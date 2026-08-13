@@ -40,6 +40,30 @@ class MediaLibraryViewSpec {
   final Widget Function(BuildContext context, Widget navigation) builder;
 }
 
+/// 向壳内子树暴露「切到某个视图」的能力（[InheritedWidget]，不改 builder 签名）。
+///
+/// 动因：库页空态的引导按钮要能把用户带到「导入」视图（[MediaLibraryViewKind.sources]），
+/// 而空态 widget 埋在书架页深处——层层回调穿透会让三个库页壳的构造签名全部膨胀。
+/// 子树用 [maybeOf] 取到后调 [select]；不在壳内（书架被独立 push）时拿到 null，
+/// 调用方自行回退（如直接开导入对话框）。
+class MediaLibraryShellScope extends InheritedWidget {
+  const MediaLibraryShellScope({
+    required this.select,
+    required super.child,
+    super.key,
+  });
+
+  /// 切到指定视图；壳没有该视图时静默忽略。
+  final void Function(MediaLibraryViewKind kind) select;
+
+  static MediaLibraryShellScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MediaLibraryShellScope>();
+
+  @override
+  bool updateShouldNotify(MediaLibraryShellScope oldWidget) =>
+      select != oldWidget.select;
+}
+
 /// 库页视图导航壳：在一个顶层 tab 内切换 [MediaLibraryViewSpec] 声明的若干视图。
 ///
 /// 设计要点：
@@ -99,24 +123,30 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   Widget build(BuildContext context) {
     final List<MediaLibraryViewSpec> views = widget.views;
     if (views.length < 2) {
-      return views.first.builder(context, const SizedBox.shrink());
+      return MediaLibraryShellScope(
+        select: _select,
+        child: views.first.builder(context, const SizedBox.shrink()),
+      );
     }
     final Widget navigation = _buildNavigation(views);
-    return Stack(
-      children: <Widget>[
-        for (int i = 0; i < views.length; i++)
-          if (_visited.contains(i))
-            Offstage(
-              offstage: i != _currentIndex,
-              child: TickerMode(
-                enabled: i == _currentIndex,
-                child: views[i].builder(
-                  context,
-                  i == _currentIndex ? navigation : const SizedBox.shrink(),
+    return MediaLibraryShellScope(
+      select: _select,
+      child: Stack(
+        children: <Widget>[
+          for (int i = 0; i < views.length; i++)
+            if (_visited.contains(i))
+              Offstage(
+                offstage: i != _currentIndex,
+                child: TickerMode(
+                  enabled: i == _currentIndex,
+                  child: views[i].builder(
+                    context,
+                    i == _currentIndex ? navigation : const SizedBox.shrink(),
+                  ),
                 ),
               ),
-            ),
-      ],
+        ],
+      ),
     );
   }
 

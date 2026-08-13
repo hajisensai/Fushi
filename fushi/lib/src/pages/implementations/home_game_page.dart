@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
@@ -63,6 +67,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key monitorKey = ValueKey<String>('game-monitor');
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
   static const Key settingsKey = ValueKey<String>('game-settings');
+  static const Key importKey = ValueKey<String>('game-import');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -178,6 +183,72 @@ class _HomeGamePageState extends State<HomeGamePage> {
                       navigation: navigation,
                     );
               },
+            ),
+          ),
+          KeyedSubtree(
+            key: HomeGamePage.importKey,
+            child: _buildImport(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 游戏「导入」视图：与书 / 漫画 / 视频库页的「导入」视图同构同位（快速导入
+  /// 区收纳单件入口；游戏暂无扫描根概念，故本页只有快速导入一区）。
+  Widget _buildImport(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    return DesktopContentLayout(
+      kind: DesktopContentKind.readerShelf,
+      child: Column(
+        children: <Widget>[
+          FushiPageHeader.customTitle(
+            title: GameSectionTabs(
+              selected: GameSection.importGames,
+              focusIdPrefix: 'game-import-tab',
+              onSelectDashboard: _showDashboard,
+              onSelectLibrary: _showLibrary,
+              onSelectMonitor: _showMonitor,
+              onSelectSettings: _showSettings,
+            ),
+            actions: const <Widget>[],
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Builder(
+                    builder: (BuildContext context) {
+                      return QuickImportSection(
+                        actions: <QuickImportAction>[
+                          QuickImportAction(
+                            icon: Icons.videogame_asset_outlined,
+                            label: t.game_add,
+                            // IndexedStack 急切构建全部子区，本视图在无
+                            // ProviderScope 的 widget 测试里也会被 build——
+                            // 容器只在点按时解析，构建期零 provider 依赖。
+                            onTap: () => addGameViaFilePicker(
+                              ProviderScope.containerOf(context, listen: false)
+                                  .read(appProvider)
+                                  .galgameRepo,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    t.game_import_drop_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

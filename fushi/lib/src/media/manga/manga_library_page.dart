@@ -50,7 +50,7 @@ class MangaLibraryPage extends StatelessWidget {
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
-          label: t.library_view_sources,
+          label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
               MangaSourcesPage(navigation: navigation),
         ),

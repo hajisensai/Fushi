@@ -4962,7 +4962,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ref.invalidate(allTagsProvider);
   }
 
-  /// 空库只提示从「来源」添加文件夹；常规单视频 CTA 已移除。
+  /// 空库引导去「导入」视图（快速导入 + 来源扫描根都在那）；与书 / 漫画 / 游戏
+  /// 空态同一句引导词，全 app 只教一个入库位置。
   Widget _buildEmpty() {
     return FushiPlaceholderMessage(
       icon: Icons.movie_outlined,
@@ -4971,8 +4972,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ? null
           : FilledButton.icon(
               onPressed: widget.onOpenSources,
-              icon: const Icon(Icons.create_new_folder_outlined),
-              label: Text(t.media_source_add),
+              icon: const Icon(Icons.library_add_outlined),
+              label: Text(t.library_empty_go_import),
             ),
     );
   }

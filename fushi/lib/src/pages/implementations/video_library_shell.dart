@@ -133,7 +133,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           ),
           ButtonSegment<VideoLibrarySection>(
             value: VideoLibrarySection.sources,
-            label: Text(t.library_view_sources),
+            label: Text(t.library_view_import),
           ),
           ButtonSegment<VideoLibrarySection>(
             value: VideoLibrarySection.settings,

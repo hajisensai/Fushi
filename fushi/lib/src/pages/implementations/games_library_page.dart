@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,7 +34,10 @@ import 'package:fushi/src/mining/galgame_scrape_controller.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_prompt.dart';
+import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/game_shared.dart'
+    show GameSection, gameSectionNotifier;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
@@ -108,11 +110,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   @override
   void initState() {
     super.initState();
+    // 仓储是 ChangeNotifier：监听它，游戏从任何入口落库（「导入」视图快速导入、
+    // 详情页编辑等）本页都能自动刷新，不再依赖「写操作都发生在本页」的隐含假设。
+    _repo.addListener(_refresh);
     unawaited(_reload());
   }
 
   @override
   void dispose() {
+    _repo.removeListener(_refresh);
     _searchController.dispose();
     super.dispose();
   }
@@ -160,33 +166,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   List<GalgameEntry> _visibleFor(Set<String>? allowedIds) =>
       applyGalgameLibraryView(_games, _view, allowedIds: allowedIds);
 
-  /// 添加游戏：文件选择器选一个 `.exe`，以文件名去扩展名作默认名，追加进列表。
-  ///
-  /// 落库后**不等封面**就返回（卡片先用默认占位图出现），封面解析在后台跑完再回填：
-  /// 目录扫描 + exe 图标解析是磁盘/CPU 活，让它阻塞「添加」这一步会让 UI 无谓地卡住。
-  Future<void> _addGame() async {
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: <String>['exe'],
-    );
-    final String? exe = (picked != null && picked.files.isNotEmpty)
-        ? picked.files.first.path
-        : null;
-    if (exe == null || exe.isEmpty) {
-      return; // 用户取消
-    }
-    if (filterOutDuplicateGameExes(_games, <String>[exe]).isEmpty) {
-      FushiToast.show(
-        msg: t.game_already_added,
-        severity: ToastSeverity.warning,
-      );
-      return; // 已在库里：不重复添加
-    }
-    final GalgameEntry entry = newGalgameEntryFromExe(exe);
-    await _repo.addAll(<GalgameEntry>[entry]);
-    _refresh();
-    unawaited(_autoCover(entry, silent: true));
-  }
+  /// 添加游戏（独立使用时的兜底入口）：委托给共享动作 [addGameViaFilePicker]
+  /// （选 exe → 查重 → 落库 → 后台补封面），与「导入」视图快速导入区同一条路。
+  /// 本页经仓储监听自动刷新。
+  Future<void> _addGame() => addGameViaFilePicker(_repo);
 
   /// 拖入文件导入：筛出新的 `.exe` 批量添加，toast 汇报数量；每条落库后走
   /// 与「添加游戏」同一套 [_autoCover] 后台补齐封面（#370 目录级联 + exe 图标）。
@@ -687,24 +670,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         ],
       ),
     );
-    final Widget addButton = FloatingActionButton.extended(
-      onPressed: _addGame,
-      icon: const Icon(Icons.add),
-      label: Text(t.game_add),
-    );
+    // 嵌在游戏 tab 里（生产路径）：单件入口已统一收敛到「导入」分段（与书 /
+    // 漫画 / 视频库页同位，2026-08-13 定案），不再摆 FAB。独立 push 时够不到
+    // 分段导航，保留 FAB 兜底。
     if (widget.embedded) {
-      return Stack(
-        children: <Widget>[
-          Positioned.fill(child: body),
-          Positioned(right: 16, bottom: 16, child: addButton),
-        ],
-      );
+      return body;
     }
     return Scaffold(
       appBar: AppBar(
         title: Text(t.games),
       ),
-      floatingActionButton: addButton,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addGame,
+        icon: const Icon(Icons.add),
+        label: Text(t.game_add),
+      ),
       body: body,
     );
   }
@@ -1020,11 +1000,20 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 ),
           ),
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _addGame,
-            icon: const Icon(Icons.add),
-            label: Text(t.game_add),
-          ),
+          // 嵌壳时空态引导去「导入」分段（唯一入库位置）；独立使用时直接选 exe。
+          if (widget.embedded)
+            FilledButton.icon(
+              onPressed: () =>
+                  gameSectionNotifier.value = GameSection.importGames,
+              icon: const Icon(Icons.library_add_outlined),
+              label: Text(t.library_empty_go_import),
+            )
+          else
+            FilledButton.icon(
+              onPressed: _addGame,
+              icon: const Icon(Icons.add),
+              label: Text(t.game_add),
+            ),
         ],
       ),
     );

@@ -30,6 +30,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_feature_flags.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -657,26 +658,27 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildPageHeader() {
     final List<Widget> actions = <Widget>[
-      // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
-      // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
-      // 漫画库和书架是同一页面的两种壳，但导入的是两种载体，故按钮指向两个不同
-      // 的对话框——不再是「同一个框换个 label」。
-      if (_mangaOnly)
-        MangaFushiSource.instance.buildMangaImportButton(
-          context: context,
-          ref: ref,
-          appModel: appModel,
-          focusId: kShelfImportFocusId,
-          label: t.manga_import_action,
-        )
-      else
-        mediaSource.buildBookImportButton(
-          context: context,
-          ref: ref,
-          appModel: appModel,
-          focusId: kShelfImportFocusId,
-          label: t.srt_import,
-        ),
+      // 单件导入入口已统一收敛到库页「导入」视图的快速导入区（书 / 漫画 / 视频 /
+      // 游戏四域同位，2026-08-13 定案）；页头只在书架被**独立使用**（无导航壳、
+      // 够不到「导入」视图）时保留导入按钮兜底。漫画和书籍载体不同，兜底按钮
+      // 仍指向两个不同的对话框。
+      if (_pageWidget.navigation == null)
+        if (_mangaOnly)
+          MangaFushiSource.instance.buildMangaImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+            focusId: kShelfImportFocusId,
+            label: t.manga_import_action,
+          )
+        else
+          mediaSource.buildBookImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+            focusId: kShelfImportFocusId,
+            label: t.srt_import,
+          ),
       _headerAction(
         tooltip: t.scrape_all,
         icon: Icons.manage_search_outlined,
@@ -1955,6 +1957,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget buildPlaceholder() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 在库页导航壳里：空态引导去「导入」视图（快速导入 + 常驻来源都在那），教会
+    // 用户唯一入库位置；独立使用（无壳）时回退为直接开导入对话框。
+    final MediaLibraryShellScope? shell =
+        MediaLibraryShellScope.maybeOf(context);
 
     return Center(
       child: Column(
@@ -1965,27 +1971,34 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             message: t.reader_no_books_added,
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          FilledButton.icon(
-            icon: const Icon(Icons.library_add_outlined, size: 18),
-            label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
-            onPressed: () async {
-              // 空态按钮与页头按钮指向同一个对话框：漫画库开漫画框，书架开书籍框。
-              final bool? imported = await showAppDialog<bool>(
-                context: context,
-                builder: (_) => _mangaOnly
-                    ? MangaImportDialog(db: appModel.database)
-                    : BookImportDialog(
-                        repo: SrtBookRepository(appModel.database),
-                        audiobookRepo: AudiobookRepository(appModel.database),
-                        db: appModel.database,
-                      ),
-              );
-              if (imported == true) {
-                ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
-                ref.invalidate(srtBooksProvider);
-              }
-            },
-          ),
+          if (shell != null)
+            FilledButton.icon(
+              icon: const Icon(Icons.library_add_outlined, size: 18),
+              label: Text(t.library_empty_go_import),
+              onPressed: () => shell.select(MediaLibraryViewKind.sources),
+            )
+          else
+            FilledButton.icon(
+              icon: const Icon(Icons.library_add_outlined, size: 18),
+              label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
+              onPressed: () async {
+                // 空态兜底与页头兜底指向同一个对话框：漫画库开漫画框，书架开书籍框。
+                final bool? imported = await showAppDialog<bool>(
+                  context: context,
+                  builder: (_) => _mangaOnly
+                      ? MangaImportDialog(db: appModel.database)
+                      : BookImportDialog(
+                          repo: SrtBookRepository(appModel.database),
+                          audiobookRepo: AudiobookRepository(appModel.database),
+                          db: appModel.database,
+                        ),
+                );
+                if (imported == true) {
+                  ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+                  ref.invalidate(srtBooksProvider);
+                }
+              },
+            ),
         ],
       ),
     );

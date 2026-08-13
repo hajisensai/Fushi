@@ -22,7 +22,8 @@ void main() {
     expect(shell, contains('t.nav_home'));
     expect(shell, contains('t.series'));
     expect(shell, contains('t.video_library_all_videos'));
-    expect(shell, contains('t.library_view_sources'));
+    // 2026-08-13 入库入口统一：来源分段改名「导入」（library_view_import）。
+    expect(shell, contains('t.library_view_import'));
     expect(shell, contains('Offstage('));
     expect(shell, contains('HomeVideoPage('));
     expect(shell, contains('MediaSourcesPage('));
