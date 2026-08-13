@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
@@ -115,6 +116,26 @@ abstract class FushiRemoteMiningService {
     required String expression,
     required String reading,
   });
+
+  // ── 互联 Lapis 客制化：主机端 note type 模板读写 ──────────────────────
+  //
+  // 手机端（AnkiDroid / AnkiMobile）没有改已存在模板的平台 API；开启「制卡到
+  // 已配对设备」时卡片落在主机的 Anki 上，Lapis 样式客制化因此必须经互联作用
+  // 于**主机端**卡型。三个方法与 `BaseAnkiRepository` 同名同契约，实现方直接
+  // 委派主机本地 Anki 仓库。
+
+  /// 读主机端 [modelName] 的完整定义（字段/卡模板/CSS）。主机后端不支持模板
+  /// 读写或模型不存在返回 `null`；主机 Anki 不可达照抛（调用方转成失败响应）。
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName);
+
+  /// 覆写主机端 [modelName] 的 styling。返回 `false` = 主机后端不支持。
+  Future<bool> updateNoteTypeStyling(String modelName, String css);
+
+  /// 覆写主机端 [modelName] 的全部卡模板。返回 `false` = 主机后端不支持。
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  );
 }
 
 /// 把一次查词结果写入 Hibiki 查词历史（无 UI 副作用）。浏览器扩展 record 用。

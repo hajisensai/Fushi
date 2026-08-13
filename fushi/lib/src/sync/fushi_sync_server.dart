@@ -549,6 +549,10 @@ class FushiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleMineForward(request);
     }
+    if (reqPath.startsWith('/api/anki/note-type/')) {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleAnkiNoteType(request, reqPath);
+    }
     if (reqPath == '/api/media/dictionary') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       return _handleDictionaryMedia(request, method == 'HEAD');
@@ -1188,6 +1192,38 @@ class FushiSyncServer {
       return _jsonResponse(await buildForwardedMineResponse(body, mining: svc));
     } on FormatException {
       return shelf.Response(400, body: 'Missing rawPayloadJson');
+    }
+  }
+
+  /// 互联 Lapis 客制化：客户端（手机 AnkiDroid 等无模板 API 的平台）经互联读写本机
+  /// Anki 的 note type（读定义 / 写 styling / 写卡模板）。契约与 YomitanApiServer 共享
+  /// （buildAnkiNoteType*Response，单一真相源）。未注入挖词 service → 404（旧版客户端
+  /// 不会打这些端点，旧版主机对新客户端返回 404 → 客户端按「后端不支持」降级）；
+  /// modelName/css/templates 缺失或类型错 → 400。
+  Future<shelf.Response> _handleAnkiNoteType(
+    shelf.Request request,
+    String path,
+  ) async {
+    final FushiRemoteMiningService? svc = _miningService;
+    if (svc == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      switch (path) {
+        case '/api/anki/note-type/read':
+          return _jsonResponse(
+              await buildAnkiNoteTypeReadResponse(body, mining: svc));
+        case '/api/anki/note-type/styling':
+          return _jsonResponse(
+              await buildAnkiNoteTypeStylingResponse(body, mining: svc));
+        case '/api/anki/note-type/templates':
+          return _jsonResponse(
+              await buildAnkiNoteTypeTemplatesResponse(body, mining: svc));
+        default:
+          return shelf.Response.notFound('Unknown endpoint');
+      }
+    } on FormatException catch (e) {
+      return shelf.Response(400, body: e.message);
     }
   }
 

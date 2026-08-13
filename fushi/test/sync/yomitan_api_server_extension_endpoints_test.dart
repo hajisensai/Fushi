@@ -14,6 +14,7 @@ import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _FakeLookup
     implements FushiRemoteLookupService, FushiRemotePopupLookupService {
@@ -99,6 +100,29 @@ class _FakeMining implements FushiRemoteMiningService {
     lastDupReading = reading;
     return dupResult;
   }
+
+  // 互联 Lapis 客制化端点的捕获（/api/anki/note-type/*）。
+  AnkiNoteTypeDefinition? noteTypeDef;
+  String? lastNoteTypeRead;
+  (String, String)? lastStylingWrite;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    lastNoteTypeRead = modelName;
+    return noteTypeDef;
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    lastStylingWrite = (modelName, css);
+    return true;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) async =>
+      true;
 }
 
 String _basic(String token) =>

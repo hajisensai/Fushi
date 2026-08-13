@@ -33,6 +33,34 @@ class _FakeSender implements RemoteMineSender {
     dupCalls.add(<String>[expression, reading]);
     return dupResult;
   }
+
+  // 互联 Lapis 客制化：note type 读写捕获。
+  AnkiNoteTypeDefinition? noteTypeDef;
+  bool noteTypeWriteOk = true;
+  final List<String> noteTypeReads = <String>[];
+  final List<(String, String)> stylingWrites = <(String, String)>[];
+  final List<(String, List<AnkiCardTemplate>)> templateWrites =
+      <(String, List<AnkiCardTemplate>)>[];
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    noteTypeReads.add(modelName);
+    return noteTypeDef;
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    stylingWrites.add((modelName, css));
+    return noteTypeWriteOk;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+      String modelName, List<AnkiCardTemplate> templates) async {
+    templateWrites.add((modelName, templates));
+    return noteTypeWriteOk;
+  }
 }
 
 /// 假本地仓库：远端模式下 mineEntry/isDuplicate 绝不该落到它身上（落了就抛，验证不误操作本机）。
@@ -65,6 +93,21 @@ class _FakeLocal extends BaseAnkiRepository {
     createdDecks.add(name);
     return true;
   }
+
+  // Lapis 模板读写跟随制卡落点走互联：远端模式下绝不该落到本地仓库。
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+          String modelName) async =>
+      throw StateError('local readNoteTypeDefinition must NOT run');
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
+      throw StateError('local updateNoteTypeStyling must NOT run');
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) async =>
+      throw StateError('local updateNoteTypeTemplates must NOT run');
 }
 
 /// BUG-1549：带可配置本地设置的假本地仓库（配置类委派合法，制卡类仍禁止落地）。
@@ -284,6 +327,56 @@ void main() {
           rawPayloadJson: '{}',
           context: const AnkiMiningContext(sentence: ''));
       expect(up.result, MineResult.error);
+    });
+
+    // Lapis 模板读写跟随制卡落点：卡落在主机上，样式客制化就必须改主机的模板。
+    // 这也是手机端（AnkiDroid 无模板 API）唯一的可视化配置通道。
+    group('Lapis note type 读写经互联作用于主机端', () {
+      test('supportsNoteTypeEditing 恒 true（本地 AnkiDroid false 也不遮蔽）', () {
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+            local: _FakeLocal(), client: _FakeSender(null));
+        // _FakeLocal 继承基类默认 false；远端模式下不再看本地能力。
+        expect(repo.supportsNoteTypeEditing, isTrue);
+      });
+
+      test('readNoteTypeDefinition 转发远端、不触本地', () async {
+        final _FakeSender sender = _FakeSender(null)
+          ..noteTypeDef = const AnkiNoteTypeDefinition(
+            name: 'Lapis',
+            fields: <String>['Expression'],
+            templates: <AnkiCardTemplate>[],
+            css: '.card {}',
+          );
+        final RemoteMiningAnkiRepository repo =
+            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        final AnkiNoteTypeDefinition? def =
+            await repo.readNoteTypeDefinition('Lapis');
+        expect(def?.name, 'Lapis');
+        expect(sender.noteTypeReads.single, 'Lapis');
+      });
+
+      test('updateNoteTypeStyling / updateNoteTypeTemplates 转发远端', () async {
+        final _FakeSender sender = _FakeSender(null);
+        final RemoteMiningAnkiRepository repo =
+            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        expect(await repo.updateNoteTypeStyling('Lapis', '.card {}'), isTrue);
+        expect(sender.stylingWrites.single, ('Lapis', '.card {}'));
+        expect(
+          await repo.updateNoteTypeTemplates('Lapis', const <AnkiCardTemplate>[
+            AnkiCardTemplate(name: 'Card', front: 'F', back: 'B'),
+          ]),
+          isTrue,
+        );
+        expect(sender.templateWrites.single.$1, 'Lapis');
+        expect(sender.templateWrites.single.$2.single.back, 'B');
+      });
+
+      test('主机版本过旧/不支持 → 写返回 false（不谎报成功）', () async {
+        final _FakeSender sender = _FakeSender(null)..noteTypeWriteOk = false;
+        final RemoteMiningAnkiRepository repo =
+            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        expect(await repo.updateNoteTypeStyling('Lapis', ''), isFalse);
+      });
     });
   });
 }
