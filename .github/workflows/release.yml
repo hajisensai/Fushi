@@ -8,21 +8,20 @@ on:
   # changed. A version bump lives in fushi/pubspec.yaml (under fushi/**) so it
   # still triggers; the rolling debug seq = commit count, so skipping a seq on a
   # docs-only push is harmless.
-  # ⚠️ Fushi 改名过渡期（2026-08-07 用户指示）：暂停 push 自动发布——新版 Fushi
-  # 尚未正式就绪，自动发布会让老 Hibiki 用户经应用内更新拉到改名后的构建
-  # （Android 并存装新包 / helper 组件名对不上），迁移链发布前恢复本块。
-  # push:
-  #   branches: ['main', 'develop']
-  #   paths:
-  #     - 'fushi/**'
-  #     - 'packages/**'
-  #     - 'ci/**'
-  #     - 'tool/**'
-  #     - 'third_party/**'
-  #     - '.github/workflows/**'
-  #     - 'melos.yaml'
-  #     - 'pubspec.yaml'
-  #     - 'pubspec.lock'
+  # Fushi 改名过渡期曾暂停 push 自动发布（2026-08-07 用户指示），
+  # 2026-08-13 用户指示恢复。
+  push:
+    branches: ['main', 'develop']
+    paths:
+      - 'fushi/**'
+      - 'packages/**'
+      - 'ci/**'
+      - 'tool/**'
+      - 'third_party/**'
+      - '.github/workflows/**'
+      - 'melos.yaml'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
   release:
     types: [published]
   workflow_dispatch:
