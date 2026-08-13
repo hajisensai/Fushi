@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/video/video_danmaku_lane_board.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_text_metrics.dart';
 
@@ -17,7 +18,11 @@ class VideoDanmakuLayoutEntry {
   });
 
   final VideoDanmakuItem item;
+
+  /// 行号（0 = 最上面一行）。滚动/顶部弹幕从 0 往下挑，底部弹幕从最后一行往上挑，
+  /// 但三种模式共用同一套行号与同一块占用板，所以模式混排也不会撞在一起。
   final int lane;
+
   final Offset position;
 
   /// 文本实测渲染宽度（px）。滚动弹幕右边缘 = `position.dx + width`，是判断
@@ -38,10 +43,17 @@ class VideoDanmakuLayoutSnapshot {
   final int droppedForDensity;
 }
 
+/// 弹幕逐帧布局器。
+///
+/// **有状态，必须按播放会话长期持有**（[VideoDanmakuOverlay] 里就是一个 final 字段）：
+/// 行号分配记在 [VideoDanmakuLaneBoard] 里跨帧延续，这正是「某条弹幕退场时其余弹幕
+/// 不重排」的前提。每帧新建一个实例等于丢掉这份记忆，重排会立刻回来。
 class VideoDanmakuLayout {
-  VideoDanmakuLayout._();
+  VideoDanmakuLayout();
 
-  static VideoDanmakuLayoutSnapshot layout({
+  final VideoDanmakuLaneBoard _board = VideoDanmakuLaneBoard();
+
+  VideoDanmakuLayoutSnapshot layout({
     required List<VideoDanmakuItem> items,
     required int positionMs,
     required Size viewportSize,
@@ -65,6 +77,29 @@ class VideoDanmakuLayout {
         droppedForDensity: 0,
       );
     }
+    // TODO-1376：弹幕仅占画面顶部 [areaFraction] 高度带（默认满屏），把弹幕挤出底部
+    // 字幕区；行高不得低于实测单行文本高度，否则相邻行直接糊在一起。
+    final double band =
+        viewportSize.height * areaFraction.clamp(0.0, 1.0).toDouble();
+    final double minLaneHeight = textMetrics.lineHeight(fontScale);
+    final double evenLaneHeight = band / maxLanes;
+    final double laneHeight = math.max(minLaneHeight, evenLaneHeight);
+    // 放得下几行就只发几行的号——靠 clamp 把越界行压回带内，等于让多个行号落在
+    // 同一个 y 上互相覆盖，那是伪装成「有 maxLanes 行」的重叠。
+    final int rows = evenLaneHeight >= minLaneHeight
+        ? maxLanes
+        : math.max(1, math.min(maxLanes, band ~/ minLaneHeight));
+    final int allowed = normalizeVideoDanmakuMaxActive(maxActive);
+    _board.beginFrame(
+      itemsToken: items,
+      viewportWidth: viewportSize.width,
+      maxRows: rows,
+      maxActive: allowed,
+      scrollDurationMs: scrollDuration.inMilliseconds,
+      fixedDurationMs: fixedDuration.inMilliseconds,
+      fontScale: fontScale,
+      positionMs: positionMs,
+    );
     // [items] 契约按 startMs 升序（来源 video_danmaku_source.dart 解析后 sort）。
     // 活动窗口只可能落在 startMs ∈ [positionMs - maxDurationMs, positionMs]：
     //  - startMs > positionMs ⇒ elapsed<0（尚未出现）；
@@ -77,6 +112,7 @@ class VideoDanmakuLayout {
     );
     final int loIndex = _lowerBoundByStartMs(items, positionMs - maxDurationMs);
     final int hiIndex = _lowerBoundByStartMs(items, positionMs + 1);
+    _board.forgetBefore(loIndex);
     final List<_ActiveItem> active = <_ActiveItem>[];
     for (int i = loIndex; i < hiIndex; i++) {
       final VideoDanmakuItem item = items[i];
@@ -97,74 +133,51 @@ class VideoDanmakuLayout {
       final int byStart = a.item.startMs.compareTo(b.item.startMs);
       return byStart == 0 ? a.index.compareTo(b.index) : byStart;
     });
-    final int allowed = normalizeVideoDanmakuMaxActive(maxActive);
-    final List<_ActiveItem> capped =
-        active.length <= allowed ? active : active.sublist(0, allowed);
-    // TODO-1376：弹幕仅占画面顶部 [areaFraction] 高度带（默认满屏），把弹幕挤出底部
-    // 字幕区；lane 高度随字号缩放 [fontScale] 放大，避免大字号相邻行重叠。
-    final double band =
-        viewportSize.height * areaFraction.clamp(0.0, 1.0).toDouble();
-    final double laneHeight =
-        math.max(18 * fontScale, band / math.max(1, maxLanes));
-    final List<int> nextFreeMs = List<int>.filled(maxLanes, -1);
     final List<VideoDanmakuLayoutEntry> entries = <VideoDanmakuLayoutEntry>[];
-    for (final _ActiveItem activeItem in capped) {
-      final int lane = _pickLane(
-        activeItem,
-        nextFreeMs,
-        maxLanes,
-        scrollDuration.inMilliseconds,
+    for (final _ActiveItem activeItem in active) {
+      // 实测渲染宽度（非估算）：progress 走到 1 的同一刻弹幕离开活动集，宽度算少了
+      // 就会在文本右半截还可见时被整条抹掉。
+      final double width = textMetrics.widthOf(activeItem.item.text, fontScale);
+      // 弹幕真正占的地盘是「文本框 + 两侧阴影」。位移几何与行占用都按这个实际尺寸
+      // 算，退场才发生在屏幕之外（否则文本框刚压线出屏时，屏幕左缘还挂着一道阴影
+      // 残影跟着被抹掉），同一行的前后两条也才真的不叠边。
+      final double occupiedWidth = width + 2 * kVideoDanmakuShadowOverflow;
+      // 行号在出生那一刻定死并终身不变；密度上限同样在出生那一刻裁决。已经在场的
+      // 弹幕永远续渲染，所以任何一条退场都不会牵动其余弹幕的位置或可见性。
+      final int? row = _board.rowFor(
+        index: activeItem.index,
+        item: activeItem.item,
+        width: occupiedWidth,
+        admitNewborn: entries.length < allowed,
       );
-      final double top = (lane * laneHeight).clamp(
-        0,
-        math.max(0, band - laneHeight),
-      );
+      if (row == null) continue;
       final double progress = _progressFor(
         activeItem,
         scrollDuration,
         fixedDuration,
       );
-      // 实测渲染宽度（非估算）：滚动弹幕的行程是「视口宽 + 自身宽」，progress 走到
-      // 1 的同一刻它离开活动集，所以宽度算少了就会在文本右半截还可见时被整条抹掉。
-      final double width = textMetrics.widthOf(activeItem.item.text, fontScale);
+      // 滚动行程 = 视口宽 + 占地宽；`+ kVideoDanmakuShadowOverflow` 把坐标从「阴影框
+      // 左边缘」换算回「文本框左边缘」。progress=1 时文本右边缘停在 -阴影溢出 处，
+      // 连同阴影一起走完全屏，下一帧离开活动集才不会在画面里被抹掉。
       final double x = switch (activeItem.item.mode) {
-        VideoDanmakuMode.scroll =>
-          viewportSize.width - (viewportSize.width + width) * progress,
+        VideoDanmakuMode.scroll => viewportSize.width -
+            (viewportSize.width + occupiedWidth) * progress +
+            kVideoDanmakuShadowOverflow,
         VideoDanmakuMode.top => viewportSize.width * 0.5,
         VideoDanmakuMode.bottom => viewportSize.width * 0.5,
       };
-      final double y = activeItem.item.mode == VideoDanmakuMode.bottom
-          ? band - laneHeight - top
-          : top;
       entries.add(VideoDanmakuLayoutEntry(
         item: activeItem.item,
-        lane: lane,
-        position: Offset(x, y),
+        lane: row,
+        position: Offset(x, row * laneHeight),
         width: width,
         opacity: _opacityFor(activeItem.item.mode, progress),
       ));
-      nextFreeMs[lane] = activeItem.item.startMs + 900;
     }
     return VideoDanmakuLayoutSnapshot(
       entries: entries,
-      droppedForDensity: active.length - capped.length,
+      droppedForDensity: active.length - entries.length,
     );
-  }
-
-  static int _pickLane(
-    _ActiveItem activeItem,
-    List<int> nextFreeMs,
-    int maxLanes,
-    int scrollDurationMs,
-  ) {
-    final Iterable<int> laneOrder =
-        activeItem.item.mode == VideoDanmakuMode.bottom
-            ? Iterable<int>.generate(maxLanes, (int i) => maxLanes - 1 - i)
-            : Iterable<int>.generate(maxLanes);
-    for (final int lane in laneOrder) {
-      if (activeItem.item.startMs >= nextFreeMs[lane]) return lane;
-    }
-    return activeItem.index % maxLanes;
   }
 
   static double _progressFor(

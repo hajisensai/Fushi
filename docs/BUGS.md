@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1504 条。点号进各自文件。
+> 共 1505 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1607](bugs/BUG-1607-danmaku-exit-relayout.md) | ✅ | ✅ | 弹幕退场时其余弹幕整屏重排 |
 | [BUG-1604](bugs/BUG-1604-sync-channel-isolation-remaining-loops.md) | ✅ | ✅ | 合集同步与退出书同步的通道循环仍无逐通道隔离：云通道抛异常，互联通道整轮不跑 |
 | [BUG-1603](bugs/BUG-1603-srt-subtitle-shadow-directional-offset.md) | ✅ | ✅ | SRT 字幕柔和投影方向性偏下，真机上观感为阴影错位 |
 | [BUG-1596](bugs/BUG-1596-release-sequence-workdir.md) | ✅ | ✅ | release.yml 序号脚本在 working-directory: fushi 下解析成不存在路径，恢复自动发布首跑 exit 127 |

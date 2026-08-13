@@ -62,6 +62,10 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
   /// 上一帧返回的平滑位置（毫秒），用于**只进不退**单调钳制，消除退出边缘的来回跳动。
   int _lastSmoothMs = 0;
 
+  /// 布局器**按播放会话长期持有**：行号分配记在它内部并跨帧延续，一条弹幕退场时
+  /// 其余弹幕才不会跟着换行。每帧新建实例就丢掉这份记忆，重排立刻回来。
+  final VideoDanmakuLayout _layout = VideoDanmakuLayout();
+
   @override
   void initState() {
     super.initState();
@@ -151,8 +155,7 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
         builder: (BuildContext context, _) {
           return LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              final VideoDanmakuLayoutSnapshot snapshot =
-                  VideoDanmakuLayout.layout(
+              final VideoDanmakuLayoutSnapshot snapshot = _layout.layout(
                 items: widget.items,
                 positionMs: _smoothPositionMs(),
                 viewportSize: constraints.biggest,
