@@ -3364,5 +3364,6 @@
   "sync_pair_fingerprint_retrust": "Clear and trust again",
   "sync_pair_fingerprint_changed_body": "This address was pinned to a different certificate before. Continue only if you know the peer reinstalled or reset it — otherwise someone may be intercepting the connection.",
   "interconnect_upload_section_footer": "Choose what this device uploads to the connected peer. Independent from the cloud backup switches and off by default. These switches only apply while Enable interconnect is on: turning interconnect off stops every upload here.",
-  "remote_delete_audiobook_partial": "Book deleted, but its audiobook could not be removed on the paired device"
+  "remote_delete_audiobook_partial": "Book deleted, but its audiobook could not be removed on the paired device",
+  "video_subscription_group_release_count": "$count releases"
 }

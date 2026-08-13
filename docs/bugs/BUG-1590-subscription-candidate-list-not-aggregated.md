@@ -1,0 +1,11 @@
+## BUG-1590 · 订阅候选列表按发布逐条列，与订阅生效单位不一致
+- **报告**：2026-08-13（用户截图：订阅页搜 `Re:Zero kara Hajimeru Isekai Seikatsu 4th Season`，列表里是同一字幕组同一分辨率的 08/10/07/06/01/02/04… 一集一行。原话：「这里订阅的时候，重复的数据太多了，优化一下」）
+- **真实性**：✅ 真 bug（是设计缺陷不是渲染 bug）。根因 `fushi/lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart` 的结果列表 `itemCount: result.items.length`——**行单位是「一个发布」，而订阅的生效单位是「一条规则」**（页面自己写着「将追踪 Erai-raws · 1080p，有新的单集发布时自动加入下载」）。同一条规则命中十几集，列表就重复十几行，用户要在视觉噪声里找那条规则。
+- **[x] ① 已修复** — 新增纯函数 `groupVideoSubscriptionCandidates()`：**订阅模式下**把结果按订阅生效单位聚合成一行；下载模式保持一集一行（那时用户要挑的就是具体某个发布）。
+  - **分组键直接取 `deriveStrictVideoSubscriptionFilter()` 产出的 `filter.json`**，不另发明键。理由：那个函数就是「两个发布订起来是不是同一条」的**定义本身**。自己写「releaseGroup + resolution」看着等价，但 nyaa 还锁 `trusted`、torznab 还锁 source/codec/language，键漏一维就会把本该分开的两条规则合成一行——用户订到的和看到的不是一回事。用定义当键，这种漂移不可能发生。
+  - 代表条取做种最多者，并列时按发布时间、再按标题字典序——**全序**，同一份结果每次渲染同一行，列表不跳。
+  - 行序 = 各组首次出现序，聚合不改变用户已习惯的排序。
+  - 推不出 filter 的条目（版本证据不足、本就不能订阅）**不聚合**，各占一行照旧显示、提交时由既有校验拒绝；并成一坨只会让「为什么订不了」更难看懂。
+  - 聚合行补两项元数据：`video_subscription_group_release_count`（共 N 个发布，17 语言经 `i18n_sync --add` + `dart run slang`）与集数区间 `EP1-EP12`，否则用户看到一行会以为只订到一集。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_subscription_candidate_grouping_test.dart`（5 条）：多集聚合成一行且集数/最新时间/代表条正确；**`trusted` 不同必须分成两行**（正是「自己发明分组键」会合错的那一格）；分辨率/字幕组不同各自成行；不可订阅条目不聚合且排在后面；聚合稳定性（同一输入两次渲染结果一致、行序不跳）。变异实测：把分组键换成 `releaseGroup + resolution` → `trusted` 那条红；还原 → 5 条全绿。`test/pages` 全组 2781 条绿，`flutter analyze` 全量 No issues found。
+- **备注**：只改订阅模式的行单位，下载模式与提交/校验链路一字未动。
