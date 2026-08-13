@@ -20,8 +20,7 @@ class _Candidate extends VideoResourceCandidate {
     super.resolution = '1080p',
     super.releaseGroup = 'Erai-raws',
     super.trusted = true,
-    super.category = '1_2',
-  }) : super(remoteId: remoteId ?? title);
+  }) : super(remoteId: remoteId ?? title, category: '1_2');
 }
 
 void main() {
