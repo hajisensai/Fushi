@@ -8,18 +8,18 @@
   "notes": "Automated release-signed debug-channel build from develop @ ca929aa. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-1.4.0-debug.11537-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11537-ios.ipa",
-      "releaseSequence": 11537,
-      "tag": "v1.4.0-debug.11537+bf162a4",
-      "version": "1.4.0-debug.11537"
+      "name": "fushi-1.4.0-debug.11538-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11538-ios.ipa",
+      "releaseSequence": 11538,
+      "tag": "v1.4.0-debug.11538+8630a2b",
+      "version": "1.4.0-debug.11538"
     },
     {
-      "name": "fushi-1.4.0-debug.11537-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11537-macos.zip",
-      "releaseSequence": 11537,
-      "tag": "v1.4.0-debug.11537+bf162a4",
-      "version": "1.4.0-debug.11537"
+      "name": "fushi-1.4.0-debug.11538-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11538-macos.zip",
+      "releaseSequence": 11538,
+      "tag": "v1.4.0-debug.11538+8630a2b",
+      "version": "1.4.0-debug.11538"
     },
     {
       "name": "fushi-1.4.0-debug.11538-windows-setup.exe",
