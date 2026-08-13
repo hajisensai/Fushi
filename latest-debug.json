@@ -22,11 +22,11 @@
       "version": "1.4.0-debug.11532"
     },
     {
-      "name": "fushi-1.4.0-debug.11532-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11532-windows-setup.exe",
-      "releaseSequence": 11532,
-      "tag": "v1.4.0-debug.11532+79b2419",
-      "version": "1.4.0-debug.11532"
+      "name": "fushi-1.4.0-debug.11535-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11535-windows-setup.exe",
+      "releaseSequence": 11535,
+      "tag": "v1.4.0-debug.11535+45c1b62",
+      "version": "1.4.0-debug.11535"
     },
     {
       "name": "hibiki-1.3.3-debug.10192-ec51ef7-debug.apk",
