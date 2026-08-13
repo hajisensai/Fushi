@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="logo hibiki" width="160">
+<img src="../static-assets/fushi-logo.png" alt="logo Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **Tanpa pengaturan rumit** — impor kamus dan audio yang direkomendasikan dalam satu langkah.
 
-[![Unduh versi terbaru](https://img.shields.io/badge/%E2%AC%87%20Unduh%20versi%20terbaru-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Unduh versi terbaru](https://img.shields.io/badge/%E2%AC%87%20Unduh%20versi%20terbaru-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Gabung Discord](https://img.shields.io/badge/Gabung%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Tonton apa yang ingin kamu tonton, lalu bahasanya ikut terkuasai.**
 
-hibiki mengubah novel yang kamu baca, serial yang kamu ikuti, dan buku audio yang kamu dengar menjadi input bahasamu — ketuk kata asing mana pun untuk mencarinya, lalu jadikan kartu Anki dengan konteks aslinya hanya dengan sekali ketuk. Ia tidak menyuruhmu menghafal daftar kata yang sudah ditetapkan, melainkan hanya membantumu menangkap kata yang **benar-benar kamu baca dan dengar**.
+Fushi mengubah novel yang kamu baca, serial yang kamu ikuti, dan buku audio yang kamu dengar menjadi input bahasamu — ketuk kata asing mana pun untuk mencarinya, lalu jadikan kartu Anki dengan konteks aslinya hanya dengan sekali ketuk. Ia tidak menyuruhmu menghafal daftar kata yang sudah ditetapkan, melainkan hanya membantumu menangkap kata yang **benar-benar kamu baca dan dengar**.
 
-Cara paling efektif untuk belajar bahasa adalah paparan dalam jumlah besar terhadap konten nyata, bukan menghafal kata-kata terisolasi dari buku kosakata. Tetapi "imersi" selalu punya dua kerepotan: mencari kata memutus alur, dan kamu lupa begitu mengalihkan pandangan. hibiki menyambungkan rantai itu:
+Cara paling efektif untuk belajar bahasa adalah paparan dalam jumlah besar terhadap konten nyata, bukan menghafal kata-kata terisolasi dari buku kosakata. Tetapi "imersi" selalu punya dua kerepotan: mencari kata memutus alur, dan kamu lupa begitu mengalihkan pandangan. Fushi menyambungkan rantai itu:
 
 📖 **Baca**: ketuk kata di pembaca EPUB untuk mencarinya, tanpa keluar dari halaman saat ini.<br>
 🎧 **Dengar**: buku audio menyorot kalimat demi kalimat dan membalik halaman secara otomatis.<br>
@@ -32,19 +32,19 @@ Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok un
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Rak Buku" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Pustaka Video" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Rak Buku" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Pustaka Video" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Pembacaan vertikal di desktop dengan popup pencarian" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Pembacaan vertikal di desktop dengan popup pencarian" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Pencarian kata video (popup bertingkat)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Pencarian kata video (daftar subtitel)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Pencarian kata video (popup bertingkat)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Pencarian kata video (daftar subtitel)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Pencarian via seleksi teks di luar aplikasi (ponsel)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Pencarian via seleksi teks di luar aplikasi (desktop)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Pencarian via seleksi teks di luar aplikasi (ponsel)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Pencarian via seleksi teks di luar aplikasi (desktop)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok un
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Lihat demo pembuatan kartu sekali klik ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Lihat demo pembuatan kartu sekali klik ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Fitur
@@ -117,7 +117,7 @@ Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok un
 
 ### Sinkronisasi Data
 
-- Tujuh backend sinkronisasi: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, dan Hibiki P2P.
+- Tujuh backend sinkronisasi: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, dan Fushi Interconnect.
 - Sinkronkan progres baca, statistik, dan buku.
 
 ### Lainnya
@@ -130,7 +130,10 @@ Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok un
 | Platform | Status | Rendering / UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > Minimum Android 7.0 (API 24). Bahasa yang tersedia untuk pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terlepas dari bahasa antarmuka.
 
@@ -146,7 +149,7 @@ Persiapan satu perintah (`flutter pub get` + apply patches), lalu bangun:
 # Dari root repositori
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows desktop
@@ -161,11 +164,11 @@ flutter build windows --release
 | Lapisan | Teknologi |
 |---|---|
 | Kerangka kerja | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platform | Android / Windows (Material Design 3) |
+| Platform | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Pembaca | Mesin paginasi WebView (diturunkan dari keluarga Hoshi Reader) |
 | Video | media_kit (inti libmpv) |
-| Penyimpanan | Drift (SQLite, WAL) + hoshidicts (mesin kamus C++ FFI) |
-| NLP | Tabel transformasi Yomitan (lematisasi multibahasa) + kana_kit (konversi kana); tokenisasi melalui hoshidicts FFI |
+| Penyimpanan | Drift (SQLite, WAL) + fushidicts (mesin kamus C++ FFI) |
+| NLP | Tabel transformasi Yomitan (lematisasi multibahasa) + kana_kit (konversi kana); tokenisasi melalui fushidicts FFI |
 | Pembuatan Kartu | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 bahasa) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>Struktur Proyek</b></summary>
 
 ```
-hibiki/                      # Repository root (Melos workspace: fushi_workspace)
+Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 ├── fushi/                  # Flutter app main directory
 │   ├── lib/
 │   │   ├── i18n/            # Internationalization (17 languages, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 │   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
 │   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android project (manifest, native hoshidicts)
+│   └── android/             # Android project (manifest, native fushidicts)
 ├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++ dictionary engine (FFI)
+├── native/                  # fushidicts C++ dictionary engine (FFI)
 ├── third_party/             # Vendored patched packages (dependency_overrides)
 ├── ci/                      # Build patches and integration test scripts
 ├── tool/                    # bootstrap / i18n_sync and other scripts
@@ -198,13 +201,13 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 
 ## Privasi & Data
 
-hibiki menyimpan buku, kamus, font, data buku audio, video, progres baca, sorotan, statistik, dan pengaturan yang diimpor di penyimpanan lokal aplikasi.
+Fushi menyimpan buku, kamus, font, data buku audio, video, progres baca, sorotan, statistik, dan pengaturan yang diimpor di penyimpanan lokal aplikasi.
 
-Sinkronisasi awan (Google Drive / OneDrive / Dropbox) menggunakan kredensial OAuth yang dikonfigurasi pengguna; WebDAV / FTP / SFTP menggunakan alamat server dan kredensial yang disediakan pengguna; Hibiki P2P terhubung langsung melalui alamat yang dikonfigurasi pengguna. Pembuatan kartu Anki berkomunikasi dengan AnkiDroid atau alamat AnkiConnect yang dikonfigurasi.
+Sinkronisasi awan (Google Drive / OneDrive / Dropbox) menggunakan kredensial OAuth yang dikonfigurasi pengguna; WebDAV / FTP / SFTP menggunakan alamat server dan kredensial yang disediakan pengguna; Fushi Interconnect terhubung langsung melalui alamat yang dikonfigurasi pengguna. Pembuatan kartu Anki berkomunikasi dengan AnkiDroid atau alamat AnkiConnect yang dikonfigurasi.
 
 ## Penghargaan
 
-hibiki dibangun di atas proyek dan ekosistem berikut:
+Fushi dibangun di atas proyek dan ekosistem berikut:
 
 | Proyek | Deskripsi |
 |---|---|

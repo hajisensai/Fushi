@@ -1,8 +1,8 @@
-# Panduan hibiki yang bahkan Yui Hirasawa bisa siapkan dalam 5 menit
+# Panduan Fushi yang bahkan Yui Hirasawa bisa siapkan dalam 5 menit
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | [Deutsch](user-guide.de.md) | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | **Bahasa Indonesia** | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> Panduan dalam bahasa Tionghoa Sederhana di-host di Feishu (tautan di atas). Panduan bahasa Inggris juga tersedia [di GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md).
+> Panduan dalam bahasa Tionghoa Sederhana di-host di Feishu (tautan di atas). Panduan bahasa Inggris juga tersedia [di GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md).
 
 ## Pendahuluan
 
@@ -10,13 +10,13 @@ Ini adalah perangkat lunak gratis untuk Android / Windows (iOS / macOS direncana
 
 ### URL proyek
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-Sedang dikembangkan secara aktif — masukan Anda akan ditangani dengan cepat. Laporan bug dan permintaan fitur sangat diterima. Jika Anda merasa Hibiki bermanfaat, kami berterima kasih jika Anda membagikannya kepada orang lain atau memberikan ⭐ pada repositori.
+Sedang dikembangkan secara aktif — masukan Anda akan ditangani dengan cepat. Laporan bug dan permintaan fitur sangat diterima. Jika Anda merasa Fushi bermanfaat, kami berterima kasih jika Anda membagikannya kepada orang lain atau memberikan ⭐ pada repositori.
 
 ### Unduh
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: pilih **arm64**. Windows: pilih berkas **.exe**.
 
@@ -24,7 +24,7 @@ Android: pilih **arm64**. Windows: pilih berkas **.exe**.
 
 ### 1. Mengimpor kamus yang direkomendasikan (kamus kata + aksen nada + frekuensi) dan audio lokal (basis data audio bahasa Jepang dan Inggris) (Sangat direkomendasikan untuk pemula!!! · opsional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Unduhan Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Unduhan Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Di dalam aplikasi: Pengaturan -> Sinkronisasi & Cadangan -> ketuk **Impor Cadangan**.
 
@@ -51,8 +51,8 @@ Anki memiliki [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) bawaan
 ##### Android
 
 1. Pasang dan buka Anki.
-2. Kembali ke hibiki, buka Pengaturan -> Pembuatan Kartu.
-3. Ketuk **Segarkan dek dan tipe catatan** (ditandai "1" pada gambar); hibiki akan meminta izin — ketuk Izinkan.
+2. Kembali ke Fushi, buka Pengaturan -> Pembuatan Kartu.
+3. Ketuk **Segarkan dek dan tipe catatan** (ditandai "1" pada gambar); Fushi akan meminta izin — ketuk Izinkan.
 4. Ketuk **Buat dek Lapis** (ditandai "2" pada gambar).
 5. Jika tidak ada peringatan atau kesalahan berwarna merah, penyiapan berhasil.
 
@@ -66,7 +66,7 @@ Anki memiliki [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) bawaan
 ![Menu Alat Anki di Windows](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Tempel kode add-on Anki di bawah untuk memasangnya: `2055492159`
-4. Kembali ke hibiki, buka Pengaturan -> Pembuatan Kartu.
+4. Kembali ke Fushi, buka Pengaturan -> Pembuatan Kartu.
 5. Ketuk **Segarkan dek dan tipe catatan** (ditandai "1").
 6. Ketuk **Buat dek Lapis** (ditandai "2").
 7. Jika tidak ada peringatan atau kesalahan berwarna merah, penyiapan berhasil.

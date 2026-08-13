@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="hibiki ロゴ" width="160">
+<img src="../static-assets/fushi-logo.png" alt="Fushi ロゴ" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **面倒な設定は不要** — 推奨辞書と音声をワンステップでインポート。
 
-[![最新版をダウンロード](https://img.shields.io/badge/%E2%AC%87%20%E6%9C%80%E6%96%B0%E7%89%88%E3%82%92%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![最新版をダウンロード](https://img.shields.io/badge/%E2%AC%87%20%E6%9C%80%E6%96%B0%E7%89%88%E3%82%92%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Discord に参加](https://img.shields.io/badge/Discord%20%E3%81%AB%E5%8F%82%E5%8A%A0-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **観たいものを観ているうちに、ことばが手に入る。**
 
-hibiki は、あなたが読んでいる小説、追っているアニメ、聴いているオーディオブックを、そのまま語学のインプットに変えます——知らない単語をタップすればすぐ辞書を引け、引いたらワンタップで原文の文脈つき Anki カードにできます。あらかじめ用意された単語リストを暗記させるのではなく、あなたが**実際に読んだ・聴いた**ことばだけを拾い上げます。
+Fushi は、あなたが読んでいる小説、追っているアニメ、聴いているオーディオブックを、そのまま語学のインプットに変えます——知らない単語をタップすればすぐ辞書を引け、引いたらワンタップで原文の文脈つき Anki カードにできます。あらかじめ用意された単語リストを暗記させるのではなく、あなたが**実際に読んだ・聴いた**ことばだけを拾い上げます。
 
-語学を身につける最も効果的な方法は、単語帳で孤立した単語を覚えることではなく、本物のコンテンツに大量に触れることです。けれど「没入」にはずっと二つの厄介があります——知らない単語を引くと集中が途切れる、引いてもすぐに忘れる。hibiki はこの流れをつなぎ直しました——
+語学を身につける最も効果的な方法は、単語帳で孤立した単語を覚えることではなく、本物のコンテンツに大量に触れることです。けれど「没入」にはずっと二つの厄介があります——知らない単語を引くと集中が途切れる、引いてもすぐに忘れる。Fushi はこの流れをつなぎ直しました——
 
 📖 **読む**：EPUB リーダーで単語をタップすればその場で辞書を引き、ページから離れません。<br>
 🎧 **聴く**：オーディオブックは一文ずつハイライトしながら読み上げ、自動でページをめくります。<br>
@@ -32,19 +32,19 @@ hibiki は、あなたが読んでいる小説、追っているアニメ、聴�
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="本棚" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="動画ライブラリ" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="本棚" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="動画ライブラリ" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="デスクトップでの縦書き読書と検索ポップアップ" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="デスクトップでの縦書き読書と検索ポップアップ" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="動画の単語検索（ネストポップアップ）" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="動画の単語検索（字幕リスト）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="動画の単語検索（ネストポップアップ）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="動画の単語検索（字幕リスト）" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="アプリ外でのテキスト選択検索（モバイル）" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="アプリ外でのテキスト選択検索（デスクトップ）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="アプリ外でのテキスト選択検索（モバイル）" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="アプリ外でのテキスト選択検索（デスクトップ）" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ hibiki は、あなたが読んでいる小説、追っているアニメ、聴�
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[ワンクリック作成デモを見る ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[ワンクリック作成デモを見る ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## 機能
@@ -117,7 +117,7 @@ hibiki は、あなたが読んでいる小説、追っているアニメ、聴�
 
 ### データ同期
 
-- 7 つの同期バックエンド：Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP、Hibiki P2P。
+- 7 つの同期バックエンド：Google Drive、OneDrive、Dropbox、WebDAV、FTP、SFTP、Fushi Interconnect。
 - 読書進捗、統計、書籍を同期します。
 
 ### その他
@@ -130,7 +130,10 @@ hibiki は、あなたが読んでいる小説、追っているアニメ、聴�
 | プラットフォーム | 状態 | レンダリング／UI |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > 最小要件は Android 7.0（API 24）です。辞書検索で利用できる言語は、インポートした辞書と Yomitan の変換テーブルによって決まり、インターフェース言語とは独立しています。
 
@@ -146,7 +149,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 # リポジトリのルートから
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows デスクトップ
@@ -161,11 +164,11 @@ flutter build windows --release
 | レイヤー | 技術 |
 |---|---|
 | フレームワーク | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
-| プラットフォーム | Android / Windows（Material Design 3） |
+| プラットフォーム | Android / Windows / macOS / Linux / iOS（Material Design 3） |
 | リーダー | WebView ページングエンジン（Hoshi Reader 系統から派生） |
 | 動画 | media_kit（libmpv コア） |
-| ストレージ | Drift（SQLite, WAL）＋ hoshidicts（C++ FFI 辞書エンジン） |
-| NLP | Yomitan 変換テーブル（多言語の見出し語化）＋ kana_kit（かな変換）；トークン化は hoshidicts FFI 経由 |
+| ストレージ | Drift（SQLite, WAL）＋ fushidicts（C++ FFI 辞書エンジン） |
+| NLP | Yomitan 変換テーブル（多言語の見出し語化）＋ kana_kit（かな変換）；トークン化は fushidicts FFI 経由 |
 | カード作成 | AnkiDroid API ＋ AnkiConnect |
 | i18n | Slang（17 言語） |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>プロジェクト構成</b></summary>
 
 ```
-hibiki/                      # Repository root (Melos workspace: fushi_workspace)
+Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 ├── fushi/                  # Flutter アプリのメインディレクトリ
 │   ├── lib/
 │   │   ├── i18n/            # 国際化（17 言語、Slang）
@@ -185,9 +188,9 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 │   │   │   ├── media/       # オーディオブック、字幕解析、リーダーソース
 │   │   │   └── models/      # データモデルと状態管理（AppModel）
 │   │   └── main.dart
-│   └── android/             # Android プロジェクト（manifest、ネイティブ hoshidicts）
+│   └── android/             # Android プロジェクト（manifest、ネイティブ fushidicts）
 ├── packages/                # 内部パッケージ ＋ flutter_inappwebview_windows (fork) ＋ gamepads_android_stub
-├── native/                  # hoshidicts C++ 辞書エンジン（FFI）
+├── native/                  # fushidicts C++ 辞書エンジン（FFI）
 ├── third_party/             # vendored されたパッチ済みパッケージ（dependency_overrides）
 ├── ci/                      # ビルドパッチと統合テストスクリプト
 ├── tool/                    # bootstrap / i18n_sync などのスクリプト
@@ -198,13 +201,13 @@ hibiki/                      # Repository root (Melos workspace: fushi_workspace
 
 ## プライバシーとデータ
 
-hibiki は、インポートした書籍、辞書、フォント、オーディオブックのデータ、動画、読書進捗、ハイライト、統計、設定をアプリのローカルストレージに保存します。
+Fushi は、インポートした書籍、辞書、フォント、オーディオブックのデータ、動画、読書進捗、ハイライト、統計、設定をアプリのローカルストレージに保存します。
 
-クラウド同期（Google Drive / OneDrive / Dropbox）はユーザーが設定した OAuth 認証情報を使用します。WebDAV / FTP / SFTP はユーザーが提供するサーバーアドレスと認証情報を使用します。Hibiki P2P はユーザーが設定したアドレスで直接接続します。Anki カード作成は AnkiDroid または設定された AnkiConnect アドレスと通信します。
+クラウド同期（Google Drive / OneDrive / Dropbox）はユーザーが設定した OAuth 認証情報を使用します。WebDAV / FTP / SFTP はユーザーが提供するサーバーアドレスと認証情報を使用します。Fushi Interconnect はユーザーが設定したアドレスで直接接続します。Anki カード作成は AnkiDroid または設定された AnkiConnect アドレスと通信します。
 
 ## 謝辞
 
-hibiki は以下のプロジェクトとエコシステムを基盤としています。
+Fushi は以下のプロジェクトとエコシステムを基盤としています。
 
 | プロジェクト | 説明 |
 |---|---|

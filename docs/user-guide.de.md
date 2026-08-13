@@ -1,8 +1,8 @@
-# Das hibiki-Handbuch, das selbst Yui Hirasawa in 5 Minuten einrichtet
+# Das Fushi-Handbuch, das selbst Yui Hirasawa in 5 Minuten einrichtet
 
 [English](user-guide.md) | [简体中文](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb) | [繁體中文](user-guide.zh-Hant.md) | [日本語](user-guide.ja.md) | [한국어](user-guide.ko.md) | [Español](user-guide.es.md) | [Français](user-guide.fr.md) | **Deutsch** | [Português](user-guide.pt-BR.md) | [Русский](user-guide.ru.md) | [Tiếng Việt](user-guide.vi.md) | [ภาษาไทย](user-guide.th.md) | [Bahasa Indonesia](user-guide.id.md) | [Italiano](user-guide.it.md) | [Nederlands](user-guide.nl.md) | [Türkçe](user-guide.tr.md) | [العربية](user-guide.ar.md)
 
-> Der Leitfaden auf Vereinfachtem Chinesisch wird auf Feishu gehostet (Link oben). Der englische Leitfaden ist außerdem [auf GitHub](https://github.com/hajisensai/hibiki/blob/main/docs/user-guide.md) verfügbar.
+> Der Leitfaden auf Vereinfachtem Chinesisch wird auf Feishu gehostet (Link oben). Der englische Leitfaden ist außerdem [auf GitHub](https://github.com/hajisensai/Fushi/blob/main/docs/user-guide.md) verfügbar.
 
 ## Einführung
 
@@ -10,13 +10,13 @@ Dies ist kostenlose Software für Android / Windows (iOS / macOS geplant) – ei
 
 ### Projekt-URL
 
-https://github.com/hajisensai/hibiki
+https://github.com/hajisensai/Fushi
 
-Aktiv in Entwicklung – dein Feedback wird zeitnah bearbeitet. Fehlerberichte und Funktionswünsche sind willkommen. Wenn dir Hibiki nützlich ist, freuen wir uns, wenn du es weiterempfiehlst oder dem Repository einen ⭐ gibst.
+Aktiv in Entwicklung – dein Feedback wird zeitnah bearbeitet. Fehlerberichte und Funktionswünsche sind willkommen. Wenn dir Fushi nützlich ist, freuen wir uns, wenn du es weiterempfiehlst oder dem Repository einen ⭐ gibst.
 
 ### Download
 
-https://github.com/hajisensai/hibiki/releases/latest
+https://github.com/hajisensai/Fushi/releases/latest
 
 Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
 
@@ -24,7 +24,7 @@ Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
 
 ### 1. Empfohlene Wörterbücher (Wort- + Tonhöhenakzent- + Häufigkeitswörterbücher) und lokales Audio (japanische und englische Audiodatenbanken) importieren (Sehr empfehlenswert für Einsteiger!!! · optional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare-Download (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare-Download (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 In der App: Einstellungen -> Synchronisierung & Sicherung -> tippe auf **Sicherung importieren**.
 
@@ -51,8 +51,8 @@ Anki hat [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) integriert 
 ##### Android
 
 1. Installiere und öffne Anki.
-2. Kehre zu hibiki zurück und gehe zu Einstellungen -> Kartenerstellung.
-3. Tippe auf **Stapel und Notiztypen aktualisieren** (im Bild mit „1“ markiert); hibiki fragt nach einer Berechtigung – tippe auf „Zulassen“.
+2. Kehre zu Fushi zurück und gehe zu Einstellungen -> Kartenerstellung.
+3. Tippe auf **Stapel und Notiztypen aktualisieren** (im Bild mit „1“ markiert); Fushi fragt nach einer Berechtigung – tippe auf „Zulassen“.
 4. Tippe auf **Lapis-Stapel erstellen** (im Bild mit „2“ markiert).
 5. Wenn keine rote Warnung oder Fehlermeldung erscheint, war die Einrichtung erfolgreich.
 
@@ -66,7 +66,7 @@ Anki hat [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) integriert 
 ![Anki-Werkzeugmenü unter Windows](static-assets/user-guide/anki-windows-tools-menu.png)
 
 3. Füge den folgenden Anki-Add-on-Code ein, um es zu installieren: `2055492159`
-4. Kehre zu hibiki zurück und gehe zu Einstellungen -> Kartenerstellung.
+4. Kehre zu Fushi zurück und gehe zu Einstellungen -> Kartenerstellung.
 5. Tippe auf **Stapel und Notiztypen aktualisieren** (mit „1“ markiert).
 6. Tippe auf **Lapis-Stapel erstellen** (mit „2“ markiert).
 7. Wenn keine rote Warnung oder Fehlermeldung erscheint, war die Einrichtung erfolgreich.

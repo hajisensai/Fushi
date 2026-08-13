@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="logo de hibiki" width="160">
+<img src="../static-assets/fushi-logo.png" alt="logo de Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **Sin configuración engorrosa** — importa los diccionarios y el audio recomendados en un solo paso.
 
-[![Descargar la última versión](https://img.shields.io/badge/%E2%AC%87%20Descargar%20la%20%C3%BAltima%20versi%C3%B3n-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![Descargar la última versión](https://img.shields.io/badge/%E2%AC%87%20Descargar%20la%20%C3%BAltima%20versi%C3%B3n-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Únete a Discord](https://img.shields.io/badge/%C3%9Anete%20a%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Mira lo que quieras mirar y aprende el idioma sobre la marcha.**
 
-hibiki convierte las novelas que lees, las series que sigues y los audiolibros que escuchas en tu material de entrada para el idioma: toca cualquier palabra desconocida para buscarla y, con un solo toque, conviértela en una tarjeta Anki con su contexto original. No te hace memorizar una lista de palabras predefinida; solo te ayuda a captar las palabras que **realmente lees y escuchas**.
+Fushi convierte las novelas que lees, las series que sigues y los audiolibros que escuchas en tu material de entrada para el idioma: toca cualquier palabra desconocida para buscarla y, con un solo toque, conviértela en una tarjeta Anki con su contexto original. No te hace memorizar una lista de palabras predefinida; solo te ayuda a captar las palabras que **realmente lees y escuchas**.
 
-La forma más eficaz de aprender un idioma es exponerse en grandes cantidades a contenido real, no memorizar palabras aisladas de un libro de vocabulario. Pero la "inmersión" siempre ha tenido dos inconvenientes: buscar una palabra rompe tu concentración y la olvidas en cuanto apartas la vista. hibiki cierra ese círculo:
+La forma más eficaz de aprender un idioma es exponerse en grandes cantidades a contenido real, no memorizar palabras aisladas de un libro de vocabulario. Pero la "inmersión" siempre ha tenido dos inconvenientes: buscar una palabra rompe tu concentración y la olvidas en cuanto apartas la vista. Fushi cierra ese círculo:
 
 📖 **Leer**: toca una palabra en el lector de EPUB para buscarla, sin salir de la página actual.<br>
 🎧 **Escuchar**: los audiolibros resaltan frase por frase y pasan de página automáticamente.<br>
@@ -32,19 +32,19 @@ Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Estantería" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Biblioteca de vídeos" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Estantería" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Biblioteca de vídeos" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Lectura vertical en escritorio con ventana emergente de búsqueda" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Lectura vertical en escritorio con ventana emergente de búsqueda" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Búsqueda en vídeo (ventanas emergentes anidadas)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Búsqueda en vídeo (lista de subtítulos)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Búsqueda en vídeo (ventanas emergentes anidadas)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Búsqueda en vídeo (lista de subtítulos)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Búsqueda por selección de texto fuera de la app (móvil)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Búsqueda por selección de texto fuera de la app (escritorio)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Búsqueda por selección de texto fuera de la app (móvil)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Búsqueda por selección de texto fuera de la app (escritorio)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Ver la demo de creación de tarjetas con un clic ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Ver la demo de creación de tarjetas con un clic ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Características
@@ -117,7 +117,7 @@ Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de
 
 ### Sincronización de datos
 
-- Siete backends de sincronización: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP y Hibiki P2P.
+- Siete backends de sincronización: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP y Fushi Interconnect.
 - Sincroniza el progreso de lectura, las estadísticas y los libros.
 
 ### Más
@@ -130,7 +130,10 @@ Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de
 | Plataforma | Estado | Renderizado / Interfaz |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > Mínimo Android 7.0 (API 24). Los idiomas disponibles para la búsqueda en diccionarios los determinan los diccionarios importados y las tablas de transformación de Yomitan, con independencia del idioma de la interfaz.
 
@@ -146,7 +149,7 @@ Preparación con un solo comando (`flutter pub get` + aplicar parches), luego co
 # Desde la raíz del repositorio
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Escritorio Windows
@@ -161,11 +164,11 @@ flutter build windows --release
 | Capa | Tecnología |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Plataformas | Android / Windows (Material Design 3) |
+| Plataformas | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Lector | Motor de paginación WebView (derivado de la familia Hoshi Reader) |
 | Vídeo | media_kit (libmpv core) |
-| Almacenamiento | Drift (SQLite, WAL) + hoshidicts (motor de diccionarios FFI en C++) |
-| PLN | Tablas de transformación de Yomitan (lematización multilingüe) + kana_kit (conversión de kana); tokenización mediante hoshidicts FFI |
+| Almacenamiento | Drift (SQLite, WAL) + fushidicts (motor de diccionarios FFI en C++) |
+| PLN | Tablas de transformación de Yomitan (lematización multilingüe) + kana_kit (conversión de kana); tokenización mediante fushidicts FFI |
 | Creación de tarjetas | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 idiomas) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>Estructura del proyecto</b></summary>
 
 ```
-hibiki/                      # Raíz del repositorio (espacio de trabajo Melos: fushi_workspace)
+Fushi/                      # Raíz del repositorio (espacio de trabajo Melos: fushi_workspace)
 ├── fushi/                  # Directorio principal de la aplicación Flutter
 │   ├── lib/
 │   │   ├── i18n/            # Internacionalización (17 idiomas, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Raíz del repositorio (espacio de trabajo Melos: 
 │   │   │   ├── media/       # Audiolibros, análisis de subtítulos, fuente del lector
 │   │   │   └── models/      # Modelos de datos y gestión de estado (AppModel)
 │   │   └── main.dart
-│   └── android/             # Proyecto Android (manifest, hoshidicts nativo)
+│   └── android/             # Proyecto Android (manifest, fushidicts nativo)
 ├── packages/                # Paquetes internos + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # Motor de diccionarios en C++ hoshidicts (FFI)
+├── native/                  # Motor de diccionarios en C++ fushidicts (FFI)
 ├── third_party/             # Paquetes parcheados incluidos (dependency_overrides)
 ├── ci/                      # Parches de compilación y scripts de pruebas de integración
 ├── tool/                    # Scripts bootstrap / i18n_sync y otros
@@ -198,13 +201,13 @@ hibiki/                      # Raíz del repositorio (espacio de trabajo Melos: 
 
 ## Privacidad y datos
 
-hibiki almacena los libros importados, diccionarios, fuentes, datos de audiolibros, vídeos, progreso de lectura, resaltados, estadísticas y ajustes en el almacenamiento local de la aplicación.
+Fushi almacena los libros importados, diccionarios, fuentes, datos de audiolibros, vídeos, progreso de lectura, resaltados, estadísticas y ajustes en el almacenamiento local de la aplicación.
 
-La sincronización en la nube (Google Drive / OneDrive / Dropbox) utiliza credenciales OAuth configuradas por el usuario; WebDAV / FTP / SFTP usa direcciones de servidor y credenciales proporcionadas por el usuario; Hibiki P2P se conecta directamente mediante una dirección configurada por el usuario. La creación de tarjetas Anki se comunica con AnkiDroid o con una dirección de AnkiConnect configurada.
+La sincronización en la nube (Google Drive / OneDrive / Dropbox) utiliza credenciales OAuth configuradas por el usuario; WebDAV / FTP / SFTP usa direcciones de servidor y credenciales proporcionadas por el usuario; Fushi Interconnect se conecta directamente mediante una dirección configurada por el usuario. La creación de tarjetas Anki se comunica con AnkiDroid o con una dirección de AnkiConnect configurada.
 
 ## Agradecimientos
 
-hibiki se apoya en los siguientes proyectos y ecosistema:
+Fushi se apoya en los siguientes proyectos y ecosistema:
 
 | Proyecto | Descripción |
 |---|---|

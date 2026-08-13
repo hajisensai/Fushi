@@ -1,10 +1,10 @@
 <div align="center">
 
-# hibiki
+# Fushi
 
-<img src="../static-assets/hibiki-logo.png" alt="hibiki logosu" width="160">
+<img src="../static-assets/fushi-logo.png" alt="Fushi logosu" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -14,14 +14,14 @@
 
 **Zahmetli kurulum yok** — önerilen sözlükleri ve sesi tek adımda içe aktarın.
 
-[![En son sürümü indir](https://img.shields.io/badge/%E2%AC%87%20En%20son%20s%C3%BCr%C3%BCm%C3%BC%20indir-2EA44F?style=for-the-badge)](https://github.com/hajisensai/hibiki/releases)
+[![En son sürümü indir](https://img.shields.io/badge/%E2%AC%87%20En%20son%20s%C3%BCr%C3%BCm%C3%BC%20indir-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
 [![Discord'a katıl](https://img.shields.io/badge/Discord%27a%20kat%C4%B1l-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **İzlemek istediğini izle, dili de yol üstünde kap.**
 
-hibiki, okuduğun romanları, takip ettiğin dizileri ve dinlediğin sesli kitapları dil girdine dönüştürür: bilmediğin herhangi bir sözcüğe dokunup ara, sonra tek dokunuşla onu özgün bağlamıyla bir Anki kartına çevir. Sana önceden hazırlanmış bir sözcük listesi ezberletmez; yalnızca **gerçekten okuduğun ve duyduğun** sözcükleri yakalamana yardım eder.
+Fushi, okuduğun romanları, takip ettiğin dizileri ve dinlediğin sesli kitapları dil girdine dönüştürür: bilmediğin herhangi bir sözcüğe dokunup ara, sonra tek dokunuşla onu özgün bağlamıyla bir Anki kartına çevir. Sana önceden hazırlanmış bir sözcük listesi ezberletmez; yalnızca **gerçekten okuduğun ve duyduğun** sözcükleri yakalamana yardım eder.
 
-Bir dili öğrenmenin en etkili yolu, kelime kitabından kopuk sözcükler ezberlemek değil, gerçek içerikle yoğun biçimde temas etmektir. Ama "daldırma"nın hep iki sıkıntısı oldu: sözcük aramak akışını bölüyor ve gözünü çevirir çevirmez unutuyorsun. hibiki bu döngüyü kapatıyor:
+Bir dili öğrenmenin en etkili yolu, kelime kitabından kopuk sözcükler ezberlemek değil, gerçek içerikle yoğun biçimde temas etmektir. Ama "daldırma"nın hep iki sıkıntısı oldu: sözcük aramak akışını bölüyor ve gözünü çevirir çevirmez unutuyorsun. Fushi bu döngüyü kapatıyor:
 
 📖 **Oku**: EPUB okuyucuda bir sözcüğe dokunarak, mevcut sayfadan çıkmadan ara.<br>
 🎧 **Dinle**: sesli kitaplar cümle cümle vurgulayarak okur ve sayfaları otomatik çevirir.<br>
@@ -32,19 +32,19 @@ Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaş
 
 <table>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-bookshelf-en.png" alt="Kitaplık" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-library-en.png" alt="Video Kitaplığı" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Kitaplık" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Video Kitaplığı" width="100%"></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/hibiki-readme-reader-vertical-lookup.png" alt="Arama açılır penceresiyle masaüstünde dikey okuma" width="100%"></td>
+    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Arama açılır penceresiyle masaüstünde dikey okuma" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-nested.png" alt="Videoda arama (iç içe açılır pencereler)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-video-lookup-subtitle.png" alt="Videoda arama (altyazı listesi)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Videoda arama (iç içe açılır pencereler)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Videoda arama (altyazı listesi)" width="100%"></td>
   </tr>
   <tr>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-mobile.png" alt="Uygulama dışı metin seçerek arama (mobil)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/hibiki-readme-out-of-app-lookup-desktop.png" alt="Uygulama dışı metin seçerek arama (masaüstü)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Uygulama dışı metin seçerek arama (mobil)" width="100%"></td>
+    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Uygulama dışı metin seçerek arama (masaüstü)" width="100%"></td>
   </tr>
 </table>
 
@@ -55,9 +55,9 @@ Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaş
      conventional workaround. To restore a real inline player, upload the mp4 in
      the GitHub web editor and replace the img below with the generated
      https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/hibiki-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
+<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
 
-<sub>[Tek tıkla kart oluşturma demosunu izle ▶](https://github.com/hajisensai/hibiki/raw/main/docs/static-assets/screenshots/hibiki-readme-anki-mining-demo.mp4)</sub>
+<sub>[Tek tıkla kart oluşturma demosunu izle ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Özellikler
@@ -117,7 +117,7 @@ Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaş
 
 ### Veri Eşitleme
 
-- Yedi eşitleme arka ucu: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP ve Hibiki P2P.
+- Yedi eşitleme arka ucu: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP ve Fushi Interconnect.
 - Okuma ilerlemesini, istatistikleri ve kitapları eşitleyin.
 
 ### Daha Fazlası
@@ -130,7 +130,10 @@ Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaş
 | Platform | Durum | Oluşturma / Arayüz |
 |---|---|---|
 | Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material |
+| Windows | ✅ | Material Design 3 |
+| macOS | ✅ | Material Design 3 |
+| Linux | ✅ | Material Design 3 |
+| iOS | ✅ | Material Design 3 |
 
 > En az Android 7.0 (API 24). Aramada kullanılabilen diller, arayüz dilinden bağımsız olarak içe aktarılan sözlükler ve Yomitan dönüşüm tabloları tarafından belirlenir.
 
@@ -146,7 +149,7 @@ Tek komutla hazırlık (`flutter pub get` + yamaları uygula), ardından derleyi
 # Depo kök dizininden
 bash tool/bootstrap.sh          # Windows PowerShell: .\tool\bootstrap.ps1
 
-cd hibiki
+cd fushi
 # Android
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 # Windows masaüstü
@@ -161,11 +164,11 @@ flutter build windows --release
 | Katman | Teknoloji |
 |---|---|
 | Çerçeve | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platformlar | Android / Windows (Material Design 3) |
+| Platformlar | Android / Windows / macOS / Linux / iOS (Material Design 3) |
 | Reader | WebView sayfalama motoru (Hoshi Reader ailesinden türetilmiştir) |
 | Video | media_kit (libmpv çekirdeği) |
-| Depolama | Drift (SQLite, WAL) + hoshidicts (C++ FFI sözlük motoru) |
-| NLP | Yomitan dönüşüm tabloları (çok dilli kök bulma) + kana_kit (kana dönüşümü); belirteçleme hoshidicts FFI üzerinden |
+| Depolama | Drift (SQLite, WAL) + fushidicts (C++ FFI sözlük motoru) |
+| NLP | Yomitan dönüşüm tabloları (çok dilli kök bulma) + kana_kit (kana dönüşümü); belirteçleme fushidicts FFI üzerinden |
 | Kart Oluşturma | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 dil) |
 
@@ -175,7 +178,7 @@ flutter build windows --release
 <summary><b>Proje Yapısı</b></summary>
 
 ```
-hibiki/                      # Depo kök dizini (Melos çalışma alanı: fushi_workspace)
+Fushi/                      # Depo kök dizini (Melos çalışma alanı: fushi_workspace)
 ├── fushi/                  # Flutter uygulamasının ana dizini
 │   ├── lib/
 │   │   ├── i18n/            # Uluslararasılaştırma (17 dil, Slang)
@@ -185,9 +188,9 @@ hibiki/                      # Depo kök dizini (Melos çalışma alanı: fushi_
 │   │   │   ├── media/       # Sesli kitap, altyazı ayrıştırma, okuyucu kaynağı
 │   │   │   └── models/      # Veri modelleri ve durum yönetimi (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android projesi (manifest, yerel hoshidicts)
+│   └── android/             # Android projesi (manifest, yerel fushidicts)
 ├── packages/                # Dahili paketler + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # hoshidicts C++ sözlük motoru (FFI)
+├── native/                  # fushidicts C++ sözlük motoru (FFI)
 ├── third_party/             # Gömülü yamalı paketler (dependency_overrides)
 ├── ci/                      # Derleme yamaları ve entegrasyon testi betikleri
 ├── tool/                    # bootstrap / i18n_sync ve diğer betikler
@@ -198,13 +201,13 @@ hibiki/                      # Depo kök dizini (Melos çalışma alanı: fushi_
 
 ## Gizlilik & Veri
 
-hibiki, içe aktarılan kitapları, sözlükleri, yazı tiplerini, sesli kitap verilerini, videoları, okuma ilerlemesini, vurguları, istatistikleri ve ayarları uygulamanın yerel deposunda saklar.
+Fushi, içe aktarılan kitapları, sözlükleri, yazı tiplerini, sesli kitap verilerini, videoları, okuma ilerlemesini, vurguları, istatistikleri ve ayarları uygulamanın yerel deposunda saklar.
 
-Bulut eşitleme (Google Drive / OneDrive / Dropbox), kullanıcı tarafından yapılandırılan OAuth kimlik bilgilerini kullanır; WebDAV / FTP / SFTP, kullanıcı tarafından sağlanan sunucu adreslerini ve kimlik bilgilerini kullanır; Hibiki P2P, kullanıcı tarafından yapılandırılan bir adres üzerinden doğrudan bağlanır. Anki kartı oluşturma, AnkiDroid ile veya yapılandırılmış bir AnkiConnect adresiyle iletişim kurar.
+Bulut eşitleme (Google Drive / OneDrive / Dropbox), kullanıcı tarafından yapılandırılan OAuth kimlik bilgilerini kullanır; WebDAV / FTP / SFTP, kullanıcı tarafından sağlanan sunucu adreslerini ve kimlik bilgilerini kullanır; Fushi Interconnect, kullanıcı tarafından yapılandırılan bir adres üzerinden doğrudan bağlanır. Anki kartı oluşturma, AnkiDroid ile veya yapılandırılmış bir AnkiConnect adresiyle iletişim kurar.
 
 ## Teşekkürler
 
-hibiki aşağıdaki projeler ve ekosistem üzerine kuruludur:
+Fushi aşağıdaki projeler ve ekosistem üzerine kuruludur:
 
 | Proje | Açıklama |
 |---|---|
