@@ -22,7 +22,7 @@ const List<String> kRealPathFileEntries = <String>[
 
 void main() {
   group('source guards: import folder uses unified real-path picker', () {
-    test('media_sources_view._addLocalFolder calls pickRealDirectoryPath', () {
+    test('media_sources_view.addLocalFolder calls pickRealDirectoryPath', () {
       final String src = File(
         'lib/src/pages/implementations/media_sources_view.dart',
       ).readAsStringSync();
@@ -33,13 +33,23 @@ void main() {
             '而非直接 FilePicker.getDirectoryPath()（安卓返回不可用 SAF 串）',
       );
       // 直接的 getDirectoryPath 不该再出现在来源主入口里。
-      final int idx = src.indexOf('Future<void> _addLocalFolder()');
+      // TODO-817 M1c 把来源管理抽成共享内容体后，_addLocalFolder 改为公开的
+      // addLocalFolder（「导入」视图快速导入区也直接调它）。
+      final int idx = src.indexOf('Future<void> addLocalFolder()');
+      expect(idx, isNonNegative,
+          reason: '来源视图必须保留 addLocalFolder 入口（选目录 → 落库 → 扫描）');
       final int end = src.indexOf('Future<', idx + 10);
+      expect(end, isNonNegative, reason: 'addLocalFolder 之后必须还有下一个方法声明作切片终点');
       final String body = src.substring(idx, end);
+      expect(
+        body.contains('pickRealDirectoryPath('),
+        isTrue,
+        reason: 'addLocalFolder 本体必须调统一真实路径入口',
+      );
       expect(
         body.contains('FilePicker.platform.getDirectoryPath'),
         isFalse,
-        reason: '_addLocalFolder 不得再直接调 getDirectoryPath',
+        reason: 'addLocalFolder 不得再直接调 getDirectoryPath',
       );
     });
 
@@ -48,10 +58,11 @@ void main() {
         'lib/src/pages/implementations/media_sources_view.dart',
       ).readAsStringSync();
       final String body = _methodBody(src, 'Future<void> addSource()');
+      expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
       final int direct = body.indexOf("widget.mediaKind == 'video'");
       final int dialog = body.indexOf('showAppDialog<_AddSourceChoice>');
       expect(direct, greaterThanOrEqualTo(0));
-      expect(body, contains('await _addLocalFolder()'));
+      expect(body, contains('await addLocalFolder()'));
       expect(direct, lessThan(dialog), reason: '视频应在弹来源类型对话框之前直接进入文件夹选择');
     });
 

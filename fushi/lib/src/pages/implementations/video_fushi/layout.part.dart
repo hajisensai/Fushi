@@ -944,7 +944,8 @@ extension _VideoLayout on _VideoFushiPageState {
         child: Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Material(
-            color: cs.surfaceContainer.withValues(alpha: 0.92),
+            color:
+                cs.surfaceContainer.withValues(alpha: kVideoOverlaySolidAlpha),
             borderRadius: FushiBorderRadius.dialog,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),

@@ -76,7 +76,9 @@ void main() {
         'Future<int> _clearSentenceDraft(',
       );
       expect(set, contains('_lastLookupCue'));
-      expect(set, contains('controller.cues'));
+      // BUG-1592：上下文取「锚点所属字幕流」而非硬编码主流 controller.cues——
+      // 副字幕上查词时锚点不在主流里，indexOf 恒 -1 会让上下 N 句静默失效。
+      expect(set, contains('controller.cueStreamOwning(anchor)'));
       expect(set, contains('_miningDraft.setContext('));
       expect(set, contains('return _miningDraft.length;'));
       // 视频所有 cue 同属一个视频文件 → audioFileIndex 恒 0（合并恒成功取 min/max）。

@@ -38,7 +38,7 @@ void main() {
     final int chooser = source.indexOf('showAppDialog<_AddSourceChoice>');
     expect(direct, greaterThanOrEqualTo(0));
     expect(direct, lessThan(chooser));
-    expect(source, contains('await _addLocalFolder();'));
+    expect(source, contains('await addLocalFolder();'));
     expect(source, contains('onLibraryChanged?.call();'));
   });
 

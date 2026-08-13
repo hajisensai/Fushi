@@ -395,9 +395,19 @@ void main() {
     expect(page, contains('if (selectedCue != null) {'),
         reason: '字幕列表多选优先覆盖制卡上下文（独立入口，不掺草稿）。');
     // TODO-680/BUG-392：选中 cue 的时间在裁音频/封面前经 miningClipTimeMs(...delayMs)
-    // 逆变换回播放器轴，故守卫断言随源同步收紧（仍锁「选中 cue 驱动制卡区间」语义）。
-    expect(page, contains('clipStartMs: miningClipTimeMs(selectedCue.startMs'));
-    expect(page, contains('clipEndMs: miningClipTimeMs(selectedCue.endMs'));
+    // 逆变换回播放器轴（仍锁「选中 cue 驱动制卡区间」语义）。TODO-2837：主副字幕分开
+    // 调轴后 delay 改为按 cue 所属流取（delayMsForCue），调用因此换行，锚点拆成
+    // 「miningClipTimeMs 调用」+「selectedCue 端点带流感知 delay」两半。
+    expect(page, contains('clipStartMs: miningClipTimeMs('));
+    expect(page, contains('clipEndMs: miningClipTimeMs('));
+    expect(
+      page,
+      contains('selectedCue.startMs, controller.delayMsForCue(selectedCue))'),
+    );
+    expect(
+      page,
+      contains('selectedCue.endMs, controller.delayMsForCue(selectedCue))'),
+    );
     expect(page, contains('usedSelectedCue: true'));
     expect(page, contains('_lastLookupCue ??'));
     expect(page, contains('_mineVideoCard('));

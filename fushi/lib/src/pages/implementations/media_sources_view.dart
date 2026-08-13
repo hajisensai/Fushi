@@ -125,7 +125,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// `containerOf` 抛 `Bad state: No ProviderScope found`（BUG-513）。
   late final FushiDatabase _db;
 
-  /// 同 [_db]：`AppModel` 也在 initState 捕获。`_addLocalFolder` 要把它交给
+  /// 同 [_db]：`AppModel` 也在 initState 捕获。[addLocalFolder] 要把它交给
   /// `pickRealDirectoryPath`（安卓那条腿用它申请全文件访问），而系统目录选择器是一段
   /// **很长的 async gap**——用户完全可能在选择器开着时把对话框关掉。捕获成字段后此处
   /// 不再出现任何 `ref.*`，BUG-513 的不变量（ref 只在 initState）继续成立。

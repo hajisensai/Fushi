@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// decideUpdate）已各有单测覆盖。本守卫锁住 UI 接线的关键不变量，防回归：
 /// - 行更新按钮**仅** isUpdatable 时显示（向后兼容：旧词典不显示、不崩）。
 /// - action bar「检查更新」按钮按 isUpdatable 存在性门控。
-/// - 单本/批量更新都走 force 重导（forceReplaceExisting: true）。
+/// - 单本/批量/从文件更新都以被点击词典为显式替换目标（replaceTarget，BUG-1595）。
 /// - 在线下载落来源（sourceOverride 带 downloadUrl 回填）。
 void main() {
   final File page = File(
@@ -34,7 +34,7 @@ void main() {
         reason: '非 isUpdatable 词典应走从文件覆盖 _updateDictionaryFromFile');
   });
 
-  test('TODO-839：从文件覆盖更新走 force 重导 + 异名确认接线', () {
+  test('TODO-839：从文件覆盖更新走显式替换 + 异名确认接线', () {
     expect(src.contains('DictionaryImportManager.peekDictionaryTitle(file)'),
         isTrue,
         reason: '从文件更新前应帩价探出新包 title 判断异名');
@@ -56,9 +56,16 @@ void main() {
     expect(src.contains('onTap: _checkForUpdates'), isTrue);
   });
 
-  test('单本/批量更新走 force 重导（forceReplaceExisting: true）', () {
-    expect(src.contains('forceReplaceExisting: true'), isTrue,
-        reason: '在线更新必须强制重导以替换同名旧版');
+  test('单本/批量/从文件更新以被点击词典为显式替换目标（replaceTarget）', () {
+    // BUG-1595（PR #816）：force 重导按新包 title 判重，标题携带版本号的新版会被
+    // 误判 newDictionary 追加成两版并存。更新链路改为显式 replaceTarget（decideUpdate
+    // 的 hasReplaceTarget 恒 replaceExact），替换语义不再依赖 title 匹配。
+    // 两处调用点：_redownloadAndReimport（在线单本/批量更新共用漏斗）与
+    // _updateDictionaryFromFile（本地从文件覆盖更新）。
+    expect('replaceTarget: dictionary,'.allMatches(src).length, 2,
+        reason: '在线更新漏斗与从文件覆盖更新都必须以被点击词典为显式替换目标');
+    expect(src.contains('forceReplaceExisting'), isFalse,
+        reason: '更新链路不得回退到按 title 判重的 force 重导（BUG-1595 旧陷阱）');
   });
 
   test('比对走 DictionaryUpdateService（fetchRemoteIndex + needsUpdate）', () {

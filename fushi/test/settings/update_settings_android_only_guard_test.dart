@@ -83,13 +83,15 @@ void main() {
       () {
     final String workflow =
         File('../.github/workflows/release-desktop.yml').readAsStringSync();
-    // Fushi 过渡期（2026-08-07 用户指示）：push 自动发布已停用（注释形态保留，
-    // 迁移链发布后恢复）。守卫改钉「停用是有意的」：注释掉的 push 块仍在，
-    // 且激活触发只剩 release/workflow_dispatch（防止有人误删整块或悄悄恢复）。
-    expect(workflow, contains(r"#   branches: ['main', 'develop']"),
-        reason: 'push 触发块应以注释形态保留（过渡期停用，非删除）');
-    expect(workflow, isNot(contains('\n  push:\n')),
-        reason: 'Fushi 迁移链发布前不得恢复 push 自动发布');
+    // 2026-08-07 过渡期曾暂停 push 自动发布（当时守卫钉注释形态）；
+    // 2026-08-13 用户指示恢复。守卫改钉「恢复是有意的」：push 触发块处于
+    // 激活形态且分支范围不漂移（防止有人悄悄再停用或改动触发分支）。
+    expect(workflow, contains('\n  push:\n'),
+        reason: 'push 自动发布已恢复（2026-08-13 用户指示），触发块必须处于激活形态');
+    expect(workflow, contains("branches: ['main', 'develop']"),
+        reason: 'push 触发分支范围 main/develop 不得漂移');
+    expect(workflow, isNot(contains(r"#   branches: ['main', 'develop']")),
+        reason: '不得残留注释形态的 push 块（避免双份 branches 清单漂开）');
     expect(workflow, contains('Release channel: debug, beta, or formal'));
     expect(workflow, contains('- debug'));
     expect(workflow, contains(r'case "$EVENT" in'));

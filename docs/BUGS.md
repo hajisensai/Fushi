@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1501 条。点号进各自文件。
+> 共 1502 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1596](bugs/BUG-1596-release-sequence-workdir.md) | ✅ | ✅ | release.yml 序号脚本在 working-directory: fushi 下解析成不存在路径，恢复自动发布首跑 exit 127 |
 | [BUG-1595](bugs/BUG-1595-dict-update-not-replacing.md) | ✅ | ✅ | 词典更新入口遇新包标题变化仍判新增两版并存 |
 | [BUG-1594](bugs/BUG-1594-ring-probe-readonly-map-crash.md) | ✅ | ✅ | ring_probe 只读映射下枚举文本槽必崩（Interlocked 写只读页） |
 | [BUG-1593](bugs/BUG-1593-gal-utterance-head-clipped.md) | ✅ | ✅ | galgame 制卡语音每句都少一截开头（提交时刻 vs 播放时刻） |

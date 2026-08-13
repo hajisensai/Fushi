@@ -133,6 +133,44 @@ void main() {
             '而 CI 全绿：\n'
             '${bareAssignments.map((String w) => "  $w").join("\n")}');
   });
+
+  test('调用共享脚本的 step 不得设 working-directory（BUG-1596）', () {
+    // `bash tool/release_sequence.sh` 是仓库根相对路径。step 一旦设了
+    // working-directory（如 release.yml 的 Resolve step 曾设 `fushi`），脚本会被
+    // 解析成不存在的 `fushi/tool/`，bash 报 No such file → exit 127，整条发布
+    // workflow 首步即挂。BUG-1586 落地当天没人踩到，是因为 push 自动发布恰好
+    // 停用、手动 dispatch 又默认 skip_tests——恢复自动发布首跑即红（BUG-1596）。
+    //
+    // 判定方式：从调用行向上走到所属 step 的起始行（`- name:` / `- uses:`），
+    // 途中任何 step 级 `working-directory:` 键都算违规。step 键在 YAML 里必然
+    // 排在 `run:` 块之前，所以向上扫描足以覆盖；run 块正文是 bash，不会出现
+    // 顶格的 `- name:` 干扰边界判定。
+    final List<String> offenders = <String>[];
+    for (final File workflow in workflows) {
+      final String name = workflow.uri.pathSegments.last;
+      final List<String> lines = workflow.readAsLinesSync();
+      for (int i = 0; i < lines.length; i++) {
+        if (!lines[i].contains(scriptCall)) continue;
+        for (int j = i; j >= 0; j--) {
+          final String trimmed = lines[j].trim();
+          if (trimmed.startsWith('- name:') || trimmed.startsWith('- uses:')) {
+            break;
+          }
+          if (trimmed.startsWith('working-directory:')) {
+            offenders.add('$name:${j + 1}（调用点 $name:${i + 1}）');
+            break;
+          }
+        }
+      }
+    }
+    expect(offenders, isEmpty,
+        reason: '这些 step 给根相对的 `bash tool/release_sequence.sh` 设了 '
+            'working-directory，脚本会解析到不存在的子目录路径，step 直接 '
+            'exit 127（BUG-1596）。要么去掉 working-directory 并把 step 里其余'
+            '相对路径改成根相对（对齐 release-desktop.yml 的同名 step），要么'
+            '别在这个 step 里调共享序号脚本：\n'
+            '${offenders.map((String w) => "  $w").join("\n")}');
+  });
 }
 
 /// 从脚本正文里解析 `RELEASE_SEQUENCE_FLOOR=<数字>`。

@@ -77,9 +77,11 @@ jobs:
         flutter-version: '3.44.0'
         cache: true
 
+    # 与 release-desktop.yml 的同名 step 一样在仓库根运行：BUG-1586 的
+    # `bash tool/release_sequence.sh` 是根相对路径，working-directory: fushi
+    # 会把它解析成不存在的 fushi/tool/（exit 127，自动发布恢复当天首跑即红）。
     - name: Resolve Android release channel
       id: channel
-      working-directory: fushi
       shell: bash
       env:
         INPUT_CHANNEL: ${{ github.event.inputs.channel }}
@@ -89,7 +91,7 @@ jobs:
         RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
       run: |
         set -euo pipefail
-        PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: *//')
+        PUBSPEC_VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//')
         VERSION="${PUBSPEC_VERSION%%+*}"
         PUBSPEC_BUILD="${PUBSPEC_VERSION#*+}"
         if [ "$PUBSPEC_BUILD" = "$PUBSPEC_VERSION" ]; then
