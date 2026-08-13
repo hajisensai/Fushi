@@ -3,6 +3,7 @@ import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// TODO-1303 契约守卫：`/api/mine` 响应体现在除 `result` 外，还摊开诊断
 /// `message`（失败原因 / 音频落空警告）与 `detail`（技术细节）——浏览器扩展 content.js
@@ -32,6 +33,20 @@ class _DiagMining implements FushiRemoteMiningService {
     required String expression,
     required String reading,
   }) async =>
+      false;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+          String modelName) async =>
+      null;
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
+      false;
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) async =>
       false;
 }
 

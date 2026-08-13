@@ -4,12 +4,27 @@ import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 /// 假挖词 service：捕获转发来的 payload，回预设结果。
 class _FakeMining implements FushiRemoteMiningService {
   ForwardedMinePayload? forwarded;
   RemoteMineResult result =
       const RemoteMineResult(result: 'success', message: 'ok');
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+          String modelName) async =>
+      null;
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
+      false;
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) async =>
+      false;
 
   @override
   Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload) async {
@@ -53,8 +68,8 @@ void main() {
 
     test('rawPayloadJson 缺失 → FormatException（调用方转 400）', () {
       expect(
-        () => buildForwardedMineResponse(
-            <String, dynamic>{'sentence': 'x'}, mining: _FakeMining()),
+        () => buildForwardedMineResponse(<String, dynamic>{'sentence': 'x'},
+            mining: _FakeMining()),
         throwsFormatException,
       );
     });

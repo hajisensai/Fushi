@@ -123,8 +123,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ],
         ),
         // Lapis 样式客制化：备份 / 恢复 / 字号缩放 / 自定义 CSS / 应用。
-        // 仅后端支持读写已存在 note type 时显示（AnkiConnect）；AnkiDroid /
-        // AnkiMobile 平台 API 改不了已存在模板（平台边界），整区隐藏。
+        // 仅后端支持读写已存在 note type 时显示（AnkiConnect；开启「制卡到
+        // 已配对设备」时经互联作用于主机端 Anki，手机上因此也显示）；纯本地
+        // AnkiDroid / AnkiMobile 平台 API 改不了已存在模板（平台边界），整区隐藏。
         if (vm.supportsNoteTypeEditing)
           AdaptiveSettingsSection(
             title: t.anki_lapis_section,
@@ -673,17 +674,24 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     AnkiSettings settings,
     AnkiViewModel vm,
   ) async {
-    // 字段映射编辑只在真的选了卡型时给出：字段名来自当前卡型，编辑器据此
-    // 自我门控（卡型里没有的字段一律不显示）。
-    final List<String> noteTypeFields =
+    // 字段映射编辑只在真的选了本地卡型时给出：映射写回本地设置、供本地制卡
+    // 渲染用，编辑器据此自我门控（卡型里没有的字段一律不显示）。
+    final List<String> localNoteTypeFields =
         settings.selectedNoteType?.fields ?? const <String>[];
     // 预览基线取用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段），编辑器里
     // 看到的才是他自己那张卡。读不到就退回内置副本——只影响预览观感，不影响写入。
+    // 「制卡到已配对设备」开启时这条读取走互联，返回的是**主机端**的 Lapis。
     String? baseCss;
+    List<String> noteTypeFields = localNoteTypeFields;
     try {
       final AnkiNoteTypeDefinition? def = await vm.lapisTemplateService
           .readNoteTypeDefinitionForPreview(LapisNoteType.modelName);
-      if (def != null) baseCss = stripLapisUserSection(def.css);
+      if (def != null) {
+        baseCss = stripLapisUserSection(def.css);
+        // 手机端 + 互联：本地没配 Anki 卡型时，自定义区域的字段候选取样式将
+        // 落地的那个卡型（主机端 Lapis）——否则区域区永远停在「先选卡型」。
+        if (noteTypeFields.isEmpty) noteTypeFields = def.fields;
+      }
     } catch (e) {
       debugPrint('Lapis 预览基线读取失败，退回内置副本: $e');
     }
@@ -699,7 +707,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           initialFieldMappings: settings.fieldMappings,
           initialBlocks: settings.lapisCustomBlocks,
           baseCss: baseCss,
-          pickHandlebar: noteTypeFields.isEmpty
+          // 映射编辑仍按**本地**卡型门控：远端字段候选只服务区域摆放，映射
+          // 本身是本地制卡配置，本地没选卡型就没有可写的映射目标。
+          pickHandlebar: localNoteTypeFields.isEmpty
               ? null
               : (String field, String currentValue) =>
                   _pickHandlebar(field, currentValue),
