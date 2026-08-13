@@ -1,0 +1,127 @@
+name: Provide baked-in secret stubs
+description: >
+  把「烘进包里的密钥」从仓库 secrets 注入各自的占位 Dart 文件。这是这批注入的
+  唯一真相源：任何构建 app 的 job 都只 uses 本 action，不再各自抄一份步骤。
+
+# ## 为什么要有这个 action（BUG-1588）
+#
+# 这四段注入原先是**逐字抄进每个 job** 的。抄到第 11 份时已经漂成这样：
+#
+#   - Google OAuth 桩：11 处一致
+#   - dandanplay 桩：11 处一致
+#   - 日志上传桩：**只有 10 处**——main.yml 漏了
+#   - TMDB 桩：**3 个变体**，且两条发布 workflow 一处都没有
+#
+# 最后一条的后果是：验证构建有 key、**发出去的包没有**，TMDB 在用户机器上恒
+# 「未配置」，而 CI 全绿、零构建期症状（BUG-1588）。这类漏抄不可能靠 review
+# 抓住——44 份拷贝里少一份，diff 上什么都看不出来。
+#
+# 收进一份之后，「新增一种烘进包的密钥」变成改一个文件；漏抄在结构上不可能
+# 发生。守卫见 fushi/test/build/baked_secret_stub_parity_guard_test.dart。
+#
+# ## 调用约定
+#
+# 所有输入都可以不传（默认空串）。空串 = 不注入真值，占位文件保持入库的空值，
+# 对应功能静默降级——这正是 fork / PR / 无 secret 环境下应有的行为。
+
+inputs:
+  google-oauth-client-secret:
+    description: secrets.GOOGLE_OAUTH_CLIENT_SECRET
+    required: false
+    default: ''
+  log-upload-endpoint:
+    description: secrets.LOG_UPLOAD_ENDPOINT
+    required: false
+    default: ''
+  log-upload-token:
+    description: secrets.LOG_UPLOAD_TOKEN
+    required: false
+    default: ''
+  dandanplay-app-id:
+    description: secrets.DANDANPLAY_APP_ID
+    required: false
+    default: ''
+  dandanplay-app-secret:
+    description: secrets.DANDANPLAY_APP_SECRET
+    required: false
+    default: ''
+  tmdb-api-key:
+    description: secrets.TMDB_API_KEY
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # google_oauth_secret.dart 是 gitignored 的（真值只存在于仓库 secret 与本机），
+    # 所以这里连占位都可能不存在，缺文件时才从 .example.dart 复制。
+    - name: Provide gitignored Google OAuth secret stub
+      shell: bash
+      env:
+        GOOGLE_OAUTH_CLIENT_SECRET: ${{ inputs.google-oauth-client-secret }}
+      run: |
+        dst=fushi/lib/src/sync/google_oauth_secret.dart
+        if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+          oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
+          printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+            "$oauth_secret_literal" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
+        fi
+
+    - name: Provide gitignored log upload secret stub
+      shell: bash
+      env:
+        LOG_UPLOAD_ENDPOINT: ${{ inputs.log-upload-endpoint }}
+        LOG_UPLOAD_TOKEN: ${{ inputs.log-upload-token }}
+      run: |
+        dst=fushi/lib/src/utils/misc/log_upload_secret.dart
+        if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+          log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
+          log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
+          printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
+            "$log_endpoint_literal" \
+            "$log_token_literal" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+        fi
+
+    - name: Provide gitignored dandanplay secret stub
+      shell: bash
+      env:
+        DANDANPLAY_APP_ID: ${{ inputs.dandanplay-app-id }}
+        DANDANPLAY_APP_SECRET: ${{ inputs.dandanplay-app-secret }}
+      run: |
+        dst=fushi/lib/src/media/video/dandanplay_secret.dart
+        if [ -n "$DANDANPLAY_APP_ID" ]; then
+          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
+            "$DANDANPLAY_APP_ID" \
+            "$DANDANPLAY_APP_SECRET" \
+            > "$dst"
+        elif [ ! -f "$dst" ]; then
+          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+        fi
+
+    # tmdb_default_key.dart 入库的是**空占位**（key = ''），所以一定存在；只重写
+    # const 那一行，文件注释、pref-key const 与 resolveTmdbApiKey() 全部保留。
+    - name: Provide gitignored TMDB API key stub
+      shell: bash
+      env:
+        TMDB_API_KEY: ${{ inputs.tmdb-api-key }}
+      run: |
+        dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
+        if [ ! -f "$dst" ]; then
+          cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
+        fi
+        if [ -n "$TMDB_API_KEY" ]; then
+          # -i.bak（后缀紧贴 -i，中间不留空格）是 GNU sed 与 BSD/macOS sed 都
+          # 接受的唯一就地编辑写法。裸 `sed -i "脚本" 文件` 只在 GNU sed 下成立：
+          # BSD sed 的 -i 必须带备份后缀，会把紧跟的脚本吃成后缀、再把文件名当
+          # 脚本，于是 macos/ios 作业固定报
+          # `sed: 1: "fushi/lib/src/media/vi ...": extra characters at the end of
+          # h command`。收进本 action 后这条坑只存在一份。
+          sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
+          rm -f "$dst.bak"
+        fi

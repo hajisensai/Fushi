@@ -81,70 +81,18 @@ jobs:
         sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
         sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
 
-    # google_oauth_secret.dart is gitignored (the real client secret lives only
-    # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails
-    # `flutter analyze`. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set,
-    # bake the REAL value in so release/CI builds can actually sign in to Google
-    # Drive (otherwise desktop sign-in hits invalid_client 401, TODO-045). When
-    # it is not set, fall back to the committed example (placeholder value, no
-    # GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
-    - name: Provide gitignored Google OAuth secret stub
-      shell: bash
-      env:
-        GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-      run: |
-        dst=fushi/lib/src/sync/google_oauth_secret.dart
-        if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-          oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
-          printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-            "$oauth_secret_literal" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
-        fi
-    # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
-    # = '') so a fresh clone compiles and online danmaku degrades to unsigned. When
-    # the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set, bake the
-    # real values in so the built APK signs dandanplay open-API requests and online
-    # danmaku works out of the box (no manual API entry).
-    - name: Provide gitignored dandanplay secret stub
-      shell: bash
-      env:
-        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
-        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-      run: |
-        dst=fushi/lib/src/media/video/dandanplay_secret.dart
-        if [ -n "$DANDANPLAY_APP_ID" ]; then
-          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
-            "$DANDANPLAY_APP_ID" \
-            "$DANDANPLAY_APP_SECRET" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
-        fi
-    # tmdb_default_key.dart ships a committed empty placeholder (key = '') so a
-    # fresh clone compiles and TMDB scraping degrades to "not configured" (Bangumi
-    # / AniList / MAL sources still work). When the TMDB_API_KEY repo secret is set,
-    # bake the real value in so released builds scrape TMDB covers/metadata out of
-    # the box (no manual API key entry). Only the const line is rewritten, so the
-    # file's comments, the pref-key const and resolveTmdbApiKey() all survive.
-    - name: Provide gitignored TMDB API key stub
-      shell: bash
-      env:
-        TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-      run: |
-        dst=fushi/lib/src/media/video/scraper/tmdb_default_key.dart
-        if [ ! -f "$dst" ]; then
-          cp fushi/lib/src/media/video/scraper/tmdb_default_key.example.dart "$dst"
-        fi
-        if [ -n "$TMDB_API_KEY" ]; then
-          # -i.bak（后缀紧贴 -i）是 GNU sed 与 BSD/macOS sed 通用的就地编辑写法；
-          # 裸 -i 只在 GNU sed 下成立。本 job 跑 ubuntu，但写法与 build-multiplatform
-          # 的五处保持一致，避免被复制进 macos 作业后固定变红。
-          sed -i.bak "s|^const String kBuiltinTmdbApiKey = '';|const String kBuiltinTmdbApiKey = '$TMDB_API_KEY';|" "$dst"
-          rm -f "$dst.bak"
-        fi
-
+    # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
+    # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
+    # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
+    - name: Provide baked-in secret stubs
+      uses: ./.github/actions/provide-baked-secrets
+      with:
+        google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+        dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
     # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
     # <ver>/transforms 这类可从 modules-2 重算的派生产物。三个 workflow
     # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步

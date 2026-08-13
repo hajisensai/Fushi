@@ -312,73 +312,18 @@ jobs:
         sed -i '/systemProp\.https\.proxyPort/d' gradle.properties
         sed -i '/systemProp\.http\.nonProxyHosts/d' gradle.properties
 
-    # google_oauth_secret.dart is gitignored (the real client secret lives only
-    # on dev hosts); CI lacks it, so google_drive_auth.dart's import fails
-    # `flutter analyze`. When the GOOGLE_OAUTH_CLIENT_SECRET repo secret is set,
-    # bake the REAL value in so release/CI builds can actually sign in to Google
-    # Drive (otherwise desktop sign-in hits invalid_client 401, TODO-045). When
-    # it is not set, fall back to the committed example (placeholder value, no
-    # GOCSPX- prefix, so the no_hardcoded_google_secret guard stays green).
-    - name: Provide gitignored Google OAuth secret stub
-      shell: bash
-      env:
-        GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-      run: |
-        dst=fushi/lib/src/sync/google_oauth_secret.dart
-        if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-          oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
-          printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-            "$oauth_secret_literal" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
-        fi
-    # log_upload_secret.dart ships a committed empty placeholder (endpoint = '')
-    # so a fresh clone compiles and the log-upload button stays hidden (it is
-    # gated by a non-empty endpoint, not by platform - see log_upload_config
-    # showUploadLogAction). When the LOG_UPLOAD_ENDPOINT / LOG_UPLOAD_TOKEN repo
-    # secrets are set, bake the real values in so CI/release builds (incl.
-    # Windows) actually show and can use the "upload log to cloud" button
-    # (TODO-385). When unset, leave the committed empty placeholder so the
-    # button stays hidden and no endpoint is exposed.
-    - name: Provide gitignored log upload secret stub
-      shell: bash
-      env:
-        LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
-        LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
-      run: |
-        dst=fushi/lib/src/utils/misc/log_upload_secret.dart
-        if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
-          log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
-          log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
-          printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-            "$log_endpoint_literal" \
-            "$log_token_literal" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
-        fi
-    # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
-    # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
-    # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set, bake
-    # the real values in so release builds sign dandanplay open-API requests and
-    # online danmaku works out of the box (no manual API entry).
-    - name: Provide gitignored dandanplay secret stub
-      shell: bash
-      env:
-        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
-        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-      run: |
-        dst=fushi/lib/src/media/video/dandanplay_secret.dart
-        if [ -n "$DANDANPLAY_APP_ID" ]; then
-          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
-            "$DANDANPLAY_APP_ID" \
-            "$DANDANPLAY_APP_SECRET" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
-        fi
-
+    # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
+    # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
+    # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
+    - name: Provide baked-in secret stubs
+      uses: ./.github/actions/provide-baked-secrets
+      with:
+        google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+        dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
     # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
     # <ver>/transforms 这类可从 modules-2 重算的派生产物。三个 workflow
     # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
@@ -803,60 +748,18 @@ jobs:
         flutter-version: '3.44.0'
         cache: true
 
-    - name: Provide gitignored Google OAuth secret stub
-      shell: bash
-      env:
-        GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-      run: |
-        dst=fushi/lib/src/sync/google_oauth_secret.dart
-        if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-          oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
-          printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-            "$oauth_secret_literal" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/sync/google_oauth_secret.example.dart "$dst"
-        fi
-    # Symmetric with the build job (BUG-290): every job that injects the
-    # google_oauth stub must also inject the log_upload stub so the symmetry
-    # guard (log_upload_workflow_injection_guard_test) stays green and a future
-    # platform job can never silently drop the injection. Harmless here (tests
-    # do not upload logs) - when the secret is unset it leaves the committed
-    # empty placeholder so nothing is exposed.
-    - name: Provide gitignored log upload secret stub
-      shell: bash
-      env:
-        LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
-        LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
-      run: |
-        dst=fushi/lib/src/utils/misc/log_upload_secret.dart
-        if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
-          log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
-          log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
-          printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-            "$log_endpoint_literal" \
-            "$log_token_literal" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
-        fi
-
-    - name: Provide gitignored dandanplay secret stub
-      shell: bash
-      env:
-        DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
-        DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-      run: |
-        dst=fushi/lib/src/media/video/dandanplay_secret.dart
-        if [ -n "$DANDANPLAY_APP_ID" ]; then
-          printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
-            "$DANDANPLAY_APP_ID" \
-            "$DANDANPLAY_APP_SECRET" \
-            > "$dst"
-        elif [ ! -f "$dst" ]; then
-          cp fushi/lib/src/media/video/dandanplay_secret.example.dart "$dst"
-        fi
-
+    # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
+    # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
+    # 的包里 TMDB 恒「未配置」而 CI 全绿（BUG-1588）。真相源只留一份。
+    - name: Provide baked-in secret stubs
+      uses: ./.github/actions/provide-baked-secrets
+      with:
+        google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+        dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
     - name: Flutter pub get
       working-directory: fushi
       run: flutter pub get
