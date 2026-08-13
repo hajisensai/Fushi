@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1503 条。点号进各自文件。
+> 共 1505 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1606](bugs/BUG-1606-gal-ingame-lookup-card-dismissed-by-other-text-layer.md) | ✅ | ✅ | gal 游戏内查词卡片被无关文本层重绘打掉（说话人切换时闪没） |
+| [BUG-1605](bugs/BUG-1605-gal-multi-voice-resources-single-pick.md) | ✅ | ✅ | gal 制卡：同句多个语音资源只取一个（多角色同时说话丢声） |
 | [BUG-1603](bugs/BUG-1603-srt-subtitle-shadow-directional-offset.md) | ✅ | ✅ | SRT 字幕柔和投影方向性偏下，真机上观感为阴影错位 |
 | [BUG-1596](bugs/BUG-1596-release-sequence-workdir.md) | ✅ | ✅ | release.yml 序号脚本在 working-directory: fushi 下解析成不存在路径，恢复自动发布首跑 exit 127 |
 | [BUG-1595](bugs/BUG-1595-dict-update-not-replacing.md) | ✅ | ✅ | 词典更新入口遇新包标题变化仍判新增两版并存 |

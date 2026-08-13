@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart'
-    show PcmFormat, transcodeVoiceOggToMiningAudio;
+    show PcmFormat, transcodeVoiceResourcesToMiningAudio;
 
 /// galgame 一键制卡（docs/specs/galgame-mining）的音频来源抽象。
 ///
@@ -499,7 +499,44 @@ const int kGalVoicePairingWindowMs = 1500;
 /// `textTsMs-expectedOffsetMs` 最近者。BGM/SE/系统音始终排除。
 ///
 /// 纯函数（只吃文件名列表 [oggFileNames]，不碰文件系统），可单测。无匹配返回 null。
+///
+/// 单值版 = [pickPairedVoiceOggs] 的首选那一个（判据完全同一份，不另写一套）。
 String? pickPairedVoiceOgg({
+  required List<String> oggFileNames,
+  required int textTsMs,
+  int? textEventId,
+  int windowLowMs = 130,
+  int windowHighMs = 330,
+  int expectedOffsetMs = 220,
+  int exactToleranceMs = 0,
+  int eventIdToleranceMs = kGalVoicePairingWindowMs,
+}) =>
+    _firstOrNull(pickPairedVoiceOggs(
+      oggFileNames: oggFileNames,
+      textTsMs: textTsMs,
+      textEventId: textEventId,
+      windowLowMs: windowLowMs,
+      windowHighMs: windowHighMs,
+      expectedOffsetMs: expectedOffsetMs,
+      exactToleranceMs: exactToleranceMs,
+      eventIdToleranceMs: eventIdToleranceMs,
+    ));
+
+/// [pickPairedVoiceOgg] 的**全量**版本：同一句台词可能同时读入多个语音资源（BUG-1605
+/// ——男女声优同台，引擎逐个打开各自的 OGG，hook 逐个 dump 成独立文件）。旧实现每层只
+/// 留一个候选，于是制卡永远只带其中一个人的声音。
+///
+/// 「同一句」的判据分证据等级，**只有被证明的层才允许全取**：
+///  - 事件 ID 层：文件名里带 native 写入的稳定 `TextSlot::seq`，等于引擎侧已经证明这些
+///    资源属于这条文本 → 全取，按与文本时间戳的距离升序（同距按文件名，保证确定性）；
+///  - 精确 tick 层：tick 与文本时间戳的差在 [exactToleranceMs]（默认 0，即同一毫秒）
+///    之内 → 全取，同一毫秒读入多个资源本身就是同句同时播放的强证据；
+///  - 偏移窗层：纯时间猜测（`[textTsMs-windowHighMs, textTsMs-windowLowMs]` 内离
+///    `textTsMs-expectedOffsetMs` 最近者）→ **仍然只取一个**。没有归属证据就把窗内所有
+///    文件都塞进卡里，只会把上一句的尾音、旁白、系统音一起带进来。
+///
+/// 层间仍是「高证据层命中就不看低层」，与单值版完全一致。无匹配返回空列表。
+List<String> pickPairedVoiceOggs({
   required List<String> oggFileNames,
   required int textTsMs,
   int? textEventId,
@@ -512,10 +549,8 @@ String? pickPairedVoiceOgg({
   final int lo = textTsMs - windowHighMs;
   final int hi = textTsMs - windowLowMs;
   final int target = textTsMs - expectedOffsetMs;
-  String? eventBest;
-  int eventBestDist = 1 << 62;
-  String? exactBest;
-  int exactBestDist = 1 << 62;
+  final List<_VoiceCandidate> eventHits = <_VoiceCandidate>[];
+  final List<_VoiceCandidate> exactHits = <_VoiceCandidate>[];
   String? offsetBest;
   int offsetBestDist = 1 << 62;
   for (final String name in oggFileNames) {
@@ -534,18 +569,15 @@ String? pickPairedVoiceOgg({
       final int eventDist = (textTsMs - tick).abs();
       if (textEventId != null &&
           parsed.textEventId == textEventId &&
-          eventDist <= eventIdToleranceMs &&
-          eventDist < eventBestDist) {
-        eventBestDist = eventDist;
-        eventBest = name;
+          eventDist <= eventIdToleranceMs) {
+        eventHits.add(_VoiceCandidate(name, eventDist));
       }
       // 显式携带事件 ID 的资源不能再降级成“附近最新文件”猜给另一条文本。
       continue;
     }
     final int exactDist = (tick - textTsMs).abs();
-    if (exactDist <= exactToleranceMs && exactDist < exactBestDist) {
-      exactBestDist = exactDist;
-      exactBest = name;
+    if (exactDist <= exactToleranceMs) {
+      exactHits.add(_VoiceCandidate(name, exactDist));
       continue;
     }
     if (tick < lo || tick > hi) {
@@ -557,8 +589,64 @@ String? pickPairedVoiceOgg({
       offsetBest = name;
     }
   }
-  return eventBest ?? exactBest ?? offsetBest;
+  if (eventHits.isNotEmpty) return _rankedVoiceNames(eventHits);
+  if (exactHits.isNotEmpty) return _rankedVoiceNames(exactHits);
+  return offsetBest == null ? const <String>[] : <String>[offsetBest];
 }
+
+/// 以 [primaryName] 为主语音，从 [candidateNames] 里挑出**同一句台词**的其余配音
+/// （BUG-1605）。纯函数（只吃文件名，不碰文件系统），可单测。
+///
+/// 归属证据分两级，都不是时间邻近猜测：
+///  - 主资源带稳定事件 ID（`<tick>_fushi_textseq<seq>_<basename>`）→ 收同一事件 ID 的；
+///  - 主资源没有事件 ID → 只收 tick **完全相同**、且同样没有事件 ID 的（同一毫秒被读入
+///    等于同时播放）。带事件 ID 的资源在这条分支里被排除：它已被 native 绑给某条具体
+///    文本，凑巧同 tick 不构成归属。
+///
+/// 返回**不含**主语音自身，按文件名升序（目录枚举顺序不保证，排序才让制卡结果可复现）。
+/// 主资源名不可解析、或是 BGM/SE/系统音时返回空。
+List<String> companionVoiceResourceNames({
+  required String primaryName,
+  required List<String> candidateNames,
+}) {
+  final _ParsedVoiceOgg? primary = _parseVoiceOggName(primaryName);
+  if (primary == null || _isNonVoiceBasename(primary.basename)) {
+    return const <String>[];
+  }
+  final List<String> companions = <String>[];
+  for (final String name in candidateNames) {
+    if (name == primaryName) continue;
+    final _ParsedVoiceOgg? other = _parseVoiceOggName(name);
+    if (other == null || _isNonVoiceBasename(other.basename)) continue;
+    final bool sameEvent =
+        primary.textEventId != null && other.textEventId == primary.textEventId;
+    final bool sameTick = primary.textEventId == null &&
+        other.textEventId == null &&
+        other.tick == primary.tick;
+    if (sameEvent || sameTick) companions.add(name);
+  }
+  companions.sort();
+  return companions;
+}
+
+/// 配对候选：文件名 + 与文本时间戳的距离（越小越像“主语音”）。
+class _VoiceCandidate {
+  const _VoiceCandidate(this.name, this.distance);
+  final String name;
+  final int distance;
+}
+
+/// 距离升序、同距按文件名升序。第二判据不是洁癖：目录枚举顺序本就不保证，没有它
+/// 「哪个是主语音」会随文件系统心情变，制卡结果就不可复现。
+List<String> _rankedVoiceNames(List<_VoiceCandidate> candidates) {
+  final List<_VoiceCandidate> sorted = List<_VoiceCandidate>.of(candidates)
+    ..sort((_VoiceCandidate a, _VoiceCandidate b) => a.distance != b.distance
+        ? a.distance.compareTo(b.distance)
+        : a.name.compareTo(b.name));
+  return <String>[for (final _VoiceCandidate c in sorted) c.name];
+}
+
+T? _firstOrNull<T>(List<T> items) => items.isEmpty ? null : items.first;
 
 /// Unity 资源提取器在 AudioSource 播放入口以同一个 GetTickCount64 时钟写 WAV。相较 Siglus
 /// 的 OGG 会固定早于文本约 220ms，Unity 文本/AudioClip 调用先后由引擎脚本决定，因此在
@@ -566,24 +654,58 @@ String? pickPairedVoiceOgg({
 String? pickPairedUnityVoiceWav({
   required List<String> wavFileNames,
   required int textTsMs,
+  int? textEventId,
   int beforeMs = 1000,
   int afterMs = 500,
+  int eventIdToleranceMs = kGalVoicePairingWindowMs,
+}) =>
+    _firstOrNull(pickPairedUnityVoiceWavs(
+      wavFileNames: wavFileNames,
+      textTsMs: textTsMs,
+      textEventId: textEventId,
+      beforeMs: beforeMs,
+      afterMs: afterMs,
+      eventIdToleranceMs: eventIdToleranceMs,
+    ));
+
+/// [pickPairedUnityVoiceWav] 的全量版本（BUG-1605）。证据分层与
+/// [pickPairedVoiceOggs] 同一纪律：带稳定事件 ID 的资源全取，纯时间窗只取最近一个。
+///
+/// 这里的时间窗刻意宽（`T-1000..T+500`，Unity 的文本/AudioClip 先后由引擎脚本决定），
+/// 正因为宽，窗内多文件更可能混进上一句尾音或 SE——所以无标记时坚持单取。
+List<String> pickPairedUnityVoiceWavs({
+  required List<String> wavFileNames,
+  required int textTsMs,
+  int? textEventId,
+  int beforeMs = 1000,
+  int afterMs = 500,
+  int eventIdToleranceMs = kGalVoicePairingWindowMs,
 }) {
+  final List<_VoiceCandidate> eventHits = <_VoiceCandidate>[];
   String? best;
   int bestDistance = 1 << 62;
   for (final String name in wavFileNames) {
     final _ParsedVoiceOgg? parsed = _parseVoiceOggName(name);
     if (parsed == null || _isNonVoiceBasename(parsed.basename)) continue;
+    final int distance = (parsed.tick - textTsMs).abs();
+    if (parsed.textEventId != null &&
+        textEventId != null &&
+        parsed.textEventId == textEventId &&
+        distance <= eventIdToleranceMs) {
+      eventHits.add(_VoiceCandidate(name, distance));
+    }
+    // 注意这里**没有** OGG 层那句「带标资源不再降级成时间窗」：Unity 层一直是纯时间窗
+    // 判定，把带标资源排除出兜底会让现有配对凭空失败。事件层只做加法。
     if (parsed.tick < textTsMs - beforeMs || parsed.tick > textTsMs + afterMs) {
       continue;
     }
-    final int distance = (parsed.tick - textTsMs).abs();
     if (distance < bestDistance) {
       bestDistance = distance;
       best = name;
     }
   }
-  return best;
+  if (eventHits.isNotEmpty) return _rankedVoiceNames(eventHits);
+  return best == null ? const <String>[] : <String>[best];
 }
 
 /// 在同一条文本时间戳下选择游戏资源语音。
@@ -598,17 +720,44 @@ String? pickPairedGameResource({
   required int textTsMs,
   int? textEventId,
   String? latestSessionVoiceName,
+}) =>
+    _firstOrNull(pickPairedGameResources(
+      oggFileNames: oggFileNames,
+      wavFileNames: wavFileNames,
+      textTsMs: textTsMs,
+      textEventId: textEventId,
+      latestSessionVoiceName: latestSessionVoiceName,
+    ));
+
+/// [pickPairedGameResource] 的全量版本（BUG-1605）：一句台词同时有多个角色配音时，
+/// 引擎会为同一条文本读入多个语音资源，全部都属于这句话。
+///
+/// 容器层优先级不变（先 Unity WAV，再 Siglus/KiriKiri OGG）；层内是否允许全取由证据
+/// 等级决定，见 [pickPairedVoiceOggs] / [pickPairedUnityVoiceWavs]。返回列表的**首元素
+/// 就是单值版会选中的那一个**（主语音），后续元素是同句的其余配音。
+List<String> pickPairedGameResources({
+  required List<String> oggFileNames,
+  required List<String> wavFileNames,
+  required int textTsMs,
+  int? textEventId,
+  String? latestSessionVoiceName,
 }) {
-  if (textTsMs <= 0) return latestSessionVoiceName;
-  return pickPairedUnityVoiceWav(
-        wavFileNames: wavFileNames,
-        textTsMs: textTsMs,
-      ) ??
-      pickPairedVoiceOgg(
-        oggFileNames: oggFileNames,
-        textTsMs: textTsMs,
-        textEventId: textEventId,
-      );
+  if (textTsMs <= 0) {
+    return latestSessionVoiceName == null
+        ? const <String>[]
+        : <String>[latestSessionVoiceName];
+  }
+  final List<String> wavs = pickPairedUnityVoiceWavs(
+    wavFileNames: wavFileNames,
+    textTsMs: textTsMs,
+    textEventId: textEventId,
+  );
+  if (wavs.isNotEmpty) return wavs;
+  return pickPairedVoiceOggs(
+    oggFileNames: oggFileNames,
+    textTsMs: textTsMs,
+    textEventId: textEventId,
+  );
 }
 
 /// 资源语音 dump 文件的**写入收敛门**（BUG-1109）。
@@ -1627,10 +1776,24 @@ class EngineHookGalAudioSource implements GalAudioSource {
     int textTsMs, {
     int? textEventId,
     bool allowLatestSessionFallback = true,
+  }) =>
+      _firstOrNull(_findPairedVoiceFiles(
+        textTsMs,
+        textEventId: textEventId,
+        allowLatestSessionFallback: allowLatestSessionFallback,
+      ));
+
+  /// [_findPairedVoiceFile] 的全量版本：同一句台词可能同时有多个角色配音（BUG-1605），
+  /// 引擎为同一条文本读入多个资源、hook 各 dump 一个文件。列表首元素是主语音（单值版
+  /// 选中的那一个），其余是同句伴音。判据与全取条件见 [pickPairedGameResources]。
+  List<File> _findPairedVoiceFiles(
+    int textTsMs, {
+    int? textEventId,
+    bool allowLatestSessionFallback = true,
   }) {
-    if (!Platform.isWindows) return null;
+    if (!Platform.isWindows) return const <File>[];
     final Directory dir = _galVoiceDumpDir();
-    if (!dir.existsSync()) return null;
+    if (!dir.existsSync()) return const <File>[];
     final List<String> oggNames = <String>[];
     final List<String> wavNames = <String>[];
     final List<File> voiceFiles = <File>[];
@@ -1650,9 +1813,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
         }
       }
     } catch (_) {
-      return null;
+      return const <File>[];
     }
-    String? picked = pickPairedGameResource(
+    List<String> picked = pickPairedGameResources(
       oggFileNames: oggNames,
       wavFileNames: wavNames,
       textTsMs: textTsMs,
@@ -1667,7 +1830,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     // 旧台词并谎报 game_resource。晚附着 live 行的最新语音兜底只发生在捕获期（poll，默认允许），
     // 且已在捕获时固化到该行；mine 路径传 allowLatestSessionFallback=false 明确禁用。
     if (allowLatestSessionFallback &&
-        picked == null &&
+        picked.isEmpty &&
         textTsMs <= 0 &&
         _sessionStartedAt != null) {
       File? latest;
@@ -1695,7 +1858,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
         }
       }
       if (latest != null) {
-        picked = pickPairedGameResource(
+        picked = pickPairedGameResources(
           oggFileNames: oggNames,
           wavFileNames: wavNames,
           textTsMs: textTsMs,
@@ -1703,10 +1866,47 @@ class EngineHookGalAudioSource implements GalAudioSource {
         );
       }
     }
-    if (picked == null) {
-      return null;
+    return <File>[
+      for (final String name in picked)
+        File('${dir.path}${Platform.pathSeparator}$name'),
+    ];
+  }
+
+  /// 以 [resourceId] 为**主语音**，找出同一句台词里其余角色的配音文件（BUG-1605）。
+  ///
+  /// 为什么不直接重跑一次时间戳配对：捕获期已经把主资源固化到该行（`audioResourceId`），
+  /// 那是「这句话的语音是哪一个」的既定答案，重新按时间戳猜可能给出另一个主语音，等于把
+  /// 已冻结的配对推翻。这里只做加法——沿主资源的**归属证据**向外扩：
+  ///  - 主资源带稳定事件 ID（`fushi_textseq<seq>`）→ 收同一事件 ID 的其余资源；
+  ///  - 主资源没有事件 ID → 只收 tick **完全相同**的其余资源（同一毫秒读入 = 同时播放）。
+  ///
+  /// 两条都不是时间邻近猜测：没有归属证据就只有主资源自己（判据本身是纯函数
+  /// [companionVoiceResourceNames]，这里只负责枚举目录和落回 [File]）。返回列表首元素
+  /// 恒为主资源。
+  List<File> _companionVoiceFiles(String resourceId) {
+    final File? primary = _voiceFileForResourceId(resourceId);
+    if (primary == null) return const <File>[];
+    final Directory dir = _galVoiceDumpDir();
+    final List<String> names = <String>[];
+    try {
+      for (final FileSystemEntity e in dir.listSync()) {
+        if (e is! File) continue;
+        final String name = _fileBaseName(e.path);
+        final String lower = name.toLowerCase();
+        if (!lower.endsWith('.ogg') && !lower.endsWith('.wav')) continue;
+        names.add(name);
+      }
+    } catch (_) {
+      return <File>[primary];
     }
-    return File('${dir.path}${Platform.pathSeparator}$picked');
+    return <File>[
+      primary,
+      for (final String name in companionVoiceResourceNames(
+        primaryName: resourceId,
+        candidateNames: names,
+      ))
+        File('${dir.path}${Platform.pathSeparator}$name'),
+    ];
   }
 
   /// 只检查资源文件是否已落盘，不提前做转码。捕获工作台的文本轮询用它把逐行状态从
@@ -1770,6 +1970,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return file.existsSync() ? path : null;
   }
 
+  /// 取这句台词的原始语音字节。
+  ///
+  /// BUG-1605：同一句可能有多个角色同时配音，引擎为同一条文本读入多个资源。这里取的是
+  /// **全部**（主语音在前），交给 [transcodeVoiceResourcesToMiningAudio] 合成一段音频；
+  /// 只取其中一个就等于制卡时丢掉另一个人的声音。哪些资源算「同一句」由归属证据决定，
+  /// 见 [pickPairedGameResources] / [_companionVoiceFiles]——纯时间邻近不算。
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
@@ -1777,19 +1983,21 @@ class EngineHookGalAudioSource implements GalAudioSource {
     String? resourceId,
     bool allowLatestSessionFallback = true,
   }) async {
-    final File? picked = resourceId == null
-        ? _findPairedVoiceFile(
+    final List<File> picked = resourceId == null
+        ? _findPairedVoiceFiles(
             textTsMs,
             textEventId: textEventId,
             allowLatestSessionFallback: allowLatestSessionFallback,
           )
-        : _voiceFileForResourceId(resourceId);
-    if (picked == null) return null;
-    // BUG-1109：hook 可能还在往这个文件里写。转码截断的原件会得到「有音频但少一截」
-    // 的卡，比报错更难发现，所以先等它写完。
-    await awaitStableVoiceDumpFile(picked);
-    return transcodeVoiceOggToMiningAudio(
-      oggPath: picked.path,
+        : _companionVoiceFiles(resourceId);
+    if (picked.isEmpty) return null;
+    // BUG-1109：hook 可能还在往这些文件里写。转码截断的原件会得到「有音频但少一截」
+    // 的卡，比报错更难发现，所以先等它们写完。
+    for (final File file in picked) {
+      await awaitStableVoiceDumpFile(file);
+    }
+    return transcodeVoiceResourcesToMiningAudio(
+      resourcePaths: <String>[for (final File file in picked) file.path],
       tempDir: Directory.systemTemp.path,
       outputExtension: outputExtension,
     );
