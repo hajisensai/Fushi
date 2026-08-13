@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/utils.dart';
 
 /// 2026-08-13 手机顶栏显示不全：页头（customTitle 分段导航形态）在「分段条自然宽
