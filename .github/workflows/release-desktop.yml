@@ -110,7 +110,7 @@ jobs:
             push)
               CHANNEL=debug
               TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
               BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
               PUBLISH_MANAGED_RELEASE=true
               ;;
@@ -118,17 +118,17 @@ jobs:
               case "$CHANNEL" in
                 debug)
                   TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
                   BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                   ;;
                 beta)
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
-                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
-                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                   PRERELEASE=false
                   MAKE_LATEST=true
@@ -703,7 +703,7 @@ jobs:
             push)
               CHANNEL=debug
               TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
               BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
               PUBLISH_MANAGED_RELEASE=true
               ;;
@@ -711,17 +711,17 @@ jobs:
               case "$CHANNEL" in
                 debug)
                   TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
                   BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                   ;;
                 beta)
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
-                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
-                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                   PRERELEASE=false
                   MAKE_LATEST=true
@@ -1175,7 +1175,7 @@ jobs:
             push)
               CHANNEL=debug
               TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
               BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
               PUBLISH_MANAGED_RELEASE=true
               ;;
@@ -1183,17 +1183,17 @@ jobs:
               case "$CHANNEL" in
                 debug)
                   TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
                   BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                   ;;
                 beta)
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
-                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
-                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                   PRERELEASE=false
                   MAKE_LATEST=true
@@ -1613,7 +1613,7 @@ jobs:
             push)
               CHANNEL=debug
               TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
               BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
               PUBLISH_MANAGED_RELEASE=true
               ;;
@@ -1621,17 +1621,17 @@ jobs:
               case "$CHANNEL" in
                 debug)
                   TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
                   BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                   ;;
                 beta)
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
-                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                   BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
-                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  NAME="${NAME:-Fushi ${VERSION}}"
                   BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                   PRERELEASE=false
                   MAKE_LATEST=true

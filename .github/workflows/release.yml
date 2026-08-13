@@ -141,7 +141,7 @@ jobs:
           push)
             CHANNEL=debug
             TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-            NAME="${NAME:-Hibiki debug ${VERSION} (${SHORT_SHA})}"
+            NAME="${NAME:-Fushi debug ${VERSION} (${SHORT_SHA})}"
             BODY="Automated release-signed debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
             BUILD_DEBUG_APK=false
             BUILD_DEBUG_CHANNEL_APK=true
@@ -152,7 +152,7 @@ jobs:
             case "$CHANNEL" in
               debug)
                 TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-                NAME="${NAME:-Hibiki debug ${VERSION} (${SHORT_SHA})}"
+                NAME="${NAME:-Fushi debug ${VERSION} (${SHORT_SHA})}"
                 BODY="Manual release-signed debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                 BUILD_DEBUG_APK=false
                 BUILD_DEBUG_CHANNEL_APK=true
@@ -160,7 +160,7 @@ jobs:
                 ;;
               beta)
                 TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
-                NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                 FILES="fushi/build/release-artifacts/fushi-*.apk"
                 BUILD_DEBUG_APK=false
@@ -169,7 +169,7 @@ jobs:
                 ;;
               formal)
                 TAG="${TAG:-v${VERSION}}"
-                NAME="${NAME:-Hibiki ${VERSION}}"
+                NAME="${NAME:-Fushi ${VERSION}}"
                 BODY="Manual formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                 PRERELEASE=false
                 MAKE_LATEST=true
