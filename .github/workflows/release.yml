@@ -159,7 +159,7 @@ jobs:
                 TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                 NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
-                FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+                FILES="hibiki/build/release-artifacts/bridge-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
@@ -170,7 +170,7 @@ jobs:
                 BODY="Manual formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                 PRERELEASE=false
                 MAKE_LATEST=true
-                FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+                FILES="hibiki/build/release-artifacts/bridge-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
                 NEEDS_RELEASE_KEYSTORE=true
@@ -185,7 +185,7 @@ jobs:
           release)
             CHANNEL=github-release
             TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
-            FILES="hibiki/build/release-artifacts/hibiki-*.apk"
+            FILES="hibiki/build/release-artifacts/bridge-*.apk"
             BUILD_SPLIT_RELEASE_APK=true
             NEEDS_RELEASE_KEYSTORE=true
             # BUG-869: a manually-published, NON-prerelease GitHub Release IS the
@@ -527,9 +527,24 @@ jobs:
         APK_DIR=build/app/outputs/flutter-apk
         OUT_DIR=build/release-artifacts
         mkdir -p "$OUT_DIR"
+        # 迁移桥包的资产前缀必须是 `bridge-`，不能是 `hibiki-`。
+        #
+        # 桥包与本体 Fushi 挂在**同一个** 2.0 正式版 release 上。已出货的 Hibiki v1.2.0
+        # 挑包只看「.apk 结尾 + 名字含设备 SUPPORTED_ABIS 任一项」，不认产品族，而
+        # GitHub API 按文件名升序返回资产 —— `bridge-` < `fushi-`，桥包因此先被遇到并
+        # 拿走 ABI 命中，老用户升到的是能原地覆盖安装的桥包（旧包名 + 旧签名 + 迁移
+        # 导出器）。叫 `hibiki-` 就排在 `fushi-` 之后，老客户端会先命中本体，跨包名装成
+        # 并存的第二个空 app，用户卸掉 Hibiki 即永久丢数据。
+        #
+        # 本体侧的不变式与反向用例（含「前缀换成 hibiki- 会失守」）钉在 develop 的
+        # fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart，
+        # 且 develop 的 release.yml 在上传本体资产前会硬校验这三个 bridge-*.apk 存在。
+        #
+        # 本包自身的产品族过滤是黑名单 `!startsWith('fushi-')`（见 platform_updater.dart
+        # 的 ReleaseProduct.own），`bridge-` 仍在自己这一族里，桥包的自更新不受影响。
         for f in "$APK_DIR"/app-*-release.apk; do
           ABI=$(basename "$f" | sed 's/^app-//;s/-release\.apk$//')
-          cp "$f" "$OUT_DIR/hibiki-${BUILD_VERSION_NAME}-${ABI}.apk"
+          cp "$f" "$OUT_DIR/bridge-${BUILD_VERSION_NAME}-${ABI}.apk"
         done
 
     # TODO-866: the prepared APKs in build/release-artifacts/ are otherwise only
@@ -557,7 +572,7 @@ jobs:
       with:
         tag_name: ${{ steps.channel.outputs.tag }}
         files: |
-          hibiki/build/release-artifacts/hibiki-*.apk
+          hibiki/build/release-artifacts/bridge-*.apk
 
     # TODO-1049 / TODO-1123: the debug channel reuses ONE rolling GitHub Release
     # (tag `debug-rolling`). softprops upserts same-named assets but never
