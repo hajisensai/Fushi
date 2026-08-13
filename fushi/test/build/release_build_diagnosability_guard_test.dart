@@ -51,7 +51,7 @@ void main() {
     expect(releaseText, contains('CMakeFiles/CMakeError.log'),
         reason: '-v 打的是 flutter 侧；CMake 配置期的报错只在 CMakeOutput.log / '
             'CMakeError.log 里。失败时不捞出来就等于没有。');
-    expect(releaseText, contains("if: failure()"),
+    expect(releaseText, contains('if: failure()'),
         reason: '日志上传步骤必须挂 if: failure()，否则成功时白传一份。');
   });
 
