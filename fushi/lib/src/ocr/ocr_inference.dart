@@ -109,7 +109,25 @@ enum OcrPlatform { windows, macos, ios, linux, android }
 /// - Windows 无 CUDA：检测走 DirectML（实测比 CPU 快 ~25 倍），识别走 CPU
 ///   —— 实测 DirectML 对自回归逐步解码是负优化（每步 GPU 往返开销远大于
 ///   小 batch 计算本身）。
-/// - macOS / iOS：同理，检测尝试 CoreML（fallback CPU），识别走 CPU。
+/// - **macOS / iOS：检测与识别都走 CPU**（BUG-1613）。这里曾经按 Windows 的
+///   类比给检测选 CoreML，但那段分支写下时 Apple 的 ORT native 整个被 gate 掉，
+///   从未被执行过。2026-08-14 打开 Apple 本地 OCR 后真机对拍（同一页、1 次预热
+///   + 3 次稳态取中位）：
+///
+///   | 平台 | EP | 检出 | 建会话 | 稳态/页 |
+///   |---|---|---|---|---|
+///   | macOS | CoreML | 4/4 | 4248ms | 237ms |
+///   | macOS | CPU | 4/4 | 79ms | **148ms** |
+///   | iOS (A13) | CoreML | **0/0 ❌** | 9269ms | 1491ms |
+///   | iOS (A13) | CPU | 4/4 ✅ | 174ms | **381ms** |
+///
+///   检测模型是 int8 量化的 RT-DETR-v2；ORT 的 CoreML EP 把它交给 ANE 后在 iOS
+///   上**静默算出空结果**——不抛异常、不触发 provider 回退，`onProviderResolved`
+///   照报 `effective=coreml, fallback=null`，所以 BUG-1163 那套降级可观测性
+///   完全照不到它。CPU 两端都又快又对，CoreML 在任何页数下都追不平。
+///   别再凭直觉把 CoreML 加回来——要加先在真机上拿数，
+///   `integration_test/manga_ocr_volume_e2e_itest.dart` 是现成的量具（它就是
+///   抓到本 bug 的那条测试：CoreML 下它检出 0 块）。
 /// - 其他平台：CPU。
 ///
 /// [cudaAvailable] 由调用方探测（例如 `OnnxRuntime().getAvailableProviders()`
@@ -134,15 +152,9 @@ List<OcrExecutionProvider> selectOcrExecutionProviders({
         ];
       }
       return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
+    // BUG-1613：Apple 两端与 linux/android 同档走 CPU（实测见上表）。
     case OcrPlatform.macos:
     case OcrPlatform.ios:
-      if (kind == OcrModelKind.detection) {
-        return const <OcrExecutionProvider>[
-          OcrExecutionProvider.coreml,
-          OcrExecutionProvider.cpu,
-        ];
-      }
-      return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
     case OcrPlatform.linux:
     case OcrPlatform.android:
       return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];

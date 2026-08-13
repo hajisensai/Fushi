@@ -145,15 +145,32 @@ void main() {
       );
     });
 
-    test('falls back to first apk when no ABI match', () async {
+    test('returns null when per-ABI apks exist but none fits this device',
+        () async {
+      // 曾经这里会兜底返回列表首个 apk。那是错的：设备只报 x86_64（没有 ARM 翻译层），
+      // 装 armeabi-v7a 包必然 INSTALL_FAILED_NO_MATCHING_ABIS——白下几百 MB 再失败。
+      // release 明明提供了分架构包却没有本机这一档时，返回 null 让上层退化成
+      // 「打开发布页」。兜底只保留给「整批候选都没有架构标记」的 universal 单包
+      // （下一条用例）。
       final AndroidUpdater u = AndroidUpdater(
         abiProvider: () async => <String>['x86_64'],
       );
-      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
+      final UpdateAsset? picked = await u.selectAsset(_assets(<String>[
         'fushi-0.4.2-armeabi-v7a.apk',
         'fushi-0.4.2-arm64-v8a.apk',
-      ])));
-      expect(url, 'https://example.com/fushi-0.4.2-armeabi-v7a.apk');
+      ]));
+      expect(picked, isNull);
+    });
+
+    test('universal apk (no ABI marker at all) is still served as fallback',
+        () async {
+      final AndroidUpdater u = AndroidUpdater(
+        abiProvider: () async => <String>['x86_64'],
+      );
+      final String? url = await _urlOf(u.selectAsset(
+        _assets(<String>['fushi-0.4.2-universal.apk']),
+      ));
+      expect(url, 'https://example.com/fushi-0.4.2-universal.apk');
     });
 
     test('returns null when no apk asset', () async {

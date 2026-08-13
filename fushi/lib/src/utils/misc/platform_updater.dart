@@ -219,6 +219,26 @@ bool _androidAssetMatchesChannel(String name, UpdateChannel channel) {
   };
 }
 
+/// **纯函数**：资产名是否是给 [abi] 这个设备架构的 APK。
+///
+/// 锚定成 `-<abi>.apk` 结尾，**不做子串匹配**。裸 `contains` 有两个真实故障：
+/// * 32 位 `x86` 设备的 `SUPPORTED_ABIS` 首项是 `x86`，而 `x86` 是 `x86_64` 的子串
+///   → 会挑到装不上的 64 位包；
+/// * 设备上报的 `x86_64` 过去被写成 `x86-64` 再 `contains`，与 CI 真实产物名
+///   `fushi-<version>-x86_64.apk` 永远对不上（`kAndroidReleaseAbis` 里就是 `x86_64`）。
+///
+/// 直接用设备上报的原始 ABI 串，不做 `_`→`-` 改写：CI 的资产名就是 Flutter
+/// `--split-per-abi` 的 `app-<abi>-release.apk` 原样换前缀而来，两侧本就同形。
+bool androidAssetMatchesAbi(String name, String abi) =>
+    name.endsWith('-$abi.apk');
+
+/// 候选里是否存在**任何**按架构切分的包。用于区分「这个 release 提供分架构包、只是
+/// 没有本机这一档」与「这个 release 只有一个 universal 包」（debug 通道即后者）。
+bool _hasPerAbiCandidate(Iterable<String> names) => names.any(
+      (String n) => kAndroidReleaseAbis
+          .any((String abi) => androidAssetMatchesAbi(n, abi)),
+    );
+
 bool _isDebugWindowsSetupAsset(String name) =>
     name.endsWith('-windows-setup.exe') && name.contains('-debug.');
 
@@ -273,17 +293,28 @@ class AndroidUpdater extends PlatformUpdater {
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
+    final List<UpdateAsset> candidates = <UpdateAsset>[
+      for (final UpdateAsset asset in _downloadable(assets))
+        if (_androidAssetMatchesChannel(asset.name, channel)) asset,
+    ];
+    if (candidates.isEmpty) return null;
     final List<String> abis = await _abiProvider();
-    final List<String> abiTags =
-        abis.map((String a) => a.replaceAll('_', '-')).toList();
-    UpdateAsset? fallback;
-    for (final UpdateAsset asset in _downloadable(assets)) {
-      final String name = asset.name;
-      if (!_androidAssetMatchesChannel(name, channel)) continue;
-      if (abiTags.any(name.contains)) return asset;
-      fallback ??= asset;
+    // 设备 ABI 偏好顺序是 outer 循环，资产列表是 inner：先满足设备最优架构，拿不到
+    // 再退让到次优。**资产顺序不参与架构决策**——GitHub API 按文件名升序返回资产，
+    // 让它决定就成了「字母序选架构」。
+    for (final String abi in abis) {
+      for (final UpdateAsset asset in candidates) {
+        if (androidAssetMatchesAbi(asset.name, abi)) return asset;
+      }
     }
-    return fallback;
+    // 无架构命中。只有当这批候选**根本没有分架构包**时才兜底取首个——那是 debug 通道的
+    // universal 单包。若 release 明明提供了分架构包却没有本机这一档（含 [_abiProvider]
+    // 取 ABI 失败返回空列表的情形），宁可返回 null 让上层退化成「打开发布页」，也不能
+    // 静默塞一个装不上的架构给用户。
+    if (_hasPerAbiCandidate(candidates.map((UpdateAsset a) => a.name))) {
+      return null;
+    }
+    return candidates.first;
   }
 
   @override

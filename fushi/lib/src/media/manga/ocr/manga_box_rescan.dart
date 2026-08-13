@@ -380,9 +380,9 @@ class MangaBoxRescanService {
   MangaBoxRescanRunner? _runner;
   bool _disposed = false;
 
-  /// 本平台是否内置本地 OCR native（Apple 已随 flutter_onnxruntime gate 出，见
-  /// `ocr_inference_ort.dart` 的 [isLocalOnnxRuntimeAvailable]）。调用方在尝试识别
-  /// 前判定，以便给出「本平台暂不支持」而不是抛异常。
+  /// 本平台是否内置本地 OCR native（见 `ocr_inference_ort.dart` 的
+  /// [isLocalOnnxRuntimeAvailable]；2026-08 起 Apple 也已接上，五端皆真）。
+  /// 调用方在尝试识别前判定，以便给出「本平台暂不支持」而不是抛异常。
   bool get isLocalRescanSupported => isLocalOnnxRuntimeAvailable;
 
   /// 识别三件套是否就绪（**不看检测器**——单框不需要它）。

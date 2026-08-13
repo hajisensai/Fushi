@@ -16,6 +16,15 @@ import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 String _ownExeName() =>
     Platform.resolvedExecutable.replaceAll('/', r'\').split(r'\').last;
 
+/// 「（真实系统）」各组只在 Windows 上有意义，非 Windows 一律整组跳过。
+///
+/// 这层是裸 FFI：非 Windows 上每个入口都按契约返回空/null（「非 Windows 平台契约」
+/// 那组正是断言它），于是「进程数 > 20」「注册表里必有 ProductName」这类**拿真实
+/// 系统当已知真值**的断言在 Linux CI 上必然失败。作者在 Windows 本机全绿，红只在
+/// CI 露头——本机 Windows 绿 ≠ CI Linux 绿。
+final Object? _skipOffRealWindows =
+    Platform.isWindows ? null : '真实系统断言只在 Windows 上有意义';
+
 void main() {
   group('非 Windows 平台契约', () {
     test('全部返回空/null，调用方无需自己 gate', () {
@@ -78,7 +87,7 @@ void main() {
         reason: '枚举阶段不得解析路径，否则等于对全机每个进程 OpenProcess',
       );
     });
-  });
+  }, skip: _skipOffRealWindows);
 
   group('路径解析（真实系统）', () {
     test('当前进程路径等于 Platform.resolvedExecutable', () {
@@ -96,7 +105,7 @@ void main() {
       expect(windowsProcessImagePath(0), isNull);
       expect(windowsProcessImagePath(-1), isNull);
     });
-  });
+  }, skip: _skipOffRealWindows);
 
   group('按名字 / 按 PID 查询（真实系统）', () {
     test('按 image 名（大小写不敏感）能查到自己，且带完整路径', () {
@@ -137,7 +146,7 @@ void main() {
       expect(windowsProcessesByNames(<String>{}), isEmpty);
       expect(windowsProcessesByIds(<int>[]), isEmpty);
     });
-  });
+  }, skip: _skipOffRealWindows);
 
   group('文件占用者查询 / Restart Manager（真实系统）', () {
     test('当前进程必然被报为自己 exe 文件的占用者', () {
@@ -184,7 +193,7 @@ void main() {
       );
       expect(windowsProcessesHoldingFile(''), isEmpty);
     });
-  });
+  }, skip: _skipOffRealWindows);
 
   group('注册表读取（真实系统）', () {
     const String ntCurrentVersion =
@@ -269,5 +278,5 @@ void main() {
       );
       expect(proxyEnable, anyOf(isNull, isA<int>()));
     });
-  });
+  }, skip: _skipOffRealWindows);
 }
