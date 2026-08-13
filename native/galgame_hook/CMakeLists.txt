@@ -197,6 +197,14 @@ add_executable(fushi_launcher_layout_test
 target_include_directories(fushi_launcher_layout_test PRIVATE "include")
 add_test(NAME fushi_launcher_layout_test COMMAND fushi_launcher_layout_test)
 
+# 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
+add_executable(fushi_lookup_overlay_geometry_test
+  "tests/lookup_overlay_geometry_test.cpp"
+)
+target_include_directories(fushi_lookup_overlay_geometry_test PRIVATE "include")
+add_test(NAME fushi_lookup_overlay_geometry_test
+  COMMAND fushi_lookup_overlay_geometry_test)
+
 # KiriKiri 二进制级延迟附着 profile（根因回归：恋爱成双早注入触发 Access Violation）。
 add_executable(fushi_kirikiri_launch_profile_test
   "tests/kirikiri_launch_profile_test.cpp"
