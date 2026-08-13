@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1508 条。点号进各自文件。
+> 共 1509 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1609](bugs/BUG-1609-global-lookup-card-right-corners-square.md) | ✅ | ✅ | app 外全局查词卡片右上/右下圆角变方角 |
 | [BUG-1608](bugs/BUG-1608-mobile-ankiconnect-ios-missing-and-silent-fallback.md) | ✅ | ✅ | iOS 没接 AnkiConnect（Lapis 区永远隐藏）；移动端清空 API key 后开关静默失效 |
 | [BUG-1607](bugs/BUG-1607-danmaku-exit-relayout.md) | ✅ | ✅ | 弹幕退场时其余弹幕整屏重排 |
 | [BUG-1606](bugs/BUG-1606-gal-ingame-lookup-card-dismissed-by-other-text-layer.md) | ✅ | ✅ | gal 游戏内查词卡片被无关文本层重绘打掉（说话人切换时闪没） |
