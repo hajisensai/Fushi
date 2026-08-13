@@ -73,7 +73,7 @@ Future<void> _mount(
         child: VideoSubtitleOverlay(
           controller: c,
           respectAssStyle: true,
-          onCharTap: (_, __, ___) {},
+          onCharTap: (_, __, ___, ____) {},
         ),
       ),
     ),

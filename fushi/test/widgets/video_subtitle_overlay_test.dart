@@ -28,7 +28,7 @@ void main() {
     Rect? tappedRect;
     await tester.pumpWidget(buildTestApp(VideoSubtitleOverlay(
       controller: c,
-      onCharTap: (String s, int i, Rect rect) {
+      onCharTap: (String s, int i, Rect rect, AudioCue cueArg) {
         tappedSentence = s;
         tappedIndex = i;
         tappedRect = rect;

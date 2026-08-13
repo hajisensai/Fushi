@@ -496,6 +496,25 @@ class VideoPlayerController extends ChangeNotifier
   /// TODO-1312：副字幕全量 cue（诊断 / 测试用）；空 = 无副字幕。
   List<AudioCue> get secondaryCues => _secondaryCues;
 
+  /// BUG-1592：制卡/上下文解析要用的「有效 cue 流」——主字幕流非空即主流，主流为空
+  /// （用户把主字幕关掉、只开副字幕）时落到副字幕流。
+  ///
+  /// 为什么需要它：制卡的区间锚点、上下 N 句上下文历来只认 [cues] 一条流。主字幕关闭时
+  /// 该流恒空 → 锚点 null → 制卡区间塌成 `0..0`：句子音频空、封面走 `atSeconds=0.0` 抽出
+  /// 片头黑帧（用户报「制卡黑屏」）。副字幕本就是同构的 cue 流（TODO-1312 起与主字幕独立
+  /// 求活动集、可逐字符查词），把「唯一的字幕流」这个隐含前提显式化即可，不加特例分支。
+  List<AudioCue> get miningCues => _cues.isNotEmpty ? _cues : _secondaryCues;
+
+  /// BUG-1592：[cue] 所属的那条流（按身份判定，主流优先）。两条流都不含它（列表面板的
+  /// 合成 cue / 已换集的陈旧 cue）时回 [miningCues]，保持「至少落在当前有效流上」。
+  List<AudioCue> cueStreamOwning(AudioCue cue) {
+    if (_cues.any((AudioCue c) => identical(c, cue))) return _cues;
+    if (_secondaryCues.any((AudioCue c) => identical(c, cue))) {
+      return _secondaryCues;
+    }
+    return miningCues;
+  }
+
   /// TODO-1312：副字幕当前活动集（overlay 副层渲染用，可查词）。
   List<AudioCue> get secondaryActiveCues => <AudioCue>[
         for (final int i in _activeSecondaryCueIndices)

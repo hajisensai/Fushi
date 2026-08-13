@@ -466,12 +466,11 @@ void main() {
     });
 
     test('_handleSubtitleLookupTap gates lookup before _lookupAt', () {
+      // BUG-1592：形参表不再写死（新增第四个参数 `AudioCue? cue`——命中项带出的所属
+      // cue，作制卡锚点）。本守卫要锁的是**方法体内的顺序**（沉浸门控先于 _lookupAt），
+      // 不是签名长什么样，故按 `(...)` 整体匹配。
       final RegExpMatch? body = RegExp(
-        r'void _handleSubtitleLookupTap\(\n'
-        r'    String sentence,\n'
-        r'    int graphemeIndex,\n'
-        r'    Rect charRect,\n'
-        r'  \) \{(.*?)\n  \}',
+        r'void _handleSubtitleLookupTap\([^)]*\) \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
       expect(body, isNotNull,

@@ -139,7 +139,7 @@ void main() {
           VideoSubtitleOverlay(
             controller: c,
             hitTester: hitTester,
-            onCharTap: (String s, int i, Rect r) {},
+            onCharTap: (String s, int i, Rect r, AudioCue c) {},
           ));
 
       // 甲 离场成占位：其原位置命中必须为 null（不可点、不可查词）。

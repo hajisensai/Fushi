@@ -60,10 +60,13 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     // 查词不传，回落 currentCue——它在字幕 gap / 末句后被清成 null（BUG-074 字幕条该消失），
     // 而查词往往就发生在字幕刚消失那一瞬，故 null 时按播放位置独立解析（TODO-104b / BUG-188，
     // 只读 controller，不复用被 gap 清空的 UI 状态）。
+    // BUG-1592：底部字幕 overlay 现在也透传 [overrideCue]（被点字符所属的那条 cue，主/副
+    // 同一口径），故这里的兜底只服务「没有命中项」的入口；按位置解析同样走有效流
+    // （主字幕流为空即副字幕流），否则只开副字幕时锚点恒 null → 制卡区间 `0..0`。
     _lastLookupCue = resolveVideoLookupAnchorCue(
       overrideCue: overrideCue,
       currentCue: controller.currentCue,
-      cues: controller.cues,
+      cues: controller.miningCues,
       positionMs: controller.positionMs ?? 0,
       delayMs: controller.delayMs,
     );

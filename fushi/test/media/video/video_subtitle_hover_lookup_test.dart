@@ -48,7 +48,7 @@ void main() {
         VideoSubtitleOverlay(
           controller: c,
           hoverAutoLookupEnabled: true,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -81,7 +81,7 @@ void main() {
         VideoSubtitleOverlay(
           controller: c,
           // hoverAutoLookupEnabled defaults to false.
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -107,7 +107,7 @@ void main() {
         tester,
         VideoSubtitleOverlay(
           controller: c,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );
@@ -138,7 +138,7 @@ void main() {
         VideoSubtitleOverlay(
           controller: c,
           hoverAutoLookupEnabled: true,
-          onCharHover: (String s, int i, Rect r) =>
+          onCharHover: (String s, int i, Rect r, AudioCue cueArg) =>
               hovers.add((sentence: s, graphemeIndex: i, charRect: r)),
         ),
       );

@@ -1416,7 +1416,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         hitSubtitle: true,
       )) {
         _handleSubtitleHoverLookup(
-            hit.sentence, hit.graphemeIndex, hit.charRect);
+            hit.sentence, hit.graphemeIndex, hit.charRect, hit.cue);
       }
       return;
     }
@@ -3810,7 +3810,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           topVisibleIndex: _topVisiblePopupIndex,
           hitSubtitle: true,
         )) {
-      _handleSubtitleHoverLookup(hit.sentence, hit.graphemeIndex, hit.charRect);
+      _handleSubtitleHoverLookup(
+          hit.sentence, hit.graphemeIndex, hit.charRect, hit.cue);
       return;
     }
     // BUG-879/881：画面字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏上，
@@ -3843,6 +3844,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     String sentence,
     int graphemeIndex,
     Rect charRect,
+    AudioCue? cue,
   ) {
     if (sentence == _barrierHoverLastSentence &&
         graphemeIndex == _barrierHoverLastGrapheme) {
@@ -3850,7 +3852,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _barrierHoverLastSentence = sentence;
     _barrierHoverLastGrapheme = graphemeIndex;
-    _handleSubtitleLookupTap(sentence, graphemeIndex, charRect);
+    _handleSubtitleLookupTap(sentence, graphemeIndex, charRect, cue);
   }
 
   /// BUG-094: seed one persistent, hidden warm popup slot on open so its
@@ -3895,7 +3897,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       topVisibleIndex: _topVisiblePopupIndex,
       hitSubtitle: hit != null,
     )) {
-      _handleSubtitleLookupTap(hit!.sentence, hit.graphemeIndex, hit.charRect);
+      _handleSubtitleLookupTap(
+          hit!.sentence, hit.graphemeIndex, hit.charRect, hit.cue);
       return;
     }
     // BUG-874：底部字幕没命中，再反查**字幕列表侧栏**——barrier 全屏盖在推挤式侧栏之上、
@@ -3925,13 +3928,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _popNestedPopupAt(0);
   }
 
+  /// BUG-1592：[cue] 是被点字符**所属的那条 cue**，直接当查词/制卡锚点透传
+  /// （`overrideCue`）。此前不传，锚点靠 [resolveVideoLookupAnchorCue] 去主字幕流按播放
+  /// 位置猜——主字幕关掉只开副字幕时主流为空，锚点恒 null，制卡区间塌成 `0..0`（句子音频
+  /// 空 + 封面抽第 0 秒的片头黑帧）；主副同开时点副字幕还会错锚到主字幕那句。
   void _handleSubtitleLookupTap(
     String sentence,
     int graphemeIndex,
     Rect charRect,
+    AudioCue? cue,
   ) {
     if (!_immersiveAllowsLookup) return;
-    unawaited(_lookupAt(sentence, graphemeIndex, charRect));
+    unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
   void _popNestedPopupAt(int index) {
