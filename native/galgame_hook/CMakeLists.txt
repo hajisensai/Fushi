@@ -93,6 +93,12 @@ target_include_directories(fushi_resource_audio_ready_test PRIVATE "include")
 target_compile_definitions(fushi_resource_audio_ready_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_resource_audio_ready_test COMMAND fushi_resource_audio_ready_test)
 
+add_executable(fushi_utterance_window_test
+  "tests/utterance_window_test.cpp"
+)
+target_include_directories(fushi_utterance_window_test PRIVATE "include")
+add_test(NAME fushi_utterance_window_test COMMAND fushi_utterance_window_test)
+
 add_executable(fushi_voice_resource_filename_test
   "tests/voice_resource_filename_test.cpp"
 )

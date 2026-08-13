@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1498 条。点号进各自文件。
+> 共 1500 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1594](bugs/BUG-1594-ring-probe-readonly-map-crash.md) | ✅ | ✅ | ring_probe 只读映射下枚举文本槽必崩（Interlocked 写只读页） |
+| [BUG-1593](bugs/BUG-1593-gal-utterance-head-clipped.md) | ✅ | ✅ | galgame 制卡语音每句都少一截开头（提交时刻 vs 播放时刻） |
 | [BUG-1592](bugs/BUG-1592-secondary-subtitle-mining-black-cover.md) | ✅ | ✅ | 只开副字幕时制卡：无区间→封面抽片头黑帧 |
 | [BUG-1591](bugs/BUG-1591-download-priority-has-no-write-entry.md) | ✅ | ✅ | priority 列参与排序却无写入口，排队退化成先来后到 |
 | [BUG-1590](bugs/BUG-1590-subscription-candidate-list-not-aggregated.md) | ✅ | ✅ | 订阅候选列表按发布逐条列，与订阅生效单位不一致 |

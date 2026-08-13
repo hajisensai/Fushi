@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
+#include "voice_hook_utterance_window.h"
 
 // galgame 一键制卡 C 阶段 —— 环形缓冲诊断读取器（x64 独立小工具）。
 //
@@ -365,7 +366,28 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
       voice_src = kv.first;
     }
   }
-  // 拼接语音源在 [ts-200, ts+6000] 的段；静音判据用该源峰值能量的 8%。
+  // 拼接语音源在 [下界, ts+6000] 的段；静音判据用该源峰值能量的 8%。下界与 host 的
+  // GrabUtterance 共用同一份实现（BUG-1593）：clip 时间戳是**提交**时刻，流式引擎按缓冲
+  // 深度提前灌入，固定 200ms 回看会整块丢掉句首。诊断工具必须和真实取音判据一致，否则
+  // 拿它排障只会把人带偏。
+  std::vector<fushi_voice_hook::UtteranceClipTiming> timings;
+  for (const auto* c : valid) {
+    if (any_energy && c->source_ptr != voice_src) {
+      continue;
+    }
+    const uint32_t block = c->channels * (c->bits_per_sample / 8);
+    const int64_t dur =
+        (block == 0 || c->sample_rate == 0)
+            ? 0
+            : static_cast<int64_t>(static_cast<int64_t>(c->byte_len) * 1000 /
+                                   (static_cast<int64_t>(block) *
+                                    static_cast<int64_t>(c->sample_rate)));
+    timings.push_back(fushi_voice_hook::UtteranceClipTiming{
+        static_cast<int64_t>(c->timestamp_ms), dur});
+  }
+  const int64_t lower_ts = fushi_voice_hook::UtteranceLowerBoundMs(
+      timings.data(), timings.size(), static_cast<int64_t>(ts));
+
   std::vector<uint8_t> pcm;
   const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
@@ -375,7 +397,7 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
     }
     const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                       static_cast<int64_t>(ts);
-    if (d < -200 || d > 6000) {
+    if (static_cast<int64_t>(c->timestamp_ms) < lower_ts || d > 6000) {
       continue;
     }
     const double e = ClipEnergy16(h, ring, c);
@@ -719,8 +741,12 @@ int main(int argc, char** argv) {
       argc >= 4 && strcmp(argv[2], "--select-text-thread") == 0;
 
   const std::wstring shm = SharedMemoryName(pid);
-  const DWORD mapping_access =
-      select_text_thread ? FILE_MAP_READ | FILE_MAP_WRITE : FILE_MAP_READ;
+  // BUG-1594：映射必须带 FILE_MAP_WRITE，哪怕本工具一个字节都不写。文本槽枚举走契约头的
+  // CollectTextSlotsBySeq，它按跨进程发布纪律用 AtomicLoadPreview64 读 lane_seq，而那是
+  // InterlockedCompareExchange64——一条**带锁的读改写**指令，落到只读页上就是 0xC0000005。
+  // 于是「有文本行之后跑 ring_probe <pid>」必崩（本仓 host 侧一直用 READ|WRITE，只有这个
+  // 诊断工具漏了）。权限放宽不改变「本工具只读不写」这个事实。
+  const DWORD mapping_access = FILE_MAP_READ | FILE_MAP_WRITE;
   HANDLE mapping = OpenFileMappingW(mapping_access, FALSE, shm.c_str());
   if (mapping == nullptr) {
     fprintf(stderr,
