@@ -189,6 +189,14 @@ add_executable(fushi_siglus_launch_test
 target_include_directories(fushi_siglus_launch_test PRIVATE "include")
 add_test(NAME fushi_siglus_launch_test COMMAND fushi_siglus_launch_test)
 
+# 启动器布局识别（根因回归：AngelBeats 体験版的引擎签名在 StartData/gamedata 下，
+# 只看被启动 exe 自己那层就把 hook 下在了转手即退的启动器上）。纯逻辑，注入假目录树。
+add_executable(fushi_launcher_layout_test
+  "tests/launcher_layout_test.cpp"
+)
+target_include_directories(fushi_launcher_layout_test PRIVATE "include")
+add_test(NAME fushi_launcher_layout_test COMMAND fushi_launcher_layout_test)
+
 # KiriKiri 二进制级延迟附着 profile（根因回归：恋爱成双早注入触发 Access Violation）。
 add_executable(fushi_kirikiri_launch_profile_test
   "tests/kirikiri_launch_profile_test.cpp"
