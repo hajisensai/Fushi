@@ -623,6 +623,43 @@ function flushTimers() {
     'a re-measure with an unchanged bbox is de-duped (no thrash / no loop)');
 }
 
+// 15b. Every measurement starts from descriptor.frame.height (the immutable
+//      layout ceiling), computes min(planned, measured), and writes that one
+//      height back to the shell. A short first render therefore does not become
+//      a permanent ceiling when async dictionary content grows later.
+{
+  const { host, document } = freshHost();
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  const lastHeight = () =>
+    hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1].height;
+
+  iframe.contentDocument.body.scrollHeight = 140;
+  iframe.contentDocument.body.offsetHeight = 140;
+  host.measureAndReport();
+  assert.strictEqual(lastHeight(), 140,
+    'measured content shorter than planned height shrinks the reported bbox');
+  assert.strictEqual(shell.style.height, '140px',
+    'the same min(planned, measured) height is written back to the shell');
+
+  iframe.contentDocument.body.scrollHeight = 320;
+  iframe.contentDocument.body.offsetHeight = 320;
+  host.measureAndReport();
+  assert.strictEqual(lastHeight(), 320,
+    'later content growth re-expands from the descriptor planned height');
+  assert.strictEqual(shell.style.height, '320px',
+    'the shell re-expands with later content instead of staying at 140px');
+
+  iframe.contentDocument.body.scrollHeight = 900;
+  iframe.contentDocument.body.offsetHeight = 900;
+  host.measureAndReport();
+  assert.strictEqual(lastHeight(), 480,
+    'content growth remains capped by descriptor.frame.height');
+  assert.strictEqual(shell.style.height, '480px',
+    'the shell and reported bbox share the planned-height ceiling');
+}
+
 // 16. F2 shell chrome: the injected gate <style> carries ONLY the hoshi radius +
 //     transparent background (the iframe paints the card fill + the single
 //     visible border). It draws NO border (TODO-893 double-border) and NO
@@ -646,6 +683,14 @@ function flushTimers() {
     + 'CSS shadow renders as a dark halo outside the card, not a real shadow');
   assert.ok(/background:transparent/.test(css),
     'shell background transparent (iframe paints the fill, no double layer)');
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  assert.strictEqual(iframe.parentNode, shell,
+    'popup iframe remains a direct shell child so the dedicated clip selector matches');
+  assert.ok(
+    /\.global-lookup-frame-shell>iframe\{[^}]*border-radius:inherit;[^}]*clip-path:inset\(0 round 10px\);[^}]*\}/.test(css),
+    'the promoted iframe surface owns an independent 10px rounded clip',
+  );
 }
 
 // 17. F2 data-theme stamp: the render payload's `theme` is written onto the shell

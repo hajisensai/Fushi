@@ -272,6 +272,13 @@
   // API exists, e.g. the node harness). measureAndReport itself de-dupes on the
   // bbox key, so the worst case is a single redundant measure, never a loop.
   var measureSchedules = new Map();
+  var galDirtySchedules = new Map();
+  var galCaptureReadySchedules = new Map();
+  // Chromium may suspend requestAnimationFrame for the permanently off-screen
+  // galCard WebView even while timers and input dispatch keep running. Prefer
+  // two compositor frames, but race them with a bounded fallback. Route and
+  // round identity below make the two completion sources exactly-once.
+  var GAL_DIRTY_RAF_FALLBACK_MS = 120;
   function scheduleMeasure(routeSnapshot) {
     var route = cloneRoute(routeSnapshot || activeRoute);
     var key = routeKey(route);
@@ -306,6 +313,81 @@
     // No deferral primitive (node harness): measure synchronously. De-dup on the
     // bbox key in measureAndReport keeps this from over-posting.
     measureAndReport(route);
+  }
+
+  // Interactive changes can alter pixels without changing the shell bbox, so
+  // overlaySize is correctly de-duplicated and cannot drive another capture.
+  // Coalesce those changes per immutable route and publish only after two host
+  // animation frames, when the off-screen WebView has painted the mutation.
+  function requestGalFrameDirty(routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
+    if (route.source !== 'galCard') {
+      return;
+    }
+    var key = routeKey(route);
+    var pending = galDirtySchedules.get(key);
+    if (pending) {
+      // Do not restart an already-armed double-rAF gate: a continuously mutating
+      // popup (animation/progress text) would otherwise postpone capture forever.
+      // Remember one trailing round instead.  The current round still publishes,
+      // and any number of dirty signals during it coalesce into that one retry.
+      pending.dirtyAgain = true;
+      return;
+    }
+    pending = { dirtyAgain: false, round: 0 };
+    galDirtySchedules.set(key, pending);
+    armGalDirtyRound(route, key, pending);
+  }
+
+  function armGalDirtyRound(route, key, pending) {
+    var round = ++pending.round;
+    var raf = (typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame
+        : null;
+    var fallbackTimer = null;
+    var finish = function () {
+      if (galDirtySchedules.get(key) !== pending || pending.round !== round) {
+        return;
+      }
+      clearTimerSafe(fallbackTimer);
+      fallbackTimer = null;
+      if (routeKey(activeRoute) !== key) {
+        galDirtySchedules.delete(key);
+        return;
+      }
+      postToHost('galFrameDirty', [], route);
+      if (pending.dirtyAgain) {
+        pending.dirtyAgain = false;
+        armGalDirtyRound(route, key, pending);
+      } else {
+        galDirtySchedules.delete(key);
+      }
+    };
+    if (!raf) {
+      finish();
+      return;
+    }
+    fallbackTimer = setTimerSafe(finish, GAL_DIRTY_RAF_FALLBACK_MS);
+    try {
+      raf(function () {
+        if (routeKey(activeRoute) !== key) {
+          if (galDirtySchedules.get(key) === pending) {
+            galDirtySchedules.delete(key);
+          }
+          return;
+        }
+        // The timeout may have completed this round and armed the one trailing
+        // round on the same pending object. A late rAF from the old round must
+        // not complete or delete that newer work.
+        if (galDirtySchedules.get(key) !== pending ||
+            pending.round !== round) {
+          return;
+        }
+        raf(finish);
+      });
+    } catch (e) {
+      finish();
+    }
   }
 
   // Insertion-order index of a frame id (0 = root). -1 when unknown.
@@ -367,16 +449,24 @@
         // flip). The F2 chrome below is a SEPARATE .global-lookup-frame-shell
         // rule (CSS cascades the two), so the gate substring is unchanged.
         '.global-lookup-frame-shell{visibility:hidden;opacity:0;}' +
-        '.global-lookup-frame-shell{' +
-        'box-sizing:border-box;overflow:hidden;background:transparent;' +
-        'border-radius:10px;' +
+         '.global-lookup-frame-shell{' +
+         'box-sizing:border-box;overflow:hidden;background:transparent;' +
+         'border-radius:10px;' +
         // TODO-890 — slide-out close: the shell tweens transform+opacity so a
         // dismiss slides the card off-screen instead of vanishing instantly
         // (app-out parity with the in-app _BodySwipeDismissDetector). 200ms
         // ease-out matches the Flutter side. Scoped to the shell selector so
         // it never leaks into the in-app popup (which never loads host.js).
-        'transition:transform 200ms ease-out, opacity 200ms ease-out;}' +
-        // TODO-890 — the dismissing class drives the slide-out: translate the
+         'transition:transform 200ms ease-out, opacity 200ms ease-out;}' +
+        // WebView2 promotes each iframe to its own composition surface.  In the
+        // game-card CapturePreview path that surface can escape the parent's
+        // overflow:hidden clip, leaving the iframe canvas square beyond the
+        // body's already-rounded right corners.  Clip the promoted surface
+        // itself; every shell remains independently rounded inside a cascade.
+        '.global-lookup-frame-shell>iframe{' +
+        'display:block;border-radius:inherit;' +
+        'clip-path:inset(0 round 10px);}' +
+         // TODO-890 — the dismissing class drives the slide-out: translate the
         // card fully off its own width + margin and fade to 0; visibility stays
         // visible during the transition (the reveal gate already passed) so the
         // transitionend fires before the host posts dismissPopupAt to Dart.
@@ -801,6 +891,11 @@
       // cannot be mislabeled with the record's newer render route.
       var messageRoute = cloneRoute(
           win.__fushiBridgeReplyRoute || record.route);
+      // A bridge message is emitted from the same UI task that changed the
+      // popup (favorite/mine state, nested selection, zoom action, etc.).  Its
+      // native/Dart reply may cause a second mutation; both are coalesced by the
+      // route-keyed double-rAF gate below.
+      requestGalFrameDirty(messageRoute);
       // TODO-1067 (子3) — DRIVE THE REVEAL GATE OFF popup.js's authoritative
       // render signal instead of the body-height heuristic. popup.js calls
       // flutter_inappwebview.callHandler('popupRendered', scrollHeight) EXACTLY
@@ -1247,6 +1342,7 @@
       contentReady: false,
       revealReady: false,
       observer: null,
+      dirtyObserver: null,
       contentSafetyTimer: null,
       revealSafetyTimer: null,
       route: cloneRoute(activeRoute),
@@ -1261,6 +1357,7 @@
       // cold-load _setHasChildPopupJs); renderPayload keeps it in sync after.
       applyHasChildPopup(record);
       observeContent(record, record.route);
+      observeGalFrameDirty(record, record.route);
       scheduleMeasure(record.route);
     });
     return record;
@@ -1422,6 +1519,40 @@
     record.contentSafetyTimer = contentTimer;
   }
 
+  // Content readiness is a one-shot gate and disconnects its observer after the
+  // initial popupRendered.  Keep a separate lifetime observer for later visual
+  // mutations (favorite/mine state, inline modals, expanded dictionary rows).
+  function observeGalFrameDirty(record, routeSnapshot) {
+    var route = cloneRoute(routeSnapshot || record.route);
+    if (route.source !== 'galCard' || !sameRoute(record.route, route) ||
+        record.dirtyObserver || typeof window.MutationObserver !== 'function') {
+      return;
+    }
+    var body = null;
+    try {
+      var doc = record.iframe.contentDocument;
+      body = doc && doc.body;
+    } catch (e) {
+      body = null;
+    }
+    if (!body) {
+      return;
+    }
+    try {
+      record.dirtyObserver = new window.MutationObserver(function () {
+        requestGalFrameDirty(record.route);
+      });
+      record.dirtyObserver.observe(body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+    } catch (e) {
+      record.dirtyObserver = null;
+    }
+  }
+
   // TODO-1067 (子3) — True once popup.js has PAINTED a real card: a rendered
   // glossary node (.glossary-content) OR the no-results card (.no-results). The
   // old fallback accepted ANY body with a non-zero rendered height, which let the
@@ -1519,6 +1650,15 @@
       }
       record.observer = null;
     }
+    if (record.dirtyObserver &&
+        typeof record.dirtyObserver.disconnect === 'function') {
+      try {
+        record.dirtyObserver.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      record.dirtyObserver = null;
+    }
     if (record.contentSafetyTimer != null) {
       clearTimerSafe(record.contentSafetyTimer);
       record.contentSafetyTimer = null;
@@ -1554,6 +1694,7 @@
     maybeFlipRevealReady(record, record.route);
     if (record.loaded) {
       wrapFrameBridge(record);
+      observeGalFrameDirty(record, record.route);
       // TODO-1231 P1 — only re-run the FULL body (which ends in renderPopup() = a
       // card DOM teardown+rebuild) when it ACTUALLY changed. A nested open/close
       // leaves the parent's body byte-identical (has-child now rides its own
@@ -1604,6 +1745,15 @@
             // no-op
           }
           record.observer = null;
+        }
+        if (record.dirtyObserver &&
+            typeof record.dirtyObserver.disconnect === 'function') {
+          try {
+            record.dirtyObserver.disconnect();
+          } catch (e) {
+            // no-op
+          }
+          record.dirtyObserver = null;
         }
         if (record.contentSafetyTimer != null) {
           clearTimerSafe(record.contentSafetyTimer);
@@ -1867,10 +2017,27 @@
       var left = parseFloat(record.shell.style.left) || 0;
       var top = parseFloat(record.shell.style.top) || 0;
       var width = parseFloat(record.shell.style.width) || 0;
-      var height = parseFloat(record.shell.style.height) || 0;
+      // The descriptor remains the unmodified layout ceiling.  Do not derive the
+      // next measurement from shell.style.height: a previous short result may
+      // later grow (async dictionaries / nested content), and using the already
+      // shortened style would make that shrink permanent.
+      var plannedFrame = (record.descriptor && record.descriptor.frame) || {};
+      var plannedHeight = (typeof plannedFrame.height === 'number' &&
+          isFinite(plannedFrame.height) && plannedFrame.height > 0)
+          ? plannedFrame.height
+          : (parseFloat(record.shell.style.height) || 0);
+      var height = plannedHeight;
       var measured = measureContentHeight(record);
-      if (measured > 0 && (height <= 0 || measured < height)) {
-        height = measured;
+      if (measured > 0) {
+        height = plannedHeight > 0 ? Math.min(plannedHeight, measured) : measured;
+      }
+      // One geometry truth for the promoted iframe surface, per-shell rounded
+      // clip, host hit testing, native region and CapturePreview union.  Before
+      // this assignment bbox/shellRects used the measured bottom while the shell
+      // (and its 100%-height iframe) kept the planned bottom, so CapturePreview
+      // cut through the card before its lower radius and produced square corners.
+      if (height > 0) {
+        record.shell.style.height = height + 'px';
       }
       // BUG-749 — collect every placed shell (same left/top/height the bbox
       // uses) for the native hit/paint region below.
@@ -2043,6 +2210,64 @@
     frames.forEach(function (record) {
       maybeFlipRevealReady(record);
     });
+  }
+
+  // The galgame surface is captured into a bitmap immediately after Dart hears
+  // that the off-screen window reached its final geometry.  SetWindowPos and
+  // ExecuteScript only order the HWND resize before this DOM mutation; they do
+  // not mean WebView2 has presented the resized DOM yet.  A capture in that gap
+  // can contain both the old and new layout.  Gate the capture on two animation
+  // frames in the host realm, and stamp the immutable lookup route so a late
+  // frame from an older lookup cannot publish pixels for the current one.
+  function armCaptureReady(routeSnapshot, physicalWidth, physicalHeight) {
+    var route = cloneRoute(routeSnapshot || activeRoute);
+    if (route.source !== 'galCard') {
+      return;
+    }
+    var key = routeKey(route);
+    // Resize/commit can converge more than once inside one lookup route, and
+    // physical width/height may remain equal while the layer origin changes.
+    // Only the latest commit is allowed to satisfy Dart's pending capture.
+    var token = (galCaptureReadySchedules.get(key) || 0) + 1;
+    galCaptureReadySchedules.set(key, token);
+    var raf = (typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame
+        : null;
+    var postIfCurrent = function () {
+      if (galCaptureReadySchedules.get(key) !== token) {
+        return;
+      }
+      galCaptureReadySchedules.delete(key);
+      if (routeKey(activeRoute) === key) {
+        postToHost('captureReady', [physicalWidth, physicalHeight], route);
+      }
+    };
+    // The production WebView2 host always supplies rAF.  Keep the synchronous
+    // fallback only for non-browser harnesses; no fixed-time sleep is involved.
+    if (!raf) {
+      postIfCurrent();
+      return;
+    }
+    try {
+      raf(function () {
+        if (routeKey(activeRoute) !== key ||
+            galCaptureReadySchedules.get(key) !== token) {
+          if (galCaptureReadySchedules.get(key) === token) {
+            galCaptureReadySchedules.delete(key);
+          }
+          return;
+        }
+        raf(postIfCurrent);
+      });
+    } catch (e) {
+      postIfCurrent();
+    }
+  }
+
+  function commitLayerShiftAndArmCapture(
+      bboxLeft, bboxTop, routeSnapshot, physicalWidth, physicalHeight) {
+    commitLayerShift(bboxLeft, bboxTop);
+    armCaptureReady(routeSnapshot, physicalWidth, physicalHeight);
   }
 
   // TODO-890 — slide the ROOT card off-screen, THEN post dismiss. Adds the
@@ -2255,6 +2480,7 @@
     } catch (e) {
       return false;
     }
+    requestGalFrameDirty(record.route);
     return true;
   }
 
@@ -2365,6 +2591,12 @@
             // route even if a newer lookup has already rebound the stable frame.
             win.__fushiBridgeReplyRoute = cloneRoute(route.route);
             win.__fushiBridgeResolve(route.localId, jsonValue);
+            // The Promise continuation runs as a microtask before the first
+            // animation frame below.  Arm here as well as on the outbound
+            // message so async bridge results (favorite/mining/button state)
+            // are captured even when they update a DOM property that the
+            // MutationObserver cannot see.
+            requestGalFrameDirty(route.route);
             var replyWindow = win;
             setTimerSafe(function () {
               try {
@@ -2533,8 +2765,11 @@
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     handleGlobalWheel: handleGlobalWheel,
+    armGalFrameDirty: requestGalFrameDirty,
+    requestGalFrameDirty: requestGalFrameDirty,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
+    commitLayerShiftAndArmCapture: commitLayerShiftAndArmCapture,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
     // spec 2026-07-10 — panel-mode hooks (no-ops in cascade mode).

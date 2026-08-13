@@ -393,6 +393,10 @@ Map<String, Object?> _frameRectMap({
       maxWidth: maxWidth,
       maxHeight: maxHeight,
       isVertical: false,
+      // 嵌套卡的可用高度属于整个工作区，不属于父卡内锚点的某一侧。否则点击
+      // 父 popup 中部的词会把 child 高度再次压成半屏；实际只应在屏幕顶 / 底边界
+      // 不足时裁切。根卡 / 其他 computeFrameRect 调用仍走默认 true。
+      fitHeightToAnchorSide: depth <= 0,
     );
     return <String, Object?>{
       'left': r.left - selectionScreenOffset.dx,

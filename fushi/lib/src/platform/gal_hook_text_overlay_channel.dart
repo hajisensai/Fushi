@@ -588,6 +588,21 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     );
   }
 
+  /// 制卡截图屏障：发布一帧 capture-suppress，并等待 hook 在游戏主线程确认卡片和
+  /// 字幕高亮都已经隐藏。成功回执之前调用方**不得**读取游戏窗口像素。
+  ///
+  /// 这不是普通 dismiss：离屏 popup、route 与 DOM 都保留，采样结束后由下一次普通
+  /// [galLookupPresent] 解除 suppress 并把当时仍然最新的卡片重新投回游戏。
+  static Future<GalLookupCallResult> galLookupSuspendForCapture(int seq) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    return GalLookupCallResult.fromReply(
+      await _instance.channel.invokeMethod<Object?>(
+        'galLookupSuspendForCapture',
+        <String, Object?>{'seq': seq},
+      ),
+    );
+  }
+
   /// 把 hook 转发过来的卡片内输入原样丢回 runner 的既有 popup 输入注入口
   /// （`global_lookup_window.cpp` 的 `SendMouseInput`）。Dart 不解释语义。
   ///

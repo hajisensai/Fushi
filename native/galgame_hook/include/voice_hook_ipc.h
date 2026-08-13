@@ -59,7 +59,11 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v14：追加**游戏内查词区**（hit / input / frame 三通道，见下方 kLookup* 与 LookupHitSlot）。
 //     纯追加：放在布局最尾，前面所有区偏移逐字节不动；lookup_region_offset==0 即"本会话
 //     没有此区"，旧 host 读到 v14 映射也不会错位（版本号仍会先挡，这只是纵深防御）。
-constexpr uint32_t kSharedVersion = 14;
+// v15：追加游戏内卡片的**截图抑制确认**：host 发布 kLookupFrameCaptureSuppress 后，hook
+//     在游戏线程隐藏 card/highlight，并等到下一次 continuous callback 才回写
+//     lookup_frame_applied_seq。host 只有看到该确认才能抓游戏窗口；发布成功不等于游戏渲染树
+//     已经干净，拿普通 dismiss 的 MethodChannel 返回值当屏障会稳定把 popup 拍进卡片图片。
+constexpr uint32_t kSharedVersion = 15;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -443,6 +447,10 @@ constexpr uint32_t kLookupFrameDismiss = 0x00000001u;
 // 真机上直接表现为"太卡了"。高亮本来就画在游戏自己的图层上，不在卡片位图里，所以
 // 这条路不需要任何像素。
 constexpr uint32_t kLookupFrameHighlightOnly = 0x00000002u;
+// 制卡截图期间临时隐藏卡片与选词高亮。它不是 dismiss：不推进 Esc/submit fence，也不销毁
+// 当前 route；截图完成后 host 通过一张普通 full frame 恢复。hook 必须等 TJS hide/update 成功且
+// 又经过一次 continuous callback 后，才把本帧 seq 写进 lookup_frame_applied_seq。
+constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;
 // hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
 struct LookupInputSlot {
   volatile uint64_t seq;  // 单调；**最后**写
@@ -549,6 +557,10 @@ struct SharedHeader {
   // 且环境变量在进程启动后改不了，做不到运行期开关。形态照抄 selected_text_thread_id。
   volatile uint32_t lookup_enabled;
   volatile uint32_t lookup_diag;      // kLookupDiag* 位
+  // hook→host：只确认 kLookupFrameCaptureSuppress。值是已经在 TJS hide/update 后又跨过
+  // 一次 continuous callback 的最高 LookupFrame::seq。普通 present/dismiss 不得推进它，
+  // 否则一张更晚的普通帧会伪装成“截图抑制已经安全生效”。
+  volatile uint64_t lookup_frame_applied_seq;
 };
 #pragma pack(pop)
 

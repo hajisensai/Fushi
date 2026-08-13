@@ -1061,11 +1061,39 @@ void GlobalLookupWindow::ResizeStackOffscreen(int width, int height,
   // the left or above the root card, so the host layer still needs the same
   // compensating translation as an on-screen RevealStack. The off-screen HWND
   // itself stays at OffscreenX(); there is no monitor-clamp delta to fold in.
+  const std::wstring route_script =
+      L"{source:'" + Utf8ToWide(route_context_.source) +
+      L"',routeEpoch:" + std::to_wstring(route_context_.route_epoch) +
+      L",lookupEpoch:" + std::to_wstring(route_context_.lookup_epoch) + L"}";
+  // Keep an inline double-rAF fallback for a WebView that is still running the
+  // previous host asset during an app update/hot restart.  A guarded no-op here
+  // would be fatal for galCard: Dart has already committed this resize and is
+  // waiting exclusively for captureReady, so its old reveal safety cannot fire.
+  // The fallback preserves the old commitLayerShift when present, then posts the
+  // same route-stamped message after a paint opportunity.  The production path
+  // remains the host helper, which additionally rejects a stale active route.
   std::wstring shift_script =
-      L"window.__globalLookupHost && "
-      L"window.__globalLookupHost.commitLayerShift(" +
-      std::to_wstring(bbox_left) + L", " + std::to_wstring(bbox_top) +
-      L");";
+      L"(function(host,route,w,h){"
+      L"if(host&&typeof host.commitLayerShiftAndArmCapture==='function'){"
+      L"host.commitLayerShiftAndArmCapture(" +
+      std::to_wstring(bbox_left) + L"," + std::to_wstring(bbox_top) +
+      L",route,w,h);return;}"
+      L"if(host&&typeof host.commitLayerShift==='function'){host.commitLayerShift(" +
+      std::to_wstring(bbox_left) + L"," + std::to_wstring(bbox_top) +
+      L");}"
+      L"var token=(window.__fushiGalCaptureReadyToken||0)+1;"
+      L"window.__fushiGalCaptureReadyToken=token;"
+      L"var post=function(){if(window.__fushiGalCaptureReadyToken!==token)"
+      L"return;try{window.chrome.webview.postMessage({"
+      L"handler:'captureReady',args:[w,h],__source:route.source,"
+      L"__routeEpoch:route.routeEpoch,__lookupEpoch:route.lookupEpoch});"
+      L"}catch(e){}};"
+      L"if(typeof window.requestAnimationFrame==='function'){"
+      L"window.requestAnimationFrame(function(){"
+      L"window.requestAnimationFrame(post);});}else{post();}"
+      L"})(window.__globalLookupHost," +
+      route_script + L"," + std::to_wstring(width) + L"," +
+      std::to_wstring(height) + L");";
   webview_->ExecuteScript(shift_script.c_str(), nullptr);
 }
 
@@ -1551,8 +1579,24 @@ bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
   }
   const auto virtual_keys =
       static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys);
-  return SUCCEEDED(composition_controller_->SendMouseInput(
+  const bool injected = SUCCEEDED(composition_controller_->SendMouseInput(
       event_kind, virtual_keys, mouse_data, point));
+  if (injected && webview_ != nullptr) {
+    // SendMouseInput only means the event reached WebView2; it does not mean
+    // the renderer has painted the resulting scroll/hover/button state.  Ask
+    // the host to publish a route-stamped dirty signal after two animation
+    // frames.  Dart captures only in response to that signal, never directly
+    // from the MethodChannel input acknowledgement.
+    const std::wstring dirty_script =
+        L"window.__globalLookupHost && "
+        L"window.__globalLookupHost.armGalFrameDirty && "
+        L"window.__globalLookupHost.armGalFrameDirty({source:'" +
+        Utf8ToWide(route_context_.source) + L"',routeEpoch:" +
+        std::to_wstring(route_context_.route_epoch) + L",lookupEpoch:" +
+        std::to_wstring(route_context_.lookup_epoch) + L"});";
+    webview_->ExecuteScript(dirty_script.c_str(), nullptr);
+  }
+  return injected;
 }
 
 void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,

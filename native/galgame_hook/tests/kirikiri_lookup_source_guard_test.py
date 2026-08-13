@@ -33,6 +33,17 @@
    `currentNum` 时，只能用 `kag.current` 的对象身份从 fore/back 找到逻辑下标，再投影到
    宿主页同一位置；不能依赖 `current.comp` / `id`，更不能跨页按尺寸取第一个候选。
 
+6. 同一 KAG `(page,index)` 的逻辑台词必须由 slot ledger 管理，但 **slot 只能在完整
+   candidate（可见宿主 + 字符原点跨度 + page/index）形成后提交**。无 candidate 的新句只清
+   当前 renderer，不能推进 slot 或 dismiss；同句重绘必须保留上一轮完整 binding。提交时原子
+   退休同 slot peer、推进 generation 并发布 activeEntry。Probe 只接受当前 generation 的
+   activeEntry；严格 current 身份可绕过短命 visibleHost，另一个共存 slot 成为 current 时则回退
+   到本 entry 的 visibleHost。退休 entry 的同世代迟到 `done` 必须被 render epoch 门拒绝；同 entry
+   同句不能降级 binding strength，另一 renderer 的更强 candidate 则可接管弱 active。Entry/slot
+   LRU 都必须优先淘汰 inactive；渲染原函数必须先于 Capture，epoch 账本和查词采集只能作为不抛
+   出的 sidecar。三个 TextRender wrapper 必须直接安装并立即回读，固定 stage 记录安装边界；
+   mouseMove 只做一次 identity 基线，leftClick 低频复核后续覆写，且 bitmask 仅在状态变化时发布。
+
 变异实测纪律：本文件把每条规则实现成一个独立的 `find_*` 函数，`RealAdapterTest` 用它
 扫真文件，`MutationSelfTest` 用它扫**合成的脏输入**并要求非空。两组都在，这守卫才不
 可能是「永远绿的空守卫」。
@@ -507,6 +518,16 @@ def _assigned_tjs_functions(
 
 def _compact_tjs(text: str) -> str:
     return re.sub(r"\s+", "", text)
+
+
+def _restore_tjs_literals(source: MaskedSource, text: str) -> str:
+    """Restore string slots in a masked TJS slice without restoring comments."""
+
+    def restore(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return source.literals[int(token[1:-1])]
+
+    return _SLOT_RE.sub(restore, text)
 
 
 def _braced_spans_after(text: str, marker: str) -> list[tuple[int, int]]:
@@ -1016,6 +1037,920 @@ def find_invalid_common_root_coordinate_conversion(
     return violations
 
 
+def _matches_once_in_order(text: str, patterns: tuple[str, ...]) -> bool:
+    """每个正则必须唯一出现，且顺序与 patterns 相同。"""
+    cursor = 0
+    for pattern in patterns:
+        matches = list(re.finditer(pattern, text))
+        if len(matches) != 1 or matches[0].start() < cursor:
+            return False
+        cursor = matches[0].end()
+    return True
+
+
+def find_invalid_lookup_entry_visibility_lifecycle(
+    source: MaskedSource,
+) -> list[str]:
+    """守住完整 candidate 才发布的 slot/entry 生命周期与无侵入渲染包装。"""
+    if not TJS_RAW_RE.search(source.text):
+        return [f'{ADAPTER.name}: 没有找到 LR"TJS(...)TJS" bootstrap']
+
+    violations: list[str] = []
+    tjs = _joined_tjs_payload(source)
+    required_functions = (
+        "fushiLookupBootstrap",
+        "fushiLookupAuditWrappers",
+        "fushiLookupFindEntry",
+        "fushiLookupEntryFor",
+        "fushiLookupQueueHighlightErase",
+        "fushiLookupFlushPendingHighlightErase",
+        "fushiLookupClearEntryBinding",
+        "fushiLookupRetireAnchorPeers",
+        "fushiLookupFindSlot",
+        "fushiLookupResolveCurrentSlot",
+        "fushiLookupSlotFor",
+        "fushiLookupAdoptSlot",
+        "fushiLookupCurrentIdentityState",
+        "fushiLookupCaptureTokenCurrent",
+        "fushiLookupCapture",
+        "fushiLookupFlushVisualWork",
+        "fushiLookupBindOrigin",
+        "fushiLookupProbe",
+        "fushiLookupLeftClickHook",
+        "fushiLookupMouseMoveHook",
+    )
+    functions: dict[str, str] = {}
+    parameters: dict[str, str] = {}
+    for name in required_functions:
+        matches = _assigned_tjs_functions(tjs, name)
+        if len(matches) != 1:
+            violations.append(
+                f"{ADAPTER.name}: {name} 定义数应为 1，实际 {len(matches)}"
+            )
+        else:
+            parameters[name] = _compact_tjs(matches[0][0])
+            functions[name] = _compact_tjs(matches[0][1])
+    if len(functions) != len(required_functions):
+        return violations
+
+    joined = _compact_tjs(tjs.masked)
+
+    def require_once(body: str, needle: str, message: str) -> None:
+        count = body.count(needle)
+        if count != 1:
+            violations.append(
+                f"{ADAPTER.name}: {message}（出现 {count} 次）"
+            )
+
+    bootstrap = _compact_tjs(
+        _restore_tjs_literals(tjs, functions["fushiLookupBootstrap"])
+    )
+    readiness_gate = (
+        'if(typeofglobal.kag!="Object"||global.kag===null||'
+        'typeofglobal.kag.addHook!="Object"||'
+        'typeofglobal.TextRender!="Object"||global.TextRender===null||'
+        'typeofglobal.TextRender.render!="Object"||'
+        'typeofglobal.TextRender.done!="Object"||'
+        'typeofglobal.TextRender.drawCh!="Object")return;'
+    )
+    if not bootstrap.startswith(readiness_gate):
+        violations.append(
+            f"{ADAPTER.name}: bootstrap 必须在任何 lookup 状态初始化前同时等待 "
+            "kag 与 TextRender render/done/drawCh 完整就绪"
+        )
+
+    install_stages = re.findall(r"installStage=(\d+);", bootstrap)
+    expected_install_stages = [
+        "0",
+        "10",
+        "11",
+        "20",
+        "21",
+        "30",
+        "31",
+        "40",
+        "41",
+        "42",
+        "43",
+        "50",
+    ]
+    if install_stages != expected_install_stages:
+        violations.append(
+            f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
+            "0→10/11→20/21→30/31→40/41/42/43→50；"
+            f"实际 {install_stages}"
+        )
+
+    for marker, message in (
+        (
+            "global.fushiLookupWrapperAuditPending=true;",
+            "wrapper audit 必须初始化一次 mouseMove 启动基线",
+        ),
+        (
+            "global.fushiLookupWrapperAuditLastState=-1;",
+            "wrapper audit 必须以 -1 初始化 lastState，保证首个状态会发布",
+        ),
+    ):
+        require_once(bootstrap, marker, message)
+
+    audit = _compact_tjs(
+        _restore_tjs_literals(tjs, functions["fushiLookupAuditWrappers"])
+    )
+    if parameters["fushiLookupAuditWrappers"] != "force":
+        violations.append(
+            f"{ADAPTER.name}: AuditWrappers 必须接收 force，区分一次性 hover 基线与点击复核"
+        )
+    audit_contract = (
+        "if(!force&&!global.fushiLookupWrapperAuditPending)return;"
+        "global.fushiLookupWrapperAuditPending=false;varstate=0;try{"
+        'if(typeofglobal.TextRender!="Object"||global.TextRender===null)'
+        "state=state|1;else{"
+        'if(typeofglobal.TextRender.render!="Object")state=state|2;'
+        "elseif(global.fushiLookupRenderInstallFailed||"
+        "global.TextRender.render!==global.fushiLookupInstalledRenderWrapper)"
+        "state=state|4;"
+        'if(typeofglobal.TextRender.done!="Object")state=state|8;'
+        "elseif(global.fushiLookupDoneInstallFailed||"
+        "global.TextRender.done!==global.fushiLookupInstalledDoneWrapper)"
+        "state=state|16;"
+        'if(typeofglobal.TextRender.drawCh!="Object")state=state|32;'
+        "elseif(global.fushiLookupDrawChInstallFailed||"
+        "global.TextRender.drawCh!==global.fushiLookupInstalledDrawChWrapper)"
+        "state=state|64;}}catch(e){state=state|128;}"
+        "if(state!=global.fushiLookupWrapperAuditLastState){"
+        "global.fushiLookupWrapperAuditLastState=state;"
+        'global.fushiLookupNoteError("wrapper.identity",'
+        '%[message:"state="+state]);}'
+    )
+    if audit != audit_contract:
+        violations.append(
+            f"{ADAPTER.name}: wrapper audit 必须保留固定 1/2/4/8/16/32/64/128 "
+            "bitmask，且只在 lastState 变化时发布无内容 identity 诊断"
+        )
+
+    left_click = _compact_tjs(
+        _restore_tjs_literals(tjs, functions["fushiLookupLeftClickHook"])
+    )
+    mouse_move = _compact_tjs(
+        _restore_tjs_literals(tjs, functions["fushiLookupMouseMoveHook"])
+    )
+    if not left_click.startswith(
+        "try{global.fushiLookupAuditWrappers(true);"
+    ) or left_click.count("global.fushiLookupAuditWrappers(true);") != 1:
+        violations.append(
+            f"{ADAPTER.name}: leftClick 必须每次先 AuditWrappers(true)，低频复核后续脚本覆写"
+        )
+    if not mouse_move.startswith(
+        "try{global.fushiLookupAuditWrappers(false);"
+    ) or mouse_move.count("global.fushiLookupAuditWrappers(false);") != 1:
+        violations.append(
+            f"{ADAPTER.name}: mouseMove 只能先 AuditWrappers(false)，建立一次启动基线"
+        )
+    if bootstrap.count("global.fushiLookupAuditWrappers(true);") != 1 or bootstrap.count(
+        "global.fushiLookupAuditWrappers(false);"
+    ) != 1:
+        violations.append(
+            f"{ADAPTER.name}: wrapper audit 调用面只能是 leftClick(true) 与 mouseMove(false)"
+        )
+
+    wrapper_markers = (
+        (
+            "10",
+            "global.fushiLookupOriginalRender=global.TextRender.render;",
+            "global.TextRender.render=function(a,b,c,d,e,f)",
+            "global.fushiLookupInstalledRenderWrapper=global.TextRender.render;",
+            "global.fushiLookupRenderInstallFailed="
+            "global.fushiLookupInstalledRenderWrapper==="
+            "global.fushiLookupOriginalRender;",
+            "11",
+        ),
+        (
+            "20",
+            "global.fushiLookupOriginalDone=global.TextRender.done;",
+            "global.TextRender.done=function()",
+            "global.fushiLookupInstalledDoneWrapper=global.TextRender.done;",
+            "global.fushiLookupDoneInstallFailed="
+            "global.fushiLookupInstalledDoneWrapper==="
+            "global.fushiLookupOriginalDone;",
+            "21",
+        ),
+        (
+            "30",
+            "global.fushiLookupOriginalDrawCh=global.TextRender.drawCh;",
+            "global.TextRender.drawCh=function(layer,ox,oy,ch)",
+            "global.fushiLookupInstalledDrawChWrapper=global.TextRender.drawCh;",
+            "global.fushiLookupDrawChInstallFailed="
+            "global.fushiLookupInstalledDrawChWrapper==="
+            "global.fushiLookupOriginalDrawCh;",
+            "31",
+        ),
+    )
+    wrapper_ends: list[int] = []
+    wrappers_complete = True
+    for (
+        stage_before,
+        original_marker,
+        wrapper_marker,
+        installed_marker,
+        install_failed_marker,
+        stage_after,
+    ) in wrapper_markers:
+        before_positions = list(
+            _iter_find(bootstrap, f"installStage={stage_before};")
+        )
+        original_positions = list(_iter_find(bootstrap, original_marker))
+        wrapper_spans = _braced_spans_after(bootstrap, wrapper_marker)
+        installed_positions = list(_iter_find(bootstrap, installed_marker))
+        install_failed_positions = list(
+            _iter_find(bootstrap, install_failed_marker)
+        )
+        after_positions = list(
+            _iter_find(bootstrap, f"installStage={stage_after};")
+        )
+        if (
+            len(before_positions) != 1
+            or len(original_positions) != 1
+            or len(wrapper_spans) != 1
+            or len(installed_positions) != 1
+            or len(install_failed_positions) != 1
+            or len(after_positions) != 1
+            or not (
+                before_positions[0]
+                < original_positions[0]
+                < wrapper_spans[0][0]
+                < wrapper_spans[0][1]
+                < installed_positions[0]
+                < install_failed_positions[0]
+                < after_positions[0]
+            )
+        ):
+            wrappers_complete = False
+            continue
+        wrapper_ends.append(wrapper_spans[0][1])
+
+    staged_hooks = (
+        re.escape("installStage=40;"),
+        re.escape(
+            'global.kag.addHook("leftClick",global.fushiLookupLeftClickHook);'
+        ),
+        re.escape("installStage=41;"),
+        re.escape(
+            'global.kag.addHook("mouseMove",global.fushiLookupMouseMoveHook);'
+        ),
+        re.escape("installStage=42;"),
+        re.escape(
+            'global.kag.addHook("onMouseWheelHook",'
+            "global.fushiLookupMouseWheelHook);"
+        ),
+        re.escape("installStage=43;"),
+        re.escape(
+            'global.kag.addHook("keyDown",global.fushiLookupKeyDownHook);'
+        ),
+        re.escape("installStage=50;"),
+    )
+    if not _matches_once_in_order(bootstrap, staged_hooks):
+        violations.append(
+            f"{ADAPTER.name}: installStage 40→50 必须逐个包住 leftClick/mouseMove/"
+            "wheel/keyDown hook 安装"
+        )
+
+    bootstrap_stage_note = (
+        'global.fushiLookupNoteError("bootstrap.stage",'
+        '%[message:"stage="+installStage]);'
+    )
+    require_once(
+        bootstrap,
+        bootstrap_stage_note,
+        "bootstrap 安装失败必须只发布固定 stage，不得泄露异常内容",
+    )
+
+    remove_handler = (
+        "System.removeContinuousHandler(global.fushiLookupBootstrap);"
+    )
+    remove_positions = list(_iter_find(bootstrap, remove_handler))
+    clear_bootstrap = "global.fushiLookupBootstrap=void;"
+    clear_positions = list(_iter_find(bootstrap, clear_bootstrap))
+    # 生产函数有两条退休路径：完整安装后的 success path，以及安装中途抛错后的
+    # fail-closed catch。后者不能删，否则下一帧在半包装状态重试，OriginalRender 可能
+    # 指向上一层 wrapper 并形成递归。两条路径都必须先 remove 再 clear；catch 还必须在
+    # 第二次 retirement 之前只发布固定 installStage。
+    stage_50 = bootstrap.find("installStage=50;")
+    stage_note = bootstrap.find(bootstrap_stage_note)
+    if not (
+        wrappers_complete
+        and len(wrapper_ends) == len(wrapper_markers)
+        and len(remove_positions) == 2
+        and len(clear_positions) == len(remove_positions)
+        and max(wrapper_ends) < stage_50 < remove_positions[0] < clear_positions[0]
+        and clear_positions[0] < stage_note < remove_positions[1]
+        < clear_positions[1]
+        and all(
+            remove_positions[index] < clear_positions[index]
+            for index in range(len(remove_positions))
+        )
+    ):
+        violations.append(
+            f"{ADAPTER.name}: bootstrap success/catch 只能在 wrapper 与 staged hooks 后 "
+            "fail-closed 移除 continuous handler"
+        )
+
+    if joined.count("global.fushiLookupSlots=[];") != 1:
+        violations.append(
+            f"{ADAPTER.name}: page/index slot ledger 必须唯一初始化"
+        )
+    if joined.count("global.fushiLookupRendererLease=0;") != 1:
+        violations.append(
+            f"{ADAPTER.name}: renderer lease 序列必须唯一初始化"
+        )
+
+    find_entry = functions["fushiLookupFindEntry"]
+    require_once(
+        find_entry,
+        "if(registry[i].renderer===renderer&&registry[i].rendererLease>0)"
+        "returnregistry[i];",
+        "done/Capture 必须可 find-only 查询精确 renderer",
+    )
+    if "fushiLookupEntryFor" in find_entry or "registry.add" in find_entry:
+        violations.append(
+            f"{ADAPTER.name}: FindEntry 不得分配或复用 registry entry"
+        )
+
+    entry_for = functions["fushiLookupEntryFor"]
+    for needle, message in (
+        (
+            "if(slots[si].activeEntry===candidate)",
+            "Entry LRU 必须识别 slot.activeEntry",
+        ),
+        (
+            "varvictim=(nonActiveInvalid>=0)?nonActiveInvalid:"
+            "((nonActive>=0)?nonActive:"
+            "((activeInvalid>=0)?activeInvalid:activeOldest));",
+            "Entry LRU 必须优先淘汰 inactive，全部 active 后才退役 active",
+        ),
+        (
+            "layer:void,visibleHost:void,currentIdentity:void",
+            "entry 必须分开保存坐标 layer 与真实 visibleHost",
+        ),
+        (
+            "renderEpoch:0,retiredRenderEpoch:0",
+            "entry 必须初始化 render/retired epoch",
+        ),
+        (
+            "rendererLease:++global.fushiLookupRendererLease",
+            "fresh entry 必须取得单调 renderer lease",
+        ),
+    ):
+        require_once(entry_for, needle, message)
+    reused = entry_for.find("varreused=registry[victim];")
+    revoke_reused = entry_for.find("reused.rendererLease=0;")
+    clear_glyphs = entry_for.find("reused.glyphs=[];")
+    clear_reused = entry_for.find(
+        "global.fushiLookupClearEntryBinding(reused);"
+    )
+    publish_reused = entry_for.find("reused.renderer=renderer;")
+    publish_lease = entry_for.find(
+        "reused.rendererLease=++global.fushiLookupRendererLease;"
+    )
+    if not (
+        0 <= reused < revoke_reused < clear_glyphs < clear_reused
+        < publish_reused < publish_lease
+    ):
+        violations.append(
+            f"{ADAPTER.name}: Entry LRU 必须先撤销 lease/清快照和 binding，再发布新 renderer lease"
+        )
+    for reset in (
+        "reused.renderEpoch=0;",
+        "reused.retiredRenderEpoch=0;",
+    ):
+        require_once(entry_for, reset, "Entry LRU 复用必须重置 render epoch")
+
+    clear = functions["fushiLookupClearEntryBinding"]
+    clear_patterns = (
+        re.escape("if(global.fushiLookupHitEntry===entry)"),
+        re.escape(
+            "global.fushiLookupQueueHighlightErase("
+            "global.fushiLookupHighlightRect);"
+        ),
+        re.escape("global.fushiLookupHitEntry=void;"),
+        re.escape("entry.layer=void;"),
+        re.escape("entry.visibleHost=void;"),
+        re.escape("if(slots[si].activeEntry===entry)"),
+        re.escape("slots[si].activeEntry=void;"),
+    )
+    if not _matches_once_in_order(clear, clear_patterns):
+        violations.append(
+            f"{ADAPTER.name}: ClearEntryBinding 必须擦除旧高亮并摘除 activeEntry"
+        )
+    if any(
+        re.search(rf"entry\.{field}=(?!=)", clear)
+        for field in ("logicalLine", "slotPage", "slotIndex", "slotGeneration")
+    ):
+        violations.append(
+            f"{ADAPTER.name}: 清 binding 不得抹掉 entry 的 logical slot 身份"
+        )
+
+    retire = functions["fushiLookupRetireAnchorPeers"]
+    retire_patterns = (
+        re.escape("if(peer===entry)continue;"),
+        re.escape(
+            "if(peer.slotPage!=anchorPage||peer.slotIndex!=anchorIndex)continue;"
+        ),
+        re.escape("peer.glyphs=[];"),
+        re.escape("global.fushiLookupClearEntryBinding(peer);"),
+    )
+    if not _matches_once_in_order(retire, retire_patterns):
+        violations.append(
+            f"{ADAPTER.name}: peer retirement 必须严格按 page/index 清快照"
+        )
+    require_once(
+        retire,
+        "peer.retiredRenderEpoch=peer.renderEpoch;",
+        "peer retirement 必须封存已见 render epoch，阻止迟到 done 复活",
+    )
+    if "global.fushiLookupDismiss();" in retire:
+        violations.append(
+            f"{ADAPTER.name}: peer retirement 自身不得 dismiss"
+        )
+
+    find_slot = functions["fushiLookupFindSlot"]
+    require_once(
+        find_slot,
+        "if(slots[i].page==page&&slots[i].index==index)returnslots[i];",
+        "slot 必须使用严格 (page,index) 复合键",
+    )
+
+    resolve = functions["fushiLookupResolveCurrentSlot"]
+    for needle, message in (
+        (
+            "varpages=[global.kag.fore.messages,global.kag.back.messages];",
+            "current slot 必须搜索 fore/back message 数组",
+        ),
+        (
+            "if(messages[i]===current)return%[page:p+1,index:i,identity:current];",
+            "current slot 必须由严格对象身份解析",
+        ),
+    ):
+        require_once(resolve, needle, message)
+    if "currentNum" in resolve:
+        violations.append(
+            f"{ADAPTER.name}: ResolveCurrentSlot 不得把双缓冲复用的 currentNum 当身份"
+        )
+
+    slot_for = functions["fushiLookupSlotFor"]
+    slot_lru_patterns = (
+        re.escape("if(slots.count>=8)"),
+        re.escape(
+            "if(slots[i].activeEntry===void||slots[i].activeEntry===null)"
+        ),
+        re.escape(
+            "varoldest=(oldestInactive>=0)?oldestInactive:oldestActive;"
+        ),
+        re.escape("retired.retiredRenderEpoch=retired.renderEpoch;"),
+        re.escape("global.fushiLookupClearEntryBinding(retired);"),
+        re.escape("slots.erase(oldest);"),
+    )
+    if not _matches_once_in_order(slot_for, slot_lru_patterns):
+        violations.append(
+            f"{ADAPTER.name}: Slot LRU 必须 inactive-first，且退役 active 时先清 binding"
+        )
+
+    adopt = functions["fushiLookupAdoptSlot"]
+    if parameters["fushiLookupAdoptSlot"] != (
+        "entry,line,page,index,identity,capturePhase"
+    ):
+        violations.append(
+            f"{ADAPTER.name}: AdoptSlot 必须接收 capturePhase 并保持完整 candidate 参数"
+        )
+    detach_patterns = (
+        re.escape("varallSlots=global.fushiLookupSlots;"),
+        re.escape("if(other===slot)continue;"),
+        re.escape("if(other.activeEntry===entry)"),
+        re.escape("other.activeEntry=void;"),
+    )
+    advance_patterns = (
+        re.escape("global.fushiLookupRetireAnchorPeers(entry,page,index);"),
+        re.escape("slot.line=line;"),
+        re.escape("slot.generation++;"),
+        re.escape("slot.activeEntry=void;"),
+        re.escape("advanced=true;"),
+    )
+    changed_bodies = _braced_bodies_after(adopt, "elseif(slot.line!=line)")
+    changed_ok = (
+        len(changed_bodies) == 1
+        and _matches_once_in_order(changed_bodies[0], advance_patterns)
+    )
+    stale_epoch_gate = (
+        "if(entry.slotPage==page&&entry.slotIndex==index&&"
+        "entry.slotGeneration<slot.generation&&entry.logicalLine==line&&"
+        "entry.renderEpoch<=entry.retiredRenderEpoch)"
+        "return%[slot:slot,stale:true,same:false,advanced:false];"
+    )
+    if len(changed_bodies) != 1 or changed_bodies[0].count(stale_epoch_gate) != 1:
+        violations.append(
+            f"{ADAPTER.name}: 已退休 entry 只有新 render epoch 才能重取 slot；"
+            "同世代迟到 done 必须 stale，fresh renderer 不得被误挡"
+        )
+    commit_patterns = (
+        re.escape("entry.logicalLine=line;"),
+        re.escape("entry.slotPage=page;"),
+        re.escape("entry.slotIndex=index;"),
+        re.escape("entry.slotGeneration=slot.generation;"),
+    )
+    if not _matches_once_in_order(adopt, detach_patterns):
+        violations.append(
+            f"{ADAPTER.name}: AdoptSlot 必须先把 entry 从其他 slot 的 active 链摘除"
+        )
+    if not changed_ok or not _matches_once_in_order(adopt, commit_patterns):
+        violations.append(
+            f"{ADAPTER.name}: 完整异句 candidate 必须原子退休 peer、推进 generation 后提交身份"
+        )
+    identity = functions["fushiLookupCurrentIdentityState"]
+    identity_patterns = (
+        re.escape(
+            "varslot=global.fushiLookupFindSlot(entry.slotPage,entry.slotIndex);"
+        ),
+        re.escape(
+            "if(slot===void||slot.generation!=entry.slotGeneration||"
+            "slot.line!=entry.logicalLine||slot.activeEntry!==entry)return-1;"
+        ),
+        re.escape("if(resolved===void)return-1;"),
+        re.escape(
+            "if(resolved.page==entry.slotPage&&resolved.index==entry.slotIndex)"
+        ),
+        re.escape("returnresolved.identity===captured?1:-1;"),
+    )
+    if not (
+        _matches_once_in_order(identity, identity_patterns)
+        and identity.endswith("return0;")
+    ):
+        violations.append(
+            f"{ADAPTER.name}: identity state 必须先验 active/generation；当前同 slot 严格比身份，"
+            "其他共存 slot 回退 visibleHost"
+        )
+
+    capture = functions["fushiLookupCapture"]
+    if parameters["fushiLookupCapture"] != (
+        "renderer,capturePhase,expectedLease,expectedRenderEpoch"
+    ):
+        violations.append(
+            f"{ADAPTER.name}: Capture 必须携 render/done 阶段与不可变 lease/epoch"
+        )
+    token = functions["fushiLookupCaptureTokenCurrent"]
+    for needle, message in (
+        (
+            "global.fushiLookupFindEntry(renderer)===entry",
+            "Capture token 必须复核 exact resident entry",
+        ),
+        (
+            "entry.rendererLease==expectedLease",
+            "Capture token 必须复核 renderer lease",
+        ),
+        (
+            "entry.renderEpoch==expectedRenderEpoch",
+            "Capture token 必须复核 render epoch",
+        ),
+        (
+            "expectedRenderEpoch>entry.retiredRenderEpoch",
+            "Capture token 必须拒绝退休世代",
+        ),
+    ):
+        require_once(token, needle, message)
+    if "fushiLookupEntryFor" in capture:
+        violations.append(
+            f"{ADAPTER.name}: Capture 不得分配 entry；evicted renderer 必须失败关闭"
+        )
+    token_gate = (
+        "if(!global.fushiLookupCaptureTokenCurrent(entry,renderer,"
+        "expectedLease,expectedRenderEpoch))return;"
+    )
+    token_positions = [m.start() for m in re.finditer(re.escape(token_gate), capture)]
+    getter = capture.find("(renderer.getCharactersincontextofrenderer)(0,0)")
+    adopt_call_position = capture.find(
+        "slotAdoption=global.fushiLookupAdoptSlot(entry,line,"
+    )
+    clear_positions = [
+        m.start()
+        for m in re.finditer(
+            re.escape("global.fushiLookupClearEntryBinding(entry);"), capture
+        )
+    ]
+    fallback_start = capture.find("if(slotAdoption===void)")
+    fallback_identity = capture.find("entry.logicalLine=line;", fallback_start)
+    precommit = capture.find("entry.used=++global.fushiLookupClock;")
+    retire_call_position = capture.find(
+        "global.fushiLookupRetireAnchorPeers(entry,logicalSlot.page,logicalSlot.index);"
+    )
+    candidate_publish = capture.find("entry.glyphs=glyphs;", retire_call_position)
+    token_order_ok = (
+        len(token_positions) == 8
+        and len(clear_positions) == 2
+        and 0 <= token_positions[0] < getter < token_positions[1]
+        < token_positions[2] < adopt_call_position < token_positions[3]
+        < clear_positions[0] < token_positions[4] < fallback_identity
+        < token_positions[5] < precommit < retire_call_position
+        < token_positions[6] < candidate_publish < clear_positions[1]
+        < token_positions[7]
+    )
+    if not token_order_ok:
+        violations.append(
+            f"{ADAPTER.name}: Capture 必须按 getter 前后、Adopt 前、fallback 清理前后、"
+            "Retire 前后和最终清理后保留 8 个有序 token 门"
+        )
+
+    clear_binding = functions["fushiLookupClearEntryBinding"]
+    for forbidden in ("fillRect", ".visible", ".update(", "fushiLookupDismiss"):
+        if forbidden in clear_binding:
+            violations.append(
+                f"{ADAPTER.name}: ClearEntryBinding 必须是纯账本操作，禁止 Layer/Dismiss: {forbidden}"
+            )
+    require_once(
+        clear_binding,
+        "global.fushiLookupQueueHighlightErase(global.fushiLookupHighlightRect)",
+        "ClearEntryBinding 必须把旧高亮排入有界 erase queue",
+    )
+    for helper_name in (
+        "fushiLookupEntryFor",
+        "fushiLookupRetireAnchorPeers",
+        "fushiLookupSlotFor",
+        "fushiLookupAdoptSlot",
+    ):
+        helper = functions[helper_name]
+        for forbidden in ("fillRect", ".update(", "fushiLookupDismiss("):
+            if forbidden in helper:
+                violations.append(
+                    f"{ADAPTER.name}: {helper_name} 事务内禁止视觉 Layer/Dismiss: {forbidden}"
+                )
+
+    queue_erase = functions["fushiLookupQueueHighlightErase"]
+    for needle, message in (
+        ("varpending=global.fushiLookupPendingHighlightEraseRect", "erase queue 必须读取既有矩形"),
+        ("varleft=pending.x<rect.x?pending.x:rect.x", "erase queue 必须合并左边界"),
+        ("varright=pendingRight>rectRight?pendingRight:rectRight", "erase queue 必须合并右边界"),
+        ("varbottom=pendingBottom>rectBottom?pendingBottom:rectBottom", "erase queue 必须合并下边界"),
+        ("global.fushiLookupPendingHighlightEraseSeq++", "pending highlight erase 必须用单调 seq 保护重入"),
+    ):
+        require_once(queue_erase, needle, message)
+    flush_erase = functions["fushiLookupFlushPendingHighlightErase"]
+    for needle, message in (
+        ("if(global.fushiLookupHighlightFlushActive)returnfalse", "erase flush 必须防递归"),
+        ("varcompleted=false", "erase flush 必须默认失败保留 pending"),
+        ("highlight.fillRect(pending.x,pending.y,pending.w,pending.h,0)", "leaf flush 必须擦 pending union"),
+        ("completed=true", "视觉操作完整成功后才可消费 pending"),
+        ("if(completed&&global.fushiLookupPendingHighlightEraseSeq==seq)", "只可消费成功且未被重入更新的 pending erase"),
+    ):
+        require_once(flush_erase, needle, message)
+    visual_flush = functions["fushiLookupFlushVisualWork"]
+    for needle, message in (
+        ("if(global.fushiLookupVisualFlushActive)returnfalse", "visual flush 必须防递归"),
+        ("global.fushiLookupPendingVisualDismiss=false", "visual flush 必须先摘 pending dismiss"),
+        ("global.fushiLookupFlushPendingHighlightErase()", "visual leaf 必须 drain erase"),
+    ):
+        require_once(visual_flush, needle, message)
+    span_patterns = (
+        re.escape("varglyphOriginSpanX=originMaxX-originMinX;"),
+        re.escape("varglyphOriginSpanY=originMaxY-originMinY;"),
+        re.escape(
+            "varspanErrX=Math.abs((g.maxOx-g.minOx)-glyphOriginSpanX);"
+        ),
+        re.escape(
+            "varspanErrY=Math.abs((g.maxOy-g.minOy)-glyphOriginSpanY);"
+        ),
+        re.escape(
+            "if(spanErrX>toleranceX||spanErrY>toleranceY)continue;"
+        ),
+        re.escape("if(!global.fushiLookupVisible(g.host))continue;"),
+    )
+    if not _matches_once_in_order(capture, span_patterns):
+        violations.append(
+            f"{ADAPTER.name}: candidate 必须用字符原点跨度配对并要求真实宿主可见"
+        )
+
+    best_bodies = _braced_bodies_after(capture, "if(best!==void)")
+    candidate_complete = False
+    if len(best_bodies) == 1:
+        best = best_bodies[0]
+        candidate_complete = _matches_once_in_order(
+            best,
+            (
+                re.escape(
+                    "candidateLayer=(anchorMsg!==void&&isvalidanchorMsg)"
+                    "?anchorMsg:best.host;"
+                ),
+                re.escape("candidateVisibleHost=best.host;"),
+                re.escape("candidateAnchorPage=anchorPage;"),
+                re.escape("candidateAnchorIndex=anchorIndex;"),
+                re.escape("candidateReady=true;"),
+            ),
+        )
+    if not candidate_complete:
+        violations.append(
+            f"{ADAPTER.name}: candidateReady 只能在 layer/visibleHost/page/index 全部形成后发布"
+        )
+
+    adopt_call = (
+        "slotAdoption=global.fushiLookupAdoptSlot(entry,line,"
+        "candidateAnchorPage,candidateAnchorIndex,candidateCurrentIdentity,"
+        "capturePhase);"
+    )
+    candidate_ready = capture.find("candidateReady=true;")
+    adoption = capture.find(adopt_call)
+    if not (0 <= candidate_ready < adoption):
+        violations.append(
+            f"{ADAPTER.name}: slot adoption 必须晚于完整 candidate"
+        )
+    if "fushiLookupAdoptSlot(entry,line,resolvedCurrent." in capture:
+        violations.append(
+            f"{ADAPTER.name}: resolvedCurrent 只能作身份证据，不能在 candidate 前推进 slot"
+        )
+    if capture.count("if(slotAdoption.stale)return;") != 1:
+        violations.append(
+            f"{ADAPTER.name}: Capture 必须丢弃退休同世代的迟到 done"
+        )
+
+    fallback_bodies = _braced_bodies_after(capture, "if(slotAdoption===void)")
+    fallback_ok = False
+    if len(fallback_bodies) == 1:
+        fallback = fallback_bodies[0]
+        changed_bodies = _braced_bodies_after(fallback, "if(!entrySameLogical)")
+        owned_patterns = (
+            re.escape("if(entry.slotPage!=0&&entry.slotIndex>=0)"),
+            re.escape(
+                "varowned=global.fushiLookupFindSlot("
+                "entry.slotPage,entry.slotIndex);"
+            ),
+            re.escape("if(owned!==void&&owned.activeEntry===entry)"),
+            re.escape("owned.activeEntry=void;"),
+            re.escape("owned.activeStrength=0;"),
+            re.escape("global.fushiLookupClearEntryBinding(entry);"),
+        )
+        fallback_ok = (
+            len(changed_bodies) == 1
+            and _matches_once_in_order(changed_bodies[0], owned_patterns)
+            and "entry.slotGeneration++;" in changed_bodies[0]
+            and "global.fushiLookupDismiss();" not in fallback
+            and "entry.retiredRenderEpoch=entry.renderEpoch;" not in fallback
+        )
+    if not fallback_ok or "global.fushiLookupDismiss();" in capture:
+        violations.append(
+            f"{ADAPTER.name}: 无 candidate 的新句只能清当前 entry，不得推进 slot 或 dismiss"
+        )
+
+    strength_map = (
+        "candidateStrength=(candidateCurrentIdentity!==void)?2:"
+        "((anchorKind!=0&&anchorPage!=0&&anchorIndex>=0)?1:0);"
+    )
+    same_entry_strength = (
+        "if(candidateReady&&entrySameLogical&&entry.hasBase&&"
+        "candidateStrength<entry.bindingStrength)candidateReady=false;"
+    )
+    stronger_renderer_gate = (
+        "if(activeUsable&&candidateStrength<=logicalSlot.activeStrength)"
+        "candidateReady=false;"
+    )
+    for needle, message in (
+        (strength_map, "candidate strength 必须由 identity/slot/host 证据映射"),
+        (
+            same_entry_strength,
+            "同 entry 同句的瞬时弱 candidate 不得降级既有 binding",
+        ),
+        (
+            stronger_renderer_gate,
+            "另一 renderer 的更强 candidate 必须可接管弱 active，"
+            "同强/更弱仅在旧 active 不可用时接管",
+        ),
+    ):
+        require_once(capture, needle, message)
+
+    same_bodies = _braced_bodies_after(
+        capture, "elseif(entrySameLogical&&entry.hasBase)"
+    )
+    same_ok = False
+    if len(same_bodies) == 1:
+        same = same_bodies[0]
+        same_ok = (
+            same.count("entry.glyphs=glyphs;") == 1
+            and same.count("entry.line=line;") == 1
+            and "fushiLookupClearEntryBinding" not in same
+            and "entry.layer=" not in same
+            and "entry.visibleHost=" not in same
+            and "entry.currentIdentity=" not in same
+        )
+    if not same_ok:
+        violations.append(
+            f"{ADAPTER.name}: 同句无完整 candidate 时必须保留上一轮完整 binding"
+        )
+
+    candidate_bodies = _braced_bodies_after(capture, "if(candidateReady)")
+    publish_ok = False
+    if len(candidate_bodies) == 1:
+        publish = candidate_bodies[0]
+        publish_ok = _matches_once_in_order(
+            publish,
+            (
+                re.escape(
+                    "global.fushiLookupRetireAnchorPeers(entry,"
+                    "logicalSlot.page,logicalSlot.index);"
+                ),
+                re.escape("entry.layer=candidateLayer;"),
+                re.escape("entry.visibleHost=candidateVisibleHost;"),
+                re.escape("entry.currentIdentity=candidateCurrentIdentity;"),
+                re.escape("logicalSlot.activeEntry=entry;"),
+            ),
+        )
+    if not publish_ok:
+        violations.append(
+            f"{ADAPTER.name}: 完整 candidate 必须原子写入 layer/visibleHost 并发布 activeEntry"
+        )
+
+    bind = functions["fushiLookupBindOrigin"]
+    bind_patterns = (
+        re.escape(
+            "if(victimHost===void||victimHost===null||!isvalidvictimHost)"
+        ),
+        re.escape("if(groups[vi].clock<victimClock)"),
+        re.escape("groups.erase(victim);"),
+        re.escape("varyRewound=originY<slot.lastOy-2;"),
+        re.escape(
+            "varreturnedTop=originY<=slot.minOy+2&&originX<slot.lastOx-2;"
+        ),
+        re.escape(
+            "varnewRun=slot.count>0&&(yRewound||returnedTop);"
+        ),
+    )
+    if not _matches_once_in_order(bind, bind_patterns):
+        violations.append(
+            f"{ADAPTER.name}: BindGroups 必须 invalid-first/LRU，且多行向下换行不能误重置跨度"
+        )
+    if "originY>slot.lastOy" in bind:
+        violations.append(
+            f"{ADAPTER.name}: 向下换行不得被当成新的绘制序列"
+        )
+
+    probe = functions["fushiLookupProbe"]
+    if not probe.startswith("global.fushiLookupFlushVisualWork();"):
+        violations.append(
+            f"{ADAPTER.name}: Probe 必须在命中/绘制前作为事务外叶子 flush visual work"
+        )
+    probe_patterns = (
+        re.escape("varlayer=entry.layer;"),
+        re.escape("if(!global.fushiLookupComputeOffset(layer))"),
+        re.escape(
+            "varcurrentIdentityState="
+            "global.fushiLookupCurrentIdentityState(entry);"
+        ),
+        re.escape("varvisibleHost=entry.visibleHost;"),
+        re.escape(
+            "if(currentIdentityState<0||(currentIdentityState==0&&"
+            "(visibleHost===void||visibleHost===null||!isvalidvisibleHost||"
+            "!global.fushiLookupVisible(visibleHost))))"
+        ),
+    )
+    if not _matches_once_in_order(probe, probe_patterns):
+        violations.append(
+            f"{ADAPTER.name}: Probe 坐标必须走 layer；可见性必须走 identity/visibleHost 共存语义"
+        )
+    if "global.fushiLookupVisible(layer)" in probe:
+        violations.append(
+            f"{ADAPTER.name}: Probe 不得拿 KAG 坐标 anchor 当可见性真值"
+        )
+
+    render_wrapper = (
+        "varcaptureLease=0,captureEpoch=0;"
+        "try{varepochEntry=global.fushiLookupEntryFor(this);"
+        "epochEntry.renderEpoch++;captureLease=epochEntry.rendererLease;"
+        "captureEpoch=epochEntry.renderEpoch;}"
+        "catch(e){global.fushiLookupFault();}"
+        "varresult=(global.fushiLookupOriginalRenderincontextofthis)(...);"
+        "try{global.fushiLookupCapture(this,1,captureLease,captureEpoch);}"
+        "catch(e){global.fushiLookupFault();}"
+        "try{global.fushiLookupFlushVisualWork();}"
+        "catch(e){global.fushiLookupFault();}returnresult;"
+    )
+    done_wrapper = (
+        "vardoneLease=0,doneEpoch=0;"
+        "try{vardoneEntry=global.fushiLookupFindEntry(this);"
+        "if(doneEntry!==void){doneLease=doneEntry.rendererLease;"
+        "doneEpoch=doneEntry.renderEpoch;}}"
+        "catch(e){global.fushiLookupFault();}"
+        "varresult=(global.fushiLookupOriginalDoneincontextofthis)(...);"
+        "try{if(doneLease>0)global.fushiLookupCapture(this,2,doneLease,doneEpoch);}"
+        "catch(e){global.fushiLookupFault();}"
+        "try{global.fushiLookupFlushVisualWork();}"
+        "catch(e){global.fushiLookupFault();}returnresult;"
+    )
+    require_once(
+        joined,
+        render_wrapper,
+        "TextRender.render 的 epoch 账本必须 catch 隔离；原函数必须先于 Capture(1)",
+    )
+    require_once(
+        joined,
+        done_wrapper,
+        "TextRender.done 必须 original-first，且仅调用 Capture(2)",
+    )
+    return violations
+
+
 # ── 扫真文件 ────────────────────────────────────────────────────────────────
 
 
@@ -1089,6 +2024,14 @@ class RealAdapterTest(unittest.TestCase):
             find_invalid_kag_anchor_identity_selection(self.source),
             "KAG 消息层必须按 hostPage 下的 currentNum→对象 identity 下标兜底选择；"
             "禁止 pages=[fore,back] 跨页按尺寸首个命中。",
+        )
+
+    def test_lookup_slot_ledger_publishes_only_complete_candidates(self) -> None:
+        self.assertEqual(
+            [],
+            find_invalid_lookup_entry_visibility_lifecycle(self.source),
+            "page/index ledger 只能在完整 candidate 后提交；无 candidate 不推进/不 dismiss，"
+            "同句保留 binding，Probe 只接受当前 generation 的 activeEntry。",
         )
 
 
@@ -1295,6 +2238,604 @@ global.fushiLookupCapture = function(renderer)
 '''
 
 
+# page/index slot ledger 的完整 candidate 提交边界、active entry 与可见性生命周期。生产
+# bootstrap 里的函数跨越多个 raw literal，clean 样本也保留拼接形状。
+ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE = r'''
+static const wchar_t kEntryBootstrap[] = LR"TJS(
+global.fushiLookupBootstrap = function(tick)
+{
+  if(typeof global.kag != "Object" || global.kag === null ||
+    typeof global.kag.addHook != "Object" ||
+    typeof global.TextRender != "Object" || global.TextRender === null ||
+    typeof global.TextRender.render != "Object" ||
+    typeof global.TextRender.done != "Object" ||
+    typeof global.TextRender.drawCh != "Object") return;
+var installStage = 0;
+try
+{
+global.fushiLookupSlots = [];
+global.fushiLookupRendererLease = 0;
+global.fushiLookupPendingHighlightEraseRect = void;
+global.fushiLookupPendingHighlightEraseSeq = 0;
+global.fushiLookupHighlightFlushActive = false;
+global.fushiLookupPendingVisualDismiss = false;
+global.fushiLookupVisualFlushActive = false;
+global.fushiLookupWrapperAuditPending = true;
+global.fushiLookupWrapperAuditLastState = -1;
+
+global.fushiLookupAuditWrappers = function(force)
+{
+  if(!force && !global.fushiLookupWrapperAuditPending) return;
+  global.fushiLookupWrapperAuditPending = false;
+  var state = 0;
+  try
+  {
+    if(typeof global.TextRender != "Object" || global.TextRender === null)
+      state = state | 1;
+    else
+    {
+      if(typeof global.TextRender.render != "Object") state = state | 2;
+      else if(global.fushiLookupRenderInstallFailed ||
+        global.TextRender.render !== global.fushiLookupInstalledRenderWrapper)
+        state = state | 4;
+      if(typeof global.TextRender.done != "Object") state = state | 8;
+      else if(global.fushiLookupDoneInstallFailed ||
+        global.TextRender.done !== global.fushiLookupInstalledDoneWrapper)
+        state = state | 16;
+      if(typeof global.TextRender.drawCh != "Object") state = state | 32;
+      else if(global.fushiLookupDrawChInstallFailed ||
+        global.TextRender.drawCh !== global.fushiLookupInstalledDrawChWrapper)
+        state = state | 64;
+    }
+  }
+  catch(e) { state = state | 128; }
+  if(state != global.fushiLookupWrapperAuditLastState)
+  {
+    global.fushiLookupWrapperAuditLastState = state;
+    global.fushiLookupNoteError("wrapper.identity", %[message: "state=" + state]);
+  }
+};
+
+global.fushiLookupFindEntry = function(renderer)
+{
+  var registry = global.fushiLookupRegistry;
+  for(var i = 0; i < registry.count; i++)
+    if(registry[i].renderer === renderer && registry[i].rendererLease > 0)
+      return registry[i];
+  return void;
+};
+
+global.fushiLookupEntryFor = function(renderer)
+{
+  var registry = global.fushiLookupRegistry;
+  var nonActiveInvalid = -1, nonActive = -1;
+  var activeInvalid = -1, activeOldest = -1;
+  for(var i = 0; i < registry.count; i++)
+  {
+    var candidate = registry[i];
+    var active = false;
+    var slots = global.fushiLookupSlots;
+    for(var si = 0; si < slots.count; si++)
+      if(slots[si].activeEntry === candidate) active = true;
+  }
+  if(registry.count < 8)
+  {
+    var fresh = %[renderer:renderer,
+      rendererLease:++global.fushiLookupRendererLease,
+      glyphs:[], line:"", used:0,
+      layer:void, visibleHost:void, currentIdentity:void,
+      logicalLine:"", slotPage:0, slotIndex:-1, slotGeneration:0,
+      renderEpoch:0, retiredRenderEpoch:0];
+    registry.add(fresh);
+    return fresh;
+  }
+  var victim = (nonActiveInvalid >= 0) ? nonActiveInvalid :
+    ((nonActive >= 0) ? nonActive :
+    ((activeInvalid >= 0) ? activeInvalid : activeOldest));
+  var reused = registry[victim];
+  reused.rendererLease = 0;
+  reused.glyphs = [];
+  reused.line = "";
+  reused.used = 0;
+  global.fushiLookupClearEntryBinding(reused);
+  reused.renderer = renderer;
+  reused.renderEpoch = 0;
+  reused.retiredRenderEpoch = 0;
+  reused.rendererLease = ++global.fushiLookupRendererLease;
+  return reused;
+};
+
+global.fushiLookupQueueHighlightErase = function(rect)
+{
+  if(rect === void || rect === null) return;
+  var pending = global.fushiLookupPendingHighlightEraseRect;
+  if(pending === void || pending === null)
+    global.fushiLookupPendingHighlightEraseRect = rect;
+  else
+  {
+    var left = pending.x < rect.x ? pending.x : rect.x;
+    var top = pending.y < rect.y ? pending.y : rect.y;
+    var pendingRight = pending.x + pending.w;
+    var rectRight = rect.x + rect.w;
+    var right = pendingRight > rectRight ? pendingRight : rectRight;
+    var pendingBottom = pending.y + pending.h;
+    var rectBottom = rect.y + rect.h;
+    var bottom = pendingBottom > rectBottom ? pendingBottom : rectBottom;
+    global.fushiLookupPendingHighlightEraseRect =
+      %[x:left, y:top, w:right - left, h:bottom - top];
+  }
+  global.fushiLookupPendingHighlightEraseSeq++;
+};
+
+global.fushiLookupFlushPendingHighlightErase = function()
+{
+  if(global.fushiLookupHighlightFlushActive) return false;
+  var pending = global.fushiLookupPendingHighlightEraseRect;
+  if(pending === void || pending === null) return true;
+  var seq = global.fushiLookupPendingHighlightEraseSeq;
+  global.fushiLookupHighlightFlushActive = true;
+  var completed = false;
+  try
+  {
+    var highlight = global.fushiLookupHighlightLayer;
+    highlight.fillRect(pending.x, pending.y, pending.w, pending.h, 0);
+    highlight.visible = false;
+    highlight.update();
+    completed = true;
+  }
+  catch(e) { global.fushiLookupFault(); }
+  global.fushiLookupHighlightFlushActive = false;
+  if(completed && global.fushiLookupPendingHighlightEraseSeq == seq)
+    global.fushiLookupPendingHighlightEraseRect = void;
+  return global.fushiLookupPendingHighlightEraseRect === void;
+};
+
+global.fushiLookupClearEntryBinding = function(entry)
+{
+  if(global.fushiLookupHitEntry === entry)
+  {
+    global.fushiLookupQueueHighlightErase(global.fushiLookupHighlightRect);
+    global.fushiLookupHitEntry = void;
+  }
+  entry.layer = void;
+  entry.visibleHost = void;
+  entry.currentIdentity = void;
+  var slots = global.fushiLookupSlots;
+  for(var si = 0; si < slots.count; si++)
+  {
+    if(slots[si].activeEntry === entry)
+    {
+      slots[si].activeEntry = void;
+      slots[si].activeStrength = 0;
+    }
+  }
+};
+
+global.fushiLookupRetireAnchorPeers = function(entry, anchorPage, anchorIndex)
+{
+  var registry = global.fushiLookupRegistry;
+  for(var i = 0; i < registry.count; i++)
+  {
+    var peer = registry[i];
+    if(peer === entry) continue;
+    if(peer.slotPage != anchorPage || peer.slotIndex != anchorIndex) continue;
+    peer.glyphs = [];
+    peer.retiredRenderEpoch = peer.renderEpoch;
+    global.fushiLookupClearEntryBinding(peer);
+  }
+};
+
+global.fushiLookupFindSlot = function(page, index)
+{
+  var slots = global.fushiLookupSlots;
+  for(var i = 0; i < slots.count; i++)
+    if(slots[i].page == page && slots[i].index == index) return slots[i];
+  return void;
+};
+
+global.fushiLookupResolveCurrentSlot = function()
+{
+  var current = global.fushiLookupField(global.kag, "current");
+  var pages = [global.kag.fore.messages, global.kag.back.messages];
+  for(var p = 0; p < pages.count; p++)
+  {
+    var messages = pages[p];
+    for(var i = 0; i < messages.count; i++)
+      if(messages[i] === current)
+        return %[page:p + 1, index:i, identity:current];
+  }
+  return void;
+};
+
+global.fushiLookupSlotFor = function(page, index, identity)
+{
+  var slots = global.fushiLookupSlots;
+  if(slots.count >= 8)
+  {
+    var oldestInactive = -1, oldestActive = -1;
+    for(var i = 0; i < slots.count; i++)
+    {
+      if(slots[i].activeEntry === void || slots[i].activeEntry === null)
+        oldestInactive = i;
+      else
+        oldestActive = i;
+    }
+    var oldest = (oldestInactive >= 0) ? oldestInactive : oldestActive;
+    var retired = slots[oldest].activeEntry;
+    retired.retiredRenderEpoch = retired.renderEpoch;
+    global.fushiLookupClearEntryBinding(retired);
+    slots.erase(oldest);
+  }
+  var fresh = %[page:page, index:index, line:"", generation:0,
+    currentIdentity:identity, activeEntry:void, activeStrength:0];
+  slots.add(fresh);
+  return fresh;
+};
+
+global.fushiLookupAdoptSlot = function(entry, line, page, index, identity,
+  capturePhase)
+{
+  var slot = global.fushiLookupSlotFor(page, index, identity);
+  var allSlots = global.fushiLookupSlots;
+  for(var si = 0; si < allSlots.count; si++)
+  {
+    var other = allSlots[si];
+    if(other === slot) continue;
+    if(other.activeEntry === entry)
+    {
+      other.activeEntry = void;
+      other.activeStrength = 0;
+    }
+  }
+  var advanced = false;
+  if(slot.line == "")
+  {
+    slot.line = line;
+    slot.generation++;
+  }
+  else if(slot.line != line)
+  {
+    if(entry.slotPage == page && entry.slotIndex == index &&
+      entry.slotGeneration < slot.generation && entry.logicalLine == line &&
+      entry.renderEpoch <= entry.retiredRenderEpoch)
+      return %[slot:slot, stale:true, same:false, advanced:false];
+    global.fushiLookupRetireAnchorPeers(entry, page, index);
+    slot.line = line;
+    slot.generation++;
+    slot.activeEntry = void;
+    advanced = true;
+  }
+  var same = entry.logicalLine == line;
+  entry.logicalLine = line;
+  entry.slotPage = page;
+  entry.slotIndex = index;
+  entry.slotGeneration = slot.generation;
+  return %[slot:slot, same:same, advanced:advanced];
+};
+
+global.fushiLookupFlushVisualWork = function()
+{
+  if(global.fushiLookupVisualFlushActive) return false;
+  global.fushiLookupVisualFlushActive = true;
+  var dismiss = global.fushiLookupPendingVisualDismiss;
+  global.fushiLookupPendingVisualDismiss = false;
+  if(dismiss) global.fushiLookupDismissNow();
+  global.fushiLookupFlushPendingHighlightErase();
+  global.fushiLookupVisualFlushActive = false;
+  return true;
+};
+
+global.fushiLookupCurrentIdentityState = function(entry)
+{
+  var slot = global.fushiLookupFindSlot(entry.slotPage, entry.slotIndex);
+  if(slot === void || slot.generation != entry.slotGeneration ||
+    slot.line != entry.logicalLine || slot.activeEntry !== entry) return -1;
+  if(entry.anchorKind == 0) return 0;
+  var captured = entry.currentIdentity;
+  if(captured === void || captured === null) return 0;
+  var resolved = global.fushiLookupResolveCurrentSlot();
+  if(resolved === void) return -1;
+  if(resolved.page == entry.slotPage && resolved.index == entry.slotIndex)
+    return resolved.identity === captured ? 1 : -1;
+  return 0;
+};
+)TJS" LR"TJS(
+global.fushiLookupCaptureTokenCurrent = function(entry, renderer,
+  expectedLease, expectedRenderEpoch)
+{
+  return entry !== void && expectedLease > 0 &&
+    global.fushiLookupFindEntry(renderer) === entry &&
+    entry.renderer === renderer && entry.rendererLease == expectedLease &&
+    entry.renderEpoch == expectedRenderEpoch &&
+    expectedRenderEpoch > entry.retiredRenderEpoch;
+};
+
+global.fushiLookupCapture = function(renderer, capturePhase,
+  expectedLease, expectedRenderEpoch)
+{
+  var entry = global.fushiLookupFindEntry(renderer);
+  if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+    expectedLease, expectedRenderEpoch)) return;
+  var characters = renderer.getCharacters(0, 0);
+  if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+    expectedLease, expectedRenderEpoch)) return;
+  var slotAdoption = void;
+  var logicalSlot = void;
+  var entrySameLogical = false;
+  var glyphs = [], line = "";
+  var candidateReady = false;
+  var candidateLayer = void;
+  var candidateVisibleHost = void;
+  var candidateCurrentIdentity = void;
+  var candidateAnchorPage = 0;
+  var candidateAnchorIndex = -1;
+  var originMinX = 0, originMaxX = 10;
+  var originMinY = 0, originMaxY = 0;
+  var glyphOriginSpanX = originMaxX - originMinX;
+  var glyphOriginSpanY = originMaxY - originMinY;
+  var groups = global.fushiLookupBindGroups;
+  var best = void;
+  for(var gi = 0; gi < groups.count; gi++)
+  {
+    var g = groups[gi];
+    var spanErrX = Math.abs((g.maxOx - g.minOx) - glyphOriginSpanX);
+    var spanErrY = Math.abs((g.maxOy - g.minOy) - glyphOriginSpanY);
+    var toleranceX = 12, toleranceY = 2;
+    if(spanErrX > toleranceX || spanErrY > toleranceY) continue;
+    if(!global.fushiLookupVisible(g.host)) continue;
+    best = g;
+  }
+  if(best !== void)
+  {
+    var anchorMsg = global.kag.current;
+    var anchorPage = 1;
+    var anchorIndex = 0;
+    candidateLayer = (anchorMsg !== void && isvalid anchorMsg)
+      ? anchorMsg : best.host;
+    candidateVisibleHost = best.host;
+    candidateAnchorPage = anchorPage;
+    candidateAnchorIndex = anchorIndex;
+    candidateReady = true;
+  }
+  if(slotAdoption === void && candidateAnchorPage != 0 &&
+    candidateAnchorIndex >= 0)
+  {
+    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+      expectedLease, expectedRenderEpoch)) return;
+    slotAdoption = global.fushiLookupAdoptSlot(entry, line,
+      candidateAnchorPage, candidateAnchorIndex, candidateCurrentIdentity,
+      capturePhase);
+    if(slotAdoption.stale) return;
+    logicalSlot = slotAdoption.slot;
+    entrySameLogical = slotAdoption.same;
+  }
+  if(slotAdoption === void)
+  {
+    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+      expectedLease, expectedRenderEpoch)) return;
+    entrySameLogical = entry.logicalLine == line;
+    if(!entrySameLogical)
+    {
+      if(entry.slotPage != 0 && entry.slotIndex >= 0)
+      {
+        var owned = global.fushiLookupFindSlot(
+          entry.slotPage, entry.slotIndex);
+        if(owned !== void && owned.activeEntry === entry)
+        {
+          owned.activeEntry = void;
+          owned.activeStrength = 0;
+        }
+      }
+      entry.glyphs = [];
+    global.fushiLookupClearEntryBinding(entry);
+    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+      expectedLease, expectedRenderEpoch)) return;
+    entry.logicalLine = line;
+      entry.slotGeneration++;
+    }
+  }
+  candidateStrength = (candidateCurrentIdentity !== void) ? 2 :
+    ((anchorKind != 0 && anchorPage != 0 && anchorIndex >= 0) ? 1 : 0);
+  if(candidateReady && entrySameLogical && entry.hasBase &&
+    candidateStrength < entry.bindingStrength) candidateReady = false;
+  if(activeUsable && candidateStrength <= logicalSlot.activeStrength)
+    candidateReady = false;
+  if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+    expectedLease, expectedRenderEpoch)) return;
+  entry.used = ++global.fushiLookupClock;
+  if(candidateReady)
+  {
+    if(logicalSlot !== void)
+      global.fushiLookupRetireAnchorPeers(entry,
+        logicalSlot.page, logicalSlot.index);
+    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+      expectedLease, expectedRenderEpoch)) return;
+    entry.glyphs = glyphs;
+    entry.layer = candidateLayer;
+    entry.visibleHost = candidateVisibleHost;
+    entry.currentIdentity = candidateCurrentIdentity;
+    if(logicalSlot !== void)
+      logicalSlot.activeEntry = entry;
+    if(slotAdoption !== void && slotAdoption.advanced)
+      global.fushiLookupPendingVisualDismiss = true;
+  }
+  else if(entrySameLogical && entry.hasBase)
+  {
+    entry.glyphs = glyphs;
+    entry.line = line;
+  }
+  else
+  {
+    entry.glyphs = [];
+    global.fushiLookupClearEntryBinding(entry);
+    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+      expectedLease, expectedRenderEpoch)) return;
+  }
+};
+
+global.fushiLookupBindOrigin = function(renderer, layer, originX, originY)
+{
+  var groups = global.fushiLookupBindGroups;
+  if(groups.count >= 8)
+  {
+    var victim = 0;
+    var victimClock = groups[0].clock;
+    for(var vi = 0; vi < groups.count; vi++)
+    {
+      var victimHost = groups[vi].host;
+      if(victimHost === void || victimHost === null || !isvalid victimHost)
+      {
+        victim = vi;
+        break;
+      }
+      if(groups[vi].clock < victimClock)
+      {
+        victim = vi;
+        victimClock = groups[vi].clock;
+      }
+    }
+    groups.erase(victim);
+  }
+  var slot = groups[0];
+  var yRewound = originY < slot.lastOy - 2;
+  var returnedTop = originY <= slot.minOy + 2 &&
+    originX < slot.lastOx - 2;
+  var newRun = slot.count > 0 && (yRewound || returnedTop);
+  if(newRun) slot.count = 0;
+};
+
+global.fushiLookupProbe = function(submit)
+{
+  global.fushiLookupFlushVisualWork();
+  var entry = global.fushiLookupRegistry[0];
+  var layer = entry.layer;
+  if(!global.fushiLookupComputeOffset(layer)) return false;
+  var currentIdentityState =
+    global.fushiLookupCurrentIdentityState(entry);
+  var visibleHost = entry.visibleHost;
+  if(currentIdentityState < 0 ||
+    (currentIdentityState == 0 &&
+    (visibleHost === void || visibleHost === null ||
+    !isvalid visibleHost || !global.fushiLookupVisible(visibleHost))))
+    return false;
+  return true;
+};
+
+global.fushiLookupLeftClickHook = function()
+{
+  try
+  {
+    global.fushiLookupAuditWrappers(true);
+    return global.fushiLookupProbe(true);
+  }
+  catch(e) { global.fushiLookupFault(); return false; }
+};
+global.fushiLookupMouseMoveHook = function(x, y)
+{
+  try
+  {
+    global.fushiLookupAuditWrappers(false);
+    global.fushiLookupProbe(false);
+  }
+  catch(e) { global.fushiLookupFault(); }
+  return false;
+};
+
+installStage = 10;
+global.fushiLookupOriginalRender = global.TextRender.render;
+global.TextRender.render = function(a, b, c, d, e, f)
+{
+  var captureLease = 0, captureEpoch = 0;
+  try
+  {
+    var epochEntry = global.fushiLookupEntryFor(this);
+    epochEntry.renderEpoch++;
+    captureLease = epochEntry.rendererLease;
+    captureEpoch = epochEntry.renderEpoch;
+  }
+  catch(e) { global.fushiLookupFault(); }
+  var result = (global.fushiLookupOriginalRender incontextof this)(...);
+  try { global.fushiLookupCapture(this, 1, captureLease, captureEpoch); }
+  catch(e) { global.fushiLookupFault(); }
+  try { global.fushiLookupFlushVisualWork(); }
+  catch(e) { global.fushiLookupFault(); }
+  return result;
+};
+global.fushiLookupInstalledRenderWrapper = global.TextRender.render;
+global.fushiLookupRenderInstallFailed =
+  global.fushiLookupInstalledRenderWrapper === global.fushiLookupOriginalRender;
+installStage = 11;
+installStage = 20;
+global.fushiLookupOriginalDone = global.TextRender.done;
+global.TextRender.done = function()
+{
+  var doneLease = 0, doneEpoch = 0;
+  try
+  {
+    var doneEntry = global.fushiLookupFindEntry(this);
+    if(doneEntry !== void)
+    {
+      doneLease = doneEntry.rendererLease;
+      doneEpoch = doneEntry.renderEpoch;
+    }
+  }
+  catch(e) { global.fushiLookupFault(); }
+  var result = (global.fushiLookupOriginalDone incontextof this)(...);
+  try
+  {
+    if(doneLease > 0)
+      global.fushiLookupCapture(this, 2, doneLease, doneEpoch);
+  }
+  catch(e) { global.fushiLookupFault(); }
+  try { global.fushiLookupFlushVisualWork(); }
+  catch(e) { global.fushiLookupFault(); }
+  return result;
+};
+global.fushiLookupInstalledDoneWrapper = global.TextRender.done;
+global.fushiLookupDoneInstallFailed =
+  global.fushiLookupInstalledDoneWrapper === global.fushiLookupOriginalDone;
+installStage = 21;
+installStage = 30;
+global.fushiLookupOriginalDrawCh = global.TextRender.drawCh;
+global.TextRender.drawCh = function(layer, ox, oy, ch)
+{
+  try { global.fushiLookupBindOrigin(this, layer, ox, oy); }
+  catch(e) { global.fushiLookupFault(); }
+  return (global.fushiLookupOriginalDrawCh incontextof this)(...);
+};
+global.fushiLookupInstalledDrawChWrapper = global.TextRender.drawCh;
+global.fushiLookupDrawChInstallFailed =
+  global.fushiLookupInstalledDrawChWrapper === global.fushiLookupOriginalDrawCh;
+installStage = 31;
+installStage = 40;
+global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
+installStage = 41;
+global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
+installStage = 42;
+global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+installStage = 43;
+global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+installStage = 50;
+System.removeContinuousHandler(global.fushiLookupBootstrap);
+global.fushiLookupBootstrap = void;
+}
+catch(e)
+{
+  try
+  {
+    if(typeof global.fushiLookupNoteError == "Object")
+      global.fushiLookupNoteError("bootstrap.stage",
+        %[message: "stage=" + installStage]);
+  }
+  catch(e2) {}
+  System.removeContinuousHandler(global.fushiLookupBootstrap);
+  global.fushiLookupBootstrap = void;
+}
+};
+)TJS";
+'''
+
+
 # 旧 prototype 的负样本：跨 fore/back 页扫描，只看尺寸，遇到第一个就结束。
 # 这是单独的点名变异，不能只靠“新结构不完整”的附带报错证明守卫有效。
 LEGACY_CROSS_PAGE_ANCHOR_SAMPLE = r'''
@@ -1333,6 +2874,9 @@ class MutationSelfTest(unittest.TestCase):
         self.clean = MaskedSource(CLEAN_SAMPLE)
         self.coordinate_clean = MaskedSource(COORDINATE_CLEAN_SAMPLE)
         self.anchor_clean = MaskedSource(ANCHOR_IDENTITY_CLEAN_SAMPLE)
+        self.entry_lifecycle_clean = MaskedSource(
+            ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE
+        )
 
     def _mutate(self, old: str, new: str) -> MaskedSource:
         self.assertIn(old, CLEAN_SAMPLE, "变异锚点必须真的存在于干净样本里")
@@ -1365,6 +2909,20 @@ class MutationSelfTest(unittest.TestCase):
             dirty,
             ANCHOR_IDENTITY_CLEAN_SAMPLE,
             "锚点身份变异样本必须真的与干净样本不同",
+        )
+        return MaskedSource(dirty)
+
+    def _mutate_entry_lifecycle(self, old: str, new: str) -> MaskedSource:
+        self.assertIn(
+            old,
+            ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE,
+            "entry 生命周期变异锚点必须真的存在于干净样本里",
+        )
+        dirty = ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE.replace(old, new, 1)
+        self.assertNotEqual(
+            dirty,
+            ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE,
+            "entry 生命周期变异样本必须真的与干净样本不同",
         )
         return MaskedSource(dirty)
 
@@ -1407,6 +2965,445 @@ class MutationSelfTest(unittest.TestCase):
             [],
             find_invalid_kag_anchor_identity_selection(self.anchor_clean),
         )
+
+    def test_split_raw_tjs_complete_candidate_sample_is_green(self) -> None:
+        self.assertEqual(
+            2,
+            len(TJS_RAW_RE.findall(ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE)),
+            "clean entry 样本必须跨 raw literal，覆盖生产 bootstrap 的拼接形态",
+        )
+        self.assertEqual(
+            [],
+            find_invalid_lookup_entry_visibility_lifecycle(
+                self.entry_lifecycle_clean
+            ),
+        )
+
+    def test_bootstrap_waits_for_complete_textrender_surface(self) -> None:
+        mutations = (
+            (
+                'typeof global.kag != "Object"',
+                'typeof global.kag == "undefined"',
+            ),
+            ('typeof global.kag.addHook != "Object"', "false"),
+            (
+                'typeof global.TextRender != "Object"',
+                'typeof global.TextRender == "undefined"',
+            ),
+            ('typeof global.TextRender.render != "Object"', "false"),
+            ('typeof global.TextRender.done != "Object"', "false"),
+            ('typeof global.TextRender.drawCh != "Object"', "false"),
+        )
+        for old, new in mutations:
+            with self.subTest(missing=old):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_bootstrap_readiness_precedes_lookup_state_initialization(self) -> None:
+        readiness = (
+            '  if(typeof global.kag != "Object" || global.kag === null ||\n'
+            '    typeof global.kag.addHook != "Object" ||\n'
+            '    typeof global.TextRender != "Object" || '
+            'global.TextRender === null ||\n'
+            '    typeof global.TextRender.render != "Object" ||\n'
+            '    typeof global.TextRender.done != "Object" ||\n'
+            '    typeof global.TextRender.drawCh != "Object") return;\n'
+        )
+        install_start = "var installStage = 0;\ntry\n{\n"
+        state = "global.fushiLookupSlots = [];\n"
+        dirty = self._mutate_entry_lifecycle(
+            readiness + install_start + state,
+            state + readiness + install_start,
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_bootstrap_retires_only_after_all_three_wrappers(self) -> None:
+        staged_success_retire = (
+            "installStage = 50;\n"
+            "System.removeContinuousHandler(global.fushiLookupBootstrap);\n"
+        )
+        retire_before_final_stage = (
+            "System.removeContinuousHandler(global.fushiLookupBootstrap);\n"
+            "installStage = 50;\n"
+        )
+        dirty = self._mutate_entry_lifecycle(
+            staged_success_retire, retire_before_final_stage
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_wrapper_install_readback_and_failure_markers_are_pinned(self) -> None:
+        for marker in (
+            "global.fushiLookupInstalledRenderWrapper = global.TextRender.render;\n",
+            "global.fushiLookupRenderInstallFailed =\n"
+            "  global.fushiLookupInstalledRenderWrapper === "
+            "global.fushiLookupOriginalRender;\n",
+            "global.fushiLookupInstalledDoneWrapper = global.TextRender.done;\n",
+            "global.fushiLookupDoneInstallFailed =\n"
+            "  global.fushiLookupInstalledDoneWrapper === "
+            "global.fushiLookupOriginalDone;\n",
+            "global.fushiLookupInstalledDrawChWrapper = global.TextRender.drawCh;\n",
+            "global.fushiLookupDrawChInstallFailed =\n"
+            "  global.fushiLookupInstalledDrawChWrapper === "
+            "global.fushiLookupOriginalDrawCh;\n",
+        ):
+            with self.subTest(marker=marker.strip()):
+                dirty = self._mutate_entry_lifecycle(marker, "")
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_wrapper_audit_force_bitmask_and_state_change_are_pinned(self) -> None:
+        mutations = (
+            ("function(force)\n", "function()\n"),
+            ("state = state | 64;\n", "state = state | 4;\n"),
+            (
+                "if(state != global.fushiLookupWrapperAuditLastState)\n",
+                "if(true)\n",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_wrapper_audit_call_sites_are_pinned(self) -> None:
+        for old, new in (
+            (
+                "global.fushiLookupAuditWrappers(true);\n",
+                "global.fushiLookupAuditWrappers(false);\n",
+            ),
+            (
+                "global.fushiLookupAuditWrappers(false);\n",
+                "global.fushiLookupAuditWrappers(true);\n",
+            ),
+        ):
+            with self.subTest(old=old.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_wrapper_install_stage_sequence_is_pinned(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "installStage = 31;\n", "installStage = 32;\n"
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_slot_key_requires_page_and_index(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    if(slots[i].page == page && slots[i].index == index) "
+            "return slots[i];\n",
+            "    if(slots[i].index == index) return slots[i];\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_entry_lru_must_protect_active_entries(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "      if(slots[si].activeEntry === candidate) active = true;\n",
+            "      active = false;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_clear_binding_queues_hover_erase_and_unlinks_active(self) -> None:
+        for removed in (
+            "    global.fushiLookupQueueHighlightErase("
+            "global.fushiLookupHighlightRect);\n",
+            "      slots[si].activeEntry = void;\n",
+        ):
+            with self.subTest(removed=removed.strip()):
+                dirty = self._mutate_entry_lifecycle(removed, "")
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_slot_lru_prefers_inactive_slots(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    var oldest = (oldestInactive >= 0) ? "
+            "oldestInactive : oldestActive;\n",
+            "    var oldest = oldestActive;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_adoption_detaches_entry_from_other_slots(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "      other.activeEntry = void;\n",
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_complete_different_line_retires_peers_before_advancing(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    global.fushiLookupRetireAnchorPeers(entry, page, index);\n"
+            "    slot.line = line;\n",
+            "    slot.line = line;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_retired_same_render_done_cannot_revive_slot(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "      entry.renderEpoch <= entry.retiredRenderEpoch)\n"
+            "      return %[slot:slot, stale:true, same:false, advanced:false];\n",
+            "      false)\n"
+            "      return %[slot:slot, stale:true, same:false, advanced:false];\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_candidate_uses_origin_spans_and_visible_host(self) -> None:
+        mutations = (
+            (
+                "    var spanErrX = Math.abs((g.maxOx - g.minOx) - "
+                "glyphOriginSpanX);\n",
+                "    var spanErrX = Math.abs(g.maxOx - glyphOriginSpanX);\n",
+            ),
+            (
+                "    if(!global.fushiLookupVisible(g.host)) continue;\n",
+                "",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_multiline_downward_wrap_does_not_reset_origin_span(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  var yRewound = originY < slot.lastOy - 2;\n",
+            "  var yRewound = originY > slot.lastOy + 2;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_slot_adoption_waits_for_complete_candidate(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    candidateAnchorIndex = anchorIndex;\n"
+            "    candidateReady = true;\n",
+            "    candidateReady = true;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_no_candidate_new_line_never_dismisses(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "      global.fushiLookupClearEntryBinding(entry);\n"
+            "      entry.logicalLine = line;\n",
+            "      global.fushiLookupClearEntryBinding(entry);\n"
+            "      global.fushiLookupDismiss();\n"
+            "      entry.logicalLine = line;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_no_candidate_clears_only_owned_active_slot(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "        if(owned !== void && owned.activeEntry === entry)\n",
+            "        if(owned !== void)\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_capture_never_allocates_an_evicted_renderer_entry(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  var entry = global.fushiLookupFindEntry(renderer);\n",
+            "  var entry = global.fushiLookupEntryFor(renderer);\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_renderer_lease_is_rechecked_after_game_getters(self) -> None:
+        gate = (
+            "  if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,\n"
+            "    expectedLease, expectedRenderEpoch)) return;\n"
+        )
+        dirty = self._mutate_entry_lifecycle(gate, "")
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_all_eight_capture_token_boundaries_are_required(self) -> None:
+        gate = (
+            "  if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,\n"
+            "    expectedLease, expectedRenderEpoch)) return;\n"
+        )
+        self.assertEqual(8, ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE.count(gate))
+        dirty = self._mutate_entry_lifecycle(gate, "")
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_slot_eviction_retires_the_active_render_epoch(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    retired.retiredRenderEpoch = retired.renderEpoch;\n",
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_done_is_find_only_and_uses_a_pre_original_token(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    var doneEntry = global.fushiLookupFindEntry(this);\n",
+            "    var doneEntry = global.fushiLookupEntryFor(this);\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_same_line_without_candidate_preserves_binding(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  else if(entrySameLogical && entry.hasBase)\n"
+            "  {\n"
+            "    entry.glyphs = glyphs;\n",
+            "  else if(entrySameLogical && entry.hasBase)\n"
+            "  {\n"
+            "    global.fushiLookupClearEntryBinding(entry);\n"
+            "    entry.glyphs = glyphs;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_complete_candidate_publishes_active_entry(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "      logicalSlot.activeEntry = entry;\n",
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_same_entry_strength_does_not_regress(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  if(candidateReady && entrySameLogical && entry.hasBase &&\n"
+            "    candidateStrength < entry.bindingStrength) "
+            "candidateReady = false;\n",
+            "",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_stronger_new_renderer_can_replace_weak_active(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  if(activeUsable && candidateStrength <= "
+            "logicalSlot.activeStrength)\n",
+            "  if(activeUsable)\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_probe_requires_current_generation_and_active_entry(self) -> None:
+        gate = (
+            "  if(slot === void || slot.generation != entry.slotGeneration ||\n"
+            "    slot.line != entry.logicalLine || "
+            "slot.activeEntry !== entry) return -1;\n"
+        )
+        replacements = (
+            "  if(slot === void ||\n"
+            "    slot.line != entry.logicalLine || "
+            "slot.activeEntry !== entry) return -1;\n",
+            "  if(slot === void || slot.generation != entry.slotGeneration ||\n"
+            "    slot.line != entry.logicalLine) return -1;\n",
+        )
+        for replacement in replacements:
+            with self.subTest(replacement=replacement.strip()):
+                dirty = self._mutate_entry_lifecycle(gate, replacement)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_same_current_slot_requires_exact_object_identity(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    return resolved.identity === captured ? 1 : -1;\n",
+            "    return 1;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_other_current_slot_falls_back_to_own_visible_host(self) -> None:
+        old = (
+            "  if(resolved.page == entry.slotPage && "
+            "resolved.index == entry.slotIndex)\n"
+            "    return resolved.identity === captured ? 1 : -1;\n"
+            "  return 0;\n"
+        )
+        dirty = self._mutate_entry_lifecycle(
+            old,
+            old.replace("  return 0;\n", "  return -1;\n"),
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_probe_separates_coordinate_layer_from_visible_host(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  var visibleHost = entry.visibleHost;\n",
+            "  var visibleHost = layer;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_render_and_done_wrappers_keep_original_before_capture(self) -> None:
+        for old, new in (
+            (
+                "  var result = (global.fushiLookupOriginalRender "
+                "incontextof this)(...);\n"
+                "  try { global.fushiLookupCapture(this, 1, captureLease, "
+                "captureEpoch); }\n",
+                "  try { global.fushiLookupCapture(this, 1, captureLease, "
+                "captureEpoch); }\n"
+                "  var result = (global.fushiLookupOriginalRender "
+                "incontextof this)(...);\n",
+            ),
+            (
+                "  var result = (global.fushiLookupOriginalDone "
+                "incontextof this)(...);\n"
+                "  try\n  {\n    if(doneLease > 0)\n"
+                "      global.fushiLookupCapture(this, 2, doneLease, doneEpoch);\n"
+                "  }\n",
+                "  try\n  {\n    if(doneLease > 0)\n"
+                "      global.fushiLookupCapture(this, 2, doneLease, doneEpoch);\n"
+                "  }\n"
+                "  var result = (global.fushiLookupOriginalDone "
+                "incontextof this)(...);\n",
+            ),
+        ):
+            with self.subTest(old=old.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
 
     def test_string_variable_interpolated_into_tjs_source_is_red(self) -> None:
         dirty = self._mutate(

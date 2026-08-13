@@ -749,12 +749,9 @@ class FushiLookupCardLayer extends Layer
 	{
 		super.Layer(owner, parent);
 	}
-	// 卡片层就是卡片本身：按 host 给的 cardW×cardH 建、摆在 anchor 上，**不覆盖全屏**，而且
-	// 延迟到真要显示第一帧时才建。命中判定用引擎天然的矩形命中（htRect），不依赖"alpha 为 0
-	// 的像素会把点击透传下去"这条未在本引擎验证过的行为。这条选择是为了把失败面关死：全视口
-	// 层一旦穿透语义不符预期，用户没查词时整个游戏就点不动了——那是把"查词不好使"放大成
-	// "游戏坏了"。现在最坏情况也只是卡片自己那块矩形吃掉点击，而那块本来就该吃掉。
-	// 事件坐标是层内坐标；入队时加回层位置换成视口坐标，减 anchor 由 DLL 做（帧元数据在它手上）。
+	// 命中卡片子层时，KiriKiri 直接把按下/抬起派发给该 Layer，不再经过 primary
+	// 的 KAG leftClick hook。这里是卡片按钮输入的主路；全局 hook 仅负责 primary
+	// 路径上的防穿透兜底。
 	function onMouseDown(x, y, button)
 	{
 		if(button == mbLeft) global.fushiLookupQueueInput(1, x, y, 0);
@@ -763,13 +760,15 @@ class FushiLookupCardLayer extends Layer
 	{
 		if(button == mbLeft) global.fushiLookupQueueInput(2, x, y, 0);
 	}
+	// 卡片层就是卡片本身：按 host 给的 cardW×cardH 建、摆在 anchor 上，**不覆盖全屏**，而且
+	// 延迟到真要显示第一帧时才建。命中判定用引擎天然的矩形命中（htRect），不依赖"alpha 为 0
+	// 的像素会把点击透传下去"这条未在本引擎验证过的行为。这条选择是为了把失败面关死：全视口
+	// 层一旦穿透语义不符预期，用户没查词时整个游戏就点不动了——那是把"查词不好使"放大成
+	// "游戏坏了"。现在最坏情况也只是卡片自己那块矩形吃掉点击，而那块本来就该吃掉。
+	// 事件坐标是层内坐标；入队时加回层位置换成视口坐标，减 anchor 由 DLL 做（帧元数据在它手上）。
 	function onMouseMove(x, y)
 	{
 		global.fushiLookupQueueInput(0, x, y, 0);
-	}
-	function onMouseWheel(shift, delta, x, y)
-	{
-		global.fushiLookupQueueInput(3, x, y, delta);
 	}
 	function onMouseLeave()
 	{
@@ -781,7 +780,18 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 {
 	global.fushiLookupBootstrap = function(tick)
 	{
-		if(typeof global.kag == "undefined" || global.kag === null) return;
+		// kag 会早于 textrender.dll 的 TextRender 类就绪。这里必须把三条实际要覆写的
+		// 方法一起作为 bootstrap 的前置条件；否则早注入时下面的一次性 typeof 分支会
+		// 静默跳过包装器，却仍安装鼠标 hook、移除 continuous handler，之后整局都不会
+		// 再得到逐字符几何（registry 永远为 0，且因为没有异常也不会置 SensorFault）。
+		// 未就绪时只返回并保留 handler，下一帧继续观察真实生命周期，不用 sleep/盲重试。
+		if(typeof global.kag != "Object" || global.kag === null ||
+			typeof global.kag.addHook != "Object" ||
+			typeof global.TextRender != "Object" || global.TextRender === null ||
+			typeof global.TextRender.render != "Object" ||
+			typeof global.TextRender.done != "Object" ||
+			typeof global.TextRender.drawCh != "Object") return;
+		var installStage = 0;
 		try
 		{
 			// 这一批必须最先建立：DLL 每帧都会求值 fushiLookupNotify，晚一步就是每帧一次
@@ -798,9 +808,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupGeometry = 0;
 			// hover 未命中的原因位（TJS 侧 1/2/4/8/16，DLL 映射到 kLookupDiagHover*）。
 			global.fushiLookupMiss = 0;
-			// 一次采集周期内 bindOrigin 真正生效的次数。>1 说明 drawCh 的 ox/oy 是逐字符
-			// 位置而非整行原点（本样本实测就是 >1，见 kLookupDiagOriginPerChar）。
+			// 一次采集周期内 bindOrigin 真正生效的次数。drawCh 会逐字调用，但官方
+			// KAGEX 语义明确 ox/oy 是共享行原点、ch.x/ch.y 才是逐字位置。
 			global.fushiLookupBindTicks = 0;
+			global.fushiLookupBindRevision = 0;
 			// 按**绘制目标层的父层**分组的 drawCh 落点跨度。
 			//
 			// 这是把「采到的一行」和「它画在哪个层」对起来的唯一可靠判据：本引擎里
@@ -821,6 +832,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupCoordTrace = "";
 			global.fushiLookupCoordTraceSeq = 0;
 			global.fushiLookupCoordTraceBudget = 4;
+			// Capture 已产出字形、却没有发布可命中 entry 时，用这一条 bounded trace
+			// 区分「无 drawCh 分组 / span 不匹配 / 宿主不可见 / 锚点未解析」。只记录
+			// 数量、布尔状态与跨度，不读取或拼接台词/字形内容。
+			global.fushiLookupCaptureTraceBudget = 8;
+			global.fushiLookupCaptureTraceLast = "";
+			// 不读取 renderer/台词/字形，只回答“我们装上的 wrapper 现在是否仍是入口”。
+			// mouseMove 只建立一次启动基线；低频 leftClick 会继续复核，并且仅在状态变化时
+			// 发布。游戏可能在“恢复上次进度”以后才重载系统脚本，一次性检查会漏掉该时序。
+			global.fushiLookupWrapperAuditPending = true;
+			global.fushiLookupWrapperAuditLastState = -1;
 			global.fushiLookupOffsetReachedPrimary = 0;
 			// 光标换算的暂存（避免在 hover 热路径上每条记录都分配一个字典）。
 			global.fushiLookupOffX = 0;
@@ -858,17 +879,63 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupProbeError = "";
 			global.fushiLookupCardPath = "__FUSHI_CARD_PATH__";
 			global.fushiLookupCardSeq = 0;
+			// 制卡截图的临时视觉抑制。它与永久 dismiss 分开：不动 submit/Esc fence，
+			// 下一张完整卡片帧会清除此位并恢复。同一事务的成功 token 由 DLL 回读。
+			global.fushiLookupCaptureSuppressed = false;
+			global.fushiLookupCaptureSuppressSeq = 0;
 			global.fushiLookupRegistry = [];
+			// TJS `new` 会把类成员复制到实例；脚本晚注入时，仅覆写
+			// global.TextRender 不会改变已经存在的 LangRender/TextRender 对象。
+			// 这份有界 sidecar ledger 只持有消息窗口的 renderer，不给游戏对象塞标记。
+			global.fushiLookupInstancePatches = [];
+			global.fushiLookupInstanceSweepActive = false;
+			// 已经暴露给游戏的 method closure 可能脱离 owner 字段继续存活；record
+			// 因而必须比字段 identity 更长寿。实例与 getRender 都只做有界保留，
+			// 安装/回滚失败也不能删除 original。
+			global.fushiLookupInstanceGetRenderPatches = [];
+			global.fushiLookupInstanceGetRenderOwner = void;
+			global.fushiLookupInstanceGetRenderOriginal = void;
+			global.fushiLookupInstanceGetRenderWrapper = void;
+			global.fushiLookupInstanceGetRenderInstalling = false;
+			global.fushiLookupInstanceGetRenderInstallFailed = false;
+			global.fushiLookupInstancePluginSource = 0;
+			global.fushiLookupInstancePluginCount = -1;
+			global.fushiLookupInstancePluginIndex = -1;
+			// 只发布私有消息 renderer 桥的结构计数，不读取对象字符串、台词或字形。
+			// 这用于把「插件根不存在 / renders 形态不符 / renderer 方法面不符 /
+			// wrapper 安装失败」四个静默出口在真机上分开。
+			global.fushiLookupInstanceShapeLast = "";
+			global.fushiLookupInstanceRejectShape = 0;
+			global.fushiLookupInstanceRejectClass = 0;
+			global.fushiLookupInstanceRejectMixed = 0;
+			global.fushiLookupInstanceRejectFull = 0;
+			global.fushiLookupInstanceAlreadyClass = 0;
+			// Registry entry 本身会被 8 槽 LRU 复用。lease 把一次 renderer→entry
+			// 绑定与 entry 对象地址分开；迟到回调即使仍持有旧 entry 引用，也不能在
+			// 复用后改写另一个 renderer 的 slot。
+			global.fushiLookupRendererLease = 0;
+			// KAG message slot 的逻辑台词世代。renderer 会随口型/表情重建，不能
+			// 把它当台词生命周期；(page,index) 才能隔离 ai=0 正文与 ai=1 姓名层。
+			global.fushiLookupSlots = [];
 			global.fushiLookupClock = 0;
 			global.fushiLookupHoverKey = "";
 			global.fushiLookupHitEntry = void;
 			global.fushiLookupHitOffsetX = 0;
 			global.fushiLookupHitOffsetY = 0;
 			global.fushiLookupHighlightRect = void;
+			// Entry/slot retirement runs inside the renderer ledger transaction and
+			// must never call back into a game Layer.  Queue the one visible highlight
+			// rectangle here; a transaction-external leaf flushes it afterwards.
+			global.fushiLookupPendingHighlightEraseRect = void;
+			global.fushiLookupPendingHighlightEraseSeq = 0;
+			global.fushiLookupHighlightFlushActive = false;
+			global.fushiLookupPendingVisualDismiss = false;
+			global.fushiLookupVisualFlushActive = false;
 			global.fushiLookupBoundRenderer = void;
 			global.fushiLookupBoundLayer = void;
 			global.fushiLookupBoundX = 0;
 			global.fushiLookupBoundY = 0;
+			global.fushiLookupRefreshActive = false;
 
 )TJS" LR"TJS(
 
@@ -1034,49 +1101,480 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupNotify++;
 			};
 
+			global.fushiLookupAuditWrappers = function(force)
+			{
+				if(!force && !global.fushiLookupWrapperAuditPending) return;
+				global.fushiLookupWrapperAuditPending = false;
+				var state = 0;
+				try
+				{
+					if(typeof global.TextRender != "Object" || global.TextRender === null)
+						state = state | 1;
+					else
+					{
+						if(typeof global.TextRender.render != "Object") state = state | 2;
+						else if(global.fushiLookupRenderInstallFailed ||
+							global.TextRender.render !== global.fushiLookupInstalledRenderWrapper)
+							state = state | 4;
+						if(typeof global.TextRender.done != "Object") state = state | 8;
+						else if(global.fushiLookupDoneInstallFailed ||
+							global.TextRender.done !== global.fushiLookupInstalledDoneWrapper)
+							state = state | 16;
+						if(typeof global.TextRender.drawCh != "Object") state = state | 32;
+						else if(global.fushiLookupDrawChInstallFailed ||
+							global.TextRender.drawCh !== global.fushiLookupInstalledDrawChWrapper)
+							state = state | 64;
+					}
+					// renderMsgwinPlugin 是 Limelight 私有扩展；不存在时不是通用
+					// Kirikiri 故障。只有实例真的出现后才审计它的 bridge。
+					var plugin = global.fushiLookupResolveMsgwinPlugin();
+					if(plugin !== void)
+					{
+						if(typeof plugin.getRender != "Object") state = state | 512;
+						else if(global.fushiLookupInstanceGetRenderInstallFailed ||
+							plugin !== global.fushiLookupInstanceGetRenderOwner ||
+							plugin.getRender !== global.fushiLookupInstanceGetRenderWrapper)
+							state = state | 1024;
+					}
+					var patches = global.fushiLookupInstancePatches;
+					for(var pi = 0; pi < patches.count && pi < 16; pi++)
+					{
+						var patch = patches[pi];
+						if(patch.state == 1 &&
+							(patch.renderer.render !== patch.renderWrapper ||
+							 patch.renderer.done !== patch.doneWrapper ||
+							 patch.renderer.drawCh !== patch.drawChWrapper))
+						{
+							state = state | 2048;
+							break;
+						}
+					}
+				}
+				catch(e) { state = state | 128; }
+				if(state != global.fushiLookupWrapperAuditLastState)
+				{
+					global.fushiLookupWrapperAuditLastState = state;
+					global.fushiLookupNoteError("wrapper.identity", %[message: "state=" + state]);
+				}
+			};
+
 			// 上限 8 + 淘汰最久未用。TJS 没有弱引用，registry 只增不减就等于把每个用过的
 			// renderer 连同它的整行几何永久钉在游戏进程里（prototype 的真实泄漏源）。
+			global.fushiLookupFindEntry = function(renderer)
+			{
+				var registry = global.fushiLookupRegistry;
+				for(var i = 0; i < registry.count; i++)
+					if(registry[i].renderer === renderer && registry[i].rendererLease > 0)
+						return registry[i];
+				return void;
+			};
+
+)TJS" LR"TJS(
+
 			global.fushiLookupEntryFor = function(renderer)
 			{
 				var registry = global.fushiLookupRegistry;
-				var oldest = 0;
+				var nonActiveInvalid = -1, nonActive = -1;
+				var activeInvalid = -1, activeOldest = -1;
+				var nonActiveInvalidClock = 0, nonActiveClock = 0;
+				var activeInvalidClock = 0, activeOldestClock = 0;
 				for(var i = 0; i < registry.count; i++)
 				{
-					if(registry[i].renderer === renderer) return registry[i];
-					if(registry[i].used < registry[oldest].used) oldest = i;
+					if(registry[i].renderer === renderer && registry[i].rendererLease > 0)
+						return registry[i];
+					var candidate = registry[i];
+					var active = false;
+					var activityClock = candidate.used;
+					var slots = global.fushiLookupSlots;
+					for(var si = 0; si < slots.count; si++)
+					{
+						if(slots[si].activeEntry === candidate)
+						{
+							active = true;
+							if(slots[si].clock > activityClock) activityClock = slots[si].clock;
+							break;
+						}
+					}
+					var validRenderer = false;
+					try
+					{
+						validRenderer = candidate.renderer !== void &&
+							candidate.renderer !== null && isvalid candidate.renderer;
+					}
+					catch(e) { validRenderer = false; }
+					if(!active && !validRenderer &&
+						(nonActiveInvalid < 0 || activityClock < nonActiveInvalidClock))
+					{
+						nonActiveInvalid = i;
+						nonActiveInvalidClock = activityClock;
+					}
+					else if(!active && validRenderer &&
+						(nonActive < 0 || activityClock < nonActiveClock))
+					{
+						nonActive = i;
+						nonActiveClock = activityClock;
+					}
+					else if(active && !validRenderer &&
+						(activeInvalid < 0 || activityClock < activeInvalidClock))
+					{
+						activeInvalid = i;
+						activeInvalidClock = activityClock;
+					}
+					else if(active && validRenderer &&
+						(activeOldest < 0 || activityClock < activeOldestClock))
+					{
+						activeOldest = i;
+						activeOldestClock = activityClock;
+					}
 				}
 				if(registry.count < 8)
 				{
-					var fresh = %[renderer:renderer, glyphs:[], line:"", used:0,
-						minX:0, minY:0, maxX:0, maxY:0, layer:void, originX:0, originY:0,
+					var fresh = %[renderer:renderer,
+						rendererLease:++global.fushiLookupRendererLease,
+						glyphs:[], line:"", used:0,
+						bindAttemptRevision:global.fushiLookupBindRevision,
+						observedPage:0, observedIndex:-1, observedIdentity:void,
+						minX:0, minY:0, maxX:0, maxY:0, layer:void, visibleHost:void,
+						currentIdentity:void, bindingStrength:0,
+						logicalLine:"", slotPage:0, slotIndex:-1, slotGeneration:0,
+						renderEpoch:0, retiredRenderEpoch:0,
+						originX:0, originY:0,
 						baseOx:0, baseOy:0, hasBase:false, imgLeft:0, imgTop:0,
 						passMinOx:0, passMinOy:0, passHas:false, passLayer:void,
 						hostPage:0, anchorPage:0, anchorKind:0, anchorIndex:-1];
 					registry.add(fresh);
 					return fresh;
 				}
-				var reused = registry[oldest];
-				reused.renderer = renderer;
+				// 只要还有 non-active 槽，绝不逐出 slot.activeEntry。有声表情重绘
+				// 会制造大量弱/无 candidate renderer；旧 LRU 只看 entry.used，会把仍由
+				// slot.clock 持续证明在用的 A 逐出。八槽全 active 时才有界退休最旧者。
+				var victim = (nonActiveInvalid >= 0) ? nonActiveInvalid :
+					((nonActive >= 0) ? nonActive :
+					((activeInvalid >= 0) ? activeInvalid : activeOldest));
+				var reused = registry[victim];
+				// 先撤销旧 lease，再清旧 binding；Capture 会在读取 characters 后再次
+				// 校验 lease，因此任何重入/迟到回调都只能失败关闭。
+				reused.rendererLease = 0;
 				reused.glyphs = [];
 				reused.line = "";
 				reused.used = 0;
-				reused.layer = void;
-				reused.originX = 0;
-				reused.originY = 0;
-				reused.baseOx = 0;
-				reused.baseOy = 0;
-				reused.hasBase = false;
-				reused.imgLeft = 0;
-				reused.imgTop = 0;
-				reused.passMinOx = 0;
-				reused.passMinOy = 0;
-				reused.passHas = false;
-				reused.passLayer = void;
-				reused.hostPage = 0;
-				reused.anchorPage = 0;
-				reused.anchorKind = 0;
-				reused.anchorIndex = -1;
+				global.fushiLookupClearEntryBinding(reused);
+				reused.renderer = renderer;
+				reused.logicalLine = "";
+				reused.slotPage = 0;
+				reused.slotIndex = -1;
+				reused.slotGeneration = 0;
+				reused.renderEpoch = 0;
+				reused.retiredRenderEpoch = 0;
+				reused.bindAttemptRevision = global.fushiLookupBindRevision;
+				reused.observedPage = 0;
+				reused.observedIndex = -1;
+				reused.observedIdentity = void;
+				// lease 是整条 reused entry 的发布位，所有字段完整后最后写。
+				reused.rendererLease = ++global.fushiLookupRendererLease;
 				return reused;
+			};
+
+			// Merge an old highlight into one bounded pending rectangle. This helper is
+			// deliberately pure ledger work: no Layer read/write, no isvalid, no update.
+			global.fushiLookupQueueHighlightErase = function(rect)
+			{
+				if(rect === void || rect === null) return;
+				var pending = global.fushiLookupPendingHighlightEraseRect;
+				if(pending === void || pending === null)
+				{
+					global.fushiLookupPendingHighlightEraseRect =
+						%[x:rect.x, y:rect.y, w:rect.w, h:rect.h];
+				}
+				else
+				{
+					var left = pending.x < rect.x ? pending.x : rect.x;
+					var top = pending.y < rect.y ? pending.y : rect.y;
+					var pendingRight = pending.x + pending.w;
+					var rectRight = rect.x + rect.w;
+					var right = pendingRight > rectRight ? pendingRight : rectRight;
+					var pendingBottom = pending.y + pending.h;
+					var rectBottom = rect.y + rect.h;
+					var bottom = pendingBottom > rectBottom ? pendingBottom : rectBottom;
+					global.fushiLookupPendingHighlightEraseRect =
+						%[x:left, y:top, w:right - left, h:bottom - top];
+				}
+				global.fushiLookupPendingHighlightEraseSeq++;
+			};
+
+			// The only Layer-touching half of highlight retirement. A reentrant flush
+			// never recurses; a rectangle queued during fill/update changes seq and is
+			// retained for the next leaf. Failed Layer calls likewise keep the work.
+			global.fushiLookupFlushPendingHighlightErase = function()
+			{
+				if(global.fushiLookupHighlightFlushActive) return false;
+				var pending = global.fushiLookupPendingHighlightEraseRect;
+				if(pending === void || pending === null) return true;
+				var seq = global.fushiLookupPendingHighlightEraseSeq;
+				global.fushiLookupHighlightFlushActive = true;
+				var completed = false;
+				try
+				{
+					var highlight = global.fushiLookupHighlightLayer;
+					if(highlight !== void && highlight !== null && isvalid highlight)
+					{
+						highlight.fillRect(pending.x, pending.y,
+							pending.w, pending.h, 0);
+						highlight.visible = false;
+						highlight.update();
+					}
+					completed = true;
+				}
+				catch(e) { global.fushiLookupFault(); }
+				global.fushiLookupHighlightFlushActive = false;
+				if(completed && global.fushiLookupPendingHighlightEraseSeq == seq)
+					global.fushiLookupPendingHighlightEraseRect = void;
+				return global.fushiLookupPendingHighlightEraseRect === void;
+			};
+
+			// 字形快照与宿主绑定是两笔不同来源的数据。只有“台词已换且当轮
+			// 无法建立新 candidate”时才单独清理它；同一 renderer 的同句重复 Capture
+			// 必须在新 candidate 完整后才替换旧绑定。有声台词会因口型/表情重绘反复
+			// 进入这里，某一轮 drawCh 宿主短暂不可见不能摧毁上一轮仍有效的坐标。
+			global.fushiLookupClearEntryBinding = function(entry)
+			{
+				// active handoff/退休时旧 HitEntry 不能留在 hover fence 里。hover key 只有
+				// line#index；同句 B 接管后若不清，PaintHighlight 会因 key 相同提前返回，
+				// 但 HitEntry 仍指向已经清空的 A。
+				if(global.fushiLookupHitEntry === entry)
+				{
+					global.fushiLookupQueueHighlightErase(
+						global.fushiLookupHighlightRect);
+					global.fushiLookupHitEntry = void;
+					global.fushiLookupHoverKey = "";
+					global.fushiLookupHighlightRect = void;
+					global.fushiLookupHitOffsetX = 0;
+					global.fushiLookupHitOffsetY = 0;
+				}
+				entry.layer = void;
+				entry.visibleHost = void;
+				entry.currentIdentity = void;
+				entry.bindingStrength = 0;
+				entry.originX = 0;
+				entry.originY = 0;
+				entry.baseOx = 0;
+				entry.baseOy = 0;
+				entry.hasBase = false;
+				entry.imgLeft = 0;
+				entry.imgTop = 0;
+				entry.passMinOx = 0;
+				entry.passMinOy = 0;
+				entry.passHas = false;
+				entry.passLayer = void;
+				entry.hostPage = 0;
+				entry.anchorPage = 0;
+				entry.anchorKind = 0;
+				entry.anchorIndex = -1;
+				// activeEntry 是 slot 当前可探测快照，清 binding 时必须同步摘链。
+				var slots = global.fushiLookupSlots;
+				for(var si = 0; si < slots.count; si++)
+				{
+					if(slots[si].activeEntry === entry)
+					{
+						slots[si].activeEntry = void;
+						slots[si].activeStrength = 0;
+					}
+				}
+			};
+
+)TJS" LR"TJS(
+
+			// 同一个 KAG 消息槽可能被多个 TextRender entry 捕获。退休只清「active
+			// glyph/binding」，logicalLine/slotGeneration 保留；否则 A/B renderer 在同句
+			// 交替时，被退休的一方会把自己误判成新台词并 dismiss。
+			global.fushiLookupRetireAnchorPeers = function(entry, anchorPage, anchorIndex)
+			{
+				if(anchorPage == 0 || anchorIndex < 0) return;
+				var registry = global.fushiLookupRegistry;
+				for(var i = 0; i < registry.count; i++)
+				{
+					var peer = registry[i];
+					if(peer === entry) continue;
+					if(peer.slotPage != anchorPage || peer.slotIndex != anchorIndex) continue;
+					peer.glyphs = [];
+					peer.line = "";
+					peer.used = 0;
+					// render 是真实的原函数调用边界；done 不递增。记录退休时已见
+					// render 世代，随后同世代才到的 done 不能把旧台词重新提交。
+					peer.retiredRenderEpoch = peer.renderEpoch;
+					global.fushiLookupClearEntryBinding(peer);
+				}
+			};
+
+			global.fushiLookupFindSlot = function(page, index)
+			{
+				var slots = global.fushiLookupSlots;
+				for(var i = 0; i < slots.count; i++)
+					if(slots[i].page == page && slots[i].index == index) return slots[i];
+				return void;
+			};
+
+			// 只从 kag.current 在 fore/back.messages[] 中的严格对象身份解 slot。
+			// currentNum 会在双缓冲页复用，单独拿它推进世代会误杀另一页。
+			global.fushiLookupResolveCurrentSlot = function()
+			{
+				var current = global.fushiLookupField(global.kag, "current");
+				if(current === void || current === null || !isvalid current) return void;
+				try
+				{
+					var pages = [global.kag.fore.messages, global.kag.back.messages];
+					for(var p = 0; p < pages.count; p++)
+					{
+						var messages = pages[p];
+						for(var i = 0; i < messages.count; i++)
+							if(messages[i] === current)
+								return %[page:p + 1, index:i, identity:current];
+					}
+				}
+				catch(e) {}
+				return void;
+			};
+
+			global.fushiLookupSlotFor = function(page, index, identity)
+			{
+				var found = global.fushiLookupFindSlot(page, index);
+				if(found !== void)
+				{
+					found.clock = ++global.fushiLookupClock;
+					if(identity !== void && identity !== null && isvalid identity)
+						found.currentIdentity = identity;
+					return found;
+				}
+				var slots = global.fushiLookupSlots;
+				if(slots.count >= 8)
+				{
+					var oldestInactive = -1, oldestActive = -1;
+					var inactiveClock = 0, activeClock = 0;
+					for(var i = 0; i < slots.count; i++)
+					{
+						var clock = slots[i].clock;
+						if(slots[i].activeEntry === void || slots[i].activeEntry === null)
+						{
+							if(oldestInactive < 0 || clock < inactiveClock)
+							{
+								oldestInactive = i;
+								inactiveClock = clock;
+							}
+						}
+						else
+						{
+							if(slots[i].activeEntry.used > clock) clock = slots[i].activeEntry.used;
+							if(oldestActive < 0 || clock < activeClock)
+							{
+								oldestActive = i;
+								activeClock = clock;
+							}
+						}
+					}
+					var oldest = (oldestInactive >= 0) ? oldestInactive : oldestActive;
+					var retired = slots[oldest].activeEntry;
+					if(retired !== void && retired !== null)
+					{
+						retired.glyphs = [];
+						retired.line = "";
+						retired.retiredRenderEpoch = retired.renderEpoch;
+						global.fushiLookupClearEntryBinding(retired);
+					}
+					slots.erase(oldest);
+				}
+				var fresh = %[page:page, index:index, line:"", generation:0,
+					currentIdentity:identity, activeEntry:void, activeStrength:0,
+					clock:++global.fushiLookupClock];
+				slots.add(fresh);
+				return fresh;
+			};
+
+			// 把一次已由 candidate anchorPage/index 证明的非空 Capture 纳入
+			// slot 世代。只有完整 candidate 才能进入这里；无 candidate 的表情/口型
+			// 重绘不会改变 slot，也不会摧毁上一轮仍可用的同句绑定。
+			global.fushiLookupAdoptSlot = function(entry, line, page, index, identity,
+				capturePhase)
+			{
+				var slot = global.fushiLookupSlotFor(page, index, identity);
+				// 一个 entry 同时只能归属一个 slot。renderer 可在 fore/back 切换时复用；
+				// 迁入目标前从其余 slot 的 active 摘链，防止同一对象形成幽灵 active。
+				var allSlots = global.fushiLookupSlots;
+				for(var si = 0; si < allSlots.count; si++)
+				{
+					var other = allSlots[si];
+					if(other === slot) continue;
+					if(other.activeEntry === entry)
+					{
+						other.activeEntry = void;
+						other.activeStrength = 0;
+					}
+				}
+				var advanced = false;
+				if(slot.line == "")
+				{
+					slot.line = line;
+					slot.generation++;
+				}
+				else if(slot.line != line)
+				{
+					// 同一个 KAG MessageLayer 会被下一句复用，现有接口没有消息内容
+					// generation，无法把“屏上真的 A→B→A”与“A 的迟到回调”严格区分。
+					// 这里以完整、可见、已投影到同一 page/index 的 candidate 作为唯一
+					// 提交边界；无 candidate 的 Capture 绝不推进。这样不会把旧字形留作
+					// 当前命中，也不依赖 render 次数/文本 tombstone 猜世代。
+					// entry 曾属于此 slot、且仍报告退休前的同一句时，只允许新的
+					// TextRender.render 世代重新取得提交权。done 只是同一 render 的
+					// 尾声，不能把已退休的 A 倒回当前 B。真正再次绘制 A 会先递增
+					// renderEpoch，因此合法 A→B→A 不依赖永久文本 tombstone。
+					// fresh renderer 的字符数组可能到 done 才完整，所以合法 B 的 done
+					// 仍可提交；只有已经从这个 slot 退休的旧 entry 才受下面 epoch 门。
+					if(entry.slotPage == page && entry.slotIndex == index &&
+						entry.slotGeneration < slot.generation &&
+						entry.logicalLine == line &&
+						entry.renderEpoch <= entry.retiredRenderEpoch)
+						return %[slot:slot, stale:true, same:false, advanced:false];
+					global.fushiLookupRetireAnchorPeers(entry, page, index);
+					slot.line = line;
+					slot.generation++;
+					slot.activeEntry = void;
+					slot.activeStrength = 0;
+					advanced = true;
+				}
+				var same = entry.logicalLine == line && entry.slotPage == page &&
+					entry.slotIndex == index && entry.slotGeneration == slot.generation;
+				entry.logicalLine = line;
+				entry.slotPage = page;
+				entry.slotIndex = index;
+				entry.slotGeneration = slot.generation;
+				return %[slot:slot, same:same, advanced:advanced];
+			};
+
+)TJS" LR"TJS(
+
+			// 返回 1=仍是捕获时那一个 kag.current，-1=已有另一个 current（记录已过期），
+			// 0=捕获时无法建立稳定身份。只有 1 可以绕过 drawCh 短命宿主的 visible 状态；
+			// 0 仍走 visibleHost 兼容路径，-1 则失败关闭，不能让旧词靠仍可见的宿主复活。
+			global.fushiLookupCurrentIdentityState = function(entry)
+			{
+				if(entry.slotPage != 0 && entry.slotIndex >= 0)
+				{
+					var slot = global.fushiLookupFindSlot(entry.slotPage, entry.slotIndex);
+					if(slot === void || slot.generation != entry.slotGeneration ||
+						slot.line != entry.logicalLine || slot.activeEntry !== entry) return -1;
+				}
+				if(entry.anchorKind == 0) return 0;
+				var captured = entry.currentIdentity;
+				if(captured === void || captured === null) return 0;
+				if(!isvalid captured) return -1;
+				var resolved = global.fushiLookupResolveCurrentSlot();
+				// 既有强身份时，getter 短暂不可得必须拒绝，不能降级回
+				// visibleHost；否则旧 MessageLayer 复用时会短暂复活旧词。
+				if(resolved === void) return -1;
+				if(resolved.page == entry.slotPage && resolved.index == entry.slotIndex)
+					return resolved.identity === captured ? 1 : -1;
+				// 另一个共存 slot（典型是 ai=1 姓名层 vs ai=0 正文）成为
+				// global current 不能判本 entry 过期；这时回退检查它自己的 visibleHost。
+				return 0;
 			};
 
 			global.fushiLookupVisible = function(layer)
@@ -1088,6 +1586,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					current = current.parent;
 				}
 				return true;
+			};
+
+			global.fushiLookupEntryVisible = function(entry)
+			{
+				try
+				{
+					var layer = entry.layer;
+					if(layer !== void && layer !== null && isvalid layer &&
+						global.fushiLookupVisible(layer)) return true;
+					var host = entry.visibleHost;
+					return host !== void && host !== null && isvalid host &&
+						global.fushiLookupVisible(host);
+				}
+				catch(e) { return false; }
 			};
 
 			// 高亮层同样延迟到第一次真要高亮时才建。它是全视口的，但 hitThreshold=256 是
@@ -1136,6 +1648,27 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// mousemove 都对一个 primaryLayer 尺寸的层做全屏 fillRect，那是按秒计的主线程开销。
 			global.fushiLookupPaintHighlight = function(entry, offsetX, offsetY, start, length)
 			{
+				// Never paint over pixels whose logical owner was just retired. If the
+				// transaction-external erase cannot finish, clear the hover de-dup key so
+				// the same glyph retries on the next input instead of becoming permanent.
+				if(!global.fushiLookupFlushPendingHighlightErase())
+				{
+					global.fushiLookupHoverKey = "";
+					return;
+				}
+				// WGC 抓的是整个游戏 HWND；截图屏障生效期间，即使鼠标移动/新 submit 又走到
+				// 高亮热路径，也不能把游戏内 Layer 画回截图。保留 hover 身份，恢复 full frame
+				// 时仍可按当前 entry 重画。
+				if(global.fushiLookupCaptureSuppressed)
+				{
+					var suppressedLayer = global.fushiLookupHighlightLayer;
+					if(suppressedLayer !== void && isvalid suppressedLayer)
+					{
+						suppressedLayer.visible = false;
+						suppressedLayer.update();
+					}
+					return;
+				}
 				var layer = global.fushiLookupEnsureHighlight();
 				if(layer === void || !isvalid layer) return;
 				var previous = global.fushiLookupHighlightRect;
@@ -1180,25 +1713,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 			global.fushiLookupClearHover = function()
 			{
-				if(global.fushiLookupHoverKey == "") return;
+				if(global.fushiLookupHoverKey == "" &&
+					global.fushiLookupHighlightRect === void) return;
+				global.fushiLookupQueueHighlightErase(global.fushiLookupHighlightRect);
 				global.fushiLookupHoverKey = "";
 				global.fushiLookupHitEntry = void;
-				var layer = global.fushiLookupHighlightLayer;
-				var previous = global.fushiLookupHighlightRect;
-				if(layer !== void && isvalid layer && previous !== void)
-				{
-					layer.fillRect(previous.x, previous.y, previous.w, previous.h, 0);
-					layer.visible = false;
-					layer.update();
-				}
 				global.fushiLookupHighlightRect = void;
 			};
 
 			// 收起 = 层不可见。不可见层在引擎里既不绘制也不参与命中，这是引擎最基本的语义，
 			// 不像 alpha 穿透那样需要额外验证。层留着复用（下一次查词多半尺寸相近），只是
 			// 绝不会停在"可见且可命中"的状态上。
-			global.fushiLookupDismiss = function()
+			global.fushiLookupDismissNow = function()
 			{
+				// generic dismiss 是永久收卡；它必须退出临时截图状态。否则下一次普通 hover
+				// 会被上一笔已经结束的制卡永久压住。
+				global.fushiLookupCaptureSuppressed = false;
+				global.fushiLookupCaptureSuppressSeq = 0;
 				try
 				{
 					var card = global.fushiLookupCard;
@@ -1211,6 +1742,66 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e) {}
 				global.fushiLookupCardSeq = 0;
 				global.fushiLookupClearHover();
+			};
+
+			// Visual work is committed only after the registry/slot transaction has
+			// returned. Clear the flag before touching a Layer so reentrant rendering
+			// can queue another leaf without recursion or losing that later request.
+			global.fushiLookupFlushVisualWork = function()
+			{
+				if(global.fushiLookupVisualFlushActive) return false;
+				global.fushiLookupVisualFlushActive = true;
+				var dismiss = global.fushiLookupPendingVisualDismiss;
+				global.fushiLookupPendingVisualDismiss = false;
+				try
+				{
+					if(dismiss) global.fushiLookupDismissNow();
+					global.fushiLookupFlushPendingHighlightErase();
+				}
+				catch(e) { global.fushiLookupFault(); }
+				global.fushiLookupVisualFlushActive = false;
+				return !global.fushiLookupPendingVisualDismiss &&
+					global.fushiLookupPendingHighlightEraseRect === void;
+			};
+
+			global.fushiLookupDismiss = function()
+			{
+				global.fushiLookupPendingVisualDismiss = true;
+				return global.fushiLookupFlushVisualWork();
+			};
+
+)TJS" LR"TJS(
+
+			// 临时隐藏仅服务于游戏窗口截图：保留 card seq、hover identity 与 submit fence，
+			// 只让两个游戏内 Layer 不参与合成。success token 必须最后写；DLL 只有读到精确
+			// seq 才会在下一次 continuous callback 向 host 确认。
+			global.fushiLookupSuppressForCapture = function(seq)
+			{
+				global.fushiLookupCaptureSuppressSeq = 0;
+				global.fushiLookupCaptureSuppressed = true;
+				try
+				{
+					var card = global.fushiLookupCard;
+					if(card !== void && isvalid card)
+					{
+						card.visible = false;
+						card.update();
+					}
+					var highlight = global.fushiLookupHighlightLayer;
+					if(highlight !== void && isvalid highlight)
+					{
+						highlight.visible = false;
+						highlight.update();
+					}
+					global.fushiLookupCaptureSuppressSeq = seq;
+				}
+				catch(e)
+				{
+					// 保持 suppressed=true 以失败关闭；没有 success token，host 会有界失败，
+					// 而不会把一张可能仍含 popup 的截图静默写进卡片。
+					global.fushiLookupNoteError("captureSuppress", e);
+					global.fushiLookupFault();
+				}
 			};
 
 			// 只给人工 Esc 使用；generic dismiss 还承担 host 收卡/禁用/失败回滚，不能让
@@ -1258,7 +1849,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 🔴 必须挂在 **primary 之下**，不是它的兄弟。
 						//
 						// 两个后果都实测到了：① 兄弟层不在 KAG 的输入分发树里，卡片收
-						// 不到任何鼠标事件（input_count 恒 0 → 卡片内点击/滚轮/嵌套查词
+						// 不到按下/抬起/移动事件（input_count 恒 0 → 卡片内点击/嵌套查词
 						// 全部失效，而属性自检显示 hitType=htRect 明明设上了）；
 						// ② anchor 是 primary 坐标系的量，挂在祖父层下连 setPos 都在另一
 						// 个坐标系里。高亮层此前踩的是同一个坑（缩放后偏移）。
@@ -1334,6 +1925,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					if(card === void || !isvalid card) return;
 					if(card.imageWidth != cardW || card.imageHeight != cardH ||
 						card.left != anchorX || card.top != anchorY) return;
+					// 完整结构帧就是截图后的恢复提交；先解除抑制，再显示卡片并重画高亮。
+					global.fushiLookupCaptureSuppressed = false;
+					global.fushiLookupCaptureSuppressSeq = 0;
 					card.visible = true;
 					card.update();
 					var entry = global.fushiLookupHitEntry;
@@ -1345,6 +1939,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.fushiLookupCardSeq = seq;
 				}
 				catch(e) {}
+				global.fushiLookupFlushVisualWork();
 			};
 
 			// 兼容旧 host 的无像素高亮帧。绝不 prepare、改尺寸、改位置或把隐藏的卡重新
@@ -1362,6 +1957,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							global.fushiLookupHitOffsetY, highlightStart, highlightLen);
 				}
 				catch(e) {}
+				global.fushiLookupFlushVisualWork();
 			};
 
 			// 备路：主路（mainImageBufferForWrite）查询或求值失败时，host 把 cardW×cardH 的
@@ -1386,6 +1982,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				global.fushiLookupApply(seq, highlightStart, highlightLen, anchorX, anchorY,
 					cardW, cardH);
+				global.fushiLookupFlushVisualWork();
 			};
 
 			// 输入转发。层事件给的是层内坐标；这里加回层位置换成视口坐标入队，减 anchor 仍由
@@ -1431,15 +2028,43 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// TextRender.render / done → renderer.getCharacters(0,0) 是本样本唯一命中的捕获
 			// 边界（其余四条路径已被运行日志证伪）。只留自己的几何快照，绝不长期持有引擎
 			// 返回的 characters 数组。
-			global.fushiLookupCapture = function(renderer)
+			global.fushiLookupCapture = function(renderer, capturePhase,
+				expectedLease, expectedRenderEpoch, expectedBindRevision)
 			{
+				var entry = void;
+				var slotAdoption = void;
+				var logicalSlot = void;
+				var entrySameLogical = false;
 				try
 				{
-					if(typeof renderer.getCharacters != "Object") return;
-					var characters = (renderer.getCharacters incontextof renderer)(0, 0);
-					if(characters === void || typeof characters.count == "undefined") return;
+					// Capture 绝不创建/复用 registry entry。render wrapper 已经为这次
+					// 原函数调用固定 lease+epoch；done 只允许复用仍驻留的精确 renderer。
+					// 被 LRU 淘汰的 renderer 因而天然形成 tombstone，不需要永久保存文本。
+					entry = global.fushiLookupFindEntry(renderer);
+					if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+						expectedLease, expectedRenderEpoch)) return;
+					var bindAttemptFloor = entry.bindAttemptRevision;
+					var bindRevision = (typeof expectedBindRevision == "Integer") ?
+						expectedBindRevision : global.fushiLookupBindRevision;
+					if(renderer === void || renderer === null || !isvalid renderer ||
+						typeof renderer.getCharacters != "Object") return;
+					// getCharacters 可能是带私有 ObjThis 的 closure。再次 incontextof 到
+					// 外层 MsgwinRender 会破坏该上下文，并在真机触发 void -> Object。
+					var getCharacters = renderer.getCharacters;
+					var characters = getCharacters(0, 0);
+					if(characters === void || characters === null ||
+						typeof characters != "Object" || !isvalid characters ||
+						typeof characters.count != "Integer") return;
+					// getCharacters 是游戏代码，允许重入。它返回后必须重新确认这仍是
+					// 同一次 renderer lease/render epoch，才能触碰 entry 或 slot。
+					if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+						expectedLease, expectedRenderEpoch)) return;
 					var glyphs = [], line = "";
 					var minX = 0, minY = 0, maxX = 0, maxY = 0;
+					// Candidate pairing compares drawCh origins with glyph origins.  Width/height
+					// belong to the hit box, not to the translation-invariant origin span.
+					var originMinX = 0, originMinY = 0, originMaxX = 0, originMaxY = 0;
+					var maxGlyphW = 0;
 					for(var i = 0; i < characters.count; i++)
 					{
 						var character = characters[i];
@@ -1458,6 +2083,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						if(glyphs.count == 0)
 						{
 							minX = x; minY = y; maxX = x + w; maxY = y + h;
+							originMinX = x; originMaxX = x;
+							originMinY = y; originMaxY = y;
 						}
 						else
 						{
@@ -1465,7 +2092,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							if(y < minY) minY = y;
 							if(x + w > maxX) maxX = x + w;
 							if(y + h > maxY) maxY = y + h;
+							if(x < originMinX) originMinX = x;
+							if(x > originMaxX) originMaxX = x;
+							if(y < originMinY) originMinY = y;
+							if(y > originMaxY) originMaxY = y;
 						}
+						if(w > maxGlyphW) maxGlyphW = w;
 						glyphs.add(%[ch:text, x:x, y:y, w:w, h:h]);
 						line += text;
 					}
@@ -1477,19 +2109,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						global.fushiLookupGeometry = 1;
 						global.fushiLookupNotify++;
 					}
-					// 这一趟渲染里 bindOrigin 生效了不止一次 = drawCh 的 ox/oy 是逐字符
-					// 位置，我们却把它当整行原点用，整行换算会被最后一个字的位移带跑。
-					if(global.fushiLookupBindTicks > 1) global.fushiLookupMark(8);
+					// 这一趟渲染里 bindOrigin 生效了不止一次 = drawCh 确实逐字调用。
+					// ox/oy 本身是整行共享原点；逐字位置来自 ch.x/ch.y，并已在 BindOrigin
+					// 合成为实际 drawX/drawY 后再累计。
 					global.fushiLookupBindTicks = 0;
-					var entry = global.fushiLookupEntryFor(renderer);
-					var changed = entry.line != line;
-					entry.glyphs = glyphs;
-					entry.line = line;
-					entry.minX = minX;
-					entry.minY = minY;
-					entry.maxX = maxX;
-					entry.maxY = maxY;
-					entry.used = ++global.fushiLookupClock;
+					var resolvedCurrent = global.fushiLookupResolveCurrentSlot();
+					if(capturePhase != 3 && resolvedCurrent !== void)
+					{
+						if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+							expectedLease, expectedRenderEpoch)) return;
+						entry.observedPage = resolvedCurrent.page;
+						entry.observedIndex = resolvedCurrent.index;
+						entry.observedIdentity = resolvedCurrent.identity;
+					}
+					// resolvedCurrent 只是后面 candidate 的身份证据，不在这里采纳 slot。
+					// canonical slot 必须先由 best.host 投影出 anchorPage/index，否则
+					// global current 会把交错的姓名/正文 renderer 退休到错页。
 					// 解出「渲染器局部坐标 → 图层坐标」的平移量。
 					//
 					// 两边都是同一批字符、同一个纯平移，所以最小值必然落在同一个字上：
@@ -1508,21 +2143,78 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// 用**跨度**把这一行与它的宿主层配对：同一行的 drawCh 落点与字形坐标
 					// 只差一个常数平移，所以 (maxOx-minOx) 必然等于 (maxX-minX)。身份和
 					// 时序在本引擎都不可靠，几何是唯一站得住的判据。
-					var spanX = maxX - minX;
-					var spanY = maxY - minY;
 					var best = void;
 					var bestErr = 0;
+					// candidate 先全部解到局部变量，下面不读/写 entry 的绑定。
+					// 这使宿主、KAG 页或 image 属性在表情切换中抛异常时，同句的旧
+					// binding 仍是一条完整快照，而不是被拆成一半。
+					var candidateReady = false;
+					var candidateStrength = 0;
+					var candidateLayer = void;
+					var candidateVisibleHost = void;
+					var candidateCurrentIdentity = void;
+					var candidateHostPage = 0;
+					var candidateAnchorPage = 0;
+					var candidateAnchorKind = 0;
+					var candidateAnchorIndex = -1;
+					var candidateBaseOx = 0;
+					var candidateBaseOy = 0;
+					var candidateOriginX = 0;
+					var candidateOriginY = 0;
+					var candidateImgLeft = 0;
+					var candidateImgTop = 0;
+					var glyphOriginSpanX = originMaxX - originMinX;
+					var glyphOriginSpanY = originMaxY - originMinY;
+
+)TJS" LR"TJS(
+
 					var groups = global.fushiLookupBindGroups;
+					var spanMatchCount = 0;
+					var visibleMatchCount = 0;
 					for(var gi = 0; gi < groups.count; gi++)
 					{
 						var g = groups[gi];
+						if(capturePhase == 3 &&
+							(g.revision <= bindAttemptFloor || g.revision > bindRevision))
+							continue;
 						if(g.host === void || g.host === null || !isvalid g.host) continue;
-						// 判据是**可见性 + 新近度**，不是字数：采集发生在本行 drawCh 之前，
-						// 分组里存的永远是上一行的字数，拿它比对必然差一行。而 KAG 双缓冲
-						// 页里同一时刻只有一页可见（表/裏），可见的那页就是屏上这行的宿主。
-						if(!global.fushiLookupVisible(g.host)) continue;
-						var err = -g.clock;
-						if(best === void || err < bestErr) { best = g; bestErr = err; }
+						if(g.count <= 0) continue;
+						if(!global.fushiLookupBindGroupAnchorValid(g)) continue;
+						// A refresh may be woken by any renderer's drawCh.  Once an entry has a
+						// proven slot, or render/done observed one, never let a similarly sized
+						// name/body group migrate it to another KAG message slot.
+						var expectedPage = (entry.slotPage != 0) ? entry.slotPage :
+							entry.observedPage;
+						var expectedIndex = (entry.slotPage != 0) ? entry.slotIndex :
+							entry.observedIndex;
+						if(capturePhase == 3 && (expectedPage == 0 || expectedIndex < 0 ||
+							g.anchorPage != expectedPage || g.anchorIndex != expectedIndex))
+							continue;
+						// Both sets are origins in their respective coordinate spaces, so a pure
+						// translation preserves their spans.  BindGroup extrema are reset per draw
+						// run below; historical lines therefore cannot make this comparison pass.
+						// One glyph has span zero and pairs with a one-glyph draw run.  The X
+						// tolerance admits at most one not-yet-complete typewriter advance; larger
+						// differences (such as name vs dialogue) fail closed and keep the old bind.
+						var spanErrX = Math.abs((g.maxOx - g.minOx) - glyphOriginSpanX);
+						var spanErrY = Math.abs((g.maxOy - g.minOy) - glyphOriginSpanY);
+						var toleranceX = maxGlyphW + 2;
+						if(toleranceX < 2) toleranceX = 2;
+						var toleranceY = 2;
+						if(spanErrX > toleranceX || spanErrY > toleranceY) continue;
+						spanMatchCount++;
+						// drawCh 的逐字淡入宿主会在角色口型/表情切换时转为 hidden，即使最终
+						// KAG message 仍在屏上。可见性必须由冻结的 current identity / message
+						// anchor 证明；短命 host 只保留为页交换兼容回退。
+						if(!global.fushiLookupBindGroupVisible(g)) continue;
+						visibleMatchCount++;
+						var err = spanErrX + spanErrY;
+						if(best === void || err < bestErr ||
+							(err == bestErr && g.clock > best.clock))
+						{
+							best = g;
+							bestErr = err;
+						}
 					}
 					// 容差按字宽给：半个字以内算同一行，超出就宁可不认——错认比不认更糟，
 					// 卡片会稳定地弹在另一行上。
@@ -1543,115 +2235,405 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 后 currentPage 会变，但 fore/back.messages[currentNum] 仍是同一逻辑消息
 						// 层。先按绘制宿主页投影 currentNum；旧/定制 KAG 若不暴露 currentNum，
 						// 再从 current 的对象身份找数组下标并投影到宿主页。绝不跨页按尺寸首取。
-						var anchorMsg = void;
-						var anchorPage = 0;
-						var anchorKind = 0;
-						var anchorIndex = -1;
-						var hostPage = global.fushiLookupPageOf(best.host);
-						var hostMessages = void;
-						try
-						{
-							hostMessages = (hostPage == 1) ? global.kag.fore.messages :
-								((hostPage == 2) ? global.kag.back.messages : void);
-						}
-						catch(e) { hostMessages = void; }
-						var currentNum = global.fushiLookupField(global.kag, "currentNum");
-						if(hostMessages !== void && typeof currentNum == "Integer" &&
-							currentNum >= 0 && currentNum < hostMessages.count)
-						{
-							try
-							{
-								var indexedMsg = hostMessages[currentNum];
-								if(indexedMsg !== void && indexedMsg !== null && isvalid indexedMsg)
-								{
-									anchorMsg = indexedMsg;
-									anchorKind = 1;
-									anchorIndex = currentNum;
-								}
-							}
-							catch(e) {}
-						}
-						var currentMsg = global.fushiLookupField(global.kag, "current");
-						if(anchorMsg === void && hostMessages !== void && currentMsg !== void &&
-							currentMsg !== null && isvalid currentMsg)
-						{
-							var identityIndex = -1;
-							try
-							{
-								var identityPages = [global.kag.fore.messages,
-									global.kag.back.messages];
-								for(var pgi = 0; pgi < identityPages.count && identityIndex < 0; pgi++)
-								{
-									var identityMessages = identityPages[pgi];
-									for(var mj = 0; mj < identityMessages.count; mj++)
-									{
-										if(identityMessages[mj] === currentMsg)
-										{
-											identityIndex = mj;
-											break;
-										}
-									}
-								}
-								if(identityIndex >= 0 && identityIndex < hostMessages.count)
-								{
-									var identityMsg = hostMessages[identityIndex];
-									if(identityMsg !== void && identityMsg !== null && isvalid identityMsg)
-									{
-										anchorMsg = identityMsg;
-										anchorKind = 2;
-										anchorIndex = identityIndex;
-									}
-								}
-							}
-							catch(e) {}
-						}
-						if(anchorMsg !== void && isvalid anchorMsg)
-							anchorPage = global.fushiLookupPageOf(anchorMsg);
-						entry.layer = (anchorMsg !== void && isvalid anchorMsg)
+						var anchorMsg = best.anchorIdentity;
+						var anchorPage = best.anchorPage;
+						var anchorKind = (best.anchorStrength >= 2) ? 2 : 1;
+						var anchorIndex = best.anchorIndex;
+						var hostPage = best.hostPage;
+						var identityEvidence = resolvedCurrent;
+						if(identityEvidence === void)
+							identityEvidence = global.fushiLookupResolveCurrentSlot();
+						var currentMsg = (identityEvidence === void) ? void :
+							identityEvidence.identity;
+						var identityIndex = (identityEvidence === void) ? -1 :
+							identityEvidence.index;
+						var identityPage = (identityEvidence === void) ? 0 :
+							identityEvidence.page;
+						// 只有 current 自身确实位于 candidate 的同一页/同一下标，才保存可绕过
+						// visibleHost 的稳定身份。currentNum 单独相等不够，页交换时会复用下标。
+						if(anchorKind != 0 && anchorPage != 0 && anchorIndex >= 0 &&
+							currentMsg !== void && currentMsg !== null && isvalid currentMsg &&
+							identityPage == anchorPage && identityIndex == anchorIndex &&
+							currentMsg === anchorMsg)
+							candidateCurrentIdentity = currentMsg;
+						candidateStrength = (candidateCurrentIdentity !== void) ? 2 :
+							((anchorKind != 0 && anchorPage != 0 && anchorIndex >= 0) ? 1 : 0);
+						// 坐标使用冻结的 KAG message；可见性在 Capture/Probe 都接受稳定
+						// message 或短命 draw host 任一路，兼容口型 hidden 与页交换两种时序。
+						candidateLayer = (anchorMsg !== void && isvalid anchorMsg)
 							? anchorMsg : best.host;
-						entry.hostPage = hostPage;
-						entry.anchorPage = anchorPage;
-						entry.anchorKind = anchorKind;
-						entry.anchorIndex = anchorIndex;
-						entry.baseOx = best.minOx;
-						entry.baseOy = best.minOy;
-						entry.hasBase = true;
-						entry.originX = entry.baseOx - minX;
-						entry.originY = entry.baseOy - minY;
+						candidateVisibleHost = best.host;
+						candidateHostPage = hostPage;
+						candidateAnchorPage = anchorPage;
+						candidateAnchorKind = anchorKind;
+						candidateAnchorIndex = anchorIndex;
+						candidateBaseOx = best.minOx;
+						candidateBaseOy = best.minOy;
+						candidateOriginX = candidateBaseOx - minX;
+						candidateOriginY = candidateBaseOy - minY;
 						try
 						{
-							entry.imgLeft = entry.layer.imageLeft;
-							entry.imgTop = entry.layer.imageTop;
+							candidateImgLeft = candidateLayer.imageLeft;
+							candidateImgTop = candidateLayer.imageTop;
 						}
 						catch(e)
 						{
-							entry.imgLeft = 0;
-							entry.imgTop = 0;
+							candidateImgLeft = 0;
+							candidateImgTop = 0;
 						}
-
+						candidateReady = true;
 					}
-					entry.passHas = false;
-					// 台词真的换了才收卡片：同一行重复 render（打字机动画）不该把用户正在读的
-					// 卡片一帧一帧地打掉。
-					if(changed) global.fushiLookupDismiss();
+
+					// 严格 current getter 不可得时，currentNum 投影出的 page/index 仍能
+					// 在 candidate 完整后纳入世代。若连 slot 也无法识别，才退回 renderer
+					// 本地 logicalLine；这个降级不能退休其他 renderer。
+					if(slotAdoption === void && candidateAnchorKind != 0 &&
+						candidateAnchorPage != 0 && candidateAnchorIndex >= 0)
+					{
+						// A phase-3 refresh is globally woken; it may never migrate an already
+						// associated (or render-observed) renderer to the other name/body slot.
+						var fixedPage = (entry.slotPage != 0) ? entry.slotPage :
+							entry.observedPage;
+						var fixedIndex = (entry.slotPage != 0) ? entry.slotIndex :
+							entry.observedIndex;
+						if(capturePhase == 3 && (fixedPage == 0 || fixedIndex < 0 ||
+							candidateAnchorPage != fixedPage ||
+							candidateAnchorIndex != fixedIndex)) candidateReady = false;
+						if(!candidateReady) slotAdoption = void;
+						else
+						{
+						if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+							expectedLease, expectedRenderEpoch)) return;
+						slotAdoption = global.fushiLookupAdoptSlot(entry, line,
+							candidateAnchorPage, candidateAnchorIndex,
+							candidateCurrentIdentity, capturePhase);
+						if(slotAdoption.stale) return;
+						logicalSlot = slotAdoption.slot;
+						entrySameLogical = slotAdoption.same;
+						}
+					}
+					if(slotAdoption === void)
+					{
+						if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+							expectedLease, expectedRenderEpoch)) return;
+						entrySameLogical = entry.logicalLine == line;
+						if(!entrySameLogical)
+						{
+							// 同一个已关联 renderer 先报告了异句、但这轮 drawCh candidate
+							// 尚未齐全：冻结它所属 slot 的旧 active，防止 MessageLayer 对象
+							// 复用期间把屏上的新句命中成旧字形。只定向处理已证明归属的
+							// slot；无法归属的姓名/表情临时 renderer 不影响正文。
+							if(entry.slotPage != 0 && entry.slotIndex >= 0)
+							{
+								var owned = global.fushiLookupFindSlot(
+									entry.slotPage, entry.slotIndex);
+								if(owned !== void && owned.activeEntry === entry)
+								{
+									owned.activeEntry = void;
+									owned.activeStrength = 0;
+								}
+							}
+							entry.glyphs = [];
+							entry.line = "";
+							global.fushiLookupClearEntryBinding(entry);
+							if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+								expectedLease, expectedRenderEpoch)) return;
+							entry.logicalLine = line;
+							entry.slotPage = 0;
+							entry.slotIndex = -1;
+							entry.slotGeneration++;
+						}
+					}
+
+					// 已识别 slot 时，candidate 必须回到同一 page/index；其他页的最新
+					// visible host 不是当前台词。同一逻辑世代内强度只能不降：
+					// strict current identity(2) > currentNum slot(1) > host-only(0)。
+					if(candidateReady && logicalSlot !== void &&
+						(candidateAnchorPage != logicalSlot.page ||
+						candidateAnchorIndex != logicalSlot.index)) candidateReady = false;
+					// 同一 active entry 的瞬时弱 candidate 不能把严格 current identity
+					// 降成 currentNum/host-only。口型/表情重绘正会反复经过这里；保留
+					// 强 binding 后，只更新本轮字形即可。
+					if(candidateReady && entrySameLogical && entry.hasBase &&
+						candidateStrength < entry.bindingStrength) candidateReady = false;
+					if(candidateReady && logicalSlot !== void &&
+						logicalSlot.activeEntry !== void &&
+						logicalSlot.activeEntry !== entry &&
+						logicalSlot.line == line)
+					{
+						var activeEntry = logicalSlot.activeEntry;
+						var activeUsable = activeEntry.glyphs.count > 0 && activeEntry.hasBase &&
+							activeEntry.slotGeneration == logicalSlot.generation &&
+							activeEntry.slotPage == logicalSlot.page &&
+							activeEntry.slotIndex == logicalSlot.index;
+						if(activeUsable)
+						{
+							var activeIdentityState = global.fushiLookupCurrentIdentityState(activeEntry);
+							activeUsable = activeIdentityState > 0 ||
+								(activeIdentityState == 0 &&
+								global.fushiLookupEntryVisible(activeEntry));
+						}
+						// 同句完整、几何相容且可见的 candidate 不被历史强度
+						// 永久冻结。旧 active 仍可用时保持它；宿主 hidden/失效后 B
+						// 才原子接管。B 的 strength=1 之后不能绕过 hidden，但不会
+						// 被已死 strength=2 A 锁死。
+						// 更强的 strict-current candidate 可立即接管；同强/更弱的 B
+						// 仅在 A 已不可用时接管。否则一次短命弱宿主会抢走稳定身份，
+						// 但也不能让可见的弱 A 永久挡住表情切换后的唯一强 B。
+						if(activeUsable && candidateStrength <= logicalSlot.activeStrength)
+							candidateReady = false;
+					}
+
+)TJS" LR"TJS(
+
+					if(global.fushiLookupCaptureTraceBudget > 0)
+					{
+						var group0SpanX = -1, group0SpanY = -1, group0Count = -1;
+						var group1SpanX = -1, group1SpanY = -1, group1Count = -1;
+						if(groups.count > 0)
+						{
+							group0SpanX = groups[0].maxOx - groups[0].minOx;
+							group0SpanY = groups[0].maxOy - groups[0].minOy;
+							group0Count = groups[0].count;
+						}
+						if(groups.count > 1)
+						{
+							group1SpanX = groups[1].maxOx - groups[1].minOx;
+							group1SpanY = groups[1].maxOy - groups[1].minOy;
+							group1Count = groups[1].count;
+						}
+						var captureTrace = "ph=" + capturePhase + ",g=" + glyphs.count +
+							",bg=" + groups.count + ",sm=" + spanMatchCount +
+							",vm=" + visibleMatchCount + ",b=" +
+							((best === void) ? 0 : 1) + ",cr=" +
+							(candidateReady ? 1 : 0) + ",ak=" + candidateAnchorKind +
+							",ap=" + candidateAnchorPage + ",ai=" + candidateAnchorIndex +
+							",sa=" + ((slotAdoption === void) ? 0 : 1) + ",ls=" +
+							((logicalSlot === void) ? 0 : 1) + ",same=" +
+							(entrySameLogical ? 1 : 0) + ",base=" +
+							(entry.hasBase ? 1 : 0) + ",sx=" + glyphOriginSpanX +
+							",sy=" + glyphOriginSpanY + ",g0=" + group0SpanX + "/" +
+							group0SpanY + "/" + group0Count + ",g1=" + group1SpanX +
+							"/" + group1SpanY + "/" + group1Count + ",be=" + bestErr;
+						if(captureTrace != global.fushiLookupCaptureTraceLast)
+						{
+							global.fushiLookupCaptureTraceLast = captureTrace;
+							global.fushiLookupCaptureTraceBudget--;
+							global.fushiLookupNoteError("capture.shape", %[message:captureTrace]);
+						}
+					}
+
+)TJS" LR"TJS(
+
+					if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+						expectedLease, expectedRenderEpoch)) return;
+					entry.used = ++global.fushiLookupClock;
+					if(candidateReady)
+					{
+						if(logicalSlot !== void)
+							global.fushiLookupRetireAnchorPeers(entry,
+								logicalSlot.page, logicalSlot.index);
+						if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+							expectedLease, expectedRenderEpoch)) return;
+						entry.glyphs = glyphs;
+						entry.line = line;
+						entry.minX = minX;
+						entry.minY = minY;
+						entry.maxX = maxX;
+						entry.maxY = maxY;
+						entry.layer = candidateLayer;
+						entry.visibleHost = candidateVisibleHost;
+						entry.currentIdentity = candidateCurrentIdentity;
+						entry.bindingStrength = candidateStrength;
+						entry.hostPage = candidateHostPage;
+						entry.anchorPage = candidateAnchorPage;
+						entry.anchorKind = candidateAnchorKind;
+						entry.anchorIndex = candidateAnchorIndex;
+						entry.baseOx = candidateBaseOx;
+						entry.baseOy = candidateBaseOy;
+						entry.hasBase = true;
+						entry.originX = candidateOriginX;
+						entry.originY = candidateOriginY;
+						entry.imgLeft = candidateImgLeft;
+						entry.imgTop = candidateImgTop;
+						entry.passMinOx = 0;
+						entry.passMinOy = 0;
+						entry.passHas = false;
+						entry.passLayer = void;
+						if(logicalSlot !== void)
+						{
+							logicalSlot.activeEntry = entry;
+							logicalSlot.activeStrength = candidateStrength;
+						}
+						// Hide the previous card only after the new slot/entry snapshot is fully
+						// committed. A stale outer Capture must not hide a newer reentrant card.
+						if(slotAdoption !== void && slotAdoption.advanced)
+							global.fushiLookupPendingVisualDismiss = true;
+					}
+					else if(entrySameLogical && entry.hasBase)
+					{
+						// 同句的无 candidate/弱 candidate 只更新字形，旧的强 binding
+						// 与 currentIdentity 原样保留，等 getter/visibleHost 恢复后继续命中。
+						entry.glyphs = glyphs;
+						entry.line = line;
+						entry.minX = minX;
+						entry.minY = minY;
+						entry.maxX = maxX;
+						entry.maxY = maxY;
+					}
+					else
+					{
+						entry.glyphs = [];
+						entry.line = "";
+						if(entry.hasBase) global.fushiLookupClearEntryBinding(entry);
+						if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+							expectedLease, expectedRenderEpoch)) return;
+					}
 				}
-				catch(e) {}
+				catch(e)
+				{
+					// 可识别 slot 的新异句已在 candidate 前推进 generation/退休 peer；
+					// 同句异常则不动 active binding。这里只记错，不再做会倒退状态的回滚。
+					global.fushiLookupNoteError("capture", e);
+					global.fushiLookupFault();
+				}
 			};
 
-			// drawCh 是逐字符调用，先用一组"上次绑定"快照挡住重复调用，别让每个字都去扫 registry。
-			global.fushiLookupBindOrigin = function(renderer, layer, originX, originY)
+			// Capture 中会调用 getCharacters 与多段游戏 getter，它们都可能重入渲染
+			// 并复用 registry entry。每个首次触碰 entry/slot 的发布边界前统一再校验
+			// lease+epoch，避免外层 Capture 在 ABA 后改写新 renderer 的状态。
+			global.fushiLookupCaptureTokenCurrent = function(entry, renderer,
+				expectedLease, expectedRenderEpoch)
 			{
-				if(global.fushiLookupBoundRenderer === renderer &&
-					global.fushiLookupBoundLayer === layer &&
-					global.fushiLookupBoundX == originX &&
-					global.fushiLookupBoundY == originY) return;
+				return entry !== void && expectedLease > 0 &&
+					global.fushiLookupFindEntry(renderer) === entry &&
+					entry.renderer === renderer && entry.rendererLease == expectedLease &&
+					entry.renderEpoch == expectedRenderEpoch &&
+					expectedRenderEpoch > entry.retiredRenderEpoch;
+			};
+
+			global.fushiLookupMessagesForPage = function(page)
+			{
+				try
+				{
+					if(page == 1) return global.kag.fore.messages;
+					if(page == 2) return global.kag.back.messages;
+				}
+				catch(e) {}
+				return void;
+			};
+
+			// Freeze the KAG message slot while drawCh is actually executing.  A later
+			// mouse event must not project an arbitrary historical host through the then
+			// current currentNum; doing so aliases the coexisting name/body renderers.
+			global.fushiLookupStampBindGroup = function(group, host)
+			{
+				group.hostPage = global.fushiLookupPageOf(host);
+				group.anchorPage = 0;
+				group.anchorIndex = -1;
+				group.anchorIdentity = void;
+				group.currentIdentity = void;
+				group.anchorStrength = 0;
+				var messages = global.fushiLookupMessagesForPage(group.hostPage);
+				var currentNum = global.fushiLookupField(global.kag, "currentNum");
+				if(messages !== void && typeof currentNum == "Integer" &&
+					currentNum >= 0 && currentNum < messages.count)
+				{
+					try
+					{
+						var indexed = messages[currentNum];
+						if(indexed !== void && indexed !== null && isvalid indexed)
+						{
+							group.anchorIdentity = indexed;
+							group.anchorPage = global.fushiLookupPageOf(indexed);
+							group.anchorIndex = currentNum;
+							group.anchorStrength = 1;
+						}
+					}
+					catch(e) {}
+				}
+				var resolved = global.fushiLookupResolveCurrentSlot();
+				if(resolved !== void && messages !== void && resolved.index >= 0 &&
+					resolved.index < messages.count)
+				{
+					try
+					{
+						var projected = messages[resolved.index];
+						if(projected !== void && projected !== null && isvalid projected &&
+							(group.anchorIdentity === void ||
+							 (resolved.page == group.anchorPage &&
+							  resolved.index == group.anchorIndex)))
+						{
+							group.anchorIdentity = projected;
+							group.anchorPage = global.fushiLookupPageOf(projected);
+							group.anchorIndex = resolved.index;
+							if(resolved.page == group.anchorPage &&
+								resolved.identity === projected)
+							{
+								group.currentIdentity = resolved.identity;
+								group.anchorStrength = 2;
+							}
+						}
+					}
+					catch(e) {}
+				}
+			};
+
+			global.fushiLookupBindGroupAnchorValid = function(group)
+			{
+				if(group.anchorPage == 0 || group.anchorIndex < 0 ||
+					group.anchorIdentity === void || group.anchorIdentity === null ||
+					!isvalid group.anchorIdentity) return false;
+				var messages = global.fushiLookupMessagesForPage(group.anchorPage);
+				if(messages === void || group.anchorIndex >= messages.count) return false;
+				try { return messages[group.anchorIndex] === group.anchorIdentity; }
+				catch(e) { return false; }
+			};
+
+			global.fushiLookupBindGroupVisible = function(group)
+			{
+				if(!global.fushiLookupBindGroupAnchorValid(group)) return false;
+				try
+				{
+					if(group.currentIdentity !== void && group.currentIdentity !== null &&
+						isvalid group.currentIdentity)
+					{
+						var resolved = global.fushiLookupResolveCurrentSlot();
+						if(resolved !== void && resolved.page == group.anchorPage &&
+							resolved.index == group.anchorIndex &&
+							resolved.identity === group.currentIdentity) return true;
+					}
+					if(global.fushiLookupVisible(group.anchorIdentity)) return true;
+					if(group.host !== void && group.host !== null && isvalid group.host &&
+						global.fushiLookupVisible(group.host)) return true;
+				}
+				catch(e) {}
+				return false;
+			};
+
+)TJS" LR"TJS(
+
+			// drawCh 是逐字符调用。KAGEX 的 ox/oy 是整行共享原点，字符自身位置在
+			// ch.x/ch.y；真正落点必须是两者相加。只累计 ox/oy 会得到 count>1 但跨度
+			// 永远 0/0，导致任何非单字行都不可能通过 Capture 的几何配对。
+			global.fushiLookupBindOrigin = function(renderer, layer, originX, originY, ch)
+			{
 				if(layer === void || layer === null || !isvalid layer) return;
 				if(typeof originX != "Integer" && typeof originX != "Real") return;
 				if(typeof originY != "Integer" && typeof originY != "Real") return;
+				var charX = global.fushiLookupField(ch, "x");
+				var charY = global.fushiLookupField(ch, "y");
+				if((typeof charX != "Integer" && typeof charX != "Real") ||
+					(typeof charY != "Integer" && typeof charY != "Real")) return;
+				var drawX = originX + charX;
+				var drawY = originY + charY;
+				if(global.fushiLookupBoundRenderer === renderer &&
+					global.fushiLookupBoundLayer === layer &&
+					global.fushiLookupBoundX == drawX &&
+					global.fushiLookupBoundY == drawY) return;
 				global.fushiLookupBindTicks++;
-				// ox/oy 是**这一个字**的落点，不是整行原点（本样本实测每字一次）。所以
-				// 这里只攒极值，真正的平移量由采集侧与最小字形坐标配对解出——把它当整
-				// 行原点直接用，整行判定会被最后一个字的位移整体带跑。
+				// drawX/drawY 与 getCharacters 的 x/y 是同一批字符在不同坐标系中的
+				// 原点集合，两者只差整行平移；跨度可用于姓名/正文隔离。
 				//
 				// 🔴 累加器必须挂在 **entry（即 renderer）** 上，不能是全局。屏幕上会
 				// 同时有多行文字各自淡入，多个渲染器的 drawCh 交错到来；用全局累加，
@@ -1670,30 +2652,117 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				if(slot === void)
 				{
-					slot = %[host:host, minOx:originX, maxOx:originX,
-						minOy:originY, maxOy:originY, count:0, clock:0];
+					// 先清退役宿主；全部有效时再清 clock 最小的最久未用项。
+					// 表情/口型动画会频繁创建短命 drawCh 层，FIFO erase(0) 会把仍在
+					// 刷新的消息宿主误删，随后同句 Capture 就再也找不到 candidate。
+					if(groups.count >= 8)
+					{
+						var victim = 0;
+						var victimClock = groups[0].clock;
+						for(var vi = 0; vi < groups.count; vi++)
+						{
+							var victimHost = groups[vi].host;
+							if(victimHost === void || victimHost === null || !isvalid victimHost)
+							{
+								victim = vi;
+								break;
+							}
+							if(groups[vi].clock < victimClock)
+							{
+								victim = vi;
+								victimClock = groups[vi].clock;
+							}
+						}
+						groups.erase(victim);
+					}
+					slot = %[host:host, minOx:drawX, maxOx:drawX,
+						minOy:drawY, maxOy:drawY, lastOx:drawX, lastOy:drawY,
+						count:0, clock:0, revision:0, hostPage:0,
+						anchorPage:0, anchorIndex:-1, anchorIdentity:void,
+						currentIdentity:void, anchorStrength:0];
 					groups.add(slot);
-					// 分组数有上限：淡入层随行创建/销毁，不设限就是又一处只增不减。
-					if(groups.count > 8) groups.erase(0);
+					global.fushiLookupStampBindGroup(slot, host);
 				}
-				if(originX < slot.minOx) slot.minOx = originX;
-				if(originX > slot.maxOx) slot.maxOx = originX;
-				if(originY < slot.minOy) slot.minOy = originY;
-				if(originY > slot.maxOy) slot.maxOy = originY;
+				// One TextRender entry can wrap over several visual rows (observed bbox height
+				// exceeds 90px).  Moving down to larger Y plus an X rewind is still the same
+				// run, so keep all row extrema.  Reset only when Y clearly moves upward, or
+				// when drawing returns near this run's top baseline and X also rewinds.
+				// Two pixels absorb integer/sub-pixel conversion jitter.
+				var yRewound = drawY < slot.lastOy - 2;
+				var returnedTop = drawY <= slot.minOy + 2 && drawX < slot.lastOx - 2;
+				var newRun = slot.count > 0 && (yRewound || returnedTop);
+				if(newRun)
+				{
+					slot.minOx = drawX;
+					slot.maxOx = drawX;
+					slot.minOy = drawY;
+					slot.maxOy = drawY;
+					slot.count = 0;
+					global.fushiLookupStampBindGroup(slot, host);
+				}
+				if(drawX < slot.minOx) slot.minOx = drawX;
+				if(drawX > slot.maxOx) slot.maxOx = drawX;
+				if(drawY < slot.minOy) slot.minOy = drawY;
+				if(drawY > slot.maxOy) slot.maxOy = drawY;
 				slot.count++;
+				slot.lastOx = drawX;
+				slot.lastOy = drawY;
 				slot.clock = ++global.fushiLookupClock;
+				slot.revision = ++global.fushiLookupBindRevision;
+				// 本引擎的 drawCh this 与 render this 不保证相同；不能靠 renderer identity
+				// 唤醒 Capture。全局 revision 只说明“出现了新几何”，Probe 重跑后仍必须通过
+				// span + visibleHost + page/index 三道门，绝不按最新组直接认领。
 				global.fushiLookupBoundRenderer = renderer;
 				global.fushiLookupBoundLayer = layer;
-				global.fushiLookupBoundX = originX;
-				global.fushiLookupBoundY = originY;
+				global.fushiLookupBoundX = drawX;
+				global.fushiLookupBoundY = drawY;
+			};
+
+			// Mouse/key Probe 是 drawCh 事务外的低频叶子。每个 entry 每批 drawCh 只
+			// 重捕获一次；lease/epoch token 仍负责拒绝 LRU 复用、退休 renderer 与重入 ABA。
+			global.fushiLookupRefreshPendingCaptures = function()
+			{
+				if(global.fushiLookupRefreshActive) return;
+				global.fushiLookupRefreshActive = true;
+				try
+				{
+					// Freeze one batch. drawCh triggered by getCharacters/reentrant game
+					// getters receives a newer revision and is intentionally left for next
+					// input; it cannot leak into this Capture's candidate set.
+					var targetRevision = global.fushiLookupBindRevision;
+					var registry = global.fushiLookupRegistry;
+					for(var i = 0; i < registry.count && i < 8; i++)
+					{
+						var entry = registry[i];
+						if(targetRevision <= entry.bindAttemptRevision) continue;
+						var renderer = entry.renderer;
+						var lease = entry.rendererLease;
+						var epoch = entry.renderEpoch;
+						if(renderer === void || renderer === null || !isvalid renderer ||
+							lease <= 0 || epoch <= entry.retiredRenderEpoch) continue;
+						global.fushiLookupCapture(renderer, 3, lease, epoch,
+							targetRevision);
+						// Consume this frozen batch even when Capture returned early (empty
+						// characters, stale slot, getter exception). Otherwise every mouseMove
+						// repeats the same getCharacters call indefinitely.
+						if(global.fushiLookupCaptureTokenCurrent(entry, renderer, lease, epoch) &&
+							entry.bindAttemptRevision < targetRevision)
+							entry.bindAttemptRevision = targetRevision;
+					}
+				}
+				catch(e) { global.fushiLookupNoteError("capture.refresh", e); }
+				global.fushiLookupRefreshActive = false;
 			};
 
 )TJS" LR"TJS(
 
-			// offsetX/offsetY 是 primary **图像**坐标（与 viewW/viewH 同系，用于算卡片
-			// 落点）；paintX/paintY 是 primary **图层**坐标（高亮层挂在 primary 下，画
-			// 图用这一套）。两者只差 primary.imageLeft/Top，但那个差会随缩放变化——
-			// 一个值当两种坐标用，就是之前高亮漂移的原因。
+			// offsetX/offsetY 是 primary **图像**坐标，只供与 entry.glyphs 同系的高亮
+			// 位图绘制；paintX/paintY 是 primary **图层**坐标，供挂在 primary 下的高亮层
+			// 与卡片 Layer 定位。两者只差 primary.imageLeft/Top，但那个差会随缩放变化。
+			// IPC 的 glyph/view 必须报图层坐标与 primary.width/height：host 算出的 anchor
+			// 最终直接交给 card.setPos，而 imageWidth/Height 可能是缩放 backing image（本样本
+			// 1920x1440），并不等于实际可见/输入 Layer（1920x1080）。混用会把卡片下半截
+			// 放到视口外，也会让 screenshot→Layer 输入变换错误。
 			global.fushiLookupReport = function(entry, index, offsetX, offsetY, submit,
 				paintX, paintY)
 			{
@@ -1715,12 +2784,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// IPC 那几个字段本来就是 int32，这里收敛也是契约要求。
 				global.fushiLookupHitCharIndex = int index;
 				global.fushiLookupHitCharCount = int entry.glyphs.count;
-				global.fushiLookupHitGlyphX = int (glyph.x + offsetX);
-				global.fushiLookupHitGlyphY = int (glyph.y + offsetY);
+				global.fushiLookupHitGlyphX = int (glyph.x + paintX);
+				global.fushiLookupHitGlyphY = int (glyph.y + paintY);
 				global.fushiLookupHitGlyphW = int glyph.w;
 				global.fushiLookupHitGlyphH = int glyph.h;
-				global.fushiLookupHitViewW = int primary.imageWidth;
-				global.fushiLookupHitViewH = int primary.imageHeight;
+				global.fushiLookupHitViewW = int primary.width;
+				global.fushiLookupHitViewH = int primary.height;
 				global.fushiLookupHitFlags = submit ? 1 : 0;
 				// **整行**，不截断。制卡要的是完整句子，分词是 host 的事。
 				global.fushiLookupHitLine = entry.line;
@@ -1732,12 +2801,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// 尚未被 host 消费的点击。SubmitSeq 最后写，作为 TJS 内部 seqlock。
 					global.fushiLookupSubmitCharIndex = int index;
 					global.fushiLookupSubmitCharCount = int entry.glyphs.count;
-					global.fushiLookupSubmitGlyphX = int (glyph.x + offsetX);
-					global.fushiLookupSubmitGlyphY = int (glyph.y + offsetY);
+					global.fushiLookupSubmitGlyphX = int (glyph.x + paintX);
+					global.fushiLookupSubmitGlyphY = int (glyph.y + paintY);
 					global.fushiLookupSubmitGlyphW = int glyph.w;
 					global.fushiLookupSubmitGlyphH = int glyph.h;
-					global.fushiLookupSubmitViewW = int primary.imageWidth;
-					global.fushiLookupSubmitViewH = int primary.imageHeight;
+					global.fushiLookupSubmitViewW = int primary.width;
+					global.fushiLookupSubmitViewH = int primary.height;
 					global.fushiLookupSubmitLine = entry.line;
 					global.fushiLookupSubmitSeq = global.fushiLookupHitSeq;
 				}
@@ -1747,6 +2816,11 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 			global.fushiLookupProbe = function(submit)
 			{
+				// Mouse/key hooks are transaction-external leaves. Complete any queued
+				// retirement pixels before hit testing or drawing a new hover.
+				global.fushiLookupFlushVisualWork();
+				global.fushiLookupRefreshPendingCaptures();
+				global.fushiLookupFlushVisualWork();
 				var primary = global.kag.primaryLayer;
 				// 两套坐标，用途不同，混用就是恒定偏移：
 				//   px/py = primary **图像**坐标，只用于把命中换算成卡片落点（视口尺寸
@@ -1815,9 +2889,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							traced++;
 						}
 						entry.glyphs = [];
-						entry.layer = void;
 						entry.line = "";
 						entry.used = 0;
+						global.fushiLookupClearEntryBinding(entry);
 						global.fushiLookupFault();
 						continue;
 					}
@@ -1835,7 +2909,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						global.fushiLookupMark(1);
 						continue;
 					}
-					if(!global.fushiLookupVisible(layer))
+					// 有声角色的口型/表情会把 drawCh 的短命 visibleHost 设 hidden，但 KAG
+					// current 消息对象仍是同一句的稳定身份。严格身份相等时继续使用消息层坐标；
+					// 身份不可得才回退 visibleHost，明确不一致则无条件拒绝旧 entry。
+					var currentIdentityState = global.fushiLookupCurrentIdentityState(entry);
+					if(currentIdentityState < 0 ||
+						(currentIdentityState == 0 &&
+							!global.fushiLookupEntryVisible(entry)))
 					{
 						if(traceOn && traced < 8)
 						{
@@ -1875,12 +2955,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				if(traceOn) global.fushiLookupPublishCoordTrace(trace);
 				if(!submit) global.fushiLookupClearHover();
+				global.fushiLookupFlushVisualWork();
 				return false;
 			};
 
-			// 卡片层自己（htRect）已经吃掉落在它矩形内的事件；KAG 全局钩子这一侧再判一次，
-			// 免得同一次点击既推进剧情又被卡片处理。层现在就是卡片本身，所以这是一次纯矩形
-			// 判定——不再需要 getMainPixel 去问 alpha。
+			// 卡片子层命中时由 Layer 的 down/up 处理；这里判定 primary 路径是否仍落在
+			// 卡片矩形内，防止同一次点击意外继续推进剧情。坐标使用已由滚轮真机证明的
+			// primary 光标坐标减卡片位置。
 			global.fushiLookupOverCard = function()
 			{
 				if(global.fushiLookupCardSeq == 0) return false;
@@ -1888,8 +2969,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				{
 					var card = global.fushiLookupCard;
 					if(card === void || !isvalid card || !card.visible) return false;
-					var x = card.cursorX - card.imageLeft;
-					var y = card.cursorY - card.imageTop;
+					var primary = global.kag.primaryLayer;
+					var x = primary.cursorX - card.left;
+					var y = primary.cursorY - card.top;
 					return x >= 0 && y >= 0 && x < card.imageWidth && y < card.imageHeight;
 				}
 				catch(e) { return false; }
@@ -1907,7 +2989,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// 吞掉、剧情推不动是大事。
 				try
 				{
-					if(global.fushiLookupOverCard()) return true;
+					// 低频兜底：getRender 是未来实例的主入口；人工点击时再有界复核
+					// renders[]，覆盖游戏直接替换 textRender 而未经过 getRender 的路径。
+					global.fushiLookupInstallGetRenderBridge();
+					global.fushiLookupSweepMsgwinRenders();
+					global.fushiLookupAuditWrappers(true);
+					if(global.fushiLookupOverCard())
+					{
+						var card = global.fushiLookupCard;
+						var primary = global.kag.primaryLayer;
+						var localX = primary.cursorX - card.left;
+						var localY = primary.cursorY - card.top;
+						// WebView2 需要完整的一次指针序列。显式 move 还可在鼠标未先移动时
+						// 同步 hover target；QueueInput 会合并紧邻的重复 move。
+						global.fushiLookupQueueInput(0, localX, localY, 0);
+						global.fushiLookupQueueInput(1, localX, localY, 0);
+						global.fushiLookupQueueInput(2, localX, localY, 0);
+						return true;
+					}
 					return global.fushiLookupProbe(true);
 				}
 				catch(e) { global.fushiLookupFault(); return false; }
@@ -1916,11 +3015,34 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				try
 				{
+					global.fushiLookupAuditWrappers(false);
 					if(global.fushiLookupOverCard()) return false;
 					global.fushiLookupProbe(false);
 				}
 				catch(e) { global.fushiLookupFault(); }
 				return false;
+			};
+			// KAGEX 的 Window.onMouseWheel 先把事件交给 focusedLayer，再调用这个全局
+			// `onMouseWheelHook`。卡片只是 primary 的普通子层，并不取得键盘焦点，所以不能
+			// 依赖 Layer.onMouseWheel；那条路在真机上 input_count 恒定不动。这里用 primary
+			// 的光标坐标减去卡片位置，得到与卡片位图/WebView 同系的局部坐标。卡内返回 true
+			// 会阻止 KAGEX 继续把同一滚轮解释成历史/推进剧情。
+			global.fushiLookupMouseWheelHook = function(shift, delta, x, y)
+			{
+				try
+				{
+					if(global.fushiLookupCardSeq == 0) return false;
+					var card = global.fushiLookupCard;
+					if(card === void || !isvalid card || !card.visible) return false;
+					var primary = global.kag.primaryLayer;
+					var localX = primary.cursorX - card.left;
+					var localY = primary.cursorY - card.top;
+					if(localX < 0 || localY < 0 ||
+						localX >= card.imageWidth || localY >= card.imageHeight) return false;
+					global.fushiLookupQueueInput(3, localX, localY, delta);
+					return true;
+				}
+				catch(e) { global.fushiLookupFault(); return false; }
 			};
 			global.fushiLookupKeyDownHook = function(key, shift)
 			{
@@ -1949,7 +3071,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 拒绝子类 / super 调用形式不符 / KAG.add 不收）只有异常原文说得清。放在
 			// 这里，传感器一装好就有结论，且**失败原因直接进日志**，不必靠一版版试。
 			// 结果供 fushiLookupPrepare 复用：能建就用带鼠标事件的子类（卡片内点击、
-			// 滚轮、嵌套查词全靠它），不能建就直接退回普通 Layer，不再每帧抛一次。
+			// 移动与嵌套查词靠它；滚轮走 Window 全局 hook），不能建就直接退回普通 Layer，
+			// 不再每帧抛一次。
 			global.fushiLookupCardClassOk = false;
 			try
 			{
@@ -1959,8 +3082,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// 顺带把 prepare 会设的每个属性都试一遍，逐项记原因。
 				//
 				// 真机实测：子类本身建得出来，抛异常的是**某个属性赋值**——而它被逐项
-				// 隔离后静默跳过，于是卡片能显示、却收不到鼠标事件（input_count 恒 0，
-				// 卡片内点击/滚轮/嵌套查词全部失效）。哪个属性不被接受，只有异常原文
+				// 隔离后静默跳过，于是卡片能显示、却收不到层鼠标事件（input_count 恒 0，
+				// 卡片内点击/嵌套查词全部失效）。哪个属性不被接受，只有异常原文
 				// 说得清；放在 bootstrap 里试，一次就有结论。
 				try { global.kag.add(probeLayer); }
 				catch(e) { global.fushiLookupNoteError("probe.kagAdd", e); }
@@ -1991,35 +3114,780 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupNoteError("cardClassProbe", e);
 			}
 
+)TJS" LR"TJS(
+
+			// Limelight 的 RenderMsgwinPlugin 在 bootstrap 前已经创建了 MsgwinRender；
+			// 这些对象保留的是 `new` 时复制进去的旧函数。游戏调用方会用
+			// `method incontextof renderer` 重绑方法的 this，因此 wrapper 自身必须绑定到
+			// renderer；original 只能从外置 sidecar 账本按 renderer identity 取回，不能
+			// 藏在 wrapper 的 this 字典里。
+			global.fushiLookupFindInstancePatch = function(renderer)
+			{
+				try
+				{
+					var patches = global.fushiLookupInstancePatches;
+					for(var i = 0; i < patches.count; i++)
+					{
+						var patch = patches[i];
+						if(patch.renderer === renderer && patch.state >= 0) return patch;
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				return void;
+			};
+
+			global.fushiLookupMakeInstanceRenderWrapper = function(owner)
+			{
+				return (function(a, b, c, d, e, f)
+				{
+					var renderer = this;
+					var patch = global.fushiLookupFindInstancePatch(renderer);
+					var original = (patch === void) ? void : patch.originalRender;
+					if(typeof original != "Object")
+					{
+						global.fushiLookupFault();
+						// 已暴露的方法引用可能比 sidecar record 活得更久。绝不能吞掉
+						// 游戏原调用；优先落回已安装的 class bridge，再落回 class original。
+						original = global.fushiLookupInstalledRenderWrapper;
+						if(typeof original != "Object")
+							original = global.fushiLookupOriginalRender;
+						if(typeof original != "Object") return void;
+					}
+					var captureLease = 0, captureEpoch = 0;
+					try
+					{
+						var epochEntry = global.fushiLookupEntryFor(renderer);
+						epochEntry.renderEpoch++;
+						captureLease = epochEntry.rendererLease;
+						captureEpoch = epochEntry.renderEpoch;
+					}
+					catch(e) { global.fushiLookupFault(); }
+					// original 是直接从 renderer 实例字段读出的 closure，已保留真实
+					// ObjThis；其异常与返回值均原样穿透，只有旁路采集异常会被隔离。
+					var result = (original incontextof renderer)(...);
+					try { global.fushiLookupCapture(renderer, 1, captureLease, captureEpoch); }
+					catch(e) { global.fushiLookupFault(); }
+					try { global.fushiLookupFlushVisualWork(); }
+					catch(e) { global.fushiLookupFault(); }
+					return result;
+				} incontextof owner);
+			};
+
+			global.fushiLookupMakeInstanceDoneWrapper = function(owner)
+			{
+				return (function()
+				{
+					var renderer = this;
+					var patch = global.fushiLookupFindInstancePatch(renderer);
+					var original = (patch === void) ? void : patch.originalDone;
+					if(typeof original != "Object")
+					{
+						global.fushiLookupFault();
+						original = global.fushiLookupInstalledDoneWrapper;
+						if(typeof original != "Object") original = global.fushiLookupOriginalDone;
+						if(typeof original != "Object") return void;
+					}
+					var doneLease = 0, doneEpoch = 0;
+					try
+					{
+						var doneEntry = global.fushiLookupFindEntry(renderer);
+						if(doneEntry !== void)
+						{
+							doneLease = doneEntry.rendererLease;
+							doneEpoch = doneEntry.renderEpoch;
+						}
+					}
+					catch(e) { global.fushiLookupFault(); }
+					var result = (original incontextof renderer)(...);
+					try
+					{
+						if(doneLease > 0)
+							global.fushiLookupCapture(renderer, 2, doneLease, doneEpoch);
+					}
+					catch(e) { global.fushiLookupFault(); }
+					try { global.fushiLookupFlushVisualWork(); }
+					catch(e) { global.fushiLookupFault(); }
+					return result;
+				} incontextof owner);
+			};
+
+			global.fushiLookupMakeInstanceDrawChWrapper = function(owner)
+			{
+				return (function(layer, ox, oy, ch)
+				{
+					var renderer = this;
+					var patch = global.fushiLookupFindInstancePatch(renderer);
+					var original = (patch === void) ? void : patch.originalDrawCh;
+					if(typeof original != "Object")
+					{
+						global.fushiLookupFault();
+						original = global.fushiLookupInstalledDrawChWrapper;
+						if(typeof original != "Object")
+							original = global.fushiLookupOriginalDrawCh;
+						if(typeof original != "Object") return void;
+					}
+					try { global.fushiLookupBindOrigin(renderer, layer, ox, oy, ch); }
+					catch(e) { global.fushiLookupFault(); }
+					return (original incontextof renderer)(...);
+				} incontextof owner);
+			};
+
+)TJS" LR"TJS(
+
+			// 原子地给一个既有 textRender 实例加 bridge。state=0 是重入闸门，
+			// state=1 已安装，state=2 保留 original 并允许在同一 record 上重试。
+			global.fushiLookupPatchRendererInstance = function(renderer)
+			{
+				var patch = void;
+				var noted = false;
+				try
+				{
+					if(renderer === void || renderer === null || !isvalid renderer ||
+						renderer === global.TextRender ||
+						typeof renderer.render != "Object" ||
+						typeof renderer.done != "Object" ||
+						typeof renderer.drawCh != "Object" ||
+						typeof renderer.getCharacters != "Object")
+					{
+						global.fushiLookupInstanceRejectShape++;
+						return false;
+					}
+					// `LangRender` 类还被 StandLayer 等 UI 共用；只许补它的消息实例。
+					if(typeof global.LangRender == "Object" && renderer === global.LangRender)
+					{
+						global.fushiLookupInstanceRejectClass++;
+						return false;
+					}
+
+					var patches = global.fushiLookupInstancePatches;
+					for(var i = 0; i < patches.count; i++)
+					{
+						var existing = patches[i];
+						var alive = false;
+						try
+						{
+							alive = existing.renderer !== void &&
+								existing.renderer !== null && isvalid existing.renderer;
+						}
+						catch(e) { alive = false; }
+						// method closure 可以脱离 renderer 字段继续存活；即使 owner 已
+						// invalid，也不能删除它的 original record。容量满时明确失败关闭，
+						// 后续由有 active-set 证据的独立回收事务处理。
+						if(!alive) continue;
+						if(existing.renderer === renderer)
+						{
+							patch = existing;
+							if(existing.state == 0) return false;
+							if(renderer.render === existing.renderWrapper &&
+								renderer.done === existing.doneWrapper &&
+								renderer.drawCh === existing.drawChWrapper)
+							{
+								existing.state = 1;
+								return true;
+							}
+
+							// 表情/口型脚本会重注册 MsgwinRender 的部分方法。不能把账本
+							// 标死后留下另外两个旧 wrapper：那会让残留 wrapper 再也找不到
+							// original 并吞掉游戏调用。先以 state=0 保持重入时 original 可用，
+							// 仅恢复仍由本 bridge 持有的字段；全部摘除后再以当前方法为新
+							// baseline 原子重建。
+								existing.state = 0;
+							try
+							{
+								if(typeof existing.stableRenderWrapper == "Object" &&
+									renderer.render === existing.stableRenderWrapper)
+									renderer.render = existing.originalRender;
+								if(typeof existing.stableDoneWrapper == "Object" &&
+									renderer.done === existing.stableDoneWrapper)
+									renderer.done = existing.originalDone;
+								if(typeof existing.stableDrawChWrapper == "Object" &&
+									renderer.drawCh === existing.stableDrawChWrapper)
+									renderer.drawCh = existing.originalDrawCh;
+								if((typeof existing.stableRenderWrapper == "Object" &&
+										renderer.render === existing.stableRenderWrapper) ||
+									(typeof existing.stableDoneWrapper == "Object" &&
+										renderer.done === existing.stableDoneWrapper) ||
+									(typeof existing.stableDrawChWrapper == "Object" &&
+										renderer.drawCh === existing.stableDrawChWrapper))
+								{
+									existing.state = 2;
+									return false;
+								}
+								// record 已经可能被逸出的 method closure 引用。字段全部摘除后
+								// 也只原地重建，绝不 erase original。
+								break;
+							}
+							catch(e)
+							{
+								existing.state = 2;
+								global.fushiLookupNoteError("instance.rebind", e);
+								return false;
+							}
+						}
+					}
+
+)TJS" LR"TJS(
+
+					var originalRender = renderer.render;
+					var originalDone = renderer.done;
+					var originalDrawCh = renderer.drawCh;
+					// bootstrap readiness 只覆盖安装当刻；若游戏随后替换/清掉类入口，
+					// `incontextof` 的左值可能已经是 void。这里必须先 fail closed，不能
+					// 让诊断桥把游戏启动变成 TJS 致命异常。
+					if(typeof global.fushiLookupInstalledRenderWrapper != "Object" ||
+						typeof global.fushiLookupInstalledDoneWrapper != "Object" ||
+						typeof global.fushiLookupInstalledDrawChWrapper != "Object")
+					{
+						global.fushiLookupInstanceRejectShape++;
+						if(patch !== void) patch.state = 2;
+						return false;
+					}
+					var installedRender =
+						(global.fushiLookupInstalledRenderWrapper incontextof renderer);
+					var installedDone =
+						(global.fushiLookupInstalledDoneWrapper incontextof renderer);
+					var installedDrawCh =
+						(global.fushiLookupInstalledDrawChWrapper incontextof renderer);
+					// bootstrap 后创建的实例已经复制了三条 class wrapper；全相等即已覆盖。
+					if(originalRender === installedRender &&
+						originalDone === installedDone &&
+						originalDrawCh === installedDrawCh)
+					{
+						if(patch !== void)
+						{
+							patch.originalRender = originalRender;
+							patch.originalDone = originalDone;
+							patch.originalDrawCh = originalDrawCh;
+							patch.wrapRender = false;
+							patch.wrapDone = false;
+							patch.wrapDrawCh = false;
+							patch.renderWrapper = installedRender;
+							patch.doneWrapper = installedDone;
+							patch.drawChWrapper = installedDrawCh;
+							patch.state = 2;
+						}
+						global.fushiLookupInstanceAlreadyClass++;
+						return true;
+					}
+					if(patch === void && patches.count >= 16)
+					{
+						global.fushiLookupInstanceRejectFull++;
+						return false;
+					}
+
+					// MsgwinRender/LangRender 会覆写其中一部分方法，同时从已补丁的
+					// TextRender 继承其余方法。只给真正的 override 补 sidecar；已经是
+					// class wrapper 的字段保留原样，避免重复 Capture。
+					var wrapRender = originalRender !== installedRender;
+					var wrapDone = originalDone !== installedDone;
+					var wrapDrawCh = originalDrawCh !== installedDrawCh;
+					if(patch === void)
+					{
+						patch = %[renderer:renderer, state:0,
+							stableRenderWrapper:void, stableDoneWrapper:void,
+							stableDrawChWrapper:void];
+						patches.add(patch);
+					}
+					patch.renderer = renderer;
+					patch.state = 0;
+					patch.originalRender = originalRender;
+					patch.originalDone = originalDone;
+					patch.originalDrawCh = originalDrawCh;
+					patch.wrapRender = wrapRender;
+					patch.wrapDone = wrapDone;
+					patch.wrapDrawCh = wrapDrawCh;
+					patch.renderWrapper = installedRender;
+					patch.doneWrapper = installedDone;
+					patch.drawChWrapper = installedDrawCh;
+					if(wrapRender)
+					{
+						if(typeof patch.stableRenderWrapper != "Object")
+							patch.stableRenderWrapper =
+								global.fushiLookupMakeInstanceRenderWrapper(renderer);
+						patch.renderWrapper = patch.stableRenderWrapper;
+					}
+					if(wrapDone)
+					{
+						if(typeof patch.stableDoneWrapper != "Object")
+							patch.stableDoneWrapper =
+								global.fushiLookupMakeInstanceDoneWrapper(renderer);
+						patch.doneWrapper = patch.stableDoneWrapper;
+					}
+					if(wrapDrawCh)
+					{
+						if(typeof patch.stableDrawChWrapper != "Object")
+							patch.stableDrawChWrapper =
+								global.fushiLookupMakeInstanceDrawChWrapper(renderer);
+						patch.drawChWrapper = patch.stableDrawChWrapper;
+					}
+					if((wrapRender && typeof patch.renderWrapper != "Object") ||
+						(wrapDone && typeof patch.doneWrapper != "Object") ||
+						(wrapDrawCh && typeof patch.drawChWrapper != "Object"))
+						throw "lookup instance wrapper unavailable";
+
+					if(wrapRender) renderer.render = patch.renderWrapper;
+					if(renderer.render === patch.renderWrapper && wrapDone)
+						renderer.done = patch.doneWrapper;
+					if(renderer.render === patch.renderWrapper &&
+						renderer.done === patch.doneWrapper && wrapDrawCh)
+						renderer.drawCh = patch.drawChWrapper;
+					if(renderer.render === patch.renderWrapper &&
+						renderer.done === patch.doneWrapper &&
+						renderer.drawCh === patch.drawChWrapper)
+					{
+						patch.state = 1;
+						global.fushiLookupWrapperAuditPending = true;
+						return true;
+					}
+				}
+				catch(e)
+				{
+					noted = true;
+					global.fushiLookupNoteError("instance.install", e);
+				}
+
+				// 只回滚仍等于本次 wrapper 的字段，不覆盖游戏在重入中做出的更新。
+				if(patch !== void)
+				{
+					try
+					{
+						if(patch.wrapRender && renderer.render === patch.renderWrapper)
+							renderer.render = patch.originalRender;
+					}
+					catch(e) { global.fushiLookupFault(); }
+					try
+					{
+						if(patch.wrapDone && renderer.done === patch.doneWrapper)
+							renderer.done = patch.originalDone;
+					}
+					catch(e) { global.fushiLookupFault(); }
+					try
+					{
+						if(patch.wrapDrawCh && renderer.drawCh === patch.drawChWrapper)
+							renderer.drawCh = patch.originalDrawCh;
+					}
+					catch(e) { global.fushiLookupFault(); }
+					var survivor = false;
+					try
+					{
+						survivor = (patch.wrapRender &&
+							renderer.render === patch.renderWrapper) ||
+							(patch.wrapDone && renderer.done === patch.doneWrapper) ||
+							(patch.wrapDrawCh &&
+								renderer.drawCh === patch.drawChWrapper);
+					}
+					catch(e) { survivor = true; }
+					// 字段是否仍等于 wrapper 不能证明 method closure 已不可达；失败记录
+					// 永久保留 original。state=2 允许下一轮在同一 record 上重试。
+					patch.state = 2;
+					if(!noted)
+						global.fushiLookupNoteError("instance.install",
+							%[message:"wrapper identity readback failed"]);
+				}
+				return false;
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupPatchMsgwinRender = function(msgwin)
+			{
+				try
+				{
+					if(msgwin === void || msgwin === null || !isvalid msgwin) return false;
+					// 本目标 renders[] 的元素本身就是 MsgwinRender；只有 direct 四方法
+					// 门不成立时才兼容下钻 textRender。direct 已有正确形状但正处在
+					// setter 重入/重建/失败状态时也必须就地 fail closed，不能顺势再补
+					// 内层对象而形成双 bridge。
+					var directShape = typeof msgwin.render == "Object" &&
+						typeof msgwin.done == "Object" &&
+						typeof msgwin.drawCh == "Object" &&
+						typeof msgwin.getCharacters == "Object";
+					if(directShape)
+						return global.fushiLookupPatchRendererInstance(msgwin);
+					var renderer = global.fushiLookupField(msgwin, "textRender");
+					return global.fushiLookupPatchRendererInstance(renderer);
+				}
+				catch(e) { global.fushiLookupFault(); return false; }
+			};
+
+			// 标准 KAG 把插件保存在 MainWindow.kagPlugins；目标游戏的
+			// renderMsgwinPlugin 也从 addPlugin 进入这里，并不是 global 成员。
+			// 只查两个廉价别名和这一层有界标准容器，不做对象图递归扫描。
+			global.fushiLookupIsMsgwinPlugin = function(candidate)
+			{
+				try
+				{
+					if(candidate === void || candidate === null || !isvalid candidate ||
+						typeof candidate.getRender != "Object" ||
+						typeof candidate.getRenderId != "Object") return false;
+					var renders = candidate.renders;
+					return typeof renders == "Object" && renders !== null &&
+						isvalid renders && typeof renders.count == "Integer" &&
+						renders.count >= 0;
+				}
+				catch(e) { return false; }
+			};
+
+			global.fushiLookupResolveMsgwinPlugin = function()
+			{
+				global.fushiLookupInstancePluginSource = 0;
+				global.fushiLookupInstancePluginCount = -1;
+				global.fushiLookupInstancePluginIndex = -1;
+				try
+				{
+					var direct = global.fushiLookupField(global, "renderMsgwinPlugin");
+					if(global.fushiLookupIsMsgwinPlugin(direct))
+					{
+						global.fushiLookupInstancePluginSource = 1;
+						return direct;
+					}
+					var kag = global.kag;
+					var alias = global.fushiLookupField(kag, "renderMsgwinPlugin");
+					if(global.fushiLookupIsMsgwinPlugin(alias))
+					{
+						global.fushiLookupInstancePluginSource = 2;
+						return alias;
+					}
+					var plugins = global.fushiLookupField(kag, "kagPlugins");
+					if(typeof plugins != "Object" || plugins === null || !isvalid plugins)
+						return void;
+					var count = plugins.count;
+					global.fushiLookupInstancePluginCount = count;
+					var limit = count;
+					if(limit > 64) limit = 64;
+					for(var i = 0; i < limit; i++)
+					{
+						var candidate = plugins[i];
+						if(!global.fushiLookupIsMsgwinPlugin(candidate)) continue;
+						global.fushiLookupInstancePluginSource = 3;
+						global.fushiLookupInstancePluginIndex = i;
+						return candidate;
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				return void;
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupAuditInstanceShape = function()
+			{
+				var flags = 0, count = -1, seen = 0, textRender = 0;
+				var render = 0, done = 0, drawCh = 0, characters = 0;
+				var direct = 0, installed = 0, failed = 0;
+				try
+				{
+					var plugin = global.fushiLookupResolveMsgwinPlugin();
+					if(plugin === void) flags = flags | 1;
+					else
+					{
+						if(plugin === null || !isvalid plugin) flags = flags | 2;
+						else
+						{
+							if(typeof plugin.getRender != "Object") flags = flags | 4;
+							var renders = global.fushiLookupField(plugin, "renders");
+							if(typeof renders != "Object" || renders === null || !isvalid renders)
+								flags = flags | 8;
+							else
+							{
+								count = renders.count;
+								var limit = count;
+								if(limit > 16) limit = 16;
+								for(var i = 0; i < limit; i++)
+								{
+									var item = renders[i];
+									if(item === void || item === null || !isvalid item) continue;
+									seen++;
+									if(typeof item.render == "Object" &&
+										typeof item.done == "Object" &&
+										typeof item.drawCh == "Object" &&
+										typeof item.getCharacters == "Object") direct++;
+									var renderer = global.fushiLookupField(item, "textRender");
+									if(renderer === void || renderer === null || !isvalid renderer)
+										continue;
+									textRender++;
+									if(typeof renderer.render == "Object") render++;
+									if(typeof renderer.done == "Object") done++;
+									if(typeof renderer.drawCh == "Object") drawCh++;
+									if(typeof renderer.getCharacters == "Object") characters++;
+								}
+							}
+						}
+					}
+					var patches = global.fushiLookupInstancePatches;
+					for(var pi = 0; pi < patches.count && pi < 16; pi++)
+					{
+						if(patches[pi].state == 1) installed++;
+						else if(patches[pi].state < 0) failed++;
+					}
+				}
+				catch(e) { flags = flags | 16; }
+				var shape = "f=" + flags + ",src=" +
+					global.fushiLookupInstancePluginSource + ",kc=" +
+					global.fushiLookupInstancePluginCount + ",ki=" +
+					global.fushiLookupInstancePluginIndex + ",c=" + count + ",s=" + seen +
+					",t=" + textRender + ",r=" + render + ",d=" + done +
+					",h=" + drawCh + ",g=" + characters + ",q=" + direct +
+					",ok=" + installed + ",bad=" + failed + ",rej=" +
+					global.fushiLookupInstanceRejectShape + "/" +
+					global.fushiLookupInstanceRejectClass + "/" +
+					global.fushiLookupInstanceRejectMixed + "/" +
+					global.fushiLookupInstanceRejectFull + ",base=" +
+					global.fushiLookupInstanceAlreadyClass;
+				if(shape != global.fushiLookupInstanceShapeLast)
+				{
+					global.fushiLookupInstanceShapeLast = shape;
+					global.fushiLookupNoteError("instance.shape", %[message:shape]);
+				}
+			};
+
+)TJS" LR"TJS(
+
+			global.fushiLookupSweepMsgwinRenders = function()
+			{
+				if(global.fushiLookupInstanceSweepActive) return;
+				global.fushiLookupInstanceSweepActive = true;
+				try { global.fushiLookupAuditInstanceShape(); }
+				catch(e) { global.fushiLookupFault(); }
+				try
+				{
+					var plugin = global.fushiLookupResolveMsgwinPlugin();
+					if(plugin === void)
+					{
+						global.fushiLookupInstanceSweepActive = false;
+						return;
+					}
+					if(typeof plugin == "Object" && plugin !== null && isvalid plugin)
+					{
+						var renders = plugin.renders;
+						var count = renders.count;
+						if(count > 16) count = 16;
+						for(var i = 0; i < count; i++)
+							global.fushiLookupPatchMsgwinRender(renders[i]);
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				global.fushiLookupInstanceSweepActive = false;
+				try { global.fushiLookupAuditInstanceShape(); }
+				catch(e) { global.fushiLookupFault(); }
+			};
+
+			global.fushiLookupFindGetRenderPatch = function(owner)
+			{
+				try
+				{
+					var patches = global.fushiLookupInstanceGetRenderPatches;
+					for(var i = 0; i < patches.count; i++)
+					{
+						var patch = patches[i];
+						if(patch.owner === owner && patch.state >= 0) return patch;
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				return void;
+			};
+
+			global.fushiLookupMakeGetRenderWrapper = function(owner)
+			{
+				return (function()
+				{
+					// 游戏原函数必须是第一个可抛调用；返回对象/异常完全透明。
+					var patch = global.fushiLookupFindGetRenderPatch(this);
+					var original = (patch === void) ? void : patch.original;
+					if(typeof original != "Object" &&
+						global.fushiLookupInstanceGetRenderOwner === this)
+						original = global.fushiLookupInstanceGetRenderOriginal;
+					if(typeof original != "Object")
+					{
+						global.fushiLookupFault();
+						return void;
+					}
+					var result = (original incontextof this)(...);
+					try
+					{
+						// 运行时标识符证明常见返回值是 MsgwinRender；若这个变体直接
+						// 返回 textRender，本身的严格三方法闸门也能安全覆盖。
+						if(!global.fushiLookupPatchMsgwinRender(result))
+							global.fushiLookupPatchRendererInstance(result);
+					}
+					catch(e) { global.fushiLookupFault(); }
+					return result;
+				} incontextof owner);
+			};
+
+			global.fushiLookupInstallGetRenderBridge = function()
+			{
+				if(global.fushiLookupInstanceGetRenderInstalling) return false;
+				global.fushiLookupInstanceGetRenderInstalling = true;
+				var plugin = void, original = void, wrapper = void, patch = void;
+				try
+				{
+					// 这是目标游戏私有扩展，缺失绝不阻断通用 Kirikiri bootstrap。
+					plugin = global.fushiLookupResolveMsgwinPlugin();
+					if(plugin === void)
+					{
+						global.fushiLookupInstanceGetRenderInstalling = false;
+						return false;
+					}
+					if(plugin === null || !isvalid plugin ||
+						typeof plugin.getRender != "Object" ||
+						typeof plugin.renders != "Object")
+					{
+						global.fushiLookupInstanceGetRenderInstalling = false;
+						return false;
+					}
+					patch = global.fushiLookupFindGetRenderPatch(plugin);
+					if(patch !== void && patch.state == 0)
+					{
+						global.fushiLookupInstanceGetRenderInstalling = false;
+						return false;
+					}
+					if(patch !== void && plugin.getRender === patch.wrapper &&
+						typeof patch.original == "Object")
+					{
+						patch.state = 1;
+						global.fushiLookupInstanceGetRenderOwner = plugin;
+						global.fushiLookupInstanceGetRenderOriginal = patch.original;
+						global.fushiLookupInstanceGetRenderWrapper = patch.wrapper;
+						global.fushiLookupInstanceGetRenderInstallFailed = false;
+						global.fushiLookupInstanceGetRenderInstalling = false;
+						return true;
+					}
+					original = plugin.getRender;
+					if(patch === void)
+					{
+						var patches = global.fushiLookupInstanceGetRenderPatches;
+						if(patches.count >= 16)
+						{
+							global.fushiLookupInstanceGetRenderInstalling = false;
+							return false;
+						}
+						patch = %[owner:plugin, original:original, wrapper:void, state:0];
+						patches.add(patch);
+					}
+					else
+					{
+						patch.state = 0;
+						patch.original = original;
+					}
+					if(typeof patch.wrapper != "Object")
+						patch.wrapper = global.fushiLookupMakeGetRenderWrapper(plugin);
+					wrapper = patch.wrapper;
+					if(typeof wrapper != "Object")
+						throw "lookup getRender wrapper unavailable";
+					// record/original 先发布，setter 若重入，wrapper 也能 call-through。
+					global.fushiLookupInstanceGetRenderOwner = plugin;
+					global.fushiLookupInstanceGetRenderOriginal = original;
+					global.fushiLookupInstanceGetRenderWrapper = wrapper;
+					plugin.getRender = wrapper;
+					if(plugin.getRender === wrapper)
+					{
+						patch.state = 1;
+						global.fushiLookupInstanceGetRenderInstallFailed = false;
+						global.fushiLookupInstanceGetRenderInstalling = false;
+						return true;
+					}
+				}
+				catch(e) { global.fushiLookupNoteError("getRender.install", e); }
+				try
+				{
+					if(plugin !== void && plugin !== null && isvalid plugin &&
+						wrapper !== void && plugin.getRender === wrapper)
+						plugin.getRender = original;
+				}
+				catch(e) { global.fushiLookupFault(); }
+				var survivor = false;
+				try
+				{
+					survivor = plugin !== void && plugin !== null && isvalid plugin &&
+						wrapper !== void && plugin.getRender === wrapper;
+				}
+				catch(e) { survivor = true; }
+				// 方法引用可从 owner 字段逸出；无论字段回滚是否成功都保留 owner
+				// record 和 original，后续同 owner 在原 record 上重试。
+				if(patch !== void) patch.state = 2;
+				global.fushiLookupInstanceGetRenderInstallFailed = true;
+				global.fushiLookupInstanceGetRenderInstalling = false;
+				return false;
+			};
+
+)TJS" LR"TJS(
+
 			if(typeof global.TextRender == "Object")
 			{
 				if(typeof global.TextRender.render == "Object")
 				{
+					installStage = 10;
 					global.fushiLookupOriginalRender = global.TextRender.render;
 					// 覆写游戏自己的方法：原函数**先**跑且其返回值原样透出，我们的采集
 					// 只能是尾随的旁路，且不得抛。抛出去等于我们替游戏决定了它的文字
 					// 渲染失败。
 					global.TextRender.render = function(a, b, c, d, e, f)
 					{
+						// render 是可观察的独立绘制边界。账本失败不得影响游戏原函数；
+						// done 不递增，因此迟到 done 仍停在退休世代。
+						var captureLease = 0, captureEpoch = 0;
+						try
+						{
+							var epochEntry = global.fushiLookupEntryFor(this);
+							epochEntry.renderEpoch++;
+							captureLease = epochEntry.rendererLease;
+							captureEpoch = epochEntry.renderEpoch;
+						}
+						catch(e) { global.fushiLookupFault(); }
 						var result = (global.fushiLookupOriginalRender incontextof this)(...);
-						try { global.fushiLookupCapture(this); }
+						try { global.fushiLookupCapture(this, 1, captureLease, captureEpoch); }
+						catch(e) { global.fushiLookupFault(); }
+						try { global.fushiLookupFlushVisualWork(); }
 						catch(e) { global.fushiLookupFault(); }
 						return result;
 					};
+					global.fushiLookupInstalledRenderWrapper = global.TextRender.render;
+					global.fushiLookupRenderInstallFailed =
+						global.fushiLookupInstalledRenderWrapper === global.fushiLookupOriginalRender;
+					installStage = 11;
 				}
 				if(typeof global.TextRender.done == "Object")
 				{
+					installStage = 20;
 					global.fushiLookupOriginalDone = global.TextRender.done;
 					global.TextRender.done = function()
 					{
+						// 在 original 前只做异常隔离的只读 token 快照；original 仍是函数体
+						// 第一个可能向游戏抛出的调用。若 original 内重入新 render，返回后
+						// 旧 done 的 epoch 已不匹配，会失败关闭。
+						var doneLease = 0, doneEpoch = 0;
+						try
+						{
+							var doneEntry = global.fushiLookupFindEntry(this);
+							if(doneEntry !== void)
+							{
+								doneLease = doneEntry.rendererLease;
+								doneEpoch = doneEntry.renderEpoch;
+							}
+						}
+						catch(e) { global.fushiLookupFault(); }
 						var result = (global.fushiLookupOriginalDone incontextof this)(...);
-						try { global.fushiLookupCapture(this); }
+						try
+						{
+							// done 不能调用 EntryFor：若这个 renderer 已被 LRU 淘汰，重新
+							// 建 entry 会抹掉退休证据，让迟到 done 把旧 binding 复活。
+							if(doneLease > 0)
+								global.fushiLookupCapture(this, 2, doneLease, doneEpoch);
+						}
+						catch(e) { global.fushiLookupFault(); }
+						try { global.fushiLookupFlushVisualWork(); }
 						catch(e) { global.fushiLookupFault(); }
 						return result;
 					};
+					global.fushiLookupInstalledDoneWrapper = global.TextRender.done;
+					global.fushiLookupDoneInstallFailed =
+						global.fushiLookupInstalledDoneWrapper === global.fushiLookupOriginalDone;
+					installStage = 21;
 				}
 				if(typeof global.TextRender.drawCh == "Object")
 				{
+					installStage = 30;
 					global.fushiLookupOriginalDrawCh = global.TextRender.drawCh;
 					// 🔴 全文最危险的一处：绑定原点必须发生在原函数**之前**（它要的就是这
 					// 次绘制的落点），于是我们的代码横在了游戏「把这个字画出来」的必经路
@@ -2028,11 +3896,27 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// 要跑**——采集失败只该让查词失灵，不该让游戏少画一个字。
 					global.TextRender.drawCh = function(layer, ox, oy, ch)
 					{
-						try { global.fushiLookupBindOrigin(this, layer, ox, oy); }
+						try { global.fushiLookupBindOrigin(this, layer, ox, oy, ch); }
 						catch(e) { global.fushiLookupFault(); }
 						return (global.fushiLookupOriginalDrawCh incontextof this)(...);
 					};
+					global.fushiLookupInstalledDrawChWrapper = global.TextRender.drawCh;
+					global.fushiLookupDrawChInstallFailed =
+						global.fushiLookupInstalledDrawChWrapper === global.fushiLookupOriginalDrawCh;
+					installStage = 31;
 				}
+			}
+			// 私有插件已出现时才封未来入口并扫既有 MsgwinRender；它不是通用
+			// Kirikiri readiness。若插件稍后加载，首次 leftClick 会执行同一安全 ensure。
+			var fushiLookupResolvedMsgwinPlugin =
+				global.fushiLookupResolveMsgwinPlugin();
+			if(fushiLookupResolvedMsgwinPlugin !== void)
+			{
+				installStage = 35;
+				global.fushiLookupInstallGetRenderBridge();
+				installStage = 36;
+				global.fushiLookupSweepMsgwinRenders();
+				installStage = 37;
 			}
 
 )TJS" LR"TJS(
@@ -2062,9 +3946,15 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 			}
 
+			installStage = 40;
 			global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
+			installStage = 41;
 			global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
+			installStage = 42;
+			global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+			installStage = 43;
 			global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+			installStage = 50;
 
 			Debug.notice("[HibikiLookup] sensor installed");
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
@@ -2072,6 +3962,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		}
 		catch(e)
 		{
+			try
+			{
+				if(typeof global.fushiLookupNoteError == "Object")
+					global.fushiLookupNoteError("bootstrap.stage",
+						%[message: "stage=" + installStage]);
+			}
+			catch(e2) {}
 			Debug.notice("[HibikiLookup] install failed: " + e.message);
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
 			global.fushiLookupBootstrap = void;
@@ -2186,6 +4083,9 @@ bool g_lookup_card_shown = false;
 bool g_lookup_enabled_last = false;
 bool g_lookup_sensor_live = false;
 bool g_lookup_input_pending = false;  // 上一帧撞到每帧搬运上限，队列里还有剩
+// capture-suppress 在 TJS hide/update 成功的那一帧只挂起；必须到下一次 continuous
+// callback 才写共享内存确认，不能把“脚本调用返回”冒充成“窗口已经进入后续合成帧”。
+uint64_t g_lookup_capture_suppress_pending_ack_seq = 0;
 uint32_t g_lookup_sensor_idle_ticks = 0;
 uint32_t g_lookup_sensor_eval_failures = 0;
 uint32_t g_lookup_sensor_eval_backoff = 0;
@@ -2408,6 +4308,34 @@ void HideKirikiriLookupCard() {
   ApplyKirikiriLookupCard(0, 0, 0, 0, 0, 0, 0, false);
 }
 
+bool SuppressKirikiriLookupCardForCapture(uint64_t seq) {
+  if (seq == 0) return false;
+  std::wstring script = L"global.fushiLookupSuppressForCapture(";
+  script += std::to_wstring(seq);
+  script += L");";
+  ExecuteTjsScriptGuarded(script.c_str());
+  int64_t applied = 0;
+  if (!EvaluateTjsInteger(L"global.fushiLookupCaptureSuppressSeq", &applied) ||
+      applied != static_cast<int64_t>(seq)) {
+    return false;
+  }
+  g_lookup_card_shown = false;
+  return true;
+}
+
+void CommitKirikiriLookupCaptureSuppressAck() {
+  const uint64_t seq = g_lookup_capture_suppress_pending_ack_seq;
+  if (seq == 0 || g_header == nullptr) return;
+  // 这里只会在**下一次** PumpKirikiriLookup 入口执行。普通 present/dismiss 绝不能推进
+  // 这个字段，否则更晚的普通帧可能伪装成截图抑制已经安全生效。
+  const uint64_t current =
+      ReadKirikiriSharedU64(&g_header->lookup_frame_applied_seq);
+  if (seq > current) {
+    WriteKirikiriSharedU64(&g_header->lookup_frame_applied_seq, seq);
+  }
+  g_lookup_capture_suppress_pending_ack_seq = 0;
+}
+
 // 逐行拷。源侧（共享内存）按契约恒为正 pitch、恒自顶向下；目标侧是游戏 Layer，
 // mainImageBufferPitch 可能为负（KiriKiri 允许自底向上的行序），故行步进用带符号 stride：
 // base + row*stride 对两种行序都走出同一个视觉行序。层已按卡片尺寸备好，故整块都是本帧的，
@@ -2617,6 +4545,20 @@ void PresentKirikiriLookupFrame() {
     if (!KirikiriLookupFrameStillPublished(best, best_seq)) return;
     HideKirikiriLookupCard();
     MarkKirikiriLookupFramePresented(best_seq);
+    return;
+  }
+
+  // 制卡截图的临时抑制不是 dismiss：保留 submit/Esc fence，只隐藏 card/highlight。
+  // TJS success token 保证 hide/update 已走完；共享内存 ack 则刻意延后一轮 continuous
+  // callback，给游戏窗口合成跨过一个生命周期边界。
+  if (staged.flags == fushi_voice_hook::kLookupFrameCaptureSuppress) {
+    if (!KirikiriLookupFrameStillPublished(best, best_seq)) return;
+    if (!SuppressKirikiriLookupCardForCapture(best_seq)) {
+      RetryOrDropKirikiriLookupFrame(best, best_seq, staged.hit_seq);
+      return;
+    }
+    MarkKirikiriLookupFramePresented(best_seq);
+    g_lookup_capture_suppress_pending_ack_seq = best_seq;
     return;
   }
 
@@ -2958,6 +4900,9 @@ void DrainKirikiriLookupInput() {
 // 游戏主线程的每帧入口。开关关着、查词区不存在、传感器还没建立时，这里一个字节都不写。
 void PumpKirikiriLookup() {
   if (g_stop || !fushi_voice_hook::HasLookupRegion(g_header)) return;
+  // 必须位于所有 early-return 之前：suppress 可能生效后紧接着被禁用、传感器退避或故障，
+  // 这些状态都不能吞掉“下一次 continuous callback 已到达”这一事实。
+  CommitKirikiriLookupCaptureSuppressAck();
   const bool enabled_now = LookupEnabledNow() != 0;
   if (!enabled_now) {
     // 禁用边沿强制对齐一次 TJS/C++ 可见状态；禁用稳态不再每帧执行一段 TJS。

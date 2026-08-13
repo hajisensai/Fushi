@@ -32,6 +32,7 @@ import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
@@ -115,6 +116,32 @@ class GalIngameLookupController {
   bool _draining = false;
   Completer<void>? _drainCompleter;
 
+  /// 卡片输入必须按 hook 上报顺序进入同一个 WebView。MethodChannel 当前通常会串行
+  /// dispatch，但这里不把 LEFT_DOWN/LEFT_UP 的正确性押在该实现细节上；每个调用者仍
+  /// 等自己的事件真正注入完成，失败也不会毒死后续输入链。
+  Future<void> _inputTail = Future<void>.value();
+
+  /// 离屏 WebView 的内容变化不会自动进入游戏：游戏里显示的是上一次 CapturePreview
+  /// 发布的 BGRA 快照。所有需要重抓的信号都汇进这条单飞队列：
+  ///
+  ///  * 同一事件循环内重复信号只抓一次；
+  ///  * 抓帧在途时 move/wheel 只保留一个 dirty bit，不排无界队列；
+  ///  * host 已用双 rAF 等待 WebView2 paint；这里的零时长 turn 只合并同批通知，不用
+  ///    经验毫秒数猜渲染完成。
+  Timer? _recaptureTurn;
+  bool _recaptureDirty = false;
+  bool _recaptureInFlight = false;
+  int _cardPhysicalWidth = 0;
+  int _cardPhysicalHeight = 0;
+
+  /// 游戏画面截图期间的原子可见性门。native 的 capture-suppress 在游戏主线程确认
+  /// 卡片与高亮都已隐藏后才回执；Dart 同时挡住所有 dirty/reveal 触发的 recapture，
+  /// 否则截图循环中途一张普通 present 就会提前把 popup 画回来。
+  bool _captureSuppressed = false;
+  int _captureLeaseEpoch = 0;
+  int? _captureSuppressedSeq;
+  int _captureSuppressedSessionEpoch = 0;
+
   /// 每次查词意图/消场都递增。异步词典结果与 channel 回执只有代数仍相等才可落屏，
   /// 因此慢查询永远不能在较新的点击之后闪回旧卡。
   int _lookupGeneration = 0;
@@ -164,6 +191,7 @@ class GalIngameLookupController {
       if (!_acceptsRoute(route)) return;
       unawaited(_onOverlayHidden(route));
     };
+    overlay.onRoutedDirty = markRoutedDirty;
   }
 
   @visibleForTesting
@@ -173,6 +201,7 @@ class GalIngameLookupController {
     final Future<void>? lookupDrain = _drainCompleter?.future;
     if (lookupDrain != null) await lookupDrain;
     _started = false;
+    GlobalLookupController.instance.onRoutedDirty = null;
     // 若此刻正有 enable 在 channel 里，不能直接作废 drain：它可能
     // 在 stop 后才成功把 native 打开。留一个 pending，让同一串行 drain
     // 再下发 false 后才完成清理。
@@ -187,6 +216,9 @@ class GalIngameLookupController {
     _pendingLookup = null;
     _draining = false;
     _drainCompleter = null;
+    await _inputTail;
+    _cancelRecapture();
+    _inputTail = Future<void>.value();
     _lookupGeneration++;
     _activeLookupGeneration = 0;
   }
@@ -245,6 +277,10 @@ class GalIngameLookupController {
       routeEpoch: _sessionRouteEpoch,
       lookupEpoch: ++_lookupRouteEpoch,
     );
+    // A new route must not inherit the previous card's physical size or a
+    // queued dirty recapture. Its first bitmap is allowed only after this
+    // route's overlaySize -> captureReady handshake has completed.
+    _cancelRecapture();
     // 新 submit 到达即废止旧 token，而不是等旧词典 Future 返回。旧 reveal / Timer
     // 从这一行起就无法投帧；同一个 galCard surface 会由新 route 的 lookupText 首步
     // hide(notify:false) 清场。
@@ -277,13 +313,201 @@ class GalIngameLookupController {
     }
   }
 
-  /// hook 转发的卡片内输入：原样丢回 runner 的既有 popup 输入注入口。
-  Future<void> handleInput(GalLookupInput input) async {
-    if (!_started || !_enabledNow || _activeHit == null) return;
+  /// hook 转发的卡片内输入：严格按上报顺序丢回 runner 的既有 popup 输入注入口。
+  Future<void> handleInput(GalLookupInput input) {
+    final GlobalLookupRoute? route = _activeRoute;
+    final int generation = _activeLookupGeneration;
+    final bool traceInput = input.kind != 0;
+    if (traceInput) {
+      glog('gal-ingame: input recv seq=${input.seq} kind=${input.kind} '
+          'wheel=${input.wheel} started=$_started enabled=$_enabledNow '
+          'suppressed=$_captureSuppressed active=${_activeHit != null} '
+          'generation=$generation/$_lookupGeneration '
+          'route=${route == null ? "none" : GlobalLookupChannel.isRouteValid(route)}');
+    }
+    if (_captureSuppressed ||
+        !_started ||
+        !_enabledNow ||
+        _activeHit == null ||
+        route == null) {
+      if (traceInput) {
+        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+            'at=entry_gate');
+      }
+      return Future<void>.value();
+    }
+    final Completer<void> done = Completer<void>();
+    _inputTail = _inputTail.then<void>(
+      (_) => _runQueuedInput(input, generation, route, done),
+      onError: (Object _, StackTrace __) =>
+          _runQueuedInput(input, generation, route, done),
+    );
+    return done.future;
+  }
+
+  Future<void> _runQueuedInput(
+    GalLookupInput input,
+    int generation,
+    GlobalLookupRoute route,
+    Completer<void> done,
+  ) async {
+    try {
+      await _forwardInput(input, generation, route);
+      if (!done.isCompleted) done.complete();
+    } catch (error, stackTrace) {
+      glog(
+          'gal-ingame: input kind=${input.kind} EXCEPTION $error\n$stackTrace');
+      if (!done.isCompleted) done.complete();
+    }
+  }
+
+  Future<void> _forwardInput(
+    GalLookupInput input,
+    int generation,
+    GlobalLookupRoute route,
+  ) async {
+    // 卡片已经从游戏渲染树隐藏，采样期间迟到/排队的输入没有合法命中目标；继续注入
+    // 只会在不可见 DOM 上触发按钮或滚轮，并制造一张本不该在截图中途恢复的 dirty 帧。
+    if (_captureSuppressed || !_isCurrentLookup(generation, route)) {
+      if (input.kind != 0) {
+        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+            'at=queue_gate');
+      }
+      return;
+    }
+
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupInput(input);
     if (!result.ok) {
       glog('gal-ingame: input kind=${input.kind} FAILED ${result.error}');
+      return;
+    }
+    if (input.kind != 0) {
+      glog('gal-ingame: input seq=${input.seq} kind=${input.kind} -> ok');
+    }
+    if (!_isCurrentLookup(generation, route)) {
+      if (input.kind != 0) {
+        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+            'at=reply_gate');
+      }
+      return;
+    }
+
+    // SendMouseInput 的回执只证明事件已入 WebView2，不证明 renderer 已完成布局/绘制。
+    // 实际重抓严格等待 host 的 route-stamped、双-rAF `galFrameDirty`；否则这里立即
+    // CapturePreview 仍可能拿到输入前的旧帧。leftDown/up 的顺序由 [_inputTail]
+    // 保证，host 的多个 dirty 再由 [_scheduleRecapture] 单帧合并。
+  }
+
+  /// 给离屏 host/bridge 的 paint-ready 信号使用。调用方必须带原始 route；旧代即便
+  /// 在异步制卡、收藏或嵌套查词完成后迟到，也只能在这里被丢弃，绝不刷新新卡。
+  void markRoutedDirty(GlobalLookupRoute route) {
+    final int generation = _activeLookupGeneration;
+    if (!_isCurrentLookup(generation, route)) return;
+    _scheduleRecapture(generation, route);
+  }
+
+  /// 为游戏内 popup 发起的一次场景截图获取可见性 lease。
+  ///
+  /// acquire 只有在 hook 明确 ack「卡片 + 高亮均已从游戏渲染树隐藏」后才成功；
+  /// timeout/错误具有“可能已隐藏但回执丢失”的歧义，因此失败也会走同一恢复补偿，
+  /// 随后抛出专用异常让 mining fail-closed，绝不在未知状态下继续 WGC。
+  Future<GalHookCaptureLease> acquireMiningCaptureLease() async {
+    final GalLookupHit? hit = _activeHit;
+    final GlobalLookupRoute? route = _activeRoute;
+    final int generation = _activeLookupGeneration;
+    if (hit == null || route == null || !_isCurrentLookup(generation, route)) {
+      throw const GalHookCaptureSuppressionException(
+        'the in-game lookup card is no longer current',
+      );
+    }
+    if (_captureSuppressed) {
+      // GalHookMiningCoordinator 已串行化作业；命中这里意味着绕过了那条唯一入口。
+      // 绝不让第二个调用在第一个 suspend ack 之前开始采样。
+      throw const GalHookCaptureSuppressionException(
+        'another game-window capture is already active',
+      );
+    }
+
+    final int leaseEpoch = ++_captureLeaseEpoch;
+    _captureSuppressed = true;
+    _captureSuppressedSeq = hit.seq;
+    _captureSuppressedSessionEpoch = _sessionRouteEpoch;
+    // 保留尺寸与 route/DOM，只停掉待执行的位图重抓。dirty 留真，使 release 能把
+    // 捕获期间发生的滚轮、按钮状态、新 reveal 合成一次最新帧恢复。
+    _recaptureTurn?.cancel();
+    _recaptureTurn = null;
+    _recaptureDirty = true;
+
+    try {
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupSuspendForCapture(hit.seq);
+      if (!result.ok) {
+        throw GalHookCaptureSuppressionException(
+          'native capture suspend failed: ${result.error ?? "unknown"}',
+        );
+      }
+      return _GalIngameCaptureLease(
+        () => _releaseMiningCaptureLease(leaseEpoch),
+      );
+    } catch (error) {
+      // 回执失败不等于 hook 没执行：可能是“已隐藏，ack 超时”。无条件跑恢复，
+      // 同时保持 fail-closed（异常继续抛，调用方不会截图）。
+      await _releaseMiningCaptureLease(leaseEpoch);
+      if (error is GalHookCaptureSuppressionException) rethrow;
+      throw GalHookCaptureSuppressionException(
+        'native capture suspend threw: $error',
+      );
+    }
+  }
+
+  Future<void> _releaseMiningCaptureLease(int leaseEpoch) async {
+    if (!_captureSuppressed || leaseEpoch != _captureLeaseEpoch) return;
+    final int? suspendedSeq = _captureSuppressedSeq;
+    final int suspendedSessionEpoch = _captureSuppressedSessionEpoch;
+    _captureSuppressed = false;
+    _captureSuppressedSeq = null;
+
+    try {
+      final GalLookupHit? hit = _activeHit;
+      final GlobalLookupRoute? route = _activeRoute;
+      final int generation = _activeLookupGeneration;
+      if (hit != null &&
+          route != null &&
+          _isCurrentLookup(generation, route) &&
+          _cardPhysicalWidth > 0 &&
+          _cardPhysicalHeight > 0) {
+        // 恢复“现在仍最新”的 route，不保存/复活 acquire 时那张旧卡。新查询若在采样
+        // 期间完成，这里投的是新卡；若尚未 reveal，其回调稍后会自行投第一帧。
+        _recaptureDirty = true;
+        if (!_recaptureInFlight) await _drainRecapture();
+        return;
+      }
+
+      if (route != null && _isCurrentLookup(generation, route)) {
+        // 新 route 仍在查词或尚未完成尺寸握手。保持 native suppress，等它自己的
+        // reveal/present 解除；现在投旧尺寸会把上一张卡闪回。
+        return;
+      }
+
+      // 当前 route 已结束时没有后续 full present 可以解除 native suppress。只有同一
+      // 会话才用原 seq 发普通 dismiss 做幂等清理；跨会话旧 lease 不能误伤新 mapping。
+      if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
+        final GalLookupCallResult result =
+            await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+        glog('gal-ingame: capture restore dismiss seq=$suspendedSeq '
+            '-> ${result.error ?? "ok"}');
+      }
+    } catch (error, stackTrace) {
+      // release 位于 capture 的 finally；它绝不能用恢复异常覆盖“已成功采到的像素”，
+      // 更不能让 acquire 失败被 GIF 的普通 fail-open 路径吞掉。记录后尽力发普通
+      // dismiss 清掉 native suppress；下一次查询仍可按正常 full present 重建卡片。
+      glog('gal-ingame: capture restore EXCEPTION $error\n$stackTrace');
+      if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
+        try {
+          await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+        } catch (_) {}
+      }
     }
   }
 
@@ -468,15 +692,67 @@ class GalIngameLookupController {
     if (hit == null || !_enabledNow) return;
     if (!_isCurrentLookup(_activeLookupGeneration, route)) return;
     if (physicalWidth <= 0 || physicalHeight <= 0) return;
-    final int start = hit.charIndex;
-    final int len = _highlightLength(hit);
-    final ({int x, int y}) anchor =
-        _resolveAnchor(hit, physicalWidth, physicalHeight);
-    glog('gal-ingame: present seq=${hit.seq} anchor=(${anchor.x},${anchor.y}) '
-        'card=${physicalWidth}x$physicalHeight hl=$start+$len');
-    unawaited(
-      _present(hit, anchor, start, len, _activeLookupGeneration, route),
-    );
+    _cardPhysicalWidth = physicalWidth;
+    _cardPhysicalHeight = physicalHeight;
+    glog('gal-ingame: rendered seq=${hit.seq} '
+        'card=${physicalWidth}x$physicalHeight');
+    _scheduleRecapture(_activeLookupGeneration, route);
+  }
+
+  void _scheduleRecapture(int generation, GlobalLookupRoute route) {
+    if (!_isCurrentLookup(generation, route)) return;
+    if (_cardPhysicalWidth <= 0 || _cardPhysicalHeight <= 0) return;
+    _recaptureDirty = true;
+    if (_captureSuppressed) return;
+    if (_recaptureInFlight || _recaptureTurn != null) return;
+    _recaptureTurn = Timer(Duration.zero, () {
+      _recaptureTurn = null;
+      unawaited(_drainRecapture());
+    });
+  }
+
+  Future<void> _drainRecapture() async {
+    if (_captureSuppressed || _recaptureInFlight || !_recaptureDirty) return;
+    _recaptureInFlight = true;
+    _recaptureDirty = false;
+    try {
+      final GalLookupHit? hit = _activeHit;
+      final GlobalLookupRoute? route = _activeRoute;
+      final int generation = _activeLookupGeneration;
+      final int physicalWidth = _cardPhysicalWidth;
+      final int physicalHeight = _cardPhysicalHeight;
+      if (hit == null ||
+          route == null ||
+          physicalWidth <= 0 ||
+          physicalHeight <= 0) {
+        return;
+      }
+      if (!_isCurrentLookup(generation, route)) return;
+      final int start = hit.charIndex;
+      final int len = _highlightLength(hit);
+      final ({int x, int y}) anchor =
+          _resolveAnchor(hit, physicalWidth, physicalHeight);
+      glog('gal-ingame: recapture seq=${hit.seq} '
+          'anchor=(${anchor.x},${anchor.y}) '
+          'card=${physicalWidth}x$physicalHeight hl=$start+$len');
+      await _present(hit, anchor, start, len, generation, route);
+    } finally {
+      _recaptureInFlight = false;
+      // 输入/bridge 在 CapturePreview 期间又把页面改脏：下一 turn 再抓一张，既给
+      // WebView compositor 提交绘制的机会，也避免在一个 async while 里自旋。
+      final GlobalLookupRoute? route = _activeRoute;
+      if (!_captureSuppressed && _recaptureDirty && route != null) {
+        _scheduleRecapture(_activeLookupGeneration, route);
+      }
+    }
+  }
+
+  void _cancelRecapture() {
+    _recaptureTurn?.cancel();
+    _recaptureTurn = null;
+    _recaptureDirty = false;
+    _cardPhysicalWidth = 0;
+    _cardPhysicalHeight = 0;
   }
 
   Future<void> _present(
@@ -487,7 +763,7 @@ class GalIngameLookupController {
     int generation,
     GlobalLookupRoute route,
   ) async {
-    if (!_isCurrentLookup(generation, route)) return;
+    if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupPresent(
       seq: hit.seq,
@@ -496,7 +772,7 @@ class GalIngameLookupController {
       highlightStart: highlightStart,
       highlightLen: highlightLen,
     );
-    if (!_isCurrentLookup(generation, route)) return;
+    if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     if (!result.ok) {
       glog('gal-ingame: present seq=${hit.seq} FAILED ${result.error}');
       return;
@@ -528,11 +804,17 @@ class GalIngameLookupController {
     _activeLookupGeneration = 0;
     _latestSubmitHit = null;
     _pendingLookup = null;
+    _cancelRecapture();
     try {
-      if (hit != null) {
+      if (hit != null && !_captureSuppressed) {
         final GalLookupCallResult result =
             await GalHookTextOverlayChannel.galLookupDismiss(hit.seq);
         glog('gal-ingame: dismiss seq=${hit.seq} -> ${result.error ?? "ok"}');
+      } else if (hit != null) {
+        // capture-suppress 已经把 card/highlight 收掉；此刻普通 dismiss 会提前解除
+        // native 的持续 suppress，让 WGC 采样后半段重新吃到 hover 高亮。lease release
+        // 会在截图结束后做同会话 dismiss 补偿。
+        glog('gal-ingame: defer dismiss seq=${hit.seq} until capture release');
       }
     } finally {
       await _hideThenInvalidateRoute(route);
@@ -640,6 +922,20 @@ class GalIngameLookupController {
     if (value < min) return min;
     if (value > max) return max;
     return value;
+  }
+}
+
+class _GalIngameCaptureLease implements GalHookCaptureLease {
+  _GalIngameCaptureLease(this._onRelease);
+
+  final Future<void> Function() _onRelease;
+  bool _released = false;
+
+  @override
+  Future<void> release() async {
+    if (_released) return;
+    _released = true;
+    await _onRelease();
   }
 }
 

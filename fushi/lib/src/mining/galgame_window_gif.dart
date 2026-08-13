@@ -21,6 +21,30 @@ typedef GalWindowAnimatedCapture = ({
   MiningAnimatedFormat format,
 });
 
+/// 游戏画面采样期间持有的可释放屏障。
+///
+/// 游戏内查词卡本身画在目标游戏窗口里，所以场景截图必须先由 hook 确认卡片与高亮
+/// 已隐藏。lease 的生命周期只覆盖真正读取窗口像素的区间；ffmpeg 编码和 Anki 写入
+/// 不得占着它，否则卡片会在与截图无关的慢任务期间一直消失。
+abstract class GalHookCaptureLease {
+  Future<void> release();
+}
+
+typedef GalHookCaptureLeaseFactory = Future<GalHookCaptureLease> Function();
+
+/// 无法确认游戏内查词层已经隐藏时的 fail-closed 信号。
+///
+/// [captureWindowGifBytes] 平时 fail-open 回退静图，但这个异常绝不能被吞成普通 GIF
+/// 失败，否则调用方会在隐藏状态未知时继续截图，仍可能把 popup 制进卡片。
+class GalHookCaptureSuppressionException implements Exception {
+  const GalHookCaptureSuppressionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'GalHookCaptureSuppressionException: $message';
+}
+
 /// galgame 一键制卡「画面」动图（抓角色口型/眨眼）：连续对绑定窗口抓多帧静态截图，
 /// 再用**复用的桌面 ffmpeg 后端**（`resolveFfmpegBackend()`，与 `desktop_audio_clipper.dart`
 /// 里 `extractClipGifViaFfmpeg` 走的是同一后端解析——覆盖 `FUSHI_FFMPEG` > 程序旁捆绑
@@ -42,6 +66,7 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   // 动图编码格式。默认 [MiningAnimatedFormat.gif] = 旧行为逐字等价（未传的既有调用点
   // 与测试不受影响）；真实调用点传用户偏好 `gal_mining_animated_format`。
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  GalHookCaptureLeaseFactory? captureLeaseFactory,
 }) async {
   // 只在桌面有 CLI ffmpeg 时可用；移动端无 CLI ffmpeg，直接回退单帧（且外部窗口捕获
   // 本就只有 Windows）。不做平台早退硬编码——ffmpeg 后端跑不起来时下面自然 fail-open。
@@ -50,39 +75,47 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     tempDir = await Directory.systemTemp.createTemp('hibiki_gal_gif_');
     // 连续抓帧：任一帧失败跳过该帧；帧间 sleep [intervalMs]（捕获本身还有 WGC 延迟）。
     int captured = 0;
-    // BUG-1096：native 的成功路径诊断（光标抑制是否真的生效 / 捕获目标是否被从
-    // Magpie 缩放窗重定向）。每轮只记一次，逐帧刷会把日志淹掉。
-    String? loggedDiagnostics;
-    for (int i = 0; i < frames; i++) {
-      if (i > 0 && intervalMs > 0) {
-        await Future<void>.delayed(Duration(milliseconds: intervalMs));
+    final GalHookCaptureLease? captureLease =
+        captureLeaseFactory == null ? null : await captureLeaseFactory();
+    try {
+      // BUG-1096：native 的成功路径诊断（光标抑制是否真的生效 / 捕获目标是否被从
+      // Magpie 缩放窗重定向）。每轮只记一次，逐帧刷会把日志淹掉。
+      String? loggedDiagnostics;
+      for (int i = 0; i < frames; i++) {
+        if (i > 0 && intervalMs > 0) {
+          await Future<void>.delayed(Duration(milliseconds: intervalMs));
+        }
+        final WindowCaptureResult cap =
+            await WindowCaptureChannel.captureWindow(hwnd);
+        final String? diagnostics = cap.diagnostics;
+        if (diagnostics != null &&
+            diagnostics.isNotEmpty &&
+            diagnostics != loggedDiagnostics) {
+          loggedDiagnostics = diagnostics;
+          ErrorLogService.instance.log(
+            'captureWindowGifBytes',
+            'window capture diagnostics: $diagnostics',
+            StackTrace.current,
+          );
+        }
+        if (!cap.ok) {
+          continue; // 该帧失败：跳过，尽力而为。
+        }
+        final Uint8List png = cap.pngBytes!;
+        final String frameName =
+            'frame_${captured.toString().padLeft(3, '0')}.png';
+        try {
+          await File(p.join(tempDir.path, frameName))
+              .writeAsBytes(png, flush: true);
+        } catch (_) {
+          continue; // 写盘失败：跳过该帧。
+        }
+        captured++;
       }
-      final WindowCaptureResult cap =
-          await WindowCaptureChannel.captureWindow(hwnd);
-      final String? diagnostics = cap.diagnostics;
-      if (diagnostics != null &&
-          diagnostics.isNotEmpty &&
-          diagnostics != loggedDiagnostics) {
-        loggedDiagnostics = diagnostics;
-        ErrorLogService.instance.log(
-          'captureWindowGifBytes',
-          'window capture diagnostics: $diagnostics',
-          StackTrace.current,
-        );
-      }
-      if (!cap.ok) {
-        continue; // 该帧失败：跳过，尽力而为。
-      }
-      final Uint8List png = cap.pngBytes!;
-      final String frameName =
-          'frame_${captured.toString().padLeft(3, '0')}.png';
-      try {
-        await File(p.join(tempDir.path, frameName))
-            .writeAsBytes(png, flush: true);
-      } catch (_) {
-        continue; // 写盘失败：跳过该帧。
-      }
-      captured++;
+    } finally {
+      // 只包住上面的窗口采样区间。下面可能运行 60 秒的 ffmpeg 编码不应让游戏内
+      // popup 一直消失；release 也必须覆盖捕获/写帧异常。
+      if (captureLease != null) await captureLease.release();
     }
     // 抓到 <2 帧：不成动图，交调用方回退单帧。
     if (captured < 2) {
@@ -132,6 +165,8 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
       }
     }
     return null;
+  } on GalHookCaptureSuppressionException {
+    rethrow;
   } on ProcessException catch (e, stack) {
     // ffmpeg 不可用（移动端无 CLI / 未捆绑 / 不在 PATH）：优雅回退单帧。
     ErrorLogService.instance.log('captureWindowGifBytes', e, stack);

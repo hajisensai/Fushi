@@ -1137,8 +1137,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
       [this](uint32_t kind, int32_t x, int32_t y, int32_t wheel,
              uint32_t keys) {
         GlobalLookupWindow* card = EnsureGalLookupCardWindow();
-        if (card == nullptr) return;
-        card->InjectLookupInput(kind, x, y, wheel, keys);
+        if (card == nullptr) return false;
+        return card->InjectLookupInput(kind, x, y, wheel, keys);
       });
 
   gal_hook_text_channel_->SetMethodCallHandler(

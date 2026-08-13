@@ -97,6 +97,10 @@ class GlobalLookupController {
     int physicalWidth,
     int physicalHeight,
   )? onRoutedRevealed;
+
+  /// Interactive gal-card pixels changed after the first reveal.  The route
+  /// owner coalesces these notifications into bitmap recaptures.
+  void Function(GlobalLookupRoute route)? onRoutedDirty;
   GlobalLookupRoute? _activeRoute;
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
@@ -111,6 +115,22 @@ class GlobalLookupController {
   // and the host's commitLayerShift (which pins the root) would never run.
   int _lastSentDx = 0;
   int _lastSentDy = 0;
+  // The geometry belonging to the most recent galCard resize.  Unlike desktop,
+  // galCard does not notify its owner until the host has presented two frames at
+  // this size and posts the route-stamped `captureReady` message.
+  ({
+    GlobalLookupRoute route,
+    int generation,
+    int width,
+    int height,
+    int dx,
+    int dy,
+    double left,
+    double top,
+    int attempt,
+  })? _pendingGalCapture;
+  Timer? _galCaptureReadySafety;
+  int _galCaptureGeneration = 0;
   // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
   // only ever moves OUTWARD (up/left) within one lookup session, never back
   // inward. Moving it inward on a nested CLOSE slides the window top-left back
@@ -712,6 +732,7 @@ class GlobalLookupController {
       // re-measures and reveals from scratch.
       _lastSentWidth = -1;
       _lastSentHeight = -1;
+      _cancelPendingGalCapture();
       _revealed = false;
       _revealSafety?.cancel();
       // TODO-1231 (BUG-583) — a fresh hotkey lookup starts a new session: drop
@@ -730,23 +751,13 @@ class GlobalLookupController {
       _resetStackRoot(text, result);
       _recordLookupCount();
 
-      // TODO-1095 — announce a NEW lookup to the host BEFORE the stack render:
-      // clear the union-bbox de-dup key (so the fresh card's reveal-driving
-      // overlaySize is never suppressed by a stale identical bbox) and re-gate
-      // the REUSED root shell's content-ready flag (so the reveal waits for THIS
-      // lookup's popupRendered, not the previous card's already-satisfied gate).
-      // Sent through the existing render channel (ExecuteScript) so no new native
-      // method is needed; the host guard makes it inert until host.js installs.
+      // TODO-1095 — a fresh lookup must reset the host route/bbox/content gate.
+      // Do not send beginLookup as a separate RenderJson call here: on a cold or
+      // recovering WebView the native side intentionally retains one complete
+      // pending render (last-wins), so a later renderStack would overwrite the
+      // route prelude and leave the host on desktop/0/0.  [_renderStack] prefixes
+      // both operations into one atomic script below.
       final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
-      await GlobalLookupChannel.render(
-        buildBeginLookupScript(
-          kGlobalLookupRootFrameId,
-          source: route.source,
-          routeEpoch: route.routeEpoch,
-          lookupEpoch: route.lookupEpoch,
-        ),
-      );
-      if (!_isCurrentRoute) return;
 
       // Render OFF-SCREEN at the reader-faithful size (popupMax* × appUiScale ×
       // dpr) so the page measures at the correct width straight away; the card
@@ -832,7 +843,7 @@ class GlobalLookupController {
       );
       _originFloorLeft = floor.left;
       _originFloorTop = floor.top;
-      await _renderStack();
+      await _renderStack(beginRoute: route);
       if (!_isCurrentRoute) return;
       glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
           'workCss=${_screenWorkW}x$_screenWorkH rendered');
@@ -884,8 +895,18 @@ class GlobalLookupController {
         _revealed = true;
         glog('reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
             'w=$width h=$height');
-        unawaited(GlobalLookupChannel.reveal(width: width, height: height));
-        _notifyRevealed(width, height);
+        if (GlobalLookupChannel.currentRoute.source == 'galCard') {
+          unawaited(GlobalLookupChannel.revealStack(
+            dx: 0,
+            dy: 0,
+            width: width,
+            height: height,
+          ));
+          _notifyAfterResizeReady(width, height);
+        } else {
+          unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+          _notifyRevealed(width, height);
+        }
         return;
       }
       // Surface still loading — defer instead of revealing blank.
@@ -989,6 +1010,7 @@ class GlobalLookupController {
     _lastSentHeight = -1;
     _lastSentDx = 0;
     _lastSentDy = 0;
+    _cancelPendingGalCapture();
     // TODO-1231 (BUG-583) — clear the origin ratchet on a genuine dismissal so
     // the next session starts unconstrained.
     _ratchetLeft = double.infinity;
@@ -1074,6 +1096,43 @@ class GlobalLookupController {
   void _onJsMessage(Map<String, Object?> message) {
     final Object? handler = message['handler'];
     glog('js: handler=$handler args=${message['args']}');
+    if (handler == 'captureReady') {
+      final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+      if (route.source == 'galCard') {
+        final pending = _pendingGalCapture;
+        final Object? args = message['args'];
+        final int? readyWidth =
+            args is List && args.isNotEmpty && args[0] is num
+                ? (args[0] as num).toInt()
+                : null;
+        final int? readyHeight =
+            args is List && args.length > 1 && args[1] is num
+                ? (args[1] as num).toInt()
+                : null;
+        if (pending != null &&
+            readyWidth == pending.width &&
+            readyHeight == pending.height) {
+          _galCaptureReadySafety?.cancel();
+          _galCaptureReadySafety = null;
+          _pendingGalCapture = null;
+          _notifyRevealed(pending.width, pending.height);
+        }
+      }
+      return;
+    }
+    if (handler == 'galFrameDirty') {
+      final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+      // A resize has its own captureReady gate.  Ignore dirty notifications
+      // from DOM work during that interval; capturing with the previous card
+      // dimensions would crop the newly resized surface, and captureReady will
+      // publish the definitive frame immediately afterwards.
+      if (route.source == 'galCard' &&
+          _isCurrentRoute &&
+          _pendingGalCapture == null) {
+        onRoutedDirty?.call(route);
+      }
+      return;
+    }
     // Phase C（弹窗尺寸精细化 2026-07-13）— 瞬态覆盖窗被用户拖右下角 grip 调整
     // 尺寸：native 模态 size 循环结束后经 WM_EXITSIZEMOVE 回报最终窗口 rect（物理
     // px，args=[left,top,width,height]），与剪贴板面板走同一 windowMoved 通道，但
@@ -1447,7 +1506,7 @@ class GlobalLookupController {
   /// injects global_lookup_host.js (the script is guarded by
   /// `window.__globalLookupHost &&`), so the live single-frame overlay is
   /// unaffected today. Frames whose result was pruned are skipped.
-  Future<void> _renderStack() async {
+  Future<void> _renderStack({GlobalLookupRoute? beginRoute}) async {
     final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
     final AppModel? model = _appModel;
     if (ctx == null || model == null || _stack.isEmpty) {
@@ -1488,7 +1547,9 @@ class GlobalLookupController {
     }
     // maxWidth/maxHeight are the single card size; children cascade and D2 bbox
     // trims the window down to the real extent.
-    final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+    final double dpr = _devicePixelRatio();
+    final LookupSize overlaySize =
+        _clampToPhysicalCap(model.overlayLookupEffectiveSize, model, dpr);
     final double cardW = overlaySize.width * model.appUiScale;
     final double cardH = overlaySize.height * model.appUiScale;
     // TODO-893 — screenWidth/screenHeight MUST be the real monitor work area
@@ -1501,7 +1562,7 @@ class GlobalLookupController {
     // area (e.g. monitor query failed).
     final double screenW = pickScreenDim(_screenWorkW, _layoutBoundsW, cardW);
     final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
-    await GlobalLookupChannel.render(buildStackRenderScript(
+    final String stackScript = buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
@@ -1518,7 +1579,20 @@ class GlobalLookupController {
       // child then never moves the origin -> zero parent displacement).
       originFloorLeft: _originFloorLeft,
       originFloorTop: _originFloorTop,
-    ));
+    );
+    // Cold-create and process-recovery paths cache exactly one complete script
+    // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so
+    // last-wins caching cannot discard the immutable route epoch while retaining
+    // the pixels.  Subsequent nested/visual-only renders omit the prelude.
+    final String script = beginRoute == null
+        ? stackScript
+        : '${buildBeginLookupScript(
+            kGlobalLookupRootFrameId,
+            source: beginRoute.source,
+            routeEpoch: beginRoute.routeEpoch,
+            lookupEpoch: beginRoute.lookupEpoch,
+          )}$stackScript';
+    await GlobalLookupChannel.render(script);
   }
 
   /// TODO-867 P3c C2 — parses the onLinkClick anchor arg ({x,y,width,height} in
@@ -1605,7 +1679,14 @@ class GlobalLookupController {
           height: h,
           left: ratcheted.left,
           top: ratcheted.top));
-      _notifyRevealed(w, h);
+      _notifyAfterResizeReady(
+        w,
+        h,
+        dx: dx,
+        dy: dy,
+        left: ratcheted.left,
+        top: ratcheted.top,
+      );
     } else if (w != _lastSentWidth ||
         h != _lastSentHeight ||
         dx != _lastSentDx ||
@@ -1624,8 +1705,98 @@ class GlobalLookupController {
           height: h,
           left: ratcheted.left,
           top: ratcheted.top));
-      _notifyRevealed(w, h);
+      _notifyAfterResizeReady(
+        w,
+        h,
+        dx: dx,
+        dy: dy,
+        left: ratcheted.left,
+        top: ratcheted.top,
+      );
     }
+  }
+
+  void _notifyAfterResizeReady(
+    int width,
+    int height, {
+    int dx = 0,
+    int dy = 0,
+    double left = 0,
+    double top = 0,
+  }) {
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    if (route.source == 'galCard') {
+      final int generation = ++_galCaptureGeneration;
+      _pendingGalCapture = (
+        route: route,
+        generation: generation,
+        width: width,
+        height: height,
+        dx: dx,
+        dy: dy,
+        left: left,
+        top: top,
+        attempt: 0,
+      );
+      _scheduleGalCaptureReadySafety(generation);
+      return;
+    }
+    _notifyRevealed(width, height);
+  }
+
+  void _cancelPendingGalCapture() {
+    _galCaptureReadySafety?.cancel();
+    _galCaptureReadySafety = null;
+    _pendingGalCapture = null;
+    _galCaptureGeneration++;
+  }
+
+  void _scheduleGalCaptureReadySafety(int generation) {
+    _galCaptureReadySafety?.cancel();
+    _galCaptureReadySafety = Timer(_kReadySafetyStep, () {
+      final pending = _pendingGalCapture;
+      if (pending == null ||
+          pending.generation != generation ||
+          pending.route != _activeRoute ||
+          !GlobalLookupChannel.isRouteValid(pending.route)) {
+        return;
+      }
+      if (pending.attempt >= _kReadySafetyMaxAttempts) {
+        glog('captureReady: bounded fallback after ${pending.attempt} retries '
+            'route=${pending.route.routeEpoch}/${pending.route.lookupEpoch} '
+            'size=${pending.width}x${pending.height}');
+        _pendingGalCapture = null;
+        _galCaptureReadySafety = null;
+        GlobalLookupChannel.runWithRoute(
+          pending.route,
+          () => _notifyRevealed(pending.width, pending.height),
+        );
+        return;
+      }
+      _pendingGalCapture = (
+        route: pending.route,
+        generation: pending.generation,
+        width: pending.width,
+        height: pending.height,
+        dx: pending.dx,
+        dy: pending.dy,
+        left: pending.left,
+        top: pending.top,
+        attempt: pending.attempt + 1,
+      );
+      GlobalLookupChannel.runWithRoute(
+        pending.route,
+        () => unawaited(GlobalLookupChannel.revealStack(
+          dx: pending.dx,
+          dy: pending.dy,
+          width: pending.width,
+          height: pending.height,
+          left: pending.left,
+          top: pending.top,
+        )),
+      );
+      _scheduleGalCaptureReadySafety(generation);
+    });
   }
 
   /// TODO-867 P3c — legacy single-card sizing (host reported [dpr, physH] rather
@@ -1643,14 +1814,34 @@ class GlobalLookupController {
       _lastSentWidth = width;
       _lastSentHeight = height;
       glog('reveal(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
-      unawaited(GlobalLookupChannel.reveal(width: width, height: height));
-      _notifyRevealed(width, height);
+      if (GlobalLookupChannel.currentRoute.source == 'galCard') {
+        unawaited(GlobalLookupChannel.revealStack(
+          dx: 0,
+          dy: 0,
+          width: width,
+          height: height,
+        ));
+        _notifyAfterResizeReady(width, height);
+      } else {
+        unawaited(GlobalLookupChannel.reveal(width: width, height: height));
+        _notifyRevealed(width, height);
+      }
     } else if (width != _lastSentWidth || height != _lastSentHeight) {
       _lastSentWidth = width;
       _lastSentHeight = height;
       glog('resize(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
-      unawaited(GlobalLookupChannel.resize(width: width, height: height));
-      _notifyRevealed(width, height);
+      if (GlobalLookupChannel.currentRoute.source == 'galCard') {
+        unawaited(GlobalLookupChannel.revealStack(
+          dx: 0,
+          dy: 0,
+          width: width,
+          height: height,
+        ));
+        _notifyAfterResizeReady(width, height);
+      } else {
+        unawaited(GlobalLookupChannel.resize(width: width, height: height));
+        _notifyRevealed(width, height);
+      }
     }
   }
 }

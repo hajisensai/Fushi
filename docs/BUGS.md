@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1503 条。点号进各自文件。
+> 共 1508 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1608](bugs/BUG-1608-gal-ingame-nested-popup-height-clipped.md) | ✅ | ✅ | 游戏内嵌套查词卡被父弹窗锚点空间裁短 |
+| [BUG-1607](bugs/BUG-1607-gal-ingame-card-capture-includes-popup.md) | ✅ | 🚧 | 游戏内查词制卡截图包含查词框 |
+| [BUG-1606](bugs/BUG-1606-gal-ingame-popup-input-rendering.md) | ✅ | 🚧 | 游戏内查词位图卡渲染错位且滚轮、按钮与制卡失效 |
+| [BUG-1605](bugs/BUG-1605-gal-ingame-native-popup-ownership.md) | ✅ | ✅ | 游戏内查词离屏卡被钳回桌面导致重复弹窗 |
+| [BUG-1604](bugs/BUG-1604-gal-ingame-kag-anchor-primary-coordinates.md) | ✅ | ✅ | 游戏内查词把 KAG 消息锚点误判为脱离 primary 导致字形恒不命中 |
 | [BUG-1603](bugs/BUG-1603-srt-subtitle-shadow-directional-offset.md) | ✅ | ✅ | SRT 字幕柔和投影方向性偏下，真机上观感为阴影错位 |
 | [BUG-1596](bugs/BUG-1596-release-sequence-workdir.md) | ✅ | ✅ | release.yml 序号脚本在 working-directory: fushi 下解析成不存在路径，恢复自动发布首跑 exit 127 |
 | [BUG-1595](bugs/BUG-1595-dict-update-not-replacing.md) | ✅ | ✅ | 词典更新入口遇新包标题变化仍判新增两版并存 |
@@ -528,7 +533,7 @@
 | [BUG-1044](bugs/BUG-1044-popup-auto-expand-rows-vs-columns.md) | ✅ | ✅ | 折叠词典「自动展开词典数」与「词典列数」冲突：绝对本数不随列数对齐致顶部参差 |
 | [BUG-1043](bugs/BUG-1043-ios-smoke-update-dialog-steals-focus.md) | ✅ | ✅ | iOS冒烟测试焦点断言被启动期更新弹窗与恒真判定掩盖 |
 | [BUG-1042](bugs/BUG-1042-ios-generated-xcconfig-tracked.md) | ✅ | ✅ | iOS Flutter 生成文件误入库导致 Mac 上 pod install 失败 |
-| [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | 🚧 | 🚧 | 查词浮窗卡片左侧圆角右侧直角 |
+| [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | ✅ | ✅ | 查词浮窗卡片左侧圆角右侧直角 |
 | [BUG-1040](bugs/BUG-1040-mined-card-dialog-centered-and-above-popup.md) | ✅ | ✅ | 「卡片已在 Anki 中」是底部 sheet 且层级低于查词弹窗（被盖住看不见） |
 | [BUG-1039](bugs/BUG-1039-native-tier-gif-explodes-mining.md) | ✅ | ✅ | 制卡「原片档」把 GIF 按源分辨率+源帧率导出 → 制卡/覆盖巨慢、Anki 无响应 |
 | [BUG-1038](bugs/BUG-1038-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |

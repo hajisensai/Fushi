@@ -1,4 +1,4 @@
-// v14 游戏内查词区的**契约级**测试。
+// v15 游戏内查词区的**契约级**测试。
 //
 // 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Hibiki
 // 里，两边只靠 voice_hook_ipc.h 的寻址函数对齐。所以下面钉死的不是"某个 adapter 怎么
@@ -9,8 +9,10 @@
 //      每一条拒绝理由都要有自己的独立用例，否则某天有人删掉其中一条也没人发现；
 //   3. `lookup_region_offset == 0`（旧会话 / 未分配）时访问器一律给 nullptr，而不是
 //      拿 header 基址当区起点算出野指针；
-//   4. v14 是对 v13 的**纯追加**布局：v13 及更早各区的偏移一个字节
-//      都不许被查词区影响。
+//   4. v14 查词区仍是对 v13 的**纯追加**布局；v15 又只在 v14 头尾追加
+//      lookup_frame_applied_seq，任何既有字段一个字节都不许挪；
+//   5. capture-suppress 有独占的精确 flags 身份，普通 present/dismiss/highlight 或混合位
+//      不能冒充一笔可确认的截图抑制。
 //
 // 与 text_lane_ipc_test.cpp 同一套做法：在进程内摆一块按真实布局排好的假共享内存，
 // 直接跑契约头里的那份寻址实现（不复制一份到测试里）。
@@ -31,6 +33,7 @@ using fushi_voice_hook::IsLookupFrameSane;
 using fushi_voice_hook::kClipCount;
 using fushi_voice_hook::kLookupBitmapBytes;
 using fushi_voice_hook::kLookupFrameCount;
+using fushi_voice_hook::kLookupFrameCaptureSuppress;
 using fushi_voice_hook::kLookupFrameDismiss;
 using fushi_voice_hook::kLookupFrameHighlightOnly;
 using fushi_voice_hook::kLookupInputSlotCount;
@@ -544,11 +547,35 @@ void TestDismissFrameIsFlagBornNotShapeInferred() {
         "废帧与收卡帧的唯一区别就是这个位，不是形状");
 }
 
-// ── 4. v14 是纯追加 ────────────────────────────────────────────────────────
+// 截图抑制同样是无像素控制帧，但它不能按“含有某个位”识别。若 dismiss/highlight 与
+// suppress 混合后也能命中，普通控制帧就可能排入 applied-seq 确认链，host 会在 popup
+// 仍可见时误以为窗口已经干净。
+void TestCaptureSuppressHasExactControlIdentity() {
+  Check(kLookupFrameCaptureSuppress == 0x00000004u,
+        "v15 capture-suppress 的 wire flag 必须锁在 0x4");
+  Check((kLookupFrameCaptureSuppress & kLookupFrameDismiss) == 0,
+        "capture-suppress 与 dismiss 必须是互斥位");
+  Check((kLookupFrameCaptureSuppress & kLookupFrameHighlightOnly) == 0,
+        "capture-suppress 与 highlight-only 必须是互斥位");
 
-void TestV14IsPureAppendOverV13() {
-  Check(kSharedVersion == 14, "本测试锁的是 v14 契约");
+  const uint32_t ordinary_or_mixed_flags[] = {
+      0,
+      kLookupFrameDismiss,
+      kLookupFrameHighlightOnly,
+      kLookupFrameDismiss | kLookupFrameCaptureSuppress,
+      kLookupFrameHighlightOnly | kLookupFrameCaptureSuppress,
+      kLookupFrameDismiss | kLookupFrameHighlightOnly |
+          kLookupFrameCaptureSuppress,
+  };
+  for (const uint32_t flags : ordinary_or_mixed_flags) {
+    Check(flags != kLookupFrameCaptureSuppress,
+          "只有 exact CaptureSuppress 能进入截图确认链；普通/混合帧不得冒充 ack");
+  }
+}
 
+// ── 4. v14/v15 都是纯追加 ───────────────────────────────────────────────────
+
+void TestV14LookupRegionIsPureAppendOverV13() {
   // (a) 结构体层面：查词字段整体排在 v13 最后一个字段之后。中间插一个字段就会让所有
   //     v13 消费者读错位，而版本号又已经匹配、挡不住。
   const size_t last_v13_field =
@@ -599,6 +626,22 @@ void TestV14IsPureAppendOverV13() {
         "查词区必须追加在所有 v13 区之后");
 }
 
+void TestV15OnlyAppendsCaptureSuppressAckOverV14() {
+  Check(kSharedVersion == 15, "本测试锁的是 v15 契约");
+
+  // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
+  // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
+  const size_t last_v14_field = offsetof(SharedHeader, lookup_diag);
+  const size_t only_v15_field =
+      offsetof(SharedHeader, lookup_frame_applied_seq);
+  Check(only_v15_field == last_v14_field + sizeof(uint32_t),
+        "v15 applied seq 必须紧跟 v14 末字段，不能移动或填改既有查词字段");
+  Check(only_v15_field % alignof(uint64_t) == 0,
+        "v15 applied seq 必须保持 8 字节对齐");
+  Check(sizeof(SharedHeader) == only_v15_field + sizeof(uint64_t),
+        "v15 只能追加 lookup_frame_applied_seq，头尾不得再混入别的字段");
+}
+
 // 头里的冗余自洽字段必须与编译期常量一致——否则读侧按 header 值寻址、写侧按常量写，
 // 会各算各的。
 void TestHeaderMirrorsCompileTimeConstants() {
@@ -613,6 +656,8 @@ void TestHeaderMirrorsCompileTimeConstants() {
   Check(kLookupFrameCount >= 2, "位图必须至少双缓冲");
   Check(sizeof(LookupHitSlot) % 8 == 0, "hit 槽结构 8 对齐");
   // 帧结构随 v14 收卡改造从 48 字节长到 64（加了 hit_seq / flags / reserved2）。
+  // v15 只在 SharedHeader 末尾追加 ack，不能顺手改 LookupFrame 的跨进程步长。
+  Check(sizeof(LookupFrame) == 64, "v15 不得改变 v14 的 64 字节帧结构");
   // 跨进程结构体不 8 对齐，双缓冲的第二块就会歪，且 volatile uint64 在 x86 上会撕裂。
   Check(sizeof(LookupFrame) % 8 == 0, "帧结构 8 对齐");
   Check(sizeof(LookupInputSlot) % 8 == 0, "输入槽结构 8 对齐");
@@ -630,8 +675,10 @@ int main() {
   TestShouldApplyTruthTable();
   TestDismissRightAfterPresentIsNotTreatedAsStale();
   TestDismissFrameIsFlagBornNotShapeInferred();
+  TestCaptureSuppressHasExactControlIdentity();
   TestAcceptedFramesAlwaysFitInsideTheirBitmapSlot();
-  TestV14IsPureAppendOverV13();
+  TestV14LookupRegionIsPureAppendOverV13();
+  TestV15OnlyAppendsCaptureSuppressAckOverV14();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {
     fprintf(stderr, "lookup ipc contract test failures: %d\n", g_failures);
