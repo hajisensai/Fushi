@@ -98,8 +98,8 @@ PlatformServices fakePlatformServices({
   FakePermissionService? permission,
   FakeDeviceInfoService? deviceInfo,
   BaseAnkiRepository Function()? createAnkiRepository,
-  BaseAnkiRepository Function()? createAndroidAnkiConnectRepository,
-  bool isAndroid = false,
+  BaseAnkiRepository Function()? createMobileAnkiConnectRepository,
+  bool isMobile = false,
 }) {
   return PlatformServices(
     directory: directory ?? FakeDirectoryService(),
@@ -108,7 +108,7 @@ PlatformServices fakePlatformServices({
     permission: permission ?? FakePermissionService(),
     deviceInfo: deviceInfo ?? FakeDeviceInfoService(),
     createAnkiRepository: createAnkiRepository ?? AnkiConnectRepository.new,
-    createAndroidAnkiConnectRepository: createAndroidAnkiConnectRepository,
-    isAndroid: isAndroid,
+    createMobileAnkiConnectRepository: createMobileAnkiConnectRepository,
+    isMobile: isMobile,
   );
 }

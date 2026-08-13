@@ -199,10 +199,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
-  Future<void> updateUseAnkiConnectOnAndroid(bool value) async {
+  Future<void> updateUseAnkiConnectOnMobile(bool value) async {
     final updated = await _repository.updateSettings(
       (s) => s.copyWith(
-        useAnkiConnectOnAndroid: value,
+        useAnkiConnectOnMobile: value,
         clearSelectedDeck: true,
         clearSelectedNoteType: true,
         availableDecks: const <AnkiDeck>[],
