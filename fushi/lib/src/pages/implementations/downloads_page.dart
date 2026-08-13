@@ -288,6 +288,16 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                 ),
                               );
                             },
+                            onSetPriority:
+                                (VideoDownloadJobRow job, int priority) async {
+                              final pipeline = ref
+                                  .read(appProvider)
+                                  .videoDownloadPipelineService;
+                              await pipeline?.setJobPriority(
+                                job.jobId,
+                                priority,
+                              );
+                            },
                             locationLoader: (VideoDownloadJobRow job) async {
                               final pipeline = ref
                                   .read(appProvider)

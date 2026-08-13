@@ -59,6 +59,12 @@ final class DatabaseVideoDownloadJobsPanelStore
       database.watchVideoDownloadJobs();
 }
 
+/// 调整单个任务的排队优先级。数值越大越先被取走（DAO 侧 `priority DESC`）。
+typedef VideoDownloadJobPriorityAction = Future<void> Function(
+  VideoDownloadJobRow job,
+  int priority,
+);
+
 /// Compact task surface for schema-v78 durable video downloads.
 ///
 /// Retrying and cancelling are deliberately action ports rather than direct DB
@@ -72,6 +78,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     this.onResume,
     this.onCancel,
     this.onOpenDetails,
+    this.onSetPriority,
     this.locationLoader,
     this.onDelete,
     this.pathRevealer = revealVideoDownloadPath,
@@ -88,6 +95,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     VideoDownloadJobAction? onResume,
     VideoDownloadJobAction? onCancel,
     VideoDownloadJobAction? onOpenDetails,
+    VideoDownloadJobPriorityAction? onSetPriority,
     VideoDownloadJobLocationLoader? locationLoader,
     VideoDownloadJobDeleteAction? onDelete,
     VideoDownloadPathRevealer pathRevealer = revealVideoDownloadPath,
@@ -103,6 +111,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         onResume: onResume,
         onCancel: onCancel,
         onOpenDetails: onOpenDetails,
+        onSetPriority: onSetPriority,
         locationLoader: locationLoader,
         onDelete: onDelete,
         pathRevealer: pathRevealer,
@@ -119,6 +128,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
   final VideoDownloadJobAction? onResume;
   final VideoDownloadJobAction? onCancel;
   final VideoDownloadJobAction? onOpenDetails;
+  final VideoDownloadJobPriorityAction? onSetPriority;
   final VideoDownloadJobLocationLoader? locationLoader;
   final VideoDownloadJobDeleteAction? onDelete;
   final VideoDownloadPathRevealer pathRevealer;
@@ -313,6 +323,13 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               onOpenDetails: widget.onOpenDetails == null
                   ? null
                   : () => _runAction(job, widget.onOpenDetails!),
+              onSetPriority: widget.onSetPriority == null
+                  ? null
+                  : (int priority) => _runAction(
+                        job,
+                        (VideoDownloadJobRow row) =>
+                            widget.onSetPriority!(row, priority),
+                      ),
               // Mobile has no file-manager reveal contract; the action would
               // always fail, so it is not offered there.
               onOpenLocation: widget.locationLoader == null ||
@@ -482,6 +499,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
     required this.onResume,
     required this.onCancel,
     required this.onOpenDetails,
+    required this.onSetPriority,
     required this.onOpenLocation,
     required this.onDelete,
     required this.lifecycleLabel,
@@ -497,6 +515,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final VoidCallback? onResume;
   final VoidCallback? onCancel;
   final VoidCallback? onOpenDetails;
+
+  /// 传 null 表示宿主没接这个能力（例如只读的历史面板）。
+  final void Function(int priority)? onSetPriority;
   final VoidCallback? onOpenLocation;
   final VoidCallback? onDelete;
   final String Function(String lifecycle)? lifecycleLabel;
@@ -510,6 +531,20 @@ class _VideoDownloadJobCard extends StatelessWidget {
   bool get _canResume => job.lifecycle == VideoDownloadJobLifecycle.cancelled;
 
   bool get _canCancel => job.lifecycle == VideoDownloadJobLifecycle.active;
+
+  /// 优先级只对「还会被取走」的任务有意义。已完成 / 已取消的任务调了也不会重新
+  /// 排队，露出来只会让人以为能插队。
+  bool get _canSetPriority =>
+      job.lifecycle == VideoDownloadJobLifecycle.active ||
+      job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
+
+  /// 数值 -> 档位名。非三档的历史值（理论上不会有，但 DB 不拦）按最接近的一档
+  /// 显示，不显示裸数字——用户看到 `优先级 · 7` 只会困惑。
+  static String _priorityLabel(int priority) {
+    if (priority > 0) return t.download_task_priority_high;
+    if (priority < 0) return t.download_task_priority_low;
+    return t.download_task_priority_normal;
+  }
 
   double get _progress =>
       snapshot?.progress.clamp(0, 1).toDouble() ??
@@ -649,6 +684,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
               (_canCancel && onCancel != null) ||
               onOpenDetails != null ||
               onOpenLocation != null ||
+              onSetPriority != null ||
               onDelete != null) ...<Widget>[
             const SizedBox(height: 8),
             Align(
@@ -707,6 +743,43 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             )
                           : const Icon(Icons.close, size: 18),
                       label: Text(t.cancel),
+                    ),
+                  // 优先级只对「还在排队/还没做完」的任务有意义：已完成或已取消
+                  // 的任务再调也不会被重新取走，给了只会让人以为能插队。
+                  if (onSetPriority != null && _canSetPriority)
+                    PopupMenuButton<int>(
+                      key: ValueKey<String>(
+                        'video-download-job-priority-${job.jobId}',
+                      ),
+                      enabled: !busy,
+                      tooltip: t.download_task_priority,
+                      initialValue: job.priority,
+                      onSelected: onSetPriority,
+                      itemBuilder: (BuildContext context) =>
+                          <PopupMenuEntry<int>>[
+                        PopupMenuItem<int>(
+                          value: 1,
+                          child: Text(t.download_task_priority_high),
+                        ),
+                        PopupMenuItem<int>(
+                          value: 0,
+                          child: Text(t.download_task_priority_normal),
+                        ),
+                        PopupMenuItem<int>(
+                          value: -1,
+                          child: Text(t.download_task_priority_low),
+                        ),
+                      ],
+                      child: OutlinedButton.icon(
+                        // 外层 PopupMenuButton 已接管点击；这里只借用按钮外观，
+                        // onPressed 必须为 null 才不会吞掉菜单的手势。
+                        onPressed: null,
+                        icon: const Icon(Icons.low_priority, size: 18),
+                        label: Text(
+                          '${t.download_task_priority} · '
+                          '${_priorityLabel(job.priority)}',
+                        ),
+                      ),
                     ),
                   if (onOpenLocation != null)
                     OutlinedButton.icon(

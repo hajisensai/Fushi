@@ -687,4 +687,65 @@ void main() {
     expect(deleteCalls, <bool>[false, true, true]);
     expect(tester.takeException(), isNull);
   });
+
+  // 用户报障：「没办法设置每个任务的优先权」。priority 列和 DAO 侧的
+  // `priority DESC` 排序一直都在，缺的就是这个写入口。
+  testWidgets('优先级菜单把选中的档位原样交给宿主（绝对值，不是加减）', (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    final List<(String, int)> calls = <(String, int)>[];
+    await _pumpPanel(
+      tester,
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        onSetPriority: (VideoDownloadJobRow job, int priority) async {
+          calls.add((job.jobId, priority));
+        },
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(id: 'active', title: 'Downloading show'),
+    ]);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-download-job-priority-active')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.download_task_priority_high).last);
+    await tester.pumpAndSettle();
+
+    expect(calls, <(String, int)>[('active', 1)],
+        reason: '菜单选「高」必须原样传 1。用加减实现的话反复点会漂，'
+            '同一档点两次得到不同结果。');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('已完成的任务不给优先级入口（调了也不会被重新取走）', (WidgetTester tester) async {
+    final _MemoryJobsStore store = _MemoryJobsStore();
+    addTearDown(store.close);
+    await _pumpPanel(
+      tester,
+      panel: VideoDownloadJobsPanel(
+        store: store,
+        onSetPriority: (VideoDownloadJobRow job, int priority) async {},
+      ),
+    );
+    store.emit(<VideoDownloadJobRow>[
+      _job(
+        id: 'done',
+        title: 'Finished show',
+        lifecycle: VideoDownloadJobLifecycle.completed,
+        progress: 1,
+        completedAt: 10,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-download-job-priority-done')),
+      findsNothing,
+      reason: '给一个不会再被取走的任务露出「优先级」，等于骗用户能插队。',
+    );
+  });
 }

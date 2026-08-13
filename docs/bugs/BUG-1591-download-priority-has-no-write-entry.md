@@ -1,0 +1,17 @@
+## BUG-1591 · priority 列参与排序却无写入口，排队退化成先来后到
+- **报告**：2026-08-13（用户：「下载，没有自动重试，没办法设置每个任务的优先权」）
+- **真实性**：✅ 真 bug（后半句）。❌ 前半句未复现——自动重试**已经有**，详见备注。
+  - `VideoDownloadJobs.priority`（`tables.dart:1983`，默认 0）**早就参与取任务排序**：`database_video_domain.part.dart` 三处 `OrderingTerm.desc(t.priority)`，外加专门的索引 `(lifecycle, next_attempt_at, priority DESC, created_at)`。
+  - 但**没有任何写入口**：它只在建任务时从 `request.priority` 带一次（`video_download_pipeline_service.dart:516`），而所有调用方都用默认值 0。DAO 层也没有任何 update 触及这一列。
+  - 结果：这一列恒为 0，`priority DESC` 恒为常量排序，实际排队退化成纯 `created_at` 先来后到。用户想让某个任务插队时无从下手。
+- **[x] ① 已修复** —
+  - DAO 新增 `setVideoDownloadJobPriority({jobId, priority, nowAt})`：只改 `priority` 与 `updatedAt`。优先级是排队意图，不该顺带动生命周期/阶段/重试预算——那些各有各的入口。
+  - 服务层新增 `VideoDownloadPipelineService.setJobPriority()`，写完立刻 `wake()`：优先级只在「下一次取任务」时生效，不唤醒的话用户会看到调了没反应直到下个轮询周期，观感上等于没生效。
+  - UI：任务卡新增优先级菜单（高 `1` / 普通 `0` / 低 `-1`），**绝对赋值而非加减**——加减实现下同一档点两次会漂。菜单只对 `active` / `needsAttention` 的任务显示：已完成/已取消的任务调了也不会被重新取走，露出来等于骗用户能插队。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_download_jobs_panel_test.dart` 新增 2 条：选「高」必须原样把 `1` 交给宿主（钉死绝对赋值语义）；已完成任务不给优先级入口。面板全组 18 条绿，`flutter analyze` 全量 No issues found。
+- **备注（前半句「没有自动重试」未复现）**：自动重试链路完整存在——
+  - `_observeDownload()` 发现内置引擎丢了任务时自动 `rewindVideoDownloadJobToEnqueue()` 重挂，并**消耗重试预算**（防止「永远重排、UI 上永远 active」）；
+  - `_advance()` 回到 download 阶段时 `resetAttempts: false`，不给反复丢任务的作业退还预算；
+  - 订阅侧有指数退避 `_retryDelay()`；另有用户显式 `retryJob()`。
+  - 非内置后端（外接 qBittorrent）故意不自动重加：外部服务器丢没丢任务不是本地能断言的。
+  - 用户之所以觉得「没有自动重试」，是 BUG-1587 那句误诊文案——排队等槽位的任务被写成「该 torrent 已不在引擎中」，看着就像卡死没人管。修完那句之后这个错觉自然消失。**故不新增第二套重试机制。**
