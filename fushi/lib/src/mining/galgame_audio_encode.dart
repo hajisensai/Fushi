@@ -164,6 +164,89 @@ Future<Uint8List?> pcmSliceToAacBytes({
   }
 }
 
+/// 这个容器格式是否「字节首尾相接仍是合法流」。
+///
+/// ADTS（`.aac`）每帧自带同步字与帧长，多段直接拼起来就是一段连续音频，播放器与 Anki
+/// 都当作一个流解。MP4/M4A 有全局 `moov` 索引，拼接只会得到废文件——所以那边只能退回
+/// 单段。判据写成函数而不是散在调用点，是因为它决定「多语音能不能合成」这一整条分支。
+bool isSelfSynchronizingAudioContainer(String outputExtension) =>
+    outputExtension.toLowerCase() == 'aac';
+
+/// 按顺序把多段音频字节接成一段。纯函数，可单测。空段自动跳过；全空返回空。
+Uint8List concatAudioStreams(List<Uint8List> streams) {
+  int total = 0;
+  for (final Uint8List part in streams) {
+    total += part.length;
+  }
+  final Uint8List out = Uint8List(total);
+  int offset = 0;
+  for (final Uint8List part in streams) {
+    if (part.isEmpty) continue;
+    out.setRange(offset, offset + part.length, part);
+    offset += part.length;
+  }
+  return out;
+}
+
+/// 把**同一句台词的全部原始语音资源**转码并合成一段制卡音频（BUG-1605）。
+///
+/// 为什么需要它：男女声优同台时引擎会为同一条文本读入多个语音资源，hook 各 dump 一个
+/// 文件。旧实现每层只挑一个，卡里就只剩其中一个人的声音。
+///
+/// 合成方式是**按顺序接续播放**，不是叠加混音。这不是偷懒：
+///  - 入库的 `third_party/ffmpeg-min` 是白名单裁剪版，滤镜只留了
+///    `aresample/astats/...`（见 `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 `FILTERS`），
+///    **没有 `amix`/`adelay`/`volume`**；要混音就得改配方、重编三平台二进制并重新
+///    vendor，而 `ffmpeg_min_vendored_recipe_guard_test.dart` 会在二进制换上来之前一直
+///    红。为一个能用接续解决的需求换掉整条工具链不划算。
+///  - 对制卡本身，两个人的台词分开听比叠在一起更能听清——这正是用户要的。
+///
+/// [resourcePaths] 首元素是主语音（配对层已排好序，见 [pickPairedGameResources]）。
+/// 单个资源、或输出容器不是自同步格式（[isSelfSynchronizingAudioContainer]）时退回
+/// 单段转码，语义与旧行为逐字节一致。任何一段转码失败就跳过它（Never break：宁可少一
+/// 个声音，也不能整句没音频）；全部失败返回 null。
+Future<Uint8List?> transcodeVoiceResourcesToMiningAudio({
+  required List<String> resourcePaths,
+  required String tempDir,
+  required String outputExtension,
+  int audioChannels = 1,
+  String audioBitrate = '128k',
+}) async {
+  if (resourcePaths.isEmpty) {
+    return null;
+  }
+  if (resourcePaths.length == 1 ||
+      !isSelfSynchronizingAudioContainer(outputExtension)) {
+    return transcodeVoiceOggToMiningAudio(
+      oggPath: resourcePaths.first,
+      tempDir: tempDir,
+      outputExtension: outputExtension,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+  final List<Uint8List> parts = <Uint8List>[];
+  for (final String path in resourcePaths) {
+    final Uint8List? bytes = await transcodeVoiceOggToMiningAudio(
+      oggPath: path,
+      tempDir: tempDir,
+      outputExtension: outputExtension,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+    if (bytes != null && bytes.isNotEmpty) {
+      parts.add(bytes);
+    }
+  }
+  if (parts.isEmpty) {
+    return null;
+  }
+  if (parts.length == 1) {
+    return parts.first;
+  }
+  return concatAudioStreams(parts);
+}
+
 /// galgame 纯人声一键制卡（docs/specs/galgame-mining）：把注入 hook DLL dump 的**原始语音
 /// OGG 文件** [oggPath] 整段转码成制卡管线容器（桌面 `aac`）字节，供 `providedAudioBytes`
 /// 逐字节写盘。
