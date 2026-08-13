@@ -4377,9 +4377,16 @@ class BackupService {
     }
   }
 
+  /// 导出对话框预填的建议文件名（**纯写侧**）。
+  ///
+  /// 改名安全的前提是读侧从不按文件名识别备份：导入用的是 `allowedExtensions:
+  /// ['zip']`，归档内容识别走 [_findDbEntry]（新条目名 `fushi.db`，旧归档
+  /// `hibiki.db` 有回退），云端后端也没有按 `hibiki-backup*` 列举/轮转的逻辑。
+  /// 所以用户手上 Hibiki 时代的 `*.hibiki.zip` 老包照样能导入（Never break
+  /// userspace），只是今后新导出的包叫 `fushi-backup-*.fushi.zip`。
   String defaultFilename() {
     final String date = FushiTimeFormat.dayKey(DateTime.now());
-    return 'hibiki-backup-$date.hibiki.zip';
+    return 'fushi-backup-$date.fushi.zip';
   }
 
   // ── 旧名兼容转发（命名统一 §1-H：备份动词按用户视角统一 create/restore）────

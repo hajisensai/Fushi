@@ -81,11 +81,10 @@ void main() {
         appVersion: '1.0.0',
       );
       final name = service.defaultFilename();
-      expect(name, startsWith('hibiki-backup-'));
-      expect(name, endsWith('.hibiki.zip'));
+      expect(name, startsWith('fushi-backup-'));
+      expect(name, endsWith('.fushi.zip'));
       expect(
-          RegExp(r'hibiki-backup-\d{4}-\d{2}-\d{2}\.hibiki\.zip')
-              .hasMatch(name),
+          RegExp(r'fushi-backup-\d{4}-\d{2}-\d{2}\.fushi\.zip').hasMatch(name),
           isTrue);
     });
 
