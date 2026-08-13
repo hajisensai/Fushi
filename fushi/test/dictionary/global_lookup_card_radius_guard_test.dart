@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// app 外全局查词卡片「右上/右下圆角消失、左上/左下正常」的防回退守卫（三镜像）。
 ///
 /// 根因：`html.global-lookup { background: transparent }` 让 documentElement 变成
@@ -22,16 +24,15 @@ import 'package:flutter_test/flutter_test.dart';
 ///      的「不透明主题色填满方形 iframe → 被 shell 裁成一圈白框」会回归。
 ///   3. `html.global-lookup body` 仍要有 border-radius —— 卡片圆角的唯一来源。
 ///
-/// 注意：断言前必须剥掉 CSS 注释再看声明。上面这段说明和 popup.css 里的注释都包含
+/// 注意：断言前必须掩掉 CSS 注释再看声明。上面这段说明和 popup.css 里的注释都包含
 /// `background: transparent` 字样，直接对原文 grep 会假阳/假阴（见 CLAUDE.md 的
-/// 源码扫描守卫纪律）。
+/// 源码扫描守卫纪律）。掩码走共享的 `helpers/source_guard.dart`（`maskCssComments`
+/// 是**等长**掩码，注释内容变空格、换行保留），不手写剥离：删除式剥离会让后续
+/// indexOf/substring 的下标与原文错位，且块注释形态漏剪会让要求型断言被注释骗绿
+/// —— 这正是 `source_guard_adoption_test` 锁的那条纪律。
 ///
 /// flutter test cwd 是 fushi 包根。
 void main() {
-  /// 剥掉 `/* ... */` 注释，只留真正的声明。
-  String stripCssComments(String css) =>
-      css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
-
   /// 抽取 `<selector> { ... }` 规则块（行首锚定，避免命中后代规则）。
   String ruleBody(String css, String selectorPattern) {
     final RegExp re = RegExp(r'(?:^|\n)' + selectorPattern + r'\s*\{([^}]*)\}');
@@ -50,7 +51,7 @@ void main() {
     group('[$name] app 外全局查词卡片圆角', () {
       late final String css;
       setUpAll(() {
-        css = stripCssComments(File(relPath).readAsStringSync());
+        css = maskCssComments(File(relPath).readAsStringSync());
       });
 
       test('html.global-lookup 声明真实背景层，阻止 body 背景传播成方角画布底', () {
