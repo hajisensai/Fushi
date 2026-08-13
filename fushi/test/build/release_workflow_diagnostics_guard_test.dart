@@ -275,7 +275,7 @@ void main() {
     expect(mainWorkflow, contains('fetch-depth: 0'),
         reason: 'shallow checkout would truncate git rev-list --count HEAD');
     expect(mainWorkflow,
-        contains(r'RELEASE_SEQUENCE=$(git rev-list --count HEAD)'));
+        contains(r'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)'));
     expect(
         r'--build-number "$RELEASE_SEQUENCE"'.allMatches(mainWorkflow).length,
         greaterThanOrEqualTo(2),
