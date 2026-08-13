@@ -287,7 +287,7 @@ void main() {
     final List<Shadow> shadows =
         fillOf(tester, 'S').style?.shadows ?? const <Shadow>[];
     expect(shadows.length, 1, reason: '默认柔和投影单枚，非 ASS 硬投影');
-    expect(shadows.single.offset, const Offset(0, 1));
+    expect(shadows.single.offset, Offset.zero); // BUG-1603
     expect(shadows.single.color,
         const Color(0xFF000000)); // pumpOverlay shadowColor
     expect(shadows.single.blurRadius, 5); // pumpOverlay shadowThickness
@@ -416,7 +416,7 @@ void main() {
     final List<Shadow> shadows =
         fillOf(tester, 'X').style?.shadows ?? const <Shadow>[];
     expect(shadows.single.blurRadius, 5.0);
-    expect(shadows.single.offset, const Offset(0, 1));
+    expect(shadows.single.offset, Offset.zero); // BUG-1603
   });
 
   // ---- TODO-1373: \blur 辉光 / \fad 淡入淡出 渲染门控 ----

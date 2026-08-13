@@ -533,23 +533,32 @@ class VideoSubtitleStyle {
   }
 }
 
-/// 字幕正文的**柔和投影**（抄 Niratan / mac）：把 [thickness]（阴影半径）渲染成**单层**
-/// 高斯 drop shadow，挂在正文 fill [Text] 的 `style.shadows` 上（见
+/// 字幕正文的**柔和投影**：把 [thickness]（阴影半径）渲染成**单层**高斯 drop shadow，
+/// 挂在正文 fill [Text] 的 `style.shadows` 上（见
 /// [VideoSubtitleOverlay._buildSubtitleChar]）。[thickness] <= 0 返回空列表（无投影）。
 ///
-/// 对应 Niratan `SubtitleOverlayView` 的 `.shadow(color: .black.opacity(0.9),
-/// radius: shadowRadius, y: 1)`：单个阴影、模糊半径 = [thickness]、向下偏移 1px、
-/// 颜色由 [color] 决定（默认 `0xE6000000` = 黑 @ 0.9）。观感是「字后面一团柔和黑影」。
+/// **偏移恒为零（BUG-1603）**：投影环绕字形四周，观感是「字后面一团柔和黑影」。
+///
+/// 原本抄 Niratan `SubtitleOverlayView` 的 `.shadow(..., y: 1)` 带 1px 下偏。真机
+/// （iPhone SE，DPR=2）像素实测证明那 1 逻辑像素在**紧模糊**下被放大成明显的方向性：
+///
+/// | 配置 | 上方暗度 | 下方暗度 |
+/// |---|---|---|
+/// | `offset(0,1)` blur3 | 1 | 218 |
+/// | `offset.zero` blur3 | 54 | 61 |
+///
+/// 即偏移把上方光晕**几乎清零**、下方**放大 3.5 倍**——不再是「字后柔和黑影」，而是
+/// 「阴影整个掉到字下面」。用户报的「阴影错位/方向不对」就是这个。渲染本身没问题
+/// （零偏移那组上下 54/61 对称），所以根因在参数不在渲染层。
 ///
 /// 为什么用**单层**而非 BUG-222/BUG-323 的 8 层 `Shadow`：那套残留黑字的根因是**8 份**
 /// 模糊 glyph 拷贝（`blurRadius=thickness` > 偏移 `thickness/2`）大面积重叠外溢成能看清
-/// 字形的第二个黑字。单层 drop shadow（偏移仅 (0,1)、只一份拷贝）不产生这种重叠，是所有
-/// 主流播放器（含 Niratan 本身）字幕投影的常规做法——按用户决策换回这套柔和观感（放弃
-/// BUG-323 的硬描边）。[color] 是用户/主题阴影色，thickness=模糊强度，0=无投影。
+/// 字形的第二个黑字。单层、零偏移的 drop shadow 只有一份拷贝、不产生位移重叠，结构上
+/// 不可能重现那个症状。[color] 是用户/主题阴影色，thickness=模糊强度，0=无投影。
 List<Shadow> buildSubtitleSoftShadow(Color color, double thickness) {
   if (thickness <= 0) return const <Shadow>[];
   return <Shadow>[
-    Shadow(color: color, blurRadius: thickness, offset: const Offset(0, 1)),
+    Shadow(color: color, blurRadius: thickness, offset: Offset.zero),
   ];
 }
 

@@ -116,7 +116,7 @@ void main() {
     expect(shadows.length, 1, reason: '单层柔和投影，不是 8 向伪描边');
     expect(shadows.single.color, const Color(0xFF224466));
     expect(shadows.single.blurRadius, 6);
-    expect(shadows.single.offset, const Offset(0, 1));
+    expect(shadows.single.offset, Offset.zero); // BUG-1603
   });
 
   testWidgets('thickness<=0 renders single fill Text with no shadow',
