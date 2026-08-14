@@ -138,10 +138,26 @@ void main() {
         reason: '.ruby-reserve must be height:0 so it reserves horizontal room '
             'WITHOUT shifting the base off its baseline — the BUG-108/363 '
             'vertical reserve must stay unchanged (BUG-850)');
-    expect(RegExp(r'font-size\s*:\s*0?\.5em').hasMatch(body), isTrue,
-        reason:
-            '.ruby-reserve must match the rt font-size (0.5em) so its width '
-            'equals the rendered reading width (BUG-850)');
+    // BUG-1655: 不再硬编码 0.5em —— 振假名尺寸是可调的产品值（已调到 0.6em）。
+    // 真正的不变量是「孪生体与注音盒同字号」：一旦分叉，预留的宽度就不等于注音实际
+    // 渲染的宽度，汉字会被撑开（预留偏大）或相邻注音重叠（预留偏小）。
+    final RegExp rtBoxRule2 = RegExp(
+      r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*\.ruby-rt\s*\{([^}]*)\}',
+    );
+    final RegExp fontSize = RegExp(r'font-size\s*:\s*([^;]+);');
+    final String? reserveSize = fontSize.firstMatch(body)?.group(1)?.trim();
+    final String? boxSize = fontSize
+        .firstMatch(rtBoxRule2.firstMatch(css)!.group(1)!)
+        ?.group(1)
+        ?.trim();
+    expect(reserveSize, isNotNull,
+        reason: '.ruby-reserve must declare a font-size (BUG-850)');
+    expect(RegExp(r'^[\d.]+em$').hasMatch(reserveSize!), isTrue,
+        reason: '.ruby-reserve 的字号必须是 em，才能随 popupContentZoom 等比缩放（BUG-363）');
+    expect(reserveSize, equals(boxSize),
+        reason: '.ruby-reserve must match the .ruby-rt font-size so its width '
+            'equals the rendered reading width (BUG-850) — 现为 '
+            'reserve=$reserveSize / box=$boxSize');
   });
 
   test(

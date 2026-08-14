@@ -905,7 +905,8 @@
     display: inline-block;
     position: relative;
     line-height: 1;
-    padding-top: 0.55em;
+    /* 预留带 = 注音字号 x 1.1（BUG-1655: 0.55em -> 0.66em，跟随 .ruby-rt 的 0.6em）。 */
+    padding-top: 0.66em;
     vertical-align: baseline;
     /* BUG-850: when .ruby-reserve widens the unit to the reading width, centre
        the base kanji under its reading (the absolute rt is already centred). */
@@ -951,8 +952,14 @@
     top: 0;
     /* The em chain lives on the BOX, not on <rt>: an absolutely positioned box
        derives its strut from its OWN font-size, so leaving the box at 1em made
-       it 16px tall and pushed the 0.5em reading out of the padding band. */
-    font-size: 0.5em;
+       it 16px tall and pushed the reading out of the padding band.
+       BUG-1655: 0.5em -> 0.6em（用户反馈振假名太小）。这个值是振假名尺寸的**唯一真实
+       来源**，另外三处必须跟着同步：bare markup 的 fallback、in-flow 孪生体
+       .ruby-reserve（宽度预留必须等于实际渲染宽度，BUG-850），以及 .ruby-unit 的
+       padding-top 预留带（按 scale x 1.1 给出上方空间）。四者由
+       popup_ruby_single_scale_guard_test.dart / popup_glossary_ruby_hspacing_guard_test.dart
+       锁死。 */
+    font-size: 0.6em;
     text-align: center;
     white-space: nowrap;
     line-height: 1;
@@ -964,8 +971,10 @@
        leftover `display: ruby-text`. */
     display: inline;
     /* Fallback size for an <rt> postProcessRuby never wrapped (bare markup that
-       skipped the pass) — inside .ruby-rt the box already applied the 0.5em. */
-    font-size: 0.5em;
+       skipped the pass) — inside .ruby-rt the box already applied this scale,
+       and `.ruby-rt rt { font-size: 1em }` below cancels this declaration there
+       so it is never applied twice. Must match .ruby-rt (BUG-1655: 0.6em). */
+    font-size: 0.6em;
     /* UA stylesheets declare `rt { line-height: normal }`, which beats the
        inherited 1 and inflates the annotation box (Blink measured 11px instead
        of 7.5px). */
@@ -995,7 +1004,8 @@
     width: max-content;
     height: 0;
     overflow: hidden;
-    font-size: 0.5em;
+    /* 必须与 .ruby-rt 同字号，否则预留宽度 != 实际渲染宽度（BUG-1655: 0.6em）。 */
+    font-size: 0.6em;
     line-height: 1;
     white-space: nowrap;
     visibility: hidden;
