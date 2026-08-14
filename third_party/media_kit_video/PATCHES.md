@@ -520,3 +520,46 @@ the new path behave exactly like pub.dev.
 next to its existing `Using H/W rendering.` line.
 
 Source-guard test: `fushi/test/third_party/media_kit_video_angle_interop_guard_test.dart`.
+
+## BUG-1657: a failed interop surface must not cost the whole GPU pipeline
+
+`windows/angle_surface_manager.{h,cc}` and one log line in `windows/video_output.cc`.
+
+BUG-1644 added a new display type (`EGL_PLATFORM_DEVICE_EXT` on our own D3D11
+device). `EnsureSharedEGLDisplay()` falls back to the upstream
+`EGL_DEFAULT_DISPLAY` chain only when creating *that display* fails, but the
+config, the context and the `eglCreatePbufferFromClientBuffer` all happen
+afterwards, and any of those failing threw straight out of `Create()`, which
+drops the whole `VideoOutput` into `MPV_RENDER_API_TYPE_SW`.
+
+That downgrade is far more expensive than it looks: the software path is not
+`vo=gpu`, so libmpv's `glsl-shaders` (Anime4K & other upscalers) and the
+`scale`/`cscale` filters stop applying **silently**. Measured with one user's
+real shader set, same libmpv, same clip, changing only the render API: the
+generated shaders contain 2016 `conv2d` references on the GL path and **zero**
+on the S/W path. The user-visible symptom is just "super-resolution stopped
+working", with nothing in any log.
+
+Note on evidence: mpv never emits a user shader's `//!DESC` text into the
+generated shader or the log, so "the log does not mention Anime4K" proves
+nothing. The reliable marker is the intermediate texture names a shader
+declares with `//!SAVE` (`conv2d*` here), which do appear in the generated
+GLSL/HLSL.
+
+The patch:
+
+- `Create()` calls `RetryOnUpstreamEGLDisplay()` when `CreateAndBindEGLSurface()`
+  fails. It terminates the device-backed display, releases the `EGLDeviceEXT`,
+  latches `shared_interop_display_disabled_` so neither this nor a later
+  instance rebuilds it, and rebuilds context + surface on the upstream display.
+  Only then, if that also fails, does it throw. Guarded by `instance_count_ == 0`
+  so a shared display another `VideoOutput` is already rendering on is never
+  torn down.
+- `VideoOutput` logs, next to `Using S/W rendering.`, that
+  `libmpv glsl-shaders & scale filters are INERT`, so the next such report is
+  diagnosable from the log alone.
+
+Net effect: a problem that only affects zero-copy now costs only zero-copy,
+instead of costing hardware rendering and every shader with it.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_angle_interop_guard_test.dart`.

@@ -30,6 +30,7 @@ ID3D11DeviceContext* ANGLESurfaceManager::shared_d3d_11_device_context_ =
 EGLDeviceEXT ANGLESurfaceManager::shared_egl_device_ = EGL_NO_DEVICE_EXT;
 EGLDisplay ANGLESurfaceManager::shared_display_ = EGL_NO_DISPLAY;
 bool ANGLESurfaceManager::shared_display_uses_our_device_ = false;
+bool ANGLESurfaceManager::shared_interop_display_disabled_ = false;
 
 ANGLESurfaceManager::ANGLESurfaceManager(int32_t width, int32_t height)
     : width_(width), height_(height) {
@@ -96,8 +97,21 @@ void ANGLESurfaceManager::Create() {
     return;
   }
   if (!CreateAndBindEGLSurface()) {
-    throw std::runtime_error("Unable to create ANGLE EGL surface.");
-    return;
+    // HIBIKI FORK (BUG-1657): BUG-1644 introduced a *new* display type
+    // (EGL_PLATFORM_DEVICE_EXT on our own device). |EnsureSharedEGLDisplay|
+    // only falls back to the upstream EGL_DEFAULT_DISPLAY chain when creating
+    // that display fails; anything failing *after* it (config, context,
+    // pbuffer-from-share-handle) used to land straight in |VideoOutput|'s
+    // software renderer. That is a silent, expensive downgrade: the S/W path
+    // renders with MPV_RENDER_API_TYPE_SW, which is not vo=gpu, so libmpv's
+    // `glsl-shaders` (Anime4K & friends) and the `scale`/`cscale` filters stop
+    // applying entirely -- measured: the very same shader set inlines 2016
+    // `conv2d` references into the generated shaders on the GL path and zero on
+    // the S/W path. Retry once on the well-trodden upstream display before
+    // giving up on hardware rendering.
+    if (!RetryOnUpstreamEGLDisplay()) {
+      throw std::runtime_error("Unable to create ANGLE EGL surface.");
+    }
   }
   if (internal_handle_ == nullptr || handle_ == nullptr) {
     throw std::runtime_error("Unable to retrieve Direct3D shared HANDLE.");
@@ -309,7 +323,8 @@ bool ANGLESurfaceManager::EnsureSharedEGLDisplay() {
   // re-uploaded. This mirrors what mpv's own `--gpu-context=angle` does.
   auto eglCreateDeviceANGLE = reinterpret_cast<PFNEGLCREATEDEVICEANGLEPROC>(
       eglGetProcAddress("eglCreateDeviceANGLE"));
-  if (shared_d3d_11_device_ != nullptr && eglCreateDeviceANGLE != nullptr) {
+  if (shared_d3d_11_device_ != nullptr && eglCreateDeviceANGLE != nullptr &&
+      !shared_interop_display_disabled_) {
     shared_egl_device_ = eglCreateDeviceANGLE(EGL_D3D11_DEVICE_ANGLE,
                                               shared_d3d_11_device_, nullptr);
     if (shared_egl_device_ != EGL_NO_DEVICE_EXT) {
@@ -383,6 +398,45 @@ void ANGLESurfaceManager::ReleaseSharedResources() {
     shared_d3d_11_device_->Release();
     shared_d3d_11_device_ = nullptr;
   }
+}
+
+bool ANGLESurfaceManager::RetryOnUpstreamEGLDisplay() {
+  // Only meaningful when the device-backed display is what we are on, and only
+  // safe for the very first instance: |instance_count_| is bumped after the
+  // constructor returns, so 0 means nobody else is rendering on the shared
+  // display we are about to terminate.
+  if (!shared_display_uses_our_device_ || instance_count_ != 0) {
+    return false;
+  }
+  std::cout << "media_kit: ANGLESurfaceManager: EGL surface creation failed on "
+               "the shared Direct3D 11 device; retrying on ANGLE's own display "
+               "(hardware rendering kept, zero-copy interop given up)."
+            << std::endl;
+
+  // The context/surface belong to the display we are terminating; eglTerminate
+  // destroys them, so just forget the handles instead of double-destroying.
+  context_ = EGL_NO_CONTEXT;
+  surface_ = EGL_NO_SURFACE;
+  display_ = EGL_NO_DISPLAY;
+  if (shared_display_ != EGL_NO_DISPLAY) {
+    eglTerminate(shared_display_);
+    shared_display_ = EGL_NO_DISPLAY;
+  }
+  if (shared_egl_device_ != EGL_NO_DEVICE_EXT) {
+    auto eglReleaseDeviceANGLE = reinterpret_cast<PFNEGLRELEASEDEVICEANGLEPROC>(
+        eglGetProcAddress("eglReleaseDeviceANGLE"));
+    if (eglReleaseDeviceANGLE) {
+      eglReleaseDeviceANGLE(shared_egl_device_);
+    }
+    shared_egl_device_ = EGL_NO_DEVICE_EXT;
+  }
+  shared_display_uses_our_device_ = false;
+  // Make |EnsureSharedEGLDisplay| skip the device-backed attempt from now on,
+  // otherwise this instance (and every later one) would rebuild the display
+  // that just proved unusable.
+  shared_interop_display_disabled_ = true;
+
+  return CreateEGLDisplay() && CreateAndBindEGLSurface();
 }
 
 bool ANGLESurfaceManager::CreateEGLDisplay() {

@@ -256,6 +256,46 @@ void main() {
       );
     });
 
+    test('a failed interop surface retries on ANGLE\'s own display', () {
+      // BUG-1657: the device-backed display is new; if the surface cannot be
+      // built on it, VideoOutput's software renderer takes over, and
+      // MPV_RENDER_API_TYPE_SW has no vo=gpu pipeline, so every glsl-shader
+      // (Anime4K / upscalers) and the scale/cscale filters silently stop
+      // applying. Hardware rendering must be retried on the upstream display
+      // first; losing zero-copy is far cheaper than losing the GPU pipeline.
+      final int create =
+          managerCode.indexOf('void ANGLESurfaceManager::Create()');
+      expect(create, isNonNegative,
+          reason: 'expected a Create() definition in angle_surface_manager.cc');
+      final int nextFunction =
+          managerCode.indexOf('\nvoid ANGLESurfaceManager::CleanUp', create);
+      final String body = managerCode.substring(
+          create, nextFunction < 0 ? managerCode.length : nextFunction);
+      expect(
+        body.contains('RetryOnUpstreamEGLDisplay()'),
+        isTrue,
+        reason: 'Create() must retry on the upstream EGL display when the '
+            'surface fails, instead of throwing straight into the software '
+            'renderer (where glsl-shaders are inert).',
+      );
+      expect(
+        managerCode.contains('shared_interop_display_disabled_'),
+        isTrue,
+        reason: 'once the device-backed display proves unusable it must be '
+            'latched off, otherwise every later instance rebuilds it.',
+      );
+    });
+
+    test('the software downgrade says that shaders stop applying', () {
+      expect(
+        videoOutputCode.contains('glsl-shaders & scale filters are INERT'),
+        isTrue,
+        reason: 'S/W rendering silently disables 画质增强 / super-resolution; '
+            'the log must say so or the next report is undiagnosable '
+            '(BUG-1657).',
+      );
+    });
+
     test('the interop outcome is observable', () {
       expect(
         headerCode.contains('uses_shared_d3d11_device'),
