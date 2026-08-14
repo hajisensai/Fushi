@@ -53,6 +53,40 @@ class AidokuPackageInspection {
   Map<String, Object?> get sourceInfo =>
       (manifest['info'] as Map<Object?, Object?>?)?.cast<String, Object?>() ??
       const <String, Object?>{};
+
+  List<AidokuListing> get listings =>
+      (manifest['listings'] as List<Object?>? ?? const <Object?>[])
+          .whereType<Map<Object?, Object?>>()
+          .map(
+            (Map<Object?, Object?> value) =>
+                AidokuListing.fromJson(value.cast<String, Object?>()),
+          )
+          .where((AidokuListing listing) => listing.id.isNotEmpty)
+          .toList(growable: false);
+}
+
+class AidokuListing {
+  const AidokuListing({
+    required this.id,
+    required this.name,
+    this.kind = 'Default',
+  });
+
+  factory AidokuListing.fromJson(Map<String, Object?> json) => AidokuListing(
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? '',
+        kind: json['kind']?.toString() ?? 'Default',
+      );
+
+  final String id;
+  final String name;
+  final String kind;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'id': id,
+        'name': name,
+        'kind': kind,
+      };
 }
 
 abstract interface class AidokuRuntime {
@@ -68,6 +102,12 @@ abstract interface class AidokuRuntime {
     String packagePath,
     Map<String, Object?> manga,
   );
+
+  Future<Map<String, Object?>> browse(
+    String packagePath,
+    AidokuListing listing, {
+    int page = 1,
+  });
 
   Future<List<Object?>> getPages(
     String packagePath,
@@ -128,6 +168,27 @@ class DesktopAidokuRuntime implements AidokuRuntime {
       '$page',
     ]);
     return _object(response['result'], 'search result');
+  }
+
+  @override
+  Future<Map<String, Object?>> browse(
+    String packagePath,
+    AidokuListing listing, {
+    int page = 1,
+  }) async {
+    if (page < 1) {
+      throw const AidokuRuntimeException(
+        'INVALID_PAGE',
+        'Aidoku listing page must be at least 1',
+      );
+    }
+    final Map<String, Object?> response = await _invoke(<String>[
+      'list',
+      packagePath,
+      jsonEncode(listing.toJson()),
+      '$page',
+    ]);
+    return _object(response['result'], 'listing result');
   }
 
   @override

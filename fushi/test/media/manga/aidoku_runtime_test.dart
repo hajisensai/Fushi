@@ -19,6 +19,9 @@ case "\$1" in
   search)
     printf '%s' '{"result":{"entries":[{"key":"manga"}],"has_next_page":false}}'
     ;;
+  list)
+    printf '%s' '{"result":{"entries":[{"key":"listed"}],"has_next_page":true}}'
+    ;;
   details)
     printf '%s' '{"result":{"key":"manga","title":"Title"}}'
     ;;
@@ -66,6 +69,10 @@ esac
       'source.aix',
       <String, Object?>{'key': 'manga'},
     );
+    final Map<String, Object?> listing = await runtime.browse(
+      'source.aix',
+      const AidokuListing(id: 'latest', name: 'Latest'),
+    );
     final List<Object?> pages = await runtime.getPages(
       'source.aix',
       <String, Object?>{'key': 'manga'},
@@ -74,7 +81,24 @@ esac
 
     expect(search['has_next_page'], isFalse);
     expect(details['title'], 'Title');
+    expect(listing['has_next_page'], isTrue);
     expect(pages, hasLength(1));
+  });
+
+  test('parses manifest listings', () {
+    final AidokuPackageInspection inspection =
+        AidokuPackageInspection.fromJson(<String, Object?>{
+      'manifest': <String, Object?>{
+        'info': <String, Object?>{'id': 'ja.test'},
+        'listings': <Object?>[
+          <String, Object?>{'id': '/latest/', 'name': 'Latest'},
+        ],
+      },
+      'runtime': <String, Object?>{},
+    });
+
+    expect(inspection.listings, hasLength(1));
+    expect(inspection.listings.single.id, '/latest/');
   });
 
   test('rejects an invalid search page before spawning', () async {

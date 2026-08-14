@@ -67,6 +67,20 @@ void main() {
     expect(packages.single.version, 2);
   });
 
+  test('persists enabled state for the Browse tab', () async {
+    final File packageFile = File('${root.path}/enabled.aix');
+    await packageFile.writeAsBytes(<int>[1, 2, 3]);
+    final AidokuInstalledPackage installed =
+        await store.install(packageFile, inspection());
+
+    final AidokuInstalledPackage disabled =
+        await store.setEnabled(installed, false);
+    final List<AidokuInstalledPackage> packages = await store.listInstalled();
+
+    expect(disabled.enabled, isFalse);
+    expect(packages.single.enabled, isFalse);
+  });
+
   test('rejects an empty package before changing the store', () async {
     final File source = File('${root.path}/empty.aix');
     await source.create();

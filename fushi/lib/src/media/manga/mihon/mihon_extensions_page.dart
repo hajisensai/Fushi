@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -755,77 +756,45 @@ class _AvailableExtensionTile extends StatelessWidget {
     final bool update =
         installed != null && extension.versionCode > installed!.versionCode;
     final ThemeData theme = Theme.of(context);
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        leading: _ExtensionIcon(url: extension.iconUrl),
-        title: Row(
-          children: <Widget>[
-            Flexible(child: Text(extension.name)),
-            if (extension.contentWarning >= 3) ...<Widget>[
-              const SizedBox(width: 8),
-              _NsfwBadge(theme: theme),
-            ],
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
+    return MangaExtensionManagementTile(
+      title: extension.name,
+      iconUrl: extension.iconUrl,
+      contentWarning: extension.contentWarning >= 3,
+      busy: busy,
+      enabled: installed?.enabled,
+      onEnabledChanged: onEnabledChanged,
+      secondaryLabel: showPreview ? t.mihon_extension_preview : null,
+      onSecondary: onPreview,
+      primaryLabel: installed == null
+          ? t.mihon_extension_install
+          : update
+              ? t.mihon_extension_update
+              : t.mihon_extension_uninstall,
+      onPrimary: installed == null || update ? onInstall : onUninstall,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            '${extension.language} · ${extension.versionName} · '
+            'lib ${extension.libVersion}',
+          ),
+          if (extension.sources.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 6),
             Text(
-              '${extension.language} · ${extension.versionName} · '
-              'lib ${extension.libVersion}',
+              t.mihon_extension_sources_included,
+              style: theme.textTheme.labelSmall,
             ),
-            if (extension.sources.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 6),
+            for (final MihonAvailableSource source in extension.sources)
               Text(
-                t.mihon_extension_sources_included,
-                style: theme.textTheme.labelSmall,
+                source.baseUrl.isEmpty
+                    ? '· ${source.name} (${source.language})'
+                    : '· ${source.name} (${source.language}) — '
+                        '${source.baseUrl}',
+                style: theme.textTheme.bodySmall,
               ),
-              for (final MihonAvailableSource source in extension.sources)
-                Text(
-                  source.baseUrl.isEmpty
-                      ? '· ${source.name} (${source.language})'
-                      : '· ${source.name} (${source.language}) — '
-                          '${source.baseUrl}',
-                  style: theme.textTheme.bodySmall,
-                ),
-            ],
           ],
-        ),
-        trailing: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            if (busy)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            if (installed != null)
-              Switch.adaptive(
-                value: installed!.enabled,
-                onChanged: onEnabledChanged,
-              ),
-            if (showPreview)
-              TextButton(
-                onPressed: onPreview,
-                child: Text(t.mihon_extension_preview),
-              ),
-            TextButton(
-              onPressed: installed == null || update ? onInstall : onUninstall,
-              child: Text(
-                installed == null
-                    ? t.mihon_extension_install
-                    : update
-                        ? t.mihon_extension_update
-                        : t.mihon_extension_uninstall,
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -891,57 +860,6 @@ class _PreviewFooter extends StatelessWidget {
   }
 }
 
-/// 扩展图标。仓库 index 给的是远程 URL，取不到就退回通用扩展图标——图标加载失败
-/// 不该让整行显示不出来。
-class _ExtensionIcon extends StatelessWidget {
-  const _ExtensionIcon({required this.url});
-
-  final String url;
-
-  @override
-  Widget build(BuildContext context) {
-    if (url.isEmpty) return const Icon(Icons.extension_outlined);
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: Image.network(
-        url,
-        width: 32,
-        height: 32,
-        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-            const Icon(Icons.extension_outlined),
-        loadingBuilder: (
-          BuildContext context,
-          Widget child,
-          ImageChunkEvent? progress,
-        ) =>
-            progress == null ? child : const Icon(Icons.extension_outlined),
-      ),
-    );
-  }
-}
-
-class _NsfwBadge extends StatelessWidget {
-  const _NsfwBadge({required this.theme});
-
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.errorContainer,
-          borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
-        ),
-        child: Text(
-          '18+',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onErrorContainer,
-          ),
-        ),
-      );
-}
-
 class _InstalledExtensionTile extends StatelessWidget {
   const _InstalledExtensionTile({
     required this.extension,
@@ -954,28 +872,15 @@ class _InstalledExtensionTile extends StatelessWidget {
   final ValueChanged<bool> onEnabledChanged;
 
   @override
-  Widget build(BuildContext context) => FushiCard(
-        padding: EdgeInsets.zero,
-        child: FushiListItem(
-          leading: const Icon(Icons.extension_outlined),
-          title: Text(extension.name),
-          subtitle: Text(
-            '${extension.language} · ${extension.versionName} · '
-            'lib ${extension.libVersion}',
-          ),
-          trailing: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              Switch.adaptive(
-                value: extension.enabled,
-                onChanged: onEnabledChanged,
-              ),
-              TextButton(
-                onPressed: onUninstall,
-                child: Text(t.mihon_extension_uninstall),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) => MangaExtensionManagementTile(
+        title: extension.name,
+        subtitle: Text(
+          '${extension.language} · ${extension.versionName} · '
+          'lib ${extension.libVersion}',
         ),
+        enabled: extension.enabled,
+        onEnabledChanged: onEnabledChanged,
+        primaryLabel: t.mihon_extension_uninstall,
+        onPrimary: onUninstall,
       );
 }

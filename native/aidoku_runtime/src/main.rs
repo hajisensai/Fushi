@@ -3,7 +3,7 @@ use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use aidoku::{Chapter, FilterValue, Manga};
+use aidoku::{Chapter, FilterValue, Listing, Manga};
 use aidoku_test_runner::libs::StoreItem;
 use aidoku_test_runner::{WasmEnv, imports};
 use anyhow::{Context, Result, anyhow, bail};
@@ -308,6 +308,31 @@ impl AidokuRuntime {
         self.take_result(result_pointer)
     }
 
+    fn list(&mut self, listing: &Listing, page: i32) -> Result<SearchPageResult> {
+        if page < 1 {
+            bail!("listing page must be at least 1");
+        }
+        let listing_descriptor = self
+            .environment
+            .as_mut(&mut self.store)
+            .store
+            .store_encoded(listing)
+            .context("failed to encode Aidoku listing")?;
+        let list: TypedFunction<(i32, i32), i32> = self
+            .instance
+            .exports
+            .get_typed_function(&self.store, "get_manga_list")
+            .context("Aidoku source does not export get_manga_list")?;
+        let result_pointer = list
+            .call(&mut self.store, listing_descriptor, page)
+            .context("Aidoku listing function trapped")?;
+        self.environment
+            .as_mut(&mut self.store)
+            .store
+            .remove(listing_descriptor);
+        self.take_result(result_pointer)
+    }
+
     fn details(&mut self, manga: &Manga) -> Result<Manga> {
         let manga_descriptor = self
             .environment
@@ -378,6 +403,17 @@ fn search(package: AixPackage, query: Option<&str>, page: i32) -> Result<Value> 
     }))
 }
 
+fn list(package: AixPackage, listing_json: &str, page: i32) -> Result<Value> {
+    let listing: Listing = serde_json::from_str(listing_json).context("invalid listing JSON")?;
+    let mut runtime = AidokuRuntime::load(&package.wasm)?;
+    let result = runtime.list(&listing, page)?;
+    Ok(json!({
+        "protocolVersion": 1,
+        "source": package.manifest["info"].clone(),
+        "result": serde_json::to_value(result).context("failed to encode listing result as JSON")?,
+    }))
+}
+
 fn details(package: AixPackage, manga_json: &str) -> Result<Value> {
     let manga: Manga = serde_json::from_str(manga_json).context("invalid manga JSON")?;
     let mut runtime = AidokuRuntime::load(&package.wasm)?;
@@ -404,7 +440,9 @@ fn pages(package: AixPackage, manga_json: &str, chapter_json: &str) -> Result<Va
 fn run() -> Result<Value> {
     let mut args = std::env::args().skip(1);
     let command = args.next().ok_or_else(|| {
-        anyhow!("usage: fushi-aidoku-runtime <inspect|search|details|pages> PACKAGE.aix [ARGS...]")
+        anyhow!(
+            "usage: fushi-aidoku-runtime <inspect|list|search|details|pages> PACKAGE.aix [ARGS...]"
+        )
     })?;
     let package_path = args
         .next()
@@ -420,6 +458,15 @@ fn run() -> Result<Value> {
                 .transpose()?
                 .unwrap_or(1);
             search(package, query.as_deref(), page)
+        }
+        "list" => {
+            let listing_json = args.next().ok_or_else(|| anyhow!("missing listing JSON"))?;
+            let page = args
+                .next()
+                .map(|value| value.parse::<i32>().context("invalid listing page"))
+                .transpose()?
+                .unwrap_or(1);
+            list(package, &listing_json, page)
         }
         "details" => {
             let manga_json = args.next().ok_or_else(|| anyhow!("missing manga JSON"))?;

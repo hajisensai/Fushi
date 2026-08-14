@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -39,6 +44,33 @@ class MangaBrowsePage extends ConsumerStatefulWidget {
 
 class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   MihonManager? _manager;
+  StreamSubscription<void>? _aidokuChanges;
+  List<AidokuInstalledPackage> _aidokuPackages =
+      const <AidokuInstalledPackage>[];
+  Object? _aidokuError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (DesktopAidokuRuntime.isSupported) {
+      _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
+      unawaited(_loadAidoku());
+    }
+  }
+
+  Future<void> _loadAidoku() async {
+    try {
+      final List<AidokuInstalledPackage> packages =
+          await (await AidokuPackageStore.open()).listInstalled();
+      if (!mounted) return;
+      setState(() {
+        _aidokuPackages = packages;
+        _aidokuError = null;
+      });
+    } on Object catch (error) {
+      if (mounted) setState(() => _aidokuError = error);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -53,6 +85,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   @override
   void dispose() {
     _manager?.removeListener(_changed);
+    unawaited(_aidokuChanges?.cancel());
     super.dispose();
   }
 
@@ -84,6 +117,16 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
           manager: _manager!,
           target: MihonInstalledTarget(source),
         ),
+      ),
+    );
+  }
+
+  void _openAidokuSource(AidokuInstalledPackage package) {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) =>
+            AidokuSourceBrowsePage(package: package),
       ),
     );
   }
@@ -141,6 +184,26 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                       onTap: _openMokuro,
                     ),
                   ),
+                for (final AidokuInstalledPackage package
+                    in _aidokuPackages.where(
+                  (AidokuInstalledPackage package) => package.enabled,
+                ))
+                  FushiCard(
+                    padding: EdgeInsets.zero,
+                    child: FushiListItem(
+                      leading: CircleAvatar(
+                        child: Text(
+                          package.languages.isEmpty
+                              ? '?'
+                              : package.languages.first.toUpperCase(),
+                        ),
+                      ),
+                      title: Text(package.name),
+                      subtitle: Text(package.id),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openAidokuSource(package),
+                    ),
+                  ),
                 for (final MangaOnlineSourceRow source in sources)
                   FushiCard(
                     padding: EdgeInsets.zero,
@@ -164,7 +227,25 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                       onTap: () => _openSource(source),
                     ),
                   ),
-                if (MihonRuntimeFactory.isSupported && sources.isEmpty)
+                if (_aidokuError != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
+                    child: Text(
+                      '$_aidokuError',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                if (MihonRuntimeFactory.isSupported &&
+                    sources.isEmpty &&
+                    !_aidokuPackages.any(
+                      (AidokuInstalledPackage package) => package.enabled,
+                    ))
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,

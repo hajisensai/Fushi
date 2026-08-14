@@ -55,6 +55,7 @@ void main() {
       expect(sources, contains('AidokuPackageStore.open()'));
       expect(sources, contains('AidokuRepositoryStore.open()'));
       expect(sources, contains('_AidokuRepositorySourcesDialog('));
+      expect(sources, contains('MangaExtensionManagementTile('));
     });
 
     test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {
@@ -131,6 +132,16 @@ void main() {
         browse,
         contains('MihonSourceBrowsePage('),
         reason: '已启用的 Mihon 在线源要能从「浏览」直接进内容，不是只在设置里躺着',
+      );
+      expect(
+        browse,
+        contains('AidokuSourceBrowsePage('),
+        reason: '安装的 Aidoku 源也要从「浏览」直接进入内容目录',
+      );
+      expect(
+        browse,
+        contains('AidokuPackageStore.changes.listen'),
+        reason: '保活的「浏览」页必须在安装、卸载或启停后立即重载 Aidoku 源',
       );
       // BUG-1431：mokuro.moe 与扩展源遵守同一条可见性规则——「来源」里关掉的源
       // 不出现在「浏览」里。以前它那个开关只让目录页显示成禁用态，行照旧列着。

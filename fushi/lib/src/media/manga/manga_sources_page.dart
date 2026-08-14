@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_repository_client.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_repository_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -389,6 +390,23 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     }
   }
 
+  Future<void> _setAidokuEnabled(
+    AidokuInstalledPackage package,
+    bool enabled,
+  ) async {
+    final AidokuPackageStore? store = _aidokuStore;
+    if (store == null) return;
+    try {
+      await store.setEnabled(package, enabled);
+      final List<AidokuInstalledPackage> packages = await store.listInstalled();
+      if (mounted) setState(() => _aidokuPackages = packages);
+    } on Object catch (error) {
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
+  }
+
   Future<void> _clearSourceData(MangaOnlineSourceRow source) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -587,22 +605,18 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
           const Divider(height: 24),
         for (final AidokuInstalledPackage package
             in _aidokuPackages ?? const <AidokuInstalledPackage>[])
-          FushiCard(
-            padding: EdgeInsets.zero,
-            child: FushiListItem(
-              leading: const Icon(Icons.extension_outlined),
-              title: Text(package.name),
-              subtitle: Text(
-                '${package.languages.join(', ').toUpperCase()} · '
-                '${t.aidoku_extension_version} ${package.version}\n'
-                '${package.id}',
-              ),
-              trailing: IconButton(
-                tooltip: t.aidoku_extension_remove,
-                onPressed: () => unawaited(_removeAidoku(package)),
-                icon: const Icon(Icons.delete_outline),
-              ),
+          MangaExtensionManagementTile(
+            title: package.name,
+            subtitle: Text(
+              '${package.languages.join(', ').toUpperCase()} · '
+              '${t.aidoku_extension_version} ${package.version}\n'
+              '${package.id}',
             ),
+            enabled: package.enabled,
+            onEnabledChanged: (bool value) =>
+                unawaited(_setAidokuEnabled(package, value)),
+            primaryLabel: t.aidoku_extension_remove,
+            onPrimary: () => unawaited(_removeAidoku(package)),
           ),
       ],
     );
@@ -957,6 +971,24 @@ class _AidokuRepositorySourcesDialogState
     }
   }
 
+  Future<void> _setEnabled(
+    AidokuInstalledPackage package,
+    bool enabled,
+  ) async {
+    try {
+      final AidokuInstalledPackage updated =
+          await widget.packageStore.setEnabled(package, enabled);
+      if (!mounted) return;
+      setState(() => _installed[updated.id] = updated);
+      await widget.onInstalled();
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _error = error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<AidokuRepositorySource> sources = _visibleSources;
@@ -1011,29 +1043,24 @@ class _AidokuRepositorySourcesDialogState
                           if (source.minimumAppVersion != null)
                             'Aidoku ${source.minimumAppVersion}+',
                         ];
-                        return FushiCard(
-                          padding: EdgeInsets.zero,
-                          child: FushiListItem(
-                            leading: const Icon(Icons.extension_outlined),
-                            title: Text(source.name),
-                            subtitle: Text(
-                              '${metadata.join(' · ')}\n${source.id}',
-                            ),
-                            trailing: isInstalling
-                                ? const SizedBox.square(
-                                    dimension: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : FilledButton.tonal(
-                                    onPressed:
-                                        isCurrent || _installingSourceId != null
-                                            ? null
-                                            : () => unawaited(_install(source)),
-                                    child: Text(actionLabel),
-                                  ),
+                        return MangaExtensionManagementTile(
+                          title: source.name,
+                          iconUrl: source.iconUri?.toString(),
+                          contentWarning: (source.contentRating ?? 0) >= 3,
+                          subtitle: Text(
+                            '${metadata.join(' · ')}\n${source.id}',
                           ),
+                          busy: isInstalling,
+                          enabled: installed?.enabled,
+                          onEnabledChanged: installed == null
+                              ? null
+                              : (bool value) => unawaited(
+                                    _setEnabled(installed, value),
+                                  ),
+                          primaryLabel: actionLabel,
+                          onPrimary: isCurrent || _installingSourceId != null
+                              ? null
+                              : () => unawaited(_install(source)),
                         );
                       },
                     ),

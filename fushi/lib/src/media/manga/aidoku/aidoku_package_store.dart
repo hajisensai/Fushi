@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -18,6 +19,7 @@ class AidokuInstalledPackage {
     required this.requiresWebView,
     required this.packagePath,
     required this.installedAt,
+    this.enabled = true,
   });
 
   factory AidokuInstalledPackage.fromJson(
@@ -36,6 +38,7 @@ class AidokuInstalledPackage {
       packagePath: packagePath,
       installedAt: DateTime.tryParse(json['installedAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      enabled: json['enabled'] != false,
     );
   }
 
@@ -55,6 +58,7 @@ class AidokuInstalledPackage {
       requiresWebView: inspection.requiresWebView,
       packagePath: packagePath,
       installedAt: DateTime.now().toUtc(),
+      enabled: true,
     );
   }
 
@@ -65,6 +69,18 @@ class AidokuInstalledPackage {
   final bool requiresWebView;
   final String packagePath;
   final DateTime installedAt;
+  final bool enabled;
+
+  AidokuInstalledPackage copyWith({bool? enabled}) => AidokuInstalledPackage(
+        id: id,
+        name: name,
+        version: version,
+        languages: languages,
+        requiresWebView: requiresWebView,
+        packagePath: packagePath,
+        installedAt: installedAt,
+        enabled: enabled ?? this.enabled,
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'schemaVersion': 1,
@@ -74,6 +90,7 @@ class AidokuInstalledPackage {
         'languages': languages,
         'requiresWebView': requiresWebView,
         'installedAt': installedAt.toIso8601String(),
+        'enabled': enabled,
       };
 }
 
@@ -88,6 +105,12 @@ class AidokuPackageStore {
   }
 
   final Directory directory;
+
+  static final StreamController<void> _changes =
+      StreamController<void>.broadcast(sync: true);
+
+  /// Cross-page invalidation for the kept-alive Sources and Browse tabs.
+  static Stream<void> get changes => _changes.stream;
 
   Future<List<AidokuInstalledPackage>> listInstalled() async {
     if (!await directory.exists()) return const <AidokuInstalledPackage>[];
@@ -200,7 +223,29 @@ class AidokuPackageStore {
     } on FileSystemException {
       // A later import uses a fresh nonce and is unaffected by stale backups.
     }
+    _changes.add(null);
     return installed;
+  }
+
+  Future<AidokuInstalledPackage> setEnabled(
+    AidokuInstalledPackage package,
+    bool enabled,
+  ) async {
+    if (package.enabled == enabled) return package;
+    final String stem = sha256.convert(utf8.encode(package.id)).toString();
+    final File metadata = File(p.join(directory.path, '$stem.json'));
+    if (!await metadata.exists()) {
+      throw const AidokuRuntimeException(
+        'PACKAGE_MISSING',
+        'The installed Aidoku package metadata is missing',
+      );
+    }
+    final AidokuInstalledPackage updated = package.copyWith(enabled: enabled);
+    final File staged = File('${metadata.path}.tmp');
+    await staged.writeAsString(jsonEncode(updated.toJson()), flush: true);
+    await staged.rename(metadata.path);
+    _changes.add(null);
+    return updated;
   }
 
   Future<void> remove(AidokuInstalledPackage package) async {
@@ -209,5 +254,6 @@ class AidokuPackageStore {
     final File metadata = File(p.join(directory.path, '$stem.json'));
     if (await storedPackage.exists()) await storedPackage.delete();
     if (await metadata.exists()) await metadata.delete();
+    _changes.add(null);
   }
 }
