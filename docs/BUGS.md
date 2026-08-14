@@ -29,11 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1529 条。点号进各自文件。
+> 共 1530 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1647](bugs/BUG-1647-embedded-torrent-idle-discovery.md) | ✅ | ✅ | 已完成任务恢复后 DHT 常驻导致网关周期性高延迟 |
+| [BUG-1648](bugs/BUG-1648-embedded-torrent-idle-discovery.md) | ✅ | ✅ | 已完成任务恢复后 DHT 常驻导致网关周期性高延迟 |
 | [BUG-1647](bugs/BUG-1647-bangumi-sync-stuck-in-backoff.md) | ✅ | ✅ | Bangumi 同步失败后卡在退避窗口且无自动重试，只能手动同步 |
 | [BUG-1646](bugs/BUG-1646-manosaba-scene-switch-subtitle-lane.md) | ✅ | 🚧 | 魔法少女的魔女审判切换场景后字幕线程断开 |
 | [BUG-1645](bugs/BUG-1645-nested-latin-lookup.md) | ✅ | ✅ | 嵌套查词查不了英语单词（跨节点粘连成拉丁串） |

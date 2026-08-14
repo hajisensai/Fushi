@@ -1,4 +1,4 @@
-// BUG-1647：内置 torrent session 可以因历史 resume 常驻，但无真实下载/允许做种
+// BUG-1648：内置 torrent session 可以因历史 resume 常驻，但无真实下载/允许做种
 // 工作时，DHT/LSD/UPnP/NAT-PMP 必须全部关闭。否则空闲 session 仍会持续广播、
 // 映射端口并产生小包流量，家用路由器会表现为周期性网关 ping 抖动。
 //
@@ -268,7 +268,7 @@ void main() {
     }
   });
 
-  group('BUG-1647 空闲 torrent session 关闭网络发现协议', () {
+  group('BUG-1648 空闲 torrent session 关闭网络发现协议', () {
     test('空 session 或完成且禁止做种时都显式下发 0000', () {
       final EmbeddedTorrentHost host = _host();
 

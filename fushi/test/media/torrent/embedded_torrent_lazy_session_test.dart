@@ -113,7 +113,7 @@ void main() {
           r'EmbeddedTorrentHost\.open\([\s\S]*?enableDht\s*:\s*false',
         ).hasMatch(structural),
         isTrue,
-        reason: 'BUG-1647：resume 恢复阶段若先开 DHT，门控接管前仍会产生空闲流量',
+        reason: 'BUG-1648：resume 恢复阶段若先开 DHT，门控接管前仍会产生空闲流量',
       );
     });
   });

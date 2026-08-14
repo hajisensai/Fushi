@@ -461,7 +461,7 @@ class EmbeddedTorrentHost {
   /// 应用会话级设置（qb 关键项：端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/
   /// 上传槽）到常驻 session。config 变更/启动时由 AppModel 调用。
   ///
-  /// BUG-1647：DHT/LSD/UPnP/NAT-PMP 不能仅凭用户配置常驻开启。这里保存用户
+  /// BUG-1648：DHT/LSD/UPnP/NAT-PMP 不能仅凭用户配置常驻开启。这里保存用户
   /// 意图，但实际下发值还要经过 [_desiredNetworkDiscoveryState]：无未完成下载、
   /// 也无允许做种的任务时四项全部关闭，避免空闲 DHT/网关映射流量周期性冲击
   /// 家用路由器；新任务到来时再逐项恢复用户配置。
@@ -904,7 +904,7 @@ class EmbeddedTorrentHost {
     } on Object {
       return 0;
     } finally {
-      // BUG-1647：状态推进到完成、策略到达做种上限、最后一个任务被暂停后，
+      // BUG-1648：状态推进到完成、策略到达做种上限、最后一个任务被暂停后，
       // 最迟在本轮维护 tick 关闭发现/映射协议。老 DLL 缺上传暂停原语时也必须
       // 执行——协议门控只依赖用户策略，不能被 native 的旧 paused 状态误导。
       reconcileNetworkDiscoveryState();
