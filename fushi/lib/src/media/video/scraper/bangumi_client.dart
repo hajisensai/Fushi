@@ -333,8 +333,9 @@ List<BangumiRelatedSubject> parseBangumiRelatedSubjects(String body) {
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为 [ScrapeCandidate]
 /// （id 直连改绑映射路径用；与搜索候选同一映射器，保证「使用」后落库路径零分叉）。
 ///
-/// 详情端点与搜索端点字段有两处形态差异，先归一再复用 [_mapBangumiSubject]：
-/// 评分在 `rating.score`（搜索是扁平 `score`）；话数补 `total_episodes` 回退。
+/// 与搜索端点复用同一个映射器 [_mapBangumiSubject]。评分形态两端一致（都是嵌套
+/// `rating.score`），已由 [_bangumiRating] 内部吃掉，这里不再 pre-normalize；只剩
+/// 话数一处真实差异：详情体的 `eps` 可能为 0，回退 `total_episodes`。
 /// 无海报/无标题 → null；JSON 结构异常 → 抛 [ScrapeNetworkException]。
 ScrapeCandidate? parseBangumiSubjectDetailAsCandidate(String body) {
   final Object? decoded;
@@ -347,11 +348,6 @@ ScrapeCandidate? parseBangumiSubjectDetailAsCandidate(String body) {
     throw const ScrapeNetworkException('Bangumi subject not a JSON object');
   }
   final Map<String, Object?> subject = Map<String, Object?>.of(decoded);
-  final Object? ratingNode = subject['rating'];
-  if (_asDouble(subject['score']) == null &&
-      ratingNode is Map<String, Object?>) {
-    subject['score'] = ratingNode['score'];
-  }
   if ((_asInt(subject['eps']) ?? 0) <= 0) {
     subject['eps'] = subject['total_episodes'];
   }
@@ -513,8 +509,9 @@ ScrapeCandidate? _mapBangumiSubject(Map<String, Object?> subject) {
   final int rawEps = _asInt(subject['eps']) ?? 0;
   final int? episodeCount = rawEps > 0 ? rawEps : null;
 
-  final double score = _asDouble(subject['score']) ?? 0.0;
-  final String? ratingText = score > 0 ? 'Bangumi $score' : null;
+  final ({double? score, int? votes}) rating = _bangumiRating(subject);
+  final double? score = rating.score;
+  final String? ratingText = score == null ? null : 'Bangumi $score';
 
   final String entryId = '${subject['id']}';
 
@@ -527,8 +524,41 @@ ScrapeCandidate? _mapBangumiSubject(Map<String, Object?> subject) {
     type: type,
     episodeCount: episodeCount,
     posterUrl: posterUrl,
+    // rating / ratingCount 必须与 ratingText 同源同时填：ScrapeCandidate 的契约
+    // 是「ratingText 是它的展示化文本，二者不重复解析」。这里以前只填文本，于是
+    // 落库的 ScrapeMeta（cover_scraper_service）与详情弹窗的「评分 / 评分人数」
+    // 对 Bangumi 刮出来的条目恒为空。
+    rating: score,
+    ratingCount: rating.votes,
     detailUrl: 'https://bgm.tv/subject/$entryId',
     ratingText: ratingText,
+  );
+}
+
+/// Bangumi 评分的**唯一读取点**（搜索候选与详情候选共用）。
+///
+/// 搜索端点 `/v0/search/subjects` 与详情端点 `/v0/subjects/{id}` **都**把评分放在
+/// 嵌套的 `rating: {score, total}` 里。此处以前只读扁平 `subject['score']`，并让
+/// 详情调用方在外面先做一次 pre-normalize —— 那份「搜索是扁平 score」的前提对真实
+/// API 从来不成立（实测搜索响应根本没有顶层 `score` 键），于是**搜索候选的
+/// rating / ratingCount / ratingText 三个字段恒为空**：候选选择对话框里 TMDB /
+/// AniList / MAL 都有评分 chip，唯独 Bangumi 没有。
+///
+/// 把「评分住在哪」收进这一个函数后，两个调用方都不必再各自归一化。扁平 `score`
+/// 保留为回退，兼容旧缓存与既有夹具。
+///
+/// `score` 为 0 表示「暂无评分」而非真的 0 分，按缺失处理（与
+/// [parseBangumiSubjectResponse] 同规则）。
+({double? score, int? votes}) _bangumiRating(Map<String, Object?> subject) {
+  final Object? node = subject['rating'];
+  final Map<String, Object?>? ratingNode =
+      node is Map<String, Object?> ? node : null;
+  final double? score =
+      _asDouble(ratingNode?['score']) ?? _asDouble(subject['score']);
+  final int? votes = _asInt(ratingNode?['total']);
+  return (
+    score: score != null && score > 0 ? score : null,
+    votes: votes != null && votes > 0 ? votes : null,
   );
 }
 

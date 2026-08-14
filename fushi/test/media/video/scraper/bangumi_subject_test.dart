@@ -204,6 +204,10 @@ void main() {
       expect(c.type, ScrapeEntryType.tv);
       expect(c.episodeCount, 26);
       expect(c.ratingText, 'Bangumi 8.4');
+      // 详情候选此前也只填了展示文本，rating / ratingCount 一路空到落库的
+      // ScrapeMeta 与详情弹窗的「评分 / 评分人数」。
+      expect(c.rating, 8.4);
+      expect(c.ratingCount, 1234);
     });
 
     test('无海报 → null（对封面刮削无用）；结构异常 → 抛异常', () {
