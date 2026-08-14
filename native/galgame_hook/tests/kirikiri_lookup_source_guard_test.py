@@ -545,6 +545,38 @@ def find_unguarded_bitmap_copies(source: MaskedSource) -> list[str]:
     return unguarded
 
 
+# MSVC 的字符串字面量上限是 16380 **字节**。bootstrap 是 `LR"TJS(...)TJS"` 宽串，一个
+# wchar_t 占两字节，所以真正放得下的是约 8190 个 UTF-16 code unit。
+#
+# 单位必须是 UTF-16 code unit：一个汉字按 UTF-8 是 3 字节、按 UTF-16 只占 1 个。按字节
+# 估会以为还剩一大半余量，实际早就贴着线了。
+MSVC_WIDE_LITERAL_UNITS = 8190
+
+
+def find_oversized_tjs_literals(source: MaskedSource) -> list[str]:
+    """每段 `LR"TJS(...)TJS"` 都必须留在 MSVC 的宽串上限内。
+
+    这条规则的价值在于**它替 Windows 构建把话说在前面**：超限报的是 C2026，只有
+    windows 那条流水线会红，而 Linux 上的 guards 和全部 Dart 单测照样全绿。少了它，
+    往 bootstrap 里多写几行中文注释就够让 PR 在十几分钟后翻车，且报错行号指向被截断
+    的位置，与真正改动的地方毫无关系。
+
+    拆段本身是免费的：相邻的 raw literal 由编译器拼接，运行时的 TJS 一模一样。所以
+    修法永远是「在顶层语句边界插一行 `)TJS" LR"TJS(`」，而不是删注释。
+    """
+    offenders: list[str] = []
+    for match in TJS_RAW_RE.finditer(source.text):
+        units = len(match.group(1).encode("utf-16-le")) // 2
+        if units > MSVC_WIDE_LITERAL_UNITS:
+            offenders.append(
+                f"{ADAPTER.name}:{source.line_of(match.start())} "
+                f'LR"TJS(...)TJS" 段有 {units} 个 UTF-16 单元，超过 MSVC 上限 '
+                f'{MSVC_WIDE_LITERAL_UNITS}（C2026，只在 Windows 构建报）；'
+                '在顶层语句边界插一行 )TJS" LR"TJS( 拆开'
+            )
+    return offenders
+
+
 def _joined_tjs_payload(source: MaskedSource) -> MaskedSource:
     """按 C++ 相邻 raw literal 的顺序还原最终交给引擎的 TJS。"""
     return MaskedSource(
@@ -2117,6 +2149,9 @@ class RealAdapterTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = MaskedSource(ADAPTER.read_text(encoding="utf-8"))
+
+    def test_tjs_literals_fit_msvc_wide_string_limit(self) -> None:
+        self.assertEqual([], find_oversized_tjs_literals(self.source))
 
     def test_never_builds_tjs_source_from_dynamic_strings(self) -> None:
         self.assertEqual(
@@ -3920,6 +3955,23 @@ class MutationSelfTest(unittest.TestCase):
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
         )
+
+    def test_oversized_tjs_literal_is_red_and_splitting_fixes_it(self) -> None:
+        # 一行 60 个汉字注释 = 63 个 UTF-16 单元；200 行远超上限，100 行安全。
+        filler = "// " + "あ" * 60 + "\n"
+        one = 'static const wchar_t k[] = LR"TJS(\n' + filler * 200 + ')TJS";\n'
+        self.assertNotEqual([], find_oversized_tjs_literals(MaskedSource(one)))
+        # 同样多的内容拆成两段就该绿——这条规则量的是**单段**长度，不是全文件总量；
+        # 否则修法会被误导成"删注释"，而正解一直是拆段。
+        half = filler * 100
+        two = (
+            'static const wchar_t k[] = LR"TJS(\n'
+            + half
+            + ')TJS" LR"TJS(\n'
+            + half
+            + ')TJS";\n'
+        )
+        self.assertEqual([], find_oversized_tjs_literals(MaskedSource(two)))
 
     def test_legacy_cross_page_first_same_size_anchor_is_explicitly_red(
         self,

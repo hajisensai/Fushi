@@ -864,6 +864,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupHitLine = "";
 			global.fushiLookupVisualSeq = 0;
 			global.fushiLookupSubmitSeq = 0;
+
+)TJS" LR"TJS(
+
 			// Esc 只取消当时已经存在的 submit。这个单调 fence 留在游戏侧，因而即使
 			// host 已经开始查词、结构帧尚未回到游戏，取消也不会被在途结果反弹覆盖。
 			global.fushiLookupDismissedSubmitSeq = 0;
@@ -2535,6 +2538,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e) {}
 				return void;
 			};
+
+
+)TJS" LR"TJS(
 
 			// ── classic KAG3 采集面 ──────────────────────────────────────────────────
 			// KAGEX 的 TextRender 只存在于装了 textrender.dll 的游戏（ATRI、天使☆騒々）。
