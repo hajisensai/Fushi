@@ -15,18 +15,18 @@
       "version": "1.4.0-debug.11543"
     },
     {
-      "name": "fushi-1.4.0-debug.11551-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11551-ios.ipa",
-      "releaseSequence": 11551,
-      "tag": "v1.4.0-debug.11551+3091f55",
-      "version": "1.4.0-debug.11551"
+      "name": "fushi-2.0.0-debug.11553-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.0.0-debug.11553-ios.ipa",
+      "releaseSequence": 11553,
+      "tag": "v2.0.0-debug.11553+8b5821d",
+      "version": "2.0.0-debug.11553"
     },
     {
-      "name": "fushi-1.4.0-debug.11551-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-1.4.0-debug.11551-macos.zip",
-      "releaseSequence": 11551,
-      "tag": "v1.4.0-debug.11551+3091f55",
-      "version": "1.4.0-debug.11551"
+      "name": "fushi-2.0.0-debug.11553-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.0.0-debug.11553-macos.zip",
+      "releaseSequence": 11553,
+      "tag": "v2.0.0-debug.11553+8b5821d",
+      "version": "2.0.0-debug.11553"
     },
     {
       "name": "fushi-2.0.0-debug.11553-windows-setup.exe",
