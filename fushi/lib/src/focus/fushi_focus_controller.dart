@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
@@ -152,14 +153,32 @@ class FushiFocusController extends ChangeNotifier {
     _rootContext = rootContext;
     if (!_attached) {
       FocusManager.instance.addListener(_handleFocusChange);
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
+      // 与 [_handleFocusChange] 里那条 deferred 补票**并存**是有意的：这条走
+      // window_manager 的窗口事件（可能因 channel 延迟晚到），那条走进程内的
+      // FocusManager 通知（不依赖 channel），两条覆盖不同故障模式。
+      mainWindowForegroundNotifier.addListener(_onMainWindowForegroundChanged);
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
       _attached = true;
     }
+    scheduleRepair();
+  }
+
+  void _onMainWindowForegroundChanged() {
+    if (!_attached || !mainWindowForegroundNotifier.value) return;
+    _repairDeferredWhileBackgrounded = false;
     scheduleRepair();
   }
 
   void detach() {
     if (_attached) {
       FocusManager.instance.removeListener(_handleFocusChange);
+      mainWindowForegroundNotifier
+          .removeListener(_onMainWindowForegroundChanged);
       _attached = false;
     }
     _entries.clear();

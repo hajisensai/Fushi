@@ -4,6 +4,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -151,6 +152,9 @@ void main([List<String> args = const <String>[]]) {
     await recoverLegacyMacosPrefsFromSharedPreferences();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
+      // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
+      // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
+      MainWindowForegroundWatcher.instance.start();
       await DesktopWindowPlacement.applyInitialPlacement();
       // Intercept the native window-close signal so we can tear down Bonsoir's
       // mDNS event sources (LAN broadcast + discovery) BEFORE the Flutter engine
@@ -1586,96 +1590,104 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // theme so switching themes repaints the system bars. The builder
             // reruns on every theme change, so the AnnotatedRegion re-emits the
             // matching overlay style.
-            return AnnotatedRegion<SystemUiOverlayStyle>(
-              value: fushiSystemOverlayStyle(cs.brightness),
-              child: CupertinoTheme(
-                data:
-                    fushiCupertinoTheme(cs, fontFamily: appModel.appFontFamily),
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final Size viewport = constraints.hasBoundedWidth &&
-                            constraints.hasBoundedHeight
-                        ? constraints.biggest
-                        : MediaQuery.sizeOf(context);
-                    final double uiScale =
-                        appModel.resolveAppUiScaleForViewport(
-                      viewport: viewport,
-                      platform: Theme.of(context).platform,
-                    );
-                    Widget navigation = wrapWithGlobalNavigation(
-                      navigatorKey: appModel.navigatorKey,
-                      focusNavigationEnabled:
-                          appModel.experimentalFocusNavigationEnabled,
-                      registry: appModel.shortcutRegistry,
+            // BUG-1619：整棵 app 焦点树的闸门——主窗不在前台时任何 requestFocus
+            // 都不生效，杜绝「Dart 请求焦点 → 引擎 SetFocus(FlutterView) → Win32
+            // 连带激活主窗」把主界面抢到用户的游戏 / 浏览器前面。见
+            // [MainWindowFocusGate] 的完整推导。
+            return MainWindowFocusGate(
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: fushiSystemOverlayStyle(cs.brightness),
+                child: CupertinoTheme(
+                  data: fushiCupertinoTheme(cs,
+                      fontFamily: appModel.appFontFamily),
+                  child: LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) {
+                      final Size viewport = constraints.hasBoundedWidth &&
+                              constraints.hasBoundedHeight
+                          ? constraints.biggest
+                          : MediaQuery.sizeOf(context);
+                      final double uiScale =
+                          appModel.resolveAppUiScaleForViewport(
+                        viewport: viewport,
+                        platform: Theme.of(context).platform,
+                      );
+                      Widget navigation = wrapWithGlobalNavigation(
+                        navigatorKey: appModel.navigatorKey,
+                        focusNavigationEnabled:
+                            appModel.experimentalFocusNavigationEnabled,
+                        registry: appModel.shortcutRegistry,
 
-                      // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
-                      // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
-                      // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
-                      // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
-                      // 到不了全局处理器——整个全局键处理静默失效。
-                      child: _wrapFocusNavigation(
-                        enabled: appModel.experimentalFocusNavigationEnabled,
-                        // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
-                        // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
-                        // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                        child: Stack(
-                          children: <Widget>[
-                            child!,
-                            const FloatingLyricLookupHost(),
-                          ],
-                        ),
-                      ),
-                    );
-                    if (isMacosPlatform(context)) {
-                      // macOS native shell (Approach B): the MacosWindow + Sidebar
-                      // wrap the WHOLE navigator so every route — home tabs AND
-                      // pushed routes (reader, settings detail, dialogs) — inherits
-                      // a MacosWindowScope and can use native MacosScaffold/ToolBar.
-                      // MacosTheme is derived from the SAME live ColorScheme as the
-                      // rest of the app. The sidebar destinations come from the
-                      // dynamic HomeTab list (video/games toggles) so they
-                      // stay in lock-step with HomePage's rail; selection is shared
-                      // via homeShellTabNotifier. Hide the sidebar while a media
-                      // item (reader/video) is open so reading is full-width; the
-                      // builder reruns when appModel notifies (openMedia/close).
-                      // TODO-1375：sidebar 显隐由 appModel.mediaOpenNotifier 驱动，
-                      // 不再直接读 appModel.isMediaOpen。根因：isMediaOpen 变化不
-                      // notifyListeners，退出阅读器后本 builder 不重跑、sidebar 卡在
-                      // stale null（永久消失→设置 tab 无出口→困死）。改用
-                      // ValueListenableBuilder 监听可靠通知源：退出媒体必重建恢复
-                      // sidebar。navigation（=整个 navigator）作为不变 child 透传，
-                      // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
-                      navigation = MacosTheme(
-                        data: fushiMacosThemeFromColorScheme(cs, cs.brightness),
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: appModel.mediaOpenNotifier,
-                          builder: (BuildContext context, bool mediaOpen,
-                              Widget? child) {
-                            return MacosWindow(
-                              sidebar: mediaOpen
-                                  ? null
-                                  : buildFushiMacosSidebar(
-                                      activeTabs: homeActiveTabs(
-                                        // 「视频」tab 已毕业为常驻（原
-                                        // experimentalVideoEnabled 恒 true）。games
-                                        // （galgame 库）仅 Windows；macOS 根侧栏此处
-                                        // 恒 false（gamesEnabled 缺省），不显示。
-                                        videoEnabled: true,
-                                        // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
-                                        // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
-                                        browserExtensionEnabled:
-                                            DesktopLookupService.isDesktop,
-                                      ),
-                                    ),
-                              child: child!,
-                            );
-                          },
-                          child: navigation,
+                        // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
+                        // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
+                        // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
+                        // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
+                        // 到不了全局处理器——整个全局键处理静默失效。
+                        child: _wrapFocusNavigation(
+                          enabled: appModel.experimentalFocusNavigationEnabled,
+                          // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
+                          // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
+                          // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                          child: Stack(
+                            children: <Widget>[
+                              child!,
+                              const FloatingLyricLookupHost(),
+                            ],
+                          ),
                         ),
                       );
-                    }
-                    return FushiAppUiScale(scale: uiScale, child: navigation);
-                  },
+                      if (isMacosPlatform(context)) {
+                        // macOS native shell (Approach B): the MacosWindow + Sidebar
+                        // wrap the WHOLE navigator so every route — home tabs AND
+                        // pushed routes (reader, settings detail, dialogs) — inherits
+                        // a MacosWindowScope and can use native MacosScaffold/ToolBar.
+                        // MacosTheme is derived from the SAME live ColorScheme as the
+                        // rest of the app. The sidebar destinations come from the
+                        // dynamic HomeTab list (video/games toggles) so they
+                        // stay in lock-step with HomePage's rail; selection is shared
+                        // via homeShellTabNotifier. Hide the sidebar while a media
+                        // item (reader/video) is open so reading is full-width; the
+                        // builder reruns when appModel notifies (openMedia/close).
+                        // TODO-1375：sidebar 显隐由 appModel.mediaOpenNotifier 驱动，
+                        // 不再直接读 appModel.isMediaOpen。根因：isMediaOpen 变化不
+                        // notifyListeners，退出阅读器后本 builder 不重跑、sidebar 卡在
+                        // stale null（永久消失→设置 tab 无出口→困死）。改用
+                        // ValueListenableBuilder 监听可靠通知源：退出媒体必重建恢复
+                        // sidebar。navigation（=整个 navigator）作为不变 child 透传，
+                        // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
+                        navigation = MacosTheme(
+                          data:
+                              fushiMacosThemeFromColorScheme(cs, cs.brightness),
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable: appModel.mediaOpenNotifier,
+                            builder: (BuildContext context, bool mediaOpen,
+                                Widget? child) {
+                              return MacosWindow(
+                                sidebar: mediaOpen
+                                    ? null
+                                    : buildFushiMacosSidebar(
+                                        activeTabs: homeActiveTabs(
+                                          // 「视频」tab 已毕业为常驻（原
+                                          // experimentalVideoEnabled 恒 true）。games
+                                          // （galgame 库）仅 Windows；macOS 根侧栏此处
+                                          // 恒 false（gamesEnabled 缺省），不显示。
+                                          videoEnabled: true,
+                                          // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
+                                          // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
+                                          browserExtensionEnabled:
+                                              DesktopLookupService.isDesktop,
+                                        ),
+                                      ),
+                                child: child!,
+                              );
+                            },
+                            child: navigation,
+                          ),
+                        );
+                      }
+                      return FushiAppUiScale(scale: uiScale, child: navigation);
+                    },
+                  ),
                 ),
               ),
             );
