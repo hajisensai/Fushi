@@ -60,6 +60,24 @@ void main() {
     expect(reordered.identity, sameHeadersDifferentOrder.identity);
   });
 
+  test('percent-encodes Unicode Aidoku Referer URLs for dart:io', () {
+    final AidokuImagePage page = AidokuImagePage.fromJson(
+      const <String, Object?>{
+        'content': <String, Object?>{
+          'Url': <Object?>['https://sv1.freeimgmg.online/page.jpg', null],
+        },
+      },
+    );
+
+    expect(
+      page.requestHeaders(
+        referer: 'https://rawotaku.com/read/イジめてイジられて-raw/',
+      )['Referer'],
+      'https://rawotaku.com/read/'
+      '%E3%82%A4%E3%82%B8%E3%82%81%E3%81%A6%E3%82%A4%E3%82%B8%E3%82%89%E3%82%8C%E3%81%A6-raw/',
+    );
+  });
+
   test('rejects non-HTTPS and unsupported Aidoku page payloads', () {
     expect(
       () => AidokuImagePage.fromJson(<String, Object?>{

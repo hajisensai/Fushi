@@ -73,11 +73,19 @@ class AidokuImagePage {
   final Map<String, String> headers;
   final Map<String, String> context;
 
-  Map<String, String> requestHeaders({String? referer}) => <String, String>{
-        'User-Agent': kAidokuBrowserUserAgent,
-        if (referer != null) 'Referer': referer,
-        ...headers,
-      };
+  Map<String, String> requestHeaders({String? referer}) {
+    final Map<String, String> resolved = <String, String>{
+      'User-Agent': kAidokuBrowserUserAgent,
+      if (referer != null) 'Referer': referer,
+      ...headers,
+    };
+    return resolved.map(
+      (String name, String value) => MapEntry<String, String>(
+        name,
+        _normalizeAidokuRequestHeader(name, value),
+      ),
+    );
+  }
 
   String get identity {
     final List<String> keys = headers.keys.toList()..sort();
@@ -88,6 +96,21 @@ class AidokuImagePage {
         .convert(utf8.encode('$url\u001f${jsonEncode(stableHeaders)}'))
         .toString();
   }
+}
+
+String _normalizeAidokuRequestHeader(String name, String value) {
+  switch (name.toLowerCase()) {
+    case 'referer':
+    case 'origin':
+      final Uri? uri = Uri.tryParse(value);
+      if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
+        // dart:io rejects non-Latin-1 header values before sending a request.
+        // Uri.toString percent-encodes Unicode path/query components while
+        // preserving an already valid HTTP URL.
+        return uri.toString();
+      }
+  }
+  return value;
 }
 
 class AidokuReaderChapter extends OnlineMangaReaderChapter {
