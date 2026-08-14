@@ -927,6 +927,25 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     try {
       if (audioTmp.existsSync()) audioTmp.deleteSync();
     } catch (_) {/* best-effort */}
+    // BUG-1637：下载后回填 host 端听书断点（与 srt-backed 路径的
+    // [_downloadRemoteBookProgress] 有声书段对称——此前纯 SRT 下载完从 0 开始，
+    // 且 sweep 交集键 bug 让它之后也永远同步不上）。standalone 的 identity=uid
+    // 恰为本地 `audiobook_pos_<uid>` 进度键，写穿即正确命名空间。best-effort。
+    try {
+      final ({int positionMs, int updatedAtMs}) pos =
+          await client.remoteAudiobookPosition(book.identity);
+      if (pos.updatedAtMs > 0) {
+        await appModel.database.setPrefTyped<int>(
+            audiobookPositionPrefKey(book.identity), pos.positionMs);
+        await appModel.database.setPrefTyped<int>(
+            audiobookPositionAtPrefKey(book.identity), pos.updatedAtMs);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+          'ReaderFushiHistoryPage.downloadRemoteSrtAudiobookPosition',
+          e,
+          stack);
+    }
     if (!mounted) {
       _downloadingBooks.remove(dlKey);
       return;

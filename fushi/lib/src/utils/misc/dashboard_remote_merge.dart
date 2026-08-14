@@ -64,6 +64,10 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
   for (final RemoteBookInfo b in remoteBooks) {
     if (b.progressPercent <= 0 || b.progressPercent >= 100) continue;
     if (localBookKeys.contains(b.downloadId)) continue;
+    // BUG-1638：不可下载条目（hasContent=false——host 在读的漫画/PDF 等无 EPUB
+    // 内容树的行）不进「继续」：书架远端列表早已按 hasContent 过滤，这里漏了 →
+    // 点卡片只会切到书架 tab，而书架上根本没有这张卡（死路卡）。
+    if (!b.hasContent) continue;
     out.add(RemoteContinueCandidate(
       kind: b.kind,
       id: b.downloadId,

@@ -444,6 +444,45 @@ void main() {
     });
   });
 
+  group('standalone SRT audiobook sweep (BUG-1637)', () {
+    test('纯 SRT 有声书（bookKey 空、身份=uid）的听书进度进 sweep 交集并双向同步',
+        () async {
+      // host：只有 standalone SrtBooks 行（无 Audiobooks 行、bookKey 空）。
+      await hostDb.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srt-uid-1',
+        title: 'Standalone SRT',
+        srtPath: '/tmp/standalone.srt',
+        importedAt: 0,
+      ));
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      // 本地听过：进度 prefs 按 uid 键（standalone 的 identity）。
+      await localDb.setPrefTyped<int>(
+          audiobookPositionPrefKey('srt-uid-1'), 123000);
+      await localDb.setPrefTyped<int>(
+          audiobookPositionAtPrefKey('srt-uid-1'), 7000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tsrt'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncAudiobookProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookPositionPrefKey('srt-uid-1'), 0),
+          123000,
+          reason: '此前 hostKeys 用裸 bookKey（standalone 恒空串）建交集，'
+              '纯 SRT 的进度永远不同步；必须用 identity（bookKey ?? uid）');
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookPositionAtPrefKey('srt-uid-1'), 0),
+          7000);
+    });
+  });
+
   group('video delay full sweep (BUG-1620)', () {
     test(
         'local stamped delay newer -> push to host (prefs + row write-through)',

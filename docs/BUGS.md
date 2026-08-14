@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1513 条。点号进各自文件。
+> 共 1515 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1638](bugs/BUG-1638-dashboard-remote-continue-dead-end-card.md) | ✅ | ✅ | 首页远端继续卡对不可下载条目是死路 |
+| [BUG-1637](bugs/BUG-1637-standalone-srt-audiobook-position-never-syncs.md) | ✅ | ✅ | 纯SRT有声书听书进度跨设备完全不同步 |
 | [BUG-1636](bugs/BUG-1636-remote-audio-track-not-persisted.md) | ✅ | ✅ | 互联远端视频音轨选择不持久化 |
 | [BUG-1620](bugs/BUG-1620-interconnect-remote-delay-not-persisted.md) | ✅ | ✅ | 互联远端视频字幕偏移不持久化（退出重进归 0） |
 | [BUG-1613](bugs/BUG-1613-apple-coreml-ep-detector-empty.md) | ✅ | ✅ | Apple CoreML EP 上 int8 检测模型静默返回空结果且更慢 |

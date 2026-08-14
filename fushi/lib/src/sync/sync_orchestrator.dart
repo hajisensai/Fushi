@@ -1879,11 +1879,17 @@ class SyncOrchestrator {
     if (localKeys.isEmpty) return;
 
     // 有声书进度是 host-truth 模型：只对 host 也有的有声书同步。先取 host 有声书
-    // 清单，只同步两端都有的 bookKey；本地独有有声书无 host 真相，跳过。
+    // 清单，只同步两端都有的键；本地独有有声书无 host 真相，跳过。
+    //
+    // 键必须用 [RemoteAudiobookInfo.identity]（srt-backed=bookKey；纯 SRT=uid），
+    // 不能用裸 bookKey：纯 SRT standalone 的 bookKey 恒空串，用它建交集会让这类书
+    // 的 `audiobook_pos_<uid>` 永远落不进 hostKeys → 听书进度跨设备完全不同步——
+    // 而 host 端 get/putAudiobookPosition 本就按 identity（bookKey ∪ SrtBooks.uid）
+    // 命中（BUG-1637）。空 identity（异常行）跳过不进集合。
     final Set<String> hostKeys = <String>{
       for (final RemoteAudiobookInfo info
           in await backend.listRemoteAudiobooks())
-        info.bookKey,
+        if (info.identity.isNotEmpty) info.identity,
     };
     if (hostKeys.isEmpty) return;
 
