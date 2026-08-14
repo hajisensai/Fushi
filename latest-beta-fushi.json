@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "version": "2.0.0",
+  "tag": "v2.0.0-beta.11553",
+  "channel": "beta",
+  "prerelease": true,
+  "releaseSequence": 11553,
+  "notes": "Manual desktop beta/test build from develop @ 8b5821d. Beta/test releases are prerelease and never Latest.",
+  "assets": [
+    {
+      "name": "fushi-2.0.0-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0-beta.11553/fushi-2.0.0-windows-setup.exe",
+      "releaseSequence": 11553,
+      "tag": "v2.0.0-beta.11553",
+      "version": "2.0.0"
+    }
+  ]
+}
