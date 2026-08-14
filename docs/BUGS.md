@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1513 条。点号进各自文件。
+> 共 1514 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1644](bugs/BUG-1644-d3d11va-zero-copy-interop.md) | ✅ | ✅ | Windows 视频硬解走 d3d11va-copy：ANGLE 用自己的隐藏 D3D11 device，mpv d3d11-egl interop 加载不了 |
 | [BUG-1643](bugs/BUG-1643-settings-width-cap.md) | ✅ | ✅ | 设置页宽屏被 960px 强制限宽 |
+| [BUG-1641](bugs/BUG-1641-anki-open-not-foreground.md) | ✅ | ✅ | 制卡后「在 Anki 中打开」只闪任务栏，Anki 不到前台 |
 | [BUG-1613](bugs/BUG-1613-apple-coreml-ep-detector-empty.md) | ✅ | ✅ | Apple CoreML EP 上 int8 检测模型静默返回空结果且更慢 |
 | [BUG-1610](bugs/BUG-1610-bangumi-search-rating-null.md) | ✅ | ✅ | Bangumi 搜索候选评分恒空：映射器读扁平 score，真实响应只有嵌套 rating.score |
 | [BUG-1609](bugs/BUG-1609-global-lookup-card-right-corners-square.md) | ✅ | ✅ | app 外全局查词卡片右上/右下圆角变方角 |
