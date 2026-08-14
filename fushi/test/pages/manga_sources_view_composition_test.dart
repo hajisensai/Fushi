@@ -57,6 +57,21 @@ void main() {
       expect(sources, contains('_AidokuRepositorySourcesDialog('));
     });
 
+    test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {
+      final int start = sources.indexOf(
+        'class _AidokuRepositoryUrlDialogState',
+      );
+      final int end = sources.indexOf(
+        'class _AidokuRepositorySourcesDialog',
+      );
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final String dialogSource = sources.substring(start, end);
+      expect(dialogSource, contains('=> AlertDialog('));
+      expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
+    });
+
     test('扩展提供的在线来源设置也在同一视图内', () {
       expect(sources, contains('_buildOnlineSource('));
       expect(sources, contains('t.mihon_sources_title'));

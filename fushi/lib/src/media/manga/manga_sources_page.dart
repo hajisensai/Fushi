@@ -796,7 +796,7 @@ class _AidokuRepositoryUrlDialogState
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog.adaptive(
+  Widget build(BuildContext context) => AlertDialog(
         title: Text(t.aidoku_repository_add),
         content: SizedBox(
           width: 560,
