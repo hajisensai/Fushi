@@ -30,6 +30,59 @@ window.fushiSelection = {
         return /^[\s　]$/.test(char) || this.scanDelimiters.includes(char);
     },
 
+    // BUG-1645：元素是否「同一行内连排」的 inline 盒。块级/列表项/表格单元/inline-block
+    // 在用户眼里就是换行或分栏，两侧文字不可能是同一个词。拿不到样式时返回 true
+    // （保持旧的跨节点续扫行为，不引入新的失败模式）。
+    isInlineBox(element) {
+        const style = window.getComputedStyle?.(element);
+        if (!style) return true;
+        const display = style.display;
+        return display === 'inline' || display === 'contents' ||
+            display.startsWith('ruby');
+    },
+
+    // BUG-1645：元素的 ::before/::after 生成内容是否是真实分隔符。compact 释义模式下
+    // `li::after { content: " | " }` 只存在于渲染树，DOM 里没有对应文本节点——不查
+    // 伪元素就会把视觉上分开的两条释义当成连排文字。
+    hasGeneratedContent(element, pseudo) {
+        const content = window.getComputedStyle?.(element, pseudo)?.content;
+        return !!content && content !== 'none' && content !== 'normal' &&
+            content !== '""' && content !== "''";
+    },
+
+    // BUG-1645：跨文本节点续扫时，[from] 与 [to] 之间是否存在「渲染上的断点」。
+    //
+    // 取词扫描把相邻文本节点直接首尾相接，这对日语无害（CJK 不是空格分词脚本，
+    // C++ scan_candidates 可以在任意码点处切分，粘多了自然被切掉），但对拉丁语系
+    // 是致命的：scan_candidates 明确禁止「在单词中间切」，于是把两条相邻释义粘成的
+    // `acridpungent` 永远还原不出 `acrid` —— 嵌套查词点英文注释里的词必然无结果。
+    //
+    // 判据是渲染盒边界而不是「两侧都是字母就断」：`<b>ac</b>rid` 这种行内标记拆开的
+    // 单词必须继续粘（inline 盒，无断点），`<li>acrid</li><li>pungent</li>` 这种
+    // 相邻释义必须断开（list-item 盒 / compact 模式下的 ::after 分隔符）。
+    crossesRenderBoundary(from, to) {
+        const fromElement = from?.parentElement;
+        const toElement = to?.parentElement;
+        if (!fromElement || !toElement || fromElement === toElement) return false;
+
+        const fromAncestors = new Set();
+        for (let el = fromElement; el; el = el.parentElement) fromAncestors.add(el);
+        let common = null;
+        for (let el = toElement; el; el = el.parentElement) {
+            if (fromAncestors.has(el)) { common = el; break; }
+        }
+
+        // 离开 from 一侧：出边界的元素自身是块盒，或它在文字后面吐了生成内容。
+        for (let el = fromElement; el && el !== common; el = el.parentElement) {
+            if (!this.isInlineBox(el) || this.hasGeneratedContent(el, '::after')) return true;
+        }
+        // 进入 to 一侧：同理，看的是 ::before。
+        for (let el = toElement; el && el !== common; el = el.parentElement) {
+            if (!this.isInlineBox(el) || this.hasGeneratedContent(el, '::before')) return true;
+        }
+        return false;
+    },
+
     isFurigana(node) {
         const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         return !!el?.closest('rt, rp');
@@ -327,7 +380,10 @@ window.fushiSelection = {
 
             if (scanOffset < content.length || text.length >= maxLength) break;
 
-            scanNode = walker.nextNode();
+            // BUG-1645：只有当下一个文本节点与当前节点在渲染上连排时才继续粘。
+            const nextNode = walker.nextNode();
+            if (!nextNode || this.crossesRenderBoundary(scanNode, nextNode)) break;
+            scanNode = nextNode;
             scanOffset = 0;
         }
 
