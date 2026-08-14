@@ -24,7 +24,7 @@ Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
 
 ### 1. Önerilen sözlükleri (kelime + vurgu + sıklık sözlükleri) ve yerel sesi (Japonca ve İngilizce ses veritabanları) içe aktarma (Yeni başlayanlara şiddetle önerilir!!! · isteğe bağlı)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare üzerinden indirme (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare üzerinden indirme (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Uygulamada: Ayarlar -> Eşitleme ve Yedekleme -> **Yedeği İçe Aktar** öğesine dokunun.
 
