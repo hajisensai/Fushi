@@ -12,6 +12,17 @@ enum ImportCarrier {
   /// 页图**目录**（一个漫画文件夹）。走 `MangaModule.importImageFolder`。
   mangaFolder,
 
+  /// **装着整卷载体文件的目录**：目录自身没有页图，但直接子层放着一批
+  /// `.epub` / `.cbz` / `.zip` / `.mokuro`（每个文件一卷）。走
+  /// `MangaModule.importBatchFolder`，逐卷导成独立的一本。
+  ///
+  /// 为什么必须是独立的载体身份（BUG-1646）：此前「目录」只有 [mangaFolder]
+  /// 一种解释，用户在漫画框选一个装着 20 卷 EPUB 的文件夹，会被当成页图目录，
+  /// 扫不到任何图片扩展名的文件，报 `Manga image folder has no pages`——那句话
+  /// 描述的是判定结果，而不是用户做错了什么。目录里装什么是**数据的形状**，
+  /// 不是错误情况，缺的是枚举成员，不是一个更好的错误提示。
+  mangaBatchFolder,
+
   /// mokuro v0.2+ 的 `.mokuro` OCR 结果文件（+ 同级图片）。
   /// 走 `MangaModule.importMokuro`。
   mangaMokuro,
@@ -30,12 +41,28 @@ enum ImportCarrier {
   /// 走 `TextToEpub.convert` + `EpubImporter.import`。
   text;
 
-  /// 是否属漫画域（三种漫画载体的统称）。书籍侧入口只关心这一个问题。
+  /// 是否属漫画域（四种漫画载体的统称）。书籍侧入口只关心这一个问题。
   bool get isManga =>
       this == ImportCarrier.mangaFolder ||
+      this == ImportCarrier.mangaBatchFolder ||
       this == ImportCarrier.mangaMokuro ||
       this == ImportCarrier.mangaArchive;
 }
+
+/// 单个文件可以承载「一整卷漫画」的扩展名（带点，小写）。
+///
+/// 这是**唯一真相源**：漫画框的文件选择器白名单、目录批量导入的候选枚举、
+/// 以及 [classifyImportCarrier] 的目录分支都从这里取。三处各自手抄的话，
+/// 「选得中但导不了」或「批量漏掉某种卷」这类漂移迟早出现。
+///
+/// `.zip` / `.epub` 在列是因为它们与词典包 / 普通电子书同形——光看扩展名分不出，
+/// 真定性仍由 [classifyImportCarrier] 的 `isImageArchive` 开包完成。
+const Set<String> kMangaCarrierFileExtensions = <String>{
+  '.mokuro',
+  '.cbz',
+  '.zip',
+  '.epub',
+};
 
 /// 判定 [path] 的载体身份。
 ///
@@ -47,12 +74,28 @@ enum ImportCarrier {
 /// - [isImageArchive]：真读包判定，只在扩展名二义（`.zip` / `.epub`）时才被调用。
 ///   `.zip` 同时是 Yomitan 词典包扩展名，`.epub` 也可能是扫描版漫画——光看扩展名
 ///   分不出，必须开包看里面装的是不是页图。
+/// - [directoryHasPageImages]：目录里有没有页图，判据必须与真正执行导入的枚举
+///   同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」。
+/// - [directoryCarrierFileCount]：目录**直接子层**里有几个 [kMangaCarrierFileExtensions]
+///   文件。只看扩展名（便宜），真定性推迟到逐卷导入时——那时反正要开包。
 ImportCarrier classifyImportCarrier(
   String path, {
   required bool Function(String path) isDirectory,
   required bool Function(String path) isImageArchive,
+  required bool Function(String path) directoryHasPageImages,
+  required int Function(String path) directoryCarrierFileCount,
 }) {
-  if (isDirectory(path)) return ImportCarrier.mangaFolder;
+  if (isDirectory(path)) {
+    // 页图优先：有页图就是一卷页图目录，与改动前的行为逐字节一致。目录里
+    // 同时躺着页图和整卷文件时，页图这条解释更贴近用户点「选文件夹」的意图。
+    if (directoryHasPageImages(path)) return ImportCarrier.mangaFolder;
+    if (directoryCarrierFileCount(path) > 0) {
+      return ImportCarrier.mangaBatchFolder;
+    }
+    // 空目录 / 既无页图也无整卷文件：仍按页图目录走，让导入器抛那句
+    // 「没有页」——这里没有比它更准确的话可说。
+    return ImportCarrier.mangaFolder;
+  }
 
   final String ext = p.extension(path).toLowerCase();
 
@@ -95,10 +138,14 @@ class ImportCarrierResolver {
   ImportCarrierResolver({
     required this.isDirectory,
     required this.isImageArchive,
+    required this.directoryHasPageImages,
+    required this.directoryCarrierFileCount,
   });
 
   final bool Function(String path) isDirectory;
   final bool Function(String path) isImageArchive;
+  final bool Function(String path) directoryHasPageImages;
+  final int Function(String path) directoryCarrierFileCount;
 
   String? _cachedPath;
   ImportCarrier? _cachedCarrier;
@@ -111,6 +158,8 @@ class ImportCarrierResolver {
       path,
       isDirectory: isDirectory,
       isImageArchive: isImageArchive,
+      directoryHasPageImages: directoryHasPageImages,
+      directoryCarrierFileCount: directoryCarrierFileCount,
     );
     _cachedPath = path;
     _cachedCarrier = carrier;
