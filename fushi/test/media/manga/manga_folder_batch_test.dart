@@ -113,7 +113,11 @@ void main() {
         books.map((EpubBookRow b) => b.title).toList()..sort(),
         <String>['銀河英雄伝説 01', '銀河英雄伝説 02'],
       );
-      expect(books.every((EpubBookRow b) => b.format == 'manga'), isTrue);
+      expect(
+        books.every((EpubBookRow b) =>
+            BookFormat.parseOrEpub(b.format) == BookFormat.manga),
+        isTrue,
+      );
     });
 
     test('一卷坏包不中断整批：其余卷照样进库', () async {
