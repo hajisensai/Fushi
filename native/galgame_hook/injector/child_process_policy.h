@@ -12,6 +12,12 @@ struct ChildProcessCandidate {
   const wchar_t* executable_name = nullptr;
   bool has_avcodec = false;
   bool has_avformat = false;
+  // 该进程镜像所在目录带引擎数据签名（Siglus 的 Gameexe.dat + Scene.pck 等）。
+  // 这是比 ffmpeg 模块更强的「它就是真游戏」证据：ffmpeg 只说明这个进程在解码，
+  // 引擎签名说明它就是那台引擎本身。启动器型游戏（AngelBeats 体験版：
+  // Start.exe -> StartData/StartMenu.exe -> gamedata/SiglusEngine.exe）里真正的
+  // 游戏进程一个 ffmpeg 模块都不加载，只有这条证据认得出它。
+  bool has_engine_signature = false;
 };
 
 inline bool EqualsAsciiInsensitive(const wchar_t* left, const wchar_t* right) {
@@ -50,11 +56,16 @@ inline int ChildProcessScore(const ChildProcessCandidate& candidate,
   const bool python =
       EqualsAsciiInsensitive(candidate.executable_name, L"python.exe") ||
       EqualsAsciiInsensitive(candidate.executable_name, L"pythonw.exe");
-  if (!candidate.has_avcodec && !candidate.has_avformat && !python) return -1;
+  if (!candidate.has_avcodec && !candidate.has_avformat && !python &&
+      !candidate.has_engine_signature) {
+    return -1;
+  }
   int score = 100 - depth;
   if (candidate.has_avcodec) score += 300;
   if (candidate.has_avformat) score += 300;
   if (python) score += 250;
+  // 压过 avcodec+avformat 全中（600）：解码器进程可能只是个 helper，引擎签名不会。
+  if (candidate.has_engine_signature) score += 700;
   return score;
 }
 

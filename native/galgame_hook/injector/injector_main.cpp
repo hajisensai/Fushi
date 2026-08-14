@@ -26,6 +26,7 @@
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
 #include "kirikiri_launch_profile.h"
+#include "launcher_layout.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
@@ -1800,6 +1801,56 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
+// 目录是否带引擎数据签名。目前只有 Siglus 一家有可靠的纯目录签名（Gameexe.dat +
+// Scene.pck）；再加引擎时在这里多写一个 || 即可，判据本身不用动。
+bool DirectoryHasEngineSignature(const std::wstring& dir) {
+  return fushi_voice_hook::DirectoryLooksLikeSiglus(
+      dir, [](const std::wstring& d, const wchar_t* name) {
+        return FileExists(JoinPath(d, name));
+      });
+}
+
+// 直接子目录全路径。不跟 reparse point：符号链接/联接点能把搜索绕成环。
+std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
+  std::vector<std::wstring> result;
+  if (dir.empty()) return result;
+  WIN32_FIND_DATAW data = {};
+  HANDLE find = FindFirstFileW(JoinPath(dir, L"*").c_str(), &data);
+  if (find == INVALID_HANDLE_VALUE) return result;
+  do {
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) continue;
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) continue;
+    if (wcscmp(data.cFileName, L".") == 0 || wcscmp(data.cFileName, L"..") == 0) {
+      continue;
+    }
+    result.push_back(JoinPath(dir, data.cFileName));
+  } while (FindNextFileW(find, &data));
+  FindClose(find);
+  return result;
+}
+
+// 被启动的 exe 是不是启动器：自己那层没有引擎签名，受限深度内的某个子目录有。
+// 真实样本 AngelBeats 体験版：Start.exe 在根，Siglus 签名在 StartData/gamedata。
+bool LooksLikeLauncherForEngine(const std::wstring& exe) {
+  return fushi_voice_hook::LooksLikeLauncherLayout(
+      ExecutableDirectory(exe), fushi_voice_hook::kLauncherLayoutMaxDepth,
+      DirectoryHasEngineSignature, ListSubdirectories);
+}
+
+// 子进程镜像所在目录带引擎签名 -> 它就是真游戏。启动器链里的游戏进程一个 ffmpeg 模块
+// 都不加载，只有这条证据认得出它。
+void InspectEngineSignature(DWORD pid,
+                            fushi_voice_hook::ChildProcessCandidate* candidate) {
+  HANDLE process =
+      OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (process == nullptr) return;
+  const std::wstring image = ProcessImagePath(process);
+  CloseHandle(process);
+  if (image.empty()) return;
+  candidate->has_engine_signature =
+      DirectoryHasEngineSignature(ExecutableDirectory(image));
+}
+
 void InspectFfmpegModules(DWORD pid,
                           fushi_voice_hook::ChildProcessCandidate* candidate) {
   HANDLE snapshot = CreateToolhelp32Snapshot(
@@ -1859,6 +1910,7 @@ DWORD FindGameChildProcess(DWORD root_pid) {
   for (size_t i = 0; i < candidates.size(); ++i) {
     if (fushi_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
       InspectFfmpegModules(candidates[i].pid, &candidates[i]);
+      InspectEngineSignature(candidates[i].pid, &candidates[i]);
     }
   }
   return fushi_voice_hook::SelectGameChildProcess(root_pid, candidates);
@@ -2301,8 +2353,14 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     fprintf(stderr, "[launch] delayed-attach profile=%s\n",
             delayed_kirikiri->id);
   }
+  // 启动器型游戏：hook 下在转手即退的启动器上等于什么都抓不到，必须跟随子进程。
+  const bool launcher_layout = LooksLikeLauncherForEngine(exe);
+  if (launcher_layout) {
+    fprintf(stderr,
+            "[launch] launcher layout detected; following child processes\n");
+  }
   const bool follow_children =
-      follow_child_processes || LooksLikeRenpyRuntime(exe);
+      follow_child_processes || LooksLikeRenpyRuntime(exe) || launcher_layout;
   // SteamAPI_RestartAppIfNecessary 要求游戏由 Steam 客户端启动。直接 CreateProcess
   // 即使临时设置 AppID 环境变量也可能触发客户端二次拉起，最终出现重复实例且 hook 留在
   // 已退出的首进程。Steam 游戏改走客户端协议，并自动按完整 exe 路径发现/注入真实进程。
