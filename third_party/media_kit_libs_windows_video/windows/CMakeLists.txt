@@ -101,16 +101,29 @@ get_filename_component(
 # (GPL full FFmpeg with TrueHD): NOT `-lgpl` (drops TrueHD -> re-opens BUG-073),
 # NOT `-v3` (needs Haswell+, crashes on older CPUs); `gh release upload
 # vendor-libmpv <file> --repo hajisensai/hibiki`; then update the name/URL/MD5
-# below. sha256 of this pin (verified against zhongfly sha256.txt AND re-verified
-# from the mirror before the swap):
-# 2651a618ba6906ac869a87f669c4db157ef3b9d566eb946362fadafcd2e253c1
-set(LIBMPV "mpv-dev-x86_64-20260704-git-33111f3212.7z")
+# below. sha256 of this pin (verified against zhongfly sha256.txt before the
+# swap):
+# e105420c358b71233a0a8530d570ca9993132f92e2d3cb23c4cd1c084c9c6120
+#
+# MINIMUM VERSION (BUG-1644): this pin must stay at or after mpv upstream
+# 1d15686142fd5d53c954aab7526cedab05ef9dc3 (2026-07-31, "hwdec_d3d11egl: fix
+# EGL_EXT_device_query availability check"), i.e. a zhongfly build dated
+# 2026-07-31 or later. Older libmpv checks `EGL_EXT_device_query` against the
+# EGL *display* extension string only, while ANGLE (since ANGLE 56663dbfa780)
+# lists it in the *client* string - so `hwdec_d3d11egl::init()` returns -1
+# before it ever looks at the D3D11 device, silently disabling native d3d11va
+# interop and forcing `d3d11va-copy` (every decoded frame read back to system
+# memory and re-uploaded). Measured on the previous 20260704 pin: mpv logged
+# `Loading hwdec driver 'd3d11-egl'` -> `Loading failed.` with no reason; on
+# this pin the same probe reaches `d3d11-egl: Failed to create hwdevice_ctx`,
+# i.e. past that gate. Do NOT bump backwards past 2026-07-31.
+set(LIBMPV "mpv-dev-x86_64-20260813-git-7b8915bc1d.7z")
 
 # Provenance of the vendored libmpv archive (TODO-1172: no longer downloaded
 # at build time). URL is the permanent mirror (hajisensai/hibiki release),
 # kept so the origin stays auditable; the committed .7z is the source of truth.
 set(LIBMPV_URL "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/${LIBMPV}")
-set(LIBMPV_MD5 "89702937368b0181cbce41c30e811c76")
+set(LIBMPV_MD5 "be118f0492bc99d17467e9419a0f948f")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")
