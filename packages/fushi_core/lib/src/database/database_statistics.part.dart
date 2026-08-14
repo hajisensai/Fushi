@@ -602,6 +602,11 @@ mixin _FushiDbStatistics
             readingStatistics,
             videoWatchStatistics,
             videoBooks,
+            // 阅读位置是首页「继续」的数据源（MediaItem.position 与最近阅读时刻
+            // 均派生自它）。此前不在表集里：互联/云同步把更远的对端进度写回
+            // reader_positions 后，首页「继续」不刷新、要重启 app 才生效——
+            // 同步回灌与本机关书是同一张表的写入，理应同一条失效通道。
+            readerPositions,
           ]),
         ).listen((_) {
           if (!controller.isClosed) controller.add(null);

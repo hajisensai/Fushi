@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -255,6 +256,24 @@ void main() {
         charsRead: 10,
         timeMs: 1000,
       );
+      await emitted;
+    });
+
+    test(
+        'watchDashboardDataChanges 在写入阅读位置（reader_positions）时也 emit '
+        '（同步回灌对端更远进度后首页「继续」自动刷新的根通道——此前不在表集里，'
+        '要重启 app 才生效）', () async {
+      final db = await _openDb();
+      final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
+            const Duration(seconds: 3),
+          );
+      await db.upsertReaderPosition(ReaderPositionsCompanion(
+        bookUid: const Value('uid-progress-sync'),
+        sectionIndex: const Value(3),
+        normCharOffset: const Value(4200),
+        charOffset: const Value(88),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ));
       await emitted;
     });
 
