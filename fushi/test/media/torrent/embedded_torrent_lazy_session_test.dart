@@ -103,5 +103,18 @@ void main() {
           appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
       expect(ensure.contains('EmbeddedTorrentHost.open('), isTrue);
     });
+
+    test('懒建 host 时 session 初始 DHT 必须显式关闭', () {
+      final String ensure = methodBody(
+          appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
+      final String structural = maskCommentsAndStrings(ensure);
+      expect(
+        RegExp(
+          r'EmbeddedTorrentHost\.open\([\s\S]*?enableDht\s*:\s*false',
+        ).hasMatch(structural),
+        isTrue,
+        reason: 'BUG-1647：resume 恢复阶段若先开 DHT，门控接管前仍会产生空闲流量',
+      );
+    });
   });
 }

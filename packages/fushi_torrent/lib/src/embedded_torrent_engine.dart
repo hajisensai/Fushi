@@ -824,16 +824,23 @@ class EmbeddedTorrentSession {
     }
   }
 
-  /// 列出 session 内所有种子。
-  List<FtTorrentStatus> listTorrents() {
-    if (isClosed) return const <FtTorrentStatus>[];
+  /// 尝试列出 session 内所有种子。成功的空 session 返回空列表；session 已关闭、
+  /// native/JSON 读取失败返回 null。需要根据“是否真的空闲”控制网络生命周期的
+  /// 调用方必须使用本方法，不能把读取失败误当成空 session。
+  List<FtTorrentStatus>? tryListTorrents() {
+    if (isClosed) return null;
     final Object? json = _engine._consumeJson(_b.ht_list_torrents(_session));
-    if (json is! List) return const <FtTorrentStatus>[];
+    if (json is! List) return null;
     return json
         .whereType<Map<String, dynamic>>()
         .map(FtTorrentStatus._fromJson)
         .toList(growable: false);
   }
+
+  /// 列出 session 内所有种子。兼容旧调用方：读取失败仍退回空列表；需要区分
+  /// “成功为空”和“读取失败”的状态机请改用 [tryListTorrents]。
+  List<FtTorrentStatus> listTorrents() =>
+      tryListTorrents() ?? const <FtTorrentStatus>[];
 
   /// 某种子的文件列表；元数据未就绪返回 null。
   List<FtFileEntry>? torrentFiles(String infoHash) {
