@@ -249,8 +249,13 @@ window.fushiSelection = {
             }
             if (foundStart) break;
             partsBefore.push(text.slice(0, limit));
-            node = walker.previousNode();
-            if (node) limit = node.textContent.length;
+            // BUG-1645：渲染断点就是句子边界（等价于撞上 '\n'，它本就在
+            // sentenceDelimiters 里）。跨块粘连出的句子既不是用户看到的那句，
+            // 也会把两侧的英文单词拼成一个词。
+            const prevNode = walker.previousNode();
+            if (!prevNode || this.crossesRenderBoundary(prevNode, node)) break;
+            node = prevNode;
+            limit = node.textContent.length;
         }
 
         walker.currentNode = startNode;
@@ -275,7 +280,10 @@ window.fushiSelection = {
             }
             if (foundEnd) break;
             partsAfter.push(text.slice(start));
-            node = walker.nextNode();
+            // BUG-1645：同上，向后也在渲染断点处收句。
+            const nextSentenceNode = walker.nextNode();
+            if (!nextSentenceNode || this.crossesRenderBoundary(node, nextSentenceNode)) break;
+            node = nextSentenceNode;
             start = 0;
         }
 

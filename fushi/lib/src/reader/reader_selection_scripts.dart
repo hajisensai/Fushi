@@ -397,6 +397,57 @@ window.fushiSelection = {
       this.scanDelimiters.includes(char) ||
       (window.scanNonJapaneseText === false && !this.isCodePointJapanese(char.codePointAt(0)));
   },
+  // BUG-1645：元素是否「同一行内连排」的 inline 盒。块级/列表项/表格单元/inline-block
+  // 在用户眼里就是换行或分栏，两侧文字不可能属于同一个词、同一句。拿不到样式时返回
+  // true（保持旧的跨节点续扫行为，不引入新的失败模式）。
+  isInlineBox: function(element) {
+    if (!window.getComputedStyle) return true;
+    var style = window.getComputedStyle(element);
+    if (!style) return true;
+    var display = style.display;
+    if (!display) return true;
+    return display === 'inline' || display === 'contents' || display.indexOf('ruby') === 0;
+  },
+  // BUG-1645：元素的 ::before/::after 生成内容是否是真实分隔符。这类分隔符只存在于
+  // 渲染树，DOM 里没有对应文本节点——不查伪元素就会把视觉上分开的两段当成连排文字。
+  hasGeneratedContent: function(element, pseudo) {
+    if (!window.getComputedStyle) return false;
+    var style = window.getComputedStyle(element, pseudo);
+    if (!style) return false;
+    var content = style.content;
+    return !!content && content !== 'none' && content !== 'normal' &&
+      content !== '""' && content !== "''";
+  },
+  // BUG-1645：跨文本节点行走时，文档序在前的 [from] 与在后的 [to] 之间是否存在
+  // 「渲染上的断点」。
+  //
+  // 取词/取句扫描把相邻文本节点直接首尾相接，这对日语无害（CJK 不是空格分词脚本，
+  // C++ scan_candidates 可以在任意码点处切分，粘多了自然被切掉），但对拉丁语系是
+  // 致命的：scan_candidates 明确禁止「在单词中间切」，被粘住的两个英文词永远还原
+  // 不成单词，查词必然无结果。
+  //
+  // 判据是渲染盒边界而不是「两侧都是字母就断」：`<b>ac</b>rid` 这种行内标记拆开的
+  // 单词必须继续粘（inline 盒，无断点），嵌套块/列表项之间必须断开。
+  crossesRenderBoundary: function(from, to) {
+    var fromElement = from ? from.parentElement : null;
+    var toElement = to ? to.parentElement : null;
+    if (!fromElement || !toElement || fromElement === toElement) return false;
+    var fromAncestors = [];
+    for (var a = fromElement; a; a = a.parentElement) fromAncestors.push(a);
+    var common = null;
+    for (var b = toElement; b; b = b.parentElement) {
+      if (fromAncestors.indexOf(b) >= 0) { common = b; break; }
+    }
+    // 离开 from 一侧：出边界的元素自身是块盒，或它在文字后面吐了生成内容。
+    for (var c = fromElement; c && c !== common; c = c.parentElement) {
+      if (!this.isInlineBox(c) || this.hasGeneratedContent(c, '::after')) return true;
+    }
+    // 进入 to 一侧：同理，看的是 ::before。
+    for (var d = toElement; d && d !== common; d = d.parentElement) {
+      if (!this.isInlineBox(d) || this.hasGeneratedContent(d, '::before')) return true;
+    }
+    return false;
+  },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return !!(el && el.closest('rt, rp'));
@@ -588,8 +639,12 @@ window.fushiSelection = {
       partsBefore.push(text.slice(0, limit));
       sStartNode = node;
       sStartOffset = 0;
-      node = walker.previousNode();
-      if (node) limit = node.textContent.length;
+      // BUG-1645：渲染断点就是句子边界（等价于撞上 '\n'，它本就在 sentenceDelimiters
+      // 里）。跨块粘连出的句子既不是用户看到的那句，也会把两侧的英文单词拼成一个词。
+      var prevSentenceNode = walker.previousNode();
+      if (!prevSentenceNode || this.crossesRenderBoundary(prevSentenceNode, node)) break;
+      node = prevSentenceNode;
+      limit = node.textContent.length;
     }
     walker.currentNode = startNode;
     var partsAfter = [];
@@ -615,7 +670,10 @@ window.fushiSelection = {
       partsAfter.push(afterText.slice(start));
       sEndNode = node;
       sEndOffset = afterText.length;
-      node = walker.nextNode();
+      // BUG-1645：同上，向后也在渲染断点处收句。
+      var nextSentenceNode = walker.nextNode();
+      if (!nextSentenceNode || this.crossesRenderBoundary(node, nextSentenceNode)) break;
+      node = nextSentenceNode;
       start = 0;
     }
     var beforeText = partsBefore.reverse().join('');
@@ -1060,7 +1118,10 @@ window.fushiSelection = {
       }
       if (scanOffset > start) ranges.push({ node: scanNode, start: start, end: scanOffset });
       if (scanOffset < content.length || text.length >= maxLength) break;
-      scanNode = walker.nextNode();
+      // BUG-1645：只有当下一个文本节点与当前节点在渲染上连排时才继续粘。
+      var nextScanNode = walker.nextNode();
+      if (!nextScanNode || this.crossesRenderBoundary(scanNode, nextScanNode)) break;
+      scanNode = nextScanNode;
       scanOffset = 0;
     }
     if (!text) return null;

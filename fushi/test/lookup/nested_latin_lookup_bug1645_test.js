@@ -123,6 +123,11 @@ function makeTreeWalker(root, filter) {
       this.currentNode = order[idx < 0 ? 0 : idx + 1] || null;
       return this.currentNode;
     },
+    previousNode() {
+      const idx = order.indexOf(this.currentNode);
+      this.currentNode = idx <= 0 ? null : order[idx - 1];
+      return this.currentNode;
+    },
   };
 }
 
@@ -232,6 +237,32 @@ function run() {
     });
     const text = ctx.sandbox.window.fushiSelection.selectFromPosition(ctx.hit, 0, 20);
     assert.strictEqual(text, '打ち合わせ', '[ja-inline] 日语跨行内节点续扫不得回归');
+  }
+
+  // 场景 E：句子提取走同一套跨节点行走。渲染断点就是句子边界（等价于撞上 '\n'，
+  // 它本就在 sentenceDelimiters 里）——制卡句子不得把相邻释义/相邻块粘成一句。
+  {
+    const ctx = buildContext(glossaryList('list-item', 'none'));
+    const sentence = ctx.sandbox.window.fushiSelection.getSentence(ctx.hit, 2);
+    assert.strictEqual(sentence, 'acrid', '[sentence-block] 句子提取不得跨块粘连');
+  }
+
+  // 场景 F（不回归）：同一行内被行内标记拆开的句子必须照常拼完整。
+  {
+    const ctx = buildContext((body) => {
+      const paragraph = makeElement('p', { display: 'block' });
+      const span = makeElement('span', { display: 'inline' });
+      const spanText = makeText('これは', span);
+      span.childNodes = [spanText];
+      const tailText = makeText('テストです。', paragraph);
+      appendChildren(paragraph, [span]);
+      paragraph.childNodes = [span, tailText];
+      appendChildren(body, [paragraph]);
+      return { hit: spanText };
+    });
+    const sentence = ctx.sandbox.window.fushiSelection.getSentence(ctx.hit, 0);
+    assert.strictEqual(
+      sentence, 'これはテストです。', '[sentence-inline] 行内拆开的句子必须仍能拼完整');
   }
 
   console.log('all assertions passed');
