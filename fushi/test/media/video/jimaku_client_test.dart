@@ -256,6 +256,183 @@ void main() {
     });
   });
 
+  group('JimakuSearchScope（Live Action 接入）', () {
+    test('scope 展开成 anime= 取值序列；all = 两次请求', () {
+      expect(jimakuScopeAnimeFlags(JimakuSearchScope.anime), <bool>[true]);
+      expect(
+          jimakuScopeAnimeFlags(JimakuSearchScope.liveAction), <bool>[false]);
+      // 服务端没有「不限分类」取值（anime 是硬相等过滤），故全部 = 两类各查一次。
+      expect(jimakuScopeAnimeFlags(JimakuSearchScope.all), <bool>[true, false]);
+    });
+
+    test('buildSearchEntriesUri 恒显式拼 anime=，缺省值也不省略', () {
+      final Uri anime = buildSearchEntriesUri('https://jimaku.cc/api',
+          anime: true, query: 'x');
+      expect(anime.queryParameters['anime'], 'true');
+      expect(anime.path, '/api/entries/search');
+
+      final Uri live = buildSearchEntriesUri('https://jimaku.cc/api',
+          anime: false, query: '半沢直樹');
+      expect(live.queryParameters['anime'], 'false');
+      expect(live.queryParameters['query'], '半沢直樹');
+    });
+
+    test('buildSearchEntriesUri 只拼有值的检索键，空串忽略', () {
+      final Uri uri = buildSearchEntriesUri(
+        'https://jimaku.cc/api',
+        anime: false,
+        anilistId: 21,
+        tmdbId: '  tv:12345  ',
+        query: '   ',
+      );
+      expect(uri.queryParameters['anilist_id'], '21');
+      expect(uri.queryParameters['tmdb_id'], 'tv:12345'); // 已 trim
+      expect(uri.queryParameters.containsKey('query'), isFalse);
+    });
+
+    test('jimakuTmdbId 按服务端 (tv|movie):(\\d+) 编码', () {
+      expect(jimakuTmdbId(movie: false, tmdbId: 12345), 'tv:12345');
+      expect(jimakuTmdbId(movie: true, tmdbId: 669204), 'movie:669204');
+    });
+
+    test('parseJimakuEntryFlags 解析对象，缺字段/非对象 → false', () {
+      final JimakuEntryFlags flags = parseJimakuEntryFlags(<String, Object?>{
+        'anime': false,
+        'movie': true,
+        'adult': false,
+      });
+      expect(flags.anime, isFalse);
+      expect(flags.movie, isTrue);
+      expect(flags.unverified, isFalse); // 缺字段
+      expect(flags.isLiveAction, isTrue);
+
+      const JimakuEntryFlags empty = JimakuEntryFlags();
+      expect(parseJimakuEntryFlags(null).anime, empty.anime);
+      expect(parseJimakuEntryFlags(8).movie, isFalse); // 不解析 bitfield 形态
+    });
+
+    test('parseJimakuEntries 解析 tmdb_id / japanese_name / flags', () {
+      const String body = '''
+[{"id":6270,"name":"\\"Kakure Bitch\\" Yattemashita","japanese_name":"かくれビッチやってました",
+  "tmdb_id":"movie:669204","flags":{"anime":false,"movie":true,"adult":false,
+  "external":false,"unverified":false}}]''';
+      final List<JimakuEntry> entries = parseJimakuEntries(body);
+      final JimakuEntry entry = entries.single;
+      expect(entry.tmdbId, 'movie:669204');
+      expect(entry.japaneseName, 'かくれビッチやってました');
+      expect(entry.flags.isLiveAction, isTrue);
+      expect(entry.flags.movie, isTrue);
+    });
+
+    test('name 空时回退 japanese_name（真人条目常无 romaji 名）', () {
+      final List<JimakuEntry> entries = parseJimakuEntries(
+        '[{"id":9,"name":"","english_name":"","japanese_name":"最愛"}]',
+      );
+      expect(entries.single.name, '最愛');
+    });
+
+    test('scope=liveAction → 请求带 anime=false（真人剧接入的核心守卫）', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        seen.add(req.url.queryParameters['anime'] ?? '<missing>');
+        return http.Response.bytes(
+            utf8.encode('[{"id":1,"name":"半沢直樹"}]'), 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchByQuery(
+        '半沢直樹',
+        scope: JimakuSearchScope.liveAction,
+      );
+      expect(entries.single.name, '半沢直樹');
+      expect(seen, <String>['false']);
+    });
+
+    test('默认 scope 仍是 anime=true（不回归旧行为）', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        seen.add(req.url.queryParameters['anime'] ?? '<missing>');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      await jc.searchByQuery('frieren');
+      await jc.searchByAnilistId(154587);
+      expect(seen, <String>['true', 'true']);
+    });
+
+    test('scope=all → 两次请求（动画在前）并按 id 去重合并', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final String anime = req.url.queryParameters['anime']!;
+        seen.add(anime);
+        // 两类各返回一条，其中 id=5 重复出现，必须只保留一次。
+        return http.Response(
+          anime == 'true'
+              ? '[{"id":5,"name":"dup"},{"id":1,"name":"a"}]'
+              : '[{"id":5,"name":"dup"},{"id":2,"name":"b"}]',
+          200,
+        );
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries =
+          await jc.searchByQuery('x', scope: JimakuSearchScope.all);
+      expect(seen, <String>['true', 'false']);
+      expect(entries.map((JimakuEntry e) => e.id).toList(), <int>[5, 1, 2]);
+    });
+
+    test('scope=all 时一类失败不吞掉另一类结果', () async {
+      final MockClient client = MockClient((http.Request req) async {
+        return req.url.queryParameters['anime'] == 'true'
+            ? http.Response('boom', 500)
+            : http.Response('[{"id":3,"name":"live"}]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries =
+          await jc.searchByQuery('x', scope: JimakuSearchScope.all);
+      expect(entries.single.name, 'live');
+    });
+
+    test('searchByTmdbId 默认查两类（分类过滤先于 ID 匹配）', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        seen.add(
+            '${req.url.queryParameters['anime']}:${req.url.queryParameters['tmdb_id']}');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      await jc.searchByTmdbId('tv:12345');
+      expect(seen, <String>['true:tv:12345', 'false:tv:12345']);
+    });
+
+    test('searchEntries 在 liveAction 下跳过 anilist_id、按 tmdb → 文本回退', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        if (p.containsKey('anilist_id')) {
+          calls.add('anilist');
+          return http.Response.bytes(
+              utf8.encode('[{"id":99,"name":"不该被用到"}]'), 200);
+        }
+        if (p.containsKey('tmdb_id')) {
+          calls.add('tmdb:${p['anime']}');
+          return http.Response('[]', 200);
+        }
+        calls.add('query:${p['query']}:${p['anime']}');
+        // 必须走 utf8 字节：http.Response 的 String 构造按 latin1 编码，日文直接炸。
+        return http.Response.bytes(utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchEntries(
+        anilistId: 21,
+        tmdbId: 'tv:126991',
+        queryFallbacks: <String>['最愛'],
+        scope: JimakuSearchScope.liveAction,
+      );
+      expect(entries.single.name, '最愛');
+      // AniList 是动画专属键，真人范围下不得发这个请求。
+      expect(calls, <String>['tmdb:false', 'query:最愛:false']);
+    });
+  });
+
   group('JimakuClient.listFiles strict availability check', () {
     test('默认保持 fail-open，预检查严格模式保留 HTTP 状态码', () async {
       final JimakuClient jc = JimakuClient(
