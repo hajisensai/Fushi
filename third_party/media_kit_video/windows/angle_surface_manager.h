@@ -11,6 +11,7 @@
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <EGL/eglext_angle.h>
 #include <EGL/eglplatform.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
@@ -53,6 +54,14 @@ class ANGLESurfaceManager {
 
   void MakeCurrent(bool value);
 
+  // Whether ANGLE renders on the Direct3D 11 device this class created (see
+  // |shared_d3d_11_device_|). When false, libmpv can only reach ANGLE's own
+  // hidden device and therefore falls back from `d3d11va` to `d3d11va-copy`,
+  // reading every decoded frame back through system memory.
+  static bool uses_shared_d3d11_device() {
+    return shared_display_uses_our_device_;
+  }
+
  private:
   void SwapBuffers();
 
@@ -66,6 +75,20 @@ class ANGLESurfaceManager {
 
   bool CreateAndBindEGLSurface();
 
+  // Creates (once per process) the Direct3D 11 device every |ANGLESurfaceManager|
+  // draws into. See |ANGLESurfaceManager::shared_d3d_11_device_|.
+  static bool EnsureSharedD3D11Device();
+
+  // Creates (once per process) the |EGLDisplay|. Prefers an ANGLE display that
+  // runs on |shared_d3d_11_device_| so libmpv's `d3d11-egl` hardware decoding
+  // interop can adopt the very same device; falls back to letting ANGLE create
+  // its own hidden device.
+  static bool EnsureSharedEGLDisplay();
+
+  // Destroys the process wide device & display. Only called by the last living
+  // |ANGLESurfaceManager|.
+  static void ReleaseSharedResources();
+
   int32_t width_ = 1;
   int32_t height_ = 1;
   HANDLE internal_handle_ = nullptr;
@@ -73,7 +96,8 @@ class ANGLESurfaceManager {
 
   // Sync |Draw| & |Read| calls.
   HANDLE mutex_ = nullptr;
-  // D3D 11
+  // D3D 11. Non-owning aliases of |shared_d3d_11_device_| &
+  // |shared_d3d_11_device_context_|; never |Release|d per instance.
   ID3D11Device* d3d_11_device_ = nullptr;
   ID3D11DeviceContext* d3d_11_device_context_ = nullptr;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> internal_d3d_11_texture_2D_;
@@ -129,6 +153,26 @@ class ANGLESurfaceManager {
 
   // Number of active instances of ANGLESurfaceManager.
   static int32_t instance_count_;
+
+  // HIBIKI FORK: process wide Direct3D 11 device.
+  //
+  // Upstream created one |ID3D11Device| per |ANGLESurfaceManager| *and* let
+  // ANGLE create yet another, hidden one (|EGL_DEFAULT_DISPLAY|). libmpv's
+  // `d3d11-egl` hardware decoding interop resolves its decoding device through
+  // `EGL_DEVICE_EXT` -> `EGL_D3D11_DEVICE_ANGLE`, i.e. it can only ever see
+  // ANGLE's hidden device: one nobody created with
+  // |D3D11_CREATE_DEVICE_VIDEO_SUPPORT| and nobody marked thread safe. Sharing
+  // a single device that we create with the right flags and then handing it to
+  // ANGLE puts decoder, renderer & presentation on one device.
+  static ID3D11Device* shared_d3d_11_device_;
+  static ID3D11DeviceContext* shared_d3d_11_device_context_;
+  // ANGLE handle wrapping |shared_d3d_11_device_|; |EGL_NO_DEVICE_EXT| when the
+  // interop path was not taken.
+  static EGLDeviceEXT shared_egl_device_;
+  // The one |EGLDisplay| every instance renders on.
+  static EGLDisplay shared_display_;
+  // Whether ANGLE actually runs on |shared_d3d_11_device_|.
+  static bool shared_display_uses_our_device_;
 };
 
 #endif  // ANGLE_SURFACE_MANAGER_H_

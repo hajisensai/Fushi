@@ -79,7 +79,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   static const String _rectPreferenceKey = 'gal_hook_text_window_rect';
   static const String _opacityPreferenceKey = 'gal_hook_text_window_bg_opacity';
-  static const double _defaultOpacity = 0.88;
+
+  /// 桌面歌词式重写：native 侧 hook 模式文字已自带描边 + 投影，可读性不再依赖
+  /// 底板，默认背景与音乐播放器桌面歌词一致——全透明。存过偏好的用户保持原值
+  /// （never break userspace）；`◐` 一键切底板时恢复到 [_defaultRestoreOpacity]。
+  static const double _defaultOpacity = 0.0;
+  static const double _defaultRestoreOpacity = 0.6;
 
   /// BUG-1095：台词字号的持久化 key。与 [_rectPreferenceKey]（窗口几何）严格分开——
   /// 这两件事以前被 native 的「字号 = 基准 × 窗高比例」耦成一件，正是「放不下拖高
@@ -124,7 +129,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 浮窗被关掉时仍要能判出换行并让游戏内卡片消场。
   String? _ingameLatestLineId;
   double _opacity = _defaultOpacity;
-  double _lastNonZeroOpacity = _defaultOpacity;
+  double _lastNonZeroOpacity = _defaultRestoreOpacity;
   double _fontSize = kGalHookTextFontSize;
   GalHookTextWindowRect? _savedRect;
 
@@ -452,8 +457,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       _lastNonZeroOpacity = _opacity;
       _opacity = 0;
     } else {
-      _opacity =
-          _lastNonZeroOpacity > 0 ? _lastNonZeroOpacity : _defaultOpacity;
+      _opacity = _lastNonZeroOpacity > 0
+          ? _lastNonZeroOpacity
+          : _defaultRestoreOpacity;
     }
     final AppModel? model = _appModel;
     if (model != null) {

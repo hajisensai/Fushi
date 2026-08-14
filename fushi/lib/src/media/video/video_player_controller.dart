@@ -1188,12 +1188,18 @@ class VideoPlayerController extends ChangeNotifier
       // `cuCtxCreate_v2()`，在 nvcuda64.dll 内部空指针解引用，**整个进程 0xC0000005
       // 闪退**（三份 minidump 栈完全一致）。传 configuration 让策略在**第一次属性
       // 下发**就生效，`auto` 再也不会到达 libmpv——消除时间窗本身，而不是事后覆盖。
-      // 与 [buildMpvProperties] 用同一个 [resolveAndroidHwdec] 解析，两处取值恒一致
+      // 与 [buildMpvProperties] 用同一个 [resolvePlatformHwdec] 解析，两处取值恒一致
       // （Android 仍是 copy 变体，BUG-465 不回归）。
+      //
+      // BUG-1639：**光把 `auto` 换成 `auto-safe` 并不够** —— `auto-safe` 的白名单里
+      // `nvdec` 就是 CUDA，而 Windows 上 media_kit 同样走 GL 纹理渲染、`d3d11va`
+      // interop 必然建不出 device，于是必然回退到它，同一条 `cuCtxCreate_v2` 崩溃复发。
+      // 故 [resolvePlatformHwdec] 现在在 Windows 下发不含 CUDA 的 `d3d11va` 候选列表，
+      // 让 CUDA 后端从值域里消失（详见该函数注释与 `docs/bugs/BUG-1639-*.md`）。
       _videoController = VideoController(
         player,
         configuration: VideoControllerConfiguration(
-          hwdec: resolveAndroidHwdec(mpvConfig.hwdec),
+          hwdec: resolvePlatformHwdec(mpvConfig.hwdec),
         ),
       );
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。

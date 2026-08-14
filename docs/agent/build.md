@@ -65,7 +65,7 @@ BUG-1481 之后才有的，救不了已装机的包）。GitHub API 按**文件�
 # ① 先发迁移桥包（只出 Android；桥分支 release.yml 不含桌面，也不要跑 release-desktop.yml）
 gh workflow run release.yml --repo hajisensai/Fushi \
   --ref bridge/auto-migrate-download \
-  -f channel=formal -f tag_name=v<version> -f name="Fushi <version>" -f skip_tests=false
+  -f channel=formal -f tag_name=v<version> -f release_name="Fushi <version>" -f skip_tests=false
 
 # ② 桥包资产到位后再发本体（手动 GitHub Release 或 workflow_dispatch，同一个 tag）
 
@@ -80,7 +80,8 @@ gh release view v<version> --repo hajisensai/Fushi --json assets \
   资产发布（线上桥包 `10192` 就是这么发出去的）。别看整体 run 颜色，看 `build` job 结论
   和 release 上真实的资产列表。
 - 桥分支 formal 的 release 标题默认是 `Hibiki <version>`，本体那次发布会把它改写成
-  `Fushi <version>`；不想出现中间态就在 ① 显式传 `-f name=`。
+  `Fushi <version>`；不想出现中间态就在 ① 显式传 `-f release_name=`（**键名是 `release_name`，不是 `name`**；
+  传 `name` 会被 GitHub 直接 422 拒掉：`Unexpected inputs provided: ["name"]`）。
 - 桥包用 `LEGACY_KEYSTORE_*` 四件套签名（旧 Hibiki 证书，与 `v1.1.0`/`v1.2.0` 同公钥
   `d40c4a16…`），这是它能原地覆盖安装的前提；主仓 `KEYSTORE_*` 已轮换为 Fushi 新签名，
   两套 secrets 都必须在。
