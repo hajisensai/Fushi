@@ -189,24 +189,34 @@ void main() {
     expect(find.textContaining('TextRender · 0xf94600 · 0'), findsWidgets);
   });
 
-  testWidgets('inactive workbench keeps audio tracks out of overflow menu',
+  testWidgets('inactive workbench exposes low-frequency actions without a menu',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       _wrapPage(const TexthookerPage()),
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey<String>('game-toolbar-more')));
-    await tester.pumpAndSettle();
-    expect(find.text('Health status'), findsOneWidget);
-    expect(find.text('Manage audio tracks'), findsNothing,
+    // 三点「更多」菜单已删：低频入口直接摊在工具栏上，不再需要先展开菜单。
+    expect(
+        find.byKey(const ValueKey<String>('game-toolbar-more')), findsNothing,
+        reason: '工具栏 overflow 菜单已删除，入口必须直接可见');
+    // byType 对泛型是精确匹配（PopupMenuButton<X> 不匹配 PopupMenuButton<Object?>），
+    // 所以这里用「三点图标」这个用户可见特征做守卫，换个泛型参数绕不过去。
+    expect(find.byIcon(Icons.more_vert), findsNothing,
+        reason: '捕获工作台工具栏不得再出现任何 overflow 菜单');
+    expect(find.byKey(const ValueKey<String>('game-toolbar-health')),
+        findsOneWidget);
+    expect(find.byTooltip('Health status'), findsOneWidget);
+    expect(find.byTooltip('Manage audio tracks'), findsNothing,
         reason: 'PR #455 将会话音轨改为仅在活动会话显示的工具栏直达入口');
     expect(find.byKey(const ValueKey<String>('game-toolbar-tracks')),
         findsNothing);
-    // 降级策略入口取代了旧的 bool 开关项，菜单项上直接显示当前档位（默认 full）。
-    expect(find.text('Audio fallback · Allow mixed audio'), findsOneWidget,
+    // 降级策略入口取代了旧的 bool 开关项，按钮 tooltip 直接显示当前档位（默认 full）。
+    expect(find.byKey(const ValueKey<String>('game-toolbar-audio-fallback')),
+        findsOneWidget);
+    expect(find.byTooltip('Audio fallback · Allow mixed audio'), findsOneWidget,
         reason: '三档策略入口必须显示当前档位，否则用户不知道自己在哪一档');
-    expect(find.text('Allow audio fallback'), findsNothing,
+    expect(find.byTooltip('Allow audio fallback'), findsNothing,
         reason: '旧的 bool「允许音频降级」开关已被三档策略取代');
     // BUG-1191：超分改成**每游戏一档**后，入口挪到了游戏库卡片的右键菜单
     // （`games_library_page.dart` 的 `_menuItems`）——这里不该再有它。工作台是
@@ -244,6 +254,30 @@ void main() {
     expect(find.textContaining('嵌'), findsNothing);
   });
 
+  testWidgets(
+      'embedded header keeps flattened actions without overflow at 520px',
+      (WidgetTester tester) async {
+    // 低频入口从三点菜单摊平后，嵌入模式页头动作数翻倍。页头动作区靠
+    // ConstrainedBox + 横向 SingleChildScrollView 兜底，窄窗必须是「可滚动」而不是
+    // RenderFlex overflow，更不能把入口整个丢掉。
+    await tester.binding.setSurfaceSize(const Size(520, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _wrapPage(const Scaffold(body: TexthookerPage(embedded: true))),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull,
+        reason: '摊平后的页头在窄窗不得 RenderFlex overflow');
+    // 平台无关的两个入口在任何桌面/移动平台都必须在（Windows 专属的浮窗 / 外部窗口
+    // 挖矿按钮受 Platform.isWindows 门控，不在此断言，免得 CI（Linux）假红）。
+    expect(find.byKey(const ValueKey<String>('game-toolbar-audio-fallback')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('game-toolbar-health')),
+        findsOneWidget);
+    expect(find.byIcon(Icons.more_vert), findsNothing);
+  });
+
   for (final Size size in <Size>[
     const Size(520, 760),
     const Size(1000, 760),
@@ -262,8 +296,8 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Live lines'), findsOneWidget);
       // 右栏常驻面板已从「最新台词 + 健康状态」两张只读卡换成逐句音轨面板
-      // （排除 BGM 要按本句时刻判断，见 _LineTracksCard）；健康状态移入工具栏
-      // 「更多」菜单的对话框，不再常驻。
+      // （排除 BGM 要按本句时刻判断，见 _LineTracksCard）；健康状态现在是工具栏
+      // 上的图标按钮 + 对话框（tooltip 承载文案，屏幕上没有 Text），不再常驻。
       expect(find.text('Health status'), findsNothing);
       if (size.width >= 840) {
         expect(find.text('Tracks for this line'), findsOneWidget);

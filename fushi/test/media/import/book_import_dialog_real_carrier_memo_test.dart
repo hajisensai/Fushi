@@ -120,6 +120,8 @@ void main() {
         probedPaths.add(path);
         return MangaModule.isImageArchive(path);
       },
+      directoryHasPageImages: MangaModule.directoryHasPageImages,
+      directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
     );
 
     expect(resolver.resolve(first.path), ImportCarrier.epub);
@@ -147,8 +149,7 @@ void main() {
 00:00:00,000 --> 00:00:03,000
 これは真の EPUB と字幕を通る回帰テストです。
 ''');
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     EpubStorage.debugBaseDirectoryOverride = root.path;
     AudiobookStorage.documentsRootResolver = () async => root;
     addTearDown(() async {
@@ -213,8 +214,7 @@ void main() {
         Directory.systemTemp.createTempSync('todo_2189_real_epub_only_');
     final File epub = File(p.join(root.path, 'plain.epub'))
       ..writeAsBytesSync(_realEpubBytes('TODO 2189 plain'));
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     EpubStorage.debugBaseDirectoryOverride = root.path;
     addTearDown(() async {
       EpubStorage.debugBaseDirectoryOverride = null;
@@ -265,8 +265,7 @@ void main() {
       ..writeAsBytesSync(
         _realEpubBytes('TODO 2189 manga', pureImage: true),
       );
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(() async {
       await db.close();
       if (root.existsSync()) root.deleteSync(recursive: true);

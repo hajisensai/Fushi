@@ -10,16 +10,20 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 
-/// 默认判据：什么都不是目录、什么都不是图片压缩包。
+/// 默认判据：什么都不是目录、什么都不是图片压缩包、没有目录含页图或整卷文件。
 ImportCarrier classify(
   String path, {
   Set<String> directories = const <String>{},
   Set<String> imageArchives = const <String>{},
+  Set<String> pageImageDirs = const <String>{},
+  Map<String, int> carrierFileDirs = const <String, int>{},
 }) =>
     classifyImportCarrier(
       path,
       isDirectory: directories.contains,
       isImageArchive: imageArchives.contains,
+      directoryHasPageImages: pageImageDirs.contains,
+      directoryCarrierFileCount: (String p) => carrierFileDirs[p] ?? 0,
     );
 
 void main() {
@@ -66,13 +70,60 @@ void main() {
       );
     });
 
-    test('isManga 覆盖且仅覆盖三种漫画载体', () {
+    test('isManga 覆盖且仅覆盖四种漫画载体', () {
       expect(ImportCarrier.mangaFolder.isManga, isTrue);
+      expect(ImportCarrier.mangaBatchFolder.isManga, isTrue);
       expect(ImportCarrier.mangaMokuro.isManga, isTrue);
       expect(ImportCarrier.mangaArchive.isManga, isTrue);
       expect(ImportCarrier.pdf.isManga, isFalse);
       expect(ImportCarrier.epub.isManga, isFalse);
       expect(ImportCarrier.text.isManga, isFalse);
+    });
+  });
+
+  /// BUG-1649：用户在漫画框选了一个**装着 20 卷 EPUB 的文件夹**，被当成页图目录，
+  /// 扫不到任何图片扩展名的文件，报 `Manga image folder has no pages`。目录里装
+  /// 什么是数据的形状，不是错误情况——缺的是一个载体身份。
+  group('目录的两种形状（BUG-1649）', () {
+    test('有页图 → mangaFolder（与改动前逐字节一致）', () {
+      expect(
+        classify(
+          '/m/vol1',
+          directories: <String>{'/m/vol1'},
+          pageImageDirs: <String>{'/m/vol1'},
+        ),
+        ImportCarrier.mangaFolder,
+      );
+    });
+
+    test('无页图但装着整卷文件 → mangaBatchFolder', () {
+      expect(
+        classify(
+          '/m/series',
+          directories: <String>{'/m/series'},
+          carrierFileDirs: <String, int>{'/m/series': 20},
+        ),
+        ImportCarrier.mangaBatchFolder,
+      );
+    });
+
+    test('页图与整卷文件同时在场 → mangaFolder（页图这条解释优先）', () {
+      expect(
+        classify(
+          '/m/mixed',
+          directories: <String>{'/m/mixed'},
+          pageImageDirs: <String>{'/m/mixed'},
+          carrierFileDirs: <String, int>{'/m/mixed': 3},
+        ),
+        ImportCarrier.mangaFolder,
+      );
+    });
+
+    test('空目录 → mangaFolder（让导入器抛那句「没有页」，这里没有更准确的话）', () {
+      expect(
+        classify('/m/empty', directories: <String>{'/m/empty'}),
+        ImportCarrier.mangaFolder,
+      );
     });
   });
 
@@ -120,6 +171,8 @@ void main() {
             probed.add(pth);
             return false;
           },
+          directoryHasPageImages: (_) => false,
+          directoryCarrierFileCount: (_) => 0,
         );
       }
       expect(probed, isEmpty, reason: '扩展名已能定性时不得白开一次包');
@@ -134,6 +187,8 @@ void main() {
           probed.add(pth);
           return false;
         },
+        directoryHasPageImages: (_) => false,
+        directoryCarrierFileCount: (_) => 0,
       );
       expect(probed, isEmpty, reason: '目录在读包判据之前就已早退');
     });
@@ -148,6 +203,8 @@ void main() {
             probed.add(pth);
             return false;
           },
+          directoryHasPageImages: (_) => false,
+          directoryCarrierFileCount: (_) => 0,
         );
       }
       expect(probed, <String>['/x/a.zip', '/x/a.epub']);
@@ -181,6 +238,8 @@ void main() {
             probes.add(path);
             return imageArchives.contains(path);
           },
+          directoryHasPageImages: (String _) => false,
+          directoryCarrierFileCount: (String _) => 0,
         ),
         probes: probes,
       );

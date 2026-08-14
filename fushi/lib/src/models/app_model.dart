@@ -2228,6 +2228,9 @@ class AppModel with ChangeNotifier {
       // （localhost:8765，也可能是局域网另一台机）绝不经过它。
       installAnkiRemoteMediaHttpClientFactory();
       _applyMemoryPolicy();
+      // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
+      // 否则旧定时器会拿着旧 repository 继续同步。
+      _mediaTrackingService?.dispose();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
         preferences: prefsRepo,
@@ -2565,6 +2568,8 @@ class AppModel with ChangeNotifier {
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
       prefsRepo.addListener(notifyListeners);
+      // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
+      _mediaTrackingService?.dispose();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
         preferences: prefsRepo,
@@ -3423,6 +3428,9 @@ class AppModel with ChangeNotifier {
       legacySavePaths: roots.legacy,
       resumeDir: resumeDir,
       restoreIds: _animeDownloadPlanIds,
+      // 恢复阶段先保持 DHT 静默；host 读完 torrent 状态后再按实际下载/
+      // 允许做种工作恢复用户配置，避免仅有历史 resume 时启动即广播。
+      enableDht: false,
     );
     if (host == null) return null;
     _embeddedTorrentHost = host;
@@ -3947,7 +3955,12 @@ class AppModel with ChangeNotifier {
     // host 已经被别处（下载服务 tick）先建出来时，那次 open 可能因为计划 id
     // 还没加载而跳过了恢复（[EmbeddedTorrentHost.hasRestored] = false）。
     // 真相源到位了就在这里补做一次，别让「本次启动不续传」变成常态。
-    if (host != null && !host.hasRestored) host.restoreFromResume(planIds);
+    if (host != null && !host.hasRestored) {
+      host.restoreFromResume(planIds);
+      // 这个防御性延迟恢复发生在 host 已应用用户配置之后；恢复出的活跃下载
+      // 需要立即重开 discovery，不能等下一次维护 tick。
+      host.reconcileNetworkDiscoveryState();
+    }
   }
 
   /// TODO-1961-a：周期性把 resume data 落盘（host 内部按

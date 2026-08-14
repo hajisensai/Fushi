@@ -32,3 +32,20 @@
 
 - **备注**：与 [BUG-1180](BUG-1180-interconnect-remote-list-no-cache.md) 同一轮排查发现；
   即便有了 TTL 缓存，这条也该修——漫画实例连缓存都不该去读。
+
+- **2026-08-14 口径变更（被 [BUG-1640](BUG-1640-interconnect-manga-bad-package-and-noise.md)
+  有意推翻）**：互联漫画完整支持之后，host 的漫画以占位卡出现在**漫画书架**并可下载，
+  漫画实例从「不消费远端」变成「消费远端的漫画那一半」，于是原来那条
+  `listRemoteBooksCalls == 0` 的守卫成了假命题，在 develop 上把 CI 打红
+  （run 31806463011）。本条的**防浪费诉求**没变，接替不变量改成两条：
+  ① 分架互斥——漫画架只收 `format='manga' + hasMangaContent`，普通架只收
+  `hasContent`（漫画的 `hasContent` 恒 false，是 host 的坏包防线）；
+  ② 轮数封顶——首帧一轮，TTL 内 tab 来回切不得再穿透（靠 scope 级
+  `RemoteLibraryCache` 的 in-flight 去重 + 60s TTL，即本条备注里说的那个缓存）。
+  三条守卫均已变异实测（抹掉漫画侧过滤 / 抹掉普通架过滤 / 旁路缓存，各自变红）。
+
+- **遗留（另案，未修）**：书架与漫画书架都在 `HomePage._keepAliveTabs` 里以 Offstage
+  兄弟常驻，而两者的 `mediaType` 同取 `ReaderFushiSource.instance`，于是**共用同一个
+  `ScrollController`**。两架同时挂载时 Scrollbar 会撞
+  「ScrollController attached to more than one ScrollPosition」断言（写「两架并存只打
+  一轮网络」的 widget 测试时踩到，故该用例退回单实例形态）。

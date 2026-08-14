@@ -30,11 +30,17 @@ class EmbeddedTorrentBackend
     required TorrentSaveRoots saveRoots,
     bool closesSession = true,
     EmbeddedPauseControl? pauseControl,
+    void Function()? beginNetworkWake,
+    void Function()? endNetworkWake,
+    void Function()? reconcileNetworkDiscovery,
     Directory? metainfoTempDirectory,
   })  : _session = session,
         _saveRoots = saveRoots,
         _closesSession = closesSession,
         _pauseControl = pauseControl,
+        _beginNetworkWake = beginNetworkWake,
+        _endNetworkWake = endNetworkWake,
+        _reconcileNetworkDiscovery = reconcileNetworkDiscovery,
         _metainfoTempDirectory = metainfoTempDirectory;
 
   final EmbeddedTorrentSession _session;
@@ -45,6 +51,15 @@ class EmbeddedTorrentBackend
 
   /// standalone 形态下自持的「已知暂停」集合（infohash 小写）。
   final Set<String> _localPaused = <String>{};
+
+  /// 宿主级网络发现协议的临时唤醒通道。standalone 后端不注入，沿用其
+  /// session 自己的配置；共享宿主视图在同步 add 前持有 wake，避免新任务
+  /// 尚未进入 session 时被空闲裁决关掉 DHT/LSD/端口映射。
+  final void Function()? _beginNetworkWake;
+  final void Function()? _endNetworkWake;
+
+  /// 任务移除后让宿主按剩余 torrent 立即重算发现协议状态。
+  final void Function()? _reconcileNetworkDiscovery;
 
   /// 活动根 + 历史根。写入只用活动根，列表认全部（见类注释）。
   final TorrentSaveRoots _saveRoots;
@@ -87,23 +102,33 @@ class EmbeddedTorrentBackend
   }) async {
     final String savePath = _categoryPath(category);
     if (!await prepareCategory(category)) return false;
-    final FtAddResult result;
-    if (magnetOrUrl.startsWith('magnet:')) {
-      result = _session.addMagnet(
-        magnetOrUrl,
-        savePath: savePath,
-        sequential: sequential,
-      );
-    } else if (magnetOrUrl.toLowerCase().endsWith('.torrent') &&
-        !magnetOrUrl.contains('://')) {
-      result = _session.addTorrentFile(
-        magnetOrUrl,
-        savePath: savePath,
-        sequential: sequential,
-      );
-    } else {
+    final bool isMagnet = magnetOrUrl.startsWith('magnet:');
+    final bool isLocalTorrentFile =
+        magnetOrUrl.toLowerCase().endsWith('.torrent') &&
+            !magnetOrUrl.contains('://');
+    if (!isMagnet && !isLocalTorrentFile) {
       // http(s) .torrent URL：内置引擎不支持（见类注释）。
       return false;
+    }
+
+    final FtAddResult result;
+    // prepareCategory 是本方法最后一个 await。wake 到 native add 之间必须
+    // 保持同步，否则并发 add 可能在任务真正进入 session 前提前收回发现协议。
+    _beginNetworkWake?.call();
+    try {
+      result = isMagnet
+          ? _session.addMagnet(
+              magnetOrUrl,
+              savePath: savePath,
+              sequential: sequential,
+            )
+          : _session.addTorrentFile(
+              magnetOrUrl,
+              savePath: savePath,
+              sequential: sequential,
+            );
+    } finally {
+      _endNetworkWake?.call();
     }
     if (!result.ok || result.id == null) return false;
     if (firstLastPiecePrio) {
@@ -184,8 +209,13 @@ class EmbeddedTorrentBackend
   Future<bool> removeTorrent(
     String torrentId, {
     bool deleteFiles = false,
-  }) async =>
-      _session.removeTorrent(torrentId, deleteFiles: deleteFiles);
+  }) async {
+    try {
+      return _session.removeTorrent(torrentId, deleteFiles: deleteFiles);
+    } finally {
+      _reconcileNetworkDiscovery?.call();
+    }
+  }
 
   /// 暂停/恢复原语与上传策略同一组 DLL 符号；老随包 DLL 缺符号时 false。
   @override

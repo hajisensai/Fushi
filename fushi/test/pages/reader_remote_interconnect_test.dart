@@ -92,7 +92,7 @@ void main() {
     await db.close();
   });
 
-  Widget buildApp({bool mangaOnly = false}) => ProviderScope(
+  Widget wrapScope(Widget body) => ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
           fushiBooksProvider.overrideWith(
@@ -108,61 +108,66 @@ void main() {
           child: MaterialApp(
             builder: (BuildContext context, Widget? child) =>
                 child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                mangaOnly: mangaOnly,
-                remoteBookClientLoader: () async => remoteClient,
-                remoteBookDownloadDestination: (RemoteBookInfo book) async =>
-                    File(
-                  '${pathProviderDir.path}/${book.title.hashCode}.epub',
-                ),
-                remoteBookImporter: (File file) async {
-                  importedFiles.add(file);
-                  final String? key = importedBookKey;
-                  // 真 importer 是「落库 + 返回 bookKey」；假 importer 以前只返回
-                  // 字符串，等于「书根本没进库」。v82（P3 Stage 1b，7a3505ca7a）把
-                  // reader_positions 等四子表的键从 bookKey 切成稳定 uid 之后，下游
-                  // 回填要先 `resolveEpubBookUid(localBookKey)`，查不到就整段跳过
-                  // （remote.part.dart:551 的闸门，契约明写不得用 bookKey 兜底写入）。
-                  // 于是 BUG-813 的进度回填在假 importer 下永远不发生（BUG-1497）。
-                  // 这里补上落库，让假 importer 与真 importer 的**后置条件**一致。
-                  if (key != null) {
-                    await db.insertEpubBook(EpubBooksCompanion.insert(
-                      bookKey: key,
-                      title: key,
-                      epubPath: file.path,
-                      extractDir: pathProviderDir.path,
-                      chapterCount: 1,
-                      chaptersJson: '["a"]',
-                      importedAt: 0,
-                    ));
-                  }
-                  return key;
-                },
-                remoteAudiobookFetcher: (String remoteBookKey) async {
-                  fetchedAudiobookKeys.add(remoteBookKey);
-                  // BUG-990：闸门非空时卡在有声书下载阶段（模拟空窗期），供断言本地卡
-                  // 加载覆盖层；测试 complete 后放行。
-                  if (audiobookDownloadGate != null) {
-                    await audiobookDownloadGate!.future;
-                  }
-                  final File pkg = File(
-                    '${pathProviderDir.path}/$remoteBookKey.fushiaudio',
-                  );
-                  await pkg.writeAsBytes(<int>[9, 9, 9]);
-                  return pkg;
-                },
-                remoteAudiobookImporter:
-                    (File package, String? bookKeyOverride) async {
-                  importedAudiobooks.add(
-                    (package: package, bookKeyOverride: bookKeyOverride),
-                  );
-                },
-              ),
-            ),
+            home: Scaffold(body: body),
           ),
         ),
       );
+
+  // 书架页本体。书架与漫画书架是**同一个 State 类**的两个实例：既要能单独挂载，
+  // 也要能挂在同一个 ProviderScope 里同时活着（真实 app 的 HomePage 保活形态），
+  // 因为「两架共享一轮网络」的去重发生在 scope 级的 remoteLibraryCacheProvider。
+  ReaderFushiHistoryPage buildPage({bool mangaOnly = false}) =>
+      ReaderFushiHistoryPage(
+        mangaOnly: mangaOnly,
+        remoteBookClientLoader: () async => remoteClient,
+        remoteBookDownloadDestination: (RemoteBookInfo book) async => File(
+          '${pathProviderDir.path}/${book.title.hashCode}.epub',
+        ),
+        remoteBookImporter: (File file) async {
+          importedFiles.add(file);
+          final String? key = importedBookKey;
+          // 真 importer 是「落库 + 返回 bookKey」；假 importer 以前只返回
+          // 字符串，等于「书根本没进库」。v82（P3 Stage 1b，7a3505ca7a）把
+          // reader_positions 等四子表的键从 bookKey 切成稳定 uid 之后，下游
+          // 回填要先 `resolveEpubBookUid(localBookKey)`，查不到就整段跳过
+          // （remote.part.dart:551 的闸门，契约明写不得用 bookKey 兜底写入）。
+          // 于是 BUG-813 的进度回填在假 importer 下永远不发生（BUG-1497）。
+          // 这里补上落库，让假 importer 与真 importer 的**后置条件**一致。
+          if (key != null) {
+            await db.insertEpubBook(EpubBooksCompanion.insert(
+              bookKey: key,
+              title: key,
+              epubPath: file.path,
+              extractDir: pathProviderDir.path,
+              chapterCount: 1,
+              chaptersJson: '["a"]',
+              importedAt: 0,
+            ));
+          }
+          return key;
+        },
+        remoteAudiobookFetcher: (String remoteBookKey) async {
+          fetchedAudiobookKeys.add(remoteBookKey);
+          // BUG-990：闸门非空时卡在有声书下载阶段（模拟空窗期），供断言本地卡
+          // 加载覆盖层；测试 complete 后放行。
+          if (audiobookDownloadGate != null) {
+            await audiobookDownloadGate!.future;
+          }
+          final File pkg = File(
+            '${pathProviderDir.path}/$remoteBookKey.fushiaudio',
+          );
+          await pkg.writeAsBytes(<int>[9, 9, 9]);
+          return pkg;
+        },
+        remoteAudiobookImporter: (File package, String? bookKeyOverride) async {
+          importedAudiobooks.add(
+            (package: package, bookKeyOverride: bookKeyOverride),
+          );
+        },
+      );
+
+  Widget buildApp({bool mangaOnly = false}) =>
+      wrapScope(buildPage(mangaOnly: mangaOnly));
 
   testWidgets('bookshelf mixes interconnect remote books into the main grid',
       (WidgetTester tester) async {
@@ -591,21 +596,76 @@ void main() {
         reason: '显式下拉刷新是强制入口，必须穿透 TTL 重新联网');
   });
 
-  testWidgets('BUG-1181: 漫画书架实例从不拉远端书（它根本不消费）', (WidgetTester tester) async {
-    // 漫画书架就是 ReaderFushiHistoryPage(mangaOnly: true)——与书架**同一个 State
-    // 类**。它此前也注册了 homeShellTabNotifier 监听，且回调判的是 `== HomeTab.books`，
-    // 于是切到书架时两个实例各拉一遍远端书，漫画那份在 build 里被 `!_mangaOnly` 丢掉。
+  testWidgets('BUG-1640: 漫画书架只拿 host 的漫画', (WidgetTester tester) async {
+    // BUG-1181 原来的不变量是「漫画书架永不拉远端书」——那时它确实不消费，拉了也
+    // 只是在 build 里被 `!_mangaOnly` 丢掉。互联漫画完整支持（BUG-1640）把它推翻了：
+    // host 的漫画现在以占位卡出现在漫画书架并可下载，所以漫画实例取数是对的。
+    // 这里守的是接替不变量：两架各只拿自己那半。
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      mangaTitle: 'Remote Manga',
+    );
+
     homeShellTabNotifier.value = HomeTab.manga;
     await tester.pumpWidget(buildApp(mangaOnly: true));
     await tester.pumpAndSettle();
-    expect(remoteClient.listRemoteBooksCalls, 0,
-        reason: '漫画书架不渲染远端书占位卡，首帧就不该联网');
 
-    // 切到书架 tab：漫画实例仍在树上（保活），但不得被 books 信号带着一起拉。
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Manga')),
+      findsOneWidget,
+      reason: '漫画书架要渲染 host 的漫画占位卡（format=manga + hasMangaContent）',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+      findsNothing,
+      reason: '普通 EPUB 不得流进漫画书架',
+    );
+  });
+
+  testWidgets('BUG-1640: 普通书架不收 host 的漫画', (WidgetTester tester) async {
+    // 漫画的 hasContent 恒 false（host 按 format 门控的坏包防线），普通书架按
+    // hasContent 过滤，于是漫画绝不会以「点了下不到 EPUB」的死卡出现在这里。
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      mangaTitle: 'Remote Manga',
+    );
+
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Manga')),
+      findsNothing,
+      reason: '漫画（hasContent=false）不得流进普通书架',
+    );
+  });
+
+  testWidgets('BUG-1181: 漫画书架的远端清单只打一轮网络', (WidgetTester tester) async {
+    // BUG-1181 的实质是「漫画书架白拉一整轮网络」。互联漫画完整支持（BUG-1640）
+    // 之后它拉的东西自己要用（漫画占位卡），于是防浪费的担子交给 scope 级的
+    // [RemoteLibraryCache]：in-flight 去重 + 60s TTL。这里守住轮数——首帧一轮，
+    // 之后 tab 来回切（BUG-992 的重载信号照发）不得再穿透（BUG-1180）。
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      mangaTitle: 'Remote Manga',
+    );
+
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpWidget(buildApp(mangaOnly: true));
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, 1, reason: '首帧只允许一轮远端清单请求');
+
     homeShellTabNotifier.value = HomeTab.books;
     await tester.pumpAndSettle();
-    expect(remoteClient.listRemoteBooksCalls, 0,
-        reason: 'BUG-1181：漫画实例不得响应书架 tab 信号去拉远端书');
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, 1,
+        reason: 'BUG-1181/1180：TTL 内切 tab 不得再打一轮网络');
   });
 
   testWidgets('BUG-1182: 关闭「显示远端条目」后根本不联网（而不是拉完再丢）',
@@ -662,6 +722,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     this.hasAudiobook = false,
     this.sourceKind = RemoteBookSourceKind.interconnect,
     this.progress = RemoteBookProgress.empty,
+    this.mangaTitle,
   });
 
   final String coverPath;
@@ -669,6 +730,9 @@ class _FakeRemoteBookClient implements RemoteBookClient {
   final String? bookKey;
   final bool hasAudiobook;
   final RemoteBookSourceKind sourceKind;
+  // BUG-1640 wire：非空时清单额外带一条 host 漫画。漫画走漫画包通道，host 的
+  // hasContent 按 format 门控恒 false（坏包防线），可下载性由 hasMangaContent 表达。
+  final String? mangaTitle;
   // BUG-813：host 端该书的阅读进度，供「下载回填进度」用例配置。
   final RemoteBookProgress progress;
   final List<String> downloadedTitles = <String>[];
@@ -693,6 +757,14 @@ class _FakeRemoteBookClient implements RemoteBookClient {
         'coverPath': coverPath,
         if (hasAudiobook) 'hasAudiobook': true,
       }),
+      if (mangaTitle != null)
+        RemoteBookInfo.fromJson(<String, Object?>{
+          'title': mangaTitle,
+          'hasContent': false,
+          'hasMangaContent': true,
+          'format': 'manga',
+          'coverPath': coverPath,
+        }),
     ];
   }
 
