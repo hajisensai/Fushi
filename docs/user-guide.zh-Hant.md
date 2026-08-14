@@ -24,7 +24,7 @@ Android：選擇 **arm64**。Windows：選擇 **.exe** 檔案。
 
 ### 1. 匯入推薦詞典（包含詞語＋聲調＋詞頻詞典）及本機音訊（包含日語及英語音訊資料庫）（極其推薦新手使用此方法！！！可選）
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare 下載（9.5 GB）](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare 下載（9.5 GB）](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 在 App 中：設定 -> 同步與備份 -> 點擊 **匯入備份**。
 

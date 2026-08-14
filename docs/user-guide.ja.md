@@ -24,7 +24,7 @@ Android：**arm64** を選んでください。Windows：**.exe** ファイル�
 
 ### 1. 推奨辞書（語彙＋アクセント＋頻度辞書）とローカル音声（日本語・英語の音声データベース）をインポートする（初心者に強くおすすめ！！！・任意）
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare からダウンロード（9.5 GB）](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare からダウンロード（9.5 GB）](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 アプリ内で：設定 -> 同期とバックアップ -> **バックアップをインポート** をタップします。
 

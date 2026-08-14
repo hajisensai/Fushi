@@ -28,7 +28,7 @@ Android: choose **arm64**. Windows: choose the **.exe** file.
 
 ### 1. Import recommended dictionaries (word + pitch-accent + frequency dictionaries) and local audio (Japanese and English audio databases) (Highly recommended for beginners!!! · optional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare download (9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare download (9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 In the app: Settings -> Sync & Backup -> tap **Import Backup**.
 
