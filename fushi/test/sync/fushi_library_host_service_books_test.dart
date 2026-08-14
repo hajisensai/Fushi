@@ -5,8 +5,10 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/sync/app_model_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -184,6 +186,121 @@ void main() {
     tearDown(() async {
       await db.close();
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    // ── 漫画互联（互联完整支持批次）────────────────────────────────────────
+    Future<String> insertMangaBook({
+      required String title,
+      required String extractDir,
+      bool withEpubTree = false,
+      String? mangaReadingMode,
+    }) async {
+      Directory(extractDir).createSync(recursive: true);
+      final Directory images = Directory(p.join(extractDir, 'images'))
+        ..createSync();
+      File(p.join(images.path, 'p1.jpg'))
+          .writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF, 1]);
+      File(p.join(extractDir, 'manga.json')).writeAsStringSync(jsonEncode(
+        <String, Object?>{
+          'pages': <Object?>[
+            <String, Object?>{
+              'url': 'images/p1.jpg',
+              'width': 800,
+              'height': 1200,
+              'blocks': <Object?>[],
+            },
+          ],
+        },
+      ));
+      if (withEpubTree) {
+        // 由 EPUB 转化来的漫画：书目录里仍留着 EPUB 解压树。
+        final Directory metaInf = Directory(p.join(extractDir, 'META-INF'))
+          ..createSync();
+        File(p.join(metaInf.path, 'container.xml')).writeAsStringSync('<xml/>');
+      }
+      return db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: title,
+        title: title,
+        epubPath: 'manga.json',
+        extractDir: extractDir,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value('manga'),
+        coverPath: const Value('images/p1.jpg'),
+        mangaReadingMode: Value(mangaReadingMode),
+      ));
+    }
+
+    test('listBooks 漫画行：format/hasMangaContent 下发、hasContent 恒 false',
+        () async {
+      await insertMangaBook(
+        title: 'MangaVol1',
+        extractDir: p.join(tmp.path, 'MangaVol1'),
+        mangaReadingMode: 'webtoon',
+      );
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final RemoteBookInfo info = (await svc.listBooks()).single;
+      expect(info.format, 'manga');
+      expect(info.hasMangaContent, isTrue, reason: '新 client 据此在漫画架渲染可下载占位卡');
+      expect(info.hasContent, isFalse,
+          reason: '旧 client 只认 hasContent——漫画对它必须完全无感知');
+      expect(info.mangaReadingMode, 'webtoon');
+      // wire 往返（additive 字段向后兼容）。
+      final RemoteBookInfo back = RemoteBookInfo.fromJson(info.toJson());
+      expect(back.format, 'manga');
+      expect(back.hasMangaContent, isTrue);
+      expect(back.mangaReadingMode, 'webtoon');
+      final RemoteBookInfo legacy = RemoteBookInfo.fromJson(
+          <String, Object?>{'title': 'x', 'hasContent': true});
+      expect(legacy.format, 'epub');
+      expect(legacy.hasMangaContent, isFalse);
+    });
+
+    test('EPUB 转化漫画（extractDir 残留 container.xml）hasContent 必须 false（坏包防线）',
+        () async {
+      await insertMangaBook(
+        title: 'ConvertedManga',
+        extractDir: p.join(tmp.path, 'ConvertedManga'),
+        withEpubTree: true,
+      );
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final RemoteBookInfo info = (await svc.listBooks()).single;
+      expect(info.hasContent, isFalse,
+          reason: '旧判据会把它当可下载 EPUB 打包——client 落地成夹带整套页图的'
+              '文字书、漫画身份静默丢失');
+      expect(info.hasMangaContent, isTrue);
+    });
+
+    test('exportBook 漫画 → 整树 zip（isMangaPackage 嗅中）；再 import 落库保真', () async {
+      await insertMangaBook(
+        title: 'ExportManga',
+        extractDir: p.join(tmp.path, 'ExportManga'),
+      );
+      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final File pkg = await svc.exportBook('ExportManga');
+      addTearDown(() => pkg.parent.deleteSync(recursive: true));
+      expect(await isMangaPackage(pkg), isTrue,
+          reason: '导入侧（host importBook / client 下载）按内容嗅探分流');
+
+      // 端到端：包导入到另一个库，漫画身份/页图/封面保真。落库根钉到临时目录
+      // （importFromMangaJson 经 EpubStorage 解析书目录根）。
+      final Directory booksRoot =
+          Directory.systemTemp.createTempSync('hbk_books_import_root');
+      EpubStorage.debugBaseDirectoryOverride = booksRoot.path;
+      addTearDown(() {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        if (booksRoot.existsSync()) booksRoot.deleteSync(recursive: true);
+      });
+      final FushiDatabase db2 =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db2.close);
+      final String key = await importMangaPackageFile(
+          db: db2, file: pkg, title: 'ExportManga');
+      final EpubBookRow? row = await db2.getEpubBook(key);
+      expect(row!.format, 'manga');
+      expect(File(p.join(row.extractDir, 'images', 'p1.jpg')).existsSync(),
+          isTrue);
     });
 
     // ── listBooks ──────────────────────────────────────────────────────────

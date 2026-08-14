@@ -7,7 +7,8 @@ import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 
 /// Fake 库服务：本地音频 + 有声书方法真实记录调用；dict/books 方法存根。
-class _FakeLibraryService implements FushiLibraryHostService {
+class _FakeLibraryService
+    implements FushiLibraryHostService, AudiobookDelayHost {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -205,6 +206,28 @@ class _FakeLibraryService implements FushiLibraryHostService {
     audiobookPositions[bookKey] = (
       positionMs: positionMs < 0 ? 0 : positionMs,
       updatedAtMs: updatedAtMs,
+    );
+  }
+
+  // ── 有声书调轴（互联完整支持批次，in-memory 镜像 host LWW 语义）────────────────
+  final Map<String, ({int delayMs, int updatedAtMs})> audiobookDelays =
+      <String, ({int delayMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int delayMs, int updatedAtMs})> getAudiobookDelay(
+          String identity) async =>
+      audiobookDelays[identity] ?? (delayMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putAudiobookDelay(
+      String identity, int delayMs, int updatedAtMs) async {
+    final ({int delayMs, int updatedAtMs}) current =
+        audiobookDelays[identity] ?? (delayMs: 0, updatedAtMs: 0);
+    audiobookDelays[identity] = resolveDelayLww(
+      aDelayMs: current.delayMs,
+      aUpdatedAtMs: current.updatedAtMs,
+      bDelayMs: delayMs,
+      bUpdatedAtMs: updatedAtMs,
     );
   }
 
@@ -828,6 +851,63 @@ void main() {
         expect(res.statusCode, 404);
         await res.drain<void>();
         expect(lib.audiobookPositions.containsKey('no_such_book'), isFalse);
+        c.close();
+      });
+    });
+
+    // ── /delay 端点（互联完整支持批次：有声书调轴跨设备同步）───────────────────
+    group('delay', () {
+      Future<int> putDelay(String key, int delayMs, int updatedAtMs) async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest put = await c
+            .putUrl(Uri.parse('$base/api/library/audiobooks/$key/delay'));
+        put.headers.set('authorization', authHeader());
+        put.headers.set('content-type', 'application/json');
+        put.add(utf8.encode(jsonEncode(<String, Object?>{
+          'delayMs': delayMs,
+          'delayUpdatedAtMs': updatedAtMs,
+        })));
+        final HttpClientResponse res = await put.close();
+        await res.drain<void>();
+        c.close();
+        return res.statusCode;
+      }
+
+      test('PUT then GET /delay round-trips（负值保真）+ 旧戳拒绝', () async {
+        expect(await putDelay('sample_book', -1500, 7000), 200);
+        expect(lib.audiobookDelays['sample_book']?.delayMs, -1500);
+        // 滞后设备旧戳不得回退（LWW 严格较新者胜）。
+        expect(await putDelay('sample_book', 999, 5000), 200);
+        expect(lib.audiobookDelays['sample_book']?.delayMs, -1500);
+
+        final HttpClient c = HttpClient();
+        final HttpClientRequest get = await c.getUrl(
+            Uri.parse('$base/api/library/audiobooks/sample_book/delay'));
+        get.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await get.close();
+        expect(res.statusCode, 200);
+        final Map<String, dynamic> json =
+            jsonDecode(await res.transform(utf8.decoder).join())
+                as Map<String, dynamic>;
+        expect(json['delayMs'], -1500);
+        expect(json['delayUpdatedAtMs'], 7000);
+        c.close();
+      });
+
+      test('PUT /delay for missing audiobook returns 404 (no write)',
+          () async {
+        expect(await putDelay('no_such_book', 1000, 7000), 404);
+        expect(lib.audiobookDelays.containsKey('no_such_book'), isFalse,
+            reason: '存在性闸门：任意 key 上报不得写脏');
+      });
+
+      test('未鉴权 GET /delay 401（Basic 闸门内）', () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest get = await c.getUrl(
+            Uri.parse('$base/api/library/audiobooks/sample_book/delay'));
+        final HttpClientResponse res = await get.close();
+        expect(res.statusCode, 401);
+        await res.drain<void>();
         c.close();
       });
     });
