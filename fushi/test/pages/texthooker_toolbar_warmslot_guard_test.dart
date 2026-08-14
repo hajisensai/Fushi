@@ -60,14 +60,30 @@ void main() {
           reason: '嵌入模式页头 actions 走共用方法');
     });
 
-    test('低频开关收进「更多」PopupMenuButton', () {
-      expect(pageSrc.contains('PopupMenuButton<_GalHookToolbarMenuAction>'),
-          isTrue,
-          reason: '低频开关必须收进更多菜单');
+    test('低频开关直接摊在工具栏上，不再有「更多」菜单', () {
+      expect(pageSrc.contains('PopupMenuButton'), isFalse,
+          reason: '三点 overflow 菜单已删除，低频入口必须直接可见');
+      expect(pageSrc.contains('_GalHookToolbarMenuAction'), isFalse,
+          reason: '菜单动作枚举随菜单一起删除，不得留下死代码');
+      expect(pageSrc.contains('Icons.more_vert'), isFalse,
+          reason: '工具栏不得再出现三点图标');
+      for (final String focusId in <String>[
+        'game-toolbar-audio-fallback',
+        'game-toolbar-health',
+        'game-toolbar-hook-overlay',
+        'game-toolbar-external-window',
+      ]) {
+        expect(pageSrc.contains(focusId), isTrue,
+            reason: '原菜单项 $focusId 必须成为工具栏直达按钮');
+      }
+      // 外部窗口挖矿是唯一真开关：菜单里的勾选标记没了，按钮必须自己表达开关态
+      // （图标形态随 externalWindowMode 切换），否则用户看不出当前开着还是关着。
       expect(
-          pageSrc.contains('CheckedPopupMenuItem<_GalHookToolbarMenuAction>'),
-          isTrue,
-          reason: '真开关（音频降级 / 外部窗口挖矿）用 CheckedPopupMenuItem 显示开关态');
+        RegExp(r'state\.externalWindowMode\s*\?\s*Icons\.open_in_new\b')
+            .hasMatch(pageSrc),
+        isTrue,
+        reason: '外部窗口挖矿按钮必须按开关态切换图标形态',
+      );
     });
 
     test('嵌入模式删除冗余「兼容性诊断」按钮', () {
