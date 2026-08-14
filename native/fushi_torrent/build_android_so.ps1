@@ -60,8 +60,12 @@ foreach ($abi in $Abis) {
     $triplet = $tripletByAbi[$abi]
     if ($null -eq $triplet) { throw "unknown ABI: $abi（支持 $($tripletByAbi.Keys -join ', ')）" }
 
-    Write-Host "==> vcpkg install libtorrent:$triplet"
-    & $vcpkgExe install "libtorrent:$triplet"
+    Write-Host "==> vcpkg install libtorrent:$triplet (overlay: API 24)"
+    # overlay triplet 把依赖钉到 API 24（对齐 app minSdk）：vcpkg 自带 android
+    # triplet 钉 28，boost.asio 会引用 API 28 才有的 aligned_alloc，bridge 按
+    # android-24 链接直接 undefined symbol（详见 vcpkg-triplets/ 内注释）。
+    $overlay = Join-Path $scriptDir "vcpkg-triplets"
+    & $vcpkgExe install "libtorrent:$triplet" "--overlay-triplets=$overlay"
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent:$triplet failed" }
 
     $buildDir = Join-Path $scriptDir "build-android-$abi"

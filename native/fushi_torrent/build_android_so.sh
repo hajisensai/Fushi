@@ -30,8 +30,9 @@ VCPKG_TOOLCHAIN="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 
 for abi in "${ABIS[@]}"; do
   triplet="$(triplet_for_abi "$abi")"
-  echo "==> vcpkg install libtorrent:$triplet"
-  "$VCPKG_ROOT/vcpkg" install "libtorrent:$triplet"
+  echo "==> vcpkg install libtorrent:$triplet (overlay: API 24)"
+  # overlay triplet 钉 API 24 对齐 minSdk（原因见 vcpkg-triplets/ 内注释）。
+  "$VCPKG_ROOT/vcpkg" install "libtorrent:$triplet"     "--overlay-triplets=$SCRIPT_DIR/vcpkg-triplets"
 
   build_dir="$SCRIPT_DIR/build-android-$abi"
   echo "==> cmake configure ($abi / $triplet)"
