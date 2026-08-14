@@ -870,9 +870,11 @@ class DictionaryPopupLayer extends StatelessWidget {
       children: <Widget>[leftCluster, middle, rightCluster],
     );
 
-    // 无 header 的层（app 外覆盖窗/嵌套返回层）保持旧的 40 高度；有 header 时高度由
-    // header 自身（[ReaderChromeScaler] 跟随 UI 缩放）决定。
-    return headerWidget == null ? SizedBox(height: 40, child: bar) : bar;
+    // 无 header 的层（app 外覆盖窗/嵌套返回层）顶栏高度贴住 36×36 的
+    // [_topActionConstraints] 按钮（design-2026-08 讨论区反馈：压缩顶栏与词头间距，命中区零缩水，
+    // 旧值 40 只是给按钮上下各 2px 装饰性余量）；有 header 时高度由 header 自身
+    // （[ReaderChromeScaler] 跟随 UI 缩放）决定。
+    return headerWidget == null ? SizedBox(height: 36, child: bar) : bar;
   }
 
   /// TODO-1353 复诉：弹窗顶栏可见的 A−/A+ 手动字号按钮。点按经

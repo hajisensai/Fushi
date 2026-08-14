@@ -126,6 +126,14 @@
     scroll-margin-bottom: 14px;
 }
 
+/* design-2026-08 讨论区反馈: 顶栏贴近词头——首词条不再叠加自己的 8px 顶距（顶部呼吸空间由
+   Flutter 顶栏 + 振假名 0.55em 预留区承担），词条之间的 8px 节奏不变。
+   :first-child 的语义恰好精确：句子横幅(.global-lookup-sentence)或汉字卡
+   (kanjiSection)在场时首词条不是 first-child，自动保留原间距不贴死。 */
+.entry:first-child {
+    padding-top: 0;
+}
+
 .entry-header {
     display: flex;
     align-items: center;
@@ -193,28 +201,21 @@
     opacity: 0.6;
 }
 
-.kanji-breakdown {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 4px 0 2px;
-}
-
-.kanji-tag {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    padding: 0 6px;
-    border-radius: 4px;
-    background: rgba(128, 128, 128, 0.15);
-    font-size: 16px;
+/* design-2026-08 讨论区反馈: inline kanji tap targets inside the headword (replace the old
+   kanji-breakdown chip row that duplicated every kanji on its own line). A
+   faint dotted underline is the affordance; text-underline-offset keeps it
+   clear of the glyph without colliding with the next line, and the colour is
+   muted so the headword still reads as one word. The characters stay live,
+   selectable text (BUG-110/123/125/129). */
+.kanji-inline {
     cursor: pointer;
-    -webkit-user-select: none;
+    text-decoration: underline dotted;
+    text-decoration-color: rgba(128, 128, 128, 0.55);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.12em;
 }
 
-.kanji-tag:active {
+.kanji-inline:active {
     opacity: 0.6;
 }
 
@@ -1715,11 +1716,15 @@
    白底黑字），比灰阶底更清晰。 */
 :where(#entries-container).eink .expr-tag,
 :where(#entries-container).eink .deinflection-tag,
-:where(#entries-container).eink .kanji-tag,
 :where(#entries-container).eink .glossary-tag,
 :where(#entries-container).eink .pitch-transcription-tag {
     background-color: transparent;
     border: 1px solid currentColor;
+}
+
+/* design-2026-08 讨论区反馈: 半透明灰点线在墨水屏上是抖动灰，压成 currentColor 实点。 */
+:where(#entries-container).eink .kanji-inline {
+    text-decoration-color: currentColor;
 }
 
 :where(#entries-container).eink .frequency-dict-label {

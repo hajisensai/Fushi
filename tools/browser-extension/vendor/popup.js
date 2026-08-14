@@ -2501,38 +2501,65 @@ function createFavoriteButton(expression, reading) {
     return button;
 }
 
-function createKanjiBreakdown(expression) {
-    const seen = new Set();
-    const kanjiChars = [];
-    for (const ch of expression) {
-        if (KANJI_PATTERN.test(ch) && !seen.has(ch)) {
-            seen.add(ch);
-            kanjiChars.push(ch);
+// design-2026-08 讨论区反馈: the old kanji-breakdown chip row repeated every kanji of the
+// headword on its own line just to make it clickable. The chips are gone;
+// instead each kanji INSIDE the headword is its own tap target (dotted
+// underline affordance, popup.css .kanji-inline). This is a post-pass over an
+// already-built subtree (called from the tail of postProcessRuby, so every
+// render path that fixes ruby also gets inline kanji): it only splits TEXT
+// nodes under .expression, skipping the reading machinery (rt / rp / .ruby-rt /
+// .ruby-reserve) — the per-base .ruby-unit anchor + em reserve geometry
+// (BUG-722/733/850/1487) is untouched, and each kanji stays a live text node
+// (one span deeper) so ruby lookup selection (BUG-110/123/125/129) keeps
+// working. Idempotent like postProcessRuby itself (BUG-1098): text already
+// inside a .kanji-inline is rejected by the walker filter.
+function wrapExpressionInlineKanji(container) {
+    const roots = container.classList?.contains('expression')
+        ? [container]
+        : container.querySelectorAll('.expression');
+    roots.forEach(root => {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                const p = node.parentElement;
+                if (!node.textContent || !p) return NodeFilter.FILTER_REJECT;
+                if (p.closest('rt, rp, .ruby-rt, .ruby-reserve, .kanji-inline')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+        for (const node of textNodes) {
+            const text = node.textContent;
+            let hasKanji = false;
+            for (const ch of text) {
+                if (KANJI_PATTERN.test(ch)) { hasKanji = true; break; }
+            }
+            if (!hasKanji) continue;
+            const frag = document.createDocumentFragment();
+            let run = '';
+            const flushRun = () => {
+                if (run) {
+                    frag.appendChild(document.createTextNode(run));
+                    run = '';
+                }
+            };
+            for (const ch of text) {
+                if (KANJI_PATTERN.test(ch)) {
+                    flushRun();
+                    const span = document.createElement('span');
+                    span.className = 'kanji-inline';
+                    span.textContent = ch;
+                    frag.appendChild(span);
+                } else {
+                    run += ch;
+                }
+            }
+            flushRun();
+            node.replaceWith(frag);
         }
-    }
-    if (kanjiChars.length === 0) return null;
-
-    const row = el('div', { className: 'kanji-breakdown' });
-    for (const ch of kanjiChars) {
-        const tag = el('span', {
-            className: 'kanji-tag',
-            textContent: ch,
-        });
-        tag.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const rect = tag.getBoundingClientRect();
-            markGlobalLookupExtHit(tag);
-            window.flutter_inappwebview.callHandler('onLinkClick', ch, {
-                x: rect.left,
-                y: rect.top,
-                width: rect.width,
-                height: rect.height
-            });
-        });
-        row.appendChild(tag);
-    }
-    return row;
+    });
 }
 
 function createEntryHeader(entry, idx) {
@@ -2550,9 +2577,19 @@ function createEntryHeader(entry, idx) {
     expressionSpan.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const rect = expressionSpan.getBoundingClientRect();
-        markGlobalLookupExtHit(expressionSpan);
-        window.flutter_inappwebview.callHandler('onLinkClick', expression, {
+        // design-2026-08 讨论区反馈: a click landing on an inline kanji (.kanji-inline, wrapped
+        // by wrapExpressionInlineKanji) looks up THAT character — same
+        // onLinkClick channel + anchor-rect semantics the removed
+        // kanji-breakdown chips used. Anywhere else on the headword keeps the
+        // old whole-expression re-lookup.
+        const kanjiEl = e.target instanceof Element
+            ? e.target.closest('.kanji-inline')
+            : null;
+        const anchorEl = kanjiEl || expressionSpan;
+        const term = kanjiEl ? kanjiEl.textContent : expression;
+        const rect = anchorEl.getBoundingClientRect();
+        markGlobalLookupExtHit(anchorEl);
+        window.flutter_inappwebview.callHandler('onLinkClick', term, {
             x: rect.left,
             y: rect.top,
             width: rect.width,
@@ -3315,11 +3352,6 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
     const entryDiv = el('div', { className: 'entry' });
     entryDiv.appendChild(createEntryHeader(entry, idx));
 
-    const kanjiRow = createKanjiBreakdown(entry.expression);
-    if (kanjiRow) {
-        entryDiv.appendChild(kanjiRow);
-    }
-
     const exprTags = createExpressionTagsSection(entry);
     if (exprTags) {
         entryDiv.appendChild(exprTags);
@@ -3492,6 +3524,11 @@ function postProcessRuby(container) {
             }
         }
     });
+    // design-2026-08 讨论区反馈: inline-kanji tap targets ride the same post-pass so every
+    // render path that ruby-fixes a subtree (first entry, deferred tail
+    // entries, incremental updates) also gets them; both passes are idempotent
+    // so the double walk over entry 0 (BUG-1098) stays harmless.
+    wrapExpressionInlineKanji(container);
 }
 
 function applyCustomCSS() {
@@ -3540,7 +3577,7 @@ function createKanjiCard(kanji) {
     const head = el('div', { className: 'kanji-card-head' });
     const charEl = el('div', { className: 'kanji-card-char', textContent: kanji.character });
     // Tapping the big character re-looks it up (consistent with the term
-    // headword + kanji-breakdown tags), so a kanji card is also a jump-off
+    // headword + inline kanji, design-2026-08 讨论区反馈), so a kanji card is also a jump-off
     // point for a fresh lookup.
     charEl.addEventListener('click', (e) => {
         e.preventDefault();
