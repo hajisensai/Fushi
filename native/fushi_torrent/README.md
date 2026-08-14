@@ -238,10 +238,16 @@ android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进�
 `libfushi_torrent_ffi.so`，没有 Windows 那 4 个运行时 DLL 的收拢/预载问题。
 
 1. **产出**：`build_android_so.ps1`（本机 Windows）/ `build_android_so.sh`
-   （CI Linux）——vcpkg 装 `libtorrent:<triplet>`（arm64-v8a→arm64-android 等），
-   cmake 用 vcpkg 工具链 chainload NDK 工具链（`ANDROID_PLATFORM=android-24`
-   对齐 minSdk，`ANDROID_STL=c++_shared` 对齐 app 内 fushidicts，16KB page
-   对齐见 CMakeLists），产物 strip 后落 `prebuilt/android/<abi>/`。
+   （CI Linux）——vcpkg 装 `libtorrent:<triplet>`（arm64-v8a→arm64-android 等，
+   **必须带 `--overlay-triplets=vcpkg-triplets/`**：vcpkg 自带 android triplet
+   钉 API 28，boost.asio 会引用 API 28 才进 libc 的 `aligned_alloc`，bridge 按
+   android-24 链接直接 undefined symbol——依赖与 bridge 必须同一 API level，
+   overlay 统一钉 24），cmake 用 vcpkg 工具链 chainload NDK 工具链
+   （`ANDROID_PLATFORM=android-24` 对齐 minSdk，`ANDROID_STL=c++_shared` 对齐
+   app 内 fushidicts，16KB page 对齐见 CMakeLists），产物 strip 后落
+   `prebuilt/android/<abi>/`。已在 Android 模拟器（API 34 x86_64）实测：
+   `fushi/integration_test/embedded_torrent_engine_smoke_test.dart` 两用例全过
+   （加载 + 版本串 + session + make_torrent）。
 2. **随包**：`fushi/android/app/build.gradle` 把 `prebuilt/android` 加进
    `jniLibs.srcDirs`——目录存在则随包，不存在则 Gradle 静默跳过。因此
    `flutter build apk` **不依赖 vcpkg/NDK 交叉编译**：没跑过产出脚本的机器
