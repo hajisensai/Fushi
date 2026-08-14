@@ -48,7 +48,46 @@ abstract final class DesktopForegroundGuard {
       return false;
     }
   }
+
+  /// **主窗自己**是不是前台窗口——注意与上面两个**进程级**判据的区别。
+  ///
+  /// 桌面版 Fushi 是多顶层窗口进程：主窗之外还有剪贴板查词面板、app 外查词
+  /// 覆盖窗、悬浮歌词 / 台词窗。这些辅助窗取得前台时，进程级判据一律为真，
+  /// 而主窗其实还压在用户的游戏 / 浏览器底下。凡是「主窗该不该抢键盘焦点」
+  /// 这类决策都必须用本判据，用进程级的就会把主界面拽到用户面前
+  /// （BUG-1619：拖剪贴板面板顶栏 → 面板夺焦 → 进程级 resumed →
+  /// 主窗 requestFocus → 引擎 SetFocus(FlutterView) → 连带激活主窗）。
+  ///
+  /// 非 Windows 恒 true：那些平台没有这套多顶层窗口结构，判据不该改变它们
+  /// 既有的 lifecycle 语义。
+  static bool isMainWindowForeground() {
+    final bool? override = debugMainWindowForeground;
+    if (override != null) return override;
+    if (!Platform.isWindows) return true;
+    // `flutter test` 跑在 flutter_tester 里，根本没有 runner 主窗：真实探测必然
+    // 返回 false，会把**所有**被动焦点修复挡死，整批既有焦点测试瞬间转红（实测）。
+    // 这套判据只对「有主窗的桌面 runner」有意义，测试环境一律放行；需要驱动判据的
+    // 用例显式设 [debugMainWindowForeground]（上面的 override 先于此生效）。
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return true;
+    try {
+      return _WindowsForegroundProbe.instance.isMainWindowForeground();
+    } on Object {
+      // 探测失败按「是前台」放行：宁可保留旧的回收行为，也不要把键盘焦点
+      // 永久卡死在无人接管的状态。
+      return true;
+    }
+  }
+
+  @visibleForTesting
+  static bool? debugMainWindowForeground;
 }
+
+/// Flutter runner 主窗的 Win32 窗口类名。
+///
+/// 必须与 `fushi/windows/runner/win32_window.cpp` 注册的类名逐字符一致——
+/// 那是识别「前台窗口是不是主窗」的唯一凭据（辅助窗各有自己的类名）。
+/// 守卫测试 `desktop_foreground_guard_main_window_test.dart` 锁死两边一致。
+const String kFushiMainWindowClassName = 'FLUTTER_RUNNER_WIN32_WINDOW';
 
 final class _WindowsForegroundProbe {
   _WindowsForegroundProbe._()
@@ -58,6 +97,9 @@ final class _WindowsForegroundProbe {
         _getWindowThreadProcessId = DynamicLibrary.open('user32.dll')
             .lookupFunction<_GetWindowThreadProcessIdNative,
                 _GetWindowThreadProcessIdDart>('GetWindowThreadProcessId'),
+        _getClassName = DynamicLibrary.open('user32.dll')
+            .lookupFunction<_GetClassNameNative, _GetClassNameDart>(
+                'GetClassNameW'),
         _getCurrentProcessId = DynamicLibrary.open('kernel32.dll')
             .lookupFunction<_GetCurrentProcessIdNative,
                 _GetCurrentProcessIdDart>('GetCurrentProcessId'),
@@ -75,6 +117,7 @@ final class _WindowsForegroundProbe {
 
   final _GetForegroundWindowDart _getForegroundWindow;
   final _GetWindowThreadProcessIdDart _getWindowThreadProcessId;
+  final _GetClassNameDart _getClassName;
   final _GetCurrentProcessIdDart _getCurrentProcessId;
   final _OpenProcessDart _openProcess;
   final _QueryFullProcessImageNameDart _queryFullProcessImageName;
@@ -98,6 +141,35 @@ final class _WindowsForegroundProbe {
     final String? imagePath = _processImagePath(pid);
     if (imagePath == null) return false;
     return _looksLikeFushiExecutable(imagePath);
+  }
+
+  /// 前台窗口既属于本进程、类名又是主窗类名 → 主窗就是前台窗口。
+  ///
+  /// 两个条件缺一不可：只比进程会把辅助窗（面板 / 覆盖窗 / 浮窗）算成主窗；
+  /// 只比类名会把另一个 Fushi 进程的主窗算成自己的。
+  bool isMainWindowForeground() {
+    final int foregroundHwnd = _getForegroundWindow();
+    if (foregroundHwnd == 0) return false;
+    final Pointer<Uint32> foregroundPid = calloc<Uint32>();
+    try {
+      _getWindowThreadProcessId(foregroundHwnd, foregroundPid);
+      if (foregroundPid.value != _getCurrentProcessId()) return false;
+    } finally {
+      calloc.free(foregroundPid);
+    }
+    return _windowClassName(foregroundHwnd) == kFushiMainWindowClassName;
+  }
+
+  String? _windowClassName(int hwnd) {
+    const int bufferLength = 256;
+    final Pointer<Utf16> buffer = calloc<Uint16>(bufferLength).cast<Utf16>();
+    try {
+      final int written = _getClassName(hwnd, buffer, bufferLength);
+      if (written <= 0) return null;
+      return buffer.toDartString(length: written);
+    } finally {
+      calloc.free(buffer);
+    }
   }
 
   int? _foregroundProcessId() {
@@ -167,6 +239,17 @@ typedef _GetWindowThreadProcessIdNative = Uint32 Function(
 typedef _GetWindowThreadProcessIdDart = int Function(
   int hWnd,
   Pointer<Uint32> processId,
+);
+
+typedef _GetClassNameNative = Int32 Function(
+  IntPtr hWnd,
+  Pointer<Utf16> className,
+  Int32 maxCount,
+);
+typedef _GetClassNameDart = int Function(
+  int hWnd,
+  Pointer<Utf16> className,
+  int maxCount,
 );
 
 typedef _GetCurrentProcessIdNative = Uint32 Function();

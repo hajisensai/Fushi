@@ -16,6 +16,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
@@ -613,6 +614,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// （Never break userspace）——对话框关闭时各自的返回点会归还焦点。
   void _reclaimHomeFocusIfOwned() {
     if (!mounted) return;
+    // BUG-1619：进程级 resumed ≠ 主窗回到前台（剪贴板面板 / 查词覆盖窗夺焦
+    // 也会触发它）。主窗不在前台就抢焦点 = 引擎 SetFocus(FlutterView) 连带
+    // 把主界面激活到用户的游戏 / 浏览器之上。判据与共享入口
+    // [PageFocusOwnership.reclaim] 同一条，见那里的完整说明。
+    if (!DesktopForegroundGuard.isMainWindowForeground()) return;
     final ModalRoute<Object?>? owner = ModalRoute.of(context);
     if (owner != null && !owner.isCurrent) return;
     final FushiFocusController? controller =
