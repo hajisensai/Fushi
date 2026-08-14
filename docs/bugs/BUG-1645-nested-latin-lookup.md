@@ -1,0 +1,13 @@
+## BUG-1645 · 嵌套查词查不了英语单词（跨节点粘连成拉丁串）
+- **报告**：2026-08-14（用户：截图两张——顶层查词框输入 `acrid` 正常出 Oxford/CED24/LDOCE5；在 エグい 的 Jitendex 释义里点同一个 `acrid` 触发嵌套查词，子卡「未找到搜索结果。」）
+- **真实性**：✅ 真 bug。两侧规则叠加导致，均已实证：
+  - `fushi/assets/popup/selection.js:385`（`selectFromPosition` 的续扫循环）跨文本节点续扫时**不认元素边界**，把相邻释义 `<li>acrid</li><li>pungent</li>` 粘成 `acridpungent`。用 node 在 fake DOM 里真跑该函数复现：`scanned text = "acridpungent"`。
+  - `native/fushidicts/fushidicts_src/scan/word_scan.cpp:68`（`scan_candidates` 的 `boundary_ok`）出于「不在单词中间切」的**正确**规则，拒绝在两个空格分词类字母之间切分。用 MSVC 真编译该文件跑一遍：
+    - `scan_candidates("acrid")` → `[acrid]`（顶层输入路径，命中）
+    - `scan_candidates("acrid pungent")` → `[acrid pungent] [acrid]`
+    - `scan_candidates("acridpungent")` → `[acridpungent]`（**切不出 `acrid`** → 词典无命中 → 未找到搜索结果）
+  - 日语不受影响：CJK 不是空格分词脚本，任意码点处都可切，粘多了会被自然切掉——所以症状只在拉丁语系的注释文字上出现。
+  - 同理，若某词典把多条释义渲染在**同一个文本节点**里（`;`/`,` 是 `scanDelimiters`），扫描会正常停住，所以「有的词典能点、有的不能」也解释得通。
+- **[x] ① 已修复** — 修在 JS 侧（C++ 的「不在单词中间切」是对的，不能动）：`selection.js` 新增 `crossesRenderBoundary(from, to)`，跨节点续扫前判断两个文本节点之间有没有**渲染断点**——块盒/列表项等非 inline 盒边界，或 compact 释义模式下 `li::after { content: " | " }` 这种只存在于渲染树的生成内容分隔符。判据刻意用渲染盒而不是「两侧都是字母就断」：后者会打坏 `<b>ac</b>rid` 这类行内标记拆开的单词。三份 selection.js 镜像同步（app / 两个扩展 vendor）。提交：`worktree-fix-nested-latin-lookup`。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/nested_latin_lookup_bug1645_test.js`（node + fake DOM 真执行 selection.js，带 `getComputedStyle` / 伪元素模拟）+ 同名 `.dart` wrapper（无 node 时 skip）+ 三镜像源码守卫。四个场景：相邻释义必须断开、compact `::after` 分隔符必须断开、`<b>ac</b>rid` 行内拆词必须仍能拼回、日语跨行内节点续扫不得回归。变异实测：把 `crossesRenderBoundary` 调用摘掉后场景 A 立刻红成 `actual: 'acridpungent'`，还原后 sha256 与变异前一致。
+- **备注**：`getSentence`（制卡句子提取）走的是同一套跨节点行走，同样会把块边界两侧的英文粘起来，本次**未改**——那是另一条链路（影响的是卡片 sentence 字段而非查词命中），需要单独评估后再动。
