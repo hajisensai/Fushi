@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 11625,
-  "notes": "Automated release-signed debug-channel build from main @ 8e3f357. Push releases are always prerelease and never Latest.",
+  "notes": "Automated release-signed debug-channel build from develop @ 8e3f357. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.0.0-debug.11625-8e3f357-debug.apk",
