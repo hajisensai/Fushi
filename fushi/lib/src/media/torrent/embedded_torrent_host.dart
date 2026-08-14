@@ -11,6 +11,13 @@ import 'package:fushi/src/media/torrent/torrent_upload_policy.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 import 'package:path/path.dart' as p;
 
+typedef _NetworkDiscoveryState = ({
+  bool dht,
+  bool lsd,
+  bool upnp,
+  bool natpmp,
+});
+
 /// 内置 libtorrent 引擎的 app 侧宿主：拥有**常驻**引擎 + 单个 session
 /// （所有内置下载共享），按需派发短命 [EmbeddedTorrentBackend] 适配器给
 /// `AnimeDownloadService` 的每 tick 用（适配器 close 不连累会话）。
@@ -35,11 +42,18 @@ class EmbeddedTorrentHost {
     required TorrentSaveRoots saveRoots,
     required String resumeDir,
     required int Function() clockMs,
+    required bool initialDhtEnabled,
   })  : _engine = engine,
         _session = session,
         _saveRoots = saveRoots,
         _resumeDir = resumeDir,
-        _clockMs = clockMs;
+        _clockMs = clockMs,
+        _appliedNetworkDiscovery = (
+          dht: initialDhtEnabled,
+          lsd: false,
+          upnp: false,
+          natpmp: false,
+        );
 
   final EmbeddedTorrentEngine _engine;
   final EmbeddedTorrentSession _session;
@@ -104,8 +118,33 @@ class EmbeddedTorrentHost {
   /// 上传/做种策略（默认开箱即关上传）。config 变更时由 AppModel 更新。
   QbConnectionConfig _uploadConfig = const QbConnectionConfig();
 
-  /// 每个种子进入做种阶段的时刻（做种时长上限判定基准）。
+  /// 用户配置的会话设置。发现协议会根据实际下载/做种需求门控，但每次重新
+  /// 唤醒都必须恢复用户逐项配置（不能把用户关掉的协议强行打开）。
+  QbConnectionConfig _sessionConfig = const QbConnectionConfig();
+
+  /// 当前已下发到 libtorrent 的四个发现/映射协议状态。session 创建时只可能
+  /// 单独开启 DHT，其余三项由 native 明确初始化为 false。
+  _NetworkDiscoveryState? _appliedNetworkDiscovery;
+
+  /// 同步 add/resume 前的临时网络唤醒深度。必须计数而不是 bool：多个嵌套调用
+  /// 不能由先结束的那一个提前关掉协议。
+  int _networkWakeDepth = 0;
+
+  /// 最近一次成功读取的 torrent 状态。native/JSON 瞬时失败不能被解释成“空
+  /// session”，否则 active magnet 会被误关 DHT；失败时保留这份可靠快照。
+  List<FtTorrentStatus>? _lastKnownTorrentStatuses;
+
+  /// discovery 设置下发失败每个连续失败段只记一次，成功后复位。
+  bool _loggedNetworkDiscoveryApplyFailure = false;
+
+  /// 是否已经收到过用户会话配置。启动 open 内的首次 restore 发生在配置接管前，
+  /// 必须保持静默；防御性的延迟 restore 则要像 add 一样先 wake。
+  bool _hasAppliedSessionSettings = false;
+
+  /// 老 DLL 不导出 fastResume 累计做种时长时的兼容基准（epoch ms）。它会落盘，
+  /// 避免每次重启都把做种时限从零开始。
   final Map<String, int> _seedStartMs = <String, int>{};
+  bool _hasLoadedSeedStarts = false;
 
   /// 已下发的会话级上传开关（null = 尚未下发；避免每 tick 重复 FFI）。
   /// BUG-1293：「关上传」的正确原语是会话级 unchoke 槽位清零，不是
@@ -196,6 +235,7 @@ class EmbeddedTorrentHost {
           TorrentSaveRoots(active: baseSavePath, legacy: legacySavePaths),
       resumeDir: resumeDir,
       clockMs: clockMs ?? _defaultClockMs,
+      initialDhtEnabled: enableDht,
     );
     // TODO-1961-a：会话一建起来就把上次的种子加回来（续传 + 继续做种）。
     // [restoreIds] = 当前仍存在的计划 id 集合：**计划是真相源**，用户删掉的
@@ -225,6 +265,7 @@ class EmbeddedTorrentHost {
       saveRoots: TorrentSaveRoots(active: baseSavePath),
       resumeDir: resumeDir,
       clockMs: clockMs ?? _defaultClockMs,
+      initialDhtEnabled: false,
     );
   }
 
@@ -276,6 +317,12 @@ class EmbeddedTorrentHost {
     }
     _pruneResumeFiles(keepIds);
     _hasRestored = true;
+    final bool wakeDuringRestore = _hasAppliedSessionSettings;
+    if (wakeDuringRestore) {
+      beginNetworkWake();
+    } else {
+      _lastKnownTorrentStatuses = null;
+    }
     try {
       final List<String> ids = _session.loadResumeDir(_resumeDir);
       if (ids.isNotEmpty) {
@@ -286,6 +333,8 @@ class EmbeddedTorrentHost {
     } on Object catch (e) {
       debugPrint('[torrent] resume restore failed: $e');
       return 0;
+    } finally {
+      if (wakeDuringRestore) endNetworkWake();
     }
   }
 
@@ -412,23 +461,182 @@ class EmbeddedTorrentHost {
   /// 应用会话级设置（qb 关键项：端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/
   /// 上传槽）到常驻 session。config 变更/启动时由 AppModel 调用。
   ///
+  /// BUG-1648：DHT/LSD/UPnP/NAT-PMP 不能仅凭用户配置常驻开启。这里保存用户
+  /// 意图，但实际下发值还要经过 [_desiredNetworkDiscoveryState]：无未完成下载、
+  /// 也无允许做种的任务时四项全部关闭，避免空闲 DHT/网关映射流量周期性冲击
+  /// 家用路由器；新任务到来时再逐项恢复用户配置。
+  ///
   /// native 侧会把 `maxUploadSlots > 0` 写进 unchoke_slots_limit——这会覆盖
   /// [sweepUploadPolicy] 下发的「关上传 = 0 槽位」，所以这里把已下发缓存置空，
   /// 让下一次 sweep（AppModel 在本调用之后紧接着 setUploadPolicy）重新裁决。
   bool applySessionSettings(QbConnectionConfig config) {
+    _sessionConfig = config;
+    _hasAppliedSessionSettings = true;
     _appliedSessionUploadEnabled = null;
-    return _session.applySessionSettings(
+    final _NetworkDiscoveryState discovery = _desiredNetworkDiscoveryState();
+    final bool applied = _session.applySessionSettings(
       listenPort: config.listenPort,
-      enableDht: config.enableDht,
-      enableLsd: config.enableLsd,
-      enableUpnp: config.enableUpnp,
-      enableNatpmp: config.enableNatpmp,
+      enableDht: discovery.dht,
+      enableLsd: discovery.lsd,
+      enableUpnp: discovery.upnp,
+      enableNatpmp: discovery.natpmp,
       encPolicy: config.encryptionMode,
       anonymousMode: config.anonymousMode,
       activeDownloads: config.maxActiveDownloads,
       activeSeeds: config.maxActiveSeeds,
       maxUploadSlots: config.maxUploadSlots,
     );
+    if (applied) {
+      _appliedNetworkDiscovery = discovery;
+      _loggedNetworkDiscoveryApplyFailure = false;
+    } else {
+      _logNetworkDiscoveryApplyFailure();
+    }
+    return applied;
+  }
+
+  /// 在同步 native add/resume 之前暂时唤醒发现协议。调用方必须用 finally 配对
+  /// [endNetworkWake]；begin 到真正 native 操作之间不得插入 await。
+  void beginNetworkWake() {
+    if (_networkWakeDepth == 0) {
+      // 接下来 session 可能发生 add/resume；旧快照不能用于裁决操作后的状态。
+      _lastKnownTorrentStatuses = null;
+    }
+    _networkWakeDepth++;
+    reconcileNetworkDiscoveryState();
+  }
+
+  /// 结束一次临时唤醒，并按 session 里的真实任务集合立即收回不再需要的协议。
+  void endNetworkWake() {
+    if (_networkWakeDepth > 0) {
+      _networkWakeDepth--;
+    }
+    reconcileNetworkDiscoveryState();
+  }
+
+  /// 按当前任务与做种策略协调 DHT/LSD/UPnP/NAT-PMP。仅目标状态变化时走一次
+  /// FFI；这个调用不会动端口、队列上限或上传槽位，因此不会覆盖关上传策略。
+  bool reconcileNetworkDiscoveryState() {
+    try {
+      final _NetworkDiscoveryState desired = _desiredNetworkDiscoveryState();
+      if (_appliedNetworkDiscovery == desired) return true;
+      final bool applied = _session.applySessionSettings(
+        enableDht: desired.dht,
+        enableLsd: desired.lsd,
+        enableUpnp: desired.upnp,
+        enableNatpmp: desired.natpmp,
+        encPolicy: _sessionConfig.encryptionMode,
+        anonymousMode: _sessionConfig.anonymousMode,
+      );
+      if (applied) {
+        _appliedNetworkDiscovery = desired;
+        _loggedNetworkDiscoveryApplyFailure = false;
+      } else {
+        _logNetworkDiscoveryApplyFailure();
+      }
+      return applied;
+    } on Object catch (error) {
+      _logNetworkDiscoveryApplyFailure(error);
+      return false;
+    }
+  }
+
+  _NetworkDiscoveryState _desiredNetworkDiscoveryState() {
+    final bool active;
+    if (_networkWakeDepth > 0) {
+      active = true;
+    } else {
+      final List<FtTorrentStatus>? current = _session.tryListTorrents();
+      if (current != null) {
+        _recordTorrentStatuses(current);
+        active = _hasNetworkWork(current);
+      } else {
+        final List<FtTorrentStatus>? lastKnown = _lastKnownTorrentStatuses;
+        if (lastKnown != null) {
+          active = _hasNetworkWork(lastKnown);
+        } else {
+          // 首次读取就失败时没有依据把协议从关切到开；保留当前状态，并只允许
+          // 用户配置把某项进一步关闭。add/resume 会由 wakeDepth 明确保持开启。
+          final _NetworkDiscoveryState applied = _appliedNetworkDiscovery ??
+              const (dht: false, lsd: false, upnp: false, natpmp: false);
+          return (
+            dht: applied.dht && _sessionConfig.enableDht,
+            lsd: applied.lsd && _sessionConfig.enableLsd,
+            upnp: applied.upnp && _sessionConfig.enableUpnp,
+            natpmp: applied.natpmp && _sessionConfig.enableNatpmp,
+          );
+        }
+      }
+    }
+    return (
+      dht: active && _sessionConfig.enableDht,
+      lsd: active && _sessionConfig.enableLsd,
+      upnp: active && _sessionConfig.enableUpnp,
+      natpmp: active && _sessionConfig.enableNatpmp,
+    );
+  }
+
+  bool _hasNetworkWork(List<FtTorrentStatus> torrents) {
+    final int nowMs = _clockMs();
+    for (final FtTorrentStatus torrent in torrents) {
+      final String id = torrent.id.toLowerCase();
+      if (_userPaused.contains(id)) continue;
+      if (!torrent.isFinished) return true;
+      final bool allowSeeding = shouldAllowUpload(
+        _uploadConfig,
+        TorrentUploadMetrics(
+          isSeeding: torrent.isFinished,
+          uploaded: torrent.uploaded,
+          downloaded: torrent.downloaded,
+          seedingElapsedMs: _seedingElapsedMs(torrent, nowMs),
+        ),
+      );
+      if (allowSeeding) return true;
+    }
+    return false;
+  }
+
+  int _seedingElapsedMs(FtTorrentStatus torrent, int nowMs) {
+    if (torrent.seedingDurationSeconds >= 0) {
+      return torrent.seedingDurationSeconds * 1000;
+    }
+    _ensureSeedStartsLoaded();
+    final String id = torrent.id.toLowerCase();
+    if (torrent.isFinished && !_seedStartMs.containsKey(id)) {
+      _seedStartMs[id] = nowMs;
+      _persistSeedStarts();
+    }
+    final int? startMs = _seedStartMs[id];
+    if (startMs == null || nowMs <= startMs) return 0;
+    return nowMs - startMs;
+  }
+
+  void _ensureSeedStartsLoaded() {
+    if (_hasLoadedSeedStarts) return;
+    _hasLoadedSeedStarts = true;
+    _seedStartMs.addAll(_readSeedStarts(_resumeDir));
+  }
+
+  void _recordTorrentStatuses(List<FtTorrentStatus> torrents) {
+    _lastKnownTorrentStatuses = List<FtTorrentStatus>.unmodifiable(torrents);
+    _ensureSeedStartsLoaded();
+    final Set<String> live = <String>{
+      for (final FtTorrentStatus torrent in torrents) torrent.id.toLowerCase(),
+    };
+    final int before = _seedStartMs.length;
+    _seedStartMs.removeWhere((String id, int _) => !live.contains(id));
+    if (_seedStartMs.length != before) _persistSeedStarts();
+  }
+
+  void _persistSeedStarts() {
+    _writeSeedStarts(_resumeDir, _seedStartMs);
+  }
+
+  void _logNetworkDiscoveryApplyFailure([Object? error]) {
+    if (_loggedNetworkDiscoveryApplyFailure) return;
+    _loggedNetworkDiscoveryApplyFailure = true;
+    debugPrint('[torrent] network discovery settings apply failed'
+        '${error == null ? '' : ': $error'}; will retry');
   }
 
   /// 用配置里的反吸血开关/阈值重建反吸血引擎（丢弃旧封禁状态，会自然重建）。
@@ -462,6 +670,9 @@ class EmbeddedTorrentHost {
         resume: resumeTorrentByUser,
         isPaused: isTorrentPausedForDisplay,
       ),
+      beginNetworkWake: beginNetworkWake,
+      endNetworkWake: endNetworkWake,
+      reconcileNetworkDiscovery: reconcileNetworkDiscoveryState,
     );
   }
 
@@ -477,6 +688,7 @@ class EmbeddedTorrentHost {
     _userPaused.add(id);
     // TODO-2482：用户暂停跨会话持久（真相源在宿主，落盘随 fastResume 目录）。
     _persistUserPaused();
+    reconcileNetworkDiscoveryState();
     return true;
   }
 
@@ -485,15 +697,20 @@ class EmbeddedTorrentHost {
   /// 暂停，这是策略语义使然，不是抢用户的手。
   bool resumeTorrentByUser(String infoHash) {
     final String id = infoHash.toLowerCase();
-    if (!_session.pauseTorrent(id, pause: false)) return false;
-    _userPaused.remove(id);
-    // TODO-2526：该种子可能带着 awaiting 暂停记录（启动瞬时加载失败）又被
-    // 用户重新 add 进 session —— 显式恢复必须两处记录都清，否则并集写盘
-    // 仍记暂停，下次启动把用户这次恢复吞掉、强制按回暂停。
-    _pausedAwaitingRestore.remove(id);
-    _appliedPaused.remove(id);
-    _persistUserPaused();
-    return true;
+    beginNetworkWake();
+    try {
+      if (!_session.pauseTorrent(id, pause: false)) return false;
+      _userPaused.remove(id);
+      // TODO-2526：该种子可能带着 awaiting 暂停记录（启动瞬时加载失败）又被
+      // 用户重新 add 进 session —— 显式恢复必须两处记录都清，否则并集写盘
+      // 仍记暂停，下次启动把用户这次恢复吞掉、强制按回暂停。
+      _pausedAwaitingRestore.remove(id);
+      _appliedPaused.remove(id);
+      _persistUserPaused();
+      return true;
+    } finally {
+      endNetworkWake();
+    }
   }
 
   /// TODO-2481：该种子当前是否处于（用户或策略）暂停态。native 的
@@ -636,26 +853,25 @@ class EmbeddedTorrentHost {
         }
       }
 
-      // ② per-torrent：只对已完成（做种）种子暂停/恢复。
+      // ② per-torrent：只对已完成（做种）种子暂停/恢复。状态读取失败与
+      // “成功为空”必须区分；失败时保留现状，下一轮重试。
+      final List<FtTorrentStatus>? torrents = _session.tryListTorrents();
+      if (torrents == null) return changed;
+      _recordTorrentStatuses(torrents);
       final Set<String> live = <String>{};
-      for (final FtTorrentStatus t in _session.listTorrents()) {
+      for (final FtTorrentStatus t in torrents) {
         live.add(t.id);
         // TODO-2481：用户显式暂停的种子策略整体跳过 —— 既不重复 pause，
         // 也绝不替用户 resume（否则下一 tick 就把用户按下的暂停偷偷抢回）。
         if (_userPaused.contains(t.id)) continue;
-        if (t.isSeeding) {
-          _seedStartMs.putIfAbsent(t.id, () => nowMs);
-        }
         if (!t.isFinished) continue;
-        final int? startMs = _seedStartMs[t.id];
-        final int elapsedMs = startMs == null ? 0 : nowMs - startMs;
         final bool allow = shouldAllowUpload(
           _uploadConfig,
           TorrentUploadMetrics(
-            isSeeding: t.isSeeding,
+            isSeeding: t.isFinished,
             uploaded: t.uploaded,
             downloaded: t.downloaded,
-            seedingElapsedMs: elapsedMs,
+            seedingElapsedMs: _seedingElapsedMs(t, nowMs),
           ),
         );
         final bool wantPaused = !allow;
@@ -667,7 +883,6 @@ class EmbeddedTorrentHost {
         }
       }
       // 清理已移除种子的残留状态。
-      _seedStartMs.removeWhere((String k, int v) => !live.contains(k));
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
       final int pausedBefore = _userPaused.length;
       _userPaused.removeWhere((String k) => !live.contains(k));
@@ -688,6 +903,11 @@ class EmbeddedTorrentHost {
       return changed;
     } on Object {
       return 0;
+    } finally {
+      // BUG-1648：状态推进到完成、策略到达做种上限、最后一个任务被暂停后，
+      // 最迟在本轮维护 tick 关闭发现/映射协议。老 DLL 缺上传暂停原语时也必须
+      // 执行——协议门控只依赖用户策略，不能被 native 的旧 paused 状态误导。
+      reconcileNetworkDiscoveryState();
     }
   }
 
@@ -759,6 +979,49 @@ int pruneResumeFiles({
     return removed;
   }
   return removed;
+}
+
+/// 老 DLL 不导出 `seeding_duration` 时的做种起点兼容文件。新 DLL 始终以
+/// fastResume 的累计秒数为准，不依赖此文件。
+const String _kSeedStartsFileName = 'seed_starts.json';
+
+Map<String, int> _readSeedStarts(String resumeDir) {
+  try {
+    final File file = File(p.join(resumeDir, _kSeedStartsFileName));
+    if (!file.existsSync()) return <String, int>{};
+    final Object? decoded = jsonDecode(file.readAsStringSync());
+    if (decoded is! Map) return <String, int>{};
+    return <String, int>{
+      for (final MapEntry<Object?, Object?> entry in decoded.entries)
+        if (entry.key is String &&
+            entry.key.toString().isNotEmpty &&
+            entry.value is num &&
+            (entry.value! as num).toInt() >= 0)
+          entry.key.toString().toLowerCase(): (entry.value! as num).toInt(),
+    };
+  } on Object catch (error) {
+    debugPrint('[torrent] seed starts read failed: $error');
+    return <String, int>{};
+  }
+}
+
+void _writeSeedStarts(String resumeDir, Map<String, int> starts) {
+  try {
+    final Directory dir = Directory(resumeDir);
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final String target = p.join(resumeDir, _kSeedStartsFileName);
+    final File tmp = File('$target.tmp');
+    final List<String> ids = starts.keys.toList()..sort();
+    tmp.writeAsStringSync(
+      jsonEncode(<String, int>{
+        for (final String id in ids) id.toLowerCase(): starts[id]!,
+      }),
+      flush: true,
+    );
+    tmp.renameSync(target);
+  } on Object catch (error) {
+    debugPrint('[torrent] seed starts write failed: $error');
+  }
 }
 
 /// TODO-2482：用户暂停集落盘文件名（放 resume 目录旁，跟数据根走 ——
