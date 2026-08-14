@@ -24,6 +24,13 @@
 
 int ANGLESurfaceManager::instance_count_ = 0;
 
+ID3D11Device* ANGLESurfaceManager::shared_d3d_11_device_ = nullptr;
+ID3D11DeviceContext* ANGLESurfaceManager::shared_d3d_11_device_context_ =
+    nullptr;
+EGLDeviceEXT ANGLESurfaceManager::shared_egl_device_ = EGL_NO_DEVICE_EXT;
+EGLDisplay ANGLESurfaceManager::shared_display_ = EGL_NO_DISPLAY;
+bool ANGLESurfaceManager::shared_display_uses_our_device_ = false;
+
 ANGLESurfaceManager::ANGLESurfaceManager(int32_t width, int32_t height)
     : width_(width), height_(height) {
   mutex_ = ::CreateMutex(NULL, FALSE, NULL);
@@ -111,19 +118,17 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
       eglDestroySurface(display_, surface_);
       surface_ = EGL_NO_SURFACE;
     }
+    // HIBIKI FORK: the |EGLDisplay| & the Direct3D device are process wide now
+    // (see |shared_d3d_11_device_|), so only the last instance may tear them
+    // down. |d3d_11_device_| / |d3d_11_device_context_| are non-owning aliases
+    // and are merely forgotten here; upstream |Release|d them per instance,
+    // which would now free the device out from under the surviving instances.
     if (instance_count_ == 1) {
-      eglTerminate(display_);
+      ReleaseSharedResources();
     }
     display_ = EGL_NO_DISPLAY;
-    // Release D3D device & context if the instance is being destroyed.
-    if (d3d_11_device_context_) {
-      d3d_11_device_context_->Release();
-      d3d_11_device_context_ = nullptr;
-    }
-    if (d3d_11_device_) {
-      d3d_11_device_->Release();
-      d3d_11_device_ = nullptr;
-    }
+    d3d_11_device_context_ = nullptr;
+    d3d_11_device_ = nullptr;
   } else {
     // Clear context & destroy existing |surface_|.
     eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, context_);
@@ -143,52 +148,99 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
   }
 }
 
-bool ANGLESurfaceManager::CreateD3DTexture() {
-  if (d3d_11_device_ == nullptr) {
-    // NOTE: Not enabling Feature Level 12. It crashes directly on Windows 7.
-    const auto feature_levels = {
-        D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
-        D3D_FEATURE_LEVEL_9_3,
-    };
+bool ANGLESurfaceManager::EnsureSharedD3D11Device() {
+  if (shared_d3d_11_device_ != nullptr) {
+    return true;
+  }
 
-    IDXGIAdapter* adapter = nullptr;
-    D3D_DRIVER_TYPE driver_type = D3D_DRIVER_TYPE_UNKNOWN;
+  // NOTE: Not enabling Feature Level 12. It crashes directly on Windows 7.
+  const D3D_FEATURE_LEVEL feature_levels[] = {
+      D3D_FEATURE_LEVEL_11_0,
+      D3D_FEATURE_LEVEL_10_1,
+      D3D_FEATURE_LEVEL_10_0,
+      D3D_FEATURE_LEVEL_9_3,
+  };
 
-    // NOTE: Automatically selecting adapter on Windows 10 RTM or greater.
-    if (Utils::IsWindows10RTMOrGreater()) {
-      adapter = NULL;
-      driver_type = D3D_DRIVER_TYPE_HARDWARE;
-    } else {
-      IDXGIFactory* dxgi = nullptr;
-      ::CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&dxgi);
-      // As far as my experience goes, this is the safest approach. Passing NULL
-      // (so-called default) seems to cause issues on Windows 7 or maybe some
-      // older graphics drivers. First adapter is the default.
-      // D3D_DRIVER_TYPE_UNKNOWN| must be passed with manual adapter selection.
-      dxgi->EnumAdapters(0, &adapter);
-      dxgi->Release();
+  IDXGIAdapter* adapter = nullptr;
+  D3D_DRIVER_TYPE driver_type = D3D_DRIVER_TYPE_UNKNOWN;
+
+  // NOTE: Automatically selecting adapter on Windows 10 RTM or greater.
+  if (Utils::IsWindows10RTMOrGreater()) {
+    adapter = NULL;
+    driver_type = D3D_DRIVER_TYPE_HARDWARE;
+  } else {
+    IDXGIFactory* dxgi = nullptr;
+    ::CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&dxgi);
+    // As far as my experience goes, this is the safest approach. Passing NULL
+    // (so-called default) seems to cause issues on Windows 7 or maybe some
+    // older graphics drivers. First adapter is the default.
+    // D3D_DRIVER_TYPE_UNKNOWN| must be passed with manual adapter selection.
+    dxgi->EnumAdapters(0, &adapter);
+    dxgi->Release();
+  }
+
+  // HIBIKI FORK: |D3D11_CREATE_DEVICE_VIDEO_SUPPORT| is what makes this device
+  // usable as libmpv's hardware decoding device: FFmpeg's D3D11VA device init
+  // does a QueryInterface for |ID3D11VideoDevice|, which drivers may refuse on
+  // a device created without the flag (measured: E_NOINTERFACE on WARP).
+  // |D3D11_CREATE_DEVICE_BGRA_SUPPORT| is what ANGLE wants. Both are dropped
+  // one by one if the driver rejects them, so a machine that cannot do either
+  // still gets exactly the device upstream would have created.
+  const UINT device_flag_candidates[] = {
+      D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+      D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+      0,
+  };
+  HRESULT hr = E_FAIL;
+  for (UINT device_flags : device_flag_candidates) {
+    hr = ::D3D11CreateDevice(adapter, driver_type, 0, device_flags,
+                             feature_levels,
+                             ARRAYSIZE(feature_levels),
+                             D3D11_SDK_VERSION, &shared_d3d_11_device_, 0,
+                             &shared_d3d_11_device_context_);
+    if (SUCCEEDED(hr)) {
+      std::cout << "media_kit: ANGLESurfaceManager: Direct3D device flags: 0x"
+                << std::hex << device_flags << std::dec << std::endl;
+      break;
     }
+  }
+  if (adapter != nullptr) {
+    adapter->Release();
+  }
+  CHECK_HRESULT("D3D11CreateDevice");
 
-    auto hr = ::D3D11CreateDevice(
-        adapter, driver_type, 0, 0, feature_levels.begin(),
-        static_cast<UINT>(feature_levels.size()), D3D11_SDK_VERSION,
-        &d3d_11_device_, 0, &d3d_11_device_context_);
-    CHECK_HRESULT("D3D11CreateDevice");
+  // The device is touched by libmpv's decoder threads, media_kit's render
+  // thread pool & Flutter's raster thread at the same time. libmpv turns this
+  // on itself once its interop adopts the device, but ANGLE and the Flutter
+  // texture already share it before that happens.
+  Microsoft::WRL::ComPtr<ID3D10Multithread> multithread;
+  if (SUCCEEDED(shared_d3d_11_device_->QueryInterface(
+          __uuidof(ID3D10Multithread), (void**)&multithread)) &&
+      multithread != nullptr) {
+    multithread->SetMultithreadProtected(TRUE);
   }
 
   Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device = nullptr;
-  auto dxgi_device_success = d3d_11_device_->QueryInterface(
+  auto dxgi_device_success = shared_d3d_11_device_->QueryInterface(
       __uuidof(IDXGIDevice), (void**)&dxgi_device);
   if (SUCCEEDED(dxgi_device_success) && dxgi_device != nullptr) {
     dxgi_device->SetGPUThreadPriority(5);  // Must be in interval [-7, 7].
   }
 
-  auto level = d3d_11_device_->GetFeatureLevel();
+  auto level = shared_d3d_11_device_->GetFeatureLevel();
   std::cout << "media_kit: ANGLESurfaceManager: Direct3D Feature Level: "
             << (((unsigned)level) >> 12) << "_"
             << ((((unsigned)level) >> 8) & 0xf) << std::endl;
+  return true;
+}
+
+bool ANGLESurfaceManager::CreateD3DTexture() {
+  if (!EnsureSharedD3D11Device()) {
+    return false;
+  }
+  d3d_11_device_ = shared_d3d_11_device_;
+  d3d_11_device_context_ = shared_d3d_11_device_context_;
+
   auto d3d11_texture2D_desc = D3D11_TEXTURE2D_DESC{0};
   d3d11_texture2D_desc.Width = width_;
   d3d11_texture2D_desc.Height = height_;
@@ -236,36 +288,109 @@ bool ANGLESurfaceManager::CreateD3DTexture() {
   return true;
 }
 
-bool ANGLESurfaceManager::CreateEGLDisplay() {
-  if (display_ == EGL_NO_DISPLAY) {
-    auto eglGetPlatformDisplayEXT =
-        reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-            eglGetProcAddress("eglGetPlatformDisplayEXT"));
-    if (eglGetPlatformDisplayEXT) {
-      display_ = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-                                          EGL_DEFAULT_DISPLAY,
-                                          kD3D11DisplayAttributes);
-      if (eglInitialize(display_, 0, 0) == EGL_FALSE) {
-        display_ = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-                                            EGL_DEFAULT_DISPLAY,
-                                            kD3D11_9_3DisplayAttributes);
-        if (eglInitialize(display_, 0, 0) == EGL_FALSE) {
-          display_ = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-                                              EGL_DEFAULT_DISPLAY,
-                                              kD3D9DisplayAttributes);
-          if (eglInitialize(display_, 0, 0) == EGL_FALSE) {
-            display_ = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-                                                EGL_DEFAULT_DISPLAY,
-                                                kWrapDisplayAttributes);
-            if (eglInitialize(display_, 0, 0) == EGL_FALSE) {
-              FAIL("eglGetPlatformDisplayEXT");
-            }
-          }
+bool ANGLESurfaceManager::EnsureSharedEGLDisplay() {
+  if (shared_display_ != EGL_NO_DISPLAY) {
+    return true;
+  }
+
+  auto eglGetPlatformDisplayEXT =
+      reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+          eglGetProcAddress("eglGetPlatformDisplayEXT"));
+  if (!eglGetPlatformDisplayEXT) {
+    FAIL("eglGetProcAddress");
+  }
+
+  // HIBIKI FORK: preferred path - run ANGLE on the device we created instead of
+  // letting it create a hidden one. libmpv's `d3d11-egl` interop reads its
+  // decoding device back out of the display
+  // (`EGL_DEVICE_EXT` -> `EGL_D3D11_DEVICE_ANGLE`), so this is the only way to
+  // decide which device decodes: with ANGLE's hidden device, `d3d11va` falls
+  // back to `d3d11va-copy`, i.e. every frame is read back to system memory and
+  // re-uploaded. This mirrors what mpv's own `--gpu-context=angle` does.
+  auto eglCreateDeviceANGLE = reinterpret_cast<PFNEGLCREATEDEVICEANGLEPROC>(
+      eglGetProcAddress("eglCreateDeviceANGLE"));
+  if (shared_d3d_11_device_ != nullptr && eglCreateDeviceANGLE != nullptr) {
+    shared_egl_device_ = eglCreateDeviceANGLE(EGL_D3D11_DEVICE_ANGLE,
+                                              shared_d3d_11_device_, nullptr);
+    if (shared_egl_device_ != EGL_NO_DEVICE_EXT) {
+      auto display = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT,
+                                              shared_egl_device_, nullptr);
+      if (display != EGL_NO_DISPLAY && eglInitialize(display, 0, 0)) {
+        shared_display_ = display;
+        shared_display_uses_our_device_ = true;
+        std::cout << "media_kit: ANGLESurfaceManager: ANGLE bound to the "
+                     "shared Direct3D 11 device (libmpv d3d11-egl zero-copy "
+                     "interop available)."
+                  << std::endl;
+        return true;
+      }
+      auto eglReleaseDeviceANGLE =
+          reinterpret_cast<PFNEGLRELEASEDEVICEANGLEPROC>(
+              eglGetProcAddress("eglReleaseDeviceANGLE"));
+      if (eglReleaseDeviceANGLE) {
+        eglReleaseDeviceANGLE(shared_egl_device_);
+      }
+      shared_egl_device_ = EGL_NO_DEVICE_EXT;
+    }
+    std::cout << "media_kit: ANGLESurfaceManager: Could not bind ANGLE to the "
+                 "shared Direct3D 11 device; falling back to ANGLE's own "
+                 "device (hardware decoding will copy through system memory)."
+              << std::endl;
+  }
+
+  shared_display_ = eglGetPlatformDisplayEXT(
+      EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, kD3D11DisplayAttributes);
+  if (eglInitialize(shared_display_, 0, 0) == EGL_FALSE) {
+    shared_display_ =
+        eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY,
+                                 kD3D11_9_3DisplayAttributes);
+    if (eglInitialize(shared_display_, 0, 0) == EGL_FALSE) {
+      shared_display_ = eglGetPlatformDisplayEXT(
+          EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, kD3D9DisplayAttributes);
+      if (eglInitialize(shared_display_, 0, 0) == EGL_FALSE) {
+        shared_display_ =
+            eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
+                                     EGL_DEFAULT_DISPLAY, kWrapDisplayAttributes);
+        if (eglInitialize(shared_display_, 0, 0) == EGL_FALSE) {
+          shared_display_ = EGL_NO_DISPLAY;
+          FAIL("eglGetPlatformDisplayEXT");
         }
       }
-    } else {
-      FAIL("eglGetProcAddress");
     }
+  }
+  return true;
+}
+
+void ANGLESurfaceManager::ReleaseSharedResources() {
+  if (shared_display_ != EGL_NO_DISPLAY) {
+    eglTerminate(shared_display_);
+    shared_display_ = EGL_NO_DISPLAY;
+  }
+  if (shared_egl_device_ != EGL_NO_DEVICE_EXT) {
+    auto eglReleaseDeviceANGLE = reinterpret_cast<PFNEGLRELEASEDEVICEANGLEPROC>(
+        eglGetProcAddress("eglReleaseDeviceANGLE"));
+    if (eglReleaseDeviceANGLE) {
+      eglReleaseDeviceANGLE(shared_egl_device_);
+    }
+    shared_egl_device_ = EGL_NO_DEVICE_EXT;
+  }
+  shared_display_uses_our_device_ = false;
+  if (shared_d3d_11_device_context_ != nullptr) {
+    shared_d3d_11_device_context_->Release();
+    shared_d3d_11_device_context_ = nullptr;
+  }
+  if (shared_d3d_11_device_ != nullptr) {
+    shared_d3d_11_device_->Release();
+    shared_d3d_11_device_ = nullptr;
+  }
+}
+
+bool ANGLESurfaceManager::CreateEGLDisplay() {
+  if (display_ == EGL_NO_DISPLAY) {
+    if (!EnsureSharedEGLDisplay()) {
+      return false;
+    }
+    display_ = shared_display_;
   }
   return true;
 }
