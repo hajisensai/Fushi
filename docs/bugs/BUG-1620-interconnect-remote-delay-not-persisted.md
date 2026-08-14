@@ -1,0 +1,17 @@
+## BUG-1620 · 互联远端视频字幕偏移不持久化（退出重进归 0）
+- **报告**：2026-08-14（用户：Fushi 互联播放时调过的字幕偏移，退出再进来又变成 0）
+- **真实性**：✅ 真 bug。根因两处：
+  - 写入侧：`fushi/lib/src/pages/implementations/video_fushi_page.dart` `_setDelayMs`——远端播放（`VideoFushiPage.remote` 构造器把 `playlistCollectionId` 固定 null）落进 `repo.updateDelayMs(远端uid)`，而远端视频在 client **没有 VideoBooks 行**，这是一次**静默 0 行 UPDATE**，调轴写在空气里。
+  - 读取侧：`_initRemote` / `_loadRemoteEpisode` 起播直接 `_delayMs = info.delayMs`（BUG-996 的 host→client 单向下发），host 值通常 0 → 重进归 0。
+  - 对比：播放断点（position）有「本地 prefs + LWW + 上报 host」三件套（TODO-559/653/816/885），调轴完全没有对应通道。
+- **[x] ① 已修复** — 逐条镜像断点范式（本分支提交）：
+  - 键空间：`video_remote_delay_<uid>` / `video_remote_delay_at_<uid>`（复用 `PositionPrefKeys`，`fushi_library_host_service.dart`），LWW 用专用纯函数 `resolveDelayLww`（**严格较新时间戳者胜、平局保守持有侧胜**——position 的「平局取较大位置」对可负调轴无意义）。
+  - client：`_setDelayMs` 远端分支按稳定远端 uid（合集连播 = 当前成员 id，与 `_remotePositionKeyForIndex` 同构）落 prefs + best-effort `putRemoteVideoDelay` 上报 host；起播三处改 `_resolveRemoteInitialDelayMs`（host 下发值@`delayUpdatedAtMs` vs 本地 prefs 的 LWW）。**对旧 host（无端点）本地 prefs 单独就能修好症状。**
+  - host：新端点 `GET/PUT /api/library/videos/<id>/delay`（`fushi_sync_server.dart`，与 `/position` 分支对称；Basic 鉴权中间件覆盖、不在 /stream 豁免名单）。能力接口 `VideoDelayHost`（`is` 探测，旧 host / 测试 fake 零破坏，`VideoDeletionHost` 同范式）。`putVideoDelay`：存在性闸门（无该 VideoBooks 行 no-op，防任意 id 写脏 prefs）+ clamp ±600000ms + **时间戳上限 clamp 到 now+5min**（防未来戳永久锁死 LWW）+ 胜者写穿 `VideoBooks.delayMs`（host 本机播放跟随）。
+  - 清单：`listVideos` 下发 `delayMs`（带戳 prefs 与旧 row.delayMs@0 的 LWW 胜者）+ 新字段 `delayUpdatedAtMs`（旧 client 忽略，向后兼容）。
+  - host 本机调轴镜像盖戳（断点 TODO-816 同范式）：`_setDelayMs` 本地分支同时写 delay prefs 对——否则对端上报过一次后，本机后续调轴（无戳恒 0）永远输给旧戳。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/video_delay_sync_test.dart`（resolveDelayLww 语义 + 键公式冻结 + RemoteVideoInfo delayUpdatedAtMs json 往返/向后兼容）；`fushi/test/sync/fushi_sync_server_video_delay_test.dart`（端点：GET/PUT 往返、LWW 覆盖/拒绝、404 存在性闸门、无能力 host 404、未鉴权 401、clamp）。
+- **备注**：已知边界（有意保守，不在本轮扩散）：
+  - host 端**合集系列级** `MediaCollections.subtitleDelayMs` 仍不进清单/端点（既有缺口，BUG-996 起就只发 row.delayMs）；合集内 host 本机调轴只给当前集盖戳，其它成员对端回退清单值。
+  - 副字幕独立调轴（TODO-2837）远端恒「跟随主字幕」，未入同步通道。
+  - 全量 sweep（sync_orchestrator TODO-816）未加 delay 键；调轴在播放中上报 + 起播 LWW 已闭环，离线期调轴待下次在线播放该视频时不重传（可后续跟进）。

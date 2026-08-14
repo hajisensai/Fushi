@@ -199,6 +199,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'media_source_secret_',
   'src:',
   'video_danmaku_episode/',
+  // 视频远端断点/字幕调轴三件套（PositionPrefKeys，fushi_library_host_service.dart）：
+  // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，LWW 跨设备同步用。
+  'video_remote_delay_',
+  'video_remote_delay_at_',
+  'video_remote_position_',
+  'video_remote_position_at_',
 ];
 
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。

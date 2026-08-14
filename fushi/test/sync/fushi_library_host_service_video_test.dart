@@ -194,6 +194,27 @@ void main() {
       expect(RemoteVideoInfo.fromJson(zero.toJson()).delayMs, 0);
     });
 
+    test('BUG-1620: 带戳 delay prefs 胜过旧 row.delayMs，清单带 delayUpdatedAtMs',
+        () async {
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/delayed2',
+        title: 'Delayed2',
+        videoPath: '/tmp/delayed2.mp4',
+        delayMs: const Value(-1500),
+      ));
+      // client 上报过带戳调轴（prefs 通道）→ 清单应下发 prefs 胜者而非旧行值。
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      await svc.putVideoDelay('video/delayed2', 2000, 1700000000000);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      expect(list.single.delayMs, 2000, reason: '带戳 prefs 应胜过旧 row 值');
+      expect(list.single.delayUpdatedAtMs, 1700000000000,
+          reason: '清单必须带戳，client 才能做 LWW 决议');
+      // json 向后兼容：无戳时不写 delayUpdatedAtMs 键。
+      const RemoteVideoInfo zero = RemoteVideoInfo(id: 'x', title: 'X');
+      expect(zero.toJson().containsKey('delayUpdatedAtMs'), isFalse);
+      expect(RemoteVideoInfo.fromJson(zero.toJson()).delayUpdatedAtMs, 0);
+    });
+
     test('toJson/fromJson 往返一致', () {
       const RemoteVideoInfo info = RemoteVideoInfo(
         id: 'video/test',
@@ -234,6 +255,82 @@ void main() {
   });
 
   // TODO-885 remote episode list (four-layer wiring).
+  // ── BUG-1620 字幕调轴跨设备同步（getVideoDelay / putVideoDelay）────────────────
+
+  group('BUG-1620 video delay host sync', () {
+    const String uid = 'video/delay-sync';
+
+    Future<void> insertVideo({int delayMs = 0}) => db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: 'Delay Sync',
+            videoPath: '/tmp/delay-sync.mp4',
+            delayMs: Value(delayMs),
+          ),
+        );
+
+    test('无带戳 prefs 时回退旧 row.delayMs（戳 0）；未知 id 返回 0/0', () async {
+      await insertVideo(delayMs: -800);
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final ({int delayMs, int updatedAtMs}) d = await svc.getVideoDelay(uid);
+      expect(d.delayMs, -800, reason: '旧数据（无 prefs）行为与此前直读 row 一致');
+      expect(d.updatedAtMs, 0);
+      final ({int delayMs, int updatedAtMs}) missing =
+          await svc.getVideoDelay('video/none');
+      expect(missing.delayMs, 0);
+      expect(missing.updatedAtMs, 0);
+    });
+
+    test('putVideoDelay 落 prefs + 写穿 row；严格较新者胜', () async {
+      await insertVideo();
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      await svc.putVideoDelay(uid, -1500, 1700000000000);
+      ({int delayMs, int updatedAtMs}) d = await svc.getVideoDelay(uid);
+      expect(d.delayMs, -1500);
+      expect(d.updatedAtMs, 1700000000000);
+      // 写穿行值：host 本机播放（读 row.delayMs）立即跟随。
+      expect((await db.getVideoBookByBookUid(uid))!.delayMs, -1500);
+      // 滞后设备旧戳不得回退。
+      await svc.putVideoDelay(uid, 999, 1699999990000);
+      d = await svc.getVideoDelay(uid);
+      expect(d.delayMs, -1500, reason: '旧时间戳不应回退新调轴');
+      expect((await db.getVideoBookByBookUid(uid))!.delayMs, -1500);
+    });
+
+    test('putVideoDelay 未知 id no-op（不写脏 prefs）', () async {
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      await svc.putVideoDelay('video/ghost', 1234, 1700000000000);
+      expect(
+          await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/ghost'), 0),
+          0,
+          reason: '存在性闸门：任意 id 上报不得写出孤儿 prefs');
+      expect(
+          await db.getPrefTyped<int>(
+              videoRemoteDelayAtPrefKey('video/ghost'), 0),
+          0);
+    });
+
+    test('putVideoDelay clamp ±600000；未来时间戳被上限截断', () async {
+      await insertVideo();
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final int farFuture =
+          DateTime.now().millisecondsSinceEpoch + 10 * 24 * 3600 * 1000;
+      await svc.putVideoDelay(uid, -9999999, farFuture);
+      final ({int delayMs, int updatedAtMs}) d = await svc.getVideoDelay(uid);
+      expect(d.delayMs, -600000, reason: '越界调轴必须 clamp（±10 分钟）');
+      expect(d.updatedAtMs,
+          lessThan(DateTime.now().millisecondsSinceEpoch + 6 * 60 * 1000),
+          reason: '未来戳必须截到 now+5min 内，否则 LWW 被永久锁死');
+      // 截断后的戳仍然「较新」，正常设备随后的调轴还能覆盖。
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      // 用比截断戳更新的 now+5min 边界再写一次，应可覆盖。
+      final int newer = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
+      await svc.putVideoDelay(uid, 777, newer);
+      expect((await svc.getVideoDelay(uid)).delayMs, 777,
+          reason: '截断语义不得把正常设备永远锁在门外');
+    });
+  });
+
   group('TODO-885 remote episodes', () {
     test('playlistJson rows map to episodes (index+title, never host path)',
         () async {

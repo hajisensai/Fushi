@@ -137,7 +137,11 @@ Future<bool> _defaultFushiProbe(String url, String token) async {
 /// standalone WebDAV config.
 class InterconnectSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
-    implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
+    implements
+        RemoteBookClient,
+        RemoteVideoClient,
+        RemoteVideoDelaySync,
+        RemoteCoverFetcher {
   InterconnectSyncBackend._({FushiProbe? probe})
       : _probe = probe ?? _defaultFushiProbe;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
@@ -1674,6 +1678,54 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
+  }
+
+  /// 读 host 端视频 [id] 的字幕调轴（[RemoteVideoDelaySync]）。host 返回 404
+  /// （旧 host 无端点 / 视频不存在）或网络异常时由调用方兜底——这里对 404 返回
+  /// (0, 0)，与 [remoteVideoPosition] 同款降级。
+  @override
+  Future<({int delayMs, int updatedAtMs})> remoteVideoDelay(String id) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/delay',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return (delayMs: 0, updatedAtMs: 0);
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/delay');
+    final String body = await _readBodyBounded(res);
+    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    return (
+      delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
+      updatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 向 host 上报视频 [id] 的字幕调轴（[RemoteVideoDelaySync]）。host 端「严格较新
+  /// 时间戳者胜」决定覆盖；旧 host 无端点 → 404 经 checkStatus 抛，调用方 best-effort
+  /// 捕获（本地 prefs 已持久化）。
+  @override
+  Future<void> putRemoteVideoDelay(
+    String id,
+    int delayMs,
+    int updatedAtMs,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/delay',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(<String, Object?>{
+      'delayMs': delayMs,
+      'delayUpdatedAtMs': updatedAtMs,
+    })));
+    final HttpClientResponse res = await _sendBounded(req);
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/delay');
   }
 
   static String _encodeVideoId(String id) =>

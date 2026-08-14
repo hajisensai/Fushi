@@ -1969,6 +1969,48 @@ class FushiSyncServer {
       }
     }
 
+    // GET/PUT /api/library/videos/<id>/delay — 字幕调轴跨设备同步（互联远端调轴不
+    // 持久化 bug；与 /position 分支对称）。GET 拉 host 生效值；PUT 上报本端调轴
+    // （host 侧「严格较新时间戳者胜」+ clamp + 存在性闸门，见 [VideoDelayHost]）。
+    // 老 host 无此分支 → 404，client 上报 best-effort 吞掉即可（本地 prefs 已持久化）。
+    final String? delayId = _extractVideoId(reqPath, 'delay');
+    if (delayId != null) {
+      // 显式 `as`：[VideoDelayHost] 不是 [FushiLibraryHostService] 的子类型，Dart
+      // 不做交集提升（与 [VideoDeletionHost] 的探测写法一致）。
+      if (svc is! VideoDelayHost) {
+        return shelf.Response.notFound('Video delay not supported');
+      }
+      final VideoDelayHost delayHost = svc as VideoDelayHost;
+      // 存在性闸门（一次 DB 单行查询）：防任意 id 写脏 prefs / 枚举探测。
+      if (!await svc.videoExists(delayId)) {
+        return shelf.Response.notFound('Video not found');
+      }
+      switch (method) {
+        case 'GET':
+          final ({int delayMs, int updatedAtMs}) d =
+              await delayHost.getVideoDelay(delayId);
+          return _jsonResponse(<String, dynamic>{
+            'delayMs': d.delayMs,
+            'delayUpdatedAtMs': d.updatedAtMs,
+          });
+        case 'PUT':
+          final String body = await request.readAsString();
+          Map<String, dynamic> json;
+          try {
+            json = jsonDecode(body) as Map<String, dynamic>;
+          } catch (_) {
+            return shelf.Response(400, body: 'Invalid JSON');
+          }
+          final int delayMs = (json['delayMs'] as num?)?.toInt() ?? 0;
+          final int updatedAtMs =
+              (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0;
+          await delayHost.putVideoDelay(delayId, delayMs, updatedAtMs);
+          return shelf.Response(200);
+        default:
+          return shelf.Response(405);
+      }
+    }
+
     // GET /api/library/videos/<id>/clipaudio?startMs=&endMs=&episode=&audioStreamIndex=
     //     &audioStreamCount=&ac=&bitrate= — BUG-1004：host 端本地裁 mining 句子音频段并回传。
     // 需 Basic 鉴权（中间件已处理，clipaudio 不在 /stream 豁免名单）。client ffmpeg 打不开

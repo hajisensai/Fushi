@@ -58,6 +58,7 @@ class AppModelLibraryHostService
         FushiLibraryHostService,
         DeletionTombstoneHost,
         VideoDeletionHost,
+        VideoDelayHost,
         InterconnectServiceConfigHost {
   AppModelLibraryHostService({
     required FushiDatabase db,
@@ -1127,6 +1128,14 @@ class AppModelLibraryHostService
     // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
     // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
     // 已在手、prefs 已批量预取，不再逐行发查询。
+    final ({int delayMs, int updatedAtMs}) delay = resolveDelayLww(
+      aDelayMs: row.delayMs,
+      aUpdatedAtMs: 0,
+      bDelayMs: PrefCodec.decode<int>(
+          prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '', 0),
+      bUpdatedAtMs: PrefCodec.decode<int>(
+          prefs[videoRemoteDelayAtPrefKey(row.bookUid)] ?? '', 0),
+    );
     final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
       localPositionMs: PrefCodec.decode<int>(
           prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '', 0),
@@ -1153,7 +1162,10 @@ class AppModelLibraryHostService
       positionMs: progress.positionMs,
       positionUpdatedAtMs: progress.updatedAtMs,
       // BUG-996：把 host 的字幕时序偏移下发，供远端播放跟随（设备无关的纯时序）。
-      delayMs: row.delayMs,
+      // 语义与 [getVideoDelay] 完全一致：带戳 prefs 与旧 row.delayMs（戳 0）取
+      // 严格较新者——prefs 已批量预取，不逐行发查询。
+      delayMs: delay.delayMs,
+      delayUpdatedAtMs: delay.updatedAtMs,
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
@@ -1354,6 +1366,57 @@ class AppModelLibraryHostService
     await _db.setPrefTyped<int>(
         videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
         winner.updatedAtMs);
+  }
+
+  /// 读 host 端视频 [id] 的字幕调轴（[VideoDelayHost]）。
+  ///
+  /// 带戳 prefs（client 上报 / host 本机调轴写入，见 video_fushi_page `_setDelayMs`
+  /// 的镜像盖戳）与旧 `VideoBooks.delayMs`（无戳记 0）经 [resolveDelayLww] 取胜者：
+  /// 旧数据无 prefs 时行为与此前「清单直读 row.delayMs」逐字节一致（向后兼容）。
+  @override
+  Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id) async {
+    final int prefsDelay =
+        await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(id), 0);
+    final int prefsAt =
+        await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(id), 0);
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    return resolveDelayLww(
+      aDelayMs: row?.delayMs ?? 0,
+      aUpdatedAtMs: 0,
+      bDelayMs: prefsDelay,
+      bUpdatedAtMs: prefsAt,
+    );
+  }
+
+  /// 把 client 上报的视频 [id] 字幕调轴写入 host（[VideoDelayHost]）。
+  ///
+  /// 存在性闸门：host 无该 id 的 VideoBooks 行 → no-op（防任意 id 写脏 prefs，与
+  /// [putVideoPosition] 同语义）。越界 clamp ±[kVideoSubtitleDelayLimitMs]；时间戳
+  /// 上限 clamp 到 host 当前时刻 + 5 分钟时钟偏差余量——未来戳会永久锁死后续所有
+  /// 端的正常覆盖（LWW 严格较新者胜），恶意/坏钟 client 不该拿到这个能力。
+  /// 胜者同时写穿 `VideoBooks.delayMs`，使 host 本机播放该视频立即跟随。
+  @override
+  Future<void> putVideoDelay(String id, int delayMs, int updatedAtMs) async {
+    if (await _db.getVideoBookByBookUid(id) == null) return;
+    final int clamped =
+        delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
+    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
+    final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
+    final ({int delayMs, int updatedAtMs}) current = await getVideoDelay(id);
+    final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
+      aDelayMs: current.delayMs,
+      aUpdatedAtMs: current.updatedAtMs,
+      bDelayMs: clamped,
+      bUpdatedAtMs: cappedAt,
+    );
+    if (winner.updatedAtMs == current.updatedAtMs &&
+        winner.delayMs == current.delayMs) {
+      return; // host 已存更新或相等，no-op。
+    }
+    await _db.setPrefTyped<int>(videoRemoteDelayPrefKey(id), winner.delayMs);
+    await _db.setPrefTyped<int>(
+        videoRemoteDelayAtPrefKey(id), winner.updatedAtMs);
+    await _db.updateVideoBookDelayMs(id, winner.delayMs);
   }
 
   /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（一次 DB 查询）。

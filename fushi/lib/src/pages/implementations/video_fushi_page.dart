@@ -2150,7 +2150,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _currentAudioTrackId = null;
     // BUG-996：远端播放跟随 host 下发的字幕时序偏移（此前恒 0，字幕调轴不同步）。
     // 通道已就绪——_applyLoad 里 controller.setDelayMs(_delayMs) 会应用它。
-    _delayMs = info.delayMs;
+    // 互联远端调轴不持久化 bug：host 值与本地 prefs 经 LWW 取严格较新者——本机调过
+    // 的轴退出重进不再被 host 的 0 覆盖。
+    _delayMs = _resolveRemoteInitialDelayMs(info, widget.bookUid);
     // TODO-2837：远端无副字幕流，副轨独立调轴恒复位为「跟随主字幕」。
     _secondaryDelayMs = null;
     _playbackSpeed = _readPersistedSpeed();
@@ -2176,7 +2178,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];
-      _delayMs = _remoteMembers[startIndex].delayMs;
+      _delayMs = _resolveRemoteInitialDelayMs(
+          _remoteMembers[startIndex], _remoteMembers[startIndex].id);
       await _loadRemoteEpisode(
         startIndex,
         startIntent: EpisodeStartIntent.initialOpen,
@@ -2224,7 +2227,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       info = _remoteMembers[index.clamp(0, _remoteMembers.length - 1)];
       streamEpisodeIndex = 0;
       _activeRemoteMember = info;
-      _delayMs = info.delayMs;
+      _delayMs = _resolveRemoteInitialDelayMs(info, info.id);
     } else {
       info = _effectiveRemoteInfo!;
       streamEpisodeIndex = index;
@@ -2460,6 +2463,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int v =
         raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
     return v < 0 ? 0 : v;
+  }
+
+  /// 读本地持久化的远端视频 [uid] 字幕调轴（prefs，无记录返回 0）。与断点同款
+  /// per-uid prefs 范式（互联远端调轴不持久化 bug：远端无 VideoBooks 行，
+  /// `updateDelayMs` 是静默 0 行 UPDATE，调轴必须落 prefs 才能跨重启保留）。
+  int _readPersistedRemoteDelayMs(String uid) {
+    final Object? raw = appModel.prefsRepo
+        .getPref(videoRemoteDelayPrefKey(uid), defaultValue: 0);
+    return raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  /// 读 [_readPersistedRemoteDelayMs] 对应的本地「最后更新时间」（无则 0）。LWW 用。
+  int _readPersistedRemoteDelayAtMs(String uid) {
+    final Object? raw = appModel.prefsRepo
+        .getPref(videoRemoteDelayAtPrefKey(uid), defaultValue: 0);
+    final int v =
+        raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
+    return v < 0 ? 0 : v;
+  }
+
+  /// 远端视频起播字幕调轴：host 下发值（[info].delayMs@delayUpdatedAtMs）与本地
+  /// prefs 经 [resolveDelayLww]「严格较新者胜」。平局（两侧都无戳 = 本机从未调过、
+  /// host 也无带戳记录）跟随 host（保留 BUG-996 行为）；本机调过而 host 无新主张
+  /// 时本机值胜——这正是「退出重进归 0」的修复点。
+  int _resolveRemoteInitialDelayMs(RemoteVideoInfo info, String uid) {
+    final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
+      aDelayMs: info.delayMs,
+      aUpdatedAtMs: info.delayUpdatedAtMs,
+      bDelayMs: _readPersistedRemoteDelayMs(uid),
+      bUpdatedAtMs: _readPersistedRemoteDelayAtMs(uid),
+    );
+    return winner.delayMs
+        .clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
   }
 
   /// 远端视频开播位置（TODO-653/885）：在 host 真相（[info] 随清单带回的整书 positionMs，
@@ -5787,7 +5823,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 持久化到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示 + 左上角 OSD
   /// 即时反馈（BUG-373：与调速 [Icons.speed] 同范式，让快速设置面板外也看得到调整生效）。
   Future<void> _setDelayMs(int delayMs) async {
-    final int clamped = delayMs.clamp(-600000, 600000);
+    final int clamped =
+        delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
     if (clamped == _delayMs) return;
     _delayMs = clamped;
     _controller?.setDelayMs(clamped);
@@ -5799,14 +5836,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       icon: Icons.sync_outlined,
     );
     // 同系列调轴记忆（schema v52）：合集内调轴写系列级，全系列共享（换集/从书架重进
-    // 任一集都读到同一值）；单文件视频（无合集，含远端 collectionId==null）仍走
-    // per-book，行为与旧版一致。所有调轴入口（z/x 微调、asbplayer 对齐、面板滑条/
-    // 输入/自动对轴）都汇聚到此，写入分流一处覆盖全部。
-    final int? collectionId = widget.playlistCollectionId;
-    if (collectionId != null) {
-      await widget.repo.updateCollectionSubtitleDelayMs(collectionId, clamped);
+    // 任一集都读到同一值）；单文件视频（无合集）仍走 per-book，行为与旧版一致。所有
+    // 调轴入口（z/x 微调、asbplayer 对齐、面板滑条/输入/自动对轴）都汇聚到此，写入
+    // 分流一处覆盖全部。
+    //
+    // 互联远端调轴不持久化 bug 根因修复：远端播放（[_isRemote]）在 client 无
+    // VideoBooks 行，旧路径 `updateDelayMs(远端uid)` 是**静默 0 行 UPDATE**（调轴落
+    // 在空气里），重进又被 host 清单值覆盖归 0。改按稳定远端 uid 落 prefs（断点
+    // TODO-559/653 同款范式，跨重启保留）+ best-effort 上报 host（host 侧「严格较新
+    // 时间戳者胜」+ 写穿行值，使 host 本机与其它设备跟随；失败/旧 host 无端点只记
+    // 日志——本地 prefs 已写，不阻塞播放）。合集连播键 = 当前成员 id（与断点键
+    // [_remotePositionKeyForIndex] 同构，成员天然隔离）。
+    if (_isRemote) {
+      final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+      await appModel.prefsRepo.setPref(videoRemoteDelayPrefKey(uid), clamped);
+      await appModel.prefsRepo.setPref(videoRemoteDelayAtPrefKey(uid), nowMs);
+      // 经 Object? 中转促成类型提升：RemoteVideoDelaySync 不是 RemoteVideoClient
+      // 的子类型（能力接口），直接 is 判断不会提升接收者。
+      final Object? client = _effectiveRemoteClient;
+      if (client is RemoteVideoDelaySync) {
+        try {
+          await client.putRemoteVideoDelay(uid, clamped, nowMs);
+        } catch (e) {
+          debugPrint('[VideoFushiPage] remote delay upload failed: $e');
+        }
+      }
     } else {
-      await widget.repo.updateDelayMs(widget.bookUid, clamped);
+      final int? collectionId = widget.playlistCollectionId;
+      if (collectionId != null) {
+        await widget.repo
+            .updateCollectionSubtitleDelayMs(collectionId, clamped);
+      } else {
+        await widget.repo.updateDelayMs(widget.bookUid, clamped);
+      }
+      // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键空间，
+      // 使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过一次后，
+      // 本机后续调轴（col/row 无戳恒 0）永远输给旧戳、再也传不出去。合集内只给当前
+      // 集盖戳（系列级共享值仍由 col 承载，其它成员无戳时对端回退清单值）。
+      await appModel.prefsRepo
+          .setPref(videoRemoteDelayPrefKey(widget.bookUid), clamped);
+      await appModel.prefsRepo.setPref(
+          videoRemoteDelayAtPrefKey(widget.bookUid),
+          DateTime.now().millisecondsSinceEpoch);
     }
     if (mounted) setState(() {});
   }

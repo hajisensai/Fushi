@@ -750,6 +750,48 @@ String videoRemotePositionEpisodeAtPrefKey(String bookUid, int episodeIndex) =>
 String? videoUidFromRemotePositionPrefKey(String key) =>
     videoRemotePositionPrefKeys.idFromPositionKey(key);
 
+/// 视频字幕调轴（delayMs）跨设备三件套——键结构与断点三件套同构（复用
+/// [PositionPrefKeys]，值语义不同：断点是位置毫秒，这里是可负的调轴毫秒）。
+/// 前缀冻结：`video_remote_delay_`。
+///
+/// 为什么需要（互联远端调轴不持久化 bug）：断点有「本地 prefs + LWW + 上报 host」
+/// 三件套，而调轴此前只有 host→client 单向下发（BUG-996）——client 远端播放里调轴
+/// 写的是 `VideoBooks.delayMs` 的 UPDATE，但远端视频在 client 无行，静默 0 行写入；
+/// 重进又被 host 清单值覆盖归 0。本三件套补上 client 侧持久化与双向 LWW。
+const PositionPrefKeys videoRemoteDelayPrefKeys =
+    PositionPrefKeys('video_remote_delay_');
+
+/// 视频 [bookUid] 的字幕调轴 prefs key（值 = 调轴毫秒，可负）。client 远端播放与
+/// host 本机播放共用同一公式（与断点键空间同范式，TODO-816）。
+String videoRemoteDelayPrefKey(String bookUid) =>
+    videoRemoteDelayPrefKeys.positionKey(bookUid);
+
+/// [videoRemoteDelayPrefKey] 对应的「最后更新时间」prefs key（epoch 毫秒）。
+/// LWW 冲突解决用（见 [resolveDelayLww]）。
+String videoRemoteDelayAtPrefKey(String bookUid) =>
+    videoRemoteDelayPrefKeys.atKey(bookUid);
+
+/// 字幕调轴统一 clamp 界（±10 分钟，毫秒）。页面滑条 / host 端 PUT 收口共用，
+/// 防越界值经互联写进 DB/prefs。
+const int kVideoSubtitleDelayLimitMs = 600000;
+
+/// 字幕调轴跨设备冲突解决——「严格较新时间戳者胜」。纯函数。
+///
+/// 与 [resolvePositionLww] 分开的理由：位置的平局规则「取较大位置（看得更远者胜）」
+/// 对调轴没有意义（调轴可负、大小不代表新旧）。调轴的平局（含两侧都无时间戳的旧
+/// 数据）保守取 [aDelayMs] 侧——调用方把「平局时应保留的一侧」放 a：host 收 PUT 时
+/// a=已存值（仅严格更新才覆盖）；client 起播决议时 a=host 下发值（两侧都无戳 =
+/// 本机从未调过，跟随 host，保留 BUG-996 行为）。
+({int delayMs, int updatedAtMs}) resolveDelayLww({
+  required int aDelayMs,
+  required int aUpdatedAtMs,
+  required int bDelayMs,
+  required int bUpdatedAtMs,
+}) =>
+    bUpdatedAtMs > aUpdatedAtMs
+        ? (delayMs: bDelayMs, updatedAtMs: bUpdatedAtMs)
+        : (delayMs: aDelayMs, updatedAtMs: aUpdatedAtMs);
+
 /// 播放位置跨设备冲突解决——「取较新时间戳」last-write-wins（LWW）。
 ///
 /// 视频（TODO-653）与有声书（BUG-471）共用同一实现：历史上
@@ -950,6 +992,7 @@ class RemoteVideoInfo {
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
     this.delayMs = 0,
+    this.delayUpdatedAtMs = 0,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
@@ -1006,9 +1049,16 @@ class RemoteVideoInfo {
   /// 同范式。0 表示无记录。
   final int positionUpdatedAtMs;
 
-  /// host 端该视频的字幕时序偏移（`VideoBooks.delayMs`，毫秒，可负；BUG-996）。设备
-  /// 无关的纯时序设置，跨端语义一致 → 远端播放时应用，使桌面设的字幕调轴在手机跟随。
+  /// host 端该视频的字幕时序偏移（毫秒，可负；BUG-996）。设备无关的纯时序设置，
+  /// 跨端语义一致 → 远端播放时应用，使桌面设的字幕调轴在手机跟随。取值为 host 端
+  /// `video_remote_delay_` prefs（带戳，client 上报 / host 本机调轴写入）与旧
+  /// `VideoBooks.delayMs`（无戳记 0）经 [resolveDelayLww] 的胜者。
   final int delayMs;
+
+  /// [delayMs] 的最后更新时间（epoch 毫秒）。跨设备冲突解决「严格较新者胜」
+  /// （[resolveDelayLww]）。0 = 旧 host 未带 / 从未有人带戳调过轴（client 侧视为
+  /// 「host 无新主张」，本机带戳值即胜）。
+  final int delayUpdatedAtMs;
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
@@ -1031,6 +1081,7 @@ class RemoteVideoInfo {
         if (positionMs > 0) 'positionMs': positionMs,
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
         if (delayMs != 0) 'delayMs': delayMs,
+        if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
           'episodes': <Map<String, Object?>>[
@@ -1053,6 +1104,7 @@ class RemoteVideoInfo {
     int? positionMs,
     int? positionUpdatedAtMs,
     int? delayMs,
+    int? delayUpdatedAtMs,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
@@ -1070,6 +1122,7 @@ class RemoteVideoInfo {
         positionMs: positionMs ?? this.positionMs,
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
         delayMs: delayMs ?? this.delayMs,
+        delayUpdatedAtMs: delayUpdatedAtMs ?? this.delayUpdatedAtMs,
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
@@ -1100,6 +1153,7 @@ class RemoteVideoInfo {
       positionMs: _jsonInt(json['positionMs']) ?? 0,
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
       delayMs: _jsonInt(json['delayMs']) ?? 0,
+      delayUpdatedAtMs: _jsonInt(json['delayUpdatedAtMs']) ?? 0,
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),
@@ -1554,4 +1608,23 @@ abstract interface class VideoDeletionHost {
   ///
   /// 幂等：[id] 不存在时静默返回。[id] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteVideo(String id);
+}
+
+/// host 端「视频字幕调轴跨设备同步」的**可选**能力（互联远端调轴不持久化 bug）。
+///
+/// 与 [FushiLibraryHostService] 分开的理由同 [VideoDeletionHost]：主接口有十余个
+/// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩。
+///
+/// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/delay`
+/// 落 404；client 上报是 best-effort（失败只记日志），本地 prefs 已持久化，对旧
+/// host 优雅降级（Never break userspace）。
+abstract interface class VideoDelayHost {
+  /// 读 host 端视频 [id] 的字幕调轴。返回 (调轴毫秒（可负）, 更新时间毫秒)；
+  /// 无带戳记录时回退旧 `VideoBooks.delayMs`（时间戳 0），id 未知返回 (0, 0)。
+  Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id);
+
+  /// 把 client 上报的视频 [id] 字幕调轴写入 host。冲突解决「严格较新时间戳者胜」
+  /// （[resolveDelayLww]）；[delayMs] 越界 clamp 到 ±[kVideoSubtitleDelayLimitMs]；
+  /// host 库不存在该视频时 no-op（防任意 id 写脏 prefs，与断点同语义）。
+  Future<void> putVideoDelay(String id, int delayMs, int updatedAtMs);
 }

@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
-class _FakeLibraryService implements FushiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService, VideoDelayHost {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -89,6 +89,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<List<RemoteVideoInfo>> listVideos() async {
     final ({int positionMs, int updatedAtMs}) p =
         await getVideoPosition(videoId);
+    final ({int delayMs, int updatedAtMs}) d = await getVideoDelay(videoId);
     return <RemoteVideoInfo>[
       RemoteVideoInfo(
         id: videoId,
@@ -98,6 +99,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
         coverPath: coverFile.path,
         positionMs: p.positionMs,
         positionUpdatedAtMs: p.updatedAtMs,
+        delayMs: d.delayMs,
+        delayUpdatedAtMs: d.updatedAtMs,
       ),
     ];
   }
@@ -217,6 +220,27 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   final Map<String, ({int positionMs, int updatedAtMs})> videoPositions =
       <String, ({int positionMs, int updatedAtMs})>{};
+
+  // ── BUG-1620：字幕调轴跨设备同步（in-memory 镜像 host LWW 语义）──────────────
+
+  final Map<String, ({int delayMs, int updatedAtMs})> videoDelays =
+      <String, ({int delayMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id) async =>
+      videoDelays[id] ?? (delayMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putVideoDelay(String id, int delayMs, int updatedAtMs) async {
+    final ({int delayMs, int updatedAtMs}) current =
+        videoDelays[id] ?? (delayMs: 0, updatedAtMs: 0);
+    videoDelays[id] = resolveDelayLww(
+      aDelayMs: current.delayMs,
+      aUpdatedAtMs: current.updatedAtMs,
+      bDelayMs: delayMs,
+      bUpdatedAtMs: updatedAtMs,
+    );
+  }
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
@@ -478,6 +502,51 @@ void main() {
         await backend.remoteVideoPosition('video/does-not-exist');
     expect(read.positionMs, 0);
     expect(read.updatedAtMs, 0);
+  });
+
+  // ── BUG-1620：字幕调轴跨设备同步 client↔host 往返 ────────────────────────────
+
+  test('BUG-1620: putRemoteVideoDelay uploads then remoteVideoDelay reads back',
+      () async {
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    await backend.putRemoteVideoDelay(
+        _FakeLibraryService.videoId, -1500, 1700000000000);
+
+    final ({int delayMs, int updatedAtMs}) read =
+        await backend.remoteVideoDelay(_FakeLibraryService.videoId);
+    expect(read.delayMs, -1500, reason: '负调轴必须保真往返');
+    expect(read.updatedAtMs, 1700000000000);
+
+    // 调轴 + 戳也随清单条目带回（client 起播据此做 LWW 决议）。
+    final List<RemoteVideoInfo> list = await backend.listRemoteVideos();
+    expect(list.single.delayMs, -1500);
+    expect(list.single.delayUpdatedAtMs, 1700000000000);
+  });
+
+  test('BUG-1620: remoteVideoDelay unknown id returns 0/0 (host 404, no throw)',
+      () async {
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    final ({int delayMs, int updatedAtMs}) read =
+        await backend.remoteVideoDelay('video/does-not-exist');
+    expect(read.delayMs, 0);
+    expect(read.updatedAtMs, 0);
+  });
+
+  test(
+      'BUG-1620: putRemoteVideoDelay unknown id throws (404 → best-effort 捕获在调用方)',
+      () async {
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    await expectLater(
+      backend.putRemoteVideoDelay('video/does-not-exist', 100, 1700000000000),
+      throwsA(anything),
+      reason: '存在性闸门 404 应上抛，由播放页 best-effort 捕获（本地 prefs 已写）',
+    );
   });
 
   // ── TODO-1235（TODO-961 回归）：封面走互联同款钉扎客户端 ─────────────────────

@@ -17,7 +17,7 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 /// Fake 库服务：视频方法真实、其他方法存根。
 ///
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
-class _FakeLibraryService implements FushiLibraryHostService {
+class _FakeLibraryService implements FushiLibraryHostService, VideoDelayHost {
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
           {int limit = 100}) async =>
@@ -95,9 +95,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
-    // 镜像生产 _videoInfoFromRow：清单条目带上 host 记录的播放进度（TODO-653）。
+    // 镜像生产 _videoInfoFromRow：清单条目带上 host 记录的播放进度（TODO-653）
+    // 与字幕调轴（BUG-1620）。
     final ({int positionMs, int updatedAtMs}) p =
         await getVideoPosition(videoId);
+    final ({int delayMs, int updatedAtMs}) d = await getVideoDelay(videoId);
     return <RemoteVideoInfo>[
       RemoteVideoInfo.fromJson(<String, Object?>{
         'id': videoId,
@@ -107,6 +109,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
         'coverPath': coverFile.path,
         'positionMs': p.positionMs,
         'positionUpdatedAtMs': p.updatedAtMs,
+        'delayMs': d.delayMs,
+        'delayUpdatedAtMs': d.updatedAtMs,
       }),
     ];
   }
@@ -306,6 +310,35 @@ class _FakeLibraryService implements FushiLibraryHostService {
       remoteUpdatedAtMs: updatedAtMs,
     );
   }
+
+  // ── BUG-1620：字幕调轴跨设备同步（in-memory 镜像 host LWW 语义）──────────────
+
+  final Map<String, ({int delayMs, int updatedAtMs})> videoDelays =
+      <String, ({int delayMs, int updatedAtMs})>{};
+
+  @override
+  Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id) async =>
+      videoDelays[id] ?? (delayMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putVideoDelay(String id, int delayMs, int updatedAtMs) async {
+    final ({int delayMs, int updatedAtMs}) current =
+        videoDelays[id] ?? (delayMs: 0, updatedAtMs: 0);
+    videoDelays[id] = resolveDelayLww(
+      aDelayMs: current.delayMs,
+      aUpdatedAtMs: current.updatedAtMs,
+      bDelayMs: delayMs,
+      bUpdatedAtMs: updatedAtMs,
+    );
+  }
+}
+
+/// 不实现 [VideoDelayHost] 的最小库服务——只为「老 host 能力探测负向」用例存在。
+/// delay 路由在触达任何库方法前先 `is` 探测能力 → 404，故其余成员留 noSuchMethod。
+class _NoDelayCapabilityService implements FushiLibraryHostService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('BUG-1620 负向用例不应触达库方法');
 }
 
 void main() {
@@ -856,6 +889,137 @@ void main() {
     expect(first['positionMs'], 420000, reason: 'host 进度应随清单条目带回，client 据此恢复');
     expect(first['positionUpdatedAtMs'], 1700000000000);
     c.close();
+  });
+
+  // ── BUG-1620 字幕调轴跨设备同步端点（与 /position 分支对称）──────────────────
+  group('BUG-1620 video delay endpoint', () {
+    Future<int> putDelay(int delayMs, int updatedAtMs,
+        {String encodedId = 'video%2Fsample'}) async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.putUrl(
+        Uri.parse('$base/api/library/videos/$encodedId/delay'),
+      );
+      req.headers.set('authorization', authHeader());
+      req.headers.set('content-type', 'application/json');
+      req.write(jsonEncode(<String, Object?>{
+        'delayMs': delayMs,
+        'delayUpdatedAtMs': updatedAtMs,
+      }));
+      final HttpClientResponse res = await req.close();
+      await res.drain<void>();
+      c.close();
+      return res.statusCode;
+    }
+
+    Future<Map<String, dynamic>> getDelay() async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fsample/delay'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      c.close();
+      return json;
+    }
+
+    test('GET delay 初始无记录返回 0/0', () async {
+      final Map<String, dynamic> json = await getDelay();
+      expect(json['delayMs'], 0);
+      expect(json['delayUpdatedAtMs'], 0);
+    });
+
+    test('PUT 调轴（可负）→ GET 读回同值（跨设备往返）', () async {
+      expect(await putDelay(-1500, 1700000000000), 200);
+      final Map<String, dynamic> json = await getDelay();
+      expect(json['delayMs'], -1500, reason: 'A 设备的调轴应在 host 落定，负值保真');
+      expect(json['delayUpdatedAtMs'], 1700000000000);
+    });
+
+    test('PUT 严格较新时间戳覆盖；较旧/相同时间戳被拒', () async {
+      expect(await putDelay(-1500, 1700000000000), 200);
+      expect(await putDelay(2000, 1700000005000), 200);
+      Map<String, dynamic> json = await getDelay();
+      expect(json['delayMs'], 2000);
+      // 滞后设备的旧戳不得回退。
+      expect(await putDelay(-999, 1699999990000), 200);
+      json = await getDelay();
+      expect(json['delayMs'], 2000, reason: '旧时间戳不应回退新调轴');
+      // 相同时间戳保守保留已存值（严格较新者才胜）。
+      expect(await putDelay(-999, 1700000005000), 200);
+      json = await getDelay();
+      expect(json['delayMs'], 2000, reason: '相同时间戳不覆盖');
+    });
+
+    test('PUT/GET 未知视频 id 返回 404（存在性闸门，不写脏）', () async {
+      expect(await putDelay(1000, 1700000000000, encodedId: 'video%2Fmissing'),
+          404);
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fmissing/delay'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 404);
+      await res.drain<void>();
+      c.close();
+    });
+
+    test('未鉴权请求被拒（delay 端点在 Basic 鉴权闸门内）', () async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fsample/delay'),
+      );
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 401, reason: '无 Basic 头必须 401，不得泄露调轴数据');
+      await res.drain<void>();
+      c.close();
+    });
+
+    test('listVideos 带回 host 调轴 + 时间戳，供 client LWW 决议', () async {
+      expect(await putDelay(-1500, 1700000000000), 200);
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req =
+          await c.getUrl(Uri.parse('$base/api/library/videos'));
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final List<dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join()) as List<dynamic>;
+      final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
+      expect(first['delayMs'], -1500);
+      expect(first['delayUpdatedAtMs'], 1700000000000);
+      c.close();
+    });
+
+    test('老 host（无 VideoDelayHost 能力）→ 404（client best-effort 降级）', () async {
+      final FushiSyncServer legacy = FushiSyncServer(
+        syncDataDir:
+            Directory.systemTemp.createTempSync('hbk_vid_nodelay').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: _NoDelayCapabilityService(),
+      );
+      await legacy.start();
+      try {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.getUrl(Uri.parse(
+          'http://127.0.0.1:${legacy.port}'
+          '/api/library/videos/video%2Fsample/delay',
+        ));
+        req.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, 404, reason: '能力探测负向应落 404，与老 host 行为一致');
+        await res.drain<void>();
+        c.close();
+      } finally {
+        await legacy.stop();
+      }
+    });
   });
 
   // ── TODO-885 per-episode streamurl / subtitle / position ──────────────────
