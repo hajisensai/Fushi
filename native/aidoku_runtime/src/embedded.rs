@@ -42,6 +42,19 @@ struct HostPage {
     description: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct ResolvedHostPage {
+    #[serde(flatten)]
+    page: HostPage,
+    request_url: Option<String>,
+    request_headers: HashMap<String, String>,
+}
+
+struct ResolvedImageRequest {
+    url: String,
+    headers: HashMap<String, String>,
+}
+
 struct AixPackage {
     path: PathBuf,
     manifest: Value,
@@ -342,6 +355,17 @@ fn parse_html(text: &str, base_url: Option<String>) -> HtmlNode {
         node: kuchiki::parse_html().one(text),
         base_url,
     }
+}
+
+fn absolute_attribute(raw: String, base_url: Option<&str>) -> String {
+    if reqwest::Url::parse(&raw).is_ok() {
+        return raw;
+    }
+    base_url
+        .and_then(|base| reqwest::Url::parse(base).ok())
+        .and_then(|base| base.join(&raw).ok())
+        .map(|url| url.to_string())
+        .unwrap_or(raw)
 }
 
 fn html_nodes(item: &StoreItem) -> Option<Vec<HtmlNode>> {
@@ -1053,11 +1077,7 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
                     if !absolute {
                         return Some(raw);
                     }
-                    node.base_url
-                        .as_deref()
-                        .and_then(|base| reqwest::Url::parse(base).ok())
-                        .and_then(|base| base.join(&raw).ok())
-                        .map(|url| url.to_string())
+                    Some(absolute_attribute(raw, node.base_url.as_deref()))
                 });
             match value {
                 Some(value) => caller.data_mut().store(StoreItem::String(value)),
@@ -1381,6 +1401,59 @@ impl EmbeddedRuntime {
         self.store.data_mut().remove(chapter_descriptor);
         self.take_result(pointer)
     }
+
+    fn image_request(
+        &mut self,
+        url: &str,
+        context: Option<&HashMap<String, String>>,
+    ) -> Result<Option<ResolvedImageRequest>> {
+        let Ok(function) = self
+            .instance
+            .get_typed_func::<(i32, i32), i32>(&self.store, "get_image_request")
+        else {
+            return Ok(None);
+        };
+        let url_descriptor = self
+            .store
+            .data_mut()
+            .store(StoreItem::String(url.to_owned()));
+        let context_descriptor = context
+            .map(|context| self.store.data_mut().store_encoded(context))
+            .transpose()?
+            .unwrap_or(-1);
+        let pointer = function
+            .call(&mut self.store, (url_descriptor, context_descriptor))
+            .context("Aidoku image request function trapped")?;
+        self.store.data_mut().remove(url_descriptor);
+        if context_descriptor > 0 {
+            self.store.data_mut().remove(context_descriptor);
+        }
+        let request_descriptor: i32 = self.take_result(pointer)?;
+        let resolved = self
+            .store
+            .data()
+            .descriptors
+            .get(&request_descriptor)
+            .and_then(|item| match item {
+                StoreItem::Request(request) => Some(ResolvedImageRequest {
+                    url: request.url.clone().unwrap_or_else(|| url.to_owned()),
+                    headers: request
+                        .headers
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            value
+                                .to_str()
+                                .ok()
+                                .map(|value| (key.as_str().to_owned(), value.to_owned()))
+                        })
+                        .collect(),
+                }),
+                _ => None,
+            })
+            .ok_or_else(|| anyhow!("Aidoku image request returned an invalid descriptor"))?;
+        self.store.data_mut().remove(request_descriptor);
+        Ok(Some(resolved))
+    }
 }
 
 fn execute(request: &Value) -> Result<Value> {
@@ -1455,10 +1528,29 @@ fn execute(request: &Value) -> Result<Value> {
                     .ok_or_else(|| anyhow!("missing Aidoku chapter"))?,
             )
             .context("invalid Aidoku chapter")?;
+            let pages = runtime.pages(&manga, &chapter)?;
+            let pages = pages
+                .into_iter()
+                .map(|page| {
+                    let resolved = match &page.content {
+                        HostPageContent::Url(url, context) => {
+                            runtime.image_request(url, context.as_ref()).ok().flatten()
+                        }
+                        _ => None,
+                    };
+                    ResolvedHostPage {
+                        request_url: resolved.as_ref().map(|request| request.url.clone()),
+                        request_headers: resolved
+                            .map(|request| request.headers)
+                            .unwrap_or_default(),
+                        page,
+                    }
+                })
+                .collect::<Vec<_>>();
             Ok(json!({
                 "protocolVersion": 1,
                 "source": source,
-                "result": runtime.pages(&manga, &chapter)?,
+                "result": pages,
             }))
         }
         _ => bail!("unknown Aidoku command {command:?}"),
@@ -1552,6 +1644,25 @@ mod tests {
     }
 
     #[test]
+    fn absolute_html_attributes_survive_without_a_base_url() {
+        assert_eq!(
+            absolute_attribute("https://cdn.example/page.jpg".to_owned(), None),
+            "https://cdn.example/page.jpg"
+        );
+        assert_eq!(
+            absolute_attribute(
+                "/page.jpg".to_owned(),
+                Some("https://reader.example/chapter/1")
+            ),
+            "https://reader.example/page.jpg"
+        );
+        assert_eq!(
+            absolute_attribute("/page.jpg".to_owned(), None),
+            "/page.jpg"
+        );
+    }
+
+    #[test]
     fn initializes_source_settings_and_host_defaults() {
         let manifest = json!({
             "info": {
@@ -1616,7 +1727,12 @@ mod tests {
         let pages = runtime
             .pages(&details, chapter)
             .expect("resolve chapter pages");
-        assert!(!pages.is_empty());
+        assert!(
+            !pages.is_empty(),
+            "source returned no pages for manga={} chapter={}",
+            serde_json::to_string(&details).unwrap(),
+            serde_json::to_string(chapter).unwrap()
+        );
     }
 
     #[test]

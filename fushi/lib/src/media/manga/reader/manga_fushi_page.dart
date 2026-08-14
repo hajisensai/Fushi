@@ -3155,6 +3155,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             fit: StackFit.expand,
             children: <Widget>[
               Positioned.fill(child: _buildBody()),
+              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+              // WebView 持焦后会吞掉翻页键。
+              Positioned.fill(
+                key: const ValueKey<String>('manga_dictionary_host'),
+                child: buildDictionary(),
+              ),
+              if (_bookRow != null && !_loadFailed)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: IconButton(
+                      key: const ValueKey<String>('manga_reader_back_button'),
+                      tooltip:
+                          MaterialLocalizations.of(context).backButtonTooltip,
+                      color: Colors.white,
+                      icon: const Icon(Icons.arrow_back_ios_new),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                  ),
+                ),
               // 顶部 chrome：页码指示 + 阅读模式切换。
               if (_bookRow != null && !_loadFailed)
                 Positioned(
@@ -3162,12 +3183,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   right: 0,
                   child: SafeArea(child: _buildTopChrome()),
                 ),
-              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
-              // WebView 持焦后会吞掉翻页键。
-              Positioned.fill(
-                key: const ValueKey<String>('manga_dictionary_host'),
-                child: buildDictionary(),
-              ),
             ],
           ),
         ),

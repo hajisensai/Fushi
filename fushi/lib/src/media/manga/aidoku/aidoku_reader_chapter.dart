@@ -11,15 +11,20 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 const int _maximumAidokuImageBytes = 100 * 1024 * 1024;
-const String _aidokuBrowserUserAgent =
+const String kAidokuBrowserUserAgent =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
     'AppleWebKit/537.36 (KHTML, like Gecko) '
     'Chrome/131.0 Safari/537.36';
 
 class AidokuImagePage {
-  const AidokuImagePage({required this.url, required this.headers});
+  const AidokuImagePage({
+    required this.url,
+    required this.headers,
+    required this.context,
+  });
 
   factory AidokuImagePage.fromJson(Map<String, Object?> json) {
     final Object? content = json['content'];
@@ -36,7 +41,9 @@ class AidokuImagePage {
         'This Aidoku page type is not supported by the manga reader',
       );
     }
-    final String url = urlValue.first?.toString().trim() ?? '';
+    final String originalUrl = urlValue.first?.toString().trim() ?? '';
+    final String resolvedUrl = json['request_url']?.toString().trim() ?? '';
+    final String url = resolvedUrl.isNotEmpty ? resolvedUrl : originalUrl;
     if (Uri.tryParse(url)?.isScheme('https') != true) {
       throw const AidokuRuntimeException(
         'INVALID_PAGE_URL',
@@ -44,9 +51,16 @@ class AidokuImagePage {
       );
     }
     final Object? context = urlValue.length > 1 ? urlValue[1] : null;
+    final Object? requestHeaders = json['request_headers'];
     return AidokuImagePage(
       url: url,
-      headers: context is Map<Object?, Object?>
+      headers: requestHeaders is Map<Object?, Object?>
+          ? requestHeaders.map(
+              (Object? key, Object? value) =>
+                  MapEntry<String, String>(key.toString(), value.toString()),
+            )
+          : const <String, String>{},
+      context: context is Map<Object?, Object?>
           ? context.map(
               (Object? key, Object? value) =>
                   MapEntry<String, String>(key.toString(), value.toString()),
@@ -57,9 +71,10 @@ class AidokuImagePage {
 
   final String url;
   final Map<String, String> headers;
+  final Map<String, String> context;
 
   Map<String, String> requestHeaders({String? referer}) => <String, String>{
-        'User-Agent': _aidokuBrowserUserAgent,
+        'User-Agent': kAidokuBrowserUserAgent,
         if (referer != null) 'Referer': referer,
         ...headers,
       };
@@ -269,6 +284,13 @@ class _AidokuMangaReaderSession implements MangaReaderSession {
         await staged.writeAsBytes(bytes.takeBytes(), flush: true);
         await staged.rename(target.path);
         return target;
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'AidokuReader.image[$index] ${pages[index].url}',
+          error,
+          stack,
+        );
+        rethrow;
       } finally {
         _inFlight.remove(index);
       }

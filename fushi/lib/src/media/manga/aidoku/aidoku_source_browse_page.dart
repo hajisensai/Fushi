@@ -41,6 +41,7 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
   int _page = 1;
   int _generation = 0;
   Object? _error;
+  String? _sourceBaseUrl;
 
   @override
   void initState() {
@@ -60,6 +61,11 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
           await _runtime.inspect(widget.package.packagePath);
       if (!mounted) return;
       _listings = inspection.listings;
+      _sourceBaseUrl = (inspection.sourceInfo['urls'] as List<Object?>?)
+          ?.map((Object? value) => value.toString())
+          .where(
+              (String value) => Uri.tryParse(value)?.isScheme('https') == true)
+          .firstOrNull;
       _listing = _listings.firstOrNull;
       _searching = _listing == null;
       await _load(reset: true);
@@ -153,6 +159,7 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
           package: widget.package,
           runtime: _runtime,
           manga: manga,
+          sourceBaseUrl: _sourceBaseUrl,
         ),
       ),
     );
@@ -161,6 +168,24 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
         title: widget.package.name,
+        actions: <Widget>[
+          if (_listings.isNotEmpty)
+            DropdownButton<AidokuListing>(
+              key: const ValueKey<String>('aidoku_source_listing'),
+              value: _searching ? null : _listing,
+              hint: Text(t.mihon_source_search),
+              items: <DropdownMenuItem<AidokuListing>>[
+                for (final AidokuListing listing in _listings)
+                  DropdownMenuItem<AidokuListing>(
+                    value: listing,
+                    child: Text(listing.name),
+                  ),
+              ],
+              onChanged: (AidokuListing? value) {
+                if (value != null) _selectListing(value);
+              },
+            ),
+        ],
         headerBottom: Padding(
           padding: const EdgeInsets.only(top: 8),
           child: TextField(
@@ -176,27 +201,6 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
         ),
         body: Column(
           children: <Widget>[
-            if (_listings.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: DropdownButton<AidokuListing>(
-                    value: _searching ? null : _listing,
-                    hint: Text(t.mihon_source_search),
-                    items: <DropdownMenuItem<AidokuListing>>[
-                      for (final AidokuListing listing in _listings)
-                        DropdownMenuItem<AidokuListing>(
-                          value: listing,
-                          child: Text(listing.name),
-                        ),
-                    ],
-                    onChanged: (AidokuListing? value) {
-                      if (value != null) _selectListing(value);
-                    },
-                  ),
-                ),
-              ),
             Expanded(child: _buildResults()),
           ],
         ),
@@ -246,7 +250,11 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Expanded(
-                      child: _AidokuCover(url: manga['cover']?.toString())),
+                    child: _AidokuCover(
+                      url: manga['cover']?.toString(),
+                      referer: _sourceBaseUrl,
+                    ),
+                  ),
                   Padding(
                     padding: const EdgeInsets.all(10),
                     child: Text(
@@ -270,11 +278,13 @@ class _AidokuMangaDetailPage extends StatefulWidget {
     required this.package,
     required this.runtime,
     required this.manga,
+    required this.sourceBaseUrl,
   });
 
   final AidokuInstalledPackage package;
   final AidokuRuntime runtime;
   final Map<String, Object?> manga;
+  final String? sourceBaseUrl;
 
   @override
   State<_AidokuMangaDetailPage> createState() => _AidokuMangaDetailPageState();
@@ -346,6 +356,8 @@ class _AidokuMangaDetailPageState extends State<_AidokuMangaDetailPage> {
                             borderRadius: FushiBorderRadius.poster,
                             child: _AidokuCover(
                               url: details['cover']?.toString(),
+                              referer: _aidokuHttpsUrl(details['url']) ??
+                                  widget.sourceBaseUrl,
                             ),
                           ),
                         ),
@@ -435,7 +447,12 @@ class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
           );
         });
       }
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'AidokuReader.pages ${widget.package.id} ${widget.chapter['key']}',
+        error,
+        stack,
+      );
       if (mounted) setState(() => _error = error);
     }
   }
@@ -500,9 +517,10 @@ String _aidokuNumber(Object? value) {
 }
 
 class _AidokuCover extends StatelessWidget {
-  const _AidokuCover({required this.url});
+  const _AidokuCover({required this.url, this.referer});
 
   final String? url;
+  final String? referer;
 
   @override
   Widget build(BuildContext context) {
@@ -516,10 +534,19 @@ class _AidokuCover extends StatelessWidget {
     return Image.network(
       value,
       fit: BoxFit.cover,
+      headers: <String, String>{
+        'User-Agent': kAidokuBrowserUserAgent,
+        if (referer != null) 'Referer': referer!,
+      },
       errorBuilder: (_, __, ___) => const ColoredBox(
         color: Color(0x11000000),
         child: Center(child: Icon(Icons.broken_image_outlined)),
       ),
     );
   }
+}
+
+String? _aidokuHttpsUrl(Object? value) {
+  final String candidate = value?.toString().trim() ?? '';
+  return Uri.tryParse(candidate)?.isScheme('https') == true ? candidate : null;
 }

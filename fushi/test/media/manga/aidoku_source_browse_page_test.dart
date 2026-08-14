@@ -33,6 +33,12 @@ void main() {
     expect(find.byType(GridView), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('aidoku_source_search')),
         findsOneWidget);
+    final Offset titlePosition = tester.getTopLeft(find.text('Aidoku fixture'));
+    final Offset listingPosition = tester.getTopRight(
+      find.byKey(const ValueKey<String>('aidoku_source_listing')),
+    );
+    expect(titlePosition.dy, closeTo(listingPosition.dy, 20));
+    expect(titlePosition.dx, lessThan(listingPosition.dx));
 
     await tester.tap(find.text('Latest fixture manga'));
     await tester.pump();
@@ -53,6 +59,7 @@ class _BrowseRuntime extends Fake implements AidokuRuntime {
             'id': 'ja.fixture',
             'name': 'Aidoku fixture',
             'version': 1,
+            'urls': <Object?>['https://fixture.example'],
           },
           'listings': <Object?>[
             <String, Object?>{'id': '/latest/', 'name': 'Latest'},

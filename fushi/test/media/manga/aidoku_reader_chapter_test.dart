@@ -5,19 +5,24 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 
 void main() {
-  test('parses Aidoku URL pages and preserves request headers', () {
+  test('keeps page context separate from resolved image request headers', () {
     final AidokuImagePage page = AidokuImagePage.fromJson(
       <String, Object?>{
         'content': <String, Object?>{
           'Url': <Object?>[
             'https://cdn.example/page.jpg',
-            <String, String>{'Referer': 'https://source.example/'},
+            <String, String>{'shuffled': '1'},
           ],
+        },
+        'request_url': 'https://images.example/page.jpg',
+        'request_headers': <String, String>{
+          'Referer': 'https://source.example/',
         },
       },
     );
 
-    expect(page.url, 'https://cdn.example/page.jpg');
+    expect(page.url, 'https://images.example/page.jpg');
+    expect(page.context, <String, String>{'shuffled': '1'});
     expect(page.headers, <String, String>{
       'Referer': 'https://source.example/',
     });
@@ -31,26 +36,24 @@ void main() {
     final AidokuImagePage reordered = AidokuImagePage.fromJson(
       <String, Object?>{
         'content': <String, Object?>{
-          'Url': <Object?>[
-            'https://cdn.example/page.jpg',
-            <String, String>{
-              'User-Agent': 'Fushi',
-              'Referer': 'https://source.example/',
-            },
-          ],
+          'Url': <Object?>['https://cdn.example/page.jpg', null],
+        },
+        'request_url': 'https://images.example/page.jpg',
+        'request_headers': <String, String>{
+          'User-Agent': 'Fushi',
+          'Referer': 'https://source.example/',
         },
       },
     );
     final AidokuImagePage sameHeadersDifferentOrder = AidokuImagePage.fromJson(
       <String, Object?>{
         'content': <String, Object?>{
-          'Url': <Object?>[
-            'https://cdn.example/page.jpg',
-            <String, String>{
-              'Referer': 'https://source.example/',
-              'User-Agent': 'Fushi',
-            },
-          ],
+          'Url': <Object?>['https://cdn.example/page.jpg', null],
+        },
+        'request_url': 'https://images.example/page.jpg',
+        'request_headers': <String, String>{
+          'Referer': 'https://source.example/',
+          'User-Agent': 'Fushi',
         },
       },
     );
