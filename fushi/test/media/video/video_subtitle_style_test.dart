@@ -17,7 +17,10 @@ void main() {
       const Color(0xE6000000),
     );
     expect(s.fontWeight, isNull);
-    expect(s.resolveFontWeight(1.0), 700);
+    // 默认字重 400 常规，与 mpv 默认（--sub-bold=no）对齐；ASS cueStyle 路径的字重
+    // 恒随 ASS（BUG-819），本默认只管 SRT/无样式表路径。
+    expect(VideoSubtitleStyle.defaultFontWeight, 400);
+    expect(s.resolveFontWeight(1.0), 400);
     // 阴影半径改回 Niratan 默认 3（柔和投影模糊半径，不再是 5px 硬描边）。
     expect(s.shadowThickness, isNull);
     expect(VideoSubtitleStyle.defaultShadowThickness, 3);
@@ -32,9 +35,9 @@ void main() {
   test('unconfigured weight and shadow follow app UI scale', () {
     const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
 
-    expect(s.resolveFontWeight(2.0), 900);
+    expect(s.resolveFontWeight(2.0), 800); // 400 * 2.0
     expect(s.resolveShadowThickness(2.0), 6); // 3 * 2.0
-    expect(s.resolveFontWeight(0.5), 400);
+    expect(s.resolveFontWeight(0.5), 200); // 400 * 0.5
     expect(s.resolveShadowThickness(0.5), 1.5); // 3 * 0.5
   });
 
@@ -161,7 +164,9 @@ void main() {
 
     expect(s.fontWeight, isNull);
     expect(s.shadowThickness, isNull);
-    expect(s.resolveFontWeight(1.0), 700);
+    // v1 的 700 是历史迁移锚点（_v1LegacyFontWeight）；折叠成 null 后 resolve 出的是
+    // **当前**默认 400（mpv 对齐）——「跟随默认」的老用户随新默认走，而非钉死旧值。
+    expect(s.resolveFontWeight(1.0), 400);
     expect(s.resolveShadowThickness(1.0), 3); // Niratan 默认半径。
   });
 
