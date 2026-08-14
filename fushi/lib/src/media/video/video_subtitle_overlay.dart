@@ -400,7 +400,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 字幕文字颜色（外观设置）。
   final Color? textColor;
 
-  /// 字幕字重（CSS numeric weight 100..900；asbplayer 默认 700）。
+  /// 字幕字重（CSS numeric weight 100..900；默认 400 常规，与 mpv `--sub-bold=no` 对齐）。
   final int fontWeight;
 
   /// 字幕阴影颜色。
@@ -2186,7 +2186,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double assFontScale = respect ? _assFontScale(markup) : 1.0;
     final double? cueFontPx = respect ? cue?.fontSizePx : null;
     // 字重：cueStyle 存在即以 ASS 为准——`Bold=0`（fansub 对白的常态）必须渲染
-    // **常规字重**，不得回退用户统一字重（视频页默认 700）。否则所有 ASS 字幕被
+    // **常规字重**，不得回退用户统一字重（历史默认 700，现默认 400 与 mpv 对齐，但
+    // 用户仍可显式调粗）。否则所有 ASS 字幕被
     // 合成假粗体（Fontname 多半未安装 → 回退字体再被 fake-bold），笔画变粗变宽、
     // 细描边被吞，观感与 mpv（同缺字体但按 Bold=0 常规渲染）差异巨大——用户报
     // 「字号/描边没尊重 ASS」的真凶。无 cueStyle（非 ASS / 样式失配）才用统一字重。

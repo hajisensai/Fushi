@@ -127,7 +127,7 @@ void main() {
         home: Scaffold(
           body: VideoSubtitleOverlay(
             controller: c,
-            fontWeight: 700, // 用户统一字重=粗体（视频页默认）
+            fontWeight: 700, // 用户显式统一字重=粗体（默认已是 400，此处特意调粗测渗透）
             respectAssStyle: respect,
           ),
         ),

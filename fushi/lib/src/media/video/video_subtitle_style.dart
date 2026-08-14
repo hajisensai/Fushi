@@ -287,7 +287,16 @@ class VideoSubtitleStyle {
     this.secondaryAnchor,
   });
 
-  static const int defaultFontWeight = 700;
+  /// 默认字重 400（常规），与 mpv 默认（`--sub-bold=no` → Regular）对齐：同一字体
+  /// SRT/无样式表字幕在 fushi 与 mpv 里不再一边粗体一边常规（用户报「字重差异大」）。
+  /// ASS 有 cueStyle 时字重恒以 ASS 为准（Bold 标志/命名面字重，BUG-819），本默认值
+  /// 只管非 ASS / 样式失配路径。历史默认曾是 700，v1 迁移锚点见 [_v1LegacyFontWeight]。
+  static const int defaultFontWeight = 400;
+
+  /// v1 持久化时代硬编码的默认字重（700）。仅供 [decode] 把 v1 存的该值迁移成 null
+  /// （跟随缩放/新默认）用；与当前 [defaultFontWeight] 解耦，与
+  /// [_v1LegacyShadowThickness] 同一模式——改默认不破坏旧数据迁移语义。
+  static const int _v1LegacyFontWeight = 700;
 
   /// 默认阴影/投影**半径**（模糊强度），抄 Niratan（mac 原生日语沉浸 app）字幕默认的
   /// `shadowRadius = 3`（其设置滑杆范围 0..10）。BUG-323 时代这里是 5px「硬描边粗细」；
@@ -301,7 +310,7 @@ class VideoSubtitleStyle {
   /// 同为 3，语义不同（此值是历史迁移锚点），后续改默认也不破坏旧数据迁移。
   static const double _v1LegacyShadowThickness = 3;
 
-  /// High-contrast caption defaults (TODO-051): 36px bold WHITE text with a soft
+  /// High-contrast caption defaults (TODO-051): 36px WHITE text with a soft
   /// translucent-BLACK drop shadow, no box. Fixed white/black instead of theme
   /// colors so subtitles stay legible on any video and don't wash out on
   /// low-contrast themes. [fontWeight]/[shadowThickness] stay null to follow the
@@ -466,7 +475,10 @@ class VideoSubtitleStyle {
       int? readFontWeight(Object? v) {
         if (v is! num) return null;
         final int normalized = normalizeWeight(v);
-        return version < 2 && normalized == defaultFontWeight
+        // v1 数据存的是当时硬编码默认字重（700）=「跟随默认」，迁移成 null。对照 v1
+        // 时代字面量而非当前 [defaultFontWeight]（已改 400，mpv 对齐）：否则老用户的
+        // 未调整值会被钉死成显式 700、永远吃不到新默认（同 shadowThickness 的教训）。
+        return version < 2 && normalized == _v1LegacyFontWeight
             ? null
             : normalized;
       }
