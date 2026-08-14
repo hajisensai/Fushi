@@ -368,6 +368,22 @@ fn absolute_attribute(raw: String, base_url: Option<&str>) -> String {
         .unwrap_or(raw)
 }
 
+fn html_attribute(node: &NodeRef, attribute: &str, absolute: bool) -> Option<String> {
+    let element = node.as_element()?;
+    let attributes = element.attributes.borrow();
+    let raw = attributes.get(attribute)?.to_owned();
+    if absolute && attribute == "src" && raw.starts_with("data:image/") {
+        for lazy_attribute in ["data-lazy-src", "data-src", "data-url"] {
+            if let Some(value) = attributes.get(lazy_attribute)
+                && !value.trim().is_empty()
+            {
+                return Some(value.to_owned());
+            }
+        }
+    }
+    Some(raw)
+}
+
 fn html_nodes(item: &StoreItem) -> Option<Vec<HtmlNode>> {
     match item {
         StoreItem::Html(node) => Some(vec![node.clone()]),
@@ -1067,13 +1083,7 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
                         .strip_prefix("abs:")
                         .map(|attribute| (attribute, true))
                         .unwrap_or((key.as_str(), false));
-                    let raw = node.node.as_element().and_then(|element| {
-                        element
-                            .attributes
-                            .borrow()
-                            .get(attribute)
-                            .map(str::to_owned)
-                    })?;
+                    let raw = html_attribute(&node.node, attribute, absolute)?;
                     if !absolute {
                         return Some(raw);
                     }
@@ -1663,6 +1673,26 @@ mod tests {
     }
 
     #[test]
+    fn absolute_src_uses_lazy_image_url_instead_of_data_placeholder() {
+        let document = parse_html(
+            r#"<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw="
+                data-src="https://mgoimg.view47.com/cover.jpeg">"#,
+            Some("https://rawotaku.com/latest-updated".to_owned()),
+        );
+        let image = select_nodes(&document, "img").unwrap().remove(0);
+
+        assert_eq!(
+            html_attribute(&image.node, "src", true).as_deref(),
+            Some("https://mgoimg.view47.com/cover.jpeg")
+        );
+        assert!(
+            html_attribute(&image.node, "src", false)
+                .as_deref()
+                .is_some_and(|value| value.starts_with("data:image/gif"))
+        );
+    }
+
+    #[test]
     fn initializes_source_settings_and_host_defaults() {
         let manifest = json!({
             "info": {
@@ -1707,6 +1737,14 @@ mod tests {
         let mut runtime =
             EmbeddedRuntime::load(&package.wasm, package.defaults).expect("load live source");
         let search = runtime.search(Some(&query), 1).expect("search live source");
+        assert!(
+            search
+                .entries
+                .iter()
+                .filter_map(|manga| manga.cover.as_deref())
+                .any(|cover| cover.starts_with("https://")),
+            "source search should resolve at least one HTTP cover"
+        );
         let details = search
             .entries
             .iter()
