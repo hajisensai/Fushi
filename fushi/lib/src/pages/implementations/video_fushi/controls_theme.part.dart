@@ -105,18 +105,35 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 永远拿不到自己需要的宽。
         Expanded(
           child: VideoTopBarSlots(
-            left: _topBarSlotGroup(
+            leftLead: _topBarSlotGroup(
               VideoControlSlot.topLeft,
               controller,
               layout: layout,
               desktop: true,
+              segment: VideoTopBarSegment.lead,
+            ),
+            leftTail: _topBarSlotGroup(
+              VideoControlSlot.topLeft,
+              controller,
+              layout: layout,
+              desktop: true,
+              segment: VideoTopBarSegment.tail,
             ),
             title: _topBarTitle(),
-            right: _topBarSlotGroup(
+            titlePlacement: _topBarTitlePlacement(),
+            rightLead: _topBarSlotGroup(
               VideoControlSlot.topRight,
               controller,
               layout: layout,
               desktop: true,
+              segment: VideoTopBarSegment.lead,
+            ),
+            rightTail: _topBarSlotGroup(
+              VideoControlSlot.topRight,
+              controller,
+              layout: layout,
+              desktop: true,
+              segment: VideoTopBarSegment.tail,
             ),
           ),
         ),
@@ -278,18 +295,35 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 不再让三段各占 fork 顶栏 Row 的 1/3 flex 份额。
         Expanded(
           child: VideoTopBarSlots(
-            left: _topBarSlotGroup(
+            leftLead: _topBarSlotGroup(
               VideoControlSlot.topLeft,
               controller,
               layout: layout,
               desktop: false,
+              segment: VideoTopBarSegment.lead,
+            ),
+            leftTail: _topBarSlotGroup(
+              VideoControlSlot.topLeft,
+              controller,
+              layout: layout,
+              desktop: false,
+              segment: VideoTopBarSegment.tail,
             ),
             title: _topBarTitle(),
-            right: _topBarSlotGroup(
+            titlePlacement: _topBarTitlePlacement(),
+            rightLead: _topBarSlotGroup(
               VideoControlSlot.topRight,
               controller,
               layout: layout,
               desktop: false,
+              segment: VideoTopBarSegment.lead,
+            ),
+            rightTail: _topBarSlotGroup(
+              VideoControlSlot.topRight,
+              controller,
+              layout: layout,
+              desktop: false,
+              segment: VideoTopBarSegment.tail,
             ),
           ),
         ),

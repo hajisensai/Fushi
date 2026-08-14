@@ -4997,10 +4997,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
   }
 
+  /// 标题项落在顶部哪个槽（用户可把它拖到 topLeft / topCenter / topRight）；没放置
+  /// 或被移除时返回 null。标题是单实例项（[VideoControlItem.isSingleInstance]），
+  /// `VideoControlLayout` 保证它最多出现在一个槽里。
+  VideoControlSlot? _topBarTitleSlot() {
+    for (final VideoControlSlot slot in const <VideoControlSlot>[
+      VideoControlSlot.topLeft,
+      VideoControlSlot.topCenter,
+      VideoControlSlot.topRight,
+    ]) {
+      if (_controlLayout.itemsIn(slot).contains(VideoControlItem.title)) {
+        return slot;
+      }
+    }
+    return null;
+  }
+
+  /// 标题在顶栏里夹在哪两段按钮之间（喂给 [VideoTopBarSlots]）。
+  VideoTopBarTitlePlacement _topBarTitlePlacement() {
+    switch (_topBarTitleSlot()) {
+      case VideoControlSlot.topLeft:
+        return VideoTopBarTitlePlacement.left;
+      case VideoControlSlot.topRight:
+        return VideoTopBarTitlePlacement.right;
+      default:
+        return VideoTopBarTitlePlacement.center;
+    }
+  }
+
   Widget _topBarTitle() {
-    if (!_controlLayout.itemsIn(VideoControlSlot.topCenter).contains(
-          VideoControlItem.title,
-        )) {
+    final VideoControlSlot? slot = _topBarTitleSlot();
+    if (slot == null) {
       // 标题项没配置：交回零宽占位，整条顶栏宽都归两侧按钮组。绝不能返回 Spacer
       // （= Expanded/FlexFit.tight）——那会让「空的中段」硬占一份顶栏宽，用户把标题
       // 关掉后中间明明是空白、右上角按钮却照旧被挤进滚动区裁掉（本轮修复的现象）。
@@ -5009,29 +5036,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-642 → 本轮：标题不再参与 Row 的 flex 分配（旧实现是 Flexible(loose)，与
     // 左右按钮组各占 flex:1 → Flex 把整宽**平分**成三份，loose 用不完的空间又不回流，
     // 所以右侧按钮组无论如何最多只拿 1/3 顶栏宽、多出来的按钮被裁进横滚区）。改由
-    // [_TopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整可见，
-    // 标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    // [VideoTopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整
+    // 可见，标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    //
+    // 标题被拖进按钮槽时也走这里（不再有 220 宽的内联块跟同组按钮抢位）：位置由
+    // [_topBarTitlePlacement] 交给顶栏布局还原，对齐跟随所在槽——落在 topRight 就靠
+    // 右贴住它后面那段按钮，其余靠左。
     //
     // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
-    // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
-    // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有顺序。
+    // 监听 _titleNotifier 才能在全屏换集后刷新标题。
     return _topBarTitleText(
-      alignment: AlignmentDirectional.centerStart,
-    );
-  }
-
-  Widget _topBarInlineTitle(VideoControlSlot slot) {
-    final bool alignEnd = slot == VideoControlSlot.topRight;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8 * _videoUiScale),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 220 * _videoUiScale),
-        child: _topBarTitleText(
-          alignment: alignEnd
-              ? AlignmentDirectional.centerEnd
-              : AlignmentDirectional.centerStart,
-        ),
-      ),
+      alignment: slot == VideoControlSlot.topRight
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
     );
   }
 
@@ -5264,13 +5281,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     VideoPlayerController controller, {
     required VideoControlLayout layout,
     required bool desktop,
+    required VideoTopBarSegment segment,
   }) {
     final List<VideoControlItem> rawItems = layout.itemsIn(slot);
+    // 标题项被拖进按钮槽时，它在槽内的索引位置有语义（`VideoControlLayout` 保序），
+    // 所以按标题把该槽切成 lead / tail 两段按钮，标题本身由顶栏的 title 槽渲染、
+    // **最后**才分宽（[VideoTopBarSlots]）。此前标题是组内一个 220 宽的内联块，会跟
+    // 同组按钮抢横向空间、把按钮挤进横滚区——那正是「名称挡住按钮」的另一半根因。
+    final int titleIndex = rawItems.indexOf(VideoControlItem.title);
+    final List<VideoControlItem> scoped;
+    if (titleIndex < 0) {
+      scoped = segment == VideoTopBarSegment.lead
+          ? rawItems
+          : const <VideoControlItem>[];
+    } else {
+      scoped = segment == VideoTopBarSegment.lead
+          ? rawItems.sublist(0, titleIndex)
+          : rawItems.sublist(titleIndex + 1);
+    }
     final List<VideoControlItem> items = <VideoControlItem>[
-      for (final VideoControlItem item in rawItems)
-        if (item == VideoControlItem.title ||
-            (item.isChipRenderable && _shouldRenderControlItem(item)))
-          item,
+      for (final VideoControlItem item in scoped)
+        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
     ];
     if (items.isEmpty) return const SizedBox.shrink();
 
@@ -5339,11 +5370,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   ? MainAxisAlignment.end
                   : MainAxisAlignment.start,
               children: <Widget>[
-                for (final VideoControlItem item in items)
-                  if (item == VideoControlItem.title)
-                    _topBarInlineTitle(slot)
-                  else
-                    buttonFor(item),
+                for (final VideoControlItem item in items) buttonFor(item),
               ],
             ),
           ],
