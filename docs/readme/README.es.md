@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="logo de Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Todos los escenarios comparten los mismos diccionarios, estadísticas y flujo de
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > Mínimo Android 7.0 (API 24). Los idiomas disponibles para la búsqueda en diccionarios los determinan los diccionarios importados y las tablas de transformación de Yomitan, con independencia del idioma de la interfaz.
@@ -164,7 +164,7 @@ flutter build windows --release
 | Capa | Tecnología |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Plataformas | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Plataformas | Android / Windows / macOS / iOS (Material Design 3) |
 | Lector | Motor de paginación WebView (derivado de la familia Hoshi Reader) |
 | Vídeo | media_kit (libmpv core) |
 | Almacenamiento | Drift (SQLite, WAL) + fushidicts (motor de diccionarios FFI en C++) |

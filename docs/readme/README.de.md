@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="fushi-Logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Alle Szenarien teilen sich dieselben Wörterbücher, Statistiken und denselben W
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > Mindestens Android 7.0 (API 24). Welche Sprachen zum Nachschlagen verfügbar sind, hängt von den importierten Wörterbüchern und den Yomitan-Transformationstabellen ab — unabhängig von der Oberflächensprache.
@@ -164,7 +164,7 @@ flutter build windows --release
 | Schicht | Technologie |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Plattformen | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Plattformen | Android / Windows / macOS / iOS (Material Design 3) |
 | Reader | WebView-Seitenmaschine (abgeleitet von der Hoshi-Reader-Familie) |
 | Video | media_kit (libmpv-Kern) |
 | Speicher | Drift (SQLite, WAL) + fushidicts (C++-FFI-Wörterbuch-Engine) |
