@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1527 条。点号进各自文件。
+> 共 1528 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1646](bugs/BUG-1646-manosaba-scene-switch-subtitle-lane.md) | ✅ | 🚧 | 魔法少女的魔女审判切换场景后字幕线程断开 |
 | [BUG-1645](bugs/BUG-1645-nested-latin-lookup.md) | ✅ | ✅ | 嵌套查词查不了英语单词（跨节点粘连成拉丁串） |
 | [BUG-1644](bugs/BUG-1644-d3d11va-zero-copy-interop.md) | ✅ | ✅ | Windows 视频硬解走 d3d11va-copy：ANGLE 用自己的隐藏 D3D11 device，mpv d3d11-egl interop 加载不了 |
 | [BUG-1643](bugs/BUG-1643-settings-width-cap.md) | ✅ | ✅ | 设置页宽屏被 960px 强制限宽 |
