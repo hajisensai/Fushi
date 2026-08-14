@@ -139,6 +139,7 @@ import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
@@ -505,11 +506,26 @@ class AppModel with ChangeNotifier {
       // 服务端 catch 成 HTTP 500，互联/live 书籍推送（client→host）整体失效。
       // 生产实现即文档约定的 EpubImporter.importFromPath（tmp 文件名 = <title>.epub，
       // fileName 用作 epubPath 与标题回退）。
-      importBookFromFile: (File epubFile) => EpubImporter.importFromPath(
-        db: database,
-        filePath: epubFile.path,
-        fileName: path.basename(epubFile.path),
-      ),
+      //
+      // 互联完整支持批次：先做漫画包内容嗅探（zip 根含 manga.json = 漫画书目录整
+      // 树包），命中走 MangaImporter 的既有两遍式校验落库（防穿越/缺图/同名策略/
+      // 回滚全部复用）；否则按 EPUB。端点与 tmp 命名不变，内容即真相。
+      importBookFromFile: (File bookFile) async {
+        if (await isMangaPackage(bookFile)) {
+          // tmp 文件名 = <URL raw title>.epub（_serveAssetPackage 按端点 id 命名），
+          // 去扩展名即身份标题。
+          return importMangaPackageFile(
+            db: database,
+            file: bookFile,
+            title: path.basenameWithoutExtension(bookFile.path),
+          );
+        }
+        return EpubImporter.importFromPath(
+          db: database,
+          filePath: bookFile.path,
+          fileName: path.basename(bookFile.path),
+        );
+      },
       localAudioEntries: localAudioDbs,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,

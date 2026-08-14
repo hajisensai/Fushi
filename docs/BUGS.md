@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1515 条。点号进各自文件。
+> 共 1516 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1640](bugs/BUG-1640-interconnect-manga-bad-package-and-noise.md) | ✅ | ✅ | 互联把EPUB转化漫画打成坏包且漫画行每轮刷推送错误 |
 | [BUG-1638](bugs/BUG-1638-dashboard-remote-continue-dead-end-card.md) | ✅ | ✅ | 首页远端继续卡对不可下载条目是死路 |
 | [BUG-1637](bugs/BUG-1637-standalone-srt-audiobook-position-never-syncs.md) | ✅ | ✅ | 纯SRT有声书听书进度跨设备完全不同步 |
 | [BUG-1636](bugs/BUG-1636-remote-audio-track-not-persisted.md) | ✅ | ✅ | 互联远端视频音轨选择不持久化 |

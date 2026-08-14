@@ -183,8 +183,7 @@ abstract interface class AudiobookDelayHost {
 
   /// 把 client 上报的调轴写入 host。「严格较新时间戳者胜」（[resolveDelayLww]）；
   /// clamp ±[kVideoSubtitleDelayLimitMs]；host 无该有声书时 no-op。
-  Future<void> putAudiobookDelay(
-      String identity, int delayMs, int updatedAtMs);
+  Future<void> putAudiobookDelay(String identity, int delayMs, int updatedAtMs);
 }
 
 /// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
@@ -307,7 +306,27 @@ class RemoteBookInfo {
     this.progressPercent = 0,
     this.progressUpdatedAtMs = 0,
     this.kind = MediaKind.epub,
+    this.format = 'epub',
+    this.hasMangaContent = false,
+    this.mangaReadingMode,
   });
+
+  /// 书身份格式（`EpubBooks.format` 值域：'epub'/'pdf'/'manga'，见 [BookFormat]）。
+  /// additive wire 字段 `'format'`：epub 缺省不写键（旧清单 wire 字节不变），缺失
+  /// /未知回落 'epub'。与 [kind]（MediaKind 轴）正交——manga 行 kind 仍是 epub
+  /// （EpubBooks 表身份），格式轴才区分漫画。
+  final String format;
+
+  /// 漫画内容可下载（format=='manga' 且 host 书目录根有 manga.json）。与
+  /// [hasContent]（EPUB 内容树）**分键**是向后兼容的关键：旧 client 只认
+  /// hasContent，漫画对它保持 false（完全无感知，行为与从前一致）；新 client 用
+  /// 本字段在漫画架渲染远端占位卡 + 走同一 books 端点下载漫画包。
+  final bool hasMangaContent;
+
+  /// host 端该漫画的按本阅读模式（`EpubBooks.mangaReadingMode`；null = 跟随自动
+  /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
+  /// 后续调整各端各自记忆）。
+  final String? mangaReadingMode;
 
   /// 该书的媒体种类（BUG-1119）。additive wire 字段 `'kind'`：epub 缺省**不写键**
   /// （旧书清单 wire 字节完全不变），缺失/未知一律回落 [MediaKind.epub]（旧 host
@@ -404,6 +423,9 @@ class RemoteBookInfo {
         if (progressPercent > 0) 'progressPercent': progressPercent,
         if (progressUpdatedAtMs > 0) 'progressUpdatedAtMs': progressUpdatedAtMs,
         if (kind != MediaKind.epub) 'kind': kind.dbValue,
+        if (format != 'epub') 'format': format,
+        if (hasMangaContent) 'hasMangaContent': true,
+        if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
       };
 
   RemoteBookInfo copyWith({
@@ -421,6 +443,9 @@ class RemoteBookInfo {
     int? progressPercent,
     int? progressUpdatedAtMs,
     MediaKind? kind,
+    String? format,
+    bool? hasMangaContent,
+    String? mangaReadingMode,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -439,6 +464,9 @@ class RemoteBookInfo {
         progressPercent: progressPercent ?? this.progressPercent,
         progressUpdatedAtMs: progressUpdatedAtMs ?? this.progressUpdatedAtMs,
         kind: kind ?? this.kind,
+        format: format ?? this.format,
+        hasMangaContent: hasMangaContent ?? this.hasMangaContent,
+        mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -469,6 +497,10 @@ class RemoteBookInfo {
       progressUpdatedAtMs: _jsonNonNegativeInt(json['progressUpdatedAtMs']),
       // 缺失（旧 host）/未知（对端未来新增）一律回落 epub，绝不抛异常。
       kind: MediaKind.tryParse(_jsonString(json['kind'])) ?? MediaKind.epub,
+      // 互联完整支持批次（漫画）：缺失（旧 host）回落 'epub' / false / null。
+      format: _jsonString(json['format']) ?? 'epub',
+      hasMangaContent: json['hasMangaContent'] == true,
+      mangaReadingMode: _jsonString(json['mangaReadingMode']),
     );
   }
 }

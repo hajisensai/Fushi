@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/manga_sync_package.dart' show repackageMangaBook;
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -1520,8 +1521,10 @@ class SyncOrchestrator {
       for (final EpubBookRow b in localBooks) sanitizeTtuFilename(b.title),
     };
     final Map<String, bool> remoteKeyHasContent = <String, bool>{
+      // 「远端已有内容」= EPUB 内容树 ∨ 漫画包内容（互联完整支持批次）——否则
+      // host 上已有的漫画会被本端当「远端无」反复推送。
       for (final RemoteBookInfo r in remoteBooks)
-        sanitizeTtuFilename(r.title): r.hasContent,
+        sanitizeTtuFilename(r.title): r.hasContent || r.hasMangaContent,
     };
 
     // 按 sanitizeTtuFilename(title) union 计算 diff。
@@ -1564,12 +1567,22 @@ class SyncOrchestrator {
           index++;
           continue;
         }
+        final BookFormat format = BookFormat.parseOrEpub(row.format);
+        if (format == BookFormat.pdf) {
+          // PDF 无互联内容通道（互联全域盘点已记录）。此前无 format 过滤时每本
+          // 漫画/PDF 每轮同步都稳定产出一条 repackage 失败噪音错误——静默跳过。
+          index++;
+          continue;
+        }
         tmp = _tmpFile('.epub');
-        final bool built =
-            await repackageExtractedEpub(row.extractDir, tmp.path);
+        // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
+        // EPUB → 既有 repackage。
+        final bool built = format == BookFormat.manga
+            ? await repackageMangaBook(row.extractDir, tmp.path)
+            : await repackageExtractedEpub(row.extractDir, tmp.path);
         if (!built) {
           report.errors
-              .add('live push book "$title": repackage produced no epub');
+              .add('live push book "$title": repackage produced no output');
           index++;
           continue;
         }

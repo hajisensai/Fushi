@@ -17,6 +17,8 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi/src/media/video/series_playback_prefs.dart'
     show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs;
+import 'package:fushi/src/sync/manga_sync_package.dart'
+    show kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -375,6 +377,7 @@ class AppModelLibraryHostService
         extractDir: r.extractDir,
         coverPath: r.coverPath,
       );
+      final BookFormat format = BookFormat.parseOrEpub(r.format);
       return RemoteBookInfo(
         title: r.title,
         // BUG-1488：只在真改过名时非 null（toJson 亦只在与 title 不同时写键）。
@@ -382,7 +385,17 @@ class AppModelLibraryHostService
         // BUG-1502：改名时刻随行，让 client 端做 LWW 而不是 insert-if-absent。
         displayTitleAt: overrideTitles[r.bookKey]?.updatedAt ?? 0,
         bookKey: r.bookKey,
-        hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
+        // hasContent（EPUB 内容树可导出）按 format 门控（互联完整支持批次）：由
+        // EPUB 转化来的漫画行 extractDir 里仍留着 EPUB 解压树，旧判据会把它当可
+        // 下载 EPUB 打包——把整套页图 + manga.json 塞进 zip，client 落地成一本
+        // 夹带全部页图的「文字书」、漫画身份静默丢失（坏包）。漫画内容走
+        // hasMangaContent + 漫画包通道。
+        hasContent: format == BookFormat.epub &&
+            resolveExtractedEpubRoot(r.extractDir) != null,
+        format: format.dbValue,
+        hasMangaContent: format == BookFormat.manga &&
+            File(p.join(r.extractDir, kMangaPackageMarker)).existsSync(),
+        mangaReadingMode: r.mangaReadingMode,
         hasEmbeddedCover: coverPath != null,
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
@@ -500,7 +513,23 @@ class AppModelLibraryHostService
     if (row == null) {
       throw StateError('book not found: $title');
     }
-    if (resolveExtractedEpubRoot(row.extractDir) == null) {
+    final BookFormat format = BookFormat.parseOrEpub(row.format);
+    // 漫画（互联完整支持批次）：包 = 书目录整树 zip（manga.json 标记 + 页图），
+    // 与 EPUB 包同端点、导入侧内容嗅探分流。扩展名仍 .epub（端点/tmp 命名契约
+    // 不变，内容即真相）。
+    if (format == BookFormat.manga) {
+      final Directory tmpDir =
+          Directory.systemTemp.createTempSync('hibiki_book_export');
+      final File out = File(p.join(tmpDir.path, '${row.bookKey}.epub'));
+      final bool ok = await repackageMangaBook(row.extractDir, out.path);
+      if (!ok) {
+        throw StateError('manga book has no exportable content: $title');
+      }
+      return out;
+    }
+    if (format != BookFormat.epub ||
+        resolveExtractedEpubRoot(row.extractDir) == null) {
+      // PDF（无互联内容通道）/ EPUB 树缺失：与旧行为一致抛 StateError → 404。
       throw StateError('book has no exportable EPUB root: $title');
     }
 
@@ -838,10 +867,9 @@ class AppModelLibraryHostService
   Future<void> putAudiobookDelay(
       String identity, int delayMs, int updatedAtMs) async {
     if (!await audiobookExists(identity)) return;
-    final int clamped = delayMs.clamp(
-        -kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
-    final int nowCapMs =
-        DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
+    final int clamped =
+        delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
+    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
     final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
     final ({int delayMs, int updatedAtMs}) current =
         await getAudiobookDelay(identity);
