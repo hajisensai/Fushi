@@ -280,7 +280,8 @@ void PublishUnityText(uint64_t thread_id, void* text_component,
 }
 
 void RecordUnityTmpText(void* text_component, void* string_object,
-                        const char* hook_name, const wchar_t* hook_code) {
+                        const char* hook_name, const wchar_t* hook_code,
+                        bool stable_across_components = false) {
   if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
       g_il2cpp_string_length == nullptr) {
     return;
@@ -314,8 +315,18 @@ void RecordUnityTmpText(void* text_component, void* string_object,
     }
   }
   if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
+  // Most Unity text components are independent UI fields, so their object
+  // identity must remain part of the selectable thread. Naninovel recreates
+  // its main RevealableText component when loading/switching scenes, though:
+  // using that transient pointer as the thread id silently strands the user's
+  // selection on the old scene. Keep the real component in event metadata,
+  // but give known scene-stable dialogue sources an engine-level identity.
+  const uint64_t component_identity =
+      stable_across_components
+          ? 0
+          : reinterpret_cast<uint64_t>(text_component);
   const uint64_t thread_id = fushi_voice_hook::NativeTextThreadIdFrom(
-      reinterpret_cast<uint64_t>(text_component), hook_code, hook_name);
+      component_identity, hook_code, hook_name);
   PublishUnityText(thread_id, text_component, clean, length, true, hook_name,
                    hook_code);
 }
@@ -653,7 +664,7 @@ void Detour_NaninovelRevealableSetText(void* self, void* text,
                                        const void* method) {
   g_orig_NaninovelRevealableSetText(self, text, method);
   RecordUnityTmpText(self, text, "Naninovel RevealableText",
-                     L"Naninovel.UI.RevealableText.set_Text");
+                     L"Naninovel.UI.RevealableText.set_Text", true);
 }
 
 void* Il2CppMethodPointer(const void* method) {
@@ -694,6 +705,27 @@ const void* FindIl2CppMethod(void* klass, const char* method_name,
     const char* name = g_il2cpp_method_get_name(method);
     if (name != nullptr && strcmp(name, method_name) == 0 &&
         Il2CppMethodHasParams(method, expected, count)) {
+      return method;
+    }
+  }
+  return nullptr;
+}
+
+const void* FindIl2CppMethodByParamCount(void* klass,
+                                         const char* method_name,
+                                         uint32_t count) {
+  if (klass == nullptr || method_name == nullptr ||
+      g_il2cpp_class_get_methods == nullptr ||
+      g_il2cpp_method_get_name == nullptr ||
+      g_il2cpp_method_get_param_count == nullptr) {
+    return nullptr;
+  }
+  void* iterator = nullptr;
+  while (const void* method =
+             g_il2cpp_class_get_methods(klass, &iterator)) {
+    const char* name = g_il2cpp_method_get_name(method);
+    if (name != nullptr && strcmp(name, method_name) == 0 &&
+        g_il2cpp_method_get_param_count(method) == count) {
       return method;
     }
   }
@@ -773,8 +805,6 @@ bool TryHookUnityIl2CppAudio() {
       GetProcAddress(game, "il2cpp_assembly_get_image"));
   const auto class_from_name = reinterpret_cast<Il2CppClassFromName>(
       GetProcAddress(game, "il2cpp_class_from_name"));
-  const auto class_get_method = reinterpret_cast<Il2CppClassGetMethodFromName>(
-      GetProcAddress(game, "il2cpp_class_get_method_from_name"));
   const auto get_corlib = reinterpret_cast<Il2CppGetCorlib>(
       GetProcAddress(game, "il2cpp_get_corlib"));
   g_il2cpp_runtime_invoke = reinterpret_cast<Il2CppRuntimeInvoke>(
@@ -876,13 +906,13 @@ bool TryHookUnityIl2CppAudio() {
 
   bool resource_methods_ready = false;
   bool pcm_helpers_ready = false;
-  if (class_get_method != nullptr && g_il2cpp_runtime_invoke != nullptr &&
+  if (g_il2cpp_runtime_invoke != nullptr &&
       source_class != nullptr && clip_class != nullptr &&
       object_class != nullptr) {
     g_unity_source_get_clip =
-        class_get_method(source_class, "get_clip", 0);
+        FindIl2CppMethodByParamCount(source_class, "get_clip", 0);
     g_unity_object_get_name =
-        class_get_method(object_class, "get_name", 0);
+        FindIl2CppMethodByParamCount(object_class, "get_name", 0);
     resource_methods_ready =
         g_unity_source_get_clip != nullptr &&
         g_unity_object_get_name != nullptr;
@@ -896,12 +926,13 @@ bool TryHookUnityIl2CppAudio() {
         corlib == nullptr ? nullptr
                           : class_from_name(corlib, "System", "Single");
     g_unity_clip_get_samples =
-        class_get_method(clip_class, "get_samples", 0);
+        FindIl2CppMethodByParamCount(clip_class, "get_samples", 0);
     g_unity_clip_get_channels =
-        class_get_method(clip_class, "get_channels", 0);
+        FindIl2CppMethodByParamCount(clip_class, "get_channels", 0);
     g_unity_clip_get_frequency =
-        class_get_method(clip_class, "get_frequency", 0);
-    g_unity_clip_get_data = class_get_method(clip_class, "GetData", 2);
+        FindIl2CppMethodByParamCount(clip_class, "get_frequency", 0);
+    g_unity_clip_get_data =
+        FindIl2CppMethodByParamCount(clip_class, "GetData", 2);
     pcm_helpers_ready =
         g_system_single_class != nullptr && g_il2cpp_array_new != nullptr &&
         g_il2cpp_object_unbox != nullptr &&
@@ -995,18 +1026,28 @@ bool TryHookUnityIl2CppAudio() {
   if (!resource_methods_ready) return false;
 
   bool any = audio_ready;
-  const void* play = class_get_method(source_class, "Play", 0);
-  const void* one_shot_1 = class_get_method(source_class, "PlayOneShot", 1);
-  const void* one_shot_2 = class_get_method(source_class, "PlayOneShot", 2);
-  const void* set_clip = class_get_method(source_class, "set_clip", 1);
+  // Unity 6's il2cpp_class_get_method_from_name may enter Boehm GC even for
+  // metadata lookup and abort when called from our native HookWorker. Enumerate
+  // the already-published method metadata instead; this is also what the text
+  // hook discovery above uses successfully.
+  const void* play =
+      FindIl2CppMethodByParamCount(source_class, "Play", 0);
+  const void* one_shot_1 =
+      FindIl2CppMethodByParamCount(source_class, "PlayOneShot", 1);
+  const void* one_shot_2 =
+      FindIl2CppMethodByParamCount(source_class, "PlayOneShot", 2);
+  const void* set_clip =
+      FindIl2CppMethodByParamCount(source_class, "set_clip", 1);
   const void* play_scheduled =
-      class_get_method(source_class, "PlayScheduled", 1);
-  const void* play_delayed = class_get_method(source_class, "PlayDelayed", 1);
-  const void* play_helper = class_get_method(source_class, "PlayHelper", 2);
+      FindIl2CppMethodByParamCount(source_class, "PlayScheduled", 1);
+  const void* play_delayed =
+      FindIl2CppMethodByParamCount(source_class, "PlayDelayed", 1);
+  const void* play_helper =
+      FindIl2CppMethodByParamCount(source_class, "PlayHelper", 2);
   const void* one_shot_helper =
-      class_get_method(source_class, "PlayOneShotHelper", 3);
+      FindIl2CppMethodByParamCount(source_class, "PlayOneShotHelper", 3);
   const void* play_delayed_helper =
-      class_get_method(source_class, "PlayDelayedHelper", 2);
+      FindIl2CppMethodByParamCount(source_class, "PlayDelayedHelper", 2);
   if (g_header != nullptr &&
       (play != nullptr || one_shot_1 != nullptr ||
        one_shot_2 != nullptr || set_clip != nullptr ||
