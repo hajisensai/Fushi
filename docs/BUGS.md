@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1529 条。点号进各自文件。
+> 共 1532 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1654](bugs/BUG-1654-jimaku-download-error-hidden-behind-dialog.md) | ✅ | ✅ | 下载失败提示被对话框盖住且没有原因 |
+| [BUG-1653](bugs/BUG-1653-jimaku-series-list-cleared-before-refetch.md) | ✅ | ✅ | 填集数再搜后系列列表消失且搜不出结果 |
+| [BUG-1652](bugs/BUG-1652-jimaku-search-uses-display-name.md) | ✅ | ✅ | Jimaku 搜索拿中文显示名去猜，刮削存下的 AniList ID 从没被用过 |
 | [BUG-1651](bugs/BUG-1651-opensubtitles-zh-language-code.md) | ✅ | ✅ | OpenSubtitles 搜索传裸 zh 语言码，中文字幕永远搜不到 |
 | [BUG-1646](bugs/BUG-1646-manosaba-scene-switch-subtitle-lane.md) | ✅ | 🚧 | 魔法少女的魔女审判切换场景后字幕线程断开 |
 | [BUG-1645](bugs/BUG-1645-nested-latin-lookup.md) | ✅ | ✅ | 嵌套查词查不了英语单词（跨节点粘连成拉丁串） |
