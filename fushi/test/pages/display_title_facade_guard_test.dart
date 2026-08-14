@@ -180,7 +180,7 @@ void main() {
       final String fn = slice(
         booksPart,
         'Future<void> _openIllustrations(',
-        'Future<void> _openAudioImport(',
+        'Future<void> _openSrtBookReimport(',
         where: '_openIllustrations',
       );
       expect(

@@ -310,12 +310,11 @@ void main() {
         in requiredComponentTokens.entries) {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
-      final String source =
-          entry.key.endsWith('reader_fushi_history_page.dart')
-              ? readReaderHistorySource()
-              : entry.key.endsWith('sync_settings_schema.dart')
-                  ? readSyncSettingsSchemaSource()
-                  : file.readAsStringSync();
+      final String source = entry.key.endsWith('reader_fushi_history_page.dart')
+          ? readReaderHistorySource()
+          : entry.key.endsWith('sync_settings_schema.dart')
+              ? readSyncSettingsSchemaSource()
+              : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -327,12 +326,11 @@ void main() {
         in migratedSurfaces.entries) {
       final File file = File(entry.key);
       expect(file.existsSync(), isTrue, reason: '${entry.key} must exist');
-      final String source =
-          entry.key.endsWith('reader_fushi_history_page.dart')
-              ? readReaderHistorySource()
-              : entry.key.endsWith('sync_settings_schema.dart')
-                  ? readSyncSettingsSchemaSource()
-                  : file.readAsStringSync();
+      final String source = entry.key.endsWith('reader_fushi_history_page.dart')
+          ? readReaderHistorySource()
+          : entry.key.endsWith('sync_settings_schema.dart')
+              ? readSyncSettingsSchemaSource()
+              : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -631,22 +629,21 @@ void main() {
               : entry.key.endsWith('sync_settings_schema.dart')
                   ? readSyncSettingsSchemaSource()
                   : File(entry.key).readAsStringSync();
-      final String source =
-          entry.key.endsWith('reader_fushi_history_page.dart')
-              ? _withoutTransparentInkHosts(
-                  _functionSource(
-                    fileSource,
-                    'Widget _bookCardShell({',
-                    'Widget _cardBadge({',
-                  ),
+      final String source = entry.key.endsWith('reader_fushi_history_page.dart')
+          ? _withoutTransparentInkHosts(
+              _functionSource(
+                fileSource,
+                'Widget _bookCardShell({',
+                'Widget _cardBadge({',
+              ),
+            )
+          : entry.key.endsWith('dictionary_dialog_page.dart')
+              ? _functionSource(
+                  fileSource,
+                  'Widget _buildCategoryTile({',
+                  'Future<void> _downloadSelectedDictionaries(',
                 )
-              : entry.key.endsWith('dictionary_dialog_page.dart')
-                  ? _functionSource(
-                      fileSource,
-                      'Widget _buildCategoryTile({',
-                      'Future<void> _downloadSelectedDictionaries(',
-                    )
-                  : _withoutSharedComponentNames(fileSource);
+              : _withoutSharedComponentNames(fileSource);
       for (final String banned in entry.value) {
         expect(source, isNot(contains(banned)),
             reason: '${entry.key} still contains $banned');
@@ -1942,6 +1939,9 @@ void main() {
 
   test('reader page prompt dialogs use shared MD3 dialog chrome', () {
     final String source = readReaderPageSource();
+    final String readerAudiobookPart = File(
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+    ).readAsStringSync();
     final String sentenceActionBar = _functionSource(
       source,
       'Widget buildRow(ThemeData theme)',
@@ -1950,11 +1950,6 @@ void main() {
     final String lyricsHint = _sectionSource(
       source,
       'class ReaderLyricsModeHintDialog',
-      'class ReaderSrtAudioPickerDialog',
-    );
-    final String srtAudioPicker = _sectionSource(
-      source,
-      'class ReaderSrtAudioPickerDialog',
       source.length,
     );
     final String lyricsFlow = _functionSource(
@@ -1962,10 +1957,13 @@ void main() {
       'void _showLyricsModeHintIfNeeded()',
       '  Future<void> _exitLyricsMode() async',
     );
+    // 字幕书「重新导入」入口现在弹的是共享的 [SrtBookReimportDialog]（音频 +
+    // 字幕两半），不再是本文件里那个只有音频一半的旧 picker（已删）；这里守的是
+    // 「入口仍走共享对话框、没有人在流程里手搓 adaptiveAlertDialog」。
     final String pickerFlow = _functionSource(
-      source,
-      'Future<void> _openSrtBookAudioPicker() async',
-      '  Future<void> _pickSrtAudioFiles(BuildContext dialogContext) async',
+      readerAudiobookPart,
+      'Future<void> _openSrtBookReimport() async',
+      '/// TODO-1115：有声书片段视频',
     );
     final String settingsBar = _functionSource(
       source,
@@ -1974,7 +1972,7 @@ void main() {
     );
 
     expect(lyricsFlow, contains('ReaderLyricsModeHintDialog('));
-    expect(pickerFlow, contains('ReaderSrtAudioPickerDialog('));
+    expect(pickerFlow, contains('SrtBookReimportDialog('));
     expect(settingsBar, contains('FushiDesignTokens.of(context)'));
     expect(settingsBar, contains('tokens.spacing'));
     expect(
@@ -1983,19 +1981,13 @@ void main() {
     );
     for (final String dialogSource in <String>[
       lyricsHint,
-      srtAudioPicker,
       lyricsFlow,
       pickerFlow,
     ]) {
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
-    for (final String dialogSource in <String>[
-      lyricsHint,
-      srtAudioPicker,
-    ]) {
-      expect(dialogSource, contains('FushiDialogFrame('));
-      expect(dialogSource, contains('FushiModalSheetFrame('));
-    }
+    expect(lyricsHint, contains('FushiDialogFrame('));
+    expect(lyricsHint, contains('FushiModalSheetFrame('));
     expect(sentenceActionBar, contains('FushiDesignTokens.of(context)'));
     expect(sentenceActionBar, contains('tokens.spacing'));
     expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
@@ -2048,6 +2040,12 @@ void main() {
     ).readAsStringSync();
     expect(bookImportFrame, contains('return ImportDialogFrame('));
     expect(audiobookFrame, contains('return ImportDialogFrame('));
+    // 字幕书「重新导入」对话框（音频 + 字幕两半）与上面两个导入对话框同一 chrome。
+    final String srtReimportSource = File(
+      'lib/src/media/audiobook/srt_book_reimport_dialog.dart',
+    ).readAsStringSync();
+    expect(srtReimportSource, contains('return ImportDialogFrame('));
+    expect(srtReimportSource, isNot(contains('adaptiveAlertDialog(')));
     expect(sharedImportFrame, contains('FushiDialogFrame('));
     expect(sharedImportFrame, contains('FushiModalSheetFrame('));
     expect(removeFrame, contains('FushiDialogFrame('));
@@ -2360,8 +2358,7 @@ void main() {
     expect(sharedMenu, contains('PopupMenuPosition.under'));
 
     final String dropdown =
-        File('lib/src/utils/components/fushi_dropdown.dart')
-            .readAsStringSync();
+        File('lib/src/utils/components/fushi_dropdown.dart').readAsStringSync();
     expect(dropdown, contains('MenuAnchor('));
     expect(dropdown, contains('tokens.radii.menuRadius'));
     expect(dropdown, contains('tokens.surfaces.overlay'));
@@ -2418,8 +2415,7 @@ void main() {
         File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
 
     expect(dialog, contains('animationStyle: fushiMd3DialogAnimationStyle'));
-    expect(
-        sheet, contains('sheetAnimationStyle: fushiMd3SheetAnimationStyle'));
+    expect(sheet, contains('sheetAnimationStyle: fushiMd3SheetAnimationStyle'));
     expect(menu, contains('popUpAnimationStyle: fushiMd3MenuAnimationStyle'));
     expect(home, contains('showAppDialog<bool>('));
     expect(sync, contains('showAppDialog<int>('));

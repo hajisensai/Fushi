@@ -32,6 +32,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
+import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
@@ -40,7 +42,6 @@ import 'package:fushi/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi/src/media/display_title.dart';
-import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -3778,65 +3779,6 @@ class ReaderLyricsModeHintDialog extends StatelessWidget {
             onPressed: onClose,
             child: Text(MaterialLocalizations.of(context).okButtonLabel),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-@visibleForTesting
-class ReaderSrtAudioPickerDialog extends StatelessWidget {
-  const ReaderSrtAudioPickerDialog({
-    required this.currentLabel,
-    required this.onPickFiles,
-    super.key,
-  });
-
-  final String currentLabel;
-  final VoidCallback onPickFiles;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-
-    return FushiDialogFrame(
-      maxWidth: 460,
-      maxHeightFactor: 0.76,
-      child: FushiModalSheetFrame(
-        title: t.srt_book_replace_audio,
-        leadingIcon: Icons.audio_file_outlined,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Text(
-          currentLabel,
-          style: tokens.type.listSubtitle,
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
-            ),
-            FilledButton.icon(
-              onPressed: onPickFiles,
-              icon: const Icon(Icons.audio_file_outlined, size: 18),
-              label: Text(t.srt_import_pick_audio_files),
-            ),
-          ],
         ),
       ),
     );

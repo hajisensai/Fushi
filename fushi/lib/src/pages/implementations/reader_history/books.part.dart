@@ -258,6 +258,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           MediaRef(kind: MediaKind.srt, entryKey: book.uid),
         ),
       ),
+      // 「重新导入」：音频 + 字幕两半一起换。旧入口叫「导入音频」且只能换音频，
+      // 字幕书的字幕在首次导入后全仓无处可换（用户报「有声书没办法重新导入 /
+      // 导不了字幕文件」）。对 bookKey 为空的孤儿字幕书同样可见——它们才是最需要
+      // 换字幕的一类（首次导入 cue 解析失败才会落成孤儿）。
+      DialogQuickAction(
+        label: t.srt_book_reimport,
+        icon: Icons.headphones_outlined,
+        onPressed: () async {
+          Navigator.pop(dialogContext);
+          await _openSrtBookReimport(book);
+        },
+      ),
       if (bookKey.isNotEmpty) ...[
         // 与 EPUB 卡菜单对称：手动「标记为已读完 / 取消」。有声书完成状态与 EPUB 共用
         // 同一 EpubBooks.completedAt（按配对 bookKey），故复用同一 [_toggleBookCompleted]。
@@ -281,14 +293,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             icon: Icons.image_outlined,
             onPressed: () => _openIllustrations(item, bookKey),
           ),
-        DialogQuickAction(
-          label: t.audio_import,
-          icon: Icons.headphones_outlined,
-          onPressed: () async {
-            Navigator.pop(dialogContext);
-            await _openAudioImport(book);
-          },
-        ),
         DialogListAction(
           label: t.profile_book_profile,
           icon: Icons.account_circle_outlined,
@@ -1007,32 +1011,45 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
   }
 
-  /// TODO-1032：书架卡片菜单「导入音频」。该入口只对 SRT 字幕书可见
-  /// （[_srtExtraActions] 唯一调用方），音频真值必须落 SrtBooks.audioPaths，
-  /// 与「重新定位」/阅读器内导入归一；旧实现误弹 AudiobookImportDialog 把音频写进
-  /// Audiobooks 表，导致 SrtBook 音频对话框查不到、显示空表单。
-  Future<void> _openAudioImport(SrtBook book) async {
-    final List<String> picked = await _pickSrtAudioFiles();
-    if (picked.isEmpty || !mounted) return;
+  /// 书架卡片菜单「重新导入」（字幕书）：音频 + 字幕两半一起换。
+  ///
+  /// **先按播放侧真相分流**，这是旧实现最要命的 bug：EPUB 有声书除了 `audiobooks`
+  /// 行还会落一条配对的 `srt_books` 行（`srtbook_epub_<bookKey>`，TODO-894 为打通
+  /// 同步导出），书架把它渲染成 SRT 卡片，于是这个菜单项也出现在**有声书**卡上。
+  /// 旧实现无条件走 [SrtBookRepository.replaceAudio] 写 `SrtBooks.audioPaths`，
+  /// 而 [AudiobookSessionLauncher.resolve] 是**先查 `Audiobooks` 再回退 `SrtBooks`**
+  /// 的——命中 Audiobooks 就返回，刚写的新音频永远读不到。用户报的「导入音频没用」
+  /// 就是这条：写了，但播放侧根本不看那一列。
+  ///
+  /// 判据用「该 bookKey 是否有 `audiobooks` 行」而不是 uid 形态：它正是 resolve 的
+  /// 判据本身，与播放侧逐字同源，不会因为 uid 命名将来变形而悄悄漂开。
+  Future<void> _openSrtBookReimport(SrtBook book) async {
+    final String bookKey = book.bookKey;
+    final AudiobookRow? audiobookRow = bookKey.isEmpty
+        ? null
+        : await appModel.database.getAudiobookByBookKey(bookKey);
+    if (!mounted) return;
 
-    FushiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
-    try {
-      await SrtBookRepository(appModel.database)
-          .replaceAudio(uid: book.uid, pickedPaths: picked);
-      if (mounted) {
-        _refreshSrtBooks();
-        _rebuild(() {});
-        FushiToast.show(
-            msg: t.audiobook_import_success, severity: ToastSeverity.success);
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderHistory.openAudioImport', e, stack);
-      debugPrint('[ReaderHistory] openAudioImport failed: $e');
-      if (mounted) {
-        FushiToast.show(
-            msg: t.audiobook_import_error, severity: ToastSeverity.error);
-      }
+    if (audiobookRow != null) {
+      // 播放侧读 Audiobooks：交给管那张表的对话框（它音频/字幕两半都能换）。
+      await _openAudiobookImportForKey(bookKey);
+      return;
     }
+
+    final SrtBookRepository repo = SrtBookRepository(appModel.database);
+    final SrtBookReimportOutcome? outcome =
+        await showAppDialog<SrtBookReimportOutcome>(
+      context: context,
+      builder: (_) => SrtBookReimportDialog(
+        book: book,
+        db: appModel.database,
+        repo: repo,
+      ),
+    );
+    if (outcome == null || !mounted) return;
+    _refreshSrtBooks();
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    _rebuild(() {});
   }
 
   Future<List<String>> _pickSrtAudioFiles() async {
@@ -1050,6 +1067,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   Future<void> _openAudiobookImport(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    await _openAudiobookImportForKey(bookKey);
+  }
+
+  /// 打开 [AudiobookImportDialog] 本体（调用方负责先收起自己的菜单）。
+  /// 卡菜单入口与字幕书「重新导入」的分流入口共用，避免第二处手抄 extractDir 查询。
+  Future<void> _openAudiobookImportForKey(String bookKey) async {
     final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
     if (!mounted) return;
     await showAppDialog<bool>(
@@ -1061,6 +1084,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
     );
     if (mounted) {
+      _refreshSrtBooks();
       _rebuild(() {});
     }
   }

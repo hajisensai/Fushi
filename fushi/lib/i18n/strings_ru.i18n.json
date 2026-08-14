@@ -1716,7 +1716,6 @@
   "spread_off": "Выкл",
   "spread_on": "Вкл",
   "srt_audio_unresolved": "Аудиофайл не найден — привяжите заново",
-  "srt_book_replace_audio": "Заменить аудиофайлы",
   "srt_books_section": "Аудиокниги с субтитрами",
   "srt_delete_confirm": "Удалить『$title』? Это действие нельзя отменить.",
   "srt_delete_title": "Удалить книгу с субтитрами",
@@ -3391,5 +3390,9 @@
   "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it",
   "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.",
   "manga_import_batch_hint": "This folder holds $n volume files; each is imported as its own book, named after its file.",
-  "manga_import_batch_done": "Imported $imported, skipped $skipped, failed $failed."
+  "manga_import_batch_done": "Imported $imported, skipped $skipped, failed $failed.",
+  "srt_book_reimport": "Re-import",
+  "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
+  "srt_book_reimport_no_cues": "No subtitle lines found in that file",
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
 }
