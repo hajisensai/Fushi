@@ -351,6 +351,19 @@ Map<String, String> parseMpvConf(String text) {
 /// GL 上下文 + 本次崩溃的 10-bit HEVC 片源）：`Using hardware decoding (d3d11va-copy)`，
 /// 全程不加载 `nvcuda64.dll`。
 ///
+/// **这不是「为了避崩而牺牲硬解」——终点本来就是同一个。** 在 media_kit 真实用的 ANGLE
+/// 上下文下实测：`nvdec` 的零拷贝 CUDA interop 会被 **mpv 自己拒绝**
+/// （`cuGLGetDevices` 失败 → `CUDA hwdec only works with OpenGL or Vulkan backends`），
+/// 因为 ANGLE 是 GLES-over-D3D11、不是 NVIDIA 的真 OpenGL；mpv 随后照样回落到
+/// `d3d11va-copy`。也就是说 CUDA 分支**从来没能真正用上零拷贝**，它只是在回落之前先跑
+/// 一趟 `cuInit()` / `cuCtxCreate_v2()`——而那趟在本机 app 进程里会栽进驱动空指针。
+/// 本修复只是把同一个终点提前，不再路过雷区；解码依然是 GPU 硬解（NVIDIA 上 D3D11VA
+/// 底层调的就是同一块 NVDEC 硬件）。
+///
+/// 反过来说，真要拿到零拷贝就得让 `d3d11va`（非 copy）的 interop 在这条路径上成立
+/// ——那是 media_kit 建 ANGLE context 时把底层 D3D11 device 经 EGL 扩展暴露给 mpv 的活，
+/// 属于性能优化，与本崩溃无关（详见 `docs/bugs/BUG-1639-*.md` 末节）。
+///
 /// 非 Android / 非 Windows（macOS / Linux / iOS）原样透传，零行为变化。
 ///
 /// [isAndroid] / [isWindows] 默认取 `Platform.isAndroid` / `Platform.isWindows`，

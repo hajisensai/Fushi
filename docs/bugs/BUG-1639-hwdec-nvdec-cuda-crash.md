@@ -53,6 +53,38 @@ GL 纹理渲染而非 d3d11 直渲）下逐档实测：
 注：同一档 `auto-safe` 在 `vo=gpu` **d3d11 直渲**上下文下选的是 d3d11va、不碰 CUDA——所以「用 mpv.exe
 播同一个文件不崩」不能证伪本条，渲染上下文才是分叉点。
 
+### 为什么不去「适配 CUDA」而是把它排除（实测，非取舍偏好）
+
+app 的真实渲染路径是 media_kit 的 **ANGLE + render API**（`third_party/media_kit_video/windows/`：
+`angle_surface_manager.cc:283` `eglCreateContext` 建 EGL/GLES context，`video_output.cc:56`
+以 `MPV_RENDER_PARAM_API_TYPE = MPV_RENDER_API_TYPE_OPENGL` 交给 `mpv_render_context_create`）。
+在**同构的 ANGLE 上下文**（`gpu-context=angle`，非前表的 WGL）下逐档实测：
+
+| hwdec | ANGLE 下的结果 |
+|---|---|
+| `nvdec`（零拷贝 CUDA interop） | `cu->cuGLGetDevices(...) failed -> CUDA_ERROR_OPERATING_SYSTEM` → `[vo/gpu/cuda] CUDA hwdec only works with OpenGL or Vulkan backends.` → `Loading failed` → 回落 |
+| `d3d11va`（零拷贝 D3D11 interop） | `d3d11va` 与 `d3d11-egl` 两个 interop driver 均 `Loading failed` |
+| `nvdec-copy`（CUDA copy-back） | ✅ `Using hardware decoding (nvdec-copy)`，正常播放 |
+| `d3d11va-copy`（D3D11 copy-back） | ✅ `Using hardware decoding (d3d11va-copy)`，正常播放 |
+
+三条结论：
+
+1. **零拷贝 CUDA 在当前架构下不可达**——ANGLE 是「GLES-over-D3D11」，不是 NVIDIA 的真 OpenGL，
+   `cuGLGetDevices` 认不了它，**mpv 自己就会拒绝启用 CUDA interop**。要让它生效需把 Flutter Windows
+   的渲染后端换成真 OpenGL 或 Vulkan（等于重写 media_kit Windows 渲染层），不属于「适配」范畴。
+2. **copy-back 的 CUDA（`nvdec-copy`）技术上可用，但相对 `d3d11va-copy` 零收益**：两者都用 GPU 硬件
+   解码单元、都把帧拷回内存，NVIDIA 上 D3D11VA 底层调的就是同一块 NVDEC 硬件；区别只是前者要多走
+   一遍 `cuInit()` / `cuCtxCreate_v2()`——正是本条崩溃的那步。**排除 CUDA 不等于放弃硬解。**
+3. **未解**：单实例复现时 `cuInit` 能成功（走到 `cuGLGetDevices` 才失败），而 app 里连
+   `cuInit`/`cuCtxCreate` 都崩。崩溃 dump 里进程并存 **14 个 libmpv 实例**（14 个 `mpv_wait_event`
+   事件循环）与 3 个 nvcuda64 线程，怀疑与之相关但未复现。这不影响修复结论：`d3d11va-copy`
+   根本不加载 `nvcuda64.dll`，整条路径被消除。
+
+**顺带记录一个真实的优化机会（非本条崩溃）**：`d3d11va` 零拷贝在这条路径下同样失败（连 `d3d11-egl`
+interop 都没加载起来），意味着当前每帧都在做 GPU→内存→GPU 往返。根因方向是 media_kit 建 ANGLE
+context 时没把底层 D3D11 device 经 EGL 扩展暴露给 mpv。修好它可省掉这次往返，属于性能优化，
+未在本条处理。
+
 ### 关于「只有 K-ON 崩」
 
 与 BUG-1545 的结论一致：不是 K-ON 专属，也不是标题里的 `!`、不是每集新建 Player。
