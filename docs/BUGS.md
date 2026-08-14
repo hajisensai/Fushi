@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1533 条。点号进各自文件。
+> 共 1535 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1657](bugs/BUG-1657-aidoku-image-reader-compat.md) | ✅ | ✅ | Aidoku 图源图片与章节兼容及阅读器返回入口缺失 |
+| [BUG-1656](bugs/BUG-1656-apple-manga-reader-images.md) | ✅ | ✅ | Apple 漫画阅读器图片黑屏 |
 | [BUG-1655](bugs/BUG-1655-ruby-double-scale.md) | ✅ | ✅ | 查词浮窗振假名显示过小（疑双重 0.5em 缩放） |
 | [BUG-1650](bugs/BUG-1650-sync-pulled-progress-stale-until-restart.md) | ✅ | ✅ | 同步拉回更远进度后首页继续与书架不刷新须重启 |
 | [BUG-1649](bugs/BUG-1649-manga-folder-epub-import.md) | ✅ | ✅ | 漫画页选文件夹导入：目录内是 epub 卷时报 Manga image folder has no pages |

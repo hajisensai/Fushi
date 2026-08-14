@@ -1,7 +1,7 @@
 ## BUG-1657 · Aidoku 图源图片与章节兼容及阅读器返回入口缺失
 - **报告**：2026-08-15（用户：iOS 多个 Aidoku 源封面或正文图片加载失败，部分漫画打开后无页；阅读器缺少左上返回入口；图源页标题与列表下拉布局分散）
 - **真实性**：✅ 真 bug。`native/aidoku_runtime/src/embedded.rs:1070` 的 `html.attr("abs:...")` 在 HTML 片段没有 base URL 时会把已经是绝对 HTTPS 的图片地址也丢成空值，Raw Otaku 因而稳定返回 0 页；`fushi/lib/src/media/manga/aidoku/aidoku_reader_chapter.dart:53` 又把 Aidoku `PageContext` 错当 HTTP headers，没有执行扩展的 `ImageRequestProvider`，需要防盗链 Referer 的图片会失败；`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:3157` 只有右上阅读工具，没有退出阅读器的可见按钮。
-- **[x] ① 已修复** — `0ddd01c16` 保留无 base URL HTML 片段里的绝对地址，在同一次 WASM 会话执行 `get_image_request` 并把扩展解析出的 URL/headers 传给共享下载器，封面补通用 UA/Referer，下载和解析异常写入错误日志；共享阅读器增加左上返回按钮。`28e3e9fff` 将 Aidoku 返回按钮、图源名和列表下拉合并到最顶部同一行、同一高度。
+- **[x] ① 已修复** — `bb0809bd` 保留无 base URL HTML 片段里的绝对地址，在同一次 WASM 会话执行 `get_image_request` 并把扩展解析出的 URL/headers 传给共享下载器，封面补通用 UA/Referer，下载和解析异常写入错误日志；共享阅读器增加左上返回按钮。`402cfba6` 将 Aidoku 返回按钮、图源名和列表下拉合并到最顶部同一行、同一高度。
 - **[x] ② 已加自动化测试** — `native/aidoku_runtime/src/embedded.rs` 覆盖绝对/相对 HTML 属性；`fushi/test/media/manga/aidoku_reader_chapter_test.dart` 覆盖 PageContext 与请求头隔离；`fushi/test/media/manga/aidoku_source_browse_page_test.dart` 覆盖页头左右布局；`fushi/test/pages/manga_fushi_page_test.dart` 覆盖阅读器返回入口。4 个 embedded Rust 单测、22 个相关 Flutter 测试通过；另以手机导出的 Raw Otaku `.aix` 实网复测搜索→详情→章节→图片页链路通过。
 - **[x] ③ 安装兼容已补齐** — 官方仓库当前 132 个 `.aix` 中原有 70 个会在 iOS 安装检查时因缺失 `html.parent/parse/children/html`、Canvas 图像处理或 `std.utc_offset` 等宿主 ABI 无法实例化。内嵌运行时现补齐这些导入与受 64M 像素上限约束的图片解码、裁切、缩放、合成，并以全仓 132/132 解包和 WASM 实例化测试验证。仓库添加、浏览、本地导入和两处仓库安装失败也会写入 `error_log.txt`。
 - **备注**：真机仍采用 Profile 包验证，不下载或启动 Simulator。图片请求失败会以 `AidokuReader.pages` / `AidokuReader.image[n]` 写入应用错误日志，便于按具体源继续定位。
