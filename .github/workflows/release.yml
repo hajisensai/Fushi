@@ -778,7 +778,11 @@ jobs:
         VERSION: ${{ steps.channel.outputs.build_version_name }}
         RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
         ARTIFACTS_DIR: hibiki/build/release-artifacts
-        ASSET_GLOB: hibiki-*.apk
+        # 与拆分包命名同源：产物已改成 `bridge-<version>-<abi>.apk`（理由见上面
+        # 「Prepare release APK assets」的注释）。这里漏改会让清单步骤报
+        # `No files matched hibiki-*.apk`——资产其实已经上传成功，只是清单没写成，
+        # v2.0.0 桥包首发就踩了这个（run 31777398821）。
+        ASSET_GLOB: bridge-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
 
