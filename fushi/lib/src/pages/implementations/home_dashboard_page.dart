@@ -543,7 +543,15 @@ class _HomeDashboardPageState
   void _scheduleReload() {
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
-      if (mounted) unawaited(_loadDashboardData());
+      if (!mounted) return;
+      // 「继续」的书侧数据来自缓存 provider（书列表/最近阅读时刻均派生自
+      // reader_positions），它们此前只在关书/导入时失效——互联/云同步把更远的
+      // 对端进度写回后首页拿不到新值、要重启才生效。表级变更信号（现已含
+      // readerPositions）到达时一并失效，让下面的重载 + build 的 ref.watch 读到
+      // 新进度。频度由写入端自身的 debounce + 本 400ms 防抖兜住。
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(bookLastReadAtProvider);
+      unawaited(_loadDashboardData());
     });
   }
 

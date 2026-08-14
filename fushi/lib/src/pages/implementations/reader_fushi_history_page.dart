@@ -439,6 +439,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 落到这里重载 _shelfMapsFuture，让新同步进来的合集成员立即成组。
   void _reloadShelfMapsOnTabRefresh() {
     if (!mounted) return;
+    // 同步拉回对端更远的阅读进度（localBookProgressPulled>0 同样走 refreshTab）
+    // 时，书列表 / 最近阅读时刻 provider 的缓存也必须失效——否则书架进度条与
+    // 「最近阅读」排序停在旧值，要下拉刷新或重启才对（BUG-686 只修了触发信号，
+    // 消费端一直没接上这两个缓存）。
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(bookLastReadAtProvider);
     setState(() {
       _shelfMapsFuture = _loadShelfMaps();
     });
