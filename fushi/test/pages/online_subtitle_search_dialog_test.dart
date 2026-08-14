@@ -20,23 +20,21 @@ class _StubCandidate extends VideoSubtitleCandidate {
     super.remoteId = 'r1',
     super.language = 'ja',
     super.providerPriority = 200,
-    super.downloadCount = 0,
     super.episode,
   });
 }
 
 class _StubProvider implements VideoSubtitleProvider {
-  _StubProvider({
-    required this.id,
-    required this.downloadFileName,
-    this.bytes = const <int>[1, 2, 3],
-  });
+  _StubProvider({required this.id, required this.downloadFileName});
 
   @override
   final String id;
 
   final String downloadFileName;
-  final List<int> bytes;
+
+  /// 落盘内容的固定探针字节，用于断言「写下去的就是 provider 给的那份」。
+  static const List<int> bytes = <int>[1, 2, 3];
+
   int downloadCalls = 0;
 
   @override
