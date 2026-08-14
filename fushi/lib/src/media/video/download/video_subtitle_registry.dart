@@ -17,13 +17,10 @@ class VideoSubtitleRegistry {
   ) async {
     final bool anime =
         request.media?.discoveryCategory == VideoDiscoveryCategory.anime;
-    final List<VideoSubtitleProvider> applicable = providers
-        .where(
-          (VideoSubtitleProvider provider) => anime
-              ? provider.id == 'jimaku' || provider.id == 'opensubtitles'
-              : provider.id == 'opensubtitles',
-        )
-        .toList()
+    // 每个 provider 自己决定能否服务这次检索（Jimaku 会按分类切 anime/live-action
+    // 范围），注册表不再用 id 白名单替它们做可用性判断——那行白名单曾把 Jimaku 的整个
+    // 真人剧库挡在非动漫检索之外。排序仍保留「动漫优先 Jimaku」的既有意图。
+    final List<VideoSubtitleProvider> applicable = providers.toList()
       ..sort((VideoSubtitleProvider a, VideoSubtitleProvider b) {
         if (anime && a.id != b.id) {
           if (a.id == 'jimaku') return -1;

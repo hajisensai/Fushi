@@ -146,6 +146,113 @@ void main() {
     );
     expect(result.failures.single.statusCode, 401);
   });
+
+  group('Jimaku Live Action 接入', () {
+    VideoMediaReference reference({
+      required VideoDiscoveryCategory category,
+      VideoMetadataMediaKind kind = VideoMetadataMediaKind.tv,
+      int? tmdbId,
+    }) =>
+        VideoMediaReference(
+          providerId: 'tmdb',
+          mediaId: '${tmdbId ?? 0}',
+          mediaKind: kind,
+          discoveryCategory: category,
+          title: '最愛',
+          tmdbId: tmdbId,
+        );
+
+    test('分类 → 检索范围：动漫查动画、其余查真人、未知查两类', () {
+      expect(
+        JimakuVideoSubtitleProvider.scopeFor(
+            reference(category: VideoDiscoveryCategory.anime)),
+        JimakuSearchScope.anime,
+      );
+      expect(
+        JimakuVideoSubtitleProvider.scopeFor(
+            reference(category: VideoDiscoveryCategory.tv)),
+        JimakuSearchScope.liveAction,
+      );
+      expect(
+        JimakuVideoSubtitleProvider.scopeFor(
+            reference(category: VideoDiscoveryCategory.movie)),
+        JimakuSearchScope.liveAction,
+      );
+      // 分类未知（播放页对本地文件搜字幕）不得默认成动画，否则日剧字幕整片消失。
+      expect(
+        JimakuVideoSubtitleProvider.scopeFor(null),
+        JimakuSearchScope.all,
+      );
+    });
+
+    test('TMDB id 按媒体种类编码（电影/剧集是两个号段）', () {
+      expect(
+        JimakuVideoSubtitleProvider.tmdbIdFor(reference(
+          category: VideoDiscoveryCategory.tv,
+          tmdbId: 126991,
+        )),
+        'tv:126991',
+      );
+      expect(
+        JimakuVideoSubtitleProvider.tmdbIdFor(reference(
+          category: VideoDiscoveryCategory.movie,
+          kind: VideoMetadataMediaKind.movie,
+          tmdbId: 669204,
+        )),
+        'movie:669204',
+      );
+      expect(
+        JimakuVideoSubtitleProvider.tmdbIdFor(
+            reference(category: VideoDiscoveryCategory.tv)),
+        isNull,
+      );
+    });
+
+    test('真人剧检索发 anime=false 且带 tmdb_id，不发 anilist_id', () async {
+      final List<String> searches = <String>[];
+      final JimakuVideoSubtitleProvider provider = JimakuVideoSubtitleProvider(
+        client: JimakuClient(
+          apiKey: 'k',
+          client: MockClient((http.Request request) async {
+            if (request.url.path.endsWith('/entries/search')) {
+              final Map<String, String> p = request.url.queryParameters;
+              searches.add('anime=${p['anime']}'
+                  ' tmdb=${p['tmdb_id']}'
+                  ' anilist=${p['anilist_id']}'
+                  ' query=${p['query']}');
+              return http.Response.bytes(
+                utf8.encode('[{"id":4,"name":"最愛","tmdb_id":"tv:126991",'
+                    '"flags":{"anime":false}}]'),
+                200,
+              );
+            }
+            return http.Response.bytes(
+              utf8.encode('[{"name":"最愛 - 01.ja.srt","url":"https://x/1"}]'),
+              200,
+            );
+          }),
+        ),
+      );
+
+      final ProviderBatchResult<VideoSubtitleCandidate> result =
+          await provider.search(
+        VideoSubtitleSearchRequest(
+          media: reference(
+            category: VideoDiscoveryCategory.tv,
+            tmdbId: 126991,
+          ),
+          query: '最愛',
+        ),
+      );
+
+      expect(result.failures, isEmpty);
+      expect(result.items, hasLength(1));
+      // TMDB 精确键命中即停，且分类恒为真人；AniList 是动画专属键，此处不得出现。
+      expect(searches, <String>[
+        'anime=false tmdb=tv:126991 anilist=null query=null',
+      ]);
+    });
+  });
 }
 
 const String _nyaaFeed = '''
