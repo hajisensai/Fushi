@@ -12,6 +12,43 @@ import 'package:fushi/src/utils/net/app_http.dart';
 
 const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
 
+/// Hibiki 的大类语言码 → OpenSubtitles 认得的 BCP-47 码（BUG-1651）。
+///
+/// Hibiki 内部字幕语言只分到大类（`ja`/`zh`/`en`/`ko`，见 `kJimakuLanguageCodes`——
+/// Jimaku 侧靠文件名启发式识别，本来就分不了地区）。而 OpenSubtitles 的语言表
+/// （`GET /infos/languages`，105 个码）里**没有裸 `zh`**，只有 `zh-cn` / `zh-tw` /
+/// `zh-ca`：把大类码原样发过去，中文字幕恒定搜不到。
+///
+/// 只有带地区码的语言家族需要展开——实测该表里带地区的仅 `az` / `pt` / `tm` / `zh`
+/// 四族，`ja` `en` `ko` `es` `fr` `de` `it` `ru` `th` `vi` `id` `ar` `nl` `tr` 均有裸码，
+/// 原样透传即可。这里只登记 Hibiki 可能产生的那两族，其余交给服务端裁决。
+const Map<String, List<String>> kOpenSubtitlesLanguageExpansions =
+    <String, List<String>>{
+  'zh': <String>['zh-cn', 'zh-tw'],
+  'pt': <String>['pt-br', 'pt-pt'],
+};
+
+/// 把语言偏好归一成 OpenSubtitles 能接受的值域。纯函数，便于单测。
+///
+/// 大类码展开成该族的具体地区码（`zh` → `zh-cn,zh-tw`），其余小写后原样保留；结果去重
+/// 并**排序**——API 对未规范化的 query 会回 301 重定向到规范 URL，排好序能省掉这次多余
+/// 往返（实测 `languages=zh-CN&query=X` 会被 301 到全小写且参数有序的 URL）。
+List<String> normalizeOpenSubtitlesLanguages(Iterable<String> languages) {
+  final Set<String> out = <String>{};
+  for (final String raw in languages) {
+    final String code = raw.trim().toLowerCase();
+    if (code.isEmpty) continue;
+    final List<String>? expansion = kOpenSubtitlesLanguageExpansions[code];
+    if (expansion == null) {
+      out.add(code);
+    } else {
+      out.addAll(expansion);
+    }
+  }
+  final List<String> sorted = out.toList()..sort();
+  return List<String>.unmodifiable(sorted);
+}
+
 class OpenSubtitlesConfig {
   OpenSubtitlesConfig({
     required this.apiKey,
@@ -497,10 +534,12 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       RegExp(r'^tt', caseSensitive: false),
       '',
     );
+    // 归一后再发：Hibiki 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1651）。
+    final List<String> languages =
+        normalizeOpenSubtitlesLanguages(request.languages);
     final Map<String, String> common = <String, String>{
       'page': '${request.page}',
-      if (request.languages.isNotEmpty)
-        'languages': request.languages.join(','),
+      if (languages.isNotEmpty) 'languages': languages.join(','),
     };
     final Map<String, String> episode = <String, String>{
       if (request.effectiveSeason != null)

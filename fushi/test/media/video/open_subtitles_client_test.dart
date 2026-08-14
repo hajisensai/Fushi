@@ -333,6 +333,54 @@ void main() {
         reason: 'the 65th MiB crosses the cap; chunk 66 stays unread');
   });
 
+  group('语言码归一（BUG-1651）', () {
+    test('大类 zh 展开成 OpenSubtitles 真有的地区码', () {
+      // 官方语言表（/infos/languages，105 个码）里没有裸 zh，只有 zh-cn/zh-tw/zh-ca：
+      // 原样发过去中文字幕恒定搜不到。
+      expect(normalizeOpenSubtitlesLanguages(<String>['zh']),
+          <String>['zh-cn', 'zh-tw']);
+      expect(normalizeOpenSubtitlesLanguages(<String>['pt']),
+          <String>['pt-br', 'pt-pt']);
+    });
+
+    test('本来就有裸码的语言原样透传', () {
+      expect(normalizeOpenSubtitlesLanguages(<String>['ja']), <String>['ja']);
+      expect(normalizeOpenSubtitlesLanguages(<String>['en', 'ko']),
+          <String>['en', 'ko']);
+    });
+
+    test('去重、去空、小写化，并排序', () {
+      // API 对未规范化的 query 会 301 到规范 URL；排好序省掉这次多余往返。
+      expect(
+        normalizeOpenSubtitlesLanguages(<String>['ZH', ' ja ', '', 'zh', 'ja']),
+        <String>['ja', 'zh-cn', 'zh-tw'],
+      );
+    });
+
+    test('搜索请求真的带上归一后的语言码', () async {
+      final List<Map<String, String>> queries = <Map<String, String>>[];
+      final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(
+          apiKey: 'api-secret',
+          baseUrl: Uri.parse('http://localhost/api/v1'),
+        ),
+        client: MockClient((http.Request request) async {
+          queries.add(request.url.queryParameters);
+          return http.Response(
+              jsonEncode(<String, Object?>{'data': <Object?>[]}), 200);
+        }),
+        closesClient: false,
+      );
+
+      await client.search(
+        VideoSubtitleSearchRequest(query: '最愛', languages: <String>['zh']),
+      );
+
+      expect(queries.single['languages'], 'zh-cn,zh-tw',
+          reason: '裸 zh 发过去等于放弃全部中文字幕');
+    });
+  });
+
   test('does not issue an unbounded search with only language filters',
       () async {
     final OpenSubtitlesClient client = OpenSubtitlesClient(
@@ -429,7 +477,9 @@ void main() {
     expect(queries[3], isNot(contains('parent_tmdb_id')));
     for (final Map<String, String> query in queries) {
       expect(query['page'], '3');
-      expect(query['languages'], 'ja,zh');
+      // BUG-1651：入参仍是 Hibiki 的大类码 ja/zh，但发出去必须是 OpenSubtitles
+      // 认得的 BCP-47——它的语言表里没有裸 zh。旧断言锁的正是那个缺陷行为。
+      expect(query['languages'], 'ja,zh-cn,zh-tw');
     }
   });
 

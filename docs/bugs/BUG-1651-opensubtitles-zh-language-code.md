@@ -2,8 +2,14 @@
 - **报告**：2026-08-15（用户：接入 OpenSubtitles 时自查发现，非用户报告）
 - **真实性**：✅ 真 bug — 根因 `fushi/lib/src/media/video/subtitle/open_subtitles_client.dart:503`
   （`'languages': request.languages.join(',')` 把 Hibiki 的大类语言码原样透传给 API）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复** — `fushi/lib/src/media/video/subtitle/open_subtitles_client.dart`
+  新增 `normalizeOpenSubtitlesLanguages` + `kOpenSubtitlesLanguageExpansions`，在 client 内部
+  单点归一（两个调用方——下载流水线与播放页在线检索——都受益），`_searchQueries` 改用归一结果。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/open_subtitles_client_test.dart`
+  新增 group「语言码归一（BUG-1651）」4 例：zh/pt 展开、裸码透传、去重去空排序、搜索请求真的
+  带上归一后的码。既有用例 `falls back in separate hash, IMDb, TMDB, then title requests` 里
+  断言 `languages == 'ja,zh'` 的那行同步改成 `'ja,zh-cn,zh-tw'`——它锁的正是本 bug 的缺陷行为。
+  变异实测：删掉 zh 映射后 3 例转红，还原后文件 sha256 与变异前一致。
 - **备注**：
 
 ### 根因
