@@ -61,6 +61,7 @@ class AppModelLibraryHostService
         DeletionTombstoneHost,
         VideoDeletionHost,
         VideoDelayHost,
+        AudiobookDelayHost,
         InterconnectServiceConfigHost {
   AppModelLibraryHostService({
     required FushiDatabase db,
@@ -782,14 +783,30 @@ class AppModelLibraryHostService
     final List<AudiobookRow> rows = await _db.getAllAudiobooks();
     final List<RemoteAudiobookInfo> result = <RemoteAudiobookInfo>[];
     final Set<String> emittedUids = <String>{};
+    // 清单内联断点 + 调轴（互联完整支持批次）：与视频清单同范式，sweep/下载回填
+    // 免逐本 GET（旧实现 N 本书 = N 次网络往返）。一趟 prefs 批读。
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    RemoteAudiobookInfo build(String bookKey, String uid, String? title) {
+      final String identity = bookKey.isNotEmpty ? bookKey : uid;
+      return RemoteAudiobookInfo(
+        bookKey: bookKey,
+        uid: uid,
+        title: title,
+        positionMs: PrefCodec.decode<int>(
+            allPrefs[audiobookPositionPrefKey(identity)] ?? '', 0),
+        positionUpdatedAtMs: PrefCodec.decode<int>(
+            allPrefs[audiobookPositionAtPrefKey(identity)] ?? '', 0),
+        delayMs: PrefCodec.decode<int>(
+            allPrefs[audiobookDelayPrefKey(identity)] ?? '', 0),
+        delayUpdatedAtMs: PrefCodec.decode<int>(
+            allPrefs[audiobookDelayAtPrefKey(identity)] ?? '', 0),
+      );
+    }
+
     for (final AudiobookRow r in rows) {
       final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
       if (srt == null) continue;
-      result.add(RemoteAudiobookInfo(
-        bookKey: r.bookKey,
-        uid: srt.uid,
-        title: srt.title,
-      ));
+      result.add(build(r.bookKey, srt.uid, srt.title));
       emittedUids.add(srt.uid);
     }
     // 纯 SRT（standalone）有声书：bookKey 为空、不落 Audiobooks 行，身份 = uid。
@@ -797,13 +814,51 @@ class AppModelLibraryHostService
     for (final SrtBookRow srt in srtRows) {
       if (srt.bookKey.isNotEmpty) continue; // srt-backed 已在上面枚举
       if (!emittedUids.add(srt.uid)) continue; // 去重（防重复 uid）
-      result.add(RemoteAudiobookInfo(
-        bookKey: '',
-        uid: srt.uid,
-        title: srt.title,
-      ));
+      result.add(build('', srt.uid, srt.title));
     }
     return result;
+  }
+
+  /// 读 host 端有声书 [identity] 的调轴（[AudiobookDelayHost]）。值键是既有
+  /// `audiobook_delay_` pref（旧数据无戳记 0，被任何带戳对端值盖过）。
+  @override
+  Future<({int delayMs, int updatedAtMs})> getAudiobookDelay(
+      String identity) async {
+    final int delay =
+        await _db.getPrefTyped<int>(audiobookDelayPrefKey(identity), 0);
+    final int at =
+        await _db.getPrefTyped<int>(audiobookDelayAtPrefKey(identity), 0);
+    return (delayMs: delay, updatedAtMs: at);
+  }
+
+  /// 把 client 上报的有声书 [identity] 调轴写入 host（[AudiobookDelayHost]）。
+  /// 存在性闸门 / clamp / 未来戳截断 / LWW 与视频 [putVideoDelay] 同纪律；
+  /// 有声书调轴本地读取就是这对 prefs，写入即对 host 本机播放生效（无行写穿）。
+  @override
+  Future<void> putAudiobookDelay(
+      String identity, int delayMs, int updatedAtMs) async {
+    if (!await audiobookExists(identity)) return;
+    final int clamped = delayMs.clamp(
+        -kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
+    final int nowCapMs =
+        DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
+    final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
+    final ({int delayMs, int updatedAtMs}) current =
+        await getAudiobookDelay(identity);
+    final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
+      aDelayMs: current.delayMs,
+      aUpdatedAtMs: current.updatedAtMs,
+      bDelayMs: clamped,
+      bUpdatedAtMs: cappedAt,
+    );
+    if (winner.updatedAtMs == current.updatedAtMs &&
+        winner.delayMs == current.delayMs) {
+      return; // host 已存更新或相等，no-op。
+    }
+    await _db.setPrefTyped<int>(
+        audiobookDelayPrefKey(identity), winner.delayMs);
+    await _db.setPrefTyped<int>(
+        audiobookDelayAtPrefKey(identity), winner.updatedAtMs);
   }
 
   /// 即时把身份键为 [identity] 的有声书打包成临时文件，返回该文件。

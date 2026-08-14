@@ -1658,6 +1658,55 @@ class FushiSyncServer {
       }
     }
 
+    // GET/PUT /api/library/audiobooks/<identity>/delay — 有声书调轴跨设备同步
+    // （互联完整支持批次；与视频 /delay、上面的 /position 分支对称）。同样必须在
+    // 整包 bookKey 提取之前匹配。老 host 无此分支 → 404，client best-effort 降级。
+    const String delaySuffix = '/delay';
+    if (reqPath.startsWith(audiobookPrefix) &&
+        reqPath.endsWith(delaySuffix)) {
+      final String delayIdentity = reqPath.substring(
+          audiobookPrefix.length, reqPath.length - delaySuffix.length);
+      final shelf.Response? unsafeDelayIdentity =
+          _rejectUnsafeAssetId(delayIdentity, 'bookKey');
+      if (unsafeDelayIdentity != null) return unsafeDelayIdentity;
+      if (svc is! AudiobookDelayHost) {
+        return shelf.Response.notFound('Audiobook delay not supported');
+      }
+      final AudiobookDelayHost delayHost = svc as AudiobookDelayHost;
+      try {
+        if (!await svc.audiobookExists(delayIdentity)) {
+          return shelf.Response.notFound('Audiobook not found');
+        }
+      } on ArgumentError {
+        return shelf.Response.forbidden('Invalid bookKey');
+      }
+      switch (method) {
+        case 'GET':
+          final ({int delayMs, int updatedAtMs}) d =
+              await delayHost.getAudiobookDelay(delayIdentity);
+          return _jsonResponse(<String, dynamic>{
+            'delayMs': d.delayMs,
+            'delayUpdatedAtMs': d.updatedAtMs,
+          });
+        case 'PUT':
+          final String body = await request.readAsString();
+          Map<String, dynamic> json;
+          try {
+            json = jsonDecode(body) as Map<String, dynamic>;
+          } catch (_) {
+            return shelf.Response(400, body: 'Invalid JSON');
+          }
+          final int delayMs = (json['delayMs'] as num?)?.toInt() ?? 0;
+          final int updatedAtMs =
+              (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0;
+          await delayHost.putAudiobookDelay(
+              delayIdentity, delayMs, updatedAtMs);
+          return shelf.Response(200);
+        default:
+          return shelf.Response(405);
+      }
+    }
+
     final String bookKey = reqPath.substring('/api/library/audiobooks/'.length);
     final shelf.Response? unsafe = _rejectUnsafeAssetId(bookKey, 'bookKey');
     if (unsafe != null) return unsafe;

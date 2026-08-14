@@ -190,6 +190,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
 /// 弹幕分集映射（后缀 = bookUid）、来源库凭据（后缀 = MediaSources.id，🔴 凭据）。
 const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'audiobook_delay_',
+  // 调轴 LWW 时间戳孪生键（互联完整支持批次；与 audiobook_pos_at_ 同范式）。
+  'audiobook_delay_at_',
   'audiobook_follow_',
   'audiobook_health_overlay_',
   'audiobook_image_pause_',

@@ -1886,25 +1886,37 @@ class SyncOrchestrator {
     // 的 `audiobook_pos_<uid>` 永远落不进 hostKeys → 听书进度跨设备完全不同步——
     // 而 host 端 get/putAudiobookPosition 本就按 identity（bookKey ∪ SrtBooks.uid）
     // 命中（BUG-1637）。空 identity（异常行）跳过不进集合。
-    final Set<String> hostKeys = <String>{
+    final Map<String, RemoteAudiobookInfo> hostById =
+        <String, RemoteAudiobookInfo>{
       for (final RemoteAudiobookInfo info
           in await backend.listRemoteAudiobooks())
-        if (info.identity.isNotEmpty) info.identity,
+        if (info.identity.isNotEmpty) info.identity: info,
     };
-    if (hostKeys.isEmpty) return;
+    if (hostById.isEmpty) return;
 
     await _syncPositionsLive(
       report,
       errorLabel: 'live audiobook progress',
       localKeys: localKeys,
-      hostKeys: hostKeys,
+      hostKeys: hostById.keys.toSet(),
       readLocal: (String bookKey) async => (
         positionMs:
             await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0),
         updatedAtMs:
             await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0),
       ),
-      readHost: (String bookKey) => backend.remoteAudiobookPosition(bookKey),
+      // 新 host 清单已内联断点（互联完整支持批次）→ 免逐本 GET；旧 host 清单无此
+      // 字段（0@0）→ 退回逐本 GET（真无进度的书多打一次也无害，幂等）。
+      readHost: (String bookKey) async {
+        final RemoteAudiobookInfo info = hostById[bookKey]!;
+        if (info.positionUpdatedAtMs > 0) {
+          return (
+            positionMs: info.positionMs,
+            updatedAtMs: info.positionUpdatedAtMs,
+          );
+        }
+        return backend.remoteAudiobookPosition(bookKey);
+      },
       pushToHost: (String bookKey, int positionMs, int updatedAtMs) =>
           backend.putRemoteAudiobookPosition(bookKey, positionMs, updatedAtMs),
       writeBackLocal: (String bookKey, int positionMs, int updatedAtMs) async {
@@ -1914,6 +1926,36 @@ class SyncOrchestrator {
             audiobookPositionAtPrefKey(bookKey), updatedAtMs);
       },
     );
+
+    // 有声书调轴双向收敛（互联完整支持批次；与视频 delay sweep 同范式）。
+    // 「严格较新时间戳者胜」；两侧都无戳（旧数据/从未调过）无事可做。旧 host 无
+    // /delay 端点 → push 404 静默吞（best-effort，不刷 report 噪音）。
+    for (final String identity in localKeys) {
+      final RemoteAudiobookInfo? info = hostById[identity];
+      if (info == null) continue;
+      try {
+        final int localDelay =
+            await _db.getPrefTyped<int>(audiobookDelayPrefKey(identity), 0);
+        final int localAt =
+            await _db.getPrefTyped<int>(audiobookDelayAtPrefKey(identity), 0);
+        if (localAt > info.delayUpdatedAtMs) {
+          try {
+            await backend.putRemoteAudiobookDelay(
+                identity, localDelay, localAt);
+          } catch (e) {
+            debugPrint(
+                '[SyncOrchestrator] audiobook delay push "$identity" failed: $e');
+          }
+        } else if (info.delayUpdatedAtMs > localAt) {
+          await _db.setPrefTyped<int>(
+              audiobookDelayPrefKey(identity), info.delayMs);
+          await _db.setPrefTyped<int>(
+              audiobookDelayAtPrefKey(identity), info.delayUpdatedAtMs);
+        }
+      } catch (e) {
+        report.noteError('live audiobook delay "$identity"', e);
+      }
+    }
   }
 
   /// 测试入口：直接调用 [_syncBookProgressLive]。

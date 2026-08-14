@@ -112,7 +112,15 @@ SyncKeyDiff computeLocalAudioSyncDiff({
 /// 纯 SRT 取 uid。host 端按此键先查 Audiobooks(bookKey) 再查 SrtBooks(uid) 解析。
 /// [title] 可选，供显示用（允许 null）。
 class RemoteAudiobookInfo {
-  const RemoteAudiobookInfo({required this.bookKey, this.uid, this.title});
+  const RemoteAudiobookInfo({
+    required this.bookKey,
+    this.uid,
+    this.title,
+    this.positionMs = 0,
+    this.positionUpdatedAtMs = 0,
+    this.delayMs = 0,
+    this.delayUpdatedAtMs = 0,
+  });
 
   final String bookKey;
 
@@ -121,6 +129,17 @@ class RemoteAudiobookInfo {
   final String? uid;
 
   final String? title;
+
+  /// host 端听书断点（毫秒）+ 最后更新时刻（互联完整支持批次：清单内联，供
+  /// sweep 免逐本 GET、以及下载回填/首页展示；旧 host 不带 → 0，消费方回退
+  /// 逐本 `GET /position`）。
+  final int positionMs;
+  final int positionUpdatedAtMs;
+
+  /// host 端调轴（`audiobook_delay_<identity>` prefs，毫秒可负）+ 最后更新时刻
+  /// （LWW；与视频 BUG-1620 同范式。旧 host / 从未带戳调过 → 0）。
+  final int delayMs;
+  final int delayUpdatedAtMs;
 
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
@@ -132,6 +151,10 @@ class RemoteAudiobookInfo {
         'bookKey': bookKey,
         if (uid != null && uid!.isNotEmpty) 'uid': uid,
         'title': title,
+        if (positionMs > 0) 'positionMs': positionMs,
+        if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
+        if (delayMs != 0) 'delayMs': delayMs,
+        if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
       };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -141,7 +164,27 @@ class RemoteAudiobookInfo {
             ? json['uid']!.toString()
             : null,
         title: json['title']?.toString(),
+        positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+        positionUpdatedAtMs:
+            (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0,
+        delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
+        delayUpdatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
       );
+}
+
+/// host 端「有声书调轴跨设备同步」的**可选**能力（互联完整支持批次；与视频
+/// [VideoDelayHost] 同范式——不并进主接口，避免十余个测试 fake 全量补桩）。
+/// server 用 `is` 探测，host 不实现 → `/delay` 落 404，client best-effort 降级。
+abstract interface class AudiobookDelayHost {
+  /// 读 host 端有声书 [identity] 的调轴。返回 (毫秒（可负）, 更新时刻毫秒)；
+  /// 无带戳记录时值取既有 `audiobook_delay_` pref（时间戳 0），未知 identity
+  /// 返回 (0, 0)。
+  Future<({int delayMs, int updatedAtMs})> getAudiobookDelay(String identity);
+
+  /// 把 client 上报的调轴写入 host。「严格较新时间戳者胜」（[resolveDelayLww]）；
+  /// clamp ±[kVideoSubtitleDelayLimitMs]；host 无该有声书时 no-op。
+  Future<void> putAudiobookDelay(
+      String identity, int delayMs, int updatedAtMs);
 }
 
 /// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
@@ -855,6 +898,22 @@ String audiobookPositionPrefKey(String bookKey) =>
 /// `AudiobookRepository._kPositionAtMsKeyPrefix` 同公式。冲突解决「取较新时间戳」用它。
 String audiobookPositionAtPrefKey(String bookKey) =>
     audiobookPositionPrefKeys.atKey(bookKey);
+
+/// 有声书调轴三件套（互联完整支持批次）——键结构与断点三件套同构。值键
+/// `audiobook_delay_<identity>` 是既有冻结键（`AudiobookRepository._kDelayMsKeyPrefix`
+/// 同公式）；时间戳键 `audiobook_delay_at_<identity>` 为 LWW 新增（repo 的
+/// `updateDelayMs` 现同步盖戳）。identity = srt-backed 的 bookKey / 纯 SRT 的 uid，
+/// 与断点键空间同一身份约定。
+const PositionPrefKeys audiobookDelayPrefKeys =
+    PositionPrefKeys('audiobook_delay_');
+
+/// 有声书 [identity] 的调轴 pref key（值 = 毫秒，可负）。
+String audiobookDelayPrefKey(String identity) =>
+    audiobookDelayPrefKeys.positionKey(identity);
+
+/// [audiobookDelayPrefKey] 对应的「最后更新时间」pref key（epoch 毫秒；LWW 用）。
+String audiobookDelayAtPrefKey(String identity) =>
+    audiobookDelayPrefKeys.atKey(identity);
 
 /// [audiobookPositionPrefKey] 的逆：从位置 pref key 反解出 bookKey，非该 key 返回
 /// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。时间戳键的排除见

@@ -444,6 +444,62 @@ void main() {
     });
   });
 
+  group('audiobook delay sweep (互联完整支持批次)', () {
+    test('本地带戳调轴 push 到 host；host 带戳调轴 pull 回本地；清单内联字段可用',
+        () async {
+      await _seedHostAudiobook(hostDb, 'abk-push');
+      await _seedHostAudiobook(hostDb, 'abk-pull');
+      // host 侧 abk-pull 有带戳调轴（host 本机 updateDelayMs 盖戳的效果）。
+      await hostDb.setPrefTyped<int>(audiobookDelayPrefKey('abk-pull'), 800);
+      await hostDb.setPrefTyped<int>(
+          audiobookDelayAtPrefKey('abk-pull'), 9000);
+
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      // 两本都进 sweep 基底（有听书位置 prefs）。
+      for (final String key in <String>['abk-push', 'abk-pull']) {
+        await localDb.setPrefTyped<int>(audiobookPositionPrefKey(key), 1000);
+        await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey(key), 500);
+      }
+      // 本地 abk-push 有带戳调轴。
+      await localDb.setPrefTyped<int>(audiobookDelayPrefKey('abk-push'), -700);
+      await localDb.setPrefTyped<int>(
+          audiobookDelayAtPrefKey('abk-push'), 8000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tabd'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      // 清单内联字段（免逐本 GET 的前提）先行断言。
+      final RemoteAudiobookInfo pullInfo = (await backend
+              .listRemoteAudiobooks())
+          .firstWhere((RemoteAudiobookInfo i) => i.identity == 'abk-pull');
+      expect(pullInfo.delayMs, 800);
+      expect(pullInfo.delayUpdatedAtMs, 9000);
+
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+      await orch.syncAudiobookProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await hostDb.getPrefTyped<int>(audiobookDelayPrefKey('abk-push'), 0),
+          -700,
+          reason: '本地较新调轴须收敛到 host');
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookDelayAtPrefKey('abk-push'), 0),
+          8000);
+      expect(
+          await localDb.getPrefTyped<int>(
+              audiobookDelayPrefKey('abk-pull'), 0),
+          800,
+          reason: 'host 较新调轴须回灌本地');
+      expect(
+          await localDb.getPrefTyped<int>(
+              audiobookDelayAtPrefKey('abk-pull'), 0),
+          9000);
+    });
+  });
+
   group('standalone SRT audiobook sweep (BUG-1637)', () {
     test('纯 SRT 有声书（bookKey 空、身份=uid）的听书进度进 sweep 交集并双向同步',
         () async {
