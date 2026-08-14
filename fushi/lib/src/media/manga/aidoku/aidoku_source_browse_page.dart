@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/utils.dart';
 
 /// Catalog browser for one installed Aidoku source.
@@ -393,7 +397,7 @@ class _AidokuChapterReaderPage extends StatefulWidget {
 }
 
 class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
-  List<_AidokuPage>? _pages;
+  AidokuReaderChapter? _resolved;
   Object? _error;
 
   @override
@@ -409,12 +413,27 @@ class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
         widget.manga,
         widget.chapter,
       );
-      final List<_AidokuPage> pages = result
+      final List<AidokuImagePage> pages = result
           .whereType<Map<Object?, Object?>>()
           .map((Map<Object?, Object?> value) =>
-              _AidokuPage.fromJson(value.cast<String, Object?>()))
+              AidokuImagePage.fromJson(value.cast<String, Object?>()))
           .toList(growable: false);
-      if (mounted) setState(() => _pages = pages);
+      if (pages.isEmpty) {
+        throw const AidokuRuntimeException(
+          'EMPTY_CHAPTER',
+          'Aidoku returned no readable image pages for this chapter',
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _resolved = AidokuReaderChapter(
+            package: widget.package,
+            manga: widget.manga,
+            chapter: widget.chapter,
+            pages: pages,
+          );
+        });
+      }
     } on Object catch (error) {
       if (mounted) setState(() => _error = error);
     }
@@ -423,21 +442,27 @@ class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
   @override
   Widget build(BuildContext context) {
     final String chapterTitle = _aidokuChapterTitle(widget.chapter);
-    final List<_AidokuPage>? pages = _pages;
+    final AidokuReaderChapter? resolved = _resolved;
+    if (resolved != null) {
+      final String identity = <String>[
+        widget.package.id,
+        widget.manga['key']?.toString() ?? '',
+        widget.chapter['key']?.toString() ?? '',
+      ].join('\u001f');
+      return FushiAppUiScaleNeutralizer(
+        child: MangaFushiPage(
+          item: null,
+          bookKey: 'aidoku-${sha256.convert(utf8.encode(identity))}',
+          onlineChapter: resolved,
+        ),
+      );
+    }
     return FushiPageScaffold(
       title: chapterTitle,
       subtitle: widget.manga['title']?.toString(),
       body: _error != null
           ? Center(child: Text('$_error'))
-          : pages == null
-              ? Center(child: adaptiveIndicator(context: context))
-              : pages.isEmpty
-                  ? Center(child: Text(t.mihon_source_no_results))
-                  : PageView.builder(
-                      itemCount: pages.length,
-                      itemBuilder: (BuildContext context, int index) =>
-                          _AidokuPageView(page: pages[index]),
-                    ),
+          : Center(child: adaptiveIndicator(context: context)),
     );
   }
 }
@@ -471,76 +496,6 @@ String _aidokuNumber(Object? value) {
   final double number = value.toDouble();
   if (number == number.truncateToDouble()) return number.toInt().toString();
   return number.toString().replaceFirst(RegExp(r'0+$'), '');
-}
-
-class _AidokuPage {
-  const _AidokuPage({this.url, this.headers, this.text});
-
-  factory _AidokuPage.fromJson(Map<String, Object?> json) {
-    final Object? content = json['content'];
-    if (content is Map<Object?, Object?>) {
-      final Object? url = content['Url'];
-      if (url is List<Object?> && url.isNotEmpty) {
-        final Object? context = url.length > 1 ? url[1] : null;
-        return _AidokuPage(
-          url: url.first?.toString(),
-          headers: context is Map<Object?, Object?>
-              ? context.map(
-                  (Object? key, Object? value) => MapEntry<String, String>(
-                      key.toString(), value.toString()),
-                )
-              : null,
-        );
-      }
-      final Object? text = content['Text'];
-      if (text != null) return _AidokuPage(text: text.toString());
-    }
-    return const _AidokuPage();
-  }
-
-  final String? url;
-  final Map<String, String>? headers;
-  final String? text;
-}
-
-class _AidokuPageView extends StatelessWidget {
-  const _AidokuPageView({required this.page});
-
-  final _AidokuPage page;
-
-  @override
-  Widget build(BuildContext context) {
-    if (page.url?.isNotEmpty == true) {
-      return ColoredBox(
-        color: Colors.black,
-        child: InteractiveViewer(
-          minScale: 0.5,
-          maxScale: 5,
-          child: Center(
-            child: Image.network(
-              page.url!,
-              headers: page.headers,
-              fit: BoxFit.contain,
-              errorBuilder: (_, Object error, __) => Center(
-                child: Text(
-                  '$error',
-                  style: const TextStyle(color: Colors.white),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    if (page.text?.isNotEmpty == true) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: SelectableText(page.text!),
-      );
-    }
-    return const Center(child: Icon(Icons.image_not_supported_outlined));
-  }
 }
 
 class _AidokuCover extends StatelessWidget {

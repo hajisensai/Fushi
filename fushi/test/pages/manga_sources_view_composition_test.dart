@@ -56,6 +56,16 @@ void main() {
       expect(sources, contains('AidokuRepositoryStore.open()'));
       expect(sources, contains('_AidokuRepositorySourcesDialog('));
       expect(sources, contains('MangaExtensionManagementTile('));
+      expect(sources, contains('MangaExtensionFilters('));
+      expect(sources, contains("keyPrefix: 'aidoku_extension'"));
+    });
+
+    test('Aidoku 章节进入共享漫画阅读器，复用 OCR 与阅读样式', () {
+      final String browse =
+          _read(<String>['aidoku', 'aidoku_source_browse_page.dart']);
+      expect(browse, contains('AidokuReaderChapter('));
+      expect(browse, contains('MangaFushiPage('));
+      expect(browse, contains('onlineChapter: resolved'));
     });
 
     test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {

@@ -308,9 +308,9 @@ class MangaFushiPage extends BaseSourcePage {
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
   final String bookKey;
 
-  /// A directly selected Mihon chapter. Shelf launches leave this null and
-  /// restore the chapter from the restart descriptor in `sourceMetadata`.
-  final MihonReaderChapter? onlineChapter;
+  /// A directly selected online chapter. Shelf launches leave this null and
+  /// restore the Mihon chapter from the restart descriptor in `sourceMetadata`.
+  final OnlineMangaReaderChapter? onlineChapter;
 
   /// 漫画拦截器专属虚拟域。必须与阅读器的 `fushi.local` 互异。
   static const String kMangaHost = 'manga.local';
@@ -601,7 +601,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   String? _imagesDir;
   MangaReaderSession? _pageSession;
   Map<String, int> _localPageIndices = const <String, int>{};
-  MihonReaderChapter? _onlineChapter;
+  OnlineMangaReaderChapter? _onlineChapter;
   bool _persistProgress = true;
   MokuroPayload? _payload;
   MangaReadingMode _mode = MangaReadingMode.spread;
@@ -914,7 +914,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _loadBook() async {
     final FushiDatabase db = appModel.database;
-    final MihonReaderChapter? directOnlineChapter = widget.onlineChapter;
+    final OnlineMangaReaderChapter? directOnlineChapter = widget.onlineChapter;
     if (directOnlineChapter != null) {
       final EpubBookRow? persisted = directOnlineChapter.persistProgress
           ? await db.getEpubBook(widget.bookKey)
@@ -1115,19 +1115,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _loadOnlineChapter(
-    MihonReaderChapter input, {
+    OnlineMangaReaderChapter input, {
     required EpubBookRow? persistedRow,
   }) async {
     final Directory directory = input.managedDirectory;
     final Directory imagesDirectory =
         Directory(p.join(directory.path, 'images'));
     await imagesDirectory.create(recursive: true);
-    final List<String> pageIdentities = <String>[
-      for (final MihonPage page in input.pages)
-        mihonPageCacheIdentity(input.sourceContext, page),
-    ];
+    final List<String> pageIdentities = input.pageIdentities;
     final File identityFile =
-        File(p.join(directory.path, '.mihon-chapter.json'));
+        File(p.join(directory.path, input.identityFileName));
     final bool sameChapterPages =
         await _onlineChapterIdentityMatches(identityFile, pageIdentities);
     if (!sameChapterPages) {
@@ -1136,7 +1133,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _writeOnlineChapterIdentity(identityFile, pageIdentities);
 
     final List<String> relativePagePaths = <String>[
-      for (int index = 0; index < input.pages.length; index++)
+      for (int index = 0; index < input.pageCount; index++)
         'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
     ];
     final File mangaJson = File(p.join(directory.path, 'manga.json'));
@@ -1147,7 +1144,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         final MokuroPayload stored = await MangaFushiPage.parseMangaJsonOffUi(
           await mangaJson.readAsString(),
         );
-        if (stored.images.length == input.pages.length) {
+        if (stored.images.length == input.pageCount) {
           payload = stored;
         } else {
           rewriteMangaJson = true;
@@ -1180,18 +1177,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
 
-    final MangaReaderSession pageSession = await MihonMangaPageProvider(
-      runtime: input.manager.runtime,
-      context: input.sourceContext,
-      pages: input.pages,
-      cacheRoot: Directory(
-        p.join(
-          input.manager.rootDirectory.path,
-          'reader-cache',
-          'pages',
-        ),
-      ),
-    ).open();
+    final MangaReaderSession pageSession = await input.openPageSession();
     if (!mounted) {
       await pageSession.close();
       return;
@@ -1212,18 +1198,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ? persistedRow.copyWith(
             epubPath: p.basename(mangaJson.path),
             extractDir: directory.path,
-            chapterCount: input.pages.length,
+            chapterCount: input.pageCount,
           )
         : EpubBookRow(
             bookKey: widget.bookKey,
             // v81：无持久行的内存兜底行——身份生成一次;真正落库仍经
             // insertEpubBook 单点(见其 doc)。
             uid: generateEpubBookUid(),
-            title: input.manga.title,
-            author: input.manga.author ?? input.manga.artist,
+            title: input.title,
+            author: input.author,
             epubPath: p.basename(mangaJson.path),
             extractDir: directory.path,
-            chapterCount: input.pages.length,
+            chapterCount: input.pageCount,
             chaptersJson: '[]',
             importedAt: DateTime.now().millisecondsSinceEpoch,
             format: 'manga',
@@ -2173,7 +2159,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     setState(() => _wholeVolumeOcrOpen = true);
     try {
-      final MihonReaderChapter? online = _onlineChapter;
+      final OnlineMangaReaderChapter? online = _onlineChapter;
       final MangaOcrBackgroundJob? job;
       if (online != null) {
         if (!await ensureGoogleLensDisclosure(context) || !mounted) return;

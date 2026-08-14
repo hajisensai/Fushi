@@ -656,67 +656,20 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   }
 
   Widget _buildFilters(List<String> languages) {
-    final Widget languageFilter = DropdownButtonFormField<String>(
-      value: languages.contains(_language) ? _language : '*',
-      decoration: InputDecoration(
-        labelText: t.mihon_extension_language_filter,
-      ),
-      items: <DropdownMenuItem<String>>[
-        DropdownMenuItem<String>(
-          key: const ValueKey<String>('mihon_extension_language_*'),
-          value: '*',
-          child: Text(t.mihon_extension_language_all),
-        ),
-        // `all` 也在这里，作为一个**普通语言项**（显示成 ALL，与条目副标题里的
-        // `all · 1.6.4 · lib 1.6` 同一个词）。见 `_buildContentSlivers` 里的说明。
-        for (final String language in languages)
-          DropdownMenuItem<String>(
-            key: ValueKey<String>('mihon_extension_language_$language'),
-            value: language,
-            child: Text(language.toUpperCase()),
-          ),
-      ],
-      onChanged: (String? value) {
-        setState(() => _language = value ?? '*');
-      },
-    );
-    final Widget searchField = TextField(
-      key: const ValueKey<String>('mihon_extension_search_field'),
-      controller: _searchController,
-      decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.search),
-        hintText: t.search,
-        border: const OutlineInputBorder(),
-        suffixIcon: _searchQuery.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() => _searchQuery = '');
-                },
-              ),
-      ),
-      onChanged: (String value) => setState(() => _searchQuery = value),
-    );
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        if (constraints.maxWidth < 700) {
-          return Column(
-            children: <Widget>[
-              languageFilter,
-              const SizedBox(height: 12),
-              searchField,
-            ],
-          );
-        }
-        return Row(
-          children: <Widget>[
-            Expanded(child: languageFilter),
-            const SizedBox(width: 12),
-            Expanded(child: searchField),
-          ],
-        );
+    return MangaExtensionFilters(
+      keyPrefix: 'mihon_extension',
+      languages: languages,
+      selectedLanguage: _language,
+      languageLabel: t.mihon_extension_language_filter,
+      allLanguagesLabel: t.mihon_extension_language_all,
+      searchHint: t.search,
+      searchController: _searchController,
+      searchQuery: _searchQuery,
+      onLanguageChanged: (String value) => setState(() => _language = value),
+      onSearchChanged: (String value) => setState(() => _searchQuery = value),
+      onSearchCleared: () {
+        _searchController.clear();
+        setState(() => _searchQuery = '');
       },
     );
   }

@@ -95,6 +95,94 @@ class MangaExtensionManagementTile extends StatelessWidget {
   }
 }
 
+/// Shared responsive language/search row for extension repositories.
+class MangaExtensionFilters extends StatelessWidget {
+  const MangaExtensionFilters({
+    required this.languages,
+    required this.selectedLanguage,
+    required this.languageLabel,
+    required this.allLanguagesLabel,
+    required this.searchHint,
+    required this.searchController,
+    required this.searchQuery,
+    required this.onLanguageChanged,
+    required this.onSearchChanged,
+    required this.onSearchCleared,
+    super.key,
+    this.keyPrefix = 'manga_extension',
+  });
+
+  final List<String> languages;
+  final String selectedLanguage;
+  final String languageLabel;
+  final String allLanguagesLabel;
+  final String searchHint;
+  final TextEditingController searchController;
+  final String searchQuery;
+  final ValueChanged<String> onLanguageChanged;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onSearchCleared;
+  final String keyPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget languageFilter = DropdownButtonFormField<String>(
+      value: languages.contains(selectedLanguage) ? selectedLanguage : '*',
+      decoration: InputDecoration(labelText: languageLabel),
+      items: <DropdownMenuItem<String>>[
+        DropdownMenuItem<String>(
+          key: ValueKey<String>('${keyPrefix}_language_*'),
+          value: '*',
+          child: Text(allLanguagesLabel),
+        ),
+        for (final String language in languages)
+          DropdownMenuItem<String>(
+            key: ValueKey<String>('${keyPrefix}_language_$language'),
+            value: language,
+            child: Text(language.toUpperCase()),
+          ),
+      ],
+      onChanged: (String? value) => onLanguageChanged(value ?? '*'),
+    );
+    final Widget searchField = TextField(
+      key: ValueKey<String>('${keyPrefix}_search_field'),
+      controller: searchController,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.search),
+        hintText: searchHint,
+        border: const OutlineInputBorder(),
+        suffixIcon: searchQuery.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: onSearchCleared,
+              ),
+      ),
+      onChanged: onSearchChanged,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < 700) {
+          return Column(
+            children: <Widget>[
+              languageFilter,
+              const SizedBox(height: 12),
+              searchField,
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            Expanded(child: languageFilter),
+            const SizedBox(width: 12),
+            Expanded(child: searchField),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _ExtensionIcon extends StatelessWidget {
   const _ExtensionIcon({required this.url});
 

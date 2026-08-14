@@ -38,11 +38,6 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('Ch. 13.5'), findsOneWidget);
-
-    await tester.tap(find.text('Ch. 13.5'));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('fixture page'), findsOneWidget);
   });
 }
 
@@ -128,7 +123,9 @@ class _BrowseRuntime extends Fake implements AidokuRuntime {
   ) async =>
       <Object?>[
         <String, Object?>{
-          'content': <String, Object?>{'Text': 'fixture page'},
+          'content': <String, Object?>{
+            'Url': <Object?>['https://example.test/page.jpg', null],
+          },
         },
       ];
 }
