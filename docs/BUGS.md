@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1517 条。点号进各自文件。
+> 共 1518 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1650](bugs/BUG-1650-sync-pulled-progress-stale-until-restart.md) | ✅ | ✅ | 同步拉回更远进度后首页继续与书架不刷新须重启 |
 | [BUG-1642](bugs/BUG-1642-favorite-unfavorite-never-propagates.md) | ✅ | ✅ | 取消收藏词句不跨端传播对端永远删不掉 |
 | [BUG-1640](bugs/BUG-1640-interconnect-manga-bad-package-and-noise.md) | ✅ | ✅ | 互联把EPUB转化漫画打成坏包且漫画行每轮刷推送错误 |
 | [BUG-1638](bugs/BUG-1638-dashboard-remote-continue-dead-end-card.md) | ✅ | ✅ | 首页远端继续卡对不可下载条目是死路 |
