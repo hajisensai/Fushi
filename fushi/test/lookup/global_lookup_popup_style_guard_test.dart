@@ -609,7 +609,12 @@ void main() {
           reason: 'the host must build a per-shell close-X');
       expect(host.contains("btn.className = 'global-lookup-close'"), isTrue);
       // Clicking it dismisses EXACTLY this layer (+ its children) by layer index.
-      expect(host.contains("postToHost('dismissPopupAt', [index])"), isTrue,
+      // 第三个参数是这条壳所属的路由：桌面浮窗与游戏内离屏卡片共用同一个 host，
+      // 不带路由的 dismiss 会关掉另一条路由上的那一层。
+      expect(
+          host.contains(
+              "postToHost('dismissPopupAt', [index], record && record.route)"),
+          isTrue,
           reason:
               'the X dismisses this layer by its stack index, not the root');
       expect(host.contains('var index = layerIndexOf(frameId);'), isTrue);
@@ -654,7 +659,8 @@ void main() {
       // must now be driven by popup.js's authoritative popupRendered signal.
       expect(host.contains("message.handler === 'popupRendered'"), isTrue,
           reason: 'the wrapped bridge marks content-ready on popupRendered');
-      expect(host.contains('markContentReady(record)'), isTrue);
+      expect(host.contains('markContentReady(record, messageRoute)'), isTrue,
+          reason: 'content-ready 必须落在消息来源的那条路由上');
       // hasContent tightened to a real painted card node (no bare height check).
       expect(host.contains("doc.querySelector('.glossary-content')"), isTrue);
       expect(host.contains("doc.querySelector('.no-results')"), isTrue,

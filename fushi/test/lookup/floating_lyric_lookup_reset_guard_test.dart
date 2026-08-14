@@ -24,10 +24,15 @@ void main() {
   /// 直接 `return true;`），旧写法「截到第一个 return true」会把前置 hide 整段切掉
   /// 而误报。改成取整个函数体：前置 hide 必须在 _lookupExternal 之前这条契约不变。
   String lookupTextBody(String src) {
-    const String sig = 'Future<bool> lookupText(';
+    // lookupText 现在只是路由包装（把整次查词钉进一条 GlobalLookupRoute），真正的
+    // 实现搬进了 _lookupTextRouted。前置 hide 的契约落在实现体上。
+    const String sig = 'Future<bool> _lookupTextRouted(';
     final int at = src.indexOf(sig);
     expect(at, greaterThanOrEqualTo(0),
-        reason: 'lookupText 程序化入口必须存在（TODO-872）');
+        reason: 'lookupText 程序化入口的实现必须存在（TODO-872）');
+    // 包装层必须真的把实现钉进路由里，否则游戏内查词会打到桌面浮窗上。
+    expect(src.contains('GlobalLookupChannel.runWithRoute('), isTrue,
+        reason: 'lookupText 必须在一条确定的路由上下文里跑实现');
     // 收尾是独占一行的 `  }`；不能只找 `\\n  }`，那会先命中多行签名的
     // `  }) async {`。
     final int end = src.indexOf('\n  }\n', at);

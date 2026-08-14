@@ -1,0 +1,6 @@
+## BUG-1633 · 游戏内查词位图卡渲染错位且滚轮、按钮与制卡失效
+- **报告**：2026-08-13（用户：Windows / KiriKiri 游戏内查词）
+- **真实性**：✅ 真 bug。`GlobalLookupWindow::InjectLookupInput` 只把鼠标/滚轮注入离屏 WebView，原链路没有在输入或 bridge/DOM 更新后重新执行 `CapturePreview`，因此游戏 Layer 始终显示旧 BGRA 位图；同时 `overlaySize` 后立即 reveal/present，曾在 1–2 ms 内抓到 WebView resize/reflow 的中间帧，造成词典块重叠。根因位于 `fushi/windows/runner/global_lookup_window.cpp`、`fushi/lib/src/lookup/global_lookup_controller.dart` 与 `fushi/lib/src/lookup/gal_ingame_lookup_controller.dart` 的离屏绘制/抓帧时序边界。
+- **[x] ① 已修复并通过真实游戏 E2E** — 输入注入如实回传失败；galCard 的 resize、输入、滚动、DOM 变化和 bridge 回执均以 route-stamped paint-ready/dirty 信号驱动，Dart 按 route/generation 合并为单飞重抓。关闭、换词或换游戏会推进原生抓帧代数，过期的异步 `CapturePreview` 不再复活旧卡。冷启动首张卡的滚轮真机记录为 `input 0→2`（`kind=3, wheel=-600`），随后日志依次出现 `input -> ok`、`galFrameDirty`、`recapture`，`frameWritten 26→49`，肉眼确认正文滚动。最终制卡会话中，校准 move 后卡内点击产生有序 `kind 0/1/2`，剧情未推进，`mineEntry` 成功返回 Anki note `1786571387199`。
+- **[ ] ② 未加自动化测试** — 用户明确要求本轮跳过所有测试；本轮只执行生产构建、静态差异检查和 Windows 真机 E2E。
+- **备注**：冷建离屏 WebView 时，独立的 `beginLookup` 曾被单槽 `pending_json_` 中后到的 `renderStack` 覆盖，导致 host route 留在 desktop 且首卡 dirty 被丢弃；现已把 route prelude 与首次 renderStack 合成同一脚本。KAGEX 全局 `onMouseWheelHook` 负责滚轮，卡片 Layer 的 down/up 负责按钮点击；此前“按钮没有反应”并非制卡处理器缺失。

@@ -248,25 +248,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 : () => unawaited(_selectSubtitleSource(controller, source)),
           ),
       // TODO-857 / TODO-1312 视频双字幕：副字幕入口。副字幕走 Flutter overlay 副层
-      // cue 流（可逐字符查词），仅本地视频内嵌轨（远端无内嵌轨枚举，不显示）。
+      // cue 流（可逐字符查词）。TODO-2837：远端也支持（host sidecar / host 内嵌轨
+      // 抽取 / 本地文件，见 [_buildSecondarySubtitleRows] 远端分支）。
       // TODO-1350：副字幕源改内联可展开区（ExpansionTile），在「字幕」分类里就地切换，
       // 不再点一下跳到另一个浮层窗口（用户报「副字幕打开会去到另一个窗口」）。
-      if (!_isRemote) const Divider(height: 1),
-      if (!_isRemote)
-        ExpansionTile(
-          // TODO-1350：副字幕入口的 leading 图标要和上面字幕轨 ListTile 的图标同一
-          // 缩进（ListTile 默认水平 16px）。此前 tilePadding: EdgeInsets.zero 把表头
-          // 图标顶到最左边、比其它行图标偏左没对齐（用户报「副字幕图标位置不对」）；
-          // 去掉该覆盖走 ExpansionTile 默认 16px 缩进即与兄弟行对齐。childrenPadding
-          // 保持零：展开项本身是带默认 contentPadding 的 ListTile，各自缩进已对齐。
-          leading: const Icon(Icons.subtitles_outlined),
-          title: Text(t.video_secondary_subtitle_sources),
-          subtitle: Text(t.video_secondary_subtitle_hint),
-          childrenPadding: EdgeInsets.zero,
-          shape: const Border(),
-          collapsedShape: const Border(),
-          children: _buildSecondarySubtitleRows(context, controller),
-        ),
+      const Divider(height: 1),
+      ExpansionTile(
+        // TODO-1350：副字幕入口的 leading 图标要和上面字幕轨 ListTile 的图标同一
+        // 缩进（ListTile 默认水平 16px）。此前 tilePadding: EdgeInsets.zero 把表头
+        // 图标顶到最左边、比其它行图标偏左没对齐（用户报「副字幕图标位置不对」）；
+        // 去掉该覆盖走 ExpansionTile 默认 16px 缩进即与兄弟行对齐。childrenPadding
+        // 保持零：展开项本身是带默认 contentPadding 的 ListTile，各自缩进已对齐。
+        leading: const Icon(Icons.subtitles_outlined),
+        title: Text(t.video_secondary_subtitle_sources),
+        subtitle: Text(t.video_secondary_subtitle_hint),
+        childrenPadding: EdgeInsets.zero,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        children: _buildSecondarySubtitleRows(context, controller),
+      ),
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -288,6 +288,74 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // TODO-2837 远端分支：可用源 = host sidecar（已下载在 [_remoteSubtitlePath]）+
+    // host 内嵌文本轨（抽取下载）+ 本地字幕文件导入；全部归一成本地文件 → cue →
+    // setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
+    if (_isRemote) {
+      final String? hostSub = _remoteSubtitlePath;
+      return <Widget>[
+        ListTile(
+          leading: const Icon(Icons.subtitles_off),
+          title: Text(t.video_subtitle_off),
+          selected: _currentSecondarySubtitleSource == null ||
+              SubtitleSource.isOff(_currentSecondarySubtitleSource),
+          selectedColor: cs.primary,
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_clearRemoteSecondarySubtitle(controller)),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.file_open_outlined),
+          title: Text(t.video_subtitle_import_file),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(
+                    _pickAndImportRemoteSecondarySubtitle(controller),
+                  ),
+        ),
+        if (hostSub != null)
+          ListTile(
+            leading: const Icon(Icons.cloud_done_outlined),
+            title: Text(t.video_subtitle_remote_host),
+            subtitle: Text(p.basename(hostSub)),
+            selected: _currentSecondarySubtitleSource == hostSub,
+            selectedColor: cs.primary,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(
+                      _applyRemoteSecondarySubtitle(controller, hostSub),
+                    ),
+          ),
+        for (final RemoteVideoEmbeddedSubtitleTrack track
+            in _remoteEmbeddedSubtitleTracks)
+          ListTile(
+            leading: Icon(
+              track.isText
+                  ? Icons.movie_filter_outlined
+                  : Icons.image_not_supported_outlined,
+            ),
+            title: Text(_remoteEmbeddedSubtitleLabel(track)),
+            subtitle: Text(
+              track.isText
+                  ? (track.fileName ?? track.codec)
+                  : t.video_subtitle_import_unsupported,
+            ),
+            enabled: track.isText && !_subtitleLoadingShown,
+            selected: _currentSecondarySubtitleSource ==
+                _remoteEmbeddedSubtitleSource(track),
+            selectedColor: cs.primary,
+            onTap: track.isText && !_subtitleLoadingShown
+                ? () => unawaited(
+                      _applyRemoteEmbeddedSecondarySubtitle(controller, track),
+                    )
+                : null,
+          ),
+      ];
+    }
     return <Widget>[
       if (_subtitleMenuLoading) const LinearProgressIndicator(),
       ListTile(
@@ -497,6 +565,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     controller.setSecondaryCues(cues);
     final String persisted = source.toPersistedValue();
     await widget.repo.updateSecondarySubtitleSource(widget.bookUid, persisted);
+    // 本机镜像盖戳（互联 LWW 载体，播放偏好同步泛化批）：使 host 侧
+    // getVideoPlayback / 清单以带戳值参与逐字段 LWW，对端能跟随本机选择。
+    await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
+        videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
+        persisted);
     if (!mounted) return false;
     _rebuild(() => _currentSecondarySubtitleSource = persisted);
     _showOsd(t.video_subtitle_switched(label: source.label));
@@ -513,6 +587,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       widget.bookUid,
       SubtitleSource.offSentinel,
     );
+    // 本机镜像盖戳（互联 LWW 载体）：显式关闭同样跨设备传播（off 哨兵原样入通道）。
+    await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
+        videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
+        SubtitleSource.offSentinel);
     if (!mounted) return;
     _rebuild(
         () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
@@ -533,6 +612,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final String? persisted = _currentSecondarySubtitleSource;
     if (persisted == null || persisted.isEmpty) return;
     if (SubtitleSource.isOff(persisted)) return;
+    if (_isRemote) {
+      // TODO-2837 远端副字幕：远端无本地视频文件，来源按远端编码解析——本地字幕
+      // 文件路径直接读；`embedded:<n>` 向 host 重新抽取（与主字幕内嵌轨重放同端点）。
+      await _restoreRemoteSecondarySubtitle(controller, persisted);
+      return;
+    }
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return;
     final SubtitleSource? source;
@@ -829,6 +914,194 @@ extension _VideoSubtitle on _VideoFushiPageState {
         SubtitleSource.offSentinel,
       ),
     );
+  }
+
+  // ── TODO-2837 远端副字幕（互联完整支持批次）────────────────────────────────
+  // 副字幕是 Flutter overlay 副层纯 cue 流（TODO-1312，不依赖本地 mpv 轨），远端
+  // 完全可支持：host sidecar / host 内嵌轨（抽取下载）/ 本地字幕文件三类源，全部
+  // 归一成「本地字幕文件 → cue → setSecondaryCues」。来源与独立调轴按远端 uid 落
+  // 本地 prefs（副字幕轨是本机自选的，host 不参与同步）。
+
+  /// 远端模式：把 [path] 字幕文件解析成 cue 挂**副字幕** overlay 副层，并按远端
+  /// uid 持久化来源（与主字幕 [_applyRemoteSubtitle] 同款链路，仅落点不同）。
+  Future<void> _applyRemoteSecondarySubtitle(
+    VideoPlayerController controller,
+    String path, {
+    String? selectedSource,
+    String? label,
+  }) async {
+    final String displayLabel = label ?? p.basename(path);
+    _showSubtitleLoadingOverlay();
+    final List<AudioCue> cues;
+    try {
+      cues = await _loadExternalSubtitleCues(path, widget.bookUid);
+    } finally {
+      _hideSubtitleLoadingOverlay();
+    }
+    if (!mounted) return;
+    if (cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_load_failed(label: displayLabel),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    controller.setSecondaryCues(cues);
+    final String source = selectedSource ?? path;
+    _rebuild(() => _currentSecondarySubtitleSource = source);
+    // 带戳键对 + 上报 host（播放偏好同步泛化批）：`embedded:<n>` 对端可直接重放；
+    // 本地文件路径对端文件不存在时恢复侧自然跳过。
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    unawaited(() async {
+      final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          source);
+      _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+              secondarySubtitleSource: source, secondarySubtitleAt: nowMs));
+    }());
+    _showOsd(t.video_subtitle_switched(label: displayLabel));
+  }
+
+  /// 远端模式：host 内嵌轨作**副字幕**——向 host 抽取下载后挂副层（与主字幕
+  /// [_applyRemoteEmbeddedSubtitle] 同端点）。
+  Future<void> _applyRemoteEmbeddedSecondarySubtitle(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track,
+  ) async {
+    if (!track.isText) {
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (client == null || info == null) return;
+    final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+    final Directory temp = await getTemporaryDirectory();
+    final File subtitle = File(
+      p.join(
+        temp.path,
+        _remoteSubtitleTempFileName(
+          '${info.id}_sec${track.streamIndex}',
+          track.fileName ?? 'embedded_${track.streamIndex}.srt',
+        ),
+      ),
+    );
+    await client.getRemoteVideoSubtitle(
+      info.id,
+      subtitle,
+      embeddedStreamIndex: track.streamIndex,
+      episodeIndex: ep,
+    );
+    await _applyRemoteSecondarySubtitle(
+      controller,
+      subtitle.path,
+      selectedSource: _remoteEmbeddedSubtitleSource(track),
+      label: _remoteEmbeddedSubtitleLabel(track),
+    );
+  }
+
+  /// 远端模式：文件选择器挑字幕作**副字幕**。复制到 video_subtitles/ 持久目录再
+  /// 应用（与主字幕 [_pickAndImportRemoteSubtitle] 同款考量：SAF 临时缓存退出后
+  /// 失效，复制到 app 拥有的目录才能重进时按路径重放）。
+  Future<void> _pickAndImportRemoteSecondarySubtitle(
+    VideoPlayerController controller,
+  ) async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
+      allowMultiple: false,
+    );
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    final String? path = result?.files.single.path;
+    if (path == null) return;
+    if (subtitleFormatForPath(path) == null) {
+      _showOsd(
+        t.video_subtitle_import_unsupported,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    String applyPath = path;
+    try {
+      final Directory destDir = await AppPaths.videoSubtitlesDirectory();
+      await destDir.create(recursive: true);
+      final String dest = p.join(destDir.path, p.basename(path));
+      if (!p.equals(path, dest)) {
+        await File(path).copy(dest);
+      }
+      applyPath = dest;
+    } catch (_) {
+      // 保留原始 pick 路径应用；本次可用，只是可能不持久。
+    }
+    await _applyRemoteSecondarySubtitle(controller, applyPath);
+  }
+
+  /// 远端模式：关闭副字幕（清副层 + 带戳「显式清除」）。清除也走带戳写（值空 +
+  /// at=now），因此跨设备同样收敛——对端下次起播 LWW 采纳「已关」。
+  Future<void> _clearRemoteSecondarySubtitle(
+    VideoPlayerController controller,
+  ) async {
+    controller.clearSecondaryCues();
+    if (!mounted) return;
+    _rebuild(() => _currentSecondarySubtitleSource = null);
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    unawaited(() async {
+      final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          null);
+      _pushRemotePlayback(
+          uid, VideoPlaybackSyncState(secondarySubtitleAt: nowMs));
+    }());
+  }
+
+  /// 远端模式：恢复远端副字幕来源（[_restoreSecondarySubtitle] 远端分支）。
+  /// 静默 best-effort：文件已删 / 抽取失败 / 空 cue 都不打扰用户（恢复是后台行为）。
+  Future<void> _restoreRemoteSecondarySubtitle(
+    VideoPlayerController controller,
+    String persisted,
+  ) async {
+    List<AudioCue> cues = const <AudioCue>[];
+    if (persisted.startsWith(SubtitleSource.embeddedPrefix)) {
+      final int? streamIndex = int.tryParse(
+          persisted.substring(SubtitleSource.embeddedPrefix.length));
+      final RemoteVideoClient? client = _effectiveRemoteClient;
+      final RemoteVideoInfo? info = _effectiveRemoteInfo;
+      if (streamIndex == null || client == null || info == null) return;
+      final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+      try {
+        final Directory temp = await getTemporaryDirectory();
+        final File subtitle = File(
+          p.join(
+            temp.path,
+            _remoteSubtitleTempFileName(
+                '${info.id}_sec$streamIndex', 'embedded_$streamIndex.srt'),
+          ),
+        );
+        await client.getRemoteVideoSubtitle(
+          info.id,
+          subtitle,
+          embeddedStreamIndex: streamIndex,
+          episodeIndex: ep,
+        );
+        cues = await _loadExternalSubtitleCues(subtitle.path, widget.bookUid);
+      } catch (e) {
+        debugPrint('[VideoFushiPage] secondary embedded replay failed: $e');
+        return;
+      }
+    } else if (File(persisted).existsSync()) {
+      cues = await _loadExternalSubtitleCues(persisted, widget.bookUid);
+    } else {
+      return;
+    }
+    if (!mounted || _controller != controller || cues.isEmpty) return;
+    controller.setSecondaryCues(cues);
   }
 
   /// TODO-1302 track-list-first：当前有效远端客户端已解析好的 YouTube 字幕轨列表

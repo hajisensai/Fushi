@@ -40,6 +40,21 @@ void main() {
     expect(await repo.readVolume('book-A'), 1.0);
   });
 
+  test('updateDelayMs 同步盖 audiobook_delay_at_ 时间戳（互联 LWW 载体）', () async {
+    final FushiDatabase db = await _openDb();
+    final AudiobookRepository repo = AudiobookRepository(db);
+
+    final int before = DateTime.now().millisecondsSinceEpoch;
+    await repo.updateDelayMs(bookKey: 'book-A', ms: -1500);
+    final int after = DateTime.now().millisecondsSinceEpoch;
+
+    expect(await repo.readDelayMs('book-A'), -1500);
+    final int at = await db.getPrefTyped<int>('audiobook_delay_at_book-A', 0);
+    expect(at, inInclusiveRange(before, after),
+        reason: '值与时间戳必须一起写：本机调轴无戳恒 0，'
+            '会在互联 LWW 里永远输给对端旧戳、再也传不出去');
+  });
+
   test('fine-grained (1%) volume values round-trip unchanged', () async {
     // 音量滑条细化到 1% 一档（AudiobookVolumeRow.sliderDivisions = 200）后，
     // 0.87 这类非 10% 网格值也要原样写穿/读回；存储本就是裸 double 字符串，

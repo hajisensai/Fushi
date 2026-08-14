@@ -550,12 +550,54 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     return GalLookupCallResult.fromReply(reply);
   }
 
+  /// 只挪高亮：**不重抓卡片画面**。
+  ///
+  /// 悬停换字时卡片内容一个像素都没变，而 [galLookupPresent] 每次都会走完整的
+  /// 「CapturePreview → PNG 编解码 → 全卡 memcpy」——鼠标划过一行就是几十次，真机
+  /// 表现为明显卡顿。高亮本来就画在游戏自己的图层上、不在卡片位图里，所以这条路
+  /// 一个像素都不需要。
+  static Future<GalLookupCallResult> galLookupPresentHighlight({
+    required int seq,
+    required int anchorX,
+    required int anchorY,
+    required int highlightStart,
+    required int highlightLen,
+  }) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    final Object? reply = await _instance.channel.invokeMethod<Object?>(
+      'galLookupPresentHighlight',
+      <String, Object?>{
+        'seq': seq,
+        'anchorX': anchorX,
+        'anchorY': anchorY,
+        'highlightStart': highlightStart,
+        'highlightLen': highlightLen,
+      },
+    );
+    return GalLookupCallResult.fromReply(reply);
+  }
+
   /// 消场：换行 / 换页 / 会话结束 / 卡片被用户关掉。[seq] 是要撤掉的那次命中。
   static Future<GalLookupCallResult> galLookupDismiss(int seq) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     return GalLookupCallResult.fromReply(
       await _instance.channel.invokeMethod<Object?>(
         'galLookupDismiss',
+        <String, Object?>{'seq': seq},
+      ),
+    );
+  }
+
+  /// 制卡截图屏障：发布一帧 capture-suppress，并等待 hook 在游戏主线程确认卡片和
+  /// 字幕高亮都已经隐藏。成功回执之前调用方**不得**读取游戏窗口像素。
+  ///
+  /// 这不是普通 dismiss：离屏 popup、route 与 DOM 都保留，采样结束后由下一次普通
+  /// [galLookupPresent] 解除 suppress 并把当时仍然最新的卡片重新投回游戏。
+  static Future<GalLookupCallResult> galLookupSuspendForCapture(int seq) async {
+    if (!_instance.isSupported) return GalLookupCallResult.unsupported;
+    return GalLookupCallResult.fromReply(
+      await _instance.channel.invokeMethod<Object?>(
+        'galLookupSuspendForCapture',
         <String, Object?>{'seq': seq},
       ),
     );

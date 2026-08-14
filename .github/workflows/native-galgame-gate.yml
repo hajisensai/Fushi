@@ -1,8 +1,8 @@
 # galgame_hook 单一真相源守卫的 **PR 阶段** 门。
 #
 # 补的缺口：这组守卫（engine-support 生成物 / luna profile 生成物 / vendored
-# LunaHook DLL 完整性 / manifest schema / adapter 结构 / evidence 契约 /
-# workflow 契约）此前**只**挂在 voice-hook-helper.yml 上（该 workflow 已于 2026-08-11 随
+# LunaHook DLL 完整性 / manifest schema / adapter 结构 / KiriKiri 查词不变式 /
+# evidence 契约 / workflow 契约）此前**只**挂在 voice-hook-helper.yml 上（该 workflow 已于 2026-08-11 随
 # helper 在线发布通道一并删除），而那个 workflow 的
 # 触发是 `workflow_dispatch` + `push: develop`。也就是说：改 engine-support.yaml、
 # adapter 骨架或 luna profile 的 PR，在合进 develop 之前从未被这些守卫检查过，
@@ -15,7 +15,7 @@
 # build-multiplatform.yml 的 windows job 就是 galgame_hook 仅有的两道 CI 门。
 #
 # 平台范围：galgame 相关一律只做 Windows 端（仓库硬规则）。本 workflow 跑在
-# ubuntu-latest 只是因为这七条守卫全是平台无关的静态校验（Python stdlib +
+# ubuntu-latest 只是因为这些守卫全是平台无关的静态校验（Python stdlib +
 # pwsh 的 Get-FileHash/ConvertFrom-Json），**不构建、不运行、不发布任何
 # 非 Windows 的 galgame 产物**，也不构成对其它平台的支持声明。
 name: native-galgame-gate

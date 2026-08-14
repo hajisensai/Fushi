@@ -6,12 +6,14 @@
 //
 //   1. runner→Dart 的 `onGalLookupHit` / `onGalLookupInput` 逐字段解出来是什么；
 //   2. 卡片落点由既有的级联定位纯函数算，且**永远整张留在视口内**；
-//   3. Dart→runner 的 `galLookupSetEnabled` / `galLookupPresent` / `galLookupDismiss`
-//      方法名与参数键；
+//   3. Dart→runner 的 `galLookupSetEnabled` / `galLookupPresent` /
+//      `galLookupDismiss` 方法名与参数键；
 //   4. runner 的失败是编码在应答里的 error token，不是异常——不许被吞成"成功"。
 //
 // 坐标域纪律（错了就是卡片乱跑）：hit 的 glyph/view 与 present 的 anchor 全在**游戏
 // primaryLayer 像素**域；卡片尺寸是位图的物理像素。两者同域，全程不乘 dpr。
+
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -150,7 +152,8 @@ void main() {
       expect(_hit(line: 'あいうえお', charIndex: -1).isAddressable, isFalse);
       expect(_hit(line: 'あいうえお', charIndex: 4).isAddressable, isTrue);
       // 软门：两侧计数单位若哪天漂了，硬丢会让功能静默死掉；越界本身已被硬门挡住。
-      expect(_hit(line: 'あいうえお', charCount: 99).hasConsistentCharCount, isFalse);
+      expect(
+          _hit(line: 'あいうえお', charCount: 99).hasConsistentCharCount, isFalse);
       expect(_hit(line: 'あいうえお', charCount: 99, charIndex: 2).isAddressable,
           isTrue,
           reason: '字符数对不上不构成丢弃理由——只要下标还指得到字，就照常查');
@@ -194,8 +197,7 @@ void main() {
     test('字幕在画面上半部时卡片放在字形下方', () {
       final GalLookupHit hit = _hit(glyphX: 600, glyphY: 200, viewH: 720);
       final ({int x, int y}) anchor = resolveAnchor(hit, cardW, cardH);
-      expect(anchor.y, greaterThan(hit.glyphY),
-          reason: '下方空间够就放下方，别盖住正在读的那一行');
+      expect(anchor.y, greaterThan(hit.glyphY), reason: '下方空间够就放下方，别盖住正在读的那一行');
       expectInsideView(anchor, hit);
     });
 
@@ -216,21 +218,22 @@ void main() {
       // 是贴到留白处而不是贴到 0。这里只钉方向与不越界，不钉那 6 px 的具体数值。
       const int slack = 8;
       expect(leftAnchor.x, lessThanOrEqualTo(slack));
-      expect(rightAnchor.x,
-          greaterThanOrEqualTo(right.viewW - cardW - slack));
+      expect(rightAnchor.x, greaterThanOrEqualTo(right.viewW - cardW - slack));
       expectInsideView(leftAnchor, left);
       expectInsideView(rightAnchor, right);
     });
 
     test('卡片比游戏画面还大时贴左上角，绝不给负坐标', () {
-      final GalLookupHit hit = _hit(viewW: 320, viewH: 240, glyphX: 100, glyphY: 100);
+      final GalLookupHit hit =
+          _hit(viewW: 320, viewH: 240, glyphX: 100, glyphY: 100);
       final ({int x, int y}) anchor = resolveAnchor(hit, cardW, cardH);
       expect(anchor.x, 0);
       expect(anchor.y, 0);
     });
 
     test('hook 没报视口尺寸时退化成字形正下方，不猜屏幕边界', () {
-      final GalLookupHit hit = _hit(viewW: 0, viewH: 0, glyphX: 700, glyphY: 640);
+      final GalLookupHit hit =
+          _hit(viewW: 0, viewH: 0, glyphX: 700, glyphY: 640);
       final ({int x, int y}) anchor = resolveAnchor(hit, cardW, cardH);
       expect(anchor.x, 700);
       expect(anchor.y, 640 + 26 + _kCardGap);
@@ -238,7 +241,8 @@ void main() {
 
     test('同一命中反复算落点结果稳定（纯函数，不许有隐藏状态）', () {
       final GalLookupHit hit = _hit(glyphX: 333, glyphY: 421);
-      expect(resolveAnchor(hit, cardW, cardH), resolveAnchor(hit, cardW, cardH));
+      expect(
+          resolveAnchor(hit, cardW, cardH), resolveAnchor(hit, cardW, cardH));
     });
   });
 
@@ -310,22 +314,53 @@ void main() {
       expect(result.error, 'lookup_region_missing');
     });
 
-    test('卡片被裁过时 clamped 必须透出来（投出去的是切过的图）', () async {
-      mockRunner((_) => <String, Object?>{
-            'width': 880,
-            'height': 880,
-            'clamped': true,
-          });
-      final GalLookupCallResult result =
-          await GalHookTextOverlayChannel.galLookupPresent(
-        seq: 2,
-        anchorX: 0,
-        anchorY: 0,
-        highlightStart: 0,
-        highlightLen: 1,
-      );
-      expect(result.ok, isTrue, reason: '裁过不等于失败');
-      expect(result.clamped, isTrue, reason: '但也不等于"完整投出去了"，必须如实记账');
+    test('主路复用 Fushi popup，内嵌模式只隐藏顶部整句横幅', () {
+      final String source = File(
+        'lib/src/lookup/gal_ingame_lookup_controller.dart',
+      ).readAsStringSync();
+      expect(source, contains('GlobalLookupController.instance.lookupText('));
+      expect(source, contains('GlobalLookupRoute.galCard('),
+          reason: '每次游戏内查词必须分配不可复用的离屏 route token');
+      expect(source, contains('GlobalLookupChannel.runWithRoute('),
+          reason: '查词 Future/Timer 必须继承当次 galCard route，不能读进程级可变 target');
+      expect(source, isNot(contains('GlobalLookupChannel.setTarget(')),
+          reason: '不得把迟到的旧查词改道到新 surface');
+      expect(source, contains('_finishDisableRouting('),
+          reason: '不能在旧 galCard 渲染尚未结束时提前切回桌面，否则迟到 reveal 会形成双弹窗');
+      expect(source, contains('_hideThenInvalidateRoute('),
+          reason: '终止必须先隐藏离屏 popup，再废止 route token');
+      expect(source, contains('showSentenceBanner: false'),
+          reason: '内嵌模式只隐藏 popup 顶部整句横幅，不能另造一套卡片');
+      expect(source, contains('GalHookTextOverlayChannel.galLookupPresent('),
+          reason: '渲染完成后必须抓取 Fushi popup 的 BGRA 位图投给游戏 Layer');
+      expect(source, contains('static const int _kCardBitmapBytes ='));
+      expect(source, isNot(contains('galLookupPresentTextCard(')),
+          reason: 'v14 主路不再下发结构化 NativeText payload');
+    });
+
+    test('enable 失败可重试，迟到回执不能覆盖更新状态', () {
+      final String source = File(
+        'lib/src/lookup/gal_ingame_lookup_controller.dart',
+      ).readAsStringSync();
+      expect(
+          source, contains('final int generation = ++_enableSyncGeneration;'));
+      expect(source,
+          contains('if (generation != _enableSyncGeneration) continue;'));
+      expect(source, contains('if (result.ok && desired == latestDesired) {'),
+          reason: '失败回执不能伪装成已推送，否则同一 active phase 无法重试');
+    });
+
+    test('submit 查词是 latest-wins，hover 不作废在途 submit', () {
+      final String source = File(
+        'lib/src/lookup/gal_ingame_lookup_controller.dart',
+      ).readAsStringSync();
+      expect(source, contains('if (!hit.submit)'));
+      expect(source, contains('final int generation = ++_lookupGeneration;'));
+      expect(
+          source,
+          contains(
+              '_pendingLookup = (hit: hit, generation: generation, route: route);'));
+      expect(source, contains('generation == _lookupGeneration'));
     });
 
     test('非 Windows 上三个调用一律不过桥，返回 unsupported', () async {

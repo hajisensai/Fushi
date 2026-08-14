@@ -25,6 +25,8 @@ class AggregateSnapshot {
     this.lookupMiningCounters = const <LookupMiningRecord>[],
     this.favoriteWords = const <FavoriteWordRecord>[],
     this.favoriteSentences = const <FavoriteSentence>[],
+    this.favoriteWordTombstones = const <AggregateTombstoneRecord>[],
+    this.favoriteSentenceTombstones = const <AggregateTombstoneRecord>[],
   });
 
   /// Wire format version. It is reserved for a genuinely BREAKING change (one
@@ -66,6 +68,14 @@ class AggregateSnapshot {
   final List<FavoriteWordRecord> favoriteWords;
   final List<FavoriteSentence> favoriteSentences;
 
+  /// 收藏词/收藏句的**删除墓碑**（互联完整支持批次：取消收藏此前只本地防复活、
+  /// 不跨端传播——对端那台设备上永远删不掉）。additive 字段：旧端忽略、缺失当
+  /// 空。仲裁在 [AggregateSyncService.mergeSnapshots]：墓碑 `deletedAt` 严格
+  /// 大于收藏 `createdAt` → 删除胜（对端也删）；否则重收藏胜（墓碑退场，防
+  /// 「删除僵尸」反向复活）。itemKey 与本地 `sync_deletion_tombstones` 同公式。
+  final List<AggregateTombstoneRecord> favoriteWordTombstones;
+  final List<AggregateTombstoneRecord> favoriteSentenceTombstones;
+
   /// True when nothing in the snapshot would change a peer: used to skip an
   /// empty upload on a device that has no aggregate state yet.
   bool get isEmpty =>
@@ -77,7 +87,10 @@ class AggregateSnapshot {
       miningStats.isEmpty &&
       lookupMiningCounters.isEmpty &&
       favoriteWords.isEmpty &&
-      favoriteSentences.isEmpty;
+      favoriteSentences.isEmpty &&
+      // 只有墓碑也必须上传：纯删除同样要传播到对端。
+      favoriteWordTombstones.isEmpty &&
+      favoriteSentenceTombstones.isEmpty;
 
   Map<String, Object?> toJson() => <String, Object?>{
         'version': currentVersion,
@@ -99,6 +112,12 @@ class AggregateSnapshot {
             favoriteWords.map((FavoriteWordRecord r) => r.toJson()).toList(),
         'favoriteSentences':
             favoriteSentences.map((FavoriteSentence s) => s.toJson()).toList(),
+        'favoriteWordTombstones': favoriteWordTombstones
+            .map((AggregateTombstoneRecord r) => r.toJson())
+            .toList(),
+        'favoriteSentenceTombstones': favoriteSentenceTombstones
+            .map((AggregateTombstoneRecord r) => r.toJson())
+            .toList(),
       };
 
   /// Decodes a snapshot from a backend JSON asset. A null / non-map payload, or
@@ -130,6 +149,11 @@ class AggregateSnapshot {
       favoriteWords:
           _decodeList(json['favoriteWords'], FavoriteWordRecord.fromJson),
       favoriteSentences: _decodeFavoriteSentences(json['favoriteSentences']),
+      favoriteWordTombstones: _decodeList(
+          json['favoriteWordTombstones'], AggregateTombstoneRecord.fromJson),
+      favoriteSentenceTombstones: _decodeList(
+          json['favoriteSentenceTombstones'],
+          AggregateTombstoneRecord.fromJson),
     );
   }
 
@@ -464,4 +488,33 @@ int _asInt(Object? v) {
   if (v is double) return v.toInt();
   if (v is String) return int.tryParse(v) ?? 0;
   return 0;
+}
+
+/// 收藏删除墓碑的 wire 行（互联完整支持批次）。[itemKey] 与本地
+/// `sync_deletion_tombstones.itemKey` 同公式（词 =
+/// `FushiDatabase.favoriteWordItemKey`；句 =
+/// `FavoriteSentenceRepository.itemKeyOf`）；[deletedAt] 为删除毫秒戳，仲裁
+/// 「删除 vs 重收藏」用（见 `AggregateSyncService.mergeSnapshots`）。
+class AggregateTombstoneRecord {
+  const AggregateTombstoneRecord({
+    required this.itemKey,
+    required this.deletedAt,
+  });
+
+  final String itemKey;
+  final int deletedAt;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'itemKey': itemKey,
+        'deletedAt': deletedAt,
+      };
+
+  static AggregateTombstoneRecord? fromJson(Map<String, Object?> json) {
+    final Object? itemKey = json['itemKey'];
+    if (itemKey is! String || itemKey.isEmpty) return null;
+    return AggregateTombstoneRecord(
+      itemKey: itemKey,
+      deletedAt: _asInt(json['deletedAt']),
+    );
+  }
 }

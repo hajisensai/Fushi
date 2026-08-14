@@ -444,6 +444,177 @@ void main() {
     });
   });
 
+  group('audiobook delay sweep (互联完整支持批次)', () {
+    test('本地带戳调轴 push 到 host；host 带戳调轴 pull 回本地；清单内联字段可用',
+        () async {
+      await _seedHostAudiobook(hostDb, 'abk-push');
+      await _seedHostAudiobook(hostDb, 'abk-pull');
+      // host 侧 abk-pull 有带戳调轴（host 本机 updateDelayMs 盖戳的效果）。
+      await hostDb.setPrefTyped<int>(audiobookDelayPrefKey('abk-pull'), 800);
+      await hostDb.setPrefTyped<int>(
+          audiobookDelayAtPrefKey('abk-pull'), 9000);
+
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      // 两本都进 sweep 基底（有听书位置 prefs）。
+      for (final String key in <String>['abk-push', 'abk-pull']) {
+        await localDb.setPrefTyped<int>(audiobookPositionPrefKey(key), 1000);
+        await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey(key), 500);
+      }
+      // 本地 abk-push 有带戳调轴。
+      await localDb.setPrefTyped<int>(audiobookDelayPrefKey('abk-push'), -700);
+      await localDb.setPrefTyped<int>(
+          audiobookDelayAtPrefKey('abk-push'), 8000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tabd'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      // 清单内联字段（免逐本 GET 的前提）先行断言。
+      final RemoteAudiobookInfo pullInfo = (await backend
+              .listRemoteAudiobooks())
+          .firstWhere((RemoteAudiobookInfo i) => i.identity == 'abk-pull');
+      expect(pullInfo.delayMs, 800);
+      expect(pullInfo.delayUpdatedAtMs, 9000);
+
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+      await orch.syncAudiobookProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await hostDb.getPrefTyped<int>(audiobookDelayPrefKey('abk-push'), 0),
+          -700,
+          reason: '本地较新调轴须收敛到 host');
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookDelayAtPrefKey('abk-push'), 0),
+          8000);
+      expect(
+          await localDb.getPrefTyped<int>(
+              audiobookDelayPrefKey('abk-pull'), 0),
+          800,
+          reason: 'host 较新调轴须回灌本地');
+      expect(
+          await localDb.getPrefTyped<int>(
+              audiobookDelayAtPrefKey('abk-pull'), 0),
+          9000);
+    });
+  });
+
+  group('standalone SRT audiobook sweep (BUG-1637)', () {
+    test('纯 SRT 有声书（bookKey 空、身份=uid）的听书进度进 sweep 交集并双向同步',
+        () async {
+      // host：只有 standalone SrtBooks 行（无 Audiobooks 行、bookKey 空）。
+      await hostDb.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srt-uid-1',
+        title: 'Standalone SRT',
+        srtPath: '/tmp/standalone.srt',
+        importedAt: 0,
+      ));
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      // 本地听过：进度 prefs 按 uid 键（standalone 的 identity）。
+      await localDb.setPrefTyped<int>(
+          audiobookPositionPrefKey('srt-uid-1'), 123000);
+      await localDb.setPrefTyped<int>(
+          audiobookPositionAtPrefKey('srt-uid-1'), 7000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tsrt'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncAudiobookProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookPositionPrefKey('srt-uid-1'), 0),
+          123000,
+          reason: '此前 hostKeys 用裸 bookKey（standalone 恒空串）建交集，'
+              '纯 SRT 的进度永远不同步；必须用 identity（bookKey ?? uid）');
+      expect(
+          await hostDb.getPrefTyped<int>(
+              audiobookPositionAtPrefKey('srt-uid-1'), 0),
+          7000);
+    });
+  });
+
+  group('video delay full sweep (BUG-1620)', () {
+    test(
+        'local stamped delay newer -> push to host (prefs + row write-through)',
+        () async {
+      await _seedHostVideo(hostDb, work, 'video/d1', 'D1');
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      // 本地看过该视频（有断点 prefs 即进 sweep 基底）+ 带戳调轴。
+      await localDb.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/d1'), 60000);
+      await localDb.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/d1'), 1000);
+      await localDb.setPrefTyped<int>(
+          videoRemoteDelayPrefKey('video/d1'), -1500);
+      await localDb.setPrefTyped<int>(
+          videoRemoteDelayAtPrefKey('video/d1'), 5000);
+
+      final Directory tmp = Directory(p.join(work.path, 'td1'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncVideoProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await hostDb.getPrefTyped<int>(
+              videoRemoteDelayPrefKey('video/d1'), 0),
+          -1500,
+          reason: '离线时段调的轴须在全量同步收敛到 host');
+      expect(
+          await hostDb.getPrefTyped<int>(
+              videoRemoteDelayAtPrefKey('video/d1'), 0),
+          5000);
+      // host 端写穿行值：host 本机播放（读 row.delayMs）跟随。
+      expect((await hostDb.getVideoBookByBookUid('video/d1'))!.delayMs, -1500);
+    });
+
+    test('host stamped delay newer -> pull into local prefs (+ row if exists)',
+        () async {
+      await _seedHostVideo(hostDb, work, 'video/d2', 'D2');
+      // host 上有人带戳调过轴（如 host 本机播放镜像盖戳）。
+      await hostDb.setPrefTyped<int>(videoRemoteDelayPrefKey('video/d2'), 800);
+      await hostDb.setPrefTyped<int>(
+          videoRemoteDelayAtPrefKey('video/d2'), 9000);
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      // 本地书架也有该视频（下载过），行值应被写穿。
+      await localDb.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/d2',
+        title: 'D2',
+        videoPath: '/tmp/d2.mp4',
+      ));
+
+      final Directory tmp = Directory(p.join(work.path, 'td2'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      await orch.syncVideoProgressLiveForTest(SyncRunReport(), backend);
+
+      expect(
+          await localDb.getPrefTyped<int>(
+              videoRemoteDelayPrefKey('video/d2'), 0),
+          800,
+          reason: 'host 的带戳调轴须回灌本地');
+      expect(
+          await localDb.getPrefTyped<int>(
+              videoRemoteDelayAtPrefKey('video/d2'), 0),
+          9000,
+          reason: '时间戳用对端的（不冒充 now），与进度写回同纪律');
+      expect((await localDb.getVideoBookByBookUid('video/d2'))!.delayMs, 800);
+    });
+  });
+
   group('audiobook progress full sweep (BUG-471)', () {
     test('local has audiobook position, host none -> push to host prefs',
         () async {

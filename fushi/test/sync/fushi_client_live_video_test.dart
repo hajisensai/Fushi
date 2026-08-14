@@ -16,7 +16,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
-class _FakeLibraryService implements FushiLibraryHostService {
+class _FakeLibraryService
+    implements FushiLibraryHostService, VideoPlaybackSyncHost {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -89,6 +90,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<List<RemoteVideoInfo>> listVideos() async {
     final ({int positionMs, int updatedAtMs}) p =
         await getVideoPosition(videoId);
+    final VideoPlaybackSyncState d = await getVideoPlayback(videoId);
     return <RemoteVideoInfo>[
       RemoteVideoInfo(
         id: videoId,
@@ -98,6 +100,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
         coverPath: coverFile.path,
         positionMs: p.positionMs,
         positionUpdatedAtMs: p.updatedAtMs,
+        delayMs: d.delayMs,
+        delayUpdatedAtMs: d.delayAt,
       ),
     ];
   }
@@ -217,6 +221,22 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   final Map<String, ({int positionMs, int updatedAtMs})> videoPositions =
       <String, ({int positionMs, int updatedAtMs})>{};
+
+  // ── 播放偏好跨设备同步（in-memory 镜像 host 逐字段 LWW 语义）─────────────────
+
+  final Map<String, VideoPlaybackSyncState> videoPlayback =
+      <String, VideoPlaybackSyncState>{};
+
+  @override
+  Future<VideoPlaybackSyncState> getVideoPlayback(String id) async =>
+      videoPlayback[id] ?? const VideoPlaybackSyncState();
+
+  @override
+  Future<void> putVideoPlayback(
+      String id, VideoPlaybackSyncState incoming) async {
+    videoPlayback[id] = VideoPlaybackSyncState.merge(
+        videoPlayback[id] ?? const VideoPlaybackSyncState(), incoming);
+  }
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
@@ -478,6 +498,53 @@ void main() {
         await backend.remoteVideoPosition('video/does-not-exist');
     expect(read.positionMs, 0);
     expect(read.updatedAtMs, 0);
+  });
+
+  // ── 播放偏好跨设备同步 client↔host 往返（BUG-1620 起步，泛化为 /playback）────
+
+  test('playback: put 全字段 → get 读回；清单带戳字段一并下发', () async {
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    await backend.putRemoteVideoPlayback(
+        _FakeLibraryService.videoId,
+        const VideoPlaybackSyncState(
+            delayMs: -1500,
+            delayAt: 1700000000000,
+            audioTrackId: '3',
+            audioTrackAt: 1700000000000,
+            secondarySubtitleSource: 'embedded:4',
+            secondarySubtitleAt: 1700000000000,
+            secondaryDelayMs: 250,
+            secondaryDelayAt: 1700000000000));
+
+    final VideoPlaybackSyncState read =
+        await backend.remoteVideoPlayback(_FakeLibraryService.videoId);
+    expect(read.delayMs, -1500, reason: '负调轴必须保真往返');
+    expect(read.audioTrackId, '3');
+    expect(read.secondarySubtitleSource, 'embedded:4');
+    expect(read.secondaryDelayMs, 250);
+
+    // 调轴 + 戳也随清单条目带回（client 起播据此做逐字段 LWW 决议）。
+    final List<RemoteVideoInfo> list = await backend.listRemoteVideos();
+    expect(list.single.delayMs, -1500);
+    expect(list.single.delayUpdatedAtMs, 1700000000000);
+  });
+
+  test('playback: 未知 id GET 返回空状态（host 404 降级不抛）；PUT 抛由调用方捕获', () async {
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+
+    final VideoPlaybackSyncState read =
+        await backend.remoteVideoPlayback('video/does-not-exist');
+    expect(read.isEmpty, isTrue);
+
+    await expectLater(
+      backend.putRemoteVideoPlayback('video/does-not-exist',
+          const VideoPlaybackSyncState(delayMs: 100, delayAt: 1700000000000)),
+      throwsA(anything),
+      reason: '存在性闸门 404 应上抛，由播放页 best-effort 捕获（本地 prefs 已写）',
+    );
   });
 
   // ── TODO-1235（TODO-961 回归）：封面走互联同款钉扎客户端 ─────────────────────

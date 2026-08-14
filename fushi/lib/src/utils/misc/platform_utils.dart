@@ -227,7 +227,15 @@ double? desktopContentMaxWidth(
     // --dict-columns 与更长释义）。嵌套查词弹窗渲染在根 Overlay、独立走
     // popupMaxWidth，不受此项影响。
     DesktopContentKind.dictionary => null,
-    DesktopContentKind.settings => 960,
+    // 取消设置页（含各库页内嵌的 [ModuleSettingsView] 设置标签页）在宽屏上的
+    // 960px 强制内容宽上限——这是书架（1280）/ 查词（1040）同款「莫名奇妙的宽度
+    // 限制」的最后一处残留：设置详情本身就是填满 pane 的列表流（设置主页的宽屏
+    // 主从布局早已按用户拍板不限宽，见 settings_home_page._buildWideLayout 注释），
+    // 唯独走 [DesktopContentLayout] 的这一支还把正文居中锁在 960，4K 窗口下两侧
+    // 各留 700+px 空白、且与同一 app 内不限宽的设置详情自相矛盾。
+    // 返回 null 走 full-bleed 分支，仍由 [desktopContentPadding] 保留 16/24px
+    // 侧向留白（正文不贴边）。
+    DesktopContentKind.settings => null,
   };
 }
 
