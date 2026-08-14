@@ -43,6 +43,12 @@
 
 class GlobalLookupWindow {
  public:
+  struct RouteContext {
+    std::string source = "desktop";
+    int64_t route_epoch = 0;
+    int64_t lookup_epoch = 0;
+  };
+
   // Resolves the bytes for a custom-scheme resource request (image://...).
   // Asynchronous on purpose: the bytes come from the main Dart engine over a
   // MethodChannel whose reply is delivered on the platform thread, so blocking
@@ -52,7 +58,8 @@ class GlobalLookupWindow {
   using MediaResolver = std::function<void(
       const std::string& url, std::function<void(std::vector<uint8_t>)> respond)>;
   // Receives raw JSON sent by popup JS via window.chrome.webview.postMessage.
-  using MessageCallback = std::function<void(const std::string& json)>;
+  using MessageCallback =
+      std::function<void(const std::string& json, const RouteContext& route)>;
   // TODO-1153 -- receives a native bring-up error message (WebView2 environment
   // /controller create failure) so Dart can surface it via ErrorLogService.
   using ErrorCallback = std::function<void(const std::string& message)>;
@@ -61,7 +68,7 @@ class GlobalLookupWindow {
   // can hang a resume-on-dismiss (video subtitle lookup BUG-072 pause/resume) or
   // reset its own reveal state. NOT fired for the programmatic reset Hide() that
   // precedes a fresh lookup (see Hide(bool)).
-  using HiddenCallback = std::function<void()>;
+  using HiddenCallback = std::function<void(const RouteContext& route)>;
 
   GlobalLookupWindow();
   ~GlobalLookupWindow();
@@ -89,6 +96,12 @@ class GlobalLookupWindow {
   // as a blank window.
   bool IsWebViewReady() const { return webview_ready_; }
 
+  // Binds a MethodChannel call to the immutable lookup that issued it. Epochs
+  // are monotonic per window; a late bridge reply from an older lookup must not
+  // take ownership away from the newer render before an OS-driven dismissal.
+  void SetRouteContext(std::string source, int64_t route_epoch,
+                       int64_t lookup_epoch);
+
   // Shows the overlay at screen coordinates (physical pixels) without stealing
   // focus. Creates the window + WebView2 lazily on first call. Returns false if
   // window creation failed.
@@ -96,6 +109,14 @@ class GlobalLookupWindow {
   // Resizes to fit the rendered card (physical px); clamps to the monitor work
   // area and nudges back on-screen if the bottom/right would overflow.
   void ResizeTo(int width, int height);
+  // Resizes an off-screen render surface without applying the on-screen work-
+  // area clamp. The galgame card capture window must stay parked outside the
+  // virtual desktop while WebView2 remains shown for layout and capture.
+  void ResizeOffscreen(int width, int height);
+  // Resizes the off-screen nested-card union and commits the same host-layer
+  // shift used by RevealStack, without ever moving the HWND on-screen.
+  void ResizeStackOffscreen(int width, int height, double bbox_left,
+                            double bbox_top);
   // Moves the off-screen-rendered card to the pending cursor anchor at its final
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
@@ -349,6 +370,7 @@ class GlobalLookupWindow {
   // 瞬态窗的 WebView2 子窗自动收输入，不经此路径。
   void ForwardCompositionMouse(UINT message, WPARAM wparam, LPARAM lparam);
   void RecoverDeadWebView(const std::string& replay_script);
+  RouteContext RouteForMessage(const std::string& json) const;
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never
   // swallows it) so the "app-external lookup shows no popup" cause is visible.
   void ReportOverlayError(const std::string& message, HRESULT hr);
@@ -371,6 +393,10 @@ class GlobalLookupWindow {
   static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
   bool revealed_ = false;
+  // The galgame capture surface is intentionally never "visible" in desktop
+  // semantics, but a rendered off-screen card still owns a live popup session
+  // whose JS dismiss must notify Dart and hide the in-game bitmap.
+  bool offscreen_active_ = false;
   int pending_x_ = 0;
   int pending_y_ = 0;
   bool webview_ready_ = false;
@@ -416,6 +442,8 @@ class GlobalLookupWindow {
   std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
+  RouteContext route_context_;
+  bool route_context_bound_ = false;
   // BUG-749 — host-reported shell rects (window-relative CSS px, one
   // {l,t,w,h} per card). Non-empty only on the transient cascade instance
   // (the panel host short-circuits measureAndReport and never posts them).

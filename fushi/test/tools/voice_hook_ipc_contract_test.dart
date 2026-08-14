@@ -35,8 +35,163 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    // v14：追加游戏内查词区（hit / input / frame 三通道）。纯追加，前面各区偏移不动。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 14;'));
+    // v15：保留 v14 的 hit/input/frame 查词区，并只追加截图抑制 applied-seq 确认。
+    expect(source, contains('constexpr uint32_t kSharedVersion = 15;'));
+  });
+
+  test('v15：截图抑制必须 exact-match，且普通帧不能推进 applied ack', () {
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    expect(
+      header,
+      contains(
+        'constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;',
+      ),
+      reason: 'CaptureSuppress 是 wire identity，不能漂移或复用 dismiss/highlight 位',
+    );
+    expect(
+      header,
+      contains('volatile uint64_t lookup_frame_applied_seq;'),
+      reason: 'v15 必须有 hook→host 的截图抑制完成序，发布帧本身不是渲染屏障',
+    );
+
+    final String adapter = File(
+      '../native/galgame_hook/hook/adapters/kirikiri_adapter.inc',
+    ).readAsStringSync();
+    final int presentAt = adapter.indexOf('void PresentKirikiriLookupFrame()');
+    final int presentEnd = adapter.indexOf(
+      'void DrainKirikiriLookupInput()',
+      presentAt,
+    );
+    expect(
+      presentAt,
+      greaterThanOrEqualTo(0),
+      reason: '扫不到游戏线程帧消费入口',
+    );
+    expect(presentEnd, greaterThan(presentAt), reason: '扫不到帧消费入口结尾');
+    final String presentBody = adapter.substring(presentAt, presentEnd);
+    final RegExp exactSuppressBranch = RegExp(
+      r'if\s*\(staged\.flags\s*==\s*'
+      r'fushi_voice_hook::kLookupFrameCaptureSuppress\s*\)',
+    );
+    final RegExpMatch? exactSuppressMatch =
+        exactSuppressBranch.firstMatch(presentBody);
+    expect(
+      exactSuppressMatch,
+      isNotNull,
+      reason: '必须精确匹配 CaptureSuppress；按位命中会让混合/普通帧冒充抑制事务',
+    );
+    expect(
+      presentBody,
+      isNot(
+        contains(
+          'staged.flags & fushi_voice_hook::kLookupFrameCaptureSuppress',
+        ),
+      ),
+      reason: 'CaptureSuppress 不能用 bit-test 识别',
+    );
+
+    // 非零 pending ack 只能由上面的 exact 分支排入；普通 present/dismiss/highlight
+    // 不得借一个更晚的发布序让 host 误判“popup 已经从游戏窗口消失”。
+    final List<RegExpMatch> pendingAssignments = RegExp(
+      r'g_lookup_capture_suppress_pending_ack_seq\s*=\s*best_seq\s*;',
+    ).allMatches(adapter).toList();
+    expect(pendingAssignments, hasLength(1));
+    final int exactSuppressAt = presentAt + exactSuppressMatch!.start;
+    // CaptureSuppress 分支之后的下一个控制分支。highlight-only 帧在扫描阶段就分流
+    // 到 best_highlight（只在没有结构帧时才处理），所以这里的下一道闸是"未知/组合
+    // flag 一律 Drop"，不再是当年的 highlight 分支。
+    final int nextControlBranchAt = adapter.indexOf(
+      'if (staged.flags != 0) {',
+      exactSuppressAt,
+    );
+    expect(nextControlBranchAt, greaterThan(exactSuppressAt));
+    expect(pendingAssignments.single.start, greaterThan(exactSuppressAt));
+    expect(
+      pendingAssignments.single.start,
+      lessThan(nextControlBranchAt),
+      reason: '只有 exact CaptureSuppress 分支可以排入非零 pending ack',
+    );
+
+    final int commitAt = adapter.indexOf(
+      'void CommitKirikiriLookupCaptureSuppressAck()',
+    );
+    final int commitEnd = adapter.indexOf(
+      'bool BlitLookupFrameGuarded(',
+      commitAt,
+    );
+    expect(
+      commitAt,
+      greaterThanOrEqualTo(0),
+      reason: '扫不到 applied ack 提交入口',
+    );
+    expect(commitEnd, greaterThan(commitAt), reason: '扫不到 applied ack 提交入口结尾');
+    final List<RegExpMatch> appliedSeqReferences = RegExp(
+      r'lookup_frame_applied_seq',
+    ).allMatches(adapter).toList();
+    expect(appliedSeqReferences, isNotEmpty);
+    expect(
+      appliedSeqReferences.every(
+        (RegExpMatch match) =>
+            match.start >= commitAt && match.start < commitEnd,
+      ),
+      isTrue,
+      reason: 'applied seq 只能在专用 commit 中读写；普通帧路径不得碰它',
+    );
+    final List<RegExpMatch> appliedSeqWrites = RegExp(
+      r'WriteKirikiriSharedU64\(\s*'
+      r'&g_header->lookup_frame_applied_seq\s*,',
+    ).allMatches(adapter).toList();
+    expect(
+      appliedSeqWrites,
+      hasLength(1),
+      reason: 'hook→host applied ack 必须只有一个生产写点',
+    );
+    expect(appliedSeqWrites.single.start, greaterThan(commitAt));
+    expect(appliedSeqWrites.single.start, lessThan(commitEnd));
+
+    final int pumpAt = adapter.indexOf('void PumpKirikiriLookup()');
+    final int commitCallAt = adapter.indexOf(
+      'CommitKirikiriLookupCaptureSuppressAck();',
+      pumpAt,
+    );
+    final int enabledGateAt = adapter.indexOf(
+      'const bool enabled_now = LookupEnabledNow() != 0;',
+      pumpAt,
+    );
+    expect(
+      pumpAt,
+      greaterThanOrEqualTo(0),
+      reason: '扫不到 continuous callback 入口',
+    );
+    expect(commitCallAt, greaterThan(pumpAt));
+    expect(
+      commitCallAt,
+      lessThan(enabledGateAt),
+      reason: 'ack 必须跨过下一次 callback，并在禁用/故障 early-return 前提交',
+    );
+  });
+
+  test('卡片位图预算：Dart 侧镜像常量必须等于契约头', () {
+    // 漂了不会报错，只会**静默裁卡片**：Dart 按自己的数排版，runner 按头里的数裁，
+    // Dart 的数大一点，超出的部分就被 BGRA 解码链直接切掉。用户看到半张卡，日志里
+    // 只有一行 CLAMPED——这正是最难倒推回"两个常量不一致"的那类症状。
+    final String header = File(kIpcHeaderPath).readAsStringSync();
+    final RegExp headerRe = RegExp(
+      r'constexpr uint32_t kLookupBitmapBytes = (\d+)u \* 1024u \* 1024u;',
+    );
+    final RegExpMatch? headerMatch = headerRe.firstMatch(header);
+    expect(headerMatch, isNotNull,
+        reason: '扫不到契约头的 kLookupBitmapBytes —— 判红，别让空集假绿');
+
+    final String dart = File(
+      'lib/src/lookup/gal_ingame_lookup_controller.dart',
+    ).readAsStringSync();
+    final RegExp dartRe = RegExp(r'_kCardBitmapBytes = (\d+) \* 1024 \* 1024;');
+    final RegExpMatch? dartMatch = dartRe.firstMatch(dart);
+    expect(dartMatch, isNotNull, reason: '扫不到 Dart 侧镜像常量 —— 判红');
+
+    expect(dartMatch!.group(1), headerMatch!.group(1),
+        reason: '两侧位图预算必须一致（单位 MiB）；改一处就要改另一处');
   });
 
   test('host and native share the v12 thread preview seqlock contract', () {

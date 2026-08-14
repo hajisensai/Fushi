@@ -1,4 +1,4 @@
-// v14 游戏内查词区的**契约级**测试。
+// v15 游戏内查词区的**契约级**测试。
 //
 // 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Hibiki
 // 里，两边只靠 voice_hook_ipc.h 的寻址函数对齐。所以下面钉死的不是"某个 adapter 怎么
@@ -9,7 +9,10 @@
 //      每一条拒绝理由都要有自己的独立用例，否则某天有人删掉其中一条也没人发现；
 //   3. `lookup_region_offset == 0`（旧会话 / 未分配）时访问器一律给 nullptr，而不是
 //      拿 header 基址当区起点算出野指针；
-//   4. v14 是**纯追加**：v13 及更早各区的偏移一个字节都不许被查词区影响。
+//   4. v14 查词区仍是对 v13 的**纯追加**布局；v15 又只在 v14 头尾追加
+//      lookup_frame_applied_seq，任何既有字段一个字节都不许挪；
+//   5. capture-suppress 有独占的精确 flags 身份，普通 present/dismiss/highlight 或混合位
+//      不能冒充一笔可确认的截图抑制。
 //
 // 与 text_lane_ipc_test.cpp 同一套做法：在进程内摆一块按真实布局排好的假共享内存，
 // 直接跑契约头里的那份寻址实现（不复制一份到测试里）。
@@ -30,7 +33,9 @@ using fushi_voice_hook::IsLookupFrameSane;
 using fushi_voice_hook::kClipCount;
 using fushi_voice_hook::kLookupBitmapBytes;
 using fushi_voice_hook::kLookupFrameCount;
+using fushi_voice_hook::kLookupFrameCaptureSuppress;
 using fushi_voice_hook::kLookupFrameDismiss;
+using fushi_voice_hook::kLookupFrameHighlightOnly;
 using fushi_voice_hook::kLookupInputSlotCount;
 using fushi_voice_hook::kLookupLineBytes;
 using fushi_voice_hook::kLoopbackMarkerCount;
@@ -395,11 +400,15 @@ void TestFrameSanityRejectsEveryUntrustedShape() {
           "byte_len < pitch*height 必须拒绝（按 height 逐行拷会读过尾）");
   }
   {
-    // 自洽但超容量：1024x1024 BGRA = 4MiB > 3MiB 单缓冲上限。
+    // 自洽但超容量：宽高都在 0x4000 上界内，唯一越界的是总字节数。
+    //
+    // 尺寸**从 kLookupBitmapBytes 推导**，不写死。容量抬过一次（3MiB→8MiB），
+    // 原来写死的 1024x1024（4MiB）当场变成"没超容量"，这条用例于是静默失去意义
+    // ——构造前提断言先红，而它测的那条规则根本没被执行到。
     LookupFrame too_big = HealthyFrame();
-    too_big.width = 1024;
-    too_big.height = 1024;
+    too_big.width = 2048;
     too_big.pitch = too_big.width * 4;
+    too_big.height = kLookupBitmapBytes / too_big.pitch + 1;
     too_big.byte_len = too_big.pitch * too_big.height;
     Check(too_big.byte_len > kLookupBitmapBytes,
           "构造前提：本用例确实超了单缓冲容量");
@@ -453,37 +462,50 @@ void TestShouldApplyTruthTable() {
   struct Case {
     uint64_t frame_seq;
     uint64_t frame_hit_seq;
+    uint32_t frame_flags;
     uint64_t presented_seq;
-    uint64_t current_hit_seq;
+    uint64_t current_any_hit_seq;
+    uint64_t current_submit_hit_seq;
     bool expected;
     const char* what;
   };
   const uint64_t kPresented = 10;
-  const uint64_t kCurrentHit = 5;
+  const uint64_t kCurrentAnyHit = 6;
+  const uint64_t kCurrentSubmitHit = 5;
   const Case cases[] = {
-      // 发布序更旧/相等：这帧已经处理过，hit_seq 再新也不重来。
-      {9, 4, kPresented, kCurrentHit, false, "发布序更旧 + hit 更旧 → 拒"},
-      {9, 5, kPresented, kCurrentHit, false, "发布序更旧 + hit 相等 → 拒"},
-      {9, 6, kPresented, kCurrentHit, false, "发布序更旧 + hit 更新 → 拒"},
-      {10, 5, kPresented, kCurrentHit, false, "发布序相等即已处理 → 拒"},
-      // 发布序更新：再看它回应的那次查询有没有被作废。
-      {11, 4, kPresented, kCurrentHit, false,
-       "发布序更新但回应的是旧命中 → 拒（迟到帧不许顶掉新卡片）"},
-      {11, 5, kPresented, kCurrentHit, true, "发布序更新 + 回应当前命中 → 应用"},
-      {11, 6, kPresented, kCurrentHit, true,
-       "发布序更新 + hit 比注入侧看到的还新（host 抢跑）→ 应用"},
+      // 发布序更旧/相等：fence 命中也不重来。
+      {9, 5, 0, kPresented, kCurrentAnyHit, kCurrentSubmitHit, false,
+       "卡片命中 submit fence，但发布序更旧 → 拒"},
+      {10, 6, kLookupFrameHighlightOnly, kPresented, kCurrentAnyHit,
+       kCurrentSubmitHit, false, "高亮命中 any fence，但发布序相等 → 拒"},
+      // submit B=5 之后只有 hover C=6：卡片仍回应 B，必须接受。
+      {11, 5, 0, kPresented, kCurrentAnyHit, kCurrentSubmitHit, true,
+       "submit B → hover C → present B 仍应用 submit fence"},
+      {11, 5, kLookupFrameDismiss, kPresented, kCurrentAnyHit,
+       kCurrentSubmitHit, true,
+       "submit B 无结果后 dismiss(B) 不得被 hover C 拦截"},
+      // highlight-only 只看 any fence，旧悬停和未来序都必须拒绝。
+      {11, 6, kLookupFrameHighlightOnly, kPresented, kCurrentAnyHit,
+       kCurrentSubmitHit, true, "highlight-only 严格命中 any fence → 应用"},
+      {11, 5, kLookupFrameHighlightOnly, kPresented, kCurrentAnyHit,
+       kCurrentSubmitHit, false, "旧 hover 高亮不得覆盖当前 hover"},
+      {11, 7, kLookupFrameHighlightOnly, kPresented, kCurrentAnyHit,
+       kCurrentSubmitHit, false, "尚未发布的 hover 高亮不得抢跑"},
+      // submit D=7 后，B=5 的卡片/收卡都作废。
+      {11, 5, 0, kPresented, 7, 7, false,
+       "submit D 后迟到的 present B 必须拒绝"},
+      {11, 5, kLookupFrameDismiss, kPresented, 7, 7, false,
+       "submit D 后迟到的 dismiss(B) 不得收掉 D"},
   };
   for (const Case& c : cases) {
-    Check(ShouldApplyLookupFrame(c.frame_seq, c.frame_hit_seq, c.presented_seq,
-                                 c.current_hit_seq) == c.expected,
+    Check(ShouldApplyLookupFrame(c.frame_seq, c.frame_hit_seq, c.frame_flags,
+                                 c.presented_seq, c.current_any_hit_seq,
+                                 c.current_submit_hit_seq) == c.expected,
           c.what);
   }
 
-  // 首帧：什么都还没处理过（presented=0），命中序从 1 起。
-  Check(ShouldApplyLookupFrame(1, 1, 0, 1), "会话第一帧必须能应用");
-  // 尚无命中（current_hit_seq=0）时 host 不该投帧，但真投了也不该被判为过期——
-  // 过期与否只由这两个序号决定，别在这里塞第三种语义。
-  Check(ShouldApplyLookupFrame(1, 0, 0, 0), "无命中时的帧不因 hit_seq=0 被判过期");
+  Check(ShouldApplyLookupFrame(1, 1, 0, 0, 1, 1),
+        "会话第一张 submit 卡必须能应用");
 }
 
 // 收卡整条不通的那个回归，用判据本身钉死：present 完立刻发的收卡帧必须过得去。
@@ -493,13 +515,16 @@ void TestShouldApplyTruthTable() {
 void TestDismissRightAfterPresentIsNotTreatedAsStale() {
   const uint64_t present_publish = 7;
   const uint64_t hit = 3;
-  Check(ShouldApplyLookupFrame(present_publish, hit, present_publish - 1, hit),
+  Check(ShouldApplyLookupFrame(present_publish, hit, 0, present_publish - 1,
+                               hit, hit),
         "构造前提：这次 present 本身是能被应用的");
   // host 收卡 = 领**下一个**发布序，hit_seq 仍指向被撤的那次查询。
-  Check(ShouldApplyLookupFrame(present_publish + 1, hit, present_publish, hit),
+  Check(ShouldApplyLookupFrame(present_publish + 1, hit, kLookupFrameDismiss,
+                               present_publish, hit, hit),
         "紧跟 present 的收卡帧必须能被应用（收卡链曾经就死在这里）");
   // 反面：新命中来了之后，那张收卡帧作废，不许把新卡片收掉。
-  Check(!ShouldApplyLookupFrame(present_publish + 1, hit, present_publish,
+  Check(!ShouldApplyLookupFrame(present_publish + 1, hit,
+                                kLookupFrameDismiss, present_publish, hit + 1,
                                 hit + 1),
         "陈旧的收卡帧不得收掉更新的卡片");
 }
@@ -526,11 +551,35 @@ void TestDismissFrameIsFlagBornNotShapeInferred() {
         "废帧与收卡帧的唯一区别就是这个位，不是形状");
 }
 
-// ── 4. v14 是纯追加 ────────────────────────────────────────────────────────
+// 截图抑制同样是无像素控制帧，但它不能按“含有某个位”识别。若 dismiss/highlight 与
+// suppress 混合后也能命中，普通控制帧就可能排入 applied-seq 确认链，host 会在 popup
+// 仍可见时误以为窗口已经干净。
+void TestCaptureSuppressHasExactControlIdentity() {
+  Check(kLookupFrameCaptureSuppress == 0x00000004u,
+        "v15 capture-suppress 的 wire flag 必须锁在 0x4");
+  Check((kLookupFrameCaptureSuppress & kLookupFrameDismiss) == 0,
+        "capture-suppress 与 dismiss 必须是互斥位");
+  Check((kLookupFrameCaptureSuppress & kLookupFrameHighlightOnly) == 0,
+        "capture-suppress 与 highlight-only 必须是互斥位");
 
-void TestV14IsAPureAppendOverV13() {
-  Check(kSharedVersion == 14, "本测试锁的是 v14 布局");
+  const uint32_t ordinary_or_mixed_flags[] = {
+      0,
+      kLookupFrameDismiss,
+      kLookupFrameHighlightOnly,
+      kLookupFrameDismiss | kLookupFrameCaptureSuppress,
+      kLookupFrameHighlightOnly | kLookupFrameCaptureSuppress,
+      kLookupFrameDismiss | kLookupFrameHighlightOnly |
+          kLookupFrameCaptureSuppress,
+  };
+  for (const uint32_t flags : ordinary_or_mixed_flags) {
+    Check(flags != kLookupFrameCaptureSuppress,
+          "只有 exact CaptureSuppress 能进入截图确认链；普通/混合帧不得冒充 ack");
+  }
+}
 
+// ── 4. v14/v15 都是纯追加 ───────────────────────────────────────────────────
+
+void TestV14LookupRegionIsPureAppendOverV13() {
   // (a) 结构体层面：查词字段整体排在 v13 最后一个字段之后。中间插一个字段就会让所有
   //     v13 消费者读错位，而版本号又已经匹配、挡不住。
   const size_t last_v13_field =
@@ -581,6 +630,22 @@ void TestV14IsAPureAppendOverV13() {
         "查词区必须追加在所有 v13 区之后");
 }
 
+void TestV15OnlyAppendsCaptureSuppressAckOverV14() {
+  Check(kSharedVersion == 15, "本测试锁的是 v15 契约");
+
+  // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
+  // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
+  const size_t last_v14_field = offsetof(SharedHeader, lookup_diag);
+  const size_t only_v15_field =
+      offsetof(SharedHeader, lookup_frame_applied_seq);
+  Check(only_v15_field == last_v14_field + sizeof(uint32_t),
+        "v15 applied seq 必须紧跟 v14 末字段，不能移动或填改既有查词字段");
+  Check(only_v15_field % alignof(uint64_t) == 0,
+        "v15 applied seq 必须保持 8 字节对齐");
+  Check(sizeof(SharedHeader) == only_v15_field + sizeof(uint64_t),
+        "v15 只能追加 lookup_frame_applied_seq，头尾不得再混入别的字段");
+}
+
 // 头里的冗余自洽字段必须与编译期常量一致——否则读侧按 header 值寻址、写侧按常量写，
 // 会各算各的。
 void TestHeaderMirrorsCompileTimeConstants() {
@@ -595,6 +660,8 @@ void TestHeaderMirrorsCompileTimeConstants() {
   Check(kLookupFrameCount >= 2, "位图必须至少双缓冲");
   Check(sizeof(LookupHitSlot) % 8 == 0, "hit 槽结构 8 对齐");
   // 帧结构随 v14 收卡改造从 48 字节长到 64（加了 hit_seq / flags / reserved2）。
+  // v15 只在 SharedHeader 末尾追加 ack，不能顺手改 LookupFrame 的跨进程步长。
+  Check(sizeof(LookupFrame) == 64, "v15 不得改变 v14 的 64 字节帧结构");
   // 跨进程结构体不 8 对齐，双缓冲的第二块就会歪，且 volatile uint64 在 x86 上会撕裂。
   Check(sizeof(LookupFrame) % 8 == 0, "帧结构 8 对齐");
   Check(sizeof(LookupInputSlot) % 8 == 0, "输入槽结构 8 对齐");
@@ -612,8 +679,10 @@ int main() {
   TestShouldApplyTruthTable();
   TestDismissRightAfterPresentIsNotTreatedAsStale();
   TestDismissFrameIsFlagBornNotShapeInferred();
+  TestCaptureSuppressHasExactControlIdentity();
   TestAcceptedFramesAlwaysFitInsideTheirBitmapSlot();
-  TestV14IsAPureAppendOverV13();
+  TestV14LookupRegionIsPureAppendOverV13();
+  TestV15OnlyAppendsCaptureSuppressAckOverV14();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {
     fprintf(stderr, "lookup ipc contract test failures: %d\n", g_failures);
