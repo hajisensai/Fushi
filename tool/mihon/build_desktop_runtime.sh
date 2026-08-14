@@ -21,7 +21,24 @@ server_commit="ee55c65106bb18bf81a5ddc660d321b4e14ea2f9"
 # vendored 树没有 .git 会退化成空串。走上游自带的 ProductRevision 钩子把它钉成
 # 被 vendor 的 commit 短 SHA，产物名与 manifest 因此直接指向真相源。
 server_revision="${server_commit:0:7}"
-temurin_version="jdk-21.0.11+10"
+corretto_version="21.0.12.8.1"
+corretto_base_url="https://corretto.aws/downloads/resources/$corretto_version"
+x64_archive="amazon-corretto-$corretto_version-macosx-x64.tar.gz"
+x64_archive_sha256="a018ae6221babf065f770479b1bf0ab0d23bea78ed18f236c40bb5d4736612ffa"
+arm64_archive="amazon-corretto-$corretto_version-macosx-aarch64.tar.gz"
+arm64_archive_sha256="cb230d7ac82784a4438663cdaf91d0d04037a9b4fb99ea41e138d88ce1224ab7"
+requested_architectures="${FUSHI_MIHON_ARCHS:-all}"
+
+case "$requested_architectures" in
+  all|host) ;;
+  *) echo "FUSHI_MIHON_ARCHS must be 'all' or 'host'" >&2; exit 64 ;;
+esac
+
+case "$(uname -m)" in
+  arm64) host_architecture="arm64" ;;
+  x86_64) host_architecture="x64" ;;
+  *) echo "unsupported macOS build architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
 case "$output_directory" in
   /|"") echo "refusing to write a desktop runtime to a filesystem root" >&2; exit 64 ;;
@@ -52,17 +69,77 @@ cp -R "$vendored_source_root/." "$source_root/"
 git -C "$source_root" apply "$overlay_root/server-build.gradle.patch"
 cp -R "$overlay_root/overlay/." "$source_root/"
 
+download_verified_archive() {
+  local archive="$1"
+  local expected_sha256="$2"
+  local archive_path="$download_cache/$archive"
+  local partial_path="$archive_path.partial"
+  local download_url="$corretto_base_url/$archive"
+
+  if [[ -f "$archive_path" ]] &&
+    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null 2>&1; then
+    echo "resuming incomplete cached JDK archive: $archive_path" >&2
+    if [[ ! -f "$partial_path" ]]; then
+      mv "$archive_path" "$partial_path"
+    else
+      rm -f -- "$archive_path"
+    fi
+  fi
+
+  if [[ ! -f "$archive_path" ]]; then
+    local attempt
+    for attempt in 1 2 3; do
+      echo "downloading $archive (attempt $attempt/3)" >&2
+      if curl \
+        --fail \
+        --location \
+        --http1.1 \
+        --retry 5 \
+        --retry-all-errors \
+        --continue-at - \
+        --output "$partial_path" \
+        "$download_url"; then
+        if printf '%s  %s\n' "$expected_sha256" "$partial_path" | shasum -a 256 --check >/dev/null 2>&1; then
+          mv "$partial_path" "$archive_path"
+          break
+        fi
+        echo "checksum mismatch for completed JDK archive: $archive" >&2
+        rm -f -- "$partial_path"
+      fi
+    done
+  fi
+
+  if [[ ! -f "$archive_path" ]] ||
+    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null 2>&1; then
+    echo "failed to download a verified JDK archive: $archive" >&2
+    return 1
+  fi
+}
+
+if [[ "$requested_architectures" == all ]]; then
+  download_verified_archive "$x64_archive" "$x64_archive_sha256" &
+  x64_download_pid=$!
+  download_verified_archive "$arm64_archive" "$arm64_archive_sha256" &
+  arm64_download_pid=$!
+  download_failed=false
+  wait "$x64_download_pid" || download_failed=true
+  wait "$arm64_download_pid" || download_failed=true
+  if [[ "$download_failed" == true ]]; then
+    echo "failed to download the pinned macOS JDK archives" >&2
+    exit 1
+  fi
+elif [[ "$host_architecture" == arm64 ]]; then
+  download_verified_archive "$arm64_archive" "$arm64_archive_sha256"
+else
+  download_verified_archive "$x64_archive" "$x64_archive_sha256"
+fi
+
 prepare_jdk() {
   local architecture="$1"
   local archive="$2"
   local expected_sha256="$3"
   local archive_path="$download_cache/$archive"
-  local download_version="${temurin_version/+/%2B}"
-  local download_url="https://github.com/adoptium/temurin21-binaries/releases/download/$download_version/$archive"
 
-  if [[ ! -f "$archive_path" ]]; then
-    curl --fail --location --retry 3 --output "$archive_path" "$download_url"
-  fi
   printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null
 
   local extract_root="$working_root/jdk-$architecture"
@@ -73,20 +150,26 @@ prepare_jdk() {
   printf '%s\n' "$jdk_bundle/Contents/Home"
 }
 
-x64_jdk_home="$(prepare_jdk \
-  "x64" \
-  "OpenJDK21U-jdk_x64_mac_hotspot_21.0.11_10.tar.gz" \
-  "34180eb03e6d207c388cce3da668f6cc7cd7508c185c24782fadac2c9c0e66f9")"
-arm64_jdk_home="$(prepare_jdk \
-  "arm64" \
-  "OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.11_10.tar.gz" \
-  "6ebcf221c9b41507b14c098e93c6ead6440b8d9bd154f8ec666c4c73abbdb201")"
+x64_jdk_home=""
+arm64_jdk_home=""
+if [[ "$requested_architectures" == all || "$host_architecture" == x64 ]]; then
+  x64_jdk_home="$(prepare_jdk \
+    "x64" \
+    "$x64_archive" \
+    "$x64_archive_sha256")"
+fi
+if [[ "$requested_architectures" == all || "$host_architecture" == arm64 ]]; then
+  arm64_jdk_home="$(prepare_jdk \
+    "arm64" \
+    "$arm64_archive" \
+    "$arm64_archive_sha256")"
+fi
 
-case "$(uname -m)" in
-  arm64) host_jdk_home="$arm64_jdk_home" ;;
-  x86_64) host_jdk_home="$x64_jdk_home" ;;
-  *) echo "unsupported macOS build architecture: $(uname -m)" >&2; exit 1 ;;
-esac
+if [[ "$host_architecture" == arm64 ]]; then
+  host_jdk_home="$arm64_jdk_home"
+else
+  host_jdk_home="$x64_jdk_home"
+fi
 
 # Compile and execute the Java 21-targeted server tests with the same verified
 # toolchain that is bundled. A host Java 17 can compile Kotlin JVM 21 bytecode
@@ -120,8 +203,12 @@ build_runtime() {
 }
 
 mkdir -p "$staging_root"
-build_runtime "$x64_jdk_home" "runtime-macos-x64"
-build_runtime "$arm64_jdk_home" "runtime-macos-arm64"
+if [[ -n "$x64_jdk_home" ]]; then
+  build_runtime "$x64_jdk_home" "runtime-macos-x64"
+fi
+if [[ -n "$arm64_jdk_home" ]]; then
+  build_runtime "$arm64_jdk_home" "runtime-macos-arm64"
+fi
 
 cp "$server_jar" "$staging_root/m-extension-server.jar"
 cp "$source_root/LICENSE" "$staging_root/LICENSE-M-Extension-Server.txt"
@@ -135,10 +222,10 @@ cat >"$staging_root/checksums.json" <<EOF
     "commit": "$server_commit",
     "sha256": "$server_sha256"
   },
-  "temurin": {
-    "version": "$temurin_version",
-    "macosX64ArchiveSha256": "34180eb03e6d207c388cce3da668f6cc7cd7508c185c24782fadac2c9c0e66f9",
-    "macosArm64ArchiveSha256": "6ebcf221c9b41507b14c098e93c6ead6440b8d9bd154f8ec666c4c73abbdb201"
+  "corretto": {
+    "version": "$corretto_version",
+    "macosX64ArchiveSha256": "$x64_archive_sha256",
+    "macosArm64ArchiveSha256": "$arm64_archive_sha256"
   }
 }
 EOF

@@ -14,7 +14,7 @@ usage() {
   cat <<'EOF'
 usage: script/build_and_run.sh [--debug|--release] [--logs] [--verify]
 
-Builds the macOS app, bundles the pinned Aidoku runtime, and launches fushi.
+Builds the macOS app, bundles the pinned Aidoku and Mihon runtimes, and launches fushi.
 Set FUSHI_FLUTTER_SDK to override the default Flutter SDK location.
 EOF
 }
@@ -59,6 +59,43 @@ if [[ "$verify_only" == false ]]; then
   "$repository_root/tool/aidoku/build_macos_runtime.sh" \
     "$app/Contents/Resources/aidoku_runtime"
 
+  mihon_cache="$repository_root/.dart_tool/mihon_bridge"
+  case "$(uname -m)" in
+    arm64) mihon_host_runtime="runtime-macos-arm64" ;;
+    x86_64) mihon_host_runtime="runtime-macos-x64" ;;
+    *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+  esac
+  if [[ ! -f "$mihon_cache/m-extension-server.jar" || \
+        ! -x "$mihon_cache/$mihon_host_runtime/bin/java" ]]; then
+    FUSHI_MIHON_ARCHS=host bash "$repository_root/tool/mihon/build_desktop_runtime.sh" \
+      "$mihon_cache" \
+      "$repository_root/.dart_tool/mihon-downloads"
+  fi
+  mihon_bundle="$app/Contents/Resources/mihon_bridge"
+  if [[ -e "$mihon_bundle" ]]; then
+    mihon_backup="$mihon_bundle.backup.$$"
+    mv "$mihon_bundle" "$mihon_backup"
+  else
+    mihon_backup=""
+  fi
+  if /usr/bin/ditto "$mihon_cache" "$mihon_bundle"; then
+    if [[ -n "$mihon_backup" ]]; then
+      rm -rf -- "$mihon_backup"
+    fi
+  else
+    if [[ -n "$mihon_backup" && ! -e "$mihon_bundle" ]]; then
+      mv "$mihon_backup" "$mihon_bundle"
+    fi
+    exit 1
+  fi
+
+  while IFS= read -r candidate; do
+    if file "$candidate" | grep -q 'Mach-O'; then
+      codesign --force --sign - --timestamp=none "$candidate"
+    fi
+  done < <(find "$mihon_bundle" -type f)
+  bash "$repository_root/tool/mihon/verify_desktop_runtime.sh" "$mihon_bundle"
+
   codesign --force --deep --sign - \
     --preserve-metadata=identifier,entitlements,flags,runtime \
     "$app"
@@ -71,6 +108,17 @@ fi
 
 if [[ ! -x "$app/Contents/Resources/aidoku_runtime/fushi-aidoku-runtime" ]]; then
   echo "Aidoku runtime is missing from $app" >&2
+  exit 1
+fi
+
+case "$(uname -m)" in
+  arm64) mihon_host_runtime="runtime-macos-arm64" ;;
+  x86_64) mihon_host_runtime="runtime-macos-x64" ;;
+  *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+if [[ ! -f "$app/Contents/Resources/mihon_bridge/m-extension-server.jar" || \
+      ! -x "$app/Contents/Resources/mihon_bridge/$mihon_host_runtime/bin/java" ]]; then
+  echo "Mihon runtime is missing from $app" >&2
   exit 1
 fi
 
