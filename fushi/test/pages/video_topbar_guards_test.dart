@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// video_topbar 组合并守卫（守卫审计合并产物；断言零丢弃）：
@@ -79,11 +80,14 @@ void main() {
           reason: '标题 helper 内部仍应监听 _titleNotifier（BUG-120）');
     });
 
-    test('标题用 Flexible(loose) 让宽给按钮，不用 Expanded 抢固定 1/3（TODO-642）', () {
-      // 根因：_topBarTitle() 曾用 Expanded（= Flexible(FlexFit.tight)），强迫标题填满
-      // 它分到的那段顶栏宽，把左右按钮组挤进窄横向滚动区（右上角按钮被裁 / 要横滑）。
-      // 修复改成 Flexible(fit: FlexFit.loose)：标题只占自身需要的宽、剩余空间优先让给
-      // 按钮组；标题已有 maxLines:1 + ellipsis，窄窗优雅截断。本守卫钉住该让位语义。
+    test('标题彻底退出顶栏 flex 分配，按钮先拿宽、标题吃剩余（TODO-642 续）', () {
+      // 根因（两轮）：①_topBarTitle() 最早用 Expanded（= FlexFit.tight）强占顶栏宽；
+      // ②改成 Flexible(loose) 后仍在 Flex 里——Flex 按 flex 因子**平分**可用宽，loose
+      // 用不完的份额又不回流，于是「左组 / 标题 / 右组」各锁死 1/3：右上角按钮再多也只有
+      // 1/3 宽、超出的被裁进横滚区；标题项关掉时旧代码返回 Spacer()（tight），空白中段
+      // 照样霸占 1/3（用户现象：「名称删空了、中间是空的，按钮还是被挡」）。
+      // 现在整条顶栏交给 VideoTopBarSlots 按优先级分宽（左按钮 → 右按钮 → 标题吃剩余），
+      // 布局行为本身由 test/pages/video_top_bar_slots_test.dart 用真实尺寸断言。
       final int titleStart = src.indexOf('Widget _topBarTitle()');
       expect(titleStart, greaterThanOrEqualTo(0),
           reason: '应存在 _topBarTitle() helper');
@@ -91,11 +95,25 @@ void main() {
           src.indexOf('Widget _topBarInlineTitle(', titleStart);
       expect(titleEnd, greaterThan(titleStart),
           reason: '_topBarTitle() 方法体应正常闭合在 _topBarInlineTitle 之前');
-      final String titleBody = src.substring(titleStart, titleEnd);
-      expect(titleBody.contains('fit: FlexFit.loose'), isTrue,
-          reason: 'TODO-642：标题须用 Flexible(fit: FlexFit.loose) 把宽让给按钮');
+      // 只看代码：方法体注释里必然复述 `Flexible(` / `Spacer()` 这些被禁写法的历史，
+      // 带着注释扫会把「解释为什么禁用」误判成「还在用」。掩码走共享原语（块注释/行尾
+      // 注释都能盖住，且不移动下标）。
+      final String titleBody =
+          maskComments(src.substring(titleStart, titleEnd));
+      expect(titleBody.contains('return const SizedBox.shrink();'), isTrue,
+          reason: '标题项没配置时须交回零宽占位，整条顶栏宽都归按钮');
+      expect(titleBody.contains('Spacer()'), isFalse,
+          reason: 'Spacer(=FlexFit.tight) 会让空白中段继续霸占一份顶栏宽');
       expect(titleBody.contains('return Expanded('), isFalse,
-          reason: 'TODO-642：标题不能再用 Expanded（FlexFit.tight 会抢固定 1/3 顶栏宽）');
+          reason: '标题不能用 Expanded（FlexFit.tight 会抢固定 1/3 顶栏宽）');
+      expect(titleBody.contains('Flexible('), isFalse,
+          reason: '标题不能再参与顶栏 Flex 平分（loose 也会锁死在 1/3）');
+      // 两套 controls 主题都必须把三槽交给同一个优先级布局。
+      expect(
+          'VideoTopBarSlots('.allMatches(src).length, greaterThanOrEqualTo(2),
+          reason: '桌面与移动顶栏都应经 VideoTopBarSlots 分宽');
+      expect(RegExp(r'title:\s*_topBarTitle\(\)').hasMatch(src), isTrue,
+          reason: '标题应作为 VideoTopBarSlots 的 title 槽传入');
       // 标题截断兜底仍在（窄窗让位后靠 ellipsis 优雅收尾）。
       final int textStart = src.indexOf('Widget _topBarTitleText(');
       expect(textStart, greaterThanOrEqualTo(0));

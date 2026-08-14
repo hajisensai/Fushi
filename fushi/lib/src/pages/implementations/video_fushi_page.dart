@@ -40,6 +40,7 @@ import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
@@ -5000,20 +5001,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (!_controlLayout.itemsIn(VideoControlSlot.topCenter).contains(
           VideoControlItem.title,
         )) {
-      return const Spacer();
+      // 标题项没配置：交回零宽占位，整条顶栏宽都归两侧按钮组。绝不能返回 Spacer
+      // （= Expanded/FlexFit.tight）——那会让「空的中段」硬占一份顶栏宽，用户把标题
+      // 关掉后中间明明是空白、右上角按钮却照旧被挤进滚动区裁掉（本轮修复的现象）。
+      return const SizedBox.shrink();
     }
-    return Flexible(
-      // TODO-642：标题用 Flexible(loose) 而非 Expanded(=FlexFit.tight)。tight 会强迫
-      // 标题填满它分到的那 1/3 顶栏宽，把左右按钮组（同为 Flexible loose）挤进窄滚动
-      // 区，导致右上角按钮被裁/要横滑才看得到。loose 让标题只占自身需要的宽、把剩余
-      // 空间优先让给按钮组；标题已有 maxLines:1 + ellipsis，窄窗时优雅截断不溢出。
-      fit: FlexFit.loose,
-      // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
-      // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
-      // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有 Row 顺序。
-      child: _topBarTitleText(
-        alignment: AlignmentDirectional.centerStart,
-      ),
+    // TODO-642 → 本轮：标题不再参与 Row 的 flex 分配（旧实现是 Flexible(loose)，与
+    // 左右按钮组各占 flex:1 → Flex 把整宽**平分**成三份，loose 用不完的空间又不回流，
+    // 所以右侧按钮组无论如何最多只拿 1/3 顶栏宽、多出来的按钮被裁进横滚区）。改由
+    // [_TopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整可见，
+    // 标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    //
+    // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
+    // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
+    // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有顺序。
+    return _topBarTitleText(
+      alignment: AlignmentDirectional.centerStart,
     );
   }
 
@@ -5314,17 +5317,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
 
-    return Flexible(
-      fit: FlexFit.loose,
-      child: Align(
-        alignment: slot == VideoControlSlot.topRight
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
-        child: HorizontalDragScrollable(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            reverse: slot == VideoControlSlot.topRight,
-            child: Row(
+    // 按钮组按**内容固有宽**收缩（`widthFactor: 1` + `shrinkWrap: true`），不再撑满
+    // 分到的那份宽：这样 [_TopBarSlots] 才能先把两侧按钮要的宽度足额给出去、把真正
+    // 剩下的宽度交给标题。用 ListView 而不是 SingleChildScrollView，正是因为后者的
+    // viewport 在主轴上恒撑满约束（拿不到内容宽），窄窗仍靠横滚兜底按钮可达性。
+    return Align(
+      alignment: slot == VideoControlSlot.topRight
+          ? Alignment.centerRight
+          : Alignment.centerLeft,
+      widthFactor: 1,
+      child: HorizontalDragScrollable(
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          reverse: slot == VideoControlSlot.topRight,
+          children: <Widget>[
+            Row(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: slot == VideoControlSlot.topRight
                   ? MainAxisAlignment.end
@@ -5337,7 +5346,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     buttonFor(item),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
