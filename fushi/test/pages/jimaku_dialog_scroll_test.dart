@@ -365,8 +365,8 @@ void main() {
       (WidgetTester tester) async {
     await pumpLangDialog(tester);
     // 「全部」+ ja + zh chip 渲染；ko/en 不渲染（候选里没有）。
-    expect(find.widgetWithText(ChoiceChip, t.video_jimaku_language_all),
-        findsOneWidget);
+    // 按 key 定位：分类区也有一个同字的「全部」chip，纯文本会撞上。
+    expect(find.byKey(jimakuLanguageChipKey(null)), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, '日本語'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, '中文'), findsOneWidget);
     expect(find.widgetWithText(ChoiceChip, 'English'), findsNothing);
@@ -402,8 +402,8 @@ void main() {
     // 记忆 ko，但候选里没有 ko → 退回「全部」，不空屏。
     await pumpLangDialog(tester, initialPreferredLanguage: 'ko');
     expect(shownCandidateCount(tester), 4, reason: '退回全部，列全部候选');
-    final ChoiceChip allChip = tester
-        .widget(find.widgetWithText(ChoiceChip, t.video_jimaku_language_all));
+    final ChoiceChip allChip =
+        tester.widget(find.byKey(jimakuLanguageChipKey(null)));
     expect(allChip.selected, isTrue, reason: '无候选的记忆语言退回「全部」');
   });
 

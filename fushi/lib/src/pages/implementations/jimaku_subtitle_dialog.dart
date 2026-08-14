@@ -130,8 +130,20 @@ List<String> availableFormats(List<JimakuCandidate> candidates) {
 // `jimakuLanguageLabel` 已下沉到 jimaku_client.dart（数据层单一真相源，设置页也要用）。
 // 四处共用（本对话框 / 下载对话框 / 批量对话框 / 设置页），各自直接 import 数据层。
 
-/// 「自动获取字幕（Jimaku）」对话框（参照 asbplayer）：填 API key → 用番名经 AniList
-/// 找 anilist_id → Jimaku 列字幕文件 → 选一个下载到 [saveDirectory] → pop 回本地路径。
+/// 分类筛选 chip 的稳定 key（动画 / 真人 / 全部）。
+///
+/// 分类「全部」与语言「全部」在多数语言里译文同字，靠文本定位会互相撞上；给两组 chip
+/// 各自的稳定 key，测试与无障碍工具才能无歧义指到具体那一个。
+Key jimakuCategoryChipKey(JimakuSearchScope scope) =>
+    ValueKey<String>('jimaku-category-${scope.name}');
+
+/// 语言筛选 chip 的稳定 key；[lang] 为 null 表示「全部」。
+Key jimakuLanguageChipKey(String? lang) =>
+    ValueKey<String>('jimaku-language-${lang ?? 'all'}');
+
+/// 「自动获取字幕（Jimaku）」对话框（参照 asbplayer）：填 API key → 选分类（动画 /
+/// 真人）→ 用番名经 AniList 找 anilist_id（仅动画）→ Jimaku 列字幕文件 → 选一个下载到
+/// [saveDirectory] → pop 回本地路径。
 ///
 /// 网络/解析失败一律降级为「无结果」，不抛。API key 变化经 [onApiKeyChanged] 持久化。
 /// 真实拉取需有效 key + 联网（device/network 验证待用户）。
@@ -222,6 +234,13 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// 解析（纯文本回退）。
   int? _selectedSeriesId;
 
+  /// 检索分类：Jimaku 把动画与真人（站点的 Anime / Live Action 两页）拆成互斥集合，
+  /// 服务端 `anime` 是硬相等过滤且缺省 true——不给出分类就等于只搜动画，日剧永远搜不到。
+  ///
+  /// 缺省保持 [JimakuSearchScope.anime]（= 旧行为）。这不是本地筛选而是服务端检索参数，
+  /// 故切换分类必须重搜，不能像语言/类型 chip 那样只过滤现有候选。
+  JimakuSearchScope _scope = JimakuSearchScope.anime;
+
   @override
   void initState() {
     super.initState();
@@ -288,6 +307,21 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     if (!mounted) return;
     await widget.onApiKeyChanged(apiKey);
 
+    // 真人分类不经 AniList：它的 GraphQL 写死 `type: ANIME`，日剧/电影在那儿永远查
+    // 不到，白等一次网络往返还会把系列 chip 区填上一堆同名动画误导用户。
+    if (_scope != JimakuSearchScope.anime) {
+      try {
+        await _fetchCandidates(
+          anilistId: null,
+          queryFallback: query,
+          episode: episode,
+        );
+      } finally {
+        if (mounted) setState(() => _searching = false);
+      }
+      return;
+    }
+
     AniListClient? anilist;
     try {
       anilist = AniListClient(
@@ -352,7 +386,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         entries.addAll(await jimaku.searchByAnilistId(anilistId));
       }
       if (entries.isEmpty) {
-        entries.addAll(await jimaku.searchByQuery(queryFallback));
+        entries
+            .addAll(await jimaku.searchByQuery(queryFallback, scope: _scope));
       }
 
       final List<JimakuCandidate> candidates = <JimakuCandidate>[];
@@ -530,18 +565,62 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     );
   }
 
+  /// 切换检索分类。
+  ///
+  /// 与语言/类型 chip 不同，分类是服务端检索参数而非本地过滤：换了分类，现有候选整批
+  /// 失效，必须重搜。已经搜过（或已输入番名）就顺手重搜，省掉用户再点一次搜索。
+  Future<void> _selectScope(JimakuSearchScope scope) async {
+    if (_scope == scope || _searching) return;
+    setState(() {
+      _scope = scope;
+      // 真人分类下 AniList 系列 chip 无意义（AniList 只有动画），一并清掉避免误导。
+      if (scope != JimakuSearchScope.anime) {
+        _seriesMatches = const <AniListMedia>[];
+        _selectedSeriesId = null;
+      }
+    });
+    if (_apiKeyCtrl.text.trim().isEmpty || _queryCtrl.text.trim().isEmpty) {
+      return;
+    }
+    await _search();
+  }
+
+  /// 分类筛选分区（动画 / 真人 / 全部）：恒显示。
+  ///
+  /// 这是 Jimaku 站点 Anime / Live Action 两页在 app 内的对应物。恒显示而不是「有结果
+  /// 才显示」——搜不到恰恰是用户最需要换分类的时候，把入口藏在结果后面等于没有。
+  Widget _buildCategoryChips() {
+    return _chipSection(t.video_jimaku_category, <Widget>[
+      for (final JimakuSearchScope scope in JimakuSearchScope.values)
+        ChoiceChip(
+          // 分类「全部」与语言「全部」译文同字，纯文本定位会两边撞；key 让测试与
+          // 无障碍工具都能无歧义指到具体那一个。
+          key: jimakuCategoryChipKey(scope),
+          label: Text(switch (scope) {
+            JimakuSearchScope.anime => t.video_jimaku_category_anime,
+            JimakuSearchScope.liveAction => t.video_jimaku_category_live_action,
+            JimakuSearchScope.all => t.video_jimaku_category_all,
+          }),
+          selected: _scope == scope,
+          onSelected: (_) => _selectScope(scope),
+        ),
+    ]);
+  }
+
   /// 语言筛选分区（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
   Widget _buildLanguageChips() {
     final List<String> langs = availableLanguages(_candidates);
     if (langs.isEmpty) return const SizedBox.shrink();
     return _chipSection(t.video_jimaku_language, <Widget>[
       ChoiceChip(
+        key: jimakuLanguageChipKey(null),
         label: Text(t.video_jimaku_language_all),
         selected: _selectedLanguage == null,
         onSelected: (_) => _selectLanguage(null),
       ),
       for (final String lang in langs)
         ChoiceChip(
+          key: jimakuLanguageChipKey(lang),
           label: Text(jimakuLanguageLabel(lang)),
           selected: _selectedLanguage == lang,
           onSelected: (_) => _selectLanguage(lang),
@@ -588,6 +667,9 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         children: <Widget>[
           _buildApiKeySection(),
           const SizedBox(height: 8),
+          // 分类在番名之前：它决定这次检索去哪半个库找，属于「搜什么」而不是
+          // 「搜到之后怎么筛」，所以不与语言/类型筛选放在一起。
+          _buildCategoryChips(),
           TextField(
             controller: _queryCtrl,
             decoration: InputDecoration(labelText: t.video_jimaku_query),
