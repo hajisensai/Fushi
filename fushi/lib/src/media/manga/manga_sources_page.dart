@@ -28,7 +28,7 @@ import 'package:fushi/utils.dart';
 ///
 /// 四节，自上而下：
 /// 1. 本地漫画扫描根（与书 / 视频共用的 [MediaSourcesView]）；
-/// 2. Aidoku 扩展（macOS 上添加仓库、浏览仓库及导入 / 移除 `.aix`）；
+/// 2. Aidoku 扩展（Apple 平台添加仓库、浏览仓库及导入 / 移除 `.aix`）；
 /// 3. 漫画扩展（Mihon 扩展仓库 + 安装 / 启停 / 卸载）——用户口径：「漫画扩展
 ///    不就是来源吗，来源设置里面加上就行了」，因此**不另开顶层 tab**；
 /// 4. 在线漫画源：内置的 mokuro.moe **与**扩展提供的源并列（启停 / 排序 / 偏好 /
@@ -43,8 +43,8 @@ import 'package:fushi/utils.dart';
 /// 仓库（keiyoushi 有 1900+ 条），只有 sliver 才能懒建。换回 `ListView` +
 /// 内嵌 `Column` 会立刻把「语言下拉一展开就卡死」带回来。
 ///
-/// 平台差异只在**内容**：Aidoku 目前仅在 macOS 显示导入入口；iOS / Linux 没有
-/// Mihon 扩展宿主，对应两节渲染不可用提示，视图本身与其它平台同构、同位。
+/// 平台差异只在**内容**：Aidoku 在 macOS / iOS 显示同一套管理入口；iOS / Linux
+/// 没有 Mihon 扩展宿主，对应小节渲染不可用提示，视图本身与其它平台同构、同位。
 /// `AppModel.mihonManager` 在这些平台会抛 [UnsupportedError]，故一切读它的路径
 /// 都必须先过 [MihonRuntimeFactory.isSupported]。
 class MangaSourcesPage extends ConsumerStatefulWidget {
@@ -81,7 +81,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   void initState() {
     super.initState();
     _aidokuRepositoryClient = AidokuRepositoryClient();
-    if (DesktopAidokuRuntime.isSupported) {
+    if (AidokuRuntimeFactory.isSupported) {
       unawaited(_initializeAidokuStore());
     }
   }
@@ -146,7 +146,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   }
 
   Future<void> _importAidoku() async {
-    if (!DesktopAidokuRuntime.isSupported || _aidokuBusy) return;
+    if (!AidokuRuntimeFactory.isSupported || _aidokuBusy) return;
     final bool acceptedRisk = await showAppDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog.adaptive(
@@ -184,7 +184,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       _aidokuError = null;
     });
     try {
-      final DesktopAidokuRuntime runtime = DesktopAidokuRuntime();
+      final AidokuRuntime runtime = AidokuRuntimeFactory.create();
       final AidokuPackageInspection inspection = await runtime.inspect(path);
       if (!mounted) return;
       if (inspection.requiresWebView) {
@@ -242,7 +242,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   }
 
   Future<void> _addAidokuRepository() async {
-    if (!DesktopAidokuRuntime.isSupported || _aidokuBusy) return;
+    if (!AidokuRuntimeFactory.isSupported || _aidokuBusy) return;
     final String? repositoryUrl = await showAppDialog<String>(
       context: context,
       builder: (BuildContext context) => const _AidokuRepositoryUrlDialog(),
@@ -496,7 +496,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         File('${temporaryDirectory.path}/source.aix'),
       );
       final AidokuPackageInspection inspection =
-          await DesktopAidokuRuntime().inspect(downloaded.path);
+          await AidokuRuntimeFactory.create().inspect(downloaded.path);
       final Map<String, Object?> info = inspection.sourceInfo;
       if (info['id']?.toString() != source.id ||
           (info['version'] as num?)?.toInt() != source.version) {
@@ -639,7 +639,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       );
 
   Widget _buildAidokuSection() {
-    if (!DesktopAidokuRuntime.isSupported) {
+    if (!AidokuRuntimeFactory.isSupported) {
       return Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
@@ -898,14 +898,14 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                                   label: t.manga_import_action,
                                   onTap: _importManga,
                                 ),
-                                if (DesktopAidokuRuntime.isSupported)
+                                if (AidokuRuntimeFactory.isSupported)
                                   QuickImportAction(
                                     icon: Icons.extension_outlined,
                                     label: t.aidoku_extension_import,
                                     onTap: _importAidoku,
                                     enabled: !_aidokuBusy,
                                   ),
-                                if (DesktopAidokuRuntime.isSupported)
+                                if (AidokuRuntimeFactory.isSupported)
                                   QuickImportAction(
                                     icon: Icons.cloud_download_outlined,
                                     label: t.aidoku_repository_add,
@@ -1182,7 +1182,7 @@ class _AidokuRepositorySourcesDialogState
         File('${temporaryDirectory.path}/source.aix'),
       );
       final AidokuPackageInspection inspection =
-          await DesktopAidokuRuntime().inspect(downloaded.path);
+          await AidokuRuntimeFactory.create().inspect(downloaded.path);
       final Map<String, Object?> info = inspection.sourceInfo;
       if (info['id']?.toString() != source.id ||
           (info['version'] as num?)?.toInt() != source.version) {

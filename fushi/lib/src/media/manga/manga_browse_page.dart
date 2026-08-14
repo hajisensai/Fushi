@@ -24,11 +24,11 @@ import 'package:fushi/utils.dart';
 /// 关掉的源不出现在这里。此前 mokuro.moe 那个开关只让它的目录页显示成禁用态，
 /// 行却照旧列着——同一节里两种开关语义，用户没法解释。
 ///
-/// 平台差异只体现在**内容**上，不体现在结构上：iOS / Linux 没有扩展宿主
-/// （[MihonRuntimeFactory.isSupported] 为 false），这一页仍然存在、仍然在同一个
-/// tab 位置，只是列表里只有 mokuro.moe 一行。注意 `AppModel.mihonManager` 在
-/// 不支持的平台上会抛 [UnsupportedError]，所以任何读它的路径都必须先过
-/// [MihonRuntimeFactory.isSupported] 这道门。
+/// 平台差异只体现在**内容**上，不体现在结构上：Mihon 仍只在桌面平台提供宿主，
+/// Aidoku 则在 macOS / iOS 共用同一套入口与浏览界面。Linux 没有扩展宿主时，
+/// 这一页仍然存在、仍然在同一个 tab 位置，只显示内置来源。注意
+/// `AppModel.mihonManager` 在不支持的平台上会抛 [UnsupportedError]，所以任何
+/// 读它的路径都必须先过 [MihonRuntimeFactory.isSupported] 这道门。
 class MangaBrowsePage extends ConsumerStatefulWidget {
   const MangaBrowsePage({
     super.key,
@@ -52,7 +52,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   @override
   void initState() {
     super.initState();
-    if (DesktopAidokuRuntime.isSupported) {
+    if (AidokuRuntimeFactory.isSupported) {
       _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
       unawaited(_loadAidoku());
     }

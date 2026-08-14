@@ -30,7 +30,8 @@ class AidokuSourceBrowsePage extends StatefulWidget {
 
 class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
   final TextEditingController _searchController = TextEditingController();
-  late final AidokuRuntime _runtime = widget.runtime ?? DesktopAidokuRuntime();
+  late final AidokuRuntime _runtime =
+      widget.runtime ?? AidokuRuntimeFactory.create();
   List<AidokuListing> _listings = const <AidokuListing>[];
   AidokuListing? _listing;
   List<Map<String, Object?>> _items = const <Map<String, Object?>>[];

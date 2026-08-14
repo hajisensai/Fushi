@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 const Duration kAidokuRuntimeTimeout = Duration(seconds: 90);
 const int kAidokuRuntimeOutputLimit = 32 * 1024 * 1024;
@@ -114,6 +117,147 @@ abstract interface class AidokuRuntime {
     Map<String, Object?> manga,
     Map<String, Object?> chapter,
   );
+}
+
+abstract final class AidokuRuntimeFactory {
+  static bool get isSupported => Platform.isMacOS || Platform.isIOS;
+
+  static AidokuRuntime create() {
+    if (Platform.isMacOS) return DesktopAidokuRuntime();
+    if (Platform.isIOS) return IosAidokuRuntime();
+    throw const AidokuRuntimeException(
+      'UNSUPPORTED_PLATFORM',
+      'Aidoku extensions are currently supported on macOS and iOS',
+    );
+  }
+}
+
+class IosAidokuRuntime implements AidokuRuntime {
+  IosAidokuRuntime({this.timeout = kAidokuRuntimeTimeout});
+
+  final Duration timeout;
+
+  @override
+  Future<AidokuPackageInspection> inspect(String packagePath) async =>
+      AidokuPackageInspection.fromJson(
+        await _invoke(<String, Object?>{
+          'command': 'inspect',
+          'packagePath': packagePath,
+        }),
+      );
+
+  @override
+  Future<Map<String, Object?>> search(
+    String packagePath, {
+    String? query,
+    int page = 1,
+  }) async {
+    _validatePage(page);
+    final Map<String, Object?> response = await _invoke(<String, Object?>{
+      'command': 'search',
+      'packagePath': packagePath,
+      'query': query ?? '',
+      'page': page,
+    });
+    return _object(response['result'], 'search result');
+  }
+
+  @override
+  Future<Map<String, Object?>> browse(
+    String packagePath,
+    AidokuListing listing, {
+    int page = 1,
+  }) async {
+    _validatePage(page);
+    final Map<String, Object?> response = await _invoke(<String, Object?>{
+      'command': 'list',
+      'packagePath': packagePath,
+      'listing': listing.toJson(),
+      'page': page,
+    });
+    return _object(response['result'], 'listing result');
+  }
+
+  @override
+  Future<Map<String, Object?>> getDetails(
+    String packagePath,
+    Map<String, Object?> manga,
+  ) async {
+    final Map<String, Object?> response = await _invoke(<String, Object?>{
+      'command': 'details',
+      'packagePath': packagePath,
+      'manga': manga,
+    });
+    return _object(response['result'], 'manga details');
+  }
+
+  @override
+  Future<List<Object?>> getPages(
+    String packagePath,
+    Map<String, Object?> manga,
+    Map<String, Object?> chapter,
+  ) async {
+    final Map<String, Object?> response = await _invoke(<String, Object?>{
+      'command': 'pages',
+      'packagePath': packagePath,
+      'manga': manga,
+      'chapter': chapter,
+    });
+    final Object? result = response['result'];
+    if (result is! List<Object?>) {
+      throw AidokuRuntimeException(
+        'INVALID_RESPONSE',
+        'Aidoku runtime returned ${result.runtimeType}, expected a page list',
+      );
+    }
+    return result;
+  }
+
+  Future<Map<String, Object?>> _invoke(Map<String, Object?> request) async {
+    try {
+      final Object? response = await FushiChannels.aidokuRuntime
+          .invokeMethod<Object?>('invoke', request)
+          .timeout(timeout);
+      return _object(response, 'response');
+    } on TimeoutException catch (error) {
+      throw AidokuRuntimeException(
+        'TIMEOUT',
+        'Aidoku runtime exceeded ${timeout.inSeconds} seconds',
+        cause: error,
+      );
+    } on PlatformException catch (error) {
+      throw AidokuRuntimeException(
+        error.code,
+        error.message ?? 'Aidoku runtime failed',
+        cause: error,
+      );
+    } on MissingPluginException catch (error) {
+      throw AidokuRuntimeException(
+        'RUNTIME_MISSING',
+        'The embedded Aidoku runtime is unavailable in this iOS build',
+        cause: error,
+      );
+    }
+  }
+
+  static void _validatePage(int page) {
+    if (page < 1) {
+      throw const AidokuRuntimeException(
+        'INVALID_PAGE',
+        'Aidoku page must be at least 1',
+      );
+    }
+  }
+
+  static Map<String, Object?> _object(Object? value, String label) {
+    if (value is! Map<Object?, Object?>) {
+      throw AidokuRuntimeException(
+        'INVALID_RESPONSE',
+        'Aidoku runtime $label was ${value.runtimeType}, expected an object',
+      );
+    }
+    return value.cast<String, Object?>();
+  }
 }
 
 class DesktopAidokuRuntime implements AidokuRuntime {
