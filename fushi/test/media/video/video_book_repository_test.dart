@@ -2,6 +2,14 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart'
+    show
+        videoRemoteAudioTrackAtPrefKey,
+        videoRemoteAudioTrackPrefKey,
+        videoRemoteDelayAtPrefKey,
+        videoRemoteDelayPrefKey,
+        videoRemoteSecondaryDelayAtPrefKey,
+        videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -275,6 +283,66 @@ void main() {
 
     await repo.updateDelayMs('video/d', 1200);
     expect((await repo.getByBookUid('video/d'))!.delayMs, 1200);
+  });
+
+  test('updateCollectionSubtitleDelayMs 给全体视频成员盖互联 LWW 戳（BUG-1620 系列级半边）',
+      () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    for (final String uid in <String>['video/m1', 'video/m2']) {
+      await repo.saveVideoBook(VideoBooksCompanion(
+        bookUid: Value(uid),
+        title: Value(uid),
+        videoPath: Value('/$uid.mp4'),
+      ));
+    }
+    final int cid = await db.createMediaCollection('Stamp Series');
+    await db.upsertCollectionItemAt(cid, 'video', 'video/m1', 0);
+    await db.upsertCollectionItemAt(cid, 'video', 'video/m2', 1);
+
+    await repo.updateCollectionSubtitleDelayMs(cid, -777);
+
+    expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, -777);
+    for (final String uid in <String>['video/m1', 'video/m2']) {
+      expect(await db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0), -777,
+          reason: '系列级调轴对全体成员生效，须镜像进每个成员的互联 LWW 键空间');
+      expect(await db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
+          greaterThan(0),
+          reason: '无戳（0）会让本机系列级调轴永远输给对端旧戳、传不出去');
+    }
+
+    // null（清除系列级）只清列、不动 prefs（成员 prefs 是「最后一次实际调轴」事实）。
+    await repo.updateCollectionSubtitleDelayMs(cid, null);
+    expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, isNull);
+    expect(await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/m1'), 0),
+        -777);
+
+    // 播放偏好泛化批：系列级音轨 / 副字幕调轴写入同样给全体成员盖戳。
+    await repo.updateCollectionAudioTrackId(cid, '3');
+    await repo.updateCollectionSecondarySubtitleDelayMs(cid, 250);
+    for (final String uid in <String>['video/m1', 'video/m2']) {
+      expect(
+          await db.getPrefTyped<String>(videoRemoteAudioTrackPrefKey(uid), ''),
+          '3');
+      expect(await db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(uid), 0),
+          greaterThan(0));
+      expect(
+          await db.getPrefTyped<String>(
+              videoRemoteSecondaryDelayPrefKey(uid), ''),
+          '250');
+    }
+    // 副字幕调轴清除（回跟随）也是带戳写：值空 + at 存活 → 清除跨设备收敛。
+    await repo.updateCollectionSecondarySubtitleDelayMs(cid, null);
+    expect(
+        await db.getPrefTyped<String>(
+            videoRemoteSecondaryDelayPrefKey('video/m1'), ''),
+        '');
+    expect(
+        await db.getPrefTyped<int>(
+            videoRemoteSecondaryDelayAtPrefKey('video/m1'), 0),
+        greaterThan(0),
+        reason: '清除必须带戳，否则对端旧值在 LWW 里复活');
   });
 
   test(

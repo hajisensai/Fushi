@@ -40,6 +40,7 @@ import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
 import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/desktop_lookup_dispatcher.dart';
+import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
@@ -463,7 +464,14 @@ void main([List<String> args = const <String>[]]) {
           }
           DesktopLookupDispatcher.instance.start(appModel: appModel);
           await appModel.applyDesktopClipboardLifecycle();
-        } catch (e) {
+        } catch (e, st) {
+          // 🔴 这里以前只有 debugPrint —— release 构建下它**无处可去**。于是这一整段
+          // 桌面查词启动链（剪贴板面板 / 剪贴板文字窗 / galgame 台词浮窗 / 桌面查词
+          // 分发）里任何一步抛异常，都会静默地把后面全部跳过：用户看到的是"某个功能
+          // 就是不工作"，日志里一个字都没有。真机上正因为这个，galgame 台词浮窗控制器
+          // 没启动这件事查了很久才定位到。落盘记录，别再让启动失败无声无息。
+          glog('startup: global lookup chain FAILED (non-fatal): $e');
+          glog('startup: stack: $st');
           debugPrint('[Fushi] global lookup start failed (non-fatal): $e');
         }
       }));

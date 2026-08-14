@@ -324,16 +324,79 @@ Map<String, String> parseMpvConf(String text) {
 /// 故 Android 上把会落到 surface-直渲的 `auto-safe` / `auto` 一律改写成 `auto-copy`；
 /// `no`（软解）与 `auto-copy`（已是 copy）原样透传。这是**对齐 media_kit 的纹理渲染模型**
 /// 的根因修复，对**所有** Android 设备一致（都走同一 texture 渲染器），不是给 realme 8
-/// 打特例；非 Android（桌面 / iOS）原样透传，零行为变化。
+/// 打特例。
 ///
-/// [isAndroid] 默认取 `Platform.isAndroid`，注入仅为单测。
-String resolveAndroidHwdec(String hwdec, {bool? isAndroid}) {
+/// **根治 Windows + NVIDIA 起播整进程闪退（BUG-1639；BUG-1545 的未尽根因）。**
+/// 同一条「渲染模型 ↔ 硬解后端必须匹配」的推理在 Windows 桌面端同样成立，只是失配的
+/// 那一端换成了 CUDA：media_kit 的 `NativeVideoController` 在 Windows 也走**纹理渲染**
+/// （libmpv render API + ANGLE/OpenGL），libmpv 拿不到宿主的 D3D11 device，于是
+/// `d3d11va`（需 D3D11 interop）在 hwdec 探测里必然 `Could not create device` 失败。
+/// 而 mpv 的 `auto-safe` 白名单里**紧跟其后的就是 `nvdec`——它是 CUDA API 的封装**，
+/// 于是 NVIDIA 机器上必然回退到它：`Loading hwdec driver 'cuda'` →
+/// `cuInit()` / `cuCtxCreate_v2()` → `nvcuda64.dll` 内部空指针解引用 → 整个进程
+/// `0xC0000005` 闪退（本机 minidump 四份栈完全一致，详见 `docs/bugs/BUG-1639-*.md`）。
+///
+/// BUG-1545 当时只把 media_kit 抢跑下发的裸 `auto` 换成了用户策略 `auto-safe`，**但
+/// `auto-safe` 通往的是同一个 CUDA 后端**，故崩溃复发。真正的修复是让 Windows 下发的
+/// hwdec **值域里根本不含 CUDA 系后端**（`nvdec` / `cuda` 及其 copy 变体），而不是继续
+/// 在「哪个 auto」之间挑：
+/// - `auto-safe` → `d3d11va,d3d11va-copy`：先试 interop 直渲（将来 media_kit 若能共享
+///   D3D11 device 就直接受益），失败静默回落 copy-back；
+/// - `auto-copy` → `d3d11va-copy`：用户显式要 copy-back，只给 copy 变体（保留两档语义
+///   差异，且不像裸 `auto-copy` 那样在无 d3d11va 的机器上落到 `cuda-copy`）；
+/// - `no`（软解）原样透传。
+///
+/// `d3d11va` 是 Windows 8+ 的通用硬解（Intel / AMD / NVIDIA 全支持），两档都失败时
+/// libmpv 自行回落软解，不会无画面。本机实测（`hwdec=d3d11va,d3d11va-copy` +
+/// GL 上下文 + 本次崩溃的 10-bit HEVC 片源）：`Using hardware decoding (d3d11va-copy)`，
+/// 全程不加载 `nvcuda64.dll`。
+///
+/// **这不是「为了避崩而牺牲硬解」——终点本来就是同一个。** 在 media_kit 真实用的 ANGLE
+/// 上下文下实测：`nvdec` 的零拷贝 CUDA interop 会被 **mpv 自己拒绝**
+/// （`cuGLGetDevices` 失败 → `CUDA hwdec only works with OpenGL or Vulkan backends`），
+/// 因为 ANGLE 是 GLES-over-D3D11、不是 NVIDIA 的真 OpenGL；mpv 随后照样回落到
+/// `d3d11va-copy`。也就是说 CUDA 分支**从来没能真正用上零拷贝**，它只是在回落之前先跑
+/// 一趟 `cuInit()` / `cuCtxCreate_v2()`——而那趟在本机 app 进程里会栽进驱动空指针。
+/// 本修复只是把同一个终点提前，不再路过雷区；解码依然是 GPU 硬解（NVIDIA 上 D3D11VA
+/// 底层调的就是同一块 NVDEC 硬件）。
+///
+/// 反过来说，真要拿到零拷贝就得让 `d3d11va`（非 copy）的 interop 在这条路径上成立
+/// ——那是 media_kit 建 ANGLE context 时把底层 D3D11 device 经 EGL 扩展暴露给 mpv 的活，
+/// 属于性能优化，与本崩溃无关（详见 `docs/bugs/BUG-1639-*.md` 末节）。
+///
+/// 非 Android / 非 Windows（macOS / Linux / iOS）原样透传，零行为变化。
+///
+/// [isAndroid] / [isWindows] 默认取 `Platform.isAndroid` / `Platform.isWindows`，
+/// 注入仅为单测。
+String resolvePlatformHwdec(String hwdec, {bool? isAndroid, bool? isWindows}) {
   final bool android = isAndroid ?? Platform.isAndroid;
-  if (!android) return hwdec;
-  // Android 纹理渲染下，surface-直渲的 auto-safe/auto 会 surface-null，统一改 copy 变体。
-  if (hwdec == 'auto-safe' || hwdec == 'auto') return 'auto-copy';
-  return hwdec; // no（软解）/ auto-copy（已 copy）/ 其它显式值透传。
+  if (android) {
+    // Android 纹理渲染下，surface-直渲的 auto-safe/auto 会 surface-null，统一改 copy 变体。
+    if (hwdec == 'auto-safe' || hwdec == 'auto') return 'auto-copy';
+    return hwdec; // no（软解）/ auto-copy（已 copy）/ 其它显式值透传。
+  }
+  final bool windows = isWindows ?? Platform.isWindows;
+  if (windows) {
+    // Windows GL 纹理渲染下，任何 auto* 都会经 d3d11va 失败回退到 nvdec(CUDA) → 驱动崩。
+    // 显式给不含 CUDA 的候选列表，让 CUDA 后端从值域里消失（BUG-1639）。
+    if (hwdec == 'no') return 'no';
+    if (hwdec == 'auto-copy') return kWindowsCopyHwdec;
+    return kWindowsAutoHwdec; // auto-safe / auto / 其它 auto 变体。
+  }
+  return hwdec;
 }
+
+/// Windows 下 `auto-safe`（默认档）实际下发的 hwdec 候选列表——**不含任何 CUDA 系后端**。
+///
+/// 先 `d3d11va`（interop 直渲，media_kit 当前拿不到 D3D11 device 故会失败）再
+/// `d3d11va-copy`（copy-back，实测可用）。见 [resolvePlatformHwdec] 的 BUG-1639 说明。
+const String kWindowsAutoHwdec = 'd3d11va,d3d11va-copy';
+
+/// Windows 下 `auto-copy`（用户显式要 copy-back）实际下发的 hwdec 值。
+///
+/// 只给 copy 变体，且不含 CUDA 系后端（裸 `auto-copy` 在无 d3d11va 的机器上会落到
+/// `cuda-copy`，同样调 `cuInit()`）。见 [resolvePlatformHwdec] 的 BUG-1639 说明。
+const String kWindowsCopyHwdec = 'd3d11va-copy';
 
 /// 把 [highQuality] 偏好按平台解析成「实际下发给 libmpv 的 scale 缩放链」属性 map。纯函数。
 ///
@@ -345,7 +408,7 @@ String resolveAndroidHwdec(String hwdec, {bool? isAndroid}) {
 ///
 /// 故移动端（Android/iOS）即便 highQuality 开，也把 EWA polar 链回落成轻量的**可分离**
 /// `spline36`（远比 EWA polar 便宜、又明显优于 mpv 默认 bilinear，保留「高画质开关」在移动端的
-/// 可感质量差异）；桌面 GPU 扛得住，保持 `ewa_lanczossharp` 原样不降级。这与 [resolveAndroidHwdec]
+/// 可感质量差异）；桌面 GPU 扛得住，保持 `ewa_lanczossharp` 原样不降级。这与 [resolvePlatformHwdec]
 /// 同范式：只改移动端**实际下发**的滤镜，不改用户可见的 highQuality 开关语义（用户仍可手动开，
 /// 移动端下发的是轻量链、自担闪烁风险）。对齐 Windows 端把 `sigmoid-upscaling` 默认关修闪的同类
 /// 「中端 GPU 扛不住高画质渲染链」降级思路。highQuality 关时两端一致回落 mpv 默认 bilinear
@@ -421,7 +484,7 @@ const String _standardChannelLayouts = '7.1,5.1,stereo';
 /// `android_video_controller/real.dart`）。10-bit 帧（`yuv420p10` 等）需 16-bit 纹理格式，
 /// Mali-G76 的 GL ES 驱动为该格式分配/上传时 `OUT_OF_MEMORY` → 帧上不了屏（blank），偶发
 /// 成功 vs 失败交替 → 闪烁。软解（`hwdec=no`）与 copy 硬解（`auto-copy`）两条路的**公共下游**
-/// 都是这段 10-bit GL 上屏，故 [resolveAndroidHwdec] 的 hwdec 改写救不了它——必须在 VO 之前把
+/// 都是这段 10-bit GL 上屏，故 [resolvePlatformHwdec] 的 hwdec 改写救不了它——必须在 VO 之前把
 /// 帧降到 8-bit。
 ///
 /// 修复=Android 上无条件下发 `vf=format=yuv420p`，让 libmpv 在滤镜链里把 10-bit 帧转成
@@ -430,7 +493,7 @@ const String _standardChannelLayouts = '7.1,5.1,stereo';
 /// 故对全部 Android 设备一致下发（GL 路径本就不该见 10-bit），不是给 realme 8 打特例。
 ///
 /// **仅 Android**：桌面 GL 扛得住 10-bit，iOS 走另一套渲染（Metal），均不下发（原样透传，
-/// 零行为变化）。与 [resolveAndroidHwdec] / [resolveScaleProperties] 同范式——只改 Android
+/// 零行为变化）。与 [resolvePlatformHwdec] / [resolveScaleProperties] 同范式——只改 Android
 /// **实际下发**的属性，不引入用户可见开关（高级用户仍可经 [VideoMpvConfig.rawConf] 的 `vf`
 /// 覆盖，raw 最后合并优先）。
 ///
@@ -443,10 +506,12 @@ Map<String, String> resolveAndroidPixelFormatProperties({bool? isAndroid}) {
 }
 
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
-    {bool? isAndroid, bool? isMobile}) {
+    {bool? isAndroid, bool? isMobile, bool? isWindows}) {
   final Map<String, String> out = <String, String>{};
-  // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）。
-  out['hwdec'] = resolveAndroidHwdec(config.hwdec, isAndroid: isAndroid);
+  // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）；
+  // Windows GL 纹理渲染下把 auto* 改写成不含 CUDA 的 d3d11va 列表（BUG-1639）。
+  out['hwdec'] = resolvePlatformHwdec(config.hwdec,
+      isAndroid: isAndroid, isWindows: isWindows);
   // Android 10-bit → 8-bit 降位：VO 前 vf=format=yuv420p 绕开 Mali GL 16-bit 纹理 OOM
   // （TODO-1196 / BUG-465 根因）；桌面/iOS 不下发。见 [resolveAndroidPixelFormatProperties]。
   out.addAll(resolveAndroidPixelFormatProperties(isAndroid: isAndroid));

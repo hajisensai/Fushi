@@ -77,6 +77,40 @@ void main() {
       expect(r.left + r.width, closeTo(794, 1e-9));
       expect(r.left, closeTo(594, 1e-9));
     });
+
+    test('nested height ignores anchor-side space and only fits screen bounds',
+        () {
+      const Rect anchor = Rect.fromLTWH(380, 300, 40, 20);
+
+      final GlobalLookupFrameRect root = computeFrameRect(
+        selectionRect: anchor,
+        screenW: 800,
+        screenH: 600,
+        maxWidth: 360,
+        maxHeight: 700,
+        isVertical: false,
+      );
+      final GlobalLookupFrameRect nested = computeFrameRect(
+        selectionRect: anchor,
+        screenW: 800,
+        screenH: 600,
+        maxWidth: 360,
+        maxHeight: 700,
+        isVertical: false,
+        fitHeightToAnchorSide: false,
+      );
+
+      // Root/default behaviour still fits the card to the larger side of the
+      // anchor: max(spaceAbove=296, spaceBelow=276) - border(6) = 290.
+      expect(root.height, 290);
+      // A nested card is not cropped again by the word's position inside its
+      // parent popup. Its only height ceiling is the screen, with the 6px border
+      // on both sides: 600 - 2*6 = 588.
+      expect(nested.height, 588);
+      expect(nested.height, greaterThan(root.height));
+      expect(nested.top, 6);
+      expect(nested.top + nested.height, 594);
+    });
   });
 
   group('vertical isVertical true', () {
@@ -821,6 +855,17 @@ void main() {
           reason: 'the anchorless branch must base its left on the root clamp');
       expect(body.contains("'top': rootShellOffset.top + offset,"), isTrue,
           reason: 'the anchorless branch must base its top on the root clamp');
+    });
+
+    test('nested render disables anchor-side height fitting', () {
+      final File render = File('lib/src/lookup/global_lookup_render.dart');
+      final String body = render.readAsStringSync();
+      expect(
+        body.contains('fitHeightToAnchorSide: depth <= 0'),
+        isTrue,
+        reason: 'only nested depth must use the full work-area height; the '
+            'pure computeFrameRect test alone cannot prove this wiring',
+      );
     });
   });
 }

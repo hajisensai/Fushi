@@ -84,6 +84,9 @@ class GlobalLookupFrameRect {
 /// - [screenW] / [screenH]：可用屏幕尺寸（CSS px）。
 /// - [maxWidth] / [maxHeight]：弹窗最大宽高（如 popupMaxWidth × appUiScale，**不乘 dpr**）。
 /// - [isVertical]：竖排书（true 时弹窗放选区左 / 右，否则放上 / 下）。
+/// - [fitHeightToAnchorSide]：横排时是否把卡高收进锚点较宽裕的一侧。根卡 / 游戏正文
+///   卡保持 true；嵌套查词卡传 false，让卡片只在整个屏幕顶 / 底边界处收高，而不会被
+///   父卡内的点击位置二次裁短。
 /// - [popupPadding]：弹窗与选区之间的间距（Hoshi popupPadding = 4）。
 /// - [screenBorderPadding]：弹窗中心 clamp 的屏幕边界留白（Hoshi screenBorderPadding = 6）。
 ///
@@ -96,6 +99,7 @@ GlobalLookupFrameRect computeFrameRect({
   required double maxWidth,
   required double maxHeight,
   required bool isVertical,
+  bool fitHeightToAnchorSide = true,
   double popupPadding = 4,
   double screenBorderPadding = 6,
 }) {
@@ -118,7 +122,9 @@ GlobalLookupFrameRect computeFrameRect({
   // --- height()（Hoshi :40-43）：竖排恒 maxHeight，横排按上下空间收缩 ---
   final double height = isVertical
       ? maxHeight
-      : _min(_max(spaceAbove, spaceBelow) - screenBorderPadding, maxHeight);
+      : fitHeightToAnchorSide
+          ? _min(_max(spaceAbove, spaceBelow) - screenBorderPadding, maxHeight)
+          : _min(screenH - screenBorderPadding * 2, maxHeight);
 
   // --- centerX()（Hoshi :45-57）---
   final double centerX;

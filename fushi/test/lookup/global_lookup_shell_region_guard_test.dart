@@ -91,7 +91,8 @@ void main() {
   });
 
   test('host：measureAndReport 发 shellRects 且在 overlaySize 之前', () {
-    final int at = hostJs.indexOf('function measureAndReport()');
+    // 量测按路由快照上报：同一个 host 同时服务桌面与游戏内两条路由。
+    final int at = hostJs.indexOf('function measureAndReport(routeSnapshot)');
     expect(at, greaterThanOrEqualTo(0));
     final int end = hostJs.indexOf('\n  function ', at + 10);
     final String body = hostJs.substring(at, end > at ? end : hostJs.length);

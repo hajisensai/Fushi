@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-// v14 游戏内查词通道要往 Dart 投 hit / input，并接 Dart 的 present / dismiss。
+// v15 游戏内查词通道要往 Dart 投 hit / input，并接 Dart 的 present / dismiss / capture suppress。
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
@@ -50,6 +50,14 @@ struct ReaderState {
   // 合一时收卡帧会复用刚 present 过的 seq，被注入侧的"这帧我处理过了"过滤当场丢掉，
   // 卡片永远挂在屏幕上。见 voice_hook_ipc.h 的 LookupFrame 注释。
   uint64_t lookup_publish_seq = 0;
+  // 用户的开关**意图**，与共享内存段的身份无关。
+  //
+  // 🔴 段会被换掉：退出一局再开一局 = 注入器建一段全新的共享内存，`lookup_enabled`
+  // 从 0 开始。而 Dart 侧缓存着「我已经推过 true 了」，`desired == _pushedEnabled`
+  // 当场早退，于是新段永远停在 0——传感器一个 hook 都不装，用户点字毫无反应，且
+  // 表面上开关还是开着的。段的身份只有这一层知道（Open 是唯一的映射点），所以重放
+  // 的责任也只能在这里，不能指望上层记得。
+  bool lookup_enabled_desired = false;
 };
 
 ReaderState& State() {
@@ -182,6 +190,7 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   st.lookup_hit_count = 0;
   st.lookup_hit_seq = 0;
   st.lookup_input_seq = 0;
+  st.lookup_publish_seq = 0;
   if (!fushi_voice_hook::HasLookupRegion(h)) {
     return;
   }
@@ -194,6 +203,16 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
   }
   st.lookup_input_seq =
       fushi_voice_hook::AtomicLoadPreview64(&h->lookup_input_count);
+  // Fushi 可在游戏进程不退出时重启/重连。hook 端的 presented cursor 仍保留在 DLL，
+  // 所以新 host 必须从现有双槽最大发布序继续，而不是从 1 重新开始并被全判为陈旧帧。
+  for (uint32_t i = 0; i < h->lookup_frame_count; ++i) {
+    const fushi_voice_hook::LookupFrame* frame =
+        fushi_voice_hook::LookupFrameAt(h, i);
+    if (frame == nullptr) continue;
+    const uint64_t seq =
+        fushi_voice_hook::AtomicLoadPreview64(&frame->seq);
+    if (seq > st.lookup_publish_seq) st.lookup_publish_seq = seq;
+  }
 }
 
 // 解除映射、清句柄。调用方持锁。
@@ -282,7 +301,7 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
   return valid;
 }
 
-// ══ v14 查词通道：轮询泵 + MethodChannel ═══════════════════════════════════════
+// ══ v15 查词通道：轮询泵 + MethodChannel ═══════════════════════════════════════
 //
 // 泵是「平台线程上的 WM_TIMER」而不是后台线程，理由是两侧的线程亲和性都硬：
 //   * MethodChannel::InvokeMethod 只能在平台线程调；
@@ -296,6 +315,9 @@ constexpr wchar_t kLookupPumpClassName[] = L"FushiGalLookupPump";
 constexpr char kGalHookTextChannel[] = "app.fushi.reader/gal_hook_text";
 constexpr UINT_PTR kLookupPumpTimerId = 1;
 constexpr UINT kLookupPumpIntervalMs = 16;  // ~60Hz：查词要跟手，卡片重绘也吃这个节拍
+// 这只是“游戏主线程不再前进”的失败上界，不参与正确性同步。真正的屏障是共享内存里的
+// lookup_frame_applied_seq；绝不靠等若干毫秒猜卡片已经从合成画面消失。
+constexpr ULONGLONG kLookupCaptureSuppressTimeoutMs = 3000;
 
 // 帧尺寸的**维度**上界，与 IsLookupFrameSane 同值。字节上界不在这里管：卡片多高才
 // 放得进 3MiB 取决于它多宽，只有拿到真实宽度之后才算得出来，故字节预算统一在
@@ -311,6 +333,16 @@ struct LookupPumpState {
   std::unique_ptr<LookupChannel> channel;
   VoiceHookReader::LookupCaptureRequest capture;
   VoiceHookReader::LookupInputSink input_sink;
+  // CapturePreview completes asynchronously.  A dismiss or a newer present
+  // must invalidate the older callback before it can publish another bitmap;
+  // otherwise a card can reappear after the user closed it.  Platform-thread
+  // only, like the rest of this struct.
+  uint64_t capture_generation = 0;
+  // galLookupSuspendForCapture 的 MethodResult 必须悬到游戏线程确认。只允许一笔在途；
+  // Dart 的 capture lease 会合并并发制卡，native 再守一道，避免两个目标 seq 相互覆盖。
+  std::shared_ptr<LookupResult> capture_suppress_reply;
+  uint64_t capture_suppress_publish_seq = 0;
+  ULONGLONG capture_suppress_deadline = 0;
   HWND hwnd = nullptr;
   bool timer_running = false;
 };
@@ -333,6 +365,35 @@ flutter::EncodableValue LookupErrorMap(VoiceHookLookupError error) {
       {flutter::EncodableValue("error"),
        flutter::EncodableValue(std::string(
            fushi::VoiceHookLookupErrorToken(error)))}});
+}
+
+void CompleteLookupCaptureSuppressError(VoiceHookLookupError error) {
+  LookupPumpState& pump = Pump();
+  std::shared_ptr<LookupResult> reply =
+      std::move(pump.capture_suppress_reply);
+  pump.capture_suppress_publish_seq = 0;
+  pump.capture_suppress_deadline = 0;
+  if (reply != nullptr) {
+    reply->Success(LookupErrorMap(error));
+  }
+}
+
+void CompleteLookupCaptureSuppressSuccess(uint64_t applied_seq) {
+  LookupPumpState& pump = Pump();
+  const uint64_t publish_seq = pump.capture_suppress_publish_seq;
+  std::shared_ptr<LookupResult> reply =
+      std::move(pump.capture_suppress_reply);
+  pump.capture_suppress_publish_seq = 0;
+  pump.capture_suppress_deadline = 0;
+  if (reply != nullptr) {
+    reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("ok"), flutter::EncodableValue(true)},
+        {flutter::EncodableValue("publishSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(publish_seq))},
+        {flutter::EncodableValue("appliedSeq"),
+         flutter::EncodableValue(static_cast<int64_t>(applied_seq))},
+    }));
+  }
 }
 
 flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
@@ -372,6 +433,19 @@ flutter::EncodableValue LookupInputMap(const VoiceHookLookupInput& input) {
 void PumpLookupOnce() {
   LookupPumpState& pump = Pump();
   VoiceHookReader& reader = VoiceHookReader::Instance();
+  if (pump.capture_suppress_reply != nullptr) {
+    uint64_t applied_seq = 0;
+    const VoiceHookLookupError applied_error =
+        reader.ReadLookupFrameAppliedSeq(&applied_seq);
+    if (applied_error != VoiceHookLookupError::kNone) {
+      CompleteLookupCaptureSuppressError(applied_error);
+    } else if (applied_seq >= pump.capture_suppress_publish_seq) {
+      CompleteLookupCaptureSuppressSuccess(applied_seq);
+    } else if (GetTickCount64() >= pump.capture_suppress_deadline) {
+      CompleteLookupCaptureSuppressError(
+          VoiceHookLookupError::kCaptureSuppressTimeout);
+    }
+  }
   // 会话没了（关游戏 / Close）就把定时器停掉，别在没有映射的情况下空转。Dart 侧
   // 重开会话后本来就要再调一次 galLookupSetEnabled，泵会跟着重新起来。
   if (!reader.HasLookupChannel()) {
@@ -476,6 +550,15 @@ void HandleLookupPresent(
     const flutter::MethodCall<flutter::EncodableValue>& call,
     std::unique_ptr<LookupResult> result) {
   LookupPumpState& pump = Pump();
+  // full present 是 capture-suppress 的恢复动作，只能发生在 Dart 已拿到隐藏确认并完成截图
+  // 之后。若它抢在确认前到达，不能让旧 suspend 继续以成功结束。
+  if (pump.capture_suppress_reply != nullptr) {
+    CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
+  }
+  // 新 present 的意图本身就是 latest-wins 闸。即使下面共享内存闸或 capture source
+  // 暂时不可用，也必须先作废上一张仍在 CapturePreview 的卡；否则这次失败返回后，
+  // 旧回调仍能迟到并把用户已经换掉的内容重新发布。
+  const uint64_t capture_generation = ++pump.capture_generation;
   VoiceHookReader& reader = VoiceHookReader::Instance();
   VoiceHookLookupPresent meta;
   meta.seq = static_cast<uint64_t>(ReadLookupInt(call, "seq"));
@@ -502,8 +585,13 @@ void HandleLookupPresent(
   std::shared_ptr<LookupResult> reply(std::move(result));
   pump.capture(
       kLookupMaxDimension, kLookupMaxDimension,
-      [reply, meta](bool ok, bool clamped, const std::vector<uint8_t>& bgra,
-                    uint32_t width, uint32_t height, uint32_t pitch) {
+      [reply, meta, capture_generation](
+          bool ok, bool clamped, const std::vector<uint8_t>& bgra,
+          uint32_t width, uint32_t height, uint32_t pitch) {
+        if (Pump().capture_generation != capture_generation) {
+          reply->Success(LookupErrorMap(VoiceHookLookupError::kCaptureCancelled));
+          return;
+        }
         if (!ok || bgra.empty()) {
           reply->Success(
               LookupErrorMap(VoiceHookLookupError::kCaptureFailed));
@@ -540,7 +628,10 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
                       std::unique_ptr<LookupResult>& out_result) {
   const std::string& method = call.method_name();
   if (method != "galLookupSetEnabled" && method != "galLookupPresent" &&
-      method != "galLookupDismiss" && method != "galLookupInput") {
+      method != "galLookupPresentHighlight" &&
+      method != "galLookupDismiss" &&
+      method != "galLookupSuspendForCapture" &&
+      method != "galLookupInput") {
     return false;
   }
   std::unique_ptr<LookupResult> result = std::move(out_result);
@@ -553,18 +644,27 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
           LookupErrorMap(VoiceHookLookupError::kNoCaptureSource));
       return true;
     }
-    pump.input_sink(static_cast<uint32_t>(ReadLookupInt(call, "kind")),
-                    static_cast<int32_t>(ReadLookupInt(call, "x")),
-                    static_cast<int32_t>(ReadLookupInt(call, "y")),
-                    static_cast<int32_t>(ReadLookupInt(call, "wheel")),
-                    static_cast<uint32_t>(ReadLookupInt(call, "keys")));
+    const bool injected = pump.input_sink(
+        static_cast<uint32_t>(ReadLookupInt(call, "kind")),
+        static_cast<int32_t>(ReadLookupInt(call, "x")),
+        static_cast<int32_t>(ReadLookupInt(call, "y")),
+        static_cast<int32_t>(ReadLookupInt(call, "wheel")),
+        static_cast<uint32_t>(ReadLookupInt(call, "keys")));
+    if (!injected) {
+      result->Success(LookupErrorMap(VoiceHookLookupError::kInputFailed));
+      return true;
+    }
     result->Success(flutter::EncodableValue(flutter::EncodableMap{
         {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
     return true;
   }
   if (method == "galLookupSetEnabled") {
+    const bool enabled = ReadLookupBool(call, "enabled");
+    if (!enabled && pump.capture_suppress_reply != nullptr) {
+      CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
+    }
     const VoiceHookLookupError error =
-        reader.SetLookupEnabled(ReadLookupBool(call, "enabled"));
+        reader.SetLookupEnabled(enabled);
     if (error != VoiceHookLookupError::kNone) {
       result->Success(LookupErrorMap(error));
       return true;
@@ -573,11 +673,66 @@ bool HandleLookupCall(const flutter::MethodCall<flutter::EncodableValue>& call,
         {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
     return true;
   }
+  if (method == "galLookupSuspendForCapture") {
+    if (pump.capture_suppress_reply != nullptr) {
+      result->Success(
+          LookupErrorMap(VoiceHookLookupError::kCaptureSuppressBusy));
+      return true;
+    }
+    // suppress 必须先作废所有在途 CapturePreview；否则旧卡位图可能在 suppress 帧之后
+    // 才发布，并在截图屏障解除前把卡片重新显示出来。
+    ++pump.capture_generation;
+    const VoiceHookLookupPublishResult wrote =
+        reader.WriteLookupCaptureSuppress(
+            static_cast<uint64_t>(ReadLookupInt(call, "seq")));
+    if (!wrote.ok()) {
+      result->Success(LookupErrorMap(wrote.error));
+      return true;
+    }
+    pump.capture_suppress_reply =
+        std::shared_ptr<LookupResult>(std::move(result));
+    pump.capture_suppress_publish_seq = wrote.publish_seq;
+    pump.capture_suppress_deadline =
+        GetTickCount64() + kLookupCaptureSuppressTimeoutMs;
+    StartLookupPump();
+    if (!pump.timer_running) {
+      CompleteLookupCaptureSuppressError(
+          VoiceHookLookupError::kCaptureSuppressTimeout);
+    }
+    return true;
+  }
+  if (method == "galLookupPresentHighlight") {
+    // 悬停只挪高亮：不抓帧、不拷像素。
+    VoiceHookLookupPresent meta;
+    meta.seq = static_cast<uint64_t>(ReadLookupInt(call, "seq"));
+    meta.anchor_x = static_cast<int32_t>(ReadLookupInt(call, "anchorX"));
+    meta.anchor_y = static_cast<int32_t>(ReadLookupInt(call, "anchorY"));
+    meta.highlight_start =
+        static_cast<uint32_t>(ReadLookupInt(call, "highlightStart"));
+    meta.highlight_len =
+        static_cast<uint32_t>(ReadLookupInt(call, "highlightLen"));
+    const VoiceHookLookupError error =
+        VoiceHookReader::Instance().WriteLookupHighlight(meta);
+    if (error != VoiceHookLookupError::kNone) {
+      result->Success(LookupErrorMap(error));
+      return true;
+    }
+    result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("ok"), flutter::EncodableValue(true)}}));
+    return true;
+  }
+
   if (method == "galLookupPresent") {
     HandleLookupPresent(call, std::move(result));
     return true;
   }
-  // 剩下的只可能是 galLookupDismiss（上面的白名单已经挡住其它一切）。
+  // 剩下的只可能是永久 galLookupDismiss（上面的白名单已经挡住其它一切）。
+  // 先使所有在途 CapturePreview 回调失效，再发布 dismiss 帧。回调和这里都
+  // 在平台线程，代数比较不会与 BGRA 写入并发。
+  ++pump.capture_generation;
+  if (pump.capture_suppress_reply != nullptr) {
+    CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
+  }
   const VoiceHookLookupError error = reader.WriteLookupDismiss(
       static_cast<uint64_t>(ReadLookupInt(call, "seq")));
   if (error != VoiceHookLookupError::kNone) {
@@ -621,9 +776,26 @@ const char* VoiceHookOpenErrorToken(VoiceHookOpenError error) {
 }
 
 VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
+  VoiceHookOpenResult out;
+  if (pid != 0) {
+    bool replacing_lookup_session = false;
+    {
+      ReaderState& current = State();
+      std::lock_guard<std::mutex> lock(current.mutex);
+      replacing_lookup_session =
+          current.header != nullptr && current.pid != pid;
+    }
+    if (replacing_lookup_session) {
+      ++Pump().capture_generation;
+      CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
+    }
+  }
+  // 新段上是否要把查词开关重放回去（连带把泵拉起来）。SetTimer 要进内核，按本文件
+  // 既有纪律不在持锁时做，所以在锁外收尾。
+  bool reapply_lookup_enabled = false;
+  {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
-  VoiceHookOpenResult out;
   if (pid == 0) {
     out.error = VoiceHookOpenError::kInvalidPid;
     out.detail = "pid=0";
@@ -636,6 +808,9 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   }
   // 打开了别的 pid：先释放。
   if (st.header != nullptr) {
+    // 非幂等 Open 会直接走 CloseLocked（不会经过 public Close）。先退休旧段尚在
+    // CapturePreview 的回调，避免它在新段映射成功后把旧卡写进新游戏会话。
+    ++Pump().capture_generation;
     CloseLocked(st);
   }
   const std::wstring name = SharedMemoryName(static_cast<DWORD>(pid));
@@ -683,7 +858,19 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   // v14：查词游标对齐到「现在」。不这么做，会话重开时注入侧遗留的旧 hit 会被当成
   // 新命中重放，用户会看到一张莫名其妙的卡片弹出来。
   ResetLookupCursorsLocked(st, header);
+  // 段换了就把开关意图重放进新段（见 ReaderState::lookup_enabled_desired）。
+  // 走与 SetLookupEnabled 同一道闸：新段没有查词区时什么都不做，绝不盲写。
+  if (st.lookup_enabled_desired &&
+      LookupGateLocked(header, false) == VoiceHookLookupError::kNone) {
+    InterlockedExchange(
+        reinterpret_cast<volatile LONG*>(&header->lookup_enabled), 1);
+    reapply_lookup_enabled = true;
+  }
   out.status = StatusFromHeaderLocked(header);
+  }
+  if (reapply_lookup_enabled) {
+    StartLookupPump();
+  }
   return out;
 }
 
@@ -1201,12 +1388,17 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
 }
 
 void VoiceHookReader::Close() {
+  // A WebView2 CapturePreview may outlive the mapping it was requested for.
+  // Retire it before closing so its callback cannot publish the old card into
+  // a newly opened game session whose hit sequence restarted from 1.
+  ++Pump().capture_generation;
+  CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   CloseLocked(st);
 }
 
-// ══ v14 游戏内查词通道 ═════════════════════════════════════════════════════════
+// ══ v15 游戏内查词通道 ═════════════════════════════════════════════════════════
 
 const char* VoiceHookLookupErrorToken(VoiceHookLookupError error) {
   switch (error) {
@@ -1222,6 +1414,14 @@ const char* VoiceHookLookupErrorToken(VoiceHookLookupError error) {
       return "no_capture_source";
     case VoiceHookLookupError::kCaptureFailed:
       return "capture_failed";
+    case VoiceHookLookupError::kCaptureCancelled:
+      return "capture_cancelled";
+    case VoiceHookLookupError::kInputFailed:
+      return "input_failed";
+    case VoiceHookLookupError::kCaptureSuppressBusy:
+      return "capture_suppress_busy";
+    case VoiceHookLookupError::kCaptureSuppressTimeout:
+      return "capture_suppress_timeout";
     case VoiceHookLookupError::kFrameRejected:
       return "frame_rejected";
   }
@@ -1245,12 +1445,14 @@ void VoiceHookReader::AttachLookupChannel(flutter::BinaryMessenger* messenger) {
 
 void VoiceHookReader::DetachLookupChannel() {
   LookupPumpState& pump = Pump();
+  CompleteLookupCaptureSuppressError(VoiceHookLookupError::kCaptureCancelled);
   StopLookupPump();
   // 同上：从没注册过 handler，所以这里也不能注销（注销会把 flutter_window 那份
   // 一起清掉）。只丢自己的通道对象。
   pump.channel.reset();
   pump.capture = nullptr;
   pump.input_sink = nullptr;
+  ++pump.capture_generation;
   if (pump.hwnd != nullptr) {
     DestroyWindow(pump.hwnd);
     pump.hwnd = nullptr;
@@ -1288,15 +1490,24 @@ VoiceHookLookupError VoiceHookReader::SetLookupEnabled(bool enabled) {
     ReaderState& st = State();
     std::lock_guard<std::mutex> lock(st.mutex);
     SharedHeader* h = st.header;
+    // 意图先记，且**在闸门之前**记：用户可以在游戏还没起来时就打开开关，此时没有段、
+    // 写不进去，但这依然是一个有效意图——等 Open 拿到段时按它重放。把它记在闸门后面
+    // 就等于「开关只在游戏已经在跑时才算数」，而那正是用户最容易踩的顺序。
+    st.lookup_enabled_desired = enabled;
     const VoiceHookLookupError gate = LookupGateLocked(h, false);
     if (gate != VoiceHookLookupError::kNone) {
       return gate;
     }
+    const bool was_enabled =
+        InterlockedCompareExchange(
+            reinterpret_cast<volatile LONG*>(&h->lookup_enabled), 0, 0) != 0;
     InterlockedExchange(reinterpret_cast<volatile LONG*>(&h->lookup_enabled),
                         enabled ? 1 : 0);
-    if (enabled) {
-      // 重新开启即重新对齐游标：关着的这段时间里注入侧可能仍在写 hit（它只在
-      // lookup_enabled 时才该写，但那是它的自律，不是 host 能保证的不变量）。
+    if (enabled && !was_enabled) {
+      // 只在真正的 false -> true 边沿重新对齐游标。active 会话会重放 enable 意图
+      // 以覆盖 mapping 换代；若每次幂等 true 都重置，同一拍刚写入、尚未被 16ms
+      // pump 读取的 wheel/click 会被当成“旧输入”永久吞掉。新 mapping 的初始对齐由
+      // Open() 自己完成，不依赖这里的幂等调用。
       ResetLookupCursorsLocked(st, h);
     }
   }
@@ -1520,6 +1731,49 @@ VoiceHookLookupWriteResult VoiceHookReader::WriteLookupFrame(
   return out;
 }
 
+VoiceHookLookupError VoiceHookReader::WriteLookupHighlight(
+    const VoiceHookLookupPresent& meta) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  const VoiceHookLookupError gate = LookupGateLocked(h, true);
+  if (gate != VoiceHookLookupError::kNone) {
+    return gate;
+  }
+  // 只更新高亮：与收卡同构的"无像素帧"，区别只在 flags。
+  //
+  // 为什么值得单开一条路：悬停换一个字，卡片内容一个像素都没变，但普通 present 会
+  // 走完整的「CapturePreview → PNG 编码 → WIC 解码 → 全卡 memcpy」。鼠标划过一行就是
+  // 几十次，真机症状就是"太卡了"。高亮画在游戏自己的图层上、不在卡片位图里，所以这条
+  // 路一个像素都不需要。
+  const uint64_t publish_seq = ++st.lookup_publish_seq;
+  const uint32_t index =
+      static_cast<uint32_t>(publish_seq % h->lookup_frame_count);
+  fushi_voice_hook::LookupFrame* frame =
+      fushi_voice_hook::LookupFrameAt(h, index);
+  if (frame == nullptr) {
+    return VoiceHookLookupError::kNoRegion;
+  }
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 0);
+  frame->width = 0;
+  frame->height = 0;
+  frame->pitch = 0;
+  frame->anchor_x = meta.anchor_x;
+  frame->anchor_y = meta.anchor_y;
+  frame->highlight_start = meta.highlight_start;
+  frame->highlight_len = meta.highlight_len;
+  frame->byte_len = 0;
+  frame->hit_seq = meta.seq;
+  frame->flags = fushi_voice_hook::kLookupFrameHighlightOnly;
+  frame->reserved = 0;
+  frame->reserved2 = 0;
+  fushi_voice_hook::AtomicStorePreview64(&frame->seq, publish_seq);
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 1);
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&h->lookup_frame_count_written));
+  return VoiceHookLookupError::kNone;
+}
+
 VoiceHookLookupError VoiceHookReader::WriteLookupDismiss(uint64_t seq) {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
@@ -1563,6 +1817,72 @@ VoiceHookLookupError VoiceHookReader::WriteLookupDismiss(uint64_t seq) {
   InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 1);
   InterlockedIncrement64(
       reinterpret_cast<volatile LONGLONG*>(&h->lookup_frame_count_written));
+  return VoiceHookLookupError::kNone;
+}
+
+VoiceHookLookupPublishResult VoiceHookReader::WriteLookupCaptureSuppress(
+    uint64_t seq) {
+  VoiceHookLookupPublishResult out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  // 与永久 dismiss 不同：临时抑制之后还要靠 full frame 恢复，因此要求查词消费者正在
+  // 工作。lookup_enabled==0 时注入侧不会消费 suppress 帧，挂一个等待者只会超时。
+  out.error = LookupGateLocked(h, true);
+  if (out.error != VoiceHookLookupError::kNone) {
+    return out;
+  }
+  if (seq == 0) {
+    out.error = VoiceHookLookupError::kFrameRejected;
+    return out;
+  }
+  const uint64_t publish_seq = ++st.lookup_publish_seq;
+  const uint32_t index =
+      static_cast<uint32_t>(publish_seq % h->lookup_frame_count);
+  fushi_voice_hook::LookupFrame* frame =
+      fushi_voice_hook::LookupFrameAt(h, index);
+  if (frame == nullptr) {
+    out.error = VoiceHookLookupError::kNoRegion;
+    return out;
+  }
+  // capture-suppress 是第三种显式无像素控制帧，不能伪装成 0×0 dismiss：TJS 必须保留
+  // route/submit fence，并在下一张 full frame 到来时恢复。
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 0);
+  frame->width = 0;
+  frame->height = 0;
+  frame->pitch = 0;
+  frame->anchor_x = 0;
+  frame->anchor_y = 0;
+  frame->highlight_start = 0;
+  frame->highlight_len = 0;
+  frame->byte_len = 0;
+  frame->hit_seq = seq;
+  frame->flags = fushi_voice_hook::kLookupFrameCaptureSuppress;
+  frame->reserved = 0;
+  frame->reserved2 = 0;
+  fushi_voice_hook::AtomicStorePreview64(&frame->seq, publish_seq);
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 1);
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(&h->lookup_frame_count_written));
+  out.publish_seq = publish_seq;
+  return out;
+}
+
+VoiceHookLookupError VoiceHookReader::ReadLookupFrameAppliedSeq(
+    uint64_t* out) {
+  if (out == nullptr) {
+    return VoiceHookLookupError::kFrameRejected;
+  }
+  *out = 0;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  const VoiceHookLookupError gate = LookupGateLocked(h, false);
+  if (gate != VoiceHookLookupError::kNone) {
+    return gate;
+  }
+  *out = fushi_voice_hook::AtomicLoadPreview64(
+      &h->lookup_frame_applied_seq);
   return VoiceHookLookupError::kNone;
 }
 

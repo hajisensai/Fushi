@@ -1,0 +1,19 @@
+## BUG-1620 · 互联远端视频字幕偏移不持久化（退出重进归 0）
+- **报告**：2026-08-14（用户：Fushi 互联播放时调过的字幕偏移，退出再进来又变成 0）
+- **真实性**：✅ 真 bug。根因两处：
+  - 写入侧：`fushi/lib/src/pages/implementations/video_fushi_page.dart` `_setDelayMs`——远端播放（`VideoFushiPage.remote` 构造器把 `playlistCollectionId` 固定 null）落进 `repo.updateDelayMs(远端uid)`，而远端视频在 client **没有 VideoBooks 行**，这是一次**静默 0 行 UPDATE**，调轴写在空气里。
+  - 读取侧：`_initRemote` / `_loadRemoteEpisode` 起播直接 `_delayMs = info.delayMs`（BUG-996 的 host→client 单向下发），host 值通常 0 → 重进归 0。
+  - 对比：播放断点（position）有「本地 prefs + LWW + 上报 host」三件套（TODO-559/653/816/885），调轴完全没有对应通道。
+- **[x] ① 已修复** — 逐条镜像断点范式（本分支提交）：
+  - 键空间：`video_remote_delay_<uid>` / `video_remote_delay_at_<uid>`（复用 `PositionPrefKeys`，`fushi_library_host_service.dart`），LWW 用专用纯函数 `resolveDelayLww`（**严格较新时间戳者胜、平局保守持有侧胜**——position 的「平局取较大位置」对可负调轴无意义）。
+  - client：`_setDelayMs` 远端分支按稳定远端 uid（合集连播 = 当前成员 id，与 `_remotePositionKeyForIndex` 同构）落 prefs + best-effort `putRemoteVideoDelay` 上报 host；起播三处改 `_resolveRemoteInitialDelayMs`（host 下发值@`delayUpdatedAtMs` vs 本地 prefs 的 LWW）。**对旧 host（无端点）本地 prefs 单独就能修好症状。**
+  - host：新端点 `GET/PUT /api/library/videos/<id>/delay`（`fushi_sync_server.dart`，与 `/position` 分支对称；Basic 鉴权中间件覆盖、不在 /stream 豁免名单）。能力接口 `VideoDelayHost`（`is` 探测，旧 host / 测试 fake 零破坏，`VideoDeletionHost` 同范式）。`putVideoDelay`：存在性闸门（无该 VideoBooks 行 no-op，防任意 id 写脏 prefs）+ clamp ±600000ms + **时间戳上限 clamp 到 now+5min**（防未来戳永久锁死 LWW）+ 胜者写穿 `VideoBooks.delayMs`（host 本机播放跟随）。
+  - 清单：`listVideos` 下发 `delayMs`（带戳 prefs 与旧 row.delayMs@0 的 LWW 胜者）+ 新字段 `delayUpdatedAtMs`（旧 client 忽略，向后兼容）。
+  - host 本机调轴镜像盖戳（断点 TODO-816 同范式）：`_setDelayMs` 本地分支同时写 delay prefs 对——否则对端上报过一次后，本机后续调轴（无戳恒 0）永远输给旧戳。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/video_delay_sync_test.dart`（resolveDelayLww 语义 + 键公式冻结 + RemoteVideoInfo delayUpdatedAtMs json 往返/向后兼容）；`fushi/test/sync/fushi_sync_server_video_delay_test.dart`（端点：GET/PUT 往返、LWW 覆盖/拒绝、404 存在性闸门、无能力 host 404、未鉴权 401、clamp）。
+- **备注**：首轮的三条已知边界已在「互联完整支持批次」（同分支后续提交）全部收口：
+  - ✅ **系列级调轴**：清单/`getVideoDelay` 基底改 `effectiveSeriesDelayMs(col ?? row)`；`putVideoDelay` 写穿 row + 系列级；`VideoBookRepository.updateCollectionSubtitleDelayMs` 给**全体视频成员**盖互联 LWW 戳（否则 host 系列级调轴无戳恒 0、对上报过的对端永远传不出去）。测试：`fushi_library_host_service_video_test.dart`（series-level prefs 组）+ `video_book_repository_test.dart`（成员盖戳）。
+  - ✅ **全量 sweep**：`_syncVideoProgressLive` 追加调轴双向收敛（与进度共用 uid 基底 + host 清单字段，零额外网络读；旧 host 404 静默降级）。测试：`sync_orchestrator_live_progress_test.dart`（video delay full sweep 组）。
+  - ✅ **副字幕**（TODO-2837）：远端副字幕从「完全不支持」到完整支持（host sidecar / host 内嵌轨抽取 / 本地文件三类源 + 独立调轴）。~~host 不参与同步~~ → 用户拍板后**全部入同步通道**（播放偏好同步泛化批）：来源与独立调轴均为带戳字段（`embedded:<n>`/`off:` 对端可直接重放；本地文件路径对端文件不存在时恢复侧自然跳过，无特例分支；「清除回跟随」也带戳收敛）。
+  - ✅ **播放偏好同步泛化**：`/delay` 端点泛化为 `GET/PUT /api/library/videos/<id>/playback`（`VideoPlaybackSyncState` 统一带戳字段模型：调轴/音轨/副字幕源/副字幕调轴，逐字段严格较新者胜；新增偏好字段=加一对键+一对字段+写入点盖戳，同步不再每项开一条通道）。系列级写入点（合集调轴/音轨/副轨调轴）内聚给全体成员盖戳；sweep 全字段双向收敛。
+  - 同族新修：远端音轨选择不持久化（[BUG-1636]）；远端主字幕 `embedded:<n>` 重进不重放；远端剧集面板无看完/在看角标（清单带 `completedAt`）。

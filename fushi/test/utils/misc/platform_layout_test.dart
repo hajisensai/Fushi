@@ -106,15 +106,16 @@ void main() {
       );
     });
 
-    test('uses wider settings content on Windows-sized expanded layouts', () {
+    test('settings content is full-bleed on wide desktop', () {
+      // 取消了设置正文在宽屏上的 960px 强制内容宽上限（用户实报「设置页有莫名
+      // 奇妙的宽度限制」），权威契约见
+      // test/utils/platform_utils_settings_width_test.dart。
       expect(
         desktopContentMaxWidth(
           WindowSizeClass.expanded,
           DesktopContentKind.settings,
         ),
-        // MD3 list-detail: widened 760 -> 960 so the detail pane breathes after
-        // the 280px nav pane (Phase 1 ④).
-        960,
+        isNull,
       );
     });
 

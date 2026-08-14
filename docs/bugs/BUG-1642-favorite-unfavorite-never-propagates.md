@@ -1,0 +1,12 @@
+## BUG-1642 · 取消收藏词句不跨端传播对端永远删不掉
+- **报告**：2026-08-14（互联全域盘点发现，优先级榜首）
+- **真实性**：✅ 真 bug。根因：收藏词/收藏句的删除墓碑（`sync_deletion_tombstones` 的 `favoriteword`/`favoritesentence`）只做**本地抑制**（`aggregate_sync_service.dart` 的 apply/上行裁剪按墓碑跳过），聚合快照 wire 上没有墓碑家族、互联也没有删除推送通道（`_hasInterconnectDeletionChannel` 对这两类恒 false）——本端取消收藏后本端不复活，但**对端那台设备上它还在，永远删不掉**。次生缺口：`filterTombstoned` 的上行裁剪把「全被立碑」的快照裁成空 → 不推 → 纯删除永远不出门。
+- **[x] ① 已修复** —（本分支提交）墓碑作为 additive 家族随聚合快照双向走：
+  - `AggregateSnapshot` 新增 `favoriteWordTombstones` / `favoriteSentenceTombstones`（`AggregateTombstoneRecord{itemKey, deletedAt}`，itemKey 与本地墓碑表同公式；纯墓碑快照不算 empty——纯删除也上行）。
+  - `mergeSnapshots` 做「删除 vs 重收藏」时间戳仲裁（`_arbitrateFavorites` 纯函数）：墓碑 `deletedAt` **严格大于**收藏 `createdAt` → 收藏出局（删除传播）；否则重收藏胜、墓碑退场（防「删除僵尸」反向把新收藏删掉）。
+  - `applySnapshotToLocal`：快照墓碑先落本地墓碑表（只写严格较新者，不降级、不用 now 冒充对端删除时刻）+ 删被压制的本地收藏词行（`propagateDeletion:false` 防时刻膨胀）；收藏句经 `_writeFavoriteSentences` 整表重写自然移除（其空 merged 早退改为「merged 与 current 都空才退」）。
+  - **抑制判据全部改时间戳感知**（apply 的 add 跳过 / `_writeFavoriteSentences` 剔除 / `filterTombstoned` 上行裁剪）：旧的按 itemKey 成员判定会把「删除后重收藏」永久封印。
+  - `filterTombstoned` 透传墓碑家族（重建快照时丢掉它们 = 删除永远不出门）。
+  - 云通道（同一套 snapshot/merge/apply）与互联 live 通道（GET/PUT aggregate + foldIntoLocal）同时受益，零新端点。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/aggregate_favorite_tombstone_sync_test.dart`（纯仲裁双向 + json additive 兼容 + 真 DB 端到端：A 取消收藏 → B fold 后行被删且墓碑续传；B 重收藏后 fold A 旧墓碑词存活）；`aggregate_push_tombstone_test.dart` 的「全被立碑不推空快照」按新语义改写（纯墓碑必须推、被压制收藏不复活上行）。
+- **备注**：统计删除墓碑（用户在统计页删某书统计）仍是本地抑制、未入 wire——同一范式可扩展（`AggregateTombstoneRecord` + 家族即可），记为后续项。

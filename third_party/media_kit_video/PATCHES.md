@@ -464,15 +464,32 @@ it must decode into: it reads it back out of the *current* display with
 `eglQueryDisplayAttribEXT(EGL_DEVICE_EXT)` →
 `eglQueryDeviceAttribEXT(EGL_D3D11_DEVICE_ANGLE)`. So it can only ever see
 ANGLE's hidden device — a device nobody created with
-`D3D11_CREATE_DEVICE_VIDEO_SUPPORT` and nobody marked thread safe. It then hands
-that device to FFmpeg (`d3d11_wrap_device_ref` → `d3d11va_device_init`), which
-`QueryInterface`s for `ID3D11VideoDevice` **and** `ID3D11VideoContext`; a device
-created without the video flag can fail either QI (measured: `E_NOINTERFACE` for
-`ID3D11VideoDevice` on WARP). `init()` then returns `-1` *silently*, mpv logs
-only `Loading hwdec driver 'd3d11-egl'` with no follow-up, and `--hwdec=d3d11va`
+`D3D11_CREATE_DEVICE_VIDEO_SUPPORT` and nobody marked thread safe (ANGLE hard
+codes `debug ? D3D11_CREATE_DEVICE_DEBUG : 0`, see ANGLE `Renderer11.cpp`
+`callD3D11CreateDevice`). It then hands that device to FFmpeg
+(`d3d11_wrap_device_ref` → `d3d11va_device_init`), which `QueryInterface`s for
+`ID3D11VideoDevice` **and** `ID3D11VideoContext`. That QI is gated by the flag
+at the D3D11 *runtime* level, not by the driver: a device created without
+`D3D11_CREATE_DEVICE_VIDEO_SUPPORT` returns `E_NOINTERFACE 0x80004002`
+(measured on WARP). How much that costs depends on the adapter — measured on a
+GeForce RTX 5090 the QI on ANGLE's flag-less device still succeeded — so this
+half of the patch is about being correct everywhere rather than about one
+machine. When the QI does fail, `init()` returns `-1` and `--hwdec=d3d11va`
 degrades to `d3d11va-copy`: every decoded frame is read back to system memory
 and re-uploaded to the GPU. Independently observed in `docs/bugs/BUG-1639`
+(a separate branch, not merged into `develop` yet)
 ("`d3d11va` 失败 → `Using hardware decoding (d3d11va-copy)`").
+
+**This patch alone is not sufficient.** `hwdec_d3d11egl::init()` checks
+`EGL_EXT_device_query` *before* it ever looks at the device, and libmpv older
+than mpv `1d15686142` (2026-07-31) looks for it in the EGL **display**
+extension string while ANGLE publishes it in the **client** string — so `init()`
+returns `-1` with no log line at all, whichever device the display carries
+(measured: `display: no` / `client: YES` on both the upstream
+`EGL_DEFAULT_DISPLAY` and this patch's `EGL_PLATFORM_DEVICE_EXT` display).
+`third_party/media_kit_libs_windows_video/windows/CMakeLists.txt` therefore
+pins libmpv at or after that fix and documents the floor; the guard test below
+enforces it.
 
 The patch does what mpv's own `--gpu-context=angle` does
 (`mpv/video/out/opengl/context_angle.c`, `d3d11_device_create`):

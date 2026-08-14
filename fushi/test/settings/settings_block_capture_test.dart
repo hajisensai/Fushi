@@ -146,9 +146,10 @@ void main() {
     final String globalChannel = fw.substring(globalStart, panelStart);
     expect(globalChannel.contains('"setBlockCapture"'), isTrue,
         reason: '全局查词通道必须处理 setBlockCapture');
-    expect(globalChannel.contains('global_lookup_window_->SetBlockCapture'),
-        isTrue,
-        reason: 'setBlockCapture 必须应用到瞬态查词窗对象');
+    // 通道现在按 `target` 路由到桌面浮窗或游戏内离屏卡片窗，处理器统一用局部
+    // `win`——这条防截屏因此同时覆盖两个表面，不是只覆盖成员那一个。
+    expect(globalChannel.contains('win->SetBlockCapture'), isTrue,
+        reason: 'setBlockCapture 必须应用到通道当前路由到的瞬态查词窗对象');
 
     // Dart 侧：控制器 start 时推 pref 初值（native 记值 + 窗口重建自动重加，
     // 覆盖此后每次弹出），并暴露 applyBlockCapture 供扇出入口即时重推。

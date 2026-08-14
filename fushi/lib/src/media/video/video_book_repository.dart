@@ -23,6 +23,14 @@ import 'package:fushi/src/media/video/scraper/scraper_types.dart'
 import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart'
+    show
+        videoRemoteAudioTrackAtPrefKey,
+        videoRemoteAudioTrackPrefKey,
+        videoRemoteDelayAtPrefKey,
+        videoRemoteDelayPrefKey,
+        videoRemoteSecondaryDelayAtPrefKey,
+        videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
@@ -671,27 +679,84 @@ class VideoBookRepository {
 
   /// 更新系列（合集）级音轨偏好（schema v52，同系列音轨记忆）。合集内任一集选音轨
   /// 写这里，全系列共享；null=清除（加载回退各集 per-book / libmpv 默认）。
+  ///
+  /// 互联 LWW 盖戳（播放偏好同步泛化批）：与 [updateCollectionSubtitleDelayMs]
+  /// 同纪律，把值 + now 镜像进每个视频成员的 `video_remote_audio_track_` 键对。
   Future<void> updateCollectionAudioTrackId(
     int collectionId,
     String? audioTrackId,
-  ) =>
-      _db.updateMediaCollectionAudioTrackId(collectionId, audioTrackId);
+  ) async {
+    await _db.updateMediaCollectionAudioTrackId(collectionId, audioTrackId);
+    if (audioTrackId == null) return;
+    await _stampCollectionMemberPrefs(
+      collectionId,
+      valueKeyOf: videoRemoteAudioTrackPrefKey,
+      atKeyOf: videoRemoteAudioTrackAtPrefKey,
+      value: audioTrackId,
+    );
+  }
+
+  /// 把系列级播放偏好的值 + now 镜像进合集全体视频成员的互联 LWW 键对（内部
+  /// 共享骨架；见 [updateCollectionSubtitleDelayMs] 的动机注释）。
+  Future<void> _stampCollectionMemberPrefs(
+    int collectionId, {
+    required String Function(String uid) valueKeyOf,
+    required String Function(String uid) atKeyOf,
+    required String value,
+  }) async {
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    for (final MediaCollectionItemRow item
+        in await _db.getCollectionItems(collectionId)) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      await _db.setPrefTyped<String>(valueKeyOf(item.entryKey), value);
+      await _db.setPrefTyped<int>(atKeyOf(item.entryKey), nowMs);
+    }
+  }
 
   /// 更新系列（合集）级字幕调轴（音画延迟毫秒，schema v52，同系列调轴记忆）。合集内
   /// 任一集调轴写这里，全系列共享；null=清除（加载回退各集 per-book / 0）。
+  ///
+  /// 互联 LWW 盖戳（BUG-1620 系列级半边）：系列级调轴对**全体成员**生效，故把
+  /// 值 + now 镜像进每个视频成员的 `video_remote_delay_` prefs 对——host 侧
+  /// getVideoDelay / 清单以带戳值参与「严格较新者胜」，否则对端上报过一次后，本机
+  /// 的系列级调轴（col 无戳恒 0）对那台设备永远传不出去。null（清除）只清系列级
+  /// 列、不动 prefs（清除语义 = 回退 per-book，成员 prefs 里的历史带戳值仍是
+  /// 「最后一次实际调轴」的事实）。
   Future<void> updateCollectionSubtitleDelayMs(
     int collectionId,
     int? delayMs,
-  ) =>
-      _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
+  ) async {
+    await _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
+    if (delayMs == null) return;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    for (final MediaCollectionItemRow item
+        in await _db.getCollectionItems(collectionId)) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      await _db.setPrefTyped<int>(
+          videoRemoteDelayPrefKey(item.entryKey), delayMs);
+      await _db.setPrefTyped<int>(
+          videoRemoteDelayAtPrefKey(item.entryKey), nowMs);
+    }
+  }
 
   /// 更新系列（合集）级**副字幕**独立调轴（毫秒，schema v86，TODO-2837，同系列
   /// 副轨调轴记忆）。null=清除（加载回退各集 per-book；两层都 null = 跟随主字幕）。
+  ///
+  /// 互联 LWW 盖戳（播放偏好同步泛化批）：非 null 值镜像进全体视频成员键对；
+  /// null（清除回跟随）同样是带戳写（值空 + at=now），清除也跨设备收敛。
   Future<void> updateCollectionSecondarySubtitleDelayMs(
     int collectionId,
     int? delayMs,
-  ) =>
-      _db.updateMediaCollectionSecondarySubtitleDelayMs(collectionId, delayMs);
+  ) async {
+    await _db.updateMediaCollectionSecondarySubtitleDelayMs(
+        collectionId, delayMs);
+    await _stampCollectionMemberPrefs(
+      collectionId,
+      valueKeyOf: videoRemoteSecondaryDelayPrefKey,
+      atKeyOf: videoRemoteSecondaryDelayAtPrefKey,
+      value: delayMs?.toString() ?? '',
+    );
+  }
 
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
   Future<void> updateCover(String bookUid, String coverPath) =>

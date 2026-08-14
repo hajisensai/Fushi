@@ -1770,9 +1770,14 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 「游戏内查词」（KiriKiri in-game lookup）默认**关**：它要往游戏进程里投位图，
-  /// 只对有 profile 证据的引擎组合有效，开着对其余游戏纯属白付代价。
-  static const bool galIngameLookupEnabledDefault = false;
+  /// 「游戏内查词」（KiriKiri in-game lookup）默认**开**。
+  ///
+  /// 代价只在真发生命中时才付：注入侧的传感器要等 `lookup_enabled=1` **且**引擎
+  /// 导出表里查得到那几个 TJS 入口才装，装不上就整条链静默不启动；卡片层也是延迟到
+  /// 第一帧才建。所以对非 KiriKiri 或不具备入口的游戏，开着与关着的运行期开销一致。
+  /// 反过来默认关的代价是实打实的：用户不知道有这个功能，知道了也要先退出这一局、
+  /// 去设置里翻开关、再重开一局才生效。
+  static const bool galIngameLookupEnabledDefault = true;
 
   /// 游戏内查词总开关（仅 Windows 生效）。
   bool get galIngameLookupEnabled =>

@@ -1,13 +1,14 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi/src/sync/manga_sync_package.dart' show repackageMangaBook;
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -1520,8 +1521,10 @@ class SyncOrchestrator {
       for (final EpubBookRow b in localBooks) sanitizeTtuFilename(b.title),
     };
     final Map<String, bool> remoteKeyHasContent = <String, bool>{
+      // 「远端已有内容」= EPUB 内容树 ∨ 漫画包内容（互联完整支持批次）——否则
+      // host 上已有的漫画会被本端当「远端无」反复推送。
       for (final RemoteBookInfo r in remoteBooks)
-        sanitizeTtuFilename(r.title): r.hasContent,
+        sanitizeTtuFilename(r.title): r.hasContent || r.hasMangaContent,
     };
 
     // 按 sanitizeTtuFilename(title) union 计算 diff。
@@ -1564,12 +1567,22 @@ class SyncOrchestrator {
           index++;
           continue;
         }
+        final BookFormat format = BookFormat.parseOrEpub(row.format);
+        if (format == BookFormat.pdf) {
+          // PDF 无互联内容通道（互联全域盘点已记录）。此前无 format 过滤时每本
+          // 漫画/PDF 每轮同步都稳定产出一条 repackage 失败噪音错误——静默跳过。
+          index++;
+          continue;
+        }
         tmp = _tmpFile('.epub');
-        final bool built =
-            await repackageExtractedEpub(row.extractDir, tmp.path);
+        // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
+        // EPUB → 既有 repackage。
+        final bool built = format == BookFormat.manga
+            ? await repackageMangaBook(row.extractDir, tmp.path)
+            : await repackageExtractedEpub(row.extractDir, tmp.path);
         if (!built) {
           report.errors
-              .add('live push book "$title": repackage produced no epub');
+              .add('live push book "$title": repackage produced no output');
           index++;
           continue;
         }
@@ -1811,6 +1824,109 @@ class SyncOrchestrator {
         }
       },
     );
+
+    // 播放偏好双向收敛（BUG-1620 调轴起步，播放偏好同步泛化批扩展为全字段：
+    // 调轴/音轨/副字幕源/副字幕调轴）。与进度共用同一 uid 基底 + host 清单带戳
+    // 字段（零额外网络读）；逐字段「严格较新时间戳者胜」。本地较新字段聚合成一次
+    // putRemoteVideoPlayback（旧 host 无端点 404 → 静默吞，不刷 report 噪音）；
+    // host 较新字段写回本地键对（时间戳用对端的，同进度写回纪律）+ 本地有
+    // VideoBooks 行时写穿行值，本机播放立即跟随。
+    String? nullableStr(String raw) => raw.isEmpty ? null : raw;
+    for (final String uid in localUids) {
+      final RemoteVideoInfo? info = hostById[uid];
+      if (info == null) continue;
+      try {
+        final VideoPlaybackSyncState host = info.playback;
+        final VideoPlaybackSyncState local = VideoPlaybackSyncState(
+          delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0),
+          delayAt:
+              await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
+          audioTrackId: nullableStr(await _db.getPrefTyped<String>(
+              videoRemoteAudioTrackPrefKey(uid), '')),
+          audioTrackAt: await _db.getPrefTyped<int>(
+              videoRemoteAudioTrackAtPrefKey(uid), 0),
+          secondarySubtitleSource: nullableStr(await _db.getPrefTyped<String>(
+              videoRemoteSecondarySubtitlePrefKey(uid), '')),
+          secondarySubtitleAt: await _db.getPrefTyped<int>(
+              videoRemoteSecondarySubtitleAtPrefKey(uid), 0),
+          secondaryDelayMs: int.tryParse(await _db.getPrefTyped<String>(
+              videoRemoteSecondaryDelayPrefKey(uid), '')),
+          secondaryDelayAt: await _db.getPrefTyped<int>(
+              videoRemoteSecondaryDelayAtPrefKey(uid), 0),
+        );
+
+        // 本地→host：只带本地严格较新的字段（at 置 0 的字段 host 端 merge 忽略）。
+        final VideoPlaybackSyncState push = VideoPlaybackSyncState(
+          delayMs: local.delayMs,
+          delayAt: local.delayAt > host.delayAt ? local.delayAt : 0,
+          audioTrackId: local.audioTrackId,
+          audioTrackAt:
+              local.audioTrackAt > host.audioTrackAt ? local.audioTrackAt : 0,
+          secondarySubtitleSource: local.secondarySubtitleSource,
+          secondarySubtitleAt:
+              local.secondarySubtitleAt > host.secondarySubtitleAt
+                  ? local.secondarySubtitleAt
+                  : 0,
+          secondaryDelayMs: local.secondaryDelayMs,
+          secondaryDelayAt: local.secondaryDelayAt > host.secondaryDelayAt
+              ? local.secondaryDelayAt
+              : 0,
+        );
+        if (!push.isEmpty) {
+          try {
+            await backend.putRemoteVideoPlayback(uid, push);
+          } catch (e) {
+            debugPrint(
+                '[SyncOrchestrator] video playback push "$uid" failed: $e');
+          }
+        }
+
+        // host→本地：逐字段写回严格较新者。
+        final bool hasRow = rowPositionByUid.containsKey(uid);
+        final VideoPlaybackSyncState merged =
+            VideoPlaybackSyncState.merge(local, host);
+        if (merged.delayAt != local.delayAt) {
+          await _db.setPrefTyped<int>(
+              videoRemoteDelayPrefKey(uid), merged.delayMs);
+          await _db.setPrefTyped<int>(
+              videoRemoteDelayAtPrefKey(uid), merged.delayAt);
+          if (hasRow) await _db.updateVideoBookDelayMs(uid, merged.delayMs);
+        }
+        if (merged.audioTrackAt != local.audioTrackAt) {
+          await _db.setPrefTyped<String>(
+              videoRemoteAudioTrackPrefKey(uid), merged.audioTrackId ?? '');
+          await _db.setPrefTyped<int>(
+              videoRemoteAudioTrackAtPrefKey(uid), merged.audioTrackAt);
+          if (hasRow) {
+            await _db.updateVideoBookAudioTrackId(uid, merged.audioTrackId);
+          }
+        }
+        if (merged.secondarySubtitleAt != local.secondarySubtitleAt) {
+          await _db.setPrefTyped<String>(
+              videoRemoteSecondarySubtitlePrefKey(uid),
+              merged.secondarySubtitleSource ?? '');
+          await _db.setPrefTyped<int>(
+              videoRemoteSecondarySubtitleAtPrefKey(uid),
+              merged.secondarySubtitleAt);
+          if (hasRow) {
+            await _db.updateVideoBookSecondarySubtitleSource(
+                uid, merged.secondarySubtitleSource);
+          }
+        }
+        if (merged.secondaryDelayAt != local.secondaryDelayAt) {
+          await _db.setPrefTyped<String>(videoRemoteSecondaryDelayPrefKey(uid),
+              merged.secondaryDelayMs?.toString() ?? '');
+          await _db.setPrefTyped<int>(
+              videoRemoteSecondaryDelayAtPrefKey(uid), merged.secondaryDelayAt);
+          if (hasRow) {
+            await _db.updateVideoBookSecondaryDelayMs(
+                uid, merged.secondaryDelayMs);
+          }
+        }
+      } catch (e) {
+        report.noteError('live video playback "$uid"', e);
+      }
+    }
   }
 
   /// 互联有声书播放进度 live 双向同步（BUG-471）。
@@ -1842,26 +1958,44 @@ class SyncOrchestrator {
     if (localKeys.isEmpty) return;
 
     // 有声书进度是 host-truth 模型：只对 host 也有的有声书同步。先取 host 有声书
-    // 清单，只同步两端都有的 bookKey；本地独有有声书无 host 真相，跳过。
-    final Set<String> hostKeys = <String>{
+    // 清单，只同步两端都有的键；本地独有有声书无 host 真相，跳过。
+    //
+    // 键必须用 [RemoteAudiobookInfo.identity]（srt-backed=bookKey；纯 SRT=uid），
+    // 不能用裸 bookKey：纯 SRT standalone 的 bookKey 恒空串，用它建交集会让这类书
+    // 的 `audiobook_pos_<uid>` 永远落不进 hostKeys → 听书进度跨设备完全不同步——
+    // 而 host 端 get/putAudiobookPosition 本就按 identity（bookKey ∪ SrtBooks.uid）
+    // 命中（BUG-1637）。空 identity（异常行）跳过不进集合。
+    final Map<String, RemoteAudiobookInfo> hostById =
+        <String, RemoteAudiobookInfo>{
       for (final RemoteAudiobookInfo info
           in await backend.listRemoteAudiobooks())
-        info.bookKey,
+        if (info.identity.isNotEmpty) info.identity: info,
     };
-    if (hostKeys.isEmpty) return;
+    if (hostById.isEmpty) return;
 
     await _syncPositionsLive(
       report,
       errorLabel: 'live audiobook progress',
       localKeys: localKeys,
-      hostKeys: hostKeys,
+      hostKeys: hostById.keys.toSet(),
       readLocal: (String bookKey) async => (
         positionMs:
             await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0),
         updatedAtMs:
             await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0),
       ),
-      readHost: (String bookKey) => backend.remoteAudiobookPosition(bookKey),
+      // 新 host 清单已内联断点（互联完整支持批次）→ 免逐本 GET；旧 host 清单无此
+      // 字段（0@0）→ 退回逐本 GET（真无进度的书多打一次也无害，幂等）。
+      readHost: (String bookKey) async {
+        final RemoteAudiobookInfo info = hostById[bookKey]!;
+        if (info.positionUpdatedAtMs > 0) {
+          return (
+            positionMs: info.positionMs,
+            updatedAtMs: info.positionUpdatedAtMs,
+          );
+        }
+        return backend.remoteAudiobookPosition(bookKey);
+      },
       pushToHost: (String bookKey, int positionMs, int updatedAtMs) =>
           backend.putRemoteAudiobookPosition(bookKey, positionMs, updatedAtMs),
       writeBackLocal: (String bookKey, int positionMs, int updatedAtMs) async {
@@ -1871,6 +2005,36 @@ class SyncOrchestrator {
             audiobookPositionAtPrefKey(bookKey), updatedAtMs);
       },
     );
+
+    // 有声书调轴双向收敛（互联完整支持批次；与视频 delay sweep 同范式）。
+    // 「严格较新时间戳者胜」；两侧都无戳（旧数据/从未调过）无事可做。旧 host 无
+    // /delay 端点 → push 404 静默吞（best-effort，不刷 report 噪音）。
+    for (final String identity in localKeys) {
+      final RemoteAudiobookInfo? info = hostById[identity];
+      if (info == null) continue;
+      try {
+        final int localDelay =
+            await _db.getPrefTyped<int>(audiobookDelayPrefKey(identity), 0);
+        final int localAt =
+            await _db.getPrefTyped<int>(audiobookDelayAtPrefKey(identity), 0);
+        if (localAt > info.delayUpdatedAtMs) {
+          try {
+            await backend.putRemoteAudiobookDelay(
+                identity, localDelay, localAt);
+          } catch (e) {
+            debugPrint(
+                '[SyncOrchestrator] audiobook delay push "$identity" failed: $e');
+          }
+        } else if (info.delayUpdatedAtMs > localAt) {
+          await _db.setPrefTyped<int>(
+              audiobookDelayPrefKey(identity), info.delayMs);
+          await _db.setPrefTyped<int>(
+              audiobookDelayAtPrefKey(identity), info.delayUpdatedAtMs);
+        }
+      } catch (e) {
+        report.noteError('live audiobook delay "$identity"', e);
+      }
+    }
   }
 
   /// 测试入口：直接调用 [_syncBookProgressLive]。

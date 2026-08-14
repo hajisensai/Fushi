@@ -84,6 +84,7 @@ class GalHookMiningCoordinator {
         _textService = textService ?? TexthookerService.instance,
         _engine = engine ?? ImmersionMiningEngine(),
         _captureGif = captureGif ?? _defaultCaptureGif,
+        _captureGifUsesDefault = captureGif == null,
         _captureStill = captureStill ?? WindowCaptureChannel.captureWindow,
         _createTempDirectory =
             createTempDirectory ?? _defaultCreateTempDirectory {
@@ -99,6 +100,7 @@ class GalHookMiningCoordinator {
   final TexthookerService _textService;
   final ImmersionMiningEngine _engine;
   final GalHookGifCapture _captureGif;
+  final bool _captureGifUsesDefault;
   final GalHookStillCapture _captureStill;
   final GalHookTempDirectoryFactory _createTempDirectory;
   late final GalHookLineLookup _lineLookup;
@@ -148,6 +150,7 @@ class GalHookMiningCoordinator {
   Future<GalHookMiningResult> mineLine({
     required String lineId,
     required Map<String, String> fields,
+    String? sentenceOverride,
     required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     int? updateNoteId,
@@ -157,18 +160,23 @@ class GalHookMiningCoordinator {
     VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
     // 缺省 gif = 旧行为逐字等价；调用方透传 [AppModel.galMiningAnimatedFormat]（默认 avif）。
     MiningAnimatedFormat animatedFormat = MiningAnimatedFormat.gif,
+    // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
+    // 里的查词层，不需要也不应触发这条屏障。
+    GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) {
     // 串行化 + 永不毒化（BUG-956）：单次制卡异常（含错误日志自身抛）不得让后续制卡永久挂起。
     return _miningQueue.enqueue<GalHookMiningResult>(
       () => _mineLineNow(
         lineId: lineId,
         fields: fields,
+        sentenceOverride: sentenceOverride,
         compression: compression,
         repo: repo,
         updateNoteId: updateNoteId,
         addTitleTag: addTitleTag,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
+        captureLeaseFactory: captureLeaseFactory,
       ),
       buildFailure: (Object error, StackTrace stack) =>
           GalHookMiningResult(failureReason: error.toString()),
@@ -183,12 +191,14 @@ class GalHookMiningCoordinator {
   Future<GalHookMiningResult> _mineLineNow({
     required String lineId,
     required Map<String, String> fields,
+    required String? sentenceOverride,
     required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     required int? updateNoteId,
     required bool addTitleTag,
     required VideoMiningImageMode imageMode,
     required MiningAnimatedFormat animatedFormat,
+    required GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
     if (entry == null || !_lineValidator(entry)) {
@@ -204,8 +214,14 @@ class GalHookMiningCoordinator {
       );
     }
 
+    // 游戏内 TextRender 命中拿到的是屏上净句；选中的文本线程可能带脚本文件名、
+    // hook 元数据或整句重复。lineId 仍负责锁定截图/音频生命周期，但卡片正文必须
+    // 优先使用命中时的净句，不能把传感器载荷写进 Sentence。
+    final String effectiveSentence = sentenceOverride?.trim().isNotEmpty == true
+        ? sentenceOverride!.trim()
+        : entry.text;
     final Map<String, String> effectiveFields = Map<String, String>.from(fields)
-      ..['sentence'] = entry.text;
+      ..['sentence'] = effectiveSentence;
     await writeDictionaryMediaCache(
       effectiveFields['dictionaryMedia'] ?? '',
     );
@@ -227,7 +243,10 @@ class GalHookMiningCoordinator {
     // 单帧截图：GIF 模式下是降级路径，静态模式下是**主路径**。两条路径共用同一份
     // 诊断留痕（BUG-1096：WGC 光标抑制是否生效 / 是否从 Magpie 缩放窗重定向回源窗）。
     Future<WindowCaptureResult> captureStillWithDiagnostics() async {
-      final WindowCaptureResult still = await _captureStill(window.hwnd);
+      final WindowCaptureResult still = await _captureWithLease(
+        captureLeaseFactory,
+        () => _captureStill(window.hwnd),
+      );
       final String? diagnostics = still.diagnostics;
       if (diagnostics != null && diagnostics.isNotEmpty) {
         ErrorLogService.instance.log(
@@ -254,6 +273,9 @@ class GalHookMiningCoordinator {
     StackTrace? audioStack;
     final Future<Uint8List?> audioFuture = _captureAudio(
       lineId: entry.id,
+      // 音频层用 lineId + 原始文本做严格会话校验。内嵌 popup 的
+      // sentenceOverride 只负责写进卡片；它可能已去掉 `.ks` 元数据或折叠重复句，
+      // 不能拿来和文本线程载荷逐字比较，否则当前这类合法绑定会被误判 unavailable。
       sentence: entry.text,
       outputExtension: audioExtension,
     ).catchError((Object e, StackTrace st) {
@@ -280,10 +302,23 @@ class GalHookMiningCoordinator {
       coverBytes = shrunk.bytes;
       coverName = shrunk.name;
     } else {
-      final GalWindowAnimatedCapture? animated = await _captureGif(
-        hwnd: window.hwnd,
-        format: animatedFormat,
-      );
+      final GalWindowAnimatedCapture? animated;
+      if (_captureGifUsesDefault) {
+        // 生产 GIF 路径把 lease 精确放进连续 WGC 采样循环：最后一帧落盘就恢复，
+        // 不把后续可能耗时 60 秒的 ffmpeg 编码算作「正在截图」。
+        animated = await captureWindowGifBytes(
+          hwnd: window.hwnd,
+          format: animatedFormat,
+          captureLeaseFactory: captureLeaseFactory,
+        );
+      } else {
+        // 测试/替代捕获器保留原有二参数 typedef；它没有可观察的「采样完成、开始
+        // 编码」边界，只能把注入的捕获 Future 当成一个采样单元。
+        animated = await _captureWithLease(
+          captureLeaseFactory,
+          () => _captureGif(hwnd: window.hwnd, format: animatedFormat),
+        );
+      }
       // 文件名一律取**实际产出格式**而非用户所选：捕获内部会在编码器缺失时降级 GIF，
       // 按所选格式拼名会写出 `.avif` 里装 GIF 字节的卡（Anki 按扩展名判 MIME → 图不显示）。
       coverBytes = animated?.bytes;
@@ -328,7 +363,7 @@ class GalHookMiningCoordinator {
       final ImmersionMiningResult mined = await _engine.mine(
         buildExternalWindowRequest(
           fields: effectiveFields,
-          sentence: entry.text,
+          sentence: effectiveSentence,
           screenshotBytes: coverBytes,
           coverName: coverName,
           audioBytes: audioBytes,
@@ -409,6 +444,18 @@ class GalHookMiningCoordinator {
         stack,
       );
       return const <String>[];
+    }
+  }
+
+  static Future<T> _captureWithLease<T>(
+    GalHookCaptureLeaseFactory? factory,
+    Future<T> Function() capture,
+  ) async {
+    final GalHookCaptureLease? lease = factory == null ? null : await factory();
+    try {
+      return await capture();
+    } finally {
+      if (lease != null) await lease.release();
     }
   }
 }

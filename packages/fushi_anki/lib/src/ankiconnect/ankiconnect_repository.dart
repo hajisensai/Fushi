@@ -15,6 +15,7 @@ import '../anki_note_type_definition.dart';
 import '../base_anki_repository.dart';
 import '../lapis_note_type.dart';
 import '../lapis_styling.dart';
+import 'anki_desktop_foreground.dart';
 import 'ankiconnect_service.dart';
 
 const int _uint32Mask = 0xffffffff;
@@ -1137,11 +1138,23 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }
 
   // TODO-1007/1008：在 Anki 桌面端打开浏览器并选中该 note（guiBrowse(nid:<id>)）。
+  //
+  // 光发 guiBrowse 不够：Anki 若已经在后台开着「浏览」窗口，它内部只是 raise 一个
+  // **已存在**的窗口，会被 Windows 前台锁定降级成「闪任务栏」而不真正跳出来。解锁
+  // 权握在此刻的前台进程（用户刚点按钮的 Hibiki）手里，所以在这里前后各夹一步
+  // 让渡/兜底，机制详见 [AnkiDesktopForeground]。
+  //
+  // 只对本机 Anki 生效：host 非 loopback 时说的是另一台机器上的 AnkiConnect，
+  // 去激活本机窗口毫无意义。
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
       final service = await _getService();
+      final int? ankiPid = ankiConnectHostIsLoopback(service.host)
+          ? AnkiDesktopForeground.grantForegroundToAnki()
+          : null;
       await service.guiBrowse(noteId);
+      await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);
       return true;
     } catch (e, stack) {
       debugPrint('AnkiConnectRepository.openNoteInAnki: $e');

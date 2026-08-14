@@ -195,25 +195,33 @@ void main() {
     expect(jsonEncode(pushedJson), contains('Book B'));
   });
 
-  test('全部条目都被立碑时不推空快照', () async {
+  test('全部条目都被立碑时仍要推（纯墓碑快照 = 删除传播的载体）', () async {
+    // 语义更新（互联完整支持批次）：旧行为「全被立碑 → 裁剪成空 → 不推」正是
+    // 「取消收藏永远传不到对端」的缺口一环。现在墓碑本身是快照的 additive 家族，
+    // 纯删除也必须上行——对端 fold 时按 deletedAt vs createdAt 仲裁移除。
     final FushiDatabase db = await _freshDb('agg_push_allgone_');
     addTearDown(db.close);
     final FavoriteSentence sentence = _sentence();
     await db.writeSyncDeletionTombstone(
       kFavoriteSentenceTombstoneType,
       FavoriteSentenceRepository.itemKeyOf(sentence),
-      2000,
+      // 大于句 createdAt（_sentence 的 createdAt 远早于此），删除仲裁必胜。
+      DateTime.now().millisecondsSinceEpoch,
     );
 
-    bool pushCalled = false;
+    Object? pushedJson;
     await AggregateSyncService(db).syncOverClient(
       fetchRemote: () async =>
           AggregateSnapshot(favoriteSentences: <FavoriteSentence>[sentence])
               .toJson(),
       pushMerged: (Object json) async {
-        pushCalled = true;
+        pushedJson = json;
       },
     );
-    expect(pushCalled, isFalse);
+    expect(pushedJson, isNotNull, reason: '纯删除也必须上行');
+    final AggregateSnapshot outgoing = AggregateSnapshot.fromJson(pushedJson);
+    expect(outgoing.favoriteSentences, isEmpty, reason: '被墓碑压制的句不得复活上行');
+    expect(outgoing.favoriteSentenceTombstones, hasLength(1),
+        reason: '墓碑随快照传播，对端据此移除同键收藏句');
   });
 }

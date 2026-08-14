@@ -45,8 +45,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 远端条目」的用户仍然全额付网络代价，只是结果被丢弃。门控前移到取数之前。
   /// 用 `appModelNoUpdate`（不 watch）：本门控只读 prefsRepo，与 AppModel 的通知无关；
   /// 而本 getter 会在 prefsRepo 回调等非 build 时机被调用，那里 `ref.watch` 非法。
+  /// 互联完整支持批次：漫画书架不再被排除在远端之外——host 的漫画（format='manga'
+  /// + hasMangaContent）以占位卡出现在漫画书架并可下载（漫画包通道）。BUG-1181 担心
+  /// 的「双份拉取浪费」由共享 TTL 缓存（BUG-1180）吸收：两个书架命中同一份清单。
   bool get _shouldLoadRemoteBooks =>
-      !_mangaOnly && appModelNoUpdate.prefsRepo.showRemoteEntries;
+      appModelNoUpdate.prefsRepo.showRemoteEntries;
 
   Future<_RemoteBookState?> _loadRemoteBooks(
       {bool forceRefresh = false}) async {
@@ -75,16 +78,26 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           await appModel.database.getAllEpubBooks();
       final Set<String> localKeys =
           localBooks.map((EpubBookRow r) => r.bookKey).toSet();
-      final List<RemoteBookInfo> withContent =
-          books.where((RemoteBookInfo book) => book.hasContent).toList();
+      // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
+      // 书架 = 可下载漫画（format='manga' + hasMangaContent，漫画包通道）。两架互斥，
+      // 同一条目绝不重复出现。
+      final List<RemoteBookInfo> withContent = _mangaOnly
+          ? books
+              .where((RemoteBookInfo book) =>
+                  book.format == BookFormat.manga.dbValue &&
+                  book.hasMangaContent)
+              .toList()
+          : books.where((RemoteBookInfo book) => book.hasContent).toList();
       // 纯 SRT（standalone）远端有声书：仅互联后端有 live 有声书 API。列出对端全部
       // 有声书，只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项，
       // 作为可下载占位卡。云盘后端无此 API → 空列表（占位卡不出现，与能力边界一致）。
-      final List<RemoteAudiobookInfo> remoteSrt =
-          await _loadStandaloneRemoteSrtAudiobooks(
-        client,
-        forceRefresh: forceRefresh,
-      );
+      // 漫画书架与有声书无交集，恒空。
+      final List<RemoteAudiobookInfo> remoteSrt = _mangaOnly
+          ? const <RemoteAudiobookInfo>[]
+          : await _loadStandaloneRemoteSrtAudiobooks(
+              client,
+              forceRefresh: forceRefresh,
+            );
       return _RemoteBookState(
         books: dedupeRemoteBooks(
           remote: withContent,
@@ -420,7 +433,25 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           _rebuild(() => _downloadingBooks[book.title] = scaled);
         },
       );
-      final String? localBookKey = await _importRemoteBookFile(dest);
+      final String? localBookKey =
+          await _importRemoteBookFile(dest, mangaTitleHint: book.title);
+      // 漫画：把 host 端按本阅读模式作为初始值落地（互联完整支持批次；一次性，
+      // 之后两端各自记忆）。best-effort，不阻塞下载主流程。
+      if (localBookKey != null &&
+          book.format == BookFormat.manga.dbValue &&
+          book.mangaReadingMode != null) {
+        try {
+          final FushiDatabase db = appModel.database;
+          await (db.update(db.epubBooks)
+                ..where(($EpubBooksTable t) => t.bookKey.equals(localBookKey)))
+              .write(EpubBooksCompanion(
+            mangaReadingMode: Value<String?>(book.mangaReadingMode),
+          ));
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+              'ReaderFushiHistoryPage.adoptRemoteMangaReadingMode', e, stack);
+        }
+      }
       // v83：旧「远端书下载后 bookKey 漂移改键迁移」（TODO-616 §0🔴2）已删——
       // epub 域 entryKey 换稳定 uid 后导入时刻定死；且该路径删除前已恒 no-op
       //（能建 downloadId 行的写入方早随 shelf_reorder_page 消亡）。
@@ -927,6 +958,25 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     try {
       if (audioTmp.existsSync()) audioTmp.deleteSync();
     } catch (_) {/* best-effort */}
+    // BUG-1637：下载后回填 host 端听书断点（与 srt-backed 路径的
+    // [_downloadRemoteBookProgress] 有声书段对称——此前纯 SRT 下载完从 0 开始，
+    // 且 sweep 交集键 bug 让它之后也永远同步不上）。standalone 的 identity=uid
+    // 恰为本地 `audiobook_pos_<uid>` 进度键，写穿即正确命名空间。best-effort。
+    try {
+      final ({int positionMs, int updatedAtMs}) pos =
+          await client.remoteAudiobookPosition(book.identity);
+      if (pos.updatedAtMs > 0) {
+        await appModel.database.setPrefTyped<int>(
+            audiobookPositionPrefKey(book.identity), pos.positionMs);
+        await appModel.database.setPrefTyped<int>(
+            audiobookPositionAtPrefKey(book.identity), pos.updatedAtMs);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+          'ReaderFushiHistoryPage.downloadRemoteSrtAudiobookPosition',
+          e,
+          stack);
+    }
     if (!mounted) {
       _downloadingBooks.remove(dlKey);
       return;
@@ -976,11 +1026,24 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 导入下载到本地的 EPUB，返回本地入库的 bookKey（= `sanitizeTtuFilename`
   /// 后的存储标题，可能因同名冲突重命名而与远端书名派生 key 不同）。注入的测试
   /// importer 不返回 key 时返回 null（音频接线据此降级跳过 override 绑定）。
-  Future<String?> _importRemoteBookFile(File file) async {
+  Future<String?> _importRemoteBookFile(File file,
+      {String? mangaTitleHint}) async {
     final Future<String?> Function(File file)? injected =
         _pageWidget.remoteBookImporter;
     if (injected != null) {
       return injected(file);
+    }
+    // 互联完整支持批次：漫画包内容嗅探（zip 根含 manga.json = 书目录整树包）→
+    // 走 MangaImporter 既有两遍式校验落库；否则按 EPUB。与 host 侧
+    // importBookFromFile 的嗅探完全同语义（内容即真相，扩展名不参与判定）。
+    // 标题用 [mangaTitleHint]（远端 raw title——身份键 bookKey 由它派生）而非本地
+    // 临时文件名（`_safeRemoteBookKey` 已把非 ASCII 打成下划线，用它当标题会漂键）。
+    if (await isMangaPackage(file)) {
+      return importMangaPackageFile(
+        db: appModel.database,
+        file: file,
+        title: mangaTitleHint,
+      );
     }
     return EpubImporter.importFromPath(
       db: appModel.database,

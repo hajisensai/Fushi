@@ -606,6 +606,18 @@ int IntFromValue(const flutter::EncodableMap* args, const char* key,
   return static_cast<int>(it->second.TryGetLongValue().value_or(fallback));
 }
 
+int64_t Int64FromValue(const flutter::EncodableMap* args, const char* key,
+                       int64_t fallback) {
+  if (args == nullptr) {
+    return fallback;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return fallback;
+  }
+  return it->second.TryGetLongValue().value_or(fallback);
+}
+
 bool BoolFromValue(const flutter::EncodableMap* args, const char* key,
                    bool fallback) {
   if (args == nullptr) {
@@ -656,6 +668,47 @@ std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
   }
   const auto* s = std::get_if<std::string>(&it->second);
   return s != nullptr ? *s : fallback;
+}
+
+void BindRouteContext(GlobalLookupWindow* window,
+                      const flutter::EncodableMap* args,
+                      const std::string& fallback_source) {
+  if (window == nullptr) {
+    return;
+  }
+  std::string source = StringFromValue(args, "source", fallback_source);
+  if (source != "desktop" && source != "galCard") {
+    source = fallback_source;
+  }
+  window->SetRouteContext(std::move(source),
+                          Int64FromValue(args, "routeEpoch", 0),
+                          Int64FromValue(args, "lookupEpoch", 0));
+}
+
+std::unique_ptr<flutter::EncodableValue> RoutedPayloadEnvelope(
+    const std::string& payload,
+    const GlobalLookupWindow::RouteContext& route) {
+  return std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {flutter::EncodableValue("payload"), flutter::EncodableValue(payload)},
+      {flutter::EncodableValue("source"),
+       flutter::EncodableValue(route.source)},
+      {flutter::EncodableValue("routeEpoch"),
+       flutter::EncodableValue(route.route_epoch)},
+      {flutter::EncodableValue("lookupEpoch"),
+       flutter::EncodableValue(route.lookup_epoch)},
+  });
+}
+
+std::unique_ptr<flutter::EncodableValue> RoutedHiddenEnvelope(
+    const GlobalLookupWindow::RouteContext& route) {
+  return std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {flutter::EncodableValue("source"),
+       flutter::EncodableValue(route.source)},
+      {flutter::EncodableValue("routeEpoch"),
+       flutter::EncodableValue(route.route_epoch)},
+      {flutter::EncodableValue("lookupEpoch"),
+       flutter::EncodableValue(route.lookup_epoch)},
+  });
 }
 
 // 解包可选的注音区间列表（`[{start, length, ruby}, ...]`）。
@@ -1084,8 +1137,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
       [this](uint32_t kind, int32_t x, int32_t y, int32_t wheel,
              uint32_t keys) {
         GlobalLookupWindow* card = EnsureGalLookupCardWindow();
-        if (card == nullptr) return;
-        card->InjectLookupInput(kind, x, y, wheel, keys);
+        if (card == nullptr) return false;
+        return card->InjectLookupInput(kind, x, y, wheel, keys);
       });
 
   gal_hook_text_channel_->SetMethodCallHandler(
@@ -1215,6 +1268,22 @@ GlobalLookupWindow* FlutterWindow::EnsureGalLookupCardWindow() {
                                              std::move(result));
       });
 
+  // The embedded card reuses the complete Fushi popup, not just its pixels.
+  // Route its JS bridge through the same Dart controller so audio, mining,
+  // nested lookup, and popup dismissal retain their normal semantics while the
+  // HWND itself remains off-screen.
+  gal_lookup_card_window_->SetMessageCallback(
+      [this](const std::string& json,
+             const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "jsMessage", RoutedPayloadEnvelope(json, route));
+      });
+  gal_lookup_card_window_->SetHiddenCallback(
+      [this](const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "overlayHidden", RoutedHiddenEnvelope(route));
+      });
+
   // WebView2 起不来必须能被看见。否则症状是「游戏内查词永远没反应」，而真因在 native
   // 环境创建失败——和「hook 没装上」「host 没投帧」三者同形，真机上分不开。
   gal_lookup_card_window_->SetErrorCallback([this](const std::string& message) {
@@ -1224,8 +1293,8 @@ GlobalLookupWindow* FlutterWindow::EnsureGalLookupCardWindow() {
             std::string("gal-lookup-card: ") + message));
   });
 
-  // 只离屏预热，从不 ShowAt——这个实例的像素只经共享内存进游戏，永远不作为窗口出现。
-  // owner 传 nullptr，与另外两个实例同源解耦，不把主窗拉到前台。
+  // 先离屏预热；真正查词时同一实例仍只走 ShowAt/ResizeOffscreen 进行布局和取帧，
+  // 从不 Reveal 到桌面。owner 传 nullptr，与另外两个实例同源解耦，不把主窗拉到前台。
   gal_lookup_card_window_->PrewarmWebView(480, 360, nullptr);
   return gal_lookup_card_window_.get();
 }
@@ -1268,10 +1337,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
       });
 
   // JS postMessage (dismiss / audio handlers) -> Dart.
-  global_lookup_window_->SetMessageCallback([this](const std::string& json) {
-    global_lookup_channel_->InvokeMethod(
-        "jsMessage", std::make_unique<flutter::EncodableValue>(json));
-  });
+  global_lookup_window_->SetMessageCallback(
+      [this](const std::string& json,
+             const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "jsMessage", RoutedPayloadEnvelope(json, route));
+      });
 
   // TODO-1153 -- native overlay bring-up errors (WebView2 environment/controller
   // create failure) -> Dart, so ErrorLogService surfaces "app-external lookup
@@ -1288,10 +1359,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
   // the controller's own reveal-state reset can hang off it. Not fired for the
   // programmatic reset Hide(false) before a fresh lookup (see the "hide" method
   // below + GlobalLookupWindow::Hide). Fires on the platform thread.
-  global_lookup_window_->SetHiddenCallback([this]() {
-    global_lookup_channel_->InvokeMethod(
-        "overlayHidden", std::make_unique<flutter::EncodableValue>());
-  });
+  global_lookup_window_->SetHiddenCallback(
+      [this](const GlobalLookupWindow::RouteContext& route) {
+        global_lookup_channel_->InvokeMethod(
+            "overlayHidden", RoutedHiddenEnvelope(route));
+      });
 
   global_lookup_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -1299,10 +1371,29 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                  result) {
         const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
         const std::string& method = call.method_name();
+        // 同一套查词管线要能驱动**两个**窗口：可见的桌面浮窗，以及游戏内查词专用的
+        // 离屏卡片窗（`target: "galCard"`）。
+        //
+        // 🔴 之前离屏窗只被 EnsureGalLookupCardWindow 建出来并预热，**没有任何一处
+        // 往它里面塞过内容**；而 Dart 侧查词走的是可见浮窗。结果就是：桌面弹出浮窗
+        // （用户看到的那个），投进游戏的却是那张 480x360 的空白预热页——"游戏内渲染"
+        // 从头到尾没有内容。渲染器建好却没接上，是本 PR 的核心接线缺失。
+        GlobalLookupWindow* win = global_lookup_window_.get();
+        if (StringFromValue(args, "target", "") == "galCard") {
+          win = EnsureGalLookupCardWindow();
+          if (win == nullptr) {
+            result->Error("gal_card_unavailable",
+                          "in-game lookup card window is not available");
+            return;
+          }
+        }
+        BindRouteContext(win, args,
+                         win == gal_lookup_card_window_.get() ? "galCard"
+                                                             : "desktop");
 
         if (method == "prepare") {
           const std::wstring assets_dir = WideFromValue(args, "assetsDir", L"");
-          global_lookup_window_->SetPopupAssetsDir(assets_dir);
+          win->SetPopupAssetsDir(assets_dir);
           // v14：游戏内查词卡片用同一份 popup 资源，但它懒建于「用户开启游戏内查词」，
           // 那时 Dart 不会再发一次 prepare。留存一份，别让第三个实例拿着空目录起来。
           popup_assets_dir_ = assets_dir;
@@ -1313,7 +1404,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // create-chain race that left the popup blank / self-closed).
           // nullptr owner：与 showAt 同源解耦（无 owner，不拉主窗前台）。prewarm
           // 与 showAt 的 owner 必须一致，否则 ForgetDeadWindow 重建时 owner 漂移。
-          global_lookup_window_->PrewarmWebView(
+          win->PrewarmWebView(
               IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), nullptr);
           result->Success();
@@ -1321,7 +1412,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // TODO-1079 — the ready-driven reveal fallback confirms the WebView2
           // finished its initial navigation before revealing (else it defers).
           result->Success(flutter::EncodableValue(
-              global_lookup_window_->IsWebViewReady()));
+              win->IsWebViewReady()));
         } else if (method == "showAt") {
           int x = IntFromValue(args, "x", 0);
           int y = IntFromValue(args, "y", 0);
@@ -1341,7 +1432,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // 用户诉求=悬浮字幕点词等 app 外查词绝不该夺前台（覆盖窗 §5 契约）：
           // 瞬态窗也解耦成无 owner，与面板一致。短命窗（点外/前台切换即经
           // arm_dismiss_hooks 自关），主窗最小化时照样收纳，无孤儿窗回归。
-          const bool ok = global_lookup_window_->ShowAt(
+          const bool ok = win->ShowAt(
               x, y, IntFromValue(args, "width", 420),
               IntFromValue(args, "height", 600), nullptr);
           // TODO-893 (symptom 2) — report the CURSOR MONITOR work area
@@ -1386,6 +1477,20 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
             cursor_work_y = y - mi.rcWork.top;
             monitor_dpr = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
           }
+          // 🔴 布局工作区上限（游戏内查词专用）。卡片最终画在**游戏画面**里，可用
+          // 空间是游戏视口，不是这块显示器的工作区。不覆盖的话弹窗按 2560x1440 排版，
+          // 排完再被缩到卡片尺寸，而取帧超尺寸时是**裁不是缩**——真机表现为工具栏与
+          // 第三栏词典被切在画面外，看起来像"少了很多功能"，其实只是没进画面。
+          const int cap_w = IntFromValue(args, "capW", 0);
+          const int cap_h = IntFromValue(args, "capH", 0);
+          if (cap_w > 0 && cap_h > 0) {
+            work_w = cap_w;
+            work_h = cap_h;
+            // 卡片在游戏里的落点由 hook 按 anchor 决定，与 Windows 光标所在显示器
+            // 无关；工作区原点因此就是卡片原点。
+            cursor_work_x = 0;
+            cursor_work_y = 0;
+          }
           flutter::EncodableMap reply = {
               {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
               {flutter::EncodableValue("workW"),
@@ -1401,28 +1506,50 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           };
           result->Success(flutter::EncodableValue(reply));
         } else if (method == "render") {
-          global_lookup_window_->RenderJson(StringFromValue(args, "json", ""));
+          win->RenderJson(StringFromValue(args, "json", ""));
           result->Success();
         } else if (method == "resize") {
-          global_lookup_window_->ResizeTo(IntFromValue(args, "width", 0),
-                                          IntFromValue(args, "height", 0));
+          if (win == gal_lookup_card_window_.get()) {
+            win->ResizeOffscreen(IntFromValue(args, "width", 0),
+                                 IntFromValue(args, "height", 0));
+          } else {
+            win->ResizeTo(IntFromValue(args, "width", 0),
+                          IntFromValue(args, "height", 0));
+          }
           result->Success();
         } else if (method == "reveal") {
-          global_lookup_window_->Reveal(IntFromValue(args, "width", 0),
-                                        IntFromValue(args, "height", 0));
+          // 🔴 游戏内卡片窗**永远不上屏**：reveal 是"把离屏渲染好的窗口挪到屏幕上"
+          // 这一步，对它只保留定尺寸。放过去就等于把桌面浮窗换成另一个桌面浮窗，
+          // 用户要的恰恰是别弹窗。卡片像素由 CaptureBgraAsync 取走后投进游戏图层。
+          if (win == gal_lookup_card_window_.get()) {
+            win->ResizeOffscreen(IntFromValue(args, "width", 0),
+                                 IntFromValue(args, "height", 0));
+          } else {
+            win->Reveal(IntFromValue(args, "width", 0),
+                        IntFromValue(args, "height", 0));
+          }
           result->Success();
         } else if (method == "revealStack") {
           // TODO-867 P3c E1 — reveal/resize to the nested-stack union bbox.
-          global_lookup_window_->RevealStack(
-              IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
-              IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
-              DoubleFromValue(args, "left", 0.0),
-              DoubleFromValue(args, "top", 0.0));
+          if (win == gal_lookup_card_window_.get()) {
+            // 同上：嵌套栈只更新离屏尺寸与 host layer 位移，不上屏。
+            win->ResizeStackOffscreen(
+                IntFromValue(args, "width", 0),
+                IntFromValue(args, "height", 0),
+                DoubleFromValue(args, "left", 0.0),
+                DoubleFromValue(args, "top", 0.0));
+          } else {
+            win->RevealStack(
+                IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
+                IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
+                DoubleFromValue(args, "left", 0.0),
+                DoubleFromValue(args, "top", 0.0));
+          }
           result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
           // literal string (jsonEncode'd in Dart): pass it straight through.
-          global_lookup_window_->ResolveBridge(
+          win->ResolveBridge(
               IntFromValue(args, "id", 0),
               StringFromValue(args, "value", "null"));
           result->Success();
@@ -1430,17 +1557,17 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           // TODO-1233 -- notify defaults true (genuine dismiss); the controller
           // passes notify=false for the reset that precedes a fresh lookup so it
           // does not fire overlayHidden between two lookups.
-          global_lookup_window_->Hide(BoolFromValue(args, "notify", true));
+          win->Hide(BoolFromValue(args, "notify", true));
           result->Success();
         } else if (method == "isShowing") {
           result->Success(
-              flutter::EncodableValue(global_lookup_window_->IsShowing()));
+              flutter::EncodableValue(win->IsShowing()));
         } else if (method == "setBlockCapture") {
           // 防截屏 — 与剪贴板面板同口径（WDA_EXCLUDEFROMCAPTURE）：瞬态查词窗
           // 对用户可见但不进截图 / 录屏 / 屏幕共享。GlobalLookupWindow 记住该值，
           // 窗口重建后由 ApplyBlockCapture 自动重加（同一 pref
           // clipboardPanelBlockCapture，默认 true）。
-          global_lookup_window_->SetBlockCapture(
+          win->SetBlockCapture(
               BoolFromValue(args, "block", true));
           result->Success();
         } else {
@@ -1511,20 +1638,23 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
                                                std::move(result));
       });
 
-  clipboard_panel_window_->SetMessageCallback([this](const std::string& json) {
-    clipboard_panel_channel_->InvokeMethod(
-        "jsMessage", std::make_unique<flutter::EncodableValue>(json));
-  });
+  clipboard_panel_window_->SetMessageCallback(
+      [this](const std::string& json,
+             const GlobalLookupWindow::RouteContext&) {
+        clipboard_panel_channel_->InvokeMethod(
+            "jsMessage", std::make_unique<flutter::EncodableValue>(json));
+      });
 
   clipboard_panel_window_->SetErrorCallback([this](const std::string& message) {
     clipboard_panel_channel_->InvokeMethod(
         "nativeError", std::make_unique<flutter::EncodableValue>(message));
   });
 
-  clipboard_panel_window_->SetHiddenCallback([this]() {
-    clipboard_panel_channel_->InvokeMethod(
-        "overlayHidden", std::make_unique<flutter::EncodableValue>());
-  });
+  clipboard_panel_window_->SetHiddenCallback(
+      [this](const GlobalLookupWindow::RouteContext&) {
+        clipboard_panel_channel_->InvokeMethod(
+            "overlayHidden", std::make_unique<flutter::EncodableValue>());
+      });
 
   clipboard_panel_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -1532,6 +1662,7 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
                  result) {
         const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
         const std::string& method = call.method_name();
+        BindRouteContext(clipboard_panel_window_.get(), args, "desktop");
 
         if (method == "prepare") {
           clipboard_panel_window_->SetPopupAssetsDir(

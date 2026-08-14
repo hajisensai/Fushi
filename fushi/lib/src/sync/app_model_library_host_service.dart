@@ -15,6 +15,13 @@ import 'package:fushi/src/media/media_source.dart'
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi/src/media/video/series_playback_prefs.dart'
+    show
+        effectiveSeriesAudioTrackId,
+        effectiveSeriesDelayMs,
+        effectiveSeriesSecondaryDelayMs;
+import 'package:fushi/src/sync/manga_sync_package.dart'
+    show kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -58,6 +65,8 @@ class AppModelLibraryHostService
         FushiLibraryHostService,
         DeletionTombstoneHost,
         VideoDeletionHost,
+        VideoPlaybackSyncHost,
+        AudiobookDelayHost,
         InterconnectServiceConfigHost {
   AppModelLibraryHostService({
     required FushiDatabase db,
@@ -265,11 +274,26 @@ class AppModelLibraryHostService
   /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。每个被引用
   /// 合集只 [getCollectionItems] 一次，避免逐条目 N+1。
   Future<Map<String, RemoteCollectionMembership>>
-      _primaryCollectionMembership() async {
+      _primaryCollectionMembership() async =>
+          (await _primaryCollectionData()).membership;
+
+  /// [_primaryCollectionMembership] 的富版本：同一趟查询顺带产出
+  /// `'<mediaType>|<entryKey>'` → 主归属合集**行**（[MediaCollectionRow]）的映射，
+  /// 供 listVideos 解析系列级播放偏好（`subtitleDelayMs` / `audioTrackId`，schema
+  /// v52「同系列共享」——此前清单只读 row 级值，host 在合集里调的轴/选的音轨
+  /// 远端永远看不到）。
+  Future<
+      ({
+        Map<String, RemoteCollectionMembership> membership,
+        Map<String, MediaCollectionRow> collectionByEntry,
+      })> _primaryCollectionData() async {
     final Map<String, int> primaryByEntry =
         await _db.getPrimaryCollectionIdByEntry();
     if (primaryByEntry.isEmpty) {
-      return const <String, RemoteCollectionMembership>{};
+      return (
+        membership: const <String, RemoteCollectionMembership>{},
+        collectionByEntry: const <String, MediaCollectionRow>{},
+      );
     }
     final Map<int, MediaCollectionRow> collectionsById =
         <int, MediaCollectionRow>{
@@ -278,6 +302,8 @@ class AppModelLibraryHostService
     };
     final Map<String, RemoteCollectionMembership> out =
         <String, RemoteCollectionMembership>{};
+    final Map<String, MediaCollectionRow> rowByEntry =
+        <String, MediaCollectionRow>{};
     // 只遍历真正承载某条目主归属的合集（按 id 去重），逐合集取一次成员行。
     for (final int cid in primaryByEntry.values.toSet()) {
       final MediaCollectionRow? col = collectionsById[cid];
@@ -294,9 +320,10 @@ class AppModelLibraryHostService
           collectionType: col.collectionType,
           sortIndex: item.sortIndex,
         );
+        rowByEntry[key] = col;
       }
     }
-    return out;
+    return (membership: out, collectionByEntry: rowByEntry);
   }
 
   /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
@@ -353,6 +380,7 @@ class AppModelLibraryHostService
         extractDir: r.extractDir,
         coverPath: r.coverPath,
       );
+      final BookFormat format = BookFormat.parseOrEpub(r.format);
       return RemoteBookInfo(
         title: r.title,
         // BUG-1488：只在真改过名时非 null（toJson 亦只在与 title 不同时写键）。
@@ -360,7 +388,17 @@ class AppModelLibraryHostService
         // BUG-1502：改名时刻随行，让 client 端做 LWW 而不是 insert-if-absent。
         displayTitleAt: overrideTitles[r.bookKey]?.updatedAt ?? 0,
         bookKey: r.bookKey,
-        hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
+        // hasContent（EPUB 内容树可导出）按 format 门控（互联完整支持批次）：由
+        // EPUB 转化来的漫画行 extractDir 里仍留着 EPUB 解压树，旧判据会把它当可
+        // 下载 EPUB 打包——把整套页图 + manga.json 塞进 zip，client 落地成一本
+        // 夹带全部页图的「文字书」、漫画身份静默丢失（坏包）。漫画内容走
+        // hasMangaContent + 漫画包通道。
+        hasContent: format == BookFormat.epub &&
+            resolveExtractedEpubRoot(r.extractDir) != null,
+        format: format.dbValue,
+        hasMangaContent: format == BookFormat.manga &&
+            File(p.join(r.extractDir, kMangaPackageMarker)).existsSync(),
+        mangaReadingMode: r.mangaReadingMode,
         hasEmbeddedCover: coverPath != null,
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
@@ -478,7 +516,23 @@ class AppModelLibraryHostService
     if (row == null) {
       throw StateError('book not found: $title');
     }
-    if (resolveExtractedEpubRoot(row.extractDir) == null) {
+    final BookFormat format = BookFormat.parseOrEpub(row.format);
+    // 漫画（互联完整支持批次）：包 = 书目录整树 zip（manga.json 标记 + 页图），
+    // 与 EPUB 包同端点、导入侧内容嗅探分流。扩展名仍 .epub（端点/tmp 命名契约
+    // 不变，内容即真相）。
+    if (format == BookFormat.manga) {
+      final Directory tmpDir =
+          Directory.systemTemp.createTempSync('hibiki_book_export');
+      final File out = File(p.join(tmpDir.path, '${row.bookKey}.epub'));
+      final bool ok = await repackageMangaBook(row.extractDir, out.path);
+      if (!ok) {
+        throw StateError('manga book has no exportable content: $title');
+      }
+      return out;
+    }
+    if (format != BookFormat.epub ||
+        resolveExtractedEpubRoot(row.extractDir) == null) {
+      // PDF（无互联内容通道）/ EPUB 树缺失：与旧行为一致抛 StateError → 404。
       throw StateError('book has no exportable EPUB root: $title');
     }
 
@@ -761,14 +815,30 @@ class AppModelLibraryHostService
     final List<AudiobookRow> rows = await _db.getAllAudiobooks();
     final List<RemoteAudiobookInfo> result = <RemoteAudiobookInfo>[];
     final Set<String> emittedUids = <String>{};
+    // 清单内联断点 + 调轴（互联完整支持批次）：与视频清单同范式，sweep/下载回填
+    // 免逐本 GET（旧实现 N 本书 = N 次网络往返）。一趟 prefs 批读。
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    RemoteAudiobookInfo build(String bookKey, String uid, String? title) {
+      final String identity = bookKey.isNotEmpty ? bookKey : uid;
+      return RemoteAudiobookInfo(
+        bookKey: bookKey,
+        uid: uid,
+        title: title,
+        positionMs: PrefCodec.decode<int>(
+            allPrefs[audiobookPositionPrefKey(identity)] ?? '', 0),
+        positionUpdatedAtMs: PrefCodec.decode<int>(
+            allPrefs[audiobookPositionAtPrefKey(identity)] ?? '', 0),
+        delayMs: PrefCodec.decode<int>(
+            allPrefs[audiobookDelayPrefKey(identity)] ?? '', 0),
+        delayUpdatedAtMs: PrefCodec.decode<int>(
+            allPrefs[audiobookDelayAtPrefKey(identity)] ?? '', 0),
+      );
+    }
+
     for (final AudiobookRow r in rows) {
       final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
       if (srt == null) continue;
-      result.add(RemoteAudiobookInfo(
-        bookKey: r.bookKey,
-        uid: srt.uid,
-        title: srt.title,
-      ));
+      result.add(build(r.bookKey, srt.uid, srt.title));
       emittedUids.add(srt.uid);
     }
     // 纯 SRT（standalone）有声书：bookKey 为空、不落 Audiobooks 行，身份 = uid。
@@ -776,13 +846,50 @@ class AppModelLibraryHostService
     for (final SrtBookRow srt in srtRows) {
       if (srt.bookKey.isNotEmpty) continue; // srt-backed 已在上面枚举
       if (!emittedUids.add(srt.uid)) continue; // 去重（防重复 uid）
-      result.add(RemoteAudiobookInfo(
-        bookKey: '',
-        uid: srt.uid,
-        title: srt.title,
-      ));
+      result.add(build('', srt.uid, srt.title));
     }
     return result;
+  }
+
+  /// 读 host 端有声书 [identity] 的调轴（[AudiobookDelayHost]）。值键是既有
+  /// `audiobook_delay_` pref（旧数据无戳记 0，被任何带戳对端值盖过）。
+  @override
+  Future<({int delayMs, int updatedAtMs})> getAudiobookDelay(
+      String identity) async {
+    final int delay =
+        await _db.getPrefTyped<int>(audiobookDelayPrefKey(identity), 0);
+    final int at =
+        await _db.getPrefTyped<int>(audiobookDelayAtPrefKey(identity), 0);
+    return (delayMs: delay, updatedAtMs: at);
+  }
+
+  /// 把 client 上报的有声书 [identity] 调轴写入 host（[AudiobookDelayHost]）。
+  /// 存在性闸门 / clamp / 未来戳截断 / LWW 与视频 [putVideoDelay] 同纪律；
+  /// 有声书调轴本地读取就是这对 prefs，写入即对 host 本机播放生效（无行写穿）。
+  @override
+  Future<void> putAudiobookDelay(
+      String identity, int delayMs, int updatedAtMs) async {
+    if (!await audiobookExists(identity)) return;
+    final int clamped =
+        delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
+    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
+    final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
+    final ({int delayMs, int updatedAtMs}) current =
+        await getAudiobookDelay(identity);
+    final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
+      aDelayMs: current.delayMs,
+      aUpdatedAtMs: current.updatedAtMs,
+      bDelayMs: clamped,
+      bUpdatedAtMs: cappedAt,
+    );
+    if (winner.updatedAtMs == current.updatedAtMs &&
+        winner.delayMs == current.delayMs) {
+      return; // host 已存更新或相等，no-op。
+    }
+    await _db.setPrefTyped<int>(
+        audiobookDelayPrefKey(identity), winner.delayMs);
+    await _db.setPrefTyped<int>(
+        audiobookDelayAtPrefKey(identity), winner.updatedAtMs);
   }
 
   /// 即时把身份键为 [identity] 的有声书打包成临时文件，返回该文件。
@@ -1002,8 +1109,12 @@ class AppModelLibraryHostService
 
     final Map<String, List<String>> tagsByVideoUid =
         await _tagNamesByVideoUid();
+    final ({
+      Map<String, RemoteCollectionMembership> membership,
+      Map<String, MediaCollectionRow> collectionByEntry,
+    }) collections = await _primaryCollectionData();
     final Map<String, RemoteCollectionMembership> membership =
-        await _primaryCollectionMembership();
+        collections.membership;
     // 批量预取：位置 prefs / 标签 LWW 时钟 / 移除墓碑各一趟查询，sidecar 同目录只扫
     // 一次。旧实现逐行 2~3 次 prefs 读 + 1 次行重查 + 2 次标签查询 + 1 次全目录
     // listSync——500 行清单一次 ≈ 2500 次 DB 往返 + 500 次目录扫描，且封面端点每张
@@ -1022,6 +1133,8 @@ class AppModelLibraryHostService
         tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
         // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
         collection: membership[MediaKind.video.compositeKey(row.bookUid)],
+        collectionRow: collections
+            .collectionByEntry[MediaKind.video.compositeKey(row.bookUid)],
         prefs: allPrefs,
         tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
         tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
@@ -1081,6 +1194,7 @@ class AppModelLibraryHostService
     required Map<String, List<String>?> sidecarDirCache,
     List<String> tags = const <String>[],
     RemoteCollectionMembership? collection,
+    MediaCollectionRow? collectionRow,
   }) {
     final String videoPath = row.videoPath;
     int? sizeBytes;
@@ -1127,6 +1241,48 @@ class AppModelLibraryHostService
     // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
     // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
     // 已在手、prefs 已批量预取，不再逐行发查询。
+    // 系列级播放偏好（schema v52 同系列共享）：合集成员的无戳基底 = 系列级 ?? 本集
+    // row 值（与本机播放页 [effectiveSeriesDelayMs] 同一决议）。此前只读 row，host
+    // 在合集里调的轴远端永远看不到。
+    // 播放偏好带戳状态（播放偏好同步泛化批）：语义与 [getVideoPlayback] 完全一致
+    // ——无戳基底（系列级 ?? row）与带戳 prefs 逐字段严格较新者胜；prefs 已批量
+    // 预取，不逐行发查询。
+    String? nullableStr(String? raw) {
+      if (raw == null) return null;
+      final String decoded = PrefCodec.decode<String>(raw, '');
+      return decoded.isEmpty ? null : decoded;
+    }
+
+    final VideoPlaybackSyncState playback = VideoPlaybackSyncState.merge(
+      VideoPlaybackSyncState(
+        delayMs:
+            effectiveSeriesDelayMs(collectionRow?.subtitleDelayMs, row.delayMs),
+        audioTrackId: effectiveSeriesAudioTrackId(
+            collectionRow?.audioTrackId, row.audioTrackId),
+        secondarySubtitleSource: row.secondarySubtitleSource,
+        secondaryDelayMs: effectiveSeriesSecondaryDelayMs(
+            collectionRow?.secondarySubtitleDelayMs, row.secondaryDelayMs),
+      ),
+      VideoPlaybackSyncState(
+        delayMs: PrefCodec.decode<int>(
+            prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '', 0),
+        delayAt: PrefCodec.decode<int>(
+            prefs[videoRemoteDelayAtPrefKey(row.bookUid)] ?? '', 0),
+        audioTrackId:
+            nullableStr(prefs[videoRemoteAudioTrackPrefKey(row.bookUid)]),
+        audioTrackAt: PrefCodec.decode<int>(
+            prefs[videoRemoteAudioTrackAtPrefKey(row.bookUid)] ?? '', 0),
+        secondarySubtitleSource: nullableStr(
+            prefs[videoRemoteSecondarySubtitlePrefKey(row.bookUid)]),
+        secondarySubtitleAt: PrefCodec.decode<int>(
+            prefs[videoRemoteSecondarySubtitleAtPrefKey(row.bookUid)] ?? '', 0),
+        secondaryDelayMs: int.tryParse(
+            nullableStr(prefs[videoRemoteSecondaryDelayPrefKey(row.bookUid)]) ??
+                ''),
+        secondaryDelayAt: PrefCodec.decode<int>(
+            prefs[videoRemoteSecondaryDelayAtPrefKey(row.bookUid)] ?? '', 0),
+      ),
+    );
     final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
       localPositionMs: PrefCodec.decode<int>(
           prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '', 0),
@@ -1152,8 +1308,18 @@ class AppModelLibraryHostService
       coverPath: coverPath,
       positionMs: progress.positionMs,
       positionUpdatedAtMs: progress.updatedAtMs,
-      // BUG-996：把 host 的字幕时序偏移下发，供远端播放跟随（设备无关的纯时序）。
-      delayMs: row.delayMs,
+      // 播放偏好随清单下发（BUG-996 调轴起步，播放偏好同步泛化批扩展为全字段）：
+      // client 起播据带戳字段做逐字段 LWW 决议，sweep 免逐视频 GET。
+      delayMs: playback.delayMs,
+      delayUpdatedAtMs: playback.delayAt,
+      audioTrackId: playback.audioTrackId,
+      audioTrackUpdatedAtMs: playback.audioTrackAt,
+      secondarySubtitleSource: playback.secondarySubtitleSource,
+      secondarySubtitleUpdatedAtMs: playback.secondarySubtitleAt,
+      secondaryDelayMs: playback.secondaryDelayMs,
+      secondaryDelayUpdatedAtMs: playback.secondaryDelayAt,
+      // 看完标记下发（client 剧集面板角标；此前远端集无口径恒无标记）。
+      completedAt: row.completedAt?.millisecondsSinceEpoch,
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
@@ -1354,6 +1520,136 @@ class AppModelLibraryHostService
     await _db.setPrefTyped<int>(
         videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
         winner.updatedAtMs);
+  }
+
+  /// [id] 视频的主归属合集行（无归属 / 未知 id 返回 null）。系列级播放偏好
+  /// （`subtitleDelayMs`）解析用，与清单侧 [_primaryCollectionData] 同折叠语义
+  /// （最小 collectionId 主归属）。两次轻查询（主归属映射 + 单行取合集）。
+  Future<MediaCollectionRow?> _primaryVideoCollectionRow(String id) async {
+    final Map<String, int> primaryByEntry =
+        await _db.getPrimaryCollectionIdByEntry();
+    final int? cid = primaryByEntry[MediaKind.video.compositeKey(id)];
+    if (cid == null) return null;
+    return _db.getMediaCollectionById(cid);
+  }
+
+  /// prefs 里的可空字符串字段读数：缺失/空串 → null（「未设」与「显式清除」由
+  /// at 键区分：at>0 且值空 = 显式清除）。
+  Future<String?> _readNullableStringPref(String key) async {
+    final String raw = await _db.getPrefTyped<String>(key, '');
+    return raw.isEmpty ? null : raw;
+  }
+
+  /// 读 host 端视频 [id] 的播放偏好带戳状态（[VideoPlaybackSyncHost]）。
+  ///
+  /// 无戳基底 = 本机播放读的同一决议（系列级 ?? row，[effectiveSeriesDelayMs] 族），
+  /// 与带戳 prefs 逐字段「严格较新者胜」合并：旧数据无 prefs 时行为与本机播放完全
+  /// 一致（向后兼容）。
+  @override
+  Future<VideoPlaybackSyncState> getVideoPlayback(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    final MediaCollectionRow? col =
+        row == null ? null : await _primaryVideoCollectionRow(id);
+    final VideoPlaybackSyncState base = VideoPlaybackSyncState(
+      delayMs: effectiveSeriesDelayMs(col?.subtitleDelayMs, row?.delayMs ?? 0),
+      audioTrackId:
+          effectiveSeriesAudioTrackId(col?.audioTrackId, row?.audioTrackId),
+      secondarySubtitleSource: row?.secondarySubtitleSource,
+      secondaryDelayMs: effectiveSeriesSecondaryDelayMs(
+          col?.secondarySubtitleDelayMs, row?.secondaryDelayMs),
+    );
+    final VideoPlaybackSyncState stamped = VideoPlaybackSyncState(
+      delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(id), 0),
+      delayAt: await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(id), 0),
+      audioTrackId:
+          await _readNullableStringPref(videoRemoteAudioTrackPrefKey(id)),
+      audioTrackAt:
+          await _db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(id), 0),
+      secondarySubtitleSource: await _readNullableStringPref(
+          videoRemoteSecondarySubtitlePrefKey(id)),
+      secondarySubtitleAt: await _db.getPrefTyped<int>(
+          videoRemoteSecondarySubtitleAtPrefKey(id), 0),
+      secondaryDelayMs: int.tryParse(await _db.getPrefTyped<String>(
+          videoRemoteSecondaryDelayPrefKey(id), '')),
+      secondaryDelayAt: await _db.getPrefTyped<int>(
+          videoRemoteSecondaryDelayAtPrefKey(id), 0),
+    );
+    return VideoPlaybackSyncState.merge(base, stamped);
+  }
+
+  /// 把 client 上报的播放偏好合并进 host（[VideoPlaybackSyncHost]）。
+  ///
+  /// 存在性闸门：host 无该 id 的 VideoBooks 行 → no-op（防任意 id 写脏 prefs，与
+  /// [putVideoPosition] 同语义）。调轴类字段越界 clamp
+  /// ±[kVideoSubtitleDelayLimitMs]；各字段时间戳截到 host 当前时刻 + 5 分钟时钟
+  /// 偏差余量——未来戳会永久锁死后续所有端的正常覆盖。胜出字段同时写穿
+  /// row/系列级列，使 host 本机播放立即跟随（只写 row 会被非 null 系列级值遮蔽）。
+  @override
+  Future<void> putVideoPlayback(
+      String id, VideoPlaybackSyncState incoming) async {
+    if (incoming.isEmpty) return;
+    if (await _db.getVideoBookByBookUid(id) == null) return;
+    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
+    int capAt(int at) => at > nowCapMs ? nowCapMs : at;
+    final VideoPlaybackSyncState capped = VideoPlaybackSyncState(
+      delayMs: incoming.delayMs
+          .clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),
+      delayAt: capAt(incoming.delayAt),
+      audioTrackId: incoming.audioTrackId,
+      audioTrackAt: capAt(incoming.audioTrackAt),
+      secondarySubtitleSource: incoming.secondarySubtitleSource,
+      secondarySubtitleAt: capAt(incoming.secondarySubtitleAt),
+      secondaryDelayMs: incoming.secondaryDelayMs
+          ?.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),
+      secondaryDelayAt: capAt(incoming.secondaryDelayAt),
+    );
+    final VideoPlaybackSyncState held = await getVideoPlayback(id);
+    final VideoPlaybackSyncState merged =
+        VideoPlaybackSyncState.merge(held, capped);
+    if (merged == held) return; // host 已存更新或相等，no-op。
+    final MediaCollectionRow? col = await _primaryVideoCollectionRow(id);
+
+    if (merged.delayAt > 0 && merged.delayAt != held.delayAt) {
+      await _db.setPrefTyped<int>(videoRemoteDelayPrefKey(id), merged.delayMs);
+      await _db.setPrefTyped<int>(
+          videoRemoteDelayAtPrefKey(id), merged.delayAt);
+      await _db.updateVideoBookDelayMs(id, merged.delayMs);
+      if (col != null) {
+        await _db.updateMediaCollectionSubtitleDelayMs(col.id, merged.delayMs);
+      }
+    }
+    if (merged.audioTrackAt > 0 && merged.audioTrackAt != held.audioTrackAt) {
+      await _db.setPrefTyped<String>(
+          videoRemoteAudioTrackPrefKey(id), merged.audioTrackId ?? '');
+      await _db.setPrefTyped<int>(
+          videoRemoteAudioTrackAtPrefKey(id), merged.audioTrackAt);
+      await _db.updateVideoBookAudioTrackId(id, merged.audioTrackId);
+      if (col != null) {
+        await _db.updateMediaCollectionAudioTrackId(
+            col.id, merged.audioTrackId);
+      }
+    }
+    if (merged.secondarySubtitleAt > 0 &&
+        merged.secondarySubtitleAt != held.secondarySubtitleAt) {
+      await _db.setPrefTyped<String>(videoRemoteSecondarySubtitlePrefKey(id),
+          merged.secondarySubtitleSource ?? '');
+      await _db.setPrefTyped<int>(videoRemoteSecondarySubtitleAtPrefKey(id),
+          merged.secondarySubtitleAt);
+      await _db.updateVideoBookSecondarySubtitleSource(
+          id, merged.secondarySubtitleSource);
+    }
+    if (merged.secondaryDelayAt > 0 &&
+        merged.secondaryDelayAt != held.secondaryDelayAt) {
+      await _db.setPrefTyped<String>(videoRemoteSecondaryDelayPrefKey(id),
+          merged.secondaryDelayMs?.toString() ?? '');
+      await _db.setPrefTyped<int>(
+          videoRemoteSecondaryDelayAtPrefKey(id), merged.secondaryDelayAt);
+      await _db.updateVideoBookSecondaryDelayMs(id, merged.secondaryDelayMs);
+      if (col != null) {
+        await _db.updateMediaCollectionSecondarySubtitleDelayMs(
+            col.id, merged.secondaryDelayMs);
+      }
+    }
   }
 
   /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（一次 DB 查询）。

@@ -187,6 +187,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
 /// 弹幕分集映射（后缀 = bookUid）、来源库凭据（后缀 = MediaSources.id，🔴 凭据）。
 const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'audiobook_delay_',
+  // 调轴 LWW 时间戳孪生键（互联完整支持批次；与 audiobook_pos_at_ 同范式）。
+  'audiobook_delay_at_',
   'audiobook_follow_',
   'audiobook_health_overlay_',
   'audiobook_image_pause_',
@@ -199,6 +201,19 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'media_source_secret_',
   'src:',
   'video_danmaku_episode/',
+  // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
+  // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
+  //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴）。
+  'video_remote_audio_track_',
+  'video_remote_audio_track_at_',
+  'video_remote_delay_',
+  'video_remote_delay_at_',
+  'video_remote_position_',
+  'video_remote_position_at_',
+  'video_remote_secondary_delay_',
+  'video_remote_secondary_delay_at_',
+  'video_remote_secondary_subtitle_',
+  'video_remote_secondary_subtitle_at_',
 ];
 
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。

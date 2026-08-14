@@ -18,18 +18,21 @@
 //
 // 坐标域纪律：hook 报上来的 glyph/view 尺寸在**游戏 primaryLayer 像素**域，卡片位图
 // 是逐像素 memcpy 进 Layer 的，所以「卡片在游戏里的尺寸」== 位图的**物理像素**尺寸
-// （GlobalLookupController.onRevealed 回报的就是它）。两者同域可直接比较，全程不乘
+// （GlobalLookupController.onRoutedRevealed 回报的就是它）。两者同域可直接比较，全程不乘
 // dpr——dpr 只属于 Windows 窗口那一侧。
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
@@ -74,25 +77,78 @@ class GalIngameLookupController {
   /// galgame 会话是否在跑（由台词浮窗控制器的会话同步喂进来，不另起第二个监听）。
   bool _sessionActive = false;
 
-  /// 已推给 runner 的开关值，避免每轮会话同步都发一次 channel 调用。
+  /// 最近一次被 runner **确认成功**的开关值，仅供诊断使用。
+  /// 它不是跨 shared mapping 的真值：mapping 换代后
+  /// runner 中的实际状态可能已丢失，所以 [_syncEnabled] 绝不用它跳过 native 调用。
   bool _pushedEnabled = false;
 
-  /// 当前屏上这张卡对应的命中。null = 游戏里没有卡（此时 onRevealed 的回调属于普通
-  /// 桌面查词，不该投进游戏）。
+  /// enable/disable 串行 drain。channel 调用在 await 期间可能又收到会话或
+  /// 偏好变更；新意图只置 pending，不再并发第二个 native 调用。当前回执
+  /// 返回后重读 [_enabledNow]，直到 native 最后收到的值与最新意图一致。
+  bool _enableSyncPending = false;
+  Completer<void>? _enableSyncCompleter;
+
+  /// 当前屏上这张卡对应的命中。null = 游戏里没有卡（此时 onRoutedRevealed
+  /// 的回调属于普通桌面查词，不该投进游戏）。
   GalLookupHit? _activeHit;
 
+  /// [_activeHit] 所属查词代数。新 submit 一到就使旧 reveal 回调过期，
+  /// 防止慢卡在较新点击后闪回。
+  int _activeLookupGeneration = 0;
+
+  /// 一个 galgame 会话一个 route epoch；同一会话内每次 submit 再分配唯一 lookup
+  /// epoch。两者共同构成不可复用的 [GlobalLookupRoute]，使旧 Future / Timer / JS
+  /// bridge 即便迟到也只能落回自己的离屏卡片代数，不能串到下一次点击或桌面浮窗。
+  int _sessionRouteEpoch = 0;
+  int _lookupRouteEpoch = 0;
+  GlobalLookupRoute? _activeRoute;
+
+  /// 最近一次真正提交查词的命中。hover 也有自己的 seq，但它只在 TJS 内即时移动高亮，
+  /// 不能作废正在查词的 submit，也不能拿来给卡片 present / dismiss 做身份。
+  GalLookupHit? _latestSubmitHit;
+
   /// latest-wins 待处理命中：查词在途时又点了新字，只留最后一个（连点不排队）。
-  GalLookupHit? _pendingHit;
+  ({
+    GalLookupHit hit,
+    int generation,
+    GlobalLookupRoute route,
+  })? _pendingLookup;
   bool _draining = false;
+  Completer<void>? _drainCompleter;
 
-  /// 最近一次已投出的高亮范围，用于悬停去抖——鼠标在同一个字上抖动不该反复过桥。
-  int _presentedHighlightStart = -1;
-  int _presentedHighlightLen = -1;
+  /// 卡片输入必须按 hook 上报顺序进入同一个 WebView。MethodChannel 当前通常会串行
+  /// dispatch，但这里不把 LEFT_DOWN/LEFT_UP 的正确性押在该实现细节上；每个调用者仍
+  /// 等自己的事件真正注入完成，失败也不会毒死后续输入链。
+  Future<void> _inputTail = Future<void>.value();
 
-  /// 最近一次已投出的卡片落点（primaryLayer px）。悬停只换高亮、不换卡片，必须把
-  /// 同一个 anchor 原样回传，否则卡片会跟着鼠标乱跑。null = 屏上没有卡片。
-  int? _presentedAnchorX;
-  int? _presentedAnchorY;
+  /// 离屏 WebView 的内容变化不会自动进入游戏：游戏里显示的是上一次 CapturePreview
+  /// 发布的 BGRA 快照。所有需要重抓的信号都汇进这条单飞队列：
+  ///
+  ///  * 同一事件循环内重复信号只抓一次；
+  ///  * 抓帧在途时 move/wheel 只保留一个 dirty bit，不排无界队列；
+  ///  * host 已用双 rAF 等待 WebView2 paint；这里的零时长 turn 只合并同批通知，不用
+  ///    经验毫秒数猜渲染完成。
+  Timer? _recaptureTurn;
+  bool _recaptureDirty = false;
+  bool _recaptureInFlight = false;
+  int _cardPhysicalWidth = 0;
+  int _cardPhysicalHeight = 0;
+
+  /// 游戏画面截图期间的原子可见性门。native 的 capture-suppress 在游戏主线程确认
+  /// 卡片与高亮都已隐藏后才回执；Dart 同时挡住所有 dirty/reveal 触发的 recapture，
+  /// 否则截图循环中途一张普通 present 就会提前把 popup 画回来。
+  bool _captureSuppressed = false;
+  int _captureLeaseEpoch = 0;
+  int? _captureSuppressedSeq;
+  int _captureSuppressedSessionEpoch = 0;
+
+  /// 每次查词意图/消场都递增。异步词典结果与 channel 回执只有代数仍相等才可落屏，
+  /// 因此慢查询永远不能在较新的点击之后闪回旧卡。
+  int _lookupGeneration = 0;
+
+  /// enable/disable 路由收尾代数。串行 drain 每次决定一个 native 意图
+  /// 就递增；迟到的 disable routing 收尾只能在代数仍匹配时生效。
+  int _enableSyncGeneration = 0;
 
   /// 平台门：galgame hook 只做 Windows，且必须有覆盖窗（卡片像素的唯一来源）。
   static bool get isSupported =>
@@ -127,38 +183,59 @@ class GalIngameLookupController {
     if (_started) return;
     _started = true;
     final GlobalLookupController overlay = GlobalLookupController.instance;
-    // 「卡片内容已渲染、尺寸已定」是投帧的唯一前置条件，真值只有覆盖窗知道。
-    // 链上既有消费者（今天为空）：本控制器接管这两个单消费者回调时不吞掉别人。
-    final void Function(int, int)? previousRevealed = overlay.onRevealed;
-    overlay.onRevealed = (int w, int h) {
-      previousRevealed?.call(w, h);
-      _onOverlayRevealed(w, h);
+    overlay.onRoutedRevealed = (GlobalLookupRoute route, int w, int h) {
+      if (!_acceptsRoute(route)) return;
+      _onOverlayRevealed(route, w, h);
     };
-    final void Function()? previousHidden = overlay.onHidden;
-    overlay.onHidden = () {
-      previousHidden?.call();
-      unawaited(_onOverlayHidden());
+    overlay.onRoutedHidden = (GlobalLookupRoute route) {
+      if (!_acceptsRoute(route)) return;
+      unawaited(_onOverlayHidden(route));
     };
+    overlay.onRoutedDirty = markRoutedDirty;
   }
 
   @visibleForTesting
   Future<void> stopForTesting() async {
-    _started = false;
     _sessionActive = false;
+    await _terminateCurrentLookup();
+    final Future<void>? lookupDrain = _drainCompleter?.future;
+    if (lookupDrain != null) await lookupDrain;
+    _started = false;
+    GlobalLookupController.instance.onRoutedDirty = null;
+    // 若此刻正有 enable 在 channel 里，不能直接作废 drain：它可能
+    // 在 stop 后才成功把 native 打开。留一个 pending，让同一串行 drain
+    // 再下发 false 后才完成清理。
+    _enableSyncPending = _enableSyncCompleter != null;
+    final Future<void>? enabling = _enableSyncCompleter?.future;
+    if (enabling != null) await enabling;
+    _enableSyncPending = false;
+    _enableSyncGeneration++;
     _pushedEnabled = false;
     _activeHit = null;
-    _pendingHit = null;
+    _latestSubmitHit = null;
+    _pendingLookup = null;
     _draining = false;
-    _presentedHighlightStart = -1;
-    _presentedHighlightLen = -1;
-    _presentedAnchorX = null;
-    _presentedAnchorY = null;
+    _drainCompleter = null;
+    await _inputTail;
+    _cancelRecapture();
+    _inputTail = Future<void>.value();
+    _lookupGeneration++;
+    _activeLookupGeneration = 0;
   }
 
   /// galgame 会话开始 / 结束。会话不在跑时游戏内查词必须彻底关掉——hook 侧
   /// `lookup_enabled=0` 即零写入，不留半开状态。
   Future<void> setSessionActive(bool active) async {
-    if (_sessionActive == active) return;
+    if (_sessionActive == active) {
+      // active phase 重复通知也是 reader/mapping 换代后重放意图的机会。
+      // 不能因为上一个 mapping 曾成功 enable 就用 _pushedEnabled 早退。
+      if (active) await _syncEnabled();
+      return;
+    }
+    if (active) {
+      _sessionRouteEpoch++;
+      _lookupRouteEpoch = 0;
+    }
     _sessionActive = active;
     await _syncEnabled();
   }
@@ -173,14 +250,14 @@ class GalIngameLookupController {
   /// 换行 / 换页：屏上那句话已经不在了，卡片必须跟着消场，否则卡片还挂在旧句子的
   /// 字形位置上。由台词浮窗控制器在「显示行变了」那一刻调。
   Future<void> onLineChanged() async {
-    await _dismissCurrent();
+    await _terminateCurrentLookup();
   }
 
   /// hook 报上来一次命中。
   ///
   /// [GalLookupHit.submit] 分流：
   ///  - false（悬停）：**不查词**，只把高亮挪到光标那个字。悬停事件是鼠标移动的
-  ///    频率，每次都查词会把引擎和离屏 WebView2 一起打爆。
+  ///    频率，每次都查词会把词典引擎打爆。
   ///  - true（点击 / hook 侧判定的悬停即查词）：走完整查词链。
   ///
   /// 「悬停要不要自动查词」由 hook 侧决定并体现在 submit 上，Dart 不再解释一遍——
@@ -188,35 +265,249 @@ class GalIngameLookupController {
   Future<void> handleHit(GalLookupHit hit) async {
     if (!_started || !_enabledNow) return;
     if (!hit.submit) {
-      await _updateHoverHighlight(hit);
+      // hover 高亮已在游戏线程的 fushiLookupReport 中同步绘制；再投一张 host→hook
+      // highlight 帧不仅重复，还会和查词卡争双缓冲的最新发布序。
       return;
     }
-    // latest-wins：在途查词不打断，但只保留最后一次意图。
-    _pendingHit = hit;
+    _latestSubmitHit = hit;
+    // latest-wins：在途查词不打断，但只保留最后一次意图。代数也在入队时递增，
+    // 所以当前 await 返回时就能判断自己是否已过期。
+    final int generation = ++_lookupGeneration;
+    final GlobalLookupRoute route = GlobalLookupRoute.galCard(
+      routeEpoch: _sessionRouteEpoch,
+      lookupEpoch: ++_lookupRouteEpoch,
+    );
+    // A new route must not inherit the previous card's physical size or a
+    // queued dirty recapture. Its first bitmap is allowed only after this
+    // route's overlaySize -> captureReady handshake has completed.
+    _cancelRecapture();
+    // 新 submit 到达即废止旧 token，而不是等旧词典 Future 返回。旧 reveal / Timer
+    // 从这一行起就无法投帧；同一个 galCard surface 会由新 route 的 lookupText 首步
+    // hide(notify:false) 清场。
+    final GlobalLookupRoute? previousRoute = _activeRoute;
+    _activeRoute = route;
+    if (previousRoute != null) {
+      GlobalLookupChannel.invalidateRoute(previousRoute);
+    }
+    _pendingLookup = (hit: hit, generation: generation, route: route);
     if (_draining) return;
     _draining = true;
+    final Completer<void> drainCompleter = Completer<void>();
+    _drainCompleter = drainCompleter;
     try {
-      while (_pendingHit != null) {
-        final GalLookupHit next = _pendingHit!;
-        _pendingHit = null;
-        await _runLookup(next);
+      while (_pendingLookup != null) {
+        final ({
+          GalLookupHit hit,
+          int generation,
+          GlobalLookupRoute route,
+        }) next = _pendingLookup!;
+        _pendingLookup = null;
+        await _runLookup(next.hit, next.generation, next.route);
       }
     } finally {
       _draining = false;
+      if (!drainCompleter.isCompleted) drainCompleter.complete();
+      if (identical(_drainCompleter, drainCompleter)) {
+        _drainCompleter = null;
+      }
     }
   }
 
-  /// hook 转发的卡片内输入：原样丢回 runner 的既有 popup 输入注入口。
-  ///
-  /// 这里**故意不解释语义**（不判断点到哪个词条、要不要翻页、滚多少行）——那是
-  /// popup.js 与 WebView2 的事，Dart 插一脚只会造出第二套解释规则。
-  Future<void> handleInput(GalLookupInput input) async {
-    if (!_started || !_enabledNow) return;
-    if (_activeHit == null) return; // 游戏里没有卡，输入无处可去。
+  /// hook 转发的卡片内输入：严格按上报顺序丢回 runner 的既有 popup 输入注入口。
+  Future<void> handleInput(GalLookupInput input) {
+    final GlobalLookupRoute? route = _activeRoute;
+    final int generation = _activeLookupGeneration;
+    final bool traceInput = input.kind != 0;
+    if (traceInput) {
+      glog('gal-ingame: input recv seq=${input.seq} kind=${input.kind} '
+          'wheel=${input.wheel} started=$_started enabled=$_enabledNow '
+          'suppressed=$_captureSuppressed active=${_activeHit != null} '
+          'generation=$generation/$_lookupGeneration '
+          'route=${route == null ? "none" : GlobalLookupChannel.isRouteValid(route)}');
+    }
+    if (_captureSuppressed ||
+        !_started ||
+        !_enabledNow ||
+        _activeHit == null ||
+        route == null) {
+      if (traceInput) {
+        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+            'at=entry_gate');
+      }
+      return Future<void>.value();
+    }
+    final Completer<void> done = Completer<void>();
+    _inputTail = _inputTail.then<void>(
+      (_) => _runQueuedInput(input, generation, route, done),
+      onError: (Object _, StackTrace __) =>
+          _runQueuedInput(input, generation, route, done),
+    );
+    return done.future;
+  }
+
+  Future<void> _runQueuedInput(
+    GalLookupInput input,
+    int generation,
+    GlobalLookupRoute route,
+    Completer<void> done,
+  ) async {
+    try {
+      await _forwardInput(input, generation, route);
+      if (!done.isCompleted) done.complete();
+    } catch (error, stackTrace) {
+      glog(
+          'gal-ingame: input kind=${input.kind} EXCEPTION $error\n$stackTrace');
+      if (!done.isCompleted) done.complete();
+    }
+  }
+
+  Future<void> _forwardInput(
+    GalLookupInput input,
+    int generation,
+    GlobalLookupRoute route,
+  ) async {
+    // 卡片已经从游戏渲染树隐藏，采样期间迟到/排队的输入没有合法命中目标；继续注入
+    // 只会在不可见 DOM 上触发按钮或滚轮，并制造一张本不该在截图中途恢复的 dirty 帧。
+    if (_captureSuppressed || !_isCurrentLookup(generation, route)) {
+      if (input.kind != 0) {
+        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+            'at=queue_gate');
+      }
+      return;
+    }
+
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupInput(input);
     if (!result.ok) {
       glog('gal-ingame: input kind=${input.kind} FAILED ${result.error}');
+      return;
+    }
+    if (input.kind != 0) {
+      glog('gal-ingame: input seq=${input.seq} kind=${input.kind} -> ok');
+    }
+    if (!_isCurrentLookup(generation, route)) {
+      if (input.kind != 0) {
+        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+            'at=reply_gate');
+      }
+      return;
+    }
+
+    // SendMouseInput 的回执只证明事件已入 WebView2，不证明 renderer 已完成布局/绘制。
+    // 实际重抓严格等待 host 的 route-stamped、双-rAF `galFrameDirty`；否则这里立即
+    // CapturePreview 仍可能拿到输入前的旧帧。leftDown/up 的顺序由 [_inputTail]
+    // 保证，host 的多个 dirty 再由 [_scheduleRecapture] 单帧合并。
+  }
+
+  /// 给离屏 host/bridge 的 paint-ready 信号使用。调用方必须带原始 route；旧代即便
+  /// 在异步制卡、收藏或嵌套查词完成后迟到，也只能在这里被丢弃，绝不刷新新卡。
+  void markRoutedDirty(GlobalLookupRoute route) {
+    final int generation = _activeLookupGeneration;
+    if (!_isCurrentLookup(generation, route)) return;
+    _scheduleRecapture(generation, route);
+  }
+
+  /// 为游戏内 popup 发起的一次场景截图获取可见性 lease。
+  ///
+  /// acquire 只有在 hook 明确 ack「卡片 + 高亮均已从游戏渲染树隐藏」后才成功；
+  /// timeout/错误具有“可能已隐藏但回执丢失”的歧义，因此失败也会走同一恢复补偿，
+  /// 随后抛出专用异常让 mining fail-closed，绝不在未知状态下继续 WGC。
+  Future<GalHookCaptureLease> acquireMiningCaptureLease() async {
+    final GalLookupHit? hit = _activeHit;
+    final GlobalLookupRoute? route = _activeRoute;
+    final int generation = _activeLookupGeneration;
+    if (hit == null || route == null || !_isCurrentLookup(generation, route)) {
+      throw const GalHookCaptureSuppressionException(
+        'the in-game lookup card is no longer current',
+      );
+    }
+    if (_captureSuppressed) {
+      // GalHookMiningCoordinator 已串行化作业；命中这里意味着绕过了那条唯一入口。
+      // 绝不让第二个调用在第一个 suspend ack 之前开始采样。
+      throw const GalHookCaptureSuppressionException(
+        'another game-window capture is already active',
+      );
+    }
+
+    final int leaseEpoch = ++_captureLeaseEpoch;
+    _captureSuppressed = true;
+    _captureSuppressedSeq = hit.seq;
+    _captureSuppressedSessionEpoch = _sessionRouteEpoch;
+    // 保留尺寸与 route/DOM，只停掉待执行的位图重抓。dirty 留真，使 release 能把
+    // 捕获期间发生的滚轮、按钮状态、新 reveal 合成一次最新帧恢复。
+    _recaptureTurn?.cancel();
+    _recaptureTurn = null;
+    _recaptureDirty = true;
+
+    try {
+      final GalLookupCallResult result =
+          await GalHookTextOverlayChannel.galLookupSuspendForCapture(hit.seq);
+      if (!result.ok) {
+        throw GalHookCaptureSuppressionException(
+          'native capture suspend failed: ${result.error ?? "unknown"}',
+        );
+      }
+      return _GalIngameCaptureLease(
+        () => _releaseMiningCaptureLease(leaseEpoch),
+      );
+    } catch (error) {
+      // 回执失败不等于 hook 没执行：可能是“已隐藏，ack 超时”。无条件跑恢复，
+      // 同时保持 fail-closed（异常继续抛，调用方不会截图）。
+      await _releaseMiningCaptureLease(leaseEpoch);
+      if (error is GalHookCaptureSuppressionException) rethrow;
+      throw GalHookCaptureSuppressionException(
+        'native capture suspend threw: $error',
+      );
+    }
+  }
+
+  Future<void> _releaseMiningCaptureLease(int leaseEpoch) async {
+    if (!_captureSuppressed || leaseEpoch != _captureLeaseEpoch) return;
+    final int? suspendedSeq = _captureSuppressedSeq;
+    final int suspendedSessionEpoch = _captureSuppressedSessionEpoch;
+    _captureSuppressed = false;
+    _captureSuppressedSeq = null;
+
+    try {
+      final GalLookupHit? hit = _activeHit;
+      final GlobalLookupRoute? route = _activeRoute;
+      final int generation = _activeLookupGeneration;
+      if (hit != null &&
+          route != null &&
+          _isCurrentLookup(generation, route) &&
+          _cardPhysicalWidth > 0 &&
+          _cardPhysicalHeight > 0) {
+        // 恢复“现在仍最新”的 route，不保存/复活 acquire 时那张旧卡。新查询若在采样
+        // 期间完成，这里投的是新卡；若尚未 reveal，其回调稍后会自行投第一帧。
+        _recaptureDirty = true;
+        if (!_recaptureInFlight) await _drainRecapture();
+        return;
+      }
+
+      if (route != null && _isCurrentLookup(generation, route)) {
+        // 新 route 仍在查词或尚未完成尺寸握手。保持 native suppress，等它自己的
+        // reveal/present 解除；现在投旧尺寸会把上一张卡闪回。
+        return;
+      }
+
+      // 当前 route 已结束时没有后续 full present 可以解除 native suppress。只有同一
+      // 会话才用原 seq 发普通 dismiss 做幂等清理；跨会话旧 lease 不能误伤新 mapping。
+      if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
+        final GalLookupCallResult result =
+            await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+        glog('gal-ingame: capture restore dismiss seq=$suspendedSeq '
+            '-> ${result.error ?? "ok"}');
+      }
+    } catch (error, stackTrace) {
+      // release 位于 capture 的 finally；它绝不能用恢复异常覆盖“已成功采到的像素”，
+      // 更不能让 acquire 失败被 GIF 的普通 fail-open 路径吞掉。记录后尽力发普通
+      // dismiss 清掉 native suppress；下一次查询仍可按正常 full present 重建卡片。
+      glog('gal-ingame: capture restore EXCEPTION $error\n$stackTrace');
+      if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
+        try {
+          await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
+        } catch (_) {}
+      }
     }
   }
 
@@ -236,8 +527,7 @@ class GalIngameLookupController {
     final AppModel? model = _appModel;
     if (model == null) return false;
     // best-effort：App 尚未初始化完时 prefsRepo 是 late 字段，读它会抛
-    // （与 GlobalLookupController._recordLookupCount 同款兜底）。读不到就按默认
-    // 「关」处理——绝不因为读偏好失败把 galgame 会话本身带崩。
+    // 读不到就按默认「关」处理——绝不因为读偏好失败把 galgame 会话本身带崩。
     try {
       return model.galIngameLookupEnabled;
     } catch (_) {
@@ -246,57 +536,115 @@ class GalIngameLookupController {
   }
 
   Future<void> _syncEnabled() async {
-    final bool desired = _enabledNow;
-    if (desired == _pushedEnabled) return;
-    _pushedEnabled = desired;
-    final GalLookupCallResult result =
-        await GalHookTextOverlayChannel.galLookupSetEnabled(desired);
-    glog('gal-ingame: setEnabled=$desired session=$_sessionActive '
-        '-> ${result.error ?? "ok"}');
-    if (!desired) await _dismissCurrent();
-  }
-
-  /// 悬停：只挪高亮，不查词。
-  ///
-  /// 悬停拿不到引擎的 `bestLength`（那要真查一次），所以只标光标那**一个字素簇**；
-  /// 用户真点下去（submit）才铺成整词跨度。范围没变就整条丢弃，鼠标在同一个字上
-  /// 抖动不过桥。
-  Future<void> _updateHoverHighlight(GalLookupHit hit) async {
-    final int len = _graphemeLengthAt(hit.line, hit.charIndex);
-    if (len <= 0) return;
-    if (hit.charIndex == _presentedHighlightStart &&
-        len == _presentedHighlightLen) {
+    _enableSyncPending = true;
+    final Completer<void>? activeDrain = _enableSyncCompleter;
+    if (activeDrain != null) {
+      await activeDrain.future;
+      // 解决 drain 已看到 pending=false、但尚未清掉 completer 时的
+      // lost-wakeup 窗口：新调用者在这个窗口置 pending 后，醒来必须
+      // 自己再开一轮，不能把最后一个意图留在队列里。
+      if (_enableSyncPending) await _syncEnabled();
       return;
     }
-    _presentedHighlightStart = hit.charIndex;
-    _presentedHighlightLen = len;
-    // 悬停没有新位图：anchor 沿用当前卡片的落点（没有卡时用字形下方兜底）。
-    // runner 的 present 会重取一次当前 popup 画面，所以这条路径不能没有去抖——
-    // 上面的「范围没变就丢弃」正是它，一次鼠标划过整行也只走过字数那么多次。
-    final ({int x, int y}) anchor = _resolveAnchorForCurrentCard(hit);
-    final GalLookupCallResult result =
-        await GalHookTextOverlayChannel.galLookupPresent(
-      seq: hit.seq,
-      anchorX: anchor.x,
-      anchorY: anchor.y,
-      highlightStart: hit.charIndex,
-      highlightLen: len,
-    );
-    if (!result.ok) {
-      glog('gal-ingame: hover present seq=${hit.seq} FAILED ${result.error}');
+
+    final Completer<void> drain = Completer<void>();
+    _enableSyncCompleter = drain;
+    try {
+      while (_enableSyncPending) {
+        _enableSyncPending = false;
+        final bool desired = _enabledNow;
+        final int generation = ++_enableSyncGeneration;
+        if (!desired) {
+          await _terminateCurrentLookup();
+        }
+        if (generation != _enableSyncGeneration) continue;
+        if (desired != _enabledNow) {
+          _enableSyncPending = true;
+          continue;
+        }
+
+        // 每轮都真正下发，不用 _pushedEnabled 早退。这使同一 active
+        // phase 在 shared mapping 换代后仍能重放 enable 意图。
+        final GalLookupCallResult result =
+            await GalHookTextOverlayChannel.galLookupSetEnabled(desired);
+        if (generation != _enableSyncGeneration) continue;
+
+        final bool latestDesired = _enabledNow;
+        if (result.ok && desired == latestDesired) {
+          _pushedEnabled = desired;
+        } else if (!result.ok) {
+          // enable 失败必须保持 false，让后续同 active phase 通知可重试。
+          // disable 失败也不伪称仍已 enable；runner 会自行保留关闭意图。
+          _pushedEnabled = false;
+        }
+        glog('gal-ingame: setEnabled=$desired session=$_sessionActive '
+            '-> ${result.error ?? "ok"}');
+
+        if (desired != latestDesired) {
+          _enableSyncPending = true;
+          continue;
+        }
+        if (!desired) await _finishDisableRouting(generation);
+      }
+    } catch (error) {
+      // owner 依旧把异常抛给调用者；Completer 只是唤醒同期进来的
+      // waiters，不再单独 completeError，避免没有 waiter 时制造未处理的异步错误。
+      if (!drain.isCompleted) drain.complete();
+      rethrow;
+    } finally {
+      if (identical(_enableSyncCompleter, drain)) {
+        _enableSyncCompleter = null;
+      }
+      if (!drain.isCompleted) drain.complete();
     }
+  }
+
+  Future<void> _finishDisableRouting(int enableGeneration) async {
+    final Future<void>? draining = _drainCompleter?.future;
+    if (draining != null) await draining;
+    if (enableGeneration != _enableSyncGeneration || _enabledNow) return;
+    // 严格顺序：旧 route 仍有效时先 hide；native 回执后再 invalidate。全局没有
+    // 可变 target，因此 disable 不可能把迟到 render/reveal 改道成桌面第二弹窗。
+    await _hideThenInvalidateActiveRoute();
   }
 
   /// 真查词：把「从命中字起的一段」交给 app 既有查词链。
   ///
   /// 查询串用共享的 [lookupQueryFromIndex]（与 texthooker 逐字查词同一份）：引擎按
   /// 查询串做最长匹配并回报 `bestLength`，所以点「永」命中「永遠」、点「遠」能单独
-  /// 查到「遠」。整行原样当作 `sentence`（制卡 `{sentence}` 与卡片句子横幅都用它）
-  /// ——与台词浮窗点词（`_onLookupText`）逐字同形，hook 侧也正是为此不截断整行。
-  Future<void> _runLookup(GalLookupHit hit) async {
+  /// 查到「遠」。整行原样当作 `sentence`给制卡上下文；内嵌卡不显示顶部整句横幅。
+  static const int _kCardBitmapBytes = 8 * 1024 * 1024;
+  static const double _kCardViewportFraction = 0.6;
+
+  void _applyCardSizeCap(GalLookupHit hit) {
+    if (hit.viewW <= 0 || hit.viewH <= 0) {
+      GlobalLookupController.instance.setPhysicalCap();
+      return;
+    }
+    double w = hit.viewW * _kCardViewportFraction;
+    double h = hit.viewH * _kCardViewportFraction;
+    const int budgetPixels = _kCardBitmapBytes ~/ 4;
+    final double area = w * h;
+    if (area > budgetPixels) {
+      final double shrink = math.sqrt(budgetPixels / area);
+      w *= shrink;
+      h *= shrink;
+    }
+    GlobalLookupController.instance
+        .setPhysicalCap(width: w.floor(), height: h.floor());
+  }
+
+  Future<void> _runLookup(
+    GalLookupHit hit,
+    int generation,
+    GlobalLookupRoute route,
+  ) async {
+    if (!_isCurrentLookup(generation, route)) return;
     final String query = lookupQueryFromIndex(hit.line, hit.charIndex);
     if (query.isEmpty) {
-      await _dismissCurrent();
+      if (_isCurrentLookup(generation, route)) {
+        await _terminateCurrentLookup();
+      }
       return;
     }
     if (!hit.hasConsistentCharCount) {
@@ -305,63 +653,117 @@ class GalIngameLookupController {
       glog('gal-ingame: charCount mismatch seq=${hit.seq} '
           'reported=${hit.charCount} actual=${hit.line.length}');
     }
-    // 先记住这次命中：卡片渲染完成的回调（onRevealed）要靠它算 anchor 与高亮。
+    // 必须在进入 lookupText 前挂上 active token：host 的 overlaySize/reveal 可以在
+    // lookupText Future 返回前已经到达。generation 门会拒绝后来新 submit 已作废的旧回调。
     _activeHit = hit;
-    _presentedHighlightStart = -1;
-    _presentedHighlightLen = -1;
-    // 新一次查词的落点要等新卡片量出尺寸才知道，旧落点作废（否则中间到达的悬停会
-    // 把上一张卡的位置又投一遍）。
-    _presentedAnchorX = null;
-    _presentedAnchorY = null;
+    _activeLookupGeneration = generation;
+    _applyCardSizeCap(hit);
     glog('gal-ingame: lookup seq=${hit.seq} idx=${hit.charIndex} '
         'query="$query"');
-    final bool taken = await GlobalLookupController.instance.lookupText(
-      query,
-      sentence: hit.line,
-      // 不传 anchorScreenRect：卡片落点在**游戏 Layer 坐标**里，与 Windows 屏幕坐标
-      // 无关，由 galLookupPresent 的 anchor 决定。覆盖窗自身照旧离屏渲染出帧。
-      miningHandler: _miningResolver?.call(hit.line),
+    final bool taken = await GlobalLookupChannel.runWithRoute(
+      route,
+      () => GlobalLookupController.instance.lookupText(
+        query,
+        sentence: hit.line,
+        showSentenceBanner: false,
+        miningHandler: _miningResolver?.call(hit.line),
+      ),
     );
+    if (!_isCurrentLookup(generation, route)) {
+      return;
+    }
     if (!taken) {
       glog('gal-ingame: overlay refused lookup seq=${hit.seq}');
-      _activeHit = null;
-      await _dismissCurrent();
+      await _terminateCurrentLookup();
+      return;
     }
   }
 
   /// 覆盖窗回报「卡片已渲染、尺寸已定」（物理 px）→ 投帧。
   ///
-  /// 首帧 reveal 与后续 resize（卡内点词压出子卡 / Ctrl+滚轮改字号）都会走到这里，
-  /// 所以游戏里的卡片会跟着内容重新定位，而不是停在首帧几何上。
-  void _onOverlayRevealed(int physicalWidth, int physicalHeight) {
+  /// 只接受当前 lookup generation 的 reveal；新 submit 已经到达时，旧 WebView 的迟到尺寸
+  /// 绝不能投进游戏。
+  void _onOverlayRevealed(
+    GlobalLookupRoute route,
+    int physicalWidth,
+    int physicalHeight,
+  ) {
     final GalLookupHit? hit = _activeHit;
-    // 没有在途的游戏内命中 = 这次 reveal 属于普通桌面查词（热键 / 剪贴板），不投。
     if (hit == null || !_enabledNow) return;
+    if (!_isCurrentLookup(_activeLookupGeneration, route)) return;
     if (physicalWidth <= 0 || physicalHeight <= 0) return;
-    final int start = hit.charIndex;
-    final int len = _highlightLength(hit);
-    final ({int x, int y}) anchor =
-        _resolveAnchor(hit, physicalWidth, physicalHeight);
-    _presentedHighlightStart = start;
-    _presentedHighlightLen = len;
-    _presentedAnchorX = anchor.x;
-    _presentedAnchorY = anchor.y;
-    glog('gal-ingame: present seq=${hit.seq} anchor=(${anchor.x},${anchor.y}) '
-        'card=${physicalWidth}x$physicalHeight hl=$start+$len');
-    unawaited(_present(hit, anchor, start, len));
+    _cardPhysicalWidth = physicalWidth;
+    _cardPhysicalHeight = physicalHeight;
+    glog('gal-ingame: rendered seq=${hit.seq} '
+        'card=${physicalWidth}x$physicalHeight');
+    _scheduleRecapture(_activeLookupGeneration, route);
   }
 
-  /// 投帧并把 runner 的应答记下来。
-  ///
-  /// runner 不抛异常，失败编码成 `{error: token}`（旧 helper 无 v14 查词区 / 开关没
-  /// 开 / 取帧失败 / 卡片超预算被裁）。这里**不吞**：吞掉就等于把「ready」当成
-  /// 「投出去了」，正是阶段证据门禁止的那种推断。
+  void _scheduleRecapture(int generation, GlobalLookupRoute route) {
+    if (!_isCurrentLookup(generation, route)) return;
+    if (_cardPhysicalWidth <= 0 || _cardPhysicalHeight <= 0) return;
+    _recaptureDirty = true;
+    if (_captureSuppressed) return;
+    if (_recaptureInFlight || _recaptureTurn != null) return;
+    _recaptureTurn = Timer(Duration.zero, () {
+      _recaptureTurn = null;
+      unawaited(_drainRecapture());
+    });
+  }
+
+  Future<void> _drainRecapture() async {
+    if (_captureSuppressed || _recaptureInFlight || !_recaptureDirty) return;
+    _recaptureInFlight = true;
+    _recaptureDirty = false;
+    try {
+      final GalLookupHit? hit = _activeHit;
+      final GlobalLookupRoute? route = _activeRoute;
+      final int generation = _activeLookupGeneration;
+      final int physicalWidth = _cardPhysicalWidth;
+      final int physicalHeight = _cardPhysicalHeight;
+      if (hit == null ||
+          route == null ||
+          physicalWidth <= 0 ||
+          physicalHeight <= 0) {
+        return;
+      }
+      if (!_isCurrentLookup(generation, route)) return;
+      final int start = hit.charIndex;
+      final int len = _highlightLength(hit);
+      final ({int x, int y}) anchor =
+          _resolveAnchor(hit, physicalWidth, physicalHeight);
+      glog('gal-ingame: recapture seq=${hit.seq} '
+          'anchor=(${anchor.x},${anchor.y}) '
+          'card=${physicalWidth}x$physicalHeight hl=$start+$len');
+      await _present(hit, anchor, start, len, generation, route);
+    } finally {
+      _recaptureInFlight = false;
+      // 输入/bridge 在 CapturePreview 期间又把页面改脏：下一 turn 再抓一张，既给
+      // WebView compositor 提交绘制的机会，也避免在一个 async while 里自旋。
+      final GlobalLookupRoute? route = _activeRoute;
+      if (!_captureSuppressed && _recaptureDirty && route != null) {
+        _scheduleRecapture(_activeLookupGeneration, route);
+      }
+    }
+  }
+
+  void _cancelRecapture() {
+    _recaptureTurn?.cancel();
+    _recaptureTurn = null;
+    _recaptureDirty = false;
+    _cardPhysicalWidth = 0;
+    _cardPhysicalHeight = 0;
+  }
+
   Future<void> _present(
     GalLookupHit hit,
     ({int x, int y}) anchor,
     int highlightStart,
     int highlightLen,
+    int generation,
+    GlobalLookupRoute route,
   ) async {
+    if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupPresent(
       seq: hit.seq,
@@ -370,35 +772,53 @@ class GalIngameLookupController {
       highlightStart: highlightStart,
       highlightLen: highlightLen,
     );
+    if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     if (!result.ok) {
       glog('gal-ingame: present seq=${hit.seq} FAILED ${result.error}');
       return;
     }
     if (result.clamped) {
-      // 卡片比游戏画面/字节预算还大，投进去的是被切过的图。处置在用户手上（把
-      // 弹窗最大宽高调小），这里先如实记账，不假装成功。
       glog('gal-ingame: present seq=${hit.seq} CLAMPED to '
           '${result.width}x${result.height}');
     }
   }
 
-  /// 覆盖窗被真正关掉（点外 / Esc / 前台钩子）→ 游戏里的卡片跟着消场。
-  Future<void> _onOverlayHidden() async {
-    await _dismissCurrent();
+  Future<void> _onOverlayHidden(GlobalLookupRoute route) async {
+    if (!_acceptsRoute(route)) return;
+    await _terminateCurrentLookup();
   }
 
-  Future<void> _dismissCurrent() async {
-    final GalLookupHit? hit = _activeHit;
+  /// Ends the current gal lookup on both surfaces.
+  ///
+  /// The game Layer is dismissed first; the off-screen Fushi popup is then
+  /// hidden while its immutable route is still valid, and only after native has
+  /// accepted that hide do we retire the token. Invalidating first would make
+  /// the channel boundary drop the hide and leave a stale WebView frame capable
+  /// of reappearing. This is used for line changes, empty/refused lookups,
+  /// genuine popup dismissal, session disable and test shutdown alike.
+  Future<void> _terminateCurrentLookup() async {
+    final GlobalLookupRoute? route = _activeRoute;
+    final GalLookupHit? hit = _latestSubmitHit ?? _activeHit;
+    _lookupGeneration++;
     _activeHit = null;
-    _pendingHit = null;
-    _presentedHighlightStart = -1;
-    _presentedHighlightLen = -1;
-    _presentedAnchorX = null;
-    _presentedAnchorY = null;
-    if (hit == null) return;
-    final GalLookupCallResult result =
-        await GalHookTextOverlayChannel.galLookupDismiss(hit.seq);
-    glog('gal-ingame: dismiss seq=${hit.seq} -> ${result.error ?? "ok"}');
+    _activeLookupGeneration = 0;
+    _latestSubmitHit = null;
+    _pendingLookup = null;
+    _cancelRecapture();
+    try {
+      if (hit != null && !_captureSuppressed) {
+        final GalLookupCallResult result =
+            await GalHookTextOverlayChannel.galLookupDismiss(hit.seq);
+        glog('gal-ingame: dismiss seq=${hit.seq} -> ${result.error ?? "ok"}');
+      } else if (hit != null) {
+        // capture-suppress 已经把 card/highlight 收掉；此刻普通 dismiss 会提前解除
+        // native 的持续 suppress，让 WGC 采样后半段重新吃到 hover 高亮。lease release
+        // 会在截图结束后做同会话 dismiss 补偿。
+        glog('gal-ingame: defer dismiss seq=${hit.seq} until capture release');
+      }
+    } finally {
+      await _hideThenInvalidateRoute(route);
+    }
   }
 
   /// 命中高亮跨度（UTF-16）= 引擎匹配长度 `bestLength`，钳进行尾。
@@ -406,20 +826,51 @@ class GalIngameLookupController {
   /// 与弹窗内高亮、剪贴板面板横幅高亮同一真值口径；引擎没给（无结果）时退回光标那
   /// 一个字素簇，绝不给 0 —— 0 会让游戏里「点了没反应」。
   int _highlightLength(GalLookupHit hit) {
-    final int best = GlobalLookupController.instance.rootBestLength;
+    final int bestLength = GlobalLookupController.instance.rootBestLength;
     final int remaining = hit.line.length - hit.charIndex;
-    if (best <= 0) return _graphemeLengthAt(hit.line, hit.charIndex);
-    return best > remaining ? remaining : best;
+    if (bestLength <= 0) return _graphemeLengthAt(hit.line, hit.charIndex);
+    return bestLength > remaining ? remaining : bestLength;
+  }
+
+  bool _acceptsRoute(GlobalLookupRoute route) =>
+      route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
+
+  bool _isCurrentLookup(int generation, GlobalLookupRoute route) =>
+      _started &&
+      _enabledNow &&
+      generation == _lookupGeneration &&
+      _acceptsRoute(route);
+
+  Future<void> _hideThenInvalidateActiveRoute() async {
+    await _hideThenInvalidateRoute(_activeRoute);
+  }
+
+  Future<void> _hideThenInvalidateRoute(GlobalLookupRoute? route) async {
+    if (route == null) {
+      if (_activeRoute == null) {
+        GlobalLookupController.instance.setPhysicalCap();
+      }
+      return;
+    }
+    await GlobalLookupChannel.runWithRoute(
+      route,
+      () => GlobalLookupChannel.hide(notify: false),
+    );
+    if (_activeRoute == route) {
+      GlobalLookupChannel.invalidateRoute(route);
+      _activeRoute = null;
+      GlobalLookupController.instance.setPhysicalCap();
+    }
   }
 
   /// 卡片左上角（primaryLayer px）。
   ///
-  /// 复用覆盖窗自己的级联定位纯函数 [computeFrameRect]：卡片放在被点字形的下方，
+  /// 复用公共级联定位纯函数 [computeFrameRect]：卡片放在被点字形的下方，
   /// 下方空间不够就翻到上方（这就是「避让字幕」——字形矩形本身即台词所在的那一行），
   /// 中心 X 取字形中心并 clamp 进视口。**不另写一套定位**。
   ///
   /// 之后再夹一次 `[0, view - card]`：[computeFrameRect] 在空间不足时会把**它算出来
-  /// 的**宽高收缩，而我们要投的位图尺寸是固定的（收缩不了），所以卡片比视口还大的
+  /// 的**宽高收缩，而我们交给游戏 Layer 的卡片尺寸是固定的，所以卡片比视口还大的
   /// 退化情形要显式贴边，否则右/下会溢出到视口外被裁掉。
   /// 测试入口：定位算法必须被**直接**测到，不许在测试里转写一份。
   ///
@@ -452,15 +903,6 @@ class GalIngameLookupController {
     );
   }
 
-  /// 悬停时没有新位图，也就没有权威的卡片尺寸：卡片还在屏上就把**它现在的**落点
-  /// 原样回传（换成悬停字形下方会让卡片跟着鼠标跑），没有卡片时才给字形下方兜底。
-  ({int x, int y}) _resolveAnchorForCurrentCard(GalLookupHit hit) {
-    final int? x = _presentedAnchorX;
-    final int? y = _presentedAnchorY;
-    if (x != null && y != null) return (x: x, y: y);
-    return (x: hit.glyphX, y: hit.glyphY + hit.glyphH + _kCardGap);
-  }
-
   /// [index] 处**字素簇**的 UTF-16 长度（绝不劈开代理对 / 浊点 / 组合字，与
   /// texthooker 逐字命中同一粒度）。越界返回 0。
   static int _graphemeLengthAt(String text, int index) {
@@ -480,6 +922,20 @@ class GalIngameLookupController {
     if (value < min) return min;
     if (value > max) return max;
     return value;
+  }
+}
+
+class _GalIngameCaptureLease implements GalHookCaptureLease {
+  _GalIngameCaptureLease(this._onRelease);
+
+  final Future<void> Function() _onRelease;
+  bool _released = false;
+
+  @override
+  Future<void> release() async {
+    if (_released) return;
+    _released = true;
+    await _onRelease();
   }
 }
 

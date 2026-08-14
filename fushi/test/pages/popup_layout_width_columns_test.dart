@@ -40,10 +40,12 @@ void main() {
         isNull,
         reason: '书架/视频库宽屏应占满（用户实报莫名宽度上限）',
       );
+      // 设置页同样取消上限（用户实报「设置页有莫名奇妙的宽度限制」）。
       expect(
         desktopContentMaxWidth(
             WindowSizeClass.expanded, DesktopContentKind.settings),
-        960,
+        isNull,
+        reason: '设置正文宽屏应占满，不再被 960 锁窄',
       );
     });
 

@@ -259,15 +259,15 @@ class AggregateSyncService {
   Future<AggregateSnapshot> filterTombstoned(AggregateSnapshot snapshot) async {
     final Set<(String, String)> statTombstoned =
         await _db.getStatisticsTombstoneKeys();
-    final Set<String> favWordTombstoned = <String>{
+    final Map<String, int> favWordTombstoned = <String, int>{
       for (final SyncDeletionTombstoneRow row
           in await _db.getSyncDeletionTombstonesOfType('favoriteword'))
-        row.itemKey,
+        row.itemKey: row.deletedAt,
     };
-    final Set<String> favSentenceTombstoned = <String>{
+    final Map<String, int> favSentenceTombstoned = <String, int>{
       for (final SyncDeletionTombstoneRow row in await _db
           .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
-        row.itemKey,
+        row.itemKey: row.deletedAt,
     };
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
@@ -294,18 +294,27 @@ class AggregateSyncService {
         for (final LookupMiningRecord r in snapshot.lookupMiningCounters)
           if (!statTombstoned.contains((r.title, r.sourceType))) r,
       ],
+      // 收藏过滤时间戳感知（与 applySnapshotToLocal 同律）：只剔除被墓碑严格压制
+      // 的条目——重收藏（createdAt 更新）照常上行。
       favoriteWords: <FavoriteWordRecord>[
         for (final FavoriteWordRecord r in snapshot.favoriteWords)
-          if (!favWordTombstoned.contains(FushiDatabase.favoriteWordItemKey(
-              r.expression, r.reading, r.sourceType)))
+          if ((favWordTombstoned[FushiDatabase.favoriteWordItemKey(
+                      r.expression, r.reading, r.sourceType)] ??
+                  0) <=
+              r.createdAt)
             r,
       ],
       favoriteSentences: <FavoriteSentence>[
         for (final FavoriteSentence s in snapshot.favoriteSentences)
-          if (!favSentenceTombstoned
-              .contains(FavoriteSentenceRepository.itemKeyOf(s)))
+          if ((favSentenceTombstoned[FavoriteSentenceRepository.itemKeyOf(s)] ??
+                  0) <=
+              s.createdAt.millisecondsSinceEpoch)
             s,
       ],
+      // 互联完整支持批次：墓碑家族必须透传——上行裁剪重建快照时丢掉它们，
+      // 取消收藏就永远传不到对端（正是本批要修的缺口）。
+      favoriteWordTombstones: snapshot.favoriteWordTombstones,
+      favoriteSentenceTombstones: snapshot.favoriteSentenceTombstones,
     );
   }
 
@@ -319,6 +328,35 @@ class AggregateSyncService {
     AggregateSnapshot local,
     AggregateSnapshot remote,
   ) {
+    // 收藏 + 删除墓碑的并集与仲裁（互联完整支持批次：取消收藏跨端传播）。
+    final ({
+      List<FavoriteWordRecord> favorites,
+      List<AggregateTombstoneRecord> tombstones
+    }) wordsArb = _arbitrateFavorites<FavoriteWordRecord>(
+      union: AggregateMergeService.mergeUniqueByKey<FavoriteWordRecord>(
+        local.favoriteWords,
+        remote.favoriteWords,
+        (FavoriteWordRecord r) => r.uniqueKey,
+      ),
+      tombstones: _mergeTombstoneMap(
+          local.favoriteWordTombstones, remote.favoriteWordTombstones),
+      keyOf: (FavoriteWordRecord r) => FushiDatabase.favoriteWordItemKey(
+          r.expression, r.reading, r.sourceType),
+      createdAtOf: (FavoriteWordRecord r) => r.createdAt,
+    );
+    final ({
+      List<FavoriteSentence> favorites,
+      List<AggregateTombstoneRecord> tombstones
+    }) sentencesArb = _arbitrateFavorites<FavoriteSentence>(
+      union: AggregateMergeService.mergeFavoriteSentences(
+        local.favoriteSentences,
+        remote.favoriteSentences,
+      ),
+      tombstones: _mergeTombstoneMap(
+          local.favoriteSentenceTombstones, remote.favoriteSentenceTombstones),
+      keyOf: FavoriteSentenceRepository.itemKeyOf,
+      createdAtOf: (FavoriteSentence s) => s.createdAt.millisecondsSinceEpoch,
+    );
     return AggregateSnapshot(
       readingStats: _mergeReadingStats(local.readingStats, remote.readingStats),
       videoStats: _mergeVideoStats(local.videoStats, remote.videoStats),
@@ -333,16 +371,55 @@ class AggregateSyncService {
         local.lookupMiningCounters,
         remote.lookupMiningCounters,
       ),
-      favoriteWords: AggregateMergeService.mergeUniqueByKey<FavoriteWordRecord>(
-        local.favoriteWords,
-        remote.favoriteWords,
-        (FavoriteWordRecord r) => r.uniqueKey,
-      ),
-      favoriteSentences: AggregateMergeService.mergeFavoriteSentences(
-        local.favoriteSentences,
-        remote.favoriteSentences,
-      ),
+      favoriteWords: wordsArb.favorites,
+      favoriteSentences: sentencesArb.favorites,
+      favoriteWordTombstones: wordsArb.tombstones,
+      favoriteSentenceTombstones: sentencesArb.tombstones,
     );
+  }
+
+  /// 墓碑并集（同 itemKey 取 max deletedAt）。
+  static Map<String, int> _mergeTombstoneMap(
+    List<AggregateTombstoneRecord> a,
+    List<AggregateTombstoneRecord> b,
+  ) {
+    final Map<String, int> out = <String, int>{};
+    for (final AggregateTombstoneRecord t in <AggregateTombstoneRecord>[
+      ...a,
+      ...b
+    ]) {
+      final int prev = out[t.itemKey] ?? 0;
+      if (t.deletedAt > prev) out[t.itemKey] = t.deletedAt;
+    }
+    return out;
+  }
+
+  /// 「删除 vs 重收藏」仲裁（互联完整支持批次，纯函数）：
+  /// - 墓碑 `deletedAt` **严格大于**收藏 `createdAt` → 收藏出局（删除跨端传播）；
+  /// - 否则收藏保留、同键墓碑出局（重收藏复活，且防「删除僵尸」反向把新收藏删掉）。
+  static ({List<T> favorites, List<AggregateTombstoneRecord> tombstones})
+      _arbitrateFavorites<T>({
+    required List<T> union,
+    required Map<String, int> tombstones,
+    required String Function(T item) keyOf,
+    required int Function(T item) createdAtOf,
+  }) {
+    final Map<String, int> latestCreated = <String, int>{};
+    for (final T item in union) {
+      final String key = keyOf(item);
+      final int at = createdAtOf(item);
+      if (at > (latestCreated[key] ?? -1)) latestCreated[key] = at;
+    }
+    final List<T> favorites = <T>[
+      for (final T item in union)
+        if ((tombstones[keyOf(item)] ?? 0) <= createdAtOf(item)) item,
+    ];
+    final List<AggregateTombstoneRecord> live = <AggregateTombstoneRecord>[
+      for (final MapEntry<String, int> e in tombstones.entries)
+        if ((latestCreated[e.key] ?? -1) < e.value)
+          AggregateTombstoneRecord(itemKey: e.key, deletedAt: e.value),
+    ];
+    return (favorites: favorites, tombstones: live);
   }
 
   static List<ReadingStatRecord> _mergeReadingStats(
@@ -741,7 +818,74 @@ class AggregateSyncService {
           ),
       ],
       favoriteSentences: favSentences,
+      // 收藏删除墓碑随快照上行（互联完整支持批次：取消收藏跨端传播）。
+      favoriteWordTombstones: <AggregateTombstoneRecord>[
+        for (final SyncDeletionTombstoneRow row
+            in await _db.getSyncDeletionTombstonesOfType(
+                SyncTombstoneKind.favoriteword.dbValue))
+          AggregateTombstoneRecord(
+              itemKey: row.itemKey, deletedAt: row.deletedAt),
+      ],
+      favoriteSentenceTombstones: <AggregateTombstoneRecord>[
+        for (final SyncDeletionTombstoneRow row in await _db
+            .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
+          AggregateTombstoneRecord(
+              itemKey: row.itemKey, deletedAt: row.deletedAt),
+      ],
     );
+  }
+
+  /// 把快照里的收藏删除墓碑落进本地墓碑表（只写严格较新者，旧戳不降级），并删掉
+  /// 被墓碑压制的本地收藏词行（merge 侧已仲裁：快照里仍在的墓碑必然压过全部已知
+  /// 同键收藏；本地行仍按 createdAt 双保险判一次）。收藏句的移除走
+  /// [_writeFavoriteSentences] 的墓碑过滤（pref 整表重写天然是移除）。
+  Future<void> _applySnapshotTombstones(AggregateSnapshot snapshot) async {
+    if (snapshot.favoriteWordTombstones.isEmpty &&
+        snapshot.favoriteSentenceTombstones.isEmpty) {
+      return;
+    }
+    Future<void> persist(
+        String kind, List<AggregateTombstoneRecord> tombs) async {
+      if (tombs.isEmpty) return;
+      final Map<String, int> existing = <String, int>{
+        for (final SyncDeletionTombstoneRow row
+            in await _db.getSyncDeletionTombstonesOfType(kind))
+          row.itemKey: row.deletedAt,
+      };
+      for (final AggregateTombstoneRecord t in tombs) {
+        if (t.deletedAt > (existing[t.itemKey] ?? 0)) {
+          await _db.writeSyncDeletionTombstone(kind, t.itemKey, t.deletedAt);
+        }
+      }
+    }
+
+    await persist(SyncTombstoneKind.favoriteword.dbValue,
+        snapshot.favoriteWordTombstones);
+    await persist(
+        kFavoriteSentenceTombstoneType, snapshot.favoriteSentenceTombstones);
+
+    if (snapshot.favoriteWordTombstones.isNotEmpty) {
+      final Map<String, int> wordTombs = <String, int>{
+        for (final AggregateTombstoneRecord t
+            in snapshot.favoriteWordTombstones)
+          t.itemKey: t.deletedAt,
+      };
+      for (final FavoriteWordRow row in await _db.getAllFavoriteWords()) {
+        final int deletedAt = wordTombs[FushiDatabase.favoriteWordItemKey(
+                row.expression, row.reading, row.sourceType)] ??
+            0;
+        if (deletedAt > row.createdAt) {
+          // propagateDeletion=false：墓碑已按对端原始 deletedAt 落表，改盖 now
+          // 戳会让删除时刻膨胀、在别处错误压过更晚的重收藏。
+          await _db.removeFavoriteWord(
+            expression: row.expression,
+            reading: row.reading,
+            sourceType: row.sourceType,
+            propagateDeletion: false,
+          );
+        }
+      }
+    }
   }
 
   /// Applies a merged snapshot back into the local DB using ONLY MAX / union
@@ -853,16 +997,24 @@ class AggregateSyncService {
         count: r.mineCount,
       );
     }
-    // 删除传播：跳过有 `favoriteword` sync 删除墓碑的收藏——否则本设备取消收藏后，
-    // peer 快照的并集会把它重新加回（复活，正是要治的痛点）。与上面统计墓碑同律。
-    final Set<String> favTombstoned = <String>{
+    // 互联完整支持批次：快照墓碑先落本地（对端的取消收藏在本机生效并继续向外
+    // 传播）——必须在下面的收藏 add/union 之前，使其墓碑抑制读到最新集合。
+    await _applySnapshotTombstones(snapshot);
+    // 删除传播：跳过被 `favoriteword` sync 删除墓碑压制的收藏——否则本设备取消收
+    // 藏后，peer 快照的并集会把它重新加回（复活，正是要治的痛点）。判据**时间戳
+    // 感知**（互联完整支持批次）：仅当墓碑 deletedAt 严格新于收藏 createdAt 才
+    // 跳过——对端删除后又重收藏（createdAt 更新）必须能进来，否则删除变成永久
+    // 封印（addFavoriteWord 落地时会清同键墓碑，链路自洽）。
+    final Map<String, int> favTombstoned = <String, int>{
       for (final SyncDeletionTombstoneRow row
           in await _db.getSyncDeletionTombstonesOfType('favoriteword'))
-        row.itemKey,
+        row.itemKey: row.deletedAt,
     };
     for (final FavoriteWordRecord r in snapshot.favoriteWords) {
-      if (favTombstoned.contains(FushiDatabase.favoriteWordItemKey(
-          r.expression, r.reading, r.sourceType))) {
+      final int deletedAt = favTombstoned[FushiDatabase.favoriteWordItemKey(
+              r.expression, r.reading, r.sourceType)] ??
+          0;
+      if (deletedAt > r.createdAt) {
         continue;
       }
       // addFavoriteWord is idempotent on {expression, reading, sourceType}:
@@ -917,22 +1069,26 @@ class AggregateSyncService {
   /// union back. The extra fold is idempotent, so writing an already-merged set
   /// is a no-op.
   Future<void> _writeFavoriteSentences(List<FavoriteSentence> merged) async {
-    if (merged.isEmpty) return;
     final List<FavoriteSentence> current = await _readFavoriteSentences();
+    // 互联完整支持批次：merged 为空也不能早退——对端的取消收藏（墓碑）要靠下面
+    // 的过滤 + 整表重写把本地句移除；current 也为空时照常写回空表（幂等无害）。
+    if (merged.isEmpty && current.isEmpty) return;
     final List<FavoriteSentence> union =
         AggregateMergeService.mergeFavoriteSentences(current, merged);
-    // 删除传播：剔除有 `favoritesentence` 删除墓碑的收藏句——否则本设备取消收藏后，peer
-    // 快照的并集会把它重新加回（复活）。与收藏词墓碑抑制（applySnapshotToLocal 内）同律。
-    final Set<String> tombstoned = <String>{
+    // 删除传播：剔除被 `favoritesentence` 删除墓碑压制的收藏句——否则本设备取消收
+    // 藏后，peer 快照的并集会把它重新加回（复活）。判据时间戳感知（与收藏词同律）：
+    // 墓碑 deletedAt 严格新于句 createdAt 才剔除，重收藏（createdAt 更新）能回来。
+    final Map<String, int> tombstoned = <String, int>{
       for (final SyncDeletionTombstoneRow row in await _db
           .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
-        row.itemKey,
+        row.itemKey: row.deletedAt,
     };
     final List<FavoriteSentence> out = tombstoned.isEmpty
         ? union
         : union
             .where((FavoriteSentence s) =>
-                !tombstoned.contains(FavoriteSentenceRepository.itemKeyOf(s)))
+                (tombstoned[FavoriteSentenceRepository.itemKeyOf(s)] ?? 0) <=
+                s.createdAt.millisecondsSinceEpoch)
             .toList();
     final String json =
         jsonEncode(out.map((FavoriteSentence s) => s.toJson()).toList());

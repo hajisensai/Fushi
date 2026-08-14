@@ -102,29 +102,44 @@ void main() {
       final String cpp = read('windows/runner/global_lookup_window.cpp');
       expect(cpp.contains('void GlobalLookupWindow::Hide(bool notify)'), isTrue,
           reason: 'Hide 必须带 notify 参数区分 reset 与真实关闭');
-      expect(cpp.contains('const bool was_showing = visible_;'), isTrue,
-          reason: '必须在清 visible_ 前捕获，避免双钩子双通知');
+      // 离屏卡片窗（游戏内查词）**从来不 visible_**，它活着的标志是 offscreen_active_。
+      // 只看 visible_ 的话，那条路由的 hidden 回调一次都不会触发，Dart 侧的卡片状态
+      // 就永远停在"还开着"。
+      expect(
+          cpp.contains(
+              'const bool was_showing = visible_ || offscreen_active_;'),
+          isTrue,
+          reason: '必须在清 visible_ 前捕获（含离屏路由），避免双钩子双通知');
       expect(cpp.contains('if (notify && was_showing && hidden_cb_)'), isTrue,
           reason: '回调仅在 notify 且确曾在屏时触发');
       final String h = read('windows/runner/global_lookup_window.h');
+      // 回调必须带 RouteContext：桌面浮窗与游戏内离屏卡片共用同一个 channel，
+      // 不带路由的 overlayHidden 会让 Dart 把另一条路由的关闭当成自己的。
       expect(
-          h.contains('using HiddenCallback = std::function<void()>;'), isTrue);
+          h.contains(
+              'using HiddenCallback = std::function<void(const RouteContext& route)>;'),
+          isTrue);
       expect(h.contains('void SetHiddenCallback(HiddenCallback cb)'), isTrue);
     });
 
     test('flutter_window 把 SetHiddenCallback 接到 overlayHidden InvokeMethod',
         () {
       final String src = read('windows/runner/flutter_window.cpp');
-      final int at = src.indexOf('SetHiddenCallback([this]()');
+      final int at = src.indexOf('global_lookup_window_->SetHiddenCallback(');
       expect(at, greaterThan(-1), reason: '必须注册 hidden 回调');
-      final int invoke =
-          src.indexOf('InvokeMethod(\n        "overlayHidden"', at);
+      final int invoke = src.indexOf('"overlayHidden"', at);
       expect(invoke, greaterThan(at),
           reason: 'hidden 回调必须 InvokeMethod("overlayHidden") 回 Dart');
-      // "hide" 方法读 notify 参数转发给 Hide。
+      // 回调签名与回传都必须带 route：同一个 channel 上跑着桌面浮窗和游戏内离屏
+      // 卡片两条路由，裸的 overlayHidden 会被 Dart 当成自己那条关了。
+      final String cb = src.substring(at, invoke + 120);
       expect(
-          src.contains(
-              'global_lookup_window_->Hide(BoolFromValue(args, "notify", true))'),
+          cb.contains('const GlobalLookupWindow::RouteContext& route'), isTrue,
+          reason: 'hidden 回调必须接收 RouteContext');
+      expect(cb.contains('RoutedHiddenEnvelope(route)'), isTrue,
+          reason: 'overlayHidden 必须带上路由信息回 Dart');
+      // "hide" 方法读 notify 参数转发给 Hide（通道按 target 路由后统一用 win）。
+      expect(src.contains('win->Hide(BoolFromValue(args, "notify", true))'),
           isTrue,
           reason: 'hide 方法必须把 notify 参数透给 native Hide');
     });
@@ -137,7 +152,16 @@ void main() {
           reason: 'setHandlers 必须接上 _onOverlayHidden');
       expect(c.contains('void Function()? onHidden;'), isTrue,
           reason: '必须暴露公开 onHidden 消费点（872 前置条件）');
-      expect(c.contains('void _onOverlayHidden()'), isTrue);
+      // 入站的 overlayHidden 带路由；处理器必须接得住并在该路由上下文里跑，
+      // 否则游戏内卡片关闭会被当成桌面浮窗关闭（反之亦然）。
+      expect(c.contains('void _onOverlayHidden([GlobalLookupRoute? routed])'),
+          isTrue,
+          reason: '_onOverlayHidden 必须接收路由');
+      expect(
+          c.contains(
+              'GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route))'),
+          isTrue,
+          reason: '必须在来源路由的上下文里派发 hidden');
       // between-lookups 的三处 reset 必须 notify:false：_onHotKey（热键前导）、
       // _lookupExternal（渲染前 TODO-1079 D）、lookupText（TODO-1268/BUG-578 程序化
       // 悬浮字幕点词前导复位，与热键对齐）；真实关闭路径（_onJsMessage 的

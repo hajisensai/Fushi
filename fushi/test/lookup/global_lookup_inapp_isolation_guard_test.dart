@@ -234,7 +234,9 @@ void main() {
           reason: 'the stack renderer computes real cascade geometry');
       expect(render.contains('Rect? anchorRect'), isTrue,
           reason: 'each frame payload carries its anchor rect (C2)');
-      expect(channel.contains("invokeMethod<void>('revealStack'"), isTrue,
+      // 通道调用统一经注入 target/route 的 _invoke 出口（桌面浮窗与游戏内离屏
+      // 卡片共用同一实现），所以扫的是 _invoke 而不是裸 invokeMethod。
+      expect(channel.contains("_invoke<void>('revealStack'"), isTrue,
           reason: 'E1: a revealStack channel reveals/resizes to the bbox');
       expect(cpp.contains('void GlobalLookupWindow::RevealStack('), isTrue,
           reason:
@@ -444,7 +446,10 @@ void main() {
       final int rEnd = hostJs.indexOf('function removeMissing(', rAt);
       expect(rEnd, greaterThan(rAt));
       final String renderBody = hostJs.substring(rAt, rEnd);
-      expect(renderBody.contains('maybeFlipRevealReady(record)'), isTrue,
+      // 带上 record.route：同一个 host 现在同时服务桌面与游戏内两条路由，
+      // 不带路由地翻 reveal-ready 会让另一条路由的壳跟着亮。
+      expect(renderBody.contains('maybeFlipRevealReady(record, record.route)'),
+          isTrue,
           reason: 'renderPayload flips reveal-ready via the coverage gate');
       expect(renderBody.contains('setGateFlag(record, ATTR_REVEAL_READY,'),
           isFalse,

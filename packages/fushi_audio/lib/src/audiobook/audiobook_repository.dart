@@ -125,6 +125,12 @@ class AudiobookRepository {
 
   static const String _kFollowAudioKeyPrefix = 'audiobook_follow_';
   static const String _kDelayMsKeyPrefix = 'audiobook_delay_';
+
+  /// 调轴最后写入时刻（epoch 毫秒）pref 前缀。与 `audiobook_delay_<bookKey>` 配套，
+  /// 供互联（LAN）调轴同步做「严格较新时间戳者胜」LWW（互联完整支持批次；与
+  /// [_kPositionAtMsKeyPrefix] 同范式，键公式与 sync 侧 audiobookDelayAtPrefKey
+  /// 逐字节一致）。无戳（旧数据）在 LWW 中输给任何带戳对端值。
+  static const String _kDelayAtMsKeyPrefix = 'audiobook_delay_at_';
   static const String _kSpeedKeyPrefix = 'audiobook_speed_';
   static const String _kVolumeKeyPrefix = 'audiobook_volume_';
   static const String _kImagePauseSecKeyPrefix = 'audiobook_image_pause_';
@@ -144,11 +150,17 @@ class AudiobookRepository {
     return _db.getPrefTyped('$_kDelayMsKeyPrefix$bookKey', 0);
   }
 
+  /// 写调轴（毫秒）并同时盖更新时间戳（互联 LWW 用，与 [updatePositionMs] 同
+  /// 纪律：值与时间戳是同一调轴的两个 pref，必须一起写，否则 LWW 无依据——本机
+  /// 调整无戳恒 0，会永远输给对端旧戳、再也传不出去）。
   Future<void> updateDelayMs({
     required String bookKey,
     required int ms,
-  }) =>
-      _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
+  }) async {
+    await _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
+    await _db.setPrefTyped('$_kDelayAtMsKeyPrefix$bookKey',
+        DateTime.now().millisecondsSinceEpoch);
+  }
 
   Future<double> readSpeed(String bookKey) async {
     final raw = await _db.getPref('$_kSpeedKeyPrefix$bookKey');

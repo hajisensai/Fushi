@@ -83,6 +83,7 @@ import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
@@ -400,17 +401,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 远端占位卡 + 书库概览总数要等用户手动下拉刷新才补齐。监听全局 tab 信号，切回
     // 书架 tab 时自动重拉一次远端（缓存 _lastRemoteState 顶住 waiting、不闪屏）。
     //
-    // BUG-1181：漫画书架是本 State 类的另一个实例（`mangaOnly: true`），它也会走到
-    // 这里，而回调判的是 `== HomeTab.books` —— 于是切到书架时两个实例各拉一遍远端书，
-    // 漫画那份在 build 里被 `!_mangaOnly` 丢掉。漫画实例根本不消费远端书，直接不订阅。
-    if (!_mangaOnly) {
-      homeShellTabNotifier.addListener(_onShellTabActivated);
-      // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
-      // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
-      // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
-      // 「initState 完成前依赖 InheritedWidget」断言。
-      appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
-    }
+    // 互联完整支持批次：漫画实例现在也消费远端（远端漫画占位卡 + 漫画包下载），
+    // 两个实例都订阅。BUG-1181 担心的重复网络由共享 TTL 清单缓存（BUG-1180）吸收，
+    // 两个实例命中同一份清单。
+    homeShellTabNotifier.addListener(_onShellTabActivated);
+    // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
+    // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
+    // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
+    // 「initState 完成前依赖 InheritedWidget」断言。
+    appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
   }
 
   /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转（BUG-1182）。其余偏好
@@ -1306,8 +1305,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       _lastRemoteState = snapState;
     }
     final _RemoteBookState? remoteState = snapState ?? _lastRemoteState;
-    final bool showRemote = !_mangaOnly &&
-        remoteState != null &&
+    // 互联完整支持批次：漫画书架同样显示远端占位卡（_loadRemoteBooks 已按
+    // _mangaOnly 分架过滤：漫画架只来 format='manga'+hasMangaContent 的条目）。
+    final bool showRemote = remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&
         appModel.prefsRepo.showRemoteEntries;

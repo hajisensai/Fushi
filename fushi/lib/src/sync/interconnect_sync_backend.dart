@@ -137,7 +137,11 @@ Future<bool> _defaultFushiProbe(String url, String token) async {
 /// standalone WebDAV config.
 class InterconnectSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
-    implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
+    implements
+        RemoteBookClient,
+        RemoteVideoClient,
+        RemoteVideoPlaybackSync,
+        RemoteCoverFetcher {
   InterconnectSyncBackend._({FushiProbe? probe})
       : _probe = probe ?? _defaultFushiProbe;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
@@ -1334,6 +1338,54 @@ class InterconnectSyncBackend extends SyncBackend
         res.statusCode, 'PUT /api/library/audiobooks/$bookKey/position');
   }
 
+  /// 读 host 端有声书 [identity] 的调轴（互联完整支持批次）。404（旧 host 无端点 /
+  /// 有声书不存在）返回 (0, 0)，与 [remoteAudiobookPosition] 同款降级。
+  Future<({int delayMs, int updatedAtMs})> remoteAudiobookDelay(
+    String identity,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(identity)}/delay',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return (delayMs: 0, updatedAtMs: 0);
+    }
+    _ops!.checkStatus(
+        res.statusCode, 'GET /api/library/audiobooks/$identity/delay');
+    final String body = await _readBodyBounded(res);
+    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    return (
+      delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
+      updatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 向 host 上报有声书 [identity] 的调轴。host「严格较新时间戳者胜」；旧 host 无
+  /// 端点经 checkStatus 抛错由调用方 best-effort 容错。
+  Future<void> putRemoteAudiobookDelay(
+    String identity,
+    int delayMs,
+    int updatedAtMs,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(identity)}/delay',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(<String, Object?>{
+      'delayMs': delayMs,
+      'delayUpdatedAtMs': updatedAtMs,
+    })));
+    final HttpClientResponse res = await _sendBounded(req);
+    await res.drain<void>();
+    _ops!.checkStatus(
+        res.statusCode, 'PUT /api/library/audiobooks/$identity/delay');
+  }
+
   // ── Remote videos (interconnect-only, read-only) ─────────────────────────
   // 视频只远程观看/可选下载，不参与双向同步。Host 的 /stream 端点使用短时
   // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。
@@ -1674,6 +1726,47 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
+  }
+
+  /// 读 host 端视频 [id] 的播放偏好带戳状态（[RemoteVideoPlaybackSync]）。host
+  /// 返回 404（旧 host 无端点 / 视频不存在）时返回全默认状态，与
+  /// [remoteVideoPosition] 同款降级。
+  @override
+  Future<VideoPlaybackSyncState> remoteVideoPlayback(String id) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/playback',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return const VideoPlaybackSyncState();
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/playback');
+    final String body = await _readBodyBounded(res);
+    return VideoPlaybackSyncState.fromJson(
+        (jsonDecode(body) as Map<String, dynamic>).cast<String, Object?>());
+  }
+
+  /// 向 host 上报视频 [id] 的播放偏好带戳字段（[RemoteVideoPlaybackSync]）。host
+  /// 端逐字段「严格较新时间戳者胜」合并；旧 host 无端点 → 404 经 checkStatus 抛，
+  /// 调用方 best-effort 捕获（本地 prefs 已持久化）。
+  @override
+  Future<void> putRemoteVideoPlayback(
+    String id,
+    VideoPlaybackSyncState state,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/playback',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(state.toJson())));
+    final HttpClientResponse res = await _sendBounded(req);
+    await res.drain<void>();
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/playback');
   }
 
   static String _encodeVideoId(String id) =>

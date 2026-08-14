@@ -17,7 +17,8 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 /// Fake 库服务：视频方法真实、其他方法存根。
 ///
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
-class _FakeLibraryService implements FushiLibraryHostService {
+class _FakeLibraryService
+    implements FushiLibraryHostService, VideoPlaybackSyncHost {
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
           {int limit = 100}) async =>
@@ -95,9 +96,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
-    // 镜像生产 _videoInfoFromRow：清单条目带上 host 记录的播放进度（TODO-653）。
+    // 镜像生产 _videoInfoFromRow：清单条目带上 host 记录的播放进度（TODO-653）
+    // 与字幕调轴（BUG-1620）。
     final ({int positionMs, int updatedAtMs}) p =
         await getVideoPosition(videoId);
+    final VideoPlaybackSyncState d = await getVideoPlayback(videoId);
     return <RemoteVideoInfo>[
       RemoteVideoInfo.fromJson(<String, Object?>{
         'id': videoId,
@@ -107,6 +110,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
         'coverPath': coverFile.path,
         'positionMs': p.positionMs,
         'positionUpdatedAtMs': p.updatedAtMs,
+        'delayMs': d.delayMs,
+        'delayUpdatedAtMs': d.delayAt,
       }),
     ];
   }
@@ -306,6 +311,30 @@ class _FakeLibraryService implements FushiLibraryHostService {
       remoteUpdatedAtMs: updatedAtMs,
     );
   }
+
+  // ── 播放偏好跨设备同步（in-memory 镜像 host 逐字段 LWW 语义）─────────────────
+
+  final Map<String, VideoPlaybackSyncState> videoPlayback =
+      <String, VideoPlaybackSyncState>{};
+
+  @override
+  Future<VideoPlaybackSyncState> getVideoPlayback(String id) async =>
+      videoPlayback[id] ?? const VideoPlaybackSyncState();
+
+  @override
+  Future<void> putVideoPlayback(
+      String id, VideoPlaybackSyncState incoming) async {
+    videoPlayback[id] = VideoPlaybackSyncState.merge(
+        videoPlayback[id] ?? const VideoPlaybackSyncState(), incoming);
+  }
+}
+
+/// 不实现 [VideoPlaybackSyncHost] 的最小库服务——只为「老 host 能力探测负向」用例存在。
+/// playback 路由在触达任何库方法前先 `is` 探测能力 → 404，故其余成员留 noSuchMethod。
+class _NoDelayCapabilityService implements FushiLibraryHostService {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('BUG-1620 负向用例不应触达库方法');
 }
 
 void main() {
@@ -856,6 +885,163 @@ void main() {
     expect(first['positionMs'], 420000, reason: 'host 进度应随清单条目带回，client 据此恢复');
     expect(first['positionUpdatedAtMs'], 1700000000000);
     c.close();
+  });
+
+  // ── 播放偏好跨设备同步端点（BUG-1620 起步，泛化为 /playback；与 /position 对称）──
+  group('video playback sync endpoint', () {
+    Future<int> putPlayback(Map<String, Object?> body,
+        {String encodedId = 'video%2Fsample'}) async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.putUrl(
+        Uri.parse('$base/api/library/videos/$encodedId/playback'),
+      );
+      req.headers.set('authorization', authHeader());
+      req.headers.set('content-type', 'application/json');
+      req.write(jsonEncode(body));
+      final HttpClientResponse res = await req.close();
+      await res.drain<void>();
+      c.close();
+      return res.statusCode;
+    }
+
+    Future<Map<String, dynamic>> getPlayback() async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fsample/playback'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      c.close();
+      return json;
+    }
+
+    test('GET 初始无记录返回空状态；PUT 全字段 → GET 读回（负值/清除保真）', () async {
+      Map<String, dynamic> json = await getPlayback();
+      expect(json.containsKey('delayAt'), isFalse);
+
+      expect(
+          await putPlayback(<String, Object?>{
+            'delayMs': -1500,
+            'delayAt': 1700000000000,
+            'audioTrackId': '3',
+            'audioTrackAt': 1700000000000,
+            'secondarySubtitleSource': 'embedded:4',
+            'secondarySubtitleAt': 1700000000000,
+            'secondaryDelayMs': 250,
+            'secondaryDelayAt': 1700000000000,
+          }),
+          200);
+      json = await getPlayback();
+      expect(json['delayMs'], -1500, reason: '负调轴保真');
+      expect(json['audioTrackId'], '3');
+      expect(json['secondarySubtitleSource'], 'embedded:4');
+      expect(json['secondaryDelayMs'], 250);
+      // 带戳清除（副字幕调轴回跟随）：值缺席 + at 更新。
+      expect(
+          await putPlayback(
+              <String, Object?>{'secondaryDelayAt': 1700000005000}),
+          200);
+      json = await getPlayback();
+      expect(json.containsKey('secondaryDelayMs'), isFalse,
+          reason: '带戳清除必须覆盖旧值');
+      expect(json['secondaryDelayAt'], 1700000005000);
+    });
+
+    test('逐字段严格较新者胜：旧戳单字段 PUT 不回退也不影响其它字段', () async {
+      expect(
+          await putPlayback(<String, Object?>{
+            'delayMs': 2000,
+            'delayAt': 1700000005000,
+            'audioTrackId': '1',
+            'audioTrackAt': 1700000005000,
+          }),
+          200);
+      expect(
+          await putPlayback(
+              <String, Object?>{'delayMs': -999, 'delayAt': 1699999990000}),
+          200);
+      final Map<String, dynamic> json = await getPlayback();
+      expect(json['delayMs'], 2000, reason: '旧时间戳不应回退新调轴');
+      expect(json['audioTrackId'], '1', reason: '未携带的字段不受影响');
+    });
+
+    test('PUT/GET 未知视频 id 返回 404（存在性闸门，不写脏）', () async {
+      expect(
+          await putPlayback(
+              <String, Object?>{'delayMs': 1, 'delayAt': 1700000000000},
+              encodedId: 'video%2Fmissing'),
+          404);
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fmissing/playback'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 404);
+      await res.drain<void>();
+      c.close();
+    });
+
+    test('未鉴权请求被拒（playback 端点在 Basic 鉴权闸门内）', () async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fsample/playback'),
+      );
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 401, reason: '无 Basic 头必须 401，不得泄露播放偏好');
+      await res.drain<void>();
+      c.close();
+    });
+
+    test('listVideos 带回 host 调轴 + 时间戳，供 client LWW 决议', () async {
+      expect(
+          await putPlayback(
+              <String, Object?>{'delayMs': -1500, 'delayAt': 1700000000000}),
+          200);
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req =
+          await c.getUrl(Uri.parse('$base/api/library/videos'));
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final List<dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join()) as List<dynamic>;
+      final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
+      expect(first['delayMs'], -1500);
+      expect(first['delayUpdatedAtMs'], 1700000000000);
+      c.close();
+    });
+
+    test('老 host（无 VideoPlaybackSyncHost 能力）→ 404（client best-effort 降级）',
+        () async {
+      final FushiSyncServer legacy = FushiSyncServer(
+        syncDataDir:
+            Directory.systemTemp.createTempSync('hbk_vid_nodelay').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: _NoDelayCapabilityService(),
+      );
+      await legacy.start();
+      try {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.getUrl(Uri.parse(
+          'http://127.0.0.1:${legacy.port}'
+          '/api/library/videos/video%2Fsample/playback',
+        ));
+        req.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, 404, reason: '能力探测负向应落 404，与老 host 行为一致');
+        await res.drain<void>();
+        c.close();
+      } finally {
+        await legacy.stop();
+      }
+    });
   });
 
   // ── TODO-885 per-episode streamurl / subtitle / position ──────────────────

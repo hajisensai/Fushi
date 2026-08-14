@@ -247,6 +247,30 @@ void main() {
       expect(out.first.recentMs, 5);
     });
 
+    test('BUG-1638: hasContent=false（host 在读的漫画/PDF）不进「继续」', () {
+      final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+        localBookKeys: const <String>{},
+        localVideoUids: const <String>{},
+        remoteBooks: <RemoteBookInfo>[
+          const RemoteBookInfo(
+              title: 'manga-in-progress',
+              hasContent: false,
+              bookKey: 'manga-in-progress',
+              progressPercent: 42,
+              progressUpdatedAtMs: 5),
+          const RemoteBookInfo(
+              title: 'epub-ok',
+              hasContent: true,
+              bookKey: 'epub-ok',
+              progressPercent: 10,
+              progressUpdatedAtMs: 3),
+        ],
+        remoteVideos: const <RemoteVideoInfo>[],
+      );
+      expect(out.map((RemoteContinueCandidate c) => c.id), <String>['epub-ok'],
+          reason: '书架远端列表按 hasContent 过滤，「继续」不过滤会产生点了就消失的死路卡');
+    });
+
     test('remoteContinueCandidates：候选携带 MediaKind，SRT 书不被抹成 epub', () {
       final List<RemoteContinueCandidate> out = remoteContinueCandidates(
         localBookKeys: const <String>{},
