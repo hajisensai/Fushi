@@ -180,6 +180,49 @@ void main() {
       );
     });
   });
+  group('isImportedExternalSubtitlePath（真实下载文件名，用户报「退出再进字幕没了」）', () {
+    // 用户实测截图里的 Jimaku 候选文件名：带括号、CRC、双语后缀。恢复捷径靠这个判据
+    // 决定「要不要按路径直接加载」——它一旦认不出，重进就会掉回「只扫视频同目录」的
+    // 分支，而下载的字幕根本不住在那儿，字幕就此消失。
+    test('括号 / CRC / 双语后缀都不影响识别', () {
+      for (final String name in <String>[
+        '(Hi10)_Re_Zero_-_01_(BD_720p)_(BlurayDesuYo)_(DB3C1337).ja-en.ass',
+        '[Kamigami] Re Zero kara Hajimeru Isekai Seikatsu - 01v3 '
+            '[1920x1080 x265 Ma10p AAC][JPN].ass',
+        'Re_ゼロから始める異世界生活.新編集版.S01E01.WEBRip.Netflix.ja[cc].srt',
+        'Re Life in a different world from zero.S01E01.WEBRip.ja[cc].srt',
+      ]) {
+        expect(
+          isImportedExternalSubtitlePath(
+            '/home/u/Documents/app/video_subtitles/$name',
+          ),
+          isTrue,
+          reason: '认不出就等于重进后字幕消失：$name',
+        );
+      }
+    });
+
+    test('内嵌源与非字幕扩展名仍然不认', () {
+      expect(isImportedExternalSubtitlePath('embedded:2'), isFalse);
+      expect(isImportedExternalSubtitlePath(''), isFalse);
+      expect(
+        isImportedExternalSubtitlePath('/x/video_subtitles/subs.zip'),
+        isFalse,
+      );
+    });
+
+    test('这些文件名跨集也认得住在别处（不被当成同目录 sidecar）', () {
+      expect(
+        shouldReusePersistedSubtitleAcrossEpisode(
+          '/home/u/Documents/app/video_subtitles/'
+              '(Hi10)_Re_Zero_-_01_(BD_720p).ja-en.ass',
+          '/media/Anime/Re Zero/S04E02.mkv',
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('shouldReusePersistedSubtitleAcrossEpisode（换集是否沿用导入字幕）', () {
     // 真正的导入/下载字幕：住在 <appDocs>/video_subtitles/，与剧集目录无关 → 沿用。
     test('导入字幕（异目录）→ true（跨集沿用）', () {

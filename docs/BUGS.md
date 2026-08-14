@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1532 条。点号进各自文件。
+> 共 1533 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1656](bugs/BUG-1656-playlist-subtitle-restore-no-fallback.md) | ✅ | ✅ | 合集里下载的字幕退出再进就没了：恢复链只走一支、零兜底 |
 | [BUG-1654](bugs/BUG-1654-jimaku-download-error-hidden-behind-dialog.md) | ✅ | ✅ | 下载失败提示被对话框盖住且没有原因 |
 | [BUG-1653](bugs/BUG-1653-jimaku-series-list-cleared-before-refetch.md) | ✅ | ✅ | 填集数再搜后系列列表消失且搜不出结果 |
 | [BUG-1652](bugs/BUG-1652-jimaku-search-uses-display-name.md) | ✅ | ✅ | Jimaku 搜索拿中文显示名去猜，刮削存下的 AniList ID 从没被用过 |

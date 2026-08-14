@@ -2748,6 +2748,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         cues = reparsed;
       }
       // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
+      // **但缓存本身可能就是空的**——合集里的每一集只落字幕源指针、不落 cue
+      // （见 _selectSubtitleSource 的 `_episodes.isEmpty` 分支），所以这条支路解析
+      // 失败时 cues 恒为空。下面那组兜底因此**不能**继续挂在同一条 else-if 链上，
+      // 否则「解析一次没成功」就等于零字幕、零兜底、零提示（用户报：下载的字幕退出
+      // 再进就没了，只能重下一次）。
     } else if (rehydrateEmbedded) {
       // 内嵌文本轨：重解析已抽取的缓存档案恢复 cue 级 / 行内样式 markup（TODO-1246）。
       final ({
@@ -2764,7 +2769,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         externalSub = restored.persisted;
       }
       // restored 为空（缓存被清 / 容器不可读）：保留 DB 缓存 cues，仅缺样式不缺内容。
-    } else if (cues.isEmpty) {
+    }
+
+    // 兜底链：只要**还没拿到 cue** 就逐级往下试。这里刻意独立于上面那条 else-if 链
+    // ——上面任何一支「试过但没成功」都必须能落到这里。合集里的每一集没有 DB cue 缓存
+    // 兜底（只落字幕源指针），一旦挂在同一条链上，「解析一次没成功」就直接空手收场。
+    if (!subtitleExplicitlyOff && cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
         final ({
@@ -2782,14 +2792,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           graphicStreamIndex = restored.graphicStreamIndex;
         }
       }
-      // ② 无持久化 / 无匹配：退默认 sidecar 探测。
-      if (cues.isEmpty && externalSub == null) {
+      // ② 仍为空：退默认 sidecar 探测。判据只看「还没有 cue」——旧判据额外要求
+      // `externalSub == null`，于是「有持久化源、但它恢复不出内容」时连 sidecar 都不试。
+      if (cues.isEmpty) {
         final ({String path, List<AudioCue> cues})? sidecar =
             await _detectSidecar(paths.videoPath, widget.bookUid);
         if (sidecar != null) {
           cues = sidecar.cues;
           externalSub = sidecar.path;
         }
+      }
+      // ③ 还是空：别拿一个恢复不出任何内容的外挂源去挡住播放器的内封轨自动加载
+      // （`VideoPlayerController.load` 只在「无外挂路径 + 无 cue」时才后台抽内封文本轨）。
+      // 只影响本次加载，**不回写 DB**——用户选过的源仍在库里，下次仍会先试它。
+      if (cues.isEmpty && !SubtitleSource.isEmbeddedPersisted(externalSub)) {
+        externalSub = null;
       }
     }
     await _applyLoad(
