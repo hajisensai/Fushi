@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -656,6 +657,11 @@ class _CustomFontsPageState extends BasePageState {
     }
     await _settings!.refreshFromDb();
     await appModel.refreshAppFont();
+    // gal hook 台词浮窗字体（FontTarget.galHookText）不经 Flutter engine，走
+    // gal_hook_text channel 直推 native；与 BUG-1095 字号的「写偏好 → 立刻推
+    // native」同款纪律，漏掉这步要重开浮窗才生效。非 Windows / 浮窗未启动时
+    // 是空操作。
+    await GalHookTextOverlayController.instance.applyFontFromPreferences();
     ReaderFushiSource.onSettingsChangedLive?.call();
   }
 
@@ -1438,8 +1444,9 @@ class CustomFontCatalogTile extends StatefulWidget {
 }
 
 class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
-  // 4 个字体用途开关（System UI / Novel Text / Dictionary / Video Subtitle）
-  // 默认折叠：每行不再被四枚 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
+  // 字体用途开关（System UI / Novel Text / Dictionary / Video Subtitle /
+  // Game dialogue）默认折叠：每行不被整排 FilterChip 撑高，一屏能看到更多
+  // 字体。展开后才显示。
   bool _rolesExpanded = false;
 
   String _targetLabel(FontTarget target) => switch (target) {
@@ -1447,6 +1454,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         FontTarget.body => t.font_target_body,
         FontTarget.dictionary => t.font_target_dictionary,
         FontTarget.videoSubtitle => t.font_target_video_subtitle,
+        FontTarget.galHookText => t.font_target_gal_hook,
       };
 
   /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。

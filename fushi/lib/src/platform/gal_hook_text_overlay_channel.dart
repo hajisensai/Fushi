@@ -394,6 +394,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double fontSize = kGalHookTextFontSize,
     int textColor = 0xFFFFFFFF,
     int bgColor = 0xE0000000,
+    String? fontFamily,
+    String? fontPath,
     bool following = true,
     bool passThrough = false,
     bool locked = false,
@@ -401,6 +403,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   }) {
     return _instance.showImpl(<String, Object?>{
       'fontSize': fontSize,
+      // 自定义台词字体（字体库 FontTarget.galHookText 的第一条启用项）。缺省 /
+      // 老 native 不识别时回退内置字族（Yu Gothic），never break。
+      if (fontFamily != null && fontFamily.isNotEmpty) 'fontFamily': fontFamily,
+      if (fontPath != null && fontPath.isNotEmpty) 'fontPath': fontPath,
       'textColor': textColor,
       'bgColor': bgColor,
       'buttonTextColor': 0xFFFFFFFF,
@@ -446,12 +452,16 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     required int bgColor,
     int textColor = 0xFFFFFFFF,
     double fontSize = kGalHookTextFontSize,
+    String? fontFamily,
+    String? fontPath,
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', <String, Object?>{
       'fontSize': fontSize,
       'bgColor': bgColor,
       'textColor': textColor,
+      if (fontFamily != null && fontFamily.isNotEmpty) 'fontFamily': fontFamily,
+      if (fontPath != null && fontPath.isNotEmpty) 'fontPath': fontPath,
       'buttonTextColor': 0xFFFFFFFF,
       'buttonBgColor': 0x552D2340,
       'activeColor': 0xFFCE93D8,

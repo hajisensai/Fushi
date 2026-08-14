@@ -439,6 +439,70 @@ void FloatingLyricWindow::Highlight(int start, int length) {
   RequestRender();
 }
 
+// 自定义台词字体解析（hook 模式，字体库下发）。
+//
+// 私有集合走 IDWriteFactory5 的 FontSetBuilder（Win10 1703+；老系统 As() 失败
+// 直接回退内置字族）。集合按文件路径缓存：**尝试过**就记路径，成败都不再对同
+// 一路径做第二次文件 IO——Render 每帧都会来问，失败重试等于每帧读盘。
+// family 名以文件内的第一族为准：Dart 侧字体库存的 name 是导入时的展示名，与
+// 字体内部 family 不保证一致，拿它去 CreateTextFormat 匹配不上会静默掉进系统
+// fallback，看起来就是「选了字体没生效」。
+FloatingLyricWindow::ResolvedFont FloatingLyricWindow::ResolveTextFont(
+    const wchar_t* fallback_family) {
+  ResolvedFont resolved;
+  resolved.family = fallback_family;
+  if (style_.font_file.empty()) {
+    // 没有文件：family 名非空时按系统集合解析（系统字体条目），空则内置字族。
+    if (!style_.font_family.empty()) resolved.family = style_.font_family;
+    return resolved;
+  }
+  if (style_.font_file != custom_font_collection_file_) {
+    custom_font_collection_file_ = style_.font_file;
+    custom_font_collection_.Reset();
+    custom_font_collection_family_.clear();
+    Microsoft::WRL::ComPtr<IDWriteFactory5> factory5;
+    if (dwrite_factory_ != nullptr &&
+        SUCCEEDED(dwrite_factory_.As(&factory5))) {
+      Microsoft::WRL::ComPtr<IDWriteFontFile> file;
+      Microsoft::WRL::ComPtr<IDWriteFontSetBuilder1> builder;
+      Microsoft::WRL::ComPtr<IDWriteFontSet> font_set;
+      Microsoft::WRL::ComPtr<IDWriteFontCollection1> collection;
+      if (SUCCEEDED(factory5->CreateFontFileReference(
+              style_.font_file.c_str(), nullptr, file.GetAddressOf())) &&
+          SUCCEEDED(factory5->CreateFontSetBuilder(builder.GetAddressOf())) &&
+          SUCCEEDED(builder->AddFontFile(file.Get())) &&
+          SUCCEEDED(builder->CreateFontSet(font_set.GetAddressOf())) &&
+          SUCCEEDED(factory5->CreateFontCollectionFromFontSet(
+              font_set.Get(), collection.GetAddressOf())) &&
+          collection != nullptr && collection->GetFontFamilyCount() > 0) {
+        Microsoft::WRL::ComPtr<IDWriteFontFamily1> family;
+        Microsoft::WRL::ComPtr<IDWriteLocalizedStrings> names;
+        UINT32 length = 0;
+        if (SUCCEEDED(collection->GetFontFamily(0, family.GetAddressOf())) &&
+            SUCCEEDED(family->GetFamilyNames(names.GetAddressOf())) &&
+            names->GetCount() > 0 &&
+            SUCCEEDED(names->GetStringLength(0, &length))) {
+          std::wstring name(length + 1, L'\0');
+          if (SUCCEEDED(names->GetString(0, name.data(), length + 1))) {
+            name.resize(length);
+            custom_font_collection_ = collection;
+            custom_font_collection_family_ = name;
+          }
+        }
+      }
+    }
+  }
+  if (custom_font_collection_ != nullptr &&
+      !custom_font_collection_family_.empty()) {
+    resolved.collection = custom_font_collection_.Get();
+    resolved.family = custom_font_collection_family_;
+  } else if (!style_.font_family.empty()) {
+    // 建集失败：还剩 family 名可试系统集合（同名字体恰好装过时仍能生效）。
+    resolved.family = style_.font_family;
+  }
+  return resolved;
+}
+
 void FloatingLyricWindow::UpdateStyle(const Style& style) {
   style_ = style;
   text_format_.Reset();
@@ -1158,9 +1222,15 @@ void FloatingLyricWindow::Render() {
   const DWRITE_FONT_WEIGHT text_weight = hook_text_mode_
                                              ? DWRITE_FONT_WEIGHT_SEMI_BOLD
                                              : DWRITE_FONT_WEIGHT_NORMAL;
+  // 字族也分模式：Yu Gothic UI 是界面字体，假名被压窄（约 8 成宽）只适合标签；
+  // hook 台词是正文排版，默认全宽假名的 Yu Gothic，且可被字体库的「游戏台词」
+  // 用途覆盖（ResolveTextFont：自定义文件走私有集合）。其余浮窗保持 UI 字族。
+  const ResolvedFont resolved_font =
+      hook_text_mode_ ? ResolveTextFont(L"Yu Gothic")
+                      : ResolvedFont{nullptr, L"Yu Gothic UI"};
   if (text_format_ == nullptr) {
     dwrite_factory_->CreateTextFormat(
-        L"Yu Gothic UI", nullptr, text_weight,
+        resolved_font.family.c_str(), resolved_font.collection, text_weight,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
         static_cast<float>(ScaleForDpi(scaled_font)),
         L"", text_format_.GetAddressOf());
@@ -1179,7 +1249,7 @@ void FloatingLyricWindow::Render() {
   // PushAxisAlignedClip 把一切文字绘制框在 text_rect_ 里，绝不会画到控件带上）。
   if (has_ruby && ruby_format_ == nullptr) {
     dwrite_factory_->CreateTextFormat(
-        L"Yu Gothic UI", nullptr, text_weight,
+        resolved_font.family.c_str(), resolved_font.collection, text_weight,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, ruby_font_px,
         L"", ruby_format_.GetAddressOf());
     if (ruby_format_ != nullptr) {

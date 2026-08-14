@@ -5,6 +5,7 @@
 
 #include <d2d1.h>
 #include <dwrite.h>
+#include <dwrite_3.h>
 #include <wrl/client.h>
 
 #include <cstdint>
@@ -86,6 +87,12 @@ class FloatingLyricWindow {
     double corner_radius = 0.0;
     double window_width = 0.0;
     double window_height = 0.0;
+    // 自定义台词字体（hook 模式，来自 app 字体库）。family 空 = 用内置字族；
+    // file 非空 = 从该字体文件建 DirectWrite 私有集合（family 名以文件内为准，
+    // Dart 给的 family 匹配不上时取文件第一族）。老 payload 缺字段 → 双空 →
+    // 逐像素回到内置字族（never break）。
+    std::wstring font_family;
+    std::wstring font_file;
   };
 
   struct Labels {
@@ -206,6 +213,15 @@ class FloatingLyricWindow {
   bool EnsureDeviceResources();
   void DiscardDeviceResources();
   bool EnsureTextResources();
+
+  // 自定义台词字体：按 style_.font_file 惰性建（并缓存）DirectWrite 私有字体
+  // 集合，返回排版应使用的 (collection, family)。file 为空 / 建集失败时返回
+  // (nullptr, 内置字族)——失败按文件路径记忆，不会每帧重试 IO。
+  struct ResolvedFont {
+    IDWriteFontCollection* collection = nullptr;  // nullptr = 系统集合
+    std::wstring family;
+  };
+  ResolvedFont ResolveTextFont(const wchar_t* fallback_family);
   void Render();
   void RequestRender();
 
@@ -429,6 +445,11 @@ class FloatingLyricWindow {
   // Direct2D / DirectWrite.
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  // 自定义字体私有集合缓存（见 ResolveTextFont）。collection_file_ 记的是**已
+  // 尝试**的文件路径（无论成败），路径不变绝不重建；失败时 collection_ 为空。
+  Microsoft::WRL::ComPtr<IDWriteFontCollection1> custom_font_collection_;
+  std::wstring custom_font_collection_file_;
+  std::wstring custom_font_collection_family_;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
   // 振假名用的小号 format（居中、不换行）。与 text_format_ 同生命周期：字号 /

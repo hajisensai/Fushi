@@ -131,6 +131,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
   double _opacity = _defaultOpacity;
   double _lastNonZeroOpacity = _defaultRestoreOpacity;
   double _fontSize = kGalHookTextFontSize;
+
+  /// 台词字体（字体库 FontTarget.galHookText 的第一条启用项）。null = 未设置，
+  /// native 回退内置字族。path 为 null 表示系统字体（native 按 family 名解析）。
+  String? _fontFamily;
+  String? _fontPath;
   GalHookTextWindowRect? _savedRect;
 
   static bool get isSupported =>
@@ -270,6 +275,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _opacity = stored.clamp(0.0, 1.0);
     if (_opacity > 0) _lastNonZeroOpacity = _opacity;
     _fontSize = _readFontSizePreference();
+    _readHookFontPreference();
     final Object? storedRect = read(_rectPreferenceKey, '');
     final String encoded = storedRect is String ? storedRect : '';
     if (encoded.isEmpty) return;
@@ -389,6 +395,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
         rect: _savedRect,
         fontSize: _fontSize,
         bgColor: _backgroundColor,
+        fontFamily: _fontFamily,
+        fontPath: _fontPath,
         following: _following,
         passThrough: _passThrough,
         locked: _locked,
@@ -472,6 +480,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GalHookTextOverlayChannel.updateStyle(
       bgColor: _backgroundColor,
       fontSize: _fontSize,
+      fontFamily: _fontFamily,
+      fontPath: _fontPath,
     );
     notifyListeners();
   }
@@ -492,6 +502,45 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GalHookTextOverlayChannel.updateStyle(
       bgColor: _backgroundColor,
       fontSize: next,
+      fontFamily: _fontFamily,
+      fontPath: _fontPath,
+    );
+    notifyListeners();
+  }
+
+  /// 读台词字体（字体库 `FontTarget.galHookText` 用途）：取第一条启用项的
+  /// `{name, path}` 进 [_fontFamily] / [_fontPath]。真值在
+  /// [ReaderFushiSource.readerSettings]（app 初始化时挂上）；未挂 / 未设置时
+  /// 双双置 null → native 回退内置字族。
+  void _readHookFontPreference() {
+    _fontFamily = null;
+    _fontPath = null;
+    final settings = ReaderFushiSource.readerSettings;
+    if (settings == null) return;
+    for (final Map<String, dynamic> font in settings.galHookFonts) {
+      if (font['enabled'] == false) continue;
+      final Object? name = font['name'];
+      if (name is! String || name.isEmpty) continue;
+      _fontFamily = name;
+      final Object? path = font['path'];
+      _fontPath = path is String && path.isNotEmpty ? path : null;
+      return;
+    }
+  }
+
+  /// 字体库改动后调用：重读台词字体并立刻推给已开着的 native 浮窗。与
+  /// [applyFontSizeFromPreferences] 同款纪律——漏掉这步只落盘，浮窗要重开才生效。
+  Future<void> applyFontFromPreferences() async {
+    if (!_started) return;
+    final String? prevFamily = _fontFamily;
+    final String? prevPath = _fontPath;
+    _readHookFontPreference();
+    if (prevFamily == _fontFamily && prevPath == _fontPath) return;
+    await GalHookTextOverlayChannel.updateStyle(
+      bgColor: _backgroundColor,
+      fontSize: _fontSize,
+      fontFamily: _fontFamily,
+      fontPath: _fontPath,
     );
     notifyListeners();
   }

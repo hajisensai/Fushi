@@ -28,6 +28,11 @@ enum FontTarget {
   /// not libmpv — Hibiki renders text subtitles in the Flutter layer). New in
   /// TODO-864.
   videoSubtitle,
+
+  /// Windows galgame hook 台词浮窗字体。消费方是 native DirectWrite（浮窗是
+  /// runner 自绘的分层窗，不走 Flutter engine），所以这个 target 只取
+  /// `{name, path}` 经 gal_hook_text channel 下发，不经 [AppFontLoader] 注册。
+  galHookText,
 }
 
 /// All reader display/behavior settings, decoupled from the media source.
@@ -554,6 +559,10 @@ class ReaderSettings {
   /// Sibling of the other `*_fonts` keys; backs [FontTarget.videoSubtitle].
   static const String fontKeyVideoSubtitle = 'video_sub_fonts';
 
+  /// Persistence key for the galgame hook overlay font list.
+  /// Sibling of the other `*_fonts` keys; backs [FontTarget.galHookText].
+  static const String fontKeyGalHookText = 'gal_hook_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -565,6 +574,7 @@ class ReaderSettings {
     fontKeyAppUi,
     fontKeyDictionary,
     fontKeyVideoSubtitle,
+    fontKeyGalHookText,
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -598,6 +608,8 @@ class ReaderSettings {
         fontKeyDictionary: _legacyFontListForKey(fontKeyDictionary),
       if (_cache.containsKey(fontKeyVideoSubtitle))
         fontKeyVideoSubtitle: _legacyFontListForKey(fontKeyVideoSubtitle),
+      if (_cache.containsKey(fontKeyGalHookText))
+        fontKeyGalHookText: _legacyFontListForKey(fontKeyGalHookText),
     };
   }
 
@@ -734,6 +746,7 @@ class ReaderSettings {
     // their compat seed.
     if (key != fontKeyBody &&
         key != fontKeyVideoSubtitle &&
+        key != fontKeyGalHookText &&
         !state.hasTarget(key) &&
         state.hasTarget(fontKeyBody)) {
       final FontCatalogState seeded = state.withTargetFonts(
@@ -763,6 +776,11 @@ class ReaderSettings {
   List<Map<String, dynamic>> get videoSubtitleFonts =>
       _fontListForTargetKey(fontKeyVideoSubtitle);
 
+  /// Galgame hook 台词浮窗字体列表。未设置 = 空列表 → native 回退默认字族
+  /// （Yu Gothic）。与 [videoSubtitleFonts] 同规矩：不继承正文列表。
+  List<Map<String, dynamic>> get galHookFonts =>
+      _fontListForTargetKey(fontKeyGalHookText);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
@@ -770,6 +788,7 @@ class ReaderSettings {
         FontTarget.appUi => appUiFonts,
         FontTarget.dictionary => dictionaryFonts,
         FontTarget.videoSubtitle => videoSubtitleFonts,
+        FontTarget.galHookText => galHookFonts,
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -808,6 +827,7 @@ class ReaderSettings {
         FontTarget.appUi => fontKeyAppUi,
         FontTarget.dictionary => fontKeyDictionary,
         FontTarget.videoSubtitle => fontKeyVideoSubtitle,
+        FontTarget.galHookText => fontKeyGalHookText,
       };
 
   /// Persists the whole list for [target]. The body convenience overload

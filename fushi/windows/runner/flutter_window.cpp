@@ -712,6 +712,10 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
   style.window_height =
       DoubleFromValue(args, "windowHeight", style.window_height);
+  // 自定义台词字体（gal hook 浮窗，字体库下发）。旧 payload 缺字段 → 双空 →
+  // native 用内置字族，逐像素不变。
+  style.font_family = WideFromValue(args, "fontFamily", L"");
+  style.font_file = WideFromValue(args, "fontPath", L"");
   return style;
 }
 
