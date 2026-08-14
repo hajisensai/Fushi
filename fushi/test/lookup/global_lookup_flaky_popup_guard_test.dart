@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-1079 / BUG-503 — app-external (Windows) global lookup popup "sometimes
 /// does not appear" root-cause guards (source scan).
 ///
@@ -35,14 +37,12 @@ void main() {
       // 逐个方法手写 target 迟早漏一个，漏掉的那个会静默打到**另一个窗口**上
       // （桌面浮窗 vs 游戏内离屏卡片）。出口只能有一个，裸 invokeMethod 只允许
       // 出现在出口自身体内。
-      // 只数**可执行**行：那段 helper 的注释里正好逐字写着这个调用（它在解释为什么
-      // 这里必须是 _channel.invokeMethod 而不是 _invoke），裸计数会把注释一起算进来。
-      final int bare = read('lib/src/lookup/overlay_window_channel.dart')
-          .split('\n')
-          .where((String l) => !l.trimLeft().startsWith('//'))
-          .where((String l) => l.contains('_channel.invokeMethod'))
-          .length;
-      expect(bare, 1, reason: '除 _invoke 自身外不得裸调 _channel.invokeMethod');
+      // 先掩码再数：那段 helper 的注释里正好逐字写着这个调用（它在解释为什么这里
+      // 必须是 _channel.invokeMethod 而不是 _invoke），裸计数会把注释一起算进来。
+      final String impl =
+          maskComments(read('lib/src/lookup/overlay_window_channel.dart'));
+      expect('_channel.invokeMethod'.allMatches(impl).length, 1,
+          reason: '除 _invoke 自身外不得裸调 _channel.invokeMethod');
     });
 
     test('controller triggers the prewarm from start()', () {
