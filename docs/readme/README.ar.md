@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="شعار Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > الحدّ الأدنى Android 7.0 (API 24). تُحدَّد اللغات المتاحة للبحث في القاموس بناءً على القواميس المُستورَدة وجداول تحويل Yomitan، بشكل مستقلّ عن لغة الواجهة.
@@ -164,7 +164,7 @@ flutter build windows --release
 | الطبقة | التقنية |
 |---|---|
 | إطار العمل | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| المنصّات | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| المنصّات | Android / Windows / macOS / iOS (Material Design 3) |
 | القارئ | محرّك ترقيم صفحات WebView (مُشتقّ من عائلة Hoshi Reader) |
 | الفيديو | media_kit (نواة libmpv) |
 | التخزين | Drift (SQLite, WAL) + fushidicts (محرّك قاموس C++ FFI) |

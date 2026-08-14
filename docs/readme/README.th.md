@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="โลโก้ Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Fushi เปลี่ยนนิยายที่คุณอ่าน ซี�
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > รองรับต่ำสุด Android 7.0 (API 24) ภาษาที่ใช้ค้นคำในพจนานุกรมจะถูกกำหนดโดยพจนานุกรมที่นำเข้าและตารางการแปลงรูปของ Yomitan โดยไม่ขึ้นกับภาษาของส่วนติดต่อผู้ใช้
@@ -164,7 +164,7 @@ flutter build windows --release
 | ชั้น | เทคโนโลยี |
 |---|---|
 | เฟรมเวิร์ก | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| แพลตฟอร์ม | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| แพลตฟอร์ม | Android / Windows / macOS / iOS (Material Design 3) |
 | โปรแกรมอ่าน | เครื่องมือแบ่งหน้าด้วย WebView (พัฒนาจากตระกูล Hoshi Reader) |
 | วิดีโอ | media_kit (แกนหลัก libmpv) |
 | ที่จัดเก็บข้อมูล | Drift (SQLite, WAL) + fushidicts (เครื่องมือพจนานุกรม C++ FFI) |

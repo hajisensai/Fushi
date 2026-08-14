@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="logo Fushi" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok un
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > Minimum Android 7.0 (API 24). Bahasa yang tersedia untuk pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terlepas dari bahasa antarmuka.
@@ -164,7 +164,7 @@ flutter build windows --release
 | Lapisan | Teknologi |
 |---|---|
 | Kerangka kerja | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platform | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Platform | Android / Windows / macOS / iOS (Material Design 3) |
 | Pembaca | Mesin paginasi WebView (diturunkan dari keluarga Hoshi Reader) |
 | Video | media_kit (inti libmpv) |
 | Penyimpanan | Drift (SQLite, WAL) + fushidicts (mesin kamus C++ FFI) |

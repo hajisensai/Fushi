@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="Fushi 로고" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Fushi는 당신이 읽는 소설, 챙겨 보는 애니, 듣는 오디오북을 �
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > 최소 요구 사항은 Android 7.0(API 24)입니다. 사전 검색에서 사용할 수 있는 언어는 가져온 사전과 Yomitan 변환 테이블에 의해 결정되며, 인터페이스 언어와는 독립적입니다.
@@ -164,7 +164,7 @@ flutter build windows --release
 | 레이어 | 기술 |
 |---|---|
 | 프레임워크 | Flutter 3.44.0(Dart SDK `>=3.5.0 <4.0.0`) |
-| 플랫폼 | Android / Windows / macOS / Linux / iOS(Material Design 3) |
+| 플랫폼 | Android / Windows / macOS / iOS(Material Design 3) |
 | 리더 | WebView 페이징 엔진(Hoshi Reader 계열에서 파생) |
 | 동영상 | media_kit(libmpv 코어) |
 | 스토리지 | Drift(SQLite, WAL) ＋ fushidicts(C++ FFI 사전 엔진) |
