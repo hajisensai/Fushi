@@ -445,3 +445,61 @@ drag gesture at all, so mouse / keyboard seeking is untouched.
 
 Source-guard test: `fushi/test/pages/video_horizontal_seek_test.dart`
 (group `BUG-1485: 横滑 seek 换算模型接线守卫`).
+
+## BUG-1644: ANGLE must render on our Direct3D 11 device (`d3d11va` zero-copy)
+
+`windows/angle_surface_manager.{h,cc}` and one log line in `windows/video_output.cc`.
+
+Upstream `ANGLESurfaceManager` creates **two unrelated** Direct3D 11 devices:
+
+- one per `ANGLESurfaceManager` instance, via `D3D11CreateDevice(..., flags = 0)`,
+  used only to allocate the two shared BGRA textures Flutter samples;
+- one *hidden* device that ANGLE creates for itself, because the `EGLDisplay`
+  comes from `eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
+  EGL_DEFAULT_DISPLAY, ...)`.
+
+libmpv's `d3d11-egl` hardware-decoding interop
+(`mpv/video/out/opengl/hwdec_d3d11egl.c`) has exactly one way to find the device
+it must decode into: it reads it back out of the *current* display with
+`eglQueryDisplayAttribEXT(EGL_DEVICE_EXT)` →
+`eglQueryDeviceAttribEXT(EGL_D3D11_DEVICE_ANGLE)`. So it can only ever see
+ANGLE's hidden device — a device nobody created with
+`D3D11_CREATE_DEVICE_VIDEO_SUPPORT` and nobody marked thread safe. It then hands
+that device to FFmpeg (`d3d11_wrap_device_ref` → `d3d11va_device_init`), which
+`QueryInterface`s for `ID3D11VideoDevice` **and** `ID3D11VideoContext`; a device
+created without the video flag can fail either QI (measured: `E_NOINTERFACE` for
+`ID3D11VideoDevice` on WARP). `init()` then returns `-1` *silently*, mpv logs
+only `Loading hwdec driver 'd3d11-egl'` with no follow-up, and `--hwdec=d3d11va`
+degrades to `d3d11va-copy`: every decoded frame is read back to system memory
+and re-uploaded to the GPU. Independently observed in `docs/bugs/BUG-1639`
+("`d3d11va` 失败 → `Using hardware decoding (d3d11va-copy)`").
+
+The patch does what mpv's own `--gpu-context=angle` does
+(`mpv/video/out/opengl/context_angle.c`, `d3d11_device_create`):
+
+- **one** process-wide `ID3D11Device` (`shared_d3d_11_device_`) replaces the
+  per-instance ones, created with
+  `D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT` and
+  marked `ID3D10Multithread::SetMultithreadProtected(TRUE)` (libmpv decodes on
+  its own threads while Flutter's raster thread reads the shared texture);
+- the `EGLDisplay` is created **on that device** with
+  `eglCreateDeviceANGLE(EGL_D3D11_DEVICE_ANGLE, device)` +
+  `eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, ...)`, so
+  `EGL_D3D11_DEVICE_ANGLE` resolves to our device and the interop adopts it;
+- `CleanUp(true)` no longer `Release`s the device per instance (that would free
+  it under the surviving `VideoOutput`s) — the last instance calls
+  `ReleaseSharedResources()`, which terminates the display, releases the
+  `EGLDeviceEXT` and only then the device.
+
+Every new step is guarded: if the device rejects the flags they are dropped one
+by one, and if `eglCreateDeviceANGLE` / the device-backed display is
+unavailable the original
+`EGL_PLATFORM_ANGLE_ANGLE`/`EGL_DEFAULT_DISPLAY` four-candidate fallback chain
+(D3D11 → D3D11 9_3 → D3D9 → wrap) runs verbatim, so machines that cannot take
+the new path behave exactly like pub.dev.
+
+`ANGLESurfaceManager::uses_shared_d3d11_device()` makes the outcome observable;
+`VideoOutput` logs `libmpv d3d11-egl zero-copy interop: available/unavailable`
+next to its existing `Using H/W rendering.` line.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_angle_interop_guard_test.dart`.
