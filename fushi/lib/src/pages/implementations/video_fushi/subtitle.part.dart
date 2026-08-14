@@ -142,6 +142,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_openJimakuDialog(controller)),
         ),
+      // 在线源（OpenSubtitles 等）此前只在发现页/下载流水线可达，播放页完全看不到；
+      // 这里补上入口，走 registry 一次搜全部已配置源。仅在真有配置好的源时显示。
+      if (appModel.videoSubtitleRegistry?.providers.isNotEmpty ?? false)
+        ListTile(
+          leading: const Icon(Icons.travel_explore_outlined),
+          title: Text(t.video_subtitle_online_fetch),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_openOnlineSubtitleDialog(controller)),
+        ),
       ListTile(
         leading: const Icon(Icons.file_open_outlined),
         title: Text(t.video_subtitle_import_file),
@@ -726,6 +737,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    await _applyDownloadedSubtitle(controller, downloaded);
+  }
+
+  /// 把在线对话框下载好的字幕文件应用到当前视频。
+  ///
+  /// 所有在线字幕来源共用这一条落地路径——对话框的契约就是「pop 回一个本地绝对路径」，
+  /// 至于它是 Jimaku 还是 OpenSubtitles 下来的，这里不需要也不应该知道。
+  ///
+  /// - 本地视频：构造外挂 [SubtitleSource] 经 [_selectSubtitleSource] 持久化链路应用。
+  /// - 远端视频（[_isRemote]）：没有本地 DB 行，按远端契约只在内存里应用，经
+  ///   [_applyRemoteSubtitle]（与远端「本地导入字幕」同一不落 DB 的链路）。
+  Future<void> _applyDownloadedSubtitle(
+    VideoPlayerController controller,
+    String? downloaded,
+  ) async {
     if (downloaded == null || !context.mounted) return;
     if (_isRemote) {
       // 远端：内存应用，不写本地 DB（_applyRemoteSubtitle 自带 cue 为空时的失败提示
@@ -747,6 +773,44 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (applied && mounted) {
       _showOsd(t.video_jimaku_downloaded, severity: ToastSeverity.success);
     }
+  }
+
+  /// 打开「在线获取字幕」对话框：走 [AppModel.videoSubtitleRegistry] 一次问遍所有已
+  /// 配置的在线字幕源（OpenSubtitles 等），下载后与 Jimaku 同一条落地路径应用。
+  ///
+  /// 与 Jimaku 专用入口并存而不是取代它：Jimaku 那个是条目/集号/语言的精细控制台，这个
+  /// 是「一把搜全部源」的通道。本地视频会一并带上 OSDb 文件哈希（OpenSubtitles 据此
+  /// 直接命中该压制版本的字幕，比按标题搜准得多）。
+  Future<void> _openOnlineSubtitleDialog(
+    VideoPlayerController controller,
+  ) async {
+    final VideoSubtitleRegistry? registry = appModel.videoSubtitleRegistry;
+    if (registry == null || registry.providers.isEmpty) {
+      _showOsd(t.video_subtitle_online_no_source);
+      return;
+    }
+    final String query = _jimakuQuery() ?? '';
+    final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
+    if (!context.mounted) return;
+    final String? videoPath = _currentVideoPath;
+    final VideoNameInfo? parsed =
+        videoPath == null ? null : parseVideoFilename(p.basename(videoPath));
+    final String? preferred = appModel.jimakuDefaultLanguageOrNull;
+    final String? downloaded = await showDialog<String>(
+      context: context,
+      builder: (_) => OnlineSubtitleSearchDialog(
+        registry: registry,
+        initialQuery: query,
+        saveDirectory: saveDir,
+        videoPath: videoPath,
+        season: parsed?.season,
+        episode: parsed?.episode,
+        preferredLanguages: <String>[if (preferred != null) preferred],
+      ),
+    );
+    // 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    await _applyDownloadedSubtitle(controller, downloaded);
   }
 
   /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]

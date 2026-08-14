@@ -3393,5 +3393,9 @@
   "video_jimaku_category": "分类",
   "video_jimaku_category_anime": "动画",
   "video_jimaku_category_live_action": "真人",
-  "video_jimaku_category_all": "全部"
+  "video_jimaku_category_all": "全部",
+  "video_subtitle_online_fetch": "在线获取字幕",
+  "video_subtitle_online_title": "标题",
+  "video_subtitle_online_no_source": "尚未配置在线字幕来源，请先在设置中添加。",
+  "video_subtitle_online_hash_matched": "按文件哈希精确匹配"
 }

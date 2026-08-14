@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 57715 (3395 per locale)
+/// Strings: 57783 (3399 per locale)
 ///
-/// Built on 2026-08-14 at 15:34 UTC
+/// Built on 2026-08-14 at 15:52 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4593,6 +4593,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_jimaku_category_anime => 'Anime';
   String get video_jimaku_category_live_action => 'Live action';
   String get video_jimaku_category_all => 'All';
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  String get video_subtitle_online_title => 'Title';
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -12431,6 +12436,15 @@ class _StringsAr extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -20336,6 +20350,15 @@ class _StringsDe extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -28257,6 +28280,15 @@ class _StringsEs extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -36190,6 +36222,15 @@ class _StringsFr extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -44051,6 +44092,15 @@ class _StringsId extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -51958,6 +52008,15 @@ class _StringsIt extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -59679,6 +59738,15 @@ class _StringsJa extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -67407,6 +67475,15 @@ class _StringsKo extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -75294,6 +75371,15 @@ class _StringsNl extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -83193,6 +83279,15 @@ class _StringsPtBr extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -91078,6 +91173,15 @@ class _StringsRu extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -98911,6 +99015,15 @@ class _StringsTh extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -106775,6 +106888,15 @@ class _StringsTr extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -114624,6 +114746,15 @@ class _StringsVi extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 // Path: <root>
@@ -121902,6 +122033,14 @@ class _StringsZhCn extends _StringsEn {
   String get video_jimaku_category_live_action => '真人';
   @override
   String get video_jimaku_category_all => '全部';
+  @override
+  String get video_subtitle_online_fetch => '在线获取字幕';
+  @override
+  String get video_subtitle_online_title => '标题';
+  @override
+  String get video_subtitle_online_no_source => '尚未配置在线字幕来源，请先在设置中添加。';
+  @override
+  String get video_subtitle_online_hash_matched => '按文件哈希精确匹配';
 }
 
 // Path: <root>
@@ -129546,6 +129685,15 @@ class _StringsZhHk extends _StringsEn {
   String get video_jimaku_category_live_action => 'Live action';
   @override
   String get video_jimaku_category_all => 'All';
+  @override
+  String get video_subtitle_online_fetch => 'Fetch subtitles (online)';
+  @override
+  String get video_subtitle_online_title => 'Title';
+  @override
+  String get video_subtitle_online_no_source =>
+      'No online subtitle source is configured. Add one in Settings.';
+  @override
+  String get video_subtitle_online_hash_matched => 'Matched by file hash';
 }
 
 /// Flat map(s) containing all translations.
@@ -136518,6 +136666,14 @@ extension on _StringsEn {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -143488,6 +143644,14 @@ extension on _StringsAr {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -150480,6 +150644,14 @@ extension on _StringsDe {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -157471,6 +157643,14 @@ extension on _StringsEs {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -164468,6 +164648,14 @@ extension on _StringsFr {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -171447,6 +171635,14 @@ extension on _StringsId {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -178440,6 +178636,14 @@ extension on _StringsIt {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -185395,6 +185599,14 @@ extension on _StringsJa {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -192354,6 +192566,14 @@ extension on _StringsKo {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -199341,6 +199561,14 @@ extension on _StringsNl {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -206325,6 +206553,14 @@ extension on _StringsPtBr {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -213314,6 +213550,14 @@ extension on _StringsRu {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -220286,6 +220530,14 @@ extension on _StringsTh {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -227267,6 +227519,14 @@ extension on _StringsTr {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -234244,6 +234504,14 @@ extension on _StringsVi {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }
@@ -241163,6 +241431,14 @@ extension on _StringsZhCn {
         return '真人';
       case 'video_jimaku_category_all':
         return '全部';
+      case 'video_subtitle_online_fetch':
+        return '在线获取字幕';
+      case 'video_subtitle_online_title':
+        return '标题';
+      case 'video_subtitle_online_no_source':
+        return '尚未配置在线字幕来源，请先在设置中添加。';
+      case 'video_subtitle_online_hash_matched':
+        return '按文件哈希精确匹配';
       default:
         return null;
     }
@@ -248113,6 +248389,14 @@ extension on _StringsZhHk {
         return 'Live action';
       case 'video_jimaku_category_all':
         return 'All';
+      case 'video_subtitle_online_fetch':
+        return 'Fetch subtitles (online)';
+      case 'video_subtitle_online_title':
+        return 'Title';
+      case 'video_subtitle_online_no_source':
+        return 'No online subtitle source is configured. Add one in Settings.';
+      case 'video_subtitle_online_hash_matched':
+        return 'Matched by file hash';
       default:
         return null;
     }

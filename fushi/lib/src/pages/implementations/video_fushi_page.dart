@@ -108,6 +108,8 @@ import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/src/pages/implementations/online_subtitle_search_dialog.dart';
+import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart';

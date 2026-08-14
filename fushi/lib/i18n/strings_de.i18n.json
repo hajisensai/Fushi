@@ -3393,5 +3393,9 @@
   "video_jimaku_category": "Category",
   "video_jimaku_category_anime": "Anime",
   "video_jimaku_category_live_action": "Live action",
-  "video_jimaku_category_all": "All"
+  "video_jimaku_category_all": "All",
+  "video_subtitle_online_fetch": "Fetch subtitles (online)",
+  "video_subtitle_online_title": "Title",
+  "video_subtitle_online_no_source": "No online subtitle source is configured. Add one in Settings.",
+  "video_subtitle_online_hash_matched": "Matched by file hash"
 }
