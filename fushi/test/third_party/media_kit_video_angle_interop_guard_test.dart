@@ -13,8 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// through the display (`EGL_DEVICE_EXT` → `EGL_D3D11_DEVICE_ANGLE`), i.e.
 /// ANGLE's hidden one, which was never created with
 /// `D3D11_CREATE_DEVICE_VIDEO_SUPPORT`. FFmpeg's `d3d11va_device_init` then
-/// fails its `ID3D11VideoDevice` / `ID3D11VideoContext` QueryInterface, the
-/// interop bails silently, and `hwdec=d3d11va` degrades to `d3d11va-copy`:
+/// QueryInterfaces it for `ID3D11VideoDevice` / `ID3D11VideoContext`, which the
+/// D3D11 runtime refuses on a device built without that flag (`E_NOINTERFACE`,
+/// measured on WARP; a GeForce RTX 5090 happened to allow it). Where it is
+/// refused the interop bails and `hwdec=d3d11va` degrades to `d3d11va-copy`:
 /// every decoded frame round-trips GPU → system memory → GPU.
 ///
 /// Fix (mirrors mpv's own `context_angle.c`): create one process-wide device
@@ -23,6 +25,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// EGL_PLATFORM_DEVICE_EXT, …)`. This test guards the *patch* — a future
 /// re-vendor of media_kit_video that drops it silently reintroduces the
 /// per-frame readback. See `third_party/media_kit_video/PATCHES.md`.
+///
+/// The patch has a second half that lives outside this package: libmpv itself
+/// must be new enough to accept ANGLE at all (mpv `1d15686142`, 2026-07-31 —
+/// older builds look for `EGL_EXT_device_query` in the EGL display extension
+/// string while ANGLE publishes it in the client string, so the interop is
+/// silently off no matter which device the display carries). The last test
+/// below guards that pin.
 void main() {
   // Tests run with CWD = `fushi/`; vendored packages live at the workspace root.
   const String managerSourcePath =
@@ -167,7 +176,8 @@ void main() {
     });
 
     test('the process-wide device is not released per instance', () {
-      final int cleanUp = managerCode.indexOf('void ANGLESurfaceManager::CleanUp');
+      final int cleanUp =
+          managerCode.indexOf('void ANGLESurfaceManager::CleanUp');
       expect(cleanUp, isNonNegative,
           reason: 'expected a CleanUp definition in angle_surface_manager.cc');
       final int nextFunction =
@@ -187,6 +197,62 @@ void main() {
         isTrue,
         reason: 'the last instance must tear the shared display & device down '
             'through ReleaseSharedResources().',
+      );
+    });
+
+    test('the vendored libmpv is new enough to accept ANGLE', () {
+      const String cmakePath =
+          '../third_party/media_kit_libs_windows_video/windows/CMakeLists.txt';
+      const String vendoredDir =
+          '../third_party/media_kit_libs_windows_video/vendored';
+
+      // CMake comments are `#` to end of line; a commented-out pin must not
+      // satisfy this guard.
+      final String cmake = File(cmakePath).readAsLinesSync().map((String line) {
+        final int hash = line.indexOf('#');
+        return hash < 0 ? line : line.substring(0, hash);
+      }).join('\n');
+
+      final RegExpMatch? pin =
+          RegExp(r'set\(LIBMPV\s+"([^"]+)"\)').firstMatch(cmake);
+      expect(pin, isNotNull,
+          reason: 'expected a set(LIBMPV "...") pin in $cmakePath');
+      final String archive = pin!.group(1)!;
+
+      expect(
+        File('$vendoredDir/$archive').existsSync(),
+        isTrue,
+        reason: 'the pinned libmpv archive $archive must be committed under '
+            '$vendoredDir (TODO-1172: nothing is downloaded at build time).',
+      );
+
+      final RegExpMatch? stamp =
+          RegExp(r'^mpv-dev-x86_64-(\d{8})-git-').firstMatch(archive);
+      expect(
+        stamp,
+        isNotNull,
+        reason: 'the pin must be a plain `mpv-dev-x86_64-<date>-git-<sha>.7z` '
+            'build: `-lgpl` drops TrueHD (re-opens BUG-073) and `-v3` needs '
+            'Haswell+ (crashes on older CPUs). Got: $archive',
+      );
+
+      // mpv 1d15686142 (2026-07-31) "hwdec_d3d11egl: fix EGL_EXT_device_query
+      // availability check". Before it, libmpv looked for EGL_EXT_device_query
+      // in the EGL *display* extension string while ANGLE publishes it in the
+      // *client* string, so hwdec_d3d11egl::init() returned -1 before ever
+      // reading the D3D11 device -- native d3d11va interop silently off and
+      // every frame round-tripping GPU -> system memory -> GPU. Handing ANGLE
+      // our own device (the rest of BUG-1644) cannot help while this gate
+      // fails, so the pin must not regress behind the fix.
+      const int minimumBuildDate = 20260731;
+      final int buildDate = int.parse(stamp!.group(1)!);
+      expect(
+        buildDate,
+        greaterThanOrEqualTo(minimumBuildDate),
+        reason: 'libmpv pin $archive predates mpv 1d15686142 '
+            '($minimumBuildDate), which fixes the EGL_EXT_device_query check '
+            'that gates d3d11-egl on ANGLE. Bumping backwards past it silently '
+            'restores d3d11va-copy (BUG-1644).',
       );
     });
 
