@@ -3394,5 +3394,15 @@
   "srt_book_reimport": "Re-import",
   "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
   "srt_book_reimport_no_cues": "No subtitle lines found in that file",
-  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it",
+  "aidoku_runtime_unavailable": "Aidoku extensions are currently available on macOS only.",
+  "aidoku_extensions_title": "Aidoku extensions",
+  "aidoku_extension_empty": "No Aidoku extensions installed.",
+  "aidoku_extension_remove": "Remove Aidoku extension",
+  "aidoku_extension_warning": "Aidoku extensions execute third-party WebAssembly code with network access. Only continue with sources you trust.",
+  "aidoku_webview_unsupported": "This source requires Aidoku WebView APIs that are not supported yet.",
+  "aidoku_extension_imported": "Aidoku extension imported",
+  "aidoku_extension_import": "Import Aidoku extension (.aix)",
+  "aidoku_extension_confirm_title": "Install Aidoku extension?",
+  "aidoku_extension_version": "Version"
 }

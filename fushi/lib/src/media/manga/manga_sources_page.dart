@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +9,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -19,24 +23,25 @@ import 'package:fushi/utils.dart';
 
 /// 漫画库「来源」视图：本域**所有**来源的唯一管理处。
 ///
-/// 三节，自上而下：
+/// 四节，自上而下：
 /// 1. 本地漫画扫描根（与书 / 视频共用的 [MediaSourcesView]）；
-/// 2. 漫画扩展（Mihon 扩展仓库 + 安装 / 启停 / 卸载）——用户口径：「漫画扩展
+/// 2. Aidoku 扩展（macOS 上导入 / 移除 `.aix`）；
+/// 3. 漫画扩展（Mihon 扩展仓库 + 安装 / 启停 / 卸载）——用户口径：「漫画扩展
 ///    不就是来源吗，来源设置里面加上就行了」，因此**不另开顶层 tab**；
-/// 3. 在线漫画源：内置的 mokuro.moe **与**扩展提供的源并列（启停 / 排序 / 偏好 /
+/// 4. 在线漫画源：内置的 mokuro.moe **与**扩展提供的源并列（启停 / 排序 / 偏好 /
 ///    清数据 / 置顶）。
 ///
-/// 🔴 mokuro.moe 归第 3 节，不归第 1 节（BUG-1431）：它是个网站，不是本地扫描根。
+/// 🔴 mokuro.moe 归第 4 节，不归第 1 节（BUG-1431）：它是个网站，不是本地扫描根。
 /// 之前它和「Hibiki 互联」一起挂在「本地扫描根」下，用户口径「mokuro 不应该单独
 /// 显示，应该和漫画扩展同一层级」。挪进「漫画源」后它与扩展源同构——同一节、同一
 /// 种开关语义（关掉 = 不在「浏览」里出现）。
 ///
-/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1441）：第 2 节要渲染整个扩展
+/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1441）：第 3 节要渲染整个扩展
 /// 仓库（keiyoushi 有 1900+ 条），只有 sliver 才能懒建。换回 `ListView` +
 /// 内嵌 `Column` 会立刻把「语言下拉一展开就卡死」带回来。
 ///
-/// 平台差异只在**内容**：iOS / Linux 没有扩展宿主，第 2、3 节渲染成
-/// `mihon_runtime_unavailable` 提示，视图本身与其它平台同构、同位。
+/// 平台差异只在**内容**：Aidoku 目前仅在 macOS 显示导入入口；iOS / Linux 没有
+/// Mihon 扩展宿主，对应两节渲染不可用提示，视图本身与其它平台同构、同位。
 /// `AppModel.mihonManager` 在这些平台会抛 [UnsupportedError]，故一切读它的路径
 /// 都必须先过 [MihonRuntimeFactory.isSupported]。
 class MangaSourcesPage extends ConsumerStatefulWidget {
@@ -56,6 +61,34 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   final GlobalKey<MediaSourcesViewState> _localSourcesKey =
       GlobalKey<MediaSourcesViewState>();
   MihonManager? _manager;
+  AidokuPackageStore? _aidokuStore;
+  List<AidokuInstalledPackage>? _aidokuPackages;
+  Object? _aidokuError;
+  bool _aidokuBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (DesktopAidokuRuntime.isSupported) {
+      unawaited(_initializeAidokuStore());
+    }
+  }
+
+  Future<void> _initializeAidokuStore() async {
+    try {
+      final AidokuPackageStore store = await AidokuPackageStore.open();
+      final List<AidokuInstalledPackage> packages = await store.listInstalled();
+      if (!mounted) return;
+      setState(() {
+        _aidokuStore = store;
+        _aidokuPackages = packages;
+        _aidokuError = null;
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _aidokuError = error);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -88,6 +121,137 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     if (imported == true && mounted) {
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       ref.invalidate(srtBooksProvider);
+    }
+  }
+
+  Future<void> _importAidoku() async {
+    if (!DesktopAidokuRuntime.isSupported || _aidokuBusy) return;
+    final bool acceptedRisk = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text(t.aidoku_extension_import),
+            content: Text(t.aidoku_extension_warning),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_select),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!acceptedRisk || !mounted) return;
+
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const <String>['aix'],
+      allowMultiple: false,
+      withData: false,
+    );
+    final String? path = picked?.files.single.path;
+    if (!mounted || path == null) return;
+
+    setState(() {
+      _aidokuBusy = true;
+      _aidokuError = null;
+    });
+    try {
+      final DesktopAidokuRuntime runtime = DesktopAidokuRuntime();
+      final AidokuPackageInspection inspection = await runtime.inspect(path);
+      if (!mounted) return;
+      if (inspection.requiresWebView) {
+        throw AidokuRuntimeException(
+          'WEBVIEW_REQUIRED',
+          t.aidoku_webview_unsupported,
+        );
+      }
+      final Map<String, Object?> info = inspection.sourceInfo;
+      final bool confirmed = await showAppDialog<bool>(
+            context: context,
+            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+              title: Text(t.aidoku_extension_confirm_title),
+              content: Text(
+                '${info['name']}\n${info['id']}\n'
+                '${t.aidoku_extension_version}: ${info['version']}',
+              ),
+              actions: <Widget>[
+                adaptiveDialogAction(
+                  context: dialogContext,
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: dialogContext,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: Text(t.dialog_import),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmed || !mounted) return;
+      final AidokuPackageStore store =
+          _aidokuStore ?? await AidokuPackageStore.open();
+      _aidokuStore = store;
+      final AidokuInstalledPackage installed =
+          await store.install(File(path), inspection);
+      final List<AidokuInstalledPackage> packages = await store.listInstalled();
+      if (!mounted) return;
+      setState(() => _aidokuPackages = packages);
+      FushiToast.show(
+        msg: '${t.aidoku_extension_imported}: ${installed.name}',
+        severity: ToastSeverity.success,
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _aidokuError = error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    } finally {
+      if (mounted) setState(() => _aidokuBusy = false);
+    }
+  }
+
+  Future<void> _removeAidoku(AidokuInstalledPackage package) async {
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text(t.aidoku_extension_remove),
+            content: Text(package.name),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    try {
+      await _aidokuStore!.remove(package);
+      final List<AidokuInstalledPackage> packages =
+          await _aidokuStore!.listInstalled();
+      if (mounted) setState(() => _aidokuPackages = packages);
+    } on Object catch (error) {
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 
@@ -195,6 +359,73 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         ),
       );
 
+  Widget _buildAidokuSection() {
+    if (!DesktopAidokuRuntime.isSupported) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          t.aidoku_runtime_unavailable,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            FushiIconButton(
+              key: const ValueKey<String>('aidoku_import_aix'),
+              tooltip: t.aidoku_extension_import,
+              label: t.aidoku_extension_import,
+              icon: Icons.file_open_outlined,
+              onTap: _aidokuBusy ? null : _importAidoku,
+            ),
+          ],
+        ),
+        if (_aidokuBusy || (_aidokuPackages == null && _aidokuError == null))
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: LinearProgressIndicator(),
+          ),
+        if (_aidokuError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              '$_aidokuError',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          )
+        else if (_aidokuPackages?.isEmpty == true)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(t.aidoku_extension_empty),
+          ),
+        for (final AidokuInstalledPackage package
+            in _aidokuPackages ?? const <AidokuInstalledPackage>[])
+          FushiCard(
+            padding: EdgeInsets.zero,
+            child: FushiListItem(
+              leading: const Icon(Icons.extension_outlined),
+              title: Text(package.name),
+              subtitle: Text(
+                '${package.languages.join(', ').toUpperCase()} · '
+                '${t.aidoku_extension_version} ${package.version}\n'
+                '${package.id}',
+              ),
+              trailing: IconButton(
+                tooltip: t.aidoku_extension_remove,
+                onPressed: () => unawaited(_removeAidoku(package)),
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MihonManager? manager = _manager;
@@ -223,6 +454,13 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                                   label: t.manga_import_action,
                                   onTap: _importManga,
                                 ),
+                                if (DesktopAidokuRuntime.isSupported)
+                                  QuickImportAction(
+                                    icon: Icons.extension_outlined,
+                                    label: t.aidoku_extension_import,
+                                    onTap: _importAidoku,
+                                    enabled: !_aidokuBusy,
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 28),
@@ -232,6 +470,10 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                               key: _localSourcesKey,
                               mediaKind: 'manga',
                             ),
+                            const SizedBox(height: 28),
+                            _sectionTitle(t.aidoku_extensions_title),
+                            const SizedBox(height: 8),
+                            _buildAidokuSection(),
                             const SizedBox(height: 28),
                             _sectionTitle(t.mihon_extensions_title),
                             const SizedBox(height: 8),

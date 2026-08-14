@@ -3394,5 +3394,15 @@
   "srt_book_reimport": "重新导入",
   "srt_book_reimport_subtitle_hint": "替换字幕会用新字幕重建这本书的正文。",
   "srt_book_reimport_no_cues": "该字幕文件解析不出任何字幕行",
-  "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书"
+  "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书",
+  "aidoku_runtime_unavailable": "Aidoku 扩展目前仅支持 macOS。",
+  "aidoku_extensions_title": "Aidoku 扩展",
+  "aidoku_extension_empty": "尚未安装 Aidoku 扩展。",
+  "aidoku_extension_remove": "移除 Aidoku 扩展",
+  "aidoku_extension_warning": "Aidoku 扩展会执行具有网络访问权限的第三方 WebAssembly 代码。请只导入你信任的来源。",
+  "aidoku_webview_unsupported": "此扩展依赖尚未支持的 Aidoku WebView API。",
+  "aidoku_extension_imported": "Aidoku 扩展已导入",
+  "aidoku_extension_import": "导入 Aidoku 扩展（.aix）",
+  "aidoku_extension_confirm_title": "安装 Aidoku 扩展？",
+  "aidoku_extension_version": "版本"
 }

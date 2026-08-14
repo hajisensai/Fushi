@@ -49,6 +49,10 @@ class AidokuPackageInspection {
   final List<String> imports;
   final List<String> exports;
   final bool requiresWebView;
+
+  Map<String, Object?> get sourceInfo =>
+      (manifest['info'] as Map<Object?, Object?>?)?.cast<String, Object?>() ??
+      const <String, Object?>{};
 }
 
 abstract interface class AidokuRuntime {

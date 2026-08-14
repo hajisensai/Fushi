@@ -47,6 +47,12 @@ void main() {
       );
     });
 
+    test('macOS 的「来源」视图有可见的 Aidoku .aix 导入入口', () {
+      expect(sources, contains("allowedExtensions: const <String>['aix']"));
+      expect(sources, contains("ValueKey<String>('aidoku_import_aix')"));
+      expect(sources, contains('AidokuPackageStore.open()'));
+    });
+
     test('扩展提供的在线来源设置也在同一视图内', () {
       expect(sources, contains('_buildOnlineSource('));
       expect(sources, contains('t.mihon_sources_title'));
