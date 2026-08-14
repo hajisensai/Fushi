@@ -16,7 +16,10 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi/src/media/video/series_playback_prefs.dart'
-    show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs;
+    show
+        effectiveSeriesAudioTrackId,
+        effectiveSeriesDelayMs,
+        effectiveSeriesSecondaryDelayMs;
 import 'package:fushi/src/sync/manga_sync_package.dart'
     show kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
@@ -62,7 +65,7 @@ class AppModelLibraryHostService
         FushiLibraryHostService,
         DeletionTombstoneHost,
         VideoDeletionHost,
-        VideoDelayHost,
+        VideoPlaybackSyncHost,
         AudiobookDelayHost,
         InterconnectServiceConfigHost {
   AppModelLibraryHostService({
@@ -1241,14 +1244,44 @@ class AppModelLibraryHostService
     // 系列级播放偏好（schema v52 同系列共享）：合集成员的无戳基底 = 系列级 ?? 本集
     // row 值（与本机播放页 [effectiveSeriesDelayMs] 同一决议）。此前只读 row，host
     // 在合集里调的轴远端永远看不到。
-    final ({int delayMs, int updatedAtMs}) delay = resolveDelayLww(
-      aDelayMs:
-          effectiveSeriesDelayMs(collectionRow?.subtitleDelayMs, row.delayMs),
-      aUpdatedAtMs: 0,
-      bDelayMs: PrefCodec.decode<int>(
-          prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '', 0),
-      bUpdatedAtMs: PrefCodec.decode<int>(
-          prefs[videoRemoteDelayAtPrefKey(row.bookUid)] ?? '', 0),
+    // 播放偏好带戳状态（播放偏好同步泛化批）：语义与 [getVideoPlayback] 完全一致
+    // ——无戳基底（系列级 ?? row）与带戳 prefs 逐字段严格较新者胜；prefs 已批量
+    // 预取，不逐行发查询。
+    String? nullableStr(String? raw) {
+      if (raw == null) return null;
+      final String decoded = PrefCodec.decode<String>(raw, '');
+      return decoded.isEmpty ? null : decoded;
+    }
+
+    final VideoPlaybackSyncState playback = VideoPlaybackSyncState.merge(
+      VideoPlaybackSyncState(
+        delayMs:
+            effectiveSeriesDelayMs(collectionRow?.subtitleDelayMs, row.delayMs),
+        audioTrackId: effectiveSeriesAudioTrackId(
+            collectionRow?.audioTrackId, row.audioTrackId),
+        secondarySubtitleSource: row.secondarySubtitleSource,
+        secondaryDelayMs: effectiveSeriesSecondaryDelayMs(
+            collectionRow?.secondarySubtitleDelayMs, row.secondaryDelayMs),
+      ),
+      VideoPlaybackSyncState(
+        delayMs: PrefCodec.decode<int>(
+            prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '', 0),
+        delayAt: PrefCodec.decode<int>(
+            prefs[videoRemoteDelayAtPrefKey(row.bookUid)] ?? '', 0),
+        audioTrackId:
+            nullableStr(prefs[videoRemoteAudioTrackPrefKey(row.bookUid)]),
+        audioTrackAt: PrefCodec.decode<int>(
+            prefs[videoRemoteAudioTrackAtPrefKey(row.bookUid)] ?? '', 0),
+        secondarySubtitleSource: nullableStr(
+            prefs[videoRemoteSecondarySubtitlePrefKey(row.bookUid)]),
+        secondarySubtitleAt: PrefCodec.decode<int>(
+            prefs[videoRemoteSecondarySubtitleAtPrefKey(row.bookUid)] ?? '', 0),
+        secondaryDelayMs: int.tryParse(
+            nullableStr(prefs[videoRemoteSecondaryDelayPrefKey(row.bookUid)]) ??
+                ''),
+        secondaryDelayAt: PrefCodec.decode<int>(
+            prefs[videoRemoteSecondaryDelayAtPrefKey(row.bookUid)] ?? '', 0),
+      ),
     );
     final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
       localPositionMs: PrefCodec.decode<int>(
@@ -1275,15 +1308,16 @@ class AppModelLibraryHostService
       coverPath: coverPath,
       positionMs: progress.positionMs,
       positionUpdatedAtMs: progress.updatedAtMs,
-      // BUG-996：把 host 的字幕时序偏移下发，供远端播放跟随（设备无关的纯时序）。
-      // 语义与 [getVideoDelay] 完全一致：带戳 prefs 与旧 row.delayMs（戳 0）取
-      // 严格较新者——prefs 已批量预取，不逐行发查询。
-      delayMs: delay.delayMs,
-      delayUpdatedAtMs: delay.updatedAtMs,
-      // 远端音轨默认：系列级 ?? 本集 row（同系列音轨记忆，schema v52）。client 本机
-      // 未选过音轨时按 host 的选择起播（远端音轨持久化 bug 的 host→client 半边）。
-      audioTrackId: effectiveSeriesAudioTrackId(
-          collectionRow?.audioTrackId, row.audioTrackId),
+      // 播放偏好随清单下发（BUG-996 调轴起步，播放偏好同步泛化批扩展为全字段）：
+      // client 起播据带戳字段做逐字段 LWW 决议，sweep 免逐视频 GET。
+      delayMs: playback.delayMs,
+      delayUpdatedAtMs: playback.delayAt,
+      audioTrackId: playback.audioTrackId,
+      audioTrackUpdatedAtMs: playback.audioTrackAt,
+      secondarySubtitleSource: playback.secondarySubtitleSource,
+      secondarySubtitleUpdatedAtMs: playback.secondarySubtitleAt,
+      secondaryDelayMs: playback.secondaryDelayMs,
+      secondaryDelayUpdatedAtMs: playback.secondaryDelayAt,
       // 看完标记下发（client 剧集面板角标；此前远端集无口径恒无标记）。
       completedAt: row.completedAt?.millisecondsSinceEpoch,
       episodes: episodes,
@@ -1499,64 +1533,122 @@ class AppModelLibraryHostService
     return _db.getMediaCollectionById(cid);
   }
 
-  /// 读 host 端视频 [id] 的字幕调轴（[VideoDelayHost]）。
+  /// prefs 里的可空字符串字段读数：缺失/空串 → null（「未设」与「显式清除」由
+  /// at 键区分：at>0 且值空 = 显式清除）。
+  Future<String?> _readNullableStringPref(String key) async {
+    final String raw = await _db.getPrefTyped<String>(key, '');
+    return raw.isEmpty ? null : raw;
+  }
+
+  /// 读 host 端视频 [id] 的播放偏好带戳状态（[VideoPlaybackSyncHost]）。
   ///
-  /// 带戳 prefs（client 上报 / host 本机调轴写入，见 video_fushi_page `_setDelayMs`
-  /// 的镜像盖戳）与无戳基底（系列级 `MediaCollections.subtitleDelayMs` ?? 本集
-  /// `VideoBooks.delayMs`，与本机播放页 [effectiveSeriesDelayMs] 同一决议）经
-  /// [resolveDelayLww] 取胜者：旧数据无 prefs 时行为与本机播放完全一致（向后兼容）。
+  /// 无戳基底 = 本机播放读的同一决议（系列级 ?? row，[effectiveSeriesDelayMs] 族），
+  /// 与带戳 prefs 逐字段「严格较新者胜」合并：旧数据无 prefs 时行为与本机播放完全
+  /// 一致（向后兼容）。
   @override
-  Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id) async {
-    final int prefsDelay =
-        await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(id), 0);
-    final int prefsAt =
-        await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(id), 0);
+  Future<VideoPlaybackSyncState> getVideoPlayback(String id) async {
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
     final MediaCollectionRow? col =
         row == null ? null : await _primaryVideoCollectionRow(id);
-    return resolveDelayLww(
-      aDelayMs: effectiveSeriesDelayMs(col?.subtitleDelayMs, row?.delayMs ?? 0),
-      aUpdatedAtMs: 0,
-      bDelayMs: prefsDelay,
-      bUpdatedAtMs: prefsAt,
+    final VideoPlaybackSyncState base = VideoPlaybackSyncState(
+      delayMs: effectiveSeriesDelayMs(col?.subtitleDelayMs, row?.delayMs ?? 0),
+      audioTrackId:
+          effectiveSeriesAudioTrackId(col?.audioTrackId, row?.audioTrackId),
+      secondarySubtitleSource: row?.secondarySubtitleSource,
+      secondaryDelayMs: effectiveSeriesSecondaryDelayMs(
+          col?.secondarySubtitleDelayMs, row?.secondaryDelayMs),
     );
+    final VideoPlaybackSyncState stamped = VideoPlaybackSyncState(
+      delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(id), 0),
+      delayAt: await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(id), 0),
+      audioTrackId:
+          await _readNullableStringPref(videoRemoteAudioTrackPrefKey(id)),
+      audioTrackAt:
+          await _db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(id), 0),
+      secondarySubtitleSource: await _readNullableStringPref(
+          videoRemoteSecondarySubtitlePrefKey(id)),
+      secondarySubtitleAt: await _db.getPrefTyped<int>(
+          videoRemoteSecondarySubtitleAtPrefKey(id), 0),
+      secondaryDelayMs: int.tryParse(await _db.getPrefTyped<String>(
+          videoRemoteSecondaryDelayPrefKey(id), '')),
+      secondaryDelayAt: await _db.getPrefTyped<int>(
+          videoRemoteSecondaryDelayAtPrefKey(id), 0),
+    );
+    return VideoPlaybackSyncState.merge(base, stamped);
   }
 
-  /// 把 client 上报的视频 [id] 字幕调轴写入 host（[VideoDelayHost]）。
+  /// 把 client 上报的播放偏好合并进 host（[VideoPlaybackSyncHost]）。
   ///
   /// 存在性闸门：host 无该 id 的 VideoBooks 行 → no-op（防任意 id 写脏 prefs，与
-  /// [putVideoPosition] 同语义）。越界 clamp ±[kVideoSubtitleDelayLimitMs]；时间戳
-  /// 上限 clamp 到 host 当前时刻 + 5 分钟时钟偏差余量——未来戳会永久锁死后续所有
-  /// 端的正常覆盖（LWW 严格较新者胜），恶意/坏钟 client 不该拿到这个能力。
-  /// 胜者同时写穿 `VideoBooks.delayMs`，使 host 本机播放该视频立即跟随。
+  /// [putVideoPosition] 同语义）。调轴类字段越界 clamp
+  /// ±[kVideoSubtitleDelayLimitMs]；各字段时间戳截到 host 当前时刻 + 5 分钟时钟
+  /// 偏差余量——未来戳会永久锁死后续所有端的正常覆盖。胜出字段同时写穿
+  /// row/系列级列，使 host 本机播放立即跟随（只写 row 会被非 null 系列级值遮蔽）。
   @override
-  Future<void> putVideoDelay(String id, int delayMs, int updatedAtMs) async {
+  Future<void> putVideoPlayback(
+      String id, VideoPlaybackSyncState incoming) async {
+    if (incoming.isEmpty) return;
     if (await _db.getVideoBookByBookUid(id) == null) return;
-    final int clamped =
-        delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
     final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
-    final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
-    final ({int delayMs, int updatedAtMs}) current = await getVideoDelay(id);
-    final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
-      aDelayMs: current.delayMs,
-      aUpdatedAtMs: current.updatedAtMs,
-      bDelayMs: clamped,
-      bUpdatedAtMs: cappedAt,
+    int capAt(int at) => at > nowCapMs ? nowCapMs : at;
+    final VideoPlaybackSyncState capped = VideoPlaybackSyncState(
+      delayMs: incoming.delayMs
+          .clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),
+      delayAt: capAt(incoming.delayAt),
+      audioTrackId: incoming.audioTrackId,
+      audioTrackAt: capAt(incoming.audioTrackAt),
+      secondarySubtitleSource: incoming.secondarySubtitleSource,
+      secondarySubtitleAt: capAt(incoming.secondarySubtitleAt),
+      secondaryDelayMs: incoming.secondaryDelayMs
+          ?.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),
+      secondaryDelayAt: capAt(incoming.secondaryDelayAt),
     );
-    if (winner.updatedAtMs == current.updatedAtMs &&
-        winner.delayMs == current.delayMs) {
-      return; // host 已存更新或相等，no-op。
-    }
-    await _db.setPrefTyped<int>(videoRemoteDelayPrefKey(id), winner.delayMs);
-    await _db.setPrefTyped<int>(
-        videoRemoteDelayAtPrefKey(id), winner.updatedAtMs);
-    await _db.updateVideoBookDelayMs(id, winner.delayMs);
-    // 系列级写穿（schema v52 调轴系列共享）：该视频有主归属合集时同步系列级值，
-    // 使 host 本机在合集里播放任一集（读 col ?? row）也立即跟随对端调轴——只写
-    // row 会被非 null 的系列级值遮蔽。
+    final VideoPlaybackSyncState held = await getVideoPlayback(id);
+    final VideoPlaybackSyncState merged =
+        VideoPlaybackSyncState.merge(held, capped);
+    if (merged == held) return; // host 已存更新或相等，no-op。
     final MediaCollectionRow? col = await _primaryVideoCollectionRow(id);
-    if (col != null) {
-      await _db.updateMediaCollectionSubtitleDelayMs(col.id, winner.delayMs);
+
+    if (merged.delayAt > 0 && merged.delayAt != held.delayAt) {
+      await _db.setPrefTyped<int>(videoRemoteDelayPrefKey(id), merged.delayMs);
+      await _db.setPrefTyped<int>(
+          videoRemoteDelayAtPrefKey(id), merged.delayAt);
+      await _db.updateVideoBookDelayMs(id, merged.delayMs);
+      if (col != null) {
+        await _db.updateMediaCollectionSubtitleDelayMs(col.id, merged.delayMs);
+      }
+    }
+    if (merged.audioTrackAt > 0 && merged.audioTrackAt != held.audioTrackAt) {
+      await _db.setPrefTyped<String>(
+          videoRemoteAudioTrackPrefKey(id), merged.audioTrackId ?? '');
+      await _db.setPrefTyped<int>(
+          videoRemoteAudioTrackAtPrefKey(id), merged.audioTrackAt);
+      await _db.updateVideoBookAudioTrackId(id, merged.audioTrackId);
+      if (col != null) {
+        await _db.updateMediaCollectionAudioTrackId(
+            col.id, merged.audioTrackId);
+      }
+    }
+    if (merged.secondarySubtitleAt > 0 &&
+        merged.secondarySubtitleAt != held.secondarySubtitleAt) {
+      await _db.setPrefTyped<String>(videoRemoteSecondarySubtitlePrefKey(id),
+          merged.secondarySubtitleSource ?? '');
+      await _db.setPrefTyped<int>(videoRemoteSecondarySubtitleAtPrefKey(id),
+          merged.secondarySubtitleAt);
+      await _db.updateVideoBookSecondarySubtitleSource(
+          id, merged.secondarySubtitleSource);
+    }
+    if (merged.secondaryDelayAt > 0 &&
+        merged.secondaryDelayAt != held.secondaryDelayAt) {
+      await _db.setPrefTyped<String>(videoRemoteSecondaryDelayPrefKey(id),
+          merged.secondaryDelayMs?.toString() ?? '');
+      await _db.setPrefTyped<int>(
+          videoRemoteSecondaryDelayAtPrefKey(id), merged.secondaryDelayAt);
+      await _db.updateVideoBookSecondaryDelayMs(id, merged.secondaryDelayMs);
+      if (col != null) {
+        await _db.updateMediaCollectionSecondarySubtitleDelayMs(
+            col.id, merged.secondaryDelayMs);
+      }
     }
   }
 

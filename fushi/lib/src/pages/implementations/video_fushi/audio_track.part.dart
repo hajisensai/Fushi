@@ -53,19 +53,31 @@ extension _VideoAudioTrack on _VideoFushiPageState {
     // 同系列音轨记忆（schema v52）：合集内选音轨写系列级，全系列共享（换集/从书架
     // 重进任一集都读到）；单文件视频（无合集）仍走 per-book，行为与旧版一致。
     //
-    // 互联远端音轨持久化 bug：远端播放在 client 无 VideoBooks 行，旧路径
-    // `updateAudioTrackId(远端uid)` 是静默 0 行 UPDATE（选轨退出即丢）。改按稳定
+    // BUG-1636 → 播放偏好同步泛化批：远端播放在 client 无 VideoBooks 行（旧路径
+    // `updateAudioTrackId(远端uid)` 是静默 0 行 UPDATE，选轨退出即丢）——按稳定
     // 远端 uid（合集连播 = 当前成员 id，与断点键 [_remotePositionKeyForIndex]
-    // 同构）落 prefs，重进 [_initRemote] / [_loadRemoteEpisode] 优先重放。
+    // 同构）落带戳键对 + 上报 host（逐字段 LWW，host 本机与其它设备跟随）。
     if (_isRemote) {
       final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      await appModel.setRemoteAudioTrackId(uid, track.id);
+      final int nowMs = await _stampRemoteStringPref(
+          videoRemoteAudioTrackPrefKey(uid),
+          videoRemoteAudioTrackAtPrefKey(uid),
+          track.id);
+      _pushRemotePlayback(uid,
+          VideoPlaybackSyncState(audioTrackId: track.id, audioTrackAt: nowMs));
     } else {
       final int? collectionId = widget.playlistCollectionId;
       if (collectionId != null) {
+        // 系列级写入内聚盖戳：repo 会把值 + now 镜像进全体视频成员的互联键对。
         await widget.repo.updateCollectionAudioTrackId(collectionId, track.id);
       } else {
         await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+        // 本机镜像盖戳（互联 LWW 载体）：否则对端上报过一次后，本机选轨（row
+        // 无戳恒 0）永远输给旧戳、再也传不出去。
+        await _stampRemoteStringPref(
+            videoRemoteAudioTrackPrefKey(widget.bookUid),
+            videoRemoteAudioTrackAtPrefKey(widget.bookUid),
+            track.id);
       }
     }
     if (!mounted) return;

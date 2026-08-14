@@ -2147,11 +2147,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
-    // 远端音轨恢复（互联远端音轨持久化 bug）：本机选过（prefs）优先，否则跟随
-    // host 下发的音轨偏好（系列级 ?? row，同一文件轨 id 跨设备同义）；都无 = null
-    // 跟随 libmpv 默认轨。_applyLoad 里 _restoreAudioTrack 会按它选轨。
+    // 远端音轨恢复（BUG-1636 → 播放偏好同步泛化批）：本地带戳选择与 host 下发值
+    // 逐字段 LWW；都无 = null 跟随 libmpv 默认轨。_applyLoad 里 _restoreAudioTrack
+    // 会按它选轨。
     _currentAudioTrackId =
-        appModel.remoteAudioTrackId(widget.bookUid) ?? info.audioTrackId;
+        _resolveRemoteInitialAudioTrackId(info, widget.bookUid);
     // BUG-996：远端播放跟随 host 下发的字幕时序偏移（此前恒 0，字幕调轴不同步）。
     // 通道已就绪——_applyLoad 里 controller.setDelayMs(_delayMs) 会应用它。
     // 互联远端调轴不持久化 bug：host 值与本地 prefs 经 LWW 取严格较新者——本机调过
@@ -2189,9 +2189,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _activeRemoteMember = _remoteMembers[startIndex];
       _delayMs = _resolveRemoteInitialDelayMs(
           _remoteMembers[startIndex], _remoteMembers[startIndex].id);
-      _currentAudioTrackId =
-          appModel.remoteAudioTrackId(_remoteMembers[startIndex].id) ??
-              _remoteMembers[startIndex].audioTrackId;
+      _currentAudioTrackId = _resolveRemoteInitialAudioTrackId(
+          _remoteMembers[startIndex], _remoteMembers[startIndex].id);
       await _loadRemoteEpisode(
         startIndex,
         startIntent: EpisodeStartIntent.initialOpen,
@@ -2240,19 +2239,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       streamEpisodeIndex = 0;
       _activeRemoteMember = info;
       _delayMs = _resolveRemoteInitialDelayMs(info, info.id);
-      _currentAudioTrackId =
-          appModel.remoteAudioTrackId(info.id) ?? info.audioTrackId;
+      _currentAudioTrackId = _resolveRemoteInitialAudioTrackId(info, info.id);
     } else {
       info = _effectiveRemoteInfo!;
       streamEpisodeIndex = index;
     }
-    // TODO-2837 远端副字幕：来源与独立调轴按 (uid, ep) 从本地 prefs 恢复（副字幕轨
-    // 是本机自选的，host 不参与）。_applyLoad 内 setSecondaryDelayMs 应用调轴、
+    // TODO-2837 远端副字幕（播放偏好同步泛化批）：来源与独立调轴按 uid 做本地带戳
+    // 值 vs host 下发值的逐字段 LWW。_applyLoad 内 setSecondaryDelayMs 应用调轴、
     // _restoreSecondarySubtitle 远端分支重放来源。
-    final (String secUid, int secEp) = _remotePositionKeyForIndex(index);
+    final RemoteVideoInfo secInfo =
+        _isRemoteCollection ? info : _effectiveRemoteInfo!;
+    final (String secUid, _) = _remotePositionKeyForIndex(index);
     _currentSecondarySubtitleSource =
-        appModel.remoteSecondarySubtitleSource(secUid, episodeIndex: secEp);
-    _secondaryDelayMs = appModel.remoteSecondaryDelayMs(secUid);
+        _resolveRemoteInitialSecondarySource(secInfo, secUid);
+    _secondaryDelayMs = _resolveRemoteInitialSecondaryDelayMs(secInfo, secUid);
     final RemoteVideoClient client = _effectiveRemoteClient!;
     final int seq = ++_episodeLoadSeq;
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
@@ -2559,6 +2559,79 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     return winner.delayMs
         .clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
+  }
+
+  // ── 远端播放偏好统一键对读写（播放偏好同步泛化批）───────────────────────────
+  // 每偏好 = (值键, at 键) 一对；字符串值空串 = null（「显式清除」有 at 无值，与
+  // 「从未设过」at==0 区分）。与 host 侧 getVideoPlayback 同一键、同一语义。
+
+  /// 读远端播放偏好的字符串值键（缺失/空串 → null）。
+  String? _readRemoteStringPref(String key) {
+    final Object? raw = appModel.prefsRepo.getPref(key, defaultValue: '');
+    final String s = raw?.toString() ?? '';
+    return s.isEmpty ? null : s;
+  }
+
+  /// 读远端播放偏好的 at 键（缺失 → 0）。
+  int _readRemoteAtPref(String key) {
+    final Object? raw = appModel.prefsRepo.getPref(key, defaultValue: 0);
+    final int v =
+        raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
+    return v < 0 ? 0 : v;
+  }
+
+  /// 写远端播放偏好键对（值 null → 空串哨兵 = 显式清除；at = now）。返回盖下的 at。
+  Future<int> _stampRemoteStringPref(
+      String valueKey, String atKey, String? value) async {
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    await appModel.prefsRepo.setPref(valueKey, value ?? '');
+    await appModel.prefsRepo.setPref(atKey, nowMs);
+    return nowMs;
+  }
+
+  /// best-effort 上报播放偏好带戳字段到 host（能力探测 + 吞错；调整哪个字段就
+  /// 只带哪个字段，host 逐字段 LWW 合并）。旧 host 无端点 / 离线只记日志。
+  void _pushRemotePlayback(String uid, VideoPlaybackSyncState state) {
+    // 经 Object? 中转促成类型提升：RemoteVideoPlaybackSync 是能力接口，不是
+    // RemoteVideoClient 的子类型，直接 is 判断不会提升接收者。
+    final Object? client = _effectiveRemoteClient;
+    if (client is! RemoteVideoPlaybackSync) return;
+    unawaited(() async {
+      try {
+        await client.putRemoteVideoPlayback(uid, state);
+      } catch (e) {
+        debugPrint('[VideoFushiPage] remote playback upload failed: $e');
+      }
+    }());
+  }
+
+  /// 远端起播音轨：本地带戳选择严格新于 host → 本地；否则跟随 host 下发
+  /// （系列级 ?? row 基底或对端带戳值）。平局（双 0）= 都没选过 → host 基底。
+  String? _resolveRemoteInitialAudioTrackId(RemoteVideoInfo info, String uid) =>
+      _readRemoteAtPref(videoRemoteAudioTrackAtPrefKey(uid)) >
+              info.audioTrackUpdatedAtMs
+          ? _readRemoteStringPref(videoRemoteAudioTrackPrefKey(uid))
+          : info.audioTrackId;
+
+  /// 远端起播副字幕来源（TODO-2837 副字幕入同步通道）。值可能是对端设备的本地
+  /// 文件路径——恢复侧文件不存在自然跳过，无特例分支。
+  String? _resolveRemoteInitialSecondarySource(
+          RemoteVideoInfo info, String uid) =>
+      _readRemoteAtPref(videoRemoteSecondarySubtitleAtPrefKey(uid)) >
+              info.secondarySubtitleUpdatedAtMs
+          ? _readRemoteStringPref(videoRemoteSecondarySubtitlePrefKey(uid))
+          : info.secondarySubtitleSource;
+
+  /// 远端起播副字幕独立调轴（null = 跟随主字幕；「显式清除」也带戳同步）。
+  int? _resolveRemoteInitialSecondaryDelayMs(RemoteVideoInfo info, String uid) {
+    final int? winner = _readRemoteAtPref(
+                videoRemoteSecondaryDelayAtPrefKey(uid)) >
+            info.secondaryDelayUpdatedAtMs
+        ? int.tryParse(
+            _readRemoteStringPref(videoRemoteSecondaryDelayPrefKey(uid)) ?? '')
+        : info.secondaryDelayMs;
+    return winner?.clamp(
+        -kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
   }
 
   /// 远端视频开播位置（TODO-653/885）：在 host 真相（[info] 随清单带回的整书 positionMs，
@@ -5915,16 +5988,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
       await appModel.prefsRepo.setPref(videoRemoteDelayPrefKey(uid), clamped);
       await appModel.prefsRepo.setPref(videoRemoteDelayAtPrefKey(uid), nowMs);
-      // 经 Object? 中转促成类型提升：RemoteVideoDelaySync 不是 RemoteVideoClient
-      // 的子类型（能力接口），直接 is 判断不会提升接收者。
-      final Object? client = _effectiveRemoteClient;
-      if (client is RemoteVideoDelaySync) {
-        try {
-          await client.putRemoteVideoDelay(uid, clamped, nowMs);
-        } catch (e) {
-          debugPrint('[VideoFushiPage] remote delay upload failed: $e');
-        }
-      }
+      _pushRemotePlayback(
+          uid, VideoPlaybackSyncState(delayMs: clamped, delayAt: nowMs));
     } else {
       final int? collectionId = widget.playlistCollectionId;
       if (collectionId != null) {
@@ -5971,11 +6036,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         icon: Icons.sync_outlined,
       );
     }
-    // TODO-2837 远端副字幕：副轨调轴按远端 uid 落本地 prefs（副字幕轨是本机自选的，
-    // host 不参与；null = 删记忆 = 回到跟随主字幕）。本地路径行为不变。
+    // TODO-2837 副字幕调轴入同步通道（播放偏好同步泛化批）：远端按 uid 落带戳
+    // 键对 + 上报 host；null（回跟随）也是一次带戳写，清除同样跨设备收敛。
     if (_isRemote) {
       final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      await appModel.setRemoteSecondaryDelayMs(uid, clamped);
+      final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondaryDelayPrefKey(uid),
+          videoRemoteSecondaryDelayAtPrefKey(uid),
+          clamped?.toString());
+      _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+              secondaryDelayMs: clamped, secondaryDelayAt: nowMs));
       if (mounted) setState(() {});
       return;
     }
@@ -5990,6 +6062,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } else {
       await widget.repo.updateSecondaryDelayMs(widget.bookUid, clamped);
     }
+    // 本机镜像盖戳（互联 LWW 载体；断点 TODO-816 同范式）：使 host 侧
+    // getVideoPlayback / 清单以带戳值参与逐字段 LWW。
+    await _stampRemoteStringPref(
+        videoRemoteSecondaryDelayPrefKey(widget.bookUid),
+        videoRemoteSecondaryDelayAtPrefKey(widget.bookUid),
+        clamped?.toString());
     if (mounted) setState(() {});
   }
 

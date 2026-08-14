@@ -204,7 +204,8 @@ void main() {
       ));
       // client 上报过带戳调轴（prefs 通道）→ 清单应下发 prefs 胜者而非旧行值。
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      await svc.putVideoDelay('video/delayed2', 2000, 1700000000000);
+      await svc.putVideoPlayback('video/delayed2',
+          const VideoPlaybackSyncState(delayMs: 2000, delayAt: 1700000000000));
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list.single.delayMs, 2000, reason: '带戳 prefs 应胜过旧 row 值');
       expect(list.single.delayUpdatedAtMs, 1700000000000,
@@ -269,37 +270,61 @@ void main() {
           ),
         );
 
-    test('无带戳 prefs 时回退旧 row.delayMs（戳 0）；未知 id 返回 0/0', () async {
+    test('无带戳 prefs 时回退行/系列级基底（戳 0）；未知 id 返回默认', () async {
       await insertVideo(delayMs: -800);
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final ({int delayMs, int updatedAtMs}) d = await svc.getVideoDelay(uid);
-      expect(d.delayMs, -800, reason: '旧数据（无 prefs）行为与此前直读 row 一致');
-      expect(d.updatedAtMs, 0);
-      final ({int delayMs, int updatedAtMs}) missing =
-          await svc.getVideoDelay('video/none');
+      final VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
+      expect(s.delayMs, -800, reason: '旧数据（无 prefs）行为与此前直读 row 一致');
+      expect(s.delayAt, 0);
+      final VideoPlaybackSyncState missing =
+          await svc.getVideoPlayback('video/none');
       expect(missing.delayMs, 0);
-      expect(missing.updatedAtMs, 0);
+      expect(missing.delayAt, 0);
     });
 
-    test('putVideoDelay 落 prefs + 写穿 row；严格较新者胜', () async {
+    test('putVideoPlayback 落键对 + 写穿 row；逐字段严格较新者胜', () async {
       await insertVideo();
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      await svc.putVideoDelay(uid, -1500, 1700000000000);
-      ({int delayMs, int updatedAtMs}) d = await svc.getVideoDelay(uid);
-      expect(d.delayMs, -1500);
-      expect(d.updatedAtMs, 1700000000000);
-      // 写穿行值：host 本机播放（读 row.delayMs）立即跟随。
-      expect((await db.getVideoBookByBookUid(uid))!.delayMs, -1500);
-      // 滞后设备旧戳不得回退。
-      await svc.putVideoDelay(uid, 999, 1699999990000);
-      d = await svc.getVideoDelay(uid);
-      expect(d.delayMs, -1500, reason: '旧时间戳不应回退新调轴');
-      expect((await db.getVideoBookByBookUid(uid))!.delayMs, -1500);
+      await svc.putVideoPlayback(
+          uid,
+          const VideoPlaybackSyncState(
+              delayMs: -1500,
+              delayAt: 1700000000000,
+              audioTrackId: '3',
+              audioTrackAt: 1700000000000,
+              secondarySubtitleSource: 'embedded:4',
+              secondarySubtitleAt: 1700000000000,
+              secondaryDelayMs: 250,
+              secondaryDelayAt: 1700000000000));
+      VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
+      expect(s.delayMs, -1500);
+      expect(s.audioTrackId, '3');
+      expect(s.secondarySubtitleSource, 'embedded:4');
+      expect(s.secondaryDelayMs, 250);
+      // 写穿行值：host 本机播放（读 row 列）立即跟随。
+      final VideoBookRow row = (await db.getVideoBookByBookUid(uid))!;
+      expect(row.delayMs, -1500);
+      expect(row.audioTrackId, '3');
+      expect(row.secondarySubtitleSource, 'embedded:4');
+      expect(row.secondaryDelayMs, 250);
+      // 滞后设备旧戳不得回退（逐字段独立判定：只带旧戳 delay 的 PUT 不影响其它字段）。
+      await svc.putVideoPlayback(uid,
+          const VideoPlaybackSyncState(delayMs: 999, delayAt: 1699999990000));
+      s = await svc.getVideoPlayback(uid);
+      expect(s.delayMs, -1500, reason: '旧时间戳不应回退新调轴');
+      expect(s.audioTrackId, '3', reason: '未携带的字段不受影响');
+      // 带戳 null（显式清除副字幕调轴）→ 清除也收敛。
+      await svc.putVideoPlayback(
+          uid, const VideoPlaybackSyncState(secondaryDelayAt: 1700000005000));
+      s = await svc.getVideoPlayback(uid);
+      expect(s.secondaryDelayMs, isNull, reason: '带戳清除必须覆盖旧值（回跟随）');
+      expect((await db.getVideoBookByBookUid(uid))!.secondaryDelayMs, isNull);
     });
 
-    test('putVideoDelay 未知 id no-op（不写脏 prefs）', () async {
+    test('putVideoPlayback 未知 id / 空状态 no-op（不写脏 prefs）', () async {
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      await svc.putVideoDelay('video/ghost', 1234, 1700000000000);
+      await svc.putVideoPlayback('video/ghost',
+          const VideoPlaybackSyncState(delayMs: 1234, delayAt: 1700000000000));
       expect(
           await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/ghost'), 0),
           0,
@@ -310,23 +335,24 @@ void main() {
           0);
     });
 
-    test('putVideoDelay clamp ±600000；未来时间戳被上限截断', () async {
+    test('putVideoPlayback clamp ±600000；未来时间戳被上限截断', () async {
       await insertVideo();
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final int farFuture =
           DateTime.now().millisecondsSinceEpoch + 10 * 24 * 3600 * 1000;
-      await svc.putVideoDelay(uid, -9999999, farFuture);
-      final ({int delayMs, int updatedAtMs}) d = await svc.getVideoDelay(uid);
-      expect(d.delayMs, -600000, reason: '越界调轴必须 clamp（±10 分钟）');
-      expect(d.updatedAtMs,
+      await svc.putVideoPlayback(
+          uid, VideoPlaybackSyncState(delayMs: -9999999, delayAt: farFuture));
+      final VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
+      expect(s.delayMs, -600000, reason: '越界调轴必须 clamp（±10 分钟）');
+      expect(s.delayAt,
           lessThan(DateTime.now().millisecondsSinceEpoch + 6 * 60 * 1000),
           reason: '未来戳必须截到 now+5min 内，否则 LWW 被永久锁死');
       // 截断后的戳仍然「较新」，正常设备随后的调轴还能覆盖。
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      // 用比截断戳更新的 now+5min 边界再写一次，应可覆盖。
       final int newer = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
-      await svc.putVideoDelay(uid, 777, newer);
-      expect((await svc.getVideoDelay(uid)).delayMs, 777,
+      await svc.putVideoPlayback(
+          uid, VideoPlaybackSyncState(delayMs: 777, delayAt: newer));
+      expect((await svc.getVideoPlayback(uid)).delayMs, 777,
           reason: '截断语义不得把正常设备永远锁在门外');
     });
   });
@@ -362,7 +388,7 @@ void main() {
       expect(back.completedAt, 1700000000000);
     });
 
-    test('getVideoDelay 用系列级基底；putVideoDelay 写穿 row + 系列级', () async {
+    test('getVideoPlayback 用系列级基底；putVideoPlayback 写穿 row + 系列级', () async {
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/s2',
         title: 'S2',
@@ -373,16 +399,23 @@ void main() {
       await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
 
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final ({int delayMs, int updatedAtMs}) d =
-          await svc.getVideoDelay('video/s2');
-      expect(d.delayMs, -2000, reason: '无带戳 prefs 时基底 = 系列级 ?? row');
-      expect(d.updatedAtMs, 0);
+      final VideoPlaybackSyncState s = await svc.getVideoPlayback('video/s2');
+      expect(s.delayMs, -2000, reason: '无带戳 prefs 时基底 = 系列级 ?? row');
+      expect(s.delayAt, 0);
 
-      await svc.putVideoDelay('video/s2', 1500, 1700000000000);
+      await svc.putVideoPlayback(
+          'video/s2',
+          const VideoPlaybackSyncState(
+              delayMs: 1500,
+              delayAt: 1700000000000,
+              audioTrackId: '2',
+              audioTrackAt: 1700000000000));
       expect((await db.getVideoBookByBookUid('video/s2'))!.delayMs, 1500);
       expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, 1500,
           reason: '系列级写穿：host 本机合集播放（读 col ?? row）立即跟随，'
               '只写 row 会被非 null 系列级值遮蔽');
+      expect((await db.getMediaCollectionById(cid))!.audioTrackId, '2',
+          reason: '音轨同理（系列级音轨记忆）');
     });
   });
 

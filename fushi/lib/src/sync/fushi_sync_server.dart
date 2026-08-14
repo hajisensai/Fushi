@@ -1662,8 +1662,7 @@ class FushiSyncServer {
     // （互联完整支持批次；与视频 /delay、上面的 /position 分支对称）。同样必须在
     // 整包 bookKey 提取之前匹配。老 host 无此分支 → 404，client best-effort 降级。
     const String delaySuffix = '/delay';
-    if (reqPath.startsWith(audiobookPrefix) &&
-        reqPath.endsWith(delaySuffix)) {
+    if (reqPath.startsWith(audiobookPrefix) && reqPath.endsWith(delaySuffix)) {
       final String delayIdentity = reqPath.substring(
           audiobookPrefix.length, reqPath.length - delaySuffix.length);
       final shelf.Response? unsafeDelayIdentity =
@@ -2018,30 +2017,29 @@ class FushiSyncServer {
       }
     }
 
-    // GET/PUT /api/library/videos/<id>/delay — 字幕调轴跨设备同步（互联远端调轴不
-    // 持久化 bug；与 /position 分支对称）。GET 拉 host 生效值；PUT 上报本端调轴
-    // （host 侧「严格较新时间戳者胜」+ clamp + 存在性闸门，见 [VideoDelayHost]）。
-    // 老 host 无此分支 → 404，client 上报 best-effort 吞掉即可（本地 prefs 已持久化）。
-    final String? delayId = _extractVideoId(reqPath, 'delay');
-    if (delayId != null) {
-      // 显式 `as`：[VideoDelayHost] 不是 [FushiLibraryHostService] 的子类型，Dart
-      // 不做交集提升（与 [VideoDeletionHost] 的探测写法一致）。
-      if (svc is! VideoDelayHost) {
-        return shelf.Response.notFound('Video delay not supported');
+    // GET/PUT /api/library/videos/<id>/playback — 播放偏好跨设备同步（BUG-1620
+    // 调轴起步，播放偏好同步泛化批扩展为统一带戳字段模型：调轴/音轨/副字幕源/
+    // 副字幕调轴；与 /position 分支对称）。GET 拉 host 生效状态；PUT 上报本端
+    // 带戳字段（host 侧逐字段「严格较新时间戳者胜」+ clamp + 存在性闸门，见
+    // [VideoPlaybackSyncHost]）。老 host 无此分支 → 404，client 上报 best-effort
+    // 吞掉即可（本地 prefs 已持久化）。
+    final String? playbackId = _extractVideoId(reqPath, 'playback');
+    if (playbackId != null) {
+      // 显式 `as`：[VideoPlaybackSyncHost] 不是 [FushiLibraryHostService] 的子
+      // 类型，Dart 不做交集提升（与 [VideoDeletionHost] 的探测写法一致）。
+      if (svc is! VideoPlaybackSyncHost) {
+        return shelf.Response.notFound('Video playback sync not supported');
       }
-      final VideoDelayHost delayHost = svc as VideoDelayHost;
+      final VideoPlaybackSyncHost playbackHost = svc as VideoPlaybackSyncHost;
       // 存在性闸门（一次 DB 单行查询）：防任意 id 写脏 prefs / 枚举探测。
-      if (!await svc.videoExists(delayId)) {
+      if (!await svc.videoExists(playbackId)) {
         return shelf.Response.notFound('Video not found');
       }
       switch (method) {
         case 'GET':
-          final ({int delayMs, int updatedAtMs}) d =
-              await delayHost.getVideoDelay(delayId);
-          return _jsonResponse(<String, dynamic>{
-            'delayMs': d.delayMs,
-            'delayUpdatedAtMs': d.updatedAtMs,
-          });
+          final VideoPlaybackSyncState s =
+              await playbackHost.getVideoPlayback(playbackId);
+          return _jsonResponse(s.toJson());
         case 'PUT':
           final String body = await request.readAsString();
           Map<String, dynamic> json;
@@ -2050,10 +2048,8 @@ class FushiSyncServer {
           } catch (_) {
             return shelf.Response(400, body: 'Invalid JSON');
           }
-          final int delayMs = (json['delayMs'] as num?)?.toInt() ?? 0;
-          final int updatedAtMs =
-              (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0;
-          await delayHost.putVideoDelay(delayId, delayMs, updatedAtMs);
+          await playbackHost.putVideoPlayback(
+              playbackId, VideoPlaybackSyncState.fromJson(json));
           return shelf.Response(200);
         default:
           return shelf.Response(405);

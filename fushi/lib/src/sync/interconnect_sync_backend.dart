@@ -140,7 +140,7 @@ class InterconnectSyncBackend extends SyncBackend
     implements
         RemoteBookClient,
         RemoteVideoClient,
-        RemoteVideoDelaySync,
+        RemoteVideoPlaybackSync,
         RemoteCoverFetcher {
   InterconnectSyncBackend._({FushiProbe? probe})
       : _probe = probe ?? _defaultFushiProbe;
@@ -1728,52 +1728,45 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
   }
 
-  /// 读 host 端视频 [id] 的字幕调轴（[RemoteVideoDelaySync]）。host 返回 404
-  /// （旧 host 无端点 / 视频不存在）或网络异常时由调用方兜底——这里对 404 返回
-  /// (0, 0)，与 [remoteVideoPosition] 同款降级。
+  /// 读 host 端视频 [id] 的播放偏好带戳状态（[RemoteVideoPlaybackSync]）。host
+  /// 返回 404（旧 host 无端点 / 视频不存在）时返回全默认状态，与
+  /// [remoteVideoPosition] 同款降级。
   @override
-  Future<({int delayMs, int updatedAtMs})> remoteVideoDelay(String id) async {
+  Future<VideoPlaybackSyncState> remoteVideoPlayback(String id) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/delay',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/playback',
     );
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return (delayMs: 0, updatedAtMs: 0);
+      return const VideoPlaybackSyncState();
     }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/delay');
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/playback');
     final String body = await _readBodyBounded(res);
-    final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
-    return (
-      delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
-      updatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
-    );
+    return VideoPlaybackSyncState.fromJson(
+        (jsonDecode(body) as Map<String, dynamic>).cast<String, Object?>());
   }
 
-  /// 向 host 上报视频 [id] 的字幕调轴（[RemoteVideoDelaySync]）。host 端「严格较新
-  /// 时间戳者胜」决定覆盖；旧 host 无端点 → 404 经 checkStatus 抛，调用方 best-effort
-  /// 捕获（本地 prefs 已持久化）。
+  /// 向 host 上报视频 [id] 的播放偏好带戳字段（[RemoteVideoPlaybackSync]）。host
+  /// 端逐字段「严格较新时间戳者胜」合并；旧 host 无端点 → 404 经 checkStatus 抛，
+  /// 调用方 best-effort 捕获（本地 prefs 已持久化）。
   @override
-  Future<void> putRemoteVideoDelay(
+  Future<void> putRemoteVideoPlayback(
     String id,
-    int delayMs,
-    int updatedAtMs,
+    VideoPlaybackSyncState state,
   ) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
-      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/delay',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/playback',
     );
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
-    req.add(utf8.encode(jsonEncode(<String, Object?>{
-      'delayMs': delayMs,
-      'delayUpdatedAtMs': updatedAtMs,
-    })));
+    req.add(utf8.encode(jsonEncode(state.toJson())));
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
-    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/delay');
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/playback');
   }
 
   static String _encodeVideoId(String id) =>

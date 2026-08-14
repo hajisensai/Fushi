@@ -3,7 +3,13 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart'
-    show videoRemoteDelayPrefKey, videoRemoteDelayAtPrefKey;
+    show
+        videoRemoteAudioTrackAtPrefKey,
+        videoRemoteAudioTrackPrefKey,
+        videoRemoteDelayAtPrefKey,
+        videoRemoteDelayPrefKey,
+        videoRemoteSecondaryDelayAtPrefKey,
+        videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -311,6 +317,32 @@ void main() {
     expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, isNull);
     expect(await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/m1'), 0),
         -777);
+
+    // 播放偏好泛化批：系列级音轨 / 副字幕调轴写入同样给全体成员盖戳。
+    await repo.updateCollectionAudioTrackId(cid, '3');
+    await repo.updateCollectionSecondarySubtitleDelayMs(cid, 250);
+    for (final String uid in <String>['video/m1', 'video/m2']) {
+      expect(
+          await db.getPrefTyped<String>(videoRemoteAudioTrackPrefKey(uid), ''),
+          '3');
+      expect(await db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(uid), 0),
+          greaterThan(0));
+      expect(
+          await db.getPrefTyped<String>(
+              videoRemoteSecondaryDelayPrefKey(uid), ''),
+          '250');
+    }
+    // 副字幕调轴清除（回跟随）也是带戳写：值空 + at 存活 → 清除跨设备收敛。
+    await repo.updateCollectionSecondarySubtitleDelayMs(cid, null);
+    expect(
+        await db.getPrefTyped<String>(
+            videoRemoteSecondaryDelayPrefKey('video/m1'), ''),
+        '');
+    expect(
+        await db.getPrefTyped<int>(
+            videoRemoteSecondaryDelayAtPrefKey('video/m1'), 0),
+        greaterThan(0),
+        reason: '清除必须带戳，否则对端旧值在 LWW 里复活');
   });
 
   test(

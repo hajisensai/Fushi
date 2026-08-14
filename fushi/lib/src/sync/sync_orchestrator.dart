@@ -1825,40 +1825,106 @@ class SyncOrchestrator {
       },
     );
 
-    // BUG-1620 sweep：字幕调轴双向收敛，与进度共用同一 uid 基底 + host 清单字段
-    // （清单已带 delayMs/delayUpdatedAtMs，零额外网络读）。「严格较新时间戳者胜」
-    // （[resolveDelayLww] 语义）；两侧都无戳（旧数据/从未调过）无事可做。离线时段
-    // 调的轴由此在下次全量同步收敛，不再依赖「在线播放该视频时顺带上报」。
+    // 播放偏好双向收敛（BUG-1620 调轴起步，播放偏好同步泛化批扩展为全字段：
+    // 调轴/音轨/副字幕源/副字幕调轴）。与进度共用同一 uid 基底 + host 清单带戳
+    // 字段（零额外网络读）；逐字段「严格较新时间戳者胜」。本地较新字段聚合成一次
+    // putRemoteVideoPlayback（旧 host 无端点 404 → 静默吞，不刷 report 噪音）；
+    // host 较新字段写回本地键对（时间戳用对端的，同进度写回纪律）+ 本地有
+    // VideoBooks 行时写穿行值，本机播放立即跟随。
+    String? nullableStr(String raw) => raw.isEmpty ? null : raw;
     for (final String uid in localUids) {
       final RemoteVideoInfo? info = hostById[uid];
       if (info == null) continue;
       try {
-        final int localDelay =
-            await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0);
-        final int localAt =
-            await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0);
-        if (localAt > info.delayUpdatedAtMs) {
-          // 本地新 → 上报 host（host 端再做 LWW + clamp，幂等安全）。旧 host 无
-          // /delay 端点 → 404 抛出：静默吞（best-effort，与播放中上报同款降级；
-          // 不进 report——否则旧 host 每次全量同步都刷一屏噪音错误）。
+        final VideoPlaybackSyncState host = info.playback;
+        final VideoPlaybackSyncState local = VideoPlaybackSyncState(
+          delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0),
+          delayAt:
+              await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
+          audioTrackId: nullableStr(await _db.getPrefTyped<String>(
+              videoRemoteAudioTrackPrefKey(uid), '')),
+          audioTrackAt: await _db.getPrefTyped<int>(
+              videoRemoteAudioTrackAtPrefKey(uid), 0),
+          secondarySubtitleSource: nullableStr(await _db.getPrefTyped<String>(
+              videoRemoteSecondarySubtitlePrefKey(uid), '')),
+          secondarySubtitleAt: await _db.getPrefTyped<int>(
+              videoRemoteSecondarySubtitleAtPrefKey(uid), 0),
+          secondaryDelayMs: int.tryParse(await _db.getPrefTyped<String>(
+              videoRemoteSecondaryDelayPrefKey(uid), '')),
+          secondaryDelayAt: await _db.getPrefTyped<int>(
+              videoRemoteSecondaryDelayAtPrefKey(uid), 0),
+        );
+
+        // 本地→host：只带本地严格较新的字段（at 置 0 的字段 host 端 merge 忽略）。
+        final VideoPlaybackSyncState push = VideoPlaybackSyncState(
+          delayMs: local.delayMs,
+          delayAt: local.delayAt > host.delayAt ? local.delayAt : 0,
+          audioTrackId: local.audioTrackId,
+          audioTrackAt:
+              local.audioTrackAt > host.audioTrackAt ? local.audioTrackAt : 0,
+          secondarySubtitleSource: local.secondarySubtitleSource,
+          secondarySubtitleAt:
+              local.secondarySubtitleAt > host.secondarySubtitleAt
+                  ? local.secondarySubtitleAt
+                  : 0,
+          secondaryDelayMs: local.secondaryDelayMs,
+          secondaryDelayAt: local.secondaryDelayAt > host.secondaryDelayAt
+              ? local.secondaryDelayAt
+              : 0,
+        );
+        if (!push.isEmpty) {
           try {
-            await backend.putRemoteVideoDelay(uid, localDelay, localAt);
+            await backend.putRemoteVideoPlayback(uid, push);
           } catch (e) {
-            debugPrint('[SyncOrchestrator] video delay push "$uid" failed: $e');
+            debugPrint(
+                '[SyncOrchestrator] video playback push "$uid" failed: $e');
           }
-        } else if (info.delayUpdatedAtMs > localAt) {
-          // host 新 → 写回本地 prefs（时间戳用对端的，同进度写回纪律）；本地有
-          // VideoBooks 行（书架视频）时一并写穿行值，本机播放立即跟随。
+        }
+
+        // host→本地：逐字段写回严格较新者。
+        final bool hasRow = rowPositionByUid.containsKey(uid);
+        final VideoPlaybackSyncState merged =
+            VideoPlaybackSyncState.merge(local, host);
+        if (merged.delayAt != local.delayAt) {
           await _db.setPrefTyped<int>(
-              videoRemoteDelayPrefKey(uid), info.delayMs);
+              videoRemoteDelayPrefKey(uid), merged.delayMs);
           await _db.setPrefTyped<int>(
-              videoRemoteDelayAtPrefKey(uid), info.delayUpdatedAtMs);
-          if (rowPositionByUid.containsKey(uid)) {
-            await _db.updateVideoBookDelayMs(uid, info.delayMs);
+              videoRemoteDelayAtPrefKey(uid), merged.delayAt);
+          if (hasRow) await _db.updateVideoBookDelayMs(uid, merged.delayMs);
+        }
+        if (merged.audioTrackAt != local.audioTrackAt) {
+          await _db.setPrefTyped<String>(
+              videoRemoteAudioTrackPrefKey(uid), merged.audioTrackId ?? '');
+          await _db.setPrefTyped<int>(
+              videoRemoteAudioTrackAtPrefKey(uid), merged.audioTrackAt);
+          if (hasRow) {
+            await _db.updateVideoBookAudioTrackId(uid, merged.audioTrackId);
+          }
+        }
+        if (merged.secondarySubtitleAt != local.secondarySubtitleAt) {
+          await _db.setPrefTyped<String>(
+              videoRemoteSecondarySubtitlePrefKey(uid),
+              merged.secondarySubtitleSource ?? '');
+          await _db.setPrefTyped<int>(
+              videoRemoteSecondarySubtitleAtPrefKey(uid),
+              merged.secondarySubtitleAt);
+          if (hasRow) {
+            await _db.updateVideoBookSecondarySubtitleSource(
+                uid, merged.secondarySubtitleSource);
+          }
+        }
+        if (merged.secondaryDelayAt != local.secondaryDelayAt) {
+          await _db.setPrefTyped<String>(videoRemoteSecondaryDelayPrefKey(uid),
+              merged.secondaryDelayMs?.toString() ?? '');
+          await _db.setPrefTyped<int>(
+              videoRemoteSecondaryDelayAtPrefKey(uid), merged.secondaryDelayAt);
+          if (hasRow) {
+            await _db.updateVideoBookSecondaryDelayMs(
+                uid, merged.secondaryDelayMs);
           }
         }
       } catch (e) {
-        report.noteError('live video delay "$uid"', e);
+        report.noteError('live video playback "$uid"', e);
       }
     }
   }

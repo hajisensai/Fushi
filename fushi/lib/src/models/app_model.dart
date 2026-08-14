@@ -4048,33 +4048,9 @@ class AppModel with ChangeNotifier {
   ) =>
       prefsRepo.setRemoteSubtitleSource(bookUid, episodeIndex, source);
 
-  /// 远端视频音轨选择持久化（互联远端音轨持久化 bug；根因见
-  /// [PreferencesRepository.remoteAudioTrackId]）。
-  String? remoteAudioTrackId(String bookUid) =>
-      prefsRepo.remoteAudioTrackId(bookUid);
-
-  Future<void> setRemoteAudioTrackId(String bookUid, String? trackId) =>
-      prefsRepo.setRemoteAudioTrackId(bookUid, trackId);
-
-  /// 远端视频副字幕来源持久化（TODO-2837 远端副字幕支持）。
-  String? remoteSecondarySubtitleSource(String bookUid,
-          {int episodeIndex = 0}) =>
-      prefsRepo.remoteSecondarySubtitleSource(bookUid,
-          episodeIndex: episodeIndex);
-
-  Future<void> setRemoteSecondarySubtitleSource(
-    String bookUid,
-    int episodeIndex,
-    String? source,
-  ) =>
-      prefsRepo.setRemoteSecondarySubtitleSource(bookUid, episodeIndex, source);
-
-  /// 远端视频副字幕独立调轴持久化（毫秒；null = 跟随主字幕）。
-  int? remoteSecondaryDelayMs(String bookUid) =>
-      prefsRepo.remoteSecondaryDelayMs(bookUid);
-
-  Future<void> setRemoteSecondaryDelayMs(String bookUid, int? delayMs) =>
-      prefsRepo.setRemoteSecondaryDelayMs(bookUid, delayMs);
+  // 注：远端视频播放偏好（调轴/音轨/副字幕源/副字幕调轴）不再走本层门面——统一
+  // 落 `video_remote_*_` prefs 键对（播放偏好同步泛化批，键定义在
+  // fushi_library_host_service.dart，页面直用 prefsRepo.getPref/setPref）。
 
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();

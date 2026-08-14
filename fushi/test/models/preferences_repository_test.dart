@@ -950,42 +950,4 @@ void main() {
       expect(repo.remoteSubtitleSource('bk', episodeIndex: 1), '/b.srt');
     });
   });
-
-  group('远端播放偏好三件套（互联完整支持批次）', () {
-    test('remoteAudioTrackId：set/read/清除 + 跨实例 reload 记住', () async {
-      expect(repo.remoteAudioTrackId('vid'), isNull);
-      await repo.setRemoteAudioTrackId('vid', '3');
-      expect(repo.remoteAudioTrackId('vid'), '3');
-
-      final PreferencesRepository repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      addTearDown(repo2.dispose);
-      expect(repo2.remoteAudioTrackId('vid'), '3',
-          reason: '远端音轨选择须跨实例记住（旧路径是静默 0 行 UPDATE，退出即丢）');
-
-      await repo.setRemoteAudioTrackId('vid', null);
-      expect(repo.remoteAudioTrackId('vid'), isNull);
-    });
-
-    test('remoteSecondarySubtitleSource：按 (uid, ep) 记住四态编码', () async {
-      await repo.setRemoteSecondarySubtitleSource('vid', 0, '/data/sec.srt');
-      await repo.setRemoteSecondarySubtitleSource('vid', 2, 'embedded:4');
-      expect(repo.remoteSecondarySubtitleSource('vid'), '/data/sec.srt');
-      expect(repo.remoteSecondarySubtitleSource('vid', episodeIndex: 2),
-          'embedded:4');
-      await repo.setRemoteSecondarySubtitleSource('vid', 0, null);
-      expect(repo.remoteSecondarySubtitleSource('vid'), isNull);
-      expect(repo.remoteSecondarySubtitleSource('vid', episodeIndex: 2),
-          'embedded:4');
-    });
-
-    test('remoteSecondaryDelayMs：可负、null=跟随主字幕（删记忆）', () async {
-      expect(repo.remoteSecondaryDelayMs('vid'), isNull);
-      await repo.setRemoteSecondaryDelayMs('vid', -1500);
-      expect(repo.remoteSecondaryDelayMs('vid'), -1500);
-      await repo.setRemoteSecondaryDelayMs('vid', null);
-      expect(repo.remoteSecondaryDelayMs('vid'), isNull,
-          reason: 'null 是「跟随主字幕」语义，须与显式 0 区分');
-    });
-  });
 }

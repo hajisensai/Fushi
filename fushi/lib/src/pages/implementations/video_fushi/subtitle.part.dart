@@ -565,6 +565,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     controller.setSecondaryCues(cues);
     final String persisted = source.toPersistedValue();
     await widget.repo.updateSecondarySubtitleSource(widget.bookUid, persisted);
+    // 本机镜像盖戳（互联 LWW 载体，播放偏好同步泛化批）：使 host 侧
+    // getVideoPlayback / 清单以带戳值参与逐字段 LWW，对端能跟随本机选择。
+    await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
+        videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
+        persisted);
     if (!mounted) return false;
     _rebuild(() => _currentSecondarySubtitleSource = persisted);
     _showOsd(t.video_subtitle_switched(label: source.label));
@@ -581,6 +587,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       widget.bookUid,
       SubtitleSource.offSentinel,
     );
+    // 本机镜像盖戳（互联 LWW 载体）：显式关闭同样跨设备传播（off 哨兵原样入通道）。
+    await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
+        videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
+        SubtitleSource.offSentinel);
     if (!mounted) return;
     _rebuild(
         () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
@@ -938,8 +949,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
     controller.setSecondaryCues(cues);
     final String source = selectedSource ?? path;
     _rebuild(() => _currentSecondarySubtitleSource = source);
-    final (String uid, int ep) = _remotePositionKeyForIndex(_currentEpisode);
-    unawaited(appModel.setRemoteSecondarySubtitleSource(uid, ep, source));
+    // 带戳键对 + 上报 host（播放偏好同步泛化批）：`embedded:<n>` 对端可直接重放；
+    // 本地文件路径对端文件不存在时恢复侧自然跳过。
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    unawaited(() async {
+      final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          source);
+      _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+              secondarySubtitleSource: source, secondarySubtitleAt: nowMs));
+    }());
     _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
 
@@ -1020,16 +1042,23 @@ extension _VideoSubtitle on _VideoFushiPageState {
     await _applyRemoteSecondarySubtitle(controller, applyPath);
   }
 
-  /// 远端模式：关闭副字幕（清副层 + 删远端记忆）。副字幕从不自动选择，null 即「关」，
-  /// 无需 off 哨兵区分（与主字幕不同——主字幕有 host 默认自动加载要拦）。
+  /// 远端模式：关闭副字幕（清副层 + 带戳「显式清除」）。清除也走带戳写（值空 +
+  /// at=now），因此跨设备同样收敛——对端下次起播 LWW 采纳「已关」。
   Future<void> _clearRemoteSecondarySubtitle(
     VideoPlayerController controller,
   ) async {
     controller.clearSecondaryCues();
     if (!mounted) return;
     _rebuild(() => _currentSecondarySubtitleSource = null);
-    final (String uid, int ep) = _remotePositionKeyForIndex(_currentEpisode);
-    unawaited(appModel.setRemoteSecondarySubtitleSource(uid, ep, null));
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    unawaited(() async {
+      final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          null);
+      _pushRemotePlayback(
+          uid, VideoPlaybackSyncState(secondarySubtitleAt: nowMs));
+    }());
   }
 
   /// 远端模式：恢复远端副字幕来源（[_restoreSecondarySubtitle] 远端分支）。

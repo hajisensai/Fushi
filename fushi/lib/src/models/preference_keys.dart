@@ -158,9 +158,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_mining_image_mode',
   'video_mpv_config',
   'video_mpv_shader_dir',
-  'video_remote_audio_track',
-  'video_remote_secondary_delay',
-  'video_remote_secondary_subtitle',
   'video_remote_subtitle',
   'video_resource_torznab_config',
   'video_respect_ass_style',
@@ -204,12 +201,19 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'media_source_secret_',
   'src:',
   'video_danmaku_episode/',
-  // 视频远端断点/字幕调轴三件套（PositionPrefKeys，fushi_library_host_service.dart）：
-  // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，LWW 跨设备同步用。
+  // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
+  // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
+  //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴）。
+  'video_remote_audio_track_',
+  'video_remote_audio_track_at_',
   'video_remote_delay_',
   'video_remote_delay_at_',
   'video_remote_position_',
   'video_remote_position_at_',
+  'video_remote_secondary_delay_',
+  'video_remote_secondary_delay_at_',
+  'video_remote_secondary_subtitle_',
+  'video_remote_secondary_subtitle_at_',
 ];
 
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。

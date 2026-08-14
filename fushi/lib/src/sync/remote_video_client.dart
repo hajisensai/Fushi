@@ -72,20 +72,21 @@ abstract class RemoteVideoClient extends RemoteVideoSource {
   });
 }
 
-/// 「字幕调轴跨设备同步」的**可选**能力（互联远端调轴不持久化 bug）——只有互联
-/// host 有 `/delay` 端点；URL 直链 / YouTube（[RemoteVideoClient] 的另一个实现
-/// `UrlStreamVideoClient`）没有 host 可上报。
+/// 「播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好同步泛化批
+/// 扩展为统一带戳字段模型）——只有互联 host 有 `/playback` 端点；URL 直链 /
+/// YouTube（[RemoteVideoClient] 的另一个实现 `UrlStreamVideoClient`）没有 host
+/// 可上报。
 ///
 /// 不并进 [RemoteVideoClient] 的理由与上面的两级拆分一致：该接口有十余个测试 fake
 /// 用 `implements` 全量实现，扩面强制全部补桩；播放页用 `client is
-/// RemoteVideoDelaySync` 做类型系统认可的能力判据，拿不到能力的源根本调不出上报。
-abstract interface class RemoteVideoDelaySync {
-  /// 读 host 端视频 [id] 的字幕调轴。返回 (调轴毫秒（可负）, 更新时间毫秒)；
-  /// host 无记录 / 旧 host 无端点（404）返回 (0, 0)。
-  Future<({int delayMs, int updatedAtMs})> remoteVideoDelay(String id);
+/// RemoteVideoPlaybackSync` 做类型系统认可的能力判据，拿不到能力的源根本调不出上报。
+abstract interface class RemoteVideoPlaybackSync {
+  /// 读 host 端视频 [id] 的播放偏好带戳状态。host 无记录 / 旧 host 无端点（404）
+  /// 返回全默认状态。
+  Future<VideoPlaybackSyncState> remoteVideoPlayback(String id);
 
-  /// 向 host 上报视频 [id] 的字幕调轴。host 端「严格较新时间戳者胜」决定是否覆盖。
-  /// [updatedAtMs] 为本端调轴时刻（epoch 毫秒）。旧 host 无端点时抛（404 经
+  /// 向 host 上报视频 [id] 的播放偏好带戳字段（可只带一个字段——调整哪个报哪个）。
+  /// host 端逐字段「严格较新时间戳者胜」合并。旧 host 无端点时抛（404 经
   /// checkStatus），调用方 best-effort 捕获——本地 prefs 已持久化，不阻塞播放。
-  Future<void> putRemoteVideoDelay(String id, int delayMs, int updatedAtMs);
+  Future<void> putRemoteVideoPlayback(String id, VideoPlaybackSyncState state);
 }

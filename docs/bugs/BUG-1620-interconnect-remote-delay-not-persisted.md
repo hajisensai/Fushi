@@ -14,5 +14,6 @@
 - **备注**：首轮的三条已知边界已在「互联完整支持批次」（同分支后续提交）全部收口：
   - ✅ **系列级调轴**：清单/`getVideoDelay` 基底改 `effectiveSeriesDelayMs(col ?? row)`；`putVideoDelay` 写穿 row + 系列级；`VideoBookRepository.updateCollectionSubtitleDelayMs` 给**全体视频成员**盖互联 LWW 戳（否则 host 系列级调轴无戳恒 0、对上报过的对端永远传不出去）。测试：`fushi_library_host_service_video_test.dart`（series-level prefs 组）+ `video_book_repository_test.dart`（成员盖戳）。
   - ✅ **全量 sweep**：`_syncVideoProgressLive` 追加调轴双向收敛（与进度共用 uid 基底 + host 清单字段，零额外网络读；旧 host 404 静默降级）。测试：`sync_orchestrator_live_progress_test.dart`（video delay full sweep 组）。
-  - ✅ **副字幕**（TODO-2837）：远端副字幕从「完全不支持」到完整支持（host sidecar / host 内嵌轨抽取 / 本地文件三类源 + 独立调轴），来源与调轴按远端 uid 落本地 prefs（副字幕轨是本机自选的，host 不参与同步——这是正确语义而非妥协）。
+  - ✅ **副字幕**（TODO-2837）：远端副字幕从「完全不支持」到完整支持（host sidecar / host 内嵌轨抽取 / 本地文件三类源 + 独立调轴）。~~host 不参与同步~~ → 用户拍板后**全部入同步通道**（播放偏好同步泛化批）：来源与独立调轴均为带戳字段（`embedded:<n>`/`off:` 对端可直接重放；本地文件路径对端文件不存在时恢复侧自然跳过，无特例分支；「清除回跟随」也带戳收敛）。
+  - ✅ **播放偏好同步泛化**：`/delay` 端点泛化为 `GET/PUT /api/library/videos/<id>/playback`（`VideoPlaybackSyncState` 统一带戳字段模型：调轴/音轨/副字幕源/副字幕调轴，逐字段严格较新者胜；新增偏好字段=加一对键+一对字段+写入点盖戳，同步不再每项开一条通道）。系列级写入点（合集调轴/音轨/副轨调轴）内聚给全体成员盖戳；sweep 全字段双向收敛。
   - 同族新修：远端音轨选择不持久化（[BUG-1636]）；远端主字幕 `embedded:<n>` 重进不重放；远端剧集面板无看完/在看角标（清单带 `completedAt`）。

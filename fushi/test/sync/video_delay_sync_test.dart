@@ -81,6 +81,71 @@ void main() {
     test('clamp 界冻结（页面滑条 / host PUT 共用）', () {
       expect(kVideoSubtitleDelayLimitMs, 600000);
     });
+
+    test('播放偏好泛化批新键族冻结（音轨/副字幕源/副字幕调轴）', () {
+      expect(videoRemoteAudioTrackPrefKey('u'), 'video_remote_audio_track_u');
+      expect(
+          videoRemoteAudioTrackAtPrefKey('u'), 'video_remote_audio_track_at_u');
+      expect(videoRemoteSecondarySubtitlePrefKey('u'),
+          'video_remote_secondary_subtitle_u');
+      expect(videoRemoteSecondarySubtitleAtPrefKey('u'),
+          'video_remote_secondary_subtitle_at_u');
+      expect(videoRemoteSecondaryDelayPrefKey('u'),
+          'video_remote_secondary_delay_u');
+      expect(videoRemoteSecondaryDelayAtPrefKey('u'),
+          'video_remote_secondary_delay_at_u');
+    });
+  });
+
+  group('VideoPlaybackSyncState（播放偏好同步泛化批）', () {
+    test('merge 逐字段严格较新者胜；平局保守持有侧；带戳 null=显式清除', () {
+      const VideoPlaybackSyncState held = VideoPlaybackSyncState(
+        delayMs: -1500,
+        delayAt: 200,
+        audioTrackId: '2',
+        audioTrackAt: 300,
+        secondaryDelayMs: 100,
+        secondaryDelayAt: 400,
+      );
+      const VideoPlaybackSyncState incoming = VideoPlaybackSyncState(
+        delayMs: 999,
+        delayAt: 100, // 旧戳 → 不覆盖
+        audioTrackId: '5',
+        audioTrackAt: 301, // 严格新 → 覆盖
+        secondarySubtitleSource: 'embedded:4',
+        secondarySubtitleAt: 50, // held 无戳(0) → 覆盖
+        secondaryDelayAt: 401, // 带戳 null → 显式清除覆盖
+      );
+      final VideoPlaybackSyncState merged =
+          VideoPlaybackSyncState.merge(held, incoming);
+      expect(merged.delayMs, -1500, reason: '旧戳不覆盖');
+      expect(merged.audioTrackId, '5', reason: '严格较新覆盖');
+      expect(merged.secondarySubtitleSource, 'embedded:4');
+      expect(merged.secondaryDelayMs, isNull, reason: '带戳清除必须落地');
+      expect(merged.secondaryDelayAt, 401);
+      // 平局（同戳）保守持有侧。
+      final VideoPlaybackSyncState tie = VideoPlaybackSyncState.merge(
+        held,
+        const VideoPlaybackSyncState(audioTrackId: '9', audioTrackAt: 300),
+      );
+      expect(tie.audioTrackId, '2', reason: '平局不覆盖（严格较新者才胜）');
+    });
+
+    test('json 往返：带戳字段保真；带戳 null 与「未设」可区分；空状态零键', () {
+      const VideoPlaybackSyncState s = VideoPlaybackSyncState(
+        delayMs: -1500,
+        delayAt: 10,
+        secondaryDelayAt: 20, // 值 null + at>0 = 显式清除
+      );
+      final Map<String, Object?> json = s.toJson();
+      expect(json['delayMs'], -1500);
+      expect(json.containsKey('secondaryDelayMs'), isFalse);
+      expect(json['secondaryDelayAt'], 20);
+      final VideoPlaybackSyncState back = VideoPlaybackSyncState.fromJson(json);
+      expect(back, s, reason: '往返必须逐字段保真（含显式清除）');
+      expect(const VideoPlaybackSyncState().toJson(), isEmpty);
+      expect(const VideoPlaybackSyncState().isEmpty, isTrue);
+    });
   });
 
   group('RemoteVideoInfo delayUpdatedAtMs（wire 契约）', () {

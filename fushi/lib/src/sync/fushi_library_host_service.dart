@@ -850,6 +850,176 @@ String videoRemoteDelayAtPrefKey(String bookUid) =>
 /// 防越界值经互联写进 DB/prefs。
 const int kVideoSubtitleDelayLimitMs = 600000;
 
+/// 视频「音轨选择」跨设备三件套（播放偏好同步泛化批）。值 = 轨 id 字符串（同一
+/// 文件的轨 id 跨设备同义）；空串 = 未选/已清除（跟随 libmpv 默认）。
+const PositionPrefKeys videoRemoteAudioTrackPrefKeys =
+    PositionPrefKeys('video_remote_audio_track_');
+
+String videoRemoteAudioTrackPrefKey(String bookUid) =>
+    videoRemoteAudioTrackPrefKeys.positionKey(bookUid);
+
+String videoRemoteAudioTrackAtPrefKey(String bookUid) =>
+    videoRemoteAudioTrackPrefKeys.atKey(bookUid);
+
+/// 视频「副字幕来源」跨设备三件套（TODO-2837 / 播放偏好同步泛化批）。值 = 四态
+/// 编码（本地字幕文件绝对路径 / `embedded:<n>` / `off:` 哨兵）；空串 = 未选。
+/// 本地绝对路径在对端解析不到文件时由恢复侧自然跳过（无特例分支）。
+const PositionPrefKeys videoRemoteSecondarySubtitlePrefKeys =
+    PositionPrefKeys('video_remote_secondary_subtitle_');
+
+String videoRemoteSecondarySubtitlePrefKey(String bookUid) =>
+    videoRemoteSecondarySubtitlePrefKeys.positionKey(bookUid);
+
+String videoRemoteSecondarySubtitleAtPrefKey(String bookUid) =>
+    videoRemoteSecondarySubtitlePrefKeys.atKey(bookUid);
+
+/// 视频「副字幕独立调轴」跨设备三件套（播放偏好同步泛化批）。值 = 毫秒（可负）；
+/// 空串 = 跟随主字幕（null）。「清除回跟随」也是一次带戳写（at 键存活），因此
+/// 清除同样跨设备收敛。
+const PositionPrefKeys videoRemoteSecondaryDelayPrefKeys =
+    PositionPrefKeys('video_remote_secondary_delay_');
+
+String videoRemoteSecondaryDelayPrefKey(String bookUid) =>
+    videoRemoteSecondaryDelayPrefKeys.positionKey(bookUid);
+
+String videoRemoteSecondaryDelayAtPrefKey(String bookUid) =>
+    videoRemoteSecondaryDelayPrefKeys.atKey(bookUid);
+
+/// 每视频「播放偏好」带戳状态（播放偏好同步泛化批）——互联同步的统一载体。
+///
+/// 设计准则（用户拍板：**不应该让同步这件事变得困难**）：每个偏好 = (值, 时间戳)
+/// 一对，合并 = 逐字段「严格较新时间戳者胜」（[merge]）；两端存储 = 同一
+/// `video_remote_*_` prefs 键对；wire = 单一 `/playback` 端点 + 清单内联。新增
+/// 一个偏好字段只需：加一对键 + 本类加一对字段 + 写入点盖戳——不再每个偏好开
+/// 一条通道。
+///
+/// 值语义：`null` 值 + `at>0` = 「已显式清除」（如副字幕调轴回跟随），与「从未
+/// 设过」（at==0）可区分——清除因此也能跨设备收敛。
+class VideoPlaybackSyncState {
+  const VideoPlaybackSyncState({
+    this.delayMs = 0,
+    this.delayAt = 0,
+    this.audioTrackId,
+    this.audioTrackAt = 0,
+    this.secondarySubtitleSource,
+    this.secondarySubtitleAt = 0,
+    this.secondaryDelayMs,
+    this.secondaryDelayAt = 0,
+  });
+
+  /// 主字幕调轴（毫秒，可负；无「清除」语义，0 即中性）。
+  final int delayMs;
+  final int delayAt;
+
+  /// 音轨 id（null = 未选/清除 → 跟随 libmpv 默认）。
+  final String? audioTrackId;
+  final int audioTrackAt;
+
+  /// 副字幕来源四态编码（null = 未选；`off:` = 显式关）。
+  final String? secondarySubtitleSource;
+  final int secondarySubtitleAt;
+
+  /// 副字幕独立调轴（毫秒；null = 跟随主字幕）。
+  final int? secondaryDelayMs;
+  final int secondaryDelayAt;
+
+  /// 是否没有任何带戳字段（PUT 空状态没有意义，端点可直接 no-op）。
+  bool get isEmpty =>
+      delayAt == 0 &&
+      audioTrackAt == 0 &&
+      secondarySubtitleAt == 0 &&
+      secondaryDelayAt == 0;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        if (delayAt > 0) ...<String, Object?>{
+          'delayMs': delayMs,
+          'delayAt': delayAt,
+        },
+        if (audioTrackAt > 0) ...<String, Object?>{
+          if (audioTrackId != null) 'audioTrackId': audioTrackId,
+          'audioTrackAt': audioTrackAt,
+        },
+        if (secondarySubtitleAt > 0) ...<String, Object?>{
+          if (secondarySubtitleSource != null)
+            'secondarySubtitleSource': secondarySubtitleSource,
+          'secondarySubtitleAt': secondarySubtitleAt,
+        },
+        if (secondaryDelayAt > 0) ...<String, Object?>{
+          if (secondaryDelayMs != null) 'secondaryDelayMs': secondaryDelayMs,
+          'secondaryDelayAt': secondaryDelayAt,
+        },
+      };
+
+  static VideoPlaybackSyncState fromJson(Map<String, Object?> json) =>
+      VideoPlaybackSyncState(
+        delayMs: _jsonInt(json['delayMs']) ?? 0,
+        delayAt: _jsonInt(json['delayAt']) ?? 0,
+        audioTrackId: _jsonString(json['audioTrackId']),
+        audioTrackAt: _jsonInt(json['audioTrackAt']) ?? 0,
+        secondarySubtitleSource: _jsonString(json['secondarySubtitleSource']),
+        secondarySubtitleAt: _jsonInt(json['secondarySubtitleAt']) ?? 0,
+        secondaryDelayMs: _jsonInt(json['secondaryDelayMs']),
+        secondaryDelayAt: _jsonInt(json['secondaryDelayAt']) ?? 0,
+      );
+
+  /// 逐字段「严格较新时间戳者胜」合并：[incoming] 某字段 at 严格大于 [held] 才
+  /// 覆盖该字段（平局保守持有侧——host 收 PUT 时 held=已存，client 起播决议时
+  /// held=host 下发值，与 [resolveDelayLww] 同一平局哲学）。纯函数。
+  static VideoPlaybackSyncState merge(
+    VideoPlaybackSyncState held,
+    VideoPlaybackSyncState incoming,
+  ) =>
+      VideoPlaybackSyncState(
+        delayMs:
+            incoming.delayAt > held.delayAt ? incoming.delayMs : held.delayMs,
+        delayAt:
+            incoming.delayAt > held.delayAt ? incoming.delayAt : held.delayAt,
+        audioTrackId: incoming.audioTrackAt > held.audioTrackAt
+            ? incoming.audioTrackId
+            : held.audioTrackId,
+        audioTrackAt: incoming.audioTrackAt > held.audioTrackAt
+            ? incoming.audioTrackAt
+            : held.audioTrackAt,
+        secondarySubtitleSource:
+            incoming.secondarySubtitleAt > held.secondarySubtitleAt
+                ? incoming.secondarySubtitleSource
+                : held.secondarySubtitleSource,
+        secondarySubtitleAt:
+            incoming.secondarySubtitleAt > held.secondarySubtitleAt
+                ? incoming.secondarySubtitleAt
+                : held.secondarySubtitleAt,
+        secondaryDelayMs: incoming.secondaryDelayAt > held.secondaryDelayAt
+            ? incoming.secondaryDelayMs
+            : held.secondaryDelayMs,
+        secondaryDelayAt: incoming.secondaryDelayAt > held.secondaryDelayAt
+            ? incoming.secondaryDelayAt
+            : held.secondaryDelayAt,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoPlaybackSyncState &&
+      other.delayMs == delayMs &&
+      other.delayAt == delayAt &&
+      other.audioTrackId == audioTrackId &&
+      other.audioTrackAt == audioTrackAt &&
+      other.secondarySubtitleSource == secondarySubtitleSource &&
+      other.secondarySubtitleAt == secondarySubtitleAt &&
+      other.secondaryDelayMs == secondaryDelayMs &&
+      other.secondaryDelayAt == secondaryDelayAt;
+
+  @override
+  int get hashCode => Object.hash(
+      delayMs,
+      delayAt,
+      audioTrackId,
+      audioTrackAt,
+      secondarySubtitleSource,
+      secondarySubtitleAt,
+      secondaryDelayMs,
+      secondaryDelayAt);
+}
+
 /// 字幕调轴跨设备冲突解决——「严格较新时间戳者胜」。纯函数。
 ///
 /// 与 [resolvePositionLww] 分开的理由：位置的平局规则「取较大位置（看得更远者胜）」
@@ -1085,6 +1255,11 @@ class RemoteVideoInfo {
     this.delayMs = 0,
     this.delayUpdatedAtMs = 0,
     this.audioTrackId,
+    this.audioTrackUpdatedAtMs = 0,
+    this.secondarySubtitleSource,
+    this.secondarySubtitleUpdatedAtMs = 0,
+    this.secondaryDelayMs,
+    this.secondaryDelayUpdatedAtMs = 0,
     this.completedAt,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
@@ -1159,6 +1334,31 @@ class RemoteVideoInfo {
   /// host→client 半边；client 自己的选择落本地 prefs、优先于此值）。
   final String? audioTrackId;
 
+  /// [audioTrackId] 的最后更新时刻（播放偏好同步泛化批；LWW）。0 = 无带戳记录
+  /// （值来自系列级/row 基底）。
+  final int audioTrackUpdatedAtMs;
+
+  /// host 端副字幕来源四态编码 + 时刻（TODO-2837 副字幕入同步通道）。值可能是
+  /// host 本机的绝对路径——对端恢复时文件不存在自然跳过（无特例分支）。
+  final String? secondarySubtitleSource;
+  final int secondarySubtitleUpdatedAtMs;
+
+  /// host 端副字幕独立调轴 + 时刻（null = 跟随主字幕；带戳 null = 显式清除过）。
+  final int? secondaryDelayMs;
+  final int secondaryDelayUpdatedAtMs;
+
+  /// 清单字段 → 播放偏好带戳状态（client 起播 LWW 决议 / sweep 的 host 侧读数）。
+  VideoPlaybackSyncState get playback => VideoPlaybackSyncState(
+        delayMs: delayMs,
+        delayAt: delayUpdatedAtMs,
+        audioTrackId: audioTrackId,
+        audioTrackAt: audioTrackUpdatedAtMs,
+        secondarySubtitleSource: secondarySubtitleSource,
+        secondarySubtitleAt: secondarySubtitleUpdatedAtMs,
+        secondaryDelayMs: secondaryDelayMs,
+        secondaryDelayAt: secondaryDelayUpdatedAtMs,
+      );
+
   /// host 端该视频的「看完」时刻（epoch 毫秒；null = 未看完）。client 剧集面板的
   /// 看完角标（Jellyfin played 勾）数据源——此前远端集无口径恒无标记。
   final int? completedAt;
@@ -1186,6 +1386,15 @@ class RemoteVideoInfo {
         if (delayMs != 0) 'delayMs': delayMs,
         if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
         if (_isNonEmpty(audioTrackId)) 'audioTrackId': audioTrackId,
+        if (audioTrackUpdatedAtMs > 0)
+          'audioTrackUpdatedAtMs': audioTrackUpdatedAtMs,
+        if (_isNonEmpty(secondarySubtitleSource))
+          'secondarySubtitleSource': secondarySubtitleSource,
+        if (secondarySubtitleUpdatedAtMs > 0)
+          'secondarySubtitleUpdatedAtMs': secondarySubtitleUpdatedAtMs,
+        if (secondaryDelayMs != null) 'secondaryDelayMs': secondaryDelayMs,
+        if (secondaryDelayUpdatedAtMs > 0)
+          'secondaryDelayUpdatedAtMs': secondaryDelayUpdatedAtMs,
         if (completedAt != null) 'completedAt': completedAt,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
@@ -1211,6 +1420,11 @@ class RemoteVideoInfo {
     int? delayMs,
     int? delayUpdatedAtMs,
     String? audioTrackId,
+    int? audioTrackUpdatedAtMs,
+    String? secondarySubtitleSource,
+    int? secondarySubtitleUpdatedAtMs,
+    int? secondaryDelayMs,
+    int? secondaryDelayUpdatedAtMs,
     int? completedAt,
     RemoteCollectionMembership? collection,
   }) =>
@@ -1231,6 +1445,15 @@ class RemoteVideoInfo {
         delayMs: delayMs ?? this.delayMs,
         delayUpdatedAtMs: delayUpdatedAtMs ?? this.delayUpdatedAtMs,
         audioTrackId: audioTrackId ?? this.audioTrackId,
+        audioTrackUpdatedAtMs:
+            audioTrackUpdatedAtMs ?? this.audioTrackUpdatedAtMs,
+        secondarySubtitleSource:
+            secondarySubtitleSource ?? this.secondarySubtitleSource,
+        secondarySubtitleUpdatedAtMs:
+            secondarySubtitleUpdatedAtMs ?? this.secondarySubtitleUpdatedAtMs,
+        secondaryDelayMs: secondaryDelayMs ?? this.secondaryDelayMs,
+        secondaryDelayUpdatedAtMs:
+            secondaryDelayUpdatedAtMs ?? this.secondaryDelayUpdatedAtMs,
         completedAt: completedAt ?? this.completedAt,
         episodes: episodes,
         currentEpisode: currentEpisode,
@@ -1264,6 +1487,13 @@ class RemoteVideoInfo {
       delayMs: _jsonInt(json['delayMs']) ?? 0,
       delayUpdatedAtMs: _jsonInt(json['delayUpdatedAtMs']) ?? 0,
       audioTrackId: _jsonString(json['audioTrackId']),
+      audioTrackUpdatedAtMs: _jsonInt(json['audioTrackUpdatedAtMs']) ?? 0,
+      secondarySubtitleSource: _jsonString(json['secondarySubtitleSource']),
+      secondarySubtitleUpdatedAtMs:
+          _jsonInt(json['secondarySubtitleUpdatedAtMs']) ?? 0,
+      secondaryDelayMs: _jsonInt(json['secondaryDelayMs']),
+      secondaryDelayUpdatedAtMs:
+          _jsonInt(json['secondaryDelayUpdatedAtMs']) ?? 0,
       completedAt: _jsonInt(json['completedAt']),
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
@@ -1721,21 +1951,23 @@ abstract interface class VideoDeletionHost {
   Future<void> deleteVideo(String id);
 }
 
-/// host 端「视频字幕调轴跨设备同步」的**可选**能力（互联远端调轴不持久化 bug）。
+/// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
+/// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
 ///
 /// 与 [FushiLibraryHostService] 分开的理由同 [VideoDeletionHost]：主接口有十余个
 /// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩。
 ///
-/// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/delay`
+/// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/playback`
 /// 落 404；client 上报是 best-effort（失败只记日志），本地 prefs 已持久化，对旧
 /// host 优雅降级（Never break userspace）。
-abstract interface class VideoDelayHost {
-  /// 读 host 端视频 [id] 的字幕调轴。返回 (调轴毫秒（可负）, 更新时间毫秒)；
-  /// 无带戳记录时回退旧 `VideoBooks.delayMs`（时间戳 0），id 未知返回 (0, 0)。
-  Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id);
+abstract interface class VideoPlaybackSyncHost {
+  /// 读 host 端视频 [id] 的播放偏好带戳状态。无带戳记录的字段回退行/系列级基底
+  /// （时间戳 0）；id 未知返回全默认。
+  Future<VideoPlaybackSyncState> getVideoPlayback(String id);
 
-  /// 把 client 上报的视频 [id] 字幕调轴写入 host。冲突解决「严格较新时间戳者胜」
-  /// （[resolveDelayLww]）；[delayMs] 越界 clamp 到 ±[kVideoSubtitleDelayLimitMs]；
-  /// host 库不存在该视频时 no-op（防任意 id 写脏 prefs，与断点同语义）。
-  Future<void> putVideoDelay(String id, int delayMs, int updatedAtMs);
+  /// 把 client 上报的播放偏好合并进 host（逐字段严格较新者胜，
+  /// [VideoPlaybackSyncState.merge]）。调轴类字段越界 clamp 到
+  /// ±[kVideoSubtitleDelayLimitMs]、时间戳截到 now+5min（防未来戳锁死 LWW）；
+  /// host 库不存在该视频时 no-op（防任意 id 写脏 prefs）。
+  Future<void> putVideoPlayback(String id, VideoPlaybackSyncState incoming);
 }
