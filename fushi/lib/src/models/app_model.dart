@@ -2228,6 +2228,9 @@ class AppModel with ChangeNotifier {
       // （localhost:8765，也可能是局域网另一台机）绝不经过它。
       installAnkiRemoteMediaHttpClientFactory();
       _applyMemoryPolicy();
+      // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
+      // 否则旧定时器会拿着旧 repository 继续同步。
+      _mediaTrackingService?.dispose();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
         preferences: prefsRepo,
@@ -2565,6 +2568,8 @@ class AppModel with ChangeNotifier {
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
       prefsRepo.addListener(notifyListeners);
+      // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
+      _mediaTrackingService?.dispose();
       _mediaTrackingService = MediaTrackingService(
         repository: MediaTrackingRepository(_database),
         preferences: prefsRepo,
