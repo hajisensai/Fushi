@@ -993,6 +993,8 @@ class RemoteVideoInfo {
     this.positionUpdatedAtMs = 0,
     this.delayMs = 0,
     this.delayUpdatedAtMs = 0,
+    this.audioTrackId,
+    this.completedAt,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
@@ -1060,6 +1062,16 @@ class RemoteVideoInfo {
   /// 「host 无新主张」，本机带戳值即胜）。
   final int delayUpdatedAtMs;
 
+  /// host 端该视频的音轨偏好（系列级 ?? 本集 `VideoBooks.audioTrackId`，schema v52
+  /// 同系列音轨记忆；null = host 没选过 → client 跟随 libmpv 默认轨）。同一文件的
+  /// 轨 id 跨设备同义，client 本机没选过音轨时按它起播（远端音轨持久化 bug 的
+  /// host→client 半边；client 自己的选择落本地 prefs、优先于此值）。
+  final String? audioTrackId;
+
+  /// host 端该视频的「看完」时刻（epoch 毫秒；null = 未看完）。client 剧集面板的
+  /// 看完角标（Jellyfin played 勾）数据源——此前远端集无口径恒无标记。
+  final int? completedAt;
+
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
@@ -1082,6 +1094,8 @@ class RemoteVideoInfo {
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
         if (delayMs != 0) 'delayMs': delayMs,
         if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
+        if (_isNonEmpty(audioTrackId)) 'audioTrackId': audioTrackId,
+        if (completedAt != null) 'completedAt': completedAt,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
           'episodes': <Map<String, Object?>>[
@@ -1105,6 +1119,8 @@ class RemoteVideoInfo {
     int? positionUpdatedAtMs,
     int? delayMs,
     int? delayUpdatedAtMs,
+    String? audioTrackId,
+    int? completedAt,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
@@ -1123,6 +1139,8 @@ class RemoteVideoInfo {
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
         delayMs: delayMs ?? this.delayMs,
         delayUpdatedAtMs: delayUpdatedAtMs ?? this.delayUpdatedAtMs,
+        audioTrackId: audioTrackId ?? this.audioTrackId,
+        completedAt: completedAt ?? this.completedAt,
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
@@ -1154,6 +1172,8 @@ class RemoteVideoInfo {
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
       delayMs: _jsonInt(json['delayMs']) ?? 0,
       delayUpdatedAtMs: _jsonInt(json['delayUpdatedAtMs']) ?? 0,
+      audioTrackId: _jsonString(json['audioTrackId']),
+      completedAt: _jsonInt(json['completedAt']),
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),

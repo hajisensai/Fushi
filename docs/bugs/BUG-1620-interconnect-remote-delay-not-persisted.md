@@ -11,7 +11,8 @@
   - 清单：`listVideos` 下发 `delayMs`（带戳 prefs 与旧 row.delayMs@0 的 LWW 胜者）+ 新字段 `delayUpdatedAtMs`（旧 client 忽略，向后兼容）。
   - host 本机调轴镜像盖戳（断点 TODO-816 同范式）：`_setDelayMs` 本地分支同时写 delay prefs 对——否则对端上报过一次后，本机后续调轴（无戳恒 0）永远输给旧戳。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/video_delay_sync_test.dart`（resolveDelayLww 语义 + 键公式冻结 + RemoteVideoInfo delayUpdatedAtMs json 往返/向后兼容）；`fushi/test/sync/fushi_sync_server_video_delay_test.dart`（端点：GET/PUT 往返、LWW 覆盖/拒绝、404 存在性闸门、无能力 host 404、未鉴权 401、clamp）。
-- **备注**：已知边界（有意保守，不在本轮扩散）：
-  - host 端**合集系列级** `MediaCollections.subtitleDelayMs` 仍不进清单/端点（既有缺口，BUG-996 起就只发 row.delayMs）；合集内 host 本机调轴只给当前集盖戳，其它成员对端回退清单值。
-  - 副字幕独立调轴（TODO-2837）远端恒「跟随主字幕」，未入同步通道。
-  - 全量 sweep（sync_orchestrator TODO-816）未加 delay 键；调轴在播放中上报 + 起播 LWW 已闭环，离线期调轴待下次在线播放该视频时不重传（可后续跟进）。
+- **备注**：首轮的三条已知边界已在「互联完整支持批次」（同分支后续提交）全部收口：
+  - ✅ **系列级调轴**：清单/`getVideoDelay` 基底改 `effectiveSeriesDelayMs(col ?? row)`；`putVideoDelay` 写穿 row + 系列级；`VideoBookRepository.updateCollectionSubtitleDelayMs` 给**全体视频成员**盖互联 LWW 戳（否则 host 系列级调轴无戳恒 0、对上报过的对端永远传不出去）。测试：`fushi_library_host_service_video_test.dart`（series-level prefs 组）+ `video_book_repository_test.dart`（成员盖戳）。
+  - ✅ **全量 sweep**：`_syncVideoProgressLive` 追加调轴双向收敛（与进度共用 uid 基底 + host 清单字段，零额外网络读；旧 host 404 静默降级）。测试：`sync_orchestrator_live_progress_test.dart`（video delay full sweep 组）。
+  - ✅ **副字幕**（TODO-2837）：远端副字幕从「完全不支持」到完整支持（host sidecar / host 内嵌轨抽取 / 本地文件三类源 + 独立调轴），来源与调轴按远端 uid 落本地 prefs（副字幕轨是本机自选的，host 不参与同步——这是正确语义而非妥协）。
+  - 同族新修：远端音轨选择不持久化（[BUG-1636]）；远端主字幕 `embedded:<n>` 重进不重放；远端剧集面板无看完/在看角标（清单带 `completedAt`）。

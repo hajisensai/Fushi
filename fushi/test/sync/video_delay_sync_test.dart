@@ -110,5 +110,25 @@ void main() {
       expect(updated.delayUpdatedAtMs, 42);
       expect(info.copyWith().delayUpdatedAtMs, 0);
     });
+
+    test('audioTrackId / completedAt json 往返 + copyWith 不丢（互联完整支持批次）', () {
+      const RemoteVideoInfo info = RemoteVideoInfo(
+        id: 'video/x',
+        title: 'X',
+        audioTrackId: '3',
+        completedAt: 1700000000000,
+      );
+      final RemoteVideoInfo back = RemoteVideoInfo.fromJson(info.toJson());
+      expect(back.audioTrackId, '3');
+      expect(back.completedAt, 1700000000000);
+      // copyWith 必须透传（漏字段 = 复制即静默丢数据）。
+      expect(info.copyWith().audioTrackId, '3');
+      expect(info.copyWith().completedAt, 1700000000000);
+      // 旧 host 缺键 → null（向后兼容）。
+      final RemoteVideoInfo legacy = RemoteVideoInfo.fromJson(
+          <String, Object?>{'id': 'video/x', 'title': 'X'});
+      expect(legacy.audioTrackId, isNull);
+      expect(legacy.completedAt, isNull);
+    });
   });
 }

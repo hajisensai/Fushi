@@ -15,6 +15,8 @@ import 'package:fushi/src/media/media_source.dart'
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi/src/media/video/series_playback_prefs.dart'
+    show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs;
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
@@ -266,11 +268,26 @@ class AppModelLibraryHostService
   /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。每个被引用
   /// 合集只 [getCollectionItems] 一次，避免逐条目 N+1。
   Future<Map<String, RemoteCollectionMembership>>
-      _primaryCollectionMembership() async {
+      _primaryCollectionMembership() async =>
+          (await _primaryCollectionData()).membership;
+
+  /// [_primaryCollectionMembership] 的富版本：同一趟查询顺带产出
+  /// `'<mediaType>|<entryKey>'` → 主归属合集**行**（[MediaCollectionRow]）的映射，
+  /// 供 listVideos 解析系列级播放偏好（`subtitleDelayMs` / `audioTrackId`，schema
+  /// v52「同系列共享」——此前清单只读 row 级值，host 在合集里调的轴/选的音轨
+  /// 远端永远看不到）。
+  Future<
+      ({
+        Map<String, RemoteCollectionMembership> membership,
+        Map<String, MediaCollectionRow> collectionByEntry,
+      })> _primaryCollectionData() async {
     final Map<String, int> primaryByEntry =
         await _db.getPrimaryCollectionIdByEntry();
     if (primaryByEntry.isEmpty) {
-      return const <String, RemoteCollectionMembership>{};
+      return (
+        membership: const <String, RemoteCollectionMembership>{},
+        collectionByEntry: const <String, MediaCollectionRow>{},
+      );
     }
     final Map<int, MediaCollectionRow> collectionsById =
         <int, MediaCollectionRow>{
@@ -279,6 +296,8 @@ class AppModelLibraryHostService
     };
     final Map<String, RemoteCollectionMembership> out =
         <String, RemoteCollectionMembership>{};
+    final Map<String, MediaCollectionRow> rowByEntry =
+        <String, MediaCollectionRow>{};
     // 只遍历真正承载某条目主归属的合集（按 id 去重），逐合集取一次成员行。
     for (final int cid in primaryByEntry.values.toSet()) {
       final MediaCollectionRow? col = collectionsById[cid];
@@ -295,9 +314,10 @@ class AppModelLibraryHostService
           collectionType: col.collectionType,
           sortIndex: item.sortIndex,
         );
+        rowByEntry[key] = col;
       }
     }
-    return out;
+    return (membership: out, collectionByEntry: rowByEntry);
   }
 
   /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
@@ -1003,8 +1023,12 @@ class AppModelLibraryHostService
 
     final Map<String, List<String>> tagsByVideoUid =
         await _tagNamesByVideoUid();
+    final ({
+      Map<String, RemoteCollectionMembership> membership,
+      Map<String, MediaCollectionRow> collectionByEntry,
+    }) collections = await _primaryCollectionData();
     final Map<String, RemoteCollectionMembership> membership =
-        await _primaryCollectionMembership();
+        collections.membership;
     // 批量预取：位置 prefs / 标签 LWW 时钟 / 移除墓碑各一趟查询，sidecar 同目录只扫
     // 一次。旧实现逐行 2~3 次 prefs 读 + 1 次行重查 + 2 次标签查询 + 1 次全目录
     // listSync——500 行清单一次 ≈ 2500 次 DB 往返 + 500 次目录扫描，且封面端点每张
@@ -1023,6 +1047,8 @@ class AppModelLibraryHostService
         tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
         // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
         collection: membership[MediaKind.video.compositeKey(row.bookUid)],
+        collectionRow: collections
+            .collectionByEntry[MediaKind.video.compositeKey(row.bookUid)],
         prefs: allPrefs,
         tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
         tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
@@ -1082,6 +1108,7 @@ class AppModelLibraryHostService
     required Map<String, List<String>?> sidecarDirCache,
     List<String> tags = const <String>[],
     RemoteCollectionMembership? collection,
+    MediaCollectionRow? collectionRow,
   }) {
     final String videoPath = row.videoPath;
     int? sizeBytes;
@@ -1128,8 +1155,12 @@ class AppModelLibraryHostService
     // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
     // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
     // 已在手、prefs 已批量预取，不再逐行发查询。
+    // 系列级播放偏好（schema v52 同系列共享）：合集成员的无戳基底 = 系列级 ?? 本集
+    // row 值（与本机播放页 [effectiveSeriesDelayMs] 同一决议）。此前只读 row，host
+    // 在合集里调的轴远端永远看不到。
     final ({int delayMs, int updatedAtMs}) delay = resolveDelayLww(
-      aDelayMs: row.delayMs,
+      aDelayMs:
+          effectiveSeriesDelayMs(collectionRow?.subtitleDelayMs, row.delayMs),
       aUpdatedAtMs: 0,
       bDelayMs: PrefCodec.decode<int>(
           prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '', 0),
@@ -1166,6 +1197,12 @@ class AppModelLibraryHostService
       // 严格较新者——prefs 已批量预取，不逐行发查询。
       delayMs: delay.delayMs,
       delayUpdatedAtMs: delay.updatedAtMs,
+      // 远端音轨默认：系列级 ?? 本集 row（同系列音轨记忆，schema v52）。client 本机
+      // 未选过音轨时按 host 的选择起播（远端音轨持久化 bug 的 host→client 半边）。
+      audioTrackId: effectiveSeriesAudioTrackId(
+          collectionRow?.audioTrackId, row.audioTrackId),
+      // 看完标记下发（client 剧集面板角标；此前远端集无口径恒无标记）。
+      completedAt: row.completedAt?.millisecondsSinceEpoch,
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
@@ -1368,11 +1405,23 @@ class AppModelLibraryHostService
         winner.updatedAtMs);
   }
 
+  /// [id] 视频的主归属合集行（无归属 / 未知 id 返回 null）。系列级播放偏好
+  /// （`subtitleDelayMs`）解析用，与清单侧 [_primaryCollectionData] 同折叠语义
+  /// （最小 collectionId 主归属）。两次轻查询（主归属映射 + 单行取合集）。
+  Future<MediaCollectionRow?> _primaryVideoCollectionRow(String id) async {
+    final Map<String, int> primaryByEntry =
+        await _db.getPrimaryCollectionIdByEntry();
+    final int? cid = primaryByEntry[MediaKind.video.compositeKey(id)];
+    if (cid == null) return null;
+    return _db.getMediaCollectionById(cid);
+  }
+
   /// 读 host 端视频 [id] 的字幕调轴（[VideoDelayHost]）。
   ///
   /// 带戳 prefs（client 上报 / host 本机调轴写入，见 video_fushi_page `_setDelayMs`
-  /// 的镜像盖戳）与旧 `VideoBooks.delayMs`（无戳记 0）经 [resolveDelayLww] 取胜者：
-  /// 旧数据无 prefs 时行为与此前「清单直读 row.delayMs」逐字节一致（向后兼容）。
+  /// 的镜像盖戳）与无戳基底（系列级 `MediaCollections.subtitleDelayMs` ?? 本集
+  /// `VideoBooks.delayMs`，与本机播放页 [effectiveSeriesDelayMs] 同一决议）经
+  /// [resolveDelayLww] 取胜者：旧数据无 prefs 时行为与本机播放完全一致（向后兼容）。
   @override
   Future<({int delayMs, int updatedAtMs})> getVideoDelay(String id) async {
     final int prefsDelay =
@@ -1380,8 +1429,10 @@ class AppModelLibraryHostService
     final int prefsAt =
         await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(id), 0);
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    final MediaCollectionRow? col =
+        row == null ? null : await _primaryVideoCollectionRow(id);
     return resolveDelayLww(
-      aDelayMs: row?.delayMs ?? 0,
+      aDelayMs: effectiveSeriesDelayMs(col?.subtitleDelayMs, row?.delayMs ?? 0),
       aUpdatedAtMs: 0,
       bDelayMs: prefsDelay,
       bUpdatedAtMs: prefsAt,
@@ -1417,6 +1468,13 @@ class AppModelLibraryHostService
     await _db.setPrefTyped<int>(
         videoRemoteDelayAtPrefKey(id), winner.updatedAtMs);
     await _db.updateVideoBookDelayMs(id, winner.delayMs);
+    // 系列级写穿（schema v52 调轴系列共享）：该视频有主归属合集时同步系列级值，
+    // 使 host 本机在合集里播放任一集（读 col ?? row）也立即跟随对端调轴——只写
+    // row 会被非 null 的系列级值遮蔽。
+    final MediaCollectionRow? col = await _primaryVideoCollectionRow(id);
+    if (col != null) {
+      await _db.updateMediaCollectionSubtitleDelayMs(col.id, winner.delayMs);
+    }
   }
 
   /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（一次 DB 查询）。

@@ -331,6 +331,61 @@ void main() {
     });
   });
 
+  // ── 互联完整支持批次：系列级播放偏好下发 + 音轨/看完标记 ────────────────────
+
+  group('series-level prefs in listing (schema v52 → interconnect)', () {
+    test('清单下发系列级调轴/音轨（col ?? row）+ completedAt', () async {
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/s1',
+        title: 'S1',
+        videoPath: '/tmp/s1.mp4',
+        delayMs: const Value(-100),
+        audioTrackId: const Value<String?>('1'),
+        completedAt: Value<DateTime?>(
+            DateTime.fromMillisecondsSinceEpoch(1700000000000)),
+      ));
+      final int cid = await db.createMediaCollection('Series S');
+      await db.upsertCollectionItemAt(cid, 'video', 'video/s1', 0);
+      await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
+      await db.updateMediaCollectionAudioTrackId(cid, '3');
+
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final RemoteVideoInfo info = (await svc.listVideos()).single;
+      expect(info.delayMs, -2000,
+          reason: 'host 在合集里调的轴（系列级）此前远端永远看不到——须优先于 row');
+      expect(info.audioTrackId, '3', reason: '系列级音轨优先于 row');
+      expect(info.completedAt, 1700000000000,
+          reason: '看完标记下发（client 剧集面板角标口径）');
+      // json 往返（additive 字段向后兼容）。
+      final RemoteVideoInfo back = RemoteVideoInfo.fromJson(info.toJson());
+      expect(back.audioTrackId, '3');
+      expect(back.completedAt, 1700000000000);
+    });
+
+    test('getVideoDelay 用系列级基底；putVideoDelay 写穿 row + 系列级', () async {
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/s2',
+        title: 'S2',
+        videoPath: '/tmp/s2.mp4',
+      ));
+      final int cid = await db.createMediaCollection('Series S2');
+      await db.upsertCollectionItemAt(cid, 'video', 'video/s2', 0);
+      await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
+
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final ({int delayMs, int updatedAtMs}) d =
+          await svc.getVideoDelay('video/s2');
+      expect(d.delayMs, -2000, reason: '无带戳 prefs 时基底 = 系列级 ?? row');
+      expect(d.updatedAtMs, 0);
+
+      await svc.putVideoDelay('video/s2', 1500, 1700000000000);
+      expect((await db.getVideoBookByBookUid('video/s2'))!.delayMs, 1500);
+      expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, 1500,
+          reason: '系列级写穿：host 本机合集播放（读 col ?? row）立即跟随，'
+              '只写 row 会被非 null 系列级值遮蔽');
+    });
+  });
+
   group('TODO-885 remote episodes', () {
     test('playlistJson rows map to episodes (index+title, never host path)',
         () async {

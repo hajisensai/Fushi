@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart'
@@ -1811,6 +1811,43 @@ class SyncOrchestrator {
         }
       },
     );
+
+    // BUG-1620 sweep：字幕调轴双向收敛，与进度共用同一 uid 基底 + host 清单字段
+    // （清单已带 delayMs/delayUpdatedAtMs，零额外网络读）。「严格较新时间戳者胜」
+    // （[resolveDelayLww] 语义）；两侧都无戳（旧数据/从未调过）无事可做。离线时段
+    // 调的轴由此在下次全量同步收敛，不再依赖「在线播放该视频时顺带上报」。
+    for (final String uid in localUids) {
+      final RemoteVideoInfo? info = hostById[uid];
+      if (info == null) continue;
+      try {
+        final int localDelay =
+            await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0);
+        final int localAt =
+            await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0);
+        if (localAt > info.delayUpdatedAtMs) {
+          // 本地新 → 上报 host（host 端再做 LWW + clamp，幂等安全）。旧 host 无
+          // /delay 端点 → 404 抛出：静默吞（best-effort，与播放中上报同款降级；
+          // 不进 report——否则旧 host 每次全量同步都刷一屏噪音错误）。
+          try {
+            await backend.putRemoteVideoDelay(uid, localDelay, localAt);
+          } catch (e) {
+            debugPrint('[SyncOrchestrator] video delay push "$uid" failed: $e');
+          }
+        } else if (info.delayUpdatedAtMs > localAt) {
+          // host 新 → 写回本地 prefs（时间戳用对端的，同进度写回纪律）；本地有
+          // VideoBooks 行（书架视频）时一并写穿行值，本机播放立即跟随。
+          await _db.setPrefTyped<int>(
+              videoRemoteDelayPrefKey(uid), info.delayMs);
+          await _db.setPrefTyped<int>(
+              videoRemoteDelayAtPrefKey(uid), info.delayUpdatedAtMs);
+          if (rowPositionByUid.containsKey(uid)) {
+            await _db.updateVideoBookDelayMs(uid, info.delayMs);
+          }
+        }
+      } catch (e) {
+        report.noteError('live video delay "$uid"', e);
+      }
+    }
   }
 
   /// 互联有声书播放进度 live 双向同步（BUG-471）。

@@ -1416,6 +1416,100 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 通用「远端视频 per-uid 字符串记忆」JSON map 读取（互联远端播放偏好持久化）。
+  /// 形状与 [remoteSubtitleSources] 完全一致：`{ "<key>": "<value>" }` 单条 KV，
+  /// 解析失败回退空 map。[logLabel] 用于解码失败的错误日志定位。
+  Map<String, String> _remoteVideoStringMap(String prefKey, String logLabel) {
+    final String raw = getPref(prefKey, defaultValue: '') as String;
+    if (raw.isEmpty) return <String, String>{};
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((dynamic k, dynamic v) =>
+            MapEntry<String, String>(k.toString(), v.toString()));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(logLabel, e, stack);
+    }
+    return <String, String>{};
+  }
+
+  /// 通用「远端视频 per-uid 字符串记忆」写入（读改写整 map）。[value] null = 删 key。
+  Future<void> _setRemoteVideoStringMapEntry(
+    String prefKey,
+    String logLabel,
+    String key,
+    String? value,
+  ) async {
+    final Map<String, String> map = _remoteVideoStringMap(prefKey, logLabel);
+    if (value == null) {
+      if (!map.containsKey(key)) return;
+      map.remove(key);
+    } else {
+      if (map[key] == value) return;
+      map[key] = value;
+    }
+    await setPref(prefKey, jsonEncode(map));
+    notifyListeners();
+  }
+
+  static const String _kRemoteAudioTrackLog =
+      'PreferencesRepository.remoteAudioTrackIds.decode';
+
+  /// 远端视频「音轨选择」记忆（互联远端音轨持久化 bug）：远端无 VideoBooks 行可写
+  /// `audioTrackId` 列（旧路径 `updateAudioTrackId(远端uid)` 是静默 0 行 UPDATE，
+  /// 选轨退出即丢），比照 [remoteSubtitleSources] 按稳定 bookUid 落 KV。合集连播
+  /// 各成员是独立 uid 天然隔离；host-playlist 整书一个值（与本机 row 级语义一致）。
+  String? remoteAudioTrackId(String bookUid) => _remoteVideoStringMap(
+      'video_remote_audio_track', _kRemoteAudioTrackLog)[bookUid];
+
+  /// 记住/清除某远端视频的音轨选择。[trackId] null = 删除（回退 host 下发值 /
+  /// libmpv 默认轨）。
+  Future<void> setRemoteAudioTrackId(String bookUid, String? trackId) =>
+      _setRemoteVideoStringMapEntry(
+          'video_remote_audio_track', _kRemoteAudioTrackLog, bookUid, trackId);
+
+  static const String _kRemoteSecondarySubtitleLog =
+      'PreferencesRepository.remoteSecondarySubtitleSources.decode';
+
+  /// 远端视频「副字幕来源」记忆（TODO-2837 远端副字幕支持）：与主字幕
+  /// [remoteSubtitleSources] 同款四态编码（本地文件绝对路径 / host `subtitleUrl` /
+  /// `embedded:<n>` / `off:` 哨兵），key 同款 [remoteSubtitleKey]。
+  String? remoteSecondarySubtitleSource(String bookUid,
+          {int episodeIndex = 0}) =>
+      _remoteVideoStringMap(
+              'video_remote_secondary_subtitle', _kRemoteSecondarySubtitleLog)[
+          remoteSubtitleKey(bookUid, episodeIndex)];
+
+  /// 记住/清除某远端视频的副字幕来源。[source] null = 删除（无偏好，不自动选）。
+  Future<void> setRemoteSecondarySubtitleSource(
+    String bookUid,
+    int episodeIndex,
+    String? source,
+  ) =>
+      _setRemoteVideoStringMapEntry(
+          'video_remote_secondary_subtitle',
+          _kRemoteSecondarySubtitleLog,
+          remoteSubtitleKey(bookUid, episodeIndex),
+          source);
+
+  static const String _kRemoteSecondaryDelayLog =
+      'PreferencesRepository.remoteSecondaryDelayMs.decode';
+
+  /// 远端视频「副字幕独立调轴」记忆（毫秒，可负；TODO-2837）。null = 无独立值 =
+  /// 跟随主字幕调轴。副字幕轨是 client 本机自选的（host 不知道），其调轴是本机
+  /// 属性——只落本地、不进互联同步通道（这不是妥协，是正确语义）。
+  int? remoteSecondaryDelayMs(String bookUid) {
+    final String? raw = _remoteVideoStringMap(
+        'video_remote_secondary_delay', _kRemoteSecondaryDelayLog)[bookUid];
+    return raw == null ? null : int.tryParse(raw);
+  }
+
+  /// 记住/清除某远端视频的副字幕独立调轴。[delayMs] null = 删除（回到跟随主字幕）。
+  Future<void> setRemoteSecondaryDelayMs(String bookUid, int? delayMs) =>
+      _setRemoteVideoStringMapEntry('video_remote_secondary_delay',
+          _kRemoteSecondaryDelayLog, bookUid, delayMs?.toString());
+
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;

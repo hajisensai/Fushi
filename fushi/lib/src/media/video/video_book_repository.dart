@@ -23,6 +23,8 @@ import 'package:fushi/src/media/video/scraper/scraper_types.dart'
 import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart'
+    show videoRemoteDelayPrefKey, videoRemoteDelayAtPrefKey;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 
@@ -679,11 +681,29 @@ class VideoBookRepository {
 
   /// 更新系列（合集）级字幕调轴（音画延迟毫秒，schema v52，同系列调轴记忆）。合集内
   /// 任一集调轴写这里，全系列共享；null=清除（加载回退各集 per-book / 0）。
+  ///
+  /// 互联 LWW 盖戳（BUG-1620 系列级半边）：系列级调轴对**全体成员**生效，故把
+  /// 值 + now 镜像进每个视频成员的 `video_remote_delay_` prefs 对——host 侧
+  /// getVideoDelay / 清单以带戳值参与「严格较新者胜」，否则对端上报过一次后，本机
+  /// 的系列级调轴（col 无戳恒 0）对那台设备永远传不出去。null（清除）只清系列级
+  /// 列、不动 prefs（清除语义 = 回退 per-book，成员 prefs 里的历史带戳值仍是
+  /// 「最后一次实际调轴」的事实）。
   Future<void> updateCollectionSubtitleDelayMs(
     int collectionId,
     int? delayMs,
-  ) =>
-      _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
+  ) async {
+    await _db.updateMediaCollectionSubtitleDelayMs(collectionId, delayMs);
+    if (delayMs == null) return;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    for (final MediaCollectionItemRow item
+        in await _db.getCollectionItems(collectionId)) {
+      if (item.mediaType != MediaKind.video.dbValue) continue;
+      await _db.setPrefTyped<int>(
+          videoRemoteDelayPrefKey(item.entryKey), delayMs);
+      await _db.setPrefTyped<int>(
+          videoRemoteDelayAtPrefKey(item.entryKey), nowMs);
+    }
+  }
 
   /// 更新系列（合集）级**副字幕**独立调轴（毫秒，schema v86，TODO-2837，同系列
   /// 副轨调轴记忆）。null=清除（加载回退各集 per-book；两层都 null = 跟随主字幕）。

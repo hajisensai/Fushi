@@ -51,13 +51,22 @@ extension _VideoAudioTrack on _VideoFushiPageState {
   ) async {
     await controller.selectAudioTrack(track);
     // 同系列音轨记忆（schema v52）：合集内选音轨写系列级，全系列共享（换集/从书架
-    // 重进任一集都读到）；单文件视频（无合集，含远端 collectionId==null）仍走
-    // per-book，行为与旧版一致。
-    final int? collectionId = widget.playlistCollectionId;
-    if (collectionId != null) {
-      await widget.repo.updateCollectionAudioTrackId(collectionId, track.id);
+    // 重进任一集都读到）；单文件视频（无合集）仍走 per-book，行为与旧版一致。
+    //
+    // 互联远端音轨持久化 bug：远端播放在 client 无 VideoBooks 行，旧路径
+    // `updateAudioTrackId(远端uid)` 是静默 0 行 UPDATE（选轨退出即丢）。改按稳定
+    // 远端 uid（合集连播 = 当前成员 id，与断点键 [_remotePositionKeyForIndex]
+    // 同构）落 prefs，重进 [_initRemote] / [_loadRemoteEpisode] 优先重放。
+    if (_isRemote) {
+      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+      await appModel.setRemoteAudioTrackId(uid, track.id);
     } else {
-      await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+      final int? collectionId = widget.playlistCollectionId;
+      if (collectionId != null) {
+        await widget.repo.updateCollectionAudioTrackId(collectionId, track.id);
+      } else {
+        await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+      }
     }
     if (!mounted) return;
     _rebuild(() => _currentAudioTrackId = track.id);

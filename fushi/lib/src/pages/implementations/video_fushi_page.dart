@@ -2147,13 +2147,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
-    _currentAudioTrackId = null;
+    // 远端音轨恢复（互联远端音轨持久化 bug）：本机选过（prefs）优先，否则跟随
+    // host 下发的音轨偏好（系列级 ?? row，同一文件轨 id 跨设备同义）；都无 = null
+    // 跟随 libmpv 默认轨。_applyLoad 里 _restoreAudioTrack 会按它选轨。
+    _currentAudioTrackId =
+        appModel.remoteAudioTrackId(widget.bookUid) ?? info.audioTrackId;
     // BUG-996：远端播放跟随 host 下发的字幕时序偏移（此前恒 0，字幕调轴不同步）。
     // 通道已就绪——_applyLoad 里 controller.setDelayMs(_delayMs) 会应用它。
     // 互联远端调轴不持久化 bug：host 值与本地 prefs 经 LWW 取严格较新者——本机调过
     // 的轴退出重进不再被 host 的 0 覆盖。
     _delayMs = _resolveRemoteInitialDelayMs(info, widget.bookUid);
-    // TODO-2837：远端无副字幕流，副轨独立调轴恒复位为「跟随主字幕」。
+    // TODO-2837 远端副字幕支持：先置中性值，真实来源/调轴在 [_loadRemoteEpisode]
+    // 按 (uid, ep) 从本地 prefs 恢复（副字幕轨是本机自选的，host 不参与同步）。
     _secondaryDelayMs = null;
     _playbackSpeed = _readPersistedSpeed();
     _playbackVolume = _readPersistedVolume();
@@ -2175,11 +2180,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             title: m.title,
             coverUrl: m.coverUrl,
             coverCacheKey: m.id,
+            // 剧集面板看完/在看角标（互联完整支持批次）：host 下发 completedAt +
+            // 断点即口径，与本地集（completedAt / lastPositionMs）对齐。
+            completed: m.completedAt != null,
+            started: m.positionMs > 0,
           ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];
       _delayMs = _resolveRemoteInitialDelayMs(
           _remoteMembers[startIndex], _remoteMembers[startIndex].id);
+      _currentAudioTrackId =
+          appModel.remoteAudioTrackId(_remoteMembers[startIndex].id) ??
+              _remoteMembers[startIndex].audioTrackId;
       await _loadRemoteEpisode(
         startIndex,
         startIntent: EpisodeStartIntent.initialOpen,
@@ -2228,10 +2240,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       streamEpisodeIndex = 0;
       _activeRemoteMember = info;
       _delayMs = _resolveRemoteInitialDelayMs(info, info.id);
+      _currentAudioTrackId =
+          appModel.remoteAudioTrackId(info.id) ?? info.audioTrackId;
     } else {
       info = _effectiveRemoteInfo!;
       streamEpisodeIndex = index;
     }
+    // TODO-2837 远端副字幕：来源与独立调轴按 (uid, ep) 从本地 prefs 恢复（副字幕轨
+    // 是本机自选的，host 不参与）。_applyLoad 内 setSecondaryDelayMs 应用调轴、
+    // _restoreSecondarySubtitle 远端分支重放来源。
+    final (String secUid, int secEp) = _remotePositionKeyForIndex(index);
+    _currentSecondarySubtitleSource =
+        appModel.remoteSecondarySubtitleSource(secUid, episodeIndex: secEp);
+    _secondaryDelayMs = appModel.remoteSecondaryDelayMs(secUid);
     final RemoteVideoClient client = _effectiveRemoteClient!;
     final int seq = ++_episodeLoadSeq;
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
@@ -2265,6 +2286,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final String? persistedSub =
           appModel.remoteSubtitleSource(subUid, episodeIndex: subEp);
       bool subtitleResolved = false;
+      // 内嵌轨重放成功时的持久化编码（`embedded:<n>`）——_applyLoad 会把
+      // _currentSubtitleSource 设成外挂文件路径（下载的临时抽取产物），须在其后
+      // 改回本编码，否则字幕菜单的内嵌轨行高亮不上、再选一次还会重复下载。
+      String? restoredPrimarySource;
       if (persistedSub != null) {
         if (SubtitleSource.isOff(persistedSub)) {
           // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
@@ -2280,8 +2305,42 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             _remoteSubtitlePath = persistedSub;
             subtitleResolved = true;
           }
+        } else if (persistedSub.startsWith(SubtitleSource.embeddedPrefix)) {
+          // 远端内嵌轨选择重放（互联完整支持批次）：此前 `embedded:<n>` 不重放、
+          // 重进落回 host 默认字幕（选内嵌轨的用户每次进影片都要重选一遍）。向
+          // host 重新抽取该轨（与 [_applyRemoteEmbeddedSubtitle] 同端点）；抽取
+          // 失败（轨已变 / 旧 host）静默落回 host 默认分支，不阻断起播。
+          final int? streamIndex = int.tryParse(
+              persistedSub.substring(SubtitleSource.embeddedPrefix.length));
+          if (streamIndex != null) {
+            _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
+            try {
+              final Directory temp = await getTemporaryDirectory();
+              final File subtitle = File(p.join(
+                temp.path,
+                _remoteSubtitleTempFileName(
+                    '${info.id}_emb$streamIndex', 'embedded_$streamIndex.srt'),
+              ));
+              await client.getRemoteVideoSubtitle(
+                info.id,
+                subtitle,
+                embeddedStreamIndex: streamIndex,
+                episodeIndex: streamEpisodeIndex,
+              );
+              cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
+              if (cues.isNotEmpty) {
+                externalSub = subtitle.path;
+                _remoteSubtitlePath = subtitle.path;
+                restoredPrimarySource = persistedSub;
+                subtitleResolved = true;
+              }
+            } catch (e) {
+              debugPrint(
+                  '[VideoFushiPage] embedded subtitle replay failed: $e');
+            }
+          }
         }
-        // host url / embedded 索引 / 文件已删 → 不在此解析，落回下方 host 默认分支。
+        // host url / 文件已删 → 不在此解析，落回下方 host 默认分支。
       }
       // TODO-1000：YouTube 等预解析好 cue（timedtext→AudioCue）时直接用，跳过
       // subtitleUrl 下载+解析（YouTube XML 字幕现有解析器不识别）。
@@ -2340,6 +2399,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
         externalAudioTrackUrl: urls.audioStreamUrl,
       );
+      if (restoredPrimarySource != null && mounted) {
+        // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
+        setState(() => _currentSubtitleSource = restoredPrimarySource);
+      }
       // TODO-1301（BUG-600）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
       // 一致——muxed 挖矿流自带音轨时置 null，让引擎回落 miningSource(muxed 360p) 抽音频
       // （实测 2s 出 AAC）；仅无 muxed 的纯分离流才指向 audio-only 流。此前无条件指向
@@ -5865,20 +5928,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } else {
       final int? collectionId = widget.playlistCollectionId;
       if (collectionId != null) {
+        // 系列级写入内聚盖戳：repo 会把值 + now 镜像进**全体视频成员**的
+        // `video_remote_delay_` prefs 对（互联 LWW 用，见 repo doc），此处无需重复。
         await widget.repo
             .updateCollectionSubtitleDelayMs(collectionId, clamped);
       } else {
         await widget.repo.updateDelayMs(widget.bookUid, clamped);
+        // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键
+        // 空间，使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过
+        // 一次后，本机后续调轴（row 无戳恒 0）永远输给旧戳、再也传不出去。
+        await appModel.prefsRepo
+            .setPref(videoRemoteDelayPrefKey(widget.bookUid), clamped);
+        await appModel.prefsRepo.setPref(
+            videoRemoteDelayAtPrefKey(widget.bookUid),
+            DateTime.now().millisecondsSinceEpoch);
       }
-      // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键空间，
-      // 使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过一次后，
-      // 本机后续调轴（col/row 无戳恒 0）永远输给旧戳、再也传不出去。合集内只给当前
-      // 集盖戳（系列级共享值仍由 col 承载，其它成员无戳时对端回退清单值）。
-      await appModel.prefsRepo
-          .setPref(videoRemoteDelayPrefKey(widget.bookUid), clamped);
-      await appModel.prefsRepo.setPref(
-          videoRemoteDelayAtPrefKey(widget.bookUid),
-          DateTime.now().millisecondsSinceEpoch);
     }
     if (mounted) setState(() {});
   }
@@ -5906,6 +5970,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         t.video_subtitle_secondary_delay_osd(ms: signed),
         icon: Icons.sync_outlined,
       );
+    }
+    // TODO-2837 远端副字幕：副轨调轴按远端 uid 落本地 prefs（副字幕轨是本机自选的，
+    // host 不参与；null = 删记忆 = 回到跟随主字幕）。本地路径行为不变。
+    if (_isRemote) {
+      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+      await appModel.setRemoteSecondaryDelayMs(uid, clamped);
+      if (mounted) setState(() {});
+      return;
     }
     final int? collectionId = widget.playlistCollectionId;
     if (collectionId != null) {
