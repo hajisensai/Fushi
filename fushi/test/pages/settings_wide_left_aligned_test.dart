@@ -37,9 +37,8 @@ void main() {
   });
 
   testWidgets(
-      'REGRESSION DOC: wrapping in centered DesktopContentLayout '
-      'pushes the nav pane off the left (why we do NOT wrap the wide branch)',
-      (tester) async {
+      'REGRESSION DOC: wrapping in DesktopContentLayout still pads the nav '
+      'pane off the left (why we do NOT wrap the wide branch)', (tester) async {
     await useWideSurface(tester);
     await tester.pumpWidget(_fullBleed(
       DesktopContentLayout(
@@ -49,7 +48,11 @@ void main() {
     ));
     await tester.pump();
     final Rect nav = tester.getRect(find.byKey(navKey));
-    // 1500 宽被居中限到 960 → 左缘明显 > 0(这正是我们要避免的旧行为)。
-    expect(nav.left, greaterThan(100.0));
+    // 设置正文的 960 居中限宽已取消(用户实报「设置页有莫名奇妙的宽度限制」),
+    // 但 DesktopContentLayout 仍给文字流留 24px 侧向留白 —— 导航面板依旧不贴
+    // 左缘,所以宽屏主从分支仍然不能套这一层。
+    expect(nav.width, greaterThan(0));
+    expect(nav.left, closeTo(24.0, 0.5),
+        reason: '限宽取消后只剩侧向留白,但仍非 0 —— 宽屏分支不套 DesktopContentLayout');
   });
 }
