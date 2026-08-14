@@ -24,7 +24,7 @@ Android: เลือก **arm64** Windows: เลือกไฟล์ **.exe**
 
 ### 1. นำเข้าพจนานุกรมที่แนะนำ (พจนานุกรมคำศัพท์ + ระดับเสียงสูงต่ำ + ความถี่) และไฟล์เสียงในเครื่อง (ฐานข้อมูลเสียงภาษาญี่ปุ่นและภาษาอังกฤษ) (แนะนำอย่างยิ่งสำหรับมือใหม่!!! · ไม่บังคับ)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [ดาวน์โหลดผ่าน Cloudflare (9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [ดาวน์โหลดผ่าน Cloudflare (9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 ในแอป: การตั้งค่า -> ซิงค์และสำรองข้อมูล -> แตะ **นำเข้าข้อมูลสำรอง**
 

@@ -24,7 +24,7 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 
 ### 1. 추천 사전(단어 + 고저 악센트 + 빈도 사전)과 로컬 오디오(일본어 및 영어 오디오 데이터베이스) 가져오기(초보자에게 강력 추천!!! · 선택 사항)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare 다운로드(9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare 다운로드(9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
 

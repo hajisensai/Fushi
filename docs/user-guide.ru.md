@@ -24,7 +24,7 @@ Android: выберите **arm64**. Windows: выберите файл **.exe**
 
 ### 1. Импорт рекомендуемых словарей (словари слов + тонального ударения + частотности) и локального аудио (базы данных японского и английского аудио) (Настоятельно рекомендуется новичкам!!! · необязательно)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Загрузка через Cloudflare (9,5 ГБ)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Загрузка через Cloudflare (9,5 ГБ)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 В приложении: Настройки -> Синхронизация и резервное копирование -> нажмите **Импортировать резервную копию**.
 

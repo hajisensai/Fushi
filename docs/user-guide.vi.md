@@ -24,7 +24,7 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
 ### 1. Nhập các từ điển được đề xuất (từ điển từ vựng + trọng âm cao độ + tần suất) và âm thanh cục bộ (cơ sở dữ liệu âm thanh tiếng Nhật và tiếng Anh) (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Tải xuống qua Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Tải xuống qua Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 
