@@ -142,16 +142,51 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       appModel.setJimakuDefaultLanguage(language);
 }
 
+/// 本组件里彼此独立的四组设置。
+///
+/// 它们原本焊死在一个 Column 里、整块挂在「设置 → 下载」下。但 OpenSubtitles 是**字幕
+/// 来源**而不是下载器配置：把它和种子索引器摆在一起，用户在「视频 → 字幕」里只看得到
+/// Jimaku 的 API key，自然会以为 app 根本没接 OpenSubtitles。分组让同一份表单能按归属
+/// 拆到该去的地方，配置本身仍是同一份（同一个偏好键、同一套校验与防抖保存）。
+enum VideoExternalSettingsGroup {
+  /// Torznab 种子索引器。
+  torznab,
+
+  /// OpenSubtitles 在线字幕源。
+  openSubtitles,
+
+  /// 下载后端路径映射。
+  pathMappings,
+
+  /// 下载落地的目标媒体库。
+  targetSource,
+}
+
 /// 发现/下载闭环所依赖的设备本地外部配置。
 ///
 /// 密钥字段始终遮罩；端点只有通过 provider 自身的 HTTPS/loopback 安全校验后才写入
 /// Preferences。表单错误只显示稳定的本地化提示，不把含密钥的 URL 或异常正文写进
 /// snack、日志或诊断导出。
+///
+/// 渲染哪几组由 [groups] 决定：同一份配置按归属拆到「设置 → 下载」与「设置 → 视频 →
+/// 字幕」两处，见 [VideoExternalSettingsGroup]。
 class VideoExternalProviderSettingsSection extends ConsumerStatefulWidget {
-  const VideoExternalProviderSettingsSection({super.key, this.store});
+  const VideoExternalProviderSettingsSection({
+    super.key,
+    this.store,
+    this.groups = const <VideoExternalSettingsGroup>{
+      VideoExternalSettingsGroup.torznab,
+      VideoExternalSettingsGroup.openSubtitles,
+      VideoExternalSettingsGroup.pathMappings,
+      VideoExternalSettingsGroup.targetSource,
+    },
+  });
 
   /// 测试注入口；生产路径从 [AppModel] 构造设备本地 store。
   final VideoExternalSettingsStore? store;
+
+  /// 要渲染哪几组设置。缺省全渲染（= 旧行为）。
+  final Set<VideoExternalSettingsGroup> groups;
 
   @override
   ConsumerState<VideoExternalProviderSettingsSection> createState() =>
@@ -713,105 +748,117 @@ class _VideoExternalProviderSettingsSectionState
               ),
             ),
           ),
-        _sectionHeading(
-          theme,
-          t.video_torznab_settings_title,
-          t.video_torznab_settings_hint,
-          icon: Icons.travel_explore_outlined,
-        ),
-        for (int index = 0; index < _torznab.length; index++)
-          _torznabCard(theme, index),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            key: const ValueKey<String>('video-torznab-add'),
-            onPressed: () => setState(
-              () => _torznab.add(_TorznabDraft.empty(_newDraftId('torznab'))),
-            ),
-            icon: const Icon(Icons.add),
-            label: Text(t.video_torznab_add),
+        if (widget.groups
+            .contains(VideoExternalSettingsGroup.torznab)) ...<Widget>[
+          _sectionHeading(
+            theme,
+            t.video_torznab_settings_title,
+            t.video_torznab_settings_hint,
+            icon: Icons.travel_explore_outlined,
           ),
-        ),
-        const Divider(height: 32),
-        _sectionHeading(
-          theme,
-          t.video_opensubtitles_settings_title,
-          t.video_opensubtitles_settings_hint,
-          icon: Icons.subtitles_outlined,
-        ),
-        _openSubtitlesFields(),
-        const Divider(height: 32),
-        _sectionHeading(
-          theme,
-          t.video_download_path_mappings_title,
-          t.video_download_path_mappings_hint,
-          icon: Icons.route_outlined,
-        ),
-        for (int index = 0; index < _mappings.length; index++)
-          _mappingCard(index),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            key: const ValueKey<String>('video-path-mapping-add'),
-            onPressed: () => setState(
-              () => _mappings.add(_PathMappingDraft.empty(
-                _newDraftId('mapping'),
-                suggestedBackendProfileId: _suggestedBackendProfileId,
-              )),
-            ),
-            icon: const Icon(Icons.add),
-            label: Text(t.video_download_path_mapping_add),
-          ),
-        ),
-        const Divider(height: 32),
-        _sectionHeading(
-          theme,
-          t.video_download_target_source_title,
-          t.video_download_target_source_hint,
-          icon: Icons.video_library_outlined,
-        ),
-        if (_sources.isEmpty)
-          Text(
-            t.video_download_target_source_empty,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          )
-        else
-          DropdownButtonFormField<int>(
-            key: ValueKey<String>(
-              'video-target-source-${_targetSourceId ?? 'none'}',
-            ),
-            initialValue: _targetSourceId ?? 0,
-            decoration: InputDecoration(
-              labelText: t.video_download_target_source_none,
-              isDense: true,
-              border: const OutlineInputBorder(),
-            ),
-            isExpanded: true,
-            items: <DropdownMenuItem<int>>[
-              DropdownMenuItem<int>(
-                value: 0,
-                child: Text(t.video_download_target_source_none),
+          for (int index = 0; index < _torznab.length; index++)
+            _torznabCard(theme, index),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey<String>('video-torznab-add'),
+              onPressed: () => setState(
+                () => _torznab.add(_TorznabDraft.empty(_newDraftId('torznab'))),
               ),
-              for (final ManagedVideoSourceOption source in _sources)
-                DropdownMenuItem<int>(
-                  value: source.id,
-                  child: Text(
-                    '${source.label} — ${source.rootPath}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (int? sourceId) {
-              final int? selected = sourceId == 0 ? null : sourceId;
-              setState(() => _targetSourceId = selected);
-              _save(
-                (VideoExternalSettingsStore store) =>
-                    store.saveTargetSourceId(selected),
-              );
-            },
+              icon: const Icon(Icons.add),
+              label: Text(t.video_torznab_add),
+            ),
           ),
+          const Divider(height: 32),
+        ],
+        if (widget.groups
+            .contains(VideoExternalSettingsGroup.openSubtitles)) ...<Widget>[
+          _sectionHeading(
+            theme,
+            t.video_opensubtitles_settings_title,
+            t.video_opensubtitles_settings_hint,
+            icon: Icons.subtitles_outlined,
+          ),
+          _openSubtitlesFields(),
+          const Divider(height: 32),
+        ],
+        if (widget.groups
+            .contains(VideoExternalSettingsGroup.pathMappings)) ...<Widget>[
+          _sectionHeading(
+            theme,
+            t.video_download_path_mappings_title,
+            t.video_download_path_mappings_hint,
+            icon: Icons.route_outlined,
+          ),
+          for (int index = 0; index < _mappings.length; index++)
+            _mappingCard(index),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey<String>('video-path-mapping-add'),
+              onPressed: () => setState(
+                () => _mappings.add(_PathMappingDraft.empty(
+                  _newDraftId('mapping'),
+                  suggestedBackendProfileId: _suggestedBackendProfileId,
+                )),
+              ),
+              icon: const Icon(Icons.add),
+              label: Text(t.video_download_path_mapping_add),
+            ),
+          ),
+          const Divider(height: 32),
+        ],
+        if (widget.groups
+            .contains(VideoExternalSettingsGroup.targetSource)) ...<Widget>[
+          _sectionHeading(
+            theme,
+            t.video_download_target_source_title,
+            t.video_download_target_source_hint,
+            icon: Icons.video_library_outlined,
+          ),
+          if (_sources.isEmpty)
+            Text(
+              t.video_download_target_source_empty,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            DropdownButtonFormField<int>(
+              key: ValueKey<String>(
+                'video-target-source-${_targetSourceId ?? 'none'}',
+              ),
+              initialValue: _targetSourceId ?? 0,
+              decoration: InputDecoration(
+                labelText: t.video_download_target_source_none,
+                isDense: true,
+                border: const OutlineInputBorder(),
+              ),
+              isExpanded: true,
+              items: <DropdownMenuItem<int>>[
+                DropdownMenuItem<int>(
+                  value: 0,
+                  child: Text(t.video_download_target_source_none),
+                ),
+                for (final ManagedVideoSourceOption source in _sources)
+                  DropdownMenuItem<int>(
+                    value: source.id,
+                    child: Text(
+                      '${source.label} — ${source.rootPath}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (int? sourceId) {
+                final int? selected = sourceId == 0 ? null : sourceId;
+                setState(() => _targetSourceId = selected);
+                _save(
+                  (VideoExternalSettingsStore store) =>
+                      store.saveTargetSourceId(selected),
+                );
+              },
+            ),
+        ],
         const SizedBox(height: 8),
       ],
     );

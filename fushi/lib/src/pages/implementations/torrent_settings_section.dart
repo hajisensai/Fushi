@@ -669,7 +669,15 @@ class _TorrentSettingsSectionState
             ),
           ],
         ],
-        const VideoExternalProviderSettingsSection(),
+        // OpenSubtitles 那一组不在这儿：它是字幕来源，归「设置 → 视频 → 字幕」，与
+        // Jimaku 的 API key 并列。留在下载设置里的是种子索引器与下载落地相关的三组。
+        const VideoExternalProviderSettingsSection(
+          groups: <VideoExternalSettingsGroup>{
+            VideoExternalSettingsGroup.torznab,
+            VideoExternalSettingsGroup.pathMappings,
+            VideoExternalSettingsGroup.targetSource,
+          },
+        ),
       ],
     );
     if (!widget.constrainWidth) {

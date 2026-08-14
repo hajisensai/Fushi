@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
@@ -1169,6 +1170,22 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, String code) async {
               await settingsContext.appModel.setJimakuDefaultLanguage(code);
             },
+          ),
+          // ── OpenSubtitles（另一个在线字幕源）──────────────────────────────
+          // 这块表单本来整块挂在「设置 → 下载」里，和 Torznab 种子索引器摆一起：
+          // OpenSubtitles 是**字幕来源**，放在那儿等于藏起来——用户在字幕设置里只看得到
+          // Jimaku 的 API key，自然以为 app 根本没接它。同一份配置（同一个偏好键、同一套
+          // 校验与防抖保存），只是渲染到它该在的位置。
+          SettingsCustomItem(
+            id: 'video.subtitle.opensubtitles',
+            icon: Icons.subtitles_outlined,
+            searchTitle: t.video_opensubtitles_settings_title,
+            builder: (SettingsContext settingsContext) =>
+                const VideoExternalProviderSettingsSection(
+              groups: <VideoExternalSettingsGroup>{
+                VideoExternalSettingsGroup.openSubtitles,
+              },
+            ),
           ),
         ],
       ),

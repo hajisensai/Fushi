@@ -238,9 +238,12 @@ class _OnlineSubtitleSearchDialogState extends State<OnlineSubtitleSearchDialog>
       itemBuilder: (BuildContext context, int index) {
         final VideoSubtitleCandidate candidate = result.items[index];
         final bool busy = _busyId == candidate.identityKey;
-        return ListTile(
+        // 走共享 MD3 行组件而不是裸 ListTile：普通页面的视觉外壳统一由共享组件决定
+        // （md3_design_system_static_test 的「ordinary page chrome」守卫）。
+        return FushiListItem(
           leading: const Icon(Icons.subtitles_outlined),
-          title: Text(candidate.fileName, maxLines: 2),
+          title: Text(candidate.fileName),
+          titleMaxLines: 2,
           subtitle: Text(_subtitleFor(candidate)),
           trailing: busy
               ? const SizedBox(
@@ -249,7 +252,6 @@ class _OnlineSubtitleSearchDialogState extends State<OnlineSubtitleSearchDialog>
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.download_outlined),
-          enabled: _busyId == null,
           onTap: _busyId == null ? () => _download(candidate) : null,
         );
       },
