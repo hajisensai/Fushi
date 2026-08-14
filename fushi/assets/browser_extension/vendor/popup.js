@@ -3651,7 +3651,8 @@ function _reportPopupHeight() {
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
             __fushiScrollHeight(),
-            window.__fushiRenderToken || 0);
+            window.__fushiRenderToken || 0,
+            window.innerHeight || document.documentElement.clientHeight || 0);
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
     }
@@ -4340,7 +4341,8 @@ window.updatePopupIncremental = function() {
 
     window.flutter_inappwebview.callHandler('popupRendered',
         __fushiScrollHeight(),
-        window.__fushiRenderToken || 0);
+        window.__fushiRenderToken || 0,
+        window.innerHeight || document.documentElement.clientHeight || 0);
 };
 
 

@@ -223,19 +223,30 @@ mixin DictionaryPageMixin {
   /// 一处分流即覆盖 buildNestedPopupLayer / buildPopupLoadingPlaceholder 两个调用点，且
   /// 不触碰 video 页本体。盒子尺寸口径与原两处一致（maxWidth/Height × appUiScale，padding
   /// 与 reserve 走 calcPopupPosition 默认 6/0）。
-  Rect _calcMixinPopupPosition(Rect selectionRect, Size screen) {
+  Rect _calcMixinPopupPosition(
+    Rect selectionRect,
+    Size screen, {
+    double? autoFitHeight,
+  }) {
     // 与 base_source_page._calculatePopupPosition 共用 [resolvePopupRect]。mixin
     // 家族（video/首页/texthooker）不预留 reserve、不竖排避让（全用默认），盒子尺寸
     // 随界面大小放大（同 base 的 popupMaxWidth/Height）。Phase B 拖把手时用预览态
     // [_popupResizePreview] 临时覆盖偏好实时预览（松手落库，见 [_onMixinPopupResizeEnd]）。
+    final double preferredMaxHeight =
+        (_popupResizePreview?.height ?? mixinAppModel.popupMaxHeight) *
+            mixinAppModel.appUiScale;
+    final double effectiveMaxHeight = _popupResizePreview != null
+        ? preferredMaxHeight
+        : (autoFitHeight ?? preferredMaxHeight)
+            .clamp(0.0, preferredMaxHeight)
+            .toDouble();
     final Rect anchored = resolvePopupRect(
       selectionRect: selectionRect,
       screen: screen,
       bottomDocked: mixinAppModel.popupBottomDocked,
       maxWidth: (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *
           mixinAppModel.appUiScale,
-      maxHeight: (_popupResizePreview?.height ?? mixinAppModel.popupMaxHeight) *
-          mixinAppModel.appUiScale,
+      maxHeight: effectiveMaxHeight,
     );
     // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
     // 消除「词靠右缘时贴词定位把左缘左移」的 bug（同 base_source_page）。dock 模式不冻结。
@@ -640,7 +651,11 @@ mixin DictionaryPageMixin {
     required void Function(int index) onPop,
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
-    final Rect pos = _calcMixinPopupPosition(entry.selectionRect, screen);
+    final Rect pos = _calcMixinPopupPosition(
+      entry.selectionRect,
+      screen,
+      autoFitHeight: entry.autoFitHeight,
+    );
     // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onMixinPopupResizeStart] 冻结左上角。
     if (index == controller.entries.length - 1) {
       _topPopupSelectionRect = entry.selectionRect;
@@ -708,6 +723,27 @@ mixin DictionaryPageMixin {
           // 把光标 transfer 进刚显示的顶层弹窗（BaseSourcePageState 家族的
           // onDictionaryPopupRendered 同语义；mixin 家族此前没有该钩子）。
           onNestedPopupRendered(index);
+        },
+        onContentMetrics: (double contentHeight, double viewportHeight) {
+          if (!mounted ||
+              !controller.entries.contains(entry) ||
+              mixinAppModel.popupBottomDocked ||
+              _popupResizePreview != null) {
+            return;
+          }
+          final double preferredMaxHeight =
+              mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale;
+          final double nextHeight = resolveAutoFitPopupHeight(
+            currentPopupHeight: pos.height,
+            contentHeight: contentHeight,
+            viewportHeight: viewportHeight,
+            minHeight: kLookupPopupMinHeight * mixinAppModel.appUiScale,
+            maxHeight: preferredMaxHeight,
+          );
+          if ((nextHeight - (entry.autoFitHeight ?? pos.height)).abs() < 1) {
+            return;
+          }
+          setState(() => entry.autoFitHeight = nextHeight);
         },
         // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
         onRenderError: () {

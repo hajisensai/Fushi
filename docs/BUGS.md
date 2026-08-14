@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1531 条。点号进各自文件。
+> 共 1534 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1653](bugs/BUG-1653-popup-dictionary-itest-desktop-drift.md) | ✅ | ✅ | popup_dictionary 应用级测试在桌面端因平台与导航假设失效 |
+| [BUG-1652](bugs/BUG-1652-windows-webview-click-stale-cursor.md) | ✅ | ✅ | Windows WebView 点击使用旧光标坐标导致词条操作无响应 |
+| [BUG-1651](bugs/BUG-1651-popup-auto-fit-height.md) | ✅ | ✅ | 查词弹窗忽略内容高度导致底部大面积留白 |
 | [BUG-1649](bugs/BUG-1649-manga-folder-epub-import.md) | ✅ | ✅ | 漫画页选文件夹导入：目录内是 epub 卷时报 Manga image folder has no pages |
 | [BUG-1648](bugs/BUG-1648-embedded-torrent-idle-discovery.md) | ✅ | ✅ | 已完成任务恢复后 DHT 常驻导致网关周期性高延迟 |
 | [BUG-1647](bugs/BUG-1647-bangumi-sync-stuck-in-backoff.md) | ✅ | ✅ | Bangumi 同步失败后卡在退避窗口且无自动重试，只能手动同步 |

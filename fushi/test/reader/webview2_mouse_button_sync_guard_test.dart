@@ -41,19 +41,24 @@ void main() {
   });
 
   test('五个非触摸指针入口都全量同步 ev.buttons', () {
-    expect(src.contains('void _syncMouseButtons(int buttons)'), isTrue,
+    expect(src.contains('void _syncMouseInput(Offset position, int buttons)'),
+        isTrue,
         reason: '全量同步入口被改名/删除，守卫须同步更新');
     // hover / down / up / cancel / move 各一处：hover 的掩码恒 0，是残留位唯一可靠的
     // 自愈点；缺任何一处都会让某类漏发的 up 无法补上。
-    final int calls = '_syncMouseButtons(ev.buttons)'.allMatches(src).length;
+    final int calls =
+        '_syncMouseInput(ev.localPosition, ev.buttons)'.allMatches(src).length;
     expect(calls, greaterThanOrEqualTo(5),
         reason: 'onPointerHover / Down / Up / Cancel / Move 五个入口都必须调用，'
             '实际只有 $calls 处');
   });
 
   test('同步走纯函数差分，且差分只对变化位产出翻转', () {
-    expect(src.contains('diffMouseButtonMasks(_mouseButtons, buttons)'), isTrue,
-        reason: '_syncMouseButtons 必须复用可单测的纯函数 diffMouseButtonMasks');
+    expect(src.contains('planMouseInputDispatches('), isTrue,
+        reason: '_syncMouseInput 必须复用可单测的有序输入规划器');
+    expect(src.contains('diffMouseButtonMasks(previousButtons, nextButtons)'),
+        isTrue,
+        reason: '有序输入规划器必须继续复用 BUG-1419 的逐位差分真值');
     expect(src.contains('List<MouseButtonTransition> diffMouseButtonMasks('),
         isTrue,
         reason: 'diffMouseButtonMasks 是 BUG-1419 的真值来源，不得内联回 State');

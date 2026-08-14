@@ -101,6 +101,33 @@ List<MouseButtonTransition> diffMouseButtonMasks(int previous, int next) {
   return transitions;
 }
 
+/// 一次非触摸鼠标事件要按顺序下发给 WebView2 的命令。
+///
+/// [position] 与 [buttonTransition] 恰有一个非空。用 record 保持这个纯规划器轻量；
+/// 真正的 MethodChannel 调用仍由 widget state 执行。
+typedef MouseInputDispatch = ({
+  Offset? position,
+  MouseButtonTransition? buttonTransition,
+});
+
+/// BUG-1652：规划一次非触摸鼠标事件的完整下发顺序。
+///
+/// WebView2 的 `setPointerButtonState` 使用 native 端缓存的 `lastCursorPos_`。因此即使
+/// Flutter 没先发 hover/move（弹窗刚出现在静止光标下、或光标跨平台视图边界），
+/// down/up 也必须先把**本次事件坐标**写进去，否则 click 会落在旧 DOM 位置。
+List<MouseInputDispatch> planMouseInputDispatches({
+  required Offset position,
+  required int previousButtons,
+  required int nextButtons,
+}) {
+  return <MouseInputDispatch>[
+    (position: position, buttonTransition: null),
+    for (final MouseButtonTransition transition
+        in diffMouseButtonMasks(previousButtons, nextButtons))
+      (position: null, buttonTransition: transition),
+  ];
+}
+
 const MethodChannel _pluginChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
 
 /// setSize 去抖判定（TODO-428/420）。
@@ -429,16 +456,24 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
     );
   }
 
-  /// 把 [buttons]（Flutter 指针事件的按钮位掩码）全量同步给 WebView2。
-  ///
-  /// 每个非触摸指针事件都调用它：`onPointerHover` 的掩码恒为 0，所以任何原因漏掉的
-  /// button-up（模态路由夺走 up、指针在 WebView 外抬起、多键并按）都会在用户下一次
-  /// 移动鼠标时自愈，不再需要重启 app。差分本身是纯函数
-  /// [diffMouseButtonMasks]（可单测）。
-  void _syncMouseButtons(int buttons) {
-    for (final MouseButtonTransition t
-        in diffMouseButtonMasks(_mouseButtons, buttons)) {
-      _controller._setPointerButtonState(t.button, t.isDown);
+  /// BUG-1652：坐标与按钮翻转作为一个有序输入批次下发。所有 mouse 事件都走这里，
+  /// 保证 down/up 不再依赖此前是否恰好收到 hover/move。
+  void _syncMouseInput(Offset position, int buttons) {
+    for (final MouseInputDispatch dispatch in planMouseInputDispatches(
+      position: position,
+      previousButtons: _mouseButtons,
+      nextButtons: buttons,
+    )) {
+      final Offset? cursorPosition = dispatch.position;
+      if (cursorPosition != null) {
+        _controller._setCursorPos(cursorPosition);
+        continue;
+      }
+      final MouseButtonTransition transition = dispatch.buttonTransition!;
+      _controller._setPointerButtonState(
+        transition.button,
+        transition.isDown,
+      );
     }
     _mouseButtons = buttons;
   }
@@ -460,10 +495,9 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                         // Ignoring hover events on touch for now
                         return;
                       }
-                      _controller._setCursorPos(ev.localPosition);
                       // BUG-1419：hover 的语义就是「当前没有任何键按下」，是残留
                       // MK_* 位唯一可靠的自愈点。坐标先同步，补发的 up 才落在实处。
-                      _syncMouseButtons(ev.buttons);
+                      _syncMouseInput(ev.localPosition, ev.buttons);
                     },
                     onPointerDown: (ev) {
                       _reportSurfaceSize();
@@ -488,7 +522,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                             ev.pressure);
                         return;
                       }
-                      _syncMouseButtons(ev.buttons);
+                      _syncMouseInput(ev.localPosition, ev.buttons);
                     },
                     onPointerUp: (ev) {
                       _pointerKind = ev.kind;
@@ -503,7 +537,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       }
                       // PointerUpEvent.buttons 是**抬起之后**仍按住的键，多键并按时
                       // 只清掉真正松开的那一位。
-                      _syncMouseButtons(ev.buttons);
+                      _syncMouseInput(ev.localPosition, ev.buttons);
                     },
                     onPointerCancel: (ev) {
                       _pointerKind = ev.kind;
@@ -522,7 +556,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       }
                       // 取消 = 该指针的所有键都不再按住（Flutter 的 cancel 事件
                       // buttons 已为 0，这里显式走同一条差分路径补发 up）。
-                      _syncMouseButtons(ev.buttons);
+                      _syncMouseInput(ev.localPosition, ev.buttons);
                     },
                     onPointerMove: (ev) {
                       _pointerKind = ev.kind;
@@ -534,10 +568,9 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                             ev.size,
                             ev.pressure);
                       } else {
-                        _controller._setCursorPos(ev.localPosition);
                         // 拖动中掩码变化（第二个键按下/松开）也必须逐位补发，
                         // 否则又会退化成旧的粘滞状态。
-                        _syncMouseButtons(ev.buttons);
+                        _syncMouseInput(ev.localPosition, ev.buttons);
                       }
                     },
                     onPointerSignal: (signal) {

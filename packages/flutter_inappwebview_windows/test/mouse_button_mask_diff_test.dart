@@ -93,4 +93,34 @@ void main() {
       ]);
     });
   });
+
+  group('planMouseInputDispatches', () {
+    test('按下前先把 WebView2 虚拟光标移到本次事件坐标', () {
+      final commands = planMouseInputDispatches(
+        position: const Offset(126, 48),
+        previousButtons: 0,
+        nextButtons: kPrimaryMouseButton,
+      );
+
+      expect(commands, hasLength(2));
+      expect(commands.first.position, const Offset(126, 48));
+      expect(commands.first.buttonTransition, isNull);
+      expect(commands.last.position, isNull);
+      expect(commands.last.buttonTransition?.button, PointerButton.primary);
+      expect(commands.last.buttonTransition?.isDown, isTrue);
+    });
+
+    test('抬起同样先同步坐标，click 的 down/up 落在同一个 DOM 目标', () {
+      final commands = planMouseInputDispatches(
+        position: const Offset(126, 48),
+        previousButtons: kPrimaryMouseButton,
+        nextButtons: 0,
+      );
+
+      expect(commands, hasLength(2));
+      expect(commands.first.position, const Offset(126, 48));
+      expect(commands.last.buttonTransition?.button, PointerButton.primary);
+      expect(commands.last.buttonTransition?.isDown, isFalse);
+    });
+  });
 }
