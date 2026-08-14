@@ -42,6 +42,52 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
+### formal 发版顺序：迁移桥包必须先于本体（CI 硬门）
+
+改名后**老 Hibiki 用户的迁移入口挂在 Fushi 的正式版 release 上**，所以 formal 通道多了一条
+顺序约束，由 `release.yml` 的 `Require migration bridge assets on the formal tag` 步骤强制。
+
+为什么：已出货的 Hibiki `v1.2.0` 二进制永远改不了，它挑包只看「`.apk` 结尾 + 名字含设备
+`SUPPORTED_ABIS` 任一项」，**完全不认产品族**（本体侧的 `assetBelongsToThisProduct` 是
+BUG-1481 之后才有的，救不了已装机的包）。GitHub API 按**文件名升序**返回资产，于是：
+
+- 桥包资产用 `bridge-<version>-<abi>.apk`（`bridge-` < `fushi-`）→ 老客户端先命中桥包，
+  升到的是能原地覆盖安装的迁移桥包（旧包名 `app.hibiki.reader` + 旧签名 + 迁移导出器）；
+- 桥包**缺席**时老客户端退化成「随便拿列表里第一个 apk」，装上跨包名的 Fushi = 并存的第二个
+  空 app。用户以为换代完成卸掉 Hibiki，`/data/user/0/app.hibiki.reader/` 下的数据永久丢失。
+
+不变式与反向用例（含「前缀换成 `hibiki-` 会失守」「桥包缺席会失守」）钉在
+`fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart`。
+
+发版顺序（**桥包先**，顺序错了硬门会直接失败，不会留下只有 `fushi-*` 的正式 release）：
+
+```bash
+# ① 先发迁移桥包（只出 Android；桥分支 release.yml 不含桌面，也不要跑 release-desktop.yml）
+gh workflow run release.yml --repo hajisensai/Fushi \
+  --ref bridge/auto-migrate-download \
+  -f channel=formal -f tag_name=v<version> -f name="Fushi <version>" -f skip_tests=false
+
+# ② 桥包资产到位后再发本体（手动 GitHub Release 或 workflow_dispatch，同一个 tag）
+
+# ③ 收尾核对：两族资产都在
+gh release view v<version> --repo hajisensai/Fushi --json assets \
+  --jq '.assets[].name' | sort
+```
+
+判断桥包那一步是否成功的注意点：
+
+- 桥分支的 `tests` job 与 `build` job **无 `needs` 依赖、并行跑**，`tests` 红**不会**挡住
+  资产发布（线上桥包 `10192` 就是这么发出去的）。别看整体 run 颜色，看 `build` job 结论
+  和 release 上真实的资产列表。
+- 桥分支 formal 的 release 标题默认是 `Hibiki <version>`，本体那次发布会把它改写成
+  `Fushi <version>`；不想出现中间态就在 ① 显式传 `-f name=`。
+- 桥包用 `LEGACY_KEYSTORE_*` 四件套签名（旧 Hibiki 证书，与 `v1.1.0`/`v1.2.0` 同公钥
+  `d40c4a16…`），这是它能原地覆盖安装的前提；主仓 `KEYSTORE_*` 已轮换为 Fushi 新签名，
+  两套 secrets 都必须在。
+- Windows 老用户**不需要**桥包：他们按 `-windows-setup.exe` 后缀直接拿
+  `fushi-<version>-windows-setup.exe`，Inno `AppId` 未变 → 原地升级，数据由
+  `legacy_support_dir_migration.dart` 自动搬迁。所以别给桥分支发桌面产物。
+
 ### 快速发版（跳测试）
 
 手动发版嫌慢时用「快速编译」路径：`release.yml`（Android）的 `workflow_dispatch` 带 `skip_tests` 输入，**默认 `true`**——手动 dispatch（debug/beta/formal 任意通道）默认跳过 `flutter analyze` + 主 app 单元测试 + 5 个 package 测试，直接进编译+发布。`release build` 步骤本身仍会挡住硬编译失败，发版前的真机验证仍按 [CLAUDE.md](../../CLAUDE.md) 走。约束：

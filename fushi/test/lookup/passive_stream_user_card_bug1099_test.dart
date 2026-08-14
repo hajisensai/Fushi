@@ -186,7 +186,8 @@ void main() {
               .contains('_userOwnedCard = true'),
           isTrue,
           reason: '用户在卡里点词开级联，这张卡当然归用户');
-      final int hiddenAt = glcSrc.indexOf('void _onOverlayHidden()');
+      final int hiddenAt =
+          glcSrc.indexOf('void _onOverlayHidden([GlobalLookupRoute? routed])');
       expect(hiddenAt, greaterThan(0));
       final int hiddenEnd = glcSrc.indexOf('\n  }', hiddenAt);
       expect(

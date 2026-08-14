@@ -786,11 +786,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		// 再得到逐字符几何（registry 永远为 0，且因为没有异常也不会置 SensorFault）。
 		// 未就绪时只返回并保留 handler，下一帧继续观察真实生命周期，不用 sleep/盲重试。
 		if(typeof global.kag != "Object" || global.kag === null ||
-			typeof global.kag.addHook != "Object" ||
-			typeof global.TextRender != "Object" || global.TextRender === null ||
-			typeof global.TextRender.render != "Object" ||
+			typeof global.kag.addHook != "Object") return;
+		// TextRender **半就绪**（类已在、三个方法还没挂全）必须继续等——那正是上面说的
+		// 早注入窗口。但"完全没有 TextRender"是**另一回事**：经典 KAG3 游戏（没装
+		// textrender.dll）永远等不到它，在这里一并 return 就等于把下面的 KAGEX 缺席门
+		// else 分支变成死代码，那类游戏的游戏内查词连自证探针都装不上。
+		// 判据因此落在"类在不在"上，而不是把两种情况合成一条。
+		if(typeof global.TextRender == "Object" && global.TextRender !== null &&
+			(typeof global.TextRender.render != "Object" ||
 			typeof global.TextRender.done != "Object" ||
-			typeof global.TextRender.drawCh != "Object") return;
+			typeof global.TextRender.drawCh != "Object")) return;
 		var installStage = 0;
 		try
 		{
@@ -920,6 +925,11 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupClock = 0;
 			global.fushiLookupHoverKey = "";
 			global.fushiLookupHitEntry = void;
+			// 当前**卡片**依附的 entry（BUG-1606）。与 fushiLookupHitEntry 分开：后者是最后
+			// 一次命中（含纯悬停），前者只在卡片真正显示那一刻定下，是收卡的唯一归属判据。
+			global.fushiLookupCardEntry = void;
+			// DLL 侧读它自证这局走的是经典 KAG3 采集面（真机上分得清哪条路绑上了）。
+			global.fushiLookupClassicSource = 0;
 			global.fushiLookupHitOffsetX = 0;
 			global.fushiLookupHitOffsetY = 0;
 			global.fushiLookupHighlightRect = void;
@@ -1741,6 +1751,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				catch(e) {}
 				global.fushiLookupCardSeq = 0;
+				global.fushiLookupCardEntry = void;
 				global.fushiLookupClearHover();
 			};
 
@@ -1931,6 +1942,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					card.visible = true;
 					card.update();
 					var entry = global.fushiLookupHitEntry;
+					// 卡片归属在这一刻定下（BUG-1606）：之后只有**这条**台词重绘才收卡。
+					global.fushiLookupCardEntry = entry;
 					if(entry !== void && highlightLen > 0)
 						global.fushiLookupPaintHighlight(entry, global.fushiLookupHitOffsetX,
 							global.fushiLookupHitOffsetY, highlightStart, highlightLen);
@@ -2521,6 +2534,116 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				catch(e) {}
 				return void;
+			};
+
+			// ── classic KAG3 采集面 ──────────────────────────────────────────────────
+			// KAGEX 的 TextRender 只存在于装了 textrender.dll 的游戏（ATRI、天使☆騒々）。
+			// 经典 KAG3 游戏（Fate/stay night[Realta Nua]、PRETTY×CATION2、フタマタ恋愛）
+			// 整个 global.TextRender 都不存在，上面那条捕获路径一次都绑不上——这些游戏里逐字
+			// 几何**只**从原生 Layer.drawText 经过：无论上层 KAG 系统脚本被游戏改成什么样，
+			// 每个字最终都要走这一个原生方法。所以它是这类游戏唯一正确的采集面，不是"又一条
+			// 兜底"。
+			//
+			// 产出与 fushiLookupCapture 逐字段同形（glyphs/line/包围盒/layer/origin），下游
+			// 命中测试、高亮、上报一行都不用分支：drawText 的 x/y 已经是该 layer 的图像坐标，
+			// 所以 origin 恒为 0。
+			//
+			// 段落边界不靠 hook 清屏，靠横书推进本身的不变式：字要么同行右移、要么换行下移。
+			// 一旦回到左上，就是这一层开始画下一屏文本。竖排在此判据外（plan 的非目标），
+			// 竖排游戏会退化成每列重开一段——命中仍然正确，只是整行文本按列切碎。
+			global.fushiLookupCaptureDrawText = function(layer, x, y, text)
+			{
+				try
+				{
+					if(typeof text != "String" || text == "") return;
+					if(layer === void || layer === null || !isvalid layer) return;
+					// 卡片层与高亮层是我们自己建的，绝不能把它们当台词采集回来。
+					if(typeof layer.fushiLookupIgnore != "undefined") return;
+					if(typeof x != "Integer" && typeof x != "Real") return;
+					if(typeof y != "Integer" && typeof y != "Real") return;
+					var font = layer.font;
+					if(font === void || font === null || !isvalid font) return;
+					// KiriKiri 允许负 height 表示"按像素而非 pt"，几何要的是绝对值。
+					var h = font.height;
+					if(h < 0) h = -h;
+					if(h <= 0) return;
+					var entry = global.fushiLookupEntryFor(layer);
+					var glyphs = entry.glyphs;
+					var restart = glyphs.count == 0;
+					if(!restart)
+					{
+						var last = glyphs[glyphs.count - 1];
+						if(y < last.y) restart = true;
+						else if(y == last.y && x <= last.x) restart = true;
+						// 上界：没被上面判据认出来的清屏不至于让一层无限长。
+						else if(glyphs.count >= 512) restart = true;
+					}
+					if(restart)
+					{
+						glyphs = [];
+						entry.glyphs = glyphs;
+						entry.line = "";
+						// 与 fushiLookupCapture 同一条 BUG-1606 归属判据：只有这张卡自己依附的
+						// 那条台词换了才收卡；逐字推进（restart==false）一次都不收。
+						if(global.fushiLookupCardEntry === entry)
+							global.fushiLookupDismiss();
+						else if(global.fushiLookupHitEntry === entry)
+							global.fushiLookupClearHover();
+					}
+					// glyphs 与 line 必须逐字符 1:1——host 拿 charIndex 去 line 里切词。
+					var cursor = x;
+					var line = entry.line;
+					var added = 0;
+					for(var i = 0; i < text.length; i++)
+					{
+						var ch = text.charAt(i);
+						var w = font.getTextWidth(ch);
+						if(typeof w != "Integer" && typeof w != "Real") continue;
+						if(w <= 0) continue;
+						glyphs.add(%[ch:ch, x:cursor, y:y, w:w, h:h]);
+						line += ch;
+						cursor += w;
+						added++;
+					}
+					if(added == 0) return;
+					entry.line = line;
+					// 包围盒增量维护：drawText 逐字调用，每次重扫全量就是 O(n^2)。
+					if(added == glyphs.count)
+					{
+						entry.minX = x;
+						entry.minY = y;
+						entry.maxX = cursor;
+						entry.maxY = y + h;
+					}
+					else
+					{
+						if(x < entry.minX) entry.minX = x;
+						if(y < entry.minY) entry.minY = y;
+						if(cursor > entry.maxX) entry.maxX = cursor;
+						if(y + h > entry.maxY) entry.maxY = y + h;
+					}
+					entry.layer = layer;
+					entry.originX = 0;
+					entry.originY = 0;
+					entry.used = ++global.fushiLookupClock;
+					// 位 1 = drawText 真捕到过字形（位 0 = 补丁装上了）。
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 2;
+				}
+				catch(e) {}
+			};
+
+			// MessageLayer.processCh 探针。**只自证是否触发**，不产出几何：KAG3 的 MessageLayer
+			// 把字符位置放在自己的行对象里，字段名各游戏改得千差万别，没有真机确认之前编造
+			// 字段名只会造出一条看起来在跑、实际全是 void 的假采集面。先用真机判「字到底走不
+			// 走这里」，再按实测到的结构补几何。
+			global.fushiLookupCaptureProcessCh = function(layer, ch)
+			{
+				try
+				{
+					if(typeof ch != "String" || ch == "") return;
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 4;
+				}
+				catch(e) {}
 			};
 
 			// Freeze the KAG message slot while drawCh is actually executing.  A later
@@ -3906,6 +4029,54 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					installStage = 31;
 				}
 			}
+			else
+			{
+				// ⚠️ 真机实测结论（2026-08-14，务必先读再改）：
+				//   Fate/stay night[Realta Nua]（KiriKiri2、无 textrender.dll）——传感器装上、
+				//   查词开关打开、连推 7 句台词，**drawText 与 processCh 两条包装一次都没被
+				//   调用**（classic_patch_installed 亮，classic_geometry_captured 与
+				//   classic_processch_fired 全灭），同期 LunaHook 正常收到 7 行文本。
+				//   フタマタ恋愛（KiriKiri、KAGParser.dll）——TJS exporter 始终没拿到，整个
+				//   传感器（含原有 KAGEX 路径）根本没装起来，lookup_diag 恒为 0。
+				//
+				// 也就是说：给**原生类** Layer 的成员赋值，在 TJS 里拦不住实例上的调用；而
+				// MessageLayer 在这些游戏里也不是可覆写的全局 TJS 类。下面两条目前只作为
+				// **自证探针**存在——它们不产出可用几何，只回答"这台游戏的字走不走这里"。
+				// 想让经典 KAG3 真能用，得先在真机上找到这些游戏实际的绘字边界（候选：引擎
+				// 内部 TVPDrawText 的原生 detour），而不是继续在 TJS 层加包装。
+				//
+				// 没有 KAGEX TextRender 的经典 KAG3 游戏：逐字几何原以为只从原生 Layer.drawText 经过。
+				// 这是**有条件**的全局补丁——装了 textrender.dll 的游戏走上面那条，一行都不多绕，
+				// 所以"全局类补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上；而在那些
+				// 游戏里，不绕就等于游戏内查词整个不存在。
+				// 传感器本身只在 host 真开启查词后才安装（PollKirikiriLookupInstall），关着的时候
+				// 游戏渲染路径与注入前逐字节一致。
+				global.fushiLookupOriginalDrawText = global.Layer.drawText;
+				global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
+				{
+					// 先让游戏画完再采集：原方法抛异常时不留半条几何。
+					var result = (global.fushiLookupOriginalDrawText incontextof this)(...);
+					global.fushiLookupCaptureDrawText(this, x, y, text);
+					return result;
+				};
+				// 位 0 = 补丁真的装上了（这一行跑到就说明 else 分支没有中途抛异常）。
+				global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+				// MessageLayer 是 KAG3 的 **TJS 类**，Layer 是引擎的**原生类**。给原生类的
+				// 成员赋值在 TJS 里拦不住实例上的调用（Fate/stay night[Realta Nua] 实测：补丁
+				// 装上、游戏连画 4 句台词，包装一次都没被调用），TJS 类才拦得住。两条同时挂、
+				// 各自自证，真机一轮就能判出这台游戏的字到底从哪儿过。
+				if(typeof global.MessageLayer == "Object")
+				{
+					global.fushiLookupOriginalProcessCh = global.MessageLayer.processCh;
+					global.MessageLayer.processCh = function(ch, steptime)
+					{
+						var result =
+							(global.fushiLookupOriginalProcessCh incontextof this)(...);
+						global.fushiLookupCaptureProcessCh(this, ch);
+						return result;
+					} incontextof global.MessageLayer;
+				}
+			}
 			// 私有插件已出现时才封未来入口并扫既有 MsgwinRender；它不是通用
 			// Kirikiri readiness。若插件稍后加载，首次 leftClick 会执行同一安全 ensure。
 			var fushiLookupResolvedMsgwinPlugin =
@@ -4082,6 +4253,9 @@ int64_t g_lookup_last_notify = -1;
 bool g_lookup_card_shown = false;
 bool g_lookup_enabled_last = false;
 bool g_lookup_sensor_live = false;
+// 经典 KAG3 采集面已自证（读到"真捕到字形"后不再求值）。
+bool g_lookup_classic_source_known = false;
+int g_lookup_classic_poll_ticks = 0;
 bool g_lookup_input_pending = false;  // 上一帧撞到每帧搬运上限，队列里还有剩
 // capture-suppress 在 TJS hide/update 成功的那一帧只挂起；必须到下一次 continuous
 // callback 才写共享内存确认，不能把“脚本调用返回”冒充成“窗口已经进入后续合成帧”。
@@ -4945,6 +5119,25 @@ void PumpKirikiriLookup() {
   if (!g_lookup_sensor_live) {
     g_lookup_sensor_live = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
+  }
+  // 采集面自证。**不能**挂在 notify 变化上：notify 只有用户真悬停到字上才动，而这两位
+  // 恰恰是用来诊断「一个字都没采到」的——那种情况下 notify 永远不动，挂上去就等于永远读
+  // 不到。改为低频轮询（约每 60 帧一次），读到 2（真捕到字形）就彻底停。
+  if (!g_lookup_classic_source_known && ++g_lookup_classic_poll_ticks >= 60) {
+    g_lookup_classic_poll_ticks = 0;
+    int64_t classic = 0;
+    if (EvaluateTjsInteger(L"global.fushiLookupClassicSource", &classic)) {
+      if ((classic & 1) != 0) {
+        SetLookupDiag(fushi_voice_hook::kLookupDiagClassicTextSource);
+      }
+      if ((classic & 2) != 0) {
+        SetLookupDiag(fushi_voice_hook::kLookupDiagClassicGeometry);
+        g_lookup_classic_source_known = true;
+      }
+      if ((classic & 4) != 0) {
+        SetLookupDiag(fushi_voice_hook::kLookupDiagClassicProcessCh);
+      }
+    }
   }
   const bool new_notification = notify != g_lookup_last_notify;
   if (new_notification) {

@@ -29,15 +29,23 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1508 条。点号进各自文件。
+> 共 1516 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1608](bugs/BUG-1608-gal-ingame-nested-popup-height-clipped.md) | ✅ | ✅ | 游戏内嵌套查词卡被父弹窗锚点空间裁短 |
-| [BUG-1607](bugs/BUG-1607-gal-ingame-card-capture-includes-popup.md) | ✅ | 🚧 | 游戏内查词制卡截图包含查词框 |
-| [BUG-1606](bugs/BUG-1606-gal-ingame-popup-input-rendering.md) | ✅ | 🚧 | 游戏内查词位图卡渲染错位且滚轮、按钮与制卡失效 |
-| [BUG-1605](bugs/BUG-1605-gal-ingame-native-popup-ownership.md) | ✅ | ✅ | 游戏内查词离屏卡被钳回桌面导致重复弹窗 |
-| [BUG-1604](bugs/BUG-1604-gal-ingame-kag-anchor-primary-coordinates.md) | ✅ | ✅ | 游戏内查词把 KAG 消息锚点误判为脱离 primary 导致字形恒不命中 |
+| [BUG-1635](bugs/BUG-1635-gal-ingame-nested-popup-height-clipped.md) | ✅ | ✅ | 游戏内嵌套查词卡被父弹窗锚点空间裁短 |
+| [BUG-1634](bugs/BUG-1634-gal-ingame-card-capture-includes-popup.md) | ✅ | 🚧 | 游戏内查词制卡截图包含查词框 |
+| [BUG-1633](bugs/BUG-1633-gal-ingame-popup-input-rendering.md) | ✅ | 🚧 | 游戏内查词位图卡渲染错位且滚轮、按钮与制卡失效 |
+| [BUG-1632](bugs/BUG-1632-gal-ingame-native-popup-ownership.md) | ✅ | ✅ | 游戏内查词离屏卡被钳回桌面导致重复弹窗 |
+| [BUG-1631](bugs/BUG-1631-gal-ingame-kag-anchor-primary-coordinates.md) | ✅ | ✅ | 游戏内查词把 KAG 消息锚点误判为脱离 primary 导致字形恒不命中 |
+| [BUG-1613](bugs/BUG-1613-apple-coreml-ep-detector-empty.md) | ✅ | ✅ | Apple CoreML EP 上 int8 检测模型静默返回空结果且更慢 |
+| [BUG-1610](bugs/BUG-1610-bangumi-search-rating-null.md) | ✅ | ✅ | Bangumi 搜索候选评分恒空：映射器读扁平 score，真实响应只有嵌套 rating.score |
+| [BUG-1609](bugs/BUG-1609-global-lookup-card-right-corners-square.md) | ✅ | ✅ | app 外全局查词卡片右上/右下圆角变方角 |
+| [BUG-1608](bugs/BUG-1608-mobile-ankiconnect-ios-missing-and-silent-fallback.md) | ✅ | ✅ | iOS 没接 AnkiConnect（Lapis 区永远隐藏）；移动端清空 API key 后开关静默失效 |
+| [BUG-1607](bugs/BUG-1607-danmaku-exit-relayout.md) | ✅ | ✅ | 弹幕退场时其余弹幕整屏重排 |
+| [BUG-1606](bugs/BUG-1606-gal-ingame-lookup-card-dismissed-by-other-text-layer.md) | ✅ | ✅ | gal 游戏内查词卡片被无关文本层重绘打掉（说话人切换时闪没） |
+| [BUG-1605](bugs/BUG-1605-gal-multi-voice-resources-single-pick.md) | ✅ | ✅ | gal 制卡：同句多个语音资源只取一个（多角色同时说话丢声） |
+| [BUG-1604](bugs/BUG-1604-sync-channel-isolation-remaining-loops.md) | ✅ | ✅ | 合集同步与退出书同步的通道循环仍无逐通道隔离：云通道抛异常，互联通道整轮不跑 |
 | [BUG-1603](bugs/BUG-1603-srt-subtitle-shadow-directional-offset.md) | ✅ | ✅ | SRT 字幕柔和投影方向性偏下，真机上观感为阴影错位 |
 | [BUG-1596](bugs/BUG-1596-release-sequence-workdir.md) | ✅ | ✅ | release.yml 序号脚本在 working-directory: fushi 下解析成不存在路径，恢复自动发布首跑 exit 127 |
 | [BUG-1595](bugs/BUG-1595-dict-update-not-replacing.md) | ✅ | ✅ | 词典更新入口遇新包标题变化仍判新增两版并存 |

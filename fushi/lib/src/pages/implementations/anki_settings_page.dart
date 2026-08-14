@@ -51,9 +51,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
 
-  /// Android 后端切换包含持久化与 provider 换代，必须串行，避免快速往返点击
+  /// 移动端后端切换包含持久化与 provider 换代，必须串行，避免快速往返点击
   /// 以 Future 完成顺序覆盖最后一次手势。
   bool _ankiBackendBusy = false;
+
+  /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这个开关。
+  /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：Android 的
+  /// AnkiDroid 与 iOS 的 AnkiMobile 都改不了已存在的 note type；桌面本来就走
+  /// AnkiConnect，没有这条支路。
+  static final bool _isMobileAnkiPlatform =
+      Platform.isAndroid || Platform.isIOS;
 
   @override
   Widget build(BuildContext context) {
@@ -84,21 +91,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         // 配置无关、且在互联关闭时纯死的开关。
         AdaptiveSettingsSection(
           title: 'AnkiConnect',
-          titlePlacement: Platform.isAndroid
+          titlePlacement: _isMobileAnkiPlatform
               ? SettingsSectionTitlePlacement.inside
               : SettingsSectionTitlePlacement.outside,
-          collapsible: Platform.isAndroid,
-          initiallyExpanded: !Platform.isAndroid,
+          collapsible: _isMobileAnkiPlatform,
+          initiallyExpanded: !_isMobileAnkiPlatform,
           children: [
-            if (Platform.isAndroid)
+            // 移动端两个原生后端都受限（AnkiDroid 的 Content Provider 与
+            // AnkiMobile 的 URL scheme 都改不了已存在的 note type），所以两端
+            // 同样提供「改用 AnkiConnect」这条路——指向局域网里跑着 Anki 桌面版
+            // 的机器。桌面本来就走 AnkiConnect，没有这个开关。
+            if (_isMobileAnkiPlatform)
               AdaptiveSettingsSwitchRow(
-                title: t.anki_connect_use_on_android,
-                subtitle: t.anki_connect_use_on_android_hint,
-                value: settings.useAnkiConnectOnAndroid,
+                title: t.anki_connect_use_on_mobile,
+                subtitle: t.anki_connect_use_on_mobile_hint,
+                value: settings.useAnkiConnectOnMobile,
                 onChanged: _ankiBackendBusy || uiState.isFetching
                     ? null
                     : (bool value) =>
-                        _updateAndroidAnkiBackend(vm, settings, value),
+                        _updateMobileAnkiBackend(vm, settings, value),
               ),
             _AnkiConnectionField(
               label: t.anki_connect_host,
@@ -118,13 +129,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               value: settings.ankiConnectApiKey,
               hint: t.anki_connect_api_key_hint,
               obscureText: true,
-              onChanged: vm.updateAnkiConnectApiKey,
+              // 不直接接 vm：移动端清空 key 会让「改用 AnkiConnect」失去前提，
+              // 必须当场处置（见 [_updateAnkiConnectApiKey]）。
+              onChanged: _updateAnkiConnectApiKey,
             ),
           ],
         ),
         // Lapis 样式客制化：备份 / 恢复 / 字号缩放 / 自定义 CSS / 应用。
-        // 仅后端支持读写已存在 note type 时显示（AnkiConnect）；AnkiDroid /
-        // AnkiMobile 平台 API 改不了已存在模板（平台边界），整区隐藏。
+        // 仅后端支持读写已存在 note type 时显示（AnkiConnect；开启「制卡到
+        // 已配对设备」时经互联作用于主机端 Anki，手机上因此也显示）；纯本地
+        // AnkiDroid / AnkiMobile 平台 API 改不了已存在模板（平台边界），整区隐藏。
         if (vm.supportsNoteTypeEditing)
           AdaptiveSettingsSection(
             title: t.anki_lapis_section,
@@ -580,7 +594,30 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  Future<void> _updateAndroidAnkiBackend(
+  /// AnkiConnect 的 API key 编辑入口。
+  ///
+  /// BUG-1608：移动端在开关已打开的情况下**清空** API key，会让「改用
+  /// AnkiConnect」失去前提。此前这里直接接 `vm.updateAnkiConnectApiKey`，于是
+  /// 存储与运行时都还声称开着，一直到下次启动 `PlatformServices.init()` 才把
+  /// 设置悄悄改回 false——用户回来发现开关自己关了、Lapis 区不见了，全程零提示。
+  /// 现在在清空的那一刻就把开关关掉、换回原生后端、并明确告诉用户为什么。
+  Future<void> _updateAnkiConnectApiKey(String apiKey) async {
+    final AnkiViewModel vm = ref.read(ankiViewModelProvider.notifier);
+    final AnkiSettings before = ref.read(ankiViewModelProvider).settings;
+    await vm.updateAnkiConnectApiKey(apiKey);
+    if (!mounted) return;
+    final bool losesPrerequisite = _isMobileAnkiPlatform &&
+        before.useAnkiConnectOnMobile &&
+        apiKey.trim().isEmpty;
+    if (!losesPrerequisite) return;
+    await _applyMobileAnkiBackend(vm, useAnkiConnect: false, apiKey: '');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.anki_connect_mobile_disabled_key_cleared)),
+    );
+  }
+
+  Future<void> _updateMobileAnkiBackend(
     AnkiViewModel vm,
     AnkiSettings settings,
     bool useAnkiConnect,
@@ -588,10 +625,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (_ankiBackendBusy) return;
     if (useAnkiConnect && settings.ankiConnectApiKey.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.anki_connect_android_api_key_required)),
+        SnackBar(content: Text(t.anki_connect_mobile_api_key_required)),
       );
       return;
     }
+    await _applyMobileAnkiBackend(
+      vm,
+      useAnkiConnect: useAnkiConnect,
+      apiKey: settings.ankiConnectApiKey,
+    );
+  }
+
+  /// 后端切换的**唯一**落地路径：持久化 → 更新运行时选择 → 重建仓库 provider。
+  /// 三步必须一起走完，任何一处单独发生都会制造「存储与运行时不一致」。
+  Future<void> _applyMobileAnkiBackend(
+    AnkiViewModel vm, {
+    required bool useAnkiConnect,
+    required String apiKey,
+  }) async {
+    if (_ankiBackendBusy) return;
     final PlatformServices platformServices =
         ref.read(platformServicesProvider);
     final ProviderContainer container = ProviderScope.containerOf(
@@ -600,10 +652,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
     setState(() => _ankiBackendBusy = true);
     try {
-      await vm.updateUseAnkiConnectOnAndroid(useAnkiConnect);
-      platformServices.setUseAnkiConnectOnAndroid(
+      await vm.updateUseAnkiConnectOnMobile(useAnkiConnect);
+      platformServices.setUseAnkiConnectOnMobile(
         useAnkiConnect,
-        apiKey: settings.ankiConnectApiKey,
+        apiKey: apiKey,
       );
       // Every mining entry point creates its repository through PlatformServices.
       // Rebuild the settings repository immediately as well. Switching clears
@@ -673,17 +725,24 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     AnkiSettings settings,
     AnkiViewModel vm,
   ) async {
-    // 字段映射编辑只在真的选了卡型时给出：字段名来自当前卡型，编辑器据此
-    // 自我门控（卡型里没有的字段一律不显示）。
-    final List<String> noteTypeFields =
+    // 字段映射编辑只在真的选了本地卡型时给出：映射写回本地设置、供本地制卡
+    // 渲染用，编辑器据此自我门控（卡型里没有的字段一律不显示）。
+    final List<String> localNoteTypeFields =
         settings.selectedNoteType?.fields ?? const <String>[];
     // 预览基线取用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段），编辑器里
     // 看到的才是他自己那张卡。读不到就退回内置副本——只影响预览观感，不影响写入。
+    // 「制卡到已配对设备」开启时这条读取走互联，返回的是**主机端**的 Lapis。
     String? baseCss;
+    List<String> noteTypeFields = localNoteTypeFields;
     try {
       final AnkiNoteTypeDefinition? def = await vm.lapisTemplateService
           .readNoteTypeDefinitionForPreview(LapisNoteType.modelName);
-      if (def != null) baseCss = stripLapisUserSection(def.css);
+      if (def != null) {
+        baseCss = stripLapisUserSection(def.css);
+        // 手机端 + 互联：本地没配 Anki 卡型时，自定义区域的字段候选取样式将
+        // 落地的那个卡型（主机端 Lapis）——否则区域区永远停在「先选卡型」。
+        if (noteTypeFields.isEmpty) noteTypeFields = def.fields;
+      }
     } catch (e) {
       debugPrint('Lapis 预览基线读取失败，退回内置副本: $e');
     }
@@ -699,7 +758,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           initialFieldMappings: settings.fieldMappings,
           initialBlocks: settings.lapisCustomBlocks,
           baseCss: baseCss,
-          pickHandlebar: noteTypeFields.isEmpty
+          // 映射编辑仍按**本地**卡型门控：远端字段候选只服务区域摆放，映射
+          // 本身是本地制卡配置，本地没选卡型就没有可写的映射目标。
+          pickHandlebar: localNoteTypeFields.isEmpty
               ? null
               : (String field, String currentValue) =>
                   _pickHandlebar(field, currentValue),

@@ -199,10 +199,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
-  Future<void> updateUseAnkiConnectOnAndroid(bool value) async {
+  Future<void> updateUseAnkiConnectOnMobile(bool value) async {
     final updated = await _repository.updateSettings(
       (s) => s.copyWith(
-        useAnkiConnectOnAndroid: value,
+        useAnkiConnectOnMobile: value,
         clearSelectedDeck: true,
         clearSelectedNoteType: true,
         availableDecks: const <AnkiDeck>[],
@@ -254,7 +254,8 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   // ── Lapis 样式客制化（备份/恢复/应用见 LapisTemplateService）──────────
 
   /// 当前后端能否读写已存在 note type 的模板（AnkiConnect true；AnkiDroid /
-  /// AnkiMobile false，设置页据此隐藏 Lapis 样式区）。
+  /// AnkiMobile false，设置页据此隐藏 Lapis 样式区）。开启「制卡到已配对设备」
+  /// 时恒 true——模板读写经互联作用于主机端 Anki，手机端因此也能可视化配置。
   bool get supportsNoteTypeEditing => _repository.supportsNoteTypeEditing;
 
   /// 与当前仓库绑定的模板服务（无状态，随用随建）。

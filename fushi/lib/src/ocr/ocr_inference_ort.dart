@@ -22,14 +22,23 @@ const String kOcrLogName = 'hibiki.ocr';
 
 /// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
 ///
-/// `flutter_onnxruntime` 已在 vendored fork 中 gate 出 Apple（macOS/iOS，见
-/// `third_party/flutter_onnxruntime/PATCHES.md`）：Apple 上该插件的 MethodChannel
-/// 无 native 实现，任何本地 OCR 会话构造都会抛 MissingPluginException。其余三端
-/// （Windows / Linux / Android）native 正常注册，本地 OCR 照常工作。
+/// **当前 Fushi 出包的五端全部为真**。曾经排除 Apple，是因为 vendored fork 把
+/// `ios`/`macos` 从 `flutter.plugin.platforms` 删了——那不是 ORT 不支持 Apple，
+/// 而是上游随 podspec 附带的 `Package.swift` 会经 SwiftPM 拉进
+/// `onnxruntime-swift-package-manager`（清单写死 `.macOS(.v14)`），把整个 app 拖到
+/// macOS 14。fork 改成删掉那两个 `Package.swift` 走 CocoaPods 后，真实下限只剩
+/// `onnxruntime-objc` 1.23.0 自己的 iOS 15.1 / macOS 13.4，项目部署目标已对齐
+/// （见 `third_party/flutter_onnxruntime/PATCHES.md`）。
 ///
-/// 所有本地整卷 OCR 入口（`MangaOcrServiceImpl`）都必须先过此闸门，
-/// Apple 上改走互联 host；需要整页云端识别时由用户显式选择 Google Lens。
-bool get isLocalOnnxRuntimeAvailable => !(Platform.isMacOS || Platform.isIOS);
+/// 保留这个具名闸门而不是直接写 `true`：它是「本地推理可不可用」的唯一判定点，
+/// 将来任一端的 native 再被摘掉（换 ORT 版本、平台下限回退），只改这里，
+/// 调用方（`MangaOcrServiceImpl` 整卷入口、`MangaBoxRescan` 单框入口）无须改动。
+bool get isLocalOnnxRuntimeAvailable =>
+    Platform.isWindows ||
+    Platform.isLinux ||
+    Platform.isAndroid ||
+    Platform.isMacOS ||
+    Platform.isIOS;
 
 OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
   switch (provider) {

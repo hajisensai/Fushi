@@ -81,7 +81,29 @@ body {
    (zero regression). Higher specificity than the html,body var rule above, so no
    !important needed. */
 html.global-lookup {
-    background: transparent;
+    /* BUG: 右上/右下圆角消失（左上/左下正常）。
+       上面那条 `background: transparent` 让 documentElement 变成「无背景」，于是
+       CSS 背景传播规则（css-backgrounds-3 §2.11.2）把 `body` 的背景**提升为画布
+       背景**：画布背景铺满整个视口且**永远是方角**，body 自身不再绘制该背景 ——
+       body 的 `border-radius: 10px` 从此只作用于那 1px 边框线，管不到填充色。
+       卡片的圆角外观因此完全寄生在外层 shell 的 `overflow:hidden + border-radius`
+       裁剪上（global_lookup_host.js .global-lookup-frame-shell），只有当卡片内容区
+       右缘与 shell 右缘**恰好重合**时才成立。一旦文档出现占位式垂直滚动条
+       （`scrollbar-width: thin` 使 WebView2 用非 overlay 滚动条），gutter 把内容区
+       右缘从 shell 右缘推开约 9 CSS px，右侧那两刀就裁在空处 —— 右上/右下露出方角
+       画布底色；左缘永远重合，所以左边两个角一直是好的（症状严格左右不对称）。
+       Edge（同 Chromium/WebView2 引擎，150% DPI）离屏复现：占位滚动条下右上/右下
+       为不透明方角、左侧圆角正常；overlay 滚动条下四角正常 —— 两侧差异只由 gutter
+       决定，与 native SetWindowRgn 无关（窗口 region 实测左右对称各内缩 6px）。
+
+       根因修复：给 documentElement 一个「存在但完全透明」的背景层（全透明渐变），
+       它就不再是「无背景」，传播不发生，body 的填充留在 body 自己身上、被它自己的
+       border-radius 裁剪 —— 卡片四角**自足**地圆，不再依赖 shell 裁剪与边缘重合这
+       个脆弱前提。视觉上仍是全透明，TODO-893 症状 2（不透明主题色填满方形 iframe、
+       被 shell 裁成一圈「白框」）不会回归：这一层没有任何不透明像素。
+       用简写一次写完（而不是 `background: transparent` 再补 background-image），
+       避免简写重置 background-image 的顺序陷阱。 */
+    background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0));
 }
 
 /* TODO-1065 -- mobile / external floating-subtitle popup (popup_main host) ONLY:

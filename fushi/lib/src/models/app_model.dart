@@ -6625,6 +6625,38 @@ class _AppModelRemoteLookupService
     }
   }
 
+  // ── 互联 Lapis 客制化：客户端（手机等）经互联读写本机 Anki 的 note type。
+  // 与 mineForwarded 同语义地用**本机**平台仓库（主机自己的 AnkiConnect），
+  // 后端不支持时按 BaseAnkiRepository 的降级契约回 null/false（不抛）。
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    if (!repo.supportsNoteTypeEditing) return null;
+    return repo.readNoteTypeDefinition(modelName);
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    if (!repo.supportsNoteTypeEditing) return false;
+    return repo.updateNoteTypeStyling(modelName, css);
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    if (!repo.supportsNoteTypeEditing) return false;
+    return repo.updateNoteTypeTemplates(modelName, templates);
+  }
+
   @override
   Future<bool> isDuplicate({
     required String expression,

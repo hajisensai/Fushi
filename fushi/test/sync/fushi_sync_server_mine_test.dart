@@ -5,6 +5,7 @@ import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_anki/fushi_anki.dart';
 
 class _FakeMining implements FushiRemoteMiningService {
   Map<String, String>? lastFields;
@@ -43,6 +44,33 @@ class _FakeMining implements FushiRemoteMiningService {
     lastDupExpression = expression;
     lastDupReading = reading;
     return dupResult;
+  }
+
+  // 互联 Lapis 客制化端点的捕获（/api/anki/note-type/*）。
+  AnkiNoteTypeDefinition? noteTypeDef;
+  bool noteTypeWriteOk = true;
+  String? lastNoteTypeRead;
+  (String, String)? lastStylingWrite;
+  (String, List<AnkiCardTemplate>)? lastTemplatesWrite;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    lastNoteTypeRead = modelName;
+    return noteTypeDef;
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    lastStylingWrite = (modelName, css);
+    return noteTypeWriteOk;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+      String modelName, List<AnkiCardTemplate> templates) async {
+    lastTemplatesWrite = (modelName, templates);
+    return noteTypeWriteOk;
   }
 }
 
@@ -174,6 +202,109 @@ void main() {
     final r = await c.post('127.0.0.1', server.port, '/api/duplicate');
     r.headers.contentType = ContentType.json;
     r.write('{"expression":"猫"}');
+    final resp = await r.close();
+    expect(resp.statusCode, 401);
+    await server.stop();
+  });
+
+  // ── 互联 Lapis 客制化端点（手机端经互联读写主机 Anki 的 note type）────────
+
+  test('POST /api/anki/note-type/read returns host definition', () async {
+    final mining = _FakeMining()
+      ..noteTypeDef = const AnkiNoteTypeDefinition(
+        name: 'Lapis',
+        fields: <String>['Expression', 'Sentence'],
+        templates: <AnkiCardTemplate>[
+          AnkiCardTemplate(name: 'Card', front: 'F', back: 'B'),
+        ],
+        css: '.card {}',
+      );
+    final server = FushiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: mining);
+    await server.start();
+    final resp = await _post(
+        server.port, '/api/anki/note-type/read', {'modelName': 'Lapis'}, 'tok');
+    expect(resp.statusCode, 200);
+    final out = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(mining.lastNoteTypeRead, 'Lapis');
+    expect(out['noteType']['name'], 'Lapis');
+    expect(out['noteType']['css'], '.card {}');
+    expect(out['noteType']['fields'], ['Expression', 'Sentence']);
+    await server.stop();
+  });
+
+  test('POST /api/anki/note-type/styling writes through and echoes ok',
+      () async {
+    final mining = _FakeMining();
+    final server = FushiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: mining);
+    await server.start();
+    final resp = await _post(server.port, '/api/anki/note-type/styling',
+        {'modelName': 'Lapis', 'css': '.card { color: red; }'}, 'tok');
+    expect(resp.statusCode, 200);
+    final out = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(out['ok'], true);
+    expect(mining.lastStylingWrite, ('Lapis', '.card { color: red; }'));
+    await server.stop();
+  });
+
+  test('POST /api/anki/note-type/templates writes through', () async {
+    final mining = _FakeMining();
+    final server = FushiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: mining);
+    await server.start();
+    final resp = await _post(
+        server.port,
+        '/api/anki/note-type/templates',
+        {
+          'modelName': 'Lapis',
+          'templates': [
+            {'name': 'Card', 'front': 'F', 'back': 'B2'},
+          ],
+        },
+        'tok');
+    expect(resp.statusCode, 200);
+    final out = jsonDecode(await resp.transform(utf8.decoder).join());
+    expect(out['ok'], true);
+    expect(mining.lastTemplatesWrite?.$1, 'Lapis');
+    expect(mining.lastTemplatesWrite?.$2.single.back, 'B2');
+    await server.stop();
+  });
+
+  test('POST /api/anki/note-type/read with missing modelName is 400', () async {
+    final server = FushiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: _FakeMining());
+    await server.start();
+    final resp =
+        await _post(server.port, '/api/anki/note-type/read', {}, 'tok');
+    expect(resp.statusCode, 400);
+    await server.stop();
+  });
+
+  test('POST /api/anki/note-type/read without auth is 401', () async {
+    final server = FushiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+        port: 0,
+        token: 'tok',
+        miningService: _FakeMining());
+    await server.start();
+    final c = HttpClient();
+    final r =
+        await c.post('127.0.0.1', server.port, '/api/anki/note-type/read');
+    r.headers.contentType = ContentType.json;
+    r.write('{"modelName":"Lapis"}');
     final resp = await r.close();
     expect(resp.statusCode, 401);
     await server.stop();

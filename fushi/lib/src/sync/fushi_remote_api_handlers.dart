@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/src/sync/forwarded_mine_payload.dart';
@@ -171,4 +172,62 @@ Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
   final bool duplicate =
       await mining.isDuplicate(expression: expression, reading: reading);
   return <String, dynamic>{'duplicate': duplicate};
+}
+
+/// `POST /api/anki/note-type/read` 的响应体。互联 Lapis 客制化：手机端（AnkiDroid /
+/// AnkiMobile 没有改已存在模板的平台 API）经互联读主机端 note type 完整定义，供可视化
+/// 编辑器拿真实基线、备份与漂移判定。[body] 需含 `modelName`（非空），缺失/类型错抛
+/// [FormatException]（调用方转 400）。主机后端不支持模板读写或模型不存在时 `noteType`
+/// 为 null（客户端按「未找到」提示）。
+Future<Map<String, dynamic>> buildAnkiNoteTypeReadResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final AnkiNoteTypeDefinition? def =
+      await mining.readNoteTypeDefinition(_requiredModelName(body));
+  return <String, dynamic>{'noteType': def?.toJson()};
+}
+
+/// `POST /api/anki/note-type/styling` 的响应体。覆写主机端 note type 的 styling。
+/// [body] 需含 `modelName` 与 `css`（均为字符串，css 可为空串），缺失/类型错抛
+/// [FormatException]。`ok=false` = 主机后端不支持模板写入。
+Future<Map<String, dynamic>> buildAnkiNoteTypeStylingResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String modelName = _requiredModelName(body);
+  final Object? css = body['css'];
+  if (css is! String) throw const FormatException('Missing css');
+  return <String, dynamic>{
+    'ok': await mining.updateNoteTypeStyling(modelName, css),
+  };
+}
+
+/// `POST /api/anki/note-type/templates` 的响应体。覆写主机端 note type 的全部卡模板
+/// （客户端「从备份恢复」/写 Lapis 背面模板用）。[body] 需含 `modelName` 与
+/// `templates`（`[{name, front, back}]`），缺失/类型错抛 [FormatException]。
+/// `ok=false` = 主机后端不支持模板写入。
+Future<Map<String, dynamic>> buildAnkiNoteTypeTemplatesResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String modelName = _requiredModelName(body);
+  final Object? rawTemplates = body['templates'];
+  if (rawTemplates is! List) throw const FormatException('Missing templates');
+  final List<AnkiCardTemplate> templates = <AnkiCardTemplate>[];
+  for (final Object? entry in rawTemplates) {
+    if (entry is! Map) throw const FormatException('Malformed templates');
+    templates.add(AnkiCardTemplate.fromJson(Map<String, dynamic>.from(entry)));
+  }
+  return <String, dynamic>{
+    'ok': await mining.updateNoteTypeTemplates(modelName, templates),
+  };
+}
+
+String _requiredModelName(Map<String, dynamic> body) {
+  final String modelName = body['modelName']?.toString() ?? '';
+  if (modelName.trim().isEmpty) {
+    throw const FormatException('Missing modelName');
+  }
+  return modelName;
 }

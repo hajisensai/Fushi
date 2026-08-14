@@ -400,11 +400,15 @@ void TestFrameSanityRejectsEveryUntrustedShape() {
           "byte_len < pitch*height 必须拒绝（按 height 逐行拷会读过尾）");
   }
   {
-    // 自洽但超容量：1024x1024 BGRA = 4MiB > 3MiB 单缓冲上限。
+    // 自洽但超容量：宽高都在 0x4000 上界内，唯一越界的是总字节数。
+    //
+    // 尺寸**从 kLookupBitmapBytes 推导**，不写死。容量抬过一次（3MiB→8MiB），
+    // 原来写死的 1024x1024（4MiB）当场变成"没超容量"，这条用例于是静默失去意义
+    // ——构造前提断言先红，而它测的那条规则根本没被执行到。
     LookupFrame too_big = HealthyFrame();
-    too_big.width = 1024;
-    too_big.height = 1024;
+    too_big.width = 2048;
     too_big.pitch = too_big.width * 4;
+    too_big.height = kLookupBitmapBytes / too_big.pitch + 1;
     too_big.byte_len = too_big.pitch * too_big.height;
     Check(too_big.byte_len > kLookupBitmapBytes,
           "构造前提：本用例确实超了单缓冲容量");

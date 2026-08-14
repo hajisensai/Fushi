@@ -34,7 +34,12 @@ void main() {
     final String podfile = read('ios/Podfile');
     final String script = read('ios/build_fushidicts_ffi.sh');
 
+    // 15.0 是 Xcode 27 的硬地板；15.1 是 `onnxruntime-objc` 1.23.0（本地漫画
+    // OCR）的下限。工程实际钉 15.1，所以这里既验「不低于 Xcode 地板」，也验
+    // 「三处 15.1 逐字一致」——那三处任一被单独改回 15.0，pod 就会以低于其依赖
+    // 下限的目标编译（`pod install` 未必报错，坏在链接/运行期）。
     const double xcode27MinimumDeploymentTarget = 15.0;
+    const String ortMinimumDeploymentTarget = '15.1';
     final List<double> runnerTargets = RegExp(
       r'IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);',
     )
@@ -47,12 +52,20 @@ void main() {
       expect(target, greaterThanOrEqualTo(xcode27MinimumDeploymentTarget));
     }
 
-    expect(podfile, contains("platform :ios, '15.0'"));
+    expect(podfile, contains("platform :ios, '$ortMinimumDeploymentTarget'"));
     expect(
       podfile,
-      contains("config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'"),
+      contains("config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = "
+          "'$ortMinimumDeploymentTarget'"),
+      reason: 'post_install 会覆盖每个 pod 自己的部署目标，必须与 platform '
+          '和 Runner 同步；这行漏改过一次（2026-08-14 抬 15.0→15.1 时）',
     );
-    expect(script, contains(r'${IPHONEOS_DEPLOYMENT_TARGET:-15.0}'));
+    expect(
+      script,
+      contains('\${IPHONEOS_DEPLOYMENT_TARGET:-$ortMinimumDeploymentTarget}'),
+    );
+    expect(runnerTargets.toSet(), <double>{15.1},
+        reason: 'Runner 三个 configuration 必须都是 $ortMinimumDeploymentTarget');
   });
 
   test('iOS Runner exports force-loaded FushiDicts symbols for dlsym', () {

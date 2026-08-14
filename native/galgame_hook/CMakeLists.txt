@@ -189,6 +189,22 @@ add_executable(fushi_siglus_launch_test
 target_include_directories(fushi_siglus_launch_test PRIVATE "include")
 add_test(NAME fushi_siglus_launch_test COMMAND fushi_siglus_launch_test)
 
+# 启动器布局识别（根因回归：AngelBeats 体験版的引擎签名在 StartData/gamedata 下，
+# 只看被启动 exe 自己那层就把 hook 下在了转手即退的启动器上）。纯逻辑，注入假目录树。
+add_executable(fushi_launcher_layout_test
+  "tests/launcher_layout_test.cpp"
+)
+target_include_directories(fushi_launcher_layout_test PRIVATE "include")
+add_test(NAME fushi_launcher_layout_test COMMAND fushi_launcher_layout_test)
+
+# 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
+add_executable(fushi_lookup_overlay_geometry_test
+  "tests/lookup_overlay_geometry_test.cpp"
+)
+target_include_directories(fushi_lookup_overlay_geometry_test PRIVATE "include")
+add_test(NAME fushi_lookup_overlay_geometry_test
+  COMMAND fushi_lookup_overlay_geometry_test)
+
 # KiriKiri 二进制级延迟附着 profile（根因回归：恋爱成双早注入触发 Access Violation）。
 add_executable(fushi_kirikiri_launch_profile_test
   "tests/kirikiri_launch_profile_test.cpp"
@@ -318,6 +334,15 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   )
   target_include_directories(fushi_voice_ring_probe PRIVATE "include")
   target_compile_definitions(fushi_voice_ring_probe PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
+  # 游戏内查词诊断读取器。与 ring probe 同理由只出 x64。它是唯一会写共享内存的诊断工具，
+  # 但只写 `lookup_enabled` 这一个 host→hook 开关（契约里本就归 host 写），目的是把注入侧
+  # 的传感器单独拎出来验——否则「传感器没装」与「host 没投帧」在现象上完全同形。
+  add_executable(fushi_voice_lookup_probe
+    "tools/lookup_probe.cpp"
+  )
+  target_include_directories(fushi_voice_lookup_probe PRIVATE "include")
+  target_compile_definitions(fushi_voice_lookup_probe PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 # LunaHost 符号解析校验器（纯查符号，不注入、不跑游戏）。x64/x86 各出一份，运行期从自身目录

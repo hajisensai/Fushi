@@ -336,40 +336,53 @@ constexpr uint32_t kLookupDiagFallbackPngRoute = 0x00000010u;  // 降级走 PNG 
 constexpr uint32_t kLookupDiagFramePresented = 0x00000020u;   // 位图真落进游戏 Layer
 constexpr uint32_t kLookupDiagExpressionReady = 0x00000040u;  // TVPExecuteExpression 可用
 constexpr uint32_t kLookupDiagFrameRejected = 0x00000080u;    // 收到过不合契约的帧（已拒）
+// 经典 KAG3 采集面（原生 Layer.drawText）已生效：该游戏没有 KAGEX 的 global.TextRender，
+// 逐字几何只能从原生绘字方法取。与 kLookupDiagGeometryObserved 分开——那位只说"拿到过
+// 几何"，这位说"几何是从哪条面来的"，真机排障时决定该去看 TextRender 还是 drawText。
+constexpr uint32_t kLookupDiagClassicTextSource = 0x00000100u;
+// 经典采集面**真的捕到过字形**。与上一位分开是因为真机上这两件事会分离：补丁装上了、
+// bootstrap 也跑完了，但一个字都没经过它——那说明游戏的文字根本不走这个原生方法，而不是
+// 安装失败。两者症状同形（都没有卡片），合成一位就永远分不出该去修哪边。
+constexpr uint32_t kLookupDiagClassicGeometry = 0x00000200u;
+// 经典采集面走的是 MessageLayer.processCh（TJS 类）而不是 Layer.drawText（原生类）。
+// 两者必须分开自证：真机实测 KiriKiri2 上给原生类成员赋值**拦不住实例调用**，只有 TJS
+// 层的类才拦得住。合成一位就会把"装上了但永远不触发"误读成"这条路能用"。
+constexpr uint32_t kLookupDiagClassicProcessCh = 0x00000400u;
+
 // 传感器在游戏事件循环里吞下过异常（TJS 侧 fushiLookupFaults > 0）。
 //
 // 注入进别人的事件循环，异常就绝不允许逃逸——逃出去 KiriKiri 会弹「致命的なエラー」
 // 把玩家这一局打断。但"不逃逸"必须与"看得见"成对出现：只 catch 不计数，查词会安静地
 // 半死不活（命中报不上来、卡片不出现），而现场没有任何痕迹可查。这一位就是那道痕迹。
-constexpr uint32_t kLookupDiagSensorFault = 0x00000100u;
+constexpr uint32_t kLookupDiagSensorFault = 0x00000800u;
 // ── hover 未命中的原因（真机排查用；采集成功但点不中时唯一能分型的依据）──────
 //
 // 「采到了几何」和「点得中」之间隔着坐标系换算、图层可见性、逐字形命中三道，任何
 // 一道断了，用户看到的都是同一句「点了没反应」。没有这几位就只能靠改一版试一版。
-constexpr uint32_t kLookupDiagHoverBoxMiss = 0x00000200u;   // 光标不在整行包围盒内
-constexpr uint32_t kLookupDiagHoverGlyphMiss = 0x00000400u; // 在包围盒内但无字形命中
-constexpr uint32_t kLookupDiagHoverHidden = 0x00000800u;    // 命中但可见性判定否决
+constexpr uint32_t kLookupDiagHoverBoxMiss = 0x00001000u;   // 光标不在整行包围盒内
+constexpr uint32_t kLookupDiagHoverGlyphMiss = 0x00002000u; // 在包围盒内但无字形命中
+constexpr uint32_t kLookupDiagHoverHidden = 0x00004000u;    // 命中但可见性判定否决
 // 绘制原点在一次采集周期内被绑定多次 = drawCh 的 ox/oy 是**逐字符**位置，不是整行
 // 原点。**这是引擎事实的记录位，不是错误位**：本样本（textrender.dll）实测每字一次，
 // 采集侧据此改为「用 min(ox) 与 min(字形 x) 配对解平移量」，而不是把最后一个字的落
 // 点当行原点（那正是第一版 HoverBoxMiss 的成因）。留着它是为了换引擎时一眼看出该
 // 引擎属于哪一类。
-constexpr uint32_t kLookupDiagOriginPerChar = 0x00001000u;
+constexpr uint32_t kLookupDiagOriginPerChar = 0x00008000u;
 // 文字的绘制目标层不在 primaryLayer 的父链上（独立/离屏层），沿父链累加得到的偏移
 // 因此没有意义。
-constexpr uint32_t kLookupDiagLayerDetached = 0x00002000u;
+constexpr uint32_t kLookupDiagLayerDetached = 0x00010000u;
 // ── 投帧失败分型（真机上"卡片就是不出现"的唯一分辨依据）────────────────────
 //
 // 之前 FramePresented 在降级路上是**无条件置位**的：只证明"我让 TJS 去加载 PNG 了"，
 // 不证明卡片显示了。而那条降级路要求有人把卡片写成 PNG 落盘——实测**没有任何一处
 // 写过那个文件**，于是 loadImages 必然失败、被 TJS 的 catch 吞掉，所有诊断却都报成功。
 // 诊断位声称的比它知道的多，是最难查的一类缺陷，这几位专门用来消除它。
-constexpr uint32_t kLookupDiagCardLayerMissing = 0x00004000u;   // 卡片层建不出来
-constexpr uint32_t kLookupDiagWriteBufferNull = 0x00008000u;    // 层在，但拿不到写指针
-constexpr uint32_t kLookupDiagFallbackPngMissing = 0x00010000u; // 降级路的 PNG 文件不存在
+constexpr uint32_t kLookupDiagCardLayerMissing = 0x00020000u;   // 卡片层建不出来
+constexpr uint32_t kLookupDiagWriteBufferNull = 0x00040000u;    // 层在，但拿不到写指针
+constexpr uint32_t kLookupDiagFallbackPngMissing = 0x00080000u; // 降级路的 PNG 文件不存在
 // 卡片层退回了普通 Layer（自定义子类建不出来）。卡片能显示，但卡片内的鼠标事件
 // 转发失效——降级发生了就要看得见，不许悄悄发生。
-constexpr uint32_t kLookupDiagCardPlainFallback = 0x00020000u;
+constexpr uint32_t kLookupDiagCardPlainFallback = 0x00100000u;
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。

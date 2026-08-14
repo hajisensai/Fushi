@@ -3198,10 +3198,10 @@
   "game_capture_setup_hint": "请先选择台词线程。Fushi 只能把音频与所选线程收到的台词配对。",
   "game_audio_requires_thread": "音频采集源可能已经就绪，但选择线程并收到台词之前，不存在本句音频。",
   "game_session_waiting_thread": "等待选择台词线程",
-  "anki_connect_use_on_android": "在 Android 上使用 AnkiConnect",
-  "anki_connect_use_on_android_hint": "仅在可信网络中使用。AnkiConnect 使用明文 HTTP；请配置匹配的 API key，切换后再刷新牌组与笔记类型。",
+  "anki_connect_use_on_mobile": "改用 AnkiConnect",
+  "anki_connect_use_on_mobile_hint": "仅在可信网络中使用。AnkiConnect 使用明文 HTTP；请配置匹配的 API key，切换后再刷新牌组与笔记类型。",
   "anki_connect_api_key_hint": "远程 AnkiConnect 必填；必须与插件中配置的 key 一致",
-  "anki_connect_android_api_key_required": "请先配置匹配的 AnkiConnect API key，再启用 Android 后端。",
+  "anki_connect_mobile_api_key_required": "请先配置匹配的 AnkiConnect API key，再切换到 AnkiConnect 后端。",
   "anki_connect_backend_switch_failed": "无法切换 Anki 后端：$error",
   "migration_settings_entry": "迁移到 Fushi",
   "migration_settings_entry_subtitle": "把全部数据搬到新的 Fushi 应用",
@@ -3389,5 +3389,6 @@
   "video_subtitle_anchor_bottom": "底部",
   "video_subtitle_anchor_top": "顶部",
   "video_setting_subtitle_drag_adjust": "拖拽调整位置",
-  "video_subtitle_drag_adjust_hint": "上下拖动字幕调整位置"
+  "video_subtitle_drag_adjust_hint": "上下拖动字幕调整位置",
+  "anki_connect_mobile_disabled_key_cleared": "移动端使用 AnkiConnect 必须填 API key，清空后已自动关闭该开关，Anki 改回走内置后端。"
 }

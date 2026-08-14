@@ -97,8 +97,11 @@ void main() {
     ).allMatches(adapter).toList();
     expect(pendingAssignments, hasLength(1));
     final int exactSuppressAt = presentAt + exactSuppressMatch!.start;
+    // CaptureSuppress 分支之后的下一个控制分支。highlight-only 帧在扫描阶段就分流
+    // 到 best_highlight（只在没有结构帧时才处理），所以这里的下一道闸是"未知/组合
+    // flag 一律 Drop"，不再是当年的 highlight 分支。
     final int nextControlBranchAt = adapter.indexOf(
-      'if (staged.flags == fushi_voice_hook::kLookupFrameHighlightOnly)',
+      'if (staged.flags != 0) {',
       exactSuppressAt,
     );
     expect(nextControlBranchAt, greaterThan(exactSuppressAt));

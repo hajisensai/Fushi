@@ -1,13 +1,12 @@
 # HIBIKI FORK of flutter_onnxruntime 1.8.3.
-# Delta vs upstream: the `ios` and `macos` entries are removed from
-# `flutter.plugin.platforms` below, and the ios/ + macos/ native source trees
-# are deleted. Upstream's Apple podspecs pin `onnxruntime-objc` 1.23 which forces
-# macOS deployment target 14.0 / iOS 16.0 -- that broke the Hibiki "Build Desktop"
-# macOS release job (project targets macOS 10.15 and a lower iOS). Hibiki's
-# built-in manga OCR is Windows/Linux/Android-only anyway (Apple degrades to
-# interconnect-host / Gemini cloud OCR -- see lib/src/ocr/ocr_inference_ort.dart
-# isLocalOnnxRuntimeAvailable), so dropping the Apple native registration keeps
-# the deployment target at 10.15 without touching the Dart API. See PATCHES.md.
+# All five plugin platforms (android/ios/linux/macos/windows) are upstream's.
+# Delta vs upstream: the two Apple `Package.swift` manifests are deleted so
+# Flutter builds this plugin through CocoaPods on both Apple platforms, and the
+# Apple podspecs drop their deployment floors to the real `onnxruntime-objc`
+# 1.23.0 minimums (iOS 15.1 / macOS 13.4) instead of upstream's conservative
+# iOS 16.0 / macOS 14.0. Going through SwiftPM would import
+# onnxruntime-swift-package-manager, whose manifest declares `.macOS(.v14)` and
+# would drag the whole app to macOS 14. See PATCHES.md.
 name: flutter_onnxruntime
 description: "A lightweight plugin that provides native wrappers for running ONNX Runtime on multiple platforms"
 version: 1.8.3
@@ -40,7 +39,11 @@ flutter:
       android:
         package: com.masicai.flutteronnxruntime
         pluginClass: FlutterOnnxruntimePlugin
+      ios:
+        pluginClass: FlutterOnnxruntimePlugin
       linux:
+        pluginClass: FlutterOnnxruntimePlugin
+      macos:
         pluginClass: FlutterOnnxruntimePlugin
       web:
         pluginClass: FlutterOnnxruntimeWebPlugin

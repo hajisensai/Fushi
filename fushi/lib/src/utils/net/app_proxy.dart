@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 
 /// 进程级「用户手填代理」读取器——[applyAppProxy] 不显式传 `userProxy` 时的取值来源。
 ///
@@ -347,20 +348,18 @@ Future<Map<String, String>> resolveWindowsSystemProxyEnvironment() async {
   if (!Platform.isWindows) return const <String, String>{};
   try {
     const String key =
-        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings';
-    final ProcessResult enableResult = await Process.run(
-      'reg',
-      <String>['query', key, '/v', 'ProxyEnable'],
-    );
-    final ProcessResult serverResult = await Process.run(
-      'reg',
-      <String>['query', key, '/v', 'ProxyServer'],
-    );
+        r'Software\Microsoft\Windows\CurrentVersion\Internet Settings';
     return parseWindowsRegistryProxy(
-      proxyEnableOutput:
-          enableResult.stdout is String ? enableResult.stdout as String : '',
-      proxyServerOutput:
-          serverResult.stdout is String ? serverResult.stdout as String : '',
+      proxyEnable: readWindowsRegistryDword(
+        WindowsRegistryRoot.currentUser,
+        key,
+        'ProxyEnable',
+      ),
+      proxyServer: readWindowsRegistryString(
+        WindowsRegistryRoot.currentUser,
+        key,
+        'ProxyServer',
+      ),
     );
   } catch (e) {
     // 读不到注册表（权限/环境异常）就当没有系统代理，回退直连——best-effort。
@@ -382,38 +381,19 @@ Future<Map<String, String>> resolveWindowsSystemProxyEnvironment() async {
 /// 以连续空白分隔；值本身可能含 `=`/`;`/`:` 但不含空白，故按「类型标记 REG_* 之后」取值）。
 @visibleForTesting
 Map<String, String> parseWindowsRegistryProxy({
-  required String proxyEnableOutput,
-  required String proxyServerOutput,
+  required int? proxyEnable,
+  required String? proxyServer,
 }) {
-  final String? enableValue =
-      _registryValueAfterType(proxyEnableOutput, 'ProxyEnable');
-  // ProxyEnable 是 REG_DWORD，值形如 `0x1`/`0x0`。非 0x1 视为未启用。
-  if (enableValue == null || enableValue.toLowerCase() != '0x1') {
-    return const <String, String>{};
-  }
-  final String? serverValue =
-      _registryValueAfterType(proxyServerOutput, 'ProxyServer');
-  if (serverValue == null || serverValue.isEmpty) {
+  // ProxyEnable 是 REG_DWORD；非 1 视为未启用。
+  if (proxyEnable != 1) return const <String, String>{};
+  if (proxyServer == null || proxyServer.isEmpty) {
     return const <String, String>{};
   }
 
-  final String? https = _proxyForScheme(serverValue, 'https');
+  final String? https = _proxyForScheme(proxyServer, 'https');
   final String? http =
-      _proxyForScheme(serverValue, 'http') ?? _globalProxy(serverValue);
+      _proxyForScheme(proxyServer, 'http') ?? _globalProxy(proxyServer);
   return _buildProxyEnv(https: https, http: http);
-}
-
-/// 从单条 `reg query` 输出里取出指定值名后、`REG_<TYPE>` 标记之后的那段值。
-/// 匹配行必须含 `valueName`，再按空白切出最后一段作为值。无匹配返回 null。
-String? _registryValueAfterType(String output, String valueName) {
-  for (final String rawLine in const LineSplitter().convert(output)) {
-    final String line = rawLine.trim();
-    if (!line.startsWith(valueName)) continue;
-    final RegExpMatch? m =
-        RegExp(r'^' + valueName + r'\s+REG_\w+\s+(.+)$').firstMatch(line);
-    if (m != null) return m.group(1)!.trim();
-  }
-  return null;
 }
 
 /// 从分协议代理串（`http=h:p;https=h:p`）里取指定 scheme 的 `host:port`；全局串

@@ -56,6 +56,15 @@ import unittest
 from pathlib import Path
 from typing import Iterator
 
+# KAGEX 缺席门：`if(typeof global.TextRender == "Object") { ... } else { ... }`。
+# 经典 KAG3 游戏（Fate/stay night[Realta Nua]、PRETTY×CATION2、フタマタ恋愛）整个
+# global.TextRender 都不存在，逐字几何只从原生 Layer.drawText 经过——全局补丁在**这个
+# else 里**是唯一可行采集面，不是又一条兜底。装了 textrender.dll 的游戏走 if 分支，
+# 一行都不多绕，所以"全局补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上。
+KAGEX_GATE_RE = re.compile(
+    r'if\s*\(\s*typeof\s+global\.TextRender\s*==\s*"Object"\s*\)'
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "hook" / "adapters" / "kirikiri_adapter.inc"
@@ -377,14 +386,61 @@ def _probe_block_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+def _brace_span(text: str, open_index: int) -> int:
+    """从 `open_index` 处的 `{` 起做大括号配对，返回闭合 `}` 的下一个下标（-1=没配上）。"""
+    depth = 0
+    for j in range(open_index, len(text)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return -1
+
+
+def _classic_fallback_spans(text: str) -> list[tuple[int, int]]:
+    """KAGEX 缺席门的 `else { ... }` 区间。
+
+    只认真正挂在 `typeof global.TextRender == "Object"` 之后的 else——把补丁从这个
+    else 里挪出去（或把门本身删掉）会让区间消失，补丁随即落到 find_global_monkey_patches
+    的红区里。
+    """
+    spans: list[tuple[int, int]] = []
+    for gate in KAGEX_GATE_RE.finditer(text):
+        open_index = text.find("{", gate.end())
+        if open_index < 0:
+            continue
+        close = _brace_span(text, open_index)
+        if close < 0:
+            continue
+        tail = text[close:]
+        stripped = tail.lstrip()
+        if not stripped.startswith("else"):
+            continue
+        else_open = text.find("{", close + (len(tail) - len(stripped)) + len("else"))
+        if else_open < 0:
+            continue
+        else_close = _brace_span(text, else_open)
+        if else_close < 0:
+            continue
+        spans.append((else_open, else_close))
+    return spans
+
+
 def find_global_monkey_patches(source: MaskedSource) -> list[str]:
     """引擎全局类的补丁只允许出现在默认关闭的探测分支里。
 
     `global.Layer.drawText` 挂上包装之后，游戏**所有** UI 绘制都要多绕一层；游戏内
-    渲染下这直接变成掉帧。运行日志已经证伪了这条捕获路径（只有 TextRender 命中），
-    所以它只能作为换游戏时的探针存在，且默认关闭。
+    渲染下这直接变成掉帧。所以补丁只允许出现在两处**有门的**位置：
+
+    1. 默认关闭的探测分支（换游戏时数次数用）；
+    2. KAGEX 缺席门的 else——那类游戏没有 global.TextRender，逐字几何只从原生
+       Layer.drawText 经过，不绕就等于游戏内查词整个不存在。
+
+    两处之外的补丁一律红：那是"所有游戏都多绕一层"，代价没有对价。
     """
-    spans = _probe_block_spans(source.text)
+    spans = _probe_block_spans(source.text) + _classic_fallback_spans(source.text)
     hits: list[str] = []
     for m in GLOBAL_PATCH_RE.finditer(source.text):
         if any(start <= m.start() < end for start, end in spans):
@@ -590,68 +646,43 @@ def _brace_depth_at(text: str, index: int) -> int:
 def find_invalid_kag_anchor_identity_selection(
     source: MaskedSource,
 ) -> list[str]:
-    """守住 KAG 消息层锚点的宿主页投影契约。
+    """守住 KAG 消息层锚点的**冻结点**与宿主页投影契约。
+
+    锚点必须在 drawCh 真正执行的那一刻冻结（`fushiLookupStampBindGroup`），不能留到
+    鼠标事件或 Capture 再按"那时的" `kag.currentNum` 去投影：共存的姓名层（ai=1）与
+    正文层（ai=0）会轮流成为 current，晚一步投影就把这条绑定挂到别人的台词上，症状是
+    卡片稳定地弹在另一行。
 
     fore/back 是同一组逻辑消息层的双缓冲页。稳定身份是 `currentNum`；旧 KAG 没有这个
-    字段时，才允许以 `current` 的对象身份找逻辑下标。宽高不是身份，`current.comp` 和
-    `id` 也不是必需契约。这里钉住 hostPage、宿主页数组、currentNum 主路径、对象身份
-    兜底及发布顺序；把这些片段散落在函数里不能过。
+    字段时，才允许以 `current` 的对象身份找逻辑下标（`ResolveCurrentSlot`）。宽高不是
+    身份。这里钉住冻结点、hostPage、宿主页数组、currentNum 主路径、对象身份兜底的接管
+    条件与发布顺序；把这些片段散落在别处或搬回 Capture 都不能过。
     """
     violations: list[str] = []
     if not TJS_RAW_RE.search(source.text):
         return [f'{ADAPTER.name}: 没有找到 LR"TJS(...)TJS" bootstrap']
 
     tjs = _joined_tjs_payload(source)
+    stamps = _assigned_tjs_functions(tjs, "fushiLookupStampBindGroup")
+    if len(stamps) != 1:
+        return [
+            f"{ADAPTER.name}: fushiLookupStampBindGroup 定义数应为 1，"
+            f"实际 {len(stamps)}"
+        ]
+    _, stamp_body = stamps[0]
+    stamp = _compact_tjs(stamp_body)
+
     captures = _assigned_tjs_functions(tjs, "fushiLookupCapture")
     if len(captures) != 1:
         return [
             f"{ADAPTER.name}: fushiLookupCapture 定义数应为 1，实际 {len(captures)}"
         ]
-
-    _, capture_body = captures[0]
-    capture = _compact_tjs(capture_body)
-
-    # 这是已被真机证伪的旧实现形状。单独点名，避免它只因新结构缺失而间接变红：
-    # mutation 必须能证明守卫本身认得出「跨页按尺寸首个命中」。
-    legacy_pages = re.compile(
-        r"(?:var)?pages=\[(?:global\.kag\.)?fore(?:\.messages)?,"
-        r"(?:global\.kag\.)?back(?:\.messages)?\]"
-    )
-    if legacy_pages.search(capture):
-        violations.append(
-            f"{ADAPTER.name}: 禁止旧 pages=[fore,back] 跨页按尺寸首个命中后 break"
-        )
-
-    host_page = "varhostPage=global.fushiLookupPageOf(best.host);"
-    host_messages_decl = "varhostMessages=void;"
-    host_messages_select = (
-        "hostMessages=(hostPage==1)?global.kag.fore.messages:"
-        "((hostPage==2)?global.kag.back.messages:void);"
-    )
-    entry_layer = (
-        "entry.layer=(anchorMsg!==void&&isvalidanchorMsg)?anchorMsg:best.host;"
-    )
-    entry_host_page = "entry.hostPage=hostPage;"
-    for needle, message in (
-        (host_page, "hostPage 必须由 drawCh 宿主 best.host 求得"),
-        (host_messages_decl, "必须先声明宿主页消息数组"),
-        (host_messages_select, "宿主页消息数组必须由 hostPage 唯一选择"),
-        (entry_layer, "选定的 KAG 消息层必须写入 entry.layer"),
-        (entry_host_page, "hostPage 必须随记录写入 entry.hostPage"),
-    ):
-        count = capture.count(needle)
-        if count != 1:
-            violations.append(f"{ADAPTER.name}: {message}（出现 {count} 次）")
+    capture = _compact_tjs(captures[0][1])
 
     slot = _SLOT_RE.pattern
-    current_num_decl_re = re.compile(
-        rf"varcurrentNum=global\.fushiLookupField\(global\.kag,(?P<field>{slot})\);"
+    field_read_re = re.compile(
+        rf"global\.fushiLookupField\(global\.kag,(?P<field>{slot})\)"
     )
-    current_decl_re = re.compile(
-        rf"varcurrentMsg=global\.fushiLookupField\(global\.kag,(?P<field>{slot})\);"
-    )
-    current_num_decls = list(current_num_decl_re.finditer(capture))
-    current_decls = list(current_decl_re.finditer(capture))
 
     def field_literal_is(match: re.Match[str], expected: str) -> bool:
         token = match.group("field")
@@ -663,22 +694,68 @@ def find_invalid_kag_anchor_identity_selection(
             and literal[1:-1] == expected
         )
 
+    # 冻结点：Capture 不得自己再读一次 currentNum。它拿到的必须是 drawCh 当时冻结在
+    # BindGroup 上的 anchorPage/anchorIndex/anchorIdentity。
+    if any(
+        field_literal_is(m, "currentNum") for m in field_read_re.finditer(capture)
+    ):
+        violations.append(
+            f"{ADAPTER.name}: Capture 不得按当时的 kag.currentNum 重新投影锚点；"
+            "锚点只能在 drawCh 执行期冻结"
+        )
+
+    # 这是已被真机证伪的旧实现形状。单独点名，避免它只因新结构缺失而间接变红：
+    # mutation 必须能证明守卫本身认得出「跨页按尺寸首个命中」。
+    legacy_pages = re.compile(
+        r"(?:var)?pages=\[(?:global\.kag\.)?fore(?:\.messages)?,"
+        r"(?:global\.kag\.)?back(?:\.messages)?\]"
+    )
+    if legacy_pages.search(stamp):
+        violations.append(
+            f"{ADAPTER.name}: 禁止旧 pages=[fore,back] 跨页按尺寸首个命中后 break"
+        )
+
+    host_page = "group.hostPage=global.fushiLookupPageOf(host);"
+    messages_decl = "varmessages=global.fushiLookupMessagesForPage(group.hostPage);"
+    for needle, message in (
+        (host_page, "hostPage 必须由 drawCh 宿主 host 求得"),
+        (messages_decl, "宿主页消息数组必须由 hostPage 唯一选择"),
+    ):
+        count = stamp.count(needle)
+        if count != 1:
+            violations.append(f"{ADAPTER.name}: {message}（出现 {count} 次）")
+
+    # 冻结前必须先把上一轮的锚点整组清空。少清一个字段，换句时旧值会与新值混着用，
+    # 得到一个"半新半旧"的锚点——那比完全没有锚点更难查。
+    reset_patterns = (
+        re.escape("group.anchorPage=0;"),
+        re.escape("group.anchorIndex=-1;"),
+        re.escape("group.anchorIdentity=void;"),
+        re.escape("group.currentIdentity=void;"),
+        re.escape("group.anchorStrength=0;"),
+    )
+    if not _matches_once_in_order(stamp, reset_patterns):
+        violations.append(
+            f"{ADAPTER.name}: 冻结前必须整组复位 anchorPage/Index/Identity/"
+            "currentIdentity/Strength"
+        )
+
+    current_num_decl_re = re.compile(
+        rf"varcurrentNum=global\.fushiLookupField\(global\.kag,(?P<field>{slot})\);"
+    )
+    current_num_decls = list(current_num_decl_re.finditer(stamp))
     if len(current_num_decls) != 1 or not field_literal_is(
         current_num_decls[0], "currentNum"
     ):
         violations.append(
             f"{ADAPTER.name}: currentNum 主路径必须唯一读取 kag.currentNum"
         )
-    if len(current_decls) != 1 or not field_literal_is(current_decls[0], "current"):
-        violations.append(
-            f"{ADAPTER.name}: identity 兜底必须唯一读取 kag.current"
-        )
 
     current_num_gate_re = re.compile(
-        rf"if\(hostMessages!==void&&typeofcurrentNum==(?P<type>{slot})&&"
-        r"currentNum>=0&&currentNum<hostMessages\.count\)"
+        rf"if\(messages!==void&&typeofcurrentNum==(?P<type>{slot})&&"
+        r"currentNum>=0&&currentNum<messages\.count\)"
     )
-    current_num_gates = list(current_num_gate_re.finditer(capture))
+    current_num_gates = list(current_num_gate_re.finditer(stamp))
     current_num_spans: list[tuple[int, int]] = []
     if len(current_num_gates) != 1:
         violations.append(
@@ -692,180 +769,134 @@ def find_invalid_kag_anchor_identity_selection(
                 f"{ADAPTER.name}: currentNum 主路径必须先确认 Integer"
             )
         current_num_spans = _braced_spans_after(
-            capture, current_num_gates[0].group(0)
+            stamp, current_num_gates[0].group(0)
         )
 
-    fallback_gate = (
-        "if(anchorMsg===void&&hostMessages!==void&&currentMsg!==void&&"
-        "currentMsg!==null&&isvalidcurrentMsg)"
-    )
-    fallback_spans = _braced_spans_after(capture, fallback_gate)
     if len(current_num_spans) != 1:
         violations.append(
             f"{ADAPTER.name}: currentNum 整数/上下界门必须包住唯一主路径"
         )
     else:
-        current_num_body = capture[
-            current_num_spans[0][0] : current_num_spans[0][1]
-        ]
-        indexed_decl = "varindexedMsg=hostMessages[currentNum];"
-        indexed_gate = "if(indexedMsg!==void&&indexedMsg!==null&&isvalidindexedMsg)"
-        indexed_spans = _braced_spans_after(current_num_body, indexed_gate)
-        if current_num_body.count(indexed_decl) != 1 or len(indexed_spans) != 1:
+        primary = stamp[current_num_spans[0][0] : current_num_spans[0][1]]
+        indexed_gate = "if(indexed!==void&&indexed!==null&&isvalidindexed)"
+        indexed_spans = _braced_spans_after(primary, indexed_gate)
+        if primary.count("varindexed=messages[currentNum];") != 1 or len(
+            indexed_spans
+        ) != 1:
             violations.append(
                 f"{ADAPTER.name}: currentNum 必须索引宿主页并校验所得消息层"
             )
         else:
-            indexed_body = current_num_body[
-                indexed_spans[0][0] : indexed_spans[0][1]
-            ]
-            if indexed_body.count("anchorMsg=indexedMsg;") != 1:
+            indexed_body = primary[indexed_spans[0][0] : indexed_spans[0][1]]
+            primary_publish = (
+                re.escape("group.anchorIdentity=indexed;"),
+                re.escape("group.anchorPage=global.fushiLookupPageOf(indexed);"),
+                re.escape("group.anchorIndex=currentNum;"),
+                re.escape("group.anchorStrength=1;"),
+            )
+            if not _matches_once_in_order(indexed_body, primary_publish):
                 violations.append(
-                    f"{ADAPTER.name}: currentNum 主路径必须发布宿主页同下标消息层"
+                    f"{ADAPTER.name}: currentNum 主路径必须原子发布宿主页同下标消息层"
+                    "并记 strength=1"
                 )
 
-    if len(fallback_spans) != 1:
+    resolved_decl = "varresolved=global.fushiLookupResolveCurrentSlot();"
+    if stamp.count(resolved_decl) != 1:
         violations.append(
-            f"{ADAPTER.name}: 对象身份兜底只能在 currentNum 主路径未选中时进入"
+            f"{ADAPTER.name}: identity 兜底必须唯一经 ResolveCurrentSlot 读 kag.current"
+        )
+    resolved_gate = (
+        "if(resolved!==void&&messages!==void&&resolved.index>=0&&"
+        "resolved.index<messages.count)"
+    )
+    resolved_spans = _braced_spans_after(stamp, resolved_gate)
+    if len(resolved_spans) != 1:
+        violations.append(
+            f"{ADAPTER.name}: identity 兜底必须通过宿主页上界门，且只有一处"
         )
     else:
-        fallback_body = capture[fallback_spans[0][0] : fallback_spans[0][1]]
-        identity_pages = (
-            "varidentityPages=[global.kag.fore.messages,"
-            "global.kag.back.messages];"
+        fallback_body = stamp[resolved_spans[0][0] : resolved_spans[0][1]]
+        # 接管条件是这条兜底最关键的一道门：只有"主路径还没定"或"就是同一个 slot"时
+        # 才允许它写。少了它，另一个共存 slot（姓名层）成为 current 就会把正文层的
+        # 绑定抢走——真机症状是选正文却高亮到人名。
+        takeover_gate = (
+            "(group.anchorIdentity===void||(resolved.page==group.anchorPage&&"
+            "resolved.index==group.anchorIndex))"
         )
-        page_loop = "for(varpgi=0;pgi<identityPages.count&&identityIndex<0;pgi++)"
-        message_loop = "for(varmj=0;mj<identityMessages.count;mj++)"
-        identity_gate = "if(identityMessages[mj]===currentMsg)"
-        projection_gate = "if(identityIndex>=0&&identityIndex<hostMessages.count)"
-        page_spans = _braced_spans_after(fallback_body, page_loop)
-        projection_spans = _braced_spans_after(fallback_body, projection_gate)
-        if fallback_body.count("varidentityIndex=-1;") != 1:
+        if fallback_body.count("varprojected=messages[resolved.index];") != 1:
             violations.append(
-                f"{ADAPTER.name}: 对象身份兜底必须以未命中下标开始"
+                f"{ADAPTER.name}: identity 下标必须投影到宿主页"
             )
-        if fallback_body.count(identity_pages) != 1:
+        if fallback_body.count(takeover_gate) != 1:
             violations.append(
-                f"{ADAPTER.name}: 对象身份兜底必须覆盖 fore/back 两个消息数组"
+                f"{ADAPTER.name}: identity 兜底只能在主路径未选中或同一 slot 时接管"
             )
-        if len(page_spans) != 1:
-            violations.append(f"{ADAPTER.name}: 必须只遍历一次 identityPages")
-        else:
-            page_body = fallback_body[page_spans[0][0] : page_spans[0][1]]
-            message_spans = _braced_spans_after(page_body, message_loop)
-            if (
-                page_body.count("varidentityMessages=identityPages[pgi];") != 1
-                or len(message_spans) != 1
-            ):
-                violations.append(
-                    f"{ADAPTER.name}: 每个 identity 页必须只遍历一次消息数组"
-                )
-            else:
-                message_body = page_body[
-                    message_spans[0][0] : message_spans[0][1]
-                ]
-                identity_spans = _braced_spans_after(message_body, identity_gate)
-                if len(identity_spans) != 1:
-                    violations.append(
-                        f"{ADAPTER.name}: current 只能用对象严格身份匹配逻辑下标"
-                    )
-                else:
-                    identity_body = message_body[
-                        identity_spans[0][0] : identity_spans[0][1]
-                    ]
-                    index_pos = identity_body.find("identityIndex=mj;")
-                    break_pos = identity_body.find("break;")
-                    if not (
-                        identity_body.count("identityIndex=mj;") == 1
-                        and identity_body.count("break;") == 1
-                        and 0 <= index_pos < break_pos
-                        and identity_body.endswith("break;")
-                    ):
-                        violations.append(
-                            f"{ADAPTER.name}: 对象身份命中后必须保存下标并结束当前页遍历"
-                        )
-
-        if len(projection_spans) != 1:
+        fallback_publish = (
+            re.escape("group.anchorIdentity=projected;"),
+            re.escape("group.anchorPage=global.fushiLookupPageOf(projected);"),
+            re.escape("group.anchorIndex=resolved.index;"),
+        )
+        if not _matches_once_in_order(fallback_body, fallback_publish):
             violations.append(
-                f"{ADAPTER.name}: identity 下标投影必须通过宿主页上界门"
+                f"{ADAPTER.name}: identity 兜底必须原子发布宿主页同下标消息层"
+            )
+        # strength=2 是"这条绑定拿到了当前 current 的严格身份"这一事实的唯一记号，
+        # 后面 Capture 用它决定弱 candidate 能不能顶掉强 binding。它只能在 page 与
+        # 对象身份**同时**相等时置位。
+        strong_gate = (
+            "if(resolved.page==group.anchorPage&&resolved.identity===projected)"
+        )
+        strong_spans = _braced_spans_after(fallback_body, strong_gate)
+        if len(strong_spans) != 1:
+            violations.append(
+                f"{ADAPTER.name}: strength=2 必须由 page + 对象身份双相等门守住"
             )
         else:
-            projection_body = fallback_body[
-                projection_spans[0][0] : projection_spans[0][1]
-            ]
-            projected_decl = "varidentityMsg=hostMessages[identityIndex];"
-            projected_gate = "if(identityMsg!==void&&identityMsg!==null&&isvalididentityMsg)"
-            projected_spans = _braced_spans_after(projection_body, projected_gate)
-            if (
-                projection_body.count(projected_decl) != 1
-                or len(projected_spans) != 1
+            strong_body = fallback_body[strong_spans[0][0] : strong_spans[0][1]]
+            if not _matches_once_in_order(
+                strong_body,
+                (
+                    re.escape("group.currentIdentity=resolved.identity;"),
+                    re.escape("group.anchorStrength=2;"),
+                ),
             ):
                 violations.append(
-                    f"{ADAPTER.name}: identity 下标必须投影到宿主页并校验消息层"
+                    f"{ADAPTER.name}: 严格身份命中必须同时记 currentIdentity 与 "
+                    "strength=2"
                 )
-            else:
-                projected_body = projection_body[
-                    projected_spans[0][0] : projected_spans[0][1]
-                ]
-                if projected_body.count("anchorMsg=identityMsg;") != 1:
-                    violations.append(
-                        f"{ADAPTER.name}: identity 兜底必须发布宿主页同下标消息层"
-                    )
 
-    selection_start = capture.find(host_page)
-    selection_end = capture.find(entry_layer)
-    selection = (
-        capture[selection_start:selection_end]
-        if 0 <= selection_start < selection_end
-        else capture
-    )
     if re.search(
         r"(?:\.width|\.height)(?:==|!=|<=|>=)|"
         r"(?:==|!=|<=|>=)[^;{}]{0,80}(?:\.width|\.height)",
-        selection,
+        stamp,
     ):
         violations.append(f"{ADAPTER.name}: 锚点身份门不得比较消息层宽高")
 
-    current_num_decl_pos = (
-        current_num_decls[0].start() if len(current_num_decls) == 1 else -1
-    )
-    current_decl_pos = current_decls[0].start() if len(current_decls) == 1 else -1
-    current_num_gate_pos = (
-        current_num_gates[0].start() if len(current_num_gates) == 1 else -1
-    )
     ordered = (
-        capture.find(host_page),
-        capture.find(host_messages_decl),
-        capture.find(host_messages_select),
-        current_num_decl_pos,
-        current_num_gate_pos,
-        current_decl_pos,
-        capture.find(fallback_gate),
-        capture.find(entry_layer),
-        capture.find(entry_host_page),
+        stamp.find(host_page),
+        stamp.find(messages_decl),
+        current_num_decls[0].start() if len(current_num_decls) == 1 else -1,
+        current_num_gates[0].start() if len(current_num_gates) == 1 else -1,
+        stamp.find(resolved_decl),
+        stamp.find(resolved_gate),
     )
     if any(index < 0 for index in ordered) or list(ordered) != sorted(ordered):
         violations.append(
-            f"{ADAPTER.name}: 锚点必须按 hostPage→宿主页→currentNum→identity 兜底→entry 的顺序选择"
+            f"{ADAPTER.name}: 锚点必须按 hostPage→宿主页→currentNum→identity 兜底"
+            "的顺序选择"
         )
     elif (
         len(current_num_spans) != 1
-        or len(fallback_spans) != 1
+        or len(resolved_spans) != 1
+        or not (current_num_spans[0][1] < ordered[4] < ordered[5])
         or not (
-            current_num_spans[0][1]
-            < ordered[5]
-            < ordered[6]
-            < fallback_spans[0][1]
-            < ordered[7]
-        )
-        or not (
-            _brace_depth_at(capture, ordered[0])
-            == _brace_depth_at(capture, ordered[7])
-            == _brace_depth_at(capture, ordered[8])
+            _brace_depth_at(stamp, ordered[0])
+            == _brace_depth_at(stamp, ordered[2])
+            == _brace_depth_at(stamp, ordered[4])
         )
     ):
         violations.append(
-            f"{ADAPTER.name}: currentNum 与 identity 兜底必须是同一选择块中互不嵌套的两级路径"
+            f"{ADAPTER.name}: currentNum 与 identity 兜底必须是同一层里互不嵌套的两级路径"
         )
     return violations
 
@@ -1105,18 +1136,21 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     bootstrap = _compact_tjs(
         _restore_tjs_literals(tjs, functions["fushiLookupBootstrap"])
     )
+    # 两道门必须分开，且顺序固定：kag 无条件等；TextRender 只有**半就绪**（类在、方法
+    # 没挂全）才等。把第二道并回第一道会让「完全没有 TextRender」的经典 KAG3 游戏在
+    # bootstrap 开头就 return，KAGEX 缺席门的 else 分支随即变成永远走不到的死代码。
     readiness_gate = (
         'if(typeofglobal.kag!="Object"||global.kag===null||'
-        'typeofglobal.kag.addHook!="Object"||'
-        'typeofglobal.TextRender!="Object"||global.TextRender===null||'
-        'typeofglobal.TextRender.render!="Object"||'
+        'typeofglobal.kag.addHook!="Object")return;'
+        'if(typeofglobal.TextRender=="Object"&&global.TextRender!==null&&'
+        '(typeofglobal.TextRender.render!="Object"||'
         'typeofglobal.TextRender.done!="Object"||'
-        'typeofglobal.TextRender.drawCh!="Object")return;'
+        'typeofglobal.TextRender.drawCh!="Object"))return;'
     )
     if not bootstrap.startswith(readiness_gate):
         violations.append(
-            f"{ADAPTER.name}: bootstrap 必须在任何 lookup 状态初始化前同时等待 "
-            "kag 与 TextRender render/done/drawCh 完整就绪"
+            f"{ADAPTER.name}: bootstrap 必须先无条件等 kag，再单独等 TextRender "
+            "render/done/drawCh 半就绪（TextRender 完全缺席时不得 return）"
         )
 
     install_stages = re.findall(r"installStage=(\d+);", bootstrap)
@@ -1128,6 +1162,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "21",
         "30",
         "31",
+        # 35/36/37：私有 msgwin 插件出现后才封未来入口（getRender 桥）并扫既有
+        # MsgwinRender。它不是通用 KiriKiri readiness，所以有自己的三段阶段号——真机上
+        # 「卡在装桥还是卡在扫实例」必须分得开，合成一段就退回到只能靠改一版试一版。
+        "35",
+        "36",
+        "37",
         "40",
         "41",
         "42",
@@ -1137,18 +1177,21 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→40/41/42/43→50；"
+            "0→10/11→20/21→30/31→35/36/37→40/41/42/43→50；"
             f"实际 {install_stages}"
         )
 
     for marker, message in (
         (
-            "global.fushiLookupWrapperAuditPending=true;",
-            "wrapper audit 必须初始化一次 mouseMove 启动基线",
-        ),
-        (
+            "global.fushiLookupWrapperAuditPending=true;"
             "global.fushiLookupWrapperAuditLastState=-1;",
-            "wrapper audit 必须以 -1 初始化 lastState，保证首个状态会发布",
+            "wrapper audit 必须初始化一次 mouseMove 启动基线并把 lastState 置 -1",
+        ),
+        # 给某个 renderer 实例打完补丁后必须重新置位：实例集合变了，上一次审计的
+        # state 就不再代表现状。少了这一处，新实例的包装被游戏脚本覆写掉将永远不发诊断。
+        (
+            "patch.state=1;global.fushiLookupWrapperAuditPending=true;",
+            "实例补丁装成后必须重新置位 audit，令下一次审计覆盖新实例",
         ),
     ):
         require_once(bootstrap, marker, message)
@@ -1176,7 +1219,25 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         'if(typeofglobal.TextRender.drawCh!="Object")state=state|32;'
         "elseif(global.fushiLookupDrawChInstallFailed||"
         "global.TextRender.drawCh!==global.fushiLookupInstalledDrawChWrapper)"
-        "state=state|64;}}catch(e){state=state|128;}"
+        "state=state|64;}"
+        # 512/1024：私有 msgwin 插件的 getRender 入口没了，或被别人换掉。与 1..64 分开
+        # 编码，因为它们是**两条独立的安装路径**——全局类补丁好着、实例入口坏了，症状同样
+        # 是"没有卡片"，合成一位就分不出该去修哪条。
+        "varplugin=global.fushiLookupResolveMsgwinPlugin();"
+        "if(plugin!==void){"
+        'if(typeofplugin.getRender!="Object")state=state|512;'
+        "elseif(global.fushiLookupInstanceGetRenderInstallFailed||"
+        "plugin!==global.fushiLookupInstanceGetRenderOwner||"
+        "plugin.getRender!==global.fushiLookupInstanceGetRenderWrapper)"
+        "state=state|1024;}"
+        # 2048：已经打过补丁的 renderer 实例被游戏脚本覆写回去了。
+        "varpatches=global.fushiLookupInstancePatches;"
+        "for(varpi=0;pi<patches.count&&pi<16;pi++){"
+        "varpatch=patches[pi];"
+        "if(patch.state==1&&(patch.renderer.render!==patch.renderWrapper||"
+        "patch.renderer.done!==patch.doneWrapper||"
+        "patch.renderer.drawCh!==patch.drawChWrapper)){state=state|2048;break;}}"
+        "}catch(e){state=state|128;}"
         "if(state!=global.fushiLookupWrapperAuditLastState){"
         "global.fushiLookupWrapperAuditLastState=state;"
         'global.fushiLookupNoteError("wrapper.identity",'
@@ -1184,8 +1245,9 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     )
     if audit != audit_contract:
         violations.append(
-            f"{ADAPTER.name}: wrapper audit 必须保留固定 1/2/4/8/16/32/64/128 "
-            "bitmask，且只在 lastState 变化时发布无内容 identity 诊断"
+            f"{ADAPTER.name}: wrapper audit 必须保留固定 "
+            "1/2/4/8/16/32/64/128/512/1024/2048 bitmask，"
+            "且只在 lastState 变化时发布无内容 identity 诊断"
         )
 
     left_click = _compact_tjs(
@@ -1194,11 +1256,18 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     mouse_move = _compact_tjs(
         _restore_tjs_literals(tjs, functions["fushiLookupMouseMoveHook"])
     )
+    # 人工点击是低频的，所以这里可以做有界的重活：先把 getRender 桥补上（游戏可能在
+    # bootstrap 之后才加载 msgwin 插件），再扫一遍既有 renders[]（覆盖游戏直接替换
+    # textRender 而没走 getRender 的路径），最后才审计。顺序固定：审计要看的是补完之后
+    # 的现状，先审后补等于永远审的是上一帧。
     if not left_click.startswith(
-        "try{global.fushiLookupAuditWrappers(true);"
+        "try{global.fushiLookupInstallGetRenderBridge();"
+        "global.fushiLookupSweepMsgwinRenders();"
+        "global.fushiLookupAuditWrappers(true);"
     ) or left_click.count("global.fushiLookupAuditWrappers(true);") != 1:
         violations.append(
-            f"{ADAPTER.name}: leftClick 必须每次先 AuditWrappers(true)，低频复核后续脚本覆写"
+            f"{ADAPTER.name}: leftClick 必须每次先补 getRender 桥 + 扫 MsgwinRenders "
+            "再 AuditWrappers(true)，低频复核后续脚本覆写"
         )
     if not mouse_move.startswith(
         "try{global.fushiLookupAuditWrappers(false);"
@@ -1589,11 +1658,15 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         )
 
     capture = functions["fushiLookupCapture"]
+    # expectedBindRevision 与 lease/epoch 同属"进入这次 Capture 时就冻结"的快照：
+    # drawCh 在本次 render 之后还会继续绑新的原点组，用调用时刻的 global 版本号配对
+    # 就会把下一句的绑定当成本句的。这个参数必须由调用方传进来，不能在函数里现取。
     if parameters["fushiLookupCapture"] != (
-        "renderer,capturePhase,expectedLease,expectedRenderEpoch"
+        "renderer,capturePhase,expectedLease,expectedRenderEpoch,expectedBindRevision"
     ):
         violations.append(
-            f"{ADAPTER.name}: Capture 必须携 render/done 阶段与不可变 lease/epoch"
+            f"{ADAPTER.name}: Capture 必须携 render/done 阶段与不可变 "
+            "lease/epoch/bindRevision"
         )
     token = functions["fushiLookupCaptureTokenCurrent"]
     for needle, message in (
@@ -1624,7 +1697,9 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "expectedLease,expectedRenderEpoch))return;"
     )
     token_positions = [m.start() for m in re.finditer(re.escape(token_gate), capture)]
-    getter = capture.find("(renderer.getCharactersincontextofrenderer)(0,0)")
+    # getCharacters 可能是带私有 ObjThis 的 closure，再 incontextof 一次会把 this 换掉，
+    # 所以取出来直接调用。锚点跟着实现走，别倒回去要求 incontextof。
+    getter = capture.find("varcharacters=getCharacters(0,0);")
     adopt_call_position = capture.find(
         "slotAdoption=global.fushiLookupAdoptSlot(entry,line,"
     )
@@ -1641,24 +1716,32 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "global.fushiLookupRetireAnchorPeers(entry,logicalSlot.page,logicalSlot.index);"
     )
     candidate_publish = capture.find("entry.glyphs=glyphs;", retire_call_position)
+    # 九道门，一道也不能少。每道都紧跟在一次**可能重入渲染**的调用之后：Capture 里
+    # 每次把控制权交回游戏代码（getCharacters、ResolveCurrentSlot、AdoptSlot），回来时
+    # 这个 entry 都可能已经被另一次 render 复用（ABA），此时再往它身上写就是改错对象。
+    # 第 3 道守的是 ResolveCurrentSlot 返回后写 entry.observed* 那一步——它和别的门一样
+    # 不可省：observed 快照本身就是后面配对锚点的依据。
     token_order_ok = (
-        len(token_positions) == 8
+        len(token_positions) == 9
         and len(clear_positions) == 2
         and 0 <= token_positions[0] < getter < token_positions[1]
-        < token_positions[2] < adopt_call_position < token_positions[3]
-        < clear_positions[0] < token_positions[4] < fallback_identity
-        < token_positions[5] < precommit < retire_call_position
-        < token_positions[6] < candidate_publish < clear_positions[1]
-        < token_positions[7]
+        < token_positions[2] < token_positions[3] < adopt_call_position
+        < fallback_start < token_positions[4]
+        < clear_positions[0] < token_positions[5] < fallback_identity
+        < token_positions[6] < precommit < retire_call_position
+        < token_positions[7] < candidate_publish < clear_positions[1]
+        < token_positions[8]
     )
     if not token_order_ok:
         violations.append(
-            f"{ADAPTER.name}: Capture 必须按 getter 前后、Adopt 前、fallback 清理前后、"
-            "Retire 前后和最终清理后保留 8 个有序 token 门"
+            f"{ADAPTER.name}: Capture 必须按 getter 前后、observed 快照前、Adopt 前、"
+            "fallback 清理前后、Retire 前后和最终清理后保留 9 个有序 token 门"
         )
 
     clear_binding = functions["fushiLookupClearEntryBinding"]
-    for forbidden in ("fillRect", ".visible", ".update(", "fushiLookupDismiss"):
+    # `.visible=` 而不是 `.visible`：账本里合法地存着 `entry.visibleHost`，裸子串会把它
+    # 当成"改了 Layer 可见性"报出来。禁的是**写**引擎的可见性，不是名字里带 visible。
+    for forbidden in ("fillRect", ".visible=", ".update(", "fushiLookupDismiss"):
         if forbidden in clear_binding:
             violations.append(
                 f"{ADAPTER.name}: ClearEntryBinding 必须是纯账本操作，禁止 Layer/Dismiss: {forbidden}"
@@ -1718,7 +1801,10 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         re.escape(
             "if(spanErrX>toleranceX||spanErrY>toleranceY)continue;"
         ),
-        re.escape("if(!global.fushiLookupVisible(g.host))continue;"),
+        # 可见性判据必须走 BindGroupVisible(g)，不能退回裸 `fushiLookupVisible(g.host)`：
+        # drawCh 的逐字淡入宿主在角色口型/表情切换时会变 hidden，而 KAG message 仍在屏上。
+        # 按短命 host 判，整句会在配音角色一说话就变成不可选。
+        re.escape("if(!global.fushiLookupBindGroupVisible(g))continue;"),
     )
     if not _matches_once_in_order(capture, span_patterns):
         violations.append(
@@ -1869,9 +1955,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         ),
         re.escape("if(groups[vi].clock<victimClock)"),
         re.escape("groups.erase(victim);"),
-        re.escape("varyRewound=originY<slot.lastOy-2;"),
+        # drawX/drawY 是**逐字**落点（ch.x/ch.y），不是 drawCh 传进来的共享行原点
+        # ox/oy。用行原点判换行会把整行的最后一个字当成行起点，正是第一版包围盒恒不
+        # 命中的成因；锚点必须跟着逐字落点走。
+        re.escape("varyRewound=drawY<slot.lastOy-2;"),
         re.escape(
-            "varreturnedTop=originY<=slot.minOy+2&&originX<slot.lastOx-2;"
+            "varreturnedTop=drawY<=slot.minOy+2&&drawX<slot.lastOx-2;"
         ),
         re.escape(
             "varnewRun=slot.count>0&&(yRewound||returnedTop);"
@@ -1898,21 +1987,29 @@ def find_invalid_lookup_entry_visibility_lifecycle(
             "varcurrentIdentityState="
             "global.fushiLookupCurrentIdentityState(entry);"
         ),
-        re.escape("varvisibleHost=entry.visibleHost;"),
+        # 可见性只能经 fushiLookupEntryVisible 这一个入口：它内部是「entry.layer 可见就算
+        # 可见，否则回退 visibleHost」的固定顺序。把这两段拆开写在 Probe 里，顺序一错就是
+        # 两类真机故障之一——先判短命 host 会让配音角色一说话整句变不可选（BUG-1631），
+        # 而完全不看 layer 又会让没有 visibleHost 的经典 KAG3 采集面永远命不中。
         re.escape(
             "if(currentIdentityState<0||(currentIdentityState==0&&"
-            "(visibleHost===void||visibleHost===null||!isvalidvisibleHost||"
-            "!global.fushiLookupVisible(visibleHost))))"
+            "!global.fushiLookupEntryVisible(entry)))"
         ),
     )
     if not _matches_once_in_order(probe, probe_patterns):
         violations.append(
-            f"{ADAPTER.name}: Probe 坐标必须走 layer；可见性必须走 identity/visibleHost 共存语义"
+            f"{ADAPTER.name}: Probe 坐标必须走 layer；可见性必须走 "
+            "identity/EntryVisible 共存语义"
         )
-    if "global.fushiLookupVisible(layer)" in probe:
-        violations.append(
-            f"{ADAPTER.name}: Probe 不得拿 KAG 坐标 anchor 当可见性真值"
-        )
+    for forbidden in (
+        "global.fushiLookupVisible(layer)",
+        "global.fushiLookupVisible(visibleHost)",
+    ):
+        if forbidden in probe:
+            violations.append(
+                f"{ADAPTER.name}: Probe 不得自行拼可见性判据，必须走 "
+                f"EntryVisible: {forbidden}"
+            )
 
     render_wrapper = (
         "varcaptureLease=0,captureEpoch=0;"
@@ -1949,6 +2046,66 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "TextRender.done 必须 original-first，且仅调用 Capture(2)",
     )
     return violations
+
+
+def _strip_line_comments(text: str) -> str:
+    """去掉 `//` 行注释，长度不变（换成空格）。
+
+    判据必须落在**可执行代码**上：注释里写一句"归属见 fushiLookupCardEntry"不该让守卫
+    转绿，否则改坏判据只要留着注释就能蒙混过去。
+    """
+    return re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
+
+
+def _tjs_function_body(text: str, name: str) -> tuple[int, int] | None:
+    """TJS `global.<name> = function(...) { ... }` 的函数体区间（含两端大括号）。"""
+    match = re.search(rf"global\.{re.escape(name)}\s*=\s*function", text)
+    if match is None:
+        return None
+    start = text.find("{", match.end())
+    if start < 0:
+        return None
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return (start, index + 1)
+    return None
+
+
+# 收卡归属：卡片是在 fushiLookupApply 那一刻绑到某条 entry 上的，只有**那条**台词重绘
+# 才轮得到收卡。窗口取得比一条 if 语句宽一些（判据可能写成多行），但必须在去注释后的
+# 文本上找。
+CARD_OWNER_MARKER = "fushiLookupCardEntry"
+_CARD_OWNER_WINDOW = 300
+
+
+def find_ownerless_card_dismissals(source: MaskedSource) -> list[str]:
+    """`fushiLookupCapture` 里的收卡必须带归属判据（BUG-1606）。
+
+    捕获回调对**每一个** TextRender renderer 触发：名字层、第二消息层、选项层、历史层
+    都会走进来。旧判据是「这个 renderer 上的行文本变了就收卡」，于是同一句里说话人切换
+    时另一个文本层逐字重绘，每多一个字就把用户正在读的查词卡片打掉一次（鼠标一动 hover
+    又把它拉回来）——表现就是卡片反复闪没。归属判据是这条路径上唯一的关卡：真正的换行
+    由 host 侧「会话最新行变了」兜底，与这里是哪个 renderer 无关。
+    """
+    span = _tjs_function_body(source.text, "fushiLookupCapture")
+    if span is None:
+        return [f"{ADAPTER.name} 找不到 TJS 的 fushiLookupCapture 函数体"]
+    body = _strip_line_comments(source.text[span[0] : span[1]])
+    offenders: list[str] = []
+    for index in _iter_find(body, "fushiLookupDismiss("):
+        window = body[max(0, index - _CARD_OWNER_WINDOW) : index]
+        if CARD_OWNER_MARKER in window:
+            continue
+        offenders.append(
+            f"{ADAPTER.name}:{source.line_of(span[0] + index)} "
+            f"收卡处附近没有 {CARD_OWNER_MARKER} 归属判据"
+        )
+    return offenders
 
 
 # ── 扫真文件 ────────────────────────────────────────────────────────────────
@@ -2034,6 +2191,15 @@ class RealAdapterTest(unittest.TestCase):
             "同句保留 binding，Probe 只接受当前 generation 的 activeEntry。",
         )
 
+    def test_card_dismissal_is_scoped_to_the_owning_line(self) -> None:
+        self.assertEqual(
+            [],
+            find_ownerless_card_dismissals(self.source),
+            "fushiLookupCapture 对每个 TextRender renderer 都触发（名字层 / 第二消息层 / "
+            "选项层 / 历史层都在内）；收卡必须只认卡片自己依附的那条台词，否则说话人切换"
+            "时另一个文本层逐字重绘会把用户正在读的卡片反复打掉（BUG-1606）。",
+        )
+
 
 # ── 变异自测：证明上面每条规则真的会红 ──────────────────────────────────────
 
@@ -2088,8 +2254,35 @@ if(global.fushiLookupProbeMode)
 	global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
 	global.Layer.drawText = function(x, y, text) { return 0; };
 }
+if(typeof global.TextRender == "Object")
+{
+	global.TextRender.render = function() { return 0; };
+}
+else
+{
+	global.fushiLookupOriginalDrawText = global.Layer.drawText;
+	global.Layer.drawText = function(x, y, text) { return 0; };
+}
+global.fushiLookupCapture = function(renderer)
+{
+    var entry = global.fushiLookupEntryFor(renderer);
+    var changed = entry.line != renderer.line;
+    entry.line = renderer.line;
+    if(changed)
+    {
+        if(global.fushiLookupCardEntry === entry) global.fushiLookupDismiss();
+        else if(global.fushiLookupHitEntry === entry) global.fushiLookupClearHover();
+    }
+};
 )TJS";
 """
+
+# 干净样本里那条带归属的收卡判据（变异自测的锚点）。
+OWNED_DISMISS_SAMPLE = (
+    "        if(global.fushiLookupCardEntry === entry) global.fushiLookupDismiss();\n"
+    "        else if(global.fushiLookupHitEntry === entry) "
+    "global.fushiLookupClearHover();"
+)
 
 
 # 故意拆成两个相邻 raw literal：生产 bootstrap 也是这样拼出来的。共同根守卫若错误地扫
@@ -2172,67 +2365,66 @@ global.fushiLookupProbe = function(submit)
 # 相邻 raw literal。clean 样本保留这个形状，防止守卫退回去扫 C++ masked 文本。
 ANCHOR_IDENTITY_CLEAN_SAMPLE = r'''
 static const wchar_t kAnchorBootstrap[] = LR"TJS(
-global.fushiLookupCapture = function(renderer)
+global.fushiLookupStampBindGroup = function(group, host)
 {
-  var anchorMsg = void;
-  var hostPage = global.fushiLookupPageOf(best.host);
-  var hostMessages = void;
-  try
-  {
-    hostMessages = (hostPage == 1) ? global.kag.fore.messages :
-      ((hostPage == 2) ? global.kag.back.messages : void);
-  }
-  catch(e) { hostMessages = void; }
+  group.hostPage = global.fushiLookupPageOf(host);
+  group.anchorPage = 0;
+  group.anchorIndex = -1;
+  group.anchorIdentity = void;
+  group.currentIdentity = void;
+  group.anchorStrength = 0;
+  var messages = global.fushiLookupMessagesForPage(group.hostPage);
   var currentNum = global.fushiLookupField(global.kag, "currentNum");
-  if(hostMessages !== void && typeof currentNum == "Integer" &&
-    currentNum >= 0 && currentNum < hostMessages.count)
+  if(messages !== void && typeof currentNum == "Integer" &&
+    currentNum >= 0 && currentNum < messages.count)
   {
     try
     {
-      var indexedMsg = hostMessages[currentNum];
-      if(indexedMsg !== void && indexedMsg !== null && isvalid indexedMsg)
+      var indexed = messages[currentNum];
+      if(indexed !== void && indexed !== null && isvalid indexed)
       {
-        anchorMsg = indexedMsg;
+        group.anchorIdentity = indexed;
+        group.anchorPage = global.fushiLookupPageOf(indexed);
+        group.anchorIndex = currentNum;
+        group.anchorStrength = 1;
       }
     }
     catch(e) {}
   }
 )TJS" LR"TJS(
-  var currentMsg = global.fushiLookupField(global.kag, "current");
-  if(anchorMsg === void && hostMessages !== void && currentMsg !== void &&
-    currentMsg !== null && isvalid currentMsg)
+  var resolved = global.fushiLookupResolveCurrentSlot();
+  if(resolved !== void && messages !== void && resolved.index >= 0 &&
+    resolved.index < messages.count)
   {
-    var identityIndex = -1;
     try
     {
-      var identityPages = [global.kag.fore.messages,
-        global.kag.back.messages];
-      for(var pgi = 0; pgi < identityPages.count && identityIndex < 0; pgi++)
+      var projected = messages[resolved.index];
+      if(projected !== void && projected !== null && isvalid projected &&
+        (group.anchorIdentity === void ||
+         (resolved.page == group.anchorPage &&
+          resolved.index == group.anchorIndex)))
       {
-        var identityMessages = identityPages[pgi];
-        for(var mj = 0; mj < identityMessages.count; mj++)
+        group.anchorIdentity = projected;
+        group.anchorPage = global.fushiLookupPageOf(projected);
+        group.anchorIndex = resolved.index;
+        if(resolved.page == group.anchorPage &&
+          resolved.identity === projected)
         {
-          if(identityMessages[mj] === currentMsg)
-          {
-            identityIndex = mj;
-            break;
-          }
-        }
-      }
-      if(identityIndex >= 0 && identityIndex < hostMessages.count)
-      {
-        var identityMsg = hostMessages[identityIndex];
-        if(identityMsg !== void && identityMsg !== null && isvalid identityMsg)
-        {
-          anchorMsg = identityMsg;
+          group.currentIdentity = resolved.identity;
+          group.anchorStrength = 2;
         }
       }
     }
     catch(e) {}
   }
-  entry.layer = (anchorMsg !== void && isvalid anchorMsg)
-    ? anchorMsg : best.host;
-  entry.hostPage = hostPage;
+};
+
+global.fushiLookupCapture = function(renderer, capturePhase,
+  expectedLease, expectedRenderEpoch, expectedBindRevision)
+{
+  var entry = global.fushiLookupFindEntry(renderer);
+  entry.layer = best.anchorIdentity;
+  entry.hostPage = best.hostPage;
 };
 )TJS";
 '''
@@ -2245,11 +2437,11 @@ static const wchar_t kEntryBootstrap[] = LR"TJS(
 global.fushiLookupBootstrap = function(tick)
 {
   if(typeof global.kag != "Object" || global.kag === null ||
-    typeof global.kag.addHook != "Object" ||
-    typeof global.TextRender != "Object" || global.TextRender === null ||
-    typeof global.TextRender.render != "Object" ||
+    typeof global.kag.addHook != "Object") return;
+  if(typeof global.TextRender == "Object" && global.TextRender !== null &&
+    (typeof global.TextRender.render != "Object" ||
     typeof global.TextRender.done != "Object" ||
-    typeof global.TextRender.drawCh != "Object") return;
+    typeof global.TextRender.drawCh != "Object")) return;
 var installStage = 0;
 try
 {
@@ -2286,6 +2478,27 @@ global.fushiLookupAuditWrappers = function(force)
       else if(global.fushiLookupDrawChInstallFailed ||
         global.TextRender.drawCh !== global.fushiLookupInstalledDrawChWrapper)
         state = state | 64;
+    }
+    var plugin = global.fushiLookupResolveMsgwinPlugin();
+    if(plugin !== void)
+    {
+      if(typeof plugin.getRender != "Object") state = state | 512;
+      else if(global.fushiLookupInstanceGetRenderInstallFailed ||
+        plugin !== global.fushiLookupInstanceGetRenderOwner ||
+        plugin.getRender !== global.fushiLookupInstanceGetRenderWrapper)
+        state = state | 1024;
+    }
+    var patches = global.fushiLookupInstancePatches;
+    for(var pi = 0; pi < patches.count && pi < 16; pi++)
+    {
+      var patch = patches[pi];
+      if(patch.state == 1 && (patch.renderer.render !== patch.renderWrapper ||
+        patch.renderer.done !== patch.doneWrapper ||
+        patch.renderer.drawCh !== patch.drawChWrapper))
+      {
+        state = state | 2048;
+        break;
+      }
     }
   }
   catch(e) { state = state | 128; }
@@ -2551,14 +2764,24 @@ global.fushiLookupCaptureTokenCurrent = function(entry, renderer,
 };
 
 global.fushiLookupCapture = function(renderer, capturePhase,
-  expectedLease, expectedRenderEpoch)
+  expectedLease, expectedRenderEpoch, expectedBindRevision)
 {
   var entry = global.fushiLookupFindEntry(renderer);
   if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
     expectedLease, expectedRenderEpoch)) return;
-  var characters = renderer.getCharacters(0, 0);
+  var getCharacters = renderer.getCharacters;
+  var characters = getCharacters(0, 0);
   if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
     expectedLease, expectedRenderEpoch)) return;
+  var resolvedCurrent = global.fushiLookupResolveCurrentSlot();
+  if(capturePhase != 3 && resolvedCurrent !== void)
+  {
+    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+      expectedLease, expectedRenderEpoch)) return;
+    entry.observedPage = resolvedCurrent.page;
+    entry.observedIndex = resolvedCurrent.index;
+    entry.observedIdentity = resolvedCurrent.identity;
+  }
   var slotAdoption = void;
   var logicalSlot = void;
   var entrySameLogical = false;
@@ -2582,7 +2805,7 @@ global.fushiLookupCapture = function(renderer, capturePhase,
     var spanErrY = Math.abs((g.maxOy - g.minOy) - glyphOriginSpanY);
     var toleranceX = 12, toleranceY = 2;
     if(spanErrX > toleranceX || spanErrY > toleranceY) continue;
-    if(!global.fushiLookupVisible(g.host)) continue;
+    if(!global.fushiLookupBindGroupVisible(g)) continue;
     best = g;
   }
   if(best !== void)
@@ -2627,10 +2850,10 @@ global.fushiLookupCapture = function(renderer, capturePhase,
         }
       }
       entry.glyphs = [];
-    global.fushiLookupClearEntryBinding(entry);
-    if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
-      expectedLease, expectedRenderEpoch)) return;
-    entry.logicalLine = line;
+      global.fushiLookupClearEntryBinding(entry);
+      if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
+        expectedLease, expectedRenderEpoch)) return;
+      entry.logicalLine = line;
       entry.slotGeneration++;
     }
   }
@@ -2673,8 +2896,10 @@ global.fushiLookupCapture = function(renderer, capturePhase,
   }
 };
 
-global.fushiLookupBindOrigin = function(renderer, layer, originX, originY)
+global.fushiLookupBindOrigin = function(renderer, layer, originX, originY, ch)
 {
+  var drawX = originX + ch.x;
+  var drawY = originY + ch.y;
   var groups = global.fushiLookupBindGroups;
   if(groups.count >= 8)
   {
@@ -2697,9 +2922,9 @@ global.fushiLookupBindOrigin = function(renderer, layer, originX, originY)
     groups.erase(victim);
   }
   var slot = groups[0];
-  var yRewound = originY < slot.lastOy - 2;
-  var returnedTop = originY <= slot.minOy + 2 &&
-    originX < slot.lastOx - 2;
+  var yRewound = drawY < slot.lastOy - 2;
+  var returnedTop = drawY <= slot.minOy + 2 &&
+    drawX < slot.lastOx - 2;
   var newRun = slot.count > 0 && (yRewound || returnedTop);
   if(newRun) slot.count = 0;
 };
@@ -2712,12 +2937,17 @@ global.fushiLookupProbe = function(submit)
   if(!global.fushiLookupComputeOffset(layer)) return false;
   var currentIdentityState =
     global.fushiLookupCurrentIdentityState(entry);
-  var visibleHost = entry.visibleHost;
   if(currentIdentityState < 0 ||
     (currentIdentityState == 0 &&
-    (visibleHost === void || visibleHost === null ||
-    !isvalid visibleHost || !global.fushiLookupVisible(visibleHost))))
+    !global.fushiLookupEntryVisible(entry)))
     return false;
+  return true;
+};
+
+global.fushiLookupPatchRendererInstance = function(patch)
+{
+  patch.state = 1;
+  global.fushiLookupWrapperAuditPending = true;
   return true;
 };
 
@@ -2725,6 +2955,8 @@ global.fushiLookupLeftClickHook = function()
 {
   try
   {
+    global.fushiLookupInstallGetRenderBridge();
+    global.fushiLookupSweepMsgwinRenders();
     global.fushiLookupAuditWrappers(true);
     return global.fushiLookupProbe(true);
   }
@@ -2807,6 +3039,14 @@ global.fushiLookupInstalledDrawChWrapper = global.TextRender.drawCh;
 global.fushiLookupDrawChInstallFailed =
   global.fushiLookupInstalledDrawChWrapper === global.fushiLookupOriginalDrawCh;
 installStage = 31;
+if(global.fushiLookupResolveMsgwinPlugin() !== void)
+{
+  installStage = 35;
+  global.fushiLookupInstallGetRenderBridge();
+  installStage = 36;
+  global.fushiLookupSweepMsgwinRenders();
+  installStage = 37;
+}
 installStage = 40;
 global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
 installStage = 41;
@@ -2840,7 +3080,7 @@ catch(e)
 # 这是单独的点名变异，不能只靠“新结构不完整”的附带报错证明守卫有效。
 LEGACY_CROSS_PAGE_ANCHOR_SAMPLE = r'''
 static const wchar_t kAnchorBootstrap[] = LR"TJS(
-global.fushiLookupCapture = function(renderer)
+global.fushiLookupStampBindGroup = function(group, host)
 {
   var anchorMsg = void;
   var pages = [global.kag.fore, global.kag.back];
@@ -2850,16 +3090,22 @@ global.fushiLookupCapture = function(renderer)
     for(var mj = 0; mj < messages.count; mj++)
     {
       var candidate = messages[mj];
-      if(candidate.width == best.host.width &&
-        candidate.height == best.host.height)
+      if(candidate.width == host.width &&
+        candidate.height == host.height)
       {
         anchorMsg = candidate;
         break;
       }
     }
   }
-  entry.layer = (anchorMsg !== void && isvalid anchorMsg)
-    ? anchorMsg : best.host;
+  group.anchorIdentity = anchorMsg;
+};
+
+global.fushiLookupCapture = function(renderer, capturePhase,
+  expectedLease, expectedRenderEpoch, expectedBindRevision)
+{
+  var entry = global.fushiLookupFindEntry(renderer);
+  entry.layer = best.anchorIdentity;
 };
 )TJS";
 '''
@@ -2933,6 +3179,13 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_default_on_probe_switches(self.clean))
         self.assertEqual([], find_unvalidated_placeholder_values(self.clean))
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
+        self.assertEqual([], find_ownerless_card_dismissals(self.clean))
+        # 干净样本里确实有一个 KAGEX 缺席门 else，否则放行 classic 采集面这条分支
+        # 在自测里根本没被走到（放行规则会变成永远走不到的死代码而无人察觉）。
+        self.assertNotEqual([], _classic_fallback_spans(CLEAN_SAMPLE))
+        # 干净样本里确实有一次收卡，否则归属这条规则根本没被走到。
+        self.assertIsNotNone(_tjs_function_body(CLEAN_SAMPLE, "fushiLookupCapture"))
+        self.assertIn("fushiLookupDismiss(", CLEAN_SAMPLE)
         # 干净样本里确实有一处运行期占位符替换，否则这条规则根本没被走到。
         self.assertTrue(
             any(
@@ -3004,12 +3257,12 @@ class MutationSelfTest(unittest.TestCase):
     def test_bootstrap_readiness_precedes_lookup_state_initialization(self) -> None:
         readiness = (
             '  if(typeof global.kag != "Object" || global.kag === null ||\n'
-            '    typeof global.kag.addHook != "Object" ||\n'
-            '    typeof global.TextRender != "Object" || '
-            'global.TextRender === null ||\n'
-            '    typeof global.TextRender.render != "Object" ||\n'
+            '    typeof global.kag.addHook != "Object") return;\n'
+            '  if(typeof global.TextRender == "Object" && '
+            'global.TextRender !== null &&\n'
+            '    (typeof global.TextRender.render != "Object" ||\n'
             '    typeof global.TextRender.done != "Object" ||\n'
-            '    typeof global.TextRender.drawCh != "Object") return;\n'
+            '    typeof global.TextRender.drawCh != "Object")) return;\n'
         )
         install_start = "var installStage = 0;\ntry\n{\n"
         state = "global.fushiLookupSlots = [];\n"
@@ -3178,8 +3431,13 @@ class MutationSelfTest(unittest.TestCase):
                 "    var spanErrX = Math.abs(g.maxOx - glyphOriginSpanX);\n",
             ),
             (
-                "    if(!global.fushiLookupVisible(g.host)) continue;\n",
+                "    if(!global.fushiLookupBindGroupVisible(g)) continue;\n",
                 "",
+            ),
+            # 退回裸的短命宿主可见性 = BUG-1631 的原始形状，必须单独变红。
+            (
+                "    if(!global.fushiLookupBindGroupVisible(g)) continue;\n",
+                "    if(!global.fushiLookupVisible(g.host)) continue;\n",
             ),
         )
         for old, new in mutations:
@@ -3191,8 +3449,8 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_multiline_downward_wrap_does_not_reset_origin_span(self) -> None:
         dirty = self._mutate_entry_lifecycle(
-            "  var yRewound = originY < slot.lastOy - 2;\n",
-            "  var yRewound = originY > slot.lastOy + 2;\n",
+            "  var yRewound = drawY < slot.lastOy - 2;\n",
+            "  var yRewound = drawY > slot.lastOy + 2;\n",
         )
         self.assertNotEqual(
             [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
@@ -3211,9 +3469,13 @@ class MutationSelfTest(unittest.TestCase):
     def test_no_candidate_new_line_never_dismisses(self) -> None:
         dirty = self._mutate_entry_lifecycle(
             "      global.fushiLookupClearEntryBinding(entry);\n"
+            "      if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,\n"
+            "        expectedLease, expectedRenderEpoch)) return;\n"
             "      entry.logicalLine = line;\n",
             "      global.fushiLookupClearEntryBinding(entry);\n"
             "      global.fushiLookupDismiss();\n"
+            "      if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,\n"
+            "        expectedLease, expectedRenderEpoch)) return;\n"
             "      entry.logicalLine = line;\n",
         )
         self.assertNotEqual(
@@ -3248,12 +3510,19 @@ class MutationSelfTest(unittest.TestCase):
             [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
         )
 
-    def test_all_eight_capture_token_boundaries_are_required(self) -> None:
+    def test_all_nine_capture_token_boundaries_are_required(self) -> None:
         gate = (
             "  if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,\n"
             "    expectedLease, expectedRenderEpoch)) return;\n"
         )
-        self.assertEqual(8, ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE.count(gate))
+        # 样本里这九道门分布在不同缩进层级（fallback 分支比外层多两级），所以按
+        # 缩进无关的调用形态数，别拿某一种缩进的整块字符串去数。
+        self.assertEqual(
+            9,
+            ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE.count(
+                "if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,"
+            ),
+        )
         dirty = self._mutate_entry_lifecycle(gate, "")
         self.assertNotEqual(
             [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
@@ -3366,9 +3635,10 @@ class MutationSelfTest(unittest.TestCase):
         )
 
     def test_probe_separates_coordinate_layer_from_visible_host(self) -> None:
+        """可见性判据被拆回 Probe 里手写，就不再是 EntryVisible 的固定顺序。"""
         dirty = self._mutate_entry_lifecycle(
-            "  var visibleHost = entry.visibleHost;\n",
-            "  var visibleHost = layer;\n",
+            "    !global.fushiLookupEntryVisible(entry)))\n",
+            "    !global.fushiLookupVisible(layer)))\n",
         )
         self.assertNotEqual(
             [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
@@ -3422,6 +3692,32 @@ class MutationSelfTest(unittest.TestCase):
     def test_compound_append_of_a_variable_is_red(self) -> None:
         dirty = self._mutate("script += std::to_wstring(seq)", "script += word")
         self.assertNotEqual([], find_dynamic_tjs_concatenations(dirty))
+
+    def test_global_patch_outside_every_gate_is_red(self) -> None:
+        # 补丁挪到无门位置（既不在探测分支、也不在 KAGEX 缺席门里）：所有游戏都要
+        # 多绕一层，代价没有对价，必须红。
+        dirty = self._mutate(
+            "global.fushiLookupCapture = function(renderer)",
+            "global.Layer.drawText = function(renderer)",
+        )
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
+
+    def test_removing_the_kagex_gate_turns_the_classic_patch_red(self) -> None:
+        # 门被改成恒真（typeof global.TextRender 判据没了）：else 区间随之消失，
+        # 门内补丁立刻落进红区——这正是"别的游戏也跟着多绕一层"那一刻。
+        dirty = self._mutate(
+            'if(typeof global.TextRender == "Object")',
+            "if(global.fushiLookupAlways)",
+        )
+        self.assertEqual([], _classic_fallback_spans(dirty.text))
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
+
+    def test_gate_without_else_does_not_open_a_span(self) -> None:
+        # 只有真正的 else 才代表"这台游戏没有 KAGEX"。把 else 换成新的无条件块，
+        # 区间必须消失，块里的补丁必须红。
+        dirty = self._mutate("else", "if(1)")
+        self.assertEqual([], _classic_fallback_spans(dirty.text))
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
 
     def test_unrelated_string_concatenation_stays_green(self) -> None:
         # 反向变异：非 TJS 语句里加更多字符串拼接，守卫必须仍然绿（否则它一改就红）。
@@ -3496,8 +3792,8 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_anchor_host_page_not_derived_from_draw_host_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "  var hostPage = global.fushiLookupPageOf(best.host);",
-            "  var hostPage = global.fushiLookupPageOf(global.kag.current);",
+            "  group.hostPage = global.fushiLookupPageOf(host);",
+            "  group.hostPage = global.fushiLookupPageOf(global.kag.current);",
         )
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
@@ -3505,10 +3801,15 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_host_messages_hardcoded_to_fore_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "    hostMessages = (hostPage == 1) ? global.kag.fore.messages :\n"
-            "      ((hostPage == 2) ? global.kag.back.messages : void);",
-            "    hostMessages = global.kag.fore.messages;",
+            "  var messages = global.fushiLookupMessagesForPage(group.hostPage);",
+            "  var messages = global.kag.fore.messages;",
         )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_stale_anchor_fields_not_reset_is_red(self) -> None:
+        dirty = self._mutate_anchor("  group.currentIdentity = void;\n", "")
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
         )
@@ -3524,8 +3825,8 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_current_num_without_integer_gate_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            '  if(hostMessages !== void && typeof currentNum == "Integer" &&\n',
-            "  if(hostMessages !== void &&\n",
+            '  if(messages !== void && typeof currentNum == "Integer" &&\n',
+            "  if(messages !== void &&\n",
         )
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
@@ -3533,7 +3834,7 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_current_num_without_upper_bound_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "    currentNum >= 0 && currentNum < hostMessages.count)\n",
+            "    currentNum >= 0 && currentNum < messages.count)\n",
             "    currentNum >= 0)\n",
         )
         self.assertNotEqual(
@@ -3542,8 +3843,24 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_current_num_indexing_fore_directly_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "      var indexedMsg = hostMessages[currentNum];",
-            "      var indexedMsg = global.kag.fore.messages[currentNum];",
+            "      var indexed = messages[currentNum];",
+            "      var indexed = global.kag.fore.messages[currentNum];",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_current_num_hit_not_recorded_as_weak_strength_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "        group.anchorStrength = 1;\n", ""
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_identity_fallback_not_via_resolve_current_slot_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "  var resolved = global.fushiLookupResolveCurrentSlot();\n", ""
         )
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
@@ -3551,29 +3868,10 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_identity_fallback_allowed_to_override_current_num_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "  if(anchorMsg === void && hostMessages !== void && currentMsg !== void &&\n"
-            "    currentMsg !== null && isvalid currentMsg)\n",
-            "  if(hostMessages !== void && currentMsg !== void &&\n"
-            "    currentMsg !== null && isvalid currentMsg)\n",
-        )
-        self.assertNotEqual(
-            [], find_invalid_kag_anchor_identity_selection(dirty)
-        )
-
-    def test_identity_fallback_omitting_back_page_is_red(self) -> None:
-        dirty = self._mutate_anchor(
-            "      var identityPages = [global.kag.fore.messages,\n"
-            "        global.kag.back.messages];",
-            "      var identityPages = [global.kag.fore.messages];",
-        )
-        self.assertNotEqual(
-            [], find_invalid_kag_anchor_identity_selection(dirty)
-        )
-
-    def test_identity_fallback_using_id_instead_of_object_is_red(self) -> None:
-        dirty = self._mutate_anchor(
-            "          if(identityMessages[mj] === currentMsg)\n",
-            "          if(identityMessages[mj].id == currentMsg.id)\n",
+            "        (group.anchorIdentity === void ||\n"
+            "         (resolved.page == group.anchorPage &&\n"
+            "          resolved.index == group.anchorIndex)))\n",
+            "        true)\n",
         )
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
@@ -3581,8 +3879,18 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_identity_fallback_not_projected_to_host_page_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "        var identityMsg = hostMessages[identityIndex];",
-            "        var identityMsg = identityMessages[identityIndex];",
+            "      var projected = messages[resolved.index];",
+            "      var projected = global.kag.back.messages[resolved.index];",
+        )
+        self.assertNotEqual(
+            [], find_invalid_kag_anchor_identity_selection(dirty)
+        )
+
+    def test_strong_identity_without_dual_equality_gate_is_red(self) -> None:
+        dirty = self._mutate_anchor(
+            "        if(resolved.page == group.anchorPage &&\n"
+            "          resolved.identity === projected)\n",
+            "        if(resolved.identity !== void)\n",
         )
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
@@ -3590,25 +3898,25 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_size_comparison_reintroduced_as_identity_gate_is_red(self) -> None:
         dirty = self._mutate_anchor(
-            "        if(identityMsg !== void && identityMsg !== null && isvalid identityMsg)\n",
-            "        if(identityMsg !== void && identityMsg !== null && "
-            "isvalid identityMsg && identityMsg.width == best.host.width)\n",
+            "      if(projected !== void && projected !== null && isvalid projected &&\n",
+            "      if(projected !== void && projected !== null && isvalid projected &&\n"
+            "        projected.width == host.width &&\n",
         )
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
         )
 
-    def test_current_comp_reintroduced_instead_of_identity_projection_is_red(self) -> None:
+    def test_capture_reprojecting_current_num_is_red(self) -> None:
+        """锚点被搬回 Capture 就是这次修复要根除的形状。
+
+        Capture 跑在鼠标事件/渲染回调里，那时 kag.currentNum 可能已经指向共存的另一个
+        消息层；按它重新投影会把这条绑定挂到别人的台词上。冻结点只能是 drawCh 执行期。
+        """
         dirty = self._mutate_anchor(
-            "        var identityMsg = hostMessages[identityIndex];",
-            "        var identityMsg = currentMsg.comp;",
+            "  var entry = global.fushiLookupFindEntry(renderer);\n",
+            "  var entry = global.fushiLookupFindEntry(renderer);\n"
+            '  var late = global.fushiLookupField(global.kag, "currentNum");\n',
         )
-        self.assertNotEqual(
-            [], find_invalid_kag_anchor_identity_selection(dirty)
-        )
-
-    def test_not_persisting_host_page_is_red(self) -> None:
-        dirty = self._mutate_anchor("  entry.hostPage = hostPage;\n", "")
         self.assertNotEqual(
             [], find_invalid_kag_anchor_identity_selection(dirty)
         )
@@ -3623,6 +3931,7 @@ class MutationSelfTest(unittest.TestCase):
             any("pages=[fore,back]" in violation for violation in found),
             "旧跨页首个同尺寸 break 必须有自己的定向诊断，不能只靠其它缺项带红",
         )
+
 
     def test_primary_chain_starting_from_layer_is_red(self) -> None:
         dirty = self._mutate_coordinate(
@@ -3827,6 +4136,35 @@ class MutationSelfTest(unittest.TestCase):
         self.assertNotEqual(
             [], find_invalid_common_root_coordinate_conversion(dirty)
         )
+
+    def test_ownerless_card_dismissal_is_red(self) -> None:
+        # 退回旧判据：任意 renderer 的行文本变了就收卡。
+        dirty = self._mutate(OWNED_DISMISS_SAMPLE, "        global.fushiLookupDismiss();")
+        self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
+
+    def test_owner_marker_only_in_a_comment_is_still_red(self) -> None:
+        # 判据被改坏、只在注释里留个名字——守卫必须照红（否则它形同虚设）。
+        dirty = self._mutate(
+            OWNED_DISMISS_SAMPLE,
+            "        // 归属见 global.fushiLookupCardEntry\n"
+            "        global.fushiLookupDismiss();",
+        )
+        self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
+
+    def test_equivalent_owner_check_stays_green(self) -> None:
+        # 反向变异：判据换个等价写法，守卫不该跟着红（否则它是在守写法不是守行为）。
+        dirty = self._mutate(
+            OWNED_DISMISS_SAMPLE,
+            "        if(entry === global.fushiLookupCardEntry) "
+            "global.fushiLookupDismiss();",
+        )
+        self.assertEqual([], find_ownerless_card_dismissals(dirty))
+
+    def test_missing_capture_function_is_red(self) -> None:
+        dirty = MaskedSource(
+            CLEAN_SAMPLE.replace("global.fushiLookupCapture = function", "// gone", 1)
+        )
+        self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
 
     def test_masking_keeps_line_numbers_and_hides_literal_content(self) -> None:
         self.assertEqual(len(self.clean.masked), len(CLEAN_SAMPLE))

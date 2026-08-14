@@ -179,11 +179,26 @@ class SyncChannelAuthError implements Exception {
   String toString() => 'SyncChannelAuthError(${channel.type.name}): $error';
 }
 
+/// BUG-1604 测试缝：注入本轮要跑的通道列表，绕开 [resolveSyncBackend] 返回的真实
+/// 单例后端。生产恒为 null（走下面的真实枚举）。
+///
+/// 为什么必须有这个缝：本文件里「一条通道抛异常，其余通道照跑」是**循环结构**的
+/// 不变式，只能用「第一条通道 throw，断言第二条仍被调用」来守。而真实通道来自六个
+/// 后端工厂 + 全套编排依赖，单测层拉不起来——BUG-1552 当初修了 sweep 那条循环却
+/// 把测试记成欠账（「待补：抽一个可注入的通道列表测试缝」），于是同一个结构缺陷在
+/// 另外两条循环里原样存活到 BUG-1604。缝补上，四条循环才都守得住。
+@visibleForTesting
+Future<List<SyncChannel>> Function(SyncRepository repo)?
+    debugSyncChannelsOverride;
+
 /// 不再 `@visibleForTesting`：`hasDeletionPropagationChannel` 是生产消费方——
 /// 「本机有没有可用于删除传播的通道」必须复用同一份通道枚举，各处重抄必漂。
 Future<List<SyncChannel>> enabledSyncChannelBackends(
   SyncRepository repo,
 ) async {
+  final Future<List<SyncChannel>> Function(SyncRepository repo)? override =
+      debugSyncChannelsOverride;
+  if (override != null) return override(repo);
   final SyncBackendType cloudType = await repo.getBackendType();
   final SyncBackend cloud = resolveSyncBackend(cloudType);
   // isInterconnect 由后端身份决定，不由「它排在云通道那一格」决定：备份后端被选成
@@ -407,6 +422,21 @@ Future<void> runAutoSyncAllForTest({
       localAudioEntries: localAudioEntries,
       onLocalAudioImported:
           onLocalAudioImported ?? (LocalAudioPackageContents _) async {},
+    );
+
+/// BUG-1604 测试入口：以可 await 的方式跑一次退出书 per-book 同步（生产入口
+/// [triggerAutoSyncOnMediaClosed] 把它注册进 [BookExitSyncScope] 且不回传 future）。
+@visibleForTesting
+Future<void> runAutoSyncForBookForTest({
+  required FushiDatabase db,
+  required String mediaIdentifier,
+  SyncReportCallback? onReport,
+}) =>
+    _runAutoSync(
+      db: db,
+      mediaIdentifier: mediaIdentifier,
+      messenger: null,
+      onReport: onReport,
     );
 
 const _syncCooldownMs = 5 * 60 * 1000;
@@ -844,37 +874,60 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
         reason = SyncOutcomeReason.autoDisabled;
         return;
       }
+      // BUG-1604：**逐通道**隔离异常，与 app-open sweep 同一范式。这个 for 原来
+      // 整体裸奔，只有外层一个 `catch (e) { developer.log(...) }`——云通道恒排第一
+      // （见 enabledSyncChannelBackends），它的 `restoreAuth` 探测不到 WebDAV/FTP、
+      // 或 `runCollectionsOnly` 抛裸 SocketException，异常直接终止整个 for，互联
+      // 通道的合集同步这一轮**根本不执行**。合集是双端都在改的维度，漏跑一轮就是
+      // 「我在手机上建的合集，桌面上一直不出现」。
+      bool anyChannelFailed = false;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
-        final SyncBackend backend = channel.backend;
-        await backend.restoreAuth(repo);
-        if (!await backend.isAuthenticated) continue;
-        final SyncOrchestrator orchestrator = SyncOrchestrator(
-          db: db,
-          backend: backend,
-          // 合集维度不触碰词典/音频/临时目录；systemTemp 仅为满足构造器形参，
-          // runCollectionsOnly 保证不落任何文件。
-          dictionaryResourceRoot: Directory.systemTemp,
-          audioDatabaseRoot: Directory.systemTemp,
-          tempDir: Directory.systemTemp,
-          deviceId: await repo.getOrCreateDeviceId(),
-          syncStats: false,
-          syncAudioBookPosition: false,
-          syncContent: false,
-          syncAudioBookFiles: false,
-          syncVideoFiles: false,
-          syncDictionary: false,
-          syncLocalAudio: false,
-          localAudioEntries: const <LocalAudioDbEntry>[],
-          onLocalAudioImported: (LocalAudioPackageContents _) async {},
-        );
-        final SyncRunReport report = await orchestrator.runCollectionsOnly();
-        channelsRun++;
-        logSyncReportErrors(report);
+        try {
+          final SyncBackend backend = channel.backend;
+          await backend.restoreAuth(repo);
+          if (!await backend.isAuthenticated) continue;
+          final SyncOrchestrator orchestrator = SyncOrchestrator(
+            db: db,
+            backend: backend,
+            // 合集维度不触碰词典/音频/临时目录；systemTemp 仅为满足构造器形参，
+            // runCollectionsOnly 保证不落任何文件。
+            dictionaryResourceRoot: Directory.systemTemp,
+            audioDatabaseRoot: Directory.systemTemp,
+            tempDir: Directory.systemTemp,
+            deviceId: await repo.getOrCreateDeviceId(),
+            syncStats: false,
+            syncAudioBookPosition: false,
+            syncContent: false,
+            syncAudioBookFiles: false,
+            syncVideoFiles: false,
+            syncDictionary: false,
+            syncLocalAudio: false,
+            localAudioEntries: const <LocalAudioDbEntry>[],
+            onLocalAudioImported: (LocalAudioPackageContents _) async {},
+          );
+          final SyncRunReport report = await orchestrator.runCollectionsOnly();
+          channelsRun++;
+          logSyncReportErrors(report);
+        } catch (e, stack) {
+          anyChannelFailed = true;
+          developer.log(
+            'Collections sync channel failed '
+            '(interconnect=${channel.isInterconnect})',
+            error: e,
+            stackTrace: stack,
+            name: 'SyncAutoTrigger',
+          );
+        }
       }
-      reason = channelsRun > 0
-          ? SyncOutcomeReason.completed
-          : SyncOutcomeReason.noChannels;
+      // 部分失败如实报 failed，不伪装成 completed（与 sweep 同一记账口径）。
+      if (anyChannelFailed) {
+        reason = SyncOutcomeReason.failed;
+      } else {
+        reason = channelsRun > 0
+            ? SyncOutcomeReason.completed
+            : SyncOutcomeReason.noChannels;
+      }
     });
   } catch (e) {
     developer.log(
@@ -946,50 +999,73 @@ Future<void> _runAutoSync({
 
       // option B 双通道：退出书时对每条启用的通道（云备份 + 互联）各跑一次 per-book
       // 同步，互不排斥。每条通道各自认证成功才跑；未配置的通道 continue 跳过。
+      //
+      // BUG-1604：**逐通道**隔离异常，与 app-open sweep 同一范式。这个 for 原来也是
+      // 整体裸奔（只有外层一个 catch）——云通道的 `restoreAuth` / `syncBook` 一抛，
+      // 互联通道的书进度与内容推送整轮被跳过。退出书是「读到哪」最主要的写入时机，
+      // 漏跑一轮就是对端续读位置停在旧处，而失败原因指向云盘，用户不会想到互联被连累。
+      bool anyChannelFailed = false;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
         final SyncBackend backend = channel.backend;
-        await backend.restoreAuth(repo);
-        if (!await backend.isAuthenticated) continue;
+        try {
+          await backend.restoreAuth(repo);
+          if (!await backend.isAuthenticated) continue;
 
-        channelsRun++;
-        final manager = SyncManager(db: db, backend: backend);
-        final result = await manager.syncBook(
-          book: book,
-          syncStats: syncStats,
-          statsSyncMode: StatisticsSyncMode.merge,
-          syncAudioBook: syncAudioBook,
-          syncContent:
-              channel.isInterconnect ? interconnectSyncContent : syncContent,
-        );
+          final manager = SyncManager(db: db, backend: backend);
+          final result = await manager.syncBook(
+            book: book,
+            syncStats: syncStats,
+            statsSyncMode: StatisticsSyncMode.merge,
+            syncAudioBook: syncAudioBook,
+            syncContent:
+                channel.isInterconnect ? interconnectSyncContent : syncContent,
+          );
+          // 计数放在 syncBook **之后**：抛异常的通道不算「跑过」，否则
+          // channelsRun>0 会把一条都没成功的轮次记成 completed（与 sweep 一致）。
+          channelsRun++;
 
-        // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」
-        // SnackBar（打断用户、让用户误以为「必须等同步成功条才能离开」=卡手）。
-        // 同步是 fire-and-forget 后台动作，成功无需打断式提示；真正需要用户介入的
-        // **冲突**仍经下方 onReport → presentAutoConflicts 弹对话框（不是 SnackBar）。
-        // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
+          // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」
+          // SnackBar（打断用户、让用户误以为「必须等同步成功条才能离开」=卡手）。
+          // 同步是 fire-and-forget 后台动作，成功无需打断式提示；真正需要用户介入的
+          // **冲突**仍经下方 onReport → presentAutoConflicts 弹对话框（不是 SnackBar）。
+          // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
 
-        // Surface a genuine fork to the caller as a one-conflict report so the
-        // book-exit flow can prompt resolution. The single-book path runs
-        // SyncManager.syncBook (not the orchestrator), so build the report here
-        // from the conflict fields SyncManager fills on SyncResult.conflict.
-        if (onReport != null) {
-          final SyncRunReport report = SyncRunReport();
-          if (result.direction == SyncResult.conflict) {
-            report.conflicts.add(SyncConflict(
-              assetKey: result.conflictAssetKey!,
-              dimension: result.conflictDimension!,
-              title: result.title,
-              localVersion: result.conflictLocalVersion,
-              remoteVersion: result.conflictRemoteVersion,
-            ));
+          // Surface a genuine fork to the caller as a one-conflict report so the
+          // book-exit flow can prompt resolution. The single-book path runs
+          // SyncManager.syncBook (not the orchestrator), so build the report here
+          // from the conflict fields SyncManager fills on SyncResult.conflict.
+          if (onReport != null) {
+            final SyncRunReport report = SyncRunReport();
+            if (result.direction == SyncResult.conflict) {
+              report.conflicts.add(SyncConflict(
+                assetKey: result.conflictAssetKey!,
+                dimension: result.conflictDimension!,
+                title: result.title,
+                localVersion: result.conflictLocalVersion,
+                remoteVersion: result.conflictRemoteVersion,
+              ));
+            }
+            onReport(report, backend);
           }
-          onReport(report, backend);
+        } catch (e, stack) {
+          anyChannelFailed = true;
+          developer.log(
+            'Book-exit sync channel failed '
+            '(interconnect=${channel.isInterconnect})',
+            error: e,
+            stackTrace: stack,
+            name: 'SyncAutoTrigger',
+          );
         }
       }
-      reason = channelsRun > 0
-          ? SyncOutcomeReason.completed
-          : SyncOutcomeReason.noChannels;
+      if (anyChannelFailed) {
+        reason = SyncOutcomeReason.failed;
+      } else {
+        reason = channelsRun > 0
+            ? SyncOutcomeReason.completed
+            : SyncOutcomeReason.noChannels;
+      }
     });
   } catch (e) {
     developer.log(
