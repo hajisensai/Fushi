@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 57681 (3393 per locale)
+/// Strings: 57834 (3402 per locale)
 ///
-/// Built on 2026-08-14 at 11:31 UTC
+/// Built on 2026-08-14 at 13:01 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4591,6 +4591,15 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_connect_mobile_disabled_key_cleared =>
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   String get font_target_gal_hook => 'Game dialogue font';
+  String get game_hook_btn_replay => 'Replay line audio';
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  String get game_hook_btn_follow => 'Follow latest line';
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  String get game_hook_btn_transparency => 'Toggle background';
+  String get game_hook_btn_lock => 'Lock position';
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  String get game_hook_btn_topmost => 'Always on top';
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -12425,6 +12434,24 @@ class _StringsAr extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -20326,6 +20353,24 @@ class _StringsDe extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -28243,6 +28288,24 @@ class _StringsEs extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -36172,6 +36235,24 @@ class _StringsFr extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -44029,6 +44110,24 @@ class _StringsId extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -51932,6 +52031,24 @@ class _StringsIt extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -59649,6 +59766,24 @@ class _StringsJa extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -67373,6 +67508,24 @@ class _StringsKo extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -75256,6 +75409,24 @@ class _StringsNl extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -83151,6 +83322,24 @@ class _StringsPtBr extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -91032,6 +91221,24 @@ class _StringsRu extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -98861,6 +99068,24 @@ class _StringsTh extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -106721,6 +106946,24 @@ class _StringsTr extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -114566,6 +114809,24 @@ class _StringsVi extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 // Path: <root>
@@ -121840,6 +122101,24 @@ class _StringsZhCn extends _StringsEn {
       '移动端使用 AnkiConnect 必须填 API key，清空后已自动关闭该开关，Anki 改回走内置后端。';
   @override
   String get font_target_gal_hook => '游戏台词字体';
+  @override
+  String get game_hook_btn_replay => '重播本句语音';
+  @override
+  String get game_hook_btn_recapture => '补录本句语音';
+  @override
+  String get game_hook_btn_follow => '跟随最新台词';
+  @override
+  String get game_hook_btn_passthrough => '鼠标穿透到游戏';
+  @override
+  String get game_hook_btn_transparency => '切换背景底板';
+  @override
+  String get game_hook_btn_lock => '锁定位置';
+  @override
+  String get game_hook_btn_workbench => '打开捕获工作台';
+  @override
+  String get game_hook_btn_topmost => '窗口置顶';
+  @override
+  String get game_hook_btn_close => '关闭浮窗';
 }
 
 // Path: <root>
@@ -129480,6 +129759,24 @@ class _StringsZhHk extends _StringsEn {
       'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
   @override
   String get font_target_gal_hook => 'Game dialogue font';
+  @override
+  String get game_hook_btn_replay => 'Replay line audio';
+  @override
+  String get game_hook_btn_recapture => 'Recapture line audio';
+  @override
+  String get game_hook_btn_follow => 'Follow latest line';
+  @override
+  String get game_hook_btn_passthrough => 'Mouse pass-through to game';
+  @override
+  String get game_hook_btn_transparency => 'Toggle background';
+  @override
+  String get game_hook_btn_lock => 'Lock position';
+  @override
+  String get game_hook_btn_workbench => 'Open capture workbench';
+  @override
+  String get game_hook_btn_topmost => 'Always on top';
+  @override
+  String get game_hook_btn_close => 'Close overlay';
 }
 
 /// Flat map(s) containing all translations.
@@ -136448,6 +136745,24 @@ extension on _StringsEn {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -143414,6 +143729,24 @@ extension on _StringsAr {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -150402,6 +150735,24 @@ extension on _StringsDe {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -157389,6 +157740,24 @@ extension on _StringsEs {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -164382,6 +164751,24 @@ extension on _StringsFr {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -171357,6 +171744,24 @@ extension on _StringsId {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -178346,6 +178751,24 @@ extension on _StringsIt {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -185297,6 +185720,24 @@ extension on _StringsJa {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -192252,6 +192693,24 @@ extension on _StringsKo {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -199235,6 +199694,24 @@ extension on _StringsNl {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -206215,6 +206692,24 @@ extension on _StringsPtBr {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -213200,6 +213695,24 @@ extension on _StringsRu {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -220168,6 +220681,24 @@ extension on _StringsTh {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -227145,6 +227676,24 @@ extension on _StringsTr {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -234118,6 +234667,24 @@ extension on _StringsVi {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }
@@ -241033,6 +241600,24 @@ extension on _StringsZhCn {
         return '移动端使用 AnkiConnect 必须填 API key，清空后已自动关闭该开关，Anki 改回走内置后端。';
       case 'font_target_gal_hook':
         return '游戏台词字体';
+      case 'game_hook_btn_replay':
+        return '重播本句语音';
+      case 'game_hook_btn_recapture':
+        return '补录本句语音';
+      case 'game_hook_btn_follow':
+        return '跟随最新台词';
+      case 'game_hook_btn_passthrough':
+        return '鼠标穿透到游戏';
+      case 'game_hook_btn_transparency':
+        return '切换背景底板';
+      case 'game_hook_btn_lock':
+        return '锁定位置';
+      case 'game_hook_btn_workbench':
+        return '打开捕获工作台';
+      case 'game_hook_btn_topmost':
+        return '窗口置顶';
+      case 'game_hook_btn_close':
+        return '关闭浮窗';
       default:
         return null;
     }
@@ -247979,6 +248564,24 @@ extension on _StringsZhHk {
         return 'AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.';
       case 'font_target_gal_hook':
         return 'Game dialogue font';
+      case 'game_hook_btn_replay':
+        return 'Replay line audio';
+      case 'game_hook_btn_recapture':
+        return 'Recapture line audio';
+      case 'game_hook_btn_follow':
+        return 'Follow latest line';
+      case 'game_hook_btn_passthrough':
+        return 'Mouse pass-through to game';
+      case 'game_hook_btn_transparency':
+        return 'Toggle background';
+      case 'game_hook_btn_lock':
+        return 'Lock position';
+      case 'game_hook_btn_workbench':
+        return 'Open capture workbench';
+      case 'game_hook_btn_topmost':
+        return 'Always on top';
+      case 'game_hook_btn_close':
+        return 'Close overlay';
       default:
         return null;
     }

@@ -3391,5 +3391,14 @@
   "video_setting_subtitle_drag_adjust": "拖拽调整位置",
   "video_subtitle_drag_adjust_hint": "上下拖动字幕调整位置",
   "anki_connect_mobile_disabled_key_cleared": "移动端使用 AnkiConnect 必须填 API key，清空后已自动关闭该开关，Anki 改回走内置后端。",
-  "font_target_gal_hook": "游戏台词字体"
+  "font_target_gal_hook": "游戏台词字体",
+  "game_hook_btn_replay": "重播本句语音",
+  "game_hook_btn_recapture": "补录本句语音",
+  "game_hook_btn_follow": "跟随最新台词",
+  "game_hook_btn_passthrough": "鼠标穿透到游戏",
+  "game_hook_btn_transparency": "切换背景底板",
+  "game_hook_btn_lock": "锁定位置",
+  "game_hook_btn_workbench": "打开捕获工作台",
+  "game_hook_btn_topmost": "窗口置顶",
+  "game_hook_btn_close": "关闭浮窗"
 }

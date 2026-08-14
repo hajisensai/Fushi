@@ -66,6 +66,10 @@ constexpr float kLyricOutlineRadiusDip = 1.6f;
 constexpr float kLyricShadowOffsetDip = 2.0f;
 constexpr uint32_t kLyricOutlineColor = 0xE0000000;  // 88% 黑描边
 constexpr uint32_t kLyricShadowColor = 0x59000000;   // 35% 黑投影
+// 描边/投影只在「近透明底板」时开：底板 alpha 低于此值（≈25%）文字直接压在游戏
+// 画面上，需要描边自证可读性；卡片模式（白色磨砂底）用深色文字，描边反而脏。
+// 穿透模式强制清底（BUG-1480），恒走描边分支。
+constexpr uint32_t kLyricTextFxBgAlphaMax = 0x40;
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
 constexpr float kBaseStripHeightForFontDip = 96.0f;
@@ -378,6 +382,7 @@ void FloatingLyricWindow::Hide() {
   visible_ = false;
   hovered_ = false;
   tracking_mouse_leave_ = false;
+  slot_tooltip_.Hide();
   // BUG-1471: a hidden window never receives the WM_LBUTTONUP that would end an
   // in-flight press. Clearing only `dragging_` here left `pressed_` stuck true
   // across the hide, and MaybeHoverLookup bails on `pressed_` -- hover lookup
@@ -938,6 +943,18 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // onShiftHover 同语义）。命中新字才派发一次，见 MaybeHoverLookup。
       MaybeHoverLookup(static_cast<float>(GET_X_LPARAM(lparam)),
                        static_cast<float>(GET_Y_LPARAM(lparam)));
+      // 工具条槽位悬停提示（hook 模式）：按钮只在 hovered_ 时可见/可点
+      // （ControlActionAt 同门），提示同门；拖拽/按压途中不冒提示。
+      if (hook_text_mode_ && !pressed_ && !dragging_) {
+        const int slot = hovered_
+                             ? HookToolbarSlotAt(
+                                   static_cast<float>(GET_X_LPARAM(lparam)),
+                                   static_cast<float>(GET_Y_LPARAM(lparam)))
+                             : -1;
+        POINT cursor;
+        GetCursorPos(&cursor);
+        slot_tooltip_.Update(hwnd_, slot, cursor.x + 12, cursor.y + 22);
+      }
       return 0;
     }
     case WM_TIMER: {
@@ -967,6 +984,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       tracking_mouse_leave_ = false;
       StopHoverLookupPolling();
       ResetHoverLookupAnchor();
+      slot_tooltip_.Hide();
       if (hovered_ && !dragging_) {
         hovered_ = false;
         RequestRender();
@@ -974,6 +992,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     case WM_LBUTTONDOWN: {
+      slot_tooltip_.Hide();
       const float x = static_cast<float>(GET_X_LPARAM(lparam));
       const float y = static_cast<float>(GET_Y_LPARAM(lparam));
 
@@ -1413,15 +1432,18 @@ void FloatingLyricWindow::Render() {
       // 再画投影，最后回到原点画填充。所有遍都在上面的 text_clip 之内。
       // hook 的 UpdateText 恒传 current_line_start=-1，不存在 per-range dim
       // drawing effect，因此描边遍不会被 SetDrawingEffect 换色。
+      const bool lyric_text_fx =
+          hook_text_mode_ &&
+          (pass_through_ || (style_.bg_color >> 24) < kLyricTextFxBgAlphaMax);
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_outline;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_shadow;
-      if (hook_text_mode_) {
+      if (lyric_text_fx) {
         render_target_->CreateSolidColorBrush(
             ColorFromArgb(kLyricOutlineColor), lyric_outline.GetAddressOf());
         render_target_->CreateSolidColorBrush(
             ColorFromArgb(kLyricShadowColor), lyric_shadow.GetAddressOf());
       }
-      if (hook_text_mode_ && lyric_outline != nullptr &&
+      if (lyric_text_fx && lyric_outline != nullptr &&
           lyric_shadow != nullptr) {
         const float shadow_off = ScaleForDpi(kLyricShadowOffsetDip);
         render_target_->DrawTextLayout(
@@ -1474,7 +1496,7 @@ void FloatingLyricWindow::Render() {
               text_rect_.left + box.left + box.width,
               text_origin_y + box.top + ruby_gap_px);
           // 注音的桌面歌词描边：字小，半径收到 0.75 倍、不画投影。
-          if (hook_text_mode_ && lyric_outline != nullptr) {
+          if (lyric_text_fx && lyric_outline != nullptr) {
             const float rr = ScaleForDpi(kLyricOutlineRadiusDip * 0.75f);
             const float rd = rr * 0.7071f;
             const D2D1_POINT_2F ruby_ring[8] = {
@@ -1806,6 +1828,31 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
   }
 }
 
+int FloatingLyricWindow::HookToolbarSlotAt(float x, float y) const {
+  if (hwnd_ == nullptr || !hook_text_mode_) {
+    return -1;
+  }
+  RECT rc;
+  GetClientRect(hwnd_, &rc);
+  const float width = static_cast<float>(rc.right - rc.left);
+  const float btn = ScaleForDpi(kButtonSizeDip);
+  const float gap = ScaleForDpi(kButtonGapDip);
+  const float ctrl_top = ScaleForDpi(kControlsTopDip);
+  if (y < ctrl_top || y > ctrl_top + btn) {
+    return -1;
+  }
+  const float controls_total = btn * kHookTextControlSlotCount +
+                               gap * (kHookTextControlSlotCount - 1);
+  const float left = (width - controls_total) / 2.0f;
+  for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+    const float bx = left + slot * (btn + gap);
+    if (x >= bx && x <= bx + btn) {
+      return slot;
+    }
+  }
+  return -1;
+}
+
 std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
   if (text_only_) {
     // Text-only Luna toolbar: only the lock + one-click-transparency buttons are
@@ -1826,19 +1873,11 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
       return std::string();
     }
     if (hook_text_mode_) {
-      const float controls_total =
-          btn * kHookTextControlSlotCount +
-          gap * (kHookTextControlSlotCount - 1);
-      const float left = (width - controls_total) / 2.0f;
-      for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
-        const float bx = left + slot * (btn + gap);
-        if (x < bx || x > bx + btn) continue;
-        // Shared slot table (hook_toolbar::kSlotActions): the standalone
-        // pass-through toolbar indexes the very same array, so the two windows
-        // physically cannot disagree about what a button does.
-        return hook_toolbar::kSlotActions[slot];
-      }
-      return std::string();
+      // Shared slot table (hook_toolbar::kSlotActions): the standalone
+      // pass-through toolbar indexes the very same array, so the two windows
+      // physically cannot disagree about what a button does.
+      const int slot = HookToolbarSlotAt(x, y);
+      return slot >= 0 ? hook_toolbar::kSlotActions[slot] : std::string();
     }
     const float lock_x = width - pad - btn;
     const float top_x = lock_x - gap - btn;

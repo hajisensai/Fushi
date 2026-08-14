@@ -244,6 +244,11 @@ class FloatingLyricWindow {
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);
 
+  // hook 模式：client 点落在工具条第几槽（-1 = 不在任何按钮上）。几何与
+  // Render() 的按钮绘制完全同源；ControlActionAt 与悬停提示共用这一个入口，
+  // 命中判定与提示永远指同一颗按钮。
+  int HookToolbarSlotAt(float x, float y) const;
+
   // 把 client 点上的那个字送去查词（回调带屏幕逻辑 px 的词矩形）。点击查词与
   // Shift-悬停查词共用这一个出口，两条路径的取词、坐标换算、载荷永远同形。
   // 返回是否真的派发了一次查词。
@@ -460,6 +465,9 @@ class FloatingLyricWindow {
   // BUG-951: the always-clickable toolbar used while the body is click-through.
   // Only ever created / shown for hook_text_mode_ instances in pass-through.
   HookToolbarWindow pass_through_toolbar_;
+
+  // hook 模式正文内工具条的悬停提示（文案共享 hook_toolbar::SlotTooltip 表）。
+  hook_toolbar::SlotTooltipHost slot_tooltip_;
 
   LookupCallback on_lookup_;
   ContextLookupCallback on_context_lookup_;

@@ -645,6 +645,18 @@ std::wstring WideFromValue(const flutter::EncodableMap* args, const char* key,
   return result;
 }
 
+std::wstring WideFromUtf8(const std::string& s) {
+  if (s.empty()) {
+    return std::wstring();
+  }
+  int size = MultiByteToWideChar(CP_UTF8, 0, s.data(),
+                                 static_cast<int>(s.size()), nullptr, 0);
+  std::wstring result(size, L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                      result.data(), size);
+  return result;
+}
+
 std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
                             const std::string& fallback) {
   if (args == nullptr) {
@@ -1129,6 +1141,26 @@ void FlutterWindow::RegisterGalHookTextChannel() {
               IntFromValue(args, "left", 0), IntFromValue(args, "top", 0),
               IntFromValue(args, "width", 0),
               IntFromValue(args, "height", 0));
+          // 工具条槽位悬停提示（与 hook_toolbar::kSlotActions 同下标的本地化
+          // 文案）。老 payload 缺字段就保持上次的表——文案只随 locale 变，不随
+          // 会话变。
+          if (args != nullptr) {
+            const auto tips_it =
+                args->find(flutter::EncodableValue("slotTooltips"));
+            if (tips_it != args->end()) {
+              if (const auto* list =
+                      std::get_if<flutter::EncodableList>(&tips_it->second)) {
+                std::vector<std::wstring> tooltips;
+                tooltips.reserve(list->size());
+                for (const flutter::EncodableValue& value : *list) {
+                  const auto* text = std::get_if<std::string>(&value);
+                  tooltips.push_back(text != nullptr ? WideFromUtf8(*text)
+                                                     : std::wstring());
+                }
+                hook_toolbar::SetSlotTooltips(std::move(tooltips));
+              }
+            }
+          }
           result->Success(
               flutter::EncodableValue(gal_hook_text_window_->Show(GetHandle())));
         } else if (method == "hide") {

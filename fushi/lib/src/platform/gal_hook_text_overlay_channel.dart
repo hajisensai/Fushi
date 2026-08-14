@@ -394,8 +394,12 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double fontSize = kGalHookTextFontSize,
     int textColor = 0xFFFFFFFF,
     int bgColor = 0xE0000000,
+    int buttonTextColor = 0xFFFFFFFF,
+    int buttonBgColor = 0x552D2340,
+    int activeColor = 0xFFCE93D8,
     String? fontFamily,
     String? fontPath,
+    List<String>? slotTooltips,
     bool following = true,
     bool passThrough = false,
     bool locked = false,
@@ -407,11 +411,14 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       // 老 native 不识别时回退内置字族（Yu Gothic），never break。
       if (fontFamily != null && fontFamily.isNotEmpty) 'fontFamily': fontFamily,
       if (fontPath != null && fontPath.isNotEmpty) 'fontPath': fontPath,
+      // 工具条槽位悬停提示，与 native hook_toolbar::kSlotActions 同下标。
+      if (slotTooltips != null && slotTooltips.isNotEmpty)
+        'slotTooltips': slotTooltips,
       'textColor': textColor,
       'bgColor': bgColor,
-      'buttonTextColor': 0xFFFFFFFF,
-      'buttonBgColor': 0x552D2340,
-      'activeColor': 0xFFCE93D8,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'activeColor': activeColor,
       'windowWidth': 900.0,
       'windowHeight': 140.0,
       'clickLookupEnabled': true,
@@ -452,6 +459,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     required int bgColor,
     int textColor = 0xFFFFFFFF,
     double fontSize = kGalHookTextFontSize,
+    int buttonTextColor = 0xFFFFFFFF,
+    int buttonBgColor = 0x552D2340,
+    int activeColor = 0xFFCE93D8,
     String? fontFamily,
     String? fontPath,
   }) async {
@@ -462,9 +472,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'textColor': textColor,
       if (fontFamily != null && fontFamily.isNotEmpty) 'fontFamily': fontFamily,
       if (fontPath != null && fontPath.isNotEmpty) 'fontPath': fontPath,
-      'buttonTextColor': 0xFFFFFFFF,
-      'buttonBgColor': 0x552D2340,
-      'activeColor': 0xFFCE93D8,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'activeColor': activeColor,
     });
   }
 

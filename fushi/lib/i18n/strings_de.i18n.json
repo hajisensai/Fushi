@@ -3391,5 +3391,14 @@
   "video_setting_subtitle_drag_adjust": "Drag to adjust position",
   "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it",
   "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.",
-  "font_target_gal_hook": "Game dialogue font"
+  "font_target_gal_hook": "Game dialogue font",
+  "game_hook_btn_replay": "Replay line audio",
+  "game_hook_btn_recapture": "Recapture line audio",
+  "game_hook_btn_follow": "Follow latest line",
+  "game_hook_btn_passthrough": "Mouse pass-through to game",
+  "game_hook_btn_transparency": "Toggle background",
+  "game_hook_btn_lock": "Lock position",
+  "game_hook_btn_workbench": "Open capture workbench",
+  "game_hook_btn_topmost": "Always on top",
+  "game_hook_btn_close": "Close overlay"
 }

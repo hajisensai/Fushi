@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <commctrl.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <wrl/client.h>
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 // BUG-951 — the galgame hook overlay's pass-through escape hatch.
 //
@@ -108,6 +110,39 @@ const wchar_t* SlotGlyph(int slot, const States& states);
 // Whether |slot| draws with the active (highlight) colour under |states|.
 bool SlotActive(int slot, const States& states);
 
+// 槽位悬停提示文案（本地化，由 Dart 在 show 载荷里下发；未下发 / 越界 = 空串
+// = 不显示）。与 kSlotActions 同下标，单一真相：正文内工具条和穿透工具条问的
+// 是同一张表，两处提示不可能各说各话。主线程专用（与整个模块同一约束）。
+void SetSlotTooltips(std::vector<std::wstring> tooltips);
+const std::wstring& SlotTooltip(int slot);
+
+// 手动追踪式 Win32 tooltip（TOOLTIPS_CLASS + TTM_TRACKACTIVATE）。
+//
+// 两个工具条窗都是 WS_EX_NOACTIVATE 的自绘分层窗，永远拿不到激活态，所以用
+// TTS_ALWAYSTIP；又因为按钮矩形每次 Render 都会变（居中随窗宽），不挂
+// TTF_SUBCLASS 的矩形工具，而是由宿主在 WM_MOUSEMOVE 里报「现在悬停在第几
+// 槽 + 该槽屏幕坐标」，本类只负责建窗、换文案、摆位置。
+class SlotTooltipHost {
+ public:
+  SlotTooltipHost() = default;
+  ~SlotTooltipHost();
+
+  SlotTooltipHost(const SlotTooltipHost&) = delete;
+  SlotTooltipHost& operator=(const SlotTooltipHost&) = delete;
+
+  // 在屏幕物理坐标 (|screen_x|, |screen_y|) 为 |slot| 显示提示。slot 未变则
+  // 只跟位（no-op 文案）；slot == -1 或该槽文案为空则隐藏。
+  void Update(HWND owner, int slot, int screen_x, int screen_y);
+  void Hide();
+
+ private:
+  bool EnsureWindow(HWND owner);
+
+  HWND hwnd_ = nullptr;
+  int active_slot_ = -1;
+  TOOLINFOW tool_ = {};
+};
+
 }  // namespace hook_toolbar
 
 class HookToolbarWindow {
@@ -186,6 +221,9 @@ class HookToolbarWindow {
   hook_toolbar::Style style_;
   hook_toolbar::States states_;
   bool has_layout_ = false;
+
+  // 悬停提示（文案来自 hook_toolbar::SlotTooltip 共享表）。
+  hook_toolbar::SlotTooltipHost tooltip_;
 
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;

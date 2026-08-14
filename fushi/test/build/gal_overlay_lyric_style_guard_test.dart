@@ -43,21 +43,31 @@ void main() {
     );
   });
 
-  test('② 描边只在 hook 模式生效，其余浮窗逐像素不变', () {
+  test('② 描边只在「hook 模式 × 近透明底板」生效，其余浮窗逐像素不变', () {
+    // fx 判据必须以 hook_text_mode_ 为第一门（歌词条 / 剪贴板窗永远进不来），
+    // 第二门是底板 alpha（白卡模式深字无描边）+ 穿透强制清底。
+    expect(
+      RegExp(r'lyric_text_fx =\s*hook_text_mode_ &&\s*'
+              r'\(pass_through_ \|\| \(style_\.bg_color >> 24\) < '
+              r'kLyricTextFxBgAlphaMax\)')
+          .hasMatch(window),
+      isTrue,
+      reason: '描边开关必须是 hook 模式 && (穿透 || 底板近透明)；'
+          '任何一门被拆掉，白卡会脏描边或歌词条被改观感',
+    );
     // 主文本门与注音门分别锁：两处同形门若只锁其一，另一处被拆掉时守卫不响。
     expect(
-      RegExp(r'if \(hook_text_mode_ && lyric_outline != nullptr &&\s*'
+      RegExp(r'if \(lyric_text_fx && lyric_outline != nullptr &&\s*'
               r'lyric_shadow != nullptr\)')
           .hasMatch(window),
       isTrue,
-      reason: '主文本描边/投影遍必须被 hook_text_mode_ 门住；'
-          '歌词条 / 剪贴板窗不许被改观感',
+      reason: '主文本描边/投影遍必须被 lyric_text_fx 门住',
     );
     expect(
-      RegExp(r'if \(hook_text_mode_ && lyric_outline != nullptr\) \{')
+      RegExp(r'if \(lyric_text_fx && lyric_outline != nullptr\) \{')
           .hasMatch(window),
       isTrue,
-      reason: '注音描边遍必须被 hook_text_mode_ 门住',
+      reason: '注音描边遍必须被 lyric_text_fx 门住',
     );
     expect(
       RegExp(r'hook_text_mode_\s*\?\s*DWRITE_FONT_WEIGHT_SEMI_BOLD'
@@ -78,11 +88,14 @@ void main() {
     );
   });
 
-  test('④ Dart 默认底板全透明，◐ 恢复值非零', () {
+  test('④ Dart 两态调色板：白卡默认非零、◐ 恢复值非零、透明态白字', () {
+    final RegExp def = RegExp(r'_defaultOpacity = (\d+(?:\.\d+)?);');
+    final Match? dm = def.firstMatch(controller);
+    expect(dm, isNotNull, reason: '默认底板常量必须存在');
     expect(
-      controller.contains('_defaultOpacity = 0.0'),
-      isTrue,
-      reason: '桌面歌词式默认无底板；可读性由 native 描边承担',
+      double.parse(dm!.group(1)!),
+      greaterThan(0),
+      reason: '默认是白色磨砂卡（参考桌面翻译器浅色浮窗），不是透明',
     );
     final RegExp restore = RegExp(r'_defaultRestoreOpacity = (\d+(?:\.\d+)?);');
     final Match? m = restore.firstMatch(controller);
@@ -92,5 +105,47 @@ void main() {
       greaterThan(0),
       reason: '恢复值为 0 会让 ◐ 在 0 ↔ 0 之间空转',
     );
+    // 两态文字色必须跟着底板走：白卡深字 / 透明白字。任何一半被写死，另一态
+    // 就是白字白底或黑字黑底。
+    expect(
+      RegExp(r'_textColor => _isCardMode \? 0xFF[0-9A-Fa-f]{6} : 0xFFFFFFFF')
+          .hasMatch(controller),
+      isTrue,
+      reason: '文字颜色必须按 _isCardMode 分派：卡片深字、透明白字',
+    );
+  });
+
+  test('⑤ 工具条悬停提示：文案条数 == 槽位数，两个工具条窗共用一张表', () {
+    final String toolbarHeader =
+        File('windows/runner/hook_toolbar_window.h').readAsStringSync();
+    final String toolbarImpl =
+        File('windows/runner/hook_toolbar_window.cpp').readAsStringSync();
+    final RegExp slotCount = RegExp(r'constexpr int kSlotCount = (\d+);');
+    final Match? sc = slotCount.firstMatch(toolbarHeader);
+    expect(sc, isNotNull, reason: '共享槽位表必须存在');
+    final int slots = int.parse(sc!.group(1)!);
+    // Dart 下发的文案条数必须与槽位数一致——差一条就是「按错位的提示」，比
+    // 没有提示更糟。
+    expect(
+      RegExp(r't\.game_hook_btn_\w+').allMatches(controller).length,
+      slots,
+      reason: '控制器 _slotTooltips 的条数必须等于 native kSlotCount（$slots）',
+    );
+    // 两个工具条窗都必须从共享表取词并真的接了悬停事件。
+    expect(
+      toolbarHeader.contains('void SetSlotTooltips('),
+      isTrue,
+      reason: '共享文案入口必须在 hook_toolbar 命名空间（单一真相）',
+    );
+    for (final (String file, String src) in <(String, String)>[
+      ('floating_lyric_window.cpp', window),
+      ('hook_toolbar_window.cpp', toolbarImpl),
+    ]) {
+      expect(
+        RegExp(r'(slot_)?tooltip_\.Update\(hwnd_, slot').hasMatch(src),
+        isTrue,
+        reason: '$file 的鼠标移动路径必须驱动槽位提示（两窗不许只接一半）',
+      );
+    }
   });
 }

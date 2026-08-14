@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
+#pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
 
@@ -109,6 +110,102 @@ bool SlotActive(int slot, const States& states) {
     default:
       return false;
   }
+}
+
+namespace {
+
+std::vector<std::wstring>& SlotTooltipStore() {
+  static std::vector<std::wstring> store;
+  return store;
+}
+
+}  // namespace
+
+void SetSlotTooltips(std::vector<std::wstring> tooltips) {
+  SlotTooltipStore() = std::move(tooltips);
+}
+
+const std::wstring& SlotTooltip(int slot) {
+  static const std::wstring empty;
+  const std::vector<std::wstring>& store = SlotTooltipStore();
+  if (slot < 0 || slot >= static_cast<int>(store.size())) {
+    return empty;
+  }
+  return store[static_cast<size_t>(slot)];
+}
+
+SlotTooltipHost::~SlotTooltipHost() {
+  if (hwnd_ != nullptr) {
+    DestroyWindow(hwnd_);
+    hwnd_ = nullptr;
+  }
+}
+
+bool SlotTooltipHost::EnsureWindow(HWND owner) {
+  if (hwnd_ != nullptr) {
+    return true;
+  }
+  // TOOLTIPS_CLASS 归 comctl32 管；tooltip 与 tab 同属 ICC_TAB_CLASSES。只需
+  // 初始化一次，失败（极老系统）就当没有 tooltip，功能静默降级不崩。
+  static const bool common_controls_ready = [] {
+    INITCOMMONCONTROLSEX icc = {sizeof(INITCOMMONCONTROLSEX),
+                                ICC_TAB_CLASSES};
+    return InitCommonControlsEx(&icc) != FALSE;
+  }();
+  if (!common_controls_ready) {
+    return false;
+  }
+  hwnd_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOACTIVATE, TOOLTIPS_CLASSW,
+                          nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+                          CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                          CW_USEDEFAULT, owner, nullptr,
+                          GetModuleHandleW(nullptr), nullptr);
+  if (hwnd_ == nullptr) {
+    return false;
+  }
+  tool_ = {};
+  tool_.cbSize = sizeof(tool_);
+  // TTF_TRACK|TTF_ABSOLUTE：位置完全由宿主的 TTM_TRACKPOSITION 决定——宿主窗
+  // 是 WS_EX_NOACTIVATE 的自绘分层窗，标准的矩形工具 + 子类化在这里拿不到可靠
+  // 的鼠标节奏，手动追踪反而最简单。
+  tool_.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+  tool_.hwnd = owner;
+  tool_.uId = 1;
+  tool_.lpszText = const_cast<wchar_t*>(L"");
+  SendMessageW(hwnd_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool_));
+  return true;
+}
+
+void SlotTooltipHost::Update(HWND owner, int slot, int screen_x,
+                             int screen_y) {
+  const std::wstring& text = SlotTooltip(slot);
+  if (slot < 0 || text.empty() || owner == nullptr) {
+    Hide();
+    return;
+  }
+  if (slot == active_slot_) {
+    return;  // 同一颗按钮上抖动不重摆位置，提示钉在初次进入处。
+  }
+  if (!EnsureWindow(owner)) {
+    return;
+  }
+  active_slot_ = slot;
+  tool_.lpszText = const_cast<wchar_t*>(text.c_str());
+  SendMessageW(hwnd_, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&tool_));
+  SendMessageW(hwnd_, TTM_TRACKPOSITION, 0,
+               MAKELPARAM(static_cast<WORD>(screen_x),
+                          static_cast<WORD>(screen_y)));
+  SendMessageW(hwnd_, TTM_TRACKACTIVATE, TRUE,
+               reinterpret_cast<LPARAM>(&tool_));
+}
+
+void SlotTooltipHost::Hide() {
+  active_slot_ = -1;
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  SendMessageW(hwnd_, TTM_TRACKACTIVATE, FALSE,
+               reinterpret_cast<LPARAM>(&tool_));
 }
 
 }  // namespace hook_toolbar
@@ -221,6 +318,7 @@ void HookToolbarWindow::Hide() {
   visible_ = false;
   hovered_ = false;
   tracking_mouse_leave_ = false;
+  tooltip_.Hide();
   CancelPointerGesture();
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
@@ -334,11 +432,22 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
             static_cast<int>(kDragThresholdPx * kDragThresholdPx)) {
           dragging_ = true;
         }
+        return 0;
+      }
+      {
+        // 槽位悬停提示：提示摆在光标右下（不遮按钮本身）。文案表与正文内工具
+        // 条共用（hook_toolbar::SlotTooltip），空文案 / 空槽自动隐藏。
+        const int slot = SlotAt(static_cast<float>(GET_X_LPARAM(lparam)),
+                                static_cast<float>(GET_Y_LPARAM(lparam)));
+        POINT cursor;
+        GetCursorPos(&cursor);
+        tooltip_.Update(hwnd_, slot, cursor.x + 12, cursor.y + 22);
       }
       return 0;
     }
     case WM_MOUSELEAVE: {
       tracking_mouse_leave_ = false;
+      tooltip_.Hide();
       if (hovered_ && !dragging_) {
         hovered_ = false;
         Render();
@@ -346,6 +455,7 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     case WM_LBUTTONDOWN: {
+      tooltip_.Hide();
       const float x = static_cast<float>(GET_X_LPARAM(lparam));
       const float y = static_cast<float>(GET_Y_LPARAM(lparam));
       const int slot = SlotAt(x, y);

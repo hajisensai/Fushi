@@ -80,11 +80,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
   static const String _rectPreferenceKey = 'gal_hook_text_window_rect';
   static const String _opacityPreferenceKey = 'gal_hook_text_window_bg_opacity';
 
-  /// 桌面歌词式重写：native 侧 hook 模式文字已自带描边 + 投影，可读性不再依赖
-  /// 底板，默认背景与音乐播放器桌面歌词一致——全透明。存过偏好的用户保持原值
-  /// （never break userspace）；`◐` 一键切底板时恢复到 [_defaultRestoreOpacity]。
-  static const double _defaultOpacity = 0.0;
-  static const double _defaultRestoreOpacity = 0.6;
+  /// 浮窗两态（`◐` 一键切换）：
+  /// - 底板不透明 = **白色磨砂卡**（默认）：奶白圆角卡片 + 深色文字，参考桌面
+  ///   翻译器的浅色浮窗；
+  /// - 底板全透明 = 桌面歌词式：白字直接压在游戏画面上，native 自动加描边 +
+  ///   投影自证可读性。
+  /// 存过透明度偏好的用户保持原值（never break userspace）。
+  static const double _defaultOpacity = 0.92;
+  static const double _defaultRestoreOpacity = 0.92;
 
   /// BUG-1095：台词字号的持久化 key。与 [_rectPreferenceKey]（窗口几何）严格分开——
   /// 这两件事以前被 native 的「字号 = 基准 × 窗高比例」耦成一件，正是「放不下拖高
@@ -395,8 +398,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
         rect: _savedRect,
         fontSize: _fontSize,
         bgColor: _backgroundColor,
+        textColor: _textColor,
+        buttonTextColor: _buttonTextColor,
+        buttonBgColor: _buttonBgColor,
+        activeColor: _activeColor,
         fontFamily: _fontFamily,
         fontPath: _fontPath,
+        slotTooltips: _slotTooltips,
         following: _following,
         passThrough: _passThrough,
         locked: _locked,
@@ -426,10 +434,34 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await _syncVoiceState();
   }
 
+  /// 白卡模式判据：底板可见即走浅色卡片调色板（深字浅底），全透明走桌面歌词
+  /// 调色板（白字，native 按底板 alpha 自动决定要不要描边）。
+  bool get _isCardMode => _opacity > 0;
+
   int get _backgroundColor {
     final int alpha = (_opacity.clamp(0.0, 1.0) * 255).round();
-    return alpha << 24;
+    // 卡片模式奶白底（FAFAFC）；透明模式底色无意义，保持纯黑基底以复用
+    // native 的 BUG-1046 可点性 alpha 地板。
+    return _isCardMode ? (alpha << 24) | 0x00FAFAFC : alpha << 24;
   }
+
+  int get _textColor => _isCardMode ? 0xFF23262B : 0xFFFFFFFF;
+  int get _buttonTextColor => _isCardMode ? 0xFF3C4046 : 0xFFFFFFFF;
+  int get _buttonBgColor => _isCardMode ? 0x12000000 : 0x552D2340;
+  int get _activeColor => _isCardMode ? 0xFF7B1FA2 : 0xFFCE93D8;
+
+  /// 工具条槽位悬停提示文案，与 native `hook_toolbar::kSlotActions` 同下标。
+  List<String> get _slotTooltips => <String>[
+        t.game_hook_btn_replay,
+        t.game_hook_btn_recapture,
+        t.game_hook_btn_follow,
+        t.game_hook_btn_passthrough,
+        t.game_hook_btn_transparency,
+        t.game_hook_btn_lock,
+        t.game_hook_btn_workbench,
+        t.game_hook_btn_topmost,
+        t.game_hook_btn_close,
+      ];
 
   Future<void> showManually() async {
     if (!_started) return;
@@ -480,6 +512,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GalHookTextOverlayChannel.updateStyle(
       bgColor: _backgroundColor,
       fontSize: _fontSize,
+      textColor: _textColor,
+      buttonTextColor: _buttonTextColor,
+      buttonBgColor: _buttonBgColor,
+      activeColor: _activeColor,
       fontFamily: _fontFamily,
       fontPath: _fontPath,
     );
@@ -502,6 +538,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GalHookTextOverlayChannel.updateStyle(
       bgColor: _backgroundColor,
       fontSize: next,
+      textColor: _textColor,
+      buttonTextColor: _buttonTextColor,
+      buttonBgColor: _buttonBgColor,
+      activeColor: _activeColor,
       fontFamily: _fontFamily,
       fontPath: _fontPath,
     );
@@ -539,6 +579,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GalHookTextOverlayChannel.updateStyle(
       bgColor: _backgroundColor,
       fontSize: _fontSize,
+      textColor: _textColor,
+      buttonTextColor: _buttonTextColor,
+      buttonBgColor: _buttonBgColor,
+      activeColor: _activeColor,
       fontFamily: _fontFamily,
       fontPath: _fontPath,
     );
