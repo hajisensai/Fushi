@@ -53,6 +53,19 @@ constexpr float kDragThresholdDip = 6.0f;
 // 注音高度，假名与基准字之间因此有一条细缝，不会贴在一起。
 constexpr float kRubyFontScale = 0.45f;
 constexpr float kRubyLineGapScale = 1.25f;
+// 桌面歌词式文字渲染（仅 hook 台词浮窗）：文字自带「投影 + 描边」，可读性不再
+// 依赖底板，于是背景可以像音乐播放器桌面歌词一样默认全透明。
+//
+// 描边不走自定义 DirectWrite 文本渲染器（overlay_ruby_render_guard 明确禁止
+// ——它会让绘制路径与 CharIndexAt / 高亮 / 滚动共用的那份 text_layout_ 几何
+// 分叉），而是把**同一个**
+// text_layout_ 按 8 个方向偏移多画几遍：几何天然逐像素一致，点字 index、折行、
+// 滚动、注音全部不动。8 遍 + 阴影 + 填充共 10 次 DrawTextLayout，只在文本 /
+// 悬停 / 拖动变化时重绘，代价可忽略。
+constexpr float kLyricOutlineRadiusDip = 1.6f;
+constexpr float kLyricShadowOffsetDip = 2.0f;
+constexpr uint32_t kLyricOutlineColor = 0xE0000000;  // 88% 黑描边
+constexpr uint32_t kLyricShadowColor = 0x59000000;   // 35% 黑投影
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
 constexpr float kBaseStripHeightForFontDip = 96.0f;
@@ -1140,9 +1153,14 @@ void FloatingLyricWindow::Render() {
   const float ruby_gap_px = ruby_font_px * kRubyLineGapScale;
   const bool has_ruby = !ruby_spans_.empty();
 
+  // 桌面歌词字重：hook 模式半粗（描边字太细会被描边吃掉笔画）；歌词条 / 剪贴板
+  // 窗保持 NORMAL，逐像素不变。
+  const DWRITE_FONT_WEIGHT text_weight = hook_text_mode_
+                                             ? DWRITE_FONT_WEIGHT_SEMI_BOLD
+                                             : DWRITE_FONT_WEIGHT_NORMAL;
   if (text_format_ == nullptr) {
     dwrite_factory_->CreateTextFormat(
-        L"Yu Gothic UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+        L"Yu Gothic UI", nullptr, text_weight,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
         static_cast<float>(ScaleForDpi(scaled_font)),
         L"", text_format_.GetAddressOf());
@@ -1161,7 +1179,7 @@ void FloatingLyricWindow::Render() {
   // PushAxisAlignedClip 把一切文字绘制框在 text_rect_ 里，绝不会画到控件带上）。
   if (has_ruby && ruby_format_ == nullptr) {
     dwrite_factory_->CreateTextFormat(
-        L"Yu Gothic UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+        L"Yu Gothic UI", nullptr, text_weight,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, ruby_font_px,
         L"", ruby_format_.GetAddressOf());
     if (ruby_format_ != nullptr) {
@@ -1321,6 +1339,37 @@ void FloatingLyricWindow::Render() {
           }
         }
       }
+      // 桌面歌词式描边（仅 hook 模式）：同一 text_layout_ 先按 8 向偏移画描边、
+      // 再画投影，最后回到原点画填充。所有遍都在上面的 text_clip 之内。
+      // hook 的 UpdateText 恒传 current_line_start=-1，不存在 per-range dim
+      // drawing effect，因此描边遍不会被 SetDrawingEffect 换色。
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_outline;
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_shadow;
+      if (hook_text_mode_) {
+        render_target_->CreateSolidColorBrush(
+            ColorFromArgb(kLyricOutlineColor), lyric_outline.GetAddressOf());
+        render_target_->CreateSolidColorBrush(
+            ColorFromArgb(kLyricShadowColor), lyric_shadow.GetAddressOf());
+      }
+      if (hook_text_mode_ && lyric_outline != nullptr &&
+          lyric_shadow != nullptr) {
+        const float shadow_off = ScaleForDpi(kLyricShadowOffsetDip);
+        render_target_->DrawTextLayout(
+            D2D1::Point2F(text_rect_.left + shadow_off * 0.5f,
+                          text_origin_y + shadow_off),
+            text_layout_.Get(), lyric_shadow.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+        const float r = ScaleForDpi(kLyricOutlineRadiusDip);
+        const float d = r * 0.7071f;
+        const D2D1_POINT_2F ring[8] = {
+            {r, 0.0f},  {-r, 0.0f}, {0.0f, r},  {0.0f, -r},
+            {d, d},     {d, -d},    {-d, d},    {-d, -d}};
+        for (const D2D1_POINT_2F& off : ring) {
+          render_target_->DrawTextLayout(
+              D2D1::Point2F(text_rect_.left + off.x, text_origin_y + off.y),
+              text_layout_.Get(), lyric_outline.Get(),
+              D2D1_DRAW_TEXT_OPTIONS_NONE);
+        }
+      }
       render_target_->DrawTextLayout(
           D2D1::Point2F(text_rect_.left, text_origin_y), text_layout_.Get(),
           brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
@@ -1354,6 +1403,23 @@ void FloatingLyricWindow::Render() {
               text_rect_.left + box.left, text_origin_y + box.top,
               text_rect_.left + box.left + box.width,
               text_origin_y + box.top + ruby_gap_px);
+          // 注音的桌面歌词描边：字小，半径收到 0.75 倍、不画投影。
+          if (hook_text_mode_ && lyric_outline != nullptr) {
+            const float rr = ScaleForDpi(kLyricOutlineRadiusDip * 0.75f);
+            const float rd = rr * 0.7071f;
+            const D2D1_POINT_2F ruby_ring[8] = {
+                {rr, 0.0f}, {-rr, 0.0f}, {0.0f, rr},  {0.0f, -rr},
+                {rd, rd},   {rd, -rd},   {-rd, rd},   {-rd, -rd}};
+            for (const D2D1_POINT_2F& off : ruby_ring) {
+              const D2D1_RECT_F shifted = D2D1::RectF(
+                  ruby_rect.left + off.x, ruby_rect.top + off.y,
+                  ruby_rect.right + off.x, ruby_rect.bottom + off.y);
+              render_target_->DrawTextW(
+                  span.ruby.c_str(), static_cast<UINT32>(span.ruby.size()),
+                  ruby_format_.Get(), shifted, lyric_outline.Get(),
+                  D2D1_DRAW_TEXT_OPTIONS_NONE);
+            }
+          }
           render_target_->DrawTextW(
               span.ruby.c_str(), static_cast<UINT32>(span.ruby.size()),
               ruby_format_.Get(), ruby_rect, brush.Get(),

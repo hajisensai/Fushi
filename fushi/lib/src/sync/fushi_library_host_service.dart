@@ -112,7 +112,15 @@ SyncKeyDiff computeLocalAudioSyncDiff({
 /// 纯 SRT 取 uid。host 端按此键先查 Audiobooks(bookKey) 再查 SrtBooks(uid) 解析。
 /// [title] 可选，供显示用（允许 null）。
 class RemoteAudiobookInfo {
-  const RemoteAudiobookInfo({required this.bookKey, this.uid, this.title});
+  const RemoteAudiobookInfo({
+    required this.bookKey,
+    this.uid,
+    this.title,
+    this.positionMs = 0,
+    this.positionUpdatedAtMs = 0,
+    this.delayMs = 0,
+    this.delayUpdatedAtMs = 0,
+  });
 
   final String bookKey;
 
@@ -121,6 +129,17 @@ class RemoteAudiobookInfo {
   final String? uid;
 
   final String? title;
+
+  /// host 端听书断点（毫秒）+ 最后更新时刻（互联完整支持批次：清单内联，供
+  /// sweep 免逐本 GET、以及下载回填/首页展示；旧 host 不带 → 0，消费方回退
+  /// 逐本 `GET /position`）。
+  final int positionMs;
+  final int positionUpdatedAtMs;
+
+  /// host 端调轴（`audiobook_delay_<identity>` prefs，毫秒可负）+ 最后更新时刻
+  /// （LWW；与视频 BUG-1620 同范式。旧 host / 从未带戳调过 → 0）。
+  final int delayMs;
+  final int delayUpdatedAtMs;
 
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
@@ -132,6 +151,10 @@ class RemoteAudiobookInfo {
         'bookKey': bookKey,
         if (uid != null && uid!.isNotEmpty) 'uid': uid,
         'title': title,
+        if (positionMs > 0) 'positionMs': positionMs,
+        if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
+        if (delayMs != 0) 'delayMs': delayMs,
+        if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
       };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -141,7 +164,26 @@ class RemoteAudiobookInfo {
             ? json['uid']!.toString()
             : null,
         title: json['title']?.toString(),
+        positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+        positionUpdatedAtMs:
+            (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0,
+        delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
+        delayUpdatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
       );
+}
+
+/// host 端「有声书调轴跨设备同步」的**可选**能力（互联完整支持批次；与视频
+/// [VideoDelayHost] 同范式——不并进主接口，避免十余个测试 fake 全量补桩）。
+/// server 用 `is` 探测，host 不实现 → `/delay` 落 404，client best-effort 降级。
+abstract interface class AudiobookDelayHost {
+  /// 读 host 端有声书 [identity] 的调轴。返回 (毫秒（可负）, 更新时刻毫秒)；
+  /// 无带戳记录时值取既有 `audiobook_delay_` pref（时间戳 0），未知 identity
+  /// 返回 (0, 0)。
+  Future<({int delayMs, int updatedAtMs})> getAudiobookDelay(String identity);
+
+  /// 把 client 上报的调轴写入 host。「严格较新时间戳者胜」（[resolveDelayLww]）；
+  /// clamp ±[kVideoSubtitleDelayLimitMs]；host 无该有声书时 no-op。
+  Future<void> putAudiobookDelay(String identity, int delayMs, int updatedAtMs);
 }
 
 /// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
@@ -264,7 +306,27 @@ class RemoteBookInfo {
     this.progressPercent = 0,
     this.progressUpdatedAtMs = 0,
     this.kind = MediaKind.epub,
+    this.format = 'epub',
+    this.hasMangaContent = false,
+    this.mangaReadingMode,
   });
+
+  /// 书身份格式（`EpubBooks.format` 值域：'epub'/'pdf'/'manga'，见 [BookFormat]）。
+  /// additive wire 字段 `'format'`：epub 缺省不写键（旧清单 wire 字节不变），缺失
+  /// /未知回落 'epub'。与 [kind]（MediaKind 轴）正交——manga 行 kind 仍是 epub
+  /// （EpubBooks 表身份），格式轴才区分漫画。
+  final String format;
+
+  /// 漫画内容可下载（format=='manga' 且 host 书目录根有 manga.json）。与
+  /// [hasContent]（EPUB 内容树）**分键**是向后兼容的关键：旧 client 只认
+  /// hasContent，漫画对它保持 false（完全无感知，行为与从前一致）；新 client 用
+  /// 本字段在漫画架渲染远端占位卡 + 走同一 books 端点下载漫画包。
+  final bool hasMangaContent;
+
+  /// host 端该漫画的按本阅读模式（`EpubBooks.mangaReadingMode`；null = 跟随自动
+  /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
+  /// 后续调整各端各自记忆）。
+  final String? mangaReadingMode;
 
   /// 该书的媒体种类（BUG-1119）。additive wire 字段 `'kind'`：epub 缺省**不写键**
   /// （旧书清单 wire 字节完全不变），缺失/未知一律回落 [MediaKind.epub]（旧 host
@@ -361,6 +423,9 @@ class RemoteBookInfo {
         if (progressPercent > 0) 'progressPercent': progressPercent,
         if (progressUpdatedAtMs > 0) 'progressUpdatedAtMs': progressUpdatedAtMs,
         if (kind != MediaKind.epub) 'kind': kind.dbValue,
+        if (format != 'epub') 'format': format,
+        if (hasMangaContent) 'hasMangaContent': true,
+        if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
       };
 
   RemoteBookInfo copyWith({
@@ -378,6 +443,9 @@ class RemoteBookInfo {
     int? progressPercent,
     int? progressUpdatedAtMs,
     MediaKind? kind,
+    String? format,
+    bool? hasMangaContent,
+    String? mangaReadingMode,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -396,6 +464,9 @@ class RemoteBookInfo {
         progressPercent: progressPercent ?? this.progressPercent,
         progressUpdatedAtMs: progressUpdatedAtMs ?? this.progressUpdatedAtMs,
         kind: kind ?? this.kind,
+        format: format ?? this.format,
+        hasMangaContent: hasMangaContent ?? this.hasMangaContent,
+        mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -426,6 +497,10 @@ class RemoteBookInfo {
       progressUpdatedAtMs: _jsonNonNegativeInt(json['progressUpdatedAtMs']),
       // 缺失（旧 host）/未知（对端未来新增）一律回落 epub，绝不抛异常。
       kind: MediaKind.tryParse(_jsonString(json['kind'])) ?? MediaKind.epub,
+      // 互联完整支持批次（漫画）：缺失（旧 host）回落 'epub' / false / null。
+      format: _jsonString(json['format']) ?? 'epub',
+      hasMangaContent: json['hasMangaContent'] == true,
+      mangaReadingMode: _jsonString(json['mangaReadingMode']),
     );
   }
 }
@@ -750,6 +825,218 @@ String videoRemotePositionEpisodeAtPrefKey(String bookUid, int episodeIndex) =>
 String? videoUidFromRemotePositionPrefKey(String key) =>
     videoRemotePositionPrefKeys.idFromPositionKey(key);
 
+/// 视频字幕调轴（delayMs）跨设备三件套——键结构与断点三件套同构（复用
+/// [PositionPrefKeys]，值语义不同：断点是位置毫秒，这里是可负的调轴毫秒）。
+/// 前缀冻结：`video_remote_delay_`。
+///
+/// 为什么需要（互联远端调轴不持久化 bug）：断点有「本地 prefs + LWW + 上报 host」
+/// 三件套，而调轴此前只有 host→client 单向下发（BUG-996）——client 远端播放里调轴
+/// 写的是 `VideoBooks.delayMs` 的 UPDATE，但远端视频在 client 无行，静默 0 行写入；
+/// 重进又被 host 清单值覆盖归 0。本三件套补上 client 侧持久化与双向 LWW。
+const PositionPrefKeys videoRemoteDelayPrefKeys =
+    PositionPrefKeys('video_remote_delay_');
+
+/// 视频 [bookUid] 的字幕调轴 prefs key（值 = 调轴毫秒，可负）。client 远端播放与
+/// host 本机播放共用同一公式（与断点键空间同范式，TODO-816）。
+String videoRemoteDelayPrefKey(String bookUid) =>
+    videoRemoteDelayPrefKeys.positionKey(bookUid);
+
+/// [videoRemoteDelayPrefKey] 对应的「最后更新时间」prefs key（epoch 毫秒）。
+/// LWW 冲突解决用（见 [resolveDelayLww]）。
+String videoRemoteDelayAtPrefKey(String bookUid) =>
+    videoRemoteDelayPrefKeys.atKey(bookUid);
+
+/// 字幕调轴统一 clamp 界（±10 分钟，毫秒）。页面滑条 / host 端 PUT 收口共用，
+/// 防越界值经互联写进 DB/prefs。
+const int kVideoSubtitleDelayLimitMs = 600000;
+
+/// 视频「音轨选择」跨设备三件套（播放偏好同步泛化批）。值 = 轨 id 字符串（同一
+/// 文件的轨 id 跨设备同义）；空串 = 未选/已清除（跟随 libmpv 默认）。
+const PositionPrefKeys videoRemoteAudioTrackPrefKeys =
+    PositionPrefKeys('video_remote_audio_track_');
+
+String videoRemoteAudioTrackPrefKey(String bookUid) =>
+    videoRemoteAudioTrackPrefKeys.positionKey(bookUid);
+
+String videoRemoteAudioTrackAtPrefKey(String bookUid) =>
+    videoRemoteAudioTrackPrefKeys.atKey(bookUid);
+
+/// 视频「副字幕来源」跨设备三件套（TODO-2837 / 播放偏好同步泛化批）。值 = 四态
+/// 编码（本地字幕文件绝对路径 / `embedded:<n>` / `off:` 哨兵）；空串 = 未选。
+/// 本地绝对路径在对端解析不到文件时由恢复侧自然跳过（无特例分支）。
+const PositionPrefKeys videoRemoteSecondarySubtitlePrefKeys =
+    PositionPrefKeys('video_remote_secondary_subtitle_');
+
+String videoRemoteSecondarySubtitlePrefKey(String bookUid) =>
+    videoRemoteSecondarySubtitlePrefKeys.positionKey(bookUid);
+
+String videoRemoteSecondarySubtitleAtPrefKey(String bookUid) =>
+    videoRemoteSecondarySubtitlePrefKeys.atKey(bookUid);
+
+/// 视频「副字幕独立调轴」跨设备三件套（播放偏好同步泛化批）。值 = 毫秒（可负）；
+/// 空串 = 跟随主字幕（null）。「清除回跟随」也是一次带戳写（at 键存活），因此
+/// 清除同样跨设备收敛。
+const PositionPrefKeys videoRemoteSecondaryDelayPrefKeys =
+    PositionPrefKeys('video_remote_secondary_delay_');
+
+String videoRemoteSecondaryDelayPrefKey(String bookUid) =>
+    videoRemoteSecondaryDelayPrefKeys.positionKey(bookUid);
+
+String videoRemoteSecondaryDelayAtPrefKey(String bookUid) =>
+    videoRemoteSecondaryDelayPrefKeys.atKey(bookUid);
+
+/// 每视频「播放偏好」带戳状态（播放偏好同步泛化批）——互联同步的统一载体。
+///
+/// 设计准则（用户拍板：**不应该让同步这件事变得困难**）：每个偏好 = (值, 时间戳)
+/// 一对，合并 = 逐字段「严格较新时间戳者胜」（[merge]）；两端存储 = 同一
+/// `video_remote_*_` prefs 键对；wire = 单一 `/playback` 端点 + 清单内联。新增
+/// 一个偏好字段只需：加一对键 + 本类加一对字段 + 写入点盖戳——不再每个偏好开
+/// 一条通道。
+///
+/// 值语义：`null` 值 + `at>0` = 「已显式清除」（如副字幕调轴回跟随），与「从未
+/// 设过」（at==0）可区分——清除因此也能跨设备收敛。
+class VideoPlaybackSyncState {
+  const VideoPlaybackSyncState({
+    this.delayMs = 0,
+    this.delayAt = 0,
+    this.audioTrackId,
+    this.audioTrackAt = 0,
+    this.secondarySubtitleSource,
+    this.secondarySubtitleAt = 0,
+    this.secondaryDelayMs,
+    this.secondaryDelayAt = 0,
+  });
+
+  /// 主字幕调轴（毫秒，可负；无「清除」语义，0 即中性）。
+  final int delayMs;
+  final int delayAt;
+
+  /// 音轨 id（null = 未选/清除 → 跟随 libmpv 默认）。
+  final String? audioTrackId;
+  final int audioTrackAt;
+
+  /// 副字幕来源四态编码（null = 未选；`off:` = 显式关）。
+  final String? secondarySubtitleSource;
+  final int secondarySubtitleAt;
+
+  /// 副字幕独立调轴（毫秒；null = 跟随主字幕）。
+  final int? secondaryDelayMs;
+  final int secondaryDelayAt;
+
+  /// 是否没有任何带戳字段（PUT 空状态没有意义，端点可直接 no-op）。
+  bool get isEmpty =>
+      delayAt == 0 &&
+      audioTrackAt == 0 &&
+      secondarySubtitleAt == 0 &&
+      secondaryDelayAt == 0;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        if (delayAt > 0) ...<String, Object?>{
+          'delayMs': delayMs,
+          'delayAt': delayAt,
+        },
+        if (audioTrackAt > 0) ...<String, Object?>{
+          if (audioTrackId != null) 'audioTrackId': audioTrackId,
+          'audioTrackAt': audioTrackAt,
+        },
+        if (secondarySubtitleAt > 0) ...<String, Object?>{
+          if (secondarySubtitleSource != null)
+            'secondarySubtitleSource': secondarySubtitleSource,
+          'secondarySubtitleAt': secondarySubtitleAt,
+        },
+        if (secondaryDelayAt > 0) ...<String, Object?>{
+          if (secondaryDelayMs != null) 'secondaryDelayMs': secondaryDelayMs,
+          'secondaryDelayAt': secondaryDelayAt,
+        },
+      };
+
+  static VideoPlaybackSyncState fromJson(Map<String, Object?> json) =>
+      VideoPlaybackSyncState(
+        delayMs: _jsonInt(json['delayMs']) ?? 0,
+        delayAt: _jsonInt(json['delayAt']) ?? 0,
+        audioTrackId: _jsonString(json['audioTrackId']),
+        audioTrackAt: _jsonInt(json['audioTrackAt']) ?? 0,
+        secondarySubtitleSource: _jsonString(json['secondarySubtitleSource']),
+        secondarySubtitleAt: _jsonInt(json['secondarySubtitleAt']) ?? 0,
+        secondaryDelayMs: _jsonInt(json['secondaryDelayMs']),
+        secondaryDelayAt: _jsonInt(json['secondaryDelayAt']) ?? 0,
+      );
+
+  /// 逐字段「严格较新时间戳者胜」合并：[incoming] 某字段 at 严格大于 [held] 才
+  /// 覆盖该字段（平局保守持有侧——host 收 PUT 时 held=已存，client 起播决议时
+  /// held=host 下发值，与 [resolveDelayLww] 同一平局哲学）。纯函数。
+  static VideoPlaybackSyncState merge(
+    VideoPlaybackSyncState held,
+    VideoPlaybackSyncState incoming,
+  ) =>
+      VideoPlaybackSyncState(
+        delayMs:
+            incoming.delayAt > held.delayAt ? incoming.delayMs : held.delayMs,
+        delayAt:
+            incoming.delayAt > held.delayAt ? incoming.delayAt : held.delayAt,
+        audioTrackId: incoming.audioTrackAt > held.audioTrackAt
+            ? incoming.audioTrackId
+            : held.audioTrackId,
+        audioTrackAt: incoming.audioTrackAt > held.audioTrackAt
+            ? incoming.audioTrackAt
+            : held.audioTrackAt,
+        secondarySubtitleSource:
+            incoming.secondarySubtitleAt > held.secondarySubtitleAt
+                ? incoming.secondarySubtitleSource
+                : held.secondarySubtitleSource,
+        secondarySubtitleAt:
+            incoming.secondarySubtitleAt > held.secondarySubtitleAt
+                ? incoming.secondarySubtitleAt
+                : held.secondarySubtitleAt,
+        secondaryDelayMs: incoming.secondaryDelayAt > held.secondaryDelayAt
+            ? incoming.secondaryDelayMs
+            : held.secondaryDelayMs,
+        secondaryDelayAt: incoming.secondaryDelayAt > held.secondaryDelayAt
+            ? incoming.secondaryDelayAt
+            : held.secondaryDelayAt,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoPlaybackSyncState &&
+      other.delayMs == delayMs &&
+      other.delayAt == delayAt &&
+      other.audioTrackId == audioTrackId &&
+      other.audioTrackAt == audioTrackAt &&
+      other.secondarySubtitleSource == secondarySubtitleSource &&
+      other.secondarySubtitleAt == secondarySubtitleAt &&
+      other.secondaryDelayMs == secondaryDelayMs &&
+      other.secondaryDelayAt == secondaryDelayAt;
+
+  @override
+  int get hashCode => Object.hash(
+      delayMs,
+      delayAt,
+      audioTrackId,
+      audioTrackAt,
+      secondarySubtitleSource,
+      secondarySubtitleAt,
+      secondaryDelayMs,
+      secondaryDelayAt);
+}
+
+/// 字幕调轴跨设备冲突解决——「严格较新时间戳者胜」。纯函数。
+///
+/// 与 [resolvePositionLww] 分开的理由：位置的平局规则「取较大位置（看得更远者胜）」
+/// 对调轴没有意义（调轴可负、大小不代表新旧）。调轴的平局（含两侧都无时间戳的旧
+/// 数据）保守取 [aDelayMs] 侧——调用方把「平局时应保留的一侧」放 a：host 收 PUT 时
+/// a=已存值（仅严格更新才覆盖）；client 起播决议时 a=host 下发值（两侧都无戳 =
+/// 本机从未调过，跟随 host，保留 BUG-996 行为）。
+({int delayMs, int updatedAtMs}) resolveDelayLww({
+  required int aDelayMs,
+  required int aUpdatedAtMs,
+  required int bDelayMs,
+  required int bUpdatedAtMs,
+}) =>
+    bUpdatedAtMs > aUpdatedAtMs
+        ? (delayMs: bDelayMs, updatedAtMs: bUpdatedAtMs)
+        : (delayMs: aDelayMs, updatedAtMs: aUpdatedAtMs);
+
 /// 播放位置跨设备冲突解决——「取较新时间戳」last-write-wins（LWW）。
 ///
 /// 视频（TODO-653）与有声书（BUG-471）共用同一实现：历史上
@@ -813,6 +1100,22 @@ String audiobookPositionPrefKey(String bookKey) =>
 /// `AudiobookRepository._kPositionAtMsKeyPrefix` 同公式。冲突解决「取较新时间戳」用它。
 String audiobookPositionAtPrefKey(String bookKey) =>
     audiobookPositionPrefKeys.atKey(bookKey);
+
+/// 有声书调轴三件套（互联完整支持批次）——键结构与断点三件套同构。值键
+/// `audiobook_delay_<identity>` 是既有冻结键（`AudiobookRepository._kDelayMsKeyPrefix`
+/// 同公式）；时间戳键 `audiobook_delay_at_<identity>` 为 LWW 新增（repo 的
+/// `updateDelayMs` 现同步盖戳）。identity = srt-backed 的 bookKey / 纯 SRT 的 uid，
+/// 与断点键空间同一身份约定。
+const PositionPrefKeys audiobookDelayPrefKeys =
+    PositionPrefKeys('audiobook_delay_');
+
+/// 有声书 [identity] 的调轴 pref key（值 = 毫秒，可负）。
+String audiobookDelayPrefKey(String identity) =>
+    audiobookDelayPrefKeys.positionKey(identity);
+
+/// [audiobookDelayPrefKey] 对应的「最后更新时间」pref key（epoch 毫秒；LWW 用）。
+String audiobookDelayAtPrefKey(String identity) =>
+    audiobookDelayPrefKeys.atKey(identity);
 
 /// [audiobookPositionPrefKey] 的逆：从位置 pref key 反解出 bookKey，非该 key 返回
 /// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。时间戳键的排除见
@@ -950,6 +1253,14 @@ class RemoteVideoInfo {
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
     this.delayMs = 0,
+    this.delayUpdatedAtMs = 0,
+    this.audioTrackId,
+    this.audioTrackUpdatedAtMs = 0,
+    this.secondarySubtitleSource,
+    this.secondarySubtitleUpdatedAtMs = 0,
+    this.secondaryDelayMs,
+    this.secondaryDelayUpdatedAtMs = 0,
+    this.completedAt,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
@@ -1006,9 +1317,51 @@ class RemoteVideoInfo {
   /// 同范式。0 表示无记录。
   final int positionUpdatedAtMs;
 
-  /// host 端该视频的字幕时序偏移（`VideoBooks.delayMs`，毫秒，可负；BUG-996）。设备
-  /// 无关的纯时序设置，跨端语义一致 → 远端播放时应用，使桌面设的字幕调轴在手机跟随。
+  /// host 端该视频的字幕时序偏移（毫秒，可负；BUG-996）。设备无关的纯时序设置，
+  /// 跨端语义一致 → 远端播放时应用，使桌面设的字幕调轴在手机跟随。取值为 host 端
+  /// `video_remote_delay_` prefs（带戳，client 上报 / host 本机调轴写入）与旧
+  /// `VideoBooks.delayMs`（无戳记 0）经 [resolveDelayLww] 的胜者。
   final int delayMs;
+
+  /// [delayMs] 的最后更新时间（epoch 毫秒）。跨设备冲突解决「严格较新者胜」
+  /// （[resolveDelayLww]）。0 = 旧 host 未带 / 从未有人带戳调过轴（client 侧视为
+  /// 「host 无新主张」，本机带戳值即胜）。
+  final int delayUpdatedAtMs;
+
+  /// host 端该视频的音轨偏好（系列级 ?? 本集 `VideoBooks.audioTrackId`，schema v52
+  /// 同系列音轨记忆；null = host 没选过 → client 跟随 libmpv 默认轨）。同一文件的
+  /// 轨 id 跨设备同义，client 本机没选过音轨时按它起播（远端音轨持久化 bug 的
+  /// host→client 半边；client 自己的选择落本地 prefs、优先于此值）。
+  final String? audioTrackId;
+
+  /// [audioTrackId] 的最后更新时刻（播放偏好同步泛化批；LWW）。0 = 无带戳记录
+  /// （值来自系列级/row 基底）。
+  final int audioTrackUpdatedAtMs;
+
+  /// host 端副字幕来源四态编码 + 时刻（TODO-2837 副字幕入同步通道）。值可能是
+  /// host 本机的绝对路径——对端恢复时文件不存在自然跳过（无特例分支）。
+  final String? secondarySubtitleSource;
+  final int secondarySubtitleUpdatedAtMs;
+
+  /// host 端副字幕独立调轴 + 时刻（null = 跟随主字幕；带戳 null = 显式清除过）。
+  final int? secondaryDelayMs;
+  final int secondaryDelayUpdatedAtMs;
+
+  /// 清单字段 → 播放偏好带戳状态（client 起播 LWW 决议 / sweep 的 host 侧读数）。
+  VideoPlaybackSyncState get playback => VideoPlaybackSyncState(
+        delayMs: delayMs,
+        delayAt: delayUpdatedAtMs,
+        audioTrackId: audioTrackId,
+        audioTrackAt: audioTrackUpdatedAtMs,
+        secondarySubtitleSource: secondarySubtitleSource,
+        secondarySubtitleAt: secondarySubtitleUpdatedAtMs,
+        secondaryDelayMs: secondaryDelayMs,
+        secondaryDelayAt: secondaryDelayUpdatedAtMs,
+      );
+
+  /// host 端该视频的「看完」时刻（epoch 毫秒；null = 未看完）。client 剧集面板的
+  /// 看完角标（Jellyfin played 勾）数据源——此前远端集无口径恒无标记。
+  final int? completedAt;
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
@@ -1031,6 +1384,18 @@ class RemoteVideoInfo {
         if (positionMs > 0) 'positionMs': positionMs,
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
         if (delayMs != 0) 'delayMs': delayMs,
+        if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
+        if (_isNonEmpty(audioTrackId)) 'audioTrackId': audioTrackId,
+        if (audioTrackUpdatedAtMs > 0)
+          'audioTrackUpdatedAtMs': audioTrackUpdatedAtMs,
+        if (_isNonEmpty(secondarySubtitleSource))
+          'secondarySubtitleSource': secondarySubtitleSource,
+        if (secondarySubtitleUpdatedAtMs > 0)
+          'secondarySubtitleUpdatedAtMs': secondarySubtitleUpdatedAtMs,
+        if (secondaryDelayMs != null) 'secondaryDelayMs': secondaryDelayMs,
+        if (secondaryDelayUpdatedAtMs > 0)
+          'secondaryDelayUpdatedAtMs': secondaryDelayUpdatedAtMs,
+        if (completedAt != null) 'completedAt': completedAt,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
           'episodes': <Map<String, Object?>>[
@@ -1053,6 +1418,14 @@ class RemoteVideoInfo {
     int? positionMs,
     int? positionUpdatedAtMs,
     int? delayMs,
+    int? delayUpdatedAtMs,
+    String? audioTrackId,
+    int? audioTrackUpdatedAtMs,
+    String? secondarySubtitleSource,
+    int? secondarySubtitleUpdatedAtMs,
+    int? secondaryDelayMs,
+    int? secondaryDelayUpdatedAtMs,
+    int? completedAt,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
@@ -1070,6 +1443,18 @@ class RemoteVideoInfo {
         positionMs: positionMs ?? this.positionMs,
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
         delayMs: delayMs ?? this.delayMs,
+        delayUpdatedAtMs: delayUpdatedAtMs ?? this.delayUpdatedAtMs,
+        audioTrackId: audioTrackId ?? this.audioTrackId,
+        audioTrackUpdatedAtMs:
+            audioTrackUpdatedAtMs ?? this.audioTrackUpdatedAtMs,
+        secondarySubtitleSource:
+            secondarySubtitleSource ?? this.secondarySubtitleSource,
+        secondarySubtitleUpdatedAtMs:
+            secondarySubtitleUpdatedAtMs ?? this.secondarySubtitleUpdatedAtMs,
+        secondaryDelayMs: secondaryDelayMs ?? this.secondaryDelayMs,
+        secondaryDelayUpdatedAtMs:
+            secondaryDelayUpdatedAtMs ?? this.secondaryDelayUpdatedAtMs,
+        completedAt: completedAt ?? this.completedAt,
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
@@ -1100,6 +1485,16 @@ class RemoteVideoInfo {
       positionMs: _jsonInt(json['positionMs']) ?? 0,
       positionUpdatedAtMs: _jsonInt(json['positionUpdatedAtMs']) ?? 0,
       delayMs: _jsonInt(json['delayMs']) ?? 0,
+      delayUpdatedAtMs: _jsonInt(json['delayUpdatedAtMs']) ?? 0,
+      audioTrackId: _jsonString(json['audioTrackId']),
+      audioTrackUpdatedAtMs: _jsonInt(json['audioTrackUpdatedAtMs']) ?? 0,
+      secondarySubtitleSource: _jsonString(json['secondarySubtitleSource']),
+      secondarySubtitleUpdatedAtMs:
+          _jsonInt(json['secondarySubtitleUpdatedAtMs']) ?? 0,
+      secondaryDelayMs: _jsonInt(json['secondaryDelayMs']),
+      secondaryDelayUpdatedAtMs:
+          _jsonInt(json['secondaryDelayUpdatedAtMs']) ?? 0,
+      completedAt: _jsonInt(json['completedAt']),
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,
       tags: _jsonStringList(json['tags']),
@@ -1554,4 +1949,25 @@ abstract interface class VideoDeletionHost {
   ///
   /// 幂等：[id] 不存在时静默返回。[id] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteVideo(String id);
+}
+
+/// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
+/// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
+///
+/// 与 [FushiLibraryHostService] 分开的理由同 [VideoDeletionHost]：主接口有十余个
+/// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩。
+///
+/// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/playback`
+/// 落 404；client 上报是 best-effort（失败只记日志），本地 prefs 已持久化，对旧
+/// host 优雅降级（Never break userspace）。
+abstract interface class VideoPlaybackSyncHost {
+  /// 读 host 端视频 [id] 的播放偏好带戳状态。无带戳记录的字段回退行/系列级基底
+  /// （时间戳 0）；id 未知返回全默认。
+  Future<VideoPlaybackSyncState> getVideoPlayback(String id);
+
+  /// 把 client 上报的播放偏好合并进 host（逐字段严格较新者胜，
+  /// [VideoPlaybackSyncState.merge]）。调轴类字段越界 clamp 到
+  /// ±[kVideoSubtitleDelayLimitMs]、时间戳截到 now+5min（防未来戳锁死 LWW）；
+  /// host 库不存在该视频时 no-op（防任意 id 写脏 prefs）。
+  Future<void> putVideoPlayback(String id, VideoPlaybackSyncState incoming);
 }

@@ -49,14 +49,15 @@ void main() {
           reason: 'VideoController 必须显式传 VideoControllerConfiguration');
     });
 
-    test('configuration 的 hwdec 必须来自 app 策略（resolveAndroidHwdec + mpvConfig）',
+    test('configuration 的 hwdec 必须来自 app 策略（resolvePlatformHwdec + mpvConfig）',
         () {
       expect(
-        RegExp(r'hwdec:\s*resolveAndroidHwdec\(\s*mpvConfig\.hwdec\s*\)')
+        RegExp(r'hwdec:\s*resolvePlatformHwdec\(\s*mpvConfig\.hwdec\s*\)')
             .hasMatch(src),
         isTrue,
-        reason: 'hwdec 必须由本次 load 的 mpvConfig 经 resolveAndroidHwdec 解析，'
-            '与 buildMpvProperties 取值一致（Android 仍为 copy 变体，BUG-465 不回归）',
+        reason: 'hwdec 必须由本次 load 的 mpvConfig 经 resolvePlatformHwdec 解析，'
+            '与 buildMpvProperties 取值一致（Android 仍为 copy 变体 BUG-465 不回归；'
+            'Windows 为不含 CUDA 的 d3d11va 列表 BUG-1639）',
       );
     });
 
@@ -94,18 +95,107 @@ void main() {
       expect(VideoMpvConfig.defaults.hwdec, 'auto-safe');
     });
 
-    test('resolveAndroidHwdec 对任何合法值都不产出裸 auto', () {
+    test('resolvePlatformHwdec 对任何合法值都不产出裸 auto', () {
       for (final String v in <String>['no', 'auto-safe', 'auto-copy']) {
         for (final bool android in <bool>[true, false]) {
-          expect(resolveAndroidHwdec(v, isAndroid: android), isNot('auto'),
-              reason: 'hwdec=$v (android=$android) 解析后不得是裸 auto');
+          for (final bool windows in <bool>[true, false]) {
+            expect(
+                resolvePlatformHwdec(v, isAndroid: android, isWindows: windows),
+                isNot('auto'),
+                reason:
+                    'hwdec=$v (android=$android, windows=$windows) 解析后不得是裸 auto');
+          }
         }
       }
     });
 
     test('Android 仍改写成 copy 变体（BUG-465 不回归）', () {
-      expect(resolveAndroidHwdec('auto-safe', isAndroid: true), 'auto-copy');
-      expect(resolveAndroidHwdec('auto-safe', isAndroid: false), 'auto-safe');
+      expect(
+          resolvePlatformHwdec('auto-safe', isAndroid: true, isWindows: false),
+          'auto-copy');
+      expect(
+          resolvePlatformHwdec('auto-safe', isAndroid: false, isWindows: false),
+          'auto-safe');
+    });
+  });
+
+  /// 守卫（BUG-1639）：**Windows 下发的 hwdec 值域里不得出现任何 CUDA 系后端**。
+  ///
+  /// BUG-1545 修掉了「media_kit 抢跑下发裸 `auto`」的时间窗，但把值换成用户策略
+  /// `auto-safe` 之后崩溃复发——因为 `auto-safe` 的白名单里 `nvdec` 就是 CUDA API 的
+  /// 封装。Windows 上 media_kit 同样走 GL(ANGLE) 纹理渲染，libmpv 拿不到宿主 D3D11
+  /// device，`d3d11va` interop 在 hwdec 探测里必然 `Could not create device`，于是
+  /// NVIDIA 机器必然回退 `nvdec` → `Loading hwdec driver 'cuda'` → `cuInit()` /
+  /// `cuCtxCreate_v2()` → `nvcuda64.dll` 空指针 → 整进程 0xC0000005。
+  ///
+  /// 本机 libmpv 实测（GL 上下文 + 10-bit HEVC 片源）：
+  /// `auto-safe` → `Using hardware decoding (nvdec)`（崩溃路径）；
+  /// `d3d11va,d3d11va-copy` → `Using hardware decoding (d3d11va-copy)`（不碰 nvcuda64）。
+  group('Windows 下发的 hwdec 不得含 CUDA 系后端 (BUG-1639)', () {
+    /// CUDA 系后端名（`nvdec` / `cuda` 及其 copy 变体）——出现任何一个都会走 `cuInit()`。
+    const List<String> cudaBackends = <String>['nvdec', 'cuda'];
+
+    test('任何合法 hwdec 在 Windows 解析后都不含 nvdec / cuda', () {
+      for (final String v in <String>['no', 'auto-safe', 'auto-copy']) {
+        final String resolved =
+            resolvePlatformHwdec(v, isAndroid: false, isWindows: true);
+        for (final String backend in cudaBackends) {
+          expect(resolved.contains(backend), isFalse,
+              reason: 'hwdec=$v 在 Windows 解析成 "$resolved"，含 CUDA 后端 '
+                  '"$backend" → cuInit()/cuCtxCreate_v2() → nvcuda64 空指针整进程闪退');
+        }
+      }
+    });
+
+    test('Windows 下 auto* 解析成显式 d3d11va 候选（保留两档语义差异）', () {
+      expect(
+          resolvePlatformHwdec('auto-safe', isAndroid: false, isWindows: true),
+          kWindowsAutoHwdec,
+          reason: 'auto-safe：先试 interop 直渲，失败静默回落 copy-back');
+      expect(
+          resolvePlatformHwdec('auto-copy', isAndroid: false, isWindows: true),
+          kWindowsCopyHwdec,
+          reason: 'auto-copy：用户显式要 copy-back，只给 copy 变体');
+    });
+
+    test('两个 Windows 常量本身也不含 CUDA 后端', () {
+      for (final String value in <String>[
+        kWindowsAutoHwdec,
+        kWindowsCopyHwdec
+      ]) {
+        for (final String backend in cudaBackends) {
+          expect(value.contains(backend), isFalse,
+              reason: 'Windows hwdec 常量 "$value" 不得含 CUDA 后端 "$backend"');
+        }
+        expect(value.contains('d3d11va'), isTrue,
+            reason: 'Windows 硬解走 d3d11va（Win8+ 通用，Intel/AMD/NVIDIA 全支持）');
+      }
+    });
+
+    test('Windows 下软解 no 原样透传（用户显式关硬解不被改写）', () {
+      expect(
+          resolvePlatformHwdec('no', isAndroid: false, isWindows: true), 'no');
+    });
+
+    test('非 Windows 桌面（macOS / Linux）原样透传，零行为变化', () {
+      for (final String v in <String>['no', 'auto-safe', 'auto-copy']) {
+        expect(resolvePlatformHwdec(v, isAndroid: false, isWindows: false), v,
+            reason: '非 Android / 非 Windows 平台不改写 hwdec');
+      }
+    });
+
+    test('buildMpvProperties 下发的 hwdec 在 Windows 同样不含 CUDA', () {
+      final Map<String, String> props = buildMpvProperties(
+        VideoMpvConfig.defaults,
+        isAndroid: false,
+        isMobile: false,
+        isWindows: true,
+      );
+      expect(props['hwdec'], kWindowsAutoHwdec,
+          reason: 'controller 构造与 buildMpvProperties 两处取值必须恒一致');
+      for (final String backend in cudaBackends) {
+        expect(props['hwdec']!.contains(backend), isFalse);
+      }
     });
   });
 }

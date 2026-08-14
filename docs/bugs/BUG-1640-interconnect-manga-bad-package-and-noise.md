@@ -1,0 +1,13 @@
+## BUG-1640 · 互联把EPUB转化漫画打成坏包且漫画行每轮刷推送错误
+- **报告**：2026-08-14（互联全域盘点发现；漫画互联完整支持批次的 bug 半边）
+- **真实性**：✅ 真 bug，两处：
+  - **坏包**：`AppModelLibraryHostService.listBooks` 的 `hasContent` 判据只认 `META-INF/container.xml`，不看 `format`——由 EPUB 转化来的漫画（`book_format_rebuild.dart` 保留 EPUB 解压树）`hasContent=true`，`exportBook` 用 `repackageExtractedEpub` 把**整个书目录**（含 manga.json + 全部页图）打进 zip → client 落地成一本夹带全套页图的「文字书」，漫画身份/OCR 层静默丢失。
+  - **推送噪音**：`_syncBooksContentLive` 的 toPush 不过滤 format，本地每有一本漫画/PDF，每次开 syncContent 的互联同步就稳定产出一条 `repackage produced no epub` 错误。
+- **[x] ① 已修复** —（本分支提交）`hasContent` 按 `format=='epub'` 门控（坏包防线）；push 侧漫画走漫画包通道（见备注）、PDF 静默跳过（无内容通道，记录于互联盘点）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/fushi_library_host_service_books_test.dart`（EPUB 转化漫画 hasContent 必须 false；漫画行 format/hasMangaContent 下发；exportBook 漫画整树包往返保真）；`fushi/test/sync/manga_sync_package_test.dart`（打包/嗅探/zip-slip 防线/端到端落库）。
+- **备注**：同一批次落地**漫画互联完整支持**（此前漫画在互联里完全不可见/不可下载/不可推送）：
+  - 包格式 = 漫画书目录整树 zip（根 manga.json 标记 + 页图），与 EPUB 包**同一 books 端点**、导入侧内容嗅探分流（`fushi/lib/src/sync/manga_sync_package.dart`），零新端点。
+  - wire additive：`RemoteBookInfo.format` / `hasMangaContent` / `mangaReadingMode`（旧 host 缺键回退、旧 client 因 hasContent=false 完全无感知——不会出现「旧 client 下载漫画包解析失败」）。
+  - client：漫画书架接远端占位卡（`_mangaOnly` 分架过滤 format='manga'+hasMangaContent），下载复用 `_downloadRemoteBook` 全流程（标签 LWW / 改名 override / 进度回填全部继承），导入嗅探走共享 `importMangaPackageFile`（与 host `importBookFromFile` 同一函数）；落地时采纳 host 的按本阅读模式作初始值。
+  - push：`_syncBooksContentLive` 漫画行打整树包上传，host 端同一嗅探落库（client→host 方向也通）。
+  - 阅读进度本就 format 无关（reader_positions 通道），两端有同一本漫画后自动双向同步。
