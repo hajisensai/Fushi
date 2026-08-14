@@ -168,6 +168,12 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
         title: widget.package.name,
+        showAppBar: false,
+        headerCompact: true,
+        leading: BackButton(
+          key: const ValueKey<String>('aidoku_source_back'),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
         actions: <Widget>[
           if (_listings.isNotEmpty)
             DropdownButton<AidokuListing>(

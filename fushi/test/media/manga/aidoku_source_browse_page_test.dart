@@ -34,10 +34,15 @@ void main() {
     expect(find.byKey(const ValueKey<String>('aidoku_source_search')),
         findsOneWidget);
     final Offset titlePosition = tester.getTopLeft(find.text('Aidoku fixture'));
+    final Offset backPosition = tester.getTopLeft(
+      find.byKey(const ValueKey<String>('aidoku_source_back')),
+    );
     final Offset listingPosition = tester.getTopRight(
       find.byKey(const ValueKey<String>('aidoku_source_listing')),
     );
     expect(titlePosition.dy, closeTo(listingPosition.dy, 20));
+    expect(titlePosition.dy, closeTo(backPosition.dy, 20));
+    expect(backPosition.dx, lessThan(titlePosition.dx));
     expect(titlePosition.dx, lessThan(listingPosition.dx));
 
     await tester.tap(find.text('Latest fixture manga'));
