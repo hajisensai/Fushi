@@ -507,6 +507,47 @@ jobs:
         if-no-files-found: ignore
         retention-days: 14
 
+    # 正式版发布的数据安全硬门：该 tag 上必须已经挂好迁移桥包。
+    #
+    # 已出货的 Hibiki v1.2.0 挑包不认产品族，只看「.apk 结尾 + 名字含设备
+    # SUPPORTED_ABIS 任一项」，且 GitHub API 按文件名升序返回资产。桥包用 `bridge-`
+    # 前缀（字母序 < `fushi-`）就能把 ABI 命中全部接走；桥包缺席时它会退化成
+    # `fallback ??= asset` 直接装本体 —— 跨包名装成并存的第二个空 app，用户卸掉
+    # Hibiki 即永久丢数据。所以顺序是「先发桥包、再发本体」，这一步把顺序钉成硬约束：
+    # 桥包不在就**在上传本体资产之前**失败，绝不留下一个只有 fushi-* 的正式 release。
+    #
+    # 位置很重要：本体 APK 有**两条**上传路径——手动发 GitHub Release 走下面紧邻的
+    # `Upload APKs to GitHub Release event`（`release` 事件，托管发布那步是跳过的），
+    # workflow_dispatch 走后面的 `Publish Android channel release`。这道门必须排在
+    # **两条之前**；只挡住后者等于放过手动发布这条路，而正式版按发布通道硬规则恰恰
+    # 常走手动 Release。守卫断言了它与两条上传路径的先后。
+    # 不变式与反向用例见
+    # fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart。
+    - name: Require migration bridge assets on the formal tag
+      if: steps.channel.outputs.manifest_channel == 'formal'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! ASSETS="$(gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets --jq '.assets[].name')"; then
+          echo "::error title=Missing formal release::$PUBLISH_TAG does not exist yet. Publish the migration bridge release first."
+          exit 1
+        fi
+        MISSING=()
+        for abi in arm64-v8a armeabi-v7a x86_64; do
+          if ! grep -qE "^bridge-.*-${abi}\.apk$" <<< "$ASSETS"; then
+            MISSING+=("bridge-<version>-${abi}.apk")
+          fi
+        done
+        if [ "${#MISSING[@]}" -ne 0 ]; then
+          echo "::error title=Migration bridge missing::$PUBLISH_TAG is missing ${MISSING[*]}. Old Hibiki v1.2.0 clients would install the Fushi APK as a second, empty app and lose all their data when they uninstall Hibiki. Publish the bridge assets first."
+          exit 1
+        fi
+        echo "Migration bridge assets present on $PUBLISH_TAG."
+
     - name: Upload APKs to GitHub Release event
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v3
@@ -625,41 +666,6 @@ jobs:
           echo "  deleting stale asset $asset from $PUBLISH_TAG"
           gh release delete-asset "$PUBLISH_TAG" "$asset" --repo "$REPO" --yes
         done
-
-    # 正式版发布的数据安全硬门：该 tag 上必须已经挂好迁移桥包。
-    #
-    # 已出货的 Hibiki v1.2.0 挑包不认产品族，只看「.apk 结尾 + 名字含设备
-    # SUPPORTED_ABIS 任一项」，且 GitHub API 按文件名升序返回资产。桥包用 `bridge-`
-    # 前缀（字母序 < `fushi-`）就能把 ABI 命中全部接走；桥包缺席时它会退化成
-    # `fallback ??= asset` 直接装本体 —— 跨包名装成并存的第二个空 app，用户卸掉
-    # Hibiki 即永久丢数据。所以顺序是「先发桥包、再发本体」，这一步把顺序钉成硬约束：
-    # 桥包不在就**在上传本体资产之前**失败，绝不留下一个只有 fushi-* 的正式 release。
-    # 不变式与反向用例见
-    # fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart。
-    - name: Require migration bridge assets on the formal tag
-      if: steps.channel.outputs.manifest_channel == 'formal'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        REPO: ${{ github.repository }}
-        PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        if ! ASSETS="$(gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets --jq '.assets[].name')"; then
-          echo "::error title=Missing formal release::$PUBLISH_TAG does not exist yet. Publish the migration bridge release first."
-          exit 1
-        fi
-        MISSING=()
-        for abi in arm64-v8a armeabi-v7a x86_64; do
-          if ! grep -qE "^bridge-.*-${abi}\.apk$" <<< "$ASSETS"; then
-            MISSING+=("bridge-<version>-${abi}.apk")
-          fi
-        done
-        if [ "${#MISSING[@]}" -ne 0 ]; then
-          echo "::error title=Migration bridge missing::$PUBLISH_TAG is missing ${MISSING[*]}. Old Hibiki v1.2.0 clients would install the Fushi APK as a second, empty app and lose all their data when they uninstall Hibiki. Publish the bridge assets first."
-          exit 1
-        fi
-        echo "Migration bridge assets present on $PUBLISH_TAG."
 
     - name: Publish Android channel release
       if: steps.channel.outputs.publish_managed_release == 'true'

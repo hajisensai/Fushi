@@ -118,14 +118,27 @@ void main() {
       workflow = f.readAsStringSync();
     });
 
-    test('formal 通道有桥包存在性硬门，且排在上传本体资产之前', () {
+    test('formal 通道有桥包存在性硬门，且排在**两条**上传本体资产的路径之前', () {
       const String guard =
           '- name: Require migration bridge assets on the formal tag';
-      const String publish = '- name: Publish Android channel release';
+      // 本体 APK 有两条上传路径，都必须被这道门挡在后面：
+      //  * 手动发 GitHub Release（`release` 事件）走 `Upload APKs to GitHub Release
+      //    event` —— 正式版按发布通道硬规则恰恰常走这条，而托管发布那步此时是跳过的；
+      //  * workflow_dispatch 走 `Publish Android channel release`。
+      // 只挡住后者曾经是个真漏洞：门排在第 639 行、手动上传在第 510 行，手动发布路径
+      // 上资产早就传上去了，门再报错也拦不住。
+      const List<String> uploads = <String>[
+        '- name: Upload APKs to GitHub Release event',
+        '- name: Publish Android channel release',
+      ];
       expect(workflow.contains(guard), isTrue,
           reason: '删掉这道门 = 桥包晚到的窗口期里老 Hibiki 用户会丢数据');
-      expect(workflow.indexOf(guard) < workflow.indexOf(publish), isTrue,
-          reason: '必须在上传本体资产之前失败，事后报错拦不住已经上线的资产');
+      for (final String upload in uploads) {
+        expect(workflow.contains(upload), isTrue,
+            reason: '上传步骤改名了？守卫的先后断言会失效，必须同步更新');
+        expect(workflow.indexOf(guard) < workflow.indexOf(upload), isTrue,
+            reason: '门必须排在「$upload」之前，事后报错拦不住已经上线的资产');
+      }
       expect(
         workflow
             .contains("if: steps.channel.outputs.manifest_channel == 'formal'"),
