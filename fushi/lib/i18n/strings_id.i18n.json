@@ -1717,7 +1717,6 @@
   "spread_off": "Mati",
   "spread_on": "Nyala",
   "srt_audio_unresolved": "File audio tidak ditemukan — silakan lampirkan ulang",
-  "srt_book_replace_audio": "Ganti File Audio",
   "srt_books_section": "Buku Audio Subtitle",
   "srt_delete_confirm": "Hapus『$title』? Tindakan ini tidak dapat dibatalkan.",
   "srt_delete_title": "Hapus Buku Subtitle",
@@ -3390,5 +3389,9 @@
   "video_subtitle_anchor_top": "Top",
   "video_setting_subtitle_drag_adjust": "Drag to adjust position",
   "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it",
-  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again."
+  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.",
+  "srt_book_reimport": "Re-import",
+  "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
+  "srt_book_reimport_no_cues": "No subtitle lines found in that file",
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
 }

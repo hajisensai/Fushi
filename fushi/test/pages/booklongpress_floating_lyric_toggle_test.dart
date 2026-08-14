@@ -98,7 +98,9 @@ void main() {
       isNot(contains('t.srt_import_pick_cover')),
       reason: 'TODO-1191：SRT 卡长按菜单移除冗余「选择封面图片」，走编辑信息弹窗。',
     );
-    expect(srtActions, contains('t.audio_import'));
+    // 「导入音频」已扩成「重新导入」（音频 + 字幕两半，见 SrtBookReimportDialog）：
+    // 旧入口只能换音频，字幕书的字幕在首次导入后全仓无处可换。
+    expect(srtActions, contains('t.srt_book_reimport'));
     expect(srtActions, contains('t.profile_book_profile'));
     expect(srtActions, contains('t.book_css_editor_edit_css'));
     // TODO-1068：SRT/有声书卡长按菜单对称补悬浮字幕入口，与 EPUB 侧一致。

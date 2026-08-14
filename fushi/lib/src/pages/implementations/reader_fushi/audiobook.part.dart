@@ -1612,8 +1612,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         }
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.exportClip.pipeline', e, stack);
+      ErrorLogService.instance.log('ReaderFushi.exportClip.pipeline', e, stack);
       debugPrint('[ReaderFushi] export-clip pipeline error: $e');
       if (mounted) {
         FushiToast.show(
@@ -1813,7 +1812,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
   Future<void> _openAudioImportDialog() async {
     if (_srtBookUid != null) {
-      await _openSrtBookAudioPicker();
+      await _openSrtBookReimport();
       return;
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
@@ -1837,64 +1836,54 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (mounted) _rebuild(() {});
   }
 
-  Future<void> _openSrtBookAudioPicker() async {
+  /// 阅读器内「重新导入」字幕书：音频与字幕两半在同一个对话框里换
+  /// （[SrtBookReimportDialog] -> [reimportSrtBook] 唯一写入路径）。
+  ///
+  /// 旧实现只能换音频（`ReaderSrtAudioPickerDialog`），字幕书的字幕在首次导入后
+  /// 无处可换——用户报的「有声书没办法重新导入 / 导不了字幕文件」即此。
+  Future<void> _openSrtBookReimport() async {
     final SrtBookRepository repo = SrtBookRepository(appModel.database);
     final SrtBook? book = await repo.findByUid(_srtBookUid!);
     if (book == null || !mounted) return;
 
-    final List<String>? newPaths = await showAppDialog<List<String>>(
+    final SrtBookReimportOutcome? outcome =
+        await showAppDialog<SrtBookReimportOutcome>(
       context: context,
-      builder: (ctx) {
-        final String currentLabel =
-            book.audioPaths != null && book.audioPaths!.isNotEmpty
-                ? t.srt_import_files_selected(n: book.audioPaths!.length)
-                : (book.audioRoot ?? t.audio_panel_add_audio);
-        return ReaderSrtAudioPickerDialog(
-          currentLabel: currentLabel,
-          onPickFiles: () => _pickSrtAudioFiles(ctx),
-        );
-      },
+      builder: (_) => SrtBookReimportDialog(
+        book: book,
+        db: appModel.database,
+        repo: repo,
+      ),
     );
 
-    if (newPaths == null || newPaths.isEmpty || !mounted) return;
+    if (outcome == null || !mounted) return;
 
-    FushiToast.show(msg: t.dialog_importing, severity: ToastSeverity.info);
+    // 正文被重建 = 本页持有的解析树（_book / 章节 / WebView 里那份 HTML）整体作废。
+    // 就地热换正文要重跑开书全流程（解析 -> 分页 -> 恢复位置），而恢复锚点本身也
+    // 已经失效；退回书架让用户重开是唯一不会读到半新半旧内容的做法。
+    if (outcome.bodyRebuilt) {
+      FushiToast.show(
+          msg: t.srt_book_reimport_body_rebuilt, severity: ToastSeverity.info);
+      Navigator.of(context).maybePop();
+      return;
+    }
 
     try {
-      // TODO-1032：复制导入 + 改写 SrtBook.audioPaths（清 audioRoot）的核心写入逻辑
-      // 已下沉到 SrtBookRepository.replaceAudio，三入口（书架重新定位/书架导入音频/
-      // 阅读器内导入）共用同一写入路径，避免 SRT 书音频被误写进 Audiobooks 表。
-      await repo.replaceAudio(uid: _srtBookUid!, pickedPaths: newPaths);
-
-      // 换了 SRT 书的音频：强制重 load（停旧会话再起新）。
+      // 换了音频：强制重 load（停旧会话再起新），否则同书会复用旧控制器不换源。
       await _resolveAudioSlot(forceReload: true);
-      if (mounted) {
-        _rebuild(() {});
-        FushiToast.show(
-            msg: t.audiobook_import_success, severity: ToastSeverity.success);
+      // 换了字幕但没重建正文（无配对 EPUB 的孤儿字幕书）：cue 已整组换过，
+      // 控制器里那份是旧的，必须重灌。
+      if (outcome.subtitleReplaced) {
+        await _primeAudioCuesForCurrentBook();
       }
+      if (mounted) _rebuild(() {});
     } catch (e, stack) {
-      ErrorLogService.instance.log('ReaderFushi.srtBookAudioPicker', e, stack);
-      debugPrint('[ReaderFushi] srtBookAudioPicker failed: $e');
+      ErrorLogService.instance.log('ReaderFushi.srtBookReimport', e, stack);
+      debugPrint('[ReaderFushi] srtBookReimport failed: $e');
       if (mounted) {
         FushiToast.show(
-            msg: t.audiobook_import_error, severity: ToastSeverity.error);
+            msg: t.audiobook_load_error, severity: ToastSeverity.error);
       }
-    }
-  }
-
-  Future<void> _pickSrtAudioFiles(BuildContext dialogContext) async {
-    final Set<String> audioExtensions = AudiobookStorage.audioExtensions
-        .map((String ext) => ext.replaceFirst('.', ''))
-        .toSet();
-    final List<String> paths = await pickRealFilePaths(
-      context: dialogContext,
-      appModel: appModel,
-      allowedExtensions: audioExtensions,
-    )
-      ..sort(compareAudioFilePath);
-    if (paths.isNotEmpty && dialogContext.mounted) {
-      Navigator.pop(dialogContext, paths);
     }
   }
 }

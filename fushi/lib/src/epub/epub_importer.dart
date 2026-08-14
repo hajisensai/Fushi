@@ -251,6 +251,52 @@ class EpubImporter {
     );
   }
 
+  /// 用 [epubFilePath] 这份新生成的 EPUB **就地重建**一本已入库书的解压树，返回
+  /// `(chapterCount, chaptersJson, coverPath)` 三件套供调用方回写 EpubBooks 行。
+  ///
+  /// 与 [importFromPath] 的区别：不插新行、不派生新 bookKey、不动 `extract_dir`
+  /// 列——书的身份（bookKey / extractDir / 合集 / 标签 / 进度）完整保留，只有正文
+  /// 内容被换掉。字幕书换字幕（[SrtBooks.srtPath] 换文件 → cue 全变 → 由 cue 生成
+  /// 的正文必须跟着重建）是唯一调用方：正文与 cue 靠**文本相等**配对
+  /// （`_findCueForSentence`），只换 cue 不换正文会让整本书的高亮同步全断。
+  ///
+  /// 写盘用与导入同一套原子替换（[moveExtractedDirIntoPlace]）：新树先解到临时
+  /// 目录，成功后旧树改名成 `.bak-<ts>` 让位、新树就位、再删 bak；中途失败把 bak
+  /// 改回来。绝不先删后建——中间崩一次两份都没了。
+  static Future<({int chapterCount, String chaptersJson, String? coverPath})>
+      rebuildExtractedInPlace({
+    required String epubFilePath,
+    required String extractDir,
+  }) async {
+    final int tempId = DateTime.now().millisecondsSinceEpoch;
+    final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
+    try {
+      final _ParseResult result = await compute(
+        _parseFromPathInIsolate,
+        _ParseArgsFromPath(filePath: epubFilePath, extractDir: tempDir),
+      );
+      // chaptersJson / coverHref 都是**相对**解压根的路径，先算再搬位置等价。
+      final String chaptersJson =
+          buildChaptersJson(result.book, result.characterCounts);
+      // liveExtractDirs 传空 = 允许覆盖目标目录：这里的目标正是本书自己的解压树，
+      // 覆盖它就是本方法的全部意图（导入路径传 live 列表是为了不撞**别的**书）。
+      moveExtractedDirIntoPlace(
+        srcDir: Directory(tempDir),
+        targetDir: extractDir,
+        liveExtractDirs: const <String>[],
+      );
+      return (
+        chapterCount: result.book.chapters.length,
+        chaptersJson: chaptersJson,
+        coverPath: result.book.coverHref,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('EpubImporter.rebuildInPlace', e, stack);
+      _tryDeleteDir(tempDir);
+      rethrow;
+    }
+  }
+
   /// 重新解析**已解压**的书目录 [extractDir]，返回 `(chapterCount, chaptersJson,
   /// coverPath)` 三件套。
   ///

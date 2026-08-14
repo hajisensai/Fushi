@@ -1283,7 +1283,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               // no trailing chevron (plain AdaptiveSettingsRow, not
               // NavigationRow which would force a chevron_right).
               AdaptiveSettingsRow(
-                title: t.srt_book_replace_audio,
+                // 这一行现在换的是音频**与**字幕两半（[SrtBookReimportDialog]），
+                // 不再只是「替换音频文件」。
+                title: t.srt_book_reimport,
                 icon: Icons.swap_horiz_outlined,
                 showIcon: true,
                 onTap: () {

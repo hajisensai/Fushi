@@ -13,6 +13,8 @@ import 'package:fushi/pages.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
+import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';

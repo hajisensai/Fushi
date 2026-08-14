@@ -1717,7 +1717,6 @@
   "spread_off": "끄기",
   "spread_on": "켜기",
   "srt_audio_unresolved": "오디오 파일을 찾을 수 없습니다 — 다시 연결하세요",
-  "srt_book_replace_audio": "오디오 파일 교체",
   "srt_books_section": "자막 오디오북",
   "srt_delete_confirm": "『$title』을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
   "srt_delete_title": "자막 책 삭제",
@@ -3390,5 +3389,9 @@
   "video_subtitle_anchor_top": "Top",
   "video_setting_subtitle_drag_adjust": "Drag to adjust position",
   "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it",
-  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again."
+  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.",
+  "srt_book_reimport": "Re-import",
+  "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
+  "srt_book_reimport_no_cues": "No subtitle lines found in that file",
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
 }

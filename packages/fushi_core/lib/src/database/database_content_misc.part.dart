@@ -449,6 +449,25 @@ mixin _FushiDbContentMisc
       (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(chaptersJson: Value(chaptersJson)));
 
+  /// 就地重写一本书的正文章节元数据（`chapterCount` + `chaptersJson`），不动
+  /// bookKey / extractDir / format / 封面。
+  ///
+  /// 字幕书换字幕时正文由新 cue 重新生成（[EpubImporter.rebuildExtractedInPlace]），
+  /// 章节数与每章字数随之变化，必须与解压树同一次写入对齐；沿用
+  /// [updateEpubBookChaptersJson] 的理由——`chaptersJson` 不是主键，plain UPDATE，
+  /// 无级联 re-key。与 [updateEpubBookFormat] 的区别是**不碰 format/epubPath**，
+  /// 避免为了改两列而把无关列一起重写。
+  Future<void> updateEpubBookChapters(
+    String bookKey, {
+    required int chapterCount,
+    required String chaptersJson,
+  }) =>
+      (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
+          .write(EpubBooksCompanion(
+        chapterCount: Value(chapterCount),
+        chaptersJson: Value(chaptersJson),
+      ));
+
   /// Persist the non-sensitive restart descriptor for a Mihon-backed manga.
   ///
   /// Online manga deliberately reuse [EpubBooks] so the existing shelf,

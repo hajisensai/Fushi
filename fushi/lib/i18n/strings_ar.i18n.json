@@ -1717,7 +1717,6 @@
   "spread_off": "إيقاف",
   "spread_on": "تشغيل",
   "srt_audio_unresolved": "لم يتم العثور على ملف الصوت — يرجى إعادة الإرفاق",
-  "srt_book_replace_audio": "استبدال ملفات الصوت",
   "srt_books_section": "كتب الترجمات المسموعة",
   "srt_delete_confirm": "حذف『$title』؟ لا يمكن التراجع عن هذا.",
   "srt_delete_title": "حذف كتاب الترجمات",
@@ -3390,5 +3389,9 @@
   "video_subtitle_anchor_top": "Top",
   "video_setting_subtitle_drag_adjust": "Drag to adjust position",
   "video_subtitle_drag_adjust_hint": "Drag a subtitle up or down to reposition it",
-  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again."
+  "anki_connect_mobile_disabled_key_cleared": "AnkiConnect needs an API key on mobile, so clearing it turned the switch back off. Anki now goes through the built-in backend again.",
+  "srt_book_reimport": "Re-import",
+  "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
+  "srt_book_reimport_no_cues": "No subtitle lines found in that file",
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
 }
