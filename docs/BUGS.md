@@ -29,12 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1517 条。点号进各自文件。
+> 共 1521 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1644](bugs/BUG-1644-d3d11va-zero-copy-interop.md) | ✅ | ✅ | Windows 视频硬解走 d3d11va-copy：ANGLE 用自己的隐藏 D3D11 device，mpv d3d11-egl interop 加载不了 |
+| [BUG-1643](bugs/BUG-1643-settings-width-cap.md) | ✅ | ✅ | 设置页宽屏被 960px 强制限宽 |
 | [BUG-1642](bugs/BUG-1642-favorite-unfavorite-never-propagates.md) | ✅ | ✅ | 取消收藏词句不跨端传播对端永远删不掉 |
+| [BUG-1641](bugs/BUG-1641-anki-open-not-foreground.md) | ✅ | ✅ | 制卡后「在 Anki 中打开」只闪任务栏，Anki 不到前台 |
 | [BUG-1640](bugs/BUG-1640-interconnect-manga-bad-package-and-noise.md) | ✅ | ✅ | 互联把EPUB转化漫画打成坏包且漫画行每轮刷推送错误 |
+| [BUG-1639](bugs/BUG-1639-hwdec-nvdec-cuda-crash.md) | ✅ | ✅ | Windows+NVIDIA 起播闪退：hwdec=auto-safe 在 GL 渲染路径下必然回退 nvdec(CUDA)，nvcuda64 空指针整进程崩（BUG-1545 未根治） |
 | [BUG-1638](bugs/BUG-1638-dashboard-remote-continue-dead-end-card.md) | ✅ | ✅ | 首页远端继续卡对不可下载条目是死路 |
 | [BUG-1637](bugs/BUG-1637-standalone-srt-audiobook-position-never-syncs.md) | ✅ | ✅ | 纯SRT有声书听书进度跨设备完全不同步 |
 | [BUG-1636](bugs/BUG-1636-remote-audio-track-not-persisted.md) | ✅ | ✅ | 互联远端视频音轨选择不持久化 |

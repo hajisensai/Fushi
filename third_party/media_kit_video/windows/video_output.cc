@@ -73,6 +73,16 @@ VideoOutput::VideoOutput(int64_t handle,
           is_hardware_acceleration_enabled = true;
           std::cout << "media_kit: VideoOutput: Using H/W rendering."
                     << std::endl;
+          // HIBIKI FORK: makes it observable whether libmpv can decode straight
+          // into the same Direct3D 11 device ANGLE renders with (`d3d11va`) or
+          // has to round-trip every frame through system memory
+          // (`d3d11va-copy`). See |ANGLESurfaceManager::EnsureSharedEGLDisplay|.
+          std::cout << "media_kit: VideoOutput: libmpv d3d11-egl zero-copy "
+                       "interop: "
+                    << (ANGLESurfaceManager::uses_shared_d3d11_device()
+                            ? "available"
+                            : "unavailable")
+                    << std::endl;
         }
       } catch (...) {
         // Do nothing.
