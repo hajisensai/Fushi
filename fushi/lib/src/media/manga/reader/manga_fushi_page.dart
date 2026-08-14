@@ -315,6 +315,10 @@ class MangaFushiPage extends BaseSourcePage {
   /// 漫画拦截器专属虚拟域。必须与阅读器的 `fushi.local` 互异。
   static const String kMangaHost = 'manga.local';
 
+  /// WKWebView 不支持用 `shouldInterceptRequest` 接管 http(s) 子资源；Apple
+  /// 平台必须通过 WKURLSchemeHandler 注册一个非标准 scheme。
+  static const String kMangaResourceScheme = 'fushi-manga';
+
   static String horizontalKeyTurn({
     required String direction,
     required bool rightKey,
@@ -464,11 +468,15 @@ class MangaFushiPage extends BaseSourcePage {
   /// 纯函数：manga.json 的相对 url → WebView 可加载的拦截器 URL。逐段
   /// percent-encode（保留 `/` 结构），与拦截器侧 `Uri.decodeComponent` 对称
   /// （镜像 epubUrl 的 HBK-AUDIT-127 编解码对称纪律）。
-  static String mangaImageUrl(String relativeUrl) {
+  static String mangaImageUrl(
+    String relativeUrl, {
+    bool useCustomScheme = false,
+  }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
     final String encoded =
         normalized.split('/').map(Uri.encodeComponent).join('/');
-    return 'https://$kMangaHost/img/$encoded';
+    final String scheme = useCustomScheme ? kMangaResourceScheme : 'https';
+    return '$scheme://$kMangaHost/img/$encoded';
   }
 
   /// 纯函数：围绕 [current]、半径 [radius] 的连续 spread 窗口，clamp 到
@@ -1584,7 +1592,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
           data: page.bytes,
         );
-      } on MihonRuntimeException catch (error, stackTrace) {
+      } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log(
           'MangaFushiPage.page',
           error,
@@ -1623,6 +1631,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         'Cache-Control': 'max-age=3600',
       },
       data: await File(filePath).readAsBytes(),
+    );
+  }
+
+  Future<CustomSchemeResponse?> _loadMangaCustomScheme(
+    WebResourceRequest request,
+  ) async {
+    if (request.url.scheme != MangaFushiPage.kMangaResourceScheme) {
+      return null;
+    }
+    final WebResourceResponse? response = await _interceptRequest(request.url);
+    if (response == null) return null;
+    return CustomSchemeResponse(
+      data: response.data ?? Uint8List(0),
+      contentType: response.contentType ?? 'application/octet-stream',
+      contentEncoding: response.contentEncoding ?? 'binary',
     );
   }
 
@@ -1680,7 +1703,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (page < 0 || page >= payload.images.length) continue;
       final MokuroImage image = payload.images[page];
       pages.add(image);
-      imgSrcs.add(MangaFushiPage.mangaImageUrl(image.url));
+      imgSrcs.add(
+        MangaFushiPage.mangaImageUrl(
+          image.url,
+          useCustomScheme: Platform.isMacOS || Platform.isIOS,
+        ),
+      );
       final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
       pageSpreadIndices.add(spreadIndex);
       pagesPerSpread.add(spreadIndex >= 0 && spreadIndex < _spreads.length
@@ -3370,6 +3398,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         databaseEnabled: false,
         domStorageEnabled: false,
         useShouldInterceptRequest: true,
+        resourceCustomSchemes: const <String>[
+          MangaFushiPage.kMangaResourceScheme,
+        ],
         transparentBackground: true,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
@@ -3468,6 +3499,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       shouldInterceptRequest:
           (InAppWebViewController controller, WebResourceRequest request) =>
               _interceptRequest(request.url),
+      onLoadResourceWithCustomScheme:
+          (InAppWebViewController controller, WebResourceRequest request) =>
+              _loadMangaCustomScheme(request),
       onReceivedError: (InAppWebViewController controller,
           WebResourceRequest request, WebResourceError error) async {
         if (!(request.isForMainFrame ?? false)) return;
