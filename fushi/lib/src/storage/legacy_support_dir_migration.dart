@@ -18,11 +18,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - macOS：`path_provider` 返回
 ///   `~/Library/Application Support/<CFBundleIdentifier>`。已发布的 v1.2.0 是
 ///   `com.example.hibiki`，改名后是 `app.fushi.reader`。
-/// - Linux：`path_provider` 返回 XDG_DATA_HOME 下的 `<APPLICATION_ID>`，而
-///   `linux/CMakeLists.txt` 的 `APPLICATION_ID` / `BINARY_NAME` **本次改名没动**
-///   （仍是 `com.example.hibiki` / `hibiki`）→ 无断裂、无需搬迁。守卫
-///   `test/storage/desktop_identity_continuity_guard_test.dart` 锁死这一点：
-///   哪天真去改 Linux 身份，守卫会红，逼着在这里补一条旧根。
+/// - Linux：`path_provider` 返回 XDG_DATA_HOME 下的 `<APPLICATION_ID>`。
+///   `linux/CMakeLists.txt` 的 `APPLICATION_ID` / `BINARY_NAME` **已经改了**
+///   （`com.example.hibiki` / `hibiki` → `app.fushi.reader` / `fushi`，PR #790 W9
+///   收尾一并换掉），所以 Linux **同样需要搬迁**，与 macOS 一样是「同父目录换末段」，
+///   共用同一套 [migrateSupportDirTree] / rebase 管线。守卫
+///   `test/storage/desktop_identity_continuity_guard_test.dart` 正是当时当场变红、
+///   逼出下面那条 Linux 分支的；它继续锁着这个不变式，身份再动一次还会红。
 ///
 /// 主库、`shared_preferences.json`（数据根配置与 documents 布局锚点都在里面）、
 /// TLS 私钥、更新缓存、图标缓存全在这个根下。不搬 = 用户打开一个空 app：书、
