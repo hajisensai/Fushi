@@ -94,7 +94,7 @@ class MangaBatchImportReport {
       volumes.where((MangaBatchVolumeResult v) => v.status == status).length;
 }
 
-/// 把 [path] 目录里的整卷载体文件逐个导成独立的一本漫画（BUG-1646）。
+/// 把 [path] 目录里的整卷载体文件逐个导成独立的一本漫画（BUG-1649）。
 ///
 /// 关键性质：**一卷失败不中断整批**。用户扔进来 20 卷，第 3 卷的包是坏的，另外
 /// 19 卷照样进库——把整批废掉才是更糟的行为。每卷的结局收进

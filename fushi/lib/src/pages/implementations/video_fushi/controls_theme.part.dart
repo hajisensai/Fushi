@@ -99,18 +99,26 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[
-        _topBarSlotGroup(
-          VideoControlSlot.topLeft,
-          controller,
-          layout: layout,
-          desktop: true,
-        ),
-        _topBarTitle(),
-        _topBarSlotGroup(
-          VideoControlSlot.topRight,
-          controller,
-          layout: layout,
-          desktop: true,
+        // 整条顶栏交给 [VideoTopBarSlots] 统一分宽（按钮按需优先、标题吃剩余），与底栏
+        // 用单个 [Expanded] 承接 [_centeredBottomControlBar] 同一套路。不能再把三段
+        // 直接摊成 fork 那条 Row 的 flex child——那会被 Flex 平分成 1/3，右上角按钮
+        // 永远拿不到自己需要的宽。
+        Expanded(
+          child: VideoTopBarSlots(
+            left: _topBarSlotGroup(
+              VideoControlSlot.topLeft,
+              controller,
+              layout: layout,
+              desktop: true,
+            ),
+            title: _topBarTitle(),
+            right: _topBarSlotGroup(
+              VideoControlSlot.topRight,
+              controller,
+              layout: layout,
+              desktop: true,
+            ),
+          ),
         ),
       ],
       bottomButtonBar: <Widget>[
@@ -266,18 +274,24 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[
-        _topBarSlotGroup(
-          VideoControlSlot.topLeft,
-          controller,
-          layout: layout,
-          desktop: false,
-        ),
-        _topBarTitle(),
-        _topBarSlotGroup(
-          VideoControlSlot.topRight,
-          controller,
-          layout: layout,
-          desktop: false,
+        // 与桌面同源：整条顶栏交给 [VideoTopBarSlots] 分宽（按钮按需优先、标题吃剩余），
+        // 不再让三段各占 fork 顶栏 Row 的 1/3 flex 份额。
+        Expanded(
+          child: VideoTopBarSlots(
+            left: _topBarSlotGroup(
+              VideoControlSlot.topLeft,
+              controller,
+              layout: layout,
+              desktop: false,
+            ),
+            title: _topBarTitle(),
+            right: _topBarSlotGroup(
+              VideoControlSlot.topRight,
+              controller,
+              layout: layout,
+              desktop: false,
+            ),
+          ),
         ),
       ],
       bottomButtonBar: <Widget>[

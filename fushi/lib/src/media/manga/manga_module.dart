@@ -48,7 +48,7 @@ abstract final class MangaModule {
   static int directoryCarrierFileCount(String path) =>
       mangaCarrierFilesIn(Directory(path)).length;
 
-  /// 一个装着整卷载体文件的目录 → 逐卷导入（BUG-1646）。一卷失败不中断整批，
+  /// 一个装着整卷载体文件的目录 → 逐卷导入（BUG-1649）。一卷失败不中断整批，
   /// 每卷结局在返回的报告里，由调用方一次性汇报。
   static Future<MangaBatchImportReport> importBatchFolder({
     required FushiDatabase db,

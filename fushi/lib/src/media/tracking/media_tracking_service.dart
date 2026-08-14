@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/collections/collection_season_groups.dart'
@@ -38,6 +39,13 @@ const String kGameTrackingReconcileWatermarkPref =
     'media_tracking_game_reconcile_watermark_v1';
 
 typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
+
+/// 退避重试定时器工厂（BUG-1647）；生产用真 [Timer]，测试注入假实现以便
+/// 确定性地断言「安排了多久后重试」并手动触发到期回调。
+typedef TrackingRetryTimerFactory = Timer Function(
+  Duration delay,
+  void Function() callback,
+);
 
 class MediaTrackingSyncResult {
   const MediaTrackingSyncResult({
@@ -278,17 +286,25 @@ class MediaTrackingService {
     required PreferencesRepository preferences,
     required String userAgent,
     BangumiApiFactory? apiFactory,
+    TrackingRetryTimerFactory? retryTimerFactory,
   })  : _repository = repository,
         _preferences = preferences,
         _apiFactory = apiFactory ??
             ((String token) => BangumiApiClient(
                   accessToken: token,
                   userAgent: userAgent,
-                ));
+                )),
+        _retryTimerFactory = retryTimerFactory ??
+            ((Duration delay, void Function() callback) =>
+                Timer(delay, callback));
 
   final MediaTrackingRepository _repository;
   final PreferencesRepository _preferences;
   final BangumiApiFactory _apiFactory;
+  final TrackingRetryTimerFactory _retryTimerFactory;
+
+  /// BUG-1647：退避到期后的自动重试定时器；同一时刻至多一只。
+  Timer? _retryTimer;
 
   Future<MediaTrackingSyncResult>? _syncInFlight;
   bool _syncAgainRequested = false;
@@ -1034,13 +1050,57 @@ class MediaTrackingService {
   Future<MediaTrackingSyncResult> _syncUntilSettled({
     required bool force,
   }) async {
+    // 本轮同步会重新计算下一次重试时刻，旧定时器作废。
+    _retryTimer?.cancel();
+    _retryTimer = null;
     MediaTrackingSyncResult result = await _reconcileAndSync(force: force);
     while (_syncAgainRequested) {
       _syncAgainRequested = false;
       result = await _reconcileAndSync(force: false);
     }
     await _persistSyncOutcome(result);
+    await _scheduleBackoffRetry();
     return result;
+  }
+
+  /// BUG-1647：退避到期后自动重试。
+  ///
+  /// 自动同步原本只有两个触发点——启动一次 + 完成事件当下一次。发送失败的行被
+  /// [MediaTrackingRepository.markFailed] 推进 30s..6h 的指数退避后，若没有任何
+  /// 定时器在到期时再拉一轮，`dueUpdates` 会一直把它过滤掉：失败行只能等下一个
+  /// 完成事件碰巧到来（且恰好已出退避窗口），否则永远要靠手动「立即同步」。
+  /// 这里在每轮同步收尾时查 outbox 里最早的 `nextAttemptAt`，挂一只定时器到点
+  /// 自动 [syncNow]，把「退避」从死路修成真正的重试计划。顺带覆盖单轮发送上限
+  /// （20 条/轮）导致的积压：剩余行 `nextAttemptAt` 为 0，会以最小延迟续跑。
+  Future<void> _scheduleBackoffRetry() async {
+    if (!isConfigured) return;
+    final int? earliest;
+    try {
+      earliest = await _repository.earliestNextAttemptAt();
+    } catch (error, stackTrace) {
+      ErrorLogService.instance.log(
+        'MediaTrackingService.scheduleRetry',
+        error,
+        stackTrace,
+      );
+      return;
+    }
+    if (earliest == null) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // 已到期（或从未尝试）的行也至少等一小段再跑，避免与刚结束的这一轮竞争成热循环。
+    final Duration delay =
+        Duration(milliseconds: math.max(earliest - now, 5000));
+    _retryTimer = _retryTimerFactory(delay, () {
+      _retryTimer = null;
+      unawaited(syncNow());
+    });
+  }
+
+  /// 取消挂起的重试定时器。生产进程里服务与 app 同寿命；换库/换进程重建实例前
+  /// 必须先调这里，否则旧定时器会拿着旧 repository 继续同步。
+  void dispose() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
   }
 
   /// 把本轮同步结果落成可见状态。未配置令牌时不写「上次同步」（那一轮什么都没发，

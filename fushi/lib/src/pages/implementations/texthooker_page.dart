@@ -55,15 +55,6 @@ Map<String, String> injectActiveSentence(
   return Map<String, String>.from(fields)..['sentence'] = activeSentence;
 }
 
-/// 捕获工作台工具栏「更多」菜单动作：驱动 [PopupMenuButton.onSelected] 的单一枚举，
-/// 消除嵌入/独立两套按钮定义的特殊分支。
-enum _GalHookToolbarMenuAction {
-  audioFallback,
-  health,
-  showOverlay,
-  externalWindow,
-}
-
 /// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
 ///
 /// 订阅单例 [TexthookerService]（ChangeNotifier）实时刷新文本行；每行经日语分词
@@ -1305,60 +1296,52 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         label: labelOf(t.clear),
         onTap: TexthookerService.instance.clear,
       ),
-      _buildToolbarOverflowMenu(context),
+      // 低频开关不再收进「更多」三点菜单：菜单把 4 个入口埋在两次点击之后，而其中
+      // 两项本身带状态（音频降级当前档位、外部窗口挖矿开关态），不展开菜单根本看不见
+      // 自己在哪一档。页头动作区已有横向滚动兜底（[FushiPageHeader] 的
+      // ConstrainedBox + SingleChildScrollView），窄窗放不下是滚动而非裁剪，直接摊平
+      // 即可。主操作保留可展开文字药丸，这四项恒为纯图标 + tooltip（tooltip 带当前
+      // 状态），不与主操作抢横向空间。
+      FushiIconButton(
+        key: const ValueKey<String>('game-toolbar-audio-fallback'),
+        icon: Icons.graphic_eq,
+        tooltip: '${t.game_audio_fallback_policy} · '
+            '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}',
+        focusId: const FushiFocusId('game-toolbar-audio-fallback'),
+        onTap: () => unawaited(_showAudioFallbackPolicyDialog()),
+      ),
+      FushiIconButton(
+        key: const ValueKey<String>('game-toolbar-health'),
+        icon: Icons.monitor_heart_outlined,
+        tooltip: t.game_health,
+        focusId: const FushiFocusId('game-toolbar-health'),
+        onTap: () => unawaited(_showHealthDialog()),
+      ),
+      if (Platform.isWindows)
+        FushiIconButton(
+          key: const ValueKey<String>('game-toolbar-hook-overlay'),
+          icon: Icons.picture_in_picture_alt_outlined,
+          tooltip: t.game_show_hook_text_window,
+          focusId: const FushiFocusId('game-toolbar-hook-overlay'),
+          onTap: () =>
+              unawaited(GalHookTextOverlayController.instance.showManually()),
+        ),
+      // 唯一的真开关。开关态走「图标形态 + 主色」双通道（不靠颜色单通道，色觉障碍
+      // 用户也分得清），取代原 [CheckedPopupMenuItem] 的勾选标记。
+      if (Platform.isWindows)
+        FushiIconButton(
+          key: const ValueKey<String>('game-toolbar-external-window'),
+          icon: state.externalWindowMode
+              ? Icons.open_in_new
+              : Icons.open_in_new_off,
+          tooltip: t.external_window_mining,
+          enabledColor: state.externalWindowMode
+              ? Theme.of(context).colorScheme.primary
+              : null,
+          focusId: const FushiFocusId('game-toolbar-external-window'),
+          onTap: () => unawaited(_toggleExternalWindowMode()),
+        ),
     ];
-  }
-
-  /// 低频开关收纳菜单：音频降级策略 / 显示 Hook 文本浮窗（Win）/ 外部窗口挖矿（Win）。
-  /// 「外部窗口挖矿」是真开关，用 [CheckedPopupMenuItem] 反映当前开关态；「显示 Hook
-  /// 文本浮窗」是一次性动作（showManually），用普通菜单项；「音频降级策略」是三选一
-  /// （[GalAudioFallbackPolicy]），菜单项直接显示当前档位、点开是带说明的单选对话框
-  /// ——三档代价各不相同（收 BGM / 丢音频 / 不出卡），不做「点一下换一档」的循环钮。
-  /// onSelected 由枚举驱动，无特殊分支；各动作调用与旧按钮完全一致。
-  Widget _buildToolbarOverflowMenu(BuildContext context) {
-    final GalHookSessionState state = _session.state;
-    return PopupMenuButton<_GalHookToolbarMenuAction>(
-      key: const ValueKey<String>('game-toolbar-more'),
-      tooltip: t.game_more_actions,
-      icon: const Icon(Icons.more_vert),
-      onSelected: (_GalHookToolbarMenuAction action) {
-        switch (action) {
-          case _GalHookToolbarMenuAction.audioFallback:
-            unawaited(_showAudioFallbackPolicyDialog());
-          case _GalHookToolbarMenuAction.health:
-            unawaited(_showHealthDialog());
-          case _GalHookToolbarMenuAction.showOverlay:
-            unawaited(GalHookTextOverlayController.instance.showManually());
-          case _GalHookToolbarMenuAction.externalWindow:
-            unawaited(_toggleExternalWindowMode());
-        }
-      },
-      itemBuilder: (BuildContext context) =>
-          <PopupMenuEntry<_GalHookToolbarMenuAction>>[
-        PopupMenuItem<_GalHookToolbarMenuAction>(
-          value: _GalHookToolbarMenuAction.audioFallback,
-          child: Text('${t.game_audio_fallback_policy} · '
-              '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}'),
-        ),
-        // 健康状态从右栏常驻卡改为按需打开：它是「偶尔查一眼」的静态信息，
-        // 不值得长期占着逐句操作要用的横向空间（完整版仍在「兼容性诊断」页签）。
-        PopupMenuItem<_GalHookToolbarMenuAction>(
-          value: _GalHookToolbarMenuAction.health,
-          child: Text(t.game_health),
-        ),
-        if (Platform.isWindows)
-          PopupMenuItem<_GalHookToolbarMenuAction>(
-            value: _GalHookToolbarMenuAction.showOverlay,
-            child: Text(t.game_show_hook_text_window),
-          ),
-        if (Platform.isWindows)
-          CheckedPopupMenuItem<_GalHookToolbarMenuAction>(
-            value: _GalHookToolbarMenuAction.externalWindow,
-            checked: state.externalWindowMode,
-            child: Text(t.external_window_mining),
-          ),
-      ],
-    );
   }
 
   /// 三档选择对话框。每档都写清代价——这不是「高级选项」，是用户每局都要按游戏

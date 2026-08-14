@@ -16,7 +16,7 @@ enum ImportCarrier {
   /// `.epub` / `.cbz` / `.zip` / `.mokuro`（每个文件一卷）。走
   /// `MangaModule.importBatchFolder`，逐卷导成独立的一本。
   ///
-  /// 为什么必须是独立的载体身份（BUG-1646）：此前「目录」只有 [mangaFolder]
+  /// 为什么必须是独立的载体身份（BUG-1649）：此前「目录」只有 [mangaFolder]
   /// 一种解释，用户在漫画框选一个装着 20 卷 EPUB 的文件夹，会被当成页图目录，
   /// 扫不到任何图片扩展名的文件，报 `Manga image folder has no pages`——那句话
   /// 描述的是判定结果，而不是用户做错了什么。目录里装什么是**数据的形状**，

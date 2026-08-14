@@ -226,7 +226,7 @@ void main() {
         chapterCount: 1,
         chaptersJson: '[]',
         importedAt: DateTime.now().millisecondsSinceEpoch,
-        format: const Value('manga'),
+        format: Value(BookFormat.manga.dbValue),
         coverPath: const Value('images/p1.jpg'),
         mangaReadingMode: Value(mangaReadingMode),
       ));

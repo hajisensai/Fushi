@@ -52,9 +52,21 @@ void main() {
     );
     expect(group.contains('Alignment.centerRight'), isTrue,
         reason: 'topRight must stay aligned as one group at the right edge');
-    expect(group.contains('SingleChildScrollView('), isTrue,
+    // 组内仍必须能横滚（窄窗按钮不被裁没），但**不能**再用 SingleChildScrollView：
+    // 它的 viewport 在主轴上恒撑满约束，顶栏拿不到按钮组的内容固有宽，也就没法把
+    // 「按钮用剩的」宽度交给标题（见 VideoTopBarSlots）。改用 shrinkWrap 横向 ListView：
+    // 内容少时按内容宽收缩、内容多时照旧滚动。
+    expect(group.contains('scrollDirection: Axis.horizontal'), isTrue,
         reason:
             'topRight group must scroll horizontally instead of overflowing');
+    expect(group.contains('shrinkWrap: true'), isTrue,
+        reason:
+            'topRight group must shrink-wrap to its content width so the top bar '
+            'can hand the leftover width to the title');
+    expect(group.contains('SingleChildScrollView('), isFalse,
+        reason:
+            'SingleChildScrollView always fills the main axis — it would hide the '
+            'group content width and re-break the button/title width priority');
     expect(group.contains('reverse: slot == VideoControlSlot.topRight'), isTrue,
         reason: 'topRight scroll origin should keep the end buttons reachable');
     expect(group.contains('MainAxisAlignment.end'), isTrue,
