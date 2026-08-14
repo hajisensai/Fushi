@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::fs::File;
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use aidoku::{Chapter, FilterValue, Listing, Manga};
 use anyhow::{Context, Result, anyhow, bail};
 use boa_engine::{Source, context::Context as JsContext};
-use kuchiki::NodeRef;
+use image::{DynamicImage, RgbaImage, imageops::FilterType};
 use kuchiki::traits::*;
+use kuchiki::{NodeData, NodeRef};
 use reqwest::Method;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ use zip::ZipArchive;
 
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_WASM_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CANVAS_PIXELS: u64 = 64 * 1024 * 1024;
 const DEFAULT_USER_AGENT: &str = "Aidoku/1 CFNetwork/3826.500.131 Darwin/24.5.0";
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -247,12 +249,19 @@ struct NetRequest {
     response: Option<NetResponse>,
 }
 
+#[derive(Clone)]
+struct CanvasBitmap {
+    image: RgbaImage,
+}
+
 enum StoreItem {
     String(String),
     Encoded(Vec<u8>),
     Request(Box<NetRequest>),
     Html(HtmlNode),
     HtmlList(Vec<HtmlNode>),
+    Image(CanvasBitmap),
+    Canvas(CanvasBitmap),
     JsContext(Box<JsContext>),
 }
 
@@ -382,6 +391,97 @@ fn html_attribute(node: &NodeRef, attribute: &str, absolute: bool) -> Option<Str
         }
     }
     Some(raw)
+}
+
+fn html_inner(node: &NodeRef) -> String {
+    node.children()
+        .map(|child| child.to_string())
+        .collect::<String>()
+}
+
+fn nearest_element_parent(node: &NodeRef) -> Option<NodeRef> {
+    let mut parent = node.parent();
+    while let Some(candidate) = parent {
+        if candidate.as_element().is_some() {
+            return Some(candidate);
+        }
+        parent = candidate.parent();
+    }
+    None
+}
+
+fn previous_element_sibling(node: &NodeRef) -> Option<NodeRef> {
+    let mut sibling = node.previous_sibling();
+    while let Some(candidate) = sibling {
+        if candidate.as_element().is_some() {
+            return Some(candidate);
+        }
+        sibling = candidate.previous_sibling();
+    }
+    None
+}
+
+fn canvas_dimension(value: f32) -> Option<u32> {
+    if !value.is_finite() || value <= 0.0 || value > u32::MAX as f32 {
+        return None;
+    }
+    Some(value.round().max(1.0) as u32)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn copy_bitmap_region(
+    target: &mut RgbaImage,
+    source: &RgbaImage,
+    src_x: f32,
+    src_y: f32,
+    src_width: f32,
+    src_height: f32,
+    dst_x: f32,
+    dst_y: f32,
+    dst_width: f32,
+    dst_height: f32,
+) -> bool {
+    if !src_x.is_finite()
+        || !src_y.is_finite()
+        || src_x < 0.0
+        || src_y < 0.0
+        || !dst_x.is_finite()
+        || !dst_y.is_finite()
+    {
+        return false;
+    }
+    let Some(src_width) = canvas_dimension(src_width) else {
+        return false;
+    };
+    let Some(src_height) = canvas_dimension(src_height) else {
+        return false;
+    };
+    let Some(dst_width) = canvas_dimension(dst_width) else {
+        return false;
+    };
+    let Some(dst_height) = canvas_dimension(dst_height) else {
+        return false;
+    };
+    let src_x = src_x.floor() as u32;
+    let src_y = src_y.floor() as u32;
+    if src_x >= source.width() || src_y >= source.height() {
+        return false;
+    }
+    let src_width = src_width.min(source.width() - src_x);
+    let src_height = src_height.min(source.height() - src_y);
+    let cropped = image::imageops::crop_imm(source, src_x, src_y, src_width, src_height).to_image();
+    let rendered = if cropped.width() == dst_width && cropped.height() == dst_height {
+        cropped
+    } else {
+        image::imageops::resize(&cropped, dst_width, dst_height, FilterType::Triangle)
+    };
+    image::imageops::overlay(
+        target,
+        &rendered,
+        dst_x.floor() as i64,
+        dst_y.floor() as i64,
+    );
+    true
 }
 
 fn html_nodes(item: &StoreItem) -> Option<Vec<HtmlNode>> {
@@ -552,6 +652,9 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
     )?;
     linker.func_wrap("std", "current_date", || -> f64 {
         chrono::Utc::now().timestamp() as f64
+    })?;
+    linker.func_wrap("std", "utc_offset", || -> i64 {
+        chrono::Local::now().offset().utc_minus_local() as i64
     })?;
     linker.func_wrap(
         "std",
@@ -893,6 +996,26 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
     )?;
     linker.func_wrap(
         "html",
+        "parse",
+        |mut caller: Caller<'_, HostState>,
+         ptr: i32,
+         len: i32,
+         base_ptr: i32,
+         base_len: i32|
+         -> i32 {
+            let Ok(text) = read_string(&caller, ptr, len) else {
+                return -2;
+            };
+            let Ok(base_url) = read_string(&caller, base_ptr, base_len) else {
+                return -2;
+            };
+            caller
+                .data_mut()
+                .store(StoreItem::Html(parse_html(&text, Some(base_url))))
+        },
+    )?;
+    linker.func_wrap(
+        "html",
         "select",
         |mut caller: Caller<'_, HostState>, rid: i32, ptr: i32, len: i32| -> i32 {
             let Ok(selector) = read_string(&caller, ptr, len) else {
@@ -962,6 +1085,25 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
     )?;
     linker.func_wrap(
         "html",
+        "last",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let Some(node) = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(|item| match item {
+                    StoreItem::HtmlList(nodes) => nodes.last(),
+                    _ => None,
+                })
+                .cloned()
+            else {
+                return -1;
+            };
+            caller.data_mut().store(StoreItem::Html(node))
+        },
+    )?;
+    linker.func_wrap(
+        "html",
         "text",
         |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
             let Some(nodes) = caller.data().descriptors.get(&rid).and_then(html_nodes) else {
@@ -995,6 +1137,217 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
         "html",
         "data",
         |_caller: Caller<'_, HostState>, _rid: i32| -> i32 { -1 },
+    )?;
+    linker.func_wrap(
+        "html",
+        "html",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let Some(nodes) = caller.data().descriptors.get(&rid).and_then(html_nodes) else {
+                return -1;
+            };
+            let value = nodes
+                .iter()
+                .map(|node| html_inner(&node.node))
+                .collect::<Vec<_>>()
+                .join("");
+            caller.data_mut().store(StoreItem::String(value))
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "base_uri",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let value = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+                .and_then(|node| node.base_url);
+            match value {
+                Some(value) => caller.data_mut().store(StoreItem::String(value)),
+                None => -5,
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "set_text",
+        |_caller: Caller<'_, HostState>, _rid: i32, _ptr: i32, _len: i32| -> i32 { -1 },
+    )?;
+    linker.func_wrap(
+        "html",
+        "remove",
+        |_caller: Caller<'_, HostState>, _rid: i32| -> i32 { -1 },
+    )?;
+    linker.func_wrap(
+        "html",
+        "children",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let Some(parent) = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+            else {
+                return -1;
+            };
+            let children = parent
+                .node
+                .children()
+                .filter(|node| node.as_element().is_some())
+                .map(|node| HtmlNode {
+                    node,
+                    base_url: parent.base_url.clone(),
+                })
+                .collect::<Vec<_>>();
+            caller.data_mut().store(StoreItem::HtmlList(children))
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "child_nodes",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let Some(parent) = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+            else {
+                return -1;
+            };
+            let children = parent
+                .node
+                .children()
+                .map(|node| HtmlNode {
+                    node,
+                    base_url: parent.base_url.clone(),
+                })
+                .collect::<Vec<_>>();
+            caller.data_mut().store(StoreItem::HtmlList(children))
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "parent",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let parent = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+                .and_then(|node| {
+                    nearest_element_parent(&node.node).map(|parent| HtmlNode {
+                        node: parent,
+                        base_url: node.base_url,
+                    })
+                });
+            match parent {
+                Some(parent) => caller.data_mut().store(StoreItem::Html(parent)),
+                None => -5,
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "previous",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let previous = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+                .and_then(|node| {
+                    previous_element_sibling(&node.node).map(|previous| HtmlNode {
+                        node: previous,
+                        base_url: node.base_url,
+                    })
+                });
+            match previous {
+                Some(previous) => caller.data_mut().store(StoreItem::Html(previous)),
+                None => -5,
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "tag_name",
+        |mut caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            let value = caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+                .and_then(|node| {
+                    node.node
+                        .as_element()
+                        .map(|element| element.name.local.to_string())
+                });
+            match value {
+                Some(value) => caller.data_mut().store(StoreItem::String(value)),
+                None => -5,
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "has_attr",
+        |caller: Caller<'_, HostState>, rid: i32, ptr: i32, len: i32| -> i32 {
+            let Ok(attribute) = read_string(&caller, ptr, len) else {
+                return -2;
+            };
+            caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+                .and_then(|node| {
+                    node.node.as_element().map(|element| {
+                        i32::from(element.attributes.borrow().contains(attribute.as_str()))
+                    })
+                })
+                .unwrap_or(-1)
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "kind",
+        |caller: Caller<'_, HostState>, rid: i32| -> i32 {
+            caller
+                .data()
+                .descriptors
+                .get(&rid)
+                .and_then(html_nodes)
+                .and_then(|nodes| nodes.into_iter().next())
+                .map(|node| match node.node.data() {
+                    NodeData::Text(_) => 2,
+                    NodeData::Comment(_) => 4,
+                    NodeData::Element(_) => 5,
+                    NodeData::Document(_) | NodeData::DocumentFragment => 7,
+                    _ => 1,
+                })
+                .unwrap_or(-1)
+        },
+    )?;
+    linker.func_wrap(
+        "html",
+        "unescape",
+        |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i32 {
+            let Ok(value) = read_string(&caller, ptr, len) else {
+                return -2;
+            };
+            let value = value
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">");
+            caller.data_mut().store(StoreItem::String(value))
+        },
     )?;
     linker.func_wrap(
         "html",
@@ -1144,10 +1497,214 @@ fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
         "canvas",
         "new_image",
         |mut caller: Caller<'_, HostState>, ptr: i32, len: i32| -> i32 {
-            match read_bytes(&caller, ptr, len) {
-                Ok(data) => caller.data_mut().store(StoreItem::Encoded(data)),
-                Err(_) => -3,
+            let Ok(data) = read_bytes(&caller, ptr, len) else {
+                return -11;
+            };
+            let Ok(decoded) = image::load_from_memory(&data) else {
+                return -3;
+            };
+            let image = decoded.to_rgba8();
+            if u64::from(image.width()) * u64::from(image.height()) > MAX_CANVAS_PIXELS {
+                return -3;
             }
+            caller
+                .data_mut()
+                .store(StoreItem::Image(CanvasBitmap { image }))
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "new_context",
+        |mut caller: Caller<'_, HostState>, width: f32, height: f32| -> i32 {
+            let Some(width) = canvas_dimension(width) else {
+                return -1;
+            };
+            let Some(height) = canvas_dimension(height) else {
+                return -1;
+            };
+            if u64::from(width) * u64::from(height) > MAX_CANVAS_PIXELS {
+                return -1;
+            }
+            caller.data_mut().store(StoreItem::Canvas(CanvasBitmap {
+                image: RgbaImage::new(width, height),
+            }))
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "copy_image",
+        |mut caller: Caller<'_, HostState>,
+         context: i32,
+         image: i32,
+         src_x: f32,
+         src_y: f32,
+         src_width: f32,
+         src_height: f32,
+         dst_x: f32,
+         dst_y: f32,
+         dst_width: f32,
+         dst_height: f32|
+         -> i32 {
+            let source = caller
+                .data()
+                .descriptors
+                .get(&image)
+                .and_then(|item| match item {
+                    StoreItem::Image(bitmap) | StoreItem::Canvas(bitmap) => {
+                        Some(bitmap.image.clone())
+                    }
+                    _ => None,
+                });
+            let Some(source) = source else {
+                return -3;
+            };
+            let Some(StoreItem::Canvas(target)) = caller.data_mut().descriptors.get_mut(&context)
+            else {
+                return -1;
+            };
+            if copy_bitmap_region(
+                &mut target.image,
+                &source,
+                src_x,
+                src_y,
+                src_width,
+                src_height,
+                dst_x,
+                dst_y,
+                dst_width,
+                dst_height,
+            ) {
+                0
+            } else {
+                -3
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "draw_image",
+        |mut caller: Caller<'_, HostState>,
+         context: i32,
+         image: i32,
+         dst_x: f32,
+         dst_y: f32,
+         dst_width: f32,
+         dst_height: f32|
+         -> i32 {
+            let source = caller
+                .data()
+                .descriptors
+                .get(&image)
+                .and_then(|item| match item {
+                    StoreItem::Image(bitmap) | StoreItem::Canvas(bitmap) => {
+                        Some(bitmap.image.clone())
+                    }
+                    _ => None,
+                });
+            let Some(source) = source else {
+                return -3;
+            };
+            let Some(StoreItem::Canvas(target)) = caller.data_mut().descriptors.get_mut(&context)
+            else {
+                return -1;
+            };
+            if copy_bitmap_region(
+                &mut target.image,
+                &source,
+                0.0,
+                0.0,
+                source.width() as f32,
+                source.height() as f32,
+                dst_x,
+                dst_y,
+                dst_width,
+                dst_height,
+            ) {
+                0
+            } else {
+                -3
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "get_image",
+        |mut caller: Caller<'_, HostState>, context: i32| -> i32 {
+            let image = caller
+                .data()
+                .descriptors
+                .get(&context)
+                .and_then(|item| match item {
+                    StoreItem::Canvas(bitmap) => Some(bitmap.clone()),
+                    _ => None,
+                });
+            match image {
+                Some(image) => caller.data_mut().store(StoreItem::Image(image)),
+                None => -1,
+            }
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "get_image_width",
+        |caller: Caller<'_, HostState>, image: i32| -> f32 {
+            caller
+                .data()
+                .descriptors
+                .get(&image)
+                .and_then(|item| match item {
+                    StoreItem::Image(bitmap) | StoreItem::Canvas(bitmap) => {
+                        Some(bitmap.image.width() as f32)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(-2.0)
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "get_image_height",
+        |caller: Caller<'_, HostState>, image: i32| -> f32 {
+            caller
+                .data()
+                .descriptors
+                .get(&image)
+                .and_then(|item| match item {
+                    StoreItem::Image(bitmap) | StoreItem::Canvas(bitmap) => {
+                        Some(bitmap.image.height() as f32)
+                    }
+                    _ => None,
+                })
+                .unwrap_or(-2.0)
+        },
+    )?;
+    linker.func_wrap(
+        "canvas",
+        "get_image_data",
+        |mut caller: Caller<'_, HostState>, image: i32| -> i32 {
+            let bitmap = caller
+                .data()
+                .descriptors
+                .get(&image)
+                .and_then(|item| match item {
+                    StoreItem::Image(bitmap) | StoreItem::Canvas(bitmap) => {
+                        Some(bitmap.image.clone())
+                    }
+                    _ => None,
+                });
+            let Some(bitmap) = bitmap else {
+                return -2;
+            };
+            let mut output = Cursor::new(Vec::new());
+            if DynamicImage::ImageRgba8(bitmap)
+                .write_to(&mut output, image::ImageFormat::Png)
+                .is_err()
+            {
+                return -3;
+            }
+            caller
+                .data_mut()
+                .store(StoreItem::Encoded(output.into_inner()))
         },
     )?;
     Ok(())
@@ -1690,6 +2247,29 @@ mod tests {
                 .as_deref()
                 .is_some_and(|value| value.starts_with("data:image/gif"))
         );
+    }
+
+    #[test]
+    fn canvas_copy_moves_and_scales_the_requested_image_region() {
+        let mut source = RgbaImage::new(2, 1);
+        source.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+        source.put_pixel(1, 0, image::Rgba([0, 0, 255, 255]));
+        let mut target = RgbaImage::new(2, 2);
+
+        assert!(copy_bitmap_region(
+            &mut target,
+            &source,
+            1.0,
+            0.0,
+            1.0,
+            1.0,
+            0.0,
+            0.0,
+            2.0,
+            2.0,
+        ));
+        assert_eq!(target.get_pixel(0, 0).0, [0, 0, 255, 255]);
+        assert_eq!(target.get_pixel(1, 1).0, [0, 0, 255, 255]);
     }
 
     #[test]

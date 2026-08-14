@@ -231,7 +231,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         msg: '${t.aidoku_extension_imported}: ${installed.name}',
         severity: ToastSeverity.success,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('Aidoku.install.local', error, stack);
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -269,7 +270,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         msg: '${t.aidoku_repository_added}: ${index.name}',
         severity: ToastSeverity.success,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('Aidoku.repository.add[$repositoryUrl]', error, stack);
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -293,7 +296,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       if (!mounted) return;
       setState(() => _upsertAidokuIndex(index));
       await _showAidokuRepository(index);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+          'Aidoku.repository.browse[${repository.indexUrl}]', error, stack);
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -521,7 +526,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         msg: '${t.aidoku_extension_imported}: ${installed.name}',
         severity: ToastSeverity.success,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('Aidoku.install.repository[${source.id}]', error, stack);
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -1206,7 +1213,9 @@ class _AidokuRepositorySourcesDialogState
         msg: '${t.aidoku_extension_imported}: ${installed.name}',
         severity: ToastSeverity.success,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('Aidoku.install.dialog[${source.id}]', error, stack);
       if (mounted) {
         setState(() => _error = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);

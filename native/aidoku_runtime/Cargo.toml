@@ -21,6 +21,7 @@ embedded = [
   "dep:boa_engine",
   "dep:chrono",
   "dep:chrono-tz",
+  "dep:image",
   "dep:kuchiki",
   "dep:reqwest",
   "dep:wasmi",
@@ -33,6 +34,7 @@ anyhow = "1.0"
 boa_engine = { version = "0.21", optional = true }
 chrono = { version = "0.4", optional = true }
 chrono-tz = { version = "0.10", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"], optional = true }
 kuchiki = { version = "0.8", optional = true }
 postcard = { version = "1.1", features = ["alloc"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"], optional = true }

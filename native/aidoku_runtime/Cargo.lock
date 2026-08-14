@@ -1572,6 +1572,7 @@ dependencies = [
  "boa_engine",
  "chrono",
  "chrono-tz",
+ "image",
  "kuchiki",
  "postcard",
  "reqwest",
