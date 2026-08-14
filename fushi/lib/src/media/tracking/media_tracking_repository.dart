@@ -1070,4 +1070,16 @@ class MediaTrackingRepository {
           nextAttemptAt: Value<int>(0),
         ),
       );
+
+  /// 待同步行中最早的下次尝试时刻（毫秒）；outbox 为空时返回 null。
+  ///
+  /// 服务发送侧用它在每轮同步收尾时安排退避到期的自动重试（BUG-1647）。
+  Future<int?> earliestNextAttemptAt() async {
+    final Expression<int> earliest =
+        _db.mediaTrackingOutbox.nextAttemptAt.min();
+    final TypedResult? row = await (_db.selectOnly(_db.mediaTrackingOutbox)
+          ..addColumns(<Expression<Object>>[earliest]))
+        .getSingleOrNull();
+    return row?.read(earliest);
+  }
 }

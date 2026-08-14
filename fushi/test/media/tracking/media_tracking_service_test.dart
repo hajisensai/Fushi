@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +115,24 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   void close() {}
 }
 
+/// 可手动触发的假重试定时器（BUG-1647），用于确定性断言退避重试的调度。
+class _FakeRetryTimer implements Timer {
+  _FakeRetryTimer(this.delay, this.callback);
+
+  final Duration delay;
+  final void Function() callback;
+  bool cancelled = false;
+
+  @override
+  void cancel() => cancelled = true;
+
+  @override
+  bool get isActive => !cancelled;
+
+  @override
+  int get tick => 0;
+}
+
 void main() {
   late FushiDatabase db;
   late PreferencesRepository preferences;
@@ -136,6 +156,9 @@ void main() {
   });
 
   tearDown(() async {
+    // BUG-1647：同步失败会挂真实的退避重试定时器；不取消的话它会在库关闭后
+    // 触发并在已关闭的 db 上跑同步，把无关测试炸成随机红。
+    service.dispose();
     preferences.dispose();
     await db.close();
   });
@@ -707,6 +730,102 @@ void main() {
 
     expect(result.failed, 1);
     expect(await repository.pendingCount(), 1);
+  });
+
+  group('退避到期自动重试（BUG-1647）', () {
+    late List<_FakeRetryTimer> scheduled;
+    late MediaTrackingService retryService;
+
+    setUp(() {
+      scheduled = <_FakeRetryTimer>[];
+      retryService = MediaTrackingService(
+        repository: repository,
+        preferences: preferences,
+        userAgent: 'test-agent',
+        apiFactory: (_) => api,
+        retryTimerFactory: (Duration delay, void Function() callback) {
+          final _FakeRetryTimer timer = _FakeRetryTimer(delay, callback);
+          scheduled.add(timer);
+          return timer;
+        },
+      );
+    });
+
+    tearDown(() {
+      retryService.dispose();
+    });
+
+    Future<void> enqueueOneBookUpdate() async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'book',
+        mediaTitle: 'Book',
+        kind: TrackingKind.manga,
+        subjectId: 7,
+        subjectName: 'Remote book',
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 0,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'book',
+        localProgress: 1,
+        completed: false,
+      );
+    }
+
+    test('发送失败后按退避安排自动重试，到期触发即重发成功', () async {
+      await enqueueOneBookUpdate();
+      api.error = const BangumiApiException(
+        statusCode: 503,
+        message: 'temporarily unavailable',
+      );
+
+      final MediaTrackingSyncResult failedRound = await retryService.syncNow();
+
+      expect(failedRound.failed, 1);
+      expect(scheduled, hasLength(1), reason: '失败后必须安排退避重试，否则只能手动同步');
+      final _FakeRetryTimer timer = scheduled.single;
+      // 首次失败退避 30s：安排的延迟应逼近它（调度与落库间的耗时只会更短）。
+      expect(timer.delay.inMilliseconds, lessThanOrEqualTo(30000));
+      expect(timer.delay.inMilliseconds, greaterThan(20000));
+
+      // 模拟退避窗口走完：把行重置为到期，再触发定时器回调。
+      api.error = null;
+      await repository.retryAllNow();
+      timer.callback();
+      // 回调里的 syncNow 已在飞行中，这里拿到同一个 future 等它收尾。
+      await retryService.syncNow();
+
+      expect(await repository.pendingCount(), 0, reason: '到期重试应把失败行真正发出去');
+      expect(api.creates, isNotEmpty);
+    });
+
+    test('下一轮同步开始时取消旧定时器，零待办不再安排新的', () async {
+      await enqueueOneBookUpdate();
+      api.error = const BangumiApiException(
+        statusCode: 500,
+        message: 'boom',
+      );
+      await retryService.syncNow();
+      expect(scheduled, hasLength(1));
+
+      api.error = null;
+      await retryService.syncNow(force: true);
+
+      expect(scheduled.single.cancelled, isTrue, reason: '重新同步后旧定时器必须作废');
+      expect(scheduled, hasLength(1), reason: 'outbox 清空后不该再挂新定时器');
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('未配置令牌时不安排重试定时器', () async {
+      await preferences.setPref(kBangumiAccessTokenPref, '');
+      await enqueueOneBookUpdate();
+
+      await retryService.syncNow();
+
+      expect(scheduled, isEmpty);
+    });
   });
 
   test('video completion reuses scraped Bangumi subject and creates mapping',
