@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
@@ -36,6 +39,27 @@ abstract final class MangaModule {
 
   static bool isImageArchive(String path) =>
       MangaArchiveImporter.looksLikeImageArchive(path);
+
+  /// 目录里有没有页图（[ImportCarrier] 的目录分支判据）。
+  static bool directoryHasPageImages(String path) =>
+      mangaDirectoryHasPageImages(path);
+
+  /// 目录直接子层的整卷载体文件数（[ImportCarrier] 的目录分支判据）。
+  static int directoryCarrierFileCount(String path) =>
+      mangaCarrierFilesIn(Directory(path)).length;
+
+  /// 一个装着整卷载体文件的目录 → 逐卷导入（BUG-1649）。一卷失败不中断整批，
+  /// 每卷结局在返回的报告里，由调用方一次性汇报。
+  static Future<MangaBatchImportReport> importBatchFolder({
+    required FushiDatabase db,
+    required String path,
+    void Function(int done, int total)? onVolumeProgress,
+  }) =>
+      importMangaBatchFolder(
+        db: db,
+        path: path,
+        onVolumeProgress: onVolumeProgress,
+      );
 
   /// 整目录页图导入（拖入一个漫画文件夹的落地路径）。OCR blocks 留空，之后可由
   /// 任一整卷引擎补齐——故 OCR 失败绝不会导致这本书消失。

@@ -11,7 +11,10 @@ import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/manga/manga_storage.dart'
+    show MangaImportException;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/utils.dart';
@@ -61,6 +64,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   String? _pathName;
   ImportCarrier? _carrier;
 
+  /// [ImportCarrier.mangaBatchFolder] 时这批有几卷。选中那一刻数一次并记住——
+  /// 目录枚举是 IO，不能长在 `build` 里。
+  int _batchVolumeCount = 0;
+
   /// 用户是否手打过标题。打过就永不被自动派生覆盖。
   ///
   /// 书籍框那套五值 [ImportTitleSource] 是为「EPUB / 字幕 / 音频标签」三个来源
@@ -82,6 +89,9 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         _path = initial;
         _pathName = p.basename(initial);
         _carrier = carrier;
+        _batchVolumeCount = carrier == ImportCarrier.mangaBatchFolder
+            ? MangaModule.directoryCarrierFileCount(initial)
+            : 0;
         _titleCtrl.text = _deriveTitle(initial);
       }
     }
@@ -97,6 +107,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         path,
         isDirectory: (String pth) => Directory(pth).existsSync(),
         isImageArchive: MangaModule.isImageArchive,
+        directoryHasPageImages: MangaModule.directoryHasPageImages,
+        directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
       );
 
   /// 目录取目录名，文件取去扩展名的文件名。
@@ -142,11 +154,19 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         SizedBox(height: tokens.spacing.gap),
         AdaptiveSettingsSection(children: <Widget>[_mangaRow()]),
         SizedBox(height: tokens.spacing.rowVertical),
-        FushiTextField(
-          controller: _titleCtrl,
-          labelText: t.srt_import_title_hint,
-          onChanged: (String _) => _titleFromUser = true,
-        ),
+        // 批量目录没有「一个标题」可填——每卷用自己的文件名。与其留一个填了也
+        // 不生效的输入框，不如换成说明这批要导几卷。
+        if (_carrier == ImportCarrier.mangaBatchFolder)
+          Text(
+            t.manga_import_batch_hint(n: _batchVolumeCount),
+            style: tokens.type.metadata,
+          )
+        else
+          FushiTextField(
+            controller: _titleCtrl,
+            labelText: t.srt_import_title_hint,
+            onChanged: (String _) => _titleFromUser = true,
+          ),
         if (importing) ...buildProgressSection(context, tokens),
       ],
     );
@@ -179,15 +199,14 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   // ── 选择 ────────────────────────────────────────────────────────────────
 
-  /// 漫画**文件**扩展名（不带点，小写）。`.zip` / `.epub` 在此列是因为图片型压缩包
-  /// 与词典包/普通电子书同形，选中后由 [classifyImportCarrier] 真读包定性；不是
-  /// 漫画的会被 [_adoptPath] 挡回。
-  static const Set<String> _mangaFileExtensions = <String>{
-    'mokuro',
-    'cbz',
-    'zip',
-    'epub',
-  };
+  /// 漫画**文件**扩展名（不带点，小写）——从 [kMangaCarrierFileExtensions] 这个
+  /// 唯一真相源派生，不再手抄一份：文件选择器能选中的，和目录批量导入会捡起的，
+  /// 必须是同一集合，否则「单选能导、放进文件夹就被漏掉」。
+  ///
+  /// `.zip` / `.epub` 在此列是因为图片型压缩包与词典包/普通电子书同形，选中后由
+  /// [classifyImportCarrier] 真读包定性；不是漫画的会被 [_adoptPath] 挡回。
+  static final Set<String> _mangaFileExtensions =
+      kMangaCarrierFileExtensions.map((String ext) => ext.substring(1)).toSet();
 
   Future<void> _pickFile() async {
     if (_pickerActive) return;
@@ -239,6 +258,9 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       _path = path;
       _pathName = p.basename(path);
       _carrier = carrier;
+      _batchVolumeCount = carrier == ImportCarrier.mangaBatchFolder
+          ? MangaModule.directoryCarrierFileCount(path)
+          : 0;
       if (!_titleFromUser) {
         _titleCtrl.text = _deriveTitle(path);
       }
@@ -308,6 +330,40 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
+  /// 逐卷导入一个整卷文件目录，返回给用户看的汇总文案。
+  ///
+  /// 一卷都没进来时**抛异常**而不是返回「成功 0 卷」：那种情况下这次导入就是失败，
+  /// 必须走 [runImport] 的错误路径（红 toast + 不关框），否则用户会以为导好了。
+  Future<String> _importBatchFolder(String path) async {
+    final MangaBatchImportReport report = await MangaModule.importBatchFolder(
+      db: widget.db,
+      path: path,
+      onVolumeProgress: _reportVolumeProgress,
+    );
+    for (final MangaBatchVolumeResult volume in report.volumes) {
+      debugPrint('[fushi-import] manga batch volume: '
+          '${volume.status.name} ${volume.name}'
+          '${volume.error == null ? '' : ' error=${volume.error}'}');
+    }
+    final String summary = t.manga_import_batch_done(
+      imported: report.importedCount,
+      skipped: report.duplicateCount + report.notMangaCount,
+      failed: report.failedCount,
+    );
+    if (report.isEmpty) {
+      throw MangaImportException(summary);
+    }
+    return summary;
+  }
+
+  void _reportVolumeProgress(int done, int total) {
+    if (total <= 0) return;
+    reportProgress(
+      (done / total).clamp(0.0, 1.0),
+      t.import_step_copying_file(name: '$done / $total'),
+    );
+  }
+
   void _reportCopyProgress(int done, int total) {
     if (total <= 0) return;
     reportProgress(
@@ -327,7 +383,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       return;
     }
     final String title = _titleCtrl.text.trim();
-    if (title.isEmpty) {
+    // 批量目录没有单一标题（每卷用自己的文件名），标题框也不显示，自然不校验。
+    if (title.isEmpty && carrier != ImportCarrier.mangaBatchFolder) {
       FushiToast.show(
         msg: t.srt_import_missing_title,
         severity: ToastSeverity.error,
@@ -352,6 +409,9 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         reportProgress(0, '');
         debugPrint('[fushi-import] manga route: carrier=$carrier path=$path');
         reportProgress(0.5, t.import_step_importing_epub);
+
+        // 批量目录导完要报「成功/跳过/失败各几卷」，单卷路径仍报那句通用成功。
+        String? batchSummary;
 
         // 载体在选中那一刻已定死，这里只照着分派——不再二次嗅探扩展名或读包。
         switch (carrier) {
@@ -379,6 +439,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               policy: DuplicatePolicy.ask(_askOnDuplicate),
               onProgress: _reportCopyProgress,
             );
+          case ImportCarrier.mangaBatchFolder:
+            batchSummary = await _importBatchFolder(path);
           case ImportCarrier.pdf:
           case ImportCarrier.epub:
           case ImportCarrier.text:
@@ -390,7 +452,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         reportProgress(1, t.import_step_done);
         if (mounted) {
           FushiToast.show(
-            msg: t.srt_import_success,
+            msg: batchSummary ?? t.srt_import_success,
             severity: ToastSeverity.success,
           );
           Navigator.pop(context, true);

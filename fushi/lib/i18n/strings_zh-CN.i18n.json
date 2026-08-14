@@ -3389,5 +3389,7 @@
   "video_subtitle_anchor_top": "顶部",
   "video_setting_subtitle_drag_adjust": "拖拽调整位置",
   "video_subtitle_drag_adjust_hint": "上下拖动字幕调整位置",
-  "anki_connect_mobile_disabled_key_cleared": "移动端使用 AnkiConnect 必须填 API key，清空后已自动关闭该开关，Anki 改回走内置后端。"
+  "anki_connect_mobile_disabled_key_cleared": "移动端使用 AnkiConnect 必须填 API key，清空后已自动关闭该开关，Anki 改回走内置后端。",
+  "manga_import_batch_hint": "该文件夹里有 $n 个整卷文件，将逐卷各导入为一本，书名取各自的文件名。",
+  "manga_import_batch_done": "导入完成：成功 $imported 卷，跳过 $skipped 卷，失败 $failed 卷。"
 }

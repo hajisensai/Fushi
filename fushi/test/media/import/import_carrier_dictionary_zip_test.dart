@@ -70,6 +70,8 @@ void main() {
         path,
         isDirectory: (String p) => Directory(p).existsSync(),
         isImageArchive: MangaModule.isImageArchive,
+        directoryHasPageImages: MangaModule.directoryHasPageImages,
+        directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
       );
 
   test('自带插图的 Yomitan 词典 zip 不得被判成漫画载体', () {

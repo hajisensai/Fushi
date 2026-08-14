@@ -145,6 +145,8 @@ class _BookImportDialogState extends State<BookImportDialog>
     _carrierResolver = ImportCarrierResolver(
       isDirectory: (String pth) => Directory(pth).existsSync(),
       isImageArchive: widget.imageArchiveProbe ?? MangaModule.isImageArchive,
+      directoryHasPageImages: MangaModule.directoryHasPageImages,
+      directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
     );
     final String? epub = widget.initialEpubPath;
     if (epub != null) {
