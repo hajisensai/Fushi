@@ -3397,5 +3397,6 @@
   "video_subtitle_online_fetch": "Fetch subtitles (online)",
   "video_subtitle_online_title": "Title",
   "video_subtitle_online_no_source": "No online subtitle source is configured. Add one in Settings.",
-  "video_subtitle_online_hash_matched": "Matched by file hash"
+  "video_subtitle_online_hash_matched": "Matched by file hash",
+  "video_jimaku_search_failed": "Search failed"
 }

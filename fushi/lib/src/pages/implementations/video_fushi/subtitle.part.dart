@@ -700,6 +700,51 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return null;
   }
 
+  /// 组装在线字幕检索的**身份种子**：优先用刮削早就存下的外部 ID 与日文原名，而不是
+  /// 界面上的显示名。
+  ///
+  /// 根因背景：库里的显示名可能是中文译名（如「Re：从零开始的异世界生活 第四季 丧失篇」），
+  /// 而 Jimaku 的条目名只有罗马音/英文/日文，AniList 也匹配不上这种「中文译名 + 季度 +
+  /// 篇名」的长串——于是搜索必然空手而归，**尽管这个视频刮削过、库里明明存着它的 AniList
+  /// ID 和日文原名**。有身份就别再去猜名字。
+  ///
+  /// 归属规则（`video_metadata_works` 的 CHECK 约束）：合集里的一集，元数据挂在
+  /// **合集**上而不是该集的 bookUid 上，故有 [VideoFushiPage.playlistCollectionId] 时必须
+  /// 走合集口，否则恒查不到。读不到元数据一律降级为纯文本检索（= 旧行为），绝不因此挡住
+  /// 搜索。
+  Future<JimakuSearchSeed> _buildJimakuSeed(String fallbackTitle) async {
+    try {
+      final FushiDatabase db = appModel.database;
+      final int? collectionId = widget.playlistCollectionId;
+      final VideoMetadataWorkRow? work = collectionId != null
+          ? await db.getVideoMetadataWorkByCollection(collectionId)
+          : await db.getVideoMetadataWorkByBook(widget.bookUid);
+      final Map<String, String> externalIds = <String, String>{};
+      if (work != null) {
+        final List<VideoMetadataProviderIdentityRow> identities =
+            await db.getVideoMetadataProviderIdentities(workId: work.id);
+        for (final VideoMetadataProviderIdentityRow row in identities) {
+          externalIds[row.provider] = row.externalId;
+        }
+      }
+      return buildJimakuSearchSeed(
+        originalTitle: work?.originalTitle,
+        metadataTitle: work?.title,
+        displayTitle: fallbackTitle,
+        collectionTitle: _playlistTitle,
+        externalIds: externalIds,
+        isMovie: work?.mediaType == 'movie',
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance
+          .logDiagnostic('VideoFushiPage._buildJimakuSeed', error);
+      return buildJimakuSearchSeed(
+        displayTitle: fallbackTitle,
+        collectionTitle: _playlistTitle,
+      );
+    }
+  }
+
   /// 打开「自动获取字幕（Jimaku）」对话框：用番名（[_jimakuQuery]）搜 → 下载到
   /// `<appDocs>/video_subtitles/` → 应用。
   ///
@@ -722,10 +767,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final String? preferredLanguage =
         appModel.jimakuPreferredLanguages[seriesKey] ??
             appModel.jimakuDefaultLanguageOrNull;
+    // 身份种子（外部 ID + 日文原名）；seriesKey 仍按原 query 算，免得预填词一换就把
+    // 用户此前的语言记忆全对不上。
+    final JimakuSearchSeed seed = await _buildJimakuSeed(query);
+    if (!context.mounted) return;
     final String? downloaded = await showDialog<String>(
       context: context,
       builder: (_) => JimakuSubtitleDialog(
-        initialQuery: query,
+        seed: seed,
+        initialQuery: seed.primaryQuery.isEmpty ? query : seed.primaryQuery,
         initialApiKey: appModel.jimakuApiKey,
         onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
         saveDirectory: saveDir,

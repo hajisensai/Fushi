@@ -464,6 +464,18 @@ class JimakuRequestException implements Exception {
   }
 }
 
+/// 把一次 Jimaku 失败拼成**用户能据以行动**的一句话：`<基础文案>（HTTP <状态码>）`。
+///
+/// 纯函数，便于单测。失败原因必须落到 UI 上——401（key 过期/写错）、429（被限流，等会
+/// 儿再试）、404（文件下架）对用户是完全不同的三件事，一律显示「下载失败」等于什么都
+/// 没说。拿不到状态码（DNS/超时/代理挂了）时原样返回基础文案，不编造细节。
+String describeJimakuFailure(String baseMessage, Object? error) {
+  if (error is! JimakuRequestException) return baseMessage;
+  final int? status = error.statusCode;
+  if (status == null) return baseMessage;
+  return '$baseMessage（HTTP $status）';
+}
+
 /// 构造 `/api/entries/<id>/files` 请求 URI。纯函数，便于单测断言 episode 拼参。
 ///
 /// [episode] 非空时附 `episode=<n>`，否则 URI 不带任何 query（= 旧行为）。

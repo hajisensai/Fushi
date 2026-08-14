@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 57783 (3399 per locale)
+/// Strings: 57800 (3400 per locale)
 ///
-/// Built on 2026-08-14 at 15:52 UTC
+/// Built on 2026-08-14 at 16:44 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -4598,6 +4598,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_subtitle_online_no_source =>
       'No online subtitle source is configured. Add one in Settings.';
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -12445,6 +12446,8 @@ class _StringsAr extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -20359,6 +20362,8 @@ class _StringsDe extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -28289,6 +28294,8 @@ class _StringsEs extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -36231,6 +36238,8 @@ class _StringsFr extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -44101,6 +44110,8 @@ class _StringsId extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -52017,6 +52028,8 @@ class _StringsIt extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -59747,6 +59760,8 @@ class _StringsJa extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -67484,6 +67499,8 @@ class _StringsKo extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -75380,6 +75397,8 @@ class _StringsNl extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -83288,6 +83307,8 @@ class _StringsPtBr extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -91182,6 +91203,8 @@ class _StringsRu extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -99024,6 +99047,8 @@ class _StringsTh extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -106897,6 +106922,8 @@ class _StringsTr extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -114755,6 +114782,8 @@ class _StringsVi extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 // Path: <root>
@@ -122041,6 +122070,8 @@ class _StringsZhCn extends _StringsEn {
   String get video_subtitle_online_no_source => '尚未配置在线字幕来源，请先在设置中添加。';
   @override
   String get video_subtitle_online_hash_matched => '按文件哈希精确匹配';
+  @override
+  String get video_jimaku_search_failed => '搜索失败';
 }
 
 // Path: <root>
@@ -129694,6 +129725,8 @@ class _StringsZhHk extends _StringsEn {
       'No online subtitle source is configured. Add one in Settings.';
   @override
   String get video_subtitle_online_hash_matched => 'Matched by file hash';
+  @override
+  String get video_jimaku_search_failed => 'Search failed';
 }
 
 /// Flat map(s) containing all translations.
@@ -136674,6 +136707,8 @@ extension on _StringsEn {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -143652,6 +143687,8 @@ extension on _StringsAr {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -150652,6 +150689,8 @@ extension on _StringsDe {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -157651,6 +157690,8 @@ extension on _StringsEs {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -164656,6 +164697,8 @@ extension on _StringsFr {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -171643,6 +171686,8 @@ extension on _StringsId {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -178644,6 +178689,8 @@ extension on _StringsIt {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -185607,6 +185654,8 @@ extension on _StringsJa {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -192574,6 +192623,8 @@ extension on _StringsKo {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -199569,6 +199620,8 @@ extension on _StringsNl {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -206561,6 +206614,8 @@ extension on _StringsPtBr {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -213558,6 +213613,8 @@ extension on _StringsRu {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -220538,6 +220595,8 @@ extension on _StringsTh {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -227527,6 +227586,8 @@ extension on _StringsTr {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -234512,6 +234573,8 @@ extension on _StringsVi {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }
@@ -241439,6 +241502,8 @@ extension on _StringsZhCn {
         return '尚未配置在线字幕来源，请先在设置中添加。';
       case 'video_subtitle_online_hash_matched':
         return '按文件哈希精确匹配';
+      case 'video_jimaku_search_failed':
+        return '搜索失败';
       default:
         return null;
     }
@@ -248397,6 +248462,8 @@ extension on _StringsZhHk {
         return 'No online subtitle source is configured. Add one in Settings.';
       case 'video_subtitle_online_hash_matched':
         return 'Matched by file hash';
+      case 'video_jimaku_search_failed':
+        return 'Search failed';
       default:
         return null;
     }

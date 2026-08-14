@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/jimaku_search_seed.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/utils.dart';
@@ -156,6 +157,7 @@ class JimakuSubtitleDialog extends StatefulWidget {
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
     this.httpClientFactory,
+    this.seed = const JimakuSearchSeed(),
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     super.key,
@@ -163,6 +165,13 @@ class JimakuSubtitleDialog extends StatefulWidget {
 
   /// 预填的搜索词（由视频文件名解析出的番名）。
   final String initialQuery;
+
+  /// 该视频**已知的身份**（刮削得到的 AniList / TMDB id 与备选搜索词）。
+  ///
+  /// 有强身份（[JimakuSearchSeed.hasStrongIdentity]）且用户没改过输入框时，直接按 id
+  /// 检索 Jimaku，跳过「显示名 → AniList 模糊匹配 → anilist_id」这条链——中文译名在那条
+  /// 链上匹配不到，而 id 是确定的。缺省是空种子（= 旧行为，纯文本搜）。
+  final JimakuSearchSeed seed;
 
   /// 预填的 Jimaku API key。
   final String initialApiKey;
@@ -234,6 +243,17 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// 解析（纯文本回退）。
   int? _selectedSeriesId;
 
+  /// 产生当前 [_seriesMatches] 的番名。用于判断「这次搜索是不是还在搜同一部番」——
+  /// 只有换了番名才该丢弃已解析出的系列列表。
+  String? _seriesQuery;
+
+  /// 对话框内的错误信息（搜索/下载失败）；null = 无错。
+  ///
+  /// **必须显示在对话框内部**：本对话框是全屏 modal，而 `ScaffoldMessenger` 的 SnackBar
+  /// 挂在底下那层页面的 Scaffold 上，正好被对话框整个盖住——用户只会看到「点了没反应」，
+  /// 失败原因一次也没露过面。
+  String? _error;
+
   /// 检索分类：Jimaku 把动画与真人（站点的 Anime / Live Action 两页）拆成互斥集合，
   /// 服务端 `anime` 是硬相等过滤且缺省 true——不给出分类就等于只搜动画，日剧永远搜不到。
   ///
@@ -256,6 +276,9 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     if (seedSeries != null && seedSeries.isNotEmpty) {
       _seriesMatches = List<AniListMedia>.unmodifiable(seedSeries);
       _selectedSeriesId = seedSeries.first.id;
+      // 记下这批系列对应哪个番名：否则下一次搜索会把它判成「换了番」而清空，
+      // 与真实搜索路径（_search 里同时写 _seriesMatches 和 _seriesQuery）不一致。
+      _seriesQuery = widget.initialQuery;
     }
   }
 
@@ -284,7 +307,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
     if (apiKey.isEmpty) {
-      _snack(t.video_jimaku_no_key);
+      _showError(t.video_jimaku_no_key);
       return;
     }
     if (query.isEmpty) return;
@@ -292,12 +315,22 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
 
     FocusManager.instance.primaryFocus?.unfocus();
+    // 番名没变（典型场景：只在集数框填了个数字再点搜索）就保留已解析出的系列列表与
+    // 当前选中项。旧实现在这里无条件清空，而系列列表要等一次网络往返才回填——AniList
+    // 限流（429，客户端 fail-open 静默返回空）或任何抖动都会让用户**永久失去**系列
+    // 选择面：既搜不到又换不了系列，只能关掉重开。清空必须跟着「换了番名」走。
+    final bool sameSeriesQuery = query == _seriesQuery;
+    final int? keepSelectedSeriesId =
+        sameSeriesQuery ? _selectedSeriesId : null;
     setState(() {
       _searching = true;
       _searched = false;
+      _error = null;
       _candidates = const <JimakuCandidate>[];
-      _seriesMatches = const <AniListMedia>[];
-      _selectedSeriesId = null;
+      if (!sameSeriesQuery) {
+        _seriesMatches = const <AniListMedia>[];
+        _selectedSeriesId = null;
+      }
     });
     // BUG-1509：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
     // 代理 client 初始化和联网。旧顺序先 await onApiKeyChanged，慢磁盘/数据库下点击后
@@ -322,6 +355,33 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       return;
     }
 
+    // 用户已经选定系列、番名又没变（只改了集数）：直接在该系列里重列文件。重跑一遍
+    // AniList 既白等一次往返、又平白多一次限流机会，还可能把系列面清空。
+    //
+    // 用户没手动改过番名时，刮削得到的 AniList id 同样是「已经选定的系列」——它比拿显示
+    // 名去 AniList 模糊匹配可靠得多（中文译名在那儿根本匹配不到）。
+    final int? directSeriesId = keepSelectedSeriesId ??
+        (query == widget.initialQuery ? widget.seed.anilistId : null);
+    if (directSeriesId != null) {
+      // _fetchCandidates 自己吃掉异常并落 _error，这里不需要 try/finally。
+      await _fetchCandidates(
+        anilistId: directSeriesId,
+        queryFallback: query,
+        episode: episode,
+      );
+      if (!mounted) return;
+      // 用户手选的系列即便零结果也到此为止——他明确指定了这一个，不该被偷偷换成文本搜。
+      // 而刮削推断出的 id 只是「最可能」，零结果时继续往下走文本回退，别让强身份反倒
+      // 把回退路堵死。
+      final bool settled = keepSelectedSeriesId != null ||
+          _candidates.isNotEmpty ||
+          _error != null;
+      if (settled) {
+        setState(() => _searching = false);
+        return;
+      }
+    }
+
     AniListClient? anilist;
     try {
       anilist = AniListClient(
@@ -331,7 +391,14 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       //   候选供用户消歧，默认取首条（相关度最高）。② AniList 无命中时回退文本直接搜。
       final List<AniListMedia> media = await anilist.searchAnime(query);
       if (!mounted) return;
-      setState(() => _seriesMatches = media);
+      setState(() {
+        // 只在真拿到东西时替换：AniList 空结果既可能是「查无此番」，也可能是限流/网络
+        // 抖动，后者绝不该把用户已有的系列列表擦掉。
+        if (media.isNotEmpty) {
+          _seriesMatches = media;
+          _seriesQuery = query;
+        }
+      });
       await _fetchCandidates(
         anilistId: media.isNotEmpty ? media.first.id : null,
         queryFallback: query,
@@ -381,14 +448,25 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         apiKey: _apiKeyCtrl.text.trim(),
         client: await _createHttpClient(),
       );
-      final List<JimakuEntry> entries = <JimakuEntry>[];
-      if (anilistId != null) {
-        entries.addAll(await jimaku.searchByAnilistId(anilistId));
-      }
-      if (entries.isEmpty) {
-        entries
-            .addAll(await jimaku.searchByQuery(queryFallback, scope: _scope));
-      }
+      // 检索键按可靠度递降交给客户端统一收敛：anilist_id（动画强身份）→ tmdb_id
+      // （真人强身份）→ 文本。备选文本词来自刮削（日文原名等），只在用户没手动改过输入
+      // 框时才用——他改了就说明要按自己的词搜。
+      //
+      // throwOnError：条目检索失败必须与「真的没有这部番」区分开。两者都吞成空列表时
+      // 用户只看到「没有找到字幕」，于是继续换关键词瞎试，而真实原因可能是 key 过期或
+      // 被限流——换多少次关键词都不会好。listFiles 保持 fail-open：某个条目列不出文件
+      // 不该让其它条目的结果一起消失。
+      final List<JimakuEntry> entries = await jimaku.searchEntries(
+        anilistId: anilistId,
+        tmdbId: widget.seed.tmdbId,
+        queryFallbacks: <String>[
+          queryFallback,
+          if (_queryCtrl.text.trim() == widget.initialQuery)
+            ...widget.seed.fallbackQueries,
+        ],
+        scope: _scope,
+        throwOnError: true,
+      );
 
       final List<JimakuCandidate> candidates = <JimakuCandidate>[];
       for (final JimakuEntry entry in entries) {
@@ -416,6 +494,13 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         // （用户：「apikey 配完是不是可以缩小显示」）。用户仍可点「修改」展开。
         _apiKeyCollapsed = sorted.isNotEmpty;
       });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _searched = true;
+        _searchedWithEpisode = episode != null;
+        _error = describeJimakuFailure(t.video_jimaku_search_failed, error);
+      });
     } finally {
       jimaku?.close();
     }
@@ -431,16 +516,25 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   Future<void> _download(JimakuCandidate candidate) async {
     final String apiKey = _apiKeyCtrl.text.trim();
     if (apiKey.isEmpty) return;
-    setState(() => _busyName = candidate.file.name);
+    setState(() {
+      _busyName = candidate.file.name;
+      _error = null;
+    });
     JimakuClient? jimaku;
     try {
       jimaku = JimakuClient(
         apiKey: apiKey,
         client: await _createHttpClient(),
       );
-      final Uint8List? bytes = await jimaku.downloadFile(candidate.file.url);
-      if (bytes == null) {
-        _snack(t.video_jimaku_download_failed);
+      // throwOnError：下载失败必须能说出**为什么**。旧路径吞成 null 后只弹一句
+      // 「下载失败」，key 过期（401）、被限流（429）、文件下架（404）在用户眼里长
+      // 得一模一样，无从下手。
+      final Uint8List? bytes = await jimaku.downloadFile(
+        candidate.file.url,
+        throwOnError: true,
+      );
+      if (bytes == null || bytes.isEmpty) {
+        _showError(t.video_jimaku_download_failed);
         return;
       }
       final Directory dir = Directory(widget.saveDirectory);
@@ -449,16 +543,21 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       await File(dest).writeAsBytes(bytes);
       if (!mounted) return;
       Navigator.pop(context, dest);
+    } on Object catch (error) {
+      _showError(describeJimakuFailure(t.video_jimaku_download_failed, error));
     } finally {
       jimaku?.close();
       if (mounted) setState(() => _busyName = null);
     }
   }
 
-  void _snack(String message) {
+  /// 把失败原因显示在**对话框内部**。
+  ///
+  /// 曾经走 [ScaffoldMessenger]：本对话框是全屏 modal，SnackBar 挂在它底下那层页面的
+  /// Scaffold 上，被整个盖住——用户看到的就是「点了没反应」，失败原因一次都没露过面。
+  void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    setState(() => _error = message);
   }
 
   /// API key 输入区：未折叠时为完整密码框（含获取链接提示）；折叠时为一行紧凑
@@ -719,7 +818,50 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// 结果区（宽屏右栏 / 窄屏下段）：搜索中 spinner → 无结果提示（含「显示全部集」
   /// 逃生口）→ 候选列表。列表由外层给定有界高度、内部普通（非 shrinkWrap）ListView
   /// 滚动，保留 BUG-279 不变量。
+  /// 结果区外壳：错误条恒置顶，正文在下。
+  ///
+  /// 错误必须与结果同屏而不是弹在别处——本对话框是全屏 modal，SnackBar 会被它盖住。
   Widget _buildResultsArea(ThemeData theme) {
+    final String? error = _error;
+    if (error == null) return _buildResultsBody(theme);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            key: const ValueKey<String>('jimaku-error-banner'),
+            color: theme.colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.error_outline,
+                    size: 18,
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      error,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Expanded(child: _buildResultsBody(theme)),
+      ],
+    );
+  }
+
+  Widget _buildResultsBody(ThemeData theme) {
     if (_searching) {
       return buildLoading();
     }
