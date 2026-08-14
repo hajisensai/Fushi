@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 // 查词浮窗振假名的字号（词头 + glossary 逐字 ruby）由**两条互相抵消的规则**共同决定，此前
 // 没有任何测试锁住这个契约：
 //
@@ -28,8 +30,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final String css = File('assets/popup/popup.css').readAsStringSync();
 
-  /// 剥掉注释：注释里写着 `rt { line-height: normal }` 之类的示例，会污染规则切分。
-  final String code = css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+  /// 掩掉注释：popup.css 的注释里写着 `rt { line-height: normal }`、
+  /// `.ruby-rt rt { font-size: 1em }` 这类规则示例，不掩掉就会被当成真声明读出来
+  /// （本守卫早期版本就栽在这上面）。用 source_guard 的**等长**掩码而不是删除式
+  /// replaceAll：删除会让下标与原文错位，也挡不住「把 needle 藏进注释」的欺骗。
+  final String code = maskCssComments(css);
 
   /// 粗切成 `选择器 { 声明 }`。@media 等嵌套块的外层不会以 rt 结尾，内层规则照样能被切出来。
   final Iterable<RegExpMatch> rules =
