@@ -10,6 +10,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_repository_client.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_repository_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
@@ -25,7 +27,7 @@ import 'package:fushi/utils.dart';
 ///
 /// 四节，自上而下：
 /// 1. 本地漫画扫描根（与书 / 视频共用的 [MediaSourcesView]）；
-/// 2. Aidoku 扩展（macOS 上导入 / 移除 `.aix`）；
+/// 2. Aidoku 扩展（macOS 上添加仓库、浏览仓库及导入 / 移除 `.aix`）；
 /// 3. 漫画扩展（Mihon 扩展仓库 + 安装 / 启停 / 卸载）——用户口径：「漫画扩展
 ///    不就是来源吗，来源设置里面加上就行了」，因此**不另开顶层 tab**；
 /// 4. 在线漫画源：内置的 mokuro.moe **与**扩展提供的源并列（启停 / 排序 / 偏好 /
@@ -62,13 +64,17 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       GlobalKey<MediaSourcesViewState>();
   MihonManager? _manager;
   AidokuPackageStore? _aidokuStore;
+  AidokuRepositoryStore? _aidokuRepositoryStore;
+  late final AidokuRepositoryClient _aidokuRepositoryClient;
   List<AidokuInstalledPackage>? _aidokuPackages;
+  List<AidokuSavedRepository>? _aidokuRepositories;
   Object? _aidokuError;
   bool _aidokuBusy = false;
 
   @override
   void initState() {
     super.initState();
+    _aidokuRepositoryClient = AidokuRepositoryClient();
     if (DesktopAidokuRuntime.isSupported) {
       unawaited(_initializeAidokuStore());
     }
@@ -77,11 +83,17 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   Future<void> _initializeAidokuStore() async {
     try {
       final AidokuPackageStore store = await AidokuPackageStore.open();
+      final AidokuRepositoryStore repositoryStore =
+          await AidokuRepositoryStore.open();
       final List<AidokuInstalledPackage> packages = await store.listInstalled();
+      final List<AidokuSavedRepository> repositories =
+          await repositoryStore.list();
       if (!mounted) return;
       setState(() {
         _aidokuStore = store;
+        _aidokuRepositoryStore = repositoryStore;
         _aidokuPackages = packages;
+        _aidokuRepositories = repositories;
         _aidokuError = null;
       });
     } on Object catch (error) {
@@ -103,6 +115,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   @override
   void dispose() {
     _manager?.removeListener(_changed);
+    _aidokuRepositoryClient.close();
     super.dispose();
   }
 
@@ -217,6 +230,127 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
+    }
+  }
+
+  Future<void> _addAidokuRepository() async {
+    if (!DesktopAidokuRuntime.isSupported || _aidokuBusy) return;
+    final String? repositoryUrl = await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext context) => const _AidokuRepositoryUrlDialog(),
+    );
+    if (repositoryUrl == null || !mounted) return;
+    setState(() {
+      _aidokuBusy = true;
+      _aidokuError = null;
+    });
+    try {
+      final AidokuRepositoryIndex index =
+          await _aidokuRepositoryClient.fetch(repositoryUrl);
+      final AidokuRepositoryStore repositoryStore =
+          _aidokuRepositoryStore ?? await AidokuRepositoryStore.open();
+      _aidokuRepositoryStore = repositoryStore;
+      final List<AidokuSavedRepository> repositories =
+          await repositoryStore.add(index);
+      if (!mounted) return;
+      setState(() => _aidokuRepositories = repositories);
+      FushiToast.show(
+        msg: '${t.aidoku_repository_added}: ${index.name}',
+        severity: ToastSeverity.success,
+      );
+      await _showAidokuRepository(index);
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _aidokuError = error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    } finally {
+      if (mounted) setState(() => _aidokuBusy = false);
+    }
+  }
+
+  Future<void> _browseAidokuRepository(
+    AidokuSavedRepository repository,
+  ) async {
+    if (_aidokuBusy) return;
+    setState(() {
+      _aidokuBusy = true;
+      _aidokuError = null;
+    });
+    try {
+      final AidokuRepositoryIndex index =
+          await _aidokuRepositoryClient.fetch(repository.indexUrl);
+      if (!mounted) return;
+      await _showAidokuRepository(index);
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _aidokuError = error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    } finally {
+      if (mounted) setState(() => _aidokuBusy = false);
+    }
+  }
+
+  Future<void> _showAidokuRepository(AidokuRepositoryIndex index) async {
+    final AidokuPackageStore packageStore =
+        _aidokuStore ?? await AidokuPackageStore.open();
+    _aidokuStore = packageStore;
+    final List<AidokuInstalledPackage> installed =
+        await packageStore.listInstalled();
+    if (!mounted) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext context) => _AidokuRepositorySourcesDialog(
+        index: index,
+        client: _aidokuRepositoryClient,
+        packageStore: packageStore,
+        installed: installed,
+        onInstalled: _reloadAidokuPackages,
+      ),
+    );
+  }
+
+  Future<void> _reloadAidokuPackages() async {
+    final AidokuPackageStore? store = _aidokuStore;
+    if (store == null) return;
+    final List<AidokuInstalledPackage> packages = await store.listInstalled();
+    if (mounted) setState(() => _aidokuPackages = packages);
+  }
+
+  Future<void> _removeAidokuRepository(
+    AidokuSavedRepository repository,
+  ) async {
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text(t.aidoku_repository_remove),
+            content: Text('${repository.name}\n${repository.indexUrl}'),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    try {
+      final List<AidokuSavedRepository> repositories =
+          await _aidokuRepositoryStore!.remove(repository);
+      if (mounted) setState(() => _aidokuRepositories = repositories);
+    } on Object catch (error) {
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
     }
   }
 
@@ -383,6 +517,13 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
               icon: Icons.file_open_outlined,
               onTap: _aidokuBusy ? null : _importAidoku,
             ),
+            FushiIconButton(
+              key: const ValueKey<String>('aidoku_add_repository'),
+              tooltip: t.aidoku_repository_add,
+              label: t.aidoku_repository_add,
+              icon: Icons.cloud_download_outlined,
+              onTap: _aidokuBusy ? null : _addAidokuRepository,
+            ),
           ],
         ),
         if (_aidokuBusy || (_aidokuPackages == null && _aidokuError == null))
@@ -403,6 +544,47 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(t.aidoku_extension_empty),
           ),
+        const SizedBox(height: 8),
+        if (_aidokuRepositories?.isEmpty == true)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(t.aidoku_repository_empty),
+          ),
+        for (final AidokuSavedRepository repository
+            in _aidokuRepositories ?? const <AidokuSavedRepository>[])
+          FushiCard(
+            padding: EdgeInsets.zero,
+            child: FushiListItem(
+              leading: const Icon(Icons.cloud_outlined),
+              title: Text(repository.name),
+              subtitle: Text(repository.indexUrl),
+              trailing: Wrap(
+                children: <Widget>[
+                  IconButton(
+                    tooltip: t.aidoku_repository_browse,
+                    onPressed: _aidokuBusy
+                        ? null
+                        : () => unawaited(
+                              _browseAidokuRepository(repository),
+                            ),
+                    icon: const Icon(Icons.view_list_outlined),
+                  ),
+                  IconButton(
+                    tooltip: t.aidoku_repository_remove,
+                    onPressed: _aidokuBusy
+                        ? null
+                        : () => unawaited(
+                              _removeAidokuRepository(repository),
+                            ),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if ((_aidokuRepositories?.isNotEmpty ?? false) &&
+            (_aidokuPackages?.isNotEmpty ?? false))
+          const Divider(height: 24),
         for (final AidokuInstalledPackage package
             in _aidokuPackages ?? const <AidokuInstalledPackage>[])
           FushiCard(
@@ -459,6 +641,13 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                                     icon: Icons.extension_outlined,
                                     label: t.aidoku_extension_import,
                                     onTap: _importAidoku,
+                                    enabled: !_aidokuBusy,
+                                  ),
+                                if (DesktopAidokuRuntime.isSupported)
+                                  QuickImportAction(
+                                    icon: Icons.cloud_download_outlined,
+                                    label: t.aidoku_repository_add,
+                                    onTap: _addAidokuRepository,
                                     enabled: !_aidokuBusy,
                                   ),
                               ],
@@ -577,6 +766,288 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AidokuRepositoryUrlDialog extends StatefulWidget {
+  const _AidokuRepositoryUrlDialog();
+
+  @override
+  State<_AidokuRepositoryUrlDialog> createState() =>
+      _AidokuRepositoryUrlDialogState();
+}
+
+class _AidokuRepositoryUrlDialogState
+    extends State<_AidokuRepositoryUrlDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: 'https://aidoku-community.github.io/sources/index.min.json',
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final String value = _controller.text.trim();
+    if (value.isNotEmpty) Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog.adaptive(
+        title: Text(t.aidoku_repository_add),
+        content: SizedBox(
+          width: 560,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(t.aidoku_repository_hint),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey<String>('aidoku_repository_url'),
+                controller: _controller,
+                autofocus: true,
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(
+                  labelText: t.aidoku_repository_url,
+                  prefixIcon: const Icon(Icons.link),
+                ),
+                onSubmitted: (_) => _submit(),
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: context,
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: context,
+            isDefaultAction: true,
+            onPressed: _submit,
+            child: Text(t.dialog_add),
+          ),
+        ],
+      );
+}
+
+class _AidokuRepositorySourcesDialog extends StatefulWidget {
+  const _AidokuRepositorySourcesDialog({
+    required this.index,
+    required this.client,
+    required this.packageStore,
+    required this.installed,
+    required this.onInstalled,
+  });
+
+  final AidokuRepositoryIndex index;
+  final AidokuRepositoryClient client;
+  final AidokuPackageStore packageStore;
+  final List<AidokuInstalledPackage> installed;
+  final Future<void> Function() onInstalled;
+
+  @override
+  State<_AidokuRepositorySourcesDialog> createState() =>
+      _AidokuRepositorySourcesDialogState();
+}
+
+class _AidokuRepositorySourcesDialogState
+    extends State<_AidokuRepositorySourcesDialog> {
+  late final Map<String, AidokuInstalledPackage> _installed =
+      <String, AidokuInstalledPackage>{
+    for (final AidokuInstalledPackage package in widget.installed)
+      package.id: package,
+  };
+  String _query = '';
+  String? _installingSourceId;
+  Object? _error;
+
+  List<AidokuRepositorySource> get _visibleSources {
+    final String query = _query.trim().toLowerCase();
+    if (query.isEmpty) return widget.index.sources;
+    return widget.index.sources
+        .where(
+          (AidokuRepositorySource source) =>
+              source.name.toLowerCase().contains(query) ||
+              source.id.toLowerCase().contains(query) ||
+              source.languages.any(
+                (String language) => language.toLowerCase().contains(query),
+              ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> _install(AidokuRepositorySource source) async {
+    if (_installingSourceId != null) return;
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text('${t.aidoku_repository_install}: ${source.name}'),
+            content: Text(t.aidoku_extension_warning),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_import),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _installingSourceId = source.id;
+      _error = null;
+    });
+    Directory? temporaryDirectory;
+    try {
+      temporaryDirectory =
+          await Directory.systemTemp.createTemp('fushi-aidoku-repository-');
+      final File downloaded = await widget.client.download(
+        source,
+        File('${temporaryDirectory.path}/source.aix'),
+      );
+      final AidokuPackageInspection inspection =
+          await DesktopAidokuRuntime().inspect(downloaded.path);
+      final Map<String, Object?> info = inspection.sourceInfo;
+      if (info['id']?.toString() != source.id ||
+          (info['version'] as num?)?.toInt() != source.version) {
+        throw AidokuRepositoryException(
+          'PACKAGE_MISMATCH',
+          t.aidoku_repository_identity_mismatch,
+        );
+      }
+      if (inspection.requiresWebView) {
+        throw AidokuRuntimeException(
+          'WEBVIEW_REQUIRED',
+          t.aidoku_webview_unsupported,
+        );
+      }
+      final AidokuInstalledPackage installed =
+          await widget.packageStore.install(downloaded, inspection);
+      if (!mounted) return;
+      setState(() => _installed[installed.id] = installed);
+      await widget.onInstalled();
+      FushiToast.show(
+        msg: '${t.aidoku_extension_imported}: ${installed.name}',
+        severity: ToastSeverity.success,
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _error = error);
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    } finally {
+      if (temporaryDirectory != null && await temporaryDirectory.exists()) {
+        await temporaryDirectory.delete(recursive: true);
+      }
+      if (mounted) setState(() => _installingSourceId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<AidokuRepositorySource> sources = _visibleSources;
+    return AlertDialog(
+      title: Text('${widget.index.name} · ${t.aidoku_repository_sources}'),
+      content: SizedBox(
+        width: 760,
+        height: 620,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            TextField(
+              key: const ValueKey<String>('aidoku_repository_search'),
+              decoration: InputDecoration(
+                labelText: t.aidoku_repository_search,
+                prefixIcon: const Icon(Icons.search),
+              ),
+              onChanged: (String value) => setState(() => _query = value),
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '$_error',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: sources.isEmpty
+                  ? Center(child: Text(t.mihon_source_no_results))
+                  : ListView.builder(
+                      itemCount: sources.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final AidokuRepositorySource source = sources[index];
+                        final AidokuInstalledPackage? installed =
+                            _installed[source.id];
+                        final bool isInstalling =
+                            _installingSourceId == source.id;
+                        final bool isCurrent = installed != null &&
+                            installed.version >= source.version;
+                        final String actionLabel = isCurrent
+                            ? t.aidoku_repository_installed
+                            : installed == null
+                                ? t.aidoku_repository_install
+                                : t.aidoku_repository_update;
+                        final List<String> metadata = <String>[
+                          source.languages.join(', ').toUpperCase(),
+                          '${t.aidoku_extension_version} ${source.version}',
+                          if (source.minimumAppVersion != null)
+                            'Aidoku ${source.minimumAppVersion}+',
+                        ];
+                        return FushiCard(
+                          padding: EdgeInsets.zero,
+                          child: FushiListItem(
+                            leading: const Icon(Icons.extension_outlined),
+                            title: Text(source.name),
+                            subtitle: Text(
+                              '${metadata.join(' · ')}\n${source.id}',
+                            ),
+                            trailing: isInstalling
+                                ? const SizedBox.square(
+                                    dimension: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : FilledButton.tonal(
+                                    onPressed:
+                                        isCurrent || _installingSourceId != null
+                                            ? null
+                                            : () => unawaited(_install(source)),
+                                    child: Text(actionLabel),
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed:
+              _installingSourceId == null ? () => Navigator.pop(context) : null,
+          child: Text(t.dialog_close),
+        ),
+      ],
     );
   }
 }

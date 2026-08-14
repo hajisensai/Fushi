@@ -3404,5 +3404,18 @@
   "aidoku_extension_imported": "Aidoku extension imported",
   "aidoku_extension_import": "Import Aidoku extension (.aix)",
   "aidoku_extension_confirm_title": "Install Aidoku extension?",
-  "aidoku_extension_version": "Version"
+  "aidoku_extension_version": "Version",
+  "aidoku_repository_url": "Repository URL",
+  "aidoku_repository_sources": "Repository sources",
+  "aidoku_repository_identity_mismatch": "The downloaded package does not match the repository index.",
+  "aidoku_repository_installed": "Installed",
+  "aidoku_repository_search": "Search repository sources",
+  "aidoku_repository_install": "Install",
+  "aidoku_repository_update": "Update",
+  "aidoku_repository_add": "Add Aidoku repository",
+  "aidoku_repository_added": "Aidoku repository added",
+  "aidoku_repository_browse": "Browse repository",
+  "aidoku_repository_hint": "Paste an Aidoku repository homepage or index.min.json URL. The community repository is filled in by default.",
+  "aidoku_repository_remove": "Remove repository",
+  "aidoku_repository_empty": "No Aidoku repositories added."
 }

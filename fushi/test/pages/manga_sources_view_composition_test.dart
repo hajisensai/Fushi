@@ -47,10 +47,14 @@ void main() {
       );
     });
 
-    test('macOS 的「来源」视图有可见的 Aidoku .aix 导入入口', () {
+    test('macOS 的「来源」视图有 Aidoku 单包与仓库导入入口', () {
       expect(sources, contains("allowedExtensions: const <String>['aix']"));
       expect(sources, contains("ValueKey<String>('aidoku_import_aix')"));
+      expect(sources, contains("ValueKey<String>('aidoku_add_repository')"));
+      expect(sources, contains("ValueKey<String>('aidoku_repository_url')"));
       expect(sources, contains('AidokuPackageStore.open()'));
+      expect(sources, contains('AidokuRepositoryStore.open()'));
+      expect(sources, contains('_AidokuRepositorySourcesDialog('));
     });
 
     test('扩展提供的在线来源设置也在同一视图内', () {

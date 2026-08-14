@@ -3404,5 +3404,18 @@
   "aidoku_extension_imported": "Aidoku 扩展已导入",
   "aidoku_extension_import": "导入 Aidoku 扩展（.aix）",
   "aidoku_extension_confirm_title": "安装 Aidoku 扩展？",
-  "aidoku_extension_version": "版本"
+  "aidoku_extension_version": "版本",
+  "aidoku_repository_url": "仓库地址",
+  "aidoku_repository_sources": "仓库扩展",
+  "aidoku_repository_identity_mismatch": "下载的扩展包与仓库索引不一致。",
+  "aidoku_repository_installed": "已安装",
+  "aidoku_repository_search": "搜索仓库扩展",
+  "aidoku_repository_install": "安装",
+  "aidoku_repository_update": "更新",
+  "aidoku_repository_add": "添加 Aidoku 仓库",
+  "aidoku_repository_added": "Aidoku 仓库已添加",
+  "aidoku_repository_browse": "浏览仓库",
+  "aidoku_repository_hint": "粘贴 Aidoku 仓库主页或 index.min.json 地址。默认已填入社区仓库。",
+  "aidoku_repository_remove": "移除仓库",
+  "aidoku_repository_empty": "尚未添加 Aidoku 仓库。"
 }
