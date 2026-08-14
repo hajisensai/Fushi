@@ -63,7 +63,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连控件都不该渲染。由四层专项测试咬住：Dart 侧命中→定位→投帧的契约测试、native
   // 侧 v14 契约测试（区寻址 + 帧闸门 + ShouldApplyLookupFrame 真值表）、会话 replay
   // （7 个变异体实测全红），以及禁止把查词链路搬回游戏进程的源码扫描守卫。
-  'lookup/In-game dictionary lookup':
+  'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
           'native/galgame_hook/tests/lookup_session_replay_test.cpp + '

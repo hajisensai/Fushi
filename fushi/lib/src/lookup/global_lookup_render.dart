@@ -192,10 +192,20 @@ const String kGlobalLookupRootFrameId = 'global-lookup-root';
 /// gate (the mislevelled-ready root cause: reveal fired before the fresh iframe
 /// card actually rendered = "audio plays but the popup is blank/absent"). Inert
 /// when the host is not installed (guarded, mirroring buildStackRenderScript).
-String buildBeginLookupScript(String rootId) {
+String buildBeginLookupScript(
+  String rootId, {
+  String source = 'desktop',
+  int routeEpoch = 0,
+  int lookupEpoch = 0,
+}) {
   final String encodedId = jsonEncode(rootId);
+  final String encodedRoute = jsonEncode(<String, Object>{
+    'source': source,
+    'routeEpoch': routeEpoch,
+    'lookupEpoch': lookupEpoch,
+  });
   return 'window.__globalLookupHost && '
-      'window.__globalLookupHost.beginLookup($encodedId);';
+      'window.__globalLookupHost.beginLookup($encodedId, $encodedRoute);';
 }
 
 /// TODO-1190 — builds the host `highlightFrame(frameIndex, count)` script that
@@ -383,6 +393,10 @@ Map<String, Object?> _frameRectMap({
       maxWidth: maxWidth,
       maxHeight: maxHeight,
       isVertical: false,
+      // 嵌套卡的可用高度属于整个工作区，不属于父卡内锚点的某一侧。否则点击
+      // 父 popup 中部的词会把 child 高度再次压成半屏；实际只应在屏幕顶 / 底边界
+      // 不足时裁切。根卡 / 其他 computeFrameRect 调用仍走默认 true。
+      fitHeightToAnchorSide: depth <= 0,
     );
     return <String, Object?>{
       'left': r.left - selectionScreenOffset.dx,

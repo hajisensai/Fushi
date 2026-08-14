@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1511 条。点号进各自文件。
+> 共 1516 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1618](bugs/BUG-1618-gal-ingame-nested-popup-height-clipped.md) | ✅ | ✅ | 游戏内嵌套查词卡被父弹窗锚点空间裁短 |
+| [BUG-1617](bugs/BUG-1617-gal-ingame-card-capture-includes-popup.md) | ✅ | 🚧 | 游戏内查词制卡截图包含查词框 |
+| [BUG-1616](bugs/BUG-1616-gal-ingame-popup-input-rendering.md) | ✅ | 🚧 | 游戏内查词位图卡渲染错位且滚轮、按钮与制卡失效 |
+| [BUG-1615](bugs/BUG-1615-gal-ingame-native-popup-ownership.md) | ✅ | ✅ | 游戏内查词离屏卡被钳回桌面导致重复弹窗 |
+| [BUG-1614](bugs/BUG-1614-gal-ingame-kag-anchor-primary-coordinates.md) | ✅ | ✅ | 游戏内查词把 KAG 消息锚点误判为脱离 primary 导致字形恒不命中 |
 | [BUG-1613](bugs/BUG-1613-apple-coreml-ep-detector-empty.md) | ✅ | ✅ | Apple CoreML EP 上 int8 检测模型静默返回空结果且更慢 |
 | [BUG-1610](bugs/BUG-1610-bangumi-search-rating-null.md) | ✅ | ✅ | Bangumi 搜索候选评分恒空：映射器读扁平 score，真实响应只有嵌套 rating.score |
 | [BUG-1609](bugs/BUG-1609-global-lookup-card-right-corners-square.md) | ✅ | ✅ | app 外全局查词卡片右上/右下圆角变方角 |
@@ -536,7 +541,7 @@
 | [BUG-1044](bugs/BUG-1044-popup-auto-expand-rows-vs-columns.md) | ✅ | ✅ | 折叠词典「自动展开词典数」与「词典列数」冲突：绝对本数不随列数对齐致顶部参差 |
 | [BUG-1043](bugs/BUG-1043-ios-smoke-update-dialog-steals-focus.md) | ✅ | ✅ | iOS冒烟测试焦点断言被启动期更新弹窗与恒真判定掩盖 |
 | [BUG-1042](bugs/BUG-1042-ios-generated-xcconfig-tracked.md) | ✅ | ✅ | iOS Flutter 生成文件误入库导致 Mac 上 pod install 失败 |
-| [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | 🚧 | 🚧 | 查词浮窗卡片左侧圆角右侧直角 |
+| [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | ✅ | ✅ | 查词浮窗卡片左侧圆角右侧直角 |
 | [BUG-1040](bugs/BUG-1040-mined-card-dialog-centered-and-above-popup.md) | ✅ | ✅ | 「卡片已在 Anki 中」是底部 sheet 且层级低于查词弹窗（被盖住看不见） |
 | [BUG-1039](bugs/BUG-1039-native-tier-gif-explodes-mining.md) | ✅ | ✅ | 制卡「原片档」把 GIF 按源分辨率+源帧率导出 → 制卡/覆盖巨慢、Anki 无响应 |
 | [BUG-1038](bugs/BUG-1038-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |

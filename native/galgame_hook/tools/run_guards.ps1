@@ -52,7 +52,7 @@ try {
   #
   # The $LASTEXITCODE reset + assert is not redundant. `& script.ps1` returns to
   # THIS scope, so if sync_lunahook.ps1 ever reports failure via `exit 1` instead
-  # of `throw`, execution would simply continue here, the four unittests below
+  # of `throw`, execution would simply continue here, the Python guards below
   # would reset $LASTEXITCODE to 0, and the DLL integrity check would silently
   # stop counting -- the exact failure mode this whole file exists to prevent.
   # Today it only throws, and $ErrorActionPreference='Stop' catches that; this
@@ -63,9 +63,11 @@ try {
     throw "sync_lunahook.ps1 failed with exit code $LASTEXITCODE"
   }
 
-  # Manifest schema, adapter layout, evidence contract and workflow guards.
+  # Manifest schema, adapter layout, KiriKiri lookup invariants, evidence contract
+  # and workflow guards.
   Invoke-Checked $python 'tests/engine_support_manifest_test.py'
   Invoke-Checked $python 'tests/adapter_structure_test.py'
+  Invoke-Checked $python 'tests/kirikiri_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/evidence_contract_test.py'
   Invoke-Checked $python 'tests/galhook_workflow_test.py'
 }

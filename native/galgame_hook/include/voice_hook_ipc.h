@@ -59,7 +59,11 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v14：追加**游戏内查词区**（hit / input / frame 三通道，见下方 kLookup* 与 LookupHitSlot）。
 //     纯追加：放在布局最尾，前面所有区偏移逐字节不动；lookup_region_offset==0 即"本会话
 //     没有此区"，旧 host 读到 v14 映射也不会错位（版本号仍会先挡，这只是纵深防御）。
-constexpr uint32_t kSharedVersion = 14;
+// v15：追加游戏内卡片的**截图抑制确认**：host 发布 kLookupFrameCaptureSuppress 后，hook
+//     在游戏线程隐藏 card/highlight，并等到下一次 continuous callback 才回写
+//     lookup_frame_applied_seq。host 只有看到该确认才能抓游戏窗口；发布成功不等于游戏渲染树
+//     已经干净，拿普通 dismiss 的 MethodChannel 返回值当屏障会稳定把 popup 拍进卡片图片。
+constexpr uint32_t kSharedVersion = 15;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -291,20 +295,13 @@ struct LoopbackMarker {
   uint64_t total_written;   // 该时刻的 loopback_total_written（单调）
 };
 
-// ══ v14 游戏内查词区 ═════════════════════════════════════════════════════════════
-// KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。分工是硬的：注入侧只做几何传感、
-// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有 popup.html +
-// WebView2 离屏合成）负责。
-//
-// 为什么不让注入侧自己查词自己画卡片（这正是 prototype 的做法，已废弃）：
-//   * 卡片要 ruby / 外字图 / 发音 / 制卡 / 主题 / 17 语言——在 TJS 里用 drawText 手写
-//     等于把 Hibiki 的 popup 重写一遍且永远落后一个版本；
-//   * 游戏进程里因此多出 HTTP 客户端、认证 token、手写 JSON 解析器和"拼 TJS 源码再
-//     eval"的注入面。把职责切开之后，跨边界的东西只剩**一块位图**和**一串整数**，
-//     注入面不是"escape 得更严"而是结构上不存在。
+// ══ v14 游戏内查词区 ════════════════════════════════════════════════════
+// KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。注入侧只做几何传感、
+// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有
+// popup.html + WebView2 离屏合成）负责。跨进程边界上因此只有一块位图和一串整数。
 //
 // 三条通道各自单写单读，无锁：
-//   hit   : hook → host，单槽 latest-wins（用户查得再快也只关心最后一次）
+//   hit   : hook → host，单槽 latest-wins，仅发布 submit；hover 在游戏线程即时高亮
 //   input : hook → host，环（落在卡片矩形内的鼠标/滚轮事件，供 host 喂 SendMouseInput）
 //   frame : host → hook，双缓冲（避免 host 写下一帧时撕裂 hook 正在拷的这一帧）
 //
@@ -317,7 +314,17 @@ constexpr uint32_t kLookupInputSlotCount = 64;   // 输入转发环槽数
 constexpr uint32_t kLookupFrameCount = 2;        // 位图双缓冲
 // 单缓冲位图上限 3MiB ≈ 880×880 BGRA。x86 游戏进程地址空间有限，故设硬上界；超限由
 // host 负责钳制卡片尺寸，注入侧只做校验和拒绝，绝不按收到的 width/height 盲拷。
-constexpr uint32_t kLookupBitmapBytes = 3u * 1024u * 1024u;
+// 单张卡片位图的字节预算（双缓冲，共享内存占 2 倍）。
+//
+// 超预算时 runner 只能**裁**（DecodePngStreamToStraightBgra 直接改小 width/height
+// 按左上角取块），不是缩——也就是说预算定小了，用户看到的是被切掉半张的卡片。
+// 原来的 3 MiB 只够 786432 像素，1920x1440 视口下取 0.6 就已经逼近；抬到 8 MiB
+// 后可容 2097152 像素（约 1600x1200 / 1920x1092），正常卡片不可能撞到。
+//
+// 抬这个数**不需要升 kSharedVersion**：区域寻址、IsLookupFrameSane、runner 的预算
+// 校验一律读 header->lookup_bitmap_bytes，没有一处硬用本常量。旧 helper 建的段就
+// 报 3 MiB，host 照它办，两侧仍自洽。代价只是共享内存多 10 MiB。
+constexpr uint32_t kLookupBitmapBytes = 8u * 1024u * 1024u;
 
 // lookup_diag 位。与 reserved_luna / hook_diagnostics 分开：那两个各自已满，且这里的
 // 阶段语义（传感器装没装 / 像素走哪条路）与引擎探针、helper 启动都不是一回事。
@@ -341,9 +348,43 @@ constexpr uint32_t kLookupDiagClassicGeometry = 0x00000200u;
 // 两者必须分开自证：真机实测 KiriKiri2 上给原生类成员赋值**拦不住实例调用**，只有 TJS
 // 层的类才拦得住。合成一位就会把"装上了但永远不触发"误读成"这条路能用"。
 constexpr uint32_t kLookupDiagClassicProcessCh = 0x00000400u;
-
-// hook → host：光标命中了哪个字符。单槽 latest-wins；`seq` **最后**写（Interlocked 全栅栏，
-// 保证 payload 对 reader 先可见），与 VoiceClip / LoopbackMarker 同一套纪律。
+// 传感器在游戏事件循环里吞下过异常（TJS 侧 fushiLookupFaults > 0）。
+//
+// 注入进别人的事件循环，异常就绝不允许逃逸——逃出去 KiriKiri 会弹「致命的なエラー」
+// 把玩家这一局打断。但"不逃逸"必须与"看得见"成对出现：只 catch 不计数，查词会安静地
+// 半死不活（命中报不上来、卡片不出现），而现场没有任何痕迹可查。这一位就是那道痕迹。
+constexpr uint32_t kLookupDiagSensorFault = 0x00000800u;
+// ── hover 未命中的原因（真机排查用；采集成功但点不中时唯一能分型的依据）──────
+//
+// 「采到了几何」和「点得中」之间隔着坐标系换算、图层可见性、逐字形命中三道，任何
+// 一道断了，用户看到的都是同一句「点了没反应」。没有这几位就只能靠改一版试一版。
+constexpr uint32_t kLookupDiagHoverBoxMiss = 0x00001000u;   // 光标不在整行包围盒内
+constexpr uint32_t kLookupDiagHoverGlyphMiss = 0x00002000u; // 在包围盒内但无字形命中
+constexpr uint32_t kLookupDiagHoverHidden = 0x00004000u;    // 命中但可见性判定否决
+// 绘制原点在一次采集周期内被绑定多次 = drawCh 的 ox/oy 是**逐字符**位置，不是整行
+// 原点。**这是引擎事实的记录位，不是错误位**：本样本（textrender.dll）实测每字一次，
+// 采集侧据此改为「用 min(ox) 与 min(字形 x) 配对解平移量」，而不是把最后一个字的落
+// 点当行原点（那正是第一版 HoverBoxMiss 的成因）。留着它是为了换引擎时一眼看出该
+// 引擎属于哪一类。
+constexpr uint32_t kLookupDiagOriginPerChar = 0x00008000u;
+// 文字的绘制目标层不在 primaryLayer 的父链上（独立/离屏层），沿父链累加得到的偏移
+// 因此没有意义。
+constexpr uint32_t kLookupDiagLayerDetached = 0x00010000u;
+// ── 投帧失败分型（真机上"卡片就是不出现"的唯一分辨依据）────────────────────
+//
+// 之前 FramePresented 在降级路上是**无条件置位**的：只证明"我让 TJS 去加载 PNG 了"，
+// 不证明卡片显示了。而那条降级路要求有人把卡片写成 PNG 落盘——实测**没有任何一处
+// 写过那个文件**，于是 loadImages 必然失败、被 TJS 的 catch 吞掉，所有诊断却都报成功。
+// 诊断位声称的比它知道的多，是最难查的一类缺陷，这几位专门用来消除它。
+constexpr uint32_t kLookupDiagCardLayerMissing = 0x00020000u;   // 卡片层建不出来
+constexpr uint32_t kLookupDiagWriteBufferNull = 0x00040000u;    // 层在，但拿不到写指针
+constexpr uint32_t kLookupDiagFallbackPngMissing = 0x00080000u; // 降级路的 PNG 文件不存在
+// 卡片层退回了普通 Layer（自定义子类建不出来）。卡片能显示，但卡片内的鼠标事件
+// 转发失效——降级发生了就要看得见，不许悄悄发生。
+constexpr uint32_t kLookupDiagCardPlainFallback = 0x00100000u;
+// hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
+// 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
+// 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
 struct LookupHitSlot {
   volatile uint64_t seq;   // 单调；host 据此判新。0=从未命中
   // 光标落在第几个字符。**单位是 UTF-16 code unit**，不是 UTF-8 字节、不是 code point。
@@ -411,7 +452,17 @@ struct LookupFrame {
 // 收卡是**普通一帧**，靠这个位自述，不靠「width==0 是收卡」这种魔法编码：后者要求每个
 // 读侧都记住这条隐规则，而它和「host 投了张废帧」在字节上完全一样。
 constexpr uint32_t kLookupFrameDismiss = 0x00000001u;
-
+// 只更新高亮：不带像素，注入侧跳过整张卡片的 memcpy，只把高亮挪到新位置。
+//
+// 悬停时卡片内容一个像素都没变，只是高亮要换字。而普通 present 每次都要走一整轮
+// 「CapturePreview → PNG 编码 → WIC 解码 → 全卡 memcpy」——鼠标划过一行就是几十次，
+// 真机上直接表现为"太卡了"。高亮本来就画在游戏自己的图层上，不在卡片位图里，所以
+// 这条路不需要任何像素。
+constexpr uint32_t kLookupFrameHighlightOnly = 0x00000002u;
+// 制卡截图期间临时隐藏卡片与选词高亮。它不是 dismiss：不推进 Esc/submit fence，也不销毁
+// 当前 route；截图完成后 host 通过一张普通 full frame 恢复。hook 必须等 TJS hide/update 成功且
+// 又经过一次 continuous callback 后，才把本帧 seq 写进 lookup_frame_applied_seq。
+constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;
 // hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
 struct LookupInputSlot {
   volatile uint64_t seq;  // 单调；**最后**写
@@ -505,7 +556,7 @@ struct SharedHeader {
   // 等于把要修的病换个地方藏起来。
   volatile uint64_t text_lane_recycle_count;   // 回收了一条最久未写的非选定道
   volatile uint64_t text_lane_overflow_count;  // 连可回收的道都没有，本行被丢弃
-  // ── v14 游戏内查词区（injector 填偏移/容量；追加在布局最尾，前面各区偏移一个不动）──
+  // ── v14 游戏内查词区（injector 填偏移/容量；追加在布局最尾，前面各区偏移不动）────
   uint32_t lookup_region_offset;      // 查词区起始（header 起算字节偏移；0=本会话无此区）
   uint32_t lookup_bitmap_bytes;       // 单缓冲位图字节容量（= kLookupBitmapBytes，冗余自洽）
   uint32_t lookup_frame_count;        // 位图缓冲数（= kLookupFrameCount，冗余自洽）
@@ -518,6 +569,10 @@ struct SharedHeader {
   // 且环境变量在进程启动后改不了，做不到运行期开关。形态照抄 selected_text_thread_id。
   volatile uint32_t lookup_enabled;
   volatile uint32_t lookup_diag;      // kLookupDiag* 位
+  // hook→host：只确认 kLookupFrameCaptureSuppress。值是已经在 TJS hide/update 后又跨过
+  // 一次 continuous callback 的最高 LookupFrame::seq。普通 present/dismiss 不得推进它，
+  // 否则一张更晚的普通帧会伪装成“截图抑制已经安全生效”。
+  volatile uint64_t lookup_frame_applied_seq;
 };
 #pragma pack(pop)
 
@@ -885,13 +940,19 @@ inline const uint8_t* LookupBitmapAt(const SharedHeader* header,
 // ready 位不在这里判：它是「host 写完没有」的内存可见性问题，归调用点，与「这帧是否过期」
 // 是两件事。seq 由调用点原子读出后传进来，同理。
 inline bool ShouldApplyLookupFrame(uint64_t frame_seq, uint64_t frame_hit_seq,
+                                   uint32_t frame_flags,
                                    uint64_t presented_seq,
-                                   uint64_t current_hit_seq) {
+                                   uint64_t current_any_hit_seq,
+                                   uint64_t current_submit_hit_seq) {
   // 发布序不比已处理的新 → 这帧我处理过了。
   if (frame_seq <= presented_seq) return false;
-  // 回应的那次查询已被更新的命中作废 → 迟到帧，绝不能顶掉新卡片。
-  if (frame_hit_seq < current_hit_seq) return false;
-  return true;
+  // hover 只控制游戏线程即时绘制的字形高亮；卡片内容、收卡与 dismiss 都属于最近一次
+  // submit。两种身份混用会让查词期间经过的 hover 把正确结果判成陈旧帧。
+  const uint64_t fence = frame_flags == kLookupFrameHighlightOnly
+                             ? current_any_hit_seq
+                             : current_submit_hit_seq;
+  // 只接受精确身份。大于 fence 的 frame 同样没有合法来源，不能把“host 抢跑”当成功。
+  return frame_hit_seq == fence;
 }
 
 // 帧自洽校验。**注入侧必须先过这一关再拷贝**：跨进程来的 width/height/pitch 全是不可信

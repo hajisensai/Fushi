@@ -43,10 +43,12 @@ OUT = pathlib.Path(os.environ.get("TEMP", "/tmp")) / "galhook_lookup_mutants"
 MUTANTS: list[tuple[str, str, str]] = [
     (
         "M1_late_frame_not_dropped",
-        "      if (!ShouldApplyLookupFrame(seq, frame->hit_seq, presented_seq_,\n"
-        "                                  current_hit)) {",
-        "      if (!ShouldApplyLookupFrame(seq, current_hit, presented_seq_,\n"
-        "                                  current_hit)) {",
+        "      if (!ShouldApplyLookupFrame(seq, frame->hit_seq, frame->flags,\n"
+        "                                  presented_seq_, current_any_hit,\n"
+        "                                  hook_submit_hit_seq_)) {",
+        "      if (!ShouldApplyLookupFrame(seq, hook_submit_hit_seq_, frame->flags,\n"
+        "                                  presented_seq_, current_any_hit,\n"
+        "                                  hook_submit_hit_seq_)) {",
     ),
     (
         "M2_publish_hit_while_disabled",

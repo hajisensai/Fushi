@@ -1,10 +1,11 @@
-// KiriKiri 游戏内查词（v14 查词区）的**会话 replay**。
+// KiriKiri 游戏内查词（v14 BGRA 查词区）的**会话 replay**。
 //
 // 回放 tests/fixtures/kirikiri_lookup_replay.tsv 里的一整场事件流，跑在一块按真实
 // injector 布局摆好的假共享内存上，钉死这些会话级不变量：
 //
 //   1. 正常时序 hit → frame → apply 走得通，且卡片像素真的落进了"游戏图层"；
-//   2. 回应旧命中的迟到帧必须被丢弃（连点两下时不许把上一个词的卡片贴出来 = 串卡）；
+//   2. 卡片对齐最新 submit，highlight-only 对齐最新 any hit：悬停不得
+//      作废已提交查词的迟到卡片，新 submit 则必须作废旧卡片；
 //   3. `lookup_enabled == 0` 时注入侧**一个字节都不写**（开关是唯一入口，不是"少写点"）；
 //   4. 落在卡片矩形外的输入不进转发环（否则游戏自己的点击会被吃掉）；
 //   5. 会话结束必须清理未完成状态，下一会话不串数据；
@@ -31,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -227,6 +229,9 @@ struct Counters {
   // 收卡链通不通、陈旧 dismiss 有没有误伤新卡片，看这一行就够。
   std::vector<std::string> card_transcript;
   long last_applied_fill = -1;
+  long last_applied_highlight_len = -1;
+  // 为了不改旧 fixture 的聚合字段，这里计“开启时被 adapter 接受
+  // 的 hit 事件”；其中只有 submit 会真正写共享 LookupHitSlot。
   long hits_published = 0;
   long hits_suppressed_while_disabled = 0;
   long frames_published = 0;  // 含 dismiss 帧
@@ -308,6 +313,14 @@ class LookupSessionModel {
       ++counters_.hits_suppressed_while_disabled;
       return;
     }
+    ++hook_any_hit_seq_;
+    ++counters_.hits_published;
+    const bool submit = event.Int("submit") != 0;
+
+    // hover 由 KiriKiri adapter 本地立即绘制高亮，不经 host，也不得
+    // 覆盖共享槽里 host 正在回应的最新 submit payload。
+    if (!submit) return;
+
     LookupHitSlot* hit = LookupHitOf(h);
     Check(hit != nullptr, "开启后 hit 槽必须可寻址");
     if (hit == nullptr) return;
@@ -320,7 +333,7 @@ class LookupSessionModel {
     hit->glyph_h = static_cast<int32_t>(event.IntAt("glyph", 3));
     hit->view_w = static_cast<int32_t>(event.IntAt("view", 0));
     hit->view_h = static_cast<int32_t>(event.IntAt("view", 1));
-    hit->flags = event.Int("submit") != 0 ? kLookupHitFlagSubmit : 0u;
+    hit->flags = kLookupHitFlagSubmit;
     const uint32_t bytes =
         static_cast<uint32_t>(line.size() < kLookupLineBytes ? line.size()
                                                              : kLookupLineBytes);
@@ -329,10 +342,9 @@ class LookupSessionModel {
     Check(hit->char_index < hit->char_count,
           "hit 自洽：char_index 必须落在本行字符数内");
     // seq **最后**写（与契约头注释同一套纪律）。
-    ++hook_hit_seq_;
-    hit->seq = hook_hit_seq_;
+    hit->seq = hook_any_hit_seq_;
+    hook_submit_hit_seq_ = hook_any_hit_seq_;
     ++h->lookup_hit_count;
-    ++counters_.hits_published;
   }
 
   // host → hook：带像素的一帧。**故意**允许发布不合契约的帧：跨进程来的宽高就是不可信
@@ -413,9 +425,7 @@ class LookupSessionModel {
   void PollFrames() {
     SharedHeader* h = mapping_->header();
     if (h->lookup_enabled == 0) return;
-    const LookupHitSlot* hit = LookupHitOf(h);
-    if (hit == nullptr) return;
-    const uint64_t current_hit = hit->seq;
+    const uint64_t current_any_hit = hook_any_hit_seq_;
 
     LookupFrame* best = nullptr;
     uint32_t best_index = 0;
@@ -425,8 +435,9 @@ class LookupSessionModel {
       if (frame == nullptr || frame->ready == 0) continue;
       const uint64_t seq = frame->seq;
       if (seq <= best_seq) continue;  // 本轮已找到更新的候选
-      if (!ShouldApplyLookupFrame(seq, frame->hit_seq, presented_seq_,
-                                  current_hit)) {
+      if (!ShouldApplyLookupFrame(seq, frame->hit_seq, frame->flags,
+                                  presented_seq_, current_any_hit,
+                                  hook_submit_hit_seq_)) {
         continue;
       }
       best = frame;
@@ -467,6 +478,8 @@ class LookupSessionModel {
     card_w_ = static_cast<int32_t>(best->width);
     card_h_ = static_cast<int32_t>(best->height);
     counters_.last_applied_fill = game_layer_.empty() ? -1 : game_layer_[0];
+    counters_.last_applied_highlight_len =
+        best->hit_seq == hook_any_hit_seq_ ? best->highlight_len : 0;
     counters_.card_transcript.push_back("show:" +
                                         std::to_string(best->hit_seq));
     h->lookup_diag |= fushi_voice_hook::kLookupDiagFramePresented;
@@ -521,7 +534,8 @@ class LookupSessionModel {
     h->lookup_hit_count = 0;
     h->lookup_frame_count_written = 0;
     h->lookup_input_count = 0;
-    hook_hit_seq_ = 0;
+    hook_any_hit_seq_ = 0;
+    hook_submit_hit_seq_ = 0;
     host_publish_seq_ = 0;
     presented_seq_ = 0;
     card_visible_ = false;
@@ -548,7 +562,8 @@ class LookupSessionModel {
   std::vector<uint8_t> game_layer_;  // "游戏渲染树里的卡片 Layer" 的替身
   // 每个帧槽最后一次被写入是在第几个会话（纯测试侧台账，用于识别跨会话残留）。
   std::vector<int> frame_session_;
-  uint64_t hook_hit_seq_ = 0;   // hook 侧：命中序
+  uint64_t hook_any_hit_seq_ = 0;  // hook 侧：本地所有命中序
+  uint64_t hook_submit_hit_seq_ = 0;  // hook 侧：最新 submit 命中序
   uint64_t host_publish_seq_ = 0;  // host 侧：帧发布序
   uint64_t presented_seq_ = 0;  // hook 侧：已处理到哪个发布序
   uint32_t last_publish_index_ = 0;
@@ -559,6 +574,93 @@ class LookupSessionModel {
   int32_t card_w_ = 0;
   int32_t card_h_ = 0;
 };
+
+Event ReplayEvent(
+    const char* kind,
+    std::initializer_list<std::pair<const char*, const char*>> fields) {
+  Event event;
+  event.kind = kind;
+  for (const auto& field : fields) {
+    event.fields.emplace_back(field.first, field.second);
+  }
+  return event;
+}
+
+Event ReplayHit(const char* line, const char* index, const char* submit) {
+  return ReplayEvent("hit", {{"line", line},
+                             {"index", index},
+                             {"chars", "8"},
+                             {"glyph", "120,540,24,26"},
+                             {"view", "1280,720"},
+                             {"submit", submit}});
+}
+
+Event ReplayFrame(const char* hit, const char* fill) {
+  return ReplayEvent("frame", {{"hit", hit},
+                               {"w", "480"},
+                               {"h", "320"},
+                               {"pitch", "1920"},
+                               {"anchor", "120,180"},
+                               {"hl", "1,1"},
+                               {"fill", fill}});
+}
+
+std::string Join(const std::vector<std::string>& values);
+
+void TestAnyAndSubmitHitFencesInReplay() {
+  const Event enabled = ReplayEvent("enabled", {{"value", "1"}});
+
+  // submit B -> hover C -> present B：card 帧只看 submit fence，必须应用；
+  // 但 B 帧携带的旧高亮不得覆盖 adapter 已即时绘制的 hover C。
+  {
+    FakeMapping mapping;
+    LookupSessionModel model(&mapping);
+    model.Run({enabled, ReplayHit("B", "1", "1"),
+               ReplayHit("C", "2", "0"), ReplayFrame("1", "0x31"),
+               ReplayEvent("poll", {})});
+    Check(Join(model.counters().card_transcript) == "show:1",
+          "submit B 后的 hover C 不得作废迟到的 present B");
+    Check(model.counters().applied_frames.size() == 1,
+          "present B 必须恰好应用一次");
+    Check(model.counters().last_applied_highlight_len == 0,
+          "present B 可显示，但必须 suppress 已过期的 B 高亮");
+    const LookupHitSlot* shared_submit = LookupHitOf(mapping.header());
+    Check(shared_submit != nullptr && shared_submit->seq == 1 &&
+              shared_submit->char_index == 1 &&
+              shared_submit->line_bytes == 1 &&
+              shared_submit->line_utf8[0] == 'B' &&
+              mapping.header()->lookup_hit_count == 1,
+          "hover C 不得覆盖共享槽中的 submit B payload");
+  }
+
+  // 已显示 A 卡后又 submit B，B 没有结果时 dismiss(B) 必须收卡。
+  {
+    FakeMapping mapping;
+    LookupSessionModel model(&mapping);
+    model.Run({enabled, ReplayHit("A", "1", "1"),
+               ReplayFrame("1", "0x30"), ReplayEvent("poll", {}),
+               ReplayHit("B", "2", "1"),
+               ReplayEvent("dismiss", {{"hit", "2"}}),
+               ReplayEvent("poll", {})});
+    Check(Join(model.counters().card_transcript) == "show:1,hide:2",
+          "A 卡显示后 submit B 无结果，dismiss(B) 必须收卡");
+    Check(model.counters().dismiss_frames_applied == 1,
+          "无结果 dismiss(B) 必须被应用");
+  }
+
+  // 一旦用户又 submit D，旧 B 的 card 帧必须被严格拒绝。
+  {
+    FakeMapping mapping;
+    LookupSessionModel model(&mapping);
+    model.Run({enabled, ReplayHit("B", "1", "1"),
+               ReplayHit("C", "2", "0"), ReplayHit("D", "3", "1"),
+               ReplayFrame("1", "0x32"), ReplayEvent("poll", {})});
+    Check(model.counters().card_transcript.empty(),
+          "submit D 后迟到的 present B 必须拒绝");
+    Check(FramesNeverApplied(model.counters()) == 1,
+          "被 submit D 作废的 present B 必须留在未应用计数中");
+  }
+}
 
 std::string Join(const std::vector<std::string>& values) {
   std::string joined;
@@ -598,6 +700,7 @@ int main(int argc, char** argv) {
 
   LookupSessionModel model(&mapping);
   model.Run(events);
+  TestAnyAndSubmitHitFencesInReplay();
   Counters& c = model.counters();
 
   const bool legacy_untouched =
