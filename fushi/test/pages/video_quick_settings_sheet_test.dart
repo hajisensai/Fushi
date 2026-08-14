@@ -552,7 +552,10 @@ void main() {
         t.video_setting_subtitle_font_weight,
       ),
     );
-    expect(fontWeightRow.value, 900);
+    // 默认字重 400（PR#845 与 mpv `--sub-bold=no` 对齐）；UI scale 2.0 下预览
+    // = 400 * 2 = 800。旧值 900 是「700 * 2 = 1400 被上限钳位」的饱和结果，
+    // 顺带盖住了钳位；钳位覆盖已移到单元层 video_subtitle_style_test.dart。
+    expect(fontWeightRow.value, 800);
 
     final Iterable<AdaptiveSettingsSliderRow> sliders =
         tester.widgetList<AdaptiveSettingsSliderRow>(

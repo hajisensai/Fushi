@@ -41,6 +41,24 @@ void main() {
     expect(s.resolveShadowThickness(0.5), 1.5); // 3 * 0.5
   });
 
+  test('extreme UI scale still lands inside CSS weight / shadow bounds', () {
+    // UI scale 先被 FushiAppUiScale.normalize 钳到 [0.3, 3.0]，再参与缩放。
+    // 这份覆盖原先只由 video_quick_settings_sheet_test 在旧默认 700 下偶然盖住
+    // （700 * 2 = 1400 → 上限 900）；默认改 400 后那里不再饱和，故在此显式钉死。
+    const VideoSubtitleStyle s = VideoSubtitleStyle.defaults;
+
+    // 字重上限 900 仍够得着：scale 3.0 → 400 * 3 = 1200 → 钳到 900。
+    expect(s.resolveFontWeight(3.0), 900);
+    expect(s.resolveFontWeight(99.0), 900, reason: 'scale 先被归一化到 3.0');
+    // 下限侧：scale 归一化到 0.3 → 400 * 0.3 = 120 → 按 100 步进舍入到 100。
+    expect(s.resolveFontWeight(0.01), 100);
+    // 阴影：归一化后最大 3 * 3.0 = 9，够不到滑杆上限 12——这是值域设计的结论，
+    // 不是断言写松了；若哪天 maxScale 或默认半径变大，这条会先红。
+    expect(s.resolveShadowThickness(3.0), 9);
+    expect(s.resolveShadowThickness(99.0), 9, reason: 'scale 先被归一化到 3.0');
+    expect(s.resolveShadowThickness(0.01), closeTo(0.9, 1e-9));
+  });
+
   test('null color still means follow the active theme (legacy data)', () {
     // 旧数据（TODO-051 前默认）持久化时颜色为 null = 跟随主题；resolve 仍回退主题色。
     const VideoSubtitleStyle s = VideoSubtitleStyle(
