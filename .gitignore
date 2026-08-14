@@ -88,7 +88,8 @@ flutter_run_*.txt
 
 # AI-generated docs (local-only)
 docs/superpowers/
-docs/REGRESSION_BUGS.md
+# 用 **/ 兜住 fushi/docs/REGRESSION_BUGS.md，旧规则只锚定仓库根级那一份
+**/REGRESSION_BUGS.md
 docs/TODO.md
 docs/项目负责人提示词 copy
 
