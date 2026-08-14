@@ -2425,7 +2425,6 @@
   "video_setting_torrent_active_seeds": "Max active seeds",
   "video_setting_torrent_anonymous": "Anonymous mode",
   "video_setting_torrent_antileech": "Enable anti-leech",
-  "video_setting_torrent_backend_embedded": "Built-in engine (desktop)",
   "video_setting_torrent_backend_qb": "External qBittorrent",
   "video_setting_torrent_ban_progress_cheat": "Ban progress cheat",
   "video_setting_torrent_ban_relative_cheat": "Ban relative progress cheat",
@@ -2701,7 +2700,6 @@
   "anime_download_subs_deferred": "Subtitles are matched after download, from the pack's actual files",
   "anime_download_subs_pending": "Subtitles: pending until download completes",
   "anime_download_subs_unmatched": "Subtitles: no match for this pack",
-  "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent.",
   "stat_source_breakdown": "By source",
   "stat_format_pages": "$n pages",
   "anime_download_subs_season_mismatch": "No subtitle entry matches season $season of this pack - not auto-selected. Pick one manually if you want it anyway.",
@@ -3394,5 +3392,7 @@
   "srt_book_reimport": "Re-import",
   "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
   "srt_book_reimport_no_cues": "No subtitle lines found in that file",
-  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it",
+  "video_setting_torrent_backend_embedded": "Built-in engine",
+  "download_backend_unsupported_note": "The built-in engine is not available on this platform. Downloads use external qBittorrent."
 }

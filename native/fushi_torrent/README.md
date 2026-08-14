@@ -231,11 +231,38 @@ libtorrent 2.x **无 WebSocket/WebRTC/WebTorrent tracker 能力**（头文件里
 种子（Nyaa）用标准 `udp://`/`http://` tracker + DHT，不依赖 wss——所以这
 不是"用户用不了"的短板。真实下载走标准 tracker + DHT 即可。
 
+## 阶段5 — Android .so 随包（jniLibs copy-if-present）
+
+与 Windows 阶段4 同一套「vendored 预编译」决策，产物形态更简单：vcpkg 的
+android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进单个
+`libfushi_torrent_ffi.so`，没有 Windows 那 4 个运行时 DLL 的收拢/预载问题。
+
+1. **产出**：`build_android_so.ps1`（本机 Windows）/ `build_android_so.sh`
+   （CI Linux）——vcpkg 装 `libtorrent:<triplet>`（arm64-v8a→arm64-android 等），
+   cmake 用 vcpkg 工具链 chainload NDK 工具链（`ANDROID_PLATFORM=android-24`
+   对齐 minSdk，`ANDROID_STL=c++_shared` 对齐 app 内 fushidicts，16KB page
+   对齐见 CMakeLists），产物 strip 后落 `prebuilt/android/<abi>/`。
+2. **随包**：`fushi/android/app/build.gradle` 把 `prebuilt/android` 加进
+   `jniLibs.srcDirs`——目录存在则随包，不存在则 Gradle 静默跳过。因此
+   `flutter build apk` **不依赖 vcpkg/NDK 交叉编译**：没跑过产出脚本的机器
+   照常构建，只是运行期 `EmbeddedTorrentHost.open` 因 `.so` 缺失返回 null
+   → 自动回退外接 qb（与 Windows 缺 DLL 完全同一条路径）。
+3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 按
+   `libfushi_torrent_ffi.so` 名 `DynamicLibrary.open`，命中 app 的
+   nativeLibraryDir，无需路径解析。
+4. **CI**：`release.yml` 出 APK 前跑 `build_android_so.sh`，**只编 arm64-v8a**
+   （真机主力）；armeabi-v7a / x86_64 包按上述回退路径落外接 qb，不是静默破坏。
+   vcpkg 二进制/distfile 双层缓存姿势照抄 build-multiplatform.yml（TODO-2668）。
+
+平台门控随之放开：`AppModel._supportsEmbeddedTorrent()` = 桌面 + Android；
+`resolveBackend(embeddedSupported:)`（原 `isDesktop`，参数已正名）只在 iOS
+规约回 qb。
+
 ## 尚未做（多平台 + 真机）
 
-- **多平台**（Android/macOS/Linux）：同样走 vendored 预编译 + 各 runner
-  CMake 的 copy-if-present，但需对应工具链编 libtorrent（Android NDK /
-  Xcode / gcc），未在本机验证，另起 job。
+- **macOS/Linux**：同样走 vendored 预编译 + 各 runner CMake 的
+  copy-if-present，但需对应工具链编 libtorrent（Xcode / gcc），未在本机
+  验证，另起 job。
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
 - 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
   做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，

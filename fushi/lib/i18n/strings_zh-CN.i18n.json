@@ -2425,7 +2425,6 @@
   "video_setting_torrent_active_seeds": "最大活跃做种数",
   "video_setting_torrent_anonymous": "匿名模式",
   "video_setting_torrent_antileech": "启用反吸血",
-  "video_setting_torrent_backend_embedded": "内置引擎（仅桌面）",
   "video_setting_torrent_backend_qb": "外接 qBittorrent",
   "video_setting_torrent_ban_progress_cheat": "封禁进度作弊",
   "video_setting_torrent_ban_relative_cheat": "封禁相对进度作弊",
@@ -2701,7 +2700,6 @@
   "anime_download_subs_deferred": "字幕将在下载完成后按包内实际文件配对",
   "anime_download_subs_pending": "字幕：待下载完成后配对",
   "anime_download_subs_unmatched": "字幕：未匹配到（可手动补）",
-  "download_backend_desktop_only_note": "内置引擎仅桌面平台可用，本设备使用外接 qBittorrent。",
   "stat_source_breakdown": "各来源",
   "stat_format_pages": "$n 页",
   "anime_download_subs_season_mismatch": "没有字幕条目对得上该种子的第 $season 季，已不自动选中。要用的话请手动选一条。",
@@ -3394,5 +3392,7 @@
   "srt_book_reimport": "重新导入",
   "srt_book_reimport_subtitle_hint": "替换字幕会用新字幕重建这本书的正文。",
   "srt_book_reimport_no_cues": "该字幕文件解析不出任何字幕行",
-  "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书"
+  "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书",
+  "video_setting_torrent_backend_embedded": "内置引擎",
+  "download_backend_unsupported_note": "本平台无内置引擎，下载使用外接 qBittorrent。"
 }

@@ -219,7 +219,7 @@ void main() {
       AnimeDownloadService.resolvePollInterval(
         config: embedded,
         hasActiveDownloads: true,
-        isDesktop: true,
+        embeddedSupported: true,
         idle: idle,
       ),
       AnimeDownloadService.activeInterval,
@@ -229,7 +229,7 @@ void main() {
       AnimeDownloadService.resolvePollInterval(
         config: embedded,
         hasActiveDownloads: false,
-        isDesktop: true,
+        embeddedSupported: true,
         idle: idle,
       ),
       idle,
@@ -240,7 +240,7 @@ void main() {
       AnimeDownloadService.resolvePollInterval(
         config: _kConfig,
         hasActiveDownloads: true,
-        isDesktop: true,
+        embeddedSupported: true,
         idle: idle,
       ),
       idle,
@@ -250,7 +250,7 @@ void main() {
       AnimeDownloadService.resolvePollInterval(
         config: null,
         hasActiveDownloads: true,
-        isDesktop: true,
+        embeddedSupported: true,
         idle: idle,
       ),
       idle,
