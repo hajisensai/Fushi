@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="Fushi logosu" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaş
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > En az Android 7.0 (API 24). Aramada kullanılabilen diller, arayüz dilinden bağımsız olarak içe aktarılan sözlükler ve Yomitan dönüşüm tabloları tarafından belirlenir.
@@ -164,7 +164,7 @@ flutter build windows --release
 | Katman | Teknoloji |
 |---|---|
 | Çerçeve | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platformlar | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Platformlar | Android / Windows / macOS / iOS (Material Design 3) |
 | Reader | WebView sayfalama motoru (Hoshi Reader ailesinden türetilmiştir) |
 | Video | media_kit (libmpv çekirdeği) |
 | Depolama | Drift (SQLite, WAL) + fushidicts (C++ FFI sözlük motoru) |

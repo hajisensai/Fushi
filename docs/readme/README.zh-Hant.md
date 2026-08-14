@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="Fushi logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Fushi 把你正在讀的小說、追的番、聽的有聲書，變成你的語�
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > 最低 Android 7.0（API 24）。詞典查詞的語言由匯入的詞典與 Yomitan 變換表決定，與介面語言相互獨立。
@@ -170,7 +170,7 @@ flutter build windows --release
 | 層 | 技術 |
 |---|---|
 | 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
-| 平台 | Android / Windows / macOS / Linux / iOS（Material Design 3） |
+| 平台 | Android / Windows / macOS / iOS（Material Design 3） |
 | 閱讀器 | WebView 分頁引擎（衍生自 Hoshi Reader 系列） |
 | 影片 | media_kit（libmpv 核心） |
 | 儲存 | Drift（SQLite，WAL）+ fushidicts（C++ FFI 詞典引擎） |

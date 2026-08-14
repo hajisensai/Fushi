@@ -4,7 +4,7 @@
 
 <img src="docs/static-assets/fushi-logo.png" alt="Fushi logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -28,7 +28,7 @@ Fushi 把你正在读的小说、追的番、听的有声书，变成你的语�
 🎬 **看**：视频字幕上直接查词、制卡，追番就是输入。<br>
 🃏 **沉淀**：任意场景查到的词，一键进 Anki，只复习你真正遇到的词。
 
-所有场景共享同一套词典、统计和复习流程。适合任何语言（日语、英语……），尤其适合信奉**大量输入 + 只背自制卡**的沉浸式学习者。面向 Android、Windows、macOS、Linux 与 iOS 五个平台。
+所有场景共享同一套词典、统计和复习流程。适合任何语言（日语、英语……），尤其适合信奉**大量输入 + 只背自制卡**的沉浸式学习者。面向 Android、Windows、macOS 与 iOS 四个平台发布（Linux 可自行从源码构建）。
 
 <table>
   <tr>
@@ -150,7 +150,7 @@ Fushi 把你正在读的小说、追的番、听的有声书，变成你的语�
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > 最低 Android 7.0（API 24）。Galgame 语音制卡仅限 Windows。词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
@@ -161,7 +161,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/hajisensai/Fushi/releases) 下载最新版本，提供 Android APK、Windows 安装包，以及 macOS、Linux、iOS 构建。
+从 [GitHub Releases](https://github.com/hajisensai/Fushi/releases) 下载最新版本，提供 Android APK、Windows 安装包，以及 macOS、iOS 构建。Linux 暂无预编译包，需自行从源码构建。
 
 <details open>
 <summary>📖 <b>无需繁琐配置</b>：推荐词典与本地音频一键导入即用。</summary>
@@ -199,7 +199,7 @@ flutter build ipa --release
 | 层 | 技术 |
 |---|---|
 | 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
-| 平台 | Android / Windows / macOS / Linux / iOS（Material Design 3） |
+| 平台 | Android / Windows / macOS / iOS（Material Design 3） |
 | 阅读器 | WebView 分页引擎（衍生自 Hoshi Reader 系列） |
 | 视频 | media_kit（libmpv 内核） |
 | 存储 | Drift（SQLite，WAL）+ fushidicts（C++ FFI 词典引擎） |

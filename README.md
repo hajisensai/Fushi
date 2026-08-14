@@ -4,7 +4,7 @@
 
 <img src="docs/static-assets/fushi-logo.png" alt="Fushi logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -28,7 +28,7 @@ The most effective way to learn a language is heavy exposure to real content, no
 🎬 **Watch**: look up words and make cards right on the video subtitles — following a show *is* input.<br>
 🃏 **Retain**: send any word you looked up, anywhere, straight to Anki, and review only the words you actually met.
 
-Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android, Windows, macOS, Linux, and iOS.
+Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android, Windows, macOS, and iOS (Linux builds from source).
 
 <table>
   <tr>
@@ -151,7 +151,7 @@ Every scenario shares the same dictionaries, statistics, and review workflow. It
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > Minimum Android 7.0 (API 24). Galgame voice mining is Windows-only. The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language.
@@ -162,7 +162,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/hajisensai/Fushi/releases) — Android APK, Windows installer, macOS, Linux, and iOS builds are available.
+Download the latest release from [GitHub Releases](https://github.com/hajisensai/Fushi/releases) — Android APK, Windows installer, macOS, and iOS builds are available. Linux has no prebuilt release yet; build it from source.
 
 <details open>
 <summary>📖 <b>No fiddly setup</b> — import the recommended dictionaries and audio in one step.</summary>
@@ -200,7 +200,7 @@ flutter build ipa --release
 | Layer | Technology |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platforms | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Platforms | Android / Windows / macOS / iOS (Material Design 3) |
 | Reader | WebView paging engine (derived from the Hoshi Reader family) |
 | Video | media_kit (libmpv core) |
 | Storage | Drift (SQLite, WAL) + fushidicts (C++ FFI dictionary engine) |

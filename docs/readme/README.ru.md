@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="логотип Fushi" width="160">
 
-![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![Лицензия](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Fushi превращает романы, которые вы читаете, с�
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > Минимум Android 7.0 (API 24). Языки, доступные для поиска по словарю, определяются импортированными словарями и таблицами трансформации Yomitan, независимо от языка интерфейса.
@@ -164,7 +164,7 @@ flutter build windows --release
 | Уровень | Технология |
 |---|---|
 | Фреймворк | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Платформы | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Платформы | Android / Windows / macOS / iOS (Material Design 3) |
 | Читалка | Постраничный движок на WebView (на основе семейства Hoshi Reader) |
 | Видео | media_kit (ядро libmpv) |
 | Хранение | Drift (SQLite, WAL) + fushidicts (движок словарей C++ FFI) |

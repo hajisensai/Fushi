@@ -4,7 +4,7 @@
 
 <img src="../static-assets/fushi-logo.png" alt="fushi-logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
 
@@ -132,7 +132,7 @@ Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow.
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
-| Linux | ✅ | Material Design 3 |
+| Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ | Material Design 3 |
 
 > Minimaal Android 7.0 (API 24). Welke talen beschikbaar zijn om op te zoeken, wordt bepaald door de geïmporteerde woordenboeken en de Yomitan-transformatietabellen, onafhankelijk van de interfacetaal.
@@ -164,7 +164,7 @@ flutter build windows --release
 | Laag | Technologie |
 |---|---|
 | Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platforms | Android / Windows / macOS / Linux / iOS (Material Design 3) |
+| Platforms | Android / Windows / macOS / iOS (Material Design 3) |
 | Reader | WebView-paginamotor (afgeleid van de Hoshi Reader-familie) |
 | Video | media_kit (libmpv-kern) |
 | Opslag | Drift (SQLite, WAL) + fushidicts (C++-FFI-woordenboekengine) |
