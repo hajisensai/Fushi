@@ -458,6 +458,23 @@ function isStringPartiallyChinese(text) {
 }
 
 // https://github.com/yomidevs/yomitan/blob/c0abb9e98a15aeb6b6f8f6e2d91fe5e54240b54a/ext/js/language/text-utilities.js#L28
+// 词典名 -> 该词典的内容语言（BCP-47）。映射由 Dart 注入
+// （popup_settings_injection 写 window.__fushiDictionaryLanguages，值取自 yomitan
+// index.json 的 sourceLanguage/targetLanguage，或用户在词典设置里手动指定）。
+// 浏览器扩展没有 Dart 注入 -> 返回 null -> 退回纯字符检测（旧行为）。
+//
+// 为什么必须传：getLanguageFromText 的 isStringPartiallyJapanese 把**汉字**也算
+// 日文（KANA_PATTERN || CJK_PATTERN），所以纯汉字的中文释义会被判成 'ja'。上游
+// 本来留了闸门（language 是 zh/yue 时跳过检测），但所有调用处一直传 null，闸门
+// 从未生效。传上词典自己声明的语言，中文词典的释义才不会被贴上 lang="ja" 再被
+// :lang(ja) 的日文字体链接管。
+function dictionaryLanguageOf(dictName) {
+    const map = window.__fushiDictionaryLanguages;
+    if (!map || !dictName) return null;
+    const language = map[dictName];
+    return typeof language === 'string' && language ? language : null;
+}
+
 function getLanguageFromText(text, language) {
     const partiallyJapanese = isStringPartiallyJapanese(text);
     const partiallyChinese = isStringPartiallyChinese(text);
@@ -837,16 +854,16 @@ function constructSingleGlossaryHtml(entryIndex) {
         const tempDiv = document.createElement('div');
         if (typeof g.content === 'string') {
             try {
-                renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
+                renderStructuredContent(tempDiv, JSON.parse(g.content), dictionaryLanguageOf(dictName), dictName, true);
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(g.content)) {
                     tempDiv.innerHTML = sanitizeHtml(g.content);
                 } else {
-                    renderStructuredContent(tempDiv, g.content, null, dictName, true);
+                    renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(dictName), dictName, true);
                 }
             }
         } else {
-            renderStructuredContent(tempDiv, g.content, null, dictName, true);
+            renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(dictName), dictName, true);
         }
 
         const parsedTags = parseTags(g.definitionTags).filter(tag => !NUMERIC_TAG.test(tag));
@@ -889,16 +906,16 @@ function constructGlossaryHtml(entryIndex) {
         const tempDiv = document.createElement('div');
         if (typeof g.content === 'string') {
             try {
-                renderStructuredContent(tempDiv, JSON.parse(g.content), null, dictName, true);
+                renderStructuredContent(tempDiv, JSON.parse(g.content), dictionaryLanguageOf(dictName), dictName, true);
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(g.content)) {
                     tempDiv.innerHTML = sanitizeHtml(g.content);
                 } else {
-                    renderStructuredContent(tempDiv, g.content, null, dictName, true);
+                    renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(dictName), dictName, true);
                 }
             }
         } else {
-            renderStructuredContent(tempDiv, g.content, null, dictName, true);
+            renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(dictName), dictName, true);
         }
 
         let label = '';
@@ -1784,7 +1801,11 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
                 parent.appendChild(document.createElement('br'));
             }
             if (line) {
-                if (!language && !parent.hasAttribute('lang')) {
+                // 原判据是 `!language && ...`：传了 language 就干脆不标 lang，
+                // 因为上游假设更外层已经标过。本 app 没有那个外层，于是「传了词典
+                // 语言」反而比「不传」丢的信息更多。改成只要父节点还没标就标，
+                // getLanguageFromText 在 language 已知时直接回传它（不瞎猜）。
+                if (!parent.hasAttribute('lang')) {
                     const detected = getLanguageFromText(line, language);
                     if (detected) {
                         parent.setAttribute('lang', detected);

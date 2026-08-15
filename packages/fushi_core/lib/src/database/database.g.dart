@@ -4789,6 +4789,12 @@ class $DictionaryMetadataTable extends DictionaryMetadata
           type: DriftSqlType.string,
           requiredDuringInsert: false,
           defaultValue: const Constant('[]'));
+  static const VerificationMeta _languageOverrideMeta =
+      const VerificationMeta('languageOverride');
+  @override
+  late final GeneratedColumn<String> languageOverride = GeneratedColumn<String>(
+      'language_override', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         name,
@@ -4797,7 +4803,8 @@ class $DictionaryMetadataTable extends DictionaryMetadata
         type,
         metadataJson,
         hiddenLanguagesJson,
-        collapsedLanguagesJson
+        collapsedLanguagesJson,
+        languageOverride
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4849,6 +4856,12 @@ class $DictionaryMetadataTable extends DictionaryMetadata
           collapsedLanguagesJson.isAcceptableOrUnknown(
               data['collapsed_languages_json']!, _collapsedLanguagesJsonMeta));
     }
+    if (data.containsKey('language_override')) {
+      context.handle(
+          _languageOverrideMeta,
+          languageOverride.isAcceptableOrUnknown(
+              data['language_override']!, _languageOverrideMeta));
+    }
     return context;
   }
 
@@ -4874,6 +4887,8 @@ class $DictionaryMetadataTable extends DictionaryMetadata
       collapsedLanguagesJson: attachedDatabase.typeMapping.read(
           DriftSqlType.string,
           data['${effectivePrefix}collapsed_languages_json'])!,
+      languageOverride: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}language_override']),
     );
   }
 
@@ -4892,6 +4907,17 @@ class DictionaryMetaRow extends DataClass
   final String metadataJson;
   final String hiddenLanguagesJson;
   final String collapsedLanguagesJson;
+
+  /// v87：用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。
+  ///
+  /// null = 未指定，按自动来源推断（yomitan `index.json` 的 `sourceLanguage`，
+  /// 落在 [metadataJson] 里）。非 null 为用户覆盖，压过一切自动判断。
+  ///
+  /// 为什么不塞进 [metadataJson]：重导/在线更新词典时 metadata 会被包内 index.json
+  /// **整体重建**（见 `dictionary_import_manager` 的两处 persistDictionary），
+  /// 用户的手动指定会随之蒸发。它属于「用户设置」，必须与 hidden/collapsedLanguages
+  /// 走同一条继承通道（`preservedSettings`）。
+  final String? languageOverride;
   const DictionaryMetaRow(
       {required this.name,
       required this.formatKey,
@@ -4899,7 +4925,8 @@ class DictionaryMetaRow extends DataClass
       required this.type,
       required this.metadataJson,
       required this.hiddenLanguagesJson,
-      required this.collapsedLanguagesJson});
+      required this.collapsedLanguagesJson,
+      this.languageOverride});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -4910,6 +4937,9 @@ class DictionaryMetaRow extends DataClass
     map['metadata_json'] = Variable<String>(metadataJson);
     map['hidden_languages_json'] = Variable<String>(hiddenLanguagesJson);
     map['collapsed_languages_json'] = Variable<String>(collapsedLanguagesJson);
+    if (!nullToAbsent || languageOverride != null) {
+      map['language_override'] = Variable<String>(languageOverride);
+    }
     return map;
   }
 
@@ -4922,6 +4952,9 @@ class DictionaryMetaRow extends DataClass
       metadataJson: Value(metadataJson),
       hiddenLanguagesJson: Value(hiddenLanguagesJson),
       collapsedLanguagesJson: Value(collapsedLanguagesJson),
+      languageOverride: languageOverride == null && nullToAbsent
+          ? const Value.absent()
+          : Value(languageOverride),
     );
   }
 
@@ -4938,6 +4971,7 @@ class DictionaryMetaRow extends DataClass
           serializer.fromJson<String>(json['hiddenLanguagesJson']),
       collapsedLanguagesJson:
           serializer.fromJson<String>(json['collapsedLanguagesJson']),
+      languageOverride: serializer.fromJson<String?>(json['languageOverride']),
     );
   }
   @override
@@ -4952,6 +4986,7 @@ class DictionaryMetaRow extends DataClass
       'hiddenLanguagesJson': serializer.toJson<String>(hiddenLanguagesJson),
       'collapsedLanguagesJson':
           serializer.toJson<String>(collapsedLanguagesJson),
+      'languageOverride': serializer.toJson<String?>(languageOverride),
     };
   }
 
@@ -4962,7 +4997,8 @@ class DictionaryMetaRow extends DataClass
           String? type,
           String? metadataJson,
           String? hiddenLanguagesJson,
-          String? collapsedLanguagesJson}) =>
+          String? collapsedLanguagesJson,
+          Value<String?> languageOverride = const Value.absent()}) =>
       DictionaryMetaRow(
         name: name ?? this.name,
         formatKey: formatKey ?? this.formatKey,
@@ -4972,6 +5008,9 @@ class DictionaryMetaRow extends DataClass
         hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
         collapsedLanguagesJson:
             collapsedLanguagesJson ?? this.collapsedLanguagesJson,
+        languageOverride: languageOverride.present
+            ? languageOverride.value
+            : this.languageOverride,
       );
   DictionaryMetaRow copyWithCompanion(DictionaryMetadataCompanion data) {
     return DictionaryMetaRow(
@@ -4988,6 +5027,9 @@ class DictionaryMetaRow extends DataClass
       collapsedLanguagesJson: data.collapsedLanguagesJson.present
           ? data.collapsedLanguagesJson.value
           : this.collapsedLanguagesJson,
+      languageOverride: data.languageOverride.present
+          ? data.languageOverride.value
+          : this.languageOverride,
     );
   }
 
@@ -5000,14 +5042,15 @@ class DictionaryMetaRow extends DataClass
           ..write('type: $type, ')
           ..write('metadataJson: $metadataJson, ')
           ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
-          ..write('collapsedLanguagesJson: $collapsedLanguagesJson')
+          ..write('collapsedLanguagesJson: $collapsedLanguagesJson, ')
+          ..write('languageOverride: $languageOverride')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(name, formatKey, order, type, metadataJson,
-      hiddenLanguagesJson, collapsedLanguagesJson);
+      hiddenLanguagesJson, collapsedLanguagesJson, languageOverride);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5018,7 +5061,8 @@ class DictionaryMetaRow extends DataClass
           other.type == this.type &&
           other.metadataJson == this.metadataJson &&
           other.hiddenLanguagesJson == this.hiddenLanguagesJson &&
-          other.collapsedLanguagesJson == this.collapsedLanguagesJson);
+          other.collapsedLanguagesJson == this.collapsedLanguagesJson &&
+          other.languageOverride == this.languageOverride);
 }
 
 class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
@@ -5029,6 +5073,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
   final Value<String> metadataJson;
   final Value<String> hiddenLanguagesJson;
   final Value<String> collapsedLanguagesJson;
+  final Value<String?> languageOverride;
   final Value<int> rowid;
   const DictionaryMetadataCompanion({
     this.name = const Value.absent(),
@@ -5038,6 +5083,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     this.metadataJson = const Value.absent(),
     this.hiddenLanguagesJson = const Value.absent(),
     this.collapsedLanguagesJson = const Value.absent(),
+    this.languageOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DictionaryMetadataCompanion.insert({
@@ -5048,6 +5094,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     this.metadataJson = const Value.absent(),
     this.hiddenLanguagesJson = const Value.absent(),
     this.collapsedLanguagesJson = const Value.absent(),
+    this.languageOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : name = Value(name),
         formatKey = Value(formatKey),
@@ -5060,6 +5107,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     Expression<String>? metadataJson,
     Expression<String>? hiddenLanguagesJson,
     Expression<String>? collapsedLanguagesJson,
+    Expression<String>? languageOverride,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5072,6 +5120,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
         'hidden_languages_json': hiddenLanguagesJson,
       if (collapsedLanguagesJson != null)
         'collapsed_languages_json': collapsedLanguagesJson,
+      if (languageOverride != null) 'language_override': languageOverride,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5084,6 +5133,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       Value<String>? metadataJson,
       Value<String>? hiddenLanguagesJson,
       Value<String>? collapsedLanguagesJson,
+      Value<String?>? languageOverride,
       Value<int>? rowid}) {
     return DictionaryMetadataCompanion(
       name: name ?? this.name,
@@ -5094,6 +5144,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
       collapsedLanguagesJson:
           collapsedLanguagesJson ?? this.collapsedLanguagesJson,
+      languageOverride: languageOverride ?? this.languageOverride,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5124,6 +5175,9 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       map['collapsed_languages_json'] =
           Variable<String>(collapsedLanguagesJson.value);
     }
+    if (languageOverride.present) {
+      map['language_override'] = Variable<String>(languageOverride.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5140,6 +5194,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
           ..write('metadataJson: $metadataJson, ')
           ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
           ..write('collapsedLanguagesJson: $collapsedLanguagesJson, ')
+          ..write('languageOverride: $languageOverride, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6068,6 +6123,12 @@ class $EpubBooksTable extends EpubBooks
   late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
       'imported_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _languageMeta =
+      const VerificationMeta('language');
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+      'language', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _formatMeta = const VerificationMeta('format');
   @override
   late final GeneratedColumn<String> format = GeneratedColumn<String>(
@@ -6110,6 +6171,7 @@ class $EpubBooksTable extends EpubBooks
         tocJson,
         sourceMetadata,
         importedAt,
+        language,
         format,
         mangaReadingMode,
         completedAt,
@@ -6197,6 +6259,10 @@ class $EpubBooksTable extends EpubBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('language')) {
+      context.handle(_languageMeta,
+          language.isAcceptableOrUnknown(data['language']!, _languageMeta));
+    }
     if (data.containsKey('format')) {
       context.handle(_formatMeta,
           format.isAcceptableOrUnknown(data['format']!, _formatMeta));
@@ -6250,6 +6316,8 @@ class $EpubBooksTable extends EpubBooks
           .read(DriftSqlType.string, data['${effectivePrefix}source_metadata']),
       importedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}imported_at'])!,
+      language: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}language']),
       format: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}format'])!,
       mangaReadingMode: attachedDatabase.typeMapping.read(
@@ -6292,6 +6360,16 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String? sourceMetadata;
   final int importedAt;
 
+  /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
+  ///
+  /// 导入时从 EPUB OPF 的 `dc:language` 回填（`EpubParser` 早就解析出来了，此前
+  /// 无人消费）；用户可在书籍设置里手动改，手动值压过自动值。null = 既没解析到
+  /// 也没指定 → 阅读器不写 `font-family`，保持浏览器默认（不猜，见
+  /// `content_font_chain.dart`）。
+  ///
+  /// 与 [mangaReadingMode] 同款「null=自动 / 非 null=用户覆盖」语义。
+  final String? language;
+
   /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
   /// 有声书配对壳）、`'pdf'`（pdfrx 渲染的真 PDF）或 `'manga'`（漫画 OCR，第三种书）。
   /// 默认 `'epub'` 让既有全部行零破坏（Never break userspace，v51 迁移 addColumn 自动
@@ -6326,6 +6404,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       this.tocJson,
       this.sourceMetadata,
       required this.importedAt,
+      this.language,
       required this.format,
       this.mangaReadingMode,
       this.completedAt,
@@ -6353,6 +6432,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       map['source_metadata'] = Variable<String>(sourceMetadata);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    if (!nullToAbsent || language != null) {
+      map['language'] = Variable<String>(language);
+    }
     map['format'] = Variable<String>(format);
     if (!nullToAbsent || mangaReadingMode != null) {
       map['manga_reading_mode'] = Variable<String>(mangaReadingMode);
@@ -6387,6 +6469,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? const Value.absent()
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
+      language: language == null && nullToAbsent
+          ? const Value.absent()
+          : Value(language),
       format: Value(format),
       mangaReadingMode: mangaReadingMode == null && nullToAbsent
           ? const Value.absent()
@@ -6416,6 +6501,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson: serializer.fromJson<String?>(json['tocJson']),
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      language: serializer.fromJson<String?>(json['language']),
       format: serializer.fromJson<String>(json['format']),
       mangaReadingMode: serializer.fromJson<String?>(json['mangaReadingMode']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
@@ -6438,6 +6524,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'tocJson': serializer.toJson<String?>(tocJson),
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
+      'language': serializer.toJson<String?>(language),
       'format': serializer.toJson<String>(format),
       'mangaReadingMode': serializer.toJson<String?>(mangaReadingMode),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
@@ -6458,6 +6545,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           Value<String?> tocJson = const Value.absent(),
           Value<String?> sourceMetadata = const Value.absent(),
           int? importedAt,
+          Value<String?> language = const Value.absent(),
           String? format,
           Value<String?> mangaReadingMode = const Value.absent(),
           Value<DateTime?> completedAt = const Value.absent(),
@@ -6476,6 +6564,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         sourceMetadata:
             sourceMetadata.present ? sourceMetadata.value : this.sourceMetadata,
         importedAt: importedAt ?? this.importedAt,
+        language: language.present ? language.value : this.language,
         format: format ?? this.format,
         mangaReadingMode: mangaReadingMode.present
             ? mangaReadingMode.value
@@ -6505,6 +6594,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           : this.sourceMetadata,
       importedAt:
           data.importedAt.present ? data.importedAt.value : this.importedAt,
+      language: data.language.present ? data.language.value : this.language,
       format: data.format.present ? data.format.value : this.format,
       mangaReadingMode: data.mangaReadingMode.present
           ? data.mangaReadingMode.value
@@ -6530,6 +6620,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('language: $language, ')
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
@@ -6552,6 +6643,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson,
       sourceMetadata,
       importedAt,
+      language,
       format,
       mangaReadingMode,
       completedAt,
@@ -6572,6 +6664,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.tocJson == this.tocJson &&
           other.sourceMetadata == this.sourceMetadata &&
           other.importedAt == this.importedAt &&
+          other.language == this.language &&
           other.format == this.format &&
           other.mangaReadingMode == this.mangaReadingMode &&
           other.completedAt == this.completedAt &&
@@ -6591,6 +6684,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<String?> language;
   final Value<String> format;
   final Value<String?> mangaReadingMode;
   final Value<DateTime?> completedAt;
@@ -6609,6 +6703,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.language = const Value.absent(),
     this.format = const Value.absent(),
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
@@ -6628,6 +6723,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
+    this.language = const Value.absent(),
     this.format = const Value.absent(),
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
@@ -6653,6 +6749,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<String>? language,
     Expression<String>? format,
     Expression<String>? mangaReadingMode,
     Expression<DateTime>? completedAt,
@@ -6672,6 +6769,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (language != null) 'language': language,
       if (format != null) 'format': format,
       if (mangaReadingMode != null) 'manga_reading_mode': mangaReadingMode,
       if (completedAt != null) 'completed_at': completedAt,
@@ -6693,6 +6791,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       Value<String?>? tocJson,
       Value<String?>? sourceMetadata,
       Value<int>? importedAt,
+      Value<String?>? language,
       Value<String>? format,
       Value<String?>? mangaReadingMode,
       Value<DateTime?>? completedAt,
@@ -6711,6 +6810,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      language: language ?? this.language,
       format: format ?? this.format,
       mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       completedAt: completedAt ?? this.completedAt,
@@ -6758,6 +6858,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
     if (format.present) {
       map['format'] = Variable<String>(format.value);
     }
@@ -6791,6 +6894,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('language: $language, ')
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
@@ -41825,6 +41929,7 @@ typedef $$DictionaryMetadataTableCreateCompanionBuilder
   Value<String> metadataJson,
   Value<String> hiddenLanguagesJson,
   Value<String> collapsedLanguagesJson,
+  Value<String?> languageOverride,
   Value<int> rowid,
 });
 typedef $$DictionaryMetadataTableUpdateCompanionBuilder
@@ -41836,6 +41941,7 @@ typedef $$DictionaryMetadataTableUpdateCompanionBuilder
   Value<String> metadataJson,
   Value<String> hiddenLanguagesJson,
   Value<String> collapsedLanguagesJson,
+  Value<String?> languageOverride,
   Value<int> rowid,
 });
 
@@ -41869,6 +41975,10 @@ class $$DictionaryMetadataTableFilterComposer
 
   ColumnFilters<String> get collapsedLanguagesJson => $composableBuilder(
       column: $table.collapsedLanguagesJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get languageOverride => $composableBuilder(
+      column: $table.languageOverride,
       builder: (column) => ColumnFilters(column));
 }
 
@@ -41904,6 +42014,10 @@ class $$DictionaryMetadataTableOrderingComposer
   ColumnOrderings<String> get collapsedLanguagesJson => $composableBuilder(
       column: $table.collapsedLanguagesJson,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get languageOverride => $composableBuilder(
+      column: $table.languageOverride,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$DictionaryMetadataTableAnnotationComposer
@@ -41935,6 +42049,9 @@ class $$DictionaryMetadataTableAnnotationComposer
 
   GeneratedColumn<String> get collapsedLanguagesJson => $composableBuilder(
       column: $table.collapsedLanguagesJson, builder: (column) => column);
+
+  GeneratedColumn<String> get languageOverride => $composableBuilder(
+      column: $table.languageOverride, builder: (column) => column);
 }
 
 class $$DictionaryMetadataTableTableManager extends RootTableManager<
@@ -41973,6 +42090,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             Value<String> metadataJson = const Value.absent(),
             Value<String> hiddenLanguagesJson = const Value.absent(),
             Value<String> collapsedLanguagesJson = const Value.absent(),
+            Value<String?> languageOverride = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               DictionaryMetadataCompanion(
@@ -41983,6 +42101,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             metadataJson: metadataJson,
             hiddenLanguagesJson: hiddenLanguagesJson,
             collapsedLanguagesJson: collapsedLanguagesJson,
+            languageOverride: languageOverride,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -41993,6 +42112,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             Value<String> metadataJson = const Value.absent(),
             Value<String> hiddenLanguagesJson = const Value.absent(),
             Value<String> collapsedLanguagesJson = const Value.absent(),
+            Value<String?> languageOverride = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               DictionaryMetadataCompanion.insert(
@@ -42003,6 +42123,7 @@ class $$DictionaryMetadataTableTableManager extends RootTableManager<
             metadataJson: metadataJson,
             hiddenLanguagesJson: hiddenLanguagesJson,
             collapsedLanguagesJson: collapsedLanguagesJson,
+            languageOverride: languageOverride,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -43023,6 +43144,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   required int importedAt,
+  Value<String?> language,
   Value<String> format,
   Value<String?> mangaReadingMode,
   Value<DateTime?> completedAt,
@@ -43042,6 +43164,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder = EpubBooksCompanion Function({
   Value<String?> tocJson,
   Value<String?> sourceMetadata,
   Value<int> importedAt,
+  Value<String?> language,
   Value<String> format,
   Value<String?> mangaReadingMode,
   Value<DateTime?> completedAt,
@@ -43113,6 +43236,9 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get format => $composableBuilder(
       column: $table.format, builder: (column) => ColumnFilters(column));
@@ -43193,6 +43319,9 @@ class $$EpubBooksTableOrderingComposer
   ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get format => $composableBuilder(
       column: $table.format, builder: (column) => ColumnOrderings(column));
 
@@ -43269,6 +43398,9 @@ class $$EpubBooksTableAnnotationComposer
   GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
 
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
   GeneratedColumn<String> get format =>
       $composableBuilder(column: $table.format, builder: (column) => column);
 
@@ -43334,6 +43466,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             Value<int> importedAt = const Value.absent(),
+            Value<String?> language = const Value.absent(),
             Value<String> format = const Value.absent(),
             Value<String?> mangaReadingMode = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
@@ -43353,6 +43486,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            language: language,
             format: format,
             mangaReadingMode: mangaReadingMode,
             completedAt: completedAt,
@@ -43372,6 +43506,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             Value<String?> tocJson = const Value.absent(),
             Value<String?> sourceMetadata = const Value.absent(),
             required int importedAt,
+            Value<String?> language = const Value.absent(),
             Value<String> format = const Value.absent(),
             Value<String?> mangaReadingMode = const Value.absent(),
             Value<DateTime?> completedAt = const Value.absent(),
@@ -43391,6 +43526,7 @@ class $$EpubBooksTableTableManager extends RootTableManager<
             tocJson: tocJson,
             sourceMetadata: sourceMetadata,
             importedAt: importedAt,
+            language: language,
             format: format,
             mangaReadingMode: mangaReadingMode,
             completedAt: completedAt,

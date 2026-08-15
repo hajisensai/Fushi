@@ -17,6 +17,7 @@ export 'src/utils/components/fushi_destructive_confirm_dialog.dart';
 export 'src/utils/components/fushi_placeholder_message.dart';
 export 'src/utils/components/shelf_card_widgets.dart';
 export 'src/utils/components/fushi_text_selection_controls.dart';
+export 'src/utils/components/content_language_picker.dart';
 export 'src/utils/components/fushi_list_tile.dart';
 export 'src/utils/components/fushi_focusable.dart';
 export 'src/utils/components/fushi_focus_ring.dart';

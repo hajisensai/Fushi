@@ -827,6 +827,15 @@ class AppModel with ChangeNotifier {
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
+
+  /// [dictRepo] 是否已经赋值。
+  ///
+  /// 它是 late 字段，而 `_databaseOpened = true` 发生在它被赋值**之前**，所以
+  /// 「DB 已就绪」并不蕴含「词典仓库已就绪」——初始化早期与测试 seam 都能撞进这段
+  /// 窗口，此时读 [dictionaries] 会抛 LateInitializationError。需要在初始化完成前
+  /// 读词典（例如查词弹窗注入按词典语言分流的字体 CSS）的调用方必须先问这个。
+  bool _dictionaryRepoReady = false;
+  bool get isDictionaryRepoReady => _dictionaryRepoReady;
   late ClipboardHistoryRepository clipboardHistoryRepo;
   final ClipboardHistoryNotifier clipboardHistoryNotifier =
       ClipboardHistoryNotifier();
@@ -2195,6 +2204,7 @@ class AppModel with ChangeNotifier {
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
+      _dictionaryRepoReady = true;
       mediaHistoryRepo = MediaHistoryRepository(_database);
       clipboardHistoryRepo = ClipboardHistoryRepository(_database);
 
@@ -2579,6 +2589,7 @@ class AppModel with ChangeNotifier {
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
+      _dictionaryRepoReady = true;
       await dictRepo.loadFromDb();
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
@@ -4298,6 +4309,10 @@ class AppModel with ChangeNotifier {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     }
   }
+
+  /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
+  void setDictionaryLanguageOverride(Dictionary dictionary, String? language) =>
+      dictRepo.setDictionaryLanguageOverride(dictionary, language);
 
   void toggleDictionaryCollapsed(Dictionary dictionary) =>
       dictRepo.toggleDictionaryCollapsed(

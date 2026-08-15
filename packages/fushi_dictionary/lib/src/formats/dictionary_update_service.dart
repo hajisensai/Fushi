@@ -107,6 +107,14 @@ Map<String, String> readSourceMetadataFromIndex(Directory finalDir) {
   putString('indexUrl');
   putString('downloadUrl');
 
+  // 内容语言字体链：yomitan index.json v3 声明的词头/释义语言。日中词典就是
+  // sourceLanguage=ja + targetLanguage=zh——「词头日文、释义中文」是词典自己
+  // 声明的结构性事实，落进 metadata 后由 content_font_chain 选链，不必靠字符
+  // 检测猜（那个检测把汉字一律判成日文）。缺字段的旧包/本地包留空，此时改由
+  // 用户在词典设置里手动指定（Dictionary.languageOverride）。
+  putString('sourceLanguage');
+  putString('targetLanguage');
+
   // isUpdatable 是 bool；落成字符串 'true'/'false' 与 Dictionary.isUpdatable 的
   // `metadata['isUpdatable'] == 'true'` 判据对齐。缺字段则不落 key。
   final dynamic updatable = decoded['isUpdatable'];

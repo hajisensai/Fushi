@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:fushi/src/models/cjk_font_families.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 class ReaderLayoutDefaults {
@@ -143,9 +146,11 @@ class ReaderContentStyles {
     String? themeOverride,
     bool einkMode = false,
     bool einkDark = false,
+    String? contentLanguage,
   }) {
     return '<style>\n${css(
       settings: settings,
+      contentLanguage: contentLanguage,
       fontFaces: fontFaces,
       fontFamily: fontFamily,
       customBg: customBg,
@@ -157,6 +162,26 @@ class ReaderContentStyles {
       einkMode: einkMode,
       einkDark: einkDark,
     )}\n</style>';
+  }
+
+  /// 正文 `font-family` 的值：用户字体 -> 内容语言的明朝体/宋体链 -> `serif`。
+  ///
+  /// 这里此前是裸 `serif`——Windows 上就是宋体（中文字形），日文书的汉字因此按
+  /// 中文字形渲染。接上 [contentFontFamilyCss] 后，语言已知就给该语言的衬线链；
+  /// 语言未知（[language] 为 null 或非 CJK）时链为空，退回原来的 `serif`，与改造
+  /// 前逐字节一致——不知道语言就不猜，理由见 `content_font_chain.dart`。
+  static String _bodyFontFamily(String? customCssFamilies, String? language) {
+    final String chain = contentFontFamilyCss(
+      languageTag: language,
+      platform: defaultTargetPlatform,
+      style: CjkFontStyle.serif,
+    );
+    if (customCssFamilies != null && customCssFamilies.isNotEmpty) {
+      return chain.isEmpty
+          ? '$customCssFamilies, serif'
+          : '$customCssFamilies, $chain';
+    }
+    return chain.isEmpty ? 'serif' : chain;
   }
 
   static String css({
@@ -174,6 +199,10 @@ class ReaderContentStyles {
     // 明暗模式（与全局 E-ink 主题一致），不读阅读器自己的 theme key。
     bool einkMode = false,
     bool einkDark = false,
+
+    /// 正文的内容语言（BCP-47，来自 EpubBooks.language：OPF 的 dc:language
+    /// 回填或用户手动指定）。null = 未知，此时不写语言字体链，保持既有行为。
+    String? contentLanguage,
   }) {
     final _ThemeColors themedColors = _themeColors(
         themeOverride ?? settings.theme,
@@ -204,14 +233,15 @@ class ReaderContentStyles {
     final String resolvedFontFamily;
     if (fontFaces != null && fontFamily != null) {
       resolvedFontFaces = fontFaces;
-      resolvedFontFamily = '$fontFamily, serif';
+      resolvedFontFamily = _bodyFontFamily(fontFamily, contentLanguage);
     } else {
       final ({String fontFamily, String fontFaces}) custom =
           settings.buildCustomFontCss();
       resolvedFontFaces = custom.fontFaces;
-      resolvedFontFamily = custom.fontFamily.isNotEmpty
-          ? '${custom.fontFamily}, serif'
-          : 'serif';
+      resolvedFontFamily = _bodyFontFamily(
+        custom.fontFamily.isNotEmpty ? custom.fontFamily : null,
+        contentLanguage,
+      );
     }
 
     final bool isVertical = settings.writingMode.startsWith('vertical');
