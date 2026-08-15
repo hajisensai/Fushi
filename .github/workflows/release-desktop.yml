@@ -932,6 +932,30 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
+          # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。runner 是
+          # Apple Silicon，所以一份 arm64-only 的 ffmpeg 能让上面两行全绿，却在每台
+          # Intel Mac 上被内核以 Bad CPU type (EBADARCH) 拒掉——app 本体是 universal
+          # 照常启动，于是表现为「app 好好的，就是制卡/封面/内封字幕全失效」，而且
+          # 因为抽取层各自吞掉异常，用户只看到一句泛化失败。2.1.1 就是这么发出去的。
+          #
+          # 真正的不变式不是「能跑」，而是**helper 的架构必须覆盖 app 本体的架构**：
+          # app 支持哪些架构，就得在哪些架构上有可用的 ffmpeg。这里直接按 app 本体
+          # 的 lipo 结果逐个核对，app 将来改成单架构也无需改这段。
+          app_archs="$(lipo -archs "$target_dir/fushi")"
+          echo "app archs: $app_archs"
+          for tool in ffmpeg ffprobe; do
+            tool_archs="$(lipo -archs "$target_dir/$tool")"
+            echo "$tool archs: $tool_archs"
+            for want in $app_archs; do
+              case " $tool_archs " in
+                *" $want "*) ;;
+                *)
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。Intel Mac 上该 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min.yml 出 universal 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  exit 1
+                  ;;
+              esac
+            done
+          done
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
       # **必须排在上面 Mihon / ffmpeg 两步之后**：那两步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
