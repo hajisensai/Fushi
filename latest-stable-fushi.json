@@ -1,32 +1,53 @@
 {
   "schemaVersion": 1,
-  "version": "2.1.0",
-  "tag": "v2.1.0",
+  "version": "2.0.0",
+  "tag": "v2.0.0",
   "channel": "formal",
   "prerelease": false,
-  "releaseSequence": 11660,
-  "notes": "Manual formal release from develop @ cc6ca65.",
+  "releaseSequence": 11554,
+  "notes": "Manual desktop formal release from develop @ 1730413.",
   "assets": [
     {
-      "name": "fushi-2.1.0-arm64-v8a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.0/fushi-2.1.0-arm64-v8a.apk",
-      "releaseSequence": 11660,
-      "tag": "v2.1.0",
-      "version": "2.1.0"
+      "name": "fushi-2.0.0-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0/fushi-2.0.0-arm64-v8a.apk",
+      "releaseSequence": 11554,
+      "tag": "v2.0.0",
+      "version": "2.0.0"
     },
     {
-      "name": "fushi-2.1.0-armeabi-v7a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.0/fushi-2.1.0-armeabi-v7a.apk",
-      "releaseSequence": 11660,
-      "tag": "v2.1.0",
-      "version": "2.1.0"
+      "name": "fushi-2.0.0-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0/fushi-2.0.0-armeabi-v7a.apk",
+      "releaseSequence": 11554,
+      "tag": "v2.0.0",
+      "version": "2.0.0"
     },
     {
-      "name": "fushi-2.1.0-x86_64.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.0/fushi-2.1.0-x86_64.apk",
-      "releaseSequence": 11660,
-      "tag": "v2.1.0",
-      "version": "2.1.0"
+      "name": "fushi-2.0.0-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0/fushi-2.0.0-ios.ipa",
+      "releaseSequence": 11554,
+      "tag": "v2.0.0",
+      "version": "2.0.0"
+    },
+    {
+      "name": "fushi-2.0.0-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0/fushi-2.0.0-macos.zip",
+      "releaseSequence": 11554,
+      "tag": "v2.0.0",
+      "version": "2.0.0"
+    },
+    {
+      "name": "fushi-2.0.0-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0/fushi-2.0.0-windows-setup.exe",
+      "releaseSequence": 11554,
+      "tag": "v2.0.0",
+      "version": "2.0.0"
+    },
+    {
+      "name": "fushi-2.0.0-x86_64.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0/fushi-2.0.0-x86_64.apk",
+      "releaseSequence": 11554,
+      "tag": "v2.0.0",
+      "version": "2.0.0"
     }
   ]
 }
