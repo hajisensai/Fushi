@@ -1543,6 +1543,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // galgame 侧单存一份（同 image mode / animated format 的分法）：那边的静图来自
+  // 窗口抓图（本身是 PNG），与视频帧的取舍不同，共用一个开关会逼用户为一边将就另一边。
+  // 默认同样是 jpg：BUG-1473 已把 gal 截图接进降采样（原本 1.5~4 MB 的无压缩 PNG），
+  // “小图原样返回 PNG”只是不值得重编码的捐径，不是意图。
+  MiningStillFormat get galMiningStillFormat => MiningStillFormat.fromWireName(
+      getPref('gal_mining_still_format', defaultValue: null) as String?);
+
+  void setGalMiningStillFormat(MiningStillFormat format) async {
+    await setPref('gal_mining_still_format', format.wireName);
+    notifyListeners();
+  }
+
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       MiningAnimatedFormat.fromWireName(
           getPref('gal_mining_animated_format', defaultValue: null) as String?);

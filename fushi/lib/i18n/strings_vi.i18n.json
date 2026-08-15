@@ -3432,5 +3432,7 @@
   "video_mining_still_format": "Video card screenshot format",
   "video_mining_still_format_hint": "Encoding used when the card image is a still screenshot. JPG is much smaller; PNG is lossless but several times larger. Animated covers are unaffected — they follow the animation format setting.",
   "mining_still_format_jpg": "JPG (smaller)",
-  "mining_still_format_png": "PNG (lossless)"
+  "mining_still_format_png": "PNG (lossless)",
+  "gal_mining_still_format": "Game card screenshot format",
+  "gal_mining_still_format_hint": "Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before."
 }

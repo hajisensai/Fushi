@@ -5621,6 +5621,10 @@ class AppModel with ChangeNotifier {
   void setVideoMiningStillFormat(MiningStillFormat format) =>
       prefsRepo.setVideoMiningStillFormat(format);
 
+  MiningStillFormat get galMiningStillFormat => prefsRepo.galMiningStillFormat;
+  void setGalMiningStillFormat(MiningStillFormat format) =>
+      prefsRepo.setGalMiningStillFormat(format);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

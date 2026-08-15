@@ -3,12 +3,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart'
     show GalWindowAnimatedCapture;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
@@ -304,6 +305,50 @@ void main() {
       isFalse,
       reason: '主动选静态图不是降级，不该弹「已降级为静态图」',
     );
+  });
+
+  // gal 抓图本身是 PNG，改动前落卡格式全看「这张图需不需要缩放」（需要 → 降采样重编码
+  // JPEG，不需要 → 原样 PNG）：同一个设置下两种结果，用户既无从预测也无从选择。现在由
+  // 「游戏卡片截图格式」偏好决定，且**扩展名跟随实际字节**。
+  //
+  // ⚠️ 这两条必须喂**真 PNG**：上面几条用的 `[80,78,71]`（"PNG" 三个字母）解不开，会走
+  // 「原样返回入参 + 兜底 png」那条路，无论选什么格式都落 `.png` —— 用它做断言等于什么
+  // 都没测（这正是本轮先踩过的坑）。
+  Future<String> mineStillWith(MiningStillFormat stillFormat) async {
+    final TexthookerLineEntry entry =
+        service.appendLine('無損の台詞${stillFormat.wireName}')!;
+    final _RecordingRepo repo = _RecordingRepo();
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      still: (int hwnd) async => WindowCaptureResult(
+        pngBytes:
+            Uint8List.fromList(img.encodePng(img.Image(width: 8, height: 8))),
+      ),
+      gif: (
+              {required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif}) async =>
+          null,
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '無損'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+      imageMode: VideoMiningImageMode.currentFrame,
+      stillFormat: stillFormat,
+    );
+    expect(result.success, isTrue);
+    return repo.contexts.single.coverPath!;
+  }
+
+  // 断言只看扩展名：制卡结束后 coordinator 会删掉 job 临时目录，落盘字节读不回来。
+  // 「扩展名跟的是真实字节」这一步由 `mining_still_format_test.dart` 在降采样器与引擎
+  // 两层分别钉死（那里能拿到字节），这里钉的是「gal 这条链把偏好传到了底」。
+  test('gal 静图格式跟随偏好：选 PNG → 落 .png', () async {
+    expect(await mineStillWith(MiningStillFormat.png), endsWith('.png'));
+  });
+
+  test('gal 静图格式跟随偏好：选 JPG → 落 .jpg（抓图是 PNG，必须真转码）', () async {
+    expect(await mineStillWith(MiningStillFormat.jpg), endsWith('.jpg'));
   });
 
   // 捕获内部在编码器缺失时会**降级 GIF**，此时「用户所选格式」与「实际产出格式」不同。

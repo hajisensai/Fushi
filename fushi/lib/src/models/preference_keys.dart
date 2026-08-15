@@ -70,6 +70,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_font_size',
   'gal_mining_animated_format',
   'gal_mining_image_mode',
+  'gal_mining_still_format',
   'galgame_library',
   'galgame_library_view',
   'games_collapsed_collection_ids',

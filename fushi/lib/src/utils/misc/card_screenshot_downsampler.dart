@@ -123,6 +123,50 @@ CardScreenshotEncoding? cardScreenshotEncodingOf(Uint8List bytes) {
   }
 }
 
+/// 只换编码、**不改尺寸**：把 [bytes] 重编码成 [encoding]。
+///
+/// 与 [downsampleCardScreenshot] 分开是因为用途不同：那个服务「我们自己抓的原始帧」
+/// （该压就压），这个服务「外部已经处理好的封面字节」（gal 窗口抓图已降过采样、浏览器
+/// 扩展给的截图），此时再压一遍尺寸是越权。
+///
+/// 三种情况原样返回，一个字节都不动：
+/// - 空字节；
+/// - 嗅探不出是 JPEG/PNG —— **动图（GIF/WebP/AVIF）走的就是这条**，绝不能把一段动图
+///   解成第一帧再编成静图；
+/// - 已经就是目标格式。
+Uint8List transcodeCardScreenshot(
+  Uint8List bytes, {
+  required CardScreenshotEncoding encoding,
+  int quality = 90,
+}) {
+  if (bytes.isEmpty) return bytes;
+  final CardScreenshotEncoding? actual = cardScreenshotEncodingOf(bytes);
+  if (actual == null || actual == encoding) return bytes;
+  try {
+    final img.Image? decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+    return switch (encoding) {
+      CardScreenshotEncoding.jpeg => img.encodeJpg(decoded, quality: quality),
+      CardScreenshotEncoding.png => img.encodePng(decoded),
+    };
+  } catch (_) {
+    return bytes;
+  }
+}
+
+/// [transcodeCardScreenshot] 的后台 isolate 变体（理由同
+/// [downsampleCardScreenshotAsync]：解码/编码是纯 Dart CPU 重活，不能压 UI 线程）。
+Future<Uint8List> transcodeCardScreenshotAsync(
+  Uint8List bytes, {
+  required CardScreenshotEncoding encoding,
+  int quality = 90,
+}) {
+  if (bytes.isEmpty) return Future<Uint8List>.value(bytes);
+  return Isolate.run<Uint8List>(
+    () => transcodeCardScreenshot(bytes, encoding: encoding, quality: quality),
+  );
+}
+
 /// [downsampleCardScreenshot] 的后台 isolate 变体（BUG-933）。
 ///
 /// 根因：制卡封面（libmpv 原始解码帧，可能 1080p/4K）的 `img.decodeImage` +

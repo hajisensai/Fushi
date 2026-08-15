@@ -17,15 +17,43 @@ CardScreenshotEncoding cardScreenshotEncodingFor(MiningStillFormat format) =>
       MiningStillFormat.png => CardScreenshotEncoding.png,
     };
 
-/// [bytes] 实际是哪种静图格式（魔数嗅探）。既非 JPEG 也非 PNG（降采样解码失败原样返回
-/// 的 GIF/损坏字节等）时返回 [MiningStillFormat.jpg]——落盘扩展名必须跟随**真实字节**，
-/// 而这条兜底路径上唯一能确定的事实是「它不是 PNG」，写 `.jpg` 至少与改动前一致。
-MiningStillFormat stillFormatOfBytes(Uint8List bytes) =>
+/// [bytes] 实际是哪种静图格式（魔数嗅探），认不出时用 [fallback]。
+///
+/// [fallback] **必须由调用点显式给**，不能定一个「通用默认」：认不出只发生在降采样解码
+/// 失败、原样返回入参的路径上，此时唯一可靠的信息是**这条链的入参本来是什么格式**，而
+/// 各链并不相同——视频侧当前解码帧来自 media_kit 的 `image/jpeg`，gal 侧来自窗口抓图的
+/// PNG。给它一个统一默认，就等于在其中一条链上写出「扩展名与字节不符」的卡（Anki 按扩展
+/// 名判 MIME → 封面不显示），而且是只在解码失败时才现形的那种。
+MiningStillFormat stillFormatOfBytes(
+  Uint8List bytes, {
+  required MiningStillFormat fallback,
+}) =>
     switch (cardScreenshotEncodingOf(bytes)) {
       CardScreenshotEncoding.png => MiningStillFormat.png,
       CardScreenshotEncoding.jpeg => MiningStillFormat.jpg,
-      null => MiningStillFormat.jpg,
+      null => fallback,
     };
+
+/// 外部给定封面字节的落盘文件名：**扩展名跟随实际字节**，其余部分保留调用方给的名字
+/// （`netflix_frame` / `external_window` / `netflix_shot` 这些名字是「这张图哪来的」的
+/// 线索，媒体库里一眼能认，不该被格式归一化抹掉）。
+///
+/// 只有嗅探出是 JPEG/PNG 时才换扩展名；动图字节（GIF/WebP/AVIF）原样用调用方给的名字
+/// —— 它们的格式由动图那根轴负责，此处不得插手。[name] 为 null 时沿用历史默认
+/// `immersion_cover.gif`，但静图字节会把它改成对应的静图扩展名（`.gif` 里装 JPEG 同样
+/// 是 Anki 判 MIME 判错的那种卡）。
+String providedCoverFileName(String? name, Uint8List bytes) {
+  final CardScreenshotEncoding? actual = cardScreenshotEncodingOf(bytes);
+  final String fallback = name ?? 'immersion_cover.gif';
+  if (actual == null) return fallback;
+  final String extension = switch (actual) {
+    CardScreenshotEncoding.jpeg => MiningStillFormat.jpg.fileExtension,
+    CardScreenshotEncoding.png => MiningStillFormat.png.fileExtension,
+  };
+  final int dot = fallback.lastIndexOf('.');
+  final String stem = dot <= 0 ? fallback : fallback.substring(0, dot);
+  return '$stem.$extension';
+}
 
 /// 注入式抽取器（默认指向 desktop_audio_clipper.dart 真身，测试注入假件）。逐参对齐真身。
 typedef GifExtractor = Future<String?> Function({
@@ -259,10 +287,18 @@ class ImmersionMiningEngine {
     }
 
     if (req.providedCoverBytes != null) {
-      coverPath = await _writeBytes(
-          tempDir,
-          req.providedCoverName ?? 'immersion_cover.gif',
-          req.providedCoverBytes!);
+      // 外部已经给好封面字节的三条路（gal 窗口抓图、浏览器扩展的 2A 截图、Netflix 片段
+      // 抽帧）过去在这里被逐字节写盘：格式是产字节那一侧定的，用户在设置里选的静图格式
+      // 对它们完全不生效。这里按偏好归一化一次——**只换编码、不改尺寸**（那些字节大多
+      // 已经降过采样，再压一遍是越权），动图字节（GIF/WebP/AVIF）由
+      // [transcodeCardScreenshot] 的嗅探原样放行。
+      final Uint8List provided = await transcodeCardScreenshotAsync(
+        req.providedCoverBytes!,
+        encoding: cardScreenshotEncodingFor(req.stillFormat),
+        quality: compression.screenshotQuality,
+      );
+      coverPath = await _writeBytes(tempDir,
+          providedCoverFileName(req.providedCoverName, provided), provided);
     }
 
     final String? src = req.mediaSource;
@@ -329,7 +365,10 @@ class ImmersionMiningEngine {
       // 扩展名跟随**实际字节**而非所选格式：降采样在解码失败时原样返回入参（media_kit 的
       // `image/jpeg`），按所选拼名会写出 `.png` 里装 JPEG 的卡，Anki 按扩展名判 MIME →
       // 封面不显示。同 Netflix 那条链对动图降级的处理（buildImmersionRequest）。
-      final MiningStillFormat produced = stillFormatOfBytes(small);
+      // 兜底 jpg：这条链的入参是 media_kit `controller.screenshot` 的 `image/jpeg`，
+      // 降采样解不开时原样返回的就是那份 JPEG 字节。
+      final MiningStillFormat produced =
+          stillFormatOfBytes(small, fallback: MiningStillFormat.jpg);
       return _writeBytes(
           tempDir, 'immersion_shot.${produced.fileExtension}', small);
     }

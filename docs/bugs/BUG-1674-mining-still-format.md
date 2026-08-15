@@ -9,6 +9,13 @@
   - 首选格式失败按 `MiningStillFormat.encodeAttempts` 退回 JPEG（捆绑 ffmpeg 缺 png 编码器时该丢的是格式，不是整张封面），**落盘扩展名跟随实际字节而非用户所选**——否则会写出 `.png` 里装 JPEG 的卡，Anki 按扩展名判 MIME 时封面不显示；
   - 顺带修掉 `img.findFormatForData` 对过短/损坏字节抛 RangeError（GIF 嗅探越界）的路径，嗅探失败保守回退，与降采样器既有纪律一致；
   - 文案改准：中文「视频卡片封面用字幕区间动图，还是某一帧静态截图（取哪一帧也在这里选）」，英文同步，其余 15 份（本就是英文原文）一并更新。
-  - 提交：见本文件所在提交。
-- **[x] ② 已加自动化测试** — `fushi/test/mining/mining_still_format_test.dart`（18 例）：偏好解析默认/未知值回退、`encodeAttempts` 降级链、ffmpeg 抽帧扩展名跟随偏好、png 编码器缺失退 JPEG、Dart 截图链产出**字节真是 PNG**、降采样器「只缩不放」捷径在换格式时不得原样返回、Netflix `stillFormat` 随结果带回并决定 `netflix_frame.<ext>`、`frozen()` 保留偏好、默认档逐字等价改动前。变异实测：把引擎抽帧扩展名改回硬编码 `.jpg` → 2 例红；反向替换回滚后 sha256 与变异前一致。
-- **备注**：galgame 侧不纳入本轴——那条链的静图来自窗口抓图（本就是 PNG），不经 ffmpeg/降采样格式选择；Netflix 的 `netflix_shot.jpg`（浏览器扩展直接给的截图字节）同样不经我们编码，保持原样。
+  - **第二轮（用户追加：gal 与浏览器扩展也要支持）**：
+    - gal 侧补对称的 `gal_mining_still_format` 偏好 + 「游戏卡片截图格式」设置项（与 image mode / animated format 同样的「视频与 gal 分开存」分法），透传到 `GalHookMiningCoordinator.mineLine` 的两个入口（浮窗 `gal_hook_text_overlay_controller.dart`、`texthooker_page.dart`）。gal 改动前落什么格式全看「这张抓图需不需要缩放」（需要 → JPEG，不需要 → 原样 PNG），同一设置两种结果、用户既无从预测也无从选择。
+    - 浏览器扩展这条**本身不产静图**：扩展只发 `clipBase64`（录制片段）与纯文本，静帧是 app 侧从片段里抽的，故第一轮的 `clip_frame.<ext>` 已让它生效；额外补的是**外部直接给字节**那条路——引擎在 `providedCoverBytes` 分支按偏好归一化（`transcodeCardScreenshot`：只换编码不改尺寸，动图字节由嗅探原样放行），文件名经 `providedCoverFileName` 只换扩展名、保留 `netflix_frame`/`external_window` 这类来源线索。
+    - 第二轮踩到并修掉的自造缺陷：`stillFormatOfBytes` 一度对「嗅探不出」统一兜底 jpg，而 gal 那条链的入参恒为 PNG——降采样解码失败时会写出 `.jpg` 里装 PNG。改成兜底方向由调用点显式声明（视频侧 jpg / gal 侧 png），并在测试里把两个方向都钉住。
+  - 提交：见本文件所在提交及其后续提交。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/mining_still_format_test.dart`（31 例）：偏好解析默认/未知值回退、`encodeAttempts` 降级链、ffmpeg 抽帧扩展名跟随偏好、png 编码器缺失退 JPEG、Dart 截图链产出**字节真是 PNG**、降采样器「只缩不放」捷径在换格式时不得原样返回、外部给定字节按偏好转码且动图字节原样放行、`providedCoverFileName` 只换扩展名、`stillFormatOfBytes` 两个兜底方向、Netflix `stillFormat` 随结果带回并决定 `netflix_frame.<ext>`、`frozen()` 保留偏好、默认档逐字等价改动前。
+  gal 链在 `test/mining/gal_hook_mining_coordinator_test.dart` 补两例（选 PNG/JPG 各落对应扩展名；**必须喂真 PNG 字节**，用 `[80,78,71]` 那种假字节会走「解不开→原样+兜底」路径，怎么选都落 `.png`，等于没测——这坑本轮踩过一次）。
+  `test/settings/mining_media_quality_guard_test.dart` 补一条源码守卫：三个制卡入口都必须显式透传静图格式偏好（漏传时形参默认 jpg，用户选的 PNG 静默失效，与动图格式那条同形）。
+  变异实测两轮：① 引擎抽帧扩展名改回硬编码 `.jpg` → 2 例红；② texthooker 入口的 `stillFormat:` 实参换成字面量 → 守卫红。两次反向替换回滚后 sha256 均与变异前一致。
+- **备注**：动图那根轴（`MiningAnimatedFormat`，AVIF/WebP/GIF）完全不受影响，两轴各管各的；`transcodeCardScreenshot` 的嗅探保证动图字节不会被误当静图解成第一帧。gal 的默认档仍是 jpg（BUG-1473 起 gal 截图就走降采样重编码 JPEG，「小图原样返回 PNG」只是不值得重编码的捷径，不是意图）。
