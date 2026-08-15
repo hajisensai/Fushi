@@ -295,7 +295,11 @@ esac
     # 编译器报的未定义符号——只在 ffbuild/config.log 里。CI 不打印它，等于每次
     # configure 失败都只能靠猜再赌一轮构建。这里失败即 dump 尾部，一轮就能定位。
     status=$?
-    echo "[ffmpeg-min] configure 失败（exit $status）。ffbuild/config.log 尾部 120 行："
+    # `${status}` 的花括号不是风格——`$status` 后面紧跟全角「）」时，bash 在 UTF-8
+    # locale 下会把那个多字节字符并进变量名，于是 `set -u` 报
+    # `status<乱码>: unbound variable`，dump 还没打印就先把自己炸了（实测于 CI）。
+    # 变量后紧跟任何非 ASCII 字符都必须用 ${} 界定边界。
+    echo "[ffmpeg-min] configure 失败（exit ${status}）。ffbuild/config.log 尾部 120 行："
     tail -n 120 ffbuild/config.log >&2 || echo "[ffmpeg-min] 无 ffbuild/config.log" >&2
     exit "$status"
   }
