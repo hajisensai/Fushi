@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.1.0-debug.11655",
-  "tag": "v2.1.0-debug.11655+093fede",
+  "version": "2.1.0-debug.11660",
+  "tag": "v2.1.0-debug.11660+cc6ca65",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 11655,
-  "notes": "Automated release-signed debug-channel build from develop @ 093fede. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 11660,
+  "notes": "Automated release-signed debug-channel build from develop @ cc6ca65. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.0.0-debug.11631-macos.zip",
@@ -29,11 +29,11 @@
       "version": "2.0.0-debug.11654"
     },
     {
-      "name": "fushi-2.1.0-debug.11655-093fede-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.0-debug.11655-093fede-debug.apk",
-      "releaseSequence": 11655,
-      "tag": "v2.1.0-debug.11655+093fede",
-      "version": "2.1.0-debug.11655"
+      "name": "fushi-2.1.0-debug.11660-cc6ca65-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.0-debug.11660-cc6ca65-debug.apk",
+      "releaseSequence": 11660,
+      "tag": "v2.1.0-debug.11660+cc6ca65",
+      "version": "2.1.0-debug.11660"
     }
   ]
 }
