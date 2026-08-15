@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1540 条。点号进各自文件。
+> 共 1541 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1666](bugs/BUG-1666-anki-card-crossref-links-localhost.md) | ✅ | ✅ | 制卡后卡片释义交叉引用链接跳向127本地地址 |
 | [BUG-1665](bugs/BUG-1665-english-mining-term-not-lemma.md) | ✅ | ✅ | 英语查词制卡词头不还原原形（MDX 重定向别名词条盖过原形） |
 | [BUG-1661](bugs/BUG-1661-corretto-x64-sha256-typo.md) | ✅ | ✅ | macOS 构建挂在「下载 pinned JDK 失败」，真因是 sha256 抄成 65 位 |
 | [BUG-1660](bugs/BUG-1660-aidoku-image-reader-compat.md) | ✅ | ✅ | Aidoku 图源图片与章节兼容及阅读器返回入口缺失 |
