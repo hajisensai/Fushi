@@ -132,6 +132,24 @@ build_darwin_static_deps() {
       -DBUILD_SHARED_LIBS=OFF -DBUILD_APPS=OFF -DBUILD_TESTING=OFF
     cmake --build "$work/svt-av1/build" -j "$JOBS"
     cmake --install "$work/svt-av1/build"
+
+    # BUG-1668：**x86 目标专有**的 cpuinfo 必须手动补装。上游 CMakeLists：
+    #   if(NOT USE_EXTERNAL_CPUINFO AND NOT COMPILE_C_ONLY AND HAVE_X86_PLATFORM)
+    #       add_subdirectory(third_party/cpuinfo)          # 只有 x86 才引入
+    #   target_link_libraries(SvtAv1Enc PRIVATE cpuinfo_public)
+    #   install(TARGETS SvtAv1Enc ...)                     # 只装 SvtAv1Enc
+    #   set(LIBS_PRIVATE "-lpthread -lm")                  # .pc 里不提 cpuinfo
+    # 静态库的 PRIVATE 链接**不会**把 cpuinfo 的目标文件并进 libSvtAv1Enc.a，而那些
+    # .a 既不安装也不写进 SvtAv1Enc.pc。于是 ffmpeg configure 的链接测试撞上未定义
+    # 符号，只报一句 "SvtAv1Enc >= 0.9.0 not found using pkg-config"（实测 CI）。
+    # arm64 走 ARM 特性检测、根本不引入 cpuinfo，所以「只编构建机架构」的年代碰不到。
+    #
+    # 按「找得到就装」处理，不硬编码架构：x86 有就补，arm64 本来就没有、find 空转。
+    # 一并列出 build 目录里的所有静态库，方便下次上游改名时一眼看出。
+    echo "[ffmpeg-min] SVT-AV1 build 目录里的静态库："
+    find "$work/svt-av1/build" -name '*.a' -exec basename {} \; | sort -u
+    find "$work/svt-av1/build" \( -name 'libcpuinfo*.a' -o -name 'libclog*.a' \) \
+      -exec cp {} "$prefix/lib/" \;
   fi
 
   if [ ! -f "$prefix/lib/libwebpmux.a" ]; then
@@ -261,6 +279,17 @@ case "$(uname -s)" in
     EXTRA_CONFIG+=("--cc=clang -arch $MACOS_ARCH")
     EXTRA_CONFIG+=("--extra-cflags=-arch $MACOS_ARCH")
     EXTRA_CONFIG+=("--extra-ldflags=-arch $MACOS_ARCH")
+    # BUG-1668：SvtAv1Enc.pc 的 Libs.private 只有 `-lpthread -lm`，不提 x86 专有的
+    # cpuinfo（见 build_darwin_static_deps 里的长注释），所以 pkg-config 吐出的链接行
+    # 缺它 → ffmpeg 的链接测试未定义符号 → 只报一句 "SvtAv1Enc … not found"。
+    # 上面已把 cpuinfo 的 .a 补装进 prefix；这里按**文件是否存在**补进链接行，
+    # 不写架构分支：x86 有就加，arm64 压根没有这些文件、自然不加。
+    for extra_lib in cpuinfo clog; do
+      if [ -f "$STATIC_DEPS/lib/lib$extra_lib.a" ]; then
+        echo "[ffmpeg-min] 追加静态依赖 -l${extra_lib}（SVT-AV1 x86 需要）"
+        EXTRA_CONFIG+=("--extra-libs=-l$extra_lib")
+      fi
+    done
     # 只有真跨架构时才 --enable-cross-compile：它会关掉 configure 的「跑一下测试
     # 程序」探测（在 arm64 上跑 x86_64 探测程序会被 Rosetta 影响或直接失败）。
     # 同架构时保持原样跑本地探测，行为与改动前逐字一致。
@@ -299,8 +328,19 @@ esac
     # locale 下会把那个多字节字符并进变量名，于是 `set -u` 报
     # `status<乱码>: unbound variable`，dump 还没打印就先把自己炸了（实测于 CI）。
     # 变量后紧跟任何非 ASCII 字符都必须用 ${} 界定边界。
-    echo "[ffmpeg-min] configure 失败（exit ${status}）。ffbuild/config.log 尾部 120 行："
-    tail -n 120 ffbuild/config.log >&2 || echo "[ffmpeg-min] 无 ffbuild/config.log" >&2
+    echo "[ffmpeg-min] configure 失败（exit ${status}）。ffbuild/config.log 关键片段："
+    # 光 tail 抓不到真因：configure 的检查按固定顺序跑，失败的那项（比如
+    # `check_pkg_config SvtAv1Enc`）后面往往还有几十项无关检查把它顶出尾部窗口
+    # （实测：tail -120 全是 mathfunc 噪声）。这里先按**未定义符号 / 检查失败**这类
+    # 关键词定位，再退回 tail。
+    if [ -f ffbuild/config.log ]; then
+      grep -n -i -E "undefined symbol|Undefined symbols|not found|ld: |error:" \
+        ffbuild/config.log | tail -n 40 >&2 || true
+      echo "[ffmpeg-min] ---- config.log 尾部 60 行 ----" >&2
+      tail -n 60 ffbuild/config.log >&2
+    else
+      echo "[ffmpeg-min] 无 ffbuild/config.log" >&2
+    fi
     exit "$status"
   }
 
