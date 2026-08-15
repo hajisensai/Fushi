@@ -137,6 +137,12 @@ android {
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
         main.java.srcDirs += mihonSourceOutput
+        // 内置 libtorrent 引擎（copy-if-present，与 Windows runner 同姿态）：
+        // native/fushi_torrent/build_android_so.{ps1,sh} 产出的
+        // prebuilt/android/<abi>/libfushi_torrent_ffi.so 存在则随包；目录缺失时
+        // Gradle 静默跳过，app 运行期 EmbeddedTorrentHost.open 因 .so 缺失返回
+        // null → 自动回退外接 qBittorrent。构建本身不依赖 vcpkg/NDK 交叉编译。
+        main.jniLibs.srcDirs += '../../../native/fushi_torrent/prebuilt/android'
     }
 
     defaultConfig {

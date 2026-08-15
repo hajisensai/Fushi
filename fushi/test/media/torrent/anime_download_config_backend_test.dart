@@ -7,31 +7,31 @@ void main() {
   test('backend defaults to auto (resolves per platform)', () {
     const QbConnectionConfig config = QbConnectionConfig();
     expect(config.backend, QbConnectionConfig.backendAuto);
-    // 桌面 → 内置引擎（开箱即用）；移动端 → 外接 qb。
-    expect(config.resolveBackend(isDesktop: true),
+    // 有内置引擎（桌面/Android）→ 内置引擎（开箱即用）；无（iOS）→ 外接 qb。
+    expect(config.resolveBackend(embeddedSupported: true),
         QbConnectionConfig.backendEmbedded);
-    expect(config.resolveBackend(isDesktop: false),
+    expect(config.resolveBackend(embeddedSupported: false),
         QbConnectionConfig.backendQbittorrent);
   });
 
   test('显式 backend 按平台能力规约：无内置引擎的平台连 embedded 也降级 qb (BUG-1207)', () {
     // 契约变更（原断言「explicit backends resolve to themselves regardless of
-    // platform」）：移动端从不构建也从不打包 libfushi_torrent_ffi.so，原样放行
-    // embedded 只会让设置页谎报「正在用内置引擎」、并暴露一个没有任何人读取的
-    // 下载目录，运行时再静默回退外接 qb。
+    // platform」）：无内置引擎的平台（现在只剩 iOS）从不构建也从不打包
+    // libfushi_torrent_ffi.so，原样放行 embedded 只会让设置页谎报「正在用内置
+    // 引擎」、并暴露一个没有任何人读取的下载目录，运行时再静默回退外接 qb。
     // 存储层不受影响——backend 字段仍原样存 embedded（见下面的 round-trip 用例），
-    // 规约只发生在 resolveBackend 这一处，桌面重新可用时旧配置自动复原。
+    // 规约只发生在 resolveBackend 这一处，平台重新可用时旧配置自动复原。
     const QbConnectionConfig emb =
         QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
-    expect(emb.resolveBackend(isDesktop: false),
+    expect(emb.resolveBackend(embeddedSupported: false),
         QbConnectionConfig.backendQbittorrent);
-    expect(emb.resolveBackend(isDesktop: true),
+    expect(emb.resolveBackend(embeddedSupported: true),
         QbConnectionConfig.backendEmbedded);
     const QbConnectionConfig qb =
         QbConnectionConfig(backend: QbConnectionConfig.backendQbittorrent);
-    expect(qb.resolveBackend(isDesktop: true),
+    expect(qb.resolveBackend(embeddedSupported: true),
         QbConnectionConfig.backendQbittorrent);
-    expect(qb.resolveBackend(isDesktop: false),
+    expect(qb.resolveBackend(embeddedSupported: false),
         QbConnectionConfig.backendQbittorrent);
   });
 

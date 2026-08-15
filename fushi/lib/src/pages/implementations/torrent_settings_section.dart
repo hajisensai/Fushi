@@ -25,7 +25,7 @@ const double kTorrentSettingsContentMaxWidth = 560;
 class TorrentSettingsSection extends ConsumerStatefulWidget {
   const TorrentSettingsSection({
     super.key,
-    this.desktopOverride,
+    this.embeddedSupportedOverride,
     this.constrainWidth = true,
   });
 
@@ -42,7 +42,7 @@ class TorrentSettingsSection extends ConsumerStatefulWidget {
   /// null = 用真实 `dart:io` 平台判断。照搬 `book_import_dialog.dart` 的
   /// `ocrEntryDesktopOverride` 范式——`Platform` 不可 override，不给注入口就
   /// 只能退回源码扫描守卫，测不到真实渲染行为。
-  final bool? desktopOverride;
+  final bool? embeddedSupportedOverride;
 
   @override
   ConsumerState<TorrentSettingsSection> createState() =>
@@ -51,9 +51,14 @@ class TorrentSettingsSection extends ConsumerStatefulWidget {
 
 class _TorrentSettingsSectionState
     extends ConsumerState<TorrentSettingsSection> {
-  bool get _isDesktop =>
-      widget.desktopOverride ??
-      (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+  /// 本平台是否具备内置引擎（桌面 + Android；与
+  /// `AppModel._supportsEmbeddedTorrent` 同一判据）。
+  bool get _supportsEmbedded =>
+      widget.embeddedSupportedOverride ??
+      (Platform.isWindows ||
+          Platform.isMacOS ||
+          Platform.isLinux ||
+          Platform.isAndroid);
 
   QbConnectionConfig get _config =>
       effectiveTorrentConfig(ref.read(appProvider).qbConnectionConfig);
@@ -331,7 +336,8 @@ class _TorrentSettingsSectionState
     final AppModel appModel = ref.watch(appProvider);
     final DownloadNetworkProxyConfig proxy =
         appModel.downloadNetworkProxyConfig;
-    final String backend = c.resolveBackend(isDesktop: _isDesktop);
+    final String backend =
+        c.resolveBackend(embeddedSupported: _supportsEmbedded);
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
 
@@ -384,13 +390,13 @@ class _TorrentSettingsSectionState
           ),
         const Divider(height: 24),
 
-        // 后端二选一。标签是 `qBittorrent` / `Built-in engine (desktop only)` 这类
+        // 后端二选一。标签是 `External qBittorrent` / `Built-in engine` 这类
         // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
         //
-        // BUG-1207：移动端根本没有内置引擎的 .so，选择器只放一个够不着的档位——
-        // 选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，比没有选项更糟。
-        // 故非桌面不渲染选择器，改为一行说明交代本平台只有外接 qb。
-        if (_isDesktop) ...<Widget>[
+        // BUG-1207：无内置引擎的平台（现在只剩 iOS）不渲染选择器——选择器里放一个
+        // 够不着的档位，选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，
+        // 比没有选项更糟。改为一行说明交代本平台只有外接 qb。
+        if (_supportsEmbedded) ...<Widget>[
           FushiSegmentedStrip<String>(
             segments: <ButtonSegment<String>>[
               ButtonSegment<String>(
@@ -410,7 +416,7 @@ class _TorrentSettingsSectionState
           Padding(
             padding: const EdgeInsets.fromLTRB(2, 0, 2, 4),
             child: Text(
-              t.download_backend_desktop_only_note,
+              t.download_backend_unsupported_note,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

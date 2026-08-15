@@ -336,12 +336,12 @@ class AnimeDownloadService {
   static Duration resolvePollInterval({
     required QbConnectionConfig? config,
     required bool hasActiveDownloads,
-    required bool isDesktop,
+    required bool embeddedSupported,
     required Duration idle,
     Duration active = activeInterval,
   }) {
     final bool embedded = config != null &&
-        config.resolveBackend(isDesktop: isDesktop) ==
+        config.resolveBackend(embeddedSupported: embeddedSupported) ==
             QbConnectionConfig.backendEmbedded;
     return embedded && hasActiveDownloads ? active : idle;
   }
@@ -352,7 +352,7 @@ class AnimeDownloadService {
     final Duration want = resolvePollInterval(
       config: _configProvider(),
       hasActiveDownloads: downloadProgress.value.isNotEmpty,
-      isDesktop: _isDesktop(),
+      embeddedSupported: _supportsEmbeddedTorrent(),
       idle: interval,
     );
     if (want == _currentPeriod) return;
@@ -360,8 +360,12 @@ class AnimeDownloadService {
     _startTimer(want);
   }
 
-  static bool _isDesktop() =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  /// 与 AppModel._supportsEmbeddedTorrent 同一判据：桌面 + Android。
+  static bool _supportsEmbeddedTorrent() =>
+      Platform.isWindows ||
+      Platform.isLinux ||
+      Platform.isMacOS ||
+      Platform.isAndroid;
 
   /// 轮询一次（可单独调用；测试用）。内置防重入：上一 tick 未完成则跳过。
   /// 整体容错：网络/文件系统异常静默跳过，下轮再试。

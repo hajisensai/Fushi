@@ -357,6 +357,56 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
+    # 内置 libtorrent 引擎的 Android .so：vcpkg 交叉编 libtorrent + bridge，产物落
+    # native/fushi_torrent/prebuilt/android/arm64-v8a/，由 fushi/android/app/
+    # build.gradle 的 jniLibs copy-if-present 随包。
+    #
+    # 范围决策：**只编 arm64-v8a**（2026 年真机几乎全是 arm64）。armeabi-v7a /
+    # x86_64 的 split APK 与 fat debug APK 在这些 ABI 上没有 .so，运行期
+    # EmbeddedTorrentHost.open 返回 null → 自动回退外接 qb（与 Windows 缺 DLL
+    # 同一条路径），不是静默破坏。要补其它 ABI 时给脚本追加 ABI 参数即可。
+    #
+    # 缓存姿势照抄 build-multiplatform.yml 的 Windows vcpkg 步骤（TODO-2668）：
+    # key 带 runner ImageVersion（镜像决定 vcpkg 修订与工具链 = 决定 ABI hash，
+    # 常量 key 会让另一镜像永远冷编且命中即不回存）；distfile 目录第二层兜
+    # 「新镜像上线那一次必然冷编」的高危外网取件。
+    - name: Resolve vcpkg cache identity
+      id: vcpkg_cache_id
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        image="${ImageVersion:-unknown-image}"
+        image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+        echo "vcpkg cache identity (runner ImageVersion): $image"
+        echo "image=$image" >> "$GITHUB_OUTPUT"
+    - name: Cache vcpkg source distfiles (libtorrent android)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/vcpkg-downloads
+          !${{ runner.temp }}/vcpkg-downloads/tools
+        key: ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-
+    - name: Cache vcpkg binary archives (libtorrent android)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/vcpkg/archives
+        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+    - name: Build embedded libtorrent Android .so (vcpkg)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 90
+      shell: bash
+      env:
+        VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+      run: |
+        set -euo pipefail
+        chmod +x native/fushi_torrent/build_android_so.sh
+        bash native/fushi_torrent/build_android_so.sh \
+          "$VCPKG_INSTALLATION_ROOT" "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
     # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or
     # red suite delayed (and could block) the debug-channel APK the user is

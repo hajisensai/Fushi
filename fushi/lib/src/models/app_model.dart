@@ -3524,7 +3524,7 @@ class AppModel with ChangeNotifier {
         AnimeDownloadPlanStore(baseDir: baseDir);
     _animeDownloadPlanStore = store;
 
-    // 内置引擎宿主：仅桌面（Android/iOS 阶段4/5 再定）。默认下载根就在计划目录旁的
+    // 内置引擎宿主：桌面 + Android（iOS 无内置引擎）。默认下载根就在计划目录旁的
     // `content/` 子目录（分类再往下分）；TODO-1961 起用户可在设置里改成任意目录。
     //
     // BUG-1053：这里**只记路径，不建 session**。真正的 libtorrent session 会绑
@@ -3676,7 +3676,7 @@ class AppModel with ChangeNotifier {
     QbConnectionConfig config,
   ) async {
     final String resolved =
-        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+        config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     final String installationId =
         await prefsRepo.ensureVideoDownloadEmbeddedInstallationId();
     return buildVideoDownloadBackendIdentity(
@@ -3711,7 +3711,7 @@ class AppModel with ChangeNotifier {
 
   TorrentBackend? _createExactTorrentBackend(QbConnectionConfig config) {
     final String resolved =
-        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+        config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     if (resolved == QbConnectionConfig.backendEmbedded) {
       final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
       return host?.backendView();
@@ -4022,7 +4022,7 @@ class AppModel with ChangeNotifier {
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
     final String backend =
-        config.resolveBackend(isDesktop: _supportsEmbeddedTorrent());
+        config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     // BUG-1053：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
     final EmbeddedTorrentHost? host =
         backend == QbConnectionConfig.backendEmbedded
@@ -4038,9 +4038,13 @@ class AppModel with ChangeNotifier {
     ));
   }
 
-  /// 内置 libtorrent 支持的平台：桌面（Windows 先行；mac/Linux 阶段4）。
+  /// 内置 libtorrent 支持的平台：桌面 + Android（`libfushi_torrent_ffi.so`
+  /// 经 jniLibs 随包）。iOS 不支持：从不构建也从不打包内置引擎产物。
   bool _supportsEmbeddedTorrent() =>
-      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+      Platform.isWindows ||
+      Platform.isMacOS ||
+      Platform.isLinux ||
+      Platform.isAndroid;
 
   /// 每系列记住的 Jimaku 字幕语言偏好（TODO-674）。
   Map<String, String> get jimakuPreferredLanguages =>
