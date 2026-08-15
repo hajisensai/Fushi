@@ -119,8 +119,15 @@ build_darwin_static_deps() {
     rm -rf "$work/svt-av1"
     git clone --depth 1 --branch "$SVTAV1_REF" \
       https://gitlab.com/AOMediaCodec/SVT-AV1.git "$work/svt-av1"
+    # BUG-1668：`-DCMAKE_POLICY_VERSION_MINIMUM=3.5` 是 CMake 官方给的兼容逃生开关。
+    # SVT-AV1 v2.3.0 在 **x86 目标**上会拉进 vendored 的 third_party/cpuinfo，而那份
+    # CMakeLists 顶上写的是 `cmake_minimum_required(VERSION <3.5)`，CMake 4.x 已经
+    # 移除对 <3.5 的兼容 → "Compatibility with CMake < 3.5 has been removed"，configure
+    # 当场失败。arm64 目标走的是 ARM 特性检测分支、根本不引入 cpuinfo，所以这个坑在
+    # 「只编构建机架构（arm64 runner）」的年代永远碰不到，一开始编 x86_64 才冒出来。
     cmake -S "$work/svt-av1" -B "$work/svt-av1/build" \
       -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
       -DBUILD_SHARED_LIBS=OFF -DBUILD_APPS=OFF -DBUILD_TESTING=OFF
     cmake --build "$work/svt-av1/build" -j "$JOBS"
