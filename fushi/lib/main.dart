@@ -41,6 +41,7 @@ import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
 import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
@@ -81,6 +82,11 @@ Color? _savedSplashColor;
 /// 把视频路径传进 `main(List<String> args)`；这里暂存，待 app 初始化完成后由
 /// [_FushiReaderAppState] 打开播放页并加入书架。null 表示本次启动不是外部打开视频。
 String? _pendingExternalVideoPath;
+
+/// BUG-1666：桌面端 `fushi://lookup?word=<词>` 深链（Anki 卡片上的词典交叉引用）
+/// 冷启动时从 `main(args)` 暂存待查词；app 初始化完成后由 [_FushiReaderAppState]
+/// 经 [DesktopLookupService.triggerLookup] 排队查词。null = 本次启动非深链查词。
+String? _pendingLookupDeepLinkWord;
 
 /// Single source of truth for the status/navigation bar overlay style.
 ///
@@ -129,6 +135,15 @@ void main([List<String> args = const <String>[]]) {
     final String? videoArg = firstExternalVideoArg(args);
     if (videoArg != null && File(videoArg).existsSync()) {
       _pendingExternalVideoPath = videoArg;
+    }
+    // BUG-1666：系统协议注册把 `fushi://lookup?word=<词>` 交给 `fushi.exe "%1"`，
+    // 冷启动时该 URL 就在 argv 里；与视频路径互斥判定（URL 不会命中视频白名单）。
+    for (final String arg in args) {
+      final String? word = lookupWordFromDeepLink(arg);
+      if (word != null) {
+        _pendingLookupDeepLinkWord = word;
+        break;
+      }
     }
   }
 
@@ -544,6 +559,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
   bool _externalVideoHandled = false;
+
+  /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
+  bool _lookupDeepLinkHandled = false;
 
   /// TODO-904 P0 回归：Windows 单实例守卫下，第二实例（文件关联 / 拖到 exe / CLI
   /// `hibiki.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
@@ -978,6 +996,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (raw is! String) return null;
     final String videoPath = raw;
     if (videoPath.isEmpty) return null;
+    // BUG-1666：单实例转交的是「候选 argv 字符串」，不只视频路径——Anki 卡片上的
+    // `fushi://lookup?word=<词>` 协议启动第二实例后经同一 WM_COPYDATA 通道到这里。
+    // 深链先于视频白名单分流：查词请求交 DesktopLookupService（explicit 起源，
+    // 越过去重；C++ 侧已前置主窗）；未初始化完成则暂存，交 build 首启分支接手。
+    final String? lookupWord = lookupWordFromDeepLink(videoPath);
+    if (lookupWord != null) {
+      if (!appModel.isInitialised) {
+        _pendingLookupDeepLinkWord = lookupWord;
+        _lookupDeepLinkHandled = false;
+        if (mounted) setState(() {});
+        return null;
+      }
+      DesktopLookupService.instance.triggerLookup(lookupWord);
+      return null;
+    }
     if (!isSupportedVideoFile(videoPath)) return null;
     if (!File(videoPath).existsSync()) return null;
 
@@ -1540,6 +1573,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _pendingExternalVideoPath = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_openExternalVideo(videoPath));
+      });
+    }
+
+    // BUG-1666：同上，冷启动带 `fushi://lookup?word=<词>` 深链时，初始化完成后
+    // 排队一次显式查词（消费侧按用户的剪贴板落点配置路由到主窗 tab / 面板 / 瞬态卡）。
+    if (!_lookupDeepLinkHandled && _pendingLookupDeepLinkWord != null) {
+      _lookupDeepLinkHandled = true;
+      final String word = _pendingLookupDeepLinkWord!;
+      _pendingLookupDeepLinkWord = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        DesktopLookupService.instance.triggerLookup(word);
       });
     }
 
