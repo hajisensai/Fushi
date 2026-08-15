@@ -41,7 +41,7 @@ ffmpeg launch failed: executable=ffmpeg; errorCode=2; message=No such file or di
    `HIBIKI_FFMPEG` 旧名回退是改名批次的复制粘贴漏改。旧名是改名前公开给用户的变量，
    而这恰恰是「机器上没有 ffmpeg」时的自救出口。`FUSHI_FFPROBE` 同样。
 
-- **[x] ① 已修复** — 提交 `<commit>`：
+- **[x] ① 已修复** — 提交 `f418d4abef`：
   - A：引擎就地留存两个上报口的**首个**失败摘要，abort 时经 `_withRootCause()` 并进
     `abortReason`（症状前缀不变 → 既有调用方/测试不破；根因为空时逐字保持旧文案；
     截断 300 字防糊爆 toast）。
