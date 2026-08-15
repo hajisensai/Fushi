@@ -152,6 +152,9 @@ const
   MutexReleasePollAttempts = 40; { 40 * 250ms = up to ~10s waiting for the kernel to reclaim the mutex }
   MutexReleasePollIntervalMs = 250;
   GracefulCloseAttempts = 8;
+  { Inno 的 Pascal Script 不预定义 INVALID_HANDLE_VALUE；THandle 是无符号 32 位，
+    Win32 的 (HANDLE)-1 在这里就是 $FFFFFFFF。 }
+  InvalidHandleValue = $FFFFFFFF;
 
 { OpenMutexW: third arg is a String; Inno (Unicode) marshals it into a
   PWideChar for the W variant. Returns THandle; non-zero = the named mutex is
@@ -228,13 +231,112 @@ begin
        SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+{ BUG-1675: 能不能真的换掉这个文件——用「独占写方式打开」实测，而不是猜。
+  被别的进程映射的 DLL 在 Windows 下**可以改名但不能覆盖**，所以 RenameFile
+  探测会给出假的「没被占用」；只有以 GENERIC_WRITE + dwShareMode=0 打开才复现
+  安装器复制阶段的真实约束（占用时返回 INVALID_HANDLE_VALUE / 共享冲突）。 }
+function CreateFileW(lpFileName: String; dwDesiredAccess: Cardinal;
+  dwShareMode: Cardinal; lpSecurityAttributes: Cardinal;
+  dwCreationDisposition: Cardinal; dwFlagsAndAttributes: Cardinal;
+  hTemplateFile: THandle): THandle;
+  external 'CreateFileW@kernel32.dll stdcall';
+
+function FileLockedForWrite(const FileName: String): Boolean;
+var
+  Handle: THandle;
+begin
+  Result := False;
+  if not FileExists(FileName) then
+    Exit;
+  { GENERIC_WRITE=$40000000, 不共享(0), OPEN_EXISTING=3, FILE_ATTRIBUTE_NORMAL=$80 }
+  Handle := CreateFileW(FileName, $40000000, 0, 0, 3, $80, 0);
+  if Handle = InvalidHandleValue then
+    Result := True
+  else
+    CloseHandle(Handle);
+end;
+
+{ 扫一个 arch 目录下所有 exe/dll，返回第一个被占用的完整路径（没有则空串）。 }
+function FirstLockedFileInDir(const Dir: String): String;
+var
+  FindRec: TFindRec;
+  Lower: String;
+  Full: String;
+begin
+  Result := '';
+  if not DirExists(Dir) then
+    Exit;
+  if not FindFirst(AddBackslash(Dir) + '*', FindRec) then
+    Exit;
+  try
+    repeat
+      if FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY = 0 then
+      begin
+        Lower := Lowercase(FindRec.Name);
+        { 按**后缀**判，不用 Pos 子串：`classdata.tpk` 之类不该进来，而
+          `foo.dll.stale`（换入残骸）也不是安装器要覆盖的目标。 }
+        Lower := Copy(Lower, Length(Lower) - 3, 4);
+        if (Lower = '.dll') or (Lower = '.exe') then
+        begin
+          Full := AddBackslash(Dir) + FindRec.Name;
+          if FileLockedForWrite(Full) then
+          begin
+            Result := Full;
+            Exit;
+          end;
+        end;
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+{ 被占用的 galgame helper 组件（两个架构都查），没有则空串。 }
+function LockedGalHookComponent(const AppDir: String): String;
+var
+  Base: String;
+begin
+  Base := AddBackslash(AppDir) + 'voice_hook\';
+  Result := FirstLockedFileInDir(Base + 'x86');
+  if Result = '' then
+    Result := FirstLockedFileInDir(Base + 'x64');
+end;
+
 { Runs after the user confirms install, before file copy — the last hook where
   we can still release file locks. Empty result string = proceed. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Locked: String;
+  NL: String;
 begin
   Result := '';
   KillProcessesUnderDir(ExpandConstant('{app}'));
   Sleep(500);
+
+  { BUG-1675：KillProcessesUnderDir 按**主模块路径**杀进程，杀得掉安装目录里的
+    fushi_voice_injector.exe，却杀不掉真正的占用大头——**用户正在玩的游戏**：它的
+    exe 在 D:\Games\ 之类的地方，只是把安装目录下 voice_hook\<arch>\fushi_voice_hook.dll
+    映射了进去。放着不管，复制阶段就换不掉这些文件，而应用内更新用的
+    /VERYSILENT /SUPPRESSMSGBOXES 会把这次失败静默吞掉，落地成「新本体 + 旧 helper」，
+    用户下次开游戏才看到 `voice_hook open protocol_mismatch shm=13/want 15`，
+    且那条提示给的处置（关掉游戏重开）对已经写坏的磁盘状态毫无作用。
+
+    这里**故意不强杀游戏**：ffmpeg/injector 是我们自己的无状态子进程，杀了没有代价；
+    而玩家的游戏里可能有没存档的进度，为了装个更新把它杀掉是不可接受的破坏。
+    所以查出占用就在**复制任何文件之前**中止，让用户自己存档退出——这一步返回非空
+    字符串，Inno 会显示它并干净地放弃本次安装，磁盘保持完整旧版本。 }
+  Locked := LockedGalHookComponent(ExpandConstant('{app}'));
+  if Locked <> '' then
+  begin
+    { NL 走变量而不是把 #13#10 直接写进串联式：ISPP 会把**行首**的 `#` 当成
+      预处理指令，跨行拼接时以 #13#10 开头的续行会直接编译失败。 }
+    NL := Chr(13) + Chr(10);
+    Result := '检测到 galgame 捕获组件正被占用，无法更新：' + NL + Locked + NL + NL +
+      '这通常表示你正在玩的游戏还开着（Fushi 的捕获组件被注入在游戏进程里）。' + NL +
+      '请先存档并彻底关闭所有游戏，然后重新运行本安装程序。' + NL + NL +
+      '（本次未改动任何文件，现有版本可继续使用。）';
+  end;
 end;
 
 // BUG-1014: preserve the user's desktop icon position across updates.

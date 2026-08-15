@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1542 条。点号进各自文件。
+> 共 1543 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1675](bugs/BUG-1675-gal-helper-stale-after-locked-update.md) | ✅ | ✅ | galgame 捕获组件 protocol_mismatch：更新时游戏开着导致 helper 被静默跳过 |
 | [BUG-1664](bugs/BUG-1664-mine-abort-root-cause.md) | ✅ | ✅ | 制卡中止只报症状不报根因（macOS 缺 ffmpeg 时批量制卡整批失败且不可诊断） |
 | [BUG-1663](bugs/BUG-1663-ios-update-lands-on-github-not-testflight.md) | ✅ | ✅ | iOS「检查更新」把 TestFlight 用户送到 GitHub 未签名 ipa |
 | [BUG-1662](bugs/BUG-1662-collection-rescrape-entry.md) | ✅ | ✅ | 合集缺重新刮削入口：详情页无刮削项、单集无条目信息、菜单文案不含刮削 |

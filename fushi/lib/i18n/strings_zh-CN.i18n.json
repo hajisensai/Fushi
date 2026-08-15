@@ -3020,7 +3020,6 @@
   "mihon_add_to_bookshelf": "加入漫画书架",
   "mihon_in_bookshelf": "已加入漫画书架",
   "media_source_local_roots": "本地扫描根",
-  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。组件已内置在 Fushi 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明这份 Fushi 没带上与之匹配的组件。",
   "scrape_all_confirm": "将按标题匹配库中的 $n 个条目。只自动应用高置信度的匹配——视频按标题与年份、类型等信息综合打分，书籍和游戏则要求标题唯一且完全一致。你自己定的封面一律不覆盖（手动设置的本地图、在匹配弹窗里亲手选定的条目、目录里自带的 poster 图），歧义结果留待手动确认。",
   "collection_related_title": "相关作品",
   "collection_relation_prequel": "前传",
@@ -3421,5 +3420,7 @@
   "video_collection_scrape": "刮削资料与封面",
   "update_testflight_open": "打开 TestFlight",
   "update_app_store_open": "打开 App Store",
-  "update_release_page_open": "发布页"
+  "update_release_page_open": "发布页",
+  "update_install_gal_hook_holder": "Galgame 捕获组件被占用：PID $pid - $path（这是你正在玩的游戏或它的捕获宿主进程）。请先关闭游戏再更新。",
+  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。组件已内置在 Fushi 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明磁盘上的组件比 Fushi 旧——上次更新 Fushi 时游戏正开着，安装器换不掉被占用的组件文件。请关闭所有游戏，然后重新运行一次 Fushi 安装程序。"
 }

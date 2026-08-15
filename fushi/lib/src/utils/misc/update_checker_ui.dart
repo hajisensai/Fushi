@@ -336,6 +336,20 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                   style: tokens.type.metadata,
                 ),
               ],
+              // 被 hook 的游戏 / `--hold` 的 injector host 正占着 helper 组件：这是
+              // 「更新装不上」里唯一需要用户去关**游戏**而不是关 Fushi 的一类，必须与
+              // 上面的 libmpv 占用者分开说（BUG-1675）。
+              for (final WindowsProcessInfo process
+                  in record.galHookModuleHolders) ...[
+                SizedBox(height: tokens.spacing.gap / 2),
+                SelectableText(
+                  t.update_install_gal_hook_holder(
+                    pid: process.pid,
+                    path: _windowsProcessPathLabel(process),
+                  ),
+                  style: tokens.type.metadata,
+                ),
+              ],
               for (final WindowsInnoDeleteFileFailure failure
                   in record.innoLogDeleteFileFailures) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
@@ -349,6 +363,7 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
               ],
               if (record.runningFushiProcesses.isNotEmpty ||
                   record.libmpvModuleHolders.isNotEmpty ||
+                  record.galHookModuleHolders.isNotEmpty ||
                   record.innoLogDeleteFileFailures.isNotEmpty) ...[
                 SizedBox(height: tokens.spacing.gap),
                 Text(

@@ -146,5 +146,28 @@ void main() {
               'still holds the previous component');
       expect(zh, contains('Fushi'), reason: '要说清组件是内置的，用户没有单独装它这一步');
     });
+
+    test('BUG-1675：还必须给出「磁盘上的组件本身就是旧的」这条处置', () {
+      const String key = 'game_hook_reason_protocol_mismatch';
+      final String zh = valueOf('strings_zh-CN.i18n.json', key);
+      final String en = valueOf('strings.i18n.json', key);
+      // 上面那条只覆盖「游戏进程里挂着旧组件」，重开游戏能清掉。但真实用户报的那次是
+      // 另一种：更新 Fushi 时游戏正开着，Inno 换不掉被游戏持有的
+      // voice_hook\<arch>\fushi_voice_hook.dll / fushi_voice_injector.exe，而应用内更新的
+      // /SUPPRESSMSGBOXES 把失败吞了 —— 磁盘上真的留着旧组件，重开游戏一万次也没用。
+      // 只写第一种处置，等于让撞上第二种的用户在无效动作上原地打转（用户原话：
+      // 「怎么还有这个 bug」）。
+      expect(zh, contains('安装程序'),
+          reason: '磁盘上组件比本体旧时，唯一有效动作是重跑一次 Fushi 安装程序，文案必须说出来');
+      expect(en.toLowerCase(), contains('installer again'),
+          reason: 'the on-disk-stale case is only fixed by running the Fushi '
+              'installer again; the message must say so');
+      // 且必须点出「上次更新时游戏开着」这个前提，否则用户无从判断自己撞的是哪一种。
+      expect(zh, contains('游戏正开着'),
+          reason: '要让用户能自己分辨撞的是哪一种，必须点出「更新时游戏开着」这个成因');
+      expect(en.toLowerCase(), contains('while a game was running'),
+          reason: 'the user must be able to tell which of the two cases they '
+              'hit; name the cause');
+    });
   });
 }
