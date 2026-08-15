@@ -30,14 +30,24 @@ window.fushiSelection = {
         return /^[\s　]$/.test(char) || this.scanDelimiters.includes(char);
     },
 
-    // BUG-1645：元素是否「同一行内连排」的 inline 盒。块级/列表项/表格单元/inline-block
-    // 在用户眼里就是换行或分栏，两侧文字不可能是同一个词。拿不到样式时返回 true
-    // （保持旧的跨节点续扫行为，不引入新的失败模式）。
+    // BUG-1645：元素是否「同一行内连排」的 inline 盒。块级/列表项/表格单元/flex/grid
+    // 在用户眼里就是换行或分栏，两侧文字不可能是同一个词。
+    //
+    // BUG-1659：判据必须是「inline-level 盒」这个概念本身，不是它的某个枚举
+    // 子集。原先写死 `display === 'inline'`，把 inline-block / inline-flex /
+    // inline-grid / inline-table 这些同样排在同一行上的盒子一律当成了断点。
+    // 而 popup.css 的 `.ruby-unit` 正是 `display: inline-block`（每个振假名单元一
+    // 个），于是查词浮窗 glossary 里任何带振假名的词扫到第一个 ruby 单元就断：
+    // 「打ち合わせ」只剩下「打」。
+    //
+    // 拿不到样式（或拿不到 display）时返回 true，保持旧的跨节点续扫行为，
+    // 不引入新的失败模式。
     isInlineBox(element) {
         const style = window.getComputedStyle?.(element);
         if (!style) return true;
         const display = style.display;
-        return display === 'inline' || display === 'contents' ||
+        if (!display) return true;
+        return display.startsWith('inline') || display === 'contents' ||
             display.startsWith('ruby');
     },
 
