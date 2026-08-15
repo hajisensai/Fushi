@@ -3418,6 +3418,7 @@
   "aidoku_repository_hint": "Paste an Aidoku repository homepage or index.min.json URL. The community repository is filled in by default.",
   "aidoku_repository_remove": "Remove repository",
   "aidoku_repository_empty": "No Aidoku repositories added.",
+  "video_collection_scrape": "Scrape info & cover",
   "update_testflight_open": "Open TestFlight",
   "update_app_store_open": "Open App Store",
   "update_release_page_open": "Release page"
