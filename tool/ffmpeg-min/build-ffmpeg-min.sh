@@ -289,7 +289,16 @@ esac
   --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --enable-protocol="$PROTOCOLS" \
-  "${EXTRA_CONFIG[@]}"
+  "${EXTRA_CONFIG[@]}" || {
+    # BUG-1668：configure 只在 stdout 印一行结论（如 "ERROR: SvtAv1Enc >= 0.9.0 not
+    # found using pkg-config"），**真正的原因**——编译/链接测试用的完整命令行与
+    # 编译器报的未定义符号——只在 ffbuild/config.log 里。CI 不打印它，等于每次
+    # configure 失败都只能靠猜再赌一轮构建。这里失败即 dump 尾部，一轮就能定位。
+    status=$?
+    echo "[ffmpeg-min] configure 失败（exit $status）。ffbuild/config.log 尾部 120 行："
+    tail -n 120 ffbuild/config.log >&2 || echo "[ffmpeg-min] 无 ffbuild/config.log" >&2
+    exit "$status"
+  }
 
 make -j"$JOBS"
 make install
