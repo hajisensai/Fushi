@@ -2260,7 +2260,11 @@ void main() {
     final String updateFlow = _functionSource(
       releaseSource,
       'static void _showUpdateDialog(',
-      '  /// Fallback dialog for when no APK asset exists',
+      // 终止锚点用**方法签名**而不是下一个方法的文档注释首行：注释是会被重写的
+      // （iOS 更新落地入口分流那次就把这行英文注释换成了中文），锚点跟着失效，
+      // 守卫拿 -1 当窗口末尾直接红，而被守的 chrome 其实一点没变。签名不会因为
+      // 改注释而漂。
+      '  static void _showFallbackDialog(',
     );
     final String fallbackFlow = _functionSource(
       releaseSource,
