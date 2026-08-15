@@ -329,6 +329,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final VideoMiningImageMode imageMode = appModel.videoMiningImageMode;
     final MiningAnimatedFormat animatedFormat =
         appModel.videoMiningAnimatedFormat;
+    final MiningStillFormat stillFormat = appModel.videoMiningStillFormat;
     final String? bookTitleTag = appModel.autoAddBookNameToTags
         ? BaseAnkiRepository.sanitizeTitleTag(_title)
         : null;
@@ -448,6 +449,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 动图编码格式（默认 AVIF）。引擎在编码失败时会自动降级 GIF 重试一次——旧版本
         // 包捆绑的 ffmpeg 没有 libsvtav1/libwebp，靠这条保证不会因换默认格式而制不出卡。
         animatedFormat: animatedFormat,
+        // 静图编码格式（默认 JPG）：两种截图档与动图抽取失败后的静帧降级都走它。
+        // 选 PNG 而捕绑 ffmpeg 缺编码器时引擎自动退回 JPG，不会因换格式而丢封面。
+        stillFormat: stillFormat,
       ),
       compression: mediaCompression,
       tempDir: tempDir,

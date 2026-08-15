@@ -12,7 +12,7 @@ import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -374,6 +374,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildMiningAudioQualityRow(),
             _buildVideoMiningImageModePicker(),
             _buildVideoMiningAnimatedFormatPicker(),
+            _buildVideoMiningStillFormatPicker(),
             _buildGalMiningImageModePicker(),
             _buildGalMiningAnimatedFormatPicker(),
           ],
@@ -559,6 +560,37 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         selected: appModel.galMiningAnimatedFormat,
         onChanged: appModel.setGalMiningAnimatedFormat,
       );
+
+  /// 静图（截图）**编码格式**，与上面两轴正交：封面模式选「用不用动图 / 静帧取
+  /// 哪一帧」，动图格式选「动图怎么编码」，本项只管「那一帧怎么编码」。
+  ///
+  /// 常显（不按 imageMode 隐藏）：动图抽取失败会降级成静帧，所以即使选着动图，
+  /// 本项也仍然决定那张降级图的格式；时隐时现反而让用户以为它不生效。
+  ///
+  /// galgame 侧不给这一项：那条链的静图来自窗口抓图（本就是 PNG），不经本格式轴。
+  Widget _buildVideoMiningStillFormatPicker() {
+    return AdaptiveSettingsPickerRow<MiningStillFormat>(
+      title: t.video_mining_still_format,
+      subtitle: t.video_mining_still_format_hint,
+      icon: Icons.image_outlined,
+      controlBelow: true,
+      selected: appModel.videoMiningStillFormat,
+      options: [
+        AdaptiveSettingsPickerOption<MiningStillFormat>(
+          value: MiningStillFormat.jpg,
+          label: t.mining_still_format_jpg,
+        ),
+        AdaptiveSettingsPickerOption<MiningStillFormat>(
+          value: MiningStillFormat.png,
+          label: t.mining_still_format_png,
+        ),
+      ],
+      onChanged: (MiningStillFormat format) {
+        appModel.setVideoMiningStillFormat(format);
+        setState(() {});
+      },
+    );
+  }
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     // Lapis 创建在途时 vm 的 isFetching 也为 true（vm 内部复用同一 flag）；

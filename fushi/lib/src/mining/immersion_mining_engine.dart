@@ -10,6 +10,23 @@ import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
+/// 制卡静图格式 → 降采样器的编码枚举（两层各自的词汇，在此处一次性对齐）。
+CardScreenshotEncoding cardScreenshotEncodingFor(MiningStillFormat format) =>
+    switch (format) {
+      MiningStillFormat.jpg => CardScreenshotEncoding.jpeg,
+      MiningStillFormat.png => CardScreenshotEncoding.png,
+    };
+
+/// [bytes] 实际是哪种静图格式（魔数嗅探）。既非 JPEG 也非 PNG（降采样解码失败原样返回
+/// 的 GIF/损坏字节等）时返回 [MiningStillFormat.jpg]——落盘扩展名必须跟随**真实字节**，
+/// 而这条兜底路径上唯一能确定的事实是「它不是 PNG」，写 `.jpg` 至少与改动前一致。
+MiningStillFormat stillFormatOfBytes(Uint8List bytes) =>
+    switch (cardScreenshotEncodingOf(bytes)) {
+      CardScreenshotEncoding.png => MiningStillFormat.png,
+      CardScreenshotEncoding.jpeg => MiningStillFormat.jpg,
+      null => MiningStillFormat.jpg,
+    };
+
 /// 注入式抽取器（默认指向 desktop_audio_clipper.dart 真身，测试注入假件）。逐参对齐真身。
 typedef GifExtractor = Future<String?> Function({
   required String inputPath,
@@ -277,15 +294,23 @@ class ImmersionMiningEngine {
     }
 
     // 抽字幕 cue 起始时间点的单帧；无 src → null。
+    //
+    // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选 muxer/编码器）；
+    // 首选格式失败按 [MiningStillFormat.encodeAttempts] 退回 JPEG 再抽一次——捆绑 ffmpeg
+    // 缺 png 编码器时该丢的是这个格式，不是整张封面。
     Future<String?> tryStartFrame() async {
       if (src == null) return null;
-      return _frame(
-        inputPath: src,
-        outputPath: '$tempDir/immersion_frame.jpg',
-        atSeconds: req.clipStartMs / 1000.0,
-        onFailure: reportCover,
-        tlsPinSha256: req.mediaSourceTlsPinSha256,
-      );
+      for (final MiningStillFormat attempt in req.stillFormat.encodeAttempts) {
+        final String? produced = await _frame(
+          inputPath: src,
+          outputPath: '$tempDir/immersion_frame.${attempt.fileExtension}',
+          atSeconds: req.clipStartMs / 1000.0,
+          onFailure: reportCover,
+          tlsPinSha256: req.mediaSourceTlsPinSha256,
+        );
+        if (produced != null) return produced;
+      }
+      return null;
     }
 
     // 当前解码帧（`controller.screenshot`，点词已自动暂停）→ 降采样写盘；无 stillFallback → null。
@@ -299,8 +324,14 @@ class ImmersionMiningEngine {
         shot,
         maxLongEdge: compression.screenshotMaxLongEdge,
         quality: compression.screenshotQuality,
+        encoding: cardScreenshotEncodingFor(req.stillFormat),
       );
-      return _writeBytes(tempDir, 'immersion_shot.jpg', small);
+      // 扩展名跟随**实际字节**而非所选格式：降采样在解码失败时原样返回入参（media_kit 的
+      // `image/jpeg`），按所选拼名会写出 `.png` 里装 JPEG 的卡，Anki 按扩展名判 MIME →
+      // 封面不显示。同 Netflix 那条链对动图降级的处理（buildImmersionRequest）。
+      final MiningStillFormat produced = stillFormatOfBytes(small);
+      return _writeBytes(
+          tempDir, 'immersion_shot.${produced.fileExtension}', small);
     }
 
     // BUG-1205 — 音频抽取与下面的封面阶梯**无任何数据依赖**，故在此先启动、末尾才

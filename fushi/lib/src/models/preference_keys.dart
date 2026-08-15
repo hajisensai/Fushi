@@ -156,6 +156,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_lock_window_aspect_ratio',
   'video_mining_animated_format',
   'video_mining_image_mode',
+  'video_mining_still_format',
   'video_mpv_config',
   'video_mpv_shader_dir',
   'video_remote_subtitle',

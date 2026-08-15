@@ -13,7 +13,7 @@ import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
@@ -1526,6 +1526,20 @@ class PreferencesRepository extends ChangeNotifier {
 
   void setVideoMiningAnimatedFormat(MiningAnimatedFormat format) async {
     await setPref('video_mining_animated_format', format.wireName);
+    notifyListeners();
+  }
+
+  // 静图（截图）**编码格式**，与上面两轴正交：模式选「用不用动图 / 静态帧取哪一帧」，
+  // 本项选「那帧用什么编码」。默认由 [MiningStillFormat.fromWireName] 对 null 给出（= jpg，
+  // 现状零破坏），不写在这里：解析未知历史值与「从没设过」走同一条路径。
+  //
+  // galgame 侧不取本项：那条链的静图来自窗口抓图（本就是 PNG），不经本格式轴。
+  MiningStillFormat get videoMiningStillFormat =>
+      MiningStillFormat.fromWireName(
+          getPref('video_mining_still_format', defaultValue: null) as String?);
+
+  void setVideoMiningStillFormat(MiningStillFormat format) async {
+    await setPref('video_mining_still_format', format.wireName);
     notifyListeners();
   }
 

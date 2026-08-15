@@ -2262,7 +2262,7 @@
   "video_mining_image_mode": "视频卡片图片",
   "video_mining_image_mode_current_frame": "制卡时截图",
   "video_mining_image_mode_gif": "动图 GIF（字幕片段）",
-  "video_mining_image_mode_hint": "视频制卡封面用动图还是截图",
+  "video_mining_image_mode_hint": "视频卡片封面用字幕区间动图，还是某一帧静态截图（取哪一帧也在这里选）",
   "video_mining_image_mode_subtitle_start": "字幕开头截图",
   "video_next_episode": "下一集",
   "video_playlist_episodes": "$count 集",
@@ -3428,5 +3428,9 @@
   "video_collection_scrape": "刮削资料与封面",
   "update_testflight_open": "打开 TestFlight",
   "update_app_store_open": "打开 App Store",
-  "update_release_page_open": "发布页"
+  "update_release_page_open": "发布页",
+  "video_mining_still_format": "视频卡片截图格式",
+  "video_mining_still_format_hint": "选「制卡时截图」或「字幕开头截图」时那张图用什么编码。JPG 体积小得多；PNG 无损但大好几倍。动图封面不受影响，它跟随「动图格式」那一项。",
+  "mining_still_format_jpg": "JPG（体积更小）",
+  "mining_still_format_png": "PNG（无损）"
 }
