@@ -31,10 +31,21 @@ function loadContentAndFireShift(options) {
     isConnected: true,
     pauseCount: 0,
     playCount: 0,
+    handlers: {},
+    addEventListener(type, fn, opts) {
+      (this.handlers[type] = this.handlers[type] || []).push({ fn, once: !!(opts && opts.once) });
+    },
+    removeEventListener() {},
+    emit(type) {
+      const hs = this.handlers[type] || [];
+      this.handlers[type] = hs.filter((h) => !h.once);
+      for (const h of hs) h.fn();
+    },
     pause() { this.paused = true; this.pauseCount++; },
     play() {
       this.paused = false;
       this.playCount++;
+      this.emit('play');
       return { catch() {} };
     },
   };
@@ -93,7 +104,7 @@ function loadContentAndFireShift(options) {
       sendMessage: (msg, cb) => {
         sent.push(msg);
         if (cb && respond) {
-          cb({
+          cb(options.response !== undefined ? options.response : {
             ok: true,
             data: { popupJson: '[]', result: { bestLength: 2 }, audioSources: [] },
           });
@@ -209,6 +220,27 @@ test('用户自己暂停的视频不因关闭查词弹窗被播放', () => {
   for (const fn of h.docListeners.mousedown || []) fn({ target: {} });
   assert.strictEqual(h.video.playCount, 0, '用户自己暂停的视频绝不被自动播放');
   assert.strictEqual(h.video.paused, true);
+});
+
+test('查词暂停后用户手动播放又手动暂停：关窗不得把用户的暂停顶掉', () => {
+  const h = loadContentAndFireShift();
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.paused, true, '查词先暂停');
+  // 用户手动点播放（play 事件收回控制权），随后又手动暂停。
+  h.video.paused = false;
+  h.video.emit('play');
+  h.video.paused = true;
+  for (const fn of h.docListeners.mousedown || []) fn({ target: {} });
+  assert.strictEqual(h.video.playCount, 0, '用户收回控制权后关窗绝不自动播放');
+  assert.strictEqual(h.video.paused, true);
+});
+
+test('查词失败（无弹窗可关）时立即恢复被查词暂停的视频，暂停不得没有出口', () => {
+  const h = loadContentAndFireShift({ response: { ok: false, error: 'ECONNREFUSED' } });
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.pauseCount, 1, '发起查词先暂停');
+  assert.strictEqual(h.video.playCount, 1, '失败且无在场弹窗必须立即恢复播放');
+  assert.strictEqual(h.video.paused, false);
 });
 
 test('查词暂停兼容旧 subtitleHoverPause，但新键显式 false 优先', () => {

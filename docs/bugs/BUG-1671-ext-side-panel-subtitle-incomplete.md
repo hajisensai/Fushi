@@ -9,3 +9,5 @@
   未覆盖（记录为已知边界）：DOM 采样 live 轨天然只有播过的部分、后台标签页 setInterval 节流丢行、跨域 iframe 播放器（需 all_frames）、YouTube server 兜底「拿到一条就不再补」门闩——均不是本次用户路径的主因，另行排期。
 - **[x] ② 已加自动化测试** — `tools/browser-extension/universal-subtitle-providers.test.js` 新增两用例：「disabled 语言轨强制升 hidden 下一轮收齐」「分片整批替换按归并合并，旧区间不丢/新区间进得来/重复收割去重」。变异实测：去掉升 hidden、归并退化为盲追加，两用例分别红。
 - **备注**：镜像 `fushi/assets/browser_extension/` 由 `scripts/sync-mirrors.mjs` 同步。
+- **审查修复（code review 后补，同 PR）**：①同语言多轨（"English" 与 "English [CC]" 的 language 同为 en）会被归并进同一条侧边栏轨、台词穿插重复——语言撞车时把 label 编进轨 key 消歧（单轨语言保持裸语言码，对齐其它 provider 的 key 习惯）；②textTracks 精确时间轴下 750ms 同文去重会误杀连续两声相同短句——`fushiSortedCueInsert` 加窗宽参数，收割路径用 1ms（等于 startMs 精确相等），live 轨保持 750ms；③升 hidden 与站点播放器（hls.js 等）可能拉锯——加 WeakSet 一轨一次门，站点拨回 disabled 即尊重站点，杀死 1.2s 轮询无限翻转。
+- **⚠ implemented_unverified**：`tt.mode='hidden'` 在 hls.js 真站（字幕全关时被 hls.js 反读为活动轨、触发分片下载/UI 状态）的实际行为**未真机取证**，本会话无浏览器环境；一轨一次门已把最坏情况限制在每轨一次翻转。合并前建议在一个 hls.js 站点实测字幕菜单状态与网络面板。

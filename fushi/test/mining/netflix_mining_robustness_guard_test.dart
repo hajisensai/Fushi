@@ -37,9 +37,10 @@ void main() {
         test('#1 查词暂停由 subtitlePauseOnLookup 门控', () {
           final String src = content.readAsStringSync();
           expect(
-            src.contains('if (fushiPauseOnLookup) {\n'
+            src.contains('if (fushiPauseOnLookup && '
+                '!(fushiPausedForLookup && fushiPausedForLookup.paused)) {\n'
                 '    try { const _v = fushiFindPlayingVideo(); '
-                'if (_v) { _v.pause(); fushiPausedForLookup = _v; } } catch (_) {}\n'
+                'if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}\n'
                 '  }'),
             isTrue,
             reason: '${content.path} 查词暂停未受用户设置门控'

@@ -11,3 +11,4 @@
   Side Panel 发起的查词（`fushiPrepareLookupFromSidePanel`）无「面板关闭」回调，维持只暂停不自动恢复（防止被无关的页面弹窗关闭误恢复），已注释说明。跨域 iframe（嵌入式第三方播放器）本轮不覆盖（需 all_frames + background 广播，影响面大，另行排期）。
 - **[x] ② 已加自动化测试** — `tools/browser-extension/shift-hover.test.js` 新增：默认开启即暂停/显式关闭不暂停、关窗自动恢复且不重复 play、用户自己暂停的视频绝不被自动播放、旧键显式 false 压过新默认。变异实测：禁用恢复块「关闭查词弹窗后自动恢复」用例即红。守卫 `fushi/test/mining/netflix_mining_robustness_guard_test.dart` #1 同步为新暂停代码形状。
 - **备注**：options.html 文案同步改为「关闭查词弹窗后自动恢复播放」。
+- **审查修复（code review 后补，同 PR）**：①「用户播放→再暂停→关窗」会被误播——暂停时挂一次性 `play` 监听收回 `fushiPausedForLookup`（用户手动播放即收回控制权；我们自己 resume 前先置 null 不会误清）；②查词失败/扩展失效/SW 回收（12s 兜底定时器）等「弹窗没建出来」的路径没有关窗动作可触发恢复——恢复块抽成 `fushiResumePausedForLookup()`，这些路径在无在场弹窗时直接恢复；③深搜落热路径——已因查词暂停且视频仍停着时短路跳过整个暂停块，「找不到在播视频」记 2s TTL 负缓存（纯文本页高频扫词不再全树扫描）。测试各有独立用例（shift-hover.test.js），失败恢复路径变异实测红。

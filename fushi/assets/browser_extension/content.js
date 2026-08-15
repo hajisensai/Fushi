@@ -104,9 +104,37 @@ function fushiApplyPauseOnLookupPrefs(saved) {
 // 因查词被**我们**暂停的那个 <video>；null=没有。它是恢复侧唯一真相源（对齐 app 的
 // _pausedForLookup 不变式）：用户自己暂停的视频绝不因关弹窗被播起来。
 let fushiPausedForLookup = null;
+// 记「被我们暂停」并挂一次性 play 监听：用户手动点播放（不是我们 resume——我们 resume 前
+// 已先置 null）即视为收回控制权，清掉标记。这样「查词暂停 → 用户播放 → 用户再暂停 → 关窗」
+// 不会把用户自己按下的暂停顶掉；SPA 同元素换 src 继续播的场景同样被覆盖。
+function fushiMarkPausedForLookup(v) {
+  if (fushiPausedForLookup === v) return; // 重复查词同一视频：已挂过监听，别叠加
+  fushiPausedForLookup = v;
+  try {
+    v.addEventListener('play', function () {
+      if (fushiPausedForLookup === v) fushiPausedForLookup = null;
+    }, { once: true });
+  } catch (_) {}
+}
+// 恢复侧唯一实现（对齐 app 的 shouldResumeAfterLookupDismiss）：只恢复确实由查词暂停的
+// 那个视频；用户已手动继续播放的不重复 play（v.paused 守卫）。除关窗汇聚点外，查词失败/
+// 扩展失效等「弹窗根本没建出来」的路径也必须走它——否则视频被停住却没有任何关窗动作可触发恢复。
+function fushiResumePausedForLookup() {
+  if (!fushiPausedForLookup) return;
+  const pausedVideo = fushiPausedForLookup;
+  fushiPausedForLookup = null;
+  try {
+    if (pausedVideo.isConnected !== false && pausedVideo.paused) {
+      const played = pausedVideo.play();
+      if (played && typeof played.catch === 'function') played.catch(() => {});
+    }
+  } catch (_) { /* autoplay 拦截等：保持暂停即可 */ }
+}
 // 找「正在播放」的视频：没有在播的就没有可暂停的（也就无需恢复）。顶层文档快路径优先
 // （高频 Shift 悬停查词不能每次全树扫描）；顶层没有才穿透 open shadow root 与**同源**
 // iframe 深搜（跨域 iframe 拿不到 contentDocument，静默跳过——嵌入式第三方播放器暂不覆盖）。
+// 深搜结果为空时记 2s TTL 负缓存：纯文本页/无在播视频的页面上，高频扫词不反复全树扫描。
+let fushiNoPlayingVideoUntil = 0;
 function fushiFindPlayingVideo() {
   const playing = (root) => {
     let vids;
@@ -118,6 +146,7 @@ function fushiFindPlayingVideo() {
   };
   const top = playing(document);
   if (top) return top;
+  if (Date.now() < fushiNoPlayingVideoUntil) return null; // 负缓存命中：跳过深搜
   const deep = (root, depth) => {
     if (!root || depth > 3) return null;
     let all;
@@ -137,7 +166,9 @@ function fushiFindPlayingVideo() {
     }
     return null;
   };
-  return deep(document, 0);
+  const found = deep(document, 0);
+  if (!found) fushiNoPlayingVideoUntil = Date.now() + 2000;
+  return found;
 }
 try {
   const fushiPausePrefsPromise = chrome.storage.local.get(
@@ -551,18 +582,22 @@ function fushiNotifyPanel(key) {
   } catch (_) {}
 }
 
-// 有序插入 + 去重：同文本且句首相差 <750ms 视为同一句（倒退/回放重看不重复入轨）。返回是否真插入。
-function fushiSortedCueInsert(cues, cue) {
+// 有序插入 + 去重：同文本且句首相差 <windowMs 视为同一句（倒退/回放重看不重复入轨）。
+// windowMs 缺省 750（DOM 采样 live 轨的时间轴本就有采样抖动）；textTracks 收割传 1（精确
+// 时间轴，只有 startMs 完全相同才算同一条——连续两声相同短句是真实台词，不能被宽窗误杀）。
+// 返回是否真插入。
+function fushiSortedCueInsert(cues, cue, windowMs) {
+  const win = windowMs > 0 ? windowMs : 750;
   let lo = 0;
   let hi = cues.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (cues[mid].startMs <= cue.startMs) lo = mid + 1; else hi = mid;
   }
-  for (let i = lo - 1; i >= 0 && cue.startMs - cues[i].startMs < 750; i--) {
+  for (let i = lo - 1; i >= 0 && cue.startMs - cues[i].startMs < win; i--) {
     if (cues[i].text === cue.text) return false;
   }
-  for (let j = lo; j < cues.length && cues[j].startMs - cue.startMs < 750; j++) {
+  for (let j = lo; j < cues.length && cues[j].startMs - cue.startMs < win; j++) {
     if (cues[j].text === cue.text) return false;
   }
   cues.splice(lo, 0, cue);
@@ -628,20 +663,40 @@ function fushiLiveCueEnd(state, endV) {
 //      cue——旧的「条数没长就跳过、长了整轨覆盖」两个方向都丢字幕（新区间进不来 / 旧区间
 //      被抹掉），正是「侧边栏字幕不全」的主根因。逐条有序插入（fushiSortedCueInsert 同文本
 //      ±750ms 去重），轨只增不减，快进/回看过的各区间都留得住。
+// 每条 track 只尝试升 hidden 一次：站点播放器（hls.js 等）若把 mode 拨回 disabled，那是它在
+// 管理轨道，1.2s 轮询若反复翻回去会形成无限拉锯（每次翻转都触发站点侧 change 处理）。一次
+// 尝试足以让静态播放器把 cues 加载出来；被站点收回的轨就尊重站点。
+const fushiPromotedTracks = typeof WeakSet === 'function' ? new WeakSet() : null;
 function fushiHarvestTextTracks() {
   const v = document.querySelector('video');
   if (!v || !v.textTracks || !v.textTracks.length) return;
   const vidKey = fushiVideoKey();
+  // 同语言多轨（如 "English" 与 "English [CC]"，language 同为 en）必须分 key，否则两条轨的
+  // cue 被归并进同一条侧边栏轨、台词穿插重复且轨只增不减无法恢复。仅在语言撞车时才把 label
+  // 编进轨身份——单轨语言保持裸语言码，与其它 provider（stream-bridge/YouTube）的 key 习惯一致。
+  const langCount = Object.create(null);
+  for (let i = 0; i < v.textTracks.length; i++) {
+    const t = v.textTracks[i];
+    if (!t || (t.kind !== 'subtitles' && t.kind !== 'captions')) continue;
+    const l = String(t.language || t.label || 'und');
+    langCount[l] = (langCount[l] || 0) + 1;
+  }
   for (let i = 0; i < v.textTracks.length; i++) {
     const tt = v.textTracks[i];
     if (!tt || (tt.kind !== 'subtitles' && tt.kind !== 'captions')) continue;
     if (tt.mode === 'disabled') {
-      try { tt.mode = 'hidden'; } catch (_) {}
+      if (fushiPromotedTracks && !fushiPromotedTracks.has(tt)) {
+        fushiPromotedTracks.add(tt);
+        try { tt.mode = 'hidden'; } catch (_) {}
+      }
       continue; // cues 要到下一轮轮询才加载好
     }
     if (!tt.cues || !tt.cues.length) continue;
-    const lang = String(tt.language || tt.label || 'und').replace(/\|/g, '_');
-    const key = vidKey + '|' + lang;
+    const langRaw = String(tt.language || tt.label || 'und');
+    const langId = langCount[langRaw] > 1
+      ? langRaw + '·' + String(tt.label || '#' + i)
+      : langRaw;
+    const key = vidKey + '|' + langId.replace(/\|/g, '_');
     const track = fushiEpisodeCues[key] || (fushiEpisodeCues[key] = []);
     let inserted = false;
     for (let j = 0; j < tt.cues.length; j++) {
@@ -650,7 +705,7 @@ function fushiHarvestTextTracks() {
       const text = stripCueTags(String(c.text || ''));
       if (!text) continue;
       const cue = { startMs: Math.round(c.startTime * 1000), endMs: Math.round(c.endTime * 1000), text: text };
-      if (fushiSortedCueInsert(track, cue)) inserted = true;
+      if (fushiSortedCueInsert(track, cue, 1)) inserted = true;
     }
     if (inserted) fushiNotifyPanel(key);
   }
@@ -1601,20 +1656,9 @@ function fushiRemoveContainer() {
   window.__fushiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
-  // 「查词时暂停」的恢复侧（对齐 app 的 shouldResumeAfterLookupDismiss）：只恢复确实由
-  // 查词暂停的那个视频；用户自己暂停的绝不被播起来（关窗时它不在 fushiPausedForLookup 里），
-  // 用户已手动继续播放的也不重复 play（v.paused 守卫）。嵌套查词只换弹窗内容、不经此处，
-  // 天然不会提前恢复——与 app「整栈关空才恢复」同语义。
-  if (fushiPausedForLookup) {
-    const pausedVideo = fushiPausedForLookup;
-    fushiPausedForLookup = null;
-    try {
-      if (pausedVideo.isConnected !== false && pausedVideo.paused) {
-        const played = pausedVideo.play();
-        if (played && typeof played.catch === 'function') played.catch(() => {});
-      }
-    } catch (_) { /* autoplay 拦截等：保持暂停即可 */ }
-  }
+  // 「查词时暂停」的恢复侧：关窗即恢复（实现与不变式见 fushiResumePausedForLookup）。
+  // 嵌套查词只换弹窗内容、不经此处，天然不会提前恢复——与 app「整栈关空才恢复」同语义。
+  fushiResumePausedForLookup();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。fushiSelection 未加载/无选区时是 no-op。
   try {
     if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
@@ -1776,11 +1820,22 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
   fushiPendingCueWindow = cueWindow || null;
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
-  if (fushiPauseOnLookup) {
-    try { const _v = fushiFindPlayingVideo(); if (_v) { _v.pause(); fushiPausedForLookup = _v; } } catch (_) {}
+  // 已因查词暂停且视频仍停着：重复查词不必再扫（fushiFindPlayingVideo 也不会命中）。
+  if (fushiPauseOnLookup && !(fushiPausedForLookup && fushiPausedForLookup.paused)) {
+    try { const _v = fushiFindPlayingVideo(); if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}
   }
   fushiPending = true;
   fushiPendingSince = Date.now(); // BUG-1024：记发起时刻，供在途闸超时兜底
+  // SW 在消息在途时被回收（BUG-1024）：回调永不触发，下面的失败恢复路径也到不了。兜底：
+  // 12s 后仍是同一笔在途且没有弹窗在场，就恢复被查词暂停的视频（正常有响应时无操作）。
+  const fushiLookupIssuedAt = fushiPendingSince;
+  try {
+    setTimeout(() => {
+      if (fushiPending && fushiPendingSince === fushiLookupIssuedAt && !fushiHost) {
+        fushiResumePausedForLookup();
+      }
+    }, 12000);
+  } catch (_) {}
   const clientStartedAt = performance.now();
   const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
   try {
@@ -1810,6 +1865,9 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
           error: String(resp && resp.error || 'empty lookup response'),
         });
         fushiShowConnectionFailure(resp);
+        // 失败且没有在场弹窗：不会有任何「关窗」动作可触发恢复——直接恢复被查词暂停的
+        // 视频，否则服务未启动时 Shift 划词=视频被停住+只剩一条 toast、暂停无出口。
+        if (!fushiHost) fushiResumePausedForLookup();
         return;
       }
       if (!resp.data || typeof resp.data.popupJson !== 'string') {
@@ -1820,6 +1878,7 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
           term,
           error: 'missing popupJson',
         });
+        if (!fushiHost) fushiResumePausedForLookup();
         return;
       }
       const servicePerf = resp.lookupPerf || {};
@@ -1859,6 +1918,7 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
     });
   } catch (_) {
     fushiPending = false; // 「Extension context invalidated」：静默，等用户重载页面
+    if (!fushiHost) fushiResumePausedForLookup(); // 暂停不能没有出口
   }
 }
 

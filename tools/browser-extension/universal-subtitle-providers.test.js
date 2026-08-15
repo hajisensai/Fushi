@@ -560,6 +560,35 @@ test('textTracks 收割：disabled 语言轨强制升 hidden，下一轮收齐�
   assert.ok(store['example.com/p|fr'], 'hidden 轨 cues 就绪后必须进 store');
   assert.strictEqual(store['example.com/p|fr'][0].text, 'Bonjour');
   assert.strictEqual(store['example.com/p|en'].length, 1, 'en 轨不受影响');
+  // 站点播放器（hls.js 等）把 mode 拨回 disabled = 它在管理轨道：同一轨只升一次，
+  // 不得形成 1.2s 轮询的无限翻转拉锯。
+  frTrack.mode = 'disabled';
+  h.harvester.fn();
+  assert.strictEqual(frTrack.mode, 'disabled', '同一轨只尝试升 hidden 一次，站点拨回后尊重站点');
+});
+
+test('textTracks 收割：同语言多轨（English 与 English [CC]）分 key，不得穿插归并', () => {
+  const h = loadContent({
+    hostname: 'example.com',
+    pathname: '/p',
+    textTracks: [
+      {
+        kind: 'subtitles', mode: 'showing', language: 'en', label: 'English',
+        cues: [{ startTime: 1, endTime: 2, text: 'Hello' }],
+      },
+      {
+        kind: 'captions', mode: 'hidden', language: 'en', label: 'English [CC]',
+        cues: [{ startTime: 1, endTime: 2, text: '[door slams] Hello' }],
+      },
+    ],
+  });
+  const store = h.windowObj.fushiEpisodeCues;
+  h.harvester.fn();
+  const keys = Object.keys(store).filter((k) => k.startsWith('example.com/p|'));
+  assert.strictEqual(keys.length, 2, '同语言两条轨必须落成两个独立 key');
+  for (const k of keys) {
+    assert.strictEqual(store[k].length, 1, '每条轨只含自己的 cue，不得互相穿插');
+  }
 });
 
 test('textTracks 收割：分片字幕整批替换按归并合并，旧区间不丢、新区间进得来', () => {
