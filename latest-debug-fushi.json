@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 11669,
-  "notes": "Automated release-signed debug-channel build from develop @ e20d2ee. Push releases are always prerelease and never Latest.",
+  "notes": "Automated desktop debug-channel build from develop @ e20d2ee. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.1.1-debug.11666-ios.ipa",
@@ -22,15 +22,15 @@
       "version": "2.1.1-debug.11666"
     },
     {
-      "name": "fushi-2.1.1-debug.11666-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11666-windows-setup.exe",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1-debug.11666+d967a9f",
-      "version": "2.1.1-debug.11666"
-    },
-    {
       "name": "fushi-2.1.1-debug.11669-e20d2ee-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11669-e20d2ee-debug.apk",
+      "releaseSequence": 11669,
+      "tag": "v2.1.1-debug.11669+e20d2ee",
+      "version": "2.1.1-debug.11669"
+    },
+    {
+      "name": "fushi-2.1.1-debug.11669-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11669-windows-setup.exe",
       "releaseSequence": 11669,
       "tag": "v2.1.1-debug.11669+e20d2ee",
       "version": "2.1.1-debug.11669"
