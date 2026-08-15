@@ -60,8 +60,13 @@ void main() {
       expect(code.contains('appBar:'), isFalse,
           reason: '$path 页头已统一为 FushiPageHeader 大标题（BUG-1658），'
               '不得回退 Scaffold.appBar 小标题工具栏');
-      expect(code.contains('FushiPageHeader('), isTrue,
-          reason: '$path 必须用 FushiPageHeader 渲染大标题页头（BUG-1658）');
+      // 下载页是 customTitle（分段条作页头主位），扩展页是标准大标题——两种构造
+      // 都算统一页头。
+      expect(
+          code.contains('FushiPageHeader(') ||
+              code.contains('FushiPageHeader.customTitle('),
+          isTrue,
+          reason: '$path 必须用 FushiPageHeader 渲染页头（BUG-1658）');
     }
   });
 }
