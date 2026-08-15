@@ -22,11 +22,11 @@
       "version": "2.0.0-debug.11654"
     },
     {
-      "name": "fushi-2.0.0-debug.11654-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.0.0-debug.11654-windows-setup.exe",
-      "releaseSequence": 11654,
-      "tag": "v2.0.0-debug.11654+38172d4",
-      "version": "2.0.0-debug.11654"
+      "name": "fushi-2.1.0-debug.11656-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.0-debug.11656-windows-setup.exe",
+      "releaseSequence": 11656,
+      "tag": "v2.1.0-debug.11656+e3b397d",
+      "version": "2.1.0-debug.11656"
     },
     {
       "name": "fushi-2.1.0-debug.11660-cc6ca65-debug.apk",
