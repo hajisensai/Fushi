@@ -119,13 +119,31 @@ build_darwin_static_deps() {
     rm -rf "$work/svt-av1"
     git clone --depth 1 --branch "$SVTAV1_REF" \
       https://gitlab.com/AOMediaCodec/SVT-AV1.git "$work/svt-av1"
-    # BUG-1668：`-DCMAKE_POLICY_VERSION_MINIMUM=3.5` 是 CMake 官方给的兼容逃生开关。
-    # SVT-AV1 v2.3.0 在 **x86 目标**上会拉进 vendored 的 third_party/cpuinfo，而那份
-    # CMakeLists 顶上写的是 `cmake_minimum_required(VERSION <3.5)`，CMake 4.x 已经
-    # 移除对 <3.5 的兼容 → "Compatibility with CMake < 3.5 has been removed"，configure
-    # 当场失败。arm64 目标走的是 ARM 特性检测分支、根本不引入 cpuinfo，所以这个坑在
-    # 「只编构建机架构（arm64 runner）」的年代永远碰不到，一开始编 x86_64 才冒出来。
+    # BUG-1668：下面三个 `CMAKE_SYSTEM*` / policy 开关都**只为交叉编译 x86_64 而存在**，
+    # 三者缺一，产物就是坏的。SVT-AV1 v2.3.0 在 x86 目标上会拉进 vendored 的
+    # third_party/cpuinfo（`if(… AND HAVE_X86_PLATFORM) add_subdirectory(...)`），
+    # arm64 目标走 ARM 特性检测、根本不引入它——所以这三个坑在「只编构建机架构
+    # （arm64 runner）」的年代全都碰不到，一开始编 x86_64 才逐个冒出来：
+    #
+    # ① `CMAKE_SYSTEM_NAME=Darwin`：**这条是关键**。cpuinfo 的 CMakeLists 靠
+    #    `CMAKE_SYSTEM_PROCESSOR` 决定编哪些源文件，而只传 `-DCMAKE_SYSTEM_PROCESSOR`
+    #    没用——`project()` 会用**检测到的 host 值**覆盖同名普通变量（cache 里明明是
+    #    x86_64，取到的仍是 arm64）。只有设了 CMAKE_SYSTEM_NAME 才真正进入 CMake 的
+    #    交叉编译模式，用户给的 PROCESSOR 才生效。不设它的后果极隐蔽：cpuinfo 只编出
+    #    通用的 api.c/init.c，漏掉 x86 专属的 isa.c / vendor.c / x86_init.c /
+    #    x86_mach_init.c，而 SVT-AV1 自己按 x86 编译并引用了那些符号 → 链接时
+    #    `Undefined symbols: _cpuinfo_isa, _cpuinfo_x86_mach_init` → ffmpeg configure
+    #    只回一句 "SvtAv1Enc >= 0.9.0 not found using pkg-config"，完全指不到真因。
+    #    （真机实测：设上之后 cpuinfo 编出 7 个 .o 且被并进 libSvtAv1Enc.a，
+    #    `nm` 能看到 `T _cpuinfo_x86_mach_init`，无需任何 -lcpuinfo 补链。）
+    # ② `CMAKE_SYSTEM_PROCESSOR`：①生效后由它选定目标架构的源文件集。
+    # ③ `CMAKE_POLICY_VERSION_MINIMUM=3.5`：cpuinfo 那份 CMakeLists 顶上是
+    #    `CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)`，CMake 4.x 已移除对 <3.5 的兼容
+    #    → "Compatibility with CMake < 3.5 has been removed"，configure 当场失败。
+    #    这是 CMake 官方给的兼容逃生开关。
     cmake -S "$work/svt-av1" -B "$work/svt-av1/build" \
+      -DCMAKE_SYSTEM_NAME=Darwin \
+      -DCMAKE_SYSTEM_PROCESSOR="$MACOS_ARCH" \
       -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
       -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
@@ -133,23 +151,6 @@ build_darwin_static_deps() {
     cmake --build "$work/svt-av1/build" -j "$JOBS"
     cmake --install "$work/svt-av1/build"
 
-    # BUG-1668：**x86 目标专有**的 cpuinfo 必须手动补装。上游 CMakeLists：
-    #   if(NOT USE_EXTERNAL_CPUINFO AND NOT COMPILE_C_ONLY AND HAVE_X86_PLATFORM)
-    #       add_subdirectory(third_party/cpuinfo)          # 只有 x86 才引入
-    #   target_link_libraries(SvtAv1Enc PRIVATE cpuinfo_public)
-    #   install(TARGETS SvtAv1Enc ...)                     # 只装 SvtAv1Enc
-    #   set(LIBS_PRIVATE "-lpthread -lm")                  # .pc 里不提 cpuinfo
-    # 静态库的 PRIVATE 链接**不会**把 cpuinfo 的目标文件并进 libSvtAv1Enc.a，而那些
-    # .a 既不安装也不写进 SvtAv1Enc.pc。于是 ffmpeg configure 的链接测试撞上未定义
-    # 符号，只报一句 "SvtAv1Enc >= 0.9.0 not found using pkg-config"（实测 CI）。
-    # arm64 走 ARM 特性检测、根本不引入 cpuinfo，所以「只编构建机架构」的年代碰不到。
-    #
-    # 按「找得到就装」处理，不硬编码架构：x86 有就补，arm64 本来就没有、find 空转。
-    # 一并列出 build 目录里的所有静态库，方便下次上游改名时一眼看出。
-    echo "[ffmpeg-min] SVT-AV1 build 目录里的静态库："
-    find "$work/svt-av1/build" -name '*.a' -exec basename {} \; | sort -u
-    find "$work/svt-av1/build" \( -name 'libcpuinfo*.a' -o -name 'libclog*.a' \) \
-      -exec cp {} "$prefix/lib/" \;
   fi
 
   if [ ! -f "$prefix/lib/libwebpmux.a" ]; then
@@ -279,17 +280,6 @@ case "$(uname -s)" in
     EXTRA_CONFIG+=("--cc=clang -arch $MACOS_ARCH")
     EXTRA_CONFIG+=("--extra-cflags=-arch $MACOS_ARCH")
     EXTRA_CONFIG+=("--extra-ldflags=-arch $MACOS_ARCH")
-    # BUG-1668：SvtAv1Enc.pc 的 Libs.private 只有 `-lpthread -lm`，不提 x86 专有的
-    # cpuinfo（见 build_darwin_static_deps 里的长注释），所以 pkg-config 吐出的链接行
-    # 缺它 → ffmpeg 的链接测试未定义符号 → 只报一句 "SvtAv1Enc … not found"。
-    # 上面已把 cpuinfo 的 .a 补装进 prefix；这里按**文件是否存在**补进链接行，
-    # 不写架构分支：x86 有就加，arm64 压根没有这些文件、自然不加。
-    for extra_lib in cpuinfo clog; do
-      if [ -f "$STATIC_DEPS/lib/lib$extra_lib.a" ]; then
-        echo "[ffmpeg-min] 追加静态依赖 -l${extra_lib}（SVT-AV1 x86 需要）"
-        EXTRA_CONFIG+=("--extra-libs=-l$extra_lib")
-      fi
-    done
     # 只有真跨架构时才 --enable-cross-compile：它会关掉 configure 的「跑一下测试
     # 程序」探测（在 arm64 上跑 x86_64 探测程序会被 Rosetta 影响或直接失败）。
     # 同架构时保持原样跑本地探测，行为与改动前逐字一致。
