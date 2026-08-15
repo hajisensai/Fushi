@@ -37,11 +37,14 @@ void main() {
         test('#1 查词暂停由 subtitlePauseOnLookup 门控', () {
           final String src = content.readAsStringSync();
           expect(
-            src.contains('if (fushiPauseOnLookup) {\n'
-                "    try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}\n"
+            src.contains('if (fushiPauseOnLookup && '
+                '!(fushiPausedForLookup && fushiPausedForLookup.paused)) {\n'
+                '    try { const _v = fushiFindPlayingVideo(); '
+                'if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}\n'
                 '  }'),
             isTrue,
-            reason: '${content.path} 查词暂停未受用户设置门控',
+            reason: '${content.path} 查词暂停未受用户设置门控'
+                '（或暂停未记录 fushiPausedForLookup 供关窗恢复）',
           );
           expect(
             src.contains("fushiSite() === 'netflix'"),

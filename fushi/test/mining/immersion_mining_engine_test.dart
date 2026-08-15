@@ -487,6 +487,118 @@ void main() {
     expect(repo.minedContext, isNull);
   });
 
+  // ── BUG-1664：中止原因必须带**根因**，不能只报症状 ──────────────────────
+  // 真实事故：macOS 装的包（build 885，早于 BUG-1421 给 macOS bundle 补 ffmpeg）里
+  // Contents/MacOS/ 没有 ffmpeg，PATH 上也没有（macOS 不自带）→ 抽取层 Process.start
+  // 抛 ProcessException(errorCode=2, "No such file or directory")。该精确摘要**已经**
+  // 经 onFailure 送到了引擎，却只被调用方丢进诊断日志；引擎回的是常量 'required audio
+  // missing'。于是浏览器扩展批量制卡整批失败，用户只看到「已处理 0 · 失败 4」，必须翻到
+  // 沙盒容器里的 error_log.txt 才知道是缺 ffmpeg。这三条锁住「根因一路走到 abortReason」。
+
+  /// 抽取失败并**如实上报根因**（模拟 ffmpeg 可执行不存在），再返回 null。
+  Future<String?> reportingNullAudio(
+      {required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      int? audioStreamIndex,
+      int? audioStreamCount,
+      FfmpegFailureReporter? onFailure,
+      int audioChannels = 1,
+      String audioBitrate = '64k',
+      String? tlsPinSha256}) async {
+    onFailure?.call('ffmpeg launch failed: executable=ffmpeg; '
+        'errorCode=2; message=No such file or directory');
+    return null;
+  }
+
+  test('BUG-1664 abort carries the real root cause, not just the symptom',
+      () async {
+    final repo = _FakeRepo();
+    final res =
+        await build(gif: okGif, audio: reportingNullAudio, frame: nullFrame)
+            .mine(
+                const ImmersionMiningRequest(
+                    source: AnkiMiningSource.video,
+                    fields: {'expression': 'x'},
+                    mediaSource: '/tmp/in.mp4',
+                    clipStartMs: 0,
+                    clipEndMs: 1000,
+                    sentence: 's',
+                    requireAudio: true),
+                compression: MiningMediaCompression.compressed,
+                tempDir: tmp.path,
+                repo: repo);
+    expect(res.aborted, true);
+    // 症状前缀保持不变（既有调用方/测试按它断言）……
+    expect(res.abortReason, startsWith('required audio missing'));
+    // ……根因必须跟在后面，且点名 ffmpeg 与「找不到」。
+    expect(res.abortReason, contains('ffmpeg launch failed'));
+    expect(res.abortReason, contains('No such file or directory'));
+    expect(repo.minedContext, isNull);
+  });
+
+  // 没有任何抽取上报根因时（provided-bytes 路径真没跑过抽取）逐字保持旧文案，
+  // 不给用户凭空拼一个空括号。
+  test('BUG-1664 abort reason unchanged when no root cause was reported',
+      () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
+        .mine(
+            ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
+                fields: const {'expression': 'x'},
+                clipStartMs: 0,
+                clipEndMs: 0,
+                sentence: 's',
+                providedCoverBytes: Uint8List.fromList(<int>[1, 2, 3]),
+                providedCoverName: 'netflix_clip.gif',
+                requireAudio: true),
+            compression: MiningMediaCompression.compressed,
+            tempDir: tmp.path,
+            repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason, 'required audio missing');
+  });
+
+  // 超长根因（ffmpeg 的 stderr 可以很长）要截断——这串会一路走到扩展 toast。
+  test('BUG-1664 long root cause is clipped', () async {
+    final repo = _FakeRepo();
+    final String longCause = 'x' * 900;
+    Future<String?> longReportingAudio(
+        {required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int? audioStreamIndex,
+        int? audioStreamCount,
+        FfmpegFailureReporter? onFailure,
+        int audioChannels = 1,
+        String audioBitrate = '64k',
+        String? tlsPinSha256}) async {
+      onFailure?.call(longCause);
+      return null;
+    }
+
+    final res =
+        await build(gif: okGif, audio: longReportingAudio, frame: nullFrame)
+            .mine(
+                const ImmersionMiningRequest(
+                    source: AnkiMiningSource.video,
+                    fields: {'expression': 'x'},
+                    mediaSource: '/tmp/in.mp4',
+                    clipStartMs: 0,
+                    clipEndMs: 1000,
+                    sentence: 's',
+                    requireAudio: true),
+                compression: MiningMediaCompression.compressed,
+                tempDir: tmp.path,
+                repo: repo);
+    expect(res.aborted, true);
+    expect(res.abortReason!.length, lessThan(longCause.length));
+    expect(res.abortReason, contains('…'));
+  });
+
   // ── 视频制卡封面图片模式（VideoMiningImageMode）─────────────────────────
   // gif 模式与旧阶梯逐字等价（上面 'gif+audio success' / 'gif fails -> frame fallback'
   // 已覆盖，且 imageMode 默认 gif）。以下覆盖两个静态模式：主动选静态图不置 degradedToStill、

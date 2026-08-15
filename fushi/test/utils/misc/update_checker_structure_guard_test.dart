@@ -102,8 +102,17 @@ void main() {
     // canShowDialogFromContext）共享，part 契约禁止 part 内 import 无法拆库，与 Windows 的
     // reconcilePendingWindowsInstallerHandoff 平级。release 净增 ~156 行到 1986，故把 release
     // 天花板从 1900 上调到 2050（留 ~64 行合理余量，与既有余量风格一致）。
+    // iOS 更新落地入口分流（TestFlight / App Store / 发布页）：`_showFallbackDialog`
+    // 从「一个按钮打开 html_url」变成「主按钮打开安装来源对应的入口 + 次要按钮保留
+    // 发布页」，两处调用点各多一次 `await updater.resolveDownloadLanding(...)` 与随后的
+    // `context.mounted` 复查（await 之后 context 可能已失效）。这些都长在 UpdateChecker
+    // 门面的私有作用域里（`_showFallbackDialog` 与兄弟 `_showUpdateDialog` 必须同处一
+    // part，拆开等于把两个同族对话框劈到两个文件）；纯文案映射
+    // `updateLandingActionLabel` 已移进 ui part（对话框文案的正确归属）。release 净增
+    // ~30 行到 2065，故把 release 天花板从 2050 上调到 2090（留 ~25 行合理余量，与既有
+    // 余量风格一致）。
     const int kDownloadCeiling = 1780;
-    const int kReleaseCeiling = 2050;
+    const int kReleaseCeiling = 2090;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download

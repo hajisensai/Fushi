@@ -231,11 +231,39 @@ abstract class FfmpegBackend {
 ///    用户自己装 ffmpeg；否则没装 ffmpeg 的电脑会丢内封字幕/cue 动图/制卡音频）；
 /// 3. 回退系统 PATH 上的 `ffmpeg`。
 String resolveFfmpegExecutable() => resolveFfmpegExecutableFrom(
-      // 新名优先，旧名回退（改名前公开的用户环境变量）。
-      override: Platform.environment['FUSHI_FFMPEG'] ??
-          Platform.environment['FUSHI_FFMPEG'],
+      override: ffmpegEnvOverride(),
       bundledPath: _bundledFfmpegPath(),
     );
+
+/// BUG-1664：ffmpeg 可执行的环境覆盖——**新名优先，旧名回退**（`HIBIKI_FFMPEG` 是改名
+/// 前公开给用户的变量名，仍须认）。
+///
+/// 收成单一入口是因为原先 5 个调用点各自手写 `env['FUSHI_FFMPEG'] ?? env['FUSHI_FFMPEG']`
+/// ——两边同名，注释承诺的旧名回退**从未生效**（改名批次的复制粘贴漏改）。让"回退去问
+/// 哪个名字"只存在一处，这类错误就无处可写。
+String? ffmpegEnvOverride() => resolveEnvOverrideFrom(
+      Platform.environment,
+      const <String>['FUSHI_FFMPEG', 'HIBIKI_FFMPEG'],
+    );
+
+/// ffprobe 版的 [ffmpegEnvOverride]（同样新名优先、旧名回退）。
+String? ffprobeEnvOverride() => resolveEnvOverrideFrom(
+      Platform.environment,
+      const <String>['FUSHI_FFPROBE', 'HIBIKI_FFPROBE'],
+    );
+
+/// 纯函数：在 [env] 里按 [names] 的先后顺序取第一个**非空**值（新名在前、旧名在后）。
+///
+/// 空串按「没设」处理：`FUSHI_FFMPEG=` 这种空赋值不该把旧名的有效路径挡掉，也不该被
+/// 当成可执行路径喂给 `Process.start`。纯函数是为了让优先级本身可被单测钉住——
+/// `Platform.environment` 不可注入，行为只能靠这一层来锁。
+String? resolveEnvOverrideFrom(Map<String, String> env, List<String> names) {
+  for (final String name in names) {
+    final String? value = env[name];
+    if (value != null && value.trim().isNotEmpty) return value;
+  }
+  return null;
+}
 
 /// 纯函数：按「覆盖 > 捆绑 > PATH」决定 ffmpeg 可执行（便于单测优先级）。
 String resolveFfmpegExecutableFrom({
@@ -260,8 +288,7 @@ String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 /// 同款优先级：`FUSHI_FFPROBE` 覆盖 > 程序旁捆绑 `ffprobe(.exe)`（打包时与 ffmpeg
 /// 并排塞进各桌面产物）> 系统 PATH 上的 `ffprobe`。
 String resolveFfprobeExecutable() => resolveFfprobeExecutableFrom(
-      override: Platform.environment['FUSHI_FFPROBE'] ??
-          Platform.environment['FUSHI_FFPROBE'],
+      override: ffprobeEnvOverride(),
       bundledPath: _bundledFfprobePath(),
     );
 
@@ -590,9 +617,7 @@ class CliFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
       _runCliFfmpeg(
-        // 新名优先，旧名回退（改名前公开的用户环境变量）。
-        override: Platform.environment['FUSHI_FFMPEG'] ??
-            Platform.environment['FUSHI_FFMPEG'],
+        override: ffmpegEnvOverride(),
         bundledPath: _bundledFfmpegPath(),
         isWindows: Platform.isWindows,
         args: args,
@@ -603,8 +628,7 @@ class CliFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       _runCliFfprobe(
-        override: Platform.environment['FUSHI_FFPROBE'] ??
-            Platform.environment['FUSHI_FFPROBE'],
+        override: ffprobeEnvOverride(),
         bundledPath: _bundledFfprobePath(),
         args: args,
         timeout: timeout,
@@ -718,7 +742,7 @@ void setFfmpegBackendForTesting(FfmpegBackend? backend) {
 }
 
 FfmpegBackend _selectBackend() {
-  final String? override = Platform.environment['FUSHI_FFMPEG']?.trim();
+  final String? override = ffmpegEnvOverride()?.trim();
   if (override != null && override.isNotEmpty) return const CliFfmpegBackend();
   if (Platform.isAndroid || Platform.isIOS) return const KitFfmpegBackend();
   return const CliFfmpegBackend();

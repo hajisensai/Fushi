@@ -3423,5 +3423,10 @@
   "dict_language_description": "决定这本词典的文字用哪种字体渲染。自动 = 用词典自己声明的语言。",
   "dict_language_auto": "自动",
   "book_language_action": "内容语言",
-  "book_language_description": "决定这本书的正文用哪种字体渲染。自动 = 用 EPUB 里声明的语言。"
+  "book_language_description": "决定这本书的正文用哪种字体渲染。自动 = 用 EPUB 里声明的语言。",
+  "local_audio_reference_unavailable": "没有「所有文件访问权限」无法引用原文件，已改为导入副本。",
+  "video_collection_scrape": "刮削资料与封面",
+  "update_testflight_open": "打开 TestFlight",
+  "update_app_store_open": "打开 App Store",
+  "update_release_page_open": "发布页"
 }

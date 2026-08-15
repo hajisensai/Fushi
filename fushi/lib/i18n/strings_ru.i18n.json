@@ -3423,5 +3423,10 @@
   "dict_language_description": "Decides which font renders this dictionary's text. Automatic uses the language the dictionary declares.",
   "dict_language_auto": "Automatic",
   "book_language_action": "Content language",
-  "book_language_description": "Decides which font renders this book's text. Automatic uses the language declared in the EPUB."
+  "book_language_description": "Decides which font renders this book's text. Automatic uses the language declared in the EPUB.",
+  "local_audio_reference_unavailable": "Can't reference the original file without all-files access; a copy was imported instead.",
+  "video_collection_scrape": "Scrape info & cover",
+  "update_testflight_open": "Open TestFlight",
+  "update_app_store_open": "Open App Store",
+  "update_release_page_open": "Release page"
 }

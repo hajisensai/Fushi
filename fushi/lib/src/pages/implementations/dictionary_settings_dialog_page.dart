@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -19,7 +20,10 @@ class AudioSourcesDialog extends StatefulWidget {
   final void Function(List<AudioSourceConfig>) onSave;
 
   /// 选文件并导入为一个 localAudio 源（未持久化）；返回 null 表示用户取消。
-  /// [reference]=true（仅桌面开关可启）时引用原文件不复制（BUG-483）。
+  ///
+  /// [reference] 是**用户意图**（「引用原文件不复制」开关，BUG-483）而非承诺：真正
+  /// 能不能引用由选择器实际交回的是真实路径还是 cache 临时副本决定，wiring 侧按事实
+  /// 降级并提示（BUG-1667）。
   final Future<AudioSourceConfig?> Function(bool reference)? onPickLocalDb;
 
   /// 打开某个本地音频库的「子来源顺序 + 逐源启用」编辑器（按库路径）。
@@ -45,9 +49,24 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   late List<AudioSourceConfig> _sources;
   bool _importing = false;
 
-  /// BUG-483：导入本地音频库时「引用原文件（不复制）」。仅桌面可见/可选；移动端
-  /// file_picker 返回的是会被系统清掉的缓存临时副本，引用即指向消失的文件，恒 false。
-  bool _referenceOriginal = false;
+  /// BUG-483：导入本地音频库时「引用原文件（不复制）」的**用户意图**。
+  ///
+  /// BUG-1667 起不再写死 `isDesktopPlatform`：安卓拿到全文件访问后走 SAF 解析真实
+  /// 路径、不产生任何副本，「移动端只能拿缓存副本」的旧前提已不成立。开关在桌面与
+  /// 安卓都可见；真拿不到真实路径（安卓未授权 → 回退 file_picker 的 cache 副本）时
+  /// 由 wiring 侧按事实降级为复制并提示，UI 不再替平台预判。
+  ///
+  /// 安卓默认开：一个 android.db 常见 1~6 GB，复制进内部存储要 2 倍体积，
+  /// 那正是「安卓上配不起来本地音频」的直接原因，复制不该是移动端的默认。
+  /// 桌面维持原默认（关），不改既有行为。
+  bool _referenceOriginal = _referenceOriginalDefault;
+
+  /// 「引用原文件」开关是否可见：能交出用户真实路径的平台才有意义。
+  static bool get _canReferenceOriginal =>
+      isDesktopPlatform || defaultTargetPlatform == TargetPlatform.android;
+
+  static bool get _referenceOriginalDefault =>
+      defaultTargetPlatform == TargetPlatform.android;
   bool _urlValid = false;
   final TextEditingController _controller = TextEditingController();
   final FocusNode _urlFocusNode = FocusNode();
@@ -139,10 +158,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                       onPressed: _importing ? null : _addLocalDb,
                     ),
                   ),
-                  // BUG-483：仅桌面暴露「引用原文件不复制」开关（移动端缓存副本不可引用）。
+                  // BUG-483/1667：在能交出真实路径的平台暴露「引用原文件不复制」
+                  // 开关（桌面 + 安卓；安卓未授全文件访问时由 wiring 降级为复制）。
                   // 走共享 MD3 开关行（AdaptiveSettingsSwitchRow），不直接用
                   // 裸 SwitchListTile —— 否则触犯 md3 设计系统守卫且 chrome 不一致。
-                  if (isDesktopPlatform)
+                  if (_canReferenceOriginal)
                     AdaptiveSettingsSwitchRow(
                       icon: Icons.link_outlined,
                       title: t.local_audio_reference_original,
@@ -438,8 +458,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Future<void> _addLocalDb() async {
     setState(() => _importing = true);
     try {
-      final AudioSourceConfig? added =
-          await widget.onPickLocalDb!(_referenceOriginal && isDesktopPlatform);
+      final AudioSourceConfig? added = await widget
+          .onPickLocalDb!(_referenceOriginal && _canReferenceOriginal);
       if (!mounted) return;
       if (added != null) {
         setState(() => _sources.insert(0, added));

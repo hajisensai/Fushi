@@ -365,11 +365,15 @@ class UpdateChecker {
       final UpdateAsset? asset = selection.asset;
       final String? downloadUrl = asset?.url;
 
-      // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
+      // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 前往
+      // 本平台的分发入口（iOS = TestFlight / App Store / 发布页，其余 = 发布页）。
       if (downloadUrl == null) {
         final String? htmlUrl = json['html_url'] as String?;
-        if (htmlUrl != null && context.mounted) {
-          _showFallbackDialog(context, version, releaseBody, htmlUrl);
+        if (htmlUrl != null) {
+          final UpdateLanding landing =
+              await updater.resolveDownloadLanding(htmlUrl);
+          if (!context.mounted) return;
+          _showFallbackDialog(context, version, releaseBody, landing, htmlUrl);
         }
         return;
       }
@@ -397,10 +401,13 @@ class UpdateChecker {
         _showUpdateDialog(context, version, releaseBody, asset!, updater,
             customProxy: customProxy);
       } else {
-        // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
+        // 能检查但不能自装（本期 iOS/Linux）：弹「前往下载」→ 本平台分发入口。
         final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null) {
-          _showFallbackDialog(context, version, releaseBody, htmlUrl);
+          final UpdateLanding landing =
+              await updater.resolveDownloadLanding(htmlUrl);
+          if (!context.mounted) return;
+          _showFallbackDialog(context, version, releaseBody, landing, htmlUrl);
         }
       }
     } catch (e, stack) {
@@ -728,26 +735,44 @@ class UpdateChecker {
     );
   }
 
-  /// Fallback dialog for when no APK asset exists — opens browser.
+  /// 本平台没有可应用内安装的包时的对话框：主按钮打开 [landing]（iOS 上可能是
+  /// TestFlight / App Store），[releaseHtmlUrl] 是 GitHub 发布页。
+  ///
+  /// 主按钮不落在发布页时额外给一个「发布页」次要入口：GitHub Release 里的未签名
+  /// ipa 是侧载用户唯一的取包处，主按钮改指商店后不能把这条路一起掐掉。
   static void _showFallbackDialog(
     BuildContext context,
     String version,
     String releaseNotes,
-    String htmlUrl,
+    UpdateLanding landing,
+    String releaseHtmlUrl,
   ) {
+    final bool showReleasePageAction =
+        landing.kind != UpdateLandingKind.releasePage;
     showAppDialog<void>(
       context: context,
       builder: (ctx) => UpdateAvailableDialog(
         version: version,
         releaseNotes: releaseNotes,
-        primaryLabel: t.update_download,
+        primaryLabel: updateLandingActionLabel(landing.kind),
         onPrimary: () {
           Navigator.of(ctx).pop();
           launchUrl(
-            Uri.parse(htmlUrl),
+            Uri.parse(landing.url),
             mode: LaunchMode.externalApplication,
           );
         },
+        secondaryLabel:
+            showReleasePageAction ? t.update_release_page_open : null,
+        onSecondary: showReleasePageAction
+            ? () {
+                Navigator.of(ctx).pop();
+                launchUrl(
+                  Uri.parse(releaseHtmlUrl),
+                  mode: LaunchMode.externalApplication,
+                );
+              }
+            : null,
       ),
     );
   }

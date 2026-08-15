@@ -15,7 +15,8 @@ const settingDefaults = Object.freeze({
   subtitleDragDropEnabled: true,
   subtitleAutoScroll: true,
   netflixHideNextEpisode: true,
-  subtitlePauseOnLookup: false,
+  // 默认开启，对齐 app 侧 pauseOnLookup 默认 true（TODO-1108）；显式选择（含旧键）优先。
+  subtitlePauseOnLookup: true,
   subtitleOverlayAutoLookup: false,
   subtitleOverlayBlur: false,
   subtitleOverlayAllTracks: false,
