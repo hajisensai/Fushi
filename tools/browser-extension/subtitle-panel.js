@@ -646,6 +646,14 @@
         sendResponse({ ok: handled });
         return false;
       }
+      if (msg.type === 'fushiSubtitleSidePanelLookupClosed') {
+        // Side Panel 查词面板关闭 → 恢复由查词暂停的视频（content.js 只恢复「确实是查词
+        // 暂停的」，用户自己暂停的不动）。
+        var closed = typeof window.fushiLookupClosedFromSidePanel === 'function' &&
+          window.fushiLookupClosedFromSidePanel() === true;
+        sendResponse({ ok: closed });
+        return false;
+      }
       if (msg.type === 'fushiSubtitleSidePanelMine') {
         var mineCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
         var result = typeof window.fushiMineFromSidePanel === 'function'

@@ -13,8 +13,9 @@ const vm = require('node:vm');
 
 const CONTENT = path.join(__dirname, 'content.js');
 
-// 返回带可追踪 getSelection 的 sandbox 加载结果。initialSelectionCollapsed 控制原生选区是否可见。
-function loadContent({ collapsed = false } = {}) {
+// 返回带可追踪 getSelection 的 sandbox 加载结果。collapsed 控制原生选区是否可见；
+// anchorNode 可注入选区锚点（模拟选区落在 contenteditable 等可编辑区）。
+function loadContent({ collapsed = false, anchorNode = null } = {}) {
   const src = fs.readFileSync(CONTENT, 'utf8');
   const docListeners = Object.create(null);
   const winListeners = Object.create(null);
@@ -25,6 +26,7 @@ function loadContent({ collapsed = false } = {}) {
   const nativeSelection = {
     rangeCount: 1,
     isCollapsed: collapsed,
+    anchorNode,
     removeAllRanges() {
       removeAllRangesCalls += 1;
       this.rangeCount = 0;
@@ -118,4 +120,29 @@ test('塌缩选区（仅 caret，无可见蓝色）：不做无谓 removeAllRang
   const ev = { shiftKey: true, buttons: 0, clientX: 300, clientY: 400 };
   for (const fn of docListeners.mousemove) fn(ev);
   assert.strictEqual(getRemoveCalls(), 0, '塌缩选区无可见蓝色，不应调用 removeAllRanges');
+});
+
+test('选区落在 contenteditable 里：绝不清（用户报「开着插件有时无法粘贴」的主根因）', () => {
+  // Ctrl+Shift+V（粘贴为纯文本）按下期间 Shift 在按住态，任何一次 mousemove 都会走清理路径；
+  // 富文本编辑器（Lexical/ProseMirror 等）的选区被 removeAllRanges 抹掉后粘贴静默丢弃。
+  const editor = {
+    nodeType: 1,
+    tagName: 'DIV',
+    getAttribute: (name) => (name === 'contenteditable' ? 'true' : null),
+    parentElement: null,
+  };
+  const textNode = { nodeType: 3, parentElement: editor };
+  const { docListeners, getRemoveCalls } = loadContent({ collapsed: false, anchorNode: textNode });
+  const ev = { shiftKey: true, buttons: 0, clientX: 300, clientY: 400 };
+  for (const fn of docListeners.mousemove) fn(ev);
+  assert.strictEqual(getRemoveCalls(), 0, '可编辑区内的选区是用户为输入/粘贴准备的，绝不能清');
+});
+
+test('普通页面选区（非可编辑区锚点）仍照常清理，TODO-1279 行为不回退', () => {
+  const plain = { nodeType: 1, tagName: 'P', getAttribute: () => null, parentElement: null };
+  const textNode = { nodeType: 3, parentElement: plain };
+  const { docListeners, getRemoveCalls } = loadContent({ collapsed: false, anchorNode: textNode });
+  const ev = { shiftKey: true, buttons: 0, clientX: 300, clientY: 400 };
+  for (const fn of docListeners.mousemove) fn(ev);
+  assert.ok(getRemoveCalls() >= 1, '非可编辑区选区仍应清掉（多余蓝色选区问题不回退）');
 });

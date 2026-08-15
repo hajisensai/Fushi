@@ -750,6 +750,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
+      } else if (msg.type === 'jimakuSearch') {
+        // Jimaku 查字幕①：Side Panel 搜索框 → server /api/subtitle/jimaku/search（server 持
+        // 用户在 app 设置里填的 Jimaku API key；真人剧 anime=false 补搜也在 server 侧）。
+        const r = await fetch(base + '/api/subtitle/jimaku/search', {
+          method: 'POST',
+          signal: AbortSignal.timeout(20000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            query: msg.query || '',
+            ...(Number.isInteger(msg.episode) ? { episode: msg.episode } : {}),
+            ...(typeof msg.anime === 'boolean' ? { anime: msg.anime } : {}),
+          }),
+        });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
+      } else if (msg.type === 'jimakuFetch') {
+        // Jimaku 查字幕②：候选 handle → server 下载+自动识别编码+解析，响应与
+        // /api/subtitle/parse 同形（{format,cues}），Side Panel 直接走既有 InstallTrack。
+        const r = await fetch(base + '/api/subtitle/jimaku/fetch', {
+          method: 'POST',
+          signal: AbortSignal.timeout(30000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ handle: msg.handle || '' }),
+        });
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
       } else if (msg.type === 'mine') {
         // 纯文本挖词（非流媒体页 / 回落）：直接 POST {fields,sentence}，无媒体。
         const r = await fetch(base + '/api/mine', {

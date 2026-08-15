@@ -104,17 +104,40 @@ function fushiApplyPauseOnLookupPrefs(saved) {
 // 因查词被**我们**暂停的那个 <video>；null=没有。它是恢复侧唯一真相源（对齐 app 的
 // _pausedForLookup 不变式）：用户自己暂停的视频绝不因关弹窗被播起来。
 let fushiPausedForLookup = null;
-// 记「被我们暂停」并挂一次性 play 监听：用户手动点播放（不是我们 resume——我们 resume 前
-// 已先置 null）即视为收回控制权，清掉标记。这样「查词暂停 → 用户播放 → 用户再暂停 → 关窗」
-// 不会把用户自己按下的暂停顶掉；SPA 同元素换 src 继续播的场景同样被覆盖。
-function fushiMarkPausedForLookup(v) {
-  if (fushiPausedForLookup === v) return; // 重复查词同一视频：已挂过监听，别叠加
-  fushiPausedForLookup = v;
+// 「用户手动按下播放」的一次性监听：手动播放 = 收回控制权 + 「我看完了，继续看片」——
+// ①清掉 fushiPausedForLookup（此后关窗/失败路径绝不把用户的暂停顶掉）；②把查词浮层
+// （页面弹窗 + Side Panel 查词面板）一并关掉。我们自己的恢复（fushiResumePausedForLookup）
+// 会先解除武装再 play，不会误触发。
+let fushiPlayDismissTarget = null;
+function fushiArmPlayDismiss(v) {
+  if (!v || fushiPlayDismissTarget === v) return; // 同一视频已挂过监听，别叠加
+  fushiPlayDismissTarget = v;
   try {
     v.addEventListener('play', function () {
+      if (fushiPlayDismissTarget !== v) return; // 已解除武装（我们自己的恢复）
+      fushiPlayDismissTarget = null;
       if (fushiPausedForLookup === v) fushiPausedForLookup = null;
+      fushiDismissLookupOnPlay();
     }, { once: true });
   } catch (_) {}
+}
+// 手动播放 → 关掉两处查词浮层。页面弹窗直接关（fushiRemoveContainer 幂等；其恢复步骤
+// 因标记已清而为 no-op）；Side Panel 是独立扩展页，发一条 runtime 消息让它自关。
+function fushiDismissLookupOnPlay() {
+  try { fushiRemoveContainer(); } catch (_) {}
+  if (fushiExtAlive()) {
+    try {
+      chrome.runtime.sendMessage({ type: 'fushiLookupDismiss', reason: 'play' }, function () {
+        try { void chrome.runtime.lastError; } catch (_) {}
+      });
+    } catch (_) {}
+  }
+}
+// 记「被我们暂停」：恢复真相源 + 顺带武装 play 监听。
+function fushiMarkPausedForLookup(v) {
+  if (fushiPausedForLookup === v) return;
+  fushiPausedForLookup = v;
+  fushiArmPlayDismiss(v);
 }
 // 恢复侧唯一实现（对齐 app 的 shouldResumeAfterLookupDismiss）：只恢复确实由查词暂停的
 // 那个视频；用户已手动继续播放的不重复 play（v.paused 守卫）。除关窗汇聚点外，查词失败/
@@ -123,6 +146,7 @@ function fushiResumePausedForLookup() {
   if (!fushiPausedForLookup) return;
   const pausedVideo = fushiPausedForLookup;
   fushiPausedForLookup = null;
+  fushiPlayDismissTarget = null; // 我们自己的恢复不算「用户手动播放」，先解除武装
   try {
     if (pausedVideo.isConnected !== false && pausedVideo.paused) {
       const played = pausedVideo.play();
@@ -1556,14 +1580,46 @@ function fushiClearHighlightOverlay() {
   }
 }
 
+// 当前原生选区是否落在宿主页可编辑区（input/textarea/contenteditable）里。用户在编辑器里
+// 选中/放好 caret 通常是为了输入或粘贴——那不是我们的选区，绝不能清。contenteditable 的选区
+// 走 window.getSelection()（input/textarea 的不走，天然幸免），富文本框架（Lexical/ProseMirror
+// 等）靠 selectionchange 维护内部态，被 removeAllRanges 抹掉后粘贴会静默丢弃。
+function fushiNodeInEditable(node) {
+  try {
+    if (!node) return false;
+    let el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    while (el) {
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+      if (el.isContentEditable === true) return true;
+      if (typeof el.getAttribute === 'function') {
+        const ce = el.getAttribute('contenteditable');
+        if (ce === '' || ce === 'true') return true;
+      }
+      el = el.parentElement;
+    }
+  } catch (_) {}
+  return false;
+}
+function fushiSelectionInEditable() {
+  try {
+    const sel = window.getSelection && window.getSelection();
+    return fushiNodeInEditable(sel && sel.anchorNode);
+  } catch (_) { return false; }
+}
+
 // TODO-1279：清掉浏览器原生文本选区（window.getSelection 的蓝色高亮）。只动原生 DOM Selection，
 // 不碰我们自绘的 #fushi-highlight-overlay 覆盖层（独立 <div>，与原生选区无关），也不碰
 // fushiSelection.selection（纯 JS 取词状态，覆盖层就从它的 ranges 只读取几何）。塌缩/空选区时
-// no-op：避免无谓清掉输入框 caret 或没有可见蓝色时反复调用。
+// no-op：避免无谓清掉输入框 caret 或没有可见蓝色时反复调用。落在可编辑区的选区也 no-op：
+// 那是用户为输入/粘贴准备的（Ctrl+Shift+V 的 Shift 会触发本清理路径——用户报「开着插件
+// 有时无法粘贴」的主根因）。
 function fushiClearNativeSelection() {
   try {
     const sel = window.getSelection && window.getSelection();
-    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) sel.removeAllRanges();
+    if (!sel || !(sel.rangeCount > 0) || sel.isCollapsed) return;
+    if (fushiSelectionInEditable()) return;
+    sel.removeAllRanges();
   } catch (_) { /* 某些跨域/detached 上下文 getSelection 可能抛：静默 */ }
 }
 
@@ -1660,8 +1716,12 @@ function fushiRemoveContainer() {
   // 嵌套查词只换弹窗内容、不经此处，天然不会提前恢复——与 app「整栈关空才恢复」同语义。
   fushiResumePausedForLookup();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。fushiSelection 未加载/无选区时是 no-op。
+  // 例外：当前原生选区/caret 落在宿主可编辑区时不清——那是用户点进输入框准备输入/粘贴放的
+  // caret（本 mousedown 关窗恰好发生在那一击上），clearSelection 的 removeAllRanges 会把
+  // 富文本编辑器刚放好的插入点抹掉 → 粘贴静默失效（用户报「开着插件有时无法粘贴」）。
   try {
-    if (window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
+    if (!fushiSelectionInEditable() &&
+        window.fushiSelection && typeof window.fushiSelection.clearSelection === 'function') {
       window.fushiSelection.clearSelection();
     }
   } catch (_) { /* no-op */ }
@@ -1824,6 +1884,11 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
   if (fushiPauseOnLookup && !(fushiPausedForLookup && fushiPausedForLookup.paused)) {
     try { const _v = fushiFindPlayingVideo(); if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}
   }
+  // 即使这次没有可暂停的（视频早已是暂停态，含用户自己暂停的），也武装「手动播放即关浮层」：
+  // 用户按下播放就是「继续看片」，查词浮层不该留着挡画面。
+  if (fushiPauseOnLookup) {
+    try { fushiArmPlayDismiss(fushiPausedForLookup || document.querySelector('video')); } catch (_) {}
+  }
   fushiPending = true;
   fushiPendingSince = Date.now(); // BUG-1024：记发起时刻，供在途闸超时兜底
   // SW 在消息在途时被回收（BUG-1024）：回调永不触发，下面的失败恢复路径也到不了。兜底：
@@ -1962,10 +2027,17 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
 window.fushiPrepareLookupFromSidePanel = function (cueWindow) {
   fushiPendingCueWindow = cueWindow && typeof cueWindow === 'object' ? cueWindow : null;
   if (fushiPauseOnLookup) {
-    // Side Panel 自渲染词典、没有「面板关闭」回调到 content script，故此路径只暂停、
-    // 不记 fushiPausedForLookup（否则会被后续无关的页面弹窗关闭误恢复）；恢复由用户手动。
-    try { const video = fushiFindPlayingVideo(); if (video) video.pause(); } catch (_) {}
+    // Side Panel 现在有关闭回调（fushiSubtitleSidePanelLookupClosed → fushiLookupClosedFromSidePanel），
+    // 与页面弹窗同语义：暂停并记录，面板关闭即恢复；手动播放（fushiArmPlayDismiss）即关浮层。
+    try { const video = fushiFindPlayingVideo(); if (video) { video.pause(); fushiMarkPausedForLookup(video); } } catch (_) {}
+    try { fushiArmPlayDismiss(fushiPausedForLookup || document.querySelector('video')); } catch (_) {}
   }
+  return true;
+};
+// Side Panel 查词面板真正关闭时由 subtitle-panel.js 转发到这里：恢复由查词暂停的视频。
+// 「手动播放→dismiss 消息→面板 close→这里」的环路安全：那时标记已被 play 监听清掉，恢复是 no-op。
+window.fushiLookupClosedFromSidePanel = function () {
+  fushiResumePausedForLookup();
   return true;
 };
 window.fushiMineFromSidePanel = function (fields, cueWindow) {
@@ -2350,8 +2422,13 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
     if (hl.rects.length) {
       fushiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它
       wordRect = hl.bounds;
-    } else if (window.fushiSelection && typeof window.fushiSelection.highlightSelection === 'function') {
+    } else if (window.fushiSelection && typeof window.fushiSelection.highlightSelection === 'function' &&
+        !(window.fushiSelection.selection && window.fushiSelection.selection.ranges &&
+          window.fushiSelection.selection.ranges[0] &&
+          fushiNodeInEditable(window.fushiSelection.selection.ranges[0].startContainer))) {
       // 兜底：selection 结构异常（无 ranges）时退回旧的 bbox 计算，只为拿锚点，不画 DOM 包裹高亮。
+      // 被查词落在宿主可编辑区时跳过——扩展里 highlightSelection 走 DOM 包裹路径
+      // （__fushiCssHighlightsSupported=false），改写编辑器文本节点会打散其内部模型与 caret。
       wordRect = window.fushiSelection.highlightSelection(termLen);
     }
   } catch (_) { wordRect = null; }

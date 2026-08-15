@@ -25,6 +25,7 @@ class VideoSubtitleSearchRequest {
     this.episode,
     this.fingerprint,
     this.page = 1,
+    this.anime,
   })  : alternateTitles = List<String>.unmodifiable(alternateTitles),
         languages = List<String>.unmodifiable(languages),
         assert(page > 0);
@@ -37,6 +38,10 @@ class VideoSubtitleSearchRequest {
   final int? episode;
   final LocalVideoFingerprint? fingerprint;
   final int page;
+
+  /// 内容类型提示（目前只有 Jimaku 消费）：Jimaku 的 `anime` 是硬相等过滤且服务端默认
+  /// true——真人剧/日剧必须显式 false 才搜得到。null = 不带参数（旧行为，只搜番剧）。
+  final bool? anime;
 
   String get effectiveQuery => query?.trim().isNotEmpty == true
       ? query!.trim()

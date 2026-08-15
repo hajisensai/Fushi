@@ -8,11 +8,13 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+import 'package:fushi/src/media/video/jimaku_client.dart' show JimakuClient;
 import 'package:fushi/src/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi/src/sync/remote_jimaku_subtitle_handlers.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
@@ -64,6 +66,7 @@ class YomitanApiServer {
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
     void Function(String build, String? version)? onExtensionReport,
+    String? Function()? jimakuApiKeyProvider,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -78,6 +81,7 @@ class YomitanApiServer {
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
         _onExtensionReport = onExtensionReport,
+        _jimakuApiKeyProvider = jimakuApiKeyProvider,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -105,10 +109,40 @@ class YomitanApiServer {
   // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
   // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
   final void Function(String build, String? version)? _onExtensionReport;
+  // 「Jimaku 查字幕」扩展桥：从偏好读用户 API key 的供给器。未注入/key 为空时两个
+  // jimaku 端点回 {ok:false, error:'no-api-key'}（扩展提示去 app 设置里填 key）。
+  final String? Function()? _jimakuApiKeyProvider;
   final String? _apiKey;
   final bool _allowLan;
 
   HttpServer? _server;
+
+  // Jimaku client 按 key 缓存复用（每请求新建会泄漏 http.Client）；key 变更时换新关旧。
+  JimakuClient? _jimakuClient;
+  String? _jimakuClientKey;
+  // 搜索候选按 handle 暂存（download 需要 file url 等上下文）；插入序 LRU，上限截断。
+  static const int _kJimakuCandidateCacheLimit = 200;
+  final Map<String, RemoteJimakuCandidate> _jimakuCandidates =
+      <String, RemoteJimakuCandidate>{};
+
+  JimakuClient? _jimakuClientFor() {
+    final String? key = _jimakuApiKeyProvider?.call();
+    if (key == null || key.trim().isEmpty) return null;
+    if (_jimakuClient == null || _jimakuClientKey != key) {
+      _jimakuClient?.close();
+      _jimakuClient = JimakuClient(apiKey: key);
+      _jimakuClientKey = key;
+    }
+    return _jimakuClient;
+  }
+
+  void _rememberJimakuCandidate(String handle, RemoteJimakuCandidate c) {
+    _jimakuCandidates.remove(handle); // 重插到尾部（LRU 触达即续期）
+    _jimakuCandidates[handle] = c;
+    while (_jimakuCandidates.length > _kJimakuCandidateCacheLimit) {
+      _jimakuCandidates.remove(_jimakuCandidates.keys.first);
+    }
+  }
 
   // 单词音频短命 token（与 FushiSyncServer 同款模型）：/api/lookup/audio 存字节、返
   // 免鉴权的 /api/lookup/audio/file?id= URL；命中即续期，5 分钟无访问后 prune。
@@ -140,6 +174,10 @@ class YomitanApiServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
+    _jimakuClient?.close();
+    _jimakuClient = null;
+    _jimakuClientKey = null;
+    _jimakuCandidates.clear();
   }
 
   shelf.Middleware _authMiddleware() {
@@ -264,9 +302,38 @@ class YomitanApiServer {
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
         return _handleSubtitleParse(request);
+      case '/api/subtitle/jimaku/search':
+        return _handleJimakuSearch(request);
+      case '/api/subtitle/jimaku/fetch':
+        return _handleJimakuFetch(request);
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
+  }
+
+  /// 「Jimaku 查字幕」扩展桥①搜索：body `{query?, anilistId?, episode?, anime?}`。
+  /// 逻辑在 [buildJimakuSearchResponse]（含真人剧 anime=false 补搜）；候选按 handle
+  /// 暂存供 fetch。
+  Future<shelf.Response> _handleJimakuSearch(shelf.Request request) async {
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    return _json(await buildJimakuSearchResponse(
+      body,
+      clientProvider: _jimakuClientFor,
+      rememberCandidate: _rememberJimakuCandidate,
+    ));
+  }
+
+  /// 「Jimaku 查字幕」扩展桥②下载+解析：body `{handle}`。响应与 `/api/subtitle/parse`
+  /// 同形（`{format, cues:[...]}` + filename/language），扩展直接走既有 InstallTrack 落地。
+  Future<shelf.Response> _handleJimakuFetch(shelf.Request request) async {
+    final Map<String, dynamic>? body = await _readJson(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    return _json(await buildJimakuFetchResponse(
+      body,
+      clientProvider: _jimakuClientFor,
+      resolveCandidate: (String handle) => _jimakuCandidates[handle],
+    ));
   }
 
   /// BUG-726/自更新：状态端点回带当前内置扩展指纹（extensionBuild），扩展

@@ -54,6 +54,10 @@
   // 本地服务与 6 连接上限灌满。0=无在途；带截止时间兜底，任何异常都不会永久闸死。
   var lookupPendingSince = 0;
   var LOOKUP_PENDING_TIMEOUT_MS = 1500;
+  // 用户拖过查词面板尺寸（CSS resize 把手）后置 true：本会话内主题下发/落点重算不再覆盖
+  // 用户宽高；拖拽结果经 popupSize 回写 app（与页面弹窗同一把「拖即解锁」尺寸键）。
+  var lookupUserResized = false;
+  var lookupResizeSnapshot = null;
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -135,6 +139,7 @@
   }
 
   function closeLookup() {
+    var wasOpen = !lookupPaneEl.hidden;
     lookupRequestId += 1;
     if (Number.isInteger(window._renderGeneration)) window._renderGeneration += 1;
     window._renderInProgress = false;
@@ -145,6 +150,10 @@
     currentLookupAnchor = null;
     currentLookupPerfContext = null;
     activeScanKey = '';
+    // 面板真关掉时通知视频页：由查词暂停的视频该恢复了（content 侧只恢复「确实是查词
+    // 暂停的」，用户自己暂停的不动）。「手动播放→content 反向 dismiss→这里 close」的
+    // 环路安全：那时暂停标记已被 play 监听清掉，恢复是 no-op。
+    if (wasOpen) sendToTab({ type: 'fushiSubtitleSidePanelLookupClosed' });
   }
 
   function positionLookup(anchor) {
@@ -158,7 +167,9 @@
       lookupPaneEl.style.left = '0px';
       lookupPaneEl.style.top = '0px';
     }
-    lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
+    if (!lookupUserResized) {
+      lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
+    }
     requestAnimationFrame(function () {
       if (requestId !== lookupRequestId || lookupPaneEl.hidden) return;
       var gap = 4;
@@ -207,10 +218,14 @@
     }
     var wheelSpeed = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
-    lookupPaneEl.style.width = theme['--fushi-popup-max-width'] || '400px';
+    // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
+    // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
+    if (!lookupUserResized) {
+      lookupPaneEl.style.width = theme['--fushi-popup-max-width'] || '400px';
+      lookupBaseMaxHeight = theme['--fushi-popup-max-height'] || '360px';
+      lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
+    }
     lookupPaneEl.style.maxWidth = 'calc(100vw - 16px)';
-    lookupBaseMaxHeight = theme['--fushi-popup-max-height'] || '360px';
-    lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
     lookupPaneEl.style.zoom = theme['--fushi-popup-zoom'] || '1';
   }
 
@@ -624,7 +639,20 @@
       var text = document.createElement('div');
       text.className = 'subtitle-text';
       text.textContent = cue.text;
-      text.title = '单击跳转；按住 Shift 指向文字查词；双击选择文本';
+      text.title = '单击文字查词；点击时间或行空白跳转；双击选择文本；按住 Shift 悬停扫词';
+      text.addEventListener('click', function (event) {
+        // 行内文字单击=查词（asbplayer 同款；8-11 迁原生 Side Panel 时随旧 UI 层一起丢了，
+        // 用户报「点击查词不见了，只能 Shift 查」）。拖选/双击形成的选区在场时不查，
+        // 保住「双击选择文本」。
+        try {
+          var clickSel = window.getSelection && window.getSelection();
+          if (clickSel && !clickSel.isCollapsed) return;
+        } catch (_) {}
+        event.stopPropagation(); // 不冒泡到 row 的 seek：点文字=查词、点行其它区域=跳转
+        lookupAtPointer({
+          x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
+        }, true);
+      });
       function rememberPointer(event) {
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
@@ -784,6 +812,126 @@
     fileEl.value = '';
   });
 
+  // ── Jimaku 查字幕（asb 式云端字幕）：搜索框 → server /api/subtitle/jimaku/search（用户在
+  // app 设置里填的 API key；真人剧 anime=false 补搜在 server 侧）→ 点候选下载解析 →
+  // 复用外挂字幕的 InstallTrack 落地（与本地文件同一条轨/偏移/覆盖层链路）。
+  var jimakuRowEl = document.getElementById('jimaku-row');
+  var jimakuQueryEl = document.getElementById('jimaku-query');
+  var jimakuEpEl = document.getElementById('jimaku-ep');
+  var jimakuResultsEl = document.getElementById('jimaku-results');
+  function jimakuErrorText(data, response) {
+    var error = data && data.error;
+    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
+    if (error === 'unauthorized') return 'Jimaku API key 无效或无权限';
+    if (error === 'rate-limited') return 'Jimaku 限流，请稍后再试';
+    if (error === 'missing-query') return '请输入搜索词';
+    if (!response || response.ok !== true) return 'Jimaku 搜索失败：请确认 Fushi 已启动';
+    return 'Jimaku 暂不可用，请稍后再试';
+  }
+  async function jimakuInstall(candidate) {
+    toast('正在下载：' + candidate.fileName);
+    var response = await sendRuntime({ type: 'jimakuFetch', handle: candidate.handle });
+    var data = response && response.data;
+    if (!response || response.ok !== true || !data || data.ok !== true ||
+        !Array.isArray(data.cues) || !data.cues.length) {
+      toast(data && data.error === 'unknown-handle'
+        ? '候选已过期，请重新搜索'
+        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : jimakuErrorText(data, response)));
+      return;
+    }
+    var state = await sendToTab({
+      type: 'fushiSubtitleSidePanelInstallTrack',
+      filename: data.filename || candidate.fileName,
+      cues: data.cues,
+    });
+    if (state && state.ok) {
+      stateSignature = metadataSignature(state);
+      applyState(state, true);
+      jimakuResultsEl.hidden = true;
+      jimakuResultsEl.textContent = '';
+      toast('已加载 Jimaku 字幕：' + data.cues.length + ' 句');
+    }
+  }
+  function renderJimakuResults(candidates, truncated) {
+    jimakuResultsEl.textContent = '';
+    if (!candidates.length) {
+      var empty = document.createElement('div');
+      empty.className = 'jimaku-empty';
+      empty.textContent = '无结果。试试日文原名，或填集数缩小范围。';
+      jimakuResultsEl.appendChild(empty);
+      jimakuResultsEl.hidden = false;
+      return;
+    }
+    candidates.forEach(function (candidate) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'jimaku-item';
+      var name = document.createElement('span');
+      name.className = 'jimaku-item-name';
+      name.textContent = candidate.fileName;
+      var meta = document.createElement('span');
+      meta.className = 'jimaku-item-meta';
+      meta.textContent = candidate.entryName +
+        (candidate.language ? ' · ' + candidate.language : '') +
+        (candidate.episode != null ? ' · 第' + candidate.episode + '集' : '');
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.addEventListener('click', function () { jimakuInstall(candidate); });
+      jimakuResultsEl.appendChild(row);
+    });
+    if (truncated) {
+      var more = document.createElement('div');
+      more.className = 'jimaku-empty';
+      more.textContent = '结果过多已截断，填集数可缩小范围。';
+      jimakuResultsEl.appendChild(more);
+    }
+    jimakuResultsEl.hidden = false;
+  }
+  var jimakuSearching = false;
+  async function jimakuSearch() {
+    if (jimakuSearching) return;
+    var query = String(jimakuQueryEl.value || '').trim();
+    if (!query) { toast('请输入搜索词'); return; }
+    var episode = parseInt(jimakuEpEl.value, 10);
+    jimakuSearching = true;
+    toast('正在搜索 Jimaku…');
+    try {
+      var response = await sendRuntime({
+        type: 'jimakuSearch',
+        query: query,
+        ...(Number.isInteger(episode) && episode > 0 ? { episode: episode } : {}),
+      });
+      var data = response && response.data;
+      if (!response || response.ok !== true || !data || data.ok !== true) {
+        toast(jimakuErrorText(data, response));
+        return;
+      }
+      renderJimakuResults(Array.isArray(data.candidates) ? data.candidates : [],
+        data.truncated === true);
+    } finally {
+      jimakuSearching = false;
+    }
+  }
+  document.getElementById('jimaku').addEventListener('click', function () {
+    var show = jimakuRowEl.hidden;
+    jimakuRowEl.hidden = !show;
+    if (!show) { jimakuResultsEl.hidden = true; return; }
+    // 预填当前标签页标题（长显示名命中率低，用户可改成日文原名——placeholder 已提示）。
+    if (!jimakuQueryEl.value && currentTabId != null) {
+      try {
+        chrome.tabs.get(currentTabId, function (tab) {
+          try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+          if (tab && tab.title && !jimakuQueryEl.value) jimakuQueryEl.value = tab.title;
+        });
+      } catch (_) {}
+    }
+    jimakuQueryEl.focus();
+  });
+  document.getElementById('jimaku-go').addEventListener('click', function () { jimakuSearch(); });
+  jimakuQueryEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') jimakuSearch();
+  });
+
   document.getElementById('smaller').addEventListener('click', function () {
     fontStep = Math.max(0, fontStep - 1);
     document.documentElement.style.setProperty('--subtitle-scale', String(FONT_STEPS[fontStep]));
@@ -820,6 +968,46 @@
       closeLookup();
     }
   });
+  // 「popup 不好关」的补齐三路：①content.js 在用户手动播放视频时反向推送 dismiss（页面弹窗
+  // 与本面板一起关）；②焦点离开 Side Panel（点回网页/播放器）即关；③滚动字幕列表（锚点行
+  // 已滚走，浮窗不该原地留着）即关。均幂等，重复触发无副作用。
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (msg && msg.type === 'fushiLookupDismiss') closeLookup();
+    });
+  } catch (_) {}
+  window.addEventListener('blur', function () { closeLookup(); });
+  listEl.addEventListener('wheel', function () { closeLookup(); }, { passive: true });
+  listEl.addEventListener('touchmove', function () { closeLookup(); }, { passive: true });
+  // 查词面板拖拽调整大小（CSS resize 把手在右下角）：pointerdown 落在右下角 20px 内时快照
+  // 尺寸，松手时尺寸真变了才算「用户拖过」——置 lookupUserResized + 回写 app 尺寸键
+  // （app clamp 后按「拖即解锁」持久化，下次查词/会话经主题带回来）。
+  lookupPaneEl.addEventListener('pointerdown', function (event) {
+    try {
+      var rect = lookupPaneEl.getBoundingClientRect();
+      lookupResizeSnapshot =
+        (rect.right - event.clientX <= 20 && rect.bottom - event.clientY <= 20)
+          ? { w: rect.width, h: rect.height }
+          : null;
+    } catch (_) { lookupResizeSnapshot = null; }
+  }, { passive: true });
+  window.addEventListener('pointerup', function () {
+    if (!lookupResizeSnapshot) return;
+    var snap = lookupResizeSnapshot;
+    lookupResizeSnapshot = null;
+    var rect;
+    try { rect = lookupPaneEl.getBoundingClientRect(); } catch (_) { return; }
+    if (Math.abs(rect.width - snap.w) < 3 && Math.abs(rect.height - snap.h) < 3) return;
+    lookupUserResized = true;
+    var zoom = parseFloat(lookupPaneEl.style.zoom) || 1;
+    lookupBaseMaxHeight = Math.round(rect.height / zoom) + 'px';
+    lookupPaneEl.style.maxHeight = '';
+    sendRuntime({
+      type: 'popupSize',
+      maxWidth: Math.round(rect.width / zoom),
+      maxHeight: Math.round(rect.height / zoom),
+    });
+  }, { passive: true });
   window.addEventListener('load', function () {
     // popup.js 在扩展上下文只暴露监听器；与 content.js 的 Shift host 一样，把它
     // 限定挂在常驻 shadow host，避免污染整个 Side Panel 的滚动快速路径。

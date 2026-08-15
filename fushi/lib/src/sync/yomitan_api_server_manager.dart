@@ -18,6 +18,7 @@ class YomitanApiServerManager {
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
     void Function(String build, String? version)? onExtensionReport,
+    String? Function()? jimakuApiKeyProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -28,7 +29,8 @@ class YomitanApiServerManager {
         _extensionBuildProvider = extensionBuildProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
-        _onExtensionReport = onExtensionReport;
+        _onExtensionReport = onExtensionReport,
+        _jimakuApiKeyProvider = jimakuApiKeyProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -48,6 +50,8 @@ class YomitanApiServerManager {
   // BUG-1079：扩展自报版本回调，透传给 [YomitanApiServer]（app 侧记录浏览器中实际
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
+  // 「Jimaku 查字幕」扩展桥：Jimaku API key 供给器，透传给 [YomitanApiServer]。
+  final String? Function()? _jimakuApiKeyProvider;
 
   YomitanApiServer? _server;
 
@@ -69,6 +73,7 @@ class YomitanApiServerManager {
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionSeen: _onExtensionSeen,
       onExtensionReport: _onExtensionReport,
+      jimakuApiKeyProvider: _jimakuApiKeyProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

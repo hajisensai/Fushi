@@ -235,6 +235,20 @@ test('查词暂停后用户手动播放又手动暂停：关窗不得把用户�
   assert.strictEqual(h.video.paused, true);
 });
 
+test('查词暂停后用户手动播放：页面弹窗关闭并广播 fushiLookupDismiss 给 Side Panel', () => {
+  const h = loadContentAndFireShift();
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.paused, true, '查词先暂停');
+  // 用户手动点播放：关浮层 + 广播 dismiss。
+  h.video.paused = false;
+  h.video.emit('play');
+  const dismiss = h.sent.filter((m) => m && m.type === 'fushiLookupDismiss');
+  assert.strictEqual(dismiss.length, 1, '手动播放必须广播 dismiss（Side Panel 靠它关面板）');
+  // 弹窗已随手动播放关闭：再点外部不得再有任何 play 动作。
+  for (const fn of h.docListeners.mousedown || []) fn({ target: {} });
+  assert.strictEqual(h.video.playCount, 0, '手动播放后扩展不得再碰播放状态');
+});
+
 test('查词失败（无弹窗可关）时立即恢复被查词暂停的视频，暂停不得没有出口', () => {
   const h = loadContentAndFireShift({ response: { ok: false, error: 'ECONNREFUSED' } });
   fireShiftLookup(h.docListeners, 300, 400);

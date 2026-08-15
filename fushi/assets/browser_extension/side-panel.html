@@ -15,6 +15,7 @@
       </div>
       <div class="toolbar" aria-label="字幕工具">
         <button id="load" type="button" title="加载外挂字幕">＋</button>
+        <button id="jimaku" type="button" title="从 Jimaku 搜索字幕">J</button>
         <button id="smaller" type="button" title="缩小字号">A−</button>
         <button id="larger" type="button" title="放大字号">A＋</button>
         <button id="auto-scroll" class="is-on" type="button" title="自动滚动到当前句">AS</button>
@@ -23,6 +24,12 @@
     </div>
     <input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt" multiple hidden>
     <select id="track" aria-label="字幕轨" hidden></select>
+    <div id="jimaku-row" class="jimaku-row" hidden>
+      <input id="jimaku-query" type="search" placeholder="Jimaku 搜字幕（日文原名命中率最高）" aria-label="Jimaku 搜索词">
+      <input id="jimaku-ep" type="number" min="1" placeholder="集" title="集数（可选）" aria-label="集数">
+      <button id="jimaku-go" type="button" title="搜索">搜</button>
+    </div>
+    <div id="jimaku-results" class="jimaku-results" hidden></div>
     <div id="offset" class="offset-row" hidden>
       <button type="button" data-offset="-500">−0.5</button>
       <button type="button" data-offset="-100">−0.1</button>

@@ -32,6 +32,9 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
       final List<JimakuEntry> entries = await _client.searchEntries(
         anilistId: request.media?.anilistId,
         queryFallbacks: fallbacks,
+        // Jimaku 的 anime 过滤是硬相等且服务端默认 true：真人剧必须显式 false 才搜得到，
+        // 由请求方（扩展桥/未来的 UI 开关）决定；null 保持旧行为（只搜番剧）。
+        anime: request.anime,
         throwOnError: true,
       );
       final List<VideoSubtitleCandidate> candidates =

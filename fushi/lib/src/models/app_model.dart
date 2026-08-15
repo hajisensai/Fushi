@@ -6070,6 +6070,9 @@ class AppModel with ChangeNotifier {
         _browserExtensionReportedAt = DateTime.now();
         browserExtensionReportedBuild.value = build;
       },
+      // 「Jimaku 查字幕」扩展桥：Side Panel 搜索/下载字幕经 /api/subtitle/jimaku/* 复用
+      // 用户在 app 设置里填的 Jimaku API key；未填时端点回 no-api-key（扩展提示去填）。
+      jimakuApiKeyProvider: () => jimakuApiKey,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';
