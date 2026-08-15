@@ -32,6 +32,8 @@ class VideoWorkDetailPage extends StatelessWidget {
     required this.repository,
     required this.workRef,
     required this.onChanged,
+    this.onScrapeCollection,
+    this.onEpisodeScrapeInfo,
     this.onDeleteMembersMedia,
     super.key,
   });
@@ -40,6 +42,15 @@ class VideoWorkDetailPage extends StatelessWidget {
   final VideoBookRepository repository;
   final VideoWorkRef workRef;
   final VoidCallback onChanged;
+
+  /// 管理菜单「刮削资料与封面」（BUG-1662）。null = 调用方不提供刮削能力，菜单
+  /// 不出该项（与 [onDeleteMembersMedia] 同一注入纪律）。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onScrapeCollection;
+
+  /// 集卡右键/长按菜单「条目信息」（含重新刮削，BUG-1662）。null = 不出该项。
+  final Future<void> Function(VideoBookRow episode)? onEpisodeScrapeInfo;
+
   final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
 
   @override
@@ -93,6 +104,10 @@ class VideoWorkDetailPage extends StatelessWidget {
               );
             },
             onChanged: onChanged,
+            onScrape: onScrapeCollection == null
+                ? null
+                : () => onScrapeCollection!(collection),
+            onEpisodeScrapeInfo: onEpisodeScrapeInfo,
             onDeleteMembersMedia: onDeleteMembersMedia,
           );
         },
