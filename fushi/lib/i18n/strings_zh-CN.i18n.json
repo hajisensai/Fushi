@@ -3417,5 +3417,9 @@
   "aidoku_repository_browse": "浏览仓库",
   "aidoku_repository_hint": "粘贴 Aidoku 仓库主页或 index.min.json 地址。默认已填入社区仓库。",
   "aidoku_repository_remove": "移除仓库",
-  "aidoku_repository_empty": "尚未添加 Aidoku 仓库。"
+  "aidoku_repository_empty": "尚未添加 Aidoku 仓库。",
+  "video_collection_scrape": "刮削资料与封面",
+  "update_testflight_open": "打开 TestFlight",
+  "update_app_store_open": "打开 App Store",
+  "update_release_page_open": "发布页"
 }
