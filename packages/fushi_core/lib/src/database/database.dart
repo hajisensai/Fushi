@@ -514,7 +514,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 86;
+  int get schemaVersion => 87;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2493,6 +2493,28 @@ class FushiDatabase extends _$FushiDatabase
                     'media_collections', 'secondary_subtitle_delay_ms')) {
               await m.addColumn(
                   mediaCollections, mediaCollections.secondarySubtitleDelayMs);
+            }
+          }
+          if (from < 87) {
+            // v87（内容语言字体链）：dictionary_metadata 加 language_override、
+            // epub_books 加 language，给「这份内容是什么语言」一个可持久化的真值，
+            // 供 content_font_chain 选字体链。
+            //
+            // 无损：两列 nullable 无 default → 旧库既有行全 NULL = 语言未知 =
+            // 不写 font-family = 逐字节保留 v87 前的渲染（Never break userspace）。
+            // 书的 language 由导入时的 dc:language 回填，存量书在下次打开时不会
+            // 自动回填（不扫全库），用户可手动指定；词典的自动值走 metadataJson
+            // 的 sourceLanguage，重导即有。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists(
+                    'dictionary_metadata', 'language_override')) {
+              await m.addColumn(
+                  dictionaryMetadata, dictionaryMetadata.languageOverride);
+            }
+            if (await _tableExists('epub_books') &&
+                !await _columnExists('epub_books', 'language')) {
+              await m.addColumn(epubBooks, epubBooks.language);
             }
           }
         },

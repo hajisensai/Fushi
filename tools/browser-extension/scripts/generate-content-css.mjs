@@ -97,6 +97,11 @@ function transformSelector(raw) {
   // reset killed `.ruby-unit { padding-top }` (deliberately kept low-specificity
   // via `:where()`) and glossary furigana printed on top of its base text in the
   // extension while the in-app popup rendered fine (BUG-752).
+  // 内容语言分流（`:lang(ja)` / `:lang(zh)` …）：popup.css 里它们是文档级的，
+  // 但 content.css 注入的是**宿主页面**——裸 `:lang()` 会把整个网页的字体一起换掉
+  // （最严重的一类泄漏：用户只是装了个查词扩展，结果所有日文网页字体全变）。
+  // 收进 `:where(#entries-container)` 后代，特异性仍是 (0,1,0)，与 app 内一致。
+  if (/^:lang\(/.test(p)) return ':where(#entries-container) ' + p;
   if (p === 'body') return ':where(#entries-container)';
   if (/^html([.[ ]|$)/.test(p)) return ':where(#entries-container)' + p.slice(4);
   if (p === '::selection') return ':where(#entries-container) ::selection';

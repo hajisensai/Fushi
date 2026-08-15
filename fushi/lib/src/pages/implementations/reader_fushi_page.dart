@@ -1497,6 +1497,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // the background, so a navigation that lands on it does not race a second read.
   String? _prefetchingHtmlPath;
 
+  /// 本书的内容语言（BCP-47）。来自 EpubBooks.language：导入时由 OPF 的
+  /// dc:language 回填，或用户在书籍设置里手动指定。null = 未知，正文字体退回
+  /// 浏览器默认（不猜，见 content_font_chain.dart）。
+  String? _contentLanguage;
+
   String? _cachedStyleTag;
 
   /// 样式代际：[_invalidateStyleCache] 每次自增。真异步预取（读盘/净化期间样式
@@ -2010,6 +2015,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _extractDir = extractDir;
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
+    final String? language = bookRow?.language?.trim();
+    _contentLanguage = (language == null || language.isEmpty) ? null : language;
+
     final String? locatedUid = bookRow?.uid;
     _bookUid = (locatedUid == null || locatedUid.isEmpty) ? null : locatedUid;
 
@@ -2918,6 +2926,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     return ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
+      // 正文字体按**书自己的语言**选链（与界面语言无关）：中文界面下打开日文书，
+      // 界面该是中文字形、正文该是日文字形，两个独立的正确答案。
+      contentLanguage: _contentLanguage,
       // TODO-165 / BUG-224：正文 <body> 背景/字色统一吃 `_readerThemeColors` 派生色。
       // preset 命中时 _themeColors 走 switch case 用手调底色（忽略 customBg → 零破坏）；
       // system-theme（默认主题）/light-theme/未命中 key 落 default 分支，原来恒白底

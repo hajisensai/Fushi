@@ -288,6 +288,9 @@ class DictionaryImportManager {
           },
           hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
           collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
+          // 用户手动指定的内容语言属于用户设置，重导必须继承——metadata 会被包内
+          // index.json 整体重建，塞那里等于每次更新都被抹掉。
+          languageOverride: preservedSettings?.languageOverride,
         ));
 
         progressNotifier.value = t.import_complete;
@@ -438,6 +441,8 @@ class DictionaryImportManager {
         },
         hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
         collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
+        // 同上：用户手动指定的内容语言随 preservedSettings 继承，不被重导冲掉。
+        languageOverride: preservedSettings?.languageOverride,
       ));
 
       progressNotifier.value = t.import_complete;

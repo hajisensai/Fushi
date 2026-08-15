@@ -595,6 +595,7 @@ class ProfileRepository {
       'metadataJson': row.metadataJson,
       'hiddenLanguagesJson': row.hiddenLanguagesJson,
       'collapsedLanguagesJson': row.collapsedLanguagesJson,
+      'languageOverride': row.languageOverride,
     });
   }
 
@@ -621,6 +622,11 @@ class ProfileRepository {
             Value(asString(decoded['hiddenLanguagesJson'], '[]')),
         collapsedLanguagesJson:
             Value(asString(decoded['collapsedLanguagesJson'], '[]')),
+        // null（未指定）是合法值，不能像上面几个那样塞空串默认值——空串会让
+        // effectiveSourceLanguage 的「非空即用户指定」判据失真。
+        languageOverride: Value(decoded['languageOverride'] is String
+            ? decoded['languageOverride'] as String
+            : null),
       );
     } catch (_) {
       return null;

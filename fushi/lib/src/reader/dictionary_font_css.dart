@@ -39,7 +39,7 @@ class DictionaryFontCss {
   /// whitelist model as the reader's font serving). Reads happen synchronously;
   /// any unreadable / oversized / unknown-extension file is skipped, degrading
   /// to the remaining usable fonts (and ultimately the popup.css default).
-  static ({String fontFamily, String fontFaces}) build(
+  static ({String fontFamily, String fontFaces, List<String> families}) build(
     Iterable<Map<String, dynamic>> fonts, {
     Iterable<String> allowedDirectories = const <String>[],
     int maxFileBytes = _defaultMaxFileBytes,
@@ -47,17 +47,24 @@ class DictionaryFontCss {
     final Iterable<Map<String, dynamic>> enabled =
         fonts.where((Map<String, dynamic> e) => e['enabled'] as bool? ?? true);
     final List<String> families = <String>[];
+    // 内容语言字体链要把用户字体接在每条 :lang() 规则的链首，而那条链自己负责加
+    // 引号，所以这里同时留一份**裸**家族名（families 里是 CSS 化后带引号的形态）。
+    // 两份都由同一轮过滤产出，避免「哪些字体文件可内联」出现第二份判据。
+    final List<String> rawFamilies = <String>[];
     final List<String> faces = <String>[];
 
     for (final Map<String, dynamic> e in enabled) {
       final String? rawName = e['name'] as String?;
       if (rawName == null || rawName.trim().isEmpty) continue;
       final String cssName = ReaderCustomFontCss.cssFontFamilyName(rawName);
+      final String bareName =
+          ReaderCustomFontCss.normalizedFontFamilyName(rawName);
 
       final String? fontPath = e['path'] as String?;
       if (fontPath == null) {
         // System font: the platform resolves it by family name directly.
         families.add(cssName);
+        rawFamilies.add(bareName);
         continue;
       }
 
@@ -76,6 +83,7 @@ class DictionaryFontCss {
       if (dataUrl == null) continue;
 
       families.add(cssName);
+      rawFamilies.add(bareName);
       faces.add(
         '@font-face { font-family: $cssName; '
         'src: url("$dataUrl") format("${type.format}"); '
@@ -86,6 +94,7 @@ class DictionaryFontCss {
     return (
       fontFamily: families.join(', '),
       fontFaces: faces.join('\n'),
+      families: List<String>.unmodifiable(rawFamilies),
     );
   }
 
