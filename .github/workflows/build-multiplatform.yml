@@ -404,6 +404,10 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      - name: Install Rust toolchain for physical iOS devices
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去

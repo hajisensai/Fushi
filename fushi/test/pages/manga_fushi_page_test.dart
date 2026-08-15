@@ -312,6 +312,9 @@ void main() {
     expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
         findsOneWidget,
         reason: '整卷 OCR 入口必须出现在 chrome');
+    expect(find.byKey(const ValueKey<String>('manga_reader_back_button')),
+        findsOneWidget,
+        reason: '漫画阅读器必须常显左上返回按钮');
   });
 
   testWidgets('整卷 OCR 入口：加载失败（无书行）时 chrome 不构建 → 无按钮',

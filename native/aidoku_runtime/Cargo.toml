@@ -1,0 +1,52 @@
+[package]
+name = "fushi-aidoku-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+name = "fushi_aidoku_runtime"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "fushi-aidoku-runtime"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:aidoku-test-runner", "dep:wasmer"]
+embedded = [
+  "dep:boa_engine",
+  "dep:chrono",
+  "dep:chrono-tz",
+  "dep:image",
+  "dep:kuchiki",
+  "dep:reqwest",
+  "dep:wasmi",
+]
+
+[dependencies]
+aidoku = { git = "https://github.com/Aidoku/aidoku-rs", rev = "1a6bb691dd67c7151fc76fc852fb5a364d325f72", default-features = false }
+aidoku-test-runner = { git = "https://github.com/Aidoku/aidoku-rs", rev = "1a6bb691dd67c7151fc76fc852fb5a364d325f72", optional = true }
+anyhow = "1.0"
+boa_engine = { version = "0.21", optional = true }
+chrono = { version = "0.4", optional = true }
+chrono-tz = { version = "0.10", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"], optional = true }
+kuchiki = { version = "0.8", optional = true }
+postcard = { version = "1.1", features = ["alloc"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wasmer = { version = "6.1", optional = true }
+wasmi = { version = "0.51", optional = true }
+zip = { version = "4.6", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3.27"
+
+[profile.release]
+lto = true
+strip = true

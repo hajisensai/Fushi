@@ -47,6 +47,42 @@ void main() {
       );
     });
 
+    test('macOS 的「来源」视图有 Aidoku 单包与仓库导入入口', () {
+      expect(sources, contains("allowedExtensions: const <String>['aix']"));
+      expect(sources, contains("ValueKey<String>('aidoku_import_aix')"));
+      expect(sources, contains("ValueKey<String>('aidoku_add_repository')"));
+      expect(sources, contains("ValueKey<String>('aidoku_repository_url')"));
+      expect(sources, contains('AidokuPackageStore.open()'));
+      expect(sources, contains('AidokuRepositoryStore.open()'));
+      expect(sources, contains('_AidokuRepositorySourcesDialog('));
+      expect(sources, contains('MangaExtensionManagementTile('));
+      expect(sources, contains('MangaExtensionFilters('));
+      expect(sources, contains("keyPrefix: 'aidoku_extension'"));
+    });
+
+    test('Aidoku 章节进入共享漫画阅读器，复用 OCR 与阅读样式', () {
+      final String browse =
+          _read(<String>['aidoku', 'aidoku_source_browse_page.dart']);
+      expect(browse, contains('AidokuReaderChapter('));
+      expect(browse, contains('MangaFushiPage('));
+      expect(browse, contains('onlineChapter: resolved'));
+    });
+
+    test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {
+      final int start = sources.indexOf(
+        'class _AidokuRepositoryUrlDialogState',
+      );
+      final int end = sources.indexOf(
+        'class _AidokuRepositorySourcesDialog',
+      );
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final String dialogSource = sources.substring(start, end);
+      expect(dialogSource, contains('=> AlertDialog('));
+      expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
+    });
+
     test('扩展提供的在线来源设置也在同一视图内', () {
       expect(sources, contains('_buildOnlineSource('));
       expect(sources, contains('t.mihon_sources_title'));
@@ -106,6 +142,16 @@ void main() {
         browse,
         contains('MihonSourceBrowsePage('),
         reason: '已启用的 Mihon 在线源要能从「浏览」直接进内容，不是只在设置里躺着',
+      );
+      expect(
+        browse,
+        contains('AidokuSourceBrowsePage('),
+        reason: '安装的 Aidoku 源也要从「浏览」直接进入内容目录',
+      );
+      expect(
+        browse,
+        contains('AidokuPackageStore.changes.listen'),
+        reason: '保活的「浏览」页必须在安装、卸载或启停后立即重载 Aidoku 源',
       );
       // BUG-1431：mokuro.moe 与扩展源遵守同一条可见性规则——「来源」里关掉的源
       // 不出现在「浏览」里。以前它那个开关只让目录页显示成禁用态，行照旧列着。

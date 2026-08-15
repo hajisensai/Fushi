@@ -1157,6 +1157,10 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      - name: Install Rust toolchain for physical iOS devices
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
       - name: Resolve desktop release channel
         id: channel
         shell: bash

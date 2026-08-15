@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -19,11 +24,11 @@ import 'package:fushi/utils.dart';
 /// 关掉的源不出现在这里。此前 mokuro.moe 那个开关只让它的目录页显示成禁用态，
 /// 行却照旧列着——同一节里两种开关语义，用户没法解释。
 ///
-/// 平台差异只体现在**内容**上，不体现在结构上：iOS / Linux 没有扩展宿主
-/// （[MihonRuntimeFactory.isSupported] 为 false），这一页仍然存在、仍然在同一个
-/// tab 位置，只是列表里只有 mokuro.moe 一行。注意 `AppModel.mihonManager` 在
-/// 不支持的平台上会抛 [UnsupportedError]，所以任何读它的路径都必须先过
-/// [MihonRuntimeFactory.isSupported] 这道门。
+/// 平台差异只体现在**内容**上，不体现在结构上：Mihon 仍只在桌面平台提供宿主，
+/// Aidoku 则在 macOS / iOS 共用同一套入口与浏览界面。Linux 没有扩展宿主时，
+/// 这一页仍然存在、仍然在同一个 tab 位置，只显示内置来源。注意
+/// `AppModel.mihonManager` 在不支持的平台上会抛 [UnsupportedError]，所以任何
+/// 读它的路径都必须先过 [MihonRuntimeFactory.isSupported] 这道门。
 class MangaBrowsePage extends ConsumerStatefulWidget {
   const MangaBrowsePage({
     super.key,
@@ -39,6 +44,33 @@ class MangaBrowsePage extends ConsumerStatefulWidget {
 
 class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   MihonManager? _manager;
+  StreamSubscription<void>? _aidokuChanges;
+  List<AidokuInstalledPackage> _aidokuPackages =
+      const <AidokuInstalledPackage>[];
+  Object? _aidokuError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (AidokuRuntimeFactory.isSupported) {
+      _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
+      unawaited(_loadAidoku());
+    }
+  }
+
+  Future<void> _loadAidoku() async {
+    try {
+      final List<AidokuInstalledPackage> packages =
+          await (await AidokuPackageStore.open()).listInstalled();
+      if (!mounted) return;
+      setState(() {
+        _aidokuPackages = packages;
+        _aidokuError = null;
+      });
+    } on Object catch (error) {
+      if (mounted) setState(() => _aidokuError = error);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -53,6 +85,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   @override
   void dispose() {
     _manager?.removeListener(_changed);
+    unawaited(_aidokuChanges?.cancel());
     super.dispose();
   }
 
@@ -84,6 +117,16 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
           manager: _manager!,
           target: MihonInstalledTarget(source),
         ),
+      ),
+    );
+  }
+
+  void _openAidokuSource(AidokuInstalledPackage package) {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) =>
+            AidokuSourceBrowsePage(package: package),
       ),
     );
   }
@@ -141,6 +184,26 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                       onTap: _openMokuro,
                     ),
                   ),
+                for (final AidokuInstalledPackage package
+                    in _aidokuPackages.where(
+                  (AidokuInstalledPackage package) => package.enabled,
+                ))
+                  FushiCard(
+                    padding: EdgeInsets.zero,
+                    child: FushiListItem(
+                      leading: CircleAvatar(
+                        child: Text(
+                          package.languages.isEmpty
+                              ? '?'
+                              : package.languages.first.toUpperCase(),
+                        ),
+                      ),
+                      title: Text(package.name),
+                      subtitle: Text(package.id),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openAidokuSource(package),
+                    ),
+                  ),
                 for (final MangaOnlineSourceRow source in sources)
                   FushiCard(
                     padding: EdgeInsets.zero,
@@ -164,7 +227,25 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
                       onTap: () => _openSource(source),
                     ),
                   ),
-                if (MihonRuntimeFactory.isSupported && sources.isEmpty)
+                if (_aidokuError != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
+                    child: Text(
+                      '$_aidokuError',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                if (MihonRuntimeFactory.isSupported &&
+                    sources.isEmpty &&
+                    !_aidokuPackages.any(
+                      (AidokuInstalledPackage package) => package.enabled,
+                    ))
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,

@@ -78,6 +78,8 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   'lib/src/pages/implementations/home_video_page.dart': '视频页文件选择：当场消费',
   'lib/src/media/manga/mihon/mihon_extensions_page.dart':
       'Mihon 扩展 APK：选中即 readAsBytes 拷进 app 存储的 tmp/extension-<sha>.apk.part 再校验安装，原路径不入库',
+  'lib/src/media/manga/manga_sources_page.dart':
+      'Aidoku 扩展 .aix：选中即 inspect 校验并 AidokuPackageStore.install 拷进 app 存储，原路径不入库（与上面 Mihon APK 同语义）',
   // (a) 长期引用，但**仅 Windows** 路径可达，安卓那条腿根本跑不到：
   // （2026-08-13 选 exe 逻辑从 games_library_page 收敛到共享动作 galgame_add_flow）
   'lib/src/mining/galgame_add_flow.dart':

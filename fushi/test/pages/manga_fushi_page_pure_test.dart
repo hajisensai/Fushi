@@ -7,24 +7,21 @@ void main() {
   group('mangaWindowRange', () {
     test('窗口在起点被 clamp', () {
       expect(
-        MangaFushiPage.mangaWindowRange(
-            spreadCount: 10, current: 0, radius: 1),
+        MangaFushiPage.mangaWindowRange(spreadCount: 10, current: 0, radius: 1),
         <int>[0, 1],
       );
     });
 
     test('窗口居中', () {
       expect(
-        MangaFushiPage.mangaWindowRange(
-            spreadCount: 10, current: 5, radius: 1),
+        MangaFushiPage.mangaWindowRange(spreadCount: 10, current: 5, radius: 1),
         <int>[4, 5, 6],
       );
     });
 
     test('窗口在终点被 clamp', () {
       expect(
-        MangaFushiPage.mangaWindowRange(
-            spreadCount: 10, current: 9, radius: 1),
+        MangaFushiPage.mangaWindowRange(spreadCount: 10, current: 9, radius: 1),
         <int>[8, 9],
       );
     });
@@ -77,17 +74,17 @@ void main() {
     );
 
     test('spread 模式落 spread 首页页码，fraction 钉 0', () {
-      final (int page, double fraction) =
-          MangaFushiPage.mangaProgressForSpread(spreads, 2,
-              webtoonFraction: 0.5, isWebtoon: false);
+      final (int page, double fraction) = MangaFushiPage.mangaProgressForSpread(
+          spreads, 2,
+          webtoonFraction: 0.5, isWebtoon: false);
       expect(page, 4); // spread 2 -> pages 4/5
       expect(fraction, 0.0);
     });
 
     test('webtoon 模式落 top 页 + 页内 fraction', () {
-      final (int page, double fraction) =
-          MangaFushiPage.mangaProgressForSpread(spreads, 2,
-              webtoonFraction: 0.5, isWebtoon: true);
+      final (int page, double fraction) = MangaFushiPage.mangaProgressForSpread(
+          spreads, 2,
+          webtoonFraction: 0.5, isWebtoon: true);
       expect(page, 4);
       expect(fraction, 0.5);
     });
@@ -113,8 +110,7 @@ void main() {
 
     test('空书回 0', () {
       expect(
-        MangaFushiPage.restoreSpreadFromProgress(
-            const <MangaSpreadEntry>[], 3),
+        MangaFushiPage.restoreSpreadFromProgress(const <MangaSpreadEntry>[], 3),
         0,
       );
     });
@@ -132,8 +128,8 @@ void main() {
       expect(MangaFushiPage.modeToDbString(MangaReadingMode.spread), 'spread');
       expect(
           MangaFushiPage.modeToDbString(MangaReadingMode.webtoon), 'webtoon');
-      expect(MangaFushiPage.modeFromDbString('webtoon'),
-          MangaReadingMode.webtoon);
+      expect(
+          MangaFushiPage.modeFromDbString('webtoon'), MangaReadingMode.webtoon);
       expect(
           MangaFushiPage.modeFromDbString('spread'), MangaReadingMode.spread);
       expect(MangaFushiPage.modeFromDbString('???'), MangaReadingMode.spread);
@@ -142,8 +138,8 @@ void main() {
     test('modeOverrideFromDb：null/空 = 自动判定（回 null）', () {
       expect(MangaFushiPage.modeOverrideFromDb(null), isNull);
       expect(MangaFushiPage.modeOverrideFromDb(''), isNull);
-      expect(MangaFushiPage.modeOverrideFromDb('spread'),
-          MangaReadingMode.spread);
+      expect(
+          MangaFushiPage.modeOverrideFromDb('spread'), MangaReadingMode.spread);
       expect(MangaFushiPage.modeOverrideFromDb('webtoon'),
           MangaReadingMode.webtoon);
     });
@@ -190,6 +186,13 @@ void main() {
       // 子目录结构保留（不被整体 encode 成 %2F）。
       expect(
           MangaFushiPage.mangaImageUrl('a/b/c.png').contains('%2F'), isFalse);
+      expect(
+        MangaFushiPage.mangaImageUrl(
+          'vol 1/p 01.jpg',
+          useCustomScheme: true,
+        ),
+        'fushi-manga://manga.local/img/vol%201/p%2001.jpg',
+      );
     });
   });
 }

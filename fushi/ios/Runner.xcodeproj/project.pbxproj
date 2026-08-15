@@ -137,6 +137,7 @@
 			buildPhases = (
 				913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */,
 				B20200000000000000000001 /* Build FushiDicts FFI */,
+				B20300000000000000000001 /* Build Aidoku Runtime */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -311,6 +312,29 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/build_fushidicts_ffi.sh\"\n";
 		};
+		B20300000000000000000001 /* Build Aidoku Runtime */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(AIDOKU_RUNTIME_SOURCE_DIR)/Cargo.lock",
+				"$(AIDOKU_RUNTIME_SOURCE_DIR)/Cargo.toml",
+				"$(AIDOKU_RUNTIME_SOURCE_DIR)/src/embedded.rs",
+				"$(AIDOKU_RUNTIME_SOURCE_DIR)/src/lib.rs",
+			);
+			name = "Build Aidoku Runtime";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(AIDOKU_RUNTIME_ARCHIVE)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/build_aidoku_runtime.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -400,6 +424,9 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
 			buildSettings = {
+				AIDOKU_RUNTIME_ARCHIVE = "$(AIDOKU_RUNTIME_BUILD_DIR)/libfushi_aidoku_runtime.a";
+				AIDOKU_RUNTIME_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/aidoku_runtime/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				AIDOKU_RUNTIME_SOURCE_DIR = "$(PROJECT_DIR)/../../native/aidoku_runtime";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -417,6 +444,9 @@
 					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
+					"$(AIDOKU_RUNTIME_ARCHIVE)",
+					"-framework",
+					CoreFoundation,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -538,6 +568,9 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 9740EEB21CF90195004384FC /* Debug.xcconfig */;
 			buildSettings = {
+				AIDOKU_RUNTIME_ARCHIVE = "$(AIDOKU_RUNTIME_BUILD_DIR)/libfushi_aidoku_runtime.a";
+				AIDOKU_RUNTIME_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/aidoku_runtime/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				AIDOKU_RUNTIME_SOURCE_DIR = "$(PROJECT_DIR)/../../native/aidoku_runtime";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -555,6 +588,9 @@
 					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
+					"$(AIDOKU_RUNTIME_ARCHIVE)",
+					"-framework",
+					CoreFoundation,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -570,6 +606,9 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
 			buildSettings = {
+				AIDOKU_RUNTIME_ARCHIVE = "$(AIDOKU_RUNTIME_BUILD_DIR)/libfushi_aidoku_runtime.a";
+				AIDOKU_RUNTIME_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/aidoku_runtime/$(CONFIGURATION)-$(PLATFORM_NAME)";
+				AIDOKU_RUNTIME_SOURCE_DIR = "$(PROJECT_DIR)/../../native/aidoku_runtime";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -587,6 +626,9 @@
 					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
+					"$(AIDOKU_RUNTIME_ARCHIVE)",
+					"-framework",
+					CoreFoundation,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -7,6 +7,9 @@ import Flutter
   private var initialUrl: String?
   private var urlEventSink: FlutterEventSink?
   private var ankiMobileMediaBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+  private let aidokuRuntimeQueue = DispatchQueue(
+    label: "app.fushi.reader.aidoku-runtime",
+    qos: .userInitiated)
 
   // TODO-057: brightness override applied during a video session. We snapshot
   // the user's brightness the first time the player asks (getBrightness) and
@@ -112,6 +115,74 @@ import Flutter
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let aidokuRuntimeChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/aidoku_runtime",
+      binaryMessenger: binaryMessenger)
+    aidokuRuntimeChannel.setMethodCallHandler { [weak self] (call, result) in
+      guard call.method == "invoke" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard
+        let request = call.arguments as? [String: Any],
+        JSONSerialization.isValidJSONObject(request),
+        let requestData = try? JSONSerialization.data(withJSONObject: request),
+        let requestJson = String(data: requestData, encoding: .utf8)
+      else {
+        result(FlutterError(
+          code: "INVALID_REQUEST",
+          message: "Aidoku runtime request must be a JSON object",
+          details: nil))
+        return
+      }
+      guard let self = self else {
+        result(FlutterError(
+          code: "RUNTIME_UNAVAILABLE",
+          message: "Aidoku runtime channel was released",
+          details: nil))
+        return
+      }
+      self.aidokuRuntimeQueue.async {
+        let responsePointer = requestJson.withCString { pointer in
+          fushi_aidoku_invoke(pointer)
+        }
+        guard let responsePointer else {
+          DispatchQueue.main.async {
+            result(FlutterError(
+              code: "RUNTIME_FAILED",
+              message: "Aidoku runtime returned no response",
+              details: nil))
+          }
+          return
+        }
+        let responseJson = String(cString: responsePointer)
+        fushi_aidoku_string_free(responsePointer)
+        let responseData = Data(responseJson.utf8)
+        guard
+          let response = try? JSONSerialization.jsonObject(with: responseData),
+          let responseObject = response as? [String: Any]
+        else {
+          DispatchQueue.main.async {
+            result(FlutterError(
+              code: "INVALID_RESPONSE",
+              message: "Aidoku runtime returned invalid JSON",
+              details: responseJson))
+          }
+          return
+        }
+        DispatchQueue.main.async {
+          if let message = responseObject["error"] as? String {
+            result(FlutterError(
+              code: responseObject["code"] as? String ?? "RUNTIME_FAILED",
+              message: message,
+              details: nil))
+          } else {
+            result(responseObject)
+          }
+        }
       }
     }
   }

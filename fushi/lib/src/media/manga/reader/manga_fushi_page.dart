@@ -308,12 +308,16 @@ class MangaFushiPage extends BaseSourcePage {
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
   final String bookKey;
 
-  /// A directly selected Mihon chapter. Shelf launches leave this null and
-  /// restore the chapter from the restart descriptor in `sourceMetadata`.
-  final MihonReaderChapter? onlineChapter;
+  /// A directly selected online chapter. Shelf launches leave this null and
+  /// restore the Mihon chapter from the restart descriptor in `sourceMetadata`.
+  final OnlineMangaReaderChapter? onlineChapter;
 
   /// 漫画拦截器专属虚拟域。必须与阅读器的 `fushi.local` 互异。
   static const String kMangaHost = 'manga.local';
+
+  /// WKWebView 不支持用 `shouldInterceptRequest` 接管 http(s) 子资源；Apple
+  /// 平台必须通过 WKURLSchemeHandler 注册一个非标准 scheme。
+  static const String kMangaResourceScheme = 'fushi-manga';
 
   static String horizontalKeyTurn({
     required String direction,
@@ -464,11 +468,15 @@ class MangaFushiPage extends BaseSourcePage {
   /// 纯函数：manga.json 的相对 url → WebView 可加载的拦截器 URL。逐段
   /// percent-encode（保留 `/` 结构），与拦截器侧 `Uri.decodeComponent` 对称
   /// （镜像 epubUrl 的 HBK-AUDIT-127 编解码对称纪律）。
-  static String mangaImageUrl(String relativeUrl) {
+  static String mangaImageUrl(
+    String relativeUrl, {
+    bool useCustomScheme = false,
+  }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
     final String encoded =
         normalized.split('/').map(Uri.encodeComponent).join('/');
-    return 'https://$kMangaHost/img/$encoded';
+    final String scheme = useCustomScheme ? kMangaResourceScheme : 'https';
+    return '$scheme://$kMangaHost/img/$encoded';
   }
 
   /// 纯函数：围绕 [current]、半径 [radius] 的连续 spread 窗口，clamp 到
@@ -601,7 +609,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   String? _imagesDir;
   MangaReaderSession? _pageSession;
   Map<String, int> _localPageIndices = const <String, int>{};
-  MihonReaderChapter? _onlineChapter;
+  OnlineMangaReaderChapter? _onlineChapter;
   bool _persistProgress = true;
   MokuroPayload? _payload;
   MangaReadingMode _mode = MangaReadingMode.spread;
@@ -914,7 +922,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _loadBook() async {
     final FushiDatabase db = appModel.database;
-    final MihonReaderChapter? directOnlineChapter = widget.onlineChapter;
+    final OnlineMangaReaderChapter? directOnlineChapter = widget.onlineChapter;
     if (directOnlineChapter != null) {
       final EpubBookRow? persisted = directOnlineChapter.persistProgress
           ? await db.getEpubBook(widget.bookKey)
@@ -1115,19 +1123,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _loadOnlineChapter(
-    MihonReaderChapter input, {
+    OnlineMangaReaderChapter input, {
     required EpubBookRow? persistedRow,
   }) async {
     final Directory directory = input.managedDirectory;
     final Directory imagesDirectory =
         Directory(p.join(directory.path, 'images'));
     await imagesDirectory.create(recursive: true);
-    final List<String> pageIdentities = <String>[
-      for (final MihonPage page in input.pages)
-        mihonPageCacheIdentity(input.sourceContext, page),
-    ];
+    final List<String> pageIdentities = input.pageIdentities;
     final File identityFile =
-        File(p.join(directory.path, '.mihon-chapter.json'));
+        File(p.join(directory.path, input.identityFileName));
     final bool sameChapterPages =
         await _onlineChapterIdentityMatches(identityFile, pageIdentities);
     if (!sameChapterPages) {
@@ -1136,7 +1141,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _writeOnlineChapterIdentity(identityFile, pageIdentities);
 
     final List<String> relativePagePaths = <String>[
-      for (int index = 0; index < input.pages.length; index++)
+      for (int index = 0; index < input.pageCount; index++)
         'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
     ];
     final File mangaJson = File(p.join(directory.path, 'manga.json'));
@@ -1147,7 +1152,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         final MokuroPayload stored = await MangaFushiPage.parseMangaJsonOffUi(
           await mangaJson.readAsString(),
         );
-        if (stored.images.length == input.pages.length) {
+        if (stored.images.length == input.pageCount) {
           payload = stored;
         } else {
           rewriteMangaJson = true;
@@ -1180,18 +1185,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
 
-    final MangaReaderSession pageSession = await MihonMangaPageProvider(
-      runtime: input.manager.runtime,
-      context: input.sourceContext,
-      pages: input.pages,
-      cacheRoot: Directory(
-        p.join(
-          input.manager.rootDirectory.path,
-          'reader-cache',
-          'pages',
-        ),
-      ),
-    ).open();
+    final MangaReaderSession pageSession = await input.openPageSession();
     if (!mounted) {
       await pageSession.close();
       return;
@@ -1212,18 +1206,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ? persistedRow.copyWith(
             epubPath: p.basename(mangaJson.path),
             extractDir: directory.path,
-            chapterCount: input.pages.length,
+            chapterCount: input.pageCount,
           )
         : EpubBookRow(
             bookKey: widget.bookKey,
             // v81：无持久行的内存兜底行——身份生成一次;真正落库仍经
             // insertEpubBook 单点(见其 doc)。
             uid: generateEpubBookUid(),
-            title: input.manga.title,
-            author: input.manga.author ?? input.manga.artist,
+            title: input.title,
+            author: input.author,
             epubPath: p.basename(mangaJson.path),
             extractDir: directory.path,
-            chapterCount: input.pages.length,
+            chapterCount: input.pageCount,
             chaptersJson: '[]',
             importedAt: DateTime.now().millisecondsSinceEpoch,
             format: 'manga',
@@ -1598,7 +1592,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
           data: page.bytes,
         );
-      } on MihonRuntimeException catch (error, stackTrace) {
+      } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log(
           'MangaFushiPage.page',
           error,
@@ -1637,6 +1631,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         'Cache-Control': 'max-age=3600',
       },
       data: await File(filePath).readAsBytes(),
+    );
+  }
+
+  Future<CustomSchemeResponse?> _loadMangaCustomScheme(
+    WebResourceRequest request,
+  ) async {
+    if (request.url.scheme != MangaFushiPage.kMangaResourceScheme) {
+      return null;
+    }
+    final WebResourceResponse? response = await _interceptRequest(request.url);
+    if (response == null) return null;
+    return CustomSchemeResponse(
+      data: response.data ?? Uint8List(0),
+      contentType: response.contentType ?? 'application/octet-stream',
+      contentEncoding: response.contentEncoding ?? 'binary',
     );
   }
 
@@ -1694,7 +1703,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (page < 0 || page >= payload.images.length) continue;
       final MokuroImage image = payload.images[page];
       pages.add(image);
-      imgSrcs.add(MangaFushiPage.mangaImageUrl(image.url));
+      imgSrcs.add(
+        MangaFushiPage.mangaImageUrl(
+          image.url,
+          useCustomScheme: Platform.isMacOS || Platform.isIOS,
+        ),
+      );
       final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
       pageSpreadIndices.add(spreadIndex);
       pagesPerSpread.add(spreadIndex >= 0 && spreadIndex < _spreads.length
@@ -2173,7 +2187,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     setState(() => _wholeVolumeOcrOpen = true);
     try {
-      final MihonReaderChapter? online = _onlineChapter;
+      final OnlineMangaReaderChapter? online = _onlineChapter;
       final MangaOcrBackgroundJob? job;
       if (online != null) {
         if (!await ensureGoogleLensDisclosure(context) || !mounted) return;
@@ -3141,6 +3155,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             fit: StackFit.expand,
             children: <Widget>[
               Positioned.fill(child: _buildBody()),
+              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+              // WebView 持焦后会吞掉翻页键。
+              Positioned.fill(
+                key: const ValueKey<String>('manga_dictionary_host'),
+                child: buildDictionary(),
+              ),
+              if (_bookRow != null && !_loadFailed)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  child: SafeArea(
+                    child: IconButton(
+                      key: const ValueKey<String>('manga_reader_back_button'),
+                      tooltip:
+                          MaterialLocalizations.of(context).backButtonTooltip,
+                      color: Colors.white,
+                      icon: const Icon(Icons.arrow_back_ios_new),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                  ),
+                ),
               // 顶部 chrome：页码指示 + 阅读模式切换。
               if (_bookRow != null && !_loadFailed)
                 Positioned(
@@ -3148,12 +3183,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   right: 0,
                   child: SafeArea(child: _buildTopChrome()),
                 ),
-              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
-              // WebView 持焦后会吞掉翻页键。
-              Positioned.fill(
-                key: const ValueKey<String>('manga_dictionary_host'),
-                child: buildDictionary(),
-              ),
             ],
           ),
         ),
@@ -3384,6 +3413,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         databaseEnabled: false,
         domStorageEnabled: false,
         useShouldInterceptRequest: true,
+        resourceCustomSchemes: const <String>[
+          MangaFushiPage.kMangaResourceScheme,
+        ],
         transparentBackground: true,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
@@ -3482,6 +3514,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       shouldInterceptRequest:
           (InAppWebViewController controller, WebResourceRequest request) =>
               _interceptRequest(request.url),
+      onLoadResourceWithCustomScheme:
+          (InAppWebViewController controller, WebResourceRequest request) =>
+              _loadMangaCustomScheme(request),
       onReceivedError: (InAppWebViewController controller,
           WebResourceRequest request, WebResourceError error) async {
         if (!(request.isForMainFrame ?? false)) return;
