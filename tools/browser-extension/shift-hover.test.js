@@ -27,8 +27,16 @@ function loadContentAndFireShift(options) {
   const dataset = {};
   const video = {
     paused: false,
+    ended: false,
+    isConnected: true,
     pauseCount: 0,
+    playCount: 0,
     pause() { this.paused = true; this.pauseCount++; },
+    play() {
+      this.paused = false;
+      this.playCount++;
+      return { catch() {} };
+    },
   };
   // 可控时钟：BUG-1024 的在途闸超时兜底按 Date.now() 判定，测试需要推进虚拟时间。
   const nowRef = { value: 1000000 };
@@ -65,12 +73,15 @@ function loadContentAndFireShift(options) {
     },
     getElementById: () => null,
     querySelector: (selector) => selector === 'video' ? video : null,
-    querySelectorAll: () => [],
+    querySelectorAll: (selector) => selector === 'video' ? [video] : [],
     createElement: () => ({
       style: {},
       addEventListener() {},
+      removeEventListener() {},
       appendChild() {},
       setAttribute() {},
+      remove() {},
+      contains: () => false,
       classList: { add() {} },
     }),
   };
@@ -162,18 +173,42 @@ test('未按 Shift 的 mousemove 不发查词（不刷爆服务器）', () => {
   );
 });
 
-test('查词时暂停默认关闭；开启后任意视频站点只在发起查词时暂停', () => {
-  const off = loadContentAndFireShift();
-  for (const fn of off.docListeners.mousemove) {
-    fn({ shiftKey: true, clientX: 300, clientY: 400 });
-  }
-  assert.strictEqual(off.video.pauseCount, 0, '默认关闭时查词不得暂停视频');
-
-  const on = loadContentAndFireShift({ stored: { subtitlePauseOnLookup: true } });
+test('查词时暂停默认开启（对齐 app TODO-1108）；显式关闭后不暂停', () => {
+  const on = loadContentAndFireShift();
   for (const fn of on.docListeners.mousemove) {
     fn({ shiftKey: true, clientX: 300, clientY: 400 });
   }
-  assert.strictEqual(on.video.pauseCount, 1, '开启后发起查词应暂停当前视频');
+  assert.strictEqual(on.video.pauseCount, 1, '默认开启：发起查词应暂停正在播放的视频');
+
+  const off = loadContentAndFireShift({ stored: { subtitlePauseOnLookup: false } });
+  for (const fn of off.docListeners.mousemove) {
+    fn({ shiftKey: true, clientX: 300, clientY: 400 });
+  }
+  assert.strictEqual(off.video.pauseCount, 0, '显式关闭时查词不得暂停视频');
+});
+
+test('关闭查词弹窗后自动恢复由查词暂停的视频', () => {
+  const h = loadContentAndFireShift();
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.pauseCount, 1, '查词应先暂停视频');
+  assert.strictEqual(h.video.paused, true);
+  // 点弹窗外关窗（mousedown 命中 host 之外）→ fushiRemoveContainer → 恢复播放。
+  for (const fn of h.docListeners.mousedown || []) fn({ target: {} });
+  assert.strictEqual(h.video.playCount, 1, '关窗必须恢复由查词暂停的视频');
+  assert.strictEqual(h.video.paused, false);
+  // 再关一次（无在场弹窗）不得重复 play。
+  for (const fn of h.docListeners.mousedown || []) fn({ target: {} });
+  assert.strictEqual(h.video.playCount, 1, '无查词暂停在场时不得重复 play');
+});
+
+test('用户自己暂停的视频不因关闭查词弹窗被播放', () => {
+  const h = loadContentAndFireShift();
+  h.video.paused = true; // 查词前用户已手动暂停
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.pauseCount, 0, '没有正在播放的视频就没有可暂停的');
+  for (const fn of h.docListeners.mousedown || []) fn({ target: {} });
+  assert.strictEqual(h.video.playCount, 0, '用户自己暂停的视频绝不被自动播放');
+  assert.strictEqual(h.video.paused, true);
 });
 
 test('查词暂停兼容旧 subtitleHoverPause，但新键显式 false 优先', () => {
@@ -190,6 +225,12 @@ test('查词暂停兼容旧 subtitleHoverPause，但新键显式 false 优先', 
     fn({ shiftKey: true, clientX: 300, clientY: 400 });
   }
   assert.strictEqual(overridden.video.pauseCount, 0, '新键显式 false 必须覆盖旧 true');
+
+  const legacyOff = loadContentAndFireShift({ stored: { subtitleHoverPause: false } });
+  for (const fn of legacyOff.docListeners.mousemove) {
+    fn({ shiftKey: true, clientX: 300, clientY: 400 });
+  }
+  assert.strictEqual(legacyOff.video.pauseCount, 0, '旧键显式 false 必须压过新默认开启');
 });
 
 test('查词暂停经 storage.onChanged 热更新启停，无需刷新页面', () => {
