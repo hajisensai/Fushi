@@ -56,6 +56,8 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.loadMembers,
     required this.onOpenEpisode,
     required this.onChanged,
+    this.onScrape,
+    this.onEpisodeScrapeInfo,
     this.onDeleteMembersMedia,
     super.key,
   });
@@ -71,6 +73,14 @@ class MediaCollectionDetailPage extends StatefulWidget {
 
   /// 改名 / 删除后刷新库页。
   final VoidCallback onChanged;
+
+  /// 管理菜单「刮削资料与封面」（BUG-1662）：与库页合集菜单同一套刮削弹窗，由
+  /// 调用方（持 repo + TMDB key）注入。null = 菜单不出该项。合集详情页此前没有
+  /// 任何刮削入口——刮错了的用户从「详情」进来是条断头路。
+  final Future<void> Function()? onScrape;
+
+  /// 集卡菜单「条目信息」（含重新刮削单集资料，BUG-1662）。null = 不出该项。
+  final Future<void> Function(VideoBookRow episode)? onEpisodeScrapeInfo;
 
   /// 「删除合集」时可选连同各集视频本体一起删（默认不删，保持只解链语义）。
   /// 调用方（持 [VideoBookRepository]）注入：按 [VideoBookRow] 删视频 DB 行 +
@@ -2247,6 +2257,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ],
             ),
           ),
+        // 单集条目信息（含「重新刮削」，BUG-1662）：某一集刮错了，此前在合集
+        // 语境下没有任何 UI 路径可以重刮——库页墙上只有合集卡，摸不到成员。
+        if (widget.onEpisodeScrapeInfo != null)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.scrapeInfo,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.info_outline, size: 20),
+                const SizedBox(width: 12),
+                Text(t.video_scrape_info),
+              ],
+            ),
+          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -2265,6 +2288,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.openBangumi:
         await _openEpisodeOnBangumi(episode);
+      case _EpisodeMenuAction.scrapeInfo:
+        await widget.onEpisodeScrapeInfo?.call(episode);
+        // 重刮会改写集级资料/标题，重载让新集名立即上卡。
+        if (mounted) await _reload();
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
@@ -2274,6 +2301,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _handleManageAction(_CollectionManageAction action) async {
     switch (action) {
+      case _CollectionManageAction.scrape:
+        // 弹窗关闭即返回；刮削可能改写合集名/封面/集级资料，详情页重载自己
+        // （库页刷新由调用方注入的 onApplied 负责，见 showCollectionScrapeDialog）。
+        await widget.onScrape?.call();
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.sortBySeason:
         await _sortBySeason();
         return;
@@ -2337,6 +2370,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               unawaited(_handleManageAction(action)),
           itemBuilder: (BuildContext context) =>
               <PopupMenuEntry<_CollectionManageAction>>[
+            // 刮削放最前（BUG-1662）：它是集名/集号/字幕匹配等其余管理能力的数据
+            // 源头，也是「刮错了要重刮」的用户进详情页找的那一项。
+            if (widget.onScrape != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrape,
+                Icons.image_search,
+                t.video_collection_scrape,
+              ),
             _manageMenuItem(
               _CollectionManageAction.sortBySeason,
               Icons.segment,
@@ -2460,9 +2501,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 }
 
 /// 集卡上下文菜单动作。
-enum _EpisodeMenuAction { download, openBangumi, removeFromCollection }
+enum _EpisodeMenuAction {
+  download,
+  openBangumi,
+  scrapeInfo,
+  removeFromCollection,
+}
 
 enum _CollectionManageAction {
+  scrape,
   sortBySeason,
   subtitles,
   renameEpisodes,
