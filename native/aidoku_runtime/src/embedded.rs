@@ -282,6 +282,14 @@ struct HostState {
     stdout: String,
     partial_results: Vec<Vec<u8>>,
     defaults: HashMap<String, Vec<u8>>,
+    /// Set when any network request during this invocation came back as a
+    /// Cloudflare interstitial ("Just a moment…" / Turnstile challenge). A
+    /// headless HTTP client cannot solve the JavaScript challenge, so the
+    /// source parses the challenge HTML as its expected JSON/HTML payload and
+    /// fails with an opaque decode error. Remembering that we saw the challenge
+    /// lets us turn that opaque failure into an actionable `CLOUDFLARE_CHALLENGE`
+    /// code instead of a raw `JsonParseError`.
+    cloudflare_challenge: bool,
 }
 
 impl HostState {
@@ -293,6 +301,7 @@ impl HostState {
             stdout: String::new(),
             partial_results: Vec::new(),
             defaults,
+            cloudflare_challenge: false,
         }
     }
 
@@ -520,6 +529,48 @@ fn method_from_code(value: i32) -> Option<Method> {
     })
 }
 
+/// Detects a Cloudflare interstitial ("Just a moment…" / Turnstile) response.
+///
+/// The strongest signal is Cloudflare's own `cf-mitigated: challenge` header,
+/// which it stamps on every managed-challenge response. As a fallback (some
+/// deployments omit that header) we look for the challenge markup, but only when
+/// the status and `server` header already point at Cloudflare, so a source that
+/// legitimately returns a 403/503 JSON body is never misclassified.
+fn is_cloudflare_challenge(
+    status: u16,
+    headers: &reqwest::header::HeaderMap,
+    data: &[u8],
+) -> bool {
+    if headers
+        .get("cf-mitigated")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.eq_ignore_ascii_case("challenge"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if !matches!(status, 403 | 429 | 503) {
+        return false;
+    }
+    let served_by_cloudflare = headers
+        .get(reqwest::header::SERVER)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.eq_ignore_ascii_case("cloudflare"))
+        .unwrap_or(false);
+    if !served_by_cloudflare {
+        return false;
+    }
+    let head = &data[..data.len().min(8192)];
+    let Ok(text) = std::str::from_utf8(head) else {
+        return false;
+    };
+    text.contains("challenge-platform")
+        || text.contains("Just a moment")
+        || text.contains("_cf_chl_opt")
+        || text.contains("cf-chl")
+        || text.contains("cf_challenge")
+}
+
 fn send_request(state: &mut HostState, rid: i32) -> i32 {
     let Some(StoreItem::Request(request)) = state.descriptors.get_mut(&rid) else {
         return -1;
@@ -558,12 +609,16 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
     let Ok(data) = response.bytes() else {
         return -10;
     };
+    let cloudflare_challenge = is_cloudflare_challenge(status, &headers, &data);
     request.response = Some(NetResponse {
         url: final_url,
         status,
         headers,
         data: data.to_vec(),
     });
+    if cloudflare_challenge {
+        state.cloudflare_challenge = true;
+    }
     0
 }
 
@@ -1830,6 +1885,9 @@ impl EmbeddedRuntime {
 
     fn take_result<T: DeserializeOwned>(&mut self, pointer: i32) -> Result<T> {
         if pointer <= 0 {
+            if self.store.data().cloudflare_challenge {
+                bail!("Cloudflare challenge blocked this source");
+            }
             let log = self.store.data().stdout.trim();
             if log.is_empty() {
                 bail!("Aidoku source returned error code {pointer}");
@@ -1865,6 +1923,9 @@ impl EmbeddedRuntime {
             .context("Aidoku source does not export free_result")?;
         free.call(&mut self.store, pointer)
             .context("Aidoku source failed to free its result")?;
+        if result.is_err() && self.store.data().cloudflare_challenge {
+            bail!("Cloudflare challenge blocked this source");
+        }
         result
     }
 
@@ -2133,7 +2194,11 @@ pub fn invoke_json(input: &str) -> String {
             .unwrap_or_else(|error| json!({"error": error.to_string()}).to_string()),
         Err(error) => {
             let message = format!("{error:#}");
-            let code = if message.contains("unknown import")
+            let code = if message.contains("Cloudflare challenge")
+                || message.contains("CF challenge")
+            {
+                "CLOUDFLARE_CHALLENGE"
+            } else if message.contains("unknown import")
                 || message.contains("imported function type mismatch")
                 || message.contains("failed to instantiate Aidoku WebAssembly")
             {
@@ -2200,6 +2265,38 @@ mod tests {
                 .unwrap()
                 .contains("invalid Aidoku request JSON")
         );
+    }
+
+    #[test]
+    fn detects_cloudflare_challenge_by_mitigated_header() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("cf-mitigated", "challenge".parse().unwrap());
+        assert!(is_cloudflare_challenge(403, &headers, b""));
+        // The header is authoritative regardless of status code.
+        assert!(is_cloudflare_challenge(200, &headers, b""));
+    }
+
+    #[test]
+    fn detects_cloudflare_challenge_by_interstitial_markup() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::SERVER, "cloudflare".parse().unwrap());
+        let body = b"<!DOCTYPE html><html><head><title>Just a moment...</title>\
+            <script src=\"/cdn-cgi/challenge-platform/h/b/orchestrate\"></script>";
+        assert!(is_cloudflare_challenge(403, &headers, body));
+        assert!(is_cloudflare_challenge(503, &headers, body));
+    }
+
+    #[test]
+    fn does_not_flag_a_legitimate_403_json_body() {
+        // A source that returns a real 403 JSON error (not served by Cloudflare,
+        // no challenge markup) must never be misread as a challenge.
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::SERVER, "nginx".parse().unwrap());
+        assert!(!is_cloudflare_challenge(403, &headers, br#"{"error":"forbidden"}"#));
+        // Cloudflare-served but a normal 200 JSON payload is fine too.
+        let mut cf_headers = reqwest::header::HeaderMap::new();
+        cf_headers.insert(reqwest::header::SERVER, "cloudflare".parse().unwrap());
+        assert!(!is_cloudflare_challenge(200, &cf_headers, br#"{"data":[]}"#));
     }
 
     #[test]

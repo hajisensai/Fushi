@@ -3435,5 +3435,10 @@
   "mining_still_format_jpg": "JPG（体积更小）",
   "mining_still_format_png": "PNG（无损）",
   "gal_mining_still_format": "游戏卡片截图格式",
-  "gal_mining_still_format_hint": "与视频卡片同样的格式，但分开保存。游戏窗口抓图本身是 PNG：选 PNG 无损但大好几倍，选 JPG 与这些截图过去的压缩方式一致。"
+  "gal_mining_still_format_hint": "与视频卡片同样的格式，但分开保存。游戏窗口抓图本身是 PNG：选 PNG 无损但大好几倍，选 JPG 与这些截图过去的压缩方式一致。",
+  "manga_source_cloudflare_blocked": "该来源受 Cloudflare 保护，内置阅读器暂时无法访问。",
+  "manga_global_search_title": "搜索全部来源",
+  "manga_global_search_hint": "搜索所有已启用来源",
+  "manga_global_search_prompt": "输入书名，一次搜索所有已启用的漫画来源。",
+  "manga_global_search_no_sources": "没有已启用的漫画来源，请先安装并启用扩展。"
 }
