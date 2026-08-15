@@ -22,16 +22,13 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/cover_ui/collection_scrape_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/scrape_info_dialog.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
-import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
 import 'package:fushi/src/media/video/scraper/offline_index.dart';
-import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart';
-import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
@@ -5117,7 +5114,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 拉字幕。对话框负责先关自身，这里不 pop。
       extraListActions: <DialogListAction>[
         DialogListAction(
-          label: t.video_scrape_online_match,
+          // 文案含「刮削」（BUG-1662）：这一项内部就是整套合集刮削（资料 + 封面），
+          // 叫「在线匹配封面」会让想「重新刮削」的用户按字面找不到入口。
+          label: t.video_collection_scrape,
           icon: Icons.image_search,
           onPressed: () => _openCollectionCoverMatch(collection),
         ),
@@ -5130,113 +5129,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 合集右键「在线匹配封面」：换的是**合集自己的封面**（`MediaCollections.coverPath`，
-  /// schema v61），一个成员都不动（BUG-1211）。
-  ///
-  /// 旧行为是把选中的封面 + Bangumi 条目资料一次性刷进合集全部成员，用户明确否决：
-  /// 「匹配的是合集的封面，谁说应用到本机里面的视频了」。现在弹窗从合集入口打开时
-  /// 不再出「同时应用到本合集全部 N 集」勾选，「使用」只下载一张图落进
-  /// `<video_covers>/collections/<id>.jpg` 并写合集那一列。
-  ///
-  /// 本地成员仍要找一个当**搜索种子**（用它的文件路径解析番名预填搜索框）；找不到
-  /// 就没有可预填的片名，给可见提示而不是静默返回——菜单已自行关闭，静默 return 在
-  /// 用户看来就是「点了没反应」（同 BUG-1081 的判据）。
-  ///
-  /// 不做菜单项置灰：能不能刮取决于「有没有**解析得出**的本地成员」，那要
-  /// `getCollectionItems` + 逐 uid 查 repo 才知道，为每次右键都付这份 IO 不划算；
-  /// 用扩展名式的近似预判去置灰则会撒谎（灰的其实能用 / 亮的其实不能用）。
-  Future<void> _openCollectionCoverMatch(MediaCollectionRow collection) async {
-    final FushiDatabase db = ref.read(appProvider).database;
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collection.id);
-    final List<String> uids = <String>[
-      for (final MediaCollectionItemRow m in items)
-        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
-    ];
-    VideoBookRow? seed;
-    for (final String uid in uids) {
-      seed = await widget.repo.getByBookUid(uid);
-      if (seed != null) break;
-    }
-    if (!mounted) return;
-    if (seed == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.video_collection_no_local_member)),
-      );
-      return;
-    }
-    final ({
-      CoverScraperService service,
-      CoverScraperService Function(OfflineIndex offline) rebuild,
-      Directory scraperDir,
-    }) bundle = await _scraperBundle();
-    if (!mounted) return;
-    await showCoverMatchDialog(
+  /// 合集右键「刮削资料与封面」：流程本体在 [showCollectionScrapeDialog]
+  /// （BUG-1662 抽出，与合集详情页管理菜单共用；语义约束——只写合集自身、
+  /// 不动成员（BUG-1211）——见其文档注释）。
+  Future<void> _openCollectionCoverMatch(MediaCollectionRow collection) {
+    return showCollectionScrapeDialog(
       context: context,
-      service: bundle.service,
-      book: seed,
-      // 合集入口下弹窗不读成员表（不出「应用到全部」勾选）；只传种子自身，让
-      // 「误传整表 → 又被当成批量目标」这条路在类型/数据两层都不存在。
-      collectionMemberUids: <String>[seed.bookUid],
+      db: ref.read(appProvider).database,
+      repository: widget.repo,
+      configuredTmdbKey: ref
+          .read(appProvider)
+          .prefsRepo
+          .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String,
+      collection: collection,
       onApplied: _refresh,
-      collection: CoverMatchCollectionTarget(
-        id: collection.id,
-        name: collection.name,
-        applyScrape: (
-          CollectionScrapeResult result, {
-          required String? confirmedTitle,
-        }) async {
-          await applyCollectionScrape(
-            db,
-            collection.id,
-            result,
-            confirmedTitle: confirmedTitle,
-          );
-          // TODO-2484：同一次刮削顺带拉「相关作品」。fire-and-forget——弹窗
-          // 主流程（封面+资料）已落库成功，关系区块是增量数据，拉取失败只记
-          // 日志、下次重刮补齐，不把弹窗关闭卡在第二轮网络请求上。
-          unawaited(_scrapeCollectionRelations(db, collection.id));
-        },
-      ),
     );
-  }
-
-  /// 合集刮削后的「相关作品」拉取（TODO-2484）。独立函数：applyScrape 闭包只管
-  /// 触发；失败（含逐源错误）统一进 ErrorLogService，不上 UI。
-  Future<void> _scrapeCollectionRelations(
-    FushiDatabase db,
-    int collectionId,
-  ) async {
-    // 用户自填 key 优先，其次内置 key（resolveTmdbApiKey）——与封面刮削同一
-    // 取值规则；读裸偏好会让只靠内置 key 的用户 TMDB 关系路静默失效。
-    final String tmdbKey = resolveTmdbApiKey(ref
-        .read(appProvider)
-        .prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String);
-    final BangumiClient bangumi = BangumiClient();
-    final TmdbClient? tmdb =
-        tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey);
-    try {
-      final CollectionRelationsScrapeReport report =
-          await scrapeCollectionRelations(
-        db: db,
-        collectionId: collectionId,
-        bangumi: bangumi,
-        tmdb: tmdb,
-      );
-      for (final MapEntry<String, String> entry
-          in report.sourceErrors.entries) {
-        ErrorLogService.instance.log(
-          'CollectionRelations.${entry.key}',
-          entry.value,
-        );
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CollectionRelations', e, stack);
-    } finally {
-      bangumi.close();
-      tmdb?.close();
-    }
   }
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
@@ -5286,6 +5193,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           repository: repo,
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
+          // 详情页管理菜单「刮削资料与封面」+ 集卡「条目信息」（BUG-1662）：注入
+          // 库页同一套刮削入口，合集语境下的重刮不再是断头路。
+          onScrapeCollection: _openCollectionCoverMatch,
+          onEpisodeScrapeInfo: _openScrapeInfo,
           onDeleteMembersMedia: (List<VideoBookRow> members) async {
             for (final VideoBookRow member in members) {
               await repo.deleteVideoBookAndReclaimAssets(
