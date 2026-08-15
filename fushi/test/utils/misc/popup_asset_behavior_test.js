@@ -147,6 +147,18 @@ class FakeElement {
     return Object.prototype.hasOwnProperty.call(this.attributes, name);
   }
 
+  // BUG-1666: rewriteExportedGlossaryAnchors 走导出制卡路径，读/删锚点的 href。
+  // 真 DOM 上 getAttribute 缺属性时返回 null（不是 undefined），照此实现。
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name)
+      ? this.attributes[name]
+      : null;
+  }
+
+  removeAttribute(name) {
+    delete this.attributes[name];
+  }
+
   addEventListener(type, handler) {
     if (!this.listeners[type]) {
       this.listeners[type] = [];
@@ -205,6 +217,35 @@ class FakeElement {
       return null;
     };
     return visit(this);
+  }
+
+  // BUG-1666: 与 querySelector 同一套最小选择器语法，另加「属性存在」判据，
+  // 因为 rewriteExportedGlossaryAnchors 用的是 'a[href]'。真 DOM 返回 NodeList，
+  // 生产代码只对它 .forEach，所以这里返回数组即可。
+  querySelectorAll(selector) {
+    const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/);
+    if (!parsed || (!parsed[1] && !parsed[2] && !parsed[3])) {
+      return [];
+    }
+    const wantTag = parsed[1] ? parsed[1].toUpperCase() : null;
+    const wantClass = parsed[2] || null;
+    const wantAttr = parsed[3] || null;
+    const matches = (el) =>
+      (wantTag === null || el.tagName === wantTag) &&
+      (wantClass === null || (!!el.classList && el.classList.contains(wantClass))) &&
+      (wantAttr === null ||
+        (typeof el.hasAttribute === 'function' && el.hasAttribute(wantAttr)));
+    const found = [];
+    const visit = (el) => {
+      for (const child of el.children ?? []) {
+        if (matches(child)) {
+          found.push(child);
+        }
+        visit(child);
+      }
+    };
+    visit(this);
+    return found;
   }
 
   closest(selector) {
