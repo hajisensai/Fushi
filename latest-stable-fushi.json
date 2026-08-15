@@ -5,7 +5,7 @@
   "channel": "formal",
   "prerelease": false,
   "releaseSequence": 11666,
-  "notes": "Manual formal release from develop @ d967a9f.",
+  "notes": "Manual desktop formal release from develop @ d967a9f.",
   "assets": [
     {
       "name": "fushi-2.1.1-arm64-v8a.apk",
@@ -17,6 +17,13 @@
     {
       "name": "fushi-2.1.1-armeabi-v7a.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-armeabi-v7a.apk",
+      "releaseSequence": 11666,
+      "tag": "v2.1.1",
+      "version": "2.1.1"
+    },
+    {
+      "name": "fushi-2.1.1-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-windows-setup.exe",
       "releaseSequence": 11666,
       "tag": "v2.1.1",
       "version": "2.1.1"
