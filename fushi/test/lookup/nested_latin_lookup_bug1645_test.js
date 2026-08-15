@@ -15,6 +15,10 @@
 // 判据必须是渲染盒而不是「两侧都是字母就断」，否则 `<b>ac</b>rid` 这种行内标记
 // 拆开的单词会被误断（场景 C 守这条）。
 //
+// BUG-1659（同一函数的后续回归）：`isInlineBox` 手工枚举 inline 盒，漏掉了
+// inline-block（popup.css 的 `.ruby-unit` 正是它）与「computed display 为空串」
+// 两种情况，两者都被误判成渲染断点 —— 见下方场景 E / F。
+//
 // 运行：node fushi/test/lookup/nested_latin_lookup_bug1645_test.js
 // 由同名 .dart wrapper 通过 Process.run('node', ...) 驱动（无 node 时 skip）。
 
@@ -232,6 +236,64 @@ function run() {
     });
     const text = ctx.sandbox.window.fushiSelection.selectFromPosition(ctx.hit, 0, 20);
     assert.strictEqual(text, '打ち合わせ', '[ja-inline] 日语跨行内节点续扫不得回归');
+  }
+
+  // 场景 E（BUG-1659 根因守卫）：振假名单元是 `display: inline-block`。
+  // popup.css `.ruby-unit { display: inline-block }`（每个振假名单元一个盒），
+  // 而 inline-block 是 **inline-level** 盒 —— 它和相邻文字排在同一行上，两侧
+  // 文字完全可能是同一个词。BUG-1645 的 isInlineBox 手工枚举成
+  // `display === 'inline'`，把它连同 inline-flex / inline-grid / inline-table
+  // 一起当成了渲染断点，于是查词浮窗 glossary 里任何带振假名的词扫到第一个
+  // ruby 单元就断：「打ち合わせ」只剩下「打」。
+  //
+  // 注意 test/js/popup_ruby_selection.test.mjs 盖不住这条：jsdom 的默认样式表
+  // 只给块级元素赋 display，fixture 里 span/ruby 的 computed display 全是空串，
+  // 那条测试踩到的是「空 display」路径（场景 F），不是 inline-block。
+  {
+    const ctx = buildContext((body) => {
+      const content = makeElement('div', { className: 'glossary-content', display: 'block' });
+      const ruby = makeElement('ruby', { display: 'ruby' });
+      const unit = makeElement('span', { className: 'ruby-unit', display: 'inline-block' });
+      const baseText = makeText('打', unit);
+      unit.childNodes = [baseText];
+      const tail = makeElement('span', { display: 'inline' });
+      const tailText = makeText('ち合わせ', tail);
+      tail.childNodes = [tailText];
+      appendChildren(ruby, [unit]);
+      appendChildren(content, [ruby, tail]);
+      appendChildren(body, [content]);
+      return { hit: baseText };
+    });
+    const text = ctx.sandbox.window.fushiSelection.selectFromPosition(ctx.hit, 0, 20);
+    assert.strictEqual(
+      text,
+      '打ち合わせ',
+      '[inline-block] 振假名单元(.ruby-unit)是 inline-level 盒，不得当成渲染断点',
+    );
+  }
+
+  // 场景 F（BUG-1659）：computed display 取不到值（空串）时不得当成断点。
+  // isInlineBox 的既有兜底是「拿不到样式时返回 true」，但只挡了 style 对象本身
+  // 为空的情况；样式对象在、display 是空串时会一路落到 `=== 'inline'` 全部不中，
+  // 反而判成断点。jsdom / 精简沙箱 / 未附加到文档的节点都会走到这条路径。
+  {
+    const ctx = buildContext((body) => {
+      const paragraph = makeElement('p', { display: 'block' });
+      const span = makeElement('span', { display: '' });
+      const spanText = makeText('打ち', span);
+      span.childNodes = [spanText];
+      const tailText = makeText('合わせ', paragraph);
+      appendChildren(paragraph, [span]);
+      paragraph.childNodes = [span, tailText];
+      appendChildren(body, [paragraph]);
+      return { hit: spanText };
+    });
+    const text = ctx.sandbox.window.fushiSelection.selectFromPosition(ctx.hit, 0, 20);
+    assert.strictEqual(
+      text,
+      '打ち合わせ',
+      '[empty-display] 拿不到 display 时必须沿用旧的续扫行为，不得判成断点',
+    );
   }
 
   console.log('all assertions passed');
