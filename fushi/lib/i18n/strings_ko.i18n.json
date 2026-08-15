@@ -3418,6 +3418,7 @@
   "aidoku_repository_hint": "Paste an Aidoku repository homepage or index.min.json URL. The community repository is filled in by default.",
   "aidoku_repository_remove": "Remove repository",
   "aidoku_repository_empty": "No Aidoku repositories added.",
+  "local_audio_reference_unavailable": "Can't reference the original file without all-files access; a copy was imported instead.",
   "video_collection_scrape": "Scrape info & cover",
   "update_testflight_open": "Open TestFlight",
   "update_app_store_open": "Open App Store",

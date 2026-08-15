@@ -257,10 +257,28 @@ void main() {
       // 文件入口存在，且无全文件访问权限时回退（不静默返回 null / 不硬性要求授权）。
       expect(fileEntry.isNotEmpty, isTrue,
           reason: '必须存在 pickRealFilePath 文件入口');
+      // BUG-1667：平台分流 + 回退逃生口下沉到带路径出处的 pickRealFilePathDetailed，
+      // pickRealFilePath 退化成丢掉出处的薄封装。断言意图不变——逃生口必须还在，
+      // 只是改到它现在真正所在的那个函数里查。
       expect(
-        fileEntry.contains('_fallbackPickFile'),
+        fileEntry.contains('pickRealFilePathDetailed('),
+        isTrue,
+        reason: 'pickRealFilePath 必须委托给带出处的 pickRealFilePathDetailed',
+      );
+      final String detailed =
+          _methodBody(src, 'Future<PickedFilePath?> pickRealFilePathDetailed(');
+      expect(detailed.isNotEmpty, isTrue,
+          reason: '必须存在带路径出处的 pickRealFilePathDetailed 入口');
+      expect(
+        detailed.contains('_detailedFallback('),
         isTrue,
         reason: '桌面/iOS 及安卓无全文件访问必须回退 file_picker（逃生口）',
+      );
+      expect(
+        _methodBody(src, 'Future<PickedFilePath?> _detailedFallback(')
+            .contains('_fallbackPickRaw('),
+        isTrue,
+        reason: '逃生口最终必须落到 file_picker',
       );
     });
 
