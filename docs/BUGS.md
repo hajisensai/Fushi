@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1537 条。点号进各自文件。
+> 共 1538 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1661](bugs/BUG-1661-corretto-x64-sha256-typo.md) | ✅ | ✅ | macOS 构建挂在「下载 pinned JDK 失败」，真因是 sha256 抄成 65 位 |
 | [BUG-1660](bugs/BUG-1660-aidoku-image-reader-compat.md) | ✅ | ✅ | Aidoku 图源图片与章节兼容及阅读器返回入口缺失 |
 | [BUG-1659](bugs/BUG-1659-inline-level-box-scan-boundary.md) | ✅ | ✅ | 查词浮窗 glossary 里带振假名的词只能查到第一个汉字 |
 | [BUG-1657](bugs/BUG-1657-angle-surface-fallback-loses-shaders.md) | ✅ | ✅ | 画质增强/超分静默失效：ANGLE device-backed display 之后任一步失败即掉软件渲染，而 SW 路径下 glsl-shaders 完全不生效 |

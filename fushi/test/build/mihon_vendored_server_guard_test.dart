@@ -179,6 +179,41 @@ void main() {
         );
       });
 
+      test('$name 钉的 sha256 必须正好 64 位十六进制（多一位就永远校验不过）', () {
+        // BUG-1661：#850 把 macOS 的 pinned JDK 从 Temurin 换成 Corretto 时，
+        // x64 归档的 sha256 抄成了 65 位（真值末尾多了一个字符）。`shasum -a 256
+        // --check` 对这种长度不合法的期望值只会不停地判 FAILED，于是脚本完整下完
+        // 193MB、重试三次、每次都 mismatch，最后整条 macos job 挂在
+        // 「failed to download the pinned macOS JDK archives」——报出来的现象是
+        // 「下载失败」，真因却是**抄错了一个字符**，把人往网络问题上带。
+        //
+        // 长度是这类笔误唯一稳定可测的不变式：内容对不对要下 193MB 才知道，
+        // 位数对不对本地零成本。40 位的 git commit 不在这条规则内，故只看
+        // `..._sha256 = "..."` 这种显式命名的赋值。
+        final RegExp pinned = RegExp(
+          r'''sha256\s*=\s*['"]([0-9a-zA-Z]+)['"]''',
+          caseSensitive: false,
+        );
+        final Iterable<RegExpMatch> hits = pinned.allMatches(_maskedCode(body));
+        expect(hits, isNotEmpty,
+            reason: '$name 里找不到任何钉定的 sha256 —— 校验被整段拿掉了？');
+        for (final RegExpMatch hit in hits) {
+          final String value = hit.group(1)!;
+          expect(
+            value.length,
+            64,
+            reason: '$name 里 ${hit.group(0)} 不是 64 位 sha256（实际 '
+                '${value.length} 位）。多一位/少一位都会让 shasum --check 恒红，'
+                '而现象会伪装成「下载失败」。',
+          );
+          expect(
+            RegExp(r'^[0-9a-f]{64}$').hasMatch(value),
+            isTrue,
+            reason: '$name 里 ${hit.group(0)} 含非小写十六进制字符',
+          );
+        }
+      });
+
       test('$name 显式设置 ProductRevision（vendored 树无 .git，否则 revision 退化成空）', () {
         expect(_maskedCode(body), contains('ProductRevision'));
       });
