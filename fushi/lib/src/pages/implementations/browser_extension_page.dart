@@ -132,58 +132,69 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final AppModel appModel = ref.watch(appProvider);
+
+    // BUG-1658：顶层各 tab 页头统一为 FushiPageHeader 大标题（全出血 + 自身
+    // spacing.page 内边距，与书架/视频/游戏/查词/下载同一几何），不再用旧 AppBar
+    // 小标题工具栏。
+    return Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiPageHeader(title: t.nav_browser_extension),
+          Expanded(child: _buildContentList(theme, appModel)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContentList(ThemeData theme, AppModel appModel) {
     final bool serverOn = appModel.yomitanApiServerEnabled;
     final bool connected = _isRecentlySeen(appModel);
     final String? build = appModel.browserExtensionBuild;
-
-    return Scaffold(
-      appBar: AppBar(title: Text(t.nav_browser_extension)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Text(t.browser_extension_page_intro,
-              style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 16),
-          _statusCard(theme,
-              serverOn: serverOn,
-              connected: connected,
-              port: appModel.yomitanApiPort),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _preparing ? null : _prepare,
-            icon: _preparing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.extension_outlined, size: 18),
-            label: Text(_extensionDir == null
-                ? t.browser_extension_prepare_button
-                : t.browser_extension_reinstall_button),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        Text(t.browser_extension_page_intro, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 16),
+        _statusCard(theme,
+            serverOn: serverOn,
+            connected: connected,
+            port: appModel.yomitanApiPort),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: _preparing ? null : _prepare,
+          icon: _preparing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.extension_outlined, size: 18),
+          label: Text(_extensionDir == null
+              ? t.browser_extension_prepare_button
+              : t.browser_extension_reinstall_button),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          t.browser_extension_prepare_hint,
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        if (_extensionDir != null) ...<Widget>[
+          const Divider(height: 32),
+          BrowserExtensionInstallSteps(
+            path: _extensionDir!,
+            serverEnabled: _serverEnabled,
+            hasToken: _hasToken,
+            serverPort: _serverPort,
+            portConflict: _portConflict,
           ),
           const SizedBox(height: 8),
-          Text(
-            t.browser_extension_prepare_hint,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-          if (_extensionDir != null) ...<Widget>[
-            const Divider(height: 32),
-            BrowserExtensionInstallSteps(
-              path: _extensionDir!,
-              serverEnabled: _serverEnabled,
-              hasToken: _hasToken,
-              serverPort: _serverPort,
-              portConflict: _portConflict,
-            ),
-            const SizedBox(height: 8),
-            _verifyStep(theme),
-          ],
-          const Divider(height: 32),
-          _versionCard(theme, appModel, build),
+          _verifyStep(theme),
         ],
-      ),
+        const Divider(height: 32),
+        _versionCard(theme, appModel, build),
+      ],
     );
   }
 

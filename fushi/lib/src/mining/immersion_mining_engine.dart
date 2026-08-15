@@ -110,6 +110,25 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
   return null;
 }
 
+/// BUG-1664：中止原因 = 症状 + 根因。[symptom] 是稳定的机器可读短语（既有调用方/测试
+/// 按它断言，前缀不变 → Never break userspace），[rootCause] 是抽取层已经算好的精确
+/// 摘要（ffmpeg 启动失败 / 非零退出 + stderr 等）。根因为空（真没抽取过，如 provided
+/// 字节路径丢音轨）时原样返回症状，与旧行为逐字相同。
+///
+/// 截断到 [_kRootCauseMaxChars]：这串会经 `/api/mine` 的 `message` 一路走到浏览器
+/// 扩展的 toast，ffmpeg 的 stderr 摘要可能很长，整段糊上去反而没人看。
+String _withRootCause(String symptom, String? rootCause) {
+  final String cause = rootCause?.trim() ?? '';
+  if (cause.isEmpty) return symptom;
+  final String clipped = cause.length > _kRootCauseMaxChars
+      ? '${cause.substring(0, _kRootCauseMaxChars)}…'
+      : cause;
+  return '$symptom ($clipped)';
+}
+
+/// 见 [_withRootCause]：拼进中止原因的根因摘要上限。
+const int _kRootCauseMaxChars = 300;
+
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -200,12 +219,24 @@ class ImmersionMiningEngine {
     bool degradedToStill = false;
 
     // 按来源分流的两个上报口：各自先喂专属回调，再合流进 [onFailure]（保持既有语义）。
+    // BUG-1664：两个上报口流经的**精确**失败摘要（含 `ffmpeg launch failed:
+    // executable=ffmpeg; errorCode=2; message=No such file or directory`）过去只
+    // 进调用方的诊断日志，中止却回一句常量 'required audio missing'——症状而非根因。
+    // 结果：macOS/Linux 上没有 ffmpeg 时，浏览器扩展批量制卡整批失败，用户（和排查
+    // 的人）只能看到「已处理 0 · 失败 N」，必须翻到沙盒容器里的 error_log.txt 才知道
+    // 是缺 ffmpeg。这里就地留存**首个**摘要（首个最接近根因；后续多为它的连锁反应），
+    // 供下方 abort 时并进 abortReason，让根因一路走到用户眼前。
+    String? firstCoverFailure;
+    String? firstAudioFailure;
+
     void reportCover(String summary) {
+      firstCoverFailure ??= summary;
       onCoverFailure?.call(summary);
       onFailure?.call(summary);
     }
 
     void reportAudio(String summary) {
+      firstAudioFailure ??= summary;
       onAudioFailure?.call(summary);
       onFailure?.call(summary);
     }
@@ -337,14 +368,20 @@ class ImmersionMiningEngine {
     if (req.requireAudio &&
         audioPath == null &&
         (req.hasRange || viaProvidedBytes)) {
-      return const ImmersionMiningResult(
-          aborted: true, abortReason: 'required audio missing');
+      return ImmersionMiningResult(
+          aborted: true,
+          abortReason:
+              _withRootCause('required audio missing', firstAudioFailure));
     }
     // TODO-1303：空壳卡兜底——既无封面又无音频（截图/GIF/音频全失败），不建卡。这正是
     // 「降级空壳卡仍报成功」的根：任何来源下都不该产出无媒体的卡。
     if (coverPath == null && audioPath == null) {
-      return const ImmersionMiningResult(
-          aborted: true, abortReason: 'no cover and no audio produced');
+      // 封面与音频**都**没出来时，两条链的首个摘要通常是同一个根因（例如 ffmpeg 缺失
+      // 会同时打死两条）。取封面优先只是取一个稳定顺序，null 时自动退到音频那条。
+      return ImmersionMiningResult(
+          aborted: true,
+          abortReason: _withRootCause('no cover and no audio produced',
+              firstCoverFailure ?? firstAudioFailure));
     }
 
     final AnkiMiningContext context = AnkiMiningContext(

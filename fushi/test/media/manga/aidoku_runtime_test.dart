@@ -14,6 +14,37 @@ void main() {
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('fushi-aidoku-runtime-');
+    // 假运行时按平台落两种壳：POSIX 用 shebang sh 脚本；Windows 上 shebang 脚本
+    // 无法被 Process.start 直接拉起（且 chmod 不存在），改写等价 .bat（Dart 的
+    // Process 会经 cmd.exe 运行批处理）。两个分支输出逐字节相同的 JSON 负载。
+    if (Platform.isWindows) {
+      executable = File('${root.path}/fake-aidoku-runtime.bat');
+      await executable.writeAsString('''@echo off
+if "%~1"=="inspect" (
+echo {"manifest":{"info":{"id":"ja.test"}},"runtime":{"imports":["net.send"],"exports":["get_search_manga_list"],"requiresWebView":false}}
+exit /b 0
+)
+if "%~1"=="search" (
+echo {"result":{"entries":[{"key":"manga"}],"has_next_page":false}}
+exit /b 0
+)
+if "%~1"=="list" (
+echo {"result":{"entries":[{"key":"listed"}],"has_next_page":true}}
+exit /b 0
+)
+if "%~1"=="details" (
+echo {"result":{"key":"manga","title":"Title"}}
+exit /b 0
+)
+if "%~1"=="pages" (
+echo {"result":[{"content":{"Url":["https://example.test/1.jpg",null]}}]}
+exit /b 0
+)
+echo {"error":"unknown command"} 1>&2
+exit /b 2
+''');
+      return;
+    }
     executable = File('${root.path}/fake-aidoku-runtime');
     await executable.writeAsString('''#!/bin/sh
 case "\$1" in

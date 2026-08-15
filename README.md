@@ -23,6 +23,7 @@ Fushi turns the novels you read, the shows you follow, and the audiobooks you li
 
 The most effective way to learn a language is heavy exposure to real content, not memorizing isolated words from a vocabulary book. But "immersion" has always had two annoyances: looking up a word breaks your flow, and you forget it the moment you look away. Fushi closes that loop —
 
+⬇️ **Get**: download shows and manga in one tap, right inside the app — they land in your library on their own.<br>
 📖 **Read**: tap a word in the EPUB reader to look it up, without leaving the current page.<br>
 🎧 **Listen**: audiobooks highlight along sentence by sentence and turn pages automatically.<br>
 🎬 **Watch**: look up words and make cards right on the video subtitles — following a show *is* input.<br>
@@ -129,8 +130,13 @@ Every scenario shares the same dictionaries, statistics, and review workflow. It
 
 ### Downloads
 
-- Built-in torrent engine (libtorrent), plus Nyaa search and subscriptions for new episodes.
-- A downloads page that tracks jobs and subscriptions; renames and moves happen through the download engine so seeding is never interrupted.
+- **One tap gets you the media itself.** Search a show by AniList / Nyaa without leaving the app, then download a single episode, a batch, or a whole season — with subtitles attached when they exist.
+- Finished downloads land in your library on their own, and you can **start watching while the file is still downloading**.
+- **Manga**: browse an online catalogue, tick the volumes you want, and they download, unpack, and appear on the shelf.
+- Paste any magnet link to pull down a book or a video directly.
+- **Download and subscribe** to a series and new episodes fetch themselves (checked every 15 minutes while Fushi runs); an airing calendar shows when the next one lands.
+- Built-in torrent engine (libtorrent) — no external client to install; falls back to an external qBittorrent when the native library is unavailable.
+- A downloads page tracks jobs and subscriptions; renames and moves happen through the download engine so seeding is never interrupted.
 
 ### Galgame Voice Mining (Windows)
 

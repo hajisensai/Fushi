@@ -380,17 +380,26 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       child: FushiFileDropTarget(
         debugLabel: 'home-dictionary',
         onDrop: _handleDictionaryHomeDrop,
-        child: DesktopContentLayout(
-          kind: DesktopContentKind.dictionary,
-          child: Column(
-            children: [
-              if (!isCupertinoPlatform(context)) _buildPageHeader(),
-              _buildSearchHeader(),
-              // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-              const SyncProgressBanner(),
-              Expanded(child: _buildBody()),
-            ],
-          ),
+        // BUG-1658：页头必须在 DesktopContentLayout 外——dictionary 档的 16/24px
+        // 侧向留白只属于查词正文（文字流贴边可读性差），叠到页头上会让本页大标题
+        // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
+        child: Column(
+          children: [
+            if (!isCupertinoPlatform(context)) _buildPageHeader(),
+            Expanded(
+              child: DesktopContentLayout(
+                kind: DesktopContentKind.dictionary,
+                child: Column(
+                  children: [
+                    _buildSearchHeader(),
+                    // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
+                    const SyncProgressBanner(),
+                    Expanded(child: _buildBody()),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
