@@ -22,6 +22,20 @@
       "version": "2.1.1"
     },
     {
+      "name": "fushi-2.1.1-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-ios.ipa",
+      "releaseSequence": 11666,
+      "tag": "v2.1.1",
+      "version": "2.1.1"
+    },
+    {
+      "name": "fushi-2.1.1-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-macos.zip",
+      "releaseSequence": 11666,
+      "tag": "v2.1.1",
+      "version": "2.1.1"
+    },
+    {
       "name": "fushi-2.1.1-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-windows-setup.exe",
       "releaseSequence": 11666,
