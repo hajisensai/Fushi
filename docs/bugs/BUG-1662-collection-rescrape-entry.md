@@ -22,12 +22,12 @@
   「刮削资料与封面」、集卡菜单出「条目信息」（复用库页 `_openScrapeInfo` 的
   删资料行 + forget + 重刮状态机）；`VideoWorkDetailPage` 透传；库页与放送日历页
   两个调用方接线；库页合集菜单文案改用新 i18n key `video_collection_scrape`
-  （「刮削资料与封面」）。提交见本分支（worktree-collection-rescrape-entry）。
+  （「刮削资料与封面」）。提交 `e5333c7ee7`。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/collection_detail_scrape_entry_test.dart`
   （widget 行为层）：管理菜单出「刮削资料与封面」且点击真触发回调；集卡菜单出
   「条目信息」且回调带对被右键的那一集；不注入回调时两项都不出现（不给死项）。
   已变异实测：把两个菜单项条件改恒假 → 两条正向守卫红、负向仍绿；还原后文件
-  sha256 与变异前逐字节一致。
+  sha256 与变异前逐字节一致。提交 `e5333c7ee7`。
 - **备注**：「置顶合集」= 视频首页最上方单元（无 pinned 持久化字段，纯「最近在看」
   推导）；hero 轮播 `_buildHeroCarousel` 自 #792 起是死代码，现役置顶卡（继续观看
   行首卡）本就接合集菜单，用户找不到的实际断点是上面三条。库页页头缺「全部刮削」
