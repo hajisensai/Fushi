@@ -773,6 +773,36 @@ const COMPACT_GLOSSARIES_ANKI = `.yomitan-glossary ul[data-sc-content="glossary"
 .yomitan-glossary ul[data-sc-content="glossary"] > li, .yomitan-glossary .glossary-list > li { display: inline; }
 .yomitan-glossary ul[data-sc-content="glossary"], .yomitan-glossary .glossary-list { display: inline; list-style: none; padding-left: 0px; }`;
 
+// BUG-1666: exported glossary HTML used to keep the dictionary's raw
+// cross-reference anchors (`entry://词` / relative hrefs). Anki desktop and
+// AnkiDroid render cards in a WebView whose base URL is their local media
+// server (http://127.0.0.1:<random port>), so tapping such a link on a card
+// navigated to a dead localhost page. Inside the popup these clicks are
+// intercepted and re-looked-up by the anchor's visible headword
+// (handleGlossaryAnchorClick, BUG-767); a card has no interceptor, so bake the
+// same semantic into the exported bytes: internal cross references become
+// fushi://lookup?word=<visible text> deep links (Android :popup dict window /
+// Windows single-instance handoff open them as a lookup), real external
+// http(s) links are kept, `#` fragments stay (they never leave the card), and
+// dictionary media anchors (sound:// etc., whose bytes are not exported) lose
+// their href instead of pointing nowhere.
+function rewriteExportedGlossaryAnchors(root) {
+    root.querySelectorAll('a[href]').forEach((anchor) => {
+        const href = (anchor.getAttribute('href') || '').trim();
+        if (/^https?:\/\//i.test(href) || href.startsWith('#')) {
+            return;
+        }
+        const word = /^(?:sound|image|dictmedia):/i.test(href)
+            ? ''
+            : (anchor.textContent || '').trim();
+        if (!word) {
+            anchor.removeAttribute('href');
+            return;
+        }
+        anchor.setAttribute('href', `fushi://lookup?word=${encodeURIComponent(word)}`);
+    });
+}
+
 // the following two should roughly match the glossary format of yomitan and keep compatibility with notetypes like lapis
 // 23.01.2026: this still has some differences
 // 24.01.2026: should be a bit closer now
@@ -854,6 +884,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         const currentTags = JSON.stringify(posTags);
         const filteredTags = parsedTags.filter(tag => !isPartOfSpeech(tag) || !(prevTags !== null && prevTags === currentTags));
         const tags = filteredTags.length > 0 ? filteredTags.join(', ') : '';
+        rewriteExportedGlossaryAnchors(tempDiv);
         const content = applyTableStyles(tempDiv.innerHTML);
         let listIdentifier = '';
         if (dictChanged) {
@@ -918,6 +949,7 @@ function constructGlossaryHtml(entryIndex) {
             label = tags ? `(${tags})` : ''
         }
         
+        rewriteExportedGlossaryAnchors(tempDiv);
         glossaryItems += `<li data-dictionary="${dictName}"><i>${label}</i> <span>${applyTableStyles(tempDiv.innerHTML)}</span></li>`;
         prevTags = currentTags;
         

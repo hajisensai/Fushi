@@ -219,7 +219,7 @@ void main() {
     // 退回常量即红。
     expect(
         engineNorm,
-        contains("aborted: true, abortReason: "
+        contains('aborted: true, abortReason: '
             "_withRootCause('required audio missing'"),
         reason: '缺音频中止走 aborted 信号回 shell，且必须带出根因（不得退回常量）。');
     // shell：res.aborted → 用户可见 OSD（复用现有 i18n card_export_failed_detail）。

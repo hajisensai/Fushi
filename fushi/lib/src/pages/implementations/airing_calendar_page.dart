@@ -11,6 +11,8 @@ import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/cover_ui/collection_scrape_dialog.dart';
+import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -242,6 +244,18 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             );
           },
           onChanged: () => unawaited(_load()),
+          // 与库页/详情页同一套合集刮削入口（BUG-1662）；日历页没有集级
+          // 条目信息回调（那套重刮状态机在库页），仅提供合集级刮削。
+          onScrape: () => showCollectionScrapeDialog(
+            context: context,
+            db: db,
+            repository: repo,
+            configuredTmdbKey: _appModel.prefsRepo
+                    .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
+                as String,
+            collection: collection,
+            onApplied: () => unawaited(_load()),
+          ),
         ),
       ),
     );

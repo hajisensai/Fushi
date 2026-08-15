@@ -7,6 +7,7 @@ import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
+import 'package:fushi/src/utils/misc/update_landing.dart';
 import 'package:fushi/utils.dart'; // ErrorLogService
 
 export 'update_handoff.dart'
@@ -116,6 +117,15 @@ abstract class PlatformUpdater {
 
   /// 应用已下载到 [file] 的更新。仅在 [supportsInAppInstall] 为 true 时被调用。
   Future<void> apply(File file, String version);
+
+  /// 不能应用内安装时，「前往下载」按钮该落到哪里。默认 = GitHub release 网页
+  /// （[releaseHtmlUrl]），即所有桌面/未实现平台的既有行为。
+  ///
+  /// 做成平台方法而不是在 update_checker 里 `if (Platform.isIOS)`：「本平台的更新
+  /// 从哪儿来」和「本平台怎么选包/怎么装」是同一个问题的三个面，属于同一个
+  /// [PlatformUpdater]；散到调用方就会出现「某个入口忘了分流」的静默空档。
+  Future<UpdateLanding> resolveDownloadLanding(String releaseHtmlUrl) async =>
+      UpdateLanding(url: releaseHtmlUrl, kind: UpdateLandingKind.releasePage);
 }
 
 /// 本期支持「应用内安装」的平台集合（单一真相源；Linux 在其阶段加入）。macOS 走
@@ -380,8 +390,15 @@ class MacUpdater extends PlatformUpdater {
 }
 
 /// iOS：Apple 平台禁止应用内下载/执行外部可执行文件（即便当前不在 App Store，也守住
-/// 合规边界便于将来上架）。永远只「检查版本→打开发布页」，[selectAsset] 恒 null 使
-/// 上层走 `_showFallbackDialog`。CI 产出的 `hibiki-<v>-ios.ipa` 供用户手动侧载。
+/// 合规边界便于将来上架）。永远只「检查版本→前往分发渠道」，[selectAsset] 恒 null 使
+/// 上层走 `_showFallbackDialog`。
+///
+/// 「分发渠道」不是一条：TestFlight 装的包只能从 TestFlight 更新（TestFlight 本身就
+/// 会自动更新，这里只是给用户一个手动入口），将来上架后 App Store 装的包只能从
+/// App Store 更新，而 GitHub Release 里那个未签名 `fushi-<v>-ios.ipa` 只对 AltStore /
+/// Sideloadly 侧载用户有意义。三者由**安装来源**（系统写的收据文件，见
+/// [IosInstallSource]）决定，不由更新通道决定——按通道猜会把侧载用户送进 TestFlight
+/// （他们进不去）、把 TestFlight 用户送去下一个装不上的 ipa。
 class IosUpdater extends PlatformUpdater {
   @override
   bool get supportsUpdateCheck => true;
@@ -395,6 +412,12 @@ class IosUpdater extends PlatformUpdater {
     UpdateChannel channel = UpdateChannel.stable,
   }) async =>
       null;
+
+  @override
+  Future<UpdateLanding> resolveDownloadLanding(String releaseHtmlUrl) async {
+    final IosInstallSource source = await IosInstallSourceResolver.resolve();
+    return iosUpdateLanding(source: source, releaseHtmlUrl: releaseHtmlUrl);
+  }
 
   @override
   Future<void> apply(File file, String version) async {
