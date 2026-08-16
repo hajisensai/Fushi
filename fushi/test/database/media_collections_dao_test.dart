@@ -366,7 +366,7 @@ void main() {
         <String>['b1']);
   });
 
-  // BUG-1692：库页折叠映射的数据层刷新信号——任一合集表写入即 emit，任何写入者
+  // BUG-1699：库页折叠映射的数据层刷新信号——任一合集表写入即 emit，任何写入者
   //（后台合集同步/备份导入/合集编辑）天然覆盖，无需逐路登记通知。
   test('watchCollectionTablesChanged 在建合集时 emit', () async {
     final db = await _openDb();

@@ -222,7 +222,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
   Set<String>? _knownVideoUids;
 
-  /// BUG-1692：合集表（MediaCollections / MediaCollectionItems）变更监听。合集
+  /// BUG-1699：合集表（MediaCollections / MediaCollectionItems）变更监听。合集
   /// 折叠映射（_collectionsById 等）是进页快照，而写入方很多（后台互联/云合集
   /// 同步、备份导入、其它页面的合集编辑）——不订阅数据层，host 同步落库的合集
   /// 在本页恒散卡，直到下拉刷新或重启。落库常是一批行，经 [_collectionsReloadDebounce]
@@ -356,7 +356,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
-    // BUG-1692：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
+    // BUG-1699：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
     // 落库后自动重载折叠映射——远端占位卡与新同步的合集立即成组。
     _collectionTablesSub = appModelNoUpdate.database
         .watchCollectionTablesChanged()
@@ -438,7 +438,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  /// BUG-1692：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
+  /// BUG-1699：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
   /// 一次折叠映射（[_loadLibraryMaps] 自带 setState，映射换新后网格自动重组）。
   void _onCollectionTablesChanged(void _) {
     _collectionsReloadDebounce?.cancel();

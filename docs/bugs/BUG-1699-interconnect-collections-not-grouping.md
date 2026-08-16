@@ -1,4 +1,4 @@
-## BUG-1692 · 互联对端合集在客户端库页不成组显示
+## BUG-1699 · 互联对端合集在客户端库页不成组显示
 - **报告**：2026-08-17（用户：互联合集不显示）
 - **真实性**：✅ 真 bug。序列化链（host DB → `RemoteBookInfo`/`RemoteVideoInfo.collection` → `/api/library/*` → 客户端 fromJson）本身是通的；断在三层叠加：
   1. **视频页折叠映射不重载（主因）**：合集同步把 host 合集落进本地 `MediaCollections`/`MediaCollectionItems` 后，`app_model.dart` 的 `refreshAfterSyncRun` 只 `ReaderMediaType.instance.refreshTab()` 刷书架；视频页 `home_video_page.dart` 的 `_collectionsById`/`_primaryCollectionByEntry`/`_memberSortIndex` 只在 initState/_refresh/_pullToRefresh 加载（`_loadLibraryMaps`），后台落库的合集不改视频 uid 集合 → 映射停在首帧快照 → `_resolveLocalCollectionId` 恒 null → host 合集恒散卡，直到下拉刷新或重启。防抖轻量合集路径（`sync_auto_trigger.dart` `_runCollectionsSync`）更是连书架的 refreshTab 都不发。

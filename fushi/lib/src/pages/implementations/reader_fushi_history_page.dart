@@ -393,7 +393,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
     // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
     mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
-    // BUG-1692：refreshTab 信号只覆盖「谁写库谁记得通知」登记过的路径（全量同步
+    // BUG-1699：refreshTab 信号只覆盖「谁写库谁记得通知」登记过的路径（全量同步
     // 收尾的 refreshAfterSyncRun）；防抖轻量合集同步（runCollectionsOnly）与其它
     // 写入者没有登记，落库后书架照旧散卡。直接订阅合集两张表的数据层信号，任何
     // 写入者天然覆盖。
@@ -457,12 +457,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
-  /// BUG-1692：合集表变更订阅 + 合并窗口（同视频页 _onCollectionTablesChanged，
+  /// BUG-1699：合集表变更订阅 + 合并窗口（同视频页 _onCollectionTablesChanged，
   /// 同步/导入批量落库合并成一次映射重载）。
   StreamSubscription<void>? _collectionTablesSub;
   Timer? _collectionsReloadDebounce;
 
-  /// BUG-1692：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
+  /// BUG-1699：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
   /// invalidate 书列表 provider：合集归属变化不改变书行本身）。
   void _onCollectionTablesChanged(void _) {
     _collectionsReloadDebounce?.cancel();
@@ -1427,7 +1427,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           memberSortIndex[key] = membership.sortIndex;
           continue;
         }
-        // BUG-1692：(name,type) 在本地解析不到（合集清单还没同步落库 / 用户改过
+        // BUG-1699：(name,type) 在本地解析不到（合集清单还没同步落库 / 用户改过
         // 本地合集名）不能直接散卡——合集同步若已把透传成员行（键=对端 bookKey）
         // 落进本地 MediaCollectionItems，下方按本地已同步归属回查的兜底照样能
         // 救回。此前这里 continue 把兜底整个跳过了。

@@ -201,7 +201,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1692：合集同步落库后视频页自动重组（无需下拉刷新/重启）',
+  testWidgets('BUG-1699：合集同步落库后视频页自动重组（无需下拉刷新/重启）',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -239,7 +239,7 @@ void main() {
     expect(
       find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
       findsOneWidget,
-      reason: '合集落库后无需任何手动刷新即渲染合集封面卡（BUG-1692 主诉：'
+      reason: '合集落库后无需任何手动刷新即渲染合集封面卡（BUG-1699 主诉：'
           '此前 _collectionsById 停在首帧快照，恒散卡直到重启）',
     );
     expect(

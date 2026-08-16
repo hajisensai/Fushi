@@ -112,7 +112,7 @@ class _FakeLibraryService
         'positionUpdatedAtMs': p.updatedAtMs,
         'delayMs': d.delayMs,
         'delayUpdatedAtMs': d.delayAt,
-        // BUG-1692：合集归属必须穿过端点层的字段裁剪（_remoteVideoJsonForRequest
+        // BUG-1699：合集归属必须穿过端点层的字段裁剪（_remoteVideoJsonForRequest
         // 的 remove/补回）活着到 wire——此前端点层零断言，裁剪逻辑改坏不转红。
         'collection': <String, Object?>{
           'name': 'Sample Collection',
@@ -407,7 +407,7 @@ void main() {
     expect(first['id'], 'video/sample', reason: 'id 含斜杠应被正确序列化');
     expect(first['title'], 'Sample Video');
     expect(first['hasSubtitle'], true);
-    // BUG-1692：合集归属经端点层字段裁剪后仍在（客户端据此把远端占位卡折进合集）。
+    // BUG-1699：合集归属经端点层字段裁剪后仍在（客户端据此把远端占位卡折进合集）。
     final Map<dynamic, dynamic>? collection =
         first['collection'] as Map<dynamic, dynamic>?;
     expect(collection, isNotNull,

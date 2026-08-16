@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 
-/// BUG-1692：书阶段抛出非鉴权异常（per-book catch 只兜每本书的同步体；驱动缓存
+/// BUG-1699：书阶段抛出非鉴权异常（per-book catch 只兜每本书的同步体；驱动缓存
 /// 恢复等阶段级代码不在其中）时，流水线不得整轮夭折。[cachedRootFolderId] 是
 /// syncAllBooks 起手 _restoreDriveCache 的第一次后端触点，deterministic。
 class _BookStageThrowingBackend extends FakeSyncBackend {
@@ -383,7 +383,7 @@ void main() {
     });
   });
 
-  group('BUG-1692 书阶段异常不吞后续合集阶段', () {
+  group('BUG-1699 书阶段异常不吞后续合集阶段', () {
     test('书阶段抛非鉴权异常 → run() 不抛、errors 记账、合集照常拉回本地', () async {
       // 云端已有 devA 发布的合集清单。
       final int cA = await a.db.createMediaCollection('Fav');

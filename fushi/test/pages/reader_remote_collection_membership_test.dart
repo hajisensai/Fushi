@@ -195,7 +195,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1692：host 归属名解析不到但透传成员行已同步落库 → 兜底救回折进合集',
+  testWidgets('BUG-1699：host 归属名解析不到但透传成员行已同步落库 → 兜底救回折进合集',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -237,7 +237,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1692：合集同步落库后书架自动重组（无需下拉刷新/重启）', (WidgetTester tester) async {
+  testWidgets('BUG-1699：合集同步落库后书架自动重组（无需下拉刷新/重启）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -279,7 +279,7 @@ void main() {
     expect(
       find.ancestor(of: remoteCard, matching: collectionRow),
       findsOneWidget,
-      reason: '占位卡自动折进新落库的合集（BUG-1692 主诉：此前恒散卡直到重启）',
+      reason: '占位卡自动折进新落库的合集（BUG-1699 主诉：此前恒散卡直到重启）',
     );
   });
 }
