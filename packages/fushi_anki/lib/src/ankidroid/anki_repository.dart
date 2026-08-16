@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
+import '../anki_note_type_definition.dart';
 import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
 import '../ankiconnect/ankiconnect_repository.dart';
@@ -572,6 +573,84 @@ class AnkiRepository extends BaseAnkiRepository {
       'css': template.css,
     });
     return true;
+  }
+
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
+  //
+  // 长期以来这里默认降级（基类的 false），依据是「AnkiDroid Content Provider
+  // 改不了已存在的 note type」。那个前提是错的：AnkiDroid 的
+  // CardContentProvider.update() 在 `models/<mid>` 分支支持写 `Model.CSS`，
+  // 在 `models/<mid>/templates/<ord>` 分支支持写 QUESTION_FORMAT /
+  // ANSWER_FORMAT；被明确拒绝的只有改字段名（"Field names cannot be changed
+  // via provider"），而 Lapis 样式客制化一个字段名都不改。真正的平台边界是
+  // iOS 的 AnkiMobile（只有加卡的 URL scheme），那边仍然降级。
+
+  @override
+  bool get supportsNoteTypeEditing => true;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+    String modelName,
+  ) async {
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final Map? raw = await _channel.invokeMethod(
+      'readNoteType',
+      <String, dynamic>{'noteTypeName': modelName},
+    ) as Map?;
+    if (raw == null) return null;
+    final List<dynamic> templates =
+        (raw['templates'] as List?) ?? const <dynamic>[];
+    return AnkiNoteTypeDefinition(
+      name: raw['name']?.toString() ?? modelName,
+      fields: ((raw['fields'] as List?) ?? const <dynamic>[])
+          .map((dynamic e) => e?.toString() ?? '')
+          .toList(growable: false),
+      // ord 只在写回时用于定位（Java 侧按模板名反查），backend 无关的
+      // AnkiCardTemplate 不带它——备份文件里存位置号毫无意义，模板被重排
+      // 之后按位置写回就会把正面写进另一张卡。
+      templates: templates.map((dynamic e) {
+        final Map tmpl = e as Map;
+        return AnkiCardTemplate(
+          name: tmpl['name']?.toString() ?? '',
+          front: tmpl['front']?.toString() ?? '',
+          back: tmpl['back']?.toString() ?? '',
+        );
+      }).toList(growable: false),
+      css: raw['css']?.toString() ?? '',
+    );
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final bool? ok = await _channel.invokeMethod(
+      'updateNoteTypeStyling',
+      <String, dynamic>{'noteTypeName': modelName, 'css': css},
+    ) as bool?;
+    return ok ?? false;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
+    if (templates.isEmpty) return false;
+    await _channel.invokeMethod('requestAnkidroidPermissions');
+    final bool? ok = await _channel.invokeMethod(
+      'updateNoteTypeTemplates',
+      <String, dynamic>{
+        'noteTypeName': modelName,
+        'templates': templates
+            .map((AnkiCardTemplate t) => <String, String>{
+                  'name': t.name,
+                  'front': t.front,
+                  'back': t.back,
+                })
+            .toList(growable: false),
+      },
+    ) as bool?;
+    return ok ?? false;
   }
 
   @override

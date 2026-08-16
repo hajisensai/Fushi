@@ -1228,6 +1228,23 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   @override
   bool get supportsMediaMaintenance => true;
 
+  /// AnkiConnect 报的媒体目录，**本机确实存在时**才返回，否则 null。
+  ///
+  /// 同一个仓库类既服务「桌面本机 Anki」也服务「手机连局域网里的桌面 Anki」，
+  /// 后者拿到的是那台机器的路径，本机不存在。判据只写这一份：能力探测
+  /// （[probeMediaMaintenance]，UI 据此决定显不显示）与真跑（[runMediaDedup]）
+  /// 各写一遍必然漂开，而漂开的表现就是「显示了一个点了只说不可用的区块」。
+  Future<Directory?> _localMediaDir() async {
+    final AnkiConnectService service = await _getService();
+    final String mediaPath = await service.getMediaDirPath();
+    if (mediaPath.isEmpty) return null;
+    final Directory dir = Directory(mediaPath);
+    return dir.existsSync() ? dir : null;
+  }
+
+  @override
+  Future<bool> probeMediaMaintenance() async => (await _localMediaDir()) != null;
+
   /// 媒体目录里的一个文件（媒体目录是扁平的，文件名即相对路径）。
   File _mediaFile(Directory mediaDir, String name) =>
       File('${mediaDir.path}${Platform.pathSeparator}$name');
@@ -1679,11 +1696,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     bool Function()? shouldCancel,
   }) async {
     final AnkiConnectService service = await _getService();
-    final String mediaPath = await service.getMediaDirPath();
-    final Directory mediaDir = Directory(mediaPath);
-    // AnkiConnect 在远程主机上时拿到的路径本机不存在——按不支持处理，绝不
-    // 盲扫错误目录。
-    if (!mediaDir.existsSync()) return null;
+    final Directory? mediaDir = await _localMediaDir();
+    // 媒体目录本机不存在（AnkiConnect 在另一台机器上）= 不支持，绝不盲扫。
+    // 判据与 [probeMediaMaintenance] 共用 [_localMediaDir]，不在这里再写一遍。
+    if (mediaDir == null) return null;
 
     bool cancelled = false;
     bool checkCancel() =>

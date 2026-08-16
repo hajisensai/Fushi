@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1560 条。点号进各自文件。
+> 共 1563 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,9 @@
 | [BUG-1685](bugs/BUG-1685-video-subtitle-fetch-two-implementations.md) | ✅ | ✅ | 播放页找字幕只搜 Jimaku，与下载管线的统一 registry 是两套实现 |
 | [BUG-1684](bugs/BUG-1684-outbound-user-agent-still-hibiki.md) | ✅ | ✅ | 对外 User-Agent 仍报旧名 Hibiki |
 | [BUG-1683](bugs/BUG-1683-interconnect-service-config-misses-bangumi-token.md) | ✅ | ✅ | 互联不同步 Bangumi 追番令牌与刮削/字幕/索引器凭据 |
+| [BUG-1682](bugs/BUG-1682-remote-mining-media-dedup-delegates-local.md) | ✅ | ✅ | 制卡到已配对设备时媒体去重委派本地仓库，手机上整区隐藏 |
+| [BUG-1681](bugs/BUG-1681-ankiconnect-remote-media-dedup-phantom-section.md) | ✅ | ✅ | 手机连局域网 AnkiConnect 时显示一个必然不可用的媒体存储优化区 |
+| [BUG-1680](bugs/BUG-1680-ankidroid-note-type-editing.md) | ✅ | ✅ | AnkiDroid 能改已存在 note type，Lapis 样式区却在手机上整区隐藏 |
 | [BUG-1679](bugs/BUG-1679-audiobook-audio-replace-stale-position.md) | ✅ | ✅ | 换音频后沿用旧时间轴的播放进度导致不响/乱跳页 |
 | [BUG-1678](bugs/BUG-1678-audiobook-reimport-wipes-existing-audio.md) | ✅ | ✅ | 有声书换字幕时把现有音频删光并中止导入 |
 | [BUG-1677](bugs/BUG-1677-expansiontile-outline-label-clipped.md) | ✅ | ✅ | 折叠区首个下拉框的浮动标签被展开动画的 ClipRect 削掉上半截 |

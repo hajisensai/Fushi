@@ -224,6 +224,32 @@ Future<Map<String, dynamic>> buildAnkiNoteTypeTemplatesResponse(
   };
 }
 
+/// `POST /api/anki/media/dedup/probe` 的响应体。主机端此刻能不能做媒体去重
+/// （客户端据此决定显不显示「媒体存储优化」区）。主机 Anki 不可达照抛（调用方
+/// 转成失败响应，客户端保持「未知」而不是记成「不支持」）。
+Future<Map<String, dynamic>> buildAnkiMediaDedupProbeResponse({
+  required FushiRemoteMiningService mining,
+}) async {
+  return <String, dynamic>{'available': await mining.probeMediaMaintenance()};
+}
+
+/// `POST /api/anki/media/dedup/run` 的响应体。在主机端跑一轮媒体去重。
+/// [body] 可含 `dryRun`（bool，缺省 true——**默认不动文件**：这条链路上真删的
+/// 决定权在客户端用户手里，缺字段的旧客户端/坏请求绝不能被解读成「删吧」）。
+/// `report` 为 null = 主机后端不支持。
+Future<Map<String, dynamic>> buildAnkiMediaDedupRunResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final Object? rawDryRun = body['dryRun'];
+  if (rawDryRun != null && rawDryRun is! bool) {
+    throw const FormatException('Malformed dryRun');
+  }
+  final AnkiMediaDedupReport? report =
+      await mining.runMediaDedup(dryRun: (rawDryRun as bool?) ?? true);
+  return <String, dynamic>{'report': report?.toJson()};
+}
+
 String _requiredModelName(Map<String, dynamic> body) {
   final String modelName = body['modelName']?.toString() ?? '';
   if (modelName.trim().isEmpty) {

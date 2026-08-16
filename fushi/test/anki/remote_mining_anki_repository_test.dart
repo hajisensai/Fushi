@@ -61,6 +61,20 @@ class _FakeSender implements RemoteMineSender {
     templateWrites.add((modelName, templates));
     return noteTypeWriteOk;
   }
+
+  // 互联媒体存储优化：主机端去重捕获。
+  bool mediaMaintenanceAvailable = true;
+  AnkiMediaDedupReport? dedupReport;
+  final List<bool> dedupRuns = <bool>[];
+
+  @override
+  Future<bool> probeMediaMaintenance() async => mediaMaintenanceAvailable;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({required bool dryRun}) async {
+    dedupRuns.add(dryRun);
+    return dedupReport;
+  }
 }
 
 /// 假本地仓库：远端模式下 mineEntry/isDuplicate 绝不该落到它身上（落了就抛，验证不误操作本机）。
@@ -376,6 +390,69 @@ void main() {
         final RemoteMiningAnkiRepository repo =
             RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
         expect(await repo.updateNoteTypeStyling('Lapis', ''), isFalse);
+      });
+    });
+
+    // BUG-1682：媒体去重曾委派本地仓库（`_local.supportsMediaMaintenance`）。
+    // 卡落在主机上、重复媒体也堆在主机的 collection.media 里，客户端本机连那个
+    // 目录都没有；委派本地的后果是 Android（本地 AnkiDroid 恒 false）上整区隐藏，
+    // 而同一屏上的 note type 编辑却已经走远端——两个维护动作指向两台机器。
+    group('媒体存储优化经互联作用于主机端', () {
+      test('supportsMediaMaintenance 恒 true（本地 AnkiDroid false 也不遮蔽）', () {
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+            local: _FakeLocal(), client: _FakeSender(null));
+        expect(_FakeLocal().supportsMediaMaintenance, isFalse);
+        expect(repo.supportsMediaMaintenance, isTrue);
+      });
+
+      test('probeMediaMaintenance 问的是主机，不是本地', () async {
+        final _FakeSender sender = _FakeSender(null)
+          ..mediaMaintenanceAvailable = true;
+        final RemoteMiningAnkiRepository repo =
+            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        expect(await repo.probeMediaMaintenance(), isTrue);
+
+        sender.mediaMaintenanceAvailable = false;
+        expect(await repo.probeMediaMaintenance(), isFalse);
+      });
+
+      test('runMediaDedup 转发远端并带上 dryRun', () async {
+        final _FakeSender sender = _FakeSender(null)
+          ..dedupReport = const AnkiMediaDedupReport(
+            dryRun: true,
+            groupCount: 2,
+            deletions: <MediaDedupDeletion>[
+              MediaDedupDeletion(
+                  filename: 'a.jpg', canonical: 'b.jpg', bytes: 10),
+            ],
+            notesRewritten: 0,
+            modelsRewritten: 0,
+            skipped: 0,
+          );
+        final RemoteMiningAnkiRepository repo =
+            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+
+        final AnkiMediaDedupReport? plan =
+            await repo.runMediaDedup(dryRun: true);
+        expect(plan?.groupCount, 2);
+        expect(plan?.duplicatesRemoved, 1);
+        await repo.runMediaDedup(dryRun: false);
+        expect(sender.dedupRuns, <bool>[true, false]);
+      });
+
+      test('进度与取消跨不过 HTTP 往返：明说不支持，UI 据此不画取消按钮', () {
+        final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+            local: _FakeLocal(), client: _FakeSender(null));
+        expect(repo.supportsMediaMaintenanceProgress, isFalse);
+        // 本地后端在同一进程里跑，两者都真会被调用。
+        expect(_FakeLocal().supportsMediaMaintenanceProgress, isTrue);
+      });
+
+      test('主机不支持 → 返回 null（不谎报「没有重复」）', () async {
+        final _FakeSender sender = _FakeSender(null)..dedupReport = null;
+        final RemoteMiningAnkiRepository repo =
+            RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
+        expect(await repo.runMediaDedup(dryRun: true), isNull);
       });
     });
   });

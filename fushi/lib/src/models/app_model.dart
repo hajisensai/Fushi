@@ -35,6 +35,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
@@ -6727,6 +6728,27 @@ class _AppModelRemoteLookupService
         _appModel.platformServices.createAnkiRepository();
     if (!repo.supportsNoteTypeEditing) return false;
     return repo.updateNoteTypeTemplates(modelName, templates);
+  }
+
+  // ── 互联媒体存储优化：客户端（手机）经互联对本机 collection.media 去重。
+  // 与上面同语义地用**本机**平台仓库；后端不支持时按 BaseAnkiRepository 的
+  // 降级契约回 false/null（不抛）。
+
+  @override
+  Future<bool> probeMediaMaintenance() async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    return repo.probeMediaMaintenance();
+  }
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
+    if (!repo.supportsMediaMaintenance) return null;
+    // 走本机 runner 而不是裸 repo：改写与删除真实发生在**这台机器**上，
+    // 审计 journal 与「上次去重时刻」就该落在这里。客户端只发起、只看结果。
+    return AnkiMediaDedupRunner(repo).runNow(dryRun: dryRun);
   }
 
   @override

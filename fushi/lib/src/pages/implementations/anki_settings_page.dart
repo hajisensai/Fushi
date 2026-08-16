@@ -56,11 +56,24 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   bool _ankiBackendBusy = false;
 
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这个开关。
-  /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：Android 的
-  /// AnkiDroid 与 iOS 的 AnkiMobile 都改不了已存在的 note type；桌面本来就走
-  /// AnkiConnect，没有这条支路。
+  /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：iOS 的 AnkiMobile
+  /// 只有加卡的 URL scheme，Android 的 AnkiDroid 走 Content Provider（能改模板，
+  /// 但读不到 collection.media，做不了媒体去重）；桌面本来就走 AnkiConnect，
+  /// 没有这条支路。
   static final bool _isMobileAnkiPlatform =
       Platform.isAndroid || Platform.isIOS;
+
+  @override
+  void initState() {
+    super.initState();
+    // 媒体去重区的门控要的是「此刻真能不能用」，不是后端类型（手机连局域网
+    // 桌面 Anki 时后端类型说支持、媒体目录本机却不存在）。探测要一次网络往返，
+    // 只在真正需要这个结论的设置页发起，不塞进 vm 构造。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(ankiViewModelProvider.notifier).probeMediaMaintenance();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,11 +217,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             ],
           ),
         // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
-        // 需要与 Anki 同机（本机可直读 collection.media），后端不支持时整区隐藏。
+        // 需要与 Anki 同机（本机可直读 collection.media）。门控读探测结论
+        // （[AnkiViewModel.probeMediaMaintenance]）而不是后端静态能力：手机连
+        // 局域网里的桌面 Anki 时后端类型也是 AnkiConnect，但媒体目录在那台
+        // 机器上，显示出来只会是个点了说「不可用」的死区块。探测还没有结论
+        // （没探完 / Anki 没开）时回落静态能力，不让「Anki 暂时没开」把桌面
+        // 用户的整区弄消失。
         // 用户拍板方案 A：默认不跑；自动处理是一个**默认关**的开关，打开之后
         // 也只是自动干跑并提示，真删仍要用户确认——除非再显式打开「自动直接
         // 删除」。手动触发同样先看干跑清单再确认。
-        if (vm.supportsMediaMaintenance)
+        if (uiState.mediaMaintenanceAvailable ?? vm.supportsMediaMaintenance)
           AdaptiveSettingsSection(
             title: t.anki_dedup_section,
             children: [

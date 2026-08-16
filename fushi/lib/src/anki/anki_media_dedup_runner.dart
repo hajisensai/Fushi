@@ -75,6 +75,11 @@ class AnkiMediaDedupRunner {
     return dir;
   }
 
+  /// 传给 [runNow] 的 `onProgress` / `shouldCancel` 是不是真会被调用（互联
+  /// 「制卡到已配对设备」把整轮推给主机跑，两者都跨不过那次 HTTP 往返）。
+  /// 进度弹窗据此画不确定进度条并隐藏取消按钮。
+  bool get supportsProgress => _repository.supportsMediaMaintenanceProgress;
+
   /// 跑一轮去重。[dryRun] = 只扫描规划、不改动任何东西（不写 journal、不更新
   /// 时间戳），产出的 `AnkiMediaDedupReport.deletions` 就是给用户看的删除清单。
   /// [onProgress] / [shouldCancel] 直通仓库层（BUG-1263：分钟级长任务必须有

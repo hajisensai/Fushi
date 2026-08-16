@@ -54,6 +54,15 @@ abstract class RemoteMineSender {
     String modelName,
     List<AnkiCardTemplate> templates,
   );
+
+  // ── 互联媒体存储优化：主机端 collection.media 字节级去重 ────────────────
+
+  /// 主机端此刻能不能做媒体去重。false = 主机不支持/版本过旧（无此端点）。
+  /// 全部候选不可达抛 [StateError]（同上：不可达 ≠ 不支持）。
+  Future<bool> probeMediaMaintenance();
+
+  /// 在主机端跑一轮去重。null = 主机不支持/版本过旧。
+  Future<AnkiMediaDedupReport?> runMediaDedup({required bool dryRun});
 }
 
 /// 互联「制卡到服务端」的客户端发送器。传输走共享的 [InterconnectPostTransport]
@@ -68,6 +77,7 @@ class FushiRemoteMiningClient implements RemoteMineSender {
     Duration mineTimeout = const Duration(seconds: 60),
     Duration duplicateTimeout = const Duration(seconds: 5),
     Duration noteTypeTimeout = const Duration(seconds: 15),
+    Duration mediaDedupTimeout = const Duration(minutes: 30),
   })  : _repo = repo,
         _transport = InterconnectPostTransport(
           repo: repo,
@@ -76,7 +86,8 @@ class FushiRemoteMiningClient implements RemoteMineSender {
         ),
         _mineTimeout = mineTimeout,
         _duplicateTimeout = duplicateTimeout,
-        _noteTypeTimeout = noteTypeTimeout;
+        _noteTypeTimeout = noteTypeTimeout,
+        _mediaDedupTimeout = mediaDedupTimeout;
 
   final SyncRepository _repo;
   final InterconnectPostTransport _transport;
@@ -86,6 +97,11 @@ class FushiRemoteMiningClient implements RemoteMineSender {
   /// Lapis 模板读写的超时：请求体是纯文本（CSS/模板最多几百 KB），LAN 上比制卡
   /// （媒体字节几 MB）快得多，但仍留出比查重宽裕的窗口。
   final Duration _noteTypeTimeout;
+
+  /// 媒体去重的超时：主机端要扫全库 collection.media（几万文件）并对同尺寸候选
+  /// 逐字节比对，分钟级是常态。这是**一次**长请求，不是心跳——超时短了会把正常
+  /// 运行截断成「主机不可达」，而客户端此时无从知道主机那边删到哪了。
+  final Duration _mediaDedupTimeout;
 
   /// 是否已配置可达的已配对主机（enabled 候选 + token）。用于设置页/开关判断能否远端制卡。
   Future<bool> hasTarget() async {
@@ -177,16 +193,40 @@ class FushiRemoteMiningClient implements RemoteMineSender {
     return json?['ok'] == true;
   }
 
+  @override
+  Future<bool> probeMediaMaintenance() async {
+    final Map<String, dynamic>? json = await _postNoteType(
+      path: '/api/anki/media/dedup/probe',
+      body: const <String, dynamic>{},
+    );
+    return json?['available'] == true;
+  }
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({required bool dryRun}) async {
+    final Map<String, dynamic>? json = await _postNoteType(
+      path: '/api/anki/media/dedup/run',
+      body: <String, dynamic>{'dryRun': dryRun},
+      // 去重要扫全库媒体 + 逐字节比对，几万个文件时分钟级；套用模板读写的
+      // 15 秒会把一次正常运行截成「主机不可达」。
+      timeout: _mediaDedupTimeout,
+    );
+    final Object? report = json?['report'];
+    if (report is! Map) return null;
+    return AnkiMediaDedupReport.fromJson(Map<String, dynamic>.from(report));
+  }
+
   /// note type 端点与制卡侧 [_post] 的唯一差别：消费 `allUnreachable`，把
   /// 「配对主机全部不可达」升格成异常（见 [readNoteTypeDefinition]）。
   Future<Map<String, dynamic>?> _postNoteType({
     required String path,
     required Map<String, dynamic> body,
+    Duration? timeout,
   }) async {
     final InterconnectPostOutcome outcome = await _transport.post(
       path: path,
       body: body,
-      timeout: _noteTypeTimeout,
+      timeout: timeout ?? _noteTypeTimeout,
       authErrorMessage: 'Fushi server rejected remote mining token',
     );
     if (outcome.json == null && outcome.allUnreachable) {
