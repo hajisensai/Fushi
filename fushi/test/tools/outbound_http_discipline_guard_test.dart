@@ -73,6 +73,11 @@ const Map<String, String> kOutboundAssemblyPoints = <String, String>{
       '更新包下载：同上，逐镜像建 client + applyAppProxy',
   'packages/fushi_anki/lib/src/anki_remote_media_http.dart':
       '制卡远程媒体的包内工厂钩子（BUG-1498）：未接线时回退裸 HttpClient，行为与接线前等价',
+  'packages/fushi_anki/lib/src/ankiconnect/ankiconnect_installer.dart':
+      '代装 AnkiConnect 时从 ankiweb.net 下插件包的包内工厂钩子（同 BUG-1498 范式）：'
+          'app 侧经 installAnkiAddonDownloadHttpClientFactory 接线，未接线时回退裸 '
+          'http.Client()。注意与同包 ankiconnect_service.dart 方向相反——那条打 '
+          'localhost 必须直连，这条打公网必须能走代理。',
   'packages/fushi_dictionary/lib/src/formats/dictionary_downloader.dart':
       '词典链路的包内工厂钩子（BUG-1493）：createDictionaryDio 里 `?? Dio()` 的未接线回退',
 };
@@ -109,7 +114,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 19;
+const int kRegisteredOutboundFileCount = 20;
 
 /// 裸出站构造的判据。
 ///

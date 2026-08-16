@@ -145,6 +145,47 @@ void main() {
 
     expect(await repo.openNoteInAnki(305), isTrue);
   });
+
+  /// 代装 AnkiConnect 要拿 `anki.exe` 的路径。刻意只认**正在运行的进程**报出来
+  /// 的路径，而不去注册表或默认安装目录里猜：绿色版、自定义安装位置、多版本
+  /// 共存都会让猜测失准，而进程自己报的永远是真在跑的那一个。
+  group('findRunningAnkiExecutable', () {
+    test('取正在运行的 Anki 进程自己报出的完整路径', () {
+      final List<String> events = <String>[];
+      AnkiDesktopForeground.debugBackend = _FakeForegroundBackend(
+        events: events,
+        ankiPid: 4321,
+        foregroundPidSequence: <int?>[4321],
+        ankiExecutablePath: r'C:\Program Files\Anki\anki.exe',
+      );
+
+      expect(
+        AnkiDesktopForeground.findRunningAnkiExecutable(),
+        r'C:\Program Files\Anki\anki.exe',
+      );
+      expect(events, <String>['find', 'imagePath:4321']);
+    });
+
+    test('Anki 没在运行时返回 null，不去别处猜路径', () {
+      final List<String> events = <String>[];
+      AnkiDesktopForeground.debugBackend = _FakeForegroundBackend(
+        events: events,
+        ankiPid: null,
+        foregroundPidSequence: <int?>[null],
+        ankiExecutablePath: r'C:\Program Files\Anki\anki.exe',
+      );
+
+      expect(AnkiDesktopForeground.findRunningAnkiExecutable(), isNull);
+      // 没有 pid 就不该再去问路径。
+      expect(events, <String>['find']);
+    });
+
+    test('Win32 不可用时 fail-soft 返回 null，不把异常抛给调用方', () {
+      AnkiDesktopForeground.debugBackend = _ThrowingForegroundBackend();
+
+      expect(AnkiDesktopForeground.findRunningAnkiExecutable(), isNull);
+    });
+  });
 }
 
 /// 记录调用时间线的 Win32 替身。
@@ -154,11 +195,13 @@ class _FakeForegroundBackend implements AnkiDesktopForegroundBackend {
     required this.ankiPid,
     required List<int?> foregroundPidSequence,
     this.raiseSucceeds = true,
+    this.ankiExecutablePath,
   }) : _foregroundPidSequence = foregroundPidSequence;
 
   final List<String> events;
   final int? ankiPid;
   final bool raiseSucceeds;
+  final String? ankiExecutablePath;
 
   /// 依次返回的「当前前台进程」；用完后保持最后一个值。
   final List<int?> _foregroundPidSequence;
@@ -191,6 +234,12 @@ class _FakeForegroundBackend implements AnkiDesktopForegroundBackend {
     events.add('raise:$pid');
     return raiseSucceeds;
   }
+
+  @override
+  String? processImagePath(int pid) {
+    events.add('imagePath:$pid');
+    return ankiExecutablePath;
+  }
 }
 
 class _ThrowingForegroundBackend implements AnkiDesktopForegroundBackend {
@@ -208,4 +257,7 @@ class _ThrowingForegroundBackend implements AnkiDesktopForegroundBackend {
   @override
   bool raiseTopWindowOfProcess(int pid) =>
       throw StateError('user32 unavailable');
+
+  @override
+  String? processImagePath(int pid) => throw StateError('user32 unavailable');
 }

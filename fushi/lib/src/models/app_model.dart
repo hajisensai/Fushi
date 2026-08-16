@@ -2247,6 +2247,9 @@ class AppModel with ChangeNotifier {
       // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
       // （localhost:8765，也可能是局域网另一台机）绝不经过它。
       installAnkiRemoteMediaHttpClientFactory();
+      // 「代装 AnkiConnect」从 ankiweb.net 下插件包，同样是公网出站、同样住在
+      // fushi_anki 包里。与上面一条彼此独立：一个抓发音，一个下插件。
+      installAnkiAddonDownloadHttpClientFactory();
       _applyMemoryPolicy();
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
       // 否则旧定时器会拿着旧 repository 继续同步。

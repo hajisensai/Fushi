@@ -50,6 +50,7 @@ export 'src/utils/net/app_proxy.dart';
 export 'src/utils/net/app_http.dart';
 export 'src/utils/net/dictionary_dio.dart';
 export 'src/utils/net/anki_remote_media_http.dart';
+export 'src/utils/net/anki_addon_download_http.dart';
 export 'src/utils/misc/update_check_cache.dart';
 export 'src/utils/misc/fushi_toast.dart';
 export 'src/utils/misc/webview_asset_url.dart';

@@ -3440,5 +3440,12 @@
   "manga_global_search_title": "Search all sources",
   "manga_global_search_hint": "Search every enabled source",
   "manga_global_search_prompt": "Type a title to search every enabled manga source at once.",
-  "manga_global_search_no_sources": "No enabled manga sources. Install and enable an extension first."
+  "manga_global_search_no_sources": "No enabled manga sources. Install and enable an extension first.",
+  "anki_connect_addon_install": "Install AnkiConnect",
+  "anki_connect_addon_install_hint": "Downloads AnkiConnect from AnkiWeb and hands it to the running Anki. Anki will ask you to confirm, then advise a restart.",
+  "anki_connect_addon_handed": "Handed AnkiConnect to Anki. Confirm the prompt in Anki, then restart Anki as it advises.",
+  "anki_connect_addon_anki_not_running": "No running Anki found. Start Anki desktop first, then try again.",
+  "anki_connect_addon_download_failed": "Could not download AnkiConnect from AnkiWeb: $error",
+  "anki_connect_addon_invalid": "AnkiWeb returned something that is not a usable add-on package.",
+  "anki_connect_addon_launch_failed": "Could not hand the add-on to Anki: $error"
 }
