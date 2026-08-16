@@ -119,6 +119,63 @@ void main() {
       expect(task.error, isNot(contains('SocketException')));
     });
 
+    test('BUG-1693 批审计：视频/书/纯 SRT 任务键域隔离，同名 id 三格并存不互相覆盖', () async {
+      // 键派生本身必须把三个值域分开（视频历史键冻结为裸 id，书/SRT 加域前缀）。
+      expect(InterconnectDownloadManager.bookTaskId('X'), isNot(equals('X')));
+      expect(
+        InterconnectDownloadManager.srtAudiobookTaskId('X'),
+        isNot(equals(InterconnectDownloadManager.bookTaskId('X'))),
+      );
+
+      Future<void> ok(File target,
+          {void Function(double progress)? onProgress}) async {}
+
+      await runOk('X'); // 视频任务（裸键）
+      await manager.startBookDownload(
+        downloadId: 'X',
+        title: 'X',
+        dest: dest('X.epub'),
+        run: ok,
+      );
+      await manager.startSrtAudiobookDownload(
+        identity: 'X',
+        title: 'X',
+        dest: dest('X.fushiaudio'),
+        run: ok,
+      );
+      expect(manager.tasks.length, 3,
+          reason: '同名 id 的视频/书/SRT 任务必须各占一格；共享任务表撞键会互相顶掉状态');
+      expect(
+          manager.taskFor('X')!.status, InterconnectDownloadStatus.completed);
+      expect(
+        manager.taskFor(InterconnectDownloadManager.bookTaskId('X'))!.status,
+        InterconnectDownloadStatus.completed,
+      );
+      expect(
+        manager
+            .taskFor(InterconnectDownloadManager.srtAudiobookTaskId('X'))!
+            .status,
+        InterconnectDownloadStatus.completed,
+      );
+    });
+
+    test('书下载任务失败落账（与视频同一生命周期：failed + 本地化 error）', () async {
+      await expectLater(
+        manager.startBookDownload(
+          downloadId: 'b1',
+          title: 'b1',
+          dest: dest('b1.epub'),
+          run: (File target, {void Function(double progress)? onProgress}) =>
+              throw const SocketException('connection refused'),
+        ),
+        throwsA(isA<SocketException>()),
+      );
+      final InterconnectDownloadTask task =
+          manager.taskFor(InterconnectDownloadManager.bookTaskId('b1'))!;
+      expect(task.status, InterconnectDownloadStatus.failed);
+      expect(task.error, equals(t.sync_err_network));
+    });
+
     test('未知错误保留原文（friendly 回落不吞信息）', () async {
       await expectLater(
         manager.startVideoDownload(

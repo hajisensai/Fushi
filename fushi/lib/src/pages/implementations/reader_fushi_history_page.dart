@@ -76,6 +76,7 @@ import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
@@ -303,10 +304,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 用于识别「显示远端条目」开关翻转，翻转时重新取数。
   bool? _remoteGateAtLastLoad;
 
-  /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
-  /// onProgress 前为 null（不确定进度）。下载期间用它在卡片上替换下载按钮为进度
-  /// 指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
-  final Map<String, double?> _downloadingBooks = <String, double?>{};
+  // 远端书 / 纯 SRT 有声书的下载进度与失败态不再挂本页 State（旧
+  // `_downloadingBooks` 已删，BUG-1561 书侧补齐）：任务活在 app 级
+  // InterconnectDownloadManager，占位卡经 _remoteBookTaskBadge 按任务状态渲染。
 
   /// 正在下载有声书包的本地书（key = 导入后的本地 bookKey，BUG-990）。远端有声书
   /// 走「先下 EPUB 后下有声书」两阶段：EPUB 一落库，书架 provider 自动刷新把远端占位
