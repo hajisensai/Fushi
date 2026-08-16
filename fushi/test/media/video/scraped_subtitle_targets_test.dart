@@ -5,6 +5,8 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi/src/media/video/video_sidecar.dart'
+    show isSidecarSubtitleSuffix;
 
 VideoBookRow _book(String uid, String path) => VideoBookRow(
       bookUid: uid,
@@ -214,6 +216,51 @@ void main() {
         ),
         isEmpty,
       );
+    });
+  });
+
+  group('sidecar 命名必须与 isSidecarSubtitleSuffix 白名单成对', () {
+    // 这两个函数与白名单是一个契约的两半：写出去的名字不匹配白名单，播放页就
+    // 永远发现不了那条字幕，而下一轮「已有 sidecar？」检查同样看不见它 →
+    // 每刮一次多一个孤儿文件。所以判据不是「看着像」，而是**真拿白名单验**。
+    test('各种脏语言标签归一后仍落在白名单里', () {
+      for (final String raw in <String>[
+        'ja',
+        'JA',
+        'pt-BR',
+        'ja[cc]',
+        'en(sdh)',
+        '  zh-Hans  ',
+        '日本語',
+        '',
+        '---',
+        'x' * 64,
+      ]) {
+        final String tag = sidecarLanguageTag(raw);
+        expect(tag, isNotEmpty, reason: '空标签会写成 <base>..srt');
+        expect(
+          isSidecarSubtitleSuffix('.$tag.srt'),
+          isTrue,
+          reason: '"$raw" → "$tag" 写出的 sidecar 不被白名单认可',
+        );
+      }
+    });
+
+    test('非文本字幕扩展名一律落成 .srt（否则菜单里根本不出现）', () {
+      expect(sidecarSubtitleExtension('a.srt'), '.srt');
+      expect(sidecarSubtitleExtension('a.ASS'), '.ass');
+      expect(sidecarSubtitleExtension('a.vtt'), '.vtt');
+      expect(sidecarSubtitleExtension('a.zip'), '.srt');
+      expect(sidecarSubtitleExtension('noext'), '.srt');
+    });
+
+    test('扩展名同样必须过白名单', () {
+      for (final String name in <String>['a.srt', 'a.ASS', 'a.zip', 'noext']) {
+        expect(
+          isSidecarSubtitleSuffix('.ja${sidecarSubtitleExtension(name)}'),
+          isTrue,
+        );
+      }
     });
   });
 }

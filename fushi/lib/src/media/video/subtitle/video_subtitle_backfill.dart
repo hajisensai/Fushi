@@ -242,10 +242,8 @@ class VideoSubtitleBackfillService {
     File video,
     VideoSubtitleDownload download,
   ) async {
-    final String extension = _sidecarExtension(download.fileName);
-    final String language = download.language.trim().isEmpty
-        ? 'und'
-        : download.language.trim().toLowerCase();
+    final String extension = sidecarSubtitleExtension(download.fileName);
+    final String language = sidecarLanguageTag(download.language);
     final String target = p.join(
       p.dirname(video.path),
       '${p.basenameWithoutExtension(video.path)}.$language$extension',
@@ -259,15 +257,32 @@ class VideoSubtitleBackfillService {
     await temp.rename(target);
     return target;
   }
+}
 
-  /// 只认四种可解析的文本字幕扩展名；其余一律按 `.srt` 落盘。
-  ///
-  /// 不是为了「猜格式」——播放页按扩展名路由 parser，一个 `.zip` 或 `.xyz` 后缀
-  /// 会让这条字幕在菜单里根本不出现。来源站给的多半确实是文本字幕。
-  static String _sidecarExtension(String fileName) {
-    final String ext = p.extension(fileName).toLowerCase();
-    return const <String>{'.srt', '.ass', '.ssa', '.vtt'}.contains(ext)
-        ? ext
-        : '.srt';
-  }
+/// 语言标签归一到 sidecar 后缀白名单允许的字符集（见 `isSidecarSubtitleSuffix`：
+/// `[A-Za-z0-9_-]{1,32}`）。纯函数，与那条白名单成对单测。
+///
+/// 不归一会开一个静默的洞：provider 给出 `ja[cc]` 这类带修饰的标签时，写出的
+/// `<base>.ja[cc].srt` **不匹配 sidecar 后缀白名单** → 播放页永远发现不了它，
+/// 而下一次刮削的「已有 sidecar？」检查同样看不见它 → 每刮一次多一个孤儿文件。
+/// 兜底 `und`（ISO 639-2 的「未确定」），不是空串——空串会写成 `<base>..srt`。
+String sidecarLanguageTag(String raw) {
+  final String cleaned = raw
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9_-]'), '')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  if (cleaned.isEmpty) return 'und';
+  return cleaned.length > 32 ? cleaned.substring(0, 32) : cleaned;
+}
+
+/// 只认四种可解析的文本字幕扩展名；其余一律按 `.srt` 落盘。纯函数。
+///
+/// 不是为了「猜格式」——播放页按扩展名路由 parser，一个 `.zip` 或 `.xyz` 后缀
+/// 会让这条字幕在菜单里根本不出现。来源站给的多半确实是文本字幕。
+String sidecarSubtitleExtension(String fileName) {
+  final String ext = p.extension(fileName).toLowerCase();
+  return const <String>{'.srt', '.ass', '.ssa', '.vtt'}.contains(ext)
+      ? ext
+      : '.srt';
 }
