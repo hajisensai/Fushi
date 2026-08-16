@@ -122,8 +122,15 @@ void main() {
 
     test('main.dart：迁移遮罩分支在裸 loading 分支之前', () {
       final String src = readSource('lib/main.dart').readAsStringSync();
-      final int migrateIdx = src.indexOf('appModel.dataRootMigrationActive');
-      final int loadingIdx = src.indexOf('if (!appModel.isInitialised)');
+      // BUG-1666 起 main.dart 在 build 之外也有 `if (!appModel.isInitialised)`
+      // （深链未初始化时暂存词的分支），裸 indexOf 会锚错窗口；判据只关心根 widget
+      // build 内的分支顺序，所以从 build 起点往后找。
+      final int buildIdx = src.indexOf('Widget build(BuildContext context)');
+      expect(buildIdx, greaterThan(0), reason: 'main.dart 必须有根 widget 的 build');
+      final int migrateIdx =
+          src.indexOf('appModel.dataRootMigrationActive', buildIdx);
+      final int loadingIdx =
+          src.indexOf('if (!appModel.isInitialised)', buildIdx);
       expect(migrateIdx, greaterThan(0), reason: '根 widget 必须有迁移遮罩分支');
       expect(loadingIdx, greaterThan(0));
       expect(migrateIdx, lessThan(loadingIdx),

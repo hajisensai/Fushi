@@ -155,7 +155,7 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) => _AidokuMangaDetailPage(
+        builder: (BuildContext context) => AidokuMangaDetailPage(
           package: widget.package,
           runtime: _runtime,
           manga: manga,
@@ -220,7 +220,7 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('$_error', textAlign: TextAlign.center),
+          child: Text(aidokuErrorMessage(_error), textAlign: TextAlign.center),
         ),
       );
     }
@@ -279,12 +279,13 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
   }
 }
 
-class _AidokuMangaDetailPage extends StatefulWidget {
-  const _AidokuMangaDetailPage({
+class AidokuMangaDetailPage extends StatefulWidget {
+  const AidokuMangaDetailPage({
     required this.package,
     required this.runtime,
     required this.manga,
     required this.sourceBaseUrl,
+    super.key,
   });
 
   final AidokuInstalledPackage package;
@@ -293,10 +294,10 @@ class _AidokuMangaDetailPage extends StatefulWidget {
   final String? sourceBaseUrl;
 
   @override
-  State<_AidokuMangaDetailPage> createState() => _AidokuMangaDetailPageState();
+  State<AidokuMangaDetailPage> createState() => _AidokuMangaDetailPageState();
 }
 
-class _AidokuMangaDetailPageState extends State<_AidokuMangaDetailPage> {
+class _AidokuMangaDetailPageState extends State<AidokuMangaDetailPage> {
   Map<String, Object?>? _details;
   Object? _error;
 
@@ -346,7 +347,7 @@ class _AidokuMangaDetailPageState extends State<_AidokuMangaDetailPage> {
       title: details['title']?.toString() ?? widget.package.name,
       subtitle: widget.package.name,
       body: _error != null
-          ? Center(child: Text('$_error'))
+          ? Center(child: Text(aidokuErrorMessage(_error)))
           : _details == null
               ? Center(child: adaptiveIndicator(context: context))
               : ListView(
@@ -489,6 +490,20 @@ class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
           : Center(child: adaptiveIndicator(context: context)),
     );
   }
+}
+
+/// User-facing text for an Aidoku failure.
+///
+/// Cloudflare-protected sources (MangaFire, Comix, …) can't be reached by the
+/// headless WebAssembly runtime — it has no browser to solve the JavaScript
+/// challenge — so the runtime surfaces a dedicated `CLOUDFLARE_CHALLENGE` code
+/// instead of an opaque `JsonParseError`. Turn that into an actionable line
+/// rather than dumping the exception's `toString()`.
+String aidokuErrorMessage(Object? error) {
+  if (error is AidokuRuntimeException && error.code == 'CLOUDFLARE_CHALLENGE') {
+    return t.manga_source_cloudflare_blocked;
+  }
+  return '$error';
 }
 
 String _aidokuChapterTitle(Map<String, Object?> chapter) {

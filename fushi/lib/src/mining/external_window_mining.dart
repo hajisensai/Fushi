@@ -40,6 +40,10 @@ ImmersionMiningRequest buildExternalWindowRequest({
   required AnkiMiningSource source,
   String? bookTitleTag,
   int? updateNoteId,
+  // 静图编码格式（gal 侧透传 [AppModel.galMiningStillFormat]）。缺省 jpg = 旧调用点
+  // 行为不变；引擎据它把 [providedCoverBytes] 归一化成用户选的格式，并让
+  // [providedCoverName] 的扩展名跟随**实际**字节（动图字节原样放行）。
+  MiningStillFormat stillFormat = MiningStillFormat.jpg,
 }) {
   final bool hasAudio = audioBytes != null && audioBytes.isNotEmpty;
   return ImmersionMiningRequest(
@@ -62,5 +66,6 @@ ImmersionMiningRequest buildExternalWindowRequest({
         : null,
     // 有音频 -> requireAudio 开（本应有音频却丢=失败）；纯截图卡 -> false（本就无声）。
     requireAudio: hasAudio,
+    stillFormat: stillFormat,
   );
 }

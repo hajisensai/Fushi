@@ -29,13 +29,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1548 条。点号进各自文件。
+> 共 1552 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1676](bugs/BUG-1676-anki-gloss-image-overflows-card.md) | ✅ | ✅ | 制卡词典插图撑出卡片跑到屏幕右外 |
+| [BUG-1675](bugs/BUG-1675-gal-helper-stale-after-locked-update.md) | ✅ | ✅ | galgame 捕获组件 protocol_mismatch：更新时游戏开着导致 helper 被静默跳过 |
+| [BUG-1674](bugs/BUG-1674-mining-still-format.md) | ✅ | ✅ | 视频卡片图片：描述不准，且静态截图格式不可选 |
 | [BUG-1671](bugs/BUG-1671-ext-side-panel-subtitle-incomplete.md) | ✅ | ✅ | 浏览器扩展侧边栏获取字幕不全 |
 | [BUG-1670](bugs/BUG-1670-ext-pause-on-lookup-no-resume.md) | ✅ | ✅ | 浏览器扩展查词不暂停视频且关闭弹窗不恢复播放 |
 | [BUG-1669](bugs/BUG-1669-ext-side-panel-lookup-stuck-loading.md) | ✅ | ✅ | 浏览器扩展侧边栏高频查词后「正在查词」永久卡死 |
+| [BUG-1668](bugs/BUG-1668-macos-ffmpeg-arm64-only.md) | ✅ | ✅ | macOS 随包 ffmpeg 是 arm64-only 瘦二进制，Intel Mac 上制卡/封面/内封字幕全线失效 |
 | [BUG-1667](bugs/BUG-1667-local-audio-android-db-import-double-copy.md) | ✅ | ✅ | 安卓上用 android.db 配本地音频跑不通：导入被复制两次（cache + 库目录），峰值需 2 倍体积 |
 | [BUG-1666](bugs/BUG-1666-anki-card-crossref-links-localhost.md) | ✅ | ✅ | 制卡后卡片释义交叉引用链接跳向127本地地址 |
 | [BUG-1665](bugs/BUG-1665-english-mining-term-not-lemma.md) | ✅ | ✅ | 英语查词制卡词头不还原原形（MDX 重定向别名词条盖过原形） |

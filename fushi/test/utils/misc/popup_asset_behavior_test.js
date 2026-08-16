@@ -147,6 +147,18 @@ class FakeElement {
     return Object.prototype.hasOwnProperty.call(this.attributes, name);
   }
 
+  // BUG-1666: rewriteExportedGlossaryAnchors 走导出制卡路径，读/删锚点的 href。
+  // 真 DOM 上 getAttribute 缺属性时返回 null（不是 undefined），照此实现。
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name)
+      ? this.attributes[name]
+      : null;
+  }
+
+  removeAttribute(name) {
+    delete this.attributes[name];
+  }
+
   addEventListener(type, handler) {
     if (!this.listeners[type]) {
       this.listeners[type] = [];
@@ -207,15 +219,9 @@ class FakeElement {
     return visit(this);
   }
 
-  // BUG: rewriteExportedGlossaryAnchors（制卡时把词典内部链接改写成 fushi://lookup
-  // 深链）用的是 `root.querySelectorAll('a[href]')`，而这个桩此前只实现了单数的
-  // querySelector —— 于是制卡路径一进 constructGlossaryHtml 就
-  // `TypeError: root.querySelectorAll is not a function`，整条 JS 行为测试红。
-  // 生产环境里 tempDiv 是真 DOM（有这个方法），所以要补的是**桩**，不是给生产代码
-  // 加防御——加防御只会把「桩覆盖不到生产用的 API」这件事永久掩盖掉。
-  //
-  // 选择器支持面按生产代码实际用到的来：'tag' / '.class' / 'tag.class' /
-  // 'tag[attr]'（属性只判存在，不判值，够 a[href] 用）。
+  // BUG-1666: 与 querySelector 同一套最小选择器语法，另加「属性存在」判据，
+  // 因为 rewriteExportedGlossaryAnchors 用的是 'a[href]'。真 DOM 返回 NodeList，
+  // 生产代码只对它 .forEach，所以这里返回数组即可。
   querySelectorAll(selector) {
     const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/);
     if (!parsed || (!parsed[1] && !parsed[2] && !parsed[3])) {
@@ -226,11 +232,9 @@ class FakeElement {
     const wantAttr = parsed[3] || null;
     const matches = (el) =>
       (wantTag === null || el.tagName === wantTag) &&
-      (wantClass === null ||
-        (!!el.classList && el.classList.contains(wantClass))) &&
+      (wantClass === null || (!!el.classList && el.classList.contains(wantClass))) &&
       (wantAttr === null ||
-        (typeof el.getAttribute === 'function' &&
-          el.getAttribute(wantAttr) !== null));
+        (typeof el.hasAttribute === 'function' && el.hasAttribute(wantAttr)));
     const found = [];
     const visit = (el) => {
       for (const child of el.children ?? []) {

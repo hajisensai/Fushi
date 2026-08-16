@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
+import 'package:fushi/src/media/manga/manga_global_search_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -131,6 +132,28 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
     );
   }
 
+  /// 一次跨所有已启用来源搜索。传入当前平台上「已启用」的两类源，页面不自己发现。
+  void _openGlobalSearch() {
+    final List<AidokuInstalledPackage> aidokuPackages = _aidokuPackages
+        .where((AidokuInstalledPackage package) => package.enabled)
+        .toList(growable: false);
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => MangaGlobalSearchPage(
+          mihonManager: _manager,
+          mihonSources: _enabledSources(),
+          aidokuPackages: aidokuPackages,
+        ),
+      ),
+    );
+  }
+
+  /// 至少有一个可搜索的来源时才提供全局搜索入口。
+  bool get _hasSearchableSources =>
+      _enabledSources().isNotEmpty ||
+      _aidokuPackages.any((AidokuInstalledPackage package) => package.enabled);
+
   /// 已启用扩展提供的、且用户没有停用的在线来源。不支持扩展的平台恒为空表。
   List<MangaOnlineSourceRow> _enabledSources() {
     final MihonManager? manager = _manager;
@@ -151,11 +174,20 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   /// 存在时它就是页头主位，**不再另渲染一个页面大标题**——导航条自己已经标明了当前
   /// 在哪个视图。仅在没有导航条（独立 push 进来）时才回退到文字标题。
   Widget _buildHeader() {
+    final List<Widget> actions = <Widget>[
+      if (_hasSearchableSources)
+        IconButton(
+          key: const ValueKey<String>('manga_global_search_open'),
+          tooltip: t.manga_global_search_title,
+          onPressed: _openGlobalSearch,
+          icon: const Icon(Icons.travel_explore),
+        ),
+    ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return FushiPageHeader.customTitle(title: navigation);
+      return FushiPageHeader.customTitle(title: navigation, actions: actions);
     }
-    return FushiPageHeader(title: t.library_view_browse);
+    return FushiPageHeader(title: t.library_view_browse, actions: actions);
   }
 
   @override

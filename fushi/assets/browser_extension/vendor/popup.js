@@ -647,15 +647,23 @@ function applyTableStyles(html) {
     .replace(/<td(?=[>\s])/g, `<td style="${cellStyle}"`);
 }
 
-function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance) {
+function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSized = false) {
     // .gloss-image-link
     node.style.cssText += 'display:inline-block;position:relative;line-height:1;max-width:100%;';
     // .gloss-image-container
     imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:1em;`;
-    // .gloss-image-link[data-has-aspect-ratio=true] .gloss-image-sizer
-    aspectRatioSizer.style.cssText += 'display:inline-block;width:0;vertical-align:top;font-size:0;';
-    // .gloss-image-link[data-has-aspect-ratio=true] .gloss-image
-    image.style.cssText += 'display:inline-block;vertical-align:top;object-fit:contain;border:none;outline:none;position:absolute;left:0;top:0;width:100%;height:100%;';
+    if (naturalSized) {
+        // BUG-1676：词典没声明尺寸时，<img> 自己就是布局盒（容器 width:auto）。此时
+        // 绝对定位的 img 会把容器塌成 0×0（sizer 也已关掉），整张图消失，所以这两条
+        // 必须成对切换，不能只改容器宽度。
+        aspectRatioSizer.style.cssText += 'display:none;';
+        image.style.cssText += 'display:inline-block;vertical-align:top;object-fit:contain;border:none;outline:none;position:static;width:auto;height:auto;max-width:100%;';
+    } else {
+        // .gloss-image-link[data-has-aspect-ratio=true] .gloss-image-sizer
+        aspectRatioSizer.style.cssText += 'display:inline-block;width:0;vertical-align:top;font-size:0;';
+        // .gloss-image-link[data-has-aspect-ratio=true] .gloss-image
+        image.style.cssText += 'display:inline-block;vertical-align:top;object-fit:contain;border:none;outline:none;position:absolute;left:0;top:0;width:100%;height:100%;';
+    }
     // .gloss-image-background, set image url directly
     if (appearance === 'monochrome') {
         imageBackground.style.cssText += `--image:url("${filename}");position:absolute;left:0;top:0;width:100%;height:100%;-webkit-mask-repeat:no-repeat;-webkit-mask-position:center center;-webkit-mask-mode:alpha;-webkit-mask-size:contain;-webkit-mask-image:var(--image);mask-repeat:no-repeat;mask-position:center center;mask-mode:alpha;mask-size:contain;mask-image:var(--image);background-color:currentColor;`;
@@ -1117,6 +1125,11 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
     const isSvg = /\.svg$/i.test(path);
     const useEmUnits = effectiveSizeUnits === 'em';
+    // BUG-1676：词典没声明尺寸的位图。上面的 `width = 100, height = 100` 是兜底值，
+    // 既不是这张图的真实尺寸也不是它的宽高比。弹窗端能在 img.onload 里用
+    // naturalWidth/naturalHeight 纠正（见下面的 load 分支），导出端没有加载事件，
+    // 只能把布局交给 <img> 自己 —— 这两条路径拿到的信息量不同，分流是本质不是特例。
+    const naturalSizedExport = exporting && !useEmUnits && !hasDimensions && !isSvg;
 
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
@@ -1176,6 +1189,15 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         imageContainer.style.fontSize = 'inherit';
         imageContainer.style.lineHeight = '0';
         imageContainer.style.overflow = 'visible';
+        aspectRatioSizer.style.display = 'none';
+    } else if (naturalSizedExport) {
+        // 凭空写 `100em`（= 100 × 卡片正文字号 ≈ 2000px）会把 400×300 的插图放成
+        // 2000×2000 并按 1:1 摆位；再加上 structured-content 的 `table-layout:auto`
+        // 表格不理会百分比 max-width，整张卡就被撑到屏幕右外（BUG-1676）。
+        // 交给浏览器：容器 width:auto、关掉 aspect-ratio sizer，<img> 按真实自然尺寸和
+        // 真实宽高比布局，`max-width:100%` 负责不超出卡片。
+        node.dataset.hasAspectRatio = 'false';
+        imageContainer.style.width = 'auto';
         aspectRatioSizer.style.display = 'none';
     } else {
         // 导出（制卡）与弹窗的尺寸语义不同：Yomitan 的 structured-content-generator 永远写
@@ -1245,15 +1267,19 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         if (filename) {
             image.alt = alt;
             image.src = filename;
-            if (useEmUnits) {
+            if (naturalSizedExport) {
+                // 不写 width/height 属性：兜底的 100×100 会被浏览器当成真实像素尺寸用来
+                // 定预留宽高比，正好是 BUG-1676 里那圈上下留白的来源。
+            } else if (useEmUnits) {
                 const emSize = 14;
                 const scaleFactor = 2 * window.devicePixelRatio;
                 image.width = usedWidth * emSize * scaleFactor;
+                image.height = image.width * invAspectRatio;
             } else {
                 image.width = usedWidth;
+                image.height = image.width * invAspectRatio;
             }
-            image.height = image.width * invAspectRatio;
-            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance);
+            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSizedExport);
         } else {
             image.textContent = alt;
         }
@@ -1977,6 +2003,15 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
     if (tagName === 'table') {
         const container = document.createElement('div');
         container.classList.add('gloss-sc-table-container');
+        if (exporting) {
+            // BUG-1676：弹窗有 popup.css 的
+            // `.gloss-sc-table-container{display:block;overflow-x:auto}`（上游 Yomitan 同款）
+            // 兜住超宽表格，Anki 卡片上没有那份 CSS。`table-layout:auto` 的 td 首选宽度
+            // 不理会百分比 max-width（循环依赖，浏览器直接忽略），所以卡片上任何一张超宽
+            // structured-content 表格都会连带把整张卡撑出屏幕，而不只是自己变宽。
+            // 把护栏放在容器上：表格保留自己的列宽算法，溢出改为容器内横向滚动。
+            container.style.cssText += 'display:block;max-width:100%;overflow-x:auto;';
+        }
         container.appendChild(element);
         parent.appendChild(container);
         return;
