@@ -950,7 +950,7 @@ jobs:
               case " $tool_archs " in
                 *" $want "*) ;;
                 *)
-                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。Intel Mac 上该 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min.yml 出 universal 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。Intel Mac 上该 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 universal 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
                   exit 1
                   ;;
               esac
