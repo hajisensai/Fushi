@@ -86,7 +86,7 @@ CREATE TABLE statistics_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 87,
+    expect(db.schemaVersion, 88,
         reason: 'v76 给 lookup_mining_counters 的 book_key 进唯一键');
 
     final List<LookupMiningCounterRow> rows =

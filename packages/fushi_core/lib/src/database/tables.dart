@@ -112,7 +112,7 @@ class SrtBooks extends Table {
   // Standalone SRT books (no backing epub) use the empty-string sentinel.
   TextColumn get bookKey => text().withDefault(const Constant(''))();
 
-  /// v87：字幕书/有声书的内容语言（BCP-47）。SRT 文件本身不声明语言，所以这一列
+  /// v88：字幕书/有声书的内容语言（BCP-47）。SRT 文件本身不声明语言，所以这一列
   /// 只能由用户指定；null = 未知，正文不写 font-family（不猜）。
   TextColumn get language => text().nullable()();
 }
@@ -580,7 +580,7 @@ class VideoBooks extends Table {
   TextColumn get title => text()();
   TextColumn get videoPath => text()();
 
-  /// v87：视频的内容语言（BCP-47），决定字幕用哪条字体链。
+  /// v88：视频的内容语言（BCP-47），决定字幕用哪条字体链。
   ///
   /// null = 未指定 → 字幕层退回「当前字幕轨的 language」，再没有则用历史兜底链。
   /// 非 null 为用户手动指定，压过字幕轨声明——外挂 SRT 基本都不带语言标记，
@@ -2297,7 +2297,7 @@ class Galgames extends Table {
   /// 游戏可执行文件绝对路径（hook 注入目标）。
   TextColumn get exePath => text()();
 
-  /// v87：游戏文本的内容语言（BCP-47），决定 hook 文本浮窗与查词卡用哪条字体链。
+  /// v88：游戏文本的内容语言（BCP-47），决定 hook 文本浮窗与查词卡用哪条字体链。
   ///
   /// hook 出来的文本没有任何语言声明可读，所以这一列只能由用户指定；null = 未知。
   /// 不要因为「galgame 多半是日文」就默认 ja——那是全局假设，本仓不做这种假设。

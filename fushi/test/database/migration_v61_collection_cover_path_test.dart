@@ -68,7 +68,7 @@ CREATE TABLE media_collection_items (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 87,
+    expect(db.schemaVersion, 88,
         reason: 'v61 给 media_collections 加合集自有封面列（BUG-1211）');
 
     final MediaCollectionRow? legacy = await db.getMediaCollectionById(7);
