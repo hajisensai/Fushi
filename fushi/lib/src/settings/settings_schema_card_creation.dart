@@ -118,6 +118,11 @@ SettingsDestination buildCardCreationDestination() {
         title: t.video_mining_image_mode,
         subtitle: t.video_mining_image_mode_hint,
       ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.video_mining_still_format',
+        title: t.video_mining_still_format,
+        subtitle: t.video_mining_still_format_hint,
+      ),
     ],
   );
 }

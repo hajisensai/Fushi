@@ -5614,6 +5614,17 @@ class AppModel with ChangeNotifier {
   void setGalMiningAnimatedFormat(MiningAnimatedFormat format) =>
       prefsRepo.setGalMiningAnimatedFormat(format);
 
+  // 静图（截图）编码格式（JPG / PNG，透传 prefsRepo）。默认 jpg=现状。与上面两轴正交：
+  // 模式选用不用动图与取哪帧，本项只管那帧怎么编码。
+  MiningStillFormat get videoMiningStillFormat =>
+      prefsRepo.videoMiningStillFormat;
+  void setVideoMiningStillFormat(MiningStillFormat format) =>
+      prefsRepo.setVideoMiningStillFormat(format);
+
+  MiningStillFormat get galMiningStillFormat => prefsRepo.galMiningStillFormat;
+  void setGalMiningStillFormat(MiningStillFormat format) =>
+      prefsRepo.setGalMiningStillFormat(format);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();
@@ -6798,6 +6809,9 @@ class _AppModelRemoteLookupService
           // → 静态模式根本不进 extractAnimatedClipWithFallback，不存在 BUG-1039 那种
           // 「格式与编码参数不成对」的风险：静态帧压根不吃 gifFps/gifWidth。
           imageMode: _appModel.videoMiningImageMode,
+          // 静图编码格式（默认 JPG）：服务端路径的两种静态档都落到引擎
+          // tryStartFrame，抽帧按它选编码器与扩展名，失败退回 JPG。
+          stillFormat: _appModel.videoMiningStillFormat,
         ),
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -6851,6 +6865,9 @@ class _AppModelRemoteLookupService
         // 与上面 resolve 的 format 同值：转码按它选编码器 + 输出扩展名 + 降级链，
         // 实际产出格式经 ImmersionCaptureResult.animatedFormat 回传给封面文件名。
         format: animatedFormat,
+        // 静帧档的编码格式（默认 JPG）：同样选编码器 + 输出扩展名 + 降级链，
+        // 实际产出格式经 ImmersionCaptureResult.stillFormat 回传给封面文件名。
+        stillFormat: _appModel.videoMiningStillFormat,
         stillTarget: stillTarget,
       );
     } else if (payload.netflixVideoId != null &&

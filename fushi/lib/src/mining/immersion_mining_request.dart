@@ -202,6 +202,53 @@ enum MiningAnimatedFormat {
   }
 }
 
+/// 制卡封面**静态截图的编码格式**，与 [VideoMiningImageMode] 正交，也与
+/// [MiningAnimatedFormat] 互不相干：模式选「用不用动图 / 静态帧取哪一帧」，本枚举只回答
+/// 「静态帧用什么编码」。默认 [jpg] = 现状零破坏。
+///
+/// 为什么单独一个枚举而不是把 jpg/png 并进 [MiningAnimatedFormat]：那个枚举的每个成员都
+/// 带 [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth] 这种**只对动图
+/// 成立**的属性（帧率对单帧无意义），并进去就得给静图编两个假值，再在取参处分支「这个是
+/// 静图别读帧率」。两轴独立取值、各自一个设置项，是同一手法的第三次应用。
+///
+/// 为什么只有 jpg/png 两档（而不是跟动图一样上 webp/avif）：静图这条链有两个产出点，
+/// **一个在 ffmpeg、一个在纯 Dart**（`immersion_mining_engine` 的 `tryCurrentFrame` 拿的是
+/// media_kit 的解码帧字节，经 `package:image` 降采样重编码）。`package:image` 能编的只有
+/// jpg/png；webp/avif 得把截图字节再喂一次 ffmpeg，多一次进程往返和一层失败降级，而静图
+/// 本身体积已经不是瓶颈（4K 帧降到长边 1000px 后 JPEG 约 200KB）。
+///
+/// [png] 走 [encodeAttempts] 的降级链：捆绑 ffmpeg 缺 png 编码器时退回 [jpg] 再抽一次，
+/// 而不是让封面直接丢失（入库的 `ffmpeg-min` 配方 ENCODERS 含 `png`，移动端 ffmpeg-kit
+/// 的 min 包同样含 png；链路是给「配方漂了/别的构建」兜底，不是给现状兜底）。
+enum MiningStillFormat {
+  jpg('jpg', 'jpg'),
+  png('png', 'png');
+
+  const MiningStillFormat(this.wireName, this.fileExtension);
+
+  /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
+  final String wireName;
+
+  /// 输出文件扩展名（不含点）。ffmpeg 按扩展名选 muxer，Anki 也按扩展名判 MIME，故这既是
+  /// 编码器选择依据，也是媒体库里那张图的真实身份——**扩展名必须跟随实际产出格式**，
+  /// 不能跟随用户所选（降级发生时会写出 `.png` 里装 JPEG 的卡，Anki 侧封面不显示）。
+  final String fileExtension;
+
+  /// 编码尝试链：先试本格式，失败降级 [jpg] 再试一次；[jpg] 自己只有一次尝试（链尾兜底，
+  /// 没有更低一级可降）。与 [MiningAnimatedFormat.encodeAttempts] 同范式。
+  List<MiningStillFormat> get encodeAttempts => this == MiningStillFormat.jpg
+      ? const <MiningStillFormat>[MiningStillFormat.jpg]
+      : <MiningStillFormat>[this, MiningStillFormat.jpg];
+
+  /// 从偏好字符串解析；未知/null → [jpg]（默认，向后兼容）。
+  static MiningStillFormat fromWireName(String? name) {
+    for (final MiningStillFormat format in MiningStillFormat.values) {
+      if (format.wireName == name) return format;
+    }
+    return MiningStillFormat.jpg;
+  }
+}
+
 /// 统一沉浸制卡请求。任何来源（本地/YouTube/Netflix）都构造这个喂 [ImmersionMiningEngine]。
 ///
 /// [mediaSource] 是 ffmpeg 的 inputPath——本地绝对路径 或 可 seek 的 http 流 URL。
@@ -233,6 +280,7 @@ class ImmersionMiningRequest {
     this.requireAudio = true,
     this.imageMode = VideoMiningImageMode.gif,
     this.animatedFormat = MiningAnimatedFormat.gif,
+    this.stillFormat = MiningStillFormat.jpg,
     this.mediaSourceTlsPinSha256,
     this.remoteAudioClipper,
   });
@@ -286,6 +334,14 @@ class ImmersionMiningRequest {
   /// 偏好。与 [imageMode] 的默认取法一致。
   final MiningAnimatedFormat animatedFormat;
 
+  /// 静态截图编码格式（见 [MiningStillFormat]）。仅 [imageMode] 为静态档
+  /// （[VideoMiningImageMode.isStill]），或动图抽取失败降级成静态帧时生效。
+  ///
+  /// 默认取法与 [animatedFormat] 一致：值对象默认 [MiningStillFormat.jpg]（= 改动前的
+  /// 硬编码 `.jpg`，没显式指定的调用点/测试逐字节等价），用户可见的默认由
+  /// `MiningStillFormat.fromWireName(null)` 给出（同为 jpg），真实调用点显式透传偏好。
+  final MiningStillFormat stillFormat;
+
   /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Hibiki 主机的 https 流，这里带上
   /// 该 host 经 TOFU 钉扎的证书 SHA-256 指纹（`aa:bb:..`）。引擎把它透传给 ffmpeg 抽取器的
   /// `-tls_pin_sha256`，使自编 ffmpeg-kit（`--enable-gnutls` + pin 补丁）按指纹接受自签，
@@ -337,6 +393,7 @@ class ImmersionMiningRequest {
         requireAudio: requireAudio,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
+        stillFormat: stillFormat,
         mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
         remoteAudioClipper: remoteAudioClipper,
       );

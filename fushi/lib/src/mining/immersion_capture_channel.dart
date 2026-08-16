@@ -107,6 +107,7 @@ class ImmersionCaptureResult {
     this.error,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.coverIsStill = false,
+    this.stillFormat = MiningStillFormat.jpg,
   });
 
   /// 动图封面字节。字段名与 MethodChannel 的 wire key `gifBytes` 一样是历史名，**不代表
@@ -130,8 +131,16 @@ class ImmersionCaptureResult {
   /// 为什么不新开一个 `stillBytes` 字段：[gifBytes] 就是这条链路的「封面字节」通道，
   /// 分成两个字段会让每个下游都长出一对 if。字节走原通道，用这个布尔说明它是什么——
   /// 与 [animatedFormat] 同样是「实际产出物的自描述」。
-  /// [animatedFormat] 在本值为 true 时不参与文件名（封面是 `.jpg`）。
+  /// [animatedFormat] 在本值为 true 时不参与文件名（改由 [stillFormat] 参与）。
   final bool coverIsStill;
+
+  /// [coverIsStill] 为 true 时，[gifBytes] 里那张静态帧**实际被编码成的**格式。
+  ///
+  /// 与 [animatedFormat] 同一理由：`transcodeClipToCapture` 在 png 编码器缺失时会退回
+  /// JPEG，调用方按用户偏好拼名就会写出 `.png` 里装 JPEG 的卡。默认
+  /// [MiningStillFormat.jpg] —— 动图路径与 native 后台实例路径都不产静态帧，此时该字段
+  /// 不参与文件名（见 [buildImmersionRequest] 的 `coverIsAnimated`）。
+  final MiningStillFormat stillFormat;
 
   bool get ok => error == null;
 
@@ -167,12 +176,13 @@ ImmersionMiningRequest buildImmersionRequest(
       useCapture ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes;
   final bool coverFromCapture = useCapture && cap.gifBytes != null;
   final bool coverIsAnimated = coverFromCapture && !cap.coverIsStill;
-  // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME）。片段里抽的静态帧与 2A 截图都是
-  // JPEG，但分开命名——媒体库里一眼看得出这张卡的封面是哪条路产出的。
+  // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME），分开命名——媒体库里一眼看得出
+  // 这张卡的封面是哪条路产出的。片段里抽的静态帧跟随 [ImmersionCaptureResult.stillFormat]
+  // （用户偏好，降级后为实际格式）；2A 截图是扩展直接给的字节、不经我们编码，恒 JPEG。
   final String coverName = coverIsAnimated
       ? 'netflix_clip.${cap.animatedFormat.fileExtension}'
       : coverFromCapture
-          ? 'netflix_frame.jpg'
+          ? 'netflix_frame.${cap.stillFormat.fileExtension}'
           : 'netflix_shot.jpg';
   final Uint8List? audio = useCapture ? cap.audioBytes : null;
   return ImmersionMiningRequest(
@@ -227,6 +237,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
   required MiningMediaCompression compression,
   required String tempDir,
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  MiningStillFormat stillFormat = MiningStillFormat.jpg,
   ClipStillTarget? stillTarget,
   GifExtractor gifExtractor = extractClipGifViaFfmpeg,
   AudioExtractor audioExtractor = extractAudioSegmentViaFfmpeg,
@@ -240,14 +251,25 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     final int endMs = durationMs > 0 ? durationMs : 6000;
     // 静态帧模式：片段内定点抽一帧，**不进** extractAnimatedClipWithFallback（既是行为正确
     // 性，也避免顶格档动图编码那种大体积开销 —— 静态帧不吃 gifFps/gifWidth）。
-    final String? framePath = stillTarget == null
-        ? null
-        : await frameExtractor(
-            inputPath: clip.path,
-            outputPath: '${dir.path}/clip_frame.jpg',
-            atSeconds: stillTarget.offsetMs / 1000.0,
-            decodeFromStart: true,
-          );
+    // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选编码器），首选
+    // 失败按 [MiningStillFormat.encodeAttempts] 退回 JPEG 再抽一次；实际用成的那个格式随
+    // 结果带回，供文件名跟随真实字节。
+    String? framePath;
+    MiningStillFormat producedStillFormat = MiningStillFormat.jpg;
+    if (stillTarget != null) {
+      for (final MiningStillFormat attempt in stillFormat.encodeAttempts) {
+        framePath = await frameExtractor(
+          inputPath: clip.path,
+          outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
+          atSeconds: stillTarget.offsetMs / 1000.0,
+          decodeFromStart: true,
+        );
+        if (framePath != null) {
+          producedStillFormat = attempt;
+          break;
+        }
+      }
+    }
     // 输出扩展名由每次尝试的格式补（ffmpeg 按扩展名选 muxer），故这里只给不含扩展名的前缀。
     final AnimatedClipExtraction? animated = stillTarget != null
         ? null
@@ -285,6 +307,8 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
       // 实际产出格式（可能已降级），不是用户所选。cover==null / 静态帧时不参与文件名。
       animatedFormat: animated?.format ?? MiningAnimatedFormat.gif,
       coverIsStill: framePath != null,
+      // 同上：实际编成的静图格式（可能已从 png 退回 jpg），不是用户所选。
+      stillFormat: producedStillFormat,
     );
   } catch (e) {
     return ImmersionCaptureResult(error: 'clip transcode failed: $e');

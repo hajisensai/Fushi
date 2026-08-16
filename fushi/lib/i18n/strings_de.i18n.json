@@ -2262,7 +2262,7 @@
   "video_mining_image_mode": "Video card image",
   "video_mining_image_mode_current_frame": "Screenshot at mining",
   "video_mining_image_mode_gif": "Animated GIF (subtitle clip)",
-  "video_mining_image_mode_hint": "How covers on video cards are captured",
+  "video_mining_image_mode_hint": "Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame",
   "video_mining_image_mode_subtitle_start": "Screenshot at subtitle start",
   "video_next_episode": "Nächste Folge",
   "video_playlist_episodes": "$count Folgen",
@@ -3428,5 +3428,11 @@
   "video_collection_scrape": "Scrape info & cover",
   "update_testflight_open": "Open TestFlight",
   "update_app_store_open": "Open App Store",
-  "update_release_page_open": "Release page"
+  "update_release_page_open": "Release page",
+  "video_mining_still_format": "Video card screenshot format",
+  "video_mining_still_format_hint": "Encoding used when the card image is a still screenshot. JPG is much smaller; PNG is lossless but several times larger. Animated covers are unaffected — they follow the animation format setting.",
+  "mining_still_format_jpg": "JPG (smaller)",
+  "mining_still_format_png": "PNG (lossless)",
+  "gal_mining_still_format": "Game card screenshot format",
+  "gal_mining_still_format_hint": "Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before."
 }
