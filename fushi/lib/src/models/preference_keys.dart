@@ -171,6 +171,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
   'video_sort_mode',
+  'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
   'video_subtitle_list_font_scale_index',

@@ -1784,17 +1784,20 @@ class VideoDownloadPipelineService {
         // 优先于任何启发式。
         _VerifiedSubtitleBytes? verified;
         if (candidate == null) {
-          verified = await _selectVerifiedSubtitle(
+          final ({_VerifiedSubtitleBytes? picked, String? reason}) selection =
+              await _selectVerifiedSubtitle(
             candidates: result.items,
             videoPath: video.path,
           );
+          verified = selection.picked;
           if (verified == null) {
-            const String message =
-                'Every subtitle candidate failed the timing check '
-                'against this video';
+            // 原因要说清是「都没通过校验」还是「一条都没下下来」——两者对用户是
+            // 不同的动作（改条目 vs 查网络）。
+            final String message = selection.reason ??
+                'No subtitle candidate could be verified against this video';
             await _recordUnavailableSubtitle(job, file, subtitleId, message);
             if (policy == VideoDownloadSubtitlePolicy.required) {
-              throw const VideoDownloadPipelineActionRequired(message);
+              throw VideoDownloadPipelineActionRequired(message);
             }
             continue;
           }
@@ -1907,16 +1910,20 @@ class VideoDownloadPipelineService {
   ///
   /// 探不到视频时长（缺 ffprobe / 超时）时判据退化成只做内容自检，**绝不因为
   /// 探测失败就拒收**。
-  Future<_VerifiedSubtitleBytes?> _selectVerifiedSubtitle({
+  Future<({_VerifiedSubtitleBytes? picked, String? reason})>
+      _selectVerifiedSubtitle({
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
   }) async {
-    if (candidates.isEmpty) return null;
+    if (candidates.isEmpty) {
+      return (picked: null, reason: 'No subtitle candidate was returned');
+    }
     final int? durationMs = await probeVideoDurationMs(videoPath);
     _ensureLeaseHeld();
     final KnownVideoDuration? known =
         durationMs == null ? null : KnownVideoDuration.probed(durationMs);
-    _VerifiedSubtitleBytes? firstRejected;
+    String? lastRejection;
+    String? lastDownloadError;
     final int limit = candidates.length < kSubtitleVerifyMaxCandidates
         ? candidates.length
         : kSubtitleVerifyMaxCandidates;
@@ -1927,6 +1934,7 @@ class VideoDownloadPipelineService {
         download = await subtitleRegistry!.download(candidate);
       } on Object catch (error) {
         // 单条下载失败不该中断整轮筛选——下一条可能好好的。
+        lastDownloadError = _safeError(error.toString());
         debugPrint('[subtitle] candidate download failed '
             '(${candidate.providerId}:${candidate.remoteId}): $error');
         continue;
@@ -1937,17 +1945,31 @@ class VideoDownloadPipelineService {
         video: known,
       );
       if (!check.rejected) {
-        return _VerifiedSubtitleBytes(candidate: candidate, download: download);
+        return (
+          picked:
+              _VerifiedSubtitleBytes(candidate: candidate, download: download),
+          reason: null,
+        );
       }
+      lastRejection = check.detail;
       debugPrint('[subtitle] rejected candidate '
           '"${candidate.fileName}": ${check.detail}');
-      firstRejected ??=
-          _VerifiedSubtitleBytes(candidate: candidate, download: download);
     }
-    // 视频时长未知时判据只做内容自检，被拒的一定是「真的解析不出/是空的」，
-    // 那就不该退而求其次。有时长信息时同理：全都对不上视频，硬装一个只会让
-    // 用户以为自动匹配好了。两种情况都返回 null，由调用方落明确的失败原因。
-    return null;
+    // 一条都没通过就不退而求其次：硬装一个只会让用户以为自动匹配好了，而错字幕
+    // 比没字幕更难发现。原因分两类回给调用方——「都没通过校验」要改条目，
+    // 「一条都没下下来」要查网络。
+    if (lastRejection != null) {
+      return (
+        picked: null,
+        reason: 'No subtitle candidate matched this video ($lastRejection)',
+      );
+    }
+    return (
+      picked: null,
+      reason: lastDownloadError == null
+          ? 'No subtitle candidate could be downloaded'
+          : 'Subtitle download failed: $lastDownloadError',
+    );
   }
 
   /// Copies old JSON-plan subtitle staging files without consuming them.

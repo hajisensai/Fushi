@@ -180,6 +180,13 @@ class AnimeDownloadPlan {
   /// 上次反查字幕的时刻（epoch 毫秒）；null = 还没试过。
   final int? subtitleLastAttemptAtMs;
 
+  /// 自动重试**还有没有机会**（与「现在是否该重试」不同：这里不看时间）。
+  ///
+  /// UI 用它区分两种完全不同的处境：还会自动重试 = 用户什么都不用做；重试用完了
+  /// = 要么手动补要么改条目。UI 不该自己重算 backoff 算术。
+  bool get subtitleRetryPossible =>
+      jimakuEntryId != null && subtitleAttempts <= subtitleRetryBackoff.length;
+
   /// 现在（[nowMs]）是否该再试一次自动反查字幕。
   ///
   /// 纯函数，无 IO——重试节奏是可单测的决策，不是散在 tick 里的 if。

@@ -3451,5 +3451,10 @@
   "settings_content_language_title": "Default content language",
   "settings_content_language_unset": "Not set",
   "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
-  "manga_ocr_lens_language_label": "Bahasa pengenalan"
+  "manga_ocr_lens_language_label": "Bahasa pengenalan",
+  "video_setting_subtitle_backfill": "Auto-fetch subtitles after scraping",
+  "video_setting_subtitle_backfill_hint": "When a scrape finishes, videos that still have no subtitle get one from your configured online sources. Never replaces an existing subtitle.",
+  "video_setting_subtitle_sources_section": "Online subtitle sources",
+  "video_subtitle_no_source_configured": "No subtitle found · set up an online subtitle source",
+  "anime_download_subs_retrying": "Subtitles: not up yet — will retry automatically"
 }

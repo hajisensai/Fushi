@@ -39,6 +39,7 @@ class VideoSourceScrapeCoordinator
     VideoMetadataProviderRegistry? registry,
     VideoMetadataImageProvider? fanartProvider,
     VideoMetadataAssetDownloader? assetDownloader,
+    this.onWorkScraped,
   })  : registry = registry ?? _createRegistry(config),
         fanartProvider = fanartProvider ??
             FanartVideoImageProvider(apiKey: config.fanartApiKey),
@@ -57,6 +58,17 @@ class VideoSourceScrapeCoordinator
   final bool _ownsFanartProvider;
   final bool _ownsAssetDownloader;
   final VideoMetadataDatabaseStore _store;
+
+  /// 一个作品刮完（规范数据已落库、sidecar 已写）后的通知。
+  ///
+  /// 刮削本身**不做**字幕：它是全仓唯一解析出规范身份（AniList/TMDB id + 原名）
+  /// 的地方，而字幕搜索的准确率几乎完全取决于身份准不准。把「谁需要字幕」这个
+  /// 事实播出去，由消费方（AppModel → VideoSubtitleBackfillService）决定要不要
+  /// 补、按什么偏好补——刮削协调器不该长出网络字幕依赖，也不该被字幕失败拖慢。
+  ///
+  /// 回调抛出的异常会被吞掉并记进本次 run 的 warnings，绝不让补字幕影响刮削结论。
+  final Future<void> Function(VideoScrapedWorkNotice notice)? onWorkScraped;
+
   final Set<int> _interruptedRunIds = <int>{};
   int? _activeRunId;
 
@@ -302,6 +314,25 @@ class VideoSourceScrapeCoordinator
           warnings.addAll(sidecars.warnings);
           errors.addAll(sidecars.errors);
           succeeded++;
+          // 播「这个作品刮完了」。放在 succeeded++ 之后：只有真正刮成功的作品
+          // 才值得去补字幕，失败的连身份都不可信。
+          final Future<void> Function(VideoScrapedWorkNotice)? notify =
+              onWorkScraped;
+          if (notify != null) {
+            try {
+              await notify(
+                VideoScrapedWorkNotice(work: localWork, metadata: metadata),
+              );
+            } on VideoSourceScrapeCancelled {
+              rethrow;
+            } catch (error) {
+              // 补字幕失败绝不影响刮削结论——它是刮削的下游增值，不是前置条件。
+              warnings.add(SourceScrapeIssue(
+                workTitle: localWork.title,
+                message: '字幕补齐失败：$error',
+              ));
+            }
+          }
         } on VideoSourceScrapeCancelled {
           rethrow;
         } catch (error) {
@@ -1520,4 +1551,18 @@ extension _FirstOrNull<T> on Iterable<T> {
     final Iterator<T> iterator = this.iterator;
     return iterator.moveNext() ? iterator.current : null;
   }
+}
+
+/// 「一个作品刚刮完」的事实：本地是哪些视频 + 刮出来的规范身份。
+///
+/// 刻意只带这两样：消费方要什么（补字幕 / 推送通知 / 统计）自己从这两个对象里
+/// 取，协调器不预先替它们裁剪。
+class VideoScrapedWorkNotice {
+  const VideoScrapedWorkNotice({required this.work, required this.metadata});
+
+  /// 本地作品（`work.members` 是这次涉及的 `VideoBookRow`，可能多集）。
+  final VideoSourceScrapeWork work;
+
+  /// 刮出来的规范元数据（含 ids / seasons / episodes / runtimeMinutes）。
+  final VideoMetadataWork metadata;
 }

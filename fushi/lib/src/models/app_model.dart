@@ -80,6 +80,8 @@ import 'package:fushi/src/media/video/download/video_download_pipeline_service.d
 import 'package:fushi/src/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
@@ -3262,6 +3264,16 @@ class AppModel with ChangeNotifier {
     await reloadVideoDownloadPipelineRuntime();
   }
 
+  /// 刮削后自动为缺字幕的视频补字幕（默认开）。见
+  /// [PreferencesRepository.videoSubtitleBackfillAfterScrape]。
+  bool get videoSubtitleBackfillAfterScrape =>
+      _prefsRepo?.videoSubtitleBackfillAfterScrape ?? true;
+
+  Future<void> setVideoSubtitleBackfillAfterScrape(bool enabled) async {
+    await prefsRepo.setVideoSubtitleBackfillAfterScrape(enabled);
+    notifyListeners();
+  }
+
   /// 默认字幕语言归一成语言选择器用的 `String?`（`''`/空白 → null = 不限）。
   /// 三个 Jimaku 界面（字幕对话框 / 番剧下载 / 批量匹配）共用同一兜底。
   ///
@@ -3405,6 +3417,11 @@ class AppModel with ChangeNotifier {
   VideoResourceRegistry? get videoResourceRegistry => _videoResourceRegistry;
   VideoSubtitleRegistry? _videoSubtitleRegistry;
   VideoSubtitleRegistry? get videoSubtitleRegistry => _videoSubtitleRegistry;
+
+  /// 刮削后自动补字幕（BUG-1698）。与 [_videoSubtitleRegistry] 同生命周期：
+  /// 用户改了字幕来源/语言后 `reloadVideoDownloadPipelineRuntime` 会一起重建。
+  VideoSubtitleBackfillService? _videoSubtitleBackfillService;
+
   VideoSourceScrapeCoordinator? _videoDownloadScrapeCoordinator;
   TorrentBackend? _videoDownloadBackend;
   String? _videoDownloadBackendCacheKey;
@@ -3808,17 +3825,27 @@ class AppModel with ChangeNotifier {
       kVideoScraperTmdbApiKeyPref,
       defaultValue: '',
     ) as String;
+    final String preferredLanguage = prefsRepo.jimakuDefaultLanguage.trim();
+    _videoSubtitleBackfillService = VideoSubtitleBackfillService(
+      registry: subtitles,
+      preferredLanguages: <String>[
+        if (preferredLanguage.isNotEmpty) preferredLanguage,
+      ],
+    );
     final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
       database: database,
       config: VideoSourceScrapeGlobalConfig.fromPreferences(
         prefsRepo,
         resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       ),
+      // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
+      // （AniList/TMDB id + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
+      // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
+      onWorkScraped: _backfillSubtitlesForScrapedWork,
     );
     _videoResourceRegistry = resources;
     _videoSubtitleRegistry = subtitles;
     _videoDownloadScrapeCoordinator = scrape;
-    final String preferredLanguage = prefsRepo.jimakuDefaultLanguage.trim();
     final VideoDownloadPipelineService pipeline = VideoDownloadPipelineService(
       database: database,
       resourceRegistry: resources,
@@ -3840,6 +3867,40 @@ class AppModel with ChangeNotifier {
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
+  }
+
+  /// 刮完一个作品 → 给它仍缺字幕的成员各补一条（BUG-1698）。
+  ///
+  /// 三道自然闸门，任何一道不满足就整个静默跳过（这是刮削的下游增值，不该有
+  /// 存在感）：偏好关了 / 没配任何在线字幕来源 / 该视频已经有字幕。
+  ///
+  /// 逐条串行而不是并发：一次刮削可能带来整季十几集，并发打同一个字幕站是滥用；
+  /// 而且这条路径本来就跑在刮削的后台任务里，没人在等它。
+  Future<void> _backfillSubtitlesForScrapedWork(
+    VideoScrapedWorkNotice notice,
+  ) async {
+    if (!videoSubtitleBackfillAfterScrape) return;
+    final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
+    // provider 一个都没配时 registry 是空的，搜了也只会得到空结果——别为此
+    // 探一堆视频时长。
+    if (service == null || service.registry.providers.isEmpty) return;
+
+    final Set<String> withSubtitle = <String>{
+      for (final VideoBookRow book in notice.work.members)
+        if (book.subtitleSource?.trim().isNotEmpty == true) book.bookUid,
+    };
+    final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
+      members: notice.work.members,
+      metadata: notice.metadata,
+      hasExistingSubtitle: withSubtitle.contains,
+    );
+    for (final SubtitleBackfillTarget target in targets) {
+      final SubtitleBackfillResult result = await service.backfill(target);
+      if (result.installed) {
+        debugPrint('[subtitle-backfill] installed ${result.language} for '
+            '${target.bookUid}: ${result.installedPath}');
+      }
+    }
   }
 
   /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务
