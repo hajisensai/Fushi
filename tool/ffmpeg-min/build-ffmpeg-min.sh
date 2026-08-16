@@ -57,6 +57,20 @@ X264_REF="${X264_REF:-stable}"
 SVTAV1_REF="${SVTAV1_REF:-v2.3.0}"
 LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
 
+# BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
+#
+# 为什么必须能指定：Flutter 的 `flutter build macos --release` 产出的是 **universal**
+# （x86_64 + arm64）app，而本脚本历来只编构建机自己的架构。CI 的 macOS runner 是
+# Apple Silicon，于是随包的 ffmpeg/ffprobe 是 arm64-only 瘦二进制。在 **Intel Mac**
+# 上后果是：app 本体照常启动、查词照常能用，但每次 `Process.start('…/ffmpeg')` 都
+# 被内核以 `Bad CPU type in executable`(EBADARCH) 拒掉 → 制卡音频/封面、内封字幕
+# 抽取、片段导出全线失效。ffmpeg-min.yml 与 release-desktop.yml 的 `ffmpeg -version`
+# 硬门都跑在 arm64 runner 上，对这个缺口天然免疫，所以它一路溜到了用户机器上。
+#
+# 用法：单独跑一次只出一个架构；两个架构各跑一次到不同 OUT，再 `lipo -create`
+# 合成 universal（见 .github/workflows/ffmpeg-min.yml 的 macOS job）。
+MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
+
 # BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp 从源码编成**静态库**，装进一个
 # 私有 prefix，让 ffmpeg 只从那里取。
 #
@@ -90,7 +104,12 @@ build_darwin_static_deps() {
       https://code.videolan.org/videolan/x264.git "$work/x264"
     # --disable-cli：只要库，不要 x264 命令行工具。--enable-pic：静态库进可执行
     # 文件时 arm64 需要位置无关代码。
-    (cd "$work/x264" && ./configure --prefix="$prefix" \
+    # BUG-1668：`--host` + `CC` 里的 `-arch` 一起决定产物架构。交叉编译（在 arm64
+    # runner 上编 x86_64）时 x264 的 configure 靠 --host 判定目标，靠 CC 真正生成
+    # 目标码；只给其中一个会编出构建机架构的库，随后 lipo 合出来的「universal」
+    # 里两片都是同一架构——看着像修好了，Intel 上照样跑不起来。
+    (cd "$work/x264" && CC="clang -arch $MACOS_ARCH" ./configure --prefix="$prefix" \
+      --host="$MACOS_ARCH-apple-darwin" \
       --enable-static --enable-pic --disable-cli --disable-opencl \
       && make -j"$JOBS" && make install)
   fi
@@ -100,11 +119,38 @@ build_darwin_static_deps() {
     rm -rf "$work/svt-av1"
     git clone --depth 1 --branch "$SVTAV1_REF" \
       https://gitlab.com/AOMediaCodec/SVT-AV1.git "$work/svt-av1"
+    # BUG-1668：下面三个 `CMAKE_SYSTEM*` / policy 开关都**只为交叉编译 x86_64 而存在**，
+    # 三者缺一，产物就是坏的。SVT-AV1 v2.3.0 在 x86 目标上会拉进 vendored 的
+    # third_party/cpuinfo（`if(… AND HAVE_X86_PLATFORM) add_subdirectory(...)`），
+    # arm64 目标走 ARM 特性检测、根本不引入它——所以这三个坑在「只编构建机架构
+    # （arm64 runner）」的年代全都碰不到，一开始编 x86_64 才逐个冒出来：
+    #
+    # ① `CMAKE_SYSTEM_NAME=Darwin`：**这条是关键**。cpuinfo 的 CMakeLists 靠
+    #    `CMAKE_SYSTEM_PROCESSOR` 决定编哪些源文件，而只传 `-DCMAKE_SYSTEM_PROCESSOR`
+    #    没用——`project()` 会用**检测到的 host 值**覆盖同名普通变量（cache 里明明是
+    #    x86_64，取到的仍是 arm64）。只有设了 CMAKE_SYSTEM_NAME 才真正进入 CMake 的
+    #    交叉编译模式，用户给的 PROCESSOR 才生效。不设它的后果极隐蔽：cpuinfo 只编出
+    #    通用的 api.c/init.c，漏掉 x86 专属的 isa.c / vendor.c / x86_init.c /
+    #    x86_mach_init.c，而 SVT-AV1 自己按 x86 编译并引用了那些符号 → 链接时
+    #    `Undefined symbols: _cpuinfo_isa, _cpuinfo_x86_mach_init` → ffmpeg configure
+    #    只回一句 "SvtAv1Enc >= 0.9.0 not found using pkg-config"，完全指不到真因。
+    #    （真机实测：设上之后 cpuinfo 编出 7 个 .o 且被并进 libSvtAv1Enc.a，
+    #    `nm` 能看到 `T _cpuinfo_x86_mach_init`，无需任何 -lcpuinfo 补链。）
+    # ② `CMAKE_SYSTEM_PROCESSOR`：①生效后由它选定目标架构的源文件集。
+    # ③ `CMAKE_POLICY_VERSION_MINIMUM=3.5`：cpuinfo 那份 CMakeLists 顶上是
+    #    `CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)`，CMake 4.x 已移除对 <3.5 的兼容
+    #    → "Compatibility with CMake < 3.5 has been removed"，configure 当场失败。
+    #    这是 CMake 官方给的兼容逃生开关。
     cmake -S "$work/svt-av1" -B "$work/svt-av1/build" \
+      -DCMAKE_SYSTEM_NAME=Darwin \
+      -DCMAKE_SYSTEM_PROCESSOR="$MACOS_ARCH" \
+      -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
       -DBUILD_SHARED_LIBS=OFF -DBUILD_APPS=OFF -DBUILD_TESTING=OFF
     cmake --build "$work/svt-av1/build" -j "$JOBS"
     cmake --install "$work/svt-av1/build"
+
   fi
 
   if [ ! -f "$prefix/lib/libwebpmux.a" ]; then
@@ -115,6 +161,7 @@ build_darwin_static_deps() {
     git clone --depth 1 --branch "$LIBWEBP_REF" \
       https://github.com/webmproject/libwebp.git "$work/libwebp"
     cmake -S "$work/libwebp" -B "$work/libwebp/build" \
+      -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
       -DBUILD_SHARED_LIBS=OFF -DWEBP_BUILD_LIBWEBPMUX=ON \
       -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF \
@@ -196,11 +243,16 @@ PROTOCOLS="file,pipe,http,https,tcp,tls,crypto"
 # TLS 后端按平台走系统原生库：Windows schannel（secur32，系统内置无额外 DLL）、
 # macOS SecureTransport（系统内置）、Linux gnutls（LGPL，CI 装 libgnutls28-dev）。
 # https(googlevideo) 输入的 tls 协议需要一个 TLS 后端，否则 configure 报错。
-EXTRA_CONFIG="--enable-gnutls"
+# BUG-1668：改成 **bash 数组**。原先是一个字符串 + 调用处无引号展开 `$EXTRA_CONFIG`，
+# 那种形态下任何自带空格的参数都会被词法拆散：`--cc=clang -arch x86_64` 会变成三个
+# 独立参数（`--cc=clang` / `-arch` / `x86_64`），configure 于是拿不到交叉编译器，
+# 照旧编出构建机架构 —— 正是本 bug 要根治的东西。数组 + `"${EXTRA_CONFIG[@]}"`
+# 让每个元素原样成为一个 argv，带空格也不拆。
+EXTRA_CONFIG=(--enable-gnutls)
 case "$(uname -s)" in
   # Windows：静态链接，把 libwinpthread/zlib/libgcc/x264 等折进 exe → 发布单文件，
   # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。schannel 是系统 secur32，无外链。
-  MINGW*|MSYS*) EXTRA_CONFIG="--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel" ;;
+  MINGW*|MSYS*) EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel) ;;
   # macOS（BUG-1443）：本分支曾只传 --enable-securetransport，于是 Homebrew 装的
   # x264 / svt-av1 / webp 全部以**动态依赖**留在产物里：
   #   /opt/homebrew/opt/svt-av1/lib/libSvtAv1Enc.4.dylib
@@ -219,9 +271,21 @@ case "$(uname -s)" in
   Darwin)
     build_darwin_static_deps "$STATIC_DEPS"
     export PKG_CONFIG_PATH="$STATIC_DEPS/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-    EXTRA_CONFIG="--enable-securetransport --pkg-config-flags=--static"
-    EXTRA_CONFIG="$EXTRA_CONFIG --extra-cflags=-I$STATIC_DEPS/include"
-    EXTRA_CONFIG="$EXTRA_CONFIG --extra-ldflags=-L$STATIC_DEPS/lib"
+    EXTRA_CONFIG=(--enable-securetransport --pkg-config-flags=--static)
+    EXTRA_CONFIG+=("--extra-cflags=-I$STATIC_DEPS/include")
+    EXTRA_CONFIG+=("--extra-ldflags=-L$STATIC_DEPS/lib")
+    # BUG-1668：目标架构显式钉死，不靠「构建机恰好是什么」。`-arch` 必须同时进
+    # cc / cflags / ldflags，少一处就会编出构建机架构的目标文件或链接失败。
+    EXTRA_CONFIG+=("--arch=$MACOS_ARCH")
+    EXTRA_CONFIG+=("--cc=clang -arch $MACOS_ARCH")
+    EXTRA_CONFIG+=("--extra-cflags=-arch $MACOS_ARCH")
+    EXTRA_CONFIG+=("--extra-ldflags=-arch $MACOS_ARCH")
+    # 只有真跨架构时才 --enable-cross-compile：它会关掉 configure 的「跑一下测试
+    # 程序」探测（在 arm64 上跑 x86_64 探测程序会被 Rosetta 影响或直接失败）。
+    # 同架构时保持原样跑本地探测，行为与改动前逐字一致。
+    if [ "$MACOS_ARCH" != "$(uname -m)" ]; then
+      EXTRA_CONFIG+=(--enable-cross-compile --target-os=darwin)
+    fi
     ;;
 esac
 
@@ -244,7 +308,31 @@ esac
   --enable-parser="$PARSERS" \
   --enable-bsf="$BSFS" \
   --enable-protocol="$PROTOCOLS" \
-  $EXTRA_CONFIG
+  "${EXTRA_CONFIG[@]}" || {
+    # BUG-1668：configure 只在 stdout 印一行结论（如 "ERROR: SvtAv1Enc >= 0.9.0 not
+    # found using pkg-config"），**真正的原因**——编译/链接测试用的完整命令行与
+    # 编译器报的未定义符号——只在 ffbuild/config.log 里。CI 不打印它，等于每次
+    # configure 失败都只能靠猜再赌一轮构建。这里失败即 dump 尾部，一轮就能定位。
+    status=$?
+    # `${status}` 的花括号不是风格——`$status` 后面紧跟全角「）」时，bash 在 UTF-8
+    # locale 下会把那个多字节字符并进变量名，于是 `set -u` 报
+    # `status<乱码>: unbound variable`，dump 还没打印就先把自己炸了（实测于 CI）。
+    # 变量后紧跟任何非 ASCII 字符都必须用 ${} 界定边界。
+    echo "[ffmpeg-min] configure 失败（exit ${status}）。ffbuild/config.log 关键片段："
+    # 光 tail 抓不到真因：configure 的检查按固定顺序跑，失败的那项（比如
+    # `check_pkg_config SvtAv1Enc`）后面往往还有几十项无关检查把它顶出尾部窗口
+    # （实测：tail -120 全是 mathfunc 噪声）。这里先按**未定义符号 / 检查失败**这类
+    # 关键词定位，再退回 tail。
+    if [ -f ffbuild/config.log ]; then
+      grep -n -i -E "undefined symbol|Undefined symbols|not found|ld: |error:" \
+        ffbuild/config.log | tail -n 40 >&2 || true
+      echo "[ffmpeg-min] ---- config.log 尾部 60 行 ----" >&2
+      tail -n 60 ffbuild/config.log >&2
+    else
+      echo "[ffmpeg-min] 无 ffbuild/config.log" >&2
+    fi
+    exit "$status"
+  }
 
 make -j"$JOBS"
 make install
