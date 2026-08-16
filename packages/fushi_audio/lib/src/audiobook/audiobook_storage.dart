@@ -206,12 +206,35 @@ abstract final class AudiobookStorage {
   }) =>
       missingPaths(paths, exists: exists).isNotEmpty;
 
-  static Future<void> cleanAudioFiles(Directory persistDir) async {
+  /// 两组音频路径是否是**同一套音频**（BUG-1679 的进度作废判据）。
+  /// 有序比较：顺序就是 `AudioCue.audioFileIndex` 的含义，换序即换时间轴。
+  static bool sameAudioPathList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// 清掉 [persistDir] 里的旧音频（整组替换语义），但**绝不删 [keep] 里的文件**。
+  ///
+  /// BUG-1678：重新导入时「沿用现有音频」是把已持久化的路径原样再喂一遍导入流程
+  /// 表达的，那些路径本身就落在 [persistDir] 内。无条件清目录会先把本次导入的
+  /// **源文件**删掉，紧接着复制循环 `srcFile.length()` 撞 [FileSystemException]
+  /// 中止——用户的音频没了、库里还指着已不存在的路径（症状：换完字幕音频再也不
+  /// 响）。保留集让「全换新 / 全沿用 / 混合」三种情况走同一条无分支路径。
+  static Future<void> cleanAudioFiles(
+    Directory persistDir, {
+    Iterable<String> keep = const <String>[],
+  }) async {
     if (!persistDir.existsSync()) return;
+    final Set<String> keepCanonical = <String>{
+      for (final String path in keep) p.canonicalize(path),
+    };
     for (final FileSystemEntity f in persistDir.listSync()) {
-      if (f is File && isAudioFile(f.path)) {
-        await f.delete();
-      }
+      if (f is! File || !isAudioFile(f.path)) continue;
+      if (keepCanonical.contains(p.canonicalize(f.path))) continue;
+      await f.delete();
     }
   }
 

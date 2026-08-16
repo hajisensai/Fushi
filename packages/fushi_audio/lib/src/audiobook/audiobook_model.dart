@@ -56,6 +56,29 @@ class Audiobook {
   /// true：ON —— cue 跨章时自动调 __ttuGoToSection；用户手动翻页触发
   /// auto-off 回到 false。nullable 是为了旧记录读出来默认 OFF，不需迁移。
   bool? followAudio;
+
+  /// 克隆一条既有记录，供「只改其中几列」的写入方当基线用。
+  ///
+  /// BUG-1678：`FushiDatabase.upsertAudiobook` 是 `DoUpdate((_) => ab)` 的**整行
+  /// 覆盖**，而 `_audiobookToCompanion` 每一列都是 `Value(...)`（没有 absent），
+  /// 于是凭空 `Audiobook()..bookKey = k` 再 upsert，会把本次压根没碰的列一并清空
+  /// ——「换字幕」把 `audioPaths` / `audioRoot` 清零，音频从此不响就是这么来的。
+  /// 写入方必须先取基线；新增列时也只需改这一处，不会留下第二处漏抄的手抄拷贝。
+  static Audiobook cloneOf(Audiobook src) {
+    return Audiobook()
+      ..id = src.id
+      ..bookKey = src.bookKey
+      ..audioRoot = src.audioRoot
+      ..audioPaths =
+          src.audioPaths == null ? null : List<String>.from(src.audioPaths!)
+      ..alignmentFormat = src.alignmentFormat
+      ..alignmentPath = src.alignmentPath
+      ..healthKindRaw = src.healthKindRaw
+      ..matchRatePct = src.matchRatePct
+      ..healthMeasuredAt = src.healthMeasuredAt
+      ..healthReason = src.healthReason
+      ..followAudio = src.followAudio;
+  }
 }
 
 /// 单条对齐片段，粒度为句子级别。

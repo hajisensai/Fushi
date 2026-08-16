@@ -33,6 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1679](bugs/BUG-1679-audiobook-audio-replace-stale-position.md) | ✅ | ✅ | 换音频后沿用旧时间轴的播放进度导致不响/乱跳页 |
+| [BUG-1678](bugs/BUG-1678-audiobook-reimport-wipes-existing-audio.md) | ✅ | ✅ | 有声书换字幕时把现有音频删光并中止导入 |
 | [BUG-1676](bugs/BUG-1676-anki-gloss-image-overflows-card.md) | ✅ | ✅ | 制卡词典插图撑出卡片跑到屏幕右外 |
 | [BUG-1675](bugs/BUG-1675-gal-helper-stale-after-locked-update.md) | ✅ | ✅ | galgame 捕获组件 protocol_mismatch：更新时游戏开着导致 helper 被静默跳过 |
 | [BUG-1674](bugs/BUG-1674-mining-still-format.md) | ✅ | ✅ | 视频卡片图片：描述不准，且静态截图格式不可选 |

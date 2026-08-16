@@ -186,8 +186,14 @@ class SrtBookRepository {
     }
 
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-    await AudiobookStorage.cleanAudioFiles(persistDir);
+    // BUG-1678：源文件本身可能就在持久目录内（调用方回填现有音频表达「不变」）。
+    // 无条件清目录会先删源文件，随后复制循环再去读它就抛 FileSystemException，
+    // 用户的音频没了、库里还指着已不存在的路径。
+    await AudiobookStorage.cleanAudioFiles(persistDir, keep: pickedPaths);
 
+    final List<String> previousAudio =
+        List<String>.from(book.audioPaths ?? const <String>[]);
+    final String? previousRoot = book.audioRoot;
     final List<String> persisted = <String>[];
     for (final String src in pickedPaths) {
       persisted.add(
@@ -202,6 +208,17 @@ class SrtBookRepository {
     book.audioPaths = persisted;
     book.audioRoot = null;
     await save(book);
+
+    // BUG-1679：换了音频就作废与旧时间轴绑定的播放进度。SRT 书的进度 pref key 是
+    // `audiobook_pos_<uid>`（与 AudiobookSessionLauncher._readPrefs 的 SRT 分支
+    // 同源）。不归零则恢复 seek 落在新音频的随机处甚至 EOF——「音频不响」/
+    // 「乱跳页」。音频集合没变（重复导入同一组）时不动进度。
+    final bool audioChanged = previousRoot != null ||
+        !AudiobookStorage.sameAudioPathList(previousAudio, persisted);
+    if (audioChanged) {
+      await AudiobookRepository(_db)
+          .updatePositionMs(bookKey: uid, positionMs: 0);
+    }
 
     // TODO-1032 PR2：愈合旧数据。PR1 把 SRT 书音频归一到 SrtBooks.audioPaths，但
     // 旧版书架「导入音频」曾对同一本 EPUB 配对 SRT 书落过一条 **Audiobooks** 脏行

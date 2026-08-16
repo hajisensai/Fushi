@@ -675,8 +675,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       // 持久根之外派生「引用 vs 已复制」，无需额外标记列。
       final bool referenceAudio = _referenceOriginal && isDesktopPlatform;
       final List<String> persistedPaths = <String>[];
+      // BUG-1678：本次导入的源文件本身可能就落在持久目录内——「换字幕」模式把
+      // 已持久化的音频路径原样回填进 _audioPaths 表达「音频不变」。清目录时必须
+      // 把它们排除，否则先删源文件、再 `srcFile.length()` 抛 FileSystemException
+      // 中止导入，用户的音频就此消失而库里还指着已不存在的路径。
+      final List<String> keepAudio =
+          audioCopyFiles.map((File f) => f.path).toList();
       if (referenceAudio) {
-        await AudiobookStorage.cleanAudioFiles(persistDir);
+        await AudiobookStorage.cleanAudioFiles(persistDir, keep: keepAudio);
         persistedPaths.addAll(audioCopyFiles.map((File f) => f.path));
       } else {
         for (final File f in audioCopyFiles) {
@@ -687,7 +693,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         }
         int grandCopied = 0;
 
-        await AudiobookStorage.cleanAudioFiles(persistDir);
+        await AudiobookStorage.cleanAudioFiles(persistDir, keep: keepAudio);
         for (final File srcFile in audioCopyFiles) {
           final int fileLen = await srcFile.length();
           final int capturedGrandCopied = grandCopied;
@@ -709,7 +715,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       }
 
       reportProgress(0.8, t.import_step_saving);
-      final Audiobook audiobook = Audiobook()..bookKey = widget.bookKey;
+      // BUG-1678：saveAudiobook 走整行覆盖的 upsert，凭空造一个 Audiobook 去写会
+      // 把本次没碰的列全部清空。以现有行为基线，只改本次真的换掉的那几列——
+      // 「只换字幕」因此不再清空 audioPaths/audioRoot（legacy audioRoot 目录模式
+      // 的书恒走 persistedPaths 为空这条路径，正是音频整列消失的入口）。
+      final Audiobook? currentRow =
+          await widget.repo.findByBookKey(widget.bookKey);
+      final Audiobook audiobook = currentRow != null
+          ? Audiobook.cloneOf(currentRow)
+          : (Audiobook()
+            ..bookKey = widget.bookKey
+            ..alignmentFormat = ''
+            ..alignmentPath = '');
+      audiobook.bookKey = widget.bookKey;
 
       if (persistedAlignment != null) {
         final String ext = persistedAlignment.split('.').last.toLowerCase();
@@ -719,8 +737,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ..alignmentPath = persistedAlignment;
       }
 
+      // persistedPaths 为空 = 本次没有换音频（换字幕路径）：基线已带着现有音频，
+      // 不写就是「保持不变」，绝不能落成 null 清空（BUG-1678）。
       if (persistedPaths.isNotEmpty) {
-        audiobook.audioPaths = persistedPaths;
+        audiobook
+          ..audioPaths = persistedPaths
+          // 新音频一律走文件列表模式；legacy 目录模式的 audioRoot 必须同时清掉，
+          // 否则基线把旧目录带回来，读取端 audioPaths 断链时会回退去扫旧目录。
+          ..audioRoot = null;
       }
 
       if (parsed != null) {
