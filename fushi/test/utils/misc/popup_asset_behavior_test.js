@@ -207,6 +207,43 @@ class FakeElement {
     return visit(this);
   }
 
+  // BUG: rewriteExportedGlossaryAnchors（制卡时把词典内部链接改写成 fushi://lookup
+  // 深链）用的是 `root.querySelectorAll('a[href]')`，而这个桩此前只实现了单数的
+  // querySelector —— 于是制卡路径一进 constructGlossaryHtml 就
+  // `TypeError: root.querySelectorAll is not a function`，整条 JS 行为测试红。
+  // 生产环境里 tempDiv 是真 DOM（有这个方法），所以要补的是**桩**，不是给生产代码
+  // 加防御——加防御只会把「桩覆盖不到生产用的 API」这件事永久掩盖掉。
+  //
+  // 选择器支持面按生产代码实际用到的来：'tag' / '.class' / 'tag.class' /
+  // 'tag[attr]'（属性只判存在，不判值，够 a[href] 用）。
+  querySelectorAll(selector) {
+    const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/);
+    if (!parsed || (!parsed[1] && !parsed[2] && !parsed[3])) {
+      return [];
+    }
+    const wantTag = parsed[1] ? parsed[1].toUpperCase() : null;
+    const wantClass = parsed[2] || null;
+    const wantAttr = parsed[3] || null;
+    const matches = (el) =>
+      (wantTag === null || el.tagName === wantTag) &&
+      (wantClass === null ||
+        (!!el.classList && el.classList.contains(wantClass))) &&
+      (wantAttr === null ||
+        (typeof el.getAttribute === 'function' &&
+          el.getAttribute(wantAttr) !== null));
+    const found = [];
+    const visit = (el) => {
+      for (const child of el.children ?? []) {
+        if (matches(child)) {
+          found.push(child);
+        }
+        visit(child);
+      }
+    };
+    visit(this);
+    return found;
+  }
+
   closest(selector) {
     if (!selector.startsWith('.')) {
       return null;
