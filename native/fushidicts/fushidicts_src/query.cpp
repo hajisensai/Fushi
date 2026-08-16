@@ -292,6 +292,13 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
       auto term_tag_size = blob.read<uint8_t>();
       std::string_view term_tags = blob.read_str(term_tag_size);
 
+      // v2 term 记录在 term_tags 之后追加 i32 score（上游 909c854）；v1 记录到
+      // term_tags 就结束，版本门控不读。
+      int score = 0;
+      if (data->version >= 2) {
+        score = static_cast<int>(blob.read<int32_t>());
+      }
+
       GlossaryEntry entry;
       entry.dict_name = name;
       entry.definition_tags = definition_tags;
@@ -305,6 +312,7 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
         it->second = {.expression = std::string(expr),
                       .reading = std::string(reading),
                       .rules = std::string(rules),
+                      .score = score,
                       .glossaries = {},
                       .frequencies = {}};
       } else {
@@ -314,6 +322,8 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
           }
           it->second.rules += rules;
         }
+        // 多词典/多记录合并：score 取 max（上游 909c854）。
+        it->second.score = std::max(it->second.score, score);
       }
       it->second.glossaries.push_back(std::move(entry));
     }
@@ -503,7 +513,7 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
     BlobReader idx(data->blobs.data + offset_addr, data->blobs.size - offset_addr);
     auto count = idx.read<uint32_t>();
 
-    std::vector<int> pitch_positions;
+    std::vector<Pitch> pitches;
     std::vector<std::string> transcriptions;
     for (uint32_t i = 0; i < count; i++) {
       if (!idx.has(sizeof(uint64_t))) {
@@ -542,7 +552,12 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
           if (!parsed.reading.empty() && parsed.reading != term.reading) {
             continue;
           }
-          pitch_positions.insert(pitch_positions.end(), parsed.pitches.begin(), parsed.pitches.end());
+          for (auto& accent : parsed.pitches) {
+            pitches.push_back(Pitch{.position = accent.position,
+                                    .pattern = std::move(accent.pattern),
+                                    .nasal = std::move(accent.nasal),
+                                    .devoice = std::move(accent.devoice)});
+          }
         }
       } else if (mode == "ipa") {
         auto transcriptions_data_size = blob.read<uint32_t>();
@@ -557,10 +572,10 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
         }
       }
     }
-    if (!pitch_positions.empty() || !transcriptions.empty()) {
+    if (!pitches.empty() || !transcriptions.empty()) {
       term.pitches.emplace_back(PitchEntry{
           .dict_name = name,
-          .pitch_positions = std::move(pitch_positions),
+          .pitches = std::move(pitches),
           .transcriptions = std::move(transcriptions),
       });
     }

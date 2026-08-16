@@ -297,6 +297,8 @@ void main() {
         {
           'dictionary': 'NHK',
           'pitchPositions': [2],
+          // 79c55c2 二期：pattern 式 accent 平行数组（数字位词典恒空）。
+          'patterns': <String>[],
           // TODO-687 block3: pitch entries now always carry a transcriptions
           // list (empty for plain pitch-accent dicts, populated for IPA dicts).
           'transcriptions': <String>[],
@@ -395,7 +397,8 @@ void main() {
               ),
             ],
             pitches: [
-              FushiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              FushiPitchEntry(
+                  dictName: 'NHK', pitchPositions: [2], patterns: ['heiban']),
               // IPA transcription dict: no pitch positions, only transcriptions.
               // Exercises the TODO-687 block3 passthrough end to end.
               FushiPitchEntry(
@@ -432,7 +435,8 @@ void main() {
               ),
             ],
             pitches: [
-              FushiPitchEntry(dictName: 'NHK', pitchPositions: [2]),
+              FushiPitchEntry(
+                  dictName: 'NHK', pitchPositions: [2], patterns: ['heiban']),
               FushiPitchEntry(
                 dictName: 'IPA',
                 pitchPositions: [],
@@ -497,6 +501,8 @@ void main() {
         for (var j = 0; j < nPitches.length; j++) {
           expect(nPitches[j]['dictionary'], oPitches[j]['dictionary']);
           expect(nPitches[j]['pitchPositions'], oPitches[j]['pitchPositions']);
+          // 79c55c2 二期：pattern 式 accent 两条路径逐字段一致。
+          expect(nPitches[j]['patterns'], oPitches[j]['patterns']);
           // TODO-687 block3: transcriptions must survive both paths identically
           // (parity is field-level — adding a field never auto-fails, so this
           // assertion is hand-added together with the IPA fixture data above).

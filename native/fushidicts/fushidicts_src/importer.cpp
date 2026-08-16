@@ -360,6 +360,9 @@ ProcessedFile process_term_bank(const std::string& content, const ZSTD_CDict* cd
     write_str(processed.data, term.rules);
     write_val<uint8_t>(processed.data, static_cast<uint8_t>(term.term_tags.size()));
     write_str(processed.data, term.term_tags);
+    // v2 term 记录追加段（上游 909c854）：Yomitan score，排序信号（JMdict 系词典
+    // 用它区分常用/罕用词形）。v1 读侧到 term_tags 结束，v2 读侧版本门控读取。
+    write_val<int32_t>(processed.data, static_cast<int32_t>(term.score));
 
     processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
     if (reading != expr) {

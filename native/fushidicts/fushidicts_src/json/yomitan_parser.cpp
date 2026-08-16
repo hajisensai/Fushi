@@ -58,12 +58,13 @@ struct RawFrequency {
   std::variant<int, FrequencyValue> frequency;
 };
 
-// 上游 79c55c2（parser 先行部分）：position 可以是数字或 pattern 字符串
-//（"heiban" 等）。此前 int 独取会让含 pattern 条目的整条 meta 记录解析失败、
-// 数字条目一起陪葬。nasal/devoice 键靠 error_on_unknown_keys=false 天然容忍；
-// 结构化收集（连同 pattern 出 FFI/UI）留待二期。
+// 上游 79c55c2：position 可以是数字或 pattern 字符串（"heiban" 等）——此前 int
+// 独取会让含 pattern 条目的整条 meta 记录解析失败、数字条目一起陪葬；nasal/
+// devoice 按规格是数字或数组，归一成数组。
 struct PitchesArray {
   std::variant<int, std::string> position;
+  std::optional<std::variant<int, std::vector<int>>> nasal;
+  std::optional<std::variant<int, std::vector<int>>> devoice;
 };
 
 struct RawPitch {
@@ -102,7 +103,7 @@ struct glz::meta<internal::RawFrequency> {
 template <>
 struct glz::meta<internal::PitchesArray> {
   using T = internal::PitchesArray;
-  static constexpr auto value = object("position", &T::position);
+  static constexpr auto value = object("position", &T::position, "nasal", &T::nasal, "devoice", &T::devoice);
 };
 
 template <>
@@ -197,12 +198,25 @@ bool yomitan_parser::parse_pitch(std::string_view content, ParsedPitch& out) {
     return false;
   }
 
-  out.reading = parsed.reading;
-  for (const auto& pitch : parsed.pitches) {
-    if (std::holds_alternative<int>(pitch.position)) {
-      out.pitches.push_back(std::get<int>(pitch.position));
+  auto to_number_array = [](const std::optional<std::variant<int, std::vector<int>>>& value) -> std::vector<int> {
+    if (!value) {
+      return {};
     }
-    // pattern 字符串位暂无消费方，跳过该条而非整条拒绝（二期扩 ABI 时再结构化）。
+    if (std::holds_alternative<int>(*value)) {
+      return {std::get<int>(*value)};
+    }
+    return std::get<std::vector<int>>(*value);
+  };
+
+  out.reading = parsed.reading;
+  for (auto& pitch : parsed.pitches) {
+    ParsedAccent accent{.nasal = to_number_array(pitch.nasal), .devoice = to_number_array(pitch.devoice)};
+    if (std::holds_alternative<int>(pitch.position)) {
+      accent.position = std::get<int>(pitch.position);
+    } else {
+      accent.pattern = std::move(std::get<std::string>(pitch.position));
+    }
+    out.pitches.emplace_back(std::move(accent));
   }
   return true;
 }

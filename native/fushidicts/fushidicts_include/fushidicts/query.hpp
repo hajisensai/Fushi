@@ -45,9 +45,19 @@ struct FrequencyEntry {
   std::vector<Frequency> frequencies;
 };
 
+// 上游 79c55c2：完整 pitch accent 规格。数字位 pattern 为空；pattern 位（"heiban"
+// 等）position 保持 0。nasal/devoice 是鼻浊音/清化 mora 下标——数据模型收全，
+// 当前文本形态 UI 只渲染 position/pattern（图形渲染是未来工作）。
+struct Pitch {
+  int position = 0;
+  std::string pattern;
+  std::vector<int> nasal;
+  std::vector<int> devoice;
+};
+
 struct PitchEntry {
   std::string dict_name;
-  std::vector<int> pitch_positions;
+  std::vector<Pitch> pitches;
   std::vector<std::string> transcriptions;
 };
 
@@ -55,6 +65,9 @@ struct TermResult {
   std::string expression;
   std::string reading;
   std::string rules;
+  // 上游 909c854：Yomitan term score（v2 词典落盘，v1 恒 0）。仅参与 native 排序，
+  // 不出 FFI 面。多词典同 (expr,reading) 合并时取 max。
+  int score = 0;
   std::vector<GlossaryEntry> glossaries;
   std::vector<FrequencyEntry> frequencies;
   std::vector<PitchEntry> pitches;

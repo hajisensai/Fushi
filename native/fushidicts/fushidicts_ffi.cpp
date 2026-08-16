@@ -39,6 +39,10 @@ struct FfiPitch {
   int32_t count;
   char** transcriptions;
   int32_t transcription_count;
+  // 79c55c2 二期：pattern 式 accent（"heiban" 等字符串位）单独成数组，positions
+  // 仍只含数字位（既有消费方字节兼容）。Dart 绑定同 commit 镜像。
+  char** patterns;
+  int32_t pattern_count;
 };
 
 struct FfiTermResult {
@@ -156,10 +160,26 @@ static FfiTermResult convert_term(const TermResult& t) {
   r.pitches = static_cast<FfiPitch*>(malloc(sizeof(FfiPitch) * r.pitch_count));
   for (int i = 0; i < r.pitch_count; i++) {
     r.pitches[i].dict_name = dup(t.pitches[i].dict_name);
-    r.pitches[i].count = static_cast<int32_t>(t.pitches[i].pitch_positions.size());
+    // 数字位与 pattern 位分流：positions 只装数字 accent（既有语义不变），
+    // pattern accent 进 patterns（79c55c2 二期）。
+    std::vector<int32_t> numeric;
+    std::vector<const std::string*> pattern_refs;
+    for (const auto& accent : t.pitches[i].pitches) {
+      if (accent.pattern.empty()) {
+        numeric.push_back(accent.position);
+      } else {
+        pattern_refs.push_back(&accent.pattern);
+      }
+    }
+    r.pitches[i].count = static_cast<int32_t>(numeric.size());
     r.pitches[i].positions = static_cast<int32_t*>(malloc(sizeof(int32_t) * r.pitches[i].count));
     for (int j = 0; j < r.pitches[i].count; j++) {
-      r.pitches[i].positions[j] = t.pitches[i].pitch_positions[j];
+      r.pitches[i].positions[j] = numeric[j];
+    }
+    r.pitches[i].pattern_count = static_cast<int32_t>(pattern_refs.size());
+    r.pitches[i].patterns = static_cast<char**>(malloc(sizeof(char*) * r.pitches[i].pattern_count));
+    for (int j = 0; j < r.pitches[i].pattern_count; j++) {
+      r.pitches[i].patterns[j] = dup(*pattern_refs[j]);
     }
     // transcriptions: char** array of IPA strings, mirroring frequency
     // display_values (malloc the pointer array, then dup each element).
@@ -202,6 +222,10 @@ static void free_term(FfiTermResult& r) {
       free(r.pitches[i].transcriptions[j]);
     }
     free(r.pitches[i].transcriptions);
+    for (int j = 0; j < r.pitches[i].pattern_count; j++) {
+      free(r.pitches[i].patterns[j]);
+    }
+    free(r.pitches[i].patterns);
   }
   free(r.pitches);
 }
@@ -414,12 +438,8 @@ void fushidicts_free_kanji_results(FfiKanjiResults* r) {
 
 // ── lookup ──────────────────────────────────────────────────────────
 
-FUSHI_EXPORT
-FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
+static FfiLookupResults marshal_lookup_results(std::vector<LookupResult>& results) {
   FfiLookupResults r{};
-  auto* h = static_cast<FushidictsHandle*>(handle);
-  Lookup lookup(h->query, h->deinflector);
-  auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length));
   r.count = static_cast<int32_t>(results.size());
   r.results = static_cast<FfiLookupResult*>(malloc(sizeof(FfiLookupResult) * r.count));
   for (int i = 0; i < r.count; i++) {
@@ -437,6 +457,41 @@ FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_r
     dst.term = convert_term(src.term);
   }
   return r;
+}
+
+FUSHI_EXPORT
+FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
+  auto* h = static_cast<FushidictsHandle*>(handle);
+  Lookup lookup(h->query, h->deinflector);
+  auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length));
+  return marshal_lookup_results(results);
+}
+
+// 上游 bc62d2b/86c6e2f：带排序选项的 lookup。freq_order：0=Auto 1=Ascending
+// 2=Descending 3=Disabled；freq_dict / primary_reading 传 NULL 或空串 = 未设置。
+// 老导出 fushidicts_lookup 原样保留（Never break ABI），返回结构同一套，
+// 释放同走 fushidicts_free_lookup_results。
+FUSHI_EXPORT
+FfiLookupResults fushidicts_lookup_with_options(void* handle, const char* text, int32_t max_results,
+                                                int32_t scan_length, const char* freq_dict, int32_t freq_order,
+                                                const char* primary_reading) {
+  auto* h = static_cast<FushidictsHandle*>(handle);
+  Lookup lookup(h->query, h->deinflector);
+  LookupOptions options;
+  if (freq_dict && freq_dict[0] != '\0') {
+    options.frequency_dictionary = std::string(freq_dict);
+  }
+  switch (freq_order) {
+    case 1: options.frequency_order = LookupFrequencyOrder::Ascending; break;
+    case 2: options.frequency_order = LookupFrequencyOrder::Descending; break;
+    case 3: options.frequency_order = LookupFrequencyOrder::Disabled; break;
+    default: options.frequency_order = LookupFrequencyOrder::Auto; break;
+  }
+  if (primary_reading && primary_reading[0] != '\0') {
+    options.primary_reading = std::string(primary_reading);
+  }
+  auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length), options);
+  return marshal_lookup_results(results);
 }
 
 FUSHI_EXPORT

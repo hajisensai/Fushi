@@ -57,29 +57,32 @@
 | `8993838` | train zstd dict on import | `importer.cpp`（train_zstd_dict + CDict 压缩 term glossary + 落盘 `dict.zstd`）、`query.cpp`（DDict + thread_local DCtx 解压）——引入 **v2 格式阶梯**（见下） | 适配 |
 | `c5d8c6d`（仅 1 行） | `<climits>` include 修复 | `lookup.cpp`（fork 同样裸用 INT_MAX） | 直抄 |
 | `64afa2f`（仅借鉴 stats 能力） | 上游 kanji dicts | kanji 记录 v2 追加 stats 段（见下）；上游 kanji 实现本体**跳过**（与 fork 自研 kanji 同 type byte 两套布局，互不兼容，fork 版能力更强） | 借鉴 |
+| `909c854`（score 部分，批4 二轮补齐） | term score 落盘 + 排序 | v2 term 记录在 term_tags 后追加 i32 score（v2 未发布窗口内折入，免再升 v3）；`query.cpp` 版本门控读取 + 合并取 max；`lookup.cpp` 比较器 freq 档后 score 降序。score 不出 FFI（纯 native 排序信号） | 适配 |
+| `79c55c2`（结构化部分，批4 二轮补齐） | Pitch{position,pattern,nasal,devoice} 完整规格 | `ParsedAccent`/`Pitch` 结构贯通 parser→query；pattern 出 FFI（`FfiPitch.patterns` 平行数组）→Dart（`FushiPitchEntry.patterns`）→popup JSON（`"patterns"`）→JS 渲染 `[pattern]` 文本项 + 制卡类别字段并入 pattern 名；popup_json/Dart 镜像 pkey 折 pattern（IPA 折 key 同型坑）。nasal/devoice 收在 native `Pitch` 数据模型，文本形态 UI 无渲染语义、暂不出 FFI | 适配 |
+| `bc62d2b`（批4 二轮补齐） | lookup 排序选项 | `LookupOptions{frequency_dictionary, frequency_order}` + `Lookup::lookup` 第 4 参（默认 Auto 零行为变化，排序在截断前）；新 FFI 导出 `fushidicts_lookup_with_options`（老导出原样保留）+ Dart `lookup()` 可选参数。设置 UI 是产品决策，管道先行 | 适配 |
+| `86c6e2f`（批4 二轮补齐） | primary_reading 优先 | `LookupOptions.primary_reading`，比较器最前档；同上管道贯通 | 直抄（叠在 options 上） |
 
 **磁盘格式 v2（`.fushidicts_2`，fork 首个版本阶梯）：**
 - `import_yomitan` 产出 `.fushidicts_2`；`write_simple_dict`（MDX/StarDict/DSL）仍产 `.fushidicts_1`。
 - 读侧 `dict_format_version()`（query.cpp）：`.fushidicts_2`→2，`.fushidicts_1`/`.hoshidicts_1`（改名前存量，冻结只读）→1，无 marker→不加载。
-- v2 增量：① kanji 记录尾部追加 stats 段 `[u8 count]([u8 klen][k][u16 vlen][v])*`（radical/strokes 之外全保留，JLPT/grade 等；S0 契约注释在 importer.cpp）；② term glossary 可能用训练字典压缩，`dict.zstd` 存在才挂 DDict（训练样本不足时不写，退普通压缩）。
+- v2 增量：① kanji 记录尾部追加 stats 段 `[u8 count]([u8 klen][k][u16 vlen][v])*`（radical/strokes 之外全保留，JLPT/grade 等；S0 契约注释在 importer.cpp）；② term 记录尾部追加 `[i32 score]`（Yomitan 排序信号，多记录合并取 max）；③ term glossary 可能用训练字典压缩，`dict.zstd` 存在才挂 DDict（训练样本不足时不写，退普通压缩）。
 - 兼容矩阵：新引擎读 v1 老盘**完全不变**；旧引擎读 v2 盘＝整目录不加载（降级后新导入词典不可见，不毁数据，重导可救）。kanji meanings / meta 记录恒普通 zstd 帧，不吃训练字典。
 - FFI：`FfiKanjiResult` 追加 `stat_keys/stat_values/stat_count`（native+Dart 同 commit 镜像，照 918744d transcriptions 先例双层 malloc/free）；其余 ABI 零变化。
 - 守卫：`tests/format_v2_upstream_sync_test.cpp`（v2 marker/stats 读回/marker 拒载/bloom 截断降级/zstd 往返/pitch pattern 容忍）+ `tests/text_processor_test.cpp` 新增 processor 用例。
 
-**批4 明确跳过 / 暂缓（重估条件）：**
+**批4 明确跳过 / 剩余项（批4 二轮已把「没坏处」的暂缓项全部补齐；下表为终态）：**
 
 | 上游 commit | 标题 | 处置 | 理由/重估条件 |
 |---|---|---|---|
-| `909c854`（score 排序部分） | term score 落盘 + 排序 | 暂缓，需决策 | 需 term 记录格式再升版（score 字段）；收益真实（Yomitan score 是排序信号），可与下次格式变更捆绑 |
 | `702dcc5` | build summary on import | 跳过 | 改写 index.json/删 styles.css，冲突 fork 读侧契约（弹窗样式丢失）+ 破坏 FfiImportResult；如需导入元数据留档，fork 自己加 sidecar |
 | `64afa2f` | kanji dicts（实现本体） | 跳过 | 与 fork 自研 kanji 同 type byte 两套布局，换=毁存量；stats 能力已借鉴进 v2 |
-| `bc62d2b` / `86c6e2f` | lookup 排序选项 / primary_reading 优先 | 暂缓 | 默认行为零变化；等排序 UI / 弹窗内链需求出现时三层贯通（注意：移植时 Auto 分支保 fork 现状） |
 | `88b073d` | c bindings 合入主线 | 跳过（政策不变） | fork 自研 FFI 桥等效且 errors 向量信息更全；原「忽略 c-bindings 分支」政策改述为「已合主线，仍跳过」 |
-| `79c55c2`（结构化部分） | Pitch{pattern,nasal,devoice} 出 FFI/UI | 暂缓，需决策 | FFI ABI 扩展 + popup_json pkey 折 key（IPA 同型坑）+ UI 渲染，等产品要 nasal/devoice 展示 |
-| `c5d8c6d`（submodule bump 部分） | 7 个依赖 pin 升级 | 暂缓 | fork 是 vendored 实拷贝，整体刷新是独立决策（当前 zstd 1.6.0 / utf8proc v2.11.3 均不落后关键功能） |
+| `c5d8c6d`（submodule bump 部分） | 7 个依赖 pin 升级 | 不做（有真实坏处） | fork 是 vendored 实拷贝，7 库齐升有隐性构建/行为回归风险、收益近零（zstd 1.6.0 / utf8proc v2.11.3 均不落后关键功能）；单库确有需要时按需单独 vendor |
 | `f9aa482` / `7bfdc8c` / `32b8ce5` / `e1a8c1c` / `6240e06` / `f151dbb` | submodule URL / cli+benchmark 开关 / swift cli / benchmark 修复×2 / readme | 跳过 | fork 无 submodule / 无 cli/benchmark target / 不用 SwiftPM |
 | `d6c9ea2` | use native filesystem paths | 跳过 | 已被 fork 自研 `fushi::fs_path`/`to_wide`（`util/fs_utf8.hpp` + `memory.cpp` W 系 API + `win_utf8_import_test`）等价覆盖 |
 | `e88430d` | MSVC /utf-8 | 跳过 | fork `CMakeLists.txt` 已有全局 `/utf-8 /Zc:__cplusplus /permissive-`，覆盖面更大 |
+
+真正的后续（非上游同步，产品决策）：排序选项/primary_reading 的设置 UI 与弹窗内链消费方；pitch nasal/devoice 的图形化渲染（数据模型已收全）。
 
 ## TODO-687 批3 移植的上游 commit（IPA 音标支持）
 

@@ -1044,12 +1044,16 @@ function constructPitchPositionHtml(pitches) {
         pitchGroup.pitchPositions.forEach(pos => {
             items += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
         });
+        // 79c55c2 二期：pattern 式 accent 同样进 {pitch-accent-positions} 字段。
+        (pitchGroup.patterns || []).forEach(pattern => {
+            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(pattern)}</span><span>]</span></span></li>`;
+        });
         (pitchGroup.transcriptions || []).forEach(ipa => {
             items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
         });
     });
-    // No positions AND no transcriptions: return '' instead of an empty <ol>
-    // shell, so the field is treated as empty and skipped.
+    // No positions AND no patterns AND no transcriptions: return '' instead of
+    // an empty <ol> shell, so the field is treated as empty and skipped.
     return items ? `<ol>${items}</ol>` : '';
 }
 
@@ -2190,6 +2194,13 @@ function createPitchGroup(pitchData, reading) {
         li.appendChild(document.createTextNode(` [${pitch}]`));
         list.appendChild(li);
     });
+    // 79c55c2 二期：pattern 式 accent（"heiban" 等字符串位）以文本形式渲染，
+    // 无法画数字位式的高低标记。
+    (pitchData.patterns || []).forEach((pattern) => {
+        const li = el('li');
+        li.appendChild(document.createTextNode(`[${pattern}]`));
+        list.appendChild(li);
+    });
     container.appendChild(list);
 
     const transcriptions = createTranscriptionsHtml(pitchData.transcriptions);
@@ -2261,11 +2272,13 @@ function createPitchSection(pitches, reading) {
             // TODO-688: a group with no unique pitch positions but with IPA
             // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
             // must still render, or the transcriptions are silently dropped.
+            // Pattern-style accents (79c55c2) likewise keep the group alive.
             const hasTranscriptions = pitch.transcriptions?.length;
-            if (unique.length > 0 || hasTranscriptions) {
+            const hasPatterns = pitch.patterns?.length;
+            if (unique.length > 0 || hasTranscriptions || hasPatterns) {
                 unique.forEach(pos => seen.add(pos));
                 pitchContainer.appendChild(createPitchGroup(
-                    { dictionary: pitch.dictionary, pitchPositions: unique, transcriptions: pitch.transcriptions },
+                    { dictionary: pitch.dictionary, pitchPositions: unique, patterns: pitch.patterns, transcriptions: pitch.transcriptions },
                     reading));
             }
         });

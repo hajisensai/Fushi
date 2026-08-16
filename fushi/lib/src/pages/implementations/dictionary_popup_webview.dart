@@ -16,8 +16,7 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
-import 'package:fushi/src/shortcuts/input_binding.dart'
-    show activeModifierKeys;
+import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
@@ -2471,6 +2470,7 @@ JSON.stringify((function(){
       return {
         'dictionary': p['dictName'] ?? '',
         'pitchPositions': p['positions'] ?? [],
+        'patterns': p['patterns'] ?? [],
         'transcriptions': p['transcriptions'] ?? [],
       };
     }).toList();

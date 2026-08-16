@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "fushidicts/importer.hpp"
+#include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
 
 namespace {
@@ -324,9 +325,130 @@ int main() {
         fail("E: pattern position killed the whole pitch record");
       } else {
         const PitchEntry& pe = terms.front().pitches.front();
-        expect_true("E.numeric position survives", pe.pitch_positions.size() == 1 &&
-                                                       pe.pitch_positions.front() == 2);
+        // 完整结构化（79c55c2 二期）：数字位与 pattern 位都要收下。
+        expect_true("E.accent count == 2", pe.pitches.size() == 2);
+        bool has_numeric = false, has_pattern = false;
+        for (const auto& accent : pe.pitches) {
+          if (accent.pattern.empty() && accent.position == 2) has_numeric = true;
+          if (accent.pattern == "heiban") has_pattern = true;
+        }
+        expect_true("E.numeric position survives", has_numeric);
+        expect_true("E.pattern accent survives", has_pattern);
       }
+    }
+  }
+
+  // ----- F: v2 term score 落盘 + 比较器降序（上游 909c854 后半） -----
+  {
+    const std::string kNeko = "\xE7\x8C\xAB";                     // 猫
+    const std::string kNekoReading = "\xE3\x81\xAD\xE3\x81\x93";  // ねこ
+    const std::string kNekoKata = "\xE3\x83\x8D\xE3\x82\xB3";     // ネコ
+    // 同一表记两个读音：ねこ 条目 score 1 且 reading==expression 之外的终极
+    // tiebreak 本会输给它（reading≠expr）；ネコ 条目 score 10。score 档在终极
+    // tiebreak 之前，必须让 score 高者（ネコ）排前——这正是「score 真的落盘
+    // 且真的参与排序」的判据（v1 时代两者 score 恒 0，ねこ 会赢）。
+    std::string term_bank = "[[\"" + kNeko + "\",\"" + kNekoReading + "\",\"\",\"\",1,[\"cat-hira\"],0,\"\"],"
+                            "[\"" + kNeko + "\",\"" + kNekoKata + "\",\"\",\"\",10,[\"cat-kata\"],0,\"\"]]";
+    std::vector<ZipFile> files = {
+        {"index.json", index_json("V2Score")},
+        {"term_bank_1.json", term_bank},
+    };
+    std::string zip_path = write_zip("score", files);
+    ImportResult r = dictionary_importer::import(zip_path, out_dir);
+    if (!r.success) {
+      fail("F: import failed");
+    } else {
+      DictionaryQuery q;
+      q.add_term_dict(out_dir + "/" + r.title);
+      Deinflector d;
+      Lookup lk(q, d);
+      auto results = lk.lookup(kNeko, 16, 16);
+      if (results.size() < 2) {
+        fail("F: lookup returned fewer than 2 results");
+      } else {
+        expect_eq_str("F.score-desc first", results[0].term.reading, kNekoKata);
+        expect_eq_str("F.score-desc second", results[1].term.reading, kNekoReading);
+      }
+
+      // 附带：primary_reading 覆盖一切（86c6e2f）——显式指定 ねこ 时它必须
+      // 反超 score 高的 ネコ。
+      LookupOptions primary;
+      primary.primary_reading = kNekoReading;
+      auto primary_results = lk.lookup(kNeko, 16, 16, primary);
+      if (primary_results.size() < 2) {
+        fail("F: primary_reading lookup returned fewer than 2 results");
+      } else {
+        expect_eq_str("F.primary_reading first", primary_results[0].term.reading, kNekoReading);
+      }
+    }
+  }
+
+  // ----- G: LookupOptions 显式 freq 词典升/降序（bc62d2b），截断前生效 -----
+  {
+    const std::string kNeko = "\xE7\x8C\xAB";                     // 猫
+    const std::string kNekoReading = "\xE3\x81\xAD\xE3\x81\x93";  // ねこ
+    const std::string kNekoKata = "\xE3\x83\x8D\xE3\x82\xB3";     // ネコ
+    const char* kTitle = "V2FreqOrder";
+    // 同一表记两个读音，freq 记录带 reading 定向：ねこ=100、ネコ=9000。查 猫
+    // 两个结果前置档全平（matched/steps/trace/expr==deinflected/score 均同），
+    // 序完全由 freq 档决定：Auto（升序）→ ねこ 前；显式 Descending → ネコ 前；
+    // Disabled → freq 档整个跳过（不崩溃、结果齐全即可）。
+    std::string term_bank = "[[\"" + kNeko + "\",\"" + kNekoReading + "\",\"\",\"\",0,[\"g-hira\"],0,\"\"],"
+                            "[\"" + kNeko + "\",\"" + kNekoKata + "\",\"\",\"\",0,[\"g-kata\"],0,\"\"]]";
+    std::string meta_bank = "[[\"" + kNeko + "\",\"freq\",{\"reading\":\"" + kNekoReading + "\",\"value\":100}],"
+                            "[\"" + kNeko + "\",\"freq\",{\"reading\":\"" + kNekoKata + "\",\"value\":9000}]]";
+    std::vector<ZipFile> files = {
+        {"index.json", index_json(kTitle)},
+        {"term_bank_1.json", term_bank},
+        {"term_meta_bank_1.json", meta_bank},
+    };
+    std::string zip_path = write_zip("freqorder", files);
+    ImportResult r = dictionary_importer::import(zip_path, out_dir);
+    if (!r.success) {
+      fail("G: import failed");
+    } else {
+      const std::string dict_path = out_dir + "/" + r.title;
+      DictionaryQuery q;
+      q.add_term_dict(dict_path);
+      q.add_freq_dict(dict_path);
+      Deinflector d;
+      Lookup lk(q, d);
+
+      auto auto_results = lk.lookup(kNeko, 16, 16);
+      if (auto_results.size() < 2) {
+        fail("G: auto lookup returned fewer than 2 results");
+      } else {
+        expect_eq_str("G.auto ascending first", auto_results[0].term.reading, kNekoReading);
+      }
+
+      LookupOptions desc;
+      desc.frequency_dictionary = r.title;
+      desc.frequency_order = LookupFrequencyOrder::Descending;
+      auto desc_results = lk.lookup(kNeko, 16, 16, desc);
+      if (desc_results.size() < 2) {
+        fail("G: descending lookup returned fewer than 2 results");
+      } else {
+        expect_eq_str("G.explicit descending first", desc_results[0].term.reading, kNekoKata);
+      }
+
+      LookupOptions asc;
+      asc.frequency_dictionary = r.title;
+      asc.frequency_order = LookupFrequencyOrder::Ascending;
+      auto asc_results = lk.lookup(kNeko, 16, 16, asc);
+      if (asc_results.size() < 2) {
+        fail("G: ascending lookup returned fewer than 2 results");
+      } else {
+        expect_eq_str("G.explicit ascending first", asc_results[0].term.reading, kNekoReading);
+      }
+
+      // 不存在的词典名：静默退回（有结果、不崩溃）；Disabled：跳过 freq 档。
+      LookupOptions unknown;
+      unknown.frequency_dictionary = "NoSuchDict";
+      unknown.frequency_order = LookupFrequencyOrder::Descending;
+      expect_true("G.unknown freq dict falls back silently", lk.lookup(kNeko, 16, 16, unknown).size() == 2);
+      LookupOptions disabled;
+      disabled.frequency_order = LookupFrequencyOrder::Disabled;
+      expect_true("G.disabled order still returns results", lk.lookup(kNeko, 16, 16, disabled).size() == 2);
     }
   }
 

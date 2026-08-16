@@ -40,16 +40,25 @@ class FushiPitchEntry {
   const FushiPitchEntry({
     required this.dictName,
     required this.pitchPositions,
+    this.patterns = const <String>[],
     this.transcriptions = const <String>[],
   });
   final String dictName;
   final List<int> pitchPositions;
+
+  /// Pattern-style accents（Yomitan pitch 规格里 position 为字符串，如
+  /// "heiban"）。数字位仍走 [pitchPositions]，两者分流（79c55c2 二期）。
+  final List<String> patterns;
 
   /// IPA transcriptions for this dict's entry (Yomitan `ipa` meta mode). Empty
   /// for plain pitch-accent dicts. Carried alongside pitchPositions because both
   /// share the native PITCH bucket / query path (TODO-687 block3).
   final List<String> transcriptions;
 }
+
+/// lookup 排序模式（上游 bc62d2b）。enum index 即 FFI 的 freq_order 编码：
+/// auto=0（既有比较器，零行为变化）/ ascending=1 / descending=2 / disabled=3。
+enum FushiLookupFrequencyOrder { auto, ascending, descending, disabled }
 
 class FushiTermResult {
   const FushiTermResult({
@@ -246,9 +255,16 @@ FushiTermResult _convertTerm(FfiTermResult ffi) {
           transcriptions.add(_utf8OrEmpty(p.transcriptions[j]));
         }
       }
+      final patterns = <String>[];
+      if (p.patternCount > 0 && p.patterns != nullptr) {
+        for (int j = 0; j < p.patternCount; j++) {
+          patterns.add(_utf8OrEmpty(p.patterns[j]));
+        }
+      }
       pitches.add(FushiPitchEntry(
         dictName: _utf8OrEmpty(p.dictName),
         pitchPositions: positions,
+        patterns: patterns,
         transcriptions: transcriptions,
       ));
     }
@@ -572,14 +588,30 @@ class FushiDicts {
   static const int defaultScanLength = 16;
 
   // ── lookup (with deinflection) ──────────────────────────────────
+  //
+  // 排序选项（上游 bc62d2b/86c6e2f）：默认参数下走老导出、行为零变化。
+  // [frequencyDictionary]+[frequencyOrder] 指定按某 freq 词典升/降序（在
+  // max_results 截断之前生效）；[primaryReading] 让 reading 精确匹配者排最前
+  //（Yomitan 内链语义）。当前无设置 UI 消费方，管道先行。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
     int scanLength = defaultScanLength,
+    String? frequencyDictionary,
+    FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
+    String? primaryReading,
   }) {
+    final bool useOptions = frequencyDictionary != null ||
+        frequencyOrder != FushiLookupFrequencyOrder.auto ||
+        primaryReading != null;
     final tp = text.toNativeUtf8(allocator: calloc);
+    final fd = (frequencyDictionary ?? '').toNativeUtf8(allocator: calloc);
+    final pr = (primaryReading ?? '').toNativeUtf8(allocator: calloc);
     try {
-      final r = _bindings!.lookup(_handle!, tp, maxResults, scanLength);
+      final r = useOptions
+          ? _bindings!.lookupWithOptions(_handle!, tp, maxResults, scanLength,
+              fd, frequencyOrder.index, pr)
+          : _bindings!.lookup(_handle!, tp, maxResults, scanLength);
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
@@ -609,6 +641,8 @@ class FushiDicts {
       }
     } finally {
       calloc.free(tp);
+      calloc.free(fd);
+      calloc.free(pr);
     }
   }
 
