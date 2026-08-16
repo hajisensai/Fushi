@@ -717,6 +717,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
         initialQuery: query,
         initialApiKey: appModel.jimakuApiKey,
         onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
+        // 延迟解析：填 key 会重建 provider runtime，早绑的实例正是「刚填完 key
+        // 还是搜不到」的那个旧 registry。
+        subtitleRegistry: () => appModel.videoSubtitleRegistry,
         saveDirectory: saveDir,
         httpClientFactory: appModel.createDownloadHttpClient,
         initialPreferredLanguage: preferredLanguage,

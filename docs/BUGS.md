@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1552 条。点号进各自文件。
+> 共 1559 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1687](bugs/BUG-1687-qb-category-legacy-hibiki.md) | 🚧 | 🚧 | 存量 qBittorrent 分类仍是改名前的 hibiki |
+| [BUG-1686](bugs/BUG-1686-video-home-rows-not-interconnected.md) | ✅ | ✅ | 视频首页「下一集」「最近添加」两行不含互联远端条目 |
+| [BUG-1685](bugs/BUG-1685-video-subtitle-fetch-two-implementations.md) | ✅ | ✅ | 播放页找字幕只搜 Jimaku，与下载管线的统一 registry 是两套实现 |
+| [BUG-1684](bugs/BUG-1684-outbound-user-agent-still-hibiki.md) | ✅ | ✅ | 对外 User-Agent 仍报旧名 Hibiki |
+| [BUG-1683](bugs/BUG-1683-interconnect-service-config-misses-bangumi-token.md) | ✅ | ✅ | 互联不同步 Bangumi 追番令牌与刮削/字幕/索引器凭据 |
 | [BUG-1679](bugs/BUG-1679-audiobook-audio-replace-stale-position.md) | ✅ | ✅ | 换音频后沿用旧时间轴的播放进度导致不响/乱跳页 |
 | [BUG-1678](bugs/BUG-1678-audiobook-reimport-wipes-existing-audio.md) | ✅ | ✅ | 有声书换字幕时把现有音频删光并中止导入 |
 | [BUG-1676](bugs/BUG-1676-anki-gloss-image-overflows-card.md) | ✅ | ✅ | 制卡词典插图撑出卡片跑到屏幕右外 |

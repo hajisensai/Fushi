@@ -15,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 
 /// 视频设置唯一真相源（阶段 B）：每个条目声明一次，同时服务两个宿主——
 /// 全局设置页（本 destination 的 sections 直接渲染；无 host 时读写纯 pref、下次
@@ -1169,6 +1170,19 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, String code) async {
               await settingsContext.appModel.setJimakuDefaultLanguage(code);
             },
+          ),
+          // ── OpenSubtitles（另一路在线字幕源）─────────────────────────────
+          // 字幕来源此前分居两处：Jimaku key 在这儿，OpenSubtitles 只在
+          // 设置 → 下载 → 外部来源。同一个能力两个家，用户在这里配完 Jimaku 就以为
+          // 「字幕来源配完了」，而播放页找字幕与下载自动配字幕走的是同一套 registry
+          // （两家一起搜）。这里内联**同一份**编辑组件（不复制 UI、不第二份真相源）。
+          SettingsCustomItem(
+            id: 'video.subtitle.opensubtitles',
+            searchTitle: t.video_opensubtitles_settings_title,
+            builder: (SettingsContext settingsContext) =>
+                const VideoExternalProviderSettingsSection(
+              onlySubtitleSources: true,
+            ),
           ),
         ],
       ),

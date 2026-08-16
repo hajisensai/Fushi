@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -50,6 +51,11 @@ void main() {
       PrefCodec.encode('folder-password'),
     );
     await db.setPref('download_save_root', PrefCodec.encode(r'D:\downloads'));
+    await db.setPref(
+      kBangumiAccessTokenPref,
+      PrefCodec.encode('bangumi-tracking-token'),
+    );
+    await db.setPref(kBangumiAccountNamePref, PrefCodec.encode('nick'));
 
     final InterconnectServiceConfigSnapshot snapshot =
         InterconnectServiceConfigSnapshot.fromPreferences(
@@ -60,22 +66,33 @@ void main() {
         InterconnectServiceConfigSnapshot.sharedPreferenceKeys);
     expect(snapshot.preferences['jimaku_api_key'],
         PrefCodec.encode('jimaku-secret'));
-    expect(snapshot.preferences, isNot(contains('video_scraper_tmdb_api_key')));
+    // 外部服务身份跟着用户的设备走（同一个账号在哪台设备上都该刮到同一份资料 /
+    // 搜到同一批字幕）；本机入站 API、配对凭据、设备身份与本地路径仍然不出境。
+    expect(snapshot.preferences['video_scraper_tmdb_api_key'],
+        PrefCodec.encode('tmdb'));
     expect(
-      snapshot.preferences,
-      isNot(contains('video_metadata_fanart_api_key')),
+      snapshot.preferences['video_metadata_fanart_api_key'],
+      PrefCodec.encode('fanart-secret'),
     );
     expect(
-      snapshot.preferences,
-      isNot(contains('video_metadata_bangumi_token')),
+      snapshot.preferences['video_metadata_bangumi_token'],
+      PrefCodec.encode('bangumi-secret'),
     );
     expect(
-      snapshot.preferences,
-      isNot(contains('video_metadata_douban_authorized_endpoint')),
+      snapshot.preferences['video_metadata_douban_authorized_endpoint'],
+      PrefCodec.encode('https://private.example/douban'),
     );
     expect(
-      snapshot.preferences,
-      isNot(contains('video_metadata_douban_authorized_token')),
+      snapshot.preferences['video_metadata_douban_authorized_token'],
+      PrefCodec.encode('douban-secret'),
+    );
+    expect(
+      snapshot.preferences[kBangumiAccessTokenPref],
+      PrefCodec.encode('bangumi-tracking-token'),
+    );
+    expect(
+      snapshot.preferences[kBangumiAccountNamePref],
+      PrefCodec.encode('nick'),
     );
     expect(snapshot.preferences, isNot(contains('yomitan_api_key')));
     expect(snapshot.preferences, isNot(contains('sync_hibiki_client_token')));
@@ -131,6 +148,48 @@ void main() {
     );
     expect(await db.getPref('future_secret'), isNull);
     expect(await snapshot.applyTo(db), 0, reason: 'replay must be idempotent');
+  });
+
+  test('换 Bangumi 令牌必须归零本设备对账水位（与设置页写令牌同一条不变式）', () async {
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      await db.setPref(key, PrefCodec.encode(99));
+    }
+    await db.setPref(kBangumiAccessTokenPref, PrefCodec.encode('old-token'));
+
+    final InterconnectServiceConfigSnapshot snapshot =
+        InterconnectServiceConfigSnapshot.fromJson(<String, Object?>{
+      'schemaVersion': 1,
+      'preferences': <String, Object?>{
+        kBangumiAccessTokenPref: PrefCodec.encode('new-token'),
+        kBangumiAccountNamePref: PrefCodec.encode('someone-else'),
+      },
+    });
+
+    expect(await snapshot.applyTo(db), 2, reason: '水位归零是令牌那一行的副作用，不额外计数');
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      expect(await db.getPref(key), PrefCodec.encode(0), reason: key);
+    }
+  });
+
+  test('令牌没变时不碰对账水位（重放同一份 host 快照不得倒退进度）', () async {
+    await db.setPref(kBangumiAccessTokenPref, PrefCodec.encode('same-token'));
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      await db.setPref(key, PrefCodec.encode(99));
+    }
+
+    final InterconnectServiceConfigSnapshot snapshot =
+        InterconnectServiceConfigSnapshot.fromJson(<String, Object?>{
+      'schemaVersion': 1,
+      'preferences': <String, Object?>{
+        kBangumiAccessTokenPref: PrefCodec.encode('same-token'),
+        'jimaku_api_key': PrefCodec.encode('changed'),
+      },
+    });
+
+    expect(await snapshot.applyTo(db), 1);
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      expect(await db.getPref(key), PrefCodec.encode(99), reason: key);
+    }
   });
 
   test('rejects unsupported schema versions', () {

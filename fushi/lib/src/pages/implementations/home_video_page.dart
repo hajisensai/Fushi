@@ -2422,8 +2422,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         videoCoverHeightForPortraitWidth(cardLayout.cardWidth);
     final Widget? continueRow =
         _buildContinueRow(filtered, remoteVideos, coverHeight);
-    final Widget? nextRow = _buildNextEpisodeRow(filtered, coverHeight);
-    final Widget? recentRow = _buildRecentlyAddedRow(filtered, coverHeight);
+    final Widget? nextRow =
+        _buildNextEpisodeRow(filtered, remoteVideos, coverHeight);
+    final Widget? recentRow =
+        _buildRecentlyAddedRow(filtered, remoteVideos, coverHeight);
     if (continueRow == null && nextRow == null && recentRow == null) {
       return const SizedBox.shrink();
     }
@@ -2968,55 +2970,143 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
       ];
 
+  // ── 首页横滚行的「本地 / 远端」统一槽位 ───────────────────────────────
+  //
+  // 首页三行（继续观看 / 下一集 / 最近添加）里，一个合集的成员本来就可能一半在
+  // 本机、一半只在 host 上。此前只有「继续观看」认远端，另两行的成员表结构上只
+  // 装 [VideoBookRow]，于是同一个合集在同一屏上一半互联一半不互联——用户视角就是
+  // 「视频首页没完全互联」。改成统一用 [_VideoSlot]：取组内序 / 取观看态 / 取封面 /
+  // 点开这四件事按来源分流，其余逻辑（下一集选集、最近添加窗口、排序）两边同一份。
+
+  /// 远端条目解析到的本地合集 id；host 未给归属或本地没有同名合集 → null（散卡）。
+  int? _remoteCollectionId(RemoteVideoInfo video) {
+    final RemoteCollectionMembership? membership = video.collection;
+    if (membership == null) return null;
+    return _resolveLocalCollectionId(
+      membership.collectionName,
+      membership.collectionType,
+    );
+  }
+
+  /// 组内序：本地取页级 [_memberSortIndex]，远端取 host 下发的 sortIndex。
+  int _slotSortIndex(_VideoSlot slot) {
+    final VideoBookRow? local = slot.local;
+    if (local != null) {
+      return _memberSortIndex[MediaKind.video.compositeKey(local.bookUid)] ??
+          1 << 30;
+    }
+    return slot.remote!.collection?.sortIndex ?? 1 << 30;
+  }
+
+  /// 最近观看时刻（epoch 毫秒，0 = 没看过）。远端的真相源是 host 下发的
+  /// [RemoteVideoInfo.positionUpdatedAtMs]（与「继续观看」行同一口径）。
+  int _slotWatchedAtMs(_VideoSlot slot) {
+    final VideoBookRow? local = slot.local;
+    if (local != null) {
+      return (_watchAtByUid[local.bookUid] ??
+                  _legacyWatchAtByTitle[local.title])
+              ?.millisecondsSinceEpoch ??
+          0;
+    }
+    return slot.remote!.positionUpdatedAtMs;
+  }
+
+  /// 入库时刻（epoch 毫秒）；远端 host 不带该字段（旧 host）时为 null。
+  int? _slotImportedAtMs(_VideoSlot slot) =>
+      slot.local?.importedAt ?? slot.remote?.importedAt;
+
+  List<VideoSeriesPlaybackState> _slotPlaybackStates(List<_VideoSlot> slots) =>
+      <VideoSeriesPlaybackState>[
+        for (final _VideoSlot slot in slots)
+          VideoSeriesPlaybackState(
+            lastWatchedAtMs: _slotWatchedAtMs(slot),
+            positionMs: slot.local?.lastPositionMs ?? slot.remote!.positionMs,
+            completed: slot.local != null
+                ? slot.local!.completedAt != null
+                : slot.remote!.completedAt != null,
+          ),
+      ];
+
+  ImageProvider? _slotCoverProvider(_VideoSlot slot) {
+    final VideoBookRow? local = slot.local;
+    return local != null
+        ? _localCoverProvider(local)
+        : _remoteCoverProvider(slot.remote!);
+  }
+
+  void _openSlot(_VideoSlot slot, {int? playlistCollectionId}) {
+    final VideoBookRow? local = slot.local;
+    if (local != null) {
+      unawaited(_open(local, playlistCollectionId: playlistCollectionId));
+      return;
+    }
+    unawaited(_openRemote(slot.remote!));
+  }
+
+  /// 合集成员里的本地行（合集自身封面回落链只认本地文件）。
+  List<VideoBookRow> _localMembersOf(List<_VideoSlot> slots) => <VideoBookRow>[
+        for (final _VideoSlot slot in slots)
+          if (slot.local != null) slot.local!,
+      ];
+
+  /// 「下一集」横滚行：合集成员含**本地行 + 远端占位**（同一合集两边成员合成一条
+  /// 序列后再选集）。此前只按本地成员选集：host 上有第 5 集、本机只到第 4 集时，
+  /// 这一行要么不出现、要么指向本机的旧集——用户视角就是首页没完全互联。
   Widget? _buildNextEpisodeRow(
     List<VideoBookRow> filtered,
+    List<RemoteVideoInfo> remoteVideos,
     double coverHeight,
   ) {
-    final Map<int, List<VideoBookRow>> grouped = <int, List<VideoBookRow>>{};
+    final Map<int, List<_VideoSlot>> grouped = <int, List<_VideoSlot>>{};
     for (final VideoBookRow book in filtered) {
       if (_localExtraBookUids.contains(book.bookUid)) continue;
       final int? cid =
           _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
       if (cid != null && _collectionsById.containsKey(cid)) {
-        grouped.putIfAbsent(cid, () => <VideoBookRow>[]).add(book);
+        grouped
+            .putIfAbsent(cid, () => <_VideoSlot>[])
+            .add(_VideoSlot(local: book));
       }
     }
+    for (final RemoteVideoInfo video in remoteVideos) {
+      final int? cid = _remoteCollectionId(video);
+      if (cid == null) continue;
+      grouped
+          .putIfAbsent(cid, () => <_VideoSlot>[])
+          .add(_VideoSlot(remote: video));
+    }
     final List<_VideoRowItem> items = <_VideoRowItem>[];
-    grouped.forEach((int cid, List<VideoBookRow> members) {
-      members.sort((VideoBookRow a, VideoBookRow b) =>
-          (_memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ?? 1 << 30)
-              .compareTo(
-                  _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-                      1 << 30));
+    grouped.forEach((int cid, List<_VideoSlot> members) {
+      members.sort((_VideoSlot a, _VideoSlot b) =>
+          _slotSortIndex(a).compareTo(_slotSortIndex(b)));
       int recentMs = 0;
-      for (final VideoBookRow member in members) {
-        final DateTime? watched = _watchAtByUid[member.bookUid] ??
-            _legacyWatchAtByTitle[member.title];
-        if (watched != null) {
-          recentMs = recentMs < watched.millisecondsSinceEpoch
-              ? watched.millisecondsSinceEpoch
-              : recentMs;
-        }
+      for (final _VideoSlot member in members) {
+        final int watched = _slotWatchedAtMs(member);
+        if (watched > recentMs) recentMs = watched;
       }
       final int? targetIndex = nextEpisodeAfterLatestPlayed(
-        _seriesPlaybackStates(members),
+        _slotPlaybackStates(members),
       );
       if (targetIndex == null) return;
       final MediaCollectionRow collection = _collectionsById[cid]!;
-      final VideoBookRow target = members[targetIndex];
+      final _VideoSlot target = members[targetIndex];
       items.add(_VideoRowItem(
         recentMs: recentMs,
         build: () => _buildRowMediaCard(
           cardKey: ValueKey<String>('home_video_next_collection_$cid'),
           focusId: FushiFocusId('home-video-next-collection-$cid'),
-          cover: _localCoverProvider(target) ??
-              _collectionRowCoverProvider(collection, members),
+          cover: _slotCoverProvider(target) ??
+              _collectionRowCoverProvider(
+                collection,
+                _localMembersOf(members),
+              ),
           title: _workTitle(collection),
           coverHeight: coverHeight,
-          onTap: () => unawaited(_open(target, playlistCollectionId: cid)),
+          onTap: () => _openSlot(target, playlistCollectionId: cid),
           onLongPress: () => _showCollectionContextMenu(collection),
           episodeNumber: targetIndex + 1,
           secondaryText: t.video_home_next_episode_number(n: targetIndex + 1),
+          cloudBadge: target.local == null,
         ),
       ));
     });
@@ -3032,60 +3122,75 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 「最近添加」横滚行：入库 [kVideoRecentlyAddedWindow]（14 天）内的本地条目
-  /// 按入库时刻倒序取前 15，「新」角标。远端占位无入库时刻，不进本行。
+  /// 「最近添加」横滚行：入库 [kVideoRecentlyAddedWindow]（14 天）内的条目按入库
+  /// 时刻倒序取前 15，「新」角标。
+  ///
+  /// 远端占位也进本行——前提是 host 下发了 [RemoteVideoInfo.importedAt]（旧 host
+  /// 不带 → 与改动前逐字节同行为，不进本行）。此前这一行结构上只装本地行，于是
+  /// 「host 上新入库了一批」在子设备首页完全看不见。
   Widget? _buildRecentlyAddedRow(
     List<VideoBookRow> filtered,
+    List<RemoteVideoInfo> remoteVideos,
     double coverHeight,
   ) {
     final DateTime now = DateTime.now();
-    final Map<int, List<VideoBookRow>> allMembersByCollection =
-        <int, List<VideoBookRow>>{};
-    final Map<int, List<VideoBookRow>> grouped = <int, List<VideoBookRow>>{};
-    final List<VideoBookRow> loose = <VideoBookRow>[];
-    for (final VideoBookRow book in filtered) {
-      if (_localExtraBookUids.contains(book.bookUid)) continue;
-      final int? allCid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
-      if (allCid != null && _collectionsById.containsKey(allCid)) {
-        allMembersByCollection
-            .putIfAbsent(allCid, () => <VideoBookRow>[])
-            .add(book);
+    final Map<int, List<_VideoSlot>> allMembersByCollection =
+        <int, List<_VideoSlot>>{};
+    final Map<int, List<_VideoSlot>> grouped = <int, List<_VideoSlot>>{};
+    final List<_VideoSlot> loose = <_VideoSlot>[];
+    final List<_VideoSlot> candidates = <_VideoSlot>[
+      for (final VideoBookRow book in filtered)
+        if (!_localExtraBookUids.contains(book.bookUid))
+          _VideoSlot(local: book),
+      for (final RemoteVideoInfo video in remoteVideos)
+        _VideoSlot(remote: video),
+    ];
+    for (final _VideoSlot slot in candidates) {
+      final VideoBookRow? local = slot.local;
+      final int? cid = local != null
+          ? _primaryCollectionByEntry[
+              MediaKind.video.compositeKey(local.bookUid)]
+          : _remoteCollectionId(slot.remote!);
+      final bool inCollection =
+          cid != null && _collectionsById.containsKey(cid);
+      if (inCollection) {
+        allMembersByCollection.putIfAbsent(cid, () => <_VideoSlot>[]).add(slot);
       }
-      if (!isVideoRecentlyAdded(importedAt: book.importedAt, now: now)) {
+      if (!isVideoRecentlyAdded(
+          importedAt: _slotImportedAtMs(slot), now: now)) {
         continue;
       }
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
-      if (cid != null && _collectionsById.containsKey(cid)) {
-        grouped.putIfAbsent(cid, () => <VideoBookRow>[]).add(book);
+      if (inCollection) {
+        grouped.putIfAbsent(cid, () => <_VideoSlot>[]).add(slot);
       } else {
-        loose.add(book);
+        loose.add(slot);
       }
     }
     final List<_VideoRowItem> recent = <_VideoRowItem>[];
-    grouped.forEach((int cid, List<VideoBookRow> members) {
-      members.sort((VideoBookRow a, VideoBookRow b) =>
-          (b.importedAt ?? 0).compareTo(a.importedAt ?? 0));
+    grouped.forEach((int cid, List<_VideoSlot> members) {
+      members.sort((_VideoSlot a, _VideoSlot b) =>
+          (_slotImportedAtMs(b) ?? 0).compareTo(_slotImportedAtMs(a) ?? 0));
       final MediaCollectionRow collection = _collectionsById[cid]!;
-      final VideoBookRow latest = members.first;
-      final List<VideoBookRow> allMembers =
+      final _VideoSlot latest = members.first;
+      final List<_VideoSlot> allMembers =
           allMembersByCollection[cid] ?? members;
-      allMembers.sort((VideoBookRow a, VideoBookRow b) =>
-          (_memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ?? 1 << 30)
-              .compareTo(
-                  _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-                      1 << 30));
+      allMembers.sort((_VideoSlot a, _VideoSlot b) =>
+          _slotSortIndex(a).compareTo(_slotSortIndex(b)));
       final int latestIndex = allMembers.indexWhere(
-        (VideoBookRow value) => value.bookUid == latest.bookUid,
+        (_VideoSlot value) => identical(value, latest),
       );
       final int? episodeNumber = latestIndex < 0 ? null : latestIndex + 1;
       recent.add(_VideoRowItem(
-        recentMs: members.first.importedAt ?? 0,
+        recentMs: _slotImportedAtMs(latest) ?? 0,
         build: () => _buildRowMediaCard(
           cardKey: ValueKey<String>('home_video_recent_collection_$cid'),
           focusId: FushiFocusId('home-video-recent-collection-$cid'),
-          cover: _collectionRowCoverProvider(collection, members),
+          // 合集封面回落链只认本地文件；纯远端合集回落到最新那一集的远端封面。
+          cover: _collectionRowCoverProvider(
+                collection,
+                _localMembersOf(members),
+              ) ??
+              _slotCoverProvider(latest),
           title: _workTitle(collection),
           coverHeight: coverHeight,
           onTap: () => _openCollectionDetail(collection),
@@ -3098,10 +3203,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       ));
     });
-    for (final VideoBookRow book in loose) {
+    for (final _VideoSlot slot in loose) {
+      final VideoBookRow? local = slot.local;
       recent.add(_VideoRowItem(
-        recentMs: book.importedAt ?? 0,
-        build: () => _buildRecentlyAddedCard(book, coverHeight),
+        recentMs: _slotImportedAtMs(slot) ?? 0,
+        build: () => local != null
+            ? _buildRecentlyAddedCard(local, coverHeight)
+            : _buildRecentlyAddedRemoteCard(slot.remote!, coverHeight),
       ));
     }
     recent.sort(
@@ -3427,6 +3535,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ? t.video_home_recent_episode_number(n: book.currentEpisode + 1)
           : t.video_recently_added_badge,
       newBadge: true,
+    );
+  }
+
+  /// 远端占位的「最近添加」行卡：与本地同形（「新」角标 + 集数），另带云角标表明
+  /// 内容还在 host 上；短按走既有远端流播 / 下载分派。
+  Widget _buildRecentlyAddedRemoteCard(
+    RemoteVideoInfo video,
+    double coverHeight,
+  ) {
+    final String safeKey = _safeRemoteKey(video.id);
+    return _buildRowMediaCard(
+      cardKey: ValueKey<String>('home_video_recent_remote_$safeKey'),
+      focusId: FushiFocusId('home-video-recent-remote-$safeKey'),
+      cover: _remoteCoverProvider(video),
+      title: video.title,
+      coverHeight: coverHeight,
+      onTap: () => unawaited(_openRemote(video)),
+      onLongPress: () => _showRemoteVideoDialog(video),
+      episodeNumber: video.isPlaylist ? video.currentEpisode + 1 : null,
+      secondaryText: video.isPlaylist
+          ? t.video_home_recent_episode_number(n: video.currentEpisode + 1)
+          : t.video_recently_added_badge,
+      newBadge: true,
+      cloudBadge: true,
     );
   }
 
@@ -3952,7 +4084,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       items.add(CollectionOrderingItem<_VideoSlot>(
         mediaType: MediaKind.video,
         entryKey: video.id,
-        importedAt: -1 - i,
+        // host 下发了真入库戳就按它排（与本地条目同一把尺子，「最近添加」排序才
+        // 跨端一致）；旧 host 不带 → 回落到递减负值，保持既有确定性尾部序。
+        importedAt: video.importedAt ?? (-1 - i),
         payload: _VideoSlot(remote: video),
       ));
     }

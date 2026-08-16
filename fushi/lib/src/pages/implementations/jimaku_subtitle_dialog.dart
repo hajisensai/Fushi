@@ -1,32 +1,77 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/utils.dart';
 
-/// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
+/// 一条可下载的在线字幕候选：来源条目/发布名 + 文件名 + 回给来源 provider 的句柄。
+///
+/// **不再绑定 Jimaku**：本对话框此前直连 [JimakuClient]，而下载管线走的是
+/// [VideoSubtitleRegistry]（Jimaku + OpenSubtitles）——同一个「找字幕」在两个入口
+/// 能力不同，视频页永远搜不到 OpenSubtitles。现在两边共用同一套 provider，本类只是
+/// 列表渲染用的投影：语言优先取 provider 给的（OpenSubtitles 有权威 ISO 码），
+/// provider 没给才从文件名启发式识别（Jimaku 的老口径）。
 class JimakuCandidate {
-  const JimakuCandidate({required this.entryName, required this.file});
-  final String entryName;
-  final JimakuFile file;
+  const JimakuCandidate({
+    required this.entryName,
+    required this.name,
+    this.providerId = 'jimaku',
+    String? language,
+    this.source,
+  }) : _language = language;
 
-  /// 该候选文件名识别出的语言代码（`ja`/`zh`/`en`/`ko`），认不出为 `null`。
-  String? get language => detectSubtitleLanguage(file.name);
+  /// 来源条目名（Jimaku entry / OpenSubtitles release）。
+  final String entryName;
+
+  /// 字幕文件名（列表主文案、下载落盘名、语言/集号/类型的启发式来源）。
+  final String name;
+
+  /// 来源 provider id（`jimaku` / `opensubtitles`）。
+  final String providerId;
+
+  final String? _language;
+
+  /// 真实来源候选；下载时原样回给 registry。null = 测试预置的纯渲染样本。
+  final VideoSubtitleCandidate? source;
+
+  /// 语言代码（`ja`/`zh`/`en`/`ko`…）；provider 未给且文件名认不出为 `null`。
+  String? get language {
+    final String? explicit = _language?.trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    return detectSubtitleLanguage(name);
+  }
 
   /// 从文件名解析出的集号（认不出为 null），用于按集升序排列。
-  int? get episode => file.episode;
+  int? get episode => source?.episode ?? parseSubtitleEpisode(name);
 
-  /// 字幕文件类型（扩展名小写不含点，如 `ass`/`srt`）。候选在入列前已过
-  /// [JimakuFile.isTextSubtitle]，故这里恒是四种可解析文本格式之一。
-  String get format => file.extension;
+  /// 字幕文件类型（扩展名小写不含点，如 `ass`/`srt`）。候选在入列前已过文本字幕
+  /// 过滤，故这里恒是四种可解析文本格式之一。
+  String get format {
+    final int dot = name.lastIndexOf('.');
+    return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+  }
+
+  /// 由 registry 返回的 provider 候选投影成列表项。
+  factory JimakuCandidate.fromProvider(VideoSubtitleCandidate candidate) =>
+      JimakuCandidate(
+        entryName: candidate.releaseName ?? '',
+        name: candidate.fileName,
+        providerId: candidate.providerId,
+        language: candidate.language,
+        source: candidate,
+      );
 }
 
 /// Jimaku 字幕框按视口宽度自适应：手机接近满宽，中等窗口稍留边距，桌面/2K/4K
@@ -63,7 +108,7 @@ List<JimakuCandidate> sortJimakuCandidates(
     final int ea = a.episode ?? (1 << 30);
     final int eb = b.episode ?? (1 << 30);
     if (ea != eb) return ea.compareTo(eb);
-    return a.file.name.toLowerCase().compareTo(b.file.name.toLowerCase());
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   });
   return out;
 }
@@ -141,6 +186,7 @@ class JimakuSubtitleDialog extends StatefulWidget {
     required this.initialApiKey,
     required this.onApiKeyChanged,
     required this.saveDirectory,
+    this.subtitleRegistry,
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
     this.httpClientFactory,
@@ -148,6 +194,13 @@ class JimakuSubtitleDialog extends StatefulWidget {
     this.debugInitialSeriesMatches,
     super.key,
   });
+
+  /// 统一字幕来源（Jimaku + OpenSubtitles）的**延迟**解析器。
+  ///
+  /// 延迟是必须的：填 key 会经 [onApiKeyChanged] 触发 provider runtime 重建，早绑
+  /// 的 registry 实例正是那个「刚填完 key 还是搜不到」的旧实例。null = 宿主没接
+  /// registry（纯渲染用的测试宿主）→ 搜索按未配置来源处理。
+  final VideoSubtitleRegistry? Function()? subtitleRegistry;
 
   /// 预填的搜索词（由视频文件名解析出的番名）。
   final String initialQuery;
@@ -261,10 +314,19 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     super.dispose();
   }
 
+  /// 当前是否有**任何**已配置的在线字幕来源（registry 里有 provider 即算）。
+  bool get _hasConfiguredSubtitleSource {
+    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    return registry != null && registry.providers.isNotEmpty;
+  }
+
   Future<void> _search() async {
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
-    if (apiKey.isEmpty) {
+    // 门槛是「有没有可用的字幕来源」，不是「有没有 Jimaku key」：只配了
+    // OpenSubtitles 的用户照样能搜。改动前这里硬卡 Jimaku key，等于把另一路来源
+    // 挡在门外。已配来源但 key 填错/失效 → 搜索照跑，按无结果呈现（与既有一致）。
+    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) {
       _snack(t.video_jimaku_no_key);
       return;
     }
@@ -286,7 +348,10 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     // 同一条 paint-before-work 约束。
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
-    await widget.onApiKeyChanged(apiKey);
+    // 只有真改过才写：每次搜索都写一遍会白白重建一次 provider runtime。
+    if (apiKey != widget.initialApiKey.trim()) {
+      await widget.onApiKeyChanged(apiKey);
+    }
 
     AniListClient? anilist;
     try {
@@ -314,7 +379,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   Future<void> _selectSeries(AniListMedia media) async {
     if (_selectedSeriesId == media.id || _searching) return;
     final String apiKey = _apiKeyCtrl.text.trim();
-    if (apiKey.isEmpty) return;
+    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) return;
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
     setState(() {
       _searching = true;
@@ -333,38 +398,52 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     }
   }
 
-  /// 用给定 [anilistId]（null 时回退文本 [queryFallback]）搜 Jimaku 条目 → 列文件 →
-  /// 过滤文本字幕 → **排序**（[sortJimakuCandidates]，消除「集数乱序」）→ 落状态。
-  /// 自带 JimakuClient 生命周期（本函数创建并关闭）。
+  /// 用给定 [anilistId]（null 时回退文本 [queryFallback]）向**统一字幕来源**
+  /// （[VideoSubtitleRegistry]：Jimaku + OpenSubtitles）搜候选 → **排序**
+  /// （[sortJimakuCandidates]，消除「集数乱序」）→ 落状态。
+  ///
+  /// 此前这里自建 [JimakuClient] 直连 Jimaku，而下载管线走 registry——同一个「找
+  /// 字幕」在两个入口能力不同。现在两边同一套 provider：来源增减、失败归类、去重
+  /// 与优先级都只有一份实现。
+  ///
+  /// 分类固定按 anime 提请求：registry 对 anime 派发 Jimaku + OpenSubtitles，对非
+  /// anime 只派 OpenSubtitles。本对话框是从播放页对一个已在看的片子找字幕，缩窄
+  /// 分类只会平白丢掉 Jimaku 这一路，不会带来任何正确性。
   Future<void> _fetchCandidates({
     required int? anilistId,
     required String queryFallback,
     required int? episode,
   }) async {
-    JimakuClient? jimaku;
-    try {
-      jimaku = JimakuClient(
-        apiKey: _apiKeyCtrl.text.trim(),
-        client: await _createHttpClient(),
-      );
-      final List<JimakuEntry> entries = <JimakuEntry>[];
-      if (anilistId != null) {
-        entries.addAll(await jimaku.searchByAnilistId(anilistId));
-      }
-      if (entries.isEmpty) {
-        entries.addAll(await jimaku.searchByQuery(queryFallback));
-      }
-
-      final List<JimakuCandidate> candidates = <JimakuCandidate>[];
-      for (final JimakuEntry entry in entries) {
-        final List<JimakuFile> files =
-            await jimaku.listFiles(entry.id, episode: episode);
-        for (final JimakuFile f in files) {
-          if (f.isTextSubtitle) {
-            candidates.add(JimakuCandidate(entryName: entry.name, file: f));
-          }
-        }
-      }
+    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    if (registry == null || registry.providers.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _candidates = const <JimakuCandidate>[];
+        _searched = true;
+        _searchedWithEpisode = episode != null;
+        _selectedSeriesId = anilistId;
+      });
+      return;
+    }
+    {
+      final ProviderBatchResult<VideoSubtitleCandidate> result =
+          await registry.search(VideoSubtitleSearchRequest(
+        media: VideoMediaReference(
+          providerId: 'anilist',
+          mediaId: anilistId?.toString() ?? queryFallback,
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+          title: queryFallback,
+          anilistId: anilistId,
+          episode: episode,
+        ),
+        query: queryFallback,
+        episode: episode,
+      ));
+      final List<JimakuCandidate> candidates = <JimakuCandidate>[
+        for (final VideoSubtitleCandidate candidate in result.items)
+          JimakuCandidate.fromProvider(candidate),
+      ];
       final List<JimakuCandidate> sorted = sortJimakuCandidates(
         candidates,
         preferredLanguage: _selectedLanguage,
@@ -381,8 +460,6 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         // （用户：「apikey 配完是不是可以缩小显示」）。用户仍可点「修改」展开。
         _apiKeyCollapsed = sorted.isNotEmpty;
       });
-    } finally {
-      jimaku?.close();
     }
   }
 
@@ -393,29 +470,31 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         : factory();
   }
 
+  /// 下载选中候选：交回**它自己的来源 provider**（registry 按 providerId 分派），
+  /// 落盘到 [JimakuSubtitleDialog.saveDirectory] 后 pop 回本地路径。
+  ///
+  /// 任何一路来源失败都归一成同一句「下载失败」提示——provider 的失败分类
+  /// （[ExternalProviderFailure]）是给管线重试用的，对用户只有「没下来」一种语义。
   Future<void> _download(JimakuCandidate candidate) async {
-    final String apiKey = _apiKeyCtrl.text.trim();
-    if (apiKey.isEmpty) return;
-    setState(() => _busyName = candidate.file.name);
-    JimakuClient? jimaku;
+    final VideoSubtitleCandidate? source = candidate.source;
+    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    if (source == null || registry == null) return;
+    setState(() => _busyName = candidate.name);
     try {
-      jimaku = JimakuClient(
-        apiKey: apiKey,
-        client: await _createHttpClient(),
-      );
-      final Uint8List? bytes = await jimaku.downloadFile(candidate.file.url);
-      if (bytes == null) {
+      final VideoSubtitleDownload download = await registry.download(source);
+      if (download.bytes.isEmpty) {
         _snack(t.video_jimaku_download_failed);
         return;
       }
       final Directory dir = Directory(widget.saveDirectory);
       if (!dir.existsSync()) dir.createSync(recursive: true);
-      final String dest = p.join(dir.path, candidate.file.name);
-      await File(dest).writeAsBytes(bytes);
+      final String dest = p.join(dir.path, download.fileName);
+      await File(dest).writeAsBytes(download.bytes);
       if (!mounted) return;
       Navigator.pop(context, dest);
+    } on Object {
+      _snack(t.video_jimaku_download_failed);
     } finally {
-      jimaku?.close();
       if (mounted) setState(() => _busyName = null);
     }
   }
@@ -808,7 +887,7 @@ class JimakuCandidateList extends StatelessWidget {
     // G6：与库页搜索同一归一化口径（全角/片假名/标点差异不挡命中），不再是
     // 裸 toLowerCase 子串。
     final List<JimakuCandidate> shown = filterByMediaSearch(
-        candidates, filter, (JimakuCandidate c) => <String>[c.file.name]);
+        candidates, filter, (JimakuCandidate c) => <String>[c.name]);
     // 不用 shrinkWrap：外层 [ConstrainedBox] 给了有界 maxHeight，普通 ListView 会
     // 填满该高度并在内容超出时正常滚动。shrinkWrap 反而会让它贴合内容/不产生可滚
     // 余量（maxScrollExtent=0），正是「滚不动」的来源。
@@ -816,7 +895,7 @@ class JimakuCandidateList extends StatelessWidget {
       itemCount: shown.length,
       itemBuilder: (BuildContext context, int i) {
         final JimakuCandidate c = shown[i];
-        final bool busy = busyName == c.file.name;
+        final bool busy = busyName == c.name;
         // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
         // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
         // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
@@ -825,7 +904,7 @@ class JimakuCandidateList extends StatelessWidget {
           isThreeLine: true,
           leading: const Icon(Icons.subtitles_outlined),
           title: Text(
-            c.file.name,
+            c.name,
             maxLines: 3,
             softWrap: true,
             overflow: TextOverflow.fade,

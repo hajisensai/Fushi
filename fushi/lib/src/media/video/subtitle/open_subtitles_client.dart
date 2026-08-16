@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/app_user_agent.dart';
 
 const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
 
@@ -17,12 +18,13 @@ class OpenSubtitlesConfig {
     required this.apiKey,
     this.username,
     this.password,
-    this.userAgent = 'Hibiki v1',
+    String? userAgent,
     Uri? baseUrl,
     this.enabled = true,
     this.priority = 200,
     this.allowInsecureHttp = false,
-  }) : baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
+  })  : userAgent = _resolveUserAgent(userAgent),
+        baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
     if (this.baseUrl.host.isEmpty ||
         this.baseUrl.hasQuery ||
         this.baseUrl.userInfo.isNotEmpty ||
@@ -40,9 +42,6 @@ class OpenSubtitlesConfig {
         'explicitly allowed or the host is loopback',
       );
     }
-    if (userAgent.trim().isEmpty) {
-      throw ArgumentError('OpenSubtitles user agent must not be empty');
-    }
   }
 
   factory OpenSubtitlesConfig.fromJson(Map<String, Object?> json) {
@@ -51,7 +50,7 @@ class OpenSubtitlesConfig {
       apiKey: json['apiKey'] as String? ?? '',
       username: json['username'] as String?,
       password: json['password'] as String?,
-      userAgent: json['userAgent'] as String? ?? 'Hibiki v1',
+      userAgent: json['userAgent'] as String?,
       baseUrl: rawBaseUrl == null || rawBaseUrl.trim().isEmpty
           ? null
           : Uri.parse(rawBaseUrl),
@@ -61,6 +60,18 @@ class OpenSubtitlesConfig {
           ? json['allowInsecureHttp']! as bool
           : false,
     );
+  }
+
+  /// 缺省 / 存量旧默认值都归一到当前 app 身份；用户自填的 UA 原样保留。
+  ///
+  /// `video_subtitle_opensubtitles_config` 是把整个配置序列化成 JSON 存的，所以
+  /// 光改构造默认值改不动已落盘的 `Hibiki v1`——那条 UA 会一直发出去。
+  static String _resolveUserAgent(String? raw) {
+    final String trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty || trimmed == kLegacyOpenSubtitlesUserAgent) {
+      return fushiUserAgent('opensubtitles');
+    }
+    return raw!;
   }
 
   final String apiKey;

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/utils.dart';
 
@@ -13,7 +12,7 @@ import 'package:fushi/utils.dart';
 void main() {
   JimakuCandidate cand(String name) => JimakuCandidate(
         entryName: 'Some Anime Series',
-        file: JimakuFile(name: name, url: 'https://x/$name'),
+        name: name,
       );
 
   Future<void> pumpDialog(
