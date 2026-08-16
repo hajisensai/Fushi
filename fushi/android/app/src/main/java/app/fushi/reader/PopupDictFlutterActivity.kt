@@ -127,7 +127,11 @@ class PopupDictFlutterActivity : FlutterActivity() {
         intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()?.let { return it }
         intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.let { return it }
         intent.data?.let { uri ->
-            if (uri.scheme == "hibiki" && uri.host == "lookup") {
+            // BUG-1666: the manifest registers scheme "fushi" for this VIEW
+            // intent-filter; "hibiki" is the pre-rename residue kept for any
+            // legacy link still in the wild. Matching only "hibiki" meant a
+            // fushi://lookup?word=… deep link opened an EMPTY popup.
+            if ((uri.scheme == "fushi" || uri.scheme == "hibiki") && uri.host == "lookup") {
                 uri.getQueryParameter("word")?.trim()?.takeIf { it.isNotEmpty() }
                     ?.let { return it }
             }

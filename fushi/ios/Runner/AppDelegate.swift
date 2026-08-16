@@ -27,6 +27,20 @@ import Flutter
     installChannels(binaryMessenger: engineBridge.applicationRegistrar.messenger())
   }
 
+  /// 安装来源判据 = 系统写进 bundle 的 App Store 收据文件，不是猜测：
+  /// - App Store 安装 → `.../receipt`
+  /// - TestFlight 安装 → `.../sandboxReceipt`
+  /// - 侧载 / 自签 / Xcode 直接跑 → 收据**文件不存在**（`appStoreReceiptURL` 仍给得
+  ///   出路径，所以必须查文件是否真的在，只看文件名会把侧载误判成 TestFlight）。
+  private static func currentInstallSource() -> String {
+    guard let receiptUrl = Bundle.main.appStoreReceiptURL,
+      FileManager.default.fileExists(atPath: receiptUrl.path)
+    else {
+      return "sideload"
+    }
+    return receiptUrl.lastPathComponent == "sandboxReceipt" ? "testFlight" : "appStore"
+  }
+
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
     let splashChannel = FlutterMethodChannel(
       name: "app.fushi.reader/splash",
@@ -113,6 +127,21 @@ import Flutter
           UIScreen.main.brightness = CGFloat(clamped)
         }
         result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // 更新落地入口分流（Dart 侧 IosUpdater.resolveDownloadLanding）。iOS 有三条互不
+    // 相干的分发链路 —— App Store / TestFlight / GitHub 未签名 ipa 侧载 —— 而「该去
+    // 哪儿更新」只由「这份 app 是从哪儿装来的」决定。这里回答的就是这一个事实。
+    let updateChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/update",
+      binaryMessenger: binaryMessenger)
+    updateChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "getInstallSource":
+        result(Self.currentInstallSource())
       default:
         result(FlutterMethodNotImplemented)
       }

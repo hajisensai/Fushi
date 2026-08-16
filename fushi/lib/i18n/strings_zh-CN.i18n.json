@@ -3424,7 +3424,12 @@
   "dict_language_auto": "自动",
   "book_language_action": "内容语言",
   "book_language_description": "决定这本书的正文用哪种字体渲染。自动 = 用 EPUB 里声明的语言。",
+  "local_audio_reference_unavailable": "没有「所有文件访问权限」无法引用原文件，已改为导入副本。",
+  "video_collection_scrape": "刮削资料与封面",
+  "update_testflight_open": "打开 TestFlight",
+  "update_app_store_open": "打开 App Store",
+  "update_release_page_open": "发布页",
   "settings_content_language_title": "默认内容语言",
-  "settings_content_language_description": "内容没有声明语言时用的默认值。书/视频/游戏/词典各自的设置会覆盖它。",
-  "settings_content_language_unset": "未设置"
+  "settings_content_language_unset": "未设置",
+  "settings_content_language_description": "内容没有声明语言时用的默认值。书/视频/游戏/词典各自的设置会覆盖它。"
 }

@@ -615,8 +615,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const maximumTerms = lookupTrace.maximumTerms;
         lookupTrace.phase = 'fetch-headers';
         const fetchStartedAt = performance.now();
+        // 查词 fetch 必须有上限：app 侧一旦长阻塞（词典重载/磁盘 stall），无超时的 await 会让
+        // sendResponse 永不被调——Side Panel 的「正在查词…」就永久停留。超时走下方 catch 分支
+        // 回错误响应，用户看到可重试的失败文案而不是无限转圈。上限 > Side Panel 兜底(8s)，
+        // 正常慢查询不受影响。
         const r = await fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
+          signal: AbortSignal.timeout(10000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
             term: msg.term,

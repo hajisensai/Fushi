@@ -86,9 +86,9 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
   'lib/src/pages/implementations/texthooker_page.dart':
       'galgame exe / LunaHook tsv：Windows 专属（见 galgame SOP）',
-  // (a) TODO：桌面「引用原文件不复制」时长期引用绝对路径；安卓恒复制故当前不坏。
-  'lib/src/settings/settings_schema_lookup.dart':
-      '本地音频库：桌面可选「引用原文件」长期引用（安卓恒复制，故当前不坏）',
+  // 原有一条 'lib/src/settings/settings_schema_lookup.dart'（本地音频库导入）已于
+  // BUG-1667 修掉并按「清单只减不增」删除：它改走 pickRealFilePathDetailed，安卓不再
+  // 先复制进 app cache（6 GB 的 android.db 曾需要 2 倍内部存储才导得进来）。
 };
 
 /// 扫 `lib/` 下所有 .dart，返回调用了 `.<member>(` 的文件相对路径集合。

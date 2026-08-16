@@ -2,6 +2,7 @@ package app.fushi.reader;
 
 import android.app.Activity;
 import android.database.Cursor;
+import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
 import android.media.AudioAttributes;
 import android.media.MediaMetadataRetriever;
@@ -312,11 +313,27 @@ public class TtsChannelHandler {
                                 "DB not found, skipping: " + dbPath);
                             continue;
                         }
-                        SQLiteDatabase db = SQLiteDatabase.openDatabase(
-                            dbPath, null,
-                            SQLiteDatabase.OPEN_READWRITE
-                                | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
-                        db.enableWriteAheadLogging();
+                        // BUG-1667：查询路径只读，先按只读开。引用模式（BUG-483）下这是
+                        // **用户的原始 android.db**，选了「不复制」的用户显然也不想被我们
+                        // 写（OPEN_READWRITE + WAL 会改库头并在旁边落 -wal/-shm）。
+                        // 只读开失败（介质只读 / 已是 WAL 但拿不到 -shm 等）再回退到原来的
+                        // 读写开法——功能永远不比改前差。
+                        SQLiteDatabase db;
+                        try {
+                            db = SQLiteDatabase.openDatabase(
+                                dbPath, null,
+                                SQLiteDatabase.OPEN_READONLY
+                                    | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                        } catch (Exception readOnlyFailure) {
+                            android.util.Log.w("hibiki-audio",
+                                "read-only open failed, falling back to rw: " + dbPath,
+                                readOnlyFailure);
+                            db = SQLiteDatabase.openDatabase(
+                                dbPath, null,
+                                SQLiteDatabase.OPEN_READWRITE
+                                    | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+                            db.enableWriteAheadLogging();
+                        }
                         localAudioDbPaths.add(dbPath);
                         localAudioDbs.add(db);
                         // 开库成功后再记 order，保证与 localAudioDbs 的 index 对齐。
@@ -328,25 +345,144 @@ public class TtsChannelHandler {
                     }
                 }
 
-                final List<SQLiteDatabase> snapshot = new ArrayList<>(localAudioDbs);
+                final List<String> indexTargets = new ArrayList<>(localAudioDbPaths);
                 indexFuture = ioExecutor.submit(() -> {
-                    for (SQLiteDatabase db : snapshot) {
-                        try {
-                            if (db.isOpen()) {
-                                db.execSQL(
-                                    "CREATE INDEX IF NOT EXISTS idx_entries_expr_read ON entries(expression, reading)");
-                                db.execSQL(
-                                    "CREATE INDEX IF NOT EXISTS idx_android_file_source ON android(file, source)");
-                            }
-                        } catch (Exception e) {
-                            android.util.Log.w("hibiki-audio",
-                                "Index creation skipped", e);
-                        }
+                    for (String path : indexTargets) {
+                        ensureQueryIndexes(path);
                     }
                 });
                 activity.runOnUiThread(() -> result.success(true));
             }
         });
+    }
+
+    /** 查询路径需要的两条索引：表名 + 列（顺序即索引列序）。 */
+    private static final String[][] QUERY_INDEX_SPECS = {
+        {"idx_entries_expr_read", "entries", "expression", "reading"},
+        {"idx_android_file_source", "android", "file", "source"},
+    };
+
+    /**
+     * 绑定期补齐 [dbPath] 缺失的查询索引。
+     *
+     * BUG-1667：旧实现无条件 `CREATE INDEX IF NOT EXISTS`，而它只按**索引名**判存在。
+     * Yomitan 本地音频服务器导出的 android.db 自带的等价索引叫 `idx_expr_reading` /
+     * `idx_android`（实测真库两条都有），名字对不上就照建一遍完全重复的索引。改成按
+     * 「有没有等价索引（现有索引的前缀列 == 目标列）」判：真库常见情形下一条都不建，
+     * 连写句柄都不开——引用模式下那是用户的原始文件。
+     *
+     * 与 Dart 侧 `LocalAudioDb.ensureIndexes` 同一判据，两端保持一致。
+     */
+    private void ensureQueryIndexes(String dbPath) {
+        SQLiteDatabase probe = null;
+        List<String[]> missing = new ArrayList<>();
+        try {
+            probe = SQLiteDatabase.openDatabase(
+                dbPath, null,
+                SQLiteDatabase.OPEN_READONLY | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+            for (String[] spec : QUERY_INDEX_SPECS) {
+                String[] columns = new String[spec.length - 2];
+                System.arraycopy(spec, 2, columns, 0, columns.length);
+                if (!hasEquivalentIndex(probe, spec[1], columns)) {
+                    missing.add(spec);
+                }
+            }
+        } catch (Exception e) {
+            // 连只读都开不了：退回改前的行为——照旧尝试建全部索引。这条兜底只在
+            // 「我们读都读不了」时才走，而那正是旧实现同样会去开 readWrite 的场景，
+            // 故不会比改前更差。
+            android.util.Log.w("hibiki-audio", "index probe failed: " + dbPath, e);
+            missing.clear();
+            for (String[] spec : QUERY_INDEX_SPECS) missing.add(spec);
+        } finally {
+            if (probe != null) {
+                try { probe.close(); } catch (Exception ignored) { }
+            }
+        }
+        if (missing.isEmpty()) return;
+
+        SQLiteDatabase writable = null;
+        try {
+            writable = SQLiteDatabase.openDatabase(
+                dbPath, null,
+                SQLiteDatabase.OPEN_READWRITE | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
+            for (String[] spec : missing) {
+                StringBuilder columns = new StringBuilder();
+                for (int i = 2; i < spec.length; i++) {
+                    if (i > 2) columns.append(", ");
+                    columns.append(spec[i]);
+                }
+                try {
+                    writable.execSQL("CREATE INDEX IF NOT EXISTS " + spec[0]
+                        + " ON " + spec[1] + "(" + columns + ")");
+                } catch (Exception e) {
+                    // 目标表不存在等：建不了不致命，不牵连另一条。
+                    android.util.Log.w("hibiki-audio", "Index creation skipped", e);
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.w("hibiki-audio", "Index creation skipped: " + dbPath, e);
+        } finally {
+            if (writable != null) {
+                try { writable.close(); } catch (Exception ignored) { }
+            }
+        }
+    }
+
+    /**
+     * [table] 上是否已存在能服务 `WHERE col0=? AND col1=?` 的索引：某个现有索引的
+     * **前缀列**恰好等于 [columns]。前缀即可——`(a,b,c)` 上的索引服务 `a=? AND b=?`
+     * 与专门的 `(a,b)` 索引等效。部分索引（partial）只覆盖部分行故排除；表达式索引
+     * 的 `PRAGMA index_info` 列名为 null，与任何列名都不相等，自然不匹配。
+     */
+    private static boolean hasEquivalentIndex(
+            SQLiteDatabase db, String table, String[] columns) {
+        Cursor indexes = null;
+        try {
+            indexes = db.rawQuery("PRAGMA index_list(" + table + ")", null);
+            int nameCol = indexes.getColumnIndex("name");
+            int partialCol = indexes.getColumnIndex("partial");
+            if (nameCol < 0) return false;
+            while (indexes.moveToNext()) {
+                if (partialCol >= 0 && indexes.getInt(partialCol) != 0) continue;
+                String indexName = indexes.getString(nameCol);
+                if (indexName == null) continue;
+                if (indexMatchesPrefix(db, indexName, columns)) return true;
+            }
+        } catch (Exception e) {
+            // 表不存在 / PRAGMA 失败：按「没有等价索引」处理，交给建索引路径。
+            return false;
+        } finally {
+            if (indexes != null) {
+                try { indexes.close(); } catch (Exception ignored) { }
+            }
+        }
+        return false;
+    }
+
+    private static boolean indexMatchesPrefix(
+            SQLiteDatabase db, String indexName, String[] columns) {
+        Cursor info = null;
+        try {
+            info = db.rawQuery(
+                "PRAGMA index_info(" + DatabaseUtils.sqlEscapeString(indexName) + ")",
+                null);
+            if (info.getCount() < columns.length) return false;
+            int nameCol = info.getColumnIndex("name");
+            if (nameCol < 0) return false;
+            for (int i = 0; i < columns.length; i++) {
+                if (!info.moveToNext()) return false;
+                // 表达式索引的列名为 null → 与任何列名都不相等。
+                if (!columns[i].equals(info.getString(nameCol))) return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (info != null) {
+                try { info.close(); } catch (Exception ignored) { }
+            }
+        }
     }
 
     private void handleQueryLocalAudio(MethodCall call, MethodChannel.Result result) {
