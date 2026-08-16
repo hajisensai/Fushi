@@ -35,7 +35,16 @@ import 'test_helpers.dart';
 /// 大出整条 chrome 预留带 → 每屏都被塞到"刚好填满整个视口"，于是**每一屏**的首尾行
 /// 都落进被 chrome 覆盖的区域。这就是"iOS 上 VN 模式基本不可用"的几何根因。
 ///
-/// 本测试在 live WebView 上锁两条不变式（读 DOM 几何，不依赖截图）：
+/// 第三处（**iOS 专属，且是 iOS 上最先炸的一条**）：VN 的 `initialize()` 从没跑分页/
+/// 连续 shell 都跑的 `_sharedInitViewport`——即重写 `width=device-width` 的视口 meta。
+/// 缺了它 WKWebView 按默认 **980 CSS px** 布局再整体缩放到设备宽：iPhone 真机实测
+/// `innerWidth=980 / innerHeight=1743`，而 Dart 下发的是 `dartPageWidth=375 /
+/// chromeTopInset=44`（逻辑像素），两个坐标系差 ~2.6 倍——正文被缩到约四成大小，
+/// 所有按 px 下发的量也全被按错单位解释。Android 的 WebView 默认就是 device-width、
+/// 桌面窗口又普遍 ≥980，所以这个缺口**只在 iOS 上显形**。
+///
+/// 本测试在 live WebView 上锁三条不变式（读 DOM 几何，不依赖截图）：
+///   0. `window.innerWidth` 必须等于 Dart 下发的 `--page-width`（两个坐标系重合）；
 ///   1. VN 首载稳定后 `--chrome-top-inset` 必须 >= 顶部进度条预留（18px），
 ///      即 inset 真的被推进了 VN 文档；
 ///   2. VN 当前屏 `.fushi-vn-screen` 的可视区间必须完整落在
@@ -44,6 +53,8 @@ import 'test_helpers.dart';
 ///
 /// Run（macOS）：
 ///   flutter test integration_test/reader_vn_chrome_inset_dom_test.dart -d macos
+/// Run（iOS 真机，需 DEVELOPMENT_TEAM 已配好）：
+///   flutter test integration_test/reader_vn_chrome_inset_dom_test.dart -d <udid>
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -166,6 +177,20 @@ void main() {
       final double screenBottom =
           (geo['screenBottom'] as num?)?.toDouble() ?? -1;
       final double innerHeight = (geo['innerHeight'] as num?)?.toDouble() ?? -1;
+
+      // 不变式 0（iOS 上最先炸的那条）：WebView 的 CSS 像素空间必须与 Dart 的逻辑
+      // 像素空间重合。缺 `width=device-width` 视口 meta 时 WKWebView 按默认 980 CSS px
+      // 布局再整体缩放——iOS 真机实测 `innerWidth=980 / innerHeight=1743` 对
+      // `dartPageWidth=375 / dartPageHeight=667`，两个坐标系差 ~2.6 倍：正文缩到约四成
+      // 大小，且所有按 px 下发的量（chrome 预留、页面盒、caret inset）全被按错单位解释。
+      final double innerWidth = (geo['innerWidth'] as num?)?.toDouble() ?? -1;
+      final double pageWidth = (geo['pageWidth'] as num?)?.toDouble() ?? -1;
+      expect(pageWidth, greaterThan(0), reason: 'BUG-1688：VN 必须写 --page-width');
+      expect((innerWidth - pageWidth).abs(), lessThanOrEqualTo(1.0),
+          reason: 'BUG-1688：WebView 视口宽 ($innerWidth CSS px) 必须与 Dart 下发的 '
+              '--page-width ($pageWidth 逻辑 px) 一致。不一致 = VN 少注入了 '
+              'width=device-width 视口 meta（分页/连续 shell 的 _sharedInitViewport），'
+              'WKWebView 退回 980px 布局——iOS 上 VN 不可用的主因。');
 
       // 不变式 1：VN 文档必须真的收到了 chrome inset。
       expect(chromeTopInset, greaterThanOrEqualTo(kExpectedReservePx - 1.0),

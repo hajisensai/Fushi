@@ -29,6 +29,8 @@
 // ignore_for_file: lines_longer_than_80_chars
 library;
 
+import 'package:fushi/src/reader/reader_pagination_scripts.dart'
+    show ReaderPaginationScripts;
 import 'package:fushi/src/reader/reader_content_styles.dart'
     show ReaderLayoutDefaults;
 
@@ -57,6 +59,9 @@ class ReaderVisualNovelScripts {
 
   static String _shell() {
     const String initialRestoreScript = _initialRestoreJs;
+    // BUG-1688：与分页/连续 shell 同一份视口 meta 重写（单一真相源）。
+    const String sharedInitViewport =
+        ReaderPaginationScripts.sharedInitViewportJs;
     // TODO-1085 (BUG-513): single source of truth for the image viewport ratio,
     // shared with the paginated shell (ReaderLayoutDefaults.imageWidthViewportRatio),
     // consumed by applyImageMaxVars below.
@@ -916,8 +921,12 @@ window.fushiReader = {
         return this.waitForImages();
       })
       .then(() => {
-        // BUG-1688：几何变量必须在建舞台/量屏之前落地——`fitScreensToViewport`
-        // 是按当前 `.fushi-vn-screen` 盒切屏的，晚一步就会先按错的盒切一遍。
+        // BUG-1688：视口 meta 必须最先落地。缺了它 WKWebView 按 980 CSS px 布局再
+        // 缩放，文档的 CSS 像素空间与 Dart 逻辑像素空间差 ~2.6 倍（iOS 实测
+        // innerWidth=980 vs dartPageWidth=375），下面写进去的 px 全是错单位。
+        this.applyViewportMeta();
+        // 几何变量必须在建舞台/量屏之前落地——`fitScreensToViewport` 是按当前
+        // `.fushi-vn-screen` 盒切屏的，晚一步就会先按错的盒切一遍。
         this.applyViewportVars();
         this.ensureStage();
         this.applyImageMaxVars();
@@ -962,6 +971,9 @@ window.fushiReader = {
     } else {
       while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
     }
+  },
+  applyViewportMeta: function() {
+$sharedInitViewport
   },
   applyViewportVars: function() {
     // BUG-1688：VN 舞台的可用盒由 `_vnLayoutCss` 写成

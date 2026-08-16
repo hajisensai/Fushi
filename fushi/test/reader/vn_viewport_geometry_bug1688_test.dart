@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 /// BUG-1688 守卫 —— VN view-mode 的可用盒必须与分页/连续 shell 同源。
@@ -22,6 +23,32 @@ void main() {
   });
 
   group('BUG-1688 VN viewport geometry guard', () {
+    test('VN rewrites the viewport meta exactly like the other two shells', () {
+      // iOS 真机实测：缺这段时 WKWebView 按默认 980 CSS px 布局再整体缩放
+      // （innerWidth=980 对 dartPageWidth=375），正文缩到约四成大小、所有按 px
+      // 下发的量全被按错单位解释。Android 默认 device-width、桌面窗口普遍 ≥980，
+      // 所以这个缺口只在 iOS 上显形——即"iOS 上 VN 不可用"的主因。
+      expect(
+        shell.contains(ReaderPaginationScripts.sharedInitViewportJs),
+        isTrue,
+        reason: 'VN shell must inline the SAME viewport-meta rewrite the '
+            'paginated/continuous shells run in their initialize()',
+      );
+      expect(
+        shell.contains('applyViewportMeta: function()'),
+        isTrue,
+        reason: 'VN shell must own a viewport-meta applier',
+      );
+      // 必须排在写几何变量之前：meta 改的是 CSS 像素空间本身。
+      final int metaAt = shell.indexOf('this.applyViewportMeta();');
+      final int varsAt = shell.indexOf('this.applyViewportVars();');
+      expect(metaAt, greaterThan(-1),
+          reason: 'initialize must call applyViewportMeta');
+      expect(metaAt, lessThan(varsAt),
+          reason: 'the viewport meta defines the CSS pixel space, so it must '
+              'land before any px-valued geometry var is written');
+    });
+
     test('VN initialize applies the chrome insets + page box from the config',
         () {
       expect(
