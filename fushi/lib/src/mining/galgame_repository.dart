@@ -54,6 +54,7 @@ GalgameEntry galgameEntryFromRow(
     launchArgs: row.launchArgs,
     upscalingMode: row.upscalingMode,
     japaneseLocaleMode: row.japaneseLocaleMode,
+    language: row.language,
     coverPath: (row.coverPath?.isEmpty ?? true) ? null : row.coverPath,
     addedAt: DateTime.fromMillisecondsSinceEpoch(row.addedAt),
     playStatus: GalgamePlayStatus.fromValue(row.playStatus),
@@ -248,6 +249,12 @@ class GalgameRepository extends ChangeNotifier {
   /// 解析层回落 auto）。列非空，清空写空串而不是 null。
   Future<void> setJapaneseLocaleMode(String id, String modeKey) async {
     await _db.setGalgameJapaneseLocaleMode(id, modeKey);
+    await load();
+  }
+
+  /// 用户指定游戏文本的内容语言（BCP-47）；null = 恢复未指定。
+  Future<void> setLanguage(String id, String? language) async {
+    await _db.updateGalgameLanguage(id, language);
     await load();
   }
 

@@ -337,6 +337,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
     if (req.info.isSrtBookSource) {
       _srtBookUid = req.info.bookKey;
+      // 独立 SRT 书没有 EpubBooks 行，正文语言只能从 srt_books 读——不接这一步的话
+      // SrtBooks.language 就是又一列「写了没人读」的字段（本次改动要修的正是这种）。
+      // 配对 SRT 书（bookKey 非空）走 EPUB 行，语言在开书时已解析，这里不覆盖。
+      unawaited(_applySrtBookLanguage(req.info.bookKey));
     } else {
       _audiobookBookKey = req.info.bookKey;
     }
@@ -345,6 +349,24 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     _rebuild(() {
       _audiobookController = controller;
     });
+  }
+
+  /// 独立 SRT 书的正文语言：`SrtBooks.language`（用户在卡菜单里指定）> 全局默认。
+  ///
+  /// 只对 standalone（无 EPUB backing）有意义——配对 SRT 书的正文由 EpubBooks 行
+  /// 承载，语言在开书时就解析过了，这里不去覆盖它。
+  Future<void> _applySrtBookLanguage(String uid) async {
+    if (uid.isEmpty) return;
+    final SrtBookRow? row = await appModel.database.getSrtBookByUid(uid);
+    if (!mounted) return;
+    final String? resolved = resolveContentLanguage(
+      explicit: row?.language,
+      globalDefault: appModel.prefsRepo.defaultContentLanguage,
+    );
+    appModel.currentLookupLanguage = resolved;
+    if (resolved == _contentLanguage) return;
+    _contentLanguage = resolved;
+    _invalidateStyleCache();
   }
 
   /// 把 reader 主题样式 + reader 弹窗查词装进 session（attach 期悬浮窗用 reader 主题）。

@@ -448,6 +448,22 @@ mixin _FushiDbContentMisc
       (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(language: Value(language)));
 
+  /// v87：改写视频的内容语言（BCP-47）。决定字幕用哪条字体链。
+  /// null = 未指定，字幕层退回「当前字幕轨的 language」，再没有则用历史兜底链。
+  Future<void> updateVideoBookLanguage(String bookUid, String? language) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(language: Value(language)));
+
+  /// v87：改写字幕书/有声书的内容语言（BCP-47）。null = 未知。
+  Future<void> updateSrtBookLanguage(String uid, String? language) =>
+      (update(srtBooks)..where((t) => t.uid.equals(uid)))
+          .write(SrtBooksCompanion(language: Value(language)));
+
+  /// v87：改写 galgame 的文本语言（BCP-47）。null = 未知。
+  Future<void> updateGalgameLanguage(String id, String? language) =>
+      (update(galgames)..where((t) => t.id.equals(id)))
+          .write(GalgamesCompanion(language: Value(language)));
+
   /// TODO-1192: 重写一本书的 `chaptersJson`（每章元数据 + `characters` 计数 +
   /// `charCaliber` 口径版本）。开书时若发现落库计数是旧口径（含标点/括号/空白），
   /// 按新口径 [japaneseCharCount] 后台重算后回写，使书架总字数与后续统计对齐

@@ -828,6 +828,17 @@ class AppModel with ChangeNotifier {
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
 
+  /// **当前查词来源**的内容语言（BCP-47），决定查词卡里**词头**（`.expression`
+  /// 与振假名）用哪条字体链。null = 未知 → 词头跟随弹窗的兜底链。
+  ///
+  /// 为什么词头不跟词典走：词头是**被查的那个词**，语言由用户正在读的东西决定，
+  /// 不由哪本词典解释它决定——同一个词头在日文书里查和在中文书里查是两种字形。
+  /// 释义区才跟词典语言（见 `dictionary_language_css.dart` 的分层）。
+  ///
+  /// 由各媒体页在进入/切换内容时写入（阅读器开书、视频页解析字幕语言、galgame
+  /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
+  String? currentLookupLanguage;
+
   /// [dictRepo] 是否已经赋值。
   ///
   /// 它是 late 字段，而 `_databaseOpened = true` 发生在它被赋值**之前**，所以

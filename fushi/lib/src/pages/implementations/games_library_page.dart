@@ -27,6 +27,7 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale_prompt.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
@@ -565,6 +566,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   Future<void> _launchGame(GalgameEntry game) async {
     if (_launching) return; // 再入守卫：启动进行中，忽略重复点击（避免多开确认对话框）。
     _launching = true;
+    // 查词卡的**词头**跟这个游戏的文本语言走（释义跟词典走）。hook 文本没有任何
+    // 语言声明可读，所以这里用的就是用户在卡菜单里指定的值；没指定则落全局默认。
+    _appModel.currentLookupLanguage = resolveContentLanguage(
+      explicit: game.language,
+      globalDefault: _appModel.prefsRepo.defaultContentLanguage,
+    );
     try {
       if (!Platform.isWindows) {
         FushiToast.show(
@@ -829,6 +836,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 取消（[pickMagpieUpscalingMode] 返回 null）不写任何东西。
   /// BUG-1477：每游戏的转区档。入口与超分同处——用户在哪儿管这个游戏，
   /// 就在哪儿改它的启动期配置。
+  /// 游戏内容语言选择框。写 Galgames.language；null = 恢复未指定（跟全局默认）。
+  Future<void> _editGameLanguage(GalgameEntry game) async {
+    await showContentLanguagePicker(
+      context: context,
+      title: t.book_language_action,
+      description: t.book_language_description,
+      current: game.language,
+      autoDetected: '',
+      onSelected: (String? tag) async {
+        await _repo.setLanguage(game.id, tag);
+        _refresh();
+      },
+    );
+  }
+
   Future<void> _editJapaneseLocaleMode(GalgameEntry game) async {
     final GalJapaneseLocaleMode? picked = await pickGalJapaneseLocaleMode(
       context,
@@ -1219,6 +1241,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onEditTags: () => unawaited(_openTagPicker(game)),
       onEditUpscaling: () => unawaited(_editUpscalingMode(game)),
       onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
+      onEditLanguage: () => unawaited(_editGameLanguage(game)),
     );
   }
 }
@@ -1391,6 +1414,7 @@ class _GameCard extends StatelessWidget {
     required this.onEditTags,
     required this.onEditUpscaling,
     required this.onEditJapaneseLocale,
+    required this.onEditLanguage,
     this.sortLabel,
   });
 
@@ -1415,6 +1439,10 @@ class _GameCard extends StatelessWidget {
 
   /// 打开该游戏的「日语区域（转区）」档位对话框（BUG-1477）。
   final VoidCallback onEditJapaneseLocale;
+
+  /// 打开该游戏的「内容语言」对话框。hook 出来的文本没有任何语言声明可读，
+  /// 所以这是它唯一的语言真值来源（决定文本浮窗/查词卡用哪条字体链）。
+  final VoidCallback onEditLanguage;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1531,6 +1559,12 @@ class _GameCard extends StatelessWidget {
           icon: Icons.sell_outlined,
           danger: false,
         ),
+        (
+          action: 'language',
+          label: t.book_language_action,
+          icon: Icons.translate,
+          danger: false,
+        ),
         // 窗口超分：**每个游戏各自一档**，这里是它唯一的入口（BUG-1191 删掉了那个
         // 一刀切的全局设置项）。放在游戏卡菜单里是因为该开不该开完全取决于这个游戏
         // 的原生分辨率——用户在哪儿管这个游戏，就在哪儿改它的超分。
@@ -1585,6 +1619,8 @@ class _GameCard extends StatelessWidget {
         onEditUpscaling();
       case 'japanese_locale':
         onEditJapaneseLocale();
+      case 'language':
+        onEditLanguage();
       case 'remove':
         onRemove();
     }

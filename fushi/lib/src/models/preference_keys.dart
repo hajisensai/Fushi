@@ -41,6 +41,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'current_home_tab_index',
   'custom_dict_css',
   'deduplicate_pitch_accents',
+  // String（BCP-47，如 'ja' / 'zh-Hant'；空串 = 未设置）：全局默认内容语言。
+  // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
+  'default_content_language',
   'design_system',
   'desktop_clipboard_always_on_top',
   'desktop_clipboard_auto_lookup',

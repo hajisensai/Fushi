@@ -3423,5 +3423,8 @@
   "dict_language_description": "Decides which font renders this dictionary's text. Automatic uses the language the dictionary declares.",
   "dict_language_auto": "Automatic",
   "book_language_action": "Content language",
-  "book_language_description": "Decides which font renders this book's text. Automatic uses the language declared in the EPUB."
+  "book_language_description": "Decides which font renders this book's text. Automatic uses the language declared in the EPUB.",
+  "settings_content_language_title": "Default content language",
+  "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
+  "settings_content_language_unset": "Not set"
 }

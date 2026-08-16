@@ -104,6 +104,42 @@ SettingsDestination buildAppearanceDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 内容语言紧挨字体库：它决定的正是「用哪条字体链渲染内容」，属于同一件事
+          // 的两半（选哪些字体 / 按什么语言挑）。这里设的是**默认值**，书/视频/
+          // 游戏/词典各自的设置压过它，内容自带的声明（EPUB dc:language、词典
+          // index.json、字幕轨 language）也压过它——见 resolveContentLanguage。
+          SettingsNavigationItem(
+            id: 'appearance.content_language',
+            title: t.settings_content_language_title,
+            titleBuilder: (SettingsContext settingsContext) {
+              final String current =
+                  settingsContext.appModel.prefsRepo.defaultContentLanguage;
+              final String label = current.isEmpty
+                  ? t.settings_content_language_unset
+                  : contentLanguageLabelOf(current);
+              return '${t.settings_content_language_title} · $label';
+            },
+            subtitle: t.settings_content_language_description,
+            icon: Icons.translate,
+            onTap: (SettingsContext settingsContext) async {
+              final String current =
+                  settingsContext.appModel.prefsRepo.defaultContentLanguage;
+              await showContentLanguagePicker(
+                context: settingsContext.context,
+                title: t.settings_content_language_title,
+                description: t.settings_content_language_description,
+                current: current.isEmpty ? null : current,
+                autoDetected: '',
+                autoLabel: t.settings_content_language_unset,
+                onSelected: (String? tag) async {
+                  await settingsContext.appModel.prefsRepo
+                      .setDefaultContentLanguage(tag ?? '');
+                  settingsContext.refresh();
+                  notifyReaderSettingsChanged(settingsContext);
+                },
+              );
+            },
+          ),
         ],
       ),
       SettingsSection(

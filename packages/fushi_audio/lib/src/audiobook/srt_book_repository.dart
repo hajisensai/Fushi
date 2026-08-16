@@ -347,6 +347,7 @@ class SrtBookRepository {
     book.coverPath = r.coverPath;
     book.importedAt = r.importedAt;
     book.bookKey = r.bookKey;
+    book.language = r.language;
     return book;
   }
 }
