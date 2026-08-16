@@ -1154,7 +1154,14 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// （见 [LapisVisualLayout]）——空值 = 不覆写 = 保持出厂布局。
   Widget _buildLayoutSection(FushiDesignTokens tokens) => ExpansionTile(
         tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        // top 不能是 0：outline 输入框的浮动 label 竖直居中压在顶边框线上，约半个
+        // 字高（实测 5.5px）画在自身 RenderBox **外面**，而 ExpansionTile 用
+        // ClipRect + Align(heightFactor) 做展开动画，裁剪线正压在第一个子控件顶
+        // 边——首个 `_buildLayoutPicker` 的「例句位置」会被削掉上半截（BUG-1677）。
+        childrenPadding: EdgeInsets.only(
+          top: tokens.spacing.gap,
+          bottom: tokens.spacing.gap,
+        ),
         leading: const Icon(Icons.dashboard_customize_outlined),
         title: Text(t.anki_lapis_visual_layout),
         subtitle: Text(t.anki_lapis_visual_layout_hint),
