@@ -49,6 +49,27 @@ abstract final class AnkiDesktopForeground {
     }
   }
 
+  /// 本机正在运行的 Anki 的可执行文件完整路径；没在运行/不适用时 null。
+  ///
+  /// 「Anki 正在运行」是它唯一的信息来源，也正因如此它比去注册表或默认安装路径
+  /// 里猜 `anki.exe` 可靠：进程自己报出来的路径不会因为绿色版、自定义安装目录或
+  /// 多版本共存而失准。代价是 Anki 没开时拿不到 —— 这是有意的取舍，见
+  /// `AnkiConnectInstaller`。
+  ///
+  /// 与 [grantForegroundToAnki] 一样全程 fail-soft：非 Windows、FFI 加载失败、
+  /// 找不到窗口都退回 null。
+  static String? findRunningAnkiExecutable() {
+    final AnkiDesktopForegroundBackend? backend = _backend;
+    if (backend == null) return null;
+    try {
+      final int? pid = backend.findAnkiProcessId();
+      if (pid == null) return null;
+      return backend.processImagePath(pid);
+    } on Object {
+      return null;
+    }
+  }
+
   /// 把前台权限让渡给本机 Anki 进程，返回它的 pid（找不到/不适用时 null）。
   ///
   /// 返回值交给 [raiseAnkiWindow]，避免在这里存跨调用的可变全局状态。
@@ -101,6 +122,9 @@ abstract interface class AnkiDesktopForegroundBackend {
 
   /// 按 Z 序取 [pid] 最顶的可见顶层窗口，必要时从最小化恢复，再置前台。
   bool raiseTopWindowOfProcess(int pid);
+
+  /// [pid] 的可执行文件完整路径；取不到返回 null。
+  String? processImagePath(int pid);
 }
 
 final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
@@ -234,12 +258,13 @@ final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
   }
 
   bool _isAnkiProcess(int pid) {
-    final String? imagePath = _processImagePath(pid);
+    final String? imagePath = processImagePath(pid);
     if (imagePath == null) return false;
     return _basenameLower(imagePath) == 'anki.exe';
   }
 
-  String? _processImagePath(int pid) {
+  @override
+  String? processImagePath(int pid) {
     final int handle = _openProcess(_processQueryLimitedInformation, 0, pid);
     if (handle == 0) return null;
     final Pointer<Utf16> path = calloc<Uint16>(_imagePathBufferLength).cast();

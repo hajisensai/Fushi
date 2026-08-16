@@ -48,6 +48,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// type，互斥防重入。
   bool _lapisBusy = false;
 
+  /// 「代装 AnkiConnect」进行中。与 [_lapisBusy] 分开：两者操作对象不同
+  /// （一个是 Anki 的插件目录，一个是 note type），互不阻塞。
+  bool _addonInstallBusy = false;
+
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
 
@@ -61,6 +65,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// AnkiConnect，没有这条支路。
   static final bool _isMobileAnkiPlatform =
       Platform.isAndroid || Platform.isIOS;
+
+  /// 是否提供「代装 AnkiConnect」入口。
+  ///
+  /// 只有 Windows：代装依赖从**正在运行的 Anki 进程**读出它自己的 exe 路径，
+  /// 而这套进程枚举目前只有 Win32 实现（见 `AnkiDesktopForeground`）。
+  ///
+  /// 这里刻意**不**把「Anki 此刻在不在跑」也作为显示条件：藏起来用户根本发现
+  /// 不了这个功能，更不会知道前提是先开 Anki。入口常显、点下去再探测并如实
+  /// 告知「请先启动 Anki」，比静默消失有用。顺带也避免了每帧去枚举顶层窗口。
+  static final bool _supportsAddonInstall = Platform.isWindows;
 
   @override
   Widget build(BuildContext context) {
@@ -133,6 +147,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               // 必须当场处置（见 [_updateAnkiConnectApiKey]）。
               onChanged: _updateAnkiConnectApiKey,
             ),
+            // 没有 AnkiConnect，上面这三个字段填得再对也连不上——而装它原本要
+            // 手动走 工具 → 插件 → 获取插件 → 输编号 → 重启。这一行把那套流程
+            // 收成一次点击：下载 + 交给 Anki，剩下的确认与重启由 Anki 自己主持。
+            if (_supportsAddonInstall)
+              AdaptiveSettingsRow(
+                icon: Icons.extension_outlined,
+                showIcon: true,
+                title: t.anki_connect_addon_install,
+                subtitle: t.anki_connect_addon_install_hint,
+                trailing: _addonInstallBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _addonInstallBusy ? null : _installAnkiConnectAddon,
+              ),
           ],
         ),
         // Lapis 样式客制化：备份 / 恢复 / 字号缩放 / 自定义 CSS / 应用。
@@ -867,6 +900,40 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ));
     } finally {
       if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  /// 下载 AnkiConnect 并交给正在运行的 Anki 安装。
+  ///
+  /// 措辞上刻意不说「已安装」：装不装由用户在 Anki 自己弹的确认框里决定，之后
+  /// 还要重启 Anki 才生效，Fushi 两件事都无从得知。能证明插件真的到位的只有
+  /// 之后 AnkiConnect 能应答，那属于连接探活，不是这里该声称的。
+  Future<void> _installAnkiConnectAddon() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _addonInstallBusy = true);
+    try {
+      final AnkiAddonInstallResult result =
+          await AnkiConnectInstaller.install();
+      messenger.showSnackBar(
+        SnackBar(content: Text(_addonInstallMessage(result))),
+      );
+    } finally {
+      if (mounted) setState(() => _addonInstallBusy = false);
+    }
+  }
+
+  String _addonInstallMessage(AnkiAddonInstallResult result) {
+    switch (result.status) {
+      case AnkiAddonInstallStatus.handedToAnki:
+        return t.anki_connect_addon_handed;
+      case AnkiAddonInstallStatus.ankiNotRunning:
+        return t.anki_connect_addon_anki_not_running;
+      case AnkiAddonInstallStatus.downloadFailed:
+        return t.anki_connect_addon_download_failed(error: result.detail ?? '');
+      case AnkiAddonInstallStatus.invalidPackage:
+        return t.anki_connect_addon_invalid;
+      case AnkiAddonInstallStatus.launchFailed:
+        return t.anki_connect_addon_launch_failed(error: result.detail ?? '');
     }
   }
 

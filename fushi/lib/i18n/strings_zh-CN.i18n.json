@@ -3428,5 +3428,12 @@
   "video_collection_scrape": "刮削资料与封面",
   "update_testflight_open": "打开 TestFlight",
   "update_app_store_open": "打开 App Store",
-  "update_release_page_open": "发布页"
+  "update_release_page_open": "发布页",
+  "anki_connect_addon_install": "安装 AnkiConnect",
+  "anki_connect_addon_install_hint": "从 AnkiWeb 下载 AnkiConnect 并交给正在运行的 Anki。Anki 会弹窗请你确认，之后按它的提示重启。",
+  "anki_connect_addon_handed": "已把 AnkiConnect 交给 Anki。请在 Anki 弹出的确认框中同意，然后按 Anki 的提示重启。",
+  "anki_connect_addon_anki_not_running": "没有检测到正在运行的 Anki。请先启动 Anki 桌面版再试。",
+  "anki_connect_addon_download_failed": "无法从 AnkiWeb 下载 AnkiConnect：$error",
+  "anki_connect_addon_invalid": "AnkiWeb 返回的内容不是可用的插件包。",
+  "anki_connect_addon_launch_failed": "无法把插件交给 Anki：$error"
 }

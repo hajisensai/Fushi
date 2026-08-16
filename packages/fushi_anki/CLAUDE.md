@@ -17,6 +17,7 @@ Anki 集成模块：定义 Anki 服务抽象接口，提供 AnkiDroid（Android 
 - `AnkiService` -- 抽象接口：`isAvailable()` / `getDeckNames()` / `getModelNames()` / `getModelFields()` / `addNote()` / `isDuplicate()`。
 - `AnkiRepository` (`ankidroid/`) -- AnkiDroid Content Provider 实现（Android 专用）。
 - `AnkiConnectRepository` + `AnkiConnectService` (`ankiconnect/`) -- AnkiConnect HTTP 实现（桌面/远程）。
+- `AnkiConnectInstaller` (`ankiconnect/ankiconnect_installer.dart`) -- 代装 AnkiConnect 插件（仅 Windows）：从 AnkiWeb 下裸包、**补上包内没有的 `manifest.json`** 后重新打包，再把 `.ankiaddon` 交给正在运行的 `anki.exe`，由 Anki 自己弹确认框并完成安装。下载出站走包内工厂钩子 `ankiAddonDownloadHttpClientFactory`（app 侧接线，经应用代理）——与打 localhost 必须直连的 `AnkiConnectService` 方向相反。
 - `BaseAnkiRepository` -- 共享基类。
 - `AnkiModels` -- Anki 数据模型。
 - `LapisPreset` -- 预设卡片模板。
