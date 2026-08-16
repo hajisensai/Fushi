@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1676](bugs/BUG-1676-anki-gloss-image-overflows-card.md) | ✅ | ✅ | 制卡词典插图撑出卡片跑到屏幕右外 |
 | [BUG-1671](bugs/BUG-1671-ext-side-panel-subtitle-incomplete.md) | ✅ | ✅ | 浏览器扩展侧边栏获取字幕不全 |
 | [BUG-1670](bugs/BUG-1670-ext-pause-on-lookup-no-resume.md) | ✅ | ✅ | 浏览器扩展查词不暂停视频且关闭弹窗不恢复播放 |
 | [BUG-1669](bugs/BUG-1669-ext-side-panel-lookup-stuck-loading.md) | ✅ | ✅ | 浏览器扩展侧边栏高频查词后「正在查词」永久卡死 |
