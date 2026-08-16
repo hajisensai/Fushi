@@ -38,6 +38,19 @@ const String kBookTrackingReconcileWatermarkPref =
 const String kGameTrackingReconcileWatermarkPref =
     'media_tracking_game_reconcile_watermark_v1';
 
+/// 换 Bangumi 令牌（含被清空）后必须归零的「本设备已对账水位」键。
+///
+/// 换账号 = 本地全部已完成事实都要对新账号重新对齐，继承旧账号的水位会让新账号
+/// 永远收不到迁移前看完的条目。写令牌的路径不止设置页一条：互联服务配置也会把
+/// host 的令牌落到子设备（[InterconnectServiceConfigSnapshot.applyTo]），所以这
+/// 条不变式必须是共享常量，而不是 [MediaTrackingService.setAccessToken] 里的一段
+/// 私有代码——否则两条写入路径必然漂开。
+const List<String> kBangumiTokenScopedWatermarkPrefs = <String>[
+  kVideoTrackingReconcileWatermarkPref,
+  kBookTrackingReconcileWatermarkPref,
+  kGameTrackingReconcileWatermarkPref,
+];
+
 typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
 
 /// 退避重试定时器工厂（BUG-1647）；生产用真 [Timer]，测试注入假实现以便
@@ -326,6 +339,11 @@ class MediaTrackingService {
 
   ValueListenable<int> get statusRevision => _statusRevision;
 
+  /// 令牌/账号名被**本服务之外**的路径改写后（互联服务配置导入、Profile 切换）
+  /// 通知状态监听者重读。服务本身不缓存令牌（[accessToken] 每次读偏好），所以
+  /// 只需要一次 revision bump，不需要重建服务。
+  void notifyStatusChanged() => _statusRevision.value++;
+
   String get accessToken =>
       (_preferences.getPref(kBangumiAccessTokenPref, defaultValue: '')
               as String)
@@ -345,9 +363,9 @@ class MediaTrackingService {
     await _preferences.setPref(kBangumiAccessTokenPref, normalized);
     if (previous != normalized) {
       // 新账号必须从全部本地已完成事实重新对齐，不能继承旧账号的校正水位。
-      await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
-      await _preferences.setPref(kBookTrackingReconcileWatermarkPref, 0);
-      await _preferences.setPref(kGameTrackingReconcileWatermarkPref, 0);
+      for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+        await _preferences.setPref(key, 0);
+      }
       // 账号名属于旧令牌，换令牌后必须失效，否则 UI 会挂着上一个账号的名字。
       await _preferences.setPref(kBangumiAccountNamePref, '');
     }

@@ -739,6 +739,15 @@ class AppModel with ChangeNotifier {
 
     if (report.serviceConfigsImported > 0) {
       await refreshPrefCache();
+      // 导入的服务配置不是「静态设置」，它们是 provider runtime 的构造入参：
+      // Jimaku / OpenSubtitles / Torznab / TMDB 的 client 在
+      // [_startVideoDownloadPipeline] 里按当时的 key 一次性建好，key 为空的
+      // provider 干脆不进 registry。不重建 runtime，互联搬过来的字幕/索引器
+      // 凭据要等到下次冷启动才生效（用户视角＝「同步了但还是搜不到字幕」）。
+      await reloadVideoDownloadPipelineRuntime();
+      // 追番令牌可能换人：设置页与首页的状态行监听 statusRevision，不 bump 就
+      // 一直显示导入前的账号/未连接。
+      _mediaTrackingService?.notifyStatusChanged();
     }
 
     if (report.dictionariesImported > 0) {
