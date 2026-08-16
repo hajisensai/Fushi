@@ -599,6 +599,118 @@ void main() {
     });
 
     test(
+        'BUG-1675 更新前拦下正占用 galgame helper 组件的游戏进程'
+        '（否则 Inno 静默换不掉 voice_hook/，落地成新本体+旧 helper）', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe');
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      var startCalled = false;
+      await expectLater(
+        WindowsInstaller.runAndExit(
+          installer.path,
+          targetVersion: '1.2.3',
+          handoffMarkerFile: marker,
+          collectDiagnostics: () async => WindowsInstallerDiagnostics(
+            currentExecutablePath:
+                '${dir.path}${Platform.pathSeparator}fushi.exe',
+            currentInstallDir: dir.path,
+            targetInstallDir: dir.path,
+            // 被 hook 的游戏：安装器按 image 名杀不掉它（不是 fushi.exe /
+            // msedgewebview2.exe），所以必须硬中止而不是「交给安装器处理」。
+            galHookModuleHolders: <WindowsProcessInfo>[
+              WindowsProcessInfo(
+                pid: 7777,
+                name: 'SiglusEngine.exe',
+                path: r'D:\Games\SomeGal\SiglusEngine.exe',
+              ),
+            ],
+          ),
+          startProcess: (String executable, List<String> args) async {
+            startCalled = true;
+            return const WindowsInstallerStartedProcess(pid: 4242);
+          },
+          exitProcess: (_) {},
+        ),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(marker);
+      // 关键断言：安装器**根本没被启动**。这一条就是根因修复本身——旧行为是照常
+      // 静默启动安装器，Inno 换不掉被游戏持有的 fushi_voice_hook.dll /
+      // fushi_voice_injector.exe，失败被 /SUPPRESSMSGBOXES 吞掉，用户下次开游戏
+      // 才在 `voice_hook open protocol_mismatch shm=13/want 15` 里看到后果。
+      expect(startCalled, isFalse);
+      expect(record?.installerLaunchSucceeded, isFalse);
+      expect(record?.galHookModuleHolders.single.pid, 7777);
+      expect(record?.galHookModuleHolders.single.name, 'SiglusEngine.exe');
+      expect(record?.launchError, contains('non-Fushi process'));
+      // 报错不得把占用者说成 libmpv：这次占用的是 helper 组件，指名错组件会把
+      // 用户引到完全无关的排查方向。
+      expect(record?.launchError, isNot(contains('libmpv')));
+    });
+
+    test('BUG-1675 galHookModuleHolders 计入锁证据，且 wire 键可往返', () async {
+      const WindowsInstallerDiagnostics diagnostics =
+          WindowsInstallerDiagnostics(
+        galHookModuleHolders: <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 7777, name: 'SiglusEngine.exe'),
+        ],
+      );
+      expect(diagnostics.hasLockEvidence, isTrue);
+
+      // Inno 日志侧：helper 换不掉时报的是 voice_hook\ 下的路径，只认 libmpv 会让
+      // 这半边锁证据整个看不见（重启 Windows 的提示也就不会出现）。
+      const WindowsInstallerDiagnostics fromInnoLog =
+          WindowsInstallerDiagnostics(
+        innoLogDeleteFileFailures: <WindowsInnoDeleteFileFailure>[
+          WindowsInnoDeleteFileFailure(
+            path: r'C:\Users\u\AppData\Local\Fushi\voice_hook\x86'
+                r'\fushi_voice_hook.dll',
+            code: 5,
+          ),
+        ],
+      );
+      expect(fromInnoLog.hasLockEvidence, isTrue);
+
+      // 无关路径的删除失败仍不算锁证据（别把这条守卫放宽成「有失败就算」）。
+      const WindowsInstallerDiagnostics unrelated = WindowsInstallerDiagnostics(
+        innoLogDeleteFileFailures: <WindowsInnoDeleteFileFailure>[
+          WindowsInnoDeleteFileFailure(path: r'C:\x\readme.txt', code: 5),
+        ],
+      );
+      expect(unrelated.hasLockEvidence, isFalse);
+
+      final WindowsUpdateHandoffRecord record = WindowsUpdateHandoffRecord(
+        targetVersion: '1.2.3',
+        installerPath: r'C:\tmp\setup.exe',
+        innoLogPath: r'C:\tmp\setup.install.log',
+        startedAt: DateTime.utc(2026, 8, 15),
+        galHookModuleHolders: const <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 7777, name: 'SiglusEngine.exe'),
+        ],
+      );
+      final WindowsUpdateHandoffRecord roundTripped =
+          WindowsUpdateHandoffRecord.fromJson(
+        jsonDecode(jsonEncode(record.toJson())) as Map<String, dynamic>,
+      );
+      expect(roundTripped.galHookModuleHolders.single.pid, 7777);
+
+      // 旧版本写的标记里没有这个键：必须读成空列表，不能抛。
+      final WindowsUpdateHandoffRecord legacy =
+          WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
+        'targetVersion': '1.2.3',
+        'installerPath': r'C:\tmp\setup.exe',
+        'innoLogPath': r'C:\tmp\setup.install.log',
+        'startedAt': '2026-08-15T00:00:00.000Z',
+      });
+      expect(legacy.galHookModuleHolders, isEmpty);
+    });
+
+    test(
         'defers a hibiki.exe libmpv holder to the installer instead of '
         'aborting (TODO-1181)', () async {
       final File marker = await _markerFile();

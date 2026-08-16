@@ -121,6 +121,7 @@ class WindowsInstallerDiagnostics {
     this.detectedInstallLocations = const <WindowsDetectedInstallLocation>[],
     this.runningFushiProcesses = const <WindowsProcessInfo>[],
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
+    this.galHookModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
   });
@@ -131,15 +132,30 @@ class WindowsInstallerDiagnostics {
   final List<WindowsDetectedInstallLocation> detectedInstallLocations;
   final List<WindowsProcessInfo> runningFushiProcesses;
   final List<WindowsProcessInfo> libmpvModuleHolders;
+
+  /// 正占用 `voice_hook/<arch>/` 下 galgame helper 组件的进程（被 hook 的游戏本身，
+  /// 以及以 `--hold` 维持共享内存的 injector host）。
+  ///
+  /// 与 [libmpvModuleHolders] 并列而不是合并：两者查的是不同文件、对应不同的用户处置
+  /// （「关掉播放器 / 别的用 libmpv 的程序」 vs 「关掉正在玩的游戏」），诊断面板要分开
+  /// 说才有用。旧版本写的交接标记里没有这个键，`fromJson` 取到空列表，与今天行为一致。
+  final List<WindowsProcessInfo> galHookModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
 
   bool get hasLockEvidence {
     if (libmpvModuleHolders.isNotEmpty) return true;
+    if (galHookModuleHolders.isNotEmpty) return true;
     return innoLogDeleteFileFailures.any(
       (WindowsInnoDeleteFileFailure failure) =>
           failure.code == 5 &&
-          failure.path.toLowerCase().contains('libmpv-2.dll'),
+          (failure.path.toLowerCase().contains('libmpv-2.dll') ||
+              // BUG-1675：helper 组件换不掉时 Inno 报的是 voice_hook\ 下的路径。
+              // 只认 libmpv 会让这半边的锁证据整个看不见。
+              failure.path
+                  .toLowerCase()
+                  .replaceAll('/', r'\')
+                  .contains('\\voice_hook\\')),
     );
   }
 
@@ -150,6 +166,7 @@ class WindowsInstallerDiagnostics {
     List<WindowsDetectedInstallLocation>? detectedInstallLocations,
     List<WindowsProcessInfo>? runningFushiProcesses,
     List<WindowsProcessInfo>? libmpvModuleHolders,
+    List<WindowsProcessInfo>? galHookModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
   }) {
@@ -163,6 +180,7 @@ class WindowsInstallerDiagnostics {
       runningFushiProcesses:
           runningFushiProcesses ?? this.runningFushiProcesses,
       libmpvModuleHolders: libmpvModuleHolders ?? this.libmpvModuleHolders,
+      galHookModuleHolders: galHookModuleHolders ?? this.galHookModuleHolders,
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
       pathMismatchWarning: pathMismatchWarning ?? this.pathMismatchWarning,
@@ -182,6 +200,7 @@ class WindowsUpdateHandoffRecord {
     this.detectedInstallLocations = const <WindowsDetectedInstallLocation>[],
     this.runningFushiProcesses = const <WindowsProcessInfo>[],
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
+    this.galHookModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
     this.launcherStartedAt,
@@ -231,6 +250,10 @@ class WindowsUpdateHandoffRecord {
           .map(WindowsProcessInfo.fromJson)
           .where((WindowsProcessInfo process) => process.pid > 0)
           .toList(growable: false),
+      galHookModuleHolders: _listOfMaps(json['galHookModuleHolders'])
+          .map(WindowsProcessInfo.fromJson)
+          .where((WindowsProcessInfo process) => process.pid > 0)
+          .toList(growable: false),
       innoLogDeleteFileFailures: _listOfMaps(json['innoLogDeleteFileFailures'])
           .map(WindowsInnoDeleteFileFailure.fromJson)
           .where(
@@ -272,6 +295,7 @@ class WindowsUpdateHandoffRecord {
   final List<WindowsDetectedInstallLocation> detectedInstallLocations;
   final List<WindowsProcessInfo> runningFushiProcesses;
   final List<WindowsProcessInfo> libmpvModuleHolders;
+  final List<WindowsProcessInfo> galHookModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
   final DateTime? launcherStartedAt;
@@ -301,6 +325,7 @@ class WindowsUpdateHandoffRecord {
         detectedInstallLocations: detectedInstallLocations,
         runningFushiProcesses: runningFushiProcesses,
         libmpvModuleHolders: libmpvModuleHolders,
+        galHookModuleHolders: galHookModuleHolders,
         innoLogDeleteFileFailures: innoLogDeleteFileFailures,
         pathMismatchWarning: pathMismatchWarning,
       );
@@ -325,6 +350,10 @@ class WindowsUpdateHandoffRecord {
               .toList(growable: false),
         if (libmpvModuleHolders.isNotEmpty)
           'libmpvModuleHolders': libmpvModuleHolders
+              .map((WindowsProcessInfo process) => process.toJson())
+              .toList(growable: false),
+        if (galHookModuleHolders.isNotEmpty)
+          'galHookModuleHolders': galHookModuleHolders
               .map((WindowsProcessInfo process) => process.toJson())
               .toList(growable: false),
         if (innoLogDeleteFileFailures.isNotEmpty)
@@ -380,6 +409,7 @@ class WindowsUpdateHandoffRecord {
     List<WindowsDetectedInstallLocation>? detectedInstallLocations,
     List<WindowsProcessInfo>? runningFushiProcesses,
     List<WindowsProcessInfo>? libmpvModuleHolders,
+    List<WindowsProcessInfo>? galHookModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
     DateTime? launcherStartedAt,
@@ -417,6 +447,7 @@ class WindowsUpdateHandoffRecord {
       runningFushiProcesses:
           runningFushiProcesses ?? this.runningFushiProcesses,
       libmpvModuleHolders: libmpvModuleHolders ?? this.libmpvModuleHolders,
+      galHookModuleHolders: galHookModuleHolders ?? this.galHookModuleHolders,
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
       pathMismatchWarning: pathMismatchWarning ?? this.pathMismatchWarning,
@@ -487,6 +518,7 @@ abstract final class WindowsUpdateHandoff {
         detectedInstallLocations: diagnostics.detectedInstallLocations,
         runningFushiProcesses: diagnostics.runningFushiProcesses,
         libmpvModuleHolders: diagnostics.libmpvModuleHolders,
+        galHookModuleHolders: diagnostics.galHookModuleHolders,
         innoLogDeleteFileFailures: diagnostics.innoLogDeleteFileFailures,
         pathMismatchWarning: diagnostics.pathMismatchWarning,
         lastPromptedAppVersion:

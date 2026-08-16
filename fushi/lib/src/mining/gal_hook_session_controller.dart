@@ -7,6 +7,7 @@ import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
@@ -1003,9 +1004,9 @@ class GalHookSessionController extends ChangeNotifier {
     if (!Platform.isWindows) return null;
     try {
       final String directory = File(Platform.resolvedExecutable).parent.path;
-      final String arch = is32Bit ? 'x86' : 'x64';
-      final String path =
-          '$directory\\voice_hook\\$arch\\fushi_voice_injector.exe';
+      final String arch = galgameHelperArch(is32Bit: is32Bit);
+      final String path = '$directory\\$kGalgameHelperInstallDirectoryName'
+          '\\$arch\\fushi_voice_injector.exe';
       return File(path).existsSync() ? path : null;
     } catch (_) {
       return null;
