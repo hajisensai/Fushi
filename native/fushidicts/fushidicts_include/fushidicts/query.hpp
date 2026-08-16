@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(__clang__) && defined(__APPLE__)
@@ -25,6 +26,8 @@ struct MediaFileView {
   size_t size;
 };
 
+struct ZSTD_DDict_s;
+
 struct GlossaryEntry {
   std::string dict_name;
   std::string glossary;
@@ -32,6 +35,9 @@ struct GlossaryEntry {
   std::string term_tags;
   const uint8_t* compressed_data = nullptr;
   uint32_t compressed_size = 0;
+  // v2 词典的 term glossary 用训练字典压缩（上游 8993838）；v1 恒为 nullptr，
+  // usingDDict(nullptr) 等价普通解压。
+  const ZSTD_DDict_s* zstd_dict = nullptr;
 };
 
 struct FrequencyEntry {
@@ -61,6 +67,9 @@ struct KanjiResult {
   std::string radical;
   int strokes = 0;
   std::vector<std::string> meanings;
+  // v2 词典的完整 stats 键值对（JLPT/grade/freq 等，bank 原始顺序，radical/strokes
+  // 以外的条目；借鉴上游 64afa2f 的 stats 保留能力）。v1 存量记录恒为空。
+  std::vector<std::pair<std::string, std::string>> stats;
   std::string dict_name;
 };
 
@@ -142,7 +151,7 @@ class DictionaryQuery {
 
   void add_dict(const std::string& path, DictionaryType);
 
-  static std::string decompress_glossary(const void* data, size_t size);
+  static std::string decompress_glossary(const void* data, size_t size, const ZSTD_DDict_s* dict);
   std::vector<Dictionary> term_dicts_;
   std::vector<Dictionary> freq_dicts_;
   std::vector<Dictionary> pitch_dicts_;

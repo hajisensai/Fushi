@@ -3,6 +3,8 @@
 
 #include <ankerl/unordered_dense.h>
 #include <xxh3.h>
+#define ZDICT_STATIC_LINKING_ONLY
+#include <zdict.h>
 #include <zstd.h>
 
 #include <algorithm>
@@ -15,6 +17,7 @@
 #include <fstream>
 #include <future>
 #include <limits>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -220,7 +223,57 @@ void radix_sort(std::vector<std::pair<uint64_t, uint64_t>>& offsets) {
   }
 }
 
-ProcessedFile process_term_bank(const std::string& content) {
+// 上游 8993838：导入时从第一个 term bank 采样（≤2MB、<8 样本放弃）、
+// ZDICT_optimizeTrainFromBuffer_fastCover 训练 ≤110KB 的 zstd dictionary。
+// 短 glossary 的压缩率显著受益（跨条目共享统计模型）。只训 term bank——
+// meta/kanji 记录数少、收益低，且上游注明可能反噬查询性能。
+std::vector<char> train_zstd_dict(const Zip& zip, const Files& files, bool low_ram) {
+  if (files.term_banks.empty()) {
+    return {};
+  }
+
+  const std::string content = zip.read(files.term_banks[0]);
+  std::vector<Term> terms;
+  if (!yomitan_parser::parse_term_bank(content, terms)) {
+    return {};
+  }
+
+  size_t bank_bytes = 0;
+  for (const auto& term : terms) {
+    bank_bytes += term.glossary.str.size();
+  }
+
+  std::vector<char> samples;
+  std::vector<size_t> sizes;
+  constexpr size_t max_sample_bytes = 2L * 1024 * 1024;
+  const size_t step = std::max<size_t>(1, bank_bytes / max_sample_bytes);
+  for (size_t i = 0; i < terms.size() && samples.size() < max_sample_bytes; i += step) {
+    write_str(samples, terms[i].glossary.str);
+    sizes.push_back(terms[i].glossary.str.size());
+  }
+
+  if (sizes.size() < 8) {
+    return {};
+  }
+
+  ZDICT_fastCover_params_t params = {};
+  params.d = 8;
+  params.steps = 4;
+  params.splitPoint = 1.0;
+  params.nbThreads = low_ram ? 1 : std::max<unsigned int>(1, std::thread::hardware_concurrency());
+
+  std::vector<char> dict(static_cast<size_t>(110 * 1024));
+  const size_t dict_size = ZDICT_optimizeTrainFromBuffer_fastCover(
+      dict.data(), dict.size(), samples.data(), sizes.data(), static_cast<unsigned>(sizes.size()), &params);
+  if (ZDICT_isError(dict_size)) {
+    return {};
+  }
+
+  dict.resize(dict_size);
+  return dict;
+}
+
+ProcessedFile process_term_bank(const std::string& content, const ZSTD_CDict* cdict) {
   ProcessedFile processed;
   if (content.empty()) {
     return processed;
@@ -236,6 +289,8 @@ ProcessedFile process_term_bank(const std::string& content) {
   if (!cctx) {
     return processed;
   }
+  // cdict 为空时 refCDict(nullptr) 即清除引用，退回普通压缩。
+  ZSTD_CCtx_refCDict(cctx, cdict);
 
   for (auto& term : out) {
     if (processed.data.size() > kMaxDataBufferBytes) {
@@ -258,8 +313,7 @@ ProcessedFile process_term_bank(const std::string& content) {
     if (it == processed.glossaries.end()) {
       const size_t bound = ZSTD_compressBound(glossary.size());
       compressed.resize(bound);
-      const size_t compressed_size =
-          ZSTD_compressCCtx(cctx, compressed.data(), bound, glossary.data(), glossary.size(), 0);
+      const size_t compressed_size = ZSTD_compress2(cctx, compressed.data(), bound, glossary.data(), glossary.size());
       if (ZSTD_isError(compressed_size)) {
         ZSTD_freeCCtx(cctx);
         throw std::runtime_error("failed to compress glossary");
@@ -383,6 +437,14 @@ ProcessedFile process_meta_bank(const std::string& content) {
 //                                   meanings joined by newline, ZSTD-compressed,
 //                                   pooled in the shared glossary blob region
 //                                   (identical mechanism as term glossaries).
+//   -- v2 only (marker .fushidicts_2), appended after the meanings pair --
+//   [u8 stat_count] then per stat:  [u8 key_len][key][u16 val_len][val]
+//                                   full stats key/value pairs (JLPT, grade,
+//                                   freq, ...) minus the radical/strokes keys
+//                                   already extracted above (借鉴上游 64afa2f 的
+//                                   stats 保留能力). v1 readers never touch this
+//                                   region; v2 readers gate on the dict-level
+//                                   format version, so v1 records stay readable.
 //
 // meanings are joined with newline because Yomitan kanji meanings are
 // single-line phrases; the reader splits them back on newline.
@@ -450,6 +512,46 @@ void extract_kanji_stats(std::string_view stats_json, std::string_view& radical_
     }
     strokes_out = static_cast<uint16_t>(parsed);
   }
+}
+
+// 收集 stats 里 radical/strokes 之外的全部键值对（值归一成字符串：带引号的经
+// glaze 反转义，数字/布尔保留原 token）。std::map 使键有序稳定；展示排序本就由
+// UI/tag 元数据决定，不依赖 bank 原始顺序。
+std::vector<std::pair<std::string, std::string>> collect_kanji_stats(std::string_view stats_json) {
+  std::vector<std::pair<std::string, std::string>> out;
+  if (stats_json.empty()) {
+    return out;
+  }
+  std::map<std::string, glz::raw_json_view> raw;
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(raw, stats_json);
+  if (error) {
+    return out;
+  }
+  for (auto& [key, val] : raw) {
+    if (key == "radical" || key == "rad" || key == "kangxi_radical" || key == "strokes" || key == "stroke count") {
+      continue;  // 已提取进专用字段，避免重复
+    }
+    if (key.empty() || key.size() > std::numeric_limits<uint8_t>::max()) {
+      continue;
+    }
+    std::string value;
+    std::string_view token = val.str;
+    if (!token.empty() && token.front() == 0x22) {
+      if (glz::read_json(value, token)) {
+        continue;
+      }
+    } else {
+      value.assign(token);
+    }
+    if (value.size() > std::numeric_limits<uint16_t>::max()) {
+      continue;
+    }
+    out.emplace_back(key, std::move(value));
+    if (out.size() >= std::numeric_limits<uint8_t>::max()) {
+      break;
+    }
+  }
+  return out;
 }
 
 ProcessedFile process_kanji_bank(const std::string& content) {
@@ -546,6 +648,16 @@ ProcessedFile process_kanji_bank(const std::string& content) {
     write_val<uint32_t>(processed.data, blob_size);
     processed.glossary_offsets.emplace_back(meanings_hash, meanings_offset_pos);
 
+    // v2 stats 追加段（见上方 S0 契约注释）。
+    const auto stats_kv = collect_kanji_stats(kanji.stats.str);
+    write_val<uint8_t>(processed.data, static_cast<uint8_t>(stats_kv.size()));
+    for (const auto& [stat_key, stat_value] : stats_kv) {
+      write_val<uint8_t>(processed.data, static_cast<uint8_t>(stat_key.size()));
+      write_str(processed.data, stat_key);
+      write_val<uint16_t>(processed.data, static_cast<uint16_t>(stat_value.size()));
+      write_str(processed.data, stat_value);
+    }
+
     processed.offsets.emplace_back(XXH3_64bits(character.data(), character.size()), offset);
     processed.count++;
   }
@@ -629,7 +741,7 @@ void write_kanji(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
 
 void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>& offsets, const Zip& zip,
                  const std::vector<int>& files, uint64_t& write_offset, ImportResult& result, bool low_ram,
-                 const std::string& breadcrumb_dir) {
+                 const std::string& breadcrumb_dir, const ZSTD_CDict* cdict) {
   if (files.empty()) {
     return;
   }
@@ -682,8 +794,8 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
     fushi::import_breadcrumb::set(breadcrumb_dir,
                                   "yomitan: term_bank #" + std::to_string(bank_seq++) + " / " +
                                       zip.entries[file_index].name);
-    threads.push_back(
-        std::async(std::launch::async, [&zip, file_index]() { return process_term_bank(zip.read(file_index)); }));
+    threads.push_back(std::async(
+        std::launch::async, [&zip, file_index, cdict]() { return process_term_bank(zip.read(file_index), cdict); }));
 
     if (threads.size() == max_threads) {
       write_processed(threads.front().get());
@@ -1386,11 +1498,25 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
           return write_media(path, zip, files.media_files, breadcrumb_dir);
         });
 
+    // 上游 8993838：训练 zstd dictionary（可选，失败/样本不足即空）。训练成功则
+    // 落盘 dict.zstd，term glossary 用 CDict 压缩；读侧凭 dict.zstd 是否存在决定
+    // 是否挂 DDict（v2 marker 门控整个词典目录）。
+    fushi::import_breadcrumb::set(breadcrumb_dir, "yomitan: training zstd dictionary");
+    const std::vector<char> zstd_dict = train_zstd_dict(zip, files, low_ram);
+    std::unique_ptr<ZSTD_CDict, decltype(&ZSTD_freeCDict)> cdict(nullptr, ZSTD_freeCDict);
+    if (!zstd_dict.empty()) {
+      cdict.reset(ZSTD_createCDict(zstd_dict.data(), zstd_dict.size(), 0));
+
+      std::ofstream dict_file(fushi::fs_path(path + "/dict.zstd"), std::ios::binary);
+      setup_stream_exceptions(dict_file);
+      dict_file.write(zstd_dict.data(), static_cast<std::streamsize>(zstd_dict.size()));
+    }
+
     std::ofstream blobs(fushi::fs_path(path + "/blobs.bin"), std::ios::binary);
     setup_stream_exceptions(blobs);
     std::vector<std::pair<uint64_t, uint64_t>> offsets;
     uint64_t write_offset = 0;
-    write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram, breadcrumb_dir);
+    write_terms(blobs, offsets, zip, files.term_banks, write_offset, result, low_ram, breadcrumb_dir, cdict.get());
     write_meta(blobs, offsets, zip, files.meta_banks, write_offset, result, low_ram, breadcrumb_dir);
     ankerl::unordered_dense::map<uint64_t, uint64_t> kanji_glossaries;
     write_kanji(blobs, offsets, zip, files.kanji_banks, write_offset, result, low_ram, kanji_glossaries, breadcrumb_dir);
@@ -1417,7 +1543,10 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
     result.media_count = media_thread.get();
 
-    std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
+    // v2 = 本批引入的格式阶梯（fork 首个版本升级）：kanji 记录带 stats 追加段 +
+    // term glossary 可能使用 dict.zstd 训练字典。旧引擎认不出 v2 marker 会整目录
+    // 不加载（降级后新导入词典不可见，不毁数据、重导可救）；v1 存量照读不变。
+    std::ofstream sui(fushi::fs_path(path + "/.fushidicts_2"), std::ios::binary);
     result.success = true;
   } catch (const std::exception& e) {
     result.success = false;

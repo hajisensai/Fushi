@@ -56,6 +56,13 @@ struct BlobReader {
   [[nodiscard]] bool has(size_t n) const { return ptr + n <= end; }
 };
 
+// 上游 8993838：thread_local 复用 DCtx——旧路径 ZSTD_decompress 每次内部新建
+// 上下文，materialize 一次弹窗要解压几十条 glossary，复用是纯赚的速度优化。
+ZSTD_DCtx* thread_dctx() {
+  static thread_local std::unique_ptr<ZSTD_DCtx, decltype(&ZSTD_freeDCtx)> ctx(ZSTD_createDCtx(), ZSTD_freeDCtx);
+  return ctx.get();
+}
+
 }
 
 struct DictionaryQuery::DictionaryData {
@@ -66,6 +73,8 @@ struct DictionaryQuery::DictionaryData {
   memory::mapped_file bloom_filter;
   memory::mapped_file media;
   memory::mapped_file media_index;
+  int version = 1;                   // 磁盘格式版本（marker 文件名解析，见 dict_format_version）
+  ZSTD_DDict* zstd_dict = nullptr;   // v2 + dict.zstd 存在时非空
 
   ~DictionaryData() {
     memory::unmap(blobs);
@@ -73,6 +82,7 @@ struct DictionaryQuery::DictionaryData {
     memory::unmap(bloom_filter);
     memory::unmap(media);
     memory::unmap(media_index);
+    ZSTD_freeDDict(zstd_dict);
   }
 };
 
@@ -99,24 +109,28 @@ namespace {
 //
 // 故读侧同时接受两个名字（新名优先）。这是「读旧数据的迁移代码」，不追改用户
 // 磁盘上的存量文件——重命名用户数据既不可逆，也会让回退到旧版的用户反过来坏掉。
-constexpr const char* kDictCompleteMarkers[] = {
-    "/.fushidicts_1",   // 当前写入端产出
-    "/.hoshidicts_1",   // 改名前的存量（冻结，只读不写）
-};
-
-bool has_dict_complete_marker(const std::string& path) {
-  for (const char* marker : kDictCompleteMarkers) {
-    if (std::filesystem::is_regular_file(fushi::fs_path(path + marker))) {
-      return true;
-    }
+// marker 同时承担「导入已完成」与「格式版本」两个语义（对齐上游的版本阶梯）：
+//   v2: .fushidicts_2 —— kanji 记录带 stats 追加段 + term glossary 可能使用
+//       dict.zstd 训练字典（本批引入，fork 首个版本升级）。
+//   v1: .fushidicts_1（当前 v1 写入端 write_simple_dict 仍产出）/
+//       .hoshidicts_1（改名前的存量，冻结，只读不写）。
+// 返回 0 = 无 marker（导入未完成/损坏），词典不加载。
+int dict_format_version(const std::string& path) {
+  if (std::filesystem::is_regular_file(fushi::fs_path(path + "/.fushidicts_2"))) {
+    return 2;
   }
-  return false;
+  if (std::filesystem::is_regular_file(fushi::fs_path(path + "/.fushidicts_1")) ||
+      std::filesystem::is_regular_file(fushi::fs_path(path + "/.hoshidicts_1"))) {
+    return 1;
+  }
+  return 0;
 }
 
 }  // namespace
 
 void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
-  if (!has_dict_complete_marker(path)) {
+  const int version = dict_format_version(path);
+  if (version == 0) {
     return;
   }
 
@@ -148,6 +162,7 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   }
 
   dict.data = std::make_unique<DictionaryData>();
+  dict.data->version = version;
 
   dict.data->hash_table = memory::map_rd(path + "/hash.table");
   if (!dict.data->hash_table) {
@@ -155,12 +170,14 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   }
   dict.data->table.load(dict.data->hash_table.data, dict.data->hash_table.size);
 
+  // 上游 d4183d4 删掉了「bloom.filter 缺失时现场重建」的 migration：fork importer
+  // 从第一天就写 bloom.filter，migration 是死代码，且 build_to_file 失败会 throw
+  // 并穿过无 try/catch 的 FFI 入口（上游 TestFlight 崩溃同款路径）。缺失/损坏时
+  // bloom 保持置空（contains 恒真穿透），词典照常可查，只失去 bloom 加速。
   dict.data->bloom_filter = memory::map_rd(path + "/bloom.filter");
-  if (!dict.data->bloom_filter) {
-    hash::bloom::build_to_file(dict.data->table.populated(), path + "/bloom.filter");
-    dict.data->bloom_filter = memory::map_rd(path + "/bloom.filter");
+  if (dict.data->bloom_filter) {
+    dict.data->bloom.load(dict.data->bloom_filter.data, dict.data->bloom_filter.size);
   }
-  dict.data->bloom.load(dict.data->bloom_filter.data);
   dict.data->table.set_bloom(&dict.data->bloom);
 
   dict.data->blobs = memory::map_rd(path + "/blobs.bin");
@@ -171,6 +188,18 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   dict.data->media = memory::map_rd(path + "/media.bin");
   if (dict.data->media) {
     dict.data->media_index = memory::map_rd(path + "/media.idx");
+  }
+
+  // dict.zstd 是可选产物（训练样本不足时导入端不写），存在才挂 DDict；
+  // 缺失/空文件 → DDict 保持 null → usingDDict(nullptr) 普通解压。
+  if (version >= 2) {
+    std::ifstream f(fushi::fs_path(path + "/dict.zstd"), std::ios::binary);
+    if (f) {
+      const std::string blob((std::istreambuf_iterator<char>(f)), {});
+      if (!blob.empty()) {
+        dict.data->zstd_dict = ZSTD_createDDict(blob.data(), blob.size());
+      }
+    }
   }
 
   switch (type) {
@@ -269,6 +298,7 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
       entry.term_tags = term_tags;
       entry.compressed_data = data->blobs.data + glossary_offset;
       entry.compressed_size = glossary_size;
+      entry.zstd_dict = data->zstd_dict;
 
       auto [it, inserted] = term_map.try_emplace({expr, reading});
       if (inserted) {
@@ -350,8 +380,27 @@ std::vector<KanjiResult> DictionaryQuery::query_kanji(const std::string& charact
       result.strokes = static_cast<int>(strokes);
       result.dict_name = name;
 
+      // v2 stats 追加段（版本门控：v1 记录到 meanings 对就结束，不读此段）。
+      if (data->version >= 2) {
+        auto stat_count = blob.read<uint8_t>();
+        for (uint8_t s = 0; s < stat_count; s++) {
+          if (!blob.has(sizeof(uint8_t))) {
+            break;
+          }
+          auto key_len = blob.read<uint8_t>();
+          std::string_view stat_key = blob.read_str(key_len);
+          auto val_len = blob.read<uint16_t>();
+          std::string_view stat_value = blob.read_str(val_len);
+          if (stat_key.empty()) {
+            break;  // 越界被 BlobReader 钉空 → 停止而不是灌入空对
+          }
+          result.stats.emplace_back(std::string(stat_key), std::string(stat_value));
+        }
+      }
+
       if (meanings_size > 0 && meanings_offset < data->blobs.size) {
-        std::string joined = decompress_glossary(data->blobs.data + meanings_offset, meanings_size);
+        // kanji meanings 恒为普通 zstd 帧（训练字典只用于 term glossary）。
+        std::string joined = decompress_glossary(data->blobs.data + meanings_offset, meanings_size, nullptr);
         size_t start = 0;
         while (start <= joined.size()) {
           size_t nl = joined.find('\n', start);
@@ -518,7 +567,7 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
   }
 }
 
-std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) {
+std::string DictionaryQuery::decompress_glossary(const void* data, size_t size, const ZSTD_DDict_s* dict) {
   if (!data || size == 0) {
     return "";
   }
@@ -538,7 +587,7 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) 
   std::string result;
   result.resize(decompressed_size);
 
-  size_t actual_size = ZSTD_decompress(result.data(), result.size(), data, size);
+  size_t actual_size = ZSTD_decompress_usingDDict(thread_dctx(), result.data(), result.size(), data, size, dict);
   if (ZSTD_isError(actual_size)) {
     return "";
   }
@@ -549,7 +598,7 @@ std::string DictionaryQuery::decompress_glossary(const void* data, size_t size) 
 
 void DictionaryQuery::materialize(TermResult& term) const {
   for (auto& g : term.glossaries) {
-    g.glossary = decompress_glossary(g.compressed_data, g.compressed_size);
+    g.glossary = decompress_glossary(g.compressed_data, g.compressed_size, g.zstd_dict);
   }
 }
 

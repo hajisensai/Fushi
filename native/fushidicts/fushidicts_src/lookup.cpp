@@ -3,6 +3,7 @@
 #include <utf8.h>
 
 #include <algorithm>
+#include <climits>
 #include <map>
 #include <ranges>
 #include <sstream>
@@ -21,23 +22,24 @@ std::vector<std::string> split_whitespace(const std::string& str) {
   return result;
 }
 
-std::vector<int> get_freq_values_for_dict(const TermResult& term, const std::string& dict_name) {
+// 上游 909c854 revert 了 4975788 的向量比较（作者自己否掉的实验：每次比较
+// 分配+排序一个 vector，partial_sort 下纯浪费）；回到单一最小值比较。
+int get_freq_value_for_dict(const TermResult& term, const std::string& dict_name) {
   for (const auto& frequency_entry : term.frequencies) {
     if (frequency_entry.dict_name != dict_name) {
       continue;
     }
 
-    std::vector<int> values;
+    int min_frequency = INT_MAX;
     for (const auto& frequency : frequency_entry.frequencies) {
       if (frequency.value >= 0) {
-        values.push_back(frequency.value);
+        min_frequency = std::min(min_frequency, frequency.value);
       }
     }
-    std::ranges::sort(values);
-    return values;
+    return min_frequency;
   }
 
-  return {INT_MAX};
+  return INT_MAX;
 }
 }
 
@@ -159,8 +161,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     }
 
     for (const auto& dict_name : freq_dict_order) {
-      const auto freq_a = get_freq_values_for_dict(a.term, dict_name);
-      const auto freq_b = get_freq_values_for_dict(b.term, dict_name);
+      const int freq_a = get_freq_value_for_dict(a.term, dict_name);
+      const int freq_b = get_freq_value_for_dict(b.term, dict_name);
       if (freq_a != freq_b) {
         return freq_a < freq_b;
       }

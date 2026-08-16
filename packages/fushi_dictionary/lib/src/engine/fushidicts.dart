@@ -128,6 +128,7 @@ class FushiKanjiResult {
     required this.radical,
     required this.strokes,
     required this.meanings,
+    this.stats = const <String, String>{},
     required this.dictName,
   });
 
@@ -143,6 +144,11 @@ class FushiKanjiResult {
       radical: map['radical'] as String? ?? '',
       strokes: (map['strokes'] as num?)?.toInt() ?? 0,
       meanings: List<String>.from(map['meanings'] as List? ?? const <String>[]),
+      stats: (map['stats'] as Map?)?.map(
+            (Object? k, Object? v) =>
+                MapEntry(k.toString(), v?.toString() ?? ''),
+          ) ??
+          const <String, String>{},
       dictName: map['dictName'] as String? ?? '',
     );
   }
@@ -153,6 +159,10 @@ class FushiKanjiResult {
   final String radical;
   final int strokes;
   final List<String> meanings;
+
+  /// v2 词典的完整 stats 键值对（JLPT/grade 等，radical/strokes 之外）；
+  /// v1 存量词典恒为空 map。
+  final Map<String, String> stats;
   final String dictName;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
@@ -162,6 +172,7 @@ class FushiKanjiResult {
         'radical': radical,
         'strokes': strokes,
         'meanings': meanings,
+        'stats': stats,
         'dictName': dictName,
       };
 }
@@ -260,6 +271,16 @@ FushiKanjiResult _convertKanji(FfiKanjiResult ffi) {
       meanings.add(_utf8OrEmpty(ffi.meanings[i]));
     }
   }
+  final stats = <String, String>{};
+  if (ffi.statCount > 0 &&
+      ffi.statKeys != nullptr &&
+      ffi.statValues != nullptr) {
+    for (int i = 0; i < ffi.statCount; i++) {
+      final String key = _utf8OrEmpty(ffi.statKeys[i]);
+      if (key.isEmpty) continue;
+      stats[key] = _utf8OrEmpty(ffi.statValues[i]);
+    }
+  }
   return FushiKanjiResult(
     character: _utf8OrEmpty(ffi.character),
     onyomi: _utf8OrEmpty(ffi.onyomi),
@@ -267,6 +288,7 @@ FushiKanjiResult _convertKanji(FfiKanjiResult ffi) {
     radical: _utf8OrEmpty(ffi.radical),
     strokes: ffi.strokes,
     meanings: meanings,
+    stats: stats,
     dictName: _utf8OrEmpty(ffi.dictName),
   );
 }

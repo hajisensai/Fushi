@@ -14,8 +14,8 @@
 
 ## 同步基线
 
-- **上游 `origin/main` 当前 tip**（本轮同步参照）：`3448d6d`（"Accept numeric Yomitan term scores (#14)"，2026-06-17）。
-- **Hibiki 本轮同步后所含的上游主线 commit**（直抄，见下表）：截至 `3448d6d`，但**跳过**了主线上的若干提交（见「未同步/待评估」）。
+- **上游 `origin/main` 当前 tip**（批4 同步参照，2026-08-16）：`8993838`（"train zstd dict on import"）。
+- **Hibiki 批4 同步后所含的上游主线 commit**：截至 `8993838`，但**跳过**了主线上的若干提交（见「批4 明确跳过/暂缓」）。
 - Hibiki 是 hoshidicts 的**深度 fork**：在上游主线 `2dd5199`（"count freq and pitch entries"，2026-05-16）一带分叉后，
   额外吸收了 sibling commit `feb48f5`（"add detected_type to ImportResult"，非 origin/main 主线，分叉自 `2dd5199`），
   并自研了大量上游没有的功能（见「Hibiki 本地改动清单」）。因此上游与 Hibiki **不是线性 pull 关系，是双向 merge / cherry-pick**。
@@ -30,13 +30,56 @@
 
 > 上述三处 apply 前已逐字节确认 Hibiki 仍是上游旧版（OLD），diff 与上游对应 commit 一致（除 Hibiki 本地上下文如 `fushi::fs_path`）。
 
-## 未同步 / 待评估（follow-up，按 TODO-621 计划 a9ae4ae38e9351fb4）
+## 历史遗留记账修正（批4 复核）
 
-| 上游 commit | 标题 | 为什么不在批1 | 后续条件 |
+批1 时列为「未同步/待评估」的两条，实际**早已在 Hibiki 落地**（当时忘了回写本文件）：
+
+| 上游 commit | 标题 | Hibiki 实际状态 |
+|---|---|---|
+| `2d4f2a2` | add normalization processors（NFKC） | ✅ 已落地：utf8proc v2.11.3 vendored 进 `fushidicts_external/utf8proc/`，NFKC 处理器在 `text_processor.cpp` 日语链 |
+| `e7dfdea` | add kanji standardization（异体字标准化） | ✅ 已落地（非直抄）：绕开 C++23 `#embed`，用离线预生成表 `kanji_standardization_data.{h,cpp}`（`tool/native_gen/gen_kanji_standardization.py`，kanji-processor pin 452cc2db，2122 条）。上游后来的 `4ffbffb`（replace #embed，提交生成的 C 数组源文件）自行收敛到与 Hibiki 等价的方案——数据集逐条同源，无需再动 |
+| `1198201` | fix swift build | 仅 SwiftPM，跳过（不变） |
+
+## 批4（2026-08-17）同步：`3448d6d`..`8993838`
+
+**已移植（直抄或适配，见各文件内注释）：**
+
+| 上游 commit | 标题 | 落到 Hibiki | 方式 |
 |---|---|---|---|
-| `2d4f2a2` | add normalization processors（NFKC 全角归一化） | 需 vendor `utf8proc` 进 `fushidicts_external/` + 改 `CMakeLists.txt` + 把处理器追加到 Hibiki 自研处理链链尾（与 P1/P2/P3 共存，非替换） | 批2 |
-| `e7dfdea` | add kanji standardization（异体字标准化） | **不能照搬**：上游用 C++23 `#embed` 嵌入数据表，Windows MSVC / Apple Clang 不支持，需改 CMake 生成 C 数组头。逻辑本身无害、与 Hibiki 自研 kanji 导入（`importer.cpp`）零冲突（落在 `text_processor.cpp`，非 importer/S0 二进制 contract） | 批3（慎，需 CMake 改写） |
-| `1198201` | fix swift build | 仅 SwiftPM，Hibiki 不用 SwiftPM 构建 | skip |
+| `9dc93b6` | expand iteration marks（々/ゝ/ゞ 展开） | `text_processor.cpp` | 适配（standardize_kanji 上下文已本地化） |
+| `ee0384b` | fullwidth numbers → kanji（２→二） | `text_processor.cpp` | 直抄 |
+| `aaf75c9` | collapseEmphaticSequences（っっ/ーー 折叠） | `text_processor.cpp`（插在假名转换后，对齐上游链序） | 直抄 |
+| `1cb9b4b` | normalize kana width before script conversion | `text_processor.cpp`（NFKC 提到日语链首；半角片假名 ﾒｶﾞﾈ 修复） | 直抄 |
+| `909c854`（仅 revert 部分） | revert `4975788` freq 向量比较 | `lookup.cpp`（回到单一最小值比较；score 排序+格式 bump 部分**未采纳**，见下） | 直抄 |
+| `d4183d4` | bloom/hash size 校验 + flush before unmap + 删 bloom migration | `bloom.{hpp,cpp}`（size 校验，置空降级不拒载）、`memory.cpp`（flush）、`query.cpp`（删 migration，消掉穿 FFI 的 throw；hash 侧保留 fork 自研 BUG-1303 clamp，不用上游拒载版） | 适配 |
+| `01630e8` | freq 嵌套 object 解析收紧 | `yomitan_parser.cpp`（optional display_value + error_on_missing_keys，对齐 flat 路径既有风格） | 直抄 |
+| `79c55c2`（parser 先行部分） | pitch accent spec：position 收 `variant<int,string>` | `yomitan_parser.cpp`（pattern 字符串位不再让整条 meta 记录解析失败；nasal/devoice/pattern 的结构化输出 + FFI/UI 二期另议） | 部分适配 |
+| `8993838` | train zstd dict on import | `importer.cpp`（train_zstd_dict + CDict 压缩 term glossary + 落盘 `dict.zstd`）、`query.cpp`（DDict + thread_local DCtx 解压）——引入 **v2 格式阶梯**（见下） | 适配 |
+| `c5d8c6d`（仅 1 行） | `<climits>` include 修复 | `lookup.cpp`（fork 同样裸用 INT_MAX） | 直抄 |
+| `64afa2f`（仅借鉴 stats 能力） | 上游 kanji dicts | kanji 记录 v2 追加 stats 段（见下）；上游 kanji 实现本体**跳过**（与 fork 自研 kanji 同 type byte 两套布局，互不兼容，fork 版能力更强） | 借鉴 |
+
+**磁盘格式 v2（`.fushidicts_2`，fork 首个版本阶梯）：**
+- `import_yomitan` 产出 `.fushidicts_2`；`write_simple_dict`（MDX/StarDict/DSL）仍产 `.fushidicts_1`。
+- 读侧 `dict_format_version()`（query.cpp）：`.fushidicts_2`→2，`.fushidicts_1`/`.hoshidicts_1`（改名前存量，冻结只读）→1，无 marker→不加载。
+- v2 增量：① kanji 记录尾部追加 stats 段 `[u8 count]([u8 klen][k][u16 vlen][v])*`（radical/strokes 之外全保留，JLPT/grade 等；S0 契约注释在 importer.cpp）；② term glossary 可能用训练字典压缩，`dict.zstd` 存在才挂 DDict（训练样本不足时不写，退普通压缩）。
+- 兼容矩阵：新引擎读 v1 老盘**完全不变**；旧引擎读 v2 盘＝整目录不加载（降级后新导入词典不可见，不毁数据，重导可救）。kanji meanings / meta 记录恒普通 zstd 帧，不吃训练字典。
+- FFI：`FfiKanjiResult` 追加 `stat_keys/stat_values/stat_count`（native+Dart 同 commit 镜像，照 918744d transcriptions 先例双层 malloc/free）；其余 ABI 零变化。
+- 守卫：`tests/format_v2_upstream_sync_test.cpp`（v2 marker/stats 读回/marker 拒载/bloom 截断降级/zstd 往返/pitch pattern 容忍）+ `tests/text_processor_test.cpp` 新增 processor 用例。
+
+**批4 明确跳过 / 暂缓（重估条件）：**
+
+| 上游 commit | 标题 | 处置 | 理由/重估条件 |
+|---|---|---|---|
+| `909c854`（score 排序部分） | term score 落盘 + 排序 | 暂缓，需决策 | 需 term 记录格式再升版（score 字段）；收益真实（Yomitan score 是排序信号），可与下次格式变更捆绑 |
+| `702dcc5` | build summary on import | 跳过 | 改写 index.json/删 styles.css，冲突 fork 读侧契约（弹窗样式丢失）+ 破坏 FfiImportResult；如需导入元数据留档，fork 自己加 sidecar |
+| `64afa2f` | kanji dicts（实现本体） | 跳过 | 与 fork 自研 kanji 同 type byte 两套布局，换=毁存量；stats 能力已借鉴进 v2 |
+| `bc62d2b` / `86c6e2f` | lookup 排序选项 / primary_reading 优先 | 暂缓 | 默认行为零变化；等排序 UI / 弹窗内链需求出现时三层贯通（注意：移植时 Auto 分支保 fork 现状） |
+| `88b073d` | c bindings 合入主线 | 跳过（政策不变） | fork 自研 FFI 桥等效且 errors 向量信息更全；原「忽略 c-bindings 分支」政策改述为「已合主线，仍跳过」 |
+| `79c55c2`（结构化部分） | Pitch{pattern,nasal,devoice} 出 FFI/UI | 暂缓，需决策 | FFI ABI 扩展 + popup_json pkey 折 key（IPA 同型坑）+ UI 渲染，等产品要 nasal/devoice 展示 |
+| `c5d8c6d`（submodule bump 部分） | 7 个依赖 pin 升级 | 暂缓 | fork 是 vendored 实拷贝，整体刷新是独立决策（当前 zstd 1.6.0 / utf8proc v2.11.3 均不落后关键功能） |
+| `f9aa482` / `7bfdc8c` / `32b8ce5` / `e1a8c1c` / `6240e06` / `f151dbb` | submodule URL / cli+benchmark 开关 / swift cli / benchmark 修复×2 / readme | 跳过 | fork 无 submodule / 无 cli/benchmark target / 不用 SwiftPM |
+| `d6c9ea2` | use native filesystem paths | 跳过 | 已被 fork 自研 `fushi::fs_path`/`to_wide`（`util/fs_utf8.hpp` + `memory.cpp` W 系 API + `win_utf8_import_test`）等价覆盖 |
+| `e88430d` | MSVC /utf-8 | 跳过 | fork `CMakeLists.txt` 已有全局 `/utf-8 /Zc:__cplusplus /permissive-`，覆盖面更大 |
 
 ## TODO-687 批3 移植的上游 commit（IPA 音标支持）
 

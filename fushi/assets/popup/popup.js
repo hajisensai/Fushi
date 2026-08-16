@@ -3679,6 +3679,18 @@ function createKanjiCard(kanji) {
         card.appendChild(kunyomiRow);
     }
 
+    // v2 词典的完整 stats 键值对（JLPT/grade 等，FushiKanjiResult.stats 直通）。
+    // v1 存量词典 stats 为空对象，零渲染开销；复用 kanji-card-row 现有样式。
+    if (kanji.stats && typeof kanji.stats === 'object') {
+        for (const [statKey, statValue] of Object.entries(kanji.stats)) {
+            if (typeof statValue !== 'string' || statValue.length === 0) continue;
+            const statRow = createKanjiReadingRow(statKey, statValue);
+            if (statRow) {
+                card.appendChild(statRow);
+            }
+        }
+    }
+
     const meanings = Array.isArray(kanji.meanings)
         ? kanji.meanings.filter((m) => typeof m === 'string' && m.length > 0)
         : [];

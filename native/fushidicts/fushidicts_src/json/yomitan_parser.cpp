@@ -44,7 +44,7 @@ struct glz::meta<Tag> {
 namespace internal {
 struct FrequencyValue {
   int value;
-  std::string display_value;
+  std::optional<std::string> display_value;
 };
 
 struct RawFrequencyFlat {
@@ -58,8 +58,12 @@ struct RawFrequency {
   std::variant<int, FrequencyValue> frequency;
 };
 
+// 上游 79c55c2（parser 先行部分）：position 可以是数字或 pattern 字符串
+//（"heiban" 等）。此前 int 独取会让含 pattern 条目的整条 meta 记录解析失败、
+// 数字条目一起陪葬。nasal/devoice 键靠 error_on_unknown_keys=false 天然容忍；
+// 结构化收集（连同 pattern 出 FFI/UI）留待二期。
 struct PitchesArray {
-  int position = 0;
+  std::variant<int, std::string> position;
 };
 
 struct RawPitch {
@@ -166,7 +170,9 @@ bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& 
   }
 
   internal::RawFrequency parsed;
-  error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(parsed, content);
+  // 上游 01630e8：嵌套 object 变体与 flat 路径同样收紧——缺 frequency 键的畸形
+  // 条目从「静默解析成 0」变为拒绝；displayValue 显式空串也如实保留。
+  error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = true}>(parsed, content);
   if (error) {
     return false;
   }
@@ -179,21 +185,25 @@ bool yomitan_parser::parse_frequency(std::string_view content, ParsedFrequency& 
   } else {
     auto& freq = std::get<internal::FrequencyValue>(parsed.frequency);
     out.value = freq.value;
-    out.display_value = freq.display_value.empty() ? std::to_string(freq.value) : freq.display_value;
+    out.display_value = freq.display_value.value_or(std::to_string(freq.value));
   }
   return true;
 }
 
 bool yomitan_parser::parse_pitch(std::string_view content, ParsedPitch& out) {
   internal::RawPitch parsed;
-  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(parsed, content);
+  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = true}>(parsed, content);
   if (error) {
     return false;
   }
 
   out.reading = parsed.reading;
-  out.pitches =
-      parsed.pitches | std::views::transform(&internal::PitchesArray::position) | std::ranges::to<std::vector>();
+  for (const auto& pitch : parsed.pitches) {
+    if (std::holds_alternative<int>(pitch.position)) {
+      out.pitches.push_back(std::get<int>(pitch.position));
+    }
+    // pattern 字符串位暂无消费方，跳过该条而非整条拒绝（二期扩 ABI 时再结构化）。
+  }
   return true;
 }
 

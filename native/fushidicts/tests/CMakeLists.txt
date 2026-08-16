@@ -77,6 +77,9 @@ add_fushi_test(lookup_freq_pitch_enrichment_test lookup_freq_pitch_enrichment_te
 add_fushi_test(hash_truncated_table_guard_test hash_truncated_table_guard_test.cpp)
 set_tests_properties(hash_truncated_table_guard_test PROPERTIES TIMEOUT 60)
 add_fushi_test(ipa_import_query_test ipa_import_query_test.cpp)
+# 上游同步批4：v2 格式阶梯（.fushidicts_2）——kanji stats 追加段读回、marker
+# 拒载语义、bloom 截断置空降级（d4183d4 size 校验）、zstd 训练字典往返。
+add_fushi_test(format_v2_upstream_sync_test format_v2_upstream_sync_test.cpp)
 # Simple dicts (MDX/StarDict/DSL) store rules="*" so filter_by_pos keeps them
 # for inflected-form lookups; pins pos_to_conditions("*")==~0 + the stored rule.
 add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)

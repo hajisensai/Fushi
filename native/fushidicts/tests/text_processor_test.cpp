@@ -67,6 +67,32 @@ int main() {
   // 體(U+9AD4 itaiji) -> 体(U+4F53 oyaji)。
   expect("kanji-tai-itaiji", "\xE9\xAB\x94", "\xE4\xBD\x93");
 
+  // 上游 9dc93b6 迭代符展开：佐々木 -> 佐佐木（々 U+3005 复读前一码点）。
+  expect("iter-kanji", "\xE4\xBD\x90\xE3\x80\x85\xE6\x9C\xA8", "\xE4\xBD\x90\xE4\xBD\x90\xE6\x9C\xA8");
+  // こゝ(U+309D) -> ここ；こゞ(U+309E 浊音版) -> こご（NFC 合成浊点）。
+  expect("iter-hira", "\xE3\x81\x93\xE3\x82\x9D", "\xE3\x81\x93\xE3\x81\x93");
+  expect("iter-hira-dakuten", "\xE3\x81\x93\xE3\x82\x9E", "\xE3\x81\x93\xE3\x81\x94");
+
+  // 上游 ee0384b 全角数字 -> 汉字：２(U+FF12) -> 二。
+  expect("num-fullwidth", "\xEF\xBC\x92", "\xE4\xBA\x8C");
+  // 链组合：ASCII 2 先经 alphanumeric_to_fullwidth 变 ２ 再变 二（2月 -> 二月）。
+  expect("num-ascii-chain", "2\xE6\x9C\x88", "\xE4\xBA\x8C\xE6\x9C\x88");
+
+  // 上游 aaf75c9 强调折叠：すっっごい -> すっごい(opt1 折单) / すごい(opt2 全删)。
+  expect("emphatic-collapse-1", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
+         "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84");
+  expect("emphatic-collapse-2", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
+         "\xE3\x81\x99\xE3\x81\x94\xE3\x81\x84");
+  // 长音符同理：ラーーメン -> ラーメン。
+  expect("emphatic-prolonged", "\xE3\x83\xA9\xE3\x83\xBC\xE3\x83\xBC\xE3\x83\xA1\xE3\x83\xB3",
+         "\xE3\x83\xA9\xE3\x83\xBC\xE3\x83\xA1\xE3\x83\xB3");
+
+  // 上游 1cb9b4b 链序修复：NFKC 必须在假名转换之前——半角片假名 ﾒｶﾞﾈ 先归一成
+  // メガネ 才能被 katakana_to_hiragana 转成 めがね。旧链序（NFKC 在假名转换后）
+  // 永远产不出这个变体。
+  expect("halfwidth-kana-chain", "\xEF\xBE\x92\xEF\xBD\xB6\xEF\xBE\x9E\xEF\xBE\x88",
+         "\xE3\x82\x81\xE3\x81\x8C\xE3\x81\xAD");
+
   if (g_fail) {
     std::fprintf(stderr, "%d FAIL\n", g_fail);
     return 1;

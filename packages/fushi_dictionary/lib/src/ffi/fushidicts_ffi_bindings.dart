@@ -130,6 +130,12 @@ final class FfiKanjiResult extends Struct {
   external Pointer<Pointer<Utf8>> meanings;
   @Int32()
   external int meaningCount;
+  // v2 词典的完整 stats 键值对（JLPT/grade 等）；与 native FfiKanjiResult 字段
+  // 顺序严格镜像（stat_keys/stat_values 平行数组，长度 statCount）。
+  external Pointer<Pointer<Utf8>> statKeys;
+  external Pointer<Pointer<Utf8>> statValues;
+  @Int32()
+  external int statCount;
   external Pointer<Utf8> dictName;
 }
 

@@ -93,8 +93,8 @@ std::string term_meta_bank_neko() {
 // UTF-8 byte order of the reading: ね(E3 81 AD) < び(E3 81 B3) < み(E3 81 BF),
 // i.e. ねこ, びょう, みょう. The correct frequency ranking is the opposite-ish
 // permutation びょう(100), みょう(5000), ねこ(90000). If enrichment ever moves
-// after the sort, every term's frequency list is empty, get_freq_values_for_dict
-// returns {INT_MAX} for all of them, the comparator ties on everything, and the
+// after the sort, every term's frequency list is empty, get_freq_value_for_dict
+// returns INT_MAX for all of them, the comparator ties on everything, and the
 // unsorted map order survives — which these assertions reject.
 const std::string kByouReading = "\xE3\x81\xB3\xE3\x82\x87\xE3\x81\x86";  // びょう
 const std::string kMyouReading = "\xE3\x81\xBF\xE3\x82\x87\xE3\x81\x86";  // みょう

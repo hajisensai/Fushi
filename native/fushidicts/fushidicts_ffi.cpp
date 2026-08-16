@@ -108,6 +108,11 @@ struct FfiKanjiResult {
   int32_t strokes;
   char** meanings;
   int32_t meaning_count;
+  // v2 词典的完整 stats 键值对（JLPT/grade 等；v1 记录恒为 0 条）。
+  // keys/values 平行数组，长度均为 stat_count；Dart 绑定同 commit 镜像。
+  char** stat_keys;
+  char** stat_values;
+  int32_t stat_count;
   char* dict_name;
 };
 
@@ -372,6 +377,13 @@ FfiKanjiResults fushidicts_query_kanji(void* handle, const char* character) {
     for (int j = 0; j < dst.meaning_count; j++) {
       dst.meanings[j] = dup(k.meanings[j]);
     }
+    dst.stat_count = static_cast<int32_t>(k.stats.size());
+    dst.stat_keys = static_cast<char**>(malloc(sizeof(char*) * dst.stat_count));
+    dst.stat_values = static_cast<char**>(malloc(sizeof(char*) * dst.stat_count));
+    for (int j = 0; j < dst.stat_count; j++) {
+      dst.stat_keys[j] = dup(k.stats[j].first);
+      dst.stat_values[j] = dup(k.stats[j].second);
+    }
   }
   return r;
 }
@@ -390,6 +402,12 @@ void fushidicts_free_kanji_results(FfiKanjiResults* r) {
       free(k.meanings[j]);
     }
     free(k.meanings);
+    for (int j = 0; j < k.stat_count; j++) {
+      free(k.stat_keys[j]);
+      free(k.stat_values[j]);
+    }
+    free(k.stat_keys);
+    free(k.stat_values);
   }
   free(r->results);
 }
