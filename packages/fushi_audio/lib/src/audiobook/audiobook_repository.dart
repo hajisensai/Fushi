@@ -60,13 +60,46 @@ class AudiobookRepository {
         bookKey, cues.map(AudioCue.toCompanion).toList());
   }
 
+  /// 落一条有声书记录。
+  ///
+  /// BUG-1679：写入前先判「音频集合是否变了」，变了就把播放进度归零。
+  /// `audiobook_pos_<bookKey>` 记的是**毫秒偏移**，它只在绑定的那一套音频上有
+  /// 意义；换一套音频后同一个数字指向的是另一段声音：
+  ///   * 超出新音频总时长 → [AudiobookController.load] 的恢复 seek 把播放器钉在
+  ///     EOF，按播放立刻结束 —— 用户看到的是「音频不响」；
+  ///   * 落在时长内 → 起播点随机，followAudio 立刻把阅读器拽到那条 cue 所在的页
+  ///     —— 用户看到的是「乱跳页」。
+  /// 判据是数据本身（新旧音频集合不等），不是「谁在调」：只更新 health 的保存
+  /// 音频集合不变，不会误伤进度。首次落行（旧行不存在）也归零——bookKey 是
+  /// sanitize 后的书名，删书重导会拿到同一个 key，而 preferences 不随书删除，
+  /// 上一世的进度会原样复活。
   Future<void> saveAudiobook(Audiobook audiobook) async {
+    final AudiobookRow? before =
+        await _db.getAudiobookByBookKey(audiobook.bookKey);
+    final bool audioChanged =
+        before == null || !_sameAudioSource(_rowToAudiobook(before), audiobook);
+
     await _db.upsertAudiobook(_audiobookToCompanion(audiobook));
     // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、墓碑
     // 还在」误判（范式仿书/视频的插入清墓碑）。落库串走 core 的 SyncTombstoneKind。
     await _db.clearSyncDeletionTombstone(
         SyncTombstoneKind.audiobook.dbValue, audiobook.bookKey);
-    debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey}');
+    if (audioChanged) {
+      await updatePositionMs(bookKey: audiobook.bookKey, positionMs: 0);
+    }
+    debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey} '
+        'audioChanged=$audioChanged');
+  }
+
+  /// 两条记录是否指向**同一套音频**（BUG-1679 的进度作废判据）。
+  /// 目录模式看 [Audiobook.audioRoot]，文件模式看 [Audiobook.audioPaths] 的
+  /// 有序列表——顺序即 `audioFileIndex` 的含义，换序就是换时间轴。
+  static bool _sameAudioSource(Audiobook a, Audiobook b) {
+    if (a.audioRoot != b.audioRoot) return false;
+    return AudiobookStorage.sameAudioPathList(
+      a.audioPaths ?? const <String>[],
+      b.audioPaths ?? const <String>[],
+    );
   }
 
   /// [propagateDeletion]（默认 false）：true 时记一条 `audiobook` sync 删除墓碑，供同步
@@ -158,8 +191,8 @@ class AudiobookRepository {
     required int ms,
   }) async {
     await _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
-    await _db.setPrefTyped('$_kDelayAtMsKeyPrefix$bookKey',
-        DateTime.now().millisecondsSinceEpoch);
+    await _db.setPrefTyped(
+        '$_kDelayAtMsKeyPrefix$bookKey', DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<double> readSpeed(String bookKey) async {

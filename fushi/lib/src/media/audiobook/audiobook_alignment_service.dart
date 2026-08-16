@@ -201,7 +201,9 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     },
   );
 
-  await AudiobookStorage.cleanAudioFiles(persistDir);
+  // BUG-1678：源文件可能已经落在持久目录里（同一本书重跑配对）。清目录必须放过
+  // 本次的源文件，否则先删源、复制时再读它就抛 FileSystemException 中止导入。
+  await AudiobookStorage.cleanAudioFiles(persistDir, keep: audioPaths);
   final List<String> persistedAudioPaths = <String>[];
   for (final String src in audioPaths) {
     persistedAudioPaths.add(
