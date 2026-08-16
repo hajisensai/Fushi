@@ -674,83 +674,52 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       // （仿 VideoBooks 的 `videoPath: Value(only.path)`）。读取/删除按路径是否在
       // 持久根之外派生「引用 vs 已复制」，无需额外标记列。
       final bool referenceAudio = _referenceOriginal && isDesktopPlatform;
-      final List<String> persistedPaths = <String>[];
-      // BUG-1678：本次导入的源文件本身可能就落在持久目录内——「换字幕」模式把
-      // 已持久化的音频路径原样回填进 _audioPaths 表达「音频不变」。清目录时必须
-      // 把它们排除，否则先删源文件、再 `srcFile.length()` 抛 FileSystemException
-      // 中止导入，用户的音频就此消失而库里还指着已不存在的路径。
-      final List<String> keepAudio =
-          audioCopyFiles.map((File f) => f.path).toList();
-      if (referenceAudio) {
-        await AudiobookStorage.cleanAudioFiles(persistDir, keep: keepAudio);
-        persistedPaths.addAll(audioCopyFiles.map((File f) => f.path));
-      } else {
-        for (final File f in audioCopyFiles) {
-          if (!p.isWithin(
-              p.canonicalize(persistDir.path), p.canonicalize(f.path))) {
-            grandTotal += await f.length();
-          }
-        }
-        int grandCopied = 0;
-
-        await AudiobookStorage.cleanAudioFiles(persistDir, keep: keepAudio);
-        for (final File srcFile in audioCopyFiles) {
-          final int fileLen = await srcFile.length();
-          final int capturedGrandCopied = grandCopied;
-          persistedPaths.add(
-            await AudiobookStorage.persistFileWithProgress(
-              srcFile,
-              persistDir,
-              onProgress: (int copied, int total) {
-                final double ratio = grandTotal > 0
-                    ? (capturedGrandCopied + copied) / grandTotal
-                    : 0.0;
-                reportProgress(0.5 + ratio * 0.3,
-                    t.import_step_copying_file(name: p.basename(srcFile.path)));
-              },
-            ),
-          );
-          grandCopied += fileLen;
-        }
-      }
+      // 持久目录的音频只有这一个写入原语：把目录同步成恰好这一组源文件。
+      // 「先清目录再逐个复制」那种两步写法是 BUG-1678 的形状——源文件本身可能
+      // 就在目录里（换字幕模式回填的正是已持久化路径），先清就把源删了。
+      String copyingName = '';
+      final List<String> persistedPaths = await AudiobookStorage.syncAudioFiles(
+        persistDir,
+        audioCopyFiles.map((File f) => f.path).toList(),
+        copy: !referenceAudio,
+        onFile: (String name) => copyingName = name,
+        onProgress: (int copiedBytes, int totalBytes) {
+          grandTotal = totalBytes;
+          final double ratio = totalBytes > 0 ? copiedBytes / totalBytes : 0.0;
+          reportProgress(
+              0.5 + ratio * 0.3, t.import_step_copying_file(name: copyingName));
+        },
+      );
 
       reportProgress(0.8, t.import_step_saving);
-      // BUG-1678：saveAudiobook 走整行覆盖的 upsert，凭空造一个 Audiobook 去写会
-      // 把本次没碰的列全部清空。以现有行为基线，只改本次真的换掉的那几列——
-      // 「只换字幕」因此不再清空 audioPaths/audioRoot（legacy audioRoot 目录模式
-      // 的书恒走 persistedPaths 为空这条路径，正是音频整列消失的入口）。
-      final Audiobook? currentRow =
-          await widget.repo.findByBookKey(widget.bookKey);
-      final Audiobook audiobook = currentRow != null
-          ? Audiobook.cloneOf(currentRow)
-          : (Audiobook()
-            ..bookKey = widget.bookKey
-            ..alignmentFormat = ''
-            ..alignmentPath = '');
-      audiobook.bookKey = widget.bookKey;
+      // 一次只说一件事。repository 里没有「写一整行 Audiobook」的入口，所以
+      // 「只换字幕」根本无从清空 audioPaths/audioRoot（BUG-1678 的机制 B）。
+      await widget.repo.ensureAudiobook(widget.bookKey);
 
+      String? alignmentFormat;
       if (persistedAlignment != null) {
         final String ext = persistedAlignment.split('.').last.toLowerCase();
         const Set<String> cueFormats = {'smil', 'srt', 'lrc', 'vtt', 'ass'};
-        audiobook
-          ..alignmentFormat = cueFormats.contains(ext) ? ext : 'json'
-          ..alignmentPath = persistedAlignment;
+        alignmentFormat = cueFormats.contains(ext) ? ext : 'json';
+        await widget.repo.replaceAlignment(
+          bookKey: widget.bookKey,
+          format: alignmentFormat,
+          path: persistedAlignment,
+        );
       }
 
-      // persistedPaths 为空 = 本次没有换音频（换字幕路径）：基线已带着现有音频，
-      // 不写就是「保持不变」，绝不能落成 null 清空（BUG-1678）。
+      // 为空 = 本次没换音频（换字幕路径）：不调 replaceAudio 就是「保持不变」。
       if (persistedPaths.isNotEmpty) {
-        audiobook
-          ..audioPaths = persistedPaths
-          // 新音频一律走文件列表模式；legacy 目录模式的 audioRoot 必须同时清掉，
-          // 否则基线把旧目录带回来，读取端 audioPaths 断链时会回退去扫旧目录。
-          ..audioRoot = null;
+        await widget.repo.replaceAudio(
+          bookKey: widget.bookKey,
+          audioPaths: persistedPaths,
+        );
       }
 
       if (parsed != null) {
-        parsed.health.packInto(audiobook);
+        await widget.repo
+            .writeHealth(bookKey: widget.bookKey, health: parsed.health);
       }
-      await widget.repo.saveAudiobook(audiobook);
       // TODO-1288：EPUB-backed 有声书导入必须补写一条配对 srt_books 行，否则互联
       // host 的 hasAudiobook 判据（app_model_library_host_service
       // ._srtBackedAudiobookKeys 要求 audiobooks + srt_books 两表齐备）认不出这本
@@ -785,7 +754,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         const Set<String> singleTimelineFormats = {'srt', 'lrc', 'vtt', 'ass'};
         if (persistedPaths.length > 1 &&
             persistedAlignment != null &&
-            singleTimelineFormats.contains(audiobook.alignmentFormat)) {
+            singleTimelineFormats.contains(alignmentFormat)) {
           final List<int> durationsMs =
               await AudiobookStorage.probeAudioDurationsMs(persistedPaths);
           if (durationsMs.length == persistedPaths.length &&

@@ -69,12 +69,12 @@ void main() {
       ..createSync(recursive: true);
     final File staleAudio = File(p.join(staleDir.path, 'old.mp3'))
       ..writeAsStringSync('STALE');
-    final Audiobook dirty = Audiobook()
-      ..bookKey = bookKey
-      ..alignmentFormat = ''
-      ..alignmentPath = ''
-      ..audioPaths = <String>[staleAudio.path];
-    await AudiobookRepository(db).saveAudiobook(dirty);
+    // 「脏行」= 有音频、没对齐字幕。窄写入下这件事只能这么表达：ensure 建行
+    // （alignment 两列留空串），再单独写音频——想给它加上对齐都得多调一个方法。
+    final AudiobookRepository dirtyRepo = AudiobookRepository(db);
+    await dirtyRepo.ensureAudiobook(bookKey);
+    await dirtyRepo
+        .replaceAudio(bookKey: bookKey, audioPaths: <String>[staleAudio.path]);
 
     // Pre-condition: resolve returns the stale Audiobook audio.
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
@@ -117,12 +117,11 @@ void main() {
     final File alignment = File(p.join(srcDir.path, 'align.srt'))
       ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
 
-    final Audiobook audiobook = Audiobook()
-      ..bookKey = bookKey
-      ..alignmentFormat = 'srt'
-      ..alignmentPath = alignment.path
-      ..audioPaths = <String>[audio.path];
-    await AudiobookRepository(db).saveAudiobook(audiobook);
+    final AudiobookRepository realRepo = AudiobookRepository(db);
+    await realRepo.replaceAlignment(
+        bookKey: bookKey, format: 'srt', path: alignment.path);
+    await realRepo
+        .replaceAudio(bookKey: bookKey, audioPaths: <String>[audio.path]);
 
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
     final AudiobookSessionStartRequest? request =

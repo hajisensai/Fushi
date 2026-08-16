@@ -201,33 +201,28 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     },
   );
 
-  // BUG-1678：源文件可能已经落在持久目录里（同一本书重跑配对）。清目录必须放过
-  // 本次的源文件，否则先删源、复制时再读它就抛 FileSystemException 中止导入。
-  await AudiobookStorage.cleanAudioFiles(persistDir, keep: audioPaths);
-  final List<String> persistedAudioPaths = <String>[];
-  for (final String src in audioPaths) {
-    persistedAudioPaths.add(
-      await AudiobookStorage.persistFileWithProgress(
-        File(src),
-        persistDir,
-        onProgress: (int copied, int total) {
-          report(0.85, messages._copying(p.basename(src)));
-        },
-      ),
-    );
-  }
+  // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
+  final List<String> persistedAudioPaths =
+      await AudiobookStorage.syncAudioFiles(
+    persistDir,
+    audioPaths,
+    onFile: (String name) => report(0.85, messages._copying(name)),
+  );
 
   report(0.9, messages.saving);
-  final Audiobook audiobook = Audiobook()
-    ..bookKey = bookKey
-    ..alignmentFormat = ext
-    ..alignmentPath = persistedSrt;
+  // 窄写入：一次只说一件事，没有整行入口可以误清别的列（BUG-1678）。
+  await audiobookRepo.replaceAlignment(
+    bookKey: bookKey,
+    format: ext,
+    path: persistedSrt,
+  );
   if (persistedAudioPaths.isNotEmpty) {
-    audiobook.audioPaths = persistedAudioPaths;
+    await audiobookRepo.replaceAudio(
+      bookKey: bookKey,
+      audioPaths: persistedAudioPaths,
+    );
   }
-  health.packInto(audiobook);
-
-  await audiobookRepo.saveAudiobook(audiobook);
+  await audiobookRepo.writeHealth(bookKey: bookKey, health: health);
   await writeEpubBackedSrtBook(
     repo: repo,
     bookKey: bookKey,

@@ -940,26 +940,15 @@ class _BookImportDialogState extends State<BookImportDialog>
 
     // TODO-935 ①A：引用模式（仅桌面）直接存原始绝对路径，不复制（仿 VideoBooks）。
     final bool referenceAudio = _referenceOriginal && isDesktopPlatform;
-    // BUG-1678：源文件可能已经落在持久目录内（同一 uid 重跑导入）。清目录必须
-    // 放过本次的源文件，否则先删源、复制时再读它就抛 FileSystemException。
-    await AudiobookStorage.cleanAudioFiles(persistDir, keep: _audioPaths);
-    final List<String> persistedAudioPaths = [];
-    if (referenceAudio) {
-      persistedAudioPaths.addAll(_audioPaths);
-    } else {
-      for (final String src in _audioPaths) {
-        persistedAudioPaths.add(
-          await AudiobookStorage.persistFileWithProgress(
-            File(src),
-            persistDir,
-            onProgress: (int copied, int total) {
-              reportProgress(
-                  0.8, t.import_step_copying_file(name: p.basename(src)));
-            },
-          ),
-        );
-      }
-    }
+    // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
+    final List<String> persistedAudioPaths =
+        await AudiobookStorage.syncAudioFiles(
+      persistDir,
+      _audioPaths,
+      copy: !referenceAudio,
+      onFile: (String name) =>
+          reportProgress(0.8, t.import_step_copying_file(name: name)),
+    );
 
     reportProgress(0.9, t.import_step_saving);
     final SrtBook book = SrtBook()

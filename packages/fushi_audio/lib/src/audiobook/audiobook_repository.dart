@@ -60,46 +60,106 @@ class AudiobookRepository {
         bookKey, cues.map(AudioCue.toCompanion).toList());
   }
 
-  /// 落一条有声书记录。
-  ///
-  /// BUG-1679：写入前先判「音频集合是否变了」，变了就把播放进度归零。
-  /// `audiobook_pos_<bookKey>` 记的是**毫秒偏移**，它只在绑定的那一套音频上有
-  /// 意义；换一套音频后同一个数字指向的是另一段声音：
-  ///   * 超出新音频总时长 → [AudiobookController.load] 的恢复 seek 把播放器钉在
-  ///     EOF，按播放立刻结束 —— 用户看到的是「音频不响」；
-  ///   * 落在时长内 → 起播点随机，followAudio 立刻把阅读器拽到那条 cue 所在的页
-  ///     —— 用户看到的是「乱跳页」。
-  /// 判据是数据本身（新旧音频集合不等），不是「谁在调」：只更新 health 的保存
-  /// 音频集合不变，不会误伤进度。首次落行（旧行不存在）也归零——bookKey 是
-  /// sanitize 后的书名，删书重导会拿到同一个 key，而 preferences 不随书删除，
-  /// 上一世的进度会原样复活。
-  Future<void> saveAudiobook(Audiobook audiobook) async {
-    final AudiobookRow? before =
-        await _db.getAudiobookByBookKey(audiobook.bookKey);
-    final bool audioChanged =
-        before == null || !_sameAudioSource(_rowToAudiobook(before), audiobook);
+  // ── 窄写入：一次只改一件事 ───────────────────────────────────────
+  //
+  // BUG-1678：这里**故意没有**「写一整行 Audiobook」的入口。`upsertAudiobook`
+  // 是整行覆盖（companion 每列都是 `Value(...)`，没有 absent），凭空造一个模型
+  // 再写就会把本次没碰的列静默清空——「只换字幕」因此清掉了 audioPaths/audioRoot，
+  // 用户的音频消失。修法不是「记得先克隆一份基线」（那只是把地雷挪个位置），
+  // 而是**不给整行入口**：调用方只能说「换音频」「换字幕」「回写 health」，
+  // 每个动作只写自己那几列，想清空别的列都无从下手。
 
-    await _db.upsertAudiobook(_audiobookToCompanion(audiobook));
-    // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、墓碑
-    // 还在」误判（范式仿书/视频的插入清墓碑）。落库串走 core 的 SyncTombstoneKind。
+  /// 保证 [bookKey] 有一行；已存在则原样不动。附加音频/字幕前先调它。
+  Future<void> ensureAudiobook(String bookKey) async {
+    await _db.ensureAudiobookRow(bookKey);
+    // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、
+    // 墓碑还在」误判（范式仿书/视频的插入清墓碑）。
     await _db.clearSyncDeletionTombstone(
-        SyncTombstoneKind.audiobook.dbValue, audiobook.bookKey);
-    if (audioChanged) {
-      await updatePositionMs(bookKey: audiobook.bookKey, positionMs: 0);
-    }
-    debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey} '
-        'audioChanged=$audioChanged');
+        SyncTombstoneKind.audiobook.dbValue, bookKey);
   }
 
-  /// 两条记录是否指向**同一套音频**（BUG-1679 的进度作废判据）。
-  /// 目录模式看 [Audiobook.audioRoot]，文件模式看 [Audiobook.audioPaths] 的
-  /// 有序列表——顺序即 `audioFileIndex` 的含义，换序就是换时间轴。
-  static bool _sameAudioSource(Audiobook a, Audiobook b) {
-    if (a.audioRoot != b.audioRoot) return false;
-    return AudiobookStorage.sameAudioPathList(
-      a.audioPaths ?? const <String>[],
-      b.audioPaths ?? const <String>[],
+  /// 换音频（唯一写音频两列的入口）。[audioPaths] 为落地后的绝对路径列表，
+  /// 顺序即 `AudioCue.audioFileIndex` 的含义。写入后 `audioRoot` 恒为 null：
+  /// 新音频一律文件列表模式，legacy 目录模式不得残留（否则读取端在 audioPaths
+  /// 断链时会回退去扫早已作废的旧目录）。
+  ///
+  /// BUG-1679：音频集合真的变了就把播放进度归零。`audiobook_pos_<bookKey>` 记的
+  /// 是**毫秒偏移**，只在它绑定的那一套音频上有意义；换一套后同一个数字指向的是
+  /// 另一段声音：
+  ///   * 超出新音频总时长 → [AudiobookPlayerController.load] 的恢复 seek 把播放器
+  ///     钉在 EOF，按播放立刻结束 —— 用户看到的是「音频不响」；
+  ///   * 落在时长内 → 起播点随机，followAudio 立刻把阅读器拽到那条 cue 所在的页
+  ///     —— 用户看到的是「乱跳页」。
+  /// 判据是数据本身（新旧集合不等），所以重复导入同一组音频不会误伤「听到哪儿了」。
+  /// 旧行不存在时也归零：bookKey 是 sanitize 后的书名，删书重导会拿到同一个 key，
+  /// 而 preferences 不随书删除，上一世的进度会原样复活。
+  Future<void> replaceAudio({
+    required String bookKey,
+    required List<String> audioPaths,
+  }) async {
+    await ensureAudiobook(bookKey);
+    final AudiobookRow? before = await _db.getAudiobookByBookKey(bookKey);
+    final bool audioChanged = before == null ||
+        before.audioRoot != null ||
+        !AudiobookStorage.sameAudioPathList(
+          _audioPathsOf(before),
+          audioPaths,
+        );
+
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioRoot: const Value<String?>(null),
+      ),
     );
+    if (audioChanged) {
+      await updatePositionMs(bookKey: bookKey, positionMs: 0);
+    }
+    debugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
+        'files=${audioPaths.length} audioChanged=$audioChanged');
+  }
+
+  /// 换对齐字幕（唯一写 alignment 两列的入口）。
+  Future<void> replaceAlignment({
+    required String bookKey,
+    required String format,
+    required String path,
+  }) async {
+    await ensureAudiobook(bookKey);
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(
+        alignmentFormat: Value(format),
+        alignmentPath: Value(path),
+      ),
+    );
+  }
+
+  /// 回写 health 四列（唯一写 health 列的入口）。与 [updateHealthOverlay]
+  /// 的 pref overlay 是两回事：这里落的是 audiobooks 行上的持久值。
+  Future<void> writeHealth({
+    required String bookKey,
+    required AudiobookHealth health,
+  }) async {
+    await ensureAudiobook(bookKey);
+    final Audiobook carrier = Audiobook()..bookKey = bookKey;
+    health.packInto(carrier);
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(
+        healthKindRaw: Value(carrier.healthKindRaw),
+        matchRatePct: Value(carrier.matchRatePct),
+        healthMeasuredAt: Value(carrier.healthMeasuredAt),
+        healthReason: Value(carrier.healthReason),
+      ),
+    );
+  }
+
+  static List<String> _audioPathsOf(AudiobookRow row) {
+    final String? raw = row.audioPathsJson;
+    if (raw == null) return const <String>[];
+    return (jsonDecode(raw) as List<dynamic>).cast<String>();
   }
 
   /// [propagateDeletion]（默认 false）：true 时记一条 `audiobook` sync 删除墓碑，供同步
@@ -300,19 +360,7 @@ class AudiobookRepository {
     return ab;
   }
 
-  static AudiobooksCompanion _audiobookToCompanion(Audiobook ab) {
-    return AudiobooksCompanion(
-      bookKey: Value(ab.bookKey),
-      audioRoot: Value(ab.audioRoot),
-      audioPathsJson:
-          Value(ab.audioPaths != null ? jsonEncode(ab.audioPaths) : null),
-      alignmentFormat: Value(ab.alignmentFormat),
-      alignmentPath: Value(ab.alignmentPath),
-      healthKindRaw: Value(ab.healthKindRaw),
-      matchRatePct: Value(ab.matchRatePct),
-      healthMeasuredAt: Value(ab.healthMeasuredAt),
-      healthReason: Value(ab.healthReason),
-      followAudio: Value(ab.followAudio),
-    );
-  }
+  // 这里曾有一个 `_audiobookToCompanion(Audiobook)`：把整个模型摊成每列都是
+  // `Value(...)` 的 companion 去做整行覆盖。它随 `saveAudiobook` 一起删除——
+  // 只要这个函数还在，就总有人凭空造模型再写全行，把没碰的列清空（BUG-1678）。
 }
