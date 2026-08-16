@@ -126,5 +126,31 @@ void main() {
     expect(chapter.author, 'Author');
     expect(chapter.pageCount, 1);
     expect(chapter.pageIdentities.single, hasLength(64));
+    // Single-language manifest exposes its language for Lens OCR.
+    expect(chapter.sourceLanguage, 'ja');
+  });
+
+  test('Aidoku multi-language manifest reports null source language', () {
+    final AidokuReaderChapter chapter = AidokuReaderChapter(
+      package: AidokuInstalledPackage(
+        id: 'multi.fixture',
+        name: 'Fixture',
+        version: 1,
+        languages: const <String>['en', 'ja'],
+        requiresWebView: false,
+        packagePath: '/tmp/fixture.aix',
+        installedAt: DateTime.utc(2026),
+      ),
+      manga: const <String, Object?>{'key': '/manga/', 'title': 'Fixture'},
+      chapter: const <String, Object?>{'key': '/chapter/1/'},
+      pages: <AidokuImagePage>[
+        AidokuImagePage.fromJson(const <String, Object?>{
+          'content': <String, Object?>{
+            'Url': <Object?>['https://cdn.example/page.jpg', null],
+          },
+        }),
+      ],
+    );
+    expect(chapter.sourceLanguage, isNull);
   });
 }

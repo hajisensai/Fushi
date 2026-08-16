@@ -98,6 +98,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   final TextEditingController _titleCtrl = TextEditingController();
 
   _WizardStage _stage = _WizardStage.pick;
+
+  /// Lens 识别语言（主子标签）。初值来自偏好；仅 Lens 引擎显示选择器。
+  late String _lensLanguage =
+      normalizeLensLanguage(widget.engines.initialLensLanguage);
   String? _imageDir;
   MangaOcrFolderStatus? _folderStatus;
 
@@ -387,7 +391,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         dir,
         kMangaOcrOutDirName,
         kMangaOcrPagesCacheDirName,
-        kGoogleLensEngineSignature,
+        googleLensEngineSignature(_lensLanguage),
       )),
     );
     final List<MokuroImage> cachedPages = <MokuroImage>[];
@@ -402,9 +406,9 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (cachedPages.length == pages.length && pages.isNotEmpty) {
       final MokuroPayload payload = MokuroPayload(
         images: cachedPages,
-        ocr: const MangaOcrMetadata(
+        ocr: MangaOcrMetadata(
           engine: 'google_lens',
-          engineSignature: kGoogleLensEngineSignature,
+          engineSignature: googleLensEngineSignature(_lensLanguage),
           schemaVersion: 1,
         ),
       );
@@ -431,6 +435,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       volumeTitle: _title,
       startPage: widget.startPage,
       onlyMissing: widget.onlyMissing,
+      language: _lensLanguage,
     )) {
       if (event.finished) {
         yield MangaOcrBackgroundEvent.finished(
@@ -645,6 +650,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       volumeTitle: _title,
       startPage: widget.startPage,
       onlyMissing: widget.onlyMissing,
+      language: _lensLanguage,
     )
         .listen(
       (MangaOcrVolumeEvent event) {
@@ -911,6 +917,11 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
             if (_folderStatus == MangaOcrFolderStatus.valid) ...<Widget>[
               const SizedBox(height: 12),
               _engineSelector(busy),
+              if (_engine == MangaOcrEngineId.googleLens &&
+                  _lensAvailable) ...<Widget>[
+                const SizedBox(height: 12),
+                _lensLanguageSelector(busy),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _titleCtrl,
@@ -1033,6 +1044,37 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[selector, remoteReason],
+    );
+  }
+
+  /// Lens 识别语言下拉。选项存主子标签，显示语言自称名（无需翻译）。
+  Widget _lensLanguageSelector(bool busy) {
+    final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
+      for (final (String tag, String label) in kGoogleLensLanguageOptions)
+        DropdownMenuItem<String>(value: tag, child: Text(label)),
+      // 偏好里存了列表外的语言（未来扩充/手改）时保留原值，避免选中项失效。
+      if (!kGoogleLensLanguageOptions
+          .any(((String, String) option) => option.$1 == _lensLanguage))
+        DropdownMenuItem<String>(
+          value: _lensLanguage,
+          child: Text(_lensLanguage),
+        ),
+    ];
+    return DropdownButtonFormField<String>(
+      initialValue: _lensLanguage,
+      items: items,
+      onChanged: busy
+          ? null
+          : (String? value) {
+              if (value == null) return;
+              setState(() => _lensLanguage = value);
+              widget.engines.lensLanguageSetter?.call(value);
+            },
+      decoration: InputDecoration(
+        labelText: t.manga_ocr_lens_language_label,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
     );
   }
 

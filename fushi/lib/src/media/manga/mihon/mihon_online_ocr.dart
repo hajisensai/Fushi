@@ -25,6 +25,7 @@ class MihonOnlineMangaOcr {
     required this.managedDirectory,
     required this.initialPayload,
     required this.startPage,
+    required this.language,
     GoogleLensMangaOcrService? lens,
   }) : _lens = lens ?? GoogleLensMangaOcrService();
 
@@ -32,6 +33,9 @@ class MihonOnlineMangaOcr {
   final Directory managedDirectory;
   final MokuroPayload initialPayload;
   final int startPage;
+
+  /// Lens LocaleContext 语言（在线源的元数据语言，见 `sourceLanguage`）。
+  final String language;
   final GoogleLensMangaOcrService _lens;
   static final _MihonOnlineOcrMemoryCache _memoryCache =
       _MihonOnlineOcrMemoryCache(kMihonOnlineOcrMemoryPages);
@@ -98,7 +102,7 @@ class MihonOnlineMangaOcr {
           imagesDirectory.path,
           kMangaOcrOutDirName,
           kMangaOcrPagesCacheDirName,
-          kGoogleLensEngineSignature,
+          googleLensEngineSignature(language),
         ),
       ),
     );
@@ -124,6 +128,9 @@ class MihonOnlineMangaOcr {
         );
         final String memoryKey = <String>[
           p.canonicalize(managedDirectory.path),
+          // Language joins the key: switching language must not reuse the
+          // previous language's in-memory page result.
+          googleLensEngineSignature(language),
           session.cacheIdentity(pageIndex),
         ].join('\u001f');
         final MokuroImage? memoryCached = _memoryCache.get(memoryKey);
@@ -133,6 +140,7 @@ class MihonOnlineMangaOcr {
             await _lens.recognizePageBytes(
               await file.readAsBytes(),
               relativeUrl: relativeUrl,
+              language: language,
             );
         results[pageIndex] = recognized;
         if (cached == null) {
@@ -159,9 +167,9 @@ class MihonOnlineMangaOcr {
 
     final MokuroPayload payload = MokuroPayload(
       images: results,
-      ocr: const MangaOcrMetadata(
+      ocr: MangaOcrMetadata(
         engine: 'google_lens',
-        engineSignature: kGoogleLensEngineSignature,
+        engineSignature: googleLensEngineSignature(language),
         schemaVersion: 1,
       ),
     );

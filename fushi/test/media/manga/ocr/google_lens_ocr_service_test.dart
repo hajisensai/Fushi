@@ -49,7 +49,7 @@ void main() {
     final GoogleLensMangaOcrService service =
         GoogleLensMangaOcrService(transport: transport);
     final List<MangaOcrVolumeEvent> events = await service
-        .ocrFolder(imageDirPath: root.path, onlyMissing: false)
+        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
         .toList();
 
     expect(transport.requests, 2);
@@ -57,7 +57,7 @@ void main() {
     final MokuroPayload payload =
         parseMangaJson(File(events.last.mangaJsonPath!).readAsStringSync());
     expect(payload.ocr?.engine, 'google_lens');
-    expect(payload.ocr?.engineSignature, kGoogleLensEngineSignature);
+    expect(payload.ocr?.engineSignature, googleLensEngineSignature('ja'));
     expect(payload.images, hasLength(2));
     expect(payload.images.first.blocks.single.lines.single, '日本');
     expect(payload.images.first.blocks.single.regions, hasLength(2));
@@ -66,13 +66,13 @@ void main() {
   test('page cache resumes without another network request', () async {
     final _FakeTransport first = _FakeTransport(makeGoogleLensFixture());
     await GoogleLensMangaOcrService(transport: first)
-        .ocrFolder(imageDirPath: root.path, onlyMissing: false)
+        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
         .drain<void>();
     expect(first.requests, 2);
 
     final _FakeTransport second = _FakeTransport(makeGoogleLensFixture());
     await GoogleLensMangaOcrService(transport: second)
-        .ocrFolder(imageDirPath: root.path, onlyMissing: false)
+        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
         .drain<void>();
     expect(second.requests, 0);
   });
@@ -84,7 +84,7 @@ void main() {
       root.path,
       kMangaOcrOutDirName,
       kMangaOcrPagesCacheDirName,
-      kGoogleLensEngineSignature,
+      googleLensEngineSignature('ja'),
     ));
     final GoogleLensPageCache writer = GoogleLensPageCache(directory);
     await writer.write(
@@ -135,7 +135,9 @@ void main() {
   test('source change invalidates only that Lens page', () async {
     await GoogleLensMangaOcrService(
       transport: _FakeTransport(makeGoogleLensFixture()),
-    ).ocrFolder(imageDirPath: root.path, onlyMissing: false).drain<void>();
+    )
+        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
+        .drain<void>();
     await Future<void>.delayed(const Duration(milliseconds: 2));
     File(p.join(root.path, 'p2.png')).writeAsBytesSync(
       img.encodePng(img.Image(width: 222, height: 200)),
@@ -144,7 +146,7 @@ void main() {
 
     final _FakeTransport transport = _FakeTransport(makeGoogleLensFixture());
     await GoogleLensMangaOcrService(transport: transport)
-        .ocrFolder(imageDirPath: root.path, onlyMissing: false)
+        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
         .drain<void>();
     expect(transport.requests, 1);
   });
@@ -159,6 +161,7 @@ void main() {
           imageDirPath: root.path,
           startPage: 1,
           onlyMissing: false,
+          language: 'ja',
         )
         .toList();
     progress.addAll(
@@ -167,5 +170,59 @@ void main() {
           ),
     );
     expect(progress, <int>[1, 2]);
+  });
+
+  test('per-language cache dirs are independent and clearCache removes all',
+      () async {
+    final _FakeTransport ja = _FakeTransport(makeGoogleLensFixture());
+    final GoogleLensMangaOcrService service =
+        GoogleLensMangaOcrService(transport: ja);
+    await service
+        .ocrFolder(imageDirPath: root.path, onlyMissing: false, language: 'ja')
+        .drain<void>();
+    expect(ja.requests, 2);
+
+    // Same volume in another language must not reuse the ja page cache.
+    final _FakeTransport en = _FakeTransport(makeGoogleLensFixture());
+    final List<MangaOcrVolumeEvent> events =
+        await GoogleLensMangaOcrService(transport: en)
+            .ocrFolder(
+              imageDirPath: root.path,
+              onlyMissing: false,
+              language: 'en',
+            )
+            .toList();
+    expect(en.requests, 2);
+    final MokuroPayload payload =
+        parseMangaJson(File(events.last.mangaJsonPath!).readAsStringSync());
+    expect(payload.ocr?.engineSignature, googleLensEngineSignature('en'));
+
+    final Directory cacheRoot = Directory(p.join(
+      root.path,
+      kMangaOcrOutDirName,
+      kMangaOcrPagesCacheDirName,
+    ));
+    expect(
+      Directory(p.join(cacheRoot.path, googleLensEngineSignature('ja')))
+          .existsSync(),
+      isTrue,
+    );
+    expect(
+      Directory(p.join(cacheRoot.path, googleLensEngineSignature('en')))
+          .existsSync(),
+      isTrue,
+    );
+
+    await service.clearCache(root.path);
+    expect(
+      Directory(p.join(cacheRoot.path, googleLensEngineSignature('ja')))
+          .existsSync(),
+      isFalse,
+    );
+    expect(
+      Directory(p.join(cacheRoot.path, googleLensEngineSignature('en')))
+          .existsSync(),
+      isFalse,
+    );
   });
 }

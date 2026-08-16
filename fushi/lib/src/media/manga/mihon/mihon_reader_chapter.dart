@@ -15,6 +15,10 @@ abstract class OnlineMangaReaderChapter {
   int? get initialPage;
   String get title;
   String? get author;
+
+  /// 源声明的内容语言（Mihon `source.lang` / Aidoku 单语言 manifest）；
+  /// 未知或多语言源返回 null，由消费方决定回退（Lens OCR 回退用户偏好）。
+  String? get sourceLanguage;
   int get pageCount;
   List<String> get pageIdentities;
   String get identityFileName;
@@ -51,6 +55,12 @@ class MihonReaderChapter extends OnlineMangaReaderChapter {
 
   @override
   String? get author => manga.author ?? manga.artist;
+
+  @override
+  String? get sourceLanguage {
+    final String language = sourceContext.source.language.trim();
+    return language.isEmpty ? null : language;
+  }
 
   @override
   int get pageCount => pages.length;

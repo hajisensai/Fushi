@@ -3440,5 +3440,6 @@
   "manga_global_search_title": "搜索全部来源",
   "manga_global_search_hint": "搜索所有已启用来源",
   "manga_global_search_prompt": "输入书名，一次搜索所有已启用的漫画来源。",
-  "manga_global_search_no_sources": "没有已启用的漫画来源，请先安装并启用扩展。"
+  "manga_global_search_no_sources": "没有已启用的漫画来源，请先安装并启用扩展。",
+  "manga_ocr_lens_language_label": "识别语言"
 }

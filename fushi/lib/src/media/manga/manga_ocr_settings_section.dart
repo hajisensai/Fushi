@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
@@ -28,6 +29,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.mokuroPathSetter,
     this.enginePreferenceGetter,
     this.enginePreferenceSetter,
+    this.lensLanguageGetter,
+    this.lensLanguageSetter,
     super.key,
   });
 
@@ -48,6 +51,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   final String Function()? enginePreferenceGetter;
   final Future<void> Function(String value)? enginePreferenceSetter;
 
+  /// Google Lens 识别语言偏好读写（可选：省略时下拉不出现）。
+  final String Function()? lensLanguageGetter;
+  final Future<void> Function(String value)? lensLanguageSetter;
+
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
       _MangaOcrSettingsSectionState();
@@ -57,6 +64,7 @@ class _MangaOcrSettingsSectionState
     extends ConsumerState<MangaOcrSettingsSection> {
   late final TextEditingController _pathCtrl;
   late MangaOcrEnginePreference _enginePreference;
+  late String _lensLanguage;
 
   MangaOcrModelStatus? _status;
   bool _loadingStatus = true;
@@ -80,6 +88,7 @@ class _MangaOcrSettingsSectionState
     _enginePreference = MangaOcrEnginePreferenceKey.fromKey(
       _readEnginePreference(),
     );
+    _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
     if (widget.service.isSupportedPlatform) {
       unawaited(_loadStatus());
     } else {
@@ -122,6 +131,10 @@ class _MangaOcrSettingsSectionState
     if (setter != null) {
       await setter(preference.key);
     }
+  }
+
+  Future<void> _writeLensLanguage(String language) async {
+    await widget.lensLanguageSetter?.call(language);
   }
 
   Future<void> _loadStatus() async {
@@ -285,6 +298,10 @@ class _MangaOcrSettingsSectionState
         // 桌面里等于让移动端用户无法持久地退回离线引擎。外部 mokuro 是桌面工具，
         // 由下拉项自身 disable，不再靠整块 gating。
         _inset(_buildEnginePreference(theme)),
+        if (widget.lensLanguageGetter != null) ...<Widget>[
+          const SizedBox(height: 12),
+          _inset(_buildLensLanguage(theme)),
+        ],
         const SizedBox(height: 12),
         if (widget.service.isSupportedPlatform)
           _buildModelBlock(theme)
@@ -350,6 +367,36 @@ class _MangaOcrSettingsSectionState
         if (value == null) return;
         setState(() => _enginePreference = value);
         unawaited(_writeEnginePreference(value));
+      },
+    );
+  }
+
+  /// Google Lens 识别语言（默认/本地书兜底）。在线阅读优先用源声明的语言，
+  /// 只有源语言未知时才回退到这里；本地漫画整卷 OCR 直接用此值。
+  Widget _buildLensLanguage(ThemeData theme) {
+    final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
+      for (final (String tag, String label) in kGoogleLensLanguageOptions)
+        DropdownMenuItem<String>(value: tag, child: Text(label)),
+      if (!kGoogleLensLanguageOptions
+          .any(((String, String) option) => option.$1 == _lensLanguage))
+        DropdownMenuItem<String>(
+          value: _lensLanguage,
+          child: Text(_lensLanguage),
+        ),
+    ];
+    return DropdownButtonFormField<String>(
+      key: const ValueKey<String>('manga_ocr_lens_language'),
+      initialValue: _lensLanguage,
+      decoration: InputDecoration(
+        labelText: t.manga_ocr_lens_language_label,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: items,
+      onChanged: (String? value) {
+        if (value == null) return;
+        setState(() => _lensLanguage = value);
+        unawaited(_writeLensLanguage(value));
       },
     );
   }

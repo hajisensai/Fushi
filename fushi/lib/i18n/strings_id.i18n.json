@@ -3440,5 +3440,6 @@
   "manga_global_search_title": "Search all sources",
   "manga_global_search_hint": "Search every enabled source",
   "manga_global_search_prompt": "Type a title to search every enabled manga source at once.",
-  "manga_global_search_no_sources": "No enabled manga sources. Install and enable an extension first."
+  "manga_global_search_no_sources": "No enabled manga sources. Install and enable an extension first.",
+  "manga_ocr_lens_language_label": "Bahasa pengenalan"
 }
