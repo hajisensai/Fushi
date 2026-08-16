@@ -55,4 +55,12 @@ A/B/C 的诊断改动已从分支撤回（只是实验，不入库）。
 绕过该 gate 则链接阶段缺 `libfushi_aidoku_runtime.a`。这挡住的不只是漫画源，而是
 **所有 iOS 集成测试**（查词、阅读器等与 Aidoku 无关的用例一并无法在模拟器上跑）。
 
-本 PR 顺带修掉这条构建门（见下），但 iOS 侧的本 bug 复现仍待补。
+本 PR 顺带修掉这条构建门（`build_aidoku_runtime.sh` 按 `PLATFORM_NAME` + `ARCHS`
+逐架构构建 + lipo），实测 `flutter build ios --debug --simulator` 已能产出
+`Runner.app`，iOS 集成测试全面解锁。
+
+解锁后在 iPhone 17 Pro 模拟器上跑命中探针：**结果区 WebView 命中正常**
+（`innerHeight 509 / innerWidth 402`，favorite / mine 均 `hitIsSelf: true`、
+`inViewport: true`，用例 All tests passed）。与 macOS 结果区结论一致。
+**iOS 的浮层侧仍未验证**——探针目前只覆盖结果区，且模拟器上的真实触摸注入需要
+桌面解锁后用 CGEvent 点模拟器窗口。
