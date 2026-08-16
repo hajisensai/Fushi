@@ -3451,5 +3451,15 @@
   "settings_content_language_title": "Default content language",
   "settings_content_language_unset": "Not set",
   "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
-  "manga_ocr_lens_language_label": "Recognition language"
+  "manga_ocr_lens_language_label": "Recognition language",
+  "dict_user_title": "User dictionary",
+  "dict_user_entry_add": "Add entry",
+  "dict_user_entry_edit": "Edit entry",
+  "dict_user_entry_delete_confirm": "Delete this entry?",
+  "dict_user_field_expression": "Headword",
+  "dict_user_field_reading": "Reading",
+  "dict_user_field_meaning": "Definition",
+  "dict_user_empty": "No entries yet. Add one to build your own dictionary.",
+  "dict_user_expression_required": "Headword cannot be empty",
+  "dict_user_rebuild_failed": "Failed to rebuild the user dictionary"
 }

@@ -18,6 +18,7 @@ export 'src/pages/implementations/downloads_page.dart';
 export 'src/pages/implementations/browser_extension_page.dart';
 export 'src/pages/implementations/home_page.dart';
 export 'src/pages/implementations/text_segmentation_dialog_page.dart';
+export 'src/pages/implementations/user_dictionary_editor_page.dart';
 export 'src/pages/implementations/reader_fushi_page.dart';
 export 'src/pages/implementations/reader_fushi_history_page.dart';
 export 'src/pages/implementations/reader_pdf_page.dart';
