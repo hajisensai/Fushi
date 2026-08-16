@@ -916,6 +916,9 @@ window.fushiReader = {
         return this.waitForImages();
       })
       .then(() => {
+        // BUG-1688：几何变量必须在建舞台/量屏之前落地——`fitScreensToViewport`
+        // 是按当前 `.fushi-vn-screen` 盒切屏的，晚一步就会先按错的盒切一遍。
+        this.applyViewportVars();
         this.ensureStage();
         this.applyImageMaxVars();
         this.buildSourceIndexes();
@@ -960,6 +963,27 @@ window.fushiReader = {
       while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
     }
   },
+  applyViewportVars: function() {
+    // BUG-1688：VN 舞台的可用盒由 `_vnLayoutCss` 写成
+    // `padding-top: calc(<margin>vh + var(--chrome-top-inset, 0px))`，量尺
+    // `createScreenMeasurement` 又读 `--page-width / --page-height`。这四个变量原先
+    // **只有**分页/连续 shell 的 `initialize` 会写（reader_pagination_scripts.dart
+    // 的 `--chrome-*-inset` / `--page-*`），VN 从来不写 → 全部落到 0px / 100vw /
+    // 100vh 兜底：舞台按整个视口排版、量尺比真实屏大出整条 chrome 预留带，于是每屏
+    // 首尾行都被顶栏/底栏盖住（iOS 上还要再叠刘海与 home indicator，所以最严重）。
+    // 这里与分页 shell 用同一份 C 字段、同一组变量名对齐，VN 不再自成一套几何。
+    var root = document.documentElement;
+    if (!root || !root.style) return;
+    root.style.setProperty('--chrome-top-inset', (Number(C.chromeTopInset) || 0) + 'px');
+    root.style.setProperty('--chrome-bottom-inset', (Number(C.chromeBottomInset) || 0) + 'px');
+    var pageWidth = Number(C.dartPageWidth) || window.innerWidth || 0;
+    var pageHeight = Number(C.dartPageHeight) || window.innerHeight || 0;
+    if (pageWidth > 0) root.style.setProperty('--page-width', pageWidth + 'px');
+    if (pageHeight > 0) {
+      root.style.setProperty('--page-height', pageHeight + 'px');
+      root.style.setProperty('--reader-viewport-height', pageHeight + 'px');
+    }
+  },
   ensureStage: function() {
     if (this.stage && this.screen) return;
     this.stage = document.createElement('div');
@@ -983,8 +1007,14 @@ window.fushiReader = {
     var root = document.documentElement;
     if (!root || !root.style) return;
     var ratio = $imageWidthRatio;
-    var vw = Math.max(1, window.innerWidth || 0);
-    var vh = Math.max(1, window.innerHeight || 0);
+    // BUG-1688：「实际 VN 视口」就是 `.fushi-vn-screen` 这个盒——它已扣掉 chrome
+    // 预留带与用户边距。原来读 window.innerWidth/Height（整个视口）会把插图算到
+    // 能盖住顶栏/底栏的尺寸。取不到盒时才回退整视口（首屏极早期调用）。
+    var screenBox = this.screen && this.screen.getBoundingClientRect
+      ? this.screen.getBoundingClientRect()
+      : null;
+    var vw = Math.max(1, (screenBox && screenBox.width) || window.innerWidth || 0);
+    var vh = Math.max(1, (screenBox && screenBox.height) || window.innerHeight || 0);
     root.style.setProperty('--fushi-image-max-width', Math.max(1, Math.floor(vw * ratio)) + 'px');
     root.style.setProperty('--fushi-image-max-height', vh + 'px');
   },
@@ -1372,13 +1402,29 @@ window.fushiReader = {
     root.className = 'fushi-vn-screen';
     root.setAttribute('aria-hidden', 'true');
     root.style.position = 'fixed';
-    root.style.left = '0';
-    root.style.top = '0';
     root.style.zIndex = '-1';
     root.style.opacity = '0';
     root.style.pointerEvents = 'none';
-    root.style.width = 'var(--page-width, 100vw)';
-    root.style.height = 'var(--page-height, 100vh)';
+    // BUG-1688：量尺必须是真实 `.fushi-vn-screen` 的镜像。原来它固定在 (0,0) 并用
+    // `var(--page-width, 100vw) / var(--page-height, 100vh)` 撑开——VN 下这两个变量
+    // 从没人写（见 applyViewportVars），恒取 100vw/100vh 整视口，比真实屏盒大出整条
+    // chrome 预留带。于是 `measureScreenFits` 判「装得下」的屏，渲到真实盒里首尾行
+    // 正好落在被顶栏/底栏覆盖的区域——每一屏都如此，这就是 VN 不可用的直接成因。
+    // `.fushi-vn-screen` 是 border-box，把 rect 的宽高原样搬过来即得同一个内容盒。
+    var screenBox = this.screen && this.screen.getBoundingClientRect
+      ? this.screen.getBoundingClientRect()
+      : null;
+    if (screenBox && screenBox.width > 0 && screenBox.height > 0) {
+      root.style.left = screenBox.left + 'px';
+      root.style.top = screenBox.top + 'px';
+      root.style.width = screenBox.width + 'px';
+      root.style.height = screenBox.height + 'px';
+    } else {
+      root.style.left = '0';
+      root.style.top = '0';
+      root.style.width = 'var(--page-width, 100vw)';
+      root.style.height = 'var(--page-height, 100vh)';
+    }
     var content = document.createElement('div');
     content.className = 'fushi-vn-content';
     root.appendChild(content);
@@ -2993,15 +3039,36 @@ window.fushiReader = {
 (function() {
   var vn = window.fushiReader;
   if (!vn) return;
-  if (typeof vn.updatePageSize !== 'function') {
-    vn.updatePageSize = function(width, height) {
+  // BUG-1688：可用盒变了（视口尺寸 or chrome 预留带）就得按新盒重切屏并停在原处。
+  // updatePageSize / setChromeInsets 只在「写哪几个 CSS 变量」上不同，重切动作同一份。
+  if (typeof vn.refitScreensToCurrentViewport !== 'function') {
+    vn.refitScreensToCurrentViewport = function() {
       if (!this.screens || !this.screens.length) return;
       var progress = this.calculateProgress();
+      this.applyImageMaxVars();
       this.screens = this.fitScreensToViewport(this.baseScreens
         ? this.mergeSentenceAudioCrossScreenScreens(this.baseScreens)
         : this.screens);
       this.assignScreenProgressAnchors();
       this.renderScreen(this.screenIndexForProgress(progress), true);
+    };
+  }
+  if (typeof vn.updatePageSize !== 'function') {
+    vn.updatePageSize = function(width, height) {
+      // BUG-1688：原实现整个忽略入参，`--page-width/--page-height` 于是永远是 VN
+      // 从没写过的空值，量尺只能退回 100vw/100vh。这里与分页 shell 的 updatePageSize
+      // 写同一组变量（含 `--reader-viewport-height`），再按新盒重切屏。
+      var root = document.documentElement;
+      var w = Math.round(Number(width) || 0);
+      var h = Math.round(Number(height) || 0);
+      if (root && root.style) {
+        if (w > 0) root.style.setProperty('--page-width', w + 'px');
+        if (h > 0) {
+          root.style.setProperty('--page-height', h + 'px');
+          root.style.setProperty('--reader-viewport-height', h + 'px');
+        }
+      }
+      this.refitScreensToCurrentViewport();
     };
   }
   if (typeof vn.getFirstVisibleCharOffset !== 'function') {
@@ -3011,7 +3078,20 @@ window.fushiReader = {
     };
   }
   if (typeof vn.setChromeInsets !== 'function') {
-    vn.setChromeInsets = function(topPx, bottomPx) { return null; };
+    vn.setChromeInsets = function(topPx, bottomPx) {
+      // BUG-1688：这里原来是 `return null` 的空壳，于是 Dart 侧
+      // `_applyChromeInsets`（chrome.part.dart）每次下发的顶栏/底栏预留在 VN 下全部
+      // 丢掉，`.fushi-vn-stage` 的 `var(--chrome-*-inset, 0px)` 恒取兜底 0px。
+      // 与分页/连续 shell 的 setChromeInsets 写同一组变量，再按新的可用盒重切屏
+      // （预留带变化会改变每屏能装多少行，只改 padding 不重切会留下溢出的旧屏）。
+      var root = document.documentElement;
+      if (root && root.style) {
+        root.style.setProperty('--chrome-top-inset', (Number(topPx) || 0) + 'px');
+        root.style.setProperty('--chrome-bottom-inset', (Number(bottomPx) || 0) + 'px');
+      }
+      this.refitScreensToCurrentViewport();
+      return null;
+    };
   }
   if (typeof vn.restoreToCharOffset !== 'function') {
     vn.restoreToCharOffset = async function(charOffset) {
