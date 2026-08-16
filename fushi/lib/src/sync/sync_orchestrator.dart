@@ -690,6 +690,12 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) async {
     try {
+      // apikey 同步设定重设计：service-config（host 的外部服务 API key）此前是
+      // 无 UI 无开关的隐形通道。开关默认 true（行为不变）；关掉 = 本设备不再向
+      // host 请求 service-config（连请求都不发，不是拉回来再丢弃）。
+      if (!await SyncRepository(_db).isInterconnectServiceConfigSyncEnabled()) {
+        return;
+      }
       final InterconnectServiceConfigSnapshot? snapshot =
           await backend.getRemoteServiceConfig();
       if (snapshot == null) return;

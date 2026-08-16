@@ -75,6 +75,10 @@ abstract final class PrefRedactionPolicy {
     'video_metadata_fanart_api_key',
     'video_metadata_bangumi_token',
     'video_metadata_douban_authorized_token',
+    // Bangumi 追番同步 access token（media_tracking_service.dart）。此前只靠
+    // `token` 子串兜底才被拦——形状兜底是防漏网的最后一道，真凭据必须点名
+    //（apikey 同步设定重设计 2026-08-17：名单对称性审计）。
+    'media_tracking_bangumi_access_token',
     // 授权端点可能是私有服务 URL，也可能携带 query credential；它的名字没有
     // token/api_key 形状，必须显式点名，避免备份/Profile 分享时旁路出境。
     'video_metadata_douban_authorized_endpoint',

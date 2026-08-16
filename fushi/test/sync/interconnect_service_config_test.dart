@@ -242,4 +242,43 @@ void main() {
       reason: '明文会话上 service-config 必然 403，这一次请求就不该发出去',
     );
   });
+
+  // ── apikey 同步设定重设计（2026-08-17）：service-config 接收开关 ──────────
+
+  test('service-config 同步开关默认开（既有行为不变）且落库可关', () async {
+    final SyncRepository repo = SyncRepository(db);
+    expect(await repo.isInterconnectServiceConfigSyncEnabled(), isTrue,
+        reason: '默认 true：TLS 开着的存量互联用户行为零变化');
+    await repo.setInterconnectServiceConfigSyncEnabled(false);
+    expect(await repo.isInterconnectServiceConfigSyncEnabled(), isFalse);
+    await repo.setInterconnectServiceConfigSyncEnabled(true);
+    expect(await repo.isInterconnectServiceConfigSyncEnabled(), isTrue);
+  });
+
+  test('开关键是设备本地（信任决策不跨设备携带）', () {
+    expect(
+      SyncRepository.deviceLocalPrefKeys
+          .contains('interconnect_sync_service_config'),
+      isTrue,
+      reason: '「要不要接收 host 凭据」是每台设备自己的信任决策，'
+          '随备份漂移会把 A 机的选择强加给 B 机',
+    );
+  });
+
+  test('编排器在请求 service-config 之前先问开关（关 = 连请求都不发）', () {
+    // 源码守卫（orchestrator 的 _syncServiceConfigLive 是私有方法，行为面在
+    // run() 全流水线深处）：门控必须出现在 getRemoteServiceConfig 之前——
+    // 「拉回来再丢弃」或「拉了不应用」都不满足「关掉就不发请求」的语义。
+    final String src = File('lib/src/sync/sync_orchestrator.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final int methodStart = src.indexOf('_syncServiceConfigLive(');
+    expect(methodStart, greaterThan(0));
+    final int gate =
+        src.indexOf('isInterconnectServiceConfigSyncEnabled', methodStart);
+    final int request = src.indexOf('getRemoteServiceConfig', methodStart);
+    expect(gate, greaterThan(0), reason: '门控缺失 = 开关形同虚设');
+    expect(request, greaterThan(0));
+    expect(gate < request, isTrue, reason: '门控必须先于请求：关掉开关后连 GET 都不该发');
+  });
 }

@@ -3264,7 +3264,6 @@
   "download_resources_tab": "Resources",
   "video_external_settings_section": "External resource and subtitle providers",
   "video_torznab_settings_title": "Torznab indexers",
-  "video_torznab_settings_hint": "Configure one or more Jackett, Prowlarr, or compatible Torznab endpoints. Secrets stay on this device.",
   "video_torznab_add": "Add indexer",
   "video_torznab_name": "Name",
   "video_torznab_endpoint": "Endpoint",
@@ -3278,7 +3277,6 @@
   "video_external_insecure_http_hint": "Use only for a trusted local network endpoint.",
   "video_external_endpoint_invalid": "Enter a valid endpoint without credentials, query parameters, or fragments.",
   "video_opensubtitles_settings_title": "OpenSubtitles",
-  "video_opensubtitles_settings_hint": "API credentials and preferred subtitle languages stay on this device.",
   "video_opensubtitles_user_agent": "User-Agent",
   "video_opensubtitles_languages": "Preferred languages",
   "video_opensubtitles_languages_hint": "Comma-separated language codes, for example zh-CN,en,ja",
@@ -3453,5 +3451,9 @@
   "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
   "manga_ocr_lens_language_label": "Erkennungssprache",
   "sync_err_peer_unreachable": "Can't reach the paired device - it may be offline or not running Fushi.",
-  "remote_book_list_failed": "Couldn't fetch the remote library from the paired device."
+  "remote_book_list_failed": "Couldn't fetch the remote library from the paired device.",
+  "video_torznab_settings_hint": "Configure one or more Jackett, Prowlarr, or compatible Torznab endpoints. Secrets are never exported in backups; they may sync to paired devices over Interconnect (can be turned off in Interconnect settings).",
+  "video_opensubtitles_settings_hint": "API credentials are never exported in backups; they may sync to paired devices over Interconnect (can be turned off in Interconnect settings).",
+  "sync_interconnect_service_config_toggle": "Sync service configuration from host",
+  "sync_interconnect_service_config_toggle_desc": "Receive external service settings and API keys (Jimaku, TMDB, Torznab, OpenSubtitles, tracking) from the paired host over the encrypted Interconnect channel. Requires TLS."
 }

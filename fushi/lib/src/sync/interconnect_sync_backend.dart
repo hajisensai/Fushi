@@ -823,6 +823,15 @@ class InterconnectSyncBackend extends SyncBackend
   /// 对明文 http 用裸 client（老路径字节不变），并补 Basic auth。[coverUrl] 由 host
   /// 依 client 实际请求地址回填（scheme/host 与已解析地址一致），故指纹钉扎匹配。
   /// 非 2xx / 握手失败 / 网络异常抛出，由 [RemoteCoverImage] 转占位图。
+  /// 磁盘封面缓存命名空间 = 当前对端的**配对凭据**哈希：换 IP 不变（同一对端、
+  /// 封面没变，不重下，BUG-847）；换对端 / 重新配对（token 必换）→ 新命名空间，
+  /// 上一台对端的同名条目封面不再串味。未解析会话时回退全局 token。
+  @override
+  String get coverCacheNamespace {
+    final String identity = _activeToken ?? _token ?? '';
+    return 'ic${identity.hashCode.toRadixString(16)}';
+  }
+
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) async {
     await _ensureResolved();

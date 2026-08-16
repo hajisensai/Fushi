@@ -222,6 +222,13 @@ class SyncRepository {
   static const _keyInterconnectSyncAudioBookFiles =
       'interconnect_sync_audiobook_files';
   static const _keyInterconnectSyncVideoFiles = 'interconnect_sync_video_files';
+  // apikey 同步设定重设计（2026-08-17）：互联 service-config（host 的外部服务
+  // API key / 服务配置，interconnect_service_config.dart 白名单）此前是**无 UI、
+  // 无开关**的隐形通道——用户既看不见「配对后 host 的 Jimaku/TMDB key 会同步过来」
+  // 这件事，也关不掉它。默认 true 保持既有行为（TLS 开着的互联用户无感知），
+  // 开关落设备本地（要不要接收 host 凭据是每台设备自己的信任决策，不跨设备跟随）。
+  static const _keyInterconnectServiceConfigSync =
+      'interconnect_sync_service_config';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
@@ -626,6 +633,14 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectSyncVideoFiles, false);
   Future<void> setInterconnectSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncVideoFiles, v);
+
+  /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
+  /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，
+  /// 已导入的值保持原样（不回滚——那是用户此刻正在用的配置）。
+  Future<bool> isInterconnectServiceConfigSyncEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectServiceConfigSync, true);
+  Future<void> setInterconnectServiceConfigSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectServiceConfigSync, v);
 
   // ── Per-book audiobook position (synced) ──────────────────────────
 
@@ -1169,6 +1184,9 @@ class SyncRepository {
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,
+    // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
+    // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
+    _keyInterconnectServiceConfigSync,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能
