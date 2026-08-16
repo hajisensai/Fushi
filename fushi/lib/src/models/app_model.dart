@@ -3630,6 +3630,7 @@ class AppModel with ChangeNotifier {
         apiKeyProvider: () => prefsRepo.jimakuApiKey,
         httpClientFactory: createDownloadHttpClient,
         stagingDirFor: store.subsDirFor,
+        defaultContentLanguageProvider: () => prefsRepo.defaultContentLanguage,
       ).resolve,
       backendFactory: _torrentBackendFor,
       onTick: () {
@@ -3831,6 +3832,7 @@ class AppModel with ChangeNotifier {
       preferredLanguages: <String>[
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
+      defaultContentLanguage: prefsRepo.defaultContentLanguage,
     );
     final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
       database: database,
@@ -3853,6 +3855,7 @@ class AppModel with ChangeNotifier {
       preferredSubtitleLanguages: <String>[
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
+      defaultContentLanguage: prefsRepo.defaultContentLanguage,
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
       onBackendTaskAdded: _checkpointEmbeddedVideoDownload,

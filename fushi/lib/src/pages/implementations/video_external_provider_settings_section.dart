@@ -594,6 +594,13 @@ class _VideoExternalProviderSettingsSectionState
         DropdownButtonFormField<String>(
           key: const ValueKey<String>('video-opensubtitles-language'),
           initialValue: _preferredLanguage,
+          // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
+          // 排版，长标签在 360px 紧凑布局里直接横向溢出（`compact layout has no
+          // horizontal overflow` 会红）。这里的选项以前全是 `日本語` / `中文`
+          // 这类两三字的短标签，才一直没暴露；`''` 从「全部」改成「跟随视频语言」
+          // 后就撞上了——而且这不是中文特有：17 份 i18n 里未翻译的那些落的是英文
+          // 原串 `Follow video language`，比中文还长。所以修的是约束，不是文案。
+          isExpanded: true,
           decoration: InputDecoration(
             labelText: t.video_opensubtitles_languages,
             helperText: t.video_setting_jimaku_default_language_hint,
@@ -604,12 +611,21 @@ class _VideoExternalProviderSettingsSectionState
           items: <DropdownMenuItem<String>>[
             DropdownMenuItem<String>(
               value: '',
-              child: Text(t.video_jimaku_language_all),
+              // 与设置页那份同一语义：`''` = 跟随视频语言，不是「全部」。
+              child: Text(
+                t.video_jimaku_language_follow_video,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             for (final String language in kJimakuLanguageCodes)
               DropdownMenuItem<String>(
                 value: language,
-                child: Text(jimakuLanguageLabel(language)),
+                child: Text(
+                  jimakuLanguageLabel(language),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
           ],
           onChanged: (String? value) {

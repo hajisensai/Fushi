@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi/src/media/video/video_duration_probe.dart';
 
@@ -39,13 +40,19 @@ class JimakuPlanSubtitleResolver {
     required String Function() apiKeyProvider,
     required Future<http.Client> Function() httpClientFactory,
     required Directory Function(String planId) stagingDirFor,
+    String Function()? defaultContentLanguageProvider,
   })  : _apiKeyProvider = apiKeyProvider,
         _httpClientFactory = httpClientFactory,
-        _stagingDirFor = stagingDirFor;
+        _stagingDirFor = stagingDirFor,
+        _defaultContentLanguage = defaultContentLanguageProvider ?? (() => '');
 
   final String Function() _apiKeyProvider;
   final Future<http.Client> Function() _httpClientFactory;
   final Directory Function(String planId) _stagingDirFor;
+
+  /// 设置·外观·排版里的默认内容语言（选字幕语言的最后一档）。回调而非快照：
+  /// 用户随时能改，而本 resolver 的生命周期跟 service 一样长。
+  final String Function() _defaultContentLanguage;
 
   /// 为 [plan] 按 [videoAbsolutePaths]（包内真实视频）补取字幕。
   Future<ResolvedPlanSubtitles> resolve(
@@ -76,10 +83,20 @@ class JimakuPlanSubtitleResolver {
       if (files.isEmpty) {
         return const ResolvedPlanSubtitles.failed('jimaku entry has no files');
       }
+      // 语言优先级：用户在下载对话框里显式选的 > 视频自己的语言（音轨 tag）>
+      // 全局默认内容语言。都没有时传 null，`jimakuLanguageRank` 退回它自己的默认
+      // 权重——Jimaku 是日语字幕站，那条默认在这里是合理的领域知识，不是全局假设。
+      final String? preferredLanguage = resolveSubtitleDownloadLanguage(
+        explicitSubtitlePreference: plan.jimakuLanguage,
+        contentMetadataLanguage:
+            (await probeVideoFacts(videoAbsolutePaths.first))
+                .primaryAudioLanguage,
+        globalDefaultContentLanguage: _defaultContentLanguage(),
+      );
       final List<ResolvedSubtitleMatch> matches = matchJimakuFilesToVideoNames(
         videoAbsolutePaths,
         files,
-        preferredLanguage: plan.jimakuLanguage,
+        preferredLanguage: preferredLanguage,
       );
       if (matches.isEmpty) {
         // 反查一条都对不上——绝大多数是条目选错季或用了绝对集号编号。

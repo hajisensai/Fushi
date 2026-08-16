@@ -28,6 +28,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -521,6 +522,7 @@ class VideoDownloadPipelineService {
     required this.scrapeCoordinator,
     this.onBackendTaskAdded,
     this.subtitleRegistry,
+    this.defaultContentLanguage,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
     String? workerId,
     this.pollInterval = const Duration(seconds: 5),
@@ -533,7 +535,14 @@ class VideoDownloadPipelineService {
   final FushiDatabase database;
   final VideoResourceRegistry resourceRegistry;
   final VideoSubtitleRegistry? subtitleRegistry;
+
+  /// 用户在设置里**显式**选的字幕语言（`jimakuDefaultLanguage`）。非空即硬过滤
+  /// （进 `VideoSubtitleSearchRequest.languages`）——他自己说的。
   final List<String> preferredSubtitleLanguages;
+
+  /// 设置·外观·排版里的默认内容语言。没有显式字幕语言、视频也没有可读语言时的
+  /// 最后一档；空/null = 不表态（**不猜**，见 subtitle_language_preference.dart）。
+  final String? defaultContentLanguage;
   final VideoDownloadBackendResolver backendResolver;
   final VideoSourceScrapeCoordinator scrapeCoordinator;
   final Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded;
@@ -1918,17 +1927,31 @@ class VideoDownloadPipelineService {
     if (candidates.isEmpty) {
       return (picked: null, reason: 'No subtitle candidate was returned');
     }
-    final int? durationMs = await probeVideoDurationMs(videoPath);
+    // 一次 ffprobe 拿两件事实：时长（校验用）+ 音轨语言（选语言用）。
+    final VideoProbeFacts facts = await probeVideoFacts(videoPath);
     _ensureLeaseHeld();
-    final KnownVideoDuration? known =
-        durationMs == null ? null : KnownVideoDuration.probed(durationMs);
+    final KnownVideoDuration? known = facts.durationMs == null
+        ? null
+        : KnownVideoDuration.probed(facts.durationMs!);
+    // 默认取**视频自己的语言**：设置里显式选过就用那个，否则用音轨自报的语言。
+    // 这里是**排序**不是过滤——只有英文字幕的日语番仍然配得上，只是排在后面。
+    final String? preferredLanguage = resolveSubtitleDownloadLanguage(
+      explicitSubtitlePreference: preferredSubtitleLanguages.firstOrNull,
+      contentMetadataLanguage: facts.primaryAudioLanguage,
+      globalDefaultContentLanguage: defaultContentLanguage,
+    );
+    final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
+      candidates,
+      preferredLanguage,
+      (VideoSubtitleCandidate c) => c.language,
+    );
     String? lastRejection;
     String? lastDownloadError;
-    final int limit = candidates.length < kSubtitleVerifyMaxCandidates
-        ? candidates.length
+    final int limit = ordered.length < kSubtitleVerifyMaxCandidates
+        ? ordered.length
         : kSubtitleVerifyMaxCandidates;
     for (int i = 0; i < limit; i++) {
-      final VideoSubtitleCandidate candidate = candidates[i];
+      final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
       try {
         download = await subtitleRegistry!.download(candidate);

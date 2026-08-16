@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1571 条。点号进各自文件。
+> 共 1572 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1700](bugs/BUG-1700-subtitle-default-language-not-video-language.md) | ✅ | ✅ | 自动下字幕的默认语言是「不限」，实际拿到的语言随缘，不跟视频自身语言 |
 | [BUG-1698](bugs/BUG-1698-subtitle-backfill-after-scrape.md) | ✅ | ✅ | 刮削解析出的规范身份没被字幕侧使用，且自动配字幕能力对用户完全不可见 |
 | [BUG-1697](bugs/BUG-1697-subtitle-content-never-verified.md) | ✅ | ✅ | 自动下载的字幕从不校验内容，整季合并文件被当成单集装上去 |
 | [BUG-1696](bugs/BUG-1696-subscription-blocks-download-without-subtitle.md) | ✅ | ✅ | 番剧订阅：当集 Jimaku 字幕还没上传就整条不下载，生肉早于字幕导致订阅长期不动 |

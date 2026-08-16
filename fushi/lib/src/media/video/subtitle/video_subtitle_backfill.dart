@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_duration_probe.dart';
@@ -37,6 +38,8 @@ class SubtitleBackfillTarget {
     required this.media,
     this.hasExistingSubtitle = false,
     this.scrapedRuntimeMinutes,
+    this.contentLanguage,
+    this.originalLanguage,
   });
 
   /// 视频稳定身份（`VideoBooks.bookUid`），只用于日志与调用方对账。
@@ -53,6 +56,14 @@ class SubtitleBackfillTarget {
 
   /// 刮削元数据里的播出时长（分钟）。ffprobe 探不到时的兜底时长来源。
   final int? scrapedRuntimeMinutes;
+
+  /// 用户对本视频**手动指定**的内容语言（`VideoBooks.language`，BCP-47）。
+  /// 选字幕语言时压过一切自动判断。
+  final String? contentLanguage;
+
+  /// 刮削出的作品原语言（TMDB `original_language` 等）。[contentLanguage] 没设时
+  /// 的第二档；比 mkv 音轨 tag 可靠（打包者常写错或不写）。
+  final String? originalLanguage;
 }
 
 /// 单个目标的补字幕结果。
@@ -97,11 +108,17 @@ class VideoSubtitleBackfillService {
   VideoSubtitleBackfillService({
     required this.registry,
     Iterable<String> preferredLanguages = const <String>[],
+    this.defaultContentLanguage,
     this.maxCandidates = 4,
   }) : preferredLanguages = List<String>.unmodifiable(preferredLanguages);
 
   final VideoSubtitleRegistry registry;
+
+  /// 用户在设置里**显式**选的字幕语言。非空即硬过滤（进搜索请求）。
   final List<String> preferredLanguages;
+
+  /// 设置·外观·排版里的默认内容语言；视频没有可读语言时的最后一档。
+  final String? defaultContentLanguage;
 
   /// 最多真下几条候选做校验。理由同下载流水线的
   /// `kSubtitleVerifyMaxCandidates`：候选可能几十条，全下一遍是对来源站的滥用。
@@ -159,13 +176,28 @@ class VideoSubtitleBackfillService {
       );
     }
 
-    final KnownVideoDuration? duration = await _resolveDuration(target);
+    // 一次 ffprobe 拿两件事实：时长（校验用）+ 音轨语言（选语言用）。
+    final VideoProbeFacts facts = await probeVideoFacts(target.videoPath);
+    final KnownVideoDuration? duration = _resolveDuration(target, facts);
+    // 默认取**视频自己的语言**。这里是排序不是过滤：只有英文字幕的日语番仍然
+    // 配得上，只是排在后面。硬过滤只属于用户显式选的语言（已进 request.languages）。
+    final String? preferred = resolveSubtitleDownloadLanguage(
+      explicitSubtitlePreference: preferredLanguages.firstOrNull,
+      videoContentLanguage: target.contentLanguage,
+      contentMetadataLanguage:
+          target.originalLanguage ?? facts.primaryAudioLanguage,
+      globalDefaultContentLanguage: defaultContentLanguage,
+    );
+    final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
+      result.items,
+      preferred,
+      (VideoSubtitleCandidate c) => c.language,
+    );
     String? lastRejection;
-    final int limit = result.items.length < maxCandidates
-        ? result.items.length
-        : maxCandidates;
+    final int limit =
+        ordered.length < maxCandidates ? ordered.length : maxCandidates;
     for (int i = 0; i < limit; i++) {
-      final VideoSubtitleCandidate candidate = result.items[i];
+      final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
       try {
         download = await registry.download(candidate);
@@ -207,10 +239,11 @@ class VideoSubtitleBackfillService {
   ///
   /// 顺序不能反：刮削 runtime 是**播出时长**（含广告位、只精确到分钟），拿它当
   /// 精确事实会误伤（见 [VideoDurationSource]）。它只在探不到时兜底。
-  Future<KnownVideoDuration?> _resolveDuration(
+  KnownVideoDuration? _resolveDuration(
     SubtitleBackfillTarget target,
-  ) async {
-    final int? probed = await probeVideoDurationMs(target.videoPath);
+    VideoProbeFacts facts,
+  ) {
+    final int? probed = facts.durationMs;
     if (probed != null) return KnownVideoDuration.probed(probed);
     final int? runtime = target.scrapedRuntimeMinutes;
     if (runtime != null && runtime > 0) {

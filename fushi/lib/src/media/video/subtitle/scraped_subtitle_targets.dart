@@ -47,6 +47,11 @@ List<SubtitleBackfillTarget> scrapedSubtitleTargets({
         episode: episode,
       ),
       scrapedRuntimeMinutes: _runtimeFor(metadata, season, episode),
+      // 「默认下视频语言的字幕」的两个来源：用户对本视频手动指定的内容语言
+      // （压过一切），与刮削出的作品原语言。两者都可能为空，那时由 ffprobe 的
+      // 音轨 tag 兜底，再没有就不表态——不猜。
+      contentLanguage: book.language,
+      originalLanguage: metadata.originalLanguage,
     ));
   }
   return out;

@@ -1168,7 +1168,13 @@ SettingsDestination buildVideoDestination() {
             },
           ),
           // 默认字幕语言：没有该系列记忆（jimakuPreferredLanguages）时的兜底优先语言。
-          // `''` = 不限（按 jimakuLanguageRank 默认权重排）。
+          //
+          // `''` 的语义已从「不限」改成「**跟随视频语言**」：自动下字幕时按视频
+          // 自己的语言（用户手动指定的内容语言 > 刮削 originalLanguage > 音轨 tag）
+          // 优先选，日语番取日语轨、韩剧取韩语轨。旧的「不限」实际效果是拿搜索结果
+          // 里排最前的那条，语言随缘——对一个沉浸学习 app 这不是合理默认。
+          // 注意这是**排序**不是过滤：只有英文字幕的日语番仍然配得上，只是排后面。
+          // 选定某个语言则是用户显式表态，进硬过滤。
           SettingsSegmentedItem<String>(
             id: 'video.subtitle.jimaku_default_language',
             title: t.video_setting_jimaku_default_language,
@@ -1177,7 +1183,11 @@ SettingsDestination buildVideoDestination() {
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: '',
-                label: t.video_jimaku_language_all,
+                // 不复用 video_jimaku_language_all（「全部」）：那个标签在字幕
+                // 对话框/条目选择器里是「别过滤我正在浏览的列表」，语义仍然正确；
+                // 这里同一个 `''` 值的意思已经变成「跟随视频语言」。同值不同义，
+                // 就该是两个标签。
+                label: t.video_jimaku_language_follow_video,
               ),
               for (final String code in kJimakuLanguageCodes)
                 SettingsSegmentOption<String>(
