@@ -207,6 +207,28 @@ void main() {
     final String fw =
         File('windows/runner/flutter_window.cpp').readAsStringSync();
 
+    test('BUG-1689：可激活面板 Reveal 时接管本线程活动窗口', () {
+      // 用户 2026-08-16：在游戏/浏览器里点一下剪贴板查词面板，Fushi 主界面就浮到
+      // 正在用的窗口上面（主窗非最小化时可见）。根因不在本仓代码：点击「所属进程
+      // 不在前台」的可激活窗口时，Windows 先把该线程的**活动窗口**（= runner 主窗）
+      // 前台化并抬升 Z 序，再把激活交给被点的窗口。把活动窗口换成面板自己，被抬升
+      // 的就是面板（它本来就该在最上），主窗不再被牵动。
+      //
+      // 断言走 containsCodeLine：上面这段根因注释里同样出现 SetActiveWindow。
+      expect(containsCodeLine(cpp, 'SetActiveWindow(hwnd_);'), isTrue,
+          reason: '面板不接管本线程活动窗口 -> 点面板会把主窗抬到用户窗口之上');
+      // 必须在 Reveal 的可激活分支里：无条件调用会让带 WS_EX_NOACTIVATE 的瞬态卡 /
+      // gal 卡窗也去抢本线程活动窗口，那是它们**刻意**不参与的（见 OverlayCreateExStyle）。
+      final int revealAt = cpp.indexOf('void GlobalLookupWindow::Reveal(');
+      expect(revealAt, greaterThan(0));
+      final String revealBody = cpp.substring(
+          revealAt, cpp.indexOf('void GlobalLookupWindow::RevealStack('));
+      expect(containsCodeLine(revealBody, 'if (activatable_) {'), isTrue,
+          reason: 'SetActiveWindow 必须被 activatable_ 门住');
+      expect(containsCodeLine(revealBody, 'SetActiveWindow(hwnd_);'), isTrue,
+          reason: '接管活动窗口必须发生在 Reveal（面板真正上屏那一刻）');
+    });
+
     test('render 仅面板 root 注入 panelRoot 标记（cascade settingsJs 恒不带）', () {
       expect(
           renderDart
