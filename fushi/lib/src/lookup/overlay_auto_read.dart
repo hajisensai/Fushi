@@ -53,7 +53,8 @@ class OverlayAutoRead {
   /// in-app 相同的统一契约 autoReadWordUnified（BUG-1127）：优先驱动表面自己的
   /// HTML5 `<audio>` 快路径（与手动 ♪ 同一 popup.js playWordAudio，桌面不再每播
   /// 一次 libmpv stop→load→play），播放结果经 wordAudioPlayed 桥真实回报，失败/
-  /// 超时回落 Dart 播放器（受 BUG-1015 warmUp 保护），绝不静默丢发音。
+  /// 超时回落 Dart 播放器（受 BUG-1015 惰性预热保护，BUG-1690 后预热在首次
+  /// 真实播放前的激活队列里就地执行），绝不静默丢发音。
   void autoReadFirstEntry(AppModel model, DictionarySearchResult result) {
     if (!ReaderFushiSource.instance.autoReadOnLookup) {
       return;

@@ -224,15 +224,12 @@ void main([List<String> args = const <String>[]]) {
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
 
-    // BUG-1015：just_audio_media_kit 首次平台激活会吞掉第一段播放输出，导致本次启动后
-    // 「第一次查词自动发音没声音、点第二次才响」。这里静音预热查词播放器一次，把冷启动
-    // 首帧空窗在无声中消耗掉，使首个真实自动发音即出声。fire-and-forget，不阻塞启动；
-    // 失败内部吞掉。仅桌面走 media_kit 需要——平台门控在 warmUpLookupAudioPlayer
-    // 内部（Android 原生 MediaPlayer 无此冷启动，no-op），本调用点自身不做门控。
-    // 注意（BUG-1093）：本预热只保护 Dart/media_kit 播放路径（app 外浮窗自动发音 +
-    // WebView 播放失败的兜底）；app 内自动发音的快路径是弹窗 WebView <audio>，其
-    // 首次无声根因是 WebView2 autoplay 策略，修在 fork 的环境参数里，与本预热无关。
-    unawaited(TtsChannel.instance.warmUpLookupAudioPlayer());
+    // BUG-1015 的查词播放器冷启动静音预热**不在启动路径**（BUG-1690）：预热要在真实
+    // 音频输出设备上开渲染流，启动即预热会打断其他 app 正在播的音乐（iOS 激活音频会话
+    // 直接暂停对方；蓝牙多点/独占输出被抢走）。预热已改为惰性——首次真实查词播放前，
+    // 由桌面查词播放器在自身的激活串行队列里就地执行（见 desktop_audio_playback.dart），
+    // BUG-1015 的保护不变。启动路径不得新增任何打开音频输出流的调用。
+    // （BUG-1093 弹窗 WebView <audio> 首次无声是 WebView2 autoplay 策略，与此无关。）
 
     // macOS native shell: initialise the macos_window_utils channel (paired with
     // MainFlutterWindowManipulator.start in MainFlutterWindow.swift) so the
