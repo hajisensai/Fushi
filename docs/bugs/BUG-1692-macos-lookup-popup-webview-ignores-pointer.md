@@ -25,15 +25,34 @@
 2. **BUG-1651 的弹窗自适应高度回路**（`onContentMetrics → setState(autoFitHeight)`）。该实现只存在于**本地未推送**的提交 `64d6a2bdc`，`origin/develop` 与用户运行的发布版都不含它，不可能是本 bug 成因。
 3. **「WKWebView 视口塌陷成 0×0 导致命中恒空」**。macOS 集成测试里确实抓到过 `innerHeight/innerWidth = 0` + `elementFromPoint` 返回 null，但**同一探针重跑得到 `innerHeight 478 / innerWidth 1083`、`hitIsSelf: true`**，且截图证实跑集成测试时 macOS 上根本没有可见窗口 ⇒ 那组 0 值是**离屏 + 布局未稳的瞬时伪影**，不是产品事实。任何基于「视口 0」的推论都必须先确认窗口可见。
 
+### 指针到底有没有到 WebView：到不了（已定性）
+
+在浮层**有真实词条**（非 no-results 面板）的状态下按住拖拽选字，**一个字符都选不中**。
+文本选择是 WKWebView 自己的行为、不经过 popup.js 的任何绑定，因此这条排除了
+「指针到了、只是 JS 没绑点词」的可能：**指针根本没到达浮层的 WKWebView**。
+
+### 对照实验（每条都改代码、重新构建、真机 CGEvent 点击复测）
+
+| # | 改动（仅 macOS 分支） | 结果 |
+|---|---|---|
+| A | `parkedPopupLayer` 不再把隐藏层停到屏外（`left: screen.width + 8` → 保持 `pos.left`） | ❌ 仍点不动 |
+| B | 可见态旁路 `Visibility(maintainSize)` + 入场淡入 `_PopupEntranceFade`/`AnimatedOpacity` | ❌ 仍点不动 |
+| C | `_BodySwipeDismissDetector` 的 `Listener` 由 `HitTestBehavior.opaque` 改 `deferToChild` | ❌ 仍点不动 |
+| D | 浮层不挂根 Overlay、改由页面内 `Stack` 渲染 | ⏸ **未完成**（复测中途 macOS 锁屏，未取得结论） |
+
+A/B/C 的诊断改动已从分支撤回（只是实验，不入库）。
+
 ### 下一步排查方向（按优先级）
 
-浮层与结果区的结构差异只剩这几条，逐条证伪即可收敛：
-1. 浮层挂在**根 Overlay**（`home_dictionary_page.dart::_syncPopupOverlay` / `_buildPopupOverlay`），结果区挂在页面 widget 树内 —— Apple 平台视图在 `OverlayEntry` 子树里的命中路径。
-2. 浮层特有的 `Visibility(maintainSize:…)` + `Positioned`（隐藏层停到 `screen.width + 8` 屏外，BUG-135）。
-3. 浮层入场淡入（`_PopupEntranceFade` / `AnimatedOpacity`）——即便静止在 opacity=1，仍可能影响 Apple 平台视图的 mutator 链。
-4. `_BodySwipeDismissDetector` **无条件**存在的 `Listener(behavior: HitTestBehavior.opaque)`（关掉滑关开关后它仍在，只是 child 不再套 Transform/Opacity）。
-5. Flutter SDK 侧：`RenderAppKitView.updateGestureRecognizers` 在 macOS 上是空实现（`rendering/platform_view.dart`，带 `TODO flutter#128519`），且基类 `_handleGlobalPointerEvent` 对每次 PointerDown 调 `rejectGesture()`；`input_bridge.dart` 里 `hostOwnsDictionaryPopupPointerInput = isWindowsPlatform` 的注释假设「macOS 上 WebView 直接吃掉指针」，该前提与框架现状冲突，需复核。
+1. **实验 D 未做完**，应先补：浮层挂在**根 Overlay**（`home_dictionary_page.dart::_syncPopupOverlay` / `_buildPopupOverlay`），结果区挂在页面 widget 树内——这是两者仅存的结构性差异。
+2. Flutter SDK 侧：`RenderAppKitView.updateGestureRecognizers` 在 macOS 上是空实现（`rendering/platform_view.dart`，带 `TODO flutter#128519`），且基类 `_handleGlobalPointerEvent` 对每次 PointerDown 调 `rejectGesture()`；`input_bridge.dart` 里 `hostOwnsDictionaryPopupPointerInput = isWindowsPlatform` 的注释断言「Android / iOS / macOS / Linux：WebView 是真正的原生视图，指针被它直接吃掉」——**该前提在 macOS 上与实测矛盾**（结果区吃得到、浮层吃不到），需要复核并可能把 macOS 也并入 host-owned 指针路径（与 Windows 同范式）。
+3. 若 D 证实是根 Overlay：需要的是「浮层不经 OverlayEntry」或「Overlay 内平台视图命中修正」，而不是继续在 wrapper 上试错。
 
 ### iOS 状态
 
-**未验证**。最新 develop 上 iOS 模拟器**无法构建**：`fushi/ios/build_aidoku_runtime.sh` 硬性要求 `PLATFORM_NAME == iphoneos`，跳过它则链接阶段缺 `libfushi_aidoku_runtime.a`，而本机未装 `aarch64-apple-ios-sim` target（脚本明示不为模拟器下载组件）。iOS 侧要么真机验证，要么另行支持模拟器架构构建。
+**未验证**。原因是 iOS 模拟器在最新 develop 上**根本构建不起来**：
+`fushi/ios/build_aidoku_runtime.sh` 硬性要求 `PLATFORM_NAME == iphoneos`，模拟器直接 `exit 1`；
+绕过该 gate 则链接阶段缺 `libfushi_aidoku_runtime.a`。这挡住的不只是漫画源，而是
+**所有 iOS 集成测试**（查词、阅读器等与 Aidoku 无关的用例一并无法在模拟器上跑）。
+
+本 PR 顺带修掉这条构建门（见下），但 iOS 侧的本 bug 复现仍待补。
