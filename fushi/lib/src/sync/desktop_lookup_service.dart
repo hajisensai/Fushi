@@ -15,13 +15,6 @@ import 'package:fushi/src/utils/misc/ruby_markup.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
-/// 给定窗口聚焦态，剪贴板自动监听是否应触发查词。
-///
-/// app 在前台（聚焦）时复制 = 本 app 内部复制（制卡、选词复制等），不弹；
-/// 只有 Hibiki 不在前台（用户在别的 app 复制）时，剪贴板变化才触发查词。
-/// 纯函数，便于单测（见 desktop_lookup_service_test.dart）。
-bool shouldTriggerOnClipboard(bool focused) => !focused;
-
 enum DesktopLookupOrigin { clipboard, hotkey, explicit }
 
 enum DesktopLookupForegroundPolicy { none, bringToFront }
@@ -81,11 +74,10 @@ class DesktopLookupRequest {
 /// [DesktopLookupForegroundPolicy.none]，只在后台准备查词结果；唤前台只保留给显式
 /// 意图（全局热键 / 悬浮字幕点词）。
 ///
-/// 窗口聚焦跟踪（[WindowListener]）用于区分「app 内复制」与「外部 app 复制」：
-/// 仅外部复制才自动查词（在后台）；全局热键不受聚焦过滤约束（用户在别的 app 按热键
-/// 查当前剪贴板属正常用法，即便随后 Hibiki 抢到前台）。
-class DesktopLookupService extends ChangeNotifier
-    with ClipboardListener, WindowListener {
+/// 聚焦态**不**参与是否查词的判定（用户 2026-08-16 拍板删除聚焦过滤）：无论 Hibiki
+/// 在不在前台，剪贴板一变就查词。此前的 [WindowListener] 聚焦跟踪只服务于那条过滤，
+/// 已随之整条移除；抢前台与否仍由 [DesktopLookupForegroundPolicy] 单独决定。
+class DesktopLookupService extends ChangeNotifier with ClipboardListener {
   DesktopLookupService._();
   static final DesktopLookupService instance = DesktopLookupService._();
 
@@ -123,7 +115,6 @@ class DesktopLookupService extends ChangeNotifier
   /// 异步穿插无关，结果确定。
   int _startRefCount = 0;
   DesktopClipboardWindowMode _windowMode = DesktopClipboardWindowMode.normal;
-  bool _focused = true;
   HotKey? _hotKey;
 
   /// 剪贴板复制历史采集回调（AppModel 接上 `addClipboardHistoryEntry`）。仅在真实
@@ -260,7 +251,6 @@ class DesktopLookupService extends ChangeNotifier
     // 若不清会漏进后续用例。仅在确有累计计数时同步摘除监听并归零（未 start 的用例
     // 计数恒 0，此块跳过，行为不变）。removeListener 对未注册的监听器是安全 no-op。
     if (_startRefCount > 0) {
-      windowManager.removeListener(this);
       clipboardWatcher.removeListener(this);
       _startRefCount = 0;
       _hotKey = null;
@@ -280,9 +270,6 @@ class DesktopLookupService extends ChangeNotifier
     }
     // 首个 owner（0→1）：真正把剪贴板 watcher + 全局热键接上。
     await configureWindowMode(windowMode);
-    windowManager.addListener(this);
-    // 初始聚焦态：窗口可能尚未在前台（如开机自启），以平台真实状态为准。
-    _focused = await windowManager.isFocused();
     clipboardWatcher.addListener(this);
     await clipboardWatcher.start();
     _hotKey = HotKey(
@@ -301,7 +288,6 @@ class DesktopLookupService extends ChangeNotifier
     // 仍有其它 owner 持有（跨断点重建时新旧页短暂重叠）：保持 watcher 存活，
     // 只有最后一个引用释放（1→0）才真正拆。这正是消除断点竞态的关键。
     if (_startRefCount > 0) return;
-    windowManager.removeListener(this);
     clipboardWatcher.removeListener(this);
     await clipboardWatcher.stop();
     // TODO-1086 根因：这里过去调**全局** hotKeyManager.unregisterAll()，会连带注销
@@ -338,12 +324,6 @@ class DesktopLookupService extends ChangeNotifier
       // Keep lookup service lifecycle independent from a transient window call.
     }
   }
-
-  @override
-  void onWindowFocus() => _focused = true;
-
-  @override
-  void onWindowBlur() => _focused = false;
 
   /// clipboard_watcher 的 [ClipboardListener.onClipboardChanged] 返回 `void`，
   /// 故异步读取剪贴板的工作下放到不等待的 [_handleClipboardChange]。
@@ -392,9 +372,10 @@ class DesktopLookupService extends ChangeNotifier
   }
 
   Future<void> _handleClipboardChange() async {
-    // app 在前台 = 本 app 内复制（制卡/选词复制），不弹查词。
-    final bool foreground = _focused || await _isFushiForeground();
-    if (!shouldTriggerOnClipboard(foreground)) return;
+    // 用户 2026-08-16 拍板：删掉「Hibiki 在前台就不触发」的聚焦过滤——复制即查词，
+    // 不再按 app 内/外区分。Hibiki 自产的剪贴板写入（抓选区、挖词回写）由
+    // [clipboardIgnores] 精确拦截，同词回声由 [dedupeClipboard] 的时间窗兜底，
+    // 两者都不依赖聚焦态，所以删掉过滤不会把自触发回声放进查词管线。
     final String? text = await _readClipboardText();
     if (text == null) return;
     processClipboardText(text);
@@ -457,9 +438,9 @@ class DesktopLookupService extends ChangeNotifier
   /// 与出口（[pendingText] → 词典页消费 → [bringPendingLookupToFront]）。
   ///
   /// 与被动剪贴板 [submitText] 的区别：这是用户的**显式**意图（在桌面悬浮字幕条上
-  /// 点词），故先清 [_lastText] 越过去重——即便与上次查的是同一个词也要再查一次；
-  /// 也不受 [shouldTriggerOnClipboard] 的「app 内复制不弹」聚焦过滤约束（聚焦过滤
-  /// 只针对被动的剪贴板变化）。Windows 桌面悬浮字幕点词经
+  /// 点词），故先清 [_lastText] 越过去重——即便与上次查的是同一个词也要再查一次。
+  /// （旧的「app 内复制不弹」聚焦过滤已整条删除，两条路径不再有这项差异。）
+  /// Windows 桌面悬浮字幕点词经
   /// `reader_fushi_page.dart` 的 `_lookupFromFloatingLyric` 调到这里，从而复用
   /// 剪贴板查词出口（主窗查词 tab），而不是在阅读器内弹 in-app 浮层。
   ///

@@ -895,6 +895,22 @@ void GlobalLookupWindow::Reveal(int width, int height) {
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
+  // BUG-1689 — 把**本线程的活动窗口**换成这个可激活的浮窗（不改前台、不抢焦点）。
+  //
+  // 根因：用户点一个「所属进程不在前台」的可激活窗口时，Windows 的前台切换会先把该
+  // 线程的活动窗口前台化、抬到 Z 序上层，然后才把激活交给真正被点的那个窗口。runner
+  // 主窗一直是本线程的活动窗口，于是「在游戏/浏览器里点一下剪贴板查词面板」＝「主界面
+  // 浮到用户正在用的窗口上面」（用户 2026-08-16 报，且只有主窗非最小化时看得见）。
+  // 抬升发生在系统内部，进程里没有任何一行代码调用它，事后再 SetWindowPos 推回去也
+  // 追不上（真机实测：系统给的插入位置与原前驱相同，推回等于没动）。
+  //
+  // SetActiveWindow 只改**本线程**的活动窗口；本进程不是前台进程时它不改变前台、不动
+  // Z 序、不抢键盘焦点（面板照旧 SW_SHOWNOACTIVATE 上屏）。活动窗口换成面板后，那一步
+  // 顺带抬升的对象就是面板自己——它本来就要显示在最上，于是主窗彻底不再被牵动。
+  // 只对可激活实例做：瞬态卡 / gal 卡窗带 WS_EX_NOACTIVATE，本就不参与激活。
+  if (activatable_) {
+    SetActiveWindow(hwnd_);
+  }
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();
