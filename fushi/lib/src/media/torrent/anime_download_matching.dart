@@ -2,7 +2,19 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/jimaku_matching.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
+
+// 按集索引与单集判据已抽到 media/video/jimaku_matching.dart（BUG-1695）——它同时
+// 服务合集批量与番剧下载两条路径，放在 torrent 域下会让 video 域反向依赖 torrent。
+// 这里 re-export 保持既有导入方（对话框、测试）不动。
+export 'package:fushi/src/media/video/jimaku_matching.dart'
+    show
+        JimakuEpisodeIndex,
+        JimakuEpisodeMatch,
+        JimakuEpisodeMatchKind,
+        chooseJimakuFileForEpisode,
+        compareJimakuByLanguagePreference;
 
 /// 番剧下载的纯决策逻辑：Jimaku 字幕按集索引 + 种子↔字幕匹配。
 ///
@@ -16,72 +28,6 @@ import 'package:fushi/src/media/video/video_filename_parser.dart';
 ///   **包内真实文件名** → 结论是**事实**，条数天然被真实视频文件数收敛。
 ///
 /// 真正决定「下哪些字幕、贴给哪个视频」的只有后者（BUG-1206）。
-
-/// 从 Jimaku 文件列表构建的按集索引。
-///
-/// 只收文本字幕（[JimakuFile.isTextSubtitle]）；每集候选按语言权重升序排列
-/// （[jimakuLanguageRank] + [detectSubtitleLanguage]，即 ja 优先），同权重按
-/// 文件名（大小写不敏感）tie-break 保证确定性。
-class JimakuEpisodeIndex {
-  const JimakuEpisodeIndex._({
-    required this.byEpisode,
-    required this.unnumbered,
-  });
-
-  /// 从 [files] 构建索引（非文本字幕直接丢弃）。
-  factory JimakuEpisodeIndex.fromFiles(
-    List<JimakuFile> files, {
-    String? preferredLanguage,
-  }) {
-    final Map<int, List<JimakuFile>> byEpisode = <int, List<JimakuFile>>{};
-    final List<JimakuFile> unnumbered = <JimakuFile>[];
-    for (final JimakuFile file in files) {
-      if (!file.isTextSubtitle) continue;
-      final int? episode = file.episode;
-      if (episode == null) {
-        unnumbered.add(file);
-      } else {
-        byEpisode.putIfAbsent(episode, () => <JimakuFile>[]).add(file);
-      }
-    }
-    for (final List<JimakuFile> candidates in byEpisode.values) {
-      candidates.sort((JimakuFile a, JimakuFile b) =>
-          _compareByLanguagePreference(a, b, preferredLanguage));
-    }
-    unnumbered.sort((JimakuFile a, JimakuFile b) =>
-        _compareByLanguagePreference(a, b, preferredLanguage));
-    return JimakuEpisodeIndex._(byEpisode: byEpisode, unnumbered: unnumbered);
-  }
-
-  /// 集号 → 该集候选（语言权重升序 = ja 优先，非空列表）。
-  final Map<int, List<JimakuFile>> byEpisode;
-
-  /// 认不出集号的文本字幕（剧场版/整季单文件等），同样按语言权重升序。
-  final List<JimakuFile> unnumbered;
-
-  /// 索引内文本字幕总数。
-  int get totalFiles =>
-      unnumbered.length +
-      byEpisode.values
-          .fold(0, (int sum, List<JimakuFile> list) => sum + list.length);
-
-  /// 索引是否为空（无任何可用文本字幕）。
-  bool get isEmpty => totalFiles == 0;
-}
-
-/// 候选排序键：语言权重升序（ja 优先）→ 文件名（大小写不敏感）tie-break。
-int _compareByLanguagePreference(
-  JimakuFile a,
-  JimakuFile b,
-  String? preferredLanguage,
-) {
-  final int rankA = jimakuLanguageRank(detectSubtitleLanguage(a.name),
-      preferred: preferredLanguage);
-  final int rankB = jimakuLanguageRank(detectSubtitleLanguage(b.name),
-      preferred: preferredLanguage);
-  if (rankA != rankB) return rankA.compareTo(rankB);
-  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-}
 
 /// 种子「集数身份」的类别。见 [TorrentEpisodeScope]。
 enum TorrentEpisodeScopeKind {
@@ -388,17 +334,25 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
   );
   if (index.isEmpty) return const <ResolvedSubtitleMatch>[];
 
-  // ① 按集号严格相等逐个视频反查。
+  // ① 按集号严格相等逐个视频反查。判据本身走共享原语
+  // （[chooseJimakuFileForEpisode]，BUG-1695），这里只负责「有几个视频、集号从
+  // 文件名怎么来」——即本函数相对批量路径多出来的那部分信息。
   final List<ResolvedSubtitleMatch> out = <ResolvedSubtitleMatch>[];
   for (final String path in videoFileNames) {
     final String name = p.basename(path);
     final int? episode = parseVideoFilename(name).episode;
     if (episode == null) continue;
-    final List<JimakuFile>? candidates = index.byEpisode[episode];
-    if (candidates == null || candidates.isEmpty) continue;
+    final JimakuEpisodeMatch match = chooseJimakuFileForEpisode(
+      index,
+      episode: episode,
+      // 未编号字幕的 1v1 兜底由下面 ② 统一处理（它还要看视频侧集号），这里
+      // 只取精确命中，故一律 false。
+      soleTarget: false,
+    );
+    if (match.kind != JimakuEpisodeMatchKind.exact) continue;
     out.add(ResolvedSubtitleMatch(
       videoFileName: name,
-      file: candidates.first,
+      file: match.file!,
       episode: episode,
     ));
   }

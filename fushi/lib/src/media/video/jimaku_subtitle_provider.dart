@@ -1,4 +1,5 @@
 import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 
@@ -33,6 +34,7 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
         anilistId: request.media?.anilistId,
         queryFallbacks: fallbacks,
         throwOnError: true,
+        animeFilter: _animeFilterFor(request),
       );
       final List<VideoSubtitleCandidate> candidates =
           <VideoSubtitleCandidate>[];
@@ -108,6 +110,20 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
   void close() {
     if (_closesClient) _client.close();
   }
+}
+
+/// 把发现层的分类映射成 Jimaku 的 `anime` 硬过滤（BUG-1694）。
+///
+/// `discoveryCategory` 已经是这个问题的答案，不需要再猜：anime → 只搜动画；
+/// movie/tv → 只搜真人；连 media 都没有（纯文本搜索请求）才两档都试。
+JimakuAnimeFilter _animeFilterFor(VideoSubtitleSearchRequest request) {
+  return switch (request.media?.discoveryCategory) {
+    VideoDiscoveryCategory.anime => JimakuAnimeFilter.anime,
+    VideoDiscoveryCategory.movie ||
+    VideoDiscoveryCategory.tv =>
+      JimakuAnimeFilter.liveAction,
+    null => JimakuAnimeFilter.either,
+  };
 }
 
 class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
