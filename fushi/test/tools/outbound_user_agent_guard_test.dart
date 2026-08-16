@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 对外 User-Agent 守卫：app **以自己的身份**发出去的 UA 不得再报旧名。
 ///
 /// 改名之后 UA 字面量散落在各调用方各写各的，实测残留了 4 处 `Hibiki`
@@ -25,9 +27,9 @@ void main() {
 
   /// 旧名在**非 UA 语境**下的合法残留（迁移入口、旧包名、旧资产契约）不在扫描面
   /// 内——本守卫只看带 `User-Agent` / `userAgent` 的那一行。
-  // 收尾引号必须吃掉：真实写法是 `'User-Agent': '...'`（map 字面量），
-  // `User-Agent` 与冒号之间隔着一个引号。漏掉它守卫就永远绿——这条正则是被
-  // 变异实测（把一条 UA 改回 Hibiki，守卫仍绿）逼出来的。
+  /// 收尾引号必须吃掉：真实写法是 `'User-Agent': '...'`（map 字面量），
+  /// `User-Agent` 与冒号之间隔着一个引号。漏掉它守卫就永远绿——这条正则是被
+  /// 变异实测（把一条 UA 改回 Hibiki，守卫仍绿）逼出来的。
   final RegExp userAgentLine = RegExp(
     r'''(User-Agent|userAgent)['"]?\s*[:=]''',
     caseSensitive: true,
@@ -44,14 +46,17 @@ void main() {
       final String relative = entity.path.replaceAll(r'\', '/');
       final String key = relative.substring(relative.indexOf('lib/'));
       if (browserImpersonationFiles.contains(key)) continue;
-      final List<String> lines = entity.readAsLinesSync();
-      for (int i = 0; i < lines.length; i++) {
-        final String line = lines[i];
-        // 注释行讲的是历史，不是发出去的字节。
-        if (line.trimLeft().startsWith('//')) continue;
+      // 注释讲的是历史，不是发出去的字节：走共享原语等长掩码（字符串字面量原样
+      // 保留，故 UA 本体不受影响；行号与原文一致，取证仍回原行切片）。手写
+      // startsWith 只跳整行注释，会放过块注释与行尾注释——source_guard_adoption
+      // 那条守卫就是为此立的。
+      final List<String> raw = entity.readAsLinesSync();
+      final List<String> masked = maskComments(raw.join('\n')).split('\n');
+      for (int i = 0; i < masked.length && i < raw.length; i++) {
+        final String line = masked[i];
         if (!userAgentLine.hasMatch(line)) continue;
         if (!legacyName.hasMatch(line)) continue;
-        offenders.add('$key:${i + 1}: ${line.trim()}');
+        offenders.add('$key:${i + 1}: ${raw[i].trim()}');
       }
     }
 
