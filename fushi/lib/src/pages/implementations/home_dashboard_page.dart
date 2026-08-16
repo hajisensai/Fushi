@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
@@ -453,6 +454,15 @@ class _HomeDashboardPageState
   /// 实例识别），供聚合按设备分组 + 打设备标签。
   Set<ActivityEventRow> _remoteActivityRows = Set<ActivityEventRow>.identity();
 
+  /// 上一次远端取数时「显示远端条目」门控的值（对齐视频页 BUG-1182 的
+  /// `_remoteGateAtLastLoad`），用于在 prefsRepo 的高频通知里只识别门控翻转。
+  bool _remoteGateAtLastLoad = true;
+
+  /// 「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经 AppModel
+  /// 通知、也不在 [_scheduleReload] 的表级信号里——必须显式订阅（[initState] 挂，
+  /// [dispose] 解除）才能让翻开关立即生效。
+  PreferencesRepository? _prefsRepoForRemoteGate;
+
   /// 每日字数合计（dateKey → 字数，阅读 + 观看 + 游戏），热力图「全部」档 +
   /// 今日目标行的分子（目标固定按全来源合计，不随热力图筛选变）。
   Map<String, int> _readingCharsByDay = const <String, int>{};
@@ -531,6 +541,19 @@ class _HomeDashboardPageState
         .mediaTrackingService
         .statusRevision
       ..addListener(_scheduleReload);
+    // 「显示远端条目」门控翻转（BUG-1182 同款，视频页已修、本页此前漏了）：
+    // 翻开 → 立即补拉远端；关掉 → 立即清掉已混排进「继续」/时间轴的远端条目。
+    _prefsRepoForRemoteGate = ref.read(appProvider).prefsRepo
+      ..addListener(_onPrefsChangedForRemoteGate);
+  }
+
+  /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转，其余偏好变动一概
+  /// 忽略——prefsRepo 的通知很频繁，不能每次都重跑远端取数。
+  void _onPrefsChangedForRemoteGate() {
+    if (!mounted) return;
+    final bool gate = ref.read(appProvider).prefsRepo.showRemoteEntries;
+    if (gate == _remoteGateAtLastLoad) return;
+    unawaited(_loadRemoteDashboardData());
   }
 
   /// 追踪状态版本号（[initState] 挂监听，[dispose] 解除）。
@@ -561,6 +584,7 @@ class _HomeDashboardPageState
     unawaited(_dataChangeSub?.cancel());
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
+    _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
     super.dispose();
   }
 
@@ -742,6 +766,14 @@ class _HomeDashboardPageState
   /// （display-only 不落库）。任何失败静默保持纯本地视图（离线/老 host 不致崩）。
   Future<void> _loadRemoteDashboardData() async {
     final AppModel appModel = ref.read(appProvider);
+    // 「显示远端条目」门控前移到取数之前（BUG-1182 视频页同款）：此前本页只判
+    // 互联开关，关掉开关的用户仍全额付三个远端请求的网络代价、远端条目照混排。
+    // 门控必须是第一道闸——关着就零远端工作，翻关时顺手清掉已到达的远端状态。
+    _remoteGateAtLastLoad = appModel.prefsRepo.showRemoteEntries;
+    if (!_remoteGateAtLastLoad) {
+      _clearRemoteDashboardData();
+      return;
+    }
     final SyncRepository syncRepo = SyncRepository(appModel.database);
     // 互联是独立开关（已与云备份后端解耦），未启用/未配对直接跳过。
     if (!await syncRepo.isInterconnectEnabled()) return;
@@ -825,6 +857,24 @@ class _HomeDashboardPageState
     } catch (_) {
       // 互联瞬断/超时：保持纯本地视图；下次进入首页自然重试。
     }
+  }
+
+  /// 门控关闭时清掉已混排进页面的远端状态（「继续」补位卡 / 时间轴远端行 /
+  /// 设备名 / 封面取图器），回到纯本地视图。没有远端状态时不动 UI。
+  void _clearRemoteDashboardData() {
+    if (!mounted) return;
+    final bool hasRemoteState = _remoteContinue.isNotEmpty ||
+        _remoteActivityRows.isNotEmpty ||
+        _remoteDeviceName != null ||
+        _remoteCoverFetcher != null;
+    if (!hasRemoteState) return;
+    setState(() {
+      _remoteContinue = const <RemoteContinueCandidate>[];
+      _remoteCoverFetcher = null;
+      _remoteDeviceName = null;
+      _remoteActivityRows = Set<ActivityEventRow>.identity();
+      _activityEvents = _localActivityEvents;
+    });
   }
 
   @override
