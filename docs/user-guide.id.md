@@ -6,7 +6,21 @@
 
 ## Pendahuluan
 
-Ini adalah perangkat lunak gratis untuk Android / Windows (iOS / macOS direncanakan) — aplikasi sumber terbuka lintas platform yang inovatif, yang menggabungkan membaca novel, pemutaran buku audio, pemutaran video, dan pencarian kamus.
+**Fushi — ubah maraton membaca dan menonton menjadi input bahasa.**
+
+Ketuk kata apa pun untuk mencarinya saat Anda membaca novel, menonton anime, atau mendengarkan buku audio, lalu kirim kata baru ke Anki bersama kalimat asalnya.
+
+Tanpa daftar kata bawaan — Anda hanya mengulang kata yang benar-benar Anda temui. Bekerja dengan bahasa apa pun.
+
+- 📖 Membaca EPUB · ketuk untuk mencari
+- 🎧 Buku audio dengan penyorotan kalimat per kalimat
+- 🎬 Pencarian pada takarir video dan pembuatan kartu
+- 🃏 Pembuatan kartu Anki sekali ketuk + statistik pengulangan
+- 📚 Membaca manga · cari kata langsung dari halaman melalui OCR
+- ⬇️ Unduh anime dan manga sekali ketuk di dalam aplikasi — otomatis ditambahkan ke pustaka Anda dan bisa diputar meski masih diunduh
+- 🎮 Penambangan suara Galgame (Windows) · suara asli ikut masuk ke kartu bersama teksnya
+
+Platform: Android / Windows / macOS / iOS (Linux dapat dibangun dari kode sumber; belum ada paket siap pakai)
 
 ### URL proyek
 
@@ -18,7 +32,9 @@ Sedang dikembangkan secara aktif — masukan Anda akan ditangani dengan cepat. L
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: pilih **arm64**. Windows: pilih berkas **.exe**.
+Pilih berkas yang sesuai dengan platform Anda: **Android** — APK `arm64-v8a` (semua ponsel beberapa tahun terakhir memakai ini; hanya perangkat lama yang membutuhkan `armeabi-v7a`, dan emulator memakai `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. **Linux** belum memiliki paket siap pakai, jadi harus dibangun dari kode sumber.
+
+APK yang namanya diawali `bridge-` adalah jembatan migrasi untuk **pengguna Hibiki lama**; Anda bisa mengabaikannya.
 
 ## Tutorial Konfigurasi
 
@@ -27,8 +43,6 @@ Android: pilih **arm64**. Windows: pilih berkas **.exe**.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Unduhan Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Di dalam aplikasi: Pengaturan -> Sinkronisasi & Cadangan -> ketuk **Impor Cadangan**.
-
-**Catatan: mengimpor cadangan akan menghapus data lokal. Alur ini akan ditingkatkan pada pembaruan mendatang.**
 
 ![Layar impor cadangan](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki memiliki [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) bawaan
 ![Penyiapan Anki di Windows](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Telusuri opsi konfigurasi di Pengaturan dan lihat apakah ada yang ingin Anda sesuaikan. (Opsional)
+
+Saatnya mulai berimersi.
+
+## Fitur yang Direkomendasikan
+
+### Mencari kata di luar aplikasi
+
+**Android:** pilih sebuah kata, lalu ketuk **Terjemahkan** atau **Fushi** pada menu seleksi.
+
+**Windows:** pilih sebuah kata, lalu tekan **Ctrl+Alt+D** (pintasan dapat diubah di Pengaturan -> Pintasan).
+
+### Pencarian lewat papan klip
+
+Apa pun yang Anda salin akan dicari secara otomatis. Tersedia dua mode tampilan — **panel mengambang** dan **jendela teks transparan** — keduanya dapat dikonfigurasi di Pengaturan -> Pencarian.
+
+### Pencarian di peramban / penambangan takarir layanan streaming (Netflix)
+
+Pasang ekstensi peramban dari halaman beranda Fushi.
 
 ## Ucapan Terima Kasih
 

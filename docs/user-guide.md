@@ -6,7 +6,21 @@
 
 ## Introduction
 
-This is free software for Android / Windows (iOS / macOS planned) -- an epoch-making, multi-platform open-source app that combines novel reading, audiobook playback, video playback, and dictionary lookup.
+**Fushi -- turn binge-reading and binge-watching into language input.**
+
+Tap any word to look it up while you read novels, watch anime, or listen to audiobooks, and send new words to Anki together with the sentence they came from.
+
+No preset word lists -- you only review the words you actually ran into. Works with any language.
+
+- 📖 EPUB reading · tap-to-look-up
+- 🎧 Audiobooks with sentence-by-sentence highlighting
+- 🎬 Video subtitle lookup and card creation
+- 🃏 One-tap Anki card creation + review statistics
+- 📚 Manga reading · look words up straight off the page via OCR
+- ⬇️ One-tap in-app downloads for anime and manga -- automatically added to your library, and playable while still downloading
+- 🎮 Galgame voice mining (Windows) · the original voice line goes into the card along with the text
+
+Platforms: Android / Windows / macOS / iOS (Linux can be built from source; no prebuilt packages yet)
 
 ### Project URL
 
@@ -22,7 +36,9 @@ Join our Discord to ask questions, share setups, and follow development: https:/
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: choose **arm64**. Windows: choose the **.exe** file.
+Pick the file that matches your platform: **Android** -- the `arm64-v8a` APK (every phone from the last few years uses this; only older devices need `armeabi-v7a`, and emulators use `x86_64`); **Windows** -- `windows-setup.exe`; **macOS** -- `macos.zip`; **iOS** -- `ios.ipa`. **Linux** has no prebuilt package yet, so it has to be built from source.
+
+The APKs whose names start with `bridge-` are migration bridges for **legacy Hibiki users**; you can ignore them.
 
 ## Configuration Tutorial
 
@@ -31,8 +47,6 @@ Android: choose **arm64**. Windows: choose the **.exe** file.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare download (9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 In the app: Settings -> Sync & Backup -> tap **Import Backup**.
-
-**Note: Importing a backup will clear local data. This flow will be improved in a future update.**
 
 ![Import backup screen](static-assets/user-guide/import-backup.png)
 
@@ -78,6 +92,24 @@ Anki has [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) built in --
 ![Anki Windows setup](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Go through the configuration options in Settings and see if there is anything you would like to adjust. (Optional)
+
+Time to start immersing.
+
+## Recommended Features
+
+### Looking words up outside the app
+
+**Android:** select a word, then tap **Translate** or **Fushi** in the selection menu.
+
+**Windows:** select a word, then press **Ctrl+Alt+D** (the shortcut can be changed under Settings -> Shortcuts).
+
+### Clipboard lookup
+
+Anything you copy is looked up automatically. Two presentation modes are available -- the **floating panel** and the **transparent text window** -- both configurable under Settings -> Lookup.
+
+### Browser lookup / streaming subtitle mining (Netflix)
+
+Install the browser extension from the Fushi home page.
 
 ## Acknowledgements
 

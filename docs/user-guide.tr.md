@@ -6,7 +6,21 @@
 
 ## Giriş
 
-Bu, Android / Windows için ücretsiz bir yazılımdır (iOS / macOS planlanıyor) — roman okumayı, sesli kitap oynatmayı, video oynatmayı ve sözlükte arama yapmayı bir araya getiren, çığır açan, çok platformlu bir açık kaynak uygulamadır.
+**Fushi — soluksuz okumayı ve izlemeyi dil girdisine dönüştürün.**
+
+Roman okurken, anime izlerken veya sesli kitap dinlerken herhangi bir kelimeye dokunarak anlamına bakın; yeni kelimeleri geçtikleri cümleyle birlikte Anki'ye gönderin.
+
+Hazır kelime listeleri yok — yalnızca gerçekten karşılaştığınız kelimeleri tekrar edersiniz. Her dille çalışır.
+
+- 📖 EPUB okuma · dokunarak arama
+- 🎧 Cümle cümle vurgulamalı sesli kitaplar
+- 🎬 Video altyazılarında arama ve kart oluşturma
+- 🃏 Tek dokunuşla Anki kartı oluşturma + tekrar istatistikleri
+- 📚 Manga okuma · OCR ile kelimeleri doğrudan sayfadan arayın
+- ⬇️ Uygulama içinde tek dokunuşla anime ve manga indirme — otomatik olarak kitaplığınıza eklenir ve indirme sürerken bile oynatılabilir
+- 🎮 Galgame ses madenciliği (Windows) · özgün seslendirme, metinle birlikte karta eklenir
+
+Platformlar: Android / Windows / macOS / iOS (Linux kaynaktan derlenebilir; henüz hazır paket yok)
 
 ### Proje URL'si
 
@@ -18,7 +32,9 @@ Aktif olarak geliştiriliyor — geri bildirimleriniz hızla ele alınacaktır. 
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
+Platformunuza uyan dosyayı seçin: **Android** — `arm64-v8a` APK'si (son birkaç yılın tüm telefonları bunu kullanır; yalnızca daha eski cihazlar `armeabi-v7a` gerektirir, emülatörler ise `x86_64` kullanır); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. **Linux** için henüz hazır bir paket yok, bu yüzden kaynaktan derlenmesi gerekiyor.
+
+Adı `bridge-` ile başlayan APK'ler **eski Hibiki kullanıcıları** için geçiş köprüleridir; bunları yok sayabilirsiniz.
 
 ## Yapılandırma Eğitimi
 
@@ -27,8 +43,6 @@ Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare üzerinden indirme (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Uygulamada: Ayarlar -> Eşitleme ve Yedekleme -> **Yedeği İçe Aktar** öğesine dokunun.
-
-**Not: Bir yedeği içe aktarmak yerel verileri siler. Bu akış gelecekteki bir güncellemede iyileştirilecektir.**
 
 ![Yedeği içe aktarma ekranı](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki, dünyanın en iyi aralıklı tekrar algoritmalarından biri olan [FSRS](ht
 ![Windows'ta Anki kurulumu](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Ayarlardaki yapılandırma seçeneklerini gözden geçirin ve değiştirmek istediğiniz bir şey olup olmadığına bakın. (İsteğe bağlı)
+
+Artık dile dalma zamanı.
+
+## Önerilen Özellikler
+
+### Uygulama dışında kelime arama
+
+**Android:** bir kelimeyi seçin, ardından seçim menüsünde **Çevir** veya **Fushi** öğesine dokunun.
+
+**Windows:** bir kelimeyi seçin, ardından **Ctrl+Alt+D** tuşlarına basın (kısayol, Ayarlar -> Kısayollar bölümünden değiştirilebilir).
+
+### Panodan arama
+
+Kopyaladığınız her şey otomatik olarak aranır. İki gösterim biçimi vardır — **kayan panel** ve **saydam metin penceresi** — ikisi de Ayarlar -> Arama bölümünden yapılandırılabilir.
+
+### Tarayıcıda arama / yayın platformu altyazılarından kart oluşturma (Netflix)
+
+Tarayıcı uzantısını Fushi ana sayfasından yükleyin.
 
 ## Teşekkürler
 

@@ -6,7 +6,21 @@
 
 ## Einführung
 
-Dies ist kostenlose Software für Android / Windows (iOS / macOS geplant) – eine bahnbrechende, plattformübergreifende Open-Source-App, die Romanlesen, Hörbuchwiedergabe, Videowiedergabe und Wörterbuchsuche vereint.
+**Fushi – mach aus Lese- und Serienmarathons sprachlichen Input.**
+
+Tippe beim Lesen von Romanen, beim Anime-Schauen oder beim Hören von Hörbüchern auf ein beliebiges Wort, um es nachzuschlagen, und schicke neue Wörter zusammen mit dem Satz, aus dem sie stammen, an Anki.
+
+Keine vorgefertigten Wortlisten – du wiederholst nur die Wörter, die dir tatsächlich begegnet sind. Funktioniert mit jeder Sprache.
+
+- 📖 EPUB lesen · zum Nachschlagen antippen
+- 🎧 Hörbücher mit satzweiser Hervorhebung
+- 🎬 Nachschlagen in Video-Untertiteln und Kartenerstellung
+- 🃏 Anki-Karten mit einem Tippen erstellen + Wiederholungsstatistiken
+- 📚 Manga lesen · Wörter per OCR direkt von der Seite nachschlagen
+- ⬇️ Downloads für Anime und Manga mit einem Tippen direkt in der App – automatisch zu deiner Bibliothek hinzugefügt und schon während des Downloads abspielbar
+- 🎮 Galgame-Voice-Mining (Windows) · die originale Sprachaufnahme landet zusammen mit dem Text auf der Karte
+
+Plattformen: Android / Windows / macOS / iOS (Linux kann aus dem Quellcode gebaut werden; noch keine vorgefertigten Pakete)
 
 ### Projekt-URL
 
@@ -18,7 +32,9 @@ Aktiv in Entwicklung – dein Feedback wird zeitnah bearbeitet. Fehlerberichte u
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
+Wähle die Datei, die zu deiner Plattform passt: **Android** – das `arm64-v8a`-APK (alle Handys der letzten Jahre nutzen dieses; nur ältere Geräte brauchen `armeabi-v7a`, und Emulatoren nutzen `x86_64`); **Windows** – `windows-setup.exe`; **macOS** – `macos.zip`; **iOS** – `ios.ipa`. Für **Linux** gibt es noch kein vorgefertigtes Paket, es muss also aus dem Quellcode gebaut werden.
+
+Die APKs, deren Namen mit `bridge-` beginnen, sind Migrationsbrücken für **Nutzer des früheren Hibiki**; du kannst sie ignorieren.
 
 ## Einrichtungs-Tutorial
 
@@ -27,8 +43,6 @@ Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare-Download (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 In der App: Einstellungen -> Synchronisierung & Sicherung -> tippe auf **Sicherung importieren**.
-
-**Hinweis: Beim Importieren einer Sicherung werden lokale Daten gelöscht. Dieser Ablauf wird in einem zukünftigen Update verbessert.**
 
 ![Bildschirm zum Importieren der Sicherung](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki hat [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) integriert 
 ![Anki-Einrichtung unter Windows](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Gehe die Konfigurationsoptionen in den Einstellungen durch und sieh nach, ob du etwas anpassen möchtest. (Optional)
+
+Zeit, mit dem Immersionslernen zu beginnen.
+
+## Empfohlene Funktionen
+
+### Wörter außerhalb der App nachschlagen
+
+**Android:** Markiere ein Wort und tippe dann im Auswahlmenü auf **Übersetzen** oder **Fushi**.
+
+**Windows:** Markiere ein Wort und drücke dann **Ctrl+Alt+D** (das Tastenkürzel lässt sich unter Einstellungen -> Tastenkürzel ändern).
+
+### Nachschlagen aus der Zwischenablage
+
+Alles, was du kopierst, wird automatisch nachgeschlagen. Es stehen zwei Darstellungsmodi zur Verfügung – das **schwebende Fenster** und das **transparente Textfenster** – beide konfigurierbar unter Einstellungen -> Nachschlagen.
+
+### Nachschlagen im Browser / Untertitel-Mining bei Streaming-Diensten (Netflix)
+
+Installiere die Browser-Erweiterung über die Fushi-Startseite.
 
 ## Danksagungen
 
