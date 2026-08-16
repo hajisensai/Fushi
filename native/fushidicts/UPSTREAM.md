@@ -112,7 +112,7 @@
 
 ## 验证
 
-- 本机无 C++ 编译器（MSVC/NDK），native 改动由 **CI Linux ctest**（TODO-578 接入）+ **5 平台 build** 验。
+- 本机 **MSVC 2022 可用**（批4 实证：`tests/run_all.bat` 走 vcvars64 + Ninja + ctest，全套 21 用例 ~6 秒）；「本机无 C++ 编译器」是过时说法。native 改动本地 ctest 先行，再由 **CI Linux ctest** + **5 平台 build** 兜异构。
 - ctest 守卫：`tests/freq_pitch_import_query_test.cpp`（freq/pitch import→query e2e）+ `text_processor` / `kanji` 现有用例不回退。
 
 ## 2026-08 Hibiki→Fushi 改名映射（P6-2）
