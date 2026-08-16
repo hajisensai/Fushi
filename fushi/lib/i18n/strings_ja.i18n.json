@@ -3451,5 +3451,7 @@
   "settings_content_language_title": "Default content language",
   "settings_content_language_unset": "Not set",
   "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
-  "manga_ocr_lens_language_label": "認識する言語"
+  "manga_ocr_lens_language_label": "認識する言語",
+  "sync_err_peer_unreachable": "Can't reach the paired device - it may be offline or not running Fushi.",
+  "remote_book_list_failed": "Couldn't fetch the remote library from the paired device."
 }

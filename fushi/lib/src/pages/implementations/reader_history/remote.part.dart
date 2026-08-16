@@ -899,6 +899,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 非强制的 [_refreshRemoteBooks] 会命中缓存，让刚删掉的条目在 TTL 内继续显示成
   /// 幽灵卡片（远端书删除的既有毛病）。
   void _forceRefreshRemoteBooks() {
+    // 强刷 = 该来源整库可能已变（删远端书等）：全域失效（不止 books——
+    // activity 槽不失效的话，首页时间轴 TTL 内继续显示已删条目的活动）。
+    final String? sourceId = _remoteBookClient?.remoteLibrarySourceId;
+    if (sourceId != null) _remoteCache.invalidateSource(sourceId);
     _rebuild(() {
       _remoteBooksFuture = _loadRemoteBooks(forceRefresh: true);
     });

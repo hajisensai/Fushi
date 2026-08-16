@@ -64,10 +64,9 @@ Future<FushiClientUrl> resolveReachableFushiCandidate(
     }
   }
   if (authError != null) throw authError;
-  throw SyncBackendError(
-    'No reachable Fushi server address',
-    isRetryable: true,
-  );
+  // BUG-1693：类型化，让错误文案层给出「配对设备无法连接（对端可能未运行
+  // Fushi）」的可操作提示，而不是裸英文原文上屏。
+  throw SyncPeerUnreachableError();
 }
 
 /// TODO-961 M1: https 候选地址的固定 pinned 可达性探测（不经可注入的测试缝，因为
@@ -366,6 +365,11 @@ class InterconnectSyncBackend extends SyncBackend
         username: 'hibiki',
         password: token,
         pinnedFingerprint: chosen.fingerprintSha256,
+        // BUG-1693（故障切换）：已解析地址一掉线（拒连/超时/握手失败/断流），
+        // 立即把会话置脏——下一次任何操作重探全部候选。此前只有手动同步 /
+        // clearCache 才复位，页面级读取失败后永远钉死在死地址上，WAN 备用
+        // 地址到重启前都不会被尝试。
+        onConnectivityError: () => _sessionResolved = false,
       );
       _activeFingerprint = chosen.fingerprintSha256;
       _activeToken = token;
@@ -1789,12 +1793,17 @@ class InterconnectSyncBackend extends SyncBackend
       baseUrl: WebDavOps.normalizeUrl(url),
       username: 'hibiki',
       password: token,
+      // 审计项（BUG-1693 批）：不设 connect 超时时，外层调用方的 Future.timeout
+      // 管不住底层 connect（同 [_defaultFushiProbe] 详注）——不可达地址每点一次
+      // 「测试连接」就泄漏一个最长 60s 的挂起 socket。
+      connectionTimeout: InterconnectSyncBackend.probeTimeout,
       pinnedFingerprint: fingerprint,
     );
     try {
-      await ops.testConnection();
+      await ops.testConnection().timeout(InterconnectSyncBackend.probeTimeout);
     } finally {
-      ops.close();
+      // force：普通 close 不会取消卡在 connect 上的 socket。
+      ops.close(force: true);
     }
   }
 }

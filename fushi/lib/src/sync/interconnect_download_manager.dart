@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 
 /// 一个互联（hibiki 互联 / LAN 对端）下载任务的生命周期状态。
 enum InterconnectDownloadStatus { running, completed, failed }
@@ -133,7 +134,11 @@ class InterconnectDownloadManager extends ChangeNotifier {
       _setStatus(
         id,
         InterconnectDownloadStatus.failed,
-        error: e.toString(),
+        // BUG-1693：存**用户可读**的失败原因（对端离线 → 「无法连接配对设备…」），
+        // 不是 `SocketException: OS Error: … errno = 1225` 这类原始异常文本——
+        // 它会被失败角标 tooltip 原样上屏。未知错误 friendlySyncErrorDetail
+        // 回落原文，不吞信息。
+        error: friendlySyncErrorDetail(e),
       );
       rethrow;
     }

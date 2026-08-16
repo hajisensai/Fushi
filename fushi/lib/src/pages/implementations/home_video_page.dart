@@ -4903,6 +4903,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 删成功才需要重取清单；失败时列表本就没变。forceRefresh 绕过远端库缓存 TTL，
     // 否则刚删掉的视频会在 TTL 内继续显示成幽灵卡片。
     if (!failed && supported) {
+      // 该来源整库已变：全域失效（不止 videos——activity 槽不失效的话，首页
+      // 时间轴 TTL 内继续显示已删条目的活动）。
+      final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
+      if (sourceId != null) _remoteCache.invalidateSource(sourceId);
       setState(() {
         _remoteFuture = _loadRemoteVideos(forceRefresh: true);
       });

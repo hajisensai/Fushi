@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1693](bugs/BUG-1693-interconnect-peer-offline-misreported-as-network-error.md) | 🚧 | 🚧 | 互联对端关闭时误报为网络错误 |
+| [BUG-1693](bugs/BUG-1693-interconnect-peer-offline-misreported-as-network-error.md) | ✅ | ✅ | 互联对端关闭时误报为网络错误 |
 | [BUG-1692](bugs/BUG-1692-interconnect-collections-not-grouping.md) | ✅ | ✅ | 互联对端合集在客户端库页不成组显示 |
 | [BUG-1690](bugs/BUG-1690-startup-audio-warmup-interrupts-music.md) | ✅ | ✅ | 启动静音预热在音频设备上开流,打断其他应用正在播放的音乐 |
 | [BUG-1689](bugs/BUG-1689-lookup-grip-activates-main-window.md) | ✅ | ✅ | 点剪贴板查词面板把 Hibiki 主界面抬到用户窗口之上 |

@@ -130,6 +130,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart' show SyncPeerUnreachableError;
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -6846,16 +6847,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
+    // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。
+    if (error is SyncPeerUnreachableError) return t.sync_err_peer_unreachable;
     final String s = error?.toString().toLowerCase() ?? '';
-    if (s.contains('403') ||
-        s.contains('forbidden') ||
-        s.contains('manifest failed') ||
-        s.contains('unavailable') ||
-        s.contains('unplayable') ||
-        s.contains('age') ||
-        s.contains('private')) {
-      return t.video_load_failed_unavailable;
-    }
+    // 网络判据先行（BUG-1693 顺带修）：旧序里 'age'/'unavailable' 排在前面且
+    // 'age' 是裸子串——'message'/'package'/'storage' 这类传输错误文本都含 'age'，
+    // 真网络故障会被误标成「视频不可用/受限」。'age' 加词界（age-restricted /
+    // age_verification / " age "），并把可归因的网络关键词放到它之前。
     if (s.contains('socket') ||
         s.contains('network') ||
         s.contains('connection') ||
@@ -6863,6 +6862,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         s.contains('failed host lookup') ||
         s.contains('timed out')) {
       return t.video_load_failed_network;
+    }
+    if (s.contains('403') ||
+        s.contains('forbidden') ||
+        s.contains('manifest failed') ||
+        s.contains('unavailable') ||
+        s.contains('unplayable') ||
+        RegExp(r'\bage[ _-]').hasMatch(s) ||
+        s.contains('private')) {
+      return t.video_load_failed_unavailable;
     }
     return t.video_load_failed_generic;
   }
