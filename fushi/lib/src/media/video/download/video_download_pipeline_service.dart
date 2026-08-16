@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -26,14 +28,33 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_duration_probe.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
+
+/// 自动选字幕时最多真下几条候选来做时长校验（BUG-1697）。
+///
+/// 候选可能有几十条（多语言 × 多压制组），全下一遍既慢又是对来源站的滥用。
+/// 试完前 N 条还没有通过的，说明这个片子的自动匹配本来就不该硬猜，交给用户手选。
+const int kSubtitleVerifyMaxCandidates = 4;
+
+/// 已通过校验的候选 + 它那一次下载的字节（避免落盘前再下一遍）。
+class _VerifiedSubtitleBytes {
+  const _VerifiedSubtitleBytes({
+    required this.candidate,
+    required this.download,
+  });
+
+  final VideoSubtitleCandidate candidate;
+  final VideoSubtitleDownload download;
+}
 
 const String videoDownloadMissingBackendTaskError =
     'torrent is not visible in the original backend';
@@ -1755,8 +1776,29 @@ class VideoDownloadPipelineService {
             );
             throw VideoDownloadPipelineActionRequired(message);
           }
-        } else {
-          candidate = result.items.first;
+        }
+        // 自动选片时**先验证再采用**：下载候选字节，用时长/内容判据核一遍，不过
+        // 就换下一个候选（BUG-1697）。旧实现直接 `result.items.first`，排序只按
+        // provider 优先级与下载量，从不看内容——把整季合并文件装到某一集上是无声
+        // 通过的。手动选中的候选（persistedSelection）不参与筛选：用户的显式选择
+        // 优先于任何启发式。
+        _VerifiedSubtitleBytes? verified;
+        if (candidate == null) {
+          verified = await _selectVerifiedSubtitle(
+            candidates: result.items,
+            videoPath: video.path,
+          );
+          if (verified == null) {
+            const String message =
+                'Every subtitle candidate failed the timing check '
+                'against this video';
+            await _recordUnavailableSubtitle(job, file, subtitleId, message);
+            if (policy == VideoDownloadSubtitlePolicy.required) {
+              throw const VideoDownloadPipelineActionRequired(message);
+            }
+            continue;
+          }
+          candidate = verified.candidate;
         }
         final String extension = _safeSubtitleExtension(candidate.fileName);
         final String language = candidate.language.trim().isEmpty
@@ -1790,8 +1832,10 @@ class VideoDownloadPipelineService {
             updatedAt: Value<int>(now),
           ),
         );
+        // 自动路径已经在校验时下过一次字节，直接复用——校验不该让每条字幕多下
+        // 一遍。手动/续跑路径没验过，这里才真去下。
         final VideoSubtitleDownload download =
-            await subtitleRegistry!.download(candidate);
+            verified?.download ?? await subtitleRegistry!.download(candidate);
         _ensureLeaseHeld();
         final String selectedTarget = await _selectSidecarTarget(
           bytes: download.bytes,
@@ -1849,6 +1893,61 @@ class VideoDownloadPipelineService {
       );
     }
     await _advance(job, VideoDownloadJobStage.import);
+  }
+
+  /// 依次下载 [candidates] 并做时长/内容校验，返回**第一个通过**的候选及其字节。
+  ///
+  /// 为什么要真下下来才能判：判据看的是字幕内容本身（最后一句结束在哪），搜索
+  /// 结果里只有文件名和体积。体积判不了——同样 40KB 的 ass 可能是一集也可能是
+  /// 整季。
+  ///
+  /// [kSubtitleVerifyMaxCandidates] 是硬上界：候选可能有几十条（多语言 × 多压制
+  /// 组），全下一遍既慢又是对来源站的滥用。试完前 N 条还没通过就放弃，让用户
+  /// 手动选——那时候自动匹配本来也不该硬猜。
+  ///
+  /// 探不到视频时长（缺 ffprobe / 超时）时判据退化成只做内容自检，**绝不因为
+  /// 探测失败就拒收**。
+  Future<_VerifiedSubtitleBytes?> _selectVerifiedSubtitle({
+    required List<VideoSubtitleCandidate> candidates,
+    required String videoPath,
+  }) async {
+    if (candidates.isEmpty) return null;
+    final int? durationMs = await probeVideoDurationMs(videoPath);
+    _ensureLeaseHeld();
+    final KnownVideoDuration? known =
+        durationMs == null ? null : KnownVideoDuration.probed(durationMs);
+    _VerifiedSubtitleBytes? firstRejected;
+    final int limit = candidates.length < kSubtitleVerifyMaxCandidates
+        ? candidates.length
+        : kSubtitleVerifyMaxCandidates;
+    for (int i = 0; i < limit; i++) {
+      final VideoSubtitleCandidate candidate = candidates[i];
+      final VideoSubtitleDownload download;
+      try {
+        download = await subtitleRegistry!.download(candidate);
+      } on Object catch (error) {
+        // 单条下载失败不该中断整轮筛选——下一条可能好好的。
+        debugPrint('[subtitle] candidate download failed '
+            '(${candidate.providerId}:${candidate.remoteId}): $error');
+        continue;
+      }
+      _ensureLeaseHeld();
+      final SubtitleTimingCheck check = checkSubtitleTiming(
+        summarizeSubtitleTiming(await decodeTextBytes(download.bytes)),
+        video: known,
+      );
+      if (!check.rejected) {
+        return _VerifiedSubtitleBytes(candidate: candidate, download: download);
+      }
+      debugPrint('[subtitle] rejected candidate '
+          '"${candidate.fileName}": ${check.detail}');
+      firstRejected ??=
+          _VerifiedSubtitleBytes(candidate: candidate, download: download);
+    }
+    // 视频时长未知时判据只做内容自检，被拒的一定是「真的解析不出/是空的」，
+    // 那就不该退而求其次。有时长信息时同理：全都对不上视频，硬装一个只会让
+    // 用户以为自动匹配好了。两种情况都返回 null，由调用方落明确的失败原因。
+    return null;
   }
 
   /// Copies old JSON-plan subtitle staging files without consuming them.

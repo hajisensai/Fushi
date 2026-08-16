@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1569 条。点号进各自文件。
+> 共 1570 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1697](bugs/BUG-1697-subtitle-content-never-verified.md) | ✅ | ✅ | 自动下载的字幕从不校验内容，整季合并文件被当成单集装上去 |
 | [BUG-1696](bugs/BUG-1696-subscription-blocks-download-without-subtitle.md) | ✅ | ✅ | 番剧订阅：当集 Jimaku 字幕还没上传就整条不下载，生肉早于字幕导致订阅长期不动 |
 | [BUG-1695](bugs/BUG-1695-jimaku-batch-wrong-episode-fallback.md) | ✅ | ✅ | 合集批量字幕：集号一条都对不上时静默取第一个文件，整季挂同一个错字幕 |
 | [BUG-1694](bugs/BUG-1694-jimaku-anime-filter.md) | ✅ | ✅ | Jimaku 搜索永不传 anime 参数，真人剧/日剧字幕永远 0 结果 |
