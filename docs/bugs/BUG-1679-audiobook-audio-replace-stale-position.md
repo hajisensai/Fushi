@@ -19,16 +19,22 @@
       / `audiobook.part.dart`）——用户看到的是「乱跳页」。
 - **[x] ① 已修复** — 在**音频集合真的变了**时把进度归零（判据是数据本身，不是「谁在调」，
   所以只回写 health / 只换字幕的保存不会误伤听到哪儿了）：
-  - `AudiobookRepository.saveAudiobook`：写入前读旧行，`AudiobookStorage.sameAudioPathList`
+  - `AudiobookRepository.replaceAudio`：写入前读旧行，`AudiobookStorage.sameAudioPathList`
     + `audioRoot` 比对；变了（含旧行不存在＝重建行，防上一世进度复活）就
     `updatePositionMs(positionMs: 0)`（连带写新时间戳，互联 LWW 能把这次作废传出去）。
   - `SrtBookRepository.replaceAudio`：同判据，键用 `uid`（与
     `AudiobookSessionLauncher._readPrefs` 的 SRT 分支同源）。
-  - 提交：见本分支 `fix(audiobook): stop re-import from wiping existing audio`。
+  - **归零挂在「换音频」这个动作上，而不是挂在某次保存上**：BUG-1678 的结构性修复
+    把有声书写入拆成了四个窄动作，换音频只有 `replaceAudio` 这一个入口，绕不过去。
+    第一版把判定塞在整行 `saveAudiobook` 里——那要求「凡是换了音频的路径都得记得
+    调那个保存」，仍是纪律；现在是「想换音频只能调它」，是结构。
+  - 提交：`fix(audiobook): stop re-import from wiping existing audio`（第一版）
+    + `refactor(audiobook): 让「清空没碰的列」在结构上写不出来`（收口到窄动作）。
 - **[x] ② 已加自动化测试** —
   `packages/fushi_audio/test/audiobook/audiobook_reimport_audio_survival_test.dart`
-  三条：换音频 → 归零；音频不变（只换字幕）→ 进度纹丝不动；`replaceAudio` 同一组音频不动、
-  换一组归零。三处变异实测让对应用例变红，还原后 sha256 校验一致。
+  四条：换音频 → 归零；喂同一组音频 → 进度纹丝不动；`replaceAlignment` / `writeHealth`
+  从不碰进度；SRT 书 `replaceAudio` 同一组不动、换一组归零。变异实测让对应用例变红，
+  还原后 sha256 校验一致。
 - **备注**：与 [BUG-1678](BUG-1678-audiobook-reimport-wipes-existing-audio.md) 是同一条用户报告的两半。
   **未做**：`AudiobookController.load` 仍不按真实时长钳制恢复 seek。那是症状层的兜底，
   且 `preload: false` 下此刻拿不到时长，硬做要么强制预加载（拖慢开书）要么额外探测一次时长；

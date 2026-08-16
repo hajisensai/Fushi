@@ -301,13 +301,10 @@ Future<String> seedAudiobook(
       buildSampleCues(bookKey: bookKey, chapterHref: kFixtureChapterHref);
 
   final AudiobookRepository repo = AudiobookRepository(appModel.database);
-  final Audiobook audiobook = Audiobook()
-    ..bookKey = bookKey
-    ..audioRoot = null
-    ..audioPaths = <String>[audioFile.path]
-    ..alignmentFormat = 'srt'
-    ..alignmentPath = audioPath;
-  await repo.saveAudiobook(audiobook);
+  // 窄写入：repository 没有「写一整行」的入口（BUG-1678），播种也按动作拆开。
+  await repo.replaceAlignment(bookKey: bookKey, format: 'srt', path: audioPath);
+  await repo
+      .replaceAudio(bookKey: bookKey, audioPaths: <String>[audioFile.path]);
   await repo.saveCues(bookKey: bookKey, cues: cues);
   debugPrint('[fixture] Saved audiobook meta + ${cues.length} cues');
 

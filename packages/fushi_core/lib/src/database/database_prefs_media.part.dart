@@ -386,9 +386,37 @@ mixin _FushiDbPrefsMedia
 
   Future<List<AudiobookRow>> getAllAudiobooks() => select(audiobooks).get();
 
+  /// 整行写入（**会覆盖每一列**）。只给「从同步包物化一整行」这种确实持有全部
+  /// 列的场景用。日常「只改其中几列」必须走 [patchAudiobook]——凭空造 companion
+  /// 再走这里，本次没设的列会被静默清空（BUG-1678）。
   Future<void> upsertAudiobook(AudiobooksCompanion ab) =>
       into(audiobooks).insert(ab,
           onConflict: DoUpdate((_) => ab, target: [audiobooks.bookKey]));
+
+  /// 局部更新 audiobooks：**只写 [patch] 里 present 的列**，其余原样不动。
+  /// 返回受影响行数（0 = 该 bookKey 尚无行）。
+  Future<int> patchAudiobook(String bookKey, AudiobooksCompanion patch) =>
+      (update(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
+          .write(patch);
+
+  /// 保证 [bookKey] 有一行 audiobooks；已存在则**原样不动**（不覆盖任何列）。
+  /// NOT NULL 的 alignment 两列新建时填空串，等 [patchAudiobook] 写真值。
+  Future<void> ensureAudiobookRow(String bookKey) => transaction(() async {
+        final AudiobookRow? existing = await (select(audiobooks)
+              ..where((t) => t.bookKey.equals(bookKey)))
+            .getSingleOrNull();
+        if (existing != null) return;
+        await into(audiobooks).insert(AudiobooksCompanion.insert(
+          bookKey: bookKey,
+          alignmentFormat: '',
+          alignmentPath: '',
+        ));
+      });
+
+  /// 局部更新 srt_books（按 uid）：**只写 [patch] 里 present 的列**。
+  /// 返回受影响行数（0 = 该 uid 尚无行）。
+  Future<int> patchSrtBook(String uid, SrtBooksCompanion patch) =>
+      (update(srtBooks)..where((t) => t.uid.equals(uid))).write(patch);
 
   Future<int> deleteAudiobookByBookKey(String bookKey) => transaction(() async {
         await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
