@@ -1,5 +1,5 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -393,6 +393,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
     // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
     mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
+    // BUG-1692：refreshTab 信号只覆盖「谁写库谁记得通知」登记过的路径（全量同步
+    // 收尾的 refreshAfterSyncRun）；防抖轻量合集同步（runCollectionsOnly）与其它
+    // 写入者没有登记，落库后书架照旧散卡。直接订阅合集两张表的数据层信号，任何
+    // 写入者天然覆盖。
+    _collectionTablesSub = appModelNoUpdate.database
+        .watchCollectionTablesChanged()
+        .listen(_onCollectionTablesChanged);
     // 统一下载中心：mokuro.moe 卷经共享队列后台落库（可能在「在线目录」对话框
     // 关闭后才完成）。监听队列 importedCount 增量失效书架 provider，取代旧的
     // 「对话框关闭回传导入数」信号（该信号已随对话框改队列化而移除）。
@@ -450,6 +457,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
+  /// BUG-1692：合集表变更订阅 + 合并窗口（同视频页 _onCollectionTablesChanged，
+  /// 同步/导入批量落库合并成一次映射重载）。
+  StreamSubscription<void>? _collectionTablesSub;
+  Timer? _collectionsReloadDebounce;
+
+  /// BUG-1692：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
+  /// invalidate 书列表 provider：合集归属变化不改变书行本身）。
+  void _onCollectionTablesChanged(void _) {
+    _collectionsReloadDebounce?.cancel();
+    _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() {
+        _shelfMapsFuture = _loadShelfMaps();
+      });
+    });
+  }
+
   /// mokuro.moe 共享下载队列（app 级；initState 挂监听、dispose 摘除）。
   MokuroMoeDownloadQueue? _mokuroQueue;
   int _mokuroImportedSeen = 0;
@@ -467,6 +491,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   void dispose() {
     _searchController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
+    _collectionTablesSub?.cancel();
+    _collectionsReloadDebounce?.cancel();
     _mokuroQueue?.removeListener(_onMokuroQueueChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
@@ -1396,10 +1422,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           membership.collectionName,
           membership.collectionType,
         );
-        if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
-        primaryByEntry[key] = cid;
-        memberSortIndex[key] = membership.sortIndex;
-        continue;
+        if (cid != null) {
+          primaryByEntry[key] = cid;
+          memberSortIndex[key] = membership.sortIndex;
+          continue;
+        }
+        // BUG-1692：(name,type) 在本地解析不到（合集清单还没同步落库 / 用户改过
+        // 本地合集名）不能直接散卡——合集同步若已把透传成员行（键=对端 bookKey）
+        // 落进本地 MediaCollectionItems，下方按本地已同步归属回查的兜底照样能
+        // 救回。此前这里 continue 把兜底整个跳过了。
       }
       // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
       // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。

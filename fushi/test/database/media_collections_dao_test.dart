@@ -365,4 +365,28 @@ void main() {
     expect((await db.getCollectionItems(c)).map((m) => m.entryKey).toList(),
         <String>['b1']);
   });
+
+  // BUG-1692：库页折叠映射的数据层刷新信号——任一合集表写入即 emit，任何写入者
+  //（后台合集同步/备份导入/合集编辑）天然覆盖，无需逐路登记通知。
+  test('watchCollectionTablesChanged 在建合集时 emit', () async {
+    final db = await _openDb();
+    final Future<void> emitted = db
+        .watchCollectionTablesChanged()
+        .first
+        .timeout(const Duration(seconds: 3));
+    await db.createMediaCollection('W');
+    // 不抛 = 收到 emit（.first 自行取消订阅，onCancel 收敛不挂测试）。
+    await emitted;
+  });
+
+  test('watchCollectionTablesChanged 在写成员行时也 emit', () async {
+    final db = await _openDb();
+    final int c = await db.createMediaCollection('W2');
+    final Future<void> emitted = db
+        .watchCollectionTablesChanged()
+        .first
+        .timeout(const Duration(seconds: 3));
+    await db.upsertCollectionItemAt(c, MediaKind.epub.dbValue, 'bk', 0);
+    await emitted;
+  });
 }

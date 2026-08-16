@@ -200,6 +200,54 @@ void main() {
       reason: '归属解析不到本地合集 → 占位卡落散卡网格（散卡降级）',
     );
   });
+
+  testWidgets('BUG-1692：合集同步落库后视频页自动重组（无需下拉刷新/重启）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 首帧：本地无 'LateShow' 合集 → 远端占位散卡。
+    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
+      <RemoteVideoInfo>[
+        const RemoteVideoInfo(
+          id: 'video/remote-late',
+          title: 'Remote Late',
+          collection: RemoteCollectionMembership(
+            collectionName: 'LateShow',
+            collectionType: 'collection',
+            sortIndex: 0,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_video_remote-late')),
+      findsOneWidget,
+      reason: '前置：合集未落库时占位卡是散卡',
+    );
+
+    // 模拟后台合集同步落库（互联 live / 云清单 / 备份导入任一写入者）。
+    final int cid = await db.createMediaCollection('LateShow',
+        collectionType: 'collection');
+    // 合集表 watch 有 300ms 合并窗口。
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+      findsOneWidget,
+      reason: '合集落库后无需任何手动刷新即渲染合集封面卡（BUG-1692 主诉：'
+          '此前 _collectionsById 停在首帧快照，恒散卡直到重启）',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_video_remote-late')),
+      findsNothing,
+      reason: '占位卡自动折进新落库的合集，不再渲染独立散卡',
+    );
+  });
 }
 
 class _ListFakeRemoteVideoClient implements RemoteVideoClient {
