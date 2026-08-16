@@ -146,9 +146,15 @@ internal class MihonExtensionLoader(private val context: Context) {
                     .getDeclaredConstructor()
                     .newInstance()
             } catch (error: Throwable) {
+                // 把不透明的实例化失败变成可诊断的错误：附上链式根因（通常是
+                // NoClassDefFoundError / ClassNotFoundException，指明扩展需要而
+                // host 未提供的类），否则用户只看到「无法安装」而无从判断原因。
+                // reflective 调用会把真异常包在 InvocationTargetException 里，故
+                // 走到最深一层 cause。
                 throw MihonHostException(
                     "LOAD_FAILED",
-                    "Unable to instantiate extension source $className",
+                    "Unable to instantiate extension source $className: " +
+                        describeCauseChain(error),
                     error,
                 )
             }
@@ -165,6 +171,25 @@ internal class MihonExtensionLoader(private val context: Context) {
             throw MihonHostException("NO_SOURCES", "Extension did not expose any sources")
         }
         return LoadedMihonExtension(inspection, sources, classLoader)
+    }
+
+    /**
+     * Walks the whole cause chain and renders it as
+     * `Outer: msg ← Cause: msg ← Root: msg`, capped so a runaway chain can't
+     * bloat the surfaced message. The deepest link is usually the actionable
+     * one (which class/method the extension needs but the host lacks).
+     */
+    private fun describeCauseChain(error: Throwable): String {
+        val parts = mutableListOf<String>()
+        var current: Throwable? = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current) && parts.size < 6) {
+            val label = current.javaClass.simpleName.ifBlank { current.javaClass.name }
+            val message = current.message?.trim().orEmpty()
+            parts += if (message.isEmpty()) label else "$label: $message"
+            current = current.cause
+        }
+        return parts.joinToString(" ← ")
     }
 
     @Suppress("DEPRECATION")
