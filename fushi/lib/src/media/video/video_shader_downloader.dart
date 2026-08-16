@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/app_user_agent.dart';
 
 /// Anime4K（bloc97/Anime4K）GLSL 着色器一键下载：定义官方推荐预设、生成多镜像
 /// 下载 URL、把一组 `.glsl` 拉到 [mpvShaderDirectory] 供视频页勾选启用。
@@ -340,8 +341,8 @@ Future<String?> downloadShaderFromUrl(
         followRedirects: true,
         maxRedirects: 10,
         responseType: ResponseType.bytes,
-        headers: const <String, String>{
-          'User-Agent': 'Mozilla/5.0 (Hibiki) Shader-Downloader/1.0',
+        headers: <String, String>{
+          'User-Agent': fushiUserAgent('shader-downloader'),
           'Accept': '*/*',
         },
       ));
@@ -487,8 +488,8 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
         followRedirects: true,
         maxRedirects: 10,
         responseType: ResponseType.bytes,
-        headers: const <String, String>{
-          'User-Agent': 'Mozilla/5.0 (Hibiki) Anime4K-Downloader/1.0',
+        headers: <String, String>{
+          'User-Agent': fushiUserAgent('anime4k-downloader'),
           'Accept': '*/*',
         },
       ));

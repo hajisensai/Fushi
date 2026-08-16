@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 @immutable
@@ -963,12 +964,12 @@ class _OpenSubtitlesDraft {
     required this.allowInsecureHttp,
   });
 
-  factory _OpenSubtitlesDraft.empty() => const _OpenSubtitlesDraft(
+  factory _OpenSubtitlesDraft.empty() => _OpenSubtitlesDraft(
         endpoint: 'https://api.opensubtitles.com/api/v1',
         apiKey: '',
         username: '',
         password: '',
-        userAgent: 'Hibiki v1',
+        userAgent: fushiUserAgent('opensubtitles'),
         enabled: false,
         allowInsecureHttp: false,
       );
