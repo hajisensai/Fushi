@@ -256,6 +256,26 @@ abstract class BaseAnkiRepository {
   /// 写卡路径的能力，与本功能无关。
   bool get supportsMediaMaintenance => false;
 
+  /// 本后端**此刻真能不能**做媒体去重。
+  ///
+  /// [supportsMediaMaintenance] 只说「这个后端类型实现了去重」，说不了「媒体
+  /// 目录这台机器读得到」——AnkiConnect 是同一个类，桌面上跑是本机直读，手机
+  /// 连局域网里的桌面 Anki 也是同一个类，但 `getMediaDirPath` 返回的是**那台
+  /// 机器**的路径，本机根本不存在。用静态能力当门控的后果是手机上显示一个
+  /// 点了只会说「不可用」的区块。
+  ///
+  /// 默认实现 = 静态能力（不做任何 I/O）；需要探测的后端覆写。后端不可达时
+  /// **照抛**——调用方据此保持「未知」，不要把「Anki 没开」误判成「不支持」。
+  Future<bool> probeMediaMaintenance() async => supportsMediaMaintenance;
+
+  /// [runMediaDedup] 的 `onProgress` / `shouldCancel` 是不是真的会被调用。
+  ///
+  /// 本进程内跑的后端恒 true。互联「制卡到已配对设备」把整轮去重推给主机跑，
+  /// 一次 HTTP 往返里没有回传进度的通道、也没有中途叫停的通道——那种后端返回
+  /// false，UI 据此画不确定进度条并**隐藏取消按钮**。摆一个点了没反应的取消
+  /// 按钮比没有取消按钮更糟：用户会以为已经停了。
+  bool get supportsMediaMaintenanceProgress => true;
+
   /// 跑一轮媒体字节级去重：找出字节完全相同的文件组 → 把笔记字段与卡模板/
   /// styling 里的引用统一改指保留份 → 复核引用清干净后删除多余副本。
   /// **绝不重编码任何文件**。[dryRun] = 只扫描规划，不改动。[onJournal] 在

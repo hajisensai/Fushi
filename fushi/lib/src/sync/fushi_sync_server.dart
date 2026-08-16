@@ -553,6 +553,10 @@ class FushiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleAnkiNoteType(request, reqPath);
     }
+    if (reqPath.startsWith('/api/anki/media/dedup/')) {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleAnkiMediaDedup(request, reqPath);
+    }
     if (reqPath == '/api/media/dictionary') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       return _handleDictionaryMedia(request, method == 'HEAD');
@@ -1219,6 +1223,34 @@ class FushiSyncServer {
         case '/api/anki/note-type/templates':
           return _jsonResponse(
               await buildAnkiNoteTypeTemplatesResponse(body, mining: svc));
+        default:
+          return shelf.Response.notFound('Unknown endpoint');
+      }
+    } on FormatException catch (e) {
+      return shelf.Response(400, body: e.message);
+    }
+  }
+
+  /// 互联媒体存储优化：客户端（手机）经互联对**主机端** collection.media 做字节级
+  /// 去重——卡片落在主机的 Anki 上，重复媒体也堆在主机，客户端本机根本没有那个
+  /// 目录。未注入挖词 service → 404（旧版主机对新客户端同样 404 → 客户端按
+  /// 「不支持」隐藏区块）；dryRun 类型错 → 400。
+  Future<shelf.Response> _handleAnkiMediaDedup(
+    shelf.Request request,
+    String path,
+  ) async {
+    final FushiRemoteMiningService? svc = _miningService;
+    if (svc == null) return shelf.Response.notFound('Mining off');
+    final Map<String, dynamic>? body = await _readJsonObject(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      switch (path) {
+        case '/api/anki/media/dedup/probe':
+          return _jsonResponse(
+              await buildAnkiMediaDedupProbeResponse(mining: svc));
+        case '/api/anki/media/dedup/run':
+          return _jsonResponse(
+              await buildAnkiMediaDedupRunResponse(body, mining: svc));
         default:
           return shelf.Response.notFound('Unknown endpoint');
       }

@@ -14,10 +14,15 @@ class AnkiUiState {
     this.settings = const AnkiSettings(),
     this.isFetching = false,
     this.errorMessage,
+    this.mediaMaintenanceAvailable,
   });
   final AnkiSettings settings;
   final bool isFetching;
   final String? errorMessage;
+
+  /// 媒体去重此刻真能不能用；null = 还没探测出结论（没探过 / 后端不可达）。
+  /// 设置页用它做区块门控，未知时回落到后端静态能力。
+  final bool? mediaMaintenanceAvailable;
 
   List<AnkiDeck> get availableDecks => settings.availableDecks;
   List<AnkiNoteType> get availableNoteTypes => settings.availableNoteTypes;
@@ -29,11 +34,16 @@ class AnkiUiState {
     bool? isFetching,
     String? errorMessage,
     bool clearError = false,
+    bool? mediaMaintenanceAvailable,
+    bool clearMediaMaintenanceAvailable = false,
   }) =>
       AnkiUiState(
         settings: settings ?? this.settings,
         isFetching: isFetching ?? this.isFetching,
         errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+        mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
+            ? null
+            : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
       );
 }
 
@@ -293,8 +303,27 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
   // ── 媒体存储优化（字节级去重）──────────────────────────────────────
 
-  /// 当前后端能否做媒体去重（AnkiConnect 且与 Anki 同机；设置页据此隐藏区块）。
+  /// 当前后端**类型**能否做媒体去重。这是静态能力，说不了「媒体目录这台机器
+  /// 读得到」——那个由 [probeMediaMaintenance] 探测，设置页两者一起判。
   bool get supportsMediaMaintenance => _repository.supportsMediaMaintenance;
+
+  /// 探测媒体去重此刻真能不能用，结论落进 [AnkiUiState.mediaMaintenanceAvailable]。
+  ///
+  /// 后端不可达（Anki 没开 / 局域网断了）时保持「未知」，绝不把它记成
+  /// 「不支持」——那会让桌面用户下次打开设置页发现整区消失。
+  Future<void> probeMediaMaintenance() async {
+    if (!_repository.supportsMediaMaintenance) {
+      state = state.copyWith(mediaMaintenanceAvailable: false);
+      return;
+    }
+    try {
+      final bool available = await _repository.probeMediaMaintenance();
+      state = state.copyWith(mediaMaintenanceAvailable: available);
+    } catch (e, stack) {
+      debugPrint('AnkiViewModel.probeMediaMaintenance: $e\n$stack');
+      state = state.copyWith(clearMediaMaintenanceAvailable: true);
+    }
+  }
 
   /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
   AnkiMediaDedupRunner get mediaDedupRunner =>

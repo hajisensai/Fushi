@@ -72,6 +72,20 @@ class _FakeMining implements FushiRemoteMiningService {
     lastTemplatesWrite = (modelName, templates);
     return noteTypeWriteOk;
   }
+
+  /// 媒体去重：本 fake 只需满足契约，端点行为由 dedup 专用测试覆盖。
+  bool mediaMaintenanceAvailable = false;
+  AnkiMediaDedupReport? dedupReport;
+  final List<bool> dedupRuns = <bool>[];
+
+  @override
+  Future<bool> probeMediaMaintenance() async => mediaMaintenanceAvailable;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async {
+    dedupRuns.add(dryRun);
+    return dedupReport;
+  }
 }
 
 Future<HttpClientResponse> _post(

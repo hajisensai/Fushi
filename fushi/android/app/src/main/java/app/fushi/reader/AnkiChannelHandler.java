@@ -88,6 +88,10 @@ public class AnkiChannelHandler {
                 final String deckName = call.argument("deckName");
                 final Number noteIdArg = call.argument("noteId");
                 final Map<String, String> fieldValues = call.argument("fieldValues");
+                // Lapis 样式客制化：模板列表（每项 name/front/back），见
+                // readNoteType / updateNoteTypeTemplates。
+                final ArrayList<Map<String, String>> noteTypeTemplates =
+                    call.argument("templates");
 
                 switch (call.method) {
                     case "addNote":
@@ -271,6 +275,54 @@ public class AnkiChannelHandler {
                                 result.success(null);
                             } catch (Exception e) {
                                 result.error("CREATE_MODEL_FAILED",
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    // ── 已存在 note type 的读/改（Lapis 样式客制化）──────────
+                    // 早期版本据「AnkiDroid 改不了已存在 note type」隐藏整个
+                    // Lapis 样式区，那个前提是错的：CardContentProvider.update()
+                    // 的 models/<mid> 分支支持写 Model.CSS，models/<mid>/
+                    // templates/<ord> 分支支持写 QUESTION_FORMAT/ANSWER_FORMAT。
+                    // 真正被 provider 拒绝的只有改字段名（"Field names cannot be
+                    // changed via provider"），而样式客制化一个字段名都不改。
+                    case "readNoteType":
+                        if (noteTypeName == null) {
+                            result.error("MISSING_ARG",
+                                "noteTypeName is required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(readNoteType(noteTypeName));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    case "updateNoteTypeStyling":
+                        if (noteTypeName == null || css == null) {
+                            result.error("MISSING_ARG",
+                                "noteTypeName and css are required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(
+                                    updateNoteTypeStyling(noteTypeName, css));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    case "updateNoteTypeTemplates":
+                        if (noteTypeName == null || noteTypeTemplates == null) {
+                            result.error("MISSING_ARG",
+                                "noteTypeName and templates are required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(updateNoteTypeTemplates(
+                                    noteTypeName, noteTypeTemplates));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
                                     e.getMessage(), null);
                             }
                         }
@@ -662,5 +714,138 @@ public class AnkiChannelHandler {
             null,
             null
         );
+    }
+
+    /** `content://com.ichi2.anki.flashcards/models/<mid>`。 */
+    private static Uri noteTypeUri(long mid) {
+        return Uri.withAppendedPath(
+            FlashCardsContract.Model.CONTENT_URI, Long.toString(mid));
+    }
+
+    /** `content://com.ichi2.anki.flashcards/models/<mid>/templates`。 */
+    private static Uri noteTypeTemplatesUri(long mid) {
+        return Uri.withAppendedPath(noteTypeUri(mid), "templates");
+    }
+
+    /**
+     * 读一个已存在 note type 的完整定义（字段顺序 / 卡模板 / CSS），供 Lapis
+     * 备份与漂移判定。note type 不存在返回 {@code null}（Dart 侧照契约转
+     * 「未找到」，不是错误）。
+     *
+     * <p>字段名列表由 provider 用 {@code Utils.joinFields} 以 0x1f 连接成一个
+     * 字符串返回（{@link FlashCardsContract.Model#FIELD_NAMES}），这里拆回列表。
+     */
+    @Nullable
+    private Map<String, Object> readNoteType(String name) {
+        final Long mid = ankiDroid.findModelIdByName(name, 1);
+        if (mid == null) return null;
+        final ContentResolver resolver = context.getContentResolver();
+        final Map<String, Object> out = new LinkedHashMap<>();
+        try (Cursor cursor = resolver.query(
+                noteTypeUri(mid),
+                new String[] {
+                    FlashCardsContract.Model.NAME,
+                    FlashCardsContract.Model.FIELD_NAMES,
+                    FlashCardsContract.Model.CSS,
+                },
+                null, null, null)) {
+            if (cursor == null || !cursor.moveToFirst()) return null;
+            out.put("name", emptyIfNull(cursor.getString(0)));
+            out.put("fields", splitFieldNames(cursor.getString(1)));
+            out.put("css", emptyIfNull(cursor.getString(2)));
+        }
+        out.put("templates", readNoteTypeTemplates(resolver, mid));
+        return out;
+    }
+
+    /**
+     * 读一个 note type 的全部卡模板，按 provider 给出的 ord 升序。
+     * 每项含 {@code ord}（0 基，写回时就是 URI 末段）、{@code name}、
+     * {@code front}、{@code back}。
+     */
+    private List<Map<String, Object>> readNoteTypeTemplates(
+            ContentResolver resolver, long mid) {
+        final List<Map<String, Object>> templates = new ArrayList<>();
+        try (Cursor cursor = resolver.query(
+                noteTypeTemplatesUri(mid),
+                new String[] {
+                    FlashCardsContract.CardTemplate.ORD,
+                    FlashCardsContract.CardTemplate.NAME,
+                    FlashCardsContract.CardTemplate.QUESTION_FORMAT,
+                    FlashCardsContract.CardTemplate.ANSWER_FORMAT,
+                },
+                null, null, null)) {
+            if (cursor == null) return templates;
+            while (cursor.moveToNext()) {
+                final Map<String, Object> tmpl = new LinkedHashMap<>();
+                tmpl.put("ord", cursor.getInt(0));
+                tmpl.put("name", emptyIfNull(cursor.getString(1)));
+                tmpl.put("front", emptyIfNull(cursor.getString(2)));
+                tmpl.put("back", emptyIfNull(cursor.getString(3)));
+                templates.add(tmpl);
+            }
+        }
+        return templates;
+    }
+
+    /**
+     * 覆写已存在 note type 的 styling（CSS）。note type 不存在或 provider 没
+     * 认下这次改动返回 {@code false}；provider 抛错照抛（调用方转错误码）。
+     */
+    private boolean updateNoteTypeStyling(String name, String newCss) {
+        final Long mid = ankiDroid.findModelIdByName(name, 1);
+        if (mid == null) return false;
+        final ContentValues values = new ContentValues();
+        values.put(FlashCardsContract.Model.CSS, newCss);
+        return context.getContentResolver()
+            .update(noteTypeUri(mid), values, null, null) > 0;
+    }
+
+    /**
+     * 覆写已存在 note type 的卡模板正/反面，**按模板名匹配**。
+     *
+     * <p>provider 的写入 URI 用的是 ord（0 基下标），但备份文件里只有模板名
+     * ——ord 是位置，模板被用户重排之后按位置写回就会把正面写进另一张卡。
+     * 所以这里先读一遍现有模板建立「名 → ord」，只写名字对得上的那些；备份里
+     * 有、当前 note type 里没有的模板名直接跳过（provider 不支持增删模板）。
+     *
+     * @return 是否至少有一张模板被真正改写。
+     */
+    private boolean updateNoteTypeTemplates(
+            String name, List<Map<String, String>> templates) {
+        final Long mid = ankiDroid.findModelIdByName(name, 1);
+        if (mid == null) return false;
+        final ContentResolver resolver = context.getContentResolver();
+        final Map<String, Integer> ordByName = new LinkedHashMap<>();
+        for (Map<String, Object> existing : readNoteTypeTemplates(resolver, mid)) {
+            ordByName.put((String) existing.get("name"),
+                (Integer) existing.get("ord"));
+        }
+        boolean changed = false;
+        for (Map<String, String> tmpl : templates) {
+            final Integer ord = ordByName.get(tmpl.get("name"));
+            if (ord == null) continue;
+            final ContentValues values = new ContentValues();
+            values.put(FlashCardsContract.CardTemplate.QUESTION_FORMAT,
+                emptyIfNull(tmpl.get("front")));
+            values.put(FlashCardsContract.CardTemplate.ANSWER_FORMAT,
+                emptyIfNull(tmpl.get("back")));
+            final Uri uri = Uri.withAppendedPath(
+                noteTypeTemplatesUri(mid), Integer.toString(ord));
+            if (resolver.update(uri, values, null, null) > 0) changed = true;
+        }
+        return changed;
+    }
+
+    /** provider 的字段名串（0x1f 连接）→ 列表；空串 = 无字段。 */
+    private static ArrayList<String> splitFieldNames(@Nullable String joined) {
+        final ArrayList<String> fields = new ArrayList<>();
+        if (joined == null || joined.isEmpty()) return fields;
+        fields.addAll(Arrays.asList(joined.split("\u001f", -1)));
+        return fields;
+    }
+
+    private static String emptyIfNull(@Nullable String value) {
+        return value == null ? "" : value;
     }
 }

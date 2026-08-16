@@ -41,6 +41,13 @@ class MediaDedupDeletion {
   /// [filename] 占用的字节数（= 释放的空间）。
   final int bytes;
 
+  factory MediaDedupDeletion.fromJson(Map<String, dynamic> json) =>
+      MediaDedupDeletion(
+        filename: json['filename']?.toString() ?? '',
+        canonical: json['canonical']?.toString() ?? '',
+        bytes: (json['bytes'] as num?)?.toInt() ?? 0,
+      );
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'filename': filename,
         'canonical': canonical,
@@ -243,6 +250,23 @@ class AnkiMediaDedupReport {
   /// true = 用户中途取消，数字只统计取消前已完成的部分；已做的改写/删除
   /// 保留（引用永远先改指保留份，任何时刻停下都不会出现悬空引用）。
   final bool cancelled;
+
+  /// 从 [toJson] 的产物还原（互联「制卡到已配对设备」时主机端跑完把报告发回
+  /// 客户端）。`duplicatesRemoved` / `bytesSaved` 是 [deletions] 的派生值，
+  /// 这里**不读**它们——两份数字各自还原迟早对不上，派生值只该有一个来源。
+  factory AnkiMediaDedupReport.fromJson(Map<String, dynamic> json) =>
+      AnkiMediaDedupReport(
+        dryRun: json['dryRun'] == true,
+        groupCount: (json['groupCount'] as num?)?.toInt() ?? 0,
+        deletions: ((json['deletions'] as List?) ?? const <dynamic>[])
+            .map((dynamic e) =>
+                MediaDedupDeletion.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(growable: false),
+        notesRewritten: (json['notesRewritten'] as num?)?.toInt() ?? 0,
+        modelsRewritten: (json['modelsRewritten'] as num?)?.toInt() ?? 0,
+        skipped: (json['skipped'] as num?)?.toInt() ?? 0,
+        cancelled: json['cancelled'] == true,
+      );
 
   /// 实际删除（[dryRun] 时 = 将会删除）的多余副本数。
   int get duplicatesRemoved => deletions.length;

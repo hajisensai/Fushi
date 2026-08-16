@@ -305,9 +305,26 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
           String modelName, List<AnkiCardTemplate> templates) =>
       _client.updateNoteTypeTemplates(modelName, templates);
 
-  // 媒体去重同为配置/维护类：作用于本机 Anki，委派本地仓库。
+  // ── 媒体存储优化：作用于**主机端** collection.media ────────────────────
+  //
+  // 这里曾委派本地仓库（`_local.supportsMediaMaintenance`），那是把「配置类
+  // 方法一律委派本地」的规则套错了地方：卡片落在主机的 Anki 上，重复媒体也
+  // 堆在主机的 collection.media 里，客户端本机连那个目录都没有。委派本地的
+  // 后果是——Android 上本地是 AnkiDroid（恒 false），于是明明主机能去重，
+  // 手机上整区隐藏；而 note type 编辑（就在上面几行）却已经走远端。同一个
+  // 「制卡到已配对设备」模式下两个维护动作指向两台不同机器，是自相矛盾的。
+  //
+  // 与 note type 编辑同构：能力与执行都在主机侧。
+
   @override
-  bool get supportsMediaMaintenance => _local.supportsMediaMaintenance;
+  bool get supportsMediaMaintenance => true;
+
+  /// 整轮去重在主机进程里跑，进度与取消跨不过这一次 HTTP 往返。
+  @override
+  bool get supportsMediaMaintenanceProgress => false;
+
+  @override
+  Future<bool> probeMediaMaintenance() => _client.probeMediaMaintenance();
 
   @override
   Future<AnkiMediaDedupReport?> runMediaDedup({
@@ -315,11 +332,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
-  }) =>
-      _local.runMediaDedup(
-        dryRun: dryRun,
-        onJournal: onJournal,
-        onProgress: onProgress,
-        shouldCancel: shouldCancel,
-      );
+  }) {
+    // onJournal 有意不接：改写/删除都发生在主机，审计日志也该落在主机（主机
+    // 侧经自己的 AnkiMediaDedupRunner 落 journal）。把主机的删除记进客户端的
+    // 日志目录只会造出一份「本机什么都没删」的假账。
+    // onProgress / shouldCancel 同理跨不过来，见 supportsMediaMaintenanceProgress。
+    return _client.runMediaDedup(dryRun: dryRun);
+  }
 }

@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1549 条。点号进各自文件。
+> 共 1552 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1682](bugs/BUG-1682-remote-mining-media-dedup-delegates-local.md) | ✅ | ✅ | 制卡到已配对设备时媒体去重委派本地仓库，手机上整区隐藏 |
+| [BUG-1681](bugs/BUG-1681-ankiconnect-remote-media-dedup-phantom-section.md) | ✅ | ✅ | 手机连局域网 AnkiConnect 时显示一个必然不可用的媒体存储优化区 |
+| [BUG-1680](bugs/BUG-1680-ankidroid-note-type-editing.md) | ✅ | ✅ | AnkiDroid 能改已存在 note type，Lapis 样式区却在手机上整区隐藏 |
 | [BUG-1671](bugs/BUG-1671-ext-side-panel-subtitle-incomplete.md) | ✅ | ✅ | 浏览器扩展侧边栏获取字幕不全 |
 | [BUG-1670](bugs/BUG-1670-ext-pause-on-lookup-no-resume.md) | ✅ | ✅ | 浏览器扩展查词不暂停视频且关闭弹窗不恢复播放 |
 | [BUG-1669](bugs/BUG-1669-ext-side-panel-lookup-stuck-loading.md) | ✅ | ✅ | 浏览器扩展侧边栏高频查词后「正在查词」永久卡死 |
