@@ -12,7 +12,7 @@ import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -374,8 +374,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildMiningAudioQualityRow(),
             _buildVideoMiningImageModePicker(),
             _buildVideoMiningAnimatedFormatPicker(),
+            _buildVideoMiningStillFormatPicker(),
             _buildGalMiningImageModePicker(),
             _buildGalMiningAnimatedFormatPicker(),
+            _buildGalMiningStillFormatPicker(),
           ],
         ),
       ],
@@ -558,6 +560,58 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         subtitle: t.gal_mining_animated_format_hint,
         selected: appModel.galMiningAnimatedFormat,
         onChanged: appModel.setGalMiningAnimatedFormat,
+      );
+
+  /// 静图（截图）**编码格式**，与上面两轴正交：封面模式选「用不用动图 / 静帧取
+  /// 哪一帧」，动图格式选「动图怎么编码」，本项只管「那一帧怎么编码」。
+  ///
+  /// 常显（不按 imageMode 隐藏）：动图抽取失败会降级成静帧，所以即使选着动图，
+  /// 本项也仍然决定那张降级图的格式；时隐时现反而让用户以为它不生效。
+  ///
+  /// 视频 / gal 各存一份（同 image mode、animated format 的分法）：gal 的静图来自
+  /// 窗口抓图（本身就是 PNG），与视频帧的取舍不同，共用一个开关会逼用户将就。
+  /// 三档共用一套 option 文案 —— 格式含义与场景无关。
+  Widget _buildStillFormatPicker({
+    required String title,
+    required String subtitle,
+    required MiningStillFormat selected,
+    required void Function(MiningStillFormat) onChanged,
+  }) {
+    return AdaptiveSettingsPickerRow<MiningStillFormat>(
+      title: title,
+      subtitle: subtitle,
+      icon: Icons.image_outlined,
+      controlBelow: true,
+      selected: selected,
+      options: [
+        AdaptiveSettingsPickerOption<MiningStillFormat>(
+          value: MiningStillFormat.jpg,
+          label: t.mining_still_format_jpg,
+        ),
+        AdaptiveSettingsPickerOption<MiningStillFormat>(
+          value: MiningStillFormat.png,
+          label: t.mining_still_format_png,
+        ),
+      ],
+      onChanged: (MiningStillFormat format) {
+        onChanged(format);
+        setState(() {});
+      },
+    );
+  }
+
+  Widget _buildVideoMiningStillFormatPicker() => _buildStillFormatPicker(
+        title: t.video_mining_still_format,
+        subtitle: t.video_mining_still_format_hint,
+        selected: appModel.videoMiningStillFormat,
+        onChanged: appModel.setVideoMiningStillFormat,
+      );
+
+  Widget _buildGalMiningStillFormatPicker() => _buildStillFormatPicker(
+        title: t.gal_mining_still_format,
+        subtitle: t.gal_mining_still_format_hint,
+        selected: appModel.galMiningStillFormat,
+        onChanged: appModel.setGalMiningStillFormat,
       );
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {

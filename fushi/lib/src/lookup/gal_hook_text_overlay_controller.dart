@@ -786,6 +786,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // `imageMode`/`animatedFormat` 默认 gif 会把漏传吞成「看着正常的旧行为」）。
       imageMode: model.galMiningImageMode,
       animatedFormat: model.galMiningAnimatedFormat,
+      stillFormat: model.galMiningStillFormat,
       captureLeaseFactory: suppressIngameLookupForCapture
           ? _ingameLookup.acquireMiningCaptureLease
           : null,

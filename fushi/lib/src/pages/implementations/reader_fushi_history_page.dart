@@ -2196,6 +2196,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.account_circle_outlined,
         onPressed: () => _openBookProfilePicker(item, bookKey),
       ),
+      // 内容语言：决定这本书正文用哪条字体链。导入时从 EPUB OPF 的 dc:language
+      // 自动回填，但自制/旧 EPUB 常常不声明，那时只有用户知道这本是什么语言的。
+      DialogListAction(
+        label: t.book_language_action,
+        icon: Icons.translate,
+        onPressed: () => _openBookLanguagePicker(bookKey),
+      ),
       DialogListAction(
         label: t.book_css_editor_edit_css,
         icon: Icons.code_outlined,

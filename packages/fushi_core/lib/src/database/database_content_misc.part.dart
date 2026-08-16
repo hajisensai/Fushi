@@ -439,6 +439,15 @@ mixin _FushiDbContentMisc
     ));
   }
 
+  /// v87：改写一本书的内容语言（BCP-47），决定正文用哪条字体链。
+  ///
+  /// null 是**有意义的取值**（= 未知，阅读器不写 `font-family`，保持浏览器默认），
+  /// 所以无条件写穿，不沿用「null = 不变」的约定——与相邻 [updateEpubBookFormat]
+  /// 处理 `mangaReadingMode` 的理由相同。
+  Future<void> updateEpubBookLanguage(String bookKey, String? language) =>
+      (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
+          .write(EpubBooksCompanion(language: Value(language)));
+
   /// TODO-1192: 重写一本书的 `chaptersJson`（每章元数据 + `characters` 计数 +
   /// `charCaliber` 口径版本）。开书时若发现落库计数是旧口径（含标点/括号/空白），
   /// 按新口径 [japaneseCharCount] 后台重算后回写，使书架总字数与后续统计对齐

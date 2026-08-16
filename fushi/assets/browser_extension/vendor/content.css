@@ -49,7 +49,17 @@
     --on-surface-variant: #44483F;
     color: var(--text-color);
     background-color: var(--background-color, transparent);
-    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important;
+    /* 内容语言字体链 · 兜底层。此前这里只有 macOS 的 Hiragino 两个家族名，
+       Windows / Android / Linux 上一个都不存在 → 直接掉进 `sans-serif` → 由系统
+       locale 决定 CJK 字形，于是日文词条在中文系统上渲染成中文字形（糸旁的三点
+       变三横那类）。修法是把四个平台的日文家族名都列进来：每个平台只会命中属于
+       自己的那几个，不存在的名字浏览器直接跳过。
+       日文排最前是兜底段的排序偏好（app 内容以日文居多），不是「假设内容恒为日
+       语」——真正的分流由下面的 :lang() 规则和 Dart 注入的 per-dictionary 规则
+       负责，它们特异性更高。根节点**不要**加 lang 属性，否则所有子树都会匹配同
+       一条 :lang()，把分流全部压掉。 */
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI",
+        "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif !important;
     overscroll-behavior-y: contain;
     touch-action: auto;
     -webkit-user-select: text;
@@ -78,6 +88,38 @@
        empty states, controls) keep their more-specific rules below. The
        content-css generator re-roots this declaration at #entries-container. */
     text-align: left;
+}
+
+/* 内容语言字体链 · 节点级分流。
+   yomitan structured content 允许词典作者逐节点标 `lang`，popup.js 在渲染时已把
+   它透传到 DOM（还带 nextLanguage 沿树继承）——但在此之前没有任何 CSS 消费这个
+   标注，等于白标。日中词典的「词头日文 + 释义中文」正是靠它分段：混排解不了「整
+   段是什么语言」，因为那个问题不成立；能解的是让 :lang() 的继承机制按子树分段
+   生效。
+   app 内还有一层由 Dart 注入的 per-dictionary 规则（按 index.json 的
+   sourceLanguage/targetLanguage 或用户手动指定），特异性与这里相同但注入在后，
+   而作者标注比词典级默认更精确，所以 Dart 侧把 :lang() 规则也重新注入一遍排在
+   最后。浏览器扩展没有 Dart 注入，靠的就是这里这几条。
+   顺序要求：:lang(zh) 按 BCP-47 前缀匹配会一并命中 zh-Hant/zh-TW，所以繁体规则
+   必须写在简体之后，否则繁体子树被简体链接管。 */
+:where(#entries-container) :lang(ja) {
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI",
+        "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif !important;
+}
+
+:where(#entries-container) :lang(ko) {
+    font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR",
+        "Noto Sans KR", sans-serif !important;
+}
+
+:where(#entries-container) :lang(zh) {
+    font-family: "PingFang SC", "Heiti SC", "Microsoft YaHei UI", "Microsoft YaHei",
+        "Noto Sans CJK SC", "Noto Sans SC", sans-serif !important;
+}
+
+:where(#entries-container) :lang(zh-Hant) {
+    font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei UI",
+        "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", sans-serif !important;
 }
 
 :where(#entries-container) {

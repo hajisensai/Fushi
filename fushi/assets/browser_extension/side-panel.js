@@ -49,6 +49,11 @@
   var scheduledPointer = null;
   var scanFrame = null;
   var activeScanKey = '';
+  // pointer 扫词在途闸（对齐 content.js 的 fushiPending/fushiPendingSince，BUG-1024 同款防洪）：
+  // 有词典请求在途时暂缓 pointermove 触发的新查词——横扫一行 20 个字不再瞬间打出 20 个请求把
+  // 本地服务与 6 连接上限灌满。0=无在途；带截止时间兜底，任何异常都不会永久闸死。
+  var lookupPendingSince = 0;
+  var LOOKUP_PENDING_TIMEOUT_MS = 1500;
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -56,14 +61,29 @@
   var LOOKUP_CACHE_CHAR_LIMIT = 8 * 1024 * 1024;
   var FONT_STEPS = [0.85, 1, 1.15, 1.3];
 
+  // BUG-1024 孪生（Side Panel 版）：MV3 service worker 在消息在途时被系统回收，sendMessage
+  // 回调**永不触发**——没有兜底的话这里的 Promise 永久 pending：「正在查词…」永久停留，且
+  // fetchLookup 的同词在途复用（BUG-1525）会把这个死 Promise 缓存起来，同一个词从此永久卡死。
+  // 超时竞速保证 Promise 一定 settle（值取 > app 冷查询 P99；超时按失败处理，UI 显示可重试的
+  // 失败文案而不是无限转圈）。
+  var RUNTIME_MESSAGE_TIMEOUT_MS = 8000;
   function sendRuntime(message) {
     return new Promise(function (resolve) {
+      var settled = false;
+      var timer = null;
+      var finish = function (value) {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) clearTimeout(timer);
+        resolve(value);
+      };
+      timer = setTimeout(function () { finish(null); }, RUNTIME_MESSAGE_TIMEOUT_MS);
       try {
         chrome.runtime.sendMessage(message, function (response) {
-          try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
-          resolve(response || null);
+          try { if (chrome.runtime.lastError) return finish(null); } catch (_) { return finish(null); }
+          finish(response || null);
         });
-      } catch (_) { resolve(null); }
+      } catch (_) { finish(null); }
     });
   }
 
@@ -360,11 +380,23 @@
     }
     lookupContainer.innerHTML = '<div class="no-results">正在查词…</div>';
     if (shouldPosition) positionLookup(anchor);
-    var data = await fetchLookup(value);
+    // try/finally 锁死两条不变式：①「正在查词…」绝不永久停留——fetchLookup 无论 resolve /
+    // reject（内部处理回调抛错）都必须落到成功或失败文案；② pointer 扫词在途闸一定被复位。
+    var data = null;
+    try {
+      lookupPendingSince = Date.now();
+      data = await fetchLookup(value);
+    } catch (_) {
+      data = null;
+    } finally {
+      lookupPendingSince = 0;
+    }
     if (requestId !== lookupRequestId) return;
     if (!data) {
       lookupContainer.innerHTML = '<div class="no-results">查词失败，请确认 Fushi 查词服务已开启。</div>';
       if (shouldPosition) positionLookup(anchor);
+      // 失败后复位扫描去重键：不复位的话鼠标停在同一个字上永远触发不了重试。
+      activeScanKey = '';
       return;
     }
     renderLookupData(value, data, false);
@@ -414,6 +446,12 @@
     }
     var scanKey = pointer.index + '\u0000' + term;
     if (scanKey === activeScanKey && !lookupPaneEl.hidden) return;
+    // 在途闸只拦 pointermove 自动扫词（announceMissing=false）；显式手势永远放行。
+    // 超过截止时间的在途视为已死（SW 被回收等），放行新查词——死锁不可复活。
+    if (!announceMissing && lookupPendingSince &&
+        Date.now() - lookupPendingSince < LOOKUP_PENDING_TIMEOUT_MS) {
+      return;
+    }
     activeScanKey = scanKey;
     lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y));
   }

@@ -511,7 +511,6 @@ test('textTracks 收割：原生字幕轨整轨读出（清洗标签）并增量
     textTracks: [
       { kind: 'subtitles', mode: 'showing', language: 'en', cues },
       { kind: 'metadata', mode: 'showing', language: 'md', cues },
-      { kind: 'subtitles', mode: 'disabled', language: 'fr', cues },
     ],
   });
   assert.ok(h.harvester, '缺 1200ms textTracks 收割器');
@@ -527,16 +526,99 @@ test('textTracks 收割：原生字幕轨整轨读出（清洗标签）并增量
   assert.strictEqual(store[key][0].text, 'Hello world', '行内标签必须清洗');
   assert.strictEqual(store[key][1].endMs, 4500);
   assert.strictEqual(store['example.com/p|md'], undefined, 'metadata 轨不收');
-  assert.strictEqual(store['example.com/p|fr'], undefined, 'disabled 轨不收（cues 未加载）');
   assert.deepStrictEqual(notified, [key]);
 
-  // 流媒体渐进加载：cue 变多 → 整轨刷新；没变 → 不重复通知。
+  // 流媒体渐进加载：cue 变多 → 归并入轨；没变 → 不重复通知。
   h.harvester.fn();
   assert.deepStrictEqual(notified, [key], '无增量不得重复通知面板');
   cues.push({ startTime: 6, endTime: 7, text: 'Third' });
   h.harvester.fn();
   assert.strictEqual(store[key].length, 3, 'cue 增多必须增量刷新');
   assert.deepStrictEqual(notified, [key, key]);
+});
+
+test('textTracks 收割：disabled 语言轨强制升 hidden，下一轮收齐全部语言轨', () => {
+  // 浏览器对 disabled 轨不加载 cues → 以前直接跳过 = 侧边栏语言轨永远只有播放器当前开着
+  // 的那条。现在收割器把 disabled 升为 hidden（加载 cues 但不渲染），下一轮即可收割。
+  const enCues = [{ startTime: 1, endTime: 2, text: 'Hello' }];
+  const frTrack = { kind: 'subtitles', mode: 'disabled', language: 'fr', cues: null };
+  const h = loadContent({
+    hostname: 'example.com',
+    pathname: '/p',
+    textTracks: [
+      { kind: 'subtitles', mode: 'showing', language: 'en', cues: enCues },
+      frTrack,
+    ],
+  });
+  const store = h.windowObj.fushiEpisodeCues;
+  h.harvester.fn();
+  assert.strictEqual(frTrack.mode, 'hidden', 'disabled 字幕轨必须被升为 hidden 以触发 cue 加载');
+  assert.strictEqual(store['example.com/p|fr'], undefined, '升 hidden 当轮 cues 未就绪，先不入 store');
+  // 模拟浏览器在下一轮轮询前加载完 hidden 轨的 cues。
+  frTrack.cues = [{ startTime: 1, endTime: 2, text: 'Bonjour' }];
+  h.harvester.fn();
+  assert.ok(store['example.com/p|fr'], 'hidden 轨 cues 就绪后必须进 store');
+  assert.strictEqual(store['example.com/p|fr'][0].text, 'Bonjour');
+  assert.strictEqual(store['example.com/p|en'].length, 1, 'en 轨不受影响');
+  // 站点播放器（hls.js 等）把 mode 拨回 disabled = 它在管理轨道：同一轨只升一次，
+  // 不得形成 1.2s 轮询的无限翻转拉锯。
+  frTrack.mode = 'disabled';
+  h.harvester.fn();
+  assert.strictEqual(frTrack.mode, 'disabled', '同一轨只尝试升 hidden 一次，站点拨回后尊重站点');
+});
+
+test('textTracks 收割：同语言多轨（English 与 English [CC]）分 key，不得穿插归并', () => {
+  const h = loadContent({
+    hostname: 'example.com',
+    pathname: '/p',
+    textTracks: [
+      {
+        kind: 'subtitles', mode: 'showing', language: 'en', label: 'English',
+        cues: [{ startTime: 1, endTime: 2, text: 'Hello' }],
+      },
+      {
+        kind: 'captions', mode: 'hidden', language: 'en', label: 'English [CC]',
+        cues: [{ startTime: 1, endTime: 2, text: '[door slams] Hello' }],
+      },
+    ],
+  });
+  const store = h.windowObj.fushiEpisodeCues;
+  h.harvester.fn();
+  const keys = Object.keys(store).filter((k) => k.startsWith('example.com/p|'));
+  assert.strictEqual(keys.length, 2, '同语言两条轨必须落成两个独立 key');
+  for (const k of keys) {
+    assert.strictEqual(store[k].length, 1, '每条轨只含自己的 cue，不得互相穿插');
+  }
+});
+
+test('textTracks 收割：分片字幕整批替换按归并合并，旧区间不丢、新区间进得来', () => {
+  // hls.js/Shaka 会随 back-buffer 回收/seek 把 tt.cues 整批换成另一时间窗（条数可能不变或
+  // 变少）。旧实现「条数没长就跳过、长了整轨覆盖」两个方向都丢字幕；归并后轨只增不减。
+  const track = {
+    kind: 'subtitles', mode: 'showing', language: 'en',
+    cues: [
+      { startTime: 1, endTime: 2, text: 'One' },
+      { startTime: 3, endTime: 4, text: 'Two' },
+    ],
+  };
+  const h = loadContent({ hostname: 'example.com', pathname: '/p', textTracks: [track] });
+  const store = h.windowObj.fushiEpisodeCues;
+  const key = 'example.com/p|en';
+  h.harvester.fn();
+  assert.strictEqual(store[key].length, 2);
+  // seek 后整批换窗：条数没变多（旧实现在这里整段跳过 → 新区间永远进不来）。
+  track.cues = [{ startTime: 100, endTime: 101, text: 'Later' }];
+  h.harvester.fn();
+  assert.strictEqual(store[key].length, 3, '换窗后的新 cue 必须并入');
+  assert.ok(store[key].some((c) => c.text === 'One'), '旧区间 cue 不得被整轨覆盖抹掉');
+  assert.ok(store[key].some((c) => c.text === 'Later'), '新区间 cue 必须进 store');
+  // 回看已收割区间：同 cue 重复收割去重，不得翻倍。
+  track.cues = [
+    { startTime: 1, endTime: 2, text: 'One' },
+    { startTime: 3, endTime: 4, text: 'Two' },
+  ];
+  h.harvester.fn();
+  assert.strictEqual(store[key].length, 3, '重复收割必须去重');
 });
 
 test('videoKey 契约：netflix=watch id、youtube=yt-<v>、其它=host+path', () => {

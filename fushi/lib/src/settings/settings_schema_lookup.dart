@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
@@ -9,6 +8,7 @@ import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
 import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -22,6 +22,7 @@ import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
 import 'package:fushi/utils.dart';
+import 'package:path/path.dart' as p;
 
 String _yomitanApiPortInUseMessage(int port) {
   return port == kYomitanApiDefaultPort
@@ -1081,34 +1082,49 @@ SettingsItem buildManageAudioSourcesItem() {
           onSave: (List<AudioSourceConfig> next) => appModel
               .setAudioSourceConfigs(next, scope: DeleteScope.syncEverywhere),
           onPickLocalDb: (bool reference) async {
-            final FilePickerResult? result =
-                await FilePicker.platform.pickFiles();
-            // 用户取消选择：result 为 null，正常无声返回（不是失败）。
-            if (result == null) return null;
-            // BUG-446：旧实现用 `result.files.single`，0/多文件时抛 StateError
-            // 被上层 `catch (_)` 吞成「导入失败」无信息文案。改为显式区分
-            // 「文件数异常」与「path 为空」，各记一条诊断日志（含文件数）。
-            final PlatformFile picked = result.files.first;
-            final String? pickedPath = picked.path;
-            if (result.files.length != 1 || pickedPath == null) {
+            // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
+            // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
+            // android.db 常见 1~6 GB）。安卓上 file_picker 会先把整份文件同步复制进
+            // app cache 再返回缓存路径，随后 `importFile` 又复制一份进库目录 →
+            // 峰值需要 **2 倍库体积的内部存储**，6 GB 的库要 12 GB，且全程只有一个
+            // 转圈、无进度无取消，多数手机直接失败或看起来永久卡死 = 「安卓上用
+            // android.db 配本地音频怎么都跑不通」。视频/书/有声书/漫画/字幕/制卡音频
+            // 早已统一走 [pickRealFilePathDetailed]（安卓 SAF 解析真实路径、零复制），
+            // 这条是最后的漏网。
+            final PickedFilePath? picked;
+            try {
+              picked = await pickRealFilePathDetailed(
+                context: settingsContext.context,
+                appModel: appModel,
+              );
+            } on PickedFileWithoutPathException catch (e) {
+              // BUG-446：平台交回了条目却没给可用 path（只回 bytes）**不是取消**，
+              // 是失败。记完整诊断（含条目数）后显式抛出，交给上层弹可见反馈——
+              // 静默返回会让用户以为自己没选中，真因全丢。
               ErrorLogService.instance.log(
                 'AudioSourcesDialog.pickLocalDb',
-                'unexpected file selection: count=${result.files.length}, '
-                    'pathNull=${pickedPath == null}, '
-                    'name=${picked.name}',
+                'unexpected file selection: count=${e.count}, pathNull=true',
               );
-              // path 为空（部分平台只回 bytes 不回 path）才算失败，交给上层
-              // catch 弹可见反馈；多文件但首个有 path 时仍按首个导入（容错）。
-              if (pickedPath == null) {
-                throw Exception('picked audio db has no file path (platform '
-                    'returned bytes without a path)');
-              }
+              throw Exception('picked audio db has no file path (platform '
+                  'returned bytes without a path)');
+            }
+            // 用户取消选择：返回 null，正常无声返回（不是失败）。
+            if (picked == null) return null;
+            // 引用只在**事实上拿到用户真实路径**时才成立（BUG-1667）。安卓未授予
+            // 全文件访问时降级回 file_picker，拿到的是 app cache 临时副本——引用它
+            // 等于引用一个清缓存就消失的文件，必须落回复制，并告诉用户为什么。
+            final bool canReference = picked.isRealPath;
+            if (reference && !canReference) {
+              _showSettingsSnackBar(
+                settingsContext,
+                t.local_audio_reference_unavailable,
+              );
             }
             final LocalAudioDbEntry entry =
                 await appModel.importLocalAudioDbFile(
-              pickedPath,
-              displayName: picked.name,
-              reference: reference,
+              picked.path,
+              displayName: p.basename(picked.path),
+              reference: reference && canReference,
             );
             return AudioSourceConfig.localAudio(
               label: entry.displayName,

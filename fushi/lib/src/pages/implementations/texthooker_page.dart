@@ -611,6 +611,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       addTitleTag: mixinAppModel.autoAddBookNameToTags,
       imageMode: mixinAppModel.galMiningImageMode,
       animatedFormat: mixinAppModel.galMiningAnimatedFormat,
+      stillFormat: mixinAppModel.galMiningStillFormat,
     );
     if (result.aborted) {
       FushiToast.showMine(

@@ -310,6 +310,17 @@ class DictionaryMetadata extends Table {
   TextColumn get collapsedLanguagesJson =>
       text().withDefault(const Constant('[]'))();
 
+  /// v87：用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。
+  ///
+  /// null = 未指定，按自动来源推断（yomitan `index.json` 的 `sourceLanguage`，
+  /// 落在 [metadataJson] 里）。非 null 为用户覆盖，压过一切自动判断。
+  ///
+  /// 为什么不塞进 [metadataJson]：重导/在线更新词典时 metadata 会被包内 index.json
+  /// **整体重建**（见 `dictionary_import_manager` 的两处 persistDictionary），
+  /// 用户的手动指定会随之蒸发。它属于「用户设置」，必须与 hidden/collapsedLanguages
+  /// 走同一条继承通道（`preservedSettings`）。
+  TextColumn get languageOverride => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {name};
 }
@@ -407,6 +418,16 @@ class EpubBooks extends Table {
   TextColumn get tocJson => text().nullable()();
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
+
+  /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
+  ///
+  /// 导入时从 EPUB OPF 的 `dc:language` 回填（`EpubParser` 早就解析出来了，此前
+  /// 无人消费）；用户可在书籍设置里手动改，手动值压过自动值。null = 既没解析到
+  /// 也没指定 → 阅读器不写 `font-family`，保持浏览器默认（不猜，见
+  /// `content_font_chain.dart`）。
+  ///
+  /// 与 [mangaReadingMode] 同款「null=自动 / 非 null=用户覆盖」语义。
+  TextColumn get language => text().nullable()();
 
   /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
   /// 有声书配对壳）、`'pdf'`（pdfrx 渲染的真 PDF）或 `'manga'`（漫画 OCR，第三种书）。

@@ -80,6 +80,10 @@ add_fushi_test(ipa_import_query_test ipa_import_query_test.cpp)
 # Simple dicts (MDX/StarDict/DSL) store rules="*" so filter_by_pos keeps them
 # for inflected-form lookups; pins pos_to_conditions("*")==~0 + the stored rule.
 add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
+# BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
+# lemma at import) must collapse into the lemma at lookup time, so the popup
+# header / mined Anki term is the dictionary form, not the inflected surface.
+add_fushi_test(mdx_redirect_lemma_lookup_test mdx_redirect_lemma_lookup_test.cpp)
 
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate

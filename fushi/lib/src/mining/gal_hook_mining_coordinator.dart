@@ -133,6 +133,7 @@ class GalHookMiningCoordinator {
   static Future<({Uint8List? bytes, String name})> _downsampleStill(
     Uint8List? pngBytes,
     MiningMediaCompression compression,
+    MiningStillFormat stillFormat,
   ) async {
     if (pngBytes == null || pngBytes.isEmpty) {
       return (bytes: pngBytes, name: 'external_window.png');
@@ -141,10 +142,14 @@ class GalHookMiningCoordinator {
       pngBytes,
       maxLongEdge: compression.screenshotMaxLongEdge,
       quality: compression.screenshotQuality,
+      encoding: cardScreenshotEncodingFor(stillFormat),
     );
-    final bool isJpeg =
-        out.length >= 3 && out[0] == 0xFF && out[1] == 0xD8 && out[2] == 0xFF;
-    return (bytes: out, name: 'external_window.${isJpeg ? 'jpg' : 'png'}');
+    // 文件名仍按**实际字节**定（[stillFormatOfBytes] 就是原来手写的魔数判定，收口到
+    // 一处）：降采样解不开时会原样返回入参，此时硬拼 `.jpg` 就是「.jpg 里装 PNG」。
+    // 兜底 png——这条链的入参恒为窗口抓图的 PNG，与视频侧（media_kit JPEG）方向相反。
+    final MiningStillFormat produced =
+        stillFormatOfBytes(out, fallback: MiningStillFormat.png);
+    return (bytes: out, name: 'external_window.${produced.fileExtension}');
   }
 
   Future<GalHookMiningResult> mineLine({
@@ -160,6 +165,9 @@ class GalHookMiningCoordinator {
     VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
     // 缺省 gif = 旧行为逐字等价；调用方透传 [AppModel.galMiningAnimatedFormat]（默认 avif）。
     MiningAnimatedFormat animatedFormat = MiningAnimatedFormat.gif,
+    // 静图编码格式。缺省 jpg = 旧行为（BUG-1473 起 gal 截图就走降采样重编码 JPEG）；
+    // 调用方透传 [AppModel.galMiningStillFormat]。
+    MiningStillFormat stillFormat = MiningStillFormat.jpg,
     // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
     // 里的查词层，不需要也不应触发这条屏障。
     GalHookCaptureLeaseFactory? captureLeaseFactory,
@@ -176,6 +184,7 @@ class GalHookMiningCoordinator {
         addTitleTag: addTitleTag,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
+        stillFormat: stillFormat,
         captureLeaseFactory: captureLeaseFactory,
       ),
       buildFailure: (Object error, StackTrace stack) =>
@@ -198,6 +207,7 @@ class GalHookMiningCoordinator {
     required bool addTitleTag,
     required VideoMiningImageMode imageMode,
     required MiningAnimatedFormat animatedFormat,
+    required MiningStillFormat stillFormat,
     required GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
@@ -298,7 +308,7 @@ class GalHookMiningCoordinator {
         );
       }
       final ({Uint8List? bytes, String name}) shrunk =
-          await _downsampleStill(still.pngBytes, compression);
+          await _downsampleStill(still.pngBytes, compression, stillFormat);
       coverBytes = shrunk.bytes;
       coverName = shrunk.name;
     } else {
@@ -333,7 +343,7 @@ class GalHookMiningCoordinator {
           );
         }
         final ({Uint8List? bytes, String name}) shrunk =
-            await _downsampleStill(still.pngBytes, compression);
+            await _downsampleStill(still.pngBytes, compression, stillFormat);
         coverBytes = shrunk.bytes;
         coverName = shrunk.name;
         degradedToStill = true;
@@ -378,6 +388,7 @@ class GalHookMiningCoordinator {
           bookTitleTag:
               addTitleTag && window.title.isNotEmpty ? window.title : null,
           updateNoteId: updateNoteId,
+          stillFormat: stillFormat,
         ),
         compression: compression,
         tempDir: jobDirectory.path,

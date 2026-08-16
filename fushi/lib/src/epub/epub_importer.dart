@@ -190,6 +190,14 @@ class EpubImporter {
           // TODO-817 M1b：扫描器入库时回填来源库 id；手动导入 sourceId==null
           // → Value.absent() 落 NULL（向后兼容）。
           sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+          // v87：OPF 的 dc:language 回填。`EpubParser` 一直解析着这个字段，但在此
+          // 之前全仓没有任何消费方——正文字体因此只能落到 CSS 的裸 `serif`，在
+          // Windows 上就是宋体（中文字形），日文书也一样。落库后由
+          // `content_font_chain` 选链。包没声明 → NULL → 不猜，保持浏览器默认，
+          // 用户可在书籍设置里手动指定。
+          language: book.language != null && book.language!.trim().isNotEmpty
+              ? Value(book.language!.trim())
+              : const Value.absent(),
         ),
       );
 

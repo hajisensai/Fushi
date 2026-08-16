@@ -85,6 +85,15 @@ Name: "{userdesktop}\Fushi"; Filename: "{app}\fushi.exe"; Tasks: desktopicon; Ch
 ; Fushi 应用 ProgId：双击/「打开方式」时以 fushi.exe "<文件>" 启动。
 ; "%1" 即视频绝对路径，被 runner 经 set_dart_entrypoint_arguments 传给 Dart
 ; main(args)（见 lib/main.dart + windows/runner/utils.cpp::GetCommandLineArguments）。
+; BUG-1666：fushi:// URL 协议（Anki 卡片上的词典交叉引用 fushi://lookup?word=<词>）。
+; 点击后系统以 fushi.exe "<完整URL>" 启动：冷启动走 Dart main(args)，app 已开则由
+; 单实例守卫经 WM_COPYDATA 转交首实例（与外部视频同一条链路），Dart 侧
+; lookupWordFromDeepLink 解析后排队显式查词。无条件注册（不挂 videoassoc 任务）。
+Root: HKCU; Subkey: "Software\Classes\fushi"; ValueType: string; ValueData: "URL:Fushi Lookup"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\fushi"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\fushi\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"
+Root: HKCU; Subkey: "Software\Classes\fushi\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""
+
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video"; ValueType: string; ValueData: "Fushi 视频"; Flags: uninsdeletekey; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: videoassoc

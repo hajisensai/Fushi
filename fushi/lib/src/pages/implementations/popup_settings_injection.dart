@@ -10,6 +10,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
@@ -23,6 +24,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
+import 'package:fushi/src/reader/dictionary_language_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
@@ -161,26 +163,61 @@ String _fontStyleJsMemoValue = '';
   final List<String> allowedDirectories = <String>[
     p.join(appModel.appDirectory.path, 'custom_fonts'),
   ];
-  final String cacheKey = DictionaryFontCss.fontListFingerprint(
+  // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
+  // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
+  // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
+  // 上面那个 settings 判空——初始化早期 / 测试 seam 会命中「DB 就绪但词典仓库还
+  // 没建」的窗口，直接读会抛 LateInitializationError（与上面注释说的同一个坑）。
+  // 未就绪时退化成空列表：只出兜底链，不做 per-dictionary 分流，不崩。
+  final List<DictionaryLanguageEntry> dictionaryLanguages =
+      appModel.isDictionaryRepoReady
+          ? <DictionaryLanguageEntry>[
+              for (final Dictionary d in appModel.dictionaries)
+                DictionaryLanguageEntry(
+                  name: d.name,
+                  glossaryLanguage: d.effectiveTargetLanguage,
+                ),
+            ]
+          : const <DictionaryLanguageEntry>[];
+  final String languageFingerprint = dictionaryLanguages
+      .map((DictionaryLanguageEntry e) => '${e.name}=${e.glossaryLanguage}')
+      .join('|');
+  final String cacheKey = '${DictionaryFontCss.fontListFingerprint(
     fonts,
     allowedDirectories: allowedDirectories,
-  );
+  )}|$languageFingerprint|${defaultTargetPlatform.name}';
   if (cacheKey == _fontStyleJsMemoKey) {
     return (cacheKey: cacheKey, js: _fontStyleJsMemoValue);
   }
   final int inlineFailuresBefore = DictionaryFontCss.inlineFailureCount;
-  final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
+  final ({String fontFamily, String fontFaces, List<String> families}) css =
+      DictionaryFontCss.build(
     fonts,
     allowedDirectories: allowedDirectories,
   );
   String js = '';
-  if (css.fontFamily.isNotEmpty) {
-    final String styleCss = '${css.fontFaces}\n'
-        'html, body { font-family: ${css.fontFamily}, '
-        '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
+  // 语言分流 CSS 现在**总是**产出（哪怕用户没配任何词典字体）——popup.css 的
+  // 内建链只写了 macOS 的 Hiragino，Windows/Android/Linux 上一个存在的 CJK 家族
+  // 都没有，直接掉进 sans-serif，于是由系统 locale 决定 CJK 字形（中文系统上日文
+  // 词条渲染成中文字形）。这与「用户是否配了自定义字体」无关。
+  final String languageCss = dictionaryLanguageFontCss(
+    customFamilies: css.families,
+    dictionaries: dictionaryLanguages,
+    platform: defaultTargetPlatform,
+  );
+  if (languageCss.isNotEmpty || css.fontFaces.isNotEmpty) {
+    final String styleCss = '${css.fontFaces}\n$languageCss';
     final String styleJson = jsonEncode(styleCss);
+    // popup.js 的 dictionaryLanguageOf 读这张表，给 structured content 的逐节点
+    // lang 标注一个权威来源——没有它，纯汉字的中文释义会被字符检测判成 'ja'
+    // （isStringPartiallyJapanese 把汉字算日文），再被 :lang(ja) 的日文链接管。
+    final String languageMapJson = jsonEncode(<String, String>{
+      for (final DictionaryLanguageEntry e in dictionaryLanguages)
+        if ((e.glossaryLanguage ?? '').isNotEmpty) e.name: e.glossaryLanguage!,
+    });
     js = '''
       (function(){
+        window.__fushiDictionaryLanguages = $languageMapJson;
         var el = document.getElementById('fushi-dict-font');
         if (!el) {
           el = document.createElement('style');

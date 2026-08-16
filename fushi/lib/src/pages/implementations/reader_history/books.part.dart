@@ -1254,6 +1254,31 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
   }
 
+  /// 书的内容语言选择框。选择器 UI 与词典共用（[showContentLanguagePicker]），
+  /// 这里只负责读当前值与写库。
+  ///
+  /// 写完刷新页面即可——阅读器下次开书时读 EpubBooks.language 建链；书已经开着
+  /// 时改语言不即时重渲（正文 CSS 在开书时生成），关掉重开生效。
+  Future<void> _openBookLanguagePicker(String bookKey) async {
+    Navigator.pop(context);
+    final FushiDatabase db = appModel.database;
+    final EpubBookRow? row = await db.getEpubBook(bookKey);
+    if (!mounted) return;
+    final String? current = row?.language;
+    await showContentLanguagePicker(
+      context: context,
+      title: t.book_language_action,
+      description: t.book_language_description,
+      current: current,
+      // 书没有「自动值」可显示：dc:language 在导入时就直接写进了同一列，读回来
+      // 分不清是自动回填的还是用户手动指定的。留空 = 只显示「自动」这一项本身。
+      autoDetected: '',
+      // 写完不刷新书架：语言不出现在卡片上，重建一遍纯属浪费。生效点在阅读器
+      // 开书时读这一列建字体链。
+      onSelected: (String? tag) => db.updateEpubBookLanguage(bookKey, tag),
+    );
+  }
+
   Future<void> _openCssEditor(String bookKey) async {
     final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
     final String extractDir = row?.extractDir ?? '';
