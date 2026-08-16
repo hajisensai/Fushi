@@ -3450,5 +3450,6 @@
   "anki_connect_addon_launch_failed": "Could not hand the add-on to Anki: $error",
   "settings_content_language_title": "Default content language",
   "settings_content_language_unset": "Not set",
-  "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this."
+  "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
+  "manga_ocr_lens_language_label": "Erkennungssprache"
 }

@@ -89,6 +89,7 @@ class _NoopLensRunner implements GoogleLensMangaOcrRunner {
     String? volumeTitle,
     int startPage = 0,
     bool onlyMissing = false,
+    String language = 'ja',
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
 

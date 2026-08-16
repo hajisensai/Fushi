@@ -32,6 +32,8 @@ class MangaOcrWizardEngines {
     this.remoteRunner,
     this.lensRunner,
     this.initialEnginePreference,
+    this.initialLensLanguage,
+    this.lensLanguageSetter,
   });
 
   /// 生产依赖集的**唯一**装配点。所有入口都必须经此，不得再手抄参数表。
@@ -60,6 +62,8 @@ class MangaOcrWizardEngines {
           InterconnectMangaOcrClient(repo: SyncRepository(db)),
       lensRunner: GoogleLensMangaOcrService(),
       initialEnginePreference: appModel.mangaOcrEnginePreference,
+      initialLensLanguage: appModel.mangaOcrLensLanguage,
+      lensLanguageSetter: appModel.setMangaOcrLensLanguage,
     );
   }
 
@@ -78,4 +82,10 @@ class MangaOcrWizardEngines {
 
   /// 默认引擎偏好键；null 时向导按 `auto` 解析。
   final String? initialEnginePreference;
+
+  /// Lens 识别语言初值（偏好）；null = `ja`。
+  final String? initialLensLanguage;
+
+  /// 用户在向导里改语言时回写偏好；null（测试）= 不持久化。
+  final void Function(String value)? lensLanguageSetter;
 }

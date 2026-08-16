@@ -80,6 +80,42 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('lens language dropdown persists the chosen language',
+      (WidgetTester tester) async {
+    final _FakeOcrService service = _FakeOcrService(ready: true);
+    String stored = 'ja';
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: service,
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      lensLanguageGetter: () => stored,
+      lensLanguageSetter: (String value) async => stored = value,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_ocr_lens_language_label), findsOneWidget);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_ocr_lens_language')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('English').last);
+    await tester.pumpAndSettle();
+    expect(stored, 'en');
+  });
+
+  testWidgets('lens language dropdown is absent without a language setter',
+      (WidgetTester tester) async {
+    final _FakeOcrService service = _FakeOcrService(ready: true);
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: service,
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text(t.manga_ocr_lens_language_label), findsNothing);
+  });
+
   testWidgets('detect external shows probed version',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);

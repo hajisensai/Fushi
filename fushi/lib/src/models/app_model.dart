@@ -6456,6 +6456,10 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaOcrEnginePreference(String value) =>
       prefsRepo.setMangaOcrEnginePreference(value);
 
+  String get mangaOcrLensLanguage => prefsRepo.mangaOcrLensLanguage;
+  Future<void> setMangaOcrLensLanguage(String value) =>
+      prefsRepo.setMangaOcrLensLanguage(value);
+
   String get mangaSpreadPreference => prefsRepo.mangaSpreadPreference;
   Future<void> setMangaSpreadPreference(String value) =>
       prefsRepo.setMangaSpreadPreference(value);

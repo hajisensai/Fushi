@@ -27,6 +27,8 @@ SettingsSection buildMangaOcrSection() {
           service: c.ref.read(mangaOcrServiceProvider),
           enginePreferenceGetter: () => c.appModel.mangaOcrEnginePreference,
           enginePreferenceSetter: c.appModel.setMangaOcrEnginePreference,
+          lensLanguageGetter: () => c.appModel.mangaOcrLensLanguage,
+          lensLanguageSetter: c.appModel.setMangaOcrLensLanguage,
         ),
       ),
       // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）。空串/尾斜杠由

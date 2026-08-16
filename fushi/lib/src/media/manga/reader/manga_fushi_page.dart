@@ -37,6 +37,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_online_ocr.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_box_rescan.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -2205,6 +2206,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             managedDirectory: online.managedDirectory,
             initialPayload: payload,
             startPage: _currentPage,
+            // 在线源自带内容语言（Mihon lang / Aidoku 单语言 manifest）；多语言
+            // 或未声明时回退用户的 Lens 语言偏好。
+            language: normalizeLensLanguage(
+              online.sourceLanguage,
+              fallback: appModel.mangaOcrLensLanguage,
+            ),
           ).run(),
         );
       } else {

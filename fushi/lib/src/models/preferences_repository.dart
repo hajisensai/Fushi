@@ -2045,6 +2045,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Google Lens 整卷 OCR 的识别语言（本地书/无源语言时的兜底）。在线阅读的
+  /// Lens OCR 优先用源自身声明的语言，本偏好只在源语言未知时回退。存主子标签
+  /// （`ja`/`en`/`zh`…），进请求前统一过 normalizeLensLanguage。
+  String get mangaOcrLensLanguage =>
+      getPref('manga_ocr_lens_language', defaultValue: 'ja') as String;
+
+  Future<void> setMangaOcrLensLanguage(String value) async {
+    await setPref('manga_ocr_lens_language', value);
+    notifyListeners();
+  }
+
   String get mangaSpreadPreference =>
       getPref('manga_spread_preference', defaultValue: 'auto') as String;
 

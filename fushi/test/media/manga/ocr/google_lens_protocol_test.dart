@@ -26,6 +26,7 @@ void main() {
       imageData: Uint8List.fromList(<int>[9, 8, 7, 6]),
       width: 320,
       height: 240,
+      language: 'ja',
       requestId: 42,
     );
     expect(_containsBytes(request, <int>[9, 8, 7, 6]), isTrue);
@@ -35,6 +36,7 @@ void main() {
   test('decodes line text, removes CJK spaces and records UTF-16 regions', () {
     final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
       makeGoogleLensFixture(),
+      language: 'ja',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -59,6 +61,7 @@ void main() {
         height: 0.4,
         rotation: 1.57079632679,
       ),
+      language: 'ja',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -83,6 +86,7 @@ void main() {
         secondLineText: '下',
         secondLineCenterY: 0.7,
       ),
+      language: 'ja',
       imageWidth: 1000,
       imageHeight: 1000,
     );
@@ -97,6 +101,7 @@ void main() {
     expect(
       () => GoogleLensProtocol.decodeResponse(
         Uint8List.fromList(<int>[0x12, 0xff, 0xff]),
+        language: 'ja',
         imageWidth: 1000,
         imageHeight: 1000,
       ),
@@ -121,6 +126,7 @@ void main() {
         height: lineHeight,
         rotation: rotation,
       ),
+      language: 'ja',
       imageWidth: pageWidth,
       imageHeight: pageHeight,
     );
@@ -157,6 +163,7 @@ void main() {
         height: 0.08,
         rotation: -math.pi / 2,
       ),
+      language: 'ja',
       imageWidth: 1200,
       imageHeight: 1700,
     );
@@ -180,6 +187,7 @@ void main() {
         height: lineHeight,
         rotation: math.pi / 2,
       ),
+      language: 'ja',
       imageWidth: pageWidth,
       imageHeight: pageHeight,
     );
@@ -188,6 +196,50 @@ void main() {
     expect(bounds.width * pageWidth, closeTo(lineHeight * pageHeight, 0.5));
     // 行的像素高 = 未旋转时的像素宽（lineWidth * 页宽）。
     expect(bounds.height * pageHeight, closeTo(lineWidth * pageWidth, 0.5));
+  });
+
+  test('English decode keeps word spaces instead of CJK stripping', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(firstWord: 'Hello ', secondWord: 'world'),
+      language: 'en',
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
+    expect(result.single.sentence, 'Hello world');
+  });
+
+  test('request carries the requested locale language on the wire', () {
+    final Uint8List request = GoogleLensProtocol.makeRequest(
+      imageData: Uint8List.fromList(<int>[9, 8, 7, 6]),
+      width: 320,
+      height: 240,
+      language: 'en',
+      requestId: 42,
+    );
+    expect(_containsBytes(request, <int>[0x65, 0x6e]), isTrue);
+  });
+
+  test('engine signature appends the language to the shared prefix', () {
+    expect(googleLensEngineSignature('ja'), 'google-lens-v2-niratan-ja');
+    expect(googleLensEngineSignature('en'), 'google-lens-v2-niratan-en');
+    expect(
+      googleLensEngineSignature('ja'),
+      startsWith(kGoogleLensEngineSignaturePrefix),
+    );
+  });
+
+  test('normalizeLensLanguage keeps primary subtags and falls back otherwise',
+      () {
+    expect(normalizeLensLanguage('en'), 'en');
+    expect(normalizeLensLanguage('pt-BR'), 'pt');
+    expect(normalizeLensLanguage('zh_Hans'), 'zh');
+    expect(normalizeLensLanguage('EN'), 'en');
+    expect(normalizeLensLanguage(''), 'ja');
+    expect(normalizeLensLanguage(null), 'ja');
+    expect(normalizeLensLanguage('all'), 'ja');
+    expect(normalizeLensLanguage('multi'), 'ja');
+    expect(normalizeLensLanguage('42'), 'ja');
+    expect(normalizeLensLanguage(null, fallback: 'en'), 'en');
   });
 }
 

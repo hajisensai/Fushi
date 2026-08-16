@@ -152,6 +152,12 @@ class AidokuReaderChapter extends OnlineMangaReaderChapter {
   String get title => manga['title']?.toString() ?? package.name;
 
   @override
+  String? get sourceLanguage {
+    // Aidoku manifest 是语言列表；只有单语言源能给出确定答案。
+    return package.languages.length == 1 ? package.languages.single : null;
+  }
+
+  @override
   String? get author {
     final List<Object?> authors =
         manga['authors'] as List<Object?>? ?? const <Object?>[];
