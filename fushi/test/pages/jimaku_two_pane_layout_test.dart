@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/anilist_client.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
 /// Jimaku 对话框两栏布局重构的回归测试。
@@ -33,7 +32,7 @@ void main() {
       n,
       (int i) => JimakuCandidate(
         entryName: 'Some Anime Series Title $i',
-        file: JimakuFile(name: 'episode.$i.WEBRip.ja.srt', url: 'https://x/$i'),
+        name: 'episode.$i.WEBRip.ja.srt',
       ),
       growable: false,
     );

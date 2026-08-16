@@ -24,8 +24,7 @@ class OpenSubtitlesConfig {
     this.priority = 200,
     this.allowInsecureHttp = false,
   })  : userAgent = _resolveUserAgent(userAgent),
-        baseUrl =
-            baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
+        baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
     if (this.baseUrl.host.isEmpty ||
         this.baseUrl.hasQuery ||
         this.baseUrl.userInfo.isNotEmpty ||

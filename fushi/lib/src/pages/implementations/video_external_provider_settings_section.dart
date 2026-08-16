@@ -149,10 +149,22 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
 /// Preferences。表单错误只显示稳定的本地化提示，不把含密钥的 URL 或异常正文写进
 /// snack、日志或诊断导出。
 class VideoExternalProviderSettingsSection extends ConsumerStatefulWidget {
-  const VideoExternalProviderSettingsSection({super.key, this.store});
+  const VideoExternalProviderSettingsSection({
+    super.key,
+    this.store,
+    this.onlySubtitleSources = false,
+  });
 
   /// 测试注入口；生产路径从 [AppModel] 构造设备本地 store。
   final VideoExternalSettingsStore? store;
+
+  /// 只渲染「在线字幕来源」那一节（OpenSubtitles）。
+  ///
+  /// 字幕来源此前分居两处：Jimaku API key 在设置 → 视频 → 字幕，OpenSubtitles 在
+  /// 设置 → 下载 → 外部来源。同一个能力两个家，用户配完一个以为配完了。这里不复制
+  /// 一份编辑 UI（那就是第二份真相源），而是让本组件按节可裁，两处渲染同一份实现、
+  /// 写同一个 `video_subtitle_opensubtitles_config`。
+  final bool onlySubtitleSources;
 
   @override
   ConsumerState<VideoExternalProviderSettingsSection> createState() =>
@@ -695,6 +707,31 @@ class _VideoExternalProviderSettingsSectionState
     }
     if (_store == null) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
+    if (widget.onlySubtitleSources) {
+      return Column(
+        key: const ValueKey<String>('video-external-subtitle-sources'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (_saveFailed)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                t.video_external_save_error,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+          _sectionHeading(
+            theme,
+            t.video_opensubtitles_settings_title,
+            t.video_opensubtitles_settings_hint,
+            icon: Icons.subtitles_outlined,
+          ),
+          _openSubtitlesFields(),
+        ],
+      );
+    }
     return Column(
       key: const ValueKey<String>('video-external-provider-settings'),
       crossAxisAlignment: CrossAxisAlignment.stretch,

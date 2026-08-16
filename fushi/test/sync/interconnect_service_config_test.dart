@@ -150,8 +150,7 @@ void main() {
     expect(await snapshot.applyTo(db), 0, reason: 'replay must be idempotent');
   });
 
-  test('换 Bangumi 令牌必须归零本设备对账水位（与设置页写令牌同一条不变式）',
-      () async {
+  test('换 Bangumi 令牌必须归零本设备对账水位（与设置页写令牌同一条不变式）', () async {
     for (final String key in kBangumiTokenScopedWatermarkPrefs) {
       await db.setPref(key, PrefCodec.encode(99));
     }
@@ -166,8 +165,7 @@ void main() {
       },
     });
 
-    expect(await snapshot.applyTo(db), 2,
-        reason: '水位归零是令牌那一行的副作用，不额外计数');
+    expect(await snapshot.applyTo(db), 2, reason: '水位归零是令牌那一行的副作用，不额外计数');
     for (final String key in kBangumiTokenScopedWatermarkPrefs) {
       expect(await db.getPref(key), PrefCodec.encode(0), reason: key);
     }

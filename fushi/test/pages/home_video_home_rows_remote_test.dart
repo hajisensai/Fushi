@@ -175,8 +175,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(const ValueKey<String>(
-          'home_video_recent_remote_video_remote-new')),
+      find.byKey(
+          const ValueKey<String>('home_video_recent_remote_video_remote-new')),
       findsOneWidget,
       reason: 'host 带了入库时刻 → 远端条目必须进「最近添加」',
     );
@@ -202,8 +202,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(const ValueKey<String>(
-          'home_video_recent_remote_video_remote-old')),
+      find.byKey(
+          const ValueKey<String>('home_video_recent_remote_video_remote-old')),
       findsNothing,
       reason: '没有入库时刻就判不出「最近」，不能凭空造一个',
     );

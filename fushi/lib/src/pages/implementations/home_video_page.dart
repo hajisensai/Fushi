@@ -3044,8 +3044,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 合集成员里的本地行（合集自身封面回落链只认本地文件）。
-  List<VideoBookRow> _localMembersOf(List<_VideoSlot> slots) =>
-      <VideoBookRow>[
+  List<VideoBookRow> _localMembersOf(List<_VideoSlot> slots) => <VideoBookRow>[
         for (final _VideoSlot slot in slots)
           if (slot.local != null) slot.local!,
       ];
@@ -3152,13 +3151,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ? _primaryCollectionByEntry[
               MediaKind.video.compositeKey(local.bookUid)]
           : _remoteCollectionId(slot.remote!);
-      final bool inCollection = cid != null && _collectionsById.containsKey(cid);
+      final bool inCollection =
+          cid != null && _collectionsById.containsKey(cid);
       if (inCollection) {
-        allMembersByCollection
-            .putIfAbsent(cid, () => <_VideoSlot>[])
-            .add(slot);
+        allMembersByCollection.putIfAbsent(cid, () => <_VideoSlot>[]).add(slot);
       }
-      if (!isVideoRecentlyAdded(importedAt: _slotImportedAtMs(slot), now: now)) {
+      if (!isVideoRecentlyAdded(
+          importedAt: _slotImportedAtMs(slot), now: now)) {
         continue;
       }
       if (inCollection) {
