@@ -67,12 +67,16 @@ String dictionaryLanguageFontCss({
   required List<String> customFamilies,
   required List<DictionaryLanguageEntry> dictionaries,
   required TargetPlatform platform,
+
+  /// 全局设置里的默认内容语言（`PreferencesRepository.defaultContentLanguage`）。
+  /// 只影响第 1 层的兜底链：用户设了就按那个语言建链，没设才退回硬编码顺序。
+  String? defaultLanguage,
 }) {
   final StringBuffer out = StringBuffer();
 
   // 第 1 层：兜底链。语言未知也给受控顺序（见 library 注释）。
   final String rootChain = contentFontFamilyCss(
-    languageTag: null,
+    languageTag: defaultLanguage,
     platform: platform,
     customFamilies: customFamilies,
     fallbackWhenUnknown: true,

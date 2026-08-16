@@ -1,6 +1,25 @@
 // GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch16).
 part of '../video_fushi_page.dart';
 
+/// 字幕的内容语言：用户对本视频手动指定（VideoBooks.language）> 当前字幕轨声明的
+/// language > 全局默认内容语言。三档全空 → null，字幕层退回历史兜底链（逐像素不变）。
+///
+/// 顺便登记为**查词来源语言**：在视频里查词时，词头是字幕里的那个词，语言由字幕
+/// 决定。这是个纯标量登记，不触发重建，所以放在 build 路径上是安全的；写在这里是
+/// 因为字幕轨可以中途切换（换轨即换语言），而这是唯一同时知道「视频 + 当前轨」的
+/// 地方。
+extension _VideoSubtitleLanguage on _VideoFushiPageState {
+  String? _resolveSubtitleLanguage(VideoPlayerController controller) {
+    final String? resolved = resolveContentLanguage(
+      explicit: _bookRow?.language,
+      metadata: controller.currentSubtitleLanguage,
+      globalDefault: appModel.prefsRepo.defaultContentLanguage,
+    );
+    appModel.currentLookupLanguage = resolved;
+    return resolved;
+  }
+}
+
 /// Video-layout / render-tree domain methods extracted via part-of (TODO-590
 /// batch16); shared private scope. Behaviour-preserving: every body is moved
 /// character-for-character with no edits — no `State.setState(...)` call lives in
@@ -323,6 +342,10 @@ extension _VideoLayout on _VideoFushiPageState {
                       Positioned.fill(
                         child: VideoSubtitleOverlay(
                           controller: controller,
+                          // 字幕字体链的语言：用户对本视频手动指定 > 当前字幕轨
+                          // 声明的 language > 全局默认内容语言。三档全空时字幕层
+                          // 退回历史兜底链，渲染逐像素不变。
+                          contentLanguage: _resolveSubtitleLanguage(controller),
                           onCharTap: _handleSubtitleLookupTap,
                           // TODO-756a 桌面 Shift-鼠标悬停查词：走去重入口 [_handleSubtitleHoverLookup]
                           // →（[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup

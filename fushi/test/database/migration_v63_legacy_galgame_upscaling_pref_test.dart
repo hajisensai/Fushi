@@ -203,12 +203,19 @@ void main() {
         final String after = schemaAfter[entry.key] ?? '';
         expect(after, contains('japanese_locale_mode'),
             reason: 'v75 必须给 galgames 加出该列');
-        final String stripped = after.replaceAll(
-          RegExp(r',\s*"?japanese_locale_mode"?[^,)]*'),
-          '',
-        );
+        // v87（内容语言字体链）同样在这条阶梯上合法 ADD COLUMN language。
+        expect(after, contains('language'), reason: 'v87 必须给 galgames 加出该列');
+        final String stripped = after
+            .replaceAll(
+              RegExp(r',\s*"?japanese_locale_mode"?[^,)]*'),
+              '',
+            )
+            .replaceAll(
+              RegExp(r',\s*"language"[^,)]*'),
+              '',
+            );
         expect(stripped, entry.value,
-            reason: '除 v75 那一列外，galgames 的形状必须逐字节不变'
+            reason: '除 v75 / v87 那两列外，galgames 的形状必须逐字节不变'
                 '（v63 只能删行，不得 ALTER/DROP/rebuild）');
         continue;
       }

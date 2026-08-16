@@ -15,6 +15,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -2015,8 +2016,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _extractDir = extractDir;
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
-    final String? language = bookRow?.language?.trim();
-    _contentLanguage = (language == null || language.isEmpty) ? null : language;
+    // 正文语言：本书手动指定/导入回填的 dc:language > 全局默认内容语言。
+    // 书这一档没有独立的「元数据」层——dc:language 在导入时就写进同一列了。
+    _contentLanguage = resolveContentLanguage(
+      explicit: bookRow?.language,
+      globalDefault: appModel.prefsRepo.defaultContentLanguage,
+    );
+    // 查词卡的**词头**跟这本书的语言走（释义跟词典走）。开书即登记。
+    appModel.currentLookupLanguage = _contentLanguage;
 
     final String? locatedUid = bookRow?.uid;
     _bookUid = (locatedUid == null || locatedUid.isEmpty) ? null : locatedUid;

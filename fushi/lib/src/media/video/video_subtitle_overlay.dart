@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
@@ -325,6 +326,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.controlsTopReserve = kVideoControlsTopReserve,
     this.fontFamily,
+    this.contentLanguage,
     this.respectAssStyle = false,
     super.key,
   });
@@ -481,6 +483,13 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
   final String? fontFamily;
 
+  /// 字幕的内容语言（BCP-47）。真值优先级由视频页解析后传入：
+  /// 用户对本视频手动指定（VideoBooks.language）> 当前字幕轨的 language。
+  ///
+  /// 决定 [_subtitleCjkFallback] 用哪条链。null = 语言未知 → 退回历史兜底链
+  /// （[subtitleCjkFontFallbacks]），渲染逐像素不变。
+  final String? contentLanguage;
+
   /// 是否尊重 .ass 字幕自带样式（TODO-1105）。为 true 时，字体名 / 主色 / 字号 / 描边色 /
   /// 描边宽 / 阴影色 / 阴影深度优先取 markup 里 ASS 解析出的值（行内 {...} 覆盖 > [V4+ Styles]
   /// cue 默认），缺失才回退用户统一样式（[fontFamily] / [textColor] / [fontSize] /
@@ -549,9 +558,6 @@ List<String> subtitleCjkFontFallbacks(TargetPlatform platform) =>
         ? _kWindowsSubtitleCjkFallback
         : _kDefaultSubtitleCjkFallback;
 
-List<String> get _subtitleCjkFallback =>
-    subtitleCjkFontFallbacks(defaultTargetPlatform);
-
 /// Windows 上作者字体缺失时，Flutter/Skia 以同一 YaHei UI face 渲染仍比
 /// mpv/libass FreeType REAL_DIM 的实像素偏窄、偏矮。BUG-929 用用户原片黑底帧校准：
 /// 字号补 1.09、仅纵轴再补 1.055，可把 `きれえ` 从 146×50 对齐到 158×56
@@ -581,6 +587,38 @@ const double _kWindowsMissingAssFontRasterYScale = 1.055;
 
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
+  List<String>? _cjkFallbackChain;
+  String? _cjkFallbackLanguage;
+
+  /// 字幕缺字回退链，**按字幕的内容语言解析**。
+  ///
+  /// 为什么必须按语言：历史链是一条写死的常量，而 Windows 那条的第一项是
+  /// `Microsoft YaHei UI`——一个**中文**字体。它排第一是因为 BUG-929 拿它做过
+  /// 字号度量校准（度量基准），但副作用是 Windows 上日文字幕的汉字一律以中文
+  /// 字形渲染（`練` 的糸旁三点变三横那类），而这正是用户报的问题。
+  ///
+  /// 与 BUG-929 的耦合仍然成立：ASS cell/em 字号换算（[_cellPerEmFor]）与实际
+  /// 渲染（[_styleForGrapheme] 的 fontFamilyFallback）**读的是同一个 getter**，
+  /// 所以两者永远选到同一套字体，不会出现「按 A 度量、用 B 渲染」。
+  ///
+  /// 语言未知时原样返回历史链：这条路径上的渲染与本改动前逐像素一致（外挂 SRT
+  /// 基本不带语言标记，量很大，不能让它们跟着变）。
+  List<String> get _subtitleCjkFallback {
+    final String? language = widget.contentLanguage;
+    if (_cjkFallbackChain != null && _cjkFallbackLanguage == language) {
+      return _cjkFallbackChain!;
+    }
+    final List<String> byLanguage = contentFontFamilies(
+      languageTag: language,
+      platform: defaultTargetPlatform,
+    );
+    _cjkFallbackLanguage = language;
+    _cjkFallbackChain = byLanguage.isEmpty
+        ? subtitleCjkFontFallbacks(defaultTargetPlatform)
+        : byLanguage;
+    return _cjkFallbackChain!;
+  }
+
   bool _revealed = false;
 
   /// 副字幕模糊态的独立显形标志（TODO-1382）：主/副字幕各有自己的 reveal，悬停/点击

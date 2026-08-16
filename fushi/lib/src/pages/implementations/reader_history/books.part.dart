@@ -251,6 +251,25 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // 统一三库页卡菜单：SRT 卡与 EPUB/视频/游戏卡对称含「标签」项（用户
       // 2026-07-28 拍板推翻 TODO-455；内部自行收起本对话框）。身份 =
       // SrtBooks.uid（与合集/批量选择键解码一致）。
+      // 内容语言：决定正文用哪条字体链。SRT 文件本身不声明语言，只能手动指定。
+      // 配对 SRT 书（bookKey 非空）的正文由 EpubBooks 行承载，语言在书卡菜单里改；
+      // 这一项写的是 SrtBooks.language，standalone 书开场时读它（_applySrtBookLanguage）。
+      DialogListAction(
+        label: t.book_language_action,
+        icon: Icons.translate,
+        onPressed: () async {
+          Navigator.pop(dialogContext);
+          await showContentLanguagePicker(
+            context: context,
+            title: t.book_language_action,
+            description: t.book_language_description,
+            current: book.language,
+            autoDetected: '',
+            onSelected: (String? tag) =>
+                appModel.database.updateSrtBookLanguage(book.uid, tag),
+          );
+        },
+      ),
       DialogListAction(
         label: t.tag_label,
         icon: Icons.sell_outlined,

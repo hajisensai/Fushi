@@ -3447,5 +3447,8 @@
   "anki_connect_addon_anki_not_running": "没有检测到正在运行的 Anki。请先启动 Anki 桌面版再试。",
   "anki_connect_addon_download_failed": "无法从 AnkiWeb 下载 AnkiConnect：$error",
   "anki_connect_addon_invalid": "AnkiWeb 返回的内容不是可用的插件包。",
-  "anki_connect_addon_launch_failed": "无法把插件交给 Anki：$error"
+  "anki_connect_addon_launch_failed": "无法把插件交给 Anki：$error",
+  "settings_content_language_title": "默认内容语言",
+  "settings_content_language_unset": "未设置",
+  "settings_content_language_description": "内容没有声明语言时用的默认值。书/视频/游戏/词典各自的设置会覆盖它。"
 }

@@ -713,6 +713,20 @@ class VideoPlayerController extends ChangeNotifier
   List<SubtitleTrack> get subtitleTracks =>
       _player?.state.tracks.subtitle ?? const <SubtitleTrack>[];
 
+  /// 当前选中字幕轨声明的语言（BCP-47 / ISO-639，视打包者而定）。没有轨、轨未声明
+  /// 语言、或值是 mpv 的占位（`und` / `auto` / `no`）时返回 null。
+  ///
+  /// 用途：字幕字体链的第二档真值（用户对本视频手动指定 > **这里** > 全局默认）。
+  /// 内嵌轨的 language 常被打包者写错或干脆不写，外挂 SRT 更是基本没有，所以它只能
+  /// 当线索用，不能当唯一依据——这正是 VideoBooks.language 手动指定存在的理由。
+  String? get currentSubtitleLanguage {
+    final String? language = _player?.state.track.subtitle.language?.trim();
+    if (language == null || language.isEmpty) return null;
+    const Set<String> placeholders = <String>{'und', 'auto', 'no', 'unknown'};
+    if (placeholders.contains(language.toLowerCase())) return null;
+    return language;
+  }
+
   /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
     // 关字幕 / 切到文本 overlay 都经 `no()`（图形轨改走 [selectEmbeddedGraphicTrack]

@@ -2516,6 +2516,21 @@ class FushiDatabase extends _$FushiDatabase
                 !await _columnExists('epub_books', 'language')) {
               await m.addColumn(epubBooks, epubBooks.language);
             }
+            // 其余三类资源同款覆盖列：视频（字幕字体链）、字幕书/有声书、galgame。
+            // 全部 nullable 无 default → 旧库既有行全 NULL = 语言未知 = 各消费方
+            // 保持原有渲染，零破坏。
+            if (await _tableExists('video_books') &&
+                !await _columnExists('video_books', 'language')) {
+              await m.addColumn(videoBooks, videoBooks.language);
+            }
+            if (await _tableExists('srt_books') &&
+                !await _columnExists('srt_books', 'language')) {
+              await m.addColumn(srtBooks, srtBooks.language);
+            }
+            if (await _tableExists('galgames') &&
+                !await _columnExists('galgames', 'language')) {
+              await m.addColumn(galgames, galgames.language);
+            }
           }
         },
         onCreate: (m) async {

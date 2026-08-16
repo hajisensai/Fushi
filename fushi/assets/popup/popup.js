@@ -2628,6 +2628,15 @@ function createEntryHeader(entry, idx) {
     const header = el('div', { className: 'entry-header' });
     
     const expressionSpan = el('span', { className: 'expression' });
+    // 词头语言：由 Dart 按「当前查词来源」注入（正在读的书/视频/游戏的内容语言，
+    // 否则全局默认）。标上 lang 之后，popup.css 里既有的 :lang() 规则自动接管词头
+    // 与振假名的字体——不需要再为词头单开一条 CSS。
+    //
+    // 词头与释义分属两条独立的语言轴：词头是**被查的那个词**（语言由用户在读什么
+    // 决定），释义跟**这本词典**（语言由词典自己声明）。日中词典里两者本来就不同。
+    if (window.__fushiLookupLanguage) {
+        expressionSpan.setAttribute('lang', window.__fushiLookupLanguage);
+    }
     let needsScroll = false;
     if (reading && reading !== expression) {
         needsScroll = buildFuriganaEl(expressionSpan, expression, reading);

@@ -36,6 +36,32 @@ library;
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
 
+/// 内容语言的优先级解析——**所有消费方都走这一个函数**，免得各处各写一遍
+/// 「先看这个再看那个」，写歪一处就出现「同一本书在两个界面字体不一样」。
+///
+/// 顺序（高到低）：
+/// 1. [explicit] 资源级手动指定（词典 languageOverride / 书·视频·游戏的 language 列）
+/// 2. [metadata] 内容自带的声明（EPUB `dc:language`、词典 index.json、字幕轨 language）
+/// 3. [globalDefault] 全局设置里的默认内容语言（`PreferencesRepository`）
+///
+/// 三档全空返回 null = 语言未知，由调用方决定是保持原样还是用硬编码兜底链。
+/// 空串与纯空白一律视为「没设」——偏好默认值是空串，DB 列可能存进空串。
+String? resolveContentLanguage({
+  String? explicit,
+  String? metadata,
+  String? globalDefault,
+}) {
+  for (final String? candidate in <String?>[
+    explicit,
+    metadata,
+    globalDefault
+  ]) {
+    final String trimmed = candidate?.trim() ?? '';
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
+}
+
 /// 兜底段的书写系统顺序。与 `app_ui_font_chain.dart` 的兜底段同序，理由相同：
 /// 本 app 的内容以日文居多，日文假名/专用汉字在中文字体里缺字率最高，让它排在
 /// 最前能把最常见的缺字挡在受控的 face 上。

@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -163,6 +164,18 @@ String _fontStyleJsMemoValue = '';
   final List<String> allowedDirectories = <String>[
     p.join(appModel.appDirectory.path, 'custom_fonts'),
   ];
+  // 全局默认内容语言（设置 · 外观 · 排版）。前两档真值都缺时的兜底语言。
+  // 与词典语言一样必须进 memo 键。
+  final String defaultContentLanguage =
+      appModel.isDatabaseReady ? appModel.prefsRepo.defaultContentLanguage : '';
+  // 词头语言 = 查词来源的语言（正在读的书/视频/游戏）> 全局默认。它与释义区的
+  // 词典语言是两条独立的轴，不能混用同一个值。
+  final String lookupLanguage = resolveContentLanguage(
+        explicit: appModel.currentLookupLanguage,
+        globalDefault: defaultContentLanguage,
+      ) ??
+      '';
+
   // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
   // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
   // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
@@ -185,7 +198,7 @@ String _fontStyleJsMemoValue = '';
   final String cacheKey = '${DictionaryFontCss.fontListFingerprint(
     fonts,
     allowedDirectories: allowedDirectories,
-  )}|$languageFingerprint|${defaultTargetPlatform.name}';
+  )}|$languageFingerprint|$defaultContentLanguage|$lookupLanguage|${defaultTargetPlatform.name}';
   if (cacheKey == _fontStyleJsMemoKey) {
     return (cacheKey: cacheKey, js: _fontStyleJsMemoValue);
   }
@@ -204,6 +217,7 @@ String _fontStyleJsMemoValue = '';
     customFamilies: css.families,
     dictionaries: dictionaryLanguages,
     platform: defaultTargetPlatform,
+    defaultLanguage: defaultContentLanguage,
   );
   if (languageCss.isNotEmpty || css.fontFaces.isNotEmpty) {
     final String styleCss = '${css.fontFaces}\n$languageCss';
@@ -218,6 +232,7 @@ String _fontStyleJsMemoValue = '';
     js = '''
       (function(){
         window.__fushiDictionaryLanguages = $languageMapJson;
+        window.__fushiLookupLanguage = ${jsonEncode(lookupLanguage)};
         var el = document.getElementById('fushi-dict-font');
         if (!el) {
           el = document.createElement('style');

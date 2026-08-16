@@ -30,6 +30,14 @@ const List<({String? tag, String label})> kContentLanguageOptions =
   (tag: 'en', label: 'English (en)'),
 ];
 
+/// BCP-47 标签 -> 显示名。不认识的标签原样返回（用户可能手动写了别的语言）。
+String contentLanguageLabelOf(String tag) {
+  for (final ({String? tag, String label}) option in kContentLanguageOptions) {
+    if (option.tag == tag) return option.label;
+  }
+  return tag;
+}
+
 /// 弹出内容语言选择框。
 ///
 /// - [current]：当前的**手动指定**值，null = 跟随自动。
@@ -43,11 +51,15 @@ Future<void> showContentLanguagePicker({
   required String? current,
   required String autoDetected,
   required ValueChanged<String?> onSelected,
+
+  /// 「跟随自动」那一项的文案。资源级设置里它是「自动」（= 用内容自己声明的
+  /// 语言）；全局设置里没有可自动的东西，那一项的语义是「未设置」。
+  String? autoLabel,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final List<({String? tag, String label})> options =
       <({String? tag, String label})>[
-    (tag: null, label: t.dict_language_auto),
+    (tag: null, label: autoLabel ?? t.dict_language_auto),
     ...kContentLanguageOptions,
   ];
 

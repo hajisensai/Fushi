@@ -1877,6 +1877,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _editTags(book);
             },
           ),
+          // 内容语言：决定字幕用哪条字体链。自动值来自当前字幕轨声明的 language，
+          // 但外挂 SRT 基本不带、内嵌轨的又常被打包者写错，所以必须能手动指定。
+          DialogQuickAction(
+            label: t.book_language_action,
+            icon: Icons.translate,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _pickVideoLanguage(book);
+            },
+          ),
         ],
         dangerActions: <DialogDangerAction>[
           DialogDangerAction(
@@ -1888,6 +1898,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 视频内容语言选择框。写 VideoBooks.language；null = 恢复自动（跟随字幕轨
+  /// 声明的 language，再没有则跟全局默认）。
+  ///
+  /// 改完刷新列表即可——字幕层在下一帧 build 时按新值重算回退链（overlay 的
+  /// 链缓存以 contentLanguage 为键），不需要重开视频。
+  Future<void> _pickVideoLanguage(VideoBookRow book) async {
+    await showContentLanguagePicker(
+      context: context,
+      title: t.book_language_action,
+      description: t.book_language_description,
+      current: book.language,
+      autoDetected: '',
+      onSelected: (String? tag) async {
+        await appModel.database.updateVideoBookLanguage(book.bookUid, tag);
+        if (mounted) setState(() {});
+      },
     );
   }
 

@@ -3447,5 +3447,8 @@
   "anki_connect_addon_anki_not_running": "No running Anki found. Start Anki desktop first, then try again.",
   "anki_connect_addon_download_failed": "Could not download AnkiConnect from AnkiWeb: $error",
   "anki_connect_addon_invalid": "AnkiWeb returned something that is not a usable add-on package.",
-  "anki_connect_addon_launch_failed": "Could not hand the add-on to Anki: $error"
+  "anki_connect_addon_launch_failed": "Could not hand the add-on to Anki: $error",
+  "settings_content_language_title": "Default content language",
+  "settings_content_language_unset": "Not set",
+  "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this."
 }

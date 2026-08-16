@@ -118,6 +118,7 @@ import 'package:fushi/src/media/video/video_subtitle_selection.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';

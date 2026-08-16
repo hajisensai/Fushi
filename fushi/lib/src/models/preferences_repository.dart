@@ -297,6 +297,26 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── 内容语言（内容字体链）────────────────────────────────────────────
+
+  /// **全局默认内容语言**（BCP-47，如 `ja` / `zh-Hant`）。空串 = 未设置。
+  ///
+  /// 它是内容字体链优先级里的第三档，兜在资源级之后：
+  /// `资源手动指定 > 内容自带元数据 > 本项 > 硬编码兜底链`（见
+  /// `content_font_chain.dart` 的 [resolveContentLanguage]）。
+  ///
+  /// 存在的理由：前两档覆盖不全——外挂 SRT 不带语言标记、自制 EPUB 常缺
+  /// `dc:language`、hook 出来的 galgame 文本更没有任何声明。逐个资源手动指定能解
+  /// 决，但用户装的内容通常以某一种语言为主，给一个默认值比让他点几十次省事。
+  /// 默认空串而不是 `ja`：本仓不做「内容恒为日语」这种全局假设。
+  String get defaultContentLanguage =>
+      getPref('default_content_language', defaultValue: '') as String;
+
+  Future<void> setDefaultContentLanguage(String language) async {
+    await setPref('default_content_language', language);
+    notifyListeners();
+  }
+
   // ── 库页排序方式（排序交互重设计 2026-07-12）──────────────────────────
 
   /// 书架排序方式 `.name`（recent/title/imported）。默认 recent（=历史序，现状零变化）。
