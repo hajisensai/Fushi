@@ -1328,6 +1328,9 @@ class AppModelLibraryHostService
       tagsAddedAt: tagsAddedAt,
       tagTombstones: tagTombstones,
       collection: collection,
+      // 入库时刻下发：client 的「最近添加」行与合集组间序都按它排；不下发就只能
+      // 给远端占位造假 importedAt，远端条目结构上进不了「最近添加」。
+      importedAt: row.importedAt,
     );
   }
 

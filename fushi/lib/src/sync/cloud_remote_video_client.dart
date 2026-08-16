@@ -83,6 +83,8 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
       // mergeRemoteVideoTags 按名 max(add) vs max(removed) 解析（删除/改名传播）。
       tagsAddedAt: e.tagsAddedAt,
       tagTombstones: e.tagTombstones,
+      // 云清单本来就带入库戳（0 = 旧数据未知），透传给首页「最近添加」/组间序。
+      importedAt: e.importedAtMs > 0 ? e.importedAtMs : null,
     );
   }
 
