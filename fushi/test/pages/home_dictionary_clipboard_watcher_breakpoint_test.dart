@@ -242,9 +242,9 @@ void main() {
     expect(clipboardWatcherCalls, isNot(contains('stop')),
         reason: '断点重建期绝不能停 OS 剪贴板 watcher');
 
-    // 端到端：模拟外部复制日文，断言重建后的页面仍自动查词。
+    // 端到端：模拟复制日文，断言重建后的页面仍自动查词（聚焦过滤已删除，
+    // 不再需要先造失焦态）。
     clipboardText = 'こんにちは';
-    svc.onWindowBlur(); // 失焦=用户在别的 app 复制 -> 应触发被动查词
     await tester.runAsync(() async {
       svc.onClipboardChanged();
       await Future<void>.delayed(const Duration(milliseconds: 80));

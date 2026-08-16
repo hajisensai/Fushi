@@ -118,13 +118,6 @@ void main() {
     DesktopLookupService.instance.removeListener(l);
   });
 
-  test('shouldTriggerOnClipboard: app 内复制(聚焦)不触发, 外部复制(失焦)触发', () {
-    // Hibiki 在前台聚焦 = 本 app 内复制（制卡/选词复制），不弹查词。
-    expect(shouldTriggerOnClipboard(true), isFalse);
-    // Hibiki 不在前台 = 用户在别的 app 复制，剪贴板变化触发查词。
-    expect(shouldTriggerOnClipboard(false), isTrue);
-  });
-
   // BUG-114：Windows 剪贴板被占用时 Clipboard.getData 抛 PlatformException，
   // 不得逃逸到 zone（否则记成 UncaughtZone 噪音），且不得误触发查词。
   testWidgets('clipboard busy (PlatformException) is swallowed, no lookup',
@@ -145,7 +138,6 @@ void main() {
 
     final DesktopLookupService svc = DesktopLookupService.instance;
     svc.debugReset();
-    svc.onWindowBlur(); // 失焦 → 剪贴板变化应触发读取
 
     await tester.runAsync(() async {
       try {
@@ -183,7 +175,6 @@ void main() {
 
     final DesktopLookupService svc = DesktopLookupService.instance;
     svc.debugReset();
-    svc.onWindowBlur();
 
     await tester.runAsync(() async {
       svc.onClipboardChanged();
@@ -204,7 +195,7 @@ void main() {
     expect(windowCalls, containsAllInOrder(<String>['show', 'focus']));
   });
 
-  testWidgets('clipboard change inside foreground process is ignored',
+  testWidgets('clipboard change inside foreground process still triggers',
       (WidgetTester tester) async {
     final List<String> platformCalls = <String>[];
     final TestDefaultBinaryMessenger messenger =
@@ -221,18 +212,18 @@ void main() {
 
     final DesktopLookupService svc = DesktopLookupService.instance;
     svc.debugReset();
-    svc.onWindowBlur(); // WebView/native child can make window_manager blur.
 
     await tester.runAsync(() async {
       svc.onClipboardChanged();
       await Future<void>.delayed(Duration.zero);
     });
 
-    expect(svc.pendingText, isNull);
-    expect(platformCalls, isNot(contains('Clipboard.getData')));
+    // 用户 2026-08-16 拍板删除聚焦过滤：Hibiki 自己在前台时复制也照常查词。
+    expect(svc.pendingText, '見る');
+    expect(platformCalls, contains('Clipboard.getData'));
   });
 
-  testWidgets('clipboard change inside Hibiki app-family foreground is ignored',
+  testWidgets('clipboard change inside Hibiki app-family foreground triggers',
       (WidgetTester tester) async {
     final List<String> platformCalls = <String>[];
     final TestDefaultBinaryMessenger messenger =
@@ -250,15 +241,15 @@ void main() {
 
     final DesktopLookupService svc = DesktopLookupService.instance;
     svc.debugReset();
-    svc.onWindowBlur(); // foreground can be another Hibiki process/window.
 
     await tester.runAsync(() async {
       svc.onClipboardChanged();
       await Future<void>.delayed(Duration.zero);
     });
 
-    expect(svc.pendingRequest, isNull);
-    expect(platformCalls, isNot(contains('Clipboard.getData')));
+    // 另一个 Hibiki 进程/窗口占前台同样不再抑制查词（聚焦过滤已整条删除）。
+    expect(svc.pendingRequest?.text, '見る');
+    expect(platformCalls, contains('Clipboard.getData'));
   });
 
   testWidgets(
