@@ -60,8 +60,8 @@ cue 动图、片段导出、音频容器元数据。
   （`--cc=clang -arch x86_64` → 三个 argv）。改成 bash 数组 + `"${EXTRA_CONFIG[@]}"`，
   这是让本修复真正生效的前提。
 
-- **[x] ① 已修复** — 提交 `cf1c94b5d7` / `4b9dfbfb9d` / `08d8612e08` / `35d9cf3d28` /
-  `8ad7fb8d80` / `c11f6d53a2` / `bd99b4a012` / `d771628ed2`：
+- **[x] ① 已修复** — 提交 `c5c88573d0` / `18a9b2fcca` / `dc935f980d` / `dbbaa785fc` /
+  `2d00b86e8e` / `c08976ecf6` / `4ea46ceeab` / `db90093aba`：
   - `build-ffmpeg-min.sh`：新增 `MACOS_ARCH`；x264 用 `--host` + `CC="clang -arch …"`；
     SVT-AV1 用 `CMAKE_SYSTEM_NAME`/`CMAKE_SYSTEM_PROCESSOR`/`CMAKE_OSX_ARCHITECTURES`
     + policy 开关；ffmpeg configure 传 `--arch`/`--cc`/`--extra-cflags`/`--extra-ldflags`，
