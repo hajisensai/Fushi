@@ -1705,6 +1705,16 @@ window.__fushiInstallShell = function(C) {
       window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
     }''';
 
+  /// 三种 shell 共用的视口 meta 重写（BUG-1688 第二处：VN shell 原先没跑这段）。
+  ///
+  /// 缺了它，WKWebView 会按**默认的 980 CSS px** 布局再整体缩放到设备宽——iOS 上实测
+  /// `innerWidth=980 / innerHeight=1743`，而 Dart 侧下发的 `dartPageWidth=375`、
+  /// `chromeTopInset=44` 全是逻辑像素，两个坐标系差 ~2.6 倍：正文被缩到约四成大小，
+  /// 所有按 px 下发的量（chrome 预留、页面盒、caret inset、滑动阈值）也全被按错的
+  /// 单位解释。Android 的 WebView 默认就是 device-width、桌面窗口又普遍 ≥980，所以
+  /// 这个缺口**只在 iOS 上显形**。VN 必须与分页/连续 shell 用同一份，故此常量公开。
+  static const String sharedInitViewportJs = _sharedInitViewport;
+
   static const String _sharedInitViewport = '''
   var viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) { viewport.remove(); }

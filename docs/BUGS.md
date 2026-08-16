@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1563 条。点号进各自文件。
+> 共 1564 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1688](bugs/BUG-1688-vn-chrome-inset-viewport.md) | ✅ | ✅ | VN 模式忽略 chrome inset 与页面尺寸，正文被顶栏/底栏与刘海压住（iOS 最严重） |
 | [BUG-1687](bugs/BUG-1687-qb-category-legacy-hibiki.md) | 🚧 | 🚧 | 存量 qBittorrent 分类仍是改名前的 hibiki |
 | [BUG-1686](bugs/BUG-1686-video-home-rows-not-interconnected.md) | ✅ | ✅ | 视频首页「下一集」「最近添加」两行不含互联远端条目 |
 | [BUG-1685](bugs/BUG-1685-video-subtitle-fetch-two-implementations.md) | ✅ | ✅ | 播放页找字幕只搜 Jimaku，与下载管线的统一 registry 是两套实现 |
