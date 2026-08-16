@@ -1116,6 +1116,20 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 最近一次 [start] 失败的结构化诊断；成功后为 [GalHookInjectorFailure.none]。
   GalHookInjectorDiagnostics get lastFailure => _lastFailure;
 
+  bool _japaneseLocaleApplied = false;
+
+  /// 本局**实际**是否给游戏套了日文区域（CP932），而不是用户选了哪个档位。
+  ///
+  /// 两者不是一回事：`auto` 下真正的结果由 [resolveJapaneseLocale] 现算（系统 ACP +
+  /// 目标位数），用户在设置里看到的只是「自动」。而 `auto` 判错的代价是不对称的——
+  /// 多语言版 / 汉化版被误转区时，游戏自己的 GBK/UTF-8 字符串会被按 CP932 解出非法
+  /// 序列，症状从窗口标题乱码到脚本加载失败都有，且**没有一处告诉用户是转区干的**。
+  ///
+  /// [resolveJapaneseLocale] 的注释已经论证过 `auto` 不可能总判对、真正兜底的是用户
+  /// 手动选 [GalJapaneseLocaleMode.off]。可兜底的前提是用户够得着：先得知道本局到底
+  /// 转没转。所以这个事实必须离开本类，一路走到会话状态与诊断里。
+  bool get japaneseLocaleApplied => _japaneseLocaleApplied;
+
   int _launchedPid = 0;
 
   /// launch 模式下 injector 回报的**已创建**游戏 PID（`LAUNCH pid=`）。注入是否成功
@@ -1244,6 +1258,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _rawVoiceReady = false;
     _readyFormat = null;
     _launchedPid = 0;
+    _japaneseLocaleApplied = false;
     _diagnosticsBuffer.clear();
     _lastFailure = const GalHookInjectorDiagnostics();
     final String? path = injectorPath;
@@ -1268,6 +1283,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
       is32Bit: launchMode && await exeIs32Bit(exe) == true,
       systemAnsiCodePage: systemAnsiCodePageProbe(),
     );
+    // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这个字段必须同源，
+    // 否则「诊断说没转区、进程其实转了」这种分叉比不诊断更糟。
+    _japaneseLocaleApplied = japaneseLocale;
     // 1. 拉起 injector 子进程（注入报毒代码只在这个隔离子进程里执行）。
     //    launch 模式：`--launch <exe>` CREATE_SUSPENDED 早注入，从 stdout 解析子进程 PID；
     //    attach 模式：`--pid <PID>` 附着已运行进程。

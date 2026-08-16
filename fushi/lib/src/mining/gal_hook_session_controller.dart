@@ -411,6 +411,7 @@ class GalHookSessionState {
     this.audioTracks = const <GalAudioTrack>[],
     this.selectedAudioSourcePtr = 0,
     this.excludedAudioSourcePtrs = const <int>{},
+    this.japaneseLocaleApplied = false,
   });
 
   final GalHookSessionPhase phase;
@@ -446,6 +447,16 @@ class GalHookSessionState {
   final int selectedAudioSourcePtr;
   final Set<int> excludedAudioSourcePtrs;
 
+  /// 本局**实际**有没有给游戏套日文区域（CP932）。区别于用户选的档位：`auto` 是现算的，
+  /// 设置页只显示「自动」，用户无从知道这一局到底转没转。
+  ///
+  /// 为什么要让它进状态：`auto` 判据（系统 ACP≠932 且目标 32 位）对多语言版 / 汉化版
+  /// 必然误判为「要转区」，而误转区会把游戏自己的 GBK/UTF-8 字符串按 CP932 解坏。
+  /// [resolveJapaneseLocale] 的注释已经承认 `auto` 不可能总判对、兜底是用户手动选
+  /// [GalJapaneseLocaleMode.off]——但兜底够不着就等于没有。UI 据此显式告诉用户
+  /// 「本局已转区」并给出关掉的入口，这是判错后唯一的自愈路径。
+  final bool japaneseLocaleApplied;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -480,6 +491,7 @@ class GalHookSessionState {
     List<GalAudioTrack>? audioTracks,
     int? selectedAudioSourcePtr,
     Set<int>? excludedAudioSourcePtrs,
+    bool? japaneseLocaleApplied,
   }) {
     return GalHookSessionState(
       phase: phase ?? this.phase,
@@ -512,6 +524,12 @@ class GalHookSessionState {
           selectedAudioSourcePtr ?? this.selectedAudioSourcePtr,
       excludedAudioSourcePtrs:
           excludedAudioSourcePtrs ?? this.excludedAudioSourcePtrs,
+      // 跟着 launchExe 复位：转区只属于 launch 会话，attach 路径必然没转。会话结束时
+      // stopCapture 会 clearLaunchExe，那一刻这个标记也必须落回 false，否则空闲状态还
+      // 挂着上一局的「已转区」。
+      japaneseLocaleApplied: clearLaunchExe
+          ? false
+          : japaneseLocaleApplied ?? this.japaneseLocaleApplied,
     );
   }
 }
@@ -1292,6 +1310,25 @@ class GalHookSessionController extends ChangeNotifier {
       await engine.stop();
       return const GalHookLaunchResult.failed(
         GalHookLaunchFailureReason.superseded,
+      );
+    }
+    // 转区事实入状态：**注入成功与否都要写**。游戏进程是 injector 按这个档位创建的，
+    // 即使随后注入失败降级到 loopback，游戏也已经在 CP932 下跑着了——而误转区正是
+    // 「文字乱码 / 脚本加载失败」这类症状的常见来源，此时把标记丢掉等于让用户在最需要
+    // 线索的那一刻失去线索。
+    _setState(
+      _state.copyWith(japaneseLocaleApplied: engine.japaneseLocaleApplied),
+    );
+    if (engine.japaneseLocaleApplied) {
+      _record(
+        GalHookEventSeverity.info,
+        'launch',
+        'launch.japanese_locale_applied',
+        'Launched the game with a Japanese (CP932) locale',
+        details: <String, Object?>{
+          'mode': japaneseLocaleMode.name,
+          'exe': executablePath,
+        },
       );
     }
     if (format == null && !engine.textHookReady) {

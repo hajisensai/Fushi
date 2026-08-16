@@ -3394,5 +3394,7 @@
   "srt_book_reimport": "重新导入",
   "srt_book_reimport_subtitle_hint": "替换字幕会用新字幕重建这本书的正文。",
   "srt_book_reimport_no_cues": "该字幕文件解析不出任何字幕行",
-  "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书"
+  "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书",
+  "game_session_japanese_locale": "已转区",
+  "game_session_japanese_locale_hint": "本局以日文区域 (CP932) 启动。若游戏文字乱码或脚本报错，可把该游戏的日语区域改为「永不转区」。"
 }

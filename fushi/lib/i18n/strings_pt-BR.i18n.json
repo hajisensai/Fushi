@@ -3394,5 +3394,7 @@
   "srt_book_reimport": "Re-import",
   "srt_book_reimport_subtitle_hint": "Replacing the subtitle rebuilds the book text from the new cues.",
   "srt_book_reimport_no_cues": "No subtitle lines found in that file",
-  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it"
+  "srt_book_reimport_body_rebuilt": "Book text rebuilt — reopen the book to read it",
+  "game_session_japanese_locale": "Japanese locale",
+  "game_session_japanese_locale_hint": "The game was started under a Japanese (CP932) locale. If its text looks garbled or a script error appears, set this game's Japanese locale to Never."
 }

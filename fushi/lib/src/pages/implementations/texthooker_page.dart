@@ -2044,6 +2044,12 @@ class _SessionOverviewCard extends StatelessWidget {
         readiness == GalWorkbenchReadiness.waitingForThread;
     final String audio = galHookAudioBackendLabel(state.audioBackend);
     final String phase = galHookSessionPhaseLabel(state.phase);
+    // 转区标记**窄屏也留着**：它和降级原因同属「不显示就没有第二处能看到」的事实。
+    // `auto` 档在设置页只显示「自动」，真正转没转是启动时按系统 ACP + 目标位数现算的，
+    // 判错时用户看到的只有游戏文字乱码，没有任何线索指向 Hibiki 改了区域。
+    final String localeSuffix = state.japaneseLocaleApplied
+        ? ' · ${t.game_session_japanese_locale}'
+        : '';
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
@@ -2081,13 +2087,29 @@ class _SessionOverviewCard extends StatelessWidget {
                   waitingForThread
                       ? '$phase · ${t.game_text_thread_unset}'
                       : compact
-                          ? '$phase · $audio'
+                          ? '$phase · $audio$localeSuffix'
                           : '$phase · $audio'
-                              '${format == null ? '' : ' · $format'}',
+                              '${format == null ? '' : ' · $format'}'
+                              '$localeSuffix',
                   maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                // 转区的**可执行处置**：上面那行只说「已转区」，这里说清它可能造成什么、
+                // 以及去哪关。误转区（多语言版 / 汉化版落进 `auto` 的「32 位 ⇒ 日文原版」
+                // 判据）会把游戏自己的 GBK/UTF-8 字符串按 CP932 解坏，症状从窗口标题乱码
+                // 到脚本加载失败都有。[resolveJapaneseLocale] 已经论证过 `auto` 不可能总
+                // 判对、真正兜底的是用户手动选「永不转区」——够得着那个档位的前提就是这
+                // 一行。compact 下省掉：窄屏留短标记即可，长句会把整张卡挤爆。
+                if (state.japaneseLocaleApplied && !compact)
+                  Text(
+                    t.game_session_japanese_locale_hint,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
                 // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
                 // 请同样以管理员身份启动 Hibiki」之类）。旧实现把 `engine_attach_failed`
                 // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。
