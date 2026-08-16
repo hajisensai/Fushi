@@ -499,6 +499,116 @@ void main() {
       expect(saved.status, AnimeDownloadPlan.statusImported);
     });
 
+    test('BUG-1696 已入库但字幕没配上 → 下一轮 tick 自动重试，成功后补贴 sidecar', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      // 已入库、字幕 unavailable、还没试过（存量计划形态：attempts=0）。
+      await store.save(
+        _plan().copyWith(
+          status: AnimeDownloadPlan.statusImported,
+          jimakuEntryId: 7,
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+          subtitleNote: 'jimaku entry has no files',
+        ),
+      );
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+
+      final Directory subsDir = store.subsDirFor(_kHash)
+        ..createSync(recursive: true);
+      subtitleResolverOverride =
+          (AnimeDownloadPlan plan, List<String> videos) async {
+        // 这一次字幕已经上传了。
+        final String staged = p.join(subsDir.path, 'Show - 03.ja.srt');
+        File(staged).writeAsStringSync('cue');
+        return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
+          PlanSubtitle(
+            episode: 3,
+            fileName: 'Show - 03.ja.srt',
+            stagedPath: staged,
+            language: 'ja',
+          ),
+        ]);
+      };
+
+      await buildService().tick();
+
+      expect(
+        subtitleResolverCalls,
+        hasLength(1),
+        reason: 'unavailable 不是终态——它的主流成因是「字幕还没上传」',
+      );
+      expect(
+        File(p.join(savePath, 'Show', '[Grp] Show - 03 [1080p].ja.srt'))
+            .existsSync(),
+        isTrue,
+        reason: '重试成功后 sidecar 要真的补上去，播放页按目录动态发现',
+      );
+      final AnimeDownloadPlan saved = (await store.loadAll()).single;
+      expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
+      expect(saved.subtitles.single.episode, 3);
+      expect(saved.status, AnimeDownloadPlan.statusImported,
+          reason: '重试不得改动下载/入库状态');
+      expect(saved.subtitleAttempts, 1);
+      expect(saved.subtitleLastAttemptAtMs, isNotNull);
+    });
+
+    test('BUG-1696 重试仍扑空 → 计数推进，同一轮不重复打，backoff 未到不再试', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      await store.save(
+        _plan().copyWith(
+          status: AnimeDownloadPlan.statusImported,
+          jimakuEntryId: 7,
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        ),
+      );
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+      subtitleResolverOverride = (_, __) async =>
+          const ResolvedPlanSubtitles.failed('jimaku entry has no files');
+
+      final AnimeDownloadService service = buildService();
+      await service.tick();
+      expect(subtitleResolverCalls, hasLength(1));
+      AnimeDownloadPlan saved = (await store.loadAll()).single;
+      expect(saved.subtitleAttempts, 1);
+      expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleUnavailable);
+
+      // 紧接着再 tick：backoff 第一档 15 分钟还没到，不该再打一次。
+      await service.tick();
+      expect(
+        subtitleResolverCalls,
+        hasLength(1),
+        reason: 'backoff 未到就重试 = 每轮 tick 都打一次 Jimaku',
+      );
+      saved = (await store.loadAll()).single;
+      expect(saved.subtitleAttempts, 1);
+      expect(saved.subtitleRetryPossible, isTrue, reason: '还没用完，UI 该说「稍后重试」');
+    });
+
+    test('BUG-1696 没有 Jimaku 条目的 unavailable 计划不参与重试（没来源可试）', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      await store.save(
+        _plan().copyWith(
+          status: AnimeDownloadPlan.statusImported,
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        ),
+      );
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+
+      await buildService().tick();
+      expect(subtitleResolverCalls, isEmpty);
+    });
+
     test('BUG-1206 反查一条都不配 → 落 unavailable + 原因，视频照常入库', () async {
       final (String savePath, List<Map<String, dynamic>> files) =
           completedSeasonPack();

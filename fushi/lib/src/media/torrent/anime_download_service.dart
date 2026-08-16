@@ -527,7 +527,9 @@ class AnimeDownloadService {
     final int tickNowMs = DateTime.now().millisecondsSinceEpoch;
     final List<AnimeDownloadPlan> subtitleRetries = <AnimeDownloadPlan>[
       for (final AnimeDownloadPlan plan in plans)
-        if (plan.status != AnimeDownloadPlan.statusDownloading &&
+        // 只给**已入库**的计划补字幕：downloading 的还没到反查时机（首次反查在
+        // _finishPlan 里做），failed 的连视频都没进库，给它配字幕是纯噪音。
+        if (plan.status == AnimeDownloadPlan.statusImported &&
             plan.shouldRetrySubtitles(tickNowMs))
           plan,
     ];
