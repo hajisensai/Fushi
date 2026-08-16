@@ -98,37 +98,55 @@ class DesktopAudioPlayback {
   /// settles once activation is stable, while the clip keeps playing.
   static final AudioActivationQueue _activation = AudioActivationQueue();
 
-  /// 是否已完成一次冷启动预热，避免重复预热（[warmUp] 幂等）。
-  static bool _warmed = false;
+  /// 是否已把冷启动预热排进 [_activation] 队列，避免重复入队（幂等）。
+  static bool _warmUpQueued = false;
 
-  /// 桌面首帧冷启动预热（BUG-1015）。
+  /// 冷启动惰性预热（BUG-1015 / BUG-1690）。
   ///
   /// just_audio_media_kit 在**进程内第一次**把播放平台激活（`_setPlatformActive(true)`
   /// → media_kit `Player.init`）时，第一段真实播放的音频输出会被这次冷激活吞掉：表现
-  /// 为「本次 app 启动后第一次查词自动发音没声音、点第二次才响」。这**不是**解析或触发
-  /// 问题（url 已解析成功、`_play` 也没被抢占），而是播放管线首次激活的固有空窗。
+  /// 为「本次 app 启动后第一次查词自动发音没声音、点第二次才响」（BUG-1015）。修法是
+  /// 用一段极短的**全零 PCM 静音**（[_silentWavBytes]）先走一遍 `stop→load→play`，把
+  /// 冷激活的首帧空窗在无声中消耗掉。
   ///
-  /// 根因修法：启动时用一段极短的**全零 PCM 静音**（[_silentWavBytes]）走一遍完整的
-  /// `stop→load→play` 周期（复用同一 [_player] 与 [_activation] 串行队列，绝不与后续真实
-  /// 播放交错），把这次冷激活的首帧空窗在无声中消耗掉。等用户第一次真正查词时平台已激活，
-  /// 首个自动发音即出声。volume 0 + 全零采样双重保证无任何可听声响；任何失败都被
-  /// [_play] 内部吞掉并记日志，绝不影响启动。仅桌面（just_audio_media_kit）需要，Android
-  /// 走原生 MediaPlayer 无此冷启动（由 [TtsChannel.warmUpLookupAudioPlayer] 平台门控）。
-  static Future<void> warmUp() async {
-    if (_warmed) return;
-    _warmed = true;
-    try {
-      final Directory dir = await getTemporaryDirectory();
-      final File silent = File('${dir.path}/fushi_audio_warmup.wav');
-      if (!silent.existsSync()) {
-        silent.parent.createSync(recursive: true);
-        silent.writeAsBytesSync(_silentWavBytes());
+  /// 但预热**不能放在 app 启动时**（BUG-1690）：预热本质是在真实音频输出设备上开一条
+  /// 渲染流——iOS 上这会激活音频会话、直接暂停其他 app 正在播的音乐；蓝牙多点/独占
+  /// 设备上会把输出抢过来。「启动 app 打断音乐」的根因就是这条启动期音频流。
+  ///
+  /// 根因修法：预热改为**惰性**——首次真实播放（[playUrl]/[playFile] → [_play]）在
+  /// 入队自己的播放周期**之前**，同步把预热周期排进同一条 [_activation] FIFO 串行队列。
+  /// 队列保证预热完整跑完（含等静音片播放完成，见 body 内注释）后真实播放才开始，
+  /// BUG-1015 的保护不变；而启动路径从此不碰音频设备，天然不可能打断任何音乐。
+  ///
+  /// 必须是**同步方法、内部无 await 先于入队**：否则触发它的那次真实播放可能先入队，
+  /// FIFO 顺序被破坏，首个真实播放又撞上冷激活。临时文件的异步创建挪进队列 body 内。
+  /// volume 0 + 全零采样双重保证无任何可听声响；任何失败都吞掉并记日志，绝不影响
+  /// 触发它的真实播放。Android 不经本类（原生 MediaPlayer 无此冷启动），无需门控。
+  static void _ensureWarmUpQueued() {
+    if (_warmUpQueued) return;
+    _warmUpQueued = true;
+    _activation.run<void>(() async {
+      try {
+        final Directory dir = await getTemporaryDirectory();
+        final File silent = File('${dir.path}/fushi_audio_warmup.wav');
+        if (!silent.existsSync()) {
+          silent.parent.createSync(recursive: true);
+          silent.writeAsBytesSync(_silentWavBytes());
+        }
+        await _player.stop();
+        await _player.setVolume(0.0);
+        await _player.setFilePath(silent.path);
+        await _player.play();
+        // 等静音片真正播放完成（0.1s，兜底超时）再放行队列里的下一个（真实）播放
+        // 周期：真实周期开头就是 `stop()`，若此刻设备还没完成冷启动就把预热掐掉，
+        // 冷激活空窗会漏给用户听得见的那次播放，BUG-1015 复发。
+        await _player.processingStateStream
+            .firstWhere((ProcessingState s) => s == ProcessingState.completed)
+            .timeout(const Duration(seconds: 2));
+      } catch (e, stack) {
+        ErrorLogService.instance.log('DesktopAudioPlayback.warmUp', e, stack);
       }
-      // volume 0：即便静音样本外仍有任何底噪也听不见；走 _play 复用激活串行队列。
-      await _play(() => _player.setFilePath(silent.path), 'warmUp', 0.0);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('DesktopAudioPlayback.warmUp', e, stack);
-    }
+    });
   }
 
   /// 构造一段 ~0.1s、8kHz、单声道、16-bit 的**全零（静音）** PCM WAV 字节。
@@ -180,6 +198,10 @@ class DesktopAudioPlayback {
     String tag,
     double volume,
   ) {
+    // Lazy cold-start warm-up (BUG-1015/BUG-1690): queue the silent warm-up
+    // cycle BEFORE this real cycle. Must stay synchronous up to this point so
+    // FIFO order on _activation is guaranteed.
+    _ensureWarmUpQueued();
     // Capture the activation generation at submission time. If a dismiss-stop
     // (which calls _activation.preempt()) supersedes this cycle before its body
     // reaches play(), the body bails out before starting a new activation

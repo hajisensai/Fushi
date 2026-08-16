@@ -4,14 +4,21 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 
-/// BUG-1015 守卫：桌面首次查词自动发音无声 = just_audio_media_kit 首次平台激活吞掉
-/// 第一段播放输出。修复在启动时用一段全零 PCM 静音走一遍完整播放周期预热掉冷启动。
+/// BUG-1015 + BUG-1690 守卫。
 ///
-/// 播放行为本身要真机验证（需 media_kit 平台），这里守两件可静态验证的事：
+/// BUG-1015：桌面首次查词自动发音无声 = just_audio_media_kit 首次平台激活吞掉
+/// 第一段播放输出，需要用一段全零 PCM 静音走一遍完整播放周期预热掉冷启动。
+/// BUG-1690：该预热**不得在 app 启动时执行**——预热要在真实音频输出设备上开渲染流，
+/// 启动即预热会打断其他 app 正在播的音乐（iOS 激活音频会话直接暂停对方、蓝牙多点/
+/// 独占输出被抢走）。预热必须惰性：首次真实播放前在同一条激活串行队列里就地执行。
+///
+/// 播放行为本身要真机验证（需 media_kit 平台），这里守三件可静态验证的事：
 /// ① 预热用的 WAV 字节确实是合法、绝对无声（全零采样）的 PCM WAV；
-/// ② 预热被正确接线：main 启动调用、TtsChannel 平台门控、DesktopAudioPlayback 静音走 _play。
+/// ② 惰性预热接线：_play 在捕获 generation/入队真实周期前同步调用
+///    _ensureWarmUpQueued，预热 body 走 _activation 队列、volume 0；
+/// ③ 启动路径（main.dart）不再有任何预热/打开音频输出流的调用。
 void main() {
-  group('BUG-1015 desktop lookup-audio warm-up', () {
+  group('BUG-1015/BUG-1690 desktop lookup-audio lazy warm-up', () {
     test('silent warm-up WAV is a valid, fully-silent 16-bit PCM WAV', () {
       final Uint8List bytes = DesktopAudioPlayback.debugSilentWavBytes();
       final ByteData bd = ByteData.sublistView(bytes);
@@ -43,38 +50,56 @@ void main() {
       }
     });
 
-    test(
-        'warm-up is wired: main → TtsChannel (platform-gated) → _play(volume 0)',
-        () {
-      final String main = File('lib/main.dart').readAsStringSync();
-      // 启动预热在 media_kit 初始化之后、fire-and-forget，不阻塞启动。
-      expect(main.contains('warmUpLookupAudioPlayer()'), isTrue,
-          reason: 'main 必须启动查词播放器预热');
-      final int initIdx = main.indexOf('MediaKit.ensureInitialized()');
-      final int warmIdx = main.indexOf('warmUpLookupAudioPlayer()');
-      expect(initIdx, greaterThanOrEqualTo(0));
-      expect(warmIdx, greaterThan(initIdx), reason: '预热必须在 media_kit 初始化之后');
-
-      final String tts =
-          File('lib/src/utils/misc/tts_channel.dart').readAsStringSync();
-      // 平台门控：Android 直接 return（原生 MediaPlayer 无此冷启动）。
-      expect(
-        RegExp(r'warmUpLookupAudioPlayer\(\)\s*async\s*\{\s*if\s*\(_isSupported\)\s*return;')
-            .hasMatch(tts),
-        isTrue,
-        reason: 'warmUpLookupAudioPlayer 必须对 Android(_isSupported) 短路 no-op',
-      );
-      expect(tts.contains('DesktopAudioPlayback.warmUp()'), isTrue);
-
+    test('warm-up is lazy: queued inside _play before the real cycle', () {
       final String desktop = File(
         'lib/src/utils/misc/desktop_audio_playback.dart',
       ).readAsStringSync();
-      // 预热必须走既有 _play 串行队列且 volume 0（不与真实播放交错、绝对无声）。
-      expect(
-        RegExp(r"_play\([^;]*'warmUp',\s*0\.0\)").hasMatch(desktop),
-        isTrue,
-        reason: '预热必须复用 _play 并以 volume 0 静音播放',
+
+      // _play 必须在捕获 generation（入队真实播放周期的第一步）之前同步排入预热，
+      // 保证 FIFO 顺序：预热周期先于触发它的首次真实播放完成冷激活（BUG-1015）。
+      final RegExp playPrelude = RegExp(
+        r'static\s+Future<bool>\s+_play\('
+        r'[\s\S]{0,600}?_ensureWarmUpQueued\(\);'
+        r'[\s\S]{0,600}?_activation\.generation',
       );
+      expect(playPrelude.hasMatch(desktop), isTrue,
+          reason: '_play 必须先 _ensureWarmUpQueued() 再捕获 generation/入队真实周期');
+
+      // _ensureWarmUpQueued 必须是同步入队：方法体在 _activation.run 之前不得有
+      // await（否则真实周期可能抢先入队，首个真实播放又撞冷激活）。
+      final RegExp queuedBody = RegExp(
+        r'static\s+void\s+_ensureWarmUpQueued\(\)\s*\{\s*'
+        r'if\s*\(_warmUpQueued\)\s*return;\s*'
+        r'_warmUpQueued\s*=\s*true;\s*'
+        r'_activation\.run<void>\(',
+      );
+      expect(queuedBody.hasMatch(desktop), isTrue,
+          reason: '_ensureWarmUpQueued 必须同步（无 await）把预热 body 排进 _activation');
+
+      // 预热 body 必须 volume 0（绝对无声）。
+      expect(desktop.contains('await _player.setVolume(0.0);'), isTrue,
+          reason: '预热必须以 volume 0 静音播放');
+    });
+
+    test('startup path opens NO audio stream (BUG-1690)', () {
+      final String main = File('lib/main.dart').readAsStringSync();
+      // 启动路径不得出现任何查词播放器预热/播放调用：启动开音频输出流会打断
+      // 其他 app 正在播的音乐（iOS 会话激活 / 蓝牙多点抢输出）。
+      for (final String banned in <String>[
+        'warmUpLookupAudioPlayer',
+        'DesktopAudioPlayback.',
+        '_ensureWarmUpQueued',
+      ]) {
+        expect(main.contains(banned), isFalse,
+            reason: 'main.dart 启动路径不得调用 $banned（BUG-1690：启动不开音频流）');
+      }
+
+      // TtsChannel 也不再暴露启动预热入口（唯一消费者曾是 main 启动路径；留着这个
+      // 入口 = API 层面允许再次接回启动，删口子而不是靠调用点自觉）。
+      final String tts =
+          File('lib/src/utils/misc/tts_channel.dart').readAsStringSync();
+      expect(tts.contains('warmUpLookupAudioPlayer'), isFalse,
+          reason: 'TtsChannel 不得再暴露启动预热入口');
     });
   });
 }
