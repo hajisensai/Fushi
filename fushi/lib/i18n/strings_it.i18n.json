@@ -3505,5 +3505,10 @@
   "module_manga_label": "Manga",
   "module_video_label": "Video",
   "module_games_label": "Galgame",
-  "module_toggle_hint": "Show this library tab in the navigation bar; turn off to hide it"
+  "module_toggle_hint": "Show this library tab in the navigation bar; turn off to hide it",
+  "module_books_label": "Novels",
+  "module_extension_label": "Browser extension",
+  "onboarding_feature_books": "Novel library",
+  "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
+  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)"
 }

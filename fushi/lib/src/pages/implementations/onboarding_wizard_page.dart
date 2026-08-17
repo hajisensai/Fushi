@@ -80,6 +80,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   @override
   void initState() {
     super.initState();
+    if (appModelNoUpdate.moduleBooksEnabled) {
+      _selected.add(OnboardingFeature.books);
+    }
     if (appModelNoUpdate.moduleMangaEnabled) {
       _selected.add(OnboardingFeature.manga);
     }
@@ -88,6 +91,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
     if (Platform.isWindows && appModelNoUpdate.moduleGamesEnabled) {
       _selected.add(OnboardingFeature.games);
+    }
+    if (_browserExtensionAvailable &&
+        appModelNoUpdate.moduleBrowserExtensionEnabled) {
+      _selected.add(OnboardingFeature.browserExtension);
     }
     // 上一轮推荐包导入成功后进程已重启：把落盘的 9.5 GB zip 删掉（flag 判定，
     // 未导入过 / 半截下载不受影响）。
@@ -108,11 +115,18 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     await Navigator.of(context).maybePop();
   }
 
-  /// 离开功能选择步骤时，把模块勾选写进 tab 显隐偏好（只写有变化的）。
+  /// 离开功能选择步骤时，把模块勾选写进 tab 显隐偏好（只写有变化的；平台上
+  /// 没提供勾选的模块不写，保留用户意愿）。
   Future<void> _applyModuleSelection() async {
+    final bool books = _selected.contains(OnboardingFeature.books);
     final bool manga = _selected.contains(OnboardingFeature.manga);
     final bool video = _selected.contains(OnboardingFeature.video);
     final bool games = _selected.contains(OnboardingFeature.games);
+    final bool extension =
+        _selected.contains(OnboardingFeature.browserExtension);
+    if (appModel.moduleBooksEnabled != books) {
+      await appModel.setModuleBooksEnabled(books);
+    }
     if (appModel.moduleMangaEnabled != manga) {
       await appModel.setModuleMangaEnabled(manga);
     }
@@ -121,6 +135,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
     if (Platform.isWindows && appModel.moduleGamesEnabled != games) {
       await appModel.setModuleGamesEnabled(games);
+    }
+    if (_browserExtensionAvailable &&
+        appModel.moduleBrowserExtensionEnabled != extension) {
+      await appModel.setModuleBrowserExtensionEnabled(extension);
     }
   }
 
@@ -415,7 +433,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         SizedBox(height: tokens.spacing.gap),
         for (final OnboardingFeature feature in OnboardingFeature.values)
           if (kOnboardingModuleFeatures.contains(feature) &&
-              (feature != OnboardingFeature.games || Platform.isWindows))
+              (feature != OnboardingFeature.games || Platform.isWindows) &&
+              (feature != OnboardingFeature.browserExtension ||
+                  _browserExtensionAvailable))
             OnboardingFeatureTile(
               icon: _featureIcon(feature),
               title: _featureTitle(feature),
@@ -545,6 +565,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   IconData _featureIcon(OnboardingFeature feature) {
     switch (feature) {
+      case OnboardingFeature.books:
+        return Icons.menu_book_outlined;
+      case OnboardingFeature.browserExtension:
+        return Icons.extension_outlined;
       case OnboardingFeature.manga:
         return Icons.photo_library_outlined;
       case OnboardingFeature.video:
@@ -564,6 +588,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   String _featureTitle(OnboardingFeature feature) {
     switch (feature) {
+      case OnboardingFeature.books:
+        return t.onboarding_feature_books;
+      case OnboardingFeature.browserExtension:
+        return t.module_extension_label;
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga;
       case OnboardingFeature.video:
@@ -583,6 +611,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   String _featureHint(OnboardingFeature feature) {
     switch (feature) {
+      case OnboardingFeature.books:
+        return t.onboarding_feature_books_hint;
+      case OnboardingFeature.browserExtension:
+        return t.onboarding_feature_extension_hint;
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:

@@ -107,6 +107,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mine_to_server',
   'mining_audio_quality',
   'mining_image_quality',
+  'module_books_enabled',
+  'module_browser_extension_enabled',
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
