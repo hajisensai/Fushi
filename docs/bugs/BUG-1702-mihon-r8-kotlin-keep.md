@@ -14,6 +14,11 @@
 
 - **[x] ① 已修复** — `fushi/android/app/proguard-rules.pro` 新增「Mihon 扩展宿主 ABI」区块，按上游 Mihon `app/proguard-rules.pro` 的 "Keep common dependencies used in extensions" 区块逐条对齐：补 `kotlin.**` / `kotlin.time.**` / `eu.kanade.tachiyomi.util.**` / `com.squareup.zstd.**` / `app.cash.quickjs.**`。（Mihon 自己走 `-dontobfuscate` 全保，Fushi 有混淆，只能逐包 keep。）提交 `edfed870ca`。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/mihon_host_abi_keep_guard_test.dart`：以两个真实 Keiyoushi 扩展 dex 解析出的「引用但未定义」类清单为基准，断言 proguard-rules.pro 里每个类都被至少一条**不带 `allowobfuscation`** 的 keep 覆盖。变异实测两轮均由绿转红：① 删掉 `kotlin.**` keep → 精确报出 16 个 `kotlin.*` 缺口；② 把该 keep 改成 `-keep,allowobfuscation` → 同样报红（验证「允许改名等于没保」这条语义生效）；两轮还原后 proguard-rules.pro 的 sha256 与变异前逐字节一致。
+- **真实 release 构建复验（不是只看规则文本）**：本机造临时自签名 keystore 跑 `flutter build apk --release --target-platform android-arm64`，拆产物 dex 前后对拆：
+  - 扩展需要的 63 个宿主类，**修复前缺 22 个**（`kotlin.Lazy` / `kotlin.LazyKt` / `kotlin.jvm.internal.Intrinsics` / `kotlin.coroutines.*` / `kotlin.time.*` / `JsoupExtensionsKt`），**修复后缺 0 个**。
+  - 宿主 `kotlin.*` 类数 34 → 994；`HttpSource.headers$delegate` 的字段类型从 `LW4/f` 变回 `Lkotlin/Lazy`——扩展构造函数里那句 `getDeclaredField("headers$delegate")` + `Field.set` 的类型这才对得上。
+  - 体积代价（同配置前后各构建一次）：dex 9.73 MB → 11.53 MB（+1.79 MB / +18.4%），**APK 238.8 MB → 239.3 MB（+0.50 MB / +0.21%）**——dex 在 APK 里是压缩存的，实际增量可忽略。
+  - 顺带踩到的环境问题：本机 Android release AOT 挂 `gen_snapshot` 栈溢出（`-1073741571`），得给 `android-arm64-release/windows-x64/gen_snapshot.exe` 单独打 `editbin /STACK:128M`（此前只给 windows-x64-release 那份打过，两者是不同文件）。与本 bug 无关，但不打就构建不出来。
 - **备注**：
   - 未纳入本次修复的相邻事实，另见 BUG-1703：错误消息投递通道在 Android 上是 `Fluttertoast`（系统原生 Toast，硬上限 2 行、不可复制），所以 `MihonExtensionLoader` 在 develop 上已经带的链式根因（`03c98a0828`）**依然送不到用户眼前**，截图里就断在 `Unabl…`。用户报的 v2.1.1 更早于该提交，消息里连根因都还没有。
   - 已知但**未**处理：宿主的 QuickJS 来自 `com.github.zhanghai.quickjs-java`，类名落在 `app.cash.quickjs.*`（与扩展预期一致），本次已补 keep；但成员级兼容未验证，用 QuickJs 的扩展仍可能 `NoSuchMethodError`，需真机复验后另开条目。
