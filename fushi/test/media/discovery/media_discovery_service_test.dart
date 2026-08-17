@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -311,6 +312,49 @@ void main() {
     expect(
       () => source.resolvePayload(withoutPayload),
       throwsA(isA<ExternalProviderFailure>()),
+    );
+  });
+
+  test('渐进交付：快源先上屏不等慢源，分片顺序恒按 priority', () async {
+    final Completer<void> slowGate = Completer<void>();
+    final _FakeSource fast = _FakeSource(
+      id: 'fast',
+      priority: 2,
+      capabilities: novelSearch,
+      onSearch: (DiscoveryRequest _) async => _pageOf('fast', <String>['f1']),
+    );
+    final _FakeSource slow = _FakeSource(
+      id: 'slow',
+      priority: 1,
+      capabilities: novelSearch,
+      onSearch: (DiscoveryRequest _) async {
+        await slowGate.future;
+        return _pageOf('slow', <String>['s1']);
+      },
+    );
+    final MediaDiscoveryService service = MediaDiscoveryService(
+      sources: <MediaDiscoverySource>[fast, slow],
+    );
+
+    final List<List<String>> snapshots = <List<String>>[];
+    final Future<DiscoveryAggregateResult> pending = service.load(
+      const DiscoveryRequest(kind: DiscoveryMediaKind.novel, query: 'q'),
+      onUpdate: (DiscoveryAggregateResult partial) => snapshots.add(
+        partial.slices.map((DiscoverySourceSlice s) => s.sourceId).toList(),
+      ),
+    );
+    // 快源完成后就该有一次只含 fast 的快照——不等慢源。
+    await Future<void>.delayed(Duration.zero);
+    expect(snapshots.first, <String>['fast']);
+
+    slowGate.complete();
+    final DiscoveryAggregateResult result = await pending;
+    // 最终快照与返回值都按 priority 序（slow priority 1 在前），
+    // 与完成顺序无关。
+    expect(snapshots.last, <String>['slow', 'fast']);
+    expect(
+      result.slices.map((DiscoverySourceSlice s) => s.sourceId),
+      <String>['slow', 'fast'],
     );
   });
 

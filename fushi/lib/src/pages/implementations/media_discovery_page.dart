@@ -112,6 +112,9 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         path: browsing && _pathStack.isNotEmpty ? _pathStack.last.$1 : null,
         page: _page,
       );
+      // 追加页（加载更多）不做渐进：旧条目要保序，等整页齐了再接尾。
+      final List<DiscoveryEntry> base =
+          append ? List<DiscoveryEntry>.of(_entries) : const <DiscoveryEntry>[];
       final DiscoveryAggregateResult result =
           await appModel.mediaDiscoveryService.load(
         request,
@@ -119,11 +122,26 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         disabledSourceIds: _sourceId == _kAllSources
             ? appModel.discoveryDisabledSourceIds
             : const <String>{},
+        // 渐进交付：快源先上屏，不等慢源（模式与漫画全源搜索一致）。
+        onUpdate: append
+            ? null
+            : (DiscoveryAggregateResult partial) {
+                if (!mounted || seq != _loadSeq) return;
+                setState(() {
+                  _result = partial;
+                  _entries
+                    ..clear()
+                    ..addAll(partial.entries);
+                });
+              },
       );
       if (!mounted || seq != _loadSeq) return;
       setState(() {
         _result = result;
-        _entries.addAll(result.entries);
+        _entries
+          ..clear()
+          ..addAll(base)
+          ..addAll(result.entries);
         _loading = false;
       });
     } catch (e) {

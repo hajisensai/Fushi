@@ -11,6 +11,7 @@ import 'dart:async';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
 
 /// 一个源贡献的结果分片。
 class DiscoverySourceSlice {
@@ -87,10 +88,17 @@ class MediaDiscoveryService {
   ///
   /// [disabledSourceIds] 只作用于聚合扇出（默认聚合排除的源，如 18+ 源）；
   /// 显式指定 [sourceId] 时不受它限制——用户点名即同意。
+  ///
+  /// [onUpdate]：**渐进交付**（模式取自漫画全源搜索）——每有一个源完成就用
+  /// 当前累积结果回调一次，快源不等慢源；分片顺序始终按 priority，不随完成
+  /// 顺序跳动。最终完整结果仍由返回值给出。[maxConcurrent] 限流只为不让
+  /// 几十个源同时打出去。
   Future<DiscoveryAggregateResult> load(
     DiscoveryRequest request, {
     String? sourceId,
     Set<String> disabledSourceIds = const <String>{},
+    void Function(DiscoveryAggregateResult partial)? onUpdate,
+    int maxConcurrent = 6,
   }) async {
     if (request.path != null && sourceId == null) {
       throw ArgumentError(
@@ -118,18 +126,33 @@ class MediaDiscoveryService {
     }
     if (candidates.isEmpty) return DiscoveryAggregateResult();
 
-    final List<ProviderBatchResult<DiscoveryResultPage>> results =
-        await Future.wait(
-      candidates.map(
-        (MediaDiscoverySource source) => _invoke(source, request),
-      ),
+    final List<ProviderBatchResult<DiscoveryResultPage>?> results =
+        List<ProviderBatchResult<DiscoveryResultPage>?>.filled(
+      candidates.length,
+      null,
     );
+    await runBoundedTasks(
+      List<int>.generate(candidates.length, (int i) => i),
+      maxConcurrent: maxConcurrent,
+      task: (int i) async {
+        results[i] = await _invoke(candidates[i], request);
+        onUpdate?.call(_assemble(candidates, results));
+      },
+    );
+    return _assemble(candidates, results);
+  }
 
+  /// 把（可能尚未全部完成的）逐源结果拼成聚合快照；未完成的源直接跳过。
+  static DiscoveryAggregateResult _assemble(
+    List<MediaDiscoverySource> candidates,
+    List<ProviderBatchResult<DiscoveryResultPage>?> results,
+  ) {
     final List<DiscoverySourceSlice> slices = <DiscoverySourceSlice>[];
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
     int successfulSourceCount = 0;
     for (int i = 0; i < candidates.length; i++) {
-      final ProviderBatchResult<DiscoveryResultPage> result = results[i];
+      final ProviderBatchResult<DiscoveryResultPage>? result = results[i];
+      if (result == null) continue;
       for (final DiscoveryResultPage page in result.items) {
         slices.add(
           DiscoverySourceSlice(sourceId: candidates[i].id, page: page),
