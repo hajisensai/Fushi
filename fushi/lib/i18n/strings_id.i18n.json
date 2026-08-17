@@ -3542,5 +3542,6 @@
   "manga_discovery_status_hiatus": "On hiatus",
   "manga_discovery_status_cancelled": "Cancelled",
   "manga_discovery_status_not_yet_released": "Not yet released",
-  "manga_discovery_source_popular": "Popular on ${source}"
+  "manga_discovery_source_popular": "Popular on ${source}",
+  "mihon_extension_error": "Extension error"
 }
