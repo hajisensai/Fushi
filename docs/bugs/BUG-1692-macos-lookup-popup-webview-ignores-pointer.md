@@ -1,8 +1,11 @@
 ## BUG-1692 · macOS 查词浮层 WebView 完全收不到指针事件（点击/拖拽全失效，Flutter 外壳正常）
 - **报告**：2026-08-17（用户：「查词框不能交互，点击任何地方都没反应」；追问后确认平台＝mac、入口＝剪贴板浮窗／视频字幕查词／首页词典页搜索／阅读器划词**四个全中**）
-- **真实性**：✅ 真 bug，**已在用户自己的 `/Applications/Hibiki.app` 1.2.0(885) 上用 CGEvent 真实点击复现**（非合成事件、非集成测试环境）。根因层尚未定位到 `file:line`，已排除三条候选，见下。
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** — 已先落**命中测试探针** `fushi/integration_test/popup_hittest_probe_itest.dart`（用 `document.elementFromPoint()` 而非 `.click()`），补上既有测试的结构性盲区；浮层侧的守卫待根因定位后补。
+- **真实性**：✅ 真 bug，**已在用户自己的 `/Applications/Hibiki.app` 1.2.0(885) 上用 CGEvent 真实点击复现**（非合成事件、非集成测试环境）。
+- **[x] ① 已修复** — 根因见下方「根因（已定位）」，三处落地：
+  - `fushi/lib/src/pages/implementations/dictionary_popup_layer.dart` — 浮层 surface 传 `borderOnForeground: false`；尺寸拖拽把手包 `RepaintBoundary`
+  - `fushi/lib/src/utils/components/fushi_material_components.dart:3136` — `FushiPopupSurface` 新增 `borderOnForeground` 参数（默认 true，不改既有观感）
+  - `fushi/lib/src/pages/implementations/reader_fushi_page.dart` + `reader_fushi/chrome.part.dart` — 阅读器排在 WebView 之后的 chrome（macOS 标题栏拖拽区 / 顶部进度 pill / 底栏）各包 `RepaintBoundary`
+- **[x] ② 已加自动化测试** — `fushi/test/tools/bug_1692_platform_view_overlay_guard_test.dart`（6 例：`borderOnForeground` 透传的 widget 行为 + 四处「平台视图之后必须有 RepaintBoundary / 不得 foreground 描边」的源码守卫）；另有先前落的命中测试探针 `fushi/integration_test/popup_hittest_probe_itest.dart`（用 `document.elementFromPoint()` 而非 `.click()`），补既有测试的结构性盲区。
 - **备注**：既有 `popup_dictionary_test.dart` 用 `element.click()` 直接派发事件，**绕过 DOM 命中测试**，因此本 bug 在它下面永远是绿的——这是它测不出「点不动」这类问题的结构性原因，不是用例写漏。
 
 ### 现象（真机实测矩阵，macOS 26.6 / M4 / Hibiki 1.2.0(885)）
@@ -17,6 +20,70 @@
 | **浮层内** WebView：按住拖拽选文字 | ❌ 选不中任何字符 |
 
 即：**同一个 `DictionaryPopupWebView` 组件，挂在结果区能收指针，挂在浮层里完全收不到**；浮层的 Flutter 外壳与 barrier 都正常，坏的只有浮层内的平台视图。点击与拖拽同时失效 ⇒ 不是「click 坐标映射偏了」（对比 Windows 侧 BUG-1652 那类旧光标坐标问题），而是**该 WKWebView 整体拿不到指针输入**。
+
+### 根因（已定位，2026-08-17）
+
+**不在本仓 widget 树的「哪个组件挡住了」，而在 macOS engine 的平台视图命中测试模型。**
+
+`FlutterCompositor.mm` 合成每一帧时，对每个平台视图，遍历排在它**之后**的 backing-store 图层，把它们的 `paint_region` 与该平台视图求交后写进 `FlutterMutatorView` 的 `_hitTestIgnoreRegion`；而 `FlutterMutatorView.mm` 的命中测试是：
+
+```objc
+- (NSView*)hitTest:(NSPoint)point {
+  CGPoint localPoint = point;
+  localPoint.x -= self.frame.origin.x;
+  localPoint.y -= self.frame.origin.y;
+  for (const auto& region : _hitTestIgnoreRegion) {
+    if (CGRectContainsPoint(region, localPoint)) {
+      return nil;              // ← 事件根本不进 WKWebView
+    }
+  }
+  return [super hitTest:point];
+}
+```
+
+即：**平台视图之上但凡压着 Flutter 绘制，那块区域的鼠标事件就不给平台视图。**
+
+放大成「整块失聪」的是 Flutter 侧的图层合并规则：**同一个 RepaintBoundary 内、平台视图之后的所有绘制会合并成一张 PictureLayer，其 cull rect = 该 RepaintBoundary 的整个矩形**。于是右下角一个 12×12 的拖拽把手，就能让整块 WebView 一个鼠标事件都收不到。
+
+**实测证据**（`debugDumpLayerTree()`，临时诊断已撤）：
+
+```
+TransformLayer                                  ← 页面级 RepaintBoundary 内
+ ├─ child 1: PictureLayer   (0,0,1206,693)      ← WebView 之前（背景，无害）
+ ├─ child 2: OffsetLayer → PlatformViewLayer    ← 阅读器 WebView (AppKitView)
+ └─ child 3: PictureLayer   (0,0,1206,693)      ← WebView 之后，整窗 ⇒ 全域忽略
+```
+
+浮层侧同构，两张「整个浮层大小」的 PictureLayer 压在浮层 WebView 之后：
+
+```
+ClipPathLayer (FushiPopupSurface / Material, Clip.antiAlias)
+ ├─ child 1..2: PictureLayer                    ← 顶栏、背景（之前，无害）
+ ├─ child 3: OffsetLayer → PlatformViewLayer    ← 浮层 WebView
+ └─ child 4: PictureLayer (0,0,384.7,346.2)     ← Material 描边（foregroundPainter）★
+child 2 (surface 同级): PictureLayer (0,0,384.7,346.2)  ← 尺寸拖拽把手 ★
+```
+
+两个 ★ 各对应一条解法：
+
+1. **拖拽把手 / 阅读器 chrome** → 各自包 `RepaintBoundary`，让 cull rect 收缩到自身，忽略区随之收缩成小块（阅读器实测从 `(0,0,1206,693)` 变成 `(0,0,1206,28)` + `(0,0,121.6,24)` 两小条）。
+2. **Material 描边** → `Material.borderOnForeground` 默认 `true`，`RoundedRectangleBorder` 的描边走 `CustomPaint.foregroundPainter`、画在子节点**之后**，且描边天然横跨全域，`RepaintBoundary` 救不了。只能改成在子节点**之前**绘制（`FushiPopupSurface.borderOnForeground: false`）。透明背景的 WebView 仍能透出下面的描边，真机实测**观感无变化**。
+
+**为什么「结果区能点、浮层不能点」**：结果区那个 WebView 之上恰好没有 Flutter 绘制（它是所在页面最后绘制的东西），不进忽略区；浮层则被描边 + 把手整块盖住。同一个 `DictionaryPopupWebView` 组件，命运由**宿主的绘制顺序**决定——这也是之前七组「改浮层自身结构」的对照实验全部失败的原因：改错了层。
+
+**影响面比报告更广**：同一机制下，阅读器正文 WebView 在 macOS 上同样**整块失聪**（点击翻页、划词全部无效）——本次一并修复并真机验证。
+
+### 修复验证（真机 CGEvent 点击，2026-08-17）
+
+| 步骤 | 修复前 | 修复后 |
+|---|---|---|
+| 阅读器正文点击（翻页/选词） | ❌ 进度恒为 `0 / 95580 0.00%`，无高亮 | ✅ 命中并高亮 `testword` |
+| 阅读器划词唤出查词浮层 | ❌ 无浮层 | ✅ 浮层弹出，两条词典释义 |
+| 浮层内 WebView：收藏 ☆ | ❌ 无反应 | ✅ 星标变实心橙 ★ |
+| 浮层内 WebView：词典条目折叠 `▾` | ❌ 无反应 | ✅ `HibikiGeneratedTestDict` 折叠成 `▸`，相邻条目不受影响 |
+| 浮层描边观感 | — | ✅ 无变化 |
+
+中间还做了一次**判据实验**：把阅读器 WebView 临时移到 Stack 末尾（最后绘制），点击立刻恢复 —— 反向坐实「之后绘制的 Flutter 内容」才是唯一变量。
 
 ### 已排除的候选（勿重走）
 
@@ -106,7 +173,13 @@ Windows 关**。macOS 真机实测：在查词**结果区**单击词，弹出的
 **阅读器划词**或**剪贴板浮窗**把浮层打开（测试库里有 `Pagination Test Book` 可用），
 再对浮层内的按钮验证 host-owned 转发是否生效。
 
-### 下一步（需要原生侧手段，非 Dart 侧试错）
+### 下一步（**已作废**，保留为思路留痕）
+
+> 2026-08-17 更新：根因已由 `debugDumpLayerTree()` + engine 源码（`FlutterMutatorView.mm` /
+> `FlutterCompositor.mm`）定位并修复，见上方「根因（已定位）」。以下三条是定位前的推测方向，
+> **都不必再走**。其中第 2 条对 `dictionary_popup_input_bridge.dart` 注释前提的质疑是对的
+> （macOS 上指针确实不是「被 WebView 直接吃掉」），但结论指向的 host-owned 兜底（第 3 条）
+> 是**不必要的**：根因在绘制顺序，不需要合成事件转发，原生鼠标输入已恢复。
 
 1. 用 Xcode 的 **Debug View Hierarchy** 或 lldb 打印两个 `WKWebView` 的 `NSView` 层级、
    `frame`、`hitTest:` 结果，直接对比「收得到」与「收不到」的实例差在哪。关键怀疑：
