@@ -498,6 +498,9 @@ class AppPaths {
     'dictionaryResources',
     'dictionaryImportWorkingDirectory',
     'webArchive',
+    // 新手引导推荐包的下载暂存目录（含 .part 半截文件，随根搬走以免续传丢进度；
+    // 导入成功后由向导 initState 整目录删除，常态下为空/不存在）。
+    'recommended_pack',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台

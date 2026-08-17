@@ -1705,11 +1705,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   ? null
                                   : buildFushiMacosSidebar(
                                       activeTabs: homeActiveTabs(
-                                        // 「视频」tab 已毕业为常驻（原
-                                        // experimentalVideoEnabled 恒 true）。games
+                                        // 漫画/视频按「功能模块」偏好显隐（与
+                                        // HomePage._activeTabs 同一真值）。games
                                         // （galgame 库）仅 Windows；macOS 根侧栏此处
                                         // 恒 false（gamesEnabled 缺省），不显示。
-                                        videoEnabled: true,
+                                        videoEnabled:
+                                            appModel.moduleVideoEnabled,
+                                        mangaEnabled:
+                                            appModel.moduleMangaEnabled,
                                         // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
                                         // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
                                         browserExtensionEnabled:

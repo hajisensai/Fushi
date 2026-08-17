@@ -1069,85 +1069,98 @@ SettingsItem buildManageAudioSourcesItem() {
     title: t.manage_audio_sources,
     icon: Icons.volume_up_outlined,
     onTap: (SettingsContext settingsContext) {
-      final AppModel appModel = settingsContext.appModel;
-      return showSettingsDialog(
-        settingsContext,
-        (_) => AudioSourcesDialog(
-          sources: List<AudioSourceConfig>.from(
-            appModel.audioSourceConfigs,
-          ),
-          // 本地音频源是跨设备同步的共享池（__local_audio__）：移除一个源默认传播删除
-          // （syncEverywhere），接收设备仍会逐条确认后才删本地，用户控制在接收端保留。
-          // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
-          onSave: (List<AudioSourceConfig> next) => appModel
-              .setAudioSourceConfigs(next, scope: DeleteScope.syncEverywhere),
-          onPickLocalDb: (bool reference) async {
-            // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
-            // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
-            // android.db 常见 1~6 GB）。安卓上 file_picker 会先把整份文件同步复制进
-            // app cache 再返回缓存路径，随后 `importFile` 又复制一份进库目录 →
-            // 峰值需要 **2 倍库体积的内部存储**，6 GB 的库要 12 GB，且全程只有一个
-            // 转圈、无进度无取消，多数手机直接失败或看起来永久卡死 = 「安卓上用
-            // android.db 配本地音频怎么都跑不通」。视频/书/有声书/漫画/字幕/制卡音频
-            // 早已统一走 [pickRealFilePathDetailed]（安卓 SAF 解析真实路径、零复制），
-            // 这条是最后的漏网。
-            final PickedFilePath? picked;
-            try {
-              picked = await pickRealFilePathDetailed(
-                context: settingsContext.context,
-                appModel: appModel,
-              );
-            } on PickedFileWithoutPathException catch (e) {
-              // BUG-446：平台交回了条目却没给可用 path（只回 bytes）**不是取消**，
-              // 是失败。记完整诊断（含条目数）后显式抛出，交给上层弹可见反馈——
-              // 静默返回会让用户以为自己没选中，真因全丢。
-              ErrorLogService.instance.log(
-                'AudioSourcesDialog.pickLocalDb',
-                'unexpected file selection: count=${e.count}, pathNull=true',
-              );
-              throw Exception('picked audio db has no file path (platform '
-                  'returned bytes without a path)');
-            }
-            // 用户取消选择：返回 null，正常无声返回（不是失败）。
-            if (picked == null) return null;
-            // 引用只在**事实上拿到用户真实路径**时才成立（BUG-1667）。安卓未授予
-            // 全文件访问时降级回 file_picker，拿到的是 app cache 临时副本——引用它
-            // 等于引用一个清缓存就消失的文件，必须落回复制，并告诉用户为什么。
-            final bool canReference = picked.isRealPath;
-            if (reference && !canReference) {
-              _showSettingsSnackBar(
-                settingsContext,
-                t.local_audio_reference_unavailable,
-              );
-            }
-            final LocalAudioDbEntry entry =
-                await appModel.importLocalAudioDbFile(
-              picked.path,
-              displayName: p.basename(picked.path),
-              reference: reference && canReference,
-            );
-            return AudioSourceConfig.localAudio(
-              label: entry.displayName,
-              path: entry.path,
-              enabled: true,
-            );
-          },
-          onEditLocalSources: (String path) async {
-            await showSettingsDialog(
-              settingsContext,
-              (_) => LocalAudioSourcesDialog(
-                dbPath: path,
-                savedPrefs: appModel.sourcePrefsForLocalDb(path),
-                listSources: () => appModel.listLocalAudioSources(path),
-                onApply: (List<LocalAudioSourcePref> prefs) =>
-                    appModel.setLocalAudioDbSources(path, prefs),
-              ),
-            );
-            settingsContext.refresh();
-          },
-        ),
+      return showAudioSourcesManagerDialog(
+        context: settingsContext.context,
+        appModel: settingsContext.appModel,
+        onLocalSourcesEdited: settingsContext.refresh,
       );
     },
+  );
+}
+
+/// 打开「管理音频来源」对话框的共享编排入口：设置项（查词/互联两分类）与新手引导
+/// 共用同一份实现（单一真相源）。不依赖 [SettingsContext]，任何持有 [BuildContext]
+/// 的调用点都能用；[onLocalSourcesEdited] 在「编辑本地子来源」对话框关闭后回调
+/// （设置页用它触发 schema 刷新，向导不需要可不传）。
+Future<void> showAudioSourcesManagerDialog({
+  required BuildContext context,
+  required AppModel appModel,
+  VoidCallback? onLocalSourcesEdited,
+}) {
+  return showAppDialog(
+    context: context,
+    builder: (_) => AudioSourcesDialog(
+      sources: List<AudioSourceConfig>.from(
+        appModel.audioSourceConfigs,
+      ),
+      // 本地音频源是跨设备同步的共享池（__local_audio__）：移除一个源默认传播删除
+      // （syncEverywhere），接收设备仍会逐条确认后才删本地，用户控制在接收端保留。
+      // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
+      onSave: (List<AudioSourceConfig> next) => appModel
+          .setAudioSourceConfigs(next, scope: DeleteScope.syncEverywhere),
+      onPickLocalDb: (bool reference) async {
+        // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
+        // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
+        // android.db 常见 1~6 GB）。安卓上 file_picker 会先把整份文件同步复制进
+        // app cache 再返回缓存路径，随后 `importFile` 又复制一份进库目录 →
+        // 峰值需要 **2 倍库体积的内部存储**，6 GB 的库要 12 GB，且全程只有一个
+        // 转圈、无进度无取消，多数手机直接失败或看起来永久卡死 = 「安卓上用
+        // android.db 配本地音频怎么都跑不通」。视频/书/有声书/漫画/字幕/制卡音频
+        // 早已统一走 [pickRealFilePathDetailed]（安卓 SAF 解析真实路径、零复制），
+        // 这条是最后的漏网。
+        final PickedFilePath? picked;
+        try {
+          picked = await pickRealFilePathDetailed(
+            context: context,
+            appModel: appModel,
+          );
+        } on PickedFileWithoutPathException catch (e) {
+          // BUG-446：平台交回了条目却没给可用 path（只回 bytes）**不是取消**，
+          // 是失败。记完整诊断（含条目数）后显式抛出，交给上层弹可见反馈——
+          // 静默返回会让用户以为自己没选中，真因全丢。
+          ErrorLogService.instance.log(
+            'AudioSourcesDialog.pickLocalDb',
+            'unexpected file selection: count=${e.count}, pathNull=true',
+          );
+          throw Exception('picked audio db has no file path (platform '
+              'returned bytes without a path)');
+        }
+        // 用户取消选择：返回 null，正常无声返回（不是失败）。
+        if (picked == null) return null;
+        // 引用只在**事实上拿到用户真实路径**时才成立（BUG-1667）。安卓未授予
+        // 全文件访问时降级回 file_picker，拿到的是 app cache 临时副本——引用它
+        // 等于引用一个清缓存就消失的文件，必须落回复制，并告诉用户为什么。
+        final bool canReference = picked.isRealPath;
+        if (reference && !canReference && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.local_audio_reference_unavailable)),
+          );
+        }
+        final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
+          picked.path,
+          displayName: p.basename(picked.path),
+          reference: reference && canReference,
+        );
+        return AudioSourceConfig.localAudio(
+          label: entry.displayName,
+          path: entry.path,
+          enabled: true,
+        );
+      },
+      onEditLocalSources: (String path) async {
+        await showAppDialog(
+          context: context,
+          builder: (_) => LocalAudioSourcesDialog(
+            dbPath: path,
+            savedPrefs: appModel.sourcePrefsForLocalDb(path),
+            listSources: () => appModel.listLocalAudioSources(path),
+            onApply: (List<LocalAudioSourcePref> prefs) =>
+                appModel.setLocalAudioDbSources(path, prefs),
+          ),
+        );
+        onLocalSourcesEdited?.call();
+      },
+    ),
   );
 }
 

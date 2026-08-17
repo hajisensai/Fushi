@@ -396,12 +396,16 @@ void main() {
       final String src =
           readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
               .readAsStringSync();
-      final int importIdx = src.indexOf('Future<void> _import()');
+      // 导入编排主体已提为库级 runBackupImportFlowForFile（设置页与新手引导
+      // 共用）；顺序断言锚到该函数体内，语义不变。
+      final int importIdx =
+          src.indexOf('Future<void> runBackupImportFlowForFile(');
       final int beginValIdx =
           src.indexOf('appModel.beginBackupValidating()', importIdx);
       final int endValIdx =
           src.indexOf('appModel.endBackupValidating()', importIdx);
-      final int confirmIdx = src.indexOf('_showConfirmDialog(', importIdx);
+      final int confirmIdx =
+          src.indexOf('_showBackupImportConfirmDialog(', importIdx);
       final int beginImportIdx =
           src.indexOf('appModel.beginBackupImport()', importIdx);
       expect(beginValIdx, greaterThan(0),

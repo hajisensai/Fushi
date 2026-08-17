@@ -41,6 +41,34 @@ void main() {
       expect(repo.isFirstTimeSetup, true);
     });
 
+    test(
+        'onboardingCompleted defaults to true (existing installs upgrade '
+        'without the wizard popping up)', () {
+      // 全新安装靠 HomePage 首帧在 first_time_setup 分支里显式写 false 触发引导；
+      // 键缺省必须是 true，否则老用户升级后会被强塞一次新手引导。
+      expect(repo.onboardingCompleted, true);
+    });
+
+    test('onboardingCompleted round-trips false then true', () async {
+      await repo.setOnboardingCompleted(value: false);
+      expect(repo.onboardingCompleted, false);
+      await repo.setOnboardingCompleted(value: true);
+      expect(repo.onboardingCompleted, true);
+    });
+
+    test('module tab toggles default to true and round-trip', () async {
+      // 「功能模块」显隐默认全开——升级用户底栏不变（Never break userspace）。
+      expect(repo.moduleMangaEnabled, true);
+      expect(repo.moduleVideoEnabled, true);
+      expect(repo.moduleGamesEnabled, true);
+      await repo.setModuleMangaEnabled(false);
+      await repo.setModuleVideoEnabled(false);
+      await repo.setModuleGamesEnabled(false);
+      expect(repo.moduleMangaEnabled, false);
+      expect(repo.moduleVideoEnabled, false);
+      expect(repo.moduleGamesEnabled, false);
+    });
+
     test('currentHomeTabIndex defaults to 0', () {
       expect(repo.currentHomeTabIndex, 0);
     });

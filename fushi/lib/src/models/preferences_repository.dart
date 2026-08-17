@@ -801,6 +801,44 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('first_time_setup', false);
   }
 
+  /// 「功能模块」显隐：漫画/视频/游戏三个媒体库 tab 是否出现在底栏/侧栏。默认
+  /// 全开（与旧版行为一致）；新手引导的功能选择与 设置 → 系统 → 功能模块 写同
+  /// 一真值。games 在读取端还叠加 Windows 平台门控，这里只存用户意愿。
+  bool get moduleMangaEnabled =>
+      getPref('module_manga_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleMangaEnabled(bool value) async {
+    await setPref('module_manga_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleVideoEnabled =>
+      getPref('module_video_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleVideoEnabled(bool value) async {
+    await setPref('module_video_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleGamesEnabled =>
+      getPref('module_games_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleGamesEnabled(bool value) async {
+    await setPref('module_games_enabled', value);
+    notifyListeners();
+  }
+
+  /// 新手引导完成标志。缺省值刻意取 **true**：既有安装升级上来不重弹引导；
+  /// 全新安装在 HomePage 的 `first_time_setup` 首帧分支里显式写 false，向导
+  /// 关闭后写回 true——中途杀进程下次启动值仍是 false，会重新弹出。备份合并的
+  /// insert-if-absent 天然不会覆盖本键（描述本库自身状态，同 `first_time_setup`）。
+  bool get onboardingCompleted =>
+      getPref('onboarding_completed', defaultValue: true) as bool;
+
+  Future<void> setOnboardingCompleted({required bool value}) async {
+    await setPref('onboarding_completed', value);
+  }
+
   final int defaultMaximumDictionaryTermsInResult = 10;
 
   int get maximumTerms => getPref('maximum_terms',
