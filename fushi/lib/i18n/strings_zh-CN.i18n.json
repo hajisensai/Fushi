@@ -2723,7 +2723,7 @@
   "game_upscaling_hint_not_installed": "Magpie 尚未就绪。将该游戏的「窗口超分」设为「自动」即可使用随包的内置版本；仍无法启动时请更新或重装 Fushi。",
   "media_source_count_manga": "$n 卷",
   "library_view_shelf": "书架",
-  "library_view_browse": "浏览",
+  "library_view_browse": "发现",
   "library_view_media": "媒体库",
   "scrape_failure_detail_show": "显示详情",
   "scrape_failure_detail_hide": "隐藏详情",
@@ -3241,7 +3241,6 @@
   "video_scrape_diagnostic_failed": "无法导出诊断包：$reason",
   "video_scrape_diagnostic_share_subject": "Fushi 视频刮削诊断",
   "video_scrape_diagnostic_confirm_body": "诊断包包含相对文件/目录名、刮削摘要和原始 NFO 内容；不会加入视频、字幕、图片、绝对路径、应用配置或应用凭据。原始 NFO 会原样保留，仍可能含有个人信息或密钥，请在公开分享前检查。",
-  "video_discovery_tab": "发现",
   "video_discovery_search_hint": "搜索电影、剧集、动漫",
   "video_discovery_hot": "热门推荐",
   "video_discovery_seasonal_anime": "本季动漫",
@@ -3553,6 +3552,5 @@
   "discovery_torrent_pushed": "种子任务已添加",
   "discovery_torrent_failed": "种子任务添加失败",
   "discovery_kind_novel": "小说",
-  "discovery_kind_audiobook": "有声书",
-  "game_section_discover": "发现"
+  "discovery_kind_audiobook": "有声书"
 }

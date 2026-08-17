@@ -2723,7 +2723,7 @@
   "game_upscaling_hint_not_installed": "Magpie is not ready. Set window upscaling to Auto to use the copy bundled with Fushi; if it still does not start, update or reinstall Fushi.",
   "media_source_count_manga": "$n volumes",
   "library_view_shelf": "Shelf",
-  "library_view_browse": "Browse",
+  "library_view_browse": "Discover",
   "library_view_media": "Library",
   "scrape_failure_detail_show": "Show details",
   "scrape_failure_detail_hide": "Hide details",
@@ -3240,7 +3240,6 @@
   "video_scrape_diagnostic_failed": "Could not export diagnostic package: $reason",
   "video_scrape_diagnostic_share_subject": "Fushi video scrape diagnostics",
   "video_scrape_diagnostic_confirm_body": "The package includes relative file and folder names, scrape summaries, and original NFO contents. It does not add videos, subtitles, images, absolute paths, app configuration, or app credentials. Original NFO files are preserved unchanged and may contain personal information or secrets; review the package before sharing publicly.",
-  "video_discovery_tab": "Discover",
   "video_discovery_search_hint": "Search movies, series, anime",
   "video_discovery_hot": "Popular now",
   "video_discovery_seasonal_anime": "Seasonal anime",
@@ -3553,6 +3552,5 @@
   "discovery_torrent_pushed": "Torrent task added",
   "discovery_torrent_failed": "Failed to add torrent task",
   "discovery_kind_novel": "Novels",
-  "discovery_kind_audiobook": "Audiobooks",
-  "game_section_discover": "Discover"
+  "discovery_kind_audiobook": "Audiobooks"
 }

@@ -214,9 +214,10 @@ class GameSectionTabs extends StatelessWidget {
             value: GameSection.library,
             label: Text(t.game_library),
           ),
+          // 「发现」与书 / 漫画 / 视频库页的发现视图同名同 key（同概念一词）。
           ButtonSegment<GameSection>(
             value: GameSection.discover,
-            label: Text(t.game_section_discover),
+            label: Text(t.library_view_browse),
           ),
           ButtonSegment<GameSection>(
             value: GameSection.monitor,
