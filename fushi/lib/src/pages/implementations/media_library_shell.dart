@@ -11,6 +11,9 @@ enum MediaLibraryViewKind {
   /// 已入库条目（书架 / 媒体库）。
   library,
 
+  /// 内容发现（漫画的 AniList 趋势/热门横滑行；条目是元数据，点开再匹配来源）。
+  discover,
+
   /// 在线源浏览（漫画的 mokuro.moe 目录；将来小说源同位）。
   browse,
 

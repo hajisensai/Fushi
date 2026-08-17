@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -158,16 +159,7 @@ class _MangaBrowsePageState extends ConsumerState<MangaBrowsePage> {
   List<MangaOnlineSourceRow> _enabledSources() {
     final MihonManager? manager = _manager;
     if (manager == null) return const <MangaOnlineSourceRow>[];
-    final Set<String> enabledExtensions = manager.installed
-        .where((MangaExtensionRow row) => row.enabled)
-        .map((MangaExtensionRow row) => row.packageName)
-        .toSet();
-    return manager.sources
-        .where(
-          (MangaOnlineSourceRow row) =>
-              row.enabled && enabledExtensions.contains(row.extensionPackage),
-        )
-        .toList(growable: false);
+    return enabledMangaOnlineSources(manager);
   }
 
   /// 页头。与 `MediaSourcesPage` / `MangaSourcesPage` 同一范式：库页视图导航条

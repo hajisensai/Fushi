@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/manga_browse_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
@@ -8,10 +9,12 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
-/// 顶层漫画库页：**恒为三视图**，五个平台完全同构。
+/// 顶层漫画库页：**恒为四视图**（外加设置），五个平台完全同构。
 ///
 /// - **书架**：数据、卡片、搜索、排序、合集、进度和删除全部复用小说书架；唯一差异
 ///   是只展示 `EpubBooks.format == 'manga'` 的条目。普通书架由同一页面反向排除漫画。
+/// - **发现**：AniList 元数据的趋势/热门/高分/最新完结横滑行；条目点开后在已启用
+///   来源里自动匹配可读条目（`discovery/`）。
 /// - **浏览**：可浏览内容的在线来源清单——内置 mokuro.moe 目录 + 已启用的 Mihon
 ///   在线来源，两者并列。
 /// - **来源**：本地漫画扫描根 + 漫画扩展（仓库/安装/启停）+ 扩展提供的在线来源
@@ -41,6 +44,12 @@ class MangaLibraryPage extends StatelessWidget {
           label: t.library_view_shelf,
           builder: (BuildContext context, Widget navigation) =>
               ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
+        ),
+        MediaLibraryViewSpec(
+          kind: MediaLibraryViewKind.discover,
+          label: t.library_view_discover,
+          builder: (BuildContext context, Widget navigation) =>
+              MangaDiscoveryPage(navigation: navigation),
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.browse,

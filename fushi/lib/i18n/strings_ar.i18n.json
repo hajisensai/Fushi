@@ -3527,5 +3527,20 @@
   "module_games_label": "Galgame",
   "module_toggle_hint": "Show this library tab in the navigation bar; turn off to hide it",
   "video_setting_youtube_quality": "YouTube quality",
-  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p)"
+  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p)",
+  "library_view_discover": "Discover",
+  "manga_discovery_section_trending": "Trending",
+  "manga_discovery_section_popular": "Popular",
+  "manga_discovery_section_top_rated": "Top rated",
+  "manga_discovery_section_latest_finished": "Recently completed",
+  "manga_discovery_load_failed": "Couldn't load the discover feed.",
+  "manga_discovery_match_section": "Read from a source",
+  "manga_discovery_match_running": "Matching in your enabled sources...",
+  "manga_discovery_match_none": "No match found in enabled sources.",
+  "manga_discovery_status_releasing": "Ongoing",
+  "manga_discovery_status_finished": "Completed",
+  "manga_discovery_status_hiatus": "On hiatus",
+  "manga_discovery_status_cancelled": "Cancelled",
+  "manga_discovery_status_not_yet_released": "Not yet released",
+  "manga_discovery_source_popular": "Popular on ${source}"
 }
