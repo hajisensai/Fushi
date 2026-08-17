@@ -35,6 +35,13 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 「功能模块」三开关（新手引导 PR）。写 prefsRepo（changed=true），生效点是
+  // HomePage/macOS 侧栏的可见 tab 列表——harness 里没有挂 HomePage 外壳，探不到
+  // 底栏。行为由 homeActiveTabs 纯函数用例咬住：mangaEnabled/videoEnabled/
+  // gamesEnabled=false 各自隐藏对应 tab、书架/词典/设置/下载恒在。
+  'system/Manga': 'test/pages/home_page_tabs_test.dart',
+  'system/Video': 'test/pages/home_page_tabs_test.dart',
+  'system/Galgame': 'test/pages/home_page_tabs_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有

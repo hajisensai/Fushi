@@ -5562,6 +5562,20 @@ class AppModel with ChangeNotifier {
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
 
+  bool get onboardingCompleted => prefsRepo.onboardingCompleted;
+  Future<void> setOnboardingCompleted({required bool value}) =>
+      prefsRepo.setOnboardingCompleted(value: value);
+
+  bool get moduleMangaEnabled => prefsRepo.moduleMangaEnabled;
+  Future<void> setModuleMangaEnabled(bool value) =>
+      prefsRepo.setModuleMangaEnabled(value);
+  bool get moduleVideoEnabled => prefsRepo.moduleVideoEnabled;
+  Future<void> setModuleVideoEnabled(bool value) =>
+      prefsRepo.setModuleVideoEnabled(value);
+  bool get moduleGamesEnabled => prefsRepo.moduleGamesEnabled;
+  Future<void> setModuleGamesEnabled(bool value) =>
+      prefsRepo.setModuleGamesEnabled(value);
+
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
   Future<void> setTorrentUploadIntroShown() =>

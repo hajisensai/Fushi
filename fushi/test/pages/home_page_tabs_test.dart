@@ -124,6 +124,43 @@ void main() {
     });
   });
 
+  group('module tab visibility (功能模块显隐)', () {
+    test('默认参数下漫画/视频可见（升级用户行为不变）', () {
+      final List<HomeTab> tabs = homeActiveTabs(videoEnabled: true);
+      expect(tabs, contains(HomeTab.manga));
+      expect(tabs, contains(HomeTab.video));
+    });
+
+    test('mangaEnabled=false 只隐藏漫画 tab，其余不动', () {
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, mangaEnabled: false);
+      expect(tabs, isNot(contains(HomeTab.manga)));
+      expect(tabs, contains(HomeTab.books));
+      expect(tabs, contains(HomeTab.video));
+      expect(tabs, contains(HomeTab.downloads));
+      expect(tabs, contains(HomeTab.dictionaries));
+      expect(tabs, contains(HomeTab.settings));
+    });
+
+    test('三个模块全关时书架/词典/设置/下载仍恒在', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: false,
+        mangaEnabled: false,
+        gamesEnabled: false,
+      );
+      expect(
+        tabs,
+        <HomeTab>[
+          HomeTab.home,
+          HomeTab.books,
+          HomeTab.downloads,
+          HomeTab.dictionaries,
+          HomeTab.settings,
+        ],
+      );
+    });
+  });
+
   group('home tab structure', () {
     test('HomeTab 枚举不再含已删的 texthooker', () {
       expect(
