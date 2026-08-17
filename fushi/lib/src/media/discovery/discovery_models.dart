@@ -90,6 +90,7 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
     this.leechers,
     this.coverUrl,
     this.detailUrl,
+    this.note,
   });
 
   /// 源内稳定 id（去重/防重复入队的身份键；语义源自定义：文件路径、种子页 URL 等）。
@@ -116,6 +117,10 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
 
   /// 外部详情页（nyaa view 页、shinnku 条目页）；「在浏览器打开」动作用。
   final String? detailUrl;
+
+  /// 源特定的一句话标注（shinnku 的「熟肉/生肉/手机」、平台标签等），
+  /// 原样展示，不参与任何逻辑。
+  final String? note;
 }
 
 /// 一次发现请求。[query] 非空白即搜索，否则是目录浏览（[path] null = 源根）。
