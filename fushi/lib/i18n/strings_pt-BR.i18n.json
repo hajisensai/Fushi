@@ -3525,5 +3525,7 @@
   "module_manga_label": "Manga",
   "module_video_label": "Video",
   "module_games_label": "Galgame",
-  "module_toggle_hint": "Show this library tab in the navigation bar; turn off to hide it"
+  "module_toggle_hint": "Show this library tab in the navigation bar; turn off to hide it",
+  "video_setting_youtube_quality": "YouTube quality",
+  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p)"
 }

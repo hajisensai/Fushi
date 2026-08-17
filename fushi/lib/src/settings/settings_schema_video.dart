@@ -118,6 +118,34 @@ SettingsDestination buildVideoDestination() {
               await setVideoFitModeDual(settingsContext, mode);
             },
           ),
+          // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选
+          // ≤目标 的最高档（画质菜单同语义），4K 档在 YouTube 侧只有 vp9/av01——无硬解
+          // 设备可能软解掉帧，故默认仍是「自动」。长标签多档 → dropdown 渲染。
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.youtube_quality',
+            title: t.video_setting_youtube_quality,
+            subtitle: t.video_setting_youtube_quality_hint,
+            icon: Icons.high_quality_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 15),
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.video_quality_auto,
+              ),
+              for (final int height in <int>[480, 720, 1080, 1440, 2160])
+                SettingsSegmentOption<int>(
+                  value: height,
+                  label: '${height}p',
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.youtubeQualityTargetHeight,
+            onChanged: (SettingsContext settingsContext, int height) async {
+              await settingsContext.appModel
+                  .setYoutubeQualityTargetHeight(height);
+            },
+          ),
           SettingsSegmentedItem<int>(
             id: 'video.playback.double_tap',
             title: t.video_setting_double_tap,

@@ -1285,6 +1285,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// YouTube 显式画质目标高度（如 720/1080/2160）；0 = 自动（默认策略：编码优先、
+  /// ≤1080p，见 pickPlaybackVideoStream）。消费方把 0 换算成 null 传解析器。
+  int get youtubeQualityTargetHeight =>
+      getPref('video_youtube_quality_height', defaultValue: 0) as int;
+
+  Future<void> setYoutubeQualityTargetHeight(int height) async {
+    await setPref('video_youtube_quality_height', height < 0 ? 0 : height);
+    notifyListeners();
+  }
+
   /// 视频画面缩放/比例模式（窗口模式 + 全屏的 [Video] fit；默认 [VideoFitMode.contain]
   /// = 保持比例完整适应媒体框；已有 cover/fill 持久化值仍按原值恢复）。
   VideoFitMode get videoFitMode => VideoFitMode.fromStorage(

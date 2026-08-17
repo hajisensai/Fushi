@@ -3205,6 +3205,18 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoLockWindowAspectRatio(bool value) =>
       prefsRepo.setVideoLockWindowAspectRatio(value);
 
+  /// YouTube 显式画质目标高度（0=自动；非 0 起播即选 ≤目标 的最高档，可达 1440p/4K）。
+  int get youtubeQualityTargetHeight => prefsRepo.youtubeQualityTargetHeight;
+
+  Future<void> setYoutubeQualityTargetHeight(int height) =>
+      prefsRepo.setYoutubeQualityTargetHeight(height);
+
+  /// [youtubeQualityTargetHeight] 的解析器形参形态（0 → null=默认策略）。
+  int? get youtubeQualityTargetHeightOrNull {
+    final int h = youtubeQualityTargetHeight;
+    return h > 0 ? h : null;
+  }
+
   /// 视频画面缩放/比例模式（窗口+全屏 Video fit；默认 cover=保持比例占满无黑边）。
   VideoFitMode get videoFitMode => prefsRepo.videoFitMode;
 

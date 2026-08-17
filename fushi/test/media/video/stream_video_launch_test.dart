@@ -183,6 +183,39 @@ void main() {
       launch2.client.close();
     });
 
+    test('画质目标变更 -> 旧缓存视为 miss 重解析；同目标再开命中', () async {
+      int resolveCalls = 0;
+      final YoutubeStreamCache cache =
+          YoutubeStreamCache(file: File('${tmp.path}/c.json'), now: () => now);
+      Future<void> open(int? targetHeight) async {
+        final launch = await buildStreamVideoLaunch(
+          ytRow(),
+          streamCache: cache,
+          youtubeResolver: (String url) async {
+            resolveCalls++;
+            return fakeResolved('r$resolveCalls');
+          },
+          livenessCheck: (String u, Map<String, String> h) async => true,
+          now: () => now,
+          youtubeTargetHeight: targetHeight,
+        );
+        launch.client.close();
+      }
+
+      // 自动（null）解析并缓存。
+      await open(null);
+      expect(resolveCalls, 1);
+      // 用户把画质目标改成 1440：缓存的 URL 是旧档位 → miss 重解析。
+      await open(1440);
+      expect(resolveCalls, 2);
+      // 同目标再开：命中新缓存，不再解析。
+      await open(1440);
+      expect(resolveCalls, 2);
+      // 改回自动：又是一次 miss（缓存条目记的是 1440）。
+      await open(null);
+      expect(resolveCalls, 3);
+    });
+
     test('no parseable expire -> not cached (each open re-resolves)', () async {
       int resolveCalls = 0;
       final YoutubeStreamCache cache =

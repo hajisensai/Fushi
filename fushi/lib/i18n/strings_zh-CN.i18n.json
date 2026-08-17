@@ -3525,5 +3525,7 @@
   "module_manga_label": "漫画",
   "module_video_label": "视频",
   "module_games_label": "Galgame",
-  "module_toggle_hint": "在底栏/侧栏显示该库页；关闭即隐藏"
+  "module_toggle_hint": "在底栏/侧栏显示该库页；关闭即隐藏",
+  "video_setting_youtube_quality": "YouTube 画质",
+  "video_setting_youtube_quality_hint": "起播自动选不超过目标的最高档；「自动」优先流畅（硬解友好编码，最高 1080p）"
 }
