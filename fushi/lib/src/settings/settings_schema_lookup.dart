@@ -155,6 +155,20 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
+          // 用户词典可视化编辑器：词条真相源在偏好，保存后经现有导入链整部
+          // 重建挂载（详见 user_dictionary_store.dart 库注释）。
+          SettingsNavigationItem(
+            id: 'lookup.user_dictionary',
+            title: t.dict_user_title,
+            icon: Icons.edit_note_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const UserDictionaryEditorPage(),
+              );
+              settingsContext.refresh();
+            },
+          ),
           // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
           // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
           buildManageAudioSourcesItem(),

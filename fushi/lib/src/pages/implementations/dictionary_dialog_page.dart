@@ -268,6 +268,12 @@ class _DictionaryDialogPageState extends BasePageState {
             onTap: _importDictionaryFiles,
           ),
           _buildActionButton(
+            focusPrefix: 'dict-action-user-dict',
+            icon: Icons.edit_note_outlined,
+            label: t.dict_user_title,
+            onTap: _openUserDictionaryEditor,
+          ),
+          _buildActionButton(
             focusPrefix: 'dict-action-clear',
             icon: Icons.delete_sweep_outlined,
             label: t.dialog_clear_all_dictionaries,
@@ -329,6 +335,11 @@ class _DictionaryDialogPageState extends BasePageState {
         onTap: _importDictionaryFiles,
       ),
       FushiIconButton(
+        tooltip: t.dict_user_title,
+        icon: Icons.edit_note_outlined,
+        onTap: _openUserDictionaryEditor,
+      ),
+      FushiIconButton(
         tooltip: t.dialog_clear_all_dictionaries,
         icon: Icons.delete_sweep_outlined,
         enabledColor: theme.colorScheme.error,
@@ -359,6 +370,11 @@ class _DictionaryDialogPageState extends BasePageState {
             label: t.dialog_import_dictionary,
             icon: Icons.upload_file_outlined,
             action: _importDictionaryFiles,
+          ),
+          buildPopupItem(
+            label: t.dict_user_title,
+            icon: Icons.edit_note_outlined,
+            action: _openUserDictionaryEditor,
           ),
           buildPopupItem(
             label: t.dialog_clear_all_dictionaries,
@@ -460,6 +476,19 @@ class _DictionaryDialogPageState extends BasePageState {
       context: context,
       builder: (context) => dialog,
     );
+  }
+
+  /// 打开用户词典可视化编辑器；返回后刷新列表（编辑器保存会新增/重建/删除
+  /// 「User Dictionary」这本词典，本页列表必须跟上）。
+  Future<void> _openUserDictionaryEditor() async {
+    await Navigator.push(
+      context,
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => const UserDictionaryEditorPage(),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _importDictionaryFiles() async {

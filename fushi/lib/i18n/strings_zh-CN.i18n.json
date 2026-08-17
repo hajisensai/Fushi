@@ -3451,5 +3451,15 @@
   "settings_content_language_title": "默认内容语言",
   "settings_content_language_unset": "未设置",
   "settings_content_language_description": "内容没有声明语言时用的默认值。书/视频/游戏/词典各自的设置会覆盖它。",
-  "manga_ocr_lens_language_label": "识别语言"
+  "manga_ocr_lens_language_label": "识别语言",
+  "dict_user_title": "用户词典",
+  "dict_user_entry_add": "添加词条",
+  "dict_user_entry_edit": "编辑词条",
+  "dict_user_entry_delete_confirm": "删除这条词条？",
+  "dict_user_field_expression": "词头",
+  "dict_user_field_reading": "读音",
+  "dict_user_field_meaning": "释义",
+  "dict_user_empty": "还没有词条，添加一条开始建立自己的词典。",
+  "dict_user_expression_required": "词头不能为空",
+  "dict_user_rebuild_failed": "用户词典重建失败"
 }

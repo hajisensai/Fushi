@@ -40,6 +40,7 @@ import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
+import 'package:fushi/src/dictionary/user_dictionary_store.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -4200,6 +4201,65 @@ class AppModel with ChangeNotifier {
       // 与 delete / reorder 路径对称（BUG-355）。放 finally：覆盖导入失败时旧词典可能
       // 已被删掉，那种半状态同样必须让 UI 重查，不能停在更旧的结果上。
       dictionarySearchAgainNotifier.notifyListeners();
+    }
+  }
+
+  // ── user dictionary (visual editor) ─────────────────────────────────
+
+  /// 用户词典词条列表（真相源：偏好 [userDictionaryEntriesPrefKey]）。
+  List<UserDictionaryEntry> get userDictionaryEntries =>
+      decodeUserDictionaryEntries(
+        prefsRepo.getPref(userDictionaryEntriesPrefKey, defaultValue: '')
+            as String,
+      );
+
+  /// 保存用户词条列表并重建挂载「User Dictionary」。
+  ///
+  /// 先落偏好（真相源永远先写，重建失败也不丢数据），再把整份列表编译成
+  /// Yomitan zip 走现有导入链整部重建（`forceReplaceExisting` = 同名替换并
+  /// 保留 order/hidden/collapsed）。清空到零条 = 删除该词典（走既有删除路径，
+  /// 引擎重载/缓存失效/同步删除传播全复用）。
+  Future<void> saveUserDictionaryEntries(
+    List<UserDictionaryEntry> entries,
+  ) async {
+    await prefsRepo.setPref(
+      userDictionaryEntriesPrefKey,
+      encodeUserDictionaryEntries(entries),
+    );
+
+    final List<Dictionary> existing = dictionaries
+        .where((Dictionary d) => d.name == userDictionaryTitle)
+        .toList();
+    if (entries.isEmpty) {
+      if (existing.isNotEmpty) {
+        await deleteDictionary(existing.first);
+      }
+      return;
+    }
+
+    // 与下载/自动更新共用 `<资源目录>/import_temp`（BUG-1500 的并发形状）。
+    // 忙时不硬闯：抛给编辑器提示稍后重存——偏好已落盘，下次保存自愈。
+    if (dictionaryDownloadController.isBusy) {
+      throw StateError('dictionary download in progress');
+    }
+
+    final List<int> zipBytes = buildUserDictionaryZipBytes(
+      entries: entries,
+      revision: 'user-${DateTime.now().millisecondsSinceEpoch}',
+    );
+    final File tempZip = File(
+      path.join(dictionaryResourceDirectory.path, 'user_dict_rebuild.zip'),
+    );
+    await tempZip.writeAsBytes(zipBytes, flush: true);
+    try {
+      await importDictionary(
+        file: tempZip,
+        progressNotifier: ValueNotifier<String>(''),
+        onImportSuccess: () {},
+        forceReplaceExisting: true,
+      );
+    } finally {
+      if (tempZip.existsSync()) tempZip.deleteSync();
     }
   }
 
