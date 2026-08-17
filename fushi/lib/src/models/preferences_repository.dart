@@ -2250,6 +2250,16 @@ class PreferencesRepository extends ChangeNotifier {
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
   /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
+  /// 发现页「全部源」聚合默认排除的源 id（逗号分隔）。默认排除 sukebei
+  /// （18+ 源只在用户于源下拉里**显式单选**时使用，不进默认聚合）。
+  String get discoveryDisabledSources =>
+      getPref('discovery_disabled_sources', defaultValue: 'sukebei') as String;
+
+  Future<void> setDiscoveryDisabledSources(String value) async {
+    await setPref('discovery_disabled_sources', value);
+    notifyListeners();
+  }
+
   String get downloadSaveRoot =>
       getPref('download_save_root', defaultValue: '') as String;
 

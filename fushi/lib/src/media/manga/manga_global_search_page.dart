@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +7,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
+import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -50,67 +50,12 @@ class MangaGlobalSearchPage extends StatefulWidget {
   State<MangaGlobalSearchPage> createState() => _MangaGlobalSearchPageState();
 }
 
-/// 单个来源的搜索进度。
-enum _RunStatus { loading, done, empty, cloudflare, error }
-
-/// 一个来源在本次搜索里的运行态。Mihon / Aidoku 字段互斥，由 [source] 类型决定。
-class _SourceRun {
-  _SourceRun(this.source);
-
-  final _GlobalSource source;
-  _RunStatus status = _RunStatus.loading;
-  Object? error;
-
-  // Mihon
-  MihonSourceContext? mihonContext;
-  List<MihonManga> mihonItems = const <MihonManga>[];
-
-  // Aidoku
-  List<Map<String, Object?>> aidokuItems = const <Map<String, Object?>>[];
-}
-
-/// 归一化的来源描述，抹平 Mihon / Aidoku 两套模型。
-sealed class _GlobalSource {
-  const _GlobalSource();
-
-  String get id;
-  String get name;
-  String get language;
-}
-
-class _MihonGlobalSource extends _GlobalSource {
-  const _MihonGlobalSource(this.row);
-
-  final MangaOnlineSourceRow row;
-
-  @override
-  String get id => 'mihon:${row.extensionPackage}:${row.sourceId}';
-  @override
-  String get name => row.name;
-  @override
-  String get language => row.language;
-}
-
-class _AidokuGlobalSource extends _GlobalSource {
-  const _AidokuGlobalSource(this.package);
-
-  final AidokuInstalledPackage package;
-
-  @override
-  String get id => 'aidoku:${package.id}';
-  @override
-  String get name => package.name;
-  @override
-  String get language =>
-      package.languages.isEmpty ? '' : package.languages.first;
-}
-
 class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final MihonSourceImageLoadQueue _imageQueue =
       MihonSourceImageLoadQueue(maxConcurrent: 4);
 
-  List<_SourceRun> _runs = const <_SourceRun>[];
+  List<MangaSourceSearchRun> _runs = const <MangaSourceSearchRun>[];
   int _generation = 0;
   bool _searched = false;
   AidokuRuntime? _aidokuRuntime;
@@ -131,11 +76,11 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     super.dispose();
   }
 
-  List<_GlobalSource> _sources() => <_GlobalSource>[
+  List<MangaGlobalSource> _sources() => <MangaGlobalSource>[
         for (final AidokuInstalledPackage package in widget.aidokuPackages)
-          _AidokuGlobalSource(package),
+          AidokuGlobalSource(package),
         for (final MangaOnlineSourceRow row in widget.mihonSources)
-          _MihonGlobalSource(row),
+          MihonGlobalSource(row),
       ];
 
   /// 懒创建 Aidoku 运行时：无 Aidoku 源、或平台不支持时永不创建。
@@ -150,81 +95,27 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     final String query = _searchController.text.trim();
     if (query.isEmpty) return;
     final int generation = ++_generation;
-    final List<_SourceRun> runs =
-        _sources().map(_SourceRun.new).toList(growable: false);
+    final List<MangaSourceSearchRun> runs =
+        _sources().map(MangaSourceSearchRun.new).toList(growable: false);
     setState(() {
       _searched = true;
       _runs = runs;
     });
-    // 每个来源一个不同站点，跨站并发是安全的；限流只为不让几十个源同时打出去。
-    await _runBounded(
-      runs,
-      maxConcurrent: 6,
-      task: (_SourceRun run) => _runOne(run, query, generation),
+    // 逐源扇出/限流/CF 分型在 runner（与统一发现框架共用有界并发原语）。
+    await MangaGlobalSearchRunner(
+      mihonManager: widget.mihonManager,
+      resolveAidokuRuntime: _resolveAidokuRuntime,
+    ).search(
+      runs: runs,
+      query: query,
+      isCancelled: () => !mounted || generation != _generation,
+      onRunUpdated: () {
+        if (mounted && generation == _generation) setState(() {});
+      },
     );
   }
 
-  Future<void> _runOne(_SourceRun run, String query, int generation) async {
-    try {
-      switch (run.source) {
-        case _MihonGlobalSource(:final MangaOnlineSourceRow row):
-          final MihonManager manager = widget.mihonManager!;
-          final MihonSourceContext context =
-              await manager.contextForSource(row);
-          final MihonMangaPage page = await manager.runtime.search(
-            context.extension,
-            context.source,
-            page: 1,
-            query: query,
-            preferences: context.preferences,
-          );
-          if (!mounted || generation != _generation) return;
-          run.mihonContext = context;
-          run.mihonItems = page.items;
-          run.status = page.items.isEmpty ? _RunStatus.empty : _RunStatus.done;
-        case _AidokuGlobalSource(:final AidokuInstalledPackage package):
-          final AidokuRuntime? runtime = _resolveAidokuRuntime();
-          if (runtime == null) {
-            throw const AidokuRuntimeException(
-              'RUNTIME_UNAVAILABLE',
-              'The Aidoku runtime is unavailable on this platform',
-            );
-          }
-          final Map<String, Object?> result = await runtime.search(
-            package.packagePath,
-            query: query,
-            page: 1,
-          );
-          final List<Map<String, Object?>> entries =
-              (result['entries'] as List<Object?>? ?? const <Object?>[])
-                  .whereType<Map<Object?, Object?>>()
-                  .map((Map<Object?, Object?> value) =>
-                      value.cast<String, Object?>())
-                  .where((Map<String, Object?> value) =>
-                      value['key']?.toString().isNotEmpty ?? false)
-                  .toList(growable: false);
-          if (!mounted || generation != _generation) return;
-          run.aidokuItems = entries;
-          run.status = entries.isEmpty ? _RunStatus.empty : _RunStatus.done;
-      }
-    } on Object catch (error) {
-      if (!mounted || generation != _generation) return;
-      run.error = error;
-      run.status =
-          _isCloudflare(error) ? _RunStatus.cloudflare : _RunStatus.error;
-    }
-    if (mounted && generation == _generation) setState(() {});
-  }
-
-  static bool _isCloudflare(Object error) {
-    if (error is AidokuRuntimeException) {
-      return error.code == 'CLOUDFLARE_CHALLENGE';
-    }
-    final String text = '$error';
-    return text.contains('Cloudflare') || text.contains('CF challenge');
-  }
-
-  void _openMihon(_SourceRun run, MihonManga manga) {
+  void _openMihon(MangaSourceSearchRun run, MihonManga manga) {
     final MihonSourceContext? sourceContext = run.mihonContext;
     final MihonManager? manager = widget.mihonManager;
     if (sourceContext == null || manager == null) return;
@@ -311,7 +202,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     );
   }
 
-  Widget _buildSection(_SourceRun run) {
+  Widget _buildSection(MangaSourceSearchRun run) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -344,8 +235,8 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     );
   }
 
-  Widget _statusTrailing(_SourceRun run) => switch (run.status) {
-        _RunStatus.loading => const SizedBox(
+  Widget _statusTrailing(MangaSourceSearchRun run) => switch (run.status) {
+        MangaSearchRunStatus.loading => const SizedBox(
             width: 16,
             height: 16,
             child: CircularProgressIndicator(strokeWidth: 2),
@@ -353,25 +244,25 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
         _ => const SizedBox.shrink(),
       };
 
-  Widget _buildSectionBody(_SourceRun run) {
+  Widget _buildSectionBody(MangaSourceSearchRun run) {
     switch (run.status) {
-      case _RunStatus.loading:
+      case MangaSearchRunStatus.loading:
         return const SizedBox(height: 200);
-      case _RunStatus.cloudflare:
+      case MangaSearchRunStatus.cloudflare:
         return _SectionMessage(t.manga_source_cloudflare_blocked);
-      case _RunStatus.error:
+      case MangaSearchRunStatus.error:
         return _SectionMessage('${run.error}');
-      case _RunStatus.empty:
+      case MangaSearchRunStatus.empty:
         return _SectionMessage(t.mihon_source_no_results);
-      case _RunStatus.done:
+      case MangaSearchRunStatus.done:
         return _buildResultsStrip(run);
     }
   }
 
-  Widget _buildResultsStrip(_SourceRun run) {
+  Widget _buildResultsStrip(MangaSourceSearchRun run) {
     final int count = switch (run.source) {
-      _MihonGlobalSource() => run.mihonItems.length,
-      _AidokuGlobalSource() => run.aidokuItems.length,
+      MihonGlobalSource() => run.mihonItems.length,
+      AidokuGlobalSource() => run.aidokuItems.length,
     };
     // 桌面端默认 dragDevices 不含 mouse，横向滚动区必须包 HorizontalDragScrollable
     // 才能用鼠标左键拖动平移（横向滚动守卫）。
@@ -389,12 +280,12 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     );
   }
 
-  Widget _buildHit(_SourceRun run, int index) {
+  Widget _buildHit(MangaSourceSearchRun run, int index) {
     final Widget cover;
     final String title;
     final VoidCallback onTap;
     switch (run.source) {
-      case _MihonGlobalSource():
+      case MihonGlobalSource():
         final MihonManga manga = run.mihonItems[index];
         title = manga.title;
         cover = MihonSourceImage(
@@ -405,7 +296,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           loadQueue: _imageQueue,
         );
         onTap = () => _openMihon(run, manga);
-      case _AidokuGlobalSource(:final AidokuInstalledPackage package):
+      case AidokuGlobalSource(:final AidokuInstalledPackage package):
         final Map<String, Object?> manga = run.aidokuItems[index];
         title = manga['title']?.toString() ?? manga['key'].toString();
         cover = _AidokuStripCover(url: manga['cover']?.toString());
@@ -435,27 +326,6 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           ),
         ),
       ),
-    );
-  }
-
-  /// 有上限并发地跑 [items]，每项调 [task]。一项抛错不影响其余（[task] 内部已兜住）。
-  static Future<void> _runBounded<T>(
-    List<T> items, {
-    required int maxConcurrent,
-    required Future<void> Function(T item) task,
-  }) async {
-    final Queue<T> pending = Queue<T>.of(items);
-    Future<void> worker() async {
-      while (pending.isNotEmpty) {
-        await task(pending.removeFirst());
-      }
-    }
-
-    final int workers = maxConcurrent < items.length
-        ? maxConcurrent
-        : (items.isEmpty ? 0 : items.length);
-    await Future.wait<void>(
-      <Future<void>>[for (int i = 0; i < workers; i++) worker()],
     );
   }
 }

@@ -69,6 +69,15 @@ import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
+import 'package:fushi/src/media/discovery/media_discovery_service.dart';
+import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
@@ -3638,6 +3647,8 @@ class AppModel with ChangeNotifier {
           effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       importer: buildAnimeDownloadImporter(database),
       bookImporter: _importDownloadedBooks,
+      // 发现页新内容类型（有声书/游戏）：整包直通发现导入执行器。
+      discoveryImporter: _importDiscoveryDownload,
       // BUG-1206：字幕在下载完成时按包内真实文件名反查补取，不在选种时预下。
       subtitleResolver: JimakuPlanSubtitleResolver(
         apiKeyProvider: () => prefsRepo.jimakuApiKey,
@@ -4014,6 +4025,110 @@ class AppModel with ChangeNotifier {
     };
     _animeDownloadPlanIds = ids;
     return ids;
+  }
+
+  /// 发现页新内容类型（有声书/游戏）种子完成后的入库回调：整包路径交给
+  /// [DiscoveryImportExecutor]（分类 → 解压 → 复用各域既有导入原语）。
+  /// 返回入库条目数；分类不出/解压失败抛 [DiscoveryImportBlockedException]，
+  /// service 侧收进 failReason 展示。
+  Future<int?> _importDiscoveryDownload(
+    AnimeDownloadPlan plan,
+    List<String> absolutePaths,
+  ) async {
+    final DiscoveryMediaKind? kind = switch (plan.contentKind) {
+      AnimeDownloadPlan.kindAudiobook => DiscoveryMediaKind.audiobook,
+      AnimeDownloadPlan.kindGame => DiscoveryMediaKind.game,
+      _ => null,
+    };
+    if (kind == null) return null;
+    final DiscoveryImportOutcome outcome =
+        await discoveryImportExecutor.importPaths(kind, absolutePaths);
+    return outcome.importedCount;
+  }
+
+  /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
+  DiscoveryImportExecutor get discoveryImportExecutor =>
+      _discoveryImportExecutor ??= DiscoveryImportExecutor(
+        importers: buildProductionDiscoveryImporters(
+          db: database,
+          srtBookRepo: SrtBookRepository(database),
+          audiobookRepo: AudiobookRepository(database),
+          galgameRepo: galgameRepo,
+        ),
+      );
+  DiscoveryImportExecutor? _discoveryImportExecutor;
+
+  /// 发现页源注册表（懒建，app 生命周期常驻）。内置源在此登记；加源 = 加一个
+  /// adapter 实例。Sukebei（18+）默认不进「全部源」聚合，见
+  /// [discoveryDisabledSourceIds]。
+  MediaDiscoveryService get mediaDiscoveryService =>
+      _mediaDiscoveryService ??= MediaDiscoveryService(
+        sources: <MediaDiscoverySource>[
+          NyaaDiscoverySource(
+            id: 'nyaa',
+            displayName: 'Nyaa',
+            priority: 10,
+            categoryByKind: const <DiscoveryMediaKind, String>{
+              // nyaa.si 分类：Literature=3_0 / Audio=2_0。
+              DiscoveryMediaKind.novel: '3_0',
+              DiscoveryMediaKind.audiobook: '2_0',
+            },
+            client: NyaaClient(),
+          ),
+          NyaaDiscoverySource(
+            id: 'sukebei',
+            displayName: 'Sukebei',
+            priority: 15,
+            categoryByKind: const <DiscoveryMediaKind, String>{
+              // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
+              DiscoveryMediaKind.game: '1_3',
+            },
+            client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
+          ),
+          AListDiscoverySource(
+            id: 'alist-erogame',
+            displayName: 'erogame.space',
+            priority: 20,
+            baseUrl: 'https://alist.erogame.space',
+            kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+          ),
+          ShinnkuDiscoverySource(),
+        ],
+      );
+  MediaDiscoveryService? _mediaDiscoveryService;
+
+  /// 「全部源」聚合排除的源 id（用户显式单选某源时不受限）。
+  Set<String> get discoveryDisabledSourceIds => <String>{
+        for (final String id in prefsRepo.discoveryDisabledSources.split(','))
+          if (id.trim().isNotEmpty) id.trim(),
+      };
+
+  /// 发现页直链下载队列（懒建，app 生命周期常驻——关闭发现页不中断下载，
+  /// 语义同 [mokuroMoeDownloadQueue]）。
+  DiscoveryDownloadQueue get discoveryDownloadQueue =>
+      _discoveryDownloadQueue ??= DiscoveryDownloadQueue(
+        resolvePayload: (DiscoveryResourceItem item) {
+          final MediaDiscoverySource? source =
+              mediaDiscoveryService.sourceById(item.sourceId);
+          if (source == null) {
+            throw StateError('unknown discovery source: ${item.sourceId}');
+          }
+          return source.resolvePayload(item);
+        },
+        importer: (DiscoveryDownloadTask task, File file) =>
+            discoveryImportExecutor.importDownload(task, file),
+      );
+  DiscoveryDownloadQueue? _discoveryDownloadQueue;
+
+  /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认根
+  /// [downloadDefaultSaveRoot]，再按媒体域分子目录）。
+  ///
+  /// 不再自造 documents 派生点：默认根由 [startAnimeDownloadService] 在
+  /// initialise 期唯一计算（UI 可达发现页时必已就绪），这里只消费。
+  String discoveryDownloadDirFor(DiscoveryMediaKind kind) {
+    String root = prefsRepo.downloadSaveRoot.trim();
+    if (root.isEmpty) root = downloadDefaultSaveRoot;
+    return path.join(root, 'discovery', kind.name);
   }
 
   /// The pipeline persists `stage=download` only after this checkpoint. This

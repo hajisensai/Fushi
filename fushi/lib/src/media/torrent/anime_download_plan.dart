@@ -92,6 +92,13 @@ class AnimeDownloadPlan {
   /// 内容类型：自动（按文件扩展名分流：视频→视频库、epub→阅读库）。
   static const String kindAuto = 'auto';
 
+  /// 内容类型：有声书（发现页种子；完成后走发现导入执行器：正文+字幕+音频
+  /// 齐则对齐入库）。
+  static const String kindAudiobook = 'audiobook';
+
+  /// 内容类型：游戏（发现页种子；完成后走发现导入执行器：解压/挑主 exe 登记）。
+  static const String kindGame = 'game';
+
   /// 下载中（qBittorrent 未完成，等下轮 tick）。
   static const String statusDownloading = 'downloading';
 

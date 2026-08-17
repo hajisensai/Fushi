@@ -121,7 +121,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           ),
           ButtonSegment<VideoLibrarySection>(
             value: VideoLibrarySection.discover,
-            label: Text(t.video_discovery_tab),
+            // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删）。
+            label: Text(t.library_view_browse),
           ),
           ButtonSegment<VideoLibrarySection>(
             value: VideoLibrarySection.series,
