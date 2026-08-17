@@ -6,7 +6,21 @@
 
 ## Introdução
 
-Este é um software gratuito para Android / Windows (iOS / macOS planejados) — um aplicativo de código aberto multiplataforma e revolucionário que combina leitura de romances, reprodução de audiolivros, reprodução de vídeos e consulta a dicionários.
+**Fushi — transforme maratonas de leitura e de séries em input linguístico.**
+
+Toque em qualquer palavra para consultá-la enquanto lê romances, assiste a animes ou ouve audiolivros, e envie as palavras novas para o Anki junto com a frase de onde vieram.
+
+Sem listas de palavras predefinidas — você só revisa as palavras com que realmente se deparou. Funciona com qualquer idioma.
+
+- 📖 Leitura de EPUB · toque para consultar
+- 🎧 Audiolivros com destaque frase a frase
+- 🎬 Consulta em legendas de vídeo e criação de cartões
+- 🃏 Criação de cartões no Anki com um toque + estatísticas de revisão
+- 📚 Leitura de mangá · consulte palavras direto da página via OCR
+- ⬇️ Downloads de anime e mangá dentro do app com um toque — adicionados automaticamente à sua biblioteca e reproduzíveis mesmo enquanto ainda baixam
+- 🎮 Mineração de voz em Galgame (Windows) · a fala original vai para o cartão junto com o texto
+
+Plataformas: Android / Windows / macOS / iOS (Linux pode ser compilado a partir do código-fonte; ainda não há pacotes prontos)
 
 ### URL do projeto
 
@@ -18,7 +32,9 @@ Em desenvolvimento ativo — seu feedback será tratado prontamente. Relatórios
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: escolha **arm64**. Windows: escolha o arquivo **.exe**.
+Escolha o arquivo correspondente à sua plataforma: **Android** — o APK `arm64-v8a` (todos os celulares dos últimos anos usam esse; apenas aparelhos mais antigos precisam do `armeabi-v7a`, e emuladores usam `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. O **Linux** ainda não tem pacote pronto, então precisa ser compilado a partir do código-fonte.
+
+Os APKs cujos nomes começam com `bridge-` são pontes de migração para **usuários do antigo Hibiki**; você pode ignorá-los.
 
 ## Tutorial de configuração
 
@@ -27,8 +43,6 @@ Android: escolha **arm64**. Windows: escolha o arquivo **.exe**.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Download pelo Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 No aplicativo: Configurações -> Sincronização e backup -> toque em **Importar backup**.
-
-**Observação: importar um backup apagará os dados locais. Esse fluxo será aprimorado em uma atualização futura.**
 
 ![Tela de importação de backup](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ O Anki tem o [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) embutid
 ![Configuração do Anki no Windows](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Percorra as opções de configuração nas Configurações e veja se há algo que você gostaria de ajustar. (Opcional)
+
+Hora de começar a imersão.
+
+## Recursos recomendados
+
+### Consultar palavras fora do aplicativo
+
+**Android:** selecione uma palavra e toque em **Traduzir** ou **Fushi** no menu de seleção.
+
+**Windows:** selecione uma palavra e pressione **Ctrl+Alt+D** (o atalho pode ser alterado em Configurações -> Atalhos).
+
+### Consulta pela área de transferência
+
+Tudo o que você copia é consultado automaticamente. Há dois modos de exibição — o **painel flutuante** e a **janela de texto transparente** — ambos configuráveis em Configurações -> Consulta.
+
+### Consulta no navegador / mineração de legendas de streaming (Netflix)
+
+Instale a extensão de navegador a partir da página inicial do Fushi.
 
 ## Agradecimentos
 

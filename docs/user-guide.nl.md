@@ -6,7 +6,21 @@
 
 ## Inleiding
 
-Dit is gratis software voor Android / Windows (iOS / macOS gepland) — een baanbrekende, platformonafhankelijke open-source-app die het lezen van romans, het afspelen van luisterboeken, het afspelen van video en het opzoeken in woordenboeken samenbrengt.
+**Fushi — maak van bingelezen en bingekijken taalinput.**
+
+Tik op een willekeurig woord om het op te zoeken terwijl je romans leest, anime kijkt of naar luisterboeken luistert, en stuur nieuwe woorden samen met de zin waarin je ze tegenkwam naar Anki.
+
+Geen vooraf samengestelde woordenlijsten — je herhaalt alleen de woorden die je echt bent tegengekomen. Werkt met elke taal.
+
+- 📖 EPUB lezen · tik om op te zoeken
+- 🎧 Luisterboeken met zin-voor-zin markering
+- 🎬 Opzoeken in video-ondertitels en kaarten maken
+- 🃏 Anki-kaarten maken met één tik + herhalingsstatistieken
+- 📚 Manga lezen · woorden rechtstreeks vanaf de pagina opzoeken via OCR
+- ⬇️ Anime en manga met één tik downloaden in de app — automatisch aan je bibliotheek toegevoegd en afspeelbaar terwijl het downloaden nog bezig is
+- 🎮 Galgame-stemmining (Windows) · de originele stemregel komt samen met de tekst op de kaart
+
+Platforms: Android / Windows / macOS / iOS (Linux kan vanaf de broncode worden gebouwd; nog geen kant-en-klare pakketten)
 
 ### Project-URL
 
@@ -18,7 +32,9 @@ Actief in ontwikkeling — je feedback wordt snel afgehandeld. Bugmeldingen en f
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: kies **arm64**. Windows: kies het **.exe**-bestand.
+Kies het bestand dat bij jouw platform hoort: **Android** — de `arm64-v8a`-APK (elke telefoon van de afgelopen jaren gebruikt deze; alleen oudere toestellen hebben `armeabi-v7a` nodig, en emulators gebruiken `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. Voor **Linux** is er nog geen kant-en-klaar pakket, dus dat moet vanaf de broncode worden gebouwd.
+
+De APK's waarvan de naam met `bridge-` begint, zijn migratiebruggen voor **oude Hibiki-gebruikers**; die kun je negeren.
 
 ## Configuratiehandleiding
 
@@ -27,8 +43,6 @@ Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare-download (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 In de app: Instellingen -> Synchronisatie en back-up -> tik op **Back-up importeren**.
-
-**Let op: het importeren van een back-up wist lokale gegevens. Deze flow wordt in een toekomstige update verbeterd.**
 
 ![Scherm voor back-up importeren](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki heeft [FSRS](https://github.com/open-spaced-repetition/fsrs4anki) ingebouwd
 ![Anki-installatie op Windows](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Loop de configuratieopties in Instellingen door en kijk of er iets is dat je wilt aanpassen. (Optioneel)
+
+Tijd om je onder te dompelen.
+
+## Aanbevolen functies
+
+### Woorden opzoeken buiten de app
+
+**Android:** selecteer een woord en tik vervolgens op **Vertalen** of **Fushi** in het selectiemenu.
+
+**Windows:** selecteer een woord en druk op **Ctrl+Alt+D** (de sneltoets kun je wijzigen onder Instellingen -> Sneltoetsen).
+
+### Opzoeken via het klembord
+
+Alles wat je kopieert, wordt automatisch opgezocht. Er zijn twee weergavemodi — het **zwevende paneel** en het **transparante tekstvenster** — beide in te stellen onder Instellingen -> Opzoeken.
+
+### Opzoeken in de browser / ondertitels minen bij streaming (Netflix)
+
+Installeer de browserextensie via de startpagina van Fushi.
 
 ## Dankbetuigingen
 

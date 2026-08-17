@@ -6,7 +6,21 @@
 
 ## 소개
 
-이것은 Android / Windows(iOS / macOS 계획 중)용 무료 소프트웨어입니다——소설 읽기, 오디오북 재생, 동영상 재생, 사전 검색을 하나로 결합한 획기적인 멀티플랫폼 오픈 소스 앱입니다.
+**Fushi——정주행과 몰아 읽기를 그대로 언어 인풋으로.**
+
+소설을 읽을 때, 애니메이션을 볼 때, 오디오북을 들을 때 단어를 탭하기만 하면 바로 찾아볼 수 있고, 새로운 단어를 그 단어가 나온 문장과 함께 Anki로 보낼 수 있습니다.
+
+미리 정해진 단어 목록은 없습니다——실제로 만난 단어만 복습합니다. 어떤 언어에서도 사용할 수 있습니다.
+
+- 📖 EPUB 읽기 · 탭해서 바로 검색
+- 🎧 오디오북 문장 단위 하이라이트
+- 🎬 동영상 자막 검색 및 카드 만들기
+- 🃏 원탭 Anki 카드 만들기 + 복습 통계
+- 📚 만화 보기 · OCR로 화면에서 바로 단어 검색
+- ⬇️ 애니메이션과 만화를 앱 안에서 원탭 다운로드——자동으로 라이브러리에 추가되고, 다운로드 중에도 재생할 수 있습니다
+- 🎮 Galgame 음성 마이닝(Windows) · 원본 음성이 텍스트와 함께 카드에 들어갑니다
+
+지원 플랫폼: Android / Windows / macOS / iOS(Linux는 소스에서 빌드할 수 있지만, 아직 미리 빌드된 패키지는 없습니다)
 
 ### 프로젝트 URL
 
@@ -18,7 +32,9 @@ https://github.com/hajisensai/Fushi
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세요.
+사용하는 플랫폼에 맞는 파일을 선택하세요: **Android**——`arm64-v8a` APK(최근 몇 년간의 스마트폰은 모두 이것을 사용합니다. 오래된 기기만 `armeabi-v7a`가 필요하고, 에뮬레이터는 `x86_64`를 사용합니다), **Windows**——`windows-setup.exe`, **macOS**——`macos.zip`, **iOS**——`ios.ipa`. **Linux**는 아직 미리 빌드된 패키지가 없으므로 소스에서 직접 빌드해야 합니다.
+
+이름이 `bridge-`로 시작하는 APK는 **기존 Hibiki 사용자**를 위한 마이그레이션 브리지이므로 무시하셔도 됩니다.
 
 ## 설정 튜토리얼
 
@@ -27,8 +43,6 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare 다운로드(9.5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
-
-**참고: 백업을 가져오면 로컬 데이터가 삭제됩니다. 이 흐름은 향후 업데이트에서 개선될 예정입니다.**
 
 ![백업 가져오기 화면](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki에는 [FSRS](https://github.com/open-spaced-repetition/fsrs4anki)가 내장
 ![Anki Windows 설정](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. 설정의 각 옵션을 살펴보고 조정하고 싶은 항목이 있는지 확인하세요.(선택 사항)
+
+이제 이머전을 시작할 시간입니다.
+
+## 추천 기능
+
+### 앱 밖에서 단어 찾기
+
+**Android:** 단어를 선택한 다음 선택 메뉴에서 **번역** 또는 **Fushi**를 탭합니다.
+
+**Windows:** 단어를 선택한 다음 **Ctrl+Alt+D**를 누릅니다(단축키는 설정 -> 단축키에서 변경할 수 있습니다).
+
+### 클립보드 검색
+
+복사한 내용은 자동으로 검색됩니다. 표시 방식은 **플로팅 패널**과 **투명 텍스트 창** 두 가지가 있으며, 모두 설정 -> 단어 검색에서 설정할 수 있습니다.
+
+### 브라우저 검색 / 스트리밍 자막 카드 만들기(Netflix)
+
+Fushi 홈페이지에서 브라우저 확장 프로그램을 설치하세요.
 
 ## 감사의 말
 

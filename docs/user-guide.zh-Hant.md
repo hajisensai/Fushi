@@ -6,7 +6,21 @@
 
 ## 簡介
 
-這是一款適用於 Android / Windows（iOS / macOS 計劃中）的免費軟體——一款劃時代的跨平台開源應用，集小說閱讀、有聲書播放、影片播放與詞典查詢於一體。
+**Fushi——把追小說、追番變成語言輸入。**
+
+閱讀小說、觀看動畫或聆聽有聲書時，點一下任何一個詞就能查詞，並把生詞連同它出現的句子一起送進 Anki。
+
+沒有預設詞表——你只複習自己真正遇到過的詞。適用於任何語言。
+
+- 📖 EPUB 閱讀 · 點擊即查
+- 🎧 有聲書逐句高亮
+- 🎬 影片字幕查詞與製卡
+- 🃏 一鍵製作 Anki 卡片 + 複習統計
+- 📚 漫畫閱讀 · 透過 OCR 直接從畫面上查詞
+- ⬇️ 動畫與漫畫一鍵應用內下載——自動加入你的媒體庫，下載途中即可播放
+- 🎮 Galgame 語音製卡（Windows）· 原始語音與文字一同寫入卡片
+
+支援平台：Android / Windows / macOS / iOS（Linux 可自行從原始碼建置，尚無預先建置的安裝包）
 
 ### 專案網址
 
@@ -18,7 +32,9 @@ https://github.com/hajisensai/Fushi
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android：選擇 **arm64**。Windows：選擇 **.exe** 檔案。
+請依你的平台選擇對應的檔案：**Android**——選 `arm64-v8a` 的 APK（近幾年的手機都用這個；只有較舊的裝置才需要 `armeabi-v7a`，模擬器則用 `x86_64`）；**Windows**——`windows-setup.exe`；**macOS**——`macos.zip`；**iOS**——`ios.ipa`。**Linux** 目前還沒有預先建置的安裝包，需要自行從原始碼建置。
+
+檔名以 `bridge-` 開頭的 APK 是給 **舊版 Hibiki 使用者** 的遷移橋接包，可以忽略。
 
 ## 設定教學
 
@@ -27,8 +43,6 @@ Android：選擇 **arm64**。Windows：選擇 **.exe** 檔案。
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Cloudflare 下載（9.5 GB）](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 在 App 中：設定 -> 同步與備份 -> 點擊 **匯入備份**。
-
-**注意：匯入備份會清除本機資料。此流程將在未來版本中改進。**
 
 ![匯入備份畫面](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki 內建 [FSRS](https://github.com/open-spaced-repetition/fsrs4anki)——世
 ![Anki Windows 設定](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. 瀏覽設定中的各項選項，看看有沒有想要調整的地方。（可選）
+
+該開始沉浸了。
+
+## 推薦功能
+
+### APP 外查詞
+
+**Android：** 選取一個詞，然後在選取選單中點擊 **翻譯** 或 **Fushi**。
+
+**Windows：** 選取一個詞，然後按 **Ctrl+Alt+D**（快捷鍵可在 設定 -> 快捷鍵 中修改）。
+
+### 剪貼簿查詞
+
+你複製的任何內容都會被自動查詞。提供兩種呈現方式——**浮動面板** 與 **透明文字視窗**——都可以在 設定 -> 查詞 中設定。
+
+### 瀏覽器查詞／串流字幕製卡（Netflix）
+
+從 Fushi 首頁安裝瀏覽器擴充功能。
 
 ## 鳴謝
 
