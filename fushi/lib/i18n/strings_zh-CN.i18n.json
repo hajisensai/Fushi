@@ -3527,5 +3527,19 @@
   "module_games_label": "Galgame",
   "module_toggle_hint": "在底栏/侧栏显示该库页；关闭即隐藏",
   "video_setting_youtube_quality": "YouTube 画质",
-  "video_setting_youtube_quality_hint": "起播自动选不超过目标的最高档；「自动」优先流畅（硬解友好编码，最高 1080p）"
+  "video_setting_youtube_quality_hint": "起播自动选不超过目标的最高档；「自动」优先流畅（硬解友好编码，最高 1080p）",
+  "library_view_discover": "发现",
+  "manga_discovery_section_trending": "趋势",
+  "manga_discovery_section_popular": "热门",
+  "manga_discovery_section_top_rated": "高分",
+  "manga_discovery_section_latest_finished": "最新完结",
+  "manga_discovery_load_failed": "发现内容加载失败。",
+  "manga_discovery_match_section": "来源匹配",
+  "manga_discovery_match_running": "正在已启用来源中匹配…",
+  "manga_discovery_match_none": "已启用来源中未找到匹配。",
+  "manga_discovery_status_releasing": "连载中",
+  "manga_discovery_status_finished": "已完结",
+  "manga_discovery_status_hiatus": "休刊中",
+  "manga_discovery_status_cancelled": "已腰斩",
+  "manga_discovery_status_not_yet_released": "未发售"
 }
