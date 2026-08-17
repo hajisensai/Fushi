@@ -84,9 +84,13 @@ class MediaDiscoveryService {
   /// [sourceId] null = 「全部源」：扇出到所有支持该域、且具备本次请求所需
   /// 能力（搜索/浏览）的源。深层目录浏览（`request.path != null`）的路径是
   /// 源内语义，聚合无意义，必须指定 [sourceId]，否则 [ArgumentError]。
+  ///
+  /// [disabledSourceIds] 只作用于聚合扇出（默认聚合排除的源，如 18+ 源）；
+  /// 显式指定 [sourceId] 时不受它限制——用户点名即同意。
   Future<DiscoveryAggregateResult> load(
     DiscoveryRequest request, {
     String? sourceId,
+    Set<String> disabledSourceIds = const <String>{},
   }) async {
     if (request.path != null && sourceId == null) {
       throw ArgumentError(
@@ -104,9 +108,11 @@ class MediaDiscoveryService {
     } else {
       candidates = sourcesFor(request.kind)
           .where(
-            (MediaDiscoverySource s) => request.isSearch
-                ? s.capabilities.supportsSearch
-                : s.capabilities.supportsBrowse,
+            (MediaDiscoverySource s) =>
+                !disabledSourceIds.contains(s.id) &&
+                (request.isSearch
+                    ? s.capabilities.supportsSearch
+                    : s.capabilities.supportsBrowse),
           )
           .toList();
     }

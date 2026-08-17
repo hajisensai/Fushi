@@ -3542,5 +3542,17 @@
   "manga_discovery_status_hiatus": "休刊中",
   "manga_discovery_status_cancelled": "已腰斩",
   "manga_discovery_status_not_yet_released": "未发售",
-  "manga_discovery_source_popular": "${source} · 热门"
+  "manga_discovery_source_popular": "${source} · 热门",
+  "discovery_all_sources": "全部源",
+  "discovery_search_hint": "搜索在线资源",
+  "discovery_enter_query_hint": "输入关键词搜索",
+  "discovery_empty": "无结果",
+  "discovery_partial_failure": "部分源不可用",
+  "discovery_load_more": "加载更多",
+  "discovery_download_queued": "已加入下载",
+  "discovery_torrent_pushed": "种子任务已添加",
+  "discovery_torrent_failed": "种子任务添加失败",
+  "discovery_kind_novel": "小说",
+  "discovery_kind_audiobook": "有声书",
+  "game_section_discover": "发现"
 }

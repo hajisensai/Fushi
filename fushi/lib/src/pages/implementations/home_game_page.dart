@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
@@ -10,6 +11,7 @@ import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -68,6 +70,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
   static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
+  static const Key discoverKey = ValueKey<String>('game-discover');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -189,7 +192,27 @@ class _HomeGamePageState extends State<HomeGamePage> {
             key: HomeGamePage.importKey,
             child: _buildImport(context),
           ),
+          KeyedSubtree(
+            key: HomeGamePage.discoverKey,
+            child: _buildDiscover(context),
+          ),
         ],
+      ),
+    );
+  }
+
+  /// 游戏「发现」视图：统一发现页（shinnku / AList / sukebei 等在线源，
+  /// 下载完自动解压、登记进游戏库）。
+  Widget _buildDiscover(BuildContext context) {
+    return MediaDiscoveryPage(
+      kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+      navigation: GameSectionTabs(
+        selected: GameSection.discover,
+        focusIdPrefix: 'game-discover-tab',
+        onSelectDashboard: _showDashboard,
+        onSelectLibrary: _showLibrary,
+        onSelectMonitor: _showMonitor,
+        onSelectSettings: _showSettings,
       ),
     );
   }

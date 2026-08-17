@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -21,13 +23,12 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
   @override
   MediaType get mediaType => ReaderMediaType.instance;
 
-  /// 书 tab 是「书架 + 来源」两视图（与漫画 / 视频同一套导航结构）。
+  /// 书 tab 是「书架 + 浏览 + 来源」三视图（与漫画 / 视频同一套导航结构）。
   ///
   /// 书架视图仍走 `mediaSource.buildHistoryPage()`——书 tab 支持切换来源
   /// （EPUB / PDF / 通用），页面类型由当前来源决定，壳不得硬编某一个实现。
-  /// 「浏览」视图暂缺：小说在线源（Kakuyomu / なろう 等）尚未落地，此处不放空壳
-  /// tab——[MediaLibraryShell] 在只有一个视图时连导航条都不显示，等在线源到位
-  /// 只需在这里多声明一条。
+  /// 「浏览」= 统一发现页（小说 + 有声书在线源：nyaa 等，源可切换、默认全部源
+  /// 聚合，下载完自动入库）。
   @override
   Widget build(BuildContext context) {
     return MediaLibraryShell(
@@ -38,6 +39,18 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           label: t.library_view_shelf,
           builder: (BuildContext context, Widget navigation) =>
               mediaSource.buildHistoryPage(navigation: navigation),
+        ),
+        MediaLibraryViewSpec(
+          kind: MediaLibraryViewKind.browse,
+          label: t.library_view_browse,
+          builder: (BuildContext context, Widget navigation) =>
+              MediaDiscoveryPage(
+            kinds: const <DiscoveryMediaKind>[
+              DiscoveryMediaKind.novel,
+              DiscoveryMediaKind.audiobook,
+            ],
+            navigation: navigation,
+          ),
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,

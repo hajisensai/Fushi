@@ -3542,5 +3542,17 @@
   "manga_discovery_status_hiatus": "On hiatus",
   "manga_discovery_status_cancelled": "Cancelled",
   "manga_discovery_status_not_yet_released": "Not yet released",
-  "manga_discovery_source_popular": "Popular on ${source}"
+  "manga_discovery_source_popular": "Popular on ${source}",
+  "discovery_all_sources": "All sources",
+  "discovery_search_hint": "Search online resources",
+  "discovery_enter_query_hint": "Enter a keyword to search",
+  "discovery_empty": "No results",
+  "discovery_partial_failure": "Some sources are unavailable",
+  "discovery_load_more": "Load more",
+  "discovery_download_queued": "Added to downloads",
+  "discovery_torrent_pushed": "Torrent task added",
+  "discovery_torrent_failed": "Failed to add torrent task",
+  "discovery_kind_novel": "Novels",
+  "discovery_kind_audiobook": "Audiobooks",
+  "game_section_discover": "Discover"
 }

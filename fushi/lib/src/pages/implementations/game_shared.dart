@@ -20,7 +20,9 @@ enum GameSection {
   monitor,
   diagnostics,
   settings,
-  importGames
+  importGames,
+  // 发现（在线源浏览/下载）。后补，只能追加在尾部（IndexedStack 索引即枚举序）。
+  discover,
 }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
@@ -163,6 +165,7 @@ class GameSectionTabs extends StatelessWidget {
     const List<GameSection> values = <GameSection>[
       GameSection.dashboard,
       GameSection.library,
+      GameSection.discover,
       GameSection.monitor,
       GameSection.importGames,
       GameSection.settings,
@@ -175,6 +178,9 @@ class GameSectionTabs extends StatelessWidget {
           return;
         case GameSection.library:
           onSelectLibrary();
+          return;
+        case GameSection.discover:
+          gameSectionNotifier.value = GameSection.discover;
           return;
         case GameSection.importGames:
           gameSectionNotifier.value = GameSection.importGames;
@@ -207,6 +213,10 @@ class GameSectionTabs extends StatelessWidget {
           ButtonSegment<GameSection>(
             value: GameSection.library,
             label: Text(t.game_library),
+          ),
+          ButtonSegment<GameSection>(
+            value: GameSection.discover,
+            label: Text(t.game_section_discover),
           ),
           ButtonSegment<GameSection>(
             value: GameSection.monitor,
