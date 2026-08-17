@@ -1381,6 +1381,24 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 刮削完成后，自动为**仍缺字幕**的视频补一条在线字幕。默认开。
+  ///
+  /// 为什么默认开：下载流水线的字幕阶段本来就默认 `bestEffort`（自动配字幕一直
+  /// 是开着的），只是从来没有名字、没有开关、失败只落在任务行一句英文里，用户
+  /// 无从知道这个能力存在。给它一个名字放进设置页（可被设置搜索命中），是这个
+  /// 能力第一次变得可发现。
+  ///
+  /// 只在配好了在线字幕来源（Jimaku key / OpenSubtitles）时才有任何动作；
+  /// 且**绝不覆盖**任何已有字幕。
+  bool get videoSubtitleBackfillAfterScrape =>
+      getPref('video_subtitle_backfill_after_scrape', defaultValue: true)
+          as bool;
+
+  Future<void> setVideoSubtitleBackfillAfterScrape(bool enabled) async {
+    await setPref('video_subtitle_backfill_after_scrape', enabled);
+    notifyListeners();
+  }
+
   /// 远端/流媒体视频用户手选的字幕来源（按 `<bookUid>#ep<index>` 记忆）：
   /// `{ "<key>": "<subtitleSource 四态编码>" }`。
   ///

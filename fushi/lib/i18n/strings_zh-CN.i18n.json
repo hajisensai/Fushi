@@ -2694,7 +2694,6 @@
   "shortcut_action_manga_page_backward": "上一页",
   "shortcut_action_manga_dismiss_dict": "关闭词典",
   "video_setting_jimaku_default_language": "默认字幕语言",
-  "video_setting_jimaku_default_language_hint": "该系列没有记住的语言时优先使用",
   "video_jimaku_api_key_settings_hint": "也可在 设置 → 视频 → 字幕 中修改",
   "anime_download_subs_episodes_unverified": "集号未与该整季包核对，字幕可能来自别的季。",
   "anime_download_subs_deferred": "字幕将在下载完成后按包内实际文件配对",
@@ -3465,5 +3464,12 @@
   "video_torznab_settings_hint": "配置一个或多个 Jackett、Prowlarr 或兼容的 Torznab 端点。密钥绝不随备份导出；可随互联同步到已配对设备（可在互联设置中关闭）。",
   "video_opensubtitles_settings_hint": "API 凭据绝不随备份导出；可随互联同步到已配对设备（可在互联设置中关闭）。",
   "sync_interconnect_service_config_toggle": "同步主机服务配置",
-  "sync_interconnect_service_config_toggle_desc": "经加密互联通道接收已配对主机的外部服务设定与 API key（Jimaku、TMDB、Torznab、OpenSubtitles、追番）。需启用 TLS。"
+  "sync_interconnect_service_config_toggle_desc": "经加密互联通道接收已配对主机的外部服务设定与 API key（Jimaku、TMDB、Torznab、OpenSubtitles、追番）。需启用 TLS。",
+  "video_setting_subtitle_backfill": "刮削后自动补字幕",
+  "video_setting_subtitle_backfill_hint": "刮削完成后，仍然没有字幕的视频会自动从已配置的在线字幕来源取一条。绝不覆盖已有字幕。",
+  "video_setting_subtitle_sources_section": "在线字幕来源",
+  "video_subtitle_no_source_configured": "没找到字幕 · 去配置在线字幕来源",
+  "anime_download_subs_retrying": "字幕：还没上传，稍后自动重试",
+  "video_jimaku_language_follow_video": "跟随视频语言",
+  "video_setting_jimaku_default_language_hint": "默认跟随视频自身的语言（音轨 / 刮削元数据）。选定某个语言则始终优先它。"
 }

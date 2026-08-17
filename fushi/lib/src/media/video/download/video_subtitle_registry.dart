@@ -17,13 +17,12 @@ class VideoSubtitleRegistry {
   ) async {
     final bool anime =
         request.media?.discoveryCategory == VideoDiscoveryCategory.anime;
-    final List<VideoSubtitleProvider> applicable = providers
-        .where(
-          (VideoSubtitleProvider provider) => anime
-              ? provider.id == 'jimaku' || provider.id == 'opensubtitles'
-              : provider.id == 'opensubtitles',
-        )
-        .toList()
+    // 此前非动画只放 OpenSubtitles，理由大概是「Jimaku 是番剧字幕站」。这不成立：
+    // Jimaku 上有数千条真人日剧/日影条目，而它们恰恰是本 app（日语沉浸）最需要
+    // 日语字幕、OpenSubtitles 又最缺日语轨的一类。真正把真人剧挡死的是
+    // JimakuAnimeFilter（BUG-1694），那个修好之后这道分类门就只剩「少搜一家」的
+    // 净损失。动画仍旧 Jimaku 优先，排序不变。
+    final List<VideoSubtitleProvider> applicable = providers.toList()
       ..sort((VideoSubtitleProvider a, VideoSubtitleProvider b) {
         if (anime && a.id != b.id) {
           if (a.id == 'jimaku') return -1;

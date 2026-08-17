@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/jimaku_matching.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 
 /// 合集批量字幕下载里的一集输入：稳定身份 + 定位信息 + 合集内序位。
@@ -93,33 +94,26 @@ int resolveBatchEpisode(JimakuBatchTarget target) {
 
 /// 从某集的候选文件里挑最佳字幕。纯函数，便于单测。
 ///
-/// Jimaku 的 `episode` 服务端过滤是**文件名启发式**，可能回整季打包 / 邻集文件，故：
-/// 1. 先只留精确命中 [episode] 集号的文本字幕；一个都没有再退回全体文本字幕（尽力而为，
-///    避免因启发式漏判而整集拿不到字幕）；
-/// 2. 池内按语言权重（[jimakuLanguageRank]，优先 [preferredLanguage]）→ 文件名排序，取首。
+/// **判据不在这里**——委托给全仓唯一的 [chooseJimakuFileForEpisode]（BUG-1695）。
+/// 本函数只剩「把文件列表建成索引」这一步存在的理由，保留是为了不改既有调用点形状。
 ///
-/// 无任何文本字幕候选返回 null（该集记 noMatch）。
+/// [soleTarget] 见 [chooseJimakuFileForEpisode]：只有本次匹配确实只有一个待配视频
+/// 时，未编号字幕（剧场版 / 整季单文件）才允许被采用。
+///
+/// 旧实现在「集号一个都没命中」时会退回**全体文本字幕取第一个**。那不是尽力而为，
+/// 是把「错季 / 绝对集号编号 / 条目选错」这三种冲突静默变成一个错答案：整季 12 集
+/// 会拿到同一个文件，状态还显示 done。冲突现在明确记 noMatch。
 JimakuFile? pickBestSubtitleFile(
   List<JimakuFile> files, {
   required int episode,
+  required bool soleTarget,
   String? preferredLanguage,
-}) {
-  final List<JimakuFile> text =
-      files.where((JimakuFile f) => f.isTextSubtitle).toList();
-  if (text.isEmpty) return null;
-  final List<JimakuFile> matching =
-      text.where((JimakuFile f) => f.episode == episode).toList();
-  final List<JimakuFile> pool = matching.isNotEmpty ? matching : text;
-  pool.sort((JimakuFile a, JimakuFile b) {
-    final int la = jimakuLanguageRank(detectSubtitleLanguage(a.name),
-        preferred: preferredLanguage);
-    final int lb = jimakuLanguageRank(detectSubtitleLanguage(b.name),
-        preferred: preferredLanguage);
-    if (la != lb) return la.compareTo(lb);
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  });
-  return pool.first;
-}
+}) =>
+    chooseJimakuFileForEpisode(
+      JimakuEpisodeIndex.fromFiles(files, preferredLanguage: preferredLanguage),
+      episode: episode,
+      soleTarget: soleTarget,
+    ).file;
 
 /// 批量下载落盘的文件名：以稳定 bookUid（清洗成合法文件名段）为前缀，避免多集拿到同名
 /// 文件（整季打包字幕对不同集同名）时互相覆盖。纯函数，便于单测。
@@ -169,6 +163,31 @@ Future<List<JimakuBatchItem>> runJimakuBatch({
   final List<int> ids = entryIds.toSet().toList(growable: false);
   final List<JimakuBatchItem> results = <JimakuBatchItem>[];
   final Directory dir = Directory(saveDirectory);
+  final bool soleTarget = targets.length == 1;
+
+  // 条目文件**整批只列一次**（不带 episode query），而不是每集每条目各列一次。
+  //
+  // 两个理由，第二个才是重点（BUG-1695）：
+  // ① 请求数从 targets×entries 降到 entries；
+  // ② 带 `episode=` 时服务端按**文件名启发式**先过滤一道，客户端拿到的就只是它的
+  //    猜测——「字幕侧到底有哪些集号」这个事实被遮住了，于是没法区分「这一集没有
+  //    字幕」和「整个条目就是按绝对集号编号的」。要判集号冲突，必须看到全集合。
+  final List<JimakuFile> allFiles = <JimakuFile>[];
+  JimakuEpisodeIndex? sharedIndex;
+  String? listError;
+  try {
+    for (final int id in ids) {
+      allFiles.addAll(await client.listFiles(id, throwOnError: true));
+    }
+    sharedIndex = JimakuEpisodeIndex.fromFiles(
+      allFiles,
+      preferredLanguage: preferredLanguage,
+    );
+  } catch (e) {
+    // 列文件失败是整批共因，不能伪装成每集各自的 noMatch（fail-open 会让用户以为
+    // 「这个条目没字幕」）。逐集记 failed，保持「单集失败不中断」的既有语义。
+    listError = '$e';
+  }
 
   for (final JimakuBatchTarget target in targets) {
     final JimakuBatchItem item = JimakuBatchItem(
@@ -177,24 +196,25 @@ Future<List<JimakuBatchItem>> runJimakuBatch({
     );
     item.status = JimakuBatchStatus.downloading;
     if (onItemStart != null) await onItemStart(item);
+    if (listError != null) {
+      item.status = JimakuBatchStatus.failed;
+      item.message = listError;
+      if (onItemDone != null) await onItemDone(item);
+      results.add(item);
+      continue;
+    }
     try {
-      final List<JimakuFile> files = <JimakuFile>[];
-      for (final int id in ids) {
-        files.addAll(
-          await client.listFiles(
-            id,
-            episode: item.episode,
-            throwOnError: true,
-          ),
-        );
-      }
-      final JimakuFile? best = pickBestSubtitleFile(
-        files,
+      final JimakuEpisodeMatch match = chooseJimakuFileForEpisode(
+        sharedIndex!,
         episode: item.episode,
-        preferredLanguage: preferredLanguage,
+        soleTarget: soleTarget,
       );
+      final JimakuFile? best = match.file;
       if (best == null) {
         item.status = JimakuBatchStatus.noMatch;
+        // 「为什么没配上」对用户是三件不同的事（改条目 / 等字幕 / 无能为力），
+        // 别全压成一句「无匹配」。
+        item.message = match.failureReason;
       } else {
         final Uint8List? bytes = await client.downloadFile(best.url);
         if (bytes == null) {

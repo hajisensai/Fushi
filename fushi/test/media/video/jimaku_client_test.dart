@@ -220,15 +220,59 @@ void main() {
         return http.Response('[]', 200);
       });
       final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      // 显式钉动画档：这条用例验的是「id → 文本」的回退顺序，不该被
+      // BUG-1694 的 anime=true/false 两档兜底混进额外请求。
       final List<JimakuEntry> entries = await jc.searchEntries(
         anilistId: 999,
         queryFallbacks: <String>['', 'Tom Jerry romaji', 'とむとじぇりーごっこ'],
+        animeFilter: JimakuAnimeFilter.anime,
       );
       expect(entries, hasLength(1));
       expect(entries.first.name, '字幕在此');
       // 空串被跳过；命中后不再尝试后续（此处第 3 个即命中，无第 4 个）。
       expect(
           calls, <String>['id', 'query:Tom Jerry romaji', 'query:とむとじぇりーごっこ']);
+    });
+
+    group('BUG-1694 anime 硬过滤', () {
+      test('从不拼 anime 参数 = 永远只搜服务端缺省的动画子集（真人剧 0 结果）', () async {
+        final List<String?> animeParams = <String?>[];
+        final MockClient client = MockClient((http.Request req) async {
+          animeParams.add(req.url.queryParameters['anime']);
+          return http.Response('[]', 200);
+        });
+        final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+        await jc.searchByQuery('半沢直樹');
+        // 缺省 either：先 true 再 false。少了 'false' 那一发，Jimaku 上数千条
+        // 真人条目就是搜不到——那正是本 bug。
+        expect(animeParams, <String>['true', 'false']);
+      });
+
+      test('liveAction 只发一次 anime=false', () async {
+        final List<String?> animeParams = <String?>[];
+        final MockClient client = MockClient((http.Request req) async {
+          animeParams.add(req.url.queryParameters['anime']);
+          return http.Response('[{"id":5,"name":"drama"}]', 200);
+        });
+        final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+        final List<JimakuEntry> entries = await jc.searchByQuery(
+          '半沢直樹',
+          animeFilter: JimakuAnimeFilter.liveAction,
+        );
+        expect(entries.single.name, 'drama');
+        expect(animeParams, <String>['false']);
+      });
+
+      test('动画命中就不再为真人多打一次（either 的请求数不比改动前多）', () async {
+        final List<String?> animeParams = <String?>[];
+        final MockClient client = MockClient((http.Request req) async {
+          animeParams.add(req.url.queryParameters['anime']);
+          return http.Response('[{"id":9,"name":"anime hit"}]', 200);
+        });
+        final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+        expect((await jc.searchByAnilistId(21)).single.name, 'anime hit');
+        expect(animeParams, <String>['true']);
+      });
     });
 
     test('anilist_id 与全部文本都空 → 空', () async {

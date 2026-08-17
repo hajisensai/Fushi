@@ -522,8 +522,19 @@ class AnimeDownloadService {
       for (final AnimeDownloadPlan plan in plans)
         if (plan.status == AnimeDownloadPlan.statusDownloading) plan,
     ];
-    // 没有等待中的计划就不建连接。
-    if (pending.isEmpty) {
+    // 已入库但字幕还没配上、且到了下一档重试时刻的计划（BUG-1696）。判据是纯函数
+    // [AnimeDownloadPlan.shouldRetrySubtitles]，这里只负责取当前时刻。
+    final int tickNowMs = DateTime.now().millisecondsSinceEpoch;
+    final List<AnimeDownloadPlan> subtitleRetries = <AnimeDownloadPlan>[
+      for (final AnimeDownloadPlan plan in plans)
+        // 只给**已入库**的计划补字幕：downloading 的还没到反查时机（首次反查在
+        // _finishPlan 里做），failed 的连视频都没进库，给它配字幕是纯噪音。
+        if (plan.status == AnimeDownloadPlan.statusImported &&
+            plan.shouldRetrySubtitles(tickNowMs))
+          plan,
+    ];
+    // 没有等待中的计划、也没有待重试字幕的计划就不建连接。
+    if (pending.isEmpty && subtitleRetries.isEmpty) {
       _publishProgress(const <String, double>{});
       return;
     }
@@ -586,6 +597,33 @@ class AnimeDownloadService {
           }
           if (!info.isComplete) return;
           await _finishPlan(client, current, info);
+        });
+      }
+
+      // 字幕重试跑在下载轮询之后，复用同一次 listTorrents 结果与同一条 per-plan
+      // 串行边界；单条失败不影响其它计划，也绝不把下载状态判失败。
+      for (final AnimeDownloadPlan plan in subtitleRetries) {
+        final TorrentSnapshot? info = byHash[plan.id.toLowerCase()];
+        if (info == null) continue;
+        await _runPlanSerial<void>(plan.id, () async {
+          AnimeDownloadPlan? current;
+          for (final AnimeDownloadPlan candidate in await store.loadAll()) {
+            if (candidate.id == plan.id) {
+              current = candidate;
+              break;
+            }
+          }
+          // 重新读一遍：串行队列里排在前面的操作（比如用户手动补了字幕、或删了
+          // 计划）可能已经改过它，不能拿 tick 开头那份 stale 副本去写。
+          if (current == null || !current.shouldRetrySubtitles(tickNowMs)) {
+            return;
+          }
+          try {
+            await _retrySubtitlesFor(client, current, info);
+          } catch (_) {
+            // 网络/后端异常：本轮算一次尝试已在 _resolveSubtitles 内记过；
+            // 真正抛到这里的是 listFiles 失败，下轮 backoff 再来。
+          }
         });
       }
     } finally {
@@ -728,42 +766,81 @@ class AnimeDownloadService {
   /// 任何失败路径都落 [AnimeDownloadPlan.subtitleUnavailable] + 原因，不静默：
   /// 视频照常入库（字幕缺失不该让整个下载判失败），用户在任务行能看见「字幕未
   /// 匹配」并用字幕对话框手动补。
+  /// [retrying] = 这是 [subtitleRetryBackoff] 触发的重试（计划已 imported），
+  /// 而不是下载完成时的首次反查。两者除了准入状态外走完全同一条路径。
   Future<AnimeDownloadPlan> _resolveSubtitles(
     AnimeDownloadPlan plan,
-    List<String> videoAbsolutePaths,
-  ) async {
-    if (plan.subtitleStatus != AnimeDownloadPlan.subtitlePending) return plan;
+    List<String> videoAbsolutePaths, {
+    bool retrying = false,
+  }) async {
+    final bool eligible = retrying
+        ? plan.subtitleStatus == AnimeDownloadPlan.subtitleUnavailable
+        : plan.subtitleStatus == AnimeDownloadPlan.subtitlePending;
+    if (!eligible) return plan;
+    // 尝试计数在**发起前**就要记：无论成败都算一次，否则 resolver 每次抛异常就
+    // 永远停在 attempts=0，backoff 退化成「每轮 tick 都打一次」。
+    final AnimeDownloadPlan attempted = plan.copyWith(
+      subtitleAttempts: plan.subtitleAttempts + 1,
+      subtitleLastAttemptAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
     final Future<ResolvedPlanSubtitles> Function(
       AnimeDownloadPlan,
       List<String>,
     )? resolver = _subtitleResolver;
     if (resolver == null) {
-      return plan.copyWith(
+      return attempted.copyWith(
         subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
         subtitleNote: 'subtitle resolver unavailable',
       );
     }
     try {
       final ResolvedPlanSubtitles result = await resolver(
-        plan,
+        attempted,
         videoAbsolutePaths,
       );
       if (result.subtitles.isEmpty) {
-        return plan.copyWith(
+        return attempted.copyWith(
           subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
           subtitleNote: result.failureReason ?? 'no matching subtitle',
         );
       }
-      return plan.copyWith(
+      return attempted.copyWith(
         subtitles: result.subtitles,
         subtitleStatus: AnimeDownloadPlan.subtitleResolved,
       );
     } catch (e) {
-      return plan.copyWith(
+      return attempted.copyWith(
         subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
         subtitleNote: 'subtitle resolve failed: $e',
       );
     }
+  }
+
+  /// 已入库但字幕还没配上的计划，按 [AnimeDownloadPlan.subtitleRetryBackoff]
+  /// 再反查一次（BUG-1696）。
+  ///
+  /// 为什么必须有这一步：`subtitleUnavailable` 的**主流成因是「字幕还没上传」**，
+  /// 是时间问题不是匹配问题。首次反查发生在下载刚完成那一刻——恰恰是字幕最可能
+  /// 还没上传的时刻。没有重试，订阅党的每一集都会永久停在「无字幕」。
+  ///
+  /// 只在种子仍在后端（还在做种）时可行：反查要靠 [TorrentBackend.listFiles] 给出
+  /// 包内真实文件名。种子已被移除的计划自然跳过——那时也已经没有可靠的集号来源。
+  Future<void> _retrySubtitlesFor(
+    TorrentBackend client,
+    AnimeDownloadPlan plan,
+    TorrentSnapshot info,
+  ) async {
+    final List<TorrentFileEntry> files = await client.listFiles(info.hash);
+    final (List<String> videos, _) = _classifyContent(plan, info, files);
+    if (videos.isEmpty) return;
+    final AnimeDownloadPlan resolved = await _resolveSubtitles(
+      plan,
+      videos,
+      retrying: true,
+    );
+    if (identical(resolved, plan)) return;
+    await _placeSidecars(videos, resolved.subtitles);
+    await store.save(resolved);
   }
 
   /// 把配对到的字幕从暂存复制成视频 sidecar。**该集已有任何 sidecar 就整条跳过**；

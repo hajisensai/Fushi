@@ -2694,7 +2694,6 @@
   "shortcut_action_manga_page_backward": "Previous page",
   "shortcut_action_manga_dismiss_dict": "Close dictionary",
   "video_setting_jimaku_default_language": "Default subtitle language",
-  "video_setting_jimaku_default_language_hint": "Preferred language when the series has no remembered choice",
   "video_jimaku_api_key_settings_hint": "Also editable in Settings → Video → Subtitles",
   "anime_download_subs_episodes_unverified": "Episode numbers are not verified against this pack - subtitles may come from another season.",
   "anime_download_subs_deferred": "Subtitles are matched after download, from the pack's actual files",
@@ -3465,5 +3464,12 @@
   "video_torznab_settings_hint": "Configure one or more Jackett, Prowlarr, or compatible Torznab endpoints. Secrets are never exported in backups; they may sync to paired devices over Interconnect (can be turned off in Interconnect settings).",
   "video_opensubtitles_settings_hint": "API credentials are never exported in backups; they may sync to paired devices over Interconnect (can be turned off in Interconnect settings).",
   "sync_interconnect_service_config_toggle": "Sync service configuration from host",
-  "sync_interconnect_service_config_toggle_desc": "Receive external service settings and API keys (Jimaku, TMDB, Torznab, OpenSubtitles, tracking) from the paired host over the encrypted Interconnect channel. Requires TLS."
+  "sync_interconnect_service_config_toggle_desc": "Receive external service settings and API keys (Jimaku, TMDB, Torznab, OpenSubtitles, tracking) from the paired host over the encrypted Interconnect channel. Requires TLS.",
+  "video_setting_subtitle_backfill": "Auto-fetch subtitles after scraping",
+  "video_setting_subtitle_backfill_hint": "When a scrape finishes, videos that still have no subtitle get one from your configured online sources. Never replaces an existing subtitle.",
+  "video_setting_subtitle_sources_section": "Online subtitle sources",
+  "video_subtitle_no_source_configured": "No subtitle found · set up an online subtitle source",
+  "anime_download_subs_retrying": "Subtitles: not up yet — will retry automatically",
+  "video_jimaku_language_follow_video": "Follow video language",
+  "video_setting_jimaku_default_language_hint": "Defaults to the video's own language (audio track / scraped metadata). Pick one to always prefer that language instead."
 }

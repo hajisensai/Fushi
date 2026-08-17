@@ -359,6 +359,34 @@ Uri buildListFilesUri(String base, int entryId, {int? episode}) {
   return uri.replace(queryParameters: <String, String>{'episode': '$episode'});
 }
 
+/// `/entries/search` 的 `anime` 过滤三态。
+///
+/// Jimaku 服务端把 `anime` 当**硬相等过滤**（不是排序权重），且**缺省 `true`**。
+/// 此前本客户端从不拼这个参数，等于每次都在 `anime=true` 的子集里搜——Jimaku 上
+/// 数千条真人日剧/电影条目**在任何入口都搜不到**（BUG-1694）。这不是「匹配不准」，
+/// 是整类内容的功能缺失，所以修法是把过滤面变成调用方可表达的值，而不是在某一处
+/// 补一个 if。
+enum JimakuAnimeFilter {
+  /// 只搜动画（= 服务端缺省，与本改动前逐字节同一结果集）。
+  anime,
+
+  /// 只搜真人（日剧 / 真人电影）。
+  liveAction,
+
+  /// 种类未知：先动画、空结果再真人。
+  either;
+
+  /// 本过滤态展开成的 `anime` 参数值序列（按尝试顺序）。
+  ///
+  /// 动画排在前面不是随手定的：本 app 的主用例是动画，动画命中就不该为一个同名
+  /// 真人条目多打一次请求，且结果顺序直接决定 `searchEntries` 返回的首条。
+  List<String> get queryValues => switch (this) {
+        JimakuAnimeFilter.anime => const <String>['true'],
+        JimakuAnimeFilter.liveAction => const <String>['false'],
+        JimakuAnimeFilter.either => const <String>['true', 'false'],
+      };
+}
+
 /// Jimaku API 客户端（参照 asbplayer 的 Jimaku 集成）。需用户在设置/对话框填 API key。
 ///
 /// 端点：`/api/entries/search`（按 anilist_id 或 query 搜条目）、`/api/entries/<id>/files`
@@ -378,12 +406,17 @@ class JimakuClient {
       };
 
   /// 按 AniList id 搜 Jimaku 条目。
+  ///
+  /// [animeFilter] 见 [JimakuAnimeFilter]；缺省 [JimakuAnimeFilter.either]
+  /// （动画搜不到再搜真人）。调用方知道种类时显式传，可省掉那次兜底请求。
   Future<List<JimakuEntry>> searchByAnilistId(
     int anilistId, {
     bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
-    return _searchEntries(
+    return _searchWithAnimeFilter(
       <String, String>{'anilist_id': '$anilistId'},
+      animeFilter,
       throwOnError: throwOnError,
     );
   }
@@ -392,12 +425,33 @@ class JimakuClient {
   Future<List<JimakuEntry>> searchByQuery(
     String query, {
     bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
     if (query.trim().isEmpty) return const <JimakuEntry>[];
-    return _searchEntries(
+    return _searchWithAnimeFilter(
       <String, String>{'query': query},
+      animeFilter,
       throwOnError: throwOnError,
     );
+  }
+
+  /// 按 [filter] 把一次逻辑搜索展开成 1~2 次 `/entries/search`。
+  ///
+  /// 顺序回退而非并发两发：见 [JimakuAnimeFilter.queryValues]。任一档命中即停，
+  /// 所以动画用例的请求数与本改动前完全一致（仍是 1 次）。
+  Future<List<JimakuEntry>> _searchWithAnimeFilter(
+    Map<String, String> params,
+    JimakuAnimeFilter filter, {
+    required bool throwOnError,
+  }) async {
+    for (final String value in filter.queryValues) {
+      final List<JimakuEntry> found = await _searchEntries(
+        <String, String>{...params, 'anime': value},
+        throwOnError: throwOnError,
+      );
+      if (found.isNotEmpty) return found;
+    }
+    return const <JimakuEntry>[];
   }
 
   /// 「先按 AniList id 搜、搜不到再按文本搜」的收敛入口——Jimaku 条目只有被人工挂上
@@ -409,11 +463,13 @@ class JimakuClient {
     int? anilistId,
     List<String> queryFallbacks = const <String>[],
     bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
     if (anilistId != null) {
       final List<JimakuEntry> byId = await searchByAnilistId(
         anilistId,
         throwOnError: throwOnError,
+        animeFilter: animeFilter,
       );
       if (byId.isNotEmpty) return byId;
     }
@@ -422,6 +478,7 @@ class JimakuClient {
       final List<JimakuEntry> byQuery = await searchByQuery(
         query,
         throwOnError: throwOnError,
+        animeFilter: animeFilter,
       );
       if (byQuery.isNotEmpty) return byQuery;
     }

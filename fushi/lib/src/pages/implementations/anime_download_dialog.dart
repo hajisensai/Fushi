@@ -2455,8 +2455,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           t.anime_download_subs_pending,
           scheme.onSurfaceVariant,
         ),
+      // BUG-1696 起 unavailable 不再是终态：还排得上 backoff 重试的说「稍后自动
+      // 重试」，重试次数用完了才说「未匹配到（可手动补）」。两种对用户是完全不同
+      // 的处境——前者什么都不用做，后者要么手动补要么改条目。
       AnimeDownloadPlan.subtitleUnavailable => (
-          t.anime_download_subs_unmatched,
+          plan.subtitleRetryPossible
+              ? t.anime_download_subs_retrying
+              : t.anime_download_subs_unmatched,
           scheme.tertiary,
         ),
       _ => null,

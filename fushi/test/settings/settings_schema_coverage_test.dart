@@ -83,6 +83,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 同一实例下轮即刮）。
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
+  // BUG-1698：刮削完成后给仍缺字幕的视频补一条在线字幕。写 prefsRepo
+  // （changed=true），生效点在 AppModel._backfillSubtitlesForScrapedWork 的进场门
+  // （关=刮削回调直接 return，零字幕网络请求），不是 reader CSS / 主题树，无适用
+  // 探针；由专项纯函数测试咬住「刮削结论 → 字幕目标」这一步——那才是这个功能的
+  // 全部准确率所在（外部 id / 原名 / 季集号怎么传给 provider）。
+  'video/Auto-fetch subtitles after scraping':
+      'test/media/video/scraped_subtitle_targets_test.dart',
   // Jimaku 默认字幕语言（BUG-1189/1190 那批「Jimaku 设置统一到设置页」）。写
   // prefsRepo（changed=true），生效点是三个 Jimaku 界面打开时的语言预选（没有该
   // 系列的语言记忆时用它兜底），不在 reader CSS / 主题树里，无适用探针；由专项
