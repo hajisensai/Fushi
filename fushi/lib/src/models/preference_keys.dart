@@ -178,6 +178,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_obscure_hide',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
+  'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',

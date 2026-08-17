@@ -3451,5 +3451,7 @@
   "settings_content_language_title": "Default content language",
   "settings_content_language_unset": "Not set",
   "settings_content_language_description": "Fallback language for content that does not declare one. Per-book, per-video, per-game and per-dictionary settings override this.",
-  "manga_ocr_lens_language_label": "Herkenningstaal"
+  "manga_ocr_lens_language_label": "Herkenningstaal",
+  "video_setting_youtube_quality": "YouTube quality",
+  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p)"
 }

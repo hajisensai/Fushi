@@ -2042,7 +2042,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _setLoadingPhase(_VideoLoadPhase.connecting);
       try {
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
-            await buildStreamVideoLaunch(row);
+            await buildStreamVideoLaunch(row,
+                youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull);
         if (!mounted) return;
         _resolvedStreamInfo = launch.info;
         _resolvedStreamClient = launch.client;
@@ -2680,6 +2681,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         videoRemotePositionEpisodePrefKey(keyUid, episodeIndex), clamped);
     await appModel.prefsRepo.setPref(
         videoRemotePositionEpisodeAtPrefKey(keyUid, episodeIndex), nowMs);
+    // 书架流媒体书（YouTube/直链，TODO-1157）**有** VideoBooks 行（[_bookRow] 非空），
+    // 只写 prefs 会让书架的「继续观看 / 在看筛选 / 合集续播选集」对它全部失明——那些
+    // 读的是 `lastPositionMs` / `lastPlayedAt`。与本地 [_persistPosition] 对齐补写 DB 行
+    // （resume 仍走上面的 prefs LWW，两者读写路径互不干扰）。互联远端无行，保持原样。
+    if (_bookRow != null) {
+      await widget.repo
+          .updatePosition(widget.bookUid, clamped, playedAt: nowMs);
+    }
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
@@ -3228,7 +3237,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _prewarmNextEpisodeSubtitleCache();
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
-    if (!_isRemote && _watchTracker == null) {
+    // 判据 [_bookRow] 非空 = 书架书（本地视频 + TODO-1157 流媒体书都有 VideoBooks 行）：
+    // 流媒体书（YouTube 等）在本机播放同样计观看时长/字幕字数/看完标记（用户在 app 内
+    // 看油管也是沉浸时间）。互联远端（无行，媒体归 host）保持不采集。
+    if (_bookRow != null && _watchTracker == null) {
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
         title: title,

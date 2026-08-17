@@ -475,6 +475,9 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
   bool withCaptions = true,
   // A1 多 client 兜底顺序（默认 [kYoutubeManifestClientFallback]=androidVr→ios→tv）。
   List<yt.YoutubeApiClient>? ytClients,
+  // 用户显式画质目标（设置「YouTube 画质」；null=自动=默认策略 [pickPlaybackVideoStream]，
+  // 非 null 走 [pickVideoStreamForTargetHeight]，可越过默认 1080p 上限到 1440p/4K）。
+  int? playbackTargetHeight,
 }) async {
   final yt.YoutubeExplode client =
       yt.YoutubeExplode(_createYoutubeHttpClient());
@@ -488,6 +491,7 @@ Future<YoutubeResolvedSource> resolveYoutubeSource(
       preferSubtitleLang,
       withCaptions,
       ytClients ?? kYoutubeManifestClientFallback,
+      playbackTargetHeight,
     ).timeout(timeout);
   } finally {
     client.close();
@@ -500,6 +504,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   String preferSubtitleLang,
   bool withCaptions,
   List<yt.YoutubeApiClient> ytClients,
+  int? playbackTargetHeight,
 ) async {
   // 制卡路径（withCaptions=false）直接从 URL 取 VideoId，**跳过 videos.get**（慢网下这一步就
   // ~9s）——制卡不需要标题/元数据，只要 getManifest 的流 URL。播放器路径仍取完整 Video（要标题）。
@@ -521,7 +526,7 @@ Future<YoutubeResolvedSource> _resolveYoutubeSourceInner(
   String streamUrl;
   String? audioStreamUrl;
   if (manifest.videoOnly.isNotEmpty && manifest.audioOnly.isNotEmpty) {
-    streamUrl = _pickPlaybackVideoUrl(manifest);
+    streamUrl = _pickPlaybackVideoUrl(manifest, playbackTargetHeight);
     audioStreamUrl = manifest.audioOnly.withHighestBitrate().url.toString();
   } else {
     streamUrl = manifest.muxed.withHighestBitrate().url.toString();
@@ -608,16 +613,13 @@ T pickPlaybackVideoStream<T>(
   return capped.first;
 }
 
-/// 选播放用 video-only 流：编码优先（avc1>vp9>av01）→ ≤1080p 最高清 → 非 throttled
-/// （[pickPlaybackVideoStream]）。命中 throttled（异常，ANDROID_VR 正常不 throttled）时告警。
-String _pickPlaybackVideoUrl(yt.StreamManifest manifest) {
+/// 选播放用 video-only 流。[targetHeight] null（自动）= 默认策略：编码优先（avc1>vp9>
+/// av01）→ ≤1080p 最高清 → 非 throttled（[pickPlaybackVideoStream]）；非 null = 用户显式
+/// 画质目标（[pickVideoStreamForTargetHeight]，画质菜单同语义、可达 1440p/4K）。命中
+/// throttled（异常，ANDROID_VR 正常不 throttled）时告警。
+String _pickPlaybackVideoUrl(yt.StreamManifest manifest, int? targetHeight) {
   final yt.VideoOnlyStreamInfo chosen =
-      pickPlaybackVideoStream<yt.VideoOnlyStreamInfo>(
-    manifest.videoOnly.toList(),
-    heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
-    codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
-    throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
-  );
+      _pickPlaybackVideoStreamInfo(manifest, targetHeight);
   if (chosen.isThrottled) {
     debugPrint(
       '[hibiki][youtube] 选中的播放流 isThrottled=true（异常，缓冲可能慢）：'
@@ -625,6 +627,58 @@ String _pickPlaybackVideoUrl(yt.StreamManifest manifest) {
     );
   }
   return chosen.url.toString();
+}
+
+/// 播放选流真身：[targetHeight] null=默认策略 / 非 null=显式画质目标（两纯函数二选一）。
+yt.VideoOnlyStreamInfo _pickPlaybackVideoStreamInfo(
+  yt.StreamManifest manifest,
+  int? targetHeight,
+) {
+  final List<yt.VideoOnlyStreamInfo> candidates = manifest.videoOnly.toList();
+  return targetHeight == null
+      ? pickPlaybackVideoStream<yt.VideoOnlyStreamInfo>(
+          candidates,
+          heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
+          codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
+          throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
+        )
+      : pickVideoStreamForTargetHeight<yt.VideoOnlyStreamInfo>(
+          candidates,
+          heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
+          codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
+          throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
+          targetHeight: targetHeight,
+        );
+}
+
+/// 纯函数：按用户显式**画质目标**选流 = 画质菜单语义（[dedupeVideoStreamsByHeight] 的
+/// 档位阶梯里取 ≤[targetHeight] 的最高档；全部高于目标时退最低档，宁流畅勿卡死）。
+///
+/// 与 [pickPlaybackVideoStream]（默认策略：编码优先高于分辨率，避软解抖）语义**刻意不同**：
+/// 用户在设置里显式选了目标画质（如 1440p/4K —— YouTube 高于 1080p 只有 vp9/av01），意图
+/// 是「要这个分辨率」，编码优先若仍压在分辨率之上，这个设置就永远到不了 1440p+，成谎言型
+/// 设置。编码偏好在**同一高度内**仍生效（dedupe 每档取 avc1>vp9>av01、非 throttled 优先），
+/// 行为与用户手动在画质菜单点 ≤目标 的最高档完全一致。
+T pickVideoStreamForTargetHeight<T>(
+  List<T> streams, {
+  required int Function(T stream) heightOf,
+  required String Function(T stream) codecOf,
+  required bool Function(T stream) throttledOf,
+  required int targetHeight,
+}) {
+  final List<T> deduped = dedupeVideoStreamsByHeight<T>(
+    streams,
+    heightOf: heightOf,
+    codecOf: codecOf,
+    throttledOf: throttledOf,
+  );
+  if (deduped.isEmpty) {
+    throw StateError('pickVideoStreamForTargetHeight: empty stream list');
+  }
+  for (final T s in deduped) {
+    if (heightOf(s) <= targetHeight) return s; // 降序阶梯首个 ≤ 目标。
+  }
+  return deduped.last; // 全部高于目标：退最低档。
 }
 
 /// 纯函数（泛型，可单测）：把 video-only 候选**去重成每个高度一条**（编码最优：avc1>vp9>
@@ -668,6 +722,9 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
   String url, {
   Duration timeout = const Duration(seconds: 20),
   List<yt.YoutubeApiClient>? ytClients,
+  // 用户显式画质目标（与 [resolveYoutubeSource] 同义）：非 null 时「自动」档下标
+  // 对齐 ≤目标 的最高档，与初始播放选择一致。
+  int? playbackTargetHeight,
 }) async {
   final yt.YoutubeExplode client =
       yt.YoutubeExplode(_createYoutubeHttpClient());
@@ -676,6 +733,7 @@ Future<YoutubeVariantSet> resolveYoutubeVideoVariants(
       client,
       url,
       ytClients ?? kYoutubeManifestClientFallback,
+      playbackTargetHeight,
     ).timeout(timeout);
   } finally {
     client.close();
@@ -686,6 +744,7 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
   yt.YoutubeExplode client,
   String url,
   List<yt.YoutubeApiClient> ytClients,
+  int? playbackTargetHeight,
 ) async {
   final yt.VideoId videoId = yt.VideoId(url);
   final yt.StreamManifest manifest =
@@ -714,15 +773,11 @@ Future<YoutubeVariantSet> _resolveYoutubeVideoVariantsInner(
         codec: s.videoCodec,
       ),
   ];
-  // 「自动」档 = 初始播放选择（[pickPlaybackVideoStream]：avc1 优先、≤1080p 最高清），
-  // 按高度回找它在去重表里的下标，供画质菜单「自动」项与初始高亮对齐。
+  // 「自动」档 = 初始播放选择（默认策略 [pickPlaybackVideoStream]：avc1 优先、≤1080p
+  // 最高清；有显式画质目标时 [pickVideoStreamForTargetHeight]：≤目标 的最高档），按高度
+  // 回找它在去重表里的下标，供画质菜单「自动」项与初始高亮对齐。
   final yt.VideoOnlyStreamInfo chosen =
-      pickPlaybackVideoStream<yt.VideoOnlyStreamInfo>(
-    manifest.videoOnly.toList(),
-    heightOf: (yt.VideoOnlyStreamInfo s) => s.videoResolution.height,
-    codecOf: (yt.VideoOnlyStreamInfo s) => s.videoCodec,
-    throttledOf: (yt.VideoOnlyStreamInfo s) => s.isThrottled,
-  );
+      _pickPlaybackVideoStreamInfo(manifest, playbackTargetHeight);
   int defaultIndex = variants.indexWhere(
       (YoutubeVideoVariant v) => v.height == chosen.videoResolution.height);
   if (defaultIndex < 0) defaultIndex = 0;

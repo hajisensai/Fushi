@@ -28,7 +28,11 @@ void main() {
       () {
     expect(
       // TODO-1314：快解析 gate 现经可注入的默认 resolver 闭包（参数名 u）保留，行为不变。
-      launchSrc.contains('resolveYoutubeSource(u, withCaptions: false)'),
+      // 画质目标（playbackTargetHeight）加参后调用折行，折叠空白后断言完整参数形态。
+      launchSrc
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .contains('resolveYoutubeSource(u, withCaptions: false, '
+              'playbackTargetHeight: youtubeTargetHeight)'),
       isTrue,
       reason: 'YouTube 分支必须走快解析 gate（withCaptions:false），不前置阻塞字幕/title',
     );
@@ -121,7 +125,8 @@ void main() {
 
   test('④ 阶段反馈提前：connecting 在 buildStreamVideoLaunch 调用之前', () {
     final int iConnect = pageSrc.indexOf('// TODO-1307：把「正在连接视频流…」阶段反馈提前');
-    final int iBuild = pageSrc.indexOf('await buildStreamVideoLaunch(row)');
+    // 画质目标加参后调用折行：锚到 `(row` 前缀（不含收尾括号）。
+    final int iBuild = pageSrc.indexOf('await buildStreamVideoLaunch(row');
     expect(iConnect, greaterThan(0),
         reason: 'stream book 分支必须提前置 connecting 阶段反馈');
     expect(iBuild, greaterThan(0));
