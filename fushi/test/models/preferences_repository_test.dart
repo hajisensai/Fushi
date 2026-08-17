@@ -58,15 +58,21 @@ void main() {
 
     test('module tab toggles default to true and round-trip', () async {
       // 「功能模块」显隐默认全开——升级用户底栏不变（Never break userspace）。
+      expect(repo.moduleBooksEnabled, true);
       expect(repo.moduleMangaEnabled, true);
       expect(repo.moduleVideoEnabled, true);
       expect(repo.moduleGamesEnabled, true);
+      expect(repo.moduleBrowserExtensionEnabled, true);
+      await repo.setModuleBooksEnabled(false);
       await repo.setModuleMangaEnabled(false);
       await repo.setModuleVideoEnabled(false);
       await repo.setModuleGamesEnabled(false);
+      await repo.setModuleBrowserExtensionEnabled(false);
+      expect(repo.moduleBooksEnabled, false);
       expect(repo.moduleMangaEnabled, false);
       expect(repo.moduleVideoEnabled, false);
       expect(repo.moduleGamesEnabled, false);
+      expect(repo.moduleBrowserExtensionEnabled, false);
     });
 
     test('currentHomeTabIndex defaults to 0', () {

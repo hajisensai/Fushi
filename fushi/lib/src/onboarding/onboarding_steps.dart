@@ -6,12 +6,16 @@ library;
 
 /// 功能选择步骤里可勾选的项，分两类：
 ///
-/// - **库页模块**（[isModule] == true，漫画/视频/游戏）：勾选状态在离开功能选择
+/// - **库页模块**（小说/漫画/视频/游戏/浏览器扩展）：勾选状态在离开功能选择
 ///   步骤时写进 `module_*_enabled` 偏好，未勾选的从底栏/侧栏隐藏（设置 → 系统 →
-///   功能模块 可随时改回）。模块不产生引导步骤。
+///   功能模块 可随时改回）。模块不产生引导步骤——唯一例外是浏览器扩展：它同时
+///   门控「扩展安装引导」这一步（模块都不要了自然不必引导安装）。
 /// - **配置能力**（推荐包/Anki/备份/互联）：勾选只决定向导后续走哪些配置步骤，
 ///   不写任何持久化开关。
 enum OnboardingFeature {
+  /// 小说库页（模块）。
+  books,
+
   /// 漫画库页（模块）。
   manga,
 
@@ -20,6 +24,9 @@ enum OnboardingFeature {
 
   /// galgame 游戏库页（模块，仅 Windows 提供勾选）。
   games,
+
+  /// 浏览器扩展 tab（模块，仅桌面提供勾选；同时门控扩展安装引导步骤）。
+  browserExtension,
 
   /// 官方推荐包：日语推荐词典 + 日/英发音音频库（Fushi 备份 zip，向导内直接
   /// 下载导入）。
@@ -35,11 +42,13 @@ enum OnboardingFeature {
   interconnect,
 }
 
-/// 库页模块集合（勾选写 tab 显隐偏好，不产生引导步骤）。
+/// 库页模块集合（勾选写 tab 显隐偏好；除 browserExtension 外不产生引导步骤）。
 const Set<OnboardingFeature> kOnboardingModuleFeatures = <OnboardingFeature>{
+  OnboardingFeature.books,
   OnboardingFeature.manga,
   OnboardingFeature.video,
   OnboardingFeature.games,
+  OnboardingFeature.browserExtension,
 };
 
 /// 向导步骤身份（枚举身份而非整数索引，插入/裁剪步骤不会打乱路由判断）。
@@ -69,8 +78,8 @@ enum OnboardingStepId {
 /// 恒以 [OnboardingStepId.welcome]、[OnboardingStepId.features] 开头，
 /// [OnboardingStepId.fonts]、[OnboardingStepId.finish] 结尾；中间配置步骤按固定
 /// 顺序（推荐包 → Anki → 备份 → 互联 → 扩展）出现：能力步骤只保留被勾选的，
-/// 浏览器扩展步骤由 [browserExtensionAvailable]（桌面平台）门控。库页模块勾选
-/// 不产生步骤。
+/// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面平台）**且**扩展
+/// 模块被勾选。其余库页模块勾选不产生步骤。
 List<OnboardingStepId> onboardingStepSequence({
   required Set<OnboardingFeature> selected,
   required bool browserExtensionAvailable,
@@ -84,7 +93,9 @@ List<OnboardingStepId> onboardingStepSequence({
     if (selected.contains(OnboardingFeature.backup)) OnboardingStepId.backup,
     if (selected.contains(OnboardingFeature.interconnect))
       OnboardingStepId.interconnect,
-    if (browserExtensionAvailable) OnboardingStepId.browserExtension,
+    if (browserExtensionAvailable &&
+        selected.contains(OnboardingFeature.browserExtension))
+      OnboardingStepId.browserExtension,
     OnboardingStepId.fonts,
     OnboardingStepId.finish,
   ];

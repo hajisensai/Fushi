@@ -142,21 +142,52 @@ void main() {
       expect(tabs, contains(HomeTab.settings));
     });
 
-    test('三个模块全关时书架/词典/设置/下载仍恒在', () {
+    test('booksEnabled=false 只隐藏书架 tab，首页/词典/设置不动', () {
+      final List<HomeTab> tabs =
+          homeActiveTabs(videoEnabled: true, booksEnabled: false);
+      expect(tabs, isNot(contains(HomeTab.books)));
+      expect(tabs, contains(HomeTab.home));
+      expect(tabs, contains(HomeTab.dictionaries));
+      expect(tabs, contains(HomeTab.settings));
+    });
+
+    test('browserExtensionEnabled=false 隐藏扩展 tab', () {
+      final List<HomeTab> withExt =
+          homeActiveTabs(videoEnabled: true, browserExtensionEnabled: true);
+      final List<HomeTab> withoutExt =
+          homeActiveTabs(videoEnabled: true, browserExtensionEnabled: false);
+      expect(withExt, contains(HomeTab.browserExtension));
+      expect(withoutExt, isNot(contains(HomeTab.browserExtension)));
+    });
+
+    test('五个模块全关时首页/词典/设置/下载仍恒在（安全回退面）', () {
       final List<HomeTab> tabs = homeActiveTabs(
         videoEnabled: false,
+        booksEnabled: false,
         mangaEnabled: false,
         gamesEnabled: false,
+        browserExtensionEnabled: false,
       );
       expect(
         tabs,
         <HomeTab>[
           HomeTab.home,
-          HomeTab.books,
           HomeTab.downloads,
           HomeTab.dictionaries,
           HomeTab.settings,
         ],
+      );
+    });
+
+    test('隐藏 tab 后越界视觉索引回退到恒在的 home（不再是可隐藏的书架）', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: false,
+        booksEnabled: false,
+        mangaEnabled: false,
+      );
+      expect(
+        homeTabForVisualIndex(tabs: tabs, visualIndex: 99, reversed: false),
+        HomeTab.home,
       );
     });
   });
