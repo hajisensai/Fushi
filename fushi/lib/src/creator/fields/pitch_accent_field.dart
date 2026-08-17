@@ -44,12 +44,14 @@ class PitchAccentField extends Field {
   }) {
     final reading = entry.reading.isNotEmpty ? entry.reading : entry.word;
     final positions = _readPitchPositions(entry);
+    final patterns = _readPitchPatterns(entry);
     return {
       pitchPositionsExtraKey: getAllHtmlPitch(
         reading: reading,
         positions: positions,
       ),
-      pitchCategoriesExtraKey: _getAllCategories(reading, positions),
+      pitchCategoriesExtraKey:
+          _getAllCategories(reading, positions, patterns: patterns),
     };
   }
 
@@ -70,8 +72,9 @@ class PitchAccentField extends Field {
     return buffer.toString();
   }
 
-  static String _getAllCategories(String reading, List<int> positions) {
-    if (positions.isEmpty) return '';
+  static String _getAllCategories(String reading, List<int> positions,
+      {List<String> patterns = const []}) {
+    if (positions.isEmpty && patterns.isEmpty) return '';
     final moraCount = PitchSvg.hiraToMora(reading).length;
     final categories = <String>[];
     final seen = <int>{};
@@ -80,6 +83,13 @@ class PitchAccentField extends Field {
       final cat = _pitchCategory(pos, moraCount);
       if (cat.isNotEmpty && !categories.contains(cat)) {
         categories.add(cat);
+      }
+    }
+    // Pattern 式 accent（79c55c2）：pattern 名（"heiban" 等）在 Yomitan 用法里
+    // 本身就是类别名，直接并入类别字段（SVG 画不了 pattern，仅数字位出图）。
+    for (final pattern in patterns) {
+      if (pattern.isNotEmpty && !categories.contains(pattern)) {
+        categories.add(pattern);
       }
     }
     return categories.join(',');
@@ -131,6 +141,41 @@ class PitchAccentField extends Field {
       }
     }
     return positions;
+  }
+
+  static List<String> _readPitchPatterns(DictionaryEntry entry) {
+    if (entry.extra.isEmpty) {
+      return [];
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(entry.extra);
+    } catch (_) {
+      return [];
+    }
+    if (decoded is! Map) {
+      return [];
+    }
+    final rawGroups = decoded['pitches'];
+    if (rawGroups is! List) {
+      return [];
+    }
+    final patterns = <String>[];
+    for (final rawGroup in rawGroups) {
+      if (rawGroup is! Map) {
+        continue;
+      }
+      final rawPatterns = rawGroup['patterns'];
+      if (rawPatterns is! List) {
+        continue;
+      }
+      for (final rawPattern in rawPatterns) {
+        if (rawPattern is String && rawPattern.isNotEmpty) {
+          patterns.add(rawPattern);
+        }
+      }
+    }
+    return patterns;
   }
 }
 

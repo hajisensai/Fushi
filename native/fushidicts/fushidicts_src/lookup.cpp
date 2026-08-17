@@ -3,7 +3,9 @@
 #include <utf8.h>
 
 #include <algorithm>
+#include <climits>
 #include <map>
+#include <optional>
 #include <ranges>
 #include <sstream>
 
@@ -21,27 +23,36 @@ std::vector<std::string> split_whitespace(const std::string& str) {
   return result;
 }
 
-std::vector<int> get_freq_values_for_dict(const TermResult& term, const std::string& dict_name) {
+// 上游 909c854 revert 了 4975788 的向量比较（作者自己否掉的实验：每次比较
+// 分配+排序一个 vector，partial_sort 下纯浪费）；后随 bc62d2b 演化为 optional +
+// 方向感知（Descending 时取该词典内最大值而非最小值）。
+std::optional<int> get_freq_value_for_dict(const TermResult& term, std::string_view dictionary_name, bool descending) {
+  std::optional<int> frequency;
   for (const auto& frequency_entry : term.frequencies) {
-    if (frequency_entry.dict_name != dict_name) {
+    if (frequency_entry.dict_name != dictionary_name || frequency_entry.frequencies.empty()) {
       continue;
     }
 
-    std::vector<int> values;
-    for (const auto& frequency : frequency_entry.frequencies) {
-      if (frequency.value >= 0) {
-        values.push_back(frequency.value);
+    for (const auto& candidate : frequency_entry.frequencies) {
+      if (candidate.value < 0) {
+        continue;
       }
+      frequency = frequency.has_value() ? std::optional<int>(descending ? std::max(*frequency, candidate.value)
+                                                                        : std::min(*frequency, candidate.value))
+                                        : std::optional<int>(candidate.value);
     }
-    std::ranges::sort(values);
-    return values;
   }
 
-  return {INT_MAX};
+  return frequency;
+}
+
+bool matches_primary_reading(const TermResult& term, std::string_view primary_reading) {
+  return term.reading == primary_reading;
 }
 }
 
-std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length) const {
+std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length,
+                                         const LookupOptions& options) const {
   std::map<std::pair<std::string, std::string>, LookupResult> result_map;
 
   // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
@@ -131,45 +142,101 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     query_.enrich_freq(r.term);
   }
 
-  const auto freq_dict_order = query_.get_freq_dict_order();
-  auto middle_iter = std::ranges::next(results.begin(), max_results, results.end());
-  std::ranges::partial_sort(results, middle_iter, [&freq_dict_order](const auto& a, const auto& b) {
-    auto len_a = utf8::distance(a.matched.begin(), a.matched.end());
-    auto len_b = utf8::distance(b.matched.begin(), b.matched.end());
-    if (len_a != len_b) {
-      return len_a > len_b;
-    }
-
-    auto steps_a = a.preprocessor_steps;
-    auto steps_b = b.preprocessor_steps;
-    if (steps_a != steps_b) {
-      return steps_a < steps_b;
-    }
-
-    auto trace_len_a = a.trace.size();
-    auto trace_len_b = b.trace.size();
-    if (trace_len_a != trace_len_b) {
-      return trace_len_a < trace_len_b;
-    }
-
-    auto match_a = a.term.expression == a.deinflected;
-    auto match_b = b.term.expression == b.deinflected;
-    if (match_a != match_b) {
-      return match_a > match_b;
-    }
-
-    for (const auto& dict_name : freq_dict_order) {
-      const auto freq_a = get_freq_values_for_dict(a.term, dict_name);
-      const auto freq_b = get_freq_values_for_dict(b.term, dict_name);
-      if (freq_a != freq_b) {
-        return freq_a < freq_b;
+  // 上游 bc62d2b：排序选项解析。Auto = 既有比较器（按注册顺序遍历全部 freq 词典，
+  // 零行为变化）；显式指定词典 + 升/降序时只按该词典排（找不到词典名则静默退回，
+  // 不排序也不报错——与上游一致）。
+  std::vector<std::string> auto_frequency_dictionaries;
+  std::optional<std::string_view> frequency_dictionary;
+  bool frequency_descending = false;
+  switch (options.frequency_order) {
+    case LookupFrequencyOrder::Auto:
+      auto_frequency_dictionaries = query_.get_freq_dict_order();
+      break;
+    case LookupFrequencyOrder::Ascending:
+    case LookupFrequencyOrder::Descending:
+      if (options.frequency_dictionary.has_value()) {
+        const auto selected =
+            std::ranges::find(query_.freq_dicts_, *options.frequency_dictionary, &DictionaryQuery::Dictionary::name);
+        if (selected != query_.freq_dicts_.end()) {
+          frequency_dictionary = selected->name;
+          frequency_descending = options.frequency_order == LookupFrequencyOrder::Descending;
+        }
       }
-    }
+      break;
+    case LookupFrequencyOrder::Disabled:
+      break;
+  }
+  std::string_view primary_reading;
+  if (options.primary_reading.has_value()) {
+    primary_reading = *options.primary_reading;
+  }
 
-    auto a_reading_expr_match = a.term.expression == a.term.reading;
-    auto b_reading_expr_match = b.term.expression == b.term.reading;
-    return a_reading_expr_match > b_reading_expr_match;
-  });
+  auto middle_iter = std::ranges::next(results.begin(), max_results, results.end());
+  std::ranges::partial_sort(
+      results, middle_iter,
+      [&auto_frequency_dictionaries, frequency_dictionary, frequency_descending, primary_reading](const auto& a,
+                                                                                                  const auto& b) {
+        // 上游 86c6e2f：primary_reading 精确匹配者排最前（截断前生效）。
+        if (!primary_reading.empty()) {
+          const bool primary_a = matches_primary_reading(a.term, primary_reading);
+          const bool primary_b = matches_primary_reading(b.term, primary_reading);
+          if (primary_a != primary_b) {
+            return primary_a;
+          }
+        }
+
+        auto len_a = utf8::distance(a.matched.begin(), a.matched.end());
+        auto len_b = utf8::distance(b.matched.begin(), b.matched.end());
+        if (len_a != len_b) {
+          return len_a > len_b;
+        }
+
+        auto steps_a = a.preprocessor_steps;
+        auto steps_b = b.preprocessor_steps;
+        if (steps_a != steps_b) {
+          return steps_a < steps_b;
+        }
+
+        auto trace_len_a = a.trace.size();
+        auto trace_len_b = b.trace.size();
+        if (trace_len_a != trace_len_b) {
+          return trace_len_a < trace_len_b;
+        }
+
+        auto match_a = a.term.expression == a.deinflected;
+        auto match_b = b.term.expression == b.deinflected;
+        if (match_a != match_b) {
+          return match_a > match_b;
+        }
+
+        for (const auto& dictionary_name : auto_frequency_dictionaries) {
+          const int freq_a = get_freq_value_for_dict(a.term, dictionary_name, false).value_or(INT_MAX);
+          const int freq_b = get_freq_value_for_dict(b.term, dictionary_name, false).value_or(INT_MAX);
+          if (freq_a != freq_b) {
+            return freq_a < freq_b;
+          }
+        }
+
+        if (frequency_dictionary.has_value()) {
+          const auto freq_a = get_freq_value_for_dict(a.term, *frequency_dictionary, frequency_descending);
+          const auto freq_b = get_freq_value_for_dict(b.term, *frequency_dictionary, frequency_descending);
+          if (freq_a.has_value() != freq_b.has_value()) {
+            return freq_a.has_value();
+          }
+          if (freq_a.has_value() && *freq_a != *freq_b) {
+            return frequency_descending ? *freq_a > *freq_b : *freq_a < *freq_b;
+          }
+        }
+
+        // 上游 909c854：Yomitan score 降序（v2 词典落盘；v1 恒 0 = 此档恒平）。
+        if (a.term.score != b.term.score) {
+          return a.term.score > b.term.score;
+        }
+
+        auto a_reading_expr_match = a.term.expression == a.term.reading;
+        auto b_reading_expr_match = b.term.expression == b.term.reading;
+        return a_reading_expr_match > b_reading_expr_match;
+      });
 
   if (results.size() > static_cast<size_t>(max_results)) {
     results.resize(max_results);

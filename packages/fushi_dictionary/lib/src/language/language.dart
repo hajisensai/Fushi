@@ -430,6 +430,7 @@ String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
         .map((p) => {
               'dictName': p.dictName,
               'positions': p.pitchPositions,
+              'patterns': p.patterns,
               'transcriptions': p.transcriptions,
             })
         .toList(),
@@ -554,10 +555,12 @@ String buildPopupJsonFromLookup({
         }
       }
       for (final p in r.term.pitches) {
-        // Fold transcriptions into the dedup key (mirrors native popup_json):
-        // IPA entries have no pitch positions, so positions-only keys would
-        // collapse distinct IPA records of one dict and drop all but the first.
-        final pKey = '${p.dictName}:${p.pitchPositions.join(',')}'
+        // Fold patterns + transcriptions into the dedup key (mirrors native
+        // popup_json): IPA entries have no pitch accents, and pattern-only
+        // accents have no numeric positions, so a positions-only key would
+        // collapse distinct records of one dict and drop all but the first.
+        final pKey =
+            '${p.dictName}:${p.pitchPositions.join(',')},${p.patterns.join(',')}'
             '|${p.transcriptions.join(',')}';
         if (seenPitches[key]!.add(pKey)) {
           groupPitches[key]!.add(p);
@@ -636,6 +639,8 @@ String buildPopupJsonFromLookup({
       sb.write(jsonEncode(pitches[pi].dictName));
       sb.write(',"pitchPositions":');
       sb.write(jsonEncode(pitches[pi].pitchPositions));
+      sb.write(',"patterns":');
+      sb.write(jsonEncode(pitches[pi].patterns));
       sb.write(',"transcriptions":');
       sb.write(jsonEncode(pitches[pi].transcriptions));
       sb.write('}');

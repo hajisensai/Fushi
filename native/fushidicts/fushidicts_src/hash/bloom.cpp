@@ -13,16 +13,24 @@ namespace {
 constexpr uint64_t num_hashes = 7;
 }
 
-void bloom::load(const uint8_t* ptr) {
+void bloom::load(const uint8_t* ptr, size_t size) {
+  num_hashes_ = 0;
+  mask_ = 0;
+  bits_ = nullptr;
+
+  if (!ptr || size < 2 * sizeof(uint64_t)) {
+    return;
+  }
   uint64_t num_bits;
   std::memcpy(&num_bits, ptr, sizeof(uint64_t));
   uint64_t num_hashes;
   std::memcpy(&num_hashes, ptr + sizeof(uint64_t), sizeof(uint64_t));
 
-  if (num_bits == 0 || (num_bits & (num_bits - 1)) != 0) {
-    num_hashes_ = 0;
-    mask_ = 0;
-    bits_ = nullptr;
+  // 头部合法性（非零、2 的幂）之外，还按文件实际大小校验位数组是否完整
+  // （上游 d4183d4）：被截断的 bloom.filter 若头部碰巧合法，bits_ 会读出映射尾。
+  // 校验不过走 fork 一贯的置空降级（contains 恒真穿透，查询仍可用），不拒载词典。
+  if (num_bits == 0 || (num_bits & (num_bits - 1)) != 0 ||
+      size != 2 * sizeof(uint64_t) + num_bits / 8) {
     return;
   }
   num_hashes_ = num_hashes;

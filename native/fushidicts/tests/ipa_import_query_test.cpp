@@ -8,7 +8,7 @@
 // storage layout (type byte 1, mode "ipa"), but the data JSON is shaped
 // differently ({"reading":...,"transcriptions":[{"ipa":...}]}). query_pitch
 // must branch on mode and route ipa data through parse_ipa, accumulating into
-// PitchEntry.transcriptions instead of pitch_positions. Nothing exercised this
+// PitchEntry.transcriptions instead of pitch accents. Nothing exercised this
 // import->query IPA path end to end before; the Dart-side tests are source
 // scans / parity checks that never link the native engine.
 //
@@ -131,11 +131,11 @@ int main() {
                          pe.dict_name.c_str(), kTitle);
             ++g_fail;
           }
-          if (!pe.pitch_positions.empty()) {
+          if (!pe.pitches.empty()) {
             std::fprintf(stderr,
-                         "FAIL ipa pitch_positions: got %zu want 0 (ipa carries "
-                         "no positions)\n",
-                         pe.pitch_positions.size());
+                         "FAIL ipa pitches: got %zu want 0 (ipa carries "
+                         "no pitch accents)\n",
+                         pe.pitches.size());
             ++g_fail;
           }
           if (pe.transcriptions.size() != 2) {

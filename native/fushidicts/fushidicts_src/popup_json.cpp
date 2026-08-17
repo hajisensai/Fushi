@@ -91,15 +91,31 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
       }
 
       for (const auto& p : r.term.pitches) {
+        // key 形状 = "dict:数字位段,pattern段|transcriptions段"，与 Dart 镜像
+        // buildPopupJsonFromLookup 的 pKey 逐字符同构（FFI 面就是数字/pattern 两个
+        // 平行数组，key 也按此分段，避免两侧 dedup 分歧）。pattern 位若只按
+        // position 建 key 会与 position 0 撞车被吞；IPA 记录无 accent，只按 accent
+        // 建 key 会把同 dict 多 IPA 折叠成 "dict:" 被吞（TODO-687 block3 同型坑）。
         std::string pkey = p.dict_name + ":";
-        for (size_t i = 0; i < p.pitch_positions.size(); i++) {
-          if (i > 0) pkey += ",";
-          pkey += std::to_string(p.pitch_positions[i]);
+        {
+          bool first = true;
+          for (const auto& accent : p.pitches) {
+            if (!accent.pattern.empty()) continue;
+            if (!first) pkey += ",";
+            first = false;
+            pkey += std::to_string(accent.position);
+          }
         }
-        // IPA entries carry no pitch positions, so a dedup key built only from
-        // positions collapses every IPA record of one dict to "dict:" and the
-        // set drops all but the first. Fold the transcriptions into the key so
-        // distinct IPA strings survive (TODO-687 block3).
+        pkey += ",";
+        {
+          bool first = true;
+          for (const auto& accent : p.pitches) {
+            if (accent.pattern.empty()) continue;
+            if (!first) pkey += ",";
+            first = false;
+            pkey += accent.pattern;
+          }
+        }
         pkey += "|";
         for (size_t i = 0; i < p.transcriptions.size(); i++) {
           if (i > 0) pkey += ",";
@@ -184,10 +200,27 @@ done:
       if (pi > 0) os << ',';
       os << R"({"dictionary":)";
       json_escape(os, gd.pitches[pi].dict_name);
+      // pitchPositions 只含数字位（与历史输出字节兼容）；pattern 位单独成
+      // "patterns" 数组（79c55c2 二期，JS 渲染为 [pattern] 文本项）。
       os << R"(,"pitchPositions":[)";
-      for (size_t k = 0; k < gd.pitches[pi].pitch_positions.size(); k++) {
-        if (k > 0) os << ',';
-        os << gd.pitches[pi].pitch_positions[k];
+      {
+        bool first = true;
+        for (const auto& accent : gd.pitches[pi].pitches) {
+          if (!accent.pattern.empty()) continue;
+          if (!first) os << ',';
+          first = false;
+          os << accent.position;
+        }
+      }
+      os << R"(],"patterns":[)";
+      {
+        bool first = true;
+        for (const auto& accent : gd.pitches[pi].pitches) {
+          if (accent.pattern.empty()) continue;
+          if (!first) os << ',';
+          first = false;
+          json_escape(os, accent.pattern);
+        }
       }
       os << R"(],"transcriptions":[)";
       for (size_t k = 0; k < gd.pitches[pi].transcriptions.size(); k++) {
