@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_matcher.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
@@ -111,16 +112,7 @@ class _MangaDiscoveryDetailPageState
     if (MihonRuntimeFactory.isSupported) {
       final MihonManager manager = ref.read(appProvider).mihonManager;
       _mihonManager = manager;
-      final Set<String> enabledExtensions = manager.installed
-          .where((MangaExtensionRow row) => row.enabled)
-          .map((MangaExtensionRow row) => row.packageName)
-          .toSet();
-      _mihonSources = manager.sources
-          .where(
-            (MangaOnlineSourceRow row) =>
-                row.enabled && enabledExtensions.contains(row.extensionPackage),
-          )
-          .toList(growable: false);
+      _mihonSources = enabledMangaOnlineSources(manager);
       for (final MangaOnlineSourceRow row in _mihonSources) {
         sources.add(
           MangaMatchSource(

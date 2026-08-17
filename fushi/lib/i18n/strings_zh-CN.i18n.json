@@ -3541,5 +3541,6 @@
   "manga_discovery_status_finished": "已完结",
   "manga_discovery_status_hiatus": "休刊中",
   "manga_discovery_status_cancelled": "已腰斩",
-  "manga_discovery_status_not_yet_released": "未发售"
+  "manga_discovery_status_not_yet_released": "未发售",
+  "manga_discovery_source_popular": "${source} · 热门"
 }
