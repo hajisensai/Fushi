@@ -76,7 +76,15 @@
 `webView.frame = self.bounds` + `autoresizingMask`，见 pub-cache 1.1.2）在**动态创建 /
 频繁改尺寸**的实例上不接管鼠标。
 
-### 附带发现：macOS 没屏蔽 WKWebView 原生上下文菜单
+### 附带发现②：`disableContextMenu` 在 macOS 端**无效**（改了也没用）
+
+试过把 macOS 并入 `disableContextMenu`（`isWindowsPlatform || macOS`）——真机复测
+**原生菜单照旧弹出**。该设置在 flutter_inappwebview 的 macOS 实现里没有接到
+WKWebView 的对应开关（Windows 是 fork 里专门接的 `put_AreDefaultContextMenusEnabled`）。
+要压制 macOS 原生菜单，得走别的路（如 JS 侧 `contextmenu`/`selectstart` 拦截，或
+WKWebView 的 `WKUIDelegate`）。该改动已撤回。
+
+### 附带发现①：macOS 没屏蔽 WKWebView 原生上下文菜单
 
 `dictionary_popup_webview.dart` 的 `disableContextMenu: isWindowsPlatform` —— **只在
 Windows 关**。macOS 真机实测：在查词**结果区**单击词，弹出的是系统的
@@ -90,8 +98,13 @@ Windows 关**。macOS 真机实测：在查词**结果区**单击词，弹出的
 时把 Flutter 局部坐标交给 `document.elementFromPoint(x, y)` 并合成
 `mousedown/mouseup/click`）。**没能验证**：复测时结果区的点词查词本身只弹系统 Look Up
 菜单、浮层无法稳定打开，`[hostclick]` 探针未取得一次有效输出。该实现已从分支撤回。
-下次验证需先解决上面那条原生菜单干扰，或改用不依赖点词的入口（阅读器划词 / 剪贴板浮窗）
-把浮层打开。
+第二次尝试同样失败：`disableContextMenu` 在 macOS 无效（见附带发现②），菜单照旧抢占，
+`[hostclick]` 仍无输出（结果区的指针被 WebView 吃掉、Flutter `Listener` 本就收不到，
+属预期；关键是浮层始终没能稳定打开）。
+
+**下次验证的正确姿势**：别再用「点结果区的词」这个入口——它必然撞上系统选词菜单。改用
+**阅读器划词**或**剪贴板浮窗**把浮层打开（测试库里有 `Pagination Test Book` 可用），
+再对浮层内的按钮验证 host-owned 转发是否生效。
 
 ### 下一步（需要原生侧手段，非 Dart 侧试错）
 
