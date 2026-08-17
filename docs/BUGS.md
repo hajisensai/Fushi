@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1574 条。点号进各自文件。
+> 共 1576 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1703](bugs/BUG-1703-manga-extension-error-truncated-toast.md) | ✅ | ✅ | 扩展安装/加载失败的根因被 Android 原生 toast 截成 2 行，用户永远看不到 |
+| [BUG-1702](bugs/BUG-1702-mihon-r8-kotlin-keep.md) | ✅ | ✅ | release APK 的 R8 混淆掉宿主 Kotlin 运行时，所有 Mihon 漫画扩展 LOAD_FAILED |
 | [BUG-1700](bugs/BUG-1700-subtitle-default-language-not-video-language.md) | ✅ | ✅ | 自动下字幕的默认语言是「不限」，实际拿到的语言随缘，不跟视频自身语言 |
 | [BUG-1699](bugs/BUG-1699-interconnect-collections-not-grouping.md) | ✅ | ✅ | 互联对端合集在客户端库页不成组显示 |
 | [BUG-1698](bugs/BUG-1698-subtitle-backfill-after-scrape.md) | ✅ | ✅ | 刮削解析出的规范身份没被字幕侧使用，且自动配字幕能力对用户完全不可见 |
