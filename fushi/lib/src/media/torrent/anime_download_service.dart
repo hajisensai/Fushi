@@ -120,6 +120,23 @@ List<String> resolveVideoAbsolutePaths(
   return out;
 }
 
+/// 把种子文件列表解析为**全部**文件的绝对路径（不按扩展名过滤）。纯函数，
+/// 与 [resolveVideoAbsolutePaths] 同姿态（files 为空退化用 contentPath 单文件）。
+/// 发现页内容类型（有声书/游戏）用：分类交给发现导入执行器做。
+List<String> resolveAllAbsolutePaths(
+  TorrentSnapshot info,
+  List<TorrentFileEntry> files,
+) {
+  if (files.isEmpty) {
+    return info.contentPath.isEmpty
+        ? const <String>[]
+        : <String>[info.contentPath];
+  }
+  return <String>[
+    for (final TorrentFileEntry f in files) p.join(info.savePath, f.name),
+  ];
+}
+
 /// 阅读库支持的书籍扩展名（当前只有 EPUB —— reader_fushi 走 EPUB）。
 const Set<String> kBookExtensions = <String>{'.epub'};
 
@@ -218,12 +235,17 @@ class AnimeDownloadService {
       AnimeDownloadPlan plan,
       List<String> videoAbsolutePaths,
     )? subtitleResolver,
+    Future<int?> Function(
+      AnimeDownloadPlan plan,
+      List<String> absolutePaths,
+    )? discoveryImporter,
     void Function()? onTick,
     this.interval = const Duration(seconds: 20),
   })  : _configProvider = configProvider,
         _importer = importer,
         _bookImporter = bookImporter,
         _subtitleResolver = subtitleResolver,
+        _discoveryImporter = discoveryImporter,
         _backendFactory = backendFactory ?? _defaultBackendFactory,
         _onTick = onTick;
 
@@ -255,6 +277,15 @@ class AnimeDownloadService {
     AnimeDownloadPlan plan,
     List<String> bookAbsolutePaths,
   )? _bookImporter;
+
+  /// 发现页新内容类型（[AnimeDownloadPlan.kindAudiobook] /
+  /// [AnimeDownloadPlan.kindGame]）的入库回调（AppModel 接线
+  /// `DiscoveryImportExecutor.importPaths`；null = 不支持，按失败处理）。
+  /// 返回成功入库的条目数（0/null = 无/失败）。
+  final Future<int?> Function(
+    AnimeDownloadPlan plan,
+    List<String> absolutePaths,
+  )? _discoveryImporter;
 
   /// 延迟字幕解析回调（[AnimeDownloadPlan.subtitlePending] 的计划完成时调用，
   /// 用包内真实视频文件名反查 Jimaku，见 [JimakuPlanSubtitleResolver]）。
@@ -676,6 +707,17 @@ class AnimeDownloadService {
     bool importBooks = true,
   }) async {
     final List<TorrentFileEntry> files = await client.listFiles(info.hash);
+
+    // 发现页新内容类型：整包直通发现导入执行器（解压/分类/入库），不沾视频的
+    // 字幕/sidecar/边下边播机制。keepDownloading（边下边播）只对视频有意义，
+    // 这里直接等真实完成。
+    if (plan.contentKind == AnimeDownloadPlan.kindAudiobook ||
+        plan.contentKind == AnimeDownloadPlan.kindGame) {
+      if (keepDownloading) return;
+      await _finishDiscoveryPlan(plan, info, files);
+      return;
+    }
+
     final (List<String> videos, List<String> books) = _classifyContent(
       plan,
       info,
@@ -749,6 +791,45 @@ class AnimeDownloadService {
     } else {
       await store.save(
         resolved.copyWith(
+          status: AnimeDownloadPlan.statusFailed,
+          failReason: importError ?? 'import failed',
+          importInProgress: false,
+        ),
+      );
+    }
+  }
+
+  /// 发现页内容类型（有声书/游戏）的收尾：整包文件路径交给注入的
+  /// [_discoveryImporter]，按入库条目数落 imported / failed。
+  Future<void> _finishDiscoveryPlan(
+    AnimeDownloadPlan plan,
+    TorrentSnapshot info,
+    List<TorrentFileEntry> files,
+  ) async {
+    int imported = 0;
+    String? importError;
+    final Future<int?> Function(AnimeDownloadPlan, List<String>)? importer =
+        _discoveryImporter;
+    if (importer == null) {
+      importError = 'content kind ${plan.contentKind} unsupported';
+    } else {
+      try {
+        imported =
+            await importer(plan, resolveAllAbsolutePaths(info, files)) ?? 0;
+      } catch (e) {
+        importError = 'discovery import failed: $e';
+      }
+    }
+    if (imported > 0) {
+      await store.save(
+        plan.copyWith(
+          status: AnimeDownloadPlan.statusImported,
+          importInProgress: false,
+        ),
+      );
+    } else {
+      await store.save(
+        plan.copyWith(
           status: AnimeDownloadPlan.statusFailed,
           failReason: importError ?? 'import failed',
           importInProgress: false,

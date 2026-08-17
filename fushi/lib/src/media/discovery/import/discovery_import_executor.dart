@@ -50,6 +50,52 @@ class DiscoveryImportExecutor {
   ) =>
       importFile(task.item.kind, file);
 
+  /// torrent 整包入口：对一组已就位的绝对路径分类入库（torrent 下载完成后
+  /// `AnimeDownloadService` 调这里）。
+  ///
+  /// 目录树直接分类不出、但包里有压缩包时（gal 种子常见形态：文件夹里一个
+  /// rar），取最大的压缩包解开并把解出的文件并入清单重新分类。
+  Future<DiscoveryImportOutcome> importPaths(
+    DiscoveryMediaKind kind,
+    List<String> filePaths,
+  ) async {
+    if (filePaths.length == 1) {
+      return importFile(kind, File(filePaths.single));
+    }
+    final Map<String, int> sizes = <String, int>{
+      for (final String path in filePaths)
+        if (File(path).existsSync()) path: File(path).lengthSync(),
+    };
+    DiscoveryImportPlan plan =
+        classifyDiscoveryDirectory(kind, filePaths, fileSizes: sizes);
+    if (plan is UnsupportedPlan) {
+      final List<String> archives = <String>[
+        for (final String path in filePaths)
+          if (isDiscoveryArchivePath(path)) path,
+      ]..sort(
+          (String a, String b) => (sizes[b] ?? 0).compareTo(sizes[a] ?? 0),
+        );
+      if (archives.isNotEmpty) {
+        final File archive = File(archives.first);
+        final Directory extracted = await _extractor.extract(
+          archive.path,
+          intoDir:
+              '${archive.parent.path}${Platform.pathSeparator}${_stemOf(archive.path)}',
+        );
+        final List<String> merged = List<String>.of(filePaths);
+        for (final FileSystemEntity entity
+            in extracted.listSync(recursive: true, followLinks: false)) {
+          if (entity is File) {
+            merged.add(entity.path);
+            sizes[entity.path] = entity.lengthSync();
+          }
+        }
+        plan = classifyDiscoveryDirectory(kind, merged, fileSizes: sizes);
+      }
+    }
+    return _execute(plan);
+  }
+
   Future<DiscoveryImportOutcome> importFile(
     DiscoveryMediaKind kind,
     File file,

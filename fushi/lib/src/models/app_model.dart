@@ -69,6 +69,12 @@ import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi/src/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
+import 'package:fushi/src/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
+import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
@@ -3638,6 +3644,8 @@ class AppModel with ChangeNotifier {
           effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       importer: buildAnimeDownloadImporter(database),
       bookImporter: _importDownloadedBooks,
+      // 发现页新内容类型（有声书/游戏）：整包直通发现导入执行器。
+      discoveryImporter: _importDiscoveryDownload,
       // BUG-1206：字幕在下载完成时按包内真实文件名反查补取，不在选种时预下。
       subtitleResolver: JimakuPlanSubtitleResolver(
         apiKeyProvider: () => prefsRepo.jimakuApiKey,
@@ -4015,6 +4023,37 @@ class AppModel with ChangeNotifier {
     _animeDownloadPlanIds = ids;
     return ids;
   }
+
+  /// 发现页新内容类型（有声书/游戏）种子完成后的入库回调：整包路径交给
+  /// [DiscoveryImportExecutor]（分类 → 解压 → 复用各域既有导入原语）。
+  /// 返回入库条目数；分类不出/解压失败抛 [DiscoveryImportBlockedException]，
+  /// service 侧收进 failReason 展示。
+  Future<int?> _importDiscoveryDownload(
+    AnimeDownloadPlan plan,
+    List<String> absolutePaths,
+  ) async {
+    final DiscoveryMediaKind? kind = switch (plan.contentKind) {
+      AnimeDownloadPlan.kindAudiobook => DiscoveryMediaKind.audiobook,
+      AnimeDownloadPlan.kindGame => DiscoveryMediaKind.game,
+      _ => null,
+    };
+    if (kind == null) return null;
+    final DiscoveryImportOutcome outcome =
+        await discoveryImportExecutor.importPaths(kind, absolutePaths);
+    return outcome.importedCount;
+  }
+
+  /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
+  DiscoveryImportExecutor get discoveryImportExecutor =>
+      _discoveryImportExecutor ??= DiscoveryImportExecutor(
+        importers: buildProductionDiscoveryImporters(
+          db: database,
+          srtBookRepo: SrtBookRepository(database),
+          audiobookRepo: AudiobookRepository(database),
+          galgameRepo: galgameRepo,
+        ),
+      );
+  DiscoveryImportExecutor? _discoveryImportExecutor;
 
   /// The pipeline persists `stage=download` only after this checkpoint. This
   /// closes the one-minute periodic-save gap where an unclean app exit could

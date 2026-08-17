@@ -209,6 +209,40 @@ void main() {
     );
   });
 
+  test('importPaths:目录直接分类出 exe 则不解压', () async {
+    final List<String> log = <String>[];
+    final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+      importers: _recordingImporters(log),
+      extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+    );
+    final DiscoveryImportOutcome outcome = await executor.importPaths(
+      DiscoveryMediaKind.game,
+      <String>['/dl/Pack/game.exe', '/dl/Pack/data.xp3'],
+    );
+    expect(outcome.importedCount, 1);
+    expect(log.single, contains('game.exe'));
+  });
+
+  test('importPaths:目录分类不出但含压缩包 → 解开最大包并入清单重分类', () async {
+    final List<String> log = <String>[];
+    final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+      importers: _recordingImporters(log),
+      extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
+    );
+    final File zip = await _writeZip(tempDir, 'inner.zip', <String, String>{
+      'game/atri.exe': 'gamegame',
+    });
+    final File readme = File('${tempDir.path}${Platform.pathSeparator}re.txt');
+    await readme.writeAsString('readme');
+
+    final DiscoveryImportOutcome outcome = await executor.importPaths(
+      DiscoveryMediaKind.game,
+      <String>[readme.path, zip.path],
+    );
+    expect(outcome.importedCount, 1);
+    expect(log.single, contains('atri.exe'));
+  });
+
   test('域认不出的下载物按 unknownFileType 挡下', () async {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(<String>[]),
