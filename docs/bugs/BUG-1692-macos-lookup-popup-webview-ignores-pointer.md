@@ -76,6 +76,23 @@
 `webView.frame = self.bounds` + `autoresizingMask`，见 pub-cache 1.1.2）在**动态创建 /
 频繁改尺寸**的实例上不接管鼠标。
 
+### 附带发现：macOS 没屏蔽 WKWebView 原生上下文菜单
+
+`dictionary_popup_webview.dart` 的 `disableContextMenu: isWindowsPlatform` —— **只在
+Windows 关**。macOS 真机实测：在查词**结果区**单击词，弹出的是系统的
+「Look Up "xxx" / Translate / Search with 谷歌 / Copy…」原生菜单，而不是 app 的查词浮层；
+文字被选中后该菜单还会反复抢占。这与本 bug 是否同源未定，但它本身就干扰 macOS 上的
+「点词查词」交互，应单独确认是否要把 macOS 一并纳入 `disableContextMenu`。
+
+### host-owned 指针兜底：已实现，**未取得验证**
+
+按 Windows 同款思路做过一版最小实现（macOS 上给 WebView 外包 `Listener`，`onPointerUp`
+时把 Flutter 局部坐标交给 `document.elementFromPoint(x, y)` 并合成
+`mousedown/mouseup/click`）。**没能验证**：复测时结果区的点词查词本身只弹系统 Look Up
+菜单、浮层无法稳定打开，`[hostclick]` 探针未取得一次有效输出。该实现已从分支撤回。
+下次验证需先解决上面那条原生菜单干扰，或改用不依赖点词的入口（阅读器划词 / 剪贴板浮窗）
+把浮层打开。
+
 ### 下一步（需要原生侧手段，非 Dart 侧试错）
 
 1. 用 Xcode 的 **Debug View Hierarchy** 或 lldb 打印两个 `WKWebView` 的 `NSView` 层级、
