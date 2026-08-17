@@ -143,12 +143,13 @@ void main() {
     expect(document, contains('if (RESCAN) _rescanClear();'));
   });
 
-  test('webtoon 同样可用（模式内禁原生触摸滚动，否则竖滚抢拖框手势）', () {
+  test('webtoon 同样可用（原生触摸滚动全程关闭，竖滚抢不走拖框手势）', () {
     final String document = _document(mode: MangaReadingMode.webtoon);
     expect(document, contains('window.__mangaSetRescanMode'));
-    expect(
-      document,
-      contains(r"document.body.style.touchAction = RESCAN ? 'none' : '';"),
-    );
+    // BUG-1701 起原生手势由 CSS 全程归 JS：浏览器在第一个 touchstart 就按当时的
+    // touch-action 锁定手势，模式内再切换对已开始的手势无效。框选因此不再需要
+    // 自己开关 touch-action，那个特例必须保持消除。
+    expect(document, contains('touch-action:none;'));
+    expect(document, isNot(contains('document.body.style.touchAction')));
   });
 }

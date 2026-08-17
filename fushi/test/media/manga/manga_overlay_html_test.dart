@@ -801,8 +801,7 @@ void main() {
       expect(doc.contains("e.pointerType === 'touch'"), isTrue,
           reason: '必须自己处理触点，浏览器原生缩放被 user-scalable=no 禁掉了');
       expect(doc.contains('_pinchGeom'), isTrue, reason: '必须有双指捏合几何');
-      expect(
-          doc.contains('Math.pow(g.dist / pinch.dist, ZOOM_SENS)'), isTrue,
+      expect(doc.contains('Math.pow(g.dist / pinch.dist, ZOOM_SENS)'), isTrue,
           reason: '灵敏度设置声明覆盖滚轮与捏合，pinch 比率也必须应用 ZOOM_SENS');
       expect(doc.contains("addEventListener('pointermove'"), isTrue,
           reason: '捏合需要 pointermove 才能跟手');
@@ -888,6 +887,99 @@ void main() {
           doc.contains('data-page="1" data-pw="1000" data-ph="2000" '
               'data-ocr-loaded="1"'),
           isTrue);
+    });
+
+    // BUG-1701：手机端「放大缩小跟上下滑动混了」的根因有两条，这一组把两个不变式
+    // 钉死。① 手势所有权：touch-action 默认 auto 时浏览器在第一个 touchstart 就锁定
+    // 原生 pan，pointermove 的 preventDefault 按 Pointer Events 规范并不阻止滚动，
+    // 于是捏合与竖向滚动同时发生、滚动接管后还会取消指针序列把捏合状态清掉。
+    // ② 纵向所有权：webtoon 是竖滚文档，纵向位置只能由 window.scrollY 表达；此前
+    // PAN_Y 也参与，一次缩放同时产生 transform 位移和滚动位移。
+    group('BUG-1701 触屏缩放与竖向滚动的所有权', () {
+      String docFor(MangaReadingMode mode, {int zoomPercent = 100}) =>
+          mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: mode,
+            spreadDirection: 'ltr',
+            inlineSelectionJs: '',
+            zoomPercent: zoomPercent,
+          );
+
+      test('touch-action 恒为 none，不再有运行期切换的特例', () {
+        for (final MangaReadingMode mode in MangaReadingMode.values) {
+          final String doc = docFor(mode);
+          expect(doc.contains('touch-action:none;'), isTrue,
+              reason: '$mode：手势必须在第一个 touchstart 前就归 JS 独占，'
+                  '否则捏合会被原生二指 pan 抢走');
+          expect(doc.contains('document.body.style.touchAction'), isFalse,
+              reason: '$mode：运行期切换 touch-action 对已开始的手势无效，'
+                  '这个特例必须保持消除');
+        }
+      });
+
+      test('webtoon 纵向位置只由 scrollY 拥有，PAN_Y 恒 0', () {
+        final String doc = docFor(MangaReadingMode.webtoon);
+        expect(
+            doc.contains(
+                'PAN_Y = IS_WEBTOON ? 0 : window.innerHeight * (1 - ZOOM) / 2;'),
+            isTrue,
+            reason: 'webtoon 竖滚文档不得再用 spread 的 PAN_Y 居中公式');
+        expect(doc.contains('PAN_Y = IS_WEBTOON ? 0 : ay - localY * ZOOM;'),
+            isTrue,
+            reason: '缩放锚点补偿在 webtoon 必须写 scrollY 而非 PAN_Y');
+        // 位置断言前先确认锚点唯一，避免同形 token 抢走 indexOf 的窗口。
+        expect('var IS_WEBTOON = '.allMatches(doc).length, 1,
+            reason: 'IS_WEBTOON 只允许一处声明');
+        expect(
+            doc.indexOf('var IS_WEBTOON = ') <
+                doc.indexOf('function _recenterPan()'),
+            isTrue,
+            reason: '_recenterPan/_applyCanvas 在文档解析期就跑，'
+                'IS_WEBTOON 必须先就绪，否则首帧按 spread 公式算 PAN_Y');
+      });
+
+      test('webtoon 缩放态下滚动坐标两端都换算 ZOOM', () {
+        final String doc = docFor(MangaReadingMode.webtoon);
+        expect(
+            doc.contains('var top = (page.offsetTop + (fraction || 0) * '
+                'page.offsetHeight) * ZOOM;'),
+            isTrue,
+            reason: 'offsetTop 是布局坐标，scrollTo 收视觉坐标，缺 *ZOOM 会定位错页');
+        expect(doc.contains('var y = window.scrollY / ZOOM;'), isTrue,
+            reason: 'onMangaScroll 的 fraction 与 offsetTop 同口径，'
+                'scrollY 必须换回布局坐标');
+        expect(
+            doc.contains(
+                'var localY = (IS_WEBTOON ? window.scrollY + ay : ay - PAN_Y) '
+                '/ ZOOM;'),
+            isTrue,
+            reason: 'webtoon 的锚点屏幕坐标是 layout*ZOOM - scrollY');
+        expect(
+            doc.contains(
+                'window.scrollTo(0, Math.max(0, localY * ZOOM - ay));'),
+            isTrue,
+            reason: '捏合后必须把锚点补偿写回 scrollY，否则画面跟着缩放跳走');
+      });
+
+      test('原生滚动关掉后 webtoon 竖滚由 JS 自己实现，带惯性', () {
+        final String doc = docFor(MangaReadingMode.webtoon);
+        expect(doc.contains('window.scrollBy(0, -dy);'), isTrue,
+            reason: 'touch-action:none 后单指拖动必须自己驱动竖滚');
+        expect(doc.contains('flickVy *= Math.pow(0.002, dt / 1000);'), isTrue,
+            reason: '自实现滚动必须补上惯性，否则手感比原生退化');
+        expect(doc.contains('if (drag && drag.touch) _startFlick(drag.vy);'),
+            isTrue,
+            reason: '惯性只给触屏：鼠标松手不该继续滑');
+      });
+
+      test('放大态的拖动是平移，不是翻页', () {
+        final String doc = docFor(MangaReadingMode.spread, zoomPercent: 150);
+        expect(doc.contains('if (!IS_WEBTOON && ZOOM <= 1 &&'), isTrue,
+            reason: 'ZOOM>1 时拖动已被 _panBy 消费为平移，再判 swipe 会每次平移都翻页');
+        expect(doc.contains('function _panBy(dx, dy)'), isTrue,
+            reason: '放大后必须能平移查看页面各处');
+      });
     });
   });
 }
