@@ -247,6 +247,22 @@ Fushi 将导入的书籍、词典、字体、有声书数据、视频、阅读�
 
 云同步（Google Drive / OneDrive / Dropbox）使用由用户配置的 OAuth 凭据；WebDAV / FTP / SFTP 使用用户提供的服务器地址与凭据；Fushi Interconnect 通过用户配置的地址直连。Anki 制卡会与 AnkiDroid 或已配置的 AnkiConnect 地址通信。
 
+## 开发活跃度
+
+[![开发活跃度](docs/assets/dev-activity.svg)](https://github.com/hajisensai/Fushi/commits/develop)
+
+日常开发都提交在 `develop`，`main` 只接收发布合并。上图虽然显示在 `main` 上，数据取自 `develop`，所以反映的是真实开发量，而不是合并流水。
+
+下方三条泳道就是 App 内提供的三个更新通道，每条按各自峰值缩放——debug 构建数比正式版高两个数量级，用同一把标尺会把后两条压成看不见。
+
+| 泳道 | 统计对象 | 获取方式 |
+|---|---|---|
+| **Debug（滚动）** | [release.yml](.github/workflows/release.yml) 中成功的 push 构建 | 滚动预发布，每次 push 覆盖重发 |
+| **Beta** | `v<版本>-beta.<seq>` 预发布 | 手动触发的测试版 |
+| **Stable** | `v<版本>` 正式发布 | 正式版（Latest） |
+
+> 上图由本仓库内的脚本自动生成（不依赖任何第三方服务），并由 [Update Dev Activity Chart](.github/workflows/dev-activity.yml) 工作流每日刷新。
+
 ## Star 趋势
 
 [![GitHub stars](https://img.shields.io/github/stars/hajisensai/Fushi?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/Fushi/stargazers)

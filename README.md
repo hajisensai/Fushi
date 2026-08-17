@@ -248,6 +248,22 @@ Fushi stores imported books, dictionaries, fonts, audiobook data, videos, readin
 
 Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Fushi Interconnect connects directly to a user-configured address on your own network. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
 
+## Development Activity
+
+[![Development Activity](docs/assets/dev-activity.svg)](https://github.com/hajisensai/Fushi/commits/develop)
+
+Day-to-day work lands on `develop`; `main` only receives release merges. The chart is displayed here on `main` but is generated from `develop`, so it reflects actual development rather than merge traffic.
+
+The three lanes are the update channels the app itself offers, and each is scaled to its own peak — debug builds outnumber stable releases by two orders of magnitude, so a shared scale would flatten the other two lanes to nothing.
+
+| Lane | What it counts | How you get it |
+|---|---|---|
+| **Debug (rolling)** | Successful push builds of [release.yml](.github/workflows/release.yml) | Rolling prerelease, republished on every push |
+| **Beta** | `v<version>-beta.<seq>` prereleases | Manually dispatched test build |
+| **Stable** | `v<version>` releases | Latest release |
+
+> The chart above is generated inside this repository (no third-party service) and refreshed daily by the [Update Dev Activity Chart](.github/workflows/dev-activity.yml) workflow.
+
 ## Star History
 
 [![GitHub stars](https://img.shields.io/github/stars/hajisensai/Fushi?style=flat&logo=github&label=Stars)](https://github.com/hajisensai/Fushi/stargazers)
