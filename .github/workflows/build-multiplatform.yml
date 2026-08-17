@@ -22,6 +22,7 @@ on:
       - 'ci/**'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
+      - 'tools/bundle_7za.ps1'
       - '.github/workflows/build-multiplatform.yml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -641,5 +642,14 @@ jobs:
             }
             Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
           }
+      - name: Bundle standalone 7za for discovery auto-extract
+        shell: pwsh
+        run: |
+          # 发现页下载的 7z/rar 游戏/小说压缩包离线自动解压依赖随包 7za.exe
+          # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
+            -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug" `
+            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+          if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke
