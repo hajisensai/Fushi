@@ -22,10 +22,14 @@ class FushiDevice {
   final String deviceId;
 
   /// TODO-961: host 在 mDNS TXT 里自报「已开 HTTPS」（`tls=1`）。旧版 host 不带
-  /// 该属性 → false（明文老路径）。仅作探测顺序提示，真实 scheme 以 /api/ping 为准。
+  /// 该属性 → false（明文老路径）。v2 探测顺序据此定；[webDavUrl] 的 scheme 也
+  /// 按它出（BUG-1693），真实 scheme 最终仍以 /api/ping 为准。
   final bool tlsEnabled;
 
-  String get webDavUrl => 'http://$host:$port';
+  /// BUG-1693：TXT 广播 `tls=1` 的 host 服务的是 https，这里硬编码 http 会让
+  /// v1 回退路径（`_pairLegacyV1` 直接拿本 URL 落库 + POST /api/pair）拿到错误
+  /// scheme。旧版明文 host 不带 tls 属性 → 仍是 http，行为零变化。
+  String get webDavUrl => '${tlsEnabled ? 'https' : 'http'}://$host:$port';
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'name': name,
@@ -83,6 +87,12 @@ class LanDiscoveryService {
   final Set<String> _localAddresses = <String>{};
 
   final Map<String, FushiDevice> _discoveredDevices = <String, FushiDevice>{};
+
+  /// BUG-1693：serviceName → deviceId 辅助映射。[_discoveredDevices] 以 TXT `id`
+  /// 为键，而 lost 事件在多数平台**不带 TXT 属性**、只带 service name——旧实现
+  /// 回落 `service.name` 当键去 remove，与存储键对不上，离线对端永远留在列表里。
+  /// resolved 时登记、lost 时先查它，消除「lost 事件带不带 TXT」的平台特例。
+  final Map<String, String> _serviceNameToDeviceId = <String, String>{};
   final StreamController<List<FushiDevice>> _deviceStream =
       StreamController<List<FushiDevice>>.broadcast();
   BonsoirDiscovery? _discovery;
@@ -165,12 +175,17 @@ class LanDiscoveryService {
           return;
         }
         _discoveredDevices[device.deviceId] = device;
+        // BUG-1693：登记 name → deviceId，lost 事件（多不带 TXT）靠它找回存储键。
+        _serviceNameToDeviceId[event.service.name] = device.deviceId;
         _deviceStream.add(currentDevices);
-      // A service went away: remove it by its advertised id attribute, falling
-      // back to the service name when the platform did not carry attributes.
+      // A service went away: look up the storage key we registered on resolve
+      // (lost events usually carry no TXT attributes), falling back to the id
+      // attribute / service name for services we never resolved.
       case BonsoirDiscoveryServiceLostEvent():
         final BonsoirService service = event.service;
-        final String key = service.attributes[attributeId] ?? service.name;
+        final String key = _serviceNameToDeviceId.remove(service.name) ??
+            service.attributes[attributeId] ??
+            service.name;
         if (_discoveredDevices.remove(key) != null) {
           _deviceStream.add(currentDevices);
         }
@@ -193,12 +208,19 @@ class LanDiscoveryService {
     }
   }
 
+  /// BUG-1693 测试缝：把一条发现事件直接喂进内部处理器。resolved/lost 的键控一致性
+  /// （lost 不带 TXT 也要删得掉）在单测环境没有原生 Bonsoir browser 可驱动，只能
+  /// 从这里注入事件、用 [currentDevices] 观测。
+  @visibleForTesting
+  void debugHandleEvent(BonsoirDiscoveryEvent event) => _onEvent(event);
+
   Future<void> stopDiscovery() async {
     await _sub?.cancel();
     _sub = null;
     await _discovery?.stop();
     _discovery = null;
     _discoveredDevices.clear();
+    _serviceNameToDeviceId.clear();
     // 已关闭的 controller 不能再 add（StateError）：dispose 走的正是这条路径。
     if (!_deviceStream.isClosed) _deviceStream.add(<FushiDevice>[]);
   }
@@ -222,6 +244,7 @@ class LanDiscoveryService {
     unawaited(_discovery?.stop());
     _discovery = null;
     _discoveredDevices.clear();
+    _serviceNameToDeviceId.clear();
     unawaited(_deviceStream.close());
   }
 }

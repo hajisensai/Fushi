@@ -541,28 +541,44 @@ class SyncOrchestrator {
     int readingDone = 0;
     int readingTotal = 0;
     String? readingTitle;
-    final List<SyncBookResult> bookResults = await SyncManager(
-      db: _db,
-      backend: _backend,
-      onContentProgress: (double f) => _emit(SyncPhase.readingData,
-          itemIndex: readingDone,
-          itemTotal: readingTotal,
-          title: readingTitle,
-          fileFraction: f),
-    ).syncAllBooks(
-      syncStats: syncStats,
-      statsSyncMode: statsSyncMode,
-      syncAudioBook: syncAudioBookPosition,
-      syncContent: managerSyncContent,
-      listing: listing,
-      onBookProgress: (int done, int total, String title) {
-        readingDone = done;
-        readingTotal = total;
-        readingTitle = title;
-        _emit(SyncPhase.readingData,
-            itemIndex: done, itemTotal: total, title: title);
-      },
-    );
+    // 书阶段与后续各阶段（词典/音频/进度/合集/墓碑）互相独立，但它是整条流水线里
+    // 唯一没有自带 try/catch 的阶段——它一抛，合集/墓碑等后续阶段整轮到不了
+    // （客户端设备从不本机建合集、watcher 轻量路径也永远不触发，于是 host 合集
+    // 永远落不了库、库页永远散卡）。对齐其余 _sync*Live 阶段的形状：失败记
+    // report.errors，流水线继续。
+    //
+    // SyncAuthError 例外放行：它冲出 run() 是承重契约——manual_sync_ui 靠捕获它
+    // 登出并引导重新登录（TODO-836 / BUG-1323），吞成 report.errors 会把「凭据已
+    // 失效」降级成一条无操作性的杂项错误；且鉴权死了后续阶段本来也无法工作。
+    List<SyncBookResult> bookResults = const <SyncBookResult>[];
+    try {
+      bookResults = await SyncManager(
+        db: _db,
+        backend: _backend,
+        onContentProgress: (double f) => _emit(SyncPhase.readingData,
+            itemIndex: readingDone,
+            itemTotal: readingTotal,
+            title: readingTitle,
+            fileFraction: f),
+      ).syncAllBooks(
+        syncStats: syncStats,
+        statsSyncMode: statsSyncMode,
+        syncAudioBook: syncAudioBookPosition,
+        syncContent: managerSyncContent,
+        listing: listing,
+        onBookProgress: (int done, int total, String title) {
+          readingDone = done;
+          readingTotal = total;
+          readingTitle = title;
+          _emit(SyncPhase.readingData,
+              itemIndex: done, itemTotal: total, title: title);
+        },
+      );
+    } on SyncAuthError {
+      rethrow;
+    } catch (e) {
+      report.errors.add('books: $e');
+    }
     _collectConflicts(bookResults, report);
 
     if (syncDictionary) await syncDictionaries(report);
@@ -674,6 +690,12 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) async {
     try {
+      // apikey 同步设定重设计：service-config（host 的外部服务 API key）此前是
+      // 无 UI 无开关的隐形通道。开关默认 true（行为不变）；关掉 = 本设备不再向
+      // host 请求 service-config（连请求都不发，不是拉回来再丢弃）。
+      if (!await SyncRepository(_db).isInterconnectServiceConfigSyncEnabled()) {
+        return;
+      }
       final InterconnectServiceConfigSnapshot? snapshot =
           await backend.getRemoteServiceConfig();
       if (snapshot == null) return;

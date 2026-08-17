@@ -3265,7 +3265,6 @@
   "download_resources_tab": "资源",
   "video_external_settings_section": "外部资源与字幕来源",
   "video_torznab_settings_title": "Torznab 索引器",
-  "video_torznab_settings_hint": "配置一个或多个 Jackett、Prowlarr 或兼容的 Torznab 端点。密钥仅保存在本机。",
   "video_torznab_add": "添加索引器",
   "video_torznab_name": "名称",
   "video_torznab_endpoint": "端点",
@@ -3279,7 +3278,6 @@
   "video_external_insecure_http_hint": "仅用于可信的局域网端点。",
   "video_external_endpoint_invalid": "请输入不含凭据、查询参数或片段的有效端点。",
   "video_opensubtitles_settings_title": "OpenSubtitles",
-  "video_opensubtitles_settings_hint": "API 凭据和首选字幕语言仅保存在本机。",
   "video_opensubtitles_user_agent": "User-Agent",
   "video_opensubtitles_languages": "首选语言",
   "video_opensubtitles_languages_hint": "用逗号分隔语言代码，例如 zh-CN,en,ja",
@@ -3461,5 +3459,11 @@
   "dict_user_field_meaning": "释义",
   "dict_user_empty": "还没有词条，添加一条开始建立自己的词典。",
   "dict_user_expression_required": "词头不能为空",
-  "dict_user_rebuild_failed": "用户词典重建失败"
+  "dict_user_rebuild_failed": "用户词典重建失败",
+  "sync_err_peer_unreachable": "无法连接配对设备——对方可能不在线，或对端未运行 Fushi。",
+  "remote_book_list_failed": "无法获取配对设备的远端书库。",
+  "video_torznab_settings_hint": "配置一个或多个 Jackett、Prowlarr 或兼容的 Torznab 端点。密钥绝不随备份导出；可随互联同步到已配对设备（可在互联设置中关闭）。",
+  "video_opensubtitles_settings_hint": "API 凭据绝不随备份导出；可随互联同步到已配对设备（可在互联设置中关闭）。",
+  "sync_interconnect_service_config_toggle": "同步主机服务配置",
+  "sync_interconnect_service_config_toggle_desc": "经加密互联通道接收已配对主机的外部服务设定与 API key（Jimaku、TMDB、Torznab、OpenSubtitles、追番）。需启用 TLS。"
 }

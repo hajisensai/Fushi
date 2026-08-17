@@ -124,6 +124,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   Future<void> _persistUrls() async {
+    // BUG-1693：连通性结果按 URL 键控，URL 集合一变（删除/改址）就把不再对应任何
+    // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
+    // 冒充新测）。收在这里而不是各调用点：所有 URL 变更都必经本方法（见下），
+    // 单点清理消除「哪个入口忘了清」的特例。
+    _reachable.removeWhere(
+        (String url, bool _) => !_urls.any((FushiClientUrl u) => u.url == url));
     await _repo.setFushiClientUrls(_urls);
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
@@ -355,32 +361,41 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   Future<void> _testAll() async {
-    await _saveToken();
-    final String token = _tokenController.text.trim();
-    if (_urls.isEmpty || token.isEmpty) {
+    // BUG-1693：这里不再先调 [_saveToken]——它带着 BUG-1550 的显式覆盖语义
+    // （落全局键 + **清掉全部地址行的 per-peer token**），让「测试连接」变成一次
+    // 静默的凭据改写。手动输入路径的 onChanged 已逐次落库，此处没有要补存的东西。
+    if (_urls.isEmpty) {
       if (mounted) _showSnackBar(context, t.sync_connection_failed);
       return;
     }
+    final String globalToken = _tokenController.text.trim();
     setState(() => _isTesting = true);
     for (final FushiClientUrl u in _urls) {
-      bool ok;
-      try {
-        // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
-        // 让测试连接在 TLS 握手处失败，把可连的 host 误报成失败（TODO-1330）。
-        await InterconnectSyncBackend.instance
-            .testConnection(
-              url: u.url,
-              token: token,
-              fingerprint: u.fingerprintSha256,
-            )
-            .timeout(const Duration(seconds: 5));
-        ok = true;
-      } catch (e, stack) {
-        // Record why an address probe failed (auth vs network vs timeout)
-        // instead of only showing a generic ✗ (HBK-AUDIT-165).
-        ErrorLogService.instance.log('SyncTestAll:${u.url}', e, stack);
-        ok = false;
+      // BUG-1693：凭据逐地址取（行上 per-peer token 优先、回落全局键），与全部
+      // 真实同步消费点的 BUG-1550 规则一致。旧实现拿全局键测每一台：配对第二台
+      // 后全局键被覆写，第一台恒被误报失败；全局键为空时更是整体早退，哪怕各
+      // 地址行都带着自己的有效凭据。
+      final String? token = interconnectTokenFor(u, globalToken);
+      bool ok = false;
+      if (token != null) {
+        try {
+          // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
+          // 让测试连接在 TLS 握手处失败，把可连的 host 误报成失败（TODO-1330）。
+          await InterconnectSyncBackend.instance
+              .testConnection(
+                url: u.url,
+                token: token,
+                fingerprint: u.fingerprintSha256,
+              )
+              .timeout(const Duration(seconds: 5));
+          ok = true;
+        } catch (e, stack) {
+          // Record why an address probe failed (auth vs network vs timeout)
+          // instead of only showing a generic ✗ (HBK-AUDIT-165).
+          ErrorLogService.instance.log('SyncTestAll:${u.url}', e, stack);
+        }
       }
+      // token == null：两头都拿不出凭据，不发必然 401 的请求，直接标失败。
       if (!mounted) return;
       setState(() => _reachable[u.url] = ok);
     }
@@ -815,6 +830,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
     await _pairRepo.setFushiClientTokenForUrl(baseUrl, token);
+    // BUG-1693：配对**成功**才代表互联真的投入使用，此刻才落「互联已启用」。
+    // 已启用时（本 UI 的常态——配置区本就门控于互联开关）是幂等 no-op。
+    await _syncSettings(_pairSettingsContext).setInterconnectEnabled(true);
     _syncSettings(_pairSettingsContext).reloadClientConfig();
     return t.sync_pair_success;
   }
@@ -1477,9 +1495,10 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     if (_pairingUrl != null) return;
     final state = _syncSettings(widget.settingsContext);
     final repo = SyncRepository(widget.settingsContext.appModel.database);
-    // 配对即启用互联（独立开关），不再强写 backendType——互联与云备份并存，配对不该
-    // 擦掉用户已选的云同步后端（解耦前的 UX 反模式）。
-    await state.setInterconnectEnabled(true);
+    // BUG-1693：这里**不再**预写「互联已启用」。旧实现在探测/配对之前就
+    // setInterconnectEnabled(true) 且失败不回滚——点一下就把开关写死。启用挪到
+    // 配对真正成功的收尾（v2 走 [_onPairSuccess]，v1 走 [_pairLegacyV1] 拿到
+    // token 之后），失败路径不留任何持久化副作用。
 
     setState(() => _pairingUrl = device.webDavUrl);
     try {
@@ -1547,6 +1566,8 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         if (token != null && token.isNotEmpty) {
           // BUG-1550：v1 老路径同样把凭据落在这条地址上（理由见 _onPairSuccess）。
           await repo.setFushiClientTokenForUrl(device.webDavUrl, token);
+          // BUG-1693：与 v2 路径一致——拿到 token（配对成功）才落「互联已启用」。
+          await state.setInterconnectEnabled(true);
           message = t.sync_pair_success;
         } else {
           message = t.sync_pair_failed;
@@ -1725,7 +1746,9 @@ class _InterconnectBackupBackendWidgetState
         widget.settingsContext.appModel.database,
       ).getBackendType();
       if (!mounted) return;
-      _showSnackBar(context, t.sync_error(message: e.toString()));
+      // BUG-1693：走统一的友好错误翻译（对端全部探不到 → SyncPeerUnreachableError
+      // → 「无法连接配对设备」），不再把裸异常 toString 直接上屏。
+      _showSnackBar(context, t.sync_error(message: friendlySyncErrorDetail(e)));
       widget.settingsContext.refresh();
     } finally {
       if (mounted) setState(() => _busy = false);

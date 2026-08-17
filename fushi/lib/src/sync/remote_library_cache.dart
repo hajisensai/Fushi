@@ -141,6 +141,19 @@ class RemoteLibraryCache {
     _invalidateSlot(_slotKey(sourceId, key));
   }
 
+  /// 作废 [sourceId] 的**全部**域槽（books/videos/audiobooks/activity:* …）。
+  ///
+  /// 「我刚对这个来源做了写操作（删远端条目等），它的远端库整体可能已变」的
+  /// 正确失效粒度：逐域点名必然漏（BUG-1693 批审计实证——远端删除只强刷了
+  /// 自己那个域，activity 槽在 TTL 内继续给首页时间轴喂已删条目的活动），且
+  /// activity 按 limit 分槽，调用方根本枚举不全。
+  void invalidateSource(String sourceId) {
+    final String prefix = '$sourceId|';
+    for (final String slotKey in _slots.keys.toList()) {
+      if (slotKey.startsWith(prefix)) _invalidateSlot(slotKey);
+    }
+  }
+
   void _invalidateSlot(String slotKey) {
     final _CacheSlot? slot = _slots[slotKey];
     if (slot == null) return;

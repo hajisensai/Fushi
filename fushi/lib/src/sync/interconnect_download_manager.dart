@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 
 /// 一个互联（hibiki 互联 / LAN 对端）下载任务的生命周期状态。
 enum InterconnectDownloadStatus { running, completed, failed }
@@ -64,10 +65,22 @@ typedef InterconnectDownloadComplete = Future<void> Function(File dest);
 /// 不挂任何页面 State —— 故切 tab / 退页 / 页面 dispose 时下载循环仍在本管理器里活着，
 /// 页面只 `ref.watch` 订阅渲染进度。
 ///
-/// 本波只承载视频下载（[startVideoDownload]）；底层走可续传引擎，中断留 .part 可续。
-/// 书 / 有声书 / 前台服务通知为后续波次，不在此实现。
+/// 承载视频下载（[startVideoDownload]，底层走可续传引擎，中断留 .part 可续）与
+/// 书 / 有声书下载（[startBookDownload] / [startSrtAudiobookDownload]，BUG-1693
+/// 批审计：书侧此前挂在书架页 State 里，失败在离页后完全不可见）。前台服务通知
+/// 为后续波次，不在此实现。
 class InterconnectDownloadManager extends ChangeNotifier {
   InterconnectDownloadManager();
+
+  /// 书域任务键（BUG-1693 批审计）：书任务与视频任务同居一张 [_tasks] 表——视频
+  /// 键是 `RemoteVideoInfo.id`、书键是 `RemoteBookInfo.downloadId`（= host 的
+  /// `bookKey ?? title`），两个值域互不设防，域前缀隔离避免撞键。UI 查书任务
+  /// 状态必须经同一派生函数，不得手拼前缀。
+  static String bookTaskId(String downloadId) => 'book:$downloadId';
+
+  /// 纯 SRT（standalone）远端有声书任务键（身份 = uid，与书 downloadId 又是一个
+  /// 不同值域，再隔一个域前缀）。
+  static String srtAudiobookTaskId(String identity) => 'srt:$identity';
 
   final Map<String, InterconnectDownloadTask> _tasks =
       <String, InterconnectDownloadTask>{};
@@ -95,12 +108,63 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// 某任务进度（0..1 或 null=不确定）。
   double? progressFor(String id) => _tasks[id]?.progress;
 
-  /// 启动一个视频下载任务。已在跑（同 [id]）则忽略重复调用，返回当前任务。
+  /// 启动一个视频下载任务（键 = 裸 `RemoteVideoInfo.id`，历史键域冻结不加前缀）。
+  /// 已在跑（同 [id]）则忽略重复调用，返回当前任务。
+  Future<InterconnectDownloadTask> startVideoDownload({
+    required String id,
+    required String title,
+    required File dest,
+    required InterconnectDownloadRunner run,
+    InterconnectDownloadComplete? onComplete,
+  }) =>
+      _startDownload(
+        id: id,
+        title: title,
+        dest: dest,
+        run: run,
+        onComplete: onComplete,
+      );
+
+  /// 启动一个远端书下载任务（EPUB / 漫画包，含随书有声书；键 = [bookTaskId]）。
+  /// 已在跑（同 [downloadId]）则忽略重复调用，返回当前任务。
+  Future<InterconnectDownloadTask> startBookDownload({
+    required String downloadId,
+    required String title,
+    required File dest,
+    required InterconnectDownloadRunner run,
+    InterconnectDownloadComplete? onComplete,
+  }) =>
+      _startDownload(
+        id: bookTaskId(downloadId),
+        title: title,
+        dest: dest,
+        run: run,
+        onComplete: onComplete,
+      );
+
+  /// 启动一个纯 SRT（standalone）远端有声书下载任务（键 = [srtAudiobookTaskId]）。
+  /// 已在跑（同 [identity]）则忽略重复调用，返回当前任务。
+  Future<InterconnectDownloadTask> startSrtAudiobookDownload({
+    required String identity,
+    required String title,
+    required File dest,
+    required InterconnectDownloadRunner run,
+    InterconnectDownloadComplete? onComplete,
+  }) =>
+      _startDownload(
+        id: srtAudiobookTaskId(identity),
+        title: title,
+        dest: dest,
+        run: run,
+        onComplete: onComplete,
+      );
+
+  /// 三个公开入口共用的任务生命周期本体。
   ///
-  /// 流程：置 running（不确定进度）→ [run] 驱动下载（走可续传引擎，更新进度）→
+  /// 流程：置 running（不确定进度）→ [run] 驱动下载（更新进度）→
   /// 成功调 [onComplete] 收尾（建行/下字幕）→ 标 completed；任一步失败标 failed 并存
   /// 错误。**整个生命周期与页面无关**：页面 dispose 后任务仍在本管理器里推进到底。
-  Future<InterconnectDownloadTask> startVideoDownload({
+  Future<InterconnectDownloadTask> _startDownload({
     required String id,
     required String title,
     required File dest,
@@ -133,7 +197,11 @@ class InterconnectDownloadManager extends ChangeNotifier {
       _setStatus(
         id,
         InterconnectDownloadStatus.failed,
-        error: e.toString(),
+        // BUG-1693：存**用户可读**的失败原因（对端离线 → 「无法连接配对设备…」），
+        // 不是 `SocketException: OS Error: … errno = 1225` 这类原始异常文本——
+        // 它会被失败角标 tooltip 原样上屏。未知错误 friendlySyncErrorDetail
+        // 回落原文，不吞信息。
+        error: friendlySyncErrorDetail(e),
       );
       rethrow;
     }

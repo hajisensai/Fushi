@@ -1,4 +1,4 @@
-import 'dart:async' show StreamSubscription, unawaited;
+import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -222,6 +222,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
   Set<String>? _knownVideoUids;
 
+  /// BUG-1699：合集表（MediaCollections / MediaCollectionItems）变更监听。合集
+  /// 折叠映射（_collectionsById 等）是进页快照，而写入方很多（后台互联/云合集
+  /// 同步、备份导入、其它页面的合集编辑）——不订阅数据层，host 同步落库的合集
+  /// 在本页恒散卡，直到下拉刷新或重启。落库常是一批行，经 [_collectionsReloadDebounce]
+  /// 合并后重载一次映射。
+  StreamSubscription<void>? _collectionTablesSub;
+  Timer? _collectionsReloadDebounce;
+
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
   final CardDropRegistry<VideoBookRow> _cardDropRegistry =
@@ -348,6 +356,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
+    // BUG-1699：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
+    // 落库后自动重载折叠映射——远端占位卡与新同步的合集立即成组。
+    _collectionTablesSub = appModelNoUpdate.database
+        .watchCollectionTablesChanged()
+        .listen(_onCollectionTablesChanged);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
@@ -391,6 +404,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _nextRowController.dispose();
     _recentRowController.dispose();
     _videoUidsSub?.cancel();
+    _collectionTablesSub?.cancel();
+    _collectionsReloadDebounce?.cancel();
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     _autoScrape?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
@@ -421,6 +436,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   void _onLibraryRefreshRequested() {
     if (mounted) _refresh();
+  }
+
+  /// BUG-1699：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
+  /// 一次折叠映射（[_loadLibraryMaps] 自带 setState，映射换新后网格自动重组）。
+  void _onCollectionTablesChanged(void _) {
+    _collectionsReloadDebounce?.cancel();
+    _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _loadLibraryMaps();
+    });
   }
 
   /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
@@ -4879,6 +4903,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 删成功才需要重取清单；失败时列表本就没变。forceRefresh 绕过远端库缓存 TTL，
     // 否则刚删掉的视频会在 TTL 内继续显示成幽灵卡片。
     if (!failed && supported) {
+      // 该来源整库已变：全域失效（不止 videos——activity 槽不失效的话，首页
+      // 时间轴 TTL 内继续显示已删条目的活动）。
+      final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
+      if (sourceId != null) _remoteCache.invalidateSource(sourceId);
       setState(() {
         _remoteFuture = _loadRemoteVideos(forceRefresh: true);
       });
