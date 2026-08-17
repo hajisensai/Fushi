@@ -31,6 +31,27 @@
 文本选择是 WKWebView 自己的行为、不经过 popup.js 的任何绑定，因此这条排除了
 「指针到了、只是 JS 没绑点词」的可能：**指针根本没到达浮层的 WKWebView**。
 
+### 决定性观测：事件根本没进浮层的 WebView
+
+给 `DictionaryPopupWebView` 注入 DOM 探针（`mousedown`/`mouseup`/`click`/`pointerdown`
+四个事件 capture 阶段 `console.log`，经 `onConsoleMessage` 回到 Dart 日志），两个实例
+装的是**同一份**脚本：
+
+```
+[probe] installed                                   ← 结果区实例
+[probe] installed                                   ← 浮层实例
+点结果区的词：
+[probe] pointerdown @66,30 tag=SPAN cls=expression
+[probe] mousedown  @66,29 tag=SPAN cls=expression
+[probe] mouseup    @66,29 tag=SPAN cls=expression
+[probe] click      @66,29 tag=SPAN cls=expression
+点浮层内的词：
+（无任何输出）
+```
+
+⇒ 浮层的 WKWebView **一个鼠标事件都收不到**，连 `pointerdown` 都没有。不是 JS 绑定、
+不是 DOM 命中、不是 `pointer-events`——事件在进入 WebKit 之前就丢了。
+
 ### 对照实验（每条都改代码、重新构建、真机 CGEvent 点击复测）
 
 | # | 改动（仅 macOS 分支） | 结果 |
@@ -38,15 +59,36 @@
 | A | `parkedPopupLayer` 不再把隐藏层停到屏外（`left: screen.width + 8` → 保持 `pos.left`） | ❌ 仍点不动 |
 | B | 可见态旁路 `Visibility(maintainSize)` + 入场淡入 `_PopupEntranceFade`/`AnimatedOpacity` | ❌ 仍点不动 |
 | C | `_BodySwipeDismissDetector` 的 `Listener` 由 `HitTestBehavior.opaque` 改 `deferToChild` | ❌ 仍点不动 |
-| D | 浮层不挂根 Overlay、改由页面内 `Stack` 渲染 | ⏸ **未完成**（复测中途 macOS 锁屏，未取得结论） |
+| D | 浮层不挂根 Overlay、改由页面内 `Stack` 渲染 | ❌ 仍点不动 |
+| A+B+C+D | 四项**同时**应用（排除多因叠加） | ❌ 仍点不动 |
+| E | 不 seed 常驻热槽，每次查词新建 WebView（排除「热槽 WebView 创建时隐藏在屏外导致 NSView 永久失聪」） | ❌ 仍点不动 |
+| F | 浮层可见时**不渲染**结果区 WebView，使浮层成为唯一平台视图（排除重叠平台视图事件路由） | ❌ 仍点不动 |
+| G | `FushiPopupSurface` 的 `Clip.antiAlias` 圆角裁剪改 `Clip.none`（排除 clip mutator） | ❌ 仍点不动 |
 
-A/B/C 的诊断改动已从分支撤回（只是实验，不入库）。
+所有诊断改动均已从分支撤回（只是实验，不入库）。
 
-### 下一步排查方向（按优先级）
+### 结论：范围已压到 Flutter widget 层之外
 
-1. **实验 D 未做完**，应先补：浮层挂在**根 Overlay**（`home_dictionary_page.dart::_syncPopupOverlay` / `_buildPopupOverlay`），结果区挂在页面 widget 树内——这是两者仅存的结构性差异。
-2. Flutter SDK 侧：`RenderAppKitView.updateGestureRecognizers` 在 macOS 上是空实现（`rendering/platform_view.dart`，带 `TODO flutter#128519`），且基类 `_handleGlobalPointerEvent` 对每次 PointerDown 调 `rejectGesture()`；`input_bridge.dart` 里 `hostOwnsDictionaryPopupPointerInput = isWindowsPlatform` 的注释断言「Android / iOS / macOS / Linux：WebView 是真正的原生视图，指针被它直接吃掉」——**该前提在 macOS 上与实测矛盾**（结果区吃得到、浮层吃不到），需要复核并可能把 macOS 也并入 host-owned 指针路径（与 Windows 同范式）。
-3. 若 D 证实是根 Overlay：需要的是「浮层不经 OverlayEntry」或「Overlay 内平台视图命中修正」，而不是继续在 wrapper 上试错。
+浮层与结果区用的是**同一个 widget 类、同一份注入脚本**；把两者之间所有 Flutter 侧差异
+（包装、挂载位置、实例复用、重叠、裁剪）逐一消除后，行为差异**依然存在**。因此根因不在
+本仓的 widget 代码，而在 **macOS 平台视图层**：`AppKitView` / Flutter macOS embedder 的
+事件路由，或 `flutter_inappwebview_macos` 的 `FlutterWebViewController`（`NSView` 子类，
+`webView.frame = self.bounds` + `autoresizingMask`，见 pub-cache 1.1.2）在**动态创建 /
+频繁改尺寸**的实例上不接管鼠标。
+
+### 下一步（需要原生侧手段，非 Dart 侧试错）
+
+1. 用 Xcode 的 **Debug View Hierarchy** 或 lldb 打印两个 `WKWebView` 的 `NSView` 层级、
+   `frame`、`hitTest:` 结果，直接对比「收得到」与「收不到」的实例差在哪。关键怀疑：
+   浮层实例的 NSView 未被加入响应链，或其祖先某层 `hitTest:` 返回 nil。
+2. Flutter SDK 侧：`RenderAppKitView.updateGestureRecognizers` 在 macOS 上是空实现
+   （`rendering/platform_view.dart`，带 `TODO flutter#128519`），基类 `_handleGlobalPointerEvent`
+   对每次 PointerDown 调 `rejectGesture()`。`dictionary_popup_input_bridge.dart:162-168`
+   的注释断言「Android / iOS / macOS / Linux：WebView 是真正的原生视图，指针被它直接吃掉」——
+   **该前提在 macOS 上与实测矛盾**（同一平台，结果区吃得到、浮层吃不到）。
+3. 可行的兜底方案：把 macOS 并入 **host-owned 指针路径**（`hostOwnsDictionaryPopupPointerInput`
+   目前仅 Windows true），由 Flutter 侧 `Listener` 接管指针并经 JS 桥转发坐标——Windows
+   fork 已验证这条路可用，代价是需要为 macOS 补一套坐标转发。
 
 ### iOS 状态
 
