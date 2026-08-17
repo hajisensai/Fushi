@@ -12,7 +12,7 @@
 
   同批发现的第二个缺口（同一根因、同一修复）：`eu.kanade.tachiyomi.util.**` 从未被 keep，而宿主自身一次都不调用它，R8 把整个包删掉了；扩展解析 HTML 必用的 `JsoupExtensionsKt.asJsoup()` 因此在 release 上也不存在。
 
-- **[x] ① 已修复** — `fushi/android/app/proguard-rules.pro` 新增「Mihon 扩展宿主 ABI」区块，按上游 Mihon `app/proguard-rules.pro` 的 "Keep common dependencies used in extensions" 区块逐条对齐：补 `kotlin.**` / `kotlin.time.**` / `eu.kanade.tachiyomi.util.**` / `com.squareup.zstd.**` / `app.cash.quickjs.**`。（Mihon 自己走 `-dontobfuscate` 全保，Fushi 有混淆，只能逐包 keep。）提交见本条目末尾。
+- **[x] ① 已修复** — `fushi/android/app/proguard-rules.pro` 新增「Mihon 扩展宿主 ABI」区块，按上游 Mihon `app/proguard-rules.pro` 的 "Keep common dependencies used in extensions" 区块逐条对齐：补 `kotlin.**` / `kotlin.time.**` / `eu.kanade.tachiyomi.util.**` / `com.squareup.zstd.**` / `app.cash.quickjs.**`。（Mihon 自己走 `-dontobfuscate` 全保，Fushi 有混淆，只能逐包 keep。）提交 `edfed870ca`。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/mihon_host_abi_keep_guard_test.dart`：以两个真实 Keiyoushi 扩展 dex 解析出的「引用但未定义」类清单为基准，断言 proguard-rules.pro 里每个类都被至少一条**不带 `allowobfuscation`** 的 keep 覆盖。变异实测两轮均由绿转红：① 删掉 `kotlin.**` keep → 精确报出 16 个 `kotlin.*` 缺口；② 把该 keep 改成 `-keep,allowobfuscation` → 同样报红（验证「允许改名等于没保」这条语义生效）；两轮还原后 proguard-rules.pro 的 sha256 与变异前逐字节一致。
 - **备注**：
   - 未纳入本次修复的相邻事实，另见 BUG-1703：错误消息投递通道在 Android 上是 `Fluttertoast`（系统原生 Toast，硬上限 2 行、不可复制），所以 `MihonExtensionLoader` 在 develop 上已经带的链式根因（`03c98a0828`）**依然送不到用户眼前**，截图里就断在 `Unabl…`。用户报的 v2.1.1 更早于该提交，消息里连根因都还没有。
