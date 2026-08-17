@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.1.1-debug.11758",
-  "tag": "v2.1.1-debug.11758+2e5bd13",
+  "version": "2.1.1-debug.11790",
+  "tag": "v2.1.1-debug.11790+74c4946",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 11758,
-  "notes": "Automated desktop debug-channel build from develop @ 2e5bd13. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 11790,
+  "notes": "Automated desktop debug-channel build from develop @ 74c4946. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.1.1-debug.11758-2e5bd13-debug.apk",
@@ -29,11 +29,11 @@
       "version": "2.1.1-debug.11758"
     },
     {
-      "name": "fushi-2.1.1-debug.11758-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11758-windows-setup.exe",
-      "releaseSequence": 11758,
-      "tag": "v2.1.1-debug.11758+2e5bd13",
-      "version": "2.1.1-debug.11758"
+      "name": "fushi-2.1.1-debug.11790-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11790-windows-setup.exe",
+      "releaseSequence": 11790,
+      "tag": "v2.1.1-debug.11790+74c4946",
+      "version": "2.1.1-debug.11790"
     }
   ]
 }
