@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 自动重试退避梯度；长度即最大自动重试次数（语义同 `kMokuroMoeRetryBackoff`）。
@@ -496,7 +497,8 @@ class DiscoveryDownloadQueue extends ChangeNotifier {
 /// 空结果回退 'download'。顶层函数以便导入分派侧复用同一净化规则。
 String sanitizeDiscoveryFileName(String name) {
   final String cleaned = name
-      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), ' ')
+      // 黑名单字符集用全仓唯一真相源（BUG-1125：禁止复制字符集）。
+      .replaceAll(windowsUnsafeFileNameChars, ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim()
       // Windows 文件名不能以点/空格结尾；顺带把 '.'/'..' 这类纯点名归零。

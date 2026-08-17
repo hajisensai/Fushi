@@ -4120,12 +4120,14 @@ class AppModel with ChangeNotifier {
       );
   DiscoveryDownloadQueue? _discoveryDownloadQueue;
 
-  /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认
-  /// `<baseDir>/content`，再按媒体域分子目录）。
+  /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认根
+  /// [downloadDefaultSaveRoot]，再按媒体域分子目录）。
+  ///
+  /// 不再自造 documents 派生点：默认根由 [startAnimeDownloadService] 在
+  /// initialise 期唯一计算（UI 可达发现页时必已就绪），这里只消费。
   String discoveryDownloadDirFor(DiscoveryMediaKind kind) {
     String root = prefsRepo.downloadSaveRoot.trim();
     if (root.isEmpty) root = downloadDefaultSaveRoot;
-    if (root.isEmpty) root = path.join(appDirectory.path, 'content');
     return path.join(root, 'discovery', kind.name);
   }
 
