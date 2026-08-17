@@ -69,7 +69,9 @@ class RemoteCoverCache {
         // 超龄：删掉并按未命中走网络（拉网失败也只是这张封面回占位图）。
         try {
           await f.delete();
-        } catch (_) {}
+        } catch (_) {
+          // 尽力而为：删不掉（占用/权限）就留给下次超龄清理，本次照样按未命中走。
+        }
         return null;
       }
       final Uint8List bytes = await f.readAsBytes();
@@ -111,9 +113,13 @@ class RemoteCoverCache {
       for (final File f in files.take(files.length - maxEntries)) {
         try {
           f.deleteSync();
-        } catch (_) {}
+        } catch (_) {
+          // 尽力而为：单个文件删失败（并发读占用等）跳过，下轮修剪再试。
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+      // 尽力而为：修剪只是容量优化，列目录 / stat 失败不影响缓存读写本身。
+    }
   }
 
   /// 测试可见：立即执行一次容量修剪。
