@@ -85,6 +85,28 @@ child 2 (surface 同级): PictureLayer (0,0,384.7,346.2)  ← 尺寸拖拽把手
 
 中间还做了一次**判据实验**：把阅读器 WebView 临时移到 Stack 末尾（最后绘制），点击立刻恢复 —— 反向坐实「之后绘制的 Flutter 内容」才是唯一变量。
 
+### iOS 结论：**本 bug 不影响 iOS**（已实测 A/B，2026-08-17）
+
+iOS embedder 与 macOS 不是同一套模型：Flutter 画在平台视图之上的内容进的是
+`FlutterOverlayView`，而它以 **`userInteractionEnabled = NO`** 创建，**根本不参与命中测试**；
+触摸路由由 `FlutterTouchInterceptingView` 上的手势识别器 + Flutter 自己的命中树决定。
+也就是说 iOS 上**不存在** `_hitTestIgnoreRegion` 这种「粗矩形吞掉整块平台视图输入」的机制。
+
+实测 A/B（iPhone 17 Pro 模拟器 / iOS 26.5，cliclick 注入真实触摸，走真实 UIKit 命中链；
+容器里灌入 macOS 开发库的 `fushi.db` + `dictionaryResources/` 两部测试词典）：
+
+| 构建 | 结果区点词唤出浮层 | 浮层内 WebView 折叠 `▾` | 浮层内 ★ 收藏 |
+|---|---|---|---|
+| **修复前**（`0870424fe^`） | ✅ 弹出 | ✅ 折叠成 `▸` | — |
+| **修复后**（`0870424fe`） | ✅ 弹出 | ✅ 折叠成 `▸` | ✅ 实心 ⇄ 空心 |
+
+即 iOS 修复前后行为一致、都正常 ⇒ **iOS 从未受影响，本次修复对 iOS 零回归**。
+结论范围因此收敛为：**macOS 独有**。
+
+（真机 iPhone 侧只完成了「装上并跑起来」——物理设备没有触摸注入通道
+（`devicectl` 不提供，`idevicescreenshot` 在 iOS 26 上失效），逐项点测需人工；
+鉴于模拟器 A/B 已给出确定结论，未再强求。）
+
 ### 已排除的候选（勿重走）
 
 1. **「滑动关闭弹窗」的 `Transform`+`Opacity` 包装**（`dictionary_popup_layer.dart` `_BodySwipeDismissDetector.build`）。
