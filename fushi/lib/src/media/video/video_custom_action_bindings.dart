@@ -55,12 +55,15 @@ class VideoCustomActionBindings {
   }
 
   /// 序列化：逗号分隔的动作 key，空槽位写空串（如 `video_next_subtitle,,,`）。
+  /// 一个都没绑时返回空串，而不是 `",,,"`——让「全空」只有一种写法，与偏好的默认值
+  /// （空串）重合，解绑回初始态后存储里不留一条看着像配置过的垃圾。
   ///
   /// 用 [ShortcutAction.key] 而不是枚举下标：枚举声明序会因为设置页分组排序而变动
   /// （[ShortcutAction] 头部明确写了「声明顺序 = 展示顺序」），存下标等于把持久化
   /// 绑死在展示顺序上，重排一次所有用户的绑定就全串位。
-  String encode() =>
-      _actions.map((ShortcutAction? a) => a?.key ?? '').join(',');
+  String encode() => isEmpty
+      ? ''
+      : _actions.map((ShortcutAction? a) => a?.key ?? '').join(',');
 
   /// 反序列化。空串 / 格式不符 / 未知 key（动作被删或改名）一律降级成未绑定槽位，
   /// 绝不抛异常——这条路径在 app 启动读偏好时跑，抛了就是白屏。

@@ -65,6 +65,19 @@ void main() {
       }
     });
 
+    test('全空表编码回空串（「全空」只有一种写法）', () {
+      // 与偏好默认值（空串）重合：解绑回初始态后存储里不该留一条 ",,," 这样
+      // 看着像配置过、实际什么都没绑的垃圾。
+      expect(VideoCustomActionBindings.empty.encode(), '');
+      final VideoCustomActionBindings roundTrip = VideoCustomActionBindings
+          .empty
+          .withAction(0, ShortcutAction.videoPlay)
+          .withAction(0, null);
+      expect(roundTrip.encode(), '');
+      expect(VideoCustomActionBindings.decode(roundTrip.encode()),
+          VideoCustomActionBindings.empty);
+    });
+
     test('round-trip 保持每个槽位的动作与位置', () {
       final VideoCustomActionBindings b = VideoCustomActionBindings.empty
           .withAction(0, ShortcutAction.videoNextSubtitle)
