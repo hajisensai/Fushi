@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -32,6 +33,7 @@ class VideoWorkDetailPage extends StatelessWidget {
     required this.repository,
     required this.workRef,
     required this.onChanged,
+    this.remote,
     this.onScrapeCollection,
     this.onEpisodeScrapeInfo,
     this.onDeleteMembersMedia,
@@ -42,6 +44,10 @@ class VideoWorkDetailPage extends StatelessWidget {
   final VideoBookRepository repository;
   final VideoWorkRef workRef;
   final VoidCallback onChanged;
+
+  /// 远端上下文：合集成员里「只在对端」的集靠它列出 / 流播 / 取封面。null = 纯本地
+  /// 视图（调用方没有互联 client），与远端支持引入前逐字节相同。
+  final CollectionRemoteContext? remote;
 
   /// 管理菜单「刮削资料与封面」（BUG-1662）。null = 调用方不提供刮削能力，菜单
   /// 不出该项（与 [onDeleteMembersMedia] 同一注入纪律）。
@@ -78,18 +84,14 @@ class VideoWorkDetailPage extends StatelessWidget {
           return MediaCollectionDetailPage(
             database: database,
             collection: collection,
-            loadMembers: () async {
-              final List<MediaCollectionItemRow> items =
-                  await repository.getCollectionItems(collection.id);
-              final List<VideoBookRow> result = <VideoBookRow>[];
-              for (final MediaCollectionItemRow item in items) {
-                if (item.mediaType != MediaKind.video.dbValue) continue;
-                final VideoBookRow? row =
-                    await repository.getByBookUid(item.entryKey);
-                if (row != null) result.add(row);
-              }
-              return result;
-            },
+            // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
+            // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
+            loadEpisodes: () => loadCollectionEpisodeSlots(
+              repository: repository,
+              collectionId: collection.id,
+              loadRemoteVideos: remote?.loadRemoteVideos,
+            ),
+            remote: remote,
             onOpenEpisode: (VideoBookRow episode) {
               Navigator.push<void>(
                 context,

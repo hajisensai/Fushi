@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
+import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
@@ -219,17 +220,12 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         builder: (_) => MediaCollectionDetailPage(
           database: db,
           collection: collection,
-          loadMembers: () async {
-            final List<MediaCollectionItemRow> members =
-                await db.getCollectionItems(collection.id);
-            final List<VideoBookRow> rows = <VideoBookRow>[];
-            for (final MediaCollectionItemRow m in members) {
-              if (m.mediaType != MediaKind.video.dbValue) continue;
-              final VideoBookRow? row = await repo.getByBookUid(m.entryKey);
-              if (row != null) rows.add(row);
-            }
-            return rows;
-          },
+          // 日历页没有互联 client（无远端上下文）：只在对端的成员照旧不列出，
+          // 与远端支持引入前逐字节相同。
+          loadEpisodes: () => loadCollectionEpisodeSlots(
+            repository: repo,
+            collectionId: collection.id,
+          ),
           onOpenEpisode: (VideoBookRow episode) {
             Navigator.push<void>(
               context,
