@@ -23,6 +23,10 @@ class _EmptyButLiveProvider implements VideoResourceProvider {
   String get id => 'torznab';
 
   @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
+  @override
   int get priority => 10;
 
   @override

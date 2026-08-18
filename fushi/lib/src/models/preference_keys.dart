@@ -84,6 +84,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'harmonic_frequency',
   'jimaku_api_key',
   'jimaku_default_language',
+  // bool（默认 true）：Jimaku 是否参与字幕搜索。与 jimaku_api_key 组成
+  // `enabled && key` 双门控（对齐 OpenSubtitles）。默认 true 是兼容存量：
+  // 本键出现之前「填了 key」即启用，默认 false 会让存量用户升级后失效。
+  'jimaku_enabled',
   'jimaku_pref_langs',
   'last_dictionary_update_at',
   'last_selected_deck',
@@ -172,6 +176,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_mpv_config',
   'video_mpv_shader_dir',
   'video_remote_subtitle',
+  // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
+  // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。
+  'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',
   'video_secondary_subtitle_blur',

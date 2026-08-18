@@ -3554,12 +3554,18 @@
   "discovery_kind_novel": "Novels",
   "discovery_kind_audiobook": "Audiobooks",
   "video_builtin_sources_title": "Built-in sources",
-  "video_builtin_sources_hint": "Ship with the app, always on, nothing to configure.",
-  "video_builtin_nyaa_hint": "Anime only. Movies and TV shows need a Torznab indexer below.",
   "video_resource_no_provider_title": "No resource indexer configured",
-  "video_resource_no_provider_hint": "This search had no provider to query. Add a Torznab indexer under Settings, Downloads, External resource and subtitle providers. The built-in Nyaa source only covers anime.",
   "video_subtitle_no_provider_title": "No subtitle provider configured",
   "video_subtitle_no_provider_hint": "Enter a Jimaku API key or enable OpenSubtitles under Settings, Downloads, External resource and subtitle providers.",
   "anime_download_require_subs": "Subtitles required",
-  "video_jimaku_scope_hint": "Japanese subtitles for anime and Japanese live-action titles. A free API key is required."
+  "video_jimaku_scope_hint": "Japanese subtitles for anime and Japanese live-action titles. A free API key is required.",
+  "video_builtin_apibay_hint": "Movies and TV shows. Public index, no account needed.",
+  "video_builtin_knaben_hint": "Movies and TV shows. Aggregates several public indexers.",
+  "video_jimaku_enabled_hint": "Off means Jimaku is skipped even when an API key is saved.",
+  "discovery_sources_settings_title": "Discovery sources",
+  "discovery_sources_settings_hint": "Which built-in sources take part in the Discover page's All sources search. Picking a single source in the source dropdown always works, even when it is off here.",
+  "video_builtin_sources_hint": "Ship with the app: no account, no API key. Turn one off to keep it out of resource searches.",
+  "video_builtin_nyaa_hint": "Anime only. Movies and TV shows are covered by the two public indexers below.",
+  "video_resource_no_provider_hint": "This search had no provider to query. Re-enable a built-in source, or add a Torznab indexer, under Settings, Downloads, External resource and subtitle providers.",
+  "discovery_source_kinds_label": "Covers: ${kinds}"
 }

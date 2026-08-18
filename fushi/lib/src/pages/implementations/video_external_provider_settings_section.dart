@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
@@ -12,6 +13,7 @@ import 'package:fushi/src/media/video/download/video_download_path_mapping.dart'
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,6 +37,8 @@ class VideoExternalSettingsSnapshot {
     this.torznabConfigs = const <TorznabIndexerConfig>[],
     this.openSubtitlesConfig,
     this.jimakuApiKey = '',
+    this.jimakuEnabled = true,
+    this.disabledBuiltinSourceIds = const <String>{},
     this.pathMappings = const <VideoDownloadBackendPathMappingConfig>[],
     this.managedVideoSources = const <ManagedVideoSourceOption>[],
     this.targetSourceId,
@@ -45,9 +49,19 @@ class VideoExternalSettingsSnapshot {
   final List<TorznabIndexerConfig> torznabConfigs;
   final OpenSubtitlesConfig? openSubtitlesConfig;
 
-  /// Jimaku 的全部配置就是这把 key：非空即注册该来源（`AppModel` 侧门控），
-  /// 所以这里不另造 enabled 开关，免得出现「开着但没 key」的假状态。
+  /// Jimaku 的 API key。
   final String jimakuApiKey;
+
+  /// Jimaku 是否参与字幕搜索。与 [jimakuApiKey] 组成 `enabled && key` 双门控，
+  /// 形状与 OpenSubtitles（`enabled` 长在它的 config 里）并列。
+  ///
+  /// **默认 true**：本开关出现之前「填了 key」即启用，默认 false 会让存量用户
+  /// 升级后 Jimaku 无声失效。
+  final bool jimakuEnabled;
+
+  /// 用户停用的内置资源索引器 id（[kBuiltinVideoResourceSources] 的子集）。
+  /// 装的是「停用」而不是「启用」：新内置源上线即默认参与，不需要迁移写入。
+  final Set<String> disabledBuiltinSourceIds;
   final List<VideoDownloadBackendPathMappingConfig> pathMappings;
   final List<ManagedVideoSourceOption> managedVideoSources;
   final int? targetSourceId;
@@ -63,6 +77,11 @@ abstract interface class VideoExternalSettingsStore {
   Future<void> saveOpenSubtitlesConfig(OpenSubtitlesConfig config);
 
   Future<void> saveJimakuApiKey(String apiKey);
+
+  Future<void> saveJimakuEnabled(bool enabled);
+
+  /// 开/关一个内置资源索引器（[kBuiltinVideoResourceSources] 里的 id）。
+  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled);
 
   Future<void> savePathMappings(
     List<VideoDownloadBackendPathMappingConfig> mappings,
@@ -116,6 +135,8 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       torznabConfigs: appModel.prefsRepo.videoResourceTorznabConfigs,
       openSubtitlesConfig: appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig,
       jimakuApiKey: appModel.jimakuApiKey,
+      jimakuEnabled: appModel.jimakuEnabled,
+      disabledBuiltinSourceIds: appModel.videoResourceDisabledSourceIds,
       pathMappings: appModel.prefsRepo.videoDownloadBackendPathMappings,
       managedVideoSources: sources,
       targetSourceId: target,
@@ -141,6 +162,15 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
   // 所以这里不再补一次 reload。
   Future<void> saveJimakuApiKey(String apiKey) =>
       appModel.setJimakuApiKey(apiKey.trim());
+
+  @override
+  // 同上：`setJimakuEnabled` 自己重建下载流水线运行时。
+  Future<void> saveJimakuEnabled(bool enabled) =>
+      appModel.setJimakuEnabled(enabled);
+
+  @override
+  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) =>
+      appModel.setVideoResourceSourceEnabled(sourceId, enabled);
 
   @override
   Future<void> savePathMappings(
@@ -202,6 +232,8 @@ class _VideoExternalProviderSettingsSectionState
   int? _targetSourceId;
   String _preferredLanguage = '';
   String _jimakuApiKey = '';
+  bool _jimakuEnabled = true;
+  Set<String> _disabledBuiltinSources = const <String>{};
   String _suggestedBackendProfileId = '';
   Timer? _torznabSaveDebounce;
   Timer? _openSubtitlesSaveDebounce;
@@ -262,6 +294,8 @@ class _VideoExternalProviderSettingsSectionState
         _targetSourceId = snapshot.targetSourceId;
         _preferredLanguage = snapshot.preferredSubtitleLanguage;
         _jimakuApiKey = snapshot.jimakuApiKey;
+        _jimakuEnabled = snapshot.jimakuEnabled;
+        _disabledBuiltinSources = snapshot.disabledBuiltinSourceIds;
         _suggestedBackendProfileId = snapshot.suggestedBackendProfileId;
         _loading = false;
       });
@@ -374,40 +408,15 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  /// 小节标题：实现在 [SourceSectionHeading]（发现来源开关区渲染的是同一份）。
+  /// `theme` 参数保留是为了不动本文件里十来个调用点的形状。
   Widget _sectionHeading(
     ThemeData theme,
     String title,
     String hint, {
     IconData? icon,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (icon != null) ...<Widget>[
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: theme.textTheme.titleSmall),
-                const SizedBox(height: 2),
-                Text(
-                  hint,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  }) =>
+      SourceSectionHeading(title: title, hint: hint, icon: icon);
 
   Widget _field({
     required Key key,
@@ -646,17 +655,41 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
-  /// Jimaku：全部配置只有一把 key（非空即启用）。
+  /// Jimaku：启用开关 + 一把 key，`enabled && key` 双门控。
   ///
-  /// 这里不 setState —— 输入框自己持有文本，重建只会把光标弹回去。
+  /// 开关与 OpenSubtitles 那个逐字同形（同一个 `video_external_enabled` 标签、
+  /// 同一种 SwitchListTile），因为两家在 registry 里本来就是并列的来源；一家有
+  /// 开关一家没有，用户只会以为「Jimaku 关不掉」。
+  ///
+  /// key 输入框这里不 setState —— 输入框自己持有文本，重建只会把光标弹回去。
   Widget _jimakuFields() {
-    return _field(
-      key: const ValueKey<String>('video-jimaku-api-key'),
-      label: t.video_jimaku_api_key,
-      initialValue: _jimakuApiKey,
-      helper: t.video_jimaku_api_key_hint,
-      secret: true,
-      onChanged: _updateJimakuApiKey,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SwitchListTile.adaptive(
+          key: const ValueKey<String>('video-jimaku-enabled'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.video_external_enabled),
+          subtitle: Text(t.video_jimaku_enabled_hint, maxLines: 3),
+          value: _jimakuEnabled,
+          onChanged: (bool value) {
+            setState(() => _jimakuEnabled = value);
+            _save(
+              (VideoExternalSettingsStore store) =>
+                  store.saveJimakuEnabled(value),
+            );
+          },
+        ),
+        _field(
+          key: const ValueKey<String>('video-jimaku-api-key'),
+          label: t.video_jimaku_api_key,
+          initialValue: _jimakuApiKey,
+          helper: t.video_jimaku_api_key_hint,
+          secret: true,
+          onChanged: _updateJimakuApiKey,
+        ),
+      ],
     );
   }
 
@@ -745,12 +778,15 @@ class _VideoExternalProviderSettingsSectionState
     ];
   }
 
-  /// 随应用内置、零配置的资源来源。
+  /// 随应用内置、零配置的资源来源，逐个可停用。
   ///
   /// 用户打开这一区只看到「Torznab（空）」，合理推论是「这个 app 自己没有任何
-  /// 来源」——但动漫其实一直在搜内置 Nyaa（`video_resource_registry.dart` 的
-  /// `anime && provider.id == 'nyaa'`）。内置项不落 pref、没有可编辑字段，所以
-  /// 这里是只读一行：告诉用户它存在、覆盖到哪，而不是造一个假的配置卡片。
+  /// 来源」——但动漫一直在搜内置 Nyaa，电影/剧集一直在搜内置公共索引器。行是从
+  /// [kBuiltinVideoResourceSources] 遍历出来的（同一张表也用来构造 provider），
+  /// 所以「设置里列的」与「真去搜的」不可能对不上。
+  ///
+  /// 开关与「发现来源」区渲染同一个 [SourceToggleList]：两处都是「一组零配置内置
+  /// 源按 id 记停用」，没有第二种形状的理由。
   Widget _builtinSourcesBlock(ThemeData theme) {
     return Column(
       key: const ValueKey<String>('video-builtin-sources'),
@@ -762,12 +798,33 @@ class _VideoExternalProviderSettingsSectionState
           t.video_builtin_sources_hint,
           icon: Icons.verified_outlined,
         ),
-        FushiListItem(
-          key: const ValueKey<String>('video-builtin-source-nyaa'),
-          leading: const Icon(Icons.public_outlined),
-          title: const Text('Nyaa'),
-          subtitle: Text(t.video_builtin_nyaa_hint),
-          subtitleMaxLines: 3,
+        SourceToggleList(
+          keyPrefix: 'video-builtin-source',
+          rows: <SourceToggleRow>[
+            for (final BuiltinVideoResourceSource source
+                in kBuiltinVideoResourceSources)
+              SourceToggleRow(
+                id: source.id,
+                title: source.displayName,
+                subtitle: source.hint(),
+                enabled: !_disabledBuiltinSources.contains(source.id),
+              ),
+          ],
+          onChanged: (String sourceId, bool enabled) async {
+            setState(() {
+              final Set<String> next = <String>{..._disabledBuiltinSources};
+              if (enabled) {
+                next.remove(sourceId);
+              } else {
+                next.add(sourceId);
+              }
+              _disabledBuiltinSources = next;
+            });
+            await _save(
+              (VideoExternalSettingsStore store) =>
+                  store.saveBuiltinSourceEnabled(sourceId, enabled),
+            );
+          },
         ),
       ],
     );
