@@ -71,6 +71,7 @@ class YomitanApiServer {
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
+    RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
@@ -86,6 +87,7 @@ class YomitanApiServer {
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
+        _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
@@ -105,6 +107,8 @@ class YomitanApiServer {
   final List<String> Function()? _audioSourcesProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，按 revision 门控随查词响应下发给扩展弹窗。
+  final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后，content.js 经 bridge 回写最终基准
   // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
   // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
@@ -337,6 +341,7 @@ class YomitanApiServer {
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       extensionBuildProvider: _extensionBuildProvider,
+      popupDictionaryCssProvider: _popupDictionaryCssProvider,
     );
     handlerWatch.stop();
 

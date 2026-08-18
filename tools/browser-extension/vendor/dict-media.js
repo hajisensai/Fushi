@@ -27,6 +27,14 @@ function rewriteDictionaryMediaPath(rawPath, dictName) {
 function rewriteDictLinks(html, dictName) {
     return html.replace(/<link[^>]*href=['"]([^'"]+)['"][^>]*>/gi, (match, href) => {
         const normalized = normalizeDictMediaPath(href);
+        // BUG-1718：真实浏览器同样没有 dictmedia:// scheme handler，词条 HTML 里指向词典包内
+        // 样式表的 <link> 在扩展里是死链（app 内由 WebView 自定义 scheme 解析）。与 <img> 同款
+        // 处理：扩展环境下降级成无 token 的占位属性，由 resolveDictMediaPlaceholders 取字节后
+        // 换成 <style>。app 内（该全局未设）保持 dictmedia:// 原样。
+        const linkMedia = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
+        if (linkMedia && linkMedia.base && linkMedia.token) {
+            return `<link data-fushi-media-dict="${encodeURIComponent(dictName)}" data-fushi-media-path="${encodeURIComponent(href)}">`;
+        }
         return `<link rel="stylesheet" href="dictmedia://${encodeURIComponent(normalized)}?dictionary=${encodeURIComponent(dictName)}">`;
     }).replace(/<img\b[^>]*\bsrc=(['"])([^'"]+)\1[^>]*>/gi, (match, quote, src) => {
         const rewritten = rewriteDictionaryMediaPath(src, dictName);
@@ -165,4 +173,74 @@ function constructDictCss(css, dictName, scopePrefix) {
         parts.push('}');
     }
     return parts.join('');
+}
+
+// BUG-1718：把 rewriteDictLinks 落下的占位属性（data-fushi-media-dict / data-fushi-media-path）
+// 解析成真正可显示的资源。TODO-1215 当初为了不把 sync token 写进宿主页 DOM，只把 <img src>
+// 换成了占位属性，却**从没有人来兑现这些占位**——扩展里 mdx 词典词条内的图片（gaiji / 插图 /
+// 声调图）因此一直是裂图。这里补上兑现方：token 只出现在 fetch 调用参数里，落到 DOM 的是
+// blob: URL（<img>）或内联 <style>（<link>），宿主页 MutationObserver 拿不到 token。
+function fushiDictMediaEndpoint(media, encodedDict, encodedPath) {
+    const path = normalizeDictMediaPath(decodeURIComponent(encodedPath));
+    return `${media.base}/api/media/dictionary`
+        + `?dictionary=${encodedDict}`
+        + `&path=${encodeURIComponent(path)}`
+        + `&token=${encodeURIComponent(media.token)}`;
+}
+
+function resolveDictMediaPlaceholders(root) {
+    const media = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
+    if (!media || !media.base || !media.token || !root || !root.querySelectorAll) return;
+    const nodes = root.querySelectorAll('[data-fushi-media-path]');
+    for (const node of nodes) {
+        const encodedDict = node.getAttribute('data-fushi-media-dict') || '';
+        const encodedPath = node.getAttribute('data-fushi-media-path') || '';
+        // 先摘属性：解析只做一次。失败也不重试，避免 MutationObserver ↔ 失败 无限打转。
+        node.removeAttribute('data-fushi-media-path');
+        if (!encodedPath) continue;
+        const url = fushiDictMediaEndpoint(media, encodedDict, encodedPath);
+        const isLink = node.tagName === 'LINK';
+        fetch(url).then((r) => {
+            if (!r.ok) return null;
+            return isLink ? r.text() : r.blob();
+        }).then((payload) => {
+            if (payload === null || !node.parentNode) return;
+            if (isLink) {
+                const style = document.createElement('style');
+                style.textContent = payload;
+                node.parentNode.replaceChild(style, node);
+                return;
+            }
+            const objectUrl = URL.createObjectURL(payload);
+            node.addEventListener('load', () => URL.revokeObjectURL(objectUrl), { once: true });
+            node.addEventListener('error', () => URL.revokeObjectURL(objectUrl), { once: true });
+            node.src = objectUrl;
+        }).catch(() => { /* 取不到就保持裂图/无样式，绝不阻断查词渲染 */ });
+    }
+}
+
+// 弹窗内容是 popup.js 分批渲染的（懒展开、嵌套查词都会再插 DOM），所以不能只在一次渲染后扫一遍：
+// 在弹窗根上装一个 MutationObserver，任何新插入的占位都会被兑现。每个 root 只装一次。
+function installDictMediaPlaceholderResolver(root) {
+    if (!root || root.__fushiDictMediaObserver) return;
+    if (typeof MutationObserver !== 'function') return;
+    const observer = new MutationObserver(() => resolveDictMediaPlaceholders(root));
+    observer.observe(root, { childList: true, subtree: true });
+    root.__fushiDictMediaObserver = observer;
+    resolveDictMediaPlaceholders(root);
+}
+
+// BUG-1718：把查词响应里的「弹窗 CSS 尾段」落到 popup.js 读取的三个全局上。app 内弹窗由
+// popup_settings_injection 注入同名三件套，扩展只能从 /api/lookup/dictionary 响应拿；不落这一步
+// 的话 window.dictionaryStyles 恒为 undefined，mdx 词典自带样式在扩展里 100% 失效。
+function applyFushiPopupCss(data) {
+    if (!data || typeof data !== 'object') return;
+    window.dictionaryStyles =
+        (data.dictionaryStyles && typeof data.dictionaryStyles === 'object')
+            ? data.dictionaryStyles : {};
+    window.globalDictCSS =
+        typeof data.globalDictCSS === 'string' ? data.globalDictCSS : '';
+    window.customDictCSS =
+        (data.customDictCSS && typeof data.customDictCSS === 'object')
+            ? data.customDictCSS : {};
 }

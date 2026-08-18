@@ -1,3 +1,4 @@
+import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
@@ -15,6 +16,7 @@ class YomitanApiServerManager {
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
+    RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
@@ -27,6 +29,7 @@ class YomitanApiServerManager {
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
+        _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
@@ -43,6 +46,9 @@ class YomitanApiServerManager {
   final List<String> Function()? _audioSourcesProvider;
   // BUG-726：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，透传给 [YomitanApiServer]，
+  // 按 revision 门控随查词响应下发给扩展弹窗。
+  final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗拖角调整后回写尺寸的 sink，透传给 [YomitanApiServer]。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
@@ -71,6 +77,7 @@ class YomitanApiServerManager {
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       extensionBuildProvider: _extensionBuildProvider,
+      popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionSeen: _onExtensionSeen,
       onLookupActivity: _onLookupActivity,

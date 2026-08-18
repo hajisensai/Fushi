@@ -155,6 +155,8 @@ import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
+import 'package:fushi/src/sync/fushi_remote_api_handlers.dart'
+    show RemotePopupDictionaryCss;
 import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
@@ -2817,6 +2819,45 @@ class AppModel with ChangeNotifier {
   /// 墨水屏模式（E-ink）：全局纯黑白主题 + 关动画 + 阅读器/弹窗高对比。
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
+
+  /// BUG-1718：查词弹窗「CSS 尾段」供给器——词典包自带 CSS（`FushiDicts.dictionaryStyles`，
+  /// mdx 导入落成的词典目录 `styles.css`）+ 用户全局/单典自定义 CSS，随查词响应按 revision
+  /// 门控下发给浏览器扩展弹窗。与 in-app 弹窗注入的 `window.dictionaryStyles` /
+  /// `globalDictCSS` / `customDictCSS` 同源（popup_settings_injection 的 tail 段），
+  /// 三镜像消费方是同一份 `popup.js`，不得只喂其中一处。
+  ///
+  /// 实例按三个数据源缓存，避免在查词热路径上重复哈希数百 KB 的词典 CSS：
+  /// 词典自带样式（可达数百 KB）按 **map 身份** 判——`FushiDicts._rebuildStylesCache` 只在
+  /// 词典集合变化时整体换新实例；用户自定义 CSS（每次读偏好都重新 jsonDecode，身份必变但
+  /// 体量极小）按 **内容** 判。任一变化即重建实例 ⇒ 新 revision ⇒ 扩展下次查词全量取一次。
+  RemotePopupDictionaryCss? _browserExtensionPopupCss;
+
+  RemotePopupDictionaryCss browserExtensionPopupDictionaryCss() {
+    final Map<String, String> styles = FushiDicts.dictionaryStyles;
+    final String globalCss = globalDictCSS;
+    final Map<String, String> customCss = customDictCSS;
+    final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
+    if (cached != null &&
+        identical(cached.dictionaryStyles, styles) &&
+        cached.globalDictCss == globalCss &&
+        _sameStringMap(cached.customDictCss, customCss)) {
+      return cached;
+    }
+    return _browserExtensionPopupCss = RemotePopupDictionaryCss(
+      dictionaryStyles: styles,
+      globalDictCss: globalCss,
+      customDictCss: customCss,
+    );
+  }
+
+  static bool _sameStringMap(Map<String, String> a, Map<String, String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final MapEntry<String, String> e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
 
   /// BUG-530：当前 app 主题（MD3 ColorScheme）的关键色 + 查词弹窗尺寸/列数/字号配置，作为
   /// CSS 变量喂给浏览器扩展的查词弹窗（经查词响应的 `theme` 字段下发，改主题/配置即生效，无需
@@ -6427,6 +6468,9 @@ class AppModel with ChangeNotifier {
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
       extensionBuildProvider: () => _browserExtensionBuild,
+      // BUG-1718：词典自带 CSS + 用户自定义 CSS 随查词响应按 revision 门控下发，
+      // 扩展弹窗才能和 app 内弹窗渲染出同一套词典样式（mdx 词典尤其依赖它）。
+      popupDictionaryCssProvider: browserExtensionPopupDictionaryCss,
       // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后经 bridge 回写的 sink——clamp + 拖即
       // 解锁 + 只写扩展键（下次查词 browserExtensionThemeColors 读新 extensionPopupEffectiveSize
       // 即以新尺寸下发，闭环）。
