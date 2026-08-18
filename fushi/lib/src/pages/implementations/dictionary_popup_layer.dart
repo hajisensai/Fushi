@@ -656,6 +656,11 @@ class DictionaryPopupLayer extends StatelessWidget {
       color: fillColor,
       showBorder: showBorder,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
+      // BUG-1692：本 surface 里装的是原生 WebView（平台视图）。描边默认走
+      // foregroundPainter、画在 WebView **之后**且 bounds 覆盖整个浮层，macOS engine
+      // 据此把整块浮层写进 FlutterMutatorView 的 _hitTestIgnoreRegion，`hitTest:`
+      // 处处 return nil ⇒「查词框点哪都没反应」。挪到 WebView 之前绘制即解除。
+      borderOnForeground: false,
       child: surfaceChild,
     );
 
@@ -793,12 +798,18 @@ class DictionaryPopupLayer extends StatelessWidget {
         Positioned(
           right: 0,
           bottom: 0,
-          child: _PopupResizeGrip(
-            key: resizeGripKey,
-            onStart: onResizeStart,
-            onUpdate: onResizeUpdate!,
-            onEnd: onResizeEnd,
-            onCancel: onResizeCancel,
+          // BUG-1692：把手排在浮层 WebView **之后**绘制。不自带 RepaintBoundary 就会
+          // 并进上层那张 cull rect = 整个浮层的 PictureLayer，macOS engine 把整块浮层
+          // 写进 FlutterMutatorView 的 _hitTestIgnoreRegion ⇒ WebView 全域收不到鼠标
+          // 事件。包一层让忽略区收缩到把手自身那一小角。
+          child: RepaintBoundary(
+            child: _PopupResizeGrip(
+              key: resizeGripKey,
+              onStart: onResizeStart,
+              onUpdate: onResizeUpdate!,
+              onEnd: onResizeEnd,
+              onCancel: onResizeCancel,
+            ),
           ),
         ),
       ],

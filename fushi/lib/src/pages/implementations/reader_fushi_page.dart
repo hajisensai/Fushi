@@ -2867,12 +2867,19 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         left: 0,
                         right: 0,
                         height: kMacTitleBarHeight,
-                        child: DragToMoveArea(
-                          child: ColoredBox(
-                            key: const ValueKey<String>(
-                              'fushi_reader_window_drag_area',
+                        // BUG-1692：本 Stack 里排在 WebView **之后**的每一块 Flutter
+                        // 内容都必须自带 RepaintBoundary，否则它们会合并进页面级
+                        // RepaintBoundary 那一张 cull rect = 整窗的 PictureLayer，
+                        // macOS engine 据此把整窗加进 FlutterMutatorView 的
+                        // _hitTestIgnoreRegion，WebView 整块收不到任何鼠标事件。
+                        child: RepaintBoundary(
+                          child: DragToMoveArea(
+                            child: ColoredBox(
+                              key: const ValueKey<String>(
+                                'fushi_reader_window_drag_area',
+                              ),
+                              color: bgColor,
                             ),
-                            color: bgColor,
                           ),
                         ),
                       ),

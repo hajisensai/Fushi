@@ -680,8 +680,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // eval 抛 MissingPluginException / TypeError，且本方法被菜单 fire-and-forget 调用，
       // 异常会逃当前 zone。失败退回 null —— 菜单「查词」调用方据此用 selectedText 兜底
       // 补满 currentSentence 非空契约，导出路径走空选区文案。
-      ErrorLogService.instance.log(
-          'ReaderFushi.fillLookupStateFromNativeSelection.eval', e, stack);
+      ErrorLogService.instance
+          .log('ReaderFushi.fillLookupStateFromNativeSelection.eval', e, stack);
       return null;
     }
     if (!mounted) return null;
@@ -1403,25 +1403,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
       left: 0,
       right: 0,
       bottom: 0,
-      child: ExcludeFocus(
-        child: FocusScope(
-          node: _chromeFocusScope,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ReaderChromeScaler(
-                scale: _readerChromeScale,
-                baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
-                child: bar,
-              ),
-              ColoredBox(
-                color: _themeBackgroundColor(),
-                child: SizedBox(
-                  height: _stableBottomInset,
-                  width: double.infinity,
+      // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
+      // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
+      // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
+      // 任何鼠标事件。包一层让底栏自成一张只覆盖自身高度的图层。
+      child: RepaintBoundary(
+        child: ExcludeFocus(
+          child: FocusScope(
+            node: _chromeFocusScope,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ReaderChromeScaler(
+                  scale: _readerChromeScale,
+                  baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
+                  child: bar,
                 ),
-              ),
-            ],
+                ColoredBox(
+                  color: _themeBackgroundColor(),
+                  child: SizedBox(
+                    height: _stableBottomInset,
+                    width: double.infinity,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1461,8 +1467,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             reversed: appModel.reverseReaderBottomBar,
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
-            invertSkip:
-                ReaderFushiSource.instance.invertAudiobookSkipDirection,
+            invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // TODO-728: per-reader toggle for the current-sentence cue.
             showCue: ReaderFushiSource.instance.showBottomBarCue,
           ),
@@ -1931,7 +1936,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
           onTap: _anyChromeFloating
               ? () => _handleFloatingChromeReveal()
               : _toggleChrome,
-          child: pill,
+          // BUG-1692：进度 pill 排在 WebView **之后**绘制。不自带 RepaintBoundary
+          // 就会并进页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，
+          // macOS engine 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，
+          // 于是整块 WebView 收不到任何鼠标事件（点击/划词/翻页全死）。包一层让
+          // 它自成一张紧致 bounds 的图层，忽略区只剩 pill 自己那一小块。
+          child: RepaintBoundary(child: pill),
         ),
       ),
     );
@@ -2162,8 +2172,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (sentenceRange != null || _lyricsMode) {
         await _refreshSectionHighlights(section);
       }
-      FushiToast.show(
-          msg: t.favorite_removed, severity: ToastSeverity.success);
+      FushiToast.show(msg: t.favorite_removed, severity: ToastSeverity.success);
       return;
     }
 

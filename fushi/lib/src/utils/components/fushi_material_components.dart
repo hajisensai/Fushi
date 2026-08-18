@@ -3142,6 +3142,7 @@ class FushiPopupSurface extends StatelessWidget {
     this.elevation = 0,
     this.showBorder = true,
     this.clipBehavior = Clip.antiAlias,
+    this.borderOnForeground = true,
   });
 
   final Widget child;
@@ -3150,6 +3151,20 @@ class FushiPopupSurface extends StatelessWidget {
   final double elevation;
   final bool showBorder;
   final Clip clipBehavior;
+
+  /// BUG-1692：描边画在子节点**之前**还是**之后**。
+  ///
+  /// 默认 true（Flutter [Material] 的默认值）时，描边走 `CustomPaint.foregroundPainter`，
+  /// 在子节点之后绘制，且其 paint bounds 是**整个 surface**。当 surface 里装的是原生
+  /// 平台视图（查词浮层的 WebView）时这是致命的：macOS engine 会把「平台视图之上
+  /// 的 Flutter 绘制区域」逐 rect 写进 `FlutterMutatorView` 的 `_hitTestIgnoreRegion`，
+  /// 落在其中的点 `hitTest:` 直接 return nil，于是**整块 WebView 收不到任何鼠标事件**
+  /// ——用户看到的就是「查词框点哪都没反应」。
+  ///
+  /// 装平台视图的 surface 传 false，把描边挪到子节点之前绘制即可解除。透明背景的
+  /// WebView 仍能透出下面的描边，观感不变。纯 Flutter 子树无须改动（描边盖在不透明
+  /// 子节点上才需要 foreground）。
+  final bool borderOnForeground;
 
   @override
   Widget build(BuildContext context) {
@@ -3164,6 +3179,7 @@ class FushiPopupSurface extends StatelessWidget {
             : BorderSide.none,
       ),
       clipBehavior: clipBehavior,
+      borderOnForeground: borderOnForeground,
       child: Padding(
         padding: padding,
         child: child,
