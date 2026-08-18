@@ -137,8 +137,9 @@ class DiscoveryRequest {
   final DiscoveryMediaKind kind;
   final String? query;
 
-  /// browse 位置（源内路径）。深层路径只对单一源有意义：聚合（全部源）模式
-  /// 只允许 search 或根浏览，见 `MediaDiscoveryService.load` 的入参约束。
+  /// browse 位置（源内路径）。**浏览整个是源内语义**（根目录也一样）：聚合
+  /// （全部来源）模式只允许 search，见 `MediaDiscoveryService.load` 的入参
+  /// 约束与 BUG-1711。
   final String? path;
 
   final int page;

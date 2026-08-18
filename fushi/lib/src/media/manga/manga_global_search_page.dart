@@ -20,7 +20,7 @@ import 'package:fushi/utils.dart';
 /// 标成「受 Cloudflare 保护」而不是崩掉整页——点进单源浏览页时同理。
 ///
 /// 平台差异只体现在**有哪些源**上：Mihon 仅桌面/安卓有宿主，Aidoku 只在 macOS/iOS
-/// 有宿主。调用方（`MangaBrowsePage`）负责把当前平台上「已启用」的两类源传进来，
+/// 有宿主。调用方（`MangaDiscoveryPage`）负责把当前平台上「已启用」的两类源传进来，
 /// 本页不自己发现，方便测试注入。
 class MangaGlobalSearchPage extends StatefulWidget {
   const MangaGlobalSearchPage({

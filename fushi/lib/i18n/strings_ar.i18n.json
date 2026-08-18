@@ -3553,5 +3553,9 @@
   "discovery_torrent_pushed": "Torrent task added",
   "discovery_torrent_failed": "Failed to add torrent task",
   "discovery_kind_novel": "Novels",
-  "discovery_kind_audiobook": "Audiobooks"
+  "discovery_kind_audiobook": "Audiobooks",
+  "discovery_source_pick_hint": "Pick a source to browse, or type a keyword to search every source",
+  "discovery_source_query_required": "This source only supports keyword search",
+  "manga_discovery_sources_browse": "Browse a source",
+  "discovery_kind_manga": "Manga"
 }
