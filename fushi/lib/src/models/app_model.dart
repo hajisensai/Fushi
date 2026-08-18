@@ -6378,6 +6378,9 @@ class AppModel with ChangeNotifier {
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。
       onExtensionSeen: () => _browserExtensionLastSeenAt = DateTime.now(),
+      // TODO-2936：扩展查词/制卡端点命中 → 应用「浏览器」媒体类型的 Profile 绑定
+      // （委托由 main.dart 在容器建好后注入；未注入/未绑定时为 no-op）。
+      onLookupActivity: _onBrowserLookupActivity,
       // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」。
       // 记到 ValueNotifier 供扩展管理页与内置指纹比对：不一致 = 扩展自更新未生效
       // （用户从别的目录加载 / reload 失败），页面显示更新警示条。
@@ -6392,6 +6395,24 @@ class AppModel with ChangeNotifier {
             FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
+    );
+  }
+
+  /// TODO-2936：「浏览器」媒体类型 Profile 绑定的应用委托。AppModel 不在
+  /// Riverpod 图里，无法直接触达 [ProfileViewModel]，由 main.dart 在根容器建好
+  /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser)`）。
+  Future<void> Function()? browserLookupProfileApplier;
+
+  // TODO-2936：扩展查词请求可能成串到达（termEntries + tokenize + mine），一趟
+  // 在途时后续命中直接跳过——绑定应用本身幂等，重复趟次只是浪费快照/应用开销。
+  bool _browserProfileApplyInFlight = false;
+
+  void _onBrowserLookupActivity() {
+    final Future<void> Function()? applier = browserLookupProfileApplier;
+    if (applier == null || _browserProfileApplyInFlight) return;
+    _browserProfileApplyInFlight = true;
+    unawaited(
+      applier().whenComplete(() => _browserProfileApplyInFlight = false),
     );
   }
 

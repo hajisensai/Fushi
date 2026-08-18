@@ -17,6 +17,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -804,6 +805,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 进程退出兜底：把未落盘的页码 flush 掉（与 EPUB/PDF 阅读器同纪律）。
     ExitFlushRegistry.instance.register(_flushPosition);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBook());
+    // TODO-2936：应用「漫画」媒体类型 / 本书 book 级的 Profile 绑定（与 EPUB/
+    // 视频阅读器同范式：非致命、与开书链并行；漫画的 bookKey 就是 Profile 的
+    // book 级 entryKey，见 book_format_convert.dart 的身份说明）。
+    unawaited(
+      ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+            bookUid: widget.bookKey,
+            mediaType: ProfileMediaKind.manga,
+          ),
+    );
     unawaited(_refreshRescanModelReady());
   }
 

@@ -168,6 +168,28 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   Future<void> reload() => _load();
 
+  /// TODO-2936：解析绑定（book 级 > 媒体类型级 > 当前激活）并在结果与当前激活
+  /// 不同时切换。各媒体入口（阅读器 / 视频 / 漫画开页、gal launch/attach、浏览
+  /// 器扩展查词）共用的非致命入口：失败只记日志，绝不打断调用方的加载/查词链。
+  Future<void> autoApplyBinding({
+    String? bookUid,
+    required ProfileMediaKind mediaType,
+  }) async {
+    try {
+      final int resolvedId = await _repo.resolveProfileId(
+        bookUid: bookUid,
+        mediaType: mediaType,
+      );
+      final int currentActiveId = await _repo.getActiveProfileId();
+      if (resolvedId != currentActiveId) {
+        await switchProfile(resolvedId);
+      }
+    } catch (e, st) {
+      debugPrint('[profile] auto-apply "${mediaType.dbValue}" binding failed '
+          '(non-fatal): $e\n$st');
+    }
+  }
+
   Future<void> switchProfile(int profileId) =>
       _whileInvalidatingProfileDrafts(() async {
         await _repo.snapshotCurrentSettings(state.activeProfileId);

@@ -120,7 +120,6 @@ import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -1924,23 +1923,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 优先 per-book（[widget.bookUid]）绑定，其次媒体类型级 'video' 绑定，
   /// 都无则维持当前活跃 profile。镜像 [_ReaderAudiobook._resolveAndApplyProfile]
   /// 的非致命范式：失败只记日志、不打断视频加载。
-  Future<void> _resolveAndApplyVideoProfile() async {
-    try {
-      final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
-      final ProfileViewModel profileVm =
-          ref.read(profileViewModelProvider.notifier);
-      final int resolvedId = await profileRepo.resolveProfileId(
-        bookUid: widget.bookUid,
-        mediaType: ProfileMediaKind.video,
-      );
-      final int currentActiveId = await profileRepo.getActiveProfileId();
-      if (resolvedId != currentActiveId) {
-        await profileVm.switchProfile(resolvedId);
-      }
-    } catch (e, st) {
-      debugPrint('[VideoFushi] profile resolution failed (non-fatal): $e\n$st');
-    }
-  }
+  Future<void> _resolveAndApplyVideoProfile() =>
+      ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+            bookUid: widget.bookUid,
+            mediaType: ProfileMediaKind.video,
+          );
 
   /// TODO-1213：切换加载阶段并刷新加载态 UI（mounted 守卫）。离开「下载字幕」阶段时
   /// 一并清字幕进度（其它阶段无确定性进度，转 indeterminate）。
