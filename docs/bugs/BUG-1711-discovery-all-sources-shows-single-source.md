@@ -27,7 +27,7 @@
   5. 同一根因在书域是另一种症状：novel/audiobook 没有任何 browse-capable 源，
      `home_reader_page.dart:47` 的发现页一进去就是「无结果」。
 
-- **[x] ① 已修复** — 消除「空查询 = 目录浏览」这个特殊情况，而不是给聚合结果打补丁：
+- **[x] ① 已修复**（commit `237fac6d2a`）— 消除「空查询 = 目录浏览」这个特殊情况，而不是给聚合结果打补丁：
   1. `media_discovery_service.dart` 的 `load` 把契约从「深层路径必须指定源」收紧成
      **「聚合模式只做搜索」**（`sourceId == null && !request.isSearch` 直接
      `ArgumentError`）；聚合候选筛选随之只剩 `supportsSearch` 一条判据，那个
