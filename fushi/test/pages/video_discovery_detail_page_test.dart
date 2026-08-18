@@ -50,6 +50,10 @@ void main() {
         item: item,
         facts: const <VideoDiscoveryFact>[
           VideoDiscoveryFact(label: '集数', value: '12'),
+          VideoDiscoveryFact(
+            label: '工作室',
+            value: 'Marvel Studios · Columbia Pictures · Pascal Pictures',
+          ),
         ],
         people: const <VideoDiscoveryPerson>[
           VideoDiscoveryPerson(name: '演员甲', role: '主角'),
@@ -79,6 +83,11 @@ void main() {
     expect(find.text('星环纪元'), findsOneWidget);
     expect(find.text('这是一段在线作品简介。'), findsOneWidget);
     expect(find.text('演员甲'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(
+      find.text('Marvel Studios · Columbia Pictures · Pascal Pictures'),
+      findsOneWidget,
+    );
     expect(find.text('字幕处理中'), findsOneWidget);
     expect(statusWatches, 1);
     expect(find.text(t.video_discovery_subscription_manage), findsOneWidget);
