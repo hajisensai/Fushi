@@ -30,7 +30,7 @@
   同一函数里 `<link rel=stylesheet>` 被改写成 `dictmedia://`，真实浏览器同样没有这个 scheme
   handler，也是死链。
 
-- **[x] ① 已修复** — 提交 `<待填>`
+- **[x] ① 已修复** — 提交 `9aa27d3615`
   - 服务端契约（单一真相源，两个 server 共享）：`fushi/lib/src/sync/fushi_remote_api_handlers.dart`
     新增 `RemotePopupDictionaryCss`（`dictionaryStyles` + `globalDictCss` + `customDictCss` + 内容指纹
     `revision`），`buildRemoteDictionaryLookupResponse` 把三件套按 **revision 门控** 放进响应：
@@ -53,7 +53,7 @@
     `fushi/assets/browser_extension/`；`popup.css` 未改，`vendor/content.css` 生成物无变化
     （`generate-content-css.mjs --check` 通过）。
 
-- **[x] ② 已加自动化测试** — 提交 `<待填>`
+- **[x] ② 已加自动化测试** — 提交 `9aa27d3615`
   - `fushi/test/sync/remote_lookup_dictionary_css_test.dart`：契约行为（未注入供给器 / 无
     `stylesRevision` 键 / 指纹不一致 / 指纹一致 / popupOnly 快路径 / 指纹随内容变）+ 三镜像接线
     源码扫描守卫（app_model→manager→server 与两个扩展镜像的 background/content/side-panel/dict-media）。
