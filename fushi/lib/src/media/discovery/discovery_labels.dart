@@ -9,5 +9,5 @@ String discoveryMediaKindLabel(DiscoveryMediaKind kind) => switch (kind) {
       DiscoveryMediaKind.novel => t.discovery_kind_novel,
       DiscoveryMediaKind.audiobook => t.discovery_kind_audiobook,
       DiscoveryMediaKind.game => t.game_library,
-      DiscoveryMediaKind.manga => t.library_view_browse,
+      DiscoveryMediaKind.manga => t.discovery_kind_manga,
     };

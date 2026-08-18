@@ -260,6 +260,43 @@ void main() {
     );
   });
 
+  test('聚合模式拒绝根目录浏览：抛 ArgumentError 且一个源都不调', () async {
+    // 根浏览（path == null）与深层浏览同样是源内语义。放行它就是 BUG-1711：
+    // 「全部来源」按 supportsBrowse 筛完只剩唯一的目录型源，那个源的根目录被
+    // 冒充成聚合结果（用户看到的两个文件夹）。
+    final _FakeSource browsable = _FakeSource(
+      id: 'browsable',
+      priority: 1,
+      capabilities: DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+        supportsBrowse: true,
+      ),
+      onSearch: (DiscoveryRequest _) async => _pageOf('browsable', <String>[]),
+      onBrowse: (DiscoveryRequest _) async =>
+          _pageOf('browsable', <String>['root']),
+    );
+    final _FakeSource searchOnly = _FakeSource(
+      id: 'search-only',
+      priority: 2,
+      capabilities: DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+      ),
+      onSearch: (DiscoveryRequest _) async =>
+          _pageOf('search-only', <String>[]),
+    );
+    final MediaDiscoveryService service = MediaDiscoveryService(
+      sources: <MediaDiscoverySource>[browsable, searchOnly],
+    );
+
+    await expectLater(
+      service.load(const DiscoveryRequest(kind: DiscoveryMediaKind.game)),
+      throwsArgumentError,
+    );
+    expect(browsable.browseCalls, 0);
+    expect(browsable.searchCalls, 0);
+    expect(searchOnly.searchCalls, 0);
+  });
+
   test('browse 默认实现返回 unsupported 失败', () async {
     final _FakeSource searchOnly = _FakeSource(
       id: 'search-only',
