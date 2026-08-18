@@ -20,6 +20,7 @@ class _FakeStore implements VideoExternalSettingsStore {
       <List<VideoDownloadBackendPathMappingConfig>>[];
   final List<int?> targetSourceWrites = <int?>[];
   final List<String> languageWrites = <String>[];
+  final List<String> jimakuKeyWrites = <String>[];
 
   @override
   Future<VideoExternalSettingsSnapshot> load() async => snapshot;
@@ -32,6 +33,11 @@ class _FakeStore implements VideoExternalSettingsStore {
   @override
   Future<void> saveOpenSubtitlesConfig(OpenSubtitlesConfig config) async {
     openSubtitlesWrites.add(config);
+  }
+
+  @override
+  Future<void> saveJimakuApiKey(String apiKey) async {
+    jimakuKeyWrites.add(apiKey);
   }
 
   @override
@@ -52,14 +58,21 @@ class _FakeStore implements VideoExternalSettingsStore {
   }
 }
 
-Widget _harness(_FakeStore store) => ProviderScope(
+Widget _harness(_FakeStore store, {bool onlySubtitleSources = false}) =>
+    ProviderScope(
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
           body: SizedBox(
             width: 560,
             child: SingleChildScrollView(
-              child: VideoExternalProviderSettingsSection(store: store),
+              child: VideoExternalProviderSettingsSection(
+                // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑 initState /
+                // _load），换 store 的用例会读到上一次的 store。
+                key: ValueKey<bool>(onlySubtitleSources),
+                store: store,
+                onlySubtitleSources: onlySubtitleSources,
+              ),
             ),
           ),
         ),
@@ -246,7 +259,7 @@ void main() {
     await tester.pumpWidget(_harness(store));
     await tester.pumpAndSettle();
     final Finder language = find.byKey(
-      const ValueKey<String>('video-opensubtitles-language'),
+      const ValueKey<String>('video-subtitle-default-language'),
     );
     await _show(tester, language);
     await tester.tap(language);
@@ -254,6 +267,70 @@ void main() {
     await tester.tap(find.text('中文').last);
     await tester.pumpAndSettle();
     expect(store.languageWrites.last, 'zh');
+  });
+
+  // BUG-1712：字幕来源清单必须两家都在。Jimaku 只在设置 → 视频 → 字幕露过脸，
+  // 下载页那一区只有 OpenSubtitles，用户据此以为 app 不支持 Jimaku。
+  testWidgets('both subtitle providers are editable in either placement',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    for (final bool onlySubtitleSources in <bool>[false, true]) {
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
+      );
+      await tester.pumpWidget(
+        _harness(store, onlySubtitleSources: onlySubtitleSources),
+      );
+      await tester.pumpAndSettle();
+
+      const ValueKey<String> jimakuKeyId =
+          ValueKey<String>('video-jimaku-api-key');
+      final Finder jimakuKey = find.byKey(jimakuKeyId);
+      expect(
+        jimakuKey,
+        findsOneWidget,
+        reason: 'Jimaku must be listed next to OpenSubtitles '
+            '(onlySubtitleSources=$onlySubtitleSources)',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-subtitle-default-language')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<TextField>(_textField(jimakuKeyId)).obscureText,
+        isTrue,
+      );
+
+      await _show(tester, jimakuKey);
+      await tester.enterText(jimakuKey, 'typed-key');
+      await _settleAutosave(tester);
+      expect(store.jimakuKeyWrites.last, 'typed-key');
+    }
+  });
+
+  // BUG-1712：内置 Nyaa 一直在跑（动漫），但设置里一个字都没有，用户看到的是
+  // 「Torznab（空）」= 这个 app 自己没有任何来源。
+  testWidgets('built-in Nyaa source is listed', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-builtin-source-nyaa')),
+      findsOneWidget,
+    );
+    expect(find.text('Nyaa'), findsOneWidget);
   });
 
   testWidgets('compact layout has no horizontal overflow',

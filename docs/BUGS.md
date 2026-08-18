@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1577 条。点号进各自文件。
+> 共 1580 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1714](bugs/BUG-1714-subtitle-policy-required-wrong-string.md) | ✅ | ✅ | 「附带字幕 · 必选」选项复用播放器控件文案，选项读不通 |
+| [BUG-1713](bugs/BUG-1713-resource-search-empty-state-hides-missing-indexer.md) | ✅ | ✅ | 未配置索引器时资源/字幕搜索显示「没有匹配的作品」，把配置缺失伪装成搜不到 |
+| [BUG-1712](bugs/BUG-1712-external-subtitle-sources-missing-jimaku.md) | ✅ | ✅ | 「外部资源与字幕来源」只列用户自配项，Jimaku 与内置 Nyaa 全不可见 |
 | [BUG-1703](bugs/BUG-1703-manga-extension-error-truncated-toast.md) | ✅ | ✅ | 扩展安装/加载失败的根因被 Android 原生 toast 截成 2 行，用户永远看不到 |
 | [BUG-1702](bugs/BUG-1702-mihon-r8-kotlin-keep.md) | ✅ | ✅ | release APK 的 R8 混淆掉宿主 Kotlin 运行时，所有 Mihon 漫画扩展 LOAD_FAILED |
 | [BUG-1701](bugs/BUG-1701-manga-webtoon-pinch-vs-scroll.md) | ✅ | ✅ | 手机端漫画条漫模式捏合缩放与上下滚动互相干扰 |

@@ -3277,7 +3277,6 @@
   "video_external_endpoint_invalid": "请输入不含凭据、查询参数或片段的有效端点。",
   "video_opensubtitles_settings_title": "OpenSubtitles",
   "video_opensubtitles_user_agent": "User-Agent",
-  "video_opensubtitles_languages": "首选语言",
   "video_opensubtitles_languages_hint": "用逗号分隔语言代码，例如 zh-CN,en,ja",
   "video_download_path_mappings_title": "qBittorrent 路径映射",
   "video_download_path_mappings_hint": "将每个 qBittorrent 远程根目录映射到本机可访问的文件夹。",
@@ -3553,5 +3552,14 @@
   "discovery_torrent_pushed": "种子任务已添加",
   "discovery_torrent_failed": "种子任务添加失败",
   "discovery_kind_novel": "小说",
-  "discovery_kind_audiobook": "有声书"
+  "discovery_kind_audiobook": "有声书",
+  "video_builtin_sources_title": "内置来源",
+  "video_builtin_sources_hint": "随应用内置、始终启用，无需配置。",
+  "video_builtin_nyaa_hint": "仅用于动漫。电影 / 剧集需要在下方添加 Torznab 索引器。",
+  "video_resource_no_provider_title": "未配置资源索引器",
+  "video_resource_no_provider_hint": "本次搜索没有任何来源可用。请在 设置 → 下载 → 外部资源与字幕来源 添加 Torznab 索引器；内置 Nyaa 来源仅覆盖动漫。",
+  "video_subtitle_no_provider_title": "未配置字幕来源",
+  "video_subtitle_no_provider_hint": "请在 设置 → 下载 → 外部资源与字幕来源 中填写 Jimaku API key 或启用 OpenSubtitles。",
+  "anime_download_require_subs": "必须有字幕",
+  "video_jimaku_scope_hint": "为动漫与日语真人影视提供日语字幕。需要免费 API key。"
 }
