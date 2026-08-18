@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1593 条。点号进各自文件。
+> 共 1594 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1722](bugs/BUG-1722-manga-default-store-needs-network.md) | ✅ | ✅ | 默认 keiyoushi 扩展仓库绑死在首次启动能连上 github，手机上永远看不到 |
 | [BUG-1721](bugs/BUG-1721-scrape-history-no-rescrape-entry.md) | ✅ | ✅ | 后台任务历史条目无法重新刮削或手动指定作品 |
 | [BUG-1720](bugs/BUG-1720-scrape-pending-confirmation-no-entry.md) | ✅ | ✅ | 视频刮削「待确认 N」没有任何确认入口 |
 | [BUG-1719](bugs/BUG-1719-capture-workbench-topbar-sink.md) | ✅ | ✅ | 游戏捕获工作台顶栏分段条下沉跳动 |
