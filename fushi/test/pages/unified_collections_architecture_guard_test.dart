@@ -212,12 +212,19 @@ void main() {
     // 后（语义等价、仍是文件背书的 ImageProvider），锚点凭空消失、守卫误报红。
     // 锚只到方法名：TODO-2491 集卡改版给 _episodeThumb 加了可选宽高参数，签名
     // 被 dart format 折行，带参数的单行锚会凭空失配（同上「写法当契约」教训）。
+    // BUG-1704 把成员抽象成 CollectionEpisodeSlot（本地行 + 只在对端的集同槽），
+    // 封面解析随之从 _episodeThumb 内联挪进 _episodeCover。契约一点没变——缩略图
+    // 仍必须取**该集自己**的封面；锚点跟着契约多走一层间接，判据本身不放宽。
     final String thumbBody = methodBody(detailSrc, 'Widget _episodeThumb(');
-    expect(containsCodeLine(thumbBody, 'ep.coverPath'), isTrue,
-        reason: '缩略图必须取该集自身的 coverPath（每集独立视频各有封面），'
-            '不得回退成整个合集共用一张封面');
+    expect(containsCodeLine(thumbBody, '_episodeCover(slot)'), isTrue,
+        reason: '缩略图必须按该集自身解析封面（_episodeCover），不得直接吃合集封面');
     expect(containsCodeLine(thumbBody, '_thumbPlaceholder('), isTrue,
         reason: '无封面 / 读取失败必须退占位图，不得留空或抛');
+    final String coverBody =
+        methodBody(detailSrc, 'ImageProvider? _episodeCover(');
+    expect(containsCodeLine(coverBody, 'slot.coverPath'), isTrue,
+        reason: '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
+            '不得回退成整个合集共用一张封面');
   });
 
   test('排序交互重设计：死权重零读取 + 排序菜单 + 成员序单一真相源 + 详情页就地排序', () {

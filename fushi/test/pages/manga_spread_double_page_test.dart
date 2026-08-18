@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/drift.dart' show Value;
@@ -75,6 +76,9 @@ class _MangaTestAppModel extends AppModel {
 Widget _harness(AppModel appModel, String bookKey) {
   return ProviderScope(
     overrides: <Override>[
+      // TODO-2936 起页面 initState 会读 profileViewModelProvider（媒体类型绑定），
+      // 其链路要平台层；真实 app 在根 ProviderScope 提供，测试须同样给出。
+      platformServicesProvider.overrideWithValue(testPlatformServices()),
       appProvider.overrideWith((ref) => appModel),
     ],
     child: TranslationProvider(

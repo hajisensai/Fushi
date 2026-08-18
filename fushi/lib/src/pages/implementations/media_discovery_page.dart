@@ -11,13 +11,16 @@ import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
 
 /// 统一发现页：书（小说/有声书）与 galgame 共用的多源在线资源发现视图。
 ///
-/// 结构：媒体域筛选（多域时）+ 源下拉（默认「全部源」聚合）+ 搜索框 +
-/// 结果列表（目录可下钻、资源可下载）。下载分流按条目 payloadKind：
+/// 结构：媒体域筛选（多域时）+ 来源下拉（默认「全部来源」）+ 搜索框 +
+/// 结果列表（目录可下钻、资源可下载）。**「全部来源」只做搜索**：空查询时不
+/// 发任何请求，正文列出候选来源让用户先选一个（聚合浏览没有语义，硬做只会
+/// 退化成某个恰好支持浏览的源的根目录，见 BUG-1711）。下载分流按条目 payloadKind：
 /// torrent → `pushGenericMagnet`（既有 torrent 后端 + 自动入库），
 /// http 直链 → `AppModel.discoveryDownloadQueue`（下载完自动入库）。
 /// 单源失败亮徽标不拖垮整页（`DiscoveryAggregateResult` 部分成功语义）。
@@ -42,13 +45,24 @@ class MediaDiscoveryPage extends StatefulWidget {
   State<MediaDiscoveryPage> createState() => _MediaDiscoveryPageState();
 }
 
-/// 源下拉「全部源」哨兵（DropdownMenu 泛型不便用 null）。
-const String _kAllSources = '';
+/// 空查询时的页面态。只有 [none] 才该向源发请求——另外两态发出去要么无语义、
+/// 要么必然失败，本页据此在首帧就分流（BUG-1711）。
+enum _DiscoveryIdle {
+  /// 有关键词，或单源且该源支持目录浏览：正常发请求。
+  none,
+
+  /// 「全部来源」+ 空查询：聚合没有浏览语义，先让用户选来源。
+  pickSource,
+
+  /// 单源 + 空查询，但该源只支持关键词搜索：请求必然收到 unsupported。
+  queryRequired,
+}
 
 class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   late DiscoveryMediaKind _kind = widget.kinds.first;
-  String _sourceId = _kAllSources;
+  String _sourceId = kDiscoveryAllSourcesId;
   final TextEditingController _queryCtrl = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
 
   /// 首帧后解析到的全局模型；无 ProviderScope（纯布局测试）时保持 null，
   /// 页面停留在提示态。
@@ -88,12 +102,39 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   @override
   void dispose() {
     _queryCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// 当前（空查询下的）页面态，见 [_DiscoveryIdle]。
+  _DiscoveryIdle _idleMode(AppModel appModel) {
+    if (_queryCtrl.text.trim().isNotEmpty) return _DiscoveryIdle.none;
+    if (_sourceId == kDiscoveryAllSourcesId) return _DiscoveryIdle.pickSource;
+    final MediaDiscoverySource? source =
+        appModel.mediaDiscoveryService.sourceById(_sourceId);
+    if (source != null && !source.capabilities.supportsBrowse) {
+      return _DiscoveryIdle.queryRequired;
+    }
+    return _DiscoveryIdle.none;
   }
 
   Future<void> _load({bool append = false}) async {
     final AppModel? appModel = _resolveAppModel();
     if (appModel == null) return;
+    // 「空查询 = 目录浏览」是错的：聚合模式没有浏览语义（真发出去会被服务层
+    // 挡下），只支持搜索的单源也只会换回一块 unsupported 牌坊。这两态一个请求
+    // 都不发，正文改成引导态。
+    if (_idleMode(appModel) != _DiscoveryIdle.none) {
+      _loadSeq++; // 作废在途请求：晚到的结果不许回填引导态
+      setState(() {
+        _loading = false;
+        _error = null;
+        _page = 1;
+        _entries.clear();
+        _result = null;
+      });
+      return;
+    }
     final String query = _queryCtrl.text.trim();
     final bool browsing = query.isEmpty;
     final int seq = ++_loadSeq;
@@ -119,8 +160,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       final DiscoveryAggregateResult result =
           await appModel.mediaDiscoveryService.load(
         request,
-        sourceId: _sourceId == _kAllSources ? null : _sourceId,
-        disabledSourceIds: _sourceId == _kAllSources
+        sourceId: _sourceId == kDiscoveryAllSourcesId ? null : _sourceId,
+        disabledSourceIds: _sourceId == kDiscoveryAllSourcesId
             ? appModel.discoveryDisabledSourceIds
             : const <String>{},
         // 渐进交付：快源先上屏，不等慢源（模式与漫画全源搜索一致）。
@@ -158,7 +199,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     if (kind == _kind) return;
     setState(() {
       _kind = kind;
-      _sourceId = _kAllSources;
+      _sourceId = kDiscoveryAllSourcesId;
       _pathStack.clear();
     });
     unawaited(_load());
@@ -179,6 +220,12 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       _sourceId = folder.sourceId;
       _pathStack.add((folder.path, folder.title));
     });
+    unawaited(_load());
+  }
+
+  /// 提交搜索/清空搜索：路径栈属于上一轮浏览，必须先清掉。
+  void _submitSearch() {
+    _pathStack.clear();
     unawaited(_load());
   }
 
@@ -258,91 +305,95 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final List<MediaDiscoverySource> sources =
         _appModel?.mediaDiscoveryService.sourcesFor(_kind) ??
             const <MediaDiscoverySource>[];
+    return DiscoveryHeaderControls(
+      sources: <DiscoverySourceOption>[
+        for (final MediaDiscoverySource source in sources)
+          DiscoverySourceOption(id: source.id, label: source.displayName),
+      ],
+      selectedSourceId: _sourceId,
+      onSourceSelected: _selectSource,
+      searchController: _queryCtrl,
+      searchFocusNode: _searchFocus,
+      searchHintText: t.discovery_search_hint,
+      onSearchSubmitted: (String _) => _submitSearch(),
+      onSearchCleared: () {
+        _queryCtrl.clear();
+        _submitSearch();
+      },
+      leading: widget.kinds.length > 1
+          ? SegmentedButton<DiscoveryMediaKind>(
+              segments: <ButtonSegment<DiscoveryMediaKind>>[
+                for (final DiscoveryMediaKind kind in widget.kinds)
+                  ButtonSegment<DiscoveryMediaKind>(
+                    value: kind,
+                    label: Text(_kindLabel(kind)),
+                  ),
+              ],
+              selected: <DiscoveryMediaKind>{_kind},
+              onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
+                  _selectKind(selection.first),
+            )
+          : null,
+    );
+  }
+
+  /// 目录下钻面包屑（只在单源浏览时有内容）。
+  Widget _buildBreadcrumb(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      padding: EdgeInsets.only(
+        left: tokens.spacing.page,
+        right: tokens.spacing.page,
+        top: tokens.spacing.gap,
+      ),
+      child: Row(
         children: <Widget>[
-          if (widget.kinds.length > 1)
-            Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: SegmentedButton<DiscoveryMediaKind>(
-                segments: <ButtonSegment<DiscoveryMediaKind>>[
-                  for (final DiscoveryMediaKind kind in widget.kinds)
-                    ButtonSegment<DiscoveryMediaKind>(
-                      value: kind,
-                      label: Text(_kindLabel(kind)),
-                    ),
-                ],
-                selected: <DiscoveryMediaKind>{_kind},
-                onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
-                    _selectKind(selection.first),
-              ),
-            ),
-          Row(
-            children: <Widget>[
-              DropdownMenu<String>(
-                key: const ValueKey<String>('discovery_source_menu'),
-                initialSelection: _sourceId,
-                requestFocusOnTap: false,
-                onSelected: (String? value) =>
-                    _selectSource(value ?? _kAllSources),
-                dropdownMenuEntries: <DropdownMenuEntry<String>>[
-                  DropdownMenuEntry<String>(
-                    value: _kAllSources,
-                    label: t.discovery_all_sources,
-                  ),
-                  for (final MediaDiscoverySource source in sources)
-                    DropdownMenuEntry<String>(
-                      value: source.id,
-                      label: source.displayName,
-                    ),
-                ],
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              Expanded(
-                child: TextField(
-                  key: const ValueKey<String>('discovery_search_field'),
-                  controller: _queryCtrl,
-                  decoration: InputDecoration(
-                    hintText: t.discovery_search_hint,
-                    prefixIcon: const Icon(Icons.search),
-                    isDense: true,
-                  ),
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (String _) {
-                    _pathStack.clear();
-                    unawaited(_load());
-                  },
-                ),
-              ),
-            ],
+          FushiIconButton(
+            icon: Icons.arrow_upward,
+            tooltip: t.back,
+            label: t.back,
+            onTap: _popFolder,
           ),
-          if (_pathStack.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: Row(
-                children: <Widget>[
-                  FushiIconButton(
-                    icon: Icons.arrow_upward,
-                    tooltip: t.back,
-                    label: t.back,
-                    onTap: _popFolder,
-                  ),
-                  SizedBox(width: tokens.spacing.gap),
-                  Expanded(
-                    child: Text(
-                      _pathStack.map(((String, String) e) => e.$2).join(' / '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Text(
+              _pathStack.map(((String, String) e) => e.$2).join(' / '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+          ),
         ],
       ),
+    );
+  }
+
+  /// 「全部来源」+ 空查询的引导态：把候选来源摆出来让用户点，而不是把某个
+  /// 恰好支持浏览的源的根目录冒充成聚合结果。
+  Widget _buildSourcePicker(
+    BuildContext context,
+    MediaDiscoveryService service,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            t.discovery_source_pick_hint,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+        for (final MediaDiscoverySource source in service.sourcesFor(_kind))
+          FushiListItem(
+            key: ValueKey<String>('discovery_source_pick_${source.id}'),
+            leading: const Icon(Icons.travel_explore_outlined),
+            title: Text(source.displayName),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _selectSource(source.id),
+          ),
+      ],
     );
   }
 
@@ -361,6 +412,21 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final MediaDiscoveryService service = appModel.mediaDiscoveryService;
     final DiscoveryDownloadQueue queue = appModel.discoveryDownloadQueue;
 
+    switch (_idleMode(appModel)) {
+      case _DiscoveryIdle.pickSource:
+        return _buildSourcePicker(context, service);
+      case _DiscoveryIdle.queryRequired:
+        return Center(
+          child: Text(
+            t.discovery_source_query_required,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        );
+      case _DiscoveryIdle.none:
+        break;
+    }
+
     if (_error != null) {
       return Center(
         child: Text(
@@ -374,10 +440,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_entries.isEmpty) {
-      final bool idle = _queryCtrl.text.trim().isEmpty && _result == null;
+      // 空查询的两种引导态已在上面分流：能走到这里的空列表就是真·无结果。
       return Center(
         child: Text(
-          idle ? t.discovery_enter_query_hint : t.discovery_empty,
+          t.discovery_empty,
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -405,6 +471,11 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               DiscoveryFolder() => FushiListItem(
                   leading: const Icon(Icons.folder_outlined),
                   title: Text(entry.title),
+                  // 目录条目不带来源名，用户看不出这是哪个站的目录。
+                  subtitle: Text(
+                    service.sourceById(entry.sourceId)?.displayName ??
+                        entry.sourceId,
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _openFolder(entry),
                 ),
@@ -465,6 +536,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               actions: const <Widget>[],
             ),
           _buildControls(context),
+          if (_pathStack.isNotEmpty) _buildBreadcrumb(context),
           Expanded(child: _buildBody(context)),
         ],
       ),

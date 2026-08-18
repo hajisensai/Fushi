@@ -458,7 +458,7 @@ std::wstring AppExecutablePath() {
   const DWORD length = ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
   if (length == 0 || length >= MAX_PATH) return std::wstring();
   std::wstring path(buffer, length);
-  const size_t slash = path.find_last_of(L"\/");
+  const size_t slash = path.find_last_of(L"\\/");
   if (slash == std::wstring::npos) return std::wstring();
   return path.substr(0, slash + 1) + L"fushi.exe";
 }

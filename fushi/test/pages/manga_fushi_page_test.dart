@@ -18,6 +18,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -110,6 +111,9 @@ Widget _harness(AppModel appModel, MediaItem item, String bookKey,
     {List<Override> extraOverrides = const <Override>[]}) {
   return ProviderScope(
     overrides: <Override>[
+      // TODO-2936 起页面 initState 会读 profileViewModelProvider（媒体类型绑定），
+      // 其链路要平台层；真实 app 在根 ProviderScope 提供，测试须同样给出。
+      platformServicesProvider.overrideWithValue(testPlatformServices()),
       appProvider.overrideWith((ref) => appModel),
       ...extraOverrides,
     ],
