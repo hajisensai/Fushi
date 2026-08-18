@@ -29,6 +29,9 @@ class InterconnectServiceConfigSnapshot {
   /// - 设备身份与本地路径（device_id、端口、下载根、因果基线等）。
   static const Set<String> sharedPreferenceKeys = <String>{
     'jimaku_api_key',
+    // 启用开关必须跟着 key 一起搬：只搬 key 不搬开关，子设备会拿到一把
+    // 配好却处于关闭状态的 key——正是本清单文档里说的「只搬内容不搬能力」。
+    'jimaku_enabled',
     'qb_connection_config',
     'manga_online_catalog_base_url',
     'manga_online_catalog_enabled',
@@ -49,6 +52,7 @@ class InterconnectServiceConfigSnapshot {
 
   static final Map<String, String> _defaultRawValues = <String, String>{
     'jimaku_api_key': PrefCodec.encode(''),
+    'jimaku_enabled': PrefCodec.encode(true),
     'qb_connection_config': PrefCodec.encode(''),
     'manga_online_catalog_base_url': PrefCodec.encode('https://mokuro.moe'),
     'manga_online_catalog_enabled': PrefCodec.encode(true),

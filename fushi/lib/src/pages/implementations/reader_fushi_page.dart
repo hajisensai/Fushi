@@ -51,7 +51,6 @@ import 'package:fushi/src/mining/immersion_mining_request.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
-import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';

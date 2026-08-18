@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -155,29 +154,19 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
 
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
-    final List<MediaLibraryViewKind> values = views
-        .map((MediaLibraryViewSpec spec) => spec.kind)
-        .toList(growable: false);
-    // 分段条必须包 [FushiAdjustableSegmented]：否则它只是一堆原生按钮，只遍历已注册
-    // target 的方向焦点控制器会整个跳过（手柄/键盘用户切不了视图）。包上后是单个焦点
-    // 停靠点，左右方向键原地切视图。
-    return FushiAdjustableSegmented<MediaLibraryViewKind>(
-      values: values,
+    // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
+    // 单个焦点停靠点，左右方向键原地切视图，手柄/键盘可达）。
+    return LibrarySectionTabs<MediaLibraryViewKind>(
+      tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
+        for (final MediaLibraryViewSpec spec in views)
+          LibrarySectionTab<MediaLibraryViewKind>(
+            value: spec.kind,
+            label: spec.label,
+          ),
+      ],
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
-      focusId: FushiFocusId('${widget.focusIdPrefix}-sections'),
-      child: FushiSegmentedStrip<MediaLibraryViewKind>(
-        segments: <ButtonSegment<MediaLibraryViewKind>>[
-          for (final MediaLibraryViewSpec spec in views)
-            ButtonSegment<MediaLibraryViewKind>(
-              value: spec.kind,
-              label: Text(spec.label),
-            ),
-        ],
-        selected: selected,
-        onChanged: _select,
-      ),
     );
   }
 }

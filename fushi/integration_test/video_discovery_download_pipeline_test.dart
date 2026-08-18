@@ -307,6 +307,12 @@ class _ResourceProvider implements VideoResourceProvider {
   @override
   String get id => 'nyaa';
 
+  /// 测试替身不限域：本用例断言的是「发现 → 下载」闭环，不该再依赖
+  /// 「id 恰好叫 nyaa」这种间接门控。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
   @override
   int get priority => 0;
 

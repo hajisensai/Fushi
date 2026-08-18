@@ -28,6 +28,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
@@ -534,18 +535,24 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
     final VideoSourceScrapeRunRow? latest = _latestScrapeRuns[row.id];
     if (widget.mediaKind == 'video' && latest != null) {
-      return Text(
-        t.video_source_scrape_last_summary(
-          status: _scrapeRunStatusLabel(latest.status),
-          succeeded: latest.succeededWorks,
-          pending: latest.pendingConfirmations,
-          failed: latest.failedWorks,
+      // 「待确认 N，失败 N」必须是可点的：这两个数字背后是逐条作品级事实，
+      // 用户唯一想做的事就是点进去处理它们（BUG-1720）。
+      return InkWell(
+        key: ValueKey<String>('media-source-scrape-summary-${row.id}'),
+        onTap: () => unawaited(_openScrapeRunDetail(row, latest)),
+        child: Text(
+          t.video_source_scrape_last_summary(
+            status: videoSourceScrapeRunStatusLabel(latest.status),
+            succeeded: latest.succeededWorks,
+            pending: latest.pendingConfirmations,
+            failed: latest.failedWorks,
+          ),
+          style: subStyle?.copyWith(
+            color: latest.failedWorks > 0 ? cs.error : null,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        style: subStyle?.copyWith(
-          color: latest.failedWorks > 0 ? cs.error : null,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       );
     }
     // TODO-1036：显示该来源**累计拥有**的条目数（不是上次扫描新增数 mediaCount，
@@ -598,13 +605,25 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         _ => t.video_source_scrape_action,
       };
 
-  String _scrapeRunStatusLabel(String status) => switch (status) {
-        'completed' => t.download_task_status_completed,
-        'cancelled' => t.download_status_cancelled,
-        'interrupted' => t.video_source_scrape_status_interrupted,
-        'failed' => t.download_task_status_error,
-        _ => status,
-      };
+  /// 上次刮削摘要 → 该次 run 的可操作详情。重刮走的是行上那颗「刮削此来源」
+  /// 按钮的同一个回调，手动指定走 controller 的同一条绑定保存路径。
+  Future<void> _openScrapeRunDetail(
+    SourceLibraryRow row,
+    VideoSourceScrapeRunRow run,
+  ) async {
+    final Future<void> Function(SourceLibraryRow source)? scrape =
+        widget.onScrapeSource;
+    final bool changed = await showVideoSourceScrapeRunDetailDialog(
+      context: context,
+      run: run,
+      source: row,
+      controller: widget.scrapeTaskController,
+      onRescrapeSource: scrape == null || _isScrapingSource(row.id)
+          ? null
+          : (SourceLibraryRow source) => _scrapeSource(source),
+    );
+    if (changed && mounted) await _refreshLatestScrapeRun(row.id);
+  }
 
   /// 拖拽重排后逐行回写 sortOrder（与 DAO orderBy(sortOrder, id) 对齐）。
   Future<void> _persistOrder() async {
@@ -689,6 +708,66 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
+  /// 「导入文件夹」统一入口：先问去向（设为常驻来源 / 仅导入这一次），再分发到
+  /// [addLocalFolder] / [importLocalFolderOnce]。各媒体域的快速导入区共用同一个
+  /// 对话框，仅「设为常驻来源」的提示语按 [MediaSourcesView.mediaKind] 说本域的话。
+  Future<void> importFolder() async {
+    if (isBusy) return;
+    final String asSourceHint = switch (widget.mediaKind) {
+      'video' => t.video_import_folder_as_source_hint,
+      'manga' => t.manga_import_folder_as_source_hint,
+      _ => t.book_import_folder_as_source_hint,
+    };
+    final _FolderImportChoice? choice =
+        await showAppDialog<_FolderImportChoice>(
+      context: context,
+      builder: (BuildContext ctx) => SimpleDialog(
+        title: Text(t.media_import_folder),
+        children: <Widget>[
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.asSource),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.create_new_folder_outlined),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(t.media_import_folder_as_source),
+                      Text(
+                        asSourceHint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.file_download_outlined),
+                const SizedBox(width: 16),
+                Expanded(child: Text(t.media_import_folder_once)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _FolderImportChoice.asSource:
+        await addLocalFolder();
+      case _FolderImportChoice.once:
+        await importLocalFolderOnce();
+    }
+  }
+
   /// 添加本地文件夹为常驻来源（选目录 → 去重 → 落库 → 立即扫描）。
   ///
   /// 公开：除 [addSource] 的本地分支外，「导入」视图快速导入区的「导入文件夹 →
@@ -744,7 +823,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String? picked = await pickRealDirectoryPath(
       context: context,
       appModel: _appModel,
-      dialogTitle: t.book_import_folder,
+      dialogTitle: t.media_import_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;
 
@@ -1311,6 +1390,9 @@ class _VideoSourceScrapeSettingsDialogState
 
 /// 添加来源的两个 case：本地文件夹 / 网络来源。
 enum _AddSourceChoice { local, network }
+
+/// 「导入文件夹」的两个去向：设为常驻来源 / 仅导入这一次。
+enum _FolderImportChoice { asSource, once }
 
 /// 网络来源表单返回值（连接参数 + 凭据；凭据不落 configJson）。
 class _NetworkSourceResult {

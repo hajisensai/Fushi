@@ -1,7 +1,6 @@
 /// 视频来源规范刮削协调器：按作品识别、抓取、写 v77/兼容投影并安全导出 NFO/图片。
 library;
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -32,7 +31,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 class VideoSourceScrapeCoordinator
-    implements VideoSourceScrapeRunner, VideoSourceScrapeInterruptible {
+    implements
+        VideoSourceScrapeRunner,
+        VideoSourceScrapeInterruptible,
+        VideoSourceScrapeManualBinding {
   VideoSourceScrapeCoordinator({
     required this.database,
     required this.config,
@@ -110,6 +112,106 @@ class VideoSourceScrapeCoordinator
         },
         runScope: 'work',
       );
+
+  @override
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required String query,
+  }) async {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return const <VideoSourceScrapeConfirmationCandidate>[];
+    }
+    final VideoSourceScrapeWork work = await _plannedWork(source, workTitle);
+    final VideoMetadataProvider? provider =
+        _manualSearchProvider(await _sourceProvider(source));
+    if (provider == null) {
+      return const <VideoSourceScrapeConfirmationCandidate>[];
+    }
+    final List<VideoMetadataWork> results = await provider.search(
+      VideoMetadataSearchRequest(
+        title: trimmed,
+        mediaKind: _manualMediaKind(work),
+      ),
+    );
+    return <VideoSourceScrapeConfirmationCandidate>[
+      for (final VideoMetadataWork candidate in results)
+        if (_lookupForCandidate(candidate, provider.providerKind)
+            case final VideoMetadataLookup lookup)
+          VideoSourceScrapeConfirmationCandidate(
+            lookup: lookup,
+            work: candidate,
+          ),
+    ];
+  }
+
+  @override
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) async {
+    final VideoSourceScrapeWork work = await _plannedWork(source, workTitle);
+    // 手动指定与下载导入后的精确刮削是同一件事：身份已确定，只差按它跑一遍管线。
+    // 走 [scrapeSource] 的 confirmedLookups 入口，落库、sidecar、run 审计全复用。
+    return scrapeSource(
+      source,
+      cancellationToken: cancellationToken,
+      onProgress: onProgress,
+      plannedWorks: <VideoSourceScrapeWork>[work],
+      confirmedLookups: <String, VideoMetadataLookup>{work.stableKey: lookup},
+      runScope: 'work',
+    );
+  }
+
+  Future<VideoSourceScrapeWork> _plannedWork(
+    SourceLibraryRow source,
+    String workTitle,
+  ) async {
+    final List<VideoSourceScrapeWork> works =
+        await VideoSourceWorkPlanner(database).plan(source);
+    for (final VideoSourceScrapeWork work in works) {
+      if (work.title == workTitle) return work;
+    }
+    throw VideoSourceScrapeWorkNotFound(workTitle);
+  }
+
+  Future<VideoMetadataProviderKind> _sourceProvider(
+    SourceLibraryRow source,
+  ) async =>
+      _EffectiveSourceSettings.from(
+        await database.getVideoSourceScrapeSettings(source.id),
+        config,
+        allowProtectedOverwrite: false,
+      ).provider;
+
+  /// 与 [VideoMetadataResolver] 的降级链同规则：主源可用就只用主源，主源没配才
+  /// 按枚举顺序取第一个可用源。手动搜索必须和自动识别看到同一个源，否则用户选中
+  /// 的 id 会落到一个刮削时根本不会去查的 provider 上。
+  VideoMetadataProvider? _manualSearchProvider(
+    VideoMetadataProviderKind selected,
+  ) {
+    final VideoMetadataProvider? primary = registry.provider(selected);
+    if (primary != null && primary.isAvailable) return primary;
+    for (final VideoMetadataProviderKind kind
+        in VideoMetadataProviderKind.values) {
+      final VideoMetadataProvider? provider = registry.provider(kind);
+      if (provider != null && provider.isAvailable) return provider;
+    }
+    return null;
+  }
+
+  /// 剧集/电影形态由来源计划里的真实成员决定，与 [_resolveWork] 同一判据。
+  VideoMetadataMediaKind _manualMediaKind(VideoSourceScrapeWork work) {
+    final VideoNameInfo parsed =
+        parseVideoFilename(p.basename(work.members.first.videoPath));
+    return work.isEpisodic || parsed.episode != null
+        ? VideoMetadataMediaKind.tv
+        : VideoMetadataMediaKind.movie;
+  }
 
   @override
   Future<SourceScrapeReport> scrapeSource(
@@ -1362,36 +1464,8 @@ class VideoSourceScrapeCoordinator
     );
   }
 
-  static String _reportJson(SourceScrapeReport report) => jsonEncode(
-        <String, Object?>{
-          'sourceIds': report.sourceIds,
-          'totalWorks': report.totalWorks,
-          'succeededWorks': report.succeededWorks,
-          'failedWorks': report.failedWorks,
-          'pendingConfirmations': report.pendingConfirmations,
-          'nfoWritten': report.nfoWritten,
-          'imagesWritten': report.imagesWritten,
-          'protectedArtifacts': report.protectedArtifacts,
-          'unchangedArtifacts': report.unchangedArtifacts,
-          'cancelled': report.cancelled,
-          'warnings': <Map<String, Object?>>[
-            for (final SourceScrapeIssue issue in report.warnings)
-              <String, Object?>{
-                'work': issue.workTitle,
-                'message': issue.message,
-                if (issue.path != null) 'path': issue.path,
-              },
-          ],
-          'errors': <Map<String, Object?>>[
-            for (final SourceScrapeIssue issue in report.errors)
-              <String, Object?>{
-                'work': issue.workTitle,
-                'message': issue.message,
-                if (issue.path != null) 'path': issue.path,
-              },
-          ],
-        },
-      );
+  static String _reportJson(SourceScrapeReport report) =>
+      encodeSourceScrapeReport(report);
 
   @override
   Future<void> markActiveRunInterrupted() async {

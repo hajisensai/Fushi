@@ -69,9 +69,10 @@ import 'package:fushi/src/media/video/video_cover_extractor.dart'
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
-    show VideoBooksCompanion, VideoBookRow;
+    show VideoBooksCompanion, VideoBookRow, ProfileMediaKind;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
@@ -387,6 +388,11 @@ void main([List<String> args = const <String>[]]) {
     await FushiDicts.preloadTransforms();
 
     final appModel = container.read(appProvider);
+    // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
+    // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
+    appModel.browserLookupProfileApplier = () => container
+        .read(profileViewModelProvider.notifier)
+        .autoApplyBinding(mediaType: ProfileMediaKind.browser);
     await appModel.initialise();
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────

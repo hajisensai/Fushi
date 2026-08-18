@@ -96,7 +96,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -149,7 +149,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -206,7 +206,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -272,7 +272,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -368,7 +368,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -432,7 +432,7 @@ void main() {
         textService: service,
         isWindows: true,
         exe32BitProbe: (_) async => true,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -513,7 +513,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -576,7 +576,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -646,7 +646,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -717,7 +717,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -807,7 +807,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -904,7 +904,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -968,7 +968,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1050,7 +1050,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1108,7 +1108,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1163,7 +1163,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1228,7 +1228,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => true,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1300,7 +1300,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1378,7 +1378,7 @@ void main() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1468,7 +1468,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1535,7 +1535,7 @@ void main() {
       textService: service,
       isWindows: true,
       targetWow64Probe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -1609,7 +1609,7 @@ void _playTrackerLaunchWiring() {
       textService: service,
       isWindows: true,
       exe32BitProbe: (_) async => false,
-      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory: ({
         required int targetPid,
         required String? launchExe,
@@ -2042,7 +2042,7 @@ void _bug950Guard() {
         textService: service,
         isWindows: true,
         targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2116,7 +2116,7 @@ void _bug950Guard() {
         textService: service,
         isWindows: true,
         targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2184,7 +2184,7 @@ void _bug950Guard() {
         isWindows: true,
         exe32BitProbe: (_) async => false,
         targetWow64Probe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,
@@ -2241,7 +2241,7 @@ void _bug950Guard() {
         textService: service,
         isWindows: true,
         exe32BitProbe: (_) async => false,
-        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
         engineSourceFactory: ({
           required int targetPid,
           required String? launchExe,

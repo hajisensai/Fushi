@@ -333,15 +333,74 @@ class MihonManager extends ChangeNotifier {
     // `_validatedUri` 的 HTTPS 策略自我否决掉：一个 https 仓库可以在索引里塞一条
     // http 直链，用户看不到任何提示就被中间人换掉安装包。仓库地址在 addStore 时
     // 已经过 `_confirmInsecureUrl` 明示同意，继承它才是正确的信任传递。
+    final bool insecure = Uri.parse(store.indexUrl).scheme == 'http';
+    final MihonAvailableExtension target = await _resolveInstallTarget(
+      store,
+      extension,
+      allowInsecure: insecure,
+    );
     final Uint8List bytes = await _storeClient.downloadApk(
-      extension.apkUrl,
-      allowInsecure: Uri.parse(store.indexUrl).scheme == 'http',
+      target.apkUrl,
+      allowInsecure: insecure,
     );
     return _prepareInstallBytes(
       bytes,
-      expected: extension,
+      expected: target,
       expectedSigningKey: store.signingKey,
     );
+  }
+
+  /// 安装前**重新解析一次仓库索引**，拿当次索引里的直链去下载。
+  ///
+  /// [available] 是远端索引的**内存快照**，只在进程冷启动的 [_refreshStores]
+  /// 里刷一次（没有任何缓存表，重启即丢）。而快照里的 `apkUrl` 指向的是**短寿命
+  /// 资源**：keiyoushi 把 APK 挂在 GitHub release 上，只保留最近 7 个 release，
+  /// 旧 tag 连同资产一起被删（2026-08-18 实测：当时保留的 7 个 release 全部产于
+  /// 08-16，即保留窗口只有两天）。手机上进程在后台活了几天再点安装，快照里的
+  /// **每一条**直链都指向已删除的 tag——用户看到的就是 `STORE_HTTP_404`。
+  ///
+  /// 同一份快照还会让版本号漂移变成 `METADATA_MISMATCH`（下载到的 APK 比快照新，
+  /// 被当成「与仓库元数据不符」拒掉）。两个症状同一个根因：**下载时刻的真相源
+  /// 是索引，不是几天前的快照**。所以这里不是「404 了再重试一次」的补丁，而是把安装
+  /// 的输入从快照换成当次索引。
+  ///
+  /// 刷不到索引就直接失败，不回退到快照：下一步本来就要联网下 APK，「索引拿不到
+  /// 却假装能装」只会把同一个 404 推到下一步，还多一条分支。
+  Future<MihonAvailableExtension> _resolveInstallTarget(
+    MangaExtensionStoreRow store,
+    MihonAvailableExtension snapshot, {
+    required bool allowInsecure,
+  }) async {
+    final MihonStoreFetchResult fetched = await _storeClient.fetchStore(
+      store.indexUrl,
+      allowInsecure: allowInsecure,
+    );
+    final MihonStore resolved = fetched.store!;
+    final List<MihonAvailableExtension> extensions =
+        await _storeClient.fetchExtensions(
+      resolved,
+      allowInsecure: allowInsecure,
+    );
+    // 索引都重新拉了，顺手让目录跟上：卡片上的版本号不该跟马上要装的东西对不上。
+    // `index_v2` 会让最终 indexUrl 与库里那行不同，两个地址的旧条目都要清。
+    available = <MihonAvailableExtension>[
+      ...available.where((MihonAvailableExtension item) =>
+          item.storeUrl != store.indexUrl &&
+          item.storeUrl != resolved.indexUrl),
+      ...extensions,
+    ];
+    _notify();
+    final MihonAvailableExtension? target = extensions
+        .where((MihonAvailableExtension item) =>
+            item.packageName == snapshot.packageName)
+        .firstOrNull;
+    if (target == null) {
+      throw const MihonRuntimeException(
+        'EXTENSION_GONE',
+        'The extension is no longer listed in its repository',
+      );
+    }
+    return target;
   }
 
   Future<MihonInstallProposal> prepareLocalInstall(String apkPath) async {

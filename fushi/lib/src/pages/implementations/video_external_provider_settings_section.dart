@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
@@ -12,6 +13,7 @@ import 'package:fushi/src/media/video/download/video_download_path_mapping.dart'
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -34,6 +36,9 @@ class VideoExternalSettingsSnapshot {
   const VideoExternalSettingsSnapshot({
     this.torznabConfigs = const <TorznabIndexerConfig>[],
     this.openSubtitlesConfig,
+    this.jimakuApiKey = '',
+    this.jimakuEnabled = true,
+    this.disabledBuiltinSourceIds = const <String>{},
     this.pathMappings = const <VideoDownloadBackendPathMappingConfig>[],
     this.managedVideoSources = const <ManagedVideoSourceOption>[],
     this.targetSourceId,
@@ -43,6 +48,20 @@ class VideoExternalSettingsSnapshot {
 
   final List<TorznabIndexerConfig> torznabConfigs;
   final OpenSubtitlesConfig? openSubtitlesConfig;
+
+  /// Jimaku 的 API key。
+  final String jimakuApiKey;
+
+  /// Jimaku 是否参与字幕搜索。与 [jimakuApiKey] 组成 `enabled && key` 双门控，
+  /// 形状与 OpenSubtitles（`enabled` 长在它的 config 里）并列。
+  ///
+  /// **默认 true**：本开关出现之前「填了 key」即启用，默认 false 会让存量用户
+  /// 升级后 Jimaku 无声失效。
+  final bool jimakuEnabled;
+
+  /// 用户停用的内置资源索引器 id（[kBuiltinVideoResourceSources] 的子集）。
+  /// 装的是「停用」而不是「启用」：新内置源上线即默认参与，不需要迁移写入。
+  final Set<String> disabledBuiltinSourceIds;
   final List<VideoDownloadBackendPathMappingConfig> pathMappings;
   final List<ManagedVideoSourceOption> managedVideoSources;
   final int? targetSourceId;
@@ -56,6 +75,13 @@ abstract interface class VideoExternalSettingsStore {
   Future<void> saveTorznabConfigs(List<TorznabIndexerConfig> configs);
 
   Future<void> saveOpenSubtitlesConfig(OpenSubtitlesConfig config);
+
+  Future<void> saveJimakuApiKey(String apiKey);
+
+  Future<void> saveJimakuEnabled(bool enabled);
+
+  /// 开/关一个内置资源索引器（[kBuiltinVideoResourceSources] 里的 id）。
+  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled);
 
   Future<void> savePathMappings(
     List<VideoDownloadBackendPathMappingConfig> mappings,
@@ -108,6 +134,9 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
     return VideoExternalSettingsSnapshot(
       torznabConfigs: appModel.prefsRepo.videoResourceTorznabConfigs,
       openSubtitlesConfig: appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig,
+      jimakuApiKey: appModel.jimakuApiKey,
+      jimakuEnabled: appModel.jimakuEnabled,
+      disabledBuiltinSourceIds: appModel.videoResourceDisabledSourceIds,
       pathMappings: appModel.prefsRepo.videoDownloadBackendPathMappings,
       managedVideoSources: sources,
       targetSourceId: target,
@@ -127,6 +156,21 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
     await appModel.prefsRepo.setVideoSubtitleOpenSubtitlesConfig(config);
     await appModel.reloadVideoDownloadPipelineRuntime();
   }
+
+  @override
+  // `setJimakuApiKey` 自己会重建下载流水线运行时（字幕 registry 按 key 非空注册），
+  // 所以这里不再补一次 reload。
+  Future<void> saveJimakuApiKey(String apiKey) =>
+      appModel.setJimakuApiKey(apiKey.trim());
+
+  @override
+  // 同上：`setJimakuEnabled` 自己重建下载流水线运行时。
+  Future<void> saveJimakuEnabled(bool enabled) =>
+      appModel.setJimakuEnabled(enabled);
+
+  @override
+  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) =>
+      appModel.setVideoResourceSourceEnabled(sourceId, enabled);
 
   @override
   Future<void> savePathMappings(
@@ -158,12 +202,16 @@ class VideoExternalProviderSettingsSection extends ConsumerStatefulWidget {
   /// 测试注入口；生产路径从 [AppModel] 构造设备本地 store。
   final VideoExternalSettingsStore? store;
 
-  /// 只渲染「在线字幕来源」那一节（OpenSubtitles）。
+  /// 只渲染「在线字幕来源」那一节（Jimaku + OpenSubtitles + 默认字幕语言）。
   ///
   /// 字幕来源此前分居两处：Jimaku API key 在设置 → 视频 → 字幕，OpenSubtitles 在
   /// 设置 → 下载 → 外部来源。同一个能力两个家，用户配完一个以为配完了。这里不复制
   /// 一份编辑 UI（那就是第二份真相源），而是让本组件按节可裁，两处渲染同一份实现、
   /// 写同一个 `video_subtitle_opensubtitles_config`。
+  ///
+  /// 两家 registry 是并列的（`video_subtitle_registry.dart`：动漫搜 Jimaku +
+  /// OpenSubtitles，其余只搜 OpenSubtitles），所以两家必须并列出现在同一节里；
+  /// 只列一家会让用户以为另一家不存在（用户 2026-08-18 反馈，BUG-1712）。
   final bool onlySubtitleSources;
 
   @override
@@ -183,9 +231,13 @@ class _VideoExternalProviderSettingsSectionState
   List<ManagedVideoSourceOption> _sources = <ManagedVideoSourceOption>[];
   int? _targetSourceId;
   String _preferredLanguage = '';
+  String _jimakuApiKey = '';
+  bool _jimakuEnabled = true;
+  Set<String> _disabledBuiltinSources = const <String>{};
   String _suggestedBackendProfileId = '';
   Timer? _torznabSaveDebounce;
   Timer? _openSubtitlesSaveDebounce;
+  Timer? _jimakuSaveDebounce;
   Timer? _mappingSaveDebounce;
 
   @override
@@ -200,12 +252,15 @@ class _VideoExternalProviderSettingsSectionState
     final bool flushTorznab = _torznabSaveDebounce?.isActive ?? false;
     final bool flushOpenSubtitles =
         _openSubtitlesSaveDebounce?.isActive ?? false;
+    final bool flushJimaku = _jimakuSaveDebounce?.isActive ?? false;
     final bool flushMappings = _mappingSaveDebounce?.isActive ?? false;
     _torznabSaveDebounce?.cancel();
     _openSubtitlesSaveDebounce?.cancel();
+    _jimakuSaveDebounce?.cancel();
     _mappingSaveDebounce?.cancel();
     if (flushTorznab) unawaited(_saveTorznabIfValid());
     if (flushOpenSubtitles) unawaited(_saveOpenSubtitlesIfValid());
+    if (flushJimaku) unawaited(_saveJimakuApiKey());
     if (flushMappings) unawaited(_saveMappingsIfValid());
     super.dispose();
   }
@@ -238,6 +293,9 @@ class _VideoExternalProviderSettingsSectionState
         _sources = snapshot.managedVideoSources;
         _targetSourceId = snapshot.targetSourceId;
         _preferredLanguage = snapshot.preferredSubtitleLanguage;
+        _jimakuApiKey = snapshot.jimakuApiKey;
+        _jimakuEnabled = snapshot.jimakuEnabled;
+        _disabledBuiltinSources = snapshot.disabledBuiltinSourceIds;
         _suggestedBackendProfileId = snapshot.suggestedBackendProfileId;
         _loading = false;
       });
@@ -325,6 +383,22 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  void _updateJimakuApiKey(String value) {
+    _jimakuApiKey = value;
+    _jimakuSaveDebounce?.cancel();
+    _jimakuSaveDebounce = Timer(
+      const Duration(milliseconds: 500),
+      () => unawaited(_saveJimakuApiKey()),
+    );
+  }
+
+  Future<void> _saveJimakuApiKey() {
+    final String apiKey = _jimakuApiKey;
+    return _save(
+      (VideoExternalSettingsStore store) => store.saveJimakuApiKey(apiKey),
+    );
+  }
+
   void _updateMapping(int index, _PathMappingDraft value) {
     setState(() => _mappings[index] = value);
     _mappingSaveDebounce?.cancel();
@@ -334,40 +408,15 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  /// 小节标题：实现在 [SourceSectionHeading]（发现来源开关区渲染的是同一份）。
+  /// `theme` 参数保留是为了不动本文件里十来个调用点的形状。
   Widget _sectionHeading(
     ThemeData theme,
     String title,
     String hint, {
     IconData? icon,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (icon != null) ...<Widget>[
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: theme.textTheme.titleSmall),
-                const SizedBox(height: 2),
-                Text(
-                  hint,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  }) =>
+      SourceSectionHeading(title: title, hint: hint, icon: icon);
 
   Widget _field({
     required Key key,
@@ -591,52 +640,6 @@ class _VideoExternalProviderSettingsSectionState
           onChanged: (String value) =>
               _updateOpenSubtitles(draft.copyWith(userAgent: value)),
         ),
-        DropdownButtonFormField<String>(
-          key: const ValueKey<String>('video-opensubtitles-language'),
-          initialValue: _preferredLanguage,
-          // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
-          // 排版，长标签在 360px 紧凑布局里直接横向溢出（`compact layout has no
-          // horizontal overflow` 会红）。这里的选项以前全是 `日本語` / `中文`
-          // 这类两三字的短标签，才一直没暴露；`''` 从「全部」改成「跟随视频语言」
-          // 后就撞上了——而且这不是中文特有：17 份 i18n 里未翻译的那些落的是英文
-          // 原串 `Follow video language`，比中文还长。所以修的是约束，不是文案。
-          isExpanded: true,
-          decoration: InputDecoration(
-            labelText: t.video_opensubtitles_languages,
-            helperText: t.video_setting_jimaku_default_language_hint,
-            helperMaxLines: 3,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          items: <DropdownMenuItem<String>>[
-            DropdownMenuItem<String>(
-              value: '',
-              // 与设置页那份同一语义：`''` = 跟随视频语言，不是「全部」。
-              child: Text(
-                t.video_jimaku_language_follow_video,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            for (final String language in kJimakuLanguageCodes)
-              DropdownMenuItem<String>(
-                value: language,
-                child: Text(
-                  jimakuLanguageLabel(language),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-          onChanged: (String? value) {
-            final String language = value ?? '';
-            setState(() => _preferredLanguage = language);
-            _save(
-              (VideoExternalSettingsStore store) =>
-                  store.savePreferredSubtitleLanguage(language),
-            );
-          },
-        ),
         SwitchListTile.adaptive(
           key: const ValueKey<String>('video-opensubtitles-insecure-http'),
           contentPadding: EdgeInsets.zero,
@@ -647,6 +650,181 @@ class _VideoExternalProviderSettingsSectionState
           onChanged: (bool value) => _updateOpenSubtitles(
             draft.copyWith(allowInsecureHttp: value),
           ),
+        ),
+      ],
+    );
+  }
+
+  /// Jimaku：启用开关 + 一把 key，`enabled && key` 双门控。
+  ///
+  /// 开关与 OpenSubtitles 那个逐字同形（同一个 `video_external_enabled` 标签、
+  /// 同一种 SwitchListTile），因为两家在 registry 里本来就是并列的来源；一家有
+  /// 开关一家没有，用户只会以为「Jimaku 关不掉」。
+  ///
+  /// key 输入框这里不 setState —— 输入框自己持有文本，重建只会把光标弹回去。
+  Widget _jimakuFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SwitchListTile.adaptive(
+          key: const ValueKey<String>('video-jimaku-enabled'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.video_external_enabled),
+          subtitle: Text(t.video_jimaku_enabled_hint, maxLines: 3),
+          value: _jimakuEnabled,
+          onChanged: (bool value) {
+            setState(() => _jimakuEnabled = value);
+            _save(
+              (VideoExternalSettingsStore store) =>
+                  store.saveJimakuEnabled(value),
+            );
+          },
+        ),
+        _field(
+          key: const ValueKey<String>('video-jimaku-api-key'),
+          label: t.video_jimaku_api_key,
+          initialValue: _jimakuApiKey,
+          helper: t.video_jimaku_api_key_hint,
+          secret: true,
+          onChanged: _updateJimakuApiKey,
+        ),
+      ],
+    );
+  }
+
+  /// 默认字幕语言：两家 provider 共用的**一个**偏好（存量键名
+  /// `jimaku_default_language` 冻结不追改），所以它属于「字幕来源」这一节，
+  /// 而不是某一家的卡片内字段——此前它长在 OpenSubtitles 块里，读起来像
+  /// 「OpenSubtitles 的首选语言」，实际连 Jimaku 一起管。
+  Widget _subtitleLanguageField() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: DropdownButtonFormField<String>(
+            key: const ValueKey<String>('video-subtitle-default-language'),
+            initialValue: _preferredLanguage,
+            // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
+            // 排版，长标签在 360px 紧凑布局里直接横向溢出（`compact layout has no
+            // horizontal overflow` 会红）。这里的选项以前全是 `日本語` / `中文`
+            // 这类两三字的短标签，才一直没暴露；`''` 从「全部」改成「跟随视频语言」
+            // 后就撞上了——而且这不是中文特有：17 份 i18n 里未翻译的那些落的是英文
+            // 原串 `Follow video language`，比中文还长。所以修的是约束，不是文案。
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: t.video_setting_jimaku_default_language,
+              helperText: t.video_setting_jimaku_default_language_hint,
+              helperMaxLines: 3,
+              isDense: true,
+              border: const OutlineInputBorder(),
+            ),
+            items: <DropdownMenuItem<String>>[
+              DropdownMenuItem<String>(
+                value: '',
+                // 与设置页那份同一语义：`''` = 跟随视频语言，不是「全部」。
+                child: Text(
+                  t.video_jimaku_language_follow_video,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              for (final String language in kJimakuLanguageCodes)
+                DropdownMenuItem<String>(
+                  value: language,
+                  child: Text(
+                    jimakuLanguageLabel(language),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (String? value) {
+              final String language = value ?? '';
+              setState(() => _preferredLanguage = language);
+              _save(
+                (VideoExternalSettingsStore store) =>
+                    store.savePreferredSubtitleLanguage(language),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 两家在线字幕来源 + 共用的默认语言。设置 → 视频 → 字幕与设置 → 下载 →
+  /// 外部资源与字幕来源渲染的是同一份。
+  List<Widget> _subtitleSourceBlocks(ThemeData theme) {
+    return <Widget>[
+      _sectionHeading(
+        theme,
+        // 品牌名，不进 i18n（同设置页 TMDB 的处理）。
+        'Jimaku',
+        t.video_jimaku_scope_hint,
+        icon: Icons.subtitles_outlined,
+      ),
+      _jimakuFields(),
+      _sectionHeading(
+        theme,
+        t.video_opensubtitles_settings_title,
+        t.video_opensubtitles_settings_hint,
+        icon: Icons.subtitles_outlined,
+      ),
+      _openSubtitlesFields(),
+      _subtitleLanguageField(),
+    ];
+  }
+
+  /// 随应用内置、零配置的资源来源，逐个可停用。
+  ///
+  /// 用户打开这一区只看到「Torznab（空）」，合理推论是「这个 app 自己没有任何
+  /// 来源」——但动漫一直在搜内置 Nyaa，电影/剧集一直在搜内置公共索引器。行是从
+  /// [kBuiltinVideoResourceSources] 遍历出来的（同一张表也用来构造 provider），
+  /// 所以「设置里列的」与「真去搜的」不可能对不上。
+  ///
+  /// 开关与「发现来源」区渲染同一个 [SourceToggleList]：两处都是「一组零配置内置
+  /// 源按 id 记停用」，没有第二种形状的理由。
+  Widget _builtinSourcesBlock(ThemeData theme) {
+    return Column(
+      key: const ValueKey<String>('video-builtin-sources'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _sectionHeading(
+          theme,
+          t.video_builtin_sources_title,
+          t.video_builtin_sources_hint,
+          icon: Icons.verified_outlined,
+        ),
+        SourceToggleList(
+          keyPrefix: 'video-builtin-source',
+          rows: <SourceToggleRow>[
+            for (final BuiltinVideoResourceSource source
+                in kBuiltinVideoResourceSources)
+              SourceToggleRow(
+                id: source.id,
+                title: source.displayName,
+                subtitle: source.hint(),
+                enabled: !_disabledBuiltinSources.contains(source.id),
+              ),
+          ],
+          onChanged: (String sourceId, bool enabled) async {
+            setState(() {
+              final Set<String> next = <String>{..._disabledBuiltinSources};
+              if (enabled) {
+                next.remove(sourceId);
+              } else {
+                next.add(sourceId);
+              }
+              _disabledBuiltinSources = next;
+            });
+            await _save(
+              (VideoExternalSettingsStore store) =>
+                  store.saveBuiltinSourceEnabled(sourceId, enabled),
+            );
+          },
         ),
       ],
     );
@@ -738,13 +916,7 @@ class _VideoExternalProviderSettingsSectionState
                 ),
               ),
             ),
-          _sectionHeading(
-            theme,
-            t.video_opensubtitles_settings_title,
-            t.video_opensubtitles_settings_hint,
-            icon: Icons.subtitles_outlined,
-          ),
-          _openSubtitlesFields(),
+          ..._subtitleSourceBlocks(theme),
         ],
       );
     }
@@ -767,6 +939,8 @@ class _VideoExternalProviderSettingsSectionState
               ),
             ),
           ),
+        _builtinSourcesBlock(theme),
+        const Divider(height: 32),
         _sectionHeading(
           theme,
           t.video_torznab_settings_title,
@@ -787,13 +961,7 @@ class _VideoExternalProviderSettingsSectionState
           ),
         ),
         const Divider(height: 32),
-        _sectionHeading(
-          theme,
-          t.video_opensubtitles_settings_title,
-          t.video_opensubtitles_settings_hint,
-          icon: Icons.subtitles_outlined,
-        ),
-        _openSubtitlesFields(),
+        ..._subtitleSourceBlocks(theme),
         const Divider(height: 32),
         _sectionHeading(
           theme,
