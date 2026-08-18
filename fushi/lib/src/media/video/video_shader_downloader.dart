@@ -534,3 +534,60 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
 
   return Anime4kDownloadResult(downloaded: done, failed: failed);
 }
+
+// ── 存储页助手：Anime4K 已下载文件的占用与删除 ───────────────────────────────
+
+/// 全部预设涉及的落盘文件名并集（去重，保序）。这是「本 app 曾经/可能下载过」
+/// 的清单——存储页删除**只删这些名字**，用户自导入的着色器与它们同目录混放，
+/// 整目录端掉会误删用户文件。
+List<String> anime4kManifestFileNames() {
+  final List<String> out = <String>[];
+  for (final Anime4kPreset preset in kAnime4kPresets) {
+    for (final String name in preset.fileNames) {
+      if (!out.contains(name)) out.add(name);
+    }
+  }
+  return out;
+}
+
+/// [dir] 里清单内文件的现存字节数（纯函数，便于临时目录单测）。
+int anime4kInstalledBytesIn(Directory dir) {
+  if (!dir.existsSync()) return 0;
+  int total = 0;
+  for (final String name in anime4kManifestFileNames()) {
+    final File f = File(p.join(dir.path, name));
+    try {
+      if (f.existsSync()) total += f.lengthSync();
+    } on FileSystemException {
+      // 竞态删除：跳过。
+    }
+  }
+  return total;
+}
+
+/// 删除 [dir] 里清单内的已下载文件，返回删掉的文件名（纯函数，便于单测）。
+/// 用户自导入的非清单文件一律不碰。
+List<String> deleteAnime4kFilesIn(Directory dir) {
+  if (!dir.existsSync()) return const <String>[];
+  final List<String> deleted = <String>[];
+  for (final String name in anime4kManifestFileNames()) {
+    final File f = File(p.join(dir.path, name));
+    try {
+      if (f.existsSync()) {
+        f.deleteSync();
+        deleted.add(name);
+      }
+    } on FileSystemException {
+      // 被占用/无权限：跳过，不翻转整个删除。
+    }
+  }
+  return deleted;
+}
+
+/// 默认着色器目录里的 Anime4K 占用字节数。
+Future<int> anime4kInstalledBytes() async =>
+    anime4kInstalledBytesIn(await mpvShaderDirectory());
+
+/// 删除默认着色器目录里的 Anime4K 已下载文件，返回删掉的文件名。
+Future<List<String>> deleteAnime4kShaderFiles() async =>
+    deleteAnime4kFilesIn(await mpvShaderDirectory());

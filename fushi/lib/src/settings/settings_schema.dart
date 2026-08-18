@@ -12,6 +12,7 @@ import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
+import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
@@ -105,6 +106,10 @@ List<SettingsDestination> _buildDestinations() {
     // Hibiki 互联从同步分类拆出的独立一级分类（构建函数在 sync_settings_schema
     // 同库，与同步共享私有状态）。
     buildInterconnectDestination(),
+    // 「存储」大类：磁盘占用 + 可选模块删除恢复（详见 buildStorageDestination）。
+    // 位置在数据块末、系统之前——它是设备级数据管理，与「数据存储位置」（在系统
+    // 分类内）相邻语义。
+    buildStorageDestination(),
     buildSystemDestination(),
   ]);
 }
