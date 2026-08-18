@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
@@ -116,6 +115,34 @@ SettingsDestination buildVideoDestination() {
               VideoFitMode mode,
             ) async {
               await setVideoFitModeDual(settingsContext, mode);
+            },
+          ),
+          // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选
+          // ≤目标 的最高档（画质菜单同语义），4K 档在 YouTube 侧只有 vp9/av01——无硬解
+          // 设备可能软解掉帧，故默认仍是「自动」。长标签多档 → dropdown 渲染。
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.youtube_quality',
+            title: t.video_setting_youtube_quality,
+            subtitle: t.video_setting_youtube_quality_hint,
+            icon: Icons.high_quality_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 15),
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.video_quality_auto,
+              ),
+              for (final int height in <int>[480, 720, 1080, 1440, 2160])
+                SettingsSegmentOption<int>(
+                  value: height,
+                  label: '${height}p',
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.youtubeQualityTargetHeight,
+            onChanged: (SettingsContext settingsContext, int height) async {
+              await settingsContext.appModel
+                  .setYoutubeQualityTargetHeight(height);
             },
           ),
           SettingsSegmentedItem<int>(
@@ -1131,54 +1158,40 @@ SettingsDestination buildVideoDestination() {
                   ?.call();
             },
           ),
-          // ── Jimaku（在线字幕源）───────────────────────────────────────────
-          // 此前 API key 只能在三个对话框（视频字幕 / 番剧下载 / 批量匹配）里就地填，
-          // 设置页压根没有入口；下载对话框那个还只在 key 为空时才显示，key 填错了
-          // 无处可改。这里是**唯一权威入口**，对话框里的就地输入只是快捷方式。
-          SettingsTextItem(
-            id: 'video.subtitle.jimaku_api_key',
-            title: t.video_jimaku_api_key,
-            subtitle: t.video_jimaku_api_key_hint,
-            icon: Icons.vpn_key_outlined,
-            secret: true,
+          // ── 自动获取字幕 ─────────────────────────────────────────────────
+          // 这个开关的主要价值是**让用户知道这件事存在**（BUG-1698）。
+          //
+          // 自动配字幕其实一直开着（下载流水线的字幕阶段默认 bestEffort），但它
+          // 从来没有名字、没有位置、失败只落在任务行一句英文 note 里——用户没有
+          // 任何途径发现这个能力，更不知道要去配 Jimaku key 才能用上。给它一个
+          // 有名字的条目放在字幕来源配置**正上方**，设置搜索（settings_search）
+          // 就能命中「字幕」搜到它，配置项也在同屏可见。
+          SettingsSwitchItem(
+            id: 'video.subtitle.backfill_after_scrape',
+            title: t.video_setting_subtitle_backfill,
+            subtitle: t.video_setting_subtitle_backfill_hint,
+            icon: Icons.subtitles_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jimakuApiKey,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.setJimakuApiKey(value.trim());
+                settingsContext.appModel.videoSubtitleBackfillAfterScrape,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoSubtitleBackfillAfterScrape(value);
             },
           ),
-          // 默认字幕语言：没有该系列记忆（jimakuPreferredLanguages）时的兜底优先语言。
-          // `''` = 不限（按 jimakuLanguageRank 默认权重排）。
-          SettingsSegmentedItem<String>(
-            id: 'video.subtitle.jimaku_default_language',
-            title: t.video_setting_jimaku_default_language,
-            subtitle: t.video_setting_jimaku_default_language_hint,
-            icon: Icons.translate_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: '',
-                label: t.video_jimaku_language_all,
-              ),
-              for (final String code in kJimakuLanguageCodes)
-                SettingsSegmentOption<String>(
-                  value: code,
-                  label: jimakuLanguageLabel(code),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jimakuDefaultLanguage,
-            onChanged: (SettingsContext settingsContext, String code) async {
-              await settingsContext.appModel.setJimakuDefaultLanguage(code);
-            },
-          ),
-          // ── OpenSubtitles（另一路在线字幕源）─────────────────────────────
-          // 字幕来源此前分居两处：Jimaku key 在这儿，OpenSubtitles 只在
-          // 设置 → 下载 → 外部来源。同一个能力两个家，用户在这里配完 Jimaku 就以为
-          // 「字幕来源配完了」，而播放页找字幕与下载自动配字幕走的是同一套 registry
-          // （两家一起搜）。这里内联**同一份**编辑组件（不复制 UI、不第二份真相源）。
+          // ── 在线字幕来源（Jimaku + OpenSubtitles + 默认字幕语言）──────────
+          // 字幕来源此前分居两处：Jimaku key 是这儿的两个 schema item，
+          // OpenSubtitles 只在设置 → 下载 → 外部来源。同一个能力两个家，用户在
+          // 这里配完 Jimaku 就以为「字幕来源配完了」，而播放页找字幕与下载自动配
+          // 字幕走的是同一套 registry（两家一起搜）。
+          //
+          // 现在两家一起内联**同一份**编辑组件（不复制 UI、不第二份真相源）：
+          // 下载页那一区列的也是这一份，用户在任一处看到的都是完整的来源清单
+          // （BUG-1712）。Jimaku 的 key / 默认字幕语言仍写同样的偏好键，只是
+          // 编辑面从 schema item 换成了这份组件里的字段。
           SettingsCustomItem(
             id: 'video.subtitle.opensubtitles',
-            searchTitle: t.video_opensubtitles_settings_title,
+            // 搜索得命中两家品牌名，否则搜 "Jimaku" 会是死胡同。
+            searchTitle: 'Jimaku · ${t.video_opensubtitles_settings_title}',
             builder: (SettingsContext settingsContext) =>
                 const VideoExternalProviderSettingsSection(
               onlySubtitleSources: true,

@@ -1,0 +1,23 @@
+## BUG-1704 · 互联客户端打开合集详情显示「合集为空」：详情页只认本地视频行，丢弃 host 侧成员
+- **报告**：2026-08-18（用户：fushi 互联客户端「作品资料」页显示「合集为空」，没办法正常显示合集；同屏 toast「同步完成 · 无新增」）
+- **真实性**：✅ 真 bug。根因是**合集成员的数据结构在详情页被窄化**，不是同步链断了：
+  - 合集清单是**跨端 union**：`fushi/lib/src/sync/collection_sync_engine.dart:679`（`applyCollectionLocalChanges` → `upsertCollectionItemAt`）无条件把对端成员写进本地 `media_collection_items`，`entryKey` 是 **host 侧的 bookUid**，本机可以根本没有对应 `video_books` 行（互联通道见 `sync_orchestrator.dart:641` `_syncCollectionsLive`）。所以客户端本地必然存在「合集行有 N 个成员、本地视频行 0 个」的合集。
+  - 而详情页的成员解析把成员窄化成 `VideoBookRow`，解析不到就**直接丢弃**：`fushi/lib/src/pages/implementations/video_work_detail_page.dart:82-92`（旧 `loadMembers`，`if (row != null) result.add(row)`）、`airing_calendar_page.dart:222-231`、`media_collection_detail_page.dart:825` 三处同款重复代码。
+  - 于是 `media_collection_detail_page.dart:2447` 的 `_members.isEmpty` 命中 → 整页只渲染 `t.collection_empty` 占位（hero / 资料 / 集列表全部不渲染）。
+  - 库页看起来正常是因为它**早就**支持跨端混排（`home_video_page.dart` 的 `_VideoSlot` = 本地行 ∪ 远端占位，BUG-1699 修好了合集折叠映射）——所以用户在库页看得见合集卡，点进去却是空页。这是 BUG-1699 的**下游**一环。
+  - toast「同步完成 · 无新增」不是 bug：`summarizeSyncReport`（`manual_sync_ui.dart:20`）只统计书/词典/音频的进出，合集同步本就不计入该摘要。
+- **[x] ① 已修复** —
+  - 新数据结构 `CollectionEpisodeSlot`（`fushi/lib/src/media/collections/collection_episode_slot.dart`）：合集成员 = 本地行 **或** 只在对端的 `RemoteVideoInfo` 占位，恰一非空；与库页 `_VideoSlot` 同构。同文件的 `loadCollectionEpisodeSlots` 收口了原先散在三处的成员解析：按 `media_collection_items` 落盘序解析，本地查不到的 `entryKey` 去远端清单里补，**补不上才丢弃**（无远端上下文 / 拉取失败 → 与改动前逐字节同行为）。
+  - `MediaCollectionDetailPage` 的成员真相源从 `List<VideoBookRow> _members` 换成 `List<CollectionEpisodeSlot> _slots`，`_members` 降级为派生 getter（本地子集）。判空、分季分组、续播下标、看完计数、集列表、排序落盘、拖拽重排、按季拆分、补缺集集号全部改按 slots 算；**写本地库的管理动作**（批量字幕 / 按刮削改集名 / 删视频本体 / 单集重刮）仍只作用于 `_members` 本地子集——与库页「远端占位只支持流播 + 下载」的能力边界一致。
+  - 顺带修正的两处口径：① `_persistOrder` 现在把远端成员一并写进落盘序（它们在本地 items 表里本来就有行，漏写会让本地全序与显示序错开，并经合集同步把错序传回对端）；② 「补齐缺集」的已有集号取全部成员——此前「第 5 集在 host」会被报成缺口、去重复下载一份。
+  - 远端能力经单个可空注入 `CollectionRemoteContext`（列清单 / 流播 / 带鉴权取封面三件事同生共死）传入；`home_video_page._collectionRemoteContext()` 用**共享的** `RemoteLibraryCache`（TTL 内不打网络）+ 既有 `_openRemote`（带全部远端成员 + 起播下标 → 播放器跨成员连播）+ `remoteCoverFetcherFor` 填充。日历页不注入 = 纯本地视图。
+  - 远端集卡带云角标（`CoverBadge(Icons.cloud_outlined)`，与库页同一枚）；本机没有条目行可刮，故其右键菜单不出「条目信息」。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/collection_detail_remote_members_test.dart`（5 条）：
+  - `loadCollectionEpisodeSlots` 不丢弃只在对端的成员且保落盘序（本地只有 e2，e1/e3 在 host → 顺序 e1,e2,e3，isRemote = true,false,true）；
+  - 无远端上下文 / 远端清单拉取抛异常 → 退化成纯本地视图，不抛（旧行为守卫）；
+  - 全员只在对端时详情页**不显示** `collection_empty`、两张集卡都在；
+  - 点远端集卡 → 走远端流播入口，回调收到全部远端成员 + 正确起播下标。
+  - 变异实测：把 `loadCollectionEpisodeSlots` 的远端分支短路掉 → 3 条断言变红（含「合集为空」那条），还原后源文件 sha256 与变异前逐字节一致。
+- **备注**：
+  - 书 / 漫画 / 游戏侧的 `MediaCollectionGridDetailPage` 是同一形状的隐患（同样只认本地行），但用户报的是视频「作品资料」页，且书侧远端占位的数据链（`RemoteBookInfo.collection`）与视频侧不同源，未在本次改动范围内——留作后续单独任务。
+  - 真机复测（互联客户端打开一个全员在 host 的合集）未做，本轮证据是 widget 层。

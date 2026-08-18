@@ -437,12 +437,17 @@ class AnimeDownloadSubscriptionService {
     final http.Client rawClient = await _httpClientFactory();
     final JimakuClient jimaku = JimakuClient(apiKey: apiKey, client: rawClient);
     try {
+      // 不带 `episode=`：服务端那道过滤是文件名启发式，会把「字幕侧到底有哪些
+      // 集号」这个事实遮住，于是判不出「错季 / 绝对集号」这类冲突（BUG-1695）。
       final List<JimakuFile> files = await jimaku
-          .listFiles(subscription.jimakuEntryId!, episode: episode)
+          .listFiles(subscription.jimakuEntryId!)
           .timeout(kDownloadDiscoveryTimeout);
       final JimakuFile? selected = pickBestSubtitleFile(
         files,
         episode: episode,
+        // 订阅只追单集种子（调用点上方已 `episode == null → continue`），
+        // 所以这一轮确实只有一个待配视频。
+        soleTarget: true,
         preferredLanguage: subscription.jimakuLanguage,
       );
       if (selected == null) return const <PlanSubtitle>[];
@@ -572,10 +577,19 @@ class AnimeDownloadSubscriptionService {
               planStore.subsDirFor(id),
             );
             if (current.jimakuEntryId != null && subtitles.isEmpty) {
-              pendingError = 'subtitle not available for episode $episode from '
-                  '${current.jimakuEntryName ?? current.jimakuEntryId}';
-              await planStore.delete(id);
-              continue;
+              // 这一集的字幕现在还没有——**不是不下这一集的理由**（BUG-1696）。
+              //
+              // 生肉普遍早于字幕数小时到数天。旧实现在这里 delete + continue，
+              // 于是订阅表现为「配了 Jimaku 条目就长期不下东西」，而且每轮
+              // 重新发现、重新扑空，用户看到的是一个永远卡住的订阅。
+              //
+              // 现在照常下片，字幕落 pending：下载完成时由
+              // AnimeDownloadService 按**包内真实文件名**反查（BUG-1206 的强
+              // 判据，比这里按标题猜集号更准），之后还有 backoff 重试兜底。
+              // pendingError 仍然写，任务行照旧告诉用户「这集字幕还没到」。
+              pendingError = 'subtitle not yet available for episode $episode '
+                  'from ${current.jimakuEntryName ?? current.jimakuEntryId}; '
+                  'will retry after download';
             }
             final AnimeDownloadPlan plan = AnimeDownloadPlan(
               id: id,
@@ -590,14 +604,17 @@ class AnimeDownloadSubscriptionService {
               jimakuEntryId: current.jimakuEntryId,
               jimakuEntryName: current.jimakuEntryName,
               jimakuLanguage: current.jimakuLanguage,
-              // 订阅只追**单集**种子（上面 `episode == null` 已 continue），标题
-              // 集号就是该集，且这里已经真的把字幕下下来了 → 直接 resolved。
-              // 不走 BUG-1206 的延迟反查：订阅有一条更强的产品约束——
-              // 「要字幕却取不到就整条不下」（见下方 pendingError 分支），
-              // 改成完成后再取会把这个门变成「先下完再说没字幕」。
-              subtitleStatus: subtitles.isEmpty
-                  ? AnimeDownloadPlan.subtitleNone
-                  : AnimeDownloadPlan.subtitleResolved,
+              // 三态，不是两态（BUG-1696）：
+              // - 已经取到字幕 → resolved（发现时就下好了，最快路径，不变）；
+              // - 没取到但**订阅确实绑了 Jimaku 条目** → pending，交给下载完成后
+              //   按包内真实文件名反查 + backoff 重试。旧代码这里落 none，等于
+              //   宣告「这条永远没字幕」，配合上面那道 delete 门就成了死锁；
+              // - 压根没绑条目 → none（用户没要字幕）。
+              subtitleStatus: subtitles.isNotEmpty
+                  ? AnimeDownloadPlan.subtitleResolved
+                  : (current.jimakuEntryId != null
+                      ? AnimeDownloadPlan.subtitlePending
+                      : AnimeDownloadPlan.subtitleNone),
             );
             await planStore.save(plan);
             queued = await backend.addTorrent(

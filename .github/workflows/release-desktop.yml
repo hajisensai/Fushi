@@ -427,6 +427,15 @@ jobs:
             }
             Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
           }
+      - name: Bundle standalone 7za for discovery auto-extract
+        shell: pwsh
+        run: |
+          # 发现页下载的 7z/rar 游戏/小说压缩包离线自动解压依赖随包 7za.exe
+          # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
+            -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release" `
+            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+          if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,

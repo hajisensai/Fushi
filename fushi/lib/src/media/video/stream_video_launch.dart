@@ -68,6 +68,9 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
   Future<YoutubeResolvedSource> Function(String url)? youtubeResolver,
   StreamLivenessCheck? livenessCheck,
   DateTime Function()? now,
+  // 用户显式 YouTube 画质目标（设置「YouTube 画质」；null=自动=默认策略）。透传给
+  // 默认解析器，并作为缓存条目匹配键——改设置后旧档位缓存视为 miss 重解析。
+  int? youtubeTargetHeight,
 }) async {
   final String url = book.videoPath;
   final StreamVideoSpec spec =
@@ -82,7 +85,9 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
         streamCache ?? await YoutubeStreamCache.instance();
     final Future<YoutubeResolvedSource> Function(String) resolve =
         youtubeResolver ??
-            ((String u) => resolveYoutubeSource(u, withCaptions: false));
+            ((String u) => resolveYoutubeSource(u,
+                withCaptions: false,
+                playbackTargetHeight: youtubeTargetHeight));
     final StreamLivenessCheck liveness =
         livenessCheck ?? _defaultStreamLiveness;
     final DateTime Function() clock = now ?? DateTime.now;
@@ -98,7 +103,9 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
     if (videoId != null) {
       final YoutubeStreamCacheEntry? cached = await cache.get(videoId);
       if (cached != null) {
-        if (await liveness(cached.streamUrl, cached.httpHeaders)) {
+        if (cached.targetHeight != youtubeTargetHeight) {
+          // 画质目标变了：缓存的 streamUrl 是旧档位，按 miss 重解析（新结果 put 时覆盖）。
+        } else if (await liveness(cached.streamUrl, cached.httpHeaders)) {
           hit = cached;
         } else {
           // 缓存 URL 已失效（IP 锁不匹配 / 提前吊销）：剔除，落到重解析（别喂脏 URL 致黑屏）。
@@ -141,6 +148,7 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
               miningVideoHasAudio: resolved.miningVideoHasAudio,
               httpHeaders: resolved.httpHeaders,
               expiresAtMs: expiresAtMs,
+              targetHeight: youtubeTargetHeight,
             ),
           );
         }
@@ -183,11 +191,12 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
   required String id,
   required String title,
   required String url,
+  int? youtubeTargetHeight,
 }) async {
   final UrlStreamVideoClient client;
   if (isYoutubeUrl(url)) {
-    final YoutubeResolvedSource resolved =
-        await resolveYoutubeSource(url, withCaptions: false);
+    final YoutubeResolvedSource resolved = await resolveYoutubeSource(url,
+        withCaptions: false, playbackTargetHeight: youtubeTargetHeight);
     client = UrlStreamVideoClient(
       streamUrl: resolved.streamUrl,
       audioStreamUrl: resolved.audioStreamUrl,

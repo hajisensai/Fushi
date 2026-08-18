@@ -38,6 +38,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
     show VideoSubtitleCandidate;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
+import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -108,13 +109,16 @@ enum HomeTab {
 /// [HomePage]。底栏/侧栏的位置索引由此列表导出。
 List<HomeTab> homeActiveTabs({
   required bool videoEnabled,
+  bool mangaEnabled = true,
   bool gamesEnabled = false,
   bool browserExtensionEnabled = false,
 }) =>
     <HomeTab>[
       HomeTab.home,
       HomeTab.books,
-      HomeTab.manga,
+      // 漫画/视频/游戏三个媒体库 tab 可按「功能模块」偏好隐藏（新手引导的功能
+      // 选择与 设置 → 系统 → 功能模块 写同一真值）；书架/词典/设置恒在。
+      if (mangaEnabled) HomeTab.manga,
       if (videoEnabled) HomeTab.video,
       if (gamesEnabled) HomeTab.games,
       // 下载 tab 恒在（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与
@@ -379,6 +383,23 @@ class _HomePageState extends BasePageState<HomePage>
         appModel.setLastSelectedDictionaryFormat(
             JapaneseLanguage.instance.standardFormat);
         appModel.setFirstTimeSetupFlag();
+        // 全新安装：把新手引导标成「待完成」再进下面的弹出分支。既有安装升级
+        // 上来时该键缺省即 true（不弹）；中途杀进程下次启动值仍是 false，会
+        // 重新弹出（缺省语义见 PreferencesRepository.onboardingCompleted）。
+        await appModel.setOnboardingCompleted(value: false);
+      }
+
+      // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/
+      // 跳过/返回）后统一标记完成，之后可从「设置 → 系统」随时重新打开。
+      if (mounted && !appModel.onboardingCompleted) {
+        await Navigator.of(context).push(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => const OnboardingWizardPage(),
+            fullscreenDialog: true,
+          ),
+        );
+        await appModel.setOnboardingCompleted(value: true);
       }
 
       if (mounted) {
@@ -727,13 +748,16 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 当前可见的顶层 tab：首页 → 书架 → 漫画 → 视频 → 游戏 → 下载 → 词典 → 设置。视频
-  /// tab 已毕业为常驻（位于书架与词典之间）；games（galgame 库）仅 Windows 桌面出现
-  /// （galgame 引擎-hook 注入本就 Windows-only，故以平台而非实验开关门控，默认可见），
-  /// 紧跟视频之后。底栏/侧栏的位置索引由此列表导出。
+  /// 当前可见的顶层 tab：首页 → 书架 → 漫画 → 视频 → 游戏 → 下载 → 词典 → 设置。
+  /// 漫画/视频/游戏三个媒体库 tab 按「功能模块」偏好显隐（默认全开，行为与旧版一致）；
+  /// games（galgame 库）额外叠加 Windows 平台门控（galgame 引擎-hook 注入本就
+  /// Windows-only），紧跟视频之后。底栏/侧栏的位置索引由此列表导出。
   List<HomeTab> _activeTabs() => homeActiveTabs(
-        videoEnabled: true,
-        gamesEnabled: Platform.isWindows,
+        // 漫画/视频/游戏按「功能模块」偏好显隐（games 仍叠加 Windows 平台门控，
+        // galgame 引擎-hook 注入本就 Windows-only）；偏好默认全开，行为与旧版一致。
+        videoEnabled: appModel.moduleVideoEnabled,
+        mangaEnabled: appModel.moduleMangaEnabled,
+        gamesEnabled: Platform.isWindows && appModel.moduleGamesEnabled,
         // 「电脑才有」：浏览器扩展 tab 仅桌面（Windows/macOS/Linux）显示。
         browserExtensionEnabled: DesktopLookupService.isDesktop,
       );
@@ -1256,7 +1280,7 @@ class _HomePageState extends BasePageState<HomePage>
         if (work.countries.isNotEmpty)
           VideoDiscoveryFact(
             label: t.video_work_countries,
-            value: work.countries.join(' · '),
+            value: formatVideoCountriesForDisplay(work.countries).join(' · '),
           ),
         if (work.contentRating?.trim().isNotEmpty == true)
           VideoDiscoveryFact(
@@ -1837,6 +1861,8 @@ class _HomePageState extends BasePageState<HomePage>
         context: context,
         controller: _videoSourceScrapeController,
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+        loadSource: (int sourceId) =>
+            appModel.database.getMediaSourceById(sourceId),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;

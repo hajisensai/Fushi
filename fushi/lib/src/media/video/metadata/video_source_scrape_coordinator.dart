@@ -1,7 +1,6 @@
 /// 视频来源规范刮削协调器：按作品识别、抓取、写 v77/兼容投影并安全导出 NFO/图片。
 library;
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -32,13 +31,17 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 class VideoSourceScrapeCoordinator
-    implements VideoSourceScrapeRunner, VideoSourceScrapeInterruptible {
+    implements
+        VideoSourceScrapeRunner,
+        VideoSourceScrapeInterruptible,
+        VideoSourceScrapeManualBinding {
   VideoSourceScrapeCoordinator({
     required this.database,
     required this.config,
     VideoMetadataProviderRegistry? registry,
     VideoMetadataImageProvider? fanartProvider,
     VideoMetadataAssetDownloader? assetDownloader,
+    this.onWorkScraped,
   })  : registry = registry ?? _createRegistry(config),
         fanartProvider = fanartProvider ??
             FanartVideoImageProvider(apiKey: config.fanartApiKey),
@@ -57,6 +60,17 @@ class VideoSourceScrapeCoordinator
   final bool _ownsFanartProvider;
   final bool _ownsAssetDownloader;
   final VideoMetadataDatabaseStore _store;
+
+  /// 一个作品刮完（规范数据已落库、sidecar 已写）后的通知。
+  ///
+  /// 刮削本身**不做**字幕：它是全仓唯一解析出规范身份（AniList/TMDB id + 原名）
+  /// 的地方，而字幕搜索的准确率几乎完全取决于身份准不准。把「谁需要字幕」这个
+  /// 事实播出去，由消费方（AppModel → VideoSubtitleBackfillService）决定要不要
+  /// 补、按什么偏好补——刮削协调器不该长出网络字幕依赖，也不该被字幕失败拖慢。
+  ///
+  /// 回调抛出的异常会被吞掉并记进本次 run 的 warnings，绝不让补字幕影响刮削结论。
+  final Future<void> Function(VideoScrapedWorkNotice notice)? onWorkScraped;
+
   final Set<int> _interruptedRunIds = <int>{};
   int? _activeRunId;
 
@@ -98,6 +112,106 @@ class VideoSourceScrapeCoordinator
         },
         runScope: 'work',
       );
+
+  @override
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required String query,
+  }) async {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      return const <VideoSourceScrapeConfirmationCandidate>[];
+    }
+    final VideoSourceScrapeWork work = await _plannedWork(source, workTitle);
+    final VideoMetadataProvider? provider =
+        _manualSearchProvider(await _sourceProvider(source));
+    if (provider == null) {
+      return const <VideoSourceScrapeConfirmationCandidate>[];
+    }
+    final List<VideoMetadataWork> results = await provider.search(
+      VideoMetadataSearchRequest(
+        title: trimmed,
+        mediaKind: _manualMediaKind(work),
+      ),
+    );
+    return <VideoSourceScrapeConfirmationCandidate>[
+      for (final VideoMetadataWork candidate in results)
+        if (_lookupForCandidate(candidate, provider.providerKind)
+            case final VideoMetadataLookup lookup)
+          VideoSourceScrapeConfirmationCandidate(
+            lookup: lookup,
+            work: candidate,
+          ),
+    ];
+  }
+
+  @override
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) async {
+    final VideoSourceScrapeWork work = await _plannedWork(source, workTitle);
+    // 手动指定与下载导入后的精确刮削是同一件事：身份已确定，只差按它跑一遍管线。
+    // 走 [scrapeSource] 的 confirmedLookups 入口，落库、sidecar、run 审计全复用。
+    return scrapeSource(
+      source,
+      cancellationToken: cancellationToken,
+      onProgress: onProgress,
+      plannedWorks: <VideoSourceScrapeWork>[work],
+      confirmedLookups: <String, VideoMetadataLookup>{work.stableKey: lookup},
+      runScope: 'work',
+    );
+  }
+
+  Future<VideoSourceScrapeWork> _plannedWork(
+    SourceLibraryRow source,
+    String workTitle,
+  ) async {
+    final List<VideoSourceScrapeWork> works =
+        await VideoSourceWorkPlanner(database).plan(source);
+    for (final VideoSourceScrapeWork work in works) {
+      if (work.title == workTitle) return work;
+    }
+    throw VideoSourceScrapeWorkNotFound(workTitle);
+  }
+
+  Future<VideoMetadataProviderKind> _sourceProvider(
+    SourceLibraryRow source,
+  ) async =>
+      _EffectiveSourceSettings.from(
+        await database.getVideoSourceScrapeSettings(source.id),
+        config,
+        allowProtectedOverwrite: false,
+      ).provider;
+
+  /// 与 [VideoMetadataResolver] 的降级链同规则：主源可用就只用主源，主源没配才
+  /// 按枚举顺序取第一个可用源。手动搜索必须和自动识别看到同一个源，否则用户选中
+  /// 的 id 会落到一个刮削时根本不会去查的 provider 上。
+  VideoMetadataProvider? _manualSearchProvider(
+    VideoMetadataProviderKind selected,
+  ) {
+    final VideoMetadataProvider? primary = registry.provider(selected);
+    if (primary != null && primary.isAvailable) return primary;
+    for (final VideoMetadataProviderKind kind
+        in VideoMetadataProviderKind.values) {
+      final VideoMetadataProvider? provider = registry.provider(kind);
+      if (provider != null && provider.isAvailable) return provider;
+    }
+    return null;
+  }
+
+  /// 剧集/电影形态由来源计划里的真实成员决定，与 [_resolveWork] 同一判据。
+  VideoMetadataMediaKind _manualMediaKind(VideoSourceScrapeWork work) {
+    final VideoNameInfo parsed =
+        parseVideoFilename(p.basename(work.members.first.videoPath));
+    return work.isEpisodic || parsed.episode != null
+        ? VideoMetadataMediaKind.tv
+        : VideoMetadataMediaKind.movie;
+  }
 
   @override
   Future<SourceScrapeReport> scrapeSource(
@@ -302,6 +416,25 @@ class VideoSourceScrapeCoordinator
           warnings.addAll(sidecars.warnings);
           errors.addAll(sidecars.errors);
           succeeded++;
+          // 播「这个作品刮完了」。放在 succeeded++ 之后：只有真正刮成功的作品
+          // 才值得去补字幕，失败的连身份都不可信。
+          final Future<void> Function(VideoScrapedWorkNotice)? notify =
+              onWorkScraped;
+          if (notify != null) {
+            try {
+              await notify(
+                VideoScrapedWorkNotice(work: localWork, metadata: metadata),
+              );
+            } on VideoSourceScrapeCancelled {
+              rethrow;
+            } catch (error) {
+              // 补字幕失败绝不影响刮削结论——它是刮削的下游增值，不是前置条件。
+              warnings.add(SourceScrapeIssue(
+                workTitle: localWork.title,
+                message: '字幕补齐失败：$error',
+              ));
+            }
+          }
         } on VideoSourceScrapeCancelled {
           rethrow;
         } catch (error) {
@@ -1331,36 +1464,8 @@ class VideoSourceScrapeCoordinator
     );
   }
 
-  static String _reportJson(SourceScrapeReport report) => jsonEncode(
-        <String, Object?>{
-          'sourceIds': report.sourceIds,
-          'totalWorks': report.totalWorks,
-          'succeededWorks': report.succeededWorks,
-          'failedWorks': report.failedWorks,
-          'pendingConfirmations': report.pendingConfirmations,
-          'nfoWritten': report.nfoWritten,
-          'imagesWritten': report.imagesWritten,
-          'protectedArtifacts': report.protectedArtifacts,
-          'unchangedArtifacts': report.unchangedArtifacts,
-          'cancelled': report.cancelled,
-          'warnings': <Map<String, Object?>>[
-            for (final SourceScrapeIssue issue in report.warnings)
-              <String, Object?>{
-                'work': issue.workTitle,
-                'message': issue.message,
-                if (issue.path != null) 'path': issue.path,
-              },
-          ],
-          'errors': <Map<String, Object?>>[
-            for (final SourceScrapeIssue issue in report.errors)
-              <String, Object?>{
-                'work': issue.workTitle,
-                'message': issue.message,
-                if (issue.path != null) 'path': issue.path,
-              },
-          ],
-        },
-      );
+  static String _reportJson(SourceScrapeReport report) =>
+      encodeSourceScrapeReport(report);
 
   @override
   Future<void> markActiveRunInterrupted() async {
@@ -1520,4 +1625,18 @@ extension _FirstOrNull<T> on Iterable<T> {
     final Iterator<T> iterator = this.iterator;
     return iterator.moveNext() ? iterator.current : null;
   }
+}
+
+/// 「一个作品刚刮完」的事实：本地是哪些视频 + 刮出来的规范身份。
+///
+/// 刻意只带这两样：消费方要什么（补字幕 / 推送通知 / 统计）自己从这两个对象里
+/// 取，协调器不预先替它们裁剪。
+class VideoScrapedWorkNotice {
+  const VideoScrapedWorkNotice({required this.work, required this.metadata});
+
+  /// 本地作品（`work.members` 是这次涉及的 `VideoBookRow`，可能多集）。
+  final VideoSourceScrapeWork work;
+
+  /// 刮出来的规范元数据（含 ids / seasons / episodes / runtimeMinutes）。
+  final VideoMetadataWork metadata;
 }

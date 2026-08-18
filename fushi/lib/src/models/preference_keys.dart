@@ -52,6 +52,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'desktop_clipboard_window_mode',
   'dictionary_entry_font_size',
   'dictionary_update_interval',
+  // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
+  // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
+  'discovery_disabled_sources',
   'download_custom_proxy',
   'download_network_proxy_mode',
   'download_save_root',
@@ -81,6 +84,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'harmonic_frequency',
   'jimaku_api_key',
   'jimaku_default_language',
+  // bool（默认 true）：Jimaku 是否参与字幕搜索。与 jimaku_api_key 组成
+  // `enabled && key` 双门控（对齐 OpenSubtitles）。默认 true 是兼容存量：
+  // 本键出现之前「填了 key」即启用，默认 false 会让存量用户升级后失效。
+  'jimaku_enabled',
   'jimaku_pref_langs',
   'last_dictionary_update_at',
   'last_selected_deck',
@@ -107,6 +114,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mine_to_server',
   'mining_audio_quality',
   'mining_image_quality',
+  'module_games_enabled',
+  'module_manga_enabled',
+  'module_video_enabled',
+  'onboarding_completed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',
@@ -165,12 +176,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_mpv_config',
   'video_mpv_shader_dir',
   'video_remote_subtitle',
+  // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
+  // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。
+  'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
   'video_sort_mode',
+  'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
   'video_subtitle_list_font_scale_index',
@@ -178,6 +193,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_obscure_hide',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
+  'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',

@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
+import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
+import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
@@ -20,6 +23,9 @@ class _FakeStore implements VideoExternalSettingsStore {
       <List<VideoDownloadBackendPathMappingConfig>>[];
   final List<int?> targetSourceWrites = <int?>[];
   final List<String> languageWrites = <String>[];
+  final List<String> jimakuKeyWrites = <String>[];
+  final List<bool> jimakuEnabledWrites = <bool>[];
+  final List<(String, bool)> builtinSourceWrites = <(String, bool)>[];
 
   @override
   Future<VideoExternalSettingsSnapshot> load() async => snapshot;
@@ -32,6 +38,21 @@ class _FakeStore implements VideoExternalSettingsStore {
   @override
   Future<void> saveOpenSubtitlesConfig(OpenSubtitlesConfig config) async {
     openSubtitlesWrites.add(config);
+  }
+
+  @override
+  Future<void> saveJimakuApiKey(String apiKey) async {
+    jimakuKeyWrites.add(apiKey);
+  }
+
+  @override
+  Future<void> saveJimakuEnabled(bool enabled) async {
+    jimakuEnabledWrites.add(enabled);
+  }
+
+  @override
+  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) async {
+    builtinSourceWrites.add((sourceId, enabled));
   }
 
   @override
@@ -52,14 +73,21 @@ class _FakeStore implements VideoExternalSettingsStore {
   }
 }
 
-Widget _harness(_FakeStore store) => ProviderScope(
+Widget _harness(_FakeStore store, {bool onlySubtitleSources = false}) =>
+    ProviderScope(
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
           body: SizedBox(
             width: 560,
             child: SingleChildScrollView(
-              child: VideoExternalProviderSettingsSection(store: store),
+              child: VideoExternalProviderSettingsSection(
+                // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑 initState /
+                // _load），换 store 的用例会读到上一次的 store。
+                key: ValueKey<bool>(onlySubtitleSources),
+                store: store,
+                onlySubtitleSources: onlySubtitleSources,
+              ),
             ),
           ),
         ),
@@ -246,7 +274,7 @@ void main() {
     await tester.pumpWidget(_harness(store));
     await tester.pumpAndSettle();
     final Finder language = find.byKey(
-      const ValueKey<String>('video-opensubtitles-language'),
+      const ValueKey<String>('video-subtitle-default-language'),
     );
     await _show(tester, language);
     await tester.tap(language);
@@ -254,6 +282,167 @@ void main() {
     await tester.tap(find.text('中文').last);
     await tester.pumpAndSettle();
     expect(store.languageWrites.last, 'zh');
+  });
+
+  // BUG-1712：字幕来源清单必须两家都在。Jimaku 只在设置 → 视频 → 字幕露过脸，
+  // 下载页那一区只有 OpenSubtitles，用户据此以为 app 不支持 Jimaku。
+  testWidgets('both subtitle providers are editable in either placement',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    for (final bool onlySubtitleSources in <bool>[false, true]) {
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
+      );
+      await tester.pumpWidget(
+        _harness(store, onlySubtitleSources: onlySubtitleSources),
+      );
+      await tester.pumpAndSettle();
+
+      const ValueKey<String> jimakuKeyId =
+          ValueKey<String>('video-jimaku-api-key');
+      final Finder jimakuKey = find.byKey(jimakuKeyId);
+      expect(
+        jimakuKey,
+        findsOneWidget,
+        reason: 'Jimaku must be listed next to OpenSubtitles '
+            '(onlySubtitleSources=$onlySubtitleSources)',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-subtitle-default-language')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<TextField>(_textField(jimakuKeyId)).obscureText,
+        isTrue,
+      );
+
+      await _show(tester, jimakuKey);
+      await tester.enterText(jimakuKey, 'typed-key');
+      await _settleAutosave(tester);
+      expect(store.jimakuKeyWrites.last, 'typed-key');
+    }
+  });
+
+  // BUG-1712：内置 Nyaa 一直在跑（动漫），但设置里一个字都没有，用户看到的是
+  // 「Torznab（空）」= 这个 app 自己没有任何来源。
+  testWidgets('built-in Nyaa source is listed', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-builtin-source-nyaa')),
+      findsOneWidget,
+    );
+    expect(find.text('Nyaa'), findsOneWidget);
+  });
+
+  testWidgets(
+      'every built-in source has a switch that writes through the store',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    // 表驱动：内置源全表都必须有一行开关，而不是只有当年手写的那一行 Nyaa。
+    for (final BuiltinVideoResourceSource source
+        in kBuiltinVideoResourceSources) {
+      final Finder row =
+          find.byKey(ValueKey<String>('video-builtin-source-${source.id}'));
+      expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
+      await _show(tester, row);
+      expect(
+        tester.widget<SwitchListTile>(row).value,
+        isTrue,
+        reason: '${source.id} defaults to enabled',
+      );
+    }
+
+    final Finder apibayRow = find.byKey(
+      ValueKey<String>('video-builtin-source-$kApibayResourceProviderId'),
+    );
+    await _show(tester, apibayRow);
+    await tester.tap(apibayRow);
+    await tester.pumpAndSettle();
+
+    expect(
+      store.builtinSourceWrites,
+      <(String, bool)>[(kApibayResourceProviderId, false)],
+    );
+    // 本地状态立刻翻转，不等下一次 load —— 否则开关会弹回去。
+    expect(tester.widget<SwitchListTile>(apibayRow).value, isFalse);
+  });
+
+  testWidgets('a disabled built-in source renders as off',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(
+        disabledBuiltinSourceIds: <String>{kKnabenResourceProviderId},
+      ),
+    );
+
+    await tester.pumpWidget(_harness(store));
+    await tester.pumpAndSettle();
+
+    final Finder knaben = find.byKey(
+      ValueKey<String>('video-builtin-source-$kKnabenResourceProviderId'),
+    );
+    await _show(tester, knaben);
+    expect(tester.widget<SwitchListTile>(knaben).value, isFalse);
+    final Finder nyaa = find.byKey(
+      ValueKey<String>('video-builtin-source-$kNyaaResourceProviderId'),
+    );
+    await _show(tester, nyaa);
+    expect(tester.widget<SwitchListTile>(nyaa).value, isTrue);
+  });
+
+  testWidgets('Jimaku has an enabled switch beside its API key, defaulting on',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // 存量用户：填了 key、从没见过这个开关。默认必须是「开」。
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(jimakuApiKey: 'legacy-key'),
+    );
+
+    await tester.pumpWidget(_harness(store, onlySubtitleSources: true));
+    await tester.pumpAndSettle();
+
+    final Finder jimaku =
+        find.byKey(const ValueKey<String>('video-jimaku-enabled'));
+    await _show(tester, jimaku);
+    expect(tester.widget<SwitchListTile>(jimaku).value, isTrue);
+    // 与 OpenSubtitles 并列同形：两家都在同一节里各有一个启用开关。
+    expect(
+      find.byKey(const ValueKey<String>('video-opensubtitles-enabled')),
+      findsOneWidget,
+    );
+
+    await tester.tap(jimaku);
+    await tester.pumpAndSettle();
+
+    expect(store.jimakuEnabledWrites, <bool>[false]);
+    // 关掉开关不得清空 key —— 双门控的意义就是留着 key 也能停用。
+    expect(store.jimakuKeyWrites, isEmpty);
   });
 
   testWidgets('compact layout has no horizontal overflow',

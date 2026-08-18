@@ -801,6 +801,44 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('first_time_setup', false);
   }
 
+  /// 「功能模块」显隐：漫画/视频/游戏三个媒体库 tab 是否出现在底栏/侧栏。默认
+  /// 全开（与旧版行为一致）；新手引导的功能选择与 设置 → 系统 → 功能模块 写同
+  /// 一真值。games 在读取端还叠加 Windows 平台门控，这里只存用户意愿。
+  bool get moduleMangaEnabled =>
+      getPref('module_manga_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleMangaEnabled(bool value) async {
+    await setPref('module_manga_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleVideoEnabled =>
+      getPref('module_video_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleVideoEnabled(bool value) async {
+    await setPref('module_video_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleGamesEnabled =>
+      getPref('module_games_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleGamesEnabled(bool value) async {
+    await setPref('module_games_enabled', value);
+    notifyListeners();
+  }
+
+  /// 新手引导完成标志。缺省值刻意取 **true**：既有安装升级上来不重弹引导；
+  /// 全新安装在 HomePage 的 `first_time_setup` 首帧分支里显式写 false，向导
+  /// 关闭后写回 true——中途杀进程下次启动值仍是 false，会重新弹出。备份合并的
+  /// insert-if-absent 天然不会覆盖本键（描述本库自身状态，同 `first_time_setup`）。
+  bool get onboardingCompleted =>
+      getPref('onboarding_completed', defaultValue: true) as bool;
+
+  Future<void> setOnboardingCompleted({required bool value}) async {
+    await setPref('onboarding_completed', value);
+  }
+
   final int defaultMaximumDictionaryTermsInResult = 10;
 
   int get maximumTerms => getPref('maximum_terms',
@@ -1247,6 +1285,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// YouTube 显式画质目标高度（如 720/1080/2160）；0 = 自动（默认策略：编码优先、
+  /// ≤1080p，见 pickPlaybackVideoStream）。消费方把 0 换算成 null 传解析器。
+  int get youtubeQualityTargetHeight =>
+      getPref('video_youtube_quality_height', defaultValue: 0) as int;
+
+  Future<void> setYoutubeQualityTargetHeight(int height) async {
+    await setPref('video_youtube_quality_height', height < 0 ? 0 : height);
+    notifyListeners();
+  }
+
   /// 视频画面缩放/比例模式（窗口模式 + 全屏的 [Video] fit；默认 [VideoFitMode.contain]
   /// = 保持比例完整适应媒体框；已有 cover/fill 持久化值仍按原值恢复）。
   VideoFitMode get videoFitMode => VideoFitMode.fromStorage(
@@ -1339,6 +1387,21 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Jimaku 是否参与字幕搜索。与 [jimakuApiKey] 组成 `enabled && key` 双门控，
+  /// 形状对齐 OpenSubtitles（那家的 `enabled` 长在它的 config JSON 里）。
+  ///
+  /// **默认 true 是兼容性要求**：这个键出现之前，「填了 key」就等于「启用」。
+  /// 默认 false 会让所有已填 key 的存量用户在升级后 Jimaku 突然失效，且他们
+  /// 无从知道是新加了一个开关。默认 true + key 仍为空则不注册，语义与本键出现
+  /// 之前逐字一致，不需要任何迁移写入。
+  bool get jimakuEnabled =>
+      getPref('jimaku_enabled', defaultValue: true) as bool;
+
+  Future<void> setJimakuEnabled(bool value) async {
+    await setPref('jimaku_enabled', value);
+    notifyListeners();
+  }
+
   /// 每系列（番名）记住的 Jimaku 字幕语言偏好：`{ "<series 小写归一>": "<langCode>" }`。
   ///
   /// 单一 JSON map 落 KV 表（避免每系列一个 key 撑爆表）；解析失败回退空 map
@@ -1378,6 +1441,24 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setJimakuDefaultLanguage(String langCode) async {
     await setPref('jimaku_default_language', langCode);
+    notifyListeners();
+  }
+
+  /// 刮削完成后，自动为**仍缺字幕**的视频补一条在线字幕。默认开。
+  ///
+  /// 为什么默认开：下载流水线的字幕阶段本来就默认 `bestEffort`（自动配字幕一直
+  /// 是开着的），只是从来没有名字、没有开关、失败只落在任务行一句英文里，用户
+  /// 无从知道这个能力存在。给它一个名字放进设置页（可被设置搜索命中），是这个
+  /// 能力第一次变得可发现。
+  ///
+  /// 只在配好了在线字幕来源（Jimaku key / OpenSubtitles）时才有任何动作；
+  /// 且**绝不覆盖**任何已有字幕。
+  bool get videoSubtitleBackfillAfterScrape =>
+      getPref('video_subtitle_backfill_after_scrape', defaultValue: true)
+          as bool;
+
+  Future<void> setVideoSubtitleBackfillAfterScrape(bool enabled) async {
+    await setPref('video_subtitle_backfill_after_scrape', enabled);
     notifyListeners();
   }
 
@@ -2184,6 +2265,29 @@ class PreferencesRepository extends ChangeNotifier {
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
   /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
+  /// 发现页「全部源」聚合默认排除的源 id（逗号分隔）。默认排除 sukebei
+  /// （18+ 源只在用户于源下拉里**显式单选**时使用，不进默认聚合）。
+  String get discoveryDisabledSources =>
+      getPref('discovery_disabled_sources', defaultValue: 'sukebei') as String;
+
+  Future<void> setDiscoveryDisabledSources(String value) async {
+    await setPref('discovery_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 用户停用的**内置**视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
+  ///
+  /// 与 [discoveryDisabledSources] 同形：都是「一组零配置内置源，按 id 记停用」。
+  /// 用户自配的 Torznab 索引器不进这里——它们各自带 `enabled` 字段，那是配置的
+  /// 一部分，不是内置源开关。
+  String get videoResourceDisabledSources =>
+      getPref('video_resource_disabled_sources', defaultValue: '') as String;
+
+  Future<void> setVideoResourceDisabledSources(String value) async {
+    await setPref('video_resource_disabled_sources', value);
+    notifyListeners();
+  }
+
   String get downloadSaveRoot =>
       getPref('download_save_root', defaultValue: '') as String;
 

@@ -194,6 +194,94 @@ void main() {
       reason: '归属解析不到本地合集 → 占位卡落散卡网格（散卡降级）',
     );
   });
+
+  testWidgets('BUG-1699：host 归属名解析不到但透传成员行已同步落库 → 兜底救回折进合集',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 用户把本地合集改名成 'RenamedShow'（host 仍叫 'MyShow'），合集同步已把
+    // 透传成员行（键 = 对端 bookKey = title）落进本地 MediaCollectionItems。
+    final int cid = await db.createMediaCollection('RenamedShow',
+        collectionType: 'collection');
+    await db.upsertCollectionItemAt(cid, 'epub', 'Remote Vol3', 0);
+
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Remote Vol3',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'MyShow', // 本地已改名，(name,type) 解析不到
+            collectionType: 'collection',
+            sortIndex: 0,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder collectionRow =
+        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
+    expect(collectionRow, findsOneWidget);
+    final Finder remoteCard = find
+        .byKey(ValueKey<String>('remote_book_card_${safeKey('Remote Vol3')}'));
+    expect(remoteCard, findsOneWidget);
+    expect(
+      find.ancestor(of: remoteCard, matching: collectionRow),
+      findsOneWidget,
+      reason: 'host 名解析不到时须回落已同步的本地归属救回，'
+          '此前 continue 直接跳过兜底 → 散卡',
+    );
+  });
+
+  testWidgets('BUG-1699：合集同步落库后书架自动重组（无需下拉刷新/重启）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 首帧：本地无 'LateShow' 合集 → 远端占位卡散卡。
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Late Vol1',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'LateShow',
+            collectionType: 'collection',
+            sortIndex: 0,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    final Finder remoteCard = find
+        .byKey(ValueKey<String>('remote_book_card_${safeKey('Late Vol1')}'));
+    expect(
+      find.ancestor(of: remoteCard, matching: find.byType(SliverGrid)),
+      findsOneWidget,
+      reason: '前置：合集未落库时占位卡在散卡网格',
+    );
+
+    // 模拟后台合集同步落库（任意写入者：互联 live / 云清单 / 备份导入）。
+    final int cid = await db.createMediaCollection('LateShow',
+        collectionType: 'collection');
+    // 合集表 watch 有 300ms 合并窗口，等它触发映射重载。
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    final Finder collectionRow =
+        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
+    expect(collectionRow, findsOneWidget, reason: '合集落库后无需任何手动刷新即渲染合集行');
+    expect(
+      find.ancestor(of: remoteCard, matching: collectionRow),
+      findsOneWidget,
+      reason: '占位卡自动折进新落库的合集（BUG-1699 主诉：此前恒散卡直到重启）',
+    );
+  });
 }
 
 class _ListFakeRemoteBookClient implements RemoteBookClient {

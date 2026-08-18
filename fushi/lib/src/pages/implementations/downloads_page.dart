@@ -11,6 +11,8 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
+import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
@@ -45,7 +47,7 @@ class DownloadsPage extends ConsumerStatefulWidget {
 }
 
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
-  late Future<_DownloadsResourceDependencies?> _resourceDependencies;
+  late Future<_DownloadsResourceState> _resourceDependencies;
   VideoDownloadPipelineService? _resourcePipelineSnapshot;
   bool _hasLegacyAnimeTasks = false;
 
@@ -62,58 +64,97 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     _resourceDependencies = _loadResourceDependencies(appModel);
   }
 
-  Future<_DownloadsResourceDependencies?> _loadResourceDependencies([
+  Future<_DownloadsResourceState> _loadResourceDependencies([
     AppModel? current,
   ]) async {
     final AppModel appModel = current ?? ref.read(appProvider);
     final VideoResourceRegistry? registry = appModel.videoResourceRegistry;
     final VideoDownloadPipelineService? pipeline =
         appModel.videoDownloadPipelineService;
-    if (registry == null || pipeline == null) return null;
-    final List<MediaSourceRow> sources =
-        await appModel.getManagedVideoDownloadSources();
-    if (sources.isEmpty) return null;
-    try {
-      return _DownloadsResourceDependencies(
+    final bool backendReady = registry != null && pipeline != null;
+    final List<MediaSourceRow> sources = backendReady
+        ? await appModel.getManagedVideoDownloadSources()
+        : const <MediaSourceRow>[];
+    VideoDownloadBackendIdentity? identity;
+    Object? identityError;
+    // 没来源就别去连后端了：身份解析要打真后端，白连一趟还会把「缺来源」
+    // 盖成一条连接错误。
+    if (backendReady && sources.isNotEmpty) {
+      try {
+        identity = await appModel.currentVideoDownloadBackendIdentity();
+      } on Object catch (error) {
+        identityError = error;
+      }
+    }
+    final DownloadsResourceGap? gap = findDownloadsResourceGap(
+      backendReady: backendReady,
+      managedSourceCount: sources.length,
+      identityError: identityError,
+    );
+    if (gap == null &&
+        registry != null &&
+        pipeline != null &&
+        identity != null) {
+      return _DownloadsResourceReady(
         registry: registry,
         pipeline: pipeline,
-        identity: await appModel.currentVideoDownloadBackendIdentity(),
+        identity: identity,
         sources: sources,
         defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
       );
-    } on Object {
-      return null;
     }
+    // gap == null 时上面三个必然非空，这条只是让类型收敛。
+    return _DownloadsResourceBlocked(
+      gap ?? const DownloadsResourceNoBackend(),
+    );
+  }
+
+  /// 「缺受管视频来源」空态的动作：就地开来源管理对话框加一个本地视频文件夹，
+  /// 关掉后重算前置条件——不用把用户支去别的页面再走回来。
+  Future<void> _addVideoSource() async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext _) => const MediaSourcesDialog(mediaKind: 'video'),
+    );
+    if (!mounted) return;
+    setState(() {
+      _resourceDependencies = _loadResourceDependencies();
+    });
   }
 
   Widget _buildResourceTab(BuildContext tabContext) {
-    return FutureBuilder<_DownloadsResourceDependencies?>(
+    return FutureBuilder<_DownloadsResourceState>(
       future: _resourceDependencies,
       builder: (
         BuildContext context,
-        AsyncSnapshot<_DownloadsResourceDependencies?> snapshot,
+        AsyncSnapshot<_DownloadsResourceState> snapshot,
       ) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
-        final _DownloadsResourceDependencies? dependencies = snapshot.data;
-        if (dependencies == null) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.download_backend_not_configured),
-                const SizedBox(height: 12),
-                FilledButton.tonalIcon(
-                  onPressed: () =>
-                      DefaultTabController.of(tabContext).animateTo(3),
-                  icon: const Icon(Icons.settings_outlined),
-                  label: Text(t.download_open_settings),
-                ),
-              ],
-            ),
-          );
+        final _DownloadsResourceState? state = snapshot.data;
+        if (state is! _DownloadsResourceReady) {
+          final DownloadsResourceGap gap = state is _DownloadsResourceBlocked
+              ? state.gap
+              : const DownloadsResourceNoBackend();
+          return switch (gap) {
+            DownloadsResourceNoManagedSource() => _buildResourceGate(
+                message: t.download_no_managed_video_source,
+                icon: Icons.create_new_folder_outlined,
+                label: t.download_add_video_source,
+                onPressed: _addVideoSource,
+              ),
+            DownloadsResourceNoBackend(detail: final String? detail) =>
+              _buildResourceGate(
+                message: detail ?? t.download_backend_not_configured,
+                icon: Icons.settings_outlined,
+                label: t.download_open_settings,
+                onPressed: () =>
+                    DefaultTabController.of(tabContext).animateTo(3),
+              ),
+          };
         }
+        final _DownloadsResourceReady dependencies = state;
         return VideoResourceSearchSurface(
           key: const ValueKey<String>('downloads-resource-search'),
           registry: dependencies.registry,
@@ -131,6 +172,32 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 「资源」标签的空态：一句说清缺什么 + 一个直接补上它的按钮。
+  Widget _buildResourceGate({
+    required String message,
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: onPressed,
+              icon: Icon(icon),
+              label: Text(label),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -427,8 +494,22 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   }
 }
 
-class _DownloadsResourceDependencies {
-  const _DownloadsResourceDependencies({
+/// 「资源」标签的前置条件解析结果：要么齐备可用，要么缺了具体某一环。
+/// 缺什么由 [findDownloadsResourceGap] 判定（BUG-1706）。
+sealed class _DownloadsResourceState {
+  const _DownloadsResourceState();
+}
+
+/// 前置条件没齐；[gap] 说清缺的是后端还是受管视频来源。
+class _DownloadsResourceBlocked extends _DownloadsResourceState {
+  const _DownloadsResourceBlocked(this.gap);
+
+  final DownloadsResourceGap gap;
+}
+
+/// 前置条件齐备，可以搜资源并推送下载。
+class _DownloadsResourceReady extends _DownloadsResourceState {
+  const _DownloadsResourceReady({
     required this.registry,
     required this.pipeline,
     required this.identity,

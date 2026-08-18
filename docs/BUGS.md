@@ -29,11 +29,41 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1567 条。点号进各自文件。
+> 共 1597 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1692](bugs/BUG-1692-macos-lookup-popup-webview-ignores-pointer.md) | 🚧 | 🚧 | macOS 查词浮层 WebView 完全收不到指针事件（点击/拖拽全失效，Flutter 外壳正常） |
+| [BUG-1722](bugs/BUG-1722-manga-default-store-needs-network.md) | ✅ | ✅ | 默认 keiyoushi 扩展仓库绑死在首次启动能连上 github，手机上永远看不到 |
+| [BUG-1721](bugs/BUG-1721-scrape-history-no-rescrape-entry.md) | ✅ | ✅ | 后台任务历史条目无法重新刮削或手动指定作品 |
+| [BUG-1720](bugs/BUG-1720-scrape-pending-confirmation-no-entry.md) | ✅ | ✅ | 视频刮削「待确认 N」没有任何确认入口 |
+| [BUG-1719](bugs/BUG-1719-capture-workbench-topbar-sink.md) | ✅ | ✅ | 游戏捕获工作台顶栏分段条下沉跳动 |
+| [BUG-1718](bugs/BUG-1718-browser-extension-missing-dictionary-css.md) | ✅ | ✅ | 浏览器扩展查词拿不到词典自带 CSS 与词典内嵌图片，mdx 词典在插件里样式全失效 |
+| [BUG-1717](bugs/BUG-1717-manga-default-keiyoushi-store.md) | — | — | 漫画缺少默认 keiyoushi 扩展仓库（核查：develop 已内置） |
+| [BUG-1716](bugs/BUG-1716-mihon-store-remove-no-confirm.md) | ✅ | ✅ | 删除漫画扩展仓库没有确认提示，一点即删 |
+| [BUG-1715](bugs/BUG-1715-desktop-extension-icons-bypass-proxy.md) | ✅ | ✅ | 桌面漫画扩展列表不显示图标：图标请求绕过应用代理出口 |
+| [BUG-1714](bugs/BUG-1714-subtitle-policy-required-wrong-string.md) | ✅ | ✅ | 「附带字幕 · 必选」选项复用播放器控件文案，选项读不通 |
+| [BUG-1713](bugs/BUG-1713-resource-search-empty-state-hides-missing-indexer.md) | ✅ | ✅ | 未配置索引器时资源/字幕搜索显示「没有匹配的作品」，把配置缺失伪装成搜不到 |
+| [BUG-1712](bugs/BUG-1712-external-subtitle-sources-missing-jimaku.md) | ✅ | ✅ | 「外部资源与字幕来源」只列用户自配项，Jimaku 与内置 Nyaa 全不可见 |
+| [BUG-1711](bugs/BUG-1711-discovery-all-sources-shows-single-source.md) | ✅ | ✅ | 发现页「全部源」透出单个源的目录列表 |
+| [BUG-1710](bugs/BUG-1710-manga-duplicate-discover-tabs.md) | ✅ | ✅ | 漫画库两个 tab 都叫「发现」 |
+| [BUG-1709](bugs/BUG-1709-mihon-install-uses-stale-index-snapshot.md) | ✅ | ✅ | 默认 keiyoushi 仓库安装扩展报 STORE_HTTP_404：安装用的是过期索引快照 |
+| [BUG-1708](bugs/BUG-1708-update-blocked-by-self-held-files.md) | ✅ | ✅ | 自更新被自己造成的文件占用挡住且失败后 app 不回来 |
+| [BUG-1707](bugs/BUG-1707-mihon-store-legacy-index-v2.md) | ✅ | ✅ | Mihon 扩展仓库填 index.min.json 后安装必 404（legacy 分支吞掉 repo.json 的 index_v2） |
+| [BUG-1706](bugs/BUG-1706-downloads-resource-gate-message.md) | ✅ | ✅ | 下载页资源标签把「无受管视频来源」误报成「请先配置下载后端」 |
+| [BUG-1705](bugs/BUG-1705-qb-login-204.md) | ✅ | ✅ | qBittorrent 5.2+ 登录成功返回 204 被判成登录失败 |
+| [BUG-1704](bugs/BUG-1704-interconnect-collection-detail-remote-members.md) | ✅ | ✅ | 互联客户端打开合集详情显示「合集为空」：详情页只认本地视频行，丢弃 host 侧成员 |
+| [BUG-1703](bugs/BUG-1703-manga-extension-error-truncated-toast.md) | ✅ | ✅ | 扩展安装/加载失败的根因被 Android 原生 toast 截成 2 行，用户永远看不到 |
+| [BUG-1702](bugs/BUG-1702-mihon-r8-kotlin-keep.md) | ✅ | ✅ | release APK 的 R8 混淆掉宿主 Kotlin 运行时，所有 Mihon 漫画扩展 LOAD_FAILED |
+| [BUG-1701](bugs/BUG-1701-manga-webtoon-pinch-vs-scroll.md) | ✅ | ✅ | 手机端漫画条漫模式捏合缩放与上下滚动互相干扰 |
+| [BUG-1700](bugs/BUG-1700-subtitle-default-language-not-video-language.md) | ✅ | ✅ | 自动下字幕的默认语言是「不限」，实际拿到的语言随缘，不跟视频自身语言 |
+| [BUG-1699](bugs/BUG-1699-interconnect-collections-not-grouping.md) | ✅ | ✅ | 互联对端合集在客户端库页不成组显示 |
+| [BUG-1698](bugs/BUG-1698-subtitle-backfill-after-scrape.md) | ✅ | ✅ | 刮削解析出的规范身份没被字幕侧使用，且自动配字幕能力对用户完全不可见 |
+| [BUG-1697](bugs/BUG-1697-subtitle-content-never-verified.md) | ✅ | ✅ | 自动下载的字幕从不校验内容，整季合并文件被当成单集装上去 |
+| [BUG-1696](bugs/BUG-1696-subscription-blocks-download-without-subtitle.md) | ✅ | ✅ | 番剧订阅：当集 Jimaku 字幕还没上传就整条不下载，生肉早于字幕导致订阅长期不动 |
+| [BUG-1695](bugs/BUG-1695-jimaku-batch-wrong-episode-fallback.md) | ✅ | ✅ | 合集批量字幕：集号一条都对不上时静默取第一个文件，整季挂同一个错字幕 |
+| [BUG-1694](bugs/BUG-1694-jimaku-anime-filter.md) | ✅ | ✅ | Jimaku 搜索永不传 anime 参数，真人剧/日剧字幕永远 0 结果 |
+| [BUG-1693](bugs/BUG-1693-interconnect-peer-offline-misreported-as-network-error.md) | ✅ | ✅ | 互联对端关闭时误报为网络错误 |
+| [BUG-1692](bugs/BUG-1692-macos-lookup-popup-webview-ignores-pointer.md) | ✅ | ✅ | macOS 查词浮层 WebView 完全收不到指针事件（点击/拖拽全失效，Flutter 外壳正常） |
 | [BUG-1690](bugs/BUG-1690-startup-audio-warmup-interrupts-music.md) | ✅ | ✅ | 启动静音预热在音频设备上开流,打断其他应用正在播放的音乐 |
 | [BUG-1689](bugs/BUG-1689-lookup-grip-activates-main-window.md) | ✅ | ✅ | 点剪贴板查词面板把 Hibiki 主界面抬到用户窗口之上 |
 | [BUG-1688](bugs/BUG-1688-vn-chrome-inset-viewport.md) | ✅ | ✅ | VN 模式忽略 chrome inset 与页面尺寸，正文被顶栏/底栏与刘海压住（iOS 最严重） |

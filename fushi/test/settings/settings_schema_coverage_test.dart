@@ -35,6 +35,13 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 「功能模块」三开关（新手引导 PR）。写 prefsRepo（changed=true），生效点是
+  // HomePage/macOS 侧栏的可见 tab 列表——harness 里没有挂 HomePage 外壳，探不到
+  // 底栏。行为由 homeActiveTabs 纯函数用例咬住：mangaEnabled/videoEnabled/
+  // gamesEnabled=false 各自隐藏对应 tab、书架/词典/设置/下载恒在。
+  'system/Manga': 'test/pages/home_page_tabs_test.dart',
+  'system/Video': 'test/pages/home_page_tabs_test.dart',
+  'system/Galgame': 'test/pages/home_page_tabs_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
@@ -83,6 +90,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 同一实例下轮即刮）。
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
+  // BUG-1698：刮削完成后给仍缺字幕的视频补一条在线字幕。写 prefsRepo
+  // （changed=true），生效点在 AppModel._backfillSubtitlesForScrapedWork 的进场门
+  // （关=刮削回调直接 return，零字幕网络请求），不是 reader CSS / 主题树，无适用
+  // 探针；由专项纯函数测试咬住「刮削结论 → 字幕目标」这一步——那才是这个功能的
+  // 全部准确率所在（外部 id / 原名 / 季集号怎么传给 provider）。
+  'video/Auto-fetch subtitles after scraping':
+      'test/media/video/scraped_subtitle_targets_test.dart',
   // Jimaku 默认字幕语言（BUG-1189/1190 那批「Jimaku 设置统一到设置页」）。写
   // prefsRepo（changed=true），生效点是三个 Jimaku 界面打开时的语言预选（没有该
   // 系列的语言记忆时用它兜底），不在 reader CSS / 主题树里，无适用探针；由专项

@@ -411,6 +411,40 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   // 除前已恒 no-op（唯一能建 downloadId 行的写入方早已随 shelf_reorder_page 消亡）。
 
   // ── media collections (统一合集：Jellyfin 式容器 + 成员引用) ─────────
+  /// 合集两张表（media_collections / media_collection_items）的「数据变了」信号：
+  /// 任一表写入即 emit（不带数据，消费方自行重载分组映射）。
+  ///
+  /// 库页的合集折叠映射是页级快照（进页拉一次），写入方却有很多：后台合集同步
+  /// （互联 live 端点 / 云 __collections__ 清单）、备份导入、其它页面的合集编辑。
+  /// 靠「每个写入路径各自记得通知页面」必然漏——BUG-1699 实证：互联合集同步落库
+  /// 后视频页 _collectionsById 停在首帧快照，host 合集恒散卡直到重启。数据层单一
+  /// 事件源让任何写入者天然覆盖，无需逐路登记。
+  ///
+  /// 用手动 [StreamController] + [tableUpdates]，**不用** drift keyed `.watch()`
+  /// （取消订阅遗留 `Timer.run` 挂死 widget 测试，BUG-834，同
+  /// [watchDashboardDataChanges] 范式）。
+  Stream<void> watchCollectionTablesChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub = tableUpdates(
+          TableUpdateQuery
+              .onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
+            mediaCollections,
+            mediaCollectionItems,
+          ]),
+        ).listen((_) {
+          if (!controller.isClosed) controller.add(null);
+        });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 全部合集，按 sortOrder 升序、id 升序（卡片列表稳定排序，同 [getAllSeries] 范式）。
   Future<List<MediaCollectionRow>> getAllMediaCollections() =>
       (select(mediaCollections)

@@ -133,13 +133,13 @@ int main() {
                          pe.dict_name.c_str(), kTitle);
             ++g_fail;
           }
-          if (pe.pitch_positions.size() != 2) {
+          if (pe.pitches.size() != 2) {
             std::fprintf(stderr, "FAIL pitch positions count: got %zu want 2\n",
-                         pe.pitch_positions.size());
+                         pe.pitches.size());
             ++g_fail;
           } else {
-            expect_eq_int("pitch.pos0", pe.pitch_positions[0], 0);
-            expect_eq_int("pitch.pos1", pe.pitch_positions[1], 2);
+            expect_eq_int("pitch.pos0", pe.pitches[0].position, 0);
+            expect_eq_int("pitch.pos1", pe.pitches[1].position, 2);
           }
         }
       }

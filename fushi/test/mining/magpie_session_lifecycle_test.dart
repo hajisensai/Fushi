@@ -83,7 +83,7 @@ void main() {
     controller = GalHookSessionController(
       textService: texthooker,
       isWindows: true,
-      injectorResolver: ({required bool is32Bit}) => null,
+      injectorResolver: ({required bool is32Bit}) async => null,
       exe32BitProbe: (_) async => false,
       loopbackSourceFactory: _FakeLoopbackSource.new,
       windowListLoader: () async => const <ExternalWindowInfo>[],

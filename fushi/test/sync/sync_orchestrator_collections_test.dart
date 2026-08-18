@@ -11,6 +11,17 @@ import 'package:fushi_core/fushi_core.dart';
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 
+/// BUG-1699：书阶段抛出非鉴权异常（per-book catch 只兜每本书的同步体；驱动缓存
+/// 恢复等阶段级代码不在其中）时，流水线不得整轮夭折。[cachedRootFolderId] 是
+/// syncAllBooks 起手 _restoreDriveCache 的第一次后端触点，deterministic。
+class _BookStageThrowingBackend extends FakeSyncBackend {
+  _BookStageThrowingBackend(super.store);
+
+  @override
+  String? get cachedRootFolderId =>
+      throw StateError('boom: book stage failure');
+}
+
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 /// 一台设备：自有 DB + deviceId，共享同一 FakeAssetStore（模拟同一云命名空间）。
@@ -369,6 +380,50 @@ void main() {
       expect((await a.orderOf('Fav')).toSet(),
           containsAll(<String>{'x', 'legacy'}),
           reason: '删除前先吸收旧单文件知识');
+    });
+  });
+
+  group('BUG-1699 书阶段异常不吞后续合集阶段', () {
+    test('书阶段抛非鉴权异常 → run() 不抛、errors 记账、合集照常拉回本地', () async {
+      // 云端已有 devA 发布的合集清单。
+      final int cA = await a.db.createMediaCollection('Fav');
+      await a.db.addToCollection(cA, MediaKind.epub, 'x');
+      await tick();
+      await a.sync();
+
+      // devB：库里有一本书（book 阶段真的会跑），后端在书阶段起手的驱动缓存
+      // 恢复处抛 StateError（per-book catch 兜不住的阶段级异常）。
+      await b.db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'Bk',
+        title: 'Bk',
+        epubPath: '${work.path}/b/Bk/original.epub',
+        extractDir: '${work.path}/b/Bk',
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ));
+      final SyncOrchestrator orch = SyncOrchestrator(
+        db: b.db,
+        backend: _BookStageThrowingBackend(store),
+        dictionaryResourceRoot: b.tmp,
+        audioDatabaseRoot: b.tmp,
+        tempDir: b.tmp,
+        deviceId: b.deviceId,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+        syncLocalAudio: false,
+      );
+
+      // 修复前：SyncAuthError 直接冲出 run()，合集阶段整轮到不了。
+      final SyncRunReport report = await orch.run();
+
+      expect(report.errors.any((String e) => e.startsWith('books:')), isTrue,
+          reason: '书阶段失败必须留痕（不是静默吞掉）');
+      expect(await b.orderOf('Fav'), <String>['x'],
+          reason: '书阶段失败后合集阶段仍须执行，host/云合集照常落库');
     });
   });
 }

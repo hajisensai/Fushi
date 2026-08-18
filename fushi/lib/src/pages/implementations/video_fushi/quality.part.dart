@@ -129,7 +129,8 @@ extension _VideoQuality on _VideoFushiPageState {
     final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
-      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(watch);
+      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(watch,
+          playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull);
       // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。
       if (!mounted || seq != _episodeLoadSeq) return;
       _rebuild(() {

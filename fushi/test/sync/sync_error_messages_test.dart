@@ -178,4 +178,26 @@ void main() {
       );
     });
   });
+
+  group('BUG-1693 互联对端不可达的错误分型', () {
+    test('SyncPeerUnreachableError → 「配对设备无法连接」，不是裸英文原文', () {
+      final SyncPeerUnreachableError error = SyncPeerUnreachableError();
+      expect(friendlySyncError(error), equals(t.sync_err_peer_unreachable));
+      expect(
+          friendlySyncErrorDetail(error), equals(t.sync_err_peer_unreachable));
+      // 修复前的症状：任何分支都命不中 → 英文原文直接上屏。
+      expect(friendlySyncError(error),
+          isNot(contains('No reachable Fushi server address')));
+    });
+
+    test('也不是「网络错误」——对端没开 Fushi 不等于本机网络坏了', () {
+      expect(friendlySyncError(SyncPeerUnreachableError()),
+          isNot(equals(t.sync_err_network)));
+    });
+
+    test('裸 SyncBackendError 的兜底行为不变（原文可见，不吞信息）', () {
+      final SyncBackendError error = SyncBackendError('some backend detail');
+      expect(friendlySyncErrorDetail(error), equals('some backend detail'));
+    });
+  });
 }

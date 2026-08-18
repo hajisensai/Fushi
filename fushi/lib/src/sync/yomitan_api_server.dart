@@ -47,6 +47,16 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/duplicate',
 };
 
+/// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
+/// 浏览器里查词/制卡」的端点。刻意**不含** `/api/extension/status`：那是扩展 SW
+/// 启动的探活 ping（浏览器一开就发），不代表用户在用扩展查词，不该据此切 Profile。
+const Set<String> _kLookupActivityPaths = <String>{
+  '/termEntries',
+  '/tokenize',
+  '/api/lookup/dictionary',
+  '/api/mine',
+};
+
 class YomitanApiServer {
   static final RegExp _lookupTraceIdPattern =
       RegExp(r'^[A-Za-z0-9._:-]{1,64}$');
@@ -61,8 +71,10 @@ class YomitanApiServer {
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     String? Function()? extensionBuildProvider,
+    RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
+    void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     String? apiKey,
     bool allowLan = false,
@@ -75,8 +87,10 @@ class YomitanApiServer {
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
+        _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
+        _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
         _apiKey = apiKey,
         _allowLan = allowLan;
@@ -93,6 +107,8 @@ class YomitanApiServer {
   final List<String> Function()? _audioSourcesProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，按 revision 门控随查词响应下发给扩展弹窗。
+  final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后，content.js 经 bridge 回写最终基准
   // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
   // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
@@ -101,6 +117,9 @@ class YomitanApiServer {
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
   final void Function()? _onExtensionSeen;
+  // TODO-2936：查词/制卡端点被命中即回调（已过鉴权中间件，只代表真实扩展活动）。
+  // app 侧据此应用「浏览器」媒体类型的 Profile 绑定（未绑定时为 no-op）。
+  final void Function()? _onLookupActivity;
   // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」
   // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
   // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
@@ -233,6 +252,10 @@ class YomitanApiServer {
     if (_kExtensionSeenPaths.contains(path)) {
       _onExtensionSeen?.call();
     }
+    // TODO-2936：查词/制卡活动 → 应用「浏览器」媒体类型 Profile 绑定。
+    if (_kLookupActivityPaths.contains(path)) {
+      _onLookupActivity?.call();
+    }
     switch (path) {
       case '/serverVersion':
         return _json(<String, dynamic>{'version': 1});
@@ -318,6 +341,7 @@ class YomitanApiServer {
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       extensionBuildProvider: _extensionBuildProvider,
+      popupDictionaryCssProvider: _popupDictionaryCssProvider,
     );
     handlerWatch.stop();
 

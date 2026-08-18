@@ -519,6 +519,24 @@ SettingsDestination buildInterconnectDestination() {
             builder: (SettingsContext ctx) =>
                 _InterconnectBackupBackendWidget(settingsContext: ctx),
           ),
+          // apikey 同步设定重设计（2026-08-17）：service-config 接收开关。此前
+          // host 的外部服务 API key（Jimaku/TMDB/Torznab/OpenSubtitles/追番）经
+          // 互联单向下发是一条**无 UI 无开关**的隐形通道——用户既不知道配对后
+          // key 会同步过来，也关不掉。开关落设备本地（信任决策不跨设备跟随），
+          // 默认开 = 既有行为不变；关掉只是不再请求，已导入的值不回滚。
+          SettingsSwitchItem(
+            id: 'interconnect.service_config_sync',
+            title: t.sync_interconnect_service_config_toggle,
+            subtitle: t.sync_interconnect_service_config_toggle_desc,
+            icon: Icons.key_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectServiceConfigSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectServiceConfigSync = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectServiceConfigSyncEnabled(value);
+            },
+          ),
         ],
       ),
       // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
@@ -649,6 +667,9 @@ class _SyncSettingsState {
   bool interconnectSyncDictionary = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
+  // apikey 同步设定重设计（2026-08-17）：service-config（host 的外部服务 API key）
+  // 接收开关。默认 true = 既有行为；此前这条通道无 UI 无开关，用户不可见也关不掉。
+  bool interconnectServiceConfigSync = true;
   bool _loaded = false;
   bool _loading = false;
 
@@ -735,6 +756,8 @@ class _SyncSettingsState {
           await _repo.isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles =
           await _repo.isInterconnectSyncVideoFilesEnabled();
+      interconnectServiceConfigSync =
+          await _repo.isInterconnectServiceConfigSyncEnabled();
       serverEnabled = await _repo.isServerEnabled();
       hasClientConnection = (await _repo.getFushiClientUrls()).isNotEmpty;
       _loaded = true;

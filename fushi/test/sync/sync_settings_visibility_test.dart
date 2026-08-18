@@ -339,10 +339,12 @@ void main() {
         'interconnect.upload_video_files',
       ]);
       expect(dest.sections[2].visible, isNotNull);
-      // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端。
+      // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
+      // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）。
       expect(idsOf(dest.sections[3]), <String>[
         'interconnect.mine_to_server',
         'interconnect.backup_backend',
+        'interconnect.service_config_sync',
       ]);
       expect(dest.sections[3].visible, isNotNull);
       expect(idsOf(dest.sections[4]), <String>['sync.server_mode']);

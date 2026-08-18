@@ -72,6 +72,9 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   'lib/src/pages/implementations/profile_management_page.dart':
       'Profile JSON：选中即读入并落库',
   'lib/src/sync/sync_settings_schema/backup.part.dart': '备份 zip：选中即校验并恢复，不长期引用',
+  'lib/src/pages/implementations/onboarding_wizard_page.dart':
+      '新手引导「选择本地推荐包」：备份 zip 选中即走 runBackupImportFlowForFile 校验并恢复，'
+          '与 backup.part.dart 同语义，不长期引用',
   'lib/src/utils/misc/gallery_image_picker.dart': '制卡图片：选中即读字节写进卡片，不长期引用',
   'lib/src/pages/implementations/video_shader_dialog.dart':
       '着色器文件：选中即拷进 mpv_shaders 目录',

@@ -74,6 +74,19 @@ SettingsDestination buildSystemDestination() {
               settingsContext.refresh();
             },
           ),
+          // 新手引导重开入口（首启由 HomePage 自动弹一次）；引导本身只跳转
+          // 既有配置页面，不写任何功能开关。
+          SettingsNavigationItem(
+            id: 'system.onboarding_wizard',
+            title: t.onboarding_reopen,
+            icon: Icons.flag_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const OnboardingWizardPage(),
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
             title: t.low_memory_mode,
@@ -129,6 +142,51 @@ SettingsDestination buildSystemDestination() {
             subtitle: t.about_tmdb_attribution,
             icon: Icons.movie_outlined,
             builder: _buildTmdbAttributionRow,
+          ),
+        ],
+      ),
+      // 「功能模块」：漫画/视频/游戏三个媒体库 tab 的显隐开关（与新手引导的功能
+      // 选择写同一真值）。书架/词典/设置恒在，不提供开关；games 仅 Windows 显示
+      // （读取端还叠加平台门控）。
+      SettingsSection(
+        title: t.settings_section_modules,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'system.module_manga',
+            title: t.module_manga_label,
+            subtitle: t.module_toggle_hint,
+            icon: Icons.photo_library_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleMangaEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setModuleMangaEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.module_video',
+            title: t.module_video_label,
+            subtitle: t.module_toggle_hint,
+            icon: Icons.smart_display_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleVideoEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setModuleVideoEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.module_games',
+            title: t.module_games_label,
+            subtitle: t.module_toggle_hint,
+            icon: Icons.videogame_asset_outlined,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleGamesEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setModuleGamesEnabled(value);
+              settingsContext.refresh();
+            },
           ),
         ],
       ),

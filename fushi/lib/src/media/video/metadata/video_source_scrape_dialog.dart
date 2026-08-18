@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -12,6 +15,7 @@ Future<void> showVideoSourceScrapeTaskPanel({
   required VideoSourceScrapeTaskController controller,
   required Future<List<VideoSourceScrapeRunRow>> Function() loadRuns,
   Future<void> Function(VideoSourceScrapeRunRow run)? onRetry,
+  Future<SourceLibraryRow?> Function(int sourceId)? loadSource,
 }) =>
     showAppDialog<void>(
       context: context,
@@ -19,6 +23,7 @@ Future<void> showVideoSourceScrapeTaskPanel({
         controller: controller,
         loadRuns: loadRuns,
         onRetry: onRetry,
+        loadSource: loadSource,
       ),
     );
 
@@ -27,11 +32,13 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
     required this.controller,
     required this.loadRuns,
     this.onRetry,
+    this.loadSource,
   });
 
   final VideoSourceScrapeTaskController controller;
   final Future<List<VideoSourceScrapeRunRow>> Function() loadRuns;
   final Future<void> Function(VideoSourceScrapeRunRow run)? onRetry;
+  final Future<SourceLibraryRow?> Function(int sourceId)? loadSource;
 
   @override
   State<_VideoSourceScrapeTaskPanel> createState() =>
@@ -214,17 +221,17 @@ class _VideoSourceScrapeTaskPanelState
             padding: EdgeInsets.zero,
             leading: Icon(_runIcon(run.status)),
             title: Text(
-              '${_runStatusLabel(run.status)} · '
+              '${videoSourceScrapeRunStatusLabel(run.status)} · '
               '${run.provider?.toUpperCase() ?? t.nav_video}',
             ),
             subtitle: Text(_runSubtitle(run)),
             subtitleMaxLines: 3,
+            onTap: () => unawaited(_openRunDetail(run)),
             trailing: widget.onRetry != null &&
                     run.sourceId != null &&
-                    <String>{'failed', 'interrupted', 'cancelled'}
-                        .contains(run.status)
+                    scrapeRunHasUnresolvedWorks(run)
                 ? IconButton(
-                    tooltip: t.video_load_failed_retry,
+                    tooltip: t.video_source_scrape_rescrape_source,
                     onPressed: _retrying.contains(run.id)
                         ? null
                         : () => unawaited(_retry(run)),
@@ -246,7 +253,7 @@ class _VideoSourceScrapeTaskPanelState
       DateTime.fromMillisecondsSinceEpoch(run.startedAt),
     );
     final String summary = t.video_source_scrape_last_summary(
-      status: _runStatusLabel(run.status),
+      status: videoSourceScrapeRunStatusLabel(run.status),
       succeeded: run.succeededWorks,
       pending: run.pendingConfirmations,
       failed: run.failedWorks,
@@ -270,6 +277,30 @@ class _VideoSourceScrapeTaskPanelState
     }
   }
 
+  /// 点历史条目 = 打开这次 run 的可操作详情：逐条作品的待确认/失败原因，
+  /// 以及「手动指定作品」和「重新刮削此来源」。
+  Future<void> _openRunDetail(VideoSourceScrapeRunRow run) async {
+    final int? sourceId = run.sourceId;
+    final Future<SourceLibraryRow?> Function(int sourceId)? loadSource =
+        widget.loadSource;
+    final SourceLibraryRow? source = sourceId == null || loadSource == null
+        ? null
+        : await loadSource(sourceId);
+    if (!mounted) return;
+    final Future<void> Function(VideoSourceScrapeRunRow run)? retry =
+        widget.onRetry;
+    final bool changed = await showVideoSourceScrapeRunDetailDialog(
+      context: context,
+      run: run,
+      source: source,
+      controller: widget.controller,
+      onRescrapeSource: retry == null || source == null
+          ? null
+          : (SourceLibraryRow _) => retry(run),
+    );
+    if (changed && mounted) await _reloadHistory();
+  }
+
   String _phaseLabel(VideoSourceScrapePhase phase) => switch (phase) {
         VideoSourceScrapePhase.planning => t.video_source_scrape_phase_planning,
         VideoSourceScrapePhase.recognizing =>
@@ -284,15 +315,6 @@ class _VideoSourceScrapeTaskPanelState
           t.video_source_scrape_status_interrupted,
         VideoSourceScrapePhase.failed => t.download_task_status_error,
         VideoSourceScrapePhase.idle => t.video_source_scrape_tasks_empty,
-      };
-
-  String _runStatusLabel(String status) => switch (status) {
-        'completed' => t.download_task_status_completed,
-        'cancelled' => t.download_status_cancelled,
-        'interrupted' => t.video_source_scrape_status_interrupted,
-        'failed' => t.download_task_status_error,
-        'running' => t.video_source_scrape_action,
-        _ => status,
       };
 
   IconData _runIcon(String status) => switch (status) {
@@ -323,29 +345,11 @@ class _VideoSourceScrapeTaskPanelState
             shrinkWrap: true,
             itemCount: confirmation.candidates.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (BuildContext context, int index) {
-              final VideoSourceScrapeConfirmationCandidate candidate =
-                  confirmation.candidates[index];
-              final String? original = candidate.work.originalTitle;
-              final String details = <String>[
-                candidate.lookup.provider.name.toUpperCase(),
-                candidate.lookup.externalId,
-                if (candidate.work.year != null) '${candidate.work.year}',
-                if (original != null && original != candidate.work.title)
-                  original,
-              ].join(' · ');
-              return FushiListItem(
-                key: ValueKey<String>(
-                  'video-source-candidate-${candidate.lookup.provider.name}-'
-                  '${candidate.lookup.externalId}',
-                ),
-                padding: EdgeInsets.zero,
-                title: Text(candidate.work.title),
-                subtitle: Text(details),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => widget.controller.confirmPending(candidate),
-              );
-            },
+            itemBuilder: (BuildContext context, int index) =>
+                VideoSourceScrapeCandidateTile(
+              candidate: confirmation.candidates[index],
+              onSelected: widget.controller.confirmPending,
+            ),
           ),
         ),
       ],

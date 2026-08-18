@@ -13,7 +13,7 @@ import '../helpers/source_guard.dart';
 /// 3. **iOS / Linux 与其它平台导航结构相同**，差异只在各视图内部内容（本文件）。
 ///
 /// 第 2、3 条为什么用源码扫描而不是 widget 测试：`MangaSourcesPage` /
-/// `MangaBrowsePage` 都从 `appProvider` 拿 `AppModel`（整库 + WebView + 一堆
+/// `MangaDiscoveryPage` 都从 `appProvider` 拿 `AppModel`（整库 + WebView + 一堆
 /// provider），挂起来测的是环境不是接线；而这两条要守的恰恰是**接线本身**。
 /// 内嵌节真能在外层 ListView 里渲染这件事，由
 /// `test/media/manga/mihon_extensions_page_test.dart` 的 embedded 用例真 pump 守。
@@ -126,39 +126,60 @@ void main() {
       );
     });
 
-    test('「浏览」视图恒有 mokuro.moe，Mihon 在线源与它并列', () {
-      final String browse = _read(<String>['manga_browse_page.dart']);
+    // BUG-1710：原「浏览」tab 已并进「发现」，这些能力现在落在发现页 +
+    // 「浏览来源」节两个文件里。断言跟着搬家，一条都没放宽。
+    test('「发现」页恒有 mokuro.moe，Mihon 在线源与它并列', () {
+      final String discovery =
+          _read(<String>['discovery', 'manga_discovery_page.dart']);
+      final String section =
+          _read(<String>['discovery', 'manga_source_catalog_section.dart']);
       expect(
-        browse,
+        discovery,
         contains('if (!MihonRuntimeFactory.isSupported) return;'),
         reason: '同上：iOS/Linux 上不得触碰 AppModel.mihonManager',
       );
       expect(
-        browse,
+        section,
         contains('t.mihon_source_browse_mokuro'),
-        reason: 'mokuro.moe 是内置来源，任何平台都必须在「浏览」里',
+        reason: 'mokuro.moe 是内置来源，任何平台都必须在「浏览来源」节里',
       );
       expect(
-        browse,
+        discovery,
         contains('MihonSourceBrowsePage('),
-        reason: '已启用的 Mihon 在线源要能从「浏览」直接进内容，不是只在设置里躺着',
+        reason: '已启用的 Mihon 在线源要能从「发现」直接进内容，不是只在设置里躺着',
       );
       expect(
-        browse,
+        discovery,
         contains('AidokuSourceBrowsePage('),
-        reason: '安装的 Aidoku 源也要从「浏览」直接进入内容目录',
+        reason: '安装的 Aidoku 源也要从「发现」直接进入内容目录',
       );
       expect(
-        browse,
+        discovery,
         contains('AidokuPackageStore.changes.listen'),
-        reason: '保活的「浏览」页必须在安装、卸载或启停后立即重载 Aidoku 源',
+        reason: '保活的「发现」页必须在安装、卸载或启停后立即重载 Aidoku 源',
       );
       // BUG-1431：mokuro.moe 与扩展源遵守同一条可见性规则——「来源」里关掉的源
-      // 不出现在「浏览」里。以前它那个开关只让目录页显示成禁用态，行照旧列着。
+      // 不出现在浏览入口里。以前它那个开关只让目录页显示成禁用态，行照旧列着。
       expect(
-        browse,
+        discovery,
         contains('isMokuroMoeSourceEnabled('),
-        reason: '「浏览」必须尊重「来源」里的 mokuro.moe 开关，否则同一节两种开关语义',
+        reason: '「发现」必须尊重「来源」里的 mokuro.moe 开关，否则同一节两种开关语义',
+      );
+      // 合并后新增的能力：来源筛选下拉 + 搜索框（与书/galgame 发现页同形）。
+      expect(
+        discovery,
+        contains('DiscoveryHeaderControls('),
+        reason: '用户口径：发现页必须有来源筛选和搜索栏',
+      );
+      expect(
+        discovery,
+        contains('MangaGlobalSearchPage('),
+        reason: '搜索提交要落到全源聚合搜索，不能只是个摆设输入框',
+      );
+      expect(
+        discovery,
+        contains('MangaSourceCatalogSection('),
+        reason: '原「浏览」tab 的来源清单必须真的出现在发现页正文里',
       );
     });
   });
@@ -173,13 +194,13 @@ void main() {
   ///
   /// 守的是**形态**不是文案：只要还有 `bottom: widget.navigation`，就说明又退回
   /// 了「标题在上、导航条在下」的两行结构。
-  group('漫画来源 / 浏览页头不再渲染重复的页面大标题', () {
-    for (final (String label, String file) in <(String, String)>[
-      ('来源', 'manga_sources_page.dart'),
-      ('浏览', 'manga_browse_page.dart'),
+  group('漫画来源 / 发现页头不再渲染重复的页面大标题', () {
+    for (final (String label, List<String> file) in <(String, List<String>)>[
+      ('来源', <String>['manga_sources_page.dart']),
+      ('发现', <String>['discovery', 'manga_discovery_page.dart']),
     ]) {
       test('$label 页：有导航条时它占页头主位（customTitle）', () {
-        final String source = _read(<String>[file]);
+        final String source = _read(file);
         expect(
           source,
           contains('FushiPageHeader.customTitle('),
@@ -188,7 +209,7 @@ void main() {
       });
 
       test('$label 页：不再把导航条挂成页头的 bottom', () {
-        final String source = _read(<String>[file]);
+        final String source = _read(file);
         expect(
           source,
           isNot(contains('bottom: widget.navigation')),

@@ -35,6 +35,8 @@ class ProfileKeys {
   static const Set<String> _excludedPrefKeys = {
     'active_profile_id',
     'first_time_setup',
+    // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
+    'onboarding_completed',
     'current_home_tab_index',
     'startup_default_dictionary_tab',
     'app_ui_scale',

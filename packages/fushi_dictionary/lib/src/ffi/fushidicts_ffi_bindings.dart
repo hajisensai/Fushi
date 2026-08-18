@@ -38,6 +38,11 @@ final class FfiPitch extends Struct {
   external Pointer<Pointer<Utf8>> transcriptions;
   @Int32()
   external int transcriptionCount;
+  // 79c55c2 二期：pattern 式 accent（"heiban" 等字符串位）；与 native FfiPitch
+  // 字段顺序严格镜像。
+  external Pointer<Pointer<Utf8>> patterns;
+  @Int32()
+  external int patternCount;
 }
 
 final class FfiTermResult extends Struct {
@@ -130,6 +135,12 @@ final class FfiKanjiResult extends Struct {
   external Pointer<Pointer<Utf8>> meanings;
   @Int32()
   external int meaningCount;
+  // v2 词典的完整 stats 键值对（JLPT/grade 等）；与 native FfiKanjiResult 字段
+  // 顺序严格镜像（stat_keys/stat_values 平行数组，长度 statCount）。
+  external Pointer<Pointer<Utf8>> statKeys;
+  external Pointer<Pointer<Utf8>> statValues;
+  @Int32()
+  external int statCount;
   external Pointer<Utf8> dictName;
 }
 
@@ -167,6 +178,15 @@ typedef _FreeQueryResultDart = void Function(Pointer<FfiQueryResult> r);
 
 typedef _LookupDart = FfiLookupResults Function(
     Pointer<Void> handle, Pointer<Utf8> text, int maxResults, int scanLength);
+
+typedef _LookupWithOptionsDart = FfiLookupResults Function(
+    Pointer<Void> handle,
+    Pointer<Utf8> text,
+    int maxResults,
+    int scanLength,
+    Pointer<Utf8> freqDict,
+    int freqOrder,
+    Pointer<Utf8> primaryReading);
 
 typedef _FreeLookupResultsDart = void Function(Pointer<FfiLookupResults> r);
 
@@ -228,6 +248,10 @@ class FushidictsFfiBindings {
     lookup = _lib.lookupFunction<
         FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32),
         _LookupDart>('fushidicts_lookup');
+    lookupWithOptions = _lib.lookupFunction<
+        FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32,
+            Pointer<Utf8>, Int32, Pointer<Utf8>),
+        _LookupWithOptionsDart>('fushidicts_lookup_with_options');
     freeLookupResults = _lib.lookupFunction<
         Void Function(Pointer<FfiLookupResults>),
         _FreeLookupResultsDart>('fushidicts_free_lookup_results');
@@ -269,6 +293,7 @@ class FushidictsFfiBindings {
   late final _QueryDart query;
   late final _FreeQueryResultDart freeQueryResult;
   late final _LookupDart lookup;
+  late final _LookupWithOptionsDart lookupWithOptions;
   late final _FreeLookupResultsDart freeLookupResults;
   late final _GetStylesDart getStyles;
   late final _FreeStylesDart freeStyles;

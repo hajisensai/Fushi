@@ -58,6 +58,10 @@
 //               环境，再在同一个挂起进程里完成 Hibiki 早注入。运行库不可用时告警并安全
 //               回退普通启动（launch 专用；Steam 协议启动会明确告警且不伪装已转区）。
 //     --dll     hook DLL 路径（默认取同目录 arch 匹配的 fushi_voice_hook.dll）
+//     --unity-runtime  Unity 资源提取运行时目录（含 fushi_unity_audio_extract.exe /
+//               classdata.tpk / vgmstream-cli.exe）。缺省=injector 同目录的
+//               unity_audio_runtime\。注入运行时现在从安装目录外的副本启动（BUG-1708），
+//               而这套提取运行时有 140 MB、仍留在安装目录，故位置必须显式下发。
 //     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
 //               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
@@ -286,8 +290,27 @@ bool RegularFileExists(const std::wstring& path) {
          (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
+// `--unity-runtime` 指定的提取运行时目录（末尾反斜杠由 NormalizeDirectory 补齐）。
+// 空 = 未指定，回退 injector 同目录，保持旧行为。
+std::wstring g_unity_runtime_override;
+
+// 目录路径归一：去掉首尾空白并保证以反斜杠结尾，便于直接拼接文件名。
+std::wstring NormalizeDirectory(const std::wstring& value) {
+  std::wstring path = value;
+  while (!path.empty() && (path.back() == L' ' || path.back() == L'\t')) {
+    path.pop_back();
+  }
+  if (path.empty()) return path;
+  if (path.back() != L'\\' && path.back() != L'/') path.push_back(L'\\');
+  return path;
+}
+
 UnityExtractorRuntime FindUnityExtractorRuntime() {
-  const std::wstring base = InjectorDir() + L"unity_audio_runtime\\";
+  // 显式下发优先：injector 自身可能跑在安装目录外的注入运行时副本里（BUG-1708），
+  // 此时「同目录」根本没有 unity_audio_runtime\。
+  const std::wstring base = g_unity_runtime_override.empty()
+                                ? InjectorDir() + L"unity_audio_runtime\\"
+                                : g_unity_runtime_override;
   UnityExtractorRuntime runtime;
   runtime.executable = base + L"fushi_unity_audio_extract.exe";
   runtime.classdata = base + L"classdata.tpk";
@@ -2607,6 +2630,8 @@ int main() {
         launch_args.emplace_back(argv[++i]);
       } else if (a == L"--dll" && i + 1 < argc) {
         dll_path = argv[++i];
+      } else if (a == L"--unity-runtime" && i + 1 < argc) {
+        g_unity_runtime_override = NormalizeDirectory(argv[++i]);
       } else if (a == L"--wait-ms" && i + 1 < argc) {
         wait_ms = static_cast<DWORD>(_wtoi(argv[++i]));
       } else if (a == L"--hold") {

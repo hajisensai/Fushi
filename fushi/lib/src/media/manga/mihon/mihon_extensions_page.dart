@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 
 /// Mihon 扩展仓库与安装管理。
@@ -116,7 +117,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _manager!.addStore(url, allowInsecure: allowInsecure);
     } catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        unawaited(showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: error,
+        ));
       }
     }
   }
@@ -159,7 +164,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _confirmAndInstall(proposal);
     } catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        unawaited(showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: error,
+        ));
       }
     }
   }
@@ -171,7 +180,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _confirmAndInstall(proposal);
     } catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        unawaited(showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: error,
+        ));
       }
     }
   }
@@ -232,7 +245,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           // 同上：保留原始预览错误；残留 staging 会在下次启动清理。
         }
       }
-      if (mounted) FushiToast.show(msg: '$error');
+      if (mounted) {
+        unawaited(showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: error,
+        ));
+      }
     }
   }
 
@@ -345,9 +364,41 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       return true;
     } catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        unawaited(showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: error,
+        ));
       }
       return false;
+    }
+  }
+
+  /// 删仓库也要确认（BUG-1716）：与卸载扩展、Aidoku 仓库删除同一套语义。
+  /// 删掉仓库会让它提供的整页可装扩展从列表消失，误触成本远高于一次确认。
+  Future<void> _removeStore(MangaExtensionStoreRow store) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        title: Text(t.mihon_store_remove),
+        content: Text('${store.name}\n${store.indexUrl}'),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: dialogContext,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _manager!.removeStore(store.indexUrl);
     }
   }
 
@@ -578,10 +629,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                     : '${store.indexUrl}\n${store.lastError}',
               ),
               trailing: IconButton(
-                tooltip: t.dialog_delete,
-                onPressed: () => unawaited(
-                  manager.removeStore(store.indexUrl),
-                ),
+                tooltip: t.mihon_store_remove,
+                onPressed: () => unawaited(_removeStore(store)),
                 icon: const Icon(Icons.delete_outline),
               ),
             ),

@@ -51,6 +51,8 @@ class AnimeDownloadPlan {
     this.jimakuLanguage,
     this.subtitleStatus = subtitleNone,
     this.subtitleNote,
+    this.subtitleAttempts = 0,
+    this.subtitleLastAttemptAtMs,
   });
 
   /// 不涉及字幕（用户没勾「一并下字幕」/ 没选中 Jimaku 条目 / 通用磁链）。
@@ -64,7 +66,22 @@ class AnimeDownloadPlan {
 
   /// 反查完一条都没配上 / Jimaku 取不到；原因见 [subtitleNote]。
   /// **不是静默失败**：任务行会显式显示，用户可用字幕对话框手动补。
+  ///
+  /// 这个状态**不是终态**：生肉普遍早于字幕数小时到数天，第一次反查扑空是常态而
+  /// 非错误。[subtitleRetryBackoff] 定义后续自动重试节奏（BUG-1696）。
   static const String subtitleUnavailable = 'unavailable';
+
+  /// [subtitleUnavailable] 后的自动重试节奏（相对上次尝试的间隔）。
+  ///
+  /// 覆盖「字幕通常在开播后几小时~两天内上传」这个真实分布；跑完就停，不无限
+  /// 轮询——一个永远不会有字幕的条目不该每轮 tick 都打一次 Jimaku。
+  static const List<Duration> subtitleRetryBackoff = <Duration>[
+    Duration(minutes: 15),
+    Duration(hours: 1),
+    Duration(hours: 4),
+    Duration(hours: 12),
+    Duration(hours: 24),
+  ];
 
   /// 内容类型：视频（走视频库入库，番剧默认）。
   static const String kindVideo = 'video';
@@ -74,6 +91,13 @@ class AnimeDownloadPlan {
 
   /// 内容类型：自动（按文件扩展名分流：视频→视频库、epub→阅读库）。
   static const String kindAuto = 'auto';
+
+  /// 内容类型：有声书（发现页种子；完成后走发现导入执行器：正文+字幕+音频
+  /// 齐则对齐入库）。
+  static const String kindAudiobook = 'audiobook';
+
+  /// 内容类型：游戏（发现页种子；完成后走发现导入执行器：解压/挑主 exe 登记）。
+  static const String kindGame = 'game';
 
   /// 下载中（qBittorrent 未完成，等下轮 tick）。
   static const String statusDownloading = 'downloading';
@@ -157,6 +181,34 @@ class AnimeDownloadPlan {
   /// [subtitleUnavailable] 时的原因（英文短语，落日志/任务行用）。
   final String? subtitleNote;
 
+  /// 已尝试反查字幕的次数（含首次）。用于在 [subtitleRetryBackoff] 里定位下一档。
+  final int subtitleAttempts;
+
+  /// 上次反查字幕的时刻（epoch 毫秒）；null = 还没试过。
+  final int? subtitleLastAttemptAtMs;
+
+  /// 自动重试**还有没有机会**（与「现在是否该重试」不同：这里不看时间）。
+  ///
+  /// UI 用它区分两种完全不同的处境：还会自动重试 = 用户什么都不用做；重试用完了
+  /// = 要么手动补要么改条目。UI 不该自己重算 backoff 算术。
+  bool get subtitleRetryPossible =>
+      jimakuEntryId != null && subtitleAttempts <= subtitleRetryBackoff.length;
+
+  /// 现在（[nowMs]）是否该再试一次自动反查字幕。
+  ///
+  /// 纯函数，无 IO——重试节奏是可单测的决策，不是散在 tick 里的 if。
+  bool shouldRetrySubtitles(int nowMs) {
+    if (subtitleStatus != subtitleUnavailable) return false;
+    // 没有 Jimaku 条目就没有可重试的来源；重试只会每轮白打一次网络。
+    if (jimakuEntryId == null) return false;
+    final int index = subtitleAttempts - 1;
+    if (index < 0) return true;
+    if (index >= subtitleRetryBackoff.length) return false;
+    final int? last = subtitleLastAttemptAtMs;
+    if (last == null) return true;
+    return nowMs - last >= subtitleRetryBackoff[index].inMilliseconds;
+  }
+
   /// 注意：可空字段（[failReason] / [collectionId] 等）无法通过 copyWith
   /// 置回 null（标准模式局限）；状态机只前进赋值，不需要清空。
   AnimeDownloadPlan copyWith({
@@ -180,6 +232,8 @@ class AnimeDownloadPlan {
     String? jimakuLanguage,
     String? subtitleStatus,
     String? subtitleNote,
+    int? subtitleAttempts,
+    int? subtitleLastAttemptAtMs,
   }) {
     return AnimeDownloadPlan(
       id: id ?? this.id,
@@ -202,6 +256,9 @@ class AnimeDownloadPlan {
       jimakuLanguage: jimakuLanguage ?? this.jimakuLanguage,
       subtitleStatus: subtitleStatus ?? this.subtitleStatus,
       subtitleNote: subtitleNote ?? this.subtitleNote,
+      subtitleAttempts: subtitleAttempts ?? this.subtitleAttempts,
+      subtitleLastAttemptAtMs:
+          subtitleLastAttemptAtMs ?? this.subtitleLastAttemptAtMs,
     );
   }
 }
@@ -237,6 +294,8 @@ Map<String, dynamic> encodeAnimeDownloadPlan(AnimeDownloadPlan plan) {
     'jimakuLanguage': plan.jimakuLanguage,
     'subtitleStatus': plan.subtitleStatus,
     'subtitleNote': plan.subtitleNote,
+    'subtitleAttempts': plan.subtitleAttempts,
+    'subtitleLastAttemptAtMs': plan.subtitleLastAttemptAtMs,
   };
 }
 
@@ -310,6 +369,14 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
               : AnimeDownloadPlan.subtitleResolved),
       subtitleNote:
           raw['subtitleNote'] is String ? raw['subtitleNote'] as String : null,
+      // 缺字段（BUG-1696 之前的计划）→ 0 次尝试。对已经是 unavailable 的老计划，
+      // 这意味着它们会在下一轮 tick 立刻获得**一次**重试机会，之后照 backoff 走。
+      // 这正是想要的：那批计划就是被旧的「取不到就算了」卡住的。
+      subtitleAttempts:
+          raw['subtitleAttempts'] is int ? raw['subtitleAttempts'] as int : 0,
+      subtitleLastAttemptAtMs: raw['subtitleLastAttemptAtMs'] is int
+          ? raw['subtitleLastAttemptAtMs'] as int
+          : null,
     );
   } catch (_) {
     return null;

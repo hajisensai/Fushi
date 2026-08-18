@@ -18,6 +18,7 @@ export 'src/pages/implementations/downloads_page.dart';
 export 'src/pages/implementations/browser_extension_page.dart';
 export 'src/pages/implementations/home_page.dart';
 export 'src/pages/implementations/text_segmentation_dialog_page.dart';
+export 'src/pages/implementations/user_dictionary_editor_page.dart';
 export 'src/pages/implementations/reader_fushi_page.dart';
 export 'src/pages/implementations/reader_fushi_history_page.dart';
 export 'src/pages/implementations/reader_pdf_page.dart';
@@ -44,6 +45,7 @@ export 'src/pages/implementations/tag_picker_page.dart';
 export 'src/pages/implementations/anki_settings_page.dart';
 export 'src/pages/implementations/profile_management_page.dart';
 export 'src/pages/implementations/miscellaneous_settings_page.dart';
+export 'src/pages/implementations/onboarding_wizard_page.dart';
 export 'src/pages/implementations/shortcut_settings_page.dart';
 
 export 'src/pages/base_page.dart';

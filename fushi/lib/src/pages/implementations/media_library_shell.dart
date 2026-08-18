@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -11,7 +10,12 @@ enum MediaLibraryViewKind {
   /// 已入库条目（书架 / 媒体库）。
   library,
 
-  /// 在线源浏览（漫画的 mokuro.moe 目录；将来小说源同位）。
+  /// 内容发现（漫画的 AniList 趋势/热门横滑行；条目是元数据，点开再匹配来源）。
+  discover,
+
+  /// 在线源浏览（书 tab 的统一发现页；视频同位）。**漫画已不再使用**：它的在线
+  /// 来源清单已并进 [discover]，两个 tab 的文案都叫「发现」曾让用户分不清
+  /// （BUG-1710）。
   browse,
 
   /// 来源管理：本地扫描根 + 在线源设置 + 漫画扩展（扩展本身就是「来源」，
@@ -152,29 +156,19 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
 
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
-    final List<MediaLibraryViewKind> values = views
-        .map((MediaLibraryViewSpec spec) => spec.kind)
-        .toList(growable: false);
-    // 分段条必须包 [FushiAdjustableSegmented]：否则它只是一堆原生按钮，只遍历已注册
-    // target 的方向焦点控制器会整个跳过（手柄/键盘用户切不了视图）。包上后是单个焦点
-    // 停靠点，左右方向键原地切视图。
-    return FushiAdjustableSegmented<MediaLibraryViewKind>(
-      values: values,
+    // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
+    // 单个焦点停靠点，左右方向键原地切视图，手柄/键盘可达）。
+    return LibrarySectionTabs<MediaLibraryViewKind>(
+      tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
+        for (final MediaLibraryViewSpec spec in views)
+          LibrarySectionTab<MediaLibraryViewKind>(
+            value: spec.kind,
+            label: spec.label,
+          ),
+      ],
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
-      focusId: FushiFocusId('${widget.focusIdPrefix}-sections'),
-      child: FushiSegmentedStrip<MediaLibraryViewKind>(
-        segments: <ButtonSegment<MediaLibraryViewKind>>[
-          for (final MediaLibraryViewSpec spec in views)
-            ButtonSegment<MediaLibraryViewKind>(
-              value: spec.kind,
-              label: Text(spec.label),
-            ),
-        ],
-        selected: selected,
-        onChanged: _select,
-      ),
     );
   }
 }

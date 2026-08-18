@@ -6,7 +6,21 @@
 
 ## Giới thiệu
 
-Đây là phần mềm miễn phí cho Android / Windows (iOS / macOS đang được lên kế hoạch) — một ứng dụng mã nguồn mở đa nền tảng mang tính đột phá, kết hợp việc đọc tiểu thuyết, phát sách nói, phát video và tra cứu từ điển.
+**Fushi — biến việc đọc ngấu nghiến và xem ngấu nghiến thành đầu vào ngôn ngữ.**
+
+Chạm vào bất kỳ từ nào để tra cứu trong khi bạn đọc tiểu thuyết, xem anime hoặc nghe sách nói, và gửi từ mới sang Anki cùng với câu chứa nó.
+
+Không có danh sách từ vựng dựng sẵn — bạn chỉ ôn lại những từ mà bạn thực sự gặp phải. Hoạt động với mọi ngôn ngữ.
+
+- 📖 Đọc EPUB · chạm để tra từ
+- 🎧 Sách nói với tô sáng theo từng câu
+- 🎬 Tra cứu phụ đề video và tạo thẻ
+- 🃏 Tạo thẻ Anki chỉ với một chạm + thống kê ôn tập
+- 📚 Đọc manga · tra từ ngay trên trang truyện bằng OCR
+- ⬇️ Tải anime và manga ngay trong ứng dụng chỉ với một chạm — tự động thêm vào thư viện của bạn, và xem được ngay cả khi vẫn đang tải
+- 🎮 Khai thác lồng tiếng Galgame (Windows) · câu thoại lồng tiếng gốc được đưa vào thẻ cùng với văn bản
+
+Nền tảng: Android / Windows / macOS / iOS (Linux có thể build từ mã nguồn; chưa có gói dựng sẵn)
 
 ### URL dự án
 
@@ -18,7 +32,9 @@ https://github.com/hajisensai/Fushi
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Android: chọn **arm64**. Windows: chọn tệp **.exe**.
+Chọn tệp phù hợp với nền tảng của bạn: **Android** — tệp APK `arm64-v8a` (mọi điện thoại trong vài năm gần đây đều dùng loại này; chỉ các thiết bị cũ hơn mới cần `armeabi-v7a`, còn trình giả lập dùng `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. **Linux** chưa có gói dựng sẵn, nên phải build từ mã nguồn.
+
+Các tệp APK có tên bắt đầu bằng `bridge-` là cầu nối chuyển đổi dành cho **người dùng Hibiki cũ**; bạn có thể bỏ qua chúng.
 
 ## Hướng dẫn cấu hình
 
@@ -27,8 +43,6 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 [Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Tải xuống qua Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
-
-**Lưu ý: nhập bản sao lưu sẽ xóa dữ liệu cục bộ. Quy trình này sẽ được cải thiện trong bản cập nhật tương lai.**
 
 ![Màn hình nhập bản sao lưu](static-assets/user-guide/import-backup.png)
 
@@ -74,6 +88,24 @@ Anki tích hợp sẵn [FSRS](https://github.com/open-spaced-repetition/fsrs4ank
 ![Thiết lập Anki trên Windows](static-assets/user-guide/anki-windows-setup.png)
 
 ### 3. Xem qua các tùy chọn trong phần Cài đặt và kiểm tra xem có điều gì bạn muốn điều chỉnh không. (Tùy chọn)
+
+Đã đến lúc bắt đầu đắm chìm.
+
+## Tính năng được đề xuất
+
+### Tra từ bên ngoài ứng dụng
+
+**Android:** chọn một từ, rồi nhấn **Dịch** hoặc **Fushi** trong menu chọn văn bản.
+
+**Windows:** chọn một từ, rồi nhấn **Ctrl+Alt+D** (có thể đổi phím tắt trong Cài đặt -> Phím tắt).
+
+### Tra từ từ bộ nhớ tạm
+
+Mọi thứ bạn sao chép đều được tra cứu tự động. Có hai chế độ hiển thị — **bảng nổi** và **cửa sổ văn bản trong suốt** — cả hai đều cấu hình được trong Cài đặt -> Tra cứu.
+
+### Tra từ trên trình duyệt / khai thác phụ đề dịch vụ phát trực tuyến (Netflix)
+
+Cài đặt tiện ích mở rộng trình duyệt từ trang chủ của Fushi.
 
 ## Lời cảm ơn
 

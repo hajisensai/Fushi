@@ -1532,6 +1532,9 @@ function fushiEnsureContainer() {
     shadow.appendChild(c);
     fushiContainer = c;
     window.__fushiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+    // BUG-1718：词条 HTML 里的图片/样式表在扩展环境下被 rewriteDictLinks 降级成占位属性
+    // （不把 sync token 写进宿主页 DOM），这里装上兑现方——否则 mdx 词典的插图恒为裂图。
+    installDictMediaPlaceholderResolver(shadow);
     // BUG-1078：弹窗滚轮监听懒装——popup.js 在扩展上下文里不再常驻 document（常驻的
     // 非 passive wheel 监听会让浏览器在所有网页放弃合成器快速滚动路径），而是把监听
     // 暴露为 window.__fushiPopupWheelListener，由这里在弹窗 host 创建时挂到 shadow
@@ -1914,6 +1917,9 @@ function fushiSendLookup(term, anchorRect, cueWindow) {
       // 的 createEntryHeader 才渲染 ♪ 按钮（与 app 内 window.audioSources 注入一致）。
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       window.needsAudio = true;
+      // BUG-1718：词典自带 CSS + 用户自定义 CSS（app 内弹窗由 Dart 注入的同名三件套）落到
+      // popup.js 读取的全局上——不落这一步 mdx 词典的自带样式在扩展里全失效。
+      applyFushiPopupCss(resp.data);
       fushiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
     });
   } catch (_) {
@@ -2052,6 +2058,7 @@ window.__fushiOnLinkClick = function (query) {
       });
       window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
       window.needsAudio = true;
+      applyFushiPopupCss(resp.data); // BUG-1718：嵌套查词同样要带上词典自带 CSS
       // 同词去重状态跟着**弹窗当前显示的词**走：弹窗里已经是子词了，鼠标再回到原文那个父词
       // 上就是一次真正的换词，必须能重查。不更新的话 fushiLastTerm 还停在父词，mousemove
       // 的同词去重会把它当「还在同一个词上」直接 return，用户从嵌套查词回不到原词。
