@@ -3553,5 +3553,12 @@
   "discovery_torrent_pushed": "Torrent task added",
   "discovery_torrent_failed": "Failed to add torrent task",
   "discovery_kind_novel": "Novels",
-  "discovery_kind_audiobook": "Audiobooks"
+  "discovery_kind_audiobook": "Audiobooks",
+  "video_source_scrape_rescrape_source": "Rescrape this source",
+  "video_source_scrape_run_detail_title": "Scrape result",
+  "video_source_scrape_run_no_issues": "No warnings or errors were recorded.",
+  "video_source_scrape_manual_search_title": "Specify the work manually",
+  "video_source_scrape_manual_search_hint": "Search the metadata provider by title, then pick the correct work.",
+  "video_source_scrape_manual_search_action": "Search",
+  "video_source_scrape_manual_search_empty": "No results"
 }

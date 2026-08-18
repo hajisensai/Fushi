@@ -3553,5 +3553,12 @@
   "discovery_torrent_pushed": "种子任务已添加",
   "discovery_torrent_failed": "种子任务添加失败",
   "discovery_kind_novel": "小说",
-  "discovery_kind_audiobook": "有声书"
+  "discovery_kind_audiobook": "有声书",
+  "video_source_scrape_rescrape_source": "重新刮削此来源",
+  "video_source_scrape_run_detail_title": "刮削结果",
+  "video_source_scrape_run_no_issues": "本次刮削没有记录警告或错误。",
+  "video_source_scrape_manual_search_title": "手动指定作品",
+  "video_source_scrape_manual_search_hint": "按标题搜索资料源，然后选中正确的作品。",
+  "video_source_scrape_manual_search_action": "搜索",
+  "video_source_scrape_manual_search_empty": "没有搜索结果"
 }
