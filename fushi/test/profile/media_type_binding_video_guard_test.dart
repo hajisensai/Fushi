@@ -42,6 +42,10 @@ void main() {
       'audiobook',
       'lyrics',
       'video',
+      // TODO-2936：漫画 / 游戏 / 浏览器三个新绑定行。
+      'manga',
+      'game',
+      'browser',
     ]) {
       expect(
         src.contains('_buildMediaTypeRow(') &&
@@ -65,12 +69,14 @@ void main() {
     final String src = videoPage.readAsStringSync();
 
     // Guard against dead UI: opening a video must resolve the video binding.
+    // (TODO-2936: the resolve+compare+switch tail is converged into
+    // ProfileViewModel.autoApplyBinding; the page delegates to it.)
     expect(
-      src.contains('resolveProfileId(') &&
+      src.contains('autoApplyBinding(') &&
           src.contains('mediaType: ProfileMediaKind.video'),
       isTrue,
       reason:
-          'video page must call resolveProfileId(mediaType: ProfileMediaKind'
+          'video page must call autoApplyBinding(mediaType: ProfileMediaKind'
           '.video) so the media-type binding actually takes effect (else it '
           'is dead UI)',
     );

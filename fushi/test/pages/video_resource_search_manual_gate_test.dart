@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 
@@ -18,6 +19,10 @@ class _RecordingResourceProvider implements VideoResourceProvider {
 
   @override
   String get id => 'torznab';
+
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
 
   @override
   int get priority => 10;

@@ -1,13 +1,15 @@
 // 默认扩展仓库自动装配（用户诉求：「漫画扩展仓库默认添加 keiyoushi」）。
 //
-// 守两条不变量：
+// 守三条不变量：
 // 1. 首次初始化把 [kMihonDefaultStoreIndexUrl] 装进来——不装的话「漫画扩展」一节
 //    开箱是空的，用户得先自己知道一个仓库地址；
 // 2. **只装一次**——用户删掉它之后重启不会被塞回来（置位 pref
 //    [kMihonDefaultStoreSeededPref]）。这条比第 1 条更容易写坏：任何「没有仓库就
-//    补一个」的写法都会把用户的删除操作每次启动撤销掉。
-//
-// 另外守「装不上不致命」：首次启动断网时初始化不得抛，且 pref 不置位（下次再试）。
+//    补一个」的写法都会把用户的删除操作每次启动撤销掉；
+// 3. **装配不依赖网络**（BUG-1722）——装配是一次本地 DB 写，连不上 github.com 也
+//    照样落地一行，目录由统一的 _refreshStores 去拉、失败写进该行的 lastError。
+//    把这两件事绑在一起就是 BUG-1722 的形状：用户手机长期连不上 github，于是一行
+//    都写不出来，扩展页永远空着，而「下次启动重试」永远也重试不成。
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -76,27 +78,51 @@ void main() {
     expect(second.fetchedStoreUrls, isEmpty);
   });
 
-  test('首次启动拉不到仓库不致命：初始化不抛，pref 不置位，下次还会再试', () async {
+  // BUG-1722 的核心回归。旧实现在种子里直接 `addStore()`，于是「默认仓库存在」被
+  // 绑死在「首次启动连得上 github.com」上：连不上就一行都不写，用户看到的是一个
+  // 空列表，而且无从知道本该有一个默认仓库；所谓「下次启动重试」在长期连不上的
+  // 网络（用户手机就是）下等于永远没有。配置和目录是两件事，配置必须无条件落地。
+  test('首次启动连不上也照样有默认仓库：行先落地，失败挂在行上，联网后自动补齐目录', () async {
     final MihonManager offline = build(_FailingStoreClient());
     await offline.initialise();
-    expect(offline.stores, isEmpty);
+
+    expect(
+      offline.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
+      contains(kMihonDefaultStoreIndexUrl),
+      reason: '装配是一次本地 DB 写，不该被网络失败取消掉',
+    );
+    final MangaExtensionStoreRow seeded = offline.stores.single;
+    expect(
+      seeded.lastError,
+      isNotNull,
+      reason: '拉不到目录要让用户在扩展页看见，而不是整个仓库静默消失',
+    );
+    expect(seeded.lastSyncAt, isNull, reason: '一次都没成功同步过');
     expect(
       offline.error,
       isNull,
-      reason: '默认仓库不是用户发起的操作，拉不到不该在扩展页挂一条报错',
+      reason: '默认仓库不是用户发起的操作，拉不到不该在扩展页顶上挂一条全局报错',
     );
     expect(
       await database.getPrefTyped<bool>(kMihonDefaultStoreSeededPref, false),
-      isFalse,
+      isTrue,
+      reason: '置位语义是「已经替用户装配过」，不是「已经拉到过目录」',
     );
     offline.dispose();
 
-    final MihonManager online = build(_FakeStoreClient());
+    // 同一个库换成能联网的下一次启动：不重新装配（pref 已置位），但统一的
+    // _refreshStores 会把目录补齐、把 lastError 清掉。
+    final _FakeStoreClient client = _FakeStoreClient();
+    final MihonManager online = build(client);
     addTearDown(online.dispose);
     await online.initialise();
+
+    expect(client.fetchedStoreUrls, <String>[kMihonDefaultStoreIndexUrl]);
+    expect(online.stores.single.lastError, isNull);
+    expect(online.stores.single.lastSyncAt, isNotNull);
     expect(
-      online.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
-      contains(kMihonDefaultStoreIndexUrl),
+      online.available.map((MihonAvailableExtension item) => item.packageName),
+      contains('org.example.rawkuma'),
     );
   });
 

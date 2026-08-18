@@ -193,6 +193,38 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
   }
 }
 
+// BUG-1718：查词弹窗「CSS 尾段」缓存（词典包自带 styles.css + 用户全局/单典自定义 CSS）。
+// 这三件套是 popup.js 渲染词典自带样式的唯一输入；app 内弹窗由 Dart 侧注入，扩展只能随查词
+// 响应拿。但它体量大（实测整库 285 KB，单本 OALDPE 就 210 KB），不能每次 hover 查词都传，
+// 故走 revision 门控：请求里带上已缓存的 revision，server 只在指纹变了（用户导入/删词典、
+// 改自定义 CSS）时才回全量，其余时候只回指纹。SW 被回收后缓存清空，下次查词自动重取一次。
+let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+
+// 把服务端这次查词响应里的 CSS 尾段并进缓存，并把**完整**尾段回填进 data，
+// 让 content.js / side-panel.js 无论命中缓存与否都能拿到同一份可直接赋给 window.* 的值。
+function fushiMergePopupCss(data) {
+  if (!data || typeof data !== 'object') return data;
+  const revision = typeof data.dictionaryStylesRevision === 'string'
+    ? data.dictionaryStylesRevision : null;
+  if (revision === null) return data; // 老 app：没有该契约，保持旧行为（扩展侧退化为空样式）
+  if (data.dictionaryStyles && typeof data.dictionaryStyles === 'object') {
+    fushiPopupCss = {
+      revision,
+      dictionaryStyles: data.dictionaryStyles,
+      globalDictCSS: typeof data.globalDictCSS === 'string' ? data.globalDictCSS : '',
+      customDictCSS: (data.customDictCSS && typeof data.customDictCSS === 'object')
+        ? data.customDictCSS : {},
+    };
+  } else if (fushiPopupCss.revision !== revision) {
+    // 指纹变了但这次响应没带正文（不该发生；真发生时宁可清空也不能用陈旧样式）。
+    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+  }
+  data.dictionaryStyles = fushiPopupCss.dictionaryStyles;
+  data.globalDictCSS = fushiPopupCss.globalDictCSS;
+  data.customDictCSS = fushiPopupCss.customDictCSS;
+  return data;
+}
+
 // BUG-726：扩展自更新。app 启动时会把 <appSupport> 的已解压副本刷新到当前内置版本，并把
 // 内容指纹写进 fushi-defaults.js（build）+ 随查词响应下发（extensionBuild）。这里比对
 // 两者：不一致 = 磁盘上已有新版而当前加载的还是旧版 → chrome.runtime.reload() 从磁盘拉新
@@ -631,6 +663,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             popupOnly: true,
             maximumTerms,
             lookupTraceId: lookupId,
+            // BUG-1718：已缓存的弹窗 CSS 尾段指纹。字段在 = 本客户端认识该契约；
+            // 与服务端当前指纹一致时服务端只回指纹不回正文（数百 KB 不上路）。
+            stylesRevision: fushiPopupCss.revision,
           }),
         });
         const headersAt = performance.now();
@@ -645,7 +680,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const parseStartedAt = performance.now();
         lookupTrace.phase = 'outer-json-parse';
         if (r.ok) {
-          try { data = JSON.parse(raw); } catch (error) { parseError = String(error && error.message || error); }
+          try {
+            data = JSON.parse(raw);
+            fushiMergePopupCss(data); // BUG-1718：并进/回填词典 CSS 尾段
+          } catch (error) { parseError = String(error && error.message || error); }
         }
         const finishedAt = performance.now();
         lookupTrace.phase = 'response-ready';

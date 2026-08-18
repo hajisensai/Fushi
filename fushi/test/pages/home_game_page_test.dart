@@ -146,9 +146,9 @@ void main() {
     expect(gameSections, findsOneWidget);
     expect(find.text(t.game_dashboard), findsOneWidget);
     expect(find.text(t.game_library), findsOneWidget);
-    expect(find.text(t.game_capture_workbench), findsOneWidget);
+    expect(find.text(t.game_capture_workbench_tab), findsOneWidget);
     expect(find.text(t.settings), findsOneWidget,
-        reason: '800px 页头必须完整呈现首页、游戏库、捕获工作台、设置四个分段');
+        reason: '800px 页头必须完整呈现首页、游戏库、工作台、设置四个分段');
     expect(
       controller.requestById(
         const FushiFocusId('game-library-tab-sections'),

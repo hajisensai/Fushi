@@ -79,7 +79,7 @@ class _MangaDiscoveryDetailPageState
     unawaited(_startMatching());
   }
 
-  /// 收集当前平台上「已启用」的两类来源，与 `MangaBrowsePage` 同一口径：
+  /// 收集当前平台上「已启用」的两类来源，与发现页的「浏览来源」节同一口径：
   /// Mihon 要求扩展与在线源都启用；Aidoku 要求包启用。
   Future<List<MangaMatchSource>> _collectSources() async {
     final List<MangaMatchSource>? override = widget.matchSourcesOverride;

@@ -15,6 +15,11 @@ const vm = require('node:vm');
 
 const SIDE_PANEL = fs.readFileSync(path.join(__dirname, 'side-panel.js'), 'utf8');
 
+// BUG-1718：真实运行时（side-panel.html）里 vendor/dict-media.js 恒在 side-panel.js 之前加载，
+// 后者依赖它导出的 applyFushiPopupCss / installDictMediaPlaceholderResolver。测试沙箱必须照同样
+// 顺序装，否则跑的是一个真实世界里不存在的、缺半个脚本集的环境。
+const DICT_MEDIA = fs.readFileSync(path.join(__dirname, 'vendor', 'dict-media.js'), 'utf8');
+
 const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
 
 function makeEl() {
@@ -111,7 +116,9 @@ function loadSidePanel() {
   };
   sandbox.window.window = sandbox.window;
   sandbox.self = sandbox.window;
-  vm.runInNewContext(SIDE_PANEL, sandbox, { filename: 'side-panel.js' });
+  vm.createContext(sandbox);
+  vm.runInContext(DICT_MEDIA, sandbox, { filename: 'vendor/dict-media.js' });
+  vm.runInContext(SIDE_PANEL, sandbox, { filename: 'side-panel.js' });
   const container = created.find((el) => el.id === 'entries-container');
   assert.ok(container, 'side-panel.js 必须建出 #entries-container 查词容器');
   return {

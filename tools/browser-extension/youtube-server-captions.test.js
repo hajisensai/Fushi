@@ -20,6 +20,18 @@ const CONTENT = path.join(__dirname, 'content.js');
 // bridge 优先窗口，与 content.js fushiMaybeFetchYoutubeCaptions 里的 8000 对齐。
 const BRIDGE_GRACE_MS = 8000;
 
+// BUG-1718：真实运行时（manifest content_scripts / side-panel.html）里 vendor/dict-media.js
+// 恒在 content.js / side-panel.js 之前加载，后者依赖它导出的 applyFushiPopupCss 与
+// installDictMediaPlaceholderResolver。测试沙箱必须照同样顺序装，否则跑的是一个真实
+// 世界里不存在的、缺半个脚本集的环境。
+const FUSHI_DICT_MEDIA = require('node:path').join(__dirname, 'vendor', 'dict-media.js');
+function loadFushiDictMedia(ctx) {
+  require('node:vm').runInContext(
+    require('node:fs').readFileSync(FUSHI_DICT_MEDIA, 'utf8'), ctx,
+    { filename: 'vendor/dict-media.js' });
+}
+
+
 // 先跑一轮让 content.js 给本 videoId 记下 bridge 起点（这一轮按契约不该请求 server），
 // 再把虚拟时钟推过宽限期，后续 fetcher.fn() 就走 server 兜底路径。
 function passBridgeGraceWindow(h) {
@@ -100,6 +112,7 @@ function loadYoutube(opts) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(ADAPTERS, 'utf8'), ctx, { filename: 'subtitle-adapters.js' });
+  loadFushiDictMedia(ctx);
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), ctx, { filename: 'content.js' });
   const fetcher = intervals.find((i) => i.ms === 1500);
   return {

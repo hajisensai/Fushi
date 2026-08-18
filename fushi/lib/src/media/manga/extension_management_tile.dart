@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
 /// Shared visual contract for Mihon APK and Aidoku AIX extension rows.
@@ -194,8 +195,11 @@ class _ExtensionIcon extends StatelessWidget {
     return SizedBox(
       width: 32,
       height: 32,
-      child: Image.network(
-        url,
+      // 🔴 不要换回 Image.network（BUG-1715）：NetworkImage 走 Flutter 内部
+      // HttpClient，接不进应用代理出口；桌面上索引经代理能拉到、图标直连
+      // raw.githubusercontent.com 却失败，列表就全是占位图标。
+      child: Image(
+        image: AppHttpImage(url),
         width: 32,
         height: 32,
         errorBuilder: (_, __, ___) => const Icon(Icons.extension_outlined),

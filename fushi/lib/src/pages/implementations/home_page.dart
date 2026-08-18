@@ -1861,6 +1861,8 @@ class _HomePageState extends BasePageState<HomePage>
         context: context,
         controller: _videoSourceScrapeController,
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+        loadSource: (int sourceId) =>
+            appModel.database.getMediaSourceById(sourceId),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;

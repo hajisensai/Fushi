@@ -13,6 +13,18 @@ const vm = require('node:vm');
 
 const CONTENT = path.join(__dirname, 'content.js');
 
+// BUG-1718：真实运行时（manifest content_scripts / side-panel.html）里 vendor/dict-media.js
+// 恒在 content.js / side-panel.js 之前加载，后者依赖它导出的 applyFushiPopupCss 与
+// installDictMediaPlaceholderResolver。测试沙箱必须照同样顺序装，否则跑的是一个真实
+// 世界里不存在的、缺半个脚本集的环境。
+const FUSHI_DICT_MEDIA = require('node:path').join(__dirname, 'vendor', 'dict-media.js');
+function loadFushiDictMedia(ctx) {
+  require('node:vm').runInContext(
+    require('node:fs').readFileSync(FUSHI_DICT_MEDIA, 'utf8'), ctx,
+    { filename: 'vendor/dict-media.js' });
+}
+
+
 // 返回带可追踪 getSelection 的 sandbox 加载结果。initialSelectionCollapsed 控制原生选区是否可见。
 function loadContent({ collapsed = false } = {}) {
   const src = fs.readFileSync(CONTENT, 'utf8');
@@ -91,6 +103,7 @@ function loadContent({ collapsed = false } = {}) {
   sandbox.window.window = sandbox.window;
 
   vm.createContext(sandbox);
+  loadFushiDictMedia(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
   return { docListeners, sent, dataset, getRemoveCalls: () => removeAllRangesCalls, nativeSelection };
 }

@@ -18,8 +18,14 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 const String kMihonDefaultStoreIndexUrl =
     'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
 
-/// 默认仓库**只自动添加一次**：置位后用户删掉它就不会被下次启动重新塞回来。
-/// 只在添加成功后置位，所以首次启动断网不会永久丢掉默认仓库。
+/// 默认仓库在拉到真实索引之前的显示名。第一次成功刷新会用仓库自报的名字覆写。
+const String kMihonDefaultStoreName = 'Keiyoushi';
+
+/// 默认仓库**只自动装配一次**：置位后用户删掉它就不会被下次启动重新塞回来。
+///
+/// 置位的判据是「装配这一步做完了」，而装配现在是一次**本地** DB 写（见
+/// [MihonManager._seedDefaultStore]），不依赖网络，所以不存在「置早了导致永不重试」
+/// 的窗口。存量里 pref 仍为 false 的用户（旧代码下装配因断网失败过）下次启动即自愈。
 const String kMihonDefaultStoreSeededPref = 'mihon_default_store_seeded';
 
 class MihonManager extends ChangeNotifier {
@@ -110,8 +116,10 @@ class MihonManager extends ChangeNotifier {
       // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
       await _recoverAbandonedPreview();
       await _clearStagedApks();
-      await _refreshStores();
+      // 种子必须在刷新**之前**：它只往本地写一行，写完紧接着的 _refreshStores
+      // 就把它的目录一并拉下来——默认仓库从此和用户自己加的仓库走同一条路径。
       await _seedDefaultStore();
+      await _refreshStores();
     } catch (exception) {
       error = '$exception';
       rethrow;
@@ -121,11 +129,17 @@ class MihonManager extends ChangeNotifier {
     }
   }
 
-  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 装进来（见常量文档）。
+  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 落成一行本地仓库配置（见常量文档）。
   ///
-  /// 放在 [_refreshStores] **之后**：那一步只刷已有仓库，首次启动是空跑，紧接着
-  /// 由 [addStore] 单独拉这一个仓库，不会把同一个索引拉两遍。整个过程吞异常——
-  /// 断网或仓库临时 502 不该让扩展子系统初始化失败（`_initialise` 会 rethrow）。
+  /// **纯本地写，不碰网络。** 早先这里调 [addStore]，于是「默认仓库存在」被绑死在
+  /// 「首次启动能连上 github.com」上：连不上就一行都不写，用户看到的是一个空列表，
+  /// 而且完全不知道本该有一个默认仓库——所谓「下次启动重试」在长期连不上的网络下
+  /// 等于永远没有。仓库**配置**和仓库**目录**是两件事：配置该无条件落地，目录由
+  /// 紧随其后的 [_refreshStores] 用和其它仓库完全相同的路径去拉，失败就照常写进
+  /// `lastError` 让用户看见并可手动重试，而不是静默消失。
+  ///
+  /// 落地后即置位 [kMihonDefaultStoreSeededPref]：置位语义是「已经替用户装配过」，
+  /// 不是「已经拉到过目录」——所以用户删掉它之后不会被下次启动塞回来。
   Future<void> _seedDefaultStore() async {
     if (!seedDefaultStore) return;
     final bool seeded = await database.getPrefTyped<bool>(
@@ -133,20 +147,30 @@ class MihonManager extends ChangeNotifier {
       false,
     );
     if (seeded) return;
-    if (stores.any((MangaExtensionStoreRow row) =>
+    // 用户自己先加过同一个地址：认下它，别用种子行覆盖掉他的排序/启用状态。
+    if (!stores.any((MangaExtensionStoreRow row) =>
         row.indexUrl == kMihonDefaultStoreIndexUrl)) {
-      await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
-      return;
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: kMihonDefaultStoreIndexUrl,
+          name: kMihonDefaultStoreName,
+          // index.pb。真实格式由第一次成功刷新覆写，这里只是让「从未刷新过」的行
+          // 也能被 _refreshStores 正常处理（etag/lastModified 都为空，不会走 304）。
+          format: MihonStoreFormat.currentProtobuf.name,
+          sortOrder: Value(_nextStoreSortOrder()),
+        ),
+      );
+      await reload();
     }
-    try {
-      await addStore(kMihonDefaultStoreIndexUrl);
-      await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
-    } catch (_) {
-      // 下次启动再试。`addStore` 的 `_guarded` 已经把失败写进 `error`，但「默认仓库
-      // 这次没拉到」不是用户发起的操作，不该在扩展页挂一条报错。
-      error = null;
-    }
+    await database.setPrefTyped<bool>(kMihonDefaultStoreSeededPref, true);
   }
+
+  int _nextStoreSortOrder() => stores.isEmpty
+      ? 0
+      : stores
+              .map((MangaExtensionStoreRow row) => row.sortOrder)
+              .reduce((int a, int b) => a > b ? a : b) +
+          1;
 
   Future<void> reload() async {
     stores = await database.getMangaExtensionStores();
@@ -170,12 +194,7 @@ class MihonManager extends ChangeNotifier {
         store,
         allowInsecure: allowInsecure,
       );
-      final int sortOrder = stores.isEmpty
-          ? 0
-          : stores
-                  .map((MangaExtensionStoreRow row) => row.sortOrder)
-                  .reduce((int a, int b) => a > b ? a : b) +
-              1;
+      final int sortOrder = _nextStoreSortOrder();
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
           indexUrl: store.indexUrl,

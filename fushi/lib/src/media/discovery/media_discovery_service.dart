@@ -82,9 +82,14 @@ class MediaDiscoveryService {
 
   /// 执行一次发现请求。
   ///
-  /// [sourceId] null = 「全部源」：扇出到所有支持该域、且具备本次请求所需
-  /// 能力（搜索/浏览）的源。深层目录浏览（`request.path != null`）的路径是
-  /// 源内语义，聚合无意义，必须指定 [sourceId]，否则 [ArgumentError]。
+  /// [sourceId] null = 「全部源」：扇出到所有支持该域且支持搜索的源。
+  ///
+  /// **聚合模式只做搜索**：目录浏览（不带 query）整个是源内语义——深层路径
+  /// （`request.path != null`）固然只对单一源有意义，根目录同理：把 N 个源的
+  /// 根目录混在一张列表里，用户既看不出哪条属于谁，也没法继续下钻。更糟的是
+  /// 「全部源」会被静默退化成「恰好声明了 supportsBrowse 的那一个源」，把单源
+  /// 的根目录冒充成聚合结果（BUG-1711）。所以非搜索请求必须指定 [sourceId]，
+  /// 否则 [ArgumentError]；UI 侧的空查询聚合态应当让用户先选来源。
   ///
   /// [disabledSourceIds] 只作用于聚合扇出（默认聚合排除的源，如 18+ 源）；
   /// 显式指定 [sourceId] 时不受它限制——用户点名即同意。
@@ -100,9 +105,10 @@ class MediaDiscoveryService {
     void Function(DiscoveryAggregateResult partial)? onUpdate,
     int maxConcurrent = 6,
   }) async {
-    if (request.path != null && sourceId == null) {
+    if (sourceId == null && !request.isSearch) {
       throw ArgumentError(
-        'deep browse paths are source-local; pass sourceId',
+        'browsing is source-local; aggregate mode only supports search, '
+        'pass sourceId',
       );
     }
 
@@ -114,13 +120,12 @@ class MediaDiscoveryService {
       }
       candidates = <MediaDiscoverySource>[source];
     } else {
+      // 聚合恒为搜索（上面的入参约束已挡下非搜索），只按搜索能力筛。
       candidates = sourcesFor(request.kind)
           .where(
             (MediaDiscoverySource s) =>
                 !disabledSourceIds.contains(s.id) &&
-                (request.isSearch
-                    ? s.capabilities.supportsSearch
-                    : s.capabilities.supportsBrowse),
+                s.capabilities.supportsSearch,
           )
           .toList();
     }
