@@ -200,17 +200,12 @@ double subtitleTimestampColumnWidth(double effectiveFontSize, bool hasHours) {
 /// 「ら 只露半个」）。所以文本列宽必须由**同一组常量**同时喂给测量与渲染，不能各算各的。
 ///
 /// 行内水平结构（见 `_buildRow`）：
-/// `padding.left(8) | [勾选框 36 + 间隙 4] | 时间戳列 | 间隙 8 | 文本(Expanded) | 动作列 | padding.right(4)`
+/// `padding.left(8) | 时间戳列 | 间隙 8 | 文本(Expanded) | 动作列 | padding.right(4)`
 const double kSubtitleRowPaddingLeft = 8;
 const double kSubtitleRowPaddingRight = 4;
 
 /// 行垂直内缩（上 8 + 下 8）。
 const double kSubtitleRowPaddingVertical = 16;
-
-/// 勾选框列宽：`Checkbox`（compact + shrinkWrap）实际是 36×36，用 [SizedBox.square] 锁死，
-/// 免得主题里的 visualDensity 改动悄悄改变列宽、把测量算歪。
-const double kSubtitleRowSelectionSize = 36;
-const double kSubtitleRowSelectionGap = 4;
 
 /// 时间戳列与文本列之间的间隙。
 const double kSubtitleRowTimestampGap = 8;
@@ -227,15 +222,10 @@ double subtitleRowTextWidth({
   required double rowWidth,
   required double effectiveFontSize,
   required double timestampColumnWidth,
-  required bool hasSelectionControls,
 }) {
-  final double selectionWidth = hasSelectionControls
-      ? kSubtitleRowSelectionSize + kSubtitleRowSelectionGap
-      : 0;
   final double width = rowWidth -
       kSubtitleRowPaddingLeft -
       kSubtitleRowPaddingRight -
-      selectionWidth -
       timestampColumnWidth -
       kSubtitleRowTimestampGap -
       subtitleRowActionsWidth(effectiveFontSize);
@@ -433,7 +423,6 @@ SubtitleListCharHit? subtitleListCharHitFromParagraph(
 enum VideoSubtitleListFilter {
   all,
   favorites,
-  selected,
 }
 
 class VideoSubtitleJumpPanel extends StatefulWidget {
@@ -451,9 +440,6 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.title,
     required this.emptyHint,
     this.loadingHint,
-    this.isCueSelectedForCard,
-    this.onToggleCueSelection,
-    this.onClearCueSelection,
     this.initialAutoScroll = true,
     this.onAutoScrollChanged,
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
@@ -486,9 +472,6 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final String title;
   final String emptyHint;
   final String? loadingHint;
-  final bool Function(AudioCue cue)? isCueSelectedForCard;
-  final void Function(AudioCue cue)? onToggleCueSelection;
-  final VoidCallback? onClearCueSelection;
 
   /// 自动滚动到当前播放句的初始开关（TODO-613）。面板内 [_autoScroll] 以此为初值，
   /// 用户切换时回调 [onAutoScrollChanged] 通知页面层落盘（默认 true，向后兼容）。
@@ -592,9 +575,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// [mergePerCharacterCueGroups]）。与 [_cachedDedupCues] 同生命周期、同一次遍历刷新。
   /// 非逐字行不在表内，[_rowCue] 回落原 cue（既有行为逐像素不变）。
   Map<int, AudioCue> _cachedMergedByRep = const <int, AudioCue>{};
-  List<AudioCue>? _cachedSelectedCues;
-  int _cachedSelectedCuesLength = -1;
-  int _cachedSelectedCount = 0;
 
   /// 行高保底下界（TODO-340 的历史视觉密度）：内容比它矮的行仍占这么高，内容更高的行
   /// 按 [_measureRowExtent] 的真实测量值走。
@@ -639,7 +619,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         rowWidth: rowWidth,
         effectiveFontSize: _effectiveFontSize,
         timestampColumnWidth: _timestampColumnWidth,
-        hasSelectionControls: _hasCueSelectionControls,
       );
 
   /// 行内字幕文本的样式。测量（[_measureRowExtent]）与渲染（[_buildRowText]）共用，
@@ -689,7 +668,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       style: _rowTextStyle(bold: bold),
       maxWidth: _rowTextWidth(rowWidth),
     );
-    // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标，以及（有勾选控件时）勾选框。
+    // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标。
     double content = textHeight;
     final double timestampHeight = _timestampLineHeight ??= _measureTextHeight(
       text: '0:00',
@@ -699,9 +678,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (content < timestampHeight) content = timestampHeight;
     final double actionHeight = _effectiveFontSize + 6;
     if (content < actionHeight) content = actionHeight;
-    if (_hasCueSelectionControls && content < kSubtitleRowSelectionSize) {
-      content = kSubtitleRowSelectionSize;
-    }
     final double extent = kSubtitleRowPaddingVertical + content;
     // 保底最小行高（历史视觉密度，TODO-340）：只抬高内容矮于它的行，绝不压低内容。
     return extent < _minRowExtent ? _minRowExtent : extent;
@@ -727,11 +703,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     }
   }
 
-  /// 行是否按「当前播放 / 已选中制卡」加粗——加粗会改变断行，故行高测量必须同步判定
-  /// （与 [_buildRowText] 的 `selected || selectedForCard` 同源，BUG-1034）。
-  bool _isRowBold(int rawIndex, AudioCue cue) =>
-      rawIndex == _representativeRaw(widget.controller.currentCueIndex) ||
-      _isCueSelectedForCard(cue);
+  /// 行是否按「当前播放」加粗——加粗会改变断行，故行高测量必须同步判定
+  /// （与 [_buildRowText] 的 `selected` 同源，BUG-1034）。
+  bool _isRowBold(int rawIndex) =>
+      rawIndex == _representativeRaw(widget.controller.currentCueIndex);
 
   double _estimatedScrollOffsetForVisibleIndex(
     int visibleIndex,
@@ -746,15 +721,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       offset += _rowExtentForCue(
         cue,
         rowWidth,
-        bold: _isRowBold(rawIndex, cue),
+        bold: _isRowBold(rawIndex),
       );
     }
     return offset;
   }
-
-  bool get _hasCueSelectionControls =>
-      widget.isCueSelectedForCard != null &&
-      widget.onToggleCueSelection != null;
 
   /// 面板「该定位到哪一行」的单一入口（BUG-1484）：跟随开启时静默 gap 回落最近一行，
   /// 关闭时保持历史「无当前句就不定位」。高亮**不走这里**（gap 里画面没字幕，列表也不该
@@ -971,7 +942,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       rowWidth,
       // 与 [_estimatedScrollOffsetForVisibleIndex] / 真实渲染同源判加粗：目标行正在播放
       // 时加粗，落在静默 gap 里回落到的最近行则不加粗（BUG-1484），否则估算行高偏大。
-      bold: _isRowBold(currentIndex, targetCue),
+      bold: _isRowBold(currentIndex),
     );
     final double target = rowOffset - (viewport / 2) + (rowExtent / 2);
     final double clamped =
@@ -1031,26 +1002,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _clearCueCaches();
     });
     _scheduleScrollToCurrentCue();
-  }
-
-  bool _isCueSelectedForCard(AudioCue cue) =>
-      widget.isCueSelectedForCard?.call(cue) ?? false;
-
-  int _selectedCueCount(List<AudioCue> cues) {
-    if (!_hasCueSelectionControls) return 0;
-    if (identical(_cachedSelectedCues, cues) &&
-        _cachedSelectedCuesLength == cues.length) {
-      return _cachedSelectedCount;
-    }
-    // BUG-841：只数去重后的代表行，与 selected 档实际渲染的行一一对应。
-    int count = 0;
-    for (final int i in _dedupedRawIndexes(cues)) {
-      if (_isCueSelectedForCard(_rowCue(cues, i))) count++;
-    }
-    _cachedSelectedCues = cues;
-    _cachedSelectedCuesLength = cues.length;
-    _cachedSelectedCount = count;
-    return count;
   }
 
   /// 收藏档可见条目数（TODO-631）。与 [VideoSubtitleListFilter.favorites] 档实际渲染的
@@ -1114,8 +1065,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 合成的整句 cue，其余行返回原 cue（既有行为逐像素不变）。
   ///
   /// 列表内一切「这一行是什么」的读取都必须经此单一入口——行文本、行高测量、点击跳转、
-  /// 逐字查词、收藏 toggle、制卡选择全部同源，才不会出现「列表显示整句、制卡只拿到一个
-  /// 字」的割裂。
+  /// 逐字查词、收藏 toggle 全部同源，才不会出现「列表显示整句、制卡只拿到一个字」的
+  /// 割裂。
   AudioCue _rowCue(List<AudioCue> cues, int rawIndex) {
     _dedupedRawIndexes(cues);
     return _cachedMergedByRep[rawIndex] ?? cues[rawIndex];
@@ -1136,9 +1087,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // `_clearCueCaches()`。若把收藏档也按 `(cues 身份, 长度, filter)` 缓存，收藏状态变
     // 后这三者都没变 → 命中陈旧成员集 → 列表延迟（计数 chip 走未缓存的
     // [_favoriteCueCount] 即时更新，列表却落后，TODO-632/BUG-359）。故收藏档**不缓存**：
-    // 每次重算（收藏档条目通常不多，成本可接受）。`all` / `selected` 仍按结构键缓存
-    // （`all` 纯结构；`selected` 经 onToggleCueSelection→页面 setState 触发 didUpdateWidget
-    // 清缓存，保留其缓存性能）。
+    // 每次重算（收藏档条目通常不多，成本可接受）。`all` 仍按结构键缓存（纯结构）。
     final bool cacheable = _filter != VideoSubtitleListFilter.favorites;
     if (cacheable &&
         identical(_cachedCues, cues) &&
@@ -1159,12 +1108,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         indexes = <int>[
           for (final int i in base)
             if (widget.isCueFavorited(_rowCue(cues, i))) i,
-        ];
-        break;
-      case VideoSubtitleListFilter.selected:
-        indexes = <int>[
-          for (final int i in base)
-            if (_isCueSelectedForCard(_rowCue(cues, i))) i,
         ];
         break;
     }
@@ -1221,9 +1164,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedFilter = null;
     _cachedVisibleIndexes = const <int>[];
     _cachedVisibleIndexByRawIndex = const <int, int>{};
-    _cachedSelectedCues = null;
-    _cachedSelectedCuesLength = -1;
-    _cachedSelectedCount = 0;
     _cachedDedupCues = null;
     _cachedDedupCuesLength = -1;
     _cachedDedupIndexes = const <int>[];
@@ -1243,8 +1183,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         return t.video_subtitle_filter_all;
       case VideoSubtitleListFilter.favorites:
         return t.video_subtitle_filter_favorites;
-      case VideoSubtitleListFilter.selected:
-        return t.video_subtitle_filter_selected;
     }
   }
 
@@ -1314,7 +1252,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                               return _rowExtentForCue(
                                 cue,
                                 dimensions.crossAxisExtent,
-                                bold: _isRowBold(rawIndex, cue),
+                                bold: _isRowBold(rawIndex),
                               );
                             },
                             itemCount: visibleIndexes.length,
@@ -1458,16 +1396,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     ),
                   ),
                 ),
-              if (_hasCueSelectionControls && _selectedCueCount(cues) > 0)
-                Tooltip(
-                  message: t.video_subtitle_list_clear_selection,
-                  child: IconButton(
-                    icon: Icon(Icons.clear_all, size: iconSize),
-                    color: cs.onSurfaceVariant,
-                    onPressed: widget.onClearCueSelection,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
             ],
           ),
         ],
@@ -1503,8 +1431,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     switch (_filter) {
       case VideoSubtitleListFilter.favorites:
         return t.video_subtitle_filter_favorites_empty;
-      case VideoSubtitleListFilter.selected:
-        return t.video_subtitle_filter_selected_empty;
       case VideoSubtitleListFilter.all:
         return widget.emptyHint;
     }
@@ -1541,30 +1467,20 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         : _rowTextKeys.putIfAbsent(index, GlobalKey.new);
     if (textKey != null) _rowHitCues[index] = cue;
     final bool hovered = index == _hoveredIndex;
-    final bool selectedForCard = _isCueSelectedForCard(cue);
-    // 收藏（[favorited]）是持久属性，不抢「正在播 / 挖词选中 / hover」的背景色：用左侧
-    // 竖色条 + 行内实心星标记，与三种瞬态背景正交叠加（BUG-264）。背景优先级仍为
-    // current > selectedForCard > hover。
+    // 收藏（[favorited]）是持久属性，不抢「正在播 / hover」的背景色：用左侧竖色条 +
+    // 行内实心星标记，与两种瞬态背景正交叠加（BUG-264）。背景优先级仍为
+    // current > hover。
     final bool favorited = widget.isCueFavorited(cue);
     final Color bg = selected
         ? cs.primaryContainer
-        : selectedForCard
-            ? cs.secondaryContainer.withValues(alpha: 0.72)
-            : favorited
-                ? cs.tertiaryContainer.withValues(alpha: 0.32)
-                : (hovered
-                    ? cs.onSurface.withValues(alpha: 0.06)
-                    : Colors.transparent);
-    final Color tsColor = selected
-        ? cs.onPrimaryContainer
-        : selectedForCard
-            ? cs.onSecondaryContainer
-            : cs.onSurfaceVariant;
-    final Color textColor = selected
-        ? cs.onPrimaryContainer
-        : selectedForCard
-            ? cs.onSecondaryContainer
-            : cs.onSurface;
+        : favorited
+            ? cs.tertiaryContainer.withValues(alpha: 0.32)
+            : (hovered
+                ? cs.onSurface.withValues(alpha: 0.06)
+                : Colors.transparent);
+    final Color tsColor =
+        selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
+    final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIndex = index),
       onExit: (_) {
@@ -1604,10 +1520,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (_hasCueSelectionControls) ...<Widget>[
-                _buildSelectionCheckbox(cs, cue, selectedForCard),
-                const SizedBox(width: kSubtitleRowSelectionGap),
-              ],
               SizedBox(
                 // TODO-567：列宽随字号缩放（[_timestampColumnWidth]），且时间戳单行
                 // 不换行、超宽省略，绝不溢出到右侧字幕文本列（修「时间被下一条字幕
@@ -1628,9 +1540,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 ),
               ),
               const SizedBox(width: kSubtitleRowTimestampGap),
-              Expanded(
-                  child: _buildRowText(
-                      cue, textColor, selected, selectedForCard, textKey)),
+              Expanded(child: _buildRowText(cue, textColor, selected, textKey)),
               // 操作按钮（跳转 / 复制 / 收藏）常驻，不再仅 hover / 选中可见（BUG-265）：
               // 长文本由上面单行省略让出空间，按钮不会挤坏布局。
               _buildRowActions(cs, cue, selected, favorited),
@@ -1649,12 +1559,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     AudioCue cue,
     Color textColor,
     bool selected,
-    bool selectedForCard,
     GlobalKey? textKey,
   ) {
     // BUG-1034：与行高测量（[_measureRowExtent]）共用同一样式，断行结果一致，末行不被裁。
     final TextStyle textStyle = _rowTextStyle(
-      bold: selected || selectedForCard,
+      bold: selected,
       color: textColor,
     );
     final void Function(AudioCue, int, Rect)? onLookup = widget.onLookupCue;
@@ -1755,31 +1664,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildSelectionCheckbox(
-    ColorScheme cs,
-    AudioCue cue,
-    bool selectedForCard,
-  ) {
-    // BUG-1034：勾选框列宽 / 高锁死为 [kSubtitleRowSelectionSize]（即 compact + shrinkWrap
-    // 下 Checkbox 的实际 36×36），让行高测量用的几何常量不被主题里的 visualDensity 改动带偏。
-    return SizedBox.square(
-      dimension: kSubtitleRowSelectionSize,
-      child: Tooltip(
-        message: selectedForCard
-            ? t.video_subtitle_list_remove_from_card
-            : t.video_subtitle_list_select_for_card,
-        child: Checkbox(
-          value: selectedForCard,
-          onChanged: (_) => widget.onToggleCueSelection?.call(cue),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          activeColor: cs.secondary,
-          checkColor: cs.onSecondary,
-        ),
-      ),
     );
   }
 

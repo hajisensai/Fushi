@@ -114,7 +114,6 @@ import 'package:fushi/src/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
-import 'package:fushi/src/media/video/video_subtitle_selection.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -1450,7 +1449,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 这里，连续查多句累积；制卡（[onMineEntry] / [onUpdateEntry]）时把草稿全部句 +
   /// 当前句用 [MiningSentenceDraft.composeText] 合成 sentence 字段、用
   /// [MiningSentenceDraft.composeAudioRange] 合并成「首句起→末句止」的单一区间（GIF +
-  /// 音频共用，与字幕列表多选 [_selectedMiningCueStarts] 同观感，但属不同入口）。制卡
+  /// 音频共用）。制卡
   /// 成功或关闭整条查词浮层栈后清空。视频所有 cue 同属一个视频文件，故区间合并恒成功
   /// （[MiningSentenceDraft] 把 [AudioPlaybackRange.audioFileIndex] 当文件键，视频统一
   /// 用 0）。reader/有声书车道（[ReaderFushiPage] 的 `_miningDraft`）共用同一草稿模型。
@@ -1558,7 +1557,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
-  final Set<int> _selectedMiningCueStarts = <int>{};
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override

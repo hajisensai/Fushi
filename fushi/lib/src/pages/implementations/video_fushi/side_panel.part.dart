@@ -21,7 +21,7 @@ part of '../video_fushi_page.dart';
 /// `_buildVideoQuickSettingsSheet`, `_buildChapterSidePanel`), the controls/rail
 /// collaborators (`_clearRailHover`, `_hideVideoControlEditOverlay`,
 /// `_hideControlPopover`, `_markControlsVisible`, `_pokeControlsVisible`,
-/// `_focusOwnership`, `_clearSelectedMiningCues`), the `_subtitleListVisible` /
+/// `_focusOwnership`), the `_subtitleListVisible` /
 /// `_episodeListVisible` notifiers and `_videoUiScale` all stay in the main
 /// shell; the extension reads/calls them through the shared private scope.
 extension _VideoSidePanel on _VideoFushiPageState {
@@ -55,7 +55,6 @@ extension _VideoSidePanel on _VideoFushiPageState {
     );
     // 与 push-aside 字幕列表互斥（TODO-314）：开任何浮层都先关字幕列表。
     if (_subtitleListVisible.value) {
-      _clearSelectedMiningCues();
       _subtitleListVisible.value = false;
     }
     // TODO-638：开任何浮层都关掉 push-aside 剧集列表（与字幕列表同处右栏，互斥）。

@@ -141,20 +141,18 @@ void main() {
 
   // TODO-637 一致性守卫：三条关闭路径（面板头部 × / Esc / 控制条字幕按钮）必须
   // 语义等价——都经单一真相源 _closeSubtitleJumpList，避免「关闭副作用各写一份」再分叉
-  // （此前 × 的 onClose 只清挖词选择 + 隐藏列表，漏 _pokeControlsVisible /
-  // _refocusVideo，致点 × 后控制条不被唤回、焦点不归还视频，键盘 / 手柄后续失焦）。
+  // （此前 × 的 onClose 只隐藏列表，漏 _pokeControlsVisible / _refocusVideo，致点 ×
+  // 后控制条不被唤回、焦点不归还视频，键盘 / 手柄后续失焦）。
   group(
       'TODO-637 close-path parity: three close paths funnel through '
       '_closeSubtitleJumpList', () {
     test(
-        '_closeSubtitleJumpList 含全部四项关闭副作用'
-        '（清挖词选择 + 隐藏列表 + 唤回控制条 + 归还焦点）', () {
+        '_closeSubtitleJumpList 含全部三项关闭副作用'
+        '（隐藏列表 + 唤回控制条 + 归还焦点）', () {
       final int start = src.indexOf('void _closeSubtitleJumpList() {');
       expect(start, greaterThan(-1), reason: '应有单一真相源 _closeSubtitleJumpList');
       final int end = src.indexOf('\n  }', start);
       final String body = src.substring(start, end);
-      expect(body.contains('_clearSelectedMiningCues()'), isTrue,
-          reason: '关闭应清理挖词选择');
       expect(body.contains('_subtitleListVisible.value = false'), isTrue,
           reason: '关闭应隐藏 push-aside 列表');
       expect(body.contains('_pokeControlsVisible()'), isTrue,

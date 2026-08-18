@@ -103,15 +103,16 @@ void main() {
     expect(closeIdx, lessThan(exitIdx), reason: 'Esc 关侧栏必须排在退页之前');
   });
 
-  test('一体式字幕侧栏支持过滤和下一张卡字幕选择', () {
+  test('一体式字幕侧栏只剩「全部 / 收藏」两档，无制卡勾选框', () {
     final String panel =
         File('lib/src/media/video/video_subtitle_jump_panel.dart')
             .readAsStringSync();
     expect(panel, contains('VideoSubtitleListFilter.all'));
     expect(panel, contains('VideoSubtitleListFilter.favorites'));
-    expect(panel, contains('VideoSubtitleListFilter.selected'));
-    expect(panel, contains('Checkbox('));
-    expect(src, contains('isCueSelectedForCard: _isCueSelectedForCard'));
-    expect(src, contains('onToggleCueSelection: _toggleCueSelectedForCard'));
+    // 「选入制卡」勾选框连同「已选」档整条删除：行左侧不再有勾选框列。
+    expect(panel, isNot(contains('VideoSubtitleListFilter.selected')));
+    expect(panel, isNot(contains('Checkbox(')));
+    expect(src, isNot(contains('isCueSelectedForCard')));
+    expect(src, isNot(contains('onToggleCueSelection')));
   });
 }

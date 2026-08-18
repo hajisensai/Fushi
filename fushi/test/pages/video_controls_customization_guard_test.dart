@@ -360,63 +360,50 @@ void main() {
     expect(page, contains('_replayCurrentCueAndPokeControls'));
   });
 
-  test('TODO-258 subtitle sidebar filters and checkbox selection are wired',
-      () {
+  test('TODO-258 subtitle sidebar filters are wired', () {
     final String panel =
         read('lib/src/media/video/video_subtitle_jump_panel.dart');
-    final String page = readVideoFushiSource();
 
     expect(panel, contains('enum VideoSubtitleListFilter'));
     expect(panel, contains('VideoSubtitleListFilter.all'));
     expect(panel, contains('VideoSubtitleListFilter.favorites'));
-    expect(panel, contains('VideoSubtitleListFilter.selected'));
-    expect(panel, contains('onToggleCueSelection'));
-    expect(panel, contains('isCueSelectedForCard'));
-    expect(panel, contains('Checkbox('));
     expect(panel, contains('onTap: () => widget.onTapCue(cue)'));
-
-    expect(page, contains('onToggleCueSelection: _toggleCueSelectedForCard'));
-    expect(page, contains('isCueSelectedForCard: _isCueSelectedForCard'));
+    // 「选入制卡」勾选框已整条移除（连同已选档 / 清空选择 / 制卡多选分支）：行内不得
+    // 再出现勾选框，否则字幕列表又多一列占宽的控件。
+    expect(panel, isNot(contains('Checkbox(')));
+    expect(panel, isNot(contains('VideoSubtitleListFilter.selected')));
   });
 
-  test('TODO-258 selected subtitles only override next card media context', () {
+  test('字幕列表多选制卡整条链路已移除，制卡上下文只剩查词草稿一条路径', () {
     final String page = readVideoFushiSource();
 
-    expect(page, contains('_selectedMiningCueStarts'));
-    expect(page, contains('_selectedMiningCueForCard'));
+    // 「选入制卡」勾选框删除后，页面侧的多选状态 / 合成 cue / 清多选副作用都必须一并
+    // 消失，否则留下永远无入口的死代码。
+    expect(page, isNot(contains('_selectedMiningCueStarts')));
+    expect(page, isNot(contains('_selectedMiningCueForCard')));
+    expect(page, isNot(contains('_clearSelectedMiningCues')));
+    expect(page, isNot(contains('buildSelectedSubtitleCueContext')));
+    expect(page, isNot(contains('usedSelectedCue')));
+
+    // TODO-270 E：制卡 cue/区间/文本解析仍收口在 _resolveVideoMiningRange，只是分支
+    // 从「多选优先 / 否则草稿」收敛为草稿单路径。
     expect(
-      page,
-      contains(
-        'final AudioCue? selectedCue = _selectedMiningCueForCard(controller);',
-      ),
-    );
-    // TODO-270 E：制卡 cue/区间/文本解析收口到 _resolveVideoMiningRange；选中字幕仍
-    // 优先（独立分支，不掺查词草稿），用其单段区间 + join 文本覆盖下一张卡上下文。
-    expect(page, contains('if (selectedCue != null) {'),
-        reason: '字幕列表多选优先覆盖制卡上下文（独立入口，不掺草稿）。');
-    // TODO-680/BUG-392：选中 cue 的时间在裁音频/封面前经 miningClipTimeMs(...delayMs)
-    // 逆变换回播放器轴（仍锁「选中 cue 驱动制卡区间」语义）。TODO-2837：主副字幕分开
-    // 调轴后 delay 改为按 cue 所属流取（delayMsForCue），调用因此换行，锚点拆成
-    // 「miningClipTimeMs 调用」+「selectedCue 端点带流感知 delay」两半。
-    expect(page, contains('clipStartMs: miningClipTimeMs('));
-    expect(page, contains('clipEndMs: miningClipTimeMs('));
+        page,
+        contains(
+            '}) _resolveVideoMiningRange(VideoPlayerController controller) {'));
+    // TODO-680/BUG-392：两端点在裁音频/封面前都经 miningClipTimeMs(...clipDelayMs)
+    // 逆变换回播放器轴（dart format 会把 clipEndMs 的调用换行，故按实参锚定）。
+    expect(page, contains('miningClipTimeMs('));
+    expect(page,
+        contains('mergedRange?.startMs ?? cue?.startMs ?? 0, clipDelayMs)'));
     expect(
-      page,
-      contains('selectedCue.startMs, controller.delayMsForCue(selectedCue))'),
-    );
-    expect(
-      page,
-      contains('selectedCue.endMs, controller.delayMsForCue(selectedCue))'),
-    );
-    expect(page, contains('usedSelectedCue: true'));
+        page, contains('mergedRange?.endMs ?? cue?.endMs ?? 0, clipDelayMs)'));
     expect(page, contains('_lastLookupCue ??'));
     expect(page, contains('_mineVideoCard('));
-    // TODO-270 D：清选中句以「制卡成功」信号 result.ankiConnect 为判据（两后端成功
-    // 时都 true），不能用仅 AnkiConnect 非空的 note id，否则 AnkiDroid 成功也不清。
-    // TODO-270 E：成功后按 usedSelectedCue 分流——多选清选中句、草稿路径清草稿。
+    // TODO-270 D：清草稿以「制卡成功」信号 result.ankiConnect 为判据（两后端成功时都
+    // true），不能用仅 AnkiConnect 非空的 note id，否则 AnkiDroid 成功也不清。
     expect(page, contains('if (result.ankiConnect) {'));
-    expect(page, contains('if (range.usedSelectedCue) {'));
-    expect(page, contains('_clearSelectedMiningCues();'));
+    expect(page, contains('_miningDraft.clear();'));
   });
 
   test('TODO-266 integrated subtitle sidebar keeps playback and card semantics',
@@ -428,23 +415,16 @@ void main() {
     expect(panel, contains('SegmentedButton<VideoSubtitleListFilter>'));
     expect(panel, contains('VideoSubtitleListFilter.all'));
     expect(panel, contains('VideoSubtitleListFilter.favorites'));
-    expect(panel, contains('VideoSubtitleListFilter.selected'));
     expect(panel, contains('onTap: () => widget.onTapCue(cue)'));
-    expect(panel, contains('Checkbox('));
-    expect(
-      panel,
-      contains('onChanged: (_) => widget.onToggleCueSelection?.call(cue)'),
-    );
 
     expect(page, contains('void _handleSubtitleJumpTap(AudioCue cue)'));
     expect(page, contains('_controller?.skipToCue(cue)'));
     // BUG-966: 锚定 cue 解析收口到纯函数 resolveVideoLookupAnchorCue（currentCue 仍是默认）。
     expect(page, contains('_lastLookupCue = resolveVideoLookupAnchorCue('));
     expect(page, contains('currentCue: controller.currentCue'));
-    expect(page, contains('buildSelectedSubtitleCueContext'));
     // TODO-1000: the raw-payload assembly moved out of the video shell into the
     // shared ImmersionMiningEngine (fields carried on the request), so the card
-    // still lands from the selected-cue context via repo.mineEntry — assert it in
+    // still lands from the resolved cue context via repo.mineEntry — assert it in
     // the engine source now (jsonEncode(req.fields)). Same invariant, new home.
     final String engine = readImmersionMiningEngineSource();
     expect(engine, contains('rawPayloadJson: jsonEncode(req.fields)'));
