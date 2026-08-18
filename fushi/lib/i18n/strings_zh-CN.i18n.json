@@ -3554,5 +3554,7 @@
   "discovery_kind_novel": "小说",
   "discovery_kind_audiobook": "有声书",
   "video_import_folder_as_source_hint": "以后自动扫描此文件夹里的新视频",
-  "manga_import_folder_as_source_hint": "以后自动扫描此文件夹里的新漫画"
+  "manga_import_folder_as_source_hint": "以后自动扫描此文件夹里的新漫画",
+  "download_no_managed_video_source": "还没有受管视频来源。下载完成的视频需要一个本地视频文件夹才能入库。",
+  "download_add_video_source": "添加视频来源"
 }

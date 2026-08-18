@@ -3554,5 +3554,7 @@
   "discovery_kind_novel": "Novels",
   "discovery_kind_audiobook": "Audiobooks",
   "video_import_folder_as_source_hint": "Keep scanning this folder for new videos",
-  "manga_import_folder_as_source_hint": "Keep scanning this folder for new manga"
+  "manga_import_folder_as_source_hint": "Keep scanning this folder for new manga",
+  "download_no_managed_video_source": "No managed video source yet. Downloads need a local video folder to land in.",
+  "download_add_video_source": "Add video source"
 }

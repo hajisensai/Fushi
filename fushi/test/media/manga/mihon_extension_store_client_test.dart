@@ -271,6 +271,159 @@ void main() {
         ),
       );
     });
+
+    // BUG: 数组分支（用户填 `/index.min.json`）拿到 `repo.json` 后曾经把 `index_v2`
+    // 整个忽略，只有对象分支跟随。keiyoushi 已迁到 `index_v2`，旧数组索引只剩占位
+    // 条目，据此推出的 `apk/` 直链在仓库里不存在 —— 装什么都 `STORE_HTTP_404`。
+    test('follows index_v2 from a legacy index.min.json entry point', () async {
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/repo.json')) {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'index_v2': 'https://legacy.example/index.json',
+                'meta': <String, Object?>{
+                  'name': 'Legacy repository',
+                  'shortName': 'Legacy',
+                  'signingKeyFingerprint': 'aabb',
+                },
+              }),
+              HttpStatus.ok,
+            );
+          }
+          if (request.url.path.endsWith('/index.json')) {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'name': 'Migrated repository',
+                'badgeLabel': 'Migrated',
+                'signingKey': 'aabb',
+                'extensionList': <String, Object?>{
+                  'extensions': <Object?>[
+                    <String, Object?>{
+                      'name': 'Migrated extension',
+                      'packageName': 'org.example.migrated',
+                      'resources': <String, Object?>{
+                        'apkUrl': 'https://cdn.example/releases/migrated.apk',
+                        'iconUrl': 'icons/migrated.png',
+                      },
+                      'extensionLib': '1.6',
+                      'versionCode': 9,
+                      'versionName': '1.6.9',
+                      'contentWarning': 'CONTENT_WARNING_SAFE',
+                      'sources': <Object?>[],
+                    },
+                  ],
+                },
+              }),
+              HttpStatus.ok,
+            );
+          }
+          return http.Response(
+            jsonEncode(<Object?>[
+              <String, Object?>{
+                'name': 'Outdated App',
+                'pkg': 'org.example.stub',
+                'apk': 'stub.apk',
+                'lang': 'all',
+                'code': 1,
+                'version': '1.4.1',
+                'nsfw': 0,
+                'sources': <Object?>[],
+              },
+            ]),
+            HttpStatus.ok,
+          );
+        }),
+      );
+      addTearDown(client.close);
+
+      final MihonStore store =
+          (await client.fetchStore('https://legacy.example/index.min.json'))
+              .store!;
+      final List<MihonAvailableExtension> extensions =
+          await client.fetchExtensions(store);
+
+      expect(store.format, MihonStoreFormat.currentJson);
+      expect(store.indexUrl, 'https://legacy.example/index.json');
+      expect(
+        extensions.single.apkUrl,
+        'https://cdn.example/releases/migrated.apk',
+      );
+    });
+
+    // `index_v2` 是仓库方自由填的地址，可以指回一个 `index.min.json` 形成环。
+    test('stops an index_v2 loop instead of recursing forever', () async {
+      int requests = 0;
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requests += 1;
+          if (request.url.path.endsWith('/repo.json')) {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'index_v2': 'https://loop.example/index.min.json',
+                'meta': <String, Object?>{'name': 'Loop repository'},
+              }),
+              HttpStatus.ok,
+            );
+          }
+          return http.Response(jsonEncode(<Object?>[]), HttpStatus.ok);
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore('https://loop.example/index.min.json'),
+        throwsA(
+          isA<MihonRuntimeException>().having(
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'TOO_MANY_INDEX_HOPS',
+          ),
+        ),
+      );
+      expect(requests, lessThan(10));
+    });
+
+    // 报错必须说清是哪个地址 404 了，但不能把 release 资产 302 过去的签名 query
+    // （`sig=` / `jwt=`）写进文案 —— 那会进 UI 和上传的日志。
+    test('names the failing URL without leaking signed query', () async {
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          if (request.url.query.isEmpty) {
+            return http.Response(
+              '',
+              HttpStatus.found,
+              headers: <String, String>{
+                HttpHeaders.locationHeader:
+                    'https://cdn.example/asset.apk?sig=SECRET&jwt=SECRET',
+              },
+            );
+          }
+          return http.Response('', HttpStatus.notFound);
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.downloadApk('https://repo.example/releases/missing.apk'),
+        throwsA(
+          isA<MihonRuntimeException>()
+              .having(
+                (MihonRuntimeException e) => e.code,
+                'code',
+                'STORE_HTTP_404',
+              )
+              .having(
+                (MihonRuntimeException e) => e.message,
+                'message',
+                allOf(
+                  contains('https://cdn.example/asset.apk'),
+                  isNot(contains('SECRET')),
+                ),
+              ),
+        ),
+      );
+    });
   });
 }
 

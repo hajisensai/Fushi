@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -106,7 +107,10 @@ void main() {
               createdAt: 0,
               orderUpdatedAt: 0,
             ),
-            loadMembers: loadMembers,
+            loadEpisodes: () async => <CollectionEpisodeSlot>[
+              for (final VideoBookRow row in await (loadMembers)())
+                CollectionEpisodeSlot.local(row),
+            ],
             onOpenEpisode: (VideoBookRow _) {},
             onChanged: () {},
           ),
