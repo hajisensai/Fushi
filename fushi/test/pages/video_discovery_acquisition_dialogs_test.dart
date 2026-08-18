@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
@@ -13,6 +15,35 @@ import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+
+/// 一个「答了但没有匹配」的来源：successfulProviderCount=1、items 为空。
+/// 与「一个来源都没有」必须是两种空态（BUG-1713）。
+class _EmptyButLiveProvider implements VideoResourceProvider {
+  @override
+  String get id => 'torznab';
+
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
+  @override
+  int get priority => 10;
+
+  @override
+  Future<ProviderBatchResult<VideoResourceCandidate>> search(
+    VideoResourceSearchRequest request,
+  ) async =>
+      ProviderBatchResult<VideoResourceCandidate>.success(
+        const <VideoResourceCandidate>[],
+      );
+
+  @override
+  Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
+      throw UnimplementedError();
+
+  @override
+  void close() {}
+}
 
 class _ResourceCandidate extends VideoResourceCandidate {
   _ResourceCandidate({
@@ -398,6 +429,118 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  // BUG-1713：一个索引器都没配时，registry 是空扇出（0 成功 0 失败），结果与
+  // 「来源都答了但没有匹配」同形。此前两者共用「没有匹配的作品」，用户只会一遍遍
+  // 换搜索词，永远看不到「你还没配来源」。
+  testWidgets('零可用来源时资源搜索给配置引导而不是没有匹配的作品', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoveryResourceSearchPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoResourceRegistry(const <VideoResourceProvider>[]),
+            sources: const <MediaSourceRow>[],
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-resource-no-provider')),
+      findsOneWidget,
+    );
+    expect(find.text(t.video_resource_no_provider_title), findsOneWidget);
+    expect(find.text(t.video_discovery_empty), findsNothing);
+  });
+
+  testWidgets('来源答了但零结果仍然是没有匹配的作品', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoveryResourceSearchPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoResourceRegistry(
+              <VideoResourceProvider>[_EmptyButLiveProvider()],
+            ),
+            sources: const <MediaSourceRow>[],
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_discovery_empty), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('video-resource-no-provider')),
+      findsNothing,
+    );
+  });
+
+  // BUG-1714：这个选项以前拼的是播放器控件的串（「必选控制必须保留在播放器上。」）。
+  testWidgets('必须有字幕的选项不复用播放器控件文案', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoveryResourceSearchPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoResourceRegistry(const <VideoResourceProvider>[]),
+            sources: const <MediaSourceRow>[],
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-resource-subtitle-policy')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.anime_download_require_subs), findsWidgets);
+    expect(
+      find.textContaining(t.video_control_reject_required),
+      findsNothing,
+    );
+  });
+
+  testWidgets('零可用字幕来源时给配置引导', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoverySubtitleSearchPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoSubtitleRegistry(const <VideoSubtitleProvider>[]),
+            pickVideo: (BuildContext context) async => null,
+            pickDirectory: (BuildContext context) async => null,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-no-provider')),
+      findsOneWidget,
+    );
+    expect(find.text(t.video_subtitle_no_provider_title), findsOneWidget);
   });
 
   testWidgets('字幕搜索使用独立页而不是居中对话框', (WidgetTester tester) async {
