@@ -6,6 +6,10 @@ import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/books_directory.dart'
+    show kLegacyBooksDirectoryName;
+import 'package:fushi/src/storage/export_directory.dart'
+    show kLegacyExportDirectoryName;
 
 /// 存储占用扫描服务（设置 → 存储）。
 ///
@@ -144,7 +148,9 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
     <StorageCategoryId, List<String>>{
   StorageCategoryId.books: <String>[
     'fushi_books',
-    'hoshi_books',
+    // 旧名存量目录（启动就地改名失败时仍可能在磁盘上）：引用迁移常量，
+    // 不重复旧代号字面量（fushi_rename_guard 禁模式）。
+    kLegacyBooksDirectoryName,
     'audiobooks',
   ],
   StorageCategoryId.dictionaries: <String>[
@@ -166,7 +172,11 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
   StorageCategoryId.shaders: <String>['mpv_shaders'],
   StorageCategoryId.customFonts: <String>['custom_fonts'],
   StorageCategoryId.web: <String>['webArchive', 'browser'],
-  StorageCategoryId.exports: <String>['fushiExport', 'hibikiExport'],
+  StorageCategoryId.exports: <String>[
+    'fushiExport',
+    // 同上：旧名存量目录走迁移常量。
+    kLegacyExportDirectoryName,
+  ],
   StorageCategoryId.database: <String>[],
   StorageCategoryId.ocrModels: <String>[],
 };
