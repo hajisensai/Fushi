@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1577 条。点号进各自文件。
+> 共 1580 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1717](bugs/BUG-1717-manga-default-keiyoushi-store.md) | — | — | 漫画缺少默认 keiyoushi 扩展仓库（核查：develop 已内置） |
+| [BUG-1716](bugs/BUG-1716-mihon-store-remove-no-confirm.md) | ✅ | ✅ | 删除漫画扩展仓库没有确认提示，一点即删 |
+| [BUG-1715](bugs/BUG-1715-desktop-extension-icons-bypass-proxy.md) | ✅ | ✅ | 桌面漫画扩展列表不显示图标：图标请求绕过应用代理出口 |
 | [BUG-1703](bugs/BUG-1703-manga-extension-error-truncated-toast.md) | ✅ | ✅ | 扩展安装/加载失败的根因被 Android 原生 toast 截成 2 行，用户永远看不到 |
 | [BUG-1702](bugs/BUG-1702-mihon-r8-kotlin-keep.md) | ✅ | ✅ | release APK 的 R8 混淆掉宿主 Kotlin 运行时，所有 Mihon 漫画扩展 LOAD_FAILED |
 | [BUG-1701](bugs/BUG-1701-manga-webtoon-pinch-vs-scroll.md) | ✅ | ✅ | 手机端漫画条漫模式捏合缩放与上下滚动互相干扰 |
