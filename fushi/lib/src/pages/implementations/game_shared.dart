@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
@@ -162,14 +161,6 @@ class GameSectionTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     // 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
     // （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构。
-    const List<GameSection> values = <GameSection>[
-      GameSection.dashboard,
-      GameSection.library,
-      GameSection.discover,
-      GameSection.monitor,
-      GameSection.importGames,
-      GameSection.settings,
-    ];
     void select(GameSection section) {
       switch (section) {
         case GameSection.dashboard:
@@ -198,45 +189,41 @@ class GameSectionTabs extends StatelessWidget {
       }
     }
 
-    return FushiAdjustableSegmented<GameSection>(
-      values: values,
+    return LibrarySectionTabs<GameSection>(
+      tabs: <LibrarySectionTab<GameSection>>[
+        LibrarySectionTab<GameSection>(
+          value: GameSection.dashboard,
+          label: t.game_dashboard,
+        ),
+        LibrarySectionTab<GameSection>(
+          value: GameSection.library,
+          label: t.game_library,
+        ),
+        // 「发现」与书 / 漫画 / 视频库页的发现视图同名同 key（同概念一词）。
+        LibrarySectionTab<GameSection>(
+          value: GameSection.discover,
+          label: t.library_view_browse,
+        ),
+        // 页签用短标签「工作台」（中文顶栏标签 ≤4 字，TODO-2937 拍板）；
+        // 页标题 / 设置导航项仍用全称 [game_capture_workbench]「捕获工作台」。
+        LibrarySectionTab<GameSection>(
+          value: GameSection.monitor,
+          label: t.game_capture_workbench_tab,
+        ),
+        // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
+        // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
+        LibrarySectionTab<GameSection>(
+          value: GameSection.importGames,
+          label: t.library_view_import,
+        ),
+        LibrarySectionTab<GameSection>(
+          value: GameSection.settings,
+          label: t.settings,
+        ),
+      ],
       selected: selected,
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
-      focusId: FushiFocusId('$focusIdPrefix-sections'),
-      child: FushiSegmentedStrip<GameSection>(
-        segments: <ButtonSegment<GameSection>>[
-          ButtonSegment<GameSection>(
-            value: GameSection.dashboard,
-            label: Text(t.game_dashboard),
-          ),
-          ButtonSegment<GameSection>(
-            value: GameSection.library,
-            label: Text(t.game_library),
-          ),
-          // 「发现」与书 / 漫画 / 视频库页的发现视图同名同 key（同概念一词）。
-          ButtonSegment<GameSection>(
-            value: GameSection.discover,
-            label: Text(t.library_view_browse),
-          ),
-          ButtonSegment<GameSection>(
-            value: GameSection.monitor,
-            label: Text(t.game_capture_workbench),
-          ),
-          // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
-          // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
-          ButtonSegment<GameSection>(
-            value: GameSection.importGames,
-            label: Text(t.library_view_import),
-          ),
-          ButtonSegment<GameSection>(
-            value: GameSection.settings,
-            label: Text(t.settings),
-          ),
-        ],
-        selected: selected,
-        onChanged: select,
-      ),
     );
   }
 }

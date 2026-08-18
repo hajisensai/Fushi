@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
@@ -107,43 +106,37 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget navigation = FushiAdjustableSegmented<VideoLibrarySection>(
-      values: VideoLibrarySection.values,
+    final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
+      tabs: <LibrarySectionTab<VideoLibrarySection>>[
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.home,
+          label: t.nav_home,
+        ),
+        // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删）。
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.discover,
+          label: t.library_view_browse,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.series,
+          label: t.series,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.allVideos,
+          label: t.video_library_all_videos,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.sources,
+          label: t.library_view_import,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.settings,
+          label: t.settings,
+        ),
+      ],
       selected: _section,
       onChanged: _select,
       focusIdPrefix: 'video-library-view',
-      focusId: const FushiFocusId('video-library-view-sections'),
-      child: FushiSegmentedStrip<VideoLibrarySection>(
-        segments: <ButtonSegment<VideoLibrarySection>>[
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.home,
-            label: Text(t.nav_home),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.discover,
-            // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删）。
-            label: Text(t.library_view_browse),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.series,
-            label: Text(t.series),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.allVideos,
-            label: Text(t.video_library_all_videos),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.sources,
-            label: Text(t.library_view_import),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.settings,
-            label: Text(t.settings),
-          ),
-        ],
-        selected: _section,
-        onChanged: _select,
-      ),
     );
     return Stack(
       children: <Widget>[

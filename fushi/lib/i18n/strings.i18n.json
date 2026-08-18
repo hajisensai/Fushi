@@ -3552,6 +3552,7 @@
   "discovery_torrent_failed": "Failed to add torrent task",
   "discovery_kind_novel": "Novels",
   "discovery_kind_audiobook": "Audiobooks",
+  "game_capture_workbench_tab": "Capture workspace",
   "video_builtin_sources_title": "Built-in sources",
   "video_resource_no_provider_title": "No resource indexer configured",
   "video_subtitle_no_provider_title": "No subtitle provider configured",
