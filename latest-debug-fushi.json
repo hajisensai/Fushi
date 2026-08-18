@@ -1,39 +1,18 @@
 {
   "schemaVersion": 1,
-  "version": "2.1.1-debug.11854",
-  "tag": "v2.1.1-debug.11854+7f942e5",
+  "version": "2.1.1-debug.11858",
+  "tag": "v2.1.1-debug.11858+419e033",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 11854,
-  "notes": "Automated release-signed debug-channel build from develop @ 7f942e5. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 11858,
+  "notes": "Automated release-signed debug-channel build from develop @ 419e033. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.1.1-debug.11810-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11810-ios.ipa",
-      "releaseSequence": 11810,
-      "tag": "v2.1.1-debug.11810+1887e98",
-      "version": "2.1.1-debug.11810"
-    },
-    {
-      "name": "fushi-2.1.1-debug.11810-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11810-macos.zip",
-      "releaseSequence": 11810,
-      "tag": "v2.1.1-debug.11810+1887e98",
-      "version": "2.1.1-debug.11810"
-    },
-    {
-      "name": "fushi-2.1.1-debug.11810-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11810-windows-setup.exe",
-      "releaseSequence": 11810,
-      "tag": "v2.1.1-debug.11810+1887e98",
-      "version": "2.1.1-debug.11810"
-    },
-    {
-      "name": "fushi-2.1.1-debug.11854-7f942e5-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11854-7f942e5-debug.apk",
-      "releaseSequence": 11854,
-      "tag": "v2.1.1-debug.11854+7f942e5",
-      "version": "2.1.1-debug.11854"
+      "name": "fushi-2.1.1-debug.11858-419e033-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.1.1-debug.11858-419e033-debug.apk",
+      "releaseSequence": 11858,
+      "tag": "v2.1.1-debug.11858+419e033",
+      "version": "2.1.1-debug.11858"
     }
   ]
 }
