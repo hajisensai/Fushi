@@ -26,6 +26,7 @@
   lookupShadow.appendChild(lookupOverrides);
   lookupShadow.appendChild(lookupContainer);
   window.__fushiRoot = lookupShadow;
+  installDictMediaPlaceholderResolver(lookupShadow); // BUG-1718：兑现词条内图片/样式表占位
   var currentTabId = null;
   var currentState = null;
   var cues = [];
@@ -306,6 +307,9 @@
         return null;
       }
       var data = response.data;
+      // BUG-1718：词典自带 CSS + 用户自定义 CSS 是全局（非按词）的，随每次真实响应刷新即可，
+      // 不进 prepared 缓存（缓存 48 个词，没必要每条都挂一份数百 KB 的引用）。
+      applyFushiPopupCss(data);
       var prepared = {
         audioSources: data.audioSources,
         theme: data.theme,

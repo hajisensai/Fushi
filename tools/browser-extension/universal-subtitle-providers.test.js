@@ -14,6 +14,16 @@ const ADAPTERS = path.join(__dirname, 'subtitle-adapters.js');
 const CONTENT = process.env.FUSHI_CONTENT_UNDER_TEST ||
   path.join(__dirname, 'content.js');
 
+// BUG-1718：真实运行时（manifest content_scripts / side-panel.html）里 vendor/dict-media.js
+// 恒在 content.js / side-panel.js 之前加载，后者依赖它导出的 applyFushiPopupCss 与
+// installDictMediaPlaceholderResolver。测试沙箱必须照同样顺序装，否则跑的是一个真实
+// 世界里不存在的、缺半个脚本集的环境。
+const FUSHI_DICT_MEDIA = path.join(__dirname, 'vendor', 'dict-media.js');
+function loadFushiDictMedia(ctx) {
+  vm.runInContext(fs.readFileSync(FUSHI_DICT_MEDIA, 'utf8'), ctx,
+    { filename: 'vendor/dict-media.js' });
+}
+
 function loadContent(opts) {
   const events = []; // 时序记录：listener 注册 / postMessage
   const intervals = []; // {fn, ms}
@@ -100,6 +110,7 @@ function loadContent(opts) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(ADAPTERS, 'utf8'), ctx, { filename: 'subtitle-adapters.js' });
+  loadFushiDictMedia(ctx);
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), ctx, { filename: 'content.js' });
   const sampler = intervals.find((i) => i.ms === 200);
   const harvester = intervals.find((i) => i.ms === 1200);

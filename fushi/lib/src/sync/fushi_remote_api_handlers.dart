@@ -16,6 +16,46 @@ import 'package:fushi/src/sync/immersion_mine_payload.dart';
 /// 纯逻辑（已解析的 body Map → 调注入的窄接口 service → 返回响应 Map），不碰 shelf/HTTP，
 /// 便于单测、便于两个 server 各自套自己的路由/鉴权外壳。
 
+/// BUG-1718：查词弹窗的「CSS 尾段」——app 内弹窗由 `popup_settings_injection` 注入 WebView 的
+/// `window.dictionaryStyles` / `globalDictCSS` / `customDictCSS` 三件套，打包成一个值随
+/// `/api/lookup/dictionary` 下发给浏览器扩展（扩展跑的是同一份 `popup.js`，这三个全局是它渲染
+/// 词典自带样式与用户自定义样式的唯一输入）。
+///
+/// - [dictionaryStyles]：`词典名 → 词典包自带 CSS`（mdx 导入时从兄弟 `.css` 落成词典目录下的
+///   `styles.css`，由 fushidicts `get_styles()` 读回）。**不是**用户设置，是词典内容的一部分。
+/// - [globalDictCss]：用户对所有词典生效的自定义 CSS。
+/// - [customDictCss]：用户按词典名单独覆盖的自定义 CSS。
+///
+/// [revision] 是这三者内容的指纹，用于「客户端缓存 + 增量下发」门控（见
+/// [buildRemoteDictionaryLookupResponse]）：内容不变 ⇒ 指纹不变 ⇒ 查词响应里只带指纹不带正文。
+/// 惰性计算并缓存在实例上，所以调用方只要按数据源身份复用同一个实例，指纹就只算一次。
+class RemotePopupDictionaryCss {
+  RemotePopupDictionaryCss({
+    required this.dictionaryStyles,
+    required this.globalDictCss,
+    required this.customDictCss,
+  });
+
+  final Map<String, String> dictionaryStyles;
+  final String globalDictCss;
+  final Map<String, String> customDictCss;
+
+  late final String revision = _computeRevision();
+
+  String _computeRevision() {
+    int h = 0;
+    for (final MapEntry<String, String> e in dictionaryStyles.entries) {
+      h = Object.hash(h, e.key, e.value.length, e.value.hashCode);
+    }
+    h = Object.hash(h, globalDictCss.length, globalDictCss.hashCode);
+    for (final MapEntry<String, String> e in customDictCss.entries) {
+      h = Object.hash(h, e.key, e.value.length, e.value.hashCode);
+    }
+    return '${dictionaryStyles.length}.${customDictCss.length}.'
+        '${h.toUnsigned(32).toRadixString(16)}';
+  }
+}
+
 /// `POST /api/lookup/dictionary` 的响应体。[body] 是已解析的 JSON Map。
 /// term 为空 → 返回空结果（与既有契约一致，不算错误）。
 ///
@@ -31,6 +71,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   Map<String, String> Function()? themeColorsProvider,
   List<String> Function()? audioSourcesProvider,
   String? Function()? extensionBuildProvider,
+  RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
 }) async {
   final Map<String, String>? theme = themeColorsProvider?.call();
   // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
@@ -41,15 +82,38 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // FUSHI_DEFAULTS.build，不一致即 chrome.runtime.reload() 从磁盘拉新（磁盘副本由
   // app 启动时刷新）。null（未注入 / 指纹尚未算好）时不带该字段（向后兼容）。
   final String? extensionBuild = extensionBuildProvider?.call();
+  // BUG-1718：弹窗「CSS 尾段」（词典自带 styles.css + 用户全局/单典自定义 CSS）。app 内弹窗由
+  // popup_settings_injection 把 window.dictionaryStyles / globalDictCSS / customDictCSS 注入
+  // WebView；浏览器扩展跑的是**同一份 popup.js**，却从来拿不到这三件套 —— mdx 词典的自带样式
+  // 在扩展里 100% 失效（用户可见症状：词头/音标/徽标/义项缩进全成裸文本）。
+  //
+  // 不能像 theme / audioSources 那样每次查词都下发：实测单本 OALDPE 的 styles.css 就有 210 KB，
+  // 整库 285 KB，而查词是 hover 级高频请求（BUG-871 / BUG-1525 已为同样理由收窄过响应体）。
+  // 故走 revision 门控：客户端把自己缓存的 revision 放进请求体 `stylesRevision`，
+  //   - 字段**缺失** ⇒ 老客户端不认识该契约 ⇒ 一个字节都不发（向后兼容，旧扩展行为不变）；
+  //   - 字段在且与当前 revision 不同 ⇒ 全量下发一次，之后一直命中缓存。
+  final RemotePopupDictionaryCss? popupCss = popupDictionaryCssProvider?.call();
+  final bool cssStale = popupCss != null &&
+      body.containsKey('stylesRevision') &&
+      body['stylesRevision']?.toString() != popupCss.revision;
+  final Map<String, Object?> envelope = <String, Object?>{
+    if (theme != null) 'theme': theme,
+    if (audioSources != null) 'audioSources': audioSources,
+    if (extensionBuild != null) 'extensionBuild': extensionBuild,
+    if (popupCss != null) 'dictionaryStylesRevision': popupCss.revision,
+    if (cssStale) ...<String, Object?>{
+      'dictionaryStyles': popupCss.dictionaryStyles,
+      'globalDictCSS': popupCss.globalDictCss,
+      'customDictCSS': popupCss.customDictCss,
+    },
+  };
   final String term = body['term']?.toString() ?? '';
   if (term.trim().isEmpty) {
     return <String, dynamic>{
       'type': 'dictionaryResult',
       'result': null,
       'popupJson': null,
-      if (theme != null) 'theme': theme,
-      if (audioSources != null) 'audioSources': audioSources,
-      if (extensionBuild != null) 'extensionBuild': extensionBuild,
+      ...envelope,
     };
   }
   final bool wildcards = body['wildcards'] as bool? ?? false;
@@ -84,9 +148,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
           ? null
           : <String, dynamic>{'bestLength': popup.bestLength},
       'popupJson': popup?.popupJson,
-      if (theme != null) 'theme': theme,
-      if (audioSources != null) 'audioSources': audioSources,
-      if (extensionBuild != null) 'extensionBuild': extensionBuild,
+      ...envelope,
     };
   }
   final DictionarySearchResult? result = await lookup.searchDictionary(
@@ -105,9 +167,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
             ? <String, dynamic>{'bestLength': result.bestLength}
             : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
-    if (theme != null) 'theme': theme,
-    if (audioSources != null) 'audioSources': audioSources,
-    if (extensionBuild != null) 'extensionBuild': extensionBuild,
+    ...envelope,
   };
 }
 
