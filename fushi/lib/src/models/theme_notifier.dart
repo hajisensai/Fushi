@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
@@ -982,7 +984,24 @@ class ThemeNotifier extends ChangeNotifier {
                 TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
               },
             )
-          : null,
+          // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
+          // 转成 navigator 的手势计数增减，平台重发起始事件 / 手势中途路由被 pop 都
+          // 会让计数失配，而计数一旦卡住，每层路由都被 IgnorePointer——画面正常但整个
+          // app 点不动（见 FushiPredictiveBackPageTransitionsBuilder 类注释）。
+          // 其余平台必须逐个列出：PageTransitionsTheme 的 builders 是全量替换，漏一个
+          // 平台它就回落到 ZoomPageTransitionsBuilder（iOS/macOS 会因此丢掉 Cupertino
+          // 的边缘滑动返回）。
+          : const PageTransitionsTheme(
+              builders: <TargetPlatform, PageTransitionsBuilder>{
+                TargetPlatform.android:
+                    FushiPredictiveBackPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+                TargetPlatform.linux: ZoomPageTransitionsBuilder(),
+                TargetPlatform.fuchsia: ZoomPageTransitionsBuilder(),
+              },
+            ),
       splashFactory: eink ? NoSplash.splashFactory : null,
       extensions: <ThemeExtension<dynamic>>[
         FushiDesignSystemTheme(designSystemTheme),
