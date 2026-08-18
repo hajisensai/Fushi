@@ -497,49 +497,32 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           ],
           if (details.facts.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.card),
-            LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final double factWidth = constraints.maxWidth >= 900
-                    ? (constraints.maxWidth - tokens.spacing.gap * 2) / 3
-                    : constraints.maxWidth >= 560
-                        ? (constraints.maxWidth - tokens.spacing.gap) / 2
-                        : constraints.maxWidth;
-                return Wrap(
-                  spacing: tokens.spacing.gap,
-                  runSpacing: tokens.spacing.gap,
+            for (final (int index, VideoDiscoveryFact fact)
+                in details.facts.indexed)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: index == 0 ? 0 : tokens.spacing.gap,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    for (final VideoDiscoveryFact fact in details.facts)
-                      SizedBox(
-                        width: factWidth,
-                        child: FushiCard(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: tokens.spacing.rowHorizontal,
-                            vertical: tokens.spacing.rowVertical,
-                          ),
-                          child: Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Text(
-                                  fact.label,
-                                  style: tokens.type.metadata,
-                                ),
-                              ),
-                              SizedBox(width: tokens.spacing.gap),
-                              Flexible(
-                                child: Text(
-                                  fact.value,
-                                  textAlign: TextAlign.end,
-                                  style: tokens.type.listTitle,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                    SizedBox(
+                      width: 116,
+                      child: Text(
+                        fact.label,
+                        style: tokens.type.metadata,
                       ),
+                    ),
+                    SizedBox(width: tokens.spacing.gap),
+                    Expanded(
+                      child: SelectableText(
+                        fact.value,
+                        style: tokens.type.listTitle,
+                      ),
+                    ),
                   ],
-                );
-              },
-            ),
+                ),
+              ),
           ],
           if (details.item.genres.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.card),

@@ -21,6 +21,7 @@ import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
@@ -1718,7 +1719,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       if (terms['studio']?.isNotEmpty == true)
         (t.video_work_studios, terms['studio']!.join(' · ')),
       if (terms['country']?.isNotEmpty == true)
-        (t.video_work_countries, terms['country']!.join(' · ')),
+        (
+          t.video_work_countries,
+          formatVideoCountriesForDisplay(terms['country']!).join(' · '),
+        ),
       if (work?.contentRating?.trim().isNotEmpty == true)
         (t.video_work_content_rating, work!.contentRating!),
       if (identities.isNotEmpty)
