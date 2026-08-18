@@ -335,6 +335,34 @@ void main() {
       reason: '末尾条目远在视口之外，懒建的话根本不该存在于 widget 树里',
     );
   });
+
+  // BUG-1716：仓库删除按钮曾经一点即删——removeStore 直接执行，没有任何确认。
+  // 卸载扩展、Aidoku 仓库删除都有确认框，唯独这里没有；删掉仓库会让它提供的
+  // 整页可装扩展从列表消失，误触成本远高于一次确认。
+  testWidgets('删除扩展仓库先确认：取消保留、确认才真删', (WidgetTester tester) async {
+    await pumpStandalone(tester);
+    expect(find.text('Fixture repository'), findsOneWidget);
+
+    // 点删除 → 出确认框，仓库还在。
+    await tester.tap(find.byTooltip(t.mihon_store_remove));
+    await tester.pumpAndSettle();
+    expect(find.text(t.dialog_delete), findsOneWidget);
+    expect(manager.stores, hasLength(1));
+
+    // 取消 → 什么都不发生。
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(manager.stores, hasLength(1));
+    expect(find.text('Fixture repository'), findsOneWidget);
+
+    // 再点删除并确认 → 仓库真的被删。
+    await tester.tap(find.byTooltip(t.mihon_store_remove));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_delete));
+    await tester.pumpAndSettle();
+    expect(manager.stores, isEmpty);
+    expect(find.text('Fixture repository'), findsNothing);
+  });
 }
 
 MihonAvailableExtension _extension({

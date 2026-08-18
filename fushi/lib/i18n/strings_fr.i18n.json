@@ -3553,6 +3553,7 @@
   "discovery_torrent_failed": "Failed to add torrent task",
   "discovery_kind_novel": "Novels",
   "discovery_kind_audiobook": "Audiobooks",
+  "mihon_store_remove": "Remove extension store",
   "video_import_folder_as_source_hint": "Keep scanning this folder for new videos",
   "manga_import_folder_as_source_hint": "Keep scanning this folder for new manga",
   "download_no_managed_video_source": "No managed video source yet. Downloads need a local video folder to land in.",

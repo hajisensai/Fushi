@@ -374,6 +374,34 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
   }
 
+  /// 删仓库也要确认（BUG-1716）：与卸载扩展、Aidoku 仓库删除同一套语义。
+  /// 删掉仓库会让它提供的整页可装扩展从列表消失，误触成本远高于一次确认。
+  Future<void> _removeStore(MangaExtensionStoreRow store) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        title: Text(t.mihon_store_remove),
+        content: Text('${store.name}\n${store.indexUrl}'),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: dialogContext,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _manager!.removeStore(store.indexUrl);
+    }
+  }
+
   Future<void> _uninstall(MangaExtensionRow extension) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -601,10 +629,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                     : '${store.indexUrl}\n${store.lastError}',
               ),
               trailing: IconButton(
-                tooltip: t.dialog_delete,
-                onPressed: () => unawaited(
-                  manager.removeStore(store.indexUrl),
-                ),
+                tooltip: t.mihon_store_remove,
+                onPressed: () => unawaited(_removeStore(store)),
                 icon: const Icon(Icons.delete_outline),
               ),
             ),
