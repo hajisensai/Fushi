@@ -49,8 +49,10 @@ class StorageUsageView extends ConsumerStatefulWidget {
   /// 返回 null = 成功，非 null = 失败原因。
   final Future<String?> Function(String bookKey) deleteBook;
 
-  /// 删除一部词典（真实现 `AppModel.deleteDictionary`）。
-  final Future<void> Function(String name) deleteDictionary;
+  /// 删除一部词典（真实现 `AppModel.deleteDictionary` + 删除后核对词典表）。
+  /// 返回 null = 成功，非 null = 失败原因——`deleteDictionary` 内部 catch-all
+  /// 不上抛，接线方必须以「删除后该名是否仍在」为准回报，不能拿无异常当成功。
+  final Future<String?> Function(String name) deleteDictionary;
 
   /// Anime4K 已下载字节数 / 删除（默认真实现；测试注临时目录版）。
   final Future<int> Function() anime4kBytesProvider;
@@ -68,7 +70,17 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       <StorageCategoryId, StorageCategoryUsage>{};
   final Set<StorageCategoryId> _expanded = <StorageCategoryId>{};
   bool _scanning = false;
+
+  /// 扫描代际：删除成功后无条件重扫（哪怕上一轮还在跑），旧代际的事件按此
+  /// 丢弃——否则「GB 级词典类目还在扫时删了一本书」会被 `_scanning` guard
+  /// 静默吞掉，数字不刷新（审查 L1）。
+  int _scanEpoch = 0;
   StreamSubscription<StorageCategoryUsage>? _scanSub;
+
+  /// 正在删除的条目 id（书 bookKey / 词典名）。非 null 时禁用全部删除入口——
+  /// 词典删除原语在 UI isolate 同步删 GB 级目录，期间再点别的删除只会排队
+  /// 添乱（审查 M2）。
+  String? _busyEntryId;
 
   List<BundledComponentUsage> _bundled = const <BundledComponentUsage>[];
 
@@ -94,7 +106,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   }
 
   Future<void> _rescan() async {
-    if (_scanning) return;
+    final int epoch = ++_scanEpoch;
     setState(() {
       _scanning = true;
       _usage.clear();
@@ -108,21 +120,22 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     } catch (e) {
       debugPrint('[storage] listing failed: $e');
     }
-    if (!mounted) return;
+    if (!mounted || epoch != _scanEpoch) return;
     await _scanSub?.cancel();
+    if (!mounted || epoch != _scanEpoch) return;
     _scanSub = widget.service
         .scanCategories(books: books, dictionaryNames: dictNames)
         .listen(
       (StorageCategoryUsage usage) {
-        if (!mounted) return;
+        if (!mounted || epoch != _scanEpoch) return;
         setState(() => _usage[usage.id] = usage);
       },
       onError: (Object e) {
         debugPrint('[storage] scan failed: $e');
-        if (mounted) setState(() => _scanning = false);
+        if (mounted && epoch == _scanEpoch) setState(() => _scanning = false);
       },
       onDone: () {
-        if (mounted) setState(() => _scanning = false);
+        if (mounted && epoch == _scanEpoch) setState(() => _scanning = false);
       },
     );
   }
@@ -176,19 +189,23 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     StorageCategoryId category,
     StorageEntryUsage entry,
   ) async {
+    if (_busyEntryId != null) return;
     final String body = category == StorageCategoryId.books
         ? t.storage_entry_delete_book_confirm_body
         : t.storage_entry_delete_dictionary_confirm_body;
     if (!await _confirmDelete(entry.label, body)) return;
+    setState(() => _busyEntryId = entry.id);
     String? failure;
     try {
       if (category == StorageCategoryId.books) {
         failure = await widget.deleteBook(entry.id);
       } else {
-        await widget.deleteDictionary(entry.id);
+        failure = await widget.deleteDictionary(entry.id);
       }
     } catch (e) {
       failure = '$e';
+    } finally {
+      if (mounted) setState(() => _busyEntryId = null);
     }
     if (!mounted) return;
     if (failure == null) {
@@ -232,6 +249,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         if (!mounted) return;
         setState(() => _ocrBusy = false);
         await _loadModules();
+        // 下载完成后总览里的 OCR 类目行同步长回来（与删除路径对称，审查 L3）。
+        await _rescan();
       },
     );
   }
@@ -247,6 +266,16 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     setState(() => _ocrBusy = true);
     try {
       await widget.ocrService.deleteModels();
+    } catch (e) {
+      // Windows 上模型文件被占用（推理还挂着）时 delete 会抛：如实报错，
+      // 不能静默吞成未处理异步异常（审查 L2）。
+      if (mounted) {
+        FushiToast.show(
+          msg: t.storage_entry_delete_failed(reason: '$e'),
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
     } finally {
       if (mounted) setState(() => _ocrBusy = false);
     }
@@ -272,6 +301,14 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     List<String> deleted = const <String>[];
     try {
       deleted = await widget.anime4kDelete();
+    } catch (e) {
+      if (mounted) {
+        FushiToast.show(
+          msg: t.storage_entry_delete_failed(reason: '$e'),
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
     } finally {
       if (mounted) setState(() => _anime4kBusy = false);
     }
@@ -428,11 +465,19 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           subtitle: Text(formatStorageBytes(entry.bytes)),
           padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
           density: FushiListDensity.compact,
-          trailing: IconButton(
-            tooltip: t.dialog_delete,
-            icon: const Icon(Icons.delete_outline, size: 18),
-            onPressed: () => _deleteEntry(id, entry),
-          ),
+          trailing: _busyEntryId == entry.id
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : IconButton(
+                  tooltip: t.dialog_delete,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  onPressed: _busyEntryId != null
+                      ? null
+                      : () => _deleteEntry(id, entry),
+                ),
         ),
       if (rest.isNotEmpty)
         FushiListItem(

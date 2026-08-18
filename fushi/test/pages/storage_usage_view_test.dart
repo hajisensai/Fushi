@@ -108,7 +108,7 @@ void main() {
       booksProvider: books ?? () async => const <StorageBookRef>[],
       dictionaryNamesProvider: () async => const <String>[],
       deleteBook: deleteBook ?? (String _) async => null,
-      deleteDictionary: (String _) async {},
+      deleteDictionary: (String _) async => null,
       anime4kBytesProvider: () async => 0,
       anime4kDelete: () async => const <String>[],
     );
@@ -123,7 +123,6 @@ void main() {
       books: () async => <StorageBookRef>[
         StorageBookRef(
           bookKey: 'keyA',
-          uid: '',
           title: '吾輩は猫である',
           extractDir: p.join(docs.path, 'fushi_books', 'keyA'),
         ),
@@ -149,7 +148,6 @@ void main() {
       books: () async => <StorageBookRef>[
         StorageBookRef(
           bookKey: 'keyA',
-          uid: '',
           title: '吾輩は猫である',
           extractDir: bookDir,
         ),

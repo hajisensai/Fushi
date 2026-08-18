@@ -99,26 +99,29 @@ class StorageCategoryUsage {
   final List<StorageEntryUsage> entries;
 }
 
-/// 书籍条目的扫描输入（由 UI 层从 `epub_books` 表取出后传入）。
+/// 书籍条目的扫描输入（由 UI 层从 `epub_books` + `srt_books` 表取出后传入）。
 class StorageBookRef {
   const StorageBookRef({
     required this.bookKey,
-    required this.uid,
     required this.title,
     required this.extractDir,
+    this.persistKeys = const <String>[],
   });
 
   final String bookKey;
-
-  /// `EpubBooks.uid`（有声书 persist 目录 `audiobooks/<fnv1a32Hex(uid)>` 的键；
-  /// 空串 = 无配对音频目录）。
-  final String uid;
 
   final String title;
 
   /// `EpubBooks.extractDir`（解压正文绝对路径；这是唯一真相，**不要**用
   /// bookKey 重新派生——pre-v16 的书目录名是旧 int id）。
   final String extractDir;
+
+  /// 有声书 persist 目录 `audiobooks/<fnv1a32Hex(key)>` 的键集合。真实键口径
+  /// 与删除侧完全一致（`AudiobookRepository.delete` 传 bookKey、
+  /// `SrtBookRepository` 传 SRT uid）：EPUB 配音频 = bookKey，字幕书音频 =
+  /// 关联 `SrtBooks.uid`。**不是** `EpubBooks.uid`（那是 v81 的本机机器 id，
+  /// 从不入哈希——审查 H1）。
+  final List<String> persistKeys;
 }
 
 /// 随包组件（安装目录内、随安装包携带）的一条展示项。
@@ -212,12 +215,13 @@ int _pathsSizeSync(final List<String> paths) {
 }
 
 /// 有声书 persist 目录的纯派生（**不创建**，与
-/// `AudiobookStorage.ensurePersistDir` 同口径：`fnv1a32Hex(utf8(uid))`；
+/// `AudiobookStorage.ensurePersistDir` 同口径：`fnv1a32Hex(utf8(key))`；
 /// 该口径已固化进持久目录名，不得漂移——上游金标在 fushi_core
-/// `stable_hash_test.dart`）。
+/// `stable_hash_test.dart`）。[persistKey] 的取值见 [StorageBookRef.persistKeys]。
 String audiobookPersistDirPath(
-        final Directory documentsRoot, final String uid) =>
-    p.join(documentsRoot.path, 'audiobooks', fnv1a32Hex(utf8.encode(uid)));
+        final Directory documentsRoot, final String persistKey) =>
+    p.join(
+        documentsRoot.path, 'audiobooks', fnv1a32Hex(utf8.encode(persistKey)));
 
 /// 目录求和的执行环境（默认 [Isolate.run]；widget 测试的 FakeAsync 区里真
 /// isolate 永不完成，测试注同步执行版 `<R>(f) async => f()`）。
@@ -287,7 +291,8 @@ class StorageUsageService {
       for (final StorageBookRef b in books)
         <String>[
           b.extractDir,
-          if (b.uid.isNotEmpty) audiobookPersistDirPath(docs, b.uid),
+          for (final String key in b.persistKeys)
+            if (key.isNotEmpty) audiobookPersistDirPath(docs, key),
         ],
     ];
     final List<int> sizes = await _run(() {

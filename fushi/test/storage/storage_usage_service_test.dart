@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
 import 'package:path/path.dart' as p;
 
@@ -71,51 +72,65 @@ void main() {
         reason: '存储类目清单必须与 AppPaths.fushiOwnedDocumentsEntries 全覆盖对齐');
   });
 
-  test('audiobookPersistDirPath 与 AudiobookStorage 持久目录口径一致', () {
-    const String uid = 'book-uid-123';
-    final String expected =
-        p.join(docs.path, 'audiobooks', fnv1a32Hex(utf8.encode(uid)));
-    expect(audiobookPersistDirPath(docs, uid), expected);
+  test('audiobookPersistDirPath 与 AudiobookStorage 真实落盘目录逐字节一致', () async {
+    // 用真实导入原语落盘（不是自算哈希自验自证）：ensurePersistDir 是唯一的
+    // 持久目录创建点，扫描端的纯派生必须与它指向同一目录（审查 H1 的守卫）。
+    AudiobookStorage.documentsRootResolver = () async => docs;
+    addTearDown(() => AudiobookStorage.documentsRootResolver = null);
+    const String persistKey = 'book-key-123';
+    final Directory real = await AudiobookStorage.ensurePersistDir(persistKey);
+    expect(audiobookPersistDirPath(docs, persistKey), real.path);
+    // 哈希口径回归锚（与 fushi_core stable_hash 金标同源）。
+    expect(real.path,
+        p.join(docs.path, 'audiobooks', fnv1a32Hex(utf8.encode(persistKey))));
   });
 
   group('scanCategories', () {
-    test('书籍类目：总量按目录整树，明细含配对有声书目录，按字节降序', () async {
+    test('书籍类目：总量按目录整树，明细含真实原语落盘的配对音频，按字节降序', () async {
       // 两本书 + 一个孤儿目录（不在 DB 里）。
       final String bookA = p.join(docs.path, 'fushi_books', 'keyA');
       final String bookB = p.join(docs.path, 'fushi_books', 'keyB');
       writeFile(p.join(bookA, 'ch1.html'), 100);
       writeFile(p.join(bookB, 'ch1.html'), 300);
       writeFile(p.join(docs.path, 'fushi_books', 'orphan', 'x.html'), 11);
-      // 书 A 有配对有声书音频。
-      final String audioA = audiobookPersistDirPath(docs, 'uidA');
-      writeFile(p.join(audioA, 'audio.mp3'), 500);
+      // 书 A 的配对音频用**真实导入原语**落盘（键 = bookKey，与
+      // AudiobookRepository 删除侧同口径；EpubBooks.uid 从不入哈希——审查 H1）；
+      // 书 A 另挂一条字幕书音频（键 = SrtBooks.uid）。
+      AudiobookStorage.documentsRootResolver = () async => docs;
+      addTearDown(() => AudiobookStorage.documentsRootResolver = null);
+      final Directory audioA = await AudiobookStorage.ensurePersistDir('keyA');
+      writeFile(p.join(audioA.path, 'audio.mp3'), 500);
+      final Directory srtAudioA =
+          await AudiobookStorage.ensurePersistDir('srtbook_1');
+      writeFile(p.join(srtAudioA.path, 'audio2.mp3'), 40);
 
       final List<StorageCategoryUsage> all = await service().scanCategories(
         books: <StorageBookRef>[
-          const StorageBookRef(
-              bookKey: 'keyA', uid: 'uidA', title: 'A', extractDir: ''),
-          const StorageBookRef(
-              bookKey: 'keyB', uid: '', title: 'B', extractDir: ''),
-        ].map((StorageBookRef b) {
-          // extractDir 是绝对路径列，测试里指向刚建的目录。
-          return StorageBookRef(
-            bookKey: b.bookKey,
-            uid: b.uid,
-            title: b.title,
-            extractDir: b.bookKey == 'keyA' ? bookA : bookB,
-          );
-        }).toList(),
+          StorageBookRef(
+            bookKey: 'keyA',
+            title: 'A',
+            extractDir: bookA,
+            persistKeys: const <String>['keyA', 'srtbook_1'],
+          ),
+          StorageBookRef(
+            bookKey: 'keyB',
+            title: 'B',
+            extractDir: bookB,
+            persistKeys: const <String>['keyB'],
+          ),
+        ],
         dictionaryNames: const <String>[],
       ).toList();
 
       final StorageCategoryUsage books = all.singleWhere(
           (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
-      // 100 + 300 + 11（孤儿也计入总量）+ 500（audiobooks 整树）。
-      expect(books.bytes, 911);
+      // 100 + 300 + 11（孤儿也计入总量）+ 500 + 40（audiobooks 整树）。
+      expect(books.bytes, 951);
       expect(books.entries.length, 2);
-      // 降序：A = 100 + 500 = 600 在前，B = 300 在后。
+      // 降序：A = 100 + 500 + 40 = 640 在前，B = 300 在后（B 的 persist 目录
+      // 不存在，计 0）。
       expect(books.entries[0].id, 'keyA');
-      expect(books.entries[0].bytes, 600);
+      expect(books.entries[0].bytes, 640);
       expect(books.entries[1].id, 'keyB');
       expect(books.entries[1].bytes, 300);
     });
