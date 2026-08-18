@@ -64,6 +64,8 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_item_presentation.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
@@ -1137,6 +1139,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final ValueNotifier<VideoControlLayout> _controlLayoutNotifier =
       ValueNotifier<VideoControlLayout>(VideoControlLayout.currentChrome);
 
+  /// 自定义「快捷键 1..4」按钮的绑定（槽位 → 视频动作）。与 [_controlLayoutNotifier]
+  /// 同样走 notifier 而不是裸字段：控制层（含全屏路由那棵独立子树）只在监听到通知时
+  /// 才重建，绑定改了却不通知 = 按钮图标/行为停在旧动作上（BUG-391 那条「漏监听 =
+  /// 改了白改」的同款陷阱，见 layout.part.dart 的 merge 列表）。
+  final ValueNotifier<VideoCustomActionBindings> _customActionBindingsNotifier =
+      ValueNotifier<VideoCustomActionBindings>(VideoCustomActionBindings.empty);
+
+  /// 当前生效的自定义按钮绑定表。
+  VideoCustomActionBindings get _customActionBindings =>
+      _customActionBindingsNotifier.value;
+
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
 
@@ -2062,6 +2075,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
 
@@ -2156,6 +2170,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
 
     // 客户端合集连播（Phase 3 合集 = N 个独立 VideoBooks 行）：host 不把兄弟集填进
     // RemoteVideoInfo.episodes（那是旧单行 playlistJson 模型），故由 client 用合集成员列表
@@ -3653,6 +3668,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _controlLayoutNotifier.dispose();
+    _customActionBindingsNotifier.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
@@ -5154,6 +5170,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.previousChapter:
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
+      // 自定义「快捷键」按钮就是一个普通图标按钮：图标 / tooltip 由绑定动作决定
+      // （见 `_videoControlItemIcon` / `_videoControlItemTooltip`），点击走
+      // `_activateVideoControlItem` 查动作表。没有任何专属渲染需求。
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
         return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
       case VideoControlItem.volume:
       case VideoControlItem.title:
@@ -5199,6 +5222,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   bool _shouldRenderControlItem(VideoControlItem item) {
+    // 自定义「快捷键」按钮：**绑了动作才显示**。这条规则同时承担两件事——
+    //   ① 没配过的槽位不会变成播放器上按了没反应的死按钮；
+    //   ② 新增这 4 个枚举项对现有用户零影响（老布局解出来它们即便落在可见槽位，
+    //      也因为绑定为空而不渲染，控制条长相完全不变）。
+    final int? slotIndex = item.customActionSlotIndex;
+    if (slotIndex != null) {
+      return _customActionBindings.actionAt(slotIndex) != null;
+    }
     switch (item) {
       case VideoControlItem.previousEpisode:
       case VideoControlItem.nextEpisode:
@@ -5234,6 +5265,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.subtitleTrack:
       case VideoControlItem.audioTrack:
         return true;
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
+        // 不可达：函数开头已按绑定是否为空决定。保留分支维持穷举检查。
+        return false;
     }
   }
 
@@ -5367,6 +5404,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// Icon for any chip-renderable [VideoControlItem] (learning + transport/nav).
   IconData _videoControlItemIcon(VideoControlItem item) {
+    // 自定义「快捷键」按钮没有固定图标：长相 = 当前绑定动作的图标（未绑定时是通用
+    // 闪电图标）。这条与编辑器 chip 共用 [videoControlItemIcon]，两处永远同款。
+    if (item.isCustomAction) {
+      return videoControlItemIcon(item, bindings: _customActionBindings);
+    }
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) return _videoControlButtonIcon(legacy);
     switch (item) {
@@ -5421,11 +5463,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.favoriteSentence:
       case VideoControlItem.settings:
         return Icons.tune;
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
+        // 不可达：函数开头已委托 [videoControlItemIcon] 按绑定解析。
+        return Icons.bolt_outlined;
     }
   }
 
   /// Tooltip for any chip-renderable [VideoControlItem].
   String _videoControlItemTooltip(VideoControlItem item) {
+    // 自定义「快捷键」按钮：tooltip = 绑定动作的名字（未绑定时是「快捷键 N」槽位名）。
+    if (item.isCustomAction) {
+      return videoControlItemLabel(
+        item,
+        context,
+        bindings: _customActionBindings,
+      );
+    }
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) return _videoControlButtonTooltip(legacy);
     switch (item) {
@@ -5479,6 +5535,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.favoriteSentence:
       case VideoControlItem.settings:
         return '';
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
+        // 不可达：函数开头已委托 [videoControlItemLabel] 按绑定解析。
+        return '';
     }
   }
 
@@ -5492,6 +5554,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     LayerLink? popoverLink,
     VideoControlSlot? sourceSlot,
   }) {
+    // 自定义「快捷键」按钮：查**键盘 / 手柄用的同一张动作表**并执行。这里刻意不写
+    // 第二套 switch——[videoActionCallbacks] 已经是「动作 → 本页具体操作」的唯一接线，
+    // 屏幕按钮再抄一份就等于承诺两份实现永远一致（沉浸门控、防重入这些都在回调里）。
+    // 未绑定 / 表里没有该动作（动作被删）时静默 no-op：按钮本就不该渲染出来。
+    final int? slotIndex = item.customActionSlotIndex;
+    if (slotIndex != null) {
+      final ShortcutAction? action = _customActionBindings.actionAt(slotIndex);
+      if (action == null) return;
+      final VoidCallback? callback =
+          videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+      if (callback == null) return;
+      // 与其它控制条按钮一致：按一下续命控制条，否则 3s 到点隐藏、手指还在按钮上。
+      _pokeControlsVisible();
+      callback();
+      return;
+    }
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) {
       _activateVideoControlButton(
@@ -5598,6 +5676,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
       case VideoControlItem.settings:
+      // 不可达：函数开头已按绑定查 [videoActionCallbacks] 执行并 return。
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
         break;
     }
   }
@@ -6147,6 +6230,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
+  /// 落盘 + 即时生效「快捷键 1..4」按钮的新绑定。与 [_setVideoControlLayout] 同款：
+  /// 先推 notifier（控制层与全屏子树立刻重建，图标/行为当场变），再持久化。
+  Future<void> _setVideoCustomActionBindings(
+    VideoCustomActionBindings bindings,
+  ) async {
+    _customActionBindingsNotifier.value = bindings;
+    await appModel.setVideoCustomActionBindings(bindings);
+    if (mounted) setState(() {});
+  }
+
   // 原 `_showVideoControlEditOverlay`（TODO-440 画面内拖拽编辑入口）已删：旧面板只
   // 声明了 onEditControlsOnscreen 参数从未渲染入口，方法早已不可达；schema 投影版
   // 不再保留死参数。关闭路径（_hideVideoControlEditOverlay）仍被浮层互斥逻辑使用。
@@ -6443,6 +6536,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       subtitleStyle: () => _subtitleStyle,
       danmakuStyle: () => _danmakuStyle,
       controlLayout: () => _controlLayout,
+      customActionBindings: () => _customActionBindings,
+      onCustomActionBindingsChanged: _setVideoCustomActionBindings,
       onSetDelay: _setDelayMs,
       // TODO-2837：副字幕独立调轴（null = 跟随主字幕）。行只在副字幕轨激活
       // （secondaryCues 非空）时显示——hasSecondarySubtitle 是活值 getter，
@@ -6456,6 +6551,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onAutoAlign: (_controller?.cues.isNotEmpty ?? false) &&
               (_controller?.videoPath?.isNotEmpty ?? false)
           ? _autoAlignSubtitle
+          : null,
+      // 「上/下一句对齐到当前时间」按钮：与键盘 Ctrl+Shift+←/→ 同一执行体。只要有
+      // 字幕 cue 就能对齐（纯按 cue 时间轴求偏移，**不需要**视频本地路径 / 音频探测，
+      // 故门条件比自动对轴松一档）；无 cue 时置 null 让面板不显示按钮。
+      onSnapDelayToCue: (_controller?.cues.isNotEmpty ?? false)
+          ? _snapSubtitleDelayToCue
           : null,
       // TODO-1051 阶段B：字幕对轴波形面板输入。有 cue + 本地视频路径时给波形抽取回调
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。

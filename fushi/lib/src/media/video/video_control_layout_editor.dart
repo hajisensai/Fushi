@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/utils.dart';
 
 /// 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。从旧
@@ -17,6 +21,8 @@ class VideoControlLayoutEditor extends StatefulWidget {
     required this.layout,
     required this.onLayoutChanged,
     required this.isTouchControls,
+    this.customActionBindings = VideoCustomActionBindings.empty,
+    this.onCustomActionBindingsChanged,
     super.key,
   });
 
@@ -29,6 +35,14 @@ class VideoControlLayoutEditor extends StatefulWidget {
   /// 触屏控件（无右键菜单兜底）：禁止把「设置」按钮拖入 hidden 移除（TODO-554）。
   final bool isTouchControls;
 
+  /// 自定义「快捷键 1..4」按钮当前绑的动作（决定 chip 的图标与名字）。
+  final VideoCustomActionBindings customActionBindings;
+
+  /// 改绑回调：点「快捷键 N」chip 选动作后落盘 + 实时生效（调用方负责）。
+  /// null = 不提供改绑入口（chip 仍可拖动，只是点不出选择器）。
+  final Future<void> Function(VideoCustomActionBindings bindings)?
+      onCustomActionBindingsChanged;
+
   @override
   State<VideoControlLayoutEditor> createState() =>
       _VideoControlLayoutEditorState();
@@ -38,9 +52,17 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
   late VideoControlLayout _controlLayout = widget.layout;
   String? _controlMoveRejectionMessage;
 
+  /// 自定义「快捷键」按钮绑定的本地镜像：与 [_controlLayout] 同款——本地先改、UI 立刻
+  /// 反映，同时把新值交给外部落盘（外部回传经 didUpdateWidget 同步回来）。
+  late VideoCustomActionBindings _customActionBindings =
+      widget.customActionBindings;
+
   @override
   void didUpdateWidget(VideoControlLayoutEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.customActionBindings != widget.customActionBindings) {
+      _customActionBindings = widget.customActionBindings;
+    }
     if (oldWidget.layout != widget.layout) {
       _controlLayout = widget.layout;
       // 外部重置/换布局后清掉上一轮的拖拽驳回提示（旧 sheet 行为）：提示描述的
@@ -492,6 +514,24 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
       dragging: false,
       highlighted: highlighted,
     );
+    // 「快捷键 N」槽位：点一下选它执行哪个动作（拖动仍然照常改位置——Draggable 用的是
+    // 即时拖拽识别器，与 onTap 在手势竞技场里按「有没有位移」自然分流，不互相吃事件）。
+    // 这是本功能唯一的配置入口：按钮就在编辑器里，点它配、拖它摆，不用去别的页面找。
+    if (item.isCustomAction && widget.onCustomActionBindingsChanged != null) {
+      return GestureDetector(
+        onTap: () => unawaited(_pickCustomAction(item)),
+        child: _wrapDraggableChip(chip, item, sourceSlot, sourceIndex),
+      );
+    }
+    return _wrapDraggableChip(chip, item, sourceSlot, sourceIndex);
+  }
+
+  Widget _wrapDraggableChip(
+    Widget chip,
+    VideoControlItem item,
+    VideoControlSlot? sourceSlot,
+    int? sourceIndex,
+  ) {
     return Draggable<VideoControlDragData>(
       data: VideoControlDragData(
         item: item,
@@ -515,6 +555,53 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     );
   }
 
+  /// 点「快捷键 N」chip：选它执行哪个动作。
+  ///
+  /// 列表就是 [kVideoAssignableActions]（= 视频页真正接过线的动作），外加一条「不绑定」
+  /// 用来清空槽位——清空后该按钮在播放器上直接消失（见 `_shouldRenderControlItem`），
+  /// 不留一个按了没反应的空壳。选完立即落盘 + 生效，没有「保存」步骤。
+  Future<void> _pickCustomAction(VideoControlItem item) async {
+    final int? slotIndex = item.customActionSlotIndex;
+    final Future<void> Function(VideoCustomActionBindings)? onChanged =
+        widget.onCustomActionBindingsChanged;
+    if (slotIndex == null || onChanged == null) return;
+    final ShortcutAction? current = _customActionBindings.actionAt(slotIndex);
+    final _CustomActionPick? pick = await showDialog<_CustomActionPick>(
+      context: context,
+      builder: (BuildContext dialogContext) => SimpleDialog(
+        title: Text(t.video_control_custom_action(index: slotIndex + 1)),
+        children: <Widget>[
+          // 「不绑定」置顶：解绑是唯一「让按钮消失」的路径，藏在几十条动作末尾会找不到。
+          FushiListItem(
+            title: Text(t.video_control_custom_action_none),
+            leading: const Icon(Icons.block),
+            selected: current == null,
+            onTap: () => Navigator.of(dialogContext).pop(
+              const _CustomActionPick(null),
+            ),
+          ),
+          for (final ShortcutAction action in kVideoAssignableActions)
+            FushiListItem(
+              title: Text(action.label),
+              leading: Icon(action.buttonIcon ?? Icons.bolt_outlined),
+              selected: current == action,
+              onTap: () => Navigator.of(dialogContext).pop(
+                _CustomActionPick(action),
+              ),
+            ),
+        ],
+      ),
+    );
+    // null = 用户点外部 / 返回键取消（区别于显式选了「不绑定」，那是
+    // `_CustomActionPick(null)`）——取消必须保持原绑定不动。
+    if (pick == null || !mounted) return;
+    final VideoCustomActionBindings next =
+        _customActionBindings.withAction(slotIndex, pick.action);
+    if (next == _customActionBindings) return;
+    setState(() => _customActionBindings = next);
+    await onChanged(next);
+  }
+
   void _handleControlDragCanceled(VideoControlItem item) {
     final String? message = switch (item) {
       VideoControlItem.volume => t.video_control_reject_volume_bottom,
@@ -533,7 +620,11 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
   }) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String label = videoControlItemLabel(item, context);
+    final String label = videoControlItemLabel(
+      item,
+      context,
+      bindings: _customActionBindings,
+    );
     final Color background =
         highlighted ? cs.primaryContainer : cs.secondaryContainer;
     final Color foreground =
@@ -560,7 +651,11 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
                 ]
               : null,
         ),
-        child: Icon(videoControlItemIcon(item), size: 18, color: foreground),
+        child: Icon(
+          videoControlItemIcon(item, bindings: _customActionBindings),
+          size: 18,
+          color: foreground,
+        ),
       ),
     );
     return Tooltip(
@@ -681,4 +776,15 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
         return t.video_control_slot_top_center;
     }
   }
+}
+
+/// 动作选择对话框的返回值。
+///
+/// 存在的唯一理由：把「取消」和「显式选了不绑定」分开。两者的 [ShortcutAction] 都是
+/// null，直接 `pop<ShortcutAction?>(null)` 会让点外部关闭 == 清空绑定——用户只是想
+/// 关掉弹窗，按钮却没了。包一层后取消是 `null`、不绑定是 `_CustomActionPick(null)`。
+class _CustomActionPick {
+  const _CustomActionPick(this.action);
+
+  final ShortcutAction? action;
 }

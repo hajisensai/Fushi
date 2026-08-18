@@ -1566,19 +1566,25 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// `_delayMs`，拿到新延迟后走既有权威写穿 [_setDelayMs]（clamp + 落盘 + OSD + 即时重算）。
   /// 无 controller / 无 cue / 位置未就绪 / 已是首末句无相邻 cue 时 no-op（不弹窗、不改延迟）。
   ///
+  /// 返回本次实际写穿的新延迟（毫秒），供**调轴面板按钮**路径把滑条 / 数值输入框 / 波形
+  /// 预览同步到新值——与 [_autoAlignSubtitle] 同款契约（TODO-1206）：面板持有自己的本地
+  /// 权威镜像 `_delayMs`，若这里只写穿页面侧而不回传，点完按钮面板控件会停在旧值。
+  /// no-op 的各分支返回 null（面板据此保持原值不动）。键盘路径忽略返回值，行为不变。
+  ///
   /// TODO-2837：本对齐（连同波形对轴 / 自动对轴）**只作用于主字幕轨**；副字幕的
   /// asbplayer 式/波形对齐是后续工作，本轮副轨只有快速设置面板的独立调轴段。
-  void _snapSubtitleDelayToCue({required bool next}) {
+  int? _snapSubtitleDelayToCue({required bool next}) {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) return null;
     final int? newDelayMs = VideoPlayerController.snapSubtitleDelayMs(
       cues: controller.cues,
       positionMs: controller.positionMs,
       currentDelayMs: _delayMs,
       next: next,
     );
-    if (newDelayMs == null) return;
+    if (newDelayMs == null) return null;
     unawaited(_setDelayMs(newDelayMs));
+    return newDelayMs;
   }
 
   /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]
@@ -1747,6 +1753,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
           initialDelayMs: _delayMs,
           onCommitDelay: _setDelayMs,
           onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+          // 「上/下一句对齐到当前时间」：本弹窗必然有 cue（进入前已判空并降级），故直接
+          // 接上执行体，与快速设置面板路径同源。
+          onSnapDelayToCue: _snapSubtitleDelayToCue,
           onPlayCue: (int startMs) async {
             await controller.seekMs(startMs);
             await controller.play();

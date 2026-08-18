@@ -3586,5 +3586,9 @@
   "video_import_folder_as_source_hint": "以后自动扫描此文件夹里的新视频",
   "manga_import_folder_as_source_hint": "以后自动扫描此文件夹里的新漫画",
   "download_no_managed_video_source": "还没有受管视频来源。下载完成的视频需要一个本地视频文件夹才能入库。",
-  "download_add_video_source": "添加视频来源"
+  "download_add_video_source": "添加视频来源",
+  "video_subtitle_prev_cue_align": "上一句对齐到当前",
+  "video_subtitle_next_cue_align": "下一句对齐到当前",
+  "video_control_custom_action": "快捷键 $index",
+  "video_control_custom_action_none": "不绑定"
 }

@@ -174,6 +174,68 @@ class VideoPlayerShortcutActions {
 /// single fixed wiring between the (remappable) registry actions and the
 /// concrete player operations; the keys themselves come from the registry so
 /// users can rebind them (TODO-134).
+/// 能绑到视频页**屏幕按钮**（自定义「快捷键 1..4」）上的动作全集。
+///
+/// 真相源是 [videoActionCallbacks]：只有它接过线的动作才真的能在本页执行，把别的动作
+/// 放进选择列表 = 用户配得上、按了没反应。这里之所以另写一份常量而不是直接取
+/// `videoActionCallbacks(...).keys`，是因为**设置页拿不到 live 的
+/// [VideoPlayerShortcutActions]**（那需要一个正在播放的 controller），而选择列表在没
+/// 打开视频时也要能展示。
+///
+/// ⚠️ 两份必须一致：守卫测试 `video_custom_action_bindings_test` 用一个哑实例调
+/// [videoActionCallbacks] 并与本表逐个比对，漏加 / 多加即红。顺序 = 选择列表的展示
+/// 顺序，按「播放 → 字幕 → 对轴 → 音量 → 画面 → 学习」分簇，与设置页快捷键分组同序。
+const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
+  // 播放控制
+  ShortcutAction.videoTogglePlayPause,
+  ShortcutAction.videoPlay,
+  ShortcutAction.videoPause,
+  ShortcutAction.videoSeekBackward,
+  ShortcutAction.videoSeekForward,
+  ShortcutAction.videoPreviousFrame,
+  ShortcutAction.videoNextFrame,
+  // 倍速
+  ShortcutAction.videoSpeedUp,
+  ShortcutAction.videoSpeedDown,
+  ShortcutAction.videoResetSpeed,
+  ShortcutAction.videoHoldSpeed,
+  // 字幕跳转 / 重播
+  ShortcutAction.videoPreviousSubtitle,
+  ShortcutAction.videoNextSubtitle,
+  ShortcutAction.videoReplayCurrentSubtitle,
+  ShortcutAction.videoReplayPreviousSubtitle,
+  // 章节
+  ShortcutAction.videoPreviousChapter,
+  ShortcutAction.videoNextChapter,
+  // 字幕显示 / 遮蔽
+  ShortcutAction.videoToggleSubtitleList,
+  ShortcutAction.videoToggleSubtitleBlur,
+  ShortcutAction.videoCycleSubtitleObscure,
+  ShortcutAction.videoToggleSubtitleHide,
+  ShortcutAction.videoCycleSecondarySubtitleObscure,
+  ShortcutAction.videoToggleSecondarySubtitleHide,
+  // 字幕对轴
+  ShortcutAction.videoOpenSubtitleAlign,
+  ShortcutAction.videoSubtitleDelayIncrease,
+  ShortcutAction.videoSubtitleDelayDecrease,
+  ShortcutAction.videoAlignSubtitleToPrev,
+  ShortcutAction.videoAlignSubtitleToNext,
+  // 音量
+  ShortcutAction.videoVolumeUp,
+  ShortcutAction.videoVolumeDown,
+  ShortcutAction.videoToggleMute,
+  // 画面 / 杂项
+  ShortcutAction.videoToggleFullscreen,
+  ShortcutAction.videoScreenshot,
+  ShortcutAction.videoToggleShaderCompare,
+  ShortcutAction.videoToggleImmersiveLock,
+  // 学习
+  ShortcutAction.videoToggleFavoriteSentence,
+  ShortcutAction.videoEnterCaret,
+  // 「返回上一级」：视频页把它解释成逐级退出阶梯（关字幕列表 → 退侧栏 → … → 退页）。
+  ShortcutAction.globalBack,
+];
+
 Map<ShortcutAction, VoidCallback> videoActionCallbacks(
   VideoPlayerShortcutActions actions,
 ) {

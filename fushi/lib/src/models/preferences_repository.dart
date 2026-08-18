@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/download/video_download_backend_identity.d
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -1325,6 +1326,24 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) async {
     await setPref('video_control_customization', layout.encode());
+    notifyListeners();
+  }
+
+  /// 视频「快捷键 1..4」自定义动作按钮的绑定（用户请求）：槽位序号 → 视频动作。
+  ///
+  /// 与 [videoControlLayout] **分开存**：布局管「按钮在哪个槽位、显不显示」，本表管
+  /// 「按钮按下去干什么」。两者正交——用户可以只改位置不改动作，反之亦然；混进同一个
+  /// JSON 只会让那个已经在扛 v1→v2→v3 迁移的 payload 再多一层版本。
+  /// 空串 = 一个都没绑（[VideoCustomActionBindings.empty]），播放器不显示任何自定义按钮。
+  VideoCustomActionBindings get videoCustomActionBindings =>
+      VideoCustomActionBindings.decode(
+        getPref('video_custom_action_bindings', defaultValue: '') as String,
+      );
+
+  Future<void> setVideoCustomActionBindings(
+    VideoCustomActionBindings bindings,
+  ) async {
+    await setPref('video_custom_action_bindings', bindings.encode());
     notifyListeners();
   }
 
