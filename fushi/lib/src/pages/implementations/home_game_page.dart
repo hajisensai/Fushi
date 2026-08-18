@@ -302,7 +302,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onSelectSettings: _showSettings,
             ),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
-            // 「捕获工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
+            // 「工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
           ),
           Expanded(
             child: Column(

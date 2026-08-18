@@ -10,8 +10,9 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 /// 文案（≤5 字）在四页渲染成等宽块；更长文案（其他语言）仍按该条最长段等宽放
 /// 大，放不下时先退自然宽、再退横向滚动（见 [FushiSegmentedStrip.minSegmentWidth]），
 /// 手机窄屏行为不变。
-/// 取值 = 5 个 CJK 字的估宽（5 × 14）+ 每段 chrome（28）：恰好容下当前最长的
-/// 中文顶栏文案「捕获工作台」，四个模块的分段块在中文下完全等宽。
+/// 取值 = 5 个 CJK 字的估宽（5 × 14）+ 每段 chrome（28）。定值时最长中文顶栏
+/// 文案是 5 字「捕获工作台」；该页签后改短为 3 字「工作台」（TODO-2937 拍板），
+/// 保留 5 字下限维持改名前的四页等宽观感，并为 ≤5 字的中文文案留余量。
 const double kLibrarySectionTabMinSegmentWidth = 98.0;
 
 /// [LibrarySectionTabs] 的一段：值 + 用户可读标签。

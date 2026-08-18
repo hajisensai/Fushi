@@ -3553,5 +3553,6 @@
   "discovery_torrent_pushed": "种子任务已添加",
   "discovery_torrent_failed": "种子任务添加失败",
   "discovery_kind_novel": "小说",
-  "discovery_kind_audiobook": "有声书"
+  "discovery_kind_audiobook": "有声书",
+  "game_capture_workbench_tab": "工作台"
 }

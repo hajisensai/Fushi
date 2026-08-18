@@ -204,9 +204,11 @@ class GameSectionTabs extends StatelessWidget {
           value: GameSection.discover,
           label: t.library_view_browse,
         ),
+        // 页签用短标签「工作台」（中文顶栏标签 ≤4 字，TODO-2937 拍板）；
+        // 页标题 / 设置导航项仍用全称 [game_capture_workbench]「捕获工作台」。
         LibrarySectionTab<GameSection>(
           value: GameSection.monitor,
-          label: t.game_capture_workbench,
+          label: t.game_capture_workbench_tab,
         ),
         // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
         // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
