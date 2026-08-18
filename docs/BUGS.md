@@ -29,11 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1581 条。点号进各自文件。
+> 共 1583 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1709](bugs/BUG-1709-mihon-install-uses-stale-index-snapshot.md) | ✅ | ✅ | 默认 keiyoushi 仓库安装扩展报 STORE_HTTP_404：安装用的是过期索引快照 |
 | [BUG-1708](bugs/BUG-1708-update-blocked-by-self-held-files.md) | ✅ | ✅ | 自更新被自己造成的文件占用挡住且失败后 app 不回来 |
+| [BUG-1707](bugs/BUG-1707-mihon-store-legacy-index-v2.md) | ✅ | ✅ | Mihon 扩展仓库填 index.min.json 后安装必 404（legacy 分支吞掉 repo.json 的 index_v2） |
 | [BUG-1706](bugs/BUG-1706-downloads-resource-gate-message.md) | ✅ | ✅ | 下载页资源标签把「无受管视频来源」误报成「请先配置下载后端」 |
 | [BUG-1705](bugs/BUG-1705-qb-login-204.md) | ✅ | ✅ | qBittorrent 5.2+ 登录成功返回 204 被判成登录失败 |
 | [BUG-1704](bugs/BUG-1704-interconnect-collection-detail-remote-members.md) | ✅ | ✅ | 互联客户端打开合集详情显示「合集为空」：详情页只认本地视频行，丢弃 host 侧成员 |
