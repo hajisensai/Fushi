@@ -28,6 +28,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
@@ -534,18 +535,24 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
     final VideoSourceScrapeRunRow? latest = _latestScrapeRuns[row.id];
     if (widget.mediaKind == 'video' && latest != null) {
-      return Text(
-        t.video_source_scrape_last_summary(
-          status: _scrapeRunStatusLabel(latest.status),
-          succeeded: latest.succeededWorks,
-          pending: latest.pendingConfirmations,
-          failed: latest.failedWorks,
+      // 「待确认 N，失败 N」必须是可点的：这两个数字背后是逐条作品级事实，
+      // 用户唯一想做的事就是点进去处理它们（BUG-1720）。
+      return InkWell(
+        key: ValueKey<String>('media-source-scrape-summary-${row.id}'),
+        onTap: () => unawaited(_openScrapeRunDetail(row, latest)),
+        child: Text(
+          t.video_source_scrape_last_summary(
+            status: videoSourceScrapeRunStatusLabel(latest.status),
+            succeeded: latest.succeededWorks,
+            pending: latest.pendingConfirmations,
+            failed: latest.failedWorks,
+          ),
+          style: subStyle?.copyWith(
+            color: latest.failedWorks > 0 ? cs.error : null,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        style: subStyle?.copyWith(
-          color: latest.failedWorks > 0 ? cs.error : null,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       );
     }
     // TODO-1036：显示该来源**累计拥有**的条目数（不是上次扫描新增数 mediaCount，
@@ -598,13 +605,25 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         _ => t.video_source_scrape_action,
       };
 
-  String _scrapeRunStatusLabel(String status) => switch (status) {
-        'completed' => t.download_task_status_completed,
-        'cancelled' => t.download_status_cancelled,
-        'interrupted' => t.video_source_scrape_status_interrupted,
-        'failed' => t.download_task_status_error,
-        _ => status,
-      };
+  /// 上次刮削摘要 → 该次 run 的可操作详情。重刮走的是行上那颗「刮削此来源」
+  /// 按钮的同一个回调，手动指定走 controller 的同一条绑定保存路径。
+  Future<void> _openScrapeRunDetail(
+    SourceLibraryRow row,
+    VideoSourceScrapeRunRow run,
+  ) async {
+    final Future<void> Function(SourceLibraryRow source)? scrape =
+        widget.onScrapeSource;
+    final bool changed = await showVideoSourceScrapeRunDetailDialog(
+      context: context,
+      run: run,
+      source: row,
+      controller: widget.scrapeTaskController,
+      onRescrapeSource: scrape == null || _isScrapingSource(row.id)
+          ? null
+          : (SourceLibraryRow source) => _scrapeSource(source),
+    );
+    if (changed && mounted) await _refreshLatestScrapeRun(row.id);
+  }
 
   /// 拖拽重排后逐行回写 sortOrder（与 DAO orderBy(sortOrder, id) 对齐）。
   Future<void> _persistOrder() async {
