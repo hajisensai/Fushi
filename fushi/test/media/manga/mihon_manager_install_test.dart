@@ -204,6 +204,153 @@ void main() {
     },
     skip: !(Platform.isWindows || Platform.isMacOS),
   );
+
+  // BUG-1709：`available` 是索引的内存快照，而快照里的 apkUrl 指向 GitHub release
+  // 资产——上游只保留最近 7 个 release，旧 tag 连同资产一起删。进程在后台活几天再点
+  // 安装，快照里每一条直链都指向已删除的 tag（`STORE_HTTP_404`）。安装必须以当次
+  // 索引为准，而不是快照。
+  test('store install downloads from a freshly resolved index', () async {
+    await database.upsertMangaExtensionStore(
+      MangaExtensionStoresCompanion.insert(
+        indexUrl: 'https://repo.example/index.json',
+        name: 'Fixture repository',
+        format: MihonStoreFormat.currentJson.name,
+        signingKey: const Value<String?>('aabb'),
+      ),
+    );
+    manager.dispose();
+
+    final List<String> requested = <String>[];
+    final MockClient httpClient = MockClient((http.Request request) async {
+      requested.add(request.url.toString());
+      if (request.url.path.endsWith('/index.json')) {
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'name': 'Fixture repository',
+            'badgeLabel': 'Fixture',
+            'signingKey': 'aabb',
+            'extensionList': <String, Object?>{
+              'extensions': <Object?>[
+                <String, Object?>{
+                  'name': 'Fixture extension',
+                  'packageName': 'org.example.fixture',
+                  'resources': <String, Object?>{
+                    'apkUrl': 'apk/fresh.apk',
+                    'iconUrl': 'icons/fixture.png',
+                  },
+                  'extensionLib': '1.6',
+                  'versionCode': 9,
+                  'versionName': '1.6.9',
+                  'contentWarning': 'CONTENT_WARNING_SAFE',
+                  'sources': <Object?>[],
+                },
+              ],
+            },
+          }),
+          HttpStatus.ok,
+        );
+      }
+      if (request.url.path.endsWith('/apk/fresh.apk')) {
+        return http.Response.bytes(<int>[9], HttpStatus.ok);
+      }
+      // 上游已经删掉的旧 release 资产。
+      return http.Response('', HttpStatus.notFound);
+    });
+    manager = MihonManager(
+      database: database,
+      rootDirectory: root,
+      runtime: runtime,
+      storeClient: MihonExtensionStoreClient(client: httpClient),
+    );
+    await manager.initialise();
+    runtime.inspection = _inspection(versionCode: 9, signer: 'aabb');
+
+    // 几天前那份快照：直链指向已被删除的 tag，版本号也停在旧值。
+    const MihonAvailableExtension stale = MihonAvailableExtension(
+      storeUrl: 'https://repo.example/index.json',
+      name: 'Fixture extension',
+      packageName: 'org.example.fixture',
+      apkUrl: 'https://repo.example/apk/deleted-release.apk',
+      iconUrl: 'https://repo.example/icons/fixture.png',
+      libVersion: '1.6',
+      versionCode: 8,
+      versionName: '1.6.8',
+      language: 'en',
+      contentWarning: 1,
+      sources: <MihonAvailableSource>[],
+    );
+
+    final MihonInstallProposal proposal =
+        await manager.prepareStoreInstall(stale);
+
+    expect(
+      requested,
+      isNot(contains('https://repo.example/apk/deleted-release.apk')),
+    );
+    expect(requested, contains('https://repo.example/apk/fresh.apk'));
+    expect(proposal.expected!.apkUrl, 'https://repo.example/apk/fresh.apk');
+    expect(proposal.expected!.versionCode, 9);
+  });
+
+  test('store install reports an extension pulled from the repository',
+      () async {
+    await database.upsertMangaExtensionStore(
+      MangaExtensionStoresCompanion.insert(
+        indexUrl: 'https://repo.example/index.json',
+        name: 'Fixture repository',
+        format: MihonStoreFormat.currentJson.name,
+        signingKey: const Value<String?>('aabb'),
+      ),
+    );
+    manager.dispose();
+
+    final MockClient httpClient = MockClient((http.Request request) async {
+      if (request.url.path.endsWith('/index.json')) {
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'name': 'Fixture repository',
+            'badgeLabel': 'Fixture',
+            'signingKey': 'aabb',
+            'extensionList': <String, Object?>{'extensions': <Object?>[]},
+          }),
+          HttpStatus.ok,
+        );
+      }
+      return http.Response('', HttpStatus.notFound);
+    });
+    manager = MihonManager(
+      database: database,
+      rootDirectory: root,
+      runtime: runtime,
+      storeClient: MihonExtensionStoreClient(client: httpClient),
+    );
+    await manager.initialise();
+
+    const MihonAvailableExtension stale = MihonAvailableExtension(
+      storeUrl: 'https://repo.example/index.json',
+      name: 'Fixture extension',
+      packageName: 'org.example.fixture',
+      apkUrl: 'https://repo.example/apk/deleted-release.apk',
+      iconUrl: 'https://repo.example/icons/fixture.png',
+      libVersion: '1.6',
+      versionCode: 8,
+      versionName: '1.6.8',
+      language: 'en',
+      contentWarning: 1,
+      sources: <MihonAvailableSource>[],
+    );
+
+    await expectLater(
+      manager.prepareStoreInstall(stale),
+      throwsA(
+        isA<MihonRuntimeException>().having(
+          (MihonRuntimeException error) => error.code,
+          'code',
+          'EXTENSION_GONE',
+        ),
+      ),
+    );
+  });
 }
 
 Future<File> _fixtureApk(

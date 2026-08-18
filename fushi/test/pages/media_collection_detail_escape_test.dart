@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -74,7 +75,10 @@ void main() {
           createdAt: 0,
           orderUpdatedAt: 0,
         ),
-        loadMembers: members ?? loadMembers,
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (members ?? loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
         onOpenEpisode: (VideoBookRow _) {},
         onChanged: () {},
       );

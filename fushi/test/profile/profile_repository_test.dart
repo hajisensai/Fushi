@@ -304,6 +304,41 @@ void main() {
           c); // full fallthrough to active (kind bound to nothing)
     });
 
+    test('TODO-2936: manga/game/browser kinds bind and resolve like the rest',
+        () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final active = await repo.createProfile('Active');
+      await repo.setActiveProfileId(active);
+      for (final ProfileMediaKind kind in <ProfileMediaKind>[
+        ProfileMediaKind.manga,
+        ProfileMediaKind.game,
+        ProfileMediaKind.browser,
+      ]) {
+        // 未绑定 → 落回 active。
+        expect(
+          await repo.resolveProfileId(bookUid: null, mediaType: kind),
+          active,
+        );
+        final bound = await repo.createProfile('P-${kind.dbValue}');
+        await repo.setMediaTypeBinding(kind, bound);
+        expect(
+          await repo.resolveProfileId(bookUid: null, mediaType: kind),
+          bound,
+        );
+        // 落库串就是 dbValue（冻结值域，UI/存储零字符串比较）。
+        expect(
+          (await repo.getAllMediaTypeBindings())[kind.dbValue],
+          bound,
+        );
+        await repo.removeMediaTypeBinding(kind);
+        expect(
+          await repo.resolveProfileId(bookUid: null, mediaType: kind),
+          active,
+        );
+      }
+    });
+
     test('deleteProfile of the active profile reassigns AND applies remaining',
         () async {
       final db = await _openDb();

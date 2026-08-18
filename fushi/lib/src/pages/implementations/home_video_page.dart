@@ -55,6 +55,7 @@ import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortNewCollectionMembersNaturally;
 import 'package:fushi/src/media/collections/shelf_sort.dart';
@@ -5370,11 +5371,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
+  /// 详情页的远端上下文（BUG-1704）：合集清单是跨端 union，客户端本地的成员行里必然
+  /// 有「只在 host 上」的集。库页早就把它们混排成远端占位卡了，详情页拿同一份清单
+  /// （共享 [RemoteLibraryCache]，TTL 内不打网络）、同一条鉴权封面链、同一个流播入口
+  /// ——否则用户在库页看得见合集、点进去却是「合集为空」。
+  ///
+  /// 没有远端源（未启用互联 / 未配对 / 关掉「显示远端条目」）→ null = 纯本地视图。
+  CollectionRemoteContext? _collectionRemoteContext() {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    if (source == null || !_shouldLoadRemoteVideos) return null;
+    return CollectionRemoteContext(
+      loadRemoteVideos: () => _remoteCache.read(
+        sourceId: source.remoteLibrarySourceId,
+        key: RemoteLibraryCacheKeys.videos,
+        fetch: source.listRemoteVideos,
+      ),
+      openEpisode: (
+        RemoteVideoInfo episode,
+        List<RemoteVideoInfo> members,
+        int index,
+      ) =>
+          unawaited(_openRemote(
+        episode,
+        collectionMembers: members,
+        startIndex: index,
+      )),
+      coverFetcher: remoteCoverFetcherFor(_remoteVideoClient),
+    );
+  }
+
   /// 打开合集详情页（Jellyfin 式）。有序成员从 [FushiDatabase.getCollectionItems] 解析，
   /// 点某集经 playlistCollectionId 进播放器带剧集面板/上下集/连播；写库后重载库页。
   void _openCollectionDetail(MediaCollectionRow collection) {
     final VideoBookRepository repo = widget.repo;
     final FushiDatabase db = ref.read(appProvider).database;
+    final CollectionRemoteContext? remote = _collectionRemoteContext();
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
@@ -5384,6 +5415,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           repository: repo,
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
+          remote: remote,
           // 详情页管理菜单「刮削资料与封面」+ 集卡「条目信息」（BUG-1662）：注入
           // 库页同一套刮削入口，合集语境下的重刮不再是断头路。
           onScrapeCollection: _openCollectionCoverMatch,

@@ -46,6 +46,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -603,6 +604,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       if (!installed || !mounted) return;
       final GalHookSessionController session =
           widget.sessionController ?? GalHookSessionController.instance;
+      // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      unawaited(
+        ref
+            .read(profileViewModelProvider.notifier)
+            .autoApplyBinding(mediaType: ProfileMediaKind.game),
+      );
       final GalHookLaunchResult result = await session.launchGame(
         game.exePath,
         launchArguments: game.launchArgumentTokens,

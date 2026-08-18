@@ -432,6 +432,13 @@ class TorznabClient implements VideoResourceProvider {
   @override
   String get id => 'torznab';
 
+  /// 不限域：Torznab 索引器是用户自己配的，搜哪些分类由他填的 `categories`
+  /// 决定，app 无权替他裁掉某个域（这也正是 id 白名单时代 `torznab` 被无条件
+  /// 放行的原义，现在只是把它写成了 provider 自己的声明）。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
   Future<TorznabCapabilities> fetchCapabilities(String indexerId) async {
     final TorznabCapabilities? cached = _capsCache[indexerId];
     if (cached != null) return cached;

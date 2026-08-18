@@ -4,6 +4,9 @@ import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 
+/// Nyaa 内置索引器的 provider id（停用清单偏好、设置页开关行、去重键共用）。
+const String kNyaaResourceProviderId = 'nyaa';
+
 class NyaaVideoResourceProvider implements VideoResourceProvider {
   NyaaVideoResourceProvider({
     required NyaaClient client,
@@ -23,7 +26,14 @@ class NyaaVideoResourceProvider implements VideoResourceProvider {
   final int priority;
 
   @override
-  String get id => 'nyaa';
+  String get id => kNyaaResourceProviderId;
+
+  /// 只进动漫域。nyaa.si 的 `1_0` 分类本身就是 Anime，拿它去搜电影/剧集只会
+  /// 返回噪声——所以这不是策略，是这家索引器的内容边界。
+  @override
+  Set<VideoDiscoveryCategory> get categories => const <VideoDiscoveryCategory>{
+        VideoDiscoveryCategory.anime,
+      };
 
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(

@@ -1673,6 +1673,12 @@ class _FakeResourceProvider implements VideoResourceProvider {
   @override
   String get id => 'nyaa';
 
+  /// 测试替身不限域：真实域归属是各 provider 自己的内容边界，这里断言的是
+  /// 流水线行为，不该再依赖「id 恰好叫 nyaa」这种间接门控。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
   @override
   int get priority => 0;
 

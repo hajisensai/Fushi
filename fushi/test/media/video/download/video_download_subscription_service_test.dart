@@ -10,6 +10,7 @@ import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
@@ -1021,6 +1022,12 @@ class _FakeResourceProvider implements VideoResourceProvider {
 
   @override
   final String id;
+
+  /// 测试替身不限域：本套件断言的是订阅调度，不该再依赖「id 恰好叫 torznab」
+  /// 这种间接门控。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
 
   final ProviderBatchResult<VideoResourceCandidate> _result;
   final Map<int, ProviderBatchResult<VideoResourceCandidate>> _resultsByPage;
