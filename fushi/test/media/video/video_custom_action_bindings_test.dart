@@ -206,25 +206,57 @@ void main() {
   });
 
   group('默认布局向后兼容', () {
-    test('老配置解码后不会平白多出可见的自定义按钮', () {
-      // 铁律：新增 4 个枚举项对现有用户零影响。老 payload 里没有它们，解码后它们
-      // 要么进隐藏托盘、要么落默认槽位——但因为绑定为空，播放器一律不渲染
-      // （渲染门在 `_shouldRenderControlItem`，此处只核布局侧不炸）。
+    test('老配置解码后自定义按钮落底栏右区（可见），且不打乱原有布局', () {
+      // 用户拍板「未绑定也显示」后，这条的语义反过来了：老用户升级**必须**能在播放器上
+      // 看到这 4 个按钮，否则得先翻进编辑器把它们从隐藏托盘拖出来才知道有这功能。
+      // 兜底槽位由 [VideoControlLayout.currentChrome] 的 assignment 决定——它同时是老
+      // 布局解码时「这个没见过的 item 该放哪」的唯一依据，漏写就会被判成「用户移除过」。
       const String legacyV2 =
           '{"version":2,"slots":{"bottomRight":["speed","settings"],'
           '"bottomCenter":["playPause"]}}';
       final VideoControlLayout layout = VideoControlLayout.decode(legacyV2);
-      // 老 payload 能正常解出且保留原有按钮。
+      // 老 payload 原有按钮原地不动。
       expect(
         layout.itemsIn(VideoControlSlot.bottomCenter),
         contains(VideoControlItem.playPause),
       );
-      // 自定义按钮不会挤进老用户的 bottomCenter。
+      expect(
+        layout.itemsIn(VideoControlSlot.bottomRight),
+        containsAll(<VideoControlItem>[
+          VideoControlItem.speed,
+          VideoControlItem.settings,
+        ]),
+      );
       for (final VideoControlItem item in VideoControlItem.customActionItems) {
+        // 落在底栏右区且可见，不进 removed。
+        expect(
+          layout.itemsIn(VideoControlSlot.bottomRight),
+          contains(item),
+          reason: '${item.storageValue} 升级后应可见于底栏右区',
+        );
+        expect(layout.slotOf(item), VideoControlSlot.bottomRight);
+        // 不挤进老用户的底栏中区（传输键簇）。
         expect(
           layout.itemsIn(VideoControlSlot.bottomCenter).contains(item),
           isFalse,
-          reason: '${item.storageValue} 不该出现在老配置的底栏中区',
+          reason: '${item.storageValue} 不该出现在底栏中区',
+        );
+      }
+    });
+
+    test('用户把自定义按钮拖进隐藏托盘后，解码回来仍是隐藏的', () {
+      // 「未绑定也显示」是默认值，不是强制值——不想要的人拖走之后必须留得住，
+      // 否则每次启动都会自己冒回来。
+      const String v3Hidden =
+          '{"version":3,"slots":{"bottomCenter":["playPause"]},'
+          '"removed":["customAction1","customAction2",'
+          '"customAction3","customAction4"]}';
+      final VideoControlLayout layout = VideoControlLayout.decode(v3Hidden);
+      for (final VideoControlItem item in VideoControlItem.customActionItems) {
+        expect(
+          layout.slotOf(item),
+          VideoControlSlot.hidden,
+          reason: '${item.storageValue} 被移除后不该自己回到播放器上',
         );
       }
     });

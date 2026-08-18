@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_layout_editor.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 
@@ -74,8 +75,8 @@ void main() {
       onChanged: (VideoCustomActionBindings b) async => saved = b,
     );
 
-    // 未绑定的槽位在编辑器里以槽位名出现（播放器上不显示，但编辑器必须能看到，
-    // 否则用户根本没有下手的地方）。
+    // 未绑定的槽位以「快捷键 N」这个槽位名出现（播放器上同样显示，点它就地弹本
+    // 选择器；编辑器里则是摆位置顺手配）。
     final String slotLabel = t.video_control_custom_action(index: 1);
     expect(find.byTooltip(slotLabel), findsWidgets);
 
@@ -128,7 +129,7 @@ void main() {
   });
 
   testWidgets('取消选择器（点外部）保持原绑定不变', (WidgetTester tester) async {
-    // 这条钉的是 `_CustomActionPick` 存在的理由：取消与「显式选不绑定」都是 null
+    // 这条钉的是 [VideoCustomActionPick] 存在的理由：取消与「显式选不绑定」都是 null
     // 动作，若不区分，点外部关弹窗会把用户配好的按钮清掉。
     bool called = false;
     final VideoCustomActionBindings bound = VideoCustomActionBindings.empty
@@ -152,6 +153,61 @@ void main() {
       isFalse,
       reason: '取消不该触发改绑回调（否则点外部就把绑定清空了）',
     );
+  });
+
+  testWidgets('共享选择器：取消返回 null，选动作/选「不绑定」返回可区分的结果',
+      (WidgetTester tester) async {
+    // 播放器控制条点空按钮走的就是这个函数（与编辑器同一个）。它是「未绑定也显示」
+    // 得以成立的前提——空按钮不是死按钮，而是就地的配置入口，所以这里单独钉住它的
+    // 三种返回，尤其是「取消 ≠ 不绑定」（两者都不带动作，混淆就会让点外部清空绑定）。
+    VideoCustomActionPick? result;
+    bool opened = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () async {
+                opened = true;
+                result = await showVideoCustomActionPicker(
+                  context: context,
+                  slotNumber: 1,
+                  current: null,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // ① 取消（点外部）→ null
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(opened, isTrue);
+    expect(find.text(t.video_control_custom_action_none), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(result, isNull, reason: '取消必须返回 null，不能被当成「不绑定」');
+
+    // ② 选一个动作 → 带动作的结果
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester
+        .ensureVisible(find.text(ShortcutAction.videoNextSubtitle.label));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(ShortcutAction.videoNextSubtitle.label));
+    await tester.pumpAndSettle();
+    expect(result?.action, ShortcutAction.videoNextSubtitle);
+
+    // ③ 选「不绑定」→ 非 null 但 action 为 null（与取消区分开）
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.video_control_custom_action_none));
+    await tester.pumpAndSettle();
+    expect(result, isNotNull, reason: '「不绑定」是一次显式选择，不是取消');
+    expect(result!.action, isNull);
   });
 
   testWidgets('选择器列出全部可绑动作，且不含未接线的动作', (WidgetTester tester) async {

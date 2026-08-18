@@ -1334,7 +1334,8 @@ class PreferencesRepository extends ChangeNotifier {
   /// 与 [videoControlLayout] **分开存**：布局管「按钮在哪个槽位、显不显示」，本表管
   /// 「按钮按下去干什么」。两者正交——用户可以只改位置不改动作，反之亦然；混进同一个
   /// JSON 只会让那个已经在扛 v1→v2→v3 迁移的 payload 再多一层版本。
-  /// 空串 = 一个都没绑（[VideoCustomActionBindings.empty]），播放器不显示任何自定义按钮。
+  /// 空串 = 一个都没绑（[VideoCustomActionBindings.empty]）。此时按钮仍显示在控制条上，
+  /// 点它就地弹动作选择器——空槽位是配置入口，不是死按钮。
   VideoCustomActionBindings get videoCustomActionBindings =>
       VideoCustomActionBindings.decode(
         getPref('video_custom_action_bindings', defaultValue: '') as String,

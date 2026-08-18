@@ -168,9 +168,10 @@ enum VideoControlItem {
   // 触摸端没有键盘——近 40 个视频动作里只有 ~25 个有具名按钮，其余在手机上根本没法
   // 触发。与其为每个动作再加一个枚举项，不如给几个可绑定的通用槽位。
   //
-  // **未绑定的槽位在播放器上不渲染**（见 `_shouldRenderControlItem`），所以新增这 4
-  // 项对现有用户零影响：老配置解出来它们要么在隐藏托盘、要么在默认槽位但因未绑定而
-  // 不显示，播放器长相完全不变。
+  // **未绑定也照常渲染**（用户拍板，见 `_shouldRenderControlItem`）：空槽位点一下就
+  // 地弹动作选择器，所以它不是死按钮，而是手机上最短的配置路径——看得见、点得到、
+  // 当场配好。代价是所有用户（含老用户，见 [currentChrome] 的兜底 assignment）升级后
+  // 底栏右区会多出 4 个按钮；不想要的可以像其它按钮一样拖进隐藏托盘。
   customAction1('customAction1'),
   customAction2('customAction2'),
   customAction3('customAction3'),
@@ -514,9 +515,9 @@ class VideoControlLayout {
       VideoControlItem.settings: VideoControlSlot.bottomRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.bottomRight,
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
-      // 自定义「快捷键」按钮默认落底栏右区：绑定后就出现在顺手位置，不用再拖一次。
-      // 未绑定时不渲染（见 `_shouldRenderControlItem`），所以放在这里不会让默认布局
-      // 平白多出 4 个按钮。
+      // 自定义「快捷键」按钮默认落底栏右区，未绑定也显示——空槽位点一下即弹动作
+      // 选择器，是手机上最短的配置路径。与 [currentChrome] 保持一致（那份还兼任老
+      // 布局的解码兜底）。
       VideoControlItem.customAction1: VideoControlSlot.bottomRight,
       VideoControlItem.customAction2: VideoControlSlot.bottomRight,
       VideoControlItem.customAction3: VideoControlSlot.bottomRight,
@@ -614,6 +615,13 @@ class VideoControlLayout {
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
       VideoControlItem.settings: VideoControlSlot.screenRight,
+      // -- 自定义「快捷键 1..4」按钮：默认可见（未绑定也显示，点它就地配动作）。
+      // 这条 assignment 同时是**老布局的解码兜底**：不列在这里，老用户升级后这几个
+      // 按钮会被判成「用户移除过」而落进隐藏托盘，播放器上永远不出现。
+      VideoControlItem.customAction1: VideoControlSlot.bottomRight,
+      VideoControlItem.customAction2: VideoControlSlot.bottomRight,
+      VideoControlItem.customAction3: VideoControlSlot.bottomRight,
+      VideoControlItem.customAction4: VideoControlSlot.bottomRight,
     },
     explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
       VideoControlSlot.topLeft: <VideoControlItem>[
@@ -648,6 +656,16 @@ class VideoControlLayout {
         VideoControlItem.volume,
         VideoControlItem.fullscreen,
         VideoControlItem.speed,
+        // 自定义「快捷键 1..4」按钮默认落底栏右区，**未绑定也显示**（用户拍板）。
+        //
+        // 必须写在 [currentChrome] 而不只是 [defaults]：老用户的持久化布局里没有这几个
+        // 新枚举项，解码时按 `currentChrome.slotOf(item)` 兜底——不列在这里就会被判成
+        // 「用户移除过」而落进隐藏托盘，于是升级后**在播放器上永远看不到它们**，得先
+        // 翻进编辑器把它们拖出来才知道有这功能。空槽位点一下即弹动作选择器，不是死按钮。
+        VideoControlItem.customAction1,
+        VideoControlItem.customAction2,
+        VideoControlItem.customAction3,
+        VideoControlItem.customAction4,
       ],
       VideoControlSlot.screenRight: <VideoControlItem>[
         VideoControlItem.subtitleList,

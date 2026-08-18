@@ -19,7 +19,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 class VideoCustomActionBindings {
   const VideoCustomActionBindings._(this._actions);
 
-  /// 全空绑定（默认值）：4 个槽位都未绑定，播放器上一个自定义按钮都不显示。
+  /// 全空绑定（默认值）：4 个槽位都未绑定。按钮**照常显示**在控制条上，点任意一个
+  /// 即弹动作选择器就地配置（未绑定不等于不显示，见 `_shouldRenderControlItem`）。
   static const VideoCustomActionBindings empty = VideoCustomActionBindings._(
     <ShortcutAction?>[null, null, null, null],
   );

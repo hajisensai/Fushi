@@ -66,6 +66,7 @@ import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
@@ -5222,14 +5223,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   bool _shouldRenderControlItem(VideoControlItem item) {
-    // 自定义「快捷键」按钮：**绑了动作才显示**。这条规则同时承担两件事——
-    //   ① 没配过的槽位不会变成播放器上按了没反应的死按钮；
-    //   ② 新增这 4 个枚举项对现有用户零影响（老布局解出来它们即便落在可见槽位，
-    //      也因为绑定为空而不渲染，控制条长相完全不变）。
-    final int? slotIndex = item.customActionSlotIndex;
-    if (slotIndex != null) {
-      return _customActionBindings.actionAt(slotIndex) != null;
-    }
+    // 自定义「快捷键」按钮：**未绑定也显示**（用户拍板）。空槽位不是死按钮——点它
+    // 就地弹动作选择器（见 `_activateVideoControlItem`），这是手机上最短的配置路径：
+    // 看得见 → 点得到 → 当场配好，不用先翻进设置面板找编辑器。
+    //
+    // 想让某个槽位彻底消失，走控件编辑器把它拖进隐藏托盘（和其它按钮同一套操作），
+    // 而不是靠「没绑动作」这个隐式条件——后者会让「我明明配置过它，怎么不见了」
+    // 和「怎么才能把它调出来」同时变成谜。
+    if (item.isCustomAction) return true;
     switch (item) {
       case VideoControlItem.previousEpisode:
       case VideoControlItem.nextEpisode:
@@ -5554,19 +5555,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     LayerLink? popoverLink,
     VideoControlSlot? sourceSlot,
   }) {
-    // 自定义「快捷键」按钮：查**键盘 / 手柄用的同一张动作表**并执行。这里刻意不写
-    // 第二套 switch——[videoActionCallbacks] 已经是「动作 → 本页具体操作」的唯一接线，
-    // 屏幕按钮再抄一份就等于承诺两份实现永远一致（沉浸门控、防重入这些都在回调里）。
-    // 未绑定 / 表里没有该动作（动作被删）时静默 no-op：按钮本就不该渲染出来。
+    // 自定义「快捷键」按钮，两种语义按是否绑过动作分流：
+    //   · 已绑定 → 查**键盘 / 手柄用的同一张动作表**并执行。这里刻意不写第二套
+    //     switch——[videoActionCallbacks] 已是「动作 → 本页具体操作」的唯一接线，屏幕
+    //     按钮再抄一份就等于承诺两份实现永远一致（沉浸门控、防重入都在回调里）。
+    //   · 未绑定 → 就地弹动作选择器配置它。空槽位照样渲染（见
+    //     `_shouldRenderControlItem`），靠这条分流才不至于变成按了没反应的死按钮。
     final int? slotIndex = item.customActionSlotIndex;
     if (slotIndex != null) {
       final ShortcutAction? action = _customActionBindings.actionAt(slotIndex);
-      if (action == null) return;
+      // 与其它控制条按钮一致：按一下续命控制条，否则 3s 到点隐藏、手指还在按钮上。
+      // 弹选择器那条路尤其需要——弹窗期间控制条不该在背后自己消失。
+      _pokeControlsVisible();
+      if (action == null) {
+        unawaited(_pickVideoCustomAction(slotIndex));
+        return;
+      }
       final VoidCallback? callback =
           videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+      // 表里没有该动作（动作在新版被删）时静默 no-op，不崩。
       if (callback == null) return;
-      // 与其它控制条按钮一致：按一下续命控制条，否则 3s 到点隐藏、手指还在按钮上。
-      _pokeControlsVisible();
       callback();
       return;
     }
@@ -6238,6 +6246,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _customActionBindingsNotifier.value = bindings;
     await appModel.setVideoCustomActionBindings(bindings);
     if (mounted) setState(() {});
+  }
+
+  /// 在播放器上直接点空的「快捷键 N」按钮 → 就地选动作。手机上最短的配置路径：
+  /// 看得见、点得到、当场配好，不用先翻进设置面板找控件编辑器。选择器与编辑器共用
+  /// [showVideoCustomActionPicker]，列表与选中态两处必然一致。
+  ///
+  /// guardOverlay：弹窗走 root navigator 会夺走视频键盘焦点，任何退出路径（选完 /
+  /// Esc / 点外部 / 抛异常）都必须归还，否则关掉弹窗后空格等快捷键要等到下次点画面
+  /// 才恢复——这是本页所有覆盖层的既有范式（见 [_openSubtitleWaveformAlign]）。
+  Future<void> _pickVideoCustomAction(int slotIndex) async {
+    final ShortcutAction? current = _customActionBindings.actionAt(slotIndex);
+    final VideoCustomActionPick? pick = await _focusOwnership.guardOverlay(
+      () => showVideoCustomActionPicker(
+        context: context,
+        slotNumber: slotIndex + 1,
+        current: current,
+      ),
+    );
+    // null = 取消（点外部 / 返回键）；显式选「不绑定」是 VideoCustomActionPick(null)。
+    if (pick == null || !mounted) return;
+    final VideoCustomActionBindings next =
+        _customActionBindings.withAction(slotIndex, pick.action);
+    if (next == _customActionBindings) return;
+    await _setVideoCustomActionBindings(next);
   }
 
   // 原 `_showVideoControlEditOverlay`（TODO-440 画面内拖拽编辑入口）已删：旧面板只

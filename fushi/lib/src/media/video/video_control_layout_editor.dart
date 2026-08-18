@@ -6,9 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
-import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
-import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/utils.dart';
 
 /// 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。从旧
@@ -555,45 +554,23 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     );
   }
 
-  /// 点「快捷键 N」chip：选它执行哪个动作。
+  /// 点「快捷键 N」chip：选它执行哪个动作。选完立即落盘 + 生效，没有「保存」步骤。
   ///
-  /// 列表就是 [kVideoAssignableActions]（= 视频页真正接过线的动作），外加一条「不绑定」
-  /// 用来清空槽位——清空后该按钮在播放器上直接消失（见 `_shouldRenderControlItem`），
-  /// 不留一个按了没反应的空壳。选完立即落盘 + 生效，没有「保存」步骤。
+  /// 弹窗本体走共享的 [showVideoCustomActionPicker]——播放器控制条上直接点空按钮走的
+  /// 是同一个入口，两处列表/顺序/选中态必然一致。
   Future<void> _pickCustomAction(VideoControlItem item) async {
     final int? slotIndex = item.customActionSlotIndex;
     final Future<void> Function(VideoCustomActionBindings)? onChanged =
         widget.onCustomActionBindingsChanged;
     if (slotIndex == null || onChanged == null) return;
     final ShortcutAction? current = _customActionBindings.actionAt(slotIndex);
-    final _CustomActionPick? pick = await showDialog<_CustomActionPick>(
+    final VideoCustomActionPick? pick = await showVideoCustomActionPicker(
       context: context,
-      builder: (BuildContext dialogContext) => SimpleDialog(
-        title: Text(t.video_control_custom_action(index: slotIndex + 1)),
-        children: <Widget>[
-          // 「不绑定」置顶：解绑是唯一「让按钮消失」的路径，藏在几十条动作末尾会找不到。
-          FushiListItem(
-            title: Text(t.video_control_custom_action_none),
-            leading: const Icon(Icons.block),
-            selected: current == null,
-            onTap: () => Navigator.of(dialogContext).pop(
-              const _CustomActionPick(null),
-            ),
-          ),
-          for (final ShortcutAction action in kVideoAssignableActions)
-            FushiListItem(
-              title: Text(action.label),
-              leading: Icon(action.buttonIcon ?? Icons.bolt_outlined),
-              selected: current == action,
-              onTap: () => Navigator.of(dialogContext).pop(
-                _CustomActionPick(action),
-              ),
-            ),
-        ],
-      ),
+      slotNumber: slotIndex + 1,
+      current: current,
     );
     // null = 用户点外部 / 返回键取消（区别于显式选了「不绑定」，那是
-    // `_CustomActionPick(null)`）——取消必须保持原绑定不动。
+    // `VideoCustomActionPick(null)`）——取消必须保持原绑定不动。
     if (pick == null || !mounted) return;
     final VideoCustomActionBindings next =
         _customActionBindings.withAction(slotIndex, pick.action);
@@ -776,15 +753,4 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
         return t.video_control_slot_top_center;
     }
   }
-}
-
-/// 动作选择对话框的返回值。
-///
-/// 存在的唯一理由：把「取消」和「显式选了不绑定」分开。两者的 [ShortcutAction] 都是
-/// null，直接 `pop<ShortcutAction?>(null)` 会让点外部关闭 == 清空绑定——用户只是想
-/// 关掉弹窗，按钮却没了。包一层后取消是 `null`、不绑定是 `_CustomActionPick(null)`。
-class _CustomActionPick {
-  const _CustomActionPick(this.action);
-
-  final ShortcutAction? action;
 }
