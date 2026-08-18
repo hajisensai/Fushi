@@ -5,6 +5,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show kGalgameHelperInstallDirectoryName;
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
+import 'package:fushi/src/utils/misc/helper_process_registry.dart';
 import 'package:fushi/src/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
@@ -673,6 +674,19 @@ class WindowsInstaller {
     try {
       if (Platform.isWindows) {
         await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
+      }
+      // 先收干净我们自己拉起的辅助子进程（ffmpeg/ffprobe 的可执行文件就在安装目录里），
+      // 再把安装交出去。它们不随 app 退出而死（Dart 的 Process.start 不绑 job object），
+      // 留一个还在转码的 ffmpeg 就足以让 Inno 在复制阶段 `DeleteFile failed; code 5`
+      // 并**整包回滚**——而那时 app 已经退出，用户只看到「关掉了没再打开」（BUG-1708）。
+      // 必须在启动 launcher 之前完成：launcher 等到本进程一退出就立刻拉起 Inno。
+      final int reaped = await HelperProcessRegistry.instance.terminateAll();
+      if (reaped > 0) {
+        ErrorLogService.instance.log(
+          'WindowsInstaller.reapHelpers',
+          'Terminated $reaped helper subprocess(es) before handing off to the '
+              'installer (they hold files inside $targetInstallDir).',
+        );
       }
       if (Platform.isWindows || hasInjectedDiagnostics) {
         _throwIfWindowsInstallBlocked(diagnostics, innoLogPath);

@@ -29,12 +29,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1579 条。点号进各自文件。
+> 共 1588 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1721](bugs/BUG-1721-scrape-history-no-rescrape-entry.md) | ✅ | ✅ | 后台任务历史条目无法重新刮削或手动指定作品 |
 | [BUG-1720](bugs/BUG-1720-scrape-pending-confirmation-no-entry.md) | ✅ | ✅ | 视频刮削「待确认 N」没有任何确认入口 |
+| [BUG-1717](bugs/BUG-1717-manga-default-keiyoushi-store.md) | — | — | 漫画缺少默认 keiyoushi 扩展仓库（核查：develop 已内置） |
+| [BUG-1716](bugs/BUG-1716-mihon-store-remove-no-confirm.md) | ✅ | ✅ | 删除漫画扩展仓库没有确认提示，一点即删 |
+| [BUG-1715](bugs/BUG-1715-desktop-extension-icons-bypass-proxy.md) | ✅ | ✅ | 桌面漫画扩展列表不显示图标：图标请求绕过应用代理出口 |
+| [BUG-1709](bugs/BUG-1709-mihon-install-uses-stale-index-snapshot.md) | ✅ | ✅ | 默认 keiyoushi 仓库安装扩展报 STORE_HTTP_404：安装用的是过期索引快照 |
+| [BUG-1708](bugs/BUG-1708-update-blocked-by-self-held-files.md) | ✅ | ✅ | 自更新被自己造成的文件占用挡住且失败后 app 不回来 |
+| [BUG-1707](bugs/BUG-1707-mihon-store-legacy-index-v2.md) | ✅ | ✅ | Mihon 扩展仓库填 index.min.json 后安装必 404（legacy 分支吞掉 repo.json 的 index_v2） |
+| [BUG-1706](bugs/BUG-1706-downloads-resource-gate-message.md) | ✅ | ✅ | 下载页资源标签把「无受管视频来源」误报成「请先配置下载后端」 |
+| [BUG-1705](bugs/BUG-1705-qb-login-204.md) | ✅ | ✅ | qBittorrent 5.2+ 登录成功返回 204 被判成登录失败 |
+| [BUG-1704](bugs/BUG-1704-interconnect-collection-detail-remote-members.md) | ✅ | ✅ | 互联客户端打开合集详情显示「合集为空」：详情页只认本地视频行，丢弃 host 侧成员 |
 | [BUG-1703](bugs/BUG-1703-manga-extension-error-truncated-toast.md) | ✅ | ✅ | 扩展安装/加载失败的根因被 Android 原生 toast 截成 2 行，用户永远看不到 |
 | [BUG-1702](bugs/BUG-1702-mihon-r8-kotlin-keep.md) | ✅ | ✅ | release APK 的 R8 混淆掉宿主 Kotlin 运行时，所有 Mihon 漫画扩展 LOAD_FAILED |
 | [BUG-1701](bugs/BUG-1701-manga-webtoon-pinch-vs-scroll.md) | ✅ | ✅ | 手机端漫画条漫模式捏合缩放与上下滚动互相干扰 |

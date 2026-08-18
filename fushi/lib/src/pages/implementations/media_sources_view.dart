@@ -708,6 +708,66 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
+  /// 「导入文件夹」统一入口：先问去向（设为常驻来源 / 仅导入这一次），再分发到
+  /// [addLocalFolder] / [importLocalFolderOnce]。各媒体域的快速导入区共用同一个
+  /// 对话框，仅「设为常驻来源」的提示语按 [MediaSourcesView.mediaKind] 说本域的话。
+  Future<void> importFolder() async {
+    if (isBusy) return;
+    final String asSourceHint = switch (widget.mediaKind) {
+      'video' => t.video_import_folder_as_source_hint,
+      'manga' => t.manga_import_folder_as_source_hint,
+      _ => t.book_import_folder_as_source_hint,
+    };
+    final _FolderImportChoice? choice =
+        await showAppDialog<_FolderImportChoice>(
+      context: context,
+      builder: (BuildContext ctx) => SimpleDialog(
+        title: Text(t.media_import_folder),
+        children: <Widget>[
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.asSource),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.create_new_folder_outlined),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(t.media_import_folder_as_source),
+                      Text(
+                        asSourceHint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.file_download_outlined),
+                const SizedBox(width: 16),
+                Expanded(child: Text(t.media_import_folder_once)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _FolderImportChoice.asSource:
+        await addLocalFolder();
+      case _FolderImportChoice.once:
+        await importLocalFolderOnce();
+    }
+  }
+
   /// 添加本地文件夹为常驻来源（选目录 → 去重 → 落库 → 立即扫描）。
   ///
   /// 公开：除 [addSource] 的本地分支外，「导入」视图快速导入区的「导入文件夹 →
@@ -763,7 +823,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String? picked = await pickRealDirectoryPath(
       context: context,
       appModel: _appModel,
-      dialogTitle: t.book_import_folder,
+      dialogTitle: t.media_import_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;
 
@@ -1330,6 +1390,9 @@ class _VideoSourceScrapeSettingsDialogState
 
 /// 添加来源的两个 case：本地文件夹 / 网络来源。
 enum _AddSourceChoice { local, network }
+
+/// 「导入文件夹」的两个去向：设为常驻来源 / 仅导入这一次。
+enum _FolderImportChoice { asSource, once }
 
 /// 网络来源表单返回值（连接参数 + 凭据；凭据不落 configJson）。
 class _NetworkSourceResult {
