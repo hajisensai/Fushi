@@ -166,7 +166,7 @@ void main() {
           textService: service,
           isWindows: true,
           targetWow64Probe: (_) async => false,
-          injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
           engineSourceFactory: ({
             required int targetPid,
             required String? launchExe,

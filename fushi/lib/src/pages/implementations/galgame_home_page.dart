@@ -24,6 +24,7 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 
 /// 游戏模块的默认首屏（游戏首页 / 仪表盘），布局对齐 ReinaManager `HomePage`
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。
@@ -280,6 +281,12 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       if (!installed || !mounted) return;
       final GalHookSessionController controller =
           widget.sessionController ?? GalHookSessionController.instance;
+      // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      unawaited(
+        ref
+            .read(profileViewModelProvider.notifier)
+            .autoApplyBinding(mediaType: ProfileMediaKind.game),
+      );
       final GalHookLaunchResult result = await controller.launchGame(
         game.exePath,
         launchArguments: game.launchArgumentTokens,

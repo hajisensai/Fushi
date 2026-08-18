@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
@@ -1179,64 +1178,20 @@ SettingsDestination buildVideoDestination() {
                   .setVideoSubtitleBackfillAfterScrape(value);
             },
           ),
-          // ── Jimaku（在线字幕源）───────────────────────────────────────────
-          // 此前 API key 只能在三个对话框（视频字幕 / 番剧下载 / 批量匹配）里就地填，
-          // 设置页压根没有入口；下载对话框那个还只在 key 为空时才显示，key 填错了
-          // 无处可改。这里是**唯一权威入口**，对话框里的就地输入只是快捷方式。
-          SettingsTextItem(
-            id: 'video.subtitle.jimaku_api_key',
-            title: t.video_jimaku_api_key,
-            subtitle: t.video_jimaku_api_key_hint,
-            icon: Icons.vpn_key_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jimakuApiKey,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await settingsContext.appModel.setJimakuApiKey(value.trim());
-            },
-          ),
-          // 默认字幕语言：没有该系列记忆（jimakuPreferredLanguages）时的兜底优先语言。
+          // ── 在线字幕来源（Jimaku + OpenSubtitles + 默认字幕语言）──────────
+          // 字幕来源此前分居两处：Jimaku key 是这儿的两个 schema item，
+          // OpenSubtitles 只在设置 → 下载 → 外部来源。同一个能力两个家，用户在
+          // 这里配完 Jimaku 就以为「字幕来源配完了」，而播放页找字幕与下载自动配
+          // 字幕走的是同一套 registry（两家一起搜）。
           //
-          // `''` 的语义已从「不限」改成「**跟随视频语言**」：自动下字幕时按视频
-          // 自己的语言（用户手动指定的内容语言 > 刮削 originalLanguage > 音轨 tag）
-          // 优先选，日语番取日语轨、韩剧取韩语轨。旧的「不限」实际效果是拿搜索结果
-          // 里排最前的那条，语言随缘——对一个沉浸学习 app 这不是合理默认。
-          // 注意这是**排序**不是过滤：只有英文字幕的日语番仍然配得上，只是排后面。
-          // 选定某个语言则是用户显式表态，进硬过滤。
-          SettingsSegmentedItem<String>(
-            id: 'video.subtitle.jimaku_default_language',
-            title: t.video_setting_jimaku_default_language,
-            subtitle: t.video_setting_jimaku_default_language_hint,
-            icon: Icons.translate_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: '',
-                // 不复用 video_jimaku_language_all（「全部」）：那个标签在字幕
-                // 对话框/条目选择器里是「别过滤我正在浏览的列表」，语义仍然正确；
-                // 这里同一个 `''` 值的意思已经变成「跟随视频语言」。同值不同义，
-                // 就该是两个标签。
-                label: t.video_jimaku_language_follow_video,
-              ),
-              for (final String code in kJimakuLanguageCodes)
-                SettingsSegmentOption<String>(
-                  value: code,
-                  label: jimakuLanguageLabel(code),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jimakuDefaultLanguage,
-            onChanged: (SettingsContext settingsContext, String code) async {
-              await settingsContext.appModel.setJimakuDefaultLanguage(code);
-            },
-          ),
-          // ── OpenSubtitles（另一路在线字幕源）─────────────────────────────
-          // 字幕来源此前分居两处：Jimaku key 在这儿，OpenSubtitles 只在
-          // 设置 → 下载 → 外部来源。同一个能力两个家，用户在这里配完 Jimaku 就以为
-          // 「字幕来源配完了」，而播放页找字幕与下载自动配字幕走的是同一套 registry
-          // （两家一起搜）。这里内联**同一份**编辑组件（不复制 UI、不第二份真相源）。
+          // 现在两家一起内联**同一份**编辑组件（不复制 UI、不第二份真相源）：
+          // 下载页那一区列的也是这一份，用户在任一处看到的都是完整的来源清单
+          // （BUG-1712）。Jimaku 的 key / 默认字幕语言仍写同样的偏好键，只是
+          // 编辑面从 schema item 换成了这份组件里的字段。
           SettingsCustomItem(
             id: 'video.subtitle.opensubtitles',
-            searchTitle: t.video_opensubtitles_settings_title,
+            // 搜索得命中两家品牌名，否则搜 "Jimaku" 会是死胡同。
+            searchTitle: 'Jimaku · ${t.video_opensubtitles_settings_title}',
             builder: (SettingsContext settingsContext) =>
                 const VideoExternalProviderSettingsSection(
               onlySubtitleSources: true,

@@ -38,6 +38,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
     show VideoSubtitleCandidate;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
+import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -1279,7 +1280,7 @@ class _HomePageState extends BasePageState<HomePage>
         if (work.countries.isNotEmpty)
           VideoDiscoveryFact(
             label: t.video_work_countries,
-            value: work.countries.join(' · '),
+            value: formatVideoCountriesForDisplay(work.countries).join(' · '),
           ),
         if (work.contentRating?.trim().isNotEmpty == true)
           VideoDiscoveryFact(
@@ -1860,6 +1861,8 @@ class _HomePageState extends BasePageState<HomePage>
         context: context,
         controller: _videoSourceScrapeController,
         loadRuns: () => appModel.database.getVideoSourceScrapeRuns(limit: 20),
+        loadSource: (int sourceId) =>
+            appModel.database.getMediaSourceById(sourceId),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;

@@ -28,6 +28,18 @@ const POPUP = path.join(__dirname, 'vendor', 'popup.js');
 const CONTENT = path.join(__dirname, 'content.js');
 const SHIM = path.join(__dirname, 'bridge-shim.js');
 
+// BUG-1718：真实运行时（manifest content_scripts / side-panel.html）里 vendor/dict-media.js
+// 恒在 content.js / side-panel.js 之前加载，后者依赖它导出的 applyFushiPopupCss 与
+// installDictMediaPlaceholderResolver。测试沙箱必须照同样顺序装，否则跑的是一个真实
+// 世界里不存在的、缺半个脚本集的环境。
+const FUSHI_DICT_MEDIA = require('node:path').join(__dirname, 'vendor', 'dict-media.js');
+function loadFushiDictMedia(ctx) {
+  require('node:vm').runInContext(
+    require('node:fs').readFileSync(FUSHI_DICT_MEDIA, 'utf8'), ctx,
+    { filename: 'vendor/dict-media.js' });
+}
+
+
 // ---------------------------------------------------------------------------
 // 最小 DOM shim：只实现本测试判据需要的语义，但这几项必须是**真语义**，否则守卫会假绿——
 // closest 必须在 shadow 边界处停下（Element.closest 不跨 shadow），composedPath 必须给出
@@ -264,6 +276,7 @@ function loadWorld(opts) {
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(POPUP, 'utf8'), sandbox, { filename: 'popup.js' });
   vm.runInContext(fs.readFileSync(SHIM, 'utf8'), sandbox, { filename: 'bridge-shim.js' });
+  loadFushiDictMedia(sandbox);
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), sandbox, { filename: 'content.js' });
 
   const flushRaf = () => { while (rafQueue.length) rafQueue.shift()(); };

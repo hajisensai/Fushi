@@ -859,19 +859,68 @@ const double _kSegmentHorizontalChrome = 28.0;
 /// such as the 深色模式 light/system/dark strip), in logical pixels.
 const double _kSegmentIconOnlyWidth = 44.0;
 
-/// Average advance width of one label glyph relative to the font size. CJK
-/// glyphs are ~1em wide and Latin ~0.55em; we use a single CJK-leaning factor so
-/// the estimate stays conservative (wide) for the worst realistic case.
-const double _kSegmentGlyphWidthFactor = 1.0;
+/// Average advance width of one label glyph relative to the font size. CJK /
+/// fullwidth glyphs are ~1em wide; Latin (and most other narrow scripts) are
+/// ~0.55em — estimated at 0.62em so the guess stays conservative (wide) without
+/// grossly over-shooting for long Latin labels (which would force strips into
+/// the scroll fallback that actually fit).
+const double _kSegmentWideGlyphWidthFactor = 1.0;
+const double _kSegmentNarrowGlyphWidthFactor = 0.62;
+
+/// Estimated advance width of [label] (logical pixels) at [scaledFont],
+/// classifying each rune as wide (CJK/fullwidth, >= U+1100) or narrow.
+double _segmentLabelContentWidth(String label, double scaledFont) {
+  double width = 0.0;
+  for (final int rune in label.runes) {
+    width += scaledFont *
+        (rune >= 0x1100
+            ? _kSegmentWideGlyphWidthFactor
+            : _kSegmentNarrowGlyphWidthFactor);
+  }
+  return width;
+}
+
+/// Estimated width (logical pixels) of ONE segment cell of a Material
+/// segmented strip: the widest segment's content, floored at [minSegmentWidth],
+/// plus per-segment chrome. Material [SegmentedButton] lays EVERY segment out
+/// at the same width — the widest segment's intrinsic width (framework
+/// `_calculateHorizontalChildSize`) — so this is the building block for the
+/// strip's natural width.
+double segmentedStripCellWidth({
+  required List<String?> segmentLabels,
+  required double fontSize,
+  required double textScaleFactor,
+  double minSegmentWidth = 0.0,
+}) {
+  final double scaledFont = fontSize * textScaleFactor;
+  double cell = minSegmentWidth;
+  for (final String? label in segmentLabels) {
+    final double content = (label == null || label.isEmpty)
+        ? _kSegmentIconOnlyWidth
+        : _segmentLabelContentWidth(label, scaledFont);
+    final double candidate = content + _kSegmentHorizontalChrome;
+    if (candidate > cell) cell = candidate;
+  }
+  return cell;
+}
 
 /// Estimates the intrinsic width (logical pixels) a Material segmented strip
 /// would occupy if laid out at its natural size, WITHOUT actually building it.
 ///
-/// Used by [AdaptiveSettingsSegmentedRow] to decide, inside a [LayoutBuilder],
-/// whether the strip fits its full-width row (→ stretch to fill, every segment
-/// equally sized) or must fall back to a horizontal scroll view (→ narrow pane,
-/// keep every segment reachable per BUG-008). It does not need to be exact —
-/// only conservative: a slight over-estimate prefers the safe scrolling path.
+/// Used by [AdaptiveSettingsSegmentedRow] and [FushiSegmentedStrip] to decide,
+/// inside a [LayoutBuilder], whether the strip fits (→ bounded equal-width
+/// layout) or must fall back to a horizontal scroll view (→ narrow pane, keep
+/// every segment reachable per BUG-008). It does not need to be exact — only
+/// conservative: a slight over-estimate prefers the safe scrolling path.
+///
+/// BUG-1719 (顶栏下沉): the estimate MUST model the framework's equal-width
+/// layout — `segmentCount × widestCell` — NOT the sum of each segment's own
+/// width. The old per-segment sum under-estimated any strip whose labels differ
+/// in length, so 「fits」 was declared for widths that could not actually hold
+/// the equal-width layout; the framework then clamped every cell below the
+/// widest label, which wrapped to two lines and grew the strip 8px taller than
+/// its siblings (the game capture-workbench top bar visibly sank on tab
+/// switch).
 ///
 /// [segmentLabels] is one entry per segment: the label's text, or `null` for an
 /// icon-only segment. [fontSize] is the segment label font size and
@@ -881,17 +930,16 @@ double estimateSegmentedStripWidth({
   required List<String?> segmentLabels,
   required double fontSize,
   required double textScaleFactor,
+  double minSegmentWidth = 0.0,
 }) {
   if (segmentLabels.isEmpty) return 0.0;
-  final double scaledFont = fontSize * textScaleFactor;
-  double total = 0.0;
-  for (final String? label in segmentLabels) {
-    final double content = (label == null || label.isEmpty)
-        ? _kSegmentIconOnlyWidth
-        : label.characters.length * scaledFont * _kSegmentGlyphWidthFactor;
-    total += content + _kSegmentHorizontalChrome;
-  }
-  return total;
+  return segmentLabels.length *
+      segmentedStripCellWidth(
+        segmentLabels: segmentLabels,
+        fontSize: fontSize,
+        textScaleFactor: textScaleFactor,
+        minSegmentWidth: minSegmentWidth,
+      );
 }
 
 class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
@@ -1088,6 +1136,7 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
     super.key,
     this.style,
     this.alignment = Alignment.centerLeft,
+    this.minSegmentWidth,
   });
 
   final List<ButtonSegment<T>> segments;
@@ -1095,6 +1144,15 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
   final ValueChanged<T> onChanged;
   final ButtonStyle? style;
   final AlignmentGeometry alignment;
+
+  /// Uniform per-segment width floor (logical pixels), applied only while the
+  /// widened strip still fits its host. Library-page top bars pass
+  /// [kLibrarySectionTabMinSegmentWidth] so all four modules' section tabs read
+  /// as the same control regardless of per-page label lengths (TODO-2937);
+  /// when the floor does not fit, the strip falls back to its natural width,
+  /// then to horizontal scrolling -- the floor never forces a scroll that the
+  /// natural width would avoid.
+  final double? minSegmentWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -1122,20 +1180,44 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
     // 分段条自然宽是纯 build 期可算量（只依赖标签/字号/缩放，不依赖布局）。
     // 先算出来：页头（[FushiHeaderCrampScope]）用它判定「左边是否摆得下」，
     // LayoutBuilder 里再用同一个值决定滚动兜底。
-    final double estimated = estimateSegmentedStripWidth(
+    final double naturalWidth = estimateSegmentedStripWidth(
       segmentLabels: segmentLabels,
       fontSize: fontSize,
       textScaleFactor: textScale,
     );
-    FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(estimated);
+    final double preferredWidth = estimateSegmentedStripWidth(
+      segmentLabels: segmentLabels,
+      fontSize: fontSize,
+      textScaleFactor: textScale,
+      minSegmentWidth: minSegmentWidth ?? 0.0,
+    );
+    FushiHeaderCrampScope.maybeOf(context)
+        ?.reportTitleNaturalWidth(preferredWidth);
     final int selectedIndex =
         segments.indexWhere((ButtonSegment<T> s) => s.value == selected);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double available = constraints.maxWidth;
-        final bool fits = available.isFinite && estimated <= available;
-        if (fits) return Align(alignment: alignment, child: strip);
+        // BUG-1719: fits => pin the strip to the estimated equal-width total
+        // (>= its real intrinsic width) with a tight SizedBox instead of
+        // handing the framework loose constraints: under a too-tight bounded
+        // width the framework clamps every cell BELOW the widest label, the
+        // label wraps and the whole strip grows 8px taller than its siblings
+        // (the capture-workbench top bar visibly sank on tab switch). Priority:
+        // uniform-floor width, then natural width, then horizontal scroll --
+        // in every tier a cell is never narrower than the widest label, so the
+        // strip's geometry is stable across hosts and window widths.
+        final double? target =
+            !available.isFinite || preferredWidth <= available
+                ? preferredWidth
+                : (naturalWidth <= available ? naturalWidth : null);
+        if (target != null) {
+          return Align(
+            alignment: alignment,
+            child: SizedBox(width: target, child: strip),
+          );
+        }
         // 与上面 [_SegmentedStripHost] 同一契约：装不下就横向滚动，且桌面端要能用
         // 鼠标左键拖着滚（默认 dragDevices 不含 mouse，否则只有滚轮能动）。段内
         // 只有点击目标、没有横拖手势，不存在竞技场之争。
@@ -1209,25 +1291,21 @@ class _SegmentedStripScrollerState extends State<_SegmentedStripScroller> {
     super.dispose();
   }
 
-  double _segmentWidth(String? label) {
-    final double content = (label == null || label.isEmpty)
-        ? _kSegmentIconOnlyWidth
-        : label.characters.length *
-            widget.fontSize *
-            widget.textScale *
-            _kSegmentGlyphWidthFactor;
-    return content + _kSegmentHorizontalChrome;
-  }
+  /// Material lays every segment out at the SAME width (the widest cell), so
+  /// the offset estimate uses the uniform per-cell width too; estimation error
+  /// is absorbed by [_kRevealMargin].
+  double get _cellWidth => segmentedStripCellWidth(
+        segmentLabels: widget.segmentLabels,
+        fontSize: widget.fontSize,
+        textScaleFactor: widget.textScale,
+      );
 
   void _ensureSelectedVisible({required bool animate}) {
     if (!mounted || !_controller.hasClients) return;
     final int index = widget.selectedIndex;
     if (index < 0 || index >= widget.segmentLabels.length) return;
-    double start = 0;
-    for (int i = 0; i < index; i++) {
-      start += _segmentWidth(widget.segmentLabels[i]);
-    }
-    final double end = start + _segmentWidth(widget.segmentLabels[index]);
+    final double start = index * _cellWidth;
+    final double end = start + _cellWidth;
     final ScrollPosition position = _controller.position;
     final double viewport = position.viewportDimension;
     double? target;
