@@ -63,8 +63,8 @@ import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
@@ -3315,6 +3315,15 @@ class AppModel with ChangeNotifier {
     await reloadVideoDownloadPipelineRuntime();
   }
 
+  /// Jimaku 是否参与字幕搜索。默认启用（见
+  /// [PreferencesRepository.jimakuEnabled]），与 key 组成双门控。
+  bool get jimakuEnabled => _prefsRepo?.jimakuEnabled ?? true;
+
+  Future<void> setJimakuEnabled(bool value) async {
+    await prefsRepo.setJimakuEnabled(value);
+    await reloadVideoDownloadPipelineRuntime();
+  }
+
   /// Jimaku 默认字幕语言（`''` = 不限）。见
   /// [PreferencesRepository.jimakuDefaultLanguage]。
   ///
@@ -3844,14 +3853,14 @@ class AppModel with ChangeNotifier {
 
   Future<void> _startVideoDownloadPipeline() async {
     if (_videoDownloadPipelineService != null) return;
-    final http.Client nyaaHttpClient = await createDownloadHttpClient();
     final http.Client torznabHttpClient = await createDownloadHttpClient();
+    // 内置索引器一律按 kBuiltinVideoResourceSources 全表注册；「用不用」由 registry
+    // 的停用清单决定，而不是靠这里少建一个对象——否则设置页开关就得重启 app 才生效。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
-      NyaaVideoResourceProvider(
-        client: NyaaClient(client: nyaaHttpClient),
-        closesClient: true,
-      ),
+      for (final BuiltinVideoResourceSource source
+          in kBuiltinVideoResourceSources)
+        source.create(await createDownloadHttpClient()),
       TorznabClient(
         indexers: prefsRepo.videoResourceTorznabConfigs,
         client: torznabHttpClient,
@@ -3860,7 +3869,9 @@ class AppModel with ChangeNotifier {
     ];
     final List<VideoSubtitleProvider> subtitleProviders =
         <VideoSubtitleProvider>[];
-    if (prefsRepo.jimakuApiKey.trim().isNotEmpty) {
+    // Jimaku：`enabled && key` 双门控（形状对齐 OpenSubtitles）。开关默认 true，
+    // 所以存量已填 key 的用户升级后行为不变。
+    if (prefsRepo.jimakuEnabled && prefsRepo.jimakuApiKey.trim().isNotEmpty) {
       final http.Client jimakuHttpClient = await createDownloadHttpClient();
       subtitleProviders.add(JimakuVideoSubtitleProvider(
         client: JimakuClient(
@@ -3883,8 +3894,10 @@ class AppModel with ChangeNotifier {
         closesClient: true,
       ));
     }
-    final VideoResourceRegistry resources =
-        VideoResourceRegistry(resourceProviders);
+    final VideoResourceRegistry resources = VideoResourceRegistry(
+      resourceProviders,
+      disabledProviderIds: videoResourceDisabledSourceIds,
+    );
     final VideoSubtitleRegistry subtitles =
         VideoSubtitleRegistry(subtitleProviders);
     final String configuredTmdbKey = prefsRepo.getPref(
@@ -4143,6 +4156,50 @@ class AppModel with ChangeNotifier {
         for (final String id in prefsRepo.discoveryDisabledSources.split(','))
           if (id.trim().isNotEmpty) id.trim(),
       };
+
+  /// 设置里停用的**内置**视频资源索引器 id（Nyaa / apibay / Knaben）。
+  Set<String> get videoResourceDisabledSourceIds => <String>{
+        for (final String id
+            in prefsRepo.videoResourceDisabledSources.split(','))
+          if (id.trim().isNotEmpty) id.trim(),
+      };
+
+  /// 开/关一个发现源。停用清单是逗号分隔的字符串，读写都只经这一个入口，
+  /// 免得每个调用点各写一份 split/join。
+  Future<void> setDiscoverySourceEnabled(String sourceId, bool enabled) async {
+    await prefsRepo.setDiscoveryDisabledSources(
+      _toggleDisabledId(discoveryDisabledSourceIds, sourceId, enabled),
+    );
+    notifyListeners();
+  }
+
+  /// 开/关一个内置视频资源索引器。改完必须重建下载流水线运行时——registry 的
+  /// 停用清单是构造期快照，不重建的话开关要等下次冷启动才生效。
+  Future<void> setVideoResourceSourceEnabled(
+    String sourceId,
+    bool enabled,
+  ) async {
+    await prefsRepo.setVideoResourceDisabledSources(
+      _toggleDisabledId(videoResourceDisabledSourceIds, sourceId, enabled),
+    );
+    await reloadVideoDownloadPipelineRuntime();
+    notifyListeners();
+  }
+
+  static String _toggleDisabledId(
+    Set<String> current,
+    String sourceId,
+    bool enabled,
+  ) {
+    final Set<String> next = <String>{...current};
+    if (enabled) {
+      next.remove(sourceId);
+    } else {
+      next.add(sourceId);
+    }
+    final List<String> sorted = next.toList()..sort();
+    return sorted.join(',');
+  }
 
   /// 发现页直链下载队列（懒建，app 生命周期常驻——关闭发现页不中断下载，
   /// 语义同 [mokuroMoeDownloadQueue]）。
@@ -6422,6 +6479,9 @@ class AppModel with ChangeNotifier {
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。
       onExtensionSeen: () => _browserExtensionLastSeenAt = DateTime.now(),
+      // TODO-2936：扩展查词/制卡端点命中 → 应用「浏览器」媒体类型的 Profile 绑定
+      // （委托由 main.dart 在容器建好后注入；未注入/未绑定时为 no-op）。
+      onLookupActivity: _onBrowserLookupActivity,
       // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」。
       // 记到 ValueNotifier 供扩展管理页与内置指纹比对：不一致 = 扩展自更新未生效
       // （用户从别的目录加载 / reload 失败），页面显示更新警示条。
@@ -6436,6 +6496,24 @@ class AppModel with ChangeNotifier {
             FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
+    );
+  }
+
+  /// TODO-2936：「浏览器」媒体类型 Profile 绑定的应用委托。AppModel 不在
+  /// Riverpod 图里，无法直接触达 [ProfileViewModel]，由 main.dart 在根容器建好
+  /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser)`）。
+  Future<void> Function()? browserLookupProfileApplier;
+
+  // TODO-2936：扩展查词请求可能成串到达（termEntries + tokenize + mine），一趟
+  // 在途时后续命中直接跳过——绑定应用本身幂等，重复趟次只是浪费快照/应用开销。
+  bool _browserProfileApplyInFlight = false;
+
+  void _onBrowserLookupActivity() {
+    final Future<void> Function()? applier = browserLookupProfileApplier;
+    if (applier == null || _browserProfileApplyInFlight) return;
+    _browserProfileApplyInFlight = true;
+    unawaited(
+      applier().whenComplete(() => _browserProfileApplyInFlight = false),
     );
   }
 

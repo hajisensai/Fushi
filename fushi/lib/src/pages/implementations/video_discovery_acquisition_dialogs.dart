@@ -1102,6 +1102,14 @@ class _VideoResourceSearchSurfaceState
         ),
       );
     }
+    if (result.hasNoActiveProvider) {
+      return _NoProviderEmptyState(
+        key: const ValueKey<String>('video-resource-no-provider'),
+        icon: Icons.travel_explore_outlined,
+        title: t.video_resource_no_provider_title,
+        hint: t.video_resource_no_provider_hint,
+      );
+    }
     if (result.items.isEmpty) {
       return Center(child: Text(t.video_discovery_empty));
     }
@@ -1177,7 +1185,11 @@ class _VideoResourceSearchSurfaceState
                 initialValue: _sourceId,
                 isExpanded: true,
                 decoration: InputDecoration(
+                  // 只给标签时这个下拉读起来像「搜哪个源」，用户据此以为选不了
+                  // 视频来源；它其实是下载落地的本地目录（BUG-1713）。
                   labelText: t.video_download_target_source_title,
+                  helperText: t.video_download_target_source_hint,
+                  helperMaxLines: 2,
                 ),
                 items: widget.sources
                     .map(
@@ -1225,8 +1237,7 @@ class _VideoResourceSearchSurfaceState
                   DropdownMenuItem<VideoDownloadSubtitlePolicy>(
                     value: VideoDownloadSubtitlePolicy.required,
                     child: Text(
-                      '${t.anime_download_include_subs} · '
-                      '${t.video_control_reject_required}',
+                      t.anime_download_require_subs,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1588,6 +1599,14 @@ class _VideoDiscoverySubtitleSearchDialogState
         ),
       );
     }
+    if (result.hasNoActiveProvider) {
+      return _NoProviderEmptyState(
+        key: const ValueKey<String>('video-subtitle-no-provider'),
+        icon: Icons.subtitles_off_outlined,
+        title: t.video_subtitle_no_provider_title,
+        hint: t.video_subtitle_no_provider_hint,
+      );
+    }
     if (result.items.isEmpty) {
       return Center(child: Text(t.video_discovery_empty));
     }
@@ -1649,6 +1668,51 @@ class _ProviderWarning extends StatelessWidget {
           SizedBox(width: tokens.spacing.gap),
           Expanded(child: Text(message, style: tokens.type.metadata)),
         ],
+      ),
+    );
+  }
+}
+
+/// 「一个来源都没参与」的空态：说清是配置缺失、去哪儿配，而不是让用户以为
+/// 换个搜索词就能搜到（BUG-1713）。
+class _NoProviderEmptyState extends StatelessWidget {
+  const _NoProviderEmptyState({
+    required this.icon,
+    required this.title,
+    required this.hint,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
+            SizedBox(height: tokens.spacing.gap),
+            Text(title, style: theme.textTheme.titleSmall),
+            SizedBox(height: tokens.spacing.gap / 2),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Text(
+                hint,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

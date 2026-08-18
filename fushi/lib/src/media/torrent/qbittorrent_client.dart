@@ -28,6 +28,77 @@ String? extractSidCookie(String? setCookieHeader) {
   return sid;
 }
 
+/// 「无返回体的动作接口成功了吗」——同时覆盖 qBittorrent 4.1~5.1 与 5.2+。
+///
+/// BUG-1705：qb 5.2 起，控制器统一以 `setResult(QString())` 表示「做完了，
+/// 没东西可回」，而 `QVariant(QString())` 是 null variant，被 WebApplication
+/// 编码成 **204 No Content**；5.1 及以前同一批接口回的是 200 + 空 body。
+/// 受影响的是 `auth/login`、`torrents/{delete,stop,start,setLocation,
+/// renameFile,filePrio,createCategory,recheck}` 一整批。只认 200 会把这些
+/// **已经生效**的调用全判成失败。
+///
+/// 反过来，回 JSON/文本的查询接口（`torrents/info`、`torrents/files`、
+/// `app/version` 等）拿到 204 就是真异常（没 body 可解析），那些调用点保持
+/// 只认 200，不要套用本判据。
+bool isQbActionSuccess(int statusCode) =>
+    statusCode == 200 || statusCode == 204;
+
+/// 判读 `POST /api/v2/auth/login` 的响应：登录成功返回 null，失败返回可读原因。
+///
+/// 两代协议的成败编码完全不同，必须都吃下（BUG-1705）：
+/// - qb ≤5.1：成功 `200` + body `Ok.`；凭据错误 `200` + body `Fails.`。
+/// - qb ≥5.2：成功 `204` 空 body；凭据错误 `401`（`APIError(Unauthorized)`）。
+/// - 两代相同：登录失败超限被封 `403` + body 含 `banned`。
+String? classifyQbLoginFailure(int statusCode, String body) {
+  final String trimmed = body.trim();
+  // 登录失败超限（默认 5 次）后 qb 返回 403 + "…banned…"，解封前填对
+  // 账密也进不去——必须单独说清，否则用户会反复重试把封禁续期。
+  if (statusCode == 403) {
+    return trimmed.toLowerCase().contains('banned')
+        ? 'IP banned by qBittorrent after too many failed logins '
+            '(unban: restart qBittorrent or wait, default 1 hour)'
+        : 'HTTP 403${trimmed.isEmpty ? '' : ': $trimmed'}';
+  }
+  if (statusCode == 401) return 'login rejected (wrong username/password)';
+  if (statusCode == 204) return null;
+  if (statusCode != 200) {
+    return 'HTTP $statusCode${trimmed.isEmpty ? '' : ': $trimmed'}';
+  }
+  if (!trimmed.startsWith('Ok')) {
+    return 'login rejected (wrong username/password)';
+  }
+  return null;
+}
+
+/// 判读 `POST /api/v2/torrents/add` 的响应：任务是否真的入列。
+///
+/// BUG-1705：qb 5.2 把这个接口的返回从纯文本 `Ok.` / `Fails.` 换成了统计
+/// JSON，并且**磁力链元数据还没到手时回 202**（`APIStatus::Async`，任务其实
+/// 已经入列），全部失败时直接抛 `Conflict` → 409。旧判据
+/// `200 && body.startsWith('Ok')` 对 5.2 恒为 false —— 种子明明加进去了，
+/// 上层却按「添加失败」处理。
+bool isQbAddAccepted(int statusCode, String body) {
+  // 202 = 已入列、元数据待拉取（磁力链的常态）。
+  if (statusCode == 202) return true;
+  if (statusCode != 200) return false;
+  final String trimmed = body.trim();
+  // qb ≤5.1：纯文本 `Ok.` / `Fails.`。
+  if (!trimmed.startsWith('{')) return trimmed.startsWith('Ok');
+  // qb ≥5.2：统计 JSON。全失败时 qb 走 409 不到这里，但可能只加进去一部分，
+  // 按「到底有没有真加进去」判，别把部分成功说成全败。
+  try {
+    final Object? decoded = jsonDecode(trimmed);
+    if (decoded is! Map<String, dynamic>) return false;
+    final Object? success = decoded['success_count'];
+    final Object? pending = decoded['pending_count'];
+    final int added = (success is num ? success.toInt() : 0) +
+        (pending is num ? pending.toInt() : 0);
+    return added > 0;
+  } on FormatException {
+    return false;
+  }
+}
+
 /// 解析 `/api/v2/torrents/info` 响应（JSON 数组）为中性 [TorrentSnapshot]。
 /// 纯函数，容错：坏 JSON / 非数组返回空列表；缺 `hash` 的条目跳过；
 /// 其余字段缺省用安全默认值（`save_path` / `content_path` / `amount_left`）。
@@ -333,23 +404,9 @@ class QBittorrentClient {
         headers: <String, String>{'Referer': baseUrl},
         body: <String, String>{'username': username, 'password': password},
       ).timeout(requestTimeout);
-      final String body = res.body.trim();
-      // 登录失败超限（默认 5 次）后 qb 返回 403 + "…banned…"，解封前填对
-      // 账密也进不去——必须单独说清，否则用户会反复重试把封禁续期。
-      if (res.statusCode == 403) {
-        _lastFailure = body.toLowerCase().contains('banned')
-            ? 'IP banned by qBittorrent after too many failed logins '
-                '(unban: restart qBittorrent or wait, default 1 hour)'
-            : 'HTTP 403: $body';
-        return false;
-      }
-      // 成功是 200 + body `Ok.`；密码错误也是 200 但 body `Fails.`。
-      if (res.statusCode != 200) {
-        _lastFailure = 'HTTP ${res.statusCode}${body.isEmpty ? '' : ': $body'}';
-        return false;
-      }
-      if (!body.startsWith('Ok')) {
-        _lastFailure = 'login rejected (wrong username/password)';
+      final String? failure = classifyQbLoginFailure(res.statusCode, res.body);
+      if (failure != null) {
+        _lastFailure = failure;
         return false;
       }
       _sid = extractSidCookie(res.headers['set-cookie']);
@@ -402,7 +459,7 @@ class QBittorrentClient {
   }
 
   /// 添加下载：[urls] 是 magnet 链接或 .torrent URL（多个换行连接）。
-  /// 200 且 body `Ok.` 视为成功。
+  /// 成败判读见 [isQbAddAccepted]（qb 5.2 换了返回编码）。
   ///
   /// [sequentialDownload] 开顺序下载、[firstLastPiecePrio] 开首尾块优先：两者
   /// 齐开时视频文件从下载初期就可顺序播放（边下边播的前置条件）。
@@ -425,9 +482,7 @@ class QBittorrentClient {
         if (firstLastPiecePrio) 'firstLastPiecePrio': 'true',
       },
     );
-    return res != null &&
-        res.statusCode == 200 &&
-        res.body.trim().startsWith('Ok');
+    return res != null && isQbAddAccepted(res.statusCode, res.body);
   }
 
   /// Uploads validated `.torrent` metainfo using qBittorrent's multipart
@@ -454,9 +509,7 @@ class QBittorrentClient {
       torrentBytes: bytes,
       torrentFileName: fileName,
     );
-    return res != null &&
-        res.statusCode == 200 &&
-        res.body.trim().startsWith('Ok');
+    return res != null && isQbAddAccepted(res.statusCode, res.body);
   }
 
   /// 确保分类存在：`POST /api/v2/torrents/createCategory`；
@@ -471,7 +524,8 @@ class QBittorrentClient {
         if (savePath != null) 'savePath': savePath,
       },
     );
-    return res != null && (res.statusCode == 200 || res.statusCode == 409);
+    return res != null &&
+        (isQbActionSuccess(res.statusCode) || res.statusCode == 409);
   }
 
   /// 列种子：`GET /api/v2/torrents/info`，[category] 非空时只列该分类。
@@ -508,7 +562,7 @@ class QBittorrentClient {
         'deleteFiles': deleteFiles ? 'true' : 'false',
       },
     );
-    return res != null && res.statusCode == 200;
+    return res != null && isQbActionSuccess(res.statusCode);
   }
 
   /// TODO-2481：暂停单个种子：`POST /api/v2/torrents/pause`（form 参数
@@ -537,14 +591,14 @@ class QBittorrentClient {
       '/api/v2/torrents/$primary',
       form: form,
     );
-    if (res != null && res.statusCode == 200) return true;
+    if (res != null && isQbActionSuccess(res.statusCode)) return true;
     if (res == null || res.statusCode != 404) return false;
     final http.Response? retry = await _request(
       'POST',
       '/api/v2/torrents/$renamed',
       form: form,
     );
-    return retry != null && retry.statusCode == 200;
+    return retry != null && isQbActionSuccess(retry.statusCode);
   }
 
   /// TODO-1961-c：改名种子内文件：`POST /api/v2/torrents/renameFile`
@@ -571,7 +625,7 @@ class QBittorrentClient {
       },
     );
     if (res == null) return (false, 'qBittorrent request failed');
-    if (res.statusCode == 200) return (true, null);
+    if (isQbActionSuccess(res.statusCode)) return (true, null);
     final String body = res.body.trim();
     return (false, body.isEmpty ? 'HTTP ${res.statusCode}' : body);
   }
@@ -595,7 +649,7 @@ class QBittorrentClient {
       form: <String, String>{'hashes': hash, 'location': location},
     );
     if (res == null) return (false, 'qBittorrent request failed');
-    if (res.statusCode == 200) return (true, null);
+    if (isQbActionSuccess(res.statusCode)) return (true, null);
     final String body = res.body.trim();
     return (false, body.isEmpty ? 'HTTP ${res.statusCode}' : body);
   }
@@ -642,7 +696,7 @@ class QBittorrentClient {
 
   /// TODO-2482：设置若干文件的下载优先级：`POST /api/v2/torrents/filePrio`
   /// （form：hash / id=`index|index|...` / priority，值域见
-  /// `_qbFilePriorityFromValue` 的注释）。200 = 成功。
+  /// `_qbFilePriorityFromValue` 的注释）。成功判据见 [isQbActionSuccess]。
   Future<bool> setFilePriority({
     required String hash,
     required List<int> fileIndexes,
@@ -658,7 +712,7 @@ class QBittorrentClient {
         'priority': '$priority',
       },
     );
-    return res != null && res.statusCode == 200;
+    return res != null && isQbActionSuccess(res.statusCode);
   }
 
   /// TODO-2482：会话级协议状态：组合 `GET /api/v2/transfer/info`（速率 +

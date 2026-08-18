@@ -19,6 +19,7 @@ class YomitanApiServerManager {
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
+    void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
   })  : _lookup = lookupService,
         _mining = miningService,
@@ -31,6 +32,7 @@ class YomitanApiServerManager {
         _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
+        _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport;
 
   final FushiRemoteLookupService _lookup;
@@ -51,6 +53,9 @@ class YomitanApiServerManager {
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
+  // TODO-2936：查词/制卡活动回调，透传给 [YomitanApiServer]（app 侧应用「浏览器」
+  // 媒体类型的 Profile 绑定）。
+  final void Function()? _onLookupActivity;
   // BUG-1079：扩展自报版本回调，透传给 [YomitanApiServer]（app 侧记录浏览器中实际
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
@@ -75,6 +80,7 @@ class YomitanApiServerManager {
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionSeen: _onExtensionSeen,
+      onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,

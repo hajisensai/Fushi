@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/external_provider.dart';
@@ -225,12 +226,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     }
   }
 
-  String _kindLabel(DiscoveryMediaKind kind) => switch (kind) {
-        DiscoveryMediaKind.novel => t.discovery_kind_novel,
-        DiscoveryMediaKind.audiobook => t.discovery_kind_audiobook,
-        DiscoveryMediaKind.game => t.game_library,
-        DiscoveryMediaKind.manga => t.library_view_browse,
-      };
+  String _kindLabel(DiscoveryMediaKind kind) => discoveryMediaKindLabel(kind);
 
   static String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';

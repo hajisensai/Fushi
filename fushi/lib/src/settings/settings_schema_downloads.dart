@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -50,8 +51,13 @@ SettingsDestination buildDownloadsDestination() {
     // 与其它 section 一致的卡片表面（body 契约：自带 section 布局、不自带脚手架/滚动）。
     // constrainWidth:false —— 下载页那套「560 居中限宽」在设置详情 pane 里会让本组
     // 左边缘变成 (paneWidth-560)/2，与其它 12 个分类的设置行完全对不齐。
+    // 发现来源开关区跟在外部资源/字幕来源之后：三块「来源开关」（内置视频索引器、
+    // 在线字幕来源、发现来源）因而同屏可比，用户不必去三个页面找同一件事。
     body: (SettingsContext context) => const AdaptiveSettingsSection(
-      children: <Widget>[TorrentSettingsSection(constrainWidth: false)],
+      children: <Widget>[
+        TorrentSettingsSection(constrainWidth: false),
+        DiscoverySourceSettingsSection(),
+      ],
     ),
   );
 }

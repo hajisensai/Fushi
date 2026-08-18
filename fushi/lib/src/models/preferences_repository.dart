@@ -1387,6 +1387,21 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Jimaku 是否参与字幕搜索。与 [jimakuApiKey] 组成 `enabled && key` 双门控，
+  /// 形状对齐 OpenSubtitles（那家的 `enabled` 长在它的 config JSON 里）。
+  ///
+  /// **默认 true 是兼容性要求**：这个键出现之前，「填了 key」就等于「启用」。
+  /// 默认 false 会让所有已填 key 的存量用户在升级后 Jimaku 突然失效，且他们
+  /// 无从知道是新加了一个开关。默认 true + key 仍为空则不注册，语义与本键出现
+  /// 之前逐字一致，不需要任何迁移写入。
+  bool get jimakuEnabled =>
+      getPref('jimaku_enabled', defaultValue: true) as bool;
+
+  Future<void> setJimakuEnabled(bool value) async {
+    await setPref('jimaku_enabled', value);
+    notifyListeners();
+  }
+
   /// 每系列（番名）记住的 Jimaku 字幕语言偏好：`{ "<series 小写归一>": "<langCode>" }`。
   ///
   /// 单一 JSON map 落 KV 表（避免每系列一个 key 撑爆表）；解析失败回退空 map
@@ -2257,6 +2272,19 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setDiscoveryDisabledSources(String value) async {
     await setPref('discovery_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 用户停用的**内置**视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
+  ///
+  /// 与 [discoveryDisabledSources] 同形：都是「一组零配置内置源，按 id 记停用」。
+  /// 用户自配的 Torznab 索引器不进这里——它们各自带 `enabled` 字段，那是配置的
+  /// 一部分，不是内置源开关。
+  String get videoResourceDisabledSources =>
+      getPref('video_resource_disabled_sources', defaultValue: '') as String;
+
+  Future<void> setVideoResourceDisabledSources(String value) async {
+    await setPref('video_resource_disabled_sources', value);
     notifyListeners();
   }
 
