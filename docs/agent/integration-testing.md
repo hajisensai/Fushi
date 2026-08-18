@@ -77,11 +77,13 @@ bash ci/integration-test.sh --avd=fushi_gpu_test
 
 书库依赖类测试（`reader_dictionary` / `reader_keyboard` / `reader_computer_use_flow` / `regression`）由 `integration_test/helpers/library_fixture.dart` 在测试内自带 fixture，全新安装也无需手动导入（fixture 细节见下方「测试素材」）。
 
-### 默认 AVD 与两个已固化陷阱（安卓）
+### 默认 AVD 与四个已固化陷阱（安卓）
 
 - **默认 AVD 不再硬编不存在的名字**：`ci/integration-test.sh` 只在没有模拟器在线时才需要 AVD；此时若未传 `--avd=` / `AVD=`，脚本优先启 GPU 验证过的 `fushi_gpu_test`（android-34，能真渲染 Flutter 像素），否则退回 `emulator -list-avds` 的第一台；都没有则明确报错要求先建 AVD 或传 `--avd=<name>`。旧文档里的 `hoshi_test_api35` 从不存在，已废弃。
 - **代理二相性（build 带代理 / drive 不带代理）**：构建 APK 阶段（`flutter build apk`，下载 libmpv android jar、sqlite3 dll 等原生依赖）以及 AnkiDroid APK 下载可能依赖 `HTTPS_PROXY` / `HTTP_PROXY`；但 `flutter drive` 连的是本机 Dart VM service（`127.0.0.1:<port>`），把这个 localhost 连接走 HTTP 代理会被中途关闭（`HttpException: Connection closed`），导致**每个目标都失败**。脚本已在所有下载完成后、进入 `flutter drive` 目标循环前自动 `unset HTTPS_PROXY HTTP_PROXY`，无需手动处理。若你手动分阶段跑：**build 阶段带代理，`--skip-build` 跑 drive 阶段一律不带代理**。
 - **AnkiDroid provisioning（仅 `anki_integration` 目标需要）**：AnkiDroid 22.4.3 在 API 34 全新安装后停在 `IntroductionActivity`，必须点一次「Get started」才会创建 `collection.anki2`——`monkey` 启动只会重复弹出该页而不会推进。`ci/lib/provision-ankidroid.sh` 会先 `am start` 该页并尝试焦点遍历 + Enter 无坐标推进，再校验 collection 是否落盘；若仍缺失会**大声报错并给出唯一手动步骤**（在模拟器里手点一次「Get started」后重跑），不会静默假装 provision 成功。
+- **Android 16（API ≥ 36）镜像：SurfaceFlinger 每几秒 abort 一次，表现为「模拟器一直加载 + 最后弹崩溃报告框」**。guest 侧 `mapper.ranchu.so` 在 `GoldfishMapper::readFromHost()` 里断言 `!rcEnc->featureInfo()->hasReadColorBufferDma` 失败 → SurfaceFlinger 的 `RegionSamplingThread` SIGABRT → Launcher 抛 `Couldn't removeRegionSamplingListener` → system_server 重启，界面永远回到加载态；最终宿主 emulator 也 `abort()` 弹出 crash 对话框。**这不是宿主 GPU/驱动问题**：`-gpu host` / `swiftshader_indirect` / `-no-window`、emulator 36.5.11 与 37.1.11、android-36 与 android-36.1 全部一致复现，android-34 从不触发；`hw.gpu.enabled`、`-feature -GLDMA`、磁盘空间、僵尸进程均已排除。唯一触发者是手势导航条注册的 RegionSamplingListener，**切 3 按钮导航即根除**（实测：手势 8~14 次 abort/90s、`surfaceflinger` ETIME 00:01；3 按钮 0 次/90s、ETIME 稳定增长）。`ci/integration-test.sh` 已在 boot 后按 `ro.build.version.sdk >= 36` 自动执行，**但 `-wipe-data` 会清掉该 overlay 设置**，手动起模拟器时需自己补：`adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton && adb shell cmd overlay disable com.android.internal.systemui.navbar.gestural`。断言存在于 `system.img` 内的 `mapper.ranchu.so`，我们无法修补，等 Google 修好镜像后可删掉这段。
+- **同一 bug 的副作用：API ≥ 36 上 `adb shell screencap` 永久失效**（它自己也走 `readFromHost`，返回 72 字节的 `Assertion failed: ...` 文本而不是 PNG）。模拟器截图取证改用宿主侧 `adb emu screenrecord screenshot <目录>`（会在该目录写出 `Screenshot_<ts>.png`）。注意 `PrintWindow` 抓 emulator 窗口只得到空白，因为画面是 OpenGL 直接渲染的。
 
 ## AnkiDroid 集成测试
 

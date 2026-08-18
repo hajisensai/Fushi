@@ -105,6 +105,31 @@ until [ "$(MSYS_NO_PATHCONV=1 $ADBD shell getprop sys.boot_completed 2>/dev/null
 done
 echo ">>> Emulator booted."
 
+# ── Android 16+ (API >= 36) guest images: SurfaceFlinger's RegionSamplingThread
+#    aborts inside mapper.ranchu.so with
+#      'Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma'
+#    every few seconds. It takes system_server down with it, so the UI restarts
+#    forever ("stuck loading") and the host emulator finally abort()s and pops
+#    its crash-report dialog. The sampler only runs while the gestural
+#    navigation handle has a RegionSamplingListener registered, so moving to
+#    3-button navigation removes the only trigger.
+#    This is a guest-image defect we cannot patch: the assertion lives in
+#    mapper.ranchu.so inside system.img. It is NOT a host/GPU problem —
+#    reproduced identically under -gpu host, swiftshader_indirect and
+#    -no-window, on emulator 36.5.11 and 37.1.11, on both android-36 and
+#    android-36.1; android-34 never hits it. Drop this block once Google ships
+#    a fixed image.
+#    Measured: gestural = 8..14 SF aborts / 90s, surfaceflinger uptime 00:01;
+#              3-button = 0 aborts / 90s, surfaceflinger uptime stable.
+#    Side effect of the same bug: 'adb shell screencap' also walks readFromHost
+#    and dies on API >= 36. Use 'adb emu screenrecord screenshot <dir>' instead.
+_sdk="$(MSYS_NO_PATHCONV=1 $ADBD shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
+if [ -n "$_sdk" ] && [ "$_sdk" -ge 36 ] 2>/dev/null; then
+  echo ">>> API $_sdk: switching to 3-button navigation (works around the SurfaceFlinger RegionSampling abort)."
+  MSYS_NO_PATHCONV=1 $ADBD shell cmd overlay enable com.android.internal.systemui.navbar.threebutton >/dev/null 2>&1 || true
+  MSYS_NO_PATHCONV=1 $ADBD shell cmd overlay disable com.android.internal.systemui.navbar.gestural >/dev/null 2>&1 || true
+fi
+
 # shellcheck source=ci/lib/provision-ankidroid.sh
 source "$REPO_ROOT/ci/lib/provision-ankidroid.sh"
 
