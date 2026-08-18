@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/galgame_hook_runtime_stage.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart'
     show PcmFormat, transcodeVoiceResourcesToMiningAudio;
 
@@ -940,6 +941,7 @@ List<String> buildEngineHookInjectorArguments({
   String? lunaHookProfilePath,
   List<String> lunaHookCodes = const <String>[],
   int readyTimeoutMs = 30000,
+  String? unityRuntimeDirectory,
 }) {
   final String? exe = launchExe;
   final bool launchMode = exe != null && exe.isNotEmpty;
@@ -948,6 +950,12 @@ List<String> buildEngineHookInjectorArguments({
       : <String>['--pid', '$targetPid', '--hold'];
   if (readyTimeoutMs > 0) {
     args.addAll(<String>['--wait-ms', '$readyTimeoutMs']);
+  }
+  // Unity 资源提取运行时留在安装目录（140 MB，不进注入运行时副本），所以 injector 不能
+  // 再按「自身目录」去找它——它自身现在跑在副本目录里（BUG-1708）。位置显式下发。
+  // 不传 = 该架构没有提取运行时，injector 按无提取能力运行（与 x86 分发包一致）。
+  if (unityRuntimeDirectory != null && unityRuntimeDirectory.isNotEmpty) {
+    args.addAll(<String>['--unity-runtime', unityRuntimeDirectory]);
   }
   if (launchMode && japaneseLocale) {
     args.add('--japanese-locale');
@@ -1285,6 +1293,10 @@ class EngineHookGalAudioSource implements GalAudioSource {
           lunaHookProfilePath: lunaHookProfilePath,
           lunaHookCodes: lunaHookCodes,
           readyTimeoutMs: _readyTimeout.inMilliseconds,
+          unityRuntimeDirectory:
+              GalgameHookRuntimeStage.instance.unityRuntimeDirectory(
+            arch: galHookHelperArchTag(path),
+          ),
         ),
       );
     } on ProcessException catch (error) {

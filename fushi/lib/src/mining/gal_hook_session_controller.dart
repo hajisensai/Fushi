@@ -10,6 +10,7 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
+import 'package:fushi/src/mining/galgame_hook_runtime_stage.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
@@ -560,7 +561,10 @@ typedef GalExe32BitProbe = Future<bool?> Function(String path);
 /// 让两条路径共用同一套判据，而不是各自猜。
 typedef GalTargetImagePathProbe = String? Function(int pid);
 typedef GalWindowListLoader = Future<List<ExternalWindowInfo>> Function();
-typedef GalInjectorResolver = String? Function({required bool is32Bit});
+
+/// 解析注入器可执行路径。**异步**：注入前要先把 hook 运行时暂存出安装目录
+/// （[GalgameHookRuntimeStage]，BUG-1708），这一步是文件复制。
+typedef GalInjectorResolver = Future<String?> Function({required bool is32Bit});
 
 /// App 级 galgame 捕获会话真相源。
 ///
@@ -1000,17 +1004,20 @@ class GalHookSessionController extends ChangeNotifier {
     return shouldUseLunaPcHooksForExecutable(imagePath);
   }
 
-  static String? defaultInjectorResolver({required bool is32Bit}) {
+  /// 注入器路径解析：**只返回暂存副本里的 injector**（[GalgameHookRuntimeStage]）。
+  ///
+  /// 刻意不回退安装目录里那个 injector。从安装目录注入正是 BUG-1708 的根因：注入进宿主的
+  /// hook DLL 由宿主持有到宿主退出，宿主若是常驻程序（实测现场是被注进微信、连开三天），
+  /// 安装目录里那几个文件就永久不可替换，此后每次应用内更新都在 Inno 的 PrepareToInstall
+  /// 撞死并整包回滚——而 app 早已为更新退出。回退到安装目录等于把根因原样留着，所以暂存
+  /// 失败时宁可让 helper 判定为不可用（走既有的「helper 缺失」提示路径）。
+  static Future<String?> defaultInjectorResolver({
+    required bool is32Bit,
+  }) async {
     if (!Platform.isWindows) return null;
-    try {
-      final String directory = File(Platform.resolvedExecutable).parent.path;
-      final String arch = galgameHelperArch(is32Bit: is32Bit);
-      final String path = '$directory\\$kGalgameHelperInstallDirectoryName'
-          '\\$arch\\fushi_voice_injector.exe';
-      return File(path).existsSync() ? path : null;
-    } catch (_) {
-      return null;
-    }
+    return GalgameHookRuntimeStage.instance.ensureStaged(
+      arch: galgameHelperArch(is32Bit: is32Bit),
+    );
   }
 
   Future<void> _attachPersistedHookProfiles(
@@ -1104,7 +1111,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
     final bool? is32Bit = await _targetWow64Probe(window.pid);
     if (generation != _operationGeneration) return;
-    final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
+    final String? injector = await _injectorResolver(is32Bit: is32Bit ?? false);
     if (injector != null && window.pid > 0) {
       _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
       final EngineHookGalAudioSource engine = _engineSourceFactory(
@@ -1249,7 +1256,7 @@ class GalHookSessionController extends ChangeNotifier {
     // 在最需要它的资源模式游戏里静默失效。
     _restoreAudioFallbackPolicy();
     final bool? is32Bit = await _exe32BitProbe(executablePath);
-    final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
+    final String? injector = await _injectorResolver(is32Bit: is32Bit ?? false);
     if (injector == null) {
       _fail(
         'helper',
@@ -3490,7 +3497,8 @@ class GalHookSessionController extends ChangeNotifier {
     try {
       final bool? is32Bit = await _targetWow64Probe(pid);
       if (generation != _operationGeneration) return;
-      final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
+      final String? injector =
+          await _injectorResolver(is32Bit: is32Bit ?? false);
       if (injector == null) return; // helper 缺失：重试不可能变好
       final EngineHookGalAudioSource engine = _engineSourceFactory(
         targetPid: pid,

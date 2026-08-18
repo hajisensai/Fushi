@@ -19,6 +19,11 @@ constexpr DWORD kParentExitTimeoutMs = 120000;
 // InitializeSetup layer is the primary guard; this is belt-and-suspenders.
 constexpr wchar_t kFushiSingleInstanceMutex[] = L"FushiSingleInstanceMutex";
 constexpr DWORD kMutexReleaseTimeoutMs = 10000;
+// 安装器退出后，等 app 自己回来的观察窗口。安装成功时 .iss 的 [Run] 会拉起 fushi.exe，
+// Flutter 冷启到建互斥体通常 1~3s；给足余量再判定「没人回来」。
+constexpr DWORD kAppRelaunchWaitMs = 20000;
+// 等安装器跑完的上限。Inno 静默安装几十秒量级，30 分钟是防挂死的兜底，不是预期值。
+constexpr DWORD kInstallerExitTimeoutMs = 1800000;
 constexpr DWORD kMutexPollIntervalMs = 250;
 
 std::string ToUtf8(const std::wstring& value) {
@@ -402,7 +407,13 @@ bool WaitForMutexReleased() {
   }
 }
 
-bool LaunchInstaller(const ParsedArgs& args, DWORD* installer_pid) {
+// 安装器退出后把 app 拉回来所需的一切。见 RelaunchAppIfInstallerFailed。
+struct InstallerRun {
+  DWORD pid = 0;
+  HANDLE process = nullptr;
+};
+
+bool LaunchInstaller(const ParsedArgs& args, InstallerRun* run) {
   std::wstring command_line =
       BuildCommandLine(args.installer_path, args.installer_args);
   STARTUPINFOW startup = {};
@@ -415,10 +426,86 @@ bool LaunchInstaller(const ParsedArgs& args, DWORD* installer_pid) {
     MarkLaunchFailed(args.marker_path, LastErrorMessage("CreateProcess Inno"));
     return false;
   }
-  *installer_pid = process.dwProcessId;
+  run->pid = process.dwProcessId;
+  // 句柄留着：安装结束后要据它判断该不该把 app 拉回来（见 EnsureAppBack）。
+  run->process = process.hProcess;
+  ::CloseHandle(process.hThread);
+  return true;
+}
+
+// 单实例互斥体在不在？在 = 已经有一个 Fushi 活着。
+bool SingleInstanceMutexHeld() {
+  HANDLE mutex = ::OpenMutexW(SYNCHRONIZE, FALSE, kFushiSingleInstanceMutex);
+  if (mutex == nullptr) return false;
+  ::CloseHandle(mutex);
+  return true;
+}
+
+// 等 app 自己回来（安装成功时由 .iss 的 [Run] 条目拉起，实测 /VERYSILENT 下照常执行）。
+// Flutter 冷启到创建互斥体要一两秒，所以给一个有界的观察窗口而不是一次性判断。
+bool WaitForAppAlive(DWORD timeout_ms) {
+  const DWORD deadline = ::GetTickCount() + timeout_ms;
+  for (;;) {
+    if (SingleInstanceMutexHeld()) return true;
+    if (static_cast<LONG>(deadline - ::GetTickCount()) <= 0) return false;
+    ::Sleep(kMutexPollIntervalMs);
+  }
+}
+
+// 与 launcher 同目录的 fushi.exe（安装器把两者装在一起）。
+std::wstring AppExecutablePath() {
+  wchar_t buffer[MAX_PATH] = {0};
+  const DWORD length = ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+  if (length == 0 || length >= MAX_PATH) return std::wstring();
+  std::wstring path(buffer, length);
+  const size_t slash = path.find_last_of(L"\/");
+  if (slash == std::wstring::npos) return std::wstring();
+  return path.substr(0, slash + 1) + L"fushi.exe";
+}
+
+bool StartApp(const std::wstring& executable) {
+  std::wstring command_line = QuoteArg(executable);
+  STARTUPINFOW startup = {};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {};
+  const BOOL ok = ::CreateProcessW(executable.c_str(), command_line.data(),
+                                   nullptr, nullptr, FALSE, 0, nullptr, nullptr,
+                                   &startup, &process);
+  if (!ok) return false;
   ::CloseHandle(process.hThread);
   ::CloseHandle(process.hProcess);
   return true;
+}
+
+// 更新链路的最后一环：**保证 app 回来**。
+//
+// 在此之前，这条链上没有任何一环对「app 还活着」负责。app 为了让出文件锁主动 exit(0)，
+// 安装器只要没走到成功路径（PrepareToInstall 中止、复制阶段 DeleteFile 失败后回滚、
+// 用户取消、setup 自己崩溃），[Run] 条目就不会执行，于是 Fushi 从用户桌面上**静默消失**，
+// 而 /SUPPRESSMSGBOXES 连失败原因都吞掉了。用户现场：2026-08-16 起连续五次更新如此，
+// 版本卡在三天前（BUG-1708）。
+//
+// 判据刻意不是「Inno 退出码等于几」——退出码语义随版本和失败类型漂移，枚举它等于给每种
+// 失败加一条特例。只问一件事：安装器结束后，还有没有 Fushi 活着？没有就拉起来。
+// 安装成功时 [Run] 已经把新版拉起来，互斥体被持有，这里自然什么都不做，不会有双实例。
+void EnsureAppBack(const ParsedArgs& args, DWORD installer_exit_code,
+                   bool installer_exit_observed) {
+  if (WaitForAppAlive(kAppRelaunchWaitMs)) {
+    AppendMarkerFields(args.marker_path,
+                       {{"appAliveAfterInstaller", "true"},
+                        {"appAliveCheckedAt", JsonString(NowIsoUtc())}});
+    return;
+  }
+  const std::wstring app = AppExecutablePath();
+  const bool started = !app.empty() && StartApp(app);
+  AppendMarkerFields(
+      args.marker_path,
+      {{"appAliveAfterInstaller", "false"},
+       {"appAliveCheckedAt", JsonString(NowIsoUtc())},
+       {"installerExitObserved", installer_exit_observed ? "true" : "false"},
+       {"installerExitCode", std::to_string(installer_exit_code)},
+       {"appRelaunchedByLauncher", started ? "true" : "false"},
+       {"appRelaunchPath", JsonString(ToUtf8(app))}});
 }
 
 }  // namespace
@@ -457,14 +544,36 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
       {{"launcherMutexReleased", mutex_released ? "true" : "false"},
        {"launcherMutexCheckedAt", JsonString(NowIsoUtc())}});
 
-  DWORD installer_pid = 0;
-  if (!LaunchInstaller(args, &installer_pid)) {
+  InstallerRun run;
+  if (!LaunchInstaller(args, &run)) {
+    // 安装器根本没起来：app 已经为这次更新退出了，必须把它拉回来，否则用户的 Fushi
+    // 就这么没了（本函数的调用方是分离进程，没有人会看这个返回码）。
+    EnsureAppBack(args, /*installer_exit_code=*/0,
+                  /*installer_exit_observed=*/false);
     return 4;
   }
 
   AppendMarkerFields(args.marker_path,
                      {{"installerLaunchSucceeded", "true"},
                       {"installerLaunchedAt", JsonString(NowIsoUtc())},
-                      {"installerPid", std::to_string(installer_pid)}});
+                      {"installerPid", std::to_string(run.pid)}});
+
+  // 等安装器跑完，再确认 app 是否回来。等待失败（超时/句柄异常）不改变结论：
+  // 无论如何都要走 EnsureAppBack，它只看「现在还有没有 Fushi 活着」。
+  DWORD exit_code = 0;
+  bool exit_observed = false;
+  if (run.process != nullptr) {
+    exit_observed =
+        ::WaitForSingleObject(run.process, kInstallerExitTimeoutMs) ==
+        WAIT_OBJECT_0;
+    if (exit_observed && !::GetExitCodeProcess(run.process, &exit_code)) {
+      exit_code = 0;
+    }
+    ::CloseHandle(run.process);
+    run.process = nullptr;
+  }
+  AppendMarkerFields(args.marker_path,
+                     {{"installerExitedAt", JsonString(NowIsoUtc())}});
+  EnsureAppBack(args, exit_code, exit_observed);
   return 0;
 }
