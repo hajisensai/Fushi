@@ -102,12 +102,41 @@ class MihonExtensionStoreClient {
 
   final http.Client _client;
 
+  /// 跟随「一份索引指向另一份索引」的最大跳数。
+  ///
+  /// 真实形态最多两跳：`index.min.json` 推导出 `repo.json`，`repo.json`
+  /// 的 `index_v2` 再指向 `index.pb`。但 `index_v2` 是仓库方自由填的地址，
+  /// 完全可以指回一个 `index.min.json`，形成环。没有上限的话一个恶意（或只是
+  /// 写错的）仓库就能让客户端无限递归下去。
+  static const int _maxIndexHops = 3;
+
   Future<MihonStoreFetchResult> fetchStore(
     String rawUrl, {
     String? etag,
     String? lastModified,
     bool allowInsecure = false,
+  }) =>
+      _fetchStore(
+        rawUrl,
+        etag: etag,
+        lastModified: lastModified,
+        allowInsecure: allowInsecure,
+        hop: 0,
+      );
+
+  Future<MihonStoreFetchResult> _fetchStore(
+    String rawUrl, {
+    required int hop,
+    String? etag,
+    String? lastModified,
+    bool allowInsecure = false,
   }) async {
+    if (hop > _maxIndexHops) {
+      throw const MihonRuntimeException(
+        'TOO_MANY_INDEX_HOPS',
+        'Extension store index points at itself in a loop',
+      );
+    }
     final Uri indexUrl = _validatedUri(rawUrl, allowInsecure: allowInsecure);
     final _NetworkBytes response = await _get(
       indexUrl,
@@ -142,15 +171,20 @@ class MihonExtensionStoreClient {
         RegExp(r'/index\.min\.json$'),
         '/repo.json',
       ));
-      final _NetworkBytes metadata = await _get(
-        metadataUrl,
+      // `repo.json` 就是下面 `0x7b` 分支处理的那份文档，直接递归过去。
+      //
+      // 这里曾经自己又调一遍 `_parseLegacyStore`，于是 `index_v2` 被整个吞掉：
+      // 对象分支会跟着 `index_v2` 走到新索引，数组分支拿着同一份 `repo.json`
+      // 却停在旧格式。keiyoushi 已经迁到 `index_v2`，它的 `index.min.json` 只剩两条
+      // 占位条目，推出来的 `apk/` 直链在仓库里根本不存在——填这个地址的用户
+      // 装什么都是 `STORE_HTTP_404`。
+      //
+      // 顺带修掉一个错配：旧实现把 `index.min.json` 响应的 etag 跟着
+      // `repo.json` 这个 `indexUrl` 一起落库，下次条件请求的 etag 压根不属于那个地址。
+      return _fetchStore(
+        metadataUrl.toString(),
         allowInsecure: allowInsecure,
-      );
-      store = _parseLegacyStore(
-        metadataUrl,
-        _jsonObject(
-          _decodeGzip(metadata.bytes, maxBytes: mihonStoreMaxBytes),
-        ),
+        hop: hop + 1,
       );
     } else if (first == 0x7b) {
       final Map<String, Object?> json = _jsonObject(bytes);
@@ -158,9 +192,10 @@ class MihonExtensionStoreClient {
         final MihonStore legacy = _parseLegacyStore(indexUrl, json);
         final Object? indexV2 = json['index_v2'];
         if (indexV2 is String && indexV2.trim().isNotEmpty) {
-          return fetchStore(
+          return _fetchStore(
             indexUrl.resolve(indexV2).toString(),
             allowInsecure: allowInsecure,
+            hop: hop + 1,
           );
         }
         store = legacy;
@@ -331,9 +366,14 @@ class MihonExtensionStoreClient {
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await response.stream.drain<void>();
+      // 带上地址：同一个 `STORE_HTTP_404` 可能是索引没了、扩展列表没了、或者
+      // APK 直链指向的 GitHub release 已被上游删除，不写地址就只能靠猜。
+      // 只留 origin+path：release 资产会 302 到带 `sig=` / `jwt=` 的签名地址，
+      // query 原样拼进报错文案等于把短期凭证写进 UI 和上传的日志。
+      final Uri safeUrl = url.replace(query: '', fragment: '');
       throw MihonRuntimeException(
         'STORE_HTTP_${response.statusCode}',
-        'Extension store request failed',
+        'Extension store request failed: HTTP ${response.statusCode} for $safeUrl',
       );
     }
     final int? declared = int.tryParse(

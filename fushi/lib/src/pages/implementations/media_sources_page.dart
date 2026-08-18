@@ -20,10 +20,11 @@ import 'package:fushi/utils.dart';
 /// 库页导航壳里的「导入」视图：**本域内容入库的唯一入口页**。
 ///
 /// 自上而下两区：
-/// 1. 快速导入（[QuickImportSection]）——单件 / 一次性入口：书 = 导入文件 +
-///    导入文件夹（二选一：设为常驻来源 / 仅导入一次）；视频 = 导入视频（对话框
-///    内含文件 / 文件夹 / 播放列表 / 网络流）。
-/// 2. 常驻来源（[MediaSourcesView]）——本地扫描根 + 网络来源的管理列表。
+/// 1. 快速导入（[QuickImportSection]）——单件 / 一次性入口：书 / 视频统一为
+///    「导入单件 + 导入文件夹」两个按钮（文件夹二选一：设为常驻来源 / 仅导入
+///    一次，见 [MediaSourcesViewState.importFolder]）。
+/// 2. 常驻来源（[MediaSourcesView]）——本地与网络扫描根的管理列表，区头带
+///    「添加来源」按钮（TODO-2930 从页头收敛至此）。
 ///
 /// 此前单件导入按钮散在各库页页头（书 / 漫画在页头、视频已删、游戏在 FAB），
 /// 五个模块五种入口；现在统一收敛到「导入」视图同一位置（2026-08-13 用户定案）。
@@ -72,9 +73,6 @@ class MediaSourcesPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<MediaSourcesPage> createState() => _MediaSourcesPageState();
 }
-
-/// 书籍「导入文件夹」的两个去向：设为常驻来源 / 仅导入这一次。
-enum _FolderImportChoice { asSource, once }
 
 class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   final GlobalKey<MediaSourcesViewState> _viewKey =
@@ -132,12 +130,9 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
                   if (quickActions.isNotEmpty) ...<Widget>[
                     QuickImportSection(actions: quickActions),
                     const SizedBox(height: 28),
-                    Text(
-                      t.media_source_section_title,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
                   ],
+                  _buildSourcesSectionHeader(),
+                  const SizedBox(height: 8),
                   MediaSourcesView(
                     key: _viewKey,
                     mediaKind: widget.mediaKind,
@@ -169,8 +164,8 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
           ),
           QuickImportAction(
             icon: Icons.drive_folder_upload_outlined,
-            label: t.book_import_folder,
-            onTap: _importBookFolder,
+            label: t.media_import_folder,
+            onTap: _importFolder,
           ),
         ],
       'video' => <QuickImportAction>[
@@ -178,6 +173,11 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
             icon: Icons.movie_outlined,
             label: t.video_import_action,
             onTap: _importVideo,
+          ),
+          QuickImportAction(
+            icon: Icons.drive_folder_upload_outlined,
+            label: t.media_import_folder,
+            onTap: _importFolder,
           ),
         ],
       _ => const <QuickImportAction>[],
@@ -197,58 +197,17 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     if (imported == true) _invalidateBookProviders();
   }
 
-  /// 书籍「导入文件夹」：二选一——设为常驻来源（Komga 式，长期自动扫描）或
-  /// 仅导入这一次（同一条扫描管线，扫完不留扫描根）。
-  Future<void> _importBookFolder() async {
-    final _FolderImportChoice? choice =
-        await showAppDialog<_FolderImportChoice>(
-      context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
-        title: Text(t.book_import_folder),
-        children: <Widget>[
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.asSource),
-            child: Row(
-              children: <Widget>[
-                const Icon(Icons.create_new_folder_outlined),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(t.book_import_folder_as_source),
-                      Text(
-                        t.book_import_folder_as_source_hint,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
-            child: Row(
-              children: <Widget>[
-                const Icon(Icons.file_download_outlined),
-                const SizedBox(width: 16),
-                Expanded(child: Text(t.book_import_folder_once)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || choice == null) return;
-    switch (choice) {
-      case _FolderImportChoice.asSource:
-        await _viewKey.currentState?.addLocalFolder();
-      case _FolderImportChoice.once:
-        await _viewKey.currentState?.importLocalFolderOnce();
+  /// 「导入文件夹」：二选一——设为常驻来源（Komga 式，长期自动扫描）或
+  /// 仅导入这一次（同一条扫描管线，扫完不留扫描根）。对话框与分发在
+  /// [MediaSourcesViewState.importFolder]，书 / 视频 / 漫画三个导入视图共用。
+  Future<void> _importFolder() async {
+    await _viewKey.currentState?.importFolder();
+    if (!mounted) return;
+    if (widget.mediaKind == 'book') {
+      _invalidateBookProviders();
+    } else {
+      widget.onLibraryChanged?.call();
     }
-    if (mounted) _invalidateBookProviders();
   }
 
   /// 单个视频 / 播放列表 / 网络流导入：复用 [VideoImportDialog]（原页头入口
@@ -271,19 +230,38 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     widget.onLibraryChanged?.call();
   }
 
+  /// 「常驻来源」区头：标题 + 区块内「添加来源」按钮。
+  ///
+  /// 原页头的「添加来源」收敛到此（TODO-2930 用户反馈：页头按钮与页内来源区
+  /// 割裂）；Cupertino 布局本就不渲染页头，这里也顺带补上了 iOS 的添加入口。
+  Widget _buildSourcesSectionHeader() {
+    final bool busy = widget.scrapeTaskController?.isBusy == true ||
+        _viewKey.currentState?.isBusy == true;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            t.media_source_section_title,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+        FushiIconButton(
+          tooltip: t.media_source_add,
+          label: t.media_source_add,
+          icon: Icons.create_new_folder_outlined,
+          enabled: !busy,
+          onTap: () {
+            if (!busy) unawaited(_viewKey.currentState?.addSource());
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildHeader() {
     final bool busy = widget.scrapeTaskController?.isBusy == true ||
         _viewKey.currentState?.isBusy == true;
     final List<Widget> actions = <Widget>[
-      FushiIconButton(
-        tooltip: t.media_source_add,
-        label: t.media_source_add,
-        icon: Icons.create_new_folder_outlined,
-        enabled: !busy,
-        onTap: () {
-          if (!busy) unawaited(_viewKey.currentState?.addSource());
-        },
-      ),
       if (widget.mediaKind == 'video' && widget.onScrapeAll != null)
         FushiIconButton(
           tooltip: t.scrape_all,

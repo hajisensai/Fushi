@@ -7,6 +7,8 @@ import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter/return_code.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/utils/misc/helper_process_registry.dart';
+
 /// 一次 ffmpeg 执行的结果。
 ///
 /// [returnCode] 为 null 表示超时被强杀；[output] 是合并的 stderr 文本
@@ -332,7 +334,8 @@ Future<FfmpegRunResult> runFfmpegProcess(
   List<String> args,
   Duration timeout,
 ) async {
-  final Process process = await Process.start(executable, args);
+  final Process process =
+      await HelperProcessRegistry.instance.start(executable, args);
   // Drain both pipes: a full OS pipe buffer (ffmpeg writes progress to stderr)
   // would otherwise deadlock the process before it can exit.
   unawaited(process.stdout.drain<void>());
@@ -370,7 +373,8 @@ Future<FfmpegRunResult> runFfprobeProcess(
   List<String> args,
   Duration timeout,
 ) async {
-  final Process process = await Process.start(executable, args);
+  final Process process =
+      await HelperProcessRegistry.instance.start(executable, args);
   final Future<String> stdoutText =
       process.stdout.transform(const Utf8Decoder(allowMalformed: true)).join();
   unawaited(process.stderr.drain<void>());

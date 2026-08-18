@@ -615,14 +615,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   /// **不再另渲染一个页面大标题**——导航条自己已经标明了当前在哪个视图，标题只是
   /// 重复占一行。仅在没有导航条（独立 push 进来）时才回退到文字标题。
   Widget _buildHeader() {
-    final List<Widget> actions = <Widget>[
-      FushiIconButton(
-        tooltip: t.media_source_add,
-        label: t.media_source_add,
-        icon: Icons.create_new_folder_outlined,
-        onTap: () => _localSourcesKey.currentState?.addSource(),
-      ),
-    ];
+    // 「添加来源」已从页头收敛到「常驻来源」区头（TODO-2930），页头只留导航条。
+    const List<Widget> actions = <Widget>[];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
       return FushiPageHeader.customTitle(
@@ -905,6 +899,13 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                                   label: t.manga_import_action,
                                   onTap: _importManga,
                                 ),
+                                QuickImportAction(
+                                  icon: Icons.drive_folder_upload_outlined,
+                                  label: t.media_import_folder,
+                                  onTap: () async => _localSourcesKey
+                                      .currentState
+                                      ?.importFolder(),
+                                ),
                                 if (AidokuRuntimeFactory.isSupported)
                                   QuickImportAction(
                                     icon: Icons.extension_outlined,
@@ -922,7 +923,22 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                               ],
                             ),
                             const SizedBox(height: 28),
-                            _sectionTitle(t.media_source_local_roots),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: _sectionTitle(
+                                    t.media_source_section_title,
+                                  ),
+                                ),
+                                FushiIconButton(
+                                  tooltip: t.media_source_add,
+                                  label: t.media_source_add,
+                                  icon: Icons.create_new_folder_outlined,
+                                  onTap: () => _localSourcesKey.currentState
+                                      ?.addSource(),
+                                ),
+                              ],
+                            ),
                             const SizedBox(height: 8),
                             MediaSourcesView(
                               key: _localSourcesKey,
