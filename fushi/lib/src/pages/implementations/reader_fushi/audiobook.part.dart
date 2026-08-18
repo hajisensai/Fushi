@@ -131,7 +131,6 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     ProfileMediaKind? mediaTypeOverride,
   }) async {
     try {
-      final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
       final ProfileViewModel profileVm =
           ref.read(profileViewModelProvider.notifier);
 
@@ -153,14 +152,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         }
       }
 
-      final int resolvedId = await profileRepo.resolveProfileId(
+      await profileVm.autoApplyBinding(
         bookUid: bookKey,
         mediaType: mediaType,
       );
-      final int currentActiveId = await profileRepo.getActiveProfileId();
-      if (resolvedId != currentActiveId) {
-        await profileVm.switchProfile(resolvedId);
-      }
     } catch (e, st) {
       debugPrint(
           '[ReaderFushi] profile resolution failed (non-fatal): $e\n$st');
