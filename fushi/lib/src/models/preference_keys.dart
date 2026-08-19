@@ -175,6 +175,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_mining_image_mode',
   'video_mining_still_format',
   'video_mpv_config',
+  'video_mpv_lua_scripts_enabled',
   'video_mpv_shader_dir',
   'video_remote_subtitle',
   // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。

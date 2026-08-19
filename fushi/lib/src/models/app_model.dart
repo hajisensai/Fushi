@@ -3139,6 +3139,13 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoShadersEnabled(String json) =>
       prefsRepo.setVideoShadersEnabled(json);
 
+  /// mpv Lua 脚本装载开关（见 video_lua_script_manager.dart；默认关，
+  /// 关闭只对之后新建的播放器生效）。
+  bool get videoMpvLuaScriptsEnabled => prefsRepo.videoMpvLuaScriptsEnabled;
+
+  Future<void> setVideoMpvLuaScriptsEnabled(bool value) =>
+      prefsRepo.setVideoMpvLuaScriptsEnabled(value);
+
   /// 用户手动指定的本机 mpv 配置/着色器目录（空=自动）。
   String get videoMpvShaderDir => prefsRepo.videoMpvShaderDir;
 

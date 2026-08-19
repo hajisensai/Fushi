@@ -3616,5 +3616,11 @@
   "storage_modules_not_installed": "Not installed",
   "storage_bundled_section": "Bundled components",
   "storage_bundled_hint": "Shipped with the installer; deleted files come back on the next update, listed for reference only.",
-  "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log"
+  "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log",
+  "video_setting_mpv_lua_scripts": "Load Lua scripts",
+  "video_setting_mpv_lua_scripts_hint": "Load all .lua files in the mpv_scripts folder into the player. Turning off takes effect the next time a video is opened.",
+  "video_setting_mpv_lua_scripts_import": "Import Lua scripts",
+  "video_setting_mpv_lua_scripts_imported": "Scripts imported",
+  "video_setting_mpv_lua_scripts_dir_copy": "Copy scripts folder path",
+  "video_setting_mpv_lua_scripts_dir_copied": "Folder path copied"
 }

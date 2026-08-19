@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
+import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -1063,6 +1064,26 @@ class VideoPlayerController extends ChangeNotifier
     await applyShadersToPlayer(player, _shaderPaths);
   }
 
+  /// 本 Player 实例已装载的 Lua 脚本绝对路径。mpv 无 unload-script，重复
+  /// `load-script` 会实例化第二份脚本，故装载必须每 Player 实例幂等（见
+  /// video_lua_script_manager.dart 文件头）。Player 与 controller 同生命周期
+  /// （复用不重建），无需随换集清空。
+  final Set<String> _loadedLuaScripts = <String>{};
+
+  /// 装载 mpv Lua 脚本（设置面板开启开关 / [load] 均走此入口）。幂等：已装载
+  /// 的路径跳过；未 [load]（无 player）时 no-op——脚本随下次 [load] 由页面
+  /// 重新解析传入。关闭开关无法从运行中的实例卸载，只对之后新建的 Player 生效。
+  Future<void> applyLuaScripts(List<String> absolutePaths) async {
+    final Player? player = _player;
+    if (player == null) return;
+    final List<String> fresh = <String>[
+      for (final String path in absolutePaths)
+        if (_loadedLuaScripts.add(path)) path,
+    ];
+    if (fresh.isEmpty) return;
+    await applyLuaScriptsToPlayer(player, fresh);
+  }
+
   /// 着色器「对比原画」旁路态：true 时临时清空 libmpv 着色器（看原画），但**保留**
   /// 启用集 [_shaderPaths]，恢复时一键贴回。供效果对比用（B：缺效果预览/对比）。
   bool _shadersBypassed = false;
@@ -1111,6 +1132,7 @@ class VideoPlayerController extends ChangeNotifier
     bool subtitleExplicitlyOff = false,
     int? renderGraphicStreamIndex,
     List<String> shaderPaths = const <String>[],
+    List<String> luaScriptPaths = const <String>[],
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     Map<String, String> httpHeaderFields = const <String, String>{},
     bool autoPlay = false,
@@ -1333,6 +1355,11 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
+
+    // 装载 mpv Lua 脚本（开关开启时页面传入目录全集）。幂等：换集复用同一
+    // Player 时已装载路径跳过，不会重复实例化脚本（见 [applyLuaScripts]）。
+    await applyLuaScripts(luaScriptPaths);
+    if (!_isCurrentLoad(player, loadToken)) return; // 脚本装载后换片/销毁。
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
     _lastVolume = initialVolume;

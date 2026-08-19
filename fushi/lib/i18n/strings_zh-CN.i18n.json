@@ -3616,5 +3616,11 @@
   "storage_modules_not_installed": "未安装",
   "storage_bundled_section": "随包组件",
   "storage_bundled_hint": "随安装包携带，删除后下次更新会自动恢复，此处仅展示。",
-  "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志"
+  "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志",
+  "video_setting_mpv_lua_scripts": "加载 Lua 脚本",
+  "video_setting_mpv_lua_scripts_hint": "装载 mpv_scripts 目录里的全部 .lua 脚本。关闭在下次打开视频时生效。",
+  "video_setting_mpv_lua_scripts_import": "导入 Lua 脚本",
+  "video_setting_mpv_lua_scripts_imported": "脚本已导入",
+  "video_setting_mpv_lua_scripts_dir_copy": "复制脚本目录路径",
+  "video_setting_mpv_lua_scripts_dir_copied": "已复制目录路径"
 }

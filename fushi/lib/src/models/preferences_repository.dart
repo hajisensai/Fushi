@@ -893,6 +893,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// mpv Lua 脚本装载开关（默认关）。开时视频播放器创建后把
+  /// `<documents>/mpv_scripts` 目录里的全部 `.lua` 经 `load-script` 装载
+  /// （见 video_lua_script_manager.dart）；mpv 无 unload-script，关闭只对
+  /// 之后新建的播放器生效。
+  bool get videoMpvLuaScriptsEnabled =>
+      getPref('video_mpv_lua_scripts_enabled', defaultValue: false) as bool;
+
+  Future<void> setVideoMpvLuaScriptsEnabled(bool value) async {
+    await setPref('video_mpv_lua_scripts_enabled', value);
+    notifyListeners();
+  }
+
   /// 用户手动指定的本机 mpv 配置/着色器目录（「从本机 mpv 导入」自动找不到时指定后
   /// 记住，下次优先扫它）。空串=未指定，走自动候选目录。
   String get videoMpvShaderDir =>

@@ -44,7 +44,8 @@ enum StorageCategoryId {
   /// 字幕副本：`video_subtitles`。
   subtitles,
 
-  /// 视频着色器：`mpv_shaders`（Anime4K 下载与用户自导入混放）。
+  /// 视频着色器与 mpv Lua 脚本：`mpv_shaders`（Anime4K 下载与用户自导入混放）
+  /// + `mpv_scripts`（体量极小，不值得独立类目）。
   shaders,
 
   /// 自定义字体：`custom_fonts`。
@@ -169,7 +170,7 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
     'thumbnails',
   ],
   StorageCategoryId.subtitles: <String>['video_subtitles'],
-  StorageCategoryId.shaders: <String>['mpv_shaders'],
+  StorageCategoryId.shaders: <String>['mpv_shaders', 'mpv_scripts'],
   StorageCategoryId.customFonts: <String>['custom_fonts'],
   StorageCategoryId.web: <String>['webArchive', 'browser'],
   StorageCategoryId.exports: <String>[
