@@ -1669,7 +1669,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   // would double-reload.
   bool get readerMergeImagePages =>
       readerSettings?.mergeImagePages ??
-      getPreference<bool>(key: 'merge_image_pages', defaultValue: false);
+      getPreference<bool>(key: 'merge_image_pages', defaultValue: true);
   Future<void> setReaderMergeImagePages(bool v) async {
     await (readerSettings?.setMergeImagePages(v) ??
         setPreference<bool>(key: 'merge_image_pages', value: v));
@@ -1717,7 +1717,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   bool get readerPrioritizeReaderStyles =>
       readerSettings?.prioritizeReaderStyles ??
-      getPreference<bool>(key: 'reader_styles', defaultValue: false);
+      getPreference<bool>(key: 'reader_styles', defaultValue: true);
   Future<void> setReaderPrioritizeReaderStyles(bool v) async {
     await (readerSettings?.setPrioritizeReaderStyles(v) ??
         setPreference<bool>(key: 'reader_styles', value: v));

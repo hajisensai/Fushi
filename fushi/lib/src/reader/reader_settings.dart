@@ -336,8 +336,12 @@ class ReaderSettings {
   /// TODO-1128: when true, the reader folds each run of trailing standalone
   /// single-image (0-char) chapters into the preceding text chapter's
   /// continuous flow instead of paging to each illustration separately.
-  /// Default false (conservative first ship); a structural layout key.
-  bool get mergeImagePages => _get<bool>('merge_image_pages', false);
+  /// A structural layout key. Now defaults to true: the conservative
+  /// first-ship default (false) made every illustration steal a page turn,
+  /// which is the wrong reading rhythm for the light novels this targets.
+  /// Users who explicitly turned it off keep their stored `false` — `_get`
+  /// never persists a default, so only an explicit `_set` wins over this.
+  bool get mergeImagePages => _get<bool>('merge_image_pages', true);
   Future<void> setMergeImagePages(bool v) => _set<bool>('merge_image_pages', v);
 
   bool get enableVerticalFontKerning => _get<bool>('vert_kerning', false);
@@ -356,7 +360,12 @@ class ReaderSettings {
   Future<void> setEnableTextJustification(bool v) =>
       _set<bool>('text_justify', v);
 
-  bool get prioritizeReaderStyles => _get<bool>('reader_styles', false);
+  /// When true the reader stops stamping `!important` on the image-sizing and
+  /// link-colour declarations it generates, so the book's own stylesheet wins.
+  /// Defaults to true: publisher CSS is authored for the illustrations it ships
+  /// with, and overriding it by default distorted spreads and full-bleed art.
+  /// Same persistence rule as [mergeImagePages] — an explicit user `false` wins.
+  bool get prioritizeReaderStyles => _get<bool>('reader_styles', true);
   Future<void> setPrioritizeReaderStyles(bool v) =>
       _set<bool>('reader_styles', v);
 
