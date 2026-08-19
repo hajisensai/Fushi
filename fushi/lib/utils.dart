@@ -20,6 +20,7 @@ export 'src/utils/components/fushi_text_selection_controls.dart';
 export 'src/utils/components/content_language_picker.dart';
 export 'src/utils/components/fushi_list_tile.dart';
 export 'src/utils/components/fushi_focusable.dart';
+export 'src/utils/components/fushi_hover_lift.dart';
 export 'src/utils/components/fushi_focus_ring.dart';
 export 'src/utils/components/galgame_poster_card.dart';
 export 'src/utils/components/fushi_design_tokens.dart';

@@ -5651,14 +5651,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ],
       ),
     );
+    // 悬停抬升：与游戏库同一个壳（含墨水屏 / 减弱动态效果两处降级）。多选态
+    // 关掉——那时卡片是勾选目标，跟着指针放大只会干扰框选。
+    final Widget liftedCard = FushiHoverLift(
+      enabled: !_selectionMode,
+      builder: (BuildContext _, bool __) => fushiCard,
+    );
     // 选择态下禁用标签拖放命中（避免选卡时误触拖标签）。
     final Widget card = _selectionMode
-        ? fushiCard
+        ? liftedCard
         : BookDragTarget(
             bookId: book.bookUid,
             onTagDropped: (BookTagRow tag) =>
                 _addTagToVideoBook(book.bookUid, tag),
-            child: fushiCard,
+            child: liftedCard,
           );
     return CardDropZone<VideoBookRow>(
       meta: book,
