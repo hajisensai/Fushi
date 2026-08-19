@@ -72,9 +72,34 @@ if (resolved == null) {
 这条**静默分支**上——工作台那条路直接拿 `entry.id`，绕开了它，所以能成。
 这条 A/B 同时证明本 bug 的用户可见后果是真的：用户在游戏里点「制卡」，屏幕上什么都不会发生。
 
-**为什么还没给出根因**：本轮用的 app 是用户已安装的构建，**不含**本 bug 的提示修复，
-所以看不到失败原因。下一步是用本分支（已含该修复）构建一份 Fushi 跑同一场景，
-让它把两种失败原因中的哪一种直接说出来。
+#### 再排除一项：两侧台词**逐字节相同**
+
+用工作台那行的「复制」按钮取 Fushi 侧原文到剪贴板，与探针打印的命中整行做字节比对：
+
+```
+sensor: len=27 bytes=27  hex=49 20 61 6D 20 6E 6F 74 20 61 20 66 61 6E 20 6F 66 20 6D 6F 72 6E 69 6E 67 73 2E
+fushi : len=27 bytes=27  hex=49 20 61 6D 20 6E 6F 74 20 61 20 66 61 6E 20 6F 66 20 6D 6F 72 6E 69 6E 67 73 2E
+exact_equal=True
+```
+
+没有尾随空格、没有 NBSP、没有零宽字符——`latest.text == line` 这个判等**本该成立**。
+（这一步必须比字节：两行肉眼完全一样，任何不可见差异都只有 hex 看得见。）
+
+#### 于是收敛到一个可直接验证的假设
+
+`_resolveIngameMiningLineId` 读的是 `_session.selectedSessionLines`
+（`gal_hook_session_controller.dart:768`），而工作台列表渲染的是 `workbenchLines`
+（同文件 `:732`）——**两个不同的 getter**。既然台词内容一致、且它确实是工作台里的最后一条，
+那么只可能是 `selectedSessionLines` 为空（或末元素不是它）。
+
+**为什么偏偏 Ren'Py 中招**：它是唯一走「启动器 → 子进程」且
+`follow_child_processes: true` 的引擎（`engine-support.yaml` 的 `renpy_ffmpeg.process_strategy`）。
+KiriKiri 是单进程，两个 getter 自然一致。所以最可能的根因是
+**会话身份挂在启动器 pid、而台词归属挂在子进程 pid（或反之）**，导致按会话过滤后为空。
+
+下一步（最小动作）：比对 `selectedSessionLines` 与 `workbenchLines` 的过滤条件，
+确认会话 id 用的是哪一个 pid；用本分支（已含本 bug 的提示修复）构建一份 Fushi 跑同一场景，
+提示会直接说出是「本局一条台词都没有」还是「有台词但对不上」——前者即坐实此假设。
 
 ### 与 BUG-1733 的关系
 
