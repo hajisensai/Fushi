@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -927,6 +929,29 @@ class SyncRepository {
     return id;
   }
 
+  // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────
+
+  static const _keyJellyfinServer = 'sync_jellyfin_server';
+
+  /// 已登录的 Jellyfin/Emby 服务器配置；未配置 / 已登出 / 脏 JSON → null。
+  /// v1 单服务器（与视频页单远端源架构对齐）。
+  Future<JellyfinServerConfig?> getJellyfinServer() async {
+    final String? raw = await _getStringOrNull(_keyJellyfinServer);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return JellyfinServerConfig.fromJson(decoded);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 保存 / 清除（null = 登出删键）Jellyfin 服务器配置。
+  Future<void> setJellyfinServer(JellyfinServerConfig? config) => config == null
+      ? _deleteKey(_keyJellyfinServer)
+      : _setString(_keyJellyfinServer, jsonEncode(config.toJson()));
+
   // ── Hibiki Client (connect to another Hibiki instance) ─────────
 
   static const _keyFushiClientUrl = 'sync_hibiki_client_url';
@@ -1184,6 +1209,8 @@ class SyncRepository {
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,
+    // Jellyfin 服务器绑定含访问令牌，属设备本地凭据，绝不随备份跨设备。
+    _keyJellyfinServer,
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
     _keyInterconnectServiceConfigSync,

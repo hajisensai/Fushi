@@ -87,6 +87,8 @@ import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
@@ -786,6 +788,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return CloudRemoteVideoClient(backend: backend, backendType: type);
   }
 
+  /// Jellyfin/Emby 媒体服务器分支：设置里登录过服务器（配置在 SyncRepository
+  /// `sync_jellyfin_server`）即可出 client——它具备完整 [RemoteVideoClient] 能力
+  /// （直连流播/字幕/服务器端断点），与互联 live 库同级；每次取数新建实例，
+  /// 缓存身份按服务器细分（`jellyfin:<serverUrl>`，BUG-1202 口径）。
+  Future<JellyfinVideoClient?> _resolveJellyfinVideoClient() async {
+    final AppModel appModel = ref.read(appProvider);
+    final SyncRepository syncRepo = SyncRepository(appModel.database);
+    final JellyfinServerConfig? config = await syncRepo.getJellyfinServer();
+    return config?.buildClient();
+  }
+
   /// 是否应该去问远端要视频清单。
   ///
   /// BUG-1182：`showRemoteEntries` 开关此前只在渲染期的 [_visibleRemoteVideos] 生效，
@@ -817,9 +830,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _remoteVideoSource = null;
       return null;
     }
-    // TODO-2119：互联优先、否则回退云盘；两者都是 [RemoteVideoSource]，所以下面
-    // 「列清单 → 去重 → 出占位卡」这条主干只写一遍，不再按后端类型分叉。
+    // TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退云盘；三者都是
+    // [RemoteVideoSource]，所以下面「列清单 → 去重 → 出占位卡」这条主干只写
+    // 一遍，不再按后端类型分叉。
     final RemoteVideoSource? source = await _resolveRemoteVideoClient() ??
+        await _resolveJellyfinVideoClient() ??
         await _resolveCloudRemoteVideoClient();
     _remoteVideoSource = source;
     if (source == null) return null;

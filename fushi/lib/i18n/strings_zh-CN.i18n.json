@@ -3616,5 +3616,11 @@
   "storage_modules_not_installed": "未安装",
   "storage_bundled_section": "随包组件",
   "storage_bundled_hint": "随安装包携带，删除后下次更新会自动恢复，此处仅展示。",
-  "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志"
+  "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志",
+  "jellyfin_settings_title": "媒体服务器（Jellyfin / Emby）",
+  "jellyfin_server_url": "服务器地址",
+  "jellyfin_sign_in": "登录",
+  "jellyfin_sign_out": "退出登录",
+  "jellyfin_sign_in_failed": "登录失败",
+  "jellyfin_settings_hint": "服务器上的视频会出现在媒体库中，点击直接串流播放。"
 }
