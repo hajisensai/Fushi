@@ -40,6 +40,7 @@ void main() {
       'buildProfilesDestination()',
       'buildSyncBackupDestination()',
       'buildInterconnectDestination()',
+      'buildStorageDestination()',
       'buildSystemDestination()',
     ];
 
