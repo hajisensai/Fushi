@@ -102,6 +102,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
 import 'package:fushi/src/media/tracking/media_tracking_service.dart';
@@ -3283,6 +3284,15 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) =>
       prefsRepo.setVideoControlLayout(layout);
+
+  /// 视频「快捷键 1..4」自定义动作按钮的绑定（槽位 → 视频动作）。
+  VideoCustomActionBindings get videoCustomActionBindings =>
+      prefsRepo.videoCustomActionBindings;
+
+  Future<void> setVideoCustomActionBindings(
+    VideoCustomActionBindings bindings,
+  ) =>
+      prefsRepo.setVideoCustomActionBindings(bindings);
 
   /// 视频字幕外观（JSON；见 VideoSubtitleStyle）。
   String get videoSubtitleStyle => prefsRepo.videoSubtitleStyle;

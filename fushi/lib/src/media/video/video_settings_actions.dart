@@ -5,6 +5,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_control_layout_editor.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -673,5 +674,8 @@ Widget buildVideoControlLayoutEditor(SettingsContext context) {
     layout: host.controlLayout(),
     onLayoutChanged: host.onControlLayoutChanged,
     isTouchControls: host.isTouchControls,
+    customActionBindings:
+        host.customActionBindings?.call() ?? VideoCustomActionBindings.empty,
+    onCustomActionBindingsChanged: host.onCustomActionBindingsChanged,
   );
 }

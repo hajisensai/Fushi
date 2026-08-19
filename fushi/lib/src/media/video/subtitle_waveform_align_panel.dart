@@ -46,6 +46,7 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     required this.loadWaveform,
     this.onCommitDelay,
     this.onAutoAlign,
+    this.onSnapDelayToCue,
     this.onPlayCue,
     this.isPlaying,
     this.onTogglePlayPause,
@@ -81,6 +82,12 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   /// 时放大对轴视图显示「自动对轴」按钮，与顶部快速设置的自动对轴按钮同一逻辑、零第二套
   /// 状态。null = 不显示该按钮（无字幕 / 无视频路径）。
   final Future<int?> Function()? onAutoAlign;
+
+  /// 「上一句 / 下一句字幕对齐到当前播放时间」回调（= 页面 `_snapSubtitleDelayToCue`，
+  /// 与键盘 Ctrl+Shift+←/→ 同一执行体）。按目标 cue 求**绝对**偏移并写穿延迟，返回
+  /// 本次写穿的新延迟供放大视图同步本地预览；已是首末句 / 位置未就绪返回 null（不改值）。
+  /// 本面板只透传给 [SubtitleWaveformZoomView]。null = 不显示这两个按钮（无字幕 cue）。
+  final int? Function({required bool next})? onSnapDelayToCue;
 
   /// TODO-1244：逐句试听回调。放大对轴视图的每句字幕旁挂一个播放按钮，点击把播放器
   /// seek 到该句（叠加当前预览延迟后的）时间并播放，方便用户核对「这段波形是哪句话」。
@@ -166,6 +173,7 @@ class _SubtitleWaveformAlignPanelState
         initialDelayMs: widget.initialDelayMs,
         onCommitDelay: widget.onCommitDelay,
         onAutoAlign: widget.onAutoAlign,
+        onSnapDelayToCue: widget.onSnapDelayToCue,
         onPlayCue: widget.onPlayCue,
         isPlaying: widget.isPlaying,
         onTogglePlayPause: widget.onTogglePlayPause,
@@ -274,6 +282,7 @@ class SubtitleWaveformZoomView extends StatefulWidget {
     required this.initialDelayMs,
     this.onCommitDelay,
     this.onAutoAlign,
+    this.onSnapDelayToCue,
     this.onPlayCue,
     this.isPlaying,
     this.onTogglePlayPause,
@@ -304,6 +313,11 @@ class SubtitleWaveformZoomView extends StatefulWidget {
   /// 放大对轴视图显示「自动对轴」按钮，点击调此回调求整体平移并经 [onCommitDelay] 同步；
   /// null = 不显示按钮。
   final Future<int?> Function()? onAutoAlign;
+
+  /// 「上一句 / 下一句字幕对齐到当前播放时间」回调（同
+  /// [SubtitleWaveformAlignPanel.onSnapDelayToCue]）。传入时底部调轴控件条显示这两个
+  /// 按钮，点击后把回传的新延迟经 [_commit] 同步到本地预览 + cue 线；null = 不显示。
+  final int? Function({required bool next})? onSnapDelayToCue;
 
   /// TODO-1244：逐句试听回调。文本条每句的播放按钮点击时把播放器 seek 到该句（叠加当前
   /// 预览延迟后的）时间并播放。null = 不显示播放按钮。
@@ -681,6 +695,19 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     } finally {
       if (mounted) setState(() => _autoAligning = false);
     }
+  }
+
+  /// 「上一句 / 下一句字幕对齐到当前播放时间」（asbplayer 式绝对偏移，与键盘
+  /// Ctrl+Shift+←/→ 同一执行体）。页面侧回调完成决策与写穿，这里只把回传的新延迟经
+  /// [_commit] 同步进本地 [_delayMs] + 输入框 + 波形 cue 线（与自动对轴同款契约）。
+  /// 返回 null（已是首末句 / 位置未就绪）时保持原值不动，也不置低置信提示——那是自动
+  /// 对轴的置信度语义，与本动作无关。
+  Future<void> _snapDelayToCue({required bool next}) async {
+    final int? Function({required bool next})? cb = widget.onSnapDelayToCue;
+    if (cb == null) return;
+    final int? newDelayMs = cb(next: next);
+    if (newDelayMs == null || !mounted) return;
+    await _commit(newDelayMs);
   }
 
   void _zoomBy(double factor) {
@@ -1347,6 +1374,22 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           padding: EdgeInsets.all(gap / 2),
           onTap: () => _commit(_delayMs + 1000),
         ),
+        // 「上/下一句对齐到当前时间」：与快速设置面板调轴行同一对按钮、同一执行体。
+        // 在放大视图里尤其顺手——播放头就在波形上，点完立刻能看到 cue 线跳到位。
+        if (widget.onSnapDelayToCue != null) ...<Widget>[
+          FushiIconButton(
+            icon: Icons.align_horizontal_left,
+            tooltip: t.video_subtitle_prev_cue_align,
+            padding: EdgeInsets.all(gap / 2),
+            onTap: () => _snapDelayToCue(next: false),
+          ),
+          FushiIconButton(
+            icon: Icons.align_horizontal_right,
+            tooltip: t.video_subtitle_next_cue_align,
+            padding: EdgeInsets.all(gap / 2),
+            onTap: () => _snapDelayToCue(next: true),
+          ),
+        ],
       ],
     );
 

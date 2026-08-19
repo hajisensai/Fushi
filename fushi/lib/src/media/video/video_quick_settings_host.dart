@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -32,6 +33,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onSetSecondaryDelay,
     this.hasSecondarySubtitle,
     this.onAutoAlign,
+    this.onSnapDelayToCue,
     this.subtitleWaveformCues = const <AudioCue>[],
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
@@ -62,6 +64,8 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onImmersiveModeChanged,
     required this.controlLayout,
     this.onControlLayoutChanged,
+    this.customActionBindings,
+    this.onCustomActionBindingsChanged,
     this.qualityOptionCount = 0,
     this.qualityCurrentLabel,
     this.onOpenQuality,
@@ -103,6 +107,19 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final bool Function()? hasSecondarySubtitle;
 
   final Future<int?> Function()? onAutoAlign;
+
+  /// asbplayer 式「把上一句 / 下一句字幕对齐到当前播放时间」（按目标 cue 求**绝对**
+  /// 偏移，一键把整轨粗对齐到当前台词时刻）。与键盘 Ctrl+Shift+←/→ 同一执行体
+  /// （页面 `_snapSubtitleDelayToCue`），此处只是把它暴露成**可点的按钮**——触摸端
+  /// 没有键盘，此前这个动作在手机上完全无法触发。
+  ///
+  /// 返回本次写穿的新延迟（毫秒）：调轴面板据此把本地权威镜像 / 滑条 / 数值输入框 /
+  /// 波形预览同步到新值（与 [onAutoAlign] 同款契约）。已是首末句无相邻 cue、播放位置
+  /// 未就绪等不改延迟的分支返回 null，面板保持原值不动。
+  ///
+  /// null 回调 = 当前无字幕 cue（无可对齐对象），面板不显示这两个按钮。
+  final int? Function({required bool next})? onSnapDelayToCue;
+
   final List<AudioCue> subtitleWaveformCues;
   final int videoDurationMs;
   final Future<List<double>> Function()? loadSubtitleWaveform;
@@ -160,6 +177,13 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final VideoControlLayout Function() controlLayout;
   final Future<void> Function(VideoControlLayout layout)?
       onControlLayoutChanged;
+
+  /// 自定义「快捷键 1..4」按钮当前绑定的动作（活值 getter，与 [controlLayout] 同款）。
+  final VideoCustomActionBindings Function()? customActionBindings;
+
+  /// 改绑「快捷键 N」后落盘 + 实时生效。null = 编辑器不提供改绑入口。
+  final Future<void> Function(VideoCustomActionBindings bindings)?
+      onCustomActionBindingsChanged;
 
   // ── HLS 画质入口 / Skia 降级入口（仅特定流/机型出现）─────────────────────
   final int qualityOptionCount;

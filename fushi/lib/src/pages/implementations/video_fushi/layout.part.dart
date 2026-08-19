@@ -233,6 +233,10 @@ extension _VideoLayout on _VideoFushiPageState {
           _controlLayoutNotifier,
           _subtitleListVisible,
           _episodeListVisible,
+          // 自定义「快捷键」按钮绑定：改绑后按钮的图标 / tooltip / 执行体全变，且
+          // 「从未绑定变成已绑定」还决定它显不显示（见 `_shouldRenderControlItem`）。
+          // 不并进来就是「设置里改了、播放器上纹丝不动」。
+          _customActionBindingsNotifier,
         ],
       ),
       builder: (BuildContext context, _) {
@@ -471,6 +475,7 @@ extension _VideoLayout on _VideoFushiPageState {
                               onClose: _hideVideoControlEditOverlay,
                               // TODO-554：触屏保留「设置」按钮入口不可移除。
                               isTouchControls: !_isDesktopVideoControls,
+                              customActionBindings: _customActionBindings,
                             ),
                           );
                         },
