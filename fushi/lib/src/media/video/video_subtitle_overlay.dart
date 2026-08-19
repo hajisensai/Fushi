@@ -1746,14 +1746,38 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final List<int> breakList = markup?.lineBreakGraphemes ?? const <int>[];
     final Set<int> breakSet =
         breakList.isEmpty ? const <int>{} : breakList.toSet();
-    final List<List<Widget>> rows = <List<Widget>>[<Widget>[]];
+    final List<List<int>> rowIndices = <List<int>>[<int>[]];
     for (int i = 0; i < chars.length; i++) {
       if (breakSet.contains(i)) {
-        rows.add(<Widget>[]);
+        rowIndices.add(<int>[]);
         continue;
       }
-      rows.last.add(charWidget(i));
+      rowIndices.last.add(i);
     }
+    // 软换行单位从「单字符」提升为「断行机会组」（BUG-1730）：此前每个 grapheme 直接作
+    // Wrap child，Wrap 对词边界一无所知，整行超宽 1px 就把英文单词最后一个字符甩下一行
+    // （中词断行）。现按 [groupSubtitleGraphemesForWrap] 把拉丁词整组包进
+    // Row(mainAxisSize: min)——拉丁按词断、CJK 仍逐字断（≈libass WrapStyle 1 语义）。
+    // 逐字形样式与 [_charEntries] 逐字登记零改动：charWidget 仍按 grapheme 下标递增顺序
+    // 构建（Column→Wrap→Row 均按序 build，登记序不变）。crossAxisAlignment 取 start，
+    // 与 Wrap run 内默认 WrapCrossAlignment.start 的顶对齐一致（组内混排缩放字形不位移）。
+    // 已知极限：单词本身宽过容器时 Row 不再拆词（溢出裁切）——病态输入，接受。
+    final List<List<Widget>> rows = <List<Widget>>[
+      for (final List<int> row in rowIndices)
+        <Widget>[
+          for (final List<int> group
+              in groupSubtitleGraphemesForWrap(chars, row))
+            group.length == 1
+                ? charWidget(group.single)
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      for (final int i in group) charWidget(i),
+                    ],
+                  ),
+        ],
+    ];
     final Widget textContent = rows.length == 1
         ? Wrap(alignment: WrapAlignment.center, children: rows.single)
         : Column(
@@ -3212,4 +3236,65 @@ class _RenderGlyphPriorityHitTest extends RenderProxyBox {
     result.add(BoxHitTestEntry(this, position));
     return true;
   }
+}
+
+/// 一行（\N 硬断行之间）grapheme 的软换行「断行机会」分组（BUG-1730）。
+///
+/// 返回的每个组是 Wrap 的一个 child：组间可断行、组内不可断。规则（≈libass
+/// WrapStyle 0/1 共同子集的简化，不追 UAX#14 全集）：
+/// - CJK（汉字/假名/谚文/全角形式等，见 [_isCjkPerCharBreakable]）逐字成组——逐字可断；
+/// - 空白附着在当前词组尾部并闭合该组——断行发生在空格处、断点空格留在上一行行尾
+///   （Wrap 行尾空格只让上一行多一个空格宽，与 libass 断行处收掉空格的观感一致）；
+///   行首 / CJK 后的孤立空白并进前一组尾部（无前组时自成组，与改前行为一致）；
+/// - 其余（拉丁/西里尔等字母、数字、撇号连字符等词内标点）连续累进一组——单词不可拆。
+///
+/// [indices] 是本行 grapheme 在 [graphemes] 里的下标（升序）；返回组保持原顺序。
+@visibleForTesting
+List<List<int>> groupSubtitleGraphemesForWrap(
+    List<String> graphemes, List<int> indices) {
+  final List<List<int>> groups = <List<int>>[];
+  List<int> word = <int>[];
+  void flushWord() {
+    if (word.isEmpty) return;
+    groups.add(word);
+    word = <int>[];
+  }
+
+  for (final int i in indices) {
+    final String g = graphemes[i];
+    if (_isCjkPerCharBreakable(g)) {
+      flushWord();
+      groups.add(<int>[i]);
+    } else if (g != '\u00A0' && g.trim().isEmpty) {
+      if (word.isEmpty && groups.isNotEmpty) {
+        groups.last.add(i);
+      } else {
+        word.add(i);
+        flushWord();
+      }
+    } else {
+      word.add(i);
+    }
+  }
+  flushWord();
+  return groups;
+}
+
+/// 该 grapheme 是否「逐字可断」（CJK 表意/假名/谚文/全角形式等——libass 对 CJK 同样
+/// 允许任意字间断行）。首码点判定即可：这些区段的 grapheme 簇几乎恒单码点；emoji
+/// 不在区段内，按词组累进也无害。
+bool _isCjkPerCharBreakable(String grapheme) {
+  if (grapheme.isEmpty) return false;
+  final int c = grapheme.runes.first;
+  return (c >= 0x1100 && c <= 0x11FF) || // 谚文字母
+      (c >= 0x2E80 && c <= 0x303F) || // CJK 部首/康熙部首/符号标点（含全角空格）
+      (c >= 0x3040 && c <= 0x30FF) || // 平/片假名
+      (c >= 0x3130 && c <= 0x318F) || // 谚文兼容字母
+      (c >= 0x31C0 && c <= 0x4DBF) || // 笔画/注音扩展/兼容/扩A
+      (c >= 0x4E00 && c <= 0x9FFF) || // CJK 统一表意
+      (c >= 0xAC00 && c <= 0xD7A3) || // 谚文音节
+      (c >= 0xF900 && c <= 0xFAFF) || // CJK 兼容表意
+      (c >= 0xFE30 && c <= 0xFE4F) || // CJK 兼容形式
+      (c >= 0xFF00 && c <= 0xFFEF) || // 全角/半角形式
+      (c >= 0x20000 && c <= 0x3FFFF); // 扩B 及以后
 }
