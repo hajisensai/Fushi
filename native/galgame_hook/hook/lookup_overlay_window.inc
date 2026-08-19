@@ -45,6 +45,10 @@ struct LookupOverlayState {
   // 已经处理过的**帧发布序**（LookupFrame::seq），不是 lookup_frame_count_written。
   // 这两个数曾被混为一谈，代价见 PollOverlayFrame 里的长注释。
   uint64_t last_presented_seq = 0;
+  // 收到 kLookupFrameCaptureSuppress 后待确认的帧序。**刻意延后一轮**再写进
+  // lookup_frame_applied_seq：host 只有看到这个确认才会去抓游戏窗口，而
+  // ShowWindow(SW_HIDE) 返回不等于 DWM 已经把这一帧合成出去。留一拍给合成。
+  uint64_t pending_suppress_ack_seq = 0;
   fushi_voice_hook::OverlayRect card;
   bool visible = false;
   bool tracking_mouse = false;
@@ -233,6 +237,25 @@ void PollOverlayFrame() {
     HideOverlay();
     return;
   }
+  // 截图抑制的确认：上一轮已经把卡片藏掉，这一轮才把 seq 交出去。
+  //
+  // 为什么这一环不能省：制卡要给游戏窗口拍一张**不含卡片**的截图，流程是
+  // host 发 kLookupFrameCaptureSuppress → 注入侧藏卡 → 注入侧写
+  // lookup_frame_applied_seq → host 看到确认才去抓图。通用呈现器原先整段都没实现，
+  // 于是 host 永远等不到确认，制卡在真机上**静默失败**——卡片能出、点击也能转发，
+  // 就是一张卡都写不出来（Ren'Py 上实测：inputs=4、frames=17、Anki 零增长）。
+  // 契约明写：普通 present/dismiss **不得**推进这个字段，否则更晚的普通帧会伪装成
+  // 「抑制已安全生效」，host 就会抓到一张带卡片的图。
+  if (g_overlay.pending_suppress_ack_seq != 0) {
+    const uint64_t seq = g_overlay.pending_suppress_ack_seq;
+    const uint64_t current =
+        ReadOverlaySharedU64(&g_header->lookup_frame_applied_seq);
+    if (seq > current) {
+      WriteOverlaySharedU64(&g_header->lookup_frame_applied_seq, seq);
+    }
+    g_overlay.pending_suppress_ack_seq = 0;
+  }
+
   const uint32_t frame_count = g_header->lookup_frame_count;
   if (frame_count == 0) return;
 
@@ -275,6 +298,21 @@ void PollOverlayFrame() {
   if ((frame->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
     g_overlay.last_presented_seq = seq_before;
     HideOverlay();
+    return;
+  }
+  // 制卡截图的临时抑制**不是** dismiss：只把卡片藏起来，不动 host 那侧的会话状态。
+  // 确认延后一轮（见函数开头）。
+  if ((frame->flags & fushi_voice_hook::kLookupFrameCaptureSuppress) != 0) {
+    g_overlay.last_presented_seq = seq_before;
+    HideOverlay();
+    g_overlay.pending_suppress_ack_seq = seq_before;
+    return;
+  }
+  // 只更新高亮的帧按定义不带像素，过不了 IsLookupFrameSane。通用呈现器把高亮画在
+  // 引擎自己的图层上这件事做不到（那是 KiriKiri 专属），所以这里**消费掉**它而不是
+  // 判成坏帧——不消费会每 16ms 重复命中同一槽，判成坏帧则会点亮误导性的 frame_rejected。
+  if ((frame->flags & fushi_voice_hook::kLookupFrameHighlightOnly) != 0) {
+    g_overlay.last_presented_seq = seq_before;
     return;
   }
   // 跨进程不可信的 width/height/pitch 必须先过这道闸门再谈拷贝。

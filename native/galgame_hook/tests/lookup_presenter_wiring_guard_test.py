@@ -63,6 +63,8 @@ CLAIM_CALL = "ClaimLookupPresenter"
 CLAIM_FLAG = "g_lookup_presenter_claimed"
 FRAME_COUNTER = "lookup_frame_count_written"
 FRAME_ACCESS = "LookupFrameAt("
+SUPPRESS_FLAG = "kLookupFrameCaptureSuppress"
+APPLIED_SEQ = "lookup_frame_applied_seq"
 
 
 def strip_comments(text: str) -> str:
@@ -220,6 +222,42 @@ def find_slot_index_from_write_counter(overlay_text: str) -> list[str]:
     return faults
 
 
+def find_missing_capture_suppress_ack(overlay_text: str) -> list[str]:
+    """规则 9：必须实现 v15 的截图抑制回执，且回执要**延后一轮**。
+
+    制卡要给游戏窗口拍一张不含卡片的图，流程是 host 发 kLookupFrameCaptureSuppress →
+    注入侧藏卡 → 注入侧写 lookup_frame_applied_seq → host 见到确认才抓图。
+    通用呈现器原先整段没实现，于是 host 永远等不到确认，**制卡在真机上静默失败**：
+    卡片能出、点击也能转发（Ren'Py 实测 inputs=4、frames=17），Anki 零增长。
+
+    延后一轮是刻意的：ShowWindow(SW_HIDE) 返回不等于 DWM 已经把这一帧合成出去。
+    所以断言的是顺序——写 applied_seq 的那段（消费 pending）必须排在 suppress 分支
+    （设置 pending）**之前**，也就是它只会在下一轮 tick 生效。
+    """
+    body = _function_body(strip_comments(overlay_text), "void PollOverlayFrame()")
+    if not body:
+        return ["找不到 PollOverlayFrame 的函数体"]
+    faults = []
+    if SUPPRESS_FLAG not in body:
+        faults.append(
+            f"PollOverlayFrame 没有处理 {SUPPRESS_FLAG}：host 的制卡截图会永远等不到确认"
+        )
+    if APPLIED_SEQ not in body:
+        faults.append(
+            f"PollOverlayFrame 没有写 {APPLIED_SEQ}：截图抑制没有回执"
+        )
+    if faults:
+        return faults
+    ack_at = body.find(APPLIED_SEQ)
+    set_at = body.find(SUPPRESS_FLAG)
+    if ack_at > set_at:
+        faults.append(
+            "回执写在 suppress 分支之后：那是同一轮就确认，"
+            "而 ShowWindow(SW_HIDE) 返回不等于合成已经跨过这一帧"
+        )
+    return faults
+
+
 def find_includes_in_overlay_inc(overlay_text: str) -> list[str]:
     """规则 6：该 .inc 在匿名命名空间内被展开，一条 #include 都不能有。"""
     stripped = strip_comments(overlay_text)
@@ -269,6 +307,9 @@ class RealSourceTest(unittest.TestCase):
 
     def test_frame_poll_scans_slots_instead_of_deriving_index(self) -> None:
         self.assertEqual([], find_slot_index_from_write_counter(self.overlay))
+
+    def test_capture_suppress_is_acknowledged_next_tick(self) -> None:
+        self.assertEqual([], find_missing_capture_suppress_ack(self.overlay))
 
 
 # 合成脏输入。断言的字面量都在这里，真文件改动不会让下面的变异测试失去意义。
@@ -413,6 +454,43 @@ void PollOverlayFrame() {
 """
 
 
+DIRTY_POLL_NO_SUPPRESS = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  for (uint32_t i = 0; i < frame_count; ++i) { LookupFrameAt(g_header, i); }
+  Present();
+}
+"""
+
+DIRTY_POLL_ACK_SAME_TICK = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  for (uint32_t i = 0; i < frame_count; ++i) { LookupFrameAt(g_header, i); }
+  if ((frame->flags & kLookupFrameCaptureSuppress) != 0) {
+    HideOverlay();
+    WriteOverlaySharedU64(&g_header->lookup_frame_applied_seq, seq);
+    return;
+  }
+}
+"""
+
+CLEAN_POLL_SUPPRESS = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  if (g_overlay.pending_suppress_ack_seq != 0) {
+    WriteOverlaySharedU64(&g_header->lookup_frame_applied_seq, seq);
+    g_overlay.pending_suppress_ack_seq = 0;
+  }
+  for (uint32_t i = 0; i < frame_count; ++i) { LookupFrameAt(g_header, i); }
+  if ((frame->flags & kLookupFrameCaptureSuppress) != 0) {
+    HideOverlay();
+    g_overlay.pending_suppress_ack_seq = seq;
+    return;
+  }
+}
+"""
+
+
 class MutationSelfTest(unittest.TestCase):
     """扫合成脏输入，全部必须非空——否则守卫是空的。"""
 
@@ -496,6 +574,15 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_scanning_poll_stays_green(self) -> None:
         self.assertEqual([], find_slot_index_from_write_counter(CLEAN_POLL_SCAN))
+
+    def test_missing_capture_suppress_is_red(self) -> None:
+        self.assertNotEqual([], find_missing_capture_suppress_ack(DIRTY_POLL_NO_SUPPRESS))
+
+    def test_same_tick_ack_is_red(self) -> None:
+        self.assertNotEqual([], find_missing_capture_suppress_ack(DIRTY_POLL_ACK_SAME_TICK))
+
+    def test_deferred_ack_stays_green(self) -> None:
+        self.assertEqual([], find_missing_capture_suppress_ack(CLEAN_POLL_SUPPRESS))
 
     def test_brace_matcher_takes_the_whole_body(self) -> None:
         body = _function_body("void PollOverlayFrame() { a(); { b(); } c(); } tail", "void PollOverlayFrame()")
