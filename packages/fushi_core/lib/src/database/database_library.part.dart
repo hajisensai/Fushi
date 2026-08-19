@@ -921,6 +921,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             ..limit(1))
           .getSingleOrNull();
 
+  /// 该自然键是否存在**合集级**删除墓碑（空哨兵行）。
+  ///
+  /// BUG-1739：扫描/自动归组等**非用户显式**的合集创建路径用它判「用户删过
+  /// 这个合集」——有墓碑就不自动重建，否则删除会被下一次来源重扫按自然键
+  /// 原样撤销（用户视角＝「合集无法删除」）。用户显式重建仍走
+  /// [createMediaCollection]（清墓碑 = 撤销删除），两种意图各有一个入口。
+  Future<bool> hasCollectionDeletionTombstone(
+    String name,
+    String collectionType,
+  ) async =>
+      await (select(collectionMemberTombstones)
+            ..where((t) =>
+                t.collectionName.equals(name) &
+                t.collectionType.equals(collectionType) &
+                t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
+                t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel))
+            ..limit(1))
+          .getSingleOrNull() !=
+      null;
+
   /// upsert 一条墓碑（重复移出刷新 deletedAt，单行 LWW）。
   Future<void> upsertCollectionMemberTombstone({
     required String collectionName,
