@@ -217,6 +217,15 @@ bool PresentOverlayBitmap(uint32_t width, uint32_t height) {
 
 // 读一帧并显示。返回 false 表示这轮没有可用新帧（不是错误）。
 void PollOverlayFrame() {
+  // 认领是**每帧复查**的，不是只在启动时问一次。真机实测（tenshi_sz，KiriKiri Z）：host 把
+  // lookup_enabled 拨到 1 的时刻早于 KiriKiri 拿到 TJS exporter，于是通用呈现器先起了线程，
+  // 随后 KiriKiri 才认领——只在 StartLookupOverlayIfUnclaimed 里判一次的话，这一局就会有
+  // 两个呈现器同时贴同一帧，用户看到双份卡片。
+  // 让位而不是退出线程：认领可能发生在任意一帧，线程留着最省事，隐藏后它只是空转。
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) {
+    HideOverlay();
+    return;
+  }
   if (g_header == nullptr || !fushi_voice_hook::HasLookupRegion(g_header)) return;
   if (g_header->lookup_enabled == 0) {
     HideOverlay();

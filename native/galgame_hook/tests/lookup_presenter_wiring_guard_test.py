@@ -60,6 +60,8 @@ INCLUDE_RE = re.compile(r"^\s*#\s*include\b.*$", re.MULTILINE)
 START_CALL = "StartLookupOverlayIfUnclaimed"
 STOP_CALL = "StopLookupOverlay"
 CLAIM_CALL = "ClaimLookupPresenter"
+CLAIM_FLAG = "g_lookup_presenter_claimed"
+FRAME_COUNTER = "lookup_frame_count_written"
 
 
 def strip_comments(text: str) -> str:
@@ -148,6 +150,45 @@ def find_missing_kirikiri_claim(kirikiri_text: str) -> list[str]:
     return ["kirikiri_adapter.inc 没有调用 ClaimLookupPresenter()"]
 
 
+def _function_body(text: str, signature: str) -> str:
+    """取 `signature` 之后第一个花括号块的原文（大括号配对）。找不到返回空串。"""
+    start = text.find(signature)
+    if start < 0:
+        return ""
+    open_at = text.find("{", start)
+    if open_at < 0:
+        return ""
+    depth = 0
+    for i in range(open_at, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_at : i + 1]
+    return ""
+
+
+def find_missing_per_frame_claim_check(overlay_text: str) -> list[str]:
+    """规则 7：PollOverlayFrame 必须每帧复查认领，且复查要早于读帧。
+
+    只在启动时判一次不够——真机上 host 先把 lookup_enabled 拨到 1、引擎适配器才拿到
+    脚本宿主并认领，通用呈现器已经起来了，于是两个呈现器同贴一帧 = 双份卡片。
+    """
+    body = _function_body(strip_comments(overlay_text), "void PollOverlayFrame()")
+    if not body:
+        return ["找不到 PollOverlayFrame 的函数体"]
+    claim_at = body.find(CLAIM_FLAG)
+    if claim_at < 0:
+        return ["PollOverlayFrame 没有复查 " + CLAIM_FLAG + "：认领后仍会继续贴帧"]
+    frame_at = body.find(FRAME_COUNTER)
+    if frame_at >= 0 and claim_at > frame_at:
+        return [
+            "PollOverlayFrame 的认领复查排在读帧之后：让位之前已经把这帧读走了"
+        ]
+    return []
+
+
 def find_includes_in_overlay_inc(overlay_text: str) -> list[str]:
     """规则 6：该 .inc 在匿名命名空间内被展开，一条 #include 都不能有。"""
     stripped = strip_comments(overlay_text)
@@ -191,6 +232,9 @@ class RealSourceTest(unittest.TestCase):
 
     def test_overlay_inc_has_no_includes(self) -> None:
         self.assertEqual([], find_includes_in_overlay_inc(self.overlay))
+
+    def test_frame_poll_rechecks_the_claim(self) -> None:
+        self.assertEqual([], find_missing_per_frame_claim_check(self.overlay))
 
 
 # 合成脏输入。断言的字面量都在这里，真文件改动不会让下面的变异测试失去意义。
@@ -274,6 +318,42 @@ void ClaimLookupPresenter() {}
 """
 
 
+DIRTY_POLL_WITHOUT_CLAIM_CHECK = """
+void PollOverlayFrame() {
+  if (g_header == nullptr) return;
+  const uint64_t written = Read(&g_header->lookup_frame_count_written);
+  Present(written);
+}
+"""
+
+DIRTY_POLL_CLAIM_CHECK_TOO_LATE = """
+void PollOverlayFrame() {
+  const uint64_t written = Read(&g_header->lookup_frame_count_written);
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  Present(written);
+}
+"""
+
+DIRTY_POLL_CLAIM_ONLY_IN_COMMENT = """
+void PollOverlayFrame() {
+  // 认领由 g_lookup_presenter_claimed 决定，启动时已经判过
+  const uint64_t written = Read(&g_header->lookup_frame_count_written);
+  Present(written);
+}
+"""
+
+CLEAN_POLL = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) {
+    HideOverlay();
+    return;
+  }
+  const uint64_t written = Read(&g_header->lookup_frame_count_written);
+  Present(written);
+}
+"""
+
+
 class MutationSelfTest(unittest.TestCase):
     """扫合成脏输入，全部必须非空——否则守卫是空的。"""
 
@@ -326,6 +406,30 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_overlay_inc_without_includes_stays_green(self) -> None:
         self.assertEqual([], find_includes_in_overlay_inc(CLEAN_OVERLAY))
+
+    def test_poll_without_claim_check_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_missing_per_frame_claim_check(DIRTY_POLL_WITHOUT_CLAIM_CHECK)
+        )
+
+    def test_poll_with_late_claim_check_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_missing_per_frame_claim_check(DIRTY_POLL_CLAIM_CHECK_TOO_LATE)
+        )
+
+    def test_poll_claim_check_only_in_comment_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_missing_per_frame_claim_check(DIRTY_POLL_CLAIM_ONLY_IN_COMMENT)
+        )
+
+    def test_clean_poll_stays_green(self) -> None:
+        self.assertEqual([], find_missing_per_frame_claim_check(CLEAN_POLL))
+
+    def test_brace_matcher_takes_the_whole_body(self) -> None:
+        body = _function_body("void PollOverlayFrame() { a(); { b(); } c(); } tail", "void PollOverlayFrame()")
+        self.assertTrue(body.startswith("{") and body.endswith("}"))
+        self.assertIn("c();", body)
+        self.assertNotIn("tail", body)
 
     def test_comment_stripper_preserves_offsets_and_lines(self) -> None:
         text = 'a();\n// StopLookupOverlay();\n/* x */ b();\n'
