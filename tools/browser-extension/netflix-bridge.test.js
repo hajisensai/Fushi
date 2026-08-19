@@ -23,6 +23,9 @@ function loadBridge(opts) {
   const posted = [];
   const listeners = [];
   const fetched = [];
+  // BUG-1728 失败注入：behavior.failing=true 时 fetch reject（模拟 CORS/网络失败），
+  // 测试中途翻回 false 验证「失败后同一 URL 可重试」。
+  const behavior = { failing: !!opts.failing };
   const windowObj = {
     location: { origin: locationOrigin },
     origin: windowOrigin,
@@ -32,12 +35,18 @@ function loadBridge(opts) {
   const sandbox = {
     window: windowObj,
     setTimeout: (fn) => { fn(); return 0; },
-    fetch: (url) => {
-      fetched.push(url);
+    // BUG-1728：记录 fetch 第二参（init）供「不带 credentials」断言；mock 响应带 ok/status
+    //（实现按 r.ok 分流成功/失败）。
+    fetch: (url, init) => {
+      fetched.push({ url, init });
+      if (behavior.failing) return Promise.reject(new Error('mock CORS/network failure'));
       return Promise.resolve({
+        ok: true,
+        status: 200,
         text: () => Promise.resolve('WEBVTT\n\n00:01.000 --> 00:02.000\nhello from ' + url),
       });
     },
+    console: { warn: () => {}, log: () => {}, error: () => {} },
     Date,
     Array,
     Object,
@@ -45,7 +54,7 @@ function loadBridge(opts) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(src, ctx, { filename: 'netflix-bridge.js' });
-  return { posted, listeners, fetched, ctx, windowObj };
+  return { posted, listeners, fetched, ctx, windowObj, behavior };
 }
 
 function makeManifest() {
@@ -132,4 +141,53 @@ test('BUG-769 opaque origin（file://）下 cue 往返不丢：自投用 "/"、�
   for (const p of replayed) {
     assert.strictEqual(p.origin, '/', '重放同样用 "/" 作 targetOrigin');
   }
+});
+
+// ── BUG-1728：整轨拦截静默失败（用户只剩「实时采集」轨）守卫 ──
+test('BUG-1728 字幕轨 fetch 不带 credentials（跨源 CDN 回 ACAO:* 时带凭据请求被 CORS 整个拒掉）', async () => {
+  const h = loadBridge();
+  vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify(makeManifest())) + ')', h.ctx);
+  await settle();
+  assert.strictEqual(h.fetched.length, 3);
+  for (const f of h.fetched) {
+    const cred = f.init && f.init.credentials;
+    assert.ok(cred === undefined || cred === 'omit',
+      'timedtext fetch 不得携带 credentials（收到 ' + JSON.stringify(f.init) + '）——' +
+      '字幕 CDN *.oca.nflxvideo.net 回 ACAO:* 时带凭据请求会被 CORS 拒掉，整轨链路静默失败');
+  }
+});
+
+test('BUG-1728 整轨抓取失败后去重标记回滚：同一 URL 在清单重放时可重试', async () => {
+  const h = loadBridge({ failing: true });
+  const manifestJs = 'JSON.parse(' + JSON.stringify(JSON.stringify(makeManifest())) + ')';
+  vm.runInContext(manifestJs, h.ctx);
+  await settle();
+  assert.strictEqual(h.fetched.length, 3, '首轮 3 轨都尝试抓取');
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues').length, 0,
+    '抓取失败不得 post cue');
+
+  // 网络恢复（如 CORS 失败只是暂时 CDN 抖动 / 切轨后重放同清单）：同 URL 必须能重试成功。
+  h.behavior.failing = false;
+  vm.runInContext(manifestJs, h.ctx);
+  await settle();
+  assert.strictEqual(h.fetched.length, 6,
+    '失败后的清单重放必须重新发起抓取（旧代码去重标记写死在 fetch 前，一次失败=本页永不重试）');
+  const cues = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues');
+  assert.strictEqual(cues.length, 3, '重试成功后 3 轨全部送达隔离世界');
+});
+
+test('BUG-1728 失败的轨不进重放存档（replayCues 不得重放空/坏 payload）', async () => {
+  const h = loadBridge({ failing: true });
+  vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify(makeManifest())) + ')', h.ctx);
+  await settle();
+  h.posted.length = 0;
+  for (const fn of h.listeners) {
+    fn({
+      origin: 'https://www.netflix.com',
+      source: h.windowObj,
+      data: { __fushiNf: 'replayCues' },
+    });
+  }
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cues').length, 0,
+    '失败轨绝不能进 cueArchive 被重放');
 });
