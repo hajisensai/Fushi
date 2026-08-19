@@ -3616,5 +3616,6 @@
   "storage_modules_not_installed": "Not installed",
   "storage_bundled_section": "Bundled components",
   "storage_bundled_hint": "Shipped with the installer; deleted files come back on the next update, listed for reference only.",
-  "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log"
+  "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log",
+  "game_hook_mining_no_session_lines": "No captured lines yet, so there is nothing to attach this card to. Pick a different text thread in the workbench."
 }

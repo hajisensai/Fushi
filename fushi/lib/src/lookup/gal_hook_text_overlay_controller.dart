@@ -734,6 +734,21 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 时重新解析，既覆盖这段时序差，也会重新套用当前 session/thread 的筛选。
       final String? resolved = _resolveIngameMiningLineId(line);
       if (resolved == null) {
+        // BUG-1734：这里过去是**纯静默返回**——不 toast、不记录、不打日志。popup 侧收到
+        // ankiConnect:false 同样什么都不做（assets/popup/popup.js 的 mine 分支只在
+        // ankiConnect 为真时才有动作），于是用户点「制卡」后屏幕上零反馈，无法区分
+        // 「制卡失败了」和「我没点到按钮」。真机上这一条把整轮 E2E 卡了很久。
+        //
+        // 两种失败原因必须分开报，因为用户要做的动作完全不同：
+        //   本局一条台词都没有 → 多半选了一条只产出伪影的文本线程（见 BUG-1733），
+        //                        要去工作台换线程；
+        //   有台词但对不上当前这句 → 与浮窗点词路径同一种失败，沿用同一条文案。
+        FushiToast.show(
+          msg: _session.selectedSessionLines.isEmpty
+              ? t.game_hook_mining_no_session_lines
+              : t.game_hook_line_unavailable,
+          severity: ToastSeverity.error,
+        );
         return const <String, Object?>{
           'ankiConnect': false,
           'noteId': null,

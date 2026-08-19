@@ -3616,5 +3616,6 @@
   "storage_modules_not_installed": "未安装",
   "storage_bundled_section": "随包组件",
   "storage_bundled_hint": "随安装包携带，删除后下次更新会自动恢复，此处仅展示。",
-  "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志"
+  "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志",
+  "game_hook_mining_no_session_lines": "本局还没有捕获到任何台词，卡片无处挂靠。请在工作台换一条文本线程。"
 }

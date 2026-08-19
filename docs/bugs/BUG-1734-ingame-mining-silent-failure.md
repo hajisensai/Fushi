@@ -1,8 +1,18 @@
 ## BUG-1734 · 游戏内卡片制卡拿不到台词行时静默失败，无任何提示
 - **报告**：2026-08-19（用户：真机验证游戏内查词制卡时发现）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/lookup/gal_hook_text_overlay_controller.dart:736-739`
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
+- **[ ] ① 部分修复** — Dart 侧的静默返回已改成**先报再返回**，且按两种原因分开报：
+  「本局一条台词都没有」用新 key `game_hook_mining_no_session_lines`（指向工作台换线程），
+  「有台词但对不上当前这句」沿用 `game_hook_line_unavailable`。
+  **但这还不是全解**：popup 侧收到 `ankiConnect:false` 依旧什么都不做
+  （`fushi/assets/popup/popup.js` 的 mine 分支只在 `result.ankiConnect` 为真时才有动作），
+  而游戏常是全屏/无边框，Fushi 的 toast 在游戏背后**用户可能仍然看不见**。
+  真正解掉要让**游戏内那张卡片自己**显示失败态，即改 popup.js 并按三镜像同步；
+  该改动必须有可视验证才敢下，本轮工作站已锁屏、未做。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/ingame_mining_failure_visibility_guard_test.dart`（6 项）：
+  真文件断言「失败分支先 `FushiToast.show(` 再 return」这条**顺序不变量** + 两条文案各自存在；
+  配三条变异（完全没有 toast / toast 排在 return 之后 / 锚点失效）与一条干净样本反向验证。
+  变异实测：把真文件里那次 toast 注释掉 → 守卫红并报出预期断言，还原后 sha256 逐字节相同。
 - **备注**：见下
 
 ### 复现（真机，2026-08-19）
