@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-1741 守卫：`BrowserExtensionPage` 是**双身份页**——既是桌面顶层导航 tab
+/// BUG-1748 守卫：`BrowserExtensionPage` 是**双身份页**——既是桌面顶层导航 tab
 /// （`HomeTab.browserExtension`，侧栏在旁边，不该出返回箭头），又被
 /// `settings_schema_lookup.dart` 的 `SettingsNavigationItem` 裸 push 成全屏
 /// `MaterialPageRoute`（此时侧栏被整个盖住）。BUG-1658 把顶层 tab 页头统一成
@@ -16,7 +16,7 @@ import '../helpers/source_guard.dart';
 /// 注释里会提到 leading、canPop、AppBar 这些词，裸 contains 会两个方向都
 /// 误判，故先经 [maskCommentsAndScriptLines] 掩掉注释与三引号语料。
 void main() {
-  test('BUG-1741：扩展页页头按 canPop 分流给返回键（顶层 tab 身份下仍不出箭头）', () {
+  test('BUG-1748：扩展页页头按 canPop 分流给返回键（顶层 tab 身份下仍不出箭头）', () {
     final File f =
         File('lib/src/pages/implementations/browser_extension_page.dart');
     expect(f.existsSync(), isTrue,

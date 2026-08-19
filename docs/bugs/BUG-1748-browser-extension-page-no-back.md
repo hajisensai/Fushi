@@ -1,9 +1,9 @@
-## BUG-1741 · 浏览器扩展页被设置 push 进来时没有返回键
+## BUG-1748 · 浏览器扩展页被设置 push 进来时没有返回键
 - **报告**：2026-08-19（用户：设置 → 查词 → 浏览器扩展，进去之后没有返回键）
 - **真实性**：✅ 真 bug —— 根因 `fushi/lib/src/pages/implementations/browser_extension_page.dart:143`
 - **[x] ① 已修复** — `browser_extension_page.dart` 的 `FushiPageHeader` 按 `Navigator.canPop()` 补 `leading` 返回键
 - **[x] ② 已加自动化测试** — `fushi/test/pages/browser_extension_page_back_button_guard_test.dart`（源码扫描守卫，已变异实测：退回无 leading 的原状必红）
-- **备注**：
+- **备注**：最初以 BUG-1741 提交（见 commit 信息），开 PR 前 `bug.dart check` 报与在飞分支 `worktree-fix-four-issues-20260819` 撞号，按规则 `renumber 1741 1748`。
 
 ### 根因
 

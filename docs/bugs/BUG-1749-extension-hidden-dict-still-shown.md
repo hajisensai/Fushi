@@ -1,9 +1,9 @@
-## BUG-1742 · 浏览器扩展里被关闭的词典仍然出释义
+## BUG-1749 · 浏览器扩展里被关闭的词典仍然出释义
 - **报告**：2026-08-19（用户：浏览器的关闭了日语词典，但是还是显示日语词典）
 - **真实性**：✅ 真 bug —— 根因 `fushi/lib/src/sync/fushi_remote_api_handlers.dart:99-109`（响应 envelope 不下发隐藏名单）+ `packages/fushi_dictionary/lib/src/language/language.dart:497`（popupJson 生成期不过滤）
 - **[x] ① 已修复** — 过滤下沉到 `buildPopupJsonFromLookup` 这个唯一数据出口，四个消费者一次性全对
 - **[x] ② 已加自动化测试** — `fushi/test/pages/popup_hidden_dictionary_filter_test.dart` 新增两条源码扫描守卫（已做三轮变异实测）
-- **备注**：同根顺带修好「扩展制卡把隐藏词典释义写进 Anki 卡片」（BUG-432 在扩展路径上的原样重现）
+- **备注**：最初以 BUG-1742 提交（见 commit 信息），撞号后 `renumber 1742 1749`。同根顺带修好「扩展制卡把隐藏词典释义写进 Anki 卡片」（BUG-432 在扩展路径上的原样重现）
 
 ### 根因：三镜像漏了第三面
 
