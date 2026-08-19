@@ -15,6 +15,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/focus/fushi_focus_controller.dart'
+    show FushiFocusRoot;
 import 'package:fushi/utils.dart';
 
 /// [addMediaRefToCollection] 的结果：三种结局各自对应一条不同的用户可见提示。
@@ -103,7 +105,7 @@ Future<CollectionAddOutcome> addMediaRefToCollection({
 ///
 /// [enabled] 为 false 时原样返回 [child]（不建 Draggable）——多选态下卡片点击是
 /// 切换选中，此时不应能拖走。
-class MediaCardDraggable extends StatelessWidget {
+class MediaCardDraggable extends StatefulWidget {
   const MediaCardDraggable({
     required this.mediaRef,
     required this.label,
@@ -124,34 +126,117 @@ class MediaCardDraggable extends StatelessWidget {
   final bool enabled;
 
   @override
+  State<MediaCardDraggable> createState() => _MediaCardDraggableState();
+}
+
+class _MediaCardDraggableState extends State<MediaCardDraggable> {
+  /// 挂在 [Draggable] 上，供浮层量取**原卡的真实尺寸**。
+  ///
+  /// 不能改用 `LayoutBuilder` 拿父约束：父约束常常是宽松的（卡片直接放在
+  /// `Scaffold.body` 里时是 0..屏宽 × 0..屏高），拿它当浮层尺寸会把浮层撑成
+  /// 整屏。`Draggable` 的 RenderBox 尺寸就等于卡片尺寸，且拖动期间
+  /// （child 被 `childWhenDragging` 等尺寸替换）保持不变。
+  final GlobalKey _anchorKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
-    if (!enabled) return child;
+    if (!widget.enabled) return widget.child;
     switch (Theme.of(context).platform) {
       case TargetPlatform.android:
       case TargetPlatform.iOS:
       case TargetPlatform.fuchsia:
         // 触屏：不建拖拽源（见类 doc）。
-        return child;
+        return widget.child;
       case TargetPlatform.linux:
       case TargetPlatform.windows:
       case TargetPlatform.macOS:
         return Draggable<MediaRef>(
-          data: mediaRef,
-          // 浮层跟指针而不是保持「按下点相对卡片的位置」：浮层是紧凑 chip、尺寸
-          // 与原卡完全不同，沿用 childDragAnchorStrategy 会让它偏到指针外面去。
-          dragAnchorStrategy: pointerDragAnchorStrategy,
-          feedback: _DragFeedback(label: label),
-          childWhenDragging: Opacity(opacity: 0.3, child: child),
-          child: child,
+          key: _anchorKey,
+          data: widget.mediaRef,
+          // 卡片形浮层与原卡同尺寸，保持「按下点相对卡片的位置」才跟手。
+          // （旧实现的浮层是紧凑 chip、尺寸与原卡完全不同，才必须改用
+          // pointerDragAnchorStrategy 把浮层钉在指针上。）
+          dragAnchorStrategy: childDragAnchorStrategy,
+          feedback: _CardDragFeedback(
+            anchorKey: _anchorKey,
+            label: widget.label,
+            child: widget.child,
+          ),
+          childWhenDragging: Opacity(opacity: 0.3, child: widget.child),
+          child: widget.child,
         );
     }
   }
 }
 
-/// 拖拽浮层：紧凑 chip（图标 + 条目名），不复用卡片本体。
+/// 拖拽浮层：把卡片本体原样再渲染一份，跟着指针走。
 ///
-/// 刻意不拿 [MediaCardDraggable.child] 当 feedback：卡片内含 `FushiFocusTarget`
-/// （焦点 id 唯一）与 `InkWell`，同一棵树里渲染第二份会造成焦点 id 撞车。
+/// 复用真卡而不是手写一份「纯视觉副本」——后者必然与真卡漂移（改了卡片样式忘了
+/// 改浮层，两处越走越远）。
+///
+/// 卡片内含 `FushiFocusTarget`，同一棵树里渲染第二份本来会撞焦点 id：焦点表按 id
+/// 唯一（`FushiFocusController.register` 是 `_entries[id] = entry` 直接覆盖），
+/// 第二份注册会顶掉真卡的 entry，浮层消失时 `unregister` 又把这条 entry 整个删
+/// 掉，真卡从此在手柄/键盘焦点表里消失。
+///
+/// 这里用 `FushiFocusRoot(enabled: false)` 把浮层子树的焦点控制器屏蔽成 null
+/// （[FushiFocusRoot.enabled] 的既有语义：结构恒定、只把 scope 暴露的 controller
+/// 置空），子树里的 `FushiFocusTarget._register` 因 `controller == null` 直接
+/// 返回——**撞车的前提不存在了**，于是不必再要求每个调用方手写副本。
+///
+/// feedback 由 Flutter 的 `_DragAvatar` 包在 `IgnorePointer` 里，卡片内的
+/// `InkWell` / 菜单按钮在浮层上不会响应，无需额外处理。
+class _CardDragFeedback extends StatelessWidget {
+  const _CardDragFeedback({
+    required this.anchorKey,
+    required this.label,
+    required this.child,
+  });
+
+  /// 原卡所在的 [Draggable]，用来量它的真实尺寸。
+  final GlobalKey anchorKey;
+
+  /// 量不到尺寸时降级用的条目名。
+  final String label;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // build 发生在拖动开始、浮层插进 Overlay 的那一刻，此时原卡早已 layout 完，
+    // 量得到确定尺寸。量不到（理论上只会在原卡同帧被移除时发生）就降级成 chip：
+    // 无约束地渲染一张卡片可能撑爆 Overlay。
+    final RenderObject? box = anchorKey.currentContext?.findRenderObject();
+    final Size? size = box is RenderBox && box.hasSize ? box.size : null;
+    if (size == null || size.isEmpty) return _DragFeedback(label: label);
+    return FushiFocusRoot(
+      enabled: false,
+      child: Opacity(
+        opacity: 0.92,
+        child: Material(
+          color: Colors.transparent,
+          elevation: 8,
+          borderRadius: tokens.radii.cardRadius,
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 拖拽浮层（降级）：紧凑 chip（图标 + 条目名）。
+///
+/// 只在量不到原卡尺寸时使用；正常情况走 [_CardDragFeedback]。
+///
+/// （旧注释「刻意不拿 child 当 feedback，会撞焦点 id」已不再成立：
+/// [_CardDragFeedback] 用 `FushiFocusRoot(enabled: false)` 屏蔽了浮层子树的
+/// 焦点注册。这里保留 chip 只是为了拿不到卡片尺寸时有个安全降级。）
 class _DragFeedback extends StatelessWidget {
   const _DragFeedback({required this.label});
 
