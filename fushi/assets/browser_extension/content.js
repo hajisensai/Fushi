@@ -200,6 +200,22 @@ let fushiResizeGrip = null;
 let fushiResizeBox = null;
 let fushiResizeDrag = null;
 
+// BUG-1726：弹窗渲染中 popup.js 逐宏任务追加词典块会把弹窗持续撑高，而 place() 只在
+// fushiRenderEntries 后的一帧 rAF 量过一次尺寸——首帧只有首词条+第 1 个词典块，高度被低估，
+// fushiComputePlacement 误判「下方放得下」且不夹高；随后弹窗长到全高溢出视口无人复算（词在
+// 视口底部时最痛：Netflix 底部字幕查词，弹窗下缘直接被屏幕截断）。
+// fushiPlaceObserver：观察 host + 容器尺寸变化（容器 overflow:visible，host 被 maxHeight 夹住
+//   后 rect 不再长高，容器仍如实反映内容自然高度），变化即用同一份锚点重跑落点。
+// fushiPlaceAnchor：本次弹窗的落点锚点（被查词 bbox；null=回落鼠标坐标）。
+// fushiHostBaseMaxHeight / fushiThemeMaxHeightPx：theme 下发的原始 maxHeight（CSS 串 / px 数）；
+//   复算写 maxHeight 时恒与其取 min——侧空间夹取只缩不放，绝不放大用户配置的弹窗上限。
+// fushiUserResizedPopup：Phase D 拖拽把手动过尺寸后停止自动复位（手动优先，避免打架）。
+let fushiPlaceObserver = null;
+let fushiPlaceAnchor = null;
+let fushiHostBaseMaxHeight = '';
+let fushiThemeMaxHeightPx = 0;
+let fushiUserResizedPopup = false;
+
 // 扩展重载/更新/禁用后，已注入到**已打开标签**里的旧 content script 会「上下文失效」：
 // chrome.runtime 变 undefined / 访问抛异常 → 再调 chrome.runtime.sendMessage 就报
 // 「Cannot read properties of undefined (reading 'sendMessage')」。守卫掉：失效即静默停手，
@@ -1686,6 +1702,12 @@ function fushiRemoveContainer() {
   }
   fushiResizeDrag = null;
   fushiResizeBox = null;
+  // BUG-1726：关窗撤落点观察器与落点会话状态（观察器对象保留复用，只断开目标）。
+  if (fushiPlaceObserver) {
+    try { fushiPlaceObserver.disconnect(); } catch (_) { /* no-op */ }
+  }
+  fushiPlaceAnchor = null;
+  fushiUserResizedPopup = false;
 }
 
 // 流媒体字幕的取词兜底：Netflix 等在字幕**上面**盖了视频覆盖层（如 .watch-video--flag-container），
@@ -2107,6 +2129,21 @@ function fushiComputePlacement(anchor, size, viewport) {
   return { left, top, maxHeight };
 }
 
+// BUG-1726 纯函数：按 fushiComputePlacement 的落点结果算「所选一侧的可用空间上限」（视口 px）。
+// 弹窗高度是渲染中的活值（popup.js 逐宏任务追加词典块），落点后仍会长高——调用方把 maxHeight
+// 恒夹到该值（并与 theme 上限取 min），任何时序下弹窗都不出视口、不压被查词。
+// pos.maxHeight 非空（两侧都放不下）时它本身就是该侧空间，直接用；为空时按落点方向补算。
+function fushiPlacementSideMax(pos, anchor, viewport) {
+  if (pos.maxHeight != null) return pos.maxHeight;
+  const M = 8; // 与 fushiComputePlacement 同源：视口边距
+  const G = 4; // 词与弹窗间隙
+  const ah = anchor.height || 0;
+  const placedBelow = pos.top >= anchor.y + ah; // 落词下方（含无锚点 ah=0 贴鼠标坐标）
+  return placedBelow
+      ? Math.max(64, viewport.height - pos.top - M) // 弹窗顶 → 视口底（留边距）
+      : Math.max(64, anchor.y - G - pos.top);       // 弹窗顶 → 词顶（长高也不压词）
+}
+
 // 弹窗尺寸精细化 Phase D：拖拽右下角把手把「起始基准最大宽高 + 本次累计位移」折算成新的基准
 // （未缩放）最大宽高并 clamp。纯函数（不碰 DOM），便于单测。
 // start：拖拽开始时的基准 {width, height}（= host.style.width / 渲染高÷zoom，未乘 zoom）。
@@ -2179,6 +2216,9 @@ function fushiInstallResizeDrag(grip) {
     // 位移超阈值才算真拖拽（区分纯点击与拖动，见 up() 的「拖即解锁」门控）。
     if (!d.moved && Math.abs(x - d.startX) + Math.abs(y - d.startY) > 3) {
       d.moved = true;
+      // BUG-1726：真拖动即停自动复位——手动尺寸从此优先，落点 ResizeObserver 不再改写几何
+      //（否则拖大一格就被复算按内容高度收回去，与用户打架）。
+      fushiUserResizedPopup = true;
     }
     const size = fushiComputeResizedSize(
       { width: d.baseW, height: d.baseH },
@@ -2318,8 +2358,12 @@ function fushiApplyTheme(c, theme, applyBox) {
   if (applyBox && fushiHost) {
     fushiHost.style.width = theme['--fushi-popup-max-width'] || '400px';
     fushiHost.style.maxWidth = 'calc(100vw - 16px)';
-    fushiHost.style.maxHeight =
+    // BUG-1726：记住 theme 原始 maxHeight（CSS 串 + px 数）。落点/复算写 maxHeight 时把
+    // 「所选一侧可用空间」与它取 min 写回——夹取只缩不放，不放大用户配置的弹窗上限。
+    fushiHostBaseMaxHeight =
         'min(' + (theme['--fushi-popup-max-height'] || '360px') + ', 80vh)';
+    fushiThemeMaxHeightPx = parseFloat(theme['--fushi-popup-max-height']) || 360;
+    fushiHost.style.maxHeight = fushiHostBaseMaxHeight;
     fushiHost.style.zoom = theme['--fushi-popup-zoom'] || '1';
   }
 }
@@ -2368,50 +2412,100 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';
   if (fushiHost) { fushiHost.style.left = '0px'; fushiHost.style.top = '0px'; }
+  // BUG-1726：新一次查词重置落点会话——锚点重记、手动尺寸标记清零（applyBox 刚把宽高从
+  // theme 重写，上一窗的手动尺寸本就随新查词失效，自动复算恢复接管）。
+  fushiPlaceAnchor = wordRect || null;
+  fushiUserResizedPopup = false;
   fushiRenderEntries(popupJson);
   const place = () => {
-    // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸），不是容器（overflow:visible=全内容
-    // 高度，会把弹窗错误地翻到词上方）。host 无则回落容器。
-    const rect = (fushiHost || c).getBoundingClientRect();
-    // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
-    // scrollX/Y（加了反而在滚动页面上错位）。拿不到 bbox → 回落最后鼠标视口坐标。
-    const ax = wordRect ? wordRect.x : fushiLastX;
-    const ay = wordRect ? wordRect.y : fushiLastY;
-    const ah = wordRect ? wordRect.height : 0;
-    // BUG-767：落点交给纯函数算，保证永不覆盖被查词（旧逻辑翻到词上方时会被夹到边距 8 → 盖住词）。
-    const pos = fushiComputePlacement(
-      { x: ax, y: ay, height: ah },
-      { width: rect.width, height: rect.height },
-      { width: window.innerWidth, height: window.innerHeight });
-    // BUG-688：host 现在带 zoom（尺寸盒随之缩放），故 fixed 定位坐标 / 夹高写入前除以 zoom，
-    // 使渲染值(style×zoom)落回目标视口尺度；zoom 缺省 1 时零影响。
-    const zoom = parseFloat(fushiHost && fushiHost.style.zoom) || 1;
-    if (fushiHost) {
-      // BUG-767：两侧都放不下时把弹窗高度夹到可用空间（内部滚动），弹窗底恰在词上方/下方，绝不压到词。
-      if (pos.maxHeight != null) fushiHost.style.maxHeight = (pos.maxHeight / zoom) + 'px';
-      fushiHost.style.left = (pos.left / zoom) + 'px';
-      fushiHost.style.top = (pos.top / zoom) + 'px';
-      // Phase D：记录本次落点的视口可用空间夹取上下文（视口坐标；host fixed，pos.* 即视口系），
-      // 供拖拽把手把视口位移折回基准并夹取——不撑出视口、且拖大也不遮被查词（BUG-767 延续）。
-      // 弹窗落在词上方(pos.top<ay)时弹窗底不得越过词顶(ay-G)；否则(落词下方/无锚点)可长到视口底。
-      const resizeGap = 4;
-      const maxBottom = (wordRect && pos.top < ay)
-          ? (ay - resizeGap)
-          : (window.innerHeight - 8);
-      fushiResizeBox = {
-        left: pos.left,
-        top: pos.top,
-        maxRight: window.innerWidth - 8,
-        maxBottom: maxBottom,
-        zoom: zoom,
-      };
-      fushiEnsureResizeGrip();
-      fushiPositionResizeGrip();
-    }
+    // BUG-688/BUG-767/BUG-1726：量实测尺寸 → 纯函数落点 → 写回 host + 记录 Phase D 夹取
+    // 上下文，全部收进 fushiApplyPlacement（首帧与 ResizeObserver 复算共用同一份实现/锚点）。
+    fushiApplyPlacement();
+    // BUG-1726：popup.js 此刻还在逐宏任务追加词典块（弹窗会继续长高），挂观察器随尺寸复算。
+    fushiObservePopupResize();
     c.style.visibility = 'visible';
     fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
   };
   requestAnimationFrame(place);
+}
+
+// BUG-1726：用当前实测尺寸 + 记录的锚点（fushiPlaceAnchor）跑一次落点并写回 host。
+// fushiRender 的首帧 place 与 ResizeObserver 复算共用这一份——同一锚点、同一纯函数，弹窗
+// 长高只会在「不压词、不出视口」的约束内翻边/夹高，不会重找锚点。
+function fushiApplyPlacement() {
+  const c = fushiContainer;
+  if (!fushiHost || !c) return;
+  const wordRect = fushiPlaceAnchor;
+  // BUG-688：量 host 的 rect（被 max-height 夹住=可见尺寸）作宽度与首选高度。
+  const hostRect = fushiHost.getBoundingClientRect();
+  // BUG-688：host 带 zoom，fixed 坐标/夹高写入前除以 zoom；zoom 缺省 1 时零影响。
+  const zoom = parseFloat(fushiHost.style.zoom) || 1;
+  // BUG-1726：高度取「容器内容自然高度」与 host 可见高的较大者——host 被 maxHeight 夹住后
+  // rect 不再长高，容器（overflow:visible）仍如实反映内容还想要多高（否则上一轮夹高会把复算
+  // 卡死在旧高度）；再按 theme 上限封顶，不让超长内容按一个永远渲染不出的高度去翻边。
+  let height = hostRect.height;
+  try {
+    const contentH = c.getBoundingClientRect().height;
+    if (contentH > height) height = contentH;
+  } catch (_) { /* 容器 rect 不可量：用 host 可见高 */ }
+  if (fushiThemeMaxHeightPx > 0) {
+    // CSS zoom 下 px 长度渲染值 ×zoom、vh 不随 zoom 缩放——与 fushiApplyTheme 写入的
+    // min(<theme px>, 80vh) 的真实渲染上限对齐。
+    const themeCap = Math.min(fushiThemeMaxHeightPx * zoom, 0.8 * window.innerHeight);
+    if (height > themeCap) height = themeCap;
+  }
+  // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
+  // scrollX/Y（加了反而在滚动页面上错位）。拿不到 bbox → 回落最后鼠标视口坐标。
+  const ax = wordRect ? wordRect.x : fushiLastX;
+  const ay = wordRect ? wordRect.y : fushiLastY;
+  const ah = wordRect ? wordRect.height : 0;
+  const anchor = { x: ax, y: ay, height: ah };
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  // BUG-767：落点交给纯函数算，保证永不覆盖被查词（旧逻辑翻到词上方时会被夹到边距 8 → 盖住词）。
+  const pos = fushiComputePlacement(
+    anchor, { width: hostRect.width, height: height }, viewport);
+  // BUG-767/BUG-1726：maxHeight 恒夹到所选一侧可用空间（两侧都放不下时 pos.maxHeight 本身就是
+  // 该值），并与 theme 原始上限取 min——即使此刻放得下，渲染继续把弹窗撑高时任何时序下都不出
+  // 视口、不压词（ResizeObserver 不可用的老 WebView 也被这一层兜住）。
+  const sideMax = fushiPlacementSideMax(pos, anchor, viewport);
+  fushiHost.style.maxHeight = fushiHostBaseMaxHeight
+      ? 'min(' + fushiHostBaseMaxHeight + ', ' + (sideMax / zoom) + 'px)'
+      : (sideMax / zoom) + 'px';
+  fushiHost.style.left = (pos.left / zoom) + 'px';
+  fushiHost.style.top = (pos.top / zoom) + 'px';
+  // Phase D：记录本次落点的视口可用空间夹取上下文（视口坐标；host fixed，pos.* 即视口系），
+  // 供拖拽把手把视口位移折回基准并夹取——不撑出视口、且拖大也不遮被查词（BUG-767 延续）。
+  // 弹窗落在词上方(pos.top<ay)时弹窗底不得越过词顶(ay-G)；否则(落词下方/无锚点)可长到视口底。
+  const resizeGap = 4;
+  const maxBottom = (wordRect && pos.top < ay)
+      ? (ay - resizeGap)
+      : (window.innerHeight - 8);
+  fushiResizeBox = {
+    left: pos.left,
+    top: pos.top,
+    maxRight: window.innerWidth - 8,
+    maxBottom: maxBottom,
+    zoom: zoom,
+  };
+  fushiEnsureResizeGrip();
+  fushiPositionResizeGrip();
+}
+
+// BUG-1726：host/容器尺寸一变（popup.js 逐宏任务追加词典块、图片/字体异步加载、嵌套查词换
+// 内容）就用同一份锚点重跑落点。拖拽调尺寸期间与用户手动拖过尺寸后不复算（Phase D 手动
+// 优先）；复算只写 host 的 top/left/maxHeight，不改变容器内容高度，不会自触发观察循环。
+function fushiObservePopupResize() {
+  if (typeof ResizeObserver !== 'function') return; // 老 WebView：无观察器时靠落点侧夹兜底
+  if (!fushiPlaceObserver) {
+    fushiPlaceObserver = new ResizeObserver(() => {
+      if (!fushiHost || !fushiContainer) return;
+      if (fushiResizeDrag || fushiUserResizedPopup) return;
+      fushiApplyPlacement();
+    });
+  }
+  fushiPlaceObserver.disconnect(); // 只观察当前弹窗实例（host 每次开窗重建）
+  fushiPlaceObserver.observe(fushiHost);
+  fushiPlaceObserver.observe(fushiContainer);
 }
 
 document.addEventListener('mousedown', (e) => {

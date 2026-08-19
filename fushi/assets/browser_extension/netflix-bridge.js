@@ -55,10 +55,19 @@
       if (track && (track.isNoneTrack || track.isForcedNarrative)) return; // 跳过 [None]/强制窄轨
       var picked = pickTrackUrl(track);
       if (!picked || seenTimedTextUrls[picked.url]) return;
+      // BUG-1728：去重标记先占坑防并发清单重复抓取，但失败必须在 .catch 里撤销——旧代码把
+      // 标记写死在 fetch 前且失败纯静默，一次网络/CORS 失败 = 该 URL 本页永不重试，用户只剩
+      // DOM 实时采集轨，还完全不知道整轨链路挂了。
       seenTimedTextUrls[picked.url] = 1;
       var lang = langOf(track);
-      fetch(picked.url, { credentials: 'include' })
-        .then(function (r) { return r.text(); })
+      // BUG-1728：裸 fetch、**不带 credentials**。字幕在跨源 CDN（*.oca.nflxvideo.net），
+      // credentials:'include' 要求响应 ACAO 是精确 origin；CDN 回 `*` 时整个请求被 CORS 拒掉
+      // → 整轨抓取静默失败。字幕 URL 自带鉴权参数、不需要 cookie（asbplayer 同款裸 fetch）。
+      fetch(picked.url)
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
         .then(function (text) {
           if (!text) return;
           var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text };
@@ -66,7 +75,12 @@
           if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
           postCuesMessage(payload);
         })
-        .catch(function () {});
+        .catch(function (e) {
+          // 撤去重标记：切轨/切集清单重放时同一 URL 可重试。保持 best-effort 不外抛，
+          // 只留一条诊断（旧代码零日志，用户端无从判断整轨为何消失）。
+          delete seenTimedTextUrls[picked.url];
+          try { console.warn('[Fushi][TODO-1219] timedtext fetch failed:', picked.url, e); } catch (_) {}
+        });
     } catch (_) {}
   }
 
