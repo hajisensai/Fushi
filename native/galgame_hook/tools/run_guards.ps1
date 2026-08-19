@@ -69,6 +69,7 @@ try {
   Invoke-Checked $python 'tests/adapter_structure_test.py'
   Invoke-Checked $python 'tests/kirikiri_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/lookup_presenter_wiring_guard_test.py'
+  Invoke-Checked $python 'tests/renpy_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/evidence_contract_test.py'
   Invoke-Checked $python 'tests/galhook_workflow_test.py'
 }
