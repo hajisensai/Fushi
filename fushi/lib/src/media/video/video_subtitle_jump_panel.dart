@@ -1095,8 +1095,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         _cachedFilter == _filter) {
       return _cachedVisibleIndexes;
     }
-    // BUG-841：三档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏 / 已选
-    // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount] / [_selectedCueCount]）
+    // BUG-841：两档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏
+    // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount]）
     // 故数量与列表一致。
     final List<int> base = _dedupedRawIndexes(cues);
     late final List<int> indexes;

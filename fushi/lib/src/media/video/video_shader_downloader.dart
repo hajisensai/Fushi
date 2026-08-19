@@ -542,7 +542,10 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
 /// 整目录端掉会误删用户文件。
 List<String> anime4kManifestFileNames() {
   final List<String> out = <String>[];
-  for (final Anime4kPreset preset in kAnime4kPresets) {
+  for (final Anime4kPreset preset in <Anime4kPreset>[
+    ...kAnime4kPresets,
+    kAnime4kUltraDeblurPreset,
+  ]) {
     for (final String name in preset.fileNames) {
       if (!out.contains(name)) out.add(name);
     }

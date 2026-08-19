@@ -5268,7 +5268,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.customAction2:
       case VideoControlItem.customAction3:
       case VideoControlItem.customAction4:
-        // 不可达：函数开头已按绑定是否为空决定。保留分支维持穷举检查。
+        // 不可达：函数开头对 isCustomAction 无条件返回 true。保留分支维持穷举检查。
         return false;
     }
   }

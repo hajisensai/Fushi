@@ -158,6 +158,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_auto_scrape',
   'video_black_flicker_notice_suppressed',
   'video_control_customization',
+  'video_custom_action_bindings',
   'video_danmaku_block_rules',
   'video_danmaku_config',
   'video_danmaku_enabled',
