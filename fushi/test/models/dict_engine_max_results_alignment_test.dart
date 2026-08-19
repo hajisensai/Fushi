@@ -105,8 +105,13 @@ void main() {
         final List<FushiLookupResult> full = engineResults(count: 200);
         expect(
           buildPopupJsonFromLookup(
-              results: full.take(maxTerms).toList(), maximumTerms: maxTerms),
-          buildPopupJsonFromLookup(results: full, maximumTerms: maxTerms),
+              results: full.take(maxTerms).toList(),
+              maximumTerms: maxTerms,
+              hiddenDictionaries: const <String>{}),
+          buildPopupJsonFromLookup(
+              results: full,
+              maximumTerms: maxTerms,
+              hiddenDictionaries: const <String>{}),
         );
       });
     }

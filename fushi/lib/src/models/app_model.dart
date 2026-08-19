@@ -1402,6 +1402,16 @@ class AppModel with ChangeNotifier {
   List<Dictionary> get pitchDictionaries => dictRepo.pitchDictionaries;
   List<Dictionary> get kanjiDictionaries => dictRepo.kanjiDictionaries;
 
+  /// 被用户在词典管理里关掉的词典名集合，查词结果生成与弹窗注入共用这一个真相源。
+  ///
+  /// term 词典是故意仍进 FFI 引擎的（见 [bucketDictPaths]：隐藏不影响匹配长度），
+  /// 所以隐藏必须在查询之后生效。收口到这里是为了防漂移：之前这个表达式只在
+  /// `popup_settings_injection` 里有一份，别的消费者（浏览器扩展的 HTTP 路径）拿不到它。
+  Set<String> get hiddenDictionaryNames => dictionaries
+      .where((Dictionary d) => d.isHidden(JapaneseLanguage.instance))
+      .map((Dictionary d) => d.name)
+      .toSet();
+
   bool _dictTypesMigrated = false;
 
   void _migrateDictionaryTypes() {
@@ -4936,6 +4946,7 @@ class AppModel with ChangeNotifier {
       result.popupJson = buildPopupJsonFromLookup(
         results: ffiResults,
         maximumTerms: effectiveMaxTerms,
+        hiddenDictionaries: hiddenDictionaryNames,
       );
       result = result.withKanjiResults(kanjiResults);
     } else {
@@ -4971,6 +4982,7 @@ class AppModel with ChangeNotifier {
         result.popupJson = buildPopupJsonFromLookup(
           results: ffiResults,
           maximumTerms: effectiveMaxTerms,
+          hiddenDictionaries: hiddenDictionaryNames,
         );
         result = result.withKanjiResults(kanjiResults);
       }
@@ -7529,6 +7541,7 @@ class _AppModelRemoteLookupService
       final String popupJson = buildPopupJsonFromLookup(
         results: ffiResults,
         maximumTerms: maximumTerms,
+        hiddenDictionaries: _appModel.hiddenDictionaryNames,
       );
       if (timing != null) {
         timing.popupJsonMicros = finishPhase(popupJsonWatch);

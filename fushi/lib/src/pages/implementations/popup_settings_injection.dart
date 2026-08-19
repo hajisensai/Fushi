@@ -624,10 +624,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       .where((d) => d.isCollapsed(JapaneseLanguage.instance))
       .map((d) => d.name)
       .toList());
-  final String hiddenNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isHidden(JapaneseLanguage.instance))
-      .map((d) => d.name)
-      .toList());
+  // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
+  final String hiddenNames =
+      jsonEncode(appModel.hiddenDictionaryNames.toList());
   final String globalDictCSS = appModel.globalDictCSS;
   final String customDictCSSJson = jsonEncode(appModel.customDictCSS);
 
