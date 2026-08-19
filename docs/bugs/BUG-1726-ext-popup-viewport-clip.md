@@ -1,7 +1,7 @@
 ## BUG-1726 · 扩展查词弹窗超出视口底部被截断
 - **报告**：2026-08-19（用户：Netflix 底部字幕查词，弹窗下缘超出屏幕被截断）
 - **真实性**：✅ 真 bug。根因 `tools/browser-extension/content.js:2407`（修复前行号；镜像 `fushi/assets/browser_extension/content.js` 同）：`place()` 只在 `fushiRenderEntries()` 后的一帧 rAF 跑一次，此刻弹窗只建好首词条 + 第 1 个词典块，高度被低估；`fushiComputePlacement`（content.js:2070，纯函数本身正确）拿到假高度误判「下方放得下」且 `maxHeight=null`；随后 popup.js 逐宏任务追加词典块把弹窗撑到全高（默认 360px），超出视口无人复算——host 上没有任何 ResizeObserver / 二次定位触发器。词在视口底部（Netflix 底部字幕）时最痛：下缘直接被屏幕截断。
-- **[x] ① 已修复** — 组合修（同 commit，见本分支 `fix(extension)` 提交）：
+- **[x] ① 已修复** — 组合修（commit 3cf5b22ce7，代码与测试同 commit）：
   - 落点写回收敛进 `fushiApplyPlacement()`（content.js），首帧 place 与复算共用同一份实现与锚点 `fushiPlaceAnchor`；host + 容器挂 `ResizeObserver`（`fushiObservePopupResize()`），渲染中长高 / 图片字体异步 / 嵌套换内容都用同一份 wordRect 重跑 `fushiComputePlacement` 写回 left/top/maxHeight；关窗 `fushiRemoveContainer` 里 disconnect。
   - 兜底（老 WebView 无 ResizeObserver 也不出界）：新纯函数 `fushiPlacementSideMax()` 给出「所选一侧可用空间上限」，place 即使 `pos.maxHeight==null` 也把 maxHeight 恒夹到 `min(theme 原始上限 fushiHostBaseMaxHeight, 侧空间)`——夹取只缩不放，不放大用户配置的弹窗高度上限。
   - 量高用「容器内容自然高度 vs host 可见高」的较大者（host 被 maxHeight 夹住后 rect 不再长高，容器 overflow:visible 仍如实反映内容），再按 theme 上限封顶，复算不会被上一轮夹高卡死。

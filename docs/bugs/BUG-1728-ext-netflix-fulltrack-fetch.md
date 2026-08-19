@@ -1,7 +1,7 @@
 ## BUG-1728 · Netflix 字幕列表只剩「实时采集」——整轨拦截静默失败
 - **报告**：2026-08-19（用户：Netflix 字幕面板只有 live 轨，整轨列表出不来）
 - **真实性**：✅ 真 bug。整轨链路（`tools/browser-extension/netflix-bridge.js`：MAIN world JSON.parse hook → ttDownloadables 挑 URL → fetch 整轨 → replayCues；解析 content.js:495-515 + subtitle-adapters.js）已实现，用户只见 live 轨 = 整轨 fetch 失败后静默回落。根因 `tools/browser-extension/netflix-bridge.js:60`（修复前行号）：`fetch(picked.url, {credentials:'include'})`——字幕在跨源 CDN `*.oca.nflxvideo.net`，带 credentials 要求响应 `Access-Control-Allow-Origin` 为精确 origin，CDN 回 `*` 时整个请求被 CORS 拒掉（asbplayer 用裸 fetch 正常）。加重项：`:57-58` 去重标记写在 fetch **之前**，失败后该 URL 本页永不重试；`:69` `.catch` 纯静默零日志。同一模式在 `stream-bridge.js:156-168`（TVer/Bilibili.tv/Hulu JP/Prime Video）。
-- **[x] ① 已修复** — 两个 bridge 同款（真源 + 镜像 MD5 一致）：
+- **[x] ① 已修复** — commit 9acdfacc87。两个 bridge 同款（真源 + 镜像 MD5 一致）：
   - `fetch(picked.url)` 去掉 credentials（字幕 URL 自带鉴权参数，不需要 cookie）；补 `r.ok` 检查（HTTP 4xx/5xx 也走失败路径，不再把错误页当字幕文本 post 出去）。
   - 去重标记保留在 fetch 前占坑（防并发清单重复抓取），但 `.catch` 里 `delete` 撤销标记——切轨/切集清单重放时同一 URL 可重试；`.catch` 加 `console.warn` 诊断，保持 best-effort 不外抛。
 - **[x] ② 已加自动化测试** — `tools/browser-extension/netflix-bridge.test.js` 新增 3 项守卫：「fetch 不带 credentials」（断言 fetch init 无 credentials）、「失败后去重标记回滚、清单重放可重试」（failing→恢复→重放，6 次 fetch、3 轨送达）、「失败轨不进 replayCues 存档」。harness fetch mock 升级为记录 init + ok/status + 可注入失败。变异实测：恢复 `{credentials:'include'}` → 1 fail；删 `.catch` 里 `delete` → 1 fail；均反向替换还原并 sha256 比对一致后 6/6 全绿。
