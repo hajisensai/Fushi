@@ -4454,39 +4454,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」（[continueMemberIndex]
-  /// 纯函数，与旧横排行初始横滚定位同源）；否则 → 「已看完 x/N」（x = completedAt
-  /// 非空的本地成员数；远端占位无本地完成态，只计入 N）。
+  /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」；否则 →
+  /// 「已看完 x/N」。
+  ///
+  /// BUG-1740：选集与时钟必须与详情页 hero **同一实现**——同走
+  /// [continueMemberIndex]，锚点时刻同走 [_slotWatchedAtMs]（= BUG-1731 的
+  /// max(本机统计, 行级 lastPlayedAt) 口径）。此前这里自绕一套
+  /// `latestPlayedSeriesIndex` + 只读本机统计时钟：互联对端回灌的进度只写行级
+  /// `lastPlayedAt`，外侧锚点便钉在本机最后播的那集，出现「卡片外『继续看
+  /// 第8集』、进详情页变『第9集』」的两套答案。
   String _collectionProgressLabel(CollectionGroup<_VideoSlot> group) {
     final int total = group.items.length;
     int completed = 0;
-    final List<VideoSeriesPlaybackState> playback =
-        <VideoSeriesPlaybackState>[];
+    final List<CollectionMemberProgress> progresses =
+        <CollectionMemberProgress>[];
     for (final CollectionOrderingItem<_VideoSlot> item in group.items) {
-      final VideoBookRow? local = item.payload.local;
-      final RemoteVideoInfo? remote = item.payload.remote;
-      final bool isCompleted = local?.completedAt != null;
+      final _VideoSlot slot = item.payload;
+      // 完成态与详情页 [CollectionEpisodeSlot.completed] 同口径：远端成员认
+      // host 下发的 completedAt，不再只数本地行。
+      final bool isCompleted = slot.local != null
+          ? slot.local!.completedAt != null
+          : slot.remote!.completedAt != null;
       if (isCompleted) completed++;
-      playback.add(VideoSeriesPlaybackState(
-        lastWatchedAtMs: local == null
-            ? remote?.positionUpdatedAtMs ?? 0
-            : (_watchAtByUid[local.bookUid] ??
-                        _legacyWatchAtByTitle[local.title])
-                    ?.millisecondsSinceEpoch ??
-                0,
-        positionMs: local?.lastPositionMs ?? remote?.positionMs ?? 0,
+      progresses.add(CollectionMemberProgress(
+        positionMs: slot.local?.lastPositionMs ?? slot.remote?.positionMs ?? 0,
         completed: isCompleted,
+        lastPlayedAt: _slotWatchedAtMs(slot),
       ));
     }
-    final int? latestIndex = latestPlayedSeriesIndex(playback);
-    final int? continueIndex = latestIndex != null &&
-            !playback[latestIndex].completed &&
-            playback[latestIndex].positionMs > 0
-        ? latestIndex
-        : nextEpisodeAfterLatestPlayed(playback);
-    if (continueIndex != null && completed < total) {
+    final bool anyTrace = progresses.any((CollectionMemberProgress p) =>
+        p.completed || (p.positionMs ?? 0) > 0 || (p.lastPlayedAt ?? 0) > 0);
+    if (anyTrace && completed < total) {
       return t.collection_continue_progress(
-        n: continueIndex + 1,
+        n: continueMemberIndex(progresses) + 1,
       );
     }
     return t.collection_watched_progress(done: completed, total: total);

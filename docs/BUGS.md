@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1605 条。点号进各自文件。
+> 共 1608 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1740](bugs/BUG-1740-collection-card-continue-label-clock.md) | ✅ | ✅ | 合集卡续播标签没用统一时钟与详情页差一集 |
+| [BUG-1739](bugs/BUG-1739-scan-resurrects-deleted-collection.md) | ✅ | ✅ | 来源重扫按自然键复活用户已删除的playlist合集 |
+| [BUG-1738](bugs/BUG-1738-download-proxy-kills-pipeline.md) | ✅ | ✅ | 自定义下载代理未填时切换发现网络永久杀死下载管线 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |
 | [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |
