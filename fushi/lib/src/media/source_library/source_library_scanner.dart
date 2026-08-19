@@ -53,7 +53,7 @@ import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/external_video.dart'
-    show normalizeVideoPath;
+    show decodedSourceBasename, normalizeVideoPath;
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
@@ -450,22 +450,20 @@ class SourceLibraryScanner {
           // 来源扫描与旧「导入视频文件夹」共用同一套作品/季/集解析规则：散片
           // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
           // 的既有增强不变；再只做归组，重扫复用已有成员且不删除缺失文件。
-          // 网络（WebDAV）来源 v1 不归组：URL 路径的百分号编码会渗进合集名，且
-          // 文件名解析规则按本地命名写成——先平铺入库，归组留后续。
-          if (files.isLocal) {
-            grouping = await VideoFolderGroupCoordinator(
-              database: _db,
-              repository: _videoRepo,
-            ).groupPaths(
-              videoPaths: <String>[
-                for (final ScanVideoItem item in plan.videos)
-                  if (classifyLocalVideoExtra(item.videoPath) == null)
-                    item.videoPath,
-              ],
-              createdVideoPaths: createdVideoPaths,
-              sourceId: source.id,
-            );
-          }
+          // 网络（WebDAV）来源同样归组：文件名解析统一走解码 basename
+          // （decodedSourceBasename），URL 的百分号编码不渗进合集名。
+          grouping = await VideoFolderGroupCoordinator(
+            database: _db,
+            repository: _videoRepo,
+          ).groupPaths(
+            videoPaths: <String>[
+              for (final ScanVideoItem item in plan.videos)
+                if (classifyLocalVideoExtra(item.videoPath) == null)
+                  item.videoPath,
+            ],
+            createdVideoPaths: createdVideoPaths,
+            sourceId: source.id,
+          );
           mediaCount += await _importPlaylists(plan, source.id, files);
           await VideoSourceMetadataIndexer(_db).index(source);
         case SourceLibraryKind.manga:
@@ -658,7 +656,7 @@ class SourceLibraryScanner {
   ///
   /// 缺页 / 坏 JSON 与本地语义一致：抛 [MangaImportException] 冒泡记进
   /// lastScanError。WebDAV 的 href 分段是百分号编码的，查表键与镜像文件名统一
-  /// 用解码后的相对路径（[_decodedRemoteBasename]）。
+  /// 用解码后的相对路径（[decodedSourceBasename]）。
   Future<int> _importMangaRemote(
     ScanPlan plan,
     int sourceId,
@@ -671,7 +669,7 @@ class SourceLibraryScanner {
         .toSet();
     int count = 0;
     for (final ScanMangaItem item in plan.mangas) {
-      final String mokuroName = _decodedRemoteBasename(item.mokuroPath);
+      final String mokuroName = decodedSourceBasename(item.mokuroPath);
       final String jsonStr = await fs.readText(item.mokuroPath);
       final Object? rawRoot = jsonDecode(jsonStr);
       final Map<String, Object?> root = rawRoot is Map
@@ -762,20 +760,6 @@ class SourceLibraryScanner {
     return slash <= 0 ? '' : path.substring(0, slash);
   }
 
-  /// 远端路径的 basename；http(s)（WebDAV href）做百分号解码，其余原样。
-  static String _decodedRemoteBasename(String path) {
-    final int slash = path.lastIndexOf('/');
-    final String raw = slash < 0 ? path : path.substring(slash + 1);
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      try {
-        return Uri.decodeComponent(raw);
-      } catch (_) {
-        return raw;
-      }
-    }
-    return raw;
-  }
-
   /// Imports every video in the plan (with sidecar subtitle cues); returns the
   /// physical paths that were newly inserted in this scan.
   ///
@@ -836,7 +820,7 @@ class SourceLibraryScanner {
           streamSpecJson = StreamVideoSpec(
             subtitleUrl: subUrl,
             subtitleFileName:
-                subUrl == null ? null : _decodedRemoteBasename(subUrl),
+                subUrl == null ? null : decodedSourceBasename(subUrl),
           ).toStorageJson();
         } else if (item.subtitlePath != null) {
           final String fmt = _extOf(p.basename(item.subtitlePath!));
@@ -876,7 +860,7 @@ class SourceLibraryScanner {
         // 标题用解码后的文件名：WebDAV 条目路径是百分号编码的 href，直接取
         // basename 会把 %20 之类渗进书架标题。
         final String title = streamInPlace
-            ? p.basenameWithoutExtension(_decodedRemoteBasename(item.videoPath))
+            ? p.basenameWithoutExtension(decodedSourceBasename(item.videoPath))
             : p.basenameWithoutExtension(item.videoPath);
         await _videoRepo.saveVideoBook(
           VideoBooksCompanion(
@@ -942,13 +926,6 @@ class SourceLibraryScanner {
     SourceFileSystem fs,
   ) async {
     if (plan.playlists.isEmpty) return 0;
-    // 网络视频来源 v1 不导 m3u8 清单：条目相对路径解析（resolveM3uEntryPath）
-    // 按本地磁盘语义写成，远端 URL 基底需要独立的解析与验证。跳过不算错误。
-    if (!fs.isLocal) {
-      debugPrint('SourceLibraryScanner: skipping ${plan.playlists.length} '
-          'playlist manifest(s) on a network video source (unsupported in v1)');
-      return 0;
-    }
 
     // 统一合集：拆集后无单条 playlist 行 → 用「同名 playlist 合集是否已存在」区分
     // 首次导入 vs 重扫。合集名 = m3u8 basename（**不随 manifest 内集路径编辑而变** →
@@ -967,8 +944,9 @@ class SourceLibraryScanner {
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
-        final String collectionName =
-            p.basenameWithoutExtension(item.playlistPath);
+        // 合集名走解码 basename：网络清单的 href 是百分号编码的。
+        final String collectionName = p
+            .basenameWithoutExtension(decodedSourceBasename(item.playlistPath));
 
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
         final String localM3u8 =
@@ -976,8 +954,12 @@ class SourceLibraryScanner {
         final String content = await readTextWithEncoding(File(localM3u8));
         // baseDir is the ORIGINAL m3u8 path's directory (source namespace):
         // locally the real on-disk dir, matching manual / drag-drop import when
-        // resolving relative episode paths.
-        final String baseDir = p.dirname(item.playlistPath);
+        // resolving relative episode paths; remotely the manifest's URL dir
+        // (resolveM3uEntryPath 对 URL 基底按 URL 语义 join，条目解析成可播的
+        // 远端流 URL，逐集入库后与直扫视频同一条 stream 播放链)。
+        final String baseDir = fs.isLocal
+            ? p.dirname(item.playlistPath)
+            : _remoteParentDir(item.playlistPath);
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         // 空 / 不可解析清单：跳过（不当成「清单变空 → 清光成员」，避免读盘瞬时失败

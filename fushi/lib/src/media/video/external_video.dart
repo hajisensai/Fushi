@@ -27,6 +27,26 @@ bool isSupportedVideoFile(String path) {
   return _supportedVideoExtensions.contains(ext);
 }
 
+/// 纯函数：取来源命名空间路径的 basename（`/` 与 `\` 都当分隔符）；http(s)
+/// URL（WebDAV href / 直链）的段是百分号编码的，先解码再返回。
+///
+/// 文件名解析（系列归组）、标题展示、身份派生（bookUid）都吃这一个口径——
+/// 派生点唯一，编码字节才不会渗进系列名/集标题/uid（网络来源 URL 路径与
+/// 本地路径在这些消费点上是同一种正常情况，不是特例分支）。解码失败（非法
+/// 百分号序列）原样返回，不抛。
+String decodedSourceBasename(String path) {
+  final int sep = path.lastIndexOf(RegExp(r'[\\/]'));
+  final String raw = sep >= 0 ? path.substring(sep + 1) : path;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try {
+      return Uri.decodeComponent(raw);
+    } catch (_) {
+      return raw;
+    }
+  }
+  return raw;
+}
+
 /// 纯函数：归一化视频路径用于「同一物理文件」比对/派生唯一标识。
 ///
 /// 统一分隔符（反斜杠转 `/`）、去掉冗余 `.`、`..` 段，保证 `D:/a/b.mkv` 与

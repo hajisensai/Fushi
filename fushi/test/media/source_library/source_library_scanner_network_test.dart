@@ -357,23 +357,27 @@ void main() {
   group('network VIDEO source over WebDAV imports stream-in-place (fake fs)',
       () {
     testWidgets(
-        'entry URL becomes a stream book: videoPath=URL, decoded title, '
-        'sidecar subtitle in streamSpecJson, no cover, no collections',
-        (WidgetTester tester) async {
+        'entry URLs become stream books with decoded titles; same-series '
+        'episodes group into a collection; m3u8 manifest imports as a '
+        'playlist of remote-URL episodes', (WidgetTester tester) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       final Directory tmp =
           Directory.systemTemp.createTempSync('net_webdav_video_');
       addTearDown(() => tmp.deleteSync(recursive: true));
-      // 占位本地字节：流播导入不该碰它们（copyToLocal 必须为 0）。
+      // 占位本地字节：流播导入只该下载清单文本，不碰视频/字幕字节。
       final String dummy = p.join(tmp.path, 'dummy.bin');
       File(dummy).writeAsBytesSync(<int>[0]);
+      final String manifest = p.join(tmp.path, 'best.m3u8');
+      File(manifest).writeAsStringSync('#EXTM3U\nclip 1.mkv\nclip 2.mkv\n');
 
       const String root = 'https://dav.example.com/media';
       final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
-        '$root/Show%20A/ep%201.mkv': dummy,
-        '$root/Show%20A/ep%201.srt': dummy,
+        '$root/Show%20A/Show%20A%20S01E01.mkv': dummy,
+        '$root/Show%20A/Show%20A%20S01E01.srt': dummy,
+        '$root/Show%20A/Show%20A%20S01E02.mkv': dummy,
+        '$root/Lists/Best%20Of.m3u8': manifest,
       });
 
       final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
@@ -390,28 +394,41 @@ void main() {
       });
 
       final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
-      expect(videos, hasLength(1));
-      final VideoBookRow video = videos.single;
-      expect(video.videoPath, '$root/Show%20A/ep%201.mkv',
-          reason: 'stream-in-place keeps the remote URL as videoPath');
-      expect(video.title, 'ep 1',
+      // 2 部直扫单集 + 清单拆出的 2 集。
+      expect(videos, hasLength(4));
+      final VideoBookRow e01 = videos.singleWhere((VideoBookRow v) =>
+          v.videoPath == '$root/Show%20A/Show%20A%20S01E01.mkv');
+      expect(e01.title, 'Show A S01E01',
           reason: 'title must be percent-decoded, not the raw href basename');
-      expect(video.coverPath, isNull,
+      expect(e01.coverPath, isNull,
           reason: 'no cover extraction for remote streams');
-      expect(video.sourceId, sid);
+      expect(e01.sourceId, sid);
       final StreamVideoSpec spec =
-          StreamVideoSpec.fromStorageJson(video.streamSpecJson);
-      expect(spec.subtitleUrl, '$root/Show%20A/ep%201.srt',
+          StreamVideoSpec.fromStorageJson(e01.streamSpecJson);
+      expect(spec.subtitleUrl, '$root/Show%20A/Show%20A%20S01E01.srt',
           reason: 'sidecar subtitle rides in streamSpecJson (played via the '
               'stream channel, not local cue parsing)');
-      expect(spec.subtitleFileName, 'ep 1.srt');
-      expect(fs.copyToLocalCalls, 0,
-          reason: 'stream-in-place must not download the video or subtitle');
-      expect(await db.getAllMediaCollections(), isEmpty,
-          reason: 'v1 does not group network videos into collections');
+      expect(spec.subtitleFileName, 'Show A S01E01.srt');
+      expect(fs.copyToLocalCalls, 1,
+          reason: 'only the m3u8 manifest text is downloaded; video and '
+              'subtitle bytes stream in place');
+
+      // 清单集：相对明文条目解析成编码后的远端 URL（可直接喂播放器）。
+      final VideoBookRow clip1 = videos.singleWhere(
+          (VideoBookRow v) => v.videoPath == '$root/Lists/clip%201.mkv');
+      expect(clip1.sourceId, sid);
+
+      // 归组：同系列两集折叠成 'Show A' 合集（解码名）；清单成 'Best Of' 合集。
+      final List<MediaCollectionRow> collections =
+          await db.getAllMediaCollections();
+      expect(
+        collections.map((MediaCollectionRow c) => c.name).toSet(),
+        <String>{'Show A', 'Best Of'},
+        reason: '合集名必须是解码后的（不能带 %20）',
+      );
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 1);
+      expect(after.mediaCount, 3, reason: '2 部直扫视频 + 1 个清单合集');
       expect(after.lastScanError, isNull);
     });
   });

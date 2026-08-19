@@ -53,17 +53,19 @@ void main() {
       );
     });
 
-    test('video addSource directly opens local folder picker', () {
+    test('video addSource offers local/network chooser (network = WebDAV only)',
+        () {
+      // 网络来源三域开放后，视频不再短路直选文件夹：与书/漫画共用同一个
+      // 本地/网络选择对话框；本地文件夹入口仍在对话框内可达。
       final String src = File(
         'lib/src/pages/implementations/media_sources_view.dart',
       ).readAsStringSync();
       final String body = _methodBody(src, 'Future<void> addSource()');
       expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
-      final int direct = body.indexOf("widget.mediaKind == 'video'");
-      final int dialog = body.indexOf('showAppDialog<_AddSourceChoice>');
-      expect(direct, greaterThanOrEqualTo(0));
+      expect(body, contains('showAppDialog<_AddSourceChoice>'));
       expect(body, contains('await addLocalFolder()'));
-      expect(direct, lessThan(dialog), reason: '视频应在弹来源类型对话框之前直接进入文件夹选择');
+      expect(src, contains("const <String>['webdav']"),
+          reason: '视频网络 transport 必须收窄到仅 WebDAV');
     });
 
     test('android branch uses native SAF channel, no custom browser', () {

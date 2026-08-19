@@ -411,6 +411,50 @@ seg1.ts
       expect(resolveM3uEntryPath('   ', '/base', context: pos), '');
     });
 
+    // 网络（WebDAV）视频来源的清单：URL 基底按 URL 语义解析，不经 p.Context
+    // （它会把 https:// 的双斜杠折叠掉）。宿主平台无关——windows context 也得
+    // 给出同样的 URL。
+    group('URL 基底（网络视频来源）', () {
+      const String base = 'https://dav.example.com/media/Lists';
+
+      test('相对明文条目：正斜杠 join + 段按需百分号编码', () {
+        expect(resolveM3uEntryPath('clip 1.mkv', base, context: win),
+            'https://dav.example.com/media/Lists/clip%201.mkv');
+        expect(resolveM3uEntryPath('Show A/E01 (BD).mkv', base, context: pos),
+            'https://dav.example.com/media/Lists/Show%20A/E01%20(BD).mkv');
+      });
+
+      test('已编码段不二次编码（%20 不变 %2520）', () {
+        expect(resolveM3uEntryPath('Show%20A/ep%201.mkv', base, context: win),
+            'https://dav.example.com/media/Lists/Show%20A/ep%201.mkv');
+      });
+
+      test('`..` 上跳但钳制在 scheme://host 之下', () {
+        expect(resolveM3uEntryPath('../Show A/E01.mkv', base, context: win),
+            'https://dav.example.com/media/Show%20A/E01.mkv');
+        expect(resolveM3uEntryPath('../../../../E01.mkv', base, context: win),
+            'https://dav.example.com/E01.mkv',
+            reason: '越过 host 根的 .. 全部钳制');
+      });
+
+      test('绝对 http(s) 条目直通（不 join、不改写）——本地基底同样成立', () {
+        const String url = 'https://cdn.example.com/hls/stream.m3u8';
+        expect(resolveM3uEntryPath(url, base, context: win), url);
+        expect(resolveM3uEntryPath(url, 'D:${bs}pl', context: win), url,
+            reason: '此前 URL 条目被误判为相对路径 join 到本地目录上');
+      });
+
+      test('parseM3u8 对 URL 基底产出可播 URL + 解码标题回退', () {
+        const String manifest = '#EXTM3U\nclip 1.mkv\n';
+        final List<PlaylistEntry> entries =
+            parseM3u8(content: manifest, baseDir: base);
+        expect(entries.single.path,
+            'https://dav.example.com/media/Lists/clip%201.mkv');
+        expect(entries.single.title, 'clip 1.mkv',
+            reason: '标题回退必须是解码后的文件名，不能带 %20');
+      });
+    });
+
     test('parseM3u8 routes an absolute entry through the resolver (not joined)',
         () {
       // Forward-slash absolute entry so the manifest carries no backslash; on
