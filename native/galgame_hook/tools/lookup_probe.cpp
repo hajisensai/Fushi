@@ -231,13 +231,16 @@ int main(int argc, char** argv) {
       fushi_voice_hook::LookupHitOf(header);
   uint64_t last_hit_seq = 0;
   for (int round = 0; round < rounds; ++round) {
-    std::printf("[%02d] text_writes=%llu hits=%llu inputs=%llu frames=%llu\n",
-                round,
-                static_cast<unsigned long long>(header->text_write_count),
-                static_cast<unsigned long long>(header->lookup_hit_count),
-                static_cast<unsigned long long>(header->lookup_input_count),
-                static_cast<unsigned long long>(
-                    header->lookup_frame_count_written));
+    // applied 是**截图抑制的回执**（lookup_frame_applied_seq）。制卡要先让注入侧藏卡
+    // 再拍一张不含卡片的图，host 只有看到这个数推进才会去抓图；它不动就说明注入侧没确认，
+    // 而「卡片能出但一张卡都写不出来」正是这个数字不动的样子——不打出来根本没法分型。
+    std::printf(
+        "[%02d] text_writes=%llu hits=%llu inputs=%llu frames=%llu applied=%llu\n",
+        round, static_cast<unsigned long long>(header->text_write_count),
+        static_cast<unsigned long long>(header->lookup_hit_count),
+        static_cast<unsigned long long>(header->lookup_input_count),
+        static_cast<unsigned long long>(header->lookup_frame_count_written),
+        static_cast<unsigned long long>(header->lookup_frame_applied_seq));
     PrintDiag(header->lookup_diag);
     if (hit != nullptr && hit->seq != last_hit_seq) {
       last_hit_seq = hit->seq;

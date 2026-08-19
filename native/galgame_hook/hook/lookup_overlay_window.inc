@@ -52,6 +52,10 @@ struct LookupOverlayState {
   fushi_voice_hook::OverlayRect card;
   bool visible = false;
   bool tracking_mouse = false;
+  // 上一次转发出去的 move 位置（卡片局部坐标）。用来丢掉同位置的重复 move——
+  // 见 WM_MOUSEMOVE 分支里的反馈环说明。-1 表示还没有过。
+  int32_t last_move_x = -1;
+  int32_t last_move_y = -1;
   std::vector<uint8_t> pixels;  // 预乘后的 BGRA，UI 线程私有
 };
 
@@ -147,6 +151,10 @@ void HideOverlay() {
   if (!g_overlay.visible) return;
   g_overlay.visible = false;
   g_overlay.card = fushi_voice_hook::OverlayRect();
+  // 位置去重的记忆只在"同一张卡片持续显示"期间有效；卡片收起后必须清掉，
+  // 否则下一张卡片在同一位置的第一次 move 会被当成重复丢掉。
+  g_overlay.last_move_x = -1;
+  g_overlay.last_move_y = -1;
   if (g_overlay.window != nullptr) ShowWindow(g_overlay.window, SW_HIDE);
 }
 
@@ -382,8 +390,18 @@ LRESULT CALLBACK LookupOverlayProc(HWND window, UINT message, WPARAM wparam,
         track.hwndTrack = window;
         if (TrackMouseEvent(&track)) g_overlay.tracking_mouse = true;
       }
-      QueueOverlayInput(fushi_voice_hook::kLookupInputMove,
-                        GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0,
+      // 同一个位置的重复 move 必须丢掉，否则会形成反馈环：
+      //   present → UpdateLayeredWindow 改窗口位置/尺寸 → 静止的光标相对窗口"动"了
+      //   → Windows 发 WM_MOUSEMOVE → 排进输入环 → host 按 hover 重新抓整张卡并投帧
+      //   → present → ……
+      // 真机实测（Ren'Py，鼠标全程没动）：inputs 从 4 一路涨到 588、frames 涨到 136，
+      // host 被自己的重绘刷屏，制卡流程也跟着卡住。
+      const int32_t mx = GET_X_LPARAM(lparam);
+      const int32_t my = GET_Y_LPARAM(lparam);
+      if (mx == g_overlay.last_move_x && my == g_overlay.last_move_y) return 0;
+      g_overlay.last_move_x = mx;
+      g_overlay.last_move_y = my;
+      QueueOverlayInput(fushi_voice_hook::kLookupInputMove, mx, my, 0,
                         OverlayModifierKeys());
       return 0;
     }
