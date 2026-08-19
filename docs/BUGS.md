@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1607 条。点号进各自文件。
+> 共 1608 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1746](bugs/BUG-1746-subscription-never-retries-failed-episode.md) | ✅ | ✅ | 订阅只看 jobId 存在就跳过，故障集永久卡死不再下载 |
 | [BUG-1742](bugs/BUG-1742-extension-hidden-dict-still-shown.md) | ✅ | ✅ | 浏览器扩展里被关闭的词典仍然出释义 |
 | [BUG-1741](bugs/BUG-1741-browser-extension-page-no-back.md) | ✅ | ✅ | 浏览器扩展页被设置 push 进来时没有返回键 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |

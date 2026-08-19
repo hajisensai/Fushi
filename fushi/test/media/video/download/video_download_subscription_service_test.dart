@@ -220,6 +220,158 @@ void main() {
     expect(row.lastError, isNull);
   });
 
+  /// BUG-1746：订阅曾把「派过任务」（jobId != null）当成「这一集搞定了」。
+  /// 任务被取消或失败之后 jobId 依然挂在条目上，旧判据每轮都 continue，那一集
+  /// 就再也不会被下——用户看到的是「订阅只下了中间几集」，而面板上毫无异常。
+  /// 实测现场：某条订阅 13 集里 ep01/02 卡在「内置下载引擎运行时缺失」、
+  /// ep03-08 被取消，全部再没重试过。
+  ///
+  /// 分界线按「是谁决定不下的」划：系统故障该重试，用户取消该尊重。
+  group('BUG-1746 订阅重试判据', () {
+    /// 跑一轮订阅检查，返回本轮入队的 remoteId。
+    ///
+    /// [atMs] 必须随轮次前进：`_drain()` 只认领**已到期**的订阅
+    /// （`claimNextVideoDownloadSubscription(nowAt:)`），第一轮跑完
+    /// `nextCheckAt = 当前 + checkInterval`。若两轮用同一个时刻，第二轮根本
+    /// 认领不到订阅、整轮空转——那样「没有重复入队」的断言会变成假绿，
+    /// 测的是「压根没跑」而不是「跑了但正确地没派」。
+    Future<List<String>> runRound(
+      FushiDatabase database, {
+      required List<String> alreadyEnqueued,
+      required int atMs,
+    }) async {
+      final List<String> enqueued = <String>[];
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        now: () => DateTime.fromMillisecondsSinceEpoch(atMs),
+        provider: _FakeResourceProvider(
+          id: 'nyaa',
+          candidates: <VideoResourceCandidate>[
+            _candidate(remoteId: 'ep-1', episode: 1),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueued.add(request.resource.remoteId);
+          return _persistFakeJob(
+            database,
+            request,
+            'job-${alreadyEnqueued.length + enqueued.length}',
+          );
+        },
+      );
+      await service.checkNow();
+      return enqueued;
+    }
+
+    /// 第二轮的时刻：第一轮的 nextCheckAt 之后。
+    const int secondRoundAt = _nowAt + 3600 * 1000;
+
+    Future<FushiDatabase> seed() async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'anime',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        startAfterEpisode: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+          'nyaaCategory': '1_2',
+        },
+      );
+      return database;
+    }
+
+    /// 直接改 lifecycle：生产里由流水线/用户操作写，这里只关心订阅怎么读它。
+    Future<void> setLifecycle(
+      FushiDatabase database,
+      String jobId,
+      String lifecycle,
+    ) =>
+        database.customStatement(
+          'UPDATE video_download_jobs SET lifecycle = ? WHERE job_id = ?',
+          <Object?>[lifecycle, jobId],
+        );
+
+    test('needsAttention（系统故障）的一集会在下一轮重新入队', () async {
+      final FushiDatabase database = await seed();
+      final List<String> first =
+          await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+      expect(first, <String>['ep-1'], reason: '第一轮应正常入队');
+
+      await setLifecycle(
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.needsAttention,
+      );
+
+      final List<String> second =
+          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt);
+      expect(second, <String>['ep-1'],
+          reason: '内置下载引擎运行时缺失这类系统故障排除后，这一集必须能被重新派；'
+              '旧判据只看 jobId 在不在，会让它永久卡死');
+    });
+
+    test('failed 的一集同样会被重新入队', () async {
+      final FushiDatabase database = await seed();
+      final List<String> first =
+          await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+      expect(first, <String>['ep-1']);
+
+      await setLifecycle(database, 'job-1', VideoDownloadJobLifecycle.failed);
+
+      expect(
+          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
+          <String>['ep-1'],
+          reason: 'failed 是系统侧的失败，不是用户意图');
+    });
+
+    test('用户取消（cancelled）的一集不会被订阅自动补回来', () async {
+      final FushiDatabase database = await seed();
+      final List<String> first =
+          await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+      expect(first, <String>['ep-1']);
+
+      await setLifecycle(
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.cancelled,
+      );
+
+      expect(
+          await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
+          isEmpty,
+          reason: 'cancelled 是用户明确说不要这一集；自动补回来的话用户永远取消不掉');
+    });
+
+    test('active / completed 的一集不重复入队（原行为不变）', () async {
+      for (final String lifecycle in <String>[
+        VideoDownloadJobLifecycle.active,
+        VideoDownloadJobLifecycle.completed,
+      ]) {
+        final FushiDatabase database = await seed();
+        final List<String> first =
+            await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
+        expect(first, <String>['ep-1']);
+
+        await setLifecycle(database, 'job-1', lifecycle);
+
+        expect(
+            await runRound(database,
+                alreadyEnqueued: first, atMs: secondRoundAt),
+            isEmpty,
+            reason: '$lifecycle 的任务仍算数，重复入队会造重复下载');
+      }
+    });
+  });
+
   test('anime roman numeral title uses the canonical third-season key',
       () async {
     final FushiDatabase database = await _openDatabase();
