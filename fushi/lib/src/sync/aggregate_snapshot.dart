@@ -157,6 +157,46 @@ class AggregateSnapshot {
     );
   }
 
+  /// 按用户的共享许可裁掉整族数据，用于互联通道的「共享统计 / 共享收藏夹」两个
+  /// 开关（云通道不调用本方法，其行为逐字节不变）。
+  ///
+  /// 快照的字段天然分成两族且不重叠：统计族（四张统计表 + 逐时桶 + 制卡计数 +
+  /// 查词/制卡计数）与收藏族（收藏词 / 收藏句 + 两类删除墓碑）。裁剪就是把不许
+  /// 共享的那一族整族置空，而不是在下游撒 if——下游的 merge / apply 面对空列表
+  /// 已经是正确的 no-op（并集折叠里空集是单位元），无需任何特例分支。
+  ///
+  /// 墓碑跟着它保护的那一族走：收藏关掉时连「取消收藏」也不该外流，否则本设备的
+  /// 删除意图仍在改写对端。
+  ///
+  /// 两个许可都为真时返回入参本身（零拷贝，`identical` 仍成立，与
+  /// [AggregateSyncService.filterTombstoned] 同纪律）。
+  AggregateSnapshot select({
+    required bool stats,
+    required bool favorites,
+  }) {
+    if (stats && favorites) return this;
+    return AggregateSnapshot(
+      readingStats: stats ? readingStats : const <ReadingStatRecord>[],
+      videoStats: stats ? videoStats : const <VideoStatRecord>[],
+      readingHourly: stats ? readingHourly : const <HourlyRecord>[],
+      readingHourlyByFormat:
+          stats ? readingHourlyByFormat : const <HourlyFormatRecord>[],
+      videoHourly: stats ? videoHourly : const <HourlyRecord>[],
+      miningStats: stats ? miningStats : const <MiningRecord>[],
+      lookupMiningCounters:
+          stats ? lookupMiningCounters : const <LookupMiningRecord>[],
+      favoriteWords: favorites ? favoriteWords : const <FavoriteWordRecord>[],
+      favoriteSentences:
+          favorites ? favoriteSentences : const <FavoriteSentence>[],
+      favoriteWordTombstones: favorites
+          ? favoriteWordTombstones
+          : const <AggregateTombstoneRecord>[],
+      favoriteSentenceTombstones: favorites
+          ? favoriteSentenceTombstones
+          : const <AggregateTombstoneRecord>[],
+    );
+  }
+
   static List<T> _decodeList<T>(
     Object? raw,
     T? Function(Map<String, Object?> row) decode,

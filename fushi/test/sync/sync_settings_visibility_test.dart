@@ -301,9 +301,10 @@ void main() {
 
     test('is its own top-level destination (not inside syncBackup)', () {
       expect(dest.id, SettingsDestinationId.interconnect);
-      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 交给已配对设备（制卡/备份
-      // 后端）+ 本机服务器 + 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
-      expect(dest.sections, hasLength(6));
+      // 启用开关 + 连接设备 + 上传到互联对端（BUG-988）+ 与已配对设备共享（统计/
+      // 收藏夹，双向、默认开）+ 交给已配对设备（制卡/备份后端）+ 本机服务器 +
+      // 互联相关配置镜像（远端词典/音频来源/远端占位卡）。
+      expect(dest.sections, hasLength(7));
     });
 
     test('enable toggle is unconditional; config sections gated on the toggle',
@@ -339,16 +340,25 @@ void main() {
         'interconnect.upload_video_files',
       ]);
       expect(dest.sections[2].visible, isNotNull);
+      // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
+      // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
+      expect(idsOf(dest.sections[3]), <String>[
+        'interconnect.share_statistics',
+        'interconnect.share_favorites',
+      ]);
+      expect(dest.sections[3].visible, isNotNull);
+      expect(dest.sections[3].footer, isNotNull,
+          reason: '双向 + 默认开启这件事必须在 UI 上说清楚');
       // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
       // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）。
-      expect(idsOf(dest.sections[3]), <String>[
+      expect(idsOf(dest.sections[4]), <String>[
         'interconnect.mine_to_server',
         'interconnect.backup_backend',
         'interconnect.service_config_sync',
       ]);
-      expect(dest.sections[3].visible, isNotNull);
-      expect(idsOf(dest.sections[4]), <String>['sync.server_mode']);
       expect(dest.sections[4].visible, isNotNull);
+      expect(idsOf(dest.sections[5]), <String>['sync.server_mode']);
+      expect(dest.sections[5].visible, isNotNull);
     });
 
     test('peer address list keeps its title and empty-state guidance', () {
@@ -392,18 +402,18 @@ void main() {
       // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
       // 同步方式时可见（与其它互联配置区一致）。
       expect(
-        idsOf(dest.sections[5]),
+        idsOf(dest.sections[6]),
         <String>[
           'lookup.remote_lookup',
           'lookup.audio_sources',
           'sync.show_remote_entries',
         ],
       );
-      expect(dest.sections[5].visible, isNotNull);
+      expect(dest.sections[6].visible, isNotNull);
     });
 
     test('host-server group keeps its explanatory footer', () {
-      expect(dest.sections[4].footer, isNotNull);
+      expect(dest.sections[5].footer, isNotNull);
     });
   });
 }

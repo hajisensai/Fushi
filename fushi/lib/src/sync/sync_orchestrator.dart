@@ -397,6 +397,7 @@ class SyncOrchestrator {
     required Directory tempDir,
     this.deviceId = '',
     required this.syncStats,
+    this.syncFavorites = true,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncAudioBookFiles,
@@ -435,6 +436,11 @@ class SyncOrchestrator {
   final String deviceId;
 
   final bool syncStats;
+
+  /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
+  /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
+  /// 默认 true：省略该参数的既有调用点行为不变。
+  final bool syncFavorites;
   final bool syncAudioBookPosition;
   final bool syncContent;
   final bool syncAudioBookFiles;
@@ -615,11 +621,12 @@ class SyncOrchestrator {
       await _syncBookProgressLive(report, b);
       await _syncVideoProgressLive(report, b);
       await _syncAudiobookProgressLive(report, b);
-      // 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。复用 syncStats
-      // 开关（聚合 = 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
+      // 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。两族各自由互联
+      // 页的「共享统计 / 共享收藏夹」开关控制（默认均 true = 拆开关前的行为），裁剪
+      // 在 [AggregateSyncService.syncOverClient] 内按族做，两族都关时整轮不发请求。
       // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
       // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
-      if (syncStats) await _syncAggregateLive(report, b);
+      if (syncStats || syncFavorites) await _syncAggregateLive(report, b);
     }
 
     // 云后端聚合同步（统计 + 收藏跨端共享，TODO-1056 phase B）。互联 live 端点
@@ -723,6 +730,8 @@ class SyncOrchestrator {
       await AggregateSyncService(_db, scope: _scope).syncOverClient(
         fetchRemote: backend.getRemoteAggregate,
         pushMerged: backend.putRemoteAggregate,
+        shareStats: syncStats,
+        shareFavorites: syncFavorites,
       );
     } catch (e) {
       report.noteError('aggregate live sync', e);

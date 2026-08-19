@@ -72,8 +72,7 @@ void main() {
     expect(cloud.syncDictionary, isFalse);
   });
 
-  test('位置/统计/本地音频不区分通道（轻量进度共享，跨设备续读是互联本意）', () async {
-    await repo.setSyncStatsEnabled(false);
+  test('位置/本地音频不区分通道（轻量进度共享，跨设备续读是互联本意）', () async {
     await repo.setSyncLocalAudioEnabled(true);
 
     final ChannelSyncFlags ic =
@@ -81,12 +80,40 @@ void main() {
     final ChannelSyncFlags cloud =
         await resolveChannelSyncFlags(repo, isInterconnect: false);
 
-    expect(ic.syncStats, cloud.syncStats);
-    expect(ic.syncStats, isFalse);
     expect(ic.syncLocalAudio, cloud.syncLocalAudio);
     expect(ic.syncLocalAudio, isTrue);
     // 有声书播放位置恒同步（isSyncAudioBookEnabled 恒 true）——两通道一致。
     expect(ic.syncAudioBookPosition, isTrue);
     expect(cloud.syncAudioBookPosition, isTrue);
+  });
+
+  // 统计/收藏此前跟着云备份的 sync_stats_enabled 一刀切（上面那条测试的原始形态就
+  // 断言过「统计不区分通道」）。互联页现在各有一个默认开启的开关，与四个上传开关
+  // 同一纪律：互联的事互联自己决定。
+  test('统计/收藏分通道：云关掉不牵连互联（默认开启）', () async {
+    await repo.setSyncStatsEnabled(false);
+
+    final ChannelSyncFlags ic =
+        await resolveChannelSyncFlags(repo, isInterconnect: true);
+    final ChannelSyncFlags cloud =
+        await resolveChannelSyncFlags(repo, isInterconnect: false);
+
+    expect(cloud.syncStats, isFalse);
+    expect(cloud.syncFavorites, isFalse, reason: '云侧两族仍同源，行为逐字节不变');
+    expect(ic.syncStats, isTrue, reason: '互联读自己的键，默认开启');
+    expect(ic.syncFavorites, isTrue);
+  });
+
+  test('关互联的共享统计不牵连共享收藏，也不牵连云通道', () async {
+    await repo.setInterconnectSyncStatsEnabled(false);
+
+    final ChannelSyncFlags ic =
+        await resolveChannelSyncFlags(repo, isInterconnect: true);
+    final ChannelSyncFlags cloud =
+        await resolveChannelSyncFlags(repo, isInterconnect: false);
+
+    expect(ic.syncStats, isFalse);
+    expect(ic.syncFavorites, isTrue, reason: '两个开关互相独立');
+    expect(cloud.syncStats, isTrue, reason: '云通道读 sync_stats_enabled，默认开启');
   });
 }

@@ -3621,5 +3621,11 @@
   "module_extension_label": "Browser extension",
   "onboarding_feature_books": "Novel library",
   "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
-  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)"
+  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)",
+  "interconnect_share_statistics": "Share statistics",
+  "interconnect_share_statistics_hint": "Reading and watching time, character counts, lookup and mining counters",
+  "interconnect_share_favorites": "Share favorites",
+  "interconnect_share_favorites_hint": "Favorite words and sentences, including un-favoriting",
+  "interconnect_share_section": "Share with paired devices",
+  "interconnect_share_section_footer": "These are merged both ways with the paired device and are on by default. Turning one off stops both sending and receiving it."
 }

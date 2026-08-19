@@ -493,6 +493,45 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
+      // 与已配对设备共享：统计 + 收藏夹的双向合并开关。刻意**不并进上面的「上传到
+      // 互联对端」区块**——那一区是纯 OUTBOUND 的重内容文件、脚注向用户承诺「默认
+      // 全部关闭」；这两项是轻量个人数据、双向合并、且默认开启（拆开关前它们本来就
+      // 在跟着云备份的「同步统计」无条件流动，只是用户看不见也关不掉）。混在一起会
+      // 让那句脚注当场变成假话。
+      SettingsSection(
+        title: t.interconnect_share_section,
+        footer: t.interconnect_share_section_footer,
+        visible: (SettingsContext ctx) =>
+            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'interconnect.share_statistics',
+            title: t.interconnect_share_statistics,
+            subtitle: t.interconnect_share_statistics_hint,
+            icon: Icons.bar_chart_outlined,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncStats,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncStats = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncStatsEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.share_favorites',
+            title: t.interconnect_share_favorites,
+            subtitle: t.interconnect_share_favorites_hint,
+            icon: Icons.star_outline,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncFavorites,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncFavorites = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setInterconnectSyncFavoritesEnabled(value);
+            },
+          ),
+        ],
+      ),
       // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色
       // 讲得通（host 没有「对端」可交），故与上面的上传区同门控——互联启用且本机不在
       // host 模式。
@@ -667,6 +706,10 @@ class _SyncSettingsState {
   bool interconnectSyncDictionary = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
+  // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
+  // 由云备份 syncStats 无条件代管时的既有行为。
+  bool interconnectSyncStats = true;
+  bool interconnectSyncFavorites = true;
   // apikey 同步设定重设计（2026-08-17）：service-config（host 的外部服务 API key）
   // 接收开关。默认 true = 既有行为；此前这条通道无 UI 无开关，用户不可见也关不掉。
   bool interconnectServiceConfigSync = true;
@@ -756,6 +799,9 @@ class _SyncSettingsState {
           await _repo.isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles =
           await _repo.isInterconnectSyncVideoFilesEnabled();
+      interconnectSyncStats = await _repo.isInterconnectSyncStatsEnabled();
+      interconnectSyncFavorites =
+          await _repo.isInterconnectSyncFavoritesEnabled();
       interconnectServiceConfigSync =
           await _repo.isInterconnectServiceConfigSyncEnabled();
       serverEnabled = await _repo.isServerEnabled();

@@ -202,12 +202,24 @@ class AggregateSyncService {
   ///
   /// No schema change; the snapshot is a transient JSON payload, local state
   /// lives in the existing statistic tables + favorite_sentences pref.
+  ///
+  /// [shareStats] / [shareFavorites] 是用户在互联设置里的「共享统计 / 共享收藏夹」
+  /// 许可（两者默认 true = 既有行为）。裁剪在**本方法内**做，而不是交给调用方：
+  /// 上行有两条路径（老 host 退化推送 + 正常合并后推送）、下行有一条，任何一条漏
+  /// 裁都等于开关没关。与 [filterTombstoned] 同一条理由——让不变式在每条路径上都
+  /// 成立，而不是靠推理。下行同样裁剪：只停上传会让对端数据继续折进本地，用户看到
+  /// 的仍是「关了还在同步」。两者皆 false 时整轮 no-op（连请求都不发）。
   Future<void> syncOverClient({
     required Future<Object?> Function() fetchRemote,
     required Future<void> Function(Object json) pushMerged,
+    bool shareStats = true,
+    bool shareFavorites = true,
   }) async {
+    if (!shareStats && !shareFavorites) return;
+
     // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot = await materializeLocalSnapshot();
+    final AggregateSnapshot localSnapshot = (await materializeLocalSnapshot())
+        .select(stats: shareStats, favorites: shareFavorites);
 
     // 2) Fetch the host's snapshot. null => old host without the endpoint:
     //    degrade to push-only (still share our state; skip the local fold).
@@ -225,7 +237,8 @@ class AggregateSyncService {
 
     // 3) Fold the host snapshot into the local one through the same pure merge
     //    the cloud channel uses (single source of truth; commutative/idempotent).
-    final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson);
+    final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson)
+        .select(stats: shareStats, favorites: shareFavorites);
     final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).

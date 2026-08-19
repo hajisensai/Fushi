@@ -224,6 +224,7 @@ Future<List<SyncChannel>> enabledSyncChannelBackends(
 class ChannelSyncFlags {
   const ChannelSyncFlags({
     required this.syncStats,
+    required this.syncFavorites,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncAudioBookFiles,
@@ -232,6 +233,11 @@ class ChannelSyncFlags {
     required this.syncLocalAudio,
   });
   final bool syncStats;
+
+  /// 收藏词 / 收藏句是否参与本通道的聚合同步。云通道恒等于 [syncStats]（云侧
+  /// 聚合快照里统计与收藏本来就由同一个开关代管，拆开会改变云备份的既有行为）；
+  /// 互联通道读自己的 `interconnect_sync_favorites`。
+  final bool syncFavorites;
   final bool syncAudioBookPosition;
   final bool syncContent;
   final bool syncAudioBookFiles;
@@ -243,7 +249,9 @@ class ChannelSyncFlags {
 /// 按通道解析分资产同步开关（BUG-988）。[isInterconnect]==true（互联通道）时「重内容」
 /// 四类——书籍/内容、词典、有声书文件、视频文件——读互联专属上传开关（默认 false，让
 /// 用户独立控制是否上传给互联对端，不被「启用互联连接」裹挟）；false（云备份通道）读
-/// 原共享 sync_*_enabled。位置/统计/本地音频不区分通道（轻量进度，跨设备续读是互联本意）。
+/// 原共享 sync_*_enabled。统计与收藏也已分通道（互联侧读 `interconnect_sync_stats` /
+/// `interconnect_sync_favorites`，默认 true = 拆开关前的行为）。位置/本地音频仍不区分
+/// 通道（轻量进度，跨设备续读是互联本意）。
 ///
 /// 不再 `@visibleForTesting`：`AppModel._propagateDictionaryDeleteToRemote` 是生产
 /// 消费方——「这条通道该不该同步词典」必须复用同一份分通道门控，各处重抄必漂
@@ -253,7 +261,14 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
   required bool isInterconnect,
 }) async {
   return ChannelSyncFlags(
-    syncStats: await repo.isSyncStatsEnabled(),
+    // 统计与收藏在互联通道上各有自己的开关（默认 true = 拆开关前的既有行为）；
+    // 云通道仍由 sync_stats_enabled 一把管两族，逐字节不变。
+    syncStats: isInterconnect
+        ? await repo.isInterconnectSyncStatsEnabled()
+        : await repo.isSyncStatsEnabled(),
+    syncFavorites: isInterconnect
+        ? await repo.isInterconnectSyncFavoritesEnabled()
+        : await repo.isSyncStatsEnabled(),
     syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
     syncContent: isInterconnect
         ? await repo.isInterconnectSyncContentEnabled()
@@ -332,6 +347,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     tempDir: tempDir,
     deviceId: await repo.getOrCreateDeviceId(),
     syncStats: flags.syncStats,
+    syncFavorites: flags.syncFavorites,
     syncAudioBookPosition: flags.syncAudioBookPosition,
     syncContent: flags.syncContent,
     syncAudioBookFiles: flags.syncAudioBookFiles,
@@ -897,6 +913,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
             tempDir: Directory.systemTemp,
             deviceId: await repo.getOrCreateDeviceId(),
             syncStats: false,
+            syncFavorites: false,
             syncAudioBookPosition: false,
             syncContent: false,
             syncAudioBookFiles: false,
