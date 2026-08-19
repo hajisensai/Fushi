@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
+#include <vector>
 
 #include "voice_hook_ipc.h"
 
@@ -77,6 +79,92 @@ void PrintHit(const fushi_voice_hook::LookupHitSlot* hit) {
   std::printf("  line=%s\n", line.c_str());
 }
 
+// ── 合成帧：把「呈现器能不能真的把位图显示出来」单独验穿 ─────────────────────────
+//
+// 为什么需要它：注入侧的呈现路径（引擎自己的图层 / 通用分层窗口）在真机上只有一种触发
+// 方式——host 收到 hit 后投一帧。于是没有命中源的引擎（Ren'Py / Siglus / CMVS …）根本
+// 没法验证呈现这一半，而「卡片不出现」与「host 压根没投帧」在现象上完全同形。
+// 本模式扮演 host 投一帧**图案已知**的位图：显示出来就说明呈现器这半是通的，与引擎侧的
+// 命中源无关。
+//
+// 写序严格照抄生产 host（voice_hook_reader.cpp 的 WriteLookupFrame）：
+//   ready=0 → 像素 → 元数据 → seq → ready=1 → 推进 lookup_frame_count_written。
+// 槽下标同样照契约取「**帧发布序** % lookup_frame_count」，元数据与像素块共用一个下标。
+bool PresentTestFrame(SharedHeader* header, int32_t anchor_x, int32_t anchor_y,
+                      uint32_t width, uint32_t height) {
+  const uint32_t frame_count = header->lookup_frame_count;
+  if (frame_count == 0) return false;
+  const uint32_t pitch = width * 4u;
+  const uint64_t bytes = static_cast<uint64_t>(pitch) * height;
+  if (bytes > header->lookup_bitmap_bytes) {
+    std::fprintf(stderr, "test frame %ux%u exceeds bitmap budget %u\n", width,
+                 height, header->lookup_bitmap_bytes);
+    return false;
+  }
+
+  const uint64_t publish_seq =
+      static_cast<uint64_t>(InterlockedCompareExchange64(
+          reinterpret_cast<volatile LONG64*>(
+              &header->lookup_frame_count_written),
+          0, 0)) +
+      1u;
+  const uint32_t index = static_cast<uint32_t>(publish_seq % frame_count);
+  fushi_voice_hook::LookupFrame* frame =
+      fushi_voice_hook::LookupFrameAt(header, index);
+  uint8_t* dst = fushi_voice_hook::LookupBitmapAt(header, index);
+  if (frame == nullptr || dst == nullptr) return false;
+
+  // 图案刻意做成一眼可辨且不可能被别的东西碰巧画出来：品红不透明边框 + 半透明青色
+  // 填充 + 一条对角线。alpha 非预乘（契约规定），呈现器负责预乘。
+  std::vector<uint8_t> pixels(static_cast<size_t>(bytes));
+  for (uint32_t y = 0; y < height; ++y) {
+    uint8_t* row = pixels.data() + static_cast<size_t>(y) * pitch;
+    for (uint32_t x = 0; x < width; ++x) {
+      const bool border = x < 4 || y < 4 || x + 4 >= width || y + 4 >= height;
+      const bool diagonal = (x * height) / (width == 0 ? 1 : width) == y;
+      uint8_t b = 200, g = 180, r = 0, a = 190;  // 半透明青
+      if (diagonal) { b = 0; g = 255; r = 255; a = 255; }
+      if (border) { b = 255; g = 0; r = 255; a = 255; }  // 品红边框
+      row[x * 4 + 0] = b;
+      row[x * 4 + 1] = g;
+      row[x * 4 + 2] = r;
+      row[x * 4 + 3] = a;
+    }
+  }
+
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 0);
+  memcpy(dst, pixels.data(), static_cast<size_t>(bytes));
+  frame->width = width;
+  frame->height = height;
+  frame->pitch = pitch;
+  frame->anchor_x = anchor_x;
+  frame->anchor_y = anchor_y;
+  frame->highlight_start = 0;
+  frame->highlight_len = 0;
+  frame->byte_len = static_cast<uint32_t>(bytes);
+  // hit_seq=0：通用呈现器不做命中围栏；引擎适配器那条会用 ShouldApplyLookupFrame 判
+  // `hit_seq == 当前 submit 序`，尚无命中时也正好是 0，两条路径都接受这一帧。
+  frame->hit_seq = 0;
+  frame->flags = 0;
+  frame->reserved = 0;
+  frame->reserved2 = 0;
+  if (!fushi_voice_hook::IsLookupFrameSane(header, frame)) {
+    std::fprintf(stderr, "staged test frame failed IsLookupFrameSane\n");
+    return false;
+  }
+  InterlockedExchange64(reinterpret_cast<volatile LONG64*>(&frame->seq),
+                        static_cast<LONG64>(publish_seq));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&frame->ready), 1);
+  InterlockedExchange64(
+      reinterpret_cast<volatile LONG64*>(&header->lookup_frame_count_written),
+      static_cast<LONG64>(publish_seq));
+  std::printf(
+      "test frame published: seq=%llu slot=%u %ux%u pitch=%u anchor=(%d,%d)\n",
+      static_cast<unsigned long long>(publish_seq), index, width, height, pitch,
+      anchor_x, anchor_y);
+  return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -90,8 +178,10 @@ int main(int argc, char** argv) {
   int rounds = argc >= 3 ? std::atoi(argv[2]) : 60;
   int interval = argc >= 4 ? std::atoi(argv[3]) : 500;
   bool enable = true;
+  bool test_frame = false;
   for (int i = 2; i < argc; ++i) {
     if (std::strcmp(argv[i], "--no-enable") == 0) enable = false;
+    if (std::strcmp(argv[i], "--present-test-frame") == 0) test_frame = true;
   }
   if (rounds <= 0) rounds = 1;
   if (interval < 50) interval = 50;
@@ -130,6 +220,11 @@ int main(int argc, char** argv) {
   if (enable) {
     header->lookup_enabled = 1;
     std::printf("lookup_enabled <- 1\n");
+  }
+
+  if (test_frame) {
+    // 先投一帧再进轮询循环：轮询里能看着 lookup_diag 的 frame_presented 位亮起来。
+    PresentTestFrame(header, 40, 40, 480, 200);
   }
 
   const fushi_voice_hook::LookupHitSlot* hit =

@@ -42,7 +42,9 @@ struct LookupOverlayState {
   HWND owner = nullptr;
   HANDLE thread = nullptr;
   DWORD thread_id = 0;
-  uint64_t last_frame_seq = 0;
+  // 已经处理过的**帧发布序**（LookupFrame::seq），不是 lookup_frame_count_written。
+  // 这两个数曾被混为一谈，代价见 PollOverlayFrame 里的长注释。
+  uint64_t last_presented_seq = 0;
   fushi_voice_hook::OverlayRect card;
   bool visible = false;
   bool tracking_mouse = false;
@@ -231,9 +233,35 @@ void PollOverlayFrame() {
     HideOverlay();
     return;
   }
-  const uint64_t written =
-      ReadOverlaySharedU64(&g_header->lookup_frame_count_written);
-  if (written == g_overlay.last_frame_seq) {
+  const uint32_t frame_count = g_header->lookup_frame_count;
+  if (frame_count == 0) return;
+
+  // 选帧：**扫全部槽、按帧自己的发布序挑最新的一张**，绝不从 lookup_frame_count_written
+  // 反推槽下标。
+  //
+  // 为什么这条必须写死：槽下标是契约的一部分——host 用的是 `帧发布序 % lookup_frame_count`
+  // （voice_hook_reader.cpp 的 WriteLookupFrame，注释里明写"两处共用同一个 index"）。
+  // 而 written 与发布序虽然同步递增，`(written - 1) % frame_count` 恒好比它小 1：
+  // host 写槽 seq%2，这里就读槽 (seq-1)%2 —— 双缓冲下**永远读的是另一个槽**，
+  // 第一帧读到的是全零槽（ready=0）直接 return，于是卡片一辈子不出现。
+  // 更毒的是这个症状与「host 压根没投帧」完全同形，真机上分不开（契约头的注释就是
+  // 为这件事写的）。KiriKiri 那条路径从来是扫全槽按 seq 选，所以躲过了这一劫。
+  fushi_voice_hook::LookupFrame* frame = nullptr;
+  uint32_t frame_index = 0;
+  uint64_t seq_before = 0;
+  for (uint32_t i = 0; i < frame_count; ++i) {
+    fushi_voice_hook::LookupFrame* candidate =
+        fushi_voice_hook::LookupFrameAt(g_header, i);
+    if (candidate == nullptr) continue;
+    if (candidate->ready == 0) continue;  // host 正在写这一槽
+    const uint64_t seq = ReadOverlaySharedU64(&candidate->seq);
+    if (seq <= g_overlay.last_presented_seq) continue;  // 处理过了
+    if (seq <= seq_before) continue;                    // 已有更新的候选
+    frame = candidate;
+    frame_index = i;
+    seq_before = seq;
+  }
+  if (frame == nullptr) {
     // 没有新帧。窗口跟随：游戏窗口被拖动/缩放时卡片要跟着走，否则它会留在屏幕原地。
     if (g_overlay.visible) {
       const fushi_voice_hook::OverlayRect client = OwnerClientRect(g_overlay.owner);
@@ -244,29 +272,19 @@ void PollOverlayFrame() {
     return;
   }
 
-  const uint32_t frame_count = g_header->lookup_frame_count;
-  if (frame_count == 0) return;
-  fushi_voice_hook::LookupFrame* frame =
-      fushi_voice_hook::LookupFrameAt(g_header, (written - 1) % frame_count);
-  if (frame == nullptr) return;
-  const uint64_t seq_before = ReadOverlaySharedU64(&frame->seq);
-  if (frame->ready == 0) return;  // host 正在写，下一轮再来
-
   if ((frame->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
-    g_overlay.last_frame_seq = written;
+    g_overlay.last_presented_seq = seq_before;
     HideOverlay();
     return;
   }
   // 跨进程不可信的 width/height/pitch 必须先过这道闸门再谈拷贝。
   if (!fushi_voice_hook::IsLookupFrameSane(g_header, frame)) {
-    g_overlay.last_frame_seq = written;
-    if (g_header != nullptr) {
-      g_header->lookup_diag |= fushi_voice_hook::kLookupDiagFrameRejected;
-    }
+    g_overlay.last_presented_seq = seq_before;
+    g_header->lookup_diag |= fushi_voice_hook::kLookupDiagFrameRejected;
     return;
   }
   const uint8_t* pixels =
-      fushi_voice_hook::LookupBitmapAt(g_header, (written - 1) % frame_count);
+      fushi_voice_hook::LookupBitmapAt(g_header, frame_index);
   if (pixels == nullptr) return;
 
   const uint32_t width = frame->width;
@@ -287,7 +305,7 @@ void PollOverlayFrame() {
   const fushi_voice_hook::OverlayRect card = fushi_voice_hook::ComputeOverlayRect(
       client, anchor_x, anchor_y, static_cast<int32_t>(width),
       static_cast<int32_t>(height));
-  g_overlay.last_frame_seq = written;
+  g_overlay.last_presented_seq = seq_before;
   if (card.empty()) {
     HideOverlay();
     return;

@@ -62,6 +62,7 @@ STOP_CALL = "StopLookupOverlay"
 CLAIM_CALL = "ClaimLookupPresenter"
 CLAIM_FLAG = "g_lookup_presenter_claimed"
 FRAME_COUNTER = "lookup_frame_count_written"
+FRAME_ACCESS = "LookupFrameAt("
 
 
 def strip_comments(text: str) -> str:
@@ -181,12 +182,42 @@ def find_missing_per_frame_claim_check(overlay_text: str) -> list[str]:
     claim_at = body.find(CLAIM_FLAG)
     if claim_at < 0:
         return ["PollOverlayFrame 没有复查 " + CLAIM_FLAG + "：认领后仍会继续贴帧"]
-    frame_at = body.find(FRAME_COUNTER)
+    # 锚点取「第一次真正去碰帧」的调用，而不是某个计数器名字——计数器可以被换掉
+    # （规则 8 就把 lookup_frame_count_written 整个赶出了这个函数），锚在它身上
+    # 会让本规则在下一次重构里静静失效。
+    frame_at = body.find(FRAME_ACCESS)
     if frame_at >= 0 and claim_at > frame_at:
         return [
             "PollOverlayFrame 的认领复查排在读帧之后：让位之前已经把这帧读走了"
         ]
     return []
+
+
+def find_slot_index_from_write_counter(overlay_text: str) -> list[str]:
+    """规则 8：选帧必须扫全部槽按帧自己的发布序挑，**不得**从写入计数器反推槽下标。
+
+    槽下标是契约的一部分：host 用的是「帧发布序 % lookup_frame_count」
+    （voice_hook_reader.cpp 的 WriteLookupFrame，元数据与像素块共用同一个 index）。
+    `lookup_frame_count_written` 虽然与发布序同步递增，但 `(written - 1) % frame_count`
+    恒比它小 1——host 写槽 seq%2，这里就读槽 (seq-1)%2，双缓冲下**永远读的是另一个槽**，
+    第一帧读到全零槽（ready=0）直接 return，卡片一辈子不出现。
+    真机实测（Ren'Py / Sakura Swim Club，2026-08-19）：改成扫全槽之后
+    lookup_diag 才第一次亮起 frame_presented。
+    """
+    body = _function_body(strip_comments(overlay_text), "void PollOverlayFrame()")
+    if not body:
+        return ["找不到 PollOverlayFrame 的函数体"]
+    faults = []
+    if FRAME_COUNTER in body:
+        faults.append(
+            f"PollOverlayFrame 里出现 {FRAME_COUNTER}："
+            "写入计数器既不是槽下标也不是本呈现器的判新依据，用它必然读错槽"
+        )
+    if "for (" not in body:
+        faults.append(
+            "PollOverlayFrame 没有扫描循环：选帧必须遍历 lookup_frame_count 个槽"
+        )
+    return faults
 
 
 def find_includes_in_overlay_inc(overlay_text: str) -> list[str]:
@@ -235,6 +266,9 @@ class RealSourceTest(unittest.TestCase):
 
     def test_frame_poll_rechecks_the_claim(self) -> None:
         self.assertEqual([], find_missing_per_frame_claim_check(self.overlay))
+
+    def test_frame_poll_scans_slots_instead_of_deriving_index(self) -> None:
+        self.assertEqual([], find_slot_index_from_write_counter(self.overlay))
 
 
 # 合成脏输入。断言的字面量都在这里，真文件改动不会让下面的变异测试失去意义。
@@ -328,9 +362,9 @@ void PollOverlayFrame() {
 
 DIRTY_POLL_CLAIM_CHECK_TOO_LATE = """
 void PollOverlayFrame() {
-  const uint64_t written = Read(&g_header->lookup_frame_count_written);
+  LookupFrameAt(g_header, 0);
   if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
-  Present(written);
+  Present();
 }
 """
 
@@ -350,6 +384,31 @@ void PollOverlayFrame() {
   }
   const uint64_t written = Read(&g_header->lookup_frame_count_written);
   Present(written);
+}
+"""
+
+
+DIRTY_POLL_INDEX_FROM_WRITE_COUNTER = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  const uint64_t written = Read(&g_header->lookup_frame_count_written);
+  LookupFrameAt(g_header, (written - 1) % frame_count);
+}
+"""
+
+DIRTY_POLL_NO_SCAN_LOOP = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  LookupFrameAt(g_header, 0);
+}
+"""
+
+CLEAN_POLL_SCAN = """
+void PollOverlayFrame() {
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) return;
+  for (uint32_t i = 0; i < frame_count; ++i) {
+    LookupFrameAt(g_header, i);
+  }
 }
 """
 
@@ -424,6 +483,19 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_clean_poll_stays_green(self) -> None:
         self.assertEqual([], find_missing_per_frame_claim_check(CLEAN_POLL))
+
+    def test_slot_index_from_write_counter_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_slot_index_from_write_counter(DIRTY_POLL_INDEX_FROM_WRITE_COUNTER)
+        )
+
+    def test_missing_scan_loop_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_slot_index_from_write_counter(DIRTY_POLL_NO_SCAN_LOOP)
+        )
+
+    def test_scanning_poll_stays_green(self) -> None:
+        self.assertEqual([], find_slot_index_from_write_counter(CLEAN_POLL_SCAN))
 
     def test_brace_matcher_takes_the_whole_body(self) -> None:
         body = _function_body("void PollOverlayFrame() { a(); { b(); } c(); } tail", "void PollOverlayFrame()")
