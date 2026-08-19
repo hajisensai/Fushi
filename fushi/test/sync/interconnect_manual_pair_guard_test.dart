@@ -36,17 +36,24 @@ void main() {
     );
   });
 
-  test('手动配对先跑 reachability 探测（scope ①：fetchFushiPing）', () {
+  test('手动配对先跑 reachability 探测（scope ①：probeFushiPing）', () {
     expect(
       source.contains('Future<void> _attemptManualPair(String rawUrl) async {'),
       isTrue,
       reason: '手动 IP 配对编排方法 _attemptManualPair 丢失',
     );
-    // 探测走已有的 /api/ping 客户端 fetchFushiPing——配对前先确认可达 + 是 hibiki。
+    // 探测走 /api/ping 客户端——配对前先确认可达 + 是 hibiki。BUG-1741 起必须用
+    // 带失败分型的 probeFushiPing：丢原因的 fetchFushiPing 会让 UI 只能说一句
+    // 「此地址未找到 Fushi 设备」，把证书不符/超时/端口没人全说成同一件事。
+    expect(
+      source.contains('await probeFushiPing('),
+      isTrue,
+      reason: '手动 IP 配对未先跑 reachability 探测（probeFushiPing）',
+    );
     expect(
       source.contains('await fetchFushiPing('),
-      isTrue,
-      reason: '手动 IP 配对未先跑 reachability 探测（fetchFushiPing）',
+      isFalse,
+      reason: '手动配对退回丢原因的 fetchFushiPing，报错文案会重新变得误导',
     );
     // 探测失败 / 非 hibiki 必须有 UI 反馈（向后兼容：仍保留地址供手粘 token）。
     expect(

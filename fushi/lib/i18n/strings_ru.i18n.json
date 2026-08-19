@@ -3621,5 +3621,8 @@
   "module_extension_label": "Browser extension",
   "onboarding_feature_books": "Novel library",
   "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
-  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)"
+  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)",
+  "sync_pair_invalid_url": "Invalid address format",
+  "sync_pair_peer_requires_https": "This device only accepts HTTPS. Use an https:// address.",
+  "sync_pair_peer_not_https": "The peer isn't using HTTPS on this port. Use an http:// address."
 }
