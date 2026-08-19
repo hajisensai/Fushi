@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1532 条。点号进各自文件。
+> 共 1534 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1737](bugs/BUG-1737-popup-dict-masonry-dead-branch.md) | ✅ | ✅ | 查词弹窗词典方框在支持原生masonry的WebKit上塌成行对齐grid |
+| [BUG-1736](bugs/BUG-1736-audiobook-stop-deadlock-darwin.md) | ✅ | ✅ | 播放中退出有声书音频永不停止且无法手动关闭 |
 | [BUG-1650](bugs/BUG-1650-sync-pulled-progress-stale-until-restart.md) | ✅ | ✅ | 同步拉回更远进度后首页继续与书架不刷新须重启 |
 | [BUG-1649](bugs/BUG-1649-manga-folder-epub-import.md) | ✅ | ✅ | 漫画页选文件夹导入：目录内是 epub 卷时报 Manga image folder has no pages |
 | [BUG-1648](bugs/BUG-1648-embedded-torrent-idle-discovery.md) | ✅ | ✅ | 已完成任务恢复后 DHT 常驻导致网关周期性高延迟 |
