@@ -721,6 +721,10 @@ TVPRemoveContinuousEventHookStub_t g_lookup_remove_continuous = nullptr;
 ITVPFunctionExporter* g_lookup_exporter = nullptr;
 TjsVariantString* g_lookup_bootstrap_script = nullptr;
 volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 3=done
+// HookWorker 只登记"该装了"这个意图；真正碰引擎的安装动作只在引擎主线程上跑 (BUG-1724)。
+volatile LONG g_lookup_install_requested = 0;
+// 拥有游戏顶层窗口的线程 id，0 = 还没解析出来（窗口尚未建立）。
+volatile LONG g_lookup_engine_main_tid = 0;
 
 // TextRender 之外的捕获路径（Layer.drawText / MessageLayer.processCh）只在换游戏、
 // TextRender 一条都不命中时才有诊断价值。运行日志已证伪它们在本样本上的作用，故默认
@@ -5307,13 +5311,67 @@ bool QueryKirikiriNativeLookupFunctions(ITVPFunctionExporter* exporter,
   }
 }
 
-// 幂等安装。`lookup_enabled==0` 时**一个 hook 都不装**，因此这里既是首装点也是重试点：
-// 用户在游戏起来之后才打开查词是常态，而 exporter 只在 V2Link / exe 直取那一瞬间到手。
+// 引擎主线程 = 拥有游戏顶层窗口的线程。只解析一次并缓存。
+//
+// 为什么需要它：安装路径要调 TJSAllocVariantString（从 TJS 全局变体字符串池分配）和
+// TVPAddContinuousEventHook（写引擎每帧遍历的回调容器）。这两样在 KiriKiri 里都只归
+// 主线程，没有任何内部同步。窗口还没建出来时返回 0，安装据此**失败关闭**——宁可晚装，
+// 也不在引擎自身还没把窗口/绘制设备立起来时去动它 (BUG-1724)。
+DWORD ResolveKirikiriEngineMainThreadId() {
+  const LONG cached = InterlockedCompareExchange(&g_lookup_engine_main_tid, 0, 0);
+  if (cached != 0) return static_cast<DWORD>(cached);
+
+  struct Finder {
+    DWORD pid;
+    DWORD tid;
+  } finder = {GetCurrentProcessId(), 0};
+  EnumWindows(
+      [](HWND window, LPARAM param) -> BOOL {
+        Finder* self = reinterpret_cast<Finder*>(param);
+        DWORD pid = 0;
+        const DWORD tid = GetWindowThreadProcessId(window, &pid);
+        if (pid != self->pid) return TRUE;
+        if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;  // 顶层窗口才算
+        if (!IsWindowVisible(window)) return TRUE;
+        self->tid = tid;
+        return FALSE;
+      },
+      reinterpret_cast<LPARAM>(&finder));
+  if (finder.tid == 0) return 0;
+  InterlockedCompareExchange(&g_lookup_engine_main_tid,
+                             static_cast<LONG>(finder.tid), 0);
+  return static_cast<DWORD>(
+      InterlockedCompareExchange(&g_lookup_engine_main_tid, 0, 0));
+}
+
+// HookWorker 侧的**意图登记**。这里一个引擎 API 都不能调。
+//
+// 原来这个函数直接在 HookWorker 上跑完整个安装（查导出表 → TJSAllocVariantString →
+// TVPAddContinuousEventHook）。KiriKiri 的 TJS 堆和连续事件回调容器都是主线程独占、
+// 无同步的，主线程每帧都在遍历/分配，于是 worker 的写入与之并发——真机表现为随机
+// 时刻在引擎内部（实测落点 tTVPBasicDrawDevice）虚调用一个读成 NULL 的成员指针，
+// 游戏弹 KiriKiri 的 "Fatal Error / Access Violation" (BUG-1724)。
+// 真正的安装改由 RunKirikiriLookupInstallOnMainThread 在主线程接缝上执行。
 void PollKirikiriLookupInstall() {
   if (g_stop || g_lookup_exporter == nullptr) return;
   if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
   if (LookupEnabledNow() == 0) return;
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
+  InterlockedExchange(&g_lookup_install_requested, 1);
+}
+
+// 主线程接缝上的真正安装。调用点必须是引擎自己在主线程上调进来的 detour
+// （TVPCreateIStream / TVPCreateStream / V2Link），并在这里再次核对线程身份：
+// KiriKiri 也会在后台线程上开流（声音流式读取），只靠"在 detour 里"并不足以断定主线程。
+void RunKirikiriLookupInstallOnMainThread() {
+  if (g_stop || g_lookup_exporter == nullptr) return;
+  if (InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0) return;
+  if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
+  if (LookupEnabledNow() == 0) return;
+  if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
+
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
   const char* names[] = {
       "tTJSVariantString * ::TJSAllocVariantString(const tjs_char *)",
@@ -5689,6 +5747,9 @@ IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) 
   if (g_header != nullptr) {
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
+  // 引擎在主线程上开流 = 一个现成的主线程接缝。安装本身还会自查线程身份，
+  // 因为 KiriKiri 也会在后台线程开流 (BUG-1724)。
+  RunKirikiriLookupInstallOnMainThread();
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
@@ -5712,6 +5773,7 @@ TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint3
   if (g_header != nullptr) {
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
+  RunKirikiriLookupInstallOnMainThread();  // 同上：主线程接缝 (BUG-1724)
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
@@ -5851,7 +5913,9 @@ HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
   }
   const HRESULT result = orig != nullptr ? orig(exporter) : S_OK;
   // 原插件的 V2Link 已完成后才登记连续帧回调；真正执行 TJS 还会再等到下一次引擎事件循环。
+  // V2Link 由引擎在主线程的 Plugins.link 栈上调进来，所以这里也是合法的安装接缝。
   InstallKirikiriLookupSensor(exporter);
+  RunKirikiriLookupInstallOnMainThread();
   return result;
 }
 
