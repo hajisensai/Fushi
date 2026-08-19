@@ -323,4 +323,62 @@ void main() {
       expect(nextEpisodeAfterLatestPlayed(members), isNull);
     });
   });
+
+  // BUG-1731：锚点输入的「最近观看时刻」必须能回落行级 lastPlayedAt（远端回灌
+  // 只写它、不产生本机统计行），否则子端看完的集数推不动 host 的下一集。
+  group('effectiveWatchedAtMs (BUG-1731)', () {
+    test('无统计行时回落行级 lastPlayedAt', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: 5000),
+        5000,
+      );
+    });
+
+    test('统计行较新时仍以统计为准（本机行为不变）', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 9000, lastPlayedAt: 5000),
+        9000,
+      );
+    });
+
+    test('行级时刻较新时取行级（远端后来又看了该集）', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 5000, lastPlayedAt: 9000),
+        9000,
+      );
+    });
+
+    test('两者皆无 → 0（没看过）', () {
+      expect(
+        effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: null),
+        0,
+      );
+    });
+
+    test('端到端形状：13 集本机看过、14/15 只有远端回灌时刻 → 锚点 15、下一集 16', () {
+      // 16 集合集：index 12 = 第 13 集（本机统计 t13），index 13/14 = 第 14/15 集
+      // （无统计行，只有远端回灌的 lastPlayedAt，t14 < t15），其余没看过。
+      const int t13 = 1000;
+      const int t14 = 2000;
+      const int t15 = 3000;
+      final List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        for (int i = 0; i < 16; i++)
+          VideoSeriesPlaybackState(
+            lastWatchedAtMs: switch (i) {
+              12 =>
+                effectiveWatchedAtMs(statsWatchedAtMs: t13, lastPlayedAt: t13),
+              13 =>
+                effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: t14),
+              14 =>
+                effectiveWatchedAtMs(statsWatchedAtMs: 0, lastPlayedAt: t15),
+              _ => 0,
+            },
+            positionMs: i == 12 || i == 13 || i == 14 ? 1200000 : 0,
+            completed: false,
+          ),
+      ];
+      expect(latestPlayedSeriesIndex(members), 14, reason: '锚点 = 第 15 集');
+      expect(nextEpisodeAfterLatestPlayed(members), 15, reason: '下一集 = 第 16 集');
+    });
+  });
 }

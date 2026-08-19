@@ -3015,10 +3015,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       <VideoSeriesPlaybackState>[
         for (final VideoBookRow member in members)
           VideoSeriesPlaybackState(
-            lastWatchedAtMs: (_watchAtByUid[member.bookUid] ??
-                        _legacyWatchAtByTitle[member.title])
-                    ?.millisecondsSinceEpoch ??
-                0,
+            // BUG-1731：统计行只记本机播放；互联子端回灌的进度只落行级
+            // lastPlayedAt。取较大者，锚点才跟得上对端看到的集数。
+            lastWatchedAtMs: effectiveWatchedAtMs(
+              statsWatchedAtMs: (_watchAtByUid[member.bookUid] ??
+                          _legacyWatchAtByTitle[member.title])
+                      ?.millisecondsSinceEpoch ??
+                  0,
+              lastPlayedAt: member.lastPlayedAt,
+            ),
             positionMs: member.lastPositionMs,
             completed: member.completedAt != null,
           ),
@@ -3057,10 +3062,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   int _slotWatchedAtMs(_VideoSlot slot) {
     final VideoBookRow? local = slot.local;
     if (local != null) {
-      return (_watchAtByUid[local.bookUid] ??
-                  _legacyWatchAtByTitle[local.title])
-              ?.millisecondsSinceEpoch ??
-          0;
+      // BUG-1731：与 [_seriesPlaybackStates] 同口径——统计行缺失/陈旧时回落
+      // 行级 lastPlayedAt（远端回灌只写它）。
+      return effectiveWatchedAtMs(
+        statsWatchedAtMs:
+            (_watchAtByUid[local.bookUid] ?? _legacyWatchAtByTitle[local.title])
+                    ?.millisecondsSinceEpoch ??
+                0,
+        lastPlayedAt: local.lastPlayedAt,
+      );
     }
     return slot.remote!.positionUpdatedAtMs;
   }

@@ -768,6 +768,98 @@ void main() {
     });
   });
 
+  // ── putVideoPosition 镜像写 VideoBooks 行（BUG-1731）──────────────────────────
+  //
+  // prefs 键空间只被「下发清单给子端」消费；host 自己的继续观看/下一集读的是
+  // VideoBooks.lastPositionMs / lastPlayedAt。子端 PUT 上报后必须写穿行，且
+  // lastPlayedAt 用对端 updatedAtMs（不是 now）。
+  group('putVideoPosition mirrors VideoBooks row (BUG-1731)', () {
+    const int importedMs = 1700000000000;
+
+    Future<void> seedRow(String uid) => db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: uid,
+            videoPath: '/tmp/$uid.mp4',
+            importedAt: const Value(importedMs),
+          ),
+        );
+
+    test('子端上报较新进度：行 lastPositionMs/lastPlayedAt 前进，时刻=对端戳', () async {
+      await seedRow('video/ep14');
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      const int peerAt = importedMs + 86400000;
+      await svc.putVideoPosition('video/ep14', 1200000, peerAt);
+
+      final VideoBookRow? row = await db.getVideoBookByBookUid('video/ep14');
+      expect(row!.lastPositionMs, 1200000);
+      expect(row.lastPlayedAt, peerAt,
+          reason: 'playedAt 必须用对端 updatedAtMs（不是 now），否则旧进度会钉死续播锚点');
+    });
+
+    test('host 本机行进度较旧时被对端推进（用户场景：手机看完后续集数）', () async {
+      await seedRow('video/ep15');
+      // host 本机曾播过一点（行级进度 + 本机时刻）。
+      await db.updateVideoBookPosition('video/ep15', 300000,
+          playedAt: importedMs + 1000);
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      const int peerAt = importedMs + 7200000;
+      await svc.putVideoPosition('video/ep15', 1400000, peerAt);
+
+      final VideoBookRow? row = await db.getVideoBookByBookUid('video/ep15');
+      expect(row!.lastPositionMs, 1400000);
+      expect(row.lastPlayedAt, peerAt);
+    });
+
+    test('older 上报不回退行进度（LWW no-op 早退）', () async {
+      await seedRow('video/ep16');
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      const int newerAt = importedMs + 3600000;
+      await svc.putVideoPosition('video/ep16', 1200000, newerAt);
+      // 滞后设备旧报：时间戳更旧，位置更小——不得覆盖。
+      await svc.putVideoPosition('video/ep16', 100, newerAt - 5000);
+
+      final VideoBookRow? row = await db.getVideoBookByBookUid('video/ep16');
+      expect(row!.lastPositionMs, 1200000);
+      expect(row.lastPlayedAt, newerAt);
+    });
+
+    test('episodeIndex>0（host-playlist 单行多集）不镜像行', () async {
+      await seedRow('video/playlist-row');
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      const int peerAt = importedMs + 60000;
+      await svc.putVideoPosition('video/playlist-row', 700000, peerAt,
+          episodeIndex: 1);
+
+      // 行级 lastPositionMs 无按集语义，episodeIndex>0 只落 per-episode prefs。
+      final VideoBookRow? row =
+          await db.getVideoBookByBookUid('video/playlist-row');
+      expect(row!.lastPositionMs, 0);
+      expect(row.lastPlayedAt, isNull);
+      final ({int positionMs, int updatedAtMs}) ep1 =
+          await svc.getVideoPosition('video/playlist-row', episodeIndex: 1);
+      expect(ep1.positionMs, 700000);
+      expect(ep1.updatedAtMs, peerAt);
+    });
+
+    test('无 VideoBooks 行（流式视频）不建行、prefs 照写', () async {
+      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+
+      await svc.putVideoPosition('video/stream-only', 800000, 7000);
+
+      expect(await db.getVideoBookByBookUid('video/stream-only'), isNull,
+          reason: '流式视频绝不强建行污染书架');
+      final ({int positionMs, int updatedAtMs}) progress =
+          await svc.getVideoPosition('video/stream-only');
+      expect(progress.positionMs, 800000);
+      expect(progress.updatedAtMs, 7000);
+    });
+  });
+
   // ── importVideo / videoExists（client→host 上传落库）────────────────────────────
   group('importVideo / videoExists', () {
     test('上传视频落进 uploadedVideoRoot 并 upsert VideoBooks 行（保留扩展名）', () async {
