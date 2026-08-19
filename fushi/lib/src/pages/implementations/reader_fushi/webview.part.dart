@@ -1374,14 +1374,44 @@ install: function(C) {
   // BUG-1342：只把每个 tick 的语义方向和主轴交给 Dart。手势 session 不能存在 JS
   // document 中，因为翻章会重建 document、在同一段惯性中重置闸门。横向主轴由跨章节
   // 持久的 ReaderWheelGestureGate 聚合；纵向鼠标滚轮维持既有固定窗口节流。
+  // BUG-1745：主轴判据要带抖动余量。一次横向触摸板滑动里总有几拍
+  // |deltaY| >= |deltaX|（手指纵向漂移 / 惯性尾段轴向噪声）；用严格 > 分类会把
+  // 这些拍标成 vertical，于是它们绕过闸门直接进 _paginate，一次横滑变成
+  // 「闸门放行 1 页 + 若干漂移拍再各翻 1 页」。弹窗滚动路径（BUG-701）已经用
+  // 同一配方修过，分页路径当时漏了。
+  var PAGED_WHEEL_AXIS_MARGIN = 6;
+  // BUG-1745：触摸板 vs 鼠标滚轮。二者对「一次输入 = 翻几页」的期望完全相反：
+  // 鼠标一格就该翻一页（离散 tick），触摸板一次滑动连同惯性会喷 1~1.5 秒的 tick
+  // 流、必须聚合成一次翻页。判据只用单事件可得的量（JS 侧不能存手势状态——翻章
+  // 会重建 document，见下方注释），时间维度的聚合交给 Dart 侧跨 document 持久的
+  // ReaderWheelGestureGate。
+  function _isTrackpadWheel(e) {
+    // line / page 模式只有真实滚轮会产生。
+    if (e.deltaMode !== 0) return false;
+    var dx = Math.abs(e.deltaX);
+    var dy = Math.abs(e.deltaY);
+    // 分数像素增量是触摸板独有的。
+    if (dx % 1 !== 0 || dy % 1 !== 0) return true;
+    // 两轴同时非零 = 二维手势，滚轮给不出。
+    if (dx > 0 && dy > 0) return true;
+    // Chromium 给鼠标滚轮的 wheelDelta 恒为 120 的整数倍；触摸板不是。
+    var wd = e.wheelDeltaY;
+    if (typeof wd === 'number' && wd !== 0 && Math.abs(wd) % 120 !== 0) return true;
+    var wdx = e.wheelDeltaX;
+    if (typeof wdx === 'number' && wdx !== 0 && Math.abs(wdx) % 120 !== 0) return true;
+    return false;
+  }
   function _handlePagedWheelTick(e) {
-    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    var absX = Math.abs(e.deltaX);
+    var absY = Math.abs(e.deltaY);
+    var horizontal = absX > absY + PAGED_WHEEL_AXIS_MARGIN;
     var delta = horizontal ? e.deltaX : e.deltaY;
     if (delta === 0) return;
     e.preventDefault();
     var direction = delta > 0 ? 'forward' : 'backward';
     window.flutter_inappwebview.callHandler('onWheelPaginate', direction,
-      horizontal ? 'horizontal' : 'vertical');
+      horizontal ? 'horizontal' : 'vertical',
+      _isTrackpadWheel(e) ? 'trackpad' : 'mouse');
   }
   // END PAGED_WHEEL_GESTURE_HELPER
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
@@ -2168,6 +2198,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (args.length < 2 || _lyricsMode) return;
             final String dir = args[0] as String;
             final String axis = args[1] as String;
+            // BUG-1745：老 shell（或未来别的注入点）可能只传两个参数；缺省按
+            // 「横向即触摸板」推断，与本次改动前的行为完全一致。
+            final String pointerKind = args.length > 2
+                ? args[2] as String
+                : (axis == 'horizontal' ? 'trackpad' : 'mouse');
             final int throttleMs =
                 ReaderFushiSource.instance.wheelPageTurnInterval;
             // BUG-1380：闸门的 token 消费必须晚于「这一 tick 能不能翻页」的确认。
@@ -2175,7 +2210,15 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // token，整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
             // canTurnPage=false 时闸门只查询不认领，且仍放行到 _paginate——那里的
             // in-flight 分支要靠这些 tick 续跨章冷却窗（TODO-1229 v2）。
-            if (axis == 'horizontal' &&
+            // BUG-1745：闸门的判据从「轴」改成「输入设备」。
+            //
+            // 旧判据 `axis == 'horizontal'` 隐含假设「纵向 = 鼠标滚轮」，可
+            // macOS 触摸板上下双指滑同样是纵向：一次滑动的惯性流持续 1~1.5 秒，
+            // 全部漏过闸门、只受 _paginate 的固定 450ms 窗管，于是一次上下滑
+            // 稳定翻 3 页；用户若把「滚轮翻页间隔」调到下限 150ms 就是 10 页。
+            // 真正要区分的从来不是轴，而是「离散 tick（鼠标，一格一页）」与
+            // 「连续惯性流（触摸板，一次滑动一页）」。
+            if (pointerKind == 'trackpad' &&
                 !_pagedWheelGestureGate.shouldStartNewGesture(
                   now: DateTime.now(),
                   settleInterval: Duration(milliseconds: throttleMs),

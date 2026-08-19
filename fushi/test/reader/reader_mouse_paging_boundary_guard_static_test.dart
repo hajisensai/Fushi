@@ -186,9 +186,21 @@ void main() {
           isTrue,
           reason: '主轴须一并回传，Dart 侧才能只对横向触控板 burst 开跨章节手势闸门');
       // 主轴判据：按绝对值更大的轴取 delta，斜向 tick 不得被次轴符号带偏。
-      expect(containsCodeLine(tick, 'Math.abs(e.deltaX) > Math.abs(e.deltaY)'),
+      // BUG-1745：再加抖动余量——一次横滑里的纵向漂移拍若被判成 vertical，就会
+      // 绕过闸门直接翻页（弹窗滚动路径 BUG-701 已用同一配方修过）。
+      expect(
+          containsCodeLine(tick, 'var absX = Math.abs(e.deltaX)') &&
+              containsCodeLine(tick, 'var absY = Math.abs(e.deltaY)') &&
+              containsCodeLine(tick, 'absX > absY + PAGED_WHEEL_AXIS_MARGIN'),
           isTrue,
-          reason: '分页滚轮必须按绝对值更大的主轴判横/纵，不能任一轴为正就前进');
+          reason: '分页滚轮必须按绝对值更大的主轴判横/纵（且带抖动余量），'
+              '不能任一轴为正就前进');
+      // BUG-1745：设备类型必须一并回传。闸门的判据是「触摸板惯性流 vs 鼠标离散
+      // tick」，不是轴——纵向触摸板滑动此前完全没进闸门，一次滑翻 3 页。
+      expect(
+          containsCodeLine(tick, "_isTrackpadWheel(e) ? 'trackpad' : 'mouse'"),
+          isTrue,
+          reason: '未回传输入设备类型，纵向触摸板惯性会绕过手势闸门连翻多页');
       expect(
           containsCodeLine(
               tick, 'var delta = horizontal ? e.deltaX : e.deltaY'),
@@ -244,8 +256,13 @@ void main() {
           reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）');
       expect(containsCodeLine(body, 'wheelPageTurnInterval'), isTrue,
           reason: '滚轮 throttleMs 源是 wheelPageTurnInterval');
-      expect(containsCodeLine(body, "axis == 'horizontal'"), isTrue,
-          reason: '只有横向触控板手势进入跨章节 burst 闸门');
+      // BUG-1745：闸门判据从「轴」改成「输入设备」。旧的 axis=='horizontal' 隐含
+      // 假设「纵向 = 鼠标滚轮」，可 macOS 触摸板上下双指滑同样是纵向——整段惯性
+      // 全部漏过闸门，一次滑动稳定翻 3 页（间隔调到下限则 10 页）。
+      expect(containsCodeLine(body, "pointerKind == 'trackpad'"), isTrue,
+          reason: '触控板手势（含纵向）必须进入跨章节 burst 闸门');
+      expect(containsCodeLine(body, "axis == 'horizontal' &&"), isFalse,
+          reason: '按轴开闸门会把纵向触摸板惯性放走（BUG-1745 根因）');
       expect(
           containsCodeLine(
               body, '_pagedWheelGestureGate.shouldStartNewGesture'),

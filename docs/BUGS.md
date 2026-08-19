@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1605 条。点号进各自文件。
+> 共 1610 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1745](bugs/BUG-1745-trackpad-vertical-wheel-multi-page.md) | ✅ | ✅ | 纵向触摸板惯性绕过手势闸门，一次滑动连翻多页 |
+| [BUG-1744](bugs/BUG-1744-macos-reader-fullscreen-top-band.md) | ✅ | ✅ | macOS 阅读器全屏下顶部残留 28pt 拖拽横带 |
+| [BUG-1743](bugs/BUG-1743-vn-scroll-to-search-match-missing.md) | ✅ | ✅ | VN 缺 scrollToSearchMatch 且调用点无存在性守卫 |
+| [BUG-1742](bugs/BUG-1742-vn-non-sasayaki-audiobook-follow.md) | ✅ | ✅ | VN 模式下非 sasayaki 书的有声书自动跟随失效 |
+| [BUG-1741](bugs/BUG-1741-interconnect-pair-probe-reason-lost.md) | ✅ | ✅ | 互联配对报错文案完全误导：三层静默吞异常 + TLS host 回落 v1 死路 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |
 | [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |
