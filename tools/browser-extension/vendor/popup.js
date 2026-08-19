@@ -3475,12 +3475,26 @@ function appendNextDeferredGlossaryBlock(entryDiv) {
         state.entryIdx,
         state.dictNames.length,
     );
+    // BUG-1727：body 已被 masonry 接管（dataset.masonryCols 在）时，既有卡片全是绝对定位、
+    // body 高度被钉死——此刻 append 的静态流卡片会从 body 顶部铺开，压在旧卡片上，直到全部
+    // 词典块建完 _firePopupRendered 才重排（--dict-columns>=2 且词典>=2 时整个渲染期卡片叠成
+    // 一团）。先把新卡片藏成 absolute+hidden（不进流、不可见），交给下面合帧的 layoutMasonry
+    // 统一定位并恢复可见——中间帧彻底消失。
+    if (state.body.dataset.masonryCols) {
+        section.style.visibility = 'hidden';
+        section.style.position = 'absolute';
+        section.style.left = '0';
+        section.style.top = '0';
+    }
     state.body.appendChild(section);
     postProcessRuby(section);
     state.nextDictionaryIndex++;
     if (state.nextDictionaryIndex >= state.dictNames.length) {
         delete entryDiv.__fushiDeferredGlossaryState;
     }
+    // BUG-1727：每追加一块就合帧重排（masonryRaf 去重，同帧多次调用只跑一次 layoutMasonry），
+    // 不再等全部建完——新卡片在下一帧就落到自己的列位并可见。
+    scheduleMasonry();
     return true;
 }
 
@@ -3848,6 +3862,7 @@ function resetMasonryBody(body) {
         item.style.width = '';
         item.style.marginTop = '';
         item.style.transform = '';
+        item.style.visibility = ''; // BUG-1727：清增量预藏，回落 CSS 流布局时卡片必须可见
         delete item.dataset.masonryCol;
     });
 }
@@ -3903,6 +3918,7 @@ function layoutMasonry() {
             item.style.marginTop = '0';
             item.style.width = `${columnWidth}px`;
             item.style.transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
+            item.style.visibility = ''; // BUG-1727：增量预藏的卡片定位完成即恢复可见
             // 读 offsetHeight 前已设 width，浏览器按目标列宽回流后再量高。
             heights[c] += item.offsetHeight + gap;
         });
