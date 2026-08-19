@@ -390,8 +390,17 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   static const int _sliderRangeMs = 10000;
   static const int _clampMs = 600000;
 
-  /// TODO-1244：波形下方 cue 文本条高度（逻辑像素）。
+  /// TODO-1244：波形下方 cue 文本条**单 lane 时**的高度（逻辑像素）。BUG-1729 起条带
+  /// 高度随实际 lane 数伸缩：1 lane 保持此值观感不变，多 lane 每行 [_multiLaneHeight]。
   static const double _stripHeight = 56.0;
+
+  /// BUG-1729：文本条 lane 数封顶。时间重叠（.ass 同屏双行/注音）或像素假重叠（低缩放
+  /// 下 [_minChipWidth] 撑宽）的 cue 竖排分行；超出封顶的挤进最后一行（接受叠画，病态
+  /// ASS 特效行不把条带撑爆）。
+  static const int _maxCueLanes = 3;
+
+  /// BUG-1729：多 lane 时的每行高度（逻辑像素）。矮于单 lane 行，chip 文本随之降为一行。
+  static const double _multiLaneHeight = 38.0;
 
   /// 文本条里每个 cue 片段的最小宽度（逻辑像素）：短句在时间轴上占位很窄，给个下限
   /// 保证文字/播放按钮可点、可读。
@@ -861,16 +870,39 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                 painter: buildPainter(-1),
               );
 
+        // BUG-1729：先对**整条时间轴**的 cue 做贪心 lane 分配（纯函数
+        // [layoutCueStripChips]）再渲染——lane 表覆盖全部 cue、与滚动位置无关，横向
+        // 滚动/播放头跟随绝不让同一句跳行；视口裁剪只发生在建 widget 时。条带高度
+        // 随实际 lane 数伸缩，外框跟随。
+        final List<CueStripSlot?> cueSlots = layoutCueStripChips(
+          cues: widget.cues,
+          delayMs: _dragMs ?? _delayMs,
+          windowEndMs: widget.windowEndMs,
+          contentWidth: contentWidth,
+          minChipWidth: _minChipWidth,
+          maxLanes: _maxCueLanes,
+        );
+        int laneCount = 1;
+        for (final CueStripSlot? slot in cueSlots) {
+          if (slot != null && slot.lane >= laneCount) laneCount = slot.lane + 1;
+        }
+        final double laneHeight =
+            laneCount <= 1 ? _stripHeight : _multiLaneHeight;
+        final double stripHeight = laneCount * laneHeight;
+
         final Widget strip = _buildCueStrip(
           theme: theme,
           cs: cs,
           delayMs: _dragMs ?? _delayMs,
           contentWidth: contentWidth,
           viewportWidth: viewWidth,
+          slots: cueSlots,
+          laneHeight: laneHeight,
+          stripHeight: stripHeight,
         );
 
         return Container(
-          height: _waveHeight + _stripHeight,
+          height: _waveHeight + stripHeight,
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(8),
@@ -938,59 +970,55 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   }
 
   /// TODO-1244：波形下方的 cue 文本条。每句按时间位置（[AudioCue.startMs]/[endMs] 叠加
-  /// [delayMs]）铺在时间轴上，宽度 = 该句时长像素（下限 [_minChipWidth]）。视口外裁剪
-  /// （[_cullMarginPx] 余量）把上墙片段压到可见的几十个，密集字幕滚动/拖延迟不卡。
+  /// [delayMs]）铺在时间轴上，宽度 = 该句时长像素（下限 [_minChipWidth]）。
+  ///
+  /// BUG-1729：时间重叠（.ass 同屏双行/注音）或像素假重叠的 cue 按 [slots] 里的贪心
+  /// lane 竖排分行（与主播放器 overlay「重叠 cue 都要显示、竖排堆叠」的产品行为一致，
+  /// TODO-1312），不再叠画。视口外裁剪（[_cullMarginPx] 余量）把上墙片段压到可见的
+  /// 几十个，密集字幕滚动/拖延迟不卡——lane 已按整条时间轴分好，裁剪不影响行位。
   Widget _buildCueStrip({
     required ThemeData theme,
     required ColorScheme cs,
     required int delayMs,
     required double contentWidth,
     required double viewportWidth,
+    required List<CueStripSlot?> slots,
+    required double laneHeight,
+    required double stripHeight,
   }) {
     final double viewLeft =
         _scrollController.hasClients ? _scrollController.offset : 0.0;
     final double viewRight = viewLeft + viewportWidth;
+    // 矮行（多 lane）里两行文本放不下，降为一行。
+    final int chipMaxLines = laneHeight >= _stripHeight ? 2 : 1;
     final List<Widget> chips = <Widget>[];
-    for (final AudioCue cue in widget.cues) {
-      final String text = cue.text.trim();
-      if (text.isEmpty) continue;
-      final double startX = timeToX(
-        timeMs: cue.startMs + delayMs,
-        windowStartMs: 0,
-        windowEndMs: widget.windowEndMs,
-        width: contentWidth,
-      );
-      final double endX = timeToX(
-        timeMs: cue.endMs + delayMs,
-        windowStartMs: 0,
-        windowEndMs: widget.windowEndMs,
-        width: contentWidth,
-      );
-      if (startX.isNaN || endX.isNaN) continue;
-      final double left = startX < 0 ? 0.0 : startX;
-      if (left >= contentWidth) continue;
-      final double avail = contentWidth - left;
-      if (avail < 8) continue;
-      double width = endX - startX;
-      if (width < _minChipWidth) width = _minChipWidth;
-      if (width > avail) width = avail;
-      final double right = left + width;
+    for (int i = 0; i < widget.cues.length; i++) {
+      final CueStripSlot? slot = slots[i];
+      if (slot == null) continue;
+      final double right = slot.left + slot.width;
       // 视口裁剪：只为可见范围 ± 余量内的 cue 建片段（密集字幕不上墙全部）。
       if (right < viewLeft - _cullMarginPx ||
-          left > viewRight + _cullMarginPx) {
+          slot.left > viewRight + _cullMarginPx) {
         continue;
       }
       chips.add(Positioned(
-        left: left,
-        top: 0,
-        bottom: 0,
-        width: width,
-        child: _buildCueChip(theme, cs, cue, text, delayMs),
+        left: slot.left,
+        top: slot.lane * laneHeight,
+        height: laneHeight,
+        width: slot.width,
+        child: _buildCueChip(
+          theme,
+          cs,
+          widget.cues[i],
+          widget.cues[i].text.trim(),
+          delayMs,
+          maxLines: chipMaxLines,
+        ),
       ));
     }
     final Widget stripBody = SizedBox(
       width: contentWidth,
-      height: _stripHeight,
+      height: stripHeight,
       child: Stack(clipBehavior: Clip.hardEdge, children: chips),
     );
     // 直接在波形上横拖底部字幕条对轴（用户反馈：不想滚到底用 +/-）：横向拖 = 平移整体
@@ -1041,8 +1069,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     ColorScheme cs,
     AudioCue cue,
     String text,
-    int delayMs,
-  ) {
+    int delayMs, {
+    required int maxLines,
+  }) {
     final bool canPlay = widget.onPlayCue != null;
     final int rawSeekMs = cue.startMs + delayMs;
     final int seekMs = rawSeekMs < 0 ? 0 : rawSeekMs;
@@ -1071,7 +1100,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                 Expanded(
                   child: Text(
                     text,
-                    maxLines: 2,
+                    maxLines: maxLines,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSecondaryContainer,
@@ -1385,4 +1414,102 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
       ],
     );
   }
+}
+
+/// BUG-1729：波形文本条上单个 cue 片段的像素槽位（左缘 / 宽 / 所在 lane 行）。
+class CueStripSlot {
+  const CueStripSlot({
+    required this.left,
+    required this.width,
+    required this.lane,
+  });
+
+  /// 片段左缘（内容坐标逻辑像素，已 clamp 进 `[0, contentWidth)`）。
+  final double left;
+
+  /// 片段宽（逻辑像素，含 [layoutCueStripChips] 的最小宽度撑宽与右缘裁剪）。
+  final double width;
+
+  /// 所在行（0 = 顶行）。
+  final int lane;
+}
+
+/// **纯函数**（BUG-1729）：把 cue 列表映射成文本条像素槽位并做贪心 lane 分配。
+///
+/// 历史 bug：文本条把全部 cue 平铺在同一行（`top: 0, bottom: 0` 占满条带全高），x 只由
+/// 时间决定——.ass 同屏双行/注音这类**时间重叠**的 cue 直接叠画成一团；低缩放下
+/// [minChipWidth] 撑宽还让时间不重叠的相邻句**像素级假重叠**。修法：按**撑宽后的像素
+/// 区间**（而非原始时间）贪心分行，两类重叠一并消除。
+///
+/// - 几何与渲染同一套规则：[timeToX] 平铺、左缘 clamp 0、宽度下限 [minChipWidth]、右缘
+///   裁剪到 [contentWidth]；空文本 / NaN / 左缘越界 / 可用宽 < 8 的 cue 槽位为 null
+///   （不上墙、不占 lane）。
+/// - 贪心：按左缘升序扫描（同左缘按原始下标定序），维护每 lane 右缘，放进第一个
+///   「右缘 <= 左缘」的 lane；放不下开新 lane，封顶 [maxLanes] 后挤进最后一 lane
+///   （接受叠画——病态 ASS 特效行成百上千条同屏，不能把条带撑爆）。
+/// - 返回与 [cues] 等长、按原始下标对位。
+List<CueStripSlot?> layoutCueStripChips({
+  required List<AudioCue> cues,
+  required int delayMs,
+  required int windowEndMs,
+  required double contentWidth,
+  required double minChipWidth,
+  required int maxLanes,
+}) {
+  final List<CueStripSlot?> slots =
+      List<CueStripSlot?>.filled(cues.length, null);
+  // 第一遍：像素几何（与渲染逐像素一致的 clamp 规则）。
+  final List<double> lefts = List<double>.filled(cues.length, 0);
+  final List<double> widths = List<double>.filled(cues.length, 0);
+  final List<int> order = <int>[];
+  for (int i = 0; i < cues.length; i++) {
+    final AudioCue cue = cues[i];
+    if (cue.text.trim().isEmpty) continue;
+    final double startX = timeToX(
+      timeMs: cue.startMs + delayMs,
+      windowStartMs: 0,
+      windowEndMs: windowEndMs,
+      width: contentWidth,
+    );
+    final double endX = timeToX(
+      timeMs: cue.endMs + delayMs,
+      windowStartMs: 0,
+      windowEndMs: windowEndMs,
+      width: contentWidth,
+    );
+    if (startX.isNaN || endX.isNaN) continue;
+    final double left = startX < 0 ? 0.0 : startX;
+    if (left >= contentWidth) continue;
+    final double avail = contentWidth - left;
+    if (avail < 8) continue;
+    double width = endX - startX;
+    if (width < minChipWidth) width = minChipWidth;
+    if (width > avail) width = avail;
+    lefts[i] = left;
+    widths[i] = width;
+    order.add(i);
+  }
+  // 第二遍：按左缘升序贪心装行。Dart 的 sort 不稳定，比较器显式用原始下标断平局。
+  order.sort((int a, int b) {
+    final int byLeft = lefts[a].compareTo(lefts[b]);
+    return byLeft != 0 ? byLeft : a.compareTo(b);
+  });
+  final int laneCap = maxLanes < 1 ? 1 : maxLanes;
+  final List<double> laneRightEdge = <double>[];
+  for (final int i in order) {
+    final double left = lefts[i];
+    final double right = left + widths[i];
+    int lane = laneRightEdge.indexWhere((double edge) => edge <= left);
+    if (lane >= 0) {
+      laneRightEdge[lane] = right;
+    } else if (laneRightEdge.length < laneCap) {
+      lane = laneRightEdge.length;
+      laneRightEdge.add(right);
+    } else {
+      lane = laneCap - 1; // 封顶：挤进最后一行，接受叠画。
+      if (right > laneRightEdge[lane]) laneRightEdge[lane] = right;
+    }
+    slots[i] = CueStripSlot(left: left, width: widths[i], lane: lane);
+  }
+  return slots;
 }
