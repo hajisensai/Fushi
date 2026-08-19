@@ -65,6 +65,30 @@ void main() {
       expect(launch.client.httpHeaderFields, isEmpty);
       launch.client.close();
     });
+
+    // 来源库 WebDAV 视频：打开时按 sourceId 现解析的认证头与 spec 防盗链头合并
+    // 进同一个 map（同时用于视频流与字幕下载），认证头不落行级 spec（凭据红线）。
+    test('sourceHttpHeaders merge into direct-stream client headers', () async {
+      const StreamVideoSpec spec = StreamVideoSpec(
+        subtitleUrl: 'https://dav.example.com/lib/ep1.srt',
+        subtitleFileName: 'ep1.srt',
+        referer: 'https://example.com/',
+      );
+      final launch = await buildStreamVideoLaunch(
+        _row(
+          videoPath: 'https://dav.example.com/lib/ep1.mkv',
+          streamSpecJson: spec.toStorageJson(),
+        ),
+        sourceHttpHeaders: const <String, String>{
+          'Authorization': 'Basic dTpwdw==',
+        },
+      );
+      expect(launch.client.httpHeaderFields, <String, String>{
+        'Referer': 'https://example.com/',
+        'Authorization': 'Basic dTpwdw==',
+      });
+      launch.client.close();
+    });
   });
 
   group('buildStreamVideoLaunch YouTube resolve cache (TODO-1314)', () {

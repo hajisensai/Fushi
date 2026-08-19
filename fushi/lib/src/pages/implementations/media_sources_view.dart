@@ -1,6 +1,6 @@
 // TODO-817 M1c / TODO-1274 来源库管理视图：列出某媒体种类（'video' | 'book' |
-// 'manga'）的来源库，支持添加本地文件夹、添加网络来源（SFTP/FTP/WebDAV，仅 'book'）、
-// 重新扫描、打开文件夹（仅 Windows 本地）、移除来源、拖拽重排。
+// 'manga'）的来源库，支持添加本地文件夹、添加网络来源、重新扫描、打开文件夹
+// （仅 Windows 本地）、移除来源、拖拽重排。
 //
 // 本文件是**内容体**，两处消费：
 // - [MediaSourcesDialog]（`media_sources_dialog.dart`）——旧的对话框入口，逐像素不变；
@@ -12,10 +12,13 @@
 // MediaSources.configJson；密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落
 // Preferences（键 `media_source_secret_<id>`），绝不进入 configJson。
 //
-// 网络来源只对 'book' 开放：EPUB 小体积、扫描时下载后导入；远端 SFTP/FTP/WebDAV 视频
-// 路径不可被播放器直接播放，故 'video' 只保留本地来源。漫画同理只支持本地（卷体积大且
-// 导入要解包，远端流式扫描无意义）。WebDAV 的 rootPath 即完整集合 URL（scheme/host/
-// 端口/路径都在里面），无需单独存 host/port（见 NetworkSourceFileSystem）。
+// 网络来源三域全开放，transport 集按域收窄（[_networkTransports]）：
+// - 'book'：SFTP/FTP/WebDAV（EPUB 小体积、扫描时下载后导入）；
+// - 'manga'：SFTP/FTP/WebDAV（整卷下载后导入，重扫有标题预检不重下载）；
+// - 'video'：仅 WebDAV（条目 URL 按流媒体书原地入库播放；SFTP/FTP 无 HTTP
+//   直链、播放器吃不了，扫描器也会拒绝）。
+// WebDAV 的 rootPath 即完整集合 URL（scheme/host/端口/路径都在里面），无需单独存
+// host/port（见 NetworkSourceFileSystem）。
 
 import 'dart:async' show unawaited;
 import 'dart:io' show Directory, File, Platform, Process;
@@ -132,8 +135,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 不再出现任何 `ref.*`，BUG-513 的不变量（ref 只在 initState）继续成立。
   late final AppModel _appModel;
 
-  /// 网络来源仅对 'book' 开放（见文件头说明）。
-  bool get _networkSupported => widget.mediaKind == 'book';
+  /// 本域可选的网络传输：书/漫画三 transport 全通（远端文件下载后导入）；
+  /// 视频仅 WebDAV（条目 URL 原地流播，SFTP/FTP 无 HTTP 直链，扫描器会拒）。
+  List<String> get _networkTransports => widget.mediaKind == 'video'
+      ? const <String>['webdav']
+      : const <String>['sftp', 'ftp', 'webdav'];
 
   /// 页面页头与所有行级 mutation 共用的忙状态。
   bool get isBusy =>
@@ -644,17 +650,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             1;
   }
 
-  /// 添加来源：让用户选本地文件夹或网络来源（后者仅 'book' 开放）。
+  /// 添加来源：让用户选本地文件夹或网络来源（三域全开放；视频网络仅 WebDAV）。
   ///
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
     if (isBusy) return;
-    // 视频来源只有本地文件夹这一种合法入口，直接选择并立即登记/扫描，避免再弹一层
-    // 只有一个选项的对话框。书籍仍保留本地/网络选择，漫画 UX 保持不变。
-    if (widget.mediaKind == 'video') {
-      await addLocalFolder();
-      return;
-    }
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
@@ -672,30 +672,32 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               ],
             ),
           ),
-          if (_networkSupported)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, _AddSourceChoice.network),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Icon(Icons.cloud_outlined),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(t.media_source_add_network),
-                        Text(
-                          t.media_source_network_subtitle,
-                          style: Theme.of(ctx).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, _AddSourceChoice.network),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Icon(Icons.cloud_outlined),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(t.media_source_add_network),
+                      Text(
+                        // 视频域只开 WebDAV（原地流播），副标题别承诺 SFTP/FTP。
+                        widget.mediaKind == 'video'
+                            ? t.media_source_network_subtitle_video
+                            : t.media_source_network_subtitle,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );
@@ -885,12 +887,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
-  /// 添加网络来源：弹连接表单（SFTP/FTP）→ 落库连接参数 + 单独存凭据 → 立即扫描。
+  /// 添加网络来源：弹连接表单（transport 集按域收窄，见 [_networkTransports]）
+  /// → 落库连接参数 + 单独存凭据 → 立即扫描。
   Future<void> _addNetworkSource() async {
+    final List<String> transports = _networkTransports;
     final _NetworkSourceResult? result =
         await showAppDialog<_NetworkSourceResult>(
       context: context,
-      builder: (BuildContext ctx) => const _NetworkSourceFormDialog(),
+      builder: (BuildContext ctx) =>
+          _NetworkSourceFormDialog(transports: transports),
     );
     if (!mounted || result == null) return;
 
@@ -1419,10 +1424,16 @@ class _NetworkSourceResult {
   final bool useTls;
 }
 
-/// 网络来源连接表单：SFTP/FTP 二选一，填 host/port/user/password（SFTP 可用私钥、
-/// FTP 可开 TLS）+ 远端根路径 + 可选显示名，附「测试连接」（复用 sync 后端）。
+/// 网络来源连接表单：在 [transports] 里选 transport，填 host/port/user/password
+/// （SFTP 可用私钥、FTP 可开 TLS；WebDAV 用整 URL）+ 远端根路径 + 可选显示名，
+/// 附「测试连接」（复用 sync 后端）。
 class _NetworkSourceFormDialog extends StatefulWidget {
-  const _NetworkSourceFormDialog();
+  const _NetworkSourceFormDialog({
+    this.transports = const <String>['sftp', 'ftp', 'webdav'],
+  });
+
+  /// 本域可选的传输集（视频域收窄到仅 WebDAV）。首项是初始选中。
+  final List<String> transports;
 
   @override
   State<_NetworkSourceFormDialog> createState() =>
@@ -1430,7 +1441,7 @@ class _NetworkSourceFormDialog extends StatefulWidget {
 }
 
 class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
-  String _transport = 'sftp';
+  late String _transport = widget.transports.first;
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _portController =
       TextEditingController(text: '22');
@@ -1615,10 +1626,16 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               SegmentedButton<String>(
-                segments: const <ButtonSegment<String>>[
-                  ButtonSegment<String>(value: 'sftp', label: Text('SFTP')),
-                  ButtonSegment<String>(value: 'ftp', label: Text('FTP')),
-                  ButtonSegment<String>(value: 'webdav', label: Text('WebDAV')),
+                segments: <ButtonSegment<String>>[
+                  for (final String tp in widget.transports)
+                    ButtonSegment<String>(
+                      value: tp,
+                      label: Text(switch (tp) {
+                        'sftp' => 'SFTP',
+                        'ftp' => 'FTP',
+                        _ => 'WebDAV',
+                      }),
+                    ),
                 ],
                 selected: <String>{_transport},
                 onSelectionChanged: (Set<String> s) =>

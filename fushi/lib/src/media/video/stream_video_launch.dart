@@ -71,6 +71,11 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
   // 用户显式 YouTube 画质目标（设置「YouTube 画质」；null=自动=默认策略）。透传给
   // 默认解析器，并作为缓存条目匹配键——改设置后旧档位缓存视为 miss 重解析。
   int? youtubeTargetHeight,
+  // 来源库网络视频（WebDAV）打开时按 sourceId 现解析的认证头（见
+  // source_stream_headers.dart 的凭据红线：不落行级 spec）。与 spec 里的防盗链
+  // header 合并后同时用于视频流与 spec.subtitleUrl 字幕下载；仅直链分支消费
+  // （YouTube 书不出自来源库）。
+  Map<String, String> sourceHttpHeaders = const <String, String>{},
 }) async {
   final String url = book.videoPath;
   final StreamVideoSpec spec =
@@ -174,7 +179,10 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
       subtitleFileName: spec.subtitleFileName,
       // 直链/HLS 是单条 muxed 流（自带音轨）→ 制卡音频从它抽，无分离 audio-only 流。
       miningVideoHasAudio: true,
-      httpHeaderFields: spec.httpHeaderFields,
+      httpHeaderFields: <String, String>{
+        ...spec.httpHeaderFields,
+        ...sourceHttpHeaders,
+      },
     );
   }
   final RemoteVideoInfo info =

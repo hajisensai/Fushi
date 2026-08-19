@@ -228,7 +228,7 @@ class MangaImporter {
     // 标题 → 冲突解析 → bookKey（= 净化标题即主键，与 EpubImporter/PdfImporter 同口径）。
     final String proposedTitle = (title != null && title.trim().isNotEmpty)
         ? title.trim()
-        : _deriveTitle(root, mokuroPath);
+        : deriveMokuroTitle(root, mokuroPath);
 
     return _copyAndInsert(
       db: db,
@@ -400,7 +400,12 @@ class MangaImporter {
   /// 从 mokuro 顶层 `title` + `volume` 派生显示标题（进而派生 bookKey）。组合 `title volume`
   /// 让同系列不同卷得到唯一 bookKey（否则两卷 sanitize 后撞主键、被迫加 `(2)` 后缀）。缺 title
   /// 退化文件名（mokuro 惯例文件名即卷名，天然唯一）。
-  static String _deriveTitle(Map<String, Object?> root, String mokuroPath) {
+  ///
+  /// 公开是给来源库扫描的网络去重预检用（SourceLibraryScanner 先读远端 `.mokuro`
+  /// 派生标题、命中已入库即跳过整卷下载）：预检必须与导入器同一套身份派生，
+  /// 不允许出现第二套判重规则。
+  static String deriveMokuroTitle(
+      Map<String, Object?> root, String mokuroPath) {
     final String title = (root['title'] as String?)?.trim() ?? '';
     final String volume = (root['volume'] as String?)?.trim() ?? '';
     final String base = p.basenameWithoutExtension(mokuroPath);
