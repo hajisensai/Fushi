@@ -5431,7 +5431,14 @@ void RunKirikiriLookupInstallOnMainThread() {
 // 拿到 exporter 的两条路径（exe 直取 / 插件 V2Link）共用的入口：先记住 exporter，再按
 // 当前开关状态决定装不装。
 void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
-  if (exporter != nullptr) g_lookup_exporter = exporter;
+  if (exporter != nullptr) {
+    g_lookup_exporter = exporter;
+    // 拿到 TJS exporter 就等于这局有脚本宿主，卡片走引擎自己的 Layer——它能跟着游戏
+    // 渲染树一起做全屏/窗口变换，通用分层窗口做不到。**认领必须在这里、不是等 bootstrap
+    // 成功之后**：bootstrap 要等引擎主线程回调才跑，而通用呈现器只看 lookup_enabled，
+    // 晚认领就会在这段空窗期抢跑，出双份卡片。
+    ClaimLookupPresenter();
+  }
   PollKirikiriLookupInstall();
 }
 

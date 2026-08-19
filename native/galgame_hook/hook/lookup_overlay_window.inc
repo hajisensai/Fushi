@@ -21,7 +21,11 @@
 // 呈现器不启动；KiriKiri 仍走它自己的 Layer，因为在游戏渲染树里跟随全屏与窗口变换是分层
 // 窗口做不到的。
 
-#include "lookup_overlay_geometry.h"
+// 注意：本文件被 include 进 dll_main.cpp 的**匿名命名空间内部**，所以这里一行 #include
+// 都不能有。头文件里的 `namespace fushi_voice_hook` 会在匿名命名空间里再开一个同名的
+// 嵌套命名空间，把真正的 ::fushi_voice_hook 整个遮住——症状是本文件之后的每个 adapter
+// 都报「不是 fushi_voice_hook 的成员」，而错误行全在别人家里。lookup_overlay_geometry.h
+// 由 dll_main.cpp 在文件作用域引入。
 
 // 引擎适配器已认领呈现（KiriKiri 的 TJS Layer）。通用呈现器只在无人认领时启动。
 volatile LONG g_lookup_presenter_claimed = 0;

@@ -1,5 +1,9 @@
 #include <windows.h>
 
+// 通用位图呈现器的窗口过程要用 GET_X_LPARAM / GET_Y_LPARAM 拆鼠标消息坐标。
+// 必须用它们而不是自己 HIWORD/LOWORD：多显示器下坐标可为负，HIWORD 会把负数截成大正数。
+#include <windowsx.h>
+
 #include <mmreg.h>
 #include <xaudio2.h>
 
@@ -35,6 +39,7 @@
 
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
+#include "lookup_overlay_geometry.h"
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
@@ -108,6 +113,11 @@ using fushi_voice_hook::UnityVoiceEvent;
 HANDLE g_mapping = nullptr;
 SharedHeader* g_header = nullptr;
 volatile bool g_stop = false;
+
+// 本 DLL 自己的模块句柄，DllMain 一进来就记下。通用位图呈现器建窗口类/窗口时要用它做
+// hInstance——传 nullptr 会把窗口类注册到宿主 exe 名下，DLL 卸载后类残留指向已释放的
+// 窗口过程。这个句柄在进程生命周期内恒定，注入的 hook DLL 也不会被 FreeLibrary。
+HMODULE g_module = nullptr;
 
 // ── C.2 捕获状态 ────────────────────────────────────────────────────────────
 // 环形缓冲基址（= header 之后）与容量，HookWorker 装好后一次性缓存；SubmitSourceBuffer
@@ -449,6 +459,10 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
   return signaled;
 }
 
+// 通用位图呈现器必须在 adapters 之前引入：KiriKiri 适配器要调 ClaimLookupPresenter()
+// 来认领呈现，把通用呈现器挡在门外（两条路径同时显示卡片会出现双份）。
+#include "lookup_overlay_window.inc"
+
 #include "adapters/unity_adapter.inc"
 #include "adapters/windows_audio_adapter.inc"
 #include "adapters/siglus_adapter.inc"
@@ -526,8 +540,17 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。
   while (!g_stop) {
     registry.Poll();
+    // 通用位图呈现器：host 打开查词后才起，且只在没有引擎适配器认领呈现时起。
+    // 放在 Poll 之后是因为认领发生在适配器安装里——先 Poll 再问，才不会在 KiriKiri
+    // 认领之前抢跑起一个多余的分层窗口。它自带 UI 线程，这里只是点火，不阻塞本循环。
+    if (g_header != nullptr && fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      StartLookupOverlayIfUnclaimed();
+    }
     Sleep(registry.PollDelayMs());
   }
+  // 呈现器先于 adapter 收尾停：它每 16ms 读一次 g_header，必须在解映射之前停稳。
+  StopLookupOverlay();
 
   // 收尾在工作线程里做（不在 loader lock 中）：先提交仍在组装的 legacy TextMesh
   // 末句，再在同一把 adapter 锁内关总开关，确保正常结束不会静默丢尾句。
@@ -549,6 +572,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
   switch (reason) {
     case DLL_PROCESS_ATTACH:
+      g_module = module;
       DisableThreadLibraryCalls(module);
       // 活儿丢给工作线程（loader lock 之外）。CreateThread 在 DllMain 中是允许的。
       CreateThread(nullptr, 0, HookWorker, module, 0, nullptr);
