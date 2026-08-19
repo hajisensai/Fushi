@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1603 条。点号进各自文件。
+> 共 1604 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
+| [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |
 | [BUG-1728](bugs/BUG-1728-ext-netflix-fulltrack-fetch.md) | ✅ | ✅ | Netflix 字幕列表只剩「实时采集」——整轨拦截静默失败 |
 | [BUG-1727](bugs/BUG-1727-ext-popup-masonry-overlap.md) | ✅ | ✅ | 扩展弹窗渲染中间态多卡片重叠 |
 | [BUG-1726](bugs/BUG-1726-ext-popup-viewport-clip.md) | ✅ | ✅ | 扩展查词弹窗超出视口底部被截断 |
