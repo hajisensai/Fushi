@@ -9,6 +9,8 @@ import 'package:fushi/src/settings/settings_schema_game.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+    show kMediaTrackingEnabled;
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
@@ -93,7 +95,9 @@ List<SettingsDestination> _buildDestinations() {
     buildMangaDestination(),
     buildListeningDestination(),
     buildVideoDestination(),
-    buildMediaTrackingDestination(),
+    // Bangumi 同步临时下线（编译期常量开关，不破坏 schema 缓存的纯度前提；
+    // 见 media_tracking_service.dart 的 kMediaTrackingEnabled）。
+    if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
     buildDownloadsDestination(),
     // 「游戏」大类：游戏库 / 捕获工作台 / 诊断的可搜导航入口（仅 Windows，详见

@@ -25,6 +25,8 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+    show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
@@ -3267,14 +3269,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
-        onEpisodeCompleted: () =>
-            appModel.mediaTrackingService.recordVideoCompleted(
-          bookUid: widget.bookUid,
-          collectionId: widget.playlistCollectionId,
-          episodeIndex: _currentEpisode,
-          seriesCompleted:
-              _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
-        ),
+        onEpisodeCompleted: () async {
+          if (!kMediaTrackingEnabled) return;
+          await appModel.mediaTrackingService.recordVideoCompleted(
+            bookUid: widget.bookUid,
+            collectionId: widget.playlistCollectionId,
+            episodeIndex: _currentEpisode,
+            seriesCompleted:
+                _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
+          );
+        },
         // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
         recordActivity: (String t, String uid, String dateKey, int timestampMs,
                 int durationMs, int chars) =>
