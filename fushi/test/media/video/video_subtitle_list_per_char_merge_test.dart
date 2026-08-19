@@ -254,8 +254,9 @@ void main() {
     test('列表取行 cue 必须走 _rowCue 单一入口', () {
       // 割裂风险：任何一处漏改都会变成「列表显示整句、制卡/收藏只拿到一个字」。
       expect(src, contains('AudioCue _rowCue('));
-      // 行渲染 / 行高测量 / 计数 / 筛选全部经此入口取 cue。
-      expect('_rowCue(cues'.allMatches(src).length, greaterThanOrEqualTo(8),
+      // 行渲染 / 行高测量 / 计数 / 筛选全部经此入口取 cue。下界 6：制卡多选删除后
+      // 「已选档筛选」「选中计数」两个调用点随之消失（原为 8）。
+      expect('_rowCue(cues'.allMatches(src).length, greaterThanOrEqualTo(6),
           reason: '漏改任何一处就会出现「列表整句、制卡单字」的割裂');
     });
 

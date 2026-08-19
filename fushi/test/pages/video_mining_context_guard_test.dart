@@ -72,8 +72,8 @@ void main() {
   test('video mining exports media from the cached lookup cue', () {
     // TODO-270 D：onMineEntry 返回类型从 Future<bool> 改为 Future<MinePopupResult>。
     // TODO-270 E：制卡 cue / 区间 / 文本解析收口到 _resolveVideoMiningRange（onMineEntry
-    // 与 onUpdateEntry 共用，避免两份漂移），守卫锚点随之搬到该 helper。语义不变：选中句
-    // 优先（字幕列表多选，独立入口）→ 否则查词草稿合并，当前 cue 走 lookup 缓存兜底。
+    // 与 onUpdateEntry 共用，避免两份漂移），守卫锚点随之搬到该 helper。语义：查词草稿
+    // 合并，当前 cue 走 lookup 缓存兜底（字幕列表多选入口已整条删除）。
     // TODO-590 batch14: `_resolveVideoMiningRange` / `onMineEntry` 体 / `_mineVideoCard`
     // 等制卡方法已搬进 lookup_mining.part.dart；合并语料把主壳排在 part 前，所以
     // end marker 必须用 part 内紧跟 `_resolveVideoMiningRange` 的 `_onMineEntryImpl`
@@ -82,12 +82,7 @@ void main() {
       '_resolveVideoMiningRange(VideoPlayerController controller) {',
       'Future<MinePopupResult> _onMineEntryImpl(',
     );
-    // 字幕列表多选（TODO-102）优先：合成 cue 单段区间 + join 文本，不掺草稿。
-    expect(resolve, contains('if (selectedCue != null) {'),
-        reason:
-            'Mining must prefer the selected cue (subtitle list multi-select).');
-    expect(resolve, contains('usedSelectedCue: true'));
-    // 否则查词草稿路径：当前 cue lookup 缓存（不漂移）→ currentCue → 按位置解析多段兜底，
+    // 查词草稿路径：当前 cue lookup 缓存（不漂移）→ currentCue → 按位置解析多段兜底，
     // 覆盖未经查词捕获 / 制卡瞬间字幕又消失的边界（TODO-104b / BUG-188，保证句子音频非空）。
     expect(resolve, contains('_lastLookupCue ??'),
         reason:
@@ -130,11 +125,10 @@ void main() {
       'if (!mounted || _currentEpisode != queuedEpisode) return result;',
       awaitIndex,
     );
-    final int clearIndex =
-        mine.indexOf('_clearSelectedMiningCues()', awaitIndex);
+    final int clearIndex = mine.indexOf('_miningDraft.clear()', awaitIndex);
     expect(mountedIndex, greaterThan(awaitIndex));
     expect(clearIndex, greaterThan(mountedIndex),
-        reason: '页面 dispose 或换集后不得再 setState 清新页面/新集选中。');
+        reason: '页面 dispose 或换集后不得再清新页面/新集的制卡草稿。');
 
     final String record = region(
       'Future<void> _recordMinedSentenceForVideo(',
@@ -156,8 +150,7 @@ void main() {
       'if (!mounted || _currentEpisode != queuedEpisode) return result;',
       updateAwait,
     );
-    final int updateClear =
-        update.indexOf('_clearSelectedMiningCues()', updateAwait);
+    final int updateClear = update.indexOf('_miningDraft.clear()', updateAwait);
     expect(updateGuard, greaterThan(updateAwait));
     expect(updateClear, greaterThan(updateGuard),
         reason: '覆盖卡排队返回后同样不得操作已销毁或已换集的 State。');

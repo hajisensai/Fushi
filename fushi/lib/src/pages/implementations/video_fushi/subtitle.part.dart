@@ -72,11 +72,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 关闭 push-aside 字幕跳转列表（TODO-637）。**三条关闭路径的单一真相源**：
   /// 面板头部 × 按钮（[onClose]）、Esc 键、控制条字幕按钮（后两者经
   /// [_toggleSubtitleJumpList] 的关闭分支）都调它，避免「关闭副作用各写一份」分叉。
-  /// 关闭时必须：清挖词选择（[_clearSelectedMiningCues]）、隐藏列表
-  /// （[_subtitleListVisible]）、唤回控制条（[_pokeControlsVisible]）、把焦点归还视频
-  /// （[_focusOwnership]，否则键盘 / 手柄后续失焦）。
+  /// 关闭时必须：隐藏列表（[_subtitleListVisible]）、唤回控制条
+  /// （[_pokeControlsVisible]）、把焦点归还视频（[_focusOwnership]，否则键盘 / 手柄
+  /// 后续失焦）。
   void _closeSubtitleJumpList() {
-    _clearSelectedMiningCues();
     _subtitleListVisible.value = false;
     _pokeControlsVisible();
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
@@ -1454,9 +1453,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               onCopyCue: _copyCueText,
                               onFavoriteCue: _toggleFavoriteCueForVideo,
                               isCueFavorited: _isCueFavorited,
-                              isCueSelectedForCard: _isCueSelectedForCard,
-                              onToggleCueSelection: _toggleCueSelectedForCard,
-                              onClearCueSelection: _clearSelectedMiningCues,
                               // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
                               initialAutoScroll:
                                   appModel.videoSubtitleListAutoScroll,

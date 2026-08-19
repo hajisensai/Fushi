@@ -194,8 +194,7 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 按钮（[VideoEpisodePanel.onClose]）、Esc 键、控制条剧集按钮（后两者经
   /// [_toggleEpisodeList] 的关闭分支）都调它，避免「关闭副作用各写一份」分叉。关闭时
   /// 必须：隐藏列表（[_episodeListVisible]）、唤回控制条（[_pokeControlsVisible]）、把焦点
-  /// 归还视频（[_focusOwnership]，否则键盘 / 手柄后续失焦）。与字幕列表关闭不同的是剧集
-  /// 列表无挖词选择，故不调 [_clearSelectedMiningCues]。
+  /// 归还视频（[_focusOwnership]，否则键盘 / 手柄后续失焦）。
   void _closeEpisodeList() {
     _episodeListVisible.value = false;
     _pokeControlsVisible();

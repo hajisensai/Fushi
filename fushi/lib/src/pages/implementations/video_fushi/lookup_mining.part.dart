@@ -7,14 +7,11 @@ part of '../video_fushi_page.dart';
 /// normalisations forced by the extension boundary (an extension is not seen as
 /// an instance member of the State subclass, so it cannot call @protected
 /// members directly):
-/// 1. the two `setState(...)` rebuilds (inside [_toggleCueSelectedForCard] and
-///    [_clearSelectedMiningCues]) → routed through the main shell's
-///    `_rebuild(...)` forwarder;
-/// 2. the `recordMined()` call (inside [_mineVideoCard]) → routed through the
-///    main shell's `_recordMinedForVideo()` forwarder.
-/// Both forwarders are the established part paradigm (pure 1-line delegation,
+/// the `recordMined()` call (inside [_mineVideoCard]) → routed through the
+/// main shell's `_recordMinedForVideo()` forwarder.
+/// That forwarder is the established part paradigm (pure 1-line delegation,
 /// zero behaviour change). No host-class static needed re-qualification: every collaborator
-/// ([buildSelectedSubtitleCueContext], [miningClipTimeMs], [resolveMiningCueForPosition],
+/// ([miningClipTimeMs], [resolveMiningCueForPosition],
 /// [extractClipGifViaFfmpeg], [extractAudioSegmentViaFfmpeg], [describeMineOutcome],
 /// [statTodayKey], [downsampleCardScreenshot], [AnkiMiningContext], etc.) is a
 /// top-level / mixin symbol in the same library.
@@ -29,9 +26,7 @@ part of '../video_fushi_page.dart';
 /// living here. [buildPopupHeaderFor] stays in the shell (favourite header).
 ///
 /// Covers the sentence-context draft helpers ([_cueRange],
-/// [_setSentenceContextToDraft], [_clearSentenceDraft]), the subtitle-list card
-/// selection ([_isCueSelectedForCard], [_toggleCueSelectedForCard],
-/// [_clearSelectedMiningCues], [_selectedMiningCueForCard]), the mining range
+/// [_setSentenceContextToDraft], [_clearSentenceDraft]), the mining range
 /// resolver ([_resolveVideoMiningRange]), the mine/update entry bodies
 /// ([_onMineEntryImpl], [_onUpdateEntryImpl]), the card landing path
 /// ([_mineVideoCard]) and the mined-sentence history row ([_recordMinedSentenceForVideo]).
@@ -93,64 +88,18 @@ extension _VideoLookupMining on _VideoFushiPageState {
   /// 发音 `{audio}`、例句字段等）基础上，注入视频专属上下文——当前帧截图
   /// coverPath（→`{book-cover}`）+ 当前字幕 cue 的音频片段（裁**当前选中音轨**）
   /// sasayakiAudioPath（→`{sentence-audio}`）+ 例句 sentence。复用现有 Anki 字段。
-  bool _isCueSelectedForCard(AudioCue cue) =>
-      _selectedMiningCueStarts.contains(cue.startMs);
-
-  void _toggleCueSelectedForCard(AudioCue cue) {
-    _rebuild(() {
-      if (!_selectedMiningCueStarts.add(cue.startMs)) {
-        _selectedMiningCueStarts.remove(cue.startMs);
-      }
-    });
-  }
-
-  void _clearSelectedMiningCues() {
-    if (_selectedMiningCueStarts.isEmpty) return;
-    _rebuild(_selectedMiningCueStarts.clear);
-  }
-
-  AudioCue? _selectedMiningCueForCard(VideoPlayerController controller) {
-    return buildSelectedSubtitleCueContext(
-      cues: controller.cues,
-      selectedStartMs: _selectedMiningCueStarts,
-    );
-  }
-
-  /// 视频制卡/覆盖共用的「解析这一张卡的区间 + 文本」。把三个并存入口收口成一处，避免
-  /// [onMineEntry] / [onUpdateEntry] 两份漂移：
-  /// - **字幕列表多选**（TODO-102，[_selectedMiningCueStarts] 非空）优先：用
-  ///   [buildSelectedSubtitleCueContext] 合成的单段区间 + join 文本，**不掺查词草稿**。
-  /// - 否则**查词窗口多句合一草稿**（TODO-270 E）：当前 cue 取「lookup 缓存 → currentCue
-  ///   → 按位置解析」多段兜底（含 gap，BUG-188）；文本用 [MiningSentenceDraft.composeText]
-  ///   合并草稿全部句 + 当前句，区间用 [MiningSentenceDraft.composeAudioRange] 合并成首句
-  ///   起→末句止（草稿空时等价于单句原行为：trim 文本 + 单 cue 区间）。
-  ///
-  /// [usedSelectedCue] 回传「本次是否走了字幕列表多选」，供成功后清多选用。
+  /// 视频制卡/覆盖共用的「解析这一张卡的区间 + 文本」。把两个并存入口收口成一处，避免
+  /// [onMineEntry] / [onUpdateEntry] 两份漂移：**查词窗口多句合一草稿**（TODO-270 E）：
+  /// 当前 cue 取「lookup 缓存 → currentCue → 按位置解析」多段兜底（含 gap，BUG-188）；
+  /// 文本用 [MiningSentenceDraft.composeText] 合并草稿全部句 + 当前句，区间用
+  /// [MiningSentenceDraft.composeAudioRange] 合并成首句起→末句止（草稿空时等价于单句
+  /// 原行为：trim 文本 + 单 cue 区间）。
   ({
     int clipStartMs,
     int clipEndMs,
     String sentence,
     String? cueSentence,
-    bool usedSelectedCue
   }) _resolveVideoMiningRange(VideoPlayerController controller) {
-    final AudioCue? selectedCue = _selectedMiningCueForCard(controller);
-    if (selectedCue != null) {
-      // 字幕列表多选（独立入口）：单段区间就是合成 cue 的时间窗，文本即其 join。
-      // TODO-680 / BUG-392：cue 时间是字幕文件坐标，裁音频/封面前逆变换回播放器轴
-      // （+ delayMs），否则字幕调轴后裁的位置整体偏移 delayMs。TODO-2837：主副
-      // 字幕分开调轴后，逆变换必须用**该 cue 所属流**的生效轴（delayMsForCue；
-      // 列表多选的合成 cue 不属任一流 → 回落有效流 miningDelayMs）。
-      return (
-        clipStartMs: miningClipTimeMs(
-            selectedCue.startMs, controller.delayMsForCue(selectedCue)),
-        clipEndMs: miningClipTimeMs(
-            selectedCue.endMs, controller.delayMsForCue(selectedCue)),
-        sentence: selectedCue.text,
-        cueSentence: selectedCue.text,
-        usedSelectedCue: true,
-      );
-    }
-
     // 查词窗口多句合一（TODO-270 E）。当前 cue 多段兜底（含 gap，BUG-188）。
     // BUG-1592：按位置兜底走**有效流**（主字幕流为空即副字幕流）。命中项已带 cue 的入口
     // （点击 / hover / 手柄光标 / 列表）走 [_lastLookupCue]，这条只服务「没有命中项」的
@@ -190,7 +139,6 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
       sentence: mergedSentence,
-      usedSelectedCue: false,
     );
   }
 
@@ -203,7 +151,6 @@ extension _VideoLookupMining on _VideoFushiPageState {
       int clipEndMs,
       String sentence,
       String? cueSentence,
-      bool usedSelectedCue,
     }) range = _resolveVideoMiningRange(controller);
     final int queuedEpisode = _currentEpisode;
     final AudioCue? historyCue = _lastLookupCue;
@@ -235,13 +182,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // favorite-sentence anchors so collections can jump back via the video page.
       unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
       if (!mounted || _currentEpisode != queuedEpisode) return result;
-      if (range.usedSelectedCue) {
-        _clearSelectedMiningCues();
-      } else {
-        // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
-        // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
-        _miningDraft.clear();
-      }
+      // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
+      // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
+      _miningDraft.clear();
     }
     return result;
   }
@@ -258,7 +201,6 @@ extension _VideoLookupMining on _VideoFushiPageState {
       int clipEndMs,
       String sentence,
       String? cueSentence,
-      bool usedSelectedCue,
     }) range = _resolveVideoMiningRange(controller);
     final int queuedEpisode = _currentEpisode;
 
@@ -272,11 +214,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     if (result.ankiConnect) {
       if (!mounted || _currentEpisode != queuedEpisode) return result;
-      if (range.usedSelectedCue) {
-        _clearSelectedMiningCues();
-      } else {
-        _miningDraft.clear();
-      }
+      _miningDraft.clear();
     }
     return result;
   }

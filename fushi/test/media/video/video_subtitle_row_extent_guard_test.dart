@@ -66,7 +66,6 @@ double _requiredTextHeight(WidgetTester tester, Finder finder) {
 
 Widget _panel({
   required VideoPlayerController controller,
-  bool withSelectionControls = false,
   bool Function(AudioCue cue)? isCueFavorited,
 }) =>
     VideoSubtitleJumpPanel(
@@ -81,8 +80,6 @@ Widget _panel({
       emptyHint: 'empty',
       fontSize: _kFontSize,
       width: _kPanelWidth,
-      isCueSelectedForCard: withSelectionControls ? (_) => false : null,
-      onToggleCueSelection: withSelectionControls ? (_) {} : null,
     );
 
 void main() {
@@ -102,7 +99,7 @@ void main() {
         ]);
 
         await tester.pumpWidget(_wrap(
-          _panel(controller: controller, withSelectionControls: true),
+          _panel(controller: controller),
           textScaler: scaler,
         ));
         await tester.pump();
@@ -132,27 +129,21 @@ void main() {
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, _kLongCue)]);
 
-      for (final bool withSelection in <bool>[false, true]) {
-        await tester.pumpWidget(_wrap(
-          _panel(controller: controller, withSelectionControls: withSelection),
-        ));
-        await tester.pump();
+      await tester.pumpWidget(_wrap(_panel(controller: controller)));
+      await tester.pump();
 
-        final RenderBox textBox =
-            tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue));
-        final double expected = subtitleRowTextWidth(
-          rowWidth: _kPanelWidth,
-          effectiveFontSize: _kFontSize,
-          timestampColumnWidth: subtitleTimestampColumnWidth(_kFontSize, false),
-          hasSelectionControls: withSelection,
-        );
-        expect(
-          textBox.size.width,
-          closeTo(expected, 0.5),
-          reason: '行高按 subtitleRowTextWidth 排版，渲染宽度必须与之一致'
-              '（withSelection=$withSelection）',
-        );
-      }
+      final RenderBox textBox =
+          tester.renderObject<RenderBox>(_cueTextFinder(_kLongCue));
+      final double expected = subtitleRowTextWidth(
+        rowWidth: _kPanelWidth,
+        effectiveFontSize: _kFontSize,
+        timestampColumnWidth: subtitleTimestampColumnWidth(_kFontSize, false),
+      );
+      expect(
+        textBox.size.width,
+        closeTo(expected, 0.5),
+        reason: '行高按 subtitleRowTextWidth 排版，渲染宽度必须与之一致',
+      );
     });
 
     testWidgets('收藏行的左侧竖色条不挤占文本列宽度', (WidgetTester tester) async {
