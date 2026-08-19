@@ -3586,5 +3586,15 @@
   "video_import_folder_as_source_hint": "以后自动扫描此文件夹里的新视频",
   "manga_import_folder_as_source_hint": "以后自动扫描此文件夹里的新漫画",
   "download_no_managed_video_source": "还没有受管视频来源。下载完成的视频需要一个本地视频文件夹才能入库。",
-  "download_add_video_source": "添加视频来源"
+  "download_add_video_source": "添加视频来源",
+  "manga_ocr_engine_auto_desc": "优先用你已配好的离线引擎，不会自作主张上传到 Lens。",
+  "manga_ocr_engine_local_onnx_desc": "完全离线，质量最好。需要一次性下载模型，老设备上较慢。",
+  "manga_ocr_engine_google_lens_desc": "需要联网，会把页面图片上传给 Google。速度快、不用下模型，但质量不如本地模型。",
+  "manga_ocr_engine_external_desc": "调用你自己安装的 mokuro 命令行，仅桌面可用。",
+  "manga_ocr_engine_paired_host_desc": "交给局域网里已配对的设备来跑，本机不下任何模型。",
+  "manga_ocr_model_disk_usage": "已占用 $size",
+  "manga_ocr_model_download_size": "需下载 $size",
+  "manga_ocr_delete_done_freed": "模型已删除，释放 $size",
+  "manga_ocr_model_unused_by_engine": "当前引擎用不到这些本地模型文件。",
+  "manga_ocr_download_total_progress": "$done / $total"
 }

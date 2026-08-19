@@ -116,7 +116,7 @@ void main() {
       expect(status.detectorReady, isFalse);
       expect(status.recognizerReady, isFalse);
       expect(status.allReady, isFalse);
-      expect(status.downloadedBytes, 0);
+      expect(status.diskBytes, 0);
       expect(status.totalBytes, 4 + 5 + 6 + 7);
     });
 
@@ -127,7 +127,7 @@ void main() {
           await service(_FakeRunner()).modelStatus();
       expect(status.detectorReady, isTrue);
       expect(status.recognizerReady, isFalse);
-      expect(status.downloadedBytes, 4);
+      expect(status.diskBytes, 4);
     });
 
     test('零字节文件不算就绪', () async {
@@ -142,13 +142,52 @@ void main() {
       final MangaOcrServiceImpl impl = service(_FakeRunner());
       MangaOcrModelStatus status = await impl.modelStatus();
       expect(status.allReady, isTrue);
-      expect(status.downloadedBytes, status.totalBytes);
+      expect(status.diskBytes, status.totalBytes);
 
-      await impl.deleteModels();
+      final int freed = await impl.deleteModels();
+      expect(freed, status.totalBytes);
       expect(modelsDir.existsSync(), isFalse);
       status = await impl.modelStatus();
       expect(status.allReady, isFalse);
-      expect(status.downloadedBytes, 0);
+      expect(status.diskBytes, 0);
+    });
+
+    // BUG-1732：占用与释放量的真相源是磁盘，不是清单。中断留下的 `.part`、上游
+    // 换档后的遗留档都不在清单里——按清单记账时它们既不显示也「删不掉」（用户
+    // 只看到删了清单那点体积），于是「显示 450 MB / 磁盘上却是另一个数」。
+    test('清单外的残留档一样计入占用，并计入删除释放量', () async {
+      writeAllModels();
+      File(p.join(modelsDir.path, 'encoder_model.onnx.part'))
+          .writeAsBytesSync(List<int>.filled(1000, 1));
+      File(p.join(modelsDir.path, 'legacy-detector-fp32.onnx'))
+          .writeAsBytesSync(List<int>.filled(500, 1));
+      final MangaOcrServiceImpl impl = service(_FakeRunner());
+
+      final MangaOcrModelStatus status = await impl.modelStatus();
+      expect(status.allReady, isTrue);
+      expect(status.totalBytes, 4 + 5 + 6 + 7);
+      expect(status.diskBytes, 4 + 5 + 6 + 7 + 1000 + 500);
+      expect(status.hasAnyFiles, isTrue);
+
+      expect(await impl.deleteModels(), 4 + 5 + 6 + 7 + 1000 + 500);
+      expect(modelsDir.existsSync(), isFalse);
+    });
+
+    test('模型不全但残留占着磁盘：hasAnyFiles 为真，可被删除释放', () async {
+      File(p.join(modelsDir.path, 'encoder_model.onnx.part'))
+          .writeAsBytesSync(List<int>.filled(2048, 1));
+      final MangaOcrServiceImpl impl = service(_FakeRunner());
+
+      final MangaOcrModelStatus status = await impl.modelStatus();
+      expect(status.allReady, isFalse);
+      expect(status.hasAnyFiles, isTrue);
+      expect(status.diskBytes, 2048);
+      expect(await impl.deleteModels(), 2048);
+    });
+
+    test('目录不存在：删除返回 0 而不是抛错', () async {
+      modelsDir.deleteSync(recursive: true);
+      expect(await service(_FakeRunner()).deleteModels(), 0);
     });
   });
 

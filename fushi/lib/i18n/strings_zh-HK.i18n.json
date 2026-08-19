@@ -3586,5 +3586,15 @@
   "video_import_folder_as_source_hint": "Keep scanning this folder for new videos",
   "manga_import_folder_as_source_hint": "Keep scanning this folder for new manga",
   "download_no_managed_video_source": "No managed video source yet. Downloads need a local video folder to land in.",
-  "download_add_video_source": "Add video source"
+  "download_add_video_source": "Add video source",
+  "manga_ocr_engine_auto_desc": "Prefers an offline engine you already set up; never uploads to Lens on its own.",
+  "manga_ocr_engine_local_onnx_desc": "Fully offline, best quality. Needs a one-time model download and is slow on old hardware.",
+  "manga_ocr_engine_google_lens_desc": "Needs internet and uploads page images to Google. Fast with no download, but quality is below the local model.",
+  "manga_ocr_engine_external_desc": "Calls a mokuro command line you installed yourself. Desktop only.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to a paired device on your network. Nothing is downloaded here.",
+  "manga_ocr_model_disk_usage": "Using $size on disk",
+  "manga_ocr_model_download_size": "Needs $size",
+  "manga_ocr_delete_done_freed": "Models deleted, freed $size",
+  "manga_ocr_model_unused_by_engine": "The current engine doesn't use these local model files.",
+  "manga_ocr_download_total_progress": "$done of $total"
 }
