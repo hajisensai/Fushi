@@ -194,3 +194,94 @@ test('视口过小导致上界<下界时仍返回下限（不倒挂）', () => {
   assert.strictEqual(r.width, 250);
   assert.strictEqual(r.height, 200);
 });
+
+// ── BUG-1726：渲染中弹窗持续长高（Netflix 底部字幕查词）→ 超出视口底部被截断 ──
+// 根因：place() 只在 fushiRenderEntries 后的一帧 rAF 量过一次尺寸（此刻只有首词条+第 1 个词典
+// 块，高度被低估），fushiComputePlacement 误判「放得下」且 maxHeight=null；随后 popup.js 逐宏
+// 任务追加词典块把弹窗撑到全高，溢出视口无人复算。修复：① fushiPlacementSideMax 纯函数给出
+// 「所选一侧可用空间上限」，place 恒把 maxHeight 夹到 min(theme 上限, sideMax)（无观察器的老
+// WebView 也被兜住）；② host+容器挂 ResizeObserver，尺寸变化用同一份锚点重跑落点。
+
+function loadSideMax() {
+  return loadSandbox().fushiPlacementSideMax;
+}
+
+test('顶层纯函数 fushiPlacementSideMax 存在', () => {
+  assert.strictEqual(typeof loadSideMax(), 'function',
+    'content.js 未导出 fushiPlacementSideMax 全局函数');
+});
+
+test('BUG-1726 sideMax：两侧都放不下时直接等于 pos.maxHeight', () => {
+  const place = loadPlacement();
+  const sideMax = loadSideMax();
+  const vp = { width: 1200, height: 500 };
+  const anchor = { x: 300, y: 240, height: 22 }; // 词在半屏，弹窗 360 两侧都放不下
+  const pos = place(anchor, { width: 400, height: 360 }, vp);
+  assert.notStrictEqual(pos.maxHeight, null);
+  assert.strictEqual(sideMax(pos, anchor, vp), pos.maxHeight);
+});
+
+test('BUG-1726 落点后继续长高（复算尚未发生的窗口期）：sideMax 夹取恒不压词、不出视口', () => {
+  // 核心时序：place() 在 hSmall 时刻落点并写 maxHeight=min(theme, sideMax)；随后 popup.js 把
+  // 内容撑到 hBig，而 ResizeObserver 复算**还没跑**（或老 WebView 根本没有）——此窗口期弹窗
+  // 实际渲染高 = min(hBig, sideMax(落点))，必须已经被夹到不压词、不出视口。
+  const place = loadPlacement();
+  const sideMax = loadSideMax();
+  for (const vh of [500, 700, 800]) {
+    for (let y = 8; y <= vh - 30; y += 41) {
+      for (const hSmall of [80, 160, 240]) {
+        for (const hBig of [hSmall, hSmall + 120, 360, 520]) {
+          const vp = { width: 1200, height: vh };
+          const anchor = { x: 300, y, height: 22 };
+          const pos = place(anchor, { width: 400, height: hSmall }, vp);
+          const sm = sideMax(pos, anchor, vp);
+          const rendered = Math.min(hBig, sm);
+          const clamped = { top: pos.top, maxHeight: rendered };
+          assert.ok(!overlapsVertically(clamped, { height: rendered }, anchor),
+            `未复算窗口期压词：vh=${vh} y=${y} ${hSmall}→${hBig} → popup=[${pos.top}, ${pos.top + rendered}] word=[${y}, ${y + 22}]`);
+          assert.ok(pos.top + rendered <= vh - 8 + 0.5,
+            `未复算窗口期弹窗底出视口：vh=${vh} y=${y} ${hSmall}→${hBig} bottom=${pos.top + rendered}`);
+          assert.ok(pos.top >= 8 - 0.5,
+            `弹窗顶出视口：vh=${vh} y=${y} ${hSmall}→${hBig} top=${pos.top}`);
+        }
+      }
+    }
+  }
+});
+
+test('BUG-1726 Netflix 场景：词贴视口底 + 渲染中长高，复算后始终不压词不出视口', () => {
+  const place = loadPlacement();
+  const sideMax = loadSideMax();
+  const vp = { width: 1600, height: 900 };
+  const anchor = { x: 700, y: 860, height: 24 }; // 底部字幕：词底距视口底仅 16px
+  // 首帧低估高度 100 → 渲染推进逐步长高到 360（--fushi-popup-max-height 默认）。
+  // 每一步都用「上一步不存在依赖、只按当前自然高度复算」模拟 ResizeObserver 重跑落点。
+  for (const h of [100, 180, 260, 360]) {
+    const pos = place(anchor, { width: 400, height: h }, vp);
+    const rendered = Math.min(h, sideMax(pos, anchor, vp));
+    assert.ok(pos.top + rendered <= anchor.y + 0.5,
+      `长高到 ${h} 后压住底部字幕词：popup=[${pos.top}, ${pos.top + rendered}] word.top=${anchor.y}`);
+    assert.ok(pos.top >= 8 - 0.5 && pos.top + rendered <= vp.height - 8 + 0.5,
+      `长高到 ${h} 后出视口：popup=[${pos.top}, ${pos.top + rendered}]`);
+  }
+});
+
+// 布线守卫（源码扫描）：纯函数对了但没接上观察器/侧夹照样复发，锁住三处接线。
+test('BUG-1726 布线：ResizeObserver 复算 + maxHeight 侧夹 + 拖拽手动优先', () => {
+  const src = fs.readFileSync(CONTENT, 'utf8');
+  assert.ok(src.includes('function fushiApplyPlacement('),
+    '落点写回必须收敛进 fushiApplyPlacement（首帧与复算共用同一份实现）');
+  assert.ok(src.includes('function fushiObservePopupResize(') &&
+    src.includes('new ResizeObserver('),
+    'host/容器必须挂 ResizeObserver，弹窗渲染中长高要重跑落点');
+  assert.ok(src.includes('fushiObservePopupResize();'),
+    'place() 必须真的调用 fushiObservePopupResize()——函数存在但没接线照样复发');
+  assert.ok(src.includes('fushiPlacementSideMax(pos, anchor, viewport)'),
+    'fushiApplyPlacement 必须用 fushiPlacementSideMax 恒夹 maxHeight（兜底老 WebView）');
+  assert.ok(src.includes("'min(' + fushiHostBaseMaxHeight"),
+    '侧夹必须与 theme 原始上限取 min——夹取只缩不放，不得放大用户配置的弹窗高度');
+  assert.ok(src.includes('fushiUserResizedPopup = true'),
+    'Phase D 拖拽动过尺寸后必须停自动复位（手动优先），否则复算和用户打架');
+  assert.ok(src.includes('fushiPlaceObserver.disconnect()'),
+    '关窗必须 disconnect 落点观察器');
+});
