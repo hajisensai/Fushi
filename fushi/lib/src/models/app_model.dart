@@ -5801,6 +5801,13 @@ class AppModel with ChangeNotifier {
   Future<void> setOnboardingCompleted({required bool value}) =>
       prefsRepo.setOnboardingCompleted(value: value);
 
+  bool get moduleBooksEnabled => prefsRepo.moduleBooksEnabled;
+  Future<void> setModuleBooksEnabled(bool value) =>
+      prefsRepo.setModuleBooksEnabled(value);
+  bool get moduleBrowserExtensionEnabled =>
+      prefsRepo.moduleBrowserExtensionEnabled;
+  Future<void> setModuleBrowserExtensionEnabled(bool value) =>
+      prefsRepo.setModuleBrowserExtensionEnabled(value);
   bool get moduleMangaEnabled => prefsRepo.moduleMangaEnabled;
   Future<void> setModuleMangaEnabled(bool value) =>
       prefsRepo.setModuleMangaEnabled(value);

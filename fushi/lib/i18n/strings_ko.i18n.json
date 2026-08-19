@@ -3616,5 +3616,10 @@
   "storage_modules_not_installed": "Not installed",
   "storage_bundled_section": "Bundled components",
   "storage_bundled_hint": "Shipped with the installer; deleted files come back on the next update, listed for reference only.",
-  "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log"
+  "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log",
+  "module_books_label": "Novels",
+  "module_extension_label": "Browser extension",
+  "onboarding_feature_books": "Novel library",
+  "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
+  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)"
 }

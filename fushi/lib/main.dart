@@ -1711,10 +1711,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                   ? null
                                   : buildFushiMacosSidebar(
                                       activeTabs: homeActiveTabs(
-                                        // 漫画/视频按「功能模块」偏好显隐（与
-                                        // HomePage._activeTabs 同一真值）。games
-                                        // （galgame 库）仅 Windows；macOS 根侧栏此处
-                                        // 恒 false（gamesEnabled 缺省），不显示。
+                                        // 小说/漫画/视频/扩展按「功能模块」偏好
+                                        // 显隐（与 HomePage._activeTabs 同一真值）。
+                                        // games（galgame 库）仅 Windows；macOS 根
+                                        // 侧栏此处恒 false（gamesEnabled 缺省）。
+                                        booksEnabled:
+                                            appModel.moduleBooksEnabled,
                                         videoEnabled:
                                             appModel.moduleVideoEnabled,
                                         mangaEnabled:
@@ -1722,7 +1724,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                         // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
                                         // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
                                         browserExtensionEnabled:
-                                            DesktopLookupService.isDesktop,
+                                            DesktopLookupService.isDesktop &&
+                                                appModel
+                                                    .moduleBrowserExtensionEnabled,
                                       ),
                                     ),
                               child: child!,

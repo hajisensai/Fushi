@@ -3,7 +3,7 @@ import 'package:fushi/src/onboarding/onboarding_steps.dart';
 
 void main() {
   group('onboardingStepSequence', () {
-    test('empty selection yields fixed skeleton (desktop)', () {
+    test('empty selection yields fixed skeleton (no capability steps)', () {
       expect(
         onboardingStepSequence(
           selected: <OnboardingFeature>{},
@@ -12,24 +12,43 @@ void main() {
         <OnboardingStepId>[
           OnboardingStepId.welcome,
           OnboardingStepId.features,
-          OnboardingStepId.browserExtension,
           OnboardingStepId.fonts,
           OnboardingStepId.finish,
         ],
       );
     });
 
-    test('mobile skeleton drops the browser-extension step', () {
+    test('extension guide step needs BOTH desktop platform and selection', () {
+      final Set<OnboardingFeature> withExtension = <OnboardingFeature>{
+        OnboardingFeature.browserExtension,
+      };
+      // 桌面 + 勾选 → 有引导步骤。
+      expect(
+        onboardingStepSequence(
+          selected: withExtension,
+          browserExtensionAvailable: true,
+        ),
+        contains(OnboardingStepId.browserExtension),
+      );
+      // 移动端即便勾选（不可能出现，但语义上）也没有该步骤。
+      expect(
+        onboardingStepSequence(
+          selected: withExtension,
+          browserExtensionAvailable: false,
+        ),
+        isNot(contains(OnboardingStepId.browserExtension)),
+      );
+      // 桌面但用户关掉了扩展模块 → 不引导安装。
       expect(
         onboardingStepSequence(
           selected: <OnboardingFeature>{},
-          browserExtensionAvailable: false,
+          browserExtensionAvailable: true,
         ),
         isNot(contains(OnboardingStepId.browserExtension)),
       );
     });
 
-    test('full capability selection yields all steps in fixed order', () {
+    test('full selection yields all steps in fixed order', () {
       expect(
         onboardingStepSequence(
           selected: OnboardingFeature.values.toSet(),
@@ -49,9 +68,15 @@ void main() {
       );
     });
 
-    test('module features (manga/video/games) never add steps', () {
+    test('tab-only module features (books/manga/video/games) never add steps',
+        () {
       final List<OnboardingStepId> withModules = onboardingStepSequence(
-        selected: kOnboardingModuleFeatures,
+        selected: <OnboardingFeature>{
+          OnboardingFeature.books,
+          OnboardingFeature.manga,
+          OnboardingFeature.video,
+          OnboardingFeature.games,
+        },
         browserExtensionAvailable: false,
       );
       final List<OnboardingStepId> without = onboardingStepSequence(

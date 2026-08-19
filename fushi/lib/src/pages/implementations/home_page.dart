@@ -109,15 +109,17 @@ enum HomeTab {
 /// [HomePage]。底栏/侧栏的位置索引由此列表导出。
 List<HomeTab> homeActiveTabs({
   required bool videoEnabled,
+  bool booksEnabled = true,
   bool mangaEnabled = true,
   bool gamesEnabled = false,
   bool browserExtensionEnabled = false,
 }) =>
     <HomeTab>[
       HomeTab.home,
-      HomeTab.books,
-      // 漫画/视频/游戏三个媒体库 tab 可按「功能模块」偏好隐藏（新手引导的功能
-      // 选择与 设置 → 系统 → 功能模块 写同一真值）；书架/词典/设置恒在。
+      // 小说/漫画/视频/游戏/浏览器扩展五个库页 tab 可按「功能模块」偏好隐藏
+      // （新手引导的功能选择与 设置 → 系统 → 功能模块 写同一真值）；首页/下载/
+      // 词典/设置恒在，是隐藏后的安全回退面。
+      if (booksEnabled) HomeTab.books,
       if (mangaEnabled) HomeTab.manga,
       if (videoEnabled) HomeTab.video,
       if (gamesEnabled) HomeTab.games,
@@ -156,7 +158,8 @@ HomeTab homeTabForVisualIndex({
 }) {
   final int logicalIndex =
       reversed ? (tabs.length - 1 - visualIndex) : visualIndex;
-  if (logicalIndex < 0 || logicalIndex >= tabs.length) return HomeTab.books;
+  // 回退到恒在的 home（书架 tab 现可被「功能模块」偏好隐藏，不再是安全回退）。
+  if (logicalIndex < 0 || logicalIndex >= tabs.length) return HomeTab.home;
   return tabs[logicalIndex];
 }
 
@@ -753,21 +756,23 @@ class _HomePageState extends BasePageState<HomePage>
   /// games（galgame 库）额外叠加 Windows 平台门控（galgame 引擎-hook 注入本就
   /// Windows-only），紧跟视频之后。底栏/侧栏的位置索引由此列表导出。
   List<HomeTab> _activeTabs() => homeActiveTabs(
-        // 漫画/视频/游戏按「功能模块」偏好显隐（games 仍叠加 Windows 平台门控，
-        // galgame 引擎-hook 注入本就 Windows-only）；偏好默认全开，行为与旧版一致。
+        // 小说/漫画/视频/游戏/扩展按「功能模块」偏好显隐（games 仍叠加 Windows
+        // 平台门控——galgame 引擎-hook 注入本就 Windows-only；扩展仍叠加桌面
+        // 门控「电脑才有」）；偏好默认全开，行为与旧版一致。
+        booksEnabled: appModel.moduleBooksEnabled,
         videoEnabled: appModel.moduleVideoEnabled,
         mangaEnabled: appModel.moduleMangaEnabled,
         gamesEnabled: Platform.isWindows && appModel.moduleGamesEnabled,
-        // 「电脑才有」：浏览器扩展 tab 仅桌面（Windows/macOS/Linux）显示。
-        browserExtensionEnabled: DesktopLookupService.isDesktop,
+        browserExtensionEnabled: DesktopLookupService.isDesktop &&
+            appModel.moduleBrowserExtensionEnabled,
       );
 
-  /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚关掉实验开关时仍停在
-  /// 视频 tab），回落到书架，避免渲染一个不存在的 tab。`_currentTab` 自身保持不变，
-  /// 下一次 [_selectTab] 会纠正它。
+  /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚在「功能模块」里
+  /// 关掉当前所在库页），回落到恒在的首页，避免渲染一个不存在的 tab。
+  /// `_currentTab` 自身保持不变，下一次 [_selectTab] 会纠正它。
   HomeTab get _visibleTab {
     final List<HomeTab> tabs = _activeTabs();
-    return tabs.contains(_currentTab) ? _currentTab : HomeTab.books;
+    return tabs.contains(_currentTab) ? _currentTab : HomeTab.home;
   }
 
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。

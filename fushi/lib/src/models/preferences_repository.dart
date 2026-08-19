@@ -802,9 +802,26 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('first_time_setup', false);
   }
 
-  /// 「功能模块」显隐：漫画/视频/游戏三个媒体库 tab 是否出现在底栏/侧栏。默认
-  /// 全开（与旧版行为一致）；新手引导的功能选择与 设置 → 系统 → 功能模块 写同
-  /// 一真值。games 在读取端还叠加 Windows 平台门控，这里只存用户意愿。
+  /// 「功能模块」显隐：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 是否出现在
+  /// 底栏/侧栏。默认全开（与旧版行为一致）；新手引导的功能选择与 设置 → 系统 →
+  /// 功能模块 写同一真值。games（Windows）与浏览器扩展（桌面）在读取端还叠加
+  /// 平台门控，这里只存用户意愿。首页/下载/词典/设置恒在，不提供开关。
+  bool get moduleBooksEnabled =>
+      getPref('module_books_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleBooksEnabled(bool value) async {
+    await setPref('module_books_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleBrowserExtensionEnabled =>
+      getPref('module_browser_extension_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleBrowserExtensionEnabled(bool value) async {
+    await setPref('module_browser_extension_enabled', value);
+    notifyListeners();
+  }
+
   bool get moduleMangaEnabled =>
       getPref('module_manga_enabled', defaultValue: true) as bool;
 

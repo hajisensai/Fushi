@@ -7,6 +7,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -145,12 +146,24 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
-      // 「功能模块」：漫画/视频/游戏三个媒体库 tab 的显隐开关（与新手引导的功能
-      // 选择写同一真值）。书架/词典/设置恒在，不提供开关；games 仅 Windows 显示
-      // （读取端还叠加平台门控）。
+      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 的显隐开关
+      // （与新手引导的功能选择写同一真值）。首页/下载/词典/设置恒在，不提供开关；
+      // games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
       SettingsSection(
         title: t.settings_section_modules,
         items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'system.module_books',
+            title: t.module_books_label,
+            subtitle: t.module_toggle_hint,
+            icon: Icons.menu_book_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleBooksEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setModuleBooksEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSwitchItem(
             id: 'system.module_manga',
             title: t.module_manga_label,
@@ -185,6 +198,20 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.appModel.moduleGamesEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setModuleGamesEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.module_browser_extension',
+            title: t.module_extension_label,
+            subtitle: t.module_toggle_hint,
+            icon: Icons.extension_outlined,
+            visible: (_) => DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleBrowserExtensionEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setModuleBrowserExtensionEnabled(value);
               settingsContext.refresh();
             },
           ),
