@@ -97,9 +97,38 @@ exact_equal=True
 KiriKiri 是单进程，两个 getter 自然一致。所以最可能的根因是
 **会话身份挂在启动器 pid、而台词归属挂在子进程 pid（或反之）**，导致按会话过滤后为空。
 
-下一步（最小动作）：比对 `selectedSessionLines` 与 `workbenchLines` 的过滤条件，
-确认会话 id 用的是哪一个 pid；用本分支（已含本 bug 的提示修复）构建一份 Fushi 跑同一场景，
-提示会直接说出是「本局一条台词都没有」还是「有台词但对不上」——前者即坐实此假设。
+#### 读代码后收敛到一个**确定的不一致**（不再是推测）
+
+两个 getter 的过滤条件逐行比对（`gal_hook_session_controller.dart`）：
+
+```dart
+// workbenchLines (:732) —— 工作台列表渲染用
+final DateTime? startedAt = _state.sessionStartedAt;
+Iterable<...> scoped = entries.where(_publishesUnderSelection...);
+if (startedAt != null) {                       // ← null 就【不过滤】，照常显示
+  scoped = scoped.where((e) => !e.receivedAt.isBefore(startedAt));
+}
+
+// selectedSessionLines (:768) —— 游戏内制卡的行解析用
+final DateTime? startedAt = _state.sessionStartedAt;
+if (startedAt == null) return const <TexthookerLineEntry>[];   // ← null 就【直接返回空】
+```
+
+**两者只有这一处差异，而且方向相反。** 于是 `sessionStartedAt == null` 时：
+用户在工作台**看得见台词**，游戏内制卡却认为**一条都没有** → `_resolveIngameMiningLineId`
+返回 null → 静默失败。这与本轮 A/B 完全吻合（工作台那条路拿 `entry.id`，压根不经过它）。
+
+`sessionStartedAt` 由 `bindWindow`（:1096）与 `launchAndCapture`（:1239）打戳，
+由 `stopListening`（:1550）清空。Ren'Py 走「启动器 → 子进程」并开着
+`follow_child_processes`，比单进程引擎多出若干次绑定/换绑时机，更容易落在它为 null 的窗口里。
+
+**这本身就是要修的东西**：两个语义上必须一致的判据分叉了。修法不是给制卡那条打补丁，
+而是让两者共用同一个谓词——顺带把「工作台显示了、制卡却当它不存在」这种自相矛盾的状态消掉。
+（`sessionStartedAt` 为 null 时到底该显示还是该隐藏，是个产品决定；但两处必须同答案。）
+
+仍未直接观测到的是「制卡那一刻 `sessionStartedAt` 是否真的为 null」——
+用本分支（已含本 bug 的提示修复）构建一份 Fushi 跑同一场景即可坐实：
+提示会直接说出是「本局一条台词都没有」还是「有台词但对不上」。
 
 ### 与 BUG-1733 的关系
 
