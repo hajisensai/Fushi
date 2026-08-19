@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -93,15 +94,77 @@ void main() {
     );
   });
 
-  test('invalid custom proxy fails instead of silently changing policy', () {
-    expect(
-      () => fixedDownloadProxyDirective(
-        const DownloadNetworkProxyConfig(
+  // BUG-1738：指令函数必须对全部可持久化输入收敛，永不抛。设置页逐键落库，
+  // custom 模式下半截/空输入曾经抛 FormatException，沿 createDownloadHttpClient
+  // 炸进 reloadVideoDownloadPipelineRuntime，把下载管线永久杀死（UI 表现为
+  // 「原下载后端当前离线」「请先配置下载后端」+ 任务罢工）。非法输入 fail-open
+  // 落 DIRECT，与 BUG-1538「误套黑洞代理比误直连更糟」同一纪律。
+  group('BUG-1738 非法 custom 代理 fail-open 而不是杀管线', () {
+    test('invalid custom proxy degrades to DIRECT instead of throwing', () {
+      expect(
+        fixedDownloadProxyDirective(
+          const DownloadNetworkProxyConfig(
+            mode: DownloadNetworkProxyMode.custom,
+            customProxy: 'not-a-proxy',
+          ),
+        ),
+        'DIRECT',
+      );
+    });
+
+    test('empty custom proxy (fresh switch to custom) degrades to DIRECT', () {
+      expect(
+        fixedDownloadProxyDirective(
+          const DownloadNetworkProxyConfig(
+            mode: DownloadNetworkProxyMode.custom,
+            customProxy: '',
+          ),
+        ),
+        'DIRECT',
+      );
+    });
+
+    test('half-typed proxy (per-keystroke persistence) degrades to DIRECT', () {
+      // 用户逐键输入 127.0.0.1:7890 的中间态全部非法，任何一个都不许抛。
+      for (final String partial in <String>[
+        '1',
+        '127.0.0.1',
+        '127.0.0.1:',
+      ]) {
+        expect(
+          fixedDownloadProxyDirective(
+            DownloadNetworkProxyConfig(
+              mode: DownloadNetworkProxyMode.custom,
+              customProxy: partial,
+            ),
+          ),
+          'DIRECT',
+          reason: 'partial input "$partial" must fail open',
+        );
+      }
+    });
+
+    test('buildDownloadHttpClient never throws for any mode/config', () async {
+      for (final DownloadNetworkProxyConfig config
+          in const <DownloadNetworkProxyConfig>[
+        DownloadNetworkProxyConfig(),
+        DownloadNetworkProxyConfig(mode: DownloadNetworkProxyMode.auto),
+        DownloadNetworkProxyConfig(
+          mode: DownloadNetworkProxyMode.custom,
+          customProxy: '',
+        ),
+        DownloadNetworkProxyConfig(
           mode: DownloadNetworkProxyMode.custom,
           customProxy: 'not-a-proxy',
         ),
-      ),
-      throwsFormatException,
-    );
+        DownloadNetworkProxyConfig(
+          mode: DownloadNetworkProxyMode.custom,
+          customProxy: '127.0.0.1:34151',
+        ),
+      ]) {
+        final http.Client client = await buildDownloadHttpClient(config);
+        client.close();
+      }
+    });
   });
 }

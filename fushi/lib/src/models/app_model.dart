@@ -3388,12 +3388,30 @@ class AppModel with ChangeNotifier {
   Future<void> setDownloadNetworkProxyMode(
     DownloadNetworkProxyMode mode,
   ) async {
+    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
     await prefsRepo.setDownloadNetworkProxyMode(mode.name);
-    await reloadVideoDownloadPipelineRuntime();
+    await _reloadPipelineIfProxyDirectiveChanged(before);
   }
 
   Future<void> setDownloadCustomProxy(String value) async {
+    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
     await prefsRepo.setDownloadCustomProxy(value);
+    await _reloadPipelineIfProxyDirectiveChanged(before);
+  }
+
+  /// BUG-1738 放大器：自定义代理输入框逐键落库，改一个字符就整套重建下载
+  /// runtime（拆掉全部 service + registry 再起）。半截输入在 custom 模式下的
+  /// 有效指令恒为 `DIRECT`（见 [fixedDownloadProxyDirective] 的 fail-open），
+  /// 指令没变就没有重建的理由；auto↔custom(非法)、custom(非法)↔direct 这类
+  /// 行为等价的切换也一并被同一条规则吸收，不设特例。
+  Future<void> _reloadPipelineIfProxyDirectiveChanged(
+    DownloadNetworkProxyConfig before,
+  ) async {
+    final DownloadNetworkProxyConfig after = downloadNetworkProxyConfig;
+    if (fixedDownloadProxyDirective(before) ==
+        fixedDownloadProxyDirective(after)) {
+      return;
+    }
     await reloadVideoDownloadPipelineRuntime();
   }
 
@@ -3490,6 +3508,16 @@ class AppModel with ChangeNotifier {
   /// schema v78 的通用视频下载闭环。旧 JSON service 仅继续兼容本次启动后由旧
   /// 对话框新写入的计划；启动前已有 JSON 会先迁入这里并归档。
   VideoDownloadPipelineService? _videoDownloadPipelineService;
+
+  /// 下载管线 runtime「应当活着」的语义位（BUG-1738）。
+  ///
+  /// [reloadVideoDownloadPipelineRuntime] 曾拿 `_videoDownloadPipelineService
+  /// == null` 当门闩，把「还没到启动时机」和「重启中途失败死掉」混成一态：一旦
+  /// `_startVideoDownloadPipeline()` 抛出，service 永久留 null，此后所有设置
+  /// 变更都在门闩上原地返回，管线再也救不回来。改用本位表达意图：
+  /// [startAnimeDownloadService] 置 true，[quiesceBackgroundDatabaseWriters]
+  /// 与 [dispose] 置 false；service 是否存在只是结果，不再当开关用。
+  bool _videoDownloadPipelineRuntimeWanted = false;
   VideoDownloadPipelineService? get videoDownloadPipelineService =>
       _videoDownloadPipelineService;
   VideoDownloadSubscriptionService? _videoDownloadSubscriptionService;
@@ -3743,6 +3771,7 @@ class AppModel with ChangeNotifier {
     // 用户永远没有这种文件，于是永远不建 session、不绑端口、不起 DHT，与
     // BUG-1053 修复后的行为逐字节一致。
     await _restoreEmbeddedTorrentSession(store);
+    _videoDownloadPipelineRuntimeWanted = true;
     await _startVideoDownloadPipeline();
   }
 
@@ -3996,11 +4025,22 @@ class AppModel with ChangeNotifier {
 
   /// 外部来源、凭据、字幕语言或网络代理变化后重建 provider runtime。持久任务
   /// 和订阅均留在 Drift；旧 worker 先释放 lease/连接，再由新配置立即对账恢复。
+  ///
+  /// BUG-1738：门闩看 [_videoDownloadPipelineRuntimeWanted]（意图）而不是
+  /// service 是否存在（结果）——后者会把「上次重启失败」冻结成永久死亡。重启
+  /// 失败记日志后返回，service 留 null，但 wanted 仍为 true，下一次设置变更
+  /// 就能救活。
   Future<void> reloadVideoDownloadPipelineRuntime() async {
-    if (_videoDownloadPipelineService == null) return;
+    if (!_videoDownloadPipelineRuntimeWanted) return;
     await _disposeVideoDownloadPipelineRuntime();
     notifyListeners();
-    await _startVideoDownloadPipeline();
+    try {
+      await _startVideoDownloadPipeline();
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('AppModel.reloadVideoDownloadPipelineRuntime', e, stack);
+    }
+    notifyListeners();
   }
 
   Future<VideoDownloadBackendBinding?> _resolveVideoDownloadBackend(
@@ -5862,6 +5902,7 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _videoDownloadPipelineRuntimeWanted = false;
     await _disposeVideoDownloadPipelineRuntime();
   }
 
@@ -5918,6 +5959,7 @@ class AppModel with ChangeNotifier {
     unawaited(stopYomitanApiServer());
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
+    _videoDownloadPipelineRuntimeWanted = false;
     unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
