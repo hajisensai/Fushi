@@ -726,11 +726,20 @@ class ReaderPaginationScripts {
   static String clearSentenceAudioCueInvocation() =>
       'window.fushiReader.clearSentenceAudioCue()';
 
+  /// BUG-1743：存在性守卫是第二层防线。裸调 `window.fushiReader.scrollToSearchMatch`
+  /// 在未实现该方法的 shell 上抛 TypeError，而 evaluateJavascript 的 JS 异常在
+  /// 移动端通道上一般不回传成 Dart 异常——调用点的 try/catch 抓不到，症状只是
+  /// 「点了没反应」，且同一次 evaluate 里后续语句会被一并中断。
+  /// 同文件 [pageInfoInvocation] 与收藏跳转路径用的都是同款守卫写法。
   static String scrollToSearchMatchInvocation(String query, int hintOffset) =>
-      'window.fushiReader.scrollToSearchMatch(${_jsStringLiteral(query)}, $hintOffset)';
+      '(window.fushiReader && '
+      'typeof window.fushiReader.scrollToSearchMatch === "function") '
+      '? window.fushiReader.scrollToSearchMatch('
+      '${_jsStringLiteral(query)}, $hintOffset) : null';
 
-  static String clearSearchHighlightInvocation() =>
-      'window.fushiReader.clearSearchHighlight()';
+  static String clearSearchHighlightInvocation() => '(window.fushiReader && '
+      'typeof window.fushiReader.clearSearchHighlight === "function") '
+      '? window.fushiReader.clearSearchHighlight() : null';
 
   /// Returns the current page / total pages within the loaded chapter as a JSON
   /// string (`{"currentPage":N,"totalPages":M}`), or the literal `"null"` when
