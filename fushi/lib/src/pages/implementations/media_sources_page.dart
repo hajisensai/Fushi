@@ -210,8 +210,9 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     }
   }
 
-  /// 单个视频 / 播放列表 / 网络流导入：复用 [VideoImportDialog]（原页头入口
-  /// 迁到来源视图后的唯一常规入口，对话框弹出即含文件 / 文件夹 / 链接三形态）。
+  /// 单个视频 / 网络流导入：复用 [VideoImportDialog]（原页头入口迁到来源视图后
+  /// 的唯一常规入口；对话框只管单件——文件 / 链接，文件夹与 m3u8 建合集入口已删，
+  /// 文件夹导入统一走 [_importFolder] 的常驻来源 / 仅导入一次二选一）。
   Future<void> _importVideo() async {
     final String? bookUid = await showAppDialog<String>(
       context: context,

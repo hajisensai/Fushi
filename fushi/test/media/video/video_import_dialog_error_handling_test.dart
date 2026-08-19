@@ -101,7 +101,7 @@ void main() {
     });
   });
 
-  group('source guard: all four import methods route through runImport', () {
+  group('source guard: all import methods route through runImport', () {
     late String source;
 
     setUpAll(() {
@@ -110,13 +110,13 @@ void main() {
           .readAsStringSync();
     });
 
-    // _importPlaylistFromPath / _pickFolder 依赖 FilePicker / 目录选择器静态入口，
-    // widget 测试驱动不到，靠源码扫描锁住「以对应 logTag 走 runImport 模板」。
+    // _importPlaylistFromPath 依赖拖入路径，widget 测试驱动不到，靠源码扫描
+    // 锁住「以对应 logTag 走 runImport 模板」。（_pickFolder 已随旧「对话框内
+    // 建合集」入口删除，2026-08-19 用户指令；文件夹导入统一走导入页入口。）
     for (final String tag in const <String>[
       'VideoImportDialog.import', // _doImport
       'VideoImportDialog.importStream', // _importStreamUrl
-      'VideoImportDialog.importPlaylist', // _importPlaylistFromPath
-      'VideoImportDialog.pickFolder', // _pickFolder
+      'VideoImportDialog.importPlaylist', // _importPlaylistFromPath（拖入 m3u8）
     ]) {
       test('import method routes through runImport with tag $tag', () {
         // dart format 可能折行，故用允许空白的正则而非裸 contains。
