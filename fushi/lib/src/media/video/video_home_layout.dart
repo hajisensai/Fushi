@@ -135,6 +135,26 @@ class VideoSeriesPlaybackState {
   bool get hasTrace => lastWatchedAtMs > 0 || positionMs > 0 || completed;
 }
 
+/// 成员的有效「最近观看时刻」（epoch 毫秒，0 = 没看过）。纯函数。
+///
+/// 两个来源取较大者：
+/// * [statsWatchedAtMs] —— 本机播放统计（`VideoWatchStatistics.lastModified`），
+///   只有本机真播放过才有行；
+/// * [lastPlayedAt] —— 行级 `VideoBooks.lastPlayedAt`，本机播放与远端进度回灌
+///   （互联子端上报 / sync sweep，用对端时刻）都写它。
+///
+/// BUG-1731：合集续播锚点此前只认统计行——子端在手机上看完后续集数只回灌行级
+/// `lastPlayedAt`、不产生 host 本机统计行，锚点仍钉在 host 最后本机播放的那集。
+/// 回落行级时刻后与 hero 的 collection_continue（只读 `lastPlayedAt`）口径一致；
+/// 本机播放时两来源同时写、时刻近似相等，max 不改变已有本机行为。
+int effectiveWatchedAtMs({
+  required int statsWatchedAtMs,
+  required int? lastPlayedAt,
+}) {
+  final int rowAt = lastPlayedAt ?? 0;
+  return statsWatchedAtMs >= rowAt ? statsWatchedAtMs : rowAt;
+}
+
 /// Returns the episode the user actually played most recently.
 ///
 /// This deliberately does not mean "the furthest episode". A user may go back

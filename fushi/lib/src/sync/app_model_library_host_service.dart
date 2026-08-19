@@ -1523,6 +1523,18 @@ class AppModelLibraryHostService
     await _db.setPrefTyped<int>(
         videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
         winner.updatedAtMs);
+    // BUG-1731：prefs 键空间只被「下发清单给子端」消费，host 自己的 UI（继续观看
+    // / 下一集 / 合集续播锚点）读的是 VideoBooks.lastPositionMs / lastPlayedAt。
+    // 子端上报只写 prefs 会让 host 端 UI 永远看不到对端进度——胜者来自对端时镜像
+    // 写行，与 client 侧 sync_orchestrator 的 writeBackLocal 同纪律。playedAt 用
+    // **对端的** updatedAtMs（绝不是 now）：传 now 会把对方三天前看的冒充成本机刚
+    // 看的，钉死合集续播锚点（BUG-1542）。仅 episodeIndex<=0（合集每集一行 / 单
+    // 视频）镜像；episodeIndex>0 是 host-playlist 单行多集形态，行级
+    // lastPositionMs 无按集语义，写它会把某一集的进度错配成整行进度。
+    if (episodeIndex <= 0 && await _db.getVideoBookByBookUid(id) != null) {
+      await _db.updateVideoBookPosition(id, winner.positionMs,
+          playedAt: winner.updatedAtMs);
+    }
   }
 
   /// [id] 视频的主归属合集行（无归属 / 未知 id 返回 null）。系列级播放偏好
