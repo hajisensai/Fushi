@@ -1,0 +1,58 @@
+## BUG-1734 · 游戏内卡片制卡拿不到台词行时静默失败，无任何提示
+- **报告**：2026-08-19（用户：真机验证游戏内查词制卡时发现）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/lookup/gal_hook_text_overlay_controller.dart:736-739`
+- **[ ] ① 部分修复** — Dart 侧的静默返回已改成**先报再返回**，且按两种原因分开报：
+  「本局一条台词都没有」用新 key `game_hook_mining_no_session_lines`（指向工作台换线程），
+  「有台词但对不上当前这句」沿用 `game_hook_line_unavailable`。
+  **但这还不是全解**：popup 侧收到 `ankiConnect:false` 依旧什么都不做
+  （`fushi/assets/popup/popup.js` 的 mine 分支只在 `result.ankiConnect` 为真时才有动作），
+  而游戏常是全屏/无边框，Fushi 的 toast 在游戏背后**用户可能仍然看不见**。
+  真正解掉要让**游戏内那张卡片自己**显示失败态，即改 popup.js 并按三镜像同步；
+  该改动必须有可视验证才敢下，本轮工作站已锁屏、未做。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/ingame_mining_failure_visibility_guard_test.dart`（6 项）：
+  真文件断言「失败分支先 `FushiToast.show(` 再 return」这条**顺序不变量** + 两条文案各自存在；
+  配三条变异（完全没有 toast / toast 排在 return 之后 / 锚点失效）与一条干净样本反向验证。
+  变异实测：把真文件里那次 toast 注释掉 → 守卫红并报出预期断言，还原后 sha256 逐字节相同。
+- **备注**：见下
+
+### 复现（真机，2026-08-19）
+
+《天使☆嚣嚣 RE-BOOT!》（KiriKiri Z）由 Fushi 启动，游戏内查词一切正常
+（`lookup_diag=0x106F`，卡片已画进游戏图层，点击也已转发：`inputs=3`）。
+点卡片右上角「+」制卡：
+
+- **第一次**（还没选文本线程）：弹出「完成捕获设置：请先选择台词线程」。行为正确。
+- **选完线程之后再点**：**什么都不发生**。没有 toast、没有进度、没有错误，Anki 一条都没多
+  （AnkiConnect 前后 `total_notes` 13200 → 13200，`galgame_card_test` 12 → 12）。
+
+用户视角完全无法区分「制卡失败了」和「我没点到按钮」。
+
+### 根因
+
+`fushi/lib/src/lookup/gal_hook_text_overlay_controller.dart:730-748` `_ingameMiningHandlerFor`：
+
+```dart
+final String? resolved = _resolveIngameMiningLineId(line);
+if (resolved == null) {
+  return const <String, Object?>{'ankiConnect': false, 'noteId': null};   // :736-739
+}
+```
+
+**静默返回**：不 toast、不 `_record`、不打日志。
+而 `_resolveIngameMiningLineId`（`:712-727`）第一步就读 `_session.selectedSessionLines`
+（`gal_hook_session_controller.dart:768`），列表为空直接 `return null`（`:714`）。
+
+对照：**浮窗点词那条制卡路径拿不到 entry 时是有提示的**——
+`gal_hook_text_overlay_controller.dart:672-680` 会 `FushiToast.show(t.game_hook_line_unavailable, error)`。
+两个入口对同一种失败的处理不对称，游戏内这条是纯静默死。
+
+### 与 BUG-1733 的关系
+
+BUG-1733 是**为什么列表是空的**（KiriKiriZ 线程的台词被伪影门丢了）；本条是**列表空时不该静默**。
+两者要分别修：即便 1733 修好，仍会有「用户选了一条真的没台词的线程」这种合法情形，
+那时也必须告诉用户，而不是让「+」按钮看起来坏了。
+
+### 修复方向
+
+失败分支给出与浮窗路径同源的提示（同一条 i18n key 或新增一条更准确的），
+并区分两种原因：本会话没有任何台词行 / 有台词但匹配不上当前这句。

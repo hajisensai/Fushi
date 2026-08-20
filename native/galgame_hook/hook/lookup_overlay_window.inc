@@ -21,7 +21,11 @@
 // 呈现器不启动；KiriKiri 仍走它自己的 Layer，因为在游戏渲染树里跟随全屏与窗口变换是分层
 // 窗口做不到的。
 
-#include "lookup_overlay_geometry.h"
+// 注意：本文件被 include 进 dll_main.cpp 的**匿名命名空间内部**，所以这里一行 #include
+// 都不能有。头文件里的 `namespace fushi_voice_hook` 会在匿名命名空间里再开一个同名的
+// 嵌套命名空间，把真正的 ::fushi_voice_hook 整个遮住——症状是本文件之后的每个 adapter
+// 都报「不是 fushi_voice_hook 的成员」，而错误行全在别人家里。lookup_overlay_geometry.h
+// 由 dll_main.cpp 在文件作用域引入。
 
 // 引擎适配器已认领呈现（KiriKiri 的 TJS Layer）。通用呈现器只在无人认领时启动。
 volatile LONG g_lookup_presenter_claimed = 0;
@@ -213,6 +217,15 @@ bool PresentOverlayBitmap(uint32_t width, uint32_t height) {
 
 // 读一帧并显示。返回 false 表示这轮没有可用新帧（不是错误）。
 void PollOverlayFrame() {
+  // 认领是**每帧复查**的，不是只在启动时问一次。真机实测（tenshi_sz，KiriKiri Z）：host 把
+  // lookup_enabled 拨到 1 的时刻早于 KiriKiri 拿到 TJS exporter，于是通用呈现器先起了线程，
+  // 随后 KiriKiri 才认领——只在 StartLookupOverlayIfUnclaimed 里判一次的话，这一局就会有
+  // 两个呈现器同时贴同一帧，用户看到双份卡片。
+  // 让位而不是退出线程：认领可能发生在任意一帧，线程留着最省事，隐藏后它只是空转。
+  if (InterlockedCompareExchange(&g_lookup_presenter_claimed, 0, 0) != 0) {
+    HideOverlay();
+    return;
+  }
   if (g_header == nullptr || !fushi_voice_hook::HasLookupRegion(g_header)) return;
   if (g_header->lookup_enabled == 0) {
     HideOverlay();

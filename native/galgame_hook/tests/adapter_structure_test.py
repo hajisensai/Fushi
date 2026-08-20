@@ -134,9 +134,13 @@ class AdapterStructureTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("unity_.ProcessPendingEvents();", registry)
         install = source.split("bool TryHookUnityIl2CppAudio()", 1)[1]
+        # 守的是「先解析 resource 方法（get_clip），再解析 PCM 方法（GetData）」这个顺序，
+        # 不是解析用的辅助函数叫什么名字。锚点只取 (类, "方法名", 参数个数) 这段实参：
+        # 解析器曾从 class_get_method 换成 FindIl2CppMethodByParamCount，顺序不变量原封
+        # 不动，守卫却因为把旧辅助函数名写死进字面量而红了，且红在与本不变量无关的地方。
         self.assertLess(
-            install.index('class_get_method(source_class, "get_clip", 0)'),
-            install.index('class_get_method(clip_class, "GetData", 2)'),
+            install.index('(source_class, "get_clip", 0)'),
+            install.index('(clip_class, "GetData", 2)'),
         )
         self.assertLess(
             install.index("pcm_helpers_ready ="),

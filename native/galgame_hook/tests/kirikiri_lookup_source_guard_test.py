@@ -2140,6 +2140,84 @@ def find_ownerless_card_dismissals(source: MaskedSource) -> list[str]:
     return offenders
 
 
+# ── BUG-1724：安装路径的线程归属 ────────────────────────────────────────────
+#
+# KiriKiri 的 TJS 变体字符串池、连续事件回调容器、图层树和绘制设备全部只归引擎主线程，
+# 没有任何内部同步，而主线程每一帧都在遍历/分配它们。整个安装动作原本跑在 HookWorker
+# 上（HookWorker -> registry.Poll -> ProcessKirikiriVoiceTasks ->
+# PollKirikiriLookupInstall），于是 worker 的 TJSAllocVariantString /
+# TVPAddContinuousEventHook 与主线程并发。真机表现是随机时刻在引擎内部虚调用一个读成
+# NULL 的成员指针（实测落点 tTVPBasicDrawDevice），游戏弹 "Fatal Error / Access
+# Violation"；带 hook 9 次复现 1 次，同样的窗口缩放序列不带 hook 5 次 0 崩。
+#
+# 守两条结构不变式（都是行为，不是写法）：
+#   1. worker 侧入口 `void PollKirikiriLookupInstall() ` 的函数体里一个引擎调用都不许有；
+#   2. `void RunKirikiriLookupInstallOnMainThread() ` 里，第一个引擎调用必须排在线程身份
+#      核对（`GetCurrentThreadId()`）之后——顺序反了等于没守。
+WORKER_INSTALL_ENTRY = "void PollKirikiriLookupInstall() "
+MAIN_THREAD_INSTALL_ENTRY = "void RunKirikiriLookupInstallOnMainThread() "
+MAIN_THREAD_ID_CALL = "GetCurrentThreadId()"
+MAIN_THREAD_RESOLVER = "ResolveKirikiriEngineMainThreadId("
+
+# 「调进引擎」的动作。出现在 worker 入口里即红；出现在主线程安装里必须排在身份核对之后。
+ENGINE_CALLS = (
+    "g_lookup_alloc_string(",
+    "g_lookup_add_continuous(",
+    "g_lookup_remove_continuous(",
+    "g_lookup_execute_script(",
+    "g_lookup_execute_expression(",
+    "QueryKirikiriNativeLookupFunctions(",
+)
+
+
+def _cpp_function_body(source: MaskedSource, signature: str) -> str | None:
+    """取 C++ 函数体（在掩码后的源码上找，注释/字面量已被抠成空白）。"""
+    index = source.masked.find(signature)
+    if index < 0:
+        return None
+    open_index = index + len(signature)
+    if open_index >= len(source.masked) or source.masked[open_index] != "{":
+        return None
+    depth = 0
+    for cursor in range(open_index, len(source.masked)):
+        char = source.masked[cursor]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source.masked[open_index + 1 : cursor]
+    return None
+
+
+def find_engine_calls_on_hook_worker(source: MaskedSource) -> list[str]:
+    body = _cpp_function_body(source, WORKER_INSTALL_ENTRY)
+    if body is None:
+        return [f"找不到 worker 侧入口 {WORKER_INSTALL_ENTRY.strip()}"]
+    return [
+        f"{WORKER_INSTALL_ENTRY.strip()} 里出现引擎调用 {call}"
+        for call in ENGINE_CALLS
+        if call in body
+    ]
+
+
+def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
+    body = _cpp_function_body(source, MAIN_THREAD_INSTALL_ENTRY)
+    if body is None:
+        return [f"找不到主线程安装入口 {MAIN_THREAD_INSTALL_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if MAIN_THREAD_RESOLVER not in body:
+        offenders.append(f"主线程安装里没有解析引擎主线程（{MAIN_THREAD_RESOLVER}）")
+    guard_at = body.find(MAIN_THREAD_ID_CALL)
+    if guard_at < 0:
+        offenders.append(f"主线程安装里没有线程身份核对（{MAIN_THREAD_ID_CALL}）")
+    call_positions = [body.find(call) for call in ENGINE_CALLS]
+    first_call = min((pos for pos in call_positions if pos >= 0), default=-1)
+    if guard_at >= 0 and first_call >= 0 and first_call < guard_at:
+        offenders.append("引擎调用排在线程身份核对之前")
+    return offenders
+
+
 # ── 扫真文件 ────────────────────────────────────────────────────────────────
 
 
@@ -2152,6 +2230,22 @@ class RealAdapterTest(unittest.TestCase):
 
     def test_tjs_literals_fit_msvc_wide_string_limit(self) -> None:
         self.assertEqual([], find_oversized_tjs_literals(self.source))
+
+    def test_install_never_calls_engine_from_hook_worker(self) -> None:
+        self.assertEqual(
+            [],
+            find_engine_calls_on_hook_worker(self.source),
+            "PollKirikiriLookupInstall 跑在 HookWorker 上，里面不能有任何引擎调用："
+            "KiriKiri 的 TJS 堆与连续事件回调容器只归主线程 (BUG-1724)",
+        )
+
+    def test_main_thread_install_checks_thread_identity_first(self) -> None:
+        self.assertEqual(
+            [],
+            find_missing_main_thread_identity_check(self.source),
+            "RunKirikiriLookupInstallOnMainThread 必须先核对线程身份再碰引擎；"
+            "引擎也会在后台线程开流，只靠'在 detour 里'不足以断定主线程 (BUG-1724)",
+        )
 
     def test_never_builds_tjs_source_from_dynamic_strings(self) -> None:
         self.assertEqual(
@@ -4217,6 +4311,82 @@ class MutationSelfTest(unittest.TestCase):
             CLEAN_SAMPLE.replace("global.fushiLookupCapture = function", "// gone", 1)
         )
         self.assertNotEqual([], find_ownerless_card_dismissals(dirty))
+
+    # ── BUG-1724 的变异实测。断言字面量照抄在此，改坏判据必须真红。 ──────────
+    #   干净样本：worker 入口只登记意图；主线程入口先核对线程身份再调引擎。
+    THREAD_CLEAN = (
+        "void PollKirikiriLookupInstall() {\n"
+        "  if (g_stop) return;\n"
+        "  InterlockedExchange(&g_lookup_install_requested, 1);\n"
+        "}\n"
+        "void RunKirikiriLookupInstallOnMainThread() {\n"
+        "  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();\n"
+        "  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;\n"
+        "  QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, fns, 5);\n"
+        "  g_lookup_alloc_string(bootstrap.c_str());\n"
+        "  g_lookup_add_continuous(&g_lookup_pump_callback);\n"
+        "}\n"
+    )
+
+    def test_thread_guard_is_green_on_clean_sample(self) -> None:
+        clean = MaskedSource(self.THREAD_CLEAN)
+        self.assertEqual([], find_engine_calls_on_hook_worker(clean))
+        self.assertEqual([], find_missing_main_thread_identity_check(clean))
+
+    def test_engine_call_moved_back_onto_hook_worker_is_red(self) -> None:
+        dirty = MaskedSource(
+            self.THREAD_CLEAN.replace(
+                "  InterlockedExchange(&g_lookup_install_requested, 1);",
+                "  g_lookup_add_continuous(&g_lookup_pump_callback);",
+                1,
+            )
+        )
+        self.assertNotEqual([], find_engine_calls_on_hook_worker(dirty))
+
+    def test_engine_call_before_thread_identity_check_is_red(self) -> None:
+        dirty = MaskedSource(
+            self.THREAD_CLEAN.replace(
+                "  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();",
+                "  g_lookup_alloc_string(bootstrap.c_str());\n"
+                "  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();",
+                1,
+            )
+        )
+        self.assertNotEqual([], find_missing_main_thread_identity_check(dirty))
+
+    def test_dropped_thread_identity_check_is_red(self) -> None:
+        dirty = MaskedSource(
+            self.THREAD_CLEAN.replace(
+                "  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;",
+                "",
+                1,
+            )
+        )
+        self.assertNotEqual([], find_missing_main_thread_identity_check(dirty))
+
+    def test_thread_identity_check_only_in_a_comment_is_still_red(self) -> None:
+        # 判据被改坏、只在注释里留个名字——守卫必须照红（否则它形同虚设）。
+        dirty = MaskedSource(
+            self.THREAD_CLEAN.replace(
+                "  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;",
+                "  // GetCurrentThreadId() 已在别处核对过",
+                1,
+            )
+        )
+        self.assertNotEqual([], find_missing_main_thread_identity_check(dirty))
+
+    def test_equivalent_thread_identity_check_stays_green(self) -> None:
+        # 反向变异：等价写法不该跟着红（否则守的是写法不是行为）。
+        dirty = MaskedSource(
+            self.THREAD_CLEAN.replace(
+                "  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;",
+                "  const DWORD self_tid = GetCurrentThreadId();\n"
+                "  if (main_tid == 0) return;\n"
+                "  if (self_tid != main_tid) return;",
+                1,
+            )
+        )
+        self.assertEqual([], find_missing_main_thread_identity_check(dirty))
 
     def test_masking_keeps_line_numbers_and_hides_literal_content(self) -> None:
         self.assertEqual(len(self.clean.masked), len(CLEAN_SAMPLE))

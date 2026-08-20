@@ -3652,5 +3652,6 @@
   "interconnect_share_favorites": "共享收藏夹",
   "interconnect_share_favorites_hint": "收藏的词与句子，取消收藏也会同步",
   "interconnect_share_section": "与已配对设备共享",
-  "interconnect_share_section_footer": "这些内容与已配对设备双向合并，默认开启。关掉后本设备既不再发送，也不再接收。"
+  "interconnect_share_section_footer": "这些内容与已配对设备双向合并，默认开启。关掉后本设备既不再发送，也不再接收。",
+  "game_hook_mining_no_session_lines": "本局还没有捕获到任何台词，卡片无处挂靠。请在工作台换一条文本线程。"
 }

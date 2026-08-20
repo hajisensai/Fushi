@@ -3652,5 +3652,6 @@
   "interconnect_share_favorites": "Share favorites",
   "interconnect_share_favorites_hint": "Favorite words and sentences, including un-favoriting",
   "interconnect_share_section": "Share with paired devices",
-  "interconnect_share_section_footer": "These are merged both ways with the paired device and are on by default. Turning one off stops both sending and receiving it."
+  "interconnect_share_section_footer": "These are merged both ways with the paired device and are on by default. Turning one off stops both sending and receiving it.",
+  "game_hook_mining_no_session_lines": "No captured lines yet, so there is nothing to attach this card to. Pick a different text thread in the workbench."
 }
