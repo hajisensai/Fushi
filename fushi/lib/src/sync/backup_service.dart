@@ -14,6 +14,7 @@ import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -3577,6 +3578,11 @@ class BackupService {
     void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
+    // 引擎常驻映射着每本词典的 hash.table / blobs.bin（native map_rd）；Windows 上
+    // 只要 view 还活着，删资源根一律 ERROR_USER_MAPPED_FILE，整个恢复流程就断在
+    // 这一行（BUG-1756）。恢复流程收尾必定重启 app（backupImportRestart），故这里
+    // 把引擎清空不需要再装回来。
+    FushiDicts.releaseAllMappings();
     if (await targetRoot.exists()) {
       await targetRoot.delete(recursive: true);
     }

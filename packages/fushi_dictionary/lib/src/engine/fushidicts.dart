@@ -325,6 +325,11 @@ class FushiDicts {
   static FushiDicts? _instance;
   static Map<String, String> _stylesCache = {};
 
+  /// 当前引擎里装了几本词典。只服务 [releaseAllMappings] 的空转判断：
+  /// 引擎本来就是空的时候没有 mmap view 要释放，重建纯属浪费
+  /// （清空全部词典会逐本调一次）。
+  static int _loadedDictCount = 0;
+
   static FushiDicts get instance {
     assert(_instance != null, 'FushiDicts.initialize() must be called first');
     return _instance!;
@@ -374,6 +379,7 @@ class FushiDicts {
       h.addPitchDict(p);
     }
     _instance = h;
+    _loadedDictCount = paths.length;
     _rebuildStylesCache();
   }
 
@@ -399,6 +405,10 @@ class FushiDicts {
       h.addKanjiDict(p);
     }
     _instance = h;
+    _loadedDictCount = termPaths.length +
+        freqPaths.length +
+        pitchPaths.length +
+        kanjiPaths.length;
     _rebuildStylesCache();
   }
 
@@ -409,6 +419,23 @@ class FushiDicts {
   static void disposeInstance() {
     _instance?.dispose();
     _instance = null;
+    _loadedDictCount = 0;
+  }
+
+  /// 释放**全部**已加载词典的文件映射，把引擎重置成空但可用的实例。
+  ///
+  /// 为什么需要这个：词典加载时，native 侧把每本词典的 `hash.table` /
+  /// `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx` 全部
+  /// `MapViewOfFile` 常驻映射（`fushidicts_src/query.cpp` 的 `add_dict` →
+  /// `memory/memory.cpp` 的 `map_rd`）。Windows 上只要那份 view 还活着，
+  /// `DeleteFileW` 一律失败（ERROR_USER_MAPPED_FILE 1224），删词典目录必抛
+  /// [FileSystemException]。故**删任何词典目录之前必须先调这里**（BUG-1756）。
+  ///
+  /// 用「重建成空引擎」而不是 [disposeInstance]：`_instance` 始终非 null，释放到
+  /// 重新加载之间落进来的查词退化成空结果，而不是撞 `_instance!` 的 null check。
+  static void releaseAllMappings() {
+    if (_instance == null || _loadedDictCount == 0) return;
+    initializeTyped();
   }
 
   static Map<String, String> get dictionaryStyles => _stylesCache;

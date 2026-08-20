@@ -46,6 +46,7 @@ import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/clipboard_history_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
@@ -513,6 +514,11 @@ class AppModel with ChangeNotifier {
       dictionaryResourceRoot: dictionaryResourceDirectory,
       packages: SyncAssetPackageService(db: database),
       refreshDictionaryCache: () async {
+        // host 侧（互联对端上传/删除词典）直接改 DB，Dart 侧内存 cache 不会自己
+        // 跟上：不先 loadFromDb，_rebuildDictPathsCacheAsync 读的还是旧列表，刚被
+        // 删掉的那本会被重新映射回引擎——幽灵词典，且它的目录再也删不掉
+        // （BUG-1756）。
+        await dictRepo.loadFromDb();
         await _rebuildDictPathsCacheAsync();
         dictRepo.clearDictionaryResultsCache();
       },
@@ -2325,7 +2331,8 @@ class AppModel with ChangeNotifier {
         Future.wait(<Future<void>>[
           thumbnailsDirectory.create(recursive: true),
           dictionaryImportWorkingDirectory.create(recursive: true),
-          dictionaryResourceDirectory.create(recursive: true),
+          dictionaryResourceDirectory.create(recursive: true).then((_) =>
+              purgePendingDictionaryDeletes(dictionaryResourceDirectory)),
           refreshSystemPalette(),
           () async {
             _exportDirectory = await prepareExportDirectory();
@@ -2673,6 +2680,7 @@ class AppModel with ChangeNotifier {
         dictionaryImportWorkingDirectory.create(recursive: true),
         dictionaryResourceDirectory.create(recursive: true),
       ]);
+      await purgePendingDictionaryDeletes(dictionaryResourceDirectory);
       await _rebuildDictPathsCacheAsync();
 
       _localAudioManager = LocalAudioManager(
@@ -4774,19 +4782,38 @@ class AppModel with ChangeNotifier {
       await clearDictionaryHistory();
       await _database.clearAllDictionaryMeta();
 
-      if (dictionaryResourceDirectory.existsSync()) {
-        dictionaryResourceDirectory.deleteSync(recursive: true);
-        dictionaryResourceDirectory.createSync(recursive: true);
-      }
-
-      dictRepo.clearDictionariesCache();
-      dictRepo.clearDictionaryResultsCache();
       // Reload the native FFI engine off the now-empty dictionary set so every
       // previously loaded index is dropped; otherwise queries keep hitting the
       // deleted dictionaries until the app restarts (BUG-171). With no
       // dictionaries left this rebuilds into an empty engine that
       // searchDictionary already degrades to empty results.
+      //
+      // 必须在删目录**之前**：引擎还攥着每本词典的 mmap view 时，Windows 上删
+      // 资源根一律 ERROR_USER_MAPPED_FILE（BUG-1756）。
+      dictRepo.clearDictionariesCache();
+      dictRepo.clearDictionaryResultsCache();
       _rebuildDictPathsCache();
+
+      // 逐个条目删而不是删掉资源根本身：隔离区（删不掉时的落脚点）建在被删目录的
+      // 父级，只有这样它才落在资源根下、被启动清理扫到。根目录保留，省掉 recreate。
+      if (dictionaryResourceDirectory.existsSync()) {
+        for (final FileSystemEntity entity
+            in dictionaryResourceDirectory.listSync()) {
+          if (entity is Directory) {
+            await deleteDictionaryDirectory(entity,
+                reloadEngine: _rebuildDictPathsCache);
+          } else {
+            try {
+              entity.deleteSync();
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('deleteDictionaries.entry', e, stack);
+            }
+          }
+        }
+      } else {
+        dictionaryResourceDirectory.createSync(recursive: true);
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionaries', e, stack);
       FushiToast.show(
@@ -4801,18 +4828,22 @@ class AppModel with ChangeNotifier {
   Future<void> deleteDictionary(Dictionary dictionary) async {
     try {
       await clearDictionaryHistory();
-      await _database.deleteDictionaryMeta(dictionary.name);
+      // 顺序不可交换（BUG-1756）：撤 meta 必须先于删目录。
+      // [DictionaryRepository.deleteDictionaryMeta] 是「移除内存 cache + 触发
+      // _onCacheRebuild（= _rebuildDictPathsCache，引擎重载到不含这本的集合，
+      // 连带释放它的 mmap view）+ 清查词缓存 + 删 DB 行」的原子动作。
+      //
+      // 旧实现绕开它直打 `_database.deleteDictionaryMeta`：DB 行没了、引擎却还
+      // 攥着这本词典的文件映射，紧接着的 deleteSync 在 Windows 上必抛
+      // ERROR_USER_MAPPED_FILE → catch 弹「删除失败」，而 cache 移除与引擎重载
+      // 全在抛出点之后、永不执行。用户看到的就是「提示删除失败，重启后词典却没了」。
+      await dictRepo.deleteDictionaryMeta(dictionary.name);
 
-      final directory = Directory(
-          path.join(dictionaryResourceDirectory.path, dictionary.name));
-
-      if (directory.existsSync()) {
-        directory.deleteSync(recursive: true);
-      }
-
-      dictRepo.removeDictionaryFromCache(dictionary.name);
-      _rebuildDictPathsCache();
-      dictRepo.clearDictionaryResultsCache();
+      await deleteDictionaryDirectory(
+        Directory(path.join(dictionaryResourceDirectory.path, dictionary.name)),
+        // 删完把剩下的词典装回引擎（释放映射时整个引擎被清空了）。
+        reloadEngine: _rebuildDictPathsCache,
+      );
       // Propagate the deletion to the remote sync staging area so the package
       // does not become an orphan that union-sync re-pulls forever (phantom
       // dictionary + slow sync, BUG-086). Best-effort + serialized with sync;

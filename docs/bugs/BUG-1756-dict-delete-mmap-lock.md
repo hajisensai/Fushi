@@ -1,0 +1,14 @@
+## BUG-1756 · 词典删除/覆盖更新失败：引擎 mmap 未卸载就删目录
+- **报告**：2026-08-20（用户：词典更新还是只能每次重新导入；删除旧词典提示删除失败，但关闭软件再打开会发现已经没有旧词典了）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/models/app_model.dart:4826`（`deleteDictionary` 绕开 repo 直打 DB + 先删目录后卸载引擎）与 `fushi/lib/src/models/dictionary_import_manager.dart:763`（`_removeDictionaryDirAndMeta` 先 `deleteSync` 后 `deleteDictionaryMeta`）。
+
+  引擎侧事实：`native/fushidicts/fushidicts_src/query.cpp:150-168` 的 `add_dict` 把每本词典的 `hash.table` / `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx` 交给 `memory/memory.cpp:30` 的 `map_rd`，Windows 分支走 `CreateFileMappingW` + `MapViewOfFile` 常驻映射（file handle 与 mapping handle 都已关闭，只剩 view）。**只要 view 还活着，`DeleteFileW` 一律 ERROR_USER_MAPPED_FILE(1224)**，`Directory.deleteSync` 必抛。
+
+  于是两个用户症状同源：
+  * **手动删除**：`deleteDictionary` 先 `await _database.deleteDictionaryMeta(name)`（直打 DB，**绕过** `DictionaryRepository.deleteDictionaryMeta` —— 只有后者会触发 `_onCacheRebuild` 卸载引擎），随后 `directory.deleteSync()` 抛异常 → catch 弹 `dictionary_delete_failed`。抛出点之后的 `removeDictionaryFromCache` / `_rebuildDictPathsCache` 永不执行，而 **DB 行已经删掉了** → 重启后词典消失、磁盘目录残留成垃圾。
+  * **覆盖更新导入**：`_removeDictionaryDirAndMeta` 把顺序写反（先 `oldDir.deleteSync`，后 `deleteDictionaryMeta`），旧本目录仍被引擎映射 → 更新第一步就抛 → 用户只能「删掉再重新导入」，而删除又失败。
+
+  同型顺序错误共 4+2 处：`deleteDictionaries`（清空全部，`clearAllDictionaryMeta` 同样绕过 repo）、`app_model_library_host_service.dart:250`（互联对端删词典）、`dictionary_import_manager.dart` 两处 `finalDir.deleteSync`；写入侧还有 `backup_service.dart:3579`（恢复前删词典资源根）与 host 的 `importDictionary`（同名覆盖写入被映射的文件，Windows 拒绝以写打开）。
+- **[x] ① 已修复** — 把「释放引擎映射 → 删目录」收成单一原语 `fushi/lib/src/models/dictionary_directory.dart` 的 `deleteDictionaryDirectory()`（配套 `FushiDicts.releaseAllMappings()`：重建成空引擎而非 `disposeInstance`，`_instance` 始终非 null，窗口内查词退化成空结果而不是撞 null check）。所有删除入口改走它；`deleteDictionary` 改走 `dictRepo.deleteDictionaryMeta`（撤 cache + 引擎重载 + 清查词缓存 + 删 DB 行的原子动作），删掉绕过 repo 的入口；`deleteDictionaries` / host 删除把引擎重载提到删目录之前；host 的 `refreshDictionaryCache` 补 `loadFromDb`（否则 host 改的是 DB、Dart 侧 cache 没跟上，rebuild 会把刚删的词典重新映射回引擎）；备份恢复与 host 覆盖导入在写入前 `releaseAllMappings()`。删不掉时（AV/索引器瞬时句柄）有界重试 5 次，用尽后改名进资源根下 `.pending_delete` 隔离区，启动时清理 —— 绝不再出现「提示失败但 meta 已删」的不一致。提交 `<pending>`。
+- **[x] ② 已加自动化测试** — `fushi/test/models/dictionary_delete_order_test.dart`（9 条）：行为层用真 `DictionaryRepository` + 内存 DB + 临时目录，在 `onCacheRebuild` 里记录「此刻目录是否还在」，断言引擎重载发生在目录消失之前；纯逻辑层覆盖 `deleteDictionaryDirectoryCore` 的重试/隔离/抛出分流与真实文件系统行为。另加强 `fushi/test/models/dictionary_delete_engine_reload_guard_test.dart`：新增 D/E 两条顺序守卫，并给 `bodyOf` 加 `stripComments` —— 原 test C 断言的 `_rebuildDictPathsCache` 字面量**被说明性注释假绿**过，剥注释后才真正锚定控制流。四组变异（两处顺序对调、绕过 repo 直打 DB、import 顺序对调）实测均正确变红，还原后逐字节 sha256 校验一致。
+- **备注**：未做真机复测（Windows 上删一本正在加载的词典 → 应无「删除失败」toast 且目录立即消失）。POSIX（Android/macOS/Linux）本就允许删除已 mmap 的文件，故该平台从来不复现；修复对它们是无害的顺序调整。
