@@ -106,6 +106,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 真按它预选语言 chip）。
   'video/Default subtitle language':
       'test/pages/jimaku_default_language_test.dart',
+  // mpv Lua 脚本装载开关。写 prefsRepo（changed=true），生效点在视频播放器创建后
+  // 经 libmpv `load-script` 命令装载脚本目录（widget harness 无 libmpv Player，
+  // 无可探渲染输入）；由专项测试咬住目录枚举（仅顶层 .lua、排序）、load-script
+  // 命令构建与导入落盘，装载幂等语义见 video_lua_script_manager.dart 文件头。
+  'video/Load Lua scripts':
+      'test/media/video/video_lua_script_manager_test.dart',
   // 多端库联合视图（spec 2026-07-12 §2.6）：上传视频文件开关。写 SyncRepository
   // gate（changed=true），生效点在 SyncOrchestrator 云后端上传阶段（非 reader
   // CSS / 主题树），无适用探针；由专项 orchestrator 行为测试咬住（关=零上传、

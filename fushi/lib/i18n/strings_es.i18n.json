@@ -3640,5 +3640,11 @@
   "jellyfin_sign_in": "Sign in",
   "jellyfin_sign_out": "Sign out",
   "jellyfin_sign_in_failed": "Sign-in failed",
-  "jellyfin_settings_hint": "Videos on the server show up in the video library and stream directly."
+  "jellyfin_settings_hint": "Videos on the server show up in the video library and stream directly.",
+  "video_setting_mpv_lua_scripts": "Load Lua scripts",
+  "video_setting_mpv_lua_scripts_hint": "Load all .lua files in the mpv_scripts folder into the player. Turning off takes effect the next time a video is opened.",
+  "video_setting_mpv_lua_scripts_import": "Import Lua scripts",
+  "video_setting_mpv_lua_scripts_imported": "Scripts imported",
+  "video_setting_mpv_lua_scripts_dir_copy": "Copy scripts folder path",
+  "video_setting_mpv_lua_scripts_dir_copied": "Folder path copied"
 }

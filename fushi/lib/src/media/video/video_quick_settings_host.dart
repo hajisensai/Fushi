@@ -56,6 +56,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onRespectAssStyleChanged,
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
+    this.onLuaScriptsEnabledChanged,
     required this.onApplyShaders,
     required this.onSelectShaderTier,
     this.onMpvShaderDirChanged,
@@ -158,6 +159,11 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
 
   // ── mpv 配置（页面持久化 + applyMpvConfig 实时应用）──────────────────────
   final Future<void> Function(VideoMpvConfig config) onMpvConfigChanged;
+
+  /// mpv Lua 脚本开关（页面持久化 + 开启时把脚本目录即时装载进活播放器；关闭
+  /// 无法卸载、下次进入视频页生效——见 video_lua_script_manager.dart）。
+  /// null = 无播放器上下文，schema 行退化为直接写 pref。
+  final Future<void> Function(bool enabled)? onLuaScriptsEnabledChanged;
 
   // ── 着色器（下载/勾选/一键选档，仅播放中实时应用）────────────────────────
   final Future<void> Function(List<String> enabledNames) onApplyShaders;

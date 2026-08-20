@@ -3640,5 +3640,11 @@
   "jellyfin_sign_in": "登录",
   "jellyfin_sign_out": "退出登录",
   "jellyfin_sign_in_failed": "登录失败",
-  "jellyfin_settings_hint": "服务器上的视频会出现在媒体库中，点击直接串流播放。"
+  "jellyfin_settings_hint": "服务器上的视频会出现在媒体库中，点击直接串流播放。",
+  "video_setting_mpv_lua_scripts": "加载 Lua 脚本",
+  "video_setting_mpv_lua_scripts_hint": "装载 mpv_scripts 目录里的全部 .lua 脚本。关闭在下次打开视频时生效。",
+  "video_setting_mpv_lua_scripts_import": "导入 Lua 脚本",
+  "video_setting_mpv_lua_scripts_imported": "脚本已导入",
+  "video_setting_mpv_lua_scripts_dir_copy": "复制脚本目录路径",
+  "video_setting_mpv_lua_scripts_dir_copied": "已复制目录路径"
 }

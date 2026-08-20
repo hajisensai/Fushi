@@ -458,6 +458,7 @@ class AppPaths {
   ///  - `game_covers` —— [gameCoversDirectory]；游戏库封面（手选 + 自动获取）。
   ///  - `video_subtitles` —— [videoSubtitlesDirectory]；`VideoStorage.subtitlesDirName`。
   ///  - `mpv_shaders` —— [mpvShadersDirectory]。
+  ///  - `mpv_scripts` —— [mpvLuaScriptsDirectory]。
   ///  - `remote_videos` —— [remoteVideosDirectory]。
   ///  - `videos` —— backup restore 的视频落点（`backup.part.dart`
   ///    `join(appDirectory, 'videos')`）。
@@ -487,6 +488,7 @@ class AppPaths {
     'game_covers',
     'video_subtitles',
     'mpv_shaders',
+    'mpv_scripts',
     'remote_videos',
     'videos',
     'anime_downloads',
@@ -574,6 +576,10 @@ class AppPaths {
   /// mpv 着色器目录 `<documents>/mpv_shaders`。
   static Future<Directory> mpvShadersDirectory() =>
       documentsSubdirectory('mpv_shaders');
+
+  /// mpv Lua 脚本目录 `<documents>/mpv_scripts`。
+  static Future<Directory> mpvLuaScriptsDirectory() =>
+      documentsSubdirectory('mpv_scripts');
 
   /// 远程视频下载目录 `<documents>/remote_videos`。
   static Future<Directory> remoteVideosDirectory() =>
