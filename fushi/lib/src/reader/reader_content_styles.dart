@@ -483,8 +483,9 @@ html {
 $layoutCss
 $paragraphSpacingCss
 img.block-img {
-  max-width: var(--fushi-image-max-width, $imageMaxWidth)$readerStylePriority;
-  max-height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  /* max-width / max-height = 页面容纳约束，恒 !important（见文件内说明）。 */
+  max-width: var(--fushi-image-max-width, $imageMaxWidth) !important;
+  max-height: var(--fushi-image-max-height, $imageMaxHeight) !important;
   width: auto$readerStylePriority;
   height: auto$readerStylePriority;
   display: block$readerStylePriority;
@@ -502,8 +503,8 @@ img.block-img {
   -webkit-column-break-inside: avoid !important;
 }
 img:not(.block-img) {
-  max-width: 100%$readerStylePriority;
-  max-height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  max-width: 100% !important;
+  max-height: var(--fushi-image-max-height, $imageMaxHeight) !important;
   object-fit: contain$readerStylePriority;
 }
 p > img:only-child, div > img:only-child, section > img:only-child, figure > img:only-child {
@@ -512,8 +513,8 @@ p > img:only-child, div > img:only-child, section > img:only-child, figure > img
   margin-right: auto;
 }
 svg {
-  max-width: var(--fushi-image-max-width, $imageMaxWidth)$readerStylePriority;
-  max-height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
+  max-width: var(--fushi-image-max-width, $imageMaxWidth) !important;
+  max-height: var(--fushi-image-max-height, $imageMaxHeight) !important;
   width: 100%$readerStylePriority;
   height: 100%$readerStylePriority;
   display: block$readerStylePriority;
@@ -717,8 +718,13 @@ ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   color: var(--fushi-sentence-audio-text-color) !important;
   background-color: var(--fushi-sentence-audio-background-color) !important;
 }
+/* 链接色**恒** !important，不跟随「优先书籍样式」。这是阅读器唯一强制链接色的地方：
+   撤掉后书自带的 `a{color:#000}`（EPUB 里极常见）在深色主题（背景 #0A0A0A）下就是
+   黑底黑字，脚注/注释跳转链接直接不可见。开关的正当理由是「出版商 CSS 是为它自带的
+   插图排的」——那对图片尺寸成立，对链接色不成立（书不知道用户选了什么主题背景）。
+   e-ink 模式另有无条件兜底，普通主题没有。 */
 a {
-  color: ${linkColor ?? colors.linkColor}$readerStylePriority;
+  color: ${linkColor ?? colors.linkColor} !important;
 }
 ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
 ''';

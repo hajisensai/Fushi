@@ -1865,6 +1865,20 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           if (hostChapter != _currentChapter) {
             _currentChapter = hostChapter;
             _lastProgressSection = _currentChapter;
+            // 重定向换了章，旧章的恢复锚必须一起归零——否则 _loadChapterDirectly
+            // 会拿这三个字段给**宿主章**建恢复脚本（见下方 initialProgress /
+            // initialCharOffset / initialCharOffsetEnd 三个参数）。真实存档里这不是
+            // 假想值：合并关闭时往回翻到独立插图章会走 _handlePageTurnLimit 的
+            // progress:0.99，而纯图片章 totalChars==0 让真实滚动值永远覆盖不掉它，
+            // 退出落库 normCharOffset=9900；开启合并后冷开该书就会被甩到宿主正文章
+            // 的 ~99% 处，整章正文被跳过。归零口径与另两个重定向点一致
+            // （navigation.part.dart 的 _navigateToChapter、chrome.part.dart 的
+            // reloadWithCurrentSettings）：宿主顶部就是那张被吸收的图。
+            _initialProgress = 0.0;
+            _initialCharOffset = -1;
+            _initialCharOffsetEnd = -1;
+            _lastProgressValue = 0.0;
+            _lastProgressCharOffset = -1;
           }
           _loadChapterDirectly(_currentChapter);
         }

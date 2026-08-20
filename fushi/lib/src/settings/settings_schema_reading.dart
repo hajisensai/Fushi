@@ -824,7 +824,9 @@ SettingsDestination buildReadingDestination() {
           ),
           // TODO-1128（受限方案 A）：把 0 字符单图 spine 章并入相邻正文章连续显示，
           // 不再各占一页/一条目录。结构性布局键（改虚拟页映射 + 注入章 DOM），故走
-          // notifyReaderLayoutChanged（重建 spread map + 重排），默认关。
+          // notifyReaderLayoutChanged（重建 spread map + 重排）。**默认开**
+          // （ReaderSettings.mergeImagePages 的 `_get` 真值就是 true）——旧注释写
+          // 「默认关」已过期。
           SettingsSwitchItem(
             id: 'reading_display.merge_image_pages',
             title: t.reader_merge_image_pages,

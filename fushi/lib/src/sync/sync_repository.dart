@@ -228,8 +228,9 @@ class SyncRepository {
   // 词句）无条件复用云备份的 sync_stats_enabled，用户在互联页既看不到这两类数据
   // 正在跨设备流动，也没法只对互联单独关掉——与 BUG-988 拆四个上传开关时修掉的
   // 是同一个毛病（互联通道借用云备份开关 = 用户失去分通道控制权）。
-  // 默认 true：既有行为就是「跟着 syncStats 默认 true 一起同步」，拆开关不改变
-  // 任何人当前看到的结果，只是把隐式变显式、可关。
+  // 缺键时**继承旧键 sync_stats_enabled 的当前值**（不是硬编码 true）：旧键是个
+  // 用户可见开关，把它关掉的存量用户升级后绝不能被默认值静默复位成「又在同步」。
+  // 只有用户真的动过互联这两个新开关（新键有行）时才用新值。
   static const _keyInterconnectSyncStats = 'interconnect_sync_stats';
   static const _keyInterconnectSyncFavorites = 'interconnect_sync_favorites';
   // apikey 同步设定重设计（2026-08-17）：互联 service-config（host 的外部服务
@@ -644,22 +645,36 @@ class SyncRepository {
   Future<void> setInterconnectSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncVideoFiles, v);
 
-  /// 互联通道「共享统计」：阅读/观看时长、字数、逐时桶、查词与制卡计数。默认 true
-  /// = 既有行为不变（此前由云备份的 [isSyncStatsEnabled] 一刀切代管）。关掉后本设备
+  /// 互联通道「共享统计」：阅读/观看时长、字数、逐时桶、查词与制卡计数。关掉后本设备
   /// 既不把统计推给对端，也不把对端统计折进本地——两个方向一起停，否则「关了还在收」
   /// 会让本地统计继续被对端撑大，用户看到的仍是没关掉。
+  ///
+  /// **缺键时继承旧开关 [isSyncStatsEnabled]**，不是硬编码 true。拆开关前互联的
+  /// 统计/收藏就是由 `sync_stats_enabled` 一刀切代管的（那是个**无 visible 门控、
+  /// 文案就叫「同步统计」的用户可见开关**）。存量用户把它关掉 = 明示「别同步我的
+  /// 统计」；新键硬编码默认 true 会让升级后第一轮互联 sweep 就把统计 + 收藏词句推给
+  /// 对端并把对端的折回本地，用户零操作、零提示 —— never break userspace。只有用户
+  /// **真的动过互联那个新开关**（新键有行才成立）时才用新值。
   Future<bool> isInterconnectSyncStatsEnabled() =>
-      _db.getPrefTyped<bool>(_keyInterconnectSyncStats, true);
+      _interconnectAggregateFlag(_keyInterconnectSyncStats);
   Future<void> setInterconnectSyncStatsEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncStats, v);
 
   /// 互联通道「共享收藏夹」：收藏词 + 收藏句（以及它们的删除墓碑，取消收藏要能
   /// 跨端传播）。与统计同为聚合快照的一半，但语义不同——收藏是用户挑出来的内容，
-  /// 值得独立开关。默认 true = 既有行为不变；同样双向一起停。
+  /// 值得独立开关。同样双向一起停；缺键时同样继承旧的 [isSyncStatsEnabled]
+  /// （收藏族拆开关前也归它管，见 [isInterconnectSyncStatsEnabled] 的说明）。
   Future<bool> isInterconnectSyncFavoritesEnabled() =>
-      _db.getPrefTyped<bool>(_keyInterconnectSyncFavorites, true);
+      _interconnectAggregateFlag(_keyInterconnectSyncFavorites);
   Future<void> setInterconnectSyncFavoritesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncFavorites, v);
+
+  /// 聚合快照两族（统计 / 收藏）互联侧开关的统一读法：新键有行就用新值，缺行则
+  /// 回退到拆开关前代管它们的旧键 `sync_stats_enabled`（其自身默认 true）。
+  Future<bool> _interconnectAggregateFlag(String key) async {
+    if (await _db.getPref(key) == null) return isSyncStatsEnabled();
+    return _db.getPrefTyped<bool>(key, true);
+  }
 
   /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
   /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，
@@ -968,7 +983,10 @@ class SyncRepository {
       if (decoded is Map<String, dynamic>) {
         return JellyfinServerConfig.fromJson(decoded);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Best-effort: 脏 JSON / 旧格式一律当「未配置」（下面 return null），不弹错也不
+      // 抛——这条只是读缓存里的服务器配置，登录页会让用户重新配。
+    }
     return null;
   }
 

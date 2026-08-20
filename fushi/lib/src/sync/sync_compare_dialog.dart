@@ -647,13 +647,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       // same contention that interrupted sync and timed out the load (BUG-083).
       await runExclusiveWithSync(() async {
         final repo = SyncRepository(widget.db);
-        final syncStats = await repo.isSyncStatsEnabled();
-        final syncAudioBook = await repo.isSyncAudioBookEnabled();
-        // BUG-988：手动解决冲突并应用时，互联通道读互联专属上传开关、云通道读共享开关，
-        // 与自动同步一致——否则「互联内容开、云内容关」时互联冲突的内容传输会被误跳过。
-        final syncContent = widget.backend is InterconnectSyncBackend
-            ? await repo.isInterconnectSyncContentEnabled()
-            : await repo.isSyncContentEnabled();
+        // BUG-988：手动「解决冲突并应用」与自动同步走**同一份** [resolveChannelSyncFlags]。
+        // 原来只有 content 在这里做了分通道三元式，统计仍读云备份的 sync_stats_enabled
+        // ——用户关掉互联「共享统计」后，手动应用一本书仍会把它的 `statistics_*.json`
+        // 推给互联 host 再 merge 回本地。整份 flags 一起解析就没有漏项可言。
+        final ChannelSyncFlags flags = await resolveChannelSyncFlags(
+          repo,
+          isInterconnect: widget.backend is InterconnectSyncBackend,
+        );
+        final bool syncStats = flags.syncStats;
+        final bool syncAudioBook = flags.syncAudioBookPosition;
+        final bool syncContent = flags.syncContent;
 
         var done = 0;
         // Blend per-file transfer fraction into the overall book progress so the

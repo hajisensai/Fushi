@@ -953,9 +953,16 @@ String _mangaGestureJs({
         rightDrag.moved = true;
       }
       if (rightDrag.moved && ZOOM > 1) {
-        PAN_X += dx;
-        PAN_Y += dy;
-        _applyCanvas();
+        // 右键拖动是桌面上的主力平移手势，必须和触摸/左键拖动、惯性、方向键走
+        // 同一个 _panBy；在这里手抄一份自增两个 PAN 分量再提交画布的代码，会同时
+        // 丢掉 _panBy 里的两条规则（注意：本注释随文档注入 WebView，故不写出那两行
+        // 自增语句的字面形式 —— manga_pan_ownership_test 按字面量计数）：
+        // ① _clampPan：右键能把页面推出视口且回不来（左键会回弹，右键不会）；
+        // ② webtoon 纵向分流：webtoon 纵向的唯一拥有者是 scrollY、PAN_Y 恒 0，
+        //    手抄版把 PAN_Y 写成非 0，而 onMangaScroll 与 __mangaScrollToSpread
+        //    都按 PAN_Y=0 用 scrollY/ZOOM 换算 offsetTop → 进度落库/恢复错页；
+        //    _clampPan 又有意不碰 webtoon 的 PAN_Y，于是永远拉不回来。
+        _panBy(dx, dy);
       }
       e.preventDefault();
       return;
@@ -1010,9 +1017,31 @@ String _mangaGestureJs({
     image.addEventListener('load', apply);
     if (image.complete) apply();
   });
+  // 首次定位是「摆位」，不是「翻页」：必须无过渡落位。
+  //
+  // RTL（默认阅读方向）倒序写入 DOM 后，spread 0 的 offsetLeft 从 0 变成
+  // (n-1)×100vw，首帧 __mangaApplyTranslate(CURRENT) 要把 #manga-root 从
+  // transform:none 一路推到 -(n-1)×100vw；而 slide（默认动画）给 #manga-root 挂着
+  // transition:transform，下面的双 rAF 又恰好是「保证过渡一定触发」的惯用法 ——
+  // 于是打开任何 RTL 书都会先看到整卷从最后一页扫回第一页（strip 是整卷长度，
+  // 200 跨页就是 199 个视口的扫掠，途经的 lazy 图还会被连带解码）。
+  //
+  // 关过渡 → 写 transform → 读一次 offsetHeight 强制同步 reflow（让新值成为后续
+  // 过渡的起点，否则还原后浏览器仍把这次位移算成一次过渡）→ 还原原过渡值。
+  // 还原发生在 reflow 之后，真正的翻页动画不受影响（不是永久关掉过渡）。
   function _initPosition(){
-    if (IS_WEBTOON) window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);
-    else window.__mangaApplyTranslate(CURRENT);
+    if (IS_WEBTOON) {
+      window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);
+      return;
+    }
+    var root = document.getElementById('manga-root');
+    var prevTransition = root ? root.style.transition : '';
+    if (root) root.style.transition = 'none';
+    window.__mangaApplyTranslate(CURRENT);
+    if (root) {
+      void root.offsetHeight;
+      root.style.transition = prevTransition;
+    }
   }
   // 图片/布局完成前 offsetLeft/offsetTop 可能为 0；首帧后 + load 后各定位一次。
   if (document.readyState === 'complete') { _initPosition(); }

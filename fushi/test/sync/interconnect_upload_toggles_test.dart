@@ -88,10 +88,15 @@ void main() {
   });
 
   // 统计/收藏此前跟着云备份的 sync_stats_enabled 一刀切（上面那条测试的原始形态就
-  // 断言过「统计不区分通道」）。互联页现在各有一个默认开启的开关，与四个上传开关
-  // 同一纪律：互联的事互联自己决定。
-  test('统计/收藏分通道：云关掉不牵连互联（默认开启）', () async {
+  // 断言过「统计不区分通道」）。互联页现在各有一个开关，与四个上传开关同一纪律：
+  // 互联的事互联自己决定。**但**这两个新键与那四个不同——它们有旧开关，所以缺行时
+  // 继承旧值而不是硬编码默认（PR#914 阻塞①，守卫见
+  // pr914_interconnect_stats_migration_test.dart）。
+  test('统计/收藏分通道：用户显式开了互联开关时，云关掉不牵连互联', () async {
     await repo.setSyncStatsEnabled(false);
+    // 用户真的动过互联那两个开关 —— 只有这时新值才该压过旧键。
+    await repo.setInterconnectSyncStatsEnabled(true);
+    await repo.setInterconnectSyncFavoritesEnabled(true);
 
     final ChannelSyncFlags ic =
         await resolveChannelSyncFlags(repo, isInterconnect: true);
@@ -100,8 +105,19 @@ void main() {
 
     expect(cloud.syncStats, isFalse);
     expect(cloud.syncFavorites, isFalse, reason: '云侧两族仍同源，行为逐字节不变');
-    expect(ic.syncStats, isTrue, reason: '互联读自己的键，默认开启');
+    expect(ic.syncStats, isTrue, reason: '互联读自己的键');
     expect(ic.syncFavorites, isTrue);
+  });
+
+  test('存量不变式：云的「同步统计」关着且互联新键从没写过 → 互联侧也是关的', () async {
+    await repo.setSyncStatsEnabled(false);
+
+    final ChannelSyncFlags ic =
+        await resolveChannelSyncFlags(repo, isInterconnect: true);
+
+    expect(ic.syncStats, isFalse,
+        reason: '新键硬编码默认 true 会让关过统计的存量用户升级后被静默复位（PR#914 ①）');
+    expect(ic.syncFavorites, isFalse);
   });
 
   test('关互联的共享统计不牵连共享收藏，也不牵连云通道', () async {

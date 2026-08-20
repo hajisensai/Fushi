@@ -22,7 +22,7 @@ void main() {
     //     collectionType: 'playlist',
     //   )
     expect(
-      RegExp(r"createMediaCollection\(\s*group\.series,\s*"
+      RegExp(r'createMediaCollection\(\s*group\.series,\s*'
               r"collectionType: 'playlist',")
           .hasMatch(src),
       isTrue,

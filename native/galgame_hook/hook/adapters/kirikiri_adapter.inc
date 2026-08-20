@@ -5311,35 +5311,36 @@ bool QueryKirikiriNativeLookupFunctions(ITVPFunctionExporter* exporter,
   }
 }
 
-// 引擎主线程 = 拥有游戏顶层窗口的线程。只解析一次并缓存。
+// 引擎主线程 = 拥有**游戏主窗口**的线程。只解析一次并缓存。
 //
 // 为什么需要它：安装路径要调 TJSAllocVariantString（从 TJS 全局变体字符串池分配）和
 // TVPAddContinuousEventHook（写引擎每帧遍历的回调容器）。这两样在 KiriKiri 里都只归
 // 主线程，没有任何内部同步。窗口还没建出来时返回 0，安装据此**失败关闭**——宁可晚装，
 // 也不在引擎自身还没把窗口/绘制设备立起来时去动它 (BUG-1724)。
+//
+// 「哪个才是游戏主窗口」只能有一套答案，所以这里直接复用 lookup_overlay_window.inc 的
+// FindGameMainWindow()（同 include 单元、就在本文件之前展开），它的判据是「同进程 +
+// 可见 + 无 owner 的顶层窗口里**客户区面积最大**的那个」。
+//
+// 原来这里自带一份 EnumWindows：取**第一个**可见无 owner 顶层窗口就 return FALSE 收工。
+// 那与 FindOverlayOwner 是同概念的两套答案，而且是错的那套——进程里只要还有另一个可见
+// 无 owner 的顶层窗口且属于别的线程（TVP 控制台窗、splash、同进程启动器窗，或本模块
+// 自己那个 1x1 的 WS_EX_TOPMOST FushiLookupOverlay，EnumWindows 会**先**枚举到它），
+// 就会把那个线程 id 当引擎主线程缓存下来。此后 GetCurrentThreadId() != main_tid 恒真，
+// RunKirikiriLookupInstallOnMainThread 每次都在身份核对那行 return，传感器静默永不安装
+// ——症状与「这个引擎不支持」完全同形。缓存是 InterlockedCompareExchange(..., 0) 写入的
+// 一次性值，写错一次**永不自愈**。
 DWORD ResolveKirikiriEngineMainThreadId() {
   const LONG cached = InterlockedCompareExchange(&g_lookup_engine_main_tid, 0, 0);
   if (cached != 0) return static_cast<DWORD>(cached);
 
-  struct Finder {
-    DWORD pid;
-    DWORD tid;
-  } finder = {GetCurrentProcessId(), 0};
-  EnumWindows(
-      [](HWND window, LPARAM param) -> BOOL {
-        Finder* self = reinterpret_cast<Finder*>(param);
-        DWORD pid = 0;
-        const DWORD tid = GetWindowThreadProcessId(window, &pid);
-        if (pid != self->pid) return TRUE;
-        if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;  // 顶层窗口才算
-        if (!IsWindowVisible(window)) return TRUE;
-        self->tid = tid;
-        return FALSE;
-      },
-      reinterpret_cast<LPARAM>(&finder));
-  if (finder.tid == 0) return 0;
+  const HWND main_window = FindGameMainWindow();
+  if (main_window == nullptr) return 0;
+  DWORD pid = 0;
+  const DWORD tid = GetWindowThreadProcessId(main_window, &pid);
+  if (tid == 0 || pid != GetCurrentProcessId()) return 0;
   InterlockedCompareExchange(&g_lookup_engine_main_tid,
-                             static_cast<LONG>(finder.tid), 0);
+                             static_cast<LONG>(tid), 0);
   return static_cast<DWORD>(
       InterlockedCompareExchange(&g_lookup_engine_main_tid, 0, 0));
 }

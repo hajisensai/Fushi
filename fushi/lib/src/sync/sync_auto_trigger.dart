@@ -250,8 +250,9 @@ class ChannelSyncFlags {
 /// 四类——书籍/内容、词典、有声书文件、视频文件——读互联专属上传开关（默认 false，让
 /// 用户独立控制是否上传给互联对端，不被「启用互联连接」裹挟）；false（云备份通道）读
 /// 原共享 sync_*_enabled。统计与收藏也已分通道（互联侧读 `interconnect_sync_stats` /
-/// `interconnect_sync_favorites`，默认 true = 拆开关前的行为）。位置/本地音频仍不区分
-/// 通道（轻量进度，跨设备续读是互联本意）。
+/// `interconnect_sync_favorites`；这两个新键**缺行时继承旧的 sync_stats_enabled**，
+/// 关过旧开关的存量用户升级后不会被静默复位，见 [SyncRepository]）。位置/本地音频仍不
+/// 区分通道（轻量进度，跨设备续读是互联本意）。
 ///
 /// 不再 `@visibleForTesting`：`AppModel._propagateDictionaryDeleteToRemote` 是生产
 /// 消费方——「这条通道该不该同步词典」必须复用同一份分通道门控，各处重抄必漂
@@ -261,8 +262,9 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
   required bool isInterconnect,
 }) async {
   return ChannelSyncFlags(
-    // 统计与收藏在互联通道上各有自己的开关（默认 true = 拆开关前的既有行为）；
-    // 云通道仍由 sync_stats_enabled 一把管两族，逐字节不变。
+    // 统计与收藏在互联通道上各有自己的开关（缺行时继承旧的 sync_stats_enabled，
+    // 所以关过旧开关的存量用户仍是关的）；云通道仍由 sync_stats_enabled 一把管两族，
+    // 逐字节不变。
     syncStats: isInterconnect
         ? await repo.isInterconnectSyncStatsEnabled()
         : await repo.isSyncStatsEnabled(),
@@ -1006,14 +1008,6 @@ Future<void> _runAutoSync({
       syncActivity.value =
           const SyncActivity(SyncActivityKind.singleBook).withTitle(book.title);
 
-      final syncStats = await repo.isSyncStatsEnabled();
-      final syncAudioBook = await repo.isSyncAudioBookEnabled();
-      final syncContent = await repo.isSyncContentEnabled();
-      // BUG-988：互联通道的书内容上传读互联专属开关（默认关），云通道读共享开关——
-      // 否则退出书时书内容仍会无视互联上传开关自动推给对端。
-      final interconnectSyncContent =
-          await repo.isInterconnectSyncContentEnabled();
-
       // option B 双通道：退出书时对每条启用的通道（云备份 + 互联）各跑一次 per-book
       // 同步，互不排斥。每条通道各自认证成功才跑；未配置的通道 continue 跳过。
       //
@@ -1029,14 +1023,24 @@ Future<void> _runAutoSync({
           await backend.restoreAuth(repo);
           if (!await backend.isAuthenticated) continue;
 
+          // BUG-988 续：per-book 的分资产门控与 sweep 走**同一份**
+          // [resolveChannelSyncFlags]。原来三个开关在循环外读死、只给 content 补了
+          // 一个 `channel.isInterconnect ? ... : ...` 三元式，统计漏掉了——用户关掉
+          // 互联「共享统计」后全量 sweep 停了，可每退出一本书仍把该书的
+          // `statistics_*.json` PUT 给互联 host 再 merge 回本地（互联后端真的实现了
+          // 这条通道：InterconnectSyncBackend.updateStatsFile）。把解析收进循环，
+          // 「哪个开关记得分通道、哪个忘了分」这种特殊情况就不存在了。
+          final ChannelSyncFlags flags = await resolveChannelSyncFlags(
+            repo,
+            isInterconnect: channel.isInterconnect,
+          );
           final manager = SyncManager(db: db, backend: backend);
           final result = await manager.syncBook(
             book: book,
-            syncStats: syncStats,
+            syncStats: flags.syncStats,
             statsSyncMode: StatisticsSyncMode.merge,
-            syncAudioBook: syncAudioBook,
-            syncContent:
-                channel.isInterconnect ? interconnectSyncContent : syncContent,
+            syncAudioBook: flags.syncAudioBookPosition,
+            syncContent: flags.syncContent,
           );
           // 计数放在 syncBook **之后**：抛异常的通道不算「跑过」，否则
           // channelsRun>0 会把一条都没成功的轮次记成 completed（与 sweep 一致）。

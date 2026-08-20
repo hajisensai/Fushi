@@ -111,6 +111,7 @@ VideoDownloadSubscriptionService _service({
   required VideoDownloadSubscriptionEnqueue enqueue,
   Duration checkInterval = const Duration(minutes: 15),
   Duration leaseDuration = const Duration(minutes: 2),
+  int autoRetryBudget = kVideoDownloadSubscriptionAutoRetryBudget,
   DateTime Function()? now,
 }) {
   final VideoDownloadSubscriptionService service =
@@ -121,6 +122,7 @@ VideoDownloadSubscriptionService _service({
     workerId: 'subscription-test-worker',
     checkInterval: checkInterval,
     leaseDuration: leaseDuration,
+    autoRetryBudget: autoRetryBudget,
     now: now ?? () => DateTime.fromMillisecondsSinceEpoch(_nowAt),
   );
   addTearDown(service.dispose);
@@ -300,7 +302,23 @@ void main() {
           <Object?>[lifecycle, jobId],
         );
 
-    test('needsAttention（系统故障）的一集会在下一轮重新入队', () async {
+    /// 「重新派」的落地形式是**恢复既有任务**，不是再造一份：任务表对
+    /// (fingerprint, resourceProvider, selectedResourceId) 没有唯一约束，克隆
+    /// 会在持续性故障下每轮堆一条死任务行。
+    Future<void> expectRevivedInPlace(FushiDatabase database) async {
+      final List<VideoDownloadJobRow> jobs =
+          await database.getVideoDownloadJobs();
+      expect(jobs, hasLength(1), reason: '恢复既有任务，不能克隆出第二条任务行');
+      expect(jobs.single.jobId, 'job-1');
+      expect(jobs.single.lifecycle, VideoDownloadJobLifecycle.active,
+          reason: '故障态的既有任务必须被放回 active，这一集才会真的继续下');
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems('anime')).single;
+      expect(item.jobId, 'job-1', reason: '条目仍绑在同一条任务上');
+      expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+    }
+
+    test('needsAttention（系统故障）的一集会在下一轮被恢复', () async {
       final FushiDatabase database = await seed();
       final List<String> first =
           await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
@@ -314,12 +332,13 @@ void main() {
 
       final List<String> second =
           await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt);
-      expect(second, <String>['ep-1'],
-          reason: '内置下载引擎运行时缺失这类系统故障排除后，这一集必须能被重新派；'
-              '旧判据只看 jobId 在不在，会让它永久卡死');
+      expect(second, isEmpty,
+          reason: 'needsAttention 的后端 torrent 可能还在跑，再派一份同 magnet 的'
+              '任务会让两条工作流指向同一个 infohash');
+      await expectRevivedInPlace(database);
     });
 
-    test('failed 的一集同样会被重新入队', () async {
+    test('failed 的一集同样会被恢复', () async {
       final FushiDatabase database = await seed();
       final List<String> first =
           await runRound(database, alreadyEnqueued: <String>[], atMs: _nowAt);
@@ -329,8 +348,10 @@ void main() {
 
       expect(
           await runRound(database, alreadyEnqueued: first, atMs: secondRoundAt),
-          <String>['ep-1'],
-          reason: 'failed 是系统侧的失败，不是用户意图');
+          isEmpty,
+          reason: 'failed 是系统侧的失败，不是用户意图；但恢复既有任务即可，'
+              '不需要克隆');
+      await expectRevivedInPlace(database);
     });
 
     test('用户取消（cancelled）的一集不会被订阅自动补回来', () async {
@@ -369,6 +390,282 @@ void main() {
             isEmpty,
             reason: '$lifecycle 的任务仍算数，重复入队会造重复下载');
       }
+    });
+  });
+
+  /// PR#915 修 BUG-1746 时拆掉了 `if (item.jobId != null) return true;`，但没有
+  /// 补上替代闸门，于是留下两个新缺陷：
+  ///
+  /// - **克隆风暴**：复用循环对 failed / needsAttention 的旧任务 `continue`，
+  ///   落到 `pipeline.enqueue` —— 而 enqueue 每次调用都
+  ///   `generateVideoDownloadInstallationId()` 生成全新 jobId，`VideoDownloadJobs`
+  ///   对 (fingerprint, resourceProvider, selectedResourceId) / torrentHash 没有
+  ///   任何唯一约束。生产 checkInterval 是 15 分钟，一个持续性故障（实测例：
+  ///   内置下载引擎运行时缺失）≈ 每集每天 96 条死任务行，面板永不收敛。
+  /// - **同 torrent 双任务**：needsAttention 是「需要用户处理的可恢复状态」，
+  ///   backendTaskId 还在、后端 torrent 可能仍在跑，再派一份同 magnet 的任务会
+  ///   让两条持久工作流指向同一个 infohash，各自 organize/import。
+  ///
+  /// 修法是「恢复既有任务 + 持久上限」，上限的账本落在任务自己的 attemptCount
+  /// 上（内存计数进程重启就归零，等于没有上限）。
+  group('订阅自动重派恢复既有任务并受持久上限约束', () {
+    /// 压到 2 只是为了少跑两轮；生产真值是
+    /// [kVideoDownloadSubscriptionAutoRetryBudget]。
+    const int autoRetryBudget = 2;
+
+    /// 每轮之间要真的前进时钟：`_drain()` 只认领已到期的订阅，同一时刻跑第二轮
+    /// 会整轮空转，「没有克隆」的断言就变成假绿（测的是「压根没跑」）。
+    int roundAt(int round) => _nowAt + round * 3600 * 1000;
+
+    Future<FushiDatabase> seed() async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      await _insertSubscription(
+        database,
+        id: 'anime',
+        sourceId: sourceId,
+        resourceProvider: 'nyaa',
+        mediaKind: 'tv',
+        discoveryCategory: 'anime',
+        season: 1,
+        startAfterEpisode: 1,
+        filters: <String, Object?>{
+          'strict': true,
+          'releaseGroup': 'SubsPlease',
+          'resolution': '1080p',
+          'trustedOnly': true,
+          'nyaaCategory': '1_2',
+        },
+      );
+      return database;
+    }
+
+    /// 模拟「故障没排除」：把这一集当前的任务打回故障态。生产里由流水线写，
+    /// 这里只关心订阅怎么读它。
+    Future<void> breakJob(
+      FushiDatabase database,
+      String jobId,
+      String lifecycle,
+    ) =>
+        database.customStatement(
+          'UPDATE video_download_jobs SET lifecycle = ? WHERE job_id = ?',
+          <Object?>[lifecycle, jobId],
+        );
+
+    /// 跑一轮检查。[enqueuedJobIds] 累积**真的新建了任务**的 jobId —— 判克隆看
+    /// 它，不要只看任务总数：两者只有在缺陷存在时才会分叉。
+    Future<void> runRound(
+      FushiDatabase database, {
+      required int round,
+      required List<String> enqueuedJobIds,
+    }) async {
+      final VideoDownloadSubscriptionService service = _service(
+        database: database,
+        autoRetryBudget: autoRetryBudget,
+        now: () => DateTime.fromMillisecondsSinceEpoch(roundAt(round)),
+        provider: _FakeResourceProvider(
+          id: 'nyaa',
+          candidates: <VideoResourceCandidate>[
+            _candidate(remoteId: 'ep-1', episode: 1),
+          ],
+        ),
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          final String jobId = 'job-${enqueuedJobIds.length + 1}';
+          enqueuedJobIds.add(jobId);
+          return _persistFakeJob(database, request, jobId);
+        },
+      );
+      await service.checkNow();
+    }
+
+    test('持续故障下任务行数不随轮次增长', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+      expect(enqueuedJobIds, <String>['job-1'], reason: '第一轮应正常入队');
+
+      for (int round = 1; round <= 5; round++) {
+        await breakJob(
+          database,
+          'job-1',
+          VideoDownloadJobLifecycle.needsAttention,
+        );
+        await runRound(database, round: round, enqueuedJobIds: enqueuedJobIds);
+      }
+
+      expect(enqueuedJobIds, <String>['job-1'],
+          reason: '后续每一轮都必须走「恢复既有任务」，不能再 enqueue 一份克隆');
+      expect(await database.getVideoDownloadJobs(), hasLength(1),
+          reason: '15 分钟一轮的持续故障不能每轮往面板堆一条死任务行');
+    });
+
+    test('恢复的是既有任务：jobId 不变、生命周期回到 active', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+      await breakJob(database, 'job-1', VideoDownloadJobLifecycle.failed);
+      final VideoDownloadJobRow before =
+          (await database.getVideoDownloadJobs()).single;
+
+      await runRound(database, round: 1, enqueuedJobIds: enqueuedJobIds);
+
+      final VideoDownloadJobRow after =
+          (await database.getVideoDownloadJobs()).single;
+      expect(after.jobId, before.jobId, reason: '恢复的必须是同一条任务，不是新任务');
+      expect(after.lifecycle, VideoDownloadJobLifecycle.active);
+      expect(after.attemptCount, greaterThan(before.attemptCount),
+          reason: '自动重派要消耗持久预算，否则上限无从计数');
+      expect(after.stage, before.stage,
+          reason: '不倒回 enqueue：后端任务可能还在跑，别把同一个种子推第二遍');
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems('anime')).single;
+      expect(item.jobId, before.jobId);
+      expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+    });
+
+    test('needsAttention 期间不会造出指向同一个 torrent 的第二条任务', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+      await breakJob(
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.needsAttention,
+      );
+
+      await runRound(database, round: 1, enqueuedJobIds: enqueuedJobIds);
+
+      final List<VideoDownloadJobRow> jobs =
+          await database.getVideoDownloadJobs();
+      final String? torrentHash = jobs.single.torrentHash;
+      expect(torrentHash, isNotNull, reason: '这条用例要真的有 infohash 才有意义');
+      expect(
+        jobs.where(
+          (VideoDownloadJobRow job) => job.torrentHash == torrentHash,
+        ),
+        hasLength(1),
+        reason: 'qBittorrent 按 infohash 去重，两条任务会各自 organize/import '
+            '同一份文件',
+      );
+    });
+
+    test('借满自动重派预算后停在 needsAttention 等用户处理', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+
+      for (int round = 1; round <= autoRetryBudget; round++) {
+        await breakJob(
+          database,
+          'job-1',
+          VideoDownloadJobLifecycle.needsAttention,
+        );
+        await runRound(database, round: round, enqueuedJobIds: enqueuedJobIds);
+        expect((await database.getVideoDownloadJobs()).single.lifecycle,
+            VideoDownloadJobLifecycle.active,
+            reason: '预算内的第 $round 次自动重派应当成功');
+      }
+
+      await breakJob(
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.needsAttention,
+      );
+      await runRound(
+        database,
+        round: autoRetryBudget + 1,
+        enqueuedJobIds: enqueuedJobIds,
+      );
+
+      final VideoDownloadJobRow job =
+          (await database.getVideoDownloadJobs()).single;
+      expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention,
+          reason: '预算借满后必须停下等人处理，不能无限自动重试');
+      expect(enqueuedJobIds, <String>['job-1'],
+          reason: '停下不等于换个方式重来：也不许改走 enqueue 造克隆');
+    });
+
+    /// [附] `_managedEpisodeKeys` 原本只排除 cancelled/failed，**保留了
+    /// needsAttention**。于是一条卡在 needsAttention、但文件已经下好的任务，会在
+    /// 文件级把自己的订阅条目判成「已经有人管」而走 `_markItemSkipped` —— 那是个
+    /// 终态写入，此后 `subscriptionItemStillClaimed` 永远返回 true，这一集被静默
+    /// 判了永久跳过（needsAttention 这一半在这条路径上根本没人再管）。
+    test('needsAttention 任务已下好的文件不会把这一集静默判成永久跳过', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+
+      // 这条任务已经把 S01E01 下好了，但整条任务卡在「需要用户处理」。
+      await database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: 'job-1',
+          originalRelativePath: 'Example.S01E01.mkv',
+          currentRelativePath: 'Example.S01E01.mkv',
+          kind: const Value<String>('video'),
+          season: const Value<int?>(1),
+          episode: const Value<int?>(1),
+          status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
+          createdAt: _nowAt,
+          updatedAt: _nowAt,
+        ),
+      );
+      await breakJob(
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.needsAttention,
+      );
+
+      await runRound(database, round: 1, enqueuedJobIds: enqueuedJobIds);
+
+      final VideoDownloadSubscriptionItemRow item =
+          (await database.getVideoDownloadSubscriptionItems('anime')).single;
+      expect(item.status, isNot(VideoDownloadSubscriptionItemStatus.skipped),
+          reason: 'skipped 是终态写入，这一集会被永久判跳过，'
+              '而它其实只是卡在需要用户处理的任务上');
+      expect(item.status, VideoDownloadSubscriptionItemStatus.queued);
+      expect((await database.getVideoDownloadJobs()).single.lifecycle,
+          VideoDownloadJobLifecycle.active,
+          reason: '正确的处理是恢复这条卡住的任务，让它把文件走完 import');
+    });
+
+    test('用户在面板重试后自动预算恢复（人工干预是唯一的复位入口）', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+      for (int round = 1; round <= autoRetryBudget + 1; round++) {
+        await breakJob(
+          database,
+          'job-1',
+          VideoDownloadJobLifecycle.needsAttention,
+        );
+        await runRound(database, round: round, enqueuedJobIds: enqueuedJobIds);
+      }
+      expect((await database.getVideoDownloadJobs()).single.lifecycle,
+          VideoDownloadJobLifecycle.needsAttention);
+
+      // 面板的重试按钮（`_canRetry` 正是针对 needsAttention / failed）。
+      expect(
+        await database.retryVideoDownloadJobByUser(
+          jobId: 'job-1',
+          nowAt: roundAt(autoRetryBudget + 2),
+        ),
+        isTrue,
+      );
+      await breakJob(
+        database,
+        'job-1',
+        VideoDownloadJobLifecycle.needsAttention,
+      );
+      await runRound(
+        database,
+        round: autoRetryBudget + 3,
+        enqueuedJobIds: enqueuedJobIds,
+      );
+
+      expect((await database.getVideoDownloadJobs()).single.lifecycle,
+          VideoDownloadJobLifecycle.active,
+          reason: 'retryVideoDownloadJobByUser 把 attemptCount 清零，'
+              '自动预算随之复位——不需要第二处状态');
     });
   });
 

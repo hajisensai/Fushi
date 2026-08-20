@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -143,9 +144,20 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                 offstage: i != _currentIndex,
                 child: TickerMode(
                   enabled: i == _currentIndex,
-                  child: views[i].builder(
-                    context,
-                    i == _currentIndex ? navigation : const SizedBox.shrink(),
+                  // [Offstage] 只关 Flutter 自己的 hitTest；desktop_drop 是进程级
+                  // 全局广播，只按各 drop target 的 `RenderBox.paintBounds` 过滤，
+                  // 而隐藏的保活视图仍以完整约束布局（全屏大小），于是**每个访问过
+                  // 的子视图都会收到同一次 OS drop**。外层 home-shell 的作用域只
+                  // 回答「书/漫画 tab 可见吗」，用户停在同一个 tab 的发现视图时答案
+                  // 照样是 true —— 隐藏的书架仍会把拖入的文件夹当漫画导入。
+                  // 判据与上面 `offstage:` 用的是同一个表达式，且写成回调、在 drop
+                  // 落地那一刻求值。
+                  child: DropSurfaceScope(
+                    isActive: () => i == _currentIndex,
+                    child: views[i].builder(
+                      context,
+                      i == _currentIndex ? navigation : const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),

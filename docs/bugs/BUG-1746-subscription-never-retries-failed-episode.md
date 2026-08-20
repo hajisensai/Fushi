@@ -62,7 +62,40 @@ if (item.jobId != null) return true;
 | 任务记录不存在（null） | ❌ | 没有任何东西在管这一集 |
 
 `_enqueueItem` 里那份重复判据**直接删掉**（而不是也改一遍）——判据只留一处，注释写明前置
-条件由调用方保证；复用既有任务的循环补上同一判据，不再把失败任务绑回来。
+条件由调用方保证。
+
+### 补正（PR#915 合入后）：重派 = 恢复既有任务，不是克隆一份
+
+第一版实现让复用循环对 failed / needsAttention 的旧任务 `continue`，于是落到
+`pipeline.enqueue`——而 `enqueue` 每次调用都 `generateVideoDownloadInstallationId()`
+生成全新 jobId，`VideoDownloadJobs` 对 (fingerprint, resourceProvider, selectedResourceId)
+/ torrentHash **没有任何唯一约束**。生产 `checkInterval` 是 15 分钟，一个持续性故障
+（实测例：内置下载引擎运行时缺失）等于**每集每天往下载面板堆约 96 条死任务行**，永不收敛；
+`needsAttention` 更糟——它的定义是「需要用户处理的**可恢复**状态」，`backendTaskId` 还在、
+后端 torrent 可能仍在跑，再派一份同 magnet 的任务会让两条持久工作流指向同一个 infohash，
+各自 organize/import。原来那道 `jobId != null` 恰好也是唯一的防风暴闸门，拆掉时没补替代。
+
+现在的形状：
+
+- `_enqueueItem` 匹配到既有任务时，`failed` / `needsAttention` 走
+  `FushiDatabase.reviveVideoDownloadJobForSubscription`（`database_video_domain.part.dart`）
+  把**同一条**任务放回 `active`，`stage` / `backendTaskId` / `torrentHash` 一律保留，
+  不倒回 enqueue，也不新建任务行。
+- 上限的账本就是任务自己的 `attemptCount`，**不加列**（内存计数进程重启就归零，等于没有
+  上限；加列会牵进已发布 schema 的迁移阶梯）。`maxAttempts` 是流水线进程内退避的预算，
+  `attemptCount - maxAttempts` 就是自动重派额外借走的格数；借满
+  `kVideoDownloadSubscriptionAutoRetryBudget`（3）之后任务原样停在 `failed` /
+  `needsAttention` 等用户处理。
+- 面板的重试按钮走 `retryVideoDownloadJobByUser`，它把 `attemptCount` 清零——于是人工干预
+  天然地把自动预算也一起复位，不需要第二处状态。
+
+### 补正：`_managedEpisodeKeys` 里 needsAttention 也要排除
+
+原实现只排除 `cancelled` / `failed`，**保留 needsAttention**。于是一条卡在 needsAttention、
+但文件已经下好的任务，会在文件级把自己的订阅条目判成「已经有人管」而走 `_markItemSkipped`
+——那是个**终态写入**，此后 `subscriptionItemStillClaimed` 永远返回 true，这一集被静默判了
+永久跳过。现在这段只认 `active` / `completed`；真正已入库的集数由 collection items 那一段
+兜住，不受影响。（下面那句「_managedEpisodeKeys 保持不动」是第一版的说法，已被本补正取代。）
 
 `_managedEpisodeKeys`（文件级「这一集是否已经在库里」）保持不动：它排除 cancelled/failed
 但保留 needsAttention 是对的，因为一个 needsAttention 的任务可能已经把文件下好了。两者

@@ -44,6 +44,16 @@
    出的 sidecar。三个 TextRender wrapper 必须直接安装并立即回读，固定 stage 记录安装边界；
    mouseMove 只做一次 identity 基线，leftClick 低频复核后续覆写，且 bitmask 仅在状态变化时发布。
 
+7. **「哪个才是游戏主窗口」只能有一套答案。** `ResolveKirikiriEngineMainThreadId` 必须
+   复用 `lookup_overlay_window.inc` 的 `FindGameMainWindow()`（可见 + 无 owner + 客户区
+   面积最大），不得自带一份「EnumWindows 第一个匹配」。第一个匹配那套是错的：TVP 控制台窗、
+   splash、同进程启动器窗，或本模块自己那个 1x1 的 `WS_EX_TOPMOST` `FushiLookupOverlay`
+   （EnumWindows 会先枚举到它）都会抢走判定，把别的线程 id 当引擎主线程
+   `InterlockedCompareExchange(..., 0)` **一次性**缓存下来，写错永不自愈；此后
+   `GetCurrentThreadId() != main_tid` 恒真，传感器静默永不安装，症状与「这个引擎不支持」
+   完全同形。配套第二问：共享的那套判据本身必须仍然是面积判据，否则统一了也是统一到错的
+   那一套。
+
 变异实测纪律：本文件把每条规则实现成一个独立的 `find_*` 函数，`RealAdapterTest` 用它
 扫真文件，`MutationSelfTest` 用它扫**合成的脏输入**并要求非空。两组都在，这守卫才不
 可能是「永远绿的空守卫」。
@@ -2218,6 +2228,58 @@ def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
     return offenders
 
 
+# 规则 7：「哪个才是游戏主窗口」只能有一套答案。
+#
+# ResolveKirikiriEngineMainThreadId 曾经自带一份 EnumWindows：取**第一个**可见、无 owner
+# 的顶层窗口就收工；而同一编译单元里 lookup_overlay_window.inc 的 FindOverlayOwner 对同
+# 一问题取的是**客户区面积最大**的那个（注释写着「启动器/工具窗口都比它小」）。两套判据
+# 里第一个匹配那套是错的：进程里只要还有另一个可见无 owner 顶层窗口且属于别的线程（TVP
+# 控制台窗、splash、同进程启动器窗，或本模块自己那个 1x1 的 WS_EX_TOPMOST
+# FushiLookupOverlay —— EnumWindows 会**先**枚举到它），就会把那个线程 id 当引擎主线程
+# 缓存下来。缓存是 InterlockedCompareExchange(..., 0) 的一次性写入，写错**永不自愈**，
+# 此后 GetCurrentThreadId() != main_tid 恒真，传感器静默永不安装 —— 症状与「这个引擎不
+# 支持」完全同形。
+MAIN_THREAD_RESOLVER_ENTRY = "DWORD ResolveKirikiriEngineMainThreadId() "
+SHARED_MAIN_WINDOW_FN = "FindGameMainWindow("
+OVERLAY_WINDOW_INC = ROOT / "hook" / "lookup_overlay_window.inc"
+
+
+def find_divergent_main_window_criteria(source: MaskedSource) -> list[str]:
+    body = _cpp_function_body(source, MAIN_THREAD_RESOLVER_ENTRY)
+    if body is None:
+        return [f"找不到 {MAIN_THREAD_RESOLVER_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if "EnumWindows(" in body:
+        offenders.append(
+            "ResolveKirikiriEngineMainThreadId 自带一份 EnumWindows 判据："
+            "游戏主窗口的判据必须只有一套（FindGameMainWindow）"
+        )
+    if SHARED_MAIN_WINDOW_FN not in body:
+        offenders.append(
+            "ResolveKirikiriEngineMainThreadId 没有复用 FindGameMainWindow()："
+            "同概念两套答案，其中一套必然与另一套不一致"
+        )
+    return offenders
+
+
+def find_unshared_main_window_area_criterion(overlay_source: str) -> list[str]:
+    """共享的那套判据本身必须是「面积最大」，否则统一了也是统一到错的那套。"""
+    text = _strip_line_comments(overlay_source)
+    if "HWND FindGameMainWindow(" not in text:
+        return ["lookup_overlay_window.inc 里没有 FindGameMainWindow()"]
+    offenders: list[str] = []
+    if not re.search(r"\bbest_area\b", text):
+        offenders.append(
+            "FindOverlayOwner 不再按客户区面积挑选：启动器/工具窗口/1x1 overlay "
+            "会被当成游戏主窗口"
+        )
+    if not re.search(r"IsWindowVisible\s*\(", text):
+        offenders.append("FindOverlayOwner 少了可见性判据")
+    if not re.search(r"GW_OWNER", text):
+        offenders.append("FindOverlayOwner 少了顶层（无 owner）判据")
+    return offenders
+
+
 # ── 扫真文件 ────────────────────────────────────────────────────────────────
 
 
@@ -2245,6 +2307,26 @@ class RealAdapterTest(unittest.TestCase):
             find_missing_main_thread_identity_check(self.source),
             "RunKirikiriLookupInstallOnMainThread 必须先核对线程身份再碰引擎；"
             "引擎也会在后台线程开流，只靠'在 detour 里'不足以断定主线程 (BUG-1724)",
+        )
+
+    def test_main_thread_resolver_reuses_the_shared_main_window_criteria(self) -> None:
+        self.assertEqual(
+            [],
+            find_divergent_main_window_criteria(self.source),
+            "ResolveKirikiriEngineMainThreadId 必须复用 FindGameMainWindow()："
+            "自带一份「EnumWindows 第一个可见无 owner 顶层窗口」会把 TVP 控制台窗/"
+            "splash/1x1 的 FushiLookupOverlay 的线程 id 永久缓存成引擎主线程，"
+            "此后传感器静默永不安装",
+        )
+
+    def test_shared_main_window_lookup_still_uses_the_area_criterion(self) -> None:
+        self.assertEqual(
+            [],
+            find_unshared_main_window_area_criterion(
+                OVERLAY_WINDOW_INC.read_text(encoding="utf-8")
+            ),
+            "统一到 FindGameMainWindow 之后，它本身的「可见 + 无 owner + 面积最大」"
+            "判据就是唯一真相源，不能被悄悄改成第一个匹配",
         )
 
     def test_never_builds_tjs_source_from_dynamic_strings(self) -> None:
@@ -3240,6 +3322,79 @@ global.fushiLookupCapture = function(renderer, capturePhase,
 '''
 
 
+DIRTY_OWN_ENUM_WINDOWS = """
+DWORD ResolveKirikiriEngineMainThreadId() {
+  struct Finder { DWORD pid; DWORD tid; } finder = {GetCurrentProcessId(), 0};
+  EnumWindows([](HWND w, LPARAM p) -> BOOL {
+    Finder* self = reinterpret_cast<Finder*>(p);
+    DWORD pid = 0;
+    const DWORD tid = GetWindowThreadProcessId(w, &pid);
+    if (pid != self->pid) return TRUE;
+    if (GetWindow(w, GW_OWNER) != nullptr) return TRUE;
+    if (!IsWindowVisible(w)) return TRUE;
+    self->tid = tid;
+    return FALSE;
+  }, reinterpret_cast<LPARAM>(&finder));
+  return finder.tid;
+}
+"""
+
+CLEAN_SHARED_RESOLVER = """
+DWORD ResolveKirikiriEngineMainThreadId() {
+  const HWND main_window = FindGameMainWindow();
+  if (main_window == nullptr) return 0;
+  DWORD pid = 0;
+  const DWORD tid = GetWindowThreadProcessId(main_window, &pid);
+  if (tid == 0 || pid != GetCurrentProcessId()) return 0;
+  return tid;
+}
+"""
+
+DIRTY_FIRST_MATCH_OWNER = """
+BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
+  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
+  DWORD pid = 0;
+  GetWindowThreadProcessId(window, &pid);
+  if (pid != search->pid) return TRUE;
+  if (!IsWindowVisible(window)) return TRUE;
+  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
+  search->best = window;
+  return FALSE;
+}
+
+HWND FindGameMainWindow() {
+  OwnerSearch search;
+  EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
+  return search.best;
+}
+"""
+
+CLEAN_AREA_OWNER = """
+BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
+  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
+  DWORD pid = 0;
+  GetWindowThreadProcessId(window, &pid);
+  if (pid != search->pid) return TRUE;
+  if (!IsWindowVisible(window)) return TRUE;
+  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
+  RECT rect = {};
+  if (!GetClientRect(window, &rect)) return TRUE;
+  const long area = (rect.right - rect.left) * (rect.bottom - rect.top);
+  if (area > search->best_area) {
+    search->best_area = area;
+    search->best = window;
+  }
+  return TRUE;
+}
+
+HWND FindGameMainWindow() {
+  OwnerSearch search;
+  EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
+  return search.best;
+}
+"""
+
+
 class MutationSelfTest(unittest.TestCase):
     """把每条规则要抓的东西真的塞进合成源码，确认规则会红。"""
 
@@ -3300,6 +3455,26 @@ class MutationSelfTest(unittest.TestCase):
             "entry 生命周期变异样本必须真的与干净样本不同",
         )
         return MaskedSource(dirty)
+
+    def test_own_enum_windows_in_resolver_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_divergent_main_window_criteria(MaskedSource(DIRTY_OWN_ENUM_WINDOWS))
+        )
+
+    def test_resolver_reusing_shared_helper_stays_green(self) -> None:
+        self.assertEqual(
+            [], find_divergent_main_window_criteria(MaskedSource(CLEAN_SHARED_RESOLVER))
+        )
+
+    def test_first_match_owner_search_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_unshared_main_window_area_criterion(DIRTY_FIRST_MATCH_OWNER)
+        )
+
+    def test_area_owner_search_stays_green(self) -> None:
+        self.assertEqual(
+            [], find_unshared_main_window_area_criterion(CLEAN_AREA_OWNER)
+        )
 
     def test_clean_sample_passes_every_rule(self) -> None:
         self.assertEqual([], find_dynamic_tjs_concatenations(self.clean))

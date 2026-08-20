@@ -23,6 +23,29 @@ typedef FileDropCallback = FutureOr<void> Function(
 typedef DropFailureReporter = void Function(
     Object error, StackTrace stackTrace);
 
+/// drop 落地那一刻的唯一门：[context] 所在的这个 drop target 现在是不是用户真正
+/// 看得着的表面。
+///
+/// 两层判据，缺一不可：
+/// - `ModalRoute.isCurrent`：挡住被新路由（对话框 / 播放页）盖住的页面；
+/// - [DropSurfaceScope.activeFor]：挡住同一条路由里被 Offstage / IndexedStack
+///   保活的隐藏子树（`isCurrent` 对同级 tab 恒为 true，挡不住它们）。
+///
+/// 抽成具名函数、而不是在 [DropTarget] 的四个匿名回调里各抄一遍：抄写版本谁都测
+/// 不到（测试够不到闭包内部），删掉其中一处的作用域判据不会有任何测试变红。
+@visibleForTesting
+bool dropSurfaceActive(BuildContext context) {
+  final ModalRoute<dynamic>? route = ModalRoute.of(context);
+  final bool routeVisible = route == null || route.isCurrent;
+  final bool surfaceActive = DropSurfaceScope.activeFor(context);
+  if (!routeVisible || !surfaceActive) {
+    debugPrint(
+      '[fushi-drop] gate closed route=$routeVisible surface=$surfaceActive',
+    );
+  }
+  return routeVisible && surfaceActive;
+}
+
 /// Enables desktop_drop only on desktop platforms; all other platforms pass the
 /// child through with zero runtime cost.
 class FushiFileDropTarget extends StatelessWidget {
@@ -52,18 +75,14 @@ class FushiFileDropTarget extends StatelessWidget {
     return DropTarget(
       enable: enabled,
       onDragDone: (DropDoneDetails detail) {
-        final bool routeVisible = _routeVisible(context);
-        final bool surfaceActive = DropSurfaceScope.activeFor(context);
-        final bool active = enabled && routeVisible && surfaceActive;
+        final bool active = enabled && dropSurfaceActive(context);
         final List<String> paths = detail.files
             .map((DropItem f) => f.path)
             .where((String s) => s.isNotEmpty)
             .toList();
         _log(
-          'done active=$active routeVisible=$routeVisible '
-          'surface=$surfaceActive '
-          'files=${paths.length} local=${detail.localPosition} '
-          'global=${detail.globalPosition}',
+          'done active=$active files=${paths.length} '
+          'local=${detail.localPosition} global=${detail.globalPosition}',
         );
         if (!active) {
           _log('ignored inactive drop');
@@ -76,29 +95,20 @@ class FushiFileDropTarget extends StatelessWidget {
         runDrop(paths, detail.globalPosition);
       },
       onDragEntered: (DropEventDetails detail) {
-        final bool routeVisible = _routeVisible(context);
-        final bool surfaceActive = DropSurfaceScope.activeFor(context);
-        final bool active = enabled && routeVisible && surfaceActive;
         _log(
-          'enter active=$active routeVisible=$routeVisible '
+          'enter active=${enabled && dropSurfaceActive(context)} '
           'local=${detail.localPosition} global=${detail.globalPosition}',
         );
       },
       onDragUpdated: (DropEventDetails detail) {
-        final bool routeVisible = _routeVisible(context);
-        final bool surfaceActive = DropSurfaceScope.activeFor(context);
-        final bool active = enabled && routeVisible && surfaceActive;
         _log(
-          'update active=$active routeVisible=$routeVisible '
+          'update active=${enabled && dropSurfaceActive(context)} '
           'local=${detail.localPosition} global=${detail.globalPosition}',
         );
       },
       onDragExited: (DropEventDetails detail) {
-        final bool routeVisible = _routeVisible(context);
-        final bool surfaceActive = DropSurfaceScope.activeFor(context);
-        final bool active = enabled && routeVisible && surfaceActive;
         _log(
-          'exit active=$active routeVisible=$routeVisible '
+          'exit active=${enabled && dropSurfaceActive(context)} '
           'local=${detail.localPosition} global=${detail.globalPosition}',
         );
       },
@@ -129,11 +139,6 @@ class FushiFileDropTarget extends StatelessWidget {
 
   void _showDropFailureToast(Object error, StackTrace stackTrace) {
     FushiToast.show(msg: t.drag_drop_failed, severity: ToastSeverity.error);
-  }
-
-  bool _routeVisible(BuildContext context) {
-    final ModalRoute<dynamic>? route = ModalRoute.of(context);
-    return route == null || route.isCurrent;
   }
 
   void _log(String message) {

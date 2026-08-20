@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
@@ -143,59 +144,76 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onShowDiagnostics: _showDiagnostics,
               onLaunched: _showMonitor,
             );
+    // 子区内容按 [GameSection] 建表，再按 `GameSection.values` 顺序展开：既把
+    // 「IndexedStack 索引 == 枚举序」这条隐式约定变成结构约束（`index:` 用的就是
+    // `_section.index`），也保证**每个**子区必然经过下面同一处拖放作用域包裹，
+    // 以后新增子区不可能漏掉。
+    final Map<GameSection, Widget> sections = <GameSection, Widget>{
+      GameSection.dashboard: KeyedSubtree(
+        key: HomeGamePage.dashboardKey,
+        child: dashboardBuilder(context, _showLibrary),
+      ),
+      GameSection.library: KeyedSubtree(
+        key: HomeGamePage.libraryKey,
+        child: _buildLibrary(context),
+      ),
+      GameSection.monitor: KeyedSubtree(
+        key: HomeGamePage.monitorKey,
+        child: monitorBuilder(context, _showLibrary),
+      ),
+      GameSection.diagnostics: KeyedSubtree(
+        key: HomeGamePage.diagnosticsKey,
+        child: GameDiagnosticsPage(
+          controller: _controller,
+          onShowLibrary: _showLibrary,
+          onShowCapture: _showMonitor,
+        ),
+      ),
+      GameSection.settings: KeyedSubtree(
+        key: HomeGamePage.settingsKey,
+        child: Builder(
+          builder: (BuildContext context) {
+            final Widget navigation = GameSectionTabs(
+              selected: GameSection.settings,
+              focusIdPrefix: 'game-settings-tab',
+              onSelectDashboard: _showDashboard,
+              onSelectLibrary: _showLibrary,
+              onSelectMonitor: _showMonitor,
+              onSelectSettings: _showSettings,
+            );
+            return widget.settingsBuilder?.call(context, navigation) ??
+                ModuleSettingsView(
+                  destinationId: SettingsDestinationId.game,
+                  navigation: navigation,
+                );
+          },
+        ),
+      ),
+      GameSection.importGames: KeyedSubtree(
+        key: HomeGamePage.importKey,
+        child: _buildImport(context),
+      ),
+      GameSection.discover: KeyedSubtree(
+        key: HomeGamePage.discoverKey,
+        child: _buildDiscover(context),
+      ),
+    };
     return Material(
       type: MaterialType.transparency,
       child: IndexedStack(
         index: _section.index,
         children: <Widget>[
-          KeyedSubtree(
-            key: HomeGamePage.dashboardKey,
-            child: dashboardBuilder(context, _showLibrary),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.libraryKey,
-            child: _buildLibrary(context),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.monitorKey,
-            child: monitorBuilder(context, _showLibrary),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.diagnosticsKey,
-            child: GameDiagnosticsPage(
-              controller: _controller,
-              onShowLibrary: _showLibrary,
-              onShowCapture: _showMonitor,
+          for (final GameSection section in GameSection.values)
+            // [IndexedStack] 比 [Offstage] 更狠：它**急切构建全部子区**并以完整约束
+            // 布局，而 desktop_drop 是进程级全局广播、只按各 drop target 的
+            // `RenderBox.paintBounds` 过滤 —— 于是七个子区的 drop target 会全部命中
+            // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
+            // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
+            // `_section`，且写成回调、在 drop 落地那一刻求值。
+            DropSurfaceScope(
+              isActive: () => _section == section,
+              child: sections[section]!,
             ),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.settingsKey,
-            child: Builder(
-              builder: (BuildContext context) {
-                final Widget navigation = GameSectionTabs(
-                  selected: GameSection.settings,
-                  focusIdPrefix: 'game-settings-tab',
-                  onSelectDashboard: _showDashboard,
-                  onSelectLibrary: _showLibrary,
-                  onSelectMonitor: _showMonitor,
-                  onSelectSettings: _showSettings,
-                );
-                return widget.settingsBuilder?.call(context, navigation) ??
-                    ModuleSettingsView(
-                      destinationId: SettingsDestinationId.game,
-                      navigation: navigation,
-                    );
-              },
-            ),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.importKey,
-            child: _buildImport(context),
-          ),
-          KeyedSubtree(
-            key: HomeGamePage.discoverKey,
-            child: _buildDiscover(context),
-          ),
         ],
       ),
     );

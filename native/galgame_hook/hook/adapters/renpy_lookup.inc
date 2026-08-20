@@ -69,6 +69,10 @@ HMODULE g_renpy_python_module = nullptr;
 volatile LONG g_renpy_lookup_state = 0;
 // 上一次读回的 Python 侧命中序号；变了才发布一次 hit。
 uint64_t g_renpy_last_hit_seq = 0;
+// 宿主心跳。每轮 ProcessRenpyLookupTick +1 并写进 Python 全局 fushi_host_seq；
+// Fushi 进程没了就不再递增，Python 侧据此自锁。与反方向的 fushi_lookup_seq
+// （命中序号，Python 写 / native 读）是两个东西，别混。
+uint64_t g_renpy_host_seq = 0;
 bool g_renpy_last_button_down = false;
 uint64_t g_renpy_submit_seq = 0;
 
@@ -140,11 +144,47 @@ bool ResolveRenpyPythonApi(HMODULE python) {
          g_py_int_as_long != nullptr && g_py_err_clear != nullptr;
 }
 
-// 种进游戏进程的传感器。只在 __main__ 里定义函数并把 tick 挂上 config.periodic_callback；
+// 种进游戏进程的传感器。只在 __main__ 里定义函数并把 tick 挂上周期回调扩展点；
 // 这一步**不读任何 Render/Layout**，所以在后台线程上执行是安全的。
 //
 // 结果一律以「扁平的 int + 一个 UTF-8 bytes」发布，不用 tuple/JSON：C 侧只需要
 // PyInt_AsLong 与 PyString_AsStringAndSize 两个入口，跨 Python 2/3 都成立。
+//
+// ── 为什么挂载要链式（脚本尾部 _fs_cbs / fushi_prev_periodic 那段）────────────
+// config.periodic_callback 是 Ren'Py **官方文档化**的扩展点（约 20Hz），游戏与 mod
+// 拿它跑自动存档、计时器、状态机。裸赋值会把它们**永久**顶掉：本 DLL 不卸载，也没有
+// 还原路径，症状是「游戏某个功能莫名不动了」，跟 Hibiki 完全对不上号。所以：
+//   * Ren'Py 7.4+ 有复数列表 config.periodic_callbacks —— 优先 append，谁的槽都不动；
+//   * 只有单数槽时才取旧值存进 fushi_prev_periodic，由 tick 在自己动手前先调一遍。
+// 重复注入时旧值会是**上一次注入的** tick：它与本次是不同的函数对象，identity 比不
+// 出来，必须拿覆盖前存下的 _fs_prev_tick 判，否则会把自己链进自己、每帧递归加深。
+//
+// ── 为什么脚本里要有 fushi_lookup_on 这道闸 ──────────────────────────────────
+// 回调种下去就没有卸载路径。native 侧若在关查词时直接早退、不再写任何 Python 全局，
+// 传感器仍会每帧跑 _fushi_find_render 全树遍历 + 每字形 2 次 Python 级 mapper 调用，
+// 一直跑到游戏退出（实测 77 字形 ≈ 9k 次调用/秒常驻引擎主线程）。所以 native 每轮把
+// 开关也写进来，ProcessRenpyLookupTick 里的 enable 判断排在那次赋值**之后**。
+//
+// ── 为什么光有 fushi_lookup_on 还不够：宿主心跳 fushi_host_seq ────────────────
+// 开关只覆盖「用户关掉查词」。**Fushi 进程被直接杀掉**时 native 侧一轮都不再跑，开关
+// 会永远停在最后写下的 1，Python 侧照样全速扫描到游戏退出——用户观感是「关了 Fushi
+// 之后游戏还是卡」，且跟 Hibiki 完全对不上号。这与上面那条是同一类缺陷，只是触发面更窄。
+// 所以 native 每轮再写一个单调递增的心跳，Python 侧连续 kFushiHostStallTicks 轮没见它
+// 变就自锁早退；心跳一恢复递增立刻解锁（绝不能变成「Fushi 重连后查词永久不工作」）。
+//
+// 阈值的依据：worker 的轮询间隔是 200ms（adapter_registry.inc 的 PollDelayMs），
+// Ren'Py 的 PERIODIC 约 20Hz、部分发行版按帧调到 60Hz+。所以正常间隔是 4~12 个 tick，
+// 60 轮 = 20Hz 下 3 秒 / 60Hz 下 1 秒，对最坏的正常间隔仍有 5 倍余量。
+// 误锁**无害且自愈**：任何携带新 submit 的赋值必然同时携带新心跳，而下面的心跳判定
+// 排在自锁之前，于是解锁与那次 submit 落在同一个 tick 上——误锁只丢 hover 高亮的延迟，
+// 丢不掉一次提交。
+//
+// 名字为什么不是 fushi_lookup_seq：那个名字**已经被占**——它是 Python 侧写、native 侧
+// 读的命中序号（反方向）。同名两义正是这类 bug 的温床，所以另起 fushi_host_seq。
+//
+// PYSRC 是**窄**字符串字面量，MSVC 的 C2026 上限是 16380 字节（不是宽串那个 8190
+// UTF-16 unit）。中文注释一字 3 字节，很容易吃光余量；写满了就插 `)PYSRC" "PYSRC(`
+// 拆段，不要靠删注释腾地方。守卫见 tests/renpy_lookup_source_guard_test.py。
 const char kRenpyLookupBootstrap[] = R"PYSRC(
 import sys as _fs_sys
 
@@ -163,6 +203,11 @@ _fs_g.setdefault('fushi_lookup_vw', 0)
 _fs_g.setdefault('fushi_lookup_vh', 0)
 _fs_g.setdefault('fushi_lookup_count', 0)
 _fs_g.setdefault('fushi_lookup_line', b'')
+# native 每轮写进来的总开关与宿主心跳。理由见文件上半的 C++ 注释。
+_fs_g.setdefault('fushi_lookup_on', 0)
+_fs_g.setdefault('fushi_host_seq', 0)
+_fs_g.setdefault('fushi_host_last', -1)
+_fs_g.setdefault('fushi_host_stall', 0)
 # native 每轮写进来的光标状态：(客户区物理 x, y, submit 序号)
 _fs_g.setdefault('fushi_cursor', (-1, -1, 0))
 # native 每轮写进来的游戏窗口客户区尺寸（物理像素）。渲染器自报的 physical size 不可信。
@@ -453,6 +498,23 @@ def _fushi_report(text):
 
 def _fushi_lookup_tick():
     g = _fs_g
+    # 游戏自己的周期回调先原样跑一遍。**不包 try**：包起来会改掉它原本的语义。
+    prev = g.get('fushi_prev_periodic')
+    if prev is not None:
+        prev()
+    # 关闸排在链完旧回调之后：游戏的周期逻辑与查词开关无关，一帧都不能少调。
+    if not g.get('fushi_lookup_on', 0):
+        return
+    # 宿主心跳自锁（Fushi 被杀掉时开关会停在 1）。判定排在自锁之前 = 立刻解锁。
+    seq = g.get('fushi_host_seq', 0)
+    if seq != g.get('fushi_host_last', -1):
+        g['fushi_host_last'] = seq
+        g['fushi_host_stall'] = 0
+    else:
+        stall = g.get('fushi_host_stall', 0) + 1
+        g['fushi_host_stall'] = stall
+        if stall >= 60:
+            return
     g['fushi_lookup_ticks'] = g['fushi_lookup_ticks'] + 1
     if g['fushi_lookup_mainthread'] == 0:
         try:
@@ -473,13 +535,33 @@ def _fushi_lookup_tick():
             pass
 
 
+# 上一次注入留下的 tick（重复注入时才有）。**不能**读 _fushi_lookup_tick：上面那个
+# def 已经把本次的新函数绑进同一个 __main__ 全局字典了，读回来的是自己。所以另设一个
+# 只由下面这行显式写的槽 fushi_installed_tick，它才真的是"上一次"。
+_fs_prev_tick = _fs_g.get('fushi_installed_tick')
+_fs_g['fushi_installed_tick'] = _fushi_lookup_tick
+
 _fs_g['_fushi_lookup_tick'] = _fushi_lookup_tick
 _fs_g['_fushi_lookup_scan'] = _fushi_lookup_scan
 _fs_g['_fushi_find_render'] = _fushi_find_render
 _fs_g['_fushi_say_text'] = _fushi_say_text
 
 import renpy.config as _fs_config
-_fs_config.periodic_callback = _fushi_lookup_tick
+
+# 链式挂载：绝不裸赋值顶掉游戏自己的回调。完整理由见文件上半的 C++ 注释。
+_fs_cbs = getattr(_fs_config, 'periodic_callbacks', None)
+if isinstance(_fs_cbs, list):
+    if _fs_prev_tick is not None and _fs_prev_tick in _fs_cbs:
+        _fs_cbs.remove(_fs_prev_tick)
+    if _fushi_lookup_tick not in _fs_cbs:
+        _fs_cbs.append(_fushi_lookup_tick)
+    _fs_g['fushi_prev_periodic'] = None
+else:
+    _fs_prev = getattr(_fs_config, 'periodic_callback', None)
+    if _fs_prev is _fushi_lookup_tick or _fs_prev is _fs_prev_tick:
+        _fs_prev = _fs_g.get('fushi_prev_periodic')
+    _fs_g['fushi_prev_periodic'] = _fs_prev
+    _fs_config.periodic_callback = _fushi_lookup_tick
 )PYSRC";
 
 // 读一个 __main__ 全局整数。调用方必须已持 GIL。
@@ -595,29 +677,39 @@ bool InstallRenpyLookupSensor() {
 void ProcessRenpyLookupTick() {
   if (g_stop || g_header == nullptr) return;
   if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
-  if (g_header->lookup_enabled == 0) return;
+
+  // lookup_enabled 不能在这里就 return：传感器一旦种进游戏进程就**没有卸载路径**
+  // （DLL 不卸载，config.periodic_callback / periodic_callbacks 只能被覆盖或摘除，
+  // 而摘除同样得由主线程做）。早退等于停止写任何 Python 全局，Python 侧的 tick 于是
+  // 继续每帧跑 _fushi_find_render 全树遍历 + 每字形 2 次 Python 级 mapper 调用，
+  // 一直跑到游戏退出（实测 77 字形 ≈ 9k 次调用/秒常驻引擎主线程）。
+  // 所以：关的时候也要走到下面那次赋值，把 fushi_lookup_on 写 0，让 Python 侧早退。
+  const bool lookup_on = g_header->lookup_enabled != 0;
 
   if (InterlockedCompareExchange(&g_renpy_lookup_state, 0, 0) == 1) {
-    InstallRenpyLookupSensor();
+    // 还没种下去：关着就别装（装了才需要关闸）。
+    if (lookup_on) InstallRenpyLookupSensor();
     return;
   }
   if (InterlockedCompareExchange(&g_renpy_lookup_state, 0, 0) != 2) return;
 
   // 光标 → 游戏窗口客户区物理像素。用 Win32 而不是 hook 引擎输入：一来引擎无关，
   // 二来 Ren'Py 的事件在 Python 层，从 native 拦它反而更脆。
-  HWND game = FindGameMainWindow();
   POINT cursor = {0, 0};
   bool has_cursor = false;
   int client_w = 0;
   int client_h = 0;
-  if (game != nullptr) {
-    RECT client = {};
-    if (GetClientRect(game, &client)) {
-      client_w = client.right - client.left;
-      client_h = client.bottom - client.top;
-    }
-    if (GetCursorPos(&cursor) && ScreenToClient(game, &cursor)) {
-      has_cursor = true;
+  if (lookup_on) {
+    HWND game = FindGameMainWindow();
+    if (game != nullptr) {
+      RECT client = {};
+      if (GetClientRect(game, &client)) {
+        client_w = client.right - client.left;
+        client_h = client.bottom - client.top;
+      }
+      if (GetCursorPos(&cursor) && ScreenToClient(game, &cursor)) {
+        has_cursor = true;
+      }
     }
   }
   // 提交触发用 **Shift**，不用左键。
@@ -629,21 +721,38 @@ void ProcessRenpyLookupTick() {
   // KiriKiri 的键盘钩子本来也有 Shift 提交，这里与之对齐。
   //
   // 边沿触发：按下的那一帧才 +1，按住不该反复提交。
-  const bool down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+  const bool down =
+      lookup_on && (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
   if (down && !g_renpy_last_button_down) ++g_renpy_submit_seq;
   g_renpy_last_button_down = down;
 
+  // 心跳每轮都递增，包括关着查词的那些轮：Python 侧的自锁判的是「宿主还在不在」，
+  // 不是「查词开没开」——两件事混在一起就会在关查词期间误锁，再开时白等一次超时。
+  ++g_renpy_host_seq;
+
   const int gil = g_py_gil_ensure();
-  char assign[256] = {0};
+  // 320 不是随手写的：最坏情况 40(前缀) + 21(on) + 39(host_seq) + 62(cursor) +
+  // 41(client) = 203 字节。_TRUNCATE 截断出来的是**语法错误的 Python**，会被
+  // PyErr_Clear 静静吞掉，然后传感器就永远收不到新光标——所以这里要留够余量。
+  char assign[320] = {0};
   _snprintf_s(assign, sizeof(assign), _TRUNCATE,
               "_m=__import__('sys').modules['__main__'];"
+              "_m.fushi_lookup_on=%d;"
+              "_m.fushi_host_seq=%llu;"
               "_m.fushi_cursor=(%d,%d,%llu);_m.fushi_client=(%d,%d)",
+              lookup_on ? 1 : 0,
+              static_cast<unsigned long long>(g_renpy_host_seq),
               has_cursor ? static_cast<int>(cursor.x) : -1,
               has_cursor ? static_cast<int>(cursor.y) : -1,
               static_cast<unsigned long long>(g_renpy_submit_seq), client_w,
               client_h);
   if (g_py_run_simple(assign) != 0 && g_py_err_clear != nullptr) {
     g_py_err_clear();
+  }
+  // 关闸写完才早退。顺序反了这条修复就完全不存在——那正是原来的形态。
+  if (!lookup_on) {
+    g_py_gil_release(gil);
+    return;
   }
 
   void* main_module = g_py_import_add_module("__main__");

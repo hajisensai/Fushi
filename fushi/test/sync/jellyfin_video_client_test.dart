@@ -182,10 +182,10 @@ void main() {
           userId: 'u1',
         );
 
-    test('remoteLibrarySourceId 按服务器细分', () {
+    test('remoteLibrarySourceId 按服务器 + 用户细分', () {
       final JellyfinVideoClient c =
           clientWith(MockClient((_) async => http.Response('{}', 200)));
-      expect(c.remoteLibrarySourceId, 'jellyfin:http://nas:8096');
+      expect(c.remoteLibrarySourceId, 'jellyfin:http://nas:8096|u1');
     });
 
     test('coverCacheNamespace 按服务器+用户稳定细分（BUG-1693 口径）', () {
@@ -286,7 +286,7 @@ void main() {
       expect(urls.miningVideoHasAudio, isTrue);
     });
 
-    test('remoteVideoPosition 读 UserData；put 走 reportStopped', () async {
+    test('remoteVideoPosition 读 UserData；put 走 reportProgress', () async {
       final List<http.Request> seen = <http.Request>[];
       final JellyfinVideoClient c =
           clientWith(MockClient((http.Request req) async {
@@ -298,11 +298,13 @@ void main() {
       final ({int positionMs, int updatedAtMs}) pos =
           await c.remoteVideoPosition('ep1');
       expect(pos.positionMs, 42000);
-      expect(pos.updatedAtMs, 0, reason: '服务器无更新时刻——报 0 让本地较新时间戳自然赢');
+      expect(pos.updatedAtMs, 0,
+          reason: '本条目 UserData 没带 LastPlayedDate（从未播过）→ 退回 0');
 
       await c.putRemoteVideoPosition('ep1', 90000, 1755000000000);
       expect(seen.last.method, 'POST');
-      expect(seen.last.url.path, '/Sessions/Playing/Stopped');
+      expect(seen.last.url.path, '/Sessions/Playing/Progress',
+          reason: '播放中的周期上报是 Progress，不是 Stopped');
       expect(jsonDecode(seen.last.body)['PositionTicks'], 90000 * kTicksPerMs);
     });
   });

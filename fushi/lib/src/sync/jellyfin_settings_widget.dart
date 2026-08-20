@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
+import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 
@@ -97,10 +98,19 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     }
   }
 
-  Future<void> _signOut() async {
+  Future<void> _signOut(JellyfinServerConfig config) async {
     setState(() => _busy = true);
     try {
       await _syncRepo.setJellyfinServer(null);
+      // 清掉这台服务器 + 这个账号的全部远端清单槽：不清的话，登出后立刻用同一
+      // 账号重新登录（或改了服务器上的库）在 TTL 内还会拿到登出前那份清单。
+      // 槽身份必须与 [JellyfinVideoClient.remoteLibrarySourceId] 逐字一致。
+      widget.settingsContext.ref
+          .read(remoteLibraryCacheProvider)
+          .invalidateSource(JellyfinVideoClient.sourceIdFor(
+            serverUrl: config.serverUrl,
+            userId: config.userId,
+          ));
       if (mounted) {
         setState(() {
           _configFuture = _syncRepo.getJellyfinServer();
@@ -198,7 +208,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : TextButton(
-                  onPressed: _signOut,
+                  onPressed: () => _signOut(config),
                   child: Text(t.jellyfin_sign_out),
                 ),
         ),

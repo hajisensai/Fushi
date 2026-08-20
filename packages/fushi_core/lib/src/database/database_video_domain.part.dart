@@ -1324,6 +1324,68 @@ mixin _FushiDbVideoDomain
     return changed == 1;
   }
 
+  /// 订阅自动重派：把既有的 `failed` / `needsAttention` 任务放回 `active`，
+  /// 而**不是**再克隆一份新任务。
+  ///
+  /// 为什么不复用 [retryVideoDownloadJobByUser]：它把 `attemptCount` 清零，语义是
+  /// 「人按了重试按钮」——人每按一次，人自己就是那道闸门。自动重派没有这道闸门，
+  /// 清零等于无上限重试。
+  ///
+  /// 上限的账本就是 [VideoDownloadJobs] 的 `attemptCount` 本身，不新增列：它的
+  /// 定义就是「这个任务累计消耗了多少次重试预算」，而一次自动重派确实是一次重试。
+  /// `maxAttempts` 是流水线进程内退避的预算，`attemptCount - maxAttempts` 即自动
+  /// 重派已经额外借走的格数；借满 [autoRetryBudget] 之后本方法返回 false，任务
+  /// 原样停在 `failed` / `needsAttention` 等用户处理。面板的重试按钮走
+  /// [retryVideoDownloadJobByUser] 把 `attemptCount` 清零，于是人工干预天然地把
+  /// 自动预算也一起恢复了——不需要第二处状态，也就没有第二处会写歪的地方。
+  ///
+  /// 入口状态被归一化：`failed` 的任务 `attemptCount` 已经等于 `maxAttempts`，而
+  /// `needsAttention` 的任务可能还是 0（[markVideoDownloadJobNeedsAttention] 不
+  /// 消耗预算）。统一写成 `maxAttempts + 已借用 + 1`，两条路径每次自动重派各消耗
+  /// 一格，不用为 needsAttention 单开一个分支。
+  ///
+  /// `stage` / `backendTaskId` / `torrentHash` 一律保留，不倒回 enqueue：
+  /// `needsAttention` 的后端 torrent 可能还在跑，重新推一遍等于让同一个 infohash
+  /// 挂上第二条工作流。`lastError` 也保留——故障还没排除时它是唯一的诊断线索。
+  Future<bool> reviveVideoDownloadJobForSubscription({
+    required String jobId,
+    required int autoRetryBudget,
+    required int nowAt,
+  }) {
+    if (autoRetryBudget <= 0) {
+      throw ArgumentError.value(autoRetryBudget, 'autoRetryBudget');
+    }
+    return transaction(() async {
+      final VideoDownloadJobRow? row = await getVideoDownloadJob(jobId);
+      if (row == null) return false;
+      if (row.lifecycle != VideoDownloadJobLifecycle.failed &&
+          row.lifecycle != VideoDownloadJobLifecycle.needsAttention) {
+        return false;
+      }
+      final int borrowed = row.attemptCount > row.maxAttempts
+          ? row.attemptCount - row.maxAttempts
+          : 0;
+      if (borrowed >= autoRetryBudget) return false;
+      final int changed = await (update(videoDownloadJobs)
+            ..where(($VideoDownloadJobsTable t) =>
+                t.jobId.equals(jobId) &
+                t.lifecycle.isIn(<String>[
+                  VideoDownloadJobLifecycle.failed,
+                  VideoDownloadJobLifecycle.needsAttention,
+                ])))
+          .write(VideoDownloadJobsCompanion(
+        lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+        attemptCount: Value<int>(row.maxAttempts + borrowed + 1),
+        nextAttemptAt: Value<int?>(nowAt),
+        claimedBy: const Value<String?>(null),
+        claimExpiresAt: const Value<int?>(null),
+        completedAt: const Value<int?>(null),
+        updatedAt: Value<int>(nowAt),
+      ));
+      return changed == 1;
+    });
+  }
+
   /// 用户显式调整单个任务的排队优先级。
   ///
   /// `priority` 早就参与取任务的排序（三处 `OrderingTerm.desc(t.priority)` +

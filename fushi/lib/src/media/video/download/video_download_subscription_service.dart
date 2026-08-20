@@ -27,6 +27,15 @@ const int _subscriptionResourcePageSize = 75;
 // detection normally stops much earlier, including mirrors that ignore paging.
 const int _subscriptionResourceMaxPages = 20;
 
+/// 订阅自动重派同一个任务的持久上限。
+///
+/// 账本不在内存里——进程重启就归零的计数等于没有上限。它落在任务自己的
+/// `attemptCount` 上，见 `FushiDatabase.reviveVideoDownloadJobForSubscription`。
+/// 借满之后这一集停在 `failed` / `needsAttention` 等用户处理：面板对这两个状态
+/// 就是显示重试按钮的（`video_download_jobs_panel.dart` 的 `_canRetry`），用户
+/// 按一次会把 `attemptCount` 清零，自动预算随之恢复。
+const int kVideoDownloadSubscriptionAutoRetryBudget = 3;
+
 class VideoDownloadSubscriptionConfigurationError implements Exception {
   const VideoDownloadSubscriptionConfigurationError(this.message);
 
@@ -58,6 +67,10 @@ class VideoDownloadSubscriptionConfigurationError implements Exception {
 ///
 /// [lifecycle] 为 null 表示任务记录已经不在了（被清理/库被换过），此时没有任何
 /// 东西在管这一集，应当允许重新派。
+///
+/// 注意「重新派」不等于「再造一份」：`failed` / `needsAttention` 的既有任务是被
+/// **恢复**的（见 [VideoDownloadSubscriptionService._enqueueItem]），只有真的一
+/// 条任务都没有时才会走 pipeline enqueue。
 bool videoDownloadJobLifecycleStillCounts(String? lifecycle) {
   if (lifecycle == null) return false;
   return lifecycle != VideoDownloadJobLifecycle.failed &&
@@ -93,6 +106,7 @@ class VideoDownloadSubscriptionService {
     String? workerId,
     this.checkInterval = const Duration(minutes: 15),
     this.leaseDuration = const Duration(minutes: 2),
+    this.autoRetryBudget = kVideoDownloadSubscriptionAutoRetryBudget,
     DateTime Function()? now,
   })  : _enqueue = enqueue,
         workerId =
@@ -104,6 +118,9 @@ class VideoDownloadSubscriptionService {
     if (leaseDuration <= Duration.zero) {
       throw ArgumentError.value(leaseDuration, 'leaseDuration');
     }
+    if (autoRetryBudget <= 0) {
+      throw ArgumentError.value(autoRetryBudget, 'autoRetryBudget');
+    }
   }
 
   final FushiDatabase database;
@@ -112,6 +129,7 @@ class VideoDownloadSubscriptionService {
   final String workerId;
   final Duration checkInterval;
   final Duration leaseDuration;
+  final int autoRetryBudget;
   final DateTime Function() _now;
 
   Timer? _timer;
@@ -359,11 +377,20 @@ class VideoDownloadSubscriptionService {
         job.externalId?.trim() == externalId;
     for (final VideoDownloadJobRow job
         in await database.getVideoDownloadJobs()) {
-      if (!sameIdentity(job) ||
-          job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
-          job.lifecycle == VideoDownloadJobLifecycle.failed) {
-        continue;
-      }
+      // 只有 active / completed 的任务才算「这一集的文件已经有人管」。
+      //
+      // 这份判据与 [subscriptionItemStillClaimed] **不同**且有意不同：那边按
+      // 「是谁决定不下的」划，cancelled 算数；这边按「文件到底有没有人在弄」
+      // 划，cancelled 不算数。needsAttention 归到不算数一侧：它正是订阅这一轮
+      // 要恢复的对象（见 [_enqueueItem]），留着它，同一条卡住的任务会在文件级
+      // 把自己的订阅条目判成「已经有人管」而走 [_markItemSkipped] —— 那是个终态
+      // 写入，此后 [subscriptionItemStillClaimed] 永远返回 true，这一集被静默判
+      // 了永久跳过。真正已经入库的集数由下面的 collection items 那一段兜住，不
+      // 依赖这里的任务扫描。
+      final bool jobOwnsEpisodeFiles =
+          job.lifecycle == VideoDownloadJobLifecycle.active ||
+              job.lifecycle == VideoDownloadJobLifecycle.completed;
+      if (!sameIdentity(job) || !jobOwnsEpisodeFiles) continue;
       for (final VideoDownloadJobFileRow file
           in await database.getVideoDownloadJobFiles(job.jobId)) {
         final int? season = file.season;
@@ -526,15 +553,36 @@ class VideoDownloadSubscriptionService {
         await database.getVideoDownloadJobs();
     _ensureLeaseHeld();
     for (final VideoDownloadJobRow job in jobs) {
-      if (job.fingerprint == subscription.fingerprint &&
-          job.resourceProvider == providerId &&
-          job.selectedResourceId == candidate.remoteId) {
-        // 复用既有任务前同样要看它算不算数：把一个 failed / needsAttention 的
-        // 旧任务重新绑回来，这一集会在「重派 → 立刻又撞上失败任务」之间空转。
-        if (!videoDownloadJobLifecycleStillCounts(job.lifecycle)) continue;
+      if (job.fingerprint != subscription.fingerprint ||
+          job.resourceProvider != providerId ||
+          job.selectedResourceId != candidate.remoteId) {
+        continue;
+      }
+      if (videoDownloadJobLifecycleStillCounts(job.lifecycle)) {
         await _markItemQueued(item.id, job.jobId);
         return true;
       }
+      // failed / needsAttention：**恢复**这一条既有任务，不再 enqueue 一份新的。
+      //
+      // `pipeline.enqueue` 每次调用都 `generateVideoDownloadInstallationId()`
+      // 生成全新 jobId，而 `VideoDownloadJobs` 对
+      // (fingerprint, resourceProvider, selectedResourceId) / torrentHash
+      // 没有任何唯一约束。生产 checkInterval 是 15 分钟，一个持续性故障
+      // （实测例：内置下载引擎运行时缺失）下这等于每集每天往下载面板堆约 96 条
+      // 死任务行，永不收敛。`needsAttention` 更糟：它是「需要用户处理的可恢复
+      // 状态」，backendTaskId 还在、后端 torrent 可能仍在跑，再派一份同 magnet
+      // 的任务会让两条持久工作流指向同一个 infohash，各自 organize/import。
+      final bool revived = await database.reviveVideoDownloadJobForSubscription(
+        jobId: job.jobId,
+        autoRetryBudget: autoRetryBudget,
+        nowAt: _now().millisecondsSinceEpoch,
+      );
+      _ensureLeaseHeld();
+      if (revived) await _markItemQueued(item.id, job.jobId);
+      // 预算借满时任务原样停在 failed / needsAttention 等用户处理。即便如此它
+      // 仍然是这一集的持久任务，不能当成「没人管」再派一份 —— 所以这里一律
+      // 返回 true，不落到下面的 enqueue。
+      return true;
     }
 
     try {

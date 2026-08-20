@@ -13,11 +13,14 @@
 // - 播放路径的 [RemoteVideoStreamUrls] 没有 HTTP 头通道，所以流/图片/字幕 URL
 //   一律用 `api_key` 查询参数自带认证（两家都支持），不依赖 header 注入。
 // - 时间单位：服务器用 tick（100ns），1ms = 10000 ticks（[kTicksPerMs]）。
-// - 断点：读走条目 UserData.PlaybackPositionTicks；写走
-//   `Sessions/Playing/Stopped`（无会话生命周期也会持久化 resume 位置，是
-//   scrobbler 类客户端的通用做法）。服务器端没有「较新时间戳者胜」合并，
-//   语义是 last-write-wins；[putRemoteVideoPosition] 的 updatedAtMs 只在本端
-//   语境有意义，不上传。
+// - 断点：读走条目 UserData.PlaybackPositionTicks + UserData.LastPlayedDate
+//   （服务器唯一的「位置更新时刻」，跨端 LWW 靠它才有得比）；写走
+//   Sessions/Playing/Progress（周期心跳，10s 一档 = Jellyfin web 客户端口径），
+//   只有真正停止播放才发 Sessions/Playing/Stopped。**别拿 Stopped 当心跳**：
+//   它在接近片尾时会把条目标记为已播放并清空 resume 位置，还会把活动日志 /
+//   webhook / Playback Reporting 统计刷成一堆假「播放已停止」。服务器端没有
+//   「较新时间戳者胜」合并，语义是 last-write-wins；[putRemoteVideoPosition]
+//   的 updatedAtMs 只在本端语境有意义，不上传。
 
 import 'dart:convert';
 import 'dart:io';
@@ -26,6 +29,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:http/http.dart' as http;
 
+import 'package:fushi/src/media/metadata/credential_redaction.dart'
+    show redactCredentialsInText;
 import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show
         RemoteCollectionMembership,
@@ -167,6 +172,9 @@ class JellyfinItem {
     this.playedPercentage,
     this.mediaSourceId,
     this.subtitleStreams = const <JellyfinSubtitleStream>[],
+    this.hasTextSubtitle = false,
+    this.sizeBytes,
+    this.lastPlayedAtMs = 0,
     this.childCount,
     this.productionYear,
   });
@@ -190,6 +198,23 @@ class JellyfinItem {
   /// 默认媒体源 id（字幕流 URL 需要）。
   final String? mediaSourceId;
   final List<JellyfinSubtitleStream> subtitleStreams;
+
+  /// 有**可下载文本**字幕（外挂或可提取的内嵌文本轨）。
+  ///
+  /// 刻意不等于服务器的 HasSubtitles：那面旗子把 PGS/DVDSub 这类图形轨也算上，
+  /// 而消费端（[RemoteVideoInfo.hasSubtitle] -> getRemoteVideoSubtitle）只能下
+  /// 文本轨，图形轨会抛。所以流表拿得到时以文本轨为准，只有服务器没给流表
+  /// （未请求 MediaSources 字段）才回落那面粗粒度旗子。
+  final bool hasTextSubtitle;
+
+  /// 默认媒体源的文件字节数（MediaSources[0].Size）；服务器没给则 null。
+  final int? sizeBytes;
+
+  /// 服务器端断点的最后更新时刻（UserData.LastPlayedDate -> epoch 毫秒）。
+  ///
+  /// 0 = 服务器没给（从未播过 / 旧版本）。跨端进度 LWW 只认时间戳，恒 0 等于
+  /// 本地恒胜——服务器断点永远读不回来。
+  final int lastPlayedAtMs;
   final int? childCount;
   final int? productionYear;
 
@@ -242,6 +267,22 @@ class JellyfinApi {
   /// 访问令牌；[authenticateByName] 成功后回填。
   String? accessToken;
 
+  /// 单个小型请求（JSON / 认证 / 进度上报）的**响应**超时。
+  ///
+  /// [createAppHttpIoClient] 只带 20s **连接**超时——服务器 TCP 可连但不回响应
+  /// （NAS 半死 / 反代挂起）时那层完全不触发：远端库页永久转圈，登录按钮的
+  /// spinner 永远退不出来（jellyfin_settings_widget 的 _busy 不复位）。取 15s
+  /// 与互联后端同口径（interconnect_sync_backend.dart 的 requestTimeout）。
+  ///
+  /// 只覆盖小请求：整片/字幕下载的 body 流刻意不挂整体超时（大文件会被误杀）。
+  static const Duration kRequestTimeout = Duration(seconds: 15);
+
+  /// [recursiveVideoItems] 的分页熔断上限。
+  ///
+  /// 不是业务上限，是防死循环：服务器给了错的 TotalRecordCount（或忽略
+  /// StartIndex、每页恒返同一批）时，没有它就是无限循环 + 无限内存。
+  static const int kMaxRecursiveItems = 20000;
+
   final http.Client _client;
 
   /// 归一化用户输入的服务器地址：补 scheme（缺省 http，局域网常态）、去尾斜杠。
@@ -272,15 +313,23 @@ class JellyfinApi {
     String path, [
     Map<String, String>? query,
   ]) async {
-    final http.Response res =
-        await _client.get(_uri(path, query), headers: _headers);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, path);
+    try {
+      final http.Response res = await _client
+          .get(_uri(path, query), headers: _headers)
+          .timeout(kRequestTimeout);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw JellyfinApiException(res.statusCode, path);
+      }
+      final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
+      return decoded is Map<String, dynamic>
+          ? decoded.cast<String, Object?>()
+          : <String, Object?>{};
+    } on http.ClientException catch (e) {
+      // 凭据脱敏必须在异常构造侧（见 credential_redaction.dart 文件头）：
+      // ClientException.toString() 把带 api_key 的整条 URL 塞进文本，而
+      // ErrorLogService 存的就是 error.toString()，无脱敏落盘并可一键上传。
+      throw Exception(redactCredentialsInText(e.toString()));
     }
-    final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
-    return decoded is Map<String, dynamic>
-        ? decoded.cast<String, Object?>()
-        : <String, Object?>{};
   }
 
   /// 用户名/密码认证（POST /Users/AuthenticateByName），成功回填 [accessToken]。
@@ -288,11 +337,14 @@ class JellyfinApi {
     String username,
     String password,
   ) async {
-    final http.Response res = await _client.post(
-      _uri('/Users/AuthenticateByName'),
-      headers: _headers,
-      body: jsonEncode(<String, String>{'Username': username, 'Pw': password}),
-    );
+    final http.Response res = await _client
+        .post(
+          _uri('/Users/AuthenticateByName'),
+          headers: _headers,
+          body: jsonEncode(
+              <String, String>{'Username': username, 'Pw': password}),
+        )
+        .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException(res.statusCode, '/Users/AuthenticateByName');
     }
@@ -331,22 +383,40 @@ class JellyfinApi {
   }
 
   /// 递归列出 [parentId]（缺省全库）下所有可播视频叶子（电影 + 单集）。
+  ///
+  /// **真分页**：单发一次 + 硬上限的旧写法在 100 部番 x 12 集就到顶，第 2001 条
+  /// 起永久不可见且无任何提示；TotalRecordCount 解出来却被丢弃、StartIndex 根本
+  /// 没传。这里按 [pageSize] 逐页取到 StartIndex >= totalCount（或某页返空）为止，
+  /// 熔断见 [kMaxRecursiveItems]。
+  ///
+  /// Fields 带 MediaSources：清单卡的「有无外挂字幕 / 文件大小」全靠它——缺了
+  /// 这段，下载入库的 Jellyfin 视频永远进不了外挂字幕下载分支。
   Future<List<JellyfinItem>> recursiveVideoItems({
     required String userId,
     String? parentId,
-    int limit = 2000,
+    int pageSize = 500,
   }) async {
-    final Map<String, Object?> json =
-        await _getJson('/Users/$userId/Items', <String, String>{
-      if (parentId != null) 'ParentId': parentId,
-      'Recursive': 'true',
-      'IncludeItemTypes': 'Movie,Episode',
-      'Limit': '$limit',
-      'Fields': 'ProductionYear',
-      'SortBy': 'SortName',
-      'SortOrder': 'Ascending',
-    });
-    return parseItemsPage(json).items;
+    final List<JellyfinItem> all = <JellyfinItem>[];
+    int start = 0;
+    while (start < kMaxRecursiveItems) {
+      final Map<String, Object?> json =
+          await _getJson('/Users/$userId/Items', <String, String>{
+        if (parentId != null) 'ParentId': parentId,
+        'Recursive': 'true',
+        'IncludeItemTypes': 'Movie,Episode',
+        'StartIndex': '$start',
+        'Limit': '$pageSize',
+        'Fields': 'ProductionYear,MediaSources',
+        'SortBy': 'SortName',
+        'SortOrder': 'Ascending',
+      });
+      final JellyfinItemsPage page = parseItemsPage(json);
+      all.addAll(page.items);
+      if (page.items.isEmpty) break;
+      start += page.items.length;
+      if (start >= page.totalCount) break;
+    }
+    return all;
   }
 
   /// 单条目详情（含 MediaSources/MediaStreams，字幕流选择用）。
@@ -359,20 +429,52 @@ class JellyfinApi {
     return parseItem(json);
   }
 
-  /// 上报播放位置（POST /Sessions/Playing/Stopped——无会话生命周期也持久化
-  /// resume 位置；服务器 last-write-wins）。
+  /// 播放中的周期进度上报（POST /Sessions/Playing/Progress）。
+  ///
+  /// 无会话生命周期也会持久化 resume 位置，是 scrobbler 类客户端的通用做法；
+  /// 与 [reportStopped] 的区别在**语义**：Progress 是「还在播」，Stopped 是
+  /// 「不播了」。周期心跳必须走这条，节流档见
+  /// [JellyfinVideoClient.kPositionReportIntervalMs]。
+  Future<void> reportProgress({
+    required String itemId,
+    required int positionMs,
+  }) async {
+    final http.Response res = await _client
+        .post(
+          _uri('/Sessions/Playing/Progress'),
+          headers: _headers,
+          body: jsonEncode(<String, Object?>{
+            'ItemId': itemId,
+            'PositionTicks': positionMs * kTicksPerMs,
+            'IsPaused': false,
+          }),
+        )
+        .timeout(kRequestTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw JellyfinApiException(res.statusCode, '/Sessions/Playing/Progress');
+    }
+  }
+
+  /// 停止播放上报（POST /Sessions/Playing/Stopped）。
+  ///
+  /// **只在真正停止播放时发**。服务器对它有额外副作用：接近片尾时把条目标记为
+  /// 已播放并清空 resume 位置，并写活动日志 / 触发 webhook / 计一次 Playback
+  /// Reporting。拿它当每秒心跳用 = 一集 24 分钟番刷约 1400 条假「播放已停止」，
+  /// 统计作废。周期上报用 [reportProgress]。
   Future<void> reportStopped({
     required String itemId,
     required int positionMs,
   }) async {
-    final http.Response res = await _client.post(
-      _uri('/Sessions/Playing/Stopped'),
-      headers: _headers,
-      body: jsonEncode(<String, Object?>{
-        'ItemId': itemId,
-        'PositionTicks': positionMs * kTicksPerMs,
-      }),
-    );
+    final http.Response res = await _client
+        .post(
+          _uri('/Sessions/Playing/Stopped'),
+          headers: _headers,
+          body: jsonEncode(<String, Object?>{
+            'ItemId': itemId,
+            'PositionTicks': positionMs * kTicksPerMs,
+          }),
+        )
+        .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException(res.statusCode, '/Sessions/Playing/Stopped');
     }
@@ -418,12 +520,19 @@ class JellyfinApi {
 
   /// 拉取 [url] 的全部字节（封面用）。非 2xx 抛 [JellyfinApiException]。
   Future<Uint8List> fetchBytes(String url) async {
-    final http.Response res =
-        await _client.get(Uri.parse(url), headers: _headers);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, Uri.parse(url).path);
+    try {
+      final http.Response res =
+          await _client.get(Uri.parse(url), headers: _headers);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw JellyfinApiException(res.statusCode, Uri.parse(url).path);
+      }
+      return res.bodyBytes;
+    } on http.ClientException catch (e) {
+      // [url] 自带 api_key（见 imageUrl / streamUrl / subtitleUrl）——网络层失败
+      // 时 ClientException.toString() 会把整条带令牌的 URL 泄进错误文本，而那条
+      // 文本会无脱敏落进 ErrorLogService 并可一键上传。
+      throw Exception(redactCredentialsInText(e.toString()));
     }
-    return res.bodyBytes;
   }
 
   /// 通用下载：GET [url] 流式写入 [dest]，按 Content-Length 汇报进度。
@@ -432,32 +541,43 @@ class JellyfinApi {
     File dest, {
     void Function(double progress)? onProgress,
   }) async {
-    final http.Request req = http.Request('GET', Uri.parse(url));
-    req.headers.addAll(_headers);
-    final http.StreamedResponse res = await _client.send(req);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, Uri.parse(url).path);
-    }
-    final int? total = res.contentLength;
-    int received = 0;
-    final IOSink sink = dest.openWrite();
-    bool ok = false;
     try {
-      await for (final List<int> chunk in res.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total != null && total > 0) {
-          onProgress?.call(received / total);
+      final http.Request req = http.Request('GET', Uri.parse(url));
+      req.headers.addAll(_headers);
+      // 只给「拿到响应头」挂超时；下面的 body 流刻意不挂整体超时——整片下载几十
+      // 分钟是正常的，套上去就是误杀。
+      final http.StreamedResponse res =
+          await _client.send(req).timeout(kRequestTimeout);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw JellyfinApiException(res.statusCode, Uri.parse(url).path);
+      }
+      final int? total = res.contentLength;
+      int received = 0;
+      final IOSink sink = dest.openWrite();
+      bool ok = false;
+      try {
+        await for (final List<int> chunk in res.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (total != null && total > 0) {
+            onProgress?.call(received / total);
+          }
+        }
+        ok = true;
+      } finally {
+        await sink.close();
+        if (!ok) {
+          try {
+            dest.deleteSync();
+          } catch (_) {
+            // best-effort 清理半截文件：删不掉（文件被占 / 权限）时也不该盖住
+            // 上面真正的失败原因，调用方拿到的仍是原始异常。
+          }
         }
       }
-      ok = true;
-    } finally {
-      await sink.close();
-      if (!ok) {
-        try {
-          dest.deleteSync();
-        } catch (_) {}
-      }
+    } on http.ClientException catch (e) {
+      // 同 fetchBytes：[url] 带 api_key，异常文本必须在构造侧脱敏。
+      throw Exception(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -509,6 +629,7 @@ class JellyfinApi {
 
     // 默认媒体源 + 字幕流：取 MediaSources[0]（direct play 与 stream URL 同源）。
     String? mediaSourceId;
+    int? sizeBytes;
     final List<JellyfinSubtitleStream> subs = <JellyfinSubtitleStream>[];
     final List<Object?> sources =
         (json['MediaSources'] as List?) ?? const <Object?>[];
@@ -516,6 +637,7 @@ class JellyfinApi {
       final Map<String, Object?> src =
           (sources.first as Map).cast<String, Object?>();
       mediaSourceId = src['Id'] as String?;
+      sizeBytes = (src['Size'] as num?)?.toInt();
       final List<Object?> streams =
           (src['MediaStreams'] as List?) ?? const <Object?>[];
       for (final Object? raw in streams) {
@@ -551,6 +673,16 @@ class JellyfinApi {
       playedPercentage: (userData['PlayedPercentage'] as num?)?.toDouble(),
       mediaSourceId: mediaSourceId,
       subtitleStreams: subs,
+      // 流表拿得到就以文本轨为准；拿不到（未请求 MediaSources 字段）才回落服务器
+      // 的粗粒度 HasSubtitles——它把图形轨也算 true，见 [JellyfinItem.hasTextSubtitle]。
+      hasTextSubtitle: subs.isEmpty
+          ? ((json['HasSubtitles'] as bool?) ?? false)
+          : subs.any((JellyfinSubtitleStream s) => s.isTextSubtitleStream),
+      sizeBytes: sizeBytes,
+      lastPlayedAtMs:
+          DateTime.tryParse((userData['LastPlayedDate'] as String?) ?? '')
+                  ?.millisecondsSinceEpoch ??
+              0,
       childCount: (json['ChildCount'] as num?)?.toInt(),
       productionYear: (json['ProductionYear'] as num?)?.toInt(),
     );
@@ -559,8 +691,9 @@ class JellyfinApi {
 
 /// Jellyfin 服务器作为远端视频源：把条目适配成互联/云端同款契约。
 ///
-/// [remoteLibrarySourceId] 按服务器 URL 细分（不同服务器 = 不同清单 = 不同
-/// 缓存槽，见 remote_library_source.dart 的 BUG-1202 口径）。
+/// [remoteLibrarySourceId] 按「服务器 + 用户」细分（不同服务器/不同账号 = 不同
+/// 清单 = 不同缓存槽，见 remote_library_source.dart 的 BUG-1202 口径）。用户维度
+/// 不能省：同机登出 A 登入 B，只按 URL 分槽会让 B 在 TTL 内看到 A 的库清单。
 ///
 /// 「显示视频库」的结构表达：单集经 [RemoteCollectionMembership] 按剧名折叠成
 /// playlist 合集卡（组内序 = 季×10000+集），复用库页既有的合集混排/上下集/
@@ -571,8 +704,17 @@ class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
   final JellyfinApi api;
   final String userId;
 
+  /// 缓存槽身份的**唯一**构造点。登出失效等「手里没有 client 实例」的调用方也
+  /// 走这里，别再各自拼字面量——拼歪一个字符就是「以为清了、其实没清」。
+  static String sourceIdFor({
+    required String serverUrl,
+    required String userId,
+  }) =>
+      'jellyfin:$serverUrl|$userId';
+
   @override
-  String get remoteLibrarySourceId => 'jellyfin:${api.serverUrl}';
+  String get remoteLibrarySourceId =>
+      sourceIdFor(serverUrl: api.serverUrl, userId: userId);
 
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) =>
@@ -585,15 +727,40 @@ class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
       'jellyfin-${sha1.convert(utf8.encode('${api.serverUrl}|$userId'))}';
 
   /// 把一个条目适配成 [RemoteVideoInfo]（列表卡片消费）。
-  RemoteVideoInfo infoFromItem(JellyfinItem item) => RemoteVideoInfo(
-        id: item.id,
-        title: item.displayTitle,
-        durationMs: item.durationMs,
-        hasCover: item.hasPrimaryImage,
-        coverUrl: item.hasPrimaryImage ? api.imageUrl(item.id) : null,
-        positionMs: item.positionMs,
-        collection: _collectionOf(item),
-      );
+  ///
+  /// [RemoteVideoInfo.hasSubtitle] 必须真实填：库页的下载入库路径用它做早返门
+  /// （`if (!video.hasSubtitle) return ...`），吃默认 false 就等于「从 Jellyfin
+  /// 下载的视频永远不下外挂字幕」，[getRemoteVideoSubtitle] 实现了也进不去。
+  RemoteVideoInfo infoFromItem(JellyfinItem item) {
+    final JellyfinSubtitleStream? subtitle = _defaultTextSubtitle(item);
+    return RemoteVideoInfo(
+      id: item.id,
+      title: item.displayTitle,
+      sizeBytes: item.sizeBytes,
+      hasSubtitle: item.hasTextSubtitle,
+      subtitleFileName:
+          subtitle == null ? null : _subtitleFileName(item, subtitle),
+      durationMs: item.durationMs,
+      hasCover: item.hasPrimaryImage,
+      coverUrl: item.hasPrimaryImage ? api.imageUrl(item.id) : null,
+      positionMs: item.positionMs,
+      positionUpdatedAtMs: item.lastPlayedAtMs,
+      collection: _collectionOf(item),
+    );
+  }
+
+  /// 「没指定轨时该下哪条字幕」的唯一判据：外挂文本轨优先，其次第一条文本轨；
+  /// 无文本轨返回 null。清单卡的文件名与 [getRemoteVideoSubtitle] 共用它，避免
+  /// 两处各写一遍挑轨规则再慢慢跑偏。
+  static JellyfinSubtitleStream? _defaultTextSubtitle(JellyfinItem item) {
+    JellyfinSubtitleStream? fallback;
+    for (final JellyfinSubtitleStream s in item.subtitleStreams) {
+      if (!s.isTextSubtitleStream) continue;
+      if (s.isExternal) return s;
+      fallback ??= s;
+    }
+    return fallback;
+  }
 
   /// 单集 → 按剧名归入 playlist 合集（库页折叠成一张剧卡）；电影独立。
   static RemoteCollectionMembership? _collectionOf(JellyfinItem item) {
@@ -696,20 +863,14 @@ class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
       throw const FileSystemException('Jellyfin item has no media source');
     }
     JellyfinSubtitleStream? pick;
-    for (final JellyfinSubtitleStream s in item.subtitleStreams) {
-      if (!s.isTextSubtitleStream) continue;
-      if (embeddedStreamIndex != null) {
-        if (s.index == embeddedStreamIndex) {
+    if (embeddedStreamIndex == null) {
+      pick = _defaultTextSubtitle(item);
+    } else {
+      for (final JellyfinSubtitleStream s in item.subtitleStreams) {
+        if (s.isTextSubtitleStream && s.index == embeddedStreamIndex) {
           pick = s;
           break;
         }
-      } else {
-        // 未指定轨：外挂优先，其次第一条文本轨。
-        if (s.isExternal) {
-          pick = s;
-          break;
-        }
-        pick ??= s;
       }
     }
     if (pick == null) {
@@ -733,10 +894,24 @@ class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
     int episodeIndex = 0,
   }) async {
     final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
-    // 服务器不给「位置更新时刻」，报 0 让调用方按「远端无更新时间」处理
-    // （本地较新时间戳自然赢，不会被远端老位置无脑覆盖）。
-    return (positionMs: item.positionMs, updatedAtMs: 0);
+    // UserData.LastPlayedDate 就是服务器侧的「位置更新时刻」。恒报 0 会让
+    // fushi_library_host_service 的 LWW（localUpdatedAtMs > remoteUpdatedAtMs）
+    // 本地恒胜——「手机看一半回电脑接力」永远拿不到服务器断点。
+    // 服务器没给（从未播过）时 lastPlayedAtMs 自然是 0，退回旧行为。
+    return (positionMs: item.positionMs, updatedAtMs: item.lastPlayedAtMs);
   }
+
+  /// 进度心跳的最小间隔。Jellyfin web 客户端就是 10s 一档。
+  ///
+  /// 调用方（video_fushi_page 的 _persistRemotePosition）是**每秒**级的位置回调；
+  /// 不节流就是一集 24 分钟番打约 1400 次上报。
+  static const int kPositionReportIntervalMs = 10000;
+
+  int _lastReportAtMs = 0;
+
+  /// 上一次上报的条目。换条目 = 换一次播放，节流窗口重开——否则切集后 10s 内的
+  /// 第一次上报会被上一集的窗口白白吃掉。
+  String _lastReportItemId = '';
 
   @override
   Future<void> putRemoteVideoPosition(
@@ -744,9 +919,19 @@ class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
     int positionMs,
     int updatedAtMs, {
     int episodeIndex = 0,
-  }) =>
-      // last-write-wins（服务器无按时间戳合并）；updatedAtMs 不上传。
-      api.reportStopped(itemId: id, positionMs: positionMs);
+  }) async {
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (id == _lastReportItemId &&
+        nowMs - _lastReportAtMs < kPositionReportIntervalMs) {
+      return;
+    }
+    _lastReportAtMs = nowMs;
+    _lastReportItemId = id;
+    // 播放中的周期上报走 Progress，不是 Stopped（后者会标记已播放、清 resume
+    // 位置并刷爆活动日志，见 [JellyfinApi.reportStopped]）。
+    // last-write-wins（服务器无按时间戳合并）；updatedAtMs 不上传。
+    await api.reportProgress(itemId: id, positionMs: positionMs);
+  }
 
   void close() => api.close();
 }
