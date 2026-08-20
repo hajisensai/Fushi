@@ -456,15 +456,21 @@ class ShortcutDefaults {
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立
     // co-active 组，与任何页面键位不冲突。
+    // 手柄默认（P2）：dpad 下/上 = 下/上一个词条。执行链是 GamepadService 的弹窗
+    // 兜底（页面 Actions 未消费 → resolveGamepad(dictionaryPopup) → 钩子调 JS），
+    // **页面专属键永远优先**：视频页 dpad 上下被音量占用，弹窗里照旧调音量——那是
+    // 有意让位（视频弹窗导航走字幕选字光标），不要为此给弹窗改绑更冲的键。
     ShortcutAction.popupNextEntry: const ShortcutBindingSet(
       wheelBindings: <WheelBinding>[
         WheelBinding(WheelDirection.down, modifiers: {ModifierKey.alt}),
       ],
+      gamepadBindings: <GamepadBinding>[_gDpadDown],
     ),
     ShortcutAction.popupPrevEntry: const ShortcutBindingSet(
       wheelBindings: <WheelBinding>[
         WheelBinding(WheelDirection.up, modifiers: {ModifierKey.alt}),
       ],
+      gamepadBindings: <GamepadBinding>[_gDpadUp],
     ),
     // 制卡（= 点弹窗里的「＋」）。默认 Ctrl+Enter，与阅读器既有的
     // readerCreateCardFromPopup 同键：两者是同一件事在不同焦点归属下的两条执行路径，
@@ -475,6 +481,16 @@ class ShortcutDefaults {
       keyboardBindings: <InputBinding>[
         _key(LogicalKeyboardKey.enter, {ModifierKey.ctrl}),
       ],
+      // 手柄 X = 制卡（P2，Dart 侧弹窗兜底派发）。reader 的 X=书签、video 的
+      // X=上一句在各自页面先命中——弹窗可见时它们仍优先，这是「页面专属键优先」
+      // 的既定哲学；漫画/首页词典/独立查词页没占 X，弹窗制卡直达。
+      gamepadBindings: const <GamepadBinding>[_gX],
+    ),
+    // 发音（P2 新增）：默认只有手柄 Y——键盘/鼠标用户点按钮已经够近，而手柄用户
+    // 此前没有任何非光标模式的发音入口。执行体是点第一个可见词条的发音按钮
+    // （fushiPopupPlayFirstAudio，与制卡同一「点按钮不另起桥」纪律）。
+    ShortcutAction.popupPlayAudio: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gY],
     ),
   };
 
@@ -544,9 +560,12 @@ class ShortcutDefaults {
           // 弹窗宿主（Android 悬浮词典 / 独立查词页）都是 Flutter 宿主、没有 Dart 侧接线，
           // 给了绑定也永不触发——「设置里能配、按了没反应」比没有这个选项更糟。
           // 与 globalExternal 在移动端返回空绑定同理。
+          // 手柄绑定（P2）移动端保留：Android 的手柄键经页面 Actions →
+          // 全局 wrapper 的弹窗兜底同样走 Dart 派发，与桌面同一条链。
           case ShortcutScope.dictionaryPopup:
             return ShortcutBindingSet(
               wheelBindings: desktop.wheelBindings,
+              gamepadBindings: desktop.gamepadBindings,
             );
         }
       }(),

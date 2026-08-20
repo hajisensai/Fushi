@@ -3655,5 +3655,6 @@
   "shortcut_action_manga_pan_left": "向左平移",
   "shortcut_action_manga_pan_right": "向右平移",
   "drag_drop_folder_source_added": "已把文件夹添加为来源并开始扫描",
-  "drag_drop_folder_source_exists": "该文件夹已经是来源了"
+  "drag_drop_folder_source_exists": "该文件夹已经是来源了",
+  "shortcut_action_popup_play_audio": "播放单词发音"
 }

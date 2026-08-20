@@ -34,16 +34,18 @@ function loadKeyListener(bindings) {
 
   const mineCalls = [];
   const moveCalls = [];
+  const audioCalls = [];
   const win = {
     fushiPopupMineFirstEntry: async () => { mineCalls.push(1); return true; },
     fushiFocusDictionaryEntryMove: (dir) => { moveCalls.push(dir); return 'moved'; },
+    fushiPopupPlayFirstAudio: async () => { audioCalls.push(1); return true; },
   };
   if (bindings !== undefined) win.__fushiPopupKeyBindings = bindings;
   const ctx = { window: win, document: { addEventListener() {} } };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(slice, ctx);
-  return { win, mineCalls, moveCalls };
+  return { win, mineCalls, moveCalls, audioCalls };
 }
 
 function ev(over) {
@@ -137,4 +139,13 @@ test('没命中任何绑定时不吞按键（网页自己的快捷键照常工�
   const e = ev({ key: 'a', ctrlKey: true });
   await win.__fushiPopupKeyListener(e);
   assert.strictEqual(e._prevented, false, '未命中就必须原样交还给页面');
+});
+
+test('播放发音绑定命中时走 fushiPopupPlayFirstAudio，不碰制卡/导航（P2）', async () => {
+  const cfg = { mine: [], next: [], prev: [], audio: [{ key: 'p', mods: [] }] };
+  const { win, mineCalls, moveCalls, audioCalls } = loadKeyListener(cfg);
+  await win.__fushiPopupKeyListener(ev({ key: 'p', ctrlKey: false }));
+  assert.strictEqual(audioCalls.length, 1);
+  assert.strictEqual(mineCalls.length, 0);
+  assert.strictEqual(moveCalls.length, 0);
 });

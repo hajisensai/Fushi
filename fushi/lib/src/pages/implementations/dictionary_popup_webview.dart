@@ -696,6 +696,23 @@ JSON.stringify((function(){
     );
   }
 
+  /// 手柄（dictionaryPopup scope）：播放第一个可见词条的发音——点既有发音按钮，
+  /// 复用其全部音源解析/回退逻辑（与制卡同一「点按钮不另起桥」纪律）。
+  Future<void> playFirstVisibleAudio() async {
+    await _controller?.evaluateJavascript(
+      source: 'window.fushiPopupPlayFirstAudio'
+          ' ? window.fushiPopupPlayFirstAudio() : false',
+    );
+  }
+
+  /// 手柄右摇杆：连续滚动弹窗内容 [dy] CSS 像素（正=向下）。
+  Future<void> scrollContentBy(double dy) async {
+    await _controller?.evaluateJavascript(
+      source: 'window.fushiPopupScrollBy'
+          ' ? window.fushiPopupScrollBy(${dy.round()}) : false',
+    );
+  }
+
   /// BUG-763/766：确认「制卡前调整」原生对话框时，回 WebView 精确点中第 [idx] 个词条
   /// （`:scope > .entry` DOM 序）的制卡按钮，复用其全部制卡/查重/覆写逻辑（Dart 侧无
   /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。

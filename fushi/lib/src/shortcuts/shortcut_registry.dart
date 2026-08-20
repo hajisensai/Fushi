@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 9;
+const int kShortcutSchemaVersion = 10;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -244,6 +244,37 @@ class FushiShortcutRegistry extends ChangeNotifier {
       _restoreGamepadDefaultIfKeyboardUntouched(
           ShortcutAction.mangaPageBackward, defaults);
     }
+    // v9 -> v10（手柄全功能重设计 P2，查词弹窗接手柄）：给三个**已存在**的
+    // dictionaryPopup 动作新增手柄默认（dpad下/上=词条导航、X=制卡）。不能用
+    // 「键盘未动过」判据整组还原——popupNext/PrevEntry 的主通道是**滚轮**，整组
+    // 还原会把用户自定义的滚轮绑定一并抹掉。该 scope 此前根本没开手柄通道，快照
+    // 里 gamepad 恒为空 ⇒ 「gamepad 为空」本身就是「用户不可能动过」的精确判据，
+    // 只补 gamepad、其余通道分毫不碰。（popupPlayAudio 是全新 action，老快照无
+    // 其 key，loadDefaults 已播种，无需迁移。）
+    if (from < 10) {
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.popupNextEntry,
+        ShortcutAction.popupPrevEntry,
+        ShortcutAction.popupMineEntry,
+      ]) {
+        _seedGamepadDefaultIfUnset(action, defaults);
+      }
+    }
+  }
+
+  /// v10：仅当 [action] 的手柄绑定**为空**时，把当前默认表的手柄绑定播种进去；
+  /// 其余通道（键盘/鼠标/滚轮）原样保留。适用于「该 scope 此前从未开过手柄通道」
+  /// 的迁移——空手柄集不可能是用户自定义，播种零误伤。
+  void _seedGamepadDefaultIfUnset(
+    ShortcutAction action,
+    Map<ShortcutAction, ShortcutBindingSet> defaults,
+  ) {
+    final ShortcutBindingSet current = bindingsFor(action);
+    if (current.gamepadBindings.isNotEmpty) return;
+    final List<GamepadBinding> seeded =
+        defaults[action]?.gamepadBindings ?? const <GamepadBinding>[];
+    if (seeded.isEmpty) return;
+    _bindings[action] = current.copyWith(gamepadBindings: seeded);
   }
 
   /// v8：把 [action] 的**键盘**绑定清空，仅当它恰等于 [oldDefaultKeyboard]（证明
