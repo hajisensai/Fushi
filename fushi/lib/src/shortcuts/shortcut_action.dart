@@ -391,6 +391,13 @@ enum ShortcutAction {
   // 「关弹窗并翻页」，那条语义在 [MangaReaderInputAction] 侧，与本动作无关。
   // 退出漫画走 universal 的 [globalBack] 阶梯（弹窗可见先关弹窗，否则退出）。
   mangaDismissDict(ShortcutScope.manga, 'manga_dismiss_dict'),
+  // 放大后在页面上平移视野（默认 Ctrl+方向键）。裸方向键已被翻页占死，所以默认
+  // 走修饰键组合；用户可在快捷键设置里改成任意键。语义是「视野往哪个方向走」，
+  // 与滚动条直觉一致，不随阅读方向镜像（镜像只对**翻页**有意义）。
+  mangaPanUp(ShortcutScope.manga, 'manga_pan_up'),
+  mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
+  mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
+  mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

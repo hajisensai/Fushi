@@ -2,9 +2,11 @@ import 'dart:async' show FutureOr;
 import 'dart:io' show Platform;
 
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kIsWeb, visibleForTesting;
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/utils.dart';
 
 /// File drop callback. [globalPosition] uses Flutter global/view coordinates,
@@ -51,13 +53,15 @@ class FushiFileDropTarget extends StatelessWidget {
       enable: enabled,
       onDragDone: (DropDoneDetails detail) {
         final bool routeVisible = _routeVisible(context);
-        final bool active = enabled && routeVisible;
+        final bool surfaceActive = DropSurfaceScope.activeFor(context);
+        final bool active = enabled && routeVisible && surfaceActive;
         final List<String> paths = detail.files
             .map((DropItem f) => f.path)
             .where((String s) => s.isNotEmpty)
             .toList();
         _log(
           'done active=$active routeVisible=$routeVisible '
+          'surface=$surfaceActive '
           'files=${paths.length} local=${detail.localPosition} '
           'global=${detail.globalPosition}',
         );
@@ -73,7 +77,8 @@ class FushiFileDropTarget extends StatelessWidget {
       },
       onDragEntered: (DropEventDetails detail) {
         final bool routeVisible = _routeVisible(context);
-        final bool active = enabled && routeVisible;
+        final bool surfaceActive = DropSurfaceScope.activeFor(context);
+        final bool active = enabled && routeVisible && surfaceActive;
         _log(
           'enter active=$active routeVisible=$routeVisible '
           'local=${detail.localPosition} global=${detail.globalPosition}',
@@ -81,7 +86,8 @@ class FushiFileDropTarget extends StatelessWidget {
       },
       onDragUpdated: (DropEventDetails detail) {
         final bool routeVisible = _routeVisible(context);
-        final bool active = enabled && routeVisible;
+        final bool surfaceActive = DropSurfaceScope.activeFor(context);
+        final bool active = enabled && routeVisible && surfaceActive;
         _log(
           'update active=$active routeVisible=$routeVisible '
           'local=${detail.localPosition} global=${detail.globalPosition}',
@@ -89,7 +95,8 @@ class FushiFileDropTarget extends StatelessWidget {
       },
       onDragExited: (DropEventDetails detail) {
         final bool routeVisible = _routeVisible(context);
-        final bool active = enabled && routeVisible;
+        final bool surfaceActive = DropSurfaceScope.activeFor(context);
+        final bool active = enabled && routeVisible && surfaceActive;
         _log(
           'exit active=$active routeVisible=$routeVisible '
           'local=${detail.localPosition} global=${detail.globalPosition}',

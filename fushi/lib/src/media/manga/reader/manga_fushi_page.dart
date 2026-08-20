@@ -99,7 +99,20 @@ enum MangaReaderInputAction {
   /// [PopScope] 闸门照跑）。与 [dismissDictionary] 是同一个键（默认 Esc）的两级——
   /// 弹窗可见先关弹窗，没弹窗才退出，判据在 [MangaFushiPage.inputActionForShortcut]。
   backOrExit,
+
+  /// 键盘平移（默认 Ctrl+方向键）：在放大后的页面上把**视野**朝该方向挪一步。
+  ///
+  /// 与 [previous]/[next] 是不同语义——翻页换的是 spread，平移只动当前页的视野，
+  /// 所以不吃「webtoon 让位原生滚动」「弹窗可见让位」那两道翻页门控（见
+  /// [MangaFushiPage.inputActionForShortcut]）：webtoon 的上下平移本来就等于滚文档。
+  panUp,
+  panDown,
+  panLeft,
+  panRight,
 }
+
+/// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
+const double kMangaPanStepFraction = 0.15;
 
 enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey }
 
@@ -359,6 +372,17 @@ class MangaFushiPage extends BaseSourcePage {
           ? MangaReaderInputAction.dismissDictionary
           : MangaReaderInputAction.backOrExit;
     }
+    // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
+    // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
+    // 就是滚文档，弹窗开着时也该能挪画面去看被挡住的部分。
+    final MangaReaderInputAction? pan = switch (action) {
+      ShortcutAction.mangaPanUp => MangaReaderInputAction.panUp,
+      ShortcutAction.mangaPanDown => MangaReaderInputAction.panDown,
+      ShortcutAction.mangaPanLeft => MangaReaderInputAction.panLeft,
+      ShortcutAction.mangaPanRight => MangaReaderInputAction.panRight,
+      _ => null,
+    };
+    if (pan != null) return pan;
     if (!horizontalArrow) {
       if (dictionaryShown) return null;
       if (mode == MangaReadingMode.webtoon) return null;
@@ -393,6 +417,31 @@ class MangaFushiPage extends BaseSourcePage {
     handlerName: 'onMangaNavigationKey',
     keys: const <String>['ArrowLeft', 'ArrowRight', 'Escape', 'Esc'],
     forwardRepeats: false,
+    stopPropagation: true,
+  );
+
+  /// 键盘平移专用的第二座桥。
+  ///
+  /// 单独一座而不是往 [navigationKeyBridgeScript] 的键表里加：翻页那座是
+  /// `forwardRepeats: false`（本页有意「按住方向键不堆翻页风暴」），而平移恰恰要连发
+  /// ——按住 Ctrl+↓ 应该持续挪画面。生成器按 handlerName 派生独立闭包与安装守卫，
+  /// 同一 document 里多座桥共存互不干扰（见 webViewKeyBridgeScript 文档）。
+  ///
+  /// 键表是**默认键位**的 token。回传后仍走 [_handleNativeNavigationKey] →
+  /// 注册表解析，所以改键在 Flutter 持焦路径立即生效；但 WebView2 持焦时只有列在
+  /// 这张表里的键会被截获——这是翻页桥既有的同款限制（它的表同样是硬编码的
+  /// ArrowLeft/ArrowRight），不是本次新引入的，要根治得让两座桥的 token 表都从
+  /// 注册表实时生成，单独立项。
+  @visibleForTesting
+  static final String panKeyBridgeScript = webViewKeyBridgeScript(
+    handlerName: 'onMangaPanKey',
+    keys: const <String>[
+      'Ctrl+ArrowUp',
+      'Ctrl+ArrowDown',
+      'Ctrl+ArrowLeft',
+      'Ctrl+ArrowRight',
+    ],
+    forwardRepeats: true,
     stopPropagation: true,
   );
 
@@ -1911,7 +1960,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// - 查词弹窗显示时，左右键关闭弹窗并翻页，Escape 只关闭弹窗；避免原生词典
   ///   WebView 持焦后把翻页键吞掉或让 Escape 落到外层退书。
   KeyEventResult _handleReaderKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) {
+    // 长按连发**只放给平移**：按住方向键持续挪画面是正常操作，而翻页恒不连发
+    // （本页既有语义，与 navigationKeyBridgeScript 的 forwardRepeats:false 同口径，
+    // 两条输入路径必须一致，否则 WebView 持焦与否手感不同）。
+    final bool repeat = event is KeyRepeatEvent;
+    if (event is! KeyDownEvent && !repeat) {
       return KeyEventResult.ignored;
     }
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
@@ -1919,6 +1972,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       activeModifierKeys(),
     );
     if (action == null) return KeyEventResult.ignored;
+    if (repeat && _panStepFor(action) == null) {
+      return KeyEventResult.ignored;
+    }
     _executeReaderInputAction(
       action,
       source: _MangaReaderInputSource.flutter,
@@ -1947,6 +2003,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
+  /// 平移动作 → 传给 `window.__mangaPanBy` 的**视口比例**步长；非平移动作返回 null。
+  ///
+  /// 符号按「视野怎么动」给（与滚动条直觉一致，JS 侧再翻成内容位移）：
+  /// dx>0 视野右移，dy>0 视野下移。
+  static Offset? _panStepFor(MangaReaderInputAction action) {
+    const double s = kMangaPanStepFraction;
+    return switch (action) {
+      MangaReaderInputAction.panLeft => const Offset(-s, 0),
+      MangaReaderInputAction.panRight => const Offset(s, 0),
+      MangaReaderInputAction.panUp => const Offset(0, -s),
+      MangaReaderInputAction.panDown => const Offset(0, s),
+      _ => null,
+    };
+  }
+
   void _executeReaderInputAction(
     MangaReaderInputAction action, {
     required _MangaReaderInputSource source,
@@ -1960,6 +2031,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           action == MangaReaderInputAction.backOrExit) {
         unawaited(_setRescanMode(false));
       }
+      return;
+    }
+    // 平移在这里就地返回：它不翻页、不关词典、也不该被翻页的跨源去抖吃掉（按住
+    // 方向键连续挪画面是正常操作，而翻页去抖正是为了压掉连发）。
+    final Offset? panStep = _panStepFor(action);
+    if (panStep != null) {
+      unawaited(_controller?.evaluateJavascript(
+            source: 'window.__mangaPanBy && '
+                'window.__mangaPanBy(${panStep.dx}, ${panStep.dy});',
+          ) ??
+          Future<void>.value());
       return;
     }
     final DateTime now = DateTime.now();
@@ -3483,6 +3565,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _handleNativeNavigationKey(args[0] as String);
           },
         );
+        // 平移桥（第二座，允许连发）。回调与翻页桥同一个——token 一律走
+        // InputBinding.deserialize + 注册表解析，动作由绑定决定而不是由桥决定。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaPanKey',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || args[0] is! String) return;
+            _handleNativeNavigationKey(args[0] as String);
+          },
+        );
         controller.addJavaScriptHandler(
           handlerName: 'onMangaContextMenu',
           callback: (List<dynamic> args) {
@@ -3585,6 +3676,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     await controller.evaluateJavascript(
       source: MangaFushiPage.navigationKeyBridgeScript,
+    );
+    if (!mounted || !_windowGate.owns(ticket)) {
+      return;
+    }
+    await controller.evaluateJavascript(
+      source: MangaFushiPage.panKeyBridgeScript,
     );
     if (!mounted || !_windowGate.owns(ticket)) {
       return;

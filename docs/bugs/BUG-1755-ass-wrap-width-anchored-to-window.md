@@ -1,0 +1,14 @@
+## BUG-1755 · 字幕换行宽度锚在窗口而非视频画面，最大化后排版突变（BUG-1730 续）
+- **报告**：2026-08-20（用户：.ass 字幕在英文单词中间断行，「it mostly seems to happen when the subs are anchored to the bottom, but not the top」，且「I use a 1440p monitor and this is a 1080p video. With the window at the same size as 1080p the subtitles looked the same but when I maximised the window it scaled the text size」。附 MPC 与 Fushi 对比截图：MPC 两行均衡，Fushi 一行占满 + 第二行只剩 `oration.`）
+- **真实性**：✅ 真 bug，但**中词断行本身已由 BUG-1730 修掉**（`3aa5907ff0`，`groupSubtitleGraphemesForWrap` 把拉丁词整组包进 `Row`，已在 origin/develop）。用户截图应出自该提交之前的构建。本条记的是 BUG-1730「备注」里明确留下的**两条未修根因**，正好就是用户自己诊断出的两点：
+  1. **换行宽度基准与字号基准不同源**（对应「最大化就变」）。字号锚在 fit:contain 后的**视频内容矩形高**（`video_subtitle_overlay.dart` 的 `_assFontScale` / `fitVideoContentSize`，与 mpv/libass 同口径），换行可用宽度却锚在**容器宽**（`Positioned.fill` 的 overlay 宽减去 ASS MarginL/R 和字幕盒固定 24px 内边距）。几何推导：letterbox 档二者都 ∝ 容器宽，换行容量恒定；**pillarbox 档**（窗口比视频扁，1080p 视频 + 带标题栏的窗口正是这一档）字号 ∝ 容器高、可用宽 ∝ 容器宽，于是**换行容量 ∝ 容器宽高比**。1920×1048（比 1.832）最大化到 2560×1440（比 1.778）≈ 换行容量少 3%，一行「刚好塞满」的字幕就被推过阈值。
+  2. **顶/底不对称**（对应「底部锚定才断行、顶部不断」）。`final SubtitleMarkup? posMarkup = forcedAnchor != null ? null : ownMarkup;` —— 这是**竖直**强制锚定，却把水平排版盒一起丢了：底锚（默认，`forcedAnchor == null`）扣掉双侧 ASS MarginL/R（常见 26~80px），顶锚 `posMarkup` 为 null → `_scaledMarginX(null, null)` 恒返回 null → 一点不扣、换行宽度反而更大。
+  - 顺带核实并**排除**了一个假设：代码里没有「字号跟窗口走而不跟视频内容矩形走」的路径（ASS 字号严格 ∝ 视频显示高）。用户感知的「字号变大」更可能是「同样的字幕被换成两行、第二行只剩一个词」造成的视觉误判。
+- **[x] ① 已修复** — 两处，都在 `fushi/lib/src/media/video/video_subtitle_overlay.dart`：
+  - 新增 `_pillarboxSideInset()`（fit:contain 后单侧黑边宽，letterbox / 分辨率未知时为 0），在 `_paddingFor` 里叠进左右 padding。可用宽度自此 ∝ 视频内容宽，与字号同源，**换行位置对窗口尺寸恒定不变**。
+  - 水平边距改读 `ownMarkup` 而非 `posMarkup`（竖直的 `scaledMarginV` / `rawMarginV` **必须**继续走 `posMarkup`，否则用户选的锚定会被 ASS MarginV 顶回去）。顶/底自此同宽。`respectAssStyle == false` 时 `ownMarkup` 恒 null，纯字幕路径零变化。
+- **[x] ② 已加自动化测试** — 新增 `fushi/test/media/video/video_subtitle_wrap_viewport_test.dart`：16:9 视频 + 固定 200px 高（⇒ 视频内容矩形恒定），容器宽 500 → 760，断言**断行位置一字不变**（并先断言这句话确实会换行，避免空转）；另一条断言整行水平范围落在视频内容矩形内、不排进左右黑边。**已做变异测试**：把 `sideBar` 写死成 0 → 两条全红；还原后文件 sha256 与变异前逐字节相同。（测试宽度必须 ≤ 测试窗口宽 800——`Center` 给 loose 约束，`SizedBox(width:1000)` 会被 constrain 成 800，黑边算式就对不上。）
+- **备注**：
+  - **未修、且是与 MPC 差异的另一半**：`\q`（WrapStyle）**完全没解析**（`ass_parser.dart` 只读 PlayResX/Y，override 标签分发里没有 `'q'` 分支，`SubtitleMarkup` 无该字段）。当前恒 ≈WrapStyle 1（贪心填满，上行更宽），而 **ASS 缺省是 WrapStyle 0 = 均衡换行**（libass 会把两行断得长度接近）。这正是截图里 MPC 给出两行均衡、Fushi 给出「满行 + 一个词」的直接原因。要修需要把贪心 `Wrap` 换成先测量后择点的均衡布局，与逐字形样式（`\fscx`/描边分层/竖排旋转）的测量精度耦合，爆炸半径大，单独立项。
+  - **未修**：`\h`（不断行空格）在 `packages/fushi_audio/lib/src/parsers/subtitle_markup.dart` 被写成普通空格，于是分组函数把作者明确禁止断行的位置当成断行机会。分组函数已经把 NBSP 当词内字符（`g != ' '`），但 `plainText` 是查词/制卡/落库的同一份文本，直接写 NBSP 会改变它；正确做法是照 `\N` 的既有范式加一个 `nonBreakingGraphemes` 下标表。同处 `\n`（软换行）也被当空格。
+  - **行为变化（有意）**：黑边内缩对 srt/vtt 同样施加（字幕属于画面、不该排进黑边），pillarbox 下这不是像素级不变。居中对齐时视觉中心不动，只是换行宽度收窄到画面宽。

@@ -354,6 +354,22 @@ class ShortcutDefaults {
     // 「只关词典、绝不退出」（漫画版）：**默认空绑定**，理由与 readerDismissDict
     // 完全相同——Esc 归 universal 的 globalBack 一键阶梯。
     ShortcutAction.mangaDismissDict: const ShortcutBindingSet(),
+    // 放大后平移视野：默认 Ctrl+方向键。裸方向键四个全被翻页占了
+    // （mangaPageForward/Backward 各绑两个），同 scope 内撞绑会被靠前声明者吃掉，
+    // 所以默认必须带修饰键。用户可在快捷键设置里改。
+    ShortcutAction.mangaPanUp: _kb([
+      _key(LogicalKeyboardKey.arrowUp, const <ModifierKey>{ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.mangaPanDown: _kb([
+      _key(LogicalKeyboardKey.arrowDown, const <ModifierKey>{ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.mangaPanLeft: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, const <ModifierKey>{ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.mangaPanRight: _kb([
+      _key(
+          LogicalKeyboardKey.arrowRight, const <ModifierKey>{ModifierKey.ctrl}),
+    ]),
     ShortcutAction.videoReplayCurrentSubtitle: _kb([
       _key(LogicalKeyboardKey.keyR),
     ], [

@@ -3649,5 +3649,11 @@
   "interconnect_share_favorites_hint": "Favorite words and sentences, including un-favoriting",
   "interconnect_share_section": "Share with paired devices",
   "interconnect_share_section_footer": "These are merged both ways with the paired device and are on by default. Turning one off stops both sending and receiving it.",
-  "game_hook_mining_no_session_lines": "No captured lines yet, so there is nothing to attach this card to. Pick a different text thread in the workbench."
+  "game_hook_mining_no_session_lines": "No captured lines yet, so there is nothing to attach this card to. Pick a different text thread in the workbench.",
+  "shortcut_action_manga_pan_up": "Pan up",
+  "shortcut_action_manga_pan_down": "Pan down",
+  "shortcut_action_manga_pan_left": "Pan left",
+  "shortcut_action_manga_pan_right": "Pan right",
+  "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
+  "drag_drop_folder_source_exists": "That folder is already a library source."
 }
