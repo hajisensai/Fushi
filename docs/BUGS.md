@@ -52,6 +52,15 @@
 | [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | ✅ | ✅ | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
 | [BUG-1733](bugs/BUG-1733-kirikiriz-thread-lines-never-ingested.md) | 🚧 | 🚧 | 选中 KiriKiriZ 文本线程后实时台词恒 0，且没有任何东西告诉用户这条线程不可能产出台词 |
 | [BUG-1732](bugs/BUG-1732-manga-ocr-engine-picker-and-model-accounting.md) | ✅ | ✅ | manga-ocr-engine-picker-and-model-accounting |
+> 共 1610 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-1745](bugs/BUG-1745-trackpad-vertical-wheel-multi-page.md) | ✅ | ✅ | 纵向触摸板惯性绕过手势闸门，一次滑动连翻多页 |
+| [BUG-1744](bugs/BUG-1744-macos-reader-fullscreen-top-band.md) | ✅ | ✅ | macOS 阅读器全屏下顶部残留 28pt 拖拽横带 |
+| [BUG-1743](bugs/BUG-1743-vn-scroll-to-search-match-missing.md) | ✅ | ✅ | VN 缺 scrollToSearchMatch 且调用点无存在性守卫 |
+| [BUG-1742](bugs/BUG-1742-vn-non-sasayaki-audiobook-follow.md) | ✅ | ✅ | VN 模式下非 sasayaki 书的有声书自动跟随失效 |
+| [BUG-1741](bugs/BUG-1741-interconnect-pair-probe-reason-lost.md) | ✅ | ✅ | 互联配对报错文案完全误导：三层静默吞异常 + TLS host 回落 v1 死路 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |
 | [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |

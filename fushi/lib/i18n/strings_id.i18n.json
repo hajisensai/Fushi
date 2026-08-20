@@ -3655,5 +3655,8 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_pair_invalid_url": "Invalid address format",
+  "sync_pair_peer_requires_https": "This device only accepts HTTPS. Use an https:// address.",
+  "sync_pair_peer_not_https": "The peer isn't using HTTPS on this port. Use an http:// address."
 }

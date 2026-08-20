@@ -36,30 +36,73 @@ List<String> discoveredPairingCandidateUrls({
   return tlsAdvertised ? <String>[https, http] : <String>[http, https];
 }
 
-/// 按候选顺序探测一台发现设备，返回第一个 ping 通的端点。
+/// BUG-1741：整段探测的收口结果——探到的端点，或**为什么没探到**。
+class DiscoveredPairingProbeOutcome {
+  const DiscoveredPairingProbeOutcome.found(
+    DiscoveredPairingProbeResult this.result, {
+    required this.peerSpeaksTls,
+  }) : failure = null;
+
+  const DiscoveredPairingProbeOutcome.failed(
+    FushiPingFailure this.failure, {
+    required this.peerSpeaksTls,
+  }) : result = null;
+
+  /// 探到的可用端点；失败时为 null。
+  final DiscoveredPairingProbeResult? result;
+
+  /// 整段探测的失败原因（按严重度取最重的一条）；成功时为 null。
+  final FushiPingFailure? failure;
+
+  /// 探测过程中**确证**对端在该端口讲 TLS（TOFU 握手拿到了证书）。
+  ///
+  /// 调用方据此禁止回落 v1 明文配对：对一个 TLS-only 端口发明文 POST 必然失败，
+  /// 回落只会把真实原因（证书 / 超时）换成一句无意义的「配对失败」。
+  final bool peerSpeaksTls;
+}
+
+/// 失败原因的严重度：越靠前越该优先展示给用户。
 ///
-/// https 候选先经 TOFU 一次性握手取指纹（取不到 → 跳过该候选，绝不裸读
-/// https），再用钉扎 ping 确认；明文 http 候选直接 ping。全部失败返回 null
-/// （调用方回落 v1 明文配对老路径，旧版 host 行为零变化）。
+/// tls 是安全事件，必须盖过后面几种；notFushi 最弱——只要有过任何一次
+/// 「连得上但对不上」以外的失败，都比「这里没有 Hibiki」更接近真相。
+const List<FushiPingFailure> _failureSeverity = <FushiPingFailure>[
+  FushiPingFailure.tls,
+  FushiPingFailure.timeout,
+  FushiPingFailure.unreachable,
+  FushiPingFailure.notFushi,
+];
+
+FushiPingFailure _worst(FushiPingFailure? a, FushiPingFailure b) {
+  if (a == null) return b;
+  return _failureSeverity.indexOf(a) <= _failureSeverity.indexOf(b) ? a : b;
+}
+
+/// 按候选顺序探测一台发现设备，返回第一个 ping 通的端点**或失败原因**。
+///
+/// https 候选先经 TOFU 一次性握手取指纹（取不到 → 记下原因并跳过该候选，绝不
+/// 裸读 https），再用钉扎 ping 确认；明文 http 候选直接 ping。
 ///
 /// [captureFingerprint] / [ping] 为测试注入缝，生产默认真实现。
-Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
+Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
   required String host,
   required int port,
   required bool tlsAdvertised,
-  Future<String?> Function(String host, int port)? captureFingerprint,
-  Future<FushiPingResult?> Function(String baseUrl,
+  Future<FushiTofuOutcome> Function(String host, int port)? captureFingerprint,
+  Future<FushiPingOutcome> Function(String baseUrl,
           {String? pinnedFingerprint})?
       ping,
 }) async {
-  final Future<String?> Function(String host, int port) capture =
+  final Future<FushiTofuOutcome> Function(String host, int port) capture =
       captureFingerprint ??
-          (String h, int p) => FushiTofuProbe.captureFingerprint(h, p);
-  final Future<FushiPingResult?> Function(String baseUrl,
+          (String h, int p) => FushiTofuProbe.probeFingerprint(h, p);
+  final Future<FushiPingOutcome> Function(String baseUrl,
           {String? pinnedFingerprint}) doPing =
       ping ??
           (String baseUrl, {String? pinnedFingerprint}) =>
-              fetchFushiPing(baseUrl, pinnedFingerprint: pinnedFingerprint);
+              probeFushiPing(baseUrl, pinnedFingerprint: pinnedFingerprint);
+
+  FushiPingFailure? worst;
+  bool peerSpeaksTls = false;
 
   for (final String baseUrl in discoveredPairingCandidateUrls(
     host: host,
@@ -67,30 +110,90 @@ Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
     tlsAdvertised: tlsAdvertised,
   )) {
     if (baseUrl.startsWith('https://')) {
-      final String? captured = await capture(host, port);
-      if (captured == null || captured.isEmpty) continue;
-      final FushiPingResult? result =
+      final FushiTofuOutcome tofu = await capture(host, port);
+      if (tofu.speaksTls) peerSpeaksTls = true;
+      final String? captured = tofu.fingerprint;
+      if (captured == null || captured.isEmpty) {
+        final FushiPingFailure? mapped = _tofuToPingFailure(tofu.failure);
+        if (mapped != null) worst = _worst(worst, mapped);
+        continue;
+      }
+      final FushiPingOutcome outcome =
           await doPing(baseUrl, pinnedFingerprint: captured);
-      if (result == null) continue;
+      final FushiPingResult? result = outcome.result;
+      if (result == null) {
+        worst = _worst(worst, outcome.failure ?? FushiPingFailure.unreachable);
+        continue;
+      }
       // 钉扎指纹以 ping 回传为准（与捕获一致，钉扎 client 已保证）；回传缺失时
       // 用捕获值。https 必须有指纹才可用（镜像手动配对的硬约束）。
       final String? fingerprint = (result.fingerprint?.isNotEmpty ?? false)
           ? result.fingerprint
           : captured;
-      return DiscoveredPairingProbeResult(
-        baseUrl: baseUrl,
-        fingerprint: fingerprint,
-        ping: result,
+      return DiscoveredPairingProbeOutcome.found(
+        DiscoveredPairingProbeResult(
+          baseUrl: baseUrl,
+          fingerprint: fingerprint,
+          ping: result,
+        ),
+        peerSpeaksTls: true,
       );
     } else {
-      final FushiPingResult? result = await doPing(baseUrl);
-      if (result == null) continue;
-      return DiscoveredPairingProbeResult(
-        baseUrl: baseUrl,
-        fingerprint: null,
-        ping: result,
+      final FushiPingOutcome outcome = await doPing(baseUrl);
+      final FushiPingResult? result = outcome.result;
+      if (result == null) {
+        worst = _worst(worst, outcome.failure ?? FushiPingFailure.unreachable);
+        continue;
+      }
+      return DiscoveredPairingProbeOutcome.found(
+        DiscoveredPairingProbeResult(
+          baseUrl: baseUrl,
+          fingerprint: null,
+          ping: result,
+        ),
+        peerSpeaksTls: peerSpeaksTls,
       );
     }
   }
-  return null;
+  return DiscoveredPairingProbeOutcome.failed(
+    worst ?? FushiPingFailure.unreachable,
+    peerSpeaksTls: peerSpeaksTls,
+  );
 }
+
+/// TOFU 失败原因 → ping 失败原因的归一（两套枚举面向同一个用户可见结论）。
+///
+/// 返回 null 表示**这次失败不构成证据**，不参与最终原因的评选。
+FushiPingFailure? _tofuToPingFailure(FushiTofuFailure? failure) {
+  switch (failure) {
+    case FushiTofuFailure.timeout:
+      return FushiPingFailure.timeout;
+    case FushiTofuFailure.unreachable:
+      return FushiPingFailure.unreachable;
+    case FushiTofuFailure.notTls:
+    case null:
+      // 「该端口不讲 TLS」在一台明文 host 上正是预期结果，零信息量。若拿它去
+      // 评选最终原因，会把 http 候选带回来的「连上了但不是 Hibiki」这种真正
+      // 有用的结论盖掉。
+      return null;
+  }
+}
+
+/// [probeDiscoveredPairingEndpointDetailed] 的丢原因薄封装（旧签名）。
+Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
+  required String host,
+  required int port,
+  required bool tlsAdvertised,
+  Future<FushiTofuOutcome> Function(String host, int port)? captureFingerprint,
+  Future<FushiPingOutcome> Function(String baseUrl,
+          {String? pinnedFingerprint})?
+      ping,
+}) async =>
+    (await probeDiscoveredPairingEndpointDetailed(
+      host: host,
+      port: port,
+      tlsAdvertised: tlsAdvertised,
+      captureFingerprint: captureFingerprint,
+      ping: ping,
+    ))
+        .result;

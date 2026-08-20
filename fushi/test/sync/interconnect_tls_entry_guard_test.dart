@@ -88,9 +88,27 @@ void main() {
     final String connect = source.substring(start, end);
     // scheme 选择 + 探测（TXT tls 标志 + /api/ping 定案）。
     expect(
-      connect.contains('await probeDiscoveredPairingEndpoint('),
+      connect.contains('await probeDiscoveredPairingEndpointDetailed('),
       isTrue,
-      reason: '发现配对未先探测 scheme（probeDiscoveredPairingEndpoint）',
+      reason: '发现配对未先探测 scheme（probeDiscoveredPairingEndpointDetailed）',
+    );
+    // BUG-1741：必须消费探测带回的失败原因与 TLS 确证，否则又会把 TLS host
+    // 推进 v1 明文死路，并把真实原因换成一句「配对失败」。
+    expect(
+      connect.contains('outcome.peerSpeaksTls'),
+      isTrue,
+      reason: '发现配对未消费 peerSpeaksTls，TLS host 会被回落进 v1 明文死路',
+    );
+    expect(
+      connect.contains('_pingFailureMessage(outcome.failure)'),
+      isTrue,
+      reason: '发现配对丢弃了探测失败原因，UI 只能给出误导文案',
+    );
+    // v1 必须用探明的 baseUrl，不能再盲信硬编码 http 的 device.webDavUrl。
+    expect(
+      connect.contains('probe?.baseUrl ?? device.webDavUrl'),
+      isTrue,
+      reason: 'v1 回落未使用探明 scheme 的 baseUrl（会把错的 http:// 永久写进列表）',
     );
     expect(
       connect.contains('tlsAdvertised: device.tlsEnabled'),

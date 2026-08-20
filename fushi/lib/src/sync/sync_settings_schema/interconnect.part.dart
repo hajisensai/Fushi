@@ -219,8 +219,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     try {
       normalizedResult = normalizeFushiInterconnectManualUrl(result);
     } catch (e, stack) {
+      // BUG-1741：这里根本没发起过连接——normalize 只是解析字符串。说「连接失败」
+      // 会把用户支去查网络/防火墙，而真正要改的是他刚敲错的那行地址。
       ErrorLogService.instance.log('SyncConfig.addFushiUrl', e, stack);
-      if (mounted) _showSnackBar(context, t.sync_connection_failed);
+      if (mounted) _showSnackBar(context, t.sync_pair_invalid_url);
       return;
     }
 
@@ -287,23 +289,50 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     final bool isHttps = parsed.scheme.toLowerCase() == 'https';
     _setPairV2Busy(true);
     try {
+      final int port = parsed.hasPort ? parsed.port : (isHttps ? 443 : 80);
+
       // https 首连：先用一次性 TOFU 探测捕获 host 证书指纹（仅取指纹，不传数据）。
       String? capturedFingerprint;
       if (isHttps) {
-        final int port = parsed.hasPort ? parsed.port : 443;
-        capturedFingerprint =
-            await FushiTofuProbe.captureFingerprint(parsed.host, port);
+        final FushiTofuOutcome tofu =
+            await FushiTofuProbe.probeFingerprint(parsed.host, port);
         if (!mounted) return;
+        if (!tofu.speaksTls) {
+          // BUG-1741：握手都没成，后面的 ping 必然也失败。此前这里不作分辨地
+          // 一路走到「未找到 Fushi 设备」——而真相往往只是用户把 http host 写成了
+          // https。分型后直接告诉他该改哪个字。
+          _showSnackBar(context, _tofuFailureMessage(tofu.failure));
+          return;
+        }
+        capturedFingerprint = tofu.fingerprint;
       }
 
       // /api/ping 探测：确认 hibiki + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
-      final FushiPingResult? ping = await fetchFushiPing(
+      final FushiPingOutcome outcome = await probeFushiPing(
         baseUrl,
         pinnedFingerprint: capturedFingerprint,
       );
       if (!mounted) return;
-      if (ping == null || !ping.isFushi || !ping.supportsPairV2) {
-        _showSnackBar(context, t.sync_pair_not_fushi);
+      final FushiPingResult? ping = outcome.result;
+      if (ping == null) {
+        // BUG-1741：明文地址打不通时回头确认对端是不是 TLS-only。那不是「这里没有
+        // 设备」，是「地址的 scheme 写错了」——两句话指向完全相反的排查方向，而旧
+        // 实现把它们说成同一句。
+        if (!isHttps && outcome.failure == FushiPingFailure.unreachable) {
+          final FushiTofuOutcome tofu =
+              await FushiTofuProbe.probeFingerprint(parsed.host, port);
+          if (!mounted) return;
+          if (tofu.speaksTls) {
+            _showSnackBar(context, t.sync_pair_peer_requires_https);
+            return;
+          }
+        }
+        _showSnackBar(context, _pingFailureMessage(outcome.failure));
+        return;
+      }
+      if (!ping.supportsPairV2) {
+        // 连上了、确实是 Hibiki，只是版本太旧——与「找不到设备」是两回事。
+        _showSnackBar(context, t.sync_pair_unavailable);
         return;
       }
       // https host 的钉扎指纹以 ping 回传为准（与捕获一致），明文 http 无指纹。
@@ -311,7 +340,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           isHttps ? (ping.fingerprint ?? capturedFingerprint) : null;
       // https 必须有指纹才能继续（否则无法钉扎，拒绝裸 https）。
       if (isHttps && (fingerprint == null || fingerprint.isEmpty)) {
-        _showSnackBar(context, t.sync_pair_failed);
+        // 语义就是「拿不到可钉扎的证书」，不是笼统的「配对失败」。
+        _showSnackBar(context, t.sync_pair_tls_failed);
         return;
       }
 
@@ -835,6 +865,39 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     await _syncSettings(_pairSettingsContext).setInterconnectEnabled(true);
     _syncSettings(_pairSettingsContext).reloadClientConfig();
     return t.sync_pair_success;
+  }
+
+  /// BUG-1741：把**配对前探测**的失败分型翻成人话。
+  ///
+  /// 探测层此前把「证书对不上」「超时」「端口没人」「不是 Hibiki」全压成一个
+  /// null，UI 只能一律说「此地址未找到 Fushi 设备」——对着一台明明在线、只是证书
+  /// 换了的机器说「这里没有设备」，用户的排查方向从第一步就是错的。
+  String _pingFailureMessage(FushiPingFailure? failure) {
+    switch (failure) {
+      case FushiPingFailure.tls:
+        return t.sync_pair_tls_failed;
+      case FushiPingFailure.timeout:
+        return t.sync_pair_timeout;
+      case FushiPingFailure.unreachable:
+        return t.sync_connection_failed;
+      case FushiPingFailure.notFushi:
+      case null:
+        return t.sync_pair_not_fushi;
+    }
+  }
+
+  /// BUG-1741：TOFU 握手失败的人话。`notTls` 是最常见的一种——用户把明文 host
+  /// 写成了 https，此时该说的是「改 scheme」而不是「配对失败」。
+  String _tofuFailureMessage(FushiTofuFailure? failure) {
+    switch (failure) {
+      case FushiTofuFailure.notTls:
+        return t.sync_pair_peer_not_https;
+      case FushiTofuFailure.timeout:
+        return t.sync_pair_timeout;
+      case FushiTofuFailure.unreachable:
+      case null:
+        return t.sync_connection_failed;
+    }
   }
 
   /// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
@@ -1502,13 +1565,14 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 
     setState(() => _pairingUrl = device.webDavUrl);
     try {
-      final DiscoveredPairingProbeResult? probe =
-          await probeDiscoveredPairingEndpoint(
+      final DiscoveredPairingProbeOutcome outcome =
+          await probeDiscoveredPairingEndpointDetailed(
         host: device.host,
         port: device.port,
         tlsAdvertised: device.tlsEnabled,
       );
       if (!mounted) return;
+      final DiscoveredPairingProbeResult? probe = outcome.result;
       if (probe != null && probe.ping.supportsPairV2) {
         // 先记录探明 scheme 的地址（host 拒绝也保留，可回退手粘 token）；钉扎
         // 指纹在配对成功后经 _onPairSuccess 落库（TOFU 记录器）。
@@ -1524,8 +1588,33 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
         );
         return;
       }
+      // BUG-1741：对端确证讲 TLS（或 mDNS 明说 tls=1）时**禁止**回落 v1。
+      //
+      // v1 只会往 `device.webDavUrl` 发明文 POST，而那个 getter 硬编码
+      // `http://`（lan_discovery_service.dart）。TLS host 根本不 bind 明文端口，
+      // 这一发必然抛，最后换来一句「配对失败」——真实原因（证书不符 / 超时）在
+      // 三层探测里已经被吞光。更糟的是它还会把那条错的 http:// 地址写进候选列表，
+      // 从此那台设备每次「测试连接」都失败，且 UI 里看不出 scheme 错了。
+      if (probe == null && (outcome.peerSpeaksTls || device.tlsEnabled)) {
+        _showSnackBar(
+          context,
+          '${device.name}: ${_pingFailureMessage(outcome.failure)}',
+        );
+        return;
+      }
+      // 探明是 https 端点却不支持 v2：同样不能拿明文 v1 去敲，只能如实说版本过旧。
+      if (probe != null && probe.baseUrl.startsWith('https://')) {
+        _showSnackBar(context, '${device.name}: ${t.sync_pair_unavailable}');
+        return;
+      }
       // 旧版 host：无 /api/ping 或不支持 v2 → v1 明文配对老路径（行为零变化）。
-      await _pairLegacyV1(device, repo, state);
+      // 已探明端点时用探明的 baseUrl，不再盲信硬编码 http 的 webDavUrl。
+      await _pairLegacyV1(
+        probe?.baseUrl ?? device.webDavUrl,
+        device,
+        repo,
+        state,
+      );
     } finally {
       if (mounted) setState(() => _pairingUrl = null);
       // Single source of truth bumped → client-config widget reloads URL + token.
@@ -1537,13 +1626,14 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
   /// v1 明文配对（旧版 host 兼容路径，与 v2 化前的实现一致）：直接 POST
   /// /api/pair 等 host 审批发 token。仅在对端不支持 v2 时走到。
   Future<void> _pairLegacyV1(
+    String baseUrl,
     FushiDevice device,
     SyncRepository repo,
     _SyncSettingsState state,
   ) async {
     // Always record the address (deduped) so the user keeps the URL even if
     // the host declines and they fall back to pasting the token.
-    await repo.addFushiClientUrl(device.webDavUrl);
+    await repo.addFushiClientUrl(baseUrl);
     // A client connection now exists → lock this device out of server mode.
     state.setHasClientConnection(true);
 
@@ -1551,7 +1641,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     try {
       final http.Response resp = await http
           .post(
-            Uri.parse('${device.webDavUrl}/api/pair'),
+            Uri.parse('$baseUrl/api/pair'),
             headers: <String, String>{'Content-Type': 'application/json'},
             body:
                 jsonEncode(<String, String>{'name': await _localDeviceName()}),
@@ -1565,7 +1655,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
             body is Map<String, dynamic> ? body['token'] as String? : null;
         if (token != null && token.isNotEmpty) {
           // BUG-1550：v1 老路径同样把凭据落在这条地址上（理由见 _onPairSuccess）。
-          await repo.setFushiClientTokenForUrl(device.webDavUrl, token);
+          await repo.setFushiClientTokenForUrl(baseUrl, token);
           // BUG-1693：与 v2 路径一致——拿到 token（配对成功）才落「互联已启用」。
           await state.setInterconnectEnabled(true);
           message = t.sync_pair_success;
@@ -1580,8 +1670,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
     } catch (e, stack) {
       // Pairing probe failed (no server/timeout/declined). Keep the URL; record
       // why instead of swallowing.
-      ErrorLogService.instance
-          .log('LanDiscovery.pair:${device.webDavUrl}', e, stack);
+      ErrorLogService.instance.log('LanDiscovery.pair:$baseUrl', e, stack);
       message = t.sync_pair_failed;
     }
     if (mounted) _showSnackBar(context, '${device.name}: $message');

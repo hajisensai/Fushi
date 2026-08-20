@@ -1,6 +1,44 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+/// BUG-1741：TOFU 握手的失败分型。
+///
+/// 「握手失败」和「连不上」是两件事：前者证明**端口上有东西，只是不讲 TLS**
+/// （多半是用户把 http host 写成了 https），后者是根本没连上。旧实现把两者都
+/// 压成 null，配对流程因此无法判断「该不该回落明文 v1」。
+enum FushiTofuFailure {
+  /// 端口可连，但不是 TLS 端点（明文服务 / 协议版本谈不拢）。
+  notTls,
+
+  /// 连不上（无监听 / 防火墙）。
+  unreachable,
+
+  /// 超时。
+  timeout,
+}
+
+/// [FushiTofuProbe.probeFingerprint] 的结果。
+class FushiTofuOutcome {
+  const FushiTofuOutcome.captured(String this.fingerprint) : failure = null;
+
+  const FushiTofuOutcome.failed(FushiTofuFailure this.failure)
+      : fingerprint = null;
+
+  /// 捕获到的 host 证书 SHA-256 指纹（`aa:bb:..`）；失败时为 null。
+  final String? fingerprint;
+
+  /// 失败原因；成功时为 null。
+  final FushiTofuFailure? failure;
+
+  /// 已确证对端在该端口讲 TLS。
+  ///
+  /// 配对流程用它做「禁止回落 v1 明文配对」的判据：明文 POST 打向一个只讲
+  /// https 的端口**必然**失败，回落过去只会换来一句无意义的「配对失败」。
+  bool get speaksTls => (fingerprint?.isNotEmpty ?? false);
+}
 
 /// TODO-963 M2: TOFU 首连「捕获 host 证书指纹」探测。
 ///
@@ -16,8 +54,8 @@ import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 ///   这一计算结果，而非硬编码放行——捕获失败（理论上不会）即拒绝握手。
 class FushiTofuProbe {
   /// 连到 [host]:[port] 做一次 TLS 握手，返回 host 证书的 SHA-256 指纹
-  /// （aa:bb:.. 形式）。失败（连不上 / 非 TLS / 超时）返回 null。
-  static Future<String?> captureFingerprint(
+  /// （aa:bb:.. 形式）或**失败原因**。
+  static Future<FushiTofuOutcome> probeFingerprint(
     String host,
     int port, {
     Duration timeout = const Duration(seconds: 5),
@@ -42,9 +80,22 @@ class FushiTofuProbe {
         final X509Certificate? peer = socket?.peerCertificate;
         return peer == null ? null : fingerprintOfDer(peer.der);
       }();
-      return captured;
-    } on Object {
-      return captured; // 连接异常时若已捕获到指纹仍可返回（握手中途失败）。
+      final String? fingerprint = captured;
+      if (fingerprint == null || fingerprint.isEmpty) {
+        return const FushiTofuOutcome.failed(FushiTofuFailure.notTls);
+      }
+      return FushiTofuOutcome.captured(fingerprint);
+    } catch (e, stack) {
+      // 握手中途失败但已拿到证书：指纹本身仍然可信（它就是对端出示的那张），
+      // 保持旧行为返回它。
+      final String? fingerprint = captured;
+      if (fingerprint != null && fingerprint.isNotEmpty) {
+        return FushiTofuOutcome.captured(fingerprint);
+      }
+      // BUG-1741：分型 + 留痕。此前这里静默返回 null，调用方无从分辨
+      // 「对端不讲 TLS」与「对端不在」——而这两者的正确处置完全相反。
+      ErrorLogService.instance.log('TofuProbe:$host:$port', e, stack);
+      return FushiTofuOutcome.failed(_classify(e));
     } finally {
       try {
         await socket?.close();
@@ -53,4 +104,20 @@ class FushiTofuProbe {
       }
     }
   }
+
+  /// 连到明文端口时 `SecureSocket.connect` 抛的是 [HandshakeException]（实现了
+  /// [TlsException]）；连不上抛 [SocketException]；超时抛 [TimeoutException]。
+  static FushiTofuFailure _classify(Object e) {
+    if (e is TlsException) return FushiTofuFailure.notTls;
+    if (e is TimeoutException) return FushiTofuFailure.timeout;
+    return FushiTofuFailure.unreachable;
+  }
+
+  /// [probeFingerprint] 的丢原因薄封装（旧签名，保持既有调用方零改动）。
+  static Future<String?> captureFingerprint(
+    String host,
+    int port, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async =>
+      (await probeFingerprint(host, port, timeout: timeout)).fingerprint;
 }

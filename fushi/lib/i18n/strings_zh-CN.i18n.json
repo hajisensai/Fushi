@@ -3655,5 +3655,8 @@
   "shortcut_action_manga_pan_left": "向左平移",
   "shortcut_action_manga_pan_right": "向右平移",
   "drag_drop_folder_source_added": "已把文件夹添加为来源并开始扫描",
-  "drag_drop_folder_source_exists": "该文件夹已经是来源了"
+  "drag_drop_folder_source_exists": "该文件夹已经是来源了",
+  "sync_pair_invalid_url": "地址格式无效",
+  "sync_pair_peer_requires_https": "该设备只接受 HTTPS，请改用 https:// 开头的地址。",
+  "sync_pair_peer_not_https": "对端在该端口未启用 HTTPS，请改用 http:// 开头的地址。"
 }

@@ -24,6 +24,8 @@ void main() {
   final String readerChrome = File(
     'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
   ).readAsStringSync();
+  final String fullscreenState =
+      File('lib/src/platform/macos_fullscreen_state.dart').readAsStringSync();
 
   test('macOS fullscreen toggles through the single NSWindow owner', () {
     // 根因：window_manager.setFullScreen 与 macos_window_utils（NSWindow.delegate
@@ -129,6 +131,65 @@ void main() {
       readerChrome,
       contains('_stableTopInset + _macosWindowTitlebarInset'),
       reason: '顶部进度 pill 必须落在 drag strip 下方，不能盖住拖动区或交通灯',
+    );
+  });
+
+  // BUG-1744：用户报的「阅读器顶部横带」。BUG-1343 引入的 28pt 拖拽带唯一条件是
+  // Platform.isMacOS——进原生全屏后既没有标题栏也没有交通灯、窗口也拖不动，这条
+  // 不透明带和它同高的正文让位却仍在，就是那条横带。
+  test('BUG-1744 fullscreen drops the titlebar strip and its content inset',
+      () {
+    // 让位量必须由全屏态门控（单一真相源：_readerTopOffset / popupTopReserve /
+    // independentDocumentInsets / 顶部进度 pill 全部读它）。
+    expect(
+      reader,
+      contains(
+          'Platform.isMacOS && !_macosFullscreen ? kMacTitleBarHeight : 0'),
+      reason: '_macosWindowTitlebarInset 未按全屏态门控 → 全屏下正文仍被下压 28pt',
+    );
+    // 带子本身也必须整体不挂，只归零 inset 会留下一条盖住正文的不透明条。
+    // （DragToMoveArea 挂在 build() 的 Stack 里，不在 _buildBody()。）
+    final String pageBuild =
+        methodBody(reader, '  Widget build(BuildContext context)');
+    expect(
+      containsCodeLine(pageBuild, 'if (Platform.isMacOS && !_macosFullscreen)'),
+      isTrue,
+      reason: '全屏下仍挂 DragToMoveArea 的 ColoredBox = 一条纯浪费的顶部横带',
+    );
+    expect(
+      containsCodeLine(pageBuild, 'DragToMoveArea('),
+      isTrue,
+      reason: '守卫取错了窗口（DragToMoveArea 应在同一个 build 方法体内）',
+    );
+    // 状态来源必须是能覆盖**全部**入口的 NSWindowDelegate：绿灯按钮和「显示」
+    // 菜单都不经过 app 自己的 F11 快捷键，只记快捷键状态会漏掉最常用的两条路。
+    expect(
+      reader,
+      contains('MacosFullscreenState.instance'),
+      reason: '全屏态必须取自单一真相源 MacosFullscreenState',
+    );
+    expect(
+      fullscreenState,
+      contains('windowDidEnterFullScreen'),
+      reason: 'NSWindowDelegate 是唯一能覆盖绿灯/菜单/快捷键全部入口的信号',
+    );
+    expect(
+      fullscreenState,
+      contains('windowDidExitFullScreen'),
+      reason: '只监听进入不监听退出，退出全屏后横带不会回来',
+    );
+    // 光 setState 不够：JS 的 --chrome-top-inset 由 _applyChromeInsets 单独推送，
+    // 漏了它正文 padding-top 会停在旧的 28px 上（横带原样还在）。
+    final String onChange =
+        methodBody(reader, '  void _onMacosFullscreenChanged()');
+    expect(containsCodeLine(onChange, '_applyChromeInsets'), isTrue,
+        reason: '全屏翻转后必须把新 inset 回喂 WebView，否则 CSS 侧仍留 28px 空白');
+    expect(containsCodeLine(onChange, 'setState'), isTrue);
+    // 监听器必须摘掉，否则页面走了还在被全局 notifier 持有。
+    expect(
+      reader,
+      contains('removeListener(_onMacosFullscreenChanged)'),
+      reason: 'dispose 未摘监听 = 泄漏 + 已 dispose 的 State 上 setState',
     );
   });
 }
