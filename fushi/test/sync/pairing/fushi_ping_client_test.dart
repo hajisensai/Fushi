@@ -7,7 +7,9 @@ import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-// TODO-963 M2: fetchFushiPing 解析 /api/ping 响应的单元测试（注入 MockClient）。
+// TODO-963 M2: probeFushiPing 解析 /api/ping 响应的单元测试（注入 MockClient）。
+// BUG-1741 收尾（PR#912 审查）：丢原因的薄封装 fetchFushiPing 已删除，本组
+// 「只关心解析结果」的用例直接读 FushiPingOutcome.result。
 void main() {
   test('解析 fushi host：v2 配对 + 展示名 + 指纹', () async {
     final MockClient mock = MockClient((http.Request req) async {
@@ -24,7 +26,7 @@ void main() {
     });
 
     final FushiPingResult? r =
-        await fetchFushiPing('https://host:38765', httpClient: mock);
+        (await probeFushiPing('https://host:38765', httpClient: mock)).result;
     expect(r, isNotNull);
     expect(r!.isFushi, isTrue);
     expect(r.supportsPairV2, isTrue);
@@ -38,7 +40,7 @@ void main() {
       return http.Response(jsonEncode(<String, dynamic>{'app': 'other'}), 200);
     });
     final FushiPingResult? r =
-        await fetchFushiPing('http://host:8080', httpClient: mock);
+        (await probeFushiPing('http://host:8080', httpClient: mock)).result;
     expect(r, isNull);
   });
 
@@ -46,7 +48,7 @@ void main() {
     final MockClient mock =
         MockClient((http.Request req) async => http.Response('nope', 404));
     final FushiPingResult? r =
-        await fetchFushiPing('http://host:8080', httpClient: mock);
+        (await probeFushiPing('http://host:8080', httpClient: mock)).result;
     expect(r, isNull);
   });
 
@@ -62,7 +64,7 @@ void main() {
       );
     });
     final FushiPingResult? r =
-        await fetchFushiPing('http://host:38765', httpClient: mock);
+        (await probeFushiPing('http://host:38765', httpClient: mock)).result;
     expect(r, isNotNull);
     expect(r!.tlsEnabled, isFalse);
     expect(r.fingerprint, isNull);

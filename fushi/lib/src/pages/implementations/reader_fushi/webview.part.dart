@@ -1370,50 +1370,7 @@ install: function(C) {
   // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
   // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
   var _wheelBoundaryArmed = null;
-  // BEGIN PAGED_WHEEL_GESTURE_HELPER
-  // BUG-1342：只把每个 tick 的语义方向和主轴交给 Dart。手势 session 不能存在 JS
-  // document 中，因为翻章会重建 document、在同一段惯性中重置闸门。横向主轴由跨章节
-  // 持久的 ReaderWheelGestureGate 聚合；纵向鼠标滚轮维持既有固定窗口节流。
-  // BUG-1745：主轴判据要带抖动余量。一次横向触摸板滑动里总有几拍
-  // |deltaY| >= |deltaX|（手指纵向漂移 / 惯性尾段轴向噪声）；用严格 > 分类会把
-  // 这些拍标成 vertical，于是它们绕过闸门直接进 _paginate，一次横滑变成
-  // 「闸门放行 1 页 + 若干漂移拍再各翻 1 页」。弹窗滚动路径（BUG-701）已经用
-  // 同一配方修过，分页路径当时漏了。
-  var PAGED_WHEEL_AXIS_MARGIN = 6;
-  // BUG-1745：触摸板 vs 鼠标滚轮。二者对「一次输入 = 翻几页」的期望完全相反：
-  // 鼠标一格就该翻一页（离散 tick），触摸板一次滑动连同惯性会喷 1~1.5 秒的 tick
-  // 流、必须聚合成一次翻页。判据只用单事件可得的量（JS 侧不能存手势状态——翻章
-  // 会重建 document，见下方注释），时间维度的聚合交给 Dart 侧跨 document 持久的
-  // ReaderWheelGestureGate。
-  function _isTrackpadWheel(e) {
-    // line / page 模式只有真实滚轮会产生。
-    if (e.deltaMode !== 0) return false;
-    var dx = Math.abs(e.deltaX);
-    var dy = Math.abs(e.deltaY);
-    // 分数像素增量是触摸板独有的。
-    if (dx % 1 !== 0 || dy % 1 !== 0) return true;
-    // 两轴同时非零 = 二维手势，滚轮给不出。
-    if (dx > 0 && dy > 0) return true;
-    // Chromium 给鼠标滚轮的 wheelDelta 恒为 120 的整数倍；触摸板不是。
-    var wd = e.wheelDeltaY;
-    if (typeof wd === 'number' && wd !== 0 && Math.abs(wd) % 120 !== 0) return true;
-    var wdx = e.wheelDeltaX;
-    if (typeof wdx === 'number' && wdx !== 0 && Math.abs(wdx) % 120 !== 0) return true;
-    return false;
-  }
-  function _handlePagedWheelTick(e) {
-    var absX = Math.abs(e.deltaX);
-    var absY = Math.abs(e.deltaY);
-    var horizontal = absX > absY + PAGED_WHEEL_AXIS_MARGIN;
-    var delta = horizontal ? e.deltaX : e.deltaY;
-    if (delta === 0) return;
-    e.preventDefault();
-    var direction = delta > 0 ? 'forward' : 'backward';
-    window.flutter_inappwebview.callHandler('onWheelPaginate', direction,
-      horizontal ? 'horizontal' : 'vertical',
-      _isTrackpadWheel(e) ? 'trackpad' : 'mouse');
-  }
-  // END PAGED_WHEEL_GESTURE_HELPER
+$kPagedWheelGestureHelperJs
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
@@ -2785,3 +2742,62 @@ String readerFushiEngineSourceUncompacted({
       vnMode: vnMode,
       continuousMode: continuousMode,
     );
+
+/// BUG-1745：分页滚轮手势桥的 JS 片段，**两个注入点的唯一真值源**。
+///
+/// 正文引擎（[_ReaderWebView._buildReaderEngineSource] 的 setup 段）与 spread 双页
+/// 独立文档（[buildSpreadPageHtml]）是两份互不共享运行时的 document，却必须对
+/// 「一次滚轮输入 = 翻几页」给出**逐字相同**的判定：落到 Dart 侧的是同一个
+/// `onWheelPaginate` handler 和同一个 [ReaderWheelGestureGate]。
+///
+/// 改动前 spread 那份是**手抄的第二遍**，于是 BUG-1745 只在正文侧被修掉——spread
+/// 仍是旧的「轴」判据、只传 2 个参数，落到 Dart 侧的兼容回落
+/// `axis == 'horizontal' ? 'trackpad' : 'mouse'` 把纵向恒判成 mouse、绕过闸门，
+/// 双页模式下触摸板上下滑一次照样翻 3 页。手抄正是漏改的直接原因，所以现在两个
+/// 注入点都拼这一份常量，第二份拷贝在源码里不再存在
+/// （守卫 `test/reader/pr912_paged_wheel_single_source_test.dart`）。
+const String kPagedWheelGestureHelperJs = r'''
+  // BEGIN PAGED_WHEEL_GESTURE_HELPER
+  // BUG-1342：只把每个 tick 的语义方向和主轴交给 Dart。手势 session 不能存在 JS
+  // document 中，因为翻章会重建 document、在同一段惯性中重置闸门。横向主轴由跨章节
+  // 持久的 ReaderWheelGestureGate 聚合；纵向鼠标滚轮维持既有固定窗口节流。
+  // BUG-1745：主轴判据要带抖动余量。一次横向触摸板滑动里总有几拍
+  // |deltaY| >= |deltaX|（手指纵向漂移 / 惯性尾段轴向噪声）；用严格 > 分类会把
+  // 这些拍标成 vertical，于是它们绕过闸门直接进 _paginate，一次横滑变成
+  // 「闸门放行 1 页 + 若干漂移拍再各翻 1 页」。弹窗滚动路径（BUG-701）已经用
+  // 同一配方修过，分页路径当时漏了。
+  var PAGED_WHEEL_AXIS_MARGIN = 6;
+  // BUG-1745：触摸板 vs 鼠标滚轮。二者对「一次输入 = 翻几页」的期望完全相反：
+  // 鼠标一格就该翻一页（离散 tick），触摸板一次滑动连同惯性会喷 1~1.5 秒的 tick
+  // 流、必须聚合成一次翻页。判据只用单事件可得的量（JS 侧不能存手势状态——翻章
+  // 会重建 document，见下方注释），时间维度的聚合交给 Dart 侧跨 document 持久的
+  // ReaderWheelGestureGate。
+  function _isTrackpadWheel(e) {
+    // line / page 模式只有真实滚轮会产生。
+    if (e.deltaMode !== 0) return false;
+    var dx = Math.abs(e.deltaX);
+    var dy = Math.abs(e.deltaY);
+    // 分数像素增量是触摸板独有的。
+    if (dx % 1 !== 0 || dy % 1 !== 0) return true;
+    // 两轴同时非零 = 二维手势，滚轮给不出。
+    if (dx > 0 && dy > 0) return true;
+    // Chromium 给鼠标滚轮的 wheelDelta 恒为 120 的整数倍；触摸板不是。
+    var wd = e.wheelDeltaY;
+    if (typeof wd === 'number' && wd !== 0 && Math.abs(wd) % 120 !== 0) return true;
+    var wdx = e.wheelDeltaX;
+    if (typeof wdx === 'number' && wdx !== 0 && Math.abs(wdx) % 120 !== 0) return true;
+    return false;
+  }
+  function _handlePagedWheelTick(e) {
+    var absX = Math.abs(e.deltaX);
+    var absY = Math.abs(e.deltaY);
+    var horizontal = absX > absY + PAGED_WHEEL_AXIS_MARGIN;
+    var delta = horizontal ? e.deltaX : e.deltaY;
+    if (delta === 0) return;
+    e.preventDefault();
+    var direction = delta > 0 ? 'forward' : 'backward';
+    window.flutter_inappwebview.callHandler('onWheelPaginate', direction,
+      horizontal ? 'horizontal' : 'vertical',
+      _isTrackpadWheel(e) ? 'trackpad' : 'mouse');
+  }
+  // END PAGED_WHEEL_GESTURE_HELPER''';

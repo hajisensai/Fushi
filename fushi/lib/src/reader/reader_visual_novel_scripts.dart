@@ -3114,9 +3114,14 @@ $sharedInitViewport
       return this.sourceRoot || document.body;
     };
   }
-  // 章内字符偏移 → 屏索引。restoreToCharOffset 里本来就有这套两段式查找
-  // （先找覆盖该偏移的屏，再取第一个末尾越过它的屏，覆盖偏移落在屏间空白/
-  // 媒体单元的情况）；提成共享 helper 供跟随与搜索复用。
+  // 章内字符偏移 → 屏索引：**唯一**一份两段式查找（先找覆盖该偏移的屏，再取第一个
+  // 末尾越过它的屏，覆盖偏移落在屏间空白 / 媒体单元的情况）。跟随
+  // （highlightSelectorCue）、搜索（scrollToSearchMatch）、恢复（restoreToCharOffset）
+  // 三条路都调它——restoreToCharOffset 里那份内联双循环已经删掉，不是「提取后留着
+  // 原拷贝」：那正是两份实现开始分叉的方式（本注释此前就说了提取、代码却没删）。
+  //
+  // 查无返回 -1。「查无之后该怎么办」按调用方分：恢复要兜底到进度比例最近的一屏，
+  // 跟随 / 搜索则必须什么都不做（乱翻屏比不翻更糟），所以兜底不在本 helper 里。
   if (typeof vn.screenIndexForCharOffset !== 'function') {
     vn.screenIndexForCharOffset = function(charOffset) {
       var target = Number(charOffset);
@@ -3140,8 +3145,14 @@ $sharedInitViewport
   // highlightSentenceAudioCue 收敛到同一条链路：选择器 → 源节点 → 字符偏移 →
   // 屏索引 → renderScreen。
   if (typeof vn.highlightSelectorCue !== 'function') {
-    vn.highlightSelectorCue = function(selector, reveal) {
+    // async + await ensureReady()：与 restoreToCharOffset / restoreProgress /
+    // jumpToFragment 同款。章节加载期到达的 cue 此前因为 this.screens 还是空的而被
+    // screenIndexForCharOffset 判成 -1、静默丢弃——正是 BUG-1742 本身的形状。
+    // 宿主（audiobook_bridge.dart）是 fire-and-forget 的 evaluateJavascript，不消费
+    // 返回值，改成 Promise 对调用方零影响。
+    vn.highlightSelectorCue = async function(selector, reveal) {
       if (!selector) return null;
+      await this.ensureReady();
       var root = this.contentRoot();
       var node = (root && root.querySelector) ? root.querySelector(selector) : null;
       if (!node) return null;
@@ -3232,8 +3243,69 @@ $sharedInitViewport
       var charOffset = seg.entry.startChar + countChars(prefix);
       var index = this.screenIndexForCharOffset(charOffset);
       if (index < 0) return null;
-      if (index !== this.currentScreenIndex) this.renderScreen(index, true);
+      if (index !== this.currentScreenIndex) {
+        this.renderScreen(index, true);
+      } else if (!this.revealComplete) {
+        // 停在当前屏时也得先把这一屏渲完，否则命中词还没被打字机揭开，屏内
+        // 文本节点里根本没有它 → 高亮建不出来。
+        this.completeCurrentReveal();
+      }
+      this.highlightSearchMatchOnScreen(query);
       return this.calculateProgress();
+    };
+  }
+  // BUG-1743 ②：翻到屏之后还得给出**视觉命中标记**。分页版一直有
+  // （`CSS.highlights.set('fushi-search', …)`，reader_pagination_scripts.dart），
+  // VN 版此前只有下面 clearSearchHighlight 的「删」、没有「建」——那把删除是死代码，
+  // 用户翻到屏之后仍要自己在满屏文字里找那个词。
+  //
+  // 不能拿源流节点建 Range：VN 的整章正文在**游离**的 sourceRoot 里（BUG-1742），
+  // ::highlight 只对 document 内的 Range 生效。所以在**当前屏的克隆**上重新定位一次
+  // ——命中就在这一屏（否则不会翻到这里），按屏内文本节点的拼接坐标建 Range。
+  // 命中横跨屏边界时屏内找不到完整串，如实返回 false 不建高亮（翻屏本身仍然生效）。
+  if (typeof vn.highlightSearchMatchOnScreen !== 'function') {
+    vn.highlightSearchMatchOnScreen = function(query) {
+      if (!window.__fushiCssHighlightsSupported) return false;
+      var scope = this.screen;
+      var needle = String(query || '');
+      if (!scope || !needle) return false;
+      try {
+        var walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null);
+        var segments = [];
+        var full = '';
+        var node;
+        while ((node = walker.nextNode())) {
+          var text = String(node.textContent || '');
+          if (!text) continue;
+          segments.push({ node: node, start: full.length, length: text.length });
+          full += text;
+        }
+        var from = full.toLowerCase().indexOf(needle.toLowerCase());
+        if (from < 0) return false;
+        var to = from + needle.length;
+        var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+        for (var i = 0; i < segments.length; i++) {
+          var seg = segments[i];
+          var segEnd = seg.start + seg.length;
+          if (!startNode && from < segEnd) {
+            startNode = seg.node;
+            startOffset = from - seg.start;
+          }
+          if (startNode && to <= segEnd) {
+            endNode = seg.node;
+            endOffset = to - seg.start;
+            break;
+          }
+        }
+        if (!startNode || !endNode) return false;
+        var range = document.createRange();
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+        CSS.highlights.set('fushi-search', new Highlight(range));
+        return true;
+      } catch (_ignored) {
+        return false;
+      }
     };
   }
   if (typeof vn.clearSearchHighlight !== 'function') {
@@ -3247,23 +3319,10 @@ $sharedInitViewport
     vn.restoreToCharOffset = async function(charOffset) {
       await this.ensureReady();
       var target = Number(charOffset);
-      var index = -1;
-      if (Number.isFinite(target) && target >= 0 && this.screens) {
-        for (var i = 0; i < this.screens.length; i++) {
-          if (this.screenContainsCharOffset(this.screens[i], target)) {
-            index = i;
-            break;
-          }
-        }
-        if (index < 0) {
-          for (var j = 0; j < this.screens.length; j++) {
-            if (this.screenEndCharCount(this.screens[j]) >= target) {
-              index = j;
-              break;
-            }
-          }
-        }
-      }
+      // 两段式查找只有 screenIndexForCharOffset 一份（此处曾是逐字重复的第二份，
+      // 且已经和 helper 分叉）。恢复独有的进度兜底留在这里：helper 查无 = -1 时，
+      // 恢复必须落到某一屏，不能像跟随 / 搜索那样什么都不做。
+      var index = this.screenIndexForCharOffset(target);
       if (index < 0) {
         index = this.screenIndexForProgress(this.totalChapterChars
           ? target / this.totalChapterChars

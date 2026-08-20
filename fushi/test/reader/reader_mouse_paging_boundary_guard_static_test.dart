@@ -175,8 +175,12 @@ void main() {
       // **方法体内部**。旧写法对整份 setupScript 取 contains，命中的是**连续模式分支**
       // 里同名的 `Math.abs(e.deltaY) >= Math.abs(e.deltaX)`（基底就存在，与本守卫要守的
       // 分页侧无关）；把分页侧改回旧裸符号判据时 21 条 wheel 守卫全绿 = 零覆盖。
+      // PR#912：`_handlePagedWheelTick` / `_isTrackpadWheel` 已提成
+      // `kPagedWheelGestureHelperJs` 常量（正文引擎与 spread 双页文档拼同一份），
+      // 于是它不再落在 `setupScript` 这个 `_between` 窗口里 —— 窗口改成整份掩码语料，
+      // 由 [methodBody] 的花括号配对给出真实边界。
       final String tick = methodBody(
-        setupScript,
+        source,
         'function _handlePagedWheelTick(e)',
         lexicon: SourceLexicon.js,
       );

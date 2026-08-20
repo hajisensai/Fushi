@@ -130,10 +130,15 @@ Future<FushiPingOutcome> probeFushiPing(
         deviceName: json['deviceName'] as String?,
       ),
     );
-  } catch (e, stack) {
+  } catch (e) {
     // BUG-1741：分型 + 留痕。此前这里是裸 `on Object { return null; }`，
     // 「钉扎指纹不符」查不到任何线索，事后连日志都没有。
-    ErrorLogService.instance.log('Ping:$baseUrl', e, stack);
+    //
+    // 走 logDiagnostic 而非 log：配对是「多候选依次探测」的 failover，明文 host
+    // 上的 https 候选每次都必然抛一次 HandshakeException，属预期路径。把它计进
+    // 用户可见错误计数 + 持久化日志只是噪声（见 ErrorLogService.logDiagnostic
+    // 的文档：多镜像 failover 的瞬时探测失败正是它点名的场景）。
+    ErrorLogService.instance.logDiagnostic('Ping:$baseUrl', e);
     return FushiPingOutcome.failed(classifyFushiProbeFailure(e));
   } finally {
     if (ownsClient) client.close();
@@ -151,18 +156,3 @@ FushiPingFailure classifyFushiProbeFailure(Object e) {
   if (e is TimeoutException) return FushiPingFailure.timeout;
   return FushiPingFailure.unreachable;
 }
-
-/// [probeFushiPing] 的丢原因薄封装，供只关心「通没通」的旧调用方使用。
-Future<FushiPingResult?> fetchFushiPing(
-  String baseUrl, {
-  String? pinnedFingerprint,
-  http.Client? httpClient,
-  Duration timeout = const Duration(seconds: 5),
-}) async =>
-    (await probeFushiPing(
-      baseUrl,
-      pinnedFingerprint: pinnedFingerprint,
-      httpClient: httpClient,
-      timeout: timeout,
-    ))
-        .result;

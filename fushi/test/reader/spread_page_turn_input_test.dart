@@ -44,14 +44,19 @@ void main() {
       );
 
   group('spread 文档自带翻页输入 (BUG-1426)', () {
-    test('滚轮桥直连既有 onWheelPaginate，且带主轴参数', () {
+    test('滚轮桥直连既有 onWheelPaginate，且带主轴与输入设备参数', () {
       final String html = htmlWith();
       expect(html, contains("callHandler('onWheelPaginate'"),
           reason: 'spread 页没有 wheel 桥 = 滚轮完全无反应（用户报的第一个症状）');
       expect(html, contains("document.addEventListener('wheel'"),
           reason: 'wheel 必须挂文档级，两张整页图铺满视口时滚轮落在哪都要算数');
-      expect(html, contains('horizontal'),
-          reason: 'Dart 侧 onWheelPaginate 要 (dir, axis) 两个参数，少一个直接早退');
+      expect(html, contains("horizontal ? 'horizontal' : 'vertical'"),
+          reason: 'Dart 侧 onWheelPaginate 的第 2 个实参是主轴，少一个直接早退');
+      // BUG-1745：第 3 个实参是输入设备。少了它就落进 Dart 侧的 2 参兼容回落
+      // （纵向恒判 mouse → 绕过触摸板闸门 → 上下滑一次翻 3 页）。「两个注入点拼的
+      // 是同一份常量」由 pr912_paged_wheel_single_source_test.dart 单独守。
+      expect(html, contains("_isTrackpadWheel(e) ? 'trackpad' : 'mouse'"),
+          reason: 'spread 也必须回传 trackpad/mouse，否则触摸板聚合闸门在双页模式失效');
     });
 
     test('横扫桥直连既有 onSwipe，阈值来自入参而非另立默认', () {

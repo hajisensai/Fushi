@@ -507,8 +507,9 @@ bool chapterTurnCoolingDown({
 /// `_onChapterLoadComplete` 的 spread 守卫（BUG-1280 ③）把整份正文引擎挡在门外，
 /// 而滚轮 / 横扫 / 键桥全在那份引擎里 ⇒ 进了双页页面滚轮和翻页键一起失效。三条通道
 /// 都直连**既有** Dart handler，Dart 侧不新增翻页语义：
-/// * `wheel` → `onWheelPaginate`（与正文 `_handlePagedWheelTick` 逐字同款：主轴取
-///   绝对值更大的那个，`delta > 0` = forward）；
+/// * `wheel` → `onWheelPaginate`（直接拼 [kPagedWheelGestureHelperJs]，与正文引擎
+///   注入的是**同一份**常量：主轴取绝对值更大的那个 + 抖动余量，`delta > 0` =
+///   forward，并回传 trackpad / mouse 供 Dart 侧的手势闸门分流）；
 /// * 单指横扫 → `onSwipe`（与正文 `touchend` 分支同款判据：横向分量占优，且位移过
 ///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ 900px/s」，`dx < 0`
 ///   = `'left'`）。阈值由调用方从 [ReaderSettings] 取同一真值传入，不在此另立默认；
@@ -565,17 +566,15 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
   });
   // BUG-1426：翻页输入。正文引擎（滚轮 / 横扫 / 键桥都在里面）对 spread 文档是
   // 被守卫挡住的，本文档必须自带，否则进了双页页面滚轮和翻页键一起没反应。
-  // 滚轮：与正文 _handlePagedWheelTick 逐字同款语义（主轴取绝对值更大的那个，
-  // delta > 0 = forward），直送既有 onWheelPaginate handler——节流 / 跨章冷却 /
+  // 滚轮：直接拼 [kPagedWheelGestureHelperJs]——正文引擎注入的就是同一个常量，
+  // 「逐字同款」由此成为**结构事实**而不再是一句注释承诺。节流 / 跨章冷却 /
   // 虚拟页翻页全在 Dart 侧那一份，这里不重复实现。
+  //
+  // BUG-1745：改动前这里是手抄的第二份实现（旧的「轴」判据、只传 2 个参数），
+  // 于是触摸板聚合闸门只修好了正文侧，双页模式上下滑一次照样翻 3 页。
+$kPagedWheelGestureHelperJs
   document.addEventListener('wheel', function(e){
-    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-    var delta = horizontal ? e.deltaX : e.deltaY;
-    if (delta === 0) return;
-    e.preventDefault();
-    window.flutter_inappwebview.callHandler('onWheelPaginate',
-      delta > 0 ? 'forward' : 'backward',
-      horizontal ? 'horizontal' : 'vertical');
+    _handlePagedWheelTick(e);
   }, {passive: false});
   // 单指横扫：判据与阈值同正文 touchend 分支（横向分量占优 + 距离/速度二选一），
   // 方向约定同样是 dx < 0 → 'left'，直送既有 onSwipe handler（那里按书写方向和

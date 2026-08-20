@@ -327,7 +327,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             return;
           }
         }
-        _showSnackBar(context, _pingFailureMessage(outcome.failure));
+        // 手动路径：地址在 [_addOrEditUrl] 里已经 `_persistUrls()` 落库了，
+        // 「已保存该地址」这句后半句成立。
+        _showSnackBar(
+          context,
+          _pingFailureMessage(outcome.failure, addressSaved: true),
+        );
         return;
       }
       if (!ping.supportsPairV2) {
@@ -872,7 +877,17 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 探测层此前把「证书对不上」「超时」「端口没人」「不是 Hibiki」全压成一个
   /// null，UI 只能一律说「此地址未找到 Fushi 设备」——对着一台明明在线、只是证书
   /// 换了的机器说「这里没有设备」，用户的排查方向从第一步就是错的。
-  String _pingFailureMessage(FushiPingFailure? failure) {
+  ///
+  /// [addressSaved] 由调用点显式声明「本条路径此刻是否已经把地址落进候选列表」：
+  /// 手动输入 IP 的 [_addOrEditUrl] 在探测**之前**就 `_persistUrls()` 了，所以
+  /// `sync_pair_not_fushi` 那句「已保存该地址」是实话；而发现列表的
+  /// [_connectToDevice] 在同一分型上直接 return，一个字都没写进库。两条路径的
+  /// 后半句正好相反，共用一句就必然有一边在说谎——所以这里**没有默认值**，
+  /// 漏传是编译错误，而不是运行期的假承诺。
+  String _pingFailureMessage(
+    FushiPingFailure? failure, {
+    required bool addressSaved,
+  }) {
     switch (failure) {
       case FushiPingFailure.tls:
         return t.sync_pair_tls_failed;
@@ -882,7 +897,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
         return t.sync_connection_failed;
       case FushiPingFailure.notFushi:
       case null:
-        return t.sync_pair_not_fushi;
+        return addressSaved
+            ? t.sync_pair_not_fushi
+            : t.sync_pair_not_fushi_discovered;
     }
   }
 
@@ -1590,15 +1607,22 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
       }
       // BUG-1741：对端确证讲 TLS（或 mDNS 明说 tls=1）时**禁止**回落 v1。
       //
-      // v1 只会往 `device.webDavUrl` 发明文 POST，而那个 getter 硬编码
-      // `http://`（lan_discovery_service.dart）。TLS host 根本不 bind 明文端口，
-      // 这一发必然抛，最后换来一句「配对失败」——真实原因（证书不符 / 超时）在
-      // 三层探测里已经被吞光。更糟的是它还会把那条错的 http:// 地址写进候选列表，
-      // 从此那台设备每次「测试连接」都失败，且 UI 里看不出 scheme 错了。
+      // v1 只会往 `device.webDavUrl` 发明文 POST。那个 getter 自 BUG-1693
+      // （`7e34a350a1`）起已按 `tlsEnabled` 出 scheme，**不再**硬编码 http；真正
+      // 的残留缺口是它的唯一依据来自 mDNS TXT，而 resolve 丢 TXT 在部分平台真实
+      // 存在 → `tlsEnabled=false` → webDavUrl 退回 `http://`。TLS host 只
+      // `bindSecure` 一个 socket、根本不 bind 明文端口，这一发必然抛，最后换来
+      // 一句「配对失败」——真实原因（证书不符 / 超时）在三层探测里已经被吞光。
+      // 更糟的是它还会把那条错的 http:// 地址写进候选列表，从此那台设备每次
+      // 「测试连接」都失败，且 UI 里看不出 scheme 错了。改用探测实测到的
+      // `probe?.baseUrl` 才是不依赖 TXT 的真相源。
       if (probe == null && (outcome.peerSpeaksTls || device.tlsEnabled)) {
+        // 这条分支直接 return，**没有**任何 addFushiClientUrl——所以文案里不能
+        // 出现「已保存该地址」那半句（那是手动路径才成立的承诺）。
         _showSnackBar(
           context,
-          '${device.name}: ${_pingFailureMessage(outcome.failure)}',
+          '${device.name}: '
+          '${_pingFailureMessage(outcome.failure, addressSaved: false)}',
         );
         return;
       }

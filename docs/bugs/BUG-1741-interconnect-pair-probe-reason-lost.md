@@ -14,17 +14,27 @@
 
   出口文案 `fushi/lib/src/sync/sync_settings_schema/interconnect.part.dart:299`：
   `ping == null || !isFushi || !supportsPairV2` 三合一 → `t.sync_pair_not_fushi`
-  「此地址未找到 Fushi 设备」。**误导的确切形态**：host 在线、证书指纹与已钉扎的不符（真实原因是
-  可能的中间人 / host 重装证书），用户被告知「这里没有设备」——与真相完全相反，排查方向从第一步就错。
-  `_ensurePinnedFingerprintTrusted`（`:696`）本是为这个场景准备的告警闸，但流程在 `:299` 就 return 了，
-  **永远走不到**。
+  「此地址未找到 Fushi 设备」。**误导的确切形态**：host 明明在线，只是超时 / 只讲 https / 本次证书
+  校验没过，用户一律被告知「这里没有设备」——与真相完全相反，排查方向从第一步就错。
+
+  **勘误（PR#912 审查）**：本段最初写的「钉扎指纹不符被压成 null，`_ensurePinnedFingerprintTrusted`
+  （`:696`）永远走不到」是**错的**，别再据此推理。配对流程传给 `probeFushiPing` 的 `pinnedFingerprint`
+  **永远是本次刚 TOFU 捕获的那张**（`_attemptManualPair` 与 `probeDiscoveredPairingEndpointDetailed`
+  都是先 capture 再 pin 着 ping），它跟「库里已钉扎的旧指纹」根本不在同一次比较里。旧指纹的比对发生在
+  `_runPairingV2` 的第一行 `_ensurePinnedFingerprintTrusted`（BUG-1557 就是为此把它提到握手之前），
+  不符会弹 `_confirmFingerprintRetrust` 告警窗，从未被吞。探测层的 `FushiPingFailure.tls` 指的是
+  **本次握手/证书校验**没过（host 两次连接出示了不同证书、或中间有人应答），不是「与已钉扎指纹不符」。
 
   另：`interconnect.part.dart:213` 把 URL 解析失败（根本没发起连接）说成 `t.sync_connection_failed`
   「连接失败」。
 
   **根因 B · TLS host 回落 v1 死路**：
-  - 物理根据 `fushi/lib/src/sync/lan_discovery_service.dart:28` — `String get webDavUrl => 'http://$host:$port';`
-    硬编码明文 scheme。
+  - 物理根据 `fushi/lib/src/sync/lan_discovery_service.dart:32` — `webDavUrl` 的 scheme 只跟 mDNS TXT
+    的 `tlsEnabled` 走。**勘误（PR#912 审查）**：本条最初写的「硬编码 `http://`」在 5 个月前的 BUG-1693
+    （`7e34a350a1`）就已经改成 `'${tlsEnabled ? 'https' : 'http'}://$host:$port'`，早已不成立。真实的
+    残留缺口是它**唯一的依据是 TXT**：resolve 丢 TXT 在部分平台真实存在 → `tlsEnabled=false` →
+    webDavUrl 退回 `http://`，对着一台只 `bindSecure` 的 host 发明文 POST。所以「改用探测实测出来的
+    `probe?.baseUrl`」这个修法是对的，只是原先给的理由说错了地方。
   - TLS host 只 `bindSecure` 一个 socket（`fushi_sync_server.dart:172`），**完全不提供明文端口**。
   - mDNS TXT 的 `tls=1` 在部分平台会被 resolve 丢掉（`discovered_pairing_probe.dart:26-28` 自承）→
     `tlsEnabled=false` → 候选顺序变 `[http, https]`；https 候选一旦握手不成被根因 A 第 1 层吞掉就
@@ -73,6 +83,31 @@
     v1 必须用 `probe?.baseUrl ?? device.webDavUrl`）、
     `interconnect_client_panel_guard_test.dart`（忙态锚点跟到新 API 名）。
   - 验证：`flutter test test/sync/ --no-pub` → 2218 passed。
+
+- **PR#912 审查收尾**（同分支追加，五条）：
+  1. **新文案不再说谎**：`_pingFailureMessage` 加 `{required bool addressSaved}`（无默认值，漏传是编译
+     错误）。手动 IP 路径在 `_addOrEditUrl` 里探测**之前**就 `_persistUrls()`，`sync_pair_not_fushi`
+     的「已保存该地址」成立；发现列表的 `_connectToDevice` 在 `probe == null && (peerSpeaksTls ||
+     tlsEnabled)` 分支直接 return、一个字不写库，改用新 key `sync_pair_not_fushi_discovered`
+     （en/zh 都去掉「已保存」）。
+  2. **`TimeoutException` 分支曾是死代码**：`SecureSocket.connect(timeout:)` 超时抛的是
+     `SocketException: Connection timed out`，被归成 `unreachable` → UI 说「连接失败」而不是「未在时限
+     内应答」。改为 `connect` 不再传 `timeout:`、外包一层 `.timeout(timeout)`（单一计时源），并对超时后
+     才 resolve 出来的 socket 挂 `unawaited(... destroy())` 兜底（`.timeout` 不取消底层 connect）。
+     `_classify` 提升为顶层 `classifyFushiTofuFailure`，与 `classifyFushiProbeFailure` 同形、可测。
+  3. **删掉三个丢原因的薄封装**：`FushiTofuProbe.captureFingerprint` / `fetchFushiPing` /
+     `probeDiscoveredPairingEndpoint` 生产侧零调用方，只为旧测试续命。测试迁到 `*Detailed` /
+     `probeFingerprint` / `probeFushiPing`，同时删掉 `interconnect_manual_pair_guard_test.dart` 里
+     「不许退回 fetchFushiPing」那条守卫——入口都没了，守卫查调用点本身就是「错误入口还开着」的证据。
+  4. **探测失败改走 `logDiagnostic`**：明文 host 的 https 候选**每次配对**都必然抛一次
+     `HandshakeException`，是多候选 failover 的预期路径。原先的 `ErrorLogService.instance.log` 把它计进
+     用户可见错误计数并持久化落盘（`error_log_service.dart:406` 的文档逐字点名了这个场景）。
+  5. **两处事实错误**：见上面根因 A 尾与根因 B 首条的两段「勘误」。
+  - 追加测试：`fushi/test/sync/tls/pr912_fushi_tofu_probe_test.dart`（分型纯函数 5 例 + 真 socket 三例：
+    只 accept 不讲 TLS → `timeout`、空端口 → `unreachable`、回非 TLS 字节 → `notTls` 且只进
+    `diagnosticEntries` 不进 `entries` + 三条源码不变式）、
+    `fushi/test/sync/pr912_pair_not_fushi_message_test.dart`（两个 key 的「已保存」文案差异本身）；
+    `interconnect_tls_entry_guard_test.dart` 新钉 `addressSaved: false`（并禁 `true`）。
 
 - **备注**：`docs/bugs/BUG-1553-interconnect-pair-failure-reason-lost.md` 的「同源但未修」段落说的
   正是本条。本次不改 server 侧、不改 v2 client（BUG-1553 已修好那一层）。

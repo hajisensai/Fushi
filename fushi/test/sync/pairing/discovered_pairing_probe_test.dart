@@ -51,13 +51,15 @@ void main() {
     });
   });
 
-  group('probeDiscoveredPairingEndpoint', () {
+  // BUG-1741 收尾（PR#912 审查）：丢原因的薄封装 probeDiscoveredPairingEndpoint
+  // 已删除，本组「只关心探到哪个端点」的用例直接读 Outcome.result。
+  group('probeDiscoveredPairingEndpointDetailed（端点选择）', () {
     test('tls host：TOFU 捕获指纹 → 钉扎 ping → 返回 https 端点', () async {
       final List<String> pingedUrls = <String>[];
       final List<String?> pingedPins = <String?>[];
 
       final DiscoveredPairingProbeResult? result =
-          await probeDiscoveredPairingEndpoint(
+          (await probeDiscoveredPairingEndpointDetailed(
         host: 'h',
         port: 38765,
         tlsAdvertised: true,
@@ -70,7 +72,8 @@ void main() {
               ? const FushiPingOutcome.ok(v2TlsPing)
               : unreachable;
         },
-      );
+      ))
+              .result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'https://h:38765');
@@ -85,7 +88,7 @@ void main() {
       final List<String> pingedUrls = <String>[];
 
       final DiscoveredPairingProbeResult? result =
-          await probeDiscoveredPairingEndpoint(
+          (await probeDiscoveredPairingEndpointDetailed(
         host: 'h',
         port: 38765,
         tlsAdvertised: true,
@@ -97,7 +100,8 @@ void main() {
               ? const FushiPingOutcome.ok(v2PlainPing)
               : unreachable;
         },
-      );
+      ))
+              .result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'http://h:38765');
@@ -110,7 +114,7 @@ void main() {
       final List<String> pingedUrls = <String>[];
 
       final DiscoveredPairingProbeResult? result =
-          await probeDiscoveredPairingEndpoint(
+          (await probeDiscoveredPairingEndpointDetailed(
         host: 'h',
         port: 38765,
         tlsAdvertised: false,
@@ -122,7 +126,8 @@ void main() {
               ? const FushiPingOutcome.ok(v2PlainPing)
               : unreachable;
         },
-      );
+      ))
+              .result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'http://h:38765');
@@ -131,7 +136,7 @@ void main() {
 
     test('TXT 丢失但 host 已开 TLS：http 失败后 https 兜底探到', () async {
       final DiscoveredPairingProbeResult? result =
-          await probeDiscoveredPairingEndpoint(
+          (await probeDiscoveredPairingEndpointDetailed(
         host: 'h',
         port: 38765,
         tlsAdvertised: false,
@@ -141,7 +146,8 @@ void main() {
             baseUrl.startsWith('https://')
                 ? const FushiPingOutcome.ok(v2TlsPing)
                 : unreachable,
-      );
+      ))
+              .result;
 
       expect(result, isNotNull);
       expect(result!.baseUrl, 'https://h:38765');
@@ -155,7 +161,7 @@ void main() {
         tlsEnabled: true,
       );
       final DiscoveredPairingProbeResult? result =
-          await probeDiscoveredPairingEndpoint(
+          (await probeDiscoveredPairingEndpointDetailed(
         host: 'h',
         port: 38765,
         tlsAdvertised: true,
@@ -165,7 +171,8 @@ void main() {
             baseUrl.startsWith('https://')
                 ? const FushiPingOutcome.ok(noFpPing)
                 : unreachable,
-      );
+      ))
+              .result;
 
       expect(result, isNotNull);
       expect(result!.fingerprint, 'de:ad:be');
@@ -173,7 +180,7 @@ void main() {
 
     test('两个 scheme 都探不通（旧 host 无 /api/ping）返回 null', () async {
       final DiscoveredPairingProbeResult? result =
-          await probeDiscoveredPairingEndpoint(
+          (await probeDiscoveredPairingEndpointDetailed(
         host: 'h',
         port: 38765,
         tlsAdvertised: false,
@@ -181,7 +188,8 @@ void main() {
             const FushiTofuOutcome.failed(FushiTofuFailure.unreachable),
         ping: (String baseUrl, {String? pinnedFingerprint}) async =>
             unreachable,
-      );
+      ))
+              .result;
 
       expect(result, isNull);
     });

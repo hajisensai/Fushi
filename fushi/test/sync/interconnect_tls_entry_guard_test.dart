@@ -100,9 +100,22 @@ void main() {
       reason: '发现配对未消费 peerSpeaksTls，TLS host 会被回落进 v1 明文死路',
     );
     expect(
-      connect.contains('_pingFailureMessage(outcome.failure)'),
+      connect.contains('_pingFailureMessage(outcome.failure,'),
       isTrue,
       reason: '发现配对丢弃了探测失败原因，UI 只能给出误导文案',
+    );
+    // PR#912 审查：这条分支**直接 return，不写任何 addFushiClientUrl**，所以
+    // 文案必须走「不含已保存该地址承诺」的那一支。`addressSaved` 无默认值，写错
+    // 就是新增一条假承诺（notFushi/null 分型下会说「已保存该地址」）。
+    expect(
+      containsCodeLine(connect, 'addressSaved: false'),
+      isTrue,
+      reason: '发现配对的失败文案未声明 addressSaved: false，但这条分支根本不保存地址',
+    );
+    expect(
+      containsCodeLine(connect, 'addressSaved: true'),
+      isFalse,
+      reason: '发现配对路径不保存地址，不得声明 addressSaved: true',
     );
     // v1 必须用探明的 baseUrl，不能再盲信硬编码 http 的 device.webDavUrl。
     expect(

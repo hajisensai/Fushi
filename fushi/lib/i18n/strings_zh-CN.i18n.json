@@ -3658,5 +3658,6 @@
   "drag_drop_folder_source_exists": "该文件夹已经是来源了",
   "sync_pair_invalid_url": "地址格式无效",
   "sync_pair_peer_requires_https": "该设备只接受 HTTPS，请改用 https:// 开头的地址。",
-  "sync_pair_peer_not_https": "对端在该端口未启用 HTTPS，请改用 http:// 开头的地址。"
+  "sync_pair_peer_not_https": "对端在该端口未启用 HTTPS，请改用 http:// 开头的地址。",
+  "sync_pair_not_fushi_discovered": "此地址未找到 Fushi 设备。"
 }

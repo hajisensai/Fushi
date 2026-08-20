@@ -178,22 +178,3 @@ FushiPingFailure? _tofuToPingFailure(FushiTofuFailure? failure) {
       return null;
   }
 }
-
-/// [probeDiscoveredPairingEndpointDetailed] 的丢原因薄封装（旧签名）。
-Future<DiscoveredPairingProbeResult?> probeDiscoveredPairingEndpoint({
-  required String host,
-  required int port,
-  required bool tlsAdvertised,
-  Future<FushiTofuOutcome> Function(String host, int port)? captureFingerprint,
-  Future<FushiPingOutcome> Function(String baseUrl,
-          {String? pinnedFingerprint})?
-      ping,
-}) async =>
-    (await probeDiscoveredPairingEndpointDetailed(
-      host: host,
-      port: port,
-      tlsAdvertised: tlsAdvertised,
-      captureFingerprint: captureFingerprint,
-      ping: ping,
-    ))
-        .result;
