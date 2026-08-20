@@ -38,7 +38,7 @@
 | [BUG-1747](bugs/BUG-1747-subtitle-source-settings-width-tear.md) | ✅ | ✅ | 字幕来源设置三种行各有一套左右边界 |
 | [BUG-1746](bugs/BUG-1746-subscription-never-retries-failed-episode.md) | ✅ | ✅ | 订阅只看 jobId 存在就跳过，故障集永久卡死不再下载 |
 | [BUG-1735](bugs/BUG-1735-artifact-thread-indistinguishable-in-picker.md) | 🚧 | 🚧 | 伪影文本线程在选择器里与健康线程无法区分，预览还被折叠成干净句子 |
-| [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | 🚧 | 🚧 | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
+| [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | 🚧 | ✅ | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
 | [BUG-1733](bugs/BUG-1733-kirikiriz-thread-lines-never-ingested.md) | 🚧 | 🚧 | 选中 KiriKiriZ 文本线程后实时台词恒 0，且没有任何东西告诉用户这条线程不可能产出台词 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |

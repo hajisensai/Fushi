@@ -727,9 +727,17 @@ class GalHookSessionController extends ChangeNotifier {
     return key == selectedKey || claimedKeys.contains(key);
   }
 
-  /// 捕获工作台当前应展示的正式行。过滤判据见 [_publishesUnderSelection]；
-  /// 捕获中额外只看本次会话，避免上一个进程的台词混进当前工作台。
-  List<TexthookerLineEntry> get workbenchLines {
+  /// 「本局当前可用的台词行」——**工作台展示与游戏内制卡共用这一份**。
+  ///
+  /// 这两处过去各写各的，且在 `sessionStartedAt == null` 时方向相反：展示那份不过滤、
+  /// 照常显示，制卡那份直接返回空。于是用户在工作台**看得见台词**，游戏内点「制卡」却
+  /// 因为拿到空列表而静默失败（BUG-1734；Ren'Py 上实测：同一句台词，工作台点词能写出
+  /// Anki 卡，游戏内卡片点「+」零反应）。
+  ///
+  /// 两个语义上必须同答案的判据分叉，本身就是 bug 的形状；所以合成一个，
+  /// 而不是给制卡那条打补丁。`startedAt` 为空时按「还没开始计会话，不做时间过滤」处理，
+  /// 与工作台原有的可见行为一致——真正的修复是**消除分歧**，不是改变用户看到的东西。
+  List<TexthookerLineEntry> get _sessionScopedLines {
     final String? selectedKey = selectedTextThreadKey;
     final DateTime? startedAt = _state.sessionStartedAt;
     Iterable<TexthookerLineEntry> scoped = _textService.entries.where(
@@ -743,6 +751,9 @@ class GalHookSessionController extends ChangeNotifier {
     }
     return List<TexthookerLineEntry>.unmodifiable(scoped);
   }
+
+  /// 捕获工作台当前应展示的正式行。
+  List<TexthookerLineEntry> get workbenchLines => _sessionScopedLines;
 
   String? get selectedTextThreadKey {
     final String? selected = _selectedTextThreadKey;
@@ -765,22 +776,9 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 当前捕获会话、当前线程的有效行。历史缓冲仍保留在 [lines]，但浮窗和场景
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
-  List<TexthookerLineEntry> get selectedSessionLines {
-    final DateTime? startedAt = _state.sessionStartedAt;
-    if (startedAt == null) return const <TexthookerLineEntry>[];
-    final String? selectedKey = selectedTextThreadKey;
-    return List<TexthookerLineEntry>.unmodifiable(
-      _textService.entries.where(
-        (TexthookerLineEntry entry) =>
-            _publishesUnderSelection(
-              entry,
-              selectedKey,
-              _selectedThreadClaimedKeys,
-            ) &&
-            !entry.receivedAt.isBefore(startedAt),
-      ),
-    );
-  }
+  /// 游戏内制卡回溯台词行时用的集合。与 [workbenchLines] **必须是同一份**——
+  /// 见 [_sessionScopedLines] 的说明（BUG-1734）。
+  List<TexthookerLineEntry> get selectedSessionLines => _sessionScopedLines;
 
   TexthookerLineEntry? entryById(String lineId) =>
       _textService.entryById(lineId);

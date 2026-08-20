@@ -42,10 +42,20 @@ struct LookupOverlayState {
   HWND owner = nullptr;
   HANDLE thread = nullptr;
   DWORD thread_id = 0;
-  uint64_t last_frame_seq = 0;
+  // 已经处理过的**帧发布序**（LookupFrame::seq），不是 lookup_frame_count_written。
+  // 这两个数曾被混为一谈，代价见 PollOverlayFrame 里的长注释。
+  uint64_t last_presented_seq = 0;
+  // 收到 kLookupFrameCaptureSuppress 后待确认的帧序。**刻意延后一轮**再写进
+  // lookup_frame_applied_seq：host 只有看到这个确认才会去抓游戏窗口，而
+  // ShowWindow(SW_HIDE) 返回不等于 DWM 已经把这一帧合成出去。留一拍给合成。
+  uint64_t pending_suppress_ack_seq = 0;
   fushi_voice_hook::OverlayRect card;
   bool visible = false;
   bool tracking_mouse = false;
+  // 上一次转发出去的 move 位置（卡片局部坐标）。用来丢掉同位置的重复 move——
+  // 见 WM_MOUSEMOVE 分支里的反馈环说明。-1 表示还没有过。
+  int32_t last_move_x = -1;
+  int32_t last_move_y = -1;
   std::vector<uint8_t> pixels;  // 预乘后的 BGRA，UI 线程私有
 };
 
@@ -141,6 +151,10 @@ void HideOverlay() {
   if (!g_overlay.visible) return;
   g_overlay.visible = false;
   g_overlay.card = fushi_voice_hook::OverlayRect();
+  // 位置去重的记忆只在"同一张卡片持续显示"期间有效；卡片收起后必须清掉，
+  // 否则下一张卡片在同一位置的第一次 move 会被当成重复丢掉。
+  g_overlay.last_move_x = -1;
+  g_overlay.last_move_y = -1;
   if (g_overlay.window != nullptr) ShowWindow(g_overlay.window, SW_HIDE);
 }
 
@@ -231,9 +245,54 @@ void PollOverlayFrame() {
     HideOverlay();
     return;
   }
-  const uint64_t written =
-      ReadOverlaySharedU64(&g_header->lookup_frame_count_written);
-  if (written == g_overlay.last_frame_seq) {
+  // 截图抑制的确认：上一轮已经把卡片藏掉，这一轮才把 seq 交出去。
+  //
+  // 为什么这一环不能省：制卡要给游戏窗口拍一张**不含卡片**的截图，流程是
+  // host 发 kLookupFrameCaptureSuppress → 注入侧藏卡 → 注入侧写
+  // lookup_frame_applied_seq → host 看到确认才去抓图。通用呈现器原先整段都没实现，
+  // 于是 host 永远等不到确认，制卡在真机上**静默失败**——卡片能出、点击也能转发，
+  // 就是一张卡都写不出来（Ren'Py 上实测：inputs=4、frames=17、Anki 零增长）。
+  // 契约明写：普通 present/dismiss **不得**推进这个字段，否则更晚的普通帧会伪装成
+  // 「抑制已安全生效」，host 就会抓到一张带卡片的图。
+  if (g_overlay.pending_suppress_ack_seq != 0) {
+    const uint64_t seq = g_overlay.pending_suppress_ack_seq;
+    const uint64_t current =
+        ReadOverlaySharedU64(&g_header->lookup_frame_applied_seq);
+    if (seq > current) {
+      WriteOverlaySharedU64(&g_header->lookup_frame_applied_seq, seq);
+    }
+    g_overlay.pending_suppress_ack_seq = 0;
+  }
+
+  const uint32_t frame_count = g_header->lookup_frame_count;
+  if (frame_count == 0) return;
+
+  // 选帧：**扫全部槽、按帧自己的发布序挑最新的一张**，绝不从 lookup_frame_count_written
+  // 反推槽下标。
+  //
+  // 为什么这条必须写死：槽下标是契约的一部分——host 用的是 `帧发布序 % lookup_frame_count`
+  // （voice_hook_reader.cpp 的 WriteLookupFrame，注释里明写"两处共用同一个 index"）。
+  // 而 written 与发布序虽然同步递增，`(written - 1) % frame_count` 恒好比它小 1：
+  // host 写槽 seq%2，这里就读槽 (seq-1)%2 —— 双缓冲下**永远读的是另一个槽**，
+  // 第一帧读到的是全零槽（ready=0）直接 return，于是卡片一辈子不出现。
+  // 更毒的是这个症状与「host 压根没投帧」完全同形，真机上分不开（契约头的注释就是
+  // 为这件事写的）。KiriKiri 那条路径从来是扫全槽按 seq 选，所以躲过了这一劫。
+  fushi_voice_hook::LookupFrame* frame = nullptr;
+  uint32_t frame_index = 0;
+  uint64_t seq_before = 0;
+  for (uint32_t i = 0; i < frame_count; ++i) {
+    fushi_voice_hook::LookupFrame* candidate =
+        fushi_voice_hook::LookupFrameAt(g_header, i);
+    if (candidate == nullptr) continue;
+    if (candidate->ready == 0) continue;  // host 正在写这一槽
+    const uint64_t seq = ReadOverlaySharedU64(&candidate->seq);
+    if (seq <= g_overlay.last_presented_seq) continue;  // 处理过了
+    if (seq <= seq_before) continue;                    // 已有更新的候选
+    frame = candidate;
+    frame_index = i;
+    seq_before = seq;
+  }
+  if (frame == nullptr) {
     // 没有新帧。窗口跟随：游戏窗口被拖动/缩放时卡片要跟着走，否则它会留在屏幕原地。
     if (g_overlay.visible) {
       const fushi_voice_hook::OverlayRect client = OwnerClientRect(g_overlay.owner);
@@ -244,29 +303,34 @@ void PollOverlayFrame() {
     return;
   }
 
-  const uint32_t frame_count = g_header->lookup_frame_count;
-  if (frame_count == 0) return;
-  fushi_voice_hook::LookupFrame* frame =
-      fushi_voice_hook::LookupFrameAt(g_header, (written - 1) % frame_count);
-  if (frame == nullptr) return;
-  const uint64_t seq_before = ReadOverlaySharedU64(&frame->seq);
-  if (frame->ready == 0) return;  // host 正在写，下一轮再来
-
   if ((frame->flags & fushi_voice_hook::kLookupFrameDismiss) != 0) {
-    g_overlay.last_frame_seq = written;
+    g_overlay.last_presented_seq = seq_before;
     HideOverlay();
+    return;
+  }
+  // 制卡截图的临时抑制**不是** dismiss：只把卡片藏起来，不动 host 那侧的会话状态。
+  // 确认延后一轮（见函数开头）。
+  if ((frame->flags & fushi_voice_hook::kLookupFrameCaptureSuppress) != 0) {
+    g_overlay.last_presented_seq = seq_before;
+    HideOverlay();
+    g_overlay.pending_suppress_ack_seq = seq_before;
+    return;
+  }
+  // 只更新高亮的帧按定义不带像素，过不了 IsLookupFrameSane。通用呈现器把高亮画在
+  // 引擎自己的图层上这件事做不到（那是 KiriKiri 专属），所以这里**消费掉**它而不是
+  // 判成坏帧——不消费会每 16ms 重复命中同一槽，判成坏帧则会点亮误导性的 frame_rejected。
+  if ((frame->flags & fushi_voice_hook::kLookupFrameHighlightOnly) != 0) {
+    g_overlay.last_presented_seq = seq_before;
     return;
   }
   // 跨进程不可信的 width/height/pitch 必须先过这道闸门再谈拷贝。
   if (!fushi_voice_hook::IsLookupFrameSane(g_header, frame)) {
-    g_overlay.last_frame_seq = written;
-    if (g_header != nullptr) {
-      g_header->lookup_diag |= fushi_voice_hook::kLookupDiagFrameRejected;
-    }
+    g_overlay.last_presented_seq = seq_before;
+    g_header->lookup_diag |= fushi_voice_hook::kLookupDiagFrameRejected;
     return;
   }
   const uint8_t* pixels =
-      fushi_voice_hook::LookupBitmapAt(g_header, (written - 1) % frame_count);
+      fushi_voice_hook::LookupBitmapAt(g_header, frame_index);
   if (pixels == nullptr) return;
 
   const uint32_t width = frame->width;
@@ -287,7 +351,7 @@ void PollOverlayFrame() {
   const fushi_voice_hook::OverlayRect card = fushi_voice_hook::ComputeOverlayRect(
       client, anchor_x, anchor_y, static_cast<int32_t>(width),
       static_cast<int32_t>(height));
-  g_overlay.last_frame_seq = written;
+  g_overlay.last_presented_seq = seq_before;
   if (card.empty()) {
     HideOverlay();
     return;
@@ -326,8 +390,18 @@ LRESULT CALLBACK LookupOverlayProc(HWND window, UINT message, WPARAM wparam,
         track.hwndTrack = window;
         if (TrackMouseEvent(&track)) g_overlay.tracking_mouse = true;
       }
-      QueueOverlayInput(fushi_voice_hook::kLookupInputMove,
-                        GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam), 0,
+      // 同一个位置的重复 move 必须丢掉，否则会形成反馈环：
+      //   present → UpdateLayeredWindow 改窗口位置/尺寸 → 静止的光标相对窗口"动"了
+      //   → Windows 发 WM_MOUSEMOVE → 排进输入环 → host 按 hover 重新抓整张卡并投帧
+      //   → present → ……
+      // 真机实测（Ren'Py，鼠标全程没动）：inputs 从 4 一路涨到 588、frames 涨到 136，
+      // host 被自己的重绘刷屏，制卡流程也跟着卡住。
+      const int32_t mx = GET_X_LPARAM(lparam);
+      const int32_t my = GET_Y_LPARAM(lparam);
+      if (mx == g_overlay.last_move_x && my == g_overlay.last_move_y) return 0;
+      g_overlay.last_move_x = mx;
+      g_overlay.last_move_y = my;
+      QueueOverlayInput(fushi_voice_hook::kLookupInputMove, mx, my, 0,
                         OverlayModifierKeys());
       return 0;
     }

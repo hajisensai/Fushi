@@ -227,6 +227,12 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
     return ready_;
   }
   bool ready() const { return ready_; }
+  // 游戏内查词传感器与音频那半完全解耦：音频要 FFmpeg 模块才装得上，而查词只要
+  // CPython 在，所以它自己按 lookup_enabled 决定装不装，不搭 install() 的车。
+  void ProcessPendingEvents() {
+    PollRenpyLookupInstall();
+    ProcessRenpyLookupTick();
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -359,6 +365,7 @@ class AdapterRegistry {
     malie_libp_.ProcessPendingEvents();
     elf_ai6_.ProcessPendingEvents();
     kirikiri_.ProcessPendingEvents();
+    renpy_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

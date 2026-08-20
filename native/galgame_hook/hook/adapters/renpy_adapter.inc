@@ -917,3 +917,8 @@ HMODULE FindLoadedFfmpegModule(fushi_voice_hook::FfmpegModuleKind kind,
   if (major != nullptr) *major = result_major;
   return result;
 }
+
+// 游戏内查词传感器单独一份文件：音频那半读的是 FFmpeg 结构偏移，查词这半读的是 CPython
+// 对象，两者除了"同属 Ren'Py"以外没有任何共享状态，混在一个文件里只会让两边都难读。
+// 被引入的文件里**一行 #include 都不能有**（见其文件头）。
+#include "adapters/renpy_lookup.inc"
