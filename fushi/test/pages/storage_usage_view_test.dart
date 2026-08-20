@@ -25,7 +25,7 @@ class _FakeOcrService implements MangaOcrService {
   Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
         detectorReady: ready,
         recognizerReady: ready,
-        downloadedBytes: ready ? 40 * 1024 * 1024 : 0,
+        diskBytes: ready ? 40 * 1024 * 1024 : 0,
         totalBytes: 40 * 1024 * 1024,
       );
 
@@ -41,9 +41,12 @@ class _FakeOcrService implements MangaOcrService {
   }
 
   @override
-  Future<void> deleteModels() async {
+  Future<int> deleteModels() async {
     deleteCalls++;
+    final bool had = ready;
     ready = false;
+    // 契约是「返回实际释放的字节数」，与 modelStatus 报的 diskBytes 对齐。
+    return had ? 40 * 1024 * 1024 : 0;
   }
 
   @override

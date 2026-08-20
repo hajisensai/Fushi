@@ -2045,10 +2045,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       try {
         // 来源库网络视频（WebDAV）：认证头按 sourceId 现解析（凭据不落行级
         // spec——改来源密码一处生效）；非来源书解析为空 map，零分支。
+        // targetUrl 传本行真实流地址：来源根下的 m3u8 清单可以指向第三方主机，
+        // 那些行同样带本来源的 sourceId，不按目标地址收口就会把 NAS 账号密码
+        // 发给第三方（见 source_library/stream_auth_scope.dart）。
         final Map<String, String> sourceHeaders =
             await resolveSourceStreamHeaders(
           db: appModel.database,
           sourceId: row.sourceId,
+          targetUrl: row.videoPath,
         );
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
             await buildStreamVideoLaunch(row,

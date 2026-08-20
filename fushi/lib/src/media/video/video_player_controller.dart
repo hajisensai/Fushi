@@ -1066,8 +1066,14 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 本 Player 实例已装载的 Lua 脚本绝对路径。mpv 无 unload-script，重复
   /// `load-script` 会实例化第二份脚本，故装载必须每 Player 实例幂等（见
-  /// video_lua_script_manager.dart 文件头）。Player 与 controller 同生命周期
-  /// （复用不重建），无需随换集清空。
+  /// video_lua_script_manager.dart 文件头）。
+  ///
+  /// 去重集的作用域是**单个 Player 实例**，不是 controller：controller 存活期间
+  /// Player 会被销毁重建（[_releaseMediaHandles] 为 TODO-1212 数据根迁移放句柄时
+  /// `dispose` 掉旧 Player 并置 null，下次 [load] 在 `_player ?? Player()` 处建新的）。
+  /// 若不随之清空，新 Player 会因「路径已在集合里」一条 `load-script` 都不发，脚本
+  /// 静默失效直到退出重进视频页。故 Player 置 null 的每一处都必须 clear（对照：
+  /// 着色器与 mpv 配置是无条件重发的，只有 Lua 走去重，漏清就是静默失效）。
   final Set<String> _loadedLuaScripts = <String>{};
 
   /// 装载 mpv Lua 脚本（设置面板开启开关 / [load] 均走此入口）。幂等：已装载
@@ -1293,6 +1299,18 @@ class VideoPlayerController extends ChangeNotifier
     final bool startArmed = await applyMpvStartPosition(player, preloadStartMs);
     if (!_isCurrentLoad(player, loadToken)) return; // start 下发后换片/销毁。
 
+    // 装载 mpv Lua 脚本（开关开启时页面传入目录全集）。幂等：同一 Player 内已装载
+    // 路径跳过，不会重复实例化脚本（见 [applyLuaScripts]）。
+    //
+    // **必须在 `open` 之前**：mpv 脚本的惯用入口是 `mp.register_event("start-file")` /
+    // `"file-loaded"`，这两个事件由 loadfile 触发。装载晚于 `open` 时，本次 load 的
+    // 文件事件在脚本注册回调之前就已经发完了——首个文件上所有基于文件加载事件的脚本
+    // （autoload、按文件切 profile、自动字幕）全部空转，要换到下一集才开始生效，
+    // 用户观感是「脚本时灵时不灵」。放在 open 前则脚本必然赶上首个 loadfile。
+    // `NativePlayer.command` 自带 waitForInitialization，不需要额外等 Player 就绪。
+    await applyLuaScripts(luaScriptPaths);
+    if (!_isCurrentLoad(player, loadToken)) return; // 脚本装载后换片/销毁。
+
     await player.open(
       Media(
         sourceUri,
@@ -1355,11 +1373,6 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = mpvConfig;
     await applyMpvConfigToPlayer(player, _mpvConfig);
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
-
-    // 装载 mpv Lua 脚本（开关开启时页面传入目录全集）。幂等：换集复用同一
-    // Player 时已装载路径跳过，不会重复实例化脚本（见 [applyLuaScripts]）。
-    await applyLuaScripts(luaScriptPaths);
-    if (!_isCurrentLoad(player, loadToken)) return; // 脚本装载后换片/销毁。
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
     _lastVolume = initialVolume;
@@ -2982,6 +2995,7 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
+    _loadedLuaScripts.clear(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();
@@ -2996,6 +3010,7 @@ class VideoPlayerController extends ChangeNotifier
     if (player == null) return;
     _player = null;
     _videoController = null;
+    _loadedLuaScripts.clear(); // 新 Player 必须重新 load-script（见字段注释）。
     await player.dispose();
   }
 

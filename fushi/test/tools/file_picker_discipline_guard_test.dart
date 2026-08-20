@@ -59,8 +59,8 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   // (b) 当场消费：解析成 cue / 转 EPUB / 拷进存储后即与原路径脱钩。
   'lib/src/media/audiobook/book_import_dialog.dart':
       '书文件与封面：导入时拷进 app 存储，与原路径脱钩（EPUB 一条 TODO：安卓白拷一份，可迁 pickRealFilePath）',
-  'lib/src/media/video/video_import_dialog.dart':
-      'm3u8 播放列表：选中即解析成 playlist，不长期引用',
+  'lib/src/settings/settings_schema_video.dart':
+      'mpv Lua 脚本：选中即 importLuaScriptFile 拷进 app 的 mpv_scripts 目录，与原路径脱钩',
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
       '字幕：选中即解析成 cue（与 pickSystemFilePath 同语义，board 1360）',
   'lib/src/pages/implementations/dictionary_dialog_page.dart':

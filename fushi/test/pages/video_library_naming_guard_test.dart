@@ -10,10 +10,25 @@ void main() {
   String read(String path) => File(path).readAsStringSync();
 
   test('① 文件夹/多集导入用 group.series 命名播放列表合集（非集文件名）', () {
-    final String src = read('lib/src/media/video/video_import_dialog.dart');
-    // 统一合集 Phase 2：文件夹多集导入分支用系列名作 playlist 合集名。
-    expect(src.contains('collectionName: group.series'), isTrue,
-        reason: '多集播放列表合集名应是系列名（group.series），不是某一集的文件名');
+    // 不变式没变，标的搬了家：旧的对话框内建合集入口（video_import_dialog 的
+    // _importGroup）已随「旧建合集入口移除」删除，唯一还按系列名建 playlist 合集
+    // 的生产路径是来源库扫描后的归组协调器。断言随之重指，而不是删掉——不变式
+    // 「多集合集名必须是系列名而不是某一集的文件名」依然要守。
+    final String src =
+        read('lib/src/media/video/video_folder_group_coordinator.dart');
+    // 断言标的（跨行，故用正则）：
+    //   createMediaCollection(
+    //     group.series,
+    //     collectionType: 'playlist',
+    //   )
+    expect(
+      RegExp(r"createMediaCollection\(\s*group\.series,\s*"
+              r"collectionType: 'playlist',")
+          .hasMatch(src),
+      isTrue,
+      reason: '多集播放列表合集名应是系列名（group.series），不是某一集的文件名；'
+          '且自动归组建出来的必须是 playlist 类型合集',
+    );
   });
 
   test('② 视频库卡片用 playlistEpisodeCount 区分播放列表并加角标', () {

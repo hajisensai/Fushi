@@ -494,7 +494,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   Widget _buildModulesSection() {
     final MangaOcrModelStatus? ocr = _ocrStatus;
     final bool ocrReady = ocr?.allReady ?? false;
-    final bool ocrPartial = !ocrReady && (ocr?.downloadedBytes ?? 0) > 0;
+    final bool ocrPartial = !ocrReady && (ocr?.hasAnyFiles ?? false);
     return AdaptiveSettingsSection(
       title: t.storage_modules_section,
       children: <Widget>[
@@ -504,7 +504,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           subtitle: ocr == null
               ? null
               : (ocrReady || ocrPartial
-                  ? formatStorageBytes(ocr.downloadedBytes)
+                  ? formatStorageBytes(ocr.diskBytes)
                   : t.storage_modules_not_installed),
           icon: Icons.document_scanner_outlined,
           showIcon: true,

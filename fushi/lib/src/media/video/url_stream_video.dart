@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
+import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
@@ -336,7 +337,11 @@ class UrlStreamVideoClient implements RemoteVideoClient {
 
   /// 有 [subtitleUrl] 则 `http.get` 下载到 [dest]；无字幕 URL 时 no-op。
   ///
-  /// 防盗链流的字幕同站时也需要 header，故下载请求带 [httpHeaderFields]。
+  /// 防盗链流的字幕**同站**时也需要 header，故同站下载请求带 [httpHeaderFields]；
+  /// 跨站字幕一律不带——[httpHeaderFields] 里可能是 WebDAV 来源的
+  /// `Authorization: Basic`（用户 NAS 明文账号密码）或防盗链凭据，而 spec 里的
+  /// 字幕 URL 可以指向任意主机（清单/来源元数据都由外部内容决定）。同站判据与
+  /// 认证头解析共用 stream_auth_scope.dart，两处口径恒一致。
   @override
   Future<void> getRemoteVideoSubtitle(
     String id,
@@ -347,9 +352,14 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   }) async {
     final String? url = subtitleUrl;
     if (url == null || url.isEmpty) return;
+    // 跨站不带凭据（见方法文档）。判据用「字幕 URL 是否与流 URL 同 origin」，
+    // 而不是「有没有 header」——后者正是把凭据发出去的那条路。
+    final bool sameSite = isSameHttpOrigin(url, streamUrl);
+    final Map<String, String>? headers =
+        (httpHeaderFields.isEmpty || !sameSite) ? null : httpHeaderFields;
     final http.Response res = await _httpClient.get(
       Uri.parse(url),
-      headers: httpHeaderFields.isEmpty ? null : httpHeaderFields,
+      headers: headers,
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw http.ClientException(
