@@ -3621,5 +3621,7 @@
   "module_extension_label": "Browser extension",
   "onboarding_feature_books": "Novel library",
   "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
-  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)"
+  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)",
+  "video_setting_tap_toggles_playback": "Tap video to play/pause",
+  "video_setting_tap_toggles_playback_hint": "Turn off so tapping the video only reveals the controls"
 }

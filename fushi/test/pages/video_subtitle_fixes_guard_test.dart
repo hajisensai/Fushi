@@ -34,9 +34,15 @@ void main() {
       'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
       'MaterialVideoControlsThemeData _mobileControlsTheme(',
     );
-    expect(src.contains('playAndPauseOnTap: true'), isTrue,
-        reason: '桌面单击画面必须播放/暂停，否则点画面毫无反应（BUG-130）');
-    expect(body.contains('playAndPauseOnTap: true'), isTrue,
+    // 单击画面的开/关现在是用户设置（`_asbConfig.tapTogglesPlayback`），**默认 true**
+    // ——BUG-130「不设这个字段 → media_kit 默认 false → 点画面毫无反应」的保护由两半
+    // 组成：这里锁「桌面主题必须显式设该字段且接用户配置」，默认值 true 由
+    // test/media/video/video_asbplayer_config_test.dart 的 defaults 用例锁住。
+    expect(src.contains('playAndPauseOnTap: _asbConfig.tapTogglesPlayback'),
+        isTrue,
+        reason: '桌面单击画面播放/暂停必须由 tapTogglesPlayback 配置驱动（BUG-130）');
+    expect(body.contains('playAndPauseOnTap: _asbConfig.tapTogglesPlayback'),
+        isTrue,
         reason: 'playAndPauseOnTap 必须设在桌面控制主题里');
   });
 

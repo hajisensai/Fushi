@@ -7216,6 +7216,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_isDesktopVideoControls) {
       unawaited(_toggleVideoFullscreen(controlsContext));
     } else {
+      // 用户设置关掉「点击画面播放/暂停」后，移动端双击中带不再切播放态（与桌面单击
+      // 的 playAndPauseOnTap 读同一个开关，两端语义一致）。桌面双击 = 全屏，与播放态
+      // 无关，故不受本开关影响。
+      if (!_asbConfig.tapTogglesPlayback) return;
       unawaited(_controller?.playOrPause() ?? Future<void>.value());
     }
   }

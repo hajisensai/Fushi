@@ -275,6 +275,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_double_tap_seek_guard_test.dart + test/pages/video_immersive_mode_levels_guard_test.dart',
   'video/Lock window to video aspect':
       'test/pages/video_window_aspect_lock_static_test.dart',
+  // 点击画面播放/暂停：生效点在 media_kit 控制条主题（桌面单击）与
+  // _handleVideoPointerUp 的移动端双击 fallback，两者都是真实手势 arena，harness 里
+  // 探不到。由 config round-trip（含默认 true / 旧档回落）+ 三条源码守卫（桌面主题
+  // 接线不得写死、移动端门控排在 playOrPause 之前、schema 行经双路写穿）咬住。
+  'video/Tap video to play/pause':
+      'test/media/video/video_asbplayer_config_test.dart + '
+          'test/pages/video_double_tap_seek_guard_test.dart',
   'video/Obscure subtitles':
       'test/media/video/video_subtitle_obscure_mode_test.dart + test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
   'video/Obscure secondary subtitle':

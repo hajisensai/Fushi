@@ -176,6 +176,27 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 点击画面是否切换播放/暂停（默认开 = 旧行为）。桌面对应控制条主题的
+          // `playAndPauseOnTap`（单击画面），移动端对应双击中带的暂停 fallback
+          // （BUG-221）——两端同一开关、语义一致，故全平台可见，不是假开关。
+          // 关掉后点画面只唤醒/收起控制条；空格键、控制条按钮、右键菜单的播放/暂停
+          // 是独立入口，不受影响。
+          SettingsSwitchItem(
+            id: 'video.playback.tap_toggles_playback',
+            title: t.video_setting_tap_toggles_playback,
+            subtitle: t.video_setting_tap_toggles_playback_hint,
+            icon: Icons.touch_app_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 14),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).tapTogglesPlayback,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(tapTogglesPlayback: value),
+              );
+            },
+          ),
           // BUG-1485：触屏横滑调进度的灵敏度。旧实现把「每像素跨多少时间」按视频总
           // 时长比例换算，长片一拽就起飞；换算模型改成「拖过整屏 = 固定一段时长」
           // （[VideoHorizontalSeekGesture]），这里让用户在三档之间选。仅移动端可见

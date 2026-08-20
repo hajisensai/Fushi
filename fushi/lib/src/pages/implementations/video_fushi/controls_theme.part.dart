@@ -75,7 +75,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。
-      playAndPauseOnTap: true,
+      // 用户设置 [_asbConfig.tapTogglesPlayback] 可关掉（默认开 = 旧行为）：关掉后单击
+      // 只唤醒/收起控制条，不改播放态。theme 在 [_setAsbConfig] 的 setState 后重建，
+      // 改完立即生效。
+      playAndPauseOnTap: _asbConfig.tapTogglesPlayback,
       toggleFullscreenOnDoublePress: false,
       // 播放器 chrome 前景固定亮色（UI 巡检 PR-4 P1）：控制条压在 fork 固定深色
       // scrim（material_desktop.dart 0x61000000）上，表面固定深色 OSD 体系不随
