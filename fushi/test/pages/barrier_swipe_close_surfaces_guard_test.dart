@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-1052 (parent TODO-716 phase 2): the "horizontal swipe over the dismiss
@@ -46,16 +47,19 @@ String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
 /// `dart format` decides where to wrap arguments, so every assertion below runs
-/// against whitespace-collapsed source. Without this, adding one character to a
-/// line silently flips a guard from "checking" to "vacuously matching nothing".
-String _flat(String src) => src.replaceAll(RegExp(r'\s+'), ' ');
+/// against comment-stripped, whitespace-collapsed source ([compactCode], the
+/// shared primitive in test/helpers/source_guard.dart). Collapsing alone is not
+/// enough: it folds COMMENTS into the corpus too, so a requirement-style
+/// assertion stays green when the implementation is deleted and only a comment
+/// quoting the same text survives.
+String _flat(String src) => compactCode(src);
 
 /// The exact regressed shape: a horizontal drag recognizer **gated on the
 /// swipe-to-close preference**, i.e. the dismiss barrier's. Deliberately not a
 /// blanket ban on `onHorizontalDrag` — video legitimately uses one for the
 /// 8px subtitle-sidebar resize handle, which covers no platform view.
 final RegExp _barrierArenaDrag = RegExp(
-    r'onHorizontalDrag\w*: ReaderFushiSource\.instance\.enableSwipeToClose');
+    r'onHorizontalDrag\w*:ReaderFushiSource\.instance\.enableSwipeToClose');
 
 /// A CONSTRUCTOR call to the primitive, with a left word boundary.
 ///
@@ -85,18 +89,20 @@ void _assertBarrierSwipeWiring(String label, String rawSrc) {
       reason: '$label must build its dismiss barrier with the shared '
           'LookupDismissBarrier primitive (BUG-1757)');
   // literal: 'onSwipeDismiss:'
-  expect(src.contains('onSwipeDismiss:'), isTrue,
+  expect(src.contains(compactCode('onSwipeDismiss:')), isTrue,
       reason: '$label must wire the barrier swipe-to-close callback');
   // literal: 'swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose'
   expect(
-    src.contains('swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose'),
+    src.contains(compactCode(
+        'swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose')),
     isTrue,
     reason: '$label must gate barrier swipe on enableSwipeToClose (switch OFF '
         '=> tap-only, never-break)',
   );
   // literal: 'ReaderFushiSource.instance.dismissSwipeSensitivity'
   expect(
-    src.contains('ReaderFushiSource.instance.dismissSwipeSensitivity'),
+    src.contains(
+        compactCode('ReaderFushiSource.instance.dismissSwipeSensitivity')),
     isTrue,
     reason: '$label must feed the live dismissSwipeSensitivity to the barrier',
   );
@@ -120,12 +126,13 @@ void main() {
       // Over-threshold drag closes ONE layer (top visible index), never clears
       // the whole stack (clearing stays the tap path).
       expect(
-        src.contains('_popNestedPopupAt(_topVisiblePopupIndex)'),
+        src.contains(compactCode('_popNestedPopupAt(_topVisiblePopupIndex)')),
         isTrue,
         reason: 'video barrier drag closes one layer (top visible index)',
       );
       // never-break: tap-to-dismiss still routes through the positional handler.
-      expect(src.contains('onTapDismiss: _onDismissBarrierTap'), isTrue,
+      expect(src.contains(compactCode('onTapDismiss: _onDismissBarrierTap')),
+          isTrue,
           reason: 'video barrier still taps to dismiss (never-break)');
     });
 
@@ -135,12 +142,15 @@ void main() {
       final String src = _flat(_read(_homeDictionary));
       _assertBarrierSwipeWiring('home_dictionary', src);
       expect(
-        src.contains('_popNestedPopupAt(_popup.lastVisibleIndex)'),
+        src.contains(compactCode('_popNestedPopupAt(_popup.lastVisibleIndex)')),
         isTrue,
         reason: 'home_dictionary barrier drag closes one layer',
       );
       // never-break: tap still clears the stack from the root layer.
-      expect(src.contains('onTapDismiss: (_) => _popNestedPopupAt(0)'), isTrue,
+      expect(
+          src.contains(
+              compactCode('onTapDismiss: (_) => _popNestedPopupAt(0)')),
+          isTrue,
           reason:
               'home_dictionary barrier still taps to dismiss (never-break)');
     });
@@ -151,7 +161,8 @@ void main() {
       final String src = _flat(_read(_texthooker));
       _assertBarrierSwipeWiring('texthooker', src);
       expect(
-        src.contains('popNestedPopupAt(_topVisiblePopupIndex, _popup)'),
+        src.contains(
+            compactCode('popNestedPopupAt(_topVisiblePopupIndex, _popup)')),
         isTrue,
         reason: 'texthooker barrier drag closes one layer',
       );
@@ -163,16 +174,20 @@ void main() {
       final String src = _flat(_read(_baseSourcePage));
       _assertBarrierSwipeWiring('base_source_page', src);
       expect(
-        src.contains('onSwipeDismiss: dismissTopPopup'),
+        src.contains(compactCode('onSwipeDismiss: dismissTopPopup')),
         isTrue,
         reason: 'base_source_page barrier drag closes one layer',
       );
       // never-break: TODO-1027 positional tap + BUG-861 hover/wheel hooks stay.
-      expect(src.contains('onTapDismiss: onDismissBarrierTap'), isTrue,
+      expect(src.contains(compactCode('onTapDismiss: onDismissBarrierTap')),
+          isTrue,
           reason: 'reader barrier tap still forwards the global position');
-      expect(src.contains('onPointerHover: onDismissBarrierHover'), isTrue,
+      expect(src.contains(compactCode('onPointerHover: onDismissBarrierHover')),
+          isTrue,
           reason: 'reader barrier still forwards hover (BUG-861)');
-      expect(src.contains('onPointerSignal: onDismissBarrierPointerSignal'),
+      expect(
+          src.contains(
+              compactCode('onPointerSignal: onDismissBarrierPointerSignal')),
           isTrue,
           reason: 'reader barrier still forwards wheel signals');
     });

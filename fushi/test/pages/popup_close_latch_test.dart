@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1757：安卓独立查词窗「关不掉」。
 ///
 /// 触发路径是连续查词——关掉一个查词窗、紧接着查下一个词：
@@ -71,20 +73,17 @@ void main() {
     const String pagePath =
         'lib/src/pages/implementations/popup_dictionary_page.dart';
 
-    String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
-
     test('_close 在关闭未被接受时复位 _isClosing', () {
-      final String src = flat(File(pagePath).readAsStringSync());
-      // literal: 'final bool accepted = await PopupChannel.instance.finishPopup();'
+      final String src = compactCode(File(pagePath).readAsStringSync());
       expect(
-        src.contains(
-            'final bool accepted = await PopupChannel.instance.finishPopup();'),
+        src.contains(compactCode(
+            'final bool accepted = await PopupChannel.instance.finishPopup();')),
         isTrue,
         reason: '必须拿到原生侧的接受结果，而不是 fire-and-forget',
       );
-      // literal: 'if (!accepted && mounted) { _isClosing = false; }'
       expect(
-        src.contains('if (!accepted && mounted) { _isClosing = false; }'),
+        src.contains(
+            compactCode('if (!accepted && mounted) { _isClosing = false; }')),
         isTrue,
         reason: '没人接下关闭就必须解开 _isClosing，否则所有关闭入口永久静默早退',
       );
@@ -94,58 +93,53 @@ void main() {
   group('源码守卫：原生侧关闭回调必须按 owner 注销', () {
     const String androidRoot = 'android/app/src/main/java/app/fushi/reader';
 
-    /// 先剥注释再扫：这些文件的注释里**故意**引用了旧写法（`setOnFinish(null)`）作为
-    /// 历史说明，扫原文会让「不得保留无条件清空入口」这条守卫被文档自己打红。
-    String stripComments(String s) => s
-        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), ' ')
-        .replaceAll(RegExp(r'//[^\n]*'), ' ');
-
+    /// 必须剥注释再扫，两个方向都会出错：这些文件的注释里**故意**引用了旧写法作为
+    /// 历史说明，扫原文会让「不得保留无条件清空入口」被文档自己打红；反过来，只折
+    /// 空白不剥注释，会让「实现删光、只留同文字注释」把要求型断言骗绿。
+    /// 剥离一律走 test/helpers/source_guard.dart 的共享原语（Kotlin 的 `//` 与
+    /// `/* */` 词法与 Dart/C++/JS 同族，[compactCode] 覆盖）。
     String read(String relative) =>
-        stripComments(File('$androidRoot/$relative').readAsStringSync());
-
-    String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
+        compactCode(File('$androidRoot/$relative').readAsStringSync());
 
     test('PopupEngineHolder 注销时比对 owner，且不存在无条件清空入口', () {
-      final String src = flat(read('PopupEngineHolder.kt'));
-      // literal: 'fun setOnFinish(owner: Any, callback: () -> Unit)'
+      final String src = read('PopupEngineHolder.kt');
       expect(
-        src.contains('fun setOnFinish(owner: Any, callback: () -> Unit)'),
+        src.contains(
+            compactCode('fun setOnFinish(owner: Any, callback: () -> Unit)')),
         isTrue,
         reason: '注册必须带 owner，否则无从判断该不该注销',
       );
-      // literal: 'if (finishHandler?.owner !== owner) return'
       expect(
-        src.contains('if (finishHandler?.owner !== owner) return'),
+        src.contains(compactCode('if (finishHandler?.owner !== owner) return')),
         isTrue,
         reason: 'BUG-1757 的根因：旧 Activity 的 onDestroy 晚于新 Activity 的 '
             'onCreate，注销必须先确认当前回调确实属于自己',
       );
       // 「无条件清空」入口存在多久，这个竞态就存在多久 —— 不允许它回来。
       expect(
-        src.contains('setOnFinish(null)'),
+        src.contains(compactCode('setOnFinish(null)')),
         isFalse,
         reason: '不得保留可以清掉别人回调的入口',
       );
     });
 
     test('finishPopup 把「有没有人接」回给 Dart', () {
-      final String src = flat(read('PopupEngineHolder.kt'));
-      // literal: 'result.success(handler != null)'
-      expect(src.contains('result.success(handler != null)'), isTrue,
+      final String src = read('PopupEngineHolder.kt');
+      expect(
+          src.contains(compactCode('result.success(handler != null)')), isTrue,
           reason: 'Dart 侧的解锁判据来自这里；回 null 会让安全网失效');
     });
 
     test('PopupDictFlutterActivity 用 clearOnFinish(this) 注销自己那次注册', () {
-      final String src = flat(read('PopupDictFlutterActivity.kt'));
-      // literal: 'PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }'
+      final String src = read('PopupDictFlutterActivity.kt');
       expect(
-        src.contains(
-            'PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }'),
+        src.contains(compactCode(
+            'PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }')),
         isTrue,
         reason: '注册时把自己作为 owner 交出去',
       );
-      // literal: 'PopupEngineHolder.clearOnFinish(this)'
-      expect(src.contains('PopupEngineHolder.clearOnFinish(this)'), isTrue,
+      expect(src.contains(compactCode('PopupEngineHolder.clearOnFinish(this)')),
+          isTrue,
           reason: 'onDestroy 只注销自己那次注册');
     });
   });
