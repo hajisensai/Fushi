@@ -3839,9 +3839,16 @@ function _firePopupRendered(stillRendering) {
 // 单卡时清掉 inline 回落到 CSS grid/block。CSS 规则原样保留作「无 JS 兜底」，故所有现有 grid
 // 守卫测试不受影响。高度变化（<details> 展开/收起、图片异步加载、ruby、字体替换）由挂在每张
 // 卡片上的 ResizeObserver 捕捉重排（不依赖 toggle 事件跨 shadow 边界）；宽度变化走 resize。
-const HAS_NATIVE_MASONRY = (() => {
-    try { return CSS.supports('display', 'grid-lanes'); } catch (e) { return false; }
-})();
+// 曾经这里有个 HAS_NATIVE_MASONRY = CSS.supports('display','grid-lanes')，命中时
+// layoutMasonry() 直接 return「交给 CSS 原生 masonry」。但 CSS 侧的那条分支**从未写过**
+// （全仓 grep `grid-lanes` 只命中这行检测本身），于是它把布局交给了一个不存在的分支。
+//
+// 2026-08 macOS 26 / Safari 26 的 WebKit 开始支持 `display: grid-lanes`，检测转为 true，
+// 弹窗在 macOS/iOS 上静默退化成 `.glossary-section > .category-body` 的**行对齐 grid**：
+// 同一行的词典卡按最高的那张对齐，矮卡（已折叠 / 义项少的词典）下方留出大片空洞。
+//
+// 特性检测只有在「对应实现确实存在」时才能提前返回。CSS 原生分支落地前，masonry 一律
+// 由 JS 铺。守卫测试：`fushi/test/pages/popup_masonry_no_dead_branch_guard_test.dart`。
 let masonryRaf = null;
 let masonryObserver = null;
 
@@ -3894,7 +3901,6 @@ function resetMasonryBody(body) {
 }
 
 function layoutMasonry() {
-    if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
     const configured = dictColumns();
     const gap = masonryGap();
     masonryBodies().forEach(body => {

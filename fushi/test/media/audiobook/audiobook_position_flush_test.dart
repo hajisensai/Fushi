@@ -278,7 +278,17 @@ void main() {
         reason: 'a persistence error must never leave native playback alive');
   });
 
-  test('BUG-1240 source order keeps flush before both stop calls', () {
+  // BUG-1240 的守卫此前钉的是**源码行顺序**（`await flushPosition()` 必须早于两个
+  // stop）。那是把「实现顺序」当成了不变式，而真正的不变式只是「落库的值必须是 stop
+  // 归零**之前**采到的位置」——它由上面 'stopPlayback persists the live position
+  // before stop resets it' 这条**行为**测试保证，与实现顺序无关。
+  //
+  // 行顺序守卫还有实质危害：它把「stop 之前必须先 await 一个 Future」焊死进契约，
+  // 而 `await _playActivationTail` 正是靠这条守卫长期存活的——在 just_audio 的
+  // Darwin/ExoPlayer 后端上它与 `_player.stop()` 循环等待，导致退出后音频永不停止。
+  // 所以这里换成钉「**不得**在停止路径上 await play 激活链」这条真正的不变式。
+  test('stop path must never await the play activation chain (deadlock guard)',
+      () {
     final String source = File(
       '${Directory.current.path}/../packages/fushi_audio/lib/src/audiobook/'
       'audiobook_controller.dart',
@@ -291,18 +301,34 @@ void main() {
     );
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
-    final String body = source.substring(start, end);
-    final int flushAt = body.indexOf('await flushPosition();');
+    // 剥掉整行 `//` 注释：要断言的是**可执行代码**，而解释这条禁令的注释里必然会写出
+    // `await _playActivationTail` 本身（否则没人看得懂为什么禁）。
+    final String body = source
+        .substring(start, end)
+        .split('\n')
+        .where((String line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+
+    expect(
+      body,
+      isNot(contains('await _playActivationTail')),
+      reason: 'just_audio 的 Darwin(AVQueuePlayer)/Android(ExoPlayer) 后端把 play '
+          '的平台回调挂起到 pause/complete/stop 才触发；停止路径 await 它就与唯一能'
+          '解开它的 _player.stop() 形成循环等待 → 退出后音频永不停止且无法手动关闭。',
+    );
+
     final int mainStopAt = body.indexOf('_player.stop()');
-    final int clipStopAt = body.indexOf('clip.stop()');
-    expect(flushAt, greaterThanOrEqualTo(0));
-    expect(flushAt, lessThan(mainStopAt));
-    expect(flushAt, lessThan(clipStopAt));
+    expect(mainStopAt, greaterThanOrEqualTo(0));
     expect(
       body.substring(mainStopAt),
       isNot(contains('_maybeSavePosition(force: true)')),
       reason: '释放后不得再用归零位置覆盖刚写穿的值',
     );
+    // 位置必须在 stop 之前**同步**采样（BUG-1240 的真不变式），此后不再采样。
+    final int sampleAt = body.indexOf('_player.position.inMilliseconds');
+    expect(sampleAt, greaterThanOrEqualTo(0), reason: '必须显式采样 stop 前的位置');
+    expect(sampleAt, lessThan(mainStopAt),
+        reason: 'stop 会把 position 归零，采样必须发生在它之前');
   });
 }
 

@@ -246,6 +246,7 @@ Fushi/                      # 仓库根（Melos workspace: fushi_workspace）
 Fushi 将导入的书籍、词典、字体、有声书数据、视频、阅读进度、高亮、统计和设置保存在 App 本地存储中。
 
 云同步（Google Drive / OneDrive / Dropbox）使用由用户配置的 OAuth 凭据；WebDAV / FTP / SFTP 使用用户提供的服务器地址与凭据；Fushi Interconnect 通过用户配置的地址直连。Anki 制卡会与 AnkiDroid 或已配置的 AnkiConnect 地址通信。
+<<<<<<< HEAD
 
 ## 开发活跃度
 
@@ -262,6 +263,8 @@ Fushi 将导入的书籍、词典、字体、有声书数据、视频、阅读�
 | **Stable** | `v<版本>` 正式发布 | 正式版（Latest） |
 
 > 上图由本仓库内的脚本自动生成（不依赖任何第三方服务），并由 [Update Dev Activity Chart](.github/workflows/dev-activity.yml) 工作流每日刷新。
+=======
+>>>>>>> origin/worktree-fix-audiobook-stop-deadlock
 
 ## Star 趋势
 
