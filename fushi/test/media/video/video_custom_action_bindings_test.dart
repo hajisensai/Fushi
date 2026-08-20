@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -269,8 +271,69 @@ void main() {
     });
   });
 
+  group('播放器只画「已绑的 + 一个加号」', () {
+    test('全空表：加号是槽位 1（下标 0）', () {
+      expect(VideoCustomActionBindings.empty.firstUnboundSlotIndex, 0);
+    });
+
+    test('绑了槽位 1：加号顺延到槽位 2', () {
+      final VideoCustomActionBindings b = VideoCustomActionBindings.empty
+          .withAction(0, ShortcutAction.videoNextSubtitle);
+      expect(b.firstUnboundSlotIndex, 1);
+    });
+
+    test('中间留空洞时取序号最小的空位（不是最后一个）', () {
+      // 槽位 1 空、2/3 已绑：加号必须回到最前面那个空位，否则用户解绑一个中间槽位
+      // 之后会看到加号跑到队尾、空出来的位置反而消失。
+      final VideoCustomActionBindings b = VideoCustomActionBindings.empty
+          .withAction(1, ShortcutAction.videoNextSubtitle)
+          .withAction(2, ShortcutAction.videoPreviousSubtitle);
+      expect(b.firstUnboundSlotIndex, 0);
+    });
+
+    test('四个全绑满：没有加号', () {
+      VideoCustomActionBindings b = VideoCustomActionBindings.empty;
+      for (int i = 0; i < VideoCustomActionBindings.slotCount; i++) {
+        b = b.withAction(i, kVideoAssignableActions[i]);
+      }
+      expect(b.firstUnboundSlotIndex, isNull);
+    });
+
+    test('渲染门控按绑定分流，不是无条件显示全部 4 个槽位', () {
+      // 门控是 6000+ 行页面里的私有方法，widget 测试拉不起整页播放器；这里扫源码钉死
+      // 它的判据形状：必须同时引用「已绑」与 firstUnboundSlotIndex（加号），且不得退回
+      // 旧的 `if (item.isCustomAction) return true;`（那就是 4 个空槽全摆）。
+      final String src = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
+      const String marker =
+          'bool _shouldRenderControlItem(VideoControlItem item) {';
+      final int start = src.indexOf(marker);
+      expect(start, greaterThan(-1), reason: '找不到 _shouldRenderControlItem 定义');
+      // 只取函数体到第一个顶格收尾，避免把后面别的方法也扫进来。
+      final int end = src.indexOf('\n  }', start);
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+      expect(
+        body.contains('firstUnboundSlotIndex'),
+        isTrue,
+        reason: '未绑定槽位必须只露 firstUnboundSlotIndex 那一个（加号）',
+      );
+      expect(
+        body.contains('actionAt(customSlot) != null'),
+        isTrue,
+        reason: '已绑定的槽位必须照常渲染',
+      );
+      expect(
+        body.contains('if (item.isCustomAction) return true;'),
+        isFalse,
+        reason: '回到无条件 true = 4 个空槽又全摆出来了',
+      );
+    });
+  });
+
   group('presentation 按绑定解析', () {
-    testWidgets('未绑定显示槽位名 + 通用图标；绑定后显示动作名 + 动作图标', (WidgetTester tester) async {
+    testWidgets('未绑定显示槽位名 + 加号图标；绑定后显示动作名 + 动作图标', (WidgetTester tester) async {
       late BuildContext ctx;
       await tester.pumpWidget(
         MaterialApp(
@@ -284,16 +347,16 @@ void main() {
       );
 
       const VideoControlItem slot1 = VideoControlItem.customAction1;
-      // 未绑定：通用图标 + 「快捷键 1」这类槽位名（非空）。
+      // 未绑定：加号图标 + 「快捷键 1」这类槽位名（非空）。
       expect(
         videoControlItemIcon(
           slot1,
           bindings: VideoCustomActionBindings.empty,
         ),
-        Icons.bolt_outlined,
+        Icons.add,
       );
-      // 完全不传 bindings 也必须退回通用图标（编辑器调色板路径）。
-      expect(videoControlItemIcon(slot1), Icons.bolt_outlined);
+      // 完全不传 bindings 也必须退回加号图标（编辑器调色板路径）。
+      expect(videoControlItemIcon(slot1), Icons.add);
       final String emptyLabel = videoControlItemLabel(
         slot1,
         ctx,
@@ -319,7 +382,7 @@ void main() {
           VideoControlItem.customAction2,
           bindings: bound,
         ),
-        Icons.bolt_outlined,
+        Icons.add,
       );
     });
   });

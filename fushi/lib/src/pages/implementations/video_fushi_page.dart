@@ -5221,14 +5221,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   bool _shouldRenderControlItem(VideoControlItem item) {
-    // 自定义「快捷键」按钮：**未绑定也显示**（用户拍板）。空槽位不是死按钮——点它
-    // 就地弹动作选择器（见 `_activateVideoControlItem`），这是手机上最短的配置路径：
-    // 看得见 → 点得到 → 当场配好，不用先翻进设置面板找编辑器。
+    // 自定义「快捷键」按钮：**已绑的照常显示，未绑的只露一个加号**（用户拍板改口，
+    // 此前是 4 个空槽全摆——一排一模一样的图标既占地方又看不出差别）。
     //
-    // 想让某个槽位彻底消失，走控件编辑器把它拖进隐藏托盘（和其它按钮同一套操作），
-    // 而不是靠「没绑动作」这个隐式条件——后者会让「我明明配置过它，怎么不见了」
-    // 和「怎么才能把它调出来」同时变成谜。
-    if (item.isCustomAction) return true;
+    // 空槽仍不是死按钮：露出来的那个加号点一下就地弹动作选择器（见
+    // `_activateVideoControlItem`），这是手机上最短的配置路径——看得见 → 点得到 →
+    // 当场配好，不用先翻进设置面板找编辑器；配完下一个空槽自动接上加号的位置。
+    //
+    // 想让快捷键按钮**彻底**消失（连加号都不要），走控件编辑器把槽位拖进隐藏托盘
+    // （和其它按钮同一套操作）。编辑器不经本门控（它读 `layout.itemsIn`），所以 4 个
+    // 槽位在那里永远都在、随时可配，不会因为播放器上只画一个而变得不可达。
+    final int? customSlot = item.customActionSlotIndex;
+    if (customSlot != null) {
+      return _customActionBindings.actionAt(customSlot) != null ||
+          customSlot == _customActionBindings.firstUnboundSlotIndex;
+    }
     switch (item) {
       case VideoControlItem.previousEpisode:
       case VideoControlItem.nextEpisode:
@@ -5467,7 +5474,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.customAction3:
       case VideoControlItem.customAction4:
         // 不可达：函数开头已委托 [videoControlItemIcon] 按绑定解析。
-        return Icons.bolt_outlined;
+        return Icons.add;
     }
   }
 
@@ -5557,8 +5564,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     //   · 已绑定 → 查**键盘 / 手柄用的同一张动作表**并执行。这里刻意不写第二套
     //     switch——[videoActionCallbacks] 已是「动作 → 本页具体操作」的唯一接线，屏幕
     //     按钮再抄一份就等于承诺两份实现永远一致（沉浸门控、防重入都在回调里）。
-    //   · 未绑定 → 就地弹动作选择器配置它。空槽位照样渲染（见
-    //     `_shouldRenderControlItem`），靠这条分流才不至于变成按了没反应的死按钮。
+    //   · 未绑定 → 就地弹动作选择器配置它。播放器上只有第一个空槽会渲染成加号（见
+    //     `_shouldRenderControlItem`），靠这条分流它才不至于变成按了没反应的死按钮。
     final int? slotIndex = item.customActionSlotIndex;
     if (slotIndex != null) {
       final ShortcutAction? action = _customActionBindings.actionAt(slotIndex);
