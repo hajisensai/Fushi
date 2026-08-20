@@ -1762,11 +1762,29 @@ class AudiobookPlayerController extends ChangeNotifier {
     //
     // 尤其不能 `await _playActivationTail`：那会与下面的 `_player.stop()` 形成循环
     // 等待（后端差异与后果见 [_playActivationTail] 的文档）。顺序因此定为
-    // 「同步采样 → 先止声 → 再落库」：stop 反过来成为解开在途 play 的那一方，
-    // 且音频停得更快（不再被一次数据库写入挡在前面）。
+    // 「同步采样 → 发出落库写 → 先止声 → 再 await 落库」：stop 反过来成为解开在途
+    // play 的那一方，且音频停得更快（不被一次数据库写入挡在前面）。
     final String? uid = _audiobook?.bookKey;
     final int? sampledPosMs =
         uid == null ? null : _player.position.inMilliseconds;
+
+    // 位置写必须在 `_player.stop()` **之前发出**（这里只建链，不 await），真正的
+    // await 放到 stop 之后 —— 两个位置都不能挪：
+    //   * 在 stop 之前 **发出**：写的是 stop 归零前采样到的值（BUG-1240），且不让
+    //     一次数据库写挡在止声前面。
+    //   * 在 stop 之后 **await**：保证本方法返回时落库已完成。
+    //   * 但**绝不能把 `_enqueuePositionWrite` 的调用本身挪到 stop 之后**。
+    //     `_enqueuePositionWrite` 是往 `_positionWriteTail` 上 `.then()` 接链；在
+    //     `_player.stop()` 之后才接链会挂死 —— `now_listening_mini_bar_exit_flash_test`
+    //     的三条用例会各自吃满 10 分钟超时（该测试用 `tester.runAsync` 在真实异步区
+    //     跑 stop，而尾链此前是在 widget 测试的 FakeAsync 时钟下建立的；stop 之后再
+    //     往上接，新链就永远等不到那个不会被推进的时钟）。这条是实测结论，别凭
+    //     「反正最后都要 await」把两者合并回一处。
+    Future<void>? pendingWrite;
+    if (uid != null && sampledPosMs != null) {
+      _lastSavedWholeSec = sampledPosMs ~/ 1000;
+      pendingWrite = _enqueuePositionWrite(uid, sampledPosMs);
+    }
 
     // 即使持久层失败，也必须尽力停掉两个播放器；错误在资源收束后再抛。
     try {
@@ -1784,16 +1802,8 @@ class AudiobookPlayerController extends ChangeNotifier {
       }
     }
 
-    // 写穿 stop **之前**采样到的位置（BUG-1240）。stop 已把 `_player.position`
-    // 归零，此后绝不再采样。
     try {
-      if (uid != null && sampledPosMs != null) {
-        _lastSavedWholeSec = sampledPosMs ~/ 1000;
-        await _enqueuePositionWrite(uid, sampledPosMs);
-      } else {
-        // 无 bookKey：仍要等旧写入排空，与 [flushPosition] 的同名分支语义一致。
-        await _positionWriteTail;
-      }
+      await (pendingWrite ?? _positionWriteTail);
     } catch (error, stack) {
       remember(error, stack);
     }
