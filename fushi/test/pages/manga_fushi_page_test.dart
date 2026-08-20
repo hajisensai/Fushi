@@ -88,7 +88,7 @@ class _FakeMangaOcrService implements MangaOcrService {
   Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
         detectorReady: false,
         recognizerReady: ready,
-        downloadedBytes: 0,
+        diskBytes: 0,
         totalBytes: 1,
       );
 
@@ -97,7 +97,7 @@ class _FakeMangaOcrService implements MangaOcrService {
       const Stream<MangaOcrDownloadEvent>.empty();
 
   @override
-  Future<void> deleteModels() async {}
+  Future<int> deleteModels() async => 0;
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({

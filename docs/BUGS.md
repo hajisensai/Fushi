@@ -40,6 +40,11 @@
 | [BUG-1727](bugs/BUG-1727-ext-popup-masonry-overlap.md) | ✅ | ✅ | 扩展弹窗渲染中间态多卡片重叠 |
 | [BUG-1726](bugs/BUG-1726-ext-popup-viewport-clip.md) | ✅ | ✅ | 扩展查词弹窗超出视口底部被截断 |
 | [BUG-1725](bugs/BUG-1725-i18n-sync-swallows-extra-args.md) | ✅ | ✅ | i18n_sync 多个 --remove 只生效第一个，多余参数被静默吞掉 |
+> 共 1599 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-1732](bugs/BUG-1732-manga-ocr-engine-picker-and-model-accounting.md) | ✅ | ✅ | manga-ocr-engine-picker-and-model-accounting |
 | [BUG-1723](bugs/BUG-1723-android-predictive-back-gesture-freezes-taps.md) | ✅ | ✅ | 安卓侧滑返回后全屏点击失效 |
 | [BUG-1722](bugs/BUG-1722-manga-default-store-needs-network.md) | ✅ | ✅ | 默认 keiyoushi 扩展仓库绑死在首次启动能连上 github，手机上永远看不到 |
 | [BUG-1721](bugs/BUG-1721-scrape-history-no-rescrape-entry.md) | ✅ | ✅ | 后台任务历史条目无法重新刮削或手动指定作品 |

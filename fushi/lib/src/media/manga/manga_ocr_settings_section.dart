@@ -72,7 +72,14 @@ class _MangaOcrSettingsSectionState
   // 下载态。
   bool _downloading = false;
   String? _downloadingFile;
-  double? _downloadProgress;
+
+  /// 逐文件已收字节（文件名 → 字节）。
+  ///
+  /// 下载器的事件是**按文件**报进度的（每个文件各自 0→100%），照搬到 UI 上就是
+  /// 一根进度条来回跑四趟：用户看到「下了一次又一次」，把 450 MB 的一套模型感知
+  /// 成好几个 G（BUG-1732 用户原话）。这里按文件名归并累计，进度条只走一趟，
+  /// 并显示「已下 / 总量」的绝对字节，让「到底要下多少」有个准数。
+  final Map<String, int> _receivedByFile = <String, int>{};
   StreamSubscription<MangaOcrDownloadEvent>? _downloadSub;
 
   bool _deleting = false;
@@ -152,20 +159,25 @@ class _MangaOcrSettingsSectionState
     });
   }
 
+  /// 全套模型的预期总字节数（清单常量之和）；未知时为 0。
+  int get _downloadTotalBytes => _status?.totalBytes ?? 0;
+
+  int get _downloadReceivedBytes =>
+      _receivedByFile.values.fold<int>(0, (int a, int b) => a + b);
+
   void _startDownload() {
     setState(() {
       _downloading = true;
       _downloadingFile = null;
-      _downloadProgress = null;
+      _receivedByFile.clear();
     });
     _downloadSub = widget.service.downloadModels().listen(
       (MangaOcrDownloadEvent event) {
         if (!mounted) return;
         setState(() {
           _downloadingFile = event.fileName;
-          _downloadProgress = event.totalBytes > 0
-              ? (event.receivedBytes / event.totalBytes).clamp(0.0, 1.0)
-              : null;
+          // 同名文件取最新值而不是累加：同一文件会连发多条递增进度事件。
+          _receivedByFile[event.fileName] = event.receivedBytes;
         });
       },
       onError: (Object e) {
@@ -219,14 +231,19 @@ class _MangaOcrSettingsSectionState
     );
     if (ok != true || !mounted) return;
     setState(() => _deleting = true);
+    int freed = 0;
     try {
-      await widget.service.deleteModels();
+      freed = await widget.service.deleteModels();
     } finally {
       if (mounted) setState(() => _deleting = false);
     }
     if (!mounted) return;
+    // 报实际释放量而不是干巴巴一句「已删除」：用户抱怨「只删了 450 MB」正是因为
+    // 删除完全不回报数字，只能靠自己去看磁盘（BUG-1732）。
     FushiToast.show(
-      msg: t.manga_ocr_delete_done,
+      msg: freed > 0
+          ? t.manga_ocr_delete_done_freed(size: _formatBytes(freed))
+          : t.manga_ocr_delete_done,
       severity: ToastSeverity.success,
     );
     await _loadStatus();
@@ -304,7 +321,7 @@ class _MangaOcrSettingsSectionState
         ],
         const SizedBox(height: 12),
         if (widget.service.isSupportedPlatform)
-          _buildModelBlock(theme)
+          _buildLocalModelArea(theme)
         else
           _inset(
             Padding(
@@ -325,44 +342,95 @@ class _MangaOcrSettingsSectionState
     );
   }
 
+  /// 引擎选项表：标签 + **取舍说明** + 可用性，一处定义。
+  ///
+  /// 说明不是装饰：几个引擎的差别全在「要不要联网 / 会不会上传页面图 / 质量高低 /
+  /// 要不要下几百 MB 模型」上，而下拉里只有五个裸名字时，用户没有任何依据挑
+  /// （用户原话：这里说一下每个的特点）。取舍写在选项自己身上，别指望用户去翻
+  /// 文档或试错。
+  ///
+  /// 平台不适用的项**保留在列表里**只置灰（不裁项）：裁掉会让「已存 external_mokuro
+  /// 的偏好」在移动端找不到匹配 value 而触发 Dropdown 断言。
+  List<_EngineOption> _engineOptions() {
+    return <_EngineOption>[
+      _EngineOption(
+        preference: MangaOcrEnginePreference.auto,
+        label: t.manga_ocr_engine_auto,
+        description: t.manga_ocr_engine_auto_desc,
+        enabled: true,
+      ),
+      _EngineOption(
+        preference: MangaOcrEnginePreference.localOnnx,
+        label: t.manga_ocr_engine_local_onnx,
+        description: t.manga_ocr_engine_local_onnx_desc,
+        enabled: widget.service.isSupportedPlatform,
+      ),
+      _EngineOption(
+        preference: MangaOcrEnginePreference.googleLens,
+        label: t.manga_ocr_engine_google_lens,
+        description: t.manga_ocr_engine_google_lens_desc,
+        enabled: true,
+      ),
+      _EngineOption(
+        preference: MangaOcrEnginePreference.externalMokuro,
+        label: t.manga_ocr_engine_external,
+        description: t.manga_ocr_engine_external_desc,
+        enabled: isDesktopPlatform,
+      ),
+      // 互联「配对主机代跑」：服务端/客户端链路早已完整（/api/ocr/job*），此前
+      // 只是没进偏好枚举，导致它永远只能被 auto 兜底顺序选中、无法显式指定。
+      // 移动端没有本地 ONNX 时这是唯一可用的整卷引擎。
+      _EngineOption(
+        preference: MangaOcrEnginePreference.pairedHost,
+        label: t.manga_remote_ocr_engine,
+        description: t.manga_ocr_engine_paired_host_desc,
+        enabled: true,
+      ),
+    ];
+  }
+
   Widget _buildEnginePreference(ThemeData theme) {
+    final List<_EngineOption> options = _engineOptions();
     return DropdownButtonFormField<MangaOcrEnginePreference>(
       key: const ValueKey<String>('manga_ocr_default_engine'),
       initialValue: _enginePreference,
+      isExpanded: true,
       decoration: InputDecoration(
         labelText: t.manga_ocr_default_engine,
         isDense: true,
         border: const OutlineInputBorder(),
       ),
-      items: <DropdownMenuItem<MangaOcrEnginePreference>>[
-        DropdownMenuItem<MangaOcrEnginePreference>(
-          value: MangaOcrEnginePreference.auto,
-          child: Text(t.manga_ocr_engine_auto),
-        ),
-        DropdownMenuItem<MangaOcrEnginePreference>(
-          value: MangaOcrEnginePreference.localOnnx,
-          enabled: widget.service.isSupportedPlatform,
-          child: Text(t.manga_ocr_engine_local_onnx),
-        ),
-        DropdownMenuItem<MangaOcrEnginePreference>(
-          value: MangaOcrEnginePreference.googleLens,
-          child: Text(t.manga_ocr_engine_google_lens),
-        ),
-        // 仍然出现在列表里（而不是按平台裁项）：裁项会让「已存 external_mokuro
-        // 的偏好」在移动端找不到匹配 value 而触发 Dropdown 断言。
-        DropdownMenuItem<MangaOcrEnginePreference>(
-          value: MangaOcrEnginePreference.externalMokuro,
-          enabled: isDesktopPlatform,
-          child: Text(t.manga_ocr_engine_external),
-        ),
-        // 互联「配对主机代跑」：服务端/客户端链路早已完整（/api/ocr/job*），此前
-        // 只是没进偏好枚举，导致它永远只能被 auto 兜底顺序选中、无法显式指定。
-        // 移动端没有本地 ONNX 时这是唯一可用的整卷引擎。
-        DropdownMenuItem<MangaOcrEnginePreference>(
-          value: MangaOcrEnginePreference.pairedHost,
-          child: Text(t.manga_remote_ocr_engine),
-        ),
+      // 闭合态只显示单行标签：说明是给「挑的时候」看的，收起后再占两行只会把
+      // 设置行撑高。
+      selectedItemBuilder: (BuildContext context) => <Widget>[
+        for (final _EngineOption option in options)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(option.label, overflow: TextOverflow.ellipsis),
+          ),
       ],
+      items: <DropdownMenuItem<MangaOcrEnginePreference>>[
+        for (final _EngineOption option in options)
+          DropdownMenuItem<MangaOcrEnginePreference>(
+            value: option.preference,
+            enabled: option.enabled,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(option.label),
+                Text(
+                  option.description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      // 两行项比默认 kMinInteractiveDimension 高，不给足高度会 overflow。
+      itemHeight: null,
       onChanged: (MangaOcrEnginePreference? value) {
         if (value == null) return;
         setState(() => _enginePreference = value);
@@ -401,7 +469,24 @@ class _MangaOcrSettingsSectionState
     );
   }
 
-  Widget _buildModelBlock(ThemeData theme) {
+  /// 当前引擎偏好是否真的会用到本地 ONNX 模型。
+  ///
+  /// `auto` 会在离线优先的兜底顺序里挑到本地模型，所以算「用得到」；显式选了
+  /// Lens / 外部 mokuro / 配对主机的，本机一个字节都不需要。
+  bool get _localModelsUsedByEngine =>
+      _enginePreference == MangaOcrEnginePreference.auto ||
+      _enginePreference == MangaOcrEnginePreference.localOnnx;
+
+  /// 本地模型区：**按当前引擎决定形态**。
+  ///
+  /// 修的是「我选的是 Google Lens，这儿怎么还让我下模型」（用户原话）——原先这块
+  /// 只受平台闸门控制，跟引擎选择完全脱钩，于是一个永远用不到本地模型的用户被
+  /// 一直劝着下 450 MB。三种形态：
+  /// - 引擎用得到（auto / 本地 ONNX）→ 完整块：状态 + 下载/删除。
+  /// - 引擎用不到但**磁盘上还留着文件** → 只给「用不到 + 占用多少 + 删除」，
+  ///   这正是「应该支持删除 ocr 模型」的落点：换了引擎之后那几百 MB 得能清掉。
+  /// - 引擎用不到且磁盘干净 → 整块不渲染，不再劝下载。
+  Widget _buildLocalModelArea(ThemeData theme) {
     if (_loadingStatus) {
       return _inset(
         const Padding(
@@ -410,12 +495,43 @@ class _MangaOcrSettingsSectionState
         ),
       );
     }
+    if (_localModelsUsedByEngine) {
+      return _buildModelBlock(theme);
+    }
+    final MangaOcrModelStatus? status = _status;
+    if (status == null || !status.hasAnyFiles) {
+      return const SizedBox.shrink();
+    }
+    return _buildOrphanModelBlock(theme, status);
+  }
+
+  /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除。
+  Widget _buildOrphanModelBlock(ThemeData theme, MangaOcrModelStatus status) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          title: t.manga_ocr_model_unused_by_engine,
+          subtitle: t.manga_ocr_model_disk_usage(
+            size: _formatBytes(status.diskBytes),
+          ),
+          icon: Icons.folder_off_outlined,
+          showIcon: true,
+        ),
+        const SizedBox(height: 8),
+        _inset(
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _deleteButton(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModelBlock(ThemeData theme) {
     final MangaOcrModelStatus? status = _status;
     final bool ready = status?.allReady ?? false;
-    final String? sizeText = status == null || status.totalBytes <= 0
-        ? null
-        : '${_formatBytes(status.downloadedBytes)} / '
-            '${_formatBytes(status.totalBytes)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -423,18 +539,28 @@ class _MangaOcrSettingsSectionState
           title: ready
               ? t.manga_ocr_model_status_ready
               : t.manga_ocr_model_status_missing,
-          subtitle: sizeText,
+          subtitle: _modelSizeSubtitle(status),
           icon: ready ? Icons.check_circle_outline : Icons.download_outlined,
           showIcon: true,
         ),
         if (_downloading) ...<Widget>[
           const SizedBox(height: 8),
-          _inset(LinearProgressIndicator(value: _downloadProgress)),
+          _inset(LinearProgressIndicator(value: _downloadProgressValue)),
           const SizedBox(height: 4),
           if (_downloadingFile != null)
             _inset(
               Text(
                 t.manga_ocr_downloading_file(file: _downloadingFile!),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          if (_downloadTotalBytes > 0)
+            _inset(
+              Text(
+                t.manga_ocr_download_total_progress(
+                  done: _formatBytes(_downloadReceivedBytes),
+                  total: _formatBytes(_downloadTotalBytes),
+                ),
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -453,17 +579,7 @@ class _MangaOcrSettingsSectionState
             Align(
               alignment: Alignment.centerLeft,
               child: ready
-                  ? OutlinedButton.icon(
-                      onPressed: _deleting ? null : _confirmDelete,
-                      icon: _deleting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.delete_outline, size: 18),
-                      label: Text(t.manga_ocr_delete),
-                    )
+                  ? _deleteButton()
                   : FilledButton.icon(
                       onPressed: _startDownload,
                       icon: const Icon(Icons.download_outlined, size: 18),
@@ -471,8 +587,67 @@ class _MangaOcrSettingsSectionState
                     ),
             ),
           ),
+          // 模型不全但磁盘上有残留（中断的 `.part`、换档后的遗留档）时，除了
+          // 「继续下载」也得能直接清掉——否则那几百 MB 在 UI 上无处可删。
+          if (!ready && (status?.hasAnyFiles ?? false)) ...<Widget>[
+            const SizedBox(height: 4),
+            _inset(
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _deleteButton(),
+              ),
+            ),
+          ],
         ],
       ],
+    );
+  }
+
+  /// 体积副标题：已占多少 + 还需下多少，两者都按真实数字给。
+  ///
+  /// 旧实现是 `已下载 / 清单总量` 这种双数字拼接，而「已下载」只累加清单内已就绪
+  /// 文件——`.part` 残留与遗留档一律看不见，用户于是遇到「显示 450 MB、删掉后
+  /// 磁盘却少了别的数」（BUG-1732）。
+  String? _modelSizeSubtitle(MangaOcrModelStatus? status) {
+    if (status == null) {
+      return null;
+    }
+    final String? usage = status.hasAnyFiles
+        ? t.manga_ocr_model_disk_usage(size: _formatBytes(status.diskBytes))
+        : null;
+    if (status.allReady) {
+      return usage;
+    }
+    final String? needed = status.totalBytes > 0
+        ? t.manga_ocr_model_download_size(
+            size: _formatBytes(status.totalBytes),
+          )
+        : null;
+    final String joined =
+        <String?>[usage, needed].whereType<String>().join(' · ');
+    return joined.isEmpty ? null : joined;
+  }
+
+  /// 总体下载进度（0~1）；总量未知时返回 null 走不确定进度条。
+  double? get _downloadProgressValue {
+    final int total = _downloadTotalBytes;
+    if (total <= 0) {
+      return null;
+    }
+    return (_downloadReceivedBytes / total).clamp(0.0, 1.0);
+  }
+
+  Widget _deleteButton() {
+    return OutlinedButton.icon(
+      onPressed: _deleting ? null : _confirmDelete,
+      icon: _deleting
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.delete_outline, size: 18),
+      label: Text(t.manga_ocr_delete),
     );
   }
 
@@ -532,4 +707,22 @@ class _MangaOcrSettingsSectionState
   }
 
   static String _formatBytes(int bytes) => FushiByteFormat.bytes(bytes);
+}
+
+/// 引擎下拉的一项：偏好值 + 标签 + 取舍说明 + 本平台是否可用。
+class _EngineOption {
+  const _EngineOption({
+    required this.preference,
+    required this.label,
+    required this.description,
+    required this.enabled,
+  });
+
+  final MangaOcrEnginePreference preference;
+  final String label;
+
+  /// 一句话取舍：联网/上传/质量/下载量，用户据此挑引擎。
+  final String description;
+
+  final bool enabled;
 }

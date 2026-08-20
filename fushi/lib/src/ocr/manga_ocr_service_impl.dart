@@ -38,6 +38,7 @@ import 'package:fushi/src/ocr/manga_ocr_tokenizer.dart';
 import 'package:fushi/src/ocr/ocr_inference.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 import 'package:fushi/src/ocr/text_detector.dart';
+import 'package:fushi/src/utils/misc/directory_bytes.dart';
 
 /// 纯函数：`Platform.operatingSystem` 字符串 → [OcrPlatform]。
 /// 未知平台（fuchsia 等）落 linux 档（纯 CPU），不会选到不存在的 EP。
@@ -460,19 +461,31 @@ class MangaOcrServiceImpl implements MangaOcrService {
   @override
   bool get isSupportedPlatform => _platformSupport();
 
+  /// 清单是否齐全（只 stat 清单里那几个文件，不遍历目录）。
+  ///
+  /// 与 [modelStatus] 分开：跑 OCR 的热路径只需要这个答案，而占用统计要递归遍历
+  /// 整个模型目录——把两者绑在一起等于让每次开跑都白扫一遍磁盘。
+  Future<bool> _manifestComplete() async {
+    final Directory dir = await _modelsDirProvider();
+    return _manifest.every(
+      (MangaOcrModelFile model) =>
+          isMangaOcrModelFileReady(File(p.join(dir.path, model.fileName))),
+    );
+  }
+
   @override
   Future<MangaOcrModelStatus> modelStatus() async {
     final Directory dir = await _modelsDirProvider();
     bool detectorReady = true;
     bool recognizerReady = true;
-    int downloadedBytes = 0;
     int totalBytes = 0;
     for (final MangaOcrModelFile model in _manifest) {
       totalBytes += model.expectedBytes;
       final File file = File(p.join(dir.path, model.fileName));
       if (isMangaOcrModelFileReady(file)) {
-        downloadedBytes += file.lengthSync();
-      } else if (model.role == MangaOcrModelRole.detector) {
+        continue;
+      }
+      if (model.role == MangaOcrModelRole.detector) {
         detectorReady = false;
       } else {
         recognizerReady = false;
@@ -481,7 +494,9 @@ class MangaOcrServiceImpl implements MangaOcrService {
     return MangaOcrModelStatus(
       detectorReady: detectorReady,
       recognizerReady: recognizerReady,
-      downloadedBytes: downloadedBytes,
+      // 占用按目录实际大小，不按清单累加：`.part` 残留与遗留旧档同样占磁盘，
+      // 用户看到的数字必须能被「删除」兑现（BUG-1732）。
+      diskBytes: await measureDirectoryBytes(dir),
       totalBytes: totalBytes,
     );
   }
@@ -493,11 +508,15 @@ class MangaOcrServiceImpl implements MangaOcrService {
   }
 
   @override
-  Future<void> deleteModels() async {
+  Future<int> deleteModels() async {
     final Directory dir = await _modelsDirProvider();
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
+    if (!await dir.exists()) {
+      return 0;
     }
+    // 先量后删：删完再量只会得到 0，用户就永远拿不到「到底释放了多少」。
+    final int freed = await measureDirectoryBytes(dir);
+    await dir.delete(recursive: true);
+    return freed;
   }
 
   Future<MangaOcrModelPaths> _resolveModelPaths() async {
@@ -538,8 +557,9 @@ class MangaOcrServiceImpl implements MangaOcrService {
             throw StateError(
                 'manga OCR is not supported on ${Platform.operatingSystem}');
           }
-          final MangaOcrModelStatus status = await modelStatus();
-          if (!status.allReady) {
+          // 只问「齐不齐」，不量「占多少」：占用统计要递归遍历整个模型目录，
+          // 那是设置页展示的开销，没有理由压在每次开跑 OCR 的路径上。
+          if (!await _manifestComplete()) {
             throw StateError('manga OCR models are not downloaded');
           }
           final MangaOcrModelPaths modelPaths = await _resolveModelPaths();

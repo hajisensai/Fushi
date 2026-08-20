@@ -3623,5 +3623,15 @@
   "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
   "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)",
   "video_setting_tap_toggles_playback": "Tap video to play/pause",
-  "video_setting_tap_toggles_playback_hint": "Turn off so tapping the video only reveals the controls"
+  "video_setting_tap_toggles_playback_hint": "Turn off so tapping the video only reveals the controls",
+  "manga_ocr_engine_auto_desc": "Prefers an offline engine you already set up; never uploads to Lens on its own.",
+  "manga_ocr_engine_local_onnx_desc": "Fully offline, best quality. Needs a one-time model download and is slow on old hardware.",
+  "manga_ocr_engine_google_lens_desc": "Needs internet and uploads page images to Google. Fast with no download, but quality is below the local model.",
+  "manga_ocr_engine_external_desc": "Calls a mokuro command line you installed yourself. Desktop only.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to a paired device on your network. Nothing is downloaded here.",
+  "manga_ocr_model_disk_usage": "Using $size on disk",
+  "manga_ocr_model_download_size": "Needs $size",
+  "manga_ocr_delete_done_freed": "Models deleted, freed $size",
+  "manga_ocr_model_unused_by_engine": "The current engine doesn't use these local model files.",
+  "manga_ocr_download_total_progress": "$done of $total"
 }
