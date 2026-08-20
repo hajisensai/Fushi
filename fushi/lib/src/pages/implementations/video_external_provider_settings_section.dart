@@ -14,6 +14,8 @@ import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
+import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
+    show kTorrentSettingsContentMaxWidth;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -429,30 +431,31 @@ class _VideoExternalProviderSettingsSectionState
     bool secret = false,
     TextInputType? keyboardType,
   }) {
+    // 宽度由整段的外层容器（[_constrainSectionWidth]）统一承接，这里不再自己
+    // 缩到 480——那份局部限宽正是几何撕裂的来源：同一个 Column 里输入框缩到
+    // 480、Switch 吃满 stretch 紧约束占满整宽、用户名/密码 Row 又各占一半，
+    // 三种行三套左右边界。
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: TextFormField(
-            key: key,
-            initialValue: initialValue,
-            obscureText: secret,
-            enableSuggestions: !secret,
-            autocorrect: !secret,
-            keyboardType: keyboardType,
-            decoration: InputDecoration(
-              labelText: label,
-              hintText: hint,
-              helperText: helper,
-              helperMaxLines: 3,
-              errorText: errorText,
-              isDense: true,
-              border: const OutlineInputBorder(),
-            ),
-            onChanged: onChanged,
+      child: SizedBox(
+        width: double.infinity,
+        child: TextFormField(
+          key: key,
+          initialValue: initialValue,
+          obscureText: secret,
+          enableSuggestions: !secret,
+          autocorrect: !secret,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            helperText: helper,
+            helperMaxLines: 3,
+            errorText: errorText,
+            isDense: true,
+            border: const OutlineInputBorder(),
           ),
+          onChanged: onChanged,
         ),
       ),
     );
@@ -700,56 +703,53 @@ class _VideoExternalProviderSettingsSectionState
   Widget _subtitleLanguageField() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: DropdownButtonFormField<String>(
-            key: const ValueKey<String>('video-subtitle-default-language'),
-            initialValue: _preferredLanguage,
-            // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
-            // 排版，长标签在 360px 紧凑布局里直接横向溢出（`compact layout has no
-            // horizontal overflow` 会红）。这里的选项以前全是 `日本語` / `中文`
-            // 这类两三字的短标签，才一直没暴露；`''` 从「全部」改成「跟随视频语言」
-            // 后就撞上了——而且这不是中文特有：17 份 i18n 里未翻译的那些落的是英文
-            // 原串 `Follow video language`，比中文还长。所以修的是约束，不是文案。
-            isExpanded: true,
-            decoration: InputDecoration(
-              labelText: t.video_setting_jimaku_default_language,
-              helperText: t.video_setting_jimaku_default_language_hint,
-              helperMaxLines: 3,
-              isDense: true,
-              border: const OutlineInputBorder(),
+      child: SizedBox(
+        width: double.infinity,
+        child: DropdownButtonFormField<String>(
+          key: const ValueKey<String>('video-subtitle-default-language'),
+          initialValue: _preferredLanguage,
+          // `isExpanded` + 逐项省略：不加的话 DropdownButton 按**内容固有宽度**
+          // 排版，长标签在 360px 紧凑布局里直接横向溢出（`compact layout has no
+          // horizontal overflow` 会红）。这里的选项以前全是 `日本語` / `中文`
+          // 这类两三字的短标签，才一直没暴露；`''` 从「全部」改成「跟随视频语言」
+          // 后就撞上了——而且这不是中文特有：17 份 i18n 里未翻译的那些落的是英文
+          // 原串 `Follow video language`，比中文还长。所以修的是约束，不是文案。
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: t.video_setting_jimaku_default_language,
+            helperText: t.video_setting_jimaku_default_language_hint,
+            helperMaxLines: 3,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          items: <DropdownMenuItem<String>>[
+            DropdownMenuItem<String>(
+              value: '',
+              // 与设置页那份同一语义：`''` = 跟随视频语言，不是「全部」。
+              child: Text(
+                t.video_jimaku_language_follow_video,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            items: <DropdownMenuItem<String>>[
+            for (final String language in kJimakuLanguageCodes)
               DropdownMenuItem<String>(
-                value: '',
-                // 与设置页那份同一语义：`''` = 跟随视频语言，不是「全部」。
+                value: language,
                 child: Text(
-                  t.video_jimaku_language_follow_video,
+                  jimakuLanguageLabel(language),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              for (final String language in kJimakuLanguageCodes)
-                DropdownMenuItem<String>(
-                  value: language,
-                  child: Text(
-                    jimakuLanguageLabel(language),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (String? value) {
-              final String language = value ?? '';
-              setState(() => _preferredLanguage = language);
-              _save(
-                (VideoExternalSettingsStore store) =>
-                    store.savePreferredSubtitleLanguage(language),
-              );
-            },
-          ),
+          ],
+          onChanged: (String? value) {
+            final String language = value ?? '';
+            setState(() => _preferredLanguage = language);
+            _save(
+              (VideoExternalSettingsStore store) =>
+                  store.savePreferredSubtitleLanguage(language),
+            );
+          },
         ),
       ),
     );
@@ -891,6 +891,29 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  /// 把整段收进与下载设置同一个内容宽度（[kTorrentSettingsContentMaxWidth]）并
+  /// **左对齐**。
+  ///
+  /// 这一段此前三种行各有一套左右边界：输入框自己缩到 480；`SwitchListTile`
+  /// 直接吃 `CrossAxisAlignment.stretch` 的紧约束、贴到 pane 最右；用户名/密码
+  /// 的 `Row` 又是全宽再各占一半。宽窗下看起来就是「输入框只占左半边、开关孤零
+  /// 零在最右、中间一大片空白」。
+  ///
+  /// 收进同一个容器后三者边界一致，同时保住 BUG-1084 的结论（4K 全屏下输入框
+  /// 不会被拉到三千像素）。用左对齐而不是 BUG-1278 的居中：这一段嵌在设置详情
+  /// 的行流里，居中会与上下普通设置行的左基线再撕一次。
+  Widget _constrainSectionWidth(Widget content) {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: kTorrentSettingsContentMaxWidth,
+        ),
+        child: SizedBox(width: double.infinity, child: content),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -902,7 +925,7 @@ class _VideoExternalProviderSettingsSectionState
     if (_store == null) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
     if (widget.onlySubtitleSources) {
-      return Column(
+      return _constrainSectionWidth(Column(
         key: const ValueKey<String>('video-external-subtitle-sources'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -918,9 +941,9 @@ class _VideoExternalProviderSettingsSectionState
             ),
           ..._subtitleSourceBlocks(theme),
         ],
-      );
+      ));
     }
-    return Column(
+    return _constrainSectionWidth(Column(
       key: const ValueKey<String>('video-external-provider-settings'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1036,7 +1059,7 @@ class _VideoExternalProviderSettingsSectionState
           ),
         const SizedBox(height: 8),
       ],
-    );
+    ));
   }
 }
 

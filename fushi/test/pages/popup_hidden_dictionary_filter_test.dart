@@ -99,12 +99,73 @@ void main() {
         reason: 'hiddenDictionaryNames injection must sit next to '
             'collapsedDictionaryNames');
 
+    // 注入侧消费真相源 getter，而不是自己抄一份 where/map 表达式。
+    // 断言字面量：'appModel.hiddenDictionaryNames'
     expect(
-      dart.contains('d.isHidden(JapaneseLanguage.instance)'),
+      dart.contains('appModel.hiddenDictionaryNames'),
+      isTrue,
+      reason: 'the injection host must consume AppModel.hiddenDictionaryNames '
+          'instead of re-deriving the hidden set locally',
+    );
+
+    // 真相源本身仍必须由 isHidden(targetLanguage) 推导——与管理页显示/隐藏开关
+    // 拨的是同一个判据。断言字面量：'d.isHidden(JapaneseLanguage.instance)'
+    final String appModelSrc =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    final int getterAt =
+        appModelSrc.indexOf('Set<String> get hiddenDictionaryNames');
+    expect(getterAt, greaterThanOrEqualTo(0),
+        reason: 'AppModel must expose hiddenDictionaryNames as the single '
+            'source of truth for the hidden dictionary set');
+    expect(
+      appModelSrc
+          .substring(getterAt, getterAt + 400)
+          .contains('d.isHidden(JapaneseLanguage.instance)'),
       isTrue,
       reason: 'the hidden set must be derived from isHidden(targetLanguage), '
           'the same predicate the management show/hide switch toggles',
     );
+  });
+
+  test('popupJson drops hidden dictionaries at the source (all hosts)', () {
+    // 这条守的是本次修复的核心不变式：过滤下沉到 popupJson 生成期这个唯一数据
+    // 出口。此前过滤只活在渲染期 JS 里，靠宿主注入 window.hiddenDictionaryNames
+    // 驱动——app 内 WebView 注入了，浏览器扩展走的 HTTP 路径从来不下发它，于是
+    // 被关掉的词典在扩展弹窗里照旧出释义、还一并写进 Anki 卡片。只要过滤留在
+    // 生成器里，任何新宿主（不经 JS 注入的）都自动正确。
+    final String lang = File(
+      '../packages/fushi_dictionary/lib/src/language/language.dart',
+    ).readAsStringSync();
+
+    // 断言字面量：'required Set<String> hiddenDictionaries'
+    // 必填（不是可选带默认值）——可选参数等于允许调用点漏传。
+    expect(
+      lang.contains('required Set<String> hiddenDictionaries'),
+      isTrue,
+      reason: 'buildPopupJsonFromLookup must take the hidden set as a REQUIRED '
+          'parameter so no host can silently skip the filter',
+    );
+
+    final int builderAt = lang.indexOf('String buildPopupJsonFromLookup(');
+    expect(builderAt, greaterThanOrEqualTo(0));
+    final int glossaryLoop =
+        lang.indexOf('for (final g in r.term.glossaries) {', builderAt);
+    expect(glossaryLoop, greaterThan(builderAt));
+
+    // 断言字面量：'if (hiddenDictionaries.contains(g.dictName)) continue;'
+    // 必须 continue 整个 glossary 迭代，而不是只跳 groupGlossaries.add——
+    // 只有隐藏词典释义的词头不该撑起空卡片，也不该占 maximumTerms 词头预算。
+    final int skipAt = lang.indexOf(
+        'if (hiddenDictionaries.contains(g.dictName)) continue;', glossaryLoop);
+    expect(skipAt, greaterThan(glossaryLoop),
+        reason: 'hidden dictionaries must be skipped at the top of the '
+            'glossary loop inside buildPopupJsonFromLookup');
+
+    final int groupCreate =
+        lang.indexOf('if (!groupExpression.containsKey(key)) {', glossaryLoop);
+    expect(groupCreate, greaterThan(skipAt),
+        reason: 'the skip must precede group creation, otherwise a headword '
+            'whose only glossaries are hidden still renders an empty card');
   });
 }
 

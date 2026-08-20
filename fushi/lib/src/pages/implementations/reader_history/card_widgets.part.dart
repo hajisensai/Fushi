@@ -288,7 +288,14 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       onLongPress: _selectionMode ? null : onLongPress,
       child: interactiveCard,
     );
-    Widget result = card;
+    // 悬停抬升：与游戏库 / 视频库同一个壳（内含墨水屏与「减弱动态效果」两处
+    // 降级）。多选态关掉——那时卡片是勾选目标，跟指针放大只会干扰框选。
+    // AnimatedScale 只做绘制变换、不改变 layout 尺寸，
+    // `book_drag_target_layout_test.dart` 的等尺寸断言仍成立。
+    Widget result = FushiHoverLift(
+      enabled: !_selectionMode,
+      builder: (BuildContext _, bool __) => card,
+    );
     if (dragBookId != null && onTagDropped != null && !_selectionMode) {
       result = BookDragTarget(
         bookId: dragBookId,

@@ -143,9 +143,9 @@ void main() {
       int maximumTerms,
     ) {
       final String json = buildPopupJsonFromLookup(
-        results: results,
-        maximumTerms: maximumTerms,
-      );
+          results: results,
+          maximumTerms: maximumTerms,
+          hiddenDictionaries: const <String>{});
       return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
     }
 

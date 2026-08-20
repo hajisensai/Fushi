@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
@@ -67,20 +68,18 @@ class GalgamePosterCard extends StatefulWidget {
 }
 
 class _GalgamePosterCardState extends State<GalgamePosterCard> {
-  bool _hovering = false;
-
-  void _setHover(bool value) {
-    if (_hovering != value) {
-      setState(() => _hovering = value);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    // hover 态与缩放交给共享的 [FushiHoverLift]（书架 / 漫画 / 视频库同一套），
+    // 它顺带带来本组件原先缺的两处降级：墨水屏与「减弱动态效果」。
+    return FushiHoverLift(builder: _buildForHover);
+  }
+
+  Widget _buildForHover(BuildContext context, bool hovering) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
 
-    final Widget cover = _buildCover(context, colors);
+    final Widget cover = _buildCover(context, colors, hovering);
 
     final TextStyle? titleStyle = theme.textTheme.titleSmall?.copyWith(
       fontWeight: FontWeight.w600,
@@ -115,10 +114,9 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
       ],
     );
 
-    // hover 放大 + 阴影：AnimatedScale 做缩放，AnimatedContainer 做阴影过渡。
+    // 缩放由外层 [FushiHoverLift] 负责；这里只留光标与手势。阴影仍随 hovering
+    // 在 [_buildCover] 里插值（那是卡片自己的视觉，壳不该知道）。
     final Widget interactive = MouseRegion(
-      onEnter: (_) => _setHover(true),
-      onExit: (_) => _setHover(false),
       cursor:
           widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
       child: GestureDetector(
@@ -126,12 +124,7 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
         onLongPress: widget.onLongPress,
         onSecondaryTap: widget.onSecondaryTap,
         behavior: HitTestBehavior.opaque,
-        child: AnimatedScale(
-          scale: _hovering ? 1.05 : 1.0,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          child: card,
-        ),
+        child: card,
       ),
     );
 
@@ -167,9 +160,9 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
   late final FushiFocusId _fallbackFocusId =
       FushiFocusId('galgame-poster-${identityHashCode(this)}');
 
-  Widget _buildCover(BuildContext context, ColorScheme colors) {
+  Widget _buildCover(BuildContext context, ColorScheme colors, bool hovering) {
     const BorderRadius radius = FushiBorderRadius.poster;
-    final bool elevated = _hovering || widget.selected;
+    final bool elevated = hovering || widget.selected;
 
     return AspectRatio(
       aspectRatio: 3 / 4,

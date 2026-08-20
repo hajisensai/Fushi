@@ -94,6 +94,27 @@ Widget _harness(_FakeStore store, {bool onlySubtitleSources = false}) =>
       ),
     );
 
+/// 宽窗 harness：原 bug 只在 pane 明显宽于内容宽度时才看得出来——560 的窄
+/// harness 下输入框（旧上限 480）与开关（占满 560）只差 80px，肉眼和断言都容易
+/// 放过；1400 下差距是好几百像素，正是用户截图里的样子。
+Widget _wideHarness(_FakeStore store) => ProviderScope(
+      child: MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: SizedBox(
+            width: 1400,
+            child: SingleChildScrollView(
+              child: VideoExternalProviderSettingsSection(
+                key: const ValueKey<String>('wide'),
+                store: store,
+                onlySubtitleSources: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
 Finder _textField(Key key) => find.descendant(
       of: find.byKey(key),
       matching: find.byType(TextField),
@@ -110,6 +131,66 @@ Future<void> _settleAutosave(WidgetTester tester) async {
 }
 
 void main() {
+  /// BUG-1747：宽窗下这一段三种行各有一套左右边界——输入框自己缩到 480、
+  /// `SwitchListTile` 吃 `CrossAxisAlignment.stretch` 的紧约束占满整个 pane、
+  /// 用户名/密码 `Row` 又是全宽再各占一半。用户看到的是「输入框只占左半边、
+  /// 开关孤零零贴在最右、中间一大片空白」。
+  ///
+  /// 不变式：整段收进同一个内容宽度容器后，三者右边缘必须重合。
+  testWidgets('BUG-1747：宽窗下输入框/开关/双列行的左右边界一致', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(
+      VideoExternalSettingsSnapshot(
+        openSubtitlesConfig: OpenSubtitlesConfig(
+          apiKey: 'sub-secret',
+          username: 'alice',
+          password: 'password',
+        ),
+      ),
+    );
+    await tester.pumpWidget(_wideHarness(store));
+    await tester.pumpAndSettle();
+
+    final Finder endpoint =
+        _textField(const ValueKey<String>('video-opensubtitles-endpoint'));
+    await _show(tester, endpoint);
+    final Rect endpointRect = tester.getRect(endpoint);
+
+    final Finder insecure =
+        find.byKey(const ValueKey<String>('video-opensubtitles-insecure-http'));
+    await _show(tester, insecure);
+    final Rect switchRect = tester.getRect(insecure);
+
+    expect(
+      endpointRect.left,
+      moreOrLessEquals(switchRect.left, epsilon: 1.0),
+      reason: '输入框与开关必须同一条左基线',
+    );
+    expect(
+      endpointRect.right,
+      moreOrLessEquals(switchRect.right, epsilon: 1.0),
+      reason: '输入框此前被局部限宽到 480、开关占满整个 pane，右边缘差几百像素；'
+          '收进同一个内容宽度容器后必须重合',
+    );
+
+    // 双列行（用户名/密码）是第三套宽度：Row 全宽 → Expanded 各半 → 再被局部
+    // 480 二次裁。它的整体左右边界同样要落在同一对基线上。
+    final Rect username = tester.getRect(
+        _textField(const ValueKey<String>('video-opensubtitles-username')));
+    final Rect password = tester.getRect(
+        _textField(const ValueKey<String>('video-opensubtitles-password')));
+    expect(username.left, moreOrLessEquals(endpointRect.left, epsilon: 1.0),
+        reason: '双列行左边界要与单列框一致');
+    expect(password.right, moreOrLessEquals(endpointRect.right, epsilon: 1.0),
+        reason: '双列行右边界要与单列框一致（此前密码框一路铺到 pane 最右）');
+
+    // 同时保住 BUG-1084：4K 全屏下输入框不得被拉成三千像素。
+    expect(endpointRect.width, lessThanOrEqualTo(561),
+        reason: '整段仍受内容宽度上限约束（BUG-1084）');
+  });
+
   testWidgets('secret fields are masked and unsafe remote HTTP is not saved',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 3200);

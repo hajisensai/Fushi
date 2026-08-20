@@ -140,7 +140,19 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiPageHeader(title: t.nav_browser_extension),
+          // 本页是双身份页：作顶层 tab 时侧栏在旁边、canPop 为 false，不出箭头
+          // （页头几何与 BUG-1658 结论一致）；被「设置 → 查词 → 浏览器扩展」
+          // push 成全屏路由时侧栏被盖住，这里承接返回键（同 DownloadsPage 范式）。
+          FushiPageHeader(
+            title: t.nav_browser_extension,
+            leading: Navigator.of(context).canPop()
+                ? FushiIconButton(
+                    icon: Icons.arrow_back,
+                    tooltip: t.back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  )
+                : null,
+          ),
           Expanded(child: _buildContentList(theme, appModel)),
         ],
       ),

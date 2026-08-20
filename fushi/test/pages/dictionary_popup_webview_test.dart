@@ -453,9 +453,9 @@ void main() {
       const maxTerms = 100;
 
       final newJson = buildPopupJsonFromLookup(
-        results: lookupResults,
-        maximumTerms: maxTerms,
-      );
+          results: lookupResults,
+          maximumTerms: maxTerms,
+          hiddenDictionaries: const <String>{});
       final oldResult = buildResultFromLookup(
         searchTerm: '食べた',
         results: lookupResults,
@@ -551,18 +551,18 @@ void main() {
 
       // ① 屈折命中（matched≠deinflected 且非空）→ 恰好一条痕迹。
       final withTrace = jsonDecode(buildPopupJsonFromLookup(
-        results: [make(matched: '食べた', deinflected: '食べる')],
-        maximumTerms: 100,
-      )) as List;
+          results: [make(matched: '食べた', deinflected: '食べる')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
       expect((withTrace.single as Map<String, dynamic>)['deinflectionTrace'], [
         {'name': '食べた → 食べる', 'description': ''},
       ]);
 
       // ② 原形直查（matched == deinflected）→ 空数组，不生成自指痕迹。
       final noInflection = jsonDecode(buildPopupJsonFromLookup(
-        results: [make(matched: '食べる', deinflected: '食べる')],
-        maximumTerms: 100,
-      )) as List;
+          results: [make(matched: '食べる', deinflected: '食べる')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
       expect(
         (noInflection.single as Map<String, dynamic>)['deinflectionTrace'],
         isEmpty,
@@ -570,9 +570,9 @@ void main() {
 
       // ③ 引擎未回填 deinflected（空串）→ 同样空数组，不生成「x → 」残缺痕迹。
       final emptyDeinflected = jsonDecode(buildPopupJsonFromLookup(
-        results: [make(matched: '食べた', deinflected: '')],
-        maximumTerms: 100,
-      )) as List;
+          results: [make(matched: '食べた', deinflected: '')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
       expect(
         (emptyDeinflected.single as Map<String, dynamic>)['deinflectionTrace'],
         isEmpty,
@@ -604,9 +604,9 @@ void main() {
     test('maximumTerms 约束词头卡数，不腰斩单个词头的注释', () {
       final lookupResults = makeLookupResults();
       final json = buildPopupJsonFromLookup(
-        results: lookupResults,
-        maximumTerms: 2,
-      );
+          results: lookupResults,
+          maximumTerms: 2,
+          hiddenDictionaries: const <String>{});
       final parsed = jsonDecode(json) as List;
       expect(parsed.length, 1, reason: '两条结果同属一个词头，只该出一张卡');
       final entry = parsed.single as Map<String, dynamic>;
@@ -619,37 +619,38 @@ void main() {
 
     test('maximumTerms 真的截断词头卡数', () {
       final json = buildPopupJsonFromLookup(
-        results: <FushiLookupResult>[
-          ...makeLookupResults(),
-          FushiLookupResult(
-            matched: '食べた',
-            deinflected: '食べる',
-            trace: const [],
-            preprocessorSteps: 0,
-            term: FushiTermResult(
-              expression: '喰べる',
-              reading: 'くべる',
-              rules: '',
-              glossaries: [
-                FushiGlossaryEntry(
-                  dictName: '大辞林',
-                  glossary: jsonEncode('別表記・別読み'),
-                  definitionTags: '',
-                  termTags: '',
-                ),
-              ],
-              frequencies: const [],
-              pitches: const [],
+          results: <FushiLookupResult>[
+            ...makeLookupResults(),
+            FushiLookupResult(
+              matched: '食べた',
+              deinflected: '食べる',
+              trace: const [],
+              preprocessorSteps: 0,
+              term: FushiTermResult(
+                expression: '喰べる',
+                reading: 'くべる',
+                rules: '',
+                glossaries: [
+                  FushiGlossaryEntry(
+                    dictName: '大辞林',
+                    glossary: jsonEncode('別表記・別読み'),
+                    definitionTags: '',
+                    termTags: '',
+                  ),
+                ],
+                frequencies: const [],
+                pitches: const [],
+              ),
             ),
-          ),
-        ],
-        maximumTerms: 1,
-      );
+          ],
+          maximumTerms: 1,
+          hiddenDictionaries: const <String>{});
       expect((jsonDecode(json) as List).length, 1);
     });
 
     test('returns empty array for empty results', () {
-      final json = buildPopupJsonFromLookup(results: [], maximumTerms: 100);
+      final json = buildPopupJsonFromLookup(
+          results: [], maximumTerms: 100, hiddenDictionaries: const <String>{});
       expect(json, '[]');
     });
   });

@@ -42,6 +42,49 @@ class VideoDownloadSubscriptionConfigurationError implements Exception {
 /// `video_download_subscription_items`，最后才调用持久下载流水线 enqueue。
 /// 因此搜索重试、应用重启和多 worker 都不会把同一 `movie` / `SxxExx`
 /// 重复变成下载任务。
+/// 一个下载任务的下场还算不算数——即「这一集已经有人管了，订阅不用再派」。
+///
+/// BUG-1746 的根因是把「曾经派过任务」（`jobId != null`）当成了「任务成功了」。
+/// 两者不是一回事：任务被取消或失败之后 jobId 依然留在订阅条目上，旧判据据此
+/// 每轮都 `continue`，那一集就再也不会被下载——用户看到的是「订阅只下了中间
+/// 几集」，而面板上什么异常都不显示。
+///
+/// 分界线按**是谁决定不下的**划：
+/// - `cancelled` 是用户明确说「不要这一集」，尊重它，不自动重下（否则用户取消
+///   一次、订阅补回来一次，永远取消不掉）；
+/// - `failed` / `needsAttention` 是系统故障（实测例：内置下载引擎运行时缺失、
+///   种子源暂时不可达），故障排除之后本该继续下，不能让这一集永久卡死；
+/// - `active` / `completed` 显然还算数。
+///
+/// [lifecycle] 为 null 表示任务记录已经不在了（被清理/库被换过），此时没有任何
+/// 东西在管这一集，应当允许重新派。
+bool videoDownloadJobLifecycleStillCounts(String? lifecycle) {
+  if (lifecycle == null) return false;
+  return lifecycle != VideoDownloadJobLifecycle.failed &&
+      lifecycle != VideoDownloadJobLifecycle.needsAttention;
+}
+
+/// 这一集是否已经被一个「仍然算数」的任务认领。判据的唯一真相源——
+/// 入队去重与复用既有任务都走它，别再在别处写第二份 `jobId != null`。
+bool subscriptionItemStillClaimed(
+  VideoDownloadSubscriptionItemRow item,
+  Map<String, String> lifecycleByJobId,
+) {
+  // processed / skipped 是入队之外的终态：已经落库、或被明确判定为不用下。
+  // 它们与任务无关，不看 lifecycle。
+  if (item.status == VideoDownloadSubscriptionItemStatus.processed ||
+      item.status == VideoDownloadSubscriptionItemStatus.skipped) {
+    return true;
+  }
+  final String? jobId = item.jobId;
+  if (jobId == null) {
+    // 没有 jobId 却标着 queued 只可能是历史遗留行（_markItemQueued 必定同时写
+    // 两者）。保持旧行为不重复入队，避免给存量库凭空造重复任务。
+    return item.status == VideoDownloadSubscriptionItemStatus.queued;
+  }
+  return videoDownloadJobLifecycleStillCounts(lifecycleByJobId[jobId]);
+}
+
 class VideoDownloadSubscriptionService {
   VideoDownloadSubscriptionService({
     required this.database,
@@ -246,6 +289,12 @@ class VideoDownloadSubscriptionService {
     };
     final Set<String> managedEpisodeKeys =
         await _managedEpisodeKeys(subscription);
+    // BUG-1746：判「这一集还用不用管」必须看任务的真实下场，不能只看 jobId 在不在。
+    final Map<String, String> lifecycleByJobId = <String, String>{
+      for (final VideoDownloadJobRow job
+          in await database.getVideoDownloadJobs())
+        job.jobId: job.lifecycle,
+    };
     final List<String> keys = releasesByItem.keys.toList()
       ..sort(_compareLogicalItemKeys);
     bool hasPersistentJob = false;
@@ -253,11 +302,7 @@ class VideoDownloadSubscriptionService {
     for (final String key in keys) {
       final VideoDownloadSubscriptionItemRow? existing = existingByKey[key];
       if (existing != null &&
-          (existing.jobId != null ||
-              existing.status == VideoDownloadSubscriptionItemStatus.queued ||
-              existing.status ==
-                  VideoDownloadSubscriptionItemStatus.processed ||
-              existing.status == VideoDownloadSubscriptionItemStatus.skipped)) {
+          subscriptionItemStillClaimed(existing, lifecycleByJobId)) {
         hasPersistentJob = hasPersistentJob || existing.jobId != null;
         continue;
       }
@@ -473,7 +518,9 @@ class VideoDownloadSubscriptionService {
     VideoDownloadSubscriptionItemRow item,
   ) async {
     _ensureLeaseHeld();
-    if (item.jobId != null) return true;
+    // 前置条件：调用方已用 [subscriptionItemStillClaimed] 判过这一集还用不用管。
+    // 这里**不再**重复写一遍 `item.jobId != null` —— 那份副本正是 BUG-1746 的
+    // 第二道锁：放开上面的判定后它会照旧把重试挡在门外。判据只留一处。
     final String providerId = persistedVideoResourceProviderId(candidate);
     final List<VideoDownloadJobRow> jobs =
         await database.getVideoDownloadJobs();
@@ -482,6 +529,9 @@ class VideoDownloadSubscriptionService {
       if (job.fingerprint == subscription.fingerprint &&
           job.resourceProvider == providerId &&
           job.selectedResourceId == candidate.remoteId) {
+        // 复用既有任务前同样要看它算不算数：把一个 failed / needsAttention 的
+        // 旧任务重新绑回来，这一集会在「重派 → 立刻又撞上失败任务」之间空转。
+        if (!videoDownloadJobLifecycleStillCounts(job.lifecycle)) continue;
         await _markItemQueued(item.id, job.jobId);
         return true;
       }

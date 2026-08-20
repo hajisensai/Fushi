@@ -497,6 +497,7 @@ String lookupHeadwordKey(FushiLookupResult r) {
 String buildPopupJsonFromLookup({
   required List<FushiLookupResult> results,
   required int maximumTerms,
+  required Set<String> hiddenDictionaries,
 }) {
   if (results.isEmpty) return '[]';
 
@@ -527,6 +528,15 @@ String buildPopupJsonFromLookup({
       break outer;
     }
     for (final g in r.term.glossaries) {
+      // 被用户关掉的词典在源头就不进 popupJson。此前这步只存在于渲染期的 JS
+      // （靠宿主注入 window.hiddenDictionaryNames 驱动），app 内 WebView 注入了、浏览器
+      // 扩展走的 HTTP 路径从来不下发它 ⇒ 关掉的词典在扩展里照旧出释义，
+      // 连制卡也一并写进去。过滤下沉到这个唯一数据出口后，app 内弹窗 / 全局查词窗 /
+      // 浏览器扩展 / 制卡四个消费者一次性全对；JS 侧原有过滤退化为冗余保险。
+      //
+      // 放在循环最前（而不是只跳 groupGlossaries.add）：只有隐藏词典释义的词头不应
+      // 该撑起一张空卡片，也不应占用 maximumTerms 词头预算。
+      if (hiddenDictionaries.contains(g.dictName)) continue;
       if (!groupExpression.containsKey(key)) {
         groupKeys.add(key);
         groupExpression[key] = r.term.expression;
