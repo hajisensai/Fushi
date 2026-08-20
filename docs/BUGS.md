@@ -29,25 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1609 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-1749](bugs/BUG-1749-extension-hidden-dict-still-shown.md) | ✅ | ✅ | 浏览器扩展里被关闭的词典仍然出释义 |
-| [BUG-1748](bugs/BUG-1748-browser-extension-page-no-back.md) | ✅ | ✅ | 浏览器扩展页被设置 push 进来时没有返回键 |
-| [BUG-1747](bugs/BUG-1747-subtitle-source-settings-width-tear.md) | ✅ | ✅ | 字幕来源设置三种行各有一套左右边界 |
-| [BUG-1746](bugs/BUG-1746-subscription-never-retries-failed-episode.md) | ✅ | ✅ | 订阅只看 jobId 存在就跳过，故障集永久卡死不再下载 |
-| [BUG-1735](bugs/BUG-1735-artifact-thread-indistinguishable-in-picker.md) | 🚧 | 🚧 | 伪影文本线程在选择器里与健康线程无法区分，预览还被折叠成干净句子 |
-| [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | 🚧 | ✅ | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
-| [BUG-1733](bugs/BUG-1733-kirikiriz-thread-lines-never-ingested.md) | 🚧 | 🚧 | 选中 KiriKiriZ 文本线程后实时台词恒 0，且没有任何东西告诉用户这条线程不可能产出台词 |
-> 共 1608 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-1740](bugs/BUG-1740-collection-card-continue-label-clock.md) | ✅ | ✅ | 合集卡续播标签没用统一时钟与详情页差一集 |
-| [BUG-1739](bugs/BUG-1739-scan-resurrects-deleted-collection.md) | ✅ | ✅ | 来源重扫按自然键复活用户已删除的playlist合集 |
-| [BUG-1738](bugs/BUG-1738-download-proxy-kills-pipeline.md) | ✅ | ✅ | 自定义下载代理未填时切换发现网络永久杀死下载管线 |
-> 共 1611 条。点号进各自文件。
+> 共 1623 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -57,6 +39,17 @@
 | [BUG-1752](bugs/BUG-1752-drop-fires-on-hidden-tabs.md) | ✅ | ✅ | 拖放同时命中隐藏 tab：视频页拖文件夹弹出「导入漫画」 |
 | [BUG-1751](bugs/BUG-1751-manga-wheel-zoom-step-unpredictable.md) | ✅ | ✅ | 漫画滚轮缩放步进取决于本机 deltaY，与右键菜单不同口径 |
 | [BUG-1750](bugs/BUG-1750-manga-rtl-slide-direction-inverted.md) | ✅ | ✅ | 漫画 RTL 翻页滑动动画方向与输入语义相反 |
+| [BUG-1749](bugs/BUG-1749-extension-hidden-dict-still-shown.md) | ✅ | ✅ | 浏览器扩展里被关闭的词典仍然出释义 |
+| [BUG-1748](bugs/BUG-1748-browser-extension-page-no-back.md) | ✅ | ✅ | 浏览器扩展页被设置 push 进来时没有返回键 |
+| [BUG-1747](bugs/BUG-1747-subtitle-source-settings-width-tear.md) | ✅ | ✅ | 字幕来源设置三种行各有一套左右边界 |
+| [BUG-1746](bugs/BUG-1746-subscription-never-retries-failed-episode.md) | ✅ | ✅ | 订阅只看 jobId 存在就跳过，故障集永久卡死不再下载 |
+| [BUG-1740](bugs/BUG-1740-collection-card-continue-label-clock.md) | ✅ | ✅ | 合集卡续播标签没用统一时钟与详情页差一集 |
+| [BUG-1739](bugs/BUG-1739-scan-resurrects-deleted-collection.md) | ✅ | ✅ | 来源重扫按自然键复活用户已删除的playlist合集 |
+| [BUG-1738](bugs/BUG-1738-download-proxy-kills-pipeline.md) | ✅ | ✅ | 自定义下载代理未填时切换发现网络永久杀死下载管线 |
+| [BUG-1735](bugs/BUG-1735-artifact-thread-indistinguishable-in-picker.md) | 🚧 | 🚧 | 伪影文本线程在选择器里与健康线程无法区分，预览还被折叠成干净句子 |
+| [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | ✅ | ✅ | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
+| [BUG-1733](bugs/BUG-1733-kirikiriz-thread-lines-never-ingested.md) | 🚧 | 🚧 | 选中 KiriKiriZ 文本线程后实时台词恒 0，且没有任何东西告诉用户这条线程不可能产出台词 |
+| [BUG-1732](bugs/BUG-1732-manga-ocr-engine-picker-and-model-accounting.md) | ✅ | ✅ | manga-ocr-engine-picker-and-model-accounting |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |
 | [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |
@@ -64,11 +57,6 @@
 | [BUG-1727](bugs/BUG-1727-ext-popup-masonry-overlap.md) | ✅ | ✅ | 扩展弹窗渲染中间态多卡片重叠 |
 | [BUG-1726](bugs/BUG-1726-ext-popup-viewport-clip.md) | ✅ | ✅ | 扩展查词弹窗超出视口底部被截断 |
 | [BUG-1725](bugs/BUG-1725-i18n-sync-swallows-extra-args.md) | ✅ | ✅ | i18n_sync 多个 --remove 只生效第一个，多余参数被静默吞掉 |
-> 共 1599 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-1732](bugs/BUG-1732-manga-ocr-engine-picker-and-model-accounting.md) | ✅ | ✅ | manga-ocr-engine-picker-and-model-accounting |
 | [BUG-1724](bugs/BUG-1724-kirikiri-lookup-install-off-main-thread.md) | ✅ | ✅ | kirikiri-lookup-install-off-main-thread |
 | [BUG-1723](bugs/BUG-1723-android-predictive-back-gesture-freezes-taps.md) | ✅ | ✅ | 安卓侧滑返回后全屏点击失效 |
 | [BUG-1722](bugs/BUG-1722-manga-default-store-needs-network.md) | ✅ | ✅ | 默认 keiyoushi 扩展仓库绑死在首次启动能连上 github，手机上永远看不到 |
