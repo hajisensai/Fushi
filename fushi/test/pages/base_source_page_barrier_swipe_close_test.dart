@@ -7,6 +7,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -143,9 +144,10 @@ Widget buildBarrierSwipeApp({
   );
 }
 
-Finder _barrierFinder() => find.byWidgetPredicate(
-      (Widget w) => w is Container && w.color == Colors.transparent,
-    );
+/// BUG-1757：barrier 现在是唯一的 [LookupDismissBarrier] 原语（此前是页面里手拼的
+/// `GestureDetector` + 透明 `Container`，横拖挂在竞技场里堵死下层 platform view 的
+/// 滚动）。按类型找比按「透明 Container」找更精确，也不会被别处的透明填充误命中。
+Finder _barrierFinder() => find.byType(LookupDismissBarrier);
 
 /// A point on the bare barrier that is NOT covered by any popup layer.
 /// Popups seed near (40,40) and (120,120) with up to 360px boxes, covering

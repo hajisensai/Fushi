@@ -34,8 +34,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
@@ -1117,10 +1117,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     });
   }
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook、video、home_dictionary 共用 [BarrierSwipeDismissTracker]）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
   /// texthooker 每次点词复用热槽（`reuseWarmSlot: true`），可见栈至多一层（+ 隐藏热槽）；
   /// 关一层即收起当前查词。逐层关索引取最后可见层（无可见层回退 0，与 barrier 只在有可见层
   /// 时才渲染一致）。
@@ -1129,20 +1125,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return i < 0 ? 0 : i;
   }
 
-  void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      popNestedPopupAt(_topVisiblePopupIndex, _popup);
-    }
+  /// TODO-1052：barrier 水平拖过阈关一层（判轴/累积/阈值收在
+  /// [LookupDismissBarrier] 内，BUG-1757：横拖不进手势竞技场）。
+  void _dismissTopNestedPopup() {
+    popNestedPopupAt(_topVisiblePopupIndex, _popup);
   }
 
   /// 从命中的那个字起做查词（BUG-1478）。
@@ -1960,20 +1946,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         hiddenByDialog: lookupPopupHiddenByDialog,
       ))
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
-            onHorizontalDragStart: ReaderFushiSource.instance.enableSwipeToClose
-                ? _onBarrierHorizontalDragStart
-                : null,
-            onHorizontalDragUpdate:
-                ReaderFushiSource.instance.enableSwipeToClose
-                    ? _onBarrierHorizontalDragUpdate
-                    : null,
-            onHorizontalDragEnd: ReaderFushiSource.instance.enableSwipeToClose
-                ? _onBarrierHorizontalDragEnd
-                : null,
-            child: const ColoredBox(color: Colors.transparent),
+          // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，横拖走它
+          // 内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+          child: LookupDismissBarrier(
+            onTapDismiss: (_) =>
+                popNestedPopupAt(_topVisiblePopupIndex, _popup),
+            onSwipeDismiss: _dismissTopNestedPopup,
+            swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
           ),
         ),
       // 搜索期加载占位卡（搜索→就绪才显示，与首页查词同观感）。

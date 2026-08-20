@@ -26,7 +26,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -3965,28 +3965,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// slot remains.
   int get _topVisiblePopupIndex => _popup.lastVisibleIndex;
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook 经 base_source_page、home_dictionary、texthooker 共用同一
-  /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
-  /// [ReaderFushiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
-  /// 与旧行为一致）。过阈关一层 = [_popNestedPopupAt]（_topVisiblePopupIndex），与
-  /// 光标 B/Esc / 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onDismissBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onDismissBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onDismissBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      _popNestedPopupAt(_topVisiblePopupIndex);
-    }
+  /// TODO-1052：查词浮层 barrier 上「水平拖过阈关一层」。判轴/累积/阈值全部收在
+  /// [LookupDismissBarrier] 内（BUG-1757：横拖不再进手势竞技场，判轴改为可单测的
+  /// 显式规则）。过阈关一层 =
+  /// [_popNestedPopupAt]（[_topVisiblePopupIndex]），与光标 B/Esc / 返回键逐层退回
+  /// 同语义，不清整栈（清整栈仍是点真空白的 tap）。
+  void _dismissTopNestedPopup() {
+    _popNestedPopupAt(_topVisiblePopupIndex);
   }
 
   /// Shift-悬停在 barrier 上「连续切换查词」的节流锚 + 去重键（TODO-756a，与阅读器
@@ -4325,35 +4310,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   hiddenByDialog: lookupPopupHiddenByDialog,
                 ))
                   Positioned.fill(
-                    // BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，
-                    // 字幕盒 MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
+                    // BUG-861：barrier 转发 hover——首弹后 barrier 盖住字幕，字幕盒
+                    // MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
                     // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
-                    child: Listener(
+                    //
+                    // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+                    // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+                    child: LookupDismissBarrier(
+                      // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并保持
+                      // 暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                      onTapDismiss: _onDismissBarrierTap,
+                      // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
+                      onSwipeDismiss: _dismissTopNestedPopup,
+                      swipeEnabled:
+                          ReaderFushiSource.instance.enableSwipeToClose,
+                      sensitivity:
+                          ReaderFushiSource.instance.dismissSwipeSensitivity,
                       onPointerHover: _onDismissBarrierHover,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
-                        // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                        onTapUp: (TapUpDetails d) =>
-                            _onDismissBarrierTap(d.globalPosition),
-                        // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
-                        // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
-                        // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
-                        // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
-                        onHorizontalDragStart:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragStart
-                                : null,
-                        onHorizontalDragUpdate:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragUpdate
-                                : null,
-                        onHorizontalDragEnd:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragEnd
-                                : null,
-                        child: const ColoredBox(color: Colors.transparent),
-                      ),
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
