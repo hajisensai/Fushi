@@ -224,6 +224,14 @@ class SyncRepository {
   static const _keyInterconnectSyncAudioBookFiles =
       'interconnect_sync_audiobook_files';
   static const _keyInterconnectSyncVideoFiles = 'interconnect_sync_video_files';
+  // 互联通道专属的「共享统计 / 共享收藏夹」开关。此前互联的聚合同步（统计 + 收藏
+  // 词句）无条件复用云备份的 sync_stats_enabled，用户在互联页既看不到这两类数据
+  // 正在跨设备流动，也没法只对互联单独关掉——与 BUG-988 拆四个上传开关时修掉的
+  // 是同一个毛病（互联通道借用云备份开关 = 用户失去分通道控制权）。
+  // 默认 true：既有行为就是「跟着 syncStats 默认 true 一起同步」，拆开关不改变
+  // 任何人当前看到的结果，只是把隐式变显式、可关。
+  static const _keyInterconnectSyncStats = 'interconnect_sync_stats';
+  static const _keyInterconnectSyncFavorites = 'interconnect_sync_favorites';
   // apikey 同步设定重设计（2026-08-17）：互联 service-config（host 的外部服务
   // API key / 服务配置，interconnect_service_config.dart 白名单）此前是**无 UI、
   // 无开关**的隐形通道——用户既看不见「配对后 host 的 Jimaku/TMDB key 会同步过来」
@@ -635,6 +643,23 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectSyncVideoFiles, false);
   Future<void> setInterconnectSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncVideoFiles, v);
+
+  /// 互联通道「共享统计」：阅读/观看时长、字数、逐时桶、查词与制卡计数。默认 true
+  /// = 既有行为不变（此前由云备份的 [isSyncStatsEnabled] 一刀切代管）。关掉后本设备
+  /// 既不把统计推给对端，也不把对端统计折进本地——两个方向一起停，否则「关了还在收」
+  /// 会让本地统计继续被对端撑大，用户看到的仍是没关掉。
+  Future<bool> isInterconnectSyncStatsEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSyncStats, true);
+  Future<void> setInterconnectSyncStatsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncStats, v);
+
+  /// 互联通道「共享收藏夹」：收藏词 + 收藏句（以及它们的删除墓碑，取消收藏要能
+  /// 跨端传播）。与统计同为聚合快照的一半，但语义不同——收藏是用户挑出来的内容，
+  /// 值得独立开关。默认 true = 既有行为不变；同样双向一起停。
+  Future<bool> isInterconnectSyncFavoritesEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSyncFavorites, true);
+  Future<void> setInterconnectSyncFavoritesEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncFavorites, v);
 
   /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
   /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，

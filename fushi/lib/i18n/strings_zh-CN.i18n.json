@@ -3646,5 +3646,11 @@
   "video_setting_mpv_lua_scripts_import": "导入 Lua 脚本",
   "video_setting_mpv_lua_scripts_imported": "脚本已导入",
   "video_setting_mpv_lua_scripts_dir_copy": "复制脚本目录路径",
-  "video_setting_mpv_lua_scripts_dir_copied": "已复制目录路径"
+  "video_setting_mpv_lua_scripts_dir_copied": "已复制目录路径",
+  "interconnect_share_statistics": "共享统计",
+  "interconnect_share_statistics_hint": "阅读与观看时长、字数、查词与制卡计数",
+  "interconnect_share_favorites": "共享收藏夹",
+  "interconnect_share_favorites_hint": "收藏的词与句子，取消收藏也会同步",
+  "interconnect_share_section": "与已配对设备共享",
+  "interconnect_share_section_footer": "这些内容与已配对设备双向合并，默认开启。关掉后本设备既不再发送，也不再接收。"
 }
