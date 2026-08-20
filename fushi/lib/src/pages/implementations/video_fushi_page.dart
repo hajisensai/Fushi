@@ -5231,6 +5231,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 想让快捷键按钮**彻底**消失（连加号都不要），走控件编辑器把槽位拖进隐藏托盘
     // （和其它按钮同一套操作）。编辑器不经本门控（它读 `layout.itemsIn`），所以 4 个
     // 槽位在那里永远都在、随时可配，不会因为播放器上只画一个而变得不可达。
+    //
+    // 已知边界：单独把「加号所在的那个槽位」拖进隐藏托盘（比如只藏快捷键1、留着
+    // 2/3/4 都不绑），播放器上就一个加号也不剩——加号取的是绑定表里序号最小的空位，
+    // 不去问它在哪个 slot。这是有意的：判据一旦掺进布局，就得回答「藏了 1 该由 2 顶上
+    // 吗、2 也藏了呢」这类没有正确答案的问题。隐藏是用户自己的操作，托盘里随时拖回来。
+    //
+    // 本分支的形状被 video_custom_action_bindings_test 的源码守卫钉死（退回无条件
+    // 显示全部槽位会变红），改这里请连它一起改。
     final int? customSlot = item.customActionSlotIndex;
     if (customSlot != null) {
       return _customActionBindings.actionAt(customSlot) != null ||
