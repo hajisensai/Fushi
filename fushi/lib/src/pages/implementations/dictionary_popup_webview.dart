@@ -2410,13 +2410,12 @@ JSON.stringify((function(){
       group['matched'] = matched;
     }
 
+    // 变形标签（含语法说明）由 buildDeinflectionTags 统一生成、随 extra 送达，
+    // 这里只解析不再自己拼——回落语义只有那一份。
     final trace = group['deinflectionTrace'] as List<Map<String, String>>;
-    if (trace.isEmpty && extraData.containsKey('deinflected')) {
-      final traceMatched = matched ?? '';
-      final deinflected = extraData['deinflected'] as String? ?? '';
-      if (traceMatched != deinflected && deinflected.isNotEmpty) {
-        trace.add({'name': '$traceMatched → $deinflected', 'description': ''});
-      }
+    if (trace.isEmpty) {
+      trace
+          .addAll(deinflectionTagsToJson(deinflectionTagsFromExtra(extraData)));
     }
 
     _appendUniqueMetadata(

@@ -56,6 +56,8 @@ add_fushi_test(word_scan_test word_scan_test.cpp
 add_fushi_test(text_processor_test text_processor_test.cpp
     "${FUSHI_SRC}/text_processor"
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
+# 弹窗 deinflectionTrace：纯内存，直接喂 LookupResult 给 build_popup_json。
+add_fushi_test(popup_json_deinflection_test popup_json_deinflection_test.cpp)
 # zip64 includes "zip/zip.hpp" -> root at fushidicts_src/.
 add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
     "${FUSHI_SRC}")

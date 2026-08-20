@@ -31,6 +31,39 @@ static void json_escape(std::ostringstream& os, const std::string& s) {
   os << '"';
 }
 
+// 词形变化链 → 弹窗的 `deinflectionTrace` 数组。
+//
+// 与 Dart 侧 buildDeinflectionTags（fushi_dictionary/lib/src/language/language.dart）
+// 逐字段对齐——两条弹窗路径必须给出同一份 JSON，parity 由 Dart 侧的
+// dictionary_popup_webview_test 锁住。语义详见该函数的文档注释：
+//   * trace 的压栈顺序是**剥离顺序**（最外层的变形最先被剥），显示要的是**接续
+//     顺序**，所以整体反转：`当たっていた` 的 trace `[-た, -いる, -て]` 显示成
+//     `-て « -いる « -た`。
+//   * trace 为空而 matched != deinflected，说明这是 lookup.cpp 里的**文本变体归一**
+//     （colour→color 一类），它不经过任何变形规则，故没有语法说明，只回落成一条
+//     `matched → deinflected`。这条分支不能删。
+static void write_deinflection_tags(std::ostringstream& os,
+                                    const std::string& matched,
+                                    const std::string& deinflected,
+                                    const std::vector<TransformGroup>& trace) {
+  os << '[';
+  if (!trace.empty()) {
+    for (size_t i = trace.size(); i-- > 0;) {
+      if (i + 1 != trace.size()) os << ',';
+      os << R"({"name":)";
+      json_escape(os, trace[i].name);
+      os << R"(,"description":)";
+      json_escape(os, trace[i].description);
+      os << '}';
+    }
+  } else if (matched != deinflected && !deinflected.empty()) {
+    os << R"({"name":)";
+    json_escape(os, matched + " \xe2\x86\x92 " + deinflected);
+    os << R"(,"description":""})";
+  }
+  os << ']';
+}
+
 std::string build_popup_json(const std::vector<LookupResult>& results,
                              int max_terms) {
   struct GroupData {
@@ -38,6 +71,7 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
     std::string reading;
     std::string matched;
     std::string deinflected;
+    std::vector<TransformGroup> trace;
     std::vector<FrequencyEntry> frequencies;
     std::vector<PitchEntry> pitches;
     std::set<std::string> seen_freqs;
@@ -69,11 +103,13 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
         gd.reading = r.term.reading;
         gd.matched = r.matched;
         gd.deinflected = r.deinflected;
+        gd.trace = r.trace;
         it = groups.find(key);
       } else if (it->second.matched == it->second.expression &&
                  r.matched != r.term.expression) {
         it->second.matched = r.matched;
         it->second.deinflected = r.deinflected;
+        it->second.trace = r.trace;
       }
 
       auto& gd = it->second;
@@ -154,17 +190,7 @@ done:
     os << R"(,"matched":)";
     json_escape(os, gd.matched);
     os << R"(,"rules":[],"deinflectionTrace":)";
-
-    if (gd.matched != gd.deinflected && !gd.deinflected.empty()) {
-      os << R"([{"name":)";
-      std::string trace_name = gd.matched;
-      trace_name += " → ";
-      trace_name += gd.deinflected;
-      json_escape(os, trace_name);
-      os << R"(,"description":""}])";
-    } else {
-      os << "[]";
-    }
+    write_deinflection_tags(os, gd.matched, gd.deinflected, gd.trace);
 
     os << R"(,"glossaries":[)";
     for (size_t j = 0; j < gd.glossaries.size(); j++) {

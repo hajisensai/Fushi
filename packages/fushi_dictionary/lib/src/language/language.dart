@@ -409,12 +409,88 @@ abstract class Language {
   }
 }
 
+/// 弹窗上的一枚词形变化标签：变形名（`-て`）+ 该变形的语法说明。
+typedef DeinflectionTag = ({String name, String description});
+
+/// 词形变化链 → 弹窗标签序列。**这是全 app 唯一一处生成变形标签的地方**，
+/// 三条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson` /
+/// 原生弹窗）和 C++ 的 `build_popup_json` 都必须走这套语义，不允许各自再拼。
+///
+/// `trace` 是唯一真相：引擎每剥掉一层变形就往里压一个 [FushiTransformGroup]，
+/// 带着变形名和 `assets/transforms/<lang>.json` 里的语法说明。压栈顺序是**剥离
+/// 顺序**（最外层的变形最先被剥），而用户要看的是**接续顺序**——从词典形出发依
+/// 次接上了哪些变形，所以显示时整体反转：`当たっていた` 的 trace 是
+/// `[-た, -いる, -て]`，显示成 `-て « -いる « -た`（与 Yomitan 一致）。
+///
+/// trace 为空、而 matched 又确实不等于 deinflected 时，回落成单条
+/// `matched → deinflected`：那是 `lookup.cpp` 的**文本变体归一**（colour→color
+/// 一类），不经过任何变形规则，所以既没有 trace 也没有语法说明。这条回落分支
+/// 不能删——删了这类查询就完全不提示词形变化了。
+List<DeinflectionTag> buildDeinflectionTags({
+  required String matched,
+  required String deinflected,
+  required List<FushiTransformGroup> trace,
+}) {
+  if (trace.isNotEmpty) {
+    return <DeinflectionTag>[
+      for (final FushiTransformGroup t in trace.reversed)
+        (name: t.name, description: t.description),
+    ];
+  }
+  if (matched != deinflected && deinflected.isNotEmpty) {
+    return <DeinflectionTag>[
+      (name: '$matched → $deinflected', description: '')
+    ];
+  }
+  return const <DeinflectionTag>[];
+}
+
+/// [buildDeinflectionTags] 的结果 → 弹窗 JSON 里的 `deinflectionTrace` 数组。
+List<Map<String, String>> deinflectionTagsToJson(List<DeinflectionTag> tags) {
+  return <Map<String, String>>[
+    for (final DeinflectionTag t in tags)
+      <String, String>{'name': t.name, 'description': t.description},
+  ];
+}
+
+/// 从 [buildLookupEntryExtra] 写出的 extra 里读回变形标签。
+///
+/// extra 里存的已经是 [buildDeinflectionTags] 的成品（含回落），所以这里**只解析、
+/// 不再判断**——回落语义只有一份。老 extra（没有 `deinflectionTrace` 键）才走末尾
+/// 的兼容分支，靠 matched/deinflected 现算。
+List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
+  final Object? raw = extra['deinflectionTrace'];
+  if (raw is List) {
+    return <DeinflectionTag>[
+      for (final Object? item in raw)
+        if (item is Map)
+          (
+            name: (item['name'] ?? '').toString(),
+            description: (item['description'] ?? '').toString(),
+          ),
+    ];
+  }
+  return buildDeinflectionTags(
+    matched: (extra['matched'] ?? '').toString(),
+    deinflected: (extra['deinflected'] ?? '').toString(),
+    trace: const <FushiTransformGroup>[],
+  );
+}
+
 String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
   return jsonEncode({
     'definitionTags': g.definitionTags,
     'termTags': g.termTags,
     'matched': r.matched,
     'deinflected': r.deinflected,
+    // 变形链带着语法说明一起随 entry 走。走 extra 的两条弹窗路径（原生弹窗、
+    // buildLookupEntriesJson）本来只能看到 matched/deinflected，只好现编一条
+    // 「matched → deinflected」且说明恒空——语法说明就是断在这里的。
+    'deinflectionTrace': deinflectionTagsToJson(buildDeinflectionTags(
+      matched: r.matched,
+      deinflected: r.deinflected,
+      trace: r.trace,
+    )),
     'frequencies': r.term.frequencies
         .map((f) => {
               'dictName': f.dictName,
@@ -506,6 +582,7 @@ String buildPopupJsonFromLookup({
   final groupReading = <String, String>{};
   final groupMatched = <String, String>{};
   final groupDeinflected = <String, String>{};
+  final groupTrace = <String, List<FushiTransformGroup>>{};
   final groupFrequencies = <String, List<FushiFrequencyEntry>>{};
   final groupPitches = <String, List<FushiPitchEntry>>{};
   final seenFreqs = <String, Set<String>>{};
@@ -543,6 +620,7 @@ String buildPopupJsonFromLookup({
         groupReading[key] = r.term.reading;
         groupMatched[key] = r.matched;
         groupDeinflected[key] = r.deinflected;
+        groupTrace[key] = r.trace;
         groupFrequencies[key] = [];
         groupPitches[key] = [];
         seenFreqs[key] = {};
@@ -555,6 +633,7 @@ String buildPopupJsonFromLookup({
         // and trace stay consistent on the same FushiLookupResult.
         groupMatched[key] = r.matched;
         groupDeinflected[key] = r.deinflected;
+        groupTrace[key] = r.trace;
       }
 
       for (final f in r.term.frequencies) {
@@ -600,15 +679,11 @@ String buildPopupJsonFromLookup({
     sb.write(',"matched":');
     sb.write(jsonEncode(groupMatched[key]));
     sb.write(',"rules":[],"deinflectionTrace":');
-    final matched = groupMatched[key]!;
-    final deinflected = groupDeinflected[key]!;
-    if (matched != deinflected && deinflected.isNotEmpty) {
-      sb.write('[{"name":');
-      sb.write(jsonEncode('$matched → $deinflected'));
-      sb.write(',"description":""}]');
-    } else {
-      sb.write('[]');
-    }
+    sb.write(jsonEncode(deinflectionTagsToJson(buildDeinflectionTags(
+      matched: groupMatched[key]!,
+      deinflected: groupDeinflected[key]!,
+      trace: groupTrace[key] ?? const <FushiTransformGroup>[],
+    ))));
     sb.write(',"glossaries":[');
     final gl = groupGlossaries[key]!;
     for (var j = 0; j < gl.length; j++) {

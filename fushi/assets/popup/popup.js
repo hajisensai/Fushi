@@ -507,6 +507,62 @@ function closeOverlay() {
     __fushiRootNode().querySelector('.overlay').style.display = 'none';
 }
 
+/* 词形变化标签的语法说明浮层（桌面 hover）。
+   点击走 showDescription 的全屏 overlay——触屏上没有 hover，且窄屏放不下这块浮层。
+   浮层是懒创建的，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
+   这样扩展注入到宿主页面时也不会跑到词典的 Shadow DOM 外面去。 */
+function ensureGrammarTooltip() {
+    const root = __fushiRootNode();
+    let tooltip = root.querySelector('.grammar-tooltip');
+    if (!tooltip) {
+        tooltip = el('div', { className: 'grammar-tooltip' });
+        __fushiOverlayParent().appendChild(tooltip);
+    }
+    return tooltip;
+}
+
+function showGrammarTooltip(element) {
+    /* 只有能 hover 的指针设备才显示。触屏浏览器会在 tap 时补发一次 mouseenter，
+       那样浮层会一直粘在屏幕上没人收（没有后续的 mouseleave）。 */
+    try {
+        if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
+    } catch (_) { /* matchMedia 不可用时按可 hover 处理 */ }
+
+    const description = element.getAttribute('data-description');
+    if (!description) return;
+
+    const tooltip = ensureGrammarTooltip();
+    tooltip.textContent = description;
+    tooltip.style.display = 'block';
+    /* 先落地再量：宽度受 CSS max-width 约束，量完才知道该往哪边收。 */
+    tooltip.style.left = '0px';
+    tooltip.style.top = '0px';
+
+    const anchor = element.getBoundingClientRect();
+    const box = tooltip.getBoundingClientRect();
+    const margin = 8;
+
+    let left = anchor.left;
+    const maxLeft = window.innerWidth - box.width - margin;
+    if (left > maxLeft) left = maxLeft;
+    if (left < margin) left = margin;
+
+    let top = anchor.bottom + 6;
+    if (top + box.height > window.innerHeight - margin) {
+        const above = anchor.top - box.height - 6;
+        /* 上方也放不下就维持在下方：宁可截断底部，也不要顶出视口外够不着。 */
+        if (above >= margin) top = above;
+    }
+
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+}
+
+function hideGrammarTooltip() {
+    const tooltip = __fushiRootNode().querySelector('.grammar-tooltip');
+    if (tooltip) tooltip.style.display = 'none';
+}
+
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
 function createFuriganaSegment(text, reading) {
     return {text, reading};
@@ -2070,12 +2126,28 @@ function renderTaggedTermPairs(parent, pairs) {
 }
 
 function createDeinflectionTag(tag) {
+    // 语法说明来自 assets/transforms/<lang>.json，随 deinflectionTrace 一起送到。
+    // 文本变体归一的回落标签（colour → color）没有说明，这时不加 has-description：
+    // 不给指针手型、不挂 hover/click，免得点开一个空框。
+    const hasDescription = !!tag.description;
+    if (!hasDescription) {
+        return el('span', {
+            className: 'deinflection-tag',
+            textContent: tag.name
+        });
+    }
     return el('span', {
-        className: 'deinflection-tag',
+        className: 'deinflection-tag has-description',
         textContent: tag.name,
         'data-description': tag.description,
         onclick() {
             showDescription(this);
+        },
+        onmouseenter() {
+            showGrammarTooltip(this);
+        },
+        onmouseleave() {
+            hideGrammarTooltip();
         }
     });
 }
