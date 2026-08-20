@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressActions;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -141,18 +143,23 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
         FushiFocusRoot.maybeControllerOf(context) == null) {
       return semantic;
     }
-    return Actions(
-      actions: <Type, Action<Intent>>{
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (_) {
-            widget.onTap?.call();
-            return null;
-          },
+    // 手柄重设计 P4：长按 A = 鼠标长按/右键同一入口（onLongPress，游戏卡上是
+    // 上下文菜单）。[GamepadLongPressActions] 对 null onLongPress 透明。
+    return GamepadLongPressActions(
+      onLongPress: widget.onLongPress,
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap?.call();
+              return null;
+            },
+          ),
+        },
+        child: FushiFocusTarget(
+          id: widget.focusId ?? _fallbackFocusId,
+          child: semantic,
         ),
-      },
-      child: FushiFocusTarget(
-        id: widget.focusId ?? _fallbackFocusId,
-        child: semantic,
       ),
     );
   }
