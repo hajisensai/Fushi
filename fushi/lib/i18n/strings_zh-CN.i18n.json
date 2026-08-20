@@ -3658,7 +3658,7 @@
   "sync_asset_local_audio_upload": "上传本地音频数据库",
   "sync_asset_local_audio_download": "下载本地音频数据库",
   "sync_asset_upload_hint": "把本机有、远端没有的推送过去。包可能很大。",
-  "sync_asset_download_hint": "把远端有、本机没有的取回来。",
   "sync_asset_upload_action": "上传",
-  "sync_asset_download_action": "下载"
+  "sync_asset_download_action": "下载",
+  "sync_asset_download_hint": "把远端有、本机没有的取回来（含你在本机删掉过的）。"
 }

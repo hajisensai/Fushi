@@ -100,31 +100,32 @@ void main() {
     test(
         'auto-sync and upload switches are gated; content-scope switches are not',
         () {
-      // Auto-sync 与三个「上传X文件」开关都带可见性谓词（见下方 source guard 对
-      // 谓词内容的锁定）；统计与词典/本地音频的四个传输动作行是 content-scope，恒显。
+      // Auto-sync、三个「上传X文件」开关、以及词典/本地音频那四个传输动作行都带可见性
+      // 谓词（见下方 source guard 对谓词内容的锁定）；只有统计是 content-scope，恒显。
+      //
+      // 那四个动作行归到「gated」这一侧，是因为它们**只在云备份通道上跑**（互联对端
+      // 的内容上传由互联页自己那组 opt-in 管，见 runManualAssetTransfer 里对互联通道
+      // 的显式跳过）。同步方式被选成互联时那条通道没有出站语义，留着就是四个死按钮。
       final SettingsSection content = dest.sections[1];
       SettingsItem byId(String id) =>
           content.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.auto_sync').visible, isNotNull,
           reason:
               'auto-sync hides when the sync method itself has no outbound');
+      expect(byId('sync.statistics').visible, isNull,
+          reason:
+              'sync.statistics is a content-scope setting, global to every backend');
       for (final String id in <String>[
-        'sync.statistics',
+        'sync.content',
+        'sync.audiobook_files',
+        'sync.video_files',
         'sync.dictionary_upload',
         'sync.dictionary_download',
         'sync.local_audio_upload',
         'sync.local_audio_download',
       ]) {
-        expect(byId(id).visible, isNull,
-            reason: '$id is a content-scope setting, global to every backend');
-      }
-      for (final String id in <String>[
-        'sync.content',
-        'sync.audiobook_files',
-        'sync.video_files',
-      ]) {
         expect(byId(id).visible, isNotNull,
-            reason: '$id is a cloud-channel upload switch, gated on backend');
+            reason: '$id only acts on the cloud channel, gated on backend');
       }
     });
 
@@ -141,6 +142,12 @@ void main() {
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
+        // 词典/本地音频那四个传输动作行同理：它们只在云备份通道上跑（互联对端的
+        // 内容上传归互联页那组 opt-in），方法选成互联时同样是死按钮。
+        'sync.dictionary_upload',
+        'sync.dictionary_download',
+        'sync.local_audio_upload',
+        'sync.local_audio_download',
       ]) {
         final int at = src.indexOf("id: '$id'");
         expect(at, greaterThanOrEqualTo(0));

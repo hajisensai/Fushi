@@ -179,8 +179,15 @@ SettingsDestination buildSyncBackupDestination() {
           // 上传把本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这
           // 台机器的词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄
           // 搬几百 MB —— 方向该由用户在点的那一刻给出。
+          //
+          // 可见性与相邻三个「上传X文件」同因：这四行只在**云备份通道**上跑
+          // （见 runManualAssetTransfer），同步方式被选成互联时那条通道没有出站
+          // 语义，留着就是四个死按钮。互联对端的内容上传由互联页自己那组开关管。
           SettingsCustomItem(
             id: 'sync.dictionary_upload',
+            searchTitle: t.sync_asset_dictionary_upload,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             icon: Icons.menu_book_outlined,
             builder: (SettingsContext ctx) => _AssetTransferWidget(
               settingsContext: ctx,
@@ -192,6 +199,9 @@ SettingsDestination buildSyncBackupDestination() {
           ),
           SettingsCustomItem(
             id: 'sync.dictionary_download',
+            searchTitle: t.sync_asset_dictionary_download,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             icon: Icons.menu_book_outlined,
             builder: (SettingsContext ctx) => _AssetTransferWidget(
               settingsContext: ctx,
@@ -203,6 +213,9 @@ SettingsDestination buildSyncBackupDestination() {
           ),
           SettingsCustomItem(
             id: 'sync.local_audio_upload',
+            searchTitle: t.sync_asset_local_audio_upload,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             icon: Icons.graphic_eq_outlined,
             builder: (SettingsContext ctx) => _AssetTransferWidget(
               settingsContext: ctx,
@@ -214,6 +227,9 @@ SettingsDestination buildSyncBackupDestination() {
           ),
           SettingsCustomItem(
             id: 'sync.local_audio_download',
+            searchTitle: t.sync_asset_local_audio_download,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             icon: Icons.graphic_eq_outlined,
             builder: (SettingsContext ctx) => _AssetTransferWidget(
               settingsContext: ctx,

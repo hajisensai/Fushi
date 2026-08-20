@@ -49,6 +49,17 @@ final ValueNotifier<SyncActivity?> syncActivity =
 /// TODO-132 诉求B），所以结局落成状态而不是提示。
 final ValueNotifier<SyncRunOutcome?> lastSyncOutcome =
     ValueNotifier<SyncRunOutcome?>(null);
+
+/// 最近一轮**全量 sweep** 的结局。与 [lastSyncOutcome]（最近一轮**任意**同步）分开，
+/// 因为这是两种语义，不是同一个值的两种读法。
+///
+/// 设置页「立即同步」那一行讲的是全量同步这件事。它以前读 [lastSyncOutcome] 再在
+/// 消费端过滤 `kind == fullSweep` —— 那不是过滤，是把「值不精确」的账留给了读的人：
+/// 任何一轮别的同步都会把 sweep 的结局挤掉，于是那一行悄悄退回静态提示，用户刚看到
+/// 的「上次同步：完成 N 项」凭空消失。资产传输是用户**手点**的，让这个缺陷从后台
+/// 偶发变成一点必现。修法是让值本身就精确。
+final ValueNotifier<SyncRunOutcome?> lastFullSweepOutcome =
+    ValueNotifier<SyncRunOutcome?>(null);
 final Set<String> _syncingIds = {};
 
 /// 登记一轮同步开始：递增在飞计数并公布它的身份。
@@ -68,6 +79,9 @@ void _beginSyncActivity(SyncActivity activity) {
 void _endSyncActivity(SyncRunOutcome outcome) {
   _activeSyncs--;
   lastSyncOutcome.value = outcome;
+  if (outcome.kind == SyncActivityKind.fullSweep) {
+    lastFullSweepOutcome.value = outcome;
+  }
   syncInProgress.value = _activeSyncs > 0;
   if (_activeSyncs == 0) {
     syncProgress.value = null;
@@ -826,7 +840,8 @@ Future<ManualSyncResult> runManualFullSync({
   }
 }
 
-/// 用户在设置页点「上传」/「下载」：只跑**一类资产、一个方向**，跑遍每条已启用通道。
+/// 用户在设置页点「上传」/「下载」：只跑**一类资产、一个方向**，且**只在云备份通道**
+/// 上跑（互联通道被显式跳过，见循环里的注释）。
 ///
 /// 与 [runManualFullSync] 同纪律：绕过自动同步开关与冷却（显式意图恒放行），与后台
 /// 同步共用 [_autoSyncMutex]（避免并发改 singleton backend 状态），**逐通道**隔离异常
@@ -867,6 +882,12 @@ Future<ManualSyncResult> runManualAssetTransfer({
       StackTrace? firstStack;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
+        // **只跑云备份通道**。这四行按钮长在云备份设置页上，而「要不要把内容送给
+        // 互联对端」是互联页上一组独立的 opt-in（默认全关，BUG-988 立的规矩：互联
+        // 的事互联自己决定）。跑遍所有通道 = 用户在云备份页点一下「上传词典」，就
+        // 把词典推给了一台他从没同意共享的对端；本地音频数据库更糟，它现在连互联
+        // 侧的开关都没有，多 GB 的 .db 会直接塞给 host。
+        if (channel.isInterconnect) continue;
         try {
           final SyncRunReport? report = await _runAssetTransferChannel(
             db: db,

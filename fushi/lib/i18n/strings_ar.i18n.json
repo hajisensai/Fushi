@@ -3658,7 +3658,7 @@
   "sync_asset_local_audio_upload": "Upload local audio databases",
   "sync_asset_local_audio_download": "Download local audio databases",
   "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
-  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
   "sync_asset_upload_action": "Upload",
-  "sync_asset_download_action": "Download"
+  "sync_asset_download_action": "Download",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not - including entries you deleted locally."
 }

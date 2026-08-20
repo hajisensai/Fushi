@@ -168,16 +168,18 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
       valueListenable: syncActivity,
       builder: (BuildContext context, SyncActivity? activity, _) {
         return ValueListenableBuilder<SyncRunOutcome?>(
-          valueListenable: lastSyncOutcome,
+          // 读 [lastFullSweepOutcome] 而不是「读 lastSyncOutcome 再过滤 kind」：
+          // 后者会被任何一轮别的同步挤掉（合集轻量、单本，以及本页那四个资产传输
+          // 按钮），于是刚显示的「上次同步」结局凭空退回静态提示。值本身就该是
+          // 精确的那一个。
+          valueListenable: lastFullSweepOutcome,
           builder: (BuildContext context, SyncRunOutcome? outcome, __) {
             final String subtitle;
             if (syncing && p != null) {
               subtitle = syncProgressLine(p);
             } else if (syncing && activity != null) {
               subtitle = syncActivityLine(activity);
-            } else if (!syncing &&
-                outcome != null &&
-                outcome.kind == SyncActivityKind.fullSweep) {
+            } else if (!syncing && outcome != null) {
               subtitle = syncOutcomeLine(outcome);
             } else {
               subtitle = t.sync_now_hint;

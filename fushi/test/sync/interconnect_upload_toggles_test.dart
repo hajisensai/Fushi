@@ -83,6 +83,23 @@ void main() {
     expect(cloud.syncAudioBookPosition, isTrue);
   });
 
+  // 设置页那四个上传 / 下载按钮长在**云备份**页上，而「要不要把内容送给互联对端」是
+  // 互联页上一组独立的 opt-in（默认全关）。手动传输一旦跑遍所有启用通道，用户在云备份
+  // 页点一下「上传词典」就把词典推给了一台他从没同意共享的对端 —— 本地音频数据库更糟，
+  // 它连互联侧的开关都没有，多 GB 的 .db 会直接塞给 host。这正是 BUG-988 立的规矩
+  // 「互联的事互联自己决定」，手动路径不能自己开后门。
+  test('手动资产传输只跑云备份通道，不碰互联对端', () {
+    final String src =
+        File('lib/src/sync/sync_auto_trigger.dart').readAsStringSync();
+    final int i =
+        src.indexOf('Future<ManualSyncResult> runManualAssetTransfer(');
+    expect(i, greaterThan(0), reason: '入口函数改名了就要同步改这条守卫');
+    // 只在这个函数体内找，别被别处同形的 token 抢走窗口。
+    final String body = src.substring(i, i + 3000);
+    expect(body.contains('if (channel.isInterconnect) continue;'), isTrue,
+        reason: '手动传输必须显式跳过互联通道，否则绕过互联页的 opt-in');
+  });
+
   // 本地音频源数据库曾经也在 ChannelSyncFlags 里（不分通道的一个开关）。它现在**根本
   // 不在自动同步里**：既没有开关，也不在任何一条通道的 flags 上，只能由设置页的显式
   // 上传 / 下载动作搬。这条守卫钉住「它没被悄悄塞回自动 sweep」。
