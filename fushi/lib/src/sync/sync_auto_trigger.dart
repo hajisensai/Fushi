@@ -230,7 +230,6 @@ class ChannelSyncFlags {
     required this.syncAudioBookFiles,
     required this.syncVideoFiles,
     required this.syncDictionary,
-    required this.syncLocalAudio,
   });
   final bool syncStats;
 
@@ -242,8 +241,15 @@ class ChannelSyncFlags {
   final bool syncContent;
   final bool syncAudioBookFiles;
   final bool syncVideoFiles;
+
+  /// 这条通道是否**自动**同步词典。云通道恒为 false：那一侧的词典改由设置页的显式
+  /// 上传 / 下载动作驱动（[SyncOrchestrator.runAssetTransferOnly]）。互联通道仍读
+  /// 「上传词典到互联对端」开关（BUG-988 的通道语义，本次不动）。
+  ///
+  /// 同时是「删词典要不要传播到这条通道的远端」的门控（BUG-1566）：只有还在自动
+  /// 双向同步的通道才需要传播删除 —— 否则并集同步下轮又把它拉回来。手动上传的那份
+  /// 是用户显式放上去的备份，本地删除不该连坐删掉它。
   final bool syncDictionary;
-  final bool syncLocalAudio;
 }
 
 /// 按通道解析分资产同步开关（BUG-988）。[isInterconnect]==true（互联通道）时「重内容」
@@ -251,8 +257,11 @@ class ChannelSyncFlags {
 /// 用户独立控制是否上传给互联对端，不被「启用互联连接」裹挟）；false（云备份通道）读
 /// 原共享 sync_*_enabled。统计与收藏也已分通道（互联侧读 `interconnect_sync_stats` /
 /// `interconnect_sync_favorites`；这两个新键**缺行时继承旧的 sync_stats_enabled**，
-/// 关过旧开关的存量用户升级后不会被静默复位，见 [SyncRepository]）。位置/本地音频仍不
-/// 区分通道（轻量进度，跨设备续读是互联本意）。
+/// 关过旧开关的存量用户升级后不会被静默复位，见 [SyncRepository]）。位置仍不区分通道
+/// （轻量进度，跨设备续读是互联本意）。
+///
+/// 本地音频源数据库**已不在这里**：它没有任何自动同步开关了，只由设置页的显式上传 /
+/// 下载动作驱动（[SyncOrchestrator.runAssetTransferOnly]）。
 ///
 /// 不再 `@visibleForTesting`：`AppModel._propagateDictionaryDeleteToRemote` 是生产
 /// 消费方——「这条通道该不该同步词典」必须复用同一份分通道门控，各处重抄必漂
@@ -281,10 +290,11 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
     syncVideoFiles: isInterconnect
         ? await repo.isInterconnectSyncVideoFilesEnabled()
         : await repo.isSyncVideoFilesEnabled(),
+    // 云通道不再有「同步词典」开关：那一侧改成设置页的显式上传 / 下载动作，自动
+    // sweep 一律不碰词典。互联侧保持原样，由互联专属上传开关驱动。
     syncDictionary: isInterconnect
         ? await repo.isInterconnectSyncDictionaryEnabled()
-        : await repo.isSyncDictionaryEnabled(),
-    syncLocalAudio: await repo.isSyncLocalAudioEnabled(),
+        : false,
   );
 }
 
@@ -355,7 +365,6 @@ Future<SyncRunReport?> _runSyncChannelInner({
     syncAudioBookFiles: flags.syncAudioBookFiles,
     syncVideoFiles: flags.syncVideoFiles,
     syncDictionary: flags.syncDictionary,
-    syncLocalAudio: flags.syncLocalAudio,
     localAudioEntries: localAudioEntries,
     onLocalAudioImported: onLocalAudioImported,
     onProgress: onProgress,
@@ -817,6 +826,164 @@ Future<ManualSyncResult> runManualFullSync({
   }
 }
 
+/// 用户在设置页点「上传」/「下载」：只跑**一类资产、一个方向**，跑遍每条已启用通道。
+///
+/// 与 [runManualFullSync] 同纪律：绕过自动同步开关与冷却（显式意图恒放行），与后台
+/// 同步共用 [_autoSyncMutex]（避免并发改 singleton backend 状态），**逐通道**隔离异常
+/// （一条云通道令牌失效不得吞掉互联通道已跑完的结果，BUG-1573），一条都没跑成时把第
+/// 一个异常原样抛回去，让 UI 层既有的鉴权分支照旧登出 + 提示重新登录。
+///
+/// 与全量 sweep 的两处**有意**不同：
+/// 1. 不喂退避状态机（[noteAutoSweepOutcomeForBackoff]）——这不是一轮探活，一次词典
+///    上传失败没有理由压制紧随其后的定时同步；
+/// 2. 不跑 [drainPendingBookSyncsAfterSweep]——本轮压根没同步任何书，没有「被挡下的
+///    退出书同步」要补。
+Future<ManualSyncResult> runManualAssetTransfer({
+  required FushiDatabase db,
+  required SyncAssetKind kind,
+  required SyncAssetDirection direction,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
+  SyncPostRunCallback? onPostRun,
+  SyncProgressCallback? onProgress,
+}) async {
+  if (!_syncingIds.add('__asset_transfer__')) {
+    return const ManualSyncResult(ManualSyncOutcome.busy);
+  }
+  _beginSyncActivity(const SyncActivity(SyncActivityKind.assetTransfer));
+  SyncOutcomeReason reason = SyncOutcomeReason.failed;
+  int channelsRun = 0;
+  try {
+    return await _autoSyncMutex.withLock(() async {
+      final repo = SyncRepository(db);
+      final SyncRunReport merged = SyncRunReport();
+      final List<ManualSyncChannelReport> channelReports =
+          <ManualSyncChannelReport>[];
+      Object? firstError;
+      StackTrace? firstStack;
+      for (final SyncChannel channel
+          in await enabledSyncChannelBackends(repo)) {
+        try {
+          final SyncRunReport? report = await _runAssetTransferChannel(
+            db: db,
+            repo: repo,
+            channel: channel,
+            kind: kind,
+            direction: direction,
+            dictionaryResourceRoot: dictionaryResourceRoot,
+            audioDatabaseRoot: audioDatabaseRoot,
+            tempDir: tempDir,
+            localAudioEntries: localAudioEntries,
+            onLocalAudioImported: onLocalAudioImported,
+            onProgress: (SyncProgress p) {
+              syncProgress.value = p;
+              onProgress?.call(p);
+            },
+          );
+          if (report == null) continue;
+          channelsRun++;
+          logSyncReportErrors(report);
+          await onPostRun?.call(report);
+          merged.mergeFrom(report);
+          channelReports.add(ManualSyncChannelReport(channel.backend, report));
+        } catch (e, stack) {
+          firstError ??= e;
+          firstStack ??= stack;
+          merged.noteError(
+            'asset transfer channel (interconnect=${channel.isInterconnect})',
+            e,
+          );
+          developer.log(
+            'Manual asset transfer channel failed '
+            '(interconnect=${channel.isInterconnect})',
+            error: e,
+            stackTrace: stack,
+            name: 'SyncAutoTrigger',
+          );
+        }
+      }
+      if (channelReports.isEmpty) {
+        if (firstError != null) {
+          reason = SyncOutcomeReason.failed;
+          Error.throwWithStackTrace(
+              firstError, firstStack ?? StackTrace.current);
+        }
+        reason = SyncOutcomeReason.noChannels;
+        return const ManualSyncResult(ManualSyncOutcome.notConfigured);
+      }
+      reason = firstError == null
+          ? SyncOutcomeReason.completed
+          : SyncOutcomeReason.failed;
+      return ManualSyncResult(
+        ManualSyncOutcome.completed,
+        merged,
+        channelReports,
+      );
+    });
+  } finally {
+    _syncingIds.remove('__asset_transfer__');
+    _endSyncActivity(SyncRunOutcome(
+      kind: SyncActivityKind.assetTransfer,
+      reason: reason,
+      channelsRun: channelsRun,
+      finishedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
+  }
+}
+
+/// 单条通道上的一次资产传输。与 [_runSyncChannel] 同形：给鉴权错误钉上通道身份再
+/// 放出去，上层才能把登出这类破坏性副作用**只**作用在出错的那条通道上（BUG-1578）。
+Future<SyncRunReport?> _runAssetTransferChannel({
+  required FushiDatabase db,
+  required SyncRepository repo,
+  required SyncChannel channel,
+  required SyncAssetKind kind,
+  required SyncAssetDirection direction,
+  required Directory dictionaryResourceRoot,
+  required Directory audioDatabaseRoot,
+  required Directory tempDir,
+  required List<LocalAudioDbEntry> localAudioEntries,
+  required Future<void> Function(LocalAudioPackageContents)
+      onLocalAudioImported,
+  required void Function(SyncProgress) onProgress,
+}) async {
+  try {
+    final SyncBackend backend = channel.backend;
+    await backend.restoreAuth(repo);
+    if (!await backend.isAuthenticated) return null;
+    final SyncOrchestrator orchestrator = SyncOrchestrator(
+      db: db,
+      backend: backend,
+      dictionaryResourceRoot: dictionaryResourceRoot,
+      audioDatabaseRoot: audioDatabaseRoot,
+      tempDir: tempDir,
+      deviceId: await repo.getOrCreateDeviceId(),
+      // 其余维度一个都不跑：runAssetTransferOnly 只碰 [kind] 这一类，这些 false 是
+      // 说清「本轮不是一次 sweep」，与合集轻量路径同纪律。
+      syncStats: false,
+      syncFavorites: false,
+      syncAudioBookPosition: false,
+      syncContent: false,
+      syncAudioBookFiles: false,
+      syncVideoFiles: false,
+      syncDictionary: false,
+      localAudioEntries: localAudioEntries,
+      onLocalAudioImported: onLocalAudioImported,
+      onProgress: onProgress,
+    );
+    return await orchestrator.runAssetTransferOnly(
+      kind: kind,
+      direction: direction,
+    );
+  } on SyncAuthError catch (e) {
+    throw SyncChannelAuthError(channel: channel, error: e);
+  }
+}
+
 Timer? _collectionsSyncDebounce;
 StreamSubscription<void>? _collectionsWatchSub;
 Duration _collectionsSyncDebounceDuration = const Duration(seconds: 8);
@@ -921,7 +1088,6 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
             syncAudioBookFiles: false,
             syncVideoFiles: false,
             syncDictionary: false,
-            syncLocalAudio: false,
             localAudioEntries: const <LocalAudioDbEntry>[],
             onLocalAudioImported: (LocalAudioPackageContents _) async {},
           );

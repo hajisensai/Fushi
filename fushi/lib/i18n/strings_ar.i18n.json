@@ -1855,8 +1855,6 @@
   "sync_connection_success": "نجح الاتصال",
   "sync_content": "مزامنة ملفات الكتب",
   "sync_content_warning": "الملفات الكبيرة ستستهلك مساحة التخزين وحزمة البيانات",
-  "sync_dictionary": "مزامنة القواميس",
-  "sync_dictionary_warning": "قد تكون حِزَم القواميس كبيرة وتتضمّن موارد قواميس مستوردة.",
   "sync_err_auth_expired": "انتهت صلاحية تسجيل الدخول — يرجى تسجيل الدخول مجددًا.",
   "sync_err_invalid_client": "بيانات اعتماد العميل غير صالحة لهذه النسخة — يُرجى تحديث التطبيق.",
   "sync_err_network": "تعذّر الوصول إلى الخادم — تحقّق من شبكتك أو إعدادات الوكيل.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "أجهزة الشبكة المحلية",
   "sync_lan_no_devices": "لم يُعثر على أجهزة",
   "sync_lan_scan_failed": "فشل الفحص — تحقّق من أذونات الشبكة أو الجدار الناري.",
-  "sync_local_audio": "مزامنة الصوت المحلي",
-  "sync_local_audio_warning": "تزامن قواعد بيانات مصادر الصوت المحلية (قد تكون كبيرة)",
   "sync_not_signed_in": "لم يتم تسجيل الدخول",
   "sync_now": "زامن الآن",
   "sync_now_audio_in": "↓$count كتاب صوتي",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

@@ -1855,8 +1855,6 @@
   "sync_connection_success": "연결 성공",
   "sync_content": "책 파일 동기화",
   "sync_content_warning": "큰 파일은 저장 공간과 데이터를 사용합니다",
-  "sync_dictionary": "사전 동기화",
-  "sync_dictionary_warning": "사전 패키지는 용량이 클 수 있으며 가져온 사전 리소스를 포함합니다.",
   "sync_err_auth_expired": "로그인이 만료되었습니다 — 다시 로그인해 주세요.",
   "sync_err_invalid_client": "이 빌드에 대한 클라이언트 자격 증명이 유효하지 않습니다 — 앱을 업데이트하세요.",
   "sync_err_network": "서버에 연결할 수 없습니다 — 네트워크 또는 프록시 설정을 확인하세요.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "LAN 기기",
   "sync_lan_no_devices": "기기를 찾을 수 없음",
   "sync_lan_scan_failed": "검색 실패 — 네트워크 권한 또는 방화벽을 확인하세요.",
-  "sync_local_audio": "로컬 오디오 동기화",
-  "sync_local_audio_warning": "로컬 오디오 소스 데이터베이스를 동기화합니다(용량이 클 수 있음)",
   "sync_not_signed_in": "로그인되지 않음",
   "sync_now": "지금 동기화",
   "sync_now_audio_in": "↓오디오북 $count개",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

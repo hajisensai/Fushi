@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Verbindung erfolgreich",
   "sync_content": "Buchdateien synchronisieren",
   "sync_content_warning": "Große Dateien verbrauchen Speicherplatz und Datenvolumen",
-  "sync_dictionary": "Wörterbücher synchronisieren",
-  "sync_dictionary_warning": "Wörterbuchpakete können groß sein und importierte Wörterbuchressourcen enthalten.",
   "sync_err_auth_expired": "Anmeldung abgelaufen – bitte erneut anmelden.",
   "sync_err_invalid_client": "Die Client-Anmeldedaten sind für diesen Build ungültig – bitte aktualisiere die App.",
   "sync_err_network": "Server nicht erreichbar – prüfe dein Netzwerk oder die Proxy-Einstellungen.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "LAN-Geräte",
   "sync_lan_no_devices": "Keine Geräte gefunden",
   "sync_lan_scan_failed": "Suche fehlgeschlagen – prüfe Netzwerkberechtigungen oder Firewall.",
-  "sync_local_audio": "Lokales Audio synchronisieren",
-  "sync_local_audio_warning": "Synchronisiert lokale Audioquellen-Datenbanken (kann groß sein)",
   "sync_not_signed_in": "Nicht angemeldet",
   "sync_now": "Jetzt synchronisieren",
   "sync_now_audio_in": "↓$count Hörbücher",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

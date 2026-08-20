@@ -77,8 +77,11 @@ void main() {
       expect(idsOf(dest.sections[1]), <String>[
         'sync.auto_sync',
         'sync.statistics',
-        'sync.dictionary',
-        'sync.local_audio',
+        // 词典与本地音频源数据库不是开关，而是各自一对显式的上传 / 下载动作行。
+        'sync.dictionary_upload',
+        'sync.dictionary_download',
+        'sync.local_audio_upload',
+        'sync.local_audio_download',
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
@@ -98,7 +101,7 @@ void main() {
         'auto-sync and upload switches are gated; content-scope switches are not',
         () {
       // Auto-sync 与三个「上传X文件」开关都带可见性谓词（见下方 source guard 对
-      // 谓词内容的锁定）；统计/词典/本地音频是 content-scope 设置，恒显。
+      // 谓词内容的锁定）；统计与词典/本地音频的四个传输动作行是 content-scope，恒显。
       final SettingsSection content = dest.sections[1];
       SettingsItem byId(String id) =>
           content.items.firstWhere((SettingsItem i) => i.id == id);
@@ -107,8 +110,10 @@ void main() {
               'auto-sync hides when the sync method itself has no outbound');
       for (final String id in <String>[
         'sync.statistics',
-        'sync.dictionary',
-        'sync.local_audio',
+        'sync.dictionary_upload',
+        'sync.dictionary_download',
+        'sync.local_audio_upload',
+        'sync.local_audio_download',
       ]) {
         expect(byId(id).visible, isNull,
             reason: '$id is a content-scope setting, global to every backend');

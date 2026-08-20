@@ -307,9 +307,8 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
 
 Future<List<SyncDictEntry>> _fetchDictEntries(
   FushiDatabase db,
-  SyncBackend backend, {
-  required bool includeLocalOnly,
-}) async {
+  SyncBackend backend,
+) async {
   final String ns = await backend.ensureNamespace(kSyncDictionaryNamespace);
   final List<AssetEntry> remote = await backend.listChildren(ns);
   // 写侧只产新后缀；读侧必须同时认 Hibiki 时代的旧后缀 —— 云根迁移只改根文件夹
@@ -342,9 +341,9 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
         remoteAssetId: remoteByName[n],
       ),
   ];
-  // 门控：远端项始终保留（要删它）；纯本地项（无远端可删）只在词典同步选项
-  // 开启时才显示，避免选项关闭时用无关本地词典刷屏。
-  out.removeWhere((SyncDictEntry e) => !e.hasRemote && !includeLocalOnly);
+  // 纯本地项（远端没有、这里没得删）曾被「词典同步开关关着」过滤掉，理由是别用
+  // 无关本地词典刷屏。开关没了之后这个过滤反而有害：本地独有 = 「还没上传的那些」，
+  // 正是用户点设置页那个上传按钮之前要看的清单。远端项本来就始终保留（要删它）。
   out.sort((SyncDictEntry a, SyncDictEntry b) =>
       a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return out;
@@ -563,8 +562,6 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   Future<void> _load() async {
     try {
-      final repo = SyncRepository(widget.db);
-      final bool dictSyncOn = await repo.isSyncDictionaryEnabled();
       // Fetch the remote listing under the sync mutex: this re-lists the remote
       // and rewrites the singleton backend's folder-id cache, so running it
       // concurrently with an in-flight sync corrupted the sync's view and made
@@ -572,11 +569,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final results =
           await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
                 _fetchCompareData(widget.db, widget.backend),
-                _fetchDictEntries(
-                  widget.db,
-                  widget.backend,
-                  includeLocalOnly: dictSyncOn,
-                ),
+                _fetchDictEntries(widget.db, widget.backend),
               ]));
       final entries = results[0] as List<SyncCompareEntry>;
       final dicts = results[1] as List<SyncDictEntry>;

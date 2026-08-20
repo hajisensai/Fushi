@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Bağlantı başarılı",
   "sync_content": "Kitap dosyalarını eşitle",
   "sync_content_warning": "Büyük dosyalar depolama alanı ve veri kullanır",
-  "sync_dictionary": "Sözlükleri eşitle",
-  "sync_dictionary_warning": "Sözlük paketleri büyük olabilir ve içe aktarılan sözlük kaynaklarını içerebilir.",
   "sync_err_auth_expired": "Oturum süresi doldu — lütfen tekrar oturum açın.",
   "sync_err_invalid_client": "Bu yapı için istemci kimlik bilgileri geçersiz — lütfen uygulamayı güncelleyin.",
   "sync_err_network": "Sunucuya ulaşılamıyor — ağ veya proxy ayarlarınızı kontrol edin.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "LAN cihazları",
   "sync_lan_no_devices": "Cihaz bulunamadı",
   "sync_lan_scan_failed": "Tarama başarısız — ağ izinlerini veya güvenlik duvarını kontrol edin.",
-  "sync_local_audio": "Yerel sesi eşitle",
-  "sync_local_audio_warning": "Yerel ses kaynağı veritabanlarını eşitler (büyük olabilir)",
   "sync_not_signed_in": "Oturum açılmadı",
   "sync_now": "Şimdi eşitle",
   "sync_now_audio_in": "↓$count sesli kitap",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

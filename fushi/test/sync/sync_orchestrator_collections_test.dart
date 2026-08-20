@@ -45,7 +45,6 @@ class _Dev {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
   Future<SyncRunReport> sync() async {
@@ -414,7 +413,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
       // 修复前：SyncAuthError 直接冲出 run()，合集阶段整轮到不了。

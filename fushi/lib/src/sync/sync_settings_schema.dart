@@ -47,6 +47,7 @@ import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
@@ -174,29 +175,53 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncStatsEnabled(value);
             },
           ),
-          SettingsSwitchItem(
-            id: 'sync.dictionary',
-            title: t.sync_dictionary,
-            subtitle: t.sync_dictionary_warning,
+          // 词典与本地音频源数据库不再是「开关 + 自动双向同步」，而是两个显式动作行：
+          // 上传把本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这
+          // 台机器的词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄
+          // 搬几百 MB —— 方向该由用户在点的那一刻给出。
+          SettingsCustomItem(
+            id: 'sync.dictionary_upload',
             icon: Icons.menu_book_outlined,
-            value: (SettingsContext ctx) => _syncSettings(ctx).syncDictionary,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncDictionary = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncDictionaryEnabled(value);
-            },
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              direction: SyncAssetDirection.upload,
+              title: t.sync_asset_dictionary_upload,
+              icon: Icons.menu_book_outlined,
+            ),
           ),
-          SettingsSwitchItem(
-            id: 'sync.local_audio',
-            title: t.sync_local_audio,
-            subtitle: t.sync_local_audio_warning,
+          SettingsCustomItem(
+            id: 'sync.dictionary_download',
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              direction: SyncAssetDirection.download,
+              title: t.sync_asset_dictionary_download,
+              icon: Icons.menu_book_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.local_audio_upload',
             icon: Icons.graphic_eq_outlined,
-            value: (SettingsContext ctx) => _syncSettings(ctx).syncLocalAudio,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncLocalAudio = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncLocalAudioEnabled(value);
-            },
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              direction: SyncAssetDirection.upload,
+              title: t.sync_asset_local_audio_upload,
+              icon: Icons.graphic_eq_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.local_audio_download',
+            icon: Icons.graphic_eq_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferWidget(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              direction: SyncAssetDirection.download,
+              title: t.sync_asset_local_audio_download,
+              icon: Icons.graphic_eq_outlined,
+            ),
           ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
@@ -696,8 +721,6 @@ class _SyncSettingsState {
   bool interconnectEnabled = false;
   bool autoSync = false;
   bool syncStats = true;
-  bool syncDictionary = false;
-  bool syncLocalAudio = false;
   bool syncContent = false;
   bool syncAudioBookFiles = false;
   bool syncVideoFiles = false;
@@ -787,8 +810,6 @@ class _SyncSettingsState {
       interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
-      syncDictionary = await _repo.isSyncDictionaryEnabled();
-      syncLocalAudio = await _repo.isSyncLocalAudioEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();

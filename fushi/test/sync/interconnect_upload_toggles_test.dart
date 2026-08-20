@@ -32,17 +32,17 @@ void main() {
   });
 
   test('互联专属上传开关默认全关，云备份内容开关全开也不上传给互联（BUG-988）', () async {
-    // 云备份内容开关全开（模拟用户为云备份开启）。
+    // 云备份内容开关全开（模拟用户为云备份开启）。词典**已没有**云侧开关：那一侧
+    // 改成了设置页的显式上传 / 下载动作，云通道恒不自动同步词典。
     await repo.setSyncContentEnabled(true);
-    await repo.setSyncDictionaryEnabled(true);
     await repo.setSyncAudioBookFilesEnabled(true);
     await repo.setSyncVideoFilesEnabled(true);
 
-    // 云通道：读共享开关 → 全 true。
+    // 云通道：读共享开关 → 全 true（词典除外，见上）。
     final ChannelSyncFlags cloud =
         await resolveChannelSyncFlags(repo, isInterconnect: false);
     expect(cloud.syncContent, isTrue);
-    expect(cloud.syncDictionary, isTrue);
+    expect(cloud.syncDictionary, isFalse, reason: '云通道不再自动同步词典（改成显式上传 / 下载）');
     expect(cloud.syncAudioBookFiles, isTrue);
     expect(cloud.syncVideoFiles, isTrue);
 
@@ -72,19 +72,27 @@ void main() {
     expect(cloud.syncDictionary, isFalse);
   });
 
-  test('位置/本地音频不区分通道（轻量进度共享，跨设备续读是互联本意）', () async {
-    await repo.setSyncLocalAudioEnabled(true);
-
+  test('位置不区分通道（轻量进度共享，跨设备续读是互联本意）', () async {
     final ChannelSyncFlags ic =
         await resolveChannelSyncFlags(repo, isInterconnect: true);
     final ChannelSyncFlags cloud =
         await resolveChannelSyncFlags(repo, isInterconnect: false);
 
-    expect(ic.syncLocalAudio, cloud.syncLocalAudio);
-    expect(ic.syncLocalAudio, isTrue);
     // 有声书播放位置恒同步（isSyncAudioBookEnabled 恒 true）——两通道一致。
     expect(ic.syncAudioBookPosition, isTrue);
     expect(cloud.syncAudioBookPosition, isTrue);
+  });
+
+  // 本地音频源数据库曾经也在 ChannelSyncFlags 里（不分通道的一个开关）。它现在**根本
+  // 不在自动同步里**：既没有开关，也不在任何一条通道的 flags 上，只能由设置页的显式
+  // 上传 / 下载动作搬。这条守卫钉住「它没被悄悄塞回自动 sweep」。
+  test('本地音频源数据库不再是任何通道的自动同步维度', () {
+    final String src =
+        File('lib/src/sync/sync_auto_trigger.dart').readAsStringSync();
+    expect(src.contains('syncLocalAudio:'), isFalse,
+        reason: 'ChannelSyncFlags 不得再带本地音频维度');
+    expect(src.contains('isSyncLocalAudioEnabled'), isFalse,
+        reason: '本地音频同步开关已删除，不得再有读取方');
   });
 
   // 统计/收藏此前跟着云备份的 sync_stats_enabled 一刀切（上面那条测试的原始形态就

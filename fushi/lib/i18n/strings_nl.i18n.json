@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Verbinding geslaagd",
   "sync_content": "Boekbestanden synchroniseren",
   "sync_content_warning": "Grote bestanden gebruiken opslagruimte en data",
-  "sync_dictionary": "Woordenboeken synchroniseren",
-  "sync_dictionary_warning": "Woordenboekpakketten kunnen groot zijn en geïmporteerde woordenboekbronnen bevatten.",
   "sync_err_auth_expired": "Aanmelding verlopen — meld je opnieuw aan.",
   "sync_err_invalid_client": "Clientgegevens zijn ongeldig voor deze build — werk de app bij.",
   "sync_err_network": "Kan de server niet bereiken — controleer je netwerk- of proxyinstellingen.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "LAN-apparaten",
   "sync_lan_no_devices": "Geen apparaten gevonden",
   "sync_lan_scan_failed": "Scannen mislukt — controleer netwerkrechten of firewall.",
-  "sync_local_audio": "Lokale audio synchroniseren",
-  "sync_local_audio_warning": "Synchroniseert databases van lokale audiobronnen (kan groot zijn)",
   "sync_not_signed_in": "Niet aangemeld",
   "sync_now": "Nu synchroniseren",
   "sync_now_audio_in": "↓$count audioboeken",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

@@ -30,6 +30,14 @@ enum SyncActivityKind {
   /// 退出书 / 切后台触发的单本同步（`SyncManager.syncBook`）。
   /// 同样没有阶段结构。
   singleBook,
+
+  /// 设置页「词典 / 本地音频数据库」的显式上传 / 下载
+  /// （`SyncOrchestrator.runAssetTransferOnly`）。
+  ///
+  /// 与 [fullSweep] 分开是因为它**只**跑一类资产的一个方向：把它伪装成全量 sweep，
+  /// 「上一轮同步的结局」那行就会拿一次词典上传的结果去回答用户「立即同步跑得怎么
+  /// 样」——答非所问。它自己会上报 [SyncPhase] 阶段 tick（词典 / 本地音频那一档）。
+  assetTransfer,
 }
 
 /// 在飞的那轮同步的身份。UI 在没有阶段 tick 可显示时退化到这一层。

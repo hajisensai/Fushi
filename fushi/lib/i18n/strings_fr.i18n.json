@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Connexion réussie",
   "sync_content": "Synchroniser les fichiers de livres",
   "sync_content_warning": "Les fichiers volumineux utiliseront de l'espace de stockage et des données",
-  "sync_dictionary": "Synchroniser les dictionnaires",
-  "sync_dictionary_warning": "Les paquets de dictionnaires peuvent être volumineux et inclure des ressources de dictionnaire importées.",
   "sync_err_auth_expired": "Connexion expirée — veuillez vous reconnecter.",
   "sync_err_invalid_client": "Les identifiants client sont invalides pour cette version — veuillez mettre l'application à jour.",
   "sync_err_network": "Impossible de joindre le serveur — vérifiez votre réseau ou vos réglages de proxy.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "Appareils du réseau local",
   "sync_lan_no_devices": "Aucun appareil trouvé",
   "sync_lan_scan_failed": "Échec de l'analyse — vérifiez les autorisations réseau ou le pare-feu.",
-  "sync_local_audio": "Synchroniser l'audio local",
-  "sync_local_audio_warning": "Synchronise les bases de données des sources audio locales (peut être volumineux)",
   "sync_not_signed_in": "Non connecté",
   "sync_now": "Synchroniser maintenant",
   "sync_now_audio_in": "↓$count livres audio",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

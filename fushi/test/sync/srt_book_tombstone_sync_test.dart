@@ -51,7 +51,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
   Future<void> addSrt(String uid, {String bookKey = ''}) =>

@@ -1855,8 +1855,6 @@
   "sync_connection_success": "连接成功",
   "sync_content": "上传书籍文件",
   "sync_content_warning": "大文件会消耗存储空间和流量",
-  "sync_dictionary": "同步词典",
-  "sync_dictionary_warning": "词典包可能很大，并包含已导入的词典资源。",
   "sync_err_auth_expired": "登录已过期，请重新登录。",
   "sync_err_invalid_client": "客户端凭据无效，请更新 App。",
   "sync_err_network": "无法连接服务器——请检查网络或代理设置。",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "局域网设备",
   "sync_lan_no_devices": "未发现设备",
   "sync_lan_scan_failed": "扫描失败——请检查网络权限或防火墙。",
-  "sync_local_audio": "同步本地音频",
-  "sync_local_audio_warning": "同步本地音频来源数据库（可能较大）",
   "sync_not_signed_in": "未登录",
   "sync_now": "立即同步",
   "sync_now_audio_in": "↓$count 有声书",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "向左平移",
   "shortcut_action_manga_pan_right": "向右平移",
   "drag_drop_folder_source_added": "已把文件夹添加为来源并开始扫描",
-  "drag_drop_folder_source_exists": "该文件夹已经是来源了"
+  "drag_drop_folder_source_exists": "该文件夹已经是来源了",
+  "sync_progress_asset_transfer": "准备传输",
+  "sync_asset_dictionary_upload": "上传词典",
+  "sync_asset_dictionary_download": "下载词典",
+  "sync_asset_local_audio_upload": "上传本地音频数据库",
+  "sync_asset_local_audio_download": "下载本地音频数据库",
+  "sync_asset_upload_hint": "把本机有、远端没有的推送过去。包可能很大。",
+  "sync_asset_download_hint": "把远端有、本机没有的取回来。",
+  "sync_asset_upload_action": "上传",
+  "sync_asset_download_action": "下载"
 }

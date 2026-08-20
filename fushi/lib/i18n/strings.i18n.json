@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Connection successful",
   "sync_content": "Upload book files",
   "sync_content_warning": "Large files will use storage space and data",
-  "sync_dictionary": "Sync dictionaries",
-  "sync_dictionary_warning": "Dictionary packages can be large and include imported dictionary resources.",
   "sync_err_auth_expired": "Sign-in expired — please sign in again.",
   "sync_err_invalid_client": "Client credentials are invalid for this build — please update the app.",
   "sync_err_network": "Cannot reach the server — check your network or proxy settings.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "LAN devices",
   "sync_lan_no_devices": "No devices found",
   "sync_lan_scan_failed": "Scan failed — check network permissions or firewall.",
-  "sync_local_audio": "Sync local audio",
-  "sync_local_audio_warning": "Syncs local audio source databases (may be large)",
   "sync_not_signed_in": "Not signed in",
   "sync_now": "Sync now",
   "sync_now_audio_in": "↓$count audiobooks",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }

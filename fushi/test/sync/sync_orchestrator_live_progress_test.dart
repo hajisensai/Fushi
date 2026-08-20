@@ -128,7 +128,6 @@ SyncOrchestrator _orchestrator({
       syncContent: false,
       syncAudioBookFiles: false,
       syncDictionary: false,
-      syncLocalAudio: false,
     );
 
 void main() {
@@ -445,14 +444,12 @@ void main() {
   });
 
   group('audiobook delay sweep (互联完整支持批次)', () {
-    test('本地带戳调轴 push 到 host；host 带戳调轴 pull 回本地；清单内联字段可用',
-        () async {
+    test('本地带戳调轴 push 到 host；host 带戳调轴 pull 回本地；清单内联字段可用', () async {
       await _seedHostAudiobook(hostDb, 'abk-push');
       await _seedHostAudiobook(hostDb, 'abk-pull');
       // host 侧 abk-pull 有带戳调轴（host 本机 updateDelayMs 盖戳的效果）。
       await hostDb.setPrefTyped<int>(audiobookDelayPrefKey('abk-pull'), 800);
-      await hostDb.setPrefTyped<int>(
-          audiobookDelayAtPrefKey('abk-pull'), 9000);
+      await hostDb.setPrefTyped<int>(audiobookDelayAtPrefKey('abk-pull'), 9000);
 
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
@@ -470,9 +467,9 @@ void main() {
       final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       // 清单内联字段（免逐本 GET 的前提）先行断言。
-      final RemoteAudiobookInfo pullInfo = (await backend
-              .listRemoteAudiobooks())
-          .firstWhere((RemoteAudiobookInfo i) => i.identity == 'abk-pull');
+      final RemoteAudiobookInfo pullInfo =
+          (await backend.listRemoteAudiobooks())
+              .firstWhere((RemoteAudiobookInfo i) => i.identity == 'abk-pull');
       expect(pullInfo.delayMs, 800);
       expect(pullInfo.delayUpdatedAtMs, 9000);
 
@@ -489,8 +486,7 @@ void main() {
               audiobookDelayAtPrefKey('abk-push'), 0),
           8000);
       expect(
-          await localDb.getPrefTyped<int>(
-              audiobookDelayPrefKey('abk-pull'), 0),
+          await localDb.getPrefTyped<int>(audiobookDelayPrefKey('abk-pull'), 0),
           800,
           reason: 'host 较新调轴须回灌本地');
       expect(
@@ -501,8 +497,7 @@ void main() {
   });
 
   group('standalone SRT audiobook sweep (BUG-1637)', () {
-    test('纯 SRT 有声书（bookKey 空、身份=uid）的听书进度进 sweep 交集并双向同步',
-        () async {
+    test('纯 SRT 有声书（bookKey 空、身份=uid）的听书进度进 sweep 交集并双向同步', () async {
       // host：只有 standalone SrtBooks 行（无 Audiobooks 行、bookKey 空）。
       await hostDb.upsertSrtBook(SrtBooksCompanion.insert(
         uid: 'srt-uid-1',

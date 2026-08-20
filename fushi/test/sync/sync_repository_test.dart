@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,39 +21,29 @@ void main() {
 
     await db.setPref(SyncRepository.syncStatsPreferenceKey, 'false');
     await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'false');
-    await db.setPref(SyncRepository.syncDictionaryPreferenceKey, 'true');
 
     expect(await repo.isSyncStatsEnabled(), isFalse);
     expect(await repo.isSyncAudioBookEnabled(), isTrue);
-    expect(await repo.isSyncDictionaryEnabled(), isTrue);
 
     await repo.setSyncStatsEnabled(true);
     await repo.setSyncAudioBookEnabled(false);
-    await repo.setSyncDictionaryEnabled(false);
 
     expect(await db.getPref(SyncRepository.syncStatsPreferenceKey), 'b:true');
     expect(
       await db.getPref(SyncRepository.syncAudioBookPreferenceKey),
       'b:true',
     );
-    expect(
-      await db.getPref(SyncRepository.syncDictionaryPreferenceKey),
-      'b:false',
-    );
   });
 
-  test('dictionary sync preference defaults to false', () async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final SyncRepository repo = SyncRepository(db);
-
-    expect(await repo.isSyncDictionaryEnabled(), isFalse);
-
-    await repo.setSyncDictionaryEnabled(true);
-    expect(await repo.isSyncDictionaryEnabled(), isTrue);
-
-    await repo.setSyncDictionaryEnabled(false);
-    expect(await repo.isSyncDictionaryEnabled(), isFalse);
+  // 「同步词典」/「同步本地音频」两个偏好已随开关一起删除（词典与本地音频源数据库
+  // 改成设置页的显式上传 / 下载动作）。存量库里的 `sync_dictionary_enabled` /
+  // `sync_local_audio_enabled` 两行不迁移也不清理，只是没人读的死数据 —— 所以这里
+  // 也不再有它们的读写用例。
+  test('deleted sync toggles have no accessor left', () {
+    final String src =
+        File('lib/src/sync/sync_repository.dart').readAsStringSync();
+    expect(src.contains('isSyncDictionaryEnabled'), isFalse);
+    expect(src.contains('isSyncLocalAudioEnabled'), isFalse);
   });
 
   test('audiobook-files sync preference defaults false and round-trips',
@@ -361,7 +353,6 @@ void main() {
       expect(keys, isNot(contains('sync_auto_enabled')));
       expect(keys, isNot(contains('sync_stats_enabled')));
       expect(keys, isNot(contains('sync_audiobook_enabled')));
-      expect(keys, isNot(contains('sync_dictionary_enabled')));
       expect(keys, isNot(contains('sync_content_enabled')));
       expect(keys, isNot(contains('sync_root_folder_id')));
       expect(keys, isNot(contains('sync_folder_cache')));

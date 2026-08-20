@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Kết nối thành công",
   "sync_content": "Đồng bộ tệp sách",
   "sync_content_warning": "Tệp lớn sẽ tốn dung lượng lưu trữ và dữ liệu mạng",
-  "sync_dictionary": "Đồng bộ từ điển",
-  "sync_dictionary_warning": "Gói từ điển có thể lớn và bao gồm các tài nguyên từ điển đã nhập.",
   "sync_err_auth_expired": "Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.",
   "sync_err_invalid_client": "Thông tin xác thực máy khách không hợp lệ cho bản build này — hãy cập nhật ứng dụng.",
   "sync_err_network": "Không thể kết nối máy chủ — kiểm tra mạng hoặc cài đặt proxy.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "Thiết bị trong mạng LAN",
   "sync_lan_no_devices": "Không tìm thấy thiết bị",
   "sync_lan_scan_failed": "Quét thất bại — kiểm tra quyền mạng hoặc tường lửa.",
-  "sync_local_audio": "Đồng bộ âm thanh cục bộ",
-  "sync_local_audio_warning": "Đồng bộ cơ sở dữ liệu nguồn âm thanh cục bộ (có thể lớn)",
   "sync_not_signed_in": "Chưa đăng nhập",
   "sync_now": "Đồng bộ ngay",
   "sync_now_audio_in": "↓$count sách nói",
@@ -3655,5 +3651,14 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
-  "drag_drop_folder_source_exists": "That folder is already a library source."
+  "drag_drop_folder_source_exists": "That folder is already a library source.",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download"
 }
