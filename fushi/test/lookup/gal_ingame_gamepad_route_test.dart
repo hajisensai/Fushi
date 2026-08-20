@@ -123,8 +123,25 @@ void main() {
           reason: 'MethodChannel 缺 gamepadAction 分发');
       final String glw =
           File('windows/runner/global_lookup_window.cpp').readAsStringSync();
-      expect(glw.contains('kAllowedActions'), isTrue,
+      // 只查符号存在不够（改名/删执行都可能漏）：切出 DispatchGamepadAction 函数
+      // 体，白名单数组与「未命中即 return」的执行判据必须都在其中。
+      final int fnIdx =
+          glw.indexOf('void GlobalLookupWindow::DispatchGamepadAction');
+      expect(fnIdx, greaterThanOrEqualTo(0),
+          reason: 'DispatchGamepadAction 实现缺席');
+      // 终点锚用真实调用 `webview_->ExecuteScript`（裸 'ExecuteScript' 会被
+      // 函数体注释里的同词提前截断）。
+      final int endIdx = glw.indexOf('webview_->ExecuteScript', fnIdx);
+      expect(endIdx, greaterThan(fnIdx),
+          reason: 'DispatchGamepadAction 里没有真实的 ExecuteScript 调用');
+      final String fnSlice = glw.substring(fnIdx, endIdx);
+      expect(fnSlice.contains('kAllowedActions'), isTrue,
           reason: '动作名必须走白名单再拼 ExecuteScript');
+      expect(
+        RegExp(r'if \(!allowed\) \{\s*return;\s*\}').hasMatch(fnSlice),
+        isTrue,
+        reason: '白名单必须真的拦截（未命中即 return），不能只是摆着的数组',
+      );
       expect(glw.contains('window.__globalLookupHost.gamepadAction('), isTrue);
     });
 
