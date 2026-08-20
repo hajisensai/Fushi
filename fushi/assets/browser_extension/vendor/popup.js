@@ -5,6 +5,8 @@
 function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+// 注意：scrollHeight 是**未乘 CSS zoom 的 layout px**。要和宿主几何（host CSS px）同单位，
+// 用下面的 __fushiReportedContentHeight()（BUG-1651 ②）。
 function __fushiScrollHeight(){ var c = __fushiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
 function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
 /* BUG-1078: composedPath() allocates a fresh array on every call and the wheel
@@ -3786,12 +3788,39 @@ function _reportPopupHeight() {
     // relayout，避免 _firePopupRendered→relayout→report→relayout 的死循环。
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
-            __fushiScrollHeight(),
+            __fushiReportedContentHeight(),
             window.__fushiRenderToken || 0,
             window.innerHeight || document.documentElement.clientHeight || 0);
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
     }
+}
+
+// BUG-1651 ②：报给宿主的内容高度必须与 `window.innerHeight` **同单位**（host CSS px）。
+// `__fushiScrollHeight()` 读的是容器 `scrollHeight`——CSS `zoom` 不改它，返回的是**未乘
+// z 的 layout px**；而 `window.innerHeight` 是视口高度，不随元素 zoom 变。宿主
+// （dictionary_popup_layer.dart 的 resolveAutoFitPopupHeight）拿这两个数作差去增减弹窗
+// 外壳高，两者差一个 z 就按 z 倍收错：z>1 收得过狠（内容被裁 / 凭空出滚动条），z<1 收
+// 不干净。默认（界面大小 100% + 词典字号 16）z=1 恰好是恒等变换，所以默认设置下看不出来。
+// 宿主侧 global_lookup_host.js 的 measureContentHeight 用的是同一套换算
+// （Math.ceil(layoutPx * frameContentZoom(record))）。
+//
+// zoom 的落点有两处（同 popupCurrentZoom 的 BUG-688 说明）：in-app 弹窗由
+// popup_settings_injection.dart 写在 document.documentElement 上（popupContentZoom =
+// 界面大小 x 词典字号/16，Ctrl+滚轮还会就地改它，所以真值只能在 JS 侧现读）；扩展浮窗
+// 由 content.js 写在 shadow host 上。读不到或非法一律回落 1（= 不换算）。
+function __fushiPopupContentZoom(){
+    var host = window.__fushiRoot && window.__fushiRoot.host;
+    var raw = (host && host.style && host.style.zoom) ||
+        (document.documentElement && document.documentElement.style &&
+            document.documentElement.style.zoom);
+    var z = parseFloat(raw);
+    return (Number.isFinite(z) && z > 0) ? z : 1;
+}
+// popupRendered 的 args[0]：内容高度，host CSS px。Math.ceil 只防子像素短一格
+// （z=1 时 scrollHeight 本就是整数，换算逐字节等价于换算前）。
+function __fushiReportedContentHeight(){
+    return Math.ceil(__fushiScrollHeight() * __fushiPopupContentZoom());
 }
 
 // 性能（查词时延）：多词条渲染现在**双发**同一 token 的 popupRendered——首词条
@@ -3839,9 +3868,16 @@ function _firePopupRendered(stillRendering) {
 // 单卡时清掉 inline 回落到 CSS grid/block。CSS 规则原样保留作「无 JS 兜底」，故所有现有 grid
 // 守卫测试不受影响。高度变化（<details> 展开/收起、图片异步加载、ruby、字体替换）由挂在每张
 // 卡片上的 ResizeObserver 捕捉重排（不依赖 toggle 事件跨 shadow 边界）；宽度变化走 resize。
-const HAS_NATIVE_MASONRY = (() => {
-    try { return CSS.supports('display', 'grid-lanes'); } catch (e) { return false; }
-})();
+// 曾经这里有个 HAS_NATIVE_MASONRY = CSS.supports('display','grid-lanes')，命中时
+// layoutMasonry() 直接 return「交给 CSS 原生 masonry」。但 CSS 侧的那条分支**从未写过**
+// （全仓 grep `grid-lanes` 只命中这行检测本身），于是它把布局交给了一个不存在的分支。
+//
+// 2026-08 macOS 26 / Safari 26 的 WebKit 开始支持 `display: grid-lanes`，检测转为 true，
+// 弹窗在 macOS/iOS 上静默退化成 `.glossary-section > .category-body` 的**行对齐 grid**：
+// 同一行的词典卡按最高的那张对齐，矮卡（已折叠 / 义项少的词典）下方留出大片空洞。
+//
+// 特性检测只有在「对应实现确实存在」时才能提前返回。CSS 原生分支落地前，masonry 一律
+// 由 JS 铺。守卫测试：`fushi/test/pages/popup_masonry_no_dead_branch_guard_test.dart`。
 let masonryRaf = null;
 let masonryObserver = null;
 
@@ -3894,7 +3930,6 @@ function resetMasonryBody(body) {
 }
 
 function layoutMasonry() {
-    if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
     const configured = dictColumns();
     const gap = masonryGap();
     masonryBodies().forEach(body => {
@@ -3954,7 +3989,7 @@ function layoutMasonry() {
 }
 
 function observeMasonryTargets() {
-    if (HAS_NATIVE_MASONRY || !masonrySupported()) return;
+    if (!masonrySupported()) return;
     if (!masonryObserver) {
         masonryObserver = new ResizeObserver(scheduleMasonry);
     }
@@ -3968,7 +4003,7 @@ function observeMasonryTargets() {
 }
 
 function scheduleMasonry() {
-    if (HAS_NATIVE_MASONRY || !masonrySupported() || masonryRaf) return;
+    if (!masonrySupported() || masonryRaf) return;
     masonryRaf = requestAnimationFrame(() => {
         masonryRaf = null;
         layoutMasonry();
@@ -4478,7 +4513,7 @@ window.updatePopupIncremental = function() {
     window.fushiRelayoutDictionaries();
 
     window.flutter_inappwebview.callHandler('popupRendered',
-        __fushiScrollHeight(),
+        __fushiReportedContentHeight(),
         window.__fushiRenderToken || 0,
         window.innerHeight || document.documentElement.clientHeight || 0);
 };

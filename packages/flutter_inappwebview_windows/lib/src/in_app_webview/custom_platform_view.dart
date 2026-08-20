@@ -115,13 +115,23 @@ typedef MouseInputDispatch = ({
 /// WebView2 的 `setPointerButtonState` 使用 native 端缓存的 `lastCursorPos_`。因此即使
 /// Flutter 没先发 hover/move（弹窗刚出现在静止光标下、或光标跨平台视图边界），
 /// down/up 也必须先把**本次事件坐标**写进去，否则 click 会落在旧 DOM 位置。
+///
+/// [position] 为 null = **本次事件没有可信坐标**，此时绝不前置 setCursorPos，沿用
+/// native 最后一次有效的 `lastCursorPos_`。唯一这样的来源是 `PointerCancelEvent`：
+/// `GestureBinding.cancelPointer` 只传 `pointer`，其余全走默认值，`position` 恒为
+/// `Offset.zero`（framework 的 `events.dart`）。而 native 的 `setCursorPos` 不是纯
+/// 赋值——`in_app_webview.cpp` 写完 `lastCursorPos_` 还会用**翻转前**的
+/// `virtualKeys_.state()` 发一个 `MOUSE_EVENT_KIND_MOVE`；取消时左键位仍是 down，于是
+/// 「带左键按下的 MOVE 到 (0,0)」被 Blink 判成拖拽，选区从锚点一路刷到文档左上角，
+/// 正是 BUG-1419「鼠标一动就刷蓝选区」的症状。补发的 up 不需要坐标，落在最后一次
+/// 有效位置即可。
 List<MouseInputDispatch> planMouseInputDispatches({
-  required Offset position,
+  required Offset? position,
   required int previousButtons,
   required int nextButtons,
 }) {
   return <MouseInputDispatch>[
-    (position: position, buttonTransition: null),
+    if (position != null) (position: position, buttonTransition: null),
     for (final MouseButtonTransition transition
         in diffMouseButtonMasks(previousButtons, nextButtons))
       (position: null, buttonTransition: transition),
@@ -458,7 +468,10 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   /// BUG-1652：坐标与按钮翻转作为一个有序输入批次下发。所有 mouse 事件都走这里，
   /// 保证 down/up 不再依赖此前是否恰好收到 hover/move。
-  void _syncMouseInput(Offset position, int buttons) {
+  ///
+  /// [position] 为 null = 本次事件没有可信坐标（只有 `PointerCancelEvent` 如此），
+  /// 只补按钮差分，不动 native 光标——理由见 [planMouseInputDispatches]。
+  void _syncMouseInput(Offset? position, int buttons) {
     for (final MouseInputDispatch dispatch in planMouseInputDispatches(
       position: position,
       previousButtons: _mouseButtons,
@@ -556,7 +569,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       }
                       // 取消 = 该指针的所有键都不再按住（Flutter 的 cancel 事件
                       // buttons 已为 0，这里显式走同一条差分路径补发 up）。
-                      _syncMouseInput(ev.localPosition, ev.buttons);
+                      // BUG-1419：坐标传 null。cancel 是 GestureBinding.cancelPointer
+                      // 合成的，`ev.localPosition` 恒为 (0,0) 而非真实光标；前置
+                      // setCursorPos 会在左键位翻转**之前**发出一个带左键按下的
+                      // MOVE 到 (0,0)，Blink 判为拖拽 → 选区从锚点刷到文档左上角。
+                      _syncMouseInput(null, ev.buttons);
                     },
                     onPointerMove: (ev) {
                       _pointerKind = ev.kind;

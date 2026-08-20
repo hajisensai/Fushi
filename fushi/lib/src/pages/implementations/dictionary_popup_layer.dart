@@ -244,6 +244,12 @@ Rect resolvePopupRect({
 /// `currentPopupHeight` 是包含 Flutter 顶栏/header 的外壳高度；JS 上报的两个值只属于
 /// WebView body。用差值增减当前总高，就不需要在 Dart 重复猜顶栏高度。结果受用户的
 /// 最小/最大高度约束；平台视图初始化期的 0/NaN 测量保持原高，避免闪跳。
+///
+/// **单位铁律**：[contentHeight] 与 [viewportHeight] 必须同为 **host CSS px**。内容
+/// 高度的原始测量是容器 `scrollHeight`——CSS `zoom` 不改它，那是未乘 z 的 layout px；
+/// 换算在 popup.js 的 `__fushiReportedContentHeight()` 里完成（乘回 documentElement /
+/// shadow host 上的 zoom = 界面大小 × 词典字号/16）。默认 z=1 时两种单位恰好相等，
+/// 所以只用 z=1 的用例永远发现不了单位错配。
 double resolveAutoFitPopupHeight({
   required double currentPopupHeight,
   required double contentHeight,

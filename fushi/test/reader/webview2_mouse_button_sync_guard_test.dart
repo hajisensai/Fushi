@@ -41,16 +41,20 @@ void main() {
   });
 
   test('五个非触摸指针入口都全量同步 ev.buttons', () {
-    expect(src.contains('void _syncMouseInput(Offset position, int buttons)'),
+    expect(src.contains('void _syncMouseInput(Offset? position, int buttons)'),
         isTrue,
-        reason: '全量同步入口被改名/删除，守卫须同步更新');
-    // hover / down / up / cancel / move 各一处：hover 的掩码恒 0，是残留位唯一可靠的
-    // 自愈点；缺任何一处都会让某类漏发的 up 无法补上。
+        reason: '全量同步入口被改名/删除，守卫须同步更新；坐标必须可空——'
+            'cancel 没有可信坐标（见下一条）');
+    // hover / down / up / move 各一处：hover 的掩码恒 0，是残留位唯一可靠的
+    // 自愈点；缺任何一处都会让某类漏发的 up 无法补上。cancel 是第五个入口，
+    // 但它传 null 坐标（下一条守）。
     final int calls =
         '_syncMouseInput(ev.localPosition, ev.buttons)'.allMatches(src).length;
-    expect(calls, greaterThanOrEqualTo(5),
-        reason: 'onPointerHover / Down / Up / Cancel / Move 五个入口都必须调用，'
+    expect(calls, greaterThanOrEqualTo(4),
+        reason: 'onPointerHover / Down / Up / Move 四个带坐标的入口都必须调用，'
             '实际只有 $calls 处');
+    expect(src.contains('_syncMouseInput(null, ev.buttons)'), isTrue,
+        reason: 'onPointerCancel 是第五个入口，必须以 null 坐标走同一条差分路径');
   });
 
   test('同步走纯函数差分，且差分只对变化位产出翻转', () {

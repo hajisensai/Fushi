@@ -35,6 +35,54 @@ void main() {
       );
     });
 
+    // BUG-1651 单位铁律：contentHeight 必须是 **host CSS px**（popup.js 的
+    // __fushiReportedContentHeight() = ceil(scrollHeight * zoom)）。默认（界面大小
+    // 100% + 词典字号 16）z=1 时 layout px 与 host CSS px 恰好相等，正因如此
+    // 上面全部 z=1 的断言抓不到单位错配。
+    test('z != 1 时只有已乘 zoom 的内容高度才收得对', () {
+      double reported(double layoutPx, double zoom) =>
+          (layoutPx * zoom).ceilToDouble();
+
+      // z=1.25（界面 125% 或词典字号 20）：ceil(296 * 1.25) = 370。
+      expect(reported(296, 1.25), 370);
+      expect(
+        resolveAutoFitPopupHeight(
+          currentPopupHeight: 360,
+          contentHeight: reported(296, 1.25),
+          viewportHeight: 310,
+          minHeight: 200,
+          maxHeight: 600,
+        ),
+        420,
+      );
+      // 反例（PR#910 的原始实现）：把未乘 zoom 的 layout px 直接喂进来，
+      // 少收 74px（420-346）—— 内容被裁 / 凭空出滚动条。
+      expect(
+        resolveAutoFitPopupHeight(
+          currentPopupHeight: 360,
+          contentHeight: 296,
+          viewportHeight: 310,
+          minHeight: 200,
+          maxHeight: 600,
+        ),
+        346,
+      );
+
+      // z=0.8（词典字号调小）：ceil(296 * 0.8) = 237；不换算反而多报，
+      // 底部空白收不干净（这正是 BUG-1651 原本要修的症状）。
+      expect(reported(296, 0.8), 237);
+      expect(
+        resolveAutoFitPopupHeight(
+          currentPopupHeight: 360,
+          contentHeight: reported(296, 0.8),
+          viewportHeight: 310,
+          minHeight: 200,
+          maxHeight: 600,
+        ),
+        287,
+      );
+    });
+
     test('无效测量保持当前高度，避免平台初始化期弹窗跳变', () {
       expect(
         resolveAutoFitPopupHeight(

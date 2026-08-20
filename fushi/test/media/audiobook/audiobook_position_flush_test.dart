@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../helpers/source_guard.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
@@ -301,13 +303,10 @@ void main() {
     );
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
-    // 剥掉整行 `//` 注释：要断言的是**可执行代码**，而解释这条禁令的注释里必然会写出
-    // `await _playActivationTail` 本身（否则没人看得懂为什么禁）。
-    final String body = source
-        .substring(start, end)
-        .split('\n')
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    // 用词法遮蔽而非手写剥行：test/tools/source_guard_adoption_test.dart 明令禁止
+    // startsWith 那种形态（不认块注释、串与模板串）。要断言的是**可执行代码**，
+    // 而解释这条禁令的注释里必然会写出 await _playActivationTail 本身。
+    final String body = maskComments(source.substring(start, end));
 
     expect(
       body,

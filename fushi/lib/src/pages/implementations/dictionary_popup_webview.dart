@@ -220,6 +220,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final VoidCallback? onRendered;
 
   /// `popupRendered` 同步带回的 DOM 内容高度与 WebView 当前视口高度。
+  ///
+  /// BUG-1651 单位铁律：两个值都是 **host CSS px**。popup.js 侧的
+  /// `__fushiReportedContentHeight()` 已把容器 `scrollHeight`（未乘 CSS `zoom` 的
+  /// layout px）乘回当前 zoom；`viewportHeight` 来自 `window.innerHeight`（不随元素
+  /// zoom 变）或 Flutter 平台视图的布局高度，本就是 host CSS px。消费方
+  /// （[resolveAutoFitPopupHeight]）直接作差，不得再乘任何缩放。
   final void Function(double contentHeight, double viewportHeight)?
       onContentMetrics;
 

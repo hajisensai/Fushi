@@ -122,5 +122,34 @@ void main() {
       expect(commands.last.buttonTransition?.button, PointerButton.primary);
       expect(commands.last.buttonTransition?.isDown, isFalse);
     });
+
+    test('没有可信坐标（cancel）时只补 up，绝不前置 setCursorPos', () {
+      // BUG-1419 症状回归：GestureBinding.cancelPointer 合成的 PointerCancelEvent
+      // 只传 pointer，position 恒为 Offset.zero。而 native 的 setCursorPos 不是纯
+      // 赋值——写完 lastCursorPos_ 还会用**翻转前**的 virtualKeys_ 发一个 MOVE。
+      // 两条叠加 = 「带左键按下的 MOVE 到 (0,0)」→ Blink 判为拖拽 → 选区从锚点
+      // 一路刷到文档左上角（用户报「鼠标一动就刷蓝选区」）。
+      final commands = planMouseInputDispatches(
+        position: null,
+        previousButtons: kPrimaryMouseButton,
+        nextButtons: 0,
+      );
+
+      expect(commands, hasLength(1), reason: '只剩补发 up 一条命令，坐标命令必须被整条略去');
+      expect(commands.single.position, isNull);
+      expect(commands.single.buttonTransition?.button, PointerButton.primary);
+      expect(commands.single.buttonTransition?.isDown, isFalse);
+    });
+
+    test('没有可信坐标且按钮无变化时，整批为空（不产生任何 native 下发）', () {
+      expect(
+        planMouseInputDispatches(
+          position: null,
+          previousButtons: 0,
+          nextButtons: 0,
+        ),
+        isEmpty,
+      );
+    });
   });
 }

@@ -896,8 +896,15 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 开始播放。
   ///
-  /// 等待 just_audio 的平台 play 请求被接受。调用者仍可 fire-and-forget 本方法，
-  /// 但控制器会保留激活 Future，令 [stopPlayback] 在采样/停止前等待它 settle。
+  /// 等待 just_audio 的平台 play 请求被接受。调用者仍可 fire-and-forget 本方法。
+  ///
+  /// ⚠️ **[stopPlayback] 绝不能等这个 Future settle**（BUG-1736）：just_audio 的
+  /// 原生 Darwin(AVQueuePlayer) 与 Android(ExoPlayer) 后端把 play 的平台回调**挂起
+  /// 到 pause / complete / stop 才触发**，于是「stop 等 play、而唯一能解开 play 的
+  /// 正是 stop 自己」构成循环等待死锁，音频一路播到整本结束且无法手动关闭。
+  /// 停止路径现在是同步采样位置 → stop → 落库，不再 await 任何激活 Future；
+  /// BUG-1240 要求的「落库值取自 stop 归零之前」由同步采样满足。
+  /// 这段文档此前写的正好相反，是当初把死锁写进来的直接来源，别再改回去。
   Future<void> play() async {
     // 对齐 Sasayaki：首次 play 之后才允许跨章自动翻页。打开书 / 恢复
     // 位置阶段 cue 与 reader 当前章不一致是常态，不应在用户没按播放时
