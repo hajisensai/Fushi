@@ -30,15 +30,19 @@ void main() {
     expect(home, isNot(contains('showVideoSourceScrapeDialog')));
   });
 
-  test('视频添加来源直选文件夹，扫描收尾通知媒体库变化', () {
+  test('视频添加来源走本地/网络选择器（网络仅 WebDAV），扫描收尾通知媒体库变化', () {
+    // 网络来源三域开放后，视频不再短路直选文件夹：与书/漫画共用同一个
+    // 本地/网络选择对话框，只是 transport 集收窄到仅 WebDAV（原地流播）。
     final String source = File(
       'lib/src/pages/implementations/media_sources_view.dart',
     ).readAsStringSync();
-    final int direct = source.indexOf("if (widget.mediaKind == 'video')");
-    final int chooser = source.indexOf('showAppDialog<_AddSourceChoice>');
-    expect(direct, greaterThanOrEqualTo(0));
-    expect(direct, lessThan(chooser));
+    expect(source, contains('showAppDialog<_AddSourceChoice>'));
     expect(source, contains('await addLocalFolder();'));
+    expect(
+        source,
+        contains(
+            "widget.mediaKind == 'video'\n      ? const <String>['webdav']"),
+        reason: '视频网络 transport 必须收窄到仅 WebDAV');
     expect(source, contains('onLibraryChanged?.call();'));
   });
 

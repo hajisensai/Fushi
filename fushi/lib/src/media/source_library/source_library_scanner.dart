@@ -16,10 +16,19 @@
 // configJson + SourceLibraryCredentialStore), and remote EPUBs are downloaded via
 // copyToLocal before import. Routing is transport-agnostic here: any non-'local'
 // transport builds a NetworkSourceFileSystem which dispatches SFTP/FTP/WebDAV
-// internally, so [buildNetworkFileSystem] needs no per-transport branch. Network
-// VIDEO sources are rejected (a raw remote path is not playable). Existing manual
-// import paths (dialogs) are untouched; sourceId defaults to null.
+// internally, so [buildNetworkFileSystem] needs no per-transport branch.
+// Existing manual import paths (dialogs) are untouched; sourceId defaults to null.
+//
+// 网络来源三域现状：
+// - book：三 transport 全通（远端 EPUB copyToLocal 下载后导入）。
+// - manga：三 transport 全通（[_importMangaRemote]：读远端 `.mokuro` 派生标题做
+//   去重预检，未命中才整卷镜像到临时目录，交给既有 MangaImporter——落库产物与
+//   本地导入逐字节同构）。
+// - video：仅 WebDAV（条目路径即 http(s) URL，按流媒体书原地入库
+//   videoPath=URL，播放走既有 stream 通道 + 打开时按 sourceId 现解析 Basic 认证，
+//   见 source_stream_headers.dart）；SFTP/FTP 无 HTTP 直链、播放器吃不了，仍拒绝。
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -36,13 +45,19 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi/src/media/manga/manga_storage.dart'
+    show MangaImportException;
+import 'package:fushi/src/media/manga/mokuro_payload.dart'
+    show MokuroImage, MokuroPayload, parseMokuro;
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/external_video.dart'
-    show normalizeVideoPath;
+    show decodedSourceBasename, normalizeVideoPath;
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart'
+    show StreamVideoSpec;
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
@@ -372,7 +387,7 @@ class SourceLibraryScanner {
   /// - 'video': each video -> [VideoBookRepository.saveVideoBook] (with sourceId)
   ///   plus parsed cues when a same-name subtitle exists.
   /// - 'manga': each `.mokuro` -> [MangaImporter.importFromMokuroPath] (with
-  ///   sourceId)，仅 local transport（见 [_importManga] 首版边界）。
+  ///   sourceId)；网络 transport 先整卷镜像下载（见 [_importMangaRemote]）。
   ///
   /// After insert, calls [FushiDatabase.updateMediaSourceScanResult] to write the
   /// media count / timestamp; any throw records its text in lastScanError
@@ -403,16 +418,13 @@ class SourceLibraryScanner {
           'Unsupported media kind for scan (expected book | video | manga)',
         );
       }
-      // 网络视频来源不受支持：远端 SFTP/FTP 路径不可被播放器直接播放（只支持网络
-      // 「书」来源——EPUB 小体积、扫描时下载后导入）。
-      if (!files.isLocal && kind == SourceLibraryKind.video) {
-        throw StateError('Network video sources are not supported');
-      }
-      // 网络漫画来源首版不支持（按视频先例）：一卷 mokuro 漫画 = `.mokuro` +
-      // 同级整目录页图，逐页下载的体量/断点语义远超「扫描时顺手下载」，且导入器
-      // 只吃本地路径探测同级图片。首版仅 local transport。
-      if (!files.isLocal && kind == SourceLibraryKind.manga) {
-        throw StateError('Network manga sources are not supported');
+      // 网络视频来源仅支持 WebDAV：条目路径本身就是 http(s) URL，可按流媒体书
+      // 原地入库播放（[_importVideos] streamInPlace）；SFTP/FTP 远端路径无 HTTP
+      // 直链、播放器吃不了，仍拒绝（放开需要本地转流桥，留后续）。
+      if (!files.isLocal &&
+          kind == SourceLibraryKind.video &&
+          source.transport != 'webdav') {
+        throw StateError('Network video sources support WebDAV only');
       }
       final List<SourceFileEntry> entries = await files.listFiles(
         source.rootPath,
@@ -438,6 +450,8 @@ class SourceLibraryScanner {
           // 来源扫描与旧「导入视频文件夹」共用同一套作品/季/集解析规则：散片
           // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
           // 的既有增强不变；再只做归组，重扫复用已有成员且不删除缺失文件。
+          // 网络（WebDAV）来源同样归组：文件名解析统一走解码 basename
+          // （decodedSourceBasename），URL 的百分号编码不渗进合集名。
           grouping = await VideoFolderGroupCoordinator(
             database: _db,
             repository: _videoRepo,
@@ -453,7 +467,7 @@ class SourceLibraryScanner {
           mediaCount += await _importPlaylists(plan, source.id, files);
           await VideoSourceMetadataIndexer(_db).index(source);
         case SourceLibraryKind.manga:
-          mediaCount = await _importManga(plan, source.id);
+          mediaCount = await _importManga(plan, source.id, files);
       }
     } catch (e, stack) {
       scanError = e.toString();
@@ -597,11 +611,18 @@ class SourceLibraryScanner {
   /// BUG-443 范式（对齐 [_importBooks] / `_importVideos`）：`skipIfExists: true`
   /// 让已导入卷（含同批同标题）抛 [DuplicateImportCancelledException]，逐卷捕获
   /// 静默跳过（不计数、不算错误）。其它导入异常（坏 JSON / 缺图）不捕获，向上
-  /// 冒泡记进 lastScanError（与 book 分支同语义）。仅 local transport——网络
-  /// manga 源已在 [scan] 入口整体拒绝，故本方法直接用磁盘路径、不接 copyToLocal。
+  /// 冒泡记进 lastScanError（与 book 分支同语义）。网络 transport 走
+  /// [_importMangaRemote]（整卷镜像下载后仍复用本导入器）。
   /// 页图不经 [planScanFromFileList] 关联：导入器自己按 mokuro 惯例在 `.mokuro`
   /// 同级探测图片来源。
-  Future<int> _importManga(ScanPlan plan, int sourceId) async {
+  Future<int> _importManga(
+    ScanPlan plan,
+    int sourceId,
+    SourceFileSystem fs,
+  ) async {
+    if (!fs.isLocal) {
+      return _importMangaRemote(plan, sourceId, fs);
+    }
     int count = 0;
     for (final ScanMangaItem item in plan.mangas) {
       try {
@@ -623,6 +644,122 @@ class SourceLibraryScanner {
     return count;
   }
 
+  /// 网络漫画来源整卷下载导入。
+  ///
+  /// 一卷 mokuro 漫画 = `.mokuro` + 同级页图，体量远超一次「顺手下载」，所以先用
+  /// 远端 `.mokuro`（小文本）派生标题做**去重预检**——重扫已入库的卷零页图流量；
+  /// 未命中才把该卷页图按 payload 相对路径镜像到本地临时目录（保留子目录布局），
+  /// 交给既有 [MangaImporter.importFromMokuroPath]：导入器只吃本地路径，落库时
+  /// 仍是恒复制进书目录，产物与本地导入逐字节同构。预检与导入器用同一套身份
+  /// （[MangaImporter.deriveMokuroTitle] + [sanitizeTtuFilename]，见
+  /// resolveDuplicateTitle），不是第二套判重规则。
+  ///
+  /// 缺页 / 坏 JSON 与本地语义一致：抛 [MangaImportException] 冒泡记进
+  /// lastScanError。WebDAV 的 href 分段是百分号编码的，查表键与镜像文件名统一
+  /// 用解码后的相对路径（[decodedSourceBasename]）。
+  Future<int> _importMangaRemote(
+    ScanPlan plan,
+    int sourceId,
+    SourceFileSystem fs,
+  ) async {
+    if (plan.mangas.isEmpty) return 0;
+    final List<EpubBookRow> existingBooks = await _db.getAllEpubBooks();
+    final Set<String> existingTitleKeys = existingBooks
+        .map((EpubBookRow b) => sanitizeTtuFilename(b.title))
+        .toSet();
+    int count = 0;
+    for (final ScanMangaItem item in plan.mangas) {
+      final String mokuroName = decodedSourceBasename(item.mokuroPath);
+      final String jsonStr = await fs.readText(item.mokuroPath);
+      final Object? rawRoot = jsonDecode(jsonStr);
+      final Map<String, Object?> root = rawRoot is Map
+          ? rawRoot.cast<String, Object?>()
+          : <String, Object?>{};
+      final String title = MangaImporter.deriveMokuroTitle(root, mokuroName);
+      if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
+        debugPrint('SourceLibraryScanner skip duplicate manga '
+            '$title (${item.mokuroPath})');
+        continue;
+      }
+      final MokuroPayload payload = parseMokuro(jsonStr);
+      if (payload.images.isEmpty) {
+        throw const MangaImportException('Mokuro file has no pages');
+      }
+
+      // 远端相对路径（解码、正斜杠）→ 远端全路径查找表，作用域 = `.mokuro` 父目录。
+      final String parentDir = _remoteParentDir(item.mokuroPath);
+      final bool isUrl =
+          parentDir.startsWith('http://') || parentDir.startsWith('https://');
+      final List<SourceFileEntry> remoteFiles =
+          await fs.listFiles(parentDir, recursive: true);
+      final String prefix = parentDir.endsWith('/') ? parentDir : '$parentDir/';
+      final Map<String, String> remoteByRel = <String, String>{};
+      for (final SourceFileEntry e in remoteFiles) {
+        if (e.isDirectory || !e.path.startsWith(prefix)) continue;
+        final List<String> segs = e.path
+            .substring(prefix.length)
+            .split('/')
+            .where((String s) => s.isNotEmpty)
+            .map((String s) => isUrl ? Uri.decodeComponent(s) : s)
+            .toList();
+        if (segs.isEmpty) continue;
+        remoteByRel[segs.join('/')] = e.path;
+      }
+
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('m1c_scan_manga_');
+      try {
+        // 逐页镜像（保留相对子目录布局——导入器按 payload.url 相对 `.mokuro`
+        // 同级解析）。`..` 段直接拒绝：临时镜像在书目录 sanitize 之前落盘，
+        // 不能靠后面那道防穿越。
+        for (final MokuroImage page in payload.images) {
+          final List<String> segs = page.url
+              .split(RegExp(r'[\\/]+'))
+              .where((String s) => s.isNotEmpty)
+              .toList();
+          if (segs.isEmpty || segs.contains('..')) {
+            throw MangaImportException('Invalid manga page path: ${page.url}');
+          }
+          final String? remotePath = remoteByRel[segs.join('/')];
+          if (remotePath == null) {
+            throw MangaImportException('Missing manga page image: ${page.url}');
+          }
+          final Directory destDir = Directory(p.joinAll(
+              <String>[tmp.path, ...segs.sublist(0, segs.length - 1)]));
+          destDir.createSync(recursive: true);
+          await fs.copyToLocal(remotePath, destDir.path);
+        }
+        final String localMokuro = p.join(tmp.path, mokuroName);
+        await File(localMokuro).writeAsString(jsonStr, flush: true);
+        try {
+          await MangaImporter.importFromMokuroPath(
+            db: _db,
+            mokuroPath: localMokuro,
+            sourceId: sourceId,
+            policy: const DuplicatePolicy.skip(),
+          );
+          count++;
+          // 同批第二卷同标题也要被预检拦住（对齐 resolveDuplicateTitle 的同批语义）。
+          existingTitleKeys.add(sanitizeTtuFilename(title));
+        } on DuplicateImportCancelledException catch (e) {
+          debugPrint('SourceLibraryScanner skip duplicate manga '
+              '${e.title} (${item.mokuroPath})');
+        }
+      } finally {
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+    return count;
+  }
+
+  /// 远端路径的父目录（正斜杠语义；SFTP/FTP 路径与 WebDAV href URL 通用）。
+  static String _remoteParentDir(String path) {
+    final int slash = path.lastIndexOf('/');
+    return slash <= 0 ? '' : path.substring(0, slash);
+  }
+
   /// Imports every video in the plan (with sidecar subtitle cues); returns the
   /// physical paths that were newly inserted in this scan.
   ///
@@ -639,6 +776,12 @@ class SourceLibraryScanner {
     SourceFileSystem fs,
   ) async {
     if (plan.videos.isEmpty) return const <String>[];
+    // 网络（仅 WebDAV 能走到这里，[scan] 入口已拒 SFTP/FTP）：条目路径就是
+    // http(s) URL，按流媒体书**原地**入库——videoPath=URL、sidecar 字幕 URL 进
+    // streamSpecJson，播放走既有 stream 通道（isStreamVideoBook 判据 =
+    // videoPath 是 http）。不下载视频、不抽封面、不解析 cue（字幕由播放页按
+    // spec.subtitleUrl 现下载，认证头打开时按 sourceId 现解析）。
+    final bool streamInPlace = !fs.isLocal;
     final List<VideoBookRow> existingRows = await _videoRepo.listAll();
     // Existing book_uid set for silent same-name dedup (matches import dialog).
     final Set<String> existingKeys =
@@ -670,8 +813,16 @@ class SourceLibraryScanner {
 
         String? subtitleSource;
         String? subtitleFormat;
+        String? streamSpecJson;
         List<AudioCue> cues = const <AudioCue>[];
-        if (item.subtitlePath != null) {
+        if (streamInPlace) {
+          final String? subUrl = item.subtitlePath;
+          streamSpecJson = StreamVideoSpec(
+            subtitleUrl: subUrl,
+            subtitleFileName:
+                subUrl == null ? null : decodedSourceBasename(subUrl),
+          ).toStorageJson();
+        } else if (item.subtitlePath != null) {
           final String fmt = _extOf(p.basename(item.subtitlePath!));
           subtitleTmp ??= Directory.systemTemp.createTempSync('m1c_scan_subs_');
           final String localSub =
@@ -706,14 +857,20 @@ class SourceLibraryScanner {
           }
         }
 
+        // 标题用解码后的文件名：WebDAV 条目路径是百分号编码的 href，直接取
+        // basename 会把 %20 之类渗进书架标题。
+        final String title = streamInPlace
+            ? p.basenameWithoutExtension(decodedSourceBasename(item.videoPath))
+            : p.basenameWithoutExtension(item.videoPath);
         await _videoRepo.saveVideoBook(
           VideoBooksCompanion(
             bookUid: Value(bookUid),
-            title: Value(p.basenameWithoutExtension(item.videoPath)),
+            title: Value(title),
             videoPath: Value(item.videoPath),
             coverPath: Value<String?>(coverPath),
             subtitleSource: Value<String?>(subtitleSource),
             subtitleFormat: Value<String?>(subtitleFormat),
+            streamSpecJson: Value<String?>(streamSpecJson),
             embeddedSubtitleTrack: subtitleSource == null
                 ? const Value<int?>(0)
                 : const Value<int?>(null),
@@ -787,8 +944,9 @@ class SourceLibraryScanner {
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
-        final String collectionName =
-            p.basenameWithoutExtension(item.playlistPath);
+        // 合集名走解码 basename：网络清单的 href 是百分号编码的。
+        final String collectionName = p
+            .basenameWithoutExtension(decodedSourceBasename(item.playlistPath));
 
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
         final String localM3u8 =
@@ -796,8 +954,12 @@ class SourceLibraryScanner {
         final String content = await readTextWithEncoding(File(localM3u8));
         // baseDir is the ORIGINAL m3u8 path's directory (source namespace):
         // locally the real on-disk dir, matching manual / drag-drop import when
-        // resolving relative episode paths.
-        final String baseDir = p.dirname(item.playlistPath);
+        // resolving relative episode paths; remotely the manifest's URL dir
+        // (resolveM3uEntryPath 对 URL 基底按 URL 语义 join，条目解析成可播的
+        // 远端流 URL，逐集入库后与直扫视频同一条 stream 播放链)。
+        final String baseDir = fs.isLocal
+            ? p.dirname(item.playlistPath)
+            : _remoteParentDir(item.playlistPath);
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         // 空 / 不可解析清单：跳过（不当成「清单变空 → 清光成员」，避免读盘瞬时失败

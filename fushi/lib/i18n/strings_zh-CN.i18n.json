@@ -3633,5 +3633,6 @@
   "manga_ocr_model_download_size": "需下载 $size",
   "manga_ocr_delete_done_freed": "模型已删除，释放 $size",
   "manga_ocr_model_unused_by_engine": "当前引擎用不到这些本地模型文件。",
-  "manga_ocr_download_total_progress": "$done / $total"
+  "manga_ocr_download_total_progress": "$done / $total",
+  "media_source_network_subtitle_video": "WebDAV 远程库（原地串流）"
 }

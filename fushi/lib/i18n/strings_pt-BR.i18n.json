@@ -3633,5 +3633,6 @@
   "manga_ocr_model_download_size": "Needs $size",
   "manga_ocr_delete_done_freed": "Models deleted, freed $size",
   "manga_ocr_model_unused_by_engine": "The current engine doesn't use these local model files.",
-  "manga_ocr_download_total_progress": "$done of $total"
+  "manga_ocr_download_total_progress": "$done of $total",
+  "media_source_network_subtitle_video": "WebDAV remote library (streams in place)"
 }

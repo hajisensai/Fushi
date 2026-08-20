@@ -36,6 +36,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
+import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
@@ -2041,9 +2042,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
       try {
+        // 来源库网络视频（WebDAV）：认证头按 sourceId 现解析（凭据不落行级
+        // spec——改来源密码一处生效）；非来源书解析为空 map，零分支。
+        final Map<String, String> sourceHeaders =
+            await resolveSourceStreamHeaders(
+          db: appModel.database,
+          sourceId: row.sourceId,
+        );
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
             await buildStreamVideoLaunch(row,
-                youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull);
+                youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
+                sourceHttpHeaders: sourceHeaders);
         if (!mounted) return;
         _resolvedStreamInfo = launch.info;
         _resolvedStreamClient = launch.client;

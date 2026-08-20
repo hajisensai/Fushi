@@ -12,6 +12,8 @@ import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/import/sidecar_finder.dart';
+import 'package:fushi/src/media/video/external_video.dart'
+    show decodedSourceBasename;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart';
@@ -43,15 +45,16 @@ String playlistBookUid(String m3u8Path) {
   return 'video/playlist/${sanitizeTtuFilename(base)}';
 }
 
-/// 取路径最后一段并去扩展名，**同时把 `/` 和 `\` 都当分隔符**（与宿主平台无关）。
+/// 取路径最后一段并去扩展名，**同时把 `/` 和 `\` 都当分隔符**（与宿主平台无关），
+/// http(s) URL 段先百分号解码（[decodedSourceBasename] 单一派生点）。
 ///
 /// 纯函数。`p.basenameWithoutExtension` 只认宿主平台的分隔符——在 Linux/macOS 上
 /// 不会把 Windows 路径的 `\` 当分隔符，于是 `D:\a\x.mkv` 整串被当文件名，破坏
 /// 「同一文件名跨不同绝对路径/不同机器得相同 bookUid」的身份不变量。这里两种分隔符
-/// 都认，保证 `D:\a\E01.mkv` 与 `/home/u/E01.mkv` 在任何平台都派生出 `E01`。
+/// 都认，保证 `D:\a\E01.mkv` 与 `/home/u/E01.mkv` 在任何平台都派生出 `E01`；
+/// 网络来源的 `https://.../E01.mkv`（含 %20 编码）同理派生出解码后的 `E01`。
 String _crossPlatformBasenameWithoutExtension(String path) {
-  final int sep = path.lastIndexOf(RegExp(r'[\\/]'));
-  final String name = sep >= 0 ? path.substring(sep + 1) : path;
+  final String name = decodedSourceBasename(path);
   final int dot = name.lastIndexOf('.');
   return dot > 0 ? name.substring(0, dot) : name;
 }
