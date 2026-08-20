@@ -725,9 +725,10 @@ class _HomeDashboardPageState
     }
 
     // Bangumi 追踪状态（映射 + 待办 + 上次同步结果）。读的是本地库与偏好，不发
-    // 网络请求，可以和其它聚合一起进首屏。
-    final MediaTrackingStatus tracking =
-        await appModel.mediaTrackingService.loadStatus();
+    // 网络请求，可以和其它聚合一起进首屏。临时下线期间卡不挂载，状态也不必查。
+    final MediaTrackingStatus tracking = kMediaTrackingEnabled
+        ? await appModel.mediaTrackingService.loadStatus()
+        : MediaTrackingStatus.empty;
 
     if (!mounted) return;
     setState(() {
@@ -912,9 +913,12 @@ class _HomeDashboardPageState
         _buildActivitySection(tokens, now, appModel, booksByKey, videosByUid);
     final Widget? recentCard =
         _buildRecentlyAddedSection(tokens, appModel, books, now);
-    // Bangumi 同步卡恒显示（未连接时也要显示——「没连上」本身就是用户最需要看到的
+    // Bangumi 同步临时下线（kMediaTrackingEnabled，见 media_tracking_service.dart）。
+    // 上线状态下此卡恒显示（未连接时也要显示——「没连上」本身就是用户最需要看到的
     // 那条状态，隐藏它就回到了「看完了没反应」的黑盒）。
-    final Widget trackingCard = _buildTrackingCard(tokens, appModel, now);
+    final Widget? trackingCard = kMediaTrackingEnabled
+        ? _buildTrackingCard(tokens, appModel, now)
+        : null;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -957,8 +961,10 @@ class _HomeDashboardPageState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    trackingCard,
-                    SizedBox(height: tokens.spacing.card),
+                    if (trackingCard != null) ...<Widget>[
+                      trackingCard,
+                      SizedBox(height: tokens.spacing.card),
+                    ],
                     activityCard,
                   ],
                 ),
@@ -974,8 +980,10 @@ class _HomeDashboardPageState
               SizedBox(height: tokens.spacing.card),
               continueCard,
               SizedBox(height: tokens.spacing.card),
-              trackingCard,
-              SizedBox(height: tokens.spacing.card),
+              if (trackingCard != null) ...<Widget>[
+                trackingCard,
+                SizedBox(height: tokens.spacing.card),
+              ],
               activityCard,
               if (recentCard != null) ...<Widget>[
                 SizedBox(height: tokens.spacing.card),

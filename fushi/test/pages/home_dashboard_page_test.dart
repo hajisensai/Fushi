@@ -1246,7 +1246,13 @@ void main() {
   // BUG-1220：追踪链路原本零可观测（成功即删 outbox 行、失败只进错误日志并退避、
   // 没建映射就静默返回），用户「看完了没反应」时无处可看。这张卡是唯一出口，
   // 三种断裂状态各自必须说得出话。
-  group('Bangumi 同步卡（BUG-1220）', () {
+  //
+  // 2026-08-19 Bangumi 同步临时下线（kMediaTrackingEnabled=false）：卡不再挂载，
+  // 整组随功能一起停用；恢复开关时删掉 skip 原样启用。
+  group('Bangumi 同步卡（BUG-1220）',
+      skip: kMediaTrackingEnabled
+          ? false
+          : 'Bangumi 同步临时下线（kMediaTrackingEnabled=false）', () {
     void useWideSurface(WidgetTester tester) {
       tester.view.physicalSize = const Size(1400, 1800);
       tester.view.devicePixelRatio = 1.0;

@@ -2295,7 +2295,9 @@ class AppModel with ChangeNotifier {
         preferences: prefsRepo,
         userAgent: _mediaTrackingUserAgent,
       );
-      unawaited(mediaTrackingService.syncNow());
+      if (kMediaTrackingEnabled) {
+        unawaited(mediaTrackingService.syncNow());
+      }
 
       final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
 
@@ -6202,6 +6204,7 @@ class AppModel with ChangeNotifier {
         // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
         // 本地状态照常生效，事件留在 outbox 由后续同步重试。
         onPlayStatusChanged: (String id, GalgamePlayStatus status) {
+          if (!kMediaTrackingEnabled) return;
           unawaited(
             mediaTrackingService.recordGameStatus(
               gameId: id,

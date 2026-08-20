@@ -46,6 +46,8 @@ import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+    show kMediaTrackingEnabled;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'

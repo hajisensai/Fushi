@@ -1230,6 +1230,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       await appModel.database
           .markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
     }
+    if (!kMediaTrackingEnabled) return;
     await appModel.mediaTrackingService.recordBookProgress(
       bookKey: widget.bookKey,
       completedChapterCount: section + (progress >= 0.999 ? 1 : 0),
