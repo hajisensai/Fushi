@@ -156,6 +156,16 @@ class VideoFolderGroupCoordinator {
         if (natural != null) {
           collection = natural;
         } else {
+          // BUG-1739：用户删过的同名 playlist 合集不由重扫复活。没有这道门，
+          // 「删除合集（保留条目）」会在成员文件仍在来源目录时被下一次扫描按
+          // 自然键原样重建（createMediaCollection 还会清墓碑），删除永远不生效。
+          // 成员视频本身照常入库/保留，只是不再被自动归组。
+          if (await _database.hasCollectionDeletionTombstone(
+            group.series,
+            'playlist',
+          )) {
+            continue;
+          }
           final int id = await _database.createMediaCollection(
             group.series,
             collectionType: 'playlist',

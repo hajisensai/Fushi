@@ -40,6 +40,13 @@
 | [BUG-1735](bugs/BUG-1735-artifact-thread-indistinguishable-in-picker.md) | 🚧 | 🚧 | 伪影文本线程在选择器里与健康线程无法区分，预览还被折叠成干净句子 |
 | [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | 🚧 | ✅ | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
 | [BUG-1733](bugs/BUG-1733-kirikiriz-thread-lines-never-ingested.md) | 🚧 | 🚧 | 选中 KiriKiriZ 文本线程后实时台词恒 0，且没有任何东西告诉用户这条线程不可能产出台词 |
+> 共 1608 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-1740](bugs/BUG-1740-collection-card-continue-label-clock.md) | ✅ | ✅ | 合集卡续播标签没用统一时钟与详情页差一集 |
+| [BUG-1739](bugs/BUG-1739-scan-resurrects-deleted-collection.md) | ✅ | ✅ | 来源重扫按自然键复活用户已删除的playlist合集 |
+| [BUG-1738](bugs/BUG-1738-download-proxy-kills-pipeline.md) | ✅ | ✅ | 自定义下载代理未填时切换发现网络永久杀死下载管线 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |
 | [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |

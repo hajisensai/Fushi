@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -18,7 +17,6 @@ import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart';
@@ -309,19 +307,6 @@ class _VideoImportDialogState extends State<VideoImportDialog>
     setState(() => _subtitlePath = path);
   }
 
-  /// 选 m3u8 播放列表 → 交给 [_importPlaylistFromPath] 解析导入。文件选择与解析
-  /// 拆开，是为了让拖入（路径已知）能复用同一条解析/落库路径，不重复逻辑。
-  Future<void> _pickPlaylist() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['m3u8', 'm3u'],
-      allowMultiple: false,
-    );
-    final String? m3u8Path = result?.files.single.path;
-    if (m3u8Path == null) return;
-    await _importPlaylistFromPath(m3u8Path);
-  }
-
   /// 解析 [m3u8Path] 多集 → 建一个 playlist VideoBook（不复制视频，存绝对路径）→
   /// pop 回 bookUid。第一集作为初始 videoPath，sidecar 字幕在播放页按集动态加载
   /// （不在导入时解析全部 cue）。手动选择与拖入共用此路径。
@@ -381,112 +366,6 @@ class _VideoImportDialogState extends State<VideoImportDialog>
         Navigator.pop(context, firstUid);
       },
     );
-  }
-
-  /// 选一个文件夹 → 扫描顶层视频文件 → 按文件名解析分组（参照 Jellyfin/anitomy，
-  /// 同番归一组、按集号排序）→ 每组建一个 VideoBook（多集=playlist，单集=单片）→
-  /// pop 回最后一个 bookUid。不复制视频，存绝对路径；sidecar 字幕在播放页按集探测。
-  Future<void> _pickFolder() async {
-    final AppModel appModel =
-        ProviderScope.containerOf(context, listen: false).read(appProvider);
-    final String? dir = await pickRealDirectoryPath(
-      context: context,
-      appModel: appModel,
-    );
-    if (dir == null) return;
-    if (!mounted) return;
-
-    // 错误处理（BUG-1117）走 runImport 模板：扫描/分组/落库异常落日志 + toast。
-    await runImport(
-      logTag: 'VideoImportDialog.pickFolder',
-      debugMessage: (Object e) =>
-          '[fushi-drop] [video-import] pickFolder failed: $e',
-      action: () async {
-        final List<String> videos = listVideoFilesInDirectory(dir);
-        if (videos.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(t.video_import_folder_empty)),
-            );
-          }
-          return;
-        }
-        final List<VideoGroup> groups = groupVideosIntoPlaylists(videos);
-        String? lastBookUid;
-        int importedCount = 0;
-        for (final VideoGroup group in groups) {
-          // null = 该组文件已在库、被去重跳过（TODO-1237 ②）；只统计真正新导入的。
-          final String? uid = await _importGroup(group);
-          if (uid != null) {
-            lastBookUid = uid;
-            importedCount++;
-          }
-        }
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(t.video_import_folder_done(count: importedCount))),
-        );
-        Navigator.pop(context, lastBookUid);
-      },
-    );
-  }
-
-  /// 导入一个系列分组：多集 → playlist VideoBook（身份 `video/playlist/<系列名>`），
-  /// 单集 → 单片 VideoBook（内嵌默认字幕轨）。返回写入的 bookUid。
-  Future<String?> _importGroup(VideoGroup group) async {
-    // TODO-1237 ②：文件夹扫描去重——同一物理文件已在库则跳过，不再 uniqueVideoBookUid
-    // 加后缀建 `X (2)` 重复条目（对齐 EPUB 扫描的 DuplicatePolicy.skip()，BUG-443）。以首集/单片
-    // 绝对路径判重（findByVideoPath 的单一真相，按 normalizeVideoPath 归一），返回 null
-    // 表示本组已导入、被跳过。
-    if (await widget.repo.isDuplicateVideoPath(group.episodes.first.path)) {
-      return null;
-    }
-    if (group.isPlaylist) {
-      final List<PlaylistEntry> entries = group.episodes
-          .map((VideoEpisode e) => PlaylistEntry(title: e.title, path: e.path))
-          .toList();
-      // 统一合集 Phase 2：拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
-      // （合集名用系列名）。封面给首集承接。
-      final SplitPlaylistImportResult result =
-          await widget.repo.importSplitPlaylist(
-        collectionName: group.series,
-        entries: entries,
-      );
-      final String firstUid = result.episodeUids.first;
-      final String? coverPath = await extractPlaylistCover(
-        episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
-        bookUid: firstUid,
-      );
-      if (coverPath != null) {
-        await widget.repo.updateCover(firstUid, coverPath);
-      }
-      // v49：一个多集播放列表只记 1 条 added 活动事件（title=合集名、mediaKey=首集
-      // uid），绝不每集一条——避免刷屏（约束2）。
-      await widget.repo.recordVideoImportActivity(
-        bookUid: firstUid,
-        title: group.series,
-      );
-      return firstUid;
-    }
-    final VideoEpisode only = group.episodes.first;
-    final String bookUid = await _uniqueBookUid(singleVideoBookUid(only.path));
-    final String? coverPath =
-        await extractVideoCover(videoPath: only.path, bookUid: bookUid);
-    await widget.repo.saveVideoBook(VideoBooksCompanion(
-      bookUid: Value(bookUid),
-      title: Value(p.basenameWithoutExtension(only.path)),
-      videoPath: Value(only.path),
-      embeddedSubtitleTrack: const Value<int?>(0),
-      coverPath: Value<String?>(coverPath),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
-    // v49：文件夹扫描里的单集视频，记一条 added 活动事件。
-    await widget.repo.recordVideoImportActivity(
-      bookUid: bookUid,
-      title: p.basenameWithoutExtension(only.path),
-    );
-    return bookUid;
   }
 
   /// 用现有 VideoBooks 的 book_uid 集对 [base] 做同名去重（静默加后缀）。
@@ -815,25 +694,10 @@ class _VideoImportDialogState extends State<VideoImportDialog>
               ),
             ],
             const Divider(height: 24),
-            FilledButton.tonalIcon(
-              onPressed: importing ? null : _pickFolder,
-              icon: const Icon(Icons.create_new_folder_outlined),
-              label: Text(
-                t.video_import_pick_folder,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton.tonalIcon(
-              onPressed: importing ? null : _pickPlaylist,
-              icon: const Icon(Icons.playlist_play),
-              label: Text(
-                t.video_import_pick_playlist,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Divider(height: 16),
+            // 旧「导入文件夹（自动分组剧集）」「选择 m3u8 播放列表」按钮已删
+            // （用户 2026-08-19 指令）：文件夹导入统一走导入页「导入文件夹」
+            // （常驻来源 / 仅导入一次二选一），m3u8 保留拖入与来源扫描两条路。
+            // 本对话框只管单件：URL 流 / 单个视频文件（可选外挂字幕）。
             OutlinedButton.icon(
               onPressed: importing ? null : _pickVideo,
               icon: const Icon(Icons.movie_outlined),

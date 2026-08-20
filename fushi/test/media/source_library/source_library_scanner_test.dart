@@ -711,6 +711,35 @@ ep2.mp4
       expect(events.single.mediaKey, 'video/ep1');
     });
 
+    test('BUG-1739 已删除的 m3u8 playlist 合集重扫不复活', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1,Episode 1
+ep1.mp4
+#EXTINF:-1,Episode 2
+ep2.mp4
+''');
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Vids',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      await SourceLibraryScanner(db).scan(source);
+      final MediaCollectionRow playlist =
+          (await db.getAllMediaCollections()).single;
+
+      // 用户删除合集后清单文件仍留在扫描根：重扫必须尊重删除墓碑，不得由
+      // importSplitPlaylist 的 createMediaCollection 把删除静默撤销。
+      await db.deleteMediaCollection(playlist.id);
+      await SourceLibraryScanner(db).scan(source);
+      expect(await db.getAllMediaCollections(), isEmpty,
+          reason: '重扫不得复活用户删除的 playlist 合集');
+    });
+
     test('实体分集同时被同名 m3u8 引用时复用路径，不建重复视频或合集', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);

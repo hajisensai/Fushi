@@ -978,6 +978,16 @@ class SourceLibraryScanner {
           continue;
         }
 
+        // BUG-1739：用户删过同名 playlist 合集 → 重扫不复活（importSplitPlaylist
+        // 的 createMediaCollection 会清墓碑，把删除静默撤销）。清单文件还在扫描
+        // 根里不代表用户想要回这个合集；显式重导（导入对话框）不走本路径。
+        if (await _db.hasCollectionDeletionTombstone(
+          collectionName,
+          'playlist',
+        )) {
+          continue;
+        }
+
         final SplitPlaylistImportResult result =
             await _videoRepo.importSplitPlaylist(
           collectionName: collectionName,

@@ -110,12 +110,16 @@ Future<void> applyDownloadNetworkProxy(
 
 /// Returns the fixed directive for direct/custom modes. Auto returns null
 /// because its result depends on environment and platform system settings.
+///
+/// **全函数，永不抛（BUG-1738）**：custom 模式下地址空/非法时 fail-open 返回
+/// `'DIRECT'`。偏好层允许存半截输入（设置页逐键落库），所以本函数的定义域天然
+/// 包含非法串；曾经的 `FormatException` 会沿 `createDownloadHttpClient` 一路
+/// 炸进 `reloadVideoDownloadPipelineRuntime`，把整条下载管线永久杀死。落 direct
+/// 而不是拒绝，与上面 BUG-1538 的纪律同源：误直连最多慢/报错重试，误套不存在
+/// 的代理则黑洞一切；非法态的用户提示由设置页 `errorText` 负责，不靠异常。
 String? fixedDownloadProxyDirective(DownloadNetworkProxyConfig config) {
   if (config.mode == DownloadNetworkProxyMode.auto) return null;
   if (config.mode == DownloadNetworkProxyMode.direct) return 'DIRECT';
   final String? normalized = normalizeUserProxyHostPort(config.customProxy);
-  if (normalized == null) {
-    throw const FormatException('Invalid download proxy');
-  }
-  return 'PROXY $normalized';
+  return normalized == null ? 'DIRECT' : 'PROXY $normalized';
 }
