@@ -3634,5 +3634,11 @@
   "manga_ocr_delete_done_freed": "模型已删除，释放 $size",
   "manga_ocr_model_unused_by_engine": "当前引擎用不到这些本地模型文件。",
   "manga_ocr_download_total_progress": "$done / $total",
-  "media_source_network_subtitle_video": "WebDAV 远程库（原地串流）"
+  "media_source_network_subtitle_video": "WebDAV 远程库（原地串流）",
+  "jellyfin_settings_title": "媒体服务器（Jellyfin / Emby）",
+  "jellyfin_server_url": "服务器地址",
+  "jellyfin_sign_in": "登录",
+  "jellyfin_sign_out": "退出登录",
+  "jellyfin_sign_in_failed": "登录失败",
+  "jellyfin_settings_hint": "服务器上的视频会出现在媒体库中，点击直接串流播放。"
 }

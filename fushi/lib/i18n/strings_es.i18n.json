@@ -3634,5 +3634,11 @@
   "manga_ocr_delete_done_freed": "Models deleted, freed $size",
   "manga_ocr_model_unused_by_engine": "The current engine doesn't use these local model files.",
   "manga_ocr_download_total_progress": "$done of $total",
-  "media_source_network_subtitle_video": "WebDAV remote library (streams in place)"
+  "media_source_network_subtitle_video": "WebDAV remote library (streams in place)",
+  "jellyfin_settings_title": "Media server (Jellyfin / Emby)",
+  "jellyfin_server_url": "Server URL",
+  "jellyfin_sign_in": "Sign in",
+  "jellyfin_sign_out": "Sign out",
+  "jellyfin_sign_in_failed": "Sign-in failed",
+  "jellyfin_settings_hint": "Videos on the server show up in the video library and stream directly."
 }

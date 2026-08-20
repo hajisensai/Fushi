@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 
@@ -1217,6 +1218,23 @@ SettingsDestination buildVideoDestination() {
                 const VideoExternalProviderSettingsSection(
               onlySubtitleSources: true,
             ),
+          ),
+        ],
+      ),
+      // ── 媒体服务器（Jellyfin / Emby）───────────────────────────────────
+      // 登录后服务器条目混排进视频库网格（home_video_page 远端源解析链），
+      // 点击直连串流播放；配置读写全在 JellyfinConfigWidget（SyncRepository
+      // `sync_jellyfin_server`，设备本地键，不随备份跨设备）。
+      SettingsSection(
+        title: t.jellyfin_settings_title,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'video.media_server.jellyfin',
+            // 搜索得命中品牌名（Jellyfin/Emby），t 标题只有「媒体服务器」语义。
+            searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
+            builder: (SettingsContext settingsContext) =>
+                JellyfinConfigWidget(settingsContext: settingsContext),
           ),
         ],
       ),
