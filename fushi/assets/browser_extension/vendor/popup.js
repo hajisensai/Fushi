@@ -3018,6 +3018,27 @@ window.fushiPopupMineFirstEntry = async function() {
     return true;
 };
 
+// 手柄（Dart 侧 dictionaryPopup scope 派发，默认 Y）：播放第一个可见词条的发音。
+// 与 fushiPopupMineFirstEntry 同模板：点既有按钮复用其全部音源解析/回退/提示逻辑，
+// 绝不另起第二条音频桥。
+window.fushiPopupPlayFirstAudio = async function() {
+    const audioButton = __fushiRootNode().querySelector('.audio-button');
+    if (!audioButton || audioButton.disabled) {
+        return false;
+    }
+    audioButton.click();
+    return true;
+};
+
+// 手柄右摇杆（Dart 侧连续派发）：滚动弹窗内容 dy CSS 像素（正=向下）。不走 wheel
+// 事件——那条路挂着词条导航绑定判定（__fushiEntryWheelBindings），纯滚动直接动
+// 文档滚动元素即可。
+window.fushiPopupScrollBy = function(dy) {
+    const el = document.scrollingElement || document.documentElement;
+    el.scrollBy(0, dy);
+    return true;
+};
+
 // 查词弹窗的键盘快捷键（用户请求：「点那个加号的动作」要能用键盘触发）。
 // 实际覆盖面：app 内弹窗、浏览器扩展、以及 app 外**已获得焦点的剪贴板面板**。app 外的
 // 瞬态查词覆盖窗带 WS_EX_NOACTIVATE、永不接收键盘焦点（且 runner 无键盘转发），本监听在
@@ -3038,8 +3059,9 @@ const FUSHI_POPUP_KEY_DEFAULT_BINDINGS = {
     mine: [{ key: 'enter', mods: ['ctrl'] }],
     next: [],
     prev: [],
+    audio: [],
 };
-// 本次 keydown 命中哪个弹窗动作：'mine' / 'next' / 'prev' / null。判据与滚轮那套同构：
+// 本次 keydown 命中哪个弹窗动作：'mine' / 'next' / 'prev' / 'audio' / null。判据与滚轮那套同构：
 // 键名归一后相等，且当前按下的修饰键集合与某条绑定**全等**（故 Ctrl+Enter 绝不会被
 // Ctrl+Shift+Enter 误触）。
 function fushiPopupKeyAction(e) {
@@ -3061,6 +3083,7 @@ function fushiPopupKeyAction(e) {
     if (matches(cfg.mine)) return 'mine';
     if (matches(cfg.next)) return 'next';
     if (matches(cfg.prev)) return 'prev';
+    if (matches(cfg.audio)) return 'audio';
     return null;
 }
 // 扩展场景下本监听常驻在**宿主页面**的 document 上（弹窗是注入宿主页的 DOM，不是独立文档），
@@ -3085,6 +3108,8 @@ window.__fushiPopupKeyListener = async function(e) {
     try {
         if (action === 'mine') {
             handled = (await window.fushiPopupMineFirstEntry()) === true;
+        } else if (action === 'audio') {
+            handled = (await window.fushiPopupPlayFirstAudio()) === true;
         } else if (typeof window.fushiFocusDictionaryEntryMove === 'function') {
             // 与 Alt+滚轮同一执行体：只有焦点真的移动了才算接管；单词条 / 已到首尾时返回
             // 'blocked'，这一帧交还给页面（不吞按键）。
