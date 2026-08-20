@@ -214,6 +214,16 @@ class OverlayWindowChannel {
         'json': popupJson,
       });
 
+  /// 手柄重设计 P5：把一枚 Dart 侧解析好的手柄动作转发进 host
+  /// （window.__globalLookupHost.gamepadAction → 顶层卡片帧的 popup.js 入口）。
+  /// [action] 只接受 native 白名单里的 'next'/'prev'/'mine'/'audio'/'scroll'；
+  /// [dy] 仅 scroll 用（CSS 像素，正=向下）。
+  Future<void> gamepadAction(String action, {double dy = 0}) =>
+      _invoke<void>('gamepadAction', <String, Object?>{
+        'action': action,
+        'dy': dy,
+      });
+
   /// Resizes the overlay window (physical px), clamped to the work area by
   /// native. Keeps the current top-left anchor.
   Future<void> resize({required int width, required int height}) =>

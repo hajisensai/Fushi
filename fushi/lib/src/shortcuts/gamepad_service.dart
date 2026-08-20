@@ -26,10 +26,21 @@ bool tryDictionaryPopupGamepadButton(
   FushiShortcutRegistry? registry,
   GamepadButton button,
 ) {
-  if (registry == null) return false;
   final DictionaryPopupGamepadHooks? hooks =
       DictionaryPopupGamepadRegistry.current;
   if (hooks == null) return false;
+  return dispatchDictionaryPopupGamepadButton(hooks, registry, button);
+}
+
+/// 按 dictionaryPopup scope 解析 [button] 并在 [hooks] 上执行。
+/// [tryDictionaryPopupGamepadButton]（app 内弹窗兜底）与 P5 的游戏内卡片独占
+/// 路由（[GalIngameLookupGamepadRoute]）共用这一个解析/执行体。
+bool dispatchDictionaryPopupGamepadButton(
+  DictionaryPopupGamepadHooks hooks,
+  FushiShortcutRegistry? registry,
+  GamepadButton button,
+) {
+  if (registry == null) return false;
   final ShortcutAction? action = registry.resolveGamepad(
     button,
     scope: ShortcutScope.dictionaryPopup,
@@ -412,6 +423,16 @@ class GamepadService {
   /// reader's registry page-turn bindings (e.g. D-pad-right → page forward)
   /// fire; when unbound in the active scope they fall back to directional focus.
   void _dispatchButton(GamepadButton button) {
+    // 手柄重设计 P5：游戏内查词卡片可见时**独占**手柄——命中弹窗动作转发进
+    // 卡片 WebView2，未命中也一律吞掉，绝不驱动后台 app 的页面/焦点/返回
+    // （游戏本身经原生输入照常收到手柄；这里只管 app 进程的这份轮询）。
+    // 不碰焦点高亮策略：app 在后台，别为游戏里的按键点亮 app 的焦点环。
+    final DictionaryPopupGamepadHooks? galHooks =
+        GalIngameLookupGamepadRoute.current;
+    if (galHooks != null) {
+      dispatchDictionaryPopupGamepadButton(galHooks, registry, button);
+      return;
+    }
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _setHighlightForHardwareNav();
@@ -503,6 +524,9 @@ class GamepadService {
   /// focus ring like an arrow key; whatever is focused is then activated by a
   /// SEPARATE explicit press (A / the rebindable enter-caret key).
   void _dispatchStickMove(TraversalDirection dir) {
+    // P5：游戏内卡片独占期间左摇杆也吞掉——后台 app 的焦点不能被游戏里的
+    // 摇杆悄悄挪走。
+    if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _setHighlightForHardwareNav();
@@ -516,8 +540,10 @@ class GamepadService {
   /// 页面滚动已有 LB/RB 整页滚（globalScrollPage*）与左摇杆焦点滚动兜底，右摇杆
   /// 现阶段专职弹窗，避免同一根摇杆在不同页面语义漂移。
   void _dispatchRightStickScroll(double dyNorm) {
+    // P5：游戏内卡片可见时右摇杆滚动卡片内容（独占路由优先）。
     final DictionaryPopupGamepadHooks? hooks =
-        DictionaryPopupGamepadRegistry.current;
+        GalIngameLookupGamepadRoute.current ??
+            DictionaryPopupGamepadRegistry.current;
     if (hooks == null) return;
     unawaited(hooks.scrollBy(dyNorm * _kRightStickScrollPxPerTick));
   }
@@ -554,6 +580,8 @@ class GamepadService {
   /// A widget that supports long-press maps the intent to the same callback its
   /// `onLongPress` uses; if nothing handles it, the long-press is a no-op.
   void _dispatchLongPress(GamepadButton button) {
+    // P5：游戏内卡片独占期间长按也吞掉（后台 app 的长按语义不该被游戏触发）。
+    if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _setHighlightForHardwareNav();

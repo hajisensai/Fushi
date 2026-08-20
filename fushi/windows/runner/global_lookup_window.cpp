@@ -2303,6 +2303,32 @@ void GlobalLookupWindow::ConfigureWebView() {
       nullptr);
 }
 
+void GlobalLookupWindow::DispatchGamepadAction(const std::string& action,
+                                               double dy) {
+  if (recovering_ || !webview_ready_ || !webview_) {
+    return;
+  }
+  // 动作名白名单：本方法把字符串拼进 ExecuteScript，绝不透传任意输入。
+  static const char* const kAllowedActions[] = {"next", "prev", "mine", "audio",
+                                                "scroll"};
+  bool allowed = false;
+  for (const char* const candidate : kAllowedActions) {
+    if (action == candidate) {
+      allowed = true;
+      break;
+    }
+  }
+  if (!allowed) {
+    return;
+  }
+  const std::wstring action_w(action.begin(), action.end());
+  const std::wstring script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.gamepadAction('" + action_w + L"', " +
+      std::to_wstring(dy) + L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
 void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // full_script is the complete JS built in Dart (settings + lookupEntries +
   // renderPopup), mirroring dictionary_popup_webview._pushResults. Cached until

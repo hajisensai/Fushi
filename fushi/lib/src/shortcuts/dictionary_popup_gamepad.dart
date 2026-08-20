@@ -71,3 +71,31 @@ class DictionaryPopupGamepadRegistry {
   @visibleForTesting
   static int get debugDepth => _stack.length;
 }
+
+/// 手柄重设计 P5：游戏内查词卡片的**独占**手柄路由（仅 Windows galgame 链路）。
+///
+/// 与 [DictionaryPopupGamepadRegistry]（app 内弹窗的兜底路由）语义相反：游戏在
+/// 前台、卡片可见时，手柄绝不能驱动后台 app 的页面 Actions / 焦点移动 / 返回
+/// ——按到 B 把后台 app 退了一页是灾难。所以 GamepadService 在分发**最前端**
+/// 检查本路由：命中弹窗动作（词条导航/制卡/发音）就经钩子转发进卡片 WebView2，
+/// 未命中的按钮也一律吞掉（卡片可见期间手柄专属卡片；游戏自己经原生输入照常
+/// 收到手柄，本路由只管 app 进程这一份轮询）。
+///
+/// 由 gal 游戏内查词 controller 在卡片显示时设置、隐藏/会话结束时清除。
+class GalIngameLookupGamepadRoute {
+  GalIngameLookupGamepadRoute._();
+
+  static DictionaryPopupGamepadHooks? _current;
+
+  /// 当前独占钩子；卡片不可见（或未设置）返回 null，分发照常走 app 路径。
+  static DictionaryPopupGamepadHooks? get current {
+    final DictionaryPopupGamepadHooks? hooks = _current;
+    if (hooks == null || !hooks.hasVisiblePopup()) return null;
+    return hooks;
+  }
+
+  static void set(DictionaryPopupGamepadHooks? hooks) => _current = hooks;
+
+  @visibleForTesting
+  static void debugClear() => _current = null;
+}
