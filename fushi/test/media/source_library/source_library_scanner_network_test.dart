@@ -127,12 +127,12 @@ class _FakeVirtualNetworkFs implements SourceFileSystem {
   @override
   bool get isLocal => false;
 
+  /// 末段文件名，**不解码** —— 对齐真实实现：`NetworkSourceFileSystem` 的
+  /// `name` 取自 WebDAV 的 `displayName`，那已经是 `Uri.decodeFull` 之后的值。
+  /// 这个替身原先照着「路径是百分号编码的」这个错误前提又解了一次，于是把生产
+  /// 侧的同款缺陷一起复刻进了测试，让相关断言全是假绿。
   static String _decodedName(String vpath) {
-    final String raw = vpath.substring(vpath.lastIndexOf('/') + 1);
-    if (vpath.startsWith('http://') || vpath.startsWith('https://')) {
-      return Uri.decodeComponent(raw);
-    }
-    return raw;
+    return vpath.substring(vpath.lastIndexOf('/') + 1);
   }
 
   @override
@@ -373,11 +373,15 @@ void main() {
       File(manifest).writeAsStringSync('#EXTM3U\nclip 1.mkv\nclip 2.mkv\n');
 
       const String root = 'https://dav.example.com/media';
+      // fixture 必须是**真实实现会产出的形状**：WebDAV 的 PROPFIND href 在
+      // webdav_ops.dart 里已 `Uri.decodeFull`，所以 SourceFileEntry.path 带的是
+      // 字面空格/中文，不是 `%20`。此前这里喂的是编码路径 —— 那种输入真实代码
+      // 一次都不会产生，于是「解码」相关的断言全是假绿。
       final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
-        '$root/Show%20A/Show%20A%20S01E01.mkv': dummy,
-        '$root/Show%20A/Show%20A%20S01E01.srt': dummy,
-        '$root/Show%20A/Show%20A%20S01E02.mkv': dummy,
-        '$root/Lists/Best%20Of.m3u8': manifest,
+        '$root/Show A/Show A S01E01.mkv': dummy,
+        '$root/Show A/Show A S01E01.srt': dummy,
+        '$root/Show A/Show A S01E02.mkv': dummy,
+        '$root/Lists/Best Of.m3u8': manifest,
       });
 
       final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
@@ -396,16 +400,16 @@ void main() {
       final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
       // 2 部直扫单集 + 清单拆出的 2 集。
       expect(videos, hasLength(4));
-      final VideoBookRow e01 = videos.singleWhere((VideoBookRow v) =>
-          v.videoPath == '$root/Show%20A/Show%20A%20S01E01.mkv');
+      final VideoBookRow e01 = videos.singleWhere(
+          (VideoBookRow v) => v.videoPath == '$root/Show A/Show A S01E01.mkv');
       expect(e01.title, 'Show A S01E01',
-          reason: 'title must be percent-decoded, not the raw href basename');
+          reason: 'title 取条目路径末段即可——路径本就是解码态，不能再解一次');
       expect(e01.coverPath, isNull,
           reason: 'no cover extraction for remote streams');
       expect(e01.sourceId, sid);
       final StreamVideoSpec spec =
           StreamVideoSpec.fromStorageJson(e01.streamSpecJson);
-      expect(spec.subtitleUrl, '$root/Show%20A/Show%20A%20S01E01.srt',
+      expect(spec.subtitleUrl, '$root/Show A/Show A S01E01.srt',
           reason: 'sidecar subtitle rides in streamSpecJson (played via the '
               'stream channel, not local cue parsing)');
       expect(spec.subtitleFileName, 'Show A S01E01.srt');
@@ -424,7 +428,7 @@ void main() {
       expect(
         collections.map((MediaCollectionRow c) => c.name).toSet(),
         <String>{'Show A', 'Best Of'},
-        reason: '合集名必须是解码后的（不能带 %20）',
+        reason: '合集名取条目路径末段（路径已是解码态）',
       );
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -531,6 +535,75 @@ void main() {
           reason: 're-scan must not re-download any page (title pre-check)');
       after = (await db.getMediaSourceById(sid))!;
       expect(after.lastScanError, isNull);
+    });
+
+    testWidgets('远端漫画：页图真名含 % / 空格 / 中文也能镜像成功（不再二次解码）',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // 回归 #908 审查发现的二次解码：SourceFileEntry.path 进扫描器时**已是解码
+      // 态**（webdav_ops.dart 的 Uri.decodeFull）。此前扫描器又 Uri.decodeComponent
+      // 一次，于是：
+      //   ① 真名含 `%`（`50% off.jpg`）→ ArgumentError: Invalid URL encoding，
+      //      而这里没有逐卷兜底，整个来源的扫描当场中止；
+      //   ② 真名是 `p%20a.jpg` → 被解成 `p a.jpg`，与 img_path 查表键对不上，
+      //      抛 `Missing manga page image`。
+      // 断言的关键字面量：'50% off.jpg' / 'p%20a.jpg' / '第1話 表紙.jpg'。
+      // 本地站位文件名与远端虚拟路径无关（假 fs 只做 虚拟路径→本地文件 映射）。
+      final String pageA = p.join(tmp.path, 'odd_a.jpg');
+      final String pageB = p.join(tmp.path, 'odd_b.jpg');
+      final String pageC = p.join(tmp.path, 'odd_c.jpg');
+      File(pageA).writeAsBytesSync(<int>[1]);
+      File(pageB).writeAsBytesSync(<int>[2]);
+      File(pageC).writeAsBytesSync(<int>[3]);
+      final String mokuroLocal = p.join(tmp.path, 'Odd.mokuro');
+      File(mokuroLocal).writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'OddNames',
+        'pages': <Object?>[
+          for (final String rel in <String>[
+            'Odd/50% off.jpg',
+            'Odd/p%20a.jpg',
+            'Odd/第1話 表紙.jpg',
+          ])
+            <String, Object?>{
+              'img_width': 800,
+              'img_height': 1200,
+              'img_path': rel,
+              'blocks': <Object?>[],
+            },
+        ],
+      }));
+
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        'https://dav.example.com/m/Odd.mokuro': mokuroLocal,
+        'https://dav.example.com/m/Odd/50% off.jpg': pageA,
+        'https://dav.example.com/m/Odd/p%20a.jpg': pageB,
+        'https://dav.example.com/m/Odd/第1話 表紙.jpg': pageC,
+      });
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Odd Names',
+        mediaKind: 'manga',
+        rootPath: 'https://dav.example.com/m',
+        transport: const Value('webdav'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull,
+          reason: '二次解码会在这里留下 ArgumentError / Missing manga page image；'
+              '实际值=${after.lastScanError}');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.title, 'OddNames');
+      expect(fs.copyToLocalCalls, 3, reason: '三张页图都要镜像成功');
     });
   });
 }
