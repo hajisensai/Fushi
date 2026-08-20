@@ -83,6 +83,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 // TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
@@ -3796,6 +3797,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _episodeListVisible.value ||
       _videoControlEditMode.value;
 
+  /// 手柄重设计 P3：可用 D-pad 逐行浏览的三类面板任一打开（字幕列表 / 剧集轨 /
+  /// 侧栏）。与 [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是
+  /// 「行浏览」表面，D-pad 在那里仍按 video scope 解析。
+  bool get _videoNavigablePanelOpen =>
+      _subtitleListVisible.value ||
+      _episodeListVisible.value ||
+      _videoSidePanel.value != null;
+
   // BUG-371：字幕跳转列表是 **push-aside** 侧栏（[_videoWithSubtitlePanel] 的
   // `Row[Expanded(video), 面板列]`，TODO-314），把画面挤窄到左侧、**不遮挡**叠在画面上
   // 的左 / 右浮动操作 rail。故强压制门控**不含**字幕列表显隐——开字幕列表时左 / 右控制
@@ -4730,6 +4739,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
     // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
     if (_handleCaretGamepadButton(button)) return true;
+    // 手柄重设计 P3：浮层面板打开时，D-pad/A 让位给通用焦点导航（面板内选行）——
+    // 返回 false 交给 GamepadService 的 dpad=移焦 / A=激活兜底，而不是解析成
+    // 音量 / seek / 播放暂停。焦点由 PanelFocusScope 在面板打开时领进面板；其余
+    // 按钮照常解析（LB/RB seek 仍可用），B 经下方 universal 兜底走逐级退出关面板。
+    if (_videoNavigablePanelOpen && isVideoPanelFocusNavButton(button)) {
+      return false;
+    }
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.video,
