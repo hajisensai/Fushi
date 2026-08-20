@@ -58,8 +58,25 @@ object PopupEngineHolder {
     @Volatile
     private var pendingSubtitle: IntArray? = null
 
+    /**
+     * BUG-1757：关闭回调必须记住**是谁注册的**。
+     *
+     * 本 holder 是 object 单例，而 [PopupDictFlutterActivity] 会被反复创建/销毁。旧实现
+     * 是裸的 `onFinish` 字段 + `setOnFinish(null)`，任何实例都能清掉任何实例注册的回调。
+     * Android 的生命周期顺序是「新实例 onCreate → 旧实例 onDestroy」，于是「关掉一个查词
+     * 窗、紧接着查下一个词」这条最常见的连续查词路径必然踩中：新窗在 onCreate 里注册了
+     * 自己的 finish，旧窗随后在 onDestroy 里把它清成 null。此后新窗调 finishPopup 时
+     * `onFinish` 是 null、静默什么都不做，而 Dart 侧 `_close()` 已经把 `_isClosing` 锁死
+     * ——窗口留在屏幕上、外观毫无变化、X / 点外面 / 横滑 / 系统返回全部静默早退，
+     * 用户侧就是「查词弹窗关不掉」，里面的原生 WebView 还活着所以内容仍能滚一点。
+     *
+     * owner 与 callback 合成**一个**字段而不是两个 `@Volatile`：两个字段无法原子更新，
+     * 读到「新 owner + 旧 callback」的撕裂状态同样会关错窗。
+     */
+    private class FinishHandler(val owner: Any, val callback: () -> Unit)
+
     @Volatile
-    private var onFinish: (() -> Unit)? = null
+    private var finishHandler: FinishHandler? = null
 
     @Volatile
     private var channel: MethodChannel? = null
@@ -76,8 +93,23 @@ object PopupEngineHolder {
         pendingSubtitle = subtitle
     }
 
-    fun setOnFinish(callback: (() -> Unit)?) {
-        onFinish = callback
+    /**
+     * 注册「关闭当前查词窗」回调。[owner] 是注册方（Activity 实例），[clearOnFinish]
+     * 据它判断该不该注销。
+     */
+    fun setOnFinish(owner: Any, callback: () -> Unit) {
+        finishHandler = FinishHandler(owner, callback)
+    }
+
+    /**
+     * 注销 [owner] 注册的回调——**当前回调不属于它就什么都不做**（BUG-1757：旧 Activity
+     * 的 onDestroy 晚于新 Activity 的 onCreate，绝不能清掉新窗刚注册的那个）。
+     *
+     * 没有「无条件清空」的入口是有意的：那个入口存在多久，这个竞态就存在多久。
+     */
+    fun clearOnFinish(owner: Any) {
+        if (finishHandler?.owner !== owner) return
+        finishHandler = null
     }
 
     /** Returns true when the engine had to be created now (cold start). */
@@ -104,8 +136,11 @@ object PopupEngineHolder {
                     result.success(map)
                 }
                 "finishPopup" -> {
-                    result.success(null)
-                    onFinish?.invoke()
+                    // BUG-1757：把「有没有人真的接下这次关闭」回给 Dart。没人接时 Dart
+                    // 侧必须解开 _isClosing，否则窗口留在屏上而所有关闭入口永久早退。
+                    val handler = finishHandler
+                    result.success(handler != null)
+                    handler?.callback?.invoke()
                 }
                 else -> result.notImplemented()
             }

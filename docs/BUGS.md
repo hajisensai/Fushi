@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1757](bugs/BUG-1757-mobile-lookup-barrier-blocks-scroll.md) | 🚧 | ✅ | 手机上查词弹窗滚动卡住——两条候选根因已实测排除，症状待用户澄清场景 |
+| [BUG-1757](bugs/BUG-1757-popup-close-latch-native-callback-race.md) | ✅ | ✅ | 安卓独立查词窗连续查词后卡死关不掉——原生关闭回调被销毁中的旧 Activity 清掉，Dart 闭锁随即锁死 |
 | [BUG-1755](bugs/BUG-1755-ass-wrap-width-anchored-to-window.md) | ✅ | ✅ | 字幕换行宽度锚在窗口而非视频画面，最大化后排版突变（BUG-1730 续） |
 | [BUG-1754](bugs/BUG-1754-drop-video-folder-ignored.md) | ✅ | ✅ | 视频页拖入文件夹完全静默 |
 | [BUG-1753](bugs/BUG-1753-drop-multi-video-only-first.md) | ✅ | ✅ | 拖入多个视频只导入第一个 |

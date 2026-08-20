@@ -88,7 +88,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         val subtitle: IntArray? = extractSubtitleRect(intent)
         PopupEngineHolder.setPendingText(text, charIndex, anchor, subtitle)
         engineWasCold = PopupEngineHolder.ensureEngine(this)
-        PopupEngineHolder.setOnFinish { runOnUiThread { finish() } }
+        PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
         // 查词弹窗是独立 :popup 进程、独立 window，绝不继承 MainActivity 的高刷偏好；
         // 不主动请求就被系统按默认策略压到 60Hz，滚动列表明显卡顿。安全 no-op 退化。
@@ -118,7 +118,10 @@ class PopupDictFlutterActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        PopupEngineHolder.setOnFinish(null)
+        // BUG-1757：只注销**自己**注册的那个回调。旧实例的 onDestroy 晚于新实例的
+        // onCreate，无条件清空会把新查词窗刚注册的 finish 清掉，之后那个窗就再也
+        // 关不掉了（连续查词必踩）。
+        PopupEngineHolder.clearOnFinish(this)
         super.onDestroy()
     }
 
