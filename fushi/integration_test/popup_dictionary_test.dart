@@ -9,8 +9,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/models.dart';
+import 'package:fushi/pages.dart';
 
 import 'helpers/focus_driver.dart';
+import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
 /// Integration test for popup dictionary path fix verification.
@@ -61,12 +63,25 @@ void main() {
 
       final cacheDir = await getTemporaryDirectory();
       final File dictFile = File('${cacheDir.path}/test_dict.zip');
+      String primarySearchTerm = '食べる';
+      bool generatedFallback = false;
 
-      if (!dictFile.existsSync()) {
+      if (!Platform.isAndroid) {
+        // Desktop runs have no runner-provisioned external fixture and retain
+        // the cache across runs. Rewrite the deterministic fixture every time
+        // so an old `test_dict.zip` cannot make this test order-dependent.
+        await writeGeneratedDictionary(dictFile);
+        primarySearchTerm = 'testword';
+        generatedFallback = true;
+        debugPrint('[popup-test] Generated local dictionary fixture');
+      } else if (!dictFile.existsSync()) {
         // The runner pushes the fixture into the app's own external-files dir
         // (readable with no permission); /sdcard/Download is a legacy fallback
         // but is blocked for the app uid under scoped storage.
-        final Directory? extDir = await getExternalStorageDirectory();
+        // `getExternalStorageDirectory` is Android-only. Desktop app-level
+        // verification uses the generated fixture fallback below.
+        final Directory? extDir =
+            Platform.isAndroid ? await getExternalStorageDirectory() : null;
         final List<File> candidates = <File>[
           if (extDir != null) File('${extDir.path}/test_dict.zip'),
           File('/sdcard/Download/test_dict.zip'),
@@ -107,6 +122,13 @@ void main() {
         debugPrint('[popup-test] Dictionary import error: $e');
       }
 
+      // importDictionary intentionally does not call onImportSuccess when the
+      // same generated fixture is already installed. Desktop reruns are
+      // persistent, so verify the fixture instead of waiting 30 seconds.
+      if (!importSuccess && generatedFallback) {
+        importSuccess = await seedDictionary(tester);
+      }
+
       // Pump frames to let the model update listeners.
       for (int i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -121,13 +143,17 @@ void main() {
 
       progressNotifier.dispose();
 
+      // Phase 4 below needs the deterministic `testword` entry even when the
+      // Android runner supplied a full Japanese dictionary fixture.
+      expect(await seedDictionary(tester), isTrue,
+          reason: 'generated popup-action fixture must be installed');
+
       // ── Phase 2: Navigate to dictionary tab ──
 
-      final List<Finder> navTargets = findPrimaryNavigationTargets();
-      expect(navTargets.length, greaterThanOrEqualTo(2),
-          reason: 'Navigation must have at least 2 targets (Books, Dicts)');
-
-      final bool focusedDict = await driver.focusWidget(navTargets[1]);
+      // Home tabs are conditional; locate the dictionary destination by its
+      // production identity instead of assuming it is always index 1.
+      final Finder dictionaryTab = findNavTargetForTab(HomeTab.dictionaries);
+      final bool focusedDict = await driver.focusWidget(dictionaryTab);
       expect(focusedDict, isTrue,
           reason: 'Dictionary tab must be reachable by focus');
       await driver.activate();
@@ -138,7 +164,11 @@ void main() {
       // ── Phase 3: Search for a word ──
 
       final Finder searchField = findSearchField();
-      await tester.enterText(searchField, '食べる');
+      await tester.enterText(searchField, primarySearchTerm);
+      final HomeDictionarySearchDebug popupDebug = tester.state(
+        find.byType(HomeDictionaryPage),
+      ) as HomeDictionarySearchDebug;
+      await popupDebug.debugSearch(primarySearchTerm, writeHistory: true);
       await tester.pump(const Duration(seconds: 5));
 
       await takeScreenshot(binding, 'popup_test_search_result');
@@ -148,7 +178,89 @@ void main() {
       debugPrint('[popup-test] Search results: $resultCount evidence widgets');
 
       expect(resultCount, greaterThan(0),
-          reason: 'Dictionary search for 食べる must return at least one result');
+          reason:
+              'Dictionary search for $primarySearchTerm must return results');
+
+      // ── Phase 4: Exercise the real in-app nested popup host ──
+
+      final bool originalBottomDocked = appModel.popupBottomDocked;
+      await appModel.setPopupBottomDocked(false);
+      addTearDown(
+        () => appModel.setPopupBottomDocked(originalBottomDocked),
+      );
+      final int popupMatches = await popupDebug.debugOpenPopup('testword');
+      expect(popupMatches, greaterThan(0));
+
+      Map<Object?, Object?>? snapshot;
+      for (int i = 0; i < 80; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        final dynamic raw = await popupDebug.debugEvaluateTopPopup(r'''
+(() => ({
+  ready: document.readyState,
+  mineButtons: document.querySelectorAll('.mine-button').length,
+  favoriteButtons: document.querySelectorAll('.favorite-button').length,
+  contentHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+  viewportHeight: window.innerHeight
+}))()
+''');
+        if (raw is Map && raw['favoriteButtons'] == 1) {
+          snapshot = raw.cast<Object?, Object?>();
+          break;
+        }
+      }
+
+      debugPrint('[popup-test] Nested popup snapshot: $snapshot; '
+          'autoFit=${popupDebug.debugTopPopupAutoFitHeight}');
+      expect(snapshot, isNotNull,
+          reason: 'real popup WebView must render mine/favorite controls');
+      expect(snapshot!['mineButtons'], 1);
+      expect(snapshot['favoriteButtons'], 1);
+      expect(popupDebug.debugTopPopupAutoFitHeight, isNotNull,
+          reason:
+              'popupRendered must feed DOM metrics back to the Flutter host');
+      expect(
+        popupDebug.debugTopPopupAutoFitHeight!,
+        lessThan(appModel.popupMaxHeight * appModel.appUiScale),
+        reason: 'single generated entry must shrink below the configured max '
+            'instead of leaving the reported blank lower half',
+      );
+
+      // DOM click exercises the actual JS -> native WebView -> Dart favorite bridge.
+      // Windows native pointer ordering itself is covered by the plugin event test.
+      await popupDebug.debugEvaluateTopPopup(
+        "document.querySelector('.favorite-button').click(); true",
+      );
+      bool favorited = false;
+      for (int i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        favorited = await appModel.database.isFavoriteWord(
+          expression: 'testword',
+          reading: 'testword',
+          sourceType: 'book',
+        );
+        if (favorited) break;
+      }
+      expect(favorited, isTrue,
+          reason:
+              'favorite button must cross the real JS/Dart bridge and write DB');
+
+      await popupDebug.debugEvaluateTopPopup(
+        "document.querySelector('.favorite-button').click(); true",
+      );
+      for (int i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        favorited = await appModel.database.isFavoriteWord(
+          expression: 'testword',
+          reading: 'testword',
+          sourceType: 'book',
+        );
+        if (!favorited) break;
+      }
+      expect(favorited, isFalse,
+          reason: 'second favorite activation must remove the same DB row');
+
+      popupDebug.debugClosePopup();
+      await tester.pump(const Duration(milliseconds: 300));
 
       await takeScreenshot(binding, 'popup_test_verified');
 

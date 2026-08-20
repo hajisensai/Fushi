@@ -239,6 +239,30 @@ Rect resolvePopupRect({
   );
 }
 
+/// BUG-1651：根据 WebView 内容高度与当前视口高度的差值，求下一帧弹窗总高度。
+///
+/// `currentPopupHeight` 是包含 Flutter 顶栏/header 的外壳高度；JS 上报的两个值只属于
+/// WebView body。用差值增减当前总高，就不需要在 Dart 重复猜顶栏高度。结果受用户的
+/// 最小/最大高度约束；平台视图初始化期的 0/NaN 测量保持原高，避免闪跳。
+double resolveAutoFitPopupHeight({
+  required double currentPopupHeight,
+  required double contentHeight,
+  required double viewportHeight,
+  required double minHeight,
+  required double maxHeight,
+}) {
+  if (!currentPopupHeight.isFinite ||
+      !contentHeight.isFinite ||
+      !viewportHeight.isFinite ||
+      contentHeight < 0 ||
+      viewportHeight <= 0 ||
+      minHeight > maxHeight) {
+    return currentPopupHeight;
+  }
+  final double desired = currentPopupHeight + contentHeight - viewportHeight;
+  return desired.clamp(minHeight, maxHeight).toDouble();
+}
+
 /// Phase B 拖拽尺寸（2026-07-15）— 把贴词算出的 [anchored] rect 的**原点钉回**
 /// [topLeft]（拖拽起始时那张卡的左上角），只保留其尺寸并夹住不越出屏幕（右下不出界）。
 ///
@@ -445,6 +469,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onTapOutside,
     this.onScrolledToBottom,
     this.onRendered,
+    this.onContentMetrics,
     this.onRenderError,
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
@@ -537,6 +562,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
+
+  /// JS 内容高度与当前 WebView 视口高度。宿主用二者差值自适应外壳总高。
+  final void Function(double contentHeight, double viewportHeight)?
+      onContentMetrics;
 
   /// TODO-058 fail-safe：弹窗 WebView 主框架加载失败时触发，宿主据此立即翻可见
   /// 挂起的冷层（加载失败也显示，不卡死）。
@@ -970,6 +999,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onSentenceContextPreview: onSentenceContextPreview,
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
+            onContentMetrics: onContentMetrics,
             onRenderError: onRenderError,
             inputSpec: inputSpec,
             onHostInputToken: onHostInputToken,

@@ -8,6 +8,47 @@ import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import '../widgets/widget_test_helpers.dart';
 
 void main() {
+  group('resolveAutoFitPopupHeight', () {
+    test('按内容与 WebView 视口的差值收掉底部空白', () {
+      expect(
+        resolveAutoFitPopupHeight(
+          currentPopupHeight: 360,
+          contentHeight: 210,
+          viewportHeight: 310,
+          minHeight: 200,
+          maxHeight: 600,
+        ),
+        260,
+      );
+    });
+
+    test('内容变多时重新长高，但不超过用户最大高度', () {
+      expect(
+        resolveAutoFitPopupHeight(
+          currentPopupHeight: 260,
+          contentHeight: 430,
+          viewportHeight: 210,
+          minHeight: 200,
+          maxHeight: 360,
+        ),
+        360,
+      );
+    });
+
+    test('无效测量保持当前高度，避免平台初始化期弹窗跳变', () {
+      expect(
+        resolveAutoFitPopupHeight(
+          currentPopupHeight: 360,
+          contentHeight: double.nan,
+          viewportHeight: 0,
+          minHeight: 200,
+          maxHeight: 600,
+        ),
+        360,
+      );
+    });
+  });
+
   test('calcPopupPosition stays inside a constrained popup surface', () {
     final Rect popupRect = calcPopupPosition(
       selectionRect: const Rect.fromLTWH(2, 2, 1, 1),

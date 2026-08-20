@@ -72,6 +72,24 @@ class MinePopupResult {
 /// WebView2 原生菜单）。两项：查词（平移自原 WebView2 自定义项）+ 复制（自补，BUG-402）。
 enum _PopupContextMenuAction { search, copy }
 
+/// BUG-1651：选择可信的 WebView 视口高度。
+///
+/// 正常窗口优先用 JS `window.innerHeight`；macOS 离屏 runner / 原生视图尚未挂到
+/// CGWindow 时 JS 会报 0，但 Flutter platform-view widget 已有真实布局高度，此时回退
+/// [layoutHeight]。两边都无效才返回 null，让宿主保持当前尺寸。
+double? resolvePopupViewportHeight({
+  required double? reportedHeight,
+  required double? layoutHeight,
+}) {
+  if (reportedHeight != null && reportedHeight.isFinite && reportedHeight > 0) {
+    return reportedHeight;
+  }
+  if (layoutHeight != null && layoutHeight.isFinite && layoutHeight > 0) {
+    return layoutHeight;
+  }
+  return null;
+}
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -97,6 +115,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
+    this.onContentMetrics,
     this.onRenderError,
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
@@ -199,6 +218,10 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
   /// handler). Used by the reader to hand the char-level cursor to this popup.
   final VoidCallback? onRendered;
+
+  /// `popupRendered` 同步带回的 DOM 内容高度与 WebView 当前视口高度。
+  final void Function(double contentHeight, double viewportHeight)?
+      onContentMetrics;
 
   /// TODO-058 fail-safe：主框架加载失败（`onReceivedError`）时触发。挂起到
   /// `popupRendered` 才显示的冷层若加载失败，`popupRendered` 永不会发；宿主据此
@@ -1574,6 +1597,28 @@ JSON.stringify((function(){
                     : int.tryParse(rawToken?.toString() ?? '');
                 if (token != null && token != _renderToken) {
                   return null;
+                }
+                final double? contentHeight = (args.isNotEmpty ? args[0] : null)
+                        is num
+                    ? (args[0] as num).toDouble()
+                    : double.tryParse(
+                        (args.isNotEmpty ? args[0] : null)?.toString() ?? '',
+                      );
+                final Object? rawViewport = args.length > 2 ? args[2] : null;
+                final double? reportedViewportHeight = rawViewport is num
+                    ? rawViewport.toDouble()
+                    : double.tryParse(rawViewport?.toString() ?? '');
+                final RenderObject? renderObject = context.findRenderObject();
+                final double? viewportHeight = resolvePopupViewportHeight(
+                  reportedHeight: reportedViewportHeight,
+                  layoutHeight: renderObject is RenderBox &&
+                          renderObject.attached &&
+                          renderObject.hasSize
+                      ? renderObject.size.height
+                      : null,
+                );
+                if (contentHeight != null && viewportHeight != null) {
+                  widget.onContentMetrics?.call(contentHeight, viewportHeight);
                 }
                 // 记录「当前已推结果渲染完成」，供 refreshCurrentResult 去重判定
                 // （识别渲染信号早于宿主盖板架起的竞态）。

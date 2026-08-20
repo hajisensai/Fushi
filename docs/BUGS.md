@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1623 条。点号进各自文件。
+> 共 1626 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -124,6 +124,9 @@
 | [BUG-1657](bugs/BUG-1657-angle-surface-fallback-loses-shaders.md) | ✅ | ✅ | 画质增强/超分静默失效：ANGLE device-backed display 之后任一步失败即掉软件渲染，而 SW 路径下 glsl-shaders 完全不生效 |
 | [BUG-1656](bugs/BUG-1656-apple-manga-reader-images.md) | ✅ | ✅ | Apple 漫画阅读器图片黑屏 |
 | [BUG-1655](bugs/BUG-1655-ruby-double-scale.md) | ✅ | ✅ | 查词浮窗振假名显示过小（疑双重 0.5em 缩放） |
+| [BUG-1653](bugs/BUG-1653-popup-dictionary-itest-desktop-drift.md) | ✅ | ✅ | popup_dictionary 应用级测试在桌面端因平台与导航假设失效 |
+| [BUG-1652](bugs/BUG-1652-windows-webview-click-stale-cursor.md) | ✅ | ✅ | Windows WebView 点击使用旧光标坐标导致词条操作无响应 |
+| [BUG-1651](bugs/BUG-1651-popup-auto-fit-height.md) | ✅ | ✅ | 查词弹窗忽略内容高度导致底部大面积留白 |
 | [BUG-1650](bugs/BUG-1650-sync-pulled-progress-stale-until-restart.md) | ✅ | ✅ | 同步拉回更远进度后首页继续与书架不刷新须重启 |
 | [BUG-1649](bugs/BUG-1649-manga-folder-epub-import.md) | ✅ | ✅ | 漫画页选文件夹导入：目录内是 epub 卷时报 Manga image folder has no pages |
 | [BUG-1648](bugs/BUG-1648-embedded-torrent-idle-discovery.md) | ✅ | ✅ | 已完成任务恢复后 DHT 常驻导致网关周期性高延迟 |
