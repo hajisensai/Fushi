@@ -46,8 +46,15 @@ import 'package:fushi/src/media/manga/reader/manga_rescan_result_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show InputBinding, ModifierKey, MouseBinding, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        ModifierKey,
+        MouseBinding,
+        activeModifierKeys;
 import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -114,7 +121,7 @@ enum MangaReaderInputAction {
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
 const double kMangaPanStepFraction = 0.15;
 
-enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey }
+enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey, gamepad }
 
 /// Serializes burst page-turn input across asynchronous WebView window loads.
 ///
@@ -348,13 +355,14 @@ class MangaFushiPage extends BaseSourcePage {
   /// 再由 [resolveMangaArrowPageTurn] 按跨页方向校正——两步都在调用侧完成，本函数
   /// 只负责「拿到动作之后，当前上下文该不该执行它」这层门控。
   ///
-  /// [horizontalArrow] = 触发键是否为左/右方向键。它们是**跨页步进**语义，两道
-  /// 门控都不适用：webtoon 的纵向滚动不影响左右翻页；词典弹窗可见时也要「关弹窗
+  /// [crossPageStep] = 触发键是否为**跨页步进**语义（左/右方向键、D-pad 左右与
+  /// 手柄翻页键 RB/LB），两道门控都不适用：webtoon 的纵向滚动不影响跨页步进
+  /// （手柄没有原生滚动路径，webtoon 也用锚点跳页）；词典弹窗可见时也要「关弹窗
   /// 并翻页」（本页与阅读器的关键差异）。其余前进/后退键则要让位——弹窗可见时空格
   /// 归词典自己，webtoon 模式下纵向键归 WebView 原生滚动。
   static MangaReaderInputAction? inputActionForShortcut({
     required ShortcutAction? action,
-    required bool horizontalArrow,
+    required bool crossPageStep,
     required bool dictionaryShown,
     required MangaReadingMode mode,
   }) {
@@ -383,7 +391,7 @@ class MangaFushiPage extends BaseSourcePage {
       _ => null,
     };
     if (pan != null) return pan;
-    if (!horizontalArrow) {
+    if (!crossPageStep) {
       if (dictionaryShown) return null;
       if (mode == MangaReadingMode.webtoon) return null;
     }
@@ -2160,11 +2168,56 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         bound;
     return MangaFushiPage.inputActionForShortcut(
       action: corrected,
-      horizontalArrow: key == LogicalKeyboardKey.arrowLeft ||
+      crossPageStep: key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight,
       dictionaryShown: isDictionaryShown,
       mode: _mode,
     );
+  }
+
+  /// 手柄按钮 → 本页输入动作（桌面轮询 [GamepadButtonIntent] 与 Android 原生
+  /// gameButton* 键事件汇合到同一入口，与阅读器 `_handleGamepadButton` 同构）。
+  ///
+  /// 解析阶梯与键盘路径一致：manga scope 优先，未命中兜底 universal（「返回上一
+  /// 级」，默认手柄 B）——所以手柄 B 走的是与 Esc 相同的两级阶梯（弹窗可见先关
+  /// 弹窗、没弹窗才退出漫画），而不是 GamepadService 的全局 maybePop 兜底直接退页。
+  /// D-pad 左/右经 [resolveMangaDpadPageTurn] 按跨页方向（日漫默认 rtl）校正。
+  ///
+  /// 手柄翻页键一律**跨页步进**语义（crossPageStep: true）：手柄没有原生滚动路径，
+  /// webtoon 模式下也该用锚点跳页；弹窗可见时关弹窗并翻页。
+  MangaReaderInputAction? _resolveMangaGamepadAction(GamepadButton button) {
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    final ShortcutAction? bound = registry.resolveGamepad(
+          button,
+          scope: ShortcutScope.manga,
+        ) ??
+        registry.resolveGamepad(
+          button,
+          scope: ShortcutScope.universal,
+        );
+    final ShortcutAction? corrected = resolveMangaDpadPageTurn(
+          button: button,
+          rtl: _spreadDirection == 'rtl',
+          boundAction: bound,
+        ) ??
+        bound;
+    return MangaFushiPage.inputActionForShortcut(
+      action: corrected,
+      crossPageStep: true,
+      dictionaryShown: isDictionaryShown,
+      mode: _mode,
+    );
+  }
+
+  /// 消费一枚手柄按钮；false 交回 GamepadService 的兜底（A=激活、dpad=移焦）。
+  bool _handleGamepadButton(GamepadButton button) {
+    final MangaReaderInputAction? action = _resolveMangaGamepadAction(button);
+    if (action == null) return false;
+    _executeReaderInputAction(
+      action,
+      source: _MangaReaderInputSource.gamepad,
+    );
+    return true;
   }
 
   void _handleNativeNavigationKey(String key) {
@@ -3246,43 +3299,56 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // 滚动的子树。
         // 键盘兜底必须包住正文、chrome 和词典弹层。旧结构只包正文 WebView，
         // 词典 WebView 获得焦点后变成 sibling，左右键/Escape 不再经过本处理器。
-        body: Focus(
-          focusNode: _focusNode,
-          autofocus: true,
-          onKeyEvent: _handleReaderKey,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              Positioned.fill(child: _buildBody()),
-              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
-              // WebView 持焦后会吞掉翻页键。
-              Positioned.fill(
-                key: const ValueKey<String>('manga_dictionary_host'),
-                child: buildDictionary(),
-              ),
-              if (_bookRow != null && !_loadFailed)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  child: SafeArea(
-                    child: IconButton(
-                      key: const ValueKey<String>('manga_reader_back_button'),
-                      tooltip:
-                          MaterialLocalizations.of(context).backButtonTooltip,
-                      color: Colors.white,
-                      icon: const Icon(Icons.arrow_back_ios_new),
-                      onPressed: () => Navigator.of(context).maybePop(),
+        //
+        // 手柄同理：桌面轮询路径把 GamepadButtonIntent 派给 primaryFocus 所在
+        // 子树的 Actions，Android 的 gameButton* 键事件经全局 wrapper 转成同一
+        // Intent——Actions 必须是正文 WebView 与词典弹层的共同祖先，词典 WebView
+        // 持焦时手柄键才仍经过本页（先关弹窗再退页的两级阶梯，而非全局 maybePop）。
+        body: Actions(
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+              onInvoke: (GamepadButtonIntent intent) =>
+                  _handleGamepadButton(intent.button),
+            ),
+          },
+          child: Focus(
+            focusNode: _focusNode,
+            autofocus: true,
+            onKeyEvent: _handleReaderKey,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Positioned.fill(child: _buildBody()),
+                // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+                // WebView 持焦后会吞掉翻页键。
+                Positioned.fill(
+                  key: const ValueKey<String>('manga_dictionary_host'),
+                  child: buildDictionary(),
+                ),
+                if (_bookRow != null && !_loadFailed)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: SafeArea(
+                      child: IconButton(
+                        key: const ValueKey<String>('manga_reader_back_button'),
+                        tooltip:
+                            MaterialLocalizations.of(context).backButtonTooltip,
+                        color: Colors.white,
+                        icon: const Icon(Icons.arrow_back_ios_new),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
                     ),
                   ),
-                ),
-              // 顶部 chrome：页码指示 + 阅读模式切换。
-              if (_bookRow != null && !_loadFailed)
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: SafeArea(child: _buildTopChrome()),
-                ),
-            ],
+                // 顶部 chrome：页码指示 + 阅读模式切换。
+                if (_bookRow != null && !_loadFailed)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: SafeArea(child: _buildTopChrome()),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

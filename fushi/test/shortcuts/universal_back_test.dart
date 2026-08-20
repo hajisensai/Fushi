@@ -116,10 +116,11 @@ void main() {
     test('手柄侧同理，且已登记的有意例外只有有声书的 B', () {
       final Map<ShortcutAction, ShortcutBindingSet> defaults =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
-      final Set<GamepadButton> backButtons = defaults[ShortcutAction.globalBack]!
-          .gamepadBindings
-          .map((GamepadBinding b) => b.button)
-          .toSet();
+      final Set<GamepadButton> backButtons =
+          defaults[ShortcutAction.globalBack]!
+              .gamepadBindings
+              .map((GamepadBinding b) => b.button)
+              .toSet();
       for (final ShortcutAction action in ShortcutAction.values) {
         if (action.scope == ShortcutScope.universal) continue;
         for (final GamepadBinding gp in defaults[action]!.gamepadBindings) {
@@ -378,7 +379,8 @@ void main() {
       expect(
         'scope: ShortcutScope.universal'.allMatches(code).length,
         2,
-        reason: '键盘 (_resolveReaderKeyboardShortcut) 与手柄 (_handleGamepadButton) '
+        reason:
+            '键盘 (_resolveReaderKeyboardShortcut) 与手柄 (_handleGamepadButton) '
             '各一处兜底解析；少一处就有一条通道退不出书',
       );
     });
@@ -388,8 +390,13 @@ void main() {
       final String code = maskComments(File(path).readAsStringSync());
       expect(code.contains('MangaReaderInputAction.backOrExit'), isTrue,
           reason: '漫画必须有「退出」这个落点动作');
-      expect(code.contains('scope: ShortcutScope.universal'), isTrue,
-          reason: '解析必须兜底 universal，否则 Esc 仍解析不到任何动作');
+      expect(
+        'scope: ShortcutScope.universal'.allMatches(code).length,
+        2,
+        reason: '键盘 (_resolveMangaKeyAction) 与手柄 (_resolveMangaGamepadAction) '
+            '各一处兜底解析 universal；少一处就有一条通道退不出漫画'
+            '（手柄那条缺席时 B 会走全局 maybePop 兜底，弹窗开着直接退页）',
+      );
       final int idx = code.indexOf('if (action == ShortcutAction.globalBack)');
       expect(idx, greaterThanOrEqualTo(0));
       final String slice = code.substring(idx, idx + 260);
