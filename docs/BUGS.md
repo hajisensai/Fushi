@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1605 条。点号进各自文件。
+> 共 1611 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1755](bugs/BUG-1755-ass-wrap-width-anchored-to-window.md) | ✅ | ✅ | 字幕换行宽度锚在窗口而非视频画面，最大化后排版突变（BUG-1730 续） |
+| [BUG-1754](bugs/BUG-1754-drop-video-folder-ignored.md) | ✅ | ✅ | 视频页拖入文件夹完全静默 |
+| [BUG-1753](bugs/BUG-1753-drop-multi-video-only-first.md) | ✅ | ✅ | 拖入多个视频只导入第一个 |
+| [BUG-1752](bugs/BUG-1752-drop-fires-on-hidden-tabs.md) | ✅ | ✅ | 拖放同时命中隐藏 tab：视频页拖文件夹弹出「导入漫画」 |
+| [BUG-1751](bugs/BUG-1751-manga-wheel-zoom-step-unpredictable.md) | ✅ | ✅ | 漫画滚轮缩放步进取决于本机 deltaY，与右键菜单不同口径 |
+| [BUG-1750](bugs/BUG-1750-manga-rtl-slide-direction-inverted.md) | ✅ | ✅ | 漫画 RTL 翻页滑动动画方向与输入语义相反 |
 | [BUG-1731](bugs/BUG-1731-host-video-progress-reverse-sync.md) | ✅ | ✅ | 互联子端看片进度不反向推进 host 的继续观看/下一集 |
 | [BUG-1730](bugs/BUG-1730-ass-word-wrap-midword-break.md) | ✅ | ✅ | ass 字幕英文单词中间断行（Wrap 逐字符换行无词边界） |
 | [BUG-1729](bugs/BUG-1729-waveform-cue-strip-overlap.md) | ✅ | ✅ | 波形对轴弹窗字幕条带重叠cue叠画 |

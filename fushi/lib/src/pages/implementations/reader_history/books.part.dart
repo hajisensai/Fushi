@@ -1152,6 +1152,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       cardHit: hitBookKey != null,
     );
     switch (intent) {
+      // 书架/漫画库不产出这个意图：目录在这两个表面仍是「一本漫画的页图文件夹」
+      // （importNewManga），把整个目录登记成扫描根是视频页的语义。列出来只为让
+      // `decideDropIntent` 以后给 books 也加上文件夹语义时，这里编译期就红。
+      case DropIntent.addFolderAsSource:
+        debugPrint('[fushi-drop] [reader-shelf] intent=addFolderAsSource '
+            '(not produced on this surface)');
       case DropIntent.importNewBook:
         _openBookImportPrefilled(
           epubPath: files.books.first,

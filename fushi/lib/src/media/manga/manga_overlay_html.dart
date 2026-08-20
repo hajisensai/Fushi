@@ -622,9 +622,26 @@ String mangaWindowDocument(
     }
   }
   if (!isWebtoon) {
-    for (final MapEntry<int, StringBuffer> entry in spreadPages.entries) {
+    // strip 的**几何顺序**必须跟着阅读方向走，否则翻页动画方向是反的。
+    //
+    // 根 strip 恒 `direction:ltr`（见上方注释）：把 `direction:rtl` 放上去会让
+    // Chromium 把 RTL 起点偏移混进 offsetLeft，translate 后整组图片错位。所以
+    // RTL 不能靠 CSS 反排——改成按**倒序写入 DOM**：spread N 的 offsetLeft 变成
+    // (n-1-N)×100vw，仍是稳定的 100vw 整数倍（`__mangaApplyTranslate` 的
+    // `-offsetLeft` 口径不变），但「下一跨页」落到左边，于是前进时画面向右滑、
+    // 新页从左边进——与 tap zone（IS_RTL 镜像）和方向键（resolveMangaArrowPageTurn）
+    // 早已按 RTL 镜像过的输入语义对上。此前只镜像输入不镜像几何，RTL（默认值）下
+    // 「按前进键 → 画面往后退的方向滑」。
+    //
+    // `__mangaApplyTranslate` 用 `data-spread` 属性选择器定位目标，与 DOM 顺序
+    // 无关，故无需改动；窗口化文档只渲染连续的一段 spread，倒序后仍连续。
+    List<int> spreadOrder = spreadPages.keys.toList()..sort();
+    if (rtl) {
+      spreadOrder = spreadOrder.reversed.toList();
+    }
+    for (final int spreadIndex in spreadOrder) {
       pagesHtml.write('<div class="manga-spread" '
-          'data-spread="${entry.key}">${entry.value}</div>');
+          'data-spread="$spreadIndex">${spreadPages[spreadIndex]}</div>');
     }
   }
 
@@ -1023,6 +1040,26 @@ String _mangaGestureJs({
     if (flickRaf) { cancelAnimationFrame(flickRaf); flickRaf = null; }
     flickVy = 0;
   }
+  // PAN 的合法区间：可见内容是**一个跨页**（100vw×100vh；webtoon 横向同宽，纵向归
+  // window.scrollY）。#manga-canvas 是 transform-origin:0 0，内容被 scale 后宽
+  // vw*ZOOM，于是 PAN_X 只能落在 [vw*(1-ZOOM), 0]——上界 0 = 内容左边缘贴视口左边，
+  // 下界 = 右边缘贴视口右边。ZOOM<=1 时区间退化（内容比视口小），此时位置由
+  // _recenterPan 居中拥有，不参与钳制。
+  //
+  // 此前 PAN 完全没有边界：拖动能把页面推出视口且回不来（放大后尤其容易），方向键
+  // 平移是离散步进、按几十下必然踩到。钳制放在 _panBy 里，拖动/惯性/方向键三条
+  // 平移路径共用同一条规则。
+  function _clampPan(){
+    if (ZOOM <= 1) return;
+    var minX = window.innerWidth * (1 - ZOOM);
+    if (PAN_X < minX) PAN_X = minX;
+    if (PAN_X > 0) PAN_X = 0;
+    if (!IS_WEBTOON) {
+      var minY = window.innerHeight * (1 - ZOOM);
+      if (PAN_Y < minY) PAN_Y = minY;
+      if (PAN_Y > 0) PAN_Y = 0;
+    }
+  }
   function _panBy(dx, dy){
     var canvasMoved = false;
     if (IS_WEBTOON) {
@@ -1032,8 +1069,17 @@ String _mangaGestureJs({
       if (dx) { PAN_X += dx; canvasMoved = true; }
       if (dy) { PAN_Y += dy; canvasMoved = true; }
     }
-    if (canvasMoved) _applyCanvas();
+    if (canvasMoved) { _clampPan(); _applyCanvas(); }
   }
+  // 方向键平移（Flutter 侧 ShortcutRegistry 驱动，见 MangaReaderInputAction.pan*）。
+  // 参数是**视口比例**而不是像素：同一步长在 1080p 和 4K 上手感一致。
+  // 符号按「视野怎么动」给（与滚动条直觉一致）：fx>0 = 视野右移，fy>0 = 视野下移；
+  // _panBy 的入参是「内容怎么动」，故取负。
+  // spread 模式在 ZOOM<=1 时整页已放得下，_panBy 自然 no-op（静默无效，不回落成翻页，
+  // 免得和翻页键语义打架）；webtoon 的上下平移恒等于滚动文档，任何倍率都有效。
+  window.__mangaPanBy = function(fx, fy){
+    _panBy(-window.innerWidth * fx, -window.innerHeight * fy);
+  };
   // 惯性：每秒衰减到 0.2%，低于 40px/s 停。阈值挡掉松手时的微抖动，
   // 否则每次抬手都会看到一小段无意的漂移。
   function _startFlick(vy){
@@ -1167,10 +1213,16 @@ String _mangaGestureJs({
         ax > ay && (ax >= 72 || (ax >= 36 && vel >= 900))) {
       var b = _bridge();
       if (!b) return;
-      // RTL：向左滑（dx<0）视觉上是「下一跨页」（往故事推进，左移露出左侧后续页）；
-      // LTR：向左滑是上一跨页。dir 语义统一为「页序方向」(+1 进 / -1 退)，由 Dart 端
-      // 依据已知阅读方向 clamp。这里只报方向：左滑 -> 'next'，右滑 -> 'prev'。
-      b.callHandler('onMangaTurn', dx < 0 ? 'next' : 'prev');
+      // swipe 跟手：拖动内容向左（dx<0）露出的是 strip **右边**那一跨页。右边是哪
+      // 一页取决于几何顺序——LTR 正序时右边是 next，RTL 倒序时右边是 prev（见文档
+      // 生成处的 spreadOrder）。所以必须按 IS_RTL 镜像，RTL 下「向右滑 = 下一页」，
+      // 与 Mihon 等 RTL 阅读器一致。
+      //
+      // 旧注释声称「dir 由 Dart 端依据阅读方向 clamp」——Dart 侧（_onMangaTurn）只有
+      // `next ? +1 : -1` 和边界钳位，从来没有方向 clamp，按那句推理必然推错。
+      var swipeRight = dx > 0;
+      b.callHandler('onMangaTurn',
+          (swipeRight === IS_RTL) ? 'next' : 'prev');
     } else if (ax < 20 && ay < 20 && el < 500) {
       _onTap(x, y);
     }
@@ -1271,29 +1323,51 @@ String _mangaGestureJs({
     e.preventDefault();
   }, {passive:false});
 
-  // Ctrl/Command + wheel：以指针为锚的**比例**缩放。
+  // Ctrl/Command + wheel：以指针为锚、**按 ZOOM_STEP 网格定量**的缩放。
   //
-  // 旧实现把 e.deltaY 只当符号用（恒 ±0.1 的加法步长），于是：① 触控板的高频小
-  // delta 与鼠标的一格大 delta 被同等对待；② 加法步长在高倍率下相对变化越来越小
-  // （1.9→2.0 只有 5.3%）。两者叠加就是用户说的「缩放极其不灵敏」。
-  // 现在按 delta 幅值走乘法缩放：一格标准滚轮（deltaY=100）≈ 22%，触控板的小 delta
-  // 按比例给小步长，任何倍率下手感一致。deltaMode 归一化后再算，否则「行/页」模式
-  // 的浏览器会得到完全不同的步长。
-  function _wheelSteps(e){
+  // 历史两版都不对：最早「e.deltaY 只当符号 + 恒 ±0.1 加法」，后改成按 delta 幅值的
+  // 乘法 exp(steps*0.2*SENS)。乘法版的毛病是**每格缩多少取决于本机 deltaY 的绝对值**：
+  // 注释假设一格 = 100，但 WebView2 在高 DPI 上根本不是 100（BUG-1065 实测 150% 缩放
+  // 机器一格只有 67），于是用户实测「一格约 112%」——既不是设计值 22%，也无法预期。
+  // 而右键菜单/设置滑块用的是 ±10 个百分点，同一个功能两套口径。
+  //
+  // 现在统一到菜单口径：一格滚轮 = 恰好一个 ZOOM_STEP 网格步，且目标值**对齐到网格**，
+  // 所以序列恒为 100→110→120…，而不是 100→112→125…；捏合留下的非整值也会被拉回网格。
+  // ZOOM_SENS 仍然管用（设置项承诺它覆盖滚轮），改为缩放**步长本身**而非指数底数。
+  var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));
+  // 「一格」的判定复用本文件翻页滚轮的同一套累计口径（阈值 40 + 反向清账，见下方
+  // BUG-051 段）：鼠标一格无论 deltaY 是 57/67/100 都 >=40，恒好一步；触控板的碎
+  // delta 攒够 40 才走一步。跨过阈值即清零、不留余数——留余数会让 deltaY=57 这类值
+  // 攒出 1,1,2,1,1,2 的非匀速台阶，正好毁掉「一格 = 10%」这个承诺。
+  var _zoomAccum = 0;
+  var _zoomDir = 0;
+  function _wheelZoomNotch(e){
     var dy = e.deltaY || 0;
     if (e.deltaMode === 1) dy *= 16;
     else if (e.deltaMode === 2) dy *= window.innerHeight;
-    // 单次事件封顶 4 格，防惯性滚动一帧糊上天。
-    return Math.max(-4, Math.min(4, -dy / 100));
+    if (dy === 0) return 0;
+    var dir = dy > 0 ? -1 : 1;
+    if (dir !== _zoomDir) { _zoomAccum = 0; _zoomDir = dir; }
+    _zoomAccum += Math.abs(dy);
+    if (_zoomAccum < 40) return 0;
+    _zoomAccum = 0;
+    return dir;
   }
   document.addEventListener('wheel', function(e){
     if (RESCAN) return;
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    var steps = _wheelSteps(e);
-    if (steps === 0) return;
-    _zoomAbout(ZOOM * Math.exp(steps * 0.2 * ZOOM_SENS), e.clientX, e.clientY);
+    var dir = _wheelZoomNotch(e);
+    if (dir === 0) return;
+    // 先把 ZOOM 化成保留 1 位小数的百分比再上下取整：ZOOM 是浮点，1.2 常存成
+    // 1.2000000000000002，直接 Math.ceil(120.00000000000003 / 10) 会得 13 而不是 12，
+    // 缩小一步就变成原地不动（_zoomAbout 的 0.0005 死区把它吃掉）。
+    var cur = Math.round(ZOOM * 1000) / 10;
+    var next = dir > 0
+      ? (Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP
+      : (Math.ceil(cur / ZOOM_STEP) - 1) * ZOOM_STEP;
+    _zoomAbout(next / 100, e.clientX, e.clientY);
   }, {passive:false});
 
   // ── 桌面鼠标滚轮翻页（仅 spread，BUG-051）──

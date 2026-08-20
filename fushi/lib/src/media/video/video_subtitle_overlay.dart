@@ -1462,11 +1462,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // MarginV 放在不同高度的同锚点 cue（标题 + 多行歌词）各就其位（TODO-1341 后续）。
     final double? scaledMarginV = forceTop ? null : _scaledMarginV(posMarkup);
     // ASS MarginL/MarginR（水平边距）缩放到显示尺寸：横移对白（说话人一侧）/ an7 左上
-    // 招牌的左缘偏移各就其位。强制置顶的纯 SRT 副字幕（posMarkup null）恒无边距。
+    // 招牌的左缘偏移各就其位。
+    //
+    // 这里读 [ownMarkup] 而**不是** [posMarkup]（BUG-1730 续）：posMarkup 在
+    // `forcedAnchor != null` 时被整个置 null，那是**竖直**强制锚定，却把水平排版盒
+    // 一起丢掉了 —— 于是底锚（默认，forcedAnchor==null）扣掉双侧 MarginL/R（常见
+    // 26~80px），顶锚反而一点不扣、换行宽度更大。用户报的「底部锚定才断行、顶部不断」
+    // 就是这条不对称。竖直方向（scaledMarginV / rawMarginV）必须继续走 posMarkup，
+    // 否则用户选的锚定会被 ASS MarginV 顶回去。
+    // respectAssStyle=false 时 ownMarkup 恒 null，纯字幕路径零行为变化。
     final double? scaledMarginL =
-        _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginL);
+        _scaledMarginX(ownMarkup, ownMarkup?.cueStyle?.marginL);
     final double? scaledMarginR =
-        _scaledMarginX(posMarkup, posMarkup?.cueStyle?.marginR);
+        _scaledMarginX(ownMarkup, ownMarkup?.cueStyle?.marginR);
     // 原始 MarginV（PlayRes 像素）：底部基线真相源 [resolveBottomBaseline] 要用它判断
     // 本组是否落在基线桶——与 [_positionKey] 的分组判据同一个量（BUG-1335）。
     final double? rawMarginV = forceTop ? null : posMarkup?.cueStyle?.marginV;
@@ -2596,6 +2604,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// ASS `MarginL`/`MarginR`（水平边距，PlayResX 像素）按 显示区宽 / PlayResX 缩放到显示
   /// 尺寸（与 [_scaledMarginV] 之于 PlayResY 同构）。缺 PlayResX 时回退 [_assFontScale]
   /// （等比视频两者相等）。无边距（null / <=0）返回 null。夹到 [0, 显示区宽] 防异常撑爆。
+  /// fit:contain 后视频内容矩形**单侧**黑边宽（pillarbox）。letterbox / 未知分辨率
+  /// 时为 0。字幕排版盒的水平可用区必须是视频内容矩形而不是整个容器，否则换行宽度
+  /// 会跟着窗口宽高比变（见 [_paddingFor] 的说明）。
+  double _pillarboxSideInset() {
+    final double? contentW = _lastVideoContentWidth;
+    final double? layoutW = _lastLayoutWidth;
+    if (contentW == null || layoutW == null) return 0;
+    final double bar = (layoutW - contentW) / 2;
+    return bar > 0 ? bar : 0;
+  }
+
   double? _scaledMarginX(SubtitleMarkup? markup, double? margin) {
     if (margin == null || margin <= 0) return null;
     final double? playResX = markup?.playResX;
@@ -2748,9 +2767,22 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
     // ASS MarginL/MarginR 水平边距：Align 内侧 padding 恰是 ASS 排版盒语义——居中对齐时
     // 盒宽 = 文本 + L + R、Align 居中该盒 → 文本中心右移 (L-R)/2；左/右对齐时文本起点 /
-    // 终点分别落在 L / 宽-R。无边距恒 0（srt/vtt 像素级不变）。
-    final double left = scaledMarginL ?? 0;
-    final double right = scaledMarginR ?? 0;
+    // 终点分别落在 L / 宽-R。无 ASS 边距时该项为 0。
+    //
+    // 再叠一层 pillarbox 侧边条（BUG-1730 续）：字号锚在**视频内容矩形高**
+    // （[_assFontScale]，与 mpv/libass 同口径），换行宽度此前却锚在**容器宽**，两者
+    // 不同源。pillarbox（窗口比视频扁，1080p 视频 + 带标题栏的窗口正是这一档）下
+    // 字号 ∝ 容器高、可用宽 ∝ 容器宽，于是换行容量 ∝ 窗口宽高比：同一句字幕在
+    // 1920×1048 窗口里放得下，最大化到 2560×1440（宽高比 1.832→1.778，容量少约 3%）
+    // 就被推过阈值多断一行——用户报的「窗口一最大化字幕排版就变」。
+    // 把黑边宽度算进左右 padding 后，可用宽 ∝ 视频内容宽，与字号同源，换行位置
+    // 对窗口尺寸恒定不变（与其它播放器一致）。letterbox 时侧边条为 0，零行为变化。
+    // 侧边条对 srt/vtt 同样施加（字幕本来就属于视频画面、不该排进黑边）：居中对齐
+    // 下视觉中心不动，只是换行宽度收窄到画面宽——pillarbox 下这是行为变化，不是
+    // 像素级不变，属于有意的口径修正。
+    final double sideBar = _pillarboxSideInset();
+    final double left = sideBar + (scaledMarginL ?? 0);
+    final double right = sideBar + (scaledMarginR ?? 0);
     return switch (v) {
       SubtitleVAlign.bottom => EdgeInsets.only(
           left: left,

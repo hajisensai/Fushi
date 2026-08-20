@@ -3621,5 +3621,11 @@
   "module_extension_label": "Browser extension",
   "onboarding_feature_books": "Novel library",
   "onboarding_feature_books_hint": "Read EPUB novels with dictionary lookup and audiobook sync",
-  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)"
+  "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)",
+  "shortcut_action_manga_pan_up": "Pan up",
+  "shortcut_action_manga_pan_down": "Pan down",
+  "shortcut_action_manga_pan_left": "Pan left",
+  "shortcut_action_manga_pan_right": "Pan right",
+  "drag_drop_folder_source_added": "Folder added as a library source and scanned.",
+  "drag_drop_folder_source_exists": "That folder is already a library source."
 }

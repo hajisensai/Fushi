@@ -32,6 +32,7 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
@@ -2057,7 +2058,15 @@ class _HomePageState extends BasePageState<HomePage>
               offstage: visible != tab,
               child: TickerMode(
                 enabled: visible == tab,
-                child: _buildTabContent(tab),
+                child: DropSurfaceScope(
+                  // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
+                  // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
+                  // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
+                  // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
+                  // 与「接拖放的那个」永远是同一个。
+                  isActive: () => _visibleTab == tab,
+                  child: _buildTabContent(tab),
+                ),
               ),
             ),
         // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。

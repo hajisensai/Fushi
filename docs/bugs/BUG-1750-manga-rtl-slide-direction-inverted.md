@@ -1,0 +1,14 @@
+## BUG-1750 · 漫画 RTL 翻页滑动动画方向与输入语义相反
+- **报告**：2026-08-20（用户：「The page slide animations are still inverted for Manga」）
+- **真实性**：✅ 真 bug。根因是**输入侧镜像了 RTL、视觉侧没镜像**，两者相反：
+  - 视觉：`fushi/lib/src/media/manga/manga_overlay_html.dart` 的 `__mangaApplyTranslate` 用 `-spread.offsetLeft` 定位，而 spread 按 spreadIndex 升序写进 DOM、根 strip 又写死 `#manga-root{...direction:ltr;}`，于是「下一跨页」恒在**右**边，前进恒为「画面左滑、新页从右进」——与 LTR 一致、与 RTL 相反。
+  - 输入：tap zone（`manga_overlay_html.dart` 的 `_tapZoneTurn`，`IS_RTL ? 'next' : 'prev'`）与方向键（`fushi/lib/src/shortcuts/manga_arrow_override.dart:33-43`，注释白纸黑字写「rtl：下一页在左 → 左键前进」）都已按 RTL 镜像。
+  - RTL 是**默认值**（`preferences_repository.dart` 的 `manga_reading_direction` 默认 `'rtl'`），所以默认配置下必现：按前进键，画面往后退的方向滑。
+  - **引入点** `cd4be252548`（2026-07-27，标题写的是 OCR）：原本 `direction:rtl` 加在根 strip 上（那时 RTL 滑动方向是对的），但 Chromium 把 RTL 起点偏移混进 `offsetLeft` 导致整组图片错位无法居中；那次为拿回稳定的 `offsetLeft` 把根 strip 钉死 LTR，**顺手把 RTL 的视觉翻页方向一起废掉了**，输入侧没跟着改。`040e583eac8`（PR#751）给 tap zone 加 `IS_RTL` 镜像，把矛盾坐实。
+  - swipe（`dx < 0 ? 'next' : 'prev'`）与滚轮翻页从未参与 RTL；其注释声称「由 Dart 端依据阅读方向 clamp」是**假的**——`_onMangaTurn` 只有 `next ? +1 : -1` 和边界钳位。
+- **[x] ① 已修复** — 保留 `direction:ltr`（那是 `offsetLeft` 稳定性的必要条件，不能回退），改成**按阅读方向倒序写入 DOM**：RTL 时 spread N 的 `offsetLeft` 变成 `(n-1-N)×100vw`，仍是稳定的 100vw 整数倍，但「下一跨页」落到左边，前进 = 画面右滑、新页从左进。`__mangaApplyTranslate` 用 `data-spread` 属性选择器定位，与 DOM 顺序无关，一行未改。同时把 swipe 判据改成 `(swipeRight === IS_RTL) ? 'next' : 'prev'`（RTL 下向右滑 = 下一页，与 Mihon 等 RTL 阅读器一致），并删掉那条撒谎的注释。滚轮翻页保持「下滚 = next」不镜像（方向无关的惯例）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_overlay_html_test.dart`：`spread RTL 的 strip 几何倒序：下一跨页在左，翻页动画方向才对`（三个 spread，断言 RTL 的 `data-spread` 顺序为 `[2,1,0]`、LTR 为 `[0,1,2]`，并复查两个方向都保持根 strip `direction:ltr`）+ `swipe 方向随 RTL 镜像，与 strip 几何同源`（正向断言新判据、反向断言写死的 `dx < 0 ? 'next' : 'prev'` 不再出现）。**已做变异测试**：把 `if (rtl)` 改成 `if (!rtl)` → 该用例红（`Expected: [2,1,0] Actual: [0,1,2]`），还原后文件 sha256 与变异前逐字节相同。
+- **备注**：
+  - 既有守卫 `spread RTL 只反转组内页序，根 strip 保持 LTR 稳定几何` **仍然通过**——本修复没有动 `direction:ltr`，只动了写入顺序。该守卫原先的措辞「DOM 顺序不变」只在单 spread 下成立，已改成明确指向「组内两页」。
+  - webtoon 不涉及（`rtl = !isWebtoon && ...`，纵向模式无 translateX 动画）。
+  - 未动的相邻问题：`MangaFushiPage.horizontalKeyTurn` 是死代码（全仓仅定义处一处命中，`d78d0274d3` 重构后调用方全改走 `resolveMangaArrowPageTurn`），留待清理。

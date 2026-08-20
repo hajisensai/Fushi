@@ -678,7 +678,9 @@ void main() {
         spreadDirection: 'rtl',
         inlineSelectionJs: '',
       );
-      // DOM 顺序不变，根 strip 保持 LTR；每个 spread 内部用 RTL 翻转双页。
+      // 同一个 spread 内部的两页 DOM 顺序不变（左右由 CSS direction 翻）；根 strip
+      // 保持 LTR，让 offsetLeft 恒为 100vw 的整数倍。跨 spread 的排列顺序另见
+      // 「spread RTL 的 strip 几何倒序」。
       expect(docRtl.indexOf('a.jpg') < docRtl.indexOf('b.jpg'), isTrue);
       expect(
           docRtl.contains('#manga-root{display:flex;flex-direction:row;'
@@ -695,6 +697,96 @@ void main() {
       );
       expect(docLtr.contains('justify-content:center;direction:ltr'), isTrue);
       expect(docLtr.contains('direction:rtl'), isFalse);
+    });
+
+    test('spread RTL 的 strip 几何倒序：下一跨页在左，翻页动画方向才对', () {
+      final MokuroImage page = _pageWithTwoBlocks();
+      List<int> spreadOrderOf(String doc) {
+        // 只取 spread 容器：每页的 .manga-page 也带 data-spread，混进来会得到
+        // [2,2,1,1,0,0] 这种成对序列。
+        final RegExp re = RegExp(r'class="manga-spread" data-spread="(\d+)"');
+        return re
+            .allMatches(doc)
+            .map((RegExpMatch m) => int.parse(m.group(1)!))
+            .toList();
+      }
+
+      final String docRtl = mangaWindowDocument(
+        <MokuroImage>[page, page, page],
+        <String>['a.jpg', 'b.jpg', 'c.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        pageSpreadIndices: const <int>[0, 1, 2],
+        inlineSelectionJs: '',
+      );
+      // RTL：spread 2 排在最左（offsetLeft 最小），所以「前进」= 画面向右滑、新页
+      // 从左边进——与 tap zone / 方向键早已按 RTL 镜像的输入语义一致。
+      // 修复前这里是 [0, 1, 2]：输入镜像了、视觉没镜像，按前进键画面往后退的方向滑。
+      expect(spreadOrderOf(docRtl), <int>[2, 1, 0]);
+
+      final String docLtr = mangaWindowDocument(
+        <MokuroImage>[page, page, page],
+        <String>['a.jpg', 'b.jpg', 'c.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'ltr',
+        pageSpreadIndices: const <int>[0, 1, 2],
+        inlineSelectionJs: '',
+      );
+      expect(spreadOrderOf(docLtr), <int>[0, 1, 2]);
+
+      // 两个方向都必须保持根 strip 的 LTR 几何：offsetLeft 得是稳定的 100vw 整数倍，
+      // 否则 __mangaApplyTranslate 的 -offsetLeft 口径失效（这正是当初钉死 LTR 的原因）。
+      for (final String doc in <String>[docRtl, docLtr]) {
+        expect(
+            doc.contains('#manga-root{display:flex;flex-direction:row;'
+                'direction:ltr;'),
+            isTrue);
+      }
+    });
+
+    test('swipe 方向随 RTL 镜像，与 strip 几何同源', () {
+      final MokuroImage page = _pageWithTwoBlocks();
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[page],
+        <String>['a.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+      );
+      // 拖动内容向左露出的是 strip 右边那一跨页；RTL 倒序后右边是 prev，所以判据
+      // 必须含 IS_RTL。修复前是写死的 `dx < 0 ? 'next' : 'prev'`。
+      expect(doc.contains("(swipeRight === IS_RTL) ? 'next' : 'prev'"), isTrue,
+          reason: 'swipe 必须按 IS_RTL 镜像，否则与倒序后的 strip 几何相反');
+      expect(doc.contains("dx < 0 ? 'next' : 'prev'"), isFalse,
+          reason: '不许再有不看阅读方向的写死 swipe 判据');
+    });
+
+    test('键盘平移导出 __mangaPanBy，且平移被钳制在视口内', () {
+      final MokuroImage page = _pageWithTwoBlocks();
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[page],
+        <String>['a.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+      );
+      // 视口比例入参 + 「视野怎么动」的符号（故 _panBy 取负）。
+      expect(doc.contains('window.__mangaPanBy = function(fx, fy){'), isTrue,
+          reason: '方向键平移要走导出的 JS 入口，而不是在 JS 里自己监听键盘');
+      expect(
+          doc.contains(
+              '_panBy(-window.innerWidth * fx, -window.innerHeight * fy);'),
+          isTrue);
+      // 钳制：PAN_X ∈ [vw*(1-ZOOM), 0]，spread 的 PAN_Y 同理。此前完全没有边界，
+      // 拖动/方向键能把页面推出视口且回不来。
+      expect(doc.contains('function _clampPan(){'), isTrue);
+      expect(
+          doc.contains('var minX = window.innerWidth * (1 - ZOOM);'), isTrue);
+      expect(doc.contains('if (canvasMoved) { _clampPan(); _applyCanvas(); }'),
+          isTrue,
+          reason: '拖动/惯性/方向键三条平移路径必须共用同一条钳制规则');
+      // ZOOM<=1 时位置归 _recenterPan 居中，钳制必须让路，否则缩小后页面被顶到左边。
+      expect(doc.contains('if (ZOOM <= 1) return;'), isTrue);
     });
 
     test('Lens regions render transparent character hit targets', () {
@@ -775,10 +867,34 @@ void main() {
       expect(doc.contains("callHandler('onMangaContextMenu'"), isTrue);
       expect(doc.contains("callHandler('onMangaZoomChanged'"), isTrue);
       expect(doc.contains('e.ctrlKey || e.metaKey'), isTrue);
-      // 滚轮缩放必须按 deltaY **幅值**做乘法缩放。旧实现只取符号、恒 ±0.1 加法步长
-      // （触控板与鼠标同等对待 + 高倍率下相对变化越来越小）＝「缩放极其不灵敏」。
-      expect(doc.contains('Math.exp(steps * 0.2 * ZOOM_SENS)'), isTrue,
-          reason: '滚轮缩放必须是按 delta 幅值的乘法缩放，不能是定长加法');
+      // 滚轮缩放必须是**对齐到 ZOOM_STEP 网格的定量步进**，与右键菜单的 ±10 个
+      // 百分点同口径。曾经用过按 delta 幅值的乘法 `Math.exp(steps * 0.2 * ZOOM_SENS)`，
+      // 那让「一格缩多少」取决于本机 deltaY 的绝对值（WebView2 高 DPI 上一格不是
+      // 100，BUG-1065 实测 67），用户实测一格约 112%、既非设计值也无法预期。
+      expect(
+          doc.contains(
+              'var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));'),
+          isTrue,
+          reason: '滚轮步长必须是 10 个百分点（乘灵敏度）的定量网格，不能是乘法缩放');
+      expect(doc.contains('Math.exp('), isFalse,
+          reason: '乘法指数缩放已废弃：一格缩多少不能取决于本机 deltaY 绝对值');
+      expect(
+          doc.contains('(Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP'), isTrue,
+          reason: '放大必须对齐到网格，否则捏合留下的非整值会一路歪下去');
+      expect(
+          doc.contains('(Math.ceil(cur / ZOOM_STEP) - 1) * ZOOM_STEP'), isTrue,
+          reason: '缩小必须对齐到网格');
+      expect(doc.contains('var cur = Math.round(ZOOM * 1000) / 10;'), isTrue,
+          reason: '必须先消掉浮点毛刺，否则 1.2000000000000002 缩小一步会原地不动');
+      // 「一格」的判定复用翻页滚轮的累计口径（阈值 40 + 反向清账）：鼠标一格无论
+      // deltaY 是 57/67/100 都 >=40 恒好一步，触控板碎 delta 攒够才走。
+      expect(doc.contains('if (_zoomAccum < 40) return 0;'), isTrue,
+          reason: '必须按累计位移判定一格，否则触控板碎 delta 要么失灵要么暴走');
+      expect(
+          doc.contains(
+              'if (dir !== _zoomDir) { _zoomAccum = 0; _zoomDir = dir; }'),
+          isTrue,
+          reason: '反向必须立刻清账，否则来回滚会被上一方向的余量吃掉');
       expect(doc.contains('e.deltaMode === 1'), isTrue,
           reason: 'deltaMode 必须归一化，否则行/页模式步长完全不同');
     });

@@ -3621,5 +3621,11 @@
   "module_extension_label": "浏览器扩展",
   "onboarding_feature_books": "小说库",
   "onboarding_feature_books_hint": "看小说（EPUB），查词与有声书同步",
-  "onboarding_feature_extension_hint": "网页查词（仅桌面）"
+  "onboarding_feature_extension_hint": "网页查词（仅桌面）",
+  "shortcut_action_manga_pan_up": "向上平移",
+  "shortcut_action_manga_pan_down": "向下平移",
+  "shortcut_action_manga_pan_left": "向左平移",
+  "shortcut_action_manga_pan_right": "向右平移",
+  "drag_drop_folder_source_added": "已把文件夹添加为来源并开始扫描",
+  "drag_drop_folder_source_exists": "该文件夹已经是来源了"
 }
