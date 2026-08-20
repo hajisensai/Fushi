@@ -615,7 +615,7 @@ class VideoControlLayout {
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
       VideoControlItem.settings: VideoControlSlot.screenRight,
-      // -- 自定义「快捷键 1..4」按钮：默认可见（未绑定也显示，点它就地配动作）。
+      // -- 自定义「快捷键 1..4」按钮：默认可见（未绑定时只露一个加号，点它就地配动作）。
       // 这条 assignment 同时是**老布局的解码兜底**：不列在这里，老用户升级后这几个
       // 按钮会被判成「用户移除过」而落进隐藏托盘，播放器上永远不出现。
       VideoControlItem.customAction1: VideoControlSlot.bottomRight,
@@ -656,12 +656,15 @@ class VideoControlLayout {
         VideoControlItem.volume,
         VideoControlItem.fullscreen,
         VideoControlItem.speed,
-        // 自定义「快捷键 1..4」按钮默认落底栏右区，**未绑定也显示**（用户拍板）。
+        // 自定义「快捷键 1..4」按钮默认落底栏右区。四个槽位都**在布局里**，但播放器上
+        // 只画「已绑的 + 第一个未绑的（加号）」——那条渲染门控在 `_shouldRenderControlItem`，
+        // 不在布局层：布局管「按钮在哪、什么顺序」，绑定管「画不画」，两件事不混在一起
+        // （否则解绑一个动作就得改写用户的布局 JSON，顺序还会跟着丢）。
         //
         // 必须写在 [currentChrome] 而不只是 [defaults]：老用户的持久化布局里没有这几个
         // 新枚举项，解码时按 `currentChrome.slotOf(item)` 兜底——不列在这里就会被判成
-        // 「用户移除过」而落进隐藏托盘，于是升级后**在播放器上永远看不到它们**，得先
-        // 翻进编辑器把它们拖出来才知道有这功能。空槽位点一下即弹动作选择器，不是死按钮。
+        // 「用户移除过」而落进隐藏托盘，于是升级后**连那个加号都看不到**，得先翻进
+        // 编辑器把它们拖出来才知道有这功能。加号点一下即弹动作选择器，不是死按钮。
         VideoControlItem.customAction1,
         VideoControlItem.customAction2,
         VideoControlItem.customAction3,

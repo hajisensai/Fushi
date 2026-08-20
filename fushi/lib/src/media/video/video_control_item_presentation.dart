@@ -61,15 +61,16 @@ String videoControlButtonLabel(VideoControlButton button) {
 ///
 /// [bindings] 只对自定义「快捷键 1..4」按钮有意义：它们没有固定图标，长相取决于用户
 /// 绑了哪个动作（用户拍板：按钮显示该动作的图标，一眼认得出，不用记住 1 是什么）。
-/// 不传 / 未绑定时退回通用的「快捷键」闪电图标——编辑器调色板里那个还没配动作的空槽位
-/// 正是这个样子。
+/// 不传 / 未绑定时退回**加号**——空槽位的唯一语义就是「点这里加一个动作」，播放器上
+/// 露出来的那个（[VideoCustomActionBindings.firstUnboundSlotIndex]）和编辑器调色板里
+/// 还没配动作的槽位都是这个样子。
 IconData videoControlItemIcon(
   VideoControlItem item, {
   VideoCustomActionBindings? bindings,
 }) {
   final int? slotIndex = item.customActionSlotIndex;
   if (slotIndex != null) {
-    return bindings?.actionAt(slotIndex)?.buttonIcon ?? Icons.bolt_outlined;
+    return bindings?.actionAt(slotIndex)?.buttonIcon ?? Icons.add;
   }
   final VideoControlButton? legacy = item.legacyButton;
   if (legacy != null) return videoControlButtonIcon(legacy);
@@ -130,7 +131,7 @@ IconData videoControlItemIcon(
     case VideoControlItem.customAction4:
       // 不可达：函数开头已按 [customActionSlotIndex] 解析并返回。保留分支只为让穷举
       // 检查继续生效——将来新增枚举项时仍然是「漏写即编译失败」。
-      return Icons.bolt_outlined;
+      return Icons.add;
   }
 }
 

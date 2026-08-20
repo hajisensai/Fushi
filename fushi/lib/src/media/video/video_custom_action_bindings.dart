@@ -19,8 +19,9 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 class VideoCustomActionBindings {
   const VideoCustomActionBindings._(this._actions);
 
-  /// 全空绑定（默认值）：4 个槽位都未绑定。按钮**照常显示**在控制条上，点任意一个
-  /// 即弹动作选择器就地配置（未绑定不等于不显示，见 `_shouldRenderControlItem`）。
+  /// 全空绑定（默认值）：4 个槽位都未绑定。控制条上此时只显示**一个**加号按钮
+  /// （[firstUnboundSlotIndex] 那个槽位），点它即弹动作选择器就地配置；其余空槽不
+  /// 占位，绑一个才露下一个（见 `_shouldRenderControlItem`）。
   static const VideoCustomActionBindings empty = VideoCustomActionBindings._(
     <ShortcutAction?>[null, null, null, null],
   );
@@ -44,6 +45,21 @@ class VideoCustomActionBindings {
 
   /// 是否一个槽位都没绑定（播放器据此完全跳过自定义按钮渲染）。
   bool get isEmpty => _actions.every((ShortcutAction? a) => a == null);
+
+  /// 序号最小的未绑定槽位；全绑满时为 null。
+  ///
+  /// 播放器上的「加号」就是它（用户拍板改口：之前 4 个空槽全摆在控制条上，一排一模
+  /// 一样的图标既占地方又看不出差别）。渲染规则因此收敛成一句话——**已绑的照常显示，
+  /// 未绑的只露这一个**：绑满 4 个就没有加号，一个没绑就只有一个加号。
+  ///
+  /// 判据只看绑定表、不看布局：一个纯函数就把「摆几个」定死，渲染层不必再维护
+  /// 「已经画过几个空槽了」这类跨按钮的计数状态（那正是特殊情况的温床）。
+  int? get firstUnboundSlotIndex {
+    for (int i = 0; i < slotCount; i++) {
+      if (_actions[i] == null) return i;
+    }
+    return null;
+  }
 
   /// 返回把槽位 [slotIndex] 改绑成 [action]（null = 解绑）后的新表。不可变对象，
   /// 原表不变——与 [VideoControlLayout] 的写法一致，调用方拿到新值后自行落盘。
