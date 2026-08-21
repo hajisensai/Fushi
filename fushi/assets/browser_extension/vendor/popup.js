@@ -519,6 +519,12 @@ function ensureGrammarTooltip() {
     if (!tooltip) {
         tooltip = el('div', { className: 'grammar-tooltip' });
         __fushiOverlayParent().appendChild(tooltip);
+        /* 浮层是 position:fixed 且挂在词条容器之外，唯一的隐藏入口原本只有标签自己的
+           mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
+           查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
+           行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。 */
+        document.addEventListener('scroll', hideGrammarTooltip, true);
+        document.addEventListener('pointerdown', hideGrammarTooltip, true);
     }
     return tooltip;
 }
@@ -555,6 +561,11 @@ function showGrammarTooltip(element) {
         /* 上方也放不下就维持在下方：宁可截断底部，也不要顶出视口外够不着。 */
         if (above >= margin) top = above;
     }
+    /* 「截断底部」必须真的只截底部：不 clamp 的话上下都放不下时 top 停在
+       anchor.bottom + 6，整块浮层落到视口外，用户悬停后什么也看不到——那不是截断，
+       是消失。先按底边收，再保证不越过上边（浮层比视口还高时贴顶、底部截断）。 */
+    top = Math.min(top, window.innerHeight - margin - box.height);
+    if (top < margin) top = margin;
 
     tooltip.style.left = left + 'px';
     tooltip.style.top = top + 'px';

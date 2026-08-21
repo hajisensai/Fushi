@@ -162,8 +162,11 @@ test("贴近底部的标签：浮层翻到上方", () => {
   assert.equal(tooltip.style.top, "394px");
 });
 
-test("上下都放不下时维持在下方，不顶出视口外", () => {
-  // 一枚比视口还高的锚点：上方 -6-120 < 8 放不下，只能维持在下方并截断。
+test("上下都放不下时贴住视口底、绝不整块落到视口外", () => {
+  // 一枚比视口还高的锚点：下方 anchor.bottom+6 已经超出视口，上方 -6-120 < 8 也放不下。
+  // 原实现此时把 top 停在 anchor.bottom + 6 = 视口高 + 6，整块浮层落在视口外——注释说
+  // 的是「宁可截断底部」，实际结果是用户悬停后什么也看不到。这条钉住「截断」而不是
+  // 「消失」：浮层顶边必须仍在视口内，且底边不越过下边距。
   const win = createPopup(rect(100, 0, 40, VIEWPORT_H));
   const tag = win.createDeinflectionTag({ name: "-て", description: "A" });
   win.document.body.appendChild(tag);
@@ -171,7 +174,36 @@ test("上下都放不下时维持在下方，不顶出视口外", () => {
   tag.onmouseenter.call(tag);
   const tooltip = win.document.querySelector(".grammar-tooltip");
 
-  assert.equal(tooltip.style.top, `${VIEWPORT_H + 6}px`);
+  const top = parseFloat(tooltip.style.top);
+  const height = tooltip.getBoundingClientRect().height;
+  assert.ok(top >= 8, `顶边越过上边距：top=${top}`);
+  assert.ok(
+    top + height <= VIEWPORT_H - 8,
+    `底边越出视口：top=${top} height=${height} viewport=${VIEWPORT_H}`,
+  );
+});
+
+test("浮层挂上后装了 scroll / pointerdown 捕获监听来收它", () => {
+  // 浮层是 position:fixed 且挂在词条容器之外，原本唯一的隐藏入口是标签自己的
+  // mouseleave：悬停着滚动列表，标签滚走而浮层钉在旧坐标；新一次查词把词条容器整个
+  // 重渲染掉时，被移除节点的 mouseleave 在各引擎行为不一致，浮层可能一直挂着。
+  const win = createPopup(rect(10, 10));
+  const seen = [];
+  const realAdd = win.document.addEventListener.bind(win.document);
+  win.document.addEventListener = (type, fn, capture) => {
+    seen.push(`${type}:${capture === true}`);
+    return realAdd(type, fn, capture);
+  };
+
+  const tag = win.createDeinflectionTag({ name: "-て", description: "A" });
+  win.document.body.appendChild(tag);
+  tag.onmouseenter.call(tag);
+
+  assert.ok(seen.includes("scroll:true"), `缺捕获阶段 scroll 监听：${seen}`);
+  assert.ok(
+    seen.includes("pointerdown:true"),
+    `缺捕获阶段 pointerdown 监听：${seen}`,
+  );
 });
 
 test("触屏（不能悬停）不显示浮层——否则没有 mouseleave 来收它", () => {
