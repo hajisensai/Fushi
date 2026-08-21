@@ -75,8 +75,17 @@ class FloatingLyricWindow {
 
   struct Style {
     double font_size = 20.0;
+    std::wstring font_family;
+    std::wstring font_path;
+    double letter_spacing = 0.0;
+    double line_height = 1.0;
+    bool bold = true;
+    int text_alignment = 0;  // 0 = center, 1 = leading.
     uint32_t text_color = 0xFFFFFFFF;
     uint32_t bg_color = 0xCC000000;
+    uint32_t outline_color = 0xE0000000;
+    double outline_width = 1.6;
+    double text_padding = 20.0;
     uint32_t button_text_color = 0xFFFFFFFF;
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
@@ -206,6 +215,7 @@ class FloatingLyricWindow {
   bool EnsureDeviceResources();
   void DiscardDeviceResources();
   bool EnsureTextResources();
+  void RebuildFontCollection();
   void Render();
   void RequestRender();
 
@@ -429,6 +439,9 @@ class FloatingLyricWindow {
   // Direct2D / DirectWrite.
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection> custom_font_collection_;
+  std::wstring resolved_font_family_ = L"Yu Gothic UI";
+  bool font_collection_dirty_ = true;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
   // 振假名用的小号 format（居中、不换行）。与 text_format_ 同生命周期：字号 /

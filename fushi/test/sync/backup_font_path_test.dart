@@ -162,6 +162,12 @@ void main() {
         ]),
       );
       await srcDb.setPref(
+        'src:reader_fushi:game_lookup_fonts',
+        jsonEncode(<Map<String, dynamic>>[
+          {'name': 'Klee One', 'path': bodyFontPath, 'enabled': true},
+        ]),
+      );
+      await srcDb.setPref(
         'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
@@ -186,6 +192,9 @@ void main() {
             ],
             'dict_fonts': <Map<String, dynamic>>[
               {'fontId': 'font_1', 'enabled': false},
+            ],
+            'game_lookup_fonts': <Map<String, dynamic>>[
+              {'fontId': 'font_1', 'enabled': true},
             ],
           },
         }),
@@ -270,6 +279,16 @@ void main() {
         reason: 'video subtitle font absolute path must not leak the source '
             'device root',
       );
+      final List<dynamic> gameLookup =
+          jsonDecode(prefs['src:reader_fushi:game_lookup_fonts']!)
+              as List<dynamic>;
+      expect((gameLookup[0] as Map)['path'], '${dstFontsDir.path}/Klee_1.ttf');
+      expect(
+        (gameLookup[0] as Map)['path'],
+        isNot(contains(srcFontsDir.path)),
+        reason: 'game lookup font absolute path must not leak the source '
+            'device root',
+      );
 
       final Map<String, dynamic> catalog =
           jsonDecode(prefs['src:reader_fushi:font_catalog']!)
@@ -291,6 +310,10 @@ void main() {
       final List<dynamic> dictRows = targetRows['dict_fonts'] as List<dynamic>;
       expect((dictRows.single as Map<dynamic, dynamic>)['fontId'], 'font_1');
       expect((dictRows.single as Map<dynamic, dynamic>)['enabled'], false);
+      final List<dynamic> gameRows =
+          targetRows['game_lookup_fonts'] as List<dynamic>;
+      expect((gameRows.single as Map<dynamic, dynamic>)['fontId'], 'font_1');
+      expect((gameRows.single as Map<dynamic, dynamic>)['enabled'], true);
     });
 
     test('legacy backup (no fontsRoot) imports without crashing', () async {

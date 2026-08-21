@@ -206,6 +206,7 @@ void main() {
       'app_ui_fonts',
       'dict_fonts',
       'video_sub_fonts',
+      'game_lookup_fonts',
     ]) {
       final String expected = dbSourcePrefKey('reader_fushi', body);
       expect(

@@ -5,8 +5,7 @@ import 'package:flutter/services.dart' show FontLoader;
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/models/font_decoder.dart';
 import 'package:fushi/src/models/woff2_decoder.dart';
-import 'package:fushi/src/reader/reader_settings.dart'
-    show ReaderCustomFontCss;
+import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
@@ -37,6 +36,49 @@ class AppFontLoader {
   /// Family names already registered this process. [FontLoader] cannot unload a
   /// family, so re-registering the same one is wasteful and pointless.
   static final Set<String> _loadedFamilies = <String>{};
+
+  /// Resolves the first font the Windows native DirectWrite overlay can use.
+  ///
+  /// System fonts carry only a family name. Imported fonts additionally carry
+  /// their canonical file path so the runner can build a private DirectWrite
+  /// font collection without installing the font globally. DirectWrite's local
+  /// file API accepts raw OpenType containers; WOFF/WOFF2 entries are therefore
+  /// skipped here and resolution continues to the next enabled entry (Flutter
+  /// targets still support them through [_resolveEntry]'s decoder).
+  ///
+  /// Returning a record keeps the MethodChannel boundary explicit and avoids
+  /// pretending a process-private Flutter [FontLoader] registration is visible
+  /// to the separate Win32 DirectWrite renderer.
+  static ({String family, String? path})? resolveForNativeOverlay(
+    List<Map<String, dynamic>> fonts, {
+    required Iterable<String> allowedDirectories,
+  }) {
+    final Set<String> allowedRoots = allowedDirectories
+        .where((String path) => path.isNotEmpty)
+        .map(p.canonicalize)
+        .toSet();
+    for (final Map<String, dynamic> font in fonts) {
+      if (!(font['enabled'] as bool? ?? true)) continue;
+      final String? rawName = font['name'] as String?;
+      if (rawName == null) continue;
+      final String family =
+          ReaderCustomFontCss.normalizedFontFamilyName(rawName);
+      if (family.isEmpty) continue;
+
+      final String? rawPath = font['path'] as String?;
+      if (rawPath == null) return (family: family, path: null);
+      if (!_directExtensions.contains(p.extension(rawPath).toLowerCase())) {
+        continue;
+      }
+      final String? safePath = ReaderCustomFontCss.safeFontPath(
+        rawPath,
+        allowedRoots: allowedRoots,
+      );
+      if (safePath == null || !File(safePath).existsSync()) continue;
+      return (family: family, path: safePath);
+    }
+    return null;
+  }
 
   /// Resolves the app-wide custom font from [fonts] (the `customFonts` list,
   /// each entry `{name, path, enabled}`), registering its file with the engine

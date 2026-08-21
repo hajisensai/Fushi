@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -657,6 +658,7 @@ class _CustomFontsPageState extends BasePageState {
     }
     await _settings!.refreshFromDb();
     await appModel.refreshAppFont();
+    await GalHookTextOverlayController.instance.applyFontFromSettings();
     ReaderFushiSource.onSettingsChangedLive?.call();
   }
 
@@ -1448,6 +1450,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         FontTarget.body => t.font_target_body,
         FontTarget.dictionary => t.font_target_dictionary,
         FontTarget.videoSubtitle => t.font_target_video_subtitle,
+        FontTarget.gameLookup => t.font_target_game_lookup,
       };
 
   /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
