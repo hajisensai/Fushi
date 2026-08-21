@@ -203,6 +203,69 @@ void main() {
     );
   });
 
+  test('search:前缀探测失败后必须能重试，不许一次失败就永久放弃', () async {
+    // 回归守卫：曾经用「_basePath 空串 + 一个 _basePathProbed 布尔」两份状态表示
+    // 一件事，而布尔在**开始尝试**时就置位 —— 于是根目录列不出来的那一次直接把
+    // 本会话的推断永久关掉，之后每次搜索拿到的目录都打不开、文件都下不了。
+    // 现在 _basePath 可空，只有真正得出结论才落值。
+    int listCalls = 0;
+    final AListDiscoverySource source = _source(
+      MockClient((http.Request request) async {
+        if (request.url.path == '/api/fs/list') {
+          listCalls++;
+          if (listCalls == 1) return http.Response('nope', 500); // 首次抖动
+          return _json(<String, dynamic>{
+            'code': 200,
+            'message': 'success',
+            'data': <String, dynamic>{
+              'content': <Map<String, dynamic>>[
+                <String, dynamic>{'name': '其他', 'is_dir': true, 'size': 0},
+              ],
+              'total': 1,
+            },
+          });
+        }
+        expect(request.url.path, '/api/fs/search');
+        return _json(<String, dynamic>{
+          'code': 200,
+          'message': 'success',
+          'data': <String, dynamic>{
+            'content': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'parent': '/guest/其他',
+                'name': 'ATRI.rar',
+                'is_dir': false,
+                'size': 1,
+              },
+            ],
+            'total': 1,
+          },
+        });
+      }),
+    );
+
+    const DiscoveryRequest req =
+        DiscoveryRequest(kind: DiscoveryMediaKind.game, query: 'ATRI');
+
+    final ProviderBatchResult<DiscoveryResultPage> first =
+        await source.search(req);
+    expect(
+      (first.items.single.entries.single as DiscoveryResourceItem).id,
+      '/guest/其他/ATRI.rar',
+      reason: '首次探测失败 → 退回不剥前缀的老行为，搜索本身照常成功',
+    );
+
+    final ProviderBatchResult<DiscoveryResultPage> second =
+        await source.search(req);
+    expect(
+      (second.items.single.entries.single as DiscoveryResourceItem).id,
+      '/其他/ATRI.rar',
+      reason: '第二次必须重新探测并剥掉 /guest；若这里仍是 /guest/... 说明又退回了'
+          '「一次失败即永久放弃」',
+    );
+    expect(listCalls, 2, reason: '第二次搜索必须真的再问一次根目录');
+  });
+
   test('resolvePayload 走 fs/get 取 raw_url', () async {
     final AListDiscoverySource source = _source(
       MockClient((http.Request request) async {

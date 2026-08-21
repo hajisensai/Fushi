@@ -17,4 +17,21 @@
 - **性能（附带修复，有实测数字）**：能量原先在选源与拼接两处**各算一遍**，每次都先把整段 `memcpy` 到新 `vector` 再扫描；`GrabUtterance` 全程持锁跑在 Flutter 平台线程上，收敛循环每行调 ~24 次，环上限 64MB。现在改成环上就地单遍扫描 + 结果缓存复用。微基准（1024 clips × 24 次 grab、环 64MB、MSVC /O2）：**968ms → 434ms，2.23×**。
   ⚠ 中途有一次**反向教训**：第一版把逐样本判断写成函数调用，挡住了自动向量化，实测 968ms → 1195ms（**慢 19%**）。是基准把它抓出来的，改成「格式分派在循环外 + 每种格式一条紧凑循环」后才有上面的 2.23×。没有基准就会把一次性能回归当成优化提交。
 - **验证**：native CTest x64 **33/33 通过**（`fushi_luna_symcheck` 除外——它依赖需要 .NET 8 的 `fushi_unity_audio_runtime`，本机只有 .NET SDK 6，是既有环境限制、与本改动无关）；x86 单独构建并运行 `fushi_voice_clip_energy_test` 通过；`ring_probe` x64 编译通过；Windows debug 全量构建通过（`√ Built`）；`flutter analyze` 零问题。
+- **合入 develop 时的代码审查留账**（都不阻断本条修复，未改动，记在这里免得丢）：
+  1. **float32 游戏只修了一半**：`voice_hook_reader.cpp` 的去静音仍只对 16-bit 非 float
+     生效，而本条修的正是 float32 游戏 —— 它们拿到的整句会保留首尾静音，`peak` 白算。
+     不是回归（旧代码更早就退化了），但「float32 体验」这条线还差这一段。
+  2. **能量预算前移可能吃掉部分性能收益**：`energies` 对**全部** valid clip 预计算，
+     而旧代码在 `excluded` 判断之前就 continue 掉被排除的源、`target_source != 0`
+     （手动选轨）时选源阶段根本不算能量。被排除的通常正是 BGM 这类大块源，64MB 环下
+     是实打实的新增扫描。968ms→434ms 的微基准未必覆盖 exclude 场景。建议只对未排除、
+     且 `target_source == 0` 时才填。
+  3. **覆盖判据抄了三份**：`ReadClipPcmLocked` / `ClipEnergyLocked` / `ring_probe.cpp`
+     各一份 `total_written - total_at_write > cap - len`。本条刚因为「手抄副本带偏排查」
+     把能量算法收进共享头，这条判据同理该一起收。
+  4. **`voice_clip_energy.h` 用 `reinterpret_cast` 读环上任意字节偏移**：注释已承认非
+     对齐，MSVC/x86 实践上没问题，但严格说是对齐 + 严格别名双重 UB。x86/x64 + MSVC
+     之外不要复用这个头。
+  5. `ring_probe.cpp` 的函数名仍叫 `ClipEnergy16`，语义已经格式无关，容易再次误导取证。
+
 - **备注**：**未做真机 E2E**——WA2 不在本机，无法在原始路径上验「显示台词 → 捕获对应语音 → 真卡写入」。按 `docs/agent/galgame-hooking.md` 的证据分级，本条修复的等级是**代码层根因修复 + 离线单测 + 双架构构建**，不构成对 Leaf/AQUAPLUS 引擎的任何支持声明，`engine-support.yaml` 未做任何状态提升。用户装好 WA2 后需回到原始启动路径复验：若「重复」消失即坐实 float32 分支；若仍在，则要用 `fushi_voice_ring_probe.exe <pid>` dump 环里的 `VoiceClip` 格式与 `source_ptr` 重新分型。

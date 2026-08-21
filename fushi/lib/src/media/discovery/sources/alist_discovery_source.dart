@@ -60,10 +60,13 @@ class AListDiscoverySource extends MediaDiscoverySource {
   /// 都回 `object not found` —— 搜索结果里的目录一个都打不开、文件一个都下不了。
   /// 实测：`/guest/其他/…/Leaf/WHITE ALBUM2` → 500 object not found；
   /// 剥掉 `/guest` 后 → 200，`fs/get` 拿到真实 `raw_url`。
-  String _basePath = '';
-
-  /// 反推过就置位：失败时退回不剥前缀（老行为），绝不因为这个附加推断让源不可用。
-  bool _basePathProbed = false;
+  /// null = 还没推断出结论（下次继续试）；`''` = 推断过、和搜索结果同命名空间、
+  /// 无需剥；`'/guest'` = 推断过、要剥这一段。
+  ///
+  /// 刻意用可空而不是「`''` + 一个 _basePathProbed 布尔」：那样 `''` 同时背着
+  /// 「没推断」和「推断出无需剥」两个意思，两份状态一旦不同步就会出现「一次探测
+  /// 失败即永久放弃」——而失败恰恰是最该重试的情形。合成一份就没有这个边界。
+  String? _basePath;
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
@@ -255,12 +258,14 @@ class AListDiscoverySource extends MediaDiscoverySource {
   /// 结果是每次首搜先白等一个连接超时，然后照样拿不到前缀——比不做还差。
   /// 这里改成只依赖已有链路，且推断失败就退回「不剥前缀」的老行为。
   Future<void> _ensureBasePath(Iterable<String> sampleParents) async {
-    if (_basePathProbed) return;
+    if (_basePath != null) return;
     final List<String> samples = sampleParents
         .where((String p) => p.startsWith('/') && p.length > 1)
         .toList(growable: false);
     if (samples.isEmpty) return; // 没样本，下次再推
-    _basePathProbed = true;
+    // 注意：这里不做任何「已尝试」标记。下面每条不产生结论的出口（根目录列不出、
+    // 样本一个都对不上、网络异常）都必须让 _basePath 保持 null，否则本会话再也
+    // 不会重推，而搜索结果的目录会一直打不开。只有两个 return 才算有结论。
     try {
       final Map<String, dynamic> data =
           await _post('/api/fs/list', <String, dynamic>{
@@ -300,7 +305,7 @@ class AListDiscoverySource extends MediaDiscoverySource {
   /// 把 search 返回的、带 [_basePath] 前缀的路径转成 `fs/list`/`fs/get` 能用的路径。
   /// 不带该前缀的路径原样返回（站点未启用用户根，或已是相对路径）。
   String _stripBasePath(String path) {
-    final String base = _basePath;
+    final String base = _basePath ?? '';
     if (base.isEmpty) return path;
     if (path == base) return '/';
     if (path.startsWith('$base/')) {
