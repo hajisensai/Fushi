@@ -299,7 +299,8 @@ extension _VideoEpisode on _VideoFushiPageState {
               // 必须跟 visible 边沿走而非挂载。
               child: PanelFocusScope(
                 visible: visible,
-                restoreFocus: _videoFocusNode,
+                restoreFocus: () =>
+                    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
                 child: VideoEpisodePanel(
                   key: const ValueKey<String>('video-episode-panel'),
                   episodes: _episodePanelEntries(),

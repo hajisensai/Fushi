@@ -18,7 +18,7 @@ void main() {
             Focus(focusNode: hostNode, child: const SizedBox(height: 10)),
             PanelFocusScope(
               visible: visible,
-              restoreFocus: hostNode,
+              restoreFocus: hostNode.requestFocus,
               child: Column(
                 children: <Widget>[
                   TextButton(
@@ -94,7 +94,7 @@ void main() {
               if (mounted)
                 PanelFocusScope(
                   visible: true,
-                  restoreFocus: hostNode,
+                  restoreFocus: hostNode.requestFocus,
                   child: TextButton(
                     key: const Key('panel-row-1'),
                     onPressed: () {},

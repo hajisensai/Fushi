@@ -456,10 +456,16 @@ class ShortcutDefaults {
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立
     // co-active 组，与任何页面键位不冲突。
-    // 手柄默认（P2）：dpad 下/上 = 下/上一个词条。执行链是 GamepadService 的弹窗
-    // 兜底（页面 Actions 未消费 → resolveGamepad(dictionaryPopup) → 钩子调 JS），
-    // **页面专属键永远优先**：视频页 dpad 上下被音量占用，弹窗里照旧调音量——那是
-    // 有意让位（视频弹窗导航走字幕选字光标），不要为此给弹窗改绑更冲的键。
+    // 手柄默认（P2）：dpad 下/上 = 下/上一个词条。执行链有两条，缺一不可：
+    //   * GamepadService 的弹窗兜底（页面 Actions 未消费 → resolveGamepad
+    //     (dictionaryPopup) → 钩子调 JS），管的是页面**没绑**这个键的场合；
+    //   * 宿主页面在自己的上下文路由里给弹窗的那一次消费机会——视频页在
+    //     BUG-924「已绑键关浮层」之前、阅读器在 caret 之后 reader scope 之前。
+    // 只有第一条时，dpad 上下 / X / Y 在 video 和 reader+audiobook scope 全都已被
+    // 占用（音量 / 上下条字幕 / 上下句 / 收起书页 chrome），页面先消费 ⇒ 这四个弹窗
+    // 默认绑定在两个最主要的宿主里结构性不可达（设置里能配、按了没反应）。
+    // 唯一有意让位的是阅读器 caret 激活期的 dpad 四向：方向键移动字级光标去选词，
+    // 是查词的操作方式本身，不能让给词条翻页。
     ShortcutAction.popupNextEntry: const ShortcutBindingSet(
       wheelBindings: <WheelBinding>[
         WheelBinding(WheelDirection.down, modifiers: {ModifierKey.alt}),

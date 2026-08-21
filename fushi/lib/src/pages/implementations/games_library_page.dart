@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
@@ -1645,15 +1646,27 @@ class _GameCard extends StatelessWidget {
     // 浮层 + hover 放大 + 主色选中环，全部由共享组件 [GalgamePosterCard] 负责。
     // focusId 沿用 `game-card-<id>`（手柄/键盘可 requestById 聚焦，focus 测试守）。
     //
-    // 手柄重设计 P4：卡片聚焦时 Y = 打开详情（A=启动、长按 A=上下文菜单在
-    // GalgamePosterCard 内）。用 isEnabled 门控而非 CallbackAction 返回 false——
-    // Actions 停在第一个 **enabled** 的 action，返回 false 仍会终止向上查找，
-    // 把 home scope 的 LT/RT 换 tab 等外层解析静默吞掉（settings_shared /
-    // adaptive_navigation 同款既定模式）。
+    // 手柄重设计 P4：卡片聚焦时 X = 打开详情（A=启动、长按 A=上下文菜单在
+    // GalgamePosterCard 内）。非 X 的按钮必须**显式转发**给祖先 Actions（home 的
+    // LT/RT 换 tab、Y 搜索都注册在那里）——覆写 isEnabled 做不到这件事：
+    // Actions.maybeInvoke 的上溯停止条件是「本层注册了这个 Intent 类型没有」，
+    // 与 enabled 无关，详见 [GamepadButtonForwardingAction] 的类文档。
+    //
+    // 用 X 不用 Y：游戏库是 home tab，与 home scope 同 co-active 组，而 Y 在那里
+    // 已经绑给了注册表动作 homeFocusSearch（shortcut_defaults）。卡片聚焦时抢 Y
+    // 就是把一个**可配置、设置页里看得见**的动作静默吞掉——而游戏库里焦点几乎总
+    // 在某张卡上，等于该 tab 里 Y=搜索永久失效。home 组的手柄默认只占 LT/RT/Y，
+    // X 是空的；X 的其它绑定都在 reader / video / dictionaryPopup 组，不同组不同
+    // 时激活，无遮蔽。
     return Actions(
       actions: <Type, Action<Intent>>{
-        GamepadButtonIntent: _GameCardDetailGamepadAction(
-          onDetail: onDetail,
+        GamepadButtonIntent: GamepadButtonForwardingAction(
+          ancestorContext: context,
+          handle: (GamepadButton button) {
+            if (button != GamepadButton.x) return false;
+            onDetail();
+            return true;
+          },
         ),
       },
       child: GalgamePosterCard(
@@ -1729,25 +1742,5 @@ class GameCoverThumb extends StatelessWidget {
       return ShelfFileCover(path: cover, placeholder: placeholder);
     }
     return placeholder;
-  }
-}
-
-/// 手柄重设计 P4：游戏卡聚焦时 Y = 打开详情。用 [isEnabled] 只认 Y——其余按钮
-/// 保持 disabled，Actions 查找继续向上冒泡（home scope 的 LT/RT 换 tab 等外层
-/// 解析不被遮蔽；这是 settings_shared / adaptive_navigation 的既定放行模式，
-/// CallbackAction 返回 false 做不到——它恒 enabled，查找到它就停）。
-class _GameCardDetailGamepadAction extends Action<GamepadButtonIntent> {
-  _GameCardDetailGamepadAction({required this.onDetail});
-
-  final VoidCallback onDetail;
-
-  @override
-  bool isEnabled(GamepadButtonIntent intent) =>
-      intent.button == GamepadButton.y;
-
-  @override
-  Object? invoke(GamepadButtonIntent intent) {
-    onDetail();
-    return true;
   }
 }

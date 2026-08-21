@@ -107,7 +107,11 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
 import 'package:fushi/src/shortcuts/shortcut_registry.dart'
     show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
+    show
+        GamepadButtonIntent,
+        GamepadLongPressIntent,
+        focusedEditableText,
+        tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';

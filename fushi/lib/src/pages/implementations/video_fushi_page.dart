@@ -92,7 +92,11 @@ import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface, DictionaryCaretController, DictionaryCaretHost;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
+    show
+        GamepadButtonIntent,
+        GamepadLongPressIntent,
+        focusedEditableText,
+        tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
@@ -3761,6 +3765,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (cause != FocusReclaimCause.popupDismissed && _hasVisiblePopup) {
       return false;
     }
+    // 手柄重设计 P3：可导航浮层面板（剧集轨 / 字幕列表 / 侧栏）打开期间焦点归
+    // PanelFocusScope 所有，页面不抢。少了这一条就是纯回归：字幕列表是 push-aside，
+    // 视频区全程可点，用户点一下画面（reclaim(gesture)）或从字幕行查完词关浮层
+    // （reclaim(popupDismissed)）焦点就被拽回页面节点，而 PanelFocusScope 只在
+    // visible 边沿认领一次、不复领 ⇒ 面板仍开着，_handleVideoGamepadButton 继续让
+    // dpad/A 给焦点兜底，于是 dpad 既进不了面板、也不再调音量/seek —— 比 P3 之前
+    // 更差（之前至少还能调音量）。面板关闭时通知先翻假，归还路径不受影响。
+    if (_videoNavigablePanelOpen) return false;
     // 生命周期回前台是全局回调，本页上方可能压着设置对话框 / 菜单 / 导入遮罩
     // （键盘所有者路由：窗口模式=本页路由，全屏期间=全屏路由）。此时抢焦点会
     // 夺走对话框的键盘（Never break userspace）——那些覆盖层各自的 guardOverlay
@@ -4765,6 +4777,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
     // （焦点移动等），不误吞导航。
     if (_hasVisiblePopup) {
+      // 手柄重设计 P2：先给浮层自己的 dictionaryPopup 绑定一次消费机会，再落到上面
+      // 那条「已绑键 = 关浮层」。少了这一步，dpad 上下 / X / Y 在 video scope 全都
+      // 有绑定（音量 / 上下条字幕），于是 P2 的词条导航 / 制卡 / 发音四个默认绑定在
+      // 视频页**结构性不可达**——GamepadService 的弹窗兜底排在页面 Actions 之后，
+      // 这里已经 return true 了，永远轮不到。设置里能配、按了没反应正是要禁的形态。
+      // B 不在 dictionaryPopup 绑定里，逐级退出关浮层的行为不变。
+      if (tryDictionaryPopupGamepadButton(appModel.shortcutRegistry, button)) {
+        return true;
+      }
       _dismissTopVisiblePopup();
       return true;
     }

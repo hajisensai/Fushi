@@ -1439,7 +1439,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                       // 还给页面焦点——D-pad 才能在 cue 行间移动。
                       PanelFocusScope(
                         visible: true,
-                        restoreFocus: _videoFocusNode,
+                        restoreFocus: () => _focusOwnership
+                            .reclaim(FocusReclaimCause.overlayClosed),
                         child: SafeArea(
                           left: false,
                           // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）

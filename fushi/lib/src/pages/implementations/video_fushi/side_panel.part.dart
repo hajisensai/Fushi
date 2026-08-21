@@ -139,7 +139,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
           // 焦点——D-pad 才能在速度/设置/章节/画质行间移动。
           final Widget panelContent = PanelFocusScope(
             visible: true,
-            restoreFocus: _videoFocusNode,
+            restoreFocus: () =>
+                _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
             child: _buildVideoSidePanelContent(
               panelState,
               controller,

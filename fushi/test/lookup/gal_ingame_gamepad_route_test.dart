@@ -145,14 +145,62 @@ void main() {
       expect(glw.contains('window.__globalLookupHost.gamepadAction('), isTrue);
     });
 
-    test('gal 控制器：会话 start 登记独占路由、stop 清除', () {
+    test('gal 控制器：独占谓词必须带前台门，route 作废必须无条件', () {
       final String code = maskComments(
           File('lib/src/lookup/gal_ingame_lookup_controller.dart')
               .readAsStringSync());
       expect(code.contains('GalIngameLookupGamepadRoute.set('), isTrue);
-      expect(code.contains('GalIngameLookupGamepadRoute.set(null);'), isTrue,
-          reason: '会话结束不清路由 = 手柄永久被吞');
       expect(code.contains("_dispatchGamepadAction('mine')"), isTrue);
+
+      // 独占的**前提**是「游戏在前台、app 在后台，手柄输入属于游戏那一侧」。少了
+      // 前台门，用户在游戏里查了词、不 dismiss 直接 Alt-Tab 回 Fushi，卡片仍活着
+      // ⇒ app 内按钮 / 左摇杆 / 长按被全吞，连 B 都吞，没有任何出路。
+      //
+      // 注意这里**不**守「会话结束清路由」：那条不变式其实由
+      // GalIngameLookupGamepadRoute.current 的可见性过滤兜住，而按字面去守
+      // `set(null);` 会匹配到 @visibleForTesting 的 stopForTesting —— 守卫看着绿，
+      // 一天都没守住东西。
+      final int hookIdx = code.indexOf('GalIngameLookupGamepadRoute.set(');
+      final String predicate =
+          code.substring(hookIdx, code.indexOf('));', hookIdx));
+      expect(
+        predicate.contains(
+            'DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()'),
+        isTrue,
+        reason: '独占谓词缺前台门 = Alt-Tab 回 app 后手柄全哑，B 也退不出去',
+      );
+
+      // hide() 是尽力而为的视觉收尾（WebView2 崩溃 / 窗口已销毁会抛）；作废 route 是
+      // 账本，必须无条件发生。写在 await 之后就会被跳过，_activeRoute 残留非空 ⇒
+      // 本会话剩余时间手柄被全吞。
+      final int hideIdx =
+          code.indexOf('Future<void> _hideThenInvalidateRoute(');
+      expect(hideIdx, greaterThan(0));
+      final String lineBreakBrace = '${String.fromCharCode(10)}  }';
+      final String hideBodyText =
+          code.substring(hideIdx, code.indexOf(lineBreakBrace, hideIdx));
+      expect(
+        hideBodyText.contains('} finally {'),
+        isTrue,
+        reason: 'hide() 抛出时 route 作废被跳过 = 手柄本会话全吞',
+      );
+    });
+
+    test('gal 卡片 host：gamepadAction 必须触发重采，否则游戏里画面不动', () {
+      final String js = maskJsComments(
+          File('assets/popup/global_lookup_host.js').readAsStringSync());
+      final int idx = js.indexOf('function gamepadAction(');
+      expect(idx, greaterThan(0));
+      final String jsBody =
+          js.substring(idx, js.indexOf('${String.fromCharCode(10)}  }', idx));
+      // 卡片 blit 进游戏 Layer，requestGalFrameDirty 是唯一重采触发；滚动不是 DOM
+      // mutation，observeGalFrameDirty 的 MutationObserver 看不见它。缺这一句 =
+      // 右摇杆滚卡片在游戏里 100% 无变化（handleGlobalWheel 同理，它补了）。
+      expect(
+        jsBody.contains('requestGalFrameDirty('),
+        isTrue,
+        reason: 'gamepadAction 不触发重采 = 右摇杆滚动在游戏里看不到任何变化',
+      );
     });
   });
 }

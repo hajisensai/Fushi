@@ -2512,37 +2512,47 @@
     if (!win) {
       return false;
     }
+    // 卡片是离屏渲染后 blit 进游戏 Layer 的，requestGalFrameDirty 是唯一的重采触发。
+    // observeGalFrameDirty 的 MutationObserver 只看 childList/subtree/attributes/
+    // characterData —— **滚动不是 DOM mutation**，所以右摇杆滚卡片不补这一句在游戏里
+    // 画面纹丝不动；词条切换的「滚进视口」分量同理，光靠 class 变更那次 dirty 的
+    // double-rAF 恰好晚于滚动落定并不保证。handleGlobalWheel 正因为这个在派发完
+    // wheel 之后也显式调了同一句（见该函数末尾）。
+    var acted = false;
     try {
       if (action === 'next' || action === 'prev') {
-        return typeof win.fushiFocusDictionaryEntryMove === 'function' &&
+        acted = typeof win.fushiFocusDictionaryEntryMove === 'function' &&
             win.fushiFocusDictionaryEntryMove(action) === 'moved';
-      }
-      if (action === 'mine') {
-        if (typeof win.fushiPopupMineFirstEntry !== 'function') return false;
-        win.fushiPopupMineFirstEntry();
-        return true;
-      }
-      if (action === 'audio') {
-        if (typeof win.fushiPopupPlayFirstAudio !== 'function') return false;
-        win.fushiPopupPlayFirstAudio();
-        return true;
-      }
-      if (action === 'scroll') {
+      } else if (action === 'mine') {
+        if (typeof win.fushiPopupMineFirstEntry === 'function') {
+          win.fushiPopupMineFirstEntry();
+          acted = true;
+        }
+      } else if (action === 'audio') {
+        if (typeof win.fushiPopupPlayFirstAudio === 'function') {
+          win.fushiPopupPlayFirstAudio();
+          acted = true;
+        }
+      } else if (action === 'scroll') {
         if (typeof win.fushiPopupScrollBy === 'function') {
           win.fushiPopupScrollBy(dy || 0);
-          return true;
-        }
-        var el = win.document &&
-            (win.document.scrollingElement || win.document.documentElement);
-        if (el && typeof el.scrollBy === 'function') {
-          el.scrollBy(0, dy || 0);
-          return true;
+          acted = true;
+        } else {
+          var el = win.document &&
+              (win.document.scrollingElement || win.document.documentElement);
+          if (el && typeof el.scrollBy === 'function') {
+            el.scrollBy(0, dy || 0);
+            acted = true;
+          }
         }
       }
     } catch (e) {
       return false;
     }
-    return false;
+    if (acted) {
+      requestGalFrameDirty(record.route);
+    }
+    return acted;
   }
 
   // 剪贴板面板：把 ROOT 帧的滚动位置复位到顶部。面板的 root iframe 是**复用**的
