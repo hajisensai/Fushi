@@ -54,6 +54,7 @@ void main() {
               romaji: 'Frieren',
               native: '葬送のフリーレン',
               coverUrl: 'https://x/c.png',
+              format: 'TV',
             ),
           ),
         ],
@@ -71,6 +72,9 @@ void main() {
       expect(episode.media.displayTitle, 'Frieren');
       expect(episode.media.native, '葬送のフリーレン');
       expect(episode.media.coverUrl, 'https://x/c.png');
+      expect(episode.media.format, 'TV',
+          reason: 'format 参与 movie/tv 归类（日历条目直达发现详情页），'
+              '缓存丢字段会让剧场版被当成剧集');
     });
 
     test('misses on mismatched signature', () {

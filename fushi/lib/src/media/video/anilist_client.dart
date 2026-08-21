@@ -13,6 +13,7 @@ class AniListMedia {
     this.coverUrl,
     this.episodes,
     this.seasonYear,
+    this.format,
   });
 
   /// AniList 媒体 id（用于到 Jimaku 按 anilist_id 查字幕）。
@@ -29,6 +30,10 @@ class AniListMedia {
 
   /// 放送年份（未知为 null），搜番消歧显示用。
   final int? seasonYear;
+
+  /// AniList MediaFormat 原文（TV/TV_SHORT/MOVIE/SPECIAL/OVA/ONA/MUSIC）；
+  /// 只有放送日历查询取这个字段（movie/tv 归类用），搜索路径为 null。
+  final String? format;
 
   /// 菜单显示用标题：优先罗马字 → 英文 → 日文 → id。
   String get displayTitle => (romaji?.isNotEmpty ?? false)
@@ -226,6 +231,8 @@ AniListAiringPage parseAniListAiringResponse(String body) {
           seasonYear: m is Map && m['seasonYear'] is int
               ? m['seasonYear'] as int
               : null,
+          format:
+              m is Map && m['format'] is String ? m['format'] as String : null,
         ),
       ));
     }
@@ -300,6 +307,7 @@ query ($from: Int, $to: Int, $ids: [Int], $page: Int) {
         coverImage { large }
         episodes
         seasonYear
+        format
       }
     }
   }
