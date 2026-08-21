@@ -105,6 +105,15 @@ add_executable(fushi_voice_clip_energy_test
 target_include_directories(fushi_voice_clip_energy_test PRIVATE "include")
 add_test(NAME fushi_voice_clip_energy_test COMMAND fushi_voice_clip_energy_test)
 
+add_executable(fushi_xaudio_source_format_test
+  "tests/xaudio_source_format_test.cpp"
+)
+target_include_directories(fushi_xaudio_source_format_test PRIVATE "hook")
+target_compile_definitions(fushi_xaudio_source_format_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_xaudio_source_format_test
+  COMMAND fushi_xaudio_source_format_test)
+
 add_executable(fushi_voice_resource_filename_test
   "tests/voice_resource_filename_test.cpp"
 )

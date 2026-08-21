@@ -164,6 +164,10 @@ constexpr uint32_t kDiagElfAi6ArcReadObserved = 0x04000000u;
 constexpr uint32_t kDiagElfAi6ArcOggObserved = 0x08000000u;
 constexpr uint32_t kDiagElfAi6ArcVoiceQueued = 0x10000000u;
 constexpr uint32_t kDiagElfAi6ArcTaskRejected = 0x20000000u;
+// XAudio2 可直接接收 Microsoft ADPCM，由引擎内部解码。4-bit 源不能冒充 PCM 写共享环；
+// hook 回调只复制进有界队列，工作线程解码成 16-bit PCM 后再发布。
+constexpr uint32_t kDiagXAudioAdpcmObserved = 0x40000000u;
+constexpr uint32_t kDiagXAudioAdpcmPcmCaptured = 0x80000000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM

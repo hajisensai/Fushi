@@ -1,4 +1,221 @@
 // P1 zero-behaviour-change split: included inside dll_main.cpp anonymous namespace.
+// XAudio2 source voice 的格式按对象保存：同一游戏可同时创建 PCM、float 与 ADPCM voice，不能再
+// 用「首个格式」解释所有 source。ADPCM 的 Submit 回调只抢一个预分配槽并 memcpy；解码、切
+// PlayBegin/PlayLength 和发布 PCM 全部留给 HookWorker 的 Poll。
+fushi_voice_hook::XAudioSourceFormatRegistry<512> g_xaudio_formats;
+
+constexpr size_t kXAudioAdpcmJobCount = 4;
+constexpr uint32_t kMaxXAudioAdpcmJobBytes = 8u * 1024u * 1024u;
+struct XAudioAdpcmJob {
+  volatile LONG state = 0;  // 0=free, 1=writing, 2=ready, 3=processing
+  uint8_t* encoded = nullptr;
+  uint32_t encoded_bytes = 0;
+  uint32_t play_begin = 0;
+  uint32_t play_length = 0;
+  uint64_t source_ptr = 0;
+  uint64_t submit_timestamp_ms = 0;
+  uint64_t timestamp_ms = 0;
+  fushi_voice_hook::XAudioSourceFormat format;
+};
+XAudioAdpcmJob g_xaudio_adpcm_jobs[kXAudioAdpcmJobCount];
+volatile LONG g_xaudio_adpcm_queue_initialized = 0;
+
+// SGRE preloads hundreds of one-shot ADPCM voices many seconds before Start.
+// Decode promptly so the four callback-copy slots stay available, but publish
+// VoiceClip only after the corresponding SourceVoice::Start supplies the real
+// playback boundary used by Luna text pairing.
+constexpr size_t kPendingXAudioClipCount = 1024;
+constexpr uint64_t kPendingXAudioClipMaxAgeMs = 60000;
+struct PendingXAudioClip {
+  bool occupied = false;  // HookWorker is the sole reader/writer.
+  uint32_t ring_offset = 0;
+  uint32_t byte_len = 0;
+  uint32_t sample_rate = 0;
+  uint32_t channels = 0;
+  uint64_t source_ptr = 0;
+  uint64_t submit_timestamp_ms = 0;
+  uint64_t total_at_write = 0;
+};
+PendingXAudioClip g_pending_xaudio_clips[kPendingXAudioClipCount];
+
+bool InitializeXAudioAdpcmQueue() {
+  if (InterlockedCompareExchange(&g_xaudio_adpcm_queue_initialized, 1, 0) !=
+      0) {
+    return true;
+  }
+  for (XAudioAdpcmJob& job : g_xaudio_adpcm_jobs) {
+    job.encoded = static_cast<uint8_t*>(VirtualAlloc(
+        nullptr, kMaxXAudioAdpcmJobBytes, MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE));
+    if (job.encoded == nullptr) {
+      for (XAudioAdpcmJob& allocated : g_xaudio_adpcm_jobs) {
+        if (allocated.encoded != nullptr) {
+          VirtualFree(allocated.encoded, 0, MEM_RELEASE);
+          allocated.encoded = nullptr;
+        }
+      }
+      InterlockedExchange(&g_xaudio_adpcm_queue_initialized, 0);
+      return false;
+    }
+  }
+  return true;
+}
+
+void ShutdownXAudioAdpcmQueue() {
+  if (InterlockedExchange(&g_xaudio_adpcm_queue_initialized, 0) == 0) return;
+  for (XAudioAdpcmJob& job : g_xaudio_adpcm_jobs) {
+    if (job.encoded != nullptr) {
+      VirtualFree(job.encoded, 0, MEM_RELEASE);
+      job.encoded = nullptr;
+    }
+    InterlockedExchange(&job.state, 0);
+  }
+}
+
+bool EnqueueXAudioAdpcmJob(
+    uint64_t source_ptr, const fushi_voice_hook::XAudioSourceFormat& format,
+    const XAUDIO2_BUFFER* buffer) {
+  if (buffer == nullptr || buffer->pAudioData == nullptr ||
+      buffer->AudioBytes == 0 ||
+      buffer->AudioBytes > kMaxXAudioAdpcmJobBytes ||
+      InterlockedCompareExchange(&g_xaudio_adpcm_queue_initialized, 0, 0) ==
+          0) {
+    return false;
+  }
+  for (XAudioAdpcmJob& job : g_xaudio_adpcm_jobs) {
+    if (InterlockedCompareExchange(&job.state, 1, 0) != 0) continue;
+    job.format = format;
+    job.source_ptr = source_ptr;
+    job.submit_timestamp_ms = GetTickCount64();
+    job.timestamp_ms = g_xaudio_formats.TimestampForSubmit(
+        static_cast<uintptr_t>(source_ptr), job.submit_timestamp_ms);
+    job.encoded_bytes = buffer->AudioBytes;
+    job.play_begin = buffer->PlayBegin;
+    job.play_length = buffer->PlayLength;
+    memcpy(job.encoded, buffer->pAudioData, buffer->AudioBytes);
+    InterlockedExchange(&job.state, 2);
+    return true;
+  }
+  return false;
+}
+
+bool StorePendingXAudioClip(uint32_t ring_offset, uint32_t byte_len,
+                           uint64_t source_ptr, uint32_t sample_rate,
+                           uint32_t channels, uint64_t submit_timestamp_ms,
+                           uint64_t total_at_write) {
+  for (PendingXAudioClip& pending : g_pending_xaudio_clips) {
+    if (pending.occupied) continue;
+    pending.ring_offset = ring_offset;
+    pending.byte_len = byte_len;
+    pending.sample_rate = sample_rate;
+    pending.channels = channels;
+    pending.source_ptr = source_ptr;
+    pending.submit_timestamp_ms = submit_timestamp_ms;
+    pending.total_at_write = total_at_write;
+    pending.occupied = true;
+    return true;
+  }
+  return false;
+}
+
+void PublishStartedXAudioClips() {
+  const uint64_t now = GetTickCount64();
+  for (PendingXAudioClip& pending : g_pending_xaudio_clips) {
+    if (!pending.occupied) continue;
+    const uint64_t playback_timestamp =
+        g_xaudio_formats.ResolvePlaybackTimestamp(
+            static_cast<uintptr_t>(pending.source_ptr),
+            pending.submit_timestamp_ms);
+    if (playback_timestamp != 0) {
+      RecordVoiceClipFmt(
+          pending.ring_offset, pending.byte_len, pending.source_ptr,
+          pending.sample_rate, pending.channels, 16, 0, playback_timestamp,
+          pending.total_at_write);
+      pending.occupied = false;
+      continue;
+    }
+    if (now > pending.submit_timestamp_ms &&
+        now - pending.submit_timestamp_ms > kPendingXAudioClipMaxAgeMs) {
+      pending.occupied = false;
+    }
+  }
+}
+
+void ProcessPendingXAudioAdpcmJobs() {
+  std::vector<int16_t> decoded;
+  for (XAudioAdpcmJob& job : g_xaudio_adpcm_jobs) {
+    if (InterlockedCompareExchange(&job.state, 3, 2) != 2) continue;
+    const bool decoded_ok = fushi_voice_hook::DecodeMicrosoftAdpcm(
+        job.format, job.encoded, job.encoded_bytes, &decoded);
+    if (decoded_ok && job.format.channels != 0) {
+      const uint64_t total_frames = decoded.size() / job.format.channels;
+      const uint64_t begin = std::min<uint64_t>(job.play_begin, total_frames);
+      const uint64_t available = total_frames - begin;
+      const uint64_t frame_count =
+          job.play_length == 0
+              ? available
+              : std::min<uint64_t>(job.play_length, available);
+      const uint64_t byte_len =
+          frame_count * job.format.channels * sizeof(int16_t);
+      if (byte_len != 0 && byte_len <= g_ring_capacity &&
+          byte_len <= std::numeric_limits<uint32_t>::max()) {
+        MaybeRecordPcmFormat(job.format.sample_rate, job.format.channels, 16,
+                             0);
+        const auto* pcm = reinterpret_cast<const uint8_t*>(
+            decoded.data() + begin * job.format.channels);
+        const uint32_t length = static_cast<uint32_t>(byte_len);
+        const uint32_t offset = RingAppendVoice(pcm, length);
+        const uint64_t total_at_write =
+            g_header == nullptr ? 0 : g_header->total_written;
+        uint64_t playback_timestamp = job.timestamp_ms;
+        if (playback_timestamp == 0) {
+          playback_timestamp = g_xaudio_formats.ResolvePlaybackTimestamp(
+              static_cast<uintptr_t>(job.source_ptr),
+              job.submit_timestamp_ms);
+        }
+        if (playback_timestamp != 0) {
+          RecordVoiceClipFmt(offset, length, job.source_ptr,
+                             job.format.sample_rate, job.format.channels, 16,
+                             0, playback_timestamp, total_at_write);
+        } else {
+          StorePendingXAudioClip(
+              offset, length, job.source_ptr, job.format.sample_rate,
+              job.format.channels, job.submit_timestamp_ms, total_at_write);
+        }
+        if (g_header != nullptr) {
+          InterlockedOr(reinterpret_cast<volatile LONG*>(
+                            &g_header->reserved_hook_diagnostics),
+                        static_cast<LONG>(
+                            fushi_voice_hook::kDiagXAudioAdpcmPcmCaptured));
+        }
+      }
+    }
+    InterlockedExchange(&job.state, 0);
+  }
+  PublishStartedXAudioClips();
+}
+
+HRESULT STDMETHODCALLTYPE Detour_SourceVoiceStart(IXAudio2SourceVoice* self,
+                                                   UINT32 Flags,
+                                                   UINT32 OperationSet) {
+  const HRESULT hr = g_orig_SourceVoiceStart(self, Flags, OperationSet);
+  if (SUCCEEDED(hr)) {
+    g_xaudio_formats.MarkStarted(reinterpret_cast<uintptr_t>(self),
+                                 GetTickCount64());
+  }
+  return hr;
+}
+
+HRESULT STDMETHODCALLTYPE Detour_SourceVoiceStop(IXAudio2SourceVoice* self,
+                                                  UINT32 Flags,
+                                                  UINT32 OperationSet) {
+  const HRESULT hr = g_orig_SourceVoiceStop(self, Flags, OperationSet);
+  if (SUCCEEDED(hr)) {
+    g_xaudio_formats.MarkStopped(reinterpret_cast<uintptr_t>(self));
+  }
+  return hr;
+}
+
 // ── C.2 detour：IXAudio2SourceVoice::SubmitSourceBuffer ──────────────────────
 // 语音送进混音前的最后一跳。零阻塞红线：只读 pBuffer 字段 + 换算字节 + RingAppendVoice，
 // 绝不加锁/分配/IO/日志。PlayBegin/PlayLength 单位是**样本(每通道)**，PlayLength==0 表示到
@@ -8,8 +225,16 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
     const XAUDIO2_BUFFER_WMA* pBufferWMA) {
   if (g_capture_enabled && pBuffer != nullptr &&
       pBuffer->pAudioData != nullptr && g_header != nullptr) {
-    const uint32_t ba = g_header->block_align;
-    if (ba != 0) {
+    fushi_voice_hook::XAudioSourceFormat format;
+    if (g_xaudio_formats.Lookup(reinterpret_cast<uintptr_t>(self), &format) &&
+        format.encoding ==
+            fushi_voice_hook::XAudioSourceEncoding::kMicrosoftAdpcm) {
+      EnqueueXAudioAdpcmJob(reinterpret_cast<uint64_t>(self), format, pBuffer);
+    } else if (format.encoding ==
+                   fushi_voice_hook::XAudioSourceEncoding::kPcmInteger ||
+               format.encoding ==
+                   fushi_voice_hook::XAudioSourceEncoding::kPcmFloat) {
+      const uint32_t ba = format.block_align;
       const uint64_t total = pBuffer->AudioBytes;
       const uint64_t begin = static_cast<uint64_t>(pBuffer->PlayBegin) * ba;
       if (begin < total) {
@@ -24,8 +249,14 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
           // C.3：这一次 SubmitSourceBuffer = 一段语音，记一条 clip（起始偏移=原子预留返回值）。
           const uint32_t off = RingAppendVoice(pBuffer->pAudioData + begin,
                                                static_cast<uint32_t>(len));
-          RecordVoiceClip(off, static_cast<uint32_t>(len),
-                          reinterpret_cast<uint64_t>(self));
+          RecordVoiceClipFmt(
+              off, static_cast<uint32_t>(len),
+              reinterpret_cast<uint64_t>(self), format.sample_rate,
+              format.channels, format.bits_per_sample,
+              format.encoding ==
+                      fushi_voice_hook::XAudioSourceEncoding::kPcmFloat
+                  ? 1u
+                  : 0u);
         }
       }
     }
@@ -44,14 +275,42 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSourceVoice(
     const WAVEFORMATEX* pSourceFormat, UINT32 Flags, float MaxFrequencyRatio,
     IXAudio2VoiceCallback* pCallback, const XAUDIO2_VOICE_SENDS* pSendList,
     const XAUDIO2_EFFECT_CHAIN* pEffectChain) {
+  fushi_voice_hook::XAudioSourceFormat format;
+  const bool has_format =
+      fushi_voice_hook::ParseXAudioSourceFormat(pSourceFormat, &format);
   const HRESULT hr = g_orig_CreateSourceVoice(
       self, ppSourceVoice, pSourceFormat, Flags, MaxFrequencyRatio, pCallback,
       pSendList, pEffectChain);
   if (SUCCEEDED(hr) && ppSourceVoice != nullptr && *ppSourceVoice != nullptr) {
-    MaybeRecordFormat(pSourceFormat);
+    if (has_format && g_xaudio_formats.Register(
+                          reinterpret_cast<uintptr_t>(*ppSourceVoice),
+                          format)) {
+      if (format.encoding ==
+          fushi_voice_hook::XAudioSourceEncoding::kMicrosoftAdpcm) {
+        if (g_header != nullptr) {
+          InterlockedOr(reinterpret_cast<volatile LONG*>(
+                            &g_header->reserved_hook_diagnostics),
+                        static_cast<LONG>(
+                            fushi_voice_hook::kDiagXAudioAdpcmObserved));
+        }
+      } else {
+        MaybeRecordPcmFormat(
+            format.sample_rate, format.channels, format.bits_per_sample,
+            format.encoding ==
+                    fushi_voice_hook::XAudioSourceEncoding::kPcmFloat
+                ? 1u
+                : 0u);
+      }
+    }
     HookFn(VtableSlot(*ppSourceVoice, kIdxSubmitSourceBuffer),
            reinterpret_cast<void*>(&Detour_SubmitSourceBuffer),
            reinterpret_cast<void**>(&g_orig_SubmitSourceBuffer));
+    HookFn(VtableSlot(*ppSourceVoice, kIdxSourceVoiceStart),
+           reinterpret_cast<void*>(&Detour_SourceVoiceStart),
+           reinterpret_cast<void**>(&g_orig_SourceVoiceStart));
+    HookFn(VtableSlot(*ppSourceVoice, kIdxSourceVoiceStop),
+           reinterpret_cast<void*>(&Detour_SourceVoiceStop),
+           reinterpret_cast<void**>(&g_orig_SourceVoiceStop));
   }
   return hr;
 }
