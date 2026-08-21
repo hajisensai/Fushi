@@ -1927,6 +1927,41 @@ class PreferencesRepository extends ChangeNotifier {
   static const double galHookTextFontSizeMin = 12.0;
   static const double galHookTextFontSizeMax = 72.0;
   static const double galHookTextFontSizeDefault = 30.0;
+  static const double galHookTextLetterSpacingMin = -2.0;
+  static const double galHookTextLetterSpacingMax = 12.0;
+  static const double galHookTextLetterSpacingDefault = 0.0;
+  static const double galHookTextLineHeightMin = 0.8;
+  static const double galHookTextLineHeightMax = 2.0;
+  static const double galHookTextLineHeightDefault = 1.0;
+  static const double galHookTextOutlineWidthMin = 0.0;
+  static const double galHookTextOutlineWidthMax = 6.0;
+  static const double galHookTextOutlineWidthDefault = 1.6;
+  static const double galHookTextPaddingMin = 0.0;
+  static const double galHookTextPaddingMax = 80.0;
+  static const double galHookTextPaddingDefault = 20.0;
+  static const double galHookTextCornerRadiusMin = 0.0;
+  static const double galHookTextCornerRadiusMax = 40.0;
+  static const double galHookTextCornerRadiusDefault = 14.0;
+  static const int galHookTextColorDefault = 0xFFFFFFFF;
+  static const int galHookTextBackgroundColorDefault = 0xFF000000;
+  static const int galHookTextOutlineColorDefault = 0xE0000000;
+  static const double galHookTextBackgroundOpacityDefault = 0.0;
+
+  double _galHookDouble(
+    String key, {
+    required double fallback,
+    required double min,
+    required double max,
+  }) {
+    final Object? stored = getPref(key, defaultValue: fallback);
+    final double value = stored is num ? stored.toDouble() : fallback;
+    return value.clamp(min, max);
+  }
+
+  int _galHookColor(String key, int fallback) {
+    final Object? stored = getPref(key, defaultValue: fallback);
+    return ((stored is num ? stored.toInt() : fallback) & 0xFFFFFFFF).toInt();
+  }
 
   double get galHookTextFontSize {
     final Object? stored = getPref(
@@ -1942,6 +1977,152 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref(
       'gal_hook_text_font_size',
       value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax).toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextLetterSpacing => _galHookDouble(
+        'gal_hook_text_letter_spacing',
+        fallback: galHookTextLetterSpacingDefault,
+        min: galHookTextLetterSpacingMin,
+        max: galHookTextLetterSpacingMax,
+      );
+
+  Future<void> setGalHookTextLetterSpacing(double value) async {
+    await setPref(
+      'gal_hook_text_letter_spacing',
+      value
+          .clamp(galHookTextLetterSpacingMin, galHookTextLetterSpacingMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextLineHeight => _galHookDouble(
+        'gal_hook_text_line_height',
+        fallback: galHookTextLineHeightDefault,
+        min: galHookTextLineHeightMin,
+        max: galHookTextLineHeightMax,
+      );
+
+  Future<void> setGalHookTextLineHeight(double value) async {
+    await setPref(
+      'gal_hook_text_line_height',
+      value
+          .clamp(galHookTextLineHeightMin, galHookTextLineHeightMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
+  bool get galHookTextBold =>
+      getPref('gal_hook_text_bold', defaultValue: true) == true;
+
+  Future<void> setGalHookTextBold(bool value) async {
+    await setPref('gal_hook_text_bold', value);
+    notifyListeners();
+  }
+
+  String get galHookTextAlignment {
+    final Object? value =
+        getPref('gal_hook_text_alignment', defaultValue: 'center');
+    return value == 'left' ? 'left' : 'center';
+  }
+
+  Future<void> setGalHookTextAlignment(String value) async {
+    await setPref(
+        'gal_hook_text_alignment', value == 'left' ? 'left' : 'center');
+    notifyListeners();
+  }
+
+  int get galHookTextColor =>
+      _galHookColor('gal_hook_text_color', galHookTextColorDefault);
+
+  Future<void> setGalHookTextColor(int value) async {
+    await setPref('gal_hook_text_color', value & 0xFFFFFFFF);
+    notifyListeners();
+  }
+
+  int get galHookTextBackgroundColor => _galHookColor(
+        'gal_hook_text_background_color',
+        galHookTextBackgroundColorDefault,
+      );
+
+  Future<void> setGalHookTextBackgroundColor(int value) async {
+    await setPref('gal_hook_text_background_color', value & 0xFFFFFFFF);
+    notifyListeners();
+  }
+
+  double get galHookTextBackgroundOpacity => _galHookDouble(
+        'gal_hook_text_window_bg_opacity',
+        fallback: galHookTextBackgroundOpacityDefault,
+        min: 0.0,
+        max: 1.0,
+      );
+
+  Future<void> setGalHookTextBackgroundOpacity(double value) async {
+    await setPref(
+      'gal_hook_text_window_bg_opacity',
+      value.clamp(0.0, 1.0).toDouble(),
+    );
+    notifyListeners();
+  }
+
+  int get galHookTextOutlineColor => _galHookColor(
+        'gal_hook_text_outline_color',
+        galHookTextOutlineColorDefault,
+      );
+
+  Future<void> setGalHookTextOutlineColor(int value) async {
+    await setPref('gal_hook_text_outline_color', value & 0xFFFFFFFF);
+    notifyListeners();
+  }
+
+  double get galHookTextOutlineWidth => _galHookDouble(
+        'gal_hook_text_outline_width',
+        fallback: galHookTextOutlineWidthDefault,
+        min: galHookTextOutlineWidthMin,
+        max: galHookTextOutlineWidthMax,
+      );
+
+  Future<void> setGalHookTextOutlineWidth(double value) async {
+    await setPref(
+      'gal_hook_text_outline_width',
+      value
+          .clamp(galHookTextOutlineWidthMin, galHookTextOutlineWidthMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextPadding => _galHookDouble(
+        'gal_hook_text_padding',
+        fallback: galHookTextPaddingDefault,
+        min: galHookTextPaddingMin,
+        max: galHookTextPaddingMax,
+      );
+
+  Future<void> setGalHookTextPadding(double value) async {
+    await setPref(
+      'gal_hook_text_padding',
+      value.clamp(galHookTextPaddingMin, galHookTextPaddingMax).toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextCornerRadius => _galHookDouble(
+        'gal_hook_text_corner_radius',
+        fallback: galHookTextCornerRadiusDefault,
+        min: galHookTextCornerRadiusMin,
+        max: galHookTextCornerRadiusMax,
+      );
+
+  Future<void> setGalHookTextCornerRadius(double value) async {
+    await setPref(
+      'gal_hook_text_corner_radius',
+      value
+          .clamp(galHookTextCornerRadiusMin, galHookTextCornerRadiusMax)
+          .toDouble(),
     );
     notifyListeners();
   }

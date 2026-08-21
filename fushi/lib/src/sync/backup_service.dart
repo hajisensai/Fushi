@@ -502,6 +502,7 @@ class BackupService {
     'src:reader_fushi:app_ui_fonts',
     'src:reader_fushi:dict_fonts',
     'src:reader_fushi:video_sub_fonts',
+    'src:reader_fushi:game_lookup_fonts',
   ];
 
   /// Preference key holding the favorite-sentence JSON list (mirrors

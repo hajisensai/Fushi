@@ -305,6 +305,60 @@ void main() {
     );
   });
 
+  test('show 携带完整外观偏好，背景颜色与透明度正确合成', () async {
+    preferences.addAll(<String, Object?>{
+      'gal_hook_text_letter_spacing': 2.0,
+      'gal_hook_text_line_height': 1.35,
+      'gal_hook_text_bold': false,
+      'gal_hook_text_alignment': 'left',
+      'gal_hook_text_color': 0xFF102030,
+      'gal_hook_text_background_color': 0xFF405060,
+      'gal_hook_text_window_bg_opacity': 0.5,
+      'gal_hook_text_outline_color': 0xAA010203,
+      'gal_hook_text_outline_width': 2.25,
+      'gal_hook_text_padding': 28.0,
+      'gal_hook_text_corner_radius': 16.0,
+    });
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    textService.appendLine('外観設定', source: TexthookerLineSource.websocket);
+    await _waitUntil(() => controller.isVisible);
+
+    final MethodCall show = nativeCalls.lastWhere(
+      (MethodCall call) => call.method == 'show',
+    );
+    final Map<Object?, Object?> args = show.arguments as Map<Object?, Object?>;
+    expect(args['letterSpacing'], 2.0);
+    expect(args['lineHeight'], 1.35);
+    expect(args['bold'], isFalse);
+    expect(args['textAlignment'], 1);
+    expect(args['textColor'], 0xFF102030);
+    expect(args['bgColor'], 0x80405060);
+    expect(args['outlineColor'], 0xAA010203);
+    expect(args['outlineWidth'], 2.25);
+    expect(args['textPadding'], 28.0);
+    expect(args['cornerRadius'], 16.0);
+  });
+
+  test('applyAppearanceFromPreferences 立即把整支样式推给 native', () async {
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    preferences.addAll(<String, Object?>{
+      'gal_hook_text_color': 0xFFABCDEF,
+      'gal_hook_text_letter_spacing': 3.5,
+      'gal_hook_text_outline_width': 0.0,
+    });
+
+    await controller.applyAppearanceFromPreferences();
+
+    final MethodCall style = nativeCalls.lastWhere(
+      (MethodCall call) => call.method == 'updateStyle',
+    );
+    final Map<Object?, Object?> args = style.arguments as Map<Object?, Object?>;
+    expect(args['textColor'], 0xFFABCDEF);
+    expect(args['letterSpacing'], 3.5);
+    expect(args['outlineWidth'], 0.0);
+  });
+
   test('applyFontSizeFromPreferences 立刻把新字号经 updateStyle 推给 native', () async {
     await controller.start(appModel: AppModel(testPlatformServices()));
     await startSession();

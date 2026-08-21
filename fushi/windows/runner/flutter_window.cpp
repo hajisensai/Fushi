@@ -751,8 +751,22 @@ std::vector<FloatingLyricWindow::RubySpan> RubySpansFromValue(
 FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   FloatingLyricWindow::Style style;
   style.font_size = DoubleFromValue(args, "fontSize", style.font_size);
+  style.font_family = WideFromValue(args, "fontFamily", style.font_family);
+  style.font_path = WideFromValue(args, "fontPath", style.font_path);
+  style.letter_spacing =
+      DoubleFromValue(args, "letterSpacing", style.letter_spacing);
+  style.line_height = DoubleFromValue(args, "lineHeight", style.line_height);
+  style.bold = BoolFromValue(args, "bold", style.bold);
+  style.text_alignment =
+      IntFromValue(args, "textAlignment", style.text_alignment);
   style.text_color = ArgbFromValue(args, "textColor", style.text_color);
   style.bg_color = ArgbFromValue(args, "bgColor", style.bg_color);
+  style.outline_color =
+      ArgbFromValue(args, "outlineColor", style.outline_color);
+  style.outline_width =
+      DoubleFromValue(args, "outlineWidth", style.outline_width);
+  style.text_padding =
+      DoubleFromValue(args, "textPadding", style.text_padding);
   style.button_text_color =
       ArgbFromValue(args, "buttonTextColor", style.button_text_color);
   style.button_bg_color =
