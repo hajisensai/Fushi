@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiSettings;
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
@@ -26,10 +28,9 @@ import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
-/// Anki 生态外链（Anki 步骤「先把 Anki 装起来」的出口）。
+/// Anki 生态外链（Anki 步骤「先把 Anki 装起来」的出口；AnkiConnect 插件不走
+/// 外链——内置包一键解压进 `addons21/`，见 [installAnkiConnectAddon]）。
 const String kAnkiDesktopDownloadUrl = 'https://apps.ankiweb.net/';
-const String kAnkiConnectAddonUrl =
-    'https://ankiweb.net/shared/info/2055492159';
 const String kAnkiDroidDownloadUrl =
     'https://play.google.com/store/apps/details?id=com.ichi2.anki';
 
@@ -299,6 +300,37 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 移动端「本机改用 AnkiConnect」次级说明的展开态（默认收起）。
   bool _mobileAnkiConnectExpanded = false;
 
+  /// 「一键安装插件」的结果提示（装好/没找到 Anki/失败），显示在按钮区上方。
+  String? _ankiAddonNotice;
+
+  /// 把内置 AnkiConnect 插件包解压进 Anki 的 addons21（仅桌面按钮可达）。
+  Future<void> _installAnkiConnectAddonFromAsset() async {
+    try {
+      final ByteData data = await rootBundle.load(kAnkiConnectAddonAsset);
+      final AnkiConnectAddonInstallResult result =
+          await installAnkiConnectAddon(
+        addonZipBytes: data.buffer.asUint8List(
+          data.offsetInBytes,
+          data.lengthInBytes,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _ankiAddonNotice = switch (result.status) {
+          AnkiConnectAddonInstallStatus.installed =>
+            t.onboarding_anki_addon_installed,
+          AnkiConnectAddonInstallStatus.ankiDataDirNotFound =>
+            t.onboarding_anki_addon_no_anki,
+        };
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _ankiAddonNotice = t.onboarding_anki_addon_failed(message: '$e'),
+      );
+    }
+  }
+
   Future<void> _testAnkiConnection() async {
     setState(() => _ankiTestAttempted = true);
     // 与制卡设置的「刷新牌组与笔记类型」同一条路径：拉到牌组即连接成功，
@@ -402,6 +434,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ),
           SizedBox(height: tokens.spacing.gap),
         ],
+        if (_ankiAddonNotice != null) ...<Widget>[
+          Text(
+            _ankiAddonNotice!,
+            style: textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+        ],
         Wrap(
           alignment: WrapAlignment.center,
           spacing: tokens.spacing.gap,
@@ -440,13 +480,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                   mode: LaunchMode.externalApplication,
                 ),
               ),
+              // 内置插件包直接解压进 Anki 的 addons21，免去「获取插件填码」；
+              // 手动路径（填码 2055492159）保留在上方说明文字里作后备。
               OutlinedButton.icon(
-                icon: const Icon(Icons.open_in_new_outlined),
-                label: Text(t.onboarding_anki_get_ankiconnect_action),
-                onPressed: () => launchUrl(
-                  Uri.parse(kAnkiConnectAddonUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
+                icon: const Icon(Icons.extension_outlined),
+                label: Text(t.onboarding_anki_install_addon_action),
+                onPressed: () => unawaited(_installAnkiConnectAddonFromAsset()),
               ),
             ],
             FilledButton.tonalIcon(

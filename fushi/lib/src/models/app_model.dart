@@ -2095,6 +2095,8 @@ class AppModel with ChangeNotifier {
       // TODO-1368/BUG-691: "Hibiki Symbols" = renamed 3-glyph subset of
       // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
       'dejavu-fonts',
+      // 内置 AnkiConnect 插件包（assets/anki/，GPLv3，新手引导一键安装用）。
+      'anki-connect',
     ];
 
     for (String packageName in packageNames) {
