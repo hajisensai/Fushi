@@ -59,6 +59,11 @@ abstract class VideoSubtitleCandidate {
     this.downloadCount = 0,
     this.hearingImpaired = false,
     this.fps,
+    this.uploadedAtMs,
+    this.collectionId,
+    this.collectionLabel,
+    this.aiTranslated = false,
+    this.fromTrusted = false,
   });
 
   final String providerId;
@@ -73,6 +78,23 @@ abstract class VideoSubtitleCandidate {
   final int downloadCount;
   final bool hearingImpaired;
   final double? fps;
+
+  /// 上传/最后修改时刻（epoch 毫秒）。版本选择器的「N 天前」与「最新文件」
+  /// 判定用；来源没给（旧响应）为 null。
+  final int? uploadedAtMs;
+
+  /// 来源侧的「合集」身份（Jimaku entry id / OpenSubtitles 无此概念为 null）。
+  /// 两级版本聚类的第一级分组键；此前只藏在 remoteId 前缀里，UI 拿不到。
+  final String? collectionId;
+
+  /// [collectionId] 的展示名（Jimaku entry 名）。
+  final String? collectionLabel;
+
+  /// 来源明确标注的机翻（OpenSubtitles `ai_translated`）。质量信号，排序降权。
+  final bool aiTranslated;
+
+  /// 来源明确标注的可信上传者（OpenSubtitles `from_trusted`）。
+  final bool fromTrusted;
 
   String get identityKey => '$providerId:$remoteId';
 }

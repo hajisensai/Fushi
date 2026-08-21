@@ -3659,5 +3659,11 @@
   "sync_pair_invalid_url": "Invalid address format",
   "sync_pair_peer_requires_https": "This device only accepts HTTPS. Use an https:// address.",
   "sync_pair_peer_not_https": "The peer isn't using HTTPS on this port. Use an http:// address.",
-  "sync_pair_not_fushi_discovered": "No Fushi device found at this address."
+  "sync_pair_not_fushi_discovered": "No Fushi device found at this address.",
+  "subtitle_version_episode_count": "$n episodes",
+  "subtitle_version_unnumbered_count": "$n unnumbered",
+  "subtitle_version_ai_translated": "AI translated",
+  "subtitle_version_content_language": "Content",
+  "subtitle_version_show_files": "Show files",
+  "subtitle_version_view_files": "File list"
 }
