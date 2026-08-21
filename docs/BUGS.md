@@ -33,8 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1763](bugs/BUG-1763-video-subtitle-chars-paused-seek.md) | 🚧 | 🚧 | 视频字幕字数暂停拖进度条也计无播放停留判据 |
-| [BUG-1762](bugs/BUG-1762-epub-jump-and-arrival-chars-inflate.md) | 🚧 | 🚧 | EPUB字数到达即计且四类跳转不播种水位整段前缀误计 |
+| [BUG-1763](bugs/BUG-1763-video-subtitle-chars-paused-seek.md) | ✅ | ✅ | 视频字幕字数暂停拖进度条也计无播放停留判据 |
+| [BUG-1762](bugs/BUG-1762-epub-jump-and-arrival-chars-inflate.md) | ✅ | ✅ | EPUB字数到达即计且四类跳转不播种水位整段前缀误计 |
 | [BUG-1761](bugs/BUG-1761-manga-stats-recount-on-reopen.md) | ✅ | ✅ | 漫画统计重开书重复计页170页卷记成400页 |
 | [BUG-1760](bugs/BUG-1760-manga-wheel-zoomed-misturn.md) | ✅ | ✅ | 漫画放大态滚轮误翻页应页内平移贴边才翻 |
 | [BUG-1759](bugs/BUG-1759-manga-zoom-out-aliasing.md) | ✅ | ✅ | 漫画缩放低于100%锯齿严重需放大到150%才恢复清晰 |
