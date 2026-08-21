@@ -91,7 +91,7 @@ void main() {
       onPick: (VideoSubtitleCandidate candidate) => picked = candidate,
     );
     final SubtitleVersionGroup assGroup = groups
-        .firstWhere((SubtitleVersionGroup group) => group.format == 'ass');
+        .firstWhere((SubtitleVersionGroup group) => group.container == 'ass');
     await tester.tap(
       find.byKey(ValueKey<String>('subtitle-version-${assGroup.key}')),
     );
@@ -111,7 +111,7 @@ void main() {
       onPick: (VideoSubtitleCandidate candidate) => picked = candidate,
     );
     final SubtitleVersionGroup assGroup = groups
-        .firstWhere((SubtitleVersionGroup group) => group.format == 'ass');
+        .firstWhere((SubtitleVersionGroup group) => group.container == 'ass');
     await tester.tap(
       find.byKey(ValueKey<String>('subtitle-version-${assGroup.key}')),
     );

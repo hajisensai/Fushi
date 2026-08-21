@@ -56,7 +56,7 @@ void main() {
       );
       expect(groups, hasLength(2), reason: 'ass 与 srt 是两个版本');
       final SubtitleVersionGroup ass = groups
-          .firstWhere((SubtitleVersionGroup group) => group.format == 'ass');
+          .firstWhere((SubtitleVersionGroup group) => group.container == 'ass');
       expect(ass.members, hasLength(3));
       expect(ass.episodes, <int>{1, 2, 3});
       expect(ass.collectionLabel, 'Show (Jimaku)');

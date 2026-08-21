@@ -54,7 +54,12 @@ class SubtitleVersionGroup {
 
   String get providerId => members.first.providerId;
   String get language => members.first.language;
-  String get format => subtitleFormatOf(members.first.fileName);
+
+  /// 字幕**容器**扩展名（ass / srt / …）。刻意不叫 `format`：那个词在本仓库已经属于
+  /// `BookFormat`（epub / pdf / manga），有一整套纪律守卫钉着「不得裸字符串比较
+  /// `.format`」。两个毫不相干的概念共用一个词，只会让那条守卫在这里误报、又诱使
+  /// 后来人去削弱它。
+  String get container => subtitleFormatOf(members.first.fileName);
   String? get releaseGroupTag =>
       subtitleReleaseGroupTag(members.first.fileName);
   bool get hearingImpaired => members.first.hearingImpaired;
@@ -63,9 +68,9 @@ class SubtitleVersionGroup {
         (VideoSubtitleCandidate candidate) => candidate.fromTrusted,
       );
 
-  /// 第二级标签的组成部分（UI 逐段拼、缺段跳过）：格式大写、语言母语名、组名。
+  /// 第二级标签的组成部分（UI 逐段拼、缺段跳过）：容器名大写、语言母语名、组名。
   List<String> get variantParts => <String>[
-        if (format.isNotEmpty) format.toUpperCase(),
+        if (container.isNotEmpty) container.toUpperCase(),
         if (language.isNotEmpty) jimakuLanguageLabel(language),
         if (releaseGroupTag != null) releaseGroupTag!,
       ];
