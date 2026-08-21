@@ -56,6 +56,7 @@
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
+#include "xaudio_source_format.h"
 #include "generated/profile_includes.inc"
 
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
@@ -205,6 +206,8 @@ volatile LONG g_format_set = 0;
 constexpr size_t kIdxCreateSourceVoice = 5;
 // IXAudio2Voice（**不**继承 IUnknown）: GetVoiceDetails(0)...DestroyVoice(18)
 // IXAudio2SourceVoice : Start(19) Stop(20) SubmitSourceBuffer(21) ...
+constexpr size_t kIdxSourceVoiceStart = 19;
+constexpr size_t kIdxSourceVoiceStop = 20;
 constexpr size_t kIdxSubmitSourceBuffer = 21;
 
 // 原函数（MinHook trampoline）。detour 经此调回原实现。
@@ -218,11 +221,15 @@ typedef HRESULT(STDMETHODCALLTYPE* CreateSourceVoice_t)(
 typedef HRESULT(STDMETHODCALLTYPE* SubmitSourceBuffer_t)(
     IXAudio2SourceVoice* self, const XAUDIO2_BUFFER* pBuffer,
     const XAUDIO2_BUFFER_WMA* pBufferWMA);
+typedef HRESULT(STDMETHODCALLTYPE* SourceVoiceStartStop_t)(
+    IXAudio2SourceVoice* self, UINT32 Flags, UINT32 OperationSet);
 
 XAudio2Create_t g_orig_XAudio2Create9 = nullptr;
 XAudio2Create_t g_orig_XAudio2Create8 = nullptr;
 CreateSourceVoice_t g_orig_CreateSourceVoice = nullptr;
 SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
+SourceVoiceStartStop_t g_orig_SourceVoiceStart = nullptr;
+SourceVoiceStartStop_t g_orig_SourceVoiceStop = nullptr;
 
 // ── DirectSound COM 方法 vtable 槽（按 dsound.h 接口声明顺序，跨 DS8 稳定）───────────
 // IDirectSound8 : IUnknown(0-2) 后 CreateSoundBuffer(3) GetCaps(4) DuplicateSoundBuffer(5)...
@@ -324,32 +331,35 @@ bool HookFn(void* target, void* detour, void** original) {
   return ok;
 }
 
-// 首次拿到语音 WAVEFORMATEX：填 header 的 sample_rate/channels/bits/is_float，block_align 最后
-// 写（作为「格式就绪」信号——SubmitSourceBuffer 回调据 block_align!=0 判定可安全换算字节）。
-void MaybeRecordFormat(const WAVEFORMATEX* wf) {
-  if (wf == nullptr || g_header == nullptr) {
+// 首次拿到可发布的 PCM 格式：block_align 最后写，作为跨进程「格式就绪」完成标记。
+// XAudio2 ADPCM 在工作线程解码成 16-bit 后也走这里，绝不把 4-bit 压缩源伪装成 PCM。
+void MaybeRecordPcmFormat(uint32_t sample_rate, uint32_t channels,
+                          uint32_t bits_per_sample, uint32_t is_float) {
+  if (g_header == nullptr || sample_rate == 0 || channels == 0 ||
+      bits_per_sample == 0 || bits_per_sample % 8 != 0) {
     return;
   }
   if (InterlockedCompareExchange(&g_format_set, 1, 0) != 0) {
     return;  // 已有其它 voice 抢先写过格式。
   }
-  g_header->sample_rate = wf->nSamplesPerSec;
-  g_header->channels = wf->nChannels;
-  g_header->bits_per_sample = wf->wBitsPerSample;
-  uint32_t is_float = 0;
-  if (wf->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-    is_float = 1;
-  } else if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-             wf->cbSize >=
-                 sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-    const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(wf);
-    if (ext->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT) {
-      is_float = 1;
-    }
-  }
+  g_header->sample_rate = sample_rate;
+  g_header->channels = channels;
+  g_header->bits_per_sample = bits_per_sample;
   g_header->is_float = is_float;
-  g_header->block_align =
-      static_cast<uint32_t>(wf->nChannels) * (wf->wBitsPerSample / 8);
+  g_header->block_align = channels * (bits_per_sample / 8);
+}
+
+void MaybeRecordFormat(const WAVEFORMATEX* format) {
+  fushi_voice_hook::XAudioSourceFormat parsed;
+  if (!fushi_voice_hook::ParseXAudioSourceFormat(format, &parsed) ||
+      parsed.encoding ==
+          fushi_voice_hook::XAudioSourceEncoding::kMicrosoftAdpcm) {
+    return;
+  }
+  MaybeRecordPcmFormat(
+      parsed.sample_rate, parsed.channels, parsed.bits_per_sample,
+      parsed.encoding == fushi_voice_hook::XAudioSourceEncoding::kPcmFloat ? 1u
+                                                                           : 0u);
 }
 
 // ── 多写者安全的环形缓冲写入（无锁原子预留）─────────────────────────────────
@@ -412,7 +422,9 @@ inline uint32_t RingAppendVoice(const uint8_t* data, uint32_t len) {
 inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
                                uint64_t source_ptr, uint32_t sample_rate,
                                uint32_t channels, uint32_t bits_per_sample,
-                               uint32_t is_float) {
+                               uint32_t is_float,
+                               uint64_t timestamp_ms = 0,
+                               uint64_t total_at_write = 0) {
   if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
     return;
   }
@@ -424,8 +436,9 @@ inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
       1));
   const size_t off = static_cast<size_t>(idx % kClipCount) * sizeof(VoiceClip);
   auto* clip = reinterpret_cast<VoiceClip*>(g_clip_base + off);
-  clip->timestamp_ms = GetTickCount64();
-  clip->total_at_write = g_header->total_written;  // 写后累计（含并发写者，判覆盖偏保守，安全）
+  clip->timestamp_ms = timestamp_ms == 0 ? GetTickCount64() : timestamp_ms;
+  clip->total_at_write = total_at_write == 0 ? g_header->total_written
+                                              : total_at_write;
   clip->ring_offset = ring_offset;
   clip->byte_len = byte_len;
   clip->sample_rate = sample_rate;

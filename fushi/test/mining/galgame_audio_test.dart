@@ -129,6 +129,32 @@ void main() {
         isNull,
       );
     });
+
+    test('拒绝 SGRE 现场误报的 4-bit PCM，让控制器降级到 loopback', () {
+      expect(
+        parseEngineHookReadyFormat(<Object?, Object?>{
+          'ready': true,
+          'sampleRate': 47968,
+          'channels': 2,
+          'bitsPerSample': 4,
+          'isFloat': false,
+        }),
+        isNull,
+      );
+    });
+
+    test('拒绝非 float32 的浮点 PCM', () {
+      expect(
+        parseEngineHookReadyFormat(<Object?, Object?>{
+          'ready': true,
+          'sampleRate': 48000,
+          'channels': 2,
+          'bitsPerSample': 16,
+          'isFloat': true,
+        }),
+        isNull,
+      );
+    });
   });
 
   group('parseEngineTextHookReady', () {
