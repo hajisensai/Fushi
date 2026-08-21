@@ -361,7 +361,7 @@ class EvidenceContractTest(unittest.TestCase):
         self.assertFalse(report["valid"])
         self.assertTrue(any("missing gates" in error for error in report["errors"]))
 
-    def test_diagnostic_decoder_uses_header_constants_and_reports_unknown_bits(self) -> None:
+    def test_diagnostic_decoder_uses_header_constants_for_new_bits(self) -> None:
         constants = load_diag_constants(ROOT / "include" / "voice_hook_ipc.h")
         report = decode_diagnostics(
             constants,
@@ -379,7 +379,11 @@ class EvidenceContractTest(unittest.TestCase):
             "kDiagQlieVorbisHooksReady",
             [item["name"] for item in report["hookio"]["set"]],
         )
-        self.assertEqual("0x80000000", report["hookio"]["unknown_bits"])
+        self.assertIn(
+            "kDiagXAudioAdpcmPcmCaptured",
+            [item["name"] for item in report["hookio"]["set"]],
+        )
+        self.assertEqual("0x00000000", report["hookio"]["unknown_bits"])
         self.assertIn(
             "kDiagSiglusOvkHooksReady",
             [item["name"] for item in report["lunadiag"]["set"]],

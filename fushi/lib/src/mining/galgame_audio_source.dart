@@ -118,24 +118,34 @@ class LoopbackGalAudioSource implements GalAudioSource {
 }
 
 /// 从 native map（`{sampleRate,channels,bitsPerSample,isFloat}`）解析 [PcmFormat]；缺任一
-/// 必需字段 / 非正值返回 null（loopback 与引擎-hook 两个源共用同一格式契约）。
+/// 必需字段 / 不可编码的 PCM 格式返回 null（loopback 与引擎-hook 两个源共用同一格式契约）。
+///
+/// helper 读到尚未稳定或并非 `WAVEFORMATEX` 的内存时，字段可能全部为正数却仍然是
+/// 垃圾格式。典型现场是 SGRE/M2 启动后误报 `47968 Hz / 2 ch / 4 bit`：旧判断把它
+/// 当作引擎 PCM 就绪，从而阻止已经可用的 WASAPI Loopback 接管，最终每句都落成
+/// `line_has_no_voice`。这里只接受 WAV/编码链路实际支持的、按整字节存储的常见位深；
+/// 浮点 PCM 目前只支持 float32。
 PcmFormat? parseGalPcmFormat(Map<Object?, Object?> m) {
   final Object? sampleRate = m['sampleRate'];
   final Object? channels = m['channels'];
   final Object? bitsPerSample = m['bitsPerSample'];
+  final bool isFloat = m['isFloat'] == true;
   if (sampleRate is! int ||
       channels is! int ||
       bitsPerSample is! int ||
-      sampleRate <= 0 ||
-      channels <= 0 ||
-      bitsPerSample <= 0) {
+      sampleRate < 8000 ||
+      sampleRate > 384000 ||
+      channels < 1 ||
+      channels > 8 ||
+      !const <int>{8, 16, 24, 32}.contains(bitsPerSample) ||
+      (isFloat && bitsPerSample != 32)) {
     return null;
   }
   return PcmFormat(
     sampleRate: sampleRate,
     channels: channels,
     bitsPerSample: bitsPerSample,
-    isFloat: m['isFloat'] == true,
+    isFloat: isFloat,
   );
 }
 

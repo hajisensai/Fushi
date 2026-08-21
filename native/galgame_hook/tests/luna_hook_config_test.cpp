@@ -62,6 +62,7 @@ int main() {
   const auto sgre_profile = fushi_voice_hook::MatchLunaHookProfiles(
       fushi_voice_hook::BuiltInLunaHookProfiles(), sgre);
   if (sgre_profile.codepage != 932 || sgre_profile.enable_pc_hooks ||
+      !sgre_profile.normalize_mages_controls ||
       sgre_profile.hook_codes.size() != 1 ||
       sgre_profile.hook_codes.front() !=
           L"HQFN-24@328E0:sgre_steam.exe") {

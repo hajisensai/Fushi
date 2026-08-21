@@ -19,6 +19,7 @@ class GenericWindowsAudioAdapter final
   const char* id() const override { return "xaudio2_directsound"; }
   bool probe() const override { return true; }
   bool install() override {
+    InitializeXAudioAdpcmQueue();
     TryHookXAudio2Create();
     TryHookDirectSoundCreate();
     installed_ = true;
@@ -35,7 +36,11 @@ class GenericWindowsAudioAdapter final
       install();
     }
   }
-  void shutdown() override { installed_ = false; }
+  void ProcessPendingEvents() { ProcessPendingXAudioAdpcmJobs(); }
+  void shutdown() override {
+    ShutdownXAudioAdpcmQueue();
+    installed_ = false;
+  }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             g_header == nullptr ? 0u : g_header->hook_diagnostics};
@@ -356,6 +361,7 @@ class AdapterRegistry {
 
   void Poll() {
     DispatchNewModules();
+    generic_audio_.ProcessPendingEvents();
     unity_.ProcessPendingEvents();
     siglus_.ProcessPendingEvents();
     tyrano_.ProcessPendingEvents();

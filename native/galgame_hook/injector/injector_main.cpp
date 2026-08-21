@@ -250,6 +250,7 @@ struct LunaCtx {
   PFN_Luna_InsertHookCode insert_hook = nullptr;
   PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
+  bool normalize_mages_controls = false;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
   std::vector<std::wstring> blocked_hook_names;
@@ -872,9 +873,14 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
   if (g_luna.header != nullptr && text != nullptr) {
     g_luna.header->hook_diagnostics |= kDiagLunaOutputObserved;
     const int raw_len = static_cast<int>(wcslen(text));
+    const std::wstring normalized_storage =
+        fushi_voice_hook::LunaNormalizeMagesControls(
+            text, raw_len, g_luna.normalize_mages_controls);
+    const wchar_t* normalized_text = normalized_storage.c_str();
+    const int escaped_len = static_cast<int>(normalized_storage.size());
     const int normalized_len =
-        fushi_voice_hook::LunaNormalizedTextLengthForHook(hookname, text,
-                                                           raw_len);
+        fushi_voice_hook::LunaNormalizedTextLengthForHook(
+            hookname, normalized_text, escaped_len);
     if (LunaDiagEnabled()) {
       char u8[1024];
       LunaWideToUtf8(text, raw_len, u8, sizeof(u8));
@@ -892,15 +898,15 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
               normalized_len, u8);
       fflush(stderr);
     }
-    if (LunaPassesFilter(text, normalized_len)) {
+    if (LunaPassesFilter(normalized_text, normalized_len)) {
       // 先判伪影，再决定本行是否写入文本环。
       const bool artifact =
-          fushi_voice_hook::LunaTextIsArtifact(text, normalized_len);
+          fushi_voice_hook::LunaTextIsArtifact(normalized_text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
       // v12：预览必须写在门控**之前**且无条件（含伪影行）。预览区的全部意义就是让用户
       // 看见未被发布的线程；放到门控之后就只剩已选中的那条，等于没做。
-      WriteThreadPreview(g_luna.header, thread_id, artifact, text,
+      WriteThreadPreview(g_luna.header, thread_id, artifact, normalized_text,
                          normalized_len);
       // LunaHook 权威标记：游戏内 GDI 文本 hook 据此让位，避免双写者污染（见
       // voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
@@ -915,7 +921,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       }
       if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id,
-                          face_id, text, normalized_len);
+                          face_id, normalized_text, normalized_len);
       }
     }
   }
@@ -1055,7 +1061,7 @@ void LunaEmbed(const wchar_t* text, LunaThreadParam tp) {
 // 缺 DLL / 缺关键导出 / 加载失败 → 打日志跳过，**不致命**（仍走游戏内 GDI hook）。
 // target 是目标进程句柄（复用 InjectDll 把 LunaHook<arch>.dll 注入游戏）。成功接线返回 true。
 bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
-                  bool use_pc_hooks,
+                  bool use_pc_hooks, bool normalize_mages_controls,
                   const std::vector<std::wstring>& hook_codes,
                   const std::vector<std::wstring>& blocked_hook_codes,
                   const std::vector<std::wstring>& blocked_hook_names,
@@ -1085,6 +1091,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   g_luna.insert_hook = bridge.insert_hook;
   g_luna.remove_hook = bridge.remove_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
+  g_luna.normalize_mages_controls = normalize_mages_controls;
   g_luna.hook_codes = hook_codes;
   g_luna.blocked_hook_codes = blocked_hook_codes;
   g_luna.blocked_hook_names = blocked_hook_names;
@@ -1160,6 +1167,7 @@ void ShutdownLunaHook() {
     g_luna.blocked_hook_names.clear();
     g_luna.confirmed_blocked_hook_names.clear();
     g_luna.preferred_hook_codes.clear();
+    g_luna.normalize_mages_controls = false;
     InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
     g_luna.pid = 0;
@@ -1171,6 +1179,7 @@ struct LunaOptions {
   bool enabled = true;    // --no-luna 关闭
   int codepage = 932;     // --luna-codepage（日文默认 SHIFT_JIS）
   bool pc_hooks = false;  // --luna-pchooks 补装通用 PC hooks
+  bool normalize_mages_controls = false;
   uint32_t defer_until_running_ms = 0;
   std::vector<std::wstring> hook_codes;  // 版本专用、已验证的 H-code
   std::vector<std::wstring> blocked_hook_codes;  // SHA-256 精确匹配的危险自动 hook
@@ -1192,6 +1201,9 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
     const auto match = fushi_voice_hook::MatchLunaHookProfiles(tsv, identity);
     if (match.codepage > 0) options->codepage = match.codepage;
     if (match.enable_pc_hooks) options->pc_hooks = true;
+    if (match.normalize_mages_controls) {
+      options->normalize_mages_controls = true;
+    }
     if (match.defer_until_running_ms > options->defer_until_running_ms) {
       options->defer_until_running_ms = match.defer_until_running_ms;
       fprintf(stderr, "[luna] matched %s deferred guard: %u ms\n", source,
@@ -1514,6 +1526,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     }
     luna_initialized =
         InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                     luna.normalize_mages_controls,
                      luna.hook_codes, luna.blocked_hook_codes,
                      luna.blocked_hook_names, luna.preferred_hook_codes);
     if (!luna_initialized) return false;
@@ -1648,6 +1661,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // 并存（原子占号防撞槽）。probe 模式确认即退，LunaHook 没有捕获窗口，故不接。
   if (hold && luna.enabled && !luna_initialized) {
     InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                 luna.normalize_mages_controls,
                  luna.hook_codes, luna.blocked_hook_codes,
                  luna.blocked_hook_names,
                  luna.preferred_hook_codes);
