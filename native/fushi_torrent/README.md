@@ -80,16 +80,26 @@ duration，`ht_torrent_peers` 补 flags/source 稳定位掩码（与 libtorrent 
 
 ## Windows 构建（standalone，不经 flutter windows runner）
 
-libtorrent 经 **vcpkg** 提供（本机 `D:\APP\vcpkg`，已装 `libtorrent:x64-windows`）：
+libtorrent 经 **vcpkg** 提供，版本由本目录 `vcpkg.json` 钉死
+（manifest + `overrides` = **libtorrent 2.0.11**）。
+
+> **不要再手动 `vcpkg install libtorrent`。** classic 模式装的是你那份 vcpkg
+> 修订当下的 ports 版本 —— 2026-08 上游把 libtorrent 升到 2.1（API 大改），
+> Windows 4 个 DLL 和 Android `.so` 当场一起编不出来，Windows 正式包直接断供
+> （BUG-1772）。现在依赖由 cmake configure 时的 vcpkg 工具链按 `vcpkg.json` 装。
+>
+> 前提：**vcpkg checkout 不能旧于 `vcpkg.json` 的 `builtin-baseline`**。baseline
+> 里的版本条目来自工作区 `versions/` 目录（跟着 HEAD 走），落后的 checkout 里
+> 没有它们，vcpkg 会报 `path 'versions/baseline.json' exists on disk, but not in ...`。
+> 构建脚本的 `Assert-VcpkgBaseline` 会先检查并直接告诉你跑 `git -C <vcpkg> pull`。
 
 ```bash
-# 1) 装 libtorrent（一次性，约 20~40min，拉 boost + openssl 从源码编）
+# 1) 准备 vcpkg（不用装 libtorrent，下一步会按 vcpkg.json 自动装）
 export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
 git clone https://github.com/microsoft/vcpkg <vcpkg>
 <vcpkg>/bootstrap-vcpkg.bat -disableMetrics
-<vcpkg>/vcpkg install libtorrent:x64-windows
 
-# 2) 配置 + 构建 bridge DLL
+# 2) 配置 + 构建 bridge DLL（首次会源码编 boost+openssl+libtorrent，约 20~40min）
 cd native/fushi_torrent
 cmake -B build -S . -A x64 \
   -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake \
@@ -238,8 +248,11 @@ android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进�
 `libfushi_torrent_ffi.so`，没有 Windows 那 4 个运行时 DLL 的收拢/预载问题。
 
 1. **产出**：`build_android_so.ps1`（本机 Windows）/ `build_android_so.sh`
-   （CI Linux）——vcpkg 装 `libtorrent:<triplet>`（arm64-v8a→arm64-android 等，
-   **必须带 `--overlay-triplets=vcpkg-triplets/`**：vcpkg 自带 android triplet
+   （CI Linux）——libtorrent 版本同样由 `vcpkg.json` 钉死（见上方 Windows 一节），
+   cmake configure 时自动装；triplet 走 arm64-v8a→arm64-android 等，
+   **必须把 `-DVCPKG_OVERLAY_TRIPLETS=vcpkg-triplets/` 传给 cmake**（manifest
+   模式下装依赖的是工具链而非命令行，只传给 `vcpkg install` 的话 overlay 根本
+   不参与）：vcpkg 自带 android triplet
    钉 API 28，boost.asio 会引用 API 28 才进 libc 的 `aligned_alloc`，bridge 按
    android-24 链接直接 undefined symbol——依赖与 bridge 必须同一 API level，
    overlay 统一钉 24），cmake 用 vcpkg 工具链 chainload NDK 工具链

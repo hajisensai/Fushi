@@ -394,7 +394,8 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/vcpkg/archives
-        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+        # v1 -> v2：同 Windows，manifest 钉版换了 ABI hash（BUG-1772）。
+        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
     - name: Build embedded libtorrent Android .so (vcpkg)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
       timeout-minutes: 90

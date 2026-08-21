@@ -5,3 +5,7 @@ build-android-*/
 # Vendored prebuilt runtime DLLs（由 build_windows_dll.ps1 产出，~11MB）——
 # 不入库（repo 不放二进制），由构建/发布流程各自现产或从 release 拉取。
 prebuilt/
+
+# vcpkg manifest 模式的依赖安装树。正常构建时 cmake 把它放在 build/ 下（已忽略），
+# 但直接跑 vcpkg install --x-manifest-root=. 会落在这里。绝不入库。
+vcpkg_installed/
