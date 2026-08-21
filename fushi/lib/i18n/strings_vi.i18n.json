@@ -3679,5 +3679,7 @@
   "download_task_sort_created": "Date added",
   "download_task_sort_progress": "Progress",
   "download_task_sort_status": "Status",
-  "download_task_no_match": "No matching tasks"
+  "download_task_no_match": "No matching tasks",
+  "manga_online_detail_load_failed": "Could not load this manga.",
+  "manga_online_error_view_detail": "View details"
 }

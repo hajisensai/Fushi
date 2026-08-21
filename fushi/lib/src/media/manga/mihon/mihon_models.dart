@@ -147,6 +147,26 @@ class MihonManga {
   final int status;
   final bool initialized;
 
+  /// 把一次详情拉取的结果合回本条目。
+  ///
+  /// Mihon 的详情解析返回的是**增量**：`url` 是条目身份，扩展从不
+  /// 回填，上游官方 app 也从不读它。两个后端各自暴露了这个假设：
+  /// Android 原生桥直接读 `lateinit url` 而崩（RUNTIME_FAILURE），桌面
+  /// sidecar 则把它静默读成空串，导致接下来拉章节用空 url（BUG-1767）。
+  ///
+  /// 所以身份统一在这里收敛：新值只能覆盖元数据，覆盖不了 `url`。
+  MihonManga mergedWithDetails(MihonManga update) => MihonManga(
+        url: url,
+        title: update.title.isNotEmpty ? update.title : title,
+        coverUrl: update.coverUrl ?? coverUrl,
+        artist: update.artist ?? artist,
+        author: update.author ?? author,
+        description: update.description ?? description,
+        genre: update.genre ?? genre,
+        status: update.status != 0 ? update.status : status,
+        initialized: update.initialized || initialized,
+      );
+
   Map<String, Object?> toJson() => <String, Object?>{
         'url': url,
         'title': title,
@@ -410,11 +430,30 @@ class MihonPreference {
 }
 
 class MihonRuntimeException implements Exception {
-  const MihonRuntimeException(this.code, this.message, {this.cause});
+  const MihonRuntimeException(
+    this.code,
+    this.message, {
+    this.cause,
+    this.details,
+  });
 
   final String code;
   final String message;
   final Object? cause;
+
+  /// 原生侧回传的完整堆栈（`PlatformException.details`）。
+  ///
+  /// 不进 [toString]：它会被直接渲染到页面上，几 KB 堆栈堆到
+  /// 屏幕上反而把真正可操作的 [message] 顶掉。堆栈只走诊断对话框
+  /// 和日志（见 [diagnostics]）。
+  final String? details;
+
+  /// 诊断通道（可复制对话框 / 日志）用的全文。
+  String get diagnostics {
+    final String? stack = details;
+    if (stack == null || stack.isEmpty) return toString();
+    return '${toString()}\n\n$stack';
+  }
 
   @override
   String toString() => 'MihonRuntimeException($code): $message';
