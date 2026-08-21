@@ -3679,5 +3679,11 @@
   "download_task_sort_created": "Date added",
   "download_task_sort_progress": "Progress",
   "download_task_sort_status": "Status",
-  "download_task_no_match": "No matching tasks"
+  "download_task_no_match": "No matching tasks",
+  "subtitle_version_episode_count": "$n episodes",
+  "subtitle_version_unnumbered_count": "$n unnumbered",
+  "subtitle_version_ai_translated": "AI translated",
+  "subtitle_version_content_language": "Content",
+  "subtitle_version_show_files": "Show files",
+  "subtitle_version_view_files": "File list"
 }

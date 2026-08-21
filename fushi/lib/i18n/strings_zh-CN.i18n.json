@@ -3679,5 +3679,11 @@
   "download_task_sort_created": "添加时间",
   "download_task_sort_progress": "进度",
   "download_task_sort_status": "状态",
-  "download_task_no_match": "没有匹配的任务"
+  "download_task_no_match": "没有匹配的任务",
+  "subtitle_version_episode_count": "共 $n 集",
+  "subtitle_version_unnumbered_count": "$n 个未编号",
+  "subtitle_version_ai_translated": "机翻",
+  "subtitle_version_content_language": "正文",
+  "subtitle_version_show_files": "展开文件",
+  "subtitle_version_view_files": "文件视图"
 }

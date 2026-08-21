@@ -143,6 +143,9 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
           season: season,
           episode: file.episode,
           fileSize: file.size,
+          uploadedAtMs: file.lastModifiedMs,
+          collectionId: '${entry.id}',
+          collectionLabel: entry.name,
         );
 
   final JimakuEntry entry;

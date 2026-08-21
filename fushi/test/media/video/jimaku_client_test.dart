@@ -59,14 +59,21 @@ void main() {
   group('parseJimakuFiles + JimakuFile', () {
     test('解析文件，缺 name/url 的跳过', () {
       const String body = '''
-[{"name":"ep01.ja.srt","url":"https://x/ep01.srt","size":1234},
+[{"name":"ep01.ja.srt","url":"https://x/ep01.srt","size":1234,
+  "last_modified":"2026-08-01T12:00:00Z"},
  {"name":"ep02.ass","url":"https://x/ep02.ass"},
  {"url":"https://x/no-name"}]''';
       final List<JimakuFile> files = parseJimakuFiles(body);
       expect(files, hasLength(2));
       expect(files[0].name, 'ep01.ja.srt');
       expect(files[0].size, 1234);
+      expect(
+        files[0].lastModifiedMs,
+        DateTime.utc(2026, 8, 1, 12).millisecondsSinceEpoch,
+        reason: 'B1 版本卡的「N 天前」来自 last_modified，此前该字段被丢弃',
+      );
       expect(files[1].url, 'https://x/ep02.ass');
+      expect(files[1].lastModifiedMs, isNull, reason: '缺失/坏时间不挡文件');
     });
 
     test('extension / isTextSubtitle', () {
