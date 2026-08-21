@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadLongPressIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 
 Widget _host(Widget child) => MaterialApp(
@@ -24,8 +28,7 @@ void main() {
     expect(ar.aspectRatio, 3 / 4);
   });
 
-  testWidgets('overlayText 有值时显示排序浮层，空时不显示',
-      (WidgetTester tester) async {
+  testWidgets('overlayText 有值时显示排序浮层，空时不显示', (WidgetTester tester) async {
     await tester.pumpWidget(_host(
       const GalgamePosterCard(
         cover: ColoredBox(color: Colors.blue),
@@ -99,5 +102,62 @@ void main() {
       ),
     ));
     expect(find.byIcon(Icons.more_vert), findsOneWidget);
+  });
+
+  // 手柄重设计 P4：焦点根下长按 A（GamepadLongPressIntent）= onLongPress
+  // （游戏卡上是上下文菜单），与鼠标长按/右键同一入口。
+  testWidgets('手柄长按 A 触发 onLongPress（焦点根下）', (WidgetTester tester) async {
+    int longPresses = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FushiFocusRoot(
+          child: Center(
+            child: SizedBox(
+              width: 160,
+              child: GalgamePosterCard(
+                cover: const ColoredBox(color: Colors.blue),
+                title: 'G',
+                onTap: () {},
+                onLongPress: () => longPresses++,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    final BuildContext cardContext =
+        tester.element(find.text('G'));
+    final Object? handled = Actions.maybeInvoke<GamepadLongPressIntent>(
+      cardContext,
+      const GamepadLongPressIntent(GamepadButton.a),
+    );
+    expect(handled, isTrue);
+    expect(longPresses, 1);
+  });
+
+  testWidgets('无 onLongPress 时长按包装透明（不拦截 intent）', (WidgetTester tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FushiFocusRoot(
+          child: Center(
+            child: SizedBox(
+              width: 160,
+              child: GalgamePosterCard(
+                cover: const ColoredBox(color: Colors.blue),
+                title: 'G',
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    final BuildContext cardContext =
+        tester.element(find.text('G'));
+    final Object? handled = Actions.maybeInvoke<GamepadLongPressIntent>(
+      cardContext,
+      const GamepadLongPressIntent(GamepadButton.a),
+    );
+    expect(handled, isNull, reason: '透明包装：intent 应继续向上查找');
   });
 }

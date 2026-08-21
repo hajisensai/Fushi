@@ -7,6 +7,9 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
@@ -1641,16 +1644,29 @@ class _GameCard extends StatelessWidget {
     // 竖版海报卡（对齐 ReinaManager 库页观感）：封面 3:4 + 标题居中 + 底部排序
     // 浮层 + hover 放大 + 主色选中环，全部由共享组件 [GalgamePosterCard] 负责。
     // focusId 沿用 `game-card-<id>`（手柄/键盘可 requestById 聚焦，focus 测试守）。
-    return GalgamePosterCard(
-      cover: GameCoverThumb(game: game),
-      title: game.displayName,
-      overlayText: sort,
-      focusId: FushiFocusId('game-card-${game.id}'),
-      onTap: onTap,
-      onLongPress: () => unawaited(_showContextMenu(context)),
-      onSecondaryTap: () => unawaited(_showContextMenu(context)),
-      trailing: _menuButton(context, colors, tokens),
-      semanticLabel: game.displayName,
+    //
+    // 手柄重设计 P4：卡片聚焦时 Y = 打开详情（A=启动、长按 A=上下文菜单在
+    // GalgamePosterCard 内）。用 isEnabled 门控而非 CallbackAction 返回 false——
+    // Actions 停在第一个 **enabled** 的 action，返回 false 仍会终止向上查找，
+    // 把 home scope 的 LT/RT 换 tab 等外层解析静默吞掉（settings_shared /
+    // adaptive_navigation 同款既定模式）。
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: _GameCardDetailGamepadAction(
+          onDetail: onDetail,
+        ),
+      },
+      child: GalgamePosterCard(
+        cover: GameCoverThumb(game: game),
+        title: game.displayName,
+        overlayText: sort,
+        focusId: FushiFocusId('game-card-${game.id}'),
+        onTap: onTap,
+        onLongPress: () => unawaited(_showContextMenu(context)),
+        onSecondaryTap: () => unawaited(_showContextMenu(context)),
+        trailing: _menuButton(context, colors, tokens),
+        semanticLabel: game.displayName,
+      ),
     );
   }
 
@@ -1713,5 +1729,25 @@ class GameCoverThumb extends StatelessWidget {
       return ShelfFileCover(path: cover, placeholder: placeholder);
     }
     return placeholder;
+  }
+}
+
+/// 手柄重设计 P4：游戏卡聚焦时 Y = 打开详情。用 [isEnabled] 只认 Y——其余按钮
+/// 保持 disabled，Actions 查找继续向上冒泡（home scope 的 LT/RT 换 tab 等外层
+/// 解析不被遮蔽；这是 settings_shared / adaptive_navigation 的既定放行模式，
+/// CallbackAction 返回 false 做不到——它恒 enabled，查找到它就停）。
+class _GameCardDetailGamepadAction extends Action<GamepadButtonIntent> {
+  _GameCardDetailGamepadAction({required this.onDetail});
+
+  final VoidCallback onDetail;
+
+  @override
+  bool isEnabled(GamepadButtonIntent intent) =>
+      intent.button == GamepadButton.y;
+
+  @override
+  Object? invoke(GamepadButtonIntent intent) {
+    onDetail();
+    return true;
   }
 }
