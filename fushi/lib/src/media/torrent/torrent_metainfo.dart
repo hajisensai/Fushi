@@ -29,6 +29,7 @@ class InspectedTorrentMetainfo {
     required this.torrentId,
     required this.v1InfoHash,
     required this.v2InfoHash,
+    this.suggestedName,
   }) : bytes = Uint8List.fromList(bytes);
 
   final Uint8List bytes;
@@ -38,6 +39,10 @@ class InspectedTorrentMetainfo {
   final String torrentId;
   final String? v1InfoHash;
   final String? v2InfoHash;
+
+  /// `info.name`（优先 `name.utf-8`）的展示名；缺失/非文本返回 null。
+  /// 手动添加任务用它预填标题。
+  final String? suggestedName;
 
   TorrentMetainfoPayload toPayload({required String fileName}) =>
       TorrentMetainfoPayload(
@@ -108,11 +113,19 @@ InspectedTorrentMetainfo inspectTorrentMetainfo(
     );
   }
 
+  String? suggestedName;
+  final Object? rawName = info['name.utf-8'] ?? info['name'];
+  if (rawName is Uint8List && rawName.isNotEmpty) {
+    final String decoded = utf8.decode(rawName, allowMalformed: true).trim();
+    if (decoded.isNotEmpty) suggestedName = decoded;
+  }
+
   return InspectedTorrentMetainfo(
     bytes: bytes,
     torrentId: torrentId,
     v1InfoHash: v1InfoHash,
     v2InfoHash: v2InfoHash,
+    suggestedName: suggestedName,
   );
 }
 

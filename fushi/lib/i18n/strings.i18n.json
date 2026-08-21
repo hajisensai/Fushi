@@ -47,7 +47,6 @@
   "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings.",
   "anime_download_search_failed": "Search failed or timed out. Tap retry.",
   "anime_download_search_hint": "Anime title",
-  "anime_download_search_start_hint": "Search an anime title above — torrents and subtitles are matched automatically.",
   "anime_download_sort_date": "Published",
   "anime_download_sort_seeders": "Seeders",
   "anime_download_sort_size": "Size",
@@ -3659,5 +3658,17 @@
   "sync_pair_invalid_url": "Invalid address format",
   "sync_pair_peer_requires_https": "This device only accepts HTTPS. Use an https:// address.",
   "sync_pair_peer_not_https": "The peer isn't using HTTPS on this port. Use an http:// address.",
-  "sync_pair_not_fushi_discovered": "No Fushi device found at this address."
+  "sync_pair_not_fushi_discovered": "No Fushi device found at this address.",
+  "download_task_add": "Add task",
+  "download_task_add_pick_torrent": "Choose torrent file",
+  "download_task_add_title_label": "Title",
+  "download_task_add_content_kind": "Content type",
+  "download_task_add_invalid": "Unrecognized magnet link or torrent file",
+  "download_task_add_submitted": "Task added",
+  "download_task_search_hint": "Search tasks",
+  "download_task_sort_created": "Date added",
+  "download_task_sort_progress": "Progress",
+  "download_task_sort_status": "Status",
+  "download_task_no_match": "No matching tasks",
+  "anime_download_search_start_hint": "Search a title above - torrents and subtitles are matched automatically. Downloads are not limited to video: books, manga, audiobooks and games are imported too."
 }

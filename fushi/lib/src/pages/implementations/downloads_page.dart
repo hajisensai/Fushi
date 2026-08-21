@@ -3,14 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
-import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
@@ -23,10 +22,11 @@ import 'package:fushi_core/fushi_core.dart'
     show MediaSourceRow, VideoDownloadJobRow;
 
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
-/// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
-/// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
-/// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
-/// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
+/// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 下载任务），任务 tab 同时列出
+/// 漫画「在线目录」（mokuro.moe）的卷下载队列；页头「添加任务」支持手动粘贴
+/// 磁力 / 选 .torrent 文件入队（[ManualDownloadTaskDialog]）。设置 tab 配置
+/// 后端/限速/上传/做种/内存。完成后按内容类型自动入库（视频→视频库、书籍/
+/// 漫画/游戏/有声书→各域导入器，见 VideoDownloadPipelineService；漫画卷→
 /// 书架，见 MokuroMoeDownloadQueue）。
 class DownloadsPage extends ConsumerStatefulWidget {
   const DownloadsPage({
@@ -201,34 +201,12 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     );
   }
 
-  /// 漫画「在线目录」入口（统一下载中心：书/漫画获取入口与 torrent 并列）。
-  ///
-  /// 书架页与书籍导入框的旧入口已收敛到这里，故本页是
-  /// [MangaModule.openOnlineCatalog] 的唯一消费方——目录弹窗的构造统一收在
-  /// 漫画模块里，不在页面层直接 new 它。
-  Future<void> _openMangaCatalog() async {
-    await MangaModule.openOnlineCatalog(
+  /// 手动添加任务（磁力链接 / .torrent 文件）：与搜索出的资源同走 v78 持久
+  /// 管线，任务出现在任务 tab、同一套排序/搜索/优先级/删除操作。
+  Future<void> _openManualTaskDialog() async {
+    await showManualDownloadTaskDialog(
       context: context,
-      db: ref.read(appProvider).database,
-    );
-  }
-
-  /// 放送日历整页入口（TODO-2487）。[tabContext] 必须来自 DefaultTabController
-  /// 之下（AppBar actions 里的 Builder），日历页点「订阅中」条目 pop 回来后
-  /// 用它把本页 tab 切到订阅。
-  void _openAiringCalendar(BuildContext tabContext) {
-    final TabController tabController = DefaultTabController.of(tabContext);
-    Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => AiringCalendarPage(
-          onOpenSubscriptions: () {
-            if (!mounted) return;
-            tabController.animateTo(2);
-          },
-        ),
-      ),
+      appModel: ref.read(appProvider),
     );
   }
 
@@ -278,18 +256,15 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
               onChanged: select,
             ),
           ),
+          // 页头动作只留「添加任务」（2026-08-21 用户点名）：旧「放送日历」
+          // 「在线目录」入口都不是下载动作，前者迁往发现页（独立改造），后者
+          // 在漫画库页「浏览」视图仍然可达。
           actions: <Widget>[
             FushiIconButton(
-              icon: Icons.calendar_month_outlined,
-              tooltip: t.download_airing_calendar_title,
-              label: t.download_airing_calendar_title,
-              onTap: () => _openAiringCalendar(tabContext),
-            ),
-            FushiIconButton(
-              icon: Icons.menu_book_outlined,
-              tooltip: t.manga_online_catalog_title,
-              label: t.manga_online_catalog_title,
-              onTap: _openMangaCatalog,
+              icon: Icons.add,
+              tooltip: t.download_task_add,
+              label: t.download_task_add,
+              onTap: _openManualTaskDialog,
             ),
           ],
         );
