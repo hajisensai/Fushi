@@ -121,19 +121,21 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
     MihonSource source,
     MihonManga manga, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async =>
-      MihonManga.fromJson(
-        _asMap(
-          await invokeBridge(
-            extension,
-            'getDetailsManga',
-            <String, Object?>{
-              ..._sourceArguments(source, preferences),
-              'mangaData': manga.toJson(),
-            },
-          ),
+  }) async {
+    final MihonManga parsed = MihonManga.fromJson(
+      _asMap(
+        await invokeBridge(
+          extension,
+          'getDetailsManga',
+          <String, Object?>{
+            ..._sourceArguments(source, preferences),
+            'mangaData': manga.toJson(),
+          },
         ),
-      );
+      ),
+    );
+    return manga.mergedWithDetails(parsed);
+  }
 
   @override
   Future<List<MihonChapter>> getChapters(

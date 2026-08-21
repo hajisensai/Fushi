@@ -173,25 +173,6 @@ internal class MihonExtensionLoader(private val context: Context) {
         return LoadedMihonExtension(inspection, sources, classLoader)
     }
 
-    /**
-     * Walks the whole cause chain and renders it as
-     * `Outer: msg ← Cause: msg ← Root: msg`, capped so a runaway chain can't
-     * bloat the surfaced message. The deepest link is usually the actionable
-     * one (which class/method the extension needs but the host lacks).
-     */
-    private fun describeCauseChain(error: Throwable): String {
-        val parts = mutableListOf<String>()
-        var current: Throwable? = error
-        val seen = HashSet<Throwable>()
-        while (current != null && seen.add(current) && parts.size < 6) {
-            val label = current.javaClass.simpleName.ifBlank { current.javaClass.name }
-            val message = current.message?.trim().orEmpty()
-            parts += if (message.isEmpty()) label else "$label: $message"
-            current = current.cause
-        }
-        return parts.joinToString(" ← ")
-    }
-
     @Suppress("DEPRECATION")
     private fun packageInfo(file: File): PackageInfo? = packageManager.getPackageArchiveInfo(
         file.absolutePath,

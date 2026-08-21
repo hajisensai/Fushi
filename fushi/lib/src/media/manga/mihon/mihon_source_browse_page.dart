@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_online_reader_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 
 enum _MihonBrowseMode { popular, latest, search }
@@ -380,6 +381,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
   MihonLibraryEntry? _libraryEntry;
   bool _libraryBusy = false;
   Object? _error;
+  String? _errorStage;
 
   @override
   void initState() {
@@ -388,6 +390,8 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
   }
 
   Future<void> _load() async {
+    if (_error != null) setState(() => _error = null);
+    String stage = 'details';
     try {
       final MihonManga details = await widget.manager.runtime.getDetails(
         widget.sourceContext.extension,
@@ -395,6 +399,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
         widget.manga,
         preferences: widget.sourceContext.preferences,
       );
+      stage = 'chapters';
       final List<MihonChapter> chapters =
           await widget.manager.runtime.getChapters(
         widget.sourceContext.extension,
@@ -402,6 +407,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
         details,
         preferences: widget.sourceContext.preferences,
       );
+      stage = 'library';
       final MihonLibraryService library = MihonLibraryService(widget.manager);
       EpubBookRow? shelfBook =
           await library.find(widget.sourceContext, details);
@@ -423,8 +429,21 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
           _libraryEntry = MihonLibraryEntry.tryParse(shelfBook?.sourceMetadata);
         });
       }
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = error);
+    } on Object catch (error, stack) {
+      // 三个阶段共用一个 catch，不记 stage 就分不出断在拉详情、拉章节
+      // 还是写书架，而桥接层对三者返回的 code 可能完全一样。
+      ErrorLogService.instance.log(
+        'MihonMangaDetailPage.load[$stage][${widget.sourceContext.source.name}]',
+        error,
+        stack,
+      );
+      debugPrint('[Mihon] detail load failed at $stage: $error');
+      if (mounted) {
+        setState(() {
+          _error = error;
+          _errorStage = stage;
+        });
+      }
     }
   }
 
@@ -496,6 +515,62 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
     );
   }
 
+  /// 失败态不能只扔一行异常文本。
+  ///
+  /// 这里的失败几乎全是环境性的（站点抽风、Cloudflare、网络），
+  /// 所以重试是真正有用的动作；而排障需要的堆栈太长，只能进可复制的
+  /// 诊断对话框（[showErrorDetails]），不能铺在页面上。
+  Widget _buildErrorView(BuildContext context, Object error) {
+    final String diagnostics = <String>[
+      'stage: ${_errorStage ?? 'unknown'}',
+      'source: ${widget.sourceContext.source.name}',
+      'manga: ${widget.manga.url}',
+      '',
+      error is MihonRuntimeException ? error.diagnostics : '$error',
+    ].join('\n');
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              t.manga_online_detail_load_failed,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              '$error',
+              style: Theme.of(context).textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                FilledButton(
+                  onPressed: () => unawaited(_load()),
+                  child: Text(t.retry),
+                ),
+                TextButton(
+                  key: const ValueKey<String>('mihon_detail_error_details'),
+                  onPressed: () => unawaited(showErrorDetails(
+                    context,
+                    title: t.mihon_extension_error,
+                    error: diagnostics,
+                  )),
+                  child: Text(t.manga_online_error_view_detail),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MihonManga details = _details ?? widget.manga;
@@ -503,7 +578,7 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
       title: details.title,
       subtitle: widget.sourceContext.source.name,
       body: _error != null
-          ? Center(child: Text('$_error'))
+          ? _buildErrorView(context, _error!)
           : _details == null
               ? Center(child: adaptiveIndicator(context: context))
               : ListView(

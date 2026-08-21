@@ -3711,5 +3711,7 @@
   "download_subscription_start_episode_invalid": "Enter a whole number (0 or greater), or leave blank",
   "download_subscription_source_unavailable": "Current target (unavailable)",
   "resource_version_episode_count": "$n episodes",
-  "resource_version_show_files": "Show files"
+  "resource_version_show_files": "Show files",
+  "manga_online_detail_load_failed": "Could not load this manga.",
+  "manga_online_error_view_detail": "View details"
 }
