@@ -285,6 +285,7 @@ flutter:
     - assets/gamepad/xbox/
     - assets/gamepad/playstation/
     - assets/gamepad/switch/
+    - assets/fonts/
     - assets/licenses/
     - assets/meta/
     - assets/popup/

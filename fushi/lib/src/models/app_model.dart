@@ -2126,6 +2126,8 @@ class AppModel with ChangeNotifier {
       // TODO-1368/BUG-691: "Hibiki Symbols" = renamed 3-glyph subset of
       // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
       'dejavu-fonts',
+      // Windows galgame overlay toolbar: reduced official Google font subset.
+      'material-symbols-rounded',
     ];
 
     for (String packageName in packageNames) {

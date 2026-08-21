@@ -433,12 +433,13 @@ class FloatingLyricWindow {
   bool press_was_text_ = false; // press landed on the lyric text (lookup case)
   bool dragging_ = false;       // promoted to a move-the-strip drag
   POINT drag_anchor_ = {0, 0};  // cursor offset inside the window at press
-  POINT press_origin_ = {0, 0}; // screen point where the press began
-  POINT press_client_ = {0, 0}; // client point where the press began (lookup)
+  POINT press_origin_ = {0, 0};  // screen point where the press began
+  POINT press_client_ = {0, 0};  // client point where the press began (lookup)
 
   // Direct2D / DirectWrite.
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection> icon_font_collection_;
   Microsoft::WRL::ComPtr<IDWriteFontCollection> custom_font_collection_;
   std::wstring resolved_font_family_ = L"Yu Gothic UI";
   bool font_collection_dirty_ = true;

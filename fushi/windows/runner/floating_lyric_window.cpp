@@ -28,18 +28,24 @@ constexpr float kCornerRadiusDip = 14.0f;
 constexpr float kHorizontalPaddingDip = 20.0f;
 constexpr float kButtonSizeDip = 30.0f;
 constexpr float kButtonGapDip = 10.0f;
+// Hook toolbar: 32dp hit areas with a compact 4dp rhythm. Keeping these
+// separate from the audiobook/clipboard controls lets the nine-icon row use a
+// deliberate 320dp width instead of inheriting the old sparse 350dp layout.
+constexpr float kHookTextButtonSizeDip = 32.0f;
+constexpr float kHookTextButtonGapDip = 4.0f;
 constexpr float kControlsTopDip = 8.0f;
 // Bottom-right resize grip and the min / max the user may drag the bar to.
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
-// Hook mode draws a centred 9-slot toolbar (9 * 30 + 8 * 10 = 350dip). The
+// Hook mode draws a centred 9-slot toolbar (9 * 32 + 8 * 4 = 320dip). The
 // generic 280dip floor would let the user drag the window narrower than its own
 // controls, clipping the leading voice buttons; hook mode therefore floors at
 // the toolbar width plus a small margin. Bump this whenever kSlotCount grows —
 // the floor is derived from the row width, not from a taste-based round number.
-constexpr float kHookTextMinStripWidthDip = 370.0f;
-// Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见 StartHoverLookupPolling）。
-// 60ms ≈ 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
+constexpr float kHookTextMinStripWidthDip = 340.0f;
+// Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见
+// StartHoverLookupPolling）。 60ms ≈
+// 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
 // 只在窗口内轮询，代价是一次 GetAsyncKeyState + 一次 DWrite 命中测试。
 constexpr UINT_PTR kHoverLookupTimerId = 1;
 constexpr UINT kHoverLookupPollMs = 60;
@@ -213,6 +219,10 @@ bool FloatingLyricWindow::EnsureTextResources() {
     if (FAILED(hr)) {
       return false;
     }
+  }
+  if (icon_font_collection_ == nullptr) {
+    hook_toolbar::LoadMaterialSymbolsRoundedFontCollection(
+        dwrite_factory_.Get(), icon_font_collection_.GetAddressOf());
   }
   if (font_collection_dirty_) {
     RebuildFontCollection();
@@ -742,11 +752,11 @@ hook_toolbar::Layout FloatingLyricWindow::ComputePassThroughToolbarLayout()
   if (!GetWindowRect(hwnd_, &wr)) {
     return layout;
   }
-  const float btn = ScaleForDpi(kButtonSizeDip);
-  const float gap = ScaleForDpi(kButtonGapDip);
+  const float btn = ScaleForDpi(kHookTextButtonSizeDip);
+  const float gap = ScaleForDpi(kHookTextButtonGapDip);
   const float margin = ScaleForDpi(kToolbarWindowMarginDip);
-  const float row_w = btn * kHookTextControlSlotCount +
-                      gap * (kHookTextControlSlotCount - 1);
+  const float row_w =
+      btn * kHookTextControlSlotCount + gap * (kHookTextControlSlotCount - 1);
   // Same origin the in-body toolbar draws at (centred row, kControlsTopDip from
   // the top), grown by |margin| so the pill has an edge to grab for dragging.
   const float body_w = static_cast<float>(wr.right - wr.left);
@@ -1283,7 +1293,8 @@ void FloatingLyricWindow::Render() {
           : kHorizontalPaddingDip;
   const float pad = ScaleForDpi(text_padding_dip);
   const float controls_h =
-      ScaleForDpi(kButtonSizeDip) + ScaleForDpi(kControlsTopDip);
+      ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip) +
+      ScaleForDpi(kControlsTopDip);
   // Both modes reserve controls_h at the top: the lyric strip for its transport
   // row, the text-only clipboard window for its thin Luna-style hover toolbar
   // (the text sits below the strip so the toolbar never overlaps it).
@@ -1599,9 +1610,11 @@ void FloatingLyricWindow::Render() {
     // grabbed to move + can reveal its controls), showing only a grip hint at
     // rest and the lock + one-click-transparency buttons on hover. Geometry
     // mirrors ControlActionAt(text_only_) exactly.
-    const float t_btn = ScaleForDpi(kButtonSizeDip);
+    const float t_btn =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip);
     const float t_pad = ScaleForDpi(kHorizontalPaddingDip);
-    const float t_gap = ScaleForDpi(kButtonGapDip);
+    const float t_gap =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonGapDip : kButtonGapDip);
     const float t_top = ScaleForDpi(kControlsTopDip);
     const float strip_h = t_top + t_btn;
 
@@ -1612,15 +1625,15 @@ void FloatingLyricWindow::Render() {
     const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);
 
     // Full-width strip background: near-invisible at rest (still catches the
-    // mouse so the top edge is always grabbable), a visible band on hover so the
-    // whole strip stays catchable while sliding across to the buttons.
+    // mouse so the top edge is always grabbable), a visible band on hover so
+    // the whole strip stays catchable while sliding across to the buttons.
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> strip_bg;
-    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.bg_color | 0xFF000000),
-                                          strip_bg.GetAddressOf());
+    render_target_->CreateSolidColorBrush(
+        ColorFromArgb(style_.bg_color | 0xFF000000), strip_bg.GetAddressOf());
     strip_bg->SetOpacity(hovered_ ? kTextStripHoverAlpha : kTextStripRestAlpha);
-    D2D1_ROUNDED_RECT strip_rect = D2D1::RoundedRect(
-        D2D1::RectF(0, 0, static_cast<float>(width), strip_h),
-        ScaleForDpi(6), ScaleForDpi(6));
+    D2D1_ROUNDED_RECT strip_rect =
+        D2D1::RoundedRect(D2D1::RectF(0, 0, static_cast<float>(width), strip_h),
+                          ScaleForDpi(6), ScaleForDpi(6));
     if (draw_body_toolbar) {
       render_target_->FillRoundedRectangle(strip_rect, strip_bg.Get());
     }
@@ -1646,19 +1659,28 @@ void FloatingLyricWindow::Render() {
 
     // Controls appear only on hover. Clipboard mode keeps its historical
     // right-aligned buttons (transparency, pin/topmost, lock); Hook mode uses a
-    // centred shared-slot core toolbar. Their hit areas in ControlActionAt() are
-    // gated on hovered_ too, so a click can never hit an invisible button.
+    // centred shared-slot core toolbar. Their hit areas in ControlActionAt()
+    // are gated on hovered_ too, so a click can never hit an invisible button.
     if (hovered_ && draw_body_toolbar) {
-      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_active;
-      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
-                                            tb_bg.GetAddressOf());
-      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
-                                            tb_fg.GetAddressOf());
+      render_target_->CreateSolidColorBrush(
+          ColorFromArgb(style_.button_text_color), tb_fg.GetAddressOf());
       render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                             tb_active.GetAddressOf());
       const hook_toolbar::States tb_states = ToolbarStates();
+      Microsoft::WRL::ComPtr<IDWriteTextFormat> icon_format;
+      if (icon_font_collection_ != nullptr) {
+        dwrite_factory_->CreateTextFormat(
+            L"Material Symbols Rounded", icon_font_collection_.Get(),
+            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, t_btn * 0.68f, L"",
+            icon_format.GetAddressOf());
+        if (icon_format != nullptr) {
+          icon_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+          icon_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+      }
       auto draw_tbtn = [&](float bx, int slot, bool active) {
         D2D1_ROUNDED_RECT br =
             D2D1::RoundedRect(D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn),
@@ -1671,27 +1693,24 @@ void FloatingLyricWindow::Render() {
         ID2D1SolidColorBrush* icon_brush =
             active ? tb_active.Get() : tb_fg.Get();
         if (icon_brush != nullptr) {
-          hook_toolbar::DrawSlotIcon(
-              render_target_.Get(), d2d_factory_.Get(), slot, tb_states,
-              D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), icon_brush);
+          const D2D1_RECT_F icon_rect =
+              D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn);
+          if (icon_format != nullptr) {
+            const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, tb_states);
+            render_target_->DrawTextW(glyph, 1, icon_format.Get(), icon_rect,
+                                      icon_brush);
+          } else {
+            hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
+                                       slot, tb_states, icon_rect, icon_brush);
+          }
         }
       };
       if (hook_text_mode_) {
         const float controls_total = t_btn * kHookTextControlSlotCount +
                                      t_gap * (kHookTextControlSlotCount - 1);
         const float left = (width - controls_total) / 2.0f;
-        // One shared pill replaces nine equally heavy keycaps. Active actions
-        // retain a soft tint, while the vector icons provide the button shape.
-        if (strip_bg != nullptr) {
-          strip_bg->SetOpacity(0.68f);
-          render_target_->FillRoundedRectangle(
-              D2D1::RoundedRect(
-                  D2D1::RectF(left - ScaleForDpi(4), t_top,
-                              left + controls_total + ScaleForDpi(4),
-                              t_top + t_btn),
-                  ScaleForDpi(10), ScaleForDpi(10)),
-              strip_bg.Get());
-        }
+        // No second pill behind the row: the full-width hover strip is already
+        // the toolbar surface. Only active buttons receive a local soft tint.
         for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
           draw_tbtn(left + slot * (t_btn + t_gap), slot,
                     hook_toolbar::SlotActive(slot, tb_states));
@@ -1725,75 +1744,75 @@ void FloatingLyricWindow::Render() {
       }
     }
   } else {
-  // Controls row (only fully visible while hovered, like QQ Music). The hit
-  // areas in ControlActionAt() stay live regardless so a deliberate click on a
-  // half-faded button still works.
-  const float btn = ScaleForDpi(kButtonSizeDip);
-  const float gap = ScaleForDpi(kButtonGapDip);
-  const float ctrl_top = ScaleForDpi(kControlsTopDip);
-  const float controls_total =
-      btn * kControlSlotCount + gap * (kControlSlotCount - 1);
-  const float ctrl_left = (width - controls_total) / 2.0f;
-  const float control_alpha = hovered_ ? 1.0f : 0.35f;
+    // Controls row (only fully visible while hovered, like QQ Music). The hit
+    // areas in ControlActionAt() stay live regardless so a deliberate click on
+    // a half-faded button still works.
+    const float btn = ScaleForDpi(kButtonSizeDip);
+    const float gap = ScaleForDpi(kButtonGapDip);
+    const float ctrl_top = ScaleForDpi(kControlsTopDip);
+    const float controls_total =
+        btn * kControlSlotCount + gap * (kControlSlotCount - 1);
+    const float ctrl_left = (width - controls_total) / 2.0f;
+    const float control_alpha = hovered_ ? 1.0f : 0.35f;
 
-  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_bg;
-  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_fg;
-  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active;
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
-                                        btn_bg.GetAddressOf());
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
-                                        btn_fg.GetAddressOf());
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
-                                        btn_active.GetAddressOf());
-  btn_bg->SetOpacity(control_alpha);
-  btn_fg->SetOpacity(control_alpha);
-  btn_active->SetOpacity(control_alpha);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_bg;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_fg;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active;
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
+                                          btn_bg.GetAddressOf());
+    render_target_->CreateSolidColorBrush(
+        ColorFromArgb(style_.button_text_color), btn_fg.GetAddressOf());
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
+                                          btn_active.GetAddressOf());
+    btn_bg->SetOpacity(control_alpha);
+    btn_fg->SetOpacity(control_alpha);
+    btn_active->SetOpacity(control_alpha);
 
-  auto draw_glyph = [&](int slot, const wchar_t* glyph, bool active) {
-    const float bx = ctrl_left + slot * (btn + gap);
-    D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
-        D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
-        ScaleForDpi(6), ScaleForDpi(6));
-    render_target_->FillRoundedRectangle(br, btn_bg.Get());
-    Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
-    dwrite_factory_->CreateTextFormat(
-        L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, btn * 0.5f, L"",
-        glyph_fmt.GetAddressOf());
-    if (glyph_fmt != nullptr) {
-      glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-      glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-      render_target_->DrawTextW(
-          glyph, GlyphLength(glyph), glyph_fmt.Get(),
-          D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
-          active ? btn_active.Get() : btn_fg.Get());
+    auto draw_glyph = [&](int slot, const wchar_t* glyph, bool active) {
+      const float bx = ctrl_left + slot * (btn + gap);
+      D2D1_ROUNDED_RECT br =
+          D2D1::RoundedRect(D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
+                            ScaleForDpi(6), ScaleForDpi(6));
+      render_target_->FillRoundedRectangle(br, btn_bg.Get());
+      Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
+      dwrite_factory_->CreateTextFormat(
+          L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, btn * 0.5f, L"",
+          glyph_fmt.GetAddressOf());
+      if (glyph_fmt != nullptr) {
+        glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        render_target_->DrawTextW(
+            glyph, GlyphLength(glyph), glyph_fmt.Get(),
+            D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
+            active ? btn_active.Get() : btn_fg.Get());
+      }
+    };
+
+    draw_glyph(0, L"⏮", false);                    // previous
+    draw_glyph(1, playing_ ? L"⏸" : L"▶", false);  // pause / play
+    draw_glyph(2, L"⏭", false);                    // next
+    // Lock: padlock glyph, tinted with the active colour while locked so the
+    // state is visible at a glance (mirrors the Android lock button).
+    draw_glyph(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
+    draw_glyph(4, L"✕", false);                                       // close
+
+    // Bottom-right resize grip: three short diagonal ticks hinting the corner
+    // can be dragged to size the bar.
+    {
+      const float grip = ScaleForDpi(kResizeGripDip);
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
+      render_target_->CreateSolidColorBrush(
+          ColorFromArgb(style_.button_text_color), grip_brush.GetAddressOf());
+      grip_brush->SetOpacity(control_alpha * 0.7f);
+      const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
+      for (int i = 1; i <= 3; ++i) {
+        const float off = grip * (i / 4.0f);
+        render_target_->DrawLine(D2D1::Point2F(width - off, height - 2.0f),
+                                 D2D1::Point2F(width - 2.0f, height - off),
+                                 grip_brush.Get(), stroke);
+      }
     }
-  };
-
-  draw_glyph(0, L"⏮", false);                       // previous
-  draw_glyph(1, playing_ ? L"⏸" : L"▶", false);  // pause / play
-  draw_glyph(2, L"⏭", false);                       // next
-  // Lock: padlock glyph, tinted with the active colour while locked so the
-  // state is visible at a glance (mirrors the Android lock button).
-  draw_glyph(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
-  draw_glyph(4, L"✕", false);                        // close
-
-  // Bottom-right resize grip: three short diagonal ticks hinting the corner can
-  // be dragged to size the bar.
-  {
-    const float grip = ScaleForDpi(kResizeGripDip);
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
-    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
-                                          grip_brush.GetAddressOf());
-    grip_brush->SetOpacity(control_alpha * 0.7f);
-    const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
-    for (int i = 1; i <= 3; ++i) {
-      const float off = grip * (i / 4.0f);
-      render_target_->DrawLine(
-          D2D1::Point2F(width - off, height - 2.0f),
-          D2D1::Point2F(width - 2.0f, height - off), grip_brush.Get(), stroke);
-    }
-  }
   }  // else (lyric transport controls)
 
   HRESULT hr = render_target_->EndDraw();
@@ -1876,17 +1895,18 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     RECT rc;
     GetClientRect(hwnd_, &rc);
     const float width = static_cast<float>(rc.right - rc.left);
-    const float btn = ScaleForDpi(kButtonSizeDip);
-    const float gap = ScaleForDpi(kButtonGapDip);
+    const float btn =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip);
+    const float gap =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonGapDip : kButtonGapDip);
     const float pad = ScaleForDpi(kHorizontalPaddingDip);
     const float ctrl_top = ScaleForDpi(kControlsTopDip);
     if (y < ctrl_top || y > ctrl_top + btn) {
       return std::string();
     }
     if (hook_text_mode_) {
-      const float controls_total =
-          btn * kHookTextControlSlotCount +
-          gap * (kHookTextControlSlotCount - 1);
+      const float controls_total = btn * kHookTextControlSlotCount +
+                                   gap * (kHookTextControlSlotCount - 1);
       const float left = (width - controls_total) / 2.0f;
       for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
         const float bx = left + slot * (btn + gap);
