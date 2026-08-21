@@ -219,44 +219,50 @@ class ReaderPaginationScripts {
   /// 语义被 `restoreToCharOffset` :706 / `jumpToFragment` 锁定，**不自创轴向**）。
   /// 起始边锚恒等于「这句开头所在那一页」，不越界。
   ///
-  /// 返回 floor 对齐后的目标滚动量（`alignToPage`：`floor(anchor/pageSize)*pageSize`，
-  /// anchor 先 clamp 到 >=0）。
+  /// 返回 floor 对齐后的目标滚动量（`alignToPage`：
+  /// `floor((anchor − contentStart)/pageSize)*pageSize`，差先 clamp 到 >=0）。
+  ///
+  /// [contentStart] 是分页网格的**相位** —— turn 轴起始 padding（竖排 `padding-top`、
+  /// 横排 `padding-left`）。滚动坐标原点是 body 的 padding box，列内容却从 content box
+  /// 起始边开始，故列 j 的起始滚动坐标 = `contentStart + j*pageSize`。不减相位就等于把
+  /// 网格整体平移了 contentStart，见 `alignToPage` 注释与 BUG-1764/BUG-875。
   @visibleForTesting
   static double revealAnchorTargetScrollForTesting({
     required double rectStart,
     required double currentScroll,
     required double pageSize,
+    double contentStart = 0,
   }) {
     if (pageSize <= 0) return currentScroll;
-    final double anchor = rectStart + currentScroll;
+    final double anchor = rectStart + currentScroll - contentStart;
     final double safe = anchor < 0 ? 0 : anchor;
     return (safe / pageSize).floorToDouble() * pageSize;
   }
 
-  /// JS `scrollToRange` reveal 决策的纯 Dart 影子（BUG-875）。
+  /// JS `scrollToRange` reveal 决策的纯 Dart 影子（BUG-875 / BUG-1764）。
   ///
-  /// 返回值：`null` = 不翻页（句首已在本页可见 / pageSize 非法 / 目标==当前）；
-  /// 非空 = 应翻到的目标 scroll。
+  /// 返回值：`null` = 不翻页（句首就在本页 / pageSize 非法）；非空 = 应翻到的目标 scroll。
   ///
-  /// 根因：`pageSize`（列周期）因 chrome inset / body padding 可比 client
-  /// `viewportExtent` 小最多半页。竖排一句 cue 句首若是行尾单字（列底），其起始边
-  /// `rectStart`(=rect.top) 落在 `[pageSize, viewportExtent)` 带内 —— 视觉仍在本页底部、
-  /// 却已越过 pitch 网格边界 → 旧 floor 判进下一页 → 有声书读到该句凭空前翻、下一句又
-  /// 翻回 = 抖动。修复：起始边落在真实 client 视口 `[0, viewportExtent)` 内即「已可见」，
-  /// 不翻页。`rectStart<0`（句首滚出视口首边）或 `>=viewportExtent`（句首真在下一页）
-  /// 才照常 floor 落页。
+  /// 判据只有一条：句首所属的那一页是不是当前页（`alignToPage` 减相位后就是精确的列号
+  /// 函数，见 [revealAnchorTargetScrollForTesting] 的 [contentStart]）。历史上这里还有
+  /// 一条 `rectStart < viewportExtent` 的「已可见即不翻」短路（BUG-875 的旧修法）：
+  /// client 视口比一页真正的内容宽出 turn 轴两侧 padding，于是**结束边** padding >
+  /// column-gap 时（横排宽屏、竖排大字号/底栏占位/移动端系统 inset），下一页开头那段
+  /// 落进 `[pageSize, viewportExtent)` 带被误判成「本页可见」→ 有声书跟随读到下一页第一句
+  /// 时不翻页（BUG-1764）。而 BUG-875 的行尾单字与它在 `rectStart` / `targetScroll` 上取值
+  /// 完全相同，同一条阈值无法区分 —— 根因不在可见性判据而在网格相位，补相位后两者同时消失。
   static double? revealScrollTargetForTesting({
     required double rectStart,
     required double currentScroll,
     required double pageSize,
-    required double viewportExtent,
+    double contentStart = 0,
   }) {
     if (pageSize <= 0) return null;
-    if (rectStart >= 0 && rectStart < viewportExtent) return null;
     final double target = revealAnchorTargetScrollForTesting(
       rectStart: rectStart,
       currentScroll: currentScroll,
       pageSize: pageSize,
+      contentStart: contentStart,
     );
     if (target == currentScroll) return null;
     return target;
@@ -2081,13 +2087,24 @@ $_sharedJs
     // 只用于最后一张无法整页对齐的 terminal clamp。
     var viewportExtent = vertical ? scrollEl.clientHeight : scrollEl.clientWidth;
     var physicalMaxScroll = Math.max(0, totalSize - viewportExtent);
+    // BUG-1764（有声书下一页第一句不翻页）/ BUG-875（竖排行尾单字凭空前翻）的共同根因：
+    // 分页网格的**相位**。滚动坐标原点是 body 的 padding box 起始边，而列内容从 content box
+    // 起始边开始 —— 两者恰差一个 turn 轴起始 padding。故列 j 的起始滚动坐标恒为
+    // contentStart + j*pageStep，而不是 j*pageStep。判「某个 anchor 属于第几列」必须先减掉
+    // contentStart 再除 pageStep（见 alignToPage）。turn 轴由 vertical 决定：竖排（vertical-rl
+    // 的 inline 轴竖直、列向下堆叠、滚 scrollTop）取 paddingTop，横排取 paddingLeft，与
+    // getPagePosition / 各落页锚的起始边取轴严格同源。
+    var contentStart = vertical
+      ? (parseFloat(cs.paddingTop) || 0)
+      : (parseFloat(cs.paddingLeft) || 0);
     return {
       vertical: vertical,
       scrollEl: scrollEl,
       pageSize: pageStep,
       maxScroll: maxScroll,
       physicalMaxScroll: physicalMaxScroll,
-      viewportExtent: viewportExtent
+      viewportExtent: viewportExtent,
+      contentStart: contentStart
     };
   },
   getPagePosition: function(context) {
@@ -2149,7 +2166,17 @@ $_sharedJs
     }, { passive: true });
   },
   alignToPage: function(context, offset) {
-    return Math.floor(Math.max(0, offset) / context.pageSize) * context.pageSize;
+    // 相位修正（BUG-1764/BUG-875 同源根因）：列 j 的起始滚动坐标 = contentStart + j*pageSize
+    // （见 getScrollContext 的 contentStart），所以列号 = floor((anchor − contentStart)/pageSize)。
+    // 裸 floor(anchor/pageSize) 相当于把网格整体平移了 contentStart：
+    //   · contentStart > gap 时，每列末尾 (contentStart − gap) 那段内容被判进下一列 → 落页前翻
+    //     一页（BUG-875 竖排行尾单字凭空翻页的真正来源）；
+    //   · 反过来下一列开头那段被判成仍属本列 → 该翻不翻（BUG-1764）。
+    // 减相位后 alignToPage 就是精确的列号函数，两个方向的错判同时消失，不需要任何可见性特例。
+    // 返回值仍落在 j*pageSize 的滚动网格上（页对齐后内容起始边露出 contentStart 的页边距，
+    // 与 paginate / pageStepPosition / minScroll 的网格严格同源，网格本身零变化）。
+    var phase = context.contentStart || 0;
+    return Math.floor(Math.max(0, offset - phase) / context.pageSize) * context.pageSize;
   },
   alignContentStartToPage: function(context, offset) {
     // TODO-1179：章首落点只能向下偏置到「包含首行内容边」的那一页。firstContentEdge
@@ -2179,18 +2206,17 @@ $_sharedJs
     var startEdge = context.vertical ? rect.top : rect.left;
     var anchor = startEdge + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
-    // BUG-875（竖排行尾单字凭空翻页根因修复）：pageStep（列周期 = N×(used 列宽+gap)）
-    // 因 chrome inset / body padding 可比 client 视口 extent 小最多半页（见 getScrollContext
-    // 的 physicalMaxScroll 注释「两者因此可相差半页」）。当一句 cue 的**句首**是一行的**行尾
-    // 单字**（竖排=列底），其首段 rect 的起始边 rect.top 落在 [pageStep, viewportExtent) 这条
-    // 「视觉仍在本页底部、却已越过 pitch 网格边界」的带内 → 旧 floor 网格把它判进下一 pitch
-    // 页 → 有声书读到该句凭空前翻一页、下一句句首起始边回到 [0,pageStep) 又翻回 = 来回抖动。
-    // 起始边只要落在真实 client 视口内即「已在本页可见」，reveal 原语不该再翻页（与
-    // scrollToTarget「已可见即 return false」同哲学，但分页模式整页对齐无需 15% 安全边距：
-    // 句子落在本页任意位置都是合法阅读位）。用真实 viewportExtent 作可见判据，从根上消除
-    // pitch 网格与 client 视口在页底的坐标失配，不引入延迟/特例分支。startEdge<0（句首已滚出
-    // 视口首边）或 >=viewportExtent（句首在下一页、真需翻页）时不短路，照常 floor 落页。
-    if (startEdge >= 0 && startEdge < context.viewportExtent) return false;
+    // BUG-1764（有声书跟随读到下一页第一句时不翻页）：这里曾有一条
+    // `if (startEdge >= 0 && startEdge < context.viewportExtent) return false;` 的
+    // 「已可见即不翻」短路，是 BUG-875（竖排行尾单字凭空前翻）的旧修法。它用 client 视口
+    // extent 当可见判据，而 client 视口比一页真正的内容（contentBox）宽出 turn 轴两侧 padding：
+    // 只要**结束边** padding > column-gap（横排 W>1100px 的宽屏、竖排字号>22 或底栏占位 /
+    // 移动端系统 inset），下一页开头那段就落在 [pageStep, viewportExtent) 带内被判成「本页可见」
+    // → 该翻不翻，要等到再下一句才翻，表现为「下一页第一句不自动翻页」。
+    // 而 BUG-875 的行尾单字与本 bug 的下一页首句在 startEdge / targetScroll 上取值完全相同，
+    // 单一阈值结构上区分不了两者 —— 说明判据维度本身就错了。真正的根因是 alignToPage 缺列
+    // 网格相位（见那里的注释）：补上相位后，`targetScroll === currentScroll` 已经精确表达
+    // 「句首就在本页」，两个方向的错判同时消失，这条特例短路不再需要，删除。
     if (targetScroll === currentScroll) return false;
     this.setPagePosition(context, targetScroll);
     var self = this;
