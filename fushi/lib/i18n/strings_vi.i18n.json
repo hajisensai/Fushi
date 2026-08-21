@@ -3511,7 +3511,6 @@
   "onboarding_feature_extension_hint": "Look up words on any web page (desktop only)",
   "onboarding_anki_intro_body": "Anki is a free spaced repetition flashcard app: new words become cards, and reviews are scheduled along the forgetting curve. After a lookup, Fushi can turn the word into an Anki card in one tap, with meaning, sentence, audio and screenshot.",
   "onboarding_anki_setup_desktop_hint": "Install the Anki desktop app, then add the AnkiConnect add-on: in Anki, open Tools - Add-ons - Get Add-ons and enter code 2055492159. Keep Anki running while creating cards.",
-  "onboarding_anki_setup_android_hint": "Install AnkiDroid and enable its API: AnkiDroid Settings - Advanced - Enable AnkiDroid API, then allow the permission dialog on your first card.",
   "onboarding_anki_setup_ios_hint": "With AnkiMobile installed, adding cards works out of the box. For the full feature set, connect to Anki running on a computer in the same network via AnkiConnect.",
   "onboarding_anki_backend_label": "Connection",
   "onboarding_anki_test_action": "Test connection",
@@ -3523,5 +3522,6 @@
   "onboarding_anki_mobile_ankiconnect_hint": "This device can also create cards into Anki running on a computer in the same network: enable AnkiConnect in card creation settings and enter the computer address.",
   "onboarding_anki_fsrs_title": "Switch Anki to FSRS",
   "onboarding_anki_fsrs_body": "Anki ships with FSRS, a far better scheduler than the 30-year-old SM-2 default: better retention with fewer reviews. In Anki, open deck options and turn on FSRS (one switch covers the whole collection). This must be done inside Anki itself.",
-  "onboarding_step_pack_browser_action": "Download in browser"
+  "onboarding_step_pack_browser_action": "Download in browser",
+  "onboarding_anki_setup_android_hint": "Install AnkiDroid and open it once to finish its first-run setup. Back in Fushi, tap Allow on the permission dialog that pops up with your first card - no AnkiDroid settings to change."
 }
