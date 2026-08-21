@@ -123,6 +123,15 @@ abstract interface class VideoSubtitleProvider {
 
   Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate);
 
+  /// 是否允许为「正文语言探测」这类**展示增强**目的白下载一次。
+  ///
+  /// 默认必须是 false。有下载配额的源（OpenSubtitles 的 `/download` 就是计配额的那
+  /// 一步，响应里带 `remaining`）绝不能被后台探测消耗——免费账号一天只有 5~20 次，
+  /// 一次搜索最多能吞掉 4 次，而探测失败还被静默吞掉，用户只会看到「下载失败」，
+  /// 永远不知道配额是被一个标签吃光的。判据必须是「这个源有没有配额」，不能是
+  /// 「这条候选的 language 字段是不是空的」——后者与配额毫无关系。
+  bool get allowsFreeProbeDownload;
+
   void close();
 }
 

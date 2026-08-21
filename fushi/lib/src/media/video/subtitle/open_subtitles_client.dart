@@ -322,6 +322,13 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
   }
 
   @override
+
+  /// OpenSubtitles 的 `/download` 就是计配额的那一步（响应带 `remaining`），
+  /// 绝不为一个展示标签消耗用户的每日额度。
+  @override
+  bool get allowsFreeProbeDownload => false;
+
+  @override
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
   ) async {

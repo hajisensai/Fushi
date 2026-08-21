@@ -499,11 +499,19 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       sources,
       preferredLanguage: _selectedLanguage,
     );
+    // 不缓存 registry.download 闭包：填/改 API key 会重建 provider runtime（同文件
+    // 下方注释已写明「早绑的实例正是坑」），把 download 撞进长期持有的 _probe 里，
+    // 改完 key 后探测仍走旧 runtime，全部失败又被静默吞掉 —— 标签永远不出现，还每次
+    // 白发一轮 HTTP。缓存只保留探测结果本身（probe 内部按 identityKey 缓存）。
     final SubtitleVersionLanguageProbe probe =
-        _probe ??= SubtitleVersionLanguageProbe(download: registry.download);
+        _probe ??= SubtitleVersionLanguageProbe(download: _downloadForProbe);
     int probed = 0;
     for (final SubtitleVersionGroup group in groups) {
       if (group.language.isNotEmpty) continue;
+      // 有下载配额的源不做探测：OpenSubtitles 的 /download 就是计配额那一步，免费账号
+      // 一天 5~20 次，这里最多能一次吞掉 4 次，而失败还被吞成「下载失败」，用户永远
+      // 不知道配额是被一个展示标签吃光的。
+      if (!registry.allowsFreeProbeDownload(group.representative)) continue;
       if (probed >= 4) break;
       probed++;
       final SubtitleContentLanguage? detected =
@@ -517,6 +525,22 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         };
       });
     }
+  }
+
+  /// 探测用下载：**每次现取** registry（与直接下载路径同纪律），不长期持有闭包。
+  Future<VideoSubtitleDownload> _downloadForProbe(
+    VideoSubtitleCandidate candidate,
+  ) {
+    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    if (registry == null) {
+      throw ExternalProviderFailure(
+        providerId: candidate.providerId,
+        operation: 'probe-download',
+        kind: ExternalProviderFailureKind.unsupported,
+        message: 'subtitle registry unavailable',
+      );
+    }
+    return registry.download(candidate);
   }
 
   Future<http.Client> _createHttpClient() {

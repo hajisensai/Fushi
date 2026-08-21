@@ -1855,6 +1855,10 @@ class _FakeSubtitleCandidate extends VideoSubtitleCandidate {
 }
 
 class _FakeSubtitleProvider implements VideoSubtitleProvider {
+  /// 测试假实现：不发真请求，探测门控取值不影响被测行为。
+  @override
+  bool get allowsFreeProbeDownload => false;
+
   _FakeSubtitleProvider({required this.bytes});
 
   final Uint8List bytes;

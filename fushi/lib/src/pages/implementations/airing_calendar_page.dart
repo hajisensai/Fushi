@@ -525,21 +525,28 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     const double width = 40;
     const double height = 60;
     final String url = coverUrl?.trim() ?? '';
+    final Widget placeholder = ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Icon(
+        Icons.movie_outlined,
+        size: 20,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,
       child: SizedBox(
         width: width,
         height: height,
+        // errorBuilder 必须给：PortraitCoverImage 在加载失败时返回
+        // SizedBox.shrink()，不给就是封面 404 / 断网留一个 40×60 的空洞（上面那条
+        // 占位分支只在 url 为空串时才走）。发现页自己的卡片就是这么传的。
         child: url.isEmpty
-            ? ColoredBox(
-                color: theme.colorScheme.surfaceContainerHighest,
-                child: Icon(
-                  Icons.movie_outlined,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            : PortraitCoverImage(image: CachedNetworkImageProvider(url)),
+            ? placeholder
+            : PortraitCoverImage(
+                image: CachedNetworkImageProvider(url),
+                errorBuilder: (_) => placeholder,
+              ),
       ),
     );
   }

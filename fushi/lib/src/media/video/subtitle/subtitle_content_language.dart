@@ -117,6 +117,8 @@ SubtitleContentLanguage detectSubtitleContentLanguage(String text) {
   int totalLatin = 0;
   int hanOnlyLines = 0;
   int hanOnlyHan = 0;
+  int kanaLines = 0;
+  int contentLines = 0;
   int simplifiedHits = 0;
   int traditionalHits = 0;
   for (final String line in lines) {
@@ -135,17 +137,39 @@ SubtitleContentLanguage detectSubtitleContentLanguage(String text) {
     }
     totalKana += lineKana;
     totalHan += lineHan;
+    if (lineKana > 0) kanaLines++;
+    if (lineKana > 0 || lineHan > 0) contentLines++;
     if (lineKana == 0 && lineHan >= 2) {
       hanOnlyLines++;
       hanOnlyHan += lineHan;
     }
   }
   if (totalKana >= 8) {
-    // 纯日语字幕里也有汉字拟声/汉字词行（「物音」），要求「无假名汉字行」既有
-    // 行数又有总量，才判双语——单个拟声行不构成中文轨。
-    final int bilingualFloor = totalHan ~/ 5 > 12 ? totalHan ~/ 5 : 12;
-    if (hanOnlyLines >= 3 && hanOnlyHan >= bilingualFloor) {
+    // 双语的判据必须**对称**：两条轨都要占到实质的对白行比例。
+    //
+    // 旧判据是 `hanOnlyHan >= max(12, totalHan/5)` —— 只拿汉字**总量**跟它自己的
+    // 五分之一比。这对「日语主体 + 零星汉字拟声行」方向有保护力，但反方向门槛恒被
+    // 自己撑爆：一份中文字幕组的 .ass（300 行中文对白、~2500 汉字）只要带 20 行日文
+    // OP/ED 卡拉 OK 歌词（中文字幕组几乎标配，8 个假名就够），就会 hanOnlyHan=2500
+    // ≥ floor=500 而被判成「中日双语」——这次重做的核心卖点在最常见的样本上判错。
+    //
+    // 改成按**行占比**双向卡：两条轨各自既要有最低行数，又要各占对白行的 20% 以上。
+    // 6% 的日文歌词行不构成日语轨，25% 的汉字拟声行也不构成中文轨（后者靠 >=3 行的
+    // 最低行数挡住）。
+    final bool bothTracksPresent = kanaLines >= 3 && hanOnlyLines >= 3;
+    final bool bothTracksSubstantial = contentLines > 0 &&
+        kanaLines * 5 >= contentLines &&
+        hanOnlyLines * 5 >= contentLines;
+    if (bothTracksPresent && bothTracksSubstantial) {
       return SubtitleContentLanguage.bilingualJaZh;
+    }
+    // 不是双语时还要选一条轨：假名行只是零星点缀（OP/ED 歌词）而正文全是无假名汉字
+    // 行时，正文其实是中文，旧实现在这里一律返回日语，等于把中文字幕标成日语。
+    // 反向仍偏保守：中文轨要够行数够总量才敢改判，否则维持日语。
+    if (kanaLines < hanOnlyLines && hanOnlyLines >= 3 && hanOnlyHan >= 12) {
+      return traditionalHits > simplifiedHits
+          ? SubtitleContentLanguage.traditionalChinese
+          : SubtitleContentLanguage.simplifiedChinese;
     }
     return SubtitleContentLanguage.japanese;
   }

@@ -80,6 +80,39 @@ void main() {
       );
     });
 
+    // 回归锚：中文字幕组的 .ass 几乎标配几行日文 OP/ED 卡拉 OK 歌词。旧判据只拿汉字
+    // 总量跟自己的五分之一比，门槛恒被自己撑爆 → 整份中文字幕被判成「中日双语」。
+    test('中文正文 + 零星日文 OP 歌词 → 中文（不是双语）', () {
+      final List<String> lines = <String>[
+        // 日文歌词 3 行（假名足量，会进日语分支）
+        'きらきら光る夜空の星よ',
+        'ずっと君のそばにいたいよ',
+        'この気持ちを歌にのせて',
+        // 中文对白 30 行：占对白行 91%
+        for (int i = 0; i < 30; i++) '这是一句很普通的中文对白内容',
+      ];
+      expect(
+        detectSubtitleContentLanguage(_srt(lines)),
+        SubtitleContentLanguage.simplifiedChinese,
+        reason: '日文歌词只占 9% 的行，不构成日语轨',
+      );
+    });
+
+    // 反向对称：日语正文 + 零星中文注释行，同样不该判双语。
+    test('日语正文 + 零星汉字行 → 日语（不是双语）', () {
+      final List<String> lines = <String>[
+        for (int i = 0; i < 30; i++) 'これは普通の日本語のセリフです',
+        '注釈文字列',
+        '補足説明文',
+        '追加情報行',
+      ];
+      expect(
+        detectSubtitleContentLanguage(_srt(lines)),
+        SubtitleContentLanguage.japanese,
+        reason: '无假名汉字行只占 9% 的行，不构成中文轨',
+      );
+    });
+
     test('简体正文 → 简体中文', () {
       expect(
         detectSubtitleContentLanguage(_srt(<String>[
