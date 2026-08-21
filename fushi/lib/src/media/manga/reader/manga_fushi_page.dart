@@ -814,7 +814,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 停留是「真的在读」的最低判据。
   Timer? _pageDwellTimer;
   int _pageDwellKey = -1;
-  static const Duration _kPageDwellThreshold = Duration(milliseconds: 1500);
+
+  /// 取自跨域共享的 [kArrivalDwellMs]：与视频的 cue 停留门是同一条产品判据
+  /// （到达 ≠ 看过），只应有一个数。
+  static const Duration _kPageDwellThreshold =
+      Duration(milliseconds: kArrivalDwellMs);
 
   /// 当前页（spread 模式按跨页、webtoon 按页）起一个 [_kPageDwellThreshold] 定时，
   /// 到期才真正入账；到期前位置变了就换目标重计时（旧目标从未入账）。

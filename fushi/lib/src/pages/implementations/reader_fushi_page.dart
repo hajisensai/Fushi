@@ -393,33 +393,58 @@ ReadProgressResult accumulateSessionChars({
 /// 水位推进只隔几百毫秒，每步就只计几十字——「到达即计」的虚增被物理上限杀掉。
 const int kMaxReadCharsPerSecond = 40;
 
-/// BUG-1762：带阅读速度封顶的 session 字数推进（纯函数）。
+/// 速度封顶的结算结果：在 [ReadProgressResult] 之上带回剩余额度（千分之一字为单位）。
+typedef ReadChargeResult = ({
+  int charsAdded,
+  int highWaterMark,
+  int creditMilliChars,
+});
+
+/// BUG-1762：带阅读速度封顶的 session 字数推进（纯函数，**令牌桶**）。
 ///
 /// [accumulateSessionChars] 的 high-water 语义只挡「重复计入」（往返回读），完全
 /// 不挡「首次快速掠过」：按住翻页键扫过的每一页都在到达瞬间全额入账（产品裁定：
 /// 到达≠读过，与漫画 BUG-1761 的停留门、视频 BUG-1763 的播放停留门同一条规则）。
-/// 本函数在其结果上叠加封顶：本次可计入 ≤ [elapsedMs] × [kMaxReadCharsPerSecond]，
-/// 超出的余量随水位**静默抬走**、不回补——快速掠过的内容视同跳转（抬水位不计数），
-/// 之后回来重读也不再计（与 high-water「重读不重复计」一致，宁可少算）。
-/// [elapsedMs] 是距上次水位推进的真实时间，由调用方按 `kMaxReadingGap` 封顶
-/// （挂机不攒计数额度）。
-ReadProgressResult accumulateSessionCharsCapped({
+///
+/// 为什么是令牌桶而不是「本次可计入 ≤ 距上次推进的时间 × 速率」：那种写法按**上报
+/// 节奏**收费。连续模式的进度上报是 50ms 节流 + coalesce 的边滑边回传，一次甩动滚过
+/// 一屏会被拆成 5~8 次推进；第一次把攒下的额度一次吃光（且余量不回补），后面几次各自
+/// 只隔几十毫秒 ⇒ 每次只准计几个字。实测一屏 400 字读 60 秒、再甩过下一屏，只能计约
+/// 80 字，正常阅读被砍掉八成。整数除法还让 <25ms 的窗口 cap 直接为 0。
+///
+/// 令牌桶把「物理上限」和「上报粒度」解耦：额度按 [elapsedMs] × 速率累积、**跨次结转**，
+/// 计入时扣减。持续速率仍被 [kMaxReadCharsPerSecond] 卡死，但上报被拆成几份不再有惩罚。
+/// 桶容量由调用方经 [maxCreditMilliChars] 给出（按 `kMaxReadingGap` 折算——挂机不攒
+/// 无限额度）。超出额度的部分仍随水位**静默抬走**、不回补，回来重读也不再计。
+ReadChargeResult accumulateSessionCharsCapped({
   required int absoluteChars,
   required int highWaterMark,
   required int elapsedMs,
+  required int creditMilliChars,
+  required int maxCreditMilliChars,
 }) {
+  final int clampedElapsedMs = elapsedMs < 0 ? 0 : elapsedMs;
+  int credit = creditMilliChars < 0 ? 0 : creditMilliChars;
+  credit += clampedElapsedMs * kMaxReadCharsPerSecond;
+  if (credit > maxCreditMilliChars) credit = maxCreditMilliChars;
   final ReadProgressResult raw = accumulateSessionChars(
     absoluteChars: absoluteChars,
     highWaterMark: highWaterMark,
   );
   if (raw.charsAdded <= 0) {
-    return raw;
+    return (
+      charsAdded: 0,
+      highWaterMark: raw.highWaterMark,
+      creditMilliChars: credit,
+    );
   }
-  final int clampedElapsedMs = elapsedMs < 0 ? 0 : elapsedMs;
-  final int cap = clampedElapsedMs * kMaxReadCharsPerSecond ~/ 1000;
+  final int affordable = credit ~/ 1000;
+  final int charsAdded =
+      raw.charsAdded < affordable ? raw.charsAdded : affordable;
   return (
-    charsAdded: raw.charsAdded < cap ? raw.charsAdded : cap,
+    charsAdded: charsAdded,
     highWaterMark: raw.highWaterMark,
+    creditMilliChars: credit - charsAdded * 1000,
   );
 }
 
@@ -1492,11 +1517,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // flush 起新 session 时由调用方重置到当前位置。
   int _sessionMaxAbsoluteChars = 0;
 
-  /// BUG-1762：上一次水位**推进**的时刻（含跳转播种）。速度封顶的时间窗基准：
-  /// 本次推进可计入 ≤ 距它的时间 × [kMaxReadCharsPerSecond]（窗按 `kMaxReadingGap`
-  /// 封顶）。只在水位真的抬高时重锚——原地采样（delta 0 的 10s 轮询）不重锚，
-  /// 否则长停留页翻过去时窗被压到轮询间隔、正常整页都计不满。
+  /// BUG-1762：速度封顶令牌桶的计时基准 —— 上一次**采样**的时刻（不是上一次水位
+  /// 推进）。每次采样都推进它并按流逝时间给桶充值，所以额度是连续累积的，与进度
+  /// 上报被拆成几份无关（连续模式一次甩动会拆成 5~8 次上报，按「上次推进」计时会
+  /// 让后面几次各自只隔几十毫秒、几乎分不到额度）。
   DateTime _lastWatermarkAdvanceAt = DateTime.now();
+
+  /// BUG-1762：速度封顶的剩余额度（千分之一字）。跨次结转，容量按 `kMaxReadingGap`
+  /// 折算 —— 挂机不攒无限额度，但正常阅读攒下的额度不会被第一个碎片一次吃光。
+  int _readChargeCreditMilliChars = 0;
 
   /// BUG-1052：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
   /// gap 守卫 tick 累加（见 `ReadingTimeTracker.onDelta`）。
@@ -2293,6 +2322,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       book.setChapterCharCountHints(counts);
       _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
       _lastWatermarkAdvanceAt = DateTime.now();
+      // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+      _readChargeCreditMilliChars = 0;
       // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
       // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
       unawaited(_persistRecomputedCharCounts(counts));

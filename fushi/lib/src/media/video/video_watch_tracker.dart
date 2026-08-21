@@ -52,11 +52,15 @@ String _dateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 
 /// 一句 cue 计入字幕字数所需的最低真实播放停留（媒体时间，毫秒）。
 /// 短 cue 取自身时长为门（日语字幕大量 cue 短于该值，固定阈值会让它们永远不计）。
-const int kCueDwellMs = 1500;
+///
+/// 取自跨域共享的 [kArrivalDwellMs]：「多久才算停留过」是同一条产品判据，漫画的
+/// 翻页停留门用的是同一个数，不再各写各的 1500。
+const int kCueDwellMs = kArrivalDwellMs;
 
-/// 单次观察允许计入的最大位置推进（毫秒）。相邻两次通知间真实播放只会推进
-/// 百余毫秒；一次跳好几秒说明是 cue 内 seek，不是停留。
-const int kCueDwellObservationCapMs = 1000;
+/// 停留量与墙钟流逝的对账余量（毫秒）。媒体时间推进得比墙钟快出这个余量以上的部分
+/// 不算停留——拖进度条 / 字幕列表点跳会让位置瞬间前进几秒而墙钟只过了几十毫秒。
+/// 留一点余量是因为倍速播放与 tick 抖动会让两者不严格相等。
+const int kCueDwellWallClockSlackMs = 250;
 
 /// 纯谓词（BUG-1763）：候选 cue 的**真实播放推进量**是否已满足停留门。
 ///
@@ -186,6 +190,7 @@ class VideoWatchTracker {
     _countedIndices.clear();
     _pendingCueIndex = -1;
     _pendingPlayedMs = 0;
+    _pendingObservedAt = null;
     _episodeCompletionReported = false;
   }
 
@@ -203,21 +208,29 @@ class VideoWatchTracker {
   int? _pendingCueEndMs;
   int _pendingLastPosMs = 0;
   int _pendingPlayedMs = 0;
+  DateTime? _pendingObservedAt;
+
+  /// 测试注入的墙钟：停留量要与真实流逝时间对账（见 [_accumulatePending]）。
+  @visibleForTesting
+  DateTime Function() debugNowForTesting = DateTime.now;
 
   /// BUG-1763：字幕字数入账必须过停留门（[shouldCountCueDwell]），不再「位置进入
   /// cue 即全额计」。旧实现不看 isPlaying、不看播了多久：暂停态拖进度条 / 字幕列表
   /// 点击跳句 / 开视频落在断点 cue 上，每个落点命中的句子都全额入账——「0 分钟
   /// 观看 + 几千字幕字」可以纯靠暂停拖条刷出来。
   ///
-  /// 观察窗规则：换句时先按已观察的推进量结算旧候选；同句时只有**播放态**的位置
-  /// 前进才累计（每次观察封顶 [kCueDwellObservationCapMs]，cue 内 seek 的跳变不算
-  /// 停留；暂停/回退只移动基线不累计），达到门槛立即入账。
+  /// 停留量由 [_accumulatePending] 从「进句 / 换句」两个事件之间的媒体位置推进推导，
+  /// 并与墙钟对账——**不按 tick 累加**，因为生产端明确抑制同句 tick 通知（详见
+  /// [_accumulatePending] 的说明）。达到门槛立即入账。
   void _onSourceChanged() {
     final VideoPlaybackSource? s = _source;
     if (s == null) return;
     final int idx = s.currentCueIndex;
     final int? pos = s.positionMs;
     if (idx != _pendingCueIndex) {
+      // 换句这一刻先把上一句的停留量结算掉：生产路径上这**就是**上一句能收到的最后
+      // 一次通知（见 [_accumulatePending] 的说明）。
+      _accumulatePending(pos);
       _commitPendingIfDwelled();
       final AudioCue? cue = idx >= 0 ? s.currentCue : null;
       final String? text = cue?.text;
@@ -229,19 +242,15 @@ class VideoWatchTracker {
         _pendingCueText = text;
         _pendingCueStartMs = cue.startMs;
         _pendingCueEndMs = cue.endMs;
-        _pendingLastPosMs = pos;
+        _pendingLastPosMs = _clampToPendingCue(pos);
         _pendingPlayedMs = 0;
+        _pendingObservedAt = debugNowForTesting();
       }
       return;
     }
     if (_pendingCueIndex < 0 || pos == null) return;
-    if (s.isPlaying) {
-      final int delta = pos - _pendingLastPosMs;
-      if (delta > 0) {
-        _pendingPlayedMs += math.min(delta, kCueDwellObservationCapMs);
-      }
-    }
-    _pendingLastPosMs = pos;
+    // 同句再次收到通知（部分源会因别的原因通知）：照常推进，与换句结算共用同一套账。
+    _accumulatePending(pos);
     if (shouldCountCueDwell(
       playedMs: _pendingPlayedMs,
       cueStartMs: _pendingCueStartMs,
@@ -249,6 +258,43 @@ class VideoWatchTracker {
     )) {
       _commitPendingIfDwelled();
     }
+  }
+
+  /// 把 [pos] 夹进候选 cue 的时间窗。换句那一刻 pos 已经落在下一句里，不夹的话会把
+  /// 后面的时间算进上一句；跳走同理。
+  int _clampToPendingCue(int pos) {
+    final int? start = _pendingCueStartMs;
+    final int? end = _pendingCueEndMs;
+    if (start == null || end == null || end <= start) return pos;
+    return pos < start ? start : (pos > end ? end : pos);
+  }
+
+  /// 把候选 cue 的停留量推进到 [pos] 这一刻。
+  ///
+  /// **不能依赖「同句 tick 会不会来」**：[VideoPlayerController] 的契约明确规定命中
+  /// 下标与当前相同时**不重复** notifyListeners（源码注释写着「避免每 125ms tick 无谓
+  /// notifyListeners」）。所以生产路径上一句 cue 从进到出只收到两次通知——进句一次、
+  /// 换句一次。按 tick 累加的写法在生产里恒为 0，字幕字数会**永远计不上**（而假源每
+  /// 500ms emit 一次的测试照样绿）。故停留量从这两个事件之间的媒体位置推进推导。
+  ///
+  /// 两道钳制，缺一不可：
+  ///  * 位置先夹进本句时间窗（[_clampToPendingCue]），否则换句那一刻的 pos 会把下一句
+  ///    的时间算进上一句；
+  ///  * 再与**墙钟**流逝量对账取小：拖进度条 / 字幕列表点跳会让媒体时间瞬间推进几秒而
+  ///    墙钟只过了几十毫秒，那不是停留。倍速播放时按墙钟收费，偏保守（宁可少算）。
+  void _accumulatePending(int? pos) {
+    if (_pendingCueIndex < 0 || pos == null) return;
+    final DateTime now = debugNowForTesting();
+    final DateTime? since = _pendingObservedAt;
+    final int clamped = _clampToPendingCue(pos);
+    final int delta = clamped - _pendingLastPosMs;
+    _pendingLastPosMs = clamped;
+    _pendingObservedAt = now;
+    if (delta <= 0) return;
+    final int wallMs = since == null
+        ? delta
+        : now.difference(since).inMilliseconds + kCueDwellWallClockSlackMs;
+    _pendingPlayedMs += math.min(delta, math.max(0, wallMs));
   }
 
   /// 结算候选：停留量达标才入账（去重集兜底），未达标直接丢弃（宁可少算）。

@@ -180,6 +180,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     );
     // BUG-1762：恢复落定也是一次水位重锚——速度封顶的时间窗从这里重新起算。
     _lastWatermarkAdvanceAt = DateTime.now();
+    // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+    _readChargeCreditMilliChars = 0;
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
     // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0
@@ -1017,22 +1019,24 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     _adoptLiveProgressAsRestoreAnchor(progress, charOffset);
     final int absoluteChars = _absoluteCharPosition(progress);
     // TODO-147 / BUG-211：按 high-water mark 增量计数，避免往返翻页重复累计。
-    // BUG-1762：叠加阅读速度封顶——到达≠读过。快速连翻/掠过时相邻两次水位推进
-    // 只隔几百毫秒，可计入字数被封在「距上次推进的时间 × kMaxReadCharsPerSecond」
-    // 之内，余量随水位静默抬走不回补；正常阅读节奏远够不到封顶，行为不变。
-    // 时间窗按 kMaxReadingGap 封顶：挂机不攒计数额度。
+    // BUG-1762：叠加阅读速度封顶——到达≠读过。封顶是**令牌桶**：额度按流逝时间累积、
+    // 跨次结转，计入时扣减。持续速率仍被 kMaxReadCharsPerSecond 卡死，但不惩罚上报
+    // 碎片化（连续模式一次甩动会被 50ms 节流拆成 5~8 次推进，按「距上次推进的时间」
+    // 收费会让后面几次各自只分到几毫秒的额度，正常阅读被砍掉八成）。
+    // 计时基准每次采样都推进；桶容量按 kMaxReadingGap 折算——挂机不攒无限额度。
     final DateTime nowForChars = DateTime.now();
-    final int sinceAdvanceMs =
+    final int sinceSampleMs =
         nowForChars.difference(_lastWatermarkAdvanceAt).inMilliseconds;
     final int gapCapMs = kMaxReadingGap.inMilliseconds;
-    final ReadProgressResult delta = accumulateSessionCharsCapped(
+    final ReadChargeResult delta = accumulateSessionCharsCapped(
       absoluteChars: absoluteChars,
       highWaterMark: _sessionMaxAbsoluteChars,
-      elapsedMs: sinceAdvanceMs > gapCapMs ? gapCapMs : sinceAdvanceMs,
+      elapsedMs: sinceSampleMs > gapCapMs ? gapCapMs : sinceSampleMs,
+      creditMilliChars: _readChargeCreditMilliChars,
+      maxCreditMilliChars: gapCapMs * kMaxReadCharsPerSecond,
     );
-    if (delta.highWaterMark > _sessionMaxAbsoluteChars) {
-      _lastWatermarkAdvanceAt = nowForChars;
-    }
+    _lastWatermarkAdvanceAt = nowForChars;
+    _readChargeCreditMilliChars = delta.creditMilliChars;
     _sessionCharsRead += delta.charsAdded;
     _sessionMaxAbsoluteChars = delta.highWaterMark;
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
@@ -1383,6 +1387,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       globalOffset,
     );
     _lastWatermarkAdvanceAt = DateTime.now();
+    // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+    _readChargeCreditMilliChars = 0;
 
     final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
       _chapterCumulativeChars,

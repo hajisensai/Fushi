@@ -1637,6 +1637,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ),
           );
           _lastWatermarkAdvanceAt = DateTime.now();
+          // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+          _readChargeCreditMilliChars = 0;
           final String preciseLocateJs =
               ReaderPaginationScripts.scrollToSearchMatchInvocation(
             query,
