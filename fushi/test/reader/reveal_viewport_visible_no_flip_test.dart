@@ -180,8 +180,15 @@ void main() {
     }
 
     test('getScrollContext 暴露 contentStart（turn 轴起始 padding）', () {
+      // 必须框进 getScrollContext 的函数体再断言：同文件 Dart 影子
+      // （revealAnchorTargetScrollForTesting 的传参）里也有一行同形的
+      // `contentStart: contentStart,`，扫全文的话把 JS 返回对象里那行删掉仍然全绿
+      // —— context.contentStart 变 undefined、相位塌成 0，BUG-875 与 BUG-1764 同时
+      // 复活而测试不红。
+      final String contextBody = functionBody(
+          'getScrollContext: function()', 'getPagePosition: function');
       expect(
-        RegExp(r'contentStart\s*:\s*contentStart').hasMatch(scripts),
+        RegExp(r'contentStart\s*:\s*contentStart').hasMatch(contextBody),
         isTrue,
         reason: 'alignToPage 需要从 context 读列网格相位',
       );
@@ -201,11 +208,22 @@ void main() {
         isTrue,
         reason: '缺相位 → BUG-875 前翻 / BUG-1764 该翻不翻同时回归',
       );
+      // JS 侧相位是三段线：读 padding → 挂进 context → 用进 floor。上面两条只守住
+      // 第一、三段，中间这段（phase 真的取自 context.contentStart）不守的话，把它
+      // 改成 `var phase = 0;` 照样全绿，相位静默失效。
+      expect(
+        RegExp(r'phase\s*=\s*context\.contentStart').hasMatch(body),
+        isTrue,
+        reason: '相位必须取自 context.contentStart，写死 0 = 相位失效',
+      );
     });
 
     test('scrollToRange 不得再用 client 视口 extent 作可见短路', () {
+      // 结束锚必须真的在 scrollToRange **之后**：notifyRestoreComplete 定义在它前面，
+      // indexOf(next, start) 返回 -1 会让 functionBody 静默退化成「扫到文件尾」，
+      // 框定意图落空（只会误红不会漏红，但断言就不再是针对这一个函数了）。
       final String body = functionBody(
-          'scrollToRange: function(range)', 'notifyRestoreComplete: function');
+          'scrollToRange: function(range)', 'contentLastPageScroll: function');
       expect(
         RegExp(r'^\s*if\s*\([^\n]*startEdge\s*<\s*context\.viewportExtent',
                 multiLine: true)
