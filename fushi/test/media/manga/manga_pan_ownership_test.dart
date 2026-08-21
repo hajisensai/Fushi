@@ -14,10 +14,11 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 ///    onMangaScroll 与 __mangaScrollToSpread 都按 PAN_Y=0 用 scrollY/ZOOM 换算
 ///    offsetTop -> 进度落库与恢复错页；而 _clampPan 有意不碰 webtoon 的 PAN_Y，
 ///    于是永远拉不回来）。
-/// 2. 首次定位必须无过渡落位。RTL 是默认阅读方向，倒序写入后 spread 0 的 offsetLeft
-///    是 (n-1)x100vw，而 #manga-root 在 slide（默认动画）下带 transition:transform，
-///    _initPosition 又挂在双 rAF 上（正是「保证过渡一定触发」的惯用法）—— 打开任何
-///    RTL 书都会先看到整卷从最后一页扫回第一页。
+/// 2. 摆位（首次定位 / resize 重投影，统一在 _reanchor）必须无过渡落位。RTL 是默认
+///    阅读方向，倒序写入后 spread 0 的 offsetLeft 是 (n-1)x100vw，而 #manga-root 在
+///    slide（默认动画）下带 transition:transform，_reanchor 又挂在双 rAF 上（正是
+///    「保证过渡一定触发」的惯用法）—— 不关过渡，打开任何 RTL 书都会先看到整卷从
+///    最后一页扫回第一页；resize 重投影带过渡则是拖窗口边框时的无意义滑动。
 MokuroImage _page(String url) => MokuroImage(
       url: url,
       size: const Size(1000, 1400),
@@ -51,9 +52,9 @@ String _rightDragBranch(String doc) {
   return doc.substring(start, end);
 }
 
-/// 截出 _initPosition 的函数体（结束锚点是缩进 2 的右花括号，函数内所有块都更深）。
-String _initPositionBody(String doc) {
-  const String head = 'function _initPosition(){';
+/// 截出 _reanchor 的函数体（结束锚点是缩进 2 的右花括号，函数内所有块都更深）。
+String _reanchorBody(String doc) {
+  const String head = 'function _reanchor(){';
   final int start = doc.indexOf(head);
   expect(start, isNot(-1));
   final int end = doc.indexOf('\n  }', start);
@@ -95,20 +96,22 @@ void main() {
     });
   });
 
-  group('首次定位无过渡落位', () {
-    test('_initPosition 关过渡 -> 写 transform -> 强制 reflow -> 还原', () {
-      final String body = _initPositionBody(_doc());
+  group('摆位（首次定位 / resize 重投影）无过渡落位', () {
+    test('_reanchor 关过渡 -> 写 transform -> 强制 reflow -> 还原', () {
+      final String body = _reanchorBody(_doc());
       // 断言字面量："root.style.transition = 'none';" / 'void root.offsetHeight;'
       // / 'root.style.transition = prevTransition;'
       final int off = body.indexOf("root.style.transition = 'none';");
-      final int apply = body.indexOf('window.__mangaApplyTranslate(CURRENT);');
+      final int apply = body.indexOf('_translateToSpread(CURRENT);');
       final int reflow = body.indexOf('void root.offsetHeight;');
       final int restore =
           body.indexOf('root.style.transition = prevTransition;');
       expect(off, isNot(-1),
           reason: 'RTL 倒序后首帧要把 root 推过整卷长度，带着 transition 就是一次'
               '从最后一页扫回第一页的动画');
-      expect(apply, isNot(-1));
+      expect(apply, isNot(-1),
+          reason: '摆位必须走纯投影 _translateToSpread：__mangaApplyTranslate 是'
+              '翻页动画入口，fade 模式下会先淡出再位移，resize 风暴里就是连环闪烁');
       expect(reflow, isNot(-1),
           reason: '必须读一次布局属性强制同步 reflow，新 transform 才会成为后续过渡的起点');
       expect(restore, isNot(-1), reason: '还原原过渡值，不能把翻页动画永久关掉');
@@ -127,8 +130,7 @@ void main() {
     });
 
     test('webtoon 分支直接返回，不碰 root 的过渡', () {
-      final String body =
-          _initPositionBody(_doc(mode: MangaReadingMode.webtoon));
+      final String body = _reanchorBody(_doc(mode: MangaReadingMode.webtoon));
       final int scroll = body
           .indexOf('window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);');
       final int ret = body.indexOf('return;');
