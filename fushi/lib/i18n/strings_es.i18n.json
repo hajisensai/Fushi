@@ -1855,8 +1855,6 @@
   "sync_connection_success": "Conexión correcta",
   "sync_content": "Sincronizar archivos de libros",
   "sync_content_warning": "Los archivos grandes consumirán almacenamiento y datos",
-  "sync_dictionary": "Sincronizar diccionarios",
-  "sync_dictionary_warning": "Los paquetes de diccionario pueden ser grandes e incluir recursos de diccionario importados.",
   "sync_err_auth_expired": "La sesión ha caducado: inicia sesión de nuevo.",
   "sync_err_invalid_client": "Las credenciales del cliente no son válidas para esta versión: actualiza la app.",
   "sync_err_network": "No se puede conectar con el servidor: revisa tu red o los ajustes de proxy.",
@@ -1871,8 +1869,6 @@
   "sync_lan_discovery": "Dispositivos en la red local",
   "sync_lan_no_devices": "No se encontraron dispositivos",
   "sync_lan_scan_failed": "Error al buscar: revisa los permisos de red o el firewall.",
-  "sync_local_audio": "Sincronizar audio local",
-  "sync_local_audio_warning": "Sincroniza las bases de datos de fuentes de audio local (pueden ser grandes)",
   "sync_not_signed_in": "No conectado",
   "sync_now": "Sincronizar ahora",
   "sync_now_audio_in": "↓$count audiolibros",
@@ -3660,5 +3656,14 @@
   "sync_pair_peer_requires_https": "This device only accepts HTTPS. Use an https:// address.",
   "sync_pair_peer_not_https": "The peer isn't using HTTPS on this port. Use an http:// address.",
   "sync_pair_not_fushi_discovered": "No Fushi device found at this address.",
-  "shortcut_action_popup_play_audio": "Play word audio"
+  "shortcut_action_popup_play_audio": "Play word audio",
+  "sync_progress_asset_transfer": "Preparing transfer",
+  "sync_asset_dictionary_upload": "Upload dictionaries",
+  "sync_asset_dictionary_download": "Download dictionaries",
+  "sync_asset_local_audio_upload": "Upload local audio databases",
+  "sync_asset_local_audio_download": "Download local audio databases",
+  "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
+  "sync_asset_upload_action": "Upload",
+  "sync_asset_download_action": "Download",
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not - including entries you deleted locally."
 }

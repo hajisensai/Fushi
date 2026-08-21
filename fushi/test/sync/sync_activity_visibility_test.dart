@@ -205,11 +205,12 @@ void main() {
 
     int occurrences(String needle) => needle.allMatches(src).length;
 
-    test('四条同步路径都经由 _beginSyncActivity 登记身份', () {
-      // 1 处定义 + 4 处调用（开机自动 sweep / 手动全量 / 合集轻量 / 单本）。
+    test('五条同步路径都经由 _beginSyncActivity 登记身份', () {
+      // 1 处定义 + 5 处调用（开机自动 sweep / 手动全量 / 合集轻量 / 单本 /
+      // 设置页显式资产上传下载）。
       expect(
         occurrences('_beginSyncActivity('),
-        5,
+        6,
         reason: '新增同步路径必须一并登记身份，否则进度条又会退回「只有线没有字」',
       );
     });
@@ -217,7 +218,7 @@ void main() {
     test('每条路径都在 finally 里经由 _endSyncActivity 公布结局', () {
       expect(
         occurrences('_endSyncActivity('),
-        5,
+        6,
         reason: '漏掉结局 = 那轮同步静默收尾，用户无从判断到底同没同步',
       );
     });
@@ -239,10 +240,20 @@ void main() {
       final String rowSrc =
           File('lib/src/sync/sync_settings_schema/actions.part.dart')
               .readAsStringSync();
+      // 不变式没变，钉的位置变了：这一行现在读**语义精确的那个值**
+      // （`lastFullSweepOutcome`），而不是读 `lastSyncOutcome` 再在消费端过滤
+      // `kind`。后者会被任何一轮别的同步挤掉 —— 合集轻量、单本，以及同页那四个
+      // 资产传输按钮 —— 结局悄悄退回静态提示。断言的字面量是
+      // `valueListenable: lastFullSweepOutcome`。
       expect(
         rowSrc,
-        contains('outcome.kind == SyncActivityKind.fullSweep'),
-        reason: '空闲副标题必须过滤同步种类，否则会显示别的同步的结局',
+        contains('valueListenable: lastFullSweepOutcome'),
+        reason: '空闲副标题只能拿全量同步的结局填，否则会显示别的同步的结局',
+      );
+      expect(
+        rowSrc,
+        isNot(contains('valueListenable: lastSyncOutcome')),
+        reason: '读任意一轮的结局再过滤 = 把值不精确的账留给读的人',
       );
       // 进行中的两段不做这个过滤：它们回答「现在有没有东西在跑」，任何同步都算数。
       expect(rowSrc, contains('syncActivityLine(activity)'));

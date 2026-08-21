@@ -236,11 +236,8 @@ void main() {
       expect(await repo.isSyncContentEnabled(), isTrue);
     });
 
-    test('Sync dictionaries defaults off, flips on', () async {
-      expect(await repo.isSyncDictionaryEnabled(), isFalse);
-      await repo.setSyncDictionaryEnabled(true);
-      expect(await repo.isSyncDictionaryEnabled(), isTrue);
-    });
+    // 「同步词典」开关已删除（词典改成设置页的显式上传 / 下载动作），所以这里不再
+    // 有对应的读写用例。
   });
 
   group('syncBook honours the statistics gate', () {
@@ -365,11 +362,11 @@ void main() {
   });
 
   group('createBackup includes dictionary resources whenever present', () {
-    // Full-data backup packs everything that exists on disk: the dictionary
-    // resources are no longer gated on the sync-dictionary toggle. (Absence of
-    // the resource files still strips the dictionary DB rows — covered in
-    // backup_service_test.dart.)
-    test('included regardless of the sync-dictionary toggle', () async {
+    // Full-data backup packs everything that exists on disk. 词典资源从来不该受
+    // 「同步词典」门控 —— 而那个开关如今已随词典改成显式上传 / 下载而删除，所以这条
+    // 用例不再拨任何开关，只断言资源始终在包里。（资源文件缺失仍会剥掉词典 DB 行，
+    // 由 backup_service_test.dart 覆盖。）
+    test('included whenever the resource files exist', () async {
       final Directory dbDir =
           await Directory.systemTemp.createTemp('t4_dict_db_');
       final Directory dictDir =
@@ -396,23 +393,19 @@ void main() {
           appVersion: '1.0.0',
         );
 
-        // Toggle OFF: full-data backup still includes the resources (the
-        // sync-dictionary gate no longer applies to local backup).
-        await SyncRepository(onDiskDb).setSyncDictionaryEnabled(false);
-        final String offPath = '${outDir.path}/off.zip';
-        await service.createBackup(offPath);
-        final offArchive =
-            ZipDecoder().decodeBytes(await File(offPath).readAsBytes());
-        expect(offArchive.findFile('dictionaryResources/JMdict/blobs.bin'),
+        final String outPath = '${outDir.path}/full.zip';
+        await service.createBackup(outPath);
+        final archive =
+            ZipDecoder().decodeBytes(await File(outPath).readAsBytes());
+        expect(archive.findFile('dictionaryResources/JMdict/blobs.bin'),
             isNotNull);
 
-        // Toggle ON: also included.
-        await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
-        final String onPath = '${outDir.path}/on.zip';
-        await service.createBackup(onPath);
-        final onArchive =
-            ZipDecoder().decodeBytes(await File(onPath).readAsBytes());
-        expect(onArchive.findFile('dictionaryResources/JMdict/blobs.bin'),
+        // 再跑一次：备份是纯函数式的全量打包，不读任何同步开关，两次结果必须相同。
+        final String secondPath = '${outDir.path}/full2.zip';
+        await service.createBackup(secondPath);
+        final secondArchive =
+            ZipDecoder().decodeBytes(await File(secondPath).readAsBytes());
+        expect(secondArchive.findFile('dictionaryResources/JMdict/blobs.bin'),
             isNotNull);
       } finally {
         await onDiskDb.close();

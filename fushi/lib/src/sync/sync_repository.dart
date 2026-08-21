@@ -185,10 +185,13 @@ class SyncRepository {
   static const _keyFolderCache = 'sync_folder_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
-  static const _keySyncDictionary = 'sync_dictionary_enabled';
+  // 废弃：`sync_dictionary_enabled` / `sync_local_audio_enabled`。词典与本地音频源
+  // 数据库不再有「同步开关」，改成设置页的显式上传 / 下载动作（见
+  // `SyncOrchestrator.runAssetTransferOnly`），所以这两个键没有任何读写方了。
+  // 存量库里已有的那两行**不迁移也不清理**：它们只是两条没人读的死数据，而删除迁移
+  // 要冒着改动已发布 schema 版本的风险去换取零收益。
   static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
   static const _keySyncVideoFiles = 'sync_video_files_enabled';
-  static const _keySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
@@ -246,7 +249,6 @@ class SyncRepository {
 
   static const String syncStatsPreferenceKey = _keySyncStats;
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
-  static const String syncDictionaryPreferenceKey = _keySyncDictionary;
 
   // ── Folder cache（按通道分槽，BUG-1576） ───────────────────────────
   //
@@ -345,11 +347,6 @@ class SyncRepository {
   Future<void> setSyncAudioBookEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncAudioBook, true);
 
-  Future<bool> isSyncDictionaryEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncDictionary, false);
-  Future<void> setSyncDictionaryEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncDictionary, v);
-
   /// 是否同步有声书文件（音频 + 字幕包）。默认 false：包大，需用户显式开启。
   Future<bool> isSyncAudioBookFilesEnabled() =>
       _db.getPrefTyped<bool>(_keySyncAudioBookFiles, false);
@@ -363,12 +360,6 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keySyncVideoFiles, false);
   Future<void> setSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncVideoFiles, v);
-
-  /// 是否同步本地音频来源（DB 文件 + 配置）。默认 false：DB 大，需用户显式开启。
-  Future<bool> isSyncLocalAudioEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncLocalAudio, false);
-  Future<void> setSyncLocalAudioEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncLocalAudio, v);
 
   Future<bool> isAutoSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyAutoSync, false);
@@ -1197,7 +1188,7 @@ class SyncRepository {
   ///
   /// 故意排除：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
-  ///   `sync_dictionary_enabled`/`sync_content_enabled` —— 当作用户设置，随备份恢复。
+  ///   `sync_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
   ///

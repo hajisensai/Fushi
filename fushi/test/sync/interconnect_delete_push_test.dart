@@ -76,7 +76,6 @@ SyncOrchestrator _orchestrator({
       syncAudioBookFiles: false,
       syncVideoFiles: false,
       syncDictionary: false,
-      syncLocalAudio: false,
     );
 
 void main() {

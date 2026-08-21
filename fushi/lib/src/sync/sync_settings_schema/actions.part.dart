@@ -11,6 +11,107 @@ part of '../sync_settings_schema.dart';
 
 // ── Backup export widget ─────────────────────────────────────────────
 
+/// 一条资产的一个方向 —— 设置页「上传词典 / 下载词典 / 上传本地音频数据库 /
+/// 下载本地音频数据库」四行共用这一个 widget。
+///
+/// **一行一个动作**，而不是一行两个按钮：方向导航（手柄 / 键盘）在这个代码库里是
+/// 按「行 = 一个 [FushiFocusTarget]」注册的（见 [_SyncNowWidget] 里 BUG-016 的注释），
+/// 一行塞两个动作就得给焦点系统开左右键绑定的特例，而用户还猜不到那个绑定存在。
+/// 拆成两行零特例，标题本身就说清了这一下会往哪边搬。
+///
+/// 跑与反馈全在 [runAssetTransferWithFeedback]（与「立即同步」共用同一个外壳）；
+/// 这里只负责渲染行、显示在飞进度、并挡住重复触发。
+class _AssetTransferWidget extends StatefulWidget {
+  const _AssetTransferWidget({
+    required this.settingsContext,
+    required this.kind,
+    required this.direction,
+    required this.title,
+    required this.icon,
+  });
+
+  final SettingsContext settingsContext;
+  final SyncAssetKind kind;
+  final SyncAssetDirection direction;
+  final String title;
+  final IconData icon;
+
+  @override
+  State<_AssetTransferWidget> createState() => _AssetTransferWidgetState();
+}
+
+class _AssetTransferWidgetState extends State<_AssetTransferWidget> {
+  Future<void> _run() async {
+    await runAssetTransferWithFeedback(
+      context: context,
+      appModel: widget.settingsContext.appModel,
+      kind: widget.kind,
+      direction: widget.direction,
+    );
+  }
+
+  /// 说明文字讲的是**方向的语义**（并集的哪一半），与资产类别无关 —— 两类资产的
+  /// 传输规则逐字相同，各写一份只会让它们日后漂移。
+  String get _subtitle => switch (widget.direction) {
+        SyncAssetDirection.upload => t.sync_asset_upload_hint,
+        SyncAssetDirection.download => t.sync_asset_download_hint,
+        // 这一行只由 upload / download 两个方向构造；[SyncAssetDirection.both] 是
+        // 自动同步路径的方向，不会出现在设置页上。
+        SyncAssetDirection.both => t.sync_asset_upload_hint,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    // 与「立即同步」同源：进度来自全局 notifier，任何在飞的同步（包括后台自动
+    // sweep）都会让本行显示进度并挡住重复触发 —— 后端是单例，两轮并行会互相踩。
+    return ValueListenableBuilder<bool>(
+      valueListenable: syncInProgress,
+      builder: (BuildContext context, bool syncing, _) {
+        return ValueListenableBuilder<SyncProgress?>(
+          valueListenable: syncProgress,
+          builder: (BuildContext context, SyncProgress? p, __) {
+            final AdaptiveSettingsRow row = AdaptiveSettingsRow(
+              title: widget.title,
+              subtitle: syncing && p != null ? syncProgressLine(p) : _subtitle,
+              icon: widget.icon,
+              controlBelow: true,
+              // 行级 onTap 才让本行注册成 [FushiFocusTarget]，方向导航与手柄 A 因此
+              // 能到达并触发它（BUG-016，与「立即同步」同因）。
+              onTap: _run,
+              trailing: syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : FilledButton.tonal(
+                      onPressed: _run,
+                      child: Text(
+                        widget.direction == SyncAssetDirection.download
+                            ? t.sync_asset_download_action
+                            : t.sync_asset_upload_action,
+                      ),
+                    ),
+            );
+            if (!syncing) return row;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                row,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: LinearProgressIndicator(value: p?.fraction),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _SyncNowWidget extends StatefulWidget {
   const _SyncNowWidget({required this.settingsContext});
   final SettingsContext settingsContext;
@@ -67,16 +168,18 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
       valueListenable: syncActivity,
       builder: (BuildContext context, SyncActivity? activity, _) {
         return ValueListenableBuilder<SyncRunOutcome?>(
-          valueListenable: lastSyncOutcome,
+          // 读 [lastFullSweepOutcome] 而不是「读 lastSyncOutcome 再过滤 kind」：
+          // 后者会被任何一轮别的同步挤掉（合集轻量、单本，以及本页那四个资产传输
+          // 按钮），于是刚显示的「上次同步」结局凭空退回静态提示。值本身就该是
+          // 精确的那一个。
+          valueListenable: lastFullSweepOutcome,
           builder: (BuildContext context, SyncRunOutcome? outcome, __) {
             final String subtitle;
             if (syncing && p != null) {
               subtitle = syncProgressLine(p);
             } else if (syncing && activity != null) {
               subtitle = syncActivityLine(activity);
-            } else if (!syncing &&
-                outcome != null &&
-                outcome.kind == SyncActivityKind.fullSweep) {
+            } else if (!syncing && outcome != null) {
               subtitle = syncOutcomeLine(outcome);
             } else {
               subtitle = t.sync_now_hint;
