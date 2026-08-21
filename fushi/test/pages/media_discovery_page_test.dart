@@ -221,4 +221,240 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // BUG-1768：搜索命中一个**同名目录**后点进去，旧实现仍带着关键词发请求
+  // （`query` 压过 `path`，`DiscoveryRequest.isSearch` 为真 → `path` 被丢弃），
+  // 于是又收到同一个目录，可以无限点下去，面包屑变成
+  // 「WHITE ALBUM2 / WHITE ALBUM2 / …」。
+  //
+  // 这里用真实站点的行为建模：`search` 是**全站递归**的，无论 path 给什么都
+  // 会把那个同名目录再吐一遍——所以「没有无限嵌套」唯一可能的原因就是这次
+  // 请求真的走了 browse。断言落在源上的调用种类与收到的 path 上，不看文案。
+  testWidgets('搜到同名目录后点进去：走 browse 且带路径，不再自嵌套', (WidgetTester tester) async {
+    final _RecursiveSearchSource site = _RecursiveSearchSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[site]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    // 选中该源 → 提交搜索。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_site')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'WHITE ALBUM2',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    // 搜索框里也有 'WHITE ALBUM2'，断言必须限定在列表条目里，否则恒真。
+    final Finder folderItem =
+        find.widgetWithText(FushiListItem, 'WHITE ALBUM2');
+    expect(site.searchCalls, 1);
+    expect(folderItem, findsOneWidget);
+    // 选中目录型源时已经 browse 过一次根目录，基线从这里取。
+    final int browseBefore = site.browseCalls;
+
+    // 点进那个同名目录。
+    await tester.tap(folderItem);
+    await tester.pumpAndSettle();
+
+    // 核心断言：这次是 browse，而且带上了目录路径。
+    expect(site.browseCalls, browseBefore + 1);
+    expect(site.searchCalls, 1, reason: '进目录不该重发搜索');
+    expect(site.lastBrowsePath, '/games/WHITE ALBUM2');
+    // 列表换成了目录真实内容，同名目录不再作为自己的子项出现。
+    expect(find.widgetWithText(FushiListItem, 'disc1.rar'), findsOneWidget);
+    expect(folderItem, findsNothing);
+
+    // 返回：回到那次搜索的结果，而不是退到源根目录。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_breadcrumb_up')),
+    );
+    await tester.pumpAndSettle();
+    expect(site.searchCalls, 2);
+    expect(site.browseCalls, browseBefore + 1, reason: '返回不该再 browse 一次');
+    expect(folderItem, findsOneWidget);
+  });
+
+  // BUG-1770：整源失败不得显示成「无结果」。失败徽标原先只挂在非空列表分支上，
+  // 空列表直接返回 discovery_empty，于是「请求全挂了」和「真的没东西」在界面上
+  // 长得一模一样——实例是 erogame.space 的 fs/list 对匿名访问恒返回
+  // object not found，点进任何目录都只看到「无结果」。
+  testWidgets('唯一来源整个失败：显示不可用而不是「无结果」', (WidgetTester tester) async {
+    final _FailingSource dead = _FailingSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[dead]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_dead')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(dead.browseCalls, 1);
+    expect(
+        find.textContaining(t.discovery_sources_unavailable), findsOneWidget);
+    expect(find.text(t.discovery_empty), findsNothing);
+  });
+
+  // 反向：源成功了但确实没条目，仍然是「无结果」——别把上面那条修成一律报错。
+  testWidgets('来源成功但结果为空：仍是「无结果」', (WidgetTester tester) async {
+    final _EmptySource empty = _EmptySource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[empty]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_empty')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(empty.browseCalls, 1);
+    expect(find.text(t.discovery_empty), findsOneWidget);
+    expect(find.textContaining(t.discovery_sources_unavailable), findsNothing);
+  });
+}
+
+/// browse/search 一律失败的源（模拟站点 API 整体不可用）。
+class _FailingSource extends MediaDiscoverySource {
+  int browseCalls = 0;
+
+  @override
+  String get id => 'dead';
+
+  @override
+  String get displayName => 'Dead';
+
+  @override
+  int get priority => 1;
+
+  @override
+  DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+        supportsBrowse: true,
+      );
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> search(
+    DiscoveryRequest request,
+  ) async =>
+      throw StateError('down');
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> browse(
+    DiscoveryRequest request,
+  ) async {
+    browseCalls++;
+    throw StateError('down');
+  }
+}
+
+/// 成功但零条目的源。
+class _EmptySource extends MediaDiscoverySource {
+  int browseCalls = 0;
+
+  @override
+  String get id => 'empty';
+
+  @override
+  String get displayName => 'Empty';
+
+  @override
+  int get priority => 1;
+
+  @override
+  DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+        supportsBrowse: true,
+      );
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> search(
+    DiscoveryRequest request,
+  ) async =>
+      _page();
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> browse(
+    DiscoveryRequest request,
+  ) async {
+    browseCalls++;
+    return _page();
+  }
+
+  ProviderBatchResult<DiscoveryResultPage> _page() {
+    return ProviderBatchResult<DiscoveryResultPage>.success(
+      <DiscoveryResultPage>[
+        DiscoveryResultPage(
+          entries: const <DiscoveryEntry>[],
+          page: 1,
+          hasMore: false,
+        ),
+      ],
+    );
+  }
+}
+
+/// 建模 AList 那类**全站递归搜索**的源：`search` 忽略位置、恒从根递归，命中集
+/// 里天然包含与关键词同名的目录本身；`browse` 才按 path 返回该目录的真实子项。
+class _RecursiveSearchSource extends MediaDiscoverySource {
+  int searchCalls = 0;
+  int browseCalls = 0;
+  String? lastBrowsePath;
+
+  @override
+  String get id => 'site';
+
+  @override
+  String get displayName => 'Site';
+
+  @override
+  int get priority => 1;
+
+  @override
+  DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+        supportsBrowse: true,
+      );
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> search(
+    DiscoveryRequest request,
+  ) async {
+    searchCalls++;
+    return _page(<DiscoveryEntry>[
+      DiscoveryFolder(
+        sourceId: id,
+        title: 'WHITE ALBUM2',
+        path: '/games/WHITE ALBUM2',
+      ),
+    ]);
+  }
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> browse(
+    DiscoveryRequest request,
+  ) async {
+    browseCalls++;
+    lastBrowsePath = request.path;
+    return _page(<DiscoveryEntry>[
+      DiscoveryResourceItem(
+        sourceId: id,
+        title: 'disc1.rar',
+        id: '${request.path}/disc1.rar',
+        kind: request.kind,
+        payloadKind: DiscoveryPayloadKind.httpFile,
+      ),
+    ]);
+  }
+
+  ProviderBatchResult<DiscoveryResultPage> _page(List<DiscoveryEntry> items) {
+    return ProviderBatchResult<DiscoveryResultPage>.success(
+      <DiscoveryResultPage>[
+        DiscoveryResultPage(entries: items, page: 1, hasMore: false),
+      ],
+    );
+  }
 }

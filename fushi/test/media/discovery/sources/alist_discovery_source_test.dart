@@ -72,35 +72,135 @@ void main() {
     expect(file.dateText, '2025-11-19');
   });
 
-  test('search:条目路径来自 parent+name', () async {
-    final AListDiscoverySource source = _source(
-      MockClient((http.Request request) async {
-        expect(request.url.path, '/api/fs/search');
+  // BUG-1771：AList 的 `fs/search` 在**用户根命名空间**里返回 `parent`
+  // （erogame.space 的 guest 是 `/guest`），而 `fs/list` / `fs/get` 收的是**相对
+  // 该根**的路径。原样拿来用，站点对搜索结果里的每个目录和每个文件都回
+  // `object not found`：目录一个都打不开、文件一个都下不了。
+  //
+  // 前缀靠 `fs/list '/'` 的根目录名反推（不问 `/api/me`：实测该站点直连时
+  // `/api/me` 3/3 连接超时，而 fs/list、fs/search 正常）。
+  //
+  // 三条成对/成组，缺一条就能被糊弄：只有①会被「一律剥首段」骗过；只有②会被
+  // 「永不剥」骗过；③钉住「推断失败不许把搜索本身拖挂」。
+
+  /// 建一个按 path 分发的 MockClient：根列表 [rootNames]，搜索结果 [searchContent]。
+  MockClient mockSite({
+    required List<String> rootNames,
+    required List<Map<String, dynamic>> searchContent,
+    List<String>? seenPaths,
+    http.Response Function()? listOverride,
+  }) {
+    return MockClient((http.Request request) async {
+      seenPaths?.add(request.url.path);
+      if (request.url.path == '/api/fs/list') {
+        if (listOverride != null) return listOverride();
         return _json(<String, dynamic>{
           'code': 200,
           'message': 'success',
           'data': <String, dynamic>{
             'content': <Map<String, dynamic>>[
-              <String, dynamic>{
-                'parent': '/guest/其他',
-                'name': 'ATRI.rar',
-                'is_dir': false,
-                'size': 1,
-              },
+              for (final String n in rootNames)
+                <String, dynamic>{'name': n, 'is_dir': true, 'size': 0},
             ],
-            'total': 1,
+            'total': rootNames.length,
           },
         });
-      }),
+      }
+      expect(request.url.path, '/api/fs/search');
+      return _json(<String, dynamic>{
+        'code': 200,
+        'message': 'success',
+        'data': <String, dynamic>{
+          'content': searchContent,
+          'total': searchContent.length,
+        },
+      });
+    });
+  }
+
+  test('search:根名字落在第 2 段 → 剥掉前缀(否则 fs/list/fs/get 全 404)', () async {
+    final List<String> seen = <String>[];
+    final AListDiscoverySource source = _source(
+      mockSite(
+        rootNames: <String>['其他', '年份合集'],
+        seenPaths: seen,
+        searchContent: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'parent': '/guest/其他',
+            'name': 'ATRI.rar',
+            'is_dir': false,
+            'size': 1,
+          },
+          <String, dynamic>{
+            'parent': '/guest',
+            'name': '其他',
+            'is_dir': true,
+            'size': 0,
+          },
+        ],
+      ),
     );
 
     final ProviderBatchResult<DiscoveryResultPage> result = await source.search(
       const DiscoveryRequest(kind: DiscoveryMediaKind.game, query: 'ATRI'),
     );
-    final DiscoveryResourceItem item =
-        result.items.single.entries.single as DiscoveryResourceItem;
-    expect(item.id, '/guest/其他/ATRI.rar');
+    expect(seen, contains('/api/fs/list'), reason: '要靠根列表反推前缀');
+    final List<DiscoveryEntry> entries = result.items.single.entries;
+    expect((entries[0] as DiscoveryResourceItem).id, '/其他/ATRI.rar');
+    // parent 恰好就是前缀本身 → 归一成根，不能变成空串。
+    expect((entries[1] as DiscoveryFolder).path, '/其他');
     expect(result.items.single.hasMore, isFalse);
+  });
+
+  test('search:根名字已在第 1 段 → 路径原样,不许乱剥', () async {
+    // 站点没开用户根：search 的 parent 与 fs/list 同命名空间，首段就是真实根目录。
+    final AListDiscoverySource source = _source(
+      mockSite(
+        rootNames: <String>['guest', '年份合集'],
+        searchContent: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'parent': '/guest/其他',
+            'name': 'ATRI.rar',
+            'is_dir': false,
+            'size': 1,
+          },
+        ],
+      ),
+    );
+
+    final ProviderBatchResult<DiscoveryResultPage> result = await source.search(
+      const DiscoveryRequest(kind: DiscoveryMediaKind.game, query: 'ATRI'),
+    );
+    expect(
+      (result.items.single.entries.single as DiscoveryResourceItem).id,
+      '/guest/其他/ATRI.rar',
+      reason: '这里的 guest 是真实根目录名，不是命名空间前缀',
+    );
+  });
+
+  test('search:根目录列不出来时退回不剥前缀，不让整个搜索失败', () async {
+    final AListDiscoverySource source = _source(
+      mockSite(
+        rootNames: const <String>[],
+        listOverride: () => http.Response('nope', 500),
+        searchContent: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'parent': '/guest/其他',
+            'name': 'ATRI.rar',
+            'is_dir': false,
+            'size': 1,
+          },
+        ],
+      ),
+    );
+
+    final ProviderBatchResult<DiscoveryResultPage> result = await source.search(
+      const DiscoveryRequest(kind: DiscoveryMediaKind.game, query: 'ATRI'),
+    );
+    expect(
+      (result.items.single.entries.single as DiscoveryResourceItem).id,
+      '/guest/其他/ATRI.rar',
+    );
   });
 
   test('resolvePayload 走 fs/get 取 raw_url', () async {

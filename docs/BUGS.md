@@ -29,11 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1645 条。点号进各自文件。
+> 共 1649 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1772](bugs/BUG-1772-libtorrent-2-1-drift-breaks-native-build.md) | ✅ | ✅ | vcpkg 未钉版，libtorrent 2.0→2.1 漂移打断 Windows DLL 与 Android .so 构建 |
+| [BUG-1771](bugs/BUG-1771-alist-search-parent-base-path.md) | ✅ | ✅ | AList 搜索结果路径带 base_path 前缀，目录打不开、文件下不了 |
+| [BUG-1770](bugs/BUG-1770-discovery-total-failure-shown-as-empty.md) | ✅ | ✅ | 发现页整源失败被显示成「无结果」 |
+| [BUG-1769](bugs/BUG-1769-gal-utterance-all-sources-concat.md) | ✅ | ✅ | 非16bit游戏语音把所有音源拼成一句（卡顿重复） |
+| [BUG-1768](bugs/BUG-1768-discovery-folder-infinite-nesting.md) | ✅ | ✅ | 发现页搜索后点文件夹无限自嵌套（query 压过 path） |
 | [BUG-1767](bugs/BUG-1767-manga-detail-lateinit-url.md) | ✅ | ✅ | 点开漫画作品报 RUNTIME_FAILURE：详情解析结果被当完整条目读 lateinit url |
 | [BUG-1766](bugs/BUG-1766-download-priority-menu-not-md3.md) | ✅ | ✅ | 排队优先级菜单未走MD3共享原语 |
 | [BUG-1765](bugs/BUG-1765-download-source-subtitle-row-misaligned.md) | ✅ | ✅ | 下载来源与字幕下拉底边不对齐 |

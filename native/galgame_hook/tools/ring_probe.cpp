@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "voice_clip_energy.h"
 #include "voice_hook_ipc.h"
 #include "voice_hook_utterance_window.h"
 
@@ -281,23 +282,24 @@ bool ReadClipPcm(const SharedHeader* h, const uint8_t* ring,
   return true;
 }
 
-// 16-bit PCM 平均绝对幅值（能量代理）。非 16-bit 返回 -1（调用方退化为固定窗口）。
+// PCM 平均绝对幅值（能量代理），归一到 16-bit 标度、与位深/浮点无关；位深真的不认识才
+// 返回 -1。算法与 host 侧 `voice_hook_reader.cpp` 共用 `voice_clip_energy.h` 的唯一一份实现
+// ——这里曾是它的第二份手抄拷贝，而取证工具报「非 16-bit 无能量」会把排查直接带偏
+// （BUG-1769 的定位就差点被这一点误导）。
 double ClipEnergy16(const SharedHeader* h, const uint8_t* ring,
                     const fushi_voice_hook::VoiceClip* c) {
-  if (c->bits_per_sample != 16 || c->is_float) {
+  const uint32_t cap = h->ring_capacity;
+  const uint32_t len = c->byte_len;
+  if (cap == 0 || len == 0 || len > cap) {
     return -1.0;
   }
-  std::vector<uint8_t> buf;
-  if (!ReadClipPcm(h, ring, c, buf) || buf.size() < 2) {
-    return 0.0;
+  if (h->total_written > c->total_at_write &&
+      h->total_written - c->total_at_write > cap - len) {
+    return 0.0;  // 已被环形覆盖
   }
-  const int16_t* s = reinterpret_cast<const int16_t*>(buf.data());
-  const size_t n = buf.size() / 2;
-  double acc = 0;
-  for (size_t i = 0; i < n; i++) {
-    acc += (s[i] < 0) ? -static_cast<double>(s[i]) : static_cast<double>(s[i]);
-  }
-  return acc / static_cast<double>(n);
+  return fushi_voice_hook::ClipEnergy16Scale(ring, cap, c->ring_offset % cap,
+                                             len, c->bits_per_sample,
+                                             c->is_float != 0);
 }
 
 // 「整句语音」根修：游戏用多个 source voice 持续并行流式（语音源没人说话时流静音）。按源做能量

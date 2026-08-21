@@ -3713,5 +3713,6 @@
   "resource_version_episode_count": "共 $n 集",
   "resource_version_show_files": "显示文件",
   "manga_online_detail_load_failed": "无法载入这部漫画。",
-  "manga_online_error_view_detail": "查看详情"
+  "manga_online_error_view_detail": "查看详情",
+  "discovery_sources_unavailable": "全部来源都不可用"
 }
