@@ -35,9 +35,8 @@ import 'package:fushi/src/media/video/download/video_download_backend_identity.d
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
-    show VideoSubtitleCandidate, VideoSubtitleProvider;
+    show VideoSubtitleCandidate;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
@@ -1303,23 +1302,35 @@ class _HomePageState extends BasePageState<HomePage>
     BuildContext context,
     VideoDiscoveryItem item,
   ) async {
-    final VideoResourceRegistry? sharedRegistry =
+    final VideoResourceRegistry? registry =
         appModelNoUpdate.videoResourceRegistry;
     final VideoDownloadPipelineService? pipeline =
         appModelNoUpdate.videoDownloadPipelineService;
-    if (sharedRegistry == null || pipeline == null) {
+    if (registry == null || pipeline == null) {
       _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
       return;
     }
-    final VideoResourceRegistry registry = VideoResourceRegistry(
-      sharedRegistry.providers.where(
-        (VideoResourceProvider provider) =>
-            provider.id == kNyaaResourceProviderId,
-      ),
-      disabledProviderIds: sharedRegistry.disabledProviderIds,
-    );
     final List<MediaSourceRow> sources =
         await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (!context.mounted) return;
+    if (sources.isEmpty) {
+      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
+      return;
+    }
+    final VideoDownloadBackendIdentity identity;
+    try {
+      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+    } on VideoDownloadBackendUnavailable catch (error) {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, error.message);
+      }
+      return;
+    } on Object {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      }
+      return;
+    }
     if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -1330,8 +1341,6 @@ class _HomePageState extends BasePageState<HomePage>
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
-            final VideoDownloadBackendIdentity identity =
-                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: selection.media,
@@ -1360,23 +1369,35 @@ class _HomePageState extends BasePageState<HomePage>
       _openDownloadsTab(2);
       return;
     }
-    final VideoResourceRegistry? sharedRegistry =
+    final VideoResourceRegistry? registry =
         appModelNoUpdate.videoResourceRegistry;
-    if (sharedRegistry == null ||
+    if (registry == null ||
         appModelNoUpdate.videoDownloadPipelineService == null ||
         appModelNoUpdate.videoDownloadSubscriptionService == null) {
       _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
       return;
     }
-    final VideoResourceRegistry registry = VideoResourceRegistry(
-      sharedRegistry.providers.where(
-        (VideoResourceProvider provider) =>
-            provider.id == kNyaaResourceProviderId,
-      ),
-      disabledProviderIds: sharedRegistry.disabledProviderIds,
-    );
     final List<MediaSourceRow> sources =
         await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (!context.mounted) return;
+    if (sources.isEmpty) {
+      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
+      return;
+    }
+    final VideoDownloadBackendIdentity identity;
+    try {
+      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+    } on VideoDownloadBackendUnavailable catch (error) {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, error.message);
+      }
+      return;
+    } on Object {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      }
+      return;
+    }
     if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -1387,8 +1408,6 @@ class _HomePageState extends BasePageState<HomePage>
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
-            final VideoDownloadBackendIdentity identity =
-                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
             final int now = DateTime.now().millisecondsSinceEpoch;
             final String subscriptionId =
                 videoDiscoverySubscriptionId(item.reference);
@@ -1447,17 +1466,11 @@ class _HomePageState extends BasePageState<HomePage>
     BuildContext context,
     VideoDiscoveryItem item,
   ) async {
-    final VideoSubtitleRegistry? sharedRegistry =
-        appModelNoUpdate.videoSubtitleRegistry;
-    if (sharedRegistry == null) {
+    final registry = appModelNoUpdate.videoSubtitleRegistry;
+    if (registry == null) {
       _showVideoDiscoveryMessage(context, t.video_discovery_load_failed);
       return;
     }
-    final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
-      sharedRegistry.providers.where(
-        (VideoSubtitleProvider provider) => provider.id == 'jimaku',
-      ),
-    );
     final VideoDownloadPipelineService? pipeline =
         appModelNoUpdate.videoDownloadPipelineService;
     final List<VideoDownloadJobRow> attachableJobs =

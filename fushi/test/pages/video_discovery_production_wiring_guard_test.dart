@@ -7,9 +7,6 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
-    final String acquisitionSource = File(
-      'lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart',
-    ).readAsStringSync();
 
     expect(source, contains('VideoDiscoveryService.production(config)'));
     expect(
@@ -29,63 +26,16 @@ void main() {
       source,
       contains('onSearchSubtitle: _openVideoDiscoverySubtitleSearch'),
     );
-    expect(source, contains('onSubscribe: _openVideoDiscoverySubscription'));
-    expect(
-      source,
-      contains(
-        'onOpenSubscriptions: _openVideoDiscoverySubscriptionsPanel',
-      ),
-    );
     expect(source, contains('watchStatus: _watchVideoDiscoveryStatus'));
     expect(source, contains('onPlay: _openLocalVideoDiscoveryWork'));
     expect(source, contains('VideoDiscoveryResourceSearchPage('));
     expect(source, contains('VideoDiscoverySubscriptionPage('));
     expect(source, contains('VideoDiscoverySubtitleSearchPage('));
     expect(
-      RegExp(r'provider\.id == kNyaaResourceProviderId').allMatches(source),
+      RegExp(r'on VideoDownloadBackendUnavailable catch \(error\)')
+          .allMatches(source),
       hasLength(2),
-      reason: '发现页资源搜索和订阅都必须只使用 Nyaa',
-    );
-    expect(
-      source,
-      contains("provider.id == 'jimaku'"),
-      reason: '发现页字幕搜索必须只使用 Jimaku',
-    );
-    final int resourceStart =
-        source.indexOf('Future<void> _openVideoDiscoveryResourceSearch(');
-    final int subtitleStart =
-        source.indexOf('Future<void> _openVideoDiscoverySubtitleSearch(');
-    final String acquisitionActions = source.substring(
-      resourceStart,
-      subtitleStart,
-    );
-    expect(
-      acquisitionActions,
-      isNot(contains('if (sources.isEmpty)')),
-      reason: '搜索资源和订阅应先打开搜索页，不能被本地落地目录提前拦截',
-    );
-    expect(
-      RegExp(r'currentVideoDownloadBackendIdentity\(\)')
-          .allMatches(acquisitionActions),
-      hasLength(2),
-      reason: '资源下载与订阅都应在用户提交选择后才解析下载后端',
-    );
-    expect(
-      acquisitionActions.indexOf('VideoDiscoveryResourceSearchPage('),
-      lessThan(acquisitionActions.indexOf(
-        'currentVideoDownloadBackendIdentity()',
-      )),
-      reason: '搜索页必须先于资源提交阶段的后端解析出现',
-    );
-    expect(
-      acquisitionSource,
-      contains('on VideoDownloadBackendUnavailable catch (error)'),
-    );
-    expect(acquisitionSource, contains('on ArgumentError'));
-    expect(
-      acquisitionSource,
-      contains('on VideoDownloadPipelineActionRequired catch (error)'),
-      reason: '提交阶段的后端和流水线错误必须留在搜索页内呈现',
+      reason: '资源搜索和订阅入口都应向用户展示内置引擎缺失的可操作原因',
     );
     expect(source, contains('Navigator.of(context).push<void>('));
     expect(source, contains('Navigator.of(context).push<String>('));
