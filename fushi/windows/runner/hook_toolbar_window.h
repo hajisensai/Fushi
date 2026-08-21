@@ -105,10 +105,15 @@ struct Layout {
 
 // Whether |slot| draws with the active (highlight) colour under |states|.
 bool SlotActive(int slot, const States& states);
+// Material Symbols Rounded codepoint for |slot| under |states|.
+const wchar_t* SlotGlyph(int slot, const States& states);
+// Loads the bundled subset from Flutter's packaged assets into an isolated
+// DirectWrite collection. The caller owns the returned reference.
+bool LoadMaterialSymbolsRoundedFontCollection(
+    IDWriteFactory* factory, IDWriteFontCollection** collection);
 // Draws a font-independent, optically aligned vector icon for |slot|. Keeping
-// this renderer shared by the in-body and pass-through toolbars avoids the
-// mixed Segoe UI Symbol / colour-emoji fallback that made the old glyph row
-// change weight, baseline and colour from button to button.
+// this as a missing-asset fallback keeps the pass-through escape hatch usable
+// even if an incomplete development bundle omits the packaged font.
 void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
                   const States& states, const D2D1_RECT_F& bounds,
                   ID2D1Brush* brush);
@@ -195,6 +200,7 @@ class HookToolbarWindow {
 
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection> icon_font_collection_;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
 
   ActionCallback on_action_;

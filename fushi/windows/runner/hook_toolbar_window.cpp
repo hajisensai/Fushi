@@ -1,6 +1,7 @@
 #include "hook_toolbar_window.h"
 
 #include <d2d1helper.h>
+#include <dwrite_3.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -26,6 +27,24 @@ constexpr float kDragThresholdPx = 6.0f;
 constexpr float kRestOpacity = 0.42f;
 constexpr float kHoverOpacity = 1.0f;
 
+std::wstring MaterialSymbolsRoundedFontPath() {
+  std::wstring module_path(32768, L'\0');
+  const DWORD length = GetModuleFileNameW(
+      nullptr, module_path.data(), static_cast<DWORD>(module_path.size()));
+  if (length == 0 || length >= module_path.size()) {
+    return std::wstring();
+  }
+  module_path.resize(length);
+  const size_t separator = module_path.find_last_of(L"\\/");
+  if (separator == std::wstring::npos) {
+    return std::wstring();
+  }
+  module_path.resize(separator + 1);
+  module_path.append(
+      L"data\\flutter_assets\\assets\\fonts\\MaterialSymbolsRounded.ttf");
+  return module_path;
+}
+
 // ARGB (0xAARRGGBB) -> D2D1_COLOR_F (straight alpha).
 D2D1_COLOR_F ColorFromArgb(uint32_t argb) {
   const float a = ((argb >> 24) & 0xFF) / 255.0f;
@@ -39,9 +58,8 @@ bool SameLayout(const hook_toolbar::Layout& a, const hook_toolbar::Layout& b) {
   return a.rect.left == b.rect.left && a.rect.top == b.rect.top &&
          a.rect.right == b.rect.right && a.rect.bottom == b.rect.bottom &&
          a.owner_origin.x == b.owner_origin.x &&
-         a.owner_origin.y == b.owner_origin.y &&
-         a.button_px == b.button_px && a.gap_px == b.gap_px &&
-         a.margin_px == b.margin_px;
+         a.owner_origin.y == b.owner_origin.y && a.button_px == b.button_px &&
+         a.gap_px == b.gap_px && a.margin_px == b.margin_px;
 }
 
 bool SameStyle(const hook_toolbar::Style& a, const hook_toolbar::Style& b) {
@@ -77,6 +95,62 @@ bool SlotActive(int slot, const States& states) {
     default:
       return false;
   }
+}
+
+const wchar_t* SlotGlyph(int slot, const States& states) {
+  switch (slot) {
+    case 0:
+      return L"\uE042";  // replay
+    case 1:
+      return L"\uE31D";  // mic
+    case 2:
+      return states.playing ? L"\uE034" : L"\uE037";  // pause / play_arrow
+    case 3:
+      return L"\uE323";  // mouse
+    case 4:
+      return L"\uE91C";  // opacity
+    case 5:
+      return states.locked ? L"\uE899" : L"\uE898";  // lock / lock_open
+    case 6:
+      return L"\uE99B";  // dashboard_customize
+    case 7:
+      return L"\uF10D";  // push_pin
+    case 8:
+      return L"\uE5CD";  // close
+    default:
+      return L"";
+  }
+}
+
+bool LoadMaterialSymbolsRoundedFontCollection(
+    IDWriteFactory* factory, IDWriteFontCollection** collection) {
+  if (factory == nullptr || collection == nullptr) {
+    return false;
+  }
+  *collection = nullptr;
+  const std::wstring path = MaterialSymbolsRoundedFontPath();
+  if (path.empty() ||
+      GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    return false;
+  }
+
+  Microsoft::WRL::ComPtr<IDWriteFactory5> factory5;
+  Microsoft::WRL::ComPtr<IDWriteFontSetBuilder1> builder;
+  Microsoft::WRL::ComPtr<IDWriteFontFile> font_file;
+  Microsoft::WRL::ComPtr<IDWriteFontSet> font_set;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection1> font_collection;
+  if (FAILED(factory->QueryInterface(IID_PPV_ARGS(factory5.GetAddressOf()))) ||
+      FAILED(factory5->CreateFontSetBuilder(builder.GetAddressOf())) ||
+      FAILED(factory5->CreateFontFileReference(path.c_str(), nullptr,
+                                               font_file.GetAddressOf())) ||
+      FAILED(builder->AddFontFile(font_file.Get())) ||
+      FAILED(builder->CreateFontSet(font_set.GetAddressOf())) ||
+      FAILED(factory5->CreateFontCollectionFromFontSet(
+          font_set.Get(), font_collection.GetAddressOf()))) {
+    return false;
+  }
+  *collection = font_collection.Detach();
+  return true;
 }
 
 void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
@@ -342,6 +416,10 @@ bool HookToolbarWindow::EnsureDeviceResources() {
             reinterpret_cast<IUnknown**>(dwrite_factory_.GetAddressOf())))) {
       return false;
     }
+  }
+  if (icon_font_collection_ == nullptr) {
+    hook_toolbar::LoadMaterialSymbolsRoundedFontCollection(
+        dwrite_factory_.Get(), icon_font_collection_.GetAddressOf());
   }
   if (render_target_ == nullptr) {
     D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
@@ -675,6 +753,18 @@ void HookToolbarWindow::Render() {
   if (btn_active != nullptr) btn_active->SetOpacity(opacity);
 
   const float btn = layout_.button_px;
+  Microsoft::WRL::ComPtr<IDWriteTextFormat> icon_format;
+  if (icon_font_collection_ != nullptr) {
+    dwrite_factory_->CreateTextFormat(
+        L"Material Symbols Rounded", icon_font_collection_.Get(),
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, btn * 0.68f, L"",
+        icon_format.GetAddressOf());
+    if (icon_format != nullptr) {
+      icon_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+      icon_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    }
+  }
   for (int slot = 0; slot < hook_toolbar::kSlotCount; ++slot) {
     const float bx = layout_.margin_px + slot * (btn + layout_.gap_px);
     const float by = layout_.margin_px;
@@ -695,8 +785,13 @@ void HookToolbarWindow::Render() {
     }
     ID2D1SolidColorBrush* brush = active ? btn_active.Get() : btn_fg.Get();
     if (brush != nullptr) {
-      hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(), slot,
-                                 states_, cell, brush);
+      if (icon_format != nullptr) {
+        const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, states_);
+        render_target_->DrawTextW(glyph, 1, icon_format.Get(), cell, brush);
+      } else {
+        hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
+                                   slot, states_, cell, brush);
+      }
     }
   }
 
