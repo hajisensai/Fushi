@@ -16,7 +16,7 @@ class _GroupedEntry {
   final String expression;
   final String reading;
   final String matched;
-  final List<Map<String, String>> deinflectionTrace;
+  final List<DeinflectionTag> deinflectionTrace;
   final List<_GlossaryItem> glossaries;
 }
 
@@ -80,14 +80,10 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
 
       final key = '${entry.word}\n${entry.reading}';
       if (!grouped.containsKey(key)) {
-        final trace = <Map<String, String>>[];
-        if (extraData != null && extraData.containsKey('deinflected')) {
-          final matched = extraData['matched'] as String? ?? '';
-          final deinflected = extraData['deinflected'] as String? ?? '';
-          if (matched != deinflected && deinflected.isNotEmpty) {
-            trace.add({'name': '$matched → $deinflected'});
-          }
-        }
+        // 变形标签（含语法说明）由 buildDeinflectionTags 统一生成、随 extra 送达。
+        final List<DeinflectionTag> trace = extraData == null
+            ? const <DeinflectionTag>[]
+            : deinflectionTagsFromExtra(extraData);
 
         grouped[key] = _GroupedEntry(
           expression: entry.word,
@@ -244,16 +240,72 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
     Color tagBg,
     FushiDesignTokens tokens,
   ) {
+    final ThemeData theme = Theme.of(context);
+    final List<Widget> children = <Widget>[];
+    for (int i = 0; i < entry.deinflectionTrace.length; i++) {
+      final DeinflectionTag tag = entry.deinflectionTrace[i];
+      // 「«」读作「来自」：右边那一层变形是接在左边这一层之上的。与 Yomitan 和
+      // WebView 弹窗（popup.css 的 .deinflection-tag:not(:first-child)::before）
+      // 保持同一种读法。
+      if (i > 0) {
+        children.add(Text(
+          '«',
+          style: theme.textTheme.labelSmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ));
+      }
+      children.add(FushiTagChip(
+        label: tag.name,
+        color: tagBg,
+        // 没有语法说明的标签（文本变体归一的回落条目）不可点，免得点开一个空框。
+        onTap:
+            tag.description.isEmpty ? null : () => _showGrammarDescription(tag),
+      ));
+    }
     return Padding(
       padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
       child: Wrap(
         spacing: tokens.spacing.gap / 4,
-        children: entry.deinflectionTrace.map((trace) {
-          return FushiTagChip(
-            label: trace['name'] ?? '',
-            color: tagBg,
-          );
-        }).toList(),
+        runSpacing: tokens.spacing.gap / 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: children,
+      ),
+    );
+  }
+
+  /// 展示某一层词形变化的语法说明（来自 `assets/transforms/<lang>.json`）。
+  Future<void> _showGrammarDescription(DeinflectionTag tag) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiDialogFrame(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              tag.name,
+              style: Theme.of(dialogContext).textTheme.titleMedium,
+            ),
+            Text(
+              t.dict_category_grammar,
+              style: Theme.of(dialogContext).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            SelectableText(tag.description),
+            SizedBox(height: tokens.spacing.gap),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(t.dialog_close),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
