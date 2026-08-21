@@ -103,10 +103,15 @@ struct Layout {
   float margin_px = 0.0f;  // padding between the window edge and the row
 };
 
-// Glyph drawn for |slot| under |states| (never null).
-const wchar_t* SlotGlyph(int slot, const States& states);
 // Whether |slot| draws with the active (highlight) colour under |states|.
 bool SlotActive(int slot, const States& states);
+// Draws a font-independent, optically aligned vector icon for |slot|. Keeping
+// this renderer shared by the in-body and pass-through toolbars avoids the
+// mixed Segoe UI Symbol / colour-emoji fallback that made the old glyph row
+// change weight, baseline and colour from button to button.
+void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
+                  const States& states, const D2D1_RECT_F& bounds,
+                  ID2D1Brush* brush);
 
 }  // namespace hook_toolbar
 
@@ -168,6 +173,7 @@ class HookToolbarWindow {
   bool class_registered_ = false;
   bool visible_ = false;
   bool hovered_ = false;
+  int hovered_slot_ = -1;
   bool tracking_mouse_leave_ = false;
 
   // Owner-drag state. |dragging_| only becomes true once the press travelled

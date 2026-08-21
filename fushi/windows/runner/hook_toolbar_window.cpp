@@ -35,13 +35,6 @@ D2D1_COLOR_F ColorFromArgb(uint32_t argb) {
   return D2D1::ColorF(r, g, b, a);
 }
 
-UINT32 GlyphLength(const wchar_t* glyph) {
-  if (glyph == nullptr) {
-    return 0;
-  }
-  return static_cast<UINT32>(std::char_traits<wchar_t>::length(glyph));
-}
-
 bool SameLayout(const hook_toolbar::Layout& a, const hook_toolbar::Layout& b) {
   return a.rect.left == b.rect.left && a.rect.top == b.rect.top &&
          a.rect.right == b.rect.right && a.rect.bottom == b.rect.bottom &&
@@ -67,31 +60,6 @@ bool SameStates(const hook_toolbar::States& a, const hook_toolbar::States& b) {
 
 namespace hook_toolbar {
 
-const wchar_t* SlotGlyph(int slot, const States& states) {
-  switch (slot) {
-    case 0:
-      return L"↺";  // ↺ replay voice
-    case 1:
-      return L"⏺";  // ⏺ recapture
-    case 2:
-      return states.playing ? L"⏸" : L"▶";  // ⏸ / ▶ follow
-    case 3:
-      return L"↗";  // ↗ pass-through
-    case 4:
-      return L"◐";  // ◐ transparency
-    case 5:
-      return states.locked ? L"\U0001F512" : L"\U0001F513";  // 🔒 / 🔓
-    case 6:
-      return L"▣";  // ▣ workbench
-    case 7:
-      return L"\U0001F4CC";  // 📌 always-on-top pin
-    case 8:
-      return L"✕";  // ✕ close
-    default:
-      return L"";
-  }
-}
-
 bool SlotActive(int slot, const States& states) {
   switch (slot) {
     case 0:
@@ -108,6 +76,227 @@ bool SlotActive(int slot, const States& states) {
       return states.topmost;
     default:
       return false;
+  }
+}
+
+void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
+                  const States& states, const D2D1_RECT_F& bounds,
+                  ID2D1Brush* brush) {
+  if (target == nullptr || factory == nullptr || brush == nullptr) {
+    return;
+  }
+  const float width = bounds.right - bounds.left;
+  const float height = bounds.bottom - bounds.top;
+  const float size = std::min(width, height);
+  if (size <= 0.0f) {
+    return;
+  }
+  const float ox = bounds.left + (width - size) * 0.5f;
+  const float oy = bounds.top + (height - size) * 0.5f;
+  const float stroke = std::max(1.0f, size * 0.055f);
+  auto point = [ox, oy, size](float x, float y) {
+    return D2D1::Point2F(ox + size * x, oy + size * y);
+  };
+  auto rect = [ox, oy, size](float left, float top, float right, float bottom) {
+    return D2D1::RectF(ox + size * left, oy + size * top, ox + size * right,
+                       oy + size * bottom);
+  };
+
+  D2D1_STROKE_STYLE_PROPERTIES stroke_properties = {};
+  stroke_properties.startCap = D2D1_CAP_STYLE_ROUND;
+  stroke_properties.endCap = D2D1_CAP_STYLE_ROUND;
+  stroke_properties.dashCap = D2D1_CAP_STYLE_ROUND;
+  stroke_properties.lineJoin = D2D1_LINE_JOIN_ROUND;
+  stroke_properties.miterLimit = 10.0f;
+  stroke_properties.dashStyle = D2D1_DASH_STYLE_SOLID;
+  Microsoft::WRL::ComPtr<ID2D1StrokeStyle> round_stroke;
+  factory->CreateStrokeStyle(&stroke_properties, nullptr, 0,
+                             round_stroke.GetAddressOf());
+
+  auto draw_path = [&](ID2D1PathGeometry* geometry) {
+    if (geometry != nullptr) {
+      target->DrawGeometry(geometry, brush, stroke, round_stroke.Get());
+    }
+  };
+
+  switch (slot) {
+    case 0: {  // Replay captured voice.
+      Microsoft::WRL::ComPtr<ID2D1PathGeometry> arc;
+      if (SUCCEEDED(factory->CreatePathGeometry(arc.GetAddressOf()))) {
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(arc->Open(sink.GetAddressOf()))) {
+          sink->BeginFigure(point(0.30f, 0.50f), D2D1_FIGURE_BEGIN_HOLLOW);
+          sink->AddArc(D2D1::ArcSegment(
+              point(0.50f, 0.28f), D2D1::SizeF(size * 0.22f, size * 0.22f),
+              0.0f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+          sink->AddArc(D2D1::ArcSegment(
+              point(0.72f, 0.50f), D2D1::SizeF(size * 0.22f, size * 0.22f),
+              0.0f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+          sink->AddArc(D2D1::ArcSegment(
+              point(0.50f, 0.72f), D2D1::SizeF(size * 0.22f, size * 0.22f),
+              0.0f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+          sink->EndFigure(D2D1_FIGURE_END_OPEN);
+          sink->Close();
+          draw_path(arc.Get());
+        }
+      }
+      target->DrawLine(point(0.30f, 0.50f), point(0.29f, 0.32f), brush, stroke,
+                       round_stroke.Get());
+      target->DrawLine(point(0.30f, 0.50f), point(0.46f, 0.46f), brush, stroke,
+                       round_stroke.Get());
+      break;
+    }
+    case 1: {  // Recapture voice: microphone, not an ambiguous text dot.
+      target->DrawRoundedRectangle(
+          D2D1::RoundedRect(rect(0.43f, 0.24f, 0.57f, 0.56f), size * 0.07f,
+                            size * 0.07f),
+          brush, stroke, round_stroke.Get());
+      Microsoft::WRL::ComPtr<ID2D1PathGeometry> cradle;
+      if (SUCCEEDED(factory->CreatePathGeometry(cradle.GetAddressOf()))) {
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(cradle->Open(sink.GetAddressOf()))) {
+          sink->BeginFigure(point(0.34f, 0.47f), D2D1_FIGURE_BEGIN_HOLLOW);
+          sink->AddBezier(D2D1::BezierSegment(
+              point(0.34f, 0.70f), point(0.66f, 0.70f), point(0.66f, 0.47f)));
+          sink->EndFigure(D2D1_FIGURE_END_OPEN);
+          sink->Close();
+          draw_path(cradle.Get());
+        }
+      }
+      target->DrawLine(point(0.50f, 0.67f), point(0.50f, 0.76f), brush, stroke,
+                       round_stroke.Get());
+      target->DrawLine(point(0.41f, 0.76f), point(0.59f, 0.76f), brush, stroke,
+                       round_stroke.Get());
+      break;
+    }
+    case 2: {  // Follow / pause.
+      if (states.playing) {
+        target->FillRoundedRectangle(
+            D2D1::RoundedRect(rect(0.35f, 0.29f, 0.45f, 0.71f), size * 0.02f,
+                              size * 0.02f),
+            brush);
+        target->FillRoundedRectangle(
+            D2D1::RoundedRect(rect(0.55f, 0.29f, 0.65f, 0.71f), size * 0.02f,
+                              size * 0.02f),
+            brush);
+      } else {
+        Microsoft::WRL::ComPtr<ID2D1PathGeometry> play;
+        if (SUCCEEDED(factory->CreatePathGeometry(play.GetAddressOf()))) {
+          Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+          if (SUCCEEDED(play->Open(sink.GetAddressOf()))) {
+            sink->BeginFigure(point(0.39f, 0.28f), D2D1_FIGURE_BEGIN_FILLED);
+            sink->AddLine(point(0.39f, 0.72f));
+            sink->AddLine(point(0.70f, 0.50f));
+            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+            sink->Close();
+            target->FillGeometry(play.Get(), brush);
+          }
+        }
+      }
+      break;
+    }
+    case 3: {  // Mouse pass-through: a proper pointer silhouette.
+      Microsoft::WRL::ComPtr<ID2D1PathGeometry> cursor;
+      if (SUCCEEDED(factory->CreatePathGeometry(cursor.GetAddressOf()))) {
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(cursor->Open(sink.GetAddressOf()))) {
+          sink->BeginFigure(point(0.29f, 0.24f), D2D1_FIGURE_BEGIN_FILLED);
+          sink->AddLine(point(0.30f, 0.73f));
+          sink->AddLine(point(0.43f, 0.60f));
+          sink->AddLine(point(0.53f, 0.78f));
+          sink->AddLine(point(0.64f, 0.72f));
+          sink->AddLine(point(0.54f, 0.55f));
+          sink->AddLine(point(0.73f, 0.53f));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+          target->FillGeometry(cursor.Get(), brush);
+        }
+      }
+      break;
+    }
+    case 4: {  // Background transparency.
+      const D2D1_ELLIPSE circle =
+          D2D1::Ellipse(point(0.50f, 0.50f), size * 0.23f, size * 0.23f);
+      target->PushAxisAlignedClip(rect(0.25f, 0.25f, 0.50f, 0.75f),
+                                  D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+      target->FillEllipse(circle, brush);
+      target->PopAxisAlignedClip();
+      target->DrawEllipse(circle, brush, stroke, round_stroke.Get());
+      break;
+    }
+    case 5: {  // Position lock / unlock.
+      target->DrawRoundedRectangle(
+          D2D1::RoundedRect(rect(0.31f, 0.44f, 0.69f, 0.74f), size * 0.05f,
+                            size * 0.05f),
+          brush, stroke, round_stroke.Get());
+      Microsoft::WRL::ComPtr<ID2D1PathGeometry> shackle;
+      if (SUCCEEDED(factory->CreatePathGeometry(shackle.GetAddressOf()))) {
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(shackle->Open(sink.GetAddressOf()))) {
+          const float left = states.locked ? 0.39f : 0.43f;
+          const float right = states.locked ? 0.61f : 0.66f;
+          sink->BeginFigure(point(left, 0.44f), D2D1_FIGURE_BEGIN_HOLLOW);
+          sink->AddLine(point(left, 0.37f));
+          sink->AddBezier(D2D1::BezierSegment(
+              point(left, 0.23f), point(right, 0.23f), point(right, 0.37f)));
+          if (states.locked) {
+            sink->AddLine(point(right, 0.44f));
+          } else {
+            sink->AddLine(point(right, 0.40f));
+          }
+          sink->EndFigure(D2D1_FIGURE_END_OPEN);
+          sink->Close();
+          draw_path(shackle.Get());
+        }
+      }
+      break;
+    }
+    case 6: {  // Capture workbench / panel.
+      target->DrawRoundedRectangle(
+          D2D1::RoundedRect(rect(0.27f, 0.28f, 0.73f, 0.72f), size * 0.04f,
+                            size * 0.04f),
+          brush, stroke, round_stroke.Get());
+      target->DrawLine(point(0.28f, 0.41f), point(0.72f, 0.41f), brush, stroke,
+                       round_stroke.Get());
+      target->DrawLine(point(0.47f, 0.42f), point(0.47f, 0.71f), brush, stroke,
+                       round_stroke.Get());
+      target->DrawLine(point(0.53f, 0.51f), point(0.66f, 0.51f), brush, stroke,
+                       round_stroke.Get());
+      target->DrawLine(point(0.53f, 0.60f), point(0.63f, 0.60f), brush, stroke,
+                       round_stroke.Get());
+      break;
+    }
+    case 7: {  // Always-on-top pin.
+      Microsoft::WRL::ComPtr<ID2D1PathGeometry> pin;
+      if (SUCCEEDED(factory->CreatePathGeometry(pin.GetAddressOf()))) {
+        Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(pin->Open(sink.GetAddressOf()))) {
+          sink->BeginFigure(point(0.35f, 0.28f), D2D1_FIGURE_BEGIN_FILLED);
+          sink->AddLine(point(0.65f, 0.28f));
+          sink->AddLine(point(0.60f, 0.38f));
+          sink->AddLine(point(0.58f, 0.51f));
+          sink->AddLine(point(0.68f, 0.60f));
+          sink->AddLine(point(0.32f, 0.60f));
+          sink->AddLine(point(0.42f, 0.51f));
+          sink->AddLine(point(0.40f, 0.38f));
+          sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+          sink->Close();
+          target->FillGeometry(pin.Get(), brush);
+        }
+      }
+      target->DrawLine(point(0.50f, 0.60f), point(0.50f, 0.77f), brush, stroke,
+                       round_stroke.Get());
+      break;
+    }
+    case 8: {  // Close.
+      target->DrawLine(point(0.31f, 0.31f), point(0.69f, 0.69f), brush, stroke,
+                       round_stroke.Get());
+      target->DrawLine(point(0.69f, 0.31f), point(0.31f, 0.69f), brush, stroke,
+                       round_stroke.Get());
+      break;
+    }
+    default:
+      break;
   }
 }
 
@@ -220,6 +409,7 @@ void HookToolbarWindow::CancelPointerGesture() {
 void HookToolbarWindow::Hide() {
   visible_ = false;
   hovered_ = false;
+  hovered_slot_ = -1;
   tracking_mouse_leave_ = false;
   CancelPointerGesture();
   if (hwnd_ != nullptr) {
@@ -303,8 +493,15 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
                                          LPARAM lparam) noexcept {
   switch (message) {
     case WM_MOUSEMOVE: {
+      const int next_hovered_slot =
+          SlotAt(static_cast<float>(GET_X_LPARAM(lparam)),
+                 static_cast<float>(GET_Y_LPARAM(lparam)));
+      const bool slot_changed = next_hovered_slot != hovered_slot_;
+      hovered_slot_ = next_hovered_slot;
       if (!hovered_) {
         hovered_ = true;
+        Render();
+      } else if (slot_changed && !dragging_) {
         Render();
       }
       if (!tracking_mouse_leave_) {
@@ -341,6 +538,7 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
       tracking_mouse_leave_ = false;
       if (hovered_ && !dragging_) {
         hovered_ = false;
+        hovered_slot_ = -1;
         Render();
       }
       return 0;
@@ -477,36 +675,28 @@ void HookToolbarWindow::Render() {
   if (btn_active != nullptr) btn_active->SetOpacity(opacity);
 
   const float btn = layout_.button_px;
-  Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
-  dwrite_factory_->CreateTextFormat(
-      L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-      std::max(1.0f, btn * 0.5f), L"", glyph_fmt.GetAddressOf());
-  if (glyph_fmt != nullptr) {
-    glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-  }
-
   for (int slot = 0; slot < hook_toolbar::kSlotCount; ++slot) {
     const float bx = layout_.margin_px + slot * (btn + layout_.gap_px);
     const float by = layout_.margin_px;
     const D2D1_RECT_F cell = D2D1::RectF(bx, by, bx + btn, by + btn);
-    if (btn_bg != nullptr) {
+    const bool active = hook_toolbar::SlotActive(slot, states_);
+    if (active && btn_active != nullptr) {
+      btn_active->SetOpacity(opacity * 0.16f);
       render_target_->FillRoundedRectangle(
-          D2D1::RoundedRect(cell, corner * 0.5f, corner * 0.5f), btn_bg.Get());
+          D2D1::RoundedRect(cell, corner * 0.65f, corner * 0.65f),
+          btn_active.Get());
+      btn_active->SetOpacity(opacity);
+    } else if (slot == hovered_slot_ && btn_bg != nullptr) {
+      btn_bg->SetOpacity(opacity * 0.55f);
+      render_target_->FillRoundedRectangle(
+          D2D1::RoundedRect(cell, corner * 0.65f, corner * 0.65f),
+          btn_bg.Get());
+      btn_bg->SetOpacity(opacity);
     }
-    if (glyph_fmt == nullptr) {
-      continue;
-    }
-    const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, states_);
-    ID2D1SolidColorBrush* brush = hook_toolbar::SlotActive(slot, states_)
-                                      ? btn_active.Get()
-                                      : btn_fg.Get();
+    ID2D1SolidColorBrush* brush = active ? btn_active.Get() : btn_fg.Get();
     if (brush != nullptr) {
-      // Full UTF-16 length: the padlock glyphs are surrogate pairs and would be
-      // truncated to a lone high surrogate by a hard-coded length of 1.
-      render_target_->DrawTextW(glyph, GlyphLength(glyph), glyph_fmt.Get(),
-                                cell, brush);
+      hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(), slot,
+                                 states_, cell, brush);
     }
   }
 
