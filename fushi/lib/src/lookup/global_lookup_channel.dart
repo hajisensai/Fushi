@@ -98,6 +98,11 @@ abstract final class GlobalLookupChannel {
 
   static Future<void> render(String popupJson) => _impl.render(popupJson);
 
+  /// 手柄重设计 P5：转发一枚手柄动作到当前路由的 overlay host（见
+  /// [OverlayWindowChannel.gamepadAction]）。
+  static Future<void> gamepadAction(String action, {double dy = 0}) =>
+      _impl.gamepadAction(action, dy: dy);
+
   static Future<void> resize({required int width, required int height}) =>
       _impl.resize(width: width, height: height);
 

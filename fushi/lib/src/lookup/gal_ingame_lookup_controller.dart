@@ -36,6 +36,7 @@ import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
 /// 偏好读取口。与 `GalHookPreferenceReader` 同形——独立声明只为不让台词浮窗控制器与
 /// 本控制器互相 import 成环，语义完全一致（key + 默认值，测试可注入替身）。
@@ -192,10 +193,34 @@ class GalIngameLookupController {
       unawaited(_onOverlayHidden(route));
     };
     overlay.onRoutedDirty = markRoutedDirty;
+    // 手柄重设计 P5：会话期把游戏内卡片登记为手柄的**独占**路由。卡片可见
+    // （_activeRoute 非空）时 GamepadService 把弹窗动作转发进卡片、吞掉其余
+    // 按钮——绝不让游戏里的手柄输入驱动后台 app 的页面/焦点/返回。
+    GalIngameLookupGamepadRoute.set(DictionaryPopupGamepadHooks(
+      hasVisiblePopup: () => _started && _enabledNow && _activeRoute != null,
+      entryMove: (bool forward) =>
+          _dispatchGamepadAction(forward ? 'next' : 'prev'),
+      mineFirstEntry: () => _dispatchGamepadAction('mine'),
+      playFirstAudio: () => _dispatchGamepadAction('audio'),
+      scrollBy: (double dy) => _dispatchGamepadAction('scroll', dy: dy),
+    ));
+  }
+
+  /// 手柄动作 → 卡片窗 host（native gamepadAction → 顶层帧 popup.js 入口）。
+  /// 必须在**当前卡片 route 的 zone**里下发，channel 才会把调用送到 galCard
+  /// 窗口而不是桌面查词窗；route 已失效时静默丢弃（瞬时输入，不排队）。
+  Future<void> _dispatchGamepadAction(String action, {double dy = 0}) async {
+    final GlobalLookupRoute? route = _activeRoute;
+    if (route == null || !GlobalLookupChannel.isRouteValid(route)) return;
+    await GlobalLookupChannel.runWithRoute(
+      route,
+      () => GlobalLookupChannel.gamepadAction(action, dy: dy),
+    );
   }
 
   @visibleForTesting
   Future<void> stopForTesting() async {
+    GalIngameLookupGamepadRoute.set(null);
     _sessionActive = false;
     await _terminateCurrentLookup();
     final Future<void>? lookupDrain = _drainCompleter?.future;
