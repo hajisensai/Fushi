@@ -1,38 +1,44 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
-import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
+import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
-import 'package:fushi/src/media/video/cover_ui/collection_scrape_dialog.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
-import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 放送日历页（TODO-2487，hayase Schedule 式周历）：周一到周日七列（窄屏切
-/// 按天分组列表），默认只显示与本地相关的番剧——合集绑定的 anilistId + 下载
-/// 订阅的 anilistId；「显示本季全部」开关拉当季全量 airing。数据走 AniList
-/// airingSchedules（[AniListClient.fetchAiringSchedulePage]，HTTP 客户端经
+/// 放送日历页（hayase Schedule 式周历，2026-08-21 重做）：周一到周日七列
+/// （窄屏切按天分组列表），默认只显示与本地相关的番剧——合集绑定的 anilistId
+/// + 下载订阅的 anilistId；「显示本季全部」开关拉当季全量 airing。
+///
+/// **每个条目都可点**：合成 [VideoDiscoveryItem]（airing_discovery_mapping）
+/// 后进发现详情页，搜索资源 / 订阅 / 搜索字幕 / 在库播放全部走 [actions] 的
+/// 既有装配——旧版「不在库也没订阅就不可点」的死条目形态（用户原话「根本
+/// 下载不出来」）由此消除。数据走 AniList airingSchedules
+/// （[AniListClient.fetchAiringSchedulePage]，HTTP 客户端经
 /// [AppModel.createDownloadHttpClient] 走既有下载代理配置）；缓存内存 + 偏好
 /// 两层（airing_calendar_cache.dart），**无 Drift schema 改动**。
 class AiringCalendarPage extends ConsumerStatefulWidget {
-  const AiringCalendarPage({super.key, this.onOpenSubscriptions});
+  const AiringCalendarPage({
+    super.key,
+    this.actions = const VideoDiscoveryActions(),
+  });
 
-  /// 点「订阅中」条目：本页先 pop，再由 DownloadsPage 把自己的 TabController
-  /// 切到订阅 tab（本页不持有下载页内部状态）。null = 订阅条目不可点。
-  final VoidCallback? onOpenSubscriptions;
+  /// 发现详情页动作装配（生产装配点是 home_page 的
+  /// `_productionVideoDiscoveryActions`；默认空动作 = 详情页只读）。
+  final VideoDiscoveryActions actions;
 
   @override
   ConsumerState<AiringCalendarPage> createState() => _AiringCalendarPageState();
@@ -54,10 +60,11 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   bool _loading = true;
   String? _errorDetail;
   List<AniListAiringEpisode> _episodes = const <AniListAiringEpisode>[];
-  Map<int, MediaCollectionRow> _collectionsByAnilistId =
-      <int, MediaCollectionRow>{};
-  Map<int, AnimeDownloadSubscription> _subscriptionsByAnilistId =
-      <int, AnimeDownloadSubscription>{};
+
+  /// 本地相关性只影响「在库/订阅中」徽章与默认过滤集；条目动作一律走发现
+  /// 详情页，所以这里只需要 id 集合，不再持有整行对象。
+  Set<int> _libraryAnilistIds = <int>{};
+  Set<int> _subscribedAnilistIds = <int>{};
 
   /// intl 星期名数据是否就绪（与 collections_page 同范式：未就绪先渲染 ISO
   /// 日期，数据到位后 setState 换本地化星期名）。
@@ -89,19 +96,14 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       final List<AnimeDownloadSubscription> subscriptions = store == null
           ? const <AnimeDownloadSubscription>[]
           : await store.loadAll();
-      final Map<int, MediaCollectionRow> collectionsById =
-          <int, MediaCollectionRow>{
+      final Set<int> libraryIds = <int>{
         for (final MediaCollectionRow c in collections)
-          if (c.anilistId != null) c.anilistId!: c,
+          if (c.anilistId != null) c.anilistId!,
       };
-      final Map<int, AnimeDownloadSubscription> subscriptionsById =
-          <int, AnimeDownloadSubscription>{
-        for (final AnimeDownloadSubscription s in subscriptions) s.anilistId: s,
+      final Set<int> subscribedIds = <int>{
+        for (final AnimeDownloadSubscription s in subscriptions) s.anilistId,
       };
-      final List<int> boundIds = <int>{
-        ...collectionsById.keys,
-        ...subscriptionsById.keys,
-      }.toList()
+      final List<int> boundIds = <int>{...libraryIds, ...subscribedIds}.toList()
         ..sort();
       final List<int>? filterIds = _showAll ? null : boundIds;
       List<AniListAiringEpisode> episodes = const <AniListAiringEpisode>[];
@@ -111,8 +113,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       }
       if (!mounted) return;
       setState(() {
-        _collectionsByAnilistId = collectionsById;
-        _subscriptionsByAnilistId = subscriptionsById;
+        _libraryAnilistIds = libraryIds;
+        _subscribedAnilistIds = subscribedIds;
         _episodes = episodes;
         _loading = false;
       });
@@ -207,61 +209,20 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     unawaited(_load());
   }
 
-  /// 打开合集详情（与 collections_page/home_video_page 同范式：loadMembers 解析
-  /// 有序视频成员，点集经 playlistCollectionId 进播放器）。日历页背后没有库页
-  /// 要刷新，onChanged 仅重载本页映射。
-  void _openCollectionDetail(MediaCollectionRow collection) {
-    final FushiDatabase db = _appModel.database;
-    final VideoBookRepository repo = VideoBookRepository(db);
-    Navigator.push<void>(
+  /// 任何日历条目 → 发现详情页：搜索资源 / 订阅 / 字幕 / 在库播放全在那里，
+  /// 回来后重载本页映射（订阅/入库状态可能变了，徽章要跟上）。
+  Future<void> _openEpisode(AniListAiringEpisode episode) async {
+    await Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => MediaCollectionDetailPage(
-          database: db,
-          collection: collection,
-          // 日历页没有互联 client（无远端上下文）：只在对端的成员照旧不列出，
-          // 与远端支持引入前逐字节相同。
-          loadEpisodes: () => loadCollectionEpisodeSlots(
-            repository: repo,
-            collectionId: collection.id,
-          ),
-          onOpenEpisode: (VideoBookRow episode) {
-            Navigator.push<void>(
-              context,
-              adaptivePageRoute<void>(
-                context: context,
-                builder: (_) => VideoFushiPage.neutralized(
-                  bookUid: episode.bookUid,
-                  repo: repo,
-                  playlistCollectionId: collection.id,
-                ),
-              ),
-            );
-          },
-          onChanged: () => unawaited(_load()),
-          // 与库页/详情页同一套合集刮削入口（BUG-1662）；日历页没有集级
-          // 条目信息回调（那套重刮状态机在库页），仅提供合集级刮削。
-          onScrape: () => showCollectionScrapeDialog(
-            context: context,
-            db: db,
-            repository: repo,
-            configuredTmdbKey: _appModel.prefsRepo
-                    .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
-                as String,
-            collection: collection,
-            onApplied: () => unawaited(_load()),
-          ),
+        builder: (_) => VideoDiscoveryDetailPage(
+          item: discoveryItemFromAiringEpisode(episode),
+          actions: widget.actions,
         ),
       ),
     );
-  }
-
-  void _openSubscriptions() {
-    final VoidCallback? callback = widget.onOpenSubscriptions;
-    if (callback == null) return;
-    Navigator.of(context).pop();
-    callback();
+    if (mounted) unawaited(_load());
   }
 
   String _weekdayName(DateTime day) {
@@ -349,8 +310,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       return _buildError(theme, errorDetail);
     }
     if (!_showAll &&
-        _collectionsByAnilistId.isEmpty &&
-        _subscriptionsByAnilistId.isEmpty) {
+        _libraryAnilistIds.isEmpty &&
+        _subscribedAnilistIds.isEmpty) {
       return _buildCenteredNote(
         theme,
         icon: Icons.event_note_outlined,
@@ -514,21 +475,19 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   }
 
   Widget _buildEpisodeTile(ThemeData theme, AniListAiringEpisode episode) {
-    final MediaCollectionRow? collection =
-        _collectionsByAnilistId[episode.mediaId];
-    final AnimeDownloadSubscription? subscription =
-        _subscriptionsByAnilistId[episode.mediaId];
+    final bool inLibrary = _libraryAnilistIds.contains(episode.mediaId);
+    final bool subscribed = _subscribedAnilistIds.contains(episode.mediaId);
     final DateTime local = airingAtToLocal(episode.airingAtSeconds);
-    final VoidCallback? onTap = collection != null
-        ? () => _openCollectionDetail(collection)
-        : subscription != null && widget.onOpenSubscriptions != null
-            ? _openSubscriptions
-            : null;
     final String episodeLabel =
         t.download_airing_calendar_episode_label(episode: episode.episode);
     return FushiListItem(
+      key: ValueKey<String>(
+        'airing-episode-${episode.mediaId}-${episode.episode}',
+      ),
       density: FushiListDensity.compact,
-      onTap: onTap,
+      // 重做后每个条目都可点：进发现详情页拿 搜索资源/订阅/字幕/播放。
+      onTap: () => unawaited(_openEpisode(episode)),
+      leading: _buildCover(theme, episode.media.coverUrl),
       // 条目落在 ListView 里（高度自由），可以安全放宽到两行——番名普遍很长，
       // 单行 ellipsis 在七列窄栏里只看得到开头几个字。
       titleMaxLines: 2,
@@ -539,22 +498,48 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       ),
       subtitle: Wrap(
         spacing: 8,
+        runSpacing: 2,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
           Text('${FushiTimeFormat.hourMinute(local)} $episodeLabel'),
-          if (collection != null)
+          if (inLibrary)
             _buildBadge(
               theme,
               t.download_airing_calendar_in_library,
               theme.colorScheme.primary,
             ),
-          if (subscription != null)
+          if (subscribed)
             _buildBadge(
               theme,
               t.download_airing_calendar_subscribed,
               theme.colorScheme.tertiary,
             ),
         ],
+      ),
+    );
+  }
+
+  /// 封面缩略图（2:3，与发现页卡片同一图源与占位形态）。模型里一直有
+  /// coverUrl，旧版从没画过——纯文本行是「丑」的主因之一。
+  Widget _buildCover(ThemeData theme, String? coverUrl) {
+    const double width = 40;
+    const double height = 60;
+    final String url = coverUrl?.trim() ?? '';
+    return ClipRRect(
+      borderRadius: FushiBorderRadius.chip,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: url.isEmpty
+            ? ColoredBox(
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: Icon(
+                  Icons.movie_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            : PortraitCoverImage(image: CachedNetworkImageProvider(url)),
       ),
     );
   }
