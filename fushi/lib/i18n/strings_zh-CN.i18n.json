@@ -47,7 +47,7 @@
   "anime_download_search_error_proxy_hint": "站点无法直连时，可在下载设置中配置网络代理。",
   "anime_download_search_failed": "搜索失败或超时，请点重试",
   "anime_download_search_hint": "番剧名",
-  "anime_download_search_start_hint": "在上方搜索番剧名，自动匹配种子与字幕。",
+  "anime_download_search_start_hint": "在上方搜索作品名，自动匹配种子与字幕。下载不限视频：书籍、漫画、有声书、游戏也会自动入库。",
   "anime_download_sort_date": "发布时间",
   "anime_download_sort_seeders": "做种数",
   "anime_download_sort_size": "体积",
@@ -3668,5 +3668,16 @@
   "sync_asset_download_hint": "把远端有、本机没有的取回来（含你在本机删掉过的）。",
   "sync_asset_legacy_notice_title": "词典与本地音频改为手动传输",
   "sync_asset_legacy_notice_body": "这台设备原先开着词典与本地音频数据库的自动同步。该开关已移除——需要传输时请用下面的上传 / 下载。已有数据不受影响，但新导入的词典不会再自动备份。",
-  "sync_asset_legacy_notice_dismiss": "知道了"
+  "sync_asset_legacy_notice_dismiss": "知道了",
+  "download_task_add": "添加任务",
+  "download_task_add_pick_torrent": "选择种子文件",
+  "download_task_add_title_label": "标题",
+  "download_task_add_content_kind": "内容类型",
+  "download_task_add_invalid": "无法识别的磁力链接或种子文件",
+  "download_task_add_submitted": "已添加任务",
+  "download_task_search_hint": "搜索任务",
+  "download_task_sort_created": "添加时间",
+  "download_task_sort_progress": "进度",
+  "download_task_sort_status": "状态",
+  "download_task_no_match": "没有匹配的任务"
 }

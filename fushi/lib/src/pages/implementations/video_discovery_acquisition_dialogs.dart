@@ -1178,6 +1178,10 @@ class _VideoResourceSearchSurfaceState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Row(
+          // 左侧带 helperText、右侧没有：默认的居中对齐会把右侧输入框往下挤
+          // 半个 helper 高（两个框底边错位）。顶对齐让两个框同高齐边，helper
+          // 自然挂在左框下方。
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Expanded(
               child: DropdownButtonFormField<int>(

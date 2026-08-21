@@ -4003,6 +4003,12 @@ class AppModel with ChangeNotifier {
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
       onBackendTaskAdded: _checkpointEmbeddedVideoDownload,
+      // 手动添加任务（下载页「添加任务」）：非视频内容整包交发现导入执行器
+      // 按域入库；.torrent 元数据落 app 目录随任务持久化。
+      discoveryImporter: (DiscoveryMediaKind kind, List<String> paths) =>
+          discoveryImportExecutor.importPaths(kind, paths),
+      manualTorrentDirectory:
+          Directory(path.join(appDirectory.path, 'manual_torrents')),
     )..start();
     _videoDownloadPipelineService = pipeline;
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(

@@ -748,4 +748,122 @@ void main() {
       reason: '给一个不会再被取走的任务露出「优先级」，等于骗用户能插队。',
     );
   });
+
+  // 任务列表搜索 + 排序（2026-08-21 用户点名：任务缺排序、缺搜索）。
+  group('sort & search', () {
+    test('sortedVideoDownloadJobs 四个维度各按预期排序', () {
+      final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[
+        _job(id: 'a', title: 'Beta', progress: 0.2)
+            .copyWith(createdAt: 100, priority: 0),
+        _job(
+          id: 'b',
+          title: 'Alpha',
+          lifecycle: VideoDownloadJobLifecycle.completed,
+          progress: 1,
+        ).copyWith(createdAt: 50),
+        _job(
+          id: 'c',
+          title: 'Gamma',
+          lifecycle: VideoDownloadJobLifecycle.needsAttention,
+          progress: 0.7,
+        ).copyWith(createdAt: 75),
+      ];
+      List<String> ids(VideoDownloadJobSort sort) =>
+          sortedVideoDownloadJobs(jobs, sort)
+              .map((VideoDownloadJobRow row) => row.jobId)
+              .toList();
+
+      expect(ids(VideoDownloadJobSort.createdDesc), <String>['a', 'c', 'b'],
+          reason: '默认最新添加在前');
+      expect(ids(VideoDownloadJobSort.titleAsc), <String>['b', 'a', 'c'],
+          reason: '名称字典序');
+      expect(ids(VideoDownloadJobSort.progressDesc), <String>['b', 'c', 'a'],
+          reason: '完成恒 1 排最前，其余按阶段进度');
+      expect(ids(VideoDownloadJobSort.statusGroup), <String>['c', 'a', 'b'],
+          reason: 'needsAttention 最需要用户看、排最前，完成最后');
+    });
+
+    test('filterVideoDownloadJobs 与库页同一套归一化（全角/大小写不挡命中）', () {
+      final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[
+        _job(id: 'a', title: 'Fate／stay night'),
+        _job(id: 'b', title: 'Other Show'),
+      ];
+      expect(filterVideoDownloadJobs(jobs, ''), hasLength(2), reason: '空查询不过滤');
+      final List<VideoDownloadJobRow> hit =
+          filterVideoDownloadJobs(jobs, 'fate stay');
+      expect(hit, hasLength(1));
+      expect(hit.single.jobId, 'a');
+      // resourceTitle 也可搜（用户记得住的常是发布名）。
+      expect(
+        filterVideoDownloadJobs(jobs, 'A-Rather-Long-Release-Group'),
+        hasLength(2),
+      );
+    });
+
+    testWidgets('搜索框过滤任务卡片，无命中给空态', (WidgetTester tester) async {
+      final _MemoryJobsStore store = _MemoryJobsStore();
+      addTearDown(store.close);
+      await _pumpPanel(
+        tester,
+        panel: VideoDownloadJobsPanel(store: store),
+      );
+      store.emit(<VideoDownloadJobRow>[
+        _job(id: 'a', title: 'Alpha Show'),
+        _job(id: 'b', title: 'Beta Show'),
+      ]);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('video-download-job-a')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('video-download-job-b')),
+          findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-download-job-search')),
+        'alpha',
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('video-download-job-a')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('video-download-job-b')),
+          findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-download-job-search')),
+        'zzz-no-match',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.download_task_no_match), findsOneWidget,
+          reason: '无命中要说清是搜索没命中，不能复用「没有任务」空态');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('排序菜单切到名称序后卡片顺序变化', (WidgetTester tester) async {
+      final _MemoryJobsStore store = _MemoryJobsStore();
+      addTearDown(store.close);
+      await _pumpPanel(
+        tester,
+        panel: VideoDownloadJobsPanel(store: store),
+      );
+      store.emit(<VideoDownloadJobRow>[
+        _job(id: 'new', title: 'Zeta Newest').copyWith(createdAt: 200),
+        _job(id: 'old', title: 'Alpha Oldest').copyWith(createdAt: 10),
+      ]);
+      await tester.pumpAndSettle();
+
+      double topOf(String id) => tester
+          .getTopLeft(find.byKey(ValueKey<String>('video-download-job-$id')))
+          .dy;
+      expect(topOf('new') < topOf('old'), isTrue, reason: '默认按添加时间倒序，最新在上');
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-download-job-sort')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.sort_title).last);
+      await tester.pumpAndSettle();
+      expect(topOf('old') < topOf('new'), isTrue,
+          reason: '名称序 Alpha 在 Zeta 之上');
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

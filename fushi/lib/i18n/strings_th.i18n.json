@@ -47,7 +47,7 @@
   "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings.",
   "anime_download_search_failed": "Search failed or timed out. Tap retry.",
   "anime_download_search_hint": "Anime title",
-  "anime_download_search_start_hint": "Search an anime title above — torrents and subtitles are matched automatically.",
+  "anime_download_search_start_hint": "Search a title above - torrents and subtitles are matched automatically. Downloads are not limited to video: books, manga, audiobooks and games are imported too.",
   "anime_download_sort_date": "Published",
   "anime_download_sort_seeders": "Seeders",
   "anime_download_sort_size": "Size",
@@ -3668,5 +3668,16 @@
   "sync_asset_download_hint": "Fetches what the remote has and this device does not - including entries you deleted locally.",
   "sync_asset_legacy_notice_title": "Dictionary and audio sync is now manual",
   "sync_asset_legacy_notice_body": "This device had automatic syncing on for dictionaries and local audio databases. That switch is gone - use the Upload / Download actions below when you want to transfer them. Nothing was deleted, but new dictionaries are no longer backed up automatically.",
-  "sync_asset_legacy_notice_dismiss": "Got it"
+  "sync_asset_legacy_notice_dismiss": "Got it",
+  "download_task_add": "Add task",
+  "download_task_add_pick_torrent": "Choose torrent file",
+  "download_task_add_title_label": "Title",
+  "download_task_add_content_kind": "Content type",
+  "download_task_add_invalid": "Unrecognized magnet link or torrent file",
+  "download_task_add_submitted": "Task added",
+  "download_task_search_hint": "Search tasks",
+  "download_task_sort_created": "Date added",
+  "download_task_sort_progress": "Progress",
+  "download_task_sort_status": "Status",
+  "download_task_no_match": "No matching tasks"
 }
