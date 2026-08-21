@@ -15,6 +15,20 @@
       "version": "2.2.0-debug.12035"
     },
     {
+      "name": "fushi-2.2.0-debug.12035-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.0-debug.12035-ios.ipa",
+      "releaseSequence": 12035,
+      "tag": "v2.2.0-debug.12035+aa532b3",
+      "version": "2.2.0-debug.12035"
+    },
+    {
+      "name": "fushi-2.2.0-debug.12035-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.0-debug.12035-macos.zip",
+      "releaseSequence": 12035,
+      "tag": "v2.2.0-debug.12035+aa532b3",
+      "version": "2.2.0-debug.12035"
+    },
+    {
       "name": "fushi-2.2.0-debug.12035-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.0-debug.12035-windows-setup.exe",
       "releaseSequence": 12035,
