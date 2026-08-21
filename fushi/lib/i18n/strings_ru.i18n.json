@@ -3665,5 +3665,7 @@
   "subtitle_version_ai_translated": "AI translated",
   "subtitle_version_content_language": "Content",
   "subtitle_version_show_files": "Show files",
-  "subtitle_version_view_files": "File list"
+  "subtitle_version_view_files": "File list",
+  "resource_version_batch": "Batch",
+  "resource_version_view_flat": "All releases"
 }
