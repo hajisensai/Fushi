@@ -284,6 +284,11 @@ class DictionaryRepository {
     await _db.deleteDictionaryMeta(name);
   }
 
+  /// 按当前 cache 重建 native 引擎（= 触发 `onCacheRebuild`）。
+  /// 给 [deleteDictionaryDirectory] 当 `reloadEngine`：删目录前要把引擎清空以释放
+  /// mmap view，删完得把剩下的词典装回去（BUG-1756）。
+  void rebuildEngine() => _onCacheRebuild?.call();
+
   void removeDictionaryFromCache(String name) {
     _dictionariesCache.removeWhere((d) => d.name == name);
   }

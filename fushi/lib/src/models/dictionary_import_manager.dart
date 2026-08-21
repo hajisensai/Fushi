@@ -8,6 +8,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 
 class DictionaryImportManager {
@@ -264,7 +265,10 @@ class DictionaryImportManager {
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalDir = Directory(path.join(_resourceDirectory.path, name));
         _validatePath(finalDir);
-        if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
+        // 走原语：残留同名目录可能仍被引擎映射着，裸 deleteSync 在 Windows 上
+        // 会抛 ERROR_USER_MAPPED_FILE（BUG-1756）。
+        await deleteDictionaryDirectory(finalDir,
+            reloadEngine: _dictRepo.rebuildEngine);
 
         if (innerDataDir.existsSync()) {
           await _publishImportedDir(innerDataDir, finalDir.path);
@@ -394,7 +398,9 @@ class DictionaryImportManager {
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalDir = Directory(path.join(_resourceDirectory.path, name));
       _validatePath(finalDir);
-      if (finalDir.existsSync()) finalDir.deleteSync(recursive: true);
+      // 同上（BUG-1756）：删旧目录必须经原语，先让引擎释放映射。
+      await deleteDictionaryDirectory(finalDir,
+          reloadEngine: _dictRepo.rebuildEngine);
 
       if (innerDataDir.existsSync()) {
         await _publishImportedDir(innerDataDir, finalDir.path);
@@ -759,10 +765,18 @@ class DictionaryImportManager {
   /// 删除一本词典的磁盘目录与 meta（替换/覆盖导入的旧本清理共用）。目录不存在
   /// 时只删 meta；[DictionaryRepository.deleteDictionaryMeta] 本身幂等。
   Future<void> _removeDictionaryDirAndMeta(String name) async {
-    final Directory oldDir =
-        Directory(path.join(_resourceDirectory.path, name));
-    if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
+    // 顺序不可交换（BUG-1756）：先撤 meta —— [DictionaryRepository
+    // .deleteDictionaryMeta] 会触发 _onCacheRebuild，把引擎重载到「不含这本」的
+    // 集合，连带释放它常驻的 mmap view；之后目录才删得掉。
+    //
+    // 旧实现反着写：先 deleteSync 旧目录，此时引擎还攥着 hash.table / blobs.bin，
+    // Windows 上必抛 ERROR_USER_MAPPED_FILE → 整个覆盖导入失败。用户侧表现就是
+    // 「词典更新不了，只能每次重新导入」。
     await _dictRepo.deleteDictionaryMeta(name);
+    await deleteDictionaryDirectory(
+      Directory(path.join(_resourceDirectory.path, name)),
+      reloadEngine: _dictRepo.rebuildEngine,
+    );
   }
 
   /// TODO-609 / W-2：合并词典来源元数据。[fromIndex] 是导入包内 index.json 提取的

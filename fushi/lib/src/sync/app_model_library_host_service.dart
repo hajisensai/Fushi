@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:fushi/src/media/video/video_import_dialog.dart'
@@ -38,6 +39,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart'
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:path/path.dart' as p;
 
@@ -236,6 +238,10 @@ class AppModelLibraryHostService
   @override
   Future<void> importDictionary(File packageFile) async {
     await _runExclusive(() async {
+      // 同名覆盖会往既有词典目录里写 blobs.bin / hash.table，而这些文件正被引擎
+      // MapViewOfFile 映射着 —— Windows 拒绝以写方式打开，覆盖导入直接失败
+      // （BUG-1756）。收尾的 _refreshDictionaryCache 会把引擎重新加载回来。
+      FushiDicts.releaseAllMappings();
       await _packages.importDictionaryPackage(
         packageFile: packageFile,
         dictionaryResourceRoot: _dictionaryResourceRoot,
@@ -251,10 +257,18 @@ class AppModelLibraryHostService
     _assertSafeName(name);
     await _runExclusive(() async {
       await _db.deleteDictionaryMeta(name);
-      final Directory dir =
-          Directory(p.join(_dictionaryResourceRoot.path, name));
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
+      // 顺序不可交换（BUG-1756）：先 refresh —— 它 loadFromDb 把 host 刚改过的 DB
+      // 同步进 Dart 侧 cache，再据此重载引擎，于是被删的那本立刻从引擎里掉出去、
+      // 它的 mmap view 被释放。反过来写（先删目录）在 Windows 上必抛
+      // ERROR_USER_MAPPED_FILE，且 refresh 永远执行不到。
+      //
+      // 这一次 refresh 不能省成「交给原语的 reloadEngine」：目录不存在时原语直接
+      // 返回、不碰引擎，cache 就会停在「已删的词典还在」的旧状态上。
       await _refreshDictionaryCache();
+      await deleteDictionaryDirectory(
+        Directory(p.join(_dictionaryResourceRoot.path, name)),
+        reloadEngine: _refreshDictionaryCache,
+      );
     });
   }
 
