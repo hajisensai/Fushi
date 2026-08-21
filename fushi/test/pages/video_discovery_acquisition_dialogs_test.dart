@@ -10,6 +10,7 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -35,6 +36,37 @@ class _EmptyButLiveProvider implements VideoResourceProvider {
   ) async =>
       ProviderBatchResult<VideoResourceCandidate>.success(
         const <VideoResourceCandidate>[],
+      );
+
+  @override
+  Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
+      throw UnimplementedError();
+
+  @override
+  void close() {}
+}
+
+class _SingleResourceProvider implements VideoResourceProvider {
+  _SingleResourceProvider(this.candidate);
+
+  final VideoResourceCandidate candidate;
+
+  @override
+  String get id => 'nyaa';
+
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{VideoDiscoveryCategory.anime};
+
+  @override
+  int get priority => 10;
+
+  @override
+  Future<ProviderBatchResult<VideoResourceCandidate>> search(
+    VideoResourceSearchRequest request,
+  ) async =>
+      ProviderBatchResult<VideoResourceCandidate>.success(
+        <VideoResourceCandidate>[candidate],
       );
 
   @override
@@ -377,6 +409,98 @@ void main() {
     expect(find.widgetWithText(ActionChip, 'Test Anime'), findsOneWidget);
     expect(find.widgetWithText(ActionChip, 'テストアニメ'), findsOneWidget);
     expect(find.byType(Scaffold), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('没有下载目录仍可先用 Nyaa 搜索资源', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final VideoResourceCandidate candidate = _ResourceCandidate(
+      providerId: 'nyaa',
+      providerInstanceId: 'nyaa.si',
+      remoteId: 'release-1',
+      title: '[Group] Test Anime - 03 [1080p]',
+    );
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoveryResourceSearchPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoResourceRegistry(
+              <VideoResourceProvider>[_SingleResourceProvider(candidate)],
+            ),
+            sources: const <MediaSourceRow>[],
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey<String>('video-resource-${candidate.identityKey}')),
+      findsOneWidget,
+    );
+    final FilledButton submit = tester.widget<FilledButton>(
+      find.byKey(const ValueKey<String>('video-resource-submit')),
+    );
+    expect(submit.onPressed, isNull, reason: '未选择下载目录时只能搜索，不能提交下载');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('资源提交时才解析后端并在页内展示不可用原因', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const String message = 'Nyaa 下载后端当前不可用';
+    final VideoResourceCandidate candidate = _ResourceCandidate(
+      providerId: 'nyaa',
+      providerInstanceId: 'nyaa.si',
+      remoteId: 'release-2',
+      title: '[Group] Test Anime - 04 [1080p]',
+    );
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoveryResourceSearchPage(
+            item: VideoDiscoveryItem(reference: _reference()),
+            registry: VideoResourceRegistry(
+              <VideoResourceProvider>[_SingleResourceProvider(candidate)],
+            ),
+            sources: const <MediaSourceRow>[
+              MediaSourceRow(
+                id: 1,
+                label: 'himoto',
+                mediaKind: 'video',
+                transport: 'local',
+                rootPath: r'D:\media',
+                mediaCount: 0,
+                recursive: true,
+                sortOrder: 0,
+                createdAt: 1,
+              ),
+            ],
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+              throw const VideoDownloadBackendUnavailable(message);
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(ValueKey<String>('video-resource-${candidate.identityKey}')),
+    );
+    await tester.pump();
+    final Finder submit =
+        find.byKey(const ValueKey<String>('video-resource-submit'));
+    expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+    await tester.tap(submit);
+    await tester.pump();
+
+    expect(find.text(message), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
