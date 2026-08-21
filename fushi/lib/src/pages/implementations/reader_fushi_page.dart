@@ -383,6 +383,42 @@ ReadProgressResult accumulateSessionChars({
   return (charsAdded: 0, highWaterMark: highWaterMark);
 }
 
+/// BUG-1762：一秒真实阅读允许计入的最大字数（速度封顶）。
+///
+/// 2400 字/分是极快的日语阅读节奏，正常精读远够不到；按住翻页键连翻时相邻两次
+/// 水位推进只隔几百毫秒，每步就只计几十字——「到达即计」的虚增被物理上限杀掉。
+const int kMaxReadCharsPerSecond = 40;
+
+/// BUG-1762：带阅读速度封顶的 session 字数推进（纯函数）。
+///
+/// [accumulateSessionChars] 的 high-water 语义只挡「重复计入」（往返回读），完全
+/// 不挡「首次快速掠过」：按住翻页键扫过的每一页都在到达瞬间全额入账（产品裁定：
+/// 到达≠读过，与漫画 BUG-1761 的停留门、视频 BUG-1763 的播放停留门同一条规则）。
+/// 本函数在其结果上叠加封顶：本次可计入 ≤ [elapsedMs] × [kMaxReadCharsPerSecond]，
+/// 超出的余量随水位**静默抬走**、不回补——快速掠过的内容视同跳转（抬水位不计数），
+/// 之后回来重读也不再计（与 high-water「重读不重复计」一致，宁可少算）。
+/// [elapsedMs] 是距上次水位推进的真实时间，由调用方按 `kMaxReadingGap` 封顶
+/// （挂机不攒计数额度）。
+ReadProgressResult accumulateSessionCharsCapped({
+  required int absoluteChars,
+  required int highWaterMark,
+  required int elapsedMs,
+}) {
+  final ReadProgressResult raw = accumulateSessionChars(
+    absoluteChars: absoluteChars,
+    highWaterMark: highWaterMark,
+  );
+  if (raw.charsAdded <= 0) {
+    return raw;
+  }
+  final int clampedElapsedMs = elapsedMs < 0 ? 0 : elapsedMs;
+  final int cap = clampedElapsedMs * kMaxReadCharsPerSecond ~/ 1000;
+  return (
+    charsAdded: raw.charsAdded < cap ? raw.charsAdded : cap,
+    highWaterMark: raw.highWaterMark,
+  );
+}
+
 /// TODO-1192: 章节位置恢复完成后，本 session「历史最高已读绝对字符位置」水位应取
 /// 的值——只升不降：`max(currentWatermark, restoreAbsolute)`。
 ///
@@ -1452,6 +1488,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // flush 起新 session 时由调用方重置到当前位置。
   int _sessionMaxAbsoluteChars = 0;
 
+  /// BUG-1762：上一次水位**推进**的时刻（含跳转播种）。速度封顶的时间窗基准：
+  /// 本次推进可计入 ≤ 距它的时间 × [kMaxReadCharsPerSecond]（窗按 `kMaxReadingGap`
+  /// 封顶）。只在水位真的抬高时重锚——原地采样（delta 0 的 10s 轮询）不重锚，
+  /// 否则长停留页翻过去时窗被压到轮询间隔、正常整页都计不满。
+  DateTime _lastWatermarkAdvanceAt = DateTime.now();
+
   /// BUG-1052：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
   /// gap 守卫 tick 累加（见 `ReadingTimeTracker.onDelta`）。
   ///
@@ -2246,6 +2288,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 未注入的书由此补齐，后续 spread 重建/预取不再逐章解析）。
       book.setChapterCharCountHints(counts);
       _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
+      _lastWatermarkAdvanceAt = DateTime.now();
       // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
       // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
       unawaited(_persistRecomputedCharCounts(counts));
