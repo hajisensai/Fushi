@@ -1435,61 +1435,69 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     // 在字幕列表上可见。`opaque:false` 不阻断指针下探（cue 行点击 / 查词 /
                     // 滚动照常）；仅桌面有 OS 光标语义才挂（移动端透传，零开销）。
                     child: _withSubtitleListCursorReveal(
-                      SafeArea(
-                        left: false,
-                        // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
-                        // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
-                        child: Stack(
-                          children: <Widget>[
-                            VideoSubtitleJumpPanel(
-                              key: const ValueKey<String>(
-                                  'video-subtitle-jump-panel'),
-                              controller: controller,
-                              onTapCue: _handleSubtitleJumpTap,
-                              onLookupCue: _handleSubtitleListLookup,
-                              // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
-                              // 「点列表下一个词」切换查词而非吞成关闭浮层。
-                              hitTester: _subtitleListHitTester,
-                              onCopyCue: _copyCueText,
-                              onFavoriteCue: _toggleFavoriteCueForVideo,
-                              isCueFavorited: _isCueFavorited,
-                              // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
-                              initialAutoScroll:
-                                  appModel.videoSubtitleListAutoScroll,
-                              onAutoScrollChanged: (bool value) => unawaited(
-                                appModel.setVideoSubtitleListAutoScroll(value),
-                              ),
-                              // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
-                              // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
-                              initialFontScaleIndex:
-                                  appModel.videoSubtitleListFontScaleIndex,
-                              onFontScaleIndexChanged: (int value) => unawaited(
-                                appModel
-                                    .setVideoSubtitleListFontScaleIndex(value),
-                              ),
-                              // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
-                              hoverAutoLookupEnabled:
-                                  ReaderFushiSource.instance.hoverAutoLookup,
-                              onClose: _closeSubtitleJumpList,
-                              colorScheme: cs,
-                              title: t.video_subtitle_list,
-                              emptyHint: t.video_subtitle_list_empty,
-                              loadingHint: t.video_subtitle_list_loading,
-                              fontSize: 14 * _videoUiScale,
-                              width: panelWidth,
-                            ),
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              child: _subtitleListResizeHandle(
-                                currentWidth: panelWidth,
-                                minWidth: minPanelWidth,
-                                maxWidth: maxPanelWidth,
+                      // 手柄重设计 P3：列表随打开挂载，挂载即领焦点进面板、卸载
+                      // 还给页面焦点——D-pad 才能在 cue 行间移动。
+                      PanelFocusScope(
+                        visible: true,
+                        restoreFocus: _videoFocusNode,
+                        child: SafeArea(
+                          left: false,
+                          // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
+                          // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
+                          child: Stack(
+                            children: <Widget>[
+                              VideoSubtitleJumpPanel(
+                                key: const ValueKey<String>(
+                                    'video-subtitle-jump-panel'),
+                                controller: controller,
+                                onTapCue: _handleSubtitleJumpTap,
+                                onLookupCue: _handleSubtitleListLookup,
+                                // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
+                                // 「点列表下一个词」切换查词而非吞成关闭浮层。
+                                hitTester: _subtitleListHitTester,
+                                onCopyCue: _copyCueText,
+                                onFavoriteCue: _toggleFavoriteCueForVideo,
+                                isCueFavorited: _isCueFavorited,
+                                // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+                                initialAutoScroll:
+                                    appModel.videoSubtitleListAutoScroll,
+                                onAutoScrollChanged: (bool value) => unawaited(
+                                  appModel
+                                      .setVideoSubtitleListAutoScroll(value),
+                                ),
+                                // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
+                                // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
+                                initialFontScaleIndex:
+                                    appModel.videoSubtitleListFontScaleIndex,
+                                onFontScaleIndexChanged: (int value) =>
+                                    unawaited(
+                                  appModel.setVideoSubtitleListFontScaleIndex(
+                                      value),
+                                ),
+                                // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
+                                hoverAutoLookupEnabled:
+                                    ReaderFushiSource.instance.hoverAutoLookup,
+                                onClose: _closeSubtitleJumpList,
                                 colorScheme: cs,
+                                title: t.video_subtitle_list,
+                                emptyHint: t.video_subtitle_list_empty,
+                                loadingHint: t.video_subtitle_list_loading,
+                                fontSize: 14 * _videoUiScale,
+                                width: panelWidth,
                               ),
-                            ),
-                          ],
+                              Positioned(
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: _subtitleListResizeHandle(
+                                  currentWidth: panelWidth,
+                                  minWidth: minPanelWidth,
+                                  maxWidth: maxPanelWidth,
+                                  colorScheme: cs,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
