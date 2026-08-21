@@ -112,7 +112,7 @@ constexpr float kTextGripWidthDip = 40.0f;
 constexpr float kTextGripHeightDip = 4.0f;
 constexpr float kTextGripTopDip = 9.0f;
 constexpr float kTextStripRestAlpha = 0.02f;   // near-invisible, still catchable
-constexpr float kTextStripHoverAlpha = 0.55f;  // visible toolbar band on hover
+constexpr float kTextStripHoverAlpha = 0.16f;  // subtle catch band on hover
 
 // BUG-1046: hook-text overlay body alpha floor. UpdateLayeredWindow windows are
 // hit-tested per PIXEL — alpha-0 pixels pass clicks through to the window
@@ -1633,7 +1633,10 @@ void FloatingLyricWindow::Render() {
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
     render_target_->CreateSolidColorBrush(ColorFromArgb(style_.text_color),
                                           grip_brush.GetAddressOf());
-    grip_brush->SetOpacity(hovered_ ? 0.9f : 0.28f);
+    // Once the controls are visible the toolbar pill itself is the move
+    // affordance. Hiding the grip avoids the detached white dash floating over
+    // the centre button.
+    grip_brush->SetOpacity(hovered_ ? 0.0f : 0.28f);
     D2D1_ROUNDED_RECT grip_rect = D2D1::RoundedRect(
         D2D1::RectF(grip_x, grip_y, grip_x + grip_w, grip_y + grip_h),
         grip_h / 2.0f, grip_h / 2.0f);
@@ -1655,45 +1658,51 @@ void FloatingLyricWindow::Render() {
                                             tb_fg.GetAddressOf());
       render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                             tb_active.GetAddressOf());
-      auto draw_tbtn = [&](float bx, const wchar_t* glyph, bool active) {
-        D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
-            D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), ScaleForDpi(6),
-            ScaleForDpi(6));
-        render_target_->FillRoundedRectangle(br, tb_bg.Get());
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
-        dwrite_factory_->CreateTextFormat(
-            L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, t_btn * 0.5f,
-            L"", glyph_fmt.GetAddressOf());
-        if (glyph_fmt != nullptr) {
-          glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-          glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-          render_target_->DrawTextW(glyph, GlyphLength(glyph), glyph_fmt.Get(),
-                                    D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn),
-                                    active ? tb_active.Get() : tb_fg.Get());
+      const hook_toolbar::States tb_states = ToolbarStates();
+      auto draw_tbtn = [&](float bx, int slot, bool active) {
+        D2D1_ROUNDED_RECT br =
+            D2D1::RoundedRect(D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn),
+                              ScaleForDpi(6), ScaleForDpi(6));
+        if (active && tb_active != nullptr) {
+          tb_active->SetOpacity(0.16f);
+          render_target_->FillRoundedRectangle(br, tb_active.Get());
+          tb_active->SetOpacity(1.0f);
+        }
+        ID2D1SolidColorBrush* icon_brush =
+            active ? tb_active.Get() : tb_fg.Get();
+        if (icon_brush != nullptr) {
+          hook_toolbar::DrawSlotIcon(
+              render_target_.Get(), d2d_factory_.Get(), slot, tb_states,
+              D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), icon_brush);
         }
       };
       if (hook_text_mode_) {
-        const float controls_total =
-            t_btn * kHookTextControlSlotCount +
-            t_gap * (kHookTextControlSlotCount - 1);
+        const float controls_total = t_btn * kHookTextControlSlotCount +
+                                     t_gap * (kHookTextControlSlotCount - 1);
         const float left = (width - controls_total) / 2.0f;
-        // Glyph + active tint come from the shared slot table, so the in-body
-        // toolbar and the standalone pass-through toolbar always draw the same
-        // buttons in the same order (BUG-951).
-        const hook_toolbar::States tb_states = ToolbarStates();
+        // One shared pill replaces nine equally heavy keycaps. Active actions
+        // retain a soft tint, while the vector icons provide the button shape.
+        if (strip_bg != nullptr) {
+          strip_bg->SetOpacity(0.68f);
+          render_target_->FillRoundedRectangle(
+              D2D1::RoundedRect(
+                  D2D1::RectF(left - ScaleForDpi(4), t_top,
+                              left + controls_total + ScaleForDpi(4),
+                              t_top + t_btn),
+                  ScaleForDpi(10), ScaleForDpi(10)),
+              strip_bg.Get());
+        }
         for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
-          draw_tbtn(left + slot * (t_btn + t_gap),
-                    hook_toolbar::SlotGlyph(slot, tb_states),
+          draw_tbtn(left + slot * (t_btn + t_gap), slot,
                     hook_toolbar::SlotActive(slot, tb_states));
         }
       } else {
         const float lock_x = width - t_pad - t_btn;
         const float top_x = lock_x - t_gap - t_btn;
         const float trans_x = top_x - t_gap - t_btn;
-        draw_tbtn(trans_x, L"◐", false);  // one-click background transparency
-        draw_tbtn(top_x, L"📌", topmost_);  // pin: always-on-top
-        draw_tbtn(lock_x, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
+        draw_tbtn(trans_x, 4, false);   // one-click background transparency
+        draw_tbtn(top_x, 7, topmost_);  // pin: always-on-top
+        draw_tbtn(lock_x, 5, locked_);
       }
     }
 
