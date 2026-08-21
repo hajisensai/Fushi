@@ -1622,6 +1622,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
         chapterLabel: _currentChapterLabel(),
         onSearchJump: (BookSearchResult result, String query) async {
           if (!mounted || _book == null || _controller == null) return;
+          // BUG-1762：搜索跳转是跳转不是阅读——先按命中位置抬统计水位（不计数）。
+          // 三个分支落点后的首个 _refreshProgress 都不再把「旧位置 → 命中处」的
+          // 前缀计成新读字数；跨章导航旧行为只把水位播到章首，章首到命中处的整段
+          // 前缀一样会被误计。往回搜低于水位天然 no-op（只升不降）。
+          _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
+            _sessionMaxAbsoluteChars,
+            computeCharWatermark(
+              chapterCumulativeChars: _chapterCumulativeChars,
+              chapterCharCounts: _chapterCharCounts,
+              chapter: result.sectionIndex,
+              progress: 0,
+              charOffset: result.charOffset,
+            ),
+          );
+          _lastWatermarkAdvanceAt = DateTime.now();
           final String preciseLocateJs =
               ReaderPaginationScripts.scrollToSearchMatchInvocation(
             query,

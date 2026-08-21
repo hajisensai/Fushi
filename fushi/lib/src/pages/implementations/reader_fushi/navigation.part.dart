@@ -178,6 +178,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         charOffset: _initialCharOffset,
       ),
     );
+    // BUG-1762：恢复落定也是一次水位重锚——速度封顶的时间窗从这里重新起算。
+    _lastWatermarkAdvanceAt = DateTime.now();
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
     // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0
@@ -1015,10 +1017,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     _adoptLiveProgressAsRestoreAnchor(progress, charOffset);
     final int absoluteChars = _absoluteCharPosition(progress);
     // TODO-147 / BUG-211：按 high-water mark 增量计数，避免往返翻页重复累计。
-    final ReadProgressResult delta = accumulateSessionChars(
+    // BUG-1762：叠加阅读速度封顶——到达≠读过。快速连翻/掠过时相邻两次水位推进
+    // 只隔几百毫秒，可计入字数被封在「距上次推进的时间 × kMaxReadCharsPerSecond」
+    // 之内，余量随水位静默抬走不回补；正常阅读节奏远够不到封顶，行为不变。
+    // 时间窗按 kMaxReadingGap 封顶：挂机不攒计数额度。
+    final DateTime nowForChars = DateTime.now();
+    final int sinceAdvanceMs =
+        nowForChars.difference(_lastWatermarkAdvanceAt).inMilliseconds;
+    final int gapCapMs = kMaxReadingGap.inMilliseconds;
+    final ReadProgressResult delta = accumulateSessionCharsCapped(
       absoluteChars: absoluteChars,
       highWaterMark: _sessionMaxAbsoluteChars,
+      elapsedMs: sinceAdvanceMs > gapCapMs ? gapCapMs : sinceAdvanceMs,
     );
+    if (delta.highWaterMark > _sessionMaxAbsoluteChars) {
+      _lastWatermarkAdvanceAt = nowForChars;
+    }
     _sessionCharsRead += delta.charsAdded;
     _sessionMaxAbsoluteChars = delta.highWaterMark;
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
@@ -1359,6 +1373,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
 
   Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
+
+    // BUG-1762：进度条拖动是跳转不是阅读——先把统计水位抬到落点（不计数），否则
+    // 同章分支落点后的首个 _refreshProgress 会把「旧位置 → 落点」整段前缀计成本次
+    // 读到的新字数（跨章分支经导航链播种，同章分支此前完全裸奔）。往回拖低于水位
+    // 天然 no-op（只升不降）。语义同 _handleExplicitCueJump。
+    _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
+      _sessionMaxAbsoluteChars,
+      globalOffset,
+    );
+    _lastWatermarkAdvanceAt = DateTime.now();
 
     final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
       _chapterCumulativeChars,
