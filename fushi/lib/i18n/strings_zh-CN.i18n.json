@@ -3685,5 +3685,7 @@
   "subtitle_version_ai_translated": "机翻",
   "subtitle_version_content_language": "正文",
   "subtitle_version_show_files": "展开文件",
-  "subtitle_version_view_files": "文件视图"
+  "subtitle_version_view_files": "文件视图",
+  "resource_version_batch": "合集",
+  "resource_version_view_flat": "全部条目"
 }
