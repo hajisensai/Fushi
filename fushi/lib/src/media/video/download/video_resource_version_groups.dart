@@ -164,16 +164,28 @@ int _byEpisodeAsc(VideoResourceCandidate a, VideoResourceCandidate b) {
   return _bySeedersDesc(a, b);
 }
 
-/// 聚类 + 排序。组间：最高做种数降序 → 最新发布降序 → key（稳定）。
+/// 聚类 + 排序。组间：**输入相关度次序**（组内最靠前那条的名次）→ 最高做种数降序
+/// → 最新发布降序 → key（稳定）。
+///
+/// 相关度必须是主键，不能上来就按做种数排：`VideoResourceRegistry` 在返回前专门跑过
+/// `rankVideoResourcesByRelevance`（按季号/标题贴合度），它存在的全部理由就是
+/// 「Nyaa 只做模糊词匹配，搜 "xxx 2" 会被做种更多的 S1/S3 压在前面」。组间再按做种数
+/// 重排等于把那个已修的 bug 原样放回主路径——用户搜第二季，第一季的版本卡回到第一位。
+/// 做种数退为**同等相关度内**的次级信号。
 List<VideoResourceVersionGroup> buildVideoResourceVersionGroups(
   Iterable<VideoResourceCandidate> candidates,
 ) {
   final Map<String, List<VideoResourceCandidate>> byKey =
       <String, List<VideoResourceCandidate>>{};
+  // 输入次序 = 上游给的相关度名次；记下每组里最靠前的那个名次。
+  final Map<String, int> bestRank = <String, int>{};
+  int rank = 0;
   for (final VideoResourceCandidate candidate in candidates) {
-    byKey
-        .putIfAbsent(_groupKeyOf(candidate), () => <VideoResourceCandidate>[])
-        .add(candidate);
+    final String key = _groupKeyOf(candidate);
+    byKey.putIfAbsent(key, () => <VideoResourceCandidate>[]).add(candidate);
+    final int? seen = bestRank[key];
+    if (seen == null || rank < seen) bestRank[key] = rank;
+    rank++;
   }
   final List<VideoResourceVersionGroup> groups = <VideoResourceVersionGroup>[
     for (final MapEntry<String, List<VideoResourceCandidate>> entry
@@ -186,6 +198,9 @@ List<VideoResourceVersionGroup> buildVideoResourceVersionGroups(
       ),
   ];
   groups.sort((VideoResourceVersionGroup a, VideoResourceVersionGroup b) {
+    final int byRank =
+        (bestRank[a.key] ?? 1 << 30).compareTo(bestRank[b.key] ?? 1 << 30);
+    if (byRank != 0) return byRank;
     final int bySeeders = b.bestSeeders.compareTo(a.bestSeeders);
     if (bySeeders != 0) return bySeeders;
     final DateTime? pa = a.latestPublishedAt;

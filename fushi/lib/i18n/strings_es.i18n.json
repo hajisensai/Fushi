@@ -3707,5 +3707,9 @@
   "subscription_sort_last_matched": "Last match",
   "subscription_show_items": "Episode history",
   "subscription_sort_created": "Date added",
-  "subscription_no_match": "No matching subscriptions"
+  "subscription_no_match": "No matching subscriptions",
+  "download_subscription_start_episode_invalid": "Enter a whole number (0 or greater), or leave blank",
+  "download_subscription_source_unavailable": "Current target (unavailable)",
+  "resource_version_episode_count": "$n episodes",
+  "resource_version_show_files": "Show files"
 }

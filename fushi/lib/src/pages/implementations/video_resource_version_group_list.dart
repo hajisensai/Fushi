@@ -74,7 +74,7 @@ class _VideoResourceVersionGroupListState
       final String range =
           episodes.length == 1 ? 'EP$first' : 'EP$first–EP$last';
       parts.add(
-        '${t.subtitle_version_episode_count(n: episodes.length)} ($range)',
+        '${t.resource_version_episode_count(n: episodes.length)} ($range)',
       );
     }
     final DateTime? latest = group.latestPublishedAt;
@@ -165,7 +165,7 @@ class _VideoResourceVersionGroupListState
                 ),
               FushiIconButton(
                 icon: expanded ? Icons.expand_less : Icons.expand_more,
-                tooltip: t.subtitle_version_show_files,
+                tooltip: t.resource_version_show_files,
                 onTap: () => _toggleExpanded(group.key),
               ),
             ],

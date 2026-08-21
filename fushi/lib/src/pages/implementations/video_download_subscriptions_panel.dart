@@ -248,7 +248,12 @@ class _VideoDownloadSubscriptionsPanelState
         searchQuery: Value<String>(result.searchQuery),
         startAfterEpisode: Value<int?>(result.startAfterEpisode),
         subtitlePolicy: Value<String>(result.subtitlePolicy.name),
-        targetSourceId: Value<int?>(result.targetSourceId),
+        // 用户没动过目标来源就**不写这一列**（result.targetSourceId 为 null）。
+        // 无条件写会在原绑定当前不可用时把它改写成别的库，见
+        // [VideoDownloadSubscriptionEdit.targetSourceId] 的说明。
+        targetSourceId: result.targetSourceId == null
+            ? const Value<int?>.absent()
+            : Value<int?>(result.targetSourceId),
         nextCheckAt: Value<int?>(now),
         lastError: const Value<String?>(null),
         updatedAt: Value<int>(now),
@@ -635,25 +640,29 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     return parts.join(' · ');
   }
 
-  Widget _buildCover(ThemeData theme) {
+  Widget _buildCover(FushiDesignTokens tokens) {
     const double width = 40;
     const double height = 60;
     final String url = subscription.coverUrl?.trim() ?? '';
+    final Widget placeholder = ColoredBox(
+      color: tokens.surfaces.group,
+      child: const Icon(Icons.subscriptions_outlined, size: 20),
+    );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,
       child: SizedBox(
         width: width,
         height: height,
+        // 与放送日历同一处理：占位底色走设计令牌（MD3 守卫禁止就地读
+        // colorScheme.surfaceContainer*），且 errorBuilder 必须给 ——
+        // PortraitCoverImage 加载失败会返回 SizedBox.shrink()，不给就是封面 404 /
+        // 断网留一个 40×60 的空洞。
         child: url.isEmpty
-            ? ColoredBox(
-                color: theme.colorScheme.surfaceContainerHighest,
-                child: Icon(
-                  Icons.subscriptions_outlined,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            : PortraitCoverImage(image: CachedNetworkImageProvider(url)),
+            ? placeholder
+            : PortraitCoverImage(
+                image: CachedNetworkImageProvider(url),
+                errorBuilder: (_) => placeholder,
+              ),
       ),
     );
   }
@@ -681,7 +690,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _buildCover(theme),
+              _buildCover(FushiDesignTokens.of(context)),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

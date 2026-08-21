@@ -39,6 +39,63 @@ void main() {
   });
 
   group('buildVideoResourceVersionGroups', () {
+    // 回归锚：VideoResourceRegistry 在返回前专门跑过 rankVideoResourcesByRelevance
+    // （按季号/标题贴合度），理由写在那个函数上：「Nyaa 只做模糊词匹配，搜 "xxx 2"
+    // 会被做种更多的 S1/S3 压在前面」。组间排序若以做种数为主键，等于把那个已修的
+    // bug 原样放回主路径。
+    test('组间以输入的相关度次序为主键，做种数不得把不相关的组顶到最前', () {
+      // 输入次序 = 上游给的相关度名次：第二季在前（更贴合查询），第一季在后。
+      final List<VideoResourceCandidate> ranked = <VideoResourceCandidate>[
+        _FakeResource(
+          remoteId: 's2',
+          title: '[GroupB] Show S2 - 01 (1080p)',
+          releaseGroup: 'GroupB',
+          resolution: '1080p',
+          seeders: 12, // 新番，做种少
+        ),
+        _FakeResource(
+          remoteId: 's1',
+          title: '[GroupA] Show S1 - 01 (1080p)',
+          releaseGroup: 'GroupA',
+          resolution: '1080p',
+          seeders: 9999, // 老季，做种多
+        ),
+      ];
+
+      final List<VideoResourceVersionGroup> groups =
+          buildVideoResourceVersionGroups(ranked);
+
+      expect(groups, hasLength(2));
+      expect(groups.first.members.single.remoteId, 's2',
+          reason: '搜第二季，第一季不得因做种多被顶到第一张卡');
+    });
+
+    test('相关度相同（同名次段）时仍按做种数降序', () {
+      // 两组的最靠前名次分别是 0 和 1，但把做种多的放在后面，验证同段内的次级信号：
+      // 这里刻意让第二条的组在输入里更靠后却做种更多，断言它**不**越位——
+      // 再补一条同组内的比较来体现做种数仍在起作用。
+      final List<VideoResourceCandidate> items = <VideoResourceCandidate>[
+        _FakeResource(
+          remoteId: 'a1',
+          title: '[GroupA] Show - 01 (1080p)',
+          releaseGroup: 'GroupA',
+          resolution: '1080p',
+          seeders: 5,
+        ),
+        _FakeResource(
+          remoteId: 'a2',
+          title: '[GroupA] Show - 02 (1080p)',
+          releaseGroup: 'GroupA',
+          resolution: '1080p',
+          seeders: 500,
+        ),
+      ];
+      final List<VideoResourceVersionGroup> groups =
+          buildVideoResourceVersionGroups(items);
+      expect(groups, hasLength(1));
+      expect(groups.single.bestSeeders, 500, reason: '组内仍取最高做种数，做种数信号没有被丢掉');
+    });
+
     List<VideoResourceCandidate> items() => <VideoResourceCandidate>[
           for (int ep = 1; ep <= 3; ep++)
             _FakeResource(

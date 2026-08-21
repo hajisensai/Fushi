@@ -487,7 +487,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       density: FushiListDensity.compact,
       // 重做后每个条目都可点：进发现详情页拿 搜索资源/订阅/字幕/播放。
       onTap: () => unawaited(_openEpisode(episode)),
-      leading: _buildCover(theme, episode.media.coverUrl),
+      leading:
+          _buildCover(FushiDesignTokens.of(context), episode.media.coverUrl),
       // 条目落在 ListView 里（高度自由），可以安全放宽到两行——番名普遍很长，
       // 单行 ellipsis 在七列窄栏里只看得到开头几个字。
       titleMaxLines: 2,
@@ -521,17 +522,15 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
 
   /// 封面缩略图（2:3，与发现页卡片同一图源与占位形态）。模型里一直有
   /// coverUrl，旧版从没画过——纯文本行是「丑」的主因之一。
-  Widget _buildCover(ThemeData theme, String? coverUrl) {
+  Widget _buildCover(FushiDesignTokens tokens, String? coverUrl) {
     const double width = 40;
     const double height = 60;
     final String url = coverUrl?.trim() ?? '';
+    // 底色走设计令牌，不直接读 colorScheme 的 surfaceContainer* —— 那是 MD3 守卫
+    // 明令的「普通页面不得就地重开局部 MD3 决策」，发现页的封面占位就是这么写的。
     final Widget placeholder = ColoredBox(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.movie_outlined,
-        size: 20,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
+      color: tokens.surfaces.group,
+      child: const Icon(Icons.movie_outlined, size: 20),
     );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,

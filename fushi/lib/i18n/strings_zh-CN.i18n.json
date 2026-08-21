@@ -3707,5 +3707,9 @@
   "subscription_sort_last_matched": "最近命中",
   "subscription_show_items": "逐集状态",
   "subscription_sort_created": "添加时间",
-  "subscription_no_match": "没有匹配的订阅"
+  "subscription_no_match": "没有匹配的订阅",
+  "download_subscription_start_episode_invalid": "请填 0 或更大的整数，留空表示不限",
+  "download_subscription_source_unavailable": "当前目标库（当前不可用）",
+  "resource_version_episode_count": "共 $n 集",
+  "resource_version_show_files": "显示文件"
 }
