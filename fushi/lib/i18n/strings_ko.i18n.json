@@ -3665,5 +3665,8 @@
   "sync_asset_upload_hint": "Sends what this device has and the remote does not. Packages can be large.",
   "sync_asset_upload_action": "Upload",
   "sync_asset_download_action": "Download",
-  "sync_asset_download_hint": "Fetches what the remote has and this device does not - including entries you deleted locally."
+  "sync_asset_download_hint": "Fetches what the remote has and this device does not - including entries you deleted locally.",
+  "sync_asset_legacy_notice_title": "Dictionary and audio sync is now manual",
+  "sync_asset_legacy_notice_body": "This device had automatic syncing on for dictionaries and local audio databases. That switch is gone - use the Upload / Download actions below when you want to transfer them. Nothing was deleted, but new dictionaries are no longer backed up automatically.",
+  "sync_asset_legacy_notice_dismiss": "Got it"
 }

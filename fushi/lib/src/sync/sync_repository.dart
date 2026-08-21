@@ -185,11 +185,16 @@ class SyncRepository {
   static const _keyFolderCache = 'sync_folder_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
-  // 废弃：`sync_dictionary_enabled` / `sync_local_audio_enabled`。词典与本地音频源
-  // 数据库不再有「同步开关」，改成设置页的显式上传 / 下载动作（见
-  // `SyncOrchestrator.runAssetTransferOnly`），所以这两个键没有任何读写方了。
-  // 存量库里已有的那两行**不迁移也不清理**：它们只是两条没人读的死数据，而删除迁移
-  // 要冒着改动已发布 schema 版本的风险去换取零收益。
+  // 废弃：词典与本地音频源数据库不再有「同步开关」，改成设置页的显式上传 / 下载
+  // 动作（见 `SyncOrchestrator.runAssetTransferOnly`）。存量库里的这两行不做 schema
+  // 迁移（要冒着改动已发布版本的风险），但**必须还读一次**：升级前开着自动同步的
+  // 用户，升级后同步会静默停下——「立即同步」照常报「完成 N 项」，而新导入的词典
+  // 再也不上云。用户没有任何信号知道备份里已经没有词典了。这不是数据丢失，是
+  // 「我以为还在备份」的静默失效，正是 never break userspace 要挡的东西。所以留一条
+  // 一次性告知（见 sync_settings_schema 的 sync.asset_legacy_notice），读到 true 就
+  // 在同步设置页说明改动，用户确认后写 false 关掉，此后这两个键才真正是死数据。
+  static const _keyLegacySyncDictionary = 'sync_dictionary_enabled';
+  static const _keyLegacySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
   static const _keySyncVideoFiles = 'sync_video_files_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
@@ -337,6 +342,19 @@ class SyncRepository {
   }
 
   // ── Sync settings ─────────────────────────────────────────────────
+
+  /// 升级前这台设备是否开着词典 / 本地音频的自动同步（任一为真即算）。
+  /// 只被那条一次性告知读；确认后经 [acknowledgeLegacyAssetAutoSync] 归零。
+  Future<bool> hadLegacyAssetAutoSync() async =>
+      await _db.getPrefTyped<bool>(_keyLegacySyncDictionary, false) ||
+      await _db.getPrefTyped<bool>(_keyLegacySyncLocalAudio, false);
+
+  /// 用户已看过告知：把两个废弃键写 false，提示不再出现。
+  /// 写 false 而不是删行——`Preferences` 没有删除接口，写值不需要动已发布 schema。
+  Future<void> acknowledgeLegacyAssetAutoSync() async {
+    await _db.setPrefTyped<bool>(_keyLegacySyncDictionary, false);
+    await _db.setPrefTyped<bool>(_keyLegacySyncLocalAudio, false);
+  }
 
   Future<bool> isSyncStatsEnabled() =>
       _db.getPrefTyped<bool>(_keySyncStats, true);

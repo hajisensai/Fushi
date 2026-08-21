@@ -77,6 +77,8 @@ void main() {
       expect(idsOf(dest.sections[1]), <String>[
         'sync.auto_sync',
         'sync.statistics',
+        // 升级前开着那两个自动同步开关的存量库才占位的一次性告知（确认后消失）。
+        'sync.asset_legacy_notice',
         // 词典与本地音频源数据库不是开关，而是各自一对显式的上传 / 下载动作行。
         'sync.dictionary_upload',
         'sync.dictionary_download',

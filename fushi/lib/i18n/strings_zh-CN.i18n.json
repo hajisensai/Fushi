@@ -3665,5 +3665,8 @@
   "sync_asset_upload_hint": "把本机有、远端没有的推送过去。包可能很大。",
   "sync_asset_upload_action": "上传",
   "sync_asset_download_action": "下载",
-  "sync_asset_download_hint": "把远端有、本机没有的取回来（含你在本机删掉过的）。"
+  "sync_asset_download_hint": "把远端有、本机没有的取回来（含你在本机删掉过的）。",
+  "sync_asset_legacy_notice_title": "词典与本地音频改为手动传输",
+  "sync_asset_legacy_notice_body": "这台设备原先开着词典与本地音频数据库的自动同步。该开关已移除——需要传输时请用下面的上传 / 下载。已有数据不受影响，但新导入的词典不会再自动备份。",
+  "sync_asset_legacy_notice_dismiss": "知道了"
 }

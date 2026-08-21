@@ -21,6 +21,64 @@ part of '../sync_settings_schema.dart';
 ///
 /// 跑与反馈全在 [runAssetTransferWithFeedback]（与「立即同步」共用同一个外壳）；
 /// 这里只负责渲染行、显示在飞进度、并挡住重复触发。
+/// 一次性告知：升级前开着词典 / 本地音频自动同步的存量用户，升级后同步会**静默**
+/// 停下——「立即同步」照常报「完成 N 项」，而新导入的词典再也不上云，用户没有任何
+/// 信号知道备份里已经没有词典了。这不是数据丢失，是「我以为还在备份」的静默失效。
+///
+/// 只在 [SyncRepository.hadLegacyAssetAutoSync] 为真时占位，用户点「知道了」后写
+/// false，此后彻底消失；从没开过那两个开关的用户一次都看不到。
+class _LegacyAssetSyncNotice extends StatefulWidget {
+  const _LegacyAssetSyncNotice({required this.settingsContext});
+
+  final SettingsContext settingsContext;
+
+  @override
+  State<_LegacyAssetSyncNotice> createState() => _LegacyAssetSyncNoticeState();
+}
+
+class _LegacyAssetSyncNoticeState extends State<_LegacyAssetSyncNotice> {
+  /// null = 还没读出来（不占位，避免闪一下再消失）。
+  bool? _show;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final bool had =
+        await SyncRepository(widget.settingsContext.appModel.database)
+            .hadLegacyAssetAutoSync();
+    if (!mounted) return;
+    setState(() => _show = had);
+  }
+
+  Future<void> _dismiss() async {
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .acknowledgeLegacyAssetAutoSync();
+    if (!mounted) return;
+    setState(() => _show = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_show != true) return const SizedBox.shrink();
+    return AdaptiveSettingsRow(
+      title: t.sync_asset_legacy_notice_title,
+      subtitle: t.sync_asset_legacy_notice_body,
+      icon: Icons.info_outline,
+      controlBelow: true,
+      // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 能到达（BUG-016）。
+      onTap: _dismiss,
+      trailing: FilledButton.tonal(
+        onPressed: _dismiss,
+        child: Text(t.sync_asset_legacy_notice_dismiss),
+      ),
+    );
+  }
+}
+
 class _AssetTransferWidget extends StatefulWidget {
   const _AssetTransferWidget({
     required this.settingsContext,

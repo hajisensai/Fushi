@@ -183,6 +183,19 @@ SettingsDestination buildSyncBackupDestination() {
           // 可见性与相邻三个「上传X文件」同因：这四行只在**云备份通道**上跑
           // （见 runManualAssetTransfer），同步方式被选成互联时那条通道没有出站
           // 语义，留着就是四个死按钮。互联对端的内容上传由互联页自己那组开关管。
+          // 一次性告知，排在四个传输动作之前：升级前开着那两个自动同步开关的存量
+          // 用户，升级后同步会静默停下（见 SyncRepository 里废弃键那段注释）。只对
+          // 读到遗留 true 的库占位，用户确认后彻底消失。可见性与下面四行同因——只有
+          // 云备份通道跑这四个动作，互联通道上说明也无处可指。
+          SettingsCustomItem(
+            id: 'sync.asset_legacy_notice',
+            searchTitle: t.sync_asset_legacy_notice_title,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.info_outline,
+            builder: (SettingsContext ctx) =>
+                _LegacyAssetSyncNotice(settingsContext: ctx),
+          ),
           SettingsCustomItem(
             id: 'sync.dictionary_upload',
             searchTitle: t.sync_asset_dictionary_upload,

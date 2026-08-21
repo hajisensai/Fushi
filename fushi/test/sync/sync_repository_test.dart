@@ -35,10 +35,32 @@ void main() {
     );
   });
 
-  // 「同步词典」/「同步本地音频」两个偏好已随开关一起删除（词典与本地音频源数据库
-  // 改成设置页的显式上传 / 下载动作）。存量库里的 `sync_dictionary_enabled` /
-  // `sync_local_audio_enabled` 两行不迁移也不清理，只是没人读的死数据 —— 所以这里
-  // 也不再有它们的读写用例。
+  // 「同步词典」/「同步本地音频」两个开关已删除（改成设置页的显式上传 / 下载动作），
+  // 但存量库里的 `sync_dictionary_enabled` / `sync_local_audio_enabled` 还要被读**一次**：
+  // 升级前开着自动同步的用户升级后同步会静默停下，必须告知一次。
+  test('legacy asset auto-sync flags drive the one-time notice', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = SyncRepository(db);
+
+    // 从没开过的库：一次都不该看到提示。
+    expect(await repo.hadLegacyAssetAutoSync(), isFalse);
+
+    // 存量库写的是未经 typed codec 的裸值，也必须认出来。
+    await db.setPref('sync_dictionary_enabled', 'true');
+    expect(await repo.hadLegacyAssetAutoSync(), isTrue);
+
+    await repo.acknowledgeLegacyAssetAutoSync();
+    expect(await repo.hadLegacyAssetAutoSync(), isFalse,
+        reason: '确认后必须不再出现，否则每次进设置页都弹一遍');
+
+    // 另一个键单独为真同样要提示（任一即可）。
+    await db.setPref('sync_local_audio_enabled', 'true');
+    expect(await repo.hadLegacyAssetAutoSync(), isTrue);
+    await repo.acknowledgeLegacyAssetAutoSync();
+    expect(await repo.hadLegacyAssetAutoSync(), isFalse);
+  });
+
   test('deleted sync toggles have no accessor left', () {
     final String src =
         File('lib/src/sync/sync_repository.dart').readAsStringSync();
