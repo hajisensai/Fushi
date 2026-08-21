@@ -13,8 +13,22 @@ import 'package:path/path.dart' as p;
 /// 只有清单机制本身变更时才需要动这里。
 const String kRecommendedPackCloudflareUrl =
     'https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip';
+const String kRecommendedPackGoogleDriveFileId =
+    '1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp';
 const String kRecommendedPackGoogleDriveUrl =
-    'https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing';
+    'https://drive.google.com/file/d/$kRecommendedPackGoogleDriveFileId/view?usp=sharing';
+
+/// Google Drive 应用内直下地址（`confirm=t` 跳过大文件病毒扫描确认页）。
+/// 与 [kRecommendedPackCloudflareUrl] 指向同一份包；URL 尾段不含文件名，
+/// 下载器须显式传 [RecommendedPackDownloader.fileName]。
+const String kRecommendedPackGoogleDriveDirectUrl =
+    'https://drive.usercontent.google.com/download'
+    '?id=$kRecommendedPackGoogleDriveFileId&export=download&confirm=t';
+
+/// 从内置回退直链推导的包文件名（Google 线路等无文件名 URL 复用它落盘，
+/// 两条线路指向同一份包，半截文件因此天然可跨线路续传）。
+final String kRecommendedPackFileName =
+    Uri.parse(kRecommendedPackCloudflareUrl).pathSegments.last;
 
 /// 推荐包**稳定清单**地址：换包时上传新 zip + 更新这份 json 即可，app 零发版。
 /// 格式（字段见 [RecommendedPackManifest]）：
@@ -104,7 +118,9 @@ class RecommendedPackDownloader {
     required Directory packDir,
     this.url = kRecommendedPackCloudflareUrl,
     this.sha256Hex,
-  }) : _packDir = packDir;
+    String? fileName,
+  })  : _packDir = packDir,
+        _fileName = fileName ?? Uri.parse(url).pathSegments.last;
 
   final Directory _packDir;
 
@@ -116,7 +132,9 @@ class RecommendedPackDownloader {
   /// 不符即删档报错——坏包/被截断的包不进备份导入。
   final String? sha256Hex;
 
-  String get _fileName => Uri.parse(url).pathSegments.last;
+  /// 落盘文件名：默认取 URL 尾段；URL 尾段不是文件名的线路（Google Drive
+  /// 直下）必须显式指定。
+  final String _fileName;
 
   /// 下载完成的推荐包文件（可能尚不存在）。
   File get packFile => File(p.join(_packDir.path, _fileName));
@@ -180,6 +198,13 @@ class RecommendedPackDownloader {
         validateStatus: (int? status) => status == 200 || status == 206,
       ),
     );
+    // Google Drive 在无法直下时会回一张 HTML 确认/报错页——码流写进 .part 再
+    // 改名就是一个假 zip，备份导入才炸。在这里按 content-type 拦下，报可读错误。
+    final String contentType = response.headers.value('content-type') ?? '';
+    if (contentType.contains('text/html')) {
+      throw Exception(
+          'server returned an HTML page instead of the pack file ($url)');
+    }
     if (existing > 0 && response.statusCode == 200) {
       // 服务器忽略 Range（回整文件）：append 会拼出坏包，只能丢半截从头写。
       existing = 0;

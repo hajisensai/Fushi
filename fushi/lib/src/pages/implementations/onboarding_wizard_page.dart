@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiSettings;
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
@@ -23,6 +25,18 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+
+/// Anki 生态外链（Anki 步骤「先把 Anki 装起来」的出口）。
+const String kAnkiDesktopDownloadUrl = 'https://apps.ankiweb.net/';
+const String kAnkiConnectAddonUrl =
+    'https://ankiweb.net/shared/info/2055492159';
+const String kAnkiDroidDownloadUrl =
+    'https://play.google.com/store/apps/details?id=com.ichi2.anki';
+
+/// 推荐包下载线路：两条线路指向同一份包。Cloudflare 是默认（走稳定清单 +
+/// sha256 校验），Google Drive 是备用镜像（应用内直下走 usercontent 直链，
+/// 浏览器打开走分享页）。
+enum _PackRoute { cloudflare, googleDrive }
 
 /// 新手引导向导：首次启动（`onboarding_completed == false`）由 [HomePage] 首帧
 /// 弹出，之后可从「设置 → 系统」重新打开。
@@ -45,9 +59,11 @@ class OnboardingWizardPage extends BasePage {
 class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     with SettingsContextHost<OnboardingWizardPage> {
   /// 已勾选的功能。模块项在 initState 从当前偏好播种（重开向导时反映现状）；
-  /// 能力项默认只勾推荐包（查词是本应用的最大公约数，其余按需自选）。
+  /// 能力项默认勾推荐包 + Anki 制卡（查词→制卡是本应用的最大公约数，备份/
+  /// 互联按需自选）。
   final Set<OnboardingFeature> _selected = <OnboardingFeature>{
     OnboardingFeature.recommendedPack,
+    OnboardingFeature.anki,
   };
 
   int _stepIndex = 0;
@@ -62,8 +78,37 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 用内置回退直链的 [_packDownloader]。
   RecommendedPackDownloader? _manifestDownloader;
 
-  RecommendedPackDownloader get _activeDownloader =>
-      _manifestDownloader ?? _packDownloader;
+  /// Google 备用镜像的下载器（懒建）。文件名沿用内置直链的包名——两条线路是
+  /// 同一份包，半截文件天然可跨线路续传。
+  RecommendedPackDownloader? _googleDownloader;
+
+  /// 当前选中的下载线路（分段按钮；下载中不可切换）。
+  _PackRoute _packRoute = _PackRoute.cloudflare;
+
+  RecommendedPackDownloader get _activeDownloader {
+    switch (_packRoute) {
+      case _PackRoute.cloudflare:
+        return _manifestDownloader ?? _packDownloader;
+      case _PackRoute.googleDrive:
+        return _googleDownloader ??= RecommendedPackDownloader(
+          packDir: _packDir,
+          url: kRecommendedPackGoogleDriveDirectUrl,
+          fileName: kRecommendedPackFileName,
+        );
+    }
+  }
+
+  /// 浏览器下载按钮的目标：CF 用直链（清单拉到过就用清单里的最新 URL），
+  /// Google 用分享页（浏览器场景让 Drive 自己处理确认页更稳）。
+  String get _packBrowserUrl {
+    switch (_packRoute) {
+      case _PackRoute.cloudflare:
+        return _manifestDownloader?.url ?? kRecommendedPackCloudflareUrl;
+      case _PackRoute.googleDrive:
+        return kRecommendedPackGoogleDriveUrl;
+    }
+  }
+
   final ValueNotifier<double> _packProgress = ValueNotifier<double>(0);
   final ValueNotifier<int> _packBytes = ValueNotifier<int>(0);
   CancelToken? _packCancelToken;
@@ -183,9 +228,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     });
     _packCancelToken = CancelToken();
     try {
-      // 先拉稳定清单拿最新包地址（换包零发版）；拉不到回退内置直链。
-      // 只解析一次并缓存——同一会话内 URL 抖动会打断续传。
-      if (_manifestDownloader == null) {
+      // CF 线路先拉稳定清单拿最新包地址（换包零发版）；拉不到回退内置直链。
+      // 只解析一次并缓存——同一会话内 URL 抖动会打断续传。Google 线路是固定
+      // 备用镜像，不走清单。
+      if (_packRoute == _PackRoute.cloudflare && _manifestDownloader == null) {
         final RecommendedPackManifest? manifest =
             await fetchRecommendedPackManifest();
         if (manifest != null) {
@@ -197,7 +243,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         }
       }
       if (!mounted) return;
-      final File file = await _activeDownloader.download(
+      // 钉住本次下载用的下载器：导入确认回调也要落在同一实例上。
+      final RecommendedPackDownloader downloader = _activeDownloader;
+      final File file = await downloader.download(
         progress: _packProgress,
         receivedBytes: _packBytes,
         cancelToken: _packCancelToken,
@@ -240,6 +288,216 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       filePath: path,
       onImportConfirmed:
           deleteAfterImport ? _activeDownloader.markImportStarted : null,
+    );
+  }
+
+  // ── Anki ──────────────────────────────────────────────────────────
+
+  /// 是否点过「测试连接」。成功/失败反馈只在测试后显示，进入步骤不抢答。
+  bool _ankiTestAttempted = false;
+
+  /// 移动端「本机改用 AnkiConnect」次级说明的展开态（默认收起）。
+  bool _mobileAnkiConnectExpanded = false;
+
+  Future<void> _testAnkiConnection() async {
+    setState(() => _ankiTestAttempted = true);
+    // 与制卡设置的「刷新牌组与笔记类型」同一条路径：拉到牌组即连接成功，
+    // 失败信息也复用设置页同一套本地化。
+    await ref.read(ankiViewModelProvider.notifier).fetchConfiguration();
+  }
+
+  /// 当前 Anki 后端的展示名（与 platform_services 的编译期选择一致：桌面
+  /// AnkiConnect；安卓 AnkiDroid / iOS AnkiMobile，移动端可显式改用 AnkiConnect）。
+  String _ankiBackendLabel(AnkiSettings settings) {
+    final bool mobile = Platform.isAndroid || Platform.isIOS;
+    if (!mobile || settings.ankiConnectUsableOnMobile) {
+      return 'AnkiConnect'
+          '（${settings.ankiConnectHost}:${settings.ankiConnectPort}）';
+    }
+    return Platform.isAndroid ? 'AnkiDroid' : 'AnkiMobile';
+  }
+
+  Widget _ankiConfigRow(String label, String value) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Text(
+            '$label：',
+            style: textTheme.bodyMedium!
+                .copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              style: textTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnkiStep() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final AnkiUiState anki = ref.watch(ankiViewModelProvider);
+    final bool mobile = Platform.isAndroid || Platform.isIOS;
+    final bool connected = _ankiTestAttempted &&
+        !anki.isFetching &&
+        anki.errorMessage == null &&
+        anki.availableDecks.isNotEmpty;
+    return ListView(
+      padding: EdgeInsets.all(tokens.spacing.card),
+      children: <Widget>[
+        SizedBox(height: tokens.spacing.card),
+        Icon(Icons.style_outlined, size: 56, color: theme.colorScheme.primary),
+        SizedBox(height: tokens.spacing.card),
+        Text(
+          t.onboarding_step_anki_title,
+          style: textTheme.headlineSmall,
+          textAlign: TextAlign.center,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        Text(t.onboarding_anki_intro_body, style: textTheme.bodyMedium),
+        SizedBox(height: tokens.spacing.gap),
+        Text(
+          Platform.isAndroid
+              ? t.onboarding_anki_setup_android_hint
+              : Platform.isIOS
+                  ? t.onboarding_anki_setup_ios_hint
+                  : t.onboarding_anki_setup_desktop_hint,
+          style: textTheme.bodyMedium,
+        ),
+        SizedBox(height: tokens.spacing.card),
+        // 当前默认配置（与制卡设置同一份 AnkiSettings 真值）。
+        _ankiConfigRow(
+          t.onboarding_anki_backend_label,
+          _ankiBackendLabel(anki.settings),
+        ),
+        _ankiConfigRow(t.anki_deck, anki.settings.selectedDeckName ?? '—'),
+        _ankiConfigRow(
+          t.anki_note_type,
+          anki.settings.selectedNoteTypeName ?? '—',
+        ),
+        SizedBox(height: tokens.spacing.card),
+        if (_ankiTestAttempted && !anki.isFetching) ...<Widget>[
+          if (connected)
+            Text(
+              t.onboarding_anki_test_success(
+                count: anki.availableDecks.length,
+              ),
+              style: textTheme.bodyMedium!
+                  .copyWith(color: theme.colorScheme.primary),
+              textAlign: TextAlign.center,
+            )
+          else if (anki.errorMessage != null)
+            Text(
+              anki.errorMessage!,
+              style:
+                  textTheme.bodySmall!.copyWith(color: theme.colorScheme.error),
+              textAlign: TextAlign.center,
+            ),
+          SizedBox(height: tokens.spacing.gap),
+        ],
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            FilledButton.tonalIcon(
+              icon: anki.isFetching
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.link_outlined),
+              label: Text(t.onboarding_anki_test_action),
+              onPressed: anki.isFetching
+                  ? null
+                  : () => unawaited(_testAnkiConnection()),
+            ),
+            // 还没连上：给「先把 Anki 装起来」的出口（连上即收起；iOS 的
+            // AnkiMobile 是付费 App，说明文字带过，不放商店外链）。
+            if (!connected && Platform.isAndroid)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.open_in_new_outlined),
+                label: Text(t.onboarding_anki_get_ankidroid_action),
+                onPressed: () => launchUrl(
+                  Uri.parse(kAnkiDroidDownloadUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            if (!connected && !mobile) ...<Widget>[
+              OutlinedButton.icon(
+                icon: const Icon(Icons.open_in_new_outlined),
+                label: Text(t.onboarding_anki_get_anki_action),
+                onPressed: () => launchUrl(
+                  Uri.parse(kAnkiDesktopDownloadUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.open_in_new_outlined),
+                label: Text(t.onboarding_anki_get_ankiconnect_action),
+                onPressed: () => launchUrl(
+                  Uri.parse(kAnkiConnectAddonUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ],
+            FilledButton.tonalIcon(
+              icon: const Icon(Icons.tune_outlined),
+              label: Text(t.onboarding_step_anki_action),
+              onPressed: () => _pushPage(
+                (_) => SettingsDetailPage(
+                  destination: buildCardCreationDestination(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        // 移动端次级入口：本机改用 AnkiConnect 连电脑（默认收起，配置真值仍在
+        // 制卡设置，不在向导里复制表单）。
+        if (mobile) ...<Widget>[
+          SizedBox(height: tokens.spacing.card),
+          FushiListItem(
+            leading: const Icon(Icons.lan_outlined),
+            title: Text(t.onboarding_anki_mobile_ankiconnect_title),
+            trailing: Icon(
+              _mobileAnkiConnectExpanded
+                  ? Icons.expand_less
+                  : Icons.expand_more,
+            ),
+            onTap: () => setState(
+              () => _mobileAnkiConnectExpanded = !_mobileAnkiConnectExpanded,
+            ),
+          ),
+          if (_mobileAnkiConnectExpanded)
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.card,
+                vertical: tokens.spacing.gap,
+              ),
+              child: Text(
+                t.onboarding_anki_mobile_ankiconnect_hint,
+                style: textTheme.bodySmall,
+              ),
+            ),
+        ],
+        // FSRS：没有 AnkiConnect/AnkiDroid API 能替用户打开，只能把路径讲清。
+        SizedBox(height: tokens.spacing.card),
+        FushiListItem(
+          leading: const Icon(Icons.speed_outlined),
+          title: Text(t.onboarding_anki_fsrs_title),
+          subtitle: Text(t.onboarding_anki_fsrs_body),
+          // 说明是三句话，不能用默认两行截断。
+          subtitleMaxLines: 8,
+        ),
+      ],
     );
   }
 
@@ -313,22 +571,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingStepId.recommendedPack:
         return _buildPackStep();
       case OnboardingStepId.anki:
-        return OnboardingStepView(
-          icon: Icons.style_outlined,
-          title: t.onboarding_step_anki_title,
-          body: t.onboarding_step_anki_body,
-          actions: <Widget>[
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.tune_outlined),
-              label: Text(t.onboarding_step_anki_action),
-              onPressed: () => _pushPage(
-                (_) => SettingsDetailPage(
-                  destination: buildCardCreationDestination(),
-                ),
-              ),
-            ),
-          ],
-        );
+        return _buildAnkiStep();
       case OnboardingStepId.backup:
         return OnboardingStepView(
           icon: Icons.cloud_sync_outlined,
@@ -517,7 +760,26 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               child: Text(t.dialog_cancel),
             ),
           ),
-        ] else
+        ] else ...<Widget>[
+          // 下载线路：两条线路同一份包，应用内直下与浏览器下载都跟随此选择。
+          Center(
+            child: SegmentedButton<_PackRoute>(
+              segments: const <ButtonSegment<_PackRoute>>[
+                ButtonSegment<_PackRoute>(
+                  value: _PackRoute.cloudflare,
+                  label: Text('Cloudflare'),
+                ),
+                ButtonSegment<_PackRoute>(
+                  value: _PackRoute.googleDrive,
+                  label: Text('Google Drive'),
+                ),
+              ],
+              selected: <_PackRoute>{_packRoute},
+              onSelectionChanged: (Set<_PackRoute> selection) =>
+                  setState(() => _packRoute = selection.first),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
           Wrap(
             alignment: WrapAlignment.center,
             spacing: tokens.spacing.gap,
@@ -540,7 +802,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                 icon: const Icon(Icons.open_in_new_outlined),
                 label: Text(t.onboarding_step_pack_browser_action),
                 onPressed: () => launchUrl(
-                  Uri.parse(kRecommendedPackGoogleDriveUrl),
+                  Uri.parse(_packBrowserUrl),
                   mode: LaunchMode.externalApplication,
                 ),
               ),
@@ -559,6 +821,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               ),
             ],
           ),
+        ],
       ],
     );
   }
