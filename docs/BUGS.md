@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1640 条。点号进各自文件。
+> 共 1641 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1764](bugs/BUG-1764-audiobook-next-page-first-cue-no-turn.md) | ✅ | ✅ | 有声书跟随：下一页第一句不自动翻页 |
 | [BUG-1763](bugs/BUG-1763-video-subtitle-chars-paused-seek.md) | ✅ | ✅ | 视频字幕字数暂停拖进度条也计无播放停留判据 |
 | [BUG-1762](bugs/BUG-1762-epub-jump-and-arrival-chars-inflate.md) | ✅ | ✅ | EPUB字数到达即计且四类跳转不播种水位整段前缀误计 |
 | [BUG-1761](bugs/BUG-1761-manga-stats-recount-on-reopen.md) | ✅ | ✅ | 漫画统计重开书重复计页170页卷记成400页 |
