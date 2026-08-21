@@ -3711,5 +3711,6 @@
   "download_subscription_start_episode_invalid": "Enter a whole number (0 or greater), or leave blank",
   "download_subscription_source_unavailable": "Current target (unavailable)",
   "resource_version_episode_count": "$n episodes",
-  "resource_version_show_files": "Show files"
+  "resource_version_show_files": "Show files",
+  "discovery_sources_unavailable": "All sources are unavailable"
 }

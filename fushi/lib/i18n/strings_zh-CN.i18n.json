@@ -3711,5 +3711,6 @@
   "download_subscription_start_episode_invalid": "请填 0 或更大的整数，留空表示不限",
   "download_subscription_source_unavailable": "当前目标库（当前不可用）",
   "resource_version_episode_count": "共 $n 集",
-  "resource_version_show_files": "显示文件"
+  "resource_version_show_files": "显示文件",
+  "discovery_sources_unavailable": "全部来源都不可用"
 }
