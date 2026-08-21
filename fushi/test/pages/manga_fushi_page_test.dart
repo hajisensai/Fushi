@@ -460,7 +460,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: true,
+          crossPageStep: true,
           dictionaryShown: true,
           mode: MangaReadingMode.spread,
         ),
@@ -473,7 +473,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaDismissDict,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: true,
           mode: MangaReadingMode.spread,
         ),
@@ -482,7 +482,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaDismissDict,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: false,
           mode: MangaReadingMode.spread,
         ),
@@ -495,7 +495,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: true,
           mode: MangaReadingMode.spread,
         ),
@@ -508,7 +508,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: false,
           mode: MangaReadingMode.webtoon,
         ),
@@ -518,7 +518,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: true,
+          crossPageStep: true,
           dictionaryShown: false,
           mode: MangaReadingMode.webtoon,
         ),
@@ -531,7 +531,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: null,
-          horizontalArrow: true,
+          crossPageStep: true,
           dictionaryShown: false,
           mode: MangaReadingMode.spread,
         ),
@@ -540,7 +540,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.readerPageForward,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: false,
           mode: MangaReadingMode.spread,
         ),

@@ -167,13 +167,16 @@ enum ShortcutScope {
       // 提供的，故只开键盘。
       case globalExternal:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
-      // 漫画页只有键盘解析入口：`_resolveMangaKeyAction` 走 `resolveKeyboard`，
-      // 滚轮翻页是硬编码的 `wheelInputAction`（不查注册表），手柄则完全没接
-      // （既无 `resolveGamepad`，也无 `GamepadButtonIntent` 的 Action）。开着手柄/
-      // 鼠标通道 = 设置页给出能配却按了没反应的入口，比没有这个选项更糟。
-      // 接上对应解析入口（照 reader `_handleGamepadButton`）并真机验证后再开。
+      // 漫画页：键盘走 `_resolveMangaKeyAction`（resolveKeyboard），手柄走
+      // `_handleGamepadButton`（resolveGamepad manga → universal，桌面轮询的
+      // GamepadButtonIntent 与 Android gameButton* 键事件汇合到同一入口，与
+      // reader 同构）。滚轮翻页是硬编码的 `wheelInputAction`（不查注册表），
+      // 鼠标依旧没有解析入口，不开。
       case manga:
-        return const <ShortcutChannel>{ShortcutChannel.keyboard};
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // 查词弹窗：滚轮（上/下一个词条）+ 键盘（制卡）。两者都不经 resolveKeyboard —— 绑定
       // 由 popup_settings_injection 序列化后注入给 popup.js，命中判定在 JS 侧（弹窗内容是
       // WebView，输入事件先到它的 JS）。键盘通道的取用点同样是

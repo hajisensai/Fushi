@@ -79,4 +79,55 @@ void main() {
       }
     });
   });
+
+  group('resolveMangaDpadPageTurn（手柄 D-pad 的同构校正）', () {
+    ShortcutAction? call(
+      GamepadButton button, {
+      required bool rtl,
+      ShortcutAction? bound = ShortcutAction.mangaPageForward,
+    }) =>
+        resolveMangaDpadPageTurn(button: button, rtl: rtl, boundAction: bound);
+
+    test('rtl（日漫默认）：dpad左前进、dpad右后退；ltr 相反', () {
+      expect(call(GamepadButton.dpadLeft, rtl: true),
+          ShortcutAction.mangaPageForward);
+      expect(call(GamepadButton.dpadRight, rtl: true),
+          ShortcutAction.mangaPageBackward);
+      expect(call(GamepadButton.dpadRight, rtl: false),
+          ShortcutAction.mangaPageForward);
+      expect(call(GamepadButton.dpadLeft, rtl: false),
+          ShortcutAction.mangaPageBackward);
+    });
+
+    test('校正只看物理方向 + 排版方向，与原绑定的前进/后退无关（键盘同款不变式）', () {
+      expect(
+        call(GamepadButton.dpadLeft,
+            rtl: true, bound: ShortcutAction.mangaPageBackward),
+        ShortcutAction.mangaPageForward,
+      );
+    });
+
+    test('已改绑成非翻页动作 / 未绑定 → 不覆写，交回注册表', () {
+      expect(
+        call(GamepadButton.dpadLeft,
+            rtl: true, bound: ShortcutAction.mangaDismissDict),
+        isNull,
+      );
+      expect(call(GamepadButton.dpadLeft, rtl: true, bound: null), isNull);
+    });
+
+    test('非 D-pad 左右按钮不参与校正（RB/LB 是页序语义，任何排版下一致）', () {
+      for (final GamepadButton button in <GamepadButton>[
+        GamepadButton.rb,
+        GamepadButton.lb,
+        GamepadButton.dpadUp,
+        GamepadButton.dpadDown,
+        GamepadButton.a,
+        GamepadButton.b,
+      ]) {
+        expect(call(button, rtl: true), isNull,
+            reason: '${button.label} 不该被方向校正');
+      }
+    });
+  });
 }

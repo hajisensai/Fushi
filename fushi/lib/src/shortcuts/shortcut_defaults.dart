@@ -334,22 +334,30 @@ class ShortcutDefaults {
     // 朝向再由 resolveMangaArrowPageTurn 按跨页方向（日漫默认 rtl）校正，所以这里
     // 存的是**页序语义**而非物理方向。
     //
-    // **只有键盘绑定**：漫画页至今没有手柄解析入口（既无 `resolveGamepad`，也无
-    // `GamepadButtonIntent` 的 Action，Android 的 gameButton* 键事件同样匹配不到
-    // 纯键盘绑定）。曾在这里配过 RB/LB/dpad/B，效果是用户在设置里能配、按下去毫无
-    // 反应——比压根没有这个选项更糟，用户会以为自己手柄坏了。要加回来必须先照
-    // reader `_handleGamepadButton` 接上解析入口并真机验证；`manga` scope 的
-    // `channels` 也相应只开键盘，`shortcut_channel_wiring_guard_test` 会盯住两者一致。
+    // 手柄默认与 reader 翻页同构（RB/dpad右=前进、LB/dpad左=后退）：漫画页现在有
+    // 真实的手柄解析入口（`_handleGamepadButton` → resolveGamepad manga →
+    // universal，桌面轮询与 Android gameButton* 汇合同一入口），dpad 左/右再由
+    // resolveMangaDpadPageTurn 按跨页方向校正——与键盘方向键同一套页序语义。
+    // B **刻意不绑**：退出/关弹窗归 universal 的 globalBack（手柄 B 默认在
+    // universal），在 manga scope 再绑一个 B 会把两级阶梯永久遮蔽
+    // （`universal_back_test` 盯着）。此前「配过 RB/LB/dpad/B 但没有解析入口」的
+    // 死通道教训见 `shortcut_channel_wiring_guard_test`——通道与入口必须同增同减。
     ShortcutAction.mangaPageForward: _kb([
       _key(LogicalKeyboardKey.pageDown),
       _key(LogicalKeyboardKey.arrowRight),
       _key(LogicalKeyboardKey.arrowDown),
       _key(LogicalKeyboardKey.space),
+    ], [
+      _gRB,
+      _gDpadRight
     ]),
     ShortcutAction.mangaPageBackward: _kb([
       _key(LogicalKeyboardKey.pageUp),
       _key(LogicalKeyboardKey.arrowLeft),
       _key(LogicalKeyboardKey.arrowUp),
+    ], [
+      _gLB,
+      _gDpadLeft
     ]),
     // 「只关词典、绝不退出」（漫画版）：**默认空绑定**，理由与 readerDismissDict
     // 完全相同——Esc 归 universal 的 globalBack 一键阶梯。
