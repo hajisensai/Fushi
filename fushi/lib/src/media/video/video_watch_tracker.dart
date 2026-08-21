@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
@@ -48,7 +50,33 @@ List<(String, int, int)> splitWatchTime(DateTime start, DateTime now) {
 // P4 写侧收敛：dateKey 派生统一走 DB 层权威实现（与复合入口同一份格式化）。
 String _dateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 
-/// 视频观看统计采集器：观看时长（仅播放时累加）+ 字幕字数（单调去重）+ 完成标记。
+/// 一句 cue 计入字幕字数所需的最低真实播放停留（媒体时间，毫秒）。
+/// 短 cue 取自身时长为门（日语字幕大量 cue 短于该值，固定阈值会让它们永远不计）。
+const int kCueDwellMs = 1500;
+
+/// 单次观察允许计入的最大位置推进（毫秒）。相邻两次通知间真实播放只会推进
+/// 百余毫秒；一次跳好几秒说明是 cue 内 seek，不是停留。
+const int kCueDwellObservationCapMs = 1000;
+
+/// 纯谓词（BUG-1763）：候选 cue 的**真实播放推进量**是否已满足停留门。
+///
+/// [playedMs] 只累计播放态下的位置前进（seek 跳变与暂停不算，见调用方的观察窗
+/// 累计规则）。旧实现「位置进入 cue 即全额计」没有任何停留判据：暂停态拖进度条、
+/// 字幕列表点击、开视频落在断点 cue 上，都会把整句字数刷进统计。
+bool shouldCountCueDwell({
+  required int playedMs,
+  required int? cueStartMs,
+  required int? cueEndMs,
+}) {
+  final int threshold =
+      (cueStartMs != null && cueEndMs != null && cueEndMs > cueStartMs)
+          ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
+          : kCueDwellMs;
+  return playedMs >= threshold;
+}
+
+/// 视频观看统计采集器：观看时长（仅播放时累加）+ 字幕字数（停留门 + 单调去重，
+/// 见 [shouldCountCueDwell]）+ 完成标记。
 ///
 /// 不直接依赖 `VideoPlayerController`（其状态读 libmpv，测试宿主无法实例化），
 /// 而经 [VideoPlaybackSource] 接口，因此纯单测可用 fake 验证采集逻辑。
@@ -152,9 +180,12 @@ class VideoWatchTracker {
     }
   }
 
-  /// 换集：清空字幕去重集与外部单集完成门闩；本地 book 完成标记仍按整本书保持。
+  /// 换集：清空字幕去重集、停留门候选与外部单集完成门闩；本地 book 完成标记仍按
+  /// 整本书保持。候选必须一并清：下标指向的是旧集 cue 表。
   void onEpisodeChanged() {
     _countedIndices.clear();
+    _pendingCueIndex = -1;
+    _pendingPlayedMs = 0;
     _episodeCompletionReported = false;
   }
 
@@ -164,19 +195,81 @@ class VideoWatchTracker {
     _source = null;
   }
 
+  /// BUG-1763 停留门候选（观察窗）：当前句、其字幕文本/起止时刻、上次观察到的
+  /// 播放位置、以及累计的**真实播放推进量**。
+  int _pendingCueIndex = -1;
+  String _pendingCueText = '';
+  int? _pendingCueStartMs;
+  int? _pendingCueEndMs;
+  int _pendingLastPosMs = 0;
+  int _pendingPlayedMs = 0;
+
+  /// BUG-1763：字幕字数入账必须过停留门（[shouldCountCueDwell]），不再「位置进入
+  /// cue 即全额计」。旧实现不看 isPlaying、不看播了多久：暂停态拖进度条 / 字幕列表
+  /// 点击跳句 / 开视频落在断点 cue 上，每个落点命中的句子都全额入账——「0 分钟
+  /// 观看 + 几千字幕字」可以纯靠暂停拖条刷出来。
+  ///
+  /// 观察窗规则：换句时先按已观察的推进量结算旧候选；同句时只有**播放态**的位置
+  /// 前进才累计（每次观察封顶 [kCueDwellObservationCapMs]，cue 内 seek 的跳变不算
+  /// 停留；暂停/回退只移动基线不累计），达到门槛立即入账。
   void _onSourceChanged() {
     final VideoPlaybackSource? s = _source;
     if (s == null) return;
     final int idx = s.currentCueIndex;
-    final String? text = s.currentCue?.text;
-    if (idx >= 0 && text != null && _countedIndices.add(idx)) {
-      final int chars = text.runes.length;
-      if (chars > 0) {
-        debugSubtitleChars += chars;
-        _sessionChars += chars;
-        unawaited(Future<void>.value(
-            _addSubtitleChars(_dateKey(DateTime.now()), chars)));
+    final int? pos = s.positionMs;
+    if (idx != _pendingCueIndex) {
+      _commitPendingIfDwelled();
+      final AudioCue? cue = idx >= 0 ? s.currentCue : null;
+      final String? text = cue?.text;
+      if (cue != null &&
+          text != null &&
+          pos != null &&
+          !_countedIndices.contains(idx)) {
+        _pendingCueIndex = idx;
+        _pendingCueText = text;
+        _pendingCueStartMs = cue.startMs;
+        _pendingCueEndMs = cue.endMs;
+        _pendingLastPosMs = pos;
+        _pendingPlayedMs = 0;
       }
+      return;
+    }
+    if (_pendingCueIndex < 0 || pos == null) return;
+    if (s.isPlaying) {
+      final int delta = pos - _pendingLastPosMs;
+      if (delta > 0) {
+        _pendingPlayedMs += math.min(delta, kCueDwellObservationCapMs);
+      }
+    }
+    _pendingLastPosMs = pos;
+    if (shouldCountCueDwell(
+      playedMs: _pendingPlayedMs,
+      cueStartMs: _pendingCueStartMs,
+      cueEndMs: _pendingCueEndMs,
+    )) {
+      _commitPendingIfDwelled();
+    }
+  }
+
+  /// 结算候选：停留量达标才入账（去重集兜底），未达标直接丢弃（宁可少算）。
+  void _commitPendingIfDwelled() {
+    final int idx = _pendingCueIndex;
+    if (idx < 0) return;
+    _pendingCueIndex = -1;
+    if (!shouldCountCueDwell(
+      playedMs: _pendingPlayedMs,
+      cueStartMs: _pendingCueStartMs,
+      cueEndMs: _pendingCueEndMs,
+    )) {
+      return;
+    }
+    if (!_countedIndices.add(idx)) return;
+    final int chars = _pendingCueText.runes.length;
+    if (chars > 0) {
+      debugSubtitleChars += chars;
+      _sessionChars += chars;
+      unawaited(Future<void>.value(
+          _addSubtitleChars(_dateKey(DateTime.now()), chars)));
     }
   }
 
