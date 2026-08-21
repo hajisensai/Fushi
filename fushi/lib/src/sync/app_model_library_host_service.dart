@@ -241,12 +241,19 @@ class AppModelLibraryHostService
       // 同名覆盖会往既有词典目录里写 blobs.bin / hash.table，而这些文件正被引擎
       // MapViewOfFile 映射着 —— Windows 拒绝以写方式打开，覆盖导入直接失败
       // （BUG-1756）。收尾的 _refreshDictionaryCache 会把引擎重新加载回来。
+      //
+      // 装回必须走 finally：releaseAllMappings 之后引擎是空的，而
+      // importDictionaryPackage 会因包损坏 / 磁盘满 / 权限抛出。写在 try 之后就被
+      // 跳过 —— host 引擎永久空转，所有互联对端查词返回空，直到 host 重启。
       FushiDicts.releaseAllMappings();
-      await _packages.importDictionaryPackage(
-        packageFile: packageFile,
-        dictionaryResourceRoot: _dictionaryResourceRoot,
-      );
-      await _refreshDictionaryCache();
+      try {
+        await _packages.importDictionaryPackage(
+          packageFile: packageFile,
+          dictionaryResourceRoot: _dictionaryResourceRoot,
+        );
+      } finally {
+        await _refreshDictionaryCache();
+      }
     });
   }
 

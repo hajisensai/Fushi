@@ -106,6 +106,12 @@ void main() {
     FileSystemException winErr(int code) => FileSystemException(
         'delete failed', 'D:/dict', OSError('occupied', code));
 
+    /// 每条用例都记引擎装回次数：进函数前调用方已 releaseAllMappings 把引擎清空，
+    /// 所以**每一条**返回路径和**每一条**抛出路径都必须恰好装回一次。
+    late int reloads;
+    setUp(() => reloads = 0);
+    Future<void> countReload() async => reloads++;
+
     test('一次成功 → deleted，不重试', () async {
       int calls = 0;
       final DictDirDeleteOutcome outcome = await deleteDictionaryDirectoryCore(
@@ -113,9 +119,11 @@ void main() {
         quarantine: () async => fail('不该走隔离'),
         sleep: (int _) async {},
         isWindows: true,
+        reloadEngine: countReload,
       );
       expect(outcome, DictDirDeleteOutcome.deleted);
       expect(calls, 1);
+      expect(reloads, 1);
     });
 
     test('Windows 占用码（5 / 32 / 1224）→ 重试到上限后隔离', () async {
@@ -132,11 +140,13 @@ void main() {
           sleep: (int _) async {},
           isWindows: true,
           maxAttempts: 3,
+          reloadEngine: countReload,
         );
         expect(outcome, DictDirDeleteOutcome.quarantined, reason: 'code=$code');
         expect(calls, 3, reason: 'code=$code 应重试到上限');
         expect(quarantined, isTrue, reason: 'code=$code');
       }
+      expect(reloads, 3, reason: '三个占用码各装回一次');
     });
 
     test('Windows 非占用码 → 原样抛给调用方报错', () async {
@@ -146,9 +156,13 @@ void main() {
           quarantine: () async => fail('不该走隔离'),
           sleep: (int _) async {},
           isWindows: true,
+          reloadEngine: countReload,
         ),
         throwsA(isA<FileSystemException>()),
       );
+      // 抛出路径也必须把引擎装回来。装回漏了 = 删一本失败，本次运行内**所有**词典
+      // 都查不出词直到重启（比这条删除失败严重得多）。
+      expect(reloads, 1, reason: '原样抛也必须装回引擎');
     });
 
     test('非 Windows → 不重试、原样抛（POSIX 没有 mmap 删除锁）', () async {
@@ -162,10 +176,12 @@ void main() {
           quarantine: () async => fail('不该走隔离'),
           sleep: (int _) async {},
           isWindows: false,
+          reloadEngine: countReload,
         ),
         throwsA(isA<FileSystemException>()),
       );
       expect(calls, 1);
+      expect(reloads, 1, reason: '非 Windows 抛出路径也必须装回引擎');
     });
 
     test('隔离也失败 → leftBehind（绝不把删不掉升级成异常打断删除流程）', () async {
@@ -175,8 +191,10 @@ void main() {
         sleep: (int _) async {},
         isWindows: true,
         maxAttempts: 2,
+        reloadEngine: countReload,
       );
       expect(outcome, DictDirDeleteOutcome.leftBehind);
+      expect(reloads, 1);
     });
   });
 

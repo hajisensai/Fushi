@@ -58,14 +58,13 @@ Future<DictDirDeleteOutcome> deleteDictionaryDirectory(
 }) async {
   if (!directory.existsSync()) return DictDirDeleteOutcome.absent;
   FushiDicts.releaseAllMappings();
-  final DictDirDeleteOutcome outcome = await deleteDictionaryDirectoryCore(
+  return deleteDictionaryDirectoryCore(
     delete: () => directory.delete(recursive: true),
     quarantine: () => _quarantineDictionaryDirectory(directory),
     sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
     isWindows: Platform.isWindows,
+    reloadEngine: reloadEngine,
   );
-  await reloadEngine();
-  return outcome;
 }
 
 /// [deleteDictionaryDirectory] 的纯逻辑核心，依赖全部注入便于测试。
@@ -75,13 +74,39 @@ Future<DictDirDeleteOutcome> deleteDictionaryDirectory(
 /// 文件刚被访问后短暂持有句柄（与 `publishImportedDir` 同款外部不可控行为）。
 /// 用尽 [maxAttempts] 后改名隔离，绝不把「删不掉」升级成「词典删了一半」。
 /// 其余错误（非 Windows、或非占用码）原样抛出，交调用方报错。
+///
+/// [reloadEngine] 在 `finally` 里跑，**抛出路径也跑**。调用方进来前已经
+/// [FushiDicts.releaseAllMappings] 把引擎清空了，装回写在 try 之后就会被上面那条
+/// rethrow 跳过——引擎停在空实例，本次运行内**所有**词典都查不出词，直到重启，比
+/// 「删除失败」本身严重得多。不变式跟着会抛的这层走，而不是留给外层记得补一句。
 @visibleForTesting
 Future<DictDirDeleteOutcome> deleteDictionaryDirectoryCore({
   required Future<void> Function() delete,
   required Future<void> Function() quarantine,
   required Future<void> Function(int delayMs) sleep,
   required bool isWindows,
+  required FutureOr<void> Function() reloadEngine,
   int maxAttempts = 5,
+}) async {
+  try {
+    return await _deleteDictionaryDirectoryAttempts(
+      delete: delete,
+      quarantine: quarantine,
+      sleep: sleep,
+      isWindows: isWindows,
+      maxAttempts: maxAttempts,
+    );
+  } finally {
+    await reloadEngine();
+  }
+}
+
+Future<DictDirDeleteOutcome> _deleteDictionaryDirectoryAttempts({
+  required Future<void> Function() delete,
+  required Future<void> Function() quarantine,
+  required Future<void> Function(int delayMs) sleep,
+  required bool isWindows,
+  required int maxAttempts,
 }) async {
   for (int attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
