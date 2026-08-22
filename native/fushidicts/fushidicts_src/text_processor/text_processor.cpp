@@ -135,9 +135,12 @@ bool is_emphatic(char32_t c) {
   return c == HIRAGANA_SMALL_TSU || c == KATAKANA_SMALL_TSU || c == KANA_PROLONGED_SOUND_MARK;
 }
 
-// 上游 aaf75c9：折叠连续强调符（っっ/ーー），full_collapse 时全删。首尾强调符保留。
+// 上游 aaf75c9：折叠连续强调符（っっ→っ/ーー→ー）。首尾强调符保留。
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L776
-std::u32string collapse_emphatic_sequences(const std::u32string& text, bool full_collapse) {
+// 上游的 full_collapse 模式（把单个っ/ッ/ー整个删掉）故意不移植：它会把含促音/长音的
+// 正常词吞字（ヒットで→ひとで 命中「海星」、きって→きて），且吞字变体消耗的源文本更长、
+// 在最长匹配优先排序下必然压过原形精确匹配；Yomitan 侧该模式也是默认关闭的用户选项（BUG-1777）。
+std::u32string collapse_emphatic_sequences(const std::u32string& text) {
   ptrdiff_t left = 0;
   while (left < static_cast<ptrdiff_t>(text.size()) && is_emphatic(text[left])) {
     ++left;
@@ -160,10 +163,7 @@ std::u32string collapse_emphatic_sequences(const std::u32string& text, bool full
     if (is_emphatic(c)) {
       if (current_collapsed_code_point != c) {
         current_collapsed_code_point = c;
-        if (!full_collapse) {
-          middle += c;
-          continue;
-        }
+        middle += c;
       }
     } else {
       current_collapsed_code_point = static_cast<char32_t>(-1);
@@ -415,17 +415,11 @@ std::vector<TextProcessor> get_japanese_processors() {
              }
            }},
       // 上游 aaf75c9：强调折叠在假名转换后、宽度处理前（对齐上游链序）。
-      {.options = {0, 1, 2},
+      // full_collapse 模式故意不挂链（见 collapse_emphatic_sequences 注释，BUG-1777）。
+      {.options = {0, 1},
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
-             switch (opt) {
-               case 1:
-                 return collapse_emphatic_sequences(text, false);
-               case 2:
-                 return collapse_emphatic_sequences(text, true);
-               default:
-                 return text;
-             }
+             return opt == 1 ? collapse_emphatic_sequences(text) : text;
            }},
       {.options = {0, 1},
        .process =

@@ -28,6 +28,16 @@ static void expect(const char* name, const std::string& src, const char* want) {
   }
 }
 
+// 负向断言：变体集**不得**含 forbidden。守卫吞字类处理器（BUG-1777 full_collapse）不被重新挂链。
+static void expect_absent(const char* name, const std::string& src, const char* forbidden) {
+  std::vector<TextVariant> vs = text_processor::process(src);
+  if (has_variant(vs, forbidden)) {
+    std::fprintf(stderr, "FAIL %s: forbidden variant '%s' present for src '%s'\n", name, forbidden,
+                 src.c_str());
+    ++g_fail;
+  }
+}
+
 int main() {
   // P2: 阿拉伯 harakat 去除  كَتَبَ -> كتب
   expect("ar-harakat", "\xD9\x83\xD9\x8E\xD8\xAA\xD9\x8E\xD8\xA8\xD9\x8E", "\xD9\x83\xD8\xAA\xD8\xA8");
@@ -78,14 +88,23 @@ int main() {
   // 链组合：ASCII 2 先经 alphanumeric_to_fullwidth 变 ２ 再变 二（2月 -> 二月）。
   expect("num-ascii-chain", "2\xE6\x9C\x88", "\xE4\xBA\x8C\xE6\x9C\x88");
 
-  // 上游 aaf75c9 强调折叠：すっっごい -> すっごい(opt1 折单) / すごい(opt2 全删)。
+  // 上游 aaf75c9 强调折叠：すっっごい -> すっごい（连续强调符折成一个）。
   expect("emphatic-collapse-1", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
          "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84");
-  expect("emphatic-collapse-2", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
-         "\xE3\x81\x99\xE3\x81\x94\xE3\x81\x84");
   // 长音符同理：ラーーメン -> ラーメン。
   expect("emphatic-prolonged", "\xE3\x83\xA9\xE3\x83\xBC\xE3\x83\xBC\xE3\x83\xA1\xE3\x83\xB3",
          "\xE3\x83\xA9\xE3\x83\xBC\xE3\x83\xA1\xE3\x83\xB3");
+
+  // BUG-1777：full_collapse（删单个っ/ッ/ー）故意不挂链——它把正常词吞字后产生的幻影
+  // 匹配消耗的源文本更长，在最长匹配优先排序下压过原形精确匹配。
+  // 原始失败路径：字幕「ヒットでしたね」查「ヒット」，ヒットで 经かな转换→ひっとで，
+  // 若再被全删促音就成 ひとで 命中「海星」并排到「ヒット」之上。
+  expect("emphatic-no-full-collapse-src", "\xE3\x83\x92\xE3\x83\x83\xE3\x83\x88\xE3\x81\xA7",
+         "\xE3\x81\xB2\xE3\x81\xA3\xE3\x81\xA8\xE3\x81\xA7");  // ヒットで 必须产出 ひっとで（促音保留）
+  expect_absent("emphatic-no-full-collapse", "\xE3\x83\x92\xE3\x83\x83\xE3\x83\x88\xE3\x81\xA7",
+                "\xE3\x81\xB2\xE3\x81\xA8\xE3\x81\xA7");  // ヒットで 不得产出 ひとで
+  expect_absent("emphatic-no-full-collapse-run", "\xE3\x81\x99\xE3\x81\xA3\xE3\x81\xA3\xE3\x81\x94\xE3\x81\x84",
+                "\xE3\x81\x99\xE3\x81\x94\xE3\x81\x84");  // すっっごい 不得产出 すごい
 
   // 上游 1cb9b4b 链序修复：NFKC 必须在假名转换之前——半角片假名 ﾒｶﾞﾈ 先归一成
   // メガネ 才能被 katakana_to_hiragana 转成 めがね。旧链序（NFKC 在假名转换后）
