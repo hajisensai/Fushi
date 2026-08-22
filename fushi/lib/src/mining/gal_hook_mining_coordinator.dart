@@ -6,6 +6,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/mining/external_window_mining.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart' show GalMinedAudio;
 import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart';
@@ -26,23 +27,11 @@ typedef GalHookTempDirectoryFactory = Future<Directory> Function();
 typedef GalHookLineLookup = TexthookerLineEntry? Function(String lineId);
 typedef GalHookLineValidator = bool Function(TexthookerLineEntry entry);
 typedef GalHookSessionStateLoader = GalHookSessionState Function();
-typedef GalHookAudioCapture = Future<Uint8List?> Function({
+typedef GalHookAudioCapture = Future<GalMinedAudio?> Function({
   required String lineId,
   required String sentence,
   required String outputExtension,
 });
-
-/// 原始 SGRE 角色语音是 RIFF/XWMA。当行已经固化了 `.xwma` 资源 ID 时，
-/// 媒体名必须保留真实扩展名；否则会把 xWMA 字节写进 `.aac` 伪装文件。
-String galHookMinedAudioExtension({
-  required String fallback,
-  String? resourceId,
-}) {
-  if (resourceId?.toLowerCase().endsWith('.xwma') ?? false) {
-    return 'xwma';
-  }
-  return fallback;
-}
 
 class GalHookMiningResult {
   const GalHookMiningResult({
@@ -103,7 +92,7 @@ class GalHookMiningCoordinator {
     _lineLookup = lineLookup ?? _textService.entryById;
     _lineValidator = lineValidator ?? _session.isLineInCurrentSession;
     _stateLoader = stateLoader ?? (() => _session.state);
-    _captureAudio = captureAudio ?? _session.captureAudioBytes;
+    _captureAudio = captureAudio ?? _session.captureLineAudio;
   }
 
   static final GalHookMiningCoordinator instance = GalHookMiningCoordinator();
@@ -293,7 +282,7 @@ class GalHookMiningCoordinator {
     final String audioExtension = immersionMiningAudioExtension();
     Object? audioError;
     StackTrace? audioStack;
-    final Future<Uint8List?> audioFuture = _captureAudio(
+    final Future<GalMinedAudio?> audioFuture = _captureAudio(
       lineId: entry.id,
       // 音频层用 lineId + 原始文本做严格会话校验。内嵌 popup 的
       // sentenceOverride 只负责写进卡片；它可能已去掉 `.ks` 元数据或折叠重复句，
@@ -362,15 +351,14 @@ class GalHookMiningCoordinator {
       }
     }
 
-    final Uint8List? audioBytes = await audioFuture;
+    final GalMinedAudio? minedAudio = await audioFuture;
     if (audioError != null) {
       Error.throwWithStackTrace(audioError!, audioStack ?? StackTrace.current);
     }
+    final Uint8List? audioBytes = minedAudio?.bytes;
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
-    final String minedAudioExtension = galHookMinedAudioExtension(
-      fallback: audioExtension,
-      resourceId: _lineLookup(entry.id)?.audioResourceId,
-    );
+    // 容器名取产出层回传的真值，**不**按 `audioResourceId` 后缀反推：那个 ID 只说明
+    // 这行配对到了什么资源，说明不了这次实际交出来的字节是原件还是回退转码的产物。
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
     // 拦成制卡失败，等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
@@ -395,7 +383,7 @@ class GalHookMiningCoordinator {
           audioBytes: audioBytes,
           audioName: sentenceAudioMissing
               ? null
-              : 'galgame_audio.$minedAudioExtension',
+              : 'galgame_audio.${minedAudio!.extension}',
           documentTitle:
               window.title.isEmpty ? 'External window' : window.title,
           // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。

@@ -29,6 +29,15 @@ abstract interface class GalAudioSource {
   Future<GalAudioSlice?> grabRecent(int backMs);
 }
 
+/// 制卡音频字节 + 它**实际**所在的容器扩展名（不带点，如 `aac` / `xwma`）。
+///
+/// 容器必须跟着字节一起从产出它的那一层回传。产出层有两条出口——单个 xWMA 原件直返、
+/// 其余转码成调用方要的 `outputExtension`——两条都压成裸 `Uint8List` 之后容器信息就丢了。
+/// 上层此前按 `audioResourceId` 是否以 `.xwma` 结尾反推，只看资源 ID 不看字节来源：多资源
+/// 合成、或配对失败回退 loopback/PCM 时，AAC 字节会被贴上 `galgame_audio.xwma` 写进 Anki
+/// （Anki 按扩展名判 MIME），卡片层面完全区分不出原始资源和回退混音。
+typedef GalMinedAudio = ({Uint8List bytes, String extension});
+
 /// 一段裸 PCM 切片 + 它的格式。
 class GalAudioSlice {
   const GalAudioSlice({required this.pcm, required this.format});
@@ -151,7 +160,7 @@ PcmFormat? parseGalPcmFormat(Map<Object?, Object?> m) {
 
 /// 引擎 hook 的就绪 map 转格式。常规路径返回共享内存 PCM 格式；Siglus 的晚附着路径只
 /// 导出原始 OVK Ogg、没有已错过的 DirectSound PCM，此时用其已验证的解码格式作为会话
-/// 能力标记，让上层保留 [EngineHookGalAudioSource] 并走 [grabPairedVoiceBytes]。
+/// 能力标记，让上层保留 [EngineHookGalAudioSource] 并走 [grabPairedVoiceAudio]。
 PcmFormat? parseEngineHookReadyFormat(Map<Object?, Object?> m) {
   if (m['ready'] != true) {
     return null;
@@ -774,7 +783,7 @@ List<String> pickPairedGameResources({
 /// 资源语音 dump 文件的**写入收敛门**（BUG-1109）。
 ///
 /// hook DLL 在游戏读取语音资源时把原件写进 dump 目录：文件**出现**不等于**写完**。
-/// 一看见文件就转码（[EngineHookGalAudioSource.grabPairedVoiceBytes]）或试听
+/// 一看见文件就转码（[EngineHookGalAudioSource.grabPairedVoiceAudio]）或试听
 /// （[EngineHookGalAudioSource.pairedVoiceFilePathForResourceId]），在流式落盘的引擎下
 /// 只会拿到前半段——OGG 是分页容器，截断的文件照样能解码出前半段，于是表现为「有音频，
 /// 但莫名少一截」而不是报错。
@@ -2167,7 +2176,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   }
 
   /// 只检查资源文件是否已落盘，不提前做转码。捕获工作台的文本轮询用它把逐行状态从
-  /// “等待音频”推进到 `game_resource`；真正制卡时仍由 [grabPairedVoiceBytes] 读取并转码。
+  /// “等待音频”推进到 `game_resource`；真正制卡时仍由 [grabPairedVoiceAudio] 读取并转码。
   bool hasPairedVoiceCandidate(int textTsMs,
           {int? textEventId, bool allowLatestSessionFallback = true}) =>
       _findPairedVoiceFile(
@@ -2211,7 +2220,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   }
 
   /// 已配对语音资源文件（dump 目录里的 OGG/WAV 原件）的绝对路径。列表行试听直接
-  /// 播原文件（media_kit 原生可解），**不走** [grabPairedVoiceBytes] 的 ffmpeg
+  /// 播原文件（media_kit 原生可解），**不走** [grabPairedVoiceAudio] 的 ffmpeg
   /// 转码链。文件不存在（已被 [pruneVoiceDump] 清理）返回 null。
   String? pairedVoiceFilePathForResourceId(String resourceId) {
     final File? file = _voiceFileForResourceId(resourceId);
@@ -2231,14 +2240,17 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return file.existsSync() ? path : null;
   }
 
-  /// 取这句台词的原始语音字节。单个 xWMA 资源直接返回原文件字节，
-  /// 不做 AAC 二次有损编码；OGG/WAV 与多资源合成仍走既有制卡容器链。
+  /// 取这句台词的原始语音，连同它**实际**所在的容器一起回传。单个 xWMA 资源直接返回
+  /// 原文件字节，不做 AAC 二次有损编码；OGG/WAV 与多资源合成仍走既有制卡容器链。
+  ///
+  /// 容器必须由这里回传而不是由上层反推：本方法有两条出口，容器不同，而两条都压成裸
+  /// `Uint8List` 之后就再也分不出来了（见 [GalMinedAudio] 的说明）。
   ///
   /// BUG-1605：同一句可能有多个角色同时配音，引擎为同一条文本读入多个资源。这里取的是
   /// **全部**（主语音在前），交给 [transcodeVoiceResourcesToMiningAudio] 合成一段音频；
   /// 只取其中一个就等于制卡时丢掉另一个人的声音。哪些资源算「同一句」由归属证据决定，
   /// 见 [pickPairedGameResources] / [_companionVoiceFiles]——纯时间邻近不算。
-  Future<Uint8List?> grabPairedVoiceBytes(
+  Future<GalMinedAudio?> grabPairedVoiceAudio(
     int textTsMs, {
     required String outputExtension,
     int? textEventId,
@@ -2261,13 +2273,18 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (picked.length == 1 &&
         picked.single.path.toLowerCase().endsWith('.xwma')) {
       final Uint8List bytes = await picked.single.readAsBytes();
-      return bytes.isEmpty ? null : bytes;
+      // 原件直返：容器就是 xWMA，不是 outputExtension。
+      return bytes.isEmpty ? null : (bytes: bytes, extension: 'xwma');
     }
-    return transcodeVoiceResourcesToMiningAudio(
+    final Uint8List? transcoded = await transcodeVoiceResourcesToMiningAudio(
       resourcePaths: <String>[for (final File file in picked) file.path],
       tempDir: Directory.systemTemp.path,
       outputExtension: outputExtension,
     );
+    // 转码路径：容器就是 ffmpeg 真正写出的那个，即 outputExtension。
+    return transcoded == null || transcoded.isEmpty
+        ? null
+        : (bytes: transcoded, extension: outputExtension);
   }
 
   /// 轻量清理语音 dump 目录（[_galVoiceDumpDir]）：hook DLL 持续 dump，跨会话会无限增长。删

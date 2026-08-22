@@ -266,7 +266,7 @@ void main() {
 
     final TexthookerLineEntry line = service.entries.single;
     clock = clock.add(const Duration(milliseconds: 2500));
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: line.id,
       sentence: line.text,
       outputExtension: 'aac',
@@ -433,7 +433,7 @@ void main() {
 
     // 制卡也必须直接用这段，不再回头问资源语音。
     engine.pairedRequests.clear();
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: line.id,
       sentence: line.text,
       outputExtension: 'aac',
@@ -827,7 +827,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
       pairedCandidate ? 'fake-$textTsMs.ogg' : null;
 
   @override
-  Future<Uint8List?> grabPairedVoiceBytes(
+  Future<GalMinedAudio?> grabPairedVoiceAudio(
     int textTsMs, {
     required String outputExtension,
     int? textEventId,

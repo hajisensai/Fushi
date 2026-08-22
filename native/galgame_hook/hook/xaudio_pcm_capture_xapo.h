@@ -41,8 +41,21 @@ struct XAudioPcmCaptureView {
 
 // XAudio2 invokes this effect after it has decoded xWMA and before the source
 // reaches the game mix.  Process is real-time safe: fixed virtual memory,
-// atomics and bounded memcpy only.  Publishing into Fushi's shared ring waits
-// until DestroyVoice has synchronously stopped all Process callbacks.
+// atomics and bounded memcpy only.
+//
+// 发布边界不能只有 DestroyVoice。引擎复用 source voice 池、整局不 Destroy 是极常见
+// 做法（每句 Stop/Flush 后换下一段音频接着用同一个 voice），那种引擎在只认 Destroy 的
+// 实现下一整局拿不到任何语音。因此 Stop / FlushSourceBuffers 也是发布边界，各自取走
+// 当前累积的一段并复位。
+//
+// 单生产者纪律（Process 对同一个 voice 由 XAudio2 串行调用）是这里免锁的前提：
+//   * 生产者只往 [written_, written_+n) 写，写完才用 CAS 把 written_ 推到 begin+n；
+//     消费者只读 [0, W)，W 是它读到的 written_ 快照 —— 那段字节必然已经写完。
+//   * 消费者复位（written_=0）后，仍在途的那次 Process 的 CAS 会因为 written_ 不再是
+//     它记下的 begin 而失败，于是那一块被丢弃，绝不会把陈旧长度复活。丢的是边界处
+//     一个音频 pass（~10ms），有界且只发生在换句瞬间。
+//   * 复位必须在调用方**取完字节之后**（TakeUtterance → RingAppend → FinishUtterance），
+//     否则新一段会从偏移 0 覆盖调用方正在读的内容。
 class XAudioPcmCaptureXapo final : public CXAPOBase {
  public:
   static constexpr uint32_t kCapacity = 4u * 1024u * 1024u;
@@ -146,23 +159,24 @@ class XAudioPcmCaptureXapo final : public CXAPOBase {
 
     const uint64_t byte_count =
         static_cast<uint64_t>(source.ValidFrameCount) * block_align_;
-    if (byte_count <= kCapacity) {
-      const LONG64 end = InterlockedAdd64(
-          &written_, static_cast<LONG64>(byte_count));
-      const uint64_t begin =
-          static_cast<uint64_t>(end) - static_cast<uint64_t>(byte_count);
-      if (begin + byte_count <= kCapacity && bytes_ != nullptr) {
-        if (InterlockedCompareExchange64(&first_process_timestamp_ms_, 0, 0) ==
-            0) {
-          InterlockedCompareExchange64(
-              &first_process_timestamp_ms_,
-              static_cast<LONG64>(GetTickCount64()), 0);
-        }
-        std::memcpy(bytes_ + begin, source.pBuffer,
-                    static_cast<size_t>(byte_count));
-      } else {
-        InterlockedExchange(&overflowed_, 1);
+    // 先写字节、后用 CAS 推进长度：消费者读到的 written_ 之下永远是写完的内容。
+    // 直接 InterlockedAdd64 抢位再 memcpy 会让消费者读到还没填完的尾巴。
+    const LONG64 begin = InterlockedCompareExchange64(&written_, 0, 0);
+    if (byte_count <= kCapacity && begin >= 0 &&
+        static_cast<uint64_t>(begin) + byte_count <= kCapacity &&
+        bytes_ != nullptr) {
+      if (InterlockedCompareExchange64(&first_process_timestamp_ms_, 0, 0) ==
+          0) {
+        InterlockedCompareExchange64(
+            &first_process_timestamp_ms_,
+            static_cast<LONG64>(GetTickCount64()), 0);
       }
+      std::memcpy(bytes_ + begin, source.pBuffer,
+                  static_cast<size_t>(byte_count));
+      // CAS 失败 = 消费者在本次 memcpy 期间取走并复位了这一段；丢弃本块，绝不能把
+      // 旧长度写回去（那会让下一段带上一段的尾巴）。
+      InterlockedCompareExchange64(
+          &written_, begin + static_cast<LONG64>(byte_count), begin);
     } else {
       InterlockedExchange(&overflowed_, 1);
     }
@@ -171,6 +185,24 @@ class XAudioPcmCaptureXapo final : public CXAPOBase {
       std::memcpy(destination.pBuffer, source.pBuffer,
                   static_cast<size_t>(byte_count));
     }
+  }
+
+  // 取走当前累积的一段。返回的 view 指向内部缓冲，调用方用完必须调
+  // [FinishUtterance] 复位，才能开始累积下一段。
+  bool TakeUtterance(XAudioPcmCaptureView* capture) const {
+    return GetCapture(capture);
+  }
+
+  // 复位到「可以开始下一段」。必须在调用方取完 [TakeUtterance] 交出的字节之后调用。
+  //
+  // 分类结论一并清掉：它描述的是**刚刚这一段**（由这一段的 SubmitSourceBuffer 观察
+  // 得来），留给下一段就是拿上一句的判决去裁下一句。
+  void FinishUtterance() {
+    InterlockedExchange64(&written_, 0);
+    InterlockedExchange64(&first_process_timestamp_ms_, 0);
+    InterlockedExchange(&overflowed_, 0);
+    InterlockedExchange(&classified_, 0);
+    InterlockedExchange(&role_voice_candidate_, 0);
   }
 
   bool GetCapture(XAudioPcmCaptureView* capture) const {

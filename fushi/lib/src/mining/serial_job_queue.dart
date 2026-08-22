@@ -3,7 +3,7 @@ import 'dart:async';
 /// 串行任务队列：把异步任务排成一条链依次执行，每个任务的返回 future 独立完成。
 ///
 /// 根因修复（BUG-956）：原先两处（GalHookMiningCoordinator.mineLine /
-/// GalHookSessionController._captureAudioBytes）各自手写 `_tail = _tail.then(job)`，
+/// GalHookSessionController._captureLineAudioNow）各自手写 `_tail = _tail.then(job)`，
 /// 但链尾没有 `catchError` 归位——一旦某个任务的**错误处理路径自身抛异常**（日志服务抛、
 /// completer 二次完成的 StateError 等），`.then` 返回的 future 变成 rejected，后续
 /// `_tail.then(onValue)` 的 onValue 永不触发、其 completer 永不完成 → 制卡永久挂起。

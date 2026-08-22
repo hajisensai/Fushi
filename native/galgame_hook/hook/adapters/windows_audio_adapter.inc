@@ -1089,6 +1089,53 @@ void ProcessPendingXAudioCaptureJobs() {
   }
 }
 
+// 把 XAPO 累积的这一段解码 PCM 发布进共享环并记一条 clip，然后复位以累积下一段。
+//
+// 三个发布边界共用这一份实现：Stop / FlushSourceBuffers / DestroyVoice。只认 Destroy
+// 的话，复用 source voice 池、整局不 Destroy 的引擎一整局拿不到任何语音（那是常见做法，
+// 不是边界情况）。返回是否真的发布了字节。
+//
+// 取字节与复位必须严格按 TakeUtterance -> RingAppendVoice -> FinishUtterance 的顺序：
+// 复位会把写游标推回 0，提前复位就会让下一段从偏移 0 覆盖这里正在读的内容。
+bool PublishXAudioPcmUtterance(
+    const fushi_voice_hook::XAudioSourceSnapshot& source,
+    fushi_voice_hook::XAudioPcmCaptureXapo* capture,
+    fushi_voice_hook::XAudioTraceEvent* trace) {
+  if (capture == nullptr || !g_capture_enabled || g_header == nullptr) {
+    return false;
+  }
+  bool published = false;
+  fushi_voice_hook::XAudioPcmCaptureView captured;
+  if (capture->TakeUtterance(&captured) && captured.byte_count != 0 &&
+      captured.byte_count <= g_ring_capacity) {
+    MaybeRecordPcmFormat(captured.sample_rate, captured.channels,
+                         captured.bits_per_sample, captured.is_float);
+    const uint32_t offset =
+        RingAppendVoice(captured.bytes, captured.byte_count);
+    const uint64_t total_at_write = g_header->total_written;
+    const uint64_t playback_timestamp =
+        source.last_start_ms != 0 ? source.last_start_ms
+                                  : captured.first_process_timestamp_ms;
+    RecordVoiceClipFmt(offset, captured.byte_count, source.source,
+                       captured.sample_rate, captured.channels,
+                       captured.bits_per_sample, captured.is_float,
+                       playback_timestamp, total_at_write,
+                       capture->clip_flags());
+    IncrementXAudioCounter(&g_xaudio_capture_counters.pcm_published);
+    SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagPcmPublished);
+    if (trace != nullptr) {
+      trace->detail1 = captured.byte_count;
+      trace->detail2 = captured.channels;
+    }
+    published = true;
+  }
+  // 无论这一段能不能发布都要复位：溢出标记（长 BGM 流写满 4 MiB 就会置上）不复位
+  // 就会一直 latch 住，之后每一段都取不出来。边界本来就是「上一段到此为止」，
+  // 取不出来的那一段本身也已经不可用。
+  capture->FinishUtterance();
+  return published;
+}
+
 HRESULT STDMETHODCALLTYPE Detour_SourceVoiceStart(IXAudio2SourceVoice* self,
                                                    UINT32 Flags,
                                                    UINT32 OperationSet) {
@@ -1173,6 +1220,14 @@ HRESULT STDMETHODCALLTYPE Detour_SourceVoiceStop(IXAudio2SourceVoice* self,
       trace.outcome = static_cast<uint32_t>(
           applied ? fushi_voice_hook::XAudioTraceOutcome::kImmediateApplied
                   : fushi_voice_hook::XAudioTraceOutcome::kStaleInvalidated);
+      // 这一句播完了：立刻发布累积的解码 PCM 并复位。等 DestroyVoice 的话，复用
+      // voice 池的引擎（整局不 Destroy）一段都拿不到，而不复用的引擎在这里发布也
+      // 只是把同一段提早交出去，随后的 Destroy 只会发现无残留可发。
+      if (applied) {
+        PublishXAudioPcmUtterance(
+            source, LookupXAudioPcmCapture(reinterpret_cast<uintptr_t>(self)),
+            &trace);
+      }
     } else {
       PublishDeferredXAudioOperation(staged);
       trace.outcome = static_cast<uint32_t>(
@@ -1210,6 +1265,11 @@ HRESULT STDMETHODCALLTYPE Detour_FlushSourceBuffers(
           fushi_voice_hook::XAudioTraceOutcome::kQueueGenerationAdvanced);
       IncrementXAudioCounter(&g_xaudio_capture_counters.flush_observed);
       SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagFlushObserved);
+      // Flush 丢掉队列里剩下的 buffer，等于这一段到此为止。已经解码出来的部分是
+      // 完整的一段，必须在下一段覆盖之前交出去。
+      PublishXAudioPcmUtterance(
+          source, LookupXAudioPcmCapture(reinterpret_cast<uintptr_t>(self)),
+          &trace);
     } else {
       trace.outcome = static_cast<uint32_t>(
           fushi_voice_hook::XAudioTraceOutcome::kStaleInvalidated);
@@ -1261,27 +1321,10 @@ void STDMETHODCALLTYPE Detour_DestroyVoice(IXAudio2Voice* self) {
   }
   g_orig_DestroyVoice(self);
   if (pcm_capture != nullptr) {
-    fushi_voice_hook::XAudioPcmCaptureView captured;
-    if (registered && g_capture_enabled && g_header != nullptr &&
-        pcm_capture->GetCapture(&captured) && captured.byte_count != 0 &&
-        captured.byte_count <= g_ring_capacity) {
-      MaybeRecordPcmFormat(captured.sample_rate, captured.channels,
-                           captured.bits_per_sample, captured.is_float);
-      const uint32_t offset =
-          RingAppendVoice(captured.bytes, captured.byte_count);
-      const uint64_t total_at_write = g_header->total_written;
-      const uint64_t playback_timestamp =
-          source.last_start_ms != 0 ? source.last_start_ms
-                                    : captured.first_process_timestamp_ms;
-      RecordVoiceClipFmt(offset, captured.byte_count, source.source,
-                         captured.sample_rate, captured.channels,
-                         captured.bits_per_sample, captured.is_float,
-                         playback_timestamp, total_at_write,
-                         pcm_capture->clip_flags());
-      IncrementXAudioCounter(&g_xaudio_capture_counters.pcm_published);
-      SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagPcmPublished);
-      trace.detail1 = captured.byte_count;
-      trace.detail2 = captured.channels;
+    // 末段兜底：Stop/Flush 已经把每句发过了，这里发的是最后那段没走过边界的残留。
+    // DestroyVoice 同步停掉所有 Process 回调后才读，故此处不与生产者并发。
+    if (registered) {
+      PublishXAudioPcmUtterance(source, pcm_capture, &trace);
     }
     pcm_capture->Release();
   }

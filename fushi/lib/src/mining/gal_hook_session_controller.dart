@@ -2640,7 +2640,8 @@ class GalHookSessionController extends ChangeNotifier {
     _captureMemory = const GalCaptureMemory();
   }
 
-  Future<Uint8List?> captureAudioBytes({
+  /// 取这行台词的制卡音频，连同它**实际**所在的容器一起回传（见 [GalMinedAudio]）。
+  Future<GalMinedAudio?> captureLineAudio({
     required String lineId,
     required String sentence,
     required String outputExtension,
@@ -2650,11 +2651,11 @@ class GalHookSessionController extends ChangeNotifier {
         entry.text != sentence ||
         !isLineInCurrentSession(entry)) {
       _markLineAudioMissing(lineId, 'line_context_unavailable');
-      return Future<Uint8List?>.value(null);
+      return Future<GalMinedAudio?>.value(null);
     }
     // 串行化 + 永不毒化（BUG-956）：单次语音采集异常（含事件记录自身抛）不得让后续采集永久挂起。
-    return _audioQueue.enqueue<Uint8List?>(
-      () => _captureAudioBytesNow(
+    return _audioQueue.enqueue<GalMinedAudio?>(
+      () => _captureLineAudioNow(
         lineId: lineId,
         sentence: sentence,
         outputExtension: outputExtension,
@@ -2670,7 +2671,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
-  Future<Uint8List?> _captureAudioBytesNow({
+  Future<GalMinedAudio?> _captureLineAudioNow({
     required String lineId,
     required String sentence,
     required String outputExtension,
@@ -2700,13 +2701,13 @@ class GalHookSessionController extends ChangeNotifier {
     }
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine != null && _isWindows) {
-      final Uint8List? paired = await _waitForPairedResourceAudio(
+      final GalMinedAudio? paired = await _waitForPairedResourceAudio(
         engine,
         lineId: lineId,
         timestamp: timestamp,
         outputExtension: outputExtension,
       );
-      if (paired != null && paired.isNotEmpty) {
+      if (paired != null && paired.bytes.isNotEmpty) {
         _textService.updateLineAudio(
           lineId,
           status: TexthookerLineAudioStatus.encoded,
@@ -2838,7 +2839,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 把一段冻结 PCM 切片转成制卡容器字节，并把该行标成 encoded。
   /// 制卡链路上「有切片了」之后的收尾只有这一份实现（PCM 兜底与手动补录共用）。
-  Future<Uint8List?> _encodeLineSlice({
+  Future<GalMinedAudio?> _encodeLineSlice({
     required String lineId,
     required GalAudioSlice slice,
     required String backend,
@@ -2887,7 +2888,8 @@ class GalHookSessionController extends ChangeNotifier {
         'PCM fallback audio encoded for mining',
         details: <String, Object?>{'lineId': lineId, 'backend': backend},
       );
-      return encoded;
+      // 这条路径的容器就是 pcmSliceToAacBytes 真正写出的那个。
+      return (bytes: encoded, extension: outputExtension);
     } finally {
       try {
         await jobDirectory.delete(recursive: true);
@@ -2897,7 +2899,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 资源 hook 已就绪时，资源文件仍可能比文本环晚几十到几百毫秒落盘。制卡不能在第一次
   /// 未命中后立刻录 Loopback；先给资源一个短暂、有上限的等待窗口，超时后才走既有降级链。
-  Future<Uint8List?> _waitForPairedResourceAudio(
+  Future<GalMinedAudio?> _waitForPairedResourceAudio(
     EngineHookGalAudioSource engine, {
     required String lineId,
     required int timestamp,
@@ -2924,14 +2926,14 @@ class GalHookSessionController extends ChangeNotifier {
           resourceId: resourceId,
         );
       }
-      final Uint8List? bytes = await engine.grabPairedVoiceBytes(
+      final GalMinedAudio? paired = await engine.grabPairedVoiceAudio(
         timestamp,
         outputExtension: outputExtension,
         textEventId: _lineTextEventIdCache[lineId],
         resourceId: resourceId,
         allowLatestSessionFallback: false,
       );
-      if (bytes != null && bytes.isNotEmpty) return bytes;
+      if (paired != null && paired.bytes.isNotEmpty) return paired;
       if (!engine.rawVoiceReady ||
           waitUs <= 0 ||
           elapsed.elapsedMicroseconds >= waitUs) {

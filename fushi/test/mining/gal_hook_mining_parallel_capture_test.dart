@@ -102,7 +102,10 @@ void main() {
       }) async {
         if (!audioStarted.isCompleted) audioStarted.complete();
         await audioRelease.future;
-        return Uint8List.fromList(<int>[1, 2, 3]);
+        return (
+          bytes: Uint8List.fromList(<int>[1, 2, 3]),
+          extension: outputExtension,
+        );
       },
     );
 

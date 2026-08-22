@@ -98,11 +98,7 @@ void main() {
 
   GalHookMiningCoordinator coordinator({
     required bool Function(TexthookerLineEntry entry) validator,
-    Future<Uint8List?> Function({
-      required String lineId,
-      required String sentence,
-      required String outputExtension,
-    })? audio,
+    GalHookAudioCapture? audio,
     Future<GalWindowAnimatedCapture?> Function(
             {required int hwnd, MiningAnimatedFormat format})?
         gif,
@@ -120,7 +116,10 @@ void main() {
               required String sentence,
               required String outputExtension,
             }) async =>
-                Uint8List.fromList(<int>[7, 8, 9]),
+                (
+                  bytes: Uint8List.fromList(<int>[7, 8, 9]),
+                  extension: outputExtension,
+                ),
         captureGif: gif ??
             (
                     {required int hwnd,
@@ -161,7 +160,10 @@ void main() {
         required String outputExtension,
       }) async {
         audioLineIds.add(lineId);
-        return Uint8List.fromList(<int>[audioLineIds.length]);
+        return (
+          bytes: Uint8List.fromList(<int>[audioLineIds.length]),
+          extension: outputExtension,
+        );
       },
     );
 
@@ -192,6 +194,69 @@ void main() {
     expect(repo.payloads.first['audio'], '[sound:word.mp3]');
     expect(repo.payloads.first['image'], '<img src="dictionary.jpg">');
     expect(firstResult.unmappedTokens, isEmpty);
+  });
+
+  test('入卡音频容器取产出层真值，不按 audioResourceId 后缀反推', () async {
+    // 失败场景：这一行已经配对到一个 `.xwma` 资源，但真正交出字节的是回退链
+    // （多资源合成 / loopback / PCM），产物是 AAC。按资源 ID 后缀反推就会把 AAC
+    // 字节写成 `galgame_audio.xwma`——Anki 按扩展名判 MIME，卡片层面再也分不出
+    // 原始资源和回退混音。
+    final TexthookerLineEntry fallbackLine = service.appendLine('回退台詞')!;
+    service.updateLineAudio(
+      fallbackLine.id,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'game_resource',
+      resourceId: 'fake-1.xwma',
+    );
+    final _RecordingRepo fallbackRepo = _RecordingRepo();
+    final GalHookMiningResult fallbackResult = await coordinator(
+      validator: (_) => true,
+      audio: ({
+        required String lineId,
+        required String sentence,
+        required String outputExtension,
+      }) async =>
+          (
+        bytes: Uint8List.fromList(<int>[1, 2, 3]),
+        extension: 'aac',
+      ),
+    ).mineLine(
+      lineId: fallbackLine.id,
+      fields: const <String, String>{'expression': '回退'},
+      compression: MiningMediaCompression.compressed,
+      repo: fallbackRepo,
+    );
+    expect(fallbackResult.success, isTrue);
+    expect(fallbackRepo.contexts.single.sentenceAudioPath, endsWith('.aac'));
+    expect(
+      fallbackRepo.contexts.single.sentenceAudioPath,
+      isNot(endsWith('.xwma')),
+      reason: '资源 ID 是 .xwma，但这次交出的字节是 AAC，容器必须跟字节走',
+    );
+
+    // 反向：这一行**没有**固化任何 `.xwma` 资源 ID，但产出层交出的确实是 xWMA
+    // 原件字节。容器同样必须跟字节走，不能被 outputExtension 抹成 aac。
+    final TexthookerLineEntry originalLine = service.appendLine('原件台詞')!;
+    final _RecordingRepo originalRepo = _RecordingRepo();
+    final GalHookMiningResult originalResult = await coordinator(
+      validator: (_) => true,
+      audio: ({
+        required String lineId,
+        required String sentence,
+        required String outputExtension,
+      }) async =>
+          (
+        bytes: Uint8List.fromList(<int>[4, 5, 6]),
+        extension: 'xwma',
+      ),
+    ).mineLine(
+      lineId: originalLine.id,
+      fields: const <String, String>{'expression': '原件'},
+      compression: MiningMediaCompression.compressed,
+      repo: originalRepo,
+    );
+    expect(originalResult.success, isTrue);
+    expect(originalRepo.contexts.single.sentenceAudioPath, endsWith('.xwma'));
   });
 
   test('GIF failure falls back to PNG and both failures abort', () async {
@@ -542,7 +607,10 @@ void main() {
         required String sentence,
         required String outputExtension,
       }) async =>
-          Uint8List.fromList(<int>[1]),
+          (
+        bytes: Uint8List.fromList(<int>[1]),
+        extension: outputExtension,
+      ),
     ).mineLine(
       lineId: entry.id,
       fields: const <String, String>{'expression': '别名'},

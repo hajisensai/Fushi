@@ -214,7 +214,7 @@ void main() {
     );
 
     // 补录即用户裁决：制卡不得再回头等资源配对把它顶掉。
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: line.id,
       sentence: line.text,
       outputExtension: 'aac',
@@ -375,7 +375,7 @@ class _LatencyEngine extends EngineHookGalAudioSource {
       pairedCandidate ? 'fake-$textTsMs.ogg' : null;
 
   @override
-  Future<Uint8List?> grabPairedVoiceBytes(
+  Future<GalMinedAudio?> grabPairedVoiceAudio(
     int textTsMs, {
     required String outputExtension,
     int? textEventId,

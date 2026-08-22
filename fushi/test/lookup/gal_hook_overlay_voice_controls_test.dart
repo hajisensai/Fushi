@@ -163,7 +163,7 @@ class _VoiceTestEngine extends EngineHookGalAudioSource {
   Future<bool> selectTextThread(int? threadId) async => true;
 
   @override
-  Future<Uint8List?> grabPairedVoiceBytes(
+  Future<GalMinedAudio?> grabPairedVoiceAudio(
     int textTsMs, {
     required String outputExtension,
     int? textEventId,

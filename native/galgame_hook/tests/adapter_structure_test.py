@@ -629,18 +629,58 @@ class AdapterStructureTest(unittest.TestCase):
     def test_hook_worker_contract_gate_covers_the_poll_pump(self) -> None:
         main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         worker = main.split("DWORD WINAPI HookWorker", 1)[1]
-        gate = worker.index("g_header->version != kSharedVersion")
-        pump = worker.index("registry.Poll();")
-        self.assertLess(gate, pump)
-        # Everything between the gate and the pump must be unreachable on a
-        # contract mismatch, or privacy-relevant pumps (loopback policy) run
-        # outside the version gate the contract promises they are behind.
-        self.assertIn("return 1;", worker[gate:pump])
+        # Whitespace-normalised so the assertion pins the control flow, not the
+        # formatter. A bare "there is a return somewhere between gate and pump"
+        # check is vacuous: SignalReady's own early return already satisfies it.
+        compact = " ".join(worker.split())
+        self.assertIn(
+            "g_header->version != kSharedVersion) { return 1; }", compact
+        )
+        self.assertLess(
+            compact.index("g_header->version != kSharedVersion"),
+            compact.index("registry.Poll();"),
+        )
         registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
             encoding="utf-8"
         )
         poll = registry.split("void Poll() {", 1)[1]
         self.assertIn("loopback_.PollPolicy();", poll)
+
+    def test_xapo_pcm_publishes_on_every_utterance_boundary(self) -> None:
+        adapter = (
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
+        ).read_text(encoding="utf-8")
+        xapo = (ROOT / "hook" / "xaudio_pcm_capture_xapo.h").read_text(
+            encoding="utf-8"
+        )
+        # One shared publisher, reached from all three boundaries. Destroy alone
+        # is not a boundary: engines that recycle a source voice pool and never
+        # destroy would hand over nothing for a whole session.
+        self.assertEqual(1, adapter.count("bool PublishXAudioPcmUtterance("))
+        for detour in (
+            "Detour_SourceVoiceStop",
+            "Detour_FlushSourceBuffers",
+            "Detour_DestroyVoice",
+        ):
+            body = adapter.split(detour, 1)[1]
+            for terminator in ("HRESULT STDMETHODCALLTYPE Detour_",
+                               "void STDMETHODCALLTYPE Detour_",
+                               "bool PublishXAudioTrace"):
+                body = body.split(terminator, 1)[0]
+            self.assertIn("PublishXAudioPcmUtterance(", body, detour)
+        # Single-producer publish discipline: bytes are copied first and the
+        # length is advanced by CAS afterwards, so a consumer never reads a tail
+        # that is still being written, and a reset cannot be undone by an
+        # in-flight append.
+        process = xapo.split("STDMETHOD_(void, Process)", 1)[1]
+        self.assertIn("InterlockedCompareExchange64(", process)
+        self.assertNotIn("InterlockedAdd64(", process)
+        # Reset must clear the classifier verdict too: it describes the segment
+        # that just ended, not the next one.
+        finish = xapo.split("void FinishUtterance() {", 1)[1].split("}", 1)[0]
+        for field in ("written_", "first_process_timestamp_ms_", "overflowed_",
+                      "classified_", "role_voice_candidate_"):
+            self.assertIn(field, finish)
 
 
 if __name__ == "__main__":

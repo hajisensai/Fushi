@@ -16,7 +16,7 @@ import 'package:fushi/src/sync/texthooker_ws_client.dart';
 ///  ① attach（捕获窗口 / 引擎重试）此前把 `lunaPcHooks` 硬编码成 false，因为它没有
 ///     exe 路径可喂给 [shouldUseLunaPcHooksForExecutable]——「判据取不到」被写成了
 ///     「判为否」，于是 Unity/Siglus 目标只要不是 Hibiki 亲自拉起就永远抓不到文本。
-///  ② 用户在台词播到中后段才查词/制卡时，[GalHookSessionController.captureAudioBytes]
+///  ② 用户在台词播到中后段才查词/制卡时，[GalHookSessionController.captureLineAudio]
 ///     会提前收束那一行的 loopback 冻结；旧实现收束后就再也不碰它，半句话被永久钉死。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -172,14 +172,14 @@ void main() {
     final String lineId = service.entries.single.id;
 
     // 语音还在播（窗口远未到点）时就查词/制卡——这正是用户报的那一刻。
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: lineId,
       sentence: service.entries.single.text,
       outputExtension: 'wav',
     );
     await waitUntil(() => loopback.backMsCalls.isNotEmpty);
 
-    // 断言全部落在**最终状态**上，不依赖读取时机：captureAudioBytes 内部还有资源等待，
+    // 断言全部落在**最终状态**上，不依赖读取时机：captureLineAudio 内部还有资源等待，
     // 返回时补全可能早已跑完，此刻去读「收束瞬间的时长」拿到的会是补全后的值。
     const int fullBackMs = 400 + 1000; // freezeDelay + _loopbackPreRollMs
     final int flushedBackMs = loopback.backMsCalls.first;
@@ -271,7 +271,7 @@ void main() {
     await waitUntil(() => service.entries.isNotEmpty);
     final String lineId = service.entries.single.id;
 
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: lineId,
       sentence: service.entries.single.text,
       outputExtension: 'wav',
@@ -284,7 +284,7 @@ void main() {
     // 再等几拍，确认没有任何异步回调把这一行翻成 missing。
     await Future<void>.delayed(const Duration(milliseconds: 60));
 
-    // 只断言时长而**不**断言 audioStatus：本装置里 captureAudioBytes 注定产不出字节
+    // 只断言时长而**不**断言 audioStatus：本装置里 captureLineAudio 注定产不出字节
     // （没有真实编码器/资源），它自己那条失败路径会把行标成 missing，与补全无关。
     // 「补全取空有没有毁掉已冻结的那段」的真正证据就是时长原封不动。
     // ±1ms 是 PCM 字节数两次整除的舍入（backMs→bytes→durationMs），不是长度变化。
@@ -372,7 +372,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
       null;
 
   @override
-  Future<Uint8List?> grabPairedVoiceBytes(
+  Future<GalMinedAudio?> grabPairedVoiceAudio(
     int textTsMs, {
     required String outputExtension,
     int? textEventId,
@@ -415,7 +415,7 @@ class _ProportionalLoopback extends LoopbackGalAudioSource {
   _ProportionalLoopback({this.nullWhenBackMs});
 
   /// 恰好这个回取窗口返回 null。按 **backMs 值**而不是调用序号来定位，才能精确命中
-  /// 「补全那一次」——captureAudioBytes 内部还会为别的用途取音频，按序号会误伤。
+  /// 「补全那一次」——captureLineAudio 内部还会为别的用途取音频，按序号会误伤。
   final int? nullWhenBackMs;
 
   final List<int> backMsCalls = <int>[];

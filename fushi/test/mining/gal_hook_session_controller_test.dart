@@ -86,7 +86,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('captureAudioBytes asks paired voice even without a text timestamp',
+  test('captureLineAudio asks paired voice even without a text timestamp',
       () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -122,13 +122,13 @@ void main() {
       isTrue,
     );
     final TexthookerLineEntry entry = service.appendLine('siglus line')!;
-    final Uint8List? bytes = await controller.captureAudioBytes(
+    final GalMinedAudio? audio = await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
     );
 
-    expect(bytes, <int>[1, 2, 3, 4]);
+    expect(audio?.bytes, <int>[1, 2, 3, 4]);
     expect(engine.pairedTimestamps, <int>[0]);
     expect(
         service.entries.single.audioStatus, TexthookerLineAudioStatus.encoded);
@@ -177,13 +177,13 @@ void main() {
       isTrue,
     );
     final TexthookerLineEntry entry = service.appendLine('late resource line')!;
-    final Uint8List? bytes = await controller.captureAudioBytes(
+    final GalMinedAudio? audio = await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
     );
 
-    expect(bytes, <int>[9, 8, 7]);
+    expect(audio?.bytes, <int>[9, 8, 7]);
     expect(engine.pairedTimestamps, <int>[0, 0]);
     expect(service.entries.single.audioBackend, 'game_resource');
     expect(
@@ -239,13 +239,13 @@ void main() {
       GalAudioFallbackPolicy.resourceOnly,
     );
 
-    final Uint8List? bytes = await controller.captureAudioBytes(
+    final GalMinedAudio? audio = await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
     );
 
-    expect(bytes, isNull);
+    expect(audio?.bytes, isNull);
     expect(service.entries.single.audioBackend, 'game_resource');
     expect(
       service.entries.single.fallbackReason,
@@ -306,13 +306,13 @@ void main() {
     final TexthookerLineEntry entry = service.appendLine('無声のモノローグ')!;
     controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
 
-    final Uint8List? bytes = await controller.captureAudioBytes(
+    final GalMinedAudio? audio = await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
     );
 
-    expect(bytes, isNull, reason: '干净源策略下不得拿混音冒充这句的语音');
+    expect(audio?.bytes, isNull, reason: '干净源策略下不得拿混音冒充这句的语音');
     expect(
       loopback.grabRecentCalls,
       0,
@@ -692,13 +692,13 @@ void main() {
     expect(service.entries, hasLength(1));
     final TexthookerLineEntry entry = service.entries.single;
 
-    final Uint8List? bytes = await controller.captureAudioBytes(
+    final GalMinedAudio? audio = await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
     );
 
-    expect(bytes, isNull);
+    expect(audio?.bytes, isNull);
     expect(loopback.grabRecentCalls, 0, reason: '策略仍然禁止取整机混音');
     expect(
       service.entries.single.fallbackReason,
@@ -1056,7 +1056,7 @@ void main() {
     expect(engine.utteranceTimestamps, isEmpty,
         reason: 'failed engine PCM readiness must remain authoritative');
 
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: service.entries.single.id,
       sentence: service.entries.single.text,
       outputExtension: 'aac',
@@ -1138,12 +1138,12 @@ void main() {
     );
 
     final TexthookerLineEntry historicalLine = service.entries.single;
-    final Uint8List? historicalAudio = await controller.captureAudioBytes(
+    final GalMinedAudio? historicalAudio = await controller.captureLineAudio(
       lineId: historicalLine.id,
       sentence: historicalLine.text,
       outputExtension: 'aac',
     );
-    expect(historicalAudio, <int>[7, 8, 9]);
+    expect(historicalAudio?.bytes, <int>[7, 8, 9]);
     expect(
       engine.pairedResourceIds,
       <String?>['fake-609653421.ogg'],
@@ -1374,7 +1374,7 @@ void main() {
     expect(entry.audioBackend, 'engine_pcm');
     expect(engine.utteranceTimestamps, <int>[654321]);
 
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
@@ -1421,14 +1421,14 @@ void main() {
       isTrue,
     );
     final TexthookerLineEntry entry = service.appendLine('siglus line')!;
-    await controller.captureAudioBytes(
+    await controller.captureLineAudio(
       lineId: entry.id,
       sentence: entry.text,
       outputExtension: 'aac',
     );
 
     expect(engine.grabFallbackFlags, isNotEmpty,
-        reason: 'mine 路径应真的调用了 grabPairedVoiceBytes');
+        reason: 'mine 路径应真的调用了 grabPairedVoiceAudio');
     expect(
       engine.grabFallbackFlags.every((bool f) => f == false),
       isTrue,
@@ -2675,7 +2675,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   }
 
   @override
-  Future<Uint8List?> grabPairedVoiceBytes(
+  Future<GalMinedAudio?> grabPairedVoiceAudio(
     int textTsMs, {
     required String outputExtension,
     int? textEventId,
@@ -2687,7 +2687,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     pairedResourceIds.add(resourceId);
     grabFallbackFlags.add(allowLatestSessionFallback);
     if (pairedTimestamps.length < pairedReadyAfterCalls) return null;
-    return pairedBytes;
+    return (bytes: pairedBytes, extension: outputExtension);
   }
 
   @override
