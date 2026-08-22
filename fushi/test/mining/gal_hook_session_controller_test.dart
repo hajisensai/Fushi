@@ -339,6 +339,293 @@ void main() {
     endpoints.dispose();
   });
 
+  test(
+      'only full policy owns process-loopback lifecycle in a live text-only session',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\sgre\sgre_steam.exe')).launched,
+      isTrue,
+    );
+    expect(loopback.startCalls, 1);
+    expect(
+      engine.rememberedNativePolicies,
+      <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.allow],
+      reason: '只有 full 会话可在 injector start 前记住 allow',
+    );
+    expect(
+      controller.state.audioBackend,
+      GalHookAudioBackend.systemLoopback,
+    );
+
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.deny);
+    expect(loopback.stopCalls, 1, reason: 'full -> cleanOnly 必须立即停掉活跃回环');
+    expect(controller.state.audioBackend, GalHookAudioBackend.none);
+    final TexthookerLineEntry line = service.appendLine('回环禁止时不得录音')!;
+    expect(await controller.startLineRecapture(line.id), isFalse);
+    expect(loopback.startCalls, 1, reason: '手动补录也不得绕过 cleanOnly 重启 WASAPI');
+
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.full);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.allow);
+    expect(loopback.startCalls, 2,
+        reason: 'cleanOnly -> full 在 text-only 活跃会话才按需重启');
+    expect(
+      controller.state.audioBackend,
+      GalHookAudioBackend.systemLoopback,
+    );
+
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.resourceOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.deny);
+    expect(loopback.stopCalls, 2, reason: 'full -> resourceOnly 同样必须停掉回环');
+    expect(controller.state.audioBackend, GalHookAudioBackend.none);
+    expect(await controller.startLineRecapture(line.id), isFalse);
+    expect(loopback.startCalls, 2);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('clean switch reaches an engine while injection is still in flight',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final Completer<PcmFormat?> startGate = Completer<PcmFormat?>();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      startGate: startGate,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    final Future<GalHookLaunchResult> launch =
+        controller.launchGame(r'D:\sgre\sgre_steam.exe');
+    for (var i = 0; i < 20 && engine.rememberedNativePolicies.isEmpty; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(
+        engine.rememberedNativePolicies.single, GalNativeLoopbackPolicy.allow);
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests, contains(GalNativeLoopbackPolicy.deny));
+    startGate.complete(null);
+    expect((await launch).launched, isTrue);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('full to clean denies native capture without stopping engine PCM',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine =
+        _FakeEngineSource(pairedBytes: Uint8List(0));
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\sgre\sgre_steam.exe')).launched,
+      isTrue,
+    );
+    expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    expect(engine.nativePolicyRequests.last, GalNativeLoopbackPolicy.deny);
+    expect(engine.stopCalls, 0,
+        reason: 'policy controls capture only; engine/playback stays alive');
+    expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('remembered clean policies never start resource-mode loopback',
+      () async {
+    for (final GalAudioFallbackPolicy policy in <GalAudioFallbackPolicy>[
+      GalAudioFallbackPolicy.cleanOnly,
+      GalAudioFallbackPolicy.resourceOnly,
+    ]) {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        rawReady: true,
+      );
+      final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => true,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+        }) =>
+            engine,
+        loopbackSourceFactory: () => loopback,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      controller.attachCaptureMemory(
+        load: (String gameKey) => GalCaptureMemory(audioFallbackPolicy: policy),
+        save: (String gameKey, GalCaptureMemory memory) {},
+      );
+
+      expect(
+        (await controller.launchGame(r'D:\sgre\sgre_steam.exe')).launched,
+        isTrue,
+      );
+      expect(controller.state.audioFallbackPolicy, policy);
+      expect(
+        engine.rememberedNativePolicies,
+        <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
+        reason: '$policy 必须在 injector start 前把 injected loopback 置 deny',
+      );
+      expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
+      expect(
+        loopback.startCalls,
+        0,
+        reason: '$policy 必须在 factory/start 之前就截断 process loopback',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    }
+  });
+
+  test('attach remembers clean policy before engine start', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+    );
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    await controller.debugWaitForAudioFallbackPolicy();
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 1, pid: 2468, title: 'SGRE'),
+    );
+    expect(
+      engine.rememberedNativePolicies,
+      <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('clean-source policy still reports a missed utterance as a miss',
       () async {
     // 「有配音但漏抓」在 cleanOnly 下必须仍然报疑似漏抓：原件通道是活的、这行还挂着
@@ -2058,7 +2345,7 @@ void _bug950Guard() {
         loopbackSourceFactory: _FakeLoopbackSource.new,
         windowListLoader: () async => const <ExternalWindowInfo>[],
         windowPollAttempts: 1,
-        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 100)],
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
       );
@@ -2085,8 +2372,16 @@ void _bug950Guard() {
         contains('engine.retry_scheduled'),
       );
 
+      controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+      await controller.debugWaitForAudioFallbackPolicy();
+
       // 退避到期后自动重试，成功即把音源升级回引擎，不再停在整机混音。
       await waitForEvent(controller, 'engine.attach_recovered');
+      expect(
+        recovered.rememberedNativePolicies,
+        <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
+        reason: 'retry 必须读取切换后的策略，不能复用首次 attach 的 allow',
+      );
       expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
       expect(controller.state.phase, GalHookSessionPhase.waitingSignals);
       expect(
@@ -2302,6 +2597,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     this.utteranceSlice,
     this.failure = const GalHookInjectorDiagnostics(),
     this.launched,
+    this.startGate,
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Uint8List pairedBytes;
@@ -2319,6 +2615,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   /// injector 已 `CreateProcess` 出来的游戏 PID；null 模拟不回报该行的旧 helper。
   final int? launched;
+  final Completer<PcmFormat?>? startGate;
   final List<int> pairedTimestamps = <int>[];
   final List<int?> pairedEventIds = <int?>[];
   final List<int?> findEventIds = <int?>[];
@@ -2328,6 +2625,10 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   int stopCalls = 0;
   int readinessRefreshCalls = 0;
   int _pollCalls = 0;
+  final List<GalNativeLoopbackPolicy> rememberedNativePolicies =
+      <GalNativeLoopbackPolicy>[];
+  final List<GalNativeLoopbackPolicy> nativePolicyRequests =
+      <GalNativeLoopbackPolicy>[];
 
   @override
   int? get gamePid => 4242;
@@ -2348,7 +2649,22 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   bool get pcmReady => !rawReady && audioFormat != null;
 
   @override
-  Future<PcmFormat?> start() async => audioFormat;
+  Future<PcmFormat?> start() async =>
+      startGate == null ? audioFormat : await startGate!.future;
+
+  @override
+  void rememberNativeLoopbackPolicy(GalNativeLoopbackPolicy policy) {
+    rememberedNativePolicies.add(policy);
+    super.rememberNativeLoopbackPolicy(policy);
+  }
+
+  @override
+  Future<bool> requestNativeLoopbackPolicy(
+    GalNativeLoopbackPolicy policy,
+  ) async {
+    nativePolicyRequests.add(policy);
+    return true;
+  }
 
   @override
   Future<bool> refreshReadiness() async {

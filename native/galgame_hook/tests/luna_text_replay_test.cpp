@@ -17,12 +17,12 @@ int main(int argc, char** argv) {
   {
     const std::wstring escaped =
         L"first\\nsecond\u00a5nthird\uffe5nfourth\\r\\nfifth%r"
-        L"#ff8A00;\u30b3\u30b9\u30d7\u30ec";
+        L"#ff8A00;\u30b3\u30b9\u30d7\u30ec%p-1;\u2500%p;\u2500";
     const std::wstring normalized =
         fushi_voice_hook::LunaNormalizeMagesControls(
             escaped.c_str(), static_cast<int>(escaped.size()), true);
     if (normalized !=
-        L"first\nsecond\nthird\nfourth\nfifth\n\u30b3\u30b9\u30d7\u30ec") {
+        L"first\nsecond\nthird\nfourth\nfifth\n\u30b3\u30b9\u30d7\u30ec\u2500\u2500") {
       return 49;
     }
     if (fushi_voice_hook::LunaNormalizeMagesControls(
@@ -30,7 +30,8 @@ int main(int argc, char** argv) {
         escaped) {
       return 50;
     }
-    const std::wstring malformed = L"literal%text #ff8G00;kept #12345;kept";
+    const std::wstring malformed =
+        L"literal%text #ff8G00;kept #12345;kept %p-;kept";
     if (fushi_voice_hook::LunaNormalizeMagesControls(
             malformed.c_str(), static_cast<int>(malformed.size()), true) !=
         malformed) {

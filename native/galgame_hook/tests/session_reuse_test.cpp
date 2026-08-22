@@ -21,9 +21,31 @@ int main() {
   header.text_region_offset = kText;
   header.clip_region_offset = kClip;
   header.hooked = 1;
+  const uint32_t deny_seq =
+      fushi_voice_hook::PublishNativeLoopbackRequest(
+          &header, fushi_voice_hook::kNativeLoopbackDeny);
+  assert(deny_seq == 1);
+  const auto deny = fushi_voice_hook::ReadNativeLoopbackRequest(&header);
+  assert(fushi_voice_hook::PublishNativeLoopbackApplied(
+      &header, deny, fushi_voice_hook::kNativeLoopbackStateStopped));
 
   assert(InspectMappingSession(false, &header, kRing, kText, kClip) ==
          MappingSessionAction::kInitializeFresh);
+  assert(InspectMappingSession(true, &header, kRing, kText, kClip) ==
+         MappingSessionAction::kReuseReady);
+
+  // Reconnect must not memset a live mapping. A real policy edge advances the
+  // request while preserving the old ack until the injected DLL applies it;
+  // neither condition makes the audio/text session stale.
+  const uint32_t allow_seq =
+      fushi_voice_hook::PublishNativeLoopbackRequest(
+          &header, fushi_voice_hook::kNativeLoopbackAllow);
+  assert(allow_seq == 2);
+  assert(fushi_voice_hook::AtomicLoadShared32(
+             &header.native_loopback_applied_seq) == deny_seq);
+  assert(fushi_voice_hook::AtomicLoadShared32(
+             &header.native_loopback_state) ==
+         fushi_voice_hook::kNativeLoopbackStateStopped);
   assert(InspectMappingSession(true, &header, kRing, kText, kClip) ==
          MappingSessionAction::kReuseReady);
 

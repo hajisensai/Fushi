@@ -157,9 +157,17 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
   s.raw_voice_ready = fushi_voice_hook::HasReadyGameResourceAudio(
       h->reserved_luna, h->hook_diagnostics,
-      h->reserved_hook_diagnostics);
+      h->reserved_hook_diagnostics, h->xaudio_diagnostics);
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
   s.text_lane_overflows = static_cast<int64_t>(h->text_lane_overflow_count);
+  s.native_loopback_requested =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_requested);
+  s.native_loopback_request_seq =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_request_seq);
+  s.native_loopback_state =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_state);
+  s.native_loopback_applied_seq =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_applied_seq);
   // 格式就绪（hook 已填有效格式）才算 ok；hooked 但格式全 0（还没收到语音）时 ok=false。
   s.ok = s.hooked && s.sample_rate > 0 && s.channels > 0 && s.bits_per_sample > 0;
   return s;
@@ -297,6 +305,20 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
     if (c->seq == seq && c->byte_len != 0 && c->byte_len <= cap) {
       valid.push_back(c);
     }
+  }
+  const bool classifier_active = std::any_of(
+      valid.begin(), valid.end(), [](const fushi_voice_hook::VoiceClip* clip) {
+        return (clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0;
+      });
+  if (classifier_active) {
+    valid.erase(
+        std::remove_if(
+            valid.begin(), valid.end(),
+            [](const fushi_voice_hook::VoiceClip* clip) {
+              return (clip->pad & fushi_voice_hook::kVoiceClipFlagRoleVoice) ==
+                     0;
+            }),
+        valid.end());
   }
   return valid;
 }
@@ -880,6 +902,15 @@ VoiceHookStatus VoiceHookReader::Status() {
   return StatusFromHeaderLocked(st.header);
 }
 
+uint32_t VoiceHookReader::RequestNativeLoopbackPolicy(bool allow) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  if (!ProtocolMatches(st.header)) return 0;
+  return fushi_voice_hook::PublishNativeLoopbackRequest(
+      st.header, allow ? fushi_voice_hook::kNativeLoopbackAllow
+                       : fushi_voice_hook::kNativeLoopbackDeny);
+}
+
 VoiceHookStatus VoiceHookReader::GrabRecent(int back_ms,
                                             std::vector<uint8_t>& out) {
   out.clear();
@@ -1156,6 +1187,15 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   if (valid.empty()) {
     return VoiceHookStatus{};
   }
+  // CollectValidClipsLocked 在分类器生效后已经只保留角色语音。此时“最近的已分类
+  // 角色段”本身就是比能量跳变更强的选轨证据：SGRE 的 xWMA 会在文本前约 156ms
+  // 一次性提交整句，环形里的 PCM 虽可完整读取，但能量代理在个别整句上会返回 0，
+  // 旧逻辑于是把已经明确标成 role voice 的轨当成“选不出源”。未启用分类器的引擎
+  // 仍完整保留原能量自动选源行为。
+  const bool role_classifier_active = std::any_of(
+      valid.begin(), valid.end(), [](const fushi_voice_hook::VoiceClip* clip) {
+        return (clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0;
+      });
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(h) + sizeof(SharedHeader);
 
@@ -1166,10 +1206,15 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     filter_by_src = true;
     sel_src = target_source;
   } else {
-    // 每源：说话前窗口 [ts-900,ts-250] 与文本时刻窗口 [ts-150,ts+450] 的平均能量。
+    // 每源：说话前窗口 [ts-900,ts-251] 与文本时刻窗口 [ts-250,ts+450] 的平均能量。
+    // SGRE 的角色 xWMA 实测会比 UserHook1 文本早约 156ms 开始播放；旧的 -150ms
+    // 前界会仅差数毫秒选不出已经通过 role-voice 分类器的源。这里与整句默认
+    // ts-200 回看窗口留出调度抖动余量，同时保持两段采样窗口不重叠。
     std::map<uint64_t, double> e_before, e_at;
     std::map<uint64_t, int> n_before, n_at;
     bool any_energy = false;
+    uint64_t nearest_role_src = 0;
+    int64_t nearest_role_distance = INT64_MAX;
     for (const auto* c : valid) {
       bool excluded = false;
       for (const uint64_t ex : exclude_sources) {
@@ -1188,11 +1233,18 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
       any_energy = true;
       const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                         static_cast<int64_t>(ts_ms);
-      if (d >= -900 && d <= -250) {
+      if (role_classifier_active && d >= -250 && d <= 450) {
+        const int64_t distance = d < 0 ? -d : d;
+        if (distance < nearest_role_distance) {
+          nearest_role_distance = distance;
+          nearest_role_src = c->source_ptr;
+        }
+      }
+      if (d >= -900 && d <= -251) {
         e_before[c->source_ptr] += e;
         n_before[c->source_ptr]++;
       }
-      if (d >= -150 && d <= 450) {
+      if (d >= -250 && d <= 450) {
         e_at[c->source_ptr] += e;
         n_at[c->source_ptr]++;
       }
@@ -1214,7 +1266,10 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
         sel_src = kv.first;
       }
     }
-    if (any_energy) {
+    if (sel_src == 0 && role_classifier_active) {
+      sel_src = nearest_role_src;
+    }
+    if (any_energy || role_classifier_active) {
       if (sel_src == 0) {
         return VoiceHookStatus{};  // 有能量数据却选不出源（全被排除）——交调用方回退
       }
