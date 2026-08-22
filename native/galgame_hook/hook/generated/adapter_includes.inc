@@ -6,3 +6,4 @@
 #include "../adapters/malie_adapter.inc"
 #include "../adapters/qlie_adapter.inc"
 #include "../adapters/elf_ai6_adapter.inc"
+#include "../adapters/sgre_adapter.inc"

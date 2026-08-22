@@ -568,6 +568,43 @@ class AdapterStructureTest(unittest.TestCase):
             "Only the explicit force-direct launch may set SteamAppId.",
         )
 
+    def test_sgre_resource_logic_is_profile_scoped(self) -> None:
+        shared_paths = (
+            ROOT / "hook" / "dll_main.cpp",
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc",
+            ROOT / "hook" / "xwma_resource.h",
+        )
+        for path in shared_paths:
+            source = path.read_text(encoding="utf-8").lower()
+            self.assertNotIn("sgre", source, path.name)
+            self.assertNotIn("voice_body.bin", source, path.name)
+
+        adapter = (
+            ROOT / "hook" / "adapters" / "sgre_adapter.inc"
+        ).read_text(encoding="utf-8")
+        profile = (
+            ROOT / "hook" / "adapters" / "sgre_profile.h"
+        ).read_text(encoding="utf-8")
+        generic = (
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn("MatchesSgreProfile", adapter)
+        self.assertIn("RegisterXAudioCompressedResourceHandler", adapter)
+        self.assertIn("FindSgreVoiceArchiveResourceParts", adapter)
+        self.assertIn("kSgreExecutableSha256", profile)
+        self.assertIn("HasXAudioCompressedResourceHandler", generic)
+        self.assertFalse((ROOT / "hook" / "xaudio_pcm_capture_xapo.h").exists())
+        self.assertNotIn("700", generic)
+
+    def test_hook_worker_rejects_unknown_ipc_before_adapter_poll(self) -> None:
+        source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        rejection = source.index(
+            "g_header == nullptr || g_header->magic != kSharedMagic"
+        )
+        polling = source.index("while (!g_stop)")
+        self.assertLess(rejection, polling)
+        self.assertIn("return 1;", source[rejection:polling])
+
 
 if __name__ == "__main__":
     unittest.main()

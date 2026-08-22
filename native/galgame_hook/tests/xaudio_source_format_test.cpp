@@ -11,7 +11,6 @@
 
 #include "xaudio_source_format.h"
 #include "xaudio_trace.h"
-#include "sgre_voice_archive.h"
 #include "xwma_resource.h"
 
 namespace {
@@ -43,18 +42,6 @@ std::vector<uint8_t> MakeMonoFormat() {
 }  // namespace
 
 int main() {
-  const uint8_t archive_bytes[] = {0x10, 0x20, 0x30, 0x40, 0x20, 0x30, 0x50};
-  const uint8_t payload_bytes[] = {0x20, 0x30, 0x50};
-  uint64_t payload_offset = 0;
-  assert(fushi_voice_hook::FindSgrePayloadOffsetInBytes(
-      archive_bytes, sizeof(archive_bytes), payload_bytes,
-      sizeof(payload_bytes), &payload_offset));
-  assert(payload_offset == 4);
-  const uint8_t absent_bytes[] = {0x30, 0x40, 0x50};
-  assert(!fushi_voice_hook::FindSgrePayloadOffsetInBytes(
-      archive_bytes, sizeof(archive_bytes), absent_bytes,
-      sizeof(absent_bytes), &payload_offset));
-
   WAVEFORMATEX wmaudio2 = {};
   wmaudio2.wFormatTag = WAVE_FORMAT_WMAUDIO2;
   wmaudio2.nChannels = 1;
@@ -83,11 +70,6 @@ int main() {
   assert(std::memcmp(xwma.data() + 58, "data", 4) == 0);
   assert(std::memcmp(xwma.data() + 66, original_wma,
                      sizeof(original_wma)) == 0);
-  assert(fushi_voice_hook::IsSgreRoleWmaSubmission(
-      wmaudio2_format, 3, 44100u * 2u));
-  assert(!fushi_voice_hook::IsSgreRoleWmaSubmission(
-      wmaudio2_format, 3, 44100u));
-
   const std::vector<uint8_t> format_bytes = MakeMonoFormat();
   const auto* wave =
       reinterpret_cast<const WAVEFORMATEX*>(format_bytes.data());

@@ -341,17 +341,10 @@ struct VoiceClip {
   uint32_t channels;
   uint32_t bits_per_sample;
   uint32_t is_float;
-  uint32_t pad;               // VoiceClipFlags；复用原保留位，结构尺寸/协议布局不变
+  uint32_t pad;               // 保留位；必须写 0，结构尺寸/协议布局不变
   uint64_t source_ptr;        // 该段所属 source voice / DS buffer 指针：区分语音源 vs BGM 源，
                               // 供 host 把同一源的连续段合成整句语音（而非只取一个 buffer 片段）
 };
-
-// VoiceClip::pad flags.  A classifier-aware engine adapter marks every clip it
-// classifies, including rejected non-voice clips.  Once the host observes that
-// capability in a session it consumes only kVoiceClipFlagRoleVoice clips;
-// adapters that do not classify keep the legacy all-clips behaviour.
-constexpr uint32_t kVoiceClipFlagClassified = 1u << 0;
-constexpr uint32_t kVoiceClipFlagRoleVoice = 1u << 1;
 
 struct UnityVoiceEvent {
   volatile uint64_t seq;   // 全局序号，最后写；0=槽尚未完成
