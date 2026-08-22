@@ -96,6 +96,39 @@ void main() {
     if (testRoot.existsSync()) await testRoot.delete(recursive: true);
   });
 
+  test('audio media extension follows captured RIFF/XWMA bytes', () {
+    final Uint8List xwma = Uint8List.fromList(<int>[
+      0x52,
+      0x49,
+      0x46,
+      0x46,
+      0,
+      0,
+      0,
+      0,
+      0x58,
+      0x57,
+      0x4d,
+      0x41,
+    ]);
+    expect(
+      galHookMinedAudioExtension(fallback: 'aac', bytes: xwma),
+      'xwma',
+    );
+  });
+
+  test('audio media extension keeps fallback for transcoded bytes', () {
+    final Uint8List aac = Uint8List.fromList(<int>[0xff, 0xf1, 0x50, 0x80]);
+    expect(
+      galHookMinedAudioExtension(fallback: 'aac', bytes: aac),
+      'aac',
+    );
+    expect(
+      galHookMinedAudioExtension(fallback: 'aac', bytes: null),
+      'aac',
+    );
+  });
+
   GalHookMiningCoordinator coordinator({
     required bool Function(TexthookerLineEntry entry) validator,
     Future<Uint8List?> Function({

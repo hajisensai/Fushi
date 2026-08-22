@@ -45,8 +45,7 @@ class UpdateDownloadDiagnostics {
     required this.receivedBytes,
     required this.totalBytes,
     required this.bytesPerSecond,
-    required this.resumed,
-    required this.restartedFromZero,
+    required this.resumeOutcome,
   });
 
   final String sourceUrl;
@@ -54,8 +53,10 @@ class UpdateDownloadDiagnostics {
   final int receivedBytes;
   final int? totalBytes;
   final double? bytesPerSecond;
-  final bool resumed;
-  final bool restartedFromZero;
+
+  /// 本次下载相对已有 `.part` 断点的处置。[DownloadResumeOutcome.none] 表示
+  /// 「没有可报的续传事实」（全新下载 / 首响应未到），UI 据此不渲染续传行。
+  final DownloadResumeOutcome resumeOutcome;
 }
 
 final Map<String, Future<File>> _activeUpdateDownloads =
@@ -731,8 +732,10 @@ Future<File> _downloadCandidateSingle({
   final Stopwatch diagnosticsStopwatch = Stopwatch()..start();
   var lastDiagnosticsElapsed = -_kDownloadDiagnosticsInterval.inMilliseconds;
   var speedStartBytes = resumeOffset;
-  var resumed = false;
-  var restartedFromZero = restarted;
+  // 首响应到达前结论未定：先按 none 报（UI 不渲染续传行），onMeta 到了再改写。
+  var resumeOutcome = restarted
+      ? DownloadResumeOutcome.restartedFromZero
+      : DownloadResumeOutcome.none;
 
   void reportDiagnostics({
     required int receivedBytes,
@@ -759,8 +762,7 @@ Future<File> _downloadCandidateSingle({
           receivedBytes: receivedBytes,
           elapsed: diagnosticsStopwatch.elapsed,
         ),
-        resumed: resumed,
-        restartedFromZero: restartedFromZero,
+        resumeOutcome: resumeOutcome,
       ),
     );
   }
@@ -814,9 +816,10 @@ Future<File> _downloadCandidateSingle({
     firstByteTimeout: _kFirstByteTimeout,
     bodyTimeout: _kPerAttemptTimeout,
     onMeta: (ResumableDownloadMetaInfo info) {
-      resumed = info.resumed;
-      restartedFromZero = info.restartedFromZero;
-      if (info.restartedFromZero) speedStartBytes = 0;
+      resumeOutcome = info.resumeOutcome;
+      if (info.resumeOutcome == DownloadResumeOutcome.restartedFromZero) {
+        speedStartBytes = 0;
+      }
       pendingMetadataWrite = persistStagingMetadata(info);
       final int? total = asset.sizeBytes ?? info.totalBytes;
       if (total != null && total > 0) {
@@ -1038,8 +1041,9 @@ Future<File?> _downloadSegmented({
           receivedBytes: receivedTotal,
           elapsed: stopwatch.elapsed,
         ),
-        resumed: false,
-        restartedFromZero: false,
+        // 分片路径开工先 _cleanupSegmentFiles，跨次续传在这条路上不存在（段级续传
+        // 只在本次运行内的重试里生效），且门控要求 resumeOffset == 0 —— 恒 none。
+        resumeOutcome: DownloadResumeOutcome.none,
       ),
     );
   }

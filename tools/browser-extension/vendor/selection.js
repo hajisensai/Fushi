@@ -26,8 +26,28 @@ window.fushiSelection = {
         return JAPANESE_RANGES.some(r => codePoint >= r[0] && codePoint <= r[1]);
     },
 
+    // BUG-1773：空白不是「词边界」的同义词，这里必须拆成两个谓词。
+    //
+    // isScanBoundary 回答的是「这个字符能不能是一个词的一部分」——点击命中判定
+    // （点空格不查词）和词首回退用它，空白当然算边界。
+    //
+    // 但**前向扫描**问的是另一个问题：「查询串该在哪停」。空格分词语言里空格是
+    // 词**间连接符**而非终点，把它当终点就等于把 `listen to` / `look forward to`
+    // 这类短语词条整类排除在匹配之外。引擎本来就按空格分词生成三级候选
+    // （`listen to music` / `listen to` / `listen`，禁止在单词中间切，见
+    // native/fushidicts/fushidicts_src/scan/word_scan.cpp），单词自己不会被挤掉。
+    //
+    // 故：isScanStop = 真正的扫描终点（标点），**不含空白**；空白能否跨过去由
+    // selectFromPosition 的桥接规则单独决定。与 reader_selection_scripts.dart
+    // 的同名谓词逐条对齐（阅读器版多一条「只扫日文」门控）。
+    isScanWhitespace(char) {
+        return /^[\s　]$/.test(char);
+    },
+    isScanStop(char) {
+        return this.scanDelimiters.includes(char);
+    },
     isScanBoundary(char) {
-        return /^[\s　]$/.test(char) || this.scanDelimiters.includes(char);
+        return this.isScanWhitespace(char) || this.isScanStop(char);
     },
 
     // BUG-1645：元素是否「同一行内连排」的 inline 盒。块级/列表项/表格单元/flex/grid
@@ -379,7 +399,18 @@ window.fushiSelection = {
 
             while (scanOffset < content.length && text.length < maxLength) {
                 const char = content[scanOffset];
-                if (this.isScanBoundary(char)) break;
+                if (this.isScanStop(char)) break;
+                // BUG-1773：空白只当**同一文本节点内**的词间连接符跨过去，且只跨
+                // 一个：左边必须已有本节点扫入的内容（`scanOffset === start` 即本节点
+                // 开头，不桥接），右边必须紧跟一个可扫字符。于是本节点开头/末尾的
+                // 空白、连续空白、空白后接标点一律终止；跨节点续扫走下面的 walker
+                // 分支（那里由 crossesRenderBoundary 判渲染断点），新节点开头的空白
+                // 同样不吃。
+                if (this.isScanWhitespace(char)) {
+                    const nextChar = content[scanOffset + 1];
+                    if (scanOffset === start || nextChar === undefined ||
+                        this.isScanWhitespace(nextChar) || this.isScanStop(nextChar)) break;
+                }
                 text += char;
                 scanOffset++;
             }

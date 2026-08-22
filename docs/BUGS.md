@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1649 条。点号进各自文件。
+> 共 1651 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1774](bugs/BUG-1774-xaudio-codec-trampoline-collision.md) | ✅ | ✅ | XAudio2 WMA Hook 覆盖 ADPCM trampoline 导致游戏静音 |
+| [BUG-1773](bugs/BUG-1773-phrase-lookup-truncated-at-word-end.md) | ✅ | ✅ | 点英文单词查词把查询串截到词尾导致短语词条永不匹配 |
 | [BUG-1772](bugs/BUG-1772-libtorrent-2-1-drift-breaks-native-build.md) | ✅ | ✅ | vcpkg 未钉版，libtorrent 2.0→2.1 漂移打断 Windows DLL 与 Android .so 构建 |
 | [BUG-1771](bugs/BUG-1771-alist-search-parent-base-path.md) | ✅ | ✅ | AList 搜索结果路径带 base_path 前缀，目录打不开、文件下不了 |
 | [BUG-1770](bugs/BUG-1770-discovery-total-failure-shown-as-empty.md) | ✅ | ✅ | 发现页整源失败被显示成「无结果」 |

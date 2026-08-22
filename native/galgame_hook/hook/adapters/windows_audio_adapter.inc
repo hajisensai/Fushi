@@ -2,61 +2,26 @@
 //
 // XAudio2 callbacks must not allocate, lock, log, decode, or touch the file
 // system.  The old layout violated the useful part of that contract indirectly:
-// four fixed 8 MiB slots meant a burst of hundreds of small SGRE ADPCM buffers
+// four fixed 8 MiB slots meant a burst of hundreds of small ADPCM buffers
 // silently retained only four.  Keep the same 32 MiB budget, but divide it into
 // pages and let 1024 preallocated descriptors share those pages by actual byte
 // occupancy.  HookWorker is the only decoder/consumer.
 fushi_voice_hook::XAudioSourceFormatRegistry<512> g_xaudio_formats;
+fushi_voice_hook::XAudioCompressedResourceDispatch
+    g_xaudio_compressed_resource_dispatch;
 
-struct XAudioPcmCaptureSlot {
-  std::atomic<uintptr_t> source{0};
-  std::atomic<fushi_voice_hook::XAudioPcmCaptureXapo*> capture{nullptr};
-};
-
-XAudioPcmCaptureSlot g_xaudio_pcm_captures[512];
-
-bool RegisterXAudioPcmCapture(
-    uintptr_t source, fushi_voice_hook::XAudioPcmCaptureXapo* capture) {
-  if (source <= 1 || capture == nullptr) return false;
-  for (XAudioPcmCaptureSlot& slot : g_xaudio_pcm_captures) {
-    uintptr_t expected = 0;
-    if (!slot.source.compare_exchange_strong(
-            expected, 1, std::memory_order_acq_rel)) {
-      continue;
-    }
-    slot.capture.store(capture, std::memory_order_relaxed);
-    slot.source.store(source, std::memory_order_release);
-    return true;
-  }
-  return false;
+bool RegisterXAudioCompressedResourceHandler(
+    fushi_voice_hook::XAudioCompressedResourceHandler handler) {
+  return g_xaudio_compressed_resource_dispatch.Register(handler);
 }
 
-fushi_voice_hook::XAudioPcmCaptureXapo* LookupXAudioPcmCapture(
-    uintptr_t source) {
-  if (source <= 1) return nullptr;
-  for (XAudioPcmCaptureSlot& slot : g_xaudio_pcm_captures) {
-    if (slot.source.load(std::memory_order_acquire) == source) {
-      return slot.capture.load(std::memory_order_acquire);
-    }
-  }
-  return nullptr;
+void UnregisterXAudioCompressedResourceHandler(
+    fushi_voice_hook::XAudioCompressedResourceHandler handler) {
+  g_xaudio_compressed_resource_dispatch.Unregister(handler);
 }
 
-fushi_voice_hook::XAudioPcmCaptureXapo* TakeXAudioPcmCapture(
-    uintptr_t source) {
-  if (source <= 1) return nullptr;
-  for (XAudioPcmCaptureSlot& slot : g_xaudio_pcm_captures) {
-    uintptr_t expected = source;
-    if (!slot.source.compare_exchange_strong(
-            expected, 1, std::memory_order_acq_rel)) {
-      continue;
-    }
-    fushi_voice_hook::XAudioPcmCaptureXapo* capture =
-        slot.capture.exchange(nullptr, std::memory_order_acq_rel);
-    slot.source.store(0, std::memory_order_release);
-    return capture;
-  }
-  return nullptr;
+bool HasXAudioCompressedResourceHandler() {
+  return g_xaudio_compressed_resource_dispatch.available();
 }
 
 constexpr size_t kXAudioCaptureJobCount = 1024;
@@ -828,7 +793,6 @@ void ProcessPendingXAudioCaptureJobs() {
   DrainXAudioControlEvents();
   std::vector<uint8_t> encoded;
   std::vector<int16_t> decoded;
-  std::vector<uint8_t> resource;
   for (XAudioCaptureJob& job : g_xaudio_capture_jobs) {
     // Claim before reading producer-owned fields.  Interlocked exchange is the
     // publication/acquire edge for the descriptor and its page chain.
@@ -898,37 +862,21 @@ void ProcessPendingXAudioCaptureJobs() {
           table_bytes != 0 &&
           static_cast<uint64_t>(job.encoded_bytes) + table_bytes ==
               encoded.size();
-      fushi_voice_hook::SgreVoiceArchiveResourceParts archive_parts;
-      const bool role_voice =
-          complete_submission &&
-          fushi_voice_hook::FindSgreVoiceArchiveResourceParts(
-              encoded.data(), job.encoded_bytes,
-              encoded.data() + job.encoded_bytes, job.wma_packet_count,
-              &archive_parts);
-      const bool complete_resource =
-          role_voice && fushi_voice_hook::BuildXwmaResourceFromChunks(
-                            archive_parts.fmt, archive_parts.fmt_bytes,
-                            archive_parts.dpds, archive_parts.dpds_bytes,
-                            encoded.data(), job.encoded_bytes, &resource);
-      if (role_voice && complete_resource &&
-          resource.size() <= std::numeric_limits<uint32_t>::max()) {
-        wchar_t storage_name[128] = {};
-        swprintf_s(storage_name, L"sgre-voicebody-%llu-%p-%llu-%llu.xwma",
-                   static_cast<unsigned long long>(archive_parts.body_offset),
-                   reinterpret_cast<void*>(job.source.source),
-                   static_cast<unsigned long long>(job.source.generation),
-                   static_cast<unsigned long long>(
-                       job.source.queue_generation));
-        if (WriteVoiceOggAt(resource.data(),
-                            static_cast<uint32_t>(resource.size()), storage_name,
-                            playback_timestamp)) {
-          SetXAudioDiagnostic(
-              fushi_voice_hook::kXAudioDiagGameResourcePublished);
-        }
+      if (complete_submission) {
+        fushi_voice_hook::XAudioCompressedResourceSubmission submission;
+        submission.source = job.source;
+        submission.payload = encoded.data();
+        submission.payload_bytes = job.encoded_bytes;
+        submission.packet_cumulative_bytes =
+            encoded.data() + job.encoded_bytes;
+        submission.packet_count = job.wma_packet_count;
+        submission.playback_timestamp_ms = playback_timestamp;
+        g_xaudio_compressed_resource_dispatch.Dispatch(submission);
       }
-      // SGRE WMAudio2 is also captured by the source XAPO for the explicit PCM
-      // fallback. This descriptor's primary purpose is the original compressed
-      // resource, so never decode or publish it through the legacy job path.
+      // Compressed WMA is never decoded or reclassified in shared middleware.
+      // An explicitly matched engine profile either proves and publishes an
+      // original resource through the worker seam or leaves the submission
+      // unknown; there is no PCM downgrade here.
       ReleaseXAudioCaptureJob(&job);
       continue;
     }
@@ -1156,7 +1104,11 @@ HRESULT STDMETHODCALLTYPE Detour_FlushSourceBuffers(
   trace.detail0 = static_cast<uint32_t>(
       registered ? fushi_voice_hook::XAudioTraceLookupResult::kRegistered
                  : fushi_voice_hook::XAudioTraceLookupResult::kMissing);
-  const HRESULT hr = g_orig_FlushSourceBuffers(self);
+  const FlushSourceBuffers_t original =
+      OriginalHookForVtableSlot<FlushSourceBuffers_t>(
+          self, kIdxFlushSourceBuffers, g_flush_source_buffers_originals);
+  const HRESULT hr =
+      original != nullptr ? original(self) : XAUDIO2_E_INVALID_CALL;
   trace.hresult = static_cast<int32_t>(hr);
   if (SUCCEEDED(hr) && registered) {
     if (g_xaudio_formats.AdvanceQueueGeneration(source.source,
@@ -1193,8 +1145,6 @@ void STDMETHODCALLTYPE Detour_DestroyVoice(IXAudio2Voice* self) {
   trace.detail0 = static_cast<uint32_t>(
       registered ? fushi_voice_hook::XAudioTraceLookupResult::kRegistered
                  : fushi_voice_hook::XAudioTraceLookupResult::kMissing);
-  fushi_voice_hook::XAudioPcmCaptureXapo* pcm_capture =
-      TakeXAudioPcmCapture(reinterpret_cast<uintptr_t>(self));
   if (registered) {
     // DestroyVoice returns void and invalidates the object synchronously.  Make
     // the lifetime unreachable before entering the original implementation;
@@ -1215,31 +1165,6 @@ void STDMETHODCALLTYPE Detour_DestroyVoice(IXAudio2Voice* self) {
         fushi_voice_hook::XAudioTraceOutcome::kLookupMiss);
   }
   g_orig_DestroyVoice(self);
-  if (pcm_capture != nullptr) {
-    fushi_voice_hook::XAudioPcmCaptureView captured;
-    if (registered && g_capture_enabled && g_header != nullptr &&
-        pcm_capture->GetCapture(&captured) && captured.byte_count != 0 &&
-        captured.byte_count <= g_ring_capacity) {
-      MaybeRecordPcmFormat(captured.sample_rate, captured.channels,
-                           captured.bits_per_sample, captured.is_float);
-      const uint32_t offset =
-          RingAppendVoice(captured.bytes, captured.byte_count);
-      const uint64_t total_at_write = g_header->total_written;
-      const uint64_t playback_timestamp =
-          source.last_start_ms != 0 ? source.last_start_ms
-                                    : captured.first_process_timestamp_ms;
-      RecordVoiceClipFmt(offset, captured.byte_count, source.source,
-                         captured.sample_rate, captured.channels,
-                         captured.bits_per_sample, captured.is_float,
-                         playback_timestamp, total_at_write,
-                         pcm_capture->clip_flags());
-      IncrementXAudioCounter(&g_xaudio_capture_counters.pcm_published);
-      SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagPcmPublished);
-      trace.detail1 = captured.byte_count;
-      trace.detail2 = captured.channels;
-    }
-    pcm_capture->Release();
-  }
   PublishXAudioTrace(&trace);
 }
 
@@ -1306,24 +1231,6 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
   trace.detail0 = static_cast<uint32_t>(
       registered ? fushi_voice_hook::XAudioTraceLookupResult::kRegistered
                  : fushi_voice_hook::XAudioTraceLookupResult::kMissing);
-  const bool xapo_capture =
-      registered && source.format.encoding ==
-                        fushi_voice_hook::XAudioSourceEncoding::kWmaudio2 &&
-      LookupXAudioPcmCapture(reinterpret_cast<uintptr_t>(self)) != nullptr;
-  if (xapo_capture && pBufferWMA != nullptr &&
-      pBufferWMA->PacketCount != 0 &&
-      pBufferWMA->pDecodedPacketCumulativeBytes != nullptr) {
-    fushi_voice_hook::XAudioPcmCaptureXapo* capture =
-        LookupXAudioPcmCapture(reinterpret_cast<uintptr_t>(self));
-    if (capture != nullptr) {
-      capture->ObserveWmaSubmission(
-          pBufferWMA->PacketCount,
-          pBufferWMA->pDecodedPacketCumulativeBytes[
-              pBufferWMA->PacketCount - 1],
-          source.format.sample_rate, source.format.channels,
-          source.format.bits_per_sample);
-    }
-  }
   if (registered) {
     trace.engine = source.engine;
     trace.source_generation = source.generation;
@@ -1372,14 +1279,22 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
     rejection = fushi_voice_hook::XAudioTraceOutcome::kLookupMiss;
     IncrementXAudioCounter(&g_xaudio_capture_counters.registry_miss);
     SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagRegistryMiss);
+  } else if (source.format.encoding ==
+                 fushi_voice_hook::XAudioSourceEncoding::kWmaudio2 &&
+             !HasXAudioCompressedResourceHandler()) {
+    rejection = fushi_voice_hook::XAudioTraceOutcome::kFormatUnsupported;
   } else {
     staged = PrepareXAudioCaptureJob(source, pBuffer, pBufferWMA,
                                      trace.timestamp_ms, &rejection);
-    if (xapo_capture) trace.detail2 = 2;
   }
   trace.detail1 = static_cast<uint32_t>(rejection);
 
-  const HRESULT hr = g_orig_SubmitSourceBuffer(self, pBuffer, pBufferWMA);
+  const SubmitSourceBuffer_t original =
+      OriginalHookForVtableSlot<SubmitSourceBuffer_t>(
+          self, kIdxSubmitSourceBuffer, g_submit_source_buffer_originals);
+  const HRESULT hr = original != nullptr
+                         ? original(self, pBuffer, pBufferWMA)
+                         : XAUDIO2_E_INVALID_CALL;
   trace.hresult = static_cast<int32_t>(hr);
   if (FAILED(hr)) {
     if (staged != nullptr) ReleaseXAudioCaptureJob(staged);
@@ -1403,9 +1318,6 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
         fushi_voice_hook::XAudioTraceOutcome::kStaleInvalidated);
   } else if (staged != nullptr) {
     PublishXAudioCaptureJob(staged);
-    trace.outcome = static_cast<uint32_t>(
-        fushi_voice_hook::XAudioTraceOutcome::kQueued);
-  } else if (xapo_capture) {
     trace.outcome = static_cast<uint32_t>(
         fushi_voice_hook::XAudioTraceOutcome::kQueued);
   } else {
@@ -1437,30 +1349,9 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSourceVoice(
       pSourceFormat, has_format,
       has_format ? static_cast<uint32_t>(format.encoding) : 0u,
       &trace.format);
-  fushi_voice_hook::XAudioPcmCaptureXapo* pcm_capture = nullptr;
-  XAUDIO2_EFFECT_DESCRIPTOR capture_descriptor = {};
-  XAUDIO2_EFFECT_CHAIN capture_chain = {};
-  const XAUDIO2_EFFECT_CHAIN* effective_effect_chain = pEffectChain;
-  if (has_format &&
-      format.encoding == fushi_voice_hook::XAudioSourceEncoding::kWmaudio2 &&
-      pEffectChain == nullptr) {
-    pcm_capture = new (std::nothrow)
-        fushi_voice_hook::XAudioPcmCaptureXapo();
-    if (pcm_capture != nullptr && pcm_capture->ready()) {
-      capture_descriptor.pEffect = pcm_capture;
-      capture_descriptor.InitialState = TRUE;
-      capture_descriptor.OutputChannels = format.channels;
-      capture_chain.EffectCount = 1;
-      capture_chain.pEffectDescriptors = &capture_descriptor;
-      effective_effect_chain = &capture_chain;
-    } else if (pcm_capture != nullptr) {
-      pcm_capture->Release();
-      pcm_capture = nullptr;
-    }
-  }
   const HRESULT hr = g_orig_CreateSourceVoice(
       self, ppSourceVoice, pSourceFormat, Flags, MaxFrequencyRatio, pCallback,
-      pSendList, effective_effect_chain);
+      pSendList, pEffectChain);
   trace.hresult = static_cast<int32_t>(hr);
   if (SUCCEEDED(hr) && ppSourceVoice != nullptr && *ppSourceVoice != nullptr) {
     trace.source = reinterpret_cast<uintptr_t>(*ppSourceVoice);
@@ -1473,13 +1364,6 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSourceVoice(
         trace.queue_generation = registered.queue_generation;
         trace.outcome = static_cast<uint32_t>(
             fushi_voice_hook::XAudioTraceOutcome::kRegistryRegistered);
-        if (pcm_capture != nullptr &&
-            !RegisterXAudioPcmCapture(
-                reinterpret_cast<uintptr_t>(*ppSourceVoice), pcm_capture)) {
-          pcm_capture->Release();
-          pcm_capture = nullptr;
-          trace.detail2 = 1;
-        }
         if (format.encoding ==
             fushi_voice_hook::XAudioSourceEncoding::kMicrosoftAdpcm) {
           if (g_header != nullptr) {
@@ -1508,29 +1392,24 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSourceVoice(
       IncrementXAudioCounter(&g_xaudio_capture_counters.unsupported_format);
       SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagUnsupportedFormat);
     }
-    if (pcm_capture != nullptr &&
-        LookupXAudioPcmCapture(
-            reinterpret_cast<uintptr_t>(*ppSourceVoice)) == nullptr) {
-      pcm_capture->Release();
-      pcm_capture = nullptr;
-    }
-    HookFn(VtableSlot(*ppSourceVoice, kIdxSubmitSourceBuffer),
-           reinterpret_cast<void*>(&Detour_SubmitSourceBuffer),
-           reinterpret_cast<void**>(&g_orig_SubmitSourceBuffer));
+    HookFnWithOriginalRegistry(
+        VtableSlot(*ppSourceVoice, kIdxSubmitSourceBuffer),
+        reinterpret_cast<void*>(&Detour_SubmitSourceBuffer),
+        &g_submit_source_buffer_originals);
     HookFn(VtableSlot(*ppSourceVoice, kIdxSourceVoiceStart),
            reinterpret_cast<void*>(&Detour_SourceVoiceStart),
            reinterpret_cast<void**>(&g_orig_SourceVoiceStart));
     HookFn(VtableSlot(*ppSourceVoice, kIdxSourceVoiceStop),
            reinterpret_cast<void*>(&Detour_SourceVoiceStop),
            reinterpret_cast<void**>(&g_orig_SourceVoiceStop));
-    HookFn(VtableSlot(*ppSourceVoice, kIdxFlushSourceBuffers),
-           reinterpret_cast<void*>(&Detour_FlushSourceBuffers),
-           reinterpret_cast<void**>(&g_orig_FlushSourceBuffers));
+    HookFnWithOriginalRegistry(
+        VtableSlot(*ppSourceVoice, kIdxFlushSourceBuffers),
+        reinterpret_cast<void*>(&Detour_FlushSourceBuffers),
+        &g_flush_source_buffers_originals);
     HookFn(VtableSlot(*ppSourceVoice, kIdxDestroyVoice),
            reinterpret_cast<void*>(&Detour_DestroyVoice),
            reinterpret_cast<void**>(&g_orig_DestroyVoice));
   } else {
-    if (pcm_capture != nullptr) pcm_capture->Release();
     trace.outcome = static_cast<uint32_t>(
         fushi_voice_hook::XAudioTraceOutcome::kOriginalFailed);
   }

@@ -139,12 +139,33 @@ class AdapterStructureTest(unittest.TestCase):
         submit = submit.split("Detour_CreateSourceVoice", 1)[0]
         self.assertLess(
             submit.index("PrepareXAudioCaptureJob("),
-            submit.index("g_orig_SubmitSourceBuffer("),
+            submit.index("OriginalHookForVtableSlot<SubmitSourceBuffer_t>"),
         )
         self.assertLess(
-            submit.index("g_orig_SubmitSourceBuffer("),
+            submit.index("OriginalHookForVtableSlot<SubmitSourceBuffer_t>"),
             submit.index("PublishXAudioCaptureJob("),
         )
+        self.assertNotIn("g_orig_SubmitSourceBuffer", main)
+        self.assertNotIn("g_orig_FlushSourceBuffers", main)
+        self.assertIn("g_submit_source_buffer_originals", main)
+        self.assertIn("g_flush_source_buffers_originals", main)
+        self.assertIn("originals.Lookup(VtableSlot(com_obj, idx))", main)
+        # 先发布 trampoline 再启用 hook：反过来的话 detour 已经在跑、original 还没
+        # 登记，正是这次要根治的崩溃形态。范围必须收在 codec 专用的那个安装函数体内
+        # ——dll_main.cpp 里还有一条普通 HookFn 路径（它用 g_hooked_fns 去重、根本
+        # 不碰 registry），全文件 index() 会先撞上那条路径的 MH_EnableHook(target)，
+        # 让这条断言在实现完全正确时也失败。
+        registry_installer = main.split(
+            "bool HookFnWithOriginalRegistry(", 1
+        )[1].split("\n}\n", 1)[0]
+        self.assertIn("originals->Publish(target, trampoline)", registry_installer)
+        self.assertLess(
+            registry_installer.index("originals->Publish(target, trampoline)"),
+            registry_installer.index("MH_EnableHook(target)"),
+        )
+        # 发布成功但启用失败时必须把已登记的 trampoline 撤掉，否则 registry 会留下
+        # 一条指向已移除 hook 的 original。
+        self.assertIn("originals->Erase(target, trampoline)", registry_installer)
         failed = submit.split("if (FAILED(hr))", 1)[1]
         failed = failed.split("return hr;", 1)[0]
         self.assertIn("ReleaseXAudioCaptureJob(staged)", failed)
@@ -567,6 +588,43 @@ class AdapterStructureTest(unittest.TestCase):
             run_launch.count('SetEnvironmentVariableW(L"SteamAppId"'),
             "Only the explicit force-direct launch may set SteamAppId.",
         )
+
+    def test_sgre_resource_logic_is_profile_scoped(self) -> None:
+        shared_paths = (
+            ROOT / "hook" / "dll_main.cpp",
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc",
+            ROOT / "hook" / "xwma_resource.h",
+        )
+        for path in shared_paths:
+            source = path.read_text(encoding="utf-8").lower()
+            self.assertNotIn("sgre", source, path.name)
+            self.assertNotIn("voice_body.bin", source, path.name)
+
+        adapter = (
+            ROOT / "hook" / "adapters" / "sgre_adapter.inc"
+        ).read_text(encoding="utf-8")
+        profile = (
+            ROOT / "hook" / "adapters" / "sgre_profile.h"
+        ).read_text(encoding="utf-8")
+        generic = (
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn("MatchesSgreProfile", adapter)
+        self.assertIn("RegisterXAudioCompressedResourceHandler", adapter)
+        self.assertIn("FindSgreVoiceArchiveResourceParts", adapter)
+        self.assertIn("kSgreExecutableSha256", profile)
+        self.assertIn("HasXAudioCompressedResourceHandler", generic)
+        self.assertFalse((ROOT / "hook" / "xaudio_pcm_capture_xapo.h").exists())
+        self.assertNotIn("700", generic)
+
+    def test_hook_worker_rejects_unknown_ipc_before_adapter_poll(self) -> None:
+        source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        rejection = source.index(
+            "g_header == nullptr || g_header->magic != kSharedMagic"
+        )
+        polling = source.index("while (!g_stop)")
+        self.assertLess(rejection, polling)
+        self.assertIn("return 1;", source[rejection:polling])
 
 
 if __name__ == "__main__":

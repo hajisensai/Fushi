@@ -42,7 +42,8 @@ add_library(fushi_voice_hook SHARED
   "hook/dll_main.cpp"
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
-  "hook/xaudio_pcm_capture_xapo.h"
+  "hook/hook_original_registry.h"
+  "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
@@ -68,10 +69,13 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
+  "hook/adapters/sgre_adapter.inc"
+  "hook/adapters/sgre_profile.h"
+  "hook/adapters/sgre_voice_archive.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp xapobase ole32)
+target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp ole32 bcrypt)
 
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
@@ -114,6 +118,13 @@ target_compile_definitions(fushi_xaudio_source_format_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_xaudio_source_format_test
   COMMAND fushi_xaudio_source_format_test)
+
+add_executable(fushi_hook_original_registry_test
+  "tests/hook_original_registry_test.cpp"
+)
+target_include_directories(fushi_hook_original_registry_test PRIVATE "hook")
+add_test(NAME fushi_hook_original_registry_test
+  COMMAND fushi_hook_original_registry_test)
 
 add_executable(fushi_xaudio_trace_export_test
   "tests/xaudio_trace_export_test.cpp"
@@ -423,3 +434,9 @@ add_test(NAME fushi_reallive_adapter_test COMMAND fushi_reallive_adapter_test)
 add_executable(fushi_elf_ai6_adapter_test "tests/elf_ai6_adapter_test.cpp")
 target_include_directories(fushi_elf_ai6_adapter_test PRIVATE "hook")
 add_test(NAME fushi_elf_ai6_adapter_test COMMAND fushi_elf_ai6_adapter_test)
+add_executable(fushi_sgre_adapter_test "tests/sgre_adapter_test.cpp")
+target_include_directories(fushi_sgre_adapter_test PRIVATE "hook")
+target_compile_definitions(fushi_sgre_adapter_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fushi_sgre_adapter_test PRIVATE bcrypt)
+add_test(NAME fushi_sgre_adapter_test COMMAND fushi_sgre_adapter_test)

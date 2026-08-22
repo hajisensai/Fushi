@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/workspace_pubspec.dart';
 
 /// BUG-073 source-scan guard: every platform's libmpv must come from a
 /// TrueHD-capable build, never media_kit's stock "default" flavor.
@@ -93,12 +94,16 @@ void main() {
     required int atLeastMarkers,
   }) {
     final List<RegExpMatch> markers = _ffmpegMarker.allMatches(text).toList();
-    expect(markers.length, greaterThanOrEqualTo(atLeastMarkers),
-        reason: '$what must carry at least $atLeastMarkers ffmpeg<x.y.z> '
-            'marker(s), found ${markers.length}. An unversioned artifact is '
-            'unverifiable: it can silently be a stock FFmpeg 6.0 build '
-            '(TODO-1137). If the pin layout changed, update this guard '
-            'deliberately instead of letting it scan nothing.');
+    expect(
+      markers.length,
+      greaterThanOrEqualTo(atLeastMarkers),
+      reason:
+          '$what must carry at least $atLeastMarkers ffmpeg<x.y.z> '
+          'marker(s), found ${markers.length}. An unversioned artifact is '
+          'unverifiable: it can silently be a stock FFmpeg 6.0 build '
+          '(TODO-1137). If the pin layout changed, update this guard '
+          'deliberately instead of letting it scan nothing.',
+    );
     for (final RegExpMatch m in markers) {
       final List<int> version = <int>[
         int.parse(m.group(1)!),
@@ -106,38 +111,41 @@ void main() {
         int.parse(m.group(3)!),
       ];
       if (isAtLeast(version, minFfmpeg)) continue;
-      fail('$what pins FFmpeg ${version.join(".")}, older than '
-          '${minFfmpeg.join(".")} (TODO-1137: 6.0 still carries the magicyuv '
-          'OOB write reachable from a crafted mkv/mov/avi). Rebuild from the '
-          'hajisensai fork. Offending line:\n  ${lineAt(text, m.start)}');
+      fail(
+        '$what pins FFmpeg ${version.join(".")}, older than '
+        '${minFfmpeg.join(".")} (TODO-1137: 6.0 still carries the magicyuv '
+        'OOB write reachable from a crafted mkv/mov/avi). Rebuild from the '
+        'hajisensai fork. Offending line:\n  ${lineAt(text, m.start)}',
+      );
     }
   }
 
   // Tests run with CWD = `fushi/`; vendored packages live at the workspace root.
-  final String pubspec = File('pubspec.yaml').readAsStringSync();
+  final WorkspacePubspec ws = WorkspacePubspec.load();
 
   String fork(String relative) =>
       File('../third_party/$relative').readAsStringSync();
 
-  test('pubspec overrides every media_kit libs package to the vendored fork',
-      () {
-    for (final String pkg in const <String>[
-      'media_kit_libs_windows_video',
-      'media_kit_libs_macos_video',
-      'media_kit_libs_ios_video',
-      'media_kit_libs_android_video',
-    ]) {
-      final RegExp override =
-          RegExp('$pkg:\\s*\\n\\s*path:\\s*\\.\\./third_party/$pkg');
-      expect(
-        override.hasMatch(pubspec),
-        isTrue,
-        reason: 'dependency_overrides must point $pkg at ../third_party/$pkg '
-            '(BUG-073). Without it, pub.dev\'s default package returns and '
-            'TrueHD audio goes silent on that platform.',
-      );
-    }
-  });
+  test(
+    'pubspec overrides every media_kit libs package to the vendored fork',
+    () {
+      for (final String pkg in const <String>[
+        'media_kit_libs_windows_video',
+        'media_kit_libs_macos_video',
+        'media_kit_libs_ios_video',
+        'media_kit_libs_android_video',
+      ]) {
+        expect(
+          ws.isVendored(pkg, 'third_party/$pkg'),
+          isTrue,
+          reason:
+              'the workspace-root pubspec must point $pkg at '
+              'third_party/$pkg (BUG-073). Without it, pub.dev\'s default '
+              'package returns and TrueHD audio goes silent on that platform.',
+        );
+      }
+    },
+  );
 
   /// Pulls the single value of a `set(<NAME> "...")` from a CMake file.
   ///
@@ -148,62 +156,102 @@ void main() {
   /// coin flip over which one the build actually uses.
   String cmakeSet(String masked, String name, RegExp pattern) {
     final List<RegExpMatch> hits = pattern.allMatches(masked).toList();
-    expect(hits.length, 1,
-        reason: 'windows CMakeLists must assign $name exactly once, found '
-            '${hits.length}. Two assignments mean this guard checks one value '
-            'while the build uses the other.');
+    expect(
+      hits.length,
+      1,
+      reason:
+          'windows CMakeLists must assign $name exactly once, found '
+          '${hits.length}. Two assignments mean this guard checks one value '
+          'while the build uses the other.',
+    );
     return hits.single.group(1)!;
   }
 
   test('Windows fork repoints libmpv off the TrueHD-broken upstream', () {
     final String cmake = maskHashComments(
-        fork('media_kit_libs_windows_video/windows/CMakeLists.txt'));
-    final String url =
-        cmakeSet(cmake, 'LIBMPV_URL', RegExp(r'set\(LIBMPV_URL\s+"([^"]+)"\)'));
-    final String asset =
-        cmakeSet(cmake, 'LIBMPV', RegExp(r'set\(LIBMPV "([^"]+)"\)'));
-    expect(url.contains('media-kit/libmpv-win32-video-build'), isFalse,
-        reason: 'win32 upstream froze at 2023-09-24 with no TrueHD decoder.');
+      fork('media_kit_libs_windows_video/windows/CMakeLists.txt'),
+    );
+    final String url = cmakeSet(
+      cmake,
+      'LIBMPV_URL',
+      RegExp(r'set\(LIBMPV_URL\s+"([^"]+)"\)'),
+    );
+    final String asset = cmakeSet(
+      cmake,
+      'LIBMPV',
+      RegExp(r'set\(LIBMPV "([^"]+)"\)'),
+    );
+    expect(
+      url.contains('media-kit/libmpv-win32-video-build'),
+      isFalse,
+      reason: 'win32 upstream froze at 2023-09-24 with no TrueHD decoder.',
+    );
     // The libmpv .7z is mirrored into our own permanent GitHub release
     // (hajisensai/fushi `vendor-libmpv`) because zhongfly/mpv-winbuild prunes
     // releases on a ~30-day window and the pinned asset 404s (TODO-1137). The
     // mirrored file is the exact zhongfly full-FFmpeg build, so guard the real
     // BUG-073 intent (full flavor, not the broken flavors) instead of the host.
-    expect(RegExp(r'^mpv-dev-x86_64-\d').hasMatch(asset), isTrue,
-        reason: 'must be the full GPL FFmpeg flavor (mpv-dev-x86_64-<date>).');
-    expect(asset.contains('-lgpl'), isFalse,
-        reason: '-lgpl drops the TrueHD decoder -> re-opens BUG-073.');
-    expect(asset.contains('-v3'), isFalse,
-        reason: '-v3 needs Haswell+ and crashes on older CPUs.');
-    expect(RegExp(r'set\(LIBMPV_MD5 "[0-9a-f]{32}"\)').hasMatch(cmake), isTrue,
-        reason: 'LIBMPV_MD5 must stay pinned.');
+    expect(
+      RegExp(r'^mpv-dev-x86_64-\d').hasMatch(asset),
+      isTrue,
+      reason: 'must be the full GPL FFmpeg flavor (mpv-dev-x86_64-<date>).',
+    );
+    expect(
+      asset.contains('-lgpl'),
+      isFalse,
+      reason: '-lgpl drops the TrueHD decoder -> re-opens BUG-073.',
+    );
+    expect(
+      asset.contains('-v3'),
+      isFalse,
+      reason: '-v3 needs Haswell+ and crashes on older CPUs.',
+    );
+    expect(
+      RegExp(r'set\(LIBMPV_MD5 "[0-9a-f]{32}"\)').hasMatch(cmake),
+      isTrue,
+      reason: 'LIBMPV_MD5 must stay pinned.',
+    );
   });
 
   test('macOS/iOS use a "video-full" xcframework on a patched FFmpeg', () {
     final Map<String, String> sha256ByPlatform = <String, String>{};
     for (final String plat in const <String>['macos', 'ios']) {
-      final String mk =
-          maskHashComments(fork('media_kit_libs_${plat}_video/$plat/Makefile'));
-      expect(mk.contains('-video-default'), isFalse,
-          reason: '$plat still downloads the "default" flavor (truehd demuxer '
-              'only, no decoder). Switch to "-video-full".');
-      expect(mk.contains('$plat-universal-video-full'), isTrue,
-          reason:
-              '$plat must download the "-video-full" flavor (all decoders).');
+      final String mk = maskHashComments(
+        fork('media_kit_libs_${plat}_video/$plat/Makefile'),
+      );
+      expect(
+        mk.contains('-video-default'),
+        isFalse,
+        reason:
+            '$plat still downloads the "default" flavor (truehd demuxer '
+            'only, no decoder). Switch to "-video-full".',
+      );
+      expect(
+        mk.contains('$plat-universal-video-full'),
+        isTrue,
+        reason: '$plat must download the "-video-full" flavor (all decoders).',
+      );
       // Mirrored into our own permanent release for the same reason Windows is:
       // upstream assets get pruned or retagged, and the media-kit originals are
       // built against FFmpeg 6.0 regardless.
-      expect(mk.contains('media-kit/libmpv-darwin-build'), isFalse,
-          reason: '$plat must not pull media-kit\'s own release: those are '
-              'built against FFmpeg 6.0 (TODO-1137).');
+      expect(
+        mk.contains('media-kit/libmpv-darwin-build'),
+        isFalse,
+        reason:
+            '$plat must not pull media-kit\'s own release: those are '
+            'built against FFmpeg 6.0 (TODO-1137).',
+      );
 
-      final List<RegExpMatch> sums =
-          RegExp(r'MPV_XCFRAMEWORKS_SHA256SUM=([0-9a-f]{64})')
-              .allMatches(mk)
-              .toList();
-      expect(sums.length, 1,
-          reason: '$plat must pin exactly one MPV_XCFRAMEWORKS_SHA256SUM for '
-              'the swapped tarball, found ${sums.length}.');
+      final List<RegExpMatch> sums = RegExp(
+        r'MPV_XCFRAMEWORKS_SHA256SUM=([0-9a-f]{64})',
+      ).allMatches(mk).toList();
+      expect(
+        sums.length,
+        1,
+        reason:
+            '$plat must pin exactly one MPV_XCFRAMEWORKS_SHA256SUM for '
+            'the swapped tarball, found ${sums.length}.',
+      );
       sha256ByPlatform[plat] = sums.single.group(1)!;
 
       // The darwin flavour of the BUG-1406 hole: the version lives in a
@@ -212,35 +260,54 @@ void main() {
       // fetched is whatever the URL spells. Requiring the interpolation keeps
       // "the version this guard checked" and "the version downloaded" the same
       // token; `expectEveryMarkerPatched` then covers a hardcoded one anyway.
-      expect(mk.contains(r'-video-full-${MPV_XCFRAMEWORKS_VERSION}.tar.gz'),
-          isTrue,
-          reason: '$plat download URL must interpolate '
-              'MPV_XCFRAMEWORKS_VERSION, not spell a version of its own — '
-              'otherwise the pinned variable and the fetched tarball can drift '
-              '(TODO-1137).');
+      expect(
+        mk.contains(r'-video-full-${MPV_XCFRAMEWORKS_VERSION}.tar.gz'),
+        isTrue,
+        reason:
+            '$plat download URL must interpolate '
+            'MPV_XCFRAMEWORKS_VERSION, not spell a version of its own — '
+            'otherwise the pinned variable and the fetched tarball can drift '
+            '(TODO-1137).',
+      );
 
       expectEveryMarkerPatched(mk, plat, atLeastMarkers: 1);
     }
     // iOS and macOS ship two different tarballs. An identical pin means one
     // Makefile was copy-pasted from the other, so its `shasum -c` now verifies
     // the wrong artifact — and would reject the right one at build time.
-    expect(sha256ByPlatform['ios'], isNot(sha256ByPlatform['macos']),
-        reason: 'ios and macos pin the same SHA256; one of them verifies the '
-            'other platform\'s tarball.');
+    expect(
+      sha256ByPlatform['ios'],
+      isNot(sha256ByPlatform['macos']),
+      reason:
+          'ios and macos pin the same SHA256; one of them verifies the '
+          'other platform\'s tarball.',
+    );
   });
 
   test('Android downloads "full" jars built on a patched FFmpeg', () {
-    final String gradle =
-        maskComments(fork('media_kit_libs_android_video/android/build.gradle'));
-    expect(RegExp(r'/default-[\w-]+\.jar').hasMatch(gradle), isFalse,
-        reason: 'Android still pins "default" jars (truehd demuxer only, no '
-            'decoder). Switch to the full jars.');
-    expect(gradle.contains('media-kit/libmpv-android-video-build'), isFalse,
-        reason: 'Android must not pull media-kit\'s own release: those are '
-            'built against FFmpeg 6.0 (TODO-1137).');
+    final String gradle = maskComments(
+      fork('media_kit_libs_android_video/android/build.gradle'),
+    );
+    expect(
+      RegExp(r'/default-[\w-]+\.jar').hasMatch(gradle),
+      isFalse,
+      reason:
+          'Android still pins "default" jars (truehd demuxer only, no '
+          'decoder). Switch to the full jars.',
+    );
+    expect(
+      gradle.contains('media-kit/libmpv-android-video-build'),
+      isFalse,
+      reason:
+          'Android must not pull media-kit\'s own release: those are '
+          'built against FFmpeg 6.0 (TODO-1137).',
+    );
     for (final String abi in androidAbis) {
-      expect(RegExp('full-$abi[\\w.-]*\\.jar').hasMatch(gradle), isTrue,
-          reason: 'Android must download a full-$abi jar (all decoders).');
+      expect(
+        RegExp('full-$abi[\\w.-]*\\.jar').hasMatch(gradle),
+        isTrue,
+        reason: 'Android must download a full-$abi jar (all decoders).',
+      );
     }
 
     // Parse the download table entry by entry instead of asking global
@@ -256,42 +323,69 @@ void main() {
       final String url = m.group(1)!;
       final String md5 = m.group(2)!;
       final String destination = m.group(3)!;
-      final RegExpMatch? abiMatch =
-          RegExp(r'full-([\w-]+)\.jar$').firstMatch(destination);
-      expect(abiMatch, isNotNull,
-          reason: 'jar entry lands on "$destination"; expected '
-              '.../full-<abi>.jar so the ABI is identifiable.');
+      final RegExpMatch? abiMatch = RegExp(
+        r'full-([\w-]+)\.jar$',
+      ).firstMatch(destination);
+      expect(
+        abiMatch,
+        isNotNull,
+        reason:
+            'jar entry lands on "$destination"; expected '
+            '.../full-<abi>.jar so the ABI is identifiable.',
+      );
       final String abi = abiMatch!.group(1)!;
-      expect(md5ByAbi.containsKey(abi), isFalse,
-          reason: 'two download entries claim ABI $abi.');
-      expect(url.contains('full-$abi-'), isTrue,
-          reason: 'the entry written to full-$abi.jar downloads "$url" — URL '
-              'and destination disagree on which ABI this jar is, so one ABI '
-              'would ship another ABI\'s libmpv.');
-      expect(_ffmpegMarker.hasMatch(url), isTrue,
-          reason: 'the $abi jar URL carries no ffmpeg<x.y.z> marker, so this '
-              'guard cannot tell a patched build from a stock 6.0 one '
-              '(TODO-1137). URL: $url');
+      expect(
+        md5ByAbi.containsKey(abi),
+        isFalse,
+        reason: 'two download entries claim ABI $abi.',
+      );
+      expect(
+        url.contains('full-$abi-'),
+        isTrue,
+        reason:
+            'the entry written to full-$abi.jar downloads "$url" — URL '
+            'and destination disagree on which ABI this jar is, so one ABI '
+            'would ship another ABI\'s libmpv.',
+      );
+      expect(
+        _ffmpegMarker.hasMatch(url),
+        isTrue,
+        reason:
+            'the $abi jar URL carries no ffmpeg<x.y.z> marker, so this '
+            'guard cannot tell a patched build from a stock 6.0 one '
+            '(TODO-1137). URL: $url',
+      );
       md5ByAbi[abi] = md5;
     }
 
     // Anchor: if the table shape changes and the loop above matches nothing,
     // this fails instead of leaving a guard that scans zero entries.
-    expect(md5ByAbi.keys.toSet(), androidAbis,
-        reason: 'parsed download entries for ${md5ByAbi.keys.toList()}, '
-            'expected exactly $androidAbis. Either an ABI was dropped or the '
-            'entry layout changed and this guard stopped seeing anything.');
+    expect(
+      md5ByAbi.keys.toSet(),
+      androidAbis,
+      reason:
+          'parsed download entries for ${md5ByAbi.keys.toList()}, '
+          'expected exactly $androidAbis. Either an ABI was dropped or the '
+          'entry layout changed and this guard stopped seeing anything.',
+    );
     // Deliberately NOT asserting the MD5 *values*: those already live in
     // build.gradle, and copying them here would only mean every artifact swap
     // edits two files in the same commit — a maintenance tax that proves
     // nothing. What is worth pinning is the correspondence: one checksum per
     // ABI (enforced by the entry regex above) and four distinct ones, so a
     // copy-pasted checksum can't leave two ABIs verifying the same jar.
-    expect(md5ByAbi.values.toSet().length, androidAbis.length,
-        reason: 'two ABIs share an MD5 pin: ${md5ByAbi.toString()}. A pasted '
-            'checksum means one ABI is verified against another ABI\'s jar.');
+    expect(
+      md5ByAbi.values.toSet().length,
+      androidAbis.length,
+      reason:
+          'two ABIs share an MD5 pin: ${md5ByAbi.toString()}. A pasted '
+          'checksum means one ABI is verified against another ABI\'s jar.',
+    );
 
-    expectEveryMarkerPatched(gradle, 'Android',
-        atLeastMarkers: androidAbis.length);
+    expectEveryMarkerPatched(
+      gradle,
+      'Android',
+      atLeastMarkers: androidAbis.length,
+    );
   });
 }

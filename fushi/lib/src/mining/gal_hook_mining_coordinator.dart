@@ -32,13 +32,23 @@ typedef GalHookAudioCapture = Future<Uint8List?> Function({
   required String outputExtension,
 });
 
-/// 原始 SGRE 角色语音是 RIFF/XWMA。当行已经固化了 `.xwma` 资源 ID 时，
-/// 媒体名必须保留真实扩展名；否则会把 xWMA 字节写进 `.aac` 伪装文件。
+/// 原始资源只有在实际产物是 RIFF/XWMA 时才保留 `.xwma`。
+/// `audioResourceId` 描述来源，不描述 capture 后的字节：同句多个 XWMA 会被
+/// 合并转码成 fallback 格式，因此不能用资源 ID 后缀给最终媒体命名。
 String galHookMinedAudioExtension({
   required String fallback,
-  String? resourceId,
+  required Uint8List? bytes,
 }) {
-  if (resourceId?.toLowerCase().endsWith('.xwma') ?? false) {
+  if (bytes != null &&
+      bytes.length >= 12 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46 &&
+      bytes[8] == 0x58 &&
+      bytes[9] == 0x57 &&
+      bytes[10] == 0x4d &&
+      bytes[11] == 0x41) {
     return 'xwma';
   }
   return fallback;
@@ -369,7 +379,7 @@ class GalHookMiningCoordinator {
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
     final String minedAudioExtension = galHookMinedAudioExtension(
       fallback: audioExtension,
-      resourceId: _lineLookup(entry.id)?.audioResourceId,
+      bytes: audioBytes,
     );
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也

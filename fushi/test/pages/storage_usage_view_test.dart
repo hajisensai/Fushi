@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,56 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/utils.dart';
-
-/// Fake OCR 服务：状态可编程，删除翻转状态。
-class _FakeOcrService implements MangaOcrService {
-  _FakeOcrService({this.ready = true});
-
-  bool ready;
-  int deleteCalls = 0;
-
-  @override
-  bool get isSupportedPlatform => true;
-
-  @override
-  Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
-        detectorReady: ready,
-        recognizerReady: ready,
-        diskBytes: ready ? 40 * 1024 * 1024 : 0,
-        totalBytes: 40 * 1024 * 1024,
-      );
-
-  @override
-  Stream<MangaOcrDownloadEvent> downloadModels() async* {
-    ready = true;
-    yield const MangaOcrDownloadEvent(
-      fileName: 'detector.onnx',
-      receivedBytes: 20,
-      totalBytes: 20,
-      done: true,
-    );
-  }
-
-  @override
-  Future<int> deleteModels() async {
-    deleteCalls++;
-    final bool had = ready;
-    ready = false;
-    // 契约是「返回实际释放的字节数」，与 modelStatus 报的 diskBytes 对齐。
-    return had ? 40 * 1024 * 1024 : 0;
-  }
-
-  @override
-  Stream<MangaOcrVolumeEvent> ocrFolder({
-    required String imageDirPath,
-    String? volumeTitle,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
-}
 
 void main() {
   late Directory tempRoot;
@@ -101,19 +53,19 @@ void main() {
 
   StorageUsageView view({
     required StorageUsageService service,
-    required _FakeOcrService ocr,
     Future<List<StorageBookRef>> Function()? books,
     Future<String?> Function(String bookKey)? deleteBook,
+    Future<int> Function()? anime4kBytes,
+    Future<List<String>> Function()? anime4kDelete,
   }) {
     return StorageUsageView(
       service: service,
-      ocrService: ocr,
       booksProvider: books ?? () async => const <StorageBookRef>[],
       dictionaryNamesProvider: () async => const <String>[],
       deleteBook: deleteBook ?? (String _) async => null,
       deleteDictionary: (String _) async => null,
-      anime4kBytesProvider: () async => 0,
-      anime4kDelete: () async => const <String>[],
+      anime4kBytesProvider: anime4kBytes ?? () async => 0,
+      anime4kDelete: anime4kDelete ?? () async => const <String>[],
     );
   }
 
@@ -122,7 +74,6 @@ void main() {
 
     await tester.pumpWidget(wrap(view(
       service: service(),
-      ocr: _FakeOcrService(),
       books: () async => <StorageBookRef>[
         StorageBookRef(
           bookKey: 'keyA',
@@ -147,7 +98,6 @@ void main() {
 
     await tester.pumpWidget(wrap(view(
       service: service(),
-      ocr: _FakeOcrService(),
       books: () async => <StorageBookRef>[
         StorageBookRef(
           bookKey: 'keyA',
@@ -195,44 +145,83 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
-  testWidgets('OCR 模型行：已安装显示删除，确认后调 service.deleteModels',
-      (WidgetTester tester) async {
-    final _FakeOcrService ocr = _FakeOcrService(ready: true);
-    await tester.pumpWidget(wrap(view(service: service(), ocr: ocr)));
+  testWidgets('非书籍类目也能展开：明细列出磁盘子项，且不给删除按钮', (WidgetTester tester) async {
+    writeFile(p.join(docs.path, 'custom_fonts', 'NotoSerif.ttf'), 4096);
+
+    await tester.pumpWidget(wrap(view(service: service())));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.storage_category_ocr_models), findsWidgets);
-    // 模块区在长类目列表下方、默认视口外：先滚到可见再点。
-    await tester.ensureVisible(find.byTooltip(t.manga_ocr_delete));
+    // 展开前明细不在树上。
+    expect(find.text('custom_fonts/NotoSerif.ttf'), findsNothing);
+
+    await tester.ensureVisible(find.text(t.storage_category_custom_fonts));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip(t.manga_ocr_delete));
+    await tester.tap(find.text(t.storage_category_custom_fonts));
+    await tester.pumpAndSettle();
+
+    expect(find.text('custom_fonts/NotoSerif.ttf'), findsOneWidget);
+    // 通用明细接不上域内删除原语，一律只读——不得出现删除按钮。
+    expect(find.byTooltip(t.dialog_delete), findsNothing);
+  });
+
+  testWidgets('可选模块区已移除：OCR 模型只剩占用行，没有下载/删除按钮', (WidgetTester tester) async {
+    writeFile(
+        p.join(support.path, kOcrModelsSupportChild, 'manga', 'a.onnx'), 300);
+
+    await tester.pumpWidget(wrap(view(service: service())));
+    await tester.pumpAndSettle();
+
+    // 类目行还在（如实显示占用），但下载/删除入口已回归漫画 OCR 设置区。
+    expect(find.text(t.storage_category_ocr_models), findsOneWidget);
+    expect(find.byTooltip(t.manga_ocr_delete), findsNothing);
+    expect(find.byTooltip(t.manga_ocr_download), findsNothing);
+  });
+
+  testWidgets('着色器类目行挂 Anime4K 删除：确认后走注入的删除原语并重扫', (WidgetTester tester) async {
+    writeFile(p.join(docs.path, 'mpv_shaders', 'Anime4K_Clamp.glsl'), 512);
+    int deleteCalls = 0;
+
+    await tester.pumpWidget(wrap(view(
+      service: service(),
+      anime4kBytes: () async => deleteCalls == 0 ? 512 : 0,
+      anime4kDelete: () async {
+        deleteCalls++;
+        File(p.join(docs.path, 'mpv_shaders', 'Anime4K_Clamp.glsl'))
+            .deleteSync();
+        return const <String>['Anime4K_Clamp.glsl'];
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder deleteButton =
+        find.byTooltip(t.storage_shaders_delete_anime4k);
+    await tester.ensureVisible(deleteButton);
+    await tester.pumpAndSettle();
+    await tester.tap(deleteButton);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
-    for (int i = 0; i < 50; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (ocr.deleteCalls > 0 &&
+    for (int i = 0; i < 20; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      if (deleteCalls > 0 &&
           find.byType(CircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }
 
-    expect(ocr.deleteCalls, 1);
-    expect(ocr.ready, isFalse);
+    expect(deleteCalls, 1);
+    // 删完预设后按钮自行消失（_anime4kBytes 归零）。
+    expect(find.byTooltip(t.storage_shaders_delete_anime4k), findsNothing);
   });
 
-  testWidgets('OCR 模型行：未安装显示下载，点击后走下载流并翻绿', (WidgetTester tester) async {
-    final _FakeOcrService ocr = _FakeOcrService(ready: false);
-    await tester.pumpWidget(wrap(view(service: service(), ocr: ocr)));
+  testWidgets('无 Anime4K 预设时着色器行不给删除按钮', (WidgetTester tester) async {
+    writeFile(p.join(docs.path, 'mpv_shaders', 'mine.glsl'), 128);
+
+    await tester.pumpWidget(wrap(view(service: service())));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.byTooltip(t.manga_ocr_download));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip(t.manga_ocr_download));
-    for (int i = 0; i < 50 && !ocr.ready; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    await tester.pump(const Duration(milliseconds: 200));
-
-    expect(ocr.ready, isTrue);
+    expect(find.text(t.storage_category_shaders), findsOneWidget);
+    expect(find.byTooltip(t.storage_shaders_delete_anime4k), findsNothing);
   });
 }

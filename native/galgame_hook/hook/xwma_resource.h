@@ -28,10 +28,9 @@ inline void AppendXwmaFourCc(std::vector<uint8_t>* output,
   output->insert(output->end(), value, value + 4);
 }
 
-// Rebuild only the RIFF envelope while preserving the archive's exact `fmt`,
-// `dpds`, and compressed payload bytes.  SGRE keeps those three chunks in
-// voice_body.bin without a RIFF header; using them verbatim is stronger than
-// synthesizing metadata from the normalized XAudio2 format.
+// Rebuild only the RIFF envelope while preserving an engine adapter's exact
+// `fmt`, `dpds`, and compressed payload bytes. Using the proved source chunks
+// verbatim is stronger than synthesizing metadata from normalized XAudio2 data.
 inline bool BuildXwmaResourceFromChunks(
     const uint8_t* fmt, uint32_t fmt_bytes, const uint8_t* dpds,
     uint32_t dpds_bytes, const uint8_t* encoded, uint32_t encoded_bytes,
@@ -116,18 +115,6 @@ inline bool BuildXwmaResource(
   }
   return BuildXwmaResourceFromChunks(fmt, kFmtBytes, dpds.data(), dpds_bytes,
                                      encoded, encoded_bytes, output);
-}
-
-inline bool IsSgreRoleWmaSubmission(const XAudioSourceFormat& format,
-                                    uint32_t packet_count,
-                                    uint32_t decoded_bytes) {
-  const uint64_t bytes_per_second =
-      static_cast<uint64_t>(format.sample_rate) * format.channels *
-      format.bits_per_sample / 8u;
-  return format.encoding == XAudioSourceEncoding::kWmaudio2 &&
-         packet_count != 0 && decoded_bytes != 0 && bytes_per_second != 0 &&
-         static_cast<uint64_t>(decoded_bytes) * 1000u >=
-             bytes_per_second * 700u;
 }
 
 }  // namespace fushi_voice_hook

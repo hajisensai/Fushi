@@ -6,3 +6,4 @@
     malie_libp_.shutdown();
     qlie_.shutdown();
     elf_ai6_.shutdown();
+    sgre_.shutdown();

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/workspace_pubspec.dart';
 
 /// BUG-1644 source-scan guard: the vendored `media_kit_video` Windows ANGLE
 /// surface manager must keep rendering on **our** Direct3D 11 device.
@@ -91,14 +92,12 @@ void main() {
   });
 
   test('vendored media_kit_video override is wired in pubspec', () {
-    final String pubspec = File('pubspec.yaml').readAsStringSync();
-    final RegExp override = RegExp(
-      r'media_kit_video:\s*\n\s*path:\s*\.\./third_party/media_kit_video',
-    );
+    final WorkspacePubspec ws = WorkspacePubspec.load();
     expect(
-      override.hasMatch(pubspec),
+      ws.isVendored('media_kit_video', 'third_party/media_kit_video'),
       isTrue,
-      reason: 'dependency_overrides must point media_kit_video at '
+      reason:
+          'dependency_overrides must point media_kit_video at '
           '../third_party/media_kit_video (BUG-1644). Without it the pub.dev '
           'package returns and Windows hardware decoding drops back to '
           'd3d11va-copy.',
@@ -106,36 +105,42 @@ void main() {
   });
 
   group('BUG-1644: ANGLE is bound to media_kit\'s own Direct3D 11 device', () {
-    test('the EGLDisplay is created from our device, not EGL_DEFAULT_DISPLAY',
-        () {
-      expect(
-        managerCode.contains('eglCreateDeviceANGLE'),
-        isTrue,
-        reason: 'angle_surface_manager.cc must wrap its ID3D11Device with '
-            'eglCreateDeviceANGLE; without it mpv can only see ANGLE\'s '
-            'hidden device and d3d11va falls back to d3d11va-copy.',
-      );
-      expect(
-        managerCode.contains('EGL_D3D11_DEVICE_ANGLE'),
-        isTrue,
-        reason: 'eglCreateDeviceANGLE must be called with '
-            'EGL_D3D11_DEVICE_ANGLE so ANGLE adopts a D3D11 device.',
-      );
-      expect(
-        managerCode.contains('EGL_PLATFORM_DEVICE_EXT'),
-        isTrue,
-        reason: 'the display must come from '
-            'eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, ...); the '
-            'EGL_PLATFORM_ANGLE_ANGLE/EGL_DEFAULT_DISPLAY form makes ANGLE '
-            'create its own device.',
-      );
-    });
+    test(
+      'the EGLDisplay is created from our device, not EGL_DEFAULT_DISPLAY',
+      () {
+        expect(
+          managerCode.contains('eglCreateDeviceANGLE'),
+          isTrue,
+          reason:
+              'angle_surface_manager.cc must wrap its ID3D11Device with '
+              'eglCreateDeviceANGLE; without it mpv can only see ANGLE\'s '
+              'hidden device and d3d11va falls back to d3d11va-copy.',
+        );
+        expect(
+          managerCode.contains('EGL_D3D11_DEVICE_ANGLE'),
+          isTrue,
+          reason:
+              'eglCreateDeviceANGLE must be called with '
+              'EGL_D3D11_DEVICE_ANGLE so ANGLE adopts a D3D11 device.',
+        );
+        expect(
+          managerCode.contains('EGL_PLATFORM_DEVICE_EXT'),
+          isTrue,
+          reason:
+              'the display must come from '
+              'eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, ...); the '
+              'EGL_PLATFORM_ANGLE_ANGLE/EGL_DEFAULT_DISPLAY form makes ANGLE '
+              'create its own device.',
+        );
+      },
+    );
 
     test('the shared device asks for video + BGRA support', () {
       expect(
         managerCode.contains('D3D11_CREATE_DEVICE_VIDEO_SUPPORT'),
         isTrue,
-        reason: 'FFmpeg\'s d3d11va_device_init QueryInterfaces for '
+        reason:
+            'FFmpeg\'s d3d11va_device_init QueryInterfaces for '
             'ID3D11VideoDevice/ID3D11VideoContext; a device created without '
             'D3D11_CREATE_DEVICE_VIDEO_SUPPORT can refuse them and the '
             'd3d11-egl interop then bails silently.',
@@ -151,7 +156,8 @@ void main() {
       expect(
         managerCode.contains('SetMultithreadProtected(TRUE)'),
         isTrue,
-        reason: 'libmpv decodes on its own threads while Flutter\'s raster '
+        reason:
+            'libmpv decodes on its own threads while Flutter\'s raster '
             'thread reads the shared texture; the device must be thread safe '
             'before it is handed to ANGLE.',
       );
@@ -167,7 +173,8 @@ void main() {
         expect(
           managerCode.contains(attributes),
           isTrue,
-          reason: 'the upstream $attributes fallback must stay reachable so '
+          reason:
+              'the upstream $attributes fallback must stay reachable so '
               'machines that cannot take the device-backed display keep '
               'working exactly like pub.dev (BUG-1644 must not regress '
               'playback on old drivers).',
@@ -176,18 +183,27 @@ void main() {
     });
 
     test('the process-wide device is not released per instance', () {
-      final int cleanUp =
-          managerCode.indexOf('void ANGLESurfaceManager::CleanUp');
-      expect(cleanUp, isNonNegative,
-          reason: 'expected a CleanUp definition in angle_surface_manager.cc');
-      final int nextFunction =
-          managerCode.indexOf('\nbool ANGLESurfaceManager::', cleanUp);
+      final int cleanUp = managerCode.indexOf(
+        'void ANGLESurfaceManager::CleanUp',
+      );
+      expect(
+        cleanUp,
+        isNonNegative,
+        reason: 'expected a CleanUp definition in angle_surface_manager.cc',
+      );
+      final int nextFunction = managerCode.indexOf(
+        '\nbool ANGLESurfaceManager::',
+        cleanUp,
+      );
       final String body = managerCode.substring(
-          cleanUp, nextFunction < 0 ? managerCode.length : nextFunction);
+        cleanUp,
+        nextFunction < 0 ? managerCode.length : nextFunction,
+      );
       expect(
         body.contains('d3d_11_device_->Release()'),
         isFalse,
-        reason: 'the device is shared by every ANGLESurfaceManager now; '
+        reason:
+            'the device is shared by every ANGLESurfaceManager now; '
             'releasing it per instance frees it under the surviving '
             'VideoOutputs. CleanUp must delegate to ReleaseSharedResources() '
             'on the last instance instead.',
@@ -195,7 +211,8 @@ void main() {
       expect(
         body.contains('ReleaseSharedResources()'),
         isTrue,
-        reason: 'the last instance must tear the shared display & device down '
+        reason:
+            'the last instance must tear the shared display & device down '
             'through ReleaseSharedResources().',
       );
     });
@@ -208,30 +225,40 @@ void main() {
 
       // CMake comments are `#` to end of line; a commented-out pin must not
       // satisfy this guard.
-      final String cmake = File(cmakePath).readAsLinesSync().map((String line) {
-        final int hash = line.indexOf('#');
-        return hash < 0 ? line : line.substring(0, hash);
-      }).join('\n');
+      final String cmake = File(cmakePath)
+          .readAsLinesSync()
+          .map((String line) {
+            final int hash = line.indexOf('#');
+            return hash < 0 ? line : line.substring(0, hash);
+          })
+          .join('\n');
 
-      final RegExpMatch? pin =
-          RegExp(r'set\(LIBMPV\s+"([^"]+)"\)').firstMatch(cmake);
-      expect(pin, isNotNull,
-          reason: 'expected a set(LIBMPV "...") pin in $cmakePath');
+      final RegExpMatch? pin = RegExp(
+        r'set\(LIBMPV\s+"([^"]+)"\)',
+      ).firstMatch(cmake);
+      expect(
+        pin,
+        isNotNull,
+        reason: 'expected a set(LIBMPV "...") pin in $cmakePath',
+      );
       final String archive = pin!.group(1)!;
 
       expect(
         File('$vendoredDir/$archive').existsSync(),
         isTrue,
-        reason: 'the pinned libmpv archive $archive must be committed under '
+        reason:
+            'the pinned libmpv archive $archive must be committed under '
             '$vendoredDir (TODO-1172: nothing is downloaded at build time).',
       );
 
-      final RegExpMatch? stamp =
-          RegExp(r'^mpv-dev-x86_64-(\d{8})-git-').firstMatch(archive);
+      final RegExpMatch? stamp = RegExp(
+        r'^mpv-dev-x86_64-(\d{8})-git-',
+      ).firstMatch(archive);
       expect(
         stamp,
         isNotNull,
-        reason: 'the pin must be a plain `mpv-dev-x86_64-<date>-git-<sha>.7z` '
+        reason:
+            'the pin must be a plain `mpv-dev-x86_64-<date>-git-<sha>.7z` '
             'build: `-lgpl` drops TrueHD (re-opens BUG-073) and `-v3` needs '
             'Haswell+ (crashes on older CPUs). Got: $archive',
       );
@@ -249,7 +276,8 @@ void main() {
       expect(
         buildDate,
         greaterThanOrEqualTo(minimumBuildDate),
-        reason: 'libmpv pin $archive predates mpv 1d15686142 '
+        reason:
+            'libmpv pin $archive predates mpv 1d15686142 '
             '($minimumBuildDate), which fixes the EGL_EXT_device_query check '
             'that gates d3d11-egl on ANGLE. Bumping backwards past it silently '
             'restores d3d11va-copy (BUG-1644).',
@@ -263,25 +291,35 @@ void main() {
       // (Anime4K / upscalers) and the scale/cscale filters silently stop
       // applying. Hardware rendering must be retried on the upstream display
       // first; losing zero-copy is far cheaper than losing the GPU pipeline.
-      final int create =
-          managerCode.indexOf('void ANGLESurfaceManager::Create()');
-      expect(create, isNonNegative,
-          reason: 'expected a Create() definition in angle_surface_manager.cc');
-      final int nextFunction =
-          managerCode.indexOf('\nvoid ANGLESurfaceManager::CleanUp', create);
+      final int create = managerCode.indexOf(
+        'void ANGLESurfaceManager::Create()',
+      );
+      expect(
+        create,
+        isNonNegative,
+        reason: 'expected a Create() definition in angle_surface_manager.cc',
+      );
+      final int nextFunction = managerCode.indexOf(
+        '\nvoid ANGLESurfaceManager::CleanUp',
+        create,
+      );
       final String body = managerCode.substring(
-          create, nextFunction < 0 ? managerCode.length : nextFunction);
+        create,
+        nextFunction < 0 ? managerCode.length : nextFunction,
+      );
       expect(
         body.contains('RetryOnUpstreamEGLDisplay()'),
         isTrue,
-        reason: 'Create() must retry on the upstream EGL display when the '
+        reason:
+            'Create() must retry on the upstream EGL display when the '
             'surface fails, instead of throwing straight into the software '
             'renderer (where glsl-shaders are inert).',
       );
       expect(
         managerCode.contains('shared_interop_display_disabled_'),
         isTrue,
-        reason: 'once the device-backed display proves unusable it must be '
+        reason:
+            'once the device-backed display proves unusable it must be '
             'latched off, otherwise every later instance rebuilds it.',
       );
     });
@@ -290,7 +328,8 @@ void main() {
       expect(
         videoOutputCode.contains('glsl-shaders & scale filters are INERT'),
         isTrue,
-        reason: 'S/W rendering silently disables 画质增强 / super-resolution; '
+        reason:
+            'S/W rendering silently disables 画质增强 / super-resolution; '
             'the log must say so or the next report is undiagnosable '
             '(BUG-1657).',
       );
@@ -300,14 +339,16 @@ void main() {
       expect(
         headerCode.contains('uses_shared_d3d11_device'),
         isTrue,
-        reason: 'ANGLESurfaceManager must expose whether ANGLE actually runs '
+        reason:
+            'ANGLESurfaceManager must expose whether ANGLE actually runs '
             'on the shared device, otherwise a silent fallback to '
             'd3d11va-copy is undiagnosable in the field.',
       );
       expect(
         videoOutputCode.contains('uses_shared_d3d11_device'),
         isTrue,
-        reason: 'VideoOutput must log the interop state next to '
+        reason:
+            'VideoOutput must log the interop state next to '
             '"Using H/W rendering.".',
       );
     });

@@ -322,20 +322,6 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
       valid.push_back(c);
     }
   }
-  const bool classifier_active = std::any_of(
-      valid.begin(), valid.end(), [](const fushi_voice_hook::VoiceClip* clip) {
-        return (clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0;
-      });
-  if (classifier_active) {
-    valid.erase(
-        std::remove_if(
-            valid.begin(), valid.end(),
-            [](const fushi_voice_hook::VoiceClip* clip) {
-              return (clip->pad & fushi_voice_hook::kVoiceClipFlagRoleVoice) ==
-                     0;
-            }),
-        valid.end());
-  }
   return valid;
 }
 
@@ -1203,15 +1189,6 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   if (valid.empty()) {
     return VoiceHookStatus{};
   }
-  // CollectValidClipsLocked 在分类器生效后已经只保留角色语音。此时“最近的已分类
-  // 角色段”本身就是比能量跳变更强的选轨证据：SGRE 的 xWMA 会在文本前约 156ms
-  // 一次性提交整句，环形里的 PCM 虽可完整读取，但能量代理在个别整句上会返回 0，
-  // 旧逻辑于是把已经明确标成 role voice 的轨当成“选不出源”。未启用分类器的引擎
-  // 仍完整保留原能量自动选源行为。
-  const bool role_classifier_active = std::any_of(
-      valid.begin(), valid.end(), [](const fushi_voice_hook::VoiceClip* clip) {
-        return (clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0;
-      });
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(h) + sizeof(SharedHeader);
 
@@ -1235,16 +1212,11 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     filter_by_src = true;
     sel_src = target_source;
   } else {
-    // 每源：说话前窗口 [ts-900,ts-251] 与文本时刻窗口 [ts-250,ts+450] 的平均能量。
-    // SGRE 的角色 xWMA 实测会比 UserHook1 文本早约 156ms 开始播放；旧的 -150ms
-    // 前界会仅差数毫秒选不出已经通过 role-voice 分类器的源。这里与整句默认
-    // ts-200 回看窗口留出调度抖动余量，同时保持两段采样窗口不重叠。
+    // 每源：说话前窗口 [ts-900,ts-250] 与文本时刻窗口 [ts-150,ts+450] 的平均能量。
     std::map<uint64_t, double> e_before, e_at;
     std::map<uint64_t, int> n_before, n_at;
     std::map<uint64_t, uint64_t> bytes_at;  // 位深不认识时的格式无关代理判据
     bool any_energy = false;
-    uint64_t nearest_role_src = 0;
-    int64_t nearest_role_distance = INT64_MAX;
     for (size_t i = 0; i < valid.size(); i++) {
       const auto* c = valid[i];
       bool excluded = false;
@@ -1257,16 +1229,11 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
       if (excluded) {
         continue;  // 用户标记的 BGM 源不参与自动选源
       }
-      const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
-                        static_cast<int64_t>(ts_ms);
-      if (d >= -250 && d <= 450) {
-        bytes_at[c->source_ptr] += c->byte_len;
-      }
-      if (role_classifier_active && d >= -250 && d <= 450) {
-        const int64_t distance = d < 0 ? -d : d;
-        if (distance < nearest_role_distance) {
-          nearest_role_distance = distance;
-          nearest_role_src = c->source_ptr;
+      {
+        const int64_t dd = static_cast<int64_t>(c->timestamp_ms) -
+                           static_cast<int64_t>(ts_ms);
+        if (dd >= -150 && dd <= 450) {
+          bytes_at[c->source_ptr] += c->byte_len;
         }
       }
       const double e = energies[i];
@@ -1274,11 +1241,13 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
         continue;  // 位深真的不认识（8/16/24/32 与 float32 之外）
       }
       any_energy = true;
-      if (d >= -900 && d <= -251) {
+      const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
+                        static_cast<int64_t>(ts_ms);
+      if (d >= -900 && d <= -250) {
         e_before[c->source_ptr] += e;
         n_before[c->source_ptr]++;
       }
-      if (d >= -250 && d <= 450) {
+      if (d >= -150 && d <= 450) {
         e_at[c->source_ptr] += e;
         n_at[c->source_ptr]++;
       }
@@ -1300,10 +1269,7 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
         sel_src = kv.first;
       }
     }
-    if (sel_src == 0 && role_classifier_active) {
-      sel_src = nearest_role_src;
-    }
-    if (sel_src == 0 && !any_energy) {
+    if (!any_energy) {
       // 位深真的不认识（不是 8/16/24/32 也不是 float32）：能量判据用不了，但**仍然只能
       // 选一个源**。退而用格式无关的代理——文本时刻窗内写入字节最多的那个源（正在出声的
       // 源必然在写）。这条分支在现实里几乎走不到（BUG-1769 修复后常见格式全部可算能量），

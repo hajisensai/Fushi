@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "engine_id": "sgre",
+  "status": "implemented_unverified",
+  "events": [
+    {"kind": "session_end", "timestamp_ms": 1}
+  ],
+  "expected": {
+    "cards": [],
+    "duplicate_text_events": 0,
+    "thread_filtered_events": 0,
+    "session_clean": true
+  }
+}

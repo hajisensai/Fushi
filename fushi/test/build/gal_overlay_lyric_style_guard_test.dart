@@ -23,10 +23,21 @@ void main() {
           .readAsStringSync();
 
   test('① 描边/投影是同一 text_layout_ 的偏移多遍绘制', () {
+    // 描边半径本身是用户可调项（gal_hook_text_outline_width），不再是编译期常量；
+    // 守的是「半径有界」而不是「叫什么名字」——无界半径会让 8 遍描边把整窗涂满。
+    // 主文本遍与注音遍各用一次，必须**每一处**都经 clamp：只要求「存在一处 clamp」
+    // 的话，另一处失去限幅是抓不到的。
+    final int outlineUses =
+        RegExp(r'style_\.outline_width').allMatches(window).length;
+    final int clampedUses =
+        RegExp(r'std::clamp\(style_\.outline_width,').allMatches(window).length;
+    expect(outlineUses, greaterThan(0),
+        reason: '描边半径必须取自 style_.outline_width');
     expect(
-      window.contains('kLyricOutlineRadiusDip'),
-      isTrue,
-      reason: '描边半径常量必须存在，否则桌面歌词渲染根本没接上',
+      clampedUses,
+      outlineUses,
+      reason: '每一处 style_.outline_width 都必须经 clamp 限幅，'
+          '否则用户能把描边半径调到把整窗涂满',
     );
     expect(
       window.contains('kLyricShadowOffsetDip'),
@@ -59,8 +70,10 @@ void main() {
       isTrue,
       reason: '注音描边遍必须被 hook_text_mode_ 门住',
     );
+    // 允许在 hook_text_mode_ 之后再 && 上更严的条件（现在是用户的 style_.bold），
+    // 但 hook_text_mode_ 必须仍在这个三元的条件里——否则歌词条会被改字重。
     expect(
-      RegExp(r'hook_text_mode_\s*\?\s*DWRITE_FONT_WEIGHT_SEMI_BOLD'
+      RegExp(r'hook_text_mode_[^?\n]*\s*\?\s*DWRITE_FONT_WEIGHT_SEMI_BOLD'
               r'\s*:\s*DWRITE_FONT_WEIGHT_NORMAL')
           .hasMatch(window),
       isTrue,

@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "调试通道的构建可能不稳定。使用风险自负。",
   "update_download": "下载",
   "update_download_failed": "下载失败",
-  "update_download_not_resumed": "未续传",
   "update_download_restarted_from_zero": "已从零重下",
   "update_download_resume_status": "续传：$status",
   "update_download_resumed": "已续传",
@@ -3579,7 +3578,7 @@
   "video_control_custom_action": "快捷键 $index",
   "video_control_custom_action_none": "不绑定",
   "settings_destination_storage": "存储",
-  "settings_destination_storage_summary": "磁盘占用与可清理模块",
+  "settings_destination_storage_summary": "数据位置与磁盘占用",
   "storage_overview_section": "磁盘占用",
   "storage_overview_total": "总计",
   "storage_overview_refresh": "重新扫描",
@@ -3601,11 +3600,9 @@
   "storage_entry_delete_dictionary_confirm_body": "将删除该词典及其已导入数据。",
   "storage_entry_delete_done": "已删除",
   "storage_entry_delete_failed": "删除失败：$reason",
-  "storage_modules_section": "可选模块",
   "storage_modules_anime4k_title": "Anime4K 着色器",
   "storage_modules_anime4k_hint": "可随时在视频设置的画质增强里重新下载",
   "storage_modules_anime4k_delete_done": "已删除 $n 个着色器文件",
-  "storage_modules_not_installed": "未安装",
   "storage_bundled_section": "随包组件",
   "storage_bundled_hint": "随安装包携带，删除后下次更新会自动恢复，此处仅展示。",
   "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志",
@@ -3738,5 +3735,6 @@
   "gal_hook_text_padding": "文字左右边距",
   "gal_hook_text_padding_hint": "让文字与窗口边缘和缩放手柄保持距离。",
   "gal_hook_text_corner_radius": "窗口圆角",
-  "gal_hook_text_corner_radius_hint": "调整窗口背景的圆角半径。"
+  "gal_hook_text_corner_radius_hint": "调整窗口背景的圆角半径。",
+  "storage_shaders_delete_anime4k": "删除 Anime4K 着色器"
 }

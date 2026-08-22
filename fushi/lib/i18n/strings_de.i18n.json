@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Debug-Kanal-Builds können instabil sein. Verwendung auf eigene Gefahr.",
   "update_download": "Herunterladen",
   "update_download_failed": "Download fehlgeschlagen",
-  "update_download_not_resumed": "nicht fortgesetzt",
   "update_download_restarted_from_zero": "von vorn begonnen",
   "update_download_resume_status": "Fortsetzen: $status",
   "update_download_resumed": "fortgesetzt",
@@ -3579,7 +3578,7 @@
   "video_control_custom_action": "Shortcut $index",
   "video_control_custom_action_none": "Not assigned",
   "settings_destination_storage": "Storage",
-  "settings_destination_storage_summary": "Disk usage and reclaimable modules",
+  "settings_destination_storage_summary": "Data location and disk usage",
   "storage_overview_section": "Disk usage",
   "storage_overview_total": "Total",
   "storage_overview_refresh": "Rescan",
@@ -3601,11 +3600,9 @@
   "storage_entry_delete_dictionary_confirm_body": "This removes the dictionary and its imported data.",
   "storage_entry_delete_done": "Deleted",
   "storage_entry_delete_failed": "Delete failed: $reason",
-  "storage_modules_section": "Optional modules",
   "storage_modules_anime4k_title": "Anime4K shaders",
   "storage_modules_anime4k_hint": "Can be downloaded again anytime in video settings",
   "storage_modules_anime4k_delete_done": "Deleted $n shader files",
-  "storage_modules_not_installed": "Not installed",
   "storage_bundled_section": "Bundled components",
   "storage_bundled_hint": "Shipped with the installer; deleted files come back on the next update, listed for reference only.",
   "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log",
@@ -3738,5 +3735,6 @@
   "gal_hook_text_padding": "Horizontal text padding",
   "gal_hook_text_padding_hint": "Keep text away from the window edges and resize grip.",
   "gal_hook_text_corner_radius": "Window corner radius",
-  "gal_hook_text_corner_radius_hint": "Adjust the background corner radius."
+  "gal_hook_text_corner_radius_hint": "Adjust the background corner radius.",
+  "storage_shaders_delete_anime4k": "Delete Anime4K shaders"
 }

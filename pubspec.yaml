@@ -2,7 +2,161 @@ name: fushi_workspace
 publish_to: none
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
+
+# 成员包按 path 参与统一解析，其中三个的包名就是它们要顶替的上游包名，
+# 因此天然优先于 pub.dev 版本，不需要（也不允许）再写 dependency_overrides：
+#   flutter_inappwebview_windows —— Windows WebView 实现的 fork。
+#   packages/gamepads_android_stub（包名 gamepads_android）—— Android 手柄走
+#     引擎自己的 key-event 通路，不用 gamepads 插件；真包启动即崩（无条件把
+#     MainActivity 强转 GamepadsCompatibleActivity），故用纯 Dart no-op 顶掉，
+#     不注册任何 native ActivityAware 插件。
+#   gamepads_windows —— BUG-116：pub 上的 0.3.0+1 会崩。轮询线程 detach 后在
+#     stop() Release 掉 g_gameInput 之后仍调 GetCurrentReading（析构期
+#     use-after-free）、直接在轮询线程上调 MethodChannel（channel 只能在平台
+#     线程用）、裸 bool 竞态、设备回调注册用的是未初始化野指针。fork 四条全修
+#     （join 后再 release、经 message-only 窗口把事件转回平台线程、原子标志、
+#     值类型回调 token）。等上游修好再撤。
+workspace:
+  - fushi
+  - packages/flutter_inappwebview_windows
+  - packages/fushi_anki
+  - packages/fushi_audio
+  - packages/fushi_core
+  - packages/fushi_dictionary
+  - packages/fushi_platform
+  - packages/fushi_torrent
+  - packages/gamepads_android_stub
+  - packages/gamepads_windows
 
 dev_dependencies:
   melos: ^7.7.0
+
+# 从 fushi/pubspec.yaml 整段搬来：pub workspace 只认根 pubspec 的
+# dependency_overrides，放在成员包里会被 pub 直接拒绝。
+# 注意：flutter_inappwebview_windows / gamepads_android(=packages/
+# gamepads_android_stub) / gamepads_windows 三个 vendored 包**不在**下面。
+# 它们是 workspace 成员，包名就是被替换的上游包名，解析时天然优先于
+# pub.dev 版本；再写一条 override 会让 pub 直接报
+# "Cannot override workspace packages."。vendor 的理由见各自 pubspec 顶部。
+dependency_overrides:
+  # TODO-1306 / TODO-1275 / BUG-361: vendored desktop_drop 0.5.0. Adds (a) URL
+  # drag import — browsers drop a URL as CFSTR_INETURLW (Windows) / public.url
+  # (macOS) / an http(s) line in text/uri-list (Linux), all of which upstream
+  # discards, so a dragged link never reaches Dart; the fork extracts the URL and
+  # sends it through the same channel as file paths for the classifier to import
+  # as a stream video — and (b) the re-register-OLE-drop-target `reinitialize`
+  # method (BUG-361). Was a pub-cache ci-patch; vendored so the cross-platform
+  # native delta is tracked source. See third_party/desktop_drop/PATCHES.md.
+  desktop_drop:
+    path: third_party/desktop_drop
+  # 自编 ffmpeg-kit（arthenica 源码重编，android 用 third_party 内自编 AAR；修 BUG-122
+  # Android16 启动崩溃）。Dart API 与上游 ffmpeg_kit_flutter 6.0.3 一致。
+  ffmpeg_kit_flutter:
+    path: third_party/ffmpeg_kit_flutter
+  # flutter_inappwebview_android 1.1.3 has legacy openFileChooser overloads
+  # declared protected, which fails against the current Android WebChromeClient
+  # API at compileSdk 36. Keep the Android implementation vendored until an
+  # upstream release carries the public-method fix.
+  flutter_inappwebview_android:
+    path: third_party/flutter_inappwebview_android
+  # Vendored third-party packages carrying Flutter 3.x API-compat patches that
+  # are not published on pub.dev. Previously these lived only as hand-edits in
+  # each dev's pub-cache, so a clean checkout failed to build (e.g. on iOS):
+  #   network_to_file_image: hashValues→Object.hash, DecoderCallback /
+  #     PaintingBinding.instantiateImageCodec / ImageProvider.load removals.
+  #   carousel_slider: CarouselController name clash with flutter/material.
+  #   fading_edge_scrollview: PageController vs ScrollController type.
+  # Source under third_party/ (SDK upper bound bumped to <4.0.0 for Dart 3).
+  network_to_file_image:
+    path: third_party/network_to_file_image
+  carousel_slider:
+    path: third_party/carousel_slider
+  fading_edge_scrollview:
+    path: third_party/fading_edge_scrollview
+  # BUG-073: upstream media_kit_libs_windows_video 1.0.11 pins a 2023-09-24
+  # libmpv whose FFmpeg build cannot decode TrueHD (TrueHD 5.1 movies play with
+  # NO sound — verified the bundled DLL fails `Opening decoder truehd` at
+  # runtime). Vendored fork repoints the CMake download to a maintained
+  # full-FFmpeg libmpv (zhongfly/mpv-winbuild) that decodes TrueHD; see
+  # third_party/media_kit_libs_windows_video/windows/CMakeLists.txt. Same DLL
+  # also backs the audiobook player, so this fixes TrueHD audiobooks too.
+  media_kit_libs_windows_video:
+    path: third_party/media_kit_libs_windows_video
+  # BUG-073 (cont.): the SAME TrueHD gap exists on macOS/iOS/Android — media-kit's
+  # "default" FFmpeg flavor enables the truehd demuxer but not its decoder, so
+  # TrueHD audio is silent on every platform, not just Windows. These forks switch
+  # each platform to the "full" flavor (which enables all decoders). Linux uses
+  # the system libmpv (full FFmpeg) and needs no override.
+  #
+  # TODO-1137: every media-kit release, full flavor included, is built against
+  # FFmpeg 6.0 (2023-02) — off the maintenance branches, no security backports,
+  # and this is the library that decodes whatever file the user opens. All three
+  # are therefore built from our own forks at FFmpeg 6.1.6 (6.1 LTS tip) and
+  # mirrored into the permanent `vendor-libmpv` release: Android from
+  # libmpv-android-video-build, macOS/iOS from libmpv-darwin-build, both on the
+  # `hibiki/ffmpeg-6.1.6` branch. Staying inside 6.x keeps the FFmpeg API stable,
+  # so mpv itself is unchanged (7.x would force a mpv bump, which in turn makes
+  # libplacebo a hard dependency neither build repo has).
+  # See each package's Makefile / build.gradle for the repoint + checksums.
+  media_kit_libs_macos_video:
+    path: third_party/media_kit_libs_macos_video
+  media_kit_libs_ios_video:
+    path: third_party/media_kit_libs_ios_video
+  media_kit_libs_android_video:
+    path: third_party/media_kit_libs_android_video
+  # BUG-235: media_kit_video 2.0.1's MaterialDesktopSeekBarState.onPointerUp /
+  # onPointerMove call controller(context) (dereferences State.context) with no
+  # mounted guard. Fushi tears down the controls subtree on fullscreen
+  # enter/exit and episode switch (VideoControlsFocusGate), so releasing the
+  # seek bar drag right then crashes with "Null check operator used on a null
+  # value". Vendored fork adds `if (!mounted) return;` to both handlers. See
+  # third_party/media_kit_video/PATCHES.md.
+  media_kit_video:
+    path: third_party/media_kit_video
+  # macOS build fix: upstream flutter_onnxruntime 1.8.3 declares ios/macos plugin
+  # platforms whose podspecs pin onnxruntime-objc 1.23 -> forces macOS 14 / iOS 16
+  # deployment target, breaking the "Build Desktop" macOS release job (project is
+  # macOS 10.15). Vendored fork drops the ios/macos plugin-platform declarations
+  # (+ deletes the Apple native trees) so Flutter never registers it into the
+  # macOS Swift package; android/linux/windows native OCR is untouched. Apple's
+  # manga OCR degrades to interconnect-host / Gemini cloud (isLocalOnnxRuntimeAvailable).
+  # See third_party/flutter_onnxruntime/PATCHES.md.
+  flutter_onnxruntime:
+    path: third_party/flutter_onnxruntime
+
+# Melos 7 的配置位置就是这里（7.0 起 melos.yaml 被废弃）。包列表不再重复声明：
+# 成员由上面的 workspace: 决定，melos 直接读它。
+melos:
+  name: fushi_workspace
+  repository: https://github.com/hajisensai/Fushi
+
+  command:
+    bootstrap:
+      # workspace 下 pub 只在根解析一次，melos 不再需要写 pubspec_overrides.yaml
+      # （usePubspecOverrides 是 Melos 6 时代给独立解析用的）。这里只保留装完
+      # 依赖后的收尾：打非 vendored 的 pub-cache 补丁。需要 bash（Windows 上是
+      # Git Bash）。Windows 原生路径是 tool/bootstrap.ps1 —— melos bootstrap 在
+      # Windows 有 CJK 编码 bug。
+      hooks:
+        post: |
+          bash ci/apply-patches.sh
+
+  scripts:
+    analyze:
+      run: melos exec -- "dart analyze --fatal-infos"
+      description: Run dart analyze in all packages
+
+    test:
+      run: melos exec -- "flutter test"
+      description: Run tests in all packages
+
+    dev:
+      run: |
+        cd fushi && flutter run
+      description: Run Fushi in debug mode
+
+    build:android:
+      run: |
+        cd fushi && flutter build apk --release --target-platform android-arm64 --split-per-abi
+      description: Build Android release APK

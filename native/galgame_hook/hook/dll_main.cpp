@@ -28,8 +28,6 @@
 
 #include <MinHook.h>
 
-#include <new>
-
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -49,9 +47,9 @@
 #include "catsystem2_int.h"
 #include "malie_lib.h"
 #include "ffmpeg_runtime.h"
+#include "hook_original_registry.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
-#include "sgre_voice_archive.h"
 #include "text_thread_identity.h"
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
@@ -59,7 +57,7 @@
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
-#include "xaudio_pcm_capture_xapo.h"
+#include "xaudio_resource_dispatch.h"
 #include "xaudio_source_format.h"
 #include "xaudio_trace.h"
 #include "xwma_resource.h"
@@ -154,14 +152,17 @@ uint8_t* g_clip_base = nullptr;
 uint8_t* g_lb_ring_base = nullptr;
 uint8_t* g_lb_marker_base = nullptr;
 
-// MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
-// 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
+// MinHook 去重集：普通 hook 仍保持历史语义。只有确实会因 codec 出现多个 vtable target
+// 的 XAudio2 方法使用下面两个独立 trampoline 注册表；不能把全 DLL 的不同 detour 混进
+// 一个仅按 target 索引的表，否则共享实现地址会把某个 detour 绑定到别的 trampoline。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
 CRITICAL_SECTION g_text_cs;
 bool g_text_cs_ready = false;
 void* g_hooked_fns[64] = {nullptr};
 int g_hooked_count = 0;
+fushi_voice_hook::HookOriginalRegistry<16> g_submit_source_buffer_originals;
+fushi_voice_hook::HookOriginalRegistry<16> g_flush_source_buffers_originals;
 
 // 原始语音流落盘的共用出口（KiriKiri 与 Siglus 都写同一目录，供 Dart 按 tick 配对）。
 std::wstring VoiceBaseName(const wchar_t* storagename) {
@@ -249,10 +250,8 @@ typedef HRESULT(STDMETHODCALLTYPE* CommitChanges_t)(IXAudio2* self,
 XAudio2Create_t g_orig_XAudio2Create9 = nullptr;
 XAudio2Create_t g_orig_XAudio2Create8 = nullptr;
 CreateSourceVoice_t g_orig_CreateSourceVoice = nullptr;
-SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
 SourceVoiceStartStop_t g_orig_SourceVoiceStart = nullptr;
 SourceVoiceStartStop_t g_orig_SourceVoiceStop = nullptr;
-FlushSourceBuffers_t g_orig_FlushSourceBuffers = nullptr;
 DestroyVoice_t g_orig_DestroyVoice = nullptr;
 CommitChanges_t g_orig_CommitChanges = nullptr;
 
@@ -356,6 +355,43 @@ bool HookFn(void* target, void* detour, void** original) {
   return ok;
 }
 
+// 多 codec XAudio2 方法专用：一个 detour 可以对应多个 target，每个 target 必须保留自己的
+// trampoline。注册表按 detour 分开，避免普通 HookFn 的跨适配器 target 去重语义被改写。
+template <size_t Capacity>
+bool HookFnWithOriginalRegistry(
+    void* target, void* detour,
+    fushi_voice_hook::HookOriginalRegistry<Capacity>* originals) {
+  if (target == nullptr || originals == nullptr || !g_cs_ready) return false;
+  bool ok = false;
+  EnterCriticalSection(&g_cs);
+  void* trampoline = originals->Lookup(target);
+  if (trampoline != nullptr) {
+    ok = true;
+  } else {
+    const MH_STATUS created = MH_CreateHook(target, detour, &trampoline);
+    if (created == MH_OK && originals->Publish(target, trampoline)) {
+      const MH_STATUS enabled = MH_EnableHook(target);
+      if (enabled == MH_OK || enabled == MH_ERROR_ENABLED) {
+        ok = true;
+      } else {
+        originals->Erase(target, trampoline);
+        MH_RemoveHook(target);
+      }
+    } else if (created == MH_OK) {
+      MH_RemoveHook(target);
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+  return ok;
+}
+
+template <typename Function, size_t Capacity>
+Function OriginalHookForVtableSlot(
+    void* com_obj, size_t idx,
+    const fushi_voice_hook::HookOriginalRegistry<Capacity>& originals) {
+  return reinterpret_cast<Function>(originals.Lookup(VtableSlot(com_obj, idx)));
+}
+
 // 首次拿到可发布的 PCM 格式：block_align 最后写，作为跨进程「格式就绪」完成标记。
 // XAudio2 ADPCM 在工作线程解码成 16-bit 后也走这里，绝不把 4-bit 压缩源伪装成 PCM。
 void MaybeRecordPcmFormat(uint32_t sample_rate, uint32_t channels,
@@ -449,8 +485,7 @@ inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
                                uint32_t channels, uint32_t bits_per_sample,
                                uint32_t is_float,
                                uint64_t timestamp_ms = 0,
-                               uint64_t total_at_write = 0,
-                               uint32_t clip_flags = 0) {
+                               uint64_t total_at_write = 0) {
   if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
     return;
   }
@@ -471,7 +506,7 @@ inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
   clip->channels = channels;
   clip->bits_per_sample = bits_per_sample;
   clip->is_float = is_float;
-  clip->pad = clip_flags;
+  clip->pad = 0;
   clip->source_ptr = source_ptr;   // 该段所属源（区分语音源 vs BGM 源；解码路径=解码器句柄）
   clip->seq = idx + 1;             // 有效性完成标记，**最后**写
 }
@@ -533,49 +568,59 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     g_header = static_cast<SharedHeader*>(
         MapViewOfFile(g_mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
   }
-  if (g_header != nullptr) {
-    // 只信任 injector 建好、契约匹配的映射。
-    if (g_header->magic == kSharedMagic &&
-        g_header->version == kSharedVersion) {
-      g_header->hooked = 1;
-
-      // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
-      // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-      if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
-
-      // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
-      g_ring_base =
-          reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
-      g_ring_capacity = g_header->ring_capacity;
-      // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
-      g_text_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
-      g_clip_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
-      // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
-      g_lb_ring_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
-      g_lb_marker_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
-      // Apply/ack native loopback policy before potentially expensive engine
-      // probing. Default deny therefore reaches stopped/applied immediately and
-      // still never creates the loopback worker; explicit allow remains
-      // independent of MinHook just as the historical fallback was.
-      registry.InstallFallbackAdapters();
-      InitializeCriticalSection(&g_cs);
-      g_cs_ready = true;
-      InitializeCriticalSection(&g_text_cs);
-      g_text_cs_ready = true;
-      InitializeCriticalSection(&g_dec_cs);
-      g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
-      InitializeCriticalSection(&g_renpy_cs);
-      g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
-      if (MH_Initialize() == MH_OK) {
-        g_mh_init = true;
-        g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
-        registry.InstallStartupAdapters();
-      }
+  // Fail closed before any adapter can observe the mapping. Polling an unknown
+  // contract is unsafe even when today's baseline adapters happen not to read
+  // the new fields: a later adapter would silently turn that accident into an
+  // out-of-bounds or fail-open policy read.
+  if (g_header == nullptr || g_header->magic != kSharedMagic ||
+      g_header->version != kSharedVersion) {
+    if (g_header != nullptr) {
+      UnmapViewOfFile(g_header);
+      g_header = nullptr;
     }
+    if (g_mapping != nullptr) {
+      CloseHandle(g_mapping);
+      g_mapping = nullptr;
+    }
+    return 1;
+  }
+
+  g_header->hooked = 1;
+
+  // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
+  // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
+  if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
+
+  // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
+  g_ring_base = reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
+  g_ring_capacity = g_header->ring_capacity;
+  // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
+  g_text_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
+  g_clip_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
+  // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
+  g_lb_ring_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
+  g_lb_marker_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
+  // Apply/ack native loopback policy before potentially expensive engine
+  // probing. Default deny therefore reaches stopped/applied immediately and
+  // still never creates the loopback worker; explicit allow remains
+  // independent of MinHook just as the historical fallback was.
+  registry.InstallFallbackAdapters();
+  InitializeCriticalSection(&g_cs);
+  g_cs_ready = true;
+  InitializeCriticalSection(&g_text_cs);
+  g_text_cs_ready = true;
+  InitializeCriticalSection(&g_dec_cs);
+  g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
+  InitializeCriticalSection(&g_renpy_cs);
+  g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
+  if (MH_Initialize() == MH_OK) {
+    g_mh_init = true;
+    g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
+    registry.InstallStartupAdapters();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。

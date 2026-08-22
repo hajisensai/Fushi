@@ -24,6 +24,9 @@ import 'package:fushi/src/storage/export_directory.dart'
 /// `storage_usage_service_test.dart`），support 根整体归「数据库与内部数据」，
 /// 其中 OCR 模型子目录单独拆出（它是唯一可删可恢复的 support 子项）。
 ///
+/// 每个类目都出明细：书籍/词典的条目来自 DB（有标题、接既有删除原语），其余
+/// 类目的条目就是类目根下的直接子项（`_childEntriesSync`，只读展示）。
+///
 /// 目录求和递归 stat 整棵树（词典是 GB 级），全部经 [Isolate.run] 隔离跑，
 /// 绝不在 UI isolate 同步扫。
 enum StorageCategoryId {
@@ -57,14 +60,15 @@ enum StorageCategoryId {
   /// 导出文件：`fushiExport` + `hibikiExport`。
   exports,
 
-  /// 数据库与内部数据：support 根整体减去 OCR 模型子目录。
+  /// 数据库与内部数据：support 根的直接子项减去 OCR 模型子目录（主库
+  /// `fushi.db`、本地发音库副本 `local_audio_*.db` 等都在明细里）。
   database,
 
   /// 漫画 OCR 模型：`<support>/ocr_models`（可删可恢复）。
   ocrModels,
 }
 
-/// 一个类目内的单条可展开条目（一本书 / 一部词典）。
+/// 一个类目内的单条可展开条目（一本书 / 一部词典 / 类目根下的一个子项）。
 class StorageEntryUsage {
   const StorageEntryUsage({
     required this.id,
@@ -73,10 +77,10 @@ class StorageEntryUsage {
     required this.paths,
   });
 
-  /// 域内主键（书 = bookKey，词典 = 词典名）。
+  /// 域内主键（书 = bookKey，词典 = 词典名，通用子项 = 绝对路径）。
   final String id;
 
-  /// 显示名（书名 / 词典名）。
+  /// 显示名（书名 / 词典名 / `<顶层目录>/<子项名>`）。
   final String label;
 
   /// 该条目占用字节数（多个目录求和）。
@@ -96,11 +100,13 @@ class StorageCategoryUsage {
 
   final StorageCategoryId id;
 
-  /// 类目总字节数（**目录整树**求和——可能大于 [entries] 之和：孤儿目录、
-  /// 未入库残留也如实计入，不做「只算已知条目」的假账）。
+  /// 类目总字节数。书籍/词典类目按**目录整树**求和——可能大于 [entries] 之和：
+  /// 孤儿目录、未入库残留也如实计入，不做「只算已知条目」的假账；其余类目的
+  /// 明细就是根目录的全部直接子项，两者恒相等。
   final int bytes;
 
-  /// 可展开明细（书籍/词典类目非空，其余为空）。按字节数降序。
+  /// 可展开明细，按字节数降序。书籍/词典是 DB 已知条目（带删除原语），其余
+  /// 类目是类目根下的直接子项（只读展示）。
   final List<StorageEntryUsage> entries;
 }
 
@@ -228,6 +234,37 @@ int _pathsSizeSync(final List<String> paths) {
   return total;
 }
 
+/// isolate 入口：列出多个根目录的**直接子项**并逐个求大小。
+///
+/// 这是除书籍/词典（有 DB 标题与既有删除原语，见 `_scanBooks` / `_scanDictionaries`）
+/// 之外所有类目的明细来源：类目根下每个文件/子目录一条，label 带顶层目录名前缀
+/// （`videos/Foo.mkv`、`mpv_shaders/Anime4K_Clamp.glsl`），跨根重名不会混淆。
+///
+/// 子项之和恒等于整树之和（根目录自身不占字节），所以类目总量直接由明细求和得出，
+/// 不再额外扫一遍整树。
+List<Map<String, Object>> _childEntriesSync(final List<String> roots) {
+  final List<Map<String, Object>> out = <Map<String, Object>>[];
+  for (final String root in roots) {
+    final Directory dir = Directory(root);
+    if (!dir.existsSync()) continue;
+    List<FileSystemEntity> children;
+    try {
+      children = dir.listSync(followLinks: false);
+    } on FileSystemException {
+      // 整树列举失败（并发删除/无权限）：该根跳过。
+      continue;
+    }
+    for (final FileSystemEntity child in children) {
+      out.add(<String, Object>{
+        'label': '${p.basename(root)}/${p.basename(child.path)}',
+        'path': child.path,
+        'bytes': directorySizeSync(child.path),
+      });
+    }
+  }
+  return out;
+}
+
 /// 有声书 persist 目录的纯派生（**不创建**，与
 /// `AudiobookStorage.ensurePersistDir` 同口径：`fnv1a32Hex(utf8(key))`；
 /// 该口径已固化进持久目录名，不得漂移——上游金标在 fushi_core
@@ -276,16 +313,15 @@ class StorageUsageService {
         case StorageCategoryId.database:
           yield await _scanDatabase(support);
         case StorageCategoryId.ocrModels:
-          final int bytes = await sizeOfPaths(
-              <String>[p.join(support.path, kOcrModelsSupportChild)]);
-          yield StorageCategoryUsage(id: id, bytes: bytes);
+          yield await _scanGeneric(id, <String>[
+            p.join(support.path, kOcrModelsSupportChild),
+          ]);
         default:
           final List<String> children =
               kStorageCategoryDocumentsChildren[id] ?? const <String>[];
-          final int bytes = await sizeOfPaths(<String>[
+          yield await _scanGeneric(id, <String>[
             for (final String child in children) p.join(docs.path, child),
           ]);
-          yield StorageCategoryUsage(id: id, bytes: bytes);
       }
     }
   }
@@ -369,13 +405,40 @@ class StorageUsageService {
   }
 
   Future<StorageCategoryUsage> _scanDatabase(final Directory support) async {
-    // support 根整体减去 OCR 模型子目录（后者单列一类）。
-    final String root = support.path;
-    final String ocr = p.join(root, kOcrModelsSupportChild);
-    final List<int> sizes = await _run(
-        () => <int>[directorySizeSync(root), directorySizeSync(ocr)]);
-    final int bytes = (sizes[0] - sizes[1]).clamp(0, sizes[0]);
-    return StorageCategoryUsage(id: StorageCategoryId.database, bytes: bytes);
+    // support 根的直接子项，减去 OCR 模型子目录（后者单列一类）。明细里因此
+    // 能看到主库 `fushi.db`、本地发音库副本 `local_audio_*.db` 等具体大件。
+    return _scanGeneric(
+      StorageCategoryId.database,
+      <String>[support.path],
+      excludePaths: <String>{p.join(support.path, kOcrModelsSupportChild)},
+    );
+  }
+
+  /// 通用类目扫描：类目根下每个直接子项一条明细，类目总量 = 明细求和。
+  /// [excludePaths] 里的子项既不计入明细也不计入总量（被别的类目单列时用）。
+  Future<StorageCategoryUsage> _scanGeneric(
+    final StorageCategoryId id,
+    final List<String> roots, {
+    final Set<String> excludePaths = const <String>{},
+  }) async {
+    final List<Map<String, Object>> raw =
+        await _run(() => _childEntriesSync(roots));
+    final List<StorageEntryUsage> entries = <StorageEntryUsage>[
+      for (final Map<String, Object> e in raw)
+        if (!excludePaths.contains(e['path'] as String))
+          StorageEntryUsage(
+            // 通用明细没有域内主键，用绝对路径当身份（UI 只拿它做展开/去重，
+            // 不接删除原语——通用条目一律只读展示）。
+            id: e['path'] as String,
+            label: e['label'] as String,
+            bytes: e['bytes'] as int,
+            paths: <String>[e['path'] as String],
+          ),
+    ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+        b.bytes.compareTo(a.bytes));
+    final int bytes =
+        entries.fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes);
+    return StorageCategoryUsage(id: id, bytes: bytes, entries: entries);
   }
 
   /// 随包组件占用（桌面端安装目录内、随安装包携带；**只展示不可删**——

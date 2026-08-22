@@ -82,10 +82,47 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 树），本进程内没有任何可探的渲染输入，故无适用探针；由三层专项测试咬住：
   // 偏好边界（默认/钳位/脏值）、控制器把字号经 show/updateStyle 真推给 native、
   // 以及 native 源码守卫（hook 模式不再按窗高缩放字号）。
-  'lookup/Galgame caption font size':
+  // 归属：#938 把整个 gal_hook_overlay section 从 settings_schema_lookup.dart 移到
+  // settings_schema_game.dart（destination 级 + section 级双重 Platform.isWindows
+  // 门控，比原先更严），故登记键的 destId 随之从 lookup 变 game。
+  'game/Galgame caption font size':
       'test/models/preferences_repository_gal_hook_font_test.dart + '
           'test/lookup/gal_hook_text_overlay_controller_test.dart + '
           'test/build/gal_overlay_font_decoupled_guard_test.dart',
+  // #938 的浮窗外观八项（字距/行高/字重/对齐/底板不透明度/描边宽度/内边距/圆角）。
+  // 与上面的字号同一个消费点：runner 自有的 Win32 分层浮窗（Direct2D/DirectWrite
+  // 直绘），本进程内没有任何可探的渲染输入——和 listening/ 那批有声书浮窗项同型
+  // （其实是同一个 floating_lyric_window.cpp，galgame 走 hook_text_mode_ 分支）。
+  //
+  // 通路由 gal_overlay_appearance_guard 逐字段咬住：MethodChannel 上的
+  // letterSpacing/lineHeight/bold/textAlignment/outlineWidth/textPadding/
+  // cornerRadius/bgColor 必须接到 runner，且间距与对齐必须落在**同一个**
+  // text_layout_ 上（否则点字命中会和显示错位）。渲染语义另由样式守卫咬：字重只
+  // 在 hook 模式生效、描边半径每一处都经 clamp、默认底板全透明且 ◐ 恢复值非零、
+  // ruby 让出的行距只在有注音时加。落到实际像素仍需 Windows 真机点验。
+  'game/Letter spacing': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'DEVICE: native hook overlay character spacing',
+  'game/Line height': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'test/build/overlay_ruby_render_guard_test.dart + '
+      'DEVICE: native hook overlay line spacing',
+  'game/Bold text': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'test/build/gal_overlay_lyric_style_guard_test.dart + '
+      'DEVICE: native hook overlay font weight',
+  'game/Text alignment': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'DEVICE: native hook overlay text alignment',
+  'game/Window background opacity':
+      'test/build/gal_overlay_appearance_guard_test.dart + '
+          'test/build/gal_overlay_lyric_style_guard_test.dart + '
+          'DEVICE: native hook overlay backplate alpha',
+  'game/Outline width': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'test/build/gal_overlay_lyric_style_guard_test.dart + '
+      'DEVICE: native hook overlay outline radius',
+  'game/Horizontal text padding':
+      'test/build/gal_overlay_appearance_guard_test.dart + '
+          'DEVICE: native hook overlay text padding',
+  'game/Window corner radius':
+      'test/build/gal_overlay_appearance_guard_test.dart + '
+          'DEVICE: native hook overlay corner radius',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开

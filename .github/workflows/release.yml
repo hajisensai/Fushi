@@ -19,7 +19,6 @@ on:
       - 'tool/**'
       - 'third_party/**'
       - '.github/workflows/**'
-      - 'melos.yaml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   release:

@@ -74,12 +74,17 @@ void main() {
       isTrue,
       reason: '必须有一个统一的 has_ruby 门，空注音时行距与绘制都不动',
     );
+    // 行距门现在还额外收 hook 模式的自定义行高，所以门的形状不再固定；真正要守的
+    // 不变量是「ruby 让出来的那段间距只在有注音时加」——它同时保证无注音的老浮窗
+    // 逐像素不变。两处（行高与基线）都必须挂在同一个 has_ruby 三元上。
     expect(
-      RegExp(r'if \(has_ruby && text_layout_ != nullptr\)[\s\S]{0,600}?'
-              r'SetLineSpacing')
+      RegExp(r'SetLineSpacing\([\s\S]{0,400}?'
+              r'\(has_ruby \? ruby_gap_px : 0\.0f\)[\s\S]{0,200}?'
+              r'\(has_ruby \? ruby_gap_px : 0\.0f\)')
           .hasMatch(window),
       isTrue,
-      reason: '加高行距必须挂在 has_ruby 门后；无条件改行距会让所有老浮窗观感变化',
+      reason: '加高行距与下压基线都必须挂在 has_ruby 上；'
+          '无条件加 ruby 间距会让所有老浮窗观感变化',
     );
     expect(
       RegExp(r'if \(has_ruby && ruby_format_ != nullptr\)').hasMatch(window),

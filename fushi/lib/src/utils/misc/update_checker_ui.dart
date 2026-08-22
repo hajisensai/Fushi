@@ -566,11 +566,14 @@ class _DownloadDiagnosticsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? style = Theme.of(context).textTheme.bodySmall;
-    final String resumeStatus = value.restartedFromZero
-        ? t.update_download_restarted_from_zero
-        : value.resumed
-            ? t.update_download_resumed
-            : t.update_download_not_resumed;
+    // 续传行只在「确实发生了续传相关的事」时出现：全新下载（none）没有可报的
+    // 续传事实，多显示一行「未续传」是把「没这回事」说成「这事没成」。
+    final String? resumeStatus = switch (value.resumeOutcome) {
+      DownloadResumeOutcome.resumed => t.update_download_resumed,
+      DownloadResumeOutcome.restartedFromZero =>
+        t.update_download_restarted_from_zero,
+      DownloadResumeOutcome.none => null,
+    };
     return DefaultTextStyle.merge(
       style: style,
       child: Column(
@@ -593,10 +596,12 @@ class _DownloadDiagnosticsPanel extends StatelessWidget {
               speed: formatUpdateDownloadSpeed(value.bytesPerSecond),
             ),
           ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          _DiagnosticLine(
-            text: t.update_download_resume_status(status: resumeStatus),
-          ),
+          if (resumeStatus != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap / 2),
+            _DiagnosticLine(
+              text: t.update_download_resume_status(status: resumeStatus),
+            ),
+          ],
         ],
       ),
     );

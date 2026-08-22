@@ -48,9 +48,12 @@ void main() {
     // 字形表必须覆盖 0..N-1（default 分支只是兜底，不算覆盖）。
     final String toolbarSource = toolbar.readAsStringSync();
     final int glyphStart = toolbarSource.indexOf('const wchar_t* SlotGlyph');
-    final int glyphEnd = toolbarSource.indexOf('bool SlotActive', glyphStart);
     expect(glyphStart, greaterThan(0), reason: '找不到 SlotGlyph 定义');
-    expect(glyphEnd, greaterThan(glyphStart));
+    // 切到 SlotGlyph 自己的收尾大括号（行首 `}`），而不是「下一个函数的名字」：
+    // 后者把守卫绑在了两个函数的书写顺序上，一旦重排就 indexOf → -1 直接打红，
+    // 而那跟被守的不变量（字形表覆盖 0..N-1）毫无关系。
+    final int glyphEnd = toolbarSource.indexOf('\n}', glyphStart);
+    expect(glyphEnd, greaterThan(glyphStart), reason: 'SlotGlyph 函数体没有闭合');
     final String glyphBody = toolbarSource.substring(glyphStart, glyphEnd);
     final List<int> glyphCases = RegExp(r'case (\d+):')
         .allMatches(glyphBody)
