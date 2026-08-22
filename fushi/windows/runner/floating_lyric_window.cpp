@@ -1188,10 +1188,13 @@ void FloatingLyricWindow::Render() {
   render_target_->BeginDraw();
   render_target_->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-  // TODO-708 P2: 圆角半径可调。style_.corner_radius > 0 时用设置值，否则回退历史 14dp。
-  const float corner_dip = style_.corner_radius > 0.0
-                               ? static_cast<float>(style_.corner_radius)
-                               : kCornerRadiusDip;
+  // TODO-708 P2: 圆角半径可调。0 是合法取值（直角），所以这里**没有**哨兵分支——
+  // 历史默认由 Style::corner_radius 的默认值承担（见头文件）。夹区间是防畸形负载：
+  // 上界与偏好侧 galHookTextCornerRadiusMax 同值。
+  static_assert(kCornerRadiusDip == 14.0f,
+                "Style::corner_radius 的默认值必须与之同源");
+  const float corner_dip =
+      static_cast<float>(std::clamp(style_.corner_radius, 0.0, 40.0));
   const float corner = ScaleForDpi(corner_dip);
   D2D1_ROUNDED_RECT bg_rect = D2D1::RoundedRect(
       D2D1::RectF(0, 0, static_cast<float>(width), static_cast<float>(height)),
@@ -1697,8 +1700,11 @@ void FloatingLyricWindow::Render() {
               D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn);
           if (icon_format != nullptr) {
             const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, tb_states);
-            render_target_->DrawTextW(glyph, 1, icon_format.Get(), icon_rect,
-                                      icon_brush);
+            // 长度一律走 GlyphLength：写死 1 会把任何代理对字形（U+1F512 等）截半，
+            // 画出一个替换方块。当前这些字形恰好都在 BMP，所以写死 1 也看不出问题
+            // ——正因如此它才会一路溜到发布，必须在源头堵死而不是靠「现在没事」。
+            render_target_->DrawTextW(glyph, GlyphLength(glyph),
+                                      icon_format.Get(), icon_rect, icon_brush);
           } else {
             hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
                                        slot, tb_states, icon_rect, icon_brush);

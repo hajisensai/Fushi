@@ -72,6 +72,32 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连控件都不该渲染。由四层专项测试咬住：Dart 侧命中→定位→投帧的契约测试、native
   // 侧 v14 契约测试（区寻址 + 帧闸门 + ShouldApplyLookupFrame 真值表）、会话 replay
   // （7 个变异体实测全红），以及禁止把查词链路搬回游戏进程的源码扫描守卫。
+  // galgame 台词浮窗的九项外观设置（PR#938）。写 prefsRepo（changed=true），生效点
+  // 全部在 runner 自有的 Win32 分层窗里：Direct2D/DirectWrite 直绘，widget harness
+  // 既没有那个 HWND 也没有渲染目标，没有任何可探的渲染输入；而且整条 Windows-only，
+  // CI（Linux）连控件都不该渲染。由三层源码守卫咬住：
+  //   ① appearance 守卫：每个字段都真的过 MethodChannel 落进 native style，并被
+  //      对应的绘制点消费（不是「接进来了但没人读」）；
+  //   ② lyric-style 守卫：描边/字重的门控与**默认值等于改造前硬编码值**；
+  //   ③ ruby-render 守卫：行距门控与默认行高恒等 1.0。
+  // ②③ 那两条默认值断言是这批登记的前提：可配置化如果顺手改了默认观感，
+  // 「没探针」就会变成「没人发现所有老用户的浮窗都变样了」。
+  'game/Galgame caption font size':
+      'test/build/gal_overlay_appearance_guard_test.dart',
+  'game/Letter spacing': 'test/build/gal_overlay_appearance_guard_test.dart',
+  'game/Line height': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'test/build/overlay_ruby_render_guard_test.dart',
+  'game/Bold text': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'test/build/gal_overlay_lyric_style_guard_test.dart',
+  'game/Text alignment': 'test/build/gal_overlay_appearance_guard_test.dart',
+  'game/Window background opacity':
+      'test/build/gal_overlay_appearance_guard_test.dart',
+  'game/Outline width': 'test/build/gal_overlay_appearance_guard_test.dart + '
+      'test/build/gal_overlay_lyric_style_guard_test.dart',
+  'game/Horizontal text padding':
+      'test/build/gal_overlay_appearance_guard_test.dart',
+  'game/Window corner radius':
+      'test/build/gal_overlay_appearance_guard_test.dart',
   'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '

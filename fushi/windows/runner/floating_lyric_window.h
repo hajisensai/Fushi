@@ -90,9 +90,14 @@ class FloatingLyricWindow {
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
     uint32_t active_color = 0xFFFFD54F;
-    // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认（14dp 圆角 / 720dip 起始
-    // 宽 + 可拖拽），>0 时按该 dp 覆盖，保证默认零观感变化。
-    double corner_radius = 0.0;
+    // TODO-708 P2: 窗宽/窗高仍用 0 = 平台原生默认（720dip 起始宽 + 可拖拽）：0 宽窗
+    // 不是合法用户取值，拿它当哨兵没有歧义。
+    //
+    // 圆角**不能**这么做：0 是合法取值（直角），偏好里 min 就是 0。原实现让绘制点
+    // 读到 0 就回退 14dp，于是用户把圆角拖到 0 什么都不会发生，而且看不出为什么。
+    // 这里直接把历史默认写成默认值，绘制点不再有哨兵分支——0 就是 0。
+    // 数值与 floating_lyric_window.cpp 的 kCornerRadiusDip 由 static_assert 钉死同源。
+    double corner_radius = 14.0;
     double window_width = 0.0;
     double window_height = 0.0;
   };

@@ -103,13 +103,24 @@ void main() {
     });
 
     test('padlock glyphs are drawn as full UTF-16 strings', () {
+      // 这条守卫原本把缩进写死在断言里（负向断言匹配的是 'DrawTextW(' + 换行 +
+      // 10 个空格 + 'glyph, 1,'）。后来新增的 hook 工具栏把同样的调用写成单行，
+      // 于是整个从它旁边溜了过去。改成「按调用点计数」：任何一个 glyph 绘制不走
+      // GlyphLength 就红，与缩进、换行、参数换行位置全部无关。
       expect(cpp.contains('GlyphLength'), isTrue,
           reason: 'Emoji glyphs need their full UTF-16 code-unit length.');
-      expect(cpp.contains('DrawTextW(\n          glyph, GlyphLength(glyph),'),
-          isTrue,
-          reason: 'DrawTextW must not truncate surrogate-pair glyphs.');
-      expect(cpp.contains('DrawTextW(\n          glyph, 1,'), isFalse,
-          reason: 'Length 1 truncates U+1F512/U+1F513 padlock glyphs.');
+      final Iterable<RegExpMatch> glyphDraws =
+          RegExp(r'DrawTextW\(\s*glyph,\s*([^,]+),').allMatches(cpp);
+      expect(glyphDraws, isNotEmpty,
+          reason: 'The glyph draw call must still exist.');
+      for (final RegExpMatch m in glyphDraws) {
+        expect(
+          m.group(1)!.trim(),
+          'GlyphLength(glyph)',
+          reason: 'Every glyph DrawTextW must pass the full UTF-16 length; a '
+              'literal length truncates U+1F512/U+1F513-class glyphs.',
+        );
+      }
     });
   });
 
