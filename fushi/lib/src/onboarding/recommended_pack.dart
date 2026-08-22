@@ -319,6 +319,33 @@ class RecommendedPackDownloader {
 
   File get _importedFlagFile => File(p.join(_packDir.path, 'imported.flag'));
 
+  /// 单流路径的服务端校验子（ETag / Last-Modified）落盘处，供跨进程续传带
+  /// `If-Range`。分片路径把校验子记在自己的进度文件里，不用这个。
+  File get _partValidatorFile =>
+      File(p.join(_packDir.path, '$_fileName.part.etag'));
+
+  String? _readSingleStreamValidator() {
+    try {
+      if (!_partValidatorFile.existsSync()) return null;
+      final String value = _partValidatorFile.readAsStringSync().trim();
+      return value.isEmpty ? null : value;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  void _writeSingleStreamValidator(String? value) {
+    try {
+      if (value == null || value.isEmpty) {
+        if (_partValidatorFile.existsSync()) _partValidatorFile.deleteSync();
+        return;
+      }
+      _partValidatorFile.writeAsStringSync(value);
+    } on FileSystemException {
+      // 校验子写不下只影响续传安全性判定，不该中断下载。
+    }
+  }
+
   bool get hasCompletedFile => packFile.existsSync();
 
   /// 已下字节（两条路合一）。分片路的 `.mpart` 是**预分配**的完整大小，长度不代表
@@ -505,6 +532,11 @@ class RecommendedPackDownloader {
     CancelToken? cancelToken,
   }) async {
     int existing = _partFile.existsSync() ? _partFile.lengthSync() : 0;
+    // 续传必须带 If-Range：这条路会在「探针因网络抖动失败」时接手一台其实支持
+    // Range 的服务器，没有校验子就会把旧断点续到**换过的新包**上，只能靠末尾
+    // sha256 事后打回——代价是白下一整个 9.5 GB。
+    final String? validator =
+        existing > 0 ? _readSingleStreamValidator() : null;
     final Response<ResponseBody> response = await dio.get<ResponseBody>(
       url,
       cancelToken: cancelToken,
@@ -512,15 +544,20 @@ class RecommendedPackDownloader {
         responseType: ResponseType.stream,
         headers: <String, Object?>{
           if (existing > 0) 'range': 'bytes=$existing-',
+          if (validator != null) 'if-range': validator,
         },
         validateStatus: (int? status) => status == 200 || status == 206,
       ),
     );
     if (existing > 0 && response.statusCode == 200) {
-      // 服务器忽略 Range（回整文件）：append 会拼出坏包，只能丢半截从头写。
+      // 服务器忽略 Range 或校验子过期（服务端换包）：append 会拼出坏包，只能丢
+      // 半截从头写。
       existing = 0;
       if (_partFile.existsSync()) _partFile.deleteSync();
     }
+    _writeSingleStreamValidator(
+      response.headers.value('etag') ?? response.headers.value('last-modified'),
+    );
     final int? remaining =
         int.tryParse(response.headers.value('content-length') ?? '');
     final int? total = remaining == null ? null : existing + remaining;
@@ -551,11 +588,13 @@ class RecommendedPackDownloader {
       if (digest.toString() != sha256Hex) {
         // 坏包不留：删掉半截，下次从头下（续传一个已知坏的文件没有意义）。
         _partFile.deleteSync();
+        _writeSingleStreamValidator(null);
         throw Exception('recommended pack sha256 mismatch: '
             'got $digest, expected $sha256Hex');
       }
     }
     _partFile.renameSync(packFile.path);
+    _writeSingleStreamValidator(null);
     return packFile;
   }
 }

@@ -66,6 +66,7 @@ class SegmentedDownloader {
     this.firstByteTimeout,
     this.isCancelled,
     this.flushInterval = kDefaultFlushInterval,
+    this.retryBackoff,
   })  : assert(concurrency > 0, 'concurrency 必须为正'),
         assert(maxAttemptsPerPart > 0, 'maxAttemptsPerPart 必须为正');
 
@@ -95,6 +96,16 @@ class SegmentedDownloader {
   final bool Function()? isCancelled;
 
   final int flushInterval;
+
+  /// 第 [attempt] 次失败后等多久再试下一个来源。默认指数退避（1s / 2s / 4s…，
+  /// 上限 30s）：移动网络抖动时背靠背重试三次基本是三次一起失败，退避才有意义。
+  /// 单测注入 [Duration.zero] 免得空等。
+  final Duration Function(int attempt)? retryBackoff;
+
+  static Duration _defaultBackoff(int attempt) {
+    final int seconds = 1 << (attempt > 4 ? 4 : attempt);
+    return Duration(seconds: seconds > 30 ? 30 : seconds);
+  }
 
   late RandomAccessFile _raf;
   final _AsyncLock _ioLock = _AsyncLock();
@@ -216,6 +227,13 @@ class SegmentedDownloader {
       } catch (e, st) {
         lastError = e;
         lastStack = st;
+        if (attempt + 1 < maxAttemptsPerPart) {
+          final Duration wait = (retryBackoff ?? _defaultBackoff)(attempt);
+          if (wait > Duration.zero) {
+            await Future<void>.delayed(wait);
+            _throwIfCancelled();
+          }
+        }
       }
     }
     Error.throwWithStackTrace(

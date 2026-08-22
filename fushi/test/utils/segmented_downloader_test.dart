@@ -172,6 +172,7 @@ void main() {
     int concurrency = 4,
     bool Function()? isCancelled,
     int maxAttemptsPerPart = 3,
+    Duration Function(int attempt)? retryBackoff,
   }) =>
       SegmentedDownloader(
         plan: plan,
@@ -183,6 +184,8 @@ void main() {
         maxAttemptsPerPart: maxAttemptsPerPart,
         isCancelled: isCancelled,
         flushInterval: 64,
+        // 单测不空等真实退避。
+        retryBackoff: retryBackoff ?? (int _) => Duration.zero,
       );
 
   group('平台前提', () {
@@ -462,6 +465,33 @@ void main() {
 
       expect(out.lengthSync(), 200, reason: '成品长度必须等于计划总长');
       expect(out.readAsBytesSync(), body);
+    });
+
+    test('换源之间按 attempt 退避，最后一次失败后不再空等', () async {
+      // 背靠背重试三次在抖动的移动网络上基本是三次一起失败；退避得真的被调用，
+      // 且不该在「已经没有下一次」之后还等一轮。
+      final _FakeHost host = _FakeHost()..dead.add('https://dead/pack.zip');
+      final List<int> attempts = <int>[];
+      final DownloadPlan plan = DownloadPlan.ranged(
+        urls: const <String>['https://dead/pack.zip'],
+        totalBytes: 100,
+        partSize: 100,
+      );
+
+      await expectLater(
+        build(
+          plan,
+          host,
+          maxAttemptsPerPart: 3,
+          retryBackoff: (int attempt) {
+            attempts.add(attempt);
+            return Duration.zero;
+          },
+        ).download(),
+        throwsA(isA<SegmentedDownloadPartException>()),
+      );
+
+      expect(attempts, <int>[0, 1], reason: '3 次尝试之间只有 2 段等待，末次失败后直接报错');
     });
 
     test('所有来源都挂时抛 SegmentedDownloadPartException 且不产出成品', () async {
