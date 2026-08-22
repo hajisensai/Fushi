@@ -1,7 +1,7 @@
 name: fushi
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.2.1+1221
+version: 2.2.1+1222
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -285,6 +285,7 @@ flutter:
     - assets/gamepad/xbox/
     - assets/gamepad/playstation/
     - assets/gamepad/switch/
+    - assets/fonts/
     - assets/licenses/
     - assets/meta/
     - assets/popup/

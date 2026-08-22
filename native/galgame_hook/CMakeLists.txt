@@ -42,6 +42,7 @@ add_library(fushi_voice_hook SHARED
   "hook/dll_main.cpp"
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
+  "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
@@ -67,10 +68,13 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
+  "hook/adapters/sgre_adapter.inc"
+  "hook/adapters/sgre_profile.h"
+  "hook/adapters/sgre_voice_archive.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp)
+target_link_libraries(fushi_voice_hook PRIVATE minhook winhttp ole32 bcrypt)
 
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
@@ -105,6 +109,25 @@ add_executable(fushi_voice_clip_energy_test
 target_include_directories(fushi_voice_clip_energy_test PRIVATE "include")
 add_test(NAME fushi_voice_clip_energy_test COMMAND fushi_voice_clip_energy_test)
 
+add_executable(fushi_xaudio_source_format_test
+  "tests/xaudio_source_format_test.cpp"
+)
+target_include_directories(fushi_xaudio_source_format_test PRIVATE "hook" "include")
+target_compile_definitions(fushi_xaudio_source_format_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_xaudio_source_format_test
+  COMMAND fushi_xaudio_source_format_test)
+
+add_executable(fushi_xaudio_trace_export_test
+  "tests/xaudio_trace_export_test.cpp"
+)
+target_include_directories(fushi_xaudio_trace_export_test PRIVATE "include")
+target_compile_definitions(fushi_xaudio_trace_export_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_dependencies(fushi_xaudio_trace_export_test fushi_voice_hook)
+add_test(NAME fushi_xaudio_trace_export_test
+  COMMAND fushi_xaudio_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
+
 add_executable(fushi_voice_resource_filename_test
   "tests/voice_resource_filename_test.cpp"
 )
@@ -136,6 +159,18 @@ add_executable(fushi_voice_session_reuse_test
 target_include_directories(fushi_voice_session_reuse_test PRIVATE "include")
 target_compile_definitions(fushi_voice_session_reuse_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_voice_session_reuse_test COMMAND fushi_voice_session_reuse_test)
+
+# v16 injected WASAPI loopback policy: pure ABI/publication/lifecycle reducer
+# coverage. It never opens an audio endpoint or starts a game and runs in both
+# Win32/x64 configurations.
+add_executable(fushi_native_loopback_policy_test
+  "tests/native_loopback_policy_test.cpp"
+)
+target_include_directories(fushi_native_loopback_policy_test PRIVATE "include")
+target_compile_definitions(fushi_native_loopback_policy_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_native_loopback_policy_test
+  COMMAND fushi_native_loopback_policy_test)
 
 add_executable(fushi_voice_hook_ipc_name_test
   "tests/voice_hook_ipc_name_test.cpp"
@@ -300,6 +335,13 @@ target_include_directories(fushi_voice_injector PRIVATE "include" "hook" "inject
 target_compile_definitions(fushi_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_voice_injector PRIVATE shell32 bcrypt)
 
+# CLI-only preflight contract. The script launches only the injector itself
+# with --capabilities/invalid policy and never opens or creates a game process.
+add_test(NAME fushi_native_loopback_cli_contract_test
+  COMMAND ${CMAKE_COMMAND}
+    "-DINJECTOR=$<TARGET_FILE:fushi_voice_injector>"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_loopback_cli_contract_test.cmake")
+
 # Unity IL2CPP Streaming AudioClip 资源提取器（仅 x64 Unity 游戏需要）。它在 injector
 # 宿主进程解析 AssetBundle，并调用开源 vgmstream 解码 FSB5；游戏内 DLL 只写资源事件。
 # 依赖按固定 release + SHA256 获取到 build staging，不把第三方二进制提交进仓库。
@@ -384,3 +426,9 @@ add_test(NAME fushi_reallive_adapter_test COMMAND fushi_reallive_adapter_test)
 add_executable(fushi_elf_ai6_adapter_test "tests/elf_ai6_adapter_test.cpp")
 target_include_directories(fushi_elf_ai6_adapter_test PRIVATE "hook")
 add_test(NAME fushi_elf_ai6_adapter_test COMMAND fushi_elf_ai6_adapter_test)
+add_executable(fushi_sgre_adapter_test "tests/sgre_adapter_test.cpp")
+target_include_directories(fushi_sgre_adapter_test PRIVATE "hook")
+target_compile_definitions(fushi_sgre_adapter_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fushi_sgre_adapter_test PRIVATE bcrypt)
+add_test(NAME fushi_sgre_adapter_test COMMAND fushi_sgre_adapter_test)

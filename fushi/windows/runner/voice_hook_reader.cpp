@@ -158,9 +158,17 @@ VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   // 由 injector 落逐句 WAV。统一契约确保资源优先，系统回环只作某句配对失败时的 fallback。
   s.raw_voice_ready = fushi_voice_hook::HasReadyGameResourceAudio(
       h->reserved_luna, h->hook_diagnostics,
-      h->reserved_hook_diagnostics);
+      h->reserved_hook_diagnostics, h->xaudio_diagnostics);
   s.text_lane_recycles = static_cast<int64_t>(h->text_lane_recycle_count);
   s.text_lane_overflows = static_cast<int64_t>(h->text_lane_overflow_count);
+  s.native_loopback_requested =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_requested);
+  s.native_loopback_request_seq =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_request_seq);
+  s.native_loopback_state =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_state);
+  s.native_loopback_applied_seq =
+      fushi_voice_hook::AtomicLoadShared32(&h->native_loopback_applied_seq);
   // 格式就绪（hook 已填有效格式）才算 ok；hooked 但格式全 0（还没收到语音）时 ok=false。
   s.ok = s.hooked && s.sample_rate > 0 && s.channels > 0 && s.bits_per_sample > 0;
   return s;
@@ -894,6 +902,15 @@ VoiceHookStatus VoiceHookReader::Status() {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   return StatusFromHeaderLocked(st.header);
+}
+
+uint32_t VoiceHookReader::RequestNativeLoopbackPolicy(bool allow) {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  if (!ProtocolMatches(st.header)) return 0;
+  return fushi_voice_hook::PublishNativeLoopbackRequest(
+      st.header, allow ? fushi_voice_hook::kNativeLoopbackAllow
+                       : fushi_voice_hook::kNativeLoopbackDeny);
 }
 
 VoiceHookStatus VoiceHookReader::GrabRecent(int back_ms,

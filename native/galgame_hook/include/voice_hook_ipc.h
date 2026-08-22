@@ -63,8 +63,38 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     在游戏线程隐藏 card/highlight，并等到下一次 continuous callback 才回写
 //     lookup_frame_applied_seq。host 只有看到该确认才能抓游戏窗口；发布成功不等于游戏渲染树
 //     已经干净，拿普通 dismiss 的 MethodChannel 返回值当屏障会稳定把 popup 拍进卡片图片。
-constexpr uint32_t kSharedVersion = 15;
+// v16：在头部最尾追加 injected WASAPI loopback 的 fail-closed 控制/确认。旧实现只门控
+//     Hibiki 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
+//     cleanOnly/resourceOnly 因而仍会录音。request_seq 最后发布请求，applied_seq 最后确认
+//     Stop/Release/线程退出；版本不匹配时 DLL 拒绝映射，旧 helper 不能绕过默认 deny。
+constexpr uint32_t kSharedVersion = 16;
 constexpr uint32_t kStableIpcVersion = 1;
+
+// v16 native loopback policy/control ABI. Only the exact value 1 authorises
+// creation of the loopback worker; zero and every unknown value are deny.
+constexpr uint32_t kNativeLoopbackDeny = 0;
+constexpr uint32_t kNativeLoopbackAllow = 1;
+constexpr uint32_t kNativeLoopbackStateStopped = 0;
+constexpr uint32_t kNativeLoopbackStateStarting = 1;
+constexpr uint32_t kNativeLoopbackStateRunning = 2;
+constexpr uint32_t kNativeLoopbackStateStopping = 3;
+constexpr uint32_t kNativeLoopbackStateFailed = 4;
+constexpr uint32_t kNativeLoopbackRequestWriteInProgress = 0x80000000u;
+constexpr uint32_t kNativeLoopbackRequestSequenceMask = 0x7fffffffu;
+
+// loopback_diag is sticky observation only; policy truth lives in the four
+// v16 fields below. 0x20 is set immediately before IAudioClient::Initialize,
+// so a remote probe can distinguish "thread existed" from the
+// privacy-sensitive AUDCLNT_STREAMFLAGS_LOOPBACK call.
+constexpr uint32_t kLoopbackDiagWorkerEntered = 0x00000001u;
+constexpr uint32_t kLoopbackDiagDeviceReady = 0x00000002u;
+constexpr uint32_t kLoopbackDiagCaptureStarted = 0x00000004u;
+constexpr uint32_t kLoopbackDiagNonSilentPacket = 0x00000008u;
+constexpr uint32_t kLoopbackDiagSilentPacket = 0x00000010u;
+constexpr uint32_t kLoopbackDiagInitializeAttempted = 0x00000020u;
+constexpr uint32_t kLoopbackDiagUnknownFormat = 0x00000040u;
+constexpr uint32_t kLoopbackDiagFailed = 0x00000080u;
+constexpr uint32_t kLoopbackDiagPolicyStopObserved = 0x00000100u;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -164,6 +194,42 @@ constexpr uint32_t kDiagElfAi6ArcReadObserved = 0x04000000u;
 constexpr uint32_t kDiagElfAi6ArcOggObserved = 0x08000000u;
 constexpr uint32_t kDiagElfAi6ArcVoiceQueued = 0x10000000u;
 constexpr uint32_t kDiagElfAi6ArcTaskRejected = 0x20000000u;
+// XAudio2 可直接接收 Microsoft ADPCM，由引擎内部解码。4-bit 源不能冒充 PCM 写共享环；
+// hook 回调只复制进有界队列，工作线程解码成 16-bit PCM 后再发布。
+constexpr uint32_t kDiagXAudioAdpcmObserved = 0x40000000u;
+constexpr uint32_t kDiagXAudioAdpcmPcmCaptured = 0x80000000u;
+
+// XAudio2 lifecycle/queue diagnostics use the original v1 protocol-reserved
+// word.  This does not change SharedHeader size or any region offset: old hosts
+// continue to ignore the zero-initialized word, while new probes can distinguish
+// "no Submit" from bounded-queue pressure, stale lifetime invalidation, decode
+// rejection, and deferred-operation commit.  These are sticky observation bits;
+// exact counters remain process-local atomics so audio callbacks never perform
+// logging or other I/O.
+constexpr uint32_t kXAudioDiagQueueReady = 0x00000001u;
+constexpr uint32_t kXAudioDiagJobQueued = 0x00000002u;
+constexpr uint32_t kXAudioDiagDescriptorExhausted = 0x00000004u;
+constexpr uint32_t kXAudioDiagArenaExhausted = 0x00000008u;
+constexpr uint32_t kXAudioDiagBufferRejected = 0x00000010u;
+constexpr uint32_t kXAudioDiagRegistryMiss = 0x00000020u;
+constexpr uint32_t kXAudioDiagStaleInvalidated = 0x00000040u;
+constexpr uint32_t kXAudioDiagDecodeRejected = 0x00000080u;
+constexpr uint32_t kXAudioDiagPcmPublished = 0x00000100u;
+constexpr uint32_t kXAudioDiagFlushObserved = 0x00000200u;
+constexpr uint32_t kXAudioDiagDestroyObserved = 0x00000400u;
+constexpr uint32_t kXAudioDiagDeferredQueued = 0x00000800u;
+constexpr uint32_t kXAudioDiagDeferredExhausted = 0x00001000u;
+constexpr uint32_t kXAudioDiagCommitObserved = 0x00002000u;
+constexpr uint32_t kXAudioDiagSubmitFailed = 0x00004000u;
+constexpr uint32_t kXAudioDiagUnsupportedFormat = 0x00008000u;
+constexpr uint32_t kXAudioDiagRegistryExhausted = 0x00010000u;
+constexpr uint32_t kXAudioDiagCommitFailed = 0x00020000u;
+constexpr uint32_t kXAudioDiagCommitQueueExhausted = 0x00040000u;
+// At least one byte-exact compressed game voice resource was published by the
+// XAudio2 path.  Unlike kXAudioDiagPcmPublished, this is a resource-audio
+// readiness proof and lets the host prefer the original file even when no PCM
+// clip was active at the matching text timestamp (SGRE xWMA).
+constexpr uint32_t kXAudioDiagGameResourcePublished = 0x00080000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -174,7 +240,8 @@ constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
 
 inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics,
-                                                uint32_t reserved_hook_diagnostics = 0) {
+                                                uint32_t reserved_hook_diagnostics = 0,
+                                                uint32_t xaudio_diagnostics = 0) {
   const uint32_t unity_required = kDiagUnityIl2CppHooksReady |
                                   kDiagUnityResourceExtractorReady;
   const bool unity_ready =
@@ -189,6 +256,7 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
          (hook_diagnostics & kDiagMalieLibpHooksReady) != 0 ||
          (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 ||
          (reserved_hook_diagnostics & kDiagElfAi6ArcHooksReady) != 0 ||
+         (xaudio_diagnostics & kXAudioDiagGameResourcePublished) != 0 ||
          unity_ready;
 }
 
@@ -273,7 +341,7 @@ struct VoiceClip {
   uint32_t channels;
   uint32_t bits_per_sample;
   uint32_t is_float;
-  uint32_t pad;               // 8 对齐
+  uint32_t pad;               // 保留位；必须写 0，结构尺寸/协议布局不变
   uint64_t source_ptr;        // 该段所属 source voice / DS buffer 指针：区分语音源 vs BGM 源，
                               // 供 host 把同一源的连续段合成整句语音（而非只取一个 buffer 片段）
 };
@@ -492,7 +560,7 @@ struct SharedHeader {
   uint32_t ipc_protocol_version;     // = kStableIpcVersion
   uint32_t luna_bridge_abi_version;  // = kLunaBridgeAbiVersion
   uint32_t luna_vendored_version;    // packed 10.16.1.2
-  uint32_t protocol_reserved;
+  volatile uint32_t xaudio_diagnostics;  // kXAudioDiag*（沿用原 protocol_reserved 槽）
   uint32_t sample_rate;     // hook 首次拿到语音格式后填
   uint32_t channels;        //
   uint32_t bits_per_sample;  //
@@ -534,7 +602,7 @@ struct SharedHeader {
   uint32_t loopback_bits_per_sample;   // 存入环的位深（固定 16，混音 float32 已转换）
   uint32_t loopback_block_align;       // 每帧字节 = channels*bits/8（存储格式；hook 填，作格式就绪信号）
   volatile uint32_t loopback_write_pos;  // 下一写入位置（0..loopback_ring_capacity）
-  uint32_t loopback_diag;                // loopback 诊断位（线程启动/设备就绪/捕获非静音等）
+  volatile uint32_t loopback_diag;       // kLoopbackDiag*（跨 worker 代际原子 OR）
   volatile uint64_t loopback_total_written;  // 单调累计写入 loopback 字节（reader 判可读量/覆盖）
   volatile uint64_t loopback_marker_count;   // 单调累计已写标记数
   // ── v12 线程预览区（injector 填偏移/槽数，写入者是 Luna 回调路径）──
@@ -574,8 +642,221 @@ struct SharedHeader {
   // 一次 continuous callback 的最高 LookupFrame::seq。普通 present/dismiss 不得推进它，
   // 否则一张更晚的普通帧会伪装成“截图抑制已经安全生效”。
   volatile uint64_t lookup_frame_applied_seq;
+  // ── v16 injected WASAPI loopback policy（纯追加；host/injector→hook→host）─────────
+  // producer 先以 request_seq 最高位取得写令牌，再写 requested，最后发布非零稳定 seq；
+  // hook 在写令牌存在时 fail closed，且只把 exact 1 当 allow。
+  // hook 先写 state，只有完成相应生命周期动作后才最后写 applied_seq。特别地，deny 的
+  // applied_seq==request_seq 且 state==stopped 保证 Stop/Release/worker join 均已完成。
+  volatile uint32_t native_loopback_requested;
+  volatile uint32_t native_loopback_request_seq;
+  volatile uint32_t native_loopback_state;
+  volatile uint32_t native_loopback_applied_seq;
 };
 #pragma pack(pop)
+
+struct NativeLoopbackRequestSnapshot {
+  uint32_t requested = kNativeLoopbackDeny;
+  uint32_t seq = 0;
+  bool valid = false;
+};
+
+// All v16 control words are aligned 32-bit values. Interlocked access is used
+// instead of relying on volatile for cross-process ordering (and stays atomic
+// on both Win32 and x64).
+inline uint32_t AtomicLoadShared32(const volatile uint32_t* value) {
+  if (value == nullptr) return 0;
+  auto* word = reinterpret_cast<volatile LONG*>(
+      const_cast<volatile uint32_t*>(value));
+  return static_cast<uint32_t>(InterlockedCompareExchange(word, 0, 0));
+}
+
+inline void AtomicStoreShared32(volatile uint32_t* value, uint32_t desired) {
+  if (value == nullptr) return;
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(value),
+                      static_cast<LONG>(desired));
+}
+
+inline void AtomicOrShared32(volatile uint32_t* value, uint32_t bits) {
+  if (value == nullptr) return;
+  InterlockedOr(reinterpret_cast<volatile LONG*>(value),
+                static_cast<LONG>(bits));
+}
+
+inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(
+    const SharedHeader* header) {
+  NativeLoopbackRequestSnapshot result;
+  if (header == nullptr) return result;
+  // A writer publishes requested before seq. A stable seq/request/seq read is
+  // therefore one coherent request; an in-flight update is retried later and
+  // never grants capture.
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before =
+        AtomicLoadShared32(&header->native_loopback_request_seq);
+    const uint32_t requested =
+        AtomicLoadShared32(&header->native_loopback_requested);
+    MemoryBarrier();
+    const uint32_t after =
+        AtomicLoadShared32(&header->native_loopback_request_seq);
+    if (before == after && after != 0 &&
+        (after & kNativeLoopbackRequestWriteInProgress) == 0) {
+      result.requested = requested;
+      result.seq = after;
+      result.valid = true;
+      return result;
+    }
+  }
+  return result;
+}
+
+inline bool NativeLoopbackRequestMatches(
+    const SharedHeader* header,
+    const NativeLoopbackRequestSnapshot& expected) {
+  const NativeLoopbackRequestSnapshot current =
+      ReadNativeLoopbackRequest(header);
+  return expected.valid && current.valid && current.seq == expected.seq &&
+         current.requested == expected.requested;
+}
+
+inline constexpr bool NativeLoopbackWorkerMayCapture(
+    const NativeLoopbackRequestSnapshot& request, uint32_t worker_request_seq) {
+  return request.valid && request.requested == kNativeLoopbackAllow &&
+         request.seq == worker_request_seq;
+}
+
+inline constexpr bool NativeLoopbackWorkerFailureApplies(
+    const NativeLoopbackRequestSnapshot& current_request,
+    uint32_t completed_request_seq, bool stop_was_requested,
+    uint32_t worker_exit_code) {
+  return worker_exit_code != 0 && !stop_was_requested &&
+         current_request.valid &&
+         current_request.requested == kNativeLoopbackAllow &&
+         current_request.seq == completed_request_seq;
+}
+
+// Cross-process publication primitive. The high request_seq bit is a bounded
+// seqlock writer token: readers never consume requested while it is set, and
+// concurrent injector/host publishers cannot expose "new requested + old
+// generation". Injector calls this before InjectDll, so a fresh zeroed mapping
+// publishes exactly seq=1.
+inline uint32_t PublishNativeLoopbackRequest(SharedHeader* header,
+                                             uint32_t requested) {
+  if (header == nullptr) return 0;
+  const uint32_t normalized = requested == kNativeLoopbackAllow
+                                  ? kNativeLoopbackAllow
+                                  : kNativeLoopbackDeny;
+  const NativeLoopbackRequestSnapshot stable =
+      ReadNativeLoopbackRequest(header);
+  if (stable.valid && stable.requested == normalized) return stable.seq;
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->native_loopback_request_seq);
+  uint32_t current = 0;
+  bool claimed = false;
+  const ULONGLONG claim_deadline = GetTickCount64() + 1000;
+  do {
+    current = AtomicLoadShared32(&header->native_loopback_request_seq);
+    if ((current & kNativeLoopbackRequestWriteInProgress) != 0) {
+      SwitchToThread();
+      continue;
+    }
+    const uint32_t claim_token =
+        current | kNativeLoopbackRequestWriteInProgress;
+    const LONG observed = InterlockedCompareExchange(
+        seq, static_cast<LONG>(claim_token), static_cast<LONG>(current));
+    if (static_cast<uint32_t>(observed) == current) {
+      claimed = true;
+      break;
+    }
+  } while (GetTickCount64() < claim_deadline);
+  if (!claimed) return 0;
+
+  const uint32_t previous_requested =
+      AtomicLoadShared32(&header->native_loopback_requested);
+  if (current != 0 && previous_requested == normalized) {
+    AtomicStoreShared32(&header->native_loopback_request_seq, current);
+    return current;
+  }
+  AtomicStoreShared32(&header->native_loopback_requested, normalized);
+  uint32_t published =
+      (current & kNativeLoopbackRequestSequenceMask) + 1u;
+  published &= kNativeLoopbackRequestSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->native_loopback_request_seq, published);
+  return published;
+}
+
+inline void PublishNativeLoopbackTransientState(
+    SharedHeader* header, const NativeLoopbackRequestSnapshot& request,
+    uint32_t state) {
+  if (!NativeLoopbackRequestMatches(header, request)) return;
+  AtomicStoreShared32(&header->native_loopback_state, state);
+}
+
+// State is written first, applied_seq last. HookWorker is the only ack writer;
+// capture workers never touch these fields, eliminating stale-generation
+// publication. A newer request racing immediately after this publication remains distinguishable:
+// applied_seq then differs from request_seq and the controller converges on
+// the latest request without treating the old state as its acknowledgement.
+inline bool PublishNativeLoopbackApplied(
+    SharedHeader* header, const NativeLoopbackRequestSnapshot& request,
+    uint32_t state) {
+  if (!NativeLoopbackRequestMatches(header, request)) return false;
+  AtomicStoreShared32(&header->native_loopback_state, state);
+  if (!NativeLoopbackRequestMatches(header, request)) return false;
+
+  AtomicStoreShared32(&header->native_loopback_applied_seq, request.seq);
+  return NativeLoopbackRequestMatches(header, request);
+}
+
+enum class NativeLoopbackWorkerPhase : uint32_t {
+  kAbsent = 0,
+  kStarting = 1,
+  kRunning = 2,
+  kStopping = 3,
+};
+
+enum class NativeLoopbackPolicyAction : uint32_t {
+  kNone = 0,
+  kStartWorker,
+  kRequestStop,
+  kPublishStarting,
+  kPublishStopping,
+  kAcknowledgeStopped,
+  kAcknowledgeRunning,
+  kAcknowledgeFailed,
+};
+
+// Pure lifecycle reducer shared by production and the x86/x64 offline test.
+// It is intentionally fail-closed: only exact allow can emit kStartWorker.
+inline constexpr NativeLoopbackPolicyAction DecideNativeLoopbackPolicyAction(
+    const NativeLoopbackRequestSnapshot& request,
+    NativeLoopbackWorkerPhase worker_phase,
+    bool failed_for_this_request) {
+  if (!request.valid) return NativeLoopbackPolicyAction::kNone;
+  const bool allow = request.requested == kNativeLoopbackAllow;
+  if (!allow) {
+    if (worker_phase == NativeLoopbackWorkerPhase::kAbsent) {
+      return NativeLoopbackPolicyAction::kAcknowledgeStopped;
+    }
+    if (worker_phase == NativeLoopbackWorkerPhase::kStopping) {
+      return NativeLoopbackPolicyAction::kPublishStopping;
+    }
+    return NativeLoopbackPolicyAction::kRequestStop;
+  }
+  if (failed_for_this_request) {
+    return NativeLoopbackPolicyAction::kAcknowledgeFailed;
+  }
+  switch (worker_phase) {
+    case NativeLoopbackWorkerPhase::kAbsent:
+      return NativeLoopbackPolicyAction::kStartWorker;
+    case NativeLoopbackWorkerPhase::kStarting:
+      return NativeLoopbackPolicyAction::kPublishStarting;
+    case NativeLoopbackWorkerPhase::kRunning:
+      return NativeLoopbackPolicyAction::kAcknowledgeRunning;
+    case NativeLoopbackWorkerPhase::kStopping:
+      return NativeLoopbackPolicyAction::kPublishStopping;
+  }
+  return NativeLoopbackPolicyAction::kNone;
+}
 
 inline uint64_t SelectedTextThreadId(const SharedHeader* header) {
   if (header == nullptr) return 0;

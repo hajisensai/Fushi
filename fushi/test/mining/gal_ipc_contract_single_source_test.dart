@@ -115,6 +115,22 @@ void main() {
     });
   });
 
+  group('共享语音 reader 不接受游戏特例分类', () {
+    test('不按环内任意 clip 标志全局删源，并保留选源隔离窗', () {
+      final File reader = File(p.join(repoRoot().path, 'fushi', 'windows',
+          'runner', 'voice_hook_reader.cpp'));
+      final String source = maskComments(reader.readAsStringSync());
+      expect(source, isNot(contains('kVoiceClipFlagClassified')),
+          reason: '单个 producer 的分类标志不能改变整个共享环的可见源集合');
+      expect(source, isNot(contains('kVoiceClipFlagRoleVoice')),
+          reason: '角色语音正证据属于 engine adapter，不属于通用 PCM reader');
+      expect(source, contains('d >= -900 && d <= -250'));
+      expect(source, contains('d >= -150 && d <= 450'));
+      expect(source, isNot(contains('d >= -250 && d <= 450')),
+          reason: 'SGRE 的提前量不能抹掉所有引擎共享的 100ms 隔离带');
+    });
+  });
+
   group('契约不符的处置文案不得指向不存在的动作', () {
     /// 捕获组件自 BUG-1196 起随主包内置、零网络（守卫见
     /// `gal_helper_no_network_guard_test.dart`），用户手上**没有**「单独更新/重装捕获组件」

@@ -56,6 +56,20 @@ int main() {
     return 7;
   }
 
+  fushi_voice_hook::LunaTargetIdentity sgre;
+  sgre.executable_sha256 =
+      "75a83a0e2a7e22055417ae0474b47be98418c4e42c695c548b558705c404b9d8";
+  const auto sgre_profile = fushi_voice_hook::MatchLunaHookProfiles(
+      fushi_voice_hook::BuiltInLunaHookProfiles(), sgre);
+  if (sgre_profile.codepage != 932 || sgre_profile.enable_pc_hooks ||
+      !sgre_profile.normalize_mages_controls ||
+      sgre_profile.hook_codes.size() != 1 ||
+      sgre_profile.hook_codes.front() !=
+          L"HQFN-24@328E0:sgre_steam.exe") {
+    std::fprintf(stderr, "STEINS;GATE RE:BOOT profile did not match\n");
+    return 8;
+  }
+
   fushi_voice_hook::LunaTargetIdentity moved = nine;
   if (fushi_voice_hook::MatchLunaHookProfiles(
           fushi_voice_hook::BuiltInLunaHookProfiles(), moved)

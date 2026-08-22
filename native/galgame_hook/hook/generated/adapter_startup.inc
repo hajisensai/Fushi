@@ -2,3 +2,4 @@
     reallive_.install();
     qlie_.install();
     elf_ai6_.install();
+    sgre_.install();

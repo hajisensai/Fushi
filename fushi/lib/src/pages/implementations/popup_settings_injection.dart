@@ -609,10 +609,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     theme.platform,
   );
   // 弹窗键盘绑定只对 **app 外**的裸 WebView2 表面（全局查词窗 / 剪贴板面板）下发真值。
-  // in-app 宿主（app 内弹窗 / Android 悬浮词典 / 独立查词页）显式收 `null` 关掉 JS 侧
-  // 判定——那里键盘由 Flutter 派发（阅读器 readerCreateCardFromPopup、视频页读
-  // popupMineEntry 绑定）。两边同时开的话，一旦 WebView 把同一次按键既交给 JS 又冒泡回
-  // Flutter，就会制出两张卡；按宿主切开是结构上杜绝，而不是靠去重兜底。
+  // in-app 宿主显式收 `null` 关掉 JS 侧判定，键盘由 Flutter 的单一消费者派发。
+  // 两边同时启用会让同一次按键跨 WebView/Flutter 边界重复制卡。
   final String popupKeyBindings = options.globalLookup
       ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
       : 'null';

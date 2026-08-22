@@ -42,6 +42,82 @@ constexpr int kLunaMinFoldedLineChars = 4;
 // 长度上界只是防御性护栏；超界同样走「原样放行」这个安全方向。
 constexpr int kLunaMaxFoldScanChars = 4096;
 
+// Some MAGES scenario strings expose script controls literally. Under Japanese
+// fonts the reverse solidus is rendered as a yen sign, so a line break can
+// arrive as `\\n`, `¥n`, `￥n`, or the MAGES-native `%r`. Inline font colors use
+// `#RRGGBB;` (for example `#ff8A00;コスプレ`). Glyph-spacing controls use `%p;`
+// or `%p<signed integer>;` (for example `%p-1;─%p;─`). Strip only the control
+// prefix and preserve the styled/positioned text. This transformation is
+// profile-gated by executable SHA-256; keeping it out of the global path avoids
+// changing legitimate prose/code in unrelated games.
+inline std::wstring LunaNormalizeMagesControls(const wchar_t* text, int len,
+                                               bool enabled) {
+  if (text == nullptr || len <= 0) return std::wstring();
+  if (!enabled) return std::wstring(text, text + len);
+  std::wstring normalized;
+  normalized.reserve(static_cast<size_t>(len));
+  for (int i = 0; i < len; ++i) {
+    const wchar_t c = text[i];
+    if (c == L'%' && i + 1 < len && text[i + 1] == L'r') {
+      normalized.push_back(L'\n');
+      ++i;
+      continue;
+    }
+    if (c == L'%' && i + 2 < len && text[i + 1] == L'p') {
+      int end = i + 2;
+      bool has_sign = false;
+      if (text[end] == L'+' || text[end] == L'-') {
+        has_sign = true;
+        ++end;
+      }
+      const int digits_begin = end;
+      while (end < len && text[end] >= L'0' && text[end] <= L'9') ++end;
+      const bool has_digits = end > digits_begin;
+      // `%p;` is the reset form. Signed forms require at least one digit so a
+      // malformed/literal `%p-;` remains visible rather than losing user text.
+      if (end < len && text[end] == L';' &&
+          ((!has_sign && !has_digits) || has_digits)) {
+        i = end;
+        continue;
+      }
+    }
+    if (c == L'#' && i + 7 < len && text[i + 7] == L';') {
+      bool is_color = true;
+      for (int j = 1; j <= 6; ++j) {
+        const wchar_t digit = text[i + j];
+        if (!((digit >= L'0' && digit <= L'9') ||
+              (digit >= L'a' && digit <= L'f') ||
+              (digit >= L'A' && digit <= L'F'))) {
+          is_color = false;
+          break;
+        }
+      }
+      if (is_color) {
+        i += 7;
+        continue;
+      }
+    }
+    const bool escape = c == L'\\' || c == 0x00a5 || c == 0xffe5;
+    if (escape && i + 1 < len && text[i + 1] == L'n') {
+      normalized.push_back(L'\n');
+      ++i;
+      continue;
+    }
+    if (escape && i + 3 < len && text[i + 1] == L'r') {
+      const wchar_t c2 = text[i + 2];
+      const bool second_escape =
+          c2 == L'\\' || c2 == 0x00a5 || c2 == 0xffe5;
+      if (second_escape && text[i + 3] == L'n') {
+        normalized.push_back(L'\n');
+        i += 3;
+        continue;
+      }
+    }
+    normalized.push_back(c);
+  }
+  return normalized;
+}
+
 inline int LunaNormalizedTextLength(const wchar_t* text, int len) {
   if (text == nullptr || len < kLunaMinFoldedLineChars * 2) return len;
   if (len > kLunaMaxFoldScanChars) return len;

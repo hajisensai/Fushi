@@ -751,8 +751,22 @@ std::vector<FloatingLyricWindow::RubySpan> RubySpansFromValue(
 FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   FloatingLyricWindow::Style style;
   style.font_size = DoubleFromValue(args, "fontSize", style.font_size);
+  style.font_family = WideFromValue(args, "fontFamily", style.font_family);
+  style.font_path = WideFromValue(args, "fontPath", style.font_path);
+  style.letter_spacing =
+      DoubleFromValue(args, "letterSpacing", style.letter_spacing);
+  style.line_height = DoubleFromValue(args, "lineHeight", style.line_height);
+  style.bold = BoolFromValue(args, "bold", style.bold);
+  style.text_alignment =
+      IntFromValue(args, "textAlignment", style.text_alignment);
   style.text_color = ArgbFromValue(args, "textColor", style.text_color);
   style.bg_color = ArgbFromValue(args, "bgColor", style.bg_color);
+  style.outline_color =
+      ArgbFromValue(args, "outlineColor", style.outline_color);
+  style.outline_width =
+      DoubleFromValue(args, "outlineWidth", style.outline_width);
+  style.text_padding =
+      DoubleFromValue(args, "textPadding", style.text_padding);
   style.button_text_color =
       ArgbFromValue(args, "buttonTextColor", style.button_text_color);
   style.button_bg_color =
@@ -2057,6 +2071,18 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.text_lane_recycles)},
               {flutter::EncodableValue("textLaneOverflows"),
                flutter::EncodableValue(s.text_lane_overflows)},
+              {flutter::EncodableValue("nativeLoopbackRequested"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_requested))},
+              {flutter::EncodableValue("nativeLoopbackRequestSeq"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_request_seq))},
+              {flutter::EncodableValue("nativeLoopbackState"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_state))},
+              {flutter::EncodableValue("nativeLoopbackAppliedSeq"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_applied_seq))},
               {flutter::EncodableValue("ready"),
                flutter::EncodableValue(s.ok || s.raw_voice_ready)},
           };
@@ -2116,6 +2142,39 @@ void FlutterWindow::RegisterVoiceHookChannel() {
         if (method == "status") {
           result->Success(flutter::EncodableValue(
               status_map(fushi::VoiceHookReader::Instance().Status())));
+          return;
+        }
+        if (method == "requestNativeLoopbackPolicy") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          const std::string* policy = nullptr;
+          if (args != nullptr) {
+            const auto it =
+                args->find(flutter::EncodableValue("policy"));
+            if (it != args->end()) {
+              policy = std::get_if<std::string>(&it->second);
+            }
+          }
+          if (policy == nullptr ||
+              (*policy != "allow" && *policy != "deny")) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("invalid_policy"))}}));
+            return;
+          }
+          const uint32_t request_seq =
+              fushi::VoiceHookReader::Instance().RequestNativeLoopbackPolicy(
+                  *policy == "allow");
+          if (request_seq == 0) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("not_open"))}}));
+            return;
+          }
+          // Return a full snapshot so Dart can often satisfy an already-
+          // applied idempotent request without an extra status round-trip.
+          result->Success(flutter::EncodableValue(status_map(
+              fushi::VoiceHookReader::Instance().Status())));
           return;
         }
         if (method == "grabRecent") {
