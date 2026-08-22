@@ -8,6 +8,29 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
+  group('resolvePopupViewportHeight', () {
+    test('uses the live JS viewport when it is valid', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 280, layoutHeight: 310),
+        280,
+      );
+    });
+
+    test('falls back to Flutter layout for an offscreen native WebView', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 0, layoutHeight: 310),
+        310,
+      );
+    });
+
+    test('returns null when neither side has a usable viewport', () {
+      expect(
+        resolvePopupViewportHeight(reportedHeight: 0, layoutHeight: 0),
+        isNull,
+      );
+    });
+  });
+
   group('dictionary popup asset bootstrap', () {
     test('iOS uses inline popup assets instead of a file URL main frame', () {
       final source = File(

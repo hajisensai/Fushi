@@ -13,6 +13,15 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+/// Bangumi 同步临时下线总开关（2026-08-19 用户决定：匹配/同步效果太差，先撤下、
+/// 改好后再加回）。false = 首页同步卡与设置入口不挂载、四个生产触发点（冷启动
+/// syncNow、视频看完、阅读进度落盘、游玩状态变更）不进本服务，对用户等效「功能
+/// 不存在」。服务/仓储/两张表/偏好键/i18n 全部原样保留：恢复只需把这里改回
+/// true；下线期间错过的完成事实由 `_reconcileAndSync` 的水位重扫补齐，不丢数据。
+/// 刻意不把闸门放进服务本体：`media/tracking` 三个测试文件直接驱动服务，下线期
+/// 间照常守护回归。
+const bool kMediaTrackingEnabled = false;
+
 const String kBangumiAccessTokenPref = 'media_tracking_bangumi_access_token';
 
 /// 连接成功时记下的 Bangumi 昵称/用户名。令牌本身不可读回账号，重开 app 后若不存

@@ -29,10 +29,26 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1623 条。点号进各自文件。
+> 共 1649 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1772](bugs/BUG-1772-libtorrent-2-1-drift-breaks-native-build.md) | ✅ | ✅ | vcpkg 未钉版，libtorrent 2.0→2.1 漂移打断 Windows DLL 与 Android .so 构建 |
+| [BUG-1771](bugs/BUG-1771-alist-search-parent-base-path.md) | ✅ | ✅ | AList 搜索结果路径带 base_path 前缀，目录打不开、文件下不了 |
+| [BUG-1770](bugs/BUG-1770-discovery-total-failure-shown-as-empty.md) | ✅ | ✅ | 发现页整源失败被显示成「无结果」 |
+| [BUG-1769](bugs/BUG-1769-gal-utterance-all-sources-concat.md) | ✅ | ✅ | 非16bit游戏语音把所有音源拼成一句（卡顿重复） |
+| [BUG-1768](bugs/BUG-1768-discovery-folder-infinite-nesting.md) | ✅ | ✅ | 发现页搜索后点文件夹无限自嵌套（query 压过 path） |
+| [BUG-1767](bugs/BUG-1767-manga-detail-lateinit-url.md) | ✅ | ✅ | 点开漫画作品报 RUNTIME_FAILURE：详情解析结果被当完整条目读 lateinit url |
+| [BUG-1766](bugs/BUG-1766-download-priority-menu-not-md3.md) | ✅ | ✅ | 排队优先级菜单未走MD3共享原语 |
+| [BUG-1765](bugs/BUG-1765-download-source-subtitle-row-misaligned.md) | ✅ | ✅ | 下载来源与字幕下拉底边不对齐 |
+| [BUG-1764](bugs/BUG-1764-audiobook-next-page-first-cue-no-turn.md) | ✅ | ✅ | 有声书跟随：下一页第一句不自动翻页 |
+| [BUG-1763](bugs/BUG-1763-video-subtitle-chars-paused-seek.md) | ✅ | ✅ | 视频字幕字数暂停拖进度条也计无播放停留判据 |
+| [BUG-1762](bugs/BUG-1762-epub-jump-and-arrival-chars-inflate.md) | ✅ | ✅ | EPUB字数到达即计且四类跳转不播种水位整段前缀误计 |
+| [BUG-1761](bugs/BUG-1761-manga-stats-recount-on-reopen.md) | ✅ | ✅ | 漫画统计重开书重复计页170页卷记成400页 |
+| [BUG-1760](bugs/BUG-1760-manga-wheel-zoomed-misturn.md) | ✅ | ✅ | 漫画放大态滚轮误翻页应页内平移贴边才翻 |
+| [BUG-1759](bugs/BUG-1759-manga-zoom-out-aliasing.md) | ✅ | ✅ | 漫画缩放低于100%锯齿严重需放大到150%才恢复清晰 |
+| [BUG-1758](bugs/BUG-1758-manga-resize-stale-projection.md) | ✅ | ✅ | 漫画阅读器调整窗口大小后显示错误跨页直到翻页 |
+| [BUG-1756](bugs/BUG-1756-dict-delete-mmap-lock.md) | ✅ | ✅ | 词典删除/覆盖更新失败：引擎 mmap 未卸载就删目录 |
 | [BUG-1755](bugs/BUG-1755-ass-wrap-width-anchored-to-window.md) | ✅ | ✅ | 字幕换行宽度锚在窗口而非视频画面，最大化后排版突变（BUG-1730 续） |
 | [BUG-1754](bugs/BUG-1754-drop-video-folder-ignored.md) | ✅ | ✅ | 视频页拖入文件夹完全静默 |
 | [BUG-1753](bugs/BUG-1753-drop-multi-video-only-first.md) | ✅ | ✅ | 拖入多个视频只导入第一个 |
@@ -43,9 +59,16 @@
 | [BUG-1748](bugs/BUG-1748-browser-extension-page-no-back.md) | ✅ | ✅ | 浏览器扩展页被设置 push 进来时没有返回键 |
 | [BUG-1747](bugs/BUG-1747-subtitle-source-settings-width-tear.md) | ✅ | ✅ | 字幕来源设置三种行各有一套左右边界 |
 | [BUG-1746](bugs/BUG-1746-subscription-never-retries-failed-episode.md) | ✅ | ✅ | 订阅只看 jobId 存在就跳过，故障集永久卡死不再下载 |
+| [BUG-1745](bugs/BUG-1745-trackpad-vertical-wheel-multi-page.md) | ✅ | ✅ | 纵向触摸板惯性绕过手势闸门，一次滑动连翻多页 |
+| [BUG-1744](bugs/BUG-1744-macos-reader-fullscreen-top-band.md) | ✅ | ✅ | macOS 阅读器全屏下顶部残留 28pt 拖拽横带 |
+| [BUG-1743](bugs/BUG-1743-vn-scroll-to-search-match-missing.md) | ✅ | ✅ | VN 缺 scrollToSearchMatch 且调用点无存在性守卫 |
+| [BUG-1742](bugs/BUG-1742-vn-non-sasayaki-audiobook-follow.md) | ✅ | ✅ | VN 模式下非 sasayaki 书的有声书自动跟随失效 |
+| [BUG-1741](bugs/BUG-1741-interconnect-pair-probe-reason-lost.md) | ✅ | ✅ | 互联配对报错文案完全误导：三层静默吞异常 + TLS host 回落 v1 死路 |
 | [BUG-1740](bugs/BUG-1740-collection-card-continue-label-clock.md) | ✅ | ✅ | 合集卡续播标签没用统一时钟与详情页差一集 |
 | [BUG-1739](bugs/BUG-1739-scan-resurrects-deleted-collection.md) | ✅ | ✅ | 来源重扫按自然键复活用户已删除的playlist合集 |
 | [BUG-1738](bugs/BUG-1738-download-proxy-kills-pipeline.md) | ✅ | ✅ | 自定义下载代理未填时切换发现网络永久杀死下载管线 |
+| [BUG-1737](bugs/BUG-1737-popup-dict-masonry-dead-branch.md) | ✅ | ✅ | 查词弹窗词典方框在支持原生masonry的WebKit上塌成行对齐grid |
+| [BUG-1736](bugs/BUG-1736-audiobook-stop-deadlock-darwin.md) | ✅ | ✅ | 播放中退出有声书音频永不停止且无法手动关闭 |
 | [BUG-1735](bugs/BUG-1735-artifact-thread-indistinguishable-in-picker.md) | 🚧 | 🚧 | 伪影文本线程在选择器里与健康线程无法区分，预览还被折叠成干净句子 |
 | [BUG-1734](bugs/BUG-1734-ingame-mining-silent-failure.md) | ✅ | ✅ | 游戏内卡片制卡拿不到台词行时静默失败，无任何提示 |
 | [BUG-1733](bugs/BUG-1733-kirikiriz-thread-lines-never-ingested.md) | 🚧 | 🚧 | 选中 KiriKiriZ 文本线程后实时台词恒 0，且没有任何东西告诉用户这条线程不可能产出台词 |
@@ -124,6 +147,9 @@
 | [BUG-1657](bugs/BUG-1657-angle-surface-fallback-loses-shaders.md) | ✅ | ✅ | 画质增强/超分静默失效：ANGLE device-backed display 之后任一步失败即掉软件渲染，而 SW 路径下 glsl-shaders 完全不生效 |
 | [BUG-1656](bugs/BUG-1656-apple-manga-reader-images.md) | ✅ | ✅ | Apple 漫画阅读器图片黑屏 |
 | [BUG-1655](bugs/BUG-1655-ruby-double-scale.md) | ✅ | ✅ | 查词浮窗振假名显示过小（疑双重 0.5em 缩放） |
+| [BUG-1653](bugs/BUG-1653-popup-dictionary-itest-desktop-drift.md) | ✅ | ✅ | popup_dictionary 应用级测试在桌面端因平台与导航假设失效 |
+| [BUG-1652](bugs/BUG-1652-windows-webview-click-stale-cursor.md) | ✅ | ✅ | Windows WebView 点击使用旧光标坐标导致词条操作无响应 |
+| [BUG-1651](bugs/BUG-1651-popup-auto-fit-height.md) | ✅ | ✅ | 查词弹窗忽略内容高度导致底部大面积留白 |
 | [BUG-1650](bugs/BUG-1650-sync-pulled-progress-stale-until-restart.md) | ✅ | ✅ | 同步拉回更远进度后首页继续与书架不刷新须重启 |
 | [BUG-1649](bugs/BUG-1649-manga-folder-epub-import.md) | ✅ | ✅ | 漫画页选文件夹导入：目录内是 epub 卷时报 Manga image folder has no pages |
 | [BUG-1648](bugs/BUG-1648-embedded-torrent-idle-discovery.md) | ✅ | ✅ | 已完成任务恢复后 DHT 常驻导致网关周期性高延迟 |

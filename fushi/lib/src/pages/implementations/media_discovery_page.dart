@@ -82,6 +82,15 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   /// 目录下钻栈（(源内路径, 显示名)）；只在单源模式下非空。
   final List<(String, String)> _pathStack = <(String, String)>[];
 
+  /// **已提交**的搜索词（`_queryCtrl` 是草稿，这里是真正发出去过的那一个）。
+  ///
+  /// BUG-1768：旧实现直接读 `_queryCtrl.text` 当「是不是搜索态」，而
+  /// `_openFolder` 只压路径栈、不动搜索框，于是「进文件夹」这次请求仍带着
+  /// 关键词 → `DiscoveryRequest.isSearch` 为真 → `path` 被静默丢弃 → 又发了
+  /// 一次一模一样的全站搜索，同名目录把自己当子项列出来，可以无限点下去。
+  /// 草稿与已提交分开后，「有没有在搜索」不再取决于用户此刻框里打了什么。
+  String _query = '';
+
   final List<DiscoveryEntry> _entries = <DiscoveryEntry>[];
   DiscoveryAggregateResult? _result;
   bool _loading = false;
@@ -108,7 +117,9 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   /// 当前（空查询下的）页面态，见 [_DiscoveryIdle]。
   _DiscoveryIdle _idleMode(AppModel appModel) {
-    if (_queryCtrl.text.trim().isNotEmpty) return _DiscoveryIdle.none;
+    // 已下钻进某个目录：这是一次有明确位置的 browse，与关键词无关（BUG-1768）。
+    if (_pathStack.isNotEmpty) return _DiscoveryIdle.none;
+    if (_query.isNotEmpty) return _DiscoveryIdle.none;
     if (_sourceId == kDiscoveryAllSourcesId) return _DiscoveryIdle.pickSource;
     final MediaDiscoverySource? source =
         appModel.mediaDiscoveryService.sourceById(_sourceId);
@@ -135,8 +146,12 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       });
       return;
     }
-    final String query = _queryCtrl.text.trim();
-    final bool browsing = query.isEmpty;
+    // 下钻比「产生这个目录的那次搜索」更具体：路径栈非空就必须走 browse。
+    // 反过来（关键词压过路径，BUG-1768 的旧行为）会让「进文件夹」退化成重发
+    // 同一次搜索。两者在这里就地互斥，请求出口只有这一个（`DiscoveryRequest`
+    // 的断言把这条不变式钉死）。
+    final String? path = _pathStack.isNotEmpty ? _pathStack.last.$1 : null;
+    final String? query = path == null && _query.isNotEmpty ? _query : null;
     final int seq = ++_loadSeq;
     setState(() {
       _loading = true;
@@ -150,8 +165,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     try {
       final DiscoveryRequest request = DiscoveryRequest(
         kind: _kind,
-        query: browsing ? null : query,
-        path: browsing && _pathStack.isNotEmpty ? _pathStack.last.$1 : null,
+        query: query,
+        path: path,
         page: _page,
       );
       // 追加页（加载更多）不做渐进：旧条目要保序，等整页齐了再接尾。
@@ -223,9 +238,12 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     unawaited(_load());
   }
 
-  /// 提交搜索/清空搜索：路径栈属于上一轮浏览，必须先清掉。
+  /// 提交搜索/清空搜索：把草稿提交成 [_query]，路径栈属于上一轮浏览，必须先清掉。
   void _submitSearch() {
-    _pathStack.clear();
+    setState(() {
+      _query = _queryCtrl.text.trim();
+      _pathStack.clear();
+    });
     unawaited(_load());
   }
 
@@ -349,6 +367,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       child: Row(
         children: <Widget>[
           FushiIconButton(
+            key: const ValueKey<String>('discovery_breadcrumb_up'),
             icon: Icons.arrow_upward,
             tooltip: t.back,
             label: t.back,
@@ -439,7 +458,25 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     if (_loading && _entries.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
+    final DiscoveryAggregateResult? result = _result;
     if (_entries.isEmpty) {
+      // BUG-1770：「一个源都没成功，而且有失败」不是「没有结果」。失败徽标原先
+      // 只挂在下面的非空列表分支上，空列表在这里就直接返回 discovery_empty ——
+      // 于是**整源失败**被显示成「无结果」，用户会以为那个目录是空的。
+      // 实例：erogame.space 的 `/api/fs/list` 对匿名访问在任何路径上都返回
+      // `object not found`（搜索仍可用），点进任何目录都只看到「无结果」。
+      // 判据用模型层早就有的 `isTotalFailure`（successfulSourceCount==0 && 有失败）。
+      if (result != null && result.isTotalFailure) {
+        return Center(
+          child: Text(
+            '${t.discovery_sources_unavailable} '
+            '(${result.failures.map((ExternalProviderFailure f) => f.providerId).toSet().join(', ')})',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.error),
+          ),
+        );
+      }
       // 空查询的两种引导态已在上面分流：能走到这里的空列表就是真·无结果。
       return Center(
         child: Text(
@@ -450,7 +487,6 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       );
     }
 
-    final DiscoveryAggregateResult? result = _result;
     return AnimatedBuilder(
       animation: queue,
       builder: (BuildContext context, Widget? _) => ListView(

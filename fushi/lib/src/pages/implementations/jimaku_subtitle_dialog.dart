@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -11,9 +12,13 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
+import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
 import 'package:fushi/utils.dart';
 
 /// 一条可下载的在线字幕候选：来源条目/发布名 + 文件名 + 回给来源 provider 的句柄。
@@ -249,7 +254,20 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   bool _searching = false;
   bool _searched = false;
   String? _busyName; // 正在下载的文件名
+  String? _busySourceKey; // 正在下载的候选 identityKey（版本卡视图用）
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
+
+  /// true = 平铺文件列表（旧视图）；false（默认）= 版本卡视图。候选缺 source
+  /// （测试预置样本）时强制文件视图。
+  bool _showFileView = false;
+
+  /// 版本组正文语言探测结果（group.key → 检测值），展示用。
+  Map<String, SubtitleContentLanguage> _probedGroupLanguages =
+      <String, SubtitleContentLanguage>{};
+
+  /// 每轮搜索递增，丢弃迟到的旧探测结果。
+  int _probeGeneration = 0;
+  SubtitleVersionLanguageProbe? _probe;
 
   /// API key 输入区是否折叠（配好 key 且已有候选结果后默认收起腾出列表空间）。
   bool _apiKeyCollapsed = false;
@@ -454,13 +472,75 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         _searched = true;
         _searchedWithEpisode = episode != null;
         _selectedSeriesId = anilistId;
+        _probedGroupLanguages = <String, SubtitleContentLanguage>{};
         // 记忆语言 / 上轮类型本次无候选 → 退回「全部」，不空屏（保底）。
         _reconcileSelectedFilters();
         // 配好 key 且搜出结果后，默认收起 API key 输入区腾出列表空间
         // （用户：「apikey 配完是不是可以缩小显示」）。用户仍可点「修改」展开。
         _apiKeyCollapsed = sorted.isNotEmpty;
       });
+      unawaited(_probeUnknownLanguageGroups(registry));
     }
+  }
+
+  /// 文件名认不出语言的版本组：后台下载代表文件探正文语言（展示增强，见
+  /// [SubtitleVersionLanguageProbe] 的纪律）。最多探 4 组、逐个串行；结果按
+  /// generation 丢弃迟到者。
+  Future<void> _probeUnknownLanguageGroups(
+    VideoSubtitleRegistry registry,
+  ) async {
+    final int generation = ++_probeGeneration;
+    final List<VideoSubtitleCandidate> sources = <VideoSubtitleCandidate>[
+      for (final JimakuCandidate candidate in _candidates)
+        if (candidate.source != null) candidate.source!,
+    ];
+    if (sources.isEmpty) return;
+    final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+      sources,
+      preferredLanguage: _selectedLanguage,
+    );
+    // 不缓存 registry.download 闭包：填/改 API key 会重建 provider runtime（同文件
+    // 下方注释已写明「早绑的实例正是坑」），把 download 撞进长期持有的 _probe 里，
+    // 改完 key 后探测仍走旧 runtime，全部失败又被静默吞掉 —— 标签永远不出现，还每次
+    // 白发一轮 HTTP。缓存只保留探测结果本身（probe 内部按 identityKey 缓存）。
+    final SubtitleVersionLanguageProbe probe =
+        _probe ??= SubtitleVersionLanguageProbe(download: _downloadForProbe);
+    int probed = 0;
+    for (final SubtitleVersionGroup group in groups) {
+      if (group.language.isNotEmpty) continue;
+      // 有下载配额的源不做探测：OpenSubtitles 的 /download 就是计配额那一步，免费账号
+      // 一天 5~20 次，这里最多能一次吞掉 4 次，而失败还被吞成「下载失败」，用户永远
+      // 不知道配额是被一个展示标签吃光的。
+      if (!registry.allowsFreeProbeDownload(group.representative)) continue;
+      if (probed >= 4) break;
+      probed++;
+      final SubtitleContentLanguage? detected =
+          await probe.probe(group.representative);
+      if (!mounted || generation != _probeGeneration) return;
+      if (detected == null) continue;
+      setState(() {
+        _probedGroupLanguages = <String, SubtitleContentLanguage>{
+          ..._probedGroupLanguages,
+          group.key: detected,
+        };
+      });
+    }
+  }
+
+  /// 探测用下载：**每次现取** registry（与直接下载路径同纪律），不长期持有闭包。
+  Future<VideoSubtitleDownload> _downloadForProbe(
+    VideoSubtitleCandidate candidate,
+  ) {
+    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    if (registry == null) {
+      throw ExternalProviderFailure(
+        providerId: candidate.providerId,
+        operation: 'probe-download',
+        kind: ExternalProviderFailureKind.unsupported,
+        message: 'subtitle registry unavailable',
+      );
+    }
+    return registry.download(candidate);
   }
 
   Future<http.Client> _createHttpClient() {
@@ -477,9 +557,19 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
   /// （[ExternalProviderFailure]）是给管线重试用的，对用户只有「没下来」一种语义。
   Future<void> _download(JimakuCandidate candidate) async {
     final VideoSubtitleCandidate? source = candidate.source;
+    if (source == null) return;
+    await _downloadSource(source);
+  }
+
+  /// 下载真实来源候选（文件视图与版本卡视图共用）：registry 按 providerId
+  /// 分派，落盘后 pop 回本地路径。
+  Future<void> _downloadSource(VideoSubtitleCandidate source) async {
     final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
-    if (source == null || registry == null) return;
-    setState(() => _busyName = candidate.name);
+    if (registry == null) return;
+    setState(() {
+      _busyName = source.fileName;
+      _busySourceKey = source.identityKey;
+    });
     try {
       final VideoSubtitleDownload download = await registry.download(source);
       if (download.bytes.isEmpty) {
@@ -495,7 +585,12 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     } on Object {
       _snack(t.video_jimaku_download_failed);
     } finally {
-      if (mounted) setState(() => _busyName = null);
+      if (mounted) {
+        setState(() {
+          _busyName = null;
+          _busySourceKey = null;
+        });
+      }
     }
   }
 
@@ -707,6 +802,21 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
               ),
               onChanged: (String v) => setState(() => _filter = v),
             ),
+            // 版本卡视图默认开；想直接翻原始文件列表的用户在这里切换。
+            if (_candidates
+                .any((JimakuCandidate c) => c.source != null)) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilterChip(
+                  key: const ValueKey<String>('jimaku-file-view-toggle'),
+                  label: Text(t.subtitle_version_view_files),
+                  selected: _showFileView,
+                  onSelected: (bool value) =>
+                      setState(() => _showFileView = value),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -750,14 +860,40 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         ),
       );
     }
-    // 先按语言筛选（_selectedLanguage）、再按类型筛选（_selectedFormat），最后交给
-    // 列表做关键词二次筛选。三层各自独立、顺序不影响结果集。
-    return JimakuCandidateList(
-      candidates: filterCandidatesByFormat(
+    // 先按语言筛选（_selectedLanguage）、再按类型筛选（_selectedFormat）、再做
+    // 关键词二次筛选。三层各自独立、顺序不影响结果集。
+    final List<JimakuCandidate> filtered = filterByMediaSearch(
+      filterCandidatesByFormat(
         filterCandidatesByLanguage(_candidates, _selectedLanguage),
         _selectedFormat,
       ),
-      filter: _filter,
+      _filter,
+      (JimakuCandidate c) => <String>[c.name, c.entryName],
+    );
+    // 版本卡视图（默认）：候选全部带真实来源时按「合集 › 格式+语言+组」聚类，
+    // 文件名流水账折进卡内（RSS-Subtitle-Manager 式版本选择器）。测试预置样本
+    // （source == null）或用户显式切文件视图时走旧平铺列表。
+    final List<VideoSubtitleCandidate> sources = <VideoSubtitleCandidate>[
+      for (final JimakuCandidate candidate in filtered)
+        if (candidate.source != null) candidate.source!,
+    ];
+    final bool canGroup =
+        sources.isNotEmpty && sources.length == filtered.length;
+    if (canGroup && !_showFileView) {
+      return SubtitleVersionGroupList(
+        groups: buildSubtitleVersionGroups(
+          sources,
+          preferredLanguage: _selectedLanguage,
+        ),
+        requestedEpisode: int.tryParse(_episodeCtrl.text.trim()),
+        busyIdentityKey: _busySourceKey,
+        onPickCandidate: _busyName == null ? _downloadSource : null,
+        probedLanguages: _probedGroupLanguages,
+      );
+    }
+    return JimakuCandidateList(
+      candidates: filtered,
+      filter: '',
       busyName: _busyName,
       onDownload: _busyName == null ? _download : null,
     );

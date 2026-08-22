@@ -115,6 +115,9 @@ class OpenSubtitlesSearchRecord {
     this.downloadCount = 0,
     this.hearingImpaired = false,
     this.fps,
+    this.uploadedAtMs,
+    this.aiTranslated = false,
+    this.fromTrusted = false,
   });
 
   final int fileId;
@@ -126,6 +129,15 @@ class OpenSubtitlesSearchRecord {
   final int downloadCount;
   final bool hearingImpaired;
   final double? fps;
+
+  /// `attributes.upload_date`（ISO-8601）→ epoch 毫秒；缺失/不可解析 null。
+  final int? uploadedAtMs;
+
+  /// `attributes.ai_translated`：机翻标记（排序降权，UI 明示）。
+  final bool aiTranslated;
+
+  /// `attributes.from_trusted`：可信上传者。
+  final bool fromTrusted;
 }
 
 List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
@@ -165,6 +177,13 @@ List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
           downloadCount: _int(attributes['download_count']) ?? 0,
           hearingImpaired: attributes['hearing_impaired'] == true,
           fps: _double(attributes['fps']),
+          uploadedAtMs: attributes['upload_date'] is String
+              ? DateTime.tryParse(attributes['upload_date']! as String)
+                  ?.toUtc()
+                  .millisecondsSinceEpoch
+              : null,
+          aiTranslated: attributes['ai_translated'] == true,
+          fromTrusted: attributes['from_trusted'] == true,
         ),
       );
     }
@@ -301,6 +320,13 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       );
     }
   }
+
+  @override
+
+  /// OpenSubtitles 的 `/download` 就是计配额的那一步（响应带 `remaining`），
+  /// 绝不为一个展示标签消耗用户的每日额度。
+  @override
+  bool get allowsFreeProbeDownload => false;
 
   @override
   Future<VideoSubtitleDownload> download(
@@ -644,6 +670,9 @@ class _OpenSubtitlesCandidate extends VideoSubtitleCandidate {
           downloadCount: record.downloadCount,
           hearingImpaired: record.hearingImpaired,
           fps: record.fps,
+          uploadedAtMs: record.uploadedAtMs,
+          aiTranslated: record.aiTranslated,
+          fromTrusted: record.fromTrusted,
         );
 
   final OpenSubtitlesSearchRecord record;

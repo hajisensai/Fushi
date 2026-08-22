@@ -163,6 +163,9 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
     'remote_videos',
     'anime_downloads',
     'videos',
+    // 下载页「手动添加任务」的 .torrent 元数据（随任务持久化）。体量很小，但必须
+    // 归进某个类目——否则存储页总量对不上白名单（守卫逼着新目录选类目）。
+    'manual_torrents',
   ],
   StorageCategoryId.covers: <String>[
     'video_covers',

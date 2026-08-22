@@ -56,7 +56,7 @@ void main() {
         registryFor(TargetPlatform.windows),
         TargetPlatform.windows,
       ));
-      expect(cfg.keys.toSet(), <String>{'mine', 'next', 'prev'});
+      expect(cfg.keys.toSet(), <String>{'mine', 'next', 'prev', 'audio'});
       expect(
         ShortcutAction.actionsForScope(ShortcutScope.dictionaryPopup).length,
         cfg.keys.length,

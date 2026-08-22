@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -368,14 +369,27 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
     final bool horizontal = widget.axis == Axis.horizontal;
     return Actions(
       actions: <Type, Action<Intent>>{
-        // Only Left/Right (horizontal) or Up/Down (vertical) are ENABLED, so the
-        // cross-axis press bubbles to leave the bar (Actions stops at the first
-        // ENABLED action, not the first that returns true — same contract the
-        // settings value rows rely on).
-        GamepadButtonIntent: _GamepadNavStepAction(
-          horizontal: horizontal,
-          onPrev: () => _step(-1),
-          onNext: () => _step(1),
+        // 只消费沿轴的两个方向键，跨轴按键**显式转发**给祖先（离开导航栏）。
+        // 原先靠覆写 isEnabled 让位是不成立的：Actions.maybeInvoke 上溯停在第一个
+        // 注册了该 Intent 类型的层，与 enabled 无关，被让位的按键其实是被静默吞掉。
+        // 见 [GamepadButtonForwardingAction] 类文档。
+        GamepadButtonIntent: GamepadButtonForwardingAction(
+          ancestorContext: context,
+          handle: (GamepadButton button) {
+            final GamepadButton prev =
+                horizontal ? GamepadButton.dpadLeft : GamepadButton.dpadUp;
+            final GamepadButton next =
+                horizontal ? GamepadButton.dpadRight : GamepadButton.dpadDown;
+            if (button == next) {
+              _step(1);
+              return true;
+            }
+            if (button == prev) {
+              _step(-1);
+              return true;
+            }
+            return false;
+          },
         ),
       },
       child: Shortcuts(
@@ -410,41 +424,6 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
 class _NavStepIntent extends Intent {
   const _NavStepIntent(this.delta);
   final int delta;
-}
-
-/// D-pad step action for [GamepadNavCluster], ENABLED only for the along-axis
-/// pair (Left/Right horizontal, Up/Down vertical). Every other button reports
-/// disabled so the press bubbles past the bar (cross-axis leaves it; A/B/LT/RT
-/// reach the page), matching `_GamepadAdjustAction` in settings_shared.
-class _GamepadNavStepAction extends Action<GamepadButtonIntent> {
-  _GamepadNavStepAction({
-    required this.horizontal,
-    required this.onPrev,
-    required this.onNext,
-  });
-
-  final bool horizontal;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-
-  GamepadButton get _prev =>
-      horizontal ? GamepadButton.dpadLeft : GamepadButton.dpadUp;
-  GamepadButton get _next =>
-      horizontal ? GamepadButton.dpadRight : GamepadButton.dpadDown;
-
-  @override
-  bool isEnabled(GamepadButtonIntent intent) =>
-      intent.button == _prev || intent.button == _next;
-
-  @override
-  Object? invoke(GamepadButtonIntent intent) {
-    if (intent.button == _next) {
-      onNext();
-    } else if (intent.button == _prev) {
-      onPrev();
-    }
-    return true;
-  }
 }
 
 PreferredSizeWidget adaptiveAppBar({

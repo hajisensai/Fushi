@@ -25,6 +25,8 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+    show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
@@ -83,13 +85,18 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 // TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
 import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface, DictionaryCaretController, DictionaryCaretHost;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
+    show
+        GamepadButtonIntent,
+        GamepadLongPressIntent,
+        focusedEditableText,
+        tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, InputBinding;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
@@ -3287,14 +3294,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
-        onEpisodeCompleted: () =>
-            appModel.mediaTrackingService.recordVideoCompleted(
-          bookUid: widget.bookUid,
-          collectionId: widget.playlistCollectionId,
-          episodeIndex: _currentEpisode,
-          seriesCompleted:
-              _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
-        ),
+        onEpisodeCompleted: () async {
+          if (!kMediaTrackingEnabled) return;
+          await appModel.mediaTrackingService.recordVideoCompleted(
+            bookUid: widget.bookUid,
+            collectionId: widget.playlistCollectionId,
+            episodeIndex: _currentEpisode,
+            seriesCompleted:
+                _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
+          );
+        },
         // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
         recordActivity: (String t, String uid, String dateKey, int timestampMs,
                 int durationMs, int chars) =>
@@ -3756,6 +3765,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (cause != FocusReclaimCause.popupDismissed && _hasVisiblePopup) {
       return false;
     }
+    // 手柄重设计 P3：可导航浮层面板（剧集轨 / 字幕列表 / 侧栏）打开期间焦点归
+    // PanelFocusScope 所有，页面不抢。少了这一条就是纯回归：字幕列表是 push-aside，
+    // 视频区全程可点，用户点一下画面（reclaim(gesture)）或从字幕行查完词关浮层
+    // （reclaim(popupDismissed)）焦点就被拽回页面节点，而 PanelFocusScope 只在
+    // visible 边沿认领一次、不复领 ⇒ 面板仍开着，_handleVideoGamepadButton 继续让
+    // dpad/A 给焦点兜底，于是 dpad 既进不了面板、也不再调音量/seek —— 比 P3 之前
+    // 更差（之前至少还能调音量）。面板关闭时通知先翻假，归还路径不受影响。
+    if (_videoNavigablePanelOpen) return false;
     // 生命周期回前台是全局回调，本页上方可能压着设置对话框 / 菜单 / 导入遮罩
     // （键盘所有者路由：窗口模式=本页路由，全屏期间=全屏路由）。此时抢焦点会
     // 夺走对话框的键盘（Never break userspace）——那些覆盖层各自的 guardOverlay
@@ -3795,6 +3812,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _subtitleListVisible.value ||
       _episodeListVisible.value ||
       _videoControlEditMode.value;
+
+  /// 手柄重设计 P3：可用 D-pad 逐行浏览的三类面板任一打开（字幕列表 / 剧集轨 /
+  /// 侧栏）。与 [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是
+  /// 「行浏览」表面，D-pad 在那里仍按 video scope 解析。
+  bool get _videoNavigablePanelOpen =>
+      _subtitleListVisible.value ||
+      _episodeListVisible.value ||
+      _videoSidePanel.value != null;
 
   // BUG-371：字幕跳转列表是 **push-aside** 侧栏（[_videoWithSubtitlePanel] 的
   // `Row[Expanded(video), 面板列]`，TODO-314），把画面挤窄到左侧、**不遮挡**叠在画面上
@@ -4730,6 +4755,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
     // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
     if (_handleCaretGamepadButton(button)) return true;
+    // 手柄重设计 P3：浮层面板打开时，D-pad/A 让位给通用焦点导航（面板内选行）——
+    // 返回 false 交给 GamepadService 的 dpad=移焦 / A=激活兜底，而不是解析成
+    // 音量 / seek / 播放暂停。焦点由 PanelFocusScope 在面板打开时领进面板；其余
+    // 按钮照常解析（LB/RB seek 仍可用），B 经下方 universal 兜底走逐级退出关面板。
+    if (_videoNavigablePanelOpen && isVideoPanelFocusNavButton(button)) {
+      return false;
+    }
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.video,
@@ -4745,6 +4777,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
     // （焦点移动等），不误吞导航。
     if (_hasVisiblePopup) {
+      // 手柄重设计 P2：先给浮层自己的 dictionaryPopup 绑定一次消费机会，再落到上面
+      // 那条「已绑键 = 关浮层」。少了这一步，dpad 上下 / X / Y 在 video scope 全都
+      // 有绑定（音量 / 上下条字幕），于是 P2 的词条导航 / 制卡 / 发音四个默认绑定在
+      // 视频页**结构性不可达**——GamepadService 的弹窗兜底排在页面 Actions 之后，
+      // 这里已经 return true 了，永远轮不到。设置里能配、按了没反应正是要禁的形态。
+      // B 不在 dictionaryPopup 绑定里，逐级退出关浮层的行为不变。
+      if (tryDictionaryPopupGamepadButton(appModel.shortcutRegistry, button)) {
+        return true;
+      }
       _dismissTopVisiblePopup();
       return true;
     }

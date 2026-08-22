@@ -73,6 +73,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         MediaCollectionItemRow,
+        MediaCollectionRow,
         MediaKind,
         MediaSourceRow,
         VideoBookRow,
@@ -1220,9 +1221,13 @@ class _HomePageState extends BasePageState<HomePage>
       );
 
   void _openVideoDiscoverySubscriptionsPanel() {
-    unawaited(Navigator.of(context).maybePop().then((_) {
-      if (mounted) _openDownloadsTab(2);
-    }));
+    // 不能只 pop 一层。发现页是 Offstage 内联在 home 里的，所以「切到下载页订阅 tab」
+    // 的前提是先真正回到 home 这一层路由。旧写法把「回到 home」编码成「pop 一次」：
+    // home → 详情（深度 1）成立，而 home → 放送日历 → 详情（深度 2）只会退回日历页，
+    // 切的是被日历完全盖住的 tab —— 用户点「管理订阅」屏幕纹丝不动。用 popUntil
+    // 收口，与栈深无关。
+    Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
+    if (mounted) _openDownloadsTab(2);
   }
 
   Future<VideoDiscoveryDetailData> _loadVideoDiscoveryDetails(
@@ -1365,7 +1370,9 @@ class _HomePageState extends BasePageState<HomePage>
         await _matchingVideoDiscoverySubscriptions(item.reference);
     if (!context.mounted) return;
     if (existing.any((VideoDownloadSubscriptionRow row) => row.enabled)) {
-      Navigator.of(context).pop();
+      // 同 [_openVideoDiscoverySubscriptionsPanel]：单层 pop 在
+      // home → 放送日历 → 详情 这条更深的栈上退不回 home，切的 tab 被日历盖住。
+      Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
       _openDownloadsTab(2);
       return;
     }
@@ -1641,8 +1648,8 @@ class _HomePageState extends BasePageState<HomePage>
             .toList(growable: false);
     final List<VideoDownloadSubscriptionRow> subscriptions =
         await _matchingVideoDiscoverySubscriptions(reference);
-    final VideoMetadataWorkRow? local =
-        await _findLocalVideoDiscoveryWork(reference);
+    final _LocalDiscoveryTarget? local =
+        await _resolveLocalDiscoveryTarget(reference);
     final VideoDownloadJobRow? job = jobs.firstOrNull;
     final bool busy = job?.lifecycle == VideoDownloadJobLifecycle.active;
     final bool subscribed = subscriptions.any(
@@ -1736,6 +1743,36 @@ class _HomePageState extends BasePageState<HomePage>
     };
   }
 
+  /// 「这条发现条目在本地对应什么」的**单一**解析。
+  ///
+  /// 在库判据与播放入口必须共用它。此前是两套真相源：日历徽章读
+  /// `media_collections.anilistId`，详情页的 isInLibrary / 播放读
+  /// `video_metadata_works` + provider identities。而番剧下载的自动入库
+  /// （[AnimeDownloadImporter]）只写前者、从不写 metadata work —— 于是用户下好的番
+  /// 在日历上标着「在库」，点进去却没有播放按钮，从日历完全打不开自己下好的番。
+  ///
+  /// 回落只按 anilistId 走：那正是番剧下载入库唯一写入的身份列，也是日历徽章用的同
+  /// 一列，两边由构造保证一致。
+  Future<_LocalDiscoveryTarget?> _resolveLocalDiscoveryTarget(
+    VideoMediaReference reference,
+  ) async {
+    final VideoMetadataWorkRow? work =
+        await _findLocalVideoDiscoveryWork(reference);
+    if (work != null) {
+      return _LocalDiscoveryTarget(work: work, collectionId: work.collectionId);
+    }
+    final int? anilistId = reference.anilistId;
+    if (anilistId == null) return null;
+    final List<MediaCollectionRow> collections =
+        await appModelNoUpdate.database.getAllMediaCollections();
+    for (final MediaCollectionRow row in collections) {
+      if (row.anilistId == anilistId) {
+        return _LocalDiscoveryTarget(work: null, collectionId: row.id);
+      }
+    }
+    return null;
+  }
+
   Future<VideoMetadataWorkRow?> _findLocalVideoDiscoveryWork(
     VideoMediaReference reference,
   ) async {
@@ -1765,10 +1802,10 @@ class _HomePageState extends BasePageState<HomePage>
     BuildContext context,
     VideoDiscoveryItem item,
   ) async {
-    final VideoMetadataWorkRow? work =
-        await _findLocalVideoDiscoveryWork(item.reference);
-    if (work == null || !context.mounted) return;
-    final String? bookUid = work.bookUid;
+    final _LocalDiscoveryTarget? target =
+        await _resolveLocalDiscoveryTarget(item.reference);
+    if (target == null || !context.mounted) return;
+    final String? bookUid = target.work?.bookUid;
     if (bookUid != null) {
       final VideoBookRow? book =
           await appModelNoUpdate.database.getVideoBookByBookUid(bookUid);
@@ -1780,7 +1817,7 @@ class _HomePageState extends BasePageState<HomePage>
       );
       return;
     }
-    final int? collectionId = work.collectionId;
+    final int? collectionId = target.collectionId;
     if (collectionId == null) return;
     final List<MediaCollectionItemRow> items =
         await appModelNoUpdate.database.getCollectionItems(collectionId);
@@ -2251,4 +2288,16 @@ class _SyncExitWarningDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 发现条目在本地库里的落点：metadata work（若有）与可播的合集 id。
+///
+/// 存在的理由是消掉「在库判据」与「播什么」两套解析 —— 见
+/// [_HomePageState._resolveLocalDiscoveryTarget]。番剧下载入库的条目只有
+/// collectionId、没有 work，所以两个字段都可能单独为空，但至少有一个非空。
+class _LocalDiscoveryTarget {
+  const _LocalDiscoveryTarget({required this.work, required this.collectionId});
+
+  final VideoMetadataWorkRow? work;
+  final int? collectionId;
 }

@@ -371,6 +371,41 @@ class SyncAuthFailure {
   bool get isForbidden => kind == SyncAuthFailureKind.forbidden;
 }
 
+/// 一次资产传输的方向。
+///
+/// 方向以前是**隐含**的：一个 `sync_*_enabled` 开关开着就双向 union，关着就完全不
+/// 传，用户没法表达「现在把本机词典推上去」这种一次性意图。词典 / 本地音频源数据库
+/// 改成显式的上传 / 下载动作后，方向成了调用点必须携带的数据，而不是从开关反推出
+/// 来的行为。
+///
+/// [both] 不是兼容补丁：互联通道的词典在「上传词典到互联对端」开关下**仍然**是双向
+/// union（BUG-988 的通道解耦语义），那是真实存在的第三种方向。
+enum SyncAssetDirection {
+  /// 只把本端独有的资产推给远端。
+  upload,
+
+  /// 只把远端独有的资产拉到本端。
+  download,
+
+  /// 双向 union（自动同步路径）。
+  both;
+
+  /// 本方向是否包含「拉远端独有」。
+  bool get pulls => this != SyncAssetDirection.upload;
+
+  /// 本方向是否包含「推本端独有」。
+  bool get pushes => this != SyncAssetDirection.download;
+}
+
+/// 显式传输的资产类别（[SyncOrchestrator.runAssetTransferOnly]）。
+enum SyncAssetKind {
+  /// 词典包（含导入的词典资源）。
+  dictionary,
+
+  /// 本地音频来源数据库（`.db` + 来源配置）。
+  localAudio,
+}
+
 /// Orchestrates sync across any [SyncBackend].
 ///
 /// Layers the three previously-missing capabilities on top of the existing
@@ -386,8 +421,10 @@ class SyncAuthFailure {
 /// over the interconnect live API are bidirectional (TODO-809) but pull only into
 /// books the device already owns (no orphan audiobook rows; remote audiobooks for
 /// unknown books still wait for manual download). Deletes are never propagated.
-/// Dictionaries and local-audio sources remain union-synced because they are
-/// separate opt-in sharing pools.
+/// 词典与本地音频源数据库**不再随自动同步跑**：它们改由设置页的显式「上传 /
+/// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
+/// 开关反推。唯一例外是互联通道的词典 —— 「上传词典到互联对端」开关仍按 BUG-988
+/// 的通道语义驱动一轮双向 union，本次不动。
 class SyncOrchestrator {
   SyncOrchestrator({
     required FushiDatabase db,
@@ -403,7 +440,6 @@ class SyncOrchestrator {
     required this.syncAudioBookFiles,
     this.syncVideoFiles = false,
     required this.syncDictionary,
-    required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
@@ -451,9 +487,10 @@ class SyncOrchestrator {
 
   final bool syncDictionary;
 
-  /// 是否同步本地音频来源（DB 文件 + 配置）。orchestrator 不依赖 AppModel：导出用的
-  /// 条目列表由 [localAudioEntries] 注入，导入注册经 [onLocalAudioImported] 回调。
-  final bool syncLocalAudio;
+  /// 本地音频来源（DB 文件 + 配置）传输所需的数据。orchestrator 不依赖 AppModel：
+  /// 导出用的条目列表由 [localAudioEntries] 注入，导入注册经 [onLocalAudioImported]
+  /// 回调。这一维度不再随自动同步跑，只由 [runAssetTransferOnly] 的显式上传 / 下载
+  /// 驱动。
   final List<LocalAudioDbEntry> localAudioEntries;
   final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
 
@@ -587,19 +624,25 @@ class SyncOrchestrator {
     }
     _collectConflicts(bookResults, report);
 
-    if (syncDictionary) await syncDictionaries(report);
+    // 词典只剩互联通道会自动跑（「上传词典到互联对端」开关，BUG-988 的通道语义）。
+    // 云通道的 [syncDictionary] 恒为 false：那一侧的词典改由设置页的显式上传 /
+    // 下载驱动，见 [runAssetTransferOnly]。
+    if (syncDictionary) {
+      await syncDictionaries(report, direction: SyncAssetDirection.both);
+    }
 
-    // 互联（InterconnectSyncBackend）本地音频 + 有声书包走 live 端点；
-    // 云后端仍走原 __local_audio__ 暂存路径（不变）。
+    // 本地音频源数据库两条通道都不再自动传（无论互联还是云）：它没有任何开关了，
+    // 只由 [runAssetTransferOnly] 的显式动作驱动。
+    //
+    // 互联（InterconnectSyncBackend）有声书包走 live 端点；
+    // 云后端仍走原暂存路径（不变）。
     if (isInterconnect) {
-      if (syncLocalAudio) await _syncLocalAudioLive(report, b);
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
       // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
       // upload-only（host→client 仍走按需流式/下载）。
       if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
-      if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
       // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
       // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
@@ -775,6 +818,32 @@ class SyncOrchestrator {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
       await _backend.findOrCreateRootFolder();
       await syncCollections(report);
+    }
+    return report;
+  }
+
+  /// 只跑**一类资产、一个方向**的轻量传输 —— 设置页「词典 / 本地音频数据库」两行
+  /// 的显式上传 / 下载动作走这条路。
+  ///
+  /// 与 [runCollectionsOnly] 同范式：**不写** lastSyncMs 冷却戳（那是完整 sweep 的
+  /// 语义），不碰任何其它维度，内部逐项错误自己进 [SyncRunReport.errors] 不中断。
+  ///
+  /// 云路径的 `ensureNamespace` 依赖同步根已解析（与 [run] 开头一致），故先
+  /// [SyncBackend.findOrCreateRootFolder]；互联 live 路径直打对端端点不需要根，
+  /// 也就不为它多跑一次网络往返。
+  Future<SyncRunReport> runAssetTransferOnly({
+    required SyncAssetKind kind,
+    required SyncAssetDirection direction,
+  }) async {
+    final SyncRunReport report = SyncRunReport();
+    if (_backend is! InterconnectSyncBackend) {
+      await _backend.findOrCreateRootFolder();
+    }
+    switch (kind) {
+      case SyncAssetKind.dictionary:
+        await syncDictionaries(report, direction: direction);
+      case SyncAssetKind.localAudio:
+        await syncLocalAudioSources(report, direction: direction);
     }
     return report;
   }
@@ -2104,9 +2173,10 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncLocalAudioLiveForTest(
     SyncRunReport report,
-    InterconnectSyncBackend backend,
-  ) =>
-      _syncLocalAudioLive(report, backend);
+    InterconnectSyncBackend backend, {
+    SyncAssetDirection direction = SyncAssetDirection.both,
+  }) =>
+      _syncLocalAudioLive(report, backend, direction);
 
   /// 测试入口：直接调用 [_syncAudiobooksLive]。
   @visibleForTesting
@@ -2118,18 +2188,38 @@ class SyncOrchestrator {
 
   /// Union-syncs dictionaries. 互联（InterconnectSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
-  Future<void> syncDictionaries(SyncRunReport report) async {
+  Future<void> syncDictionaries(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
     final SyncBackend b = _backend;
     if (b is InterconnectSyncBackend) {
-      await _syncDictionariesLive(report, b);
+      await _syncDictionariesLive(report, b, direction);
       return;
     }
-    await _syncDictionariesStaged(report);
+    await _syncDictionariesStaged(report, direction);
+  }
+
+  /// 本地音频源数据库的通道分派（与 [syncDictionaries] 同形）：互联走 live 端点，
+  /// 云后端走 `__local_audio__` 暂存命名空间。
+  Future<void> syncLocalAudioSources(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
+    final SyncBackend b = _backend;
+    if (b is InterconnectSyncBackend) {
+      await _syncLocalAudioLive(report, b, direction);
+      return;
+    }
+    await syncLocalAudioPackages(report, direction: direction);
   }
 
   /// 互联直读对端实时词典：按名 union，绝不创建/读写 __dictionaries__。
   Future<void> _syncDictionariesLive(
-      SyncRunReport report, InterconnectSyncBackend backend) async {
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+    SyncAssetDirection direction,
+  ) async {
     final List<DictionaryMetaRow> localDicts =
         await _db.getAllDictionaryMetadata();
     final List<RemoteDictionaryInfo> remoteDicts =
@@ -2142,10 +2232,14 @@ class SyncOrchestrator {
       },
     );
 
-    final int total = diff.toPull.length + diff.toPush.length;
+    // 方向裁剪放在**循环之外**：total 从一开始就是这次真正要做的量，循环体一行不
+    // 改。把 if 塞进循环里只会让进度分母撒谎（显示 0/5 却只做 2 件事）。
+    final List<String> pulls = <String>[if (direction.pulls) ...diff.toPull];
+    final List<String> pushes = <String>[if (direction.pushes) ...diff.toPush];
+    final int total = pulls.length + pushes.length;
     int index = 0;
 
-    for (final String name in diff.toPull) {
+    for (final String name in pulls) {
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2170,7 +2264,7 @@ class SyncOrchestrator {
       index++;
     }
 
-    for (final String name in diff.toPush) {
+    for (final String name in pushes) {
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2198,7 +2292,10 @@ class SyncOrchestrator {
   }
 
   /// Union-syncs dictionary packages in the `__dictionaries__` namespace.
-  Future<void> _syncDictionariesStaged(SyncRunReport report) async {
+  Future<void> _syncDictionariesStaged(
+    SyncRunReport report,
+    SyncAssetDirection direction,
+  ) async {
     final String ns = await _backend.ensureNamespace(kSyncDictionaryNamespace);
     final List<DictionaryMetaRow> localDicts =
         await _db.getAllDictionaryMetadata();
@@ -2215,15 +2312,17 @@ class SyncOrchestrator {
 
     // Resolve both sides' work first so progress has a real denominator.
     final List<DictionaryMetaRow> toPush = <DictionaryMetaRow>[
-      for (final DictionaryMetaRow d in localDicts)
-        if (!remoteNames.contains(d.name)) d,
+      if (direction.pushes)
+        for (final DictionaryMetaRow d in localDicts)
+          if (!remoteNames.contains(d.name)) d,
     ];
     final List<AssetEntry> toPull = <AssetEntry>[
-      for (final AssetEntry e in remote)
-        if (!e.isFolder &&
-            _isDictionaryAsset(e.name) &&
-            !localNames.contains(_stripDictionaryAssetSuffix(e.name)))
-          e,
+      if (direction.pulls)
+        for (final AssetEntry e in remote)
+          if (!e.isFolder &&
+              _isDictionaryAsset(e.name) &&
+              !localNames.contains(_stripDictionaryAssetSuffix(e.name)))
+            e,
     ];
     final int total = toPush.length + toPull.length;
     int index = 0;
@@ -2293,11 +2392,13 @@ class SyncOrchestrator {
   /// - toPull：远端有 ∧ 本端无 → `getRemoteLocalAudio` 下载包 → `onLocalAudioImported` 注册；
   /// - toPush：本端有 ∧ 远端无 → `exportLocalAudioPackage` 打包 → `putRemoteLocalAudio` 上传。
   ///
-  /// 仅当 client syncLocalAudio 开且 isInterconnect 时由 [run] 调用。
+  /// [direction] 裁剪要做哪一半（显式上传 / 下载动作用；[SyncAssetDirection.both]
+  /// 保留完整 union 语义）。只由 [syncLocalAudioSources] 分派调用，不再随 [run] 跑。
   /// 进度走 [SyncPhase.localAudio]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
   Future<void> _syncLocalAudioLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
+    SyncAssetDirection direction,
   ) async {
     final List<RemoteLocalAudioInfo> remoteEntries =
         await backend.listRemoteLocalAudio();
@@ -2313,11 +2414,14 @@ class SyncOrchestrator {
       remoteKeys: remoteNames,
     );
 
-    final int total = diff.toPull.length + diff.toPush.length;
+    // 方向裁剪在循环之外（同 [_syncDictionariesLive]）：total 即本次真实工作量。
+    final List<String> pulls = <String>[if (direction.pulls) ...diff.toPull];
+    final List<String> pushes = <String>[if (direction.pushes) ...diff.toPush];
+    final int total = pulls.length + pushes.length;
     int index = 0;
 
     // ── Pull：远端独有 → 下载并注册 ────────────────────────────────────────
-    for (final String name in diff.toPull) {
+    for (final String name in pulls) {
       _emit(SyncPhase.localAudio,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2350,7 +2454,7 @@ class SyncOrchestrator {
     }
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
-    for (final String name in diff.toPush) {
+    for (final String name in pushes) {
       _emit(SyncPhase.localAudio,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -2682,7 +2786,10 @@ class SyncOrchestrator {
   ///
   /// 已知限制：displayName 无唯一约束，撞名按「同一库」union 跳过（与词典按 name
   /// 同语义）；真正的唯一性去重列为 follow-up。
-  Future<void> syncLocalAudioPackages(SyncRunReport report) async {
+  Future<void> syncLocalAudioPackages(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
     final String ns = await _backend.ensureNamespace(kSyncLocalAudioNamespace);
     final List<AssetEntry> remote = await _backend.listChildren(ns);
 
@@ -2698,16 +2805,18 @@ class SyncOrchestrator {
     // Resolve both sides' work first so progress has a real denominator. The
     // push side also drops libraries whose DB file is gone (nothing to send).
     final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
-      for (final LocalAudioDbEntry d in localAudioEntries)
-        if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
-          d,
+      if (direction.pushes)
+        for (final LocalAudioDbEntry d in localAudioEntries)
+          if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
+            d,
     ];
     final List<AssetEntry> toPull = <AssetEntry>[
-      for (final AssetEntry e in remote)
-        if (!e.isFolder &&
-            _isLocalAudioAsset(e.name) &&
-            !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
-          e,
+      if (direction.pulls)
+        for (final AssetEntry e in remote)
+          if (!e.isFolder &&
+              _isLocalAudioAsset(e.name) &&
+              !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
+            e,
     ];
     final int total = toPush.length + toPull.length;
     int index = 0;

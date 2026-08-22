@@ -27,6 +27,7 @@ import 'dart:math' as math;
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -36,6 +37,7 @@ import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
 /// 偏好读取口。与 `GalHookPreferenceReader` 同形——独立声明只为不让台词浮窗控制器与
 /// 本控制器互相 import 成环，语义完全一致（key + 默认值，测试可注入替身）。
@@ -192,10 +194,44 @@ class GalIngameLookupController {
       unawaited(_onOverlayHidden(route));
     };
     overlay.onRoutedDirty = markRoutedDirty;
+    // 手柄重设计 P5：会话期把游戏内卡片登记为手柄的**独占**路由。卡片可见
+    // （_activeRoute 非空）时 GamepadService 把弹窗动作转发进卡片、吞掉其余
+    // 按钮——绝不让游戏里的手柄输入驱动后台 app 的页面/焦点/返回。
+    GalIngameLookupGamepadRoute.set(DictionaryPopupGamepadHooks(
+      // 前台门是独占的**前提**，不是可选项：独占的全部理由是「游戏在前台、app 在
+      // 后台，手柄输入属于游戏那一侧」。少了它，用户在游戏里查了词、不 dismiss 直接
+      // Alt-Tab 回 Fushi，卡片仍活着（_activeRoute 非空）⇒ app 内按钮 / 左摇杆 /
+      // 长按被**全部**吞掉转发给游戏后面那张看不见的卡片，连 B 都吞，app 里没有任何
+      // 出路。卡片是 blit 进游戏 Layer 的，不是独立窗口，native 的前台钩子收不掉它，
+      // 所以只能在这里判。非 Windows 恒 false，但那边 isSupported 早已挡住不登记。
+      hasVisiblePopup: () =>
+          _started &&
+          _enabledNow &&
+          _activeRoute != null &&
+          !DesktopForegroundGuard.isForegroundOwnedByCurrentProcess(),
+      entryMove: (bool forward) =>
+          _dispatchGamepadAction(forward ? 'next' : 'prev'),
+      mineFirstEntry: () => _dispatchGamepadAction('mine'),
+      playFirstAudio: () => _dispatchGamepadAction('audio'),
+      scrollBy: (double dy) => _dispatchGamepadAction('scroll', dy: dy),
+    ));
+  }
+
+  /// 手柄动作 → 卡片窗 host（native gamepadAction → 顶层帧 popup.js 入口）。
+  /// 必须在**当前卡片 route 的 zone**里下发，channel 才会把调用送到 galCard
+  /// 窗口而不是桌面查词窗；route 已失效时静默丢弃（瞬时输入，不排队）。
+  Future<void> _dispatchGamepadAction(String action, {double dy = 0}) async {
+    final GlobalLookupRoute? route = _activeRoute;
+    if (route == null || !GlobalLookupChannel.isRouteValid(route)) return;
+    await GlobalLookupChannel.runWithRoute(
+      route,
+      () => GlobalLookupChannel.gamepadAction(action, dy: dy),
+    );
   }
 
   @visibleForTesting
   Future<void> stopForTesting() async {
+    GalIngameLookupGamepadRoute.set(null);
     _sessionActive = false;
     await _terminateCurrentLookup();
     final Future<void>? lookupDrain = _drainCompleter?.future;
@@ -852,14 +888,22 @@ class GalIngameLookupController {
       }
       return;
     }
-    await GlobalLookupChannel.runWithRoute(
-      route,
-      () => GlobalLookupChannel.hide(notify: false),
-    );
-    if (_activeRoute == route) {
-      GlobalLookupChannel.invalidateRoute(route);
-      _activeRoute = null;
-      GlobalLookupController.instance.setPhysicalCap();
+    try {
+      await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.hide(notify: false),
+      );
+    } finally {
+      // hide() 是尽力而为的视觉收尾，WebView2 崩溃 / 窗口已销毁时会抛
+      // PlatformException；作废 route 是账本，必须无条件发生。写在 await 之后就会
+      // 被跳过：_activeRoute 残留非空 ⇒ P5 的独占手柄路由 hasVisiblePopup() 恒真，
+      // 本会话剩余时间内手柄被**全吞**（B 也被吞，app 内没有任何出路），要等下一次
+      // handleHit 换新 route 或整个会话结束才自愈。
+      if (_activeRoute == route) {
+        GlobalLookupChannel.invalidateRoute(route);
+        _activeRoute = null;
+        GlobalLookupController.instance.setPhysicalCap();
+      }
     }
   }
 

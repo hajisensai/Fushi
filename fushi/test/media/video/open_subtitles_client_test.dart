@@ -502,6 +502,38 @@ void main() {
       expect(result.failures.single.kind, testCase.kind);
     });
   }
+
+  test('B1：解析 upload_date / ai_translated / from_trusted（版本卡信号）', () {
+    final List<OpenSubtitlesSearchRecord> records =
+        parseOpenSubtitlesSearchResponse(jsonEncode(<String, Object?>{
+      'data': <Object?>[
+        <String, Object?>{
+          'attributes': <String, Object?>{
+            'language': 'en',
+            'upload_date': '2026-08-02T03:04:05Z',
+            'ai_translated': true,
+            'from_trusted': true,
+            'files': <Object?>[
+              <String, Object?>{'file_id': 1, 'file_name': 'a.srt'},
+            ],
+          },
+        },
+      ],
+    }));
+    final OpenSubtitlesSearchRecord record = records.single;
+    expect(
+      record.uploadedAtMs,
+      DateTime.utc(2026, 8, 2, 3, 4, 5).millisecondsSinceEpoch,
+    );
+    expect(record.aiTranslated, isTrue);
+    expect(record.fromTrusted, isTrue);
+
+    final List<OpenSubtitlesSearchRecord> defaults =
+        parseOpenSubtitlesSearchResponse(jsonEncode(_searchResponse));
+    expect(defaults.single.uploadedAtMs, isNull);
+    expect(defaults.single.aiTranslated, isFalse);
+    expect(defaults.single.fromTrusted, isFalse);
+  });
 }
 
 const Map<String, Object?> _emptySearch = <String, Object?>{

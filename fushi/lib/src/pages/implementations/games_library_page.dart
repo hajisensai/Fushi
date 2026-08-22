@@ -7,6 +7,10 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
@@ -1641,16 +1645,41 @@ class _GameCard extends StatelessWidget {
     // 竖版海报卡（对齐 ReinaManager 库页观感）：封面 3:4 + 标题居中 + 底部排序
     // 浮层 + hover 放大 + 主色选中环，全部由共享组件 [GalgamePosterCard] 负责。
     // focusId 沿用 `game-card-<id>`（手柄/键盘可 requestById 聚焦，focus 测试守）。
-    return GalgamePosterCard(
-      cover: GameCoverThumb(game: game),
-      title: game.displayName,
-      overlayText: sort,
-      focusId: FushiFocusId('game-card-${game.id}'),
-      onTap: onTap,
-      onLongPress: () => unawaited(_showContextMenu(context)),
-      onSecondaryTap: () => unawaited(_showContextMenu(context)),
-      trailing: _menuButton(context, colors, tokens),
-      semanticLabel: game.displayName,
+    //
+    // 手柄重设计 P4：卡片聚焦时 X = 打开详情（A=启动、长按 A=上下文菜单在
+    // GalgamePosterCard 内）。非 X 的按钮必须**显式转发**给祖先 Actions（home 的
+    // LT/RT 换 tab、Y 搜索都注册在那里）——覆写 isEnabled 做不到这件事：
+    // Actions.maybeInvoke 的上溯停止条件是「本层注册了这个 Intent 类型没有」，
+    // 与 enabled 无关，详见 [GamepadButtonForwardingAction] 的类文档。
+    //
+    // 用 X 不用 Y：游戏库是 home tab，与 home scope 同 co-active 组，而 Y 在那里
+    // 已经绑给了注册表动作 homeFocusSearch（shortcut_defaults）。卡片聚焦时抢 Y
+    // 就是把一个**可配置、设置页里看得见**的动作静默吞掉——而游戏库里焦点几乎总
+    // 在某张卡上，等于该 tab 里 Y=搜索永久失效。home 组的手柄默认只占 LT/RT/Y，
+    // X 是空的；X 的其它绑定都在 reader / video / dictionaryPopup 组，不同组不同
+    // 时激活，无遮蔽。
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: GamepadButtonForwardingAction(
+          ancestorContext: context,
+          handle: (GamepadButton button) {
+            if (button != GamepadButton.x) return false;
+            onDetail();
+            return true;
+          },
+        ),
+      },
+      child: GalgamePosterCard(
+        cover: GameCoverThumb(game: game),
+        title: game.displayName,
+        overlayText: sort,
+        focusId: FushiFocusId('game-card-${game.id}'),
+        onTap: onTap,
+        onLongPress: () => unawaited(_showContextMenu(context)),
+        onSecondaryTap: () => unawaited(_showContextMenu(context)),
+        trailing: _menuButton(context, colors, tokens),
+        semanticLabel: game.displayName,
+      ),
     );
   }
 

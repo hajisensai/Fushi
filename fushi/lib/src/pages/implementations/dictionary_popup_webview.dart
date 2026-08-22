@@ -72,6 +72,24 @@ class MinePopupResult {
 /// WebView2 原生菜单）。两项：查词（平移自原 WebView2 自定义项）+ 复制（自补，BUG-402）。
 enum _PopupContextMenuAction { search, copy }
 
+/// BUG-1651：选择可信的 WebView 视口高度。
+///
+/// 正常窗口优先用 JS `window.innerHeight`；macOS 离屏 runner / 原生视图尚未挂到
+/// CGWindow 时 JS 会报 0，但 Flutter platform-view widget 已有真实布局高度，此时回退
+/// [layoutHeight]。两边都无效才返回 null，让宿主保持当前尺寸。
+double? resolvePopupViewportHeight({
+  required double? reportedHeight,
+  required double? layoutHeight,
+}) {
+  if (reportedHeight != null && reportedHeight.isFinite && reportedHeight > 0) {
+    return reportedHeight;
+  }
+  if (layoutHeight != null && layoutHeight.isFinite && layoutHeight > 0) {
+    return layoutHeight;
+  }
+  return null;
+}
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -97,6 +115,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onScrolledToBottom,
     this.onTopPullReleased,
     this.onRendered,
+    this.onContentMetrics,
     this.onRenderError,
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
@@ -199,6 +218,16 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
   /// handler). Used by the reader to hand the char-level cursor to this popup.
   final VoidCallback? onRendered;
+
+  /// `popupRendered` 同步带回的 DOM 内容高度与 WebView 当前视口高度。
+  ///
+  /// BUG-1651 单位铁律：两个值都是 **host CSS px**。popup.js 侧的
+  /// `__fushiReportedContentHeight()` 已把容器 `scrollHeight`（未乘 CSS `zoom` 的
+  /// layout px）乘回当前 zoom；`viewportHeight` 来自 `window.innerHeight`（不随元素
+  /// zoom 变）或 Flutter 平台视图的布局高度，本就是 host CSS px。消费方
+  /// （[resolveAutoFitPopupHeight]）直接作差，不得再乘任何缩放。
+  final void Function(double contentHeight, double viewportHeight)?
+      onContentMetrics;
 
   /// TODO-058 fail-safe：主框架加载失败（`onReceivedError`）时触发。挂起到
   /// `popupRendered` 才显示的冷层若加载失败，`popupRendered` 永不会发；宿主据此
@@ -693,6 +722,23 @@ JSON.stringify((function(){
     await _controller?.evaluateJavascript(
       source: 'window.fushiPopupMineFirstEntry'
           ' ? window.fushiPopupMineFirstEntry() : false',
+    );
+  }
+
+  /// 手柄（dictionaryPopup scope）：播放第一个可见词条的发音——点既有发音按钮，
+  /// 复用其全部音源解析/回退逻辑（与制卡同一「点按钮不另起桥」纪律）。
+  Future<void> playFirstVisibleAudio() async {
+    await _controller?.evaluateJavascript(
+      source: 'window.fushiPopupPlayFirstAudio'
+          ' ? window.fushiPopupPlayFirstAudio() : false',
+    );
+  }
+
+  /// 手柄右摇杆：连续滚动弹窗内容 [dy] CSS 像素（正=向下）。
+  Future<void> scrollContentBy(double dy) async {
+    await _controller?.evaluateJavascript(
+      source: 'window.fushiPopupScrollBy'
+          ' ? window.fushiPopupScrollBy(${dy.round()}) : false',
     );
   }
 
@@ -1575,6 +1621,28 @@ JSON.stringify((function(){
                 if (token != null && token != _renderToken) {
                   return null;
                 }
+                final double? contentHeight = (args.isNotEmpty ? args[0] : null)
+                        is num
+                    ? (args[0] as num).toDouble()
+                    : double.tryParse(
+                        (args.isNotEmpty ? args[0] : null)?.toString() ?? '',
+                      );
+                final Object? rawViewport = args.length > 2 ? args[2] : null;
+                final double? reportedViewportHeight = rawViewport is num
+                    ? rawViewport.toDouble()
+                    : double.tryParse(rawViewport?.toString() ?? '');
+                final RenderObject? renderObject = context.findRenderObject();
+                final double? viewportHeight = resolvePopupViewportHeight(
+                  reportedHeight: reportedViewportHeight,
+                  layoutHeight: renderObject is RenderBox &&
+                          renderObject.attached &&
+                          renderObject.hasSize
+                      ? renderObject.size.height
+                      : null,
+                );
+                if (contentHeight != null && viewportHeight != null) {
+                  widget.onContentMetrics?.call(contentHeight, viewportHeight);
+                }
                 // 记录「当前已推结果渲染完成」，供 refreshCurrentResult 去重判定
                 // （识别渲染信号早于宿主盖板架起的竞态）。
                 _lastRenderedResult = _lastPushedResult;
@@ -2410,13 +2478,12 @@ JSON.stringify((function(){
       group['matched'] = matched;
     }
 
+    // 变形标签（含语法说明）由 buildDeinflectionTags 统一生成、随 extra 送达，
+    // 这里只解析不再自己拼——回落语义只有那一份。
     final trace = group['deinflectionTrace'] as List<Map<String, String>>;
-    if (trace.isEmpty && extraData.containsKey('deinflected')) {
-      final traceMatched = matched ?? '';
-      final deinflected = extraData['deinflected'] as String? ?? '';
-      if (traceMatched != deinflected && deinflected.isNotEmpty) {
-        trace.add({'name': '$traceMatched → $deinflected', 'description': ''});
-      }
+    if (trace.isEmpty) {
+      trace
+          .addAll(deinflectionTagsToJson(deinflectionTagsFromExtra(extraData)));
     }
 
     _appendUniqueMetadata(

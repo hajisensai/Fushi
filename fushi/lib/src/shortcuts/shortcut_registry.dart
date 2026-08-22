@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 8;
+const int kShortcutSchemaVersion = 10;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -233,6 +233,48 @@ class FushiShortcutRegistry extends ChangeNotifier {
         ],
       );
     }
+    // v8 -> v9（手柄全功能重设计 P1，漫画页接手柄）：给两个**已存在**的 manga 翻页
+    // 动作新增手柄默认（RB/dpad右=前进、LB/dpad左=后退）。老快照里它们已有键盘绑定
+    // 但手柄为空，快照整体覆盖默认 ⇒ 不迁移则新手柄键永久丢失（BUG-318 同型，与
+    // v4→v5 的 video 手柄批完全同构）。只新增手柄、不改键盘默认，故用「键盘未动过」
+    // 判据。B 不在此列——退出/关弹窗归 universal globalBack 的手柄 B（v1→v2 已补）。
+    if (from < 9) {
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.mangaPageForward, defaults);
+      _restoreGamepadDefaultIfKeyboardUntouched(
+          ShortcutAction.mangaPageBackward, defaults);
+    }
+    // v9 -> v10（手柄全功能重设计 P2，查词弹窗接手柄）：给三个**已存在**的
+    // dictionaryPopup 动作新增手柄默认（dpad下/上=词条导航、X=制卡）。不能用
+    // 「键盘未动过」判据整组还原——popupNext/PrevEntry 的主通道是**滚轮**，整组
+    // 还原会把用户自定义的滚轮绑定一并抹掉。该 scope 此前根本没开手柄通道，快照
+    // 里 gamepad 恒为空 ⇒ 「gamepad 为空」本身就是「用户不可能动过」的精确判据，
+    // 只补 gamepad、其余通道分毫不碰。（popupPlayAudio 是全新 action，老快照无
+    // 其 key，loadDefaults 已播种，无需迁移。）
+    if (from < 10) {
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.popupNextEntry,
+        ShortcutAction.popupPrevEntry,
+        ShortcutAction.popupMineEntry,
+      ]) {
+        _seedGamepadDefaultIfUnset(action, defaults);
+      }
+    }
+  }
+
+  /// v10：仅当 [action] 的手柄绑定**为空**时，把当前默认表的手柄绑定播种进去；
+  /// 其余通道（键盘/鼠标/滚轮）原样保留。适用于「该 scope 此前从未开过手柄通道」
+  /// 的迁移——空手柄集不可能是用户自定义，播种零误伤。
+  void _seedGamepadDefaultIfUnset(
+    ShortcutAction action,
+    Map<ShortcutAction, ShortcutBindingSet> defaults,
+  ) {
+    final ShortcutBindingSet current = bindingsFor(action);
+    if (current.gamepadBindings.isNotEmpty) return;
+    final List<GamepadBinding> seeded =
+        defaults[action]?.gamepadBindings ?? const <GamepadBinding>[];
+    if (seeded.isEmpty) return;
+    _bindings[action] = current.copyWith(gamepadBindings: seeded);
   }
 
   /// v8：把 [action] 的**键盘**绑定清空，仅当它恰等于 [oldDefaultKeyboard]（证明
@@ -277,10 +319,10 @@ class FushiShortcutRegistry extends ChangeNotifier {
     } catch (_) {
       return; // 损坏的条目：丢弃即可，绝不因此打断整段迁移。
     }
-    final bool keyboardUntouched =
-        _sameBindings<InputBinding>(legacy.keyboardBindings, oldDefaultKeyboard);
-    final bool gamepadUntouched =
-        _sameBindings<GamepadBinding>(legacy.gamepadBindings, oldDefaultGamepad);
+    final bool keyboardUntouched = _sameBindings<InputBinding>(
+        legacy.keyboardBindings, oldDefaultKeyboard);
+    final bool gamepadUntouched = _sameBindings<GamepadBinding>(
+        legacy.gamepadBindings, oldDefaultGamepad);
     if (keyboardUntouched && gamepadUntouched) return;
 
     final ShortcutBindingSet back = bindingsFor(ShortcutAction.globalBack);

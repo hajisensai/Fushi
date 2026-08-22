@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/discovery/discovery_download_queue.dart'
+    show DiscoveryImportOutcome;
+import 'package:fushi/src/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
@@ -1353,7 +1359,232 @@ void main() {
       throwsA(isA<VideoDownloadPipelineActionRequired>()),
     );
   });
+
+  // 手动添加任务（2026-08-21 用户点名「用户没办法手动导入任务」）。
+  group('enqueueManual', () {
+    const String manualMagnet = 'magnet:?xt=urn:btih:$_torrentHash&dn=Manual';
+
+    test('organizationPolicy 与发现域互相换算，未知策略返回 null', () {
+      for (final DiscoveryMediaKind kind in DiscoveryMediaKind.values) {
+        expect(
+          discoveryKindOfOrganizationPolicy(
+            manualDiscoveryOrganizationPolicy(kind),
+          ),
+          kind,
+        );
+      }
+      expect(discoveryKindOfOrganizationPolicy('library'), isNull);
+      expect(discoveryKindOfOrganizationPolicy('legacy'), isNull);
+      expect(discoveryKindOfOrganizationPolicy('discovery-unknown'), isNull);
+    });
+
+    test('磁力视频任务落 manual 行：无发现身份、策略 library', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+
+      final String jobId = await environment.service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Manual Movie',
+          backendIdentity: _expectedIdentity,
+          magnetUri: manualMagnet,
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job, isNotNull);
+      expect(job!.resourceProvider, kManualVideoDownloadResourceProvider);
+      expect(job.magnetUri, manualMagnet);
+      expect(job.torrentHash, _torrentHash);
+      expect(job.metadataProvider, isNull,
+          reason: '手动任务没有发现身份，import 后必须直接完成而不是进 scrape');
+      expect(job.externalId, isNull);
+      expect(job.mediaKind, VideoMetadataMediaKind.movie.name);
+      expect(job.organizationPolicy, 'library');
+      expect(job.subtitlePolicy, VideoDownloadSubtitlePolicy.none.name);
+      expect(job.targetSourceId, environment.sourceId);
+      expect(job.title, 'Manual Movie');
+    });
+
+    test('入参校验：双 payload / 零 payload / 无 hash 磁力 / 视频缺来源', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualV1Metainfo());
+
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendIdentity: _expectedIdentity,
+            magnetUri: manualMagnet,
+            metainfo: metainfo,
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsArgumentError,
+        reason: '磁力与 .torrent 恰好二选一',
+      );
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendIdentity: _expectedIdentity,
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendIdentity: _expectedIdentity,
+            magnetUri: 'magnet:?dn=no-hash',
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendIdentity: _expectedIdentity,
+            magnetUri: manualMagnet,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        reason: '视频任务必须有受管来源',
+      );
+    });
+
+    test('.torrent 任务：元数据先落盘（<jobId>.torrent），hash 取自 metainfo', () async {
+      final Directory manualDir =
+          await Directory.systemTemp.createTemp('fushi-manual-torrents-');
+      addTearDown(() async {
+        if (await manualDir.exists()) await manualDir.delete(recursive: true);
+      });
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      final VideoDownloadPipelineService service = VideoDownloadPipelineService(
+        database: environment.database,
+        resourceRegistry: environment.resourceRegistry,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: environment.backend,
+          identity: _expectedIdentity,
+        ),
+        scrapeCoordinator: environment.scrapeCoordinator,
+        manualTorrentDirectory: manualDir,
+        workerId: 'manual-metainfo-worker',
+        pollInterval: const Duration(hours: 1),
+      );
+      addTearDown(service.dispose);
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualV1Metainfo());
+
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Manual Torrent',
+          backendIdentity: _expectedIdentity,
+          metainfo: metainfo,
+          targetSourceId: environment.sourceId,
+        ),
+      );
+
+      expect(
+        File(p.join(manualDir.path, '$jobId.torrent')).existsSync(),
+        isTrue,
+        reason: '重启后 payload 从这份落盘元数据重新物化',
+      );
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job!.torrentHash, metainfo.torrentId);
+      expect(job.magnetUri, isNull);
+    });
+
+    test('.torrent 任务在未配置落盘目录时显式拒绝', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'x',
+            backendIdentity: _expectedIdentity,
+            metainfo: inspectTorrentMetainfo(_manualV1Metainfo()),
+            targetSourceId: environment.sourceId,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+    });
+
+    test('发现域任务：策略 discovery-<kind>、无字幕、无目标来源；无 importer 拒绝', () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+
+      await expectLater(
+        environment.service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'A Novel',
+            backendIdentity: _expectedIdentity,
+            magnetUri: manualMagnet,
+            discoveryKind: DiscoveryMediaKind.novel,
+          ),
+        ),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        reason: '本设备没接发现导入执行器时不能默默收下书任务',
+      );
+
+      final VideoDownloadPipelineService service = VideoDownloadPipelineService(
+        database: environment.database,
+        resourceRegistry: environment.resourceRegistry,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: environment.backend,
+          identity: _expectedIdentity,
+        ),
+        scrapeCoordinator: environment.scrapeCoordinator,
+        discoveryImporter:
+            (DiscoveryMediaKind kind, List<String> paths) async =>
+                const DiscoveryImportOutcome(importedCount: 1),
+        workerId: 'manual-discovery-worker',
+        pollInterval: const Duration(hours: 1),
+      );
+      addTearDown(service.dispose);
+
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'A Novel',
+          backendIdentity: _expectedIdentity,
+          magnetUri: manualMagnet,
+          discoveryKind: DiscoveryMediaKind.novel,
+          // 故意同时给字幕策略与来源：发现域任务必须把它们归零。
+          subtitlePolicy: VideoDownloadSubtitlePolicy.bestEffort,
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job!.organizationPolicy, 'discovery-novel');
+      expect(job.subtitlePolicy, VideoDownloadSubtitlePolicy.none.name,
+          reason: '非视频内容没有字幕概念');
+      expect(job.targetSourceId, isNull, reason: '发现域任务不进受管视频来源');
+      expect(job.mediaKind, DiscoveryMediaKind.novel.name);
+    });
+  });
 }
+
+/// 与 torrent_metainfo_test 同款的最小 v1 metainfo（单文件 name=test）。
+Uint8List _manualV1Metainfo() => Uint8List.fromList(
+      utf8.encode(
+        'd4:infod6:lengthi1e4:name4:test6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+      ),
+    );
 
 TorrentSnapshot _downloadingSnapshot({required double progress}) =>
     TorrentSnapshot(
@@ -1624,6 +1855,10 @@ class _FakeSubtitleCandidate extends VideoSubtitleCandidate {
 }
 
 class _FakeSubtitleProvider implements VideoSubtitleProvider {
+  /// 测试假实现：不发真请求，探测门控取值不影响被测行为。
+  @override
+  bool get allowsFreeProbeDownload => false;
+
   _FakeSubtitleProvider({required this.bytes});
 
   final Uint8List bytes;

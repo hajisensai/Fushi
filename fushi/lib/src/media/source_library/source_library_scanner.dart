@@ -53,7 +53,7 @@ import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/external_video.dart'
-    show decodedSourceBasename, normalizeVideoPath;
+    show normalizeVideoPath, sourceEntryBasename;
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
@@ -451,7 +451,8 @@ class SourceLibraryScanner {
           // 保持独立，多集整理为 playlist 合集。先完成逐文件入库，字幕 cue / 封面
           // 的既有增强不变；再只做归组，重扫复用已有成员且不删除缺失文件。
           // 网络（WebDAV）来源同样归组：文件名解析统一走解码 basename
-          // （decodedSourceBasename），URL 的百分号编码不渗进合集名。
+          // （sourceEntryBasename）。来源库条目路径进到这里已是解码态（见该函数
+          // 文档），所以取末段即可，不能再解一次。
           grouping = await VideoFolderGroupCoordinator(
             database: _db,
             repository: _videoRepo,
@@ -656,7 +657,8 @@ class SourceLibraryScanner {
   ///
   /// 缺页 / 坏 JSON 与本地语义一致：抛 [MangaImportException] 冒泡记进
   /// lastScanError。WebDAV 的 href 分段是百分号编码的，查表键与镜像文件名统一
-  /// 用解码后的相对路径（[decodedSourceBasename]）。
+  /// 用解码后的相对路径（来源库条目路径本就是解码态，取末段用
+  /// [sourceEntryBasename]）。
   Future<int> _importMangaRemote(
     ScanPlan plan,
     int sourceId,
@@ -669,7 +671,7 @@ class SourceLibraryScanner {
         .toSet();
     int count = 0;
     for (final ScanMangaItem item in plan.mangas) {
-      final String mokuroName = decodedSourceBasename(item.mokuroPath);
+      final String mokuroName = sourceEntryBasename(item.mokuroPath);
       final String jsonStr = await fs.readText(item.mokuroPath);
       final Object? rawRoot = jsonDecode(jsonStr);
       final Map<String, Object?> root = rawRoot is Map
@@ -688,19 +690,22 @@ class SourceLibraryScanner {
 
       // 远端相对路径（解码、正斜杠）→ 远端全路径查找表，作用域 = `.mokuro` 父目录。
       final String parentDir = _remoteParentDir(item.mokuroPath);
-      final bool isUrl =
-          parentDir.startsWith('http://') || parentDir.startsWith('https://');
       final List<SourceFileEntry> remoteFiles =
           await fs.listFiles(parentDir, recursive: true);
       final String prefix = parentDir.endsWith('/') ? parentDir : '$parentDir/';
       final Map<String, String> remoteByRel = <String, String>{};
       for (final SourceFileEntry e in remoteFiles) {
         if (e.isDirectory || !e.path.startsWith(prefix)) continue;
+        // 段不再解码：[SourceFileEntry.path] 进到这里时**已经是解码态**——WebDAV
+        // 的 PROPFIND href 在 webdav_ops.dart 里就 `Uri.decodeFull` 过了，SFTP/FTP
+        // 路径本就不是百分号编码。再解一次会踩两个坑：真名含 `%`（`50% off.jpg`）
+        // 时 `Uri.decodeComponent` 抛 ArgumentError，且这里没有逐卷兜底，整个来源
+        // 的扫描当场中止；真名是 `A%20B.jpg` 时被解成 `A B.jpg`，与下面按
+        // payload.url 查表的键对不上，抛 `Missing manga page image`。
         final List<String> segs = e.path
             .substring(prefix.length)
             .split('/')
             .where((String s) => s.isNotEmpty)
-            .map((String s) => isUrl ? Uri.decodeComponent(s) : s)
             .toList();
         if (segs.isEmpty) continue;
         remoteByRel[segs.join('/')] = e.path;
@@ -820,7 +825,7 @@ class SourceLibraryScanner {
           streamSpecJson = StreamVideoSpec(
             subtitleUrl: subUrl,
             subtitleFileName:
-                subUrl == null ? null : decodedSourceBasename(subUrl),
+                subUrl == null ? null : sourceEntryBasename(subUrl),
           ).toStorageJson();
         } else if (item.subtitlePath != null) {
           final String fmt = _extOf(p.basename(item.subtitlePath!));
@@ -860,7 +865,7 @@ class SourceLibraryScanner {
         // 标题用解码后的文件名：WebDAV 条目路径是百分号编码的 href，直接取
         // basename 会把 %20 之类渗进书架标题。
         final String title = streamInPlace
-            ? p.basenameWithoutExtension(decodedSourceBasename(item.videoPath))
+            ? p.basenameWithoutExtension(sourceEntryBasename(item.videoPath))
             : p.basenameWithoutExtension(item.videoPath);
         await _videoRepo.saveVideoBook(
           VideoBooksCompanion(
@@ -945,8 +950,8 @@ class SourceLibraryScanner {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
         // 合集名走解码 basename：网络清单的 href 是百分号编码的。
-        final String collectionName = p
-            .basenameWithoutExtension(decodedSourceBasename(item.playlistPath));
+        final String collectionName =
+            p.basenameWithoutExtension(sourceEntryBasename(item.playlistPath));
 
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
         final String localM3u8 =

@@ -135,9 +135,16 @@ extension _VideoSidePanel on _VideoFushiPageState {
           __,
         ) {
           if (panelState == null) return const SizedBox.shrink();
-          final Widget panelContent = _buildVideoSidePanelContent(
-            panelState,
-            controller,
+          // 手柄重设计 P3：侧栏随打开挂载，挂载即领焦点进面板、卸载还给页面
+          // 焦点——D-pad 才能在速度/设置/章节/画质行间移动。
+          final Widget panelContent = PanelFocusScope(
+            visible: true,
+            restoreFocus: () =>
+                _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+            child: _buildVideoSidePanelContent(
+              panelState,
+              controller,
+            ),
           );
           // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
           // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用

@@ -661,7 +661,7 @@ String mangaWindowDocument(
       : '#manga-viewport{overflow:hidden;width:100vw;height:100vh;}'
           '#manga-root{display:flex;flex-direction:row;direction:ltr;'
           'height:100vh;align-items:center;'
-          '${_rootTransitionCss(pageAnimation)}will-change:transform;}'
+          '${_rootTransitionCss(pageAnimation)}}'
           '.manga-spread{display:flex;flex:0 0 100vw;'
           'width:100vw;height:100vh;align-items:center;'
           'justify-content:center;$pageDirectionCss}';
@@ -693,7 +693,12 @@ String mangaWindowDocument(
       'html,body{margin:0;padding:0;background:#000;height:100%;touch-action:none;'
       '-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}'
       '$rootSizing'
-      '#manga-canvas{transform-origin:0 0;will-change:transform;}'
+      // BUG-1759：#manga-canvas / #manga-root **不得**在样式表里常驻
+      // will-change:transform——Chromium 会把带该提示的层的栅格化尺度钉成只升不降，
+      // 缩到 <100% 时合成器拿旧尺度纹理做无 mipmap 缩小，网点/线稿全是锯齿，放大
+      // 跨过旧尺度才重栅格（用户实测「90% 糊、150% 才恢复」）。合成层提升改由 JS 的
+      // _hintWillChange 在手势/动画期间临时挂、静止后摘除。
+      '#manga-canvas{transform-origin:0 0;}'
       '.manga-page{position:relative;flex:0 0 auto;'
       'container-type:inline-size;}'
       '.manga-page img{display:block;width:100%;height:100%;'
@@ -731,9 +736,11 @@ String mangaWindowDocument(
 /// webtoon 滚动监听 + spread 鼠标滚轮翻页（BUG-051）。tap 命中 `.ocr-box` → 选词
 /// （单击查词路径）；Shift 悬停是第二条显式查词路径。tap 命中裸图或未完成 OCR 的
 /// 区域时保持在阅读器内，不打开独立大图。
-/// swipe（仅 spread）→ `onMangaTurn`。spread 鼠标 `wheel` → `onMangaTurn`（桌面 swipe
-/// 等价物，overflow:hidden 视口下滚轮本是死操作；带 320ms 锁合并连发）。webtoon 滚动
-/// 节流 → `onMangaScroll`。`dragstart` 全程 preventDefault + CSS user-select/user-drag
+/// swipe（仅 spread）→ `onMangaTurn`。spread 鼠标 `wheel`：ZOOM<=1 → `onMangaTurn`
+/// （桌面 swipe 等价物，overflow:hidden 视口下滚轮本是死操作；带 110ms 锁合并连发）；
+/// ZOOM>1 → 页内平移优先，贴边后继续滚才翻页（BUG-1760）。webtoon 滚动
+/// 节流 → `onMangaScroll`。viewport resize → `_reanchor` 把语义位置重投影成新视口
+/// 的 px（BUG-1758）。`dragstart` 全程 preventDefault + CSS user-select/user-drag
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
 /// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
 /// 按 data-spread 测量。
@@ -790,9 +797,25 @@ String _mangaGestureJs({
   }
   _recenterPan();
   var rightDrag = null;
+  // ── 临时合成层提升（BUG-1759）──
+  // will-change:transform 一旦常驻，Chromium 就把该层的栅格化尺度钉成只升不降：
+  // 缩小后合成器拿旧尺度纹理做无 mipmap 缩小 → 锯齿；放大跨过旧尺度才重栅格。
+  // 改为手势/动画期间临时挂（合成器快路径不变），最后一次变换后摘掉 → 层降级，
+  // 内容按当前 ZOOM 重栅格，静止画面在任何倍率下都清晰。
+  function _hintWillChange(el, ms){
+    if (!el) return;
+    el.style.willChange = 'transform';
+    if (el.__wcTimer) clearTimeout(el.__wcTimer);
+    el.__wcTimer = setTimeout(function(){
+      el.__wcTimer = null;
+      el.style.willChange = '';
+    }, ms);
+  }
   function _applyCanvas(){
     var canvas = document.getElementById('manga-canvas');
-    if (canvas) canvas.style.transform =
+    if (!canvas) return;
+    _hintWillChange(canvas, 200);
+    canvas.style.transform =
       'translate(' + PAN_X + 'px,' + PAN_Y + 'px) scale(' + ZOOM + ')';
   }
   function _clampZoom(z){
@@ -835,21 +858,33 @@ String _mangaGestureJs({
   var PAGE_ANIM = '${pageAnimation.key}';
   var PAGE_ANIM_MS = ${pageAnimation.durationMs};
   var _fadeTimer = null;
-  window.__mangaApplyTranslate = function(target){
+  // 纯投影（无动画语义）：把 target 跨页的 offsetLeft 现场重测并换算成 root 的
+  // translateX，同时记入语义真值 CURRENT。翻页动画走 __mangaApplyTranslate；
+  // 摆位/resize 重投影走 _reanchor 的无过渡路径——两边共用这一个投影实现，
+  // fade 的「先淡出再位移」只属于翻页，不会在 resize 风暴里连环闪烁。
+  function _translateToSpread(target){
+    CURRENT = target;
     var root = document.getElementById('manga-root');
     if (!root) return;
     var spread = root.querySelector('.manga-spread[data-spread="'+target+'"]');
-    var offset = spread ? -spread.offsetLeft : 0;
+    root.style.transform =
+      'translateX(' + (spread ? -spread.offsetLeft : 0) + 'px)';
+  }
+  window.__mangaApplyTranslate = function(target){
+    CURRENT = target;
+    var root = document.getElementById('manga-root');
+    if (root) _hintWillChange(root, PAGE_ANIM_MS + 120);
     if (PAGE_ANIM !== 'fade') {
-      root.style.transform = 'translateX(' + offset + 'px)';
+      _translateToSpread(target);
       return;
     }
     if (_fadeTimer) clearTimeout(_fadeTimer);
-    root.style.opacity = '0';
+    if (root) root.style.opacity = '0';
     _fadeTimer = setTimeout(function(){
       _fadeTimer = null;
-      root.style.transform = 'translateX(' + offset + 'px)';
-      root.style.opacity = '1';
+      _translateToSpread(target);
+      var r = document.getElementById('manga-root');
+      if (r) r.style.opacity = '1';
     }, PAGE_ANIM_MS);
   };
   // ── webtoon scrollTo：恢复时把 data-spread==target 的页顶滚进视口，再按**页内**
@@ -858,6 +893,8 @@ String _mangaGestureJs({
   window.__mangaScrollToSpread = function(target, fraction){
     var page = document.querySelector('.manga-page[data-spread="'+target+'"]');
     if (!page) return;
+    CURRENT = target;
+    RESTORE_FRACTION = fraction || 0;
     // offsetTop/offsetHeight 是布局坐标；#manga-canvas 被 scale(ZOOM) 后
     // 视觉（滚动）坐标 = 布局坐标 * ZOOM。缺这一步在缩放态下会定位到错误的页。
     var top = (page.offsetTop + (fraction || 0) * page.offsetHeight) * ZOOM;
@@ -982,6 +1019,8 @@ String _mangaGestureJs({
   }, {passive: false});
   var CURRENT = $currentSpread;
   var RESTORE_FRACTION = ${restoreFraction.toStringAsFixed(6)};
+  // resize 已发生、_reanchor 还没跑的窗口期标志（见 resize 监听处的说明）。
+  var _resizePending = false;
   // Online sources do not expose pixel dimensions before the first image
   // response. Replace the bootstrap ratio with the browser-decoded (and EXIF
   // oriented) dimensions as soon as each page loads. OCR coordinates and the
@@ -1017,19 +1056,30 @@ String _mangaGestureJs({
     image.addEventListener('load', apply);
     if (image.complete) apply();
   });
-  // 首次定位是「摆位」，不是「翻页」：必须无过渡落位。
+  // 摆位是「重投影」，不是「翻页」：必须无过渡落位。首次定位与 viewport resize
+  // 共用这一个函数——两者本质相同：把语义真值（CURRENT 跨页 + RESTORE_FRACTION
+  // 页内偏移 + ZOOM/PAN）投影成当前视口下的 px。
   //
-  // RTL（默认阅读方向）倒序写入 DOM 后，spread 0 的 offsetLeft 从 0 变成
-  // (n-1)×100vw，首帧 __mangaApplyTranslate(CURRENT) 要把 #manga-root 从
-  // transform:none 一路推到 -(n-1)×100vw；而 slide（默认动画）给 #manga-root 挂着
-  // transition:transform，下面的双 rAF 又恰好是「保证过渡一定触发」的惯用法 ——
-  // 于是打开任何 RTL 书都会先看到整卷从最后一页扫回第一页（strip 是整卷长度，
-  // 200 跨页就是 199 个视口的扫掠，途经的 lazy 图还会被连带解码）。
+  // 无过渡的原因（首次定位侧）：RTL（默认阅读方向）倒序写入 DOM 后，spread 0 的
+  // offsetLeft 从 0 变成 (n-1)×100vw，首帧要把 #manga-root 从 transform:none 一路
+  // 推到 -(n-1)×100vw；而 slide（默认动画）给 #manga-root 挂着 transition:transform，
+  // 下面的双 rAF 又恰好是「保证过渡一定触发」的惯用法 —— 于是打开任何 RTL 书都会
+  // 先看到整卷从最后一页扫回第一页（strip 是整卷长度，200 跨页就是 199 个视口的
+  // 扫掠，途经的 lazy 图还会被连带解码）。
+  //
+  // resize 侧（BUG-1758）：布局全走视口单位（100vw/100vh），窗口一变浏览器立即
+  // 重排；但 translateX / PAN / scrollY 是加载或手势那一刻由**旧视口**换算出的 px
+  // 投影，此前没人重算——strip 钉在旧 px 上，视口里露出的就是错误的跨页（看似
+  // 「随机页」），直到下次翻页被现场重测救回。现在 resize 直接重投影。
   //
   // 关过渡 → 写 transform → 读一次 offsetHeight 强制同步 reflow（让新值成为后续
   // 过渡的起点，否则还原后浏览器仍把这次位移算成一次过渡）→ 还原原过渡值。
   // 还原发生在 reflow 之后，真正的翻页动画不受影响（不是永久关掉过渡）。
-  function _initPosition(){
+  function _reanchor(){
+    // PAN 也是旧视口的 px 投影：整页放得下时归中心（_recenterPan 的既有语义），
+    // 放大态钳回新视口的合法区间（_clampPan 的既有语义）。
+    if (ZOOM <= 1) { _recenterPan(); } else { _clampPan(); }
+    _applyCanvas();
     if (IS_WEBTOON) {
       window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);
       return;
@@ -1037,16 +1087,29 @@ String _mangaGestureJs({
     var root = document.getElementById('manga-root');
     var prevTransition = root ? root.style.transition : '';
     if (root) root.style.transition = 'none';
-    window.__mangaApplyTranslate(CURRENT);
+    _translateToSpread(CURRENT);
     if (root) {
       void root.offsetHeight;
       root.style.transition = prevTransition;
     }
   }
   // 图片/布局完成前 offsetLeft/offsetTop 可能为 0；首帧后 + load 后各定位一次。
-  if (document.readyState === 'complete') { _initPosition(); }
-  window.addEventListener('load', _initPosition);
-  requestAnimationFrame(function(){ requestAnimationFrame(_initPosition); });
+  if (document.readyState === 'complete') { _reanchor(); }
+  window.addEventListener('load', _reanchor);
+  requestAnimationFrame(function(){ requestAnimationFrame(_reanchor); });
+  // resize 风暴（拖窗口边框）rAF 合并：每帧至多重投影一次。_resizePending 同时
+  // 挡住 webtoon 滚动上报的窗口期——resize 与重投影之间若有迟到的节流上报，会把
+  // 「视觉上错误的页」记成语义真值，重投影反而钉死漂移。
+  var _reanchorRaf = null;
+  window.addEventListener('resize', function(){
+    _resizePending = true;
+    if (_reanchorRaf) return;
+    _reanchorRaf = requestAnimationFrame(function(){
+      _reanchorRaf = null;
+      _resizePending = false;
+      _reanchor();
+    });
+  });
 
   // ── 手势消歧（pointer，覆盖触摸/鼠标）──
   var sx = 0, sy = 0, st = 0, has = false;
@@ -1399,12 +1462,16 @@ String _mangaGestureJs({
     _zoomAbout(next / 100, e.clientX, e.clientY);
   }, {passive:false});
 
-  // ── 桌面鼠标滚轮翻页（仅 spread，BUG-051）──
-  // spread 的 #manga-viewport 是 overflow:hidden，滚轮本就无处可滚（死操作）；
-  // 把它复用为翻页——这是桌面端 swipe 的等价物（PC 漫画阅读器惯例）。webtoon 保留
-  // WebView 自身的原生竖向滚动，故不在此接线（否则会抢走正常滚动）。一次滚轮事件
-  // 流（尤其触控板惯性）可能连发多个 wheel，用 _wheelLock 在 320ms 内合并为一次翻页，
-  // 避免一格滚动翻一叠页。
+  // ── 桌面鼠标滚轮（仅 spread，BUG-051 / BUG-1760）──
+  // 一条语义：**滚轮滚的是内容；没有内容可滚才翻页。**
+  // - ZOOM<=1：整页放得下，页内无处可滚，滚轮是翻页（桌面端 swipe 的等价物，
+  //   PC 漫画阅读器惯例）。
+  // - ZOOM>1：滚轮是页内平移（用户报「放大阅读时经常误翻」）。走 _panBy（含钳制），
+  //   贴边后继续滚才落入下面的翻页累计——阈值 40 保证不是惯性一冲就跨页；贴边
+  //   翻页时下一页从顶部、上一页从底部接续，滚读连续。
+  // webtoon 保留 WebView 自身的原生竖向滚动，故不在此接线（否则会抢走正常滚动）。
+  // 一次滚轮事件流（尤其触控板惯性）可能连发多个 wheel，用 _wheelLock 在 110ms 内
+  // 合并为一次翻页，避免一格滚动翻一叠页。
   if (!IS_WEBTOON) {
     var _wheelLock = false;
     var _wheelAccum = 0;
@@ -1413,10 +1480,25 @@ String _mangaGestureJs({
       if (RESCAN) return;
       if (e.ctrlKey || e.metaKey) return;
       e.preventDefault();
-      var d = e.deltaY || e.deltaX || 0;
-      if (e.deltaMode === 1) d *= 16;
-      else if (e.deltaMode === 2) d *= window.innerHeight;
+      var wdx = e.deltaX || 0;
+      var wdy = e.deltaY || 0;
+      if (e.deltaMode === 1) { wdx *= 16; wdy *= 16; }
+      else if (e.deltaMode === 2) {
+        wdx *= window.innerWidth;
+        wdy *= window.innerHeight;
+      }
+      var d = wdy || wdx;
       if (d === 0) return;
+      if (ZOOM > 1) {
+        // 平移优先：动得了就消费掉本事件；动不了（已贴边/该轴无余量）落入翻页累计。
+        var px = PAN_X, py = PAN_Y;
+        _panBy(-wdx, -wdy);
+        if (PAN_X !== px || PAN_Y !== py) {
+          _wheelAccum = 0;
+          _wheelDir = 0;
+          return;
+        }
+      }
       var dir = d > 0 ? 1 : -1;
       // 反向立刻清账：来回滚不该被上一方向的余量吃掉。
       if (dir !== _wheelDir) { _wheelAccum = 0; _wheelDir = dir; }
@@ -1431,6 +1513,12 @@ String _mangaGestureJs({
       if (!b) return;
       _wheelLock = true;
       setTimeout(function(){ _wheelLock = false; }, 110);
+      if (ZOOM > 1) {
+        // 贴边翻页的续读体验：顺着滚动方向接上新页的开头/结尾。
+        PAN_Y = dir > 0 ? 0 : window.innerHeight * (1 - ZOOM);
+        _clampPan();
+        _applyCanvas();
+      }
       // 向下/向右滚 = 页序前进（next），向上/向左 = 后退（prev）；Dart 端按阅读
       // 方向已统一 clamp（与 swipe 同口径）。
       b.callHandler('onMangaTurn', dir > 0 ? 'next' : 'prev');
@@ -1454,6 +1542,9 @@ String _mangaGestureJs({
       if (_scrollTimer) return;
       _scrollTimer = setTimeout(function(){
         _scrollTimer = null;
+        // resize 与重投影之间的窗口期：此刻几何是新视口的、scrollY 还是旧投影，
+        // 视觉上停在错误的页；把它上报/记入真值会让 _reanchor 反过来钉死漂移。
+        if (_resizePending) return;
         var b = _bridge();
         if (!b) return;
         // 换回布局坐标：scrollY 含 scale(ZOOM)，而 offsetTop/offsetHeight 不含。
@@ -1474,6 +1565,10 @@ String _mangaGestureJs({
             break;
           }
         }
+        // 语义真值跟随用户滚动：resize 重投影（_reanchor）要回到「现在看的位置」，
+        // 不是文档加载那一刻的恢复位置。
+        CURRENT = topPage;
+        RESTORE_FRACTION = fraction;
         b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage }));
       }, 120);
     }, {passive: true});

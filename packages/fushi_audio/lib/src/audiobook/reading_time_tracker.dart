@@ -11,6 +11,18 @@ import 'package:fushi_core/fushi_core.dart';
 /// 早已有此守卫，阅读侧此前缺失，导致整夜后台挂起被一次性计入阅读时长（BUG-892）。
 const Duration kMaxReadingGap = Duration(seconds: 120);
 
+/// 「到达即计」治理的统一停留门（BUG-1761 漫画 / BUG-1763 视频）。
+///
+/// 产品裁定：到达 ≠ 读过 / 看过。三个域各自的机制不同（EPUB 按字数水位 + 速度封顶、
+/// 漫画按当前页停留、视频按 cue 的真实播放停留），但「多久才算停留过」是同一条产品
+/// 判据，只应有一个数。此前漫画的 `_kPageDwellThreshold` 与视频的 `kCueDwellMs` 是两
+/// 个互不相干的 1500 字面量——同值不同名，正是日后必漂的形状。
+///
+/// 用毫秒 int 而不是 Duration：`Duration.inMilliseconds` 是 getter、不能 const 求值，
+/// 而消费端两侧一个要 int、一个要 Duration，只有 int 能让两边都真正引用同一个数
+/// （`Duration(milliseconds: kArrivalDwellMs)` 仍是 const）。
+const int kArrivalDwellMs = 1500;
+
 /// 纯谓词：[start]..[now] 是否是一次正常的连续阅读窗口。
 ///
 /// 过滤异常大间隔（见 [kMaxReadingGap]）：返回 false 时调用方应整窗丢弃、不累加阅读

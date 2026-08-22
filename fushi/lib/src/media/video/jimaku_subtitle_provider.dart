@@ -71,6 +71,12 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
   }
 
   @override
+
+  /// Jimaku 无下载配额概念，允许为语言标签白下一次。
+  @override
+  bool get allowsFreeProbeDownload => true;
+
+  @override
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
   ) async {
@@ -143,6 +149,9 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
           season: season,
           episode: file.episode,
           fileSize: file.size,
+          uploadedAtMs: file.lastModifiedMs,
+          collectionId: '${entry.id}',
+          collectionLabel: entry.name,
         );
 
   final JimakuEntry entry;

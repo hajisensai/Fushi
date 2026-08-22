@@ -1277,7 +1277,7 @@ class FushiSyncServer {
   /// 供 TOFU 钉扎。只读、不含任何数据/凭据。绝不回传 token。
   shelf.Response _handlePing() {
     return _jsonResponse(<String, dynamic>{
-      // 互联 wire 服务字段：与 client 侧 fetchFushiPing 的 app == 'fushi'
+      // 互联 wire 服务字段：与 client 侧 probeFushiPing 的 app == 'fushi'
       // 同版本对切（R11 已接受跨版本配对探测互不识别）。
       'app': 'fushi',
       'pairing': <String, dynamic>{'v2': true},

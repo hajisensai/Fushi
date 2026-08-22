@@ -2496,6 +2496,65 @@
     return frameSources.has(iframe) ? frameSources.get(iframe) : null;
   }
 
+  // 手柄重设计 P5 — Dart 侧手柄独占路由（GamepadService → native gamepadAction
+  // → 本 host）：把动作转发进**顶层**卡片帧的 popup.js 既有入口，与滚轮/键盘
+  // 同一批执行体（fushiFocusDictionaryEntryMove / fushiPopupMineFirstEntry /
+  // fushiPopupPlayFirstAudio / fushiPopupScrollBy），不另起桥。帧不可用 /
+  // 入口缺席一律返回 false（no-op），绝不抛——本函数由 fire-and-forget 的
+  // ExecuteScript 调用，异常只会淹死在 WebView 控制台里。
+  function gamepadAction(action, dy) {
+    var record = null;
+    var id = topPopupId();
+    if (id !== null) {
+      record = frames.get(id);
+    }
+    var win = frameWindowOf(record);
+    if (!win) {
+      return false;
+    }
+    // 卡片是离屏渲染后 blit 进游戏 Layer 的，requestGalFrameDirty 是唯一的重采触发。
+    // observeGalFrameDirty 的 MutationObserver 只看 childList/subtree/attributes/
+    // characterData —— **滚动不是 DOM mutation**，所以右摇杆滚卡片不补这一句在游戏里
+    // 画面纹丝不动；词条切换的「滚进视口」分量同理，光靠 class 变更那次 dirty 的
+    // double-rAF 恰好晚于滚动落定并不保证。handleGlobalWheel 正因为这个在派发完
+    // wheel 之后也显式调了同一句（见该函数末尾）。
+    var acted = false;
+    try {
+      if (action === 'next' || action === 'prev') {
+        acted = typeof win.fushiFocusDictionaryEntryMove === 'function' &&
+            win.fushiFocusDictionaryEntryMove(action) === 'moved';
+      } else if (action === 'mine') {
+        if (typeof win.fushiPopupMineFirstEntry === 'function') {
+          win.fushiPopupMineFirstEntry();
+          acted = true;
+        }
+      } else if (action === 'audio') {
+        if (typeof win.fushiPopupPlayFirstAudio === 'function') {
+          win.fushiPopupPlayFirstAudio();
+          acted = true;
+        }
+      } else if (action === 'scroll') {
+        if (typeof win.fushiPopupScrollBy === 'function') {
+          win.fushiPopupScrollBy(dy || 0);
+          acted = true;
+        } else {
+          var el = win.document &&
+              (win.document.scrollingElement || win.document.documentElement);
+          if (el && typeof el.scrollBy === 'function') {
+            el.scrollBy(0, dy || 0);
+            acted = true;
+          }
+        }
+      }
+    } catch (e) {
+      return false;
+    }
+    if (acted) {
+      requestGalFrameDirty(record.route);
+    }
+    return acted;
+  }
+
   // 剪贴板面板：把 ROOT 帧的滚动位置复位到顶部。面板的 root iframe 是**复用**的
   // （renderStack 只换 #entries-container innerHTML，iframe / 其滚动容器不重建），
   // 故上一句被滚动过的 scrollTop 会跨渲染保留——一条更长的新剪贴板内容渲染进来时
@@ -2767,6 +2826,7 @@
     handleGlobalWheel: handleGlobalWheel,
     armGalFrameDirty: requestGalFrameDirty,
     requestGalFrameDirty: requestGalFrameDirty,
+    gamepadAction: gamepadAction,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
     commitLayerShiftAndArmCapture: commitLayerShiftAndArmCapture,

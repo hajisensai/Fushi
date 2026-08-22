@@ -130,6 +130,65 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a failed detail load surfaces the real cause and can be retried',
+    (WidgetTester tester) async {
+      // 原本这里只会渲染一行光秃的异常文本，既没重试也拿不到
+      // 堆栈（BUG-1767）。这条用例盯住三件事：原因可见、诊断入口存在、
+      // 重试真的会重新发请求并恢复正常页面。
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      runtime.detailsFailure = const MihonRuntimeException(
+        'RUNTIME_FAILURE',
+        'Mihon invoke/getDetailsManga failed: '
+            'NoClassDefFoundError: kotlin.LazyKt',
+        details: 'java.lang.NoClassDefFoundError\n\tat fixture.Stack',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light(useMaterial3: true),
+          home: MihonSourceBrowsePage(
+            manager: manager,
+            target: MihonInstalledTarget(manager.sources.single),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Raw Otaku fixture'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(tester.takeException(), isNull);
+      expect(runtime.detailsCalls, 1);
+      expect(find.text('Could not load this manga.'), findsOneWidget);
+      expect(
+        find.textContaining('NoClassDefFoundError: kotlin.LazyKt'),
+        findsOneWidget,
+      );
+
+      // 诊断对话框里必须能拿到原生堆栈和失败阶段。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('mihon_detail_error_details')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('stage: details'), findsOneWidget);
+      expect(find.textContaining('at fixture.Stack'), findsOneWidget);
+      await tester.tap(find.text('CLOSE'));
+      await tester.pumpAndSettle();
+
+      runtime.detailsFailure = null;
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(runtime.detailsCalls, 2);
+      expect(find.text('Could not load this manga.'), findsNothing);
+      expect(find.text('Chapter 1'), findsOneWidget);
+    },
+  );
+
   testWidgets('a stale initial response cannot replace a newer search result',
       (WidgetTester tester) async {
     runtime.popularGate = Completer<MihonMangaPage>();
@@ -213,6 +272,10 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
   Completer<MihonMangaPage>? searchGate;
   Map<int, MihonMangaPage>? popularPages;
 
+  /// 非空时 [getDetails] 抛它，用来驱动详情页的失败态。
+  Exception? detailsFailure;
+  int detailsCalls = 0;
+
   @override
   Future<List<MihonFilter>> getFilters(
     MihonExtensionRef extension,
@@ -254,14 +317,18 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     MihonSource source,
     MihonManga manga, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async =>
-      const MihonManga(
-        url: '/manga/fixture',
-        title: 'Raw Otaku fixture',
-        author: 'Fixture author',
-        description: 'Fixture description',
-        initialized: true,
-      );
+  }) async {
+    detailsCalls++;
+    final Exception? failure = detailsFailure;
+    if (failure != null) throw failure;
+    return const MihonManga(
+      url: '/manga/fixture',
+      title: 'Raw Otaku fixture',
+      author: 'Fixture author',
+      description: 'Fixture description',
+      initialized: true,
+    );
+  }
 
   @override
   Future<List<MihonChapter>> getChapters(

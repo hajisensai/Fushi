@@ -3105,27 +3105,224 @@ $sharedInitViewport
       return null;
     };
   }
+  // BUG-1742：VN 在 detachChapterSource 里把整章正文搬进一个**游离**的 div
+  // (this.sourceRoot)，document.body 里从此只剩当前一屏的克隆。任何靠
+  // document.querySelector 找正文元素的宿主路径在 VN 下都必然落空——这正是
+  // 「非 sasayaki 书的有声书自动跟随失效」的根。正文根必须从这里取。
+  if (typeof vn.contentRoot !== 'function') {
+    vn.contentRoot = function() {
+      return this.sourceRoot || document.body;
+    };
+  }
+  // 章内字符偏移 → 屏索引：**唯一**一份两段式查找（先找覆盖该偏移的屏，再取第一个
+  // 末尾越过它的屏，覆盖偏移落在屏间空白 / 媒体单元的情况）。跟随
+  // （highlightSelectorCue）、搜索（scrollToSearchMatch）、恢复（restoreToCharOffset）
+  // 三条路都调它——restoreToCharOffset 里那份内联双循环已经删掉，不是「提取后留着
+  // 原拷贝」：那正是两份实现开始分叉的方式（本注释此前就说了提取、代码却没删）。
+  //
+  // 查无返回 -1。「查无之后该怎么办」按调用方分：恢复要兜底到进度比例最近的一屏，
+  // 跟随 / 搜索则必须什么都不做（乱翻屏比不翻更糟），所以兜底不在本 helper 里。
+  if (typeof vn.screenIndexForCharOffset !== 'function') {
+    vn.screenIndexForCharOffset = function(charOffset) {
+      var target = Number(charOffset);
+      if (!Number.isFinite(target) || target < 0) return -1;
+      if (!this.screens || !this.screens.length) return -1;
+      for (var i = 0; i < this.screens.length; i++) {
+        if (this.screenContainsCharOffset(this.screens[i], target)) return i;
+      }
+      for (var j = 0; j < this.screens.length; j++) {
+        if (this.screenEndCharCount(this.screens[j]) >= target) return j;
+      }
+      return -1;
+    };
+  }
+  // BUG-1742：非 sasayaki 书（SRT/VTT/LRC 合成书）的 cue 是纯 CSS 选择器
+  // `[data-cue-id="N"]`，宿主原本用 __fushiHighlight → document.querySelector
+  // 找它。在 VN 下目标多半根本不在 document 里，querySelector 返回 null 后那条
+  // 路径静默早退，跟随永远不翻屏。
+  //
+  // VN 的「跟随」语义本来就不是滚动而是翻屏，所以这里与 sasayaki 的
+  // highlightSentenceAudioCue 收敛到同一条链路：选择器 → 源节点 → 字符偏移 →
+  // 屏索引 → renderScreen。
+  if (typeof vn.highlightSelectorCue !== 'function') {
+    // async + await ensureReady()：与 restoreToCharOffset / restoreProgress /
+    // jumpToFragment 同款。章节加载期到达的 cue 此前因为 this.screens 还是空的而被
+    // screenIndexForCharOffset 判成 -1、静默丢弃——正是 BUG-1742 本身的形状。
+    // 宿主（audiobook_bridge.dart）是 fire-and-forget 的 evaluateJavascript，不消费
+    // 返回值，改成 Promise 对调用方零影响。
+    vn.highlightSelectorCue = async function(selector, reveal) {
+      if (!selector) return null;
+      await this.ensureReady();
+      var root = this.contentRoot();
+      var node = (root && root.querySelector) ? root.querySelector(selector) : null;
+      if (!node) return null;
+      var stream = this.contentStream;
+      if (!stream || typeof stream.sourcePositionForNode !== 'function') return null;
+      var position = stream.sourcePositionForNode(node);
+      var index = this.screenIndexForCharOffset(position ? position.startChar : -1);
+      if (index < 0) return null;
+      var markActive = (function() {
+        // 当前屏是克隆出来的，class 每次 renderScreen 都会重建——所以只能在
+        // 渲染之后打，且不必清理旧的（下一次渲染自然没有）。
+        try {
+          var scope = this.screen;
+          if (!scope || !scope.querySelectorAll) return;
+          Array.prototype.forEach.call(
+            scope.querySelectorAll('.fushi-active'),
+            function(el) { el.classList.remove('fushi-active'); }
+          );
+          var clone = scope.querySelector(selector);
+          if (clone && clone.classList) clone.classList.add('fushi-active');
+        } catch (_ignored) {}
+      }).bind(this);
+      if (index !== this.currentScreenIndex) {
+        // reveal=false 是「别打断用户当前阅读位置」的显式请求，不许翻屏。
+        if (!reveal) return null;
+        this.renderScreen(index, true);
+        markActive();
+        return this.calculateProgress();
+      }
+      if (reveal && !this.revealComplete) this.completeCurrentReveal();
+      markActive();
+      return null;
+    };
+  }
+  // BUG-1743：VN 此前完全没有 scrollToSearchMatch，而宿主是裸调
+  // `window.fushiReader.scrollToSearchMatch(...)`——VN 下必抛 TypeError，表现为
+  // 「搜索结果点了没反应」/「跨章只跳到目标章第一屏」。
+  //
+  // 不能沿用分页版实现：那一版用 createWalker() 只走当前屏，且靠 scrollToRange
+  // 滚动，两个前提在 VN 下都不成立。VN 版在整章的 contentStream 上匹配，再走
+  // 与 restoreToCharOffset 同款的「字符偏移 → 屏」链路翻屏。
+  if (typeof vn.scrollToSearchMatch !== 'function') {
+    vn.scrollToSearchMatch = function(query, hintOffset) {
+      if (!query) return null;
+      var stream = this.contentStream;
+      if (!stream || !stream.textEntries || !stream.textEntries.length) return null;
+      var entries = stream.textEntries;
+      var segments = [];
+      var full = '';
+      for (var i = 0; i < entries.length; i++) {
+        var text = String(entries[i].text || '');
+        segments.push({ entry: entries[i], start: full.length, text: text });
+        full += text;
+      }
+      var lowerQuery = String(query).toLowerCase();
+      var lowerFull = full.toLowerCase();
+      var matches = [];
+      var searchFrom = 0;
+      while (searchFrom <= lowerFull.length) {
+        var idx = lowerFull.indexOf(lowerQuery, searchFrom);
+        if (idx < 0) break;
+        matches.push(idx);
+        searchFrom = idx + 1;
+      }
+      if (!matches.length) return null;
+      // 就近策略与分页版一致：同章多处命中时取离 hintOffset 最近的一处。
+      var hint = Number(hintOffset);
+      if (!Number.isFinite(hint)) hint = 0;
+      var best = matches[0];
+      var bestDist = Math.abs(best - hint);
+      for (var m = 1; m < matches.length; m++) {
+        var dist = Math.abs(matches[m] - hint);
+        if (dist < bestDist) { best = matches[m]; bestDist = dist; }
+      }
+      var seg = null;
+      for (var s = 0; s < segments.length; s++) {
+        if (best < segments[s].start + segments[s].text.length) { seg = segments[s]; break; }
+      }
+      if (!seg) seg = segments[segments.length - 1];
+      // 命中下标是「拼接后的原始文本」坐标，而屏索引吃的是**可匹配字符**坐标
+      // （countChars 会跳过空白/不可匹配字符）。直接拿 best 当 charOffset 用会
+      // 在任何含空白的章节上系统性偏移，必须经命中所在 entry 的前缀换算。
+      var localRaw = Math.max(0, best - seg.start);
+      var prefix = seg.text.slice(0, localRaw);
+      var countChars = (typeof stream.countChars === 'function')
+        ? stream.countChars.bind(stream)
+        : function(t) { return String(t || '').length; };
+      var charOffset = seg.entry.startChar + countChars(prefix);
+      var index = this.screenIndexForCharOffset(charOffset);
+      if (index < 0) return null;
+      if (index !== this.currentScreenIndex) {
+        this.renderScreen(index, true);
+      } else if (!this.revealComplete) {
+        // 停在当前屏时也得先把这一屏渲完，否则命中词还没被打字机揭开，屏内
+        // 文本节点里根本没有它 → 高亮建不出来。
+        this.completeCurrentReveal();
+      }
+      this.highlightSearchMatchOnScreen(query);
+      return this.calculateProgress();
+    };
+  }
+  // BUG-1743 ②：翻到屏之后还得给出**视觉命中标记**。分页版一直有
+  // （`CSS.highlights.set('fushi-search', …)`，reader_pagination_scripts.dart），
+  // VN 版此前只有下面 clearSearchHighlight 的「删」、没有「建」——那把删除是死代码，
+  // 用户翻到屏之后仍要自己在满屏文字里找那个词。
+  //
+  // 不能拿源流节点建 Range：VN 的整章正文在**游离**的 sourceRoot 里（BUG-1742），
+  // ::highlight 只对 document 内的 Range 生效。所以在**当前屏的克隆**上重新定位一次
+  // ——命中就在这一屏（否则不会翻到这里），按屏内文本节点的拼接坐标建 Range。
+  // 命中横跨屏边界时屏内找不到完整串，如实返回 false 不建高亮（翻屏本身仍然生效）。
+  if (typeof vn.highlightSearchMatchOnScreen !== 'function') {
+    vn.highlightSearchMatchOnScreen = function(query) {
+      if (!window.__fushiCssHighlightsSupported) return false;
+      var scope = this.screen;
+      var needle = String(query || '');
+      if (!scope || !needle) return false;
+      try {
+        var walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null);
+        var segments = [];
+        var full = '';
+        var node;
+        while ((node = walker.nextNode())) {
+          var text = String(node.textContent || '');
+          if (!text) continue;
+          segments.push({ node: node, start: full.length, length: text.length });
+          full += text;
+        }
+        var from = full.toLowerCase().indexOf(needle.toLowerCase());
+        if (from < 0) return false;
+        var to = from + needle.length;
+        var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+        for (var i = 0; i < segments.length; i++) {
+          var seg = segments[i];
+          var segEnd = seg.start + seg.length;
+          if (!startNode && from < segEnd) {
+            startNode = seg.node;
+            startOffset = from - seg.start;
+          }
+          if (startNode && to <= segEnd) {
+            endNode = seg.node;
+            endOffset = to - seg.start;
+            break;
+          }
+        }
+        if (!startNode || !endNode) return false;
+        var range = document.createRange();
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+        CSS.highlights.set('fushi-search', new Highlight(range));
+        return true;
+      } catch (_ignored) {
+        return false;
+      }
+    };
+  }
+  if (typeof vn.clearSearchHighlight !== 'function') {
+    vn.clearSearchHighlight = function() {
+      if (window.__fushiCssHighlightsSupported) {
+        try { CSS.highlights.delete('fushi-search'); } catch (_ignored) {}
+      }
+    };
+  }
   if (typeof vn.restoreToCharOffset !== 'function') {
     vn.restoreToCharOffset = async function(charOffset) {
       await this.ensureReady();
       var target = Number(charOffset);
-      var index = -1;
-      if (Number.isFinite(target) && target >= 0 && this.screens) {
-        for (var i = 0; i < this.screens.length; i++) {
-          if (this.screenContainsCharOffset(this.screens[i], target)) {
-            index = i;
-            break;
-          }
-        }
-        if (index < 0) {
-          for (var j = 0; j < this.screens.length; j++) {
-            if (this.screenEndCharCount(this.screens[j]) >= target) {
-              index = j;
-              break;
-            }
-          }
-        }
-      }
+      // 两段式查找只有 screenIndexForCharOffset 一份（此处曾是逐字重复的第二份，
+      // 且已经和 helper 分叉）。恢复独有的进度兜底留在这里：helper 查无 = -1 时，
+      // 恢复必须落到某一屏，不能像跟随 / 搜索那样什么都不做。
+      var index = this.screenIndexForCharOffset(target);
       if (index < 0) {
         index = this.screenIndexForProgress(this.totalChapterChars
           ? target / this.totalChapterChars

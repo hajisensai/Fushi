@@ -117,12 +117,13 @@ Future<InterconnectSyncBackend> _buildClientBackend({
   return backend;
 }
 
-/// 构造只开 syncLocalAudio 或 syncAudioBookFiles 的 orchestrator。
+/// 构造 orchestrator。本地音频源数据库已不再有开关：它只由显式的
+/// [SyncOrchestrator.syncLocalAudioSources] / [SyncOrchestrator.runAssetTransferOnly]
+/// 驱动，所以这里只剩 syncAudioBookFiles 一个开关。
 SyncOrchestrator _audioOrchestrator({
   required FushiDatabase db,
-  required SyncBackend backend,
   required Directory tmp,
-  bool syncLocalAudio = false,
+  required SyncBackend backend,
   bool syncAudioBookFiles = false,
   List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
   Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
@@ -138,7 +139,6 @@ SyncOrchestrator _audioOrchestrator({
       syncContent: false,
       syncAudioBookFiles: syncAudioBookFiles,
       syncDictionary: false,
-      syncLocalAudio: syncLocalAudio,
       localAudioEntries: localAudioEntries,
       onLocalAudioImported: onLocalAudioImported,
     );
@@ -293,9 +293,9 @@ void main() {
     } catch (_) {}
   });
 
-  // ── 用例 A：互联 live + syncLocalAudio=true ──────────────────────────────
+  // ── 用例 A：互联 live 本地音频传输 ────────────────────────────────────────
 
-  group('用例A: 互联 live 路径（syncLocalAudio=true）', () {
+  group('用例A: 互联 live 路径（显式本地音频传输）', () {
     late FushiSyncServer server;
     late FushiDatabase hostDb;
     late String serverBase;
@@ -354,8 +354,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('pull：本地无 NHK ラジオ，syncLocalAudio=true → 拉取并注册，localAudioImported=1',
-        () async {
+    test('pull：本地无 NHK ラジオ，显式传输 → 拉取并注册，localAudioImported=1', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -369,7 +368,6 @@ void main() {
         db: localDb,
         backend: backend,
         tmp: tmp,
-        syncLocalAudio: true,
         localAudioEntries: const <LocalAudioDbEntry>[], // 本地无音频来源
         onLocalAudioImported: (LocalAudioPackageContents c) async {
           imported.add(c.displayName);
@@ -430,7 +428,6 @@ void main() {
         db: localDb,
         backend: backend,
         tmp: tmp,
-        syncLocalAudio: true,
         localAudioEntries: localEntries,
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
@@ -455,7 +452,6 @@ void main() {
         db: localDb,
         backend: backend,
         tmp: tmp,
-        syncLocalAudio: true,
         localAudioEntries: const <LocalAudioDbEntry>[],
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
@@ -848,7 +844,7 @@ void main() {
 
   // ── 用例 C：互联 + 开关关 ────────────────────────────────────────────────
 
-  group('用例C: 互联 + 开关关（syncLocalAudio=false / syncAudioBookFiles=false）', () {
+  group('用例C: 互联 + run() 从不传本地音频（syncAudioBookFiles=false）', () {
     late FushiSyncServer server;
     late FushiDatabase hostDb;
     late String serverBase;
@@ -880,8 +876,9 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test(
-        'syncLocalAudio=false → run() 不触发本地音频传输（localAudioImported=0, localAudioExported=0）',
+    // 本地音频源数据库已从 run() 里整段拿掉：它没有开关，只有设置页的显式上传 /
+    // 下载动作能搬它。所以这里断言的不再是「开关关着时不传」，而是**恒不传**。
+    test('run() 不触发本地音频传输（localAudioImported=0, localAudioExported=0）',
         () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
@@ -895,16 +892,14 @@ void main() {
         db: localDb,
         backend: backend,
         tmp: tmp,
-        syncLocalAudio: false,
         syncAudioBookFiles: false,
         onLocalAudioImported: (LocalAudioPackageContents c) async {
-          fail('onLocalAudioImported 不应在 syncLocalAudio=false 时被调用');
+          fail('onLocalAudioImported 不应被 run() 调用');
         },
       );
       final SyncRunReport report = await orch.run();
 
-      expect(report.localAudioImported, 0,
-          reason: 'syncLocalAudio=false 不应传输本地音频');
+      expect(report.localAudioImported, 0, reason: 'run() 不再有本地音频维度');
       expect(report.localAudioExported, 0);
       expect(report.audiobooksImported, 0,
           reason: 'syncAudioBookFiles=false 不应传输有声书');
@@ -917,7 +912,7 @@ void main() {
 
   group('用例D: 云后端（非 FushiClient）走 __local_audio__ 暂存路径', () {
     test(
-        'FakeSyncBackend + syncLocalAudio=true → 调用 ensureNamespace(__local_audio__)，不走 live 端点',
+        'FakeSyncBackend + syncLocalAudioSources → 调用 ensureNamespace(__local_audio__)，不走 live 端点',
         () async {
       final FakeAssetStore store = FakeAssetStore();
       final _FakeSyncBackend backend = _FakeSyncBackend(store);
@@ -929,11 +924,14 @@ void main() {
         db: db,
         backend: backend,
         tmp: tmp,
-        syncLocalAudio: true,
         localAudioEntries: const <LocalAudioDbEntry>[],
         onLocalAudioImported: (LocalAudioPackageContents c) async {},
       );
-      final SyncRunReport report = await orch.run();
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncLocalAudioSources(
+        report,
+        direction: SyncAssetDirection.both,
+      );
 
       // 云路径：ensureNamespace 被调用（__local_audio__ 命名空间）。
       expect(backend.ensureNamespaceCalled, greaterThanOrEqualTo(1),

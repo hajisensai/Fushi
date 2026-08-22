@@ -52,6 +52,22 @@ class AListDiscoverySource extends MediaDiscoverySource {
   /// 已换取的登录 token（匿名站恒 null）。
   String? _token;
 
+  /// search 结果路径相对 `fs/list` 命名空间多出来的前缀，已归一：无前缀时为空串。
+  ///
+  /// BUG-1771：AList 的 `/api/fs/search` 返回的 `parent` 在**用户根命名空间**里
+  /// （erogame.space 的 guest 是 `/guest`），而 `/api/fs/list` 与 `/api/fs/get`
+  /// 收的是**相对该根**的路径。原样把 search 的 `parent` 当路径用，站点对每一条
+  /// 都回 `object not found` —— 搜索结果里的目录一个都打不开、文件一个都下不了。
+  /// 实测：`/guest/其他/…/Leaf/WHITE ALBUM2` → 500 object not found；
+  /// 剥掉 `/guest` 后 → 200，`fs/get` 拿到真实 `raw_url`。
+  /// null = 还没推断出结论（下次继续试）；`''` = 推断过、和搜索结果同命名空间、
+  /// 无需剥；`'/guest'` = 推断过、要剥这一段。
+  ///
+  /// 刻意用可空而不是「`''` + 一个 _basePathProbed 布尔」：那样 `''` 同时背着
+  /// 「没推断」和「推断出无需剥」两个意思，两份状态一旦不同步就会出现「一次探测
+  /// 失败即永久放弃」——而失败恰恰是最该重试的情形。合成一份就没有这个边界。
+  String? _basePath;
+
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
         kinds: _kinds,
@@ -106,6 +122,13 @@ class AListDiscoverySource extends MediaDiscoverySource {
     final List<dynamic> content =
         (data['content'] as List<dynamic>?) ?? <dynamic>[];
     final int total = (data['total'] as num?)?.toInt() ?? content.length;
+    // 先拿本次结果里的 parent 当样本反推命名空间前缀，再逐条转换（BUG-1771）。
+    // 推断失败只是不剥前缀，不影响本次搜索返回。
+    await _ensureBasePath(<String>[
+      for (final Map<String, dynamic> raw
+          in content.cast<Map<String, dynamic>>())
+        if (raw['parent'] is String) raw['parent'] as String,
+    ]);
     return ProviderBatchResult<DiscoveryResultPage>.success(
       <DiscoveryResultPage>[
         DiscoveryResultPage(
@@ -114,7 +137,7 @@ class AListDiscoverySource extends MediaDiscoverySource {
                 in content.cast<Map<String, dynamic>>())
               _entryFrom(
                 raw,
-                parent: raw['parent'] as String? ?? '/',
+                parent: _stripBasePath(raw['parent'] as String? ?? '/'),
                 kind: request.kind,
               ),
           ],
@@ -221,6 +244,75 @@ class AListDiscoverySource extends MediaDiscoverySource {
       );
     }
     return (envelope['data'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+  }
+
+  /// 反推 search 命名空间相对 `fs/list` 命名空间多出来的前缀。
+  ///
+  /// 判据只用**本来就必须能用**的 `fs/list '/'`：真实根下的第一层名字一定会出现在
+  /// search 的 `parent` 里，它**之前**的那一段就是前缀。例如根是 `[其他, 年份合集]`、
+  /// parent 是 `/guest/其他/…`，`其他` 落在第 2 段，于是前缀 = `/guest`。
+  ///
+  /// 为什么不问 `/api/me`（它直接给 `base_path`）：本机实测 alist.erogame.space 的
+  /// `/api/me` **直连 3/3 连接超时**，而同一时刻 `fs/list` / `fs/search` /
+  /// `/api/public/settings` / 首页都正常。拿一个可能连不上的端点当前置依赖，
+  /// 结果是每次首搜先白等一个连接超时，然后照样拿不到前缀——比不做还差。
+  /// 这里改成只依赖已有链路，且推断失败就退回「不剥前缀」的老行为。
+  Future<void> _ensureBasePath(Iterable<String> sampleParents) async {
+    if (_basePath != null) return;
+    final List<String> samples = sampleParents
+        .where((String p) => p.startsWith('/') && p.length > 1)
+        .toList(growable: false);
+    if (samples.isEmpty) return; // 没样本，下次再推
+    // 注意：这里不做任何「已尝试」标记。下面每条不产生结论的出口（根目录列不出、
+    // 样本一个都对不上、网络异常）都必须让 _basePath 保持 null，否则本会话再也
+    // 不会重推，而搜索结果的目录会一直打不开。只有两个 return 才算有结论。
+    try {
+      final Map<String, dynamic> data =
+          await _post('/api/fs/list', <String, dynamic>{
+        'path': '/',
+        'password': '',
+        'page': 1,
+        'per_page': 200,
+        'refresh': false,
+      });
+      final Set<String> rootNames = <String>{
+        for (final Map<String, dynamic> raw
+            in ((data['content'] as List<dynamic>?) ?? <dynamic>[])
+                .cast<Map<String, dynamic>>())
+          if (raw['name'] is String) raw['name'] as String,
+      };
+      if (rootNames.isEmpty) return;
+      for (final String parent in samples) {
+        final List<String> segments = parent
+            .split('/')
+            .where((String s) => s.isNotEmpty)
+            .toList(growable: false);
+        final int hit = segments.indexWhere(rootNames.contains);
+        if (hit < 0) continue; // 这条对不上，看下一条
+        if (hit == 0) {
+          _basePath = ''; // 已经在同一命名空间，无需剥
+          return;
+        }
+        _basePath = '/${segments.take(hit).join('/')}';
+        return;
+      }
+    } catch (_) {
+      // 根目录列不出来（站点只开搜索、网络抖动、信封变形）：拿不到前缀而已，
+      // 不是源不可用——本次搜索照常返回，只是路径保持原样。
+    }
+  }
+
+  /// 把 search 返回的、带 [_basePath] 前缀的路径转成 `fs/list`/`fs/get` 能用的路径。
+  /// 不带该前缀的路径原样返回（站点未启用用户根，或已是相对路径）。
+  String _stripBasePath(String path) {
+    final String base = _basePath ?? '';
+    if (base.isEmpty) return path;
+    if (path == base) return '/';
+    if (path.startsWith('$base/')) {
+      final String rest = path.substring(base.length);
+      return rest.isEmpty ? '/' : rest;
+    }
+    return path;
   }
 
   Future<void> _ensureToken() async {

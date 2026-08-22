@@ -3,6 +3,7 @@ package app.fushi.reader.mihon
 import android.app.Application
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
@@ -86,16 +87,19 @@ class MihonChannelHandler(private val app: Application) {
                 try {
                     val value = handle(call)
                     mainHandler.post { result.success(value) }
-                } catch (error: MihonHostException) {
-                    mainHandler.post { result.error(error.code, error.message, null) }
-                } catch (error: IllegalArgumentException) {
-                    mainHandler.post {
-                        result.error("INVALID_ARGUMENT", error.message ?: "Invalid argument", null)
+                } catch (error: Throwable) {
+                    val operation = describeOperation(call)
+                    val code = when (error) {
+                        is MihonHostException -> error.code
+                        is IllegalArgumentException -> "INVALID_ARGUMENT"
+                        else -> "RUNTIME_FAILURE"
                     }
-                } catch (_: Throwable) {
-                    mainHandler.post {
-                        result.error("RUNTIME_FAILURE", "Mihon extension operation failed", null)
-                    }
+                    // 不能把真实异常换成一句固定文案：扩展跑在第三方 dex 里，
+                    // 失败原因（缺类 / 网络 / 站点改版）只存在于 cause 链，丢了就无从诊断。
+                    val message = "Mihon $operation failed: ${describeCauseChain(error)}"
+                    Log.e(TAG, message, error)
+                    val details = diagnosticDetails(error)
+                    mainHandler.post { result.error(code, message, details) }
                 } finally {
                     requestId?.let(activeImageRequests::remove)
                 }
@@ -270,14 +274,17 @@ class MihonChannelHandler(private val app: Application) {
                 val input = arguments.requiredMap("mangaData")
                 val manga = loaded.mangaCache[cacheKey(source, input.requiredString("url"))]
                     ?: mangaFromBridge(input)
-                source.getMangaUpdate(
+                val update = source.getMangaUpdate(
                     manga = manga,
                     chapters = emptyList(),
                     fetchDetails = true,
                     fetchChapters = false,
-                ).manga.also { result ->
-                    loaded.mangaCache[cacheKey(source, result.url)] = result
-                }.toBridgeMap()
+                ).manga
+                // 详情结果是增量：身份（url）只能来自入参，读 update.url 会踩
+                // 未初始化的 lateinit。见 SManga.mergedWithDetails。
+                val merged = manga.mergedWithDetails(update)
+                loaded.mangaCache[cacheKey(source, merged.url)] = merged
+                merged.toBridgeMap()
             }
             "getChapterList" -> runBlocking {
                 val input = arguments.requiredMap("mangaData")
@@ -418,7 +425,20 @@ class MihonChannelHandler(private val app: Application) {
                 value as? Map<String, Any?>
             }
 
+    /**
+     * 把失败归到具体操作上。
+     *
+     * 漫画详情页会连着发 `getDetailsManga` 和 `getChapterList` 两次
+     * `invoke`，两者失败时原本回的 code/message 完全一样，用户和日志
+     * 都分不出断在哪一步。内层 `method` 必须跟着错误一起回去。
+     */
+    private fun describeOperation(call: MethodCall): String {
+        val inner = (call.arguments as? Map<*, *>)?.get("method")?.toString()
+        return if (inner.isNullOrEmpty()) call.method else "${call.method}/$inner"
+    }
+
     companion object {
         private const val MAX_APK_BYTES = 100L * 1024L * 1024L
+        private const val TAG = "MihonChannel"
     }
 }

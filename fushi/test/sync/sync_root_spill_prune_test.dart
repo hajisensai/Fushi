@@ -125,7 +125,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
       final SyncRunReport report = SyncRunReport();
@@ -180,7 +179,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
       final SyncRunReport report = SyncRunReport();
@@ -220,7 +218,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
       final SyncRunReport report = SyncRunReport();
@@ -285,7 +282,6 @@ void main() {
         syncContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
-        syncLocalAudio: false,
       );
 
       final SyncRunReport report = SyncRunReport();

@@ -127,6 +127,64 @@ void main() {
         reason: '门槛是「有没有可用来源」，不是「有没有 Jimaku key」');
     expect(find.text('only.opensubtitles.ep01.en.srt'), findsOneWidget);
   });
+
+  // 正文语言探测是靠 download 实现的，而 OpenSubtitles 的 /download 就是计配额那一步
+  // （响应带 remaining，免费账号一天 5~20 次）。判据必须落在「provider 有没有配额」
+  // 上，不能用「候选 language 字段是不是空的」代替 —— 后者与配额毫无关系，而
+  // OpenSubtitles 恰恰经常不给 language，最该保护的源反而最常被探测。
+  testWidgets('有下载配额的源：语言为空也不得被探测（零 download）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final _FakeSubtitleProvider metered = _FakeSubtitleProvider(
+      id: 'opensubtitles',
+      priority: 200,
+      fileName: 'metered.ep01.srt',
+      releaseName: 'Metered Release',
+      language: '', // 空语言：旧实现正是靠这个条件决定要不要探测
+      allowsFreeProbeDownload: false,
+    );
+
+    await tester.pumpWidget(host(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[metered]),
+      saveDirectory: Directory.systemTemp.createTempSync('fushi_probe1').path,
+      apiKey: '',
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, t.video_jimaku_search));
+    await tester.pumpAndSettle();
+
+    expect(metered.downloadCalls, 0, reason: '为一个展示标签白烧用户的每日下载配额，失败还被静默吞掉');
+  });
+
+  testWidgets('无配额的源：语言为空时才做探测', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final _FakeSubtitleProvider free = _FakeSubtitleProvider(
+      id: 'jimaku',
+      priority: 100,
+      fileName: 'free.ep01.srt',
+      releaseName: 'Free Release',
+      language: '',
+      allowsFreeProbeDownload: true,
+    );
+
+    await tester.pumpWidget(host(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[free]),
+      saveDirectory: Directory.systemTemp.createTempSync('fushi_probe2').path,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, t.video_jimaku_search));
+    await tester.pumpAndSettle();
+
+    expect(free.downloadCalls, greaterThan(0),
+        reason: '无配额的源仍应探测，否则门控写成了「一律不探」');
+  });
 }
 
 class _FakeSubtitleProvider implements VideoSubtitleProvider {
@@ -136,7 +194,16 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
     required this.fileName,
     required this.releaseName,
     required this.language,
+    this.allowsFreeProbeDownload = false,
   });
+
+  /// 探测许可可配：本测试要区分「有配额的源不许被探测」与「无配额的源才探」。
+  @override
+  final bool allowsFreeProbeDownload;
+
+  /// download 被调用的次数——正文语言探测是靠 download 实现的，所以这个计数就是
+  /// 「有没有为一个展示标签白烧一次配额」的直接度量。
+  int downloadCalls = 0;
 
   @override
   final String id;
@@ -166,12 +233,26 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
   @override
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
-  ) async =>
-      VideoSubtitleDownload(
-        bytes: Uint8List.fromList(<int>[1, 2, 3]),
-        fileName: candidate.fileName,
-        language: candidate.language,
-      );
+  ) async {
+    downloadCalls++;
+    // 一段简体中文正文，够 detectSubtitleContentLanguage 判出语言。
+    // 用 join 拼行，不写转义序列（本文件经工具生成时反斜杠容易被吃掉）。
+    final String srt = <String>[
+      '1',
+      '00:00:01,000 --> 00:00:03,000',
+      '这是一句很普通的中文对白内容',
+      '',
+      '2',
+      '00:00:04,000 --> 00:00:06,000',
+      '这是另一句很普通的中文对白内容',
+      '',
+    ].join(String.fromCharCode(10));
+    return VideoSubtitleDownload(
+      bytes: Uint8List.fromList(utf8.encode(srt)),
+      fileName: candidate.fileName,
+      language: candidate.language,
+    );
+  }
 
   @override
   void close() {}

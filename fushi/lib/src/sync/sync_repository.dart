@@ -185,10 +185,18 @@ class SyncRepository {
   static const _keyFolderCache = 'sync_folder_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
-  static const _keySyncDictionary = 'sync_dictionary_enabled';
+  // 废弃：词典与本地音频源数据库不再有「同步开关」，改成设置页的显式上传 / 下载
+  // 动作（见 `SyncOrchestrator.runAssetTransferOnly`）。存量库里的这两行不做 schema
+  // 迁移（要冒着改动已发布版本的风险），但**必须还读一次**：升级前开着自动同步的
+  // 用户，升级后同步会静默停下——「立即同步」照常报「完成 N 项」，而新导入的词典
+  // 再也不上云。用户没有任何信号知道备份里已经没有词典了。这不是数据丢失，是
+  // 「我以为还在备份」的静默失效，正是 never break userspace 要挡的东西。所以留一条
+  // 一次性告知（见 sync_settings_schema 的 sync.asset_legacy_notice），读到 true 就
+  // 在同步设置页说明改动，用户确认后写 false 关掉，此后这两个键才真正是死数据。
+  static const _keyLegacySyncDictionary = 'sync_dictionary_enabled';
+  static const _keyLegacySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
   static const _keySyncVideoFiles = 'sync_video_files_enabled';
-  static const _keySyncLocalAudio = 'sync_local_audio_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
@@ -246,7 +254,6 @@ class SyncRepository {
 
   static const String syncStatsPreferenceKey = _keySyncStats;
   static const String syncAudioBookPreferenceKey = _keySyncAudioBook;
-  static const String syncDictionaryPreferenceKey = _keySyncDictionary;
 
   // ── Folder cache（按通道分槽，BUG-1576） ───────────────────────────
   //
@@ -336,6 +343,19 @@ class SyncRepository {
 
   // ── Sync settings ─────────────────────────────────────────────────
 
+  /// 升级前这台设备是否开着词典 / 本地音频的自动同步（任一为真即算）。
+  /// 只被那条一次性告知读；确认后经 [acknowledgeLegacyAssetAutoSync] 归零。
+  Future<bool> hadLegacyAssetAutoSync() async =>
+      await _db.getPrefTyped<bool>(_keyLegacySyncDictionary, false) ||
+      await _db.getPrefTyped<bool>(_keyLegacySyncLocalAudio, false);
+
+  /// 用户已看过告知：把两个废弃键写 false，提示不再出现。
+  /// 写 false 而不是删行——`Preferences` 没有删除接口，写值不需要动已发布 schema。
+  Future<void> acknowledgeLegacyAssetAutoSync() async {
+    await _db.setPrefTyped<bool>(_keyLegacySyncDictionary, false);
+    await _db.setPrefTyped<bool>(_keyLegacySyncLocalAudio, false);
+  }
+
   Future<bool> isSyncStatsEnabled() =>
       _db.getPrefTyped<bool>(_keySyncStats, true);
   Future<void> setSyncStatsEnabled(bool v) =>
@@ -344,11 +364,6 @@ class SyncRepository {
   Future<bool> isSyncAudioBookEnabled() async => true;
   Future<void> setSyncAudioBookEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncAudioBook, true);
-
-  Future<bool> isSyncDictionaryEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncDictionary, false);
-  Future<void> setSyncDictionaryEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncDictionary, v);
 
   /// 是否同步有声书文件（音频 + 字幕包）。默认 false：包大，需用户显式开启。
   Future<bool> isSyncAudioBookFilesEnabled() =>
@@ -363,12 +378,6 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keySyncVideoFiles, false);
   Future<void> setSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncVideoFiles, v);
-
-  /// 是否同步本地音频来源（DB 文件 + 配置）。默认 false：DB 大，需用户显式开启。
-  Future<bool> isSyncLocalAudioEnabled() =>
-      _db.getPrefTyped<bool>(_keySyncLocalAudio, false);
-  Future<void> setSyncLocalAudioEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keySyncLocalAudio, v);
 
   Future<bool> isAutoSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyAutoSync, false);
@@ -1197,7 +1206,7 @@ class SyncRepository {
   ///
   /// 故意排除：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
-  ///   `sync_dictionary_enabled`/`sync_content_enabled` —— 当作用户设置，随备份恢复。
+  ///   `sync_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
   ///

@@ -21,6 +21,7 @@
 // Malie 五个引擎的 ready 位，这些引擎资源 hook 装好了本体也判 `raw_voice_ready=false`，
 // 直接退回整机混音。副本已删除，改为直接 include 真相源——两侧编同一组常量与同一份结构布局，
 // 版本漂移在结构上不再可能（守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
+#include "../../../native/galgame_hook/include/voice_clip_energy.h"
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 #include "../../../native/galgame_hook/include/voice_hook_utterance_window.h"
 
@@ -264,24 +265,39 @@ bool ReadClipPcmLocked(const SharedHeader* h, const uint8_t* ring,
   return true;
 }
 
-// 一条 clip 的 16-bit PCM 平均绝对幅值（能量代理）。非 16-bit 返回 -1（调用方退化）。已被环形
-// 覆盖返回 0。调用方持锁。移植自 ring_probe.cpp 的 ClipEnergy16。
-double ClipEnergy16Locked(const SharedHeader* h, const uint8_t* ring,
-                          const fushi_voice_hook::VoiceClip* c) {
-  if (c->bits_per_sample != 16 || c->is_float) {
+// 一条 clip 的平均绝对幅值（能量代理），**归一到 16-bit 标度、与位深/浮点无关**。
+// 位深真的不认识才返回 -1；已被环形覆盖返回 0。调用方持锁。
+//
+// BUG-1769：旧实现只认 16-bit（`bits_per_sample != 16 || is_float` 一律 -1），而能量是
+// `GrabUtterance` 选语音源的唯一判据，于是 float32 输出的游戏（XAudio2 的默认格式）
+// `any_energy` 恒假、`filter_by_src` 退化成 false，拼接循环把窗口内**所有源**顺序拼进一句
+// ——「同一句念两遍 + 断续杂音」。算法与跨环边界处理搬进 `voice_clip_energy.h`，由
+// native CTest `fushi_voice_clip_energy_test` 固定「换编码后能量一致」这条不变量。
+//
+// 顺带去掉了旧实现里那次全量 memcpy：改成在环上就地单遍扫描（本函数每次 GrabUtterance
+// 要跑上千次，全程持锁在平台线程上）。
+double ClipEnergyLocked(const SharedHeader* h, const uint8_t* ring,
+                        const fushi_voice_hook::VoiceClip* c) {
+  const uint32_t cap = h->ring_capacity;
+  const uint32_t len = c->byte_len;
+  if (cap == 0 || len == 0 || len > cap) {
     return -1.0;
   }
-  std::vector<uint8_t> buf;
-  if (!ReadClipPcmLocked(h, ring, c, buf) || buf.size() < 2) {
-    return 0.0;
+  if (h->total_written > c->total_at_write &&
+      h->total_written - c->total_at_write > cap - len) {
+    return 0.0;  // 已被环形覆盖
   }
-  const int16_t* s = reinterpret_cast<const int16_t*>(buf.data());
-  const size_t n = buf.size() / 2;
-  double acc = 0;
-  for (size_t i = 0; i < n; i++) {
-    acc += (s[i] < 0) ? -static_cast<double>(s[i]) : static_cast<double>(s[i]);
-  }
-  return acc / static_cast<double>(n);
+  return fushi_voice_hook::ClipEnergy16Scale(ring, cap, c->ring_offset % cap,
+                                             len, c->bits_per_sample,
+                                             c->is_float != 0);
+}
+
+// 两条 clip 的 PCM 格式是否一致。格式不同的段按字节拼在一起就是垃圾（采样率/声道/位深
+// 全被首段的 fmt 冒充），必须整段跳过。
+bool ClipFormatMatches(const fushi_voice_hook::VoiceClip* a,
+                       const fushi_voice_hook::VoiceClip* b) {
+  return a->sample_rate == b->sample_rate && a->channels == b->channels &&
+         a->bits_per_sample == b->bits_per_sample && a->is_float == b->is_float;
 }
 
 // 收集环形里有效（seq 匹配、byte_len 合法）的语音 clip 指针（seq 升序）。调用方持锁。
@@ -1199,7 +1215,20 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(h) + sizeof(SharedHeader);
 
+  // 每条 clip 的能量只算一遍：选源与拼接两处共用。旧实现两处各算一次，每次还先把整段
+  // memcpy 出来——本函数持锁跑在 Flutter 平台线程上，收敛循环每行要调 ~24 次，环上限
+  // 64MB 时那是每行几个 GB 的拷贝与扫描（宿主侧卡顿的来源，BUG-1769）。
+  std::vector<double> energies(valid.size(), -1.0);
+  for (size_t i = 0; i < valid.size(); i++) {
+    energies[i] = ClipEnergyLocked(h, ring, valid[i]);
+  }
+
   // 选语音源：target_source 非 0 直接用（手动选轨）；否则按能量自动选（排除 exclude_sources）。
+  //
+  // 这里**必须**收敛到唯一一个 source_ptr。把多个源拼进同一句永远不是合法答案：
+  // 同一时刻环里通常同时有语音源、BGM 源和混音输出，拼起来就是「同一句念两遍 + 杂音」
+  // （BUG-1769）。所以下面所有分支的出口都是「选出一个源」或「返回空交调用方回退」，
+  // 不再有「选不出就全都要」这条退化路径。
   bool filter_by_src = false;
   uint64_t sel_src = 0;
   if (target_source != 0) {
@@ -1212,10 +1241,12 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     // ts-200 回看窗口留出调度抖动余量，同时保持两段采样窗口不重叠。
     std::map<uint64_t, double> e_before, e_at;
     std::map<uint64_t, int> n_before, n_at;
+    std::map<uint64_t, uint64_t> bytes_at;  // 位深不认识时的格式无关代理判据
     bool any_energy = false;
     uint64_t nearest_role_src = 0;
     int64_t nearest_role_distance = INT64_MAX;
-    for (const auto* c : valid) {
+    for (size_t i = 0; i < valid.size(); i++) {
+      const auto* c = valid[i];
       bool excluded = false;
       for (const uint64_t ex : exclude_sources) {
         if (ex == c->source_ptr) {
@@ -1226,13 +1257,11 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
       if (excluded) {
         continue;  // 用户标记的 BGM 源不参与自动选源
       }
-      const double e = ClipEnergy16Locked(h, ring, c);
-      if (e < 0) {
-        continue;  // 非 16-bit
-      }
-      any_energy = true;
       const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                         static_cast<int64_t>(ts_ms);
+      if (d >= -250 && d <= 450) {
+        bytes_at[c->source_ptr] += c->byte_len;
+      }
       if (role_classifier_active && d >= -250 && d <= 450) {
         const int64_t distance = d < 0 ? -d : d;
         if (distance < nearest_role_distance) {
@@ -1240,6 +1269,11 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
           nearest_role_src = c->source_ptr;
         }
       }
+      const double e = energies[i];
+      if (e < 0) {
+        continue;  // 位深真的不认识（8/16/24/32 与 float32 之外）
+      }
+      any_energy = true;
       if (d >= -900 && d <= -251) {
         e_before[c->source_ptr] += e;
         n_before[c->source_ptr]++;
@@ -1269,13 +1303,23 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     if (sel_src == 0 && role_classifier_active) {
       sel_src = nearest_role_src;
     }
-    if (any_energy || role_classifier_active) {
-      if (sel_src == 0) {
-        return VoiceHookStatus{};  // 有能量数据却选不出源（全被排除）——交调用方回退
+    if (sel_src == 0 && !any_energy) {
+      // 位深真的不认识（不是 8/16/24/32 也不是 float32）：能量判据用不了，但**仍然只能
+      // 选一个源**。退而用格式无关的代理——文本时刻窗内写入字节最多的那个源（正在出声的
+      // 源必然在写）。这条分支在现实里几乎走不到（BUG-1769 修复后常见格式全部可算能量），
+      // 留着是为了让「选不出源」永远收敛到「返回空让调用方回退」，而不是「拼所有源」。
+      uint64_t best_bytes = 0;
+      for (const auto& kv : bytes_at) {
+        if (kv.second > best_bytes) {
+          best_bytes = kv.second;
+          sel_src = kv.first;
+        }
       }
-      filter_by_src = true;
     }
-    // any_energy=false（非 16-bit）：无法能量选源，退化为拼所有源（filter_by_src 保持 false）。
+    if (sel_src == 0) {
+      return VoiceHookStatus{};  // 选不出源（全被排除／窗口内没段）——交调用方回退
+    }
+    filter_by_src = true;
   }
 
   // 拼接选定源在 [下界, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
@@ -1320,7 +1364,8 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   std::vector<uint8_t> pcm;
   const fushi_voice_hook::VoiceClip* fmt = nullptr;
   double peak = 1.0;
-  for (const auto* c : valid) {
+  for (size_t i = 0; i < valid.size(); i++) {
+    const auto* c = valid[i];
     if (filter_by_src && c->source_ptr != sel_src) {
       continue;
     }
@@ -1329,7 +1374,12 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     if (static_cast<int64_t>(c->timestamp_ms) < lower_ts || d > forward_ms) {
       continue;
     }
-    const double e = ClipEnergy16Locked(h, ring, c);
+    // 同一源中途换了格式（重建 buffer、切采样率）：拼进去会被首段的 fmt 冒充，
+    // 播出来是字节级垃圾。整段跳过，宁可短一点也不给用户一段噪声（BUG-1769）。
+    if (fmt != nullptr && !ClipFormatMatches(c, fmt)) {
+      continue;
+    }
+    const double e = energies[i];
     if (e > peak) {
       peak = e;
     }
@@ -1412,11 +1462,11 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
     const int64_t d =
         static_cast<int64_t>(c->timestamp_ms) - static_cast<int64_t>(ts_ms);
     if (d >= -150 && d <= 450) {
-      // 先无条件计数：这条轨在这句时刻窗内**有没有出声**与能不能算能量无关。
-      // 能量只在 16-bit 上算得出来（ClipEnergy16Locked 其余返回 -1），拿能量兼作
-      // 「有没有段」的判据会把非 16-bit 的可用轨误判成静音（BUG-1165）。
+      // 先无条件计数：这条轨在这句时刻窗内**有没有出声**与能不能算能量无关（BUG-1165）。
+      // BUG-1769 之后能量对 8/16/24/32-bit 与 float32 全部算得出来，`e < 0` 只剩「位深真的
+      // 不认识」这一种；这条无条件计数仍然保留，作为那种情况下的兜底。
       n_clips_at[c->source_ptr]++;
-      const double e = ClipEnergy16Locked(h, ring, c);
+      const double e = ClipEnergyLocked(h, ring, c);
       if (e >= 0) {
         sum_energy_at[c->source_ptr] += e;
         n_energy_at[c->source_ptr]++;

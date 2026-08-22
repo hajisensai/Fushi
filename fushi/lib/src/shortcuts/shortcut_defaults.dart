@@ -334,22 +334,30 @@ class ShortcutDefaults {
     // 朝向再由 resolveMangaArrowPageTurn 按跨页方向（日漫默认 rtl）校正，所以这里
     // 存的是**页序语义**而非物理方向。
     //
-    // **只有键盘绑定**：漫画页至今没有手柄解析入口（既无 `resolveGamepad`，也无
-    // `GamepadButtonIntent` 的 Action，Android 的 gameButton* 键事件同样匹配不到
-    // 纯键盘绑定）。曾在这里配过 RB/LB/dpad/B，效果是用户在设置里能配、按下去毫无
-    // 反应——比压根没有这个选项更糟，用户会以为自己手柄坏了。要加回来必须先照
-    // reader `_handleGamepadButton` 接上解析入口并真机验证；`manga` scope 的
-    // `channels` 也相应只开键盘，`shortcut_channel_wiring_guard_test` 会盯住两者一致。
+    // 手柄默认与 reader 翻页同构（RB/dpad右=前进、LB/dpad左=后退）：漫画页现在有
+    // 真实的手柄解析入口（`_handleGamepadButton` → resolveGamepad manga →
+    // universal，桌面轮询与 Android gameButton* 汇合同一入口），dpad 左/右再由
+    // resolveMangaDpadPageTurn 按跨页方向校正——与键盘方向键同一套页序语义。
+    // B **刻意不绑**：退出/关弹窗归 universal 的 globalBack（手柄 B 默认在
+    // universal），在 manga scope 再绑一个 B 会把两级阶梯永久遮蔽
+    // （`universal_back_test` 盯着）。此前「配过 RB/LB/dpad/B 但没有解析入口」的
+    // 死通道教训见 `shortcut_channel_wiring_guard_test`——通道与入口必须同增同减。
     ShortcutAction.mangaPageForward: _kb([
       _key(LogicalKeyboardKey.pageDown),
       _key(LogicalKeyboardKey.arrowRight),
       _key(LogicalKeyboardKey.arrowDown),
       _key(LogicalKeyboardKey.space),
+    ], [
+      _gRB,
+      _gDpadRight
     ]),
     ShortcutAction.mangaPageBackward: _kb([
       _key(LogicalKeyboardKey.pageUp),
       _key(LogicalKeyboardKey.arrowLeft),
       _key(LogicalKeyboardKey.arrowUp),
+    ], [
+      _gLB,
+      _gDpadLeft
     ]),
     // 「只关词典、绝不退出」（漫画版）：**默认空绑定**，理由与 readerDismissDict
     // 完全相同——Esc 归 universal 的 globalBack 一键阶梯。
@@ -448,15 +456,27 @@ class ShortcutDefaults {
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立
     // co-active 组，与任何页面键位不冲突。
+    // 手柄默认（P2）：dpad 下/上 = 下/上一个词条。执行链有两条，缺一不可：
+    //   * GamepadService 的弹窗兜底（页面 Actions 未消费 → resolveGamepad
+    //     (dictionaryPopup) → 钩子调 JS），管的是页面**没绑**这个键的场合；
+    //   * 宿主页面在自己的上下文路由里给弹窗的那一次消费机会——视频页在
+    //     BUG-924「已绑键关浮层」之前、阅读器在 caret 之后 reader scope 之前。
+    // 只有第一条时，dpad 上下 / X / Y 在 video 和 reader+audiobook scope 全都已被
+    // 占用（音量 / 上下条字幕 / 上下句 / 收起书页 chrome），页面先消费 ⇒ 这四个弹窗
+    // 默认绑定在两个最主要的宿主里结构性不可达（设置里能配、按了没反应）。
+    // 唯一有意让位的是阅读器 caret 激活期的 dpad 四向：方向键移动字级光标去选词，
+    // 是查词的操作方式本身，不能让给词条翻页。
     ShortcutAction.popupNextEntry: const ShortcutBindingSet(
       wheelBindings: <WheelBinding>[
         WheelBinding(WheelDirection.down, modifiers: {ModifierKey.alt}),
       ],
+      gamepadBindings: <GamepadBinding>[_gDpadDown],
     ),
     ShortcutAction.popupPrevEntry: const ShortcutBindingSet(
       wheelBindings: <WheelBinding>[
         WheelBinding(WheelDirection.up, modifiers: {ModifierKey.alt}),
       ],
+      gamepadBindings: <GamepadBinding>[_gDpadUp],
     ),
     // 制卡（= 点弹窗里的「＋」）。默认 Ctrl+Enter，与阅读器既有的
     // readerCreateCardFromPopup 同键：两者是同一件事在不同焦点归属下的两条执行路径，
@@ -467,6 +487,16 @@ class ShortcutDefaults {
       keyboardBindings: <InputBinding>[
         _key(LogicalKeyboardKey.enter, {ModifierKey.ctrl}),
       ],
+      // 手柄 X = 制卡（P2，Dart 侧弹窗兜底派发）。reader 的 X=书签、video 的
+      // X=上一句在各自页面先命中——弹窗可见时它们仍优先，这是「页面专属键优先」
+      // 的既定哲学；漫画/首页词典/独立查词页没占 X，弹窗制卡直达。
+      gamepadBindings: const <GamepadBinding>[_gX],
+    ),
+    // 发音（P2 新增）：默认只有手柄 Y——键盘/鼠标用户点按钮已经够近，而手柄用户
+    // 此前没有任何非光标模式的发音入口。执行体是点第一个可见词条的发音按钮
+    // （fushiPopupPlayFirstAudio，与制卡同一「点按钮不另起桥」纪律）。
+    ShortcutAction.popupPlayAudio: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gY],
     ),
   };
 
@@ -536,9 +566,12 @@ class ShortcutDefaults {
           // 弹窗宿主（Android 悬浮词典 / 独立查词页）都是 Flutter 宿主、没有 Dart 侧接线，
           // 给了绑定也永不触发——「设置里能配、按了没反应」比没有这个选项更糟。
           // 与 globalExternal 在移动端返回空绑定同理。
+          // 手柄绑定（P2）移动端保留：Android 的手柄键经页面 Actions →
+          // 全局 wrapper 的弹窗兜底同样走 Dart 派发，与桌面同一条链。
           case ShortcutScope.dictionaryPopup:
             return ShortcutBindingSet(
               wheelBindings: desktop.wheelBindings,
+              gamepadBindings: desktop.gamepadBindings,
             );
         }
       }(),

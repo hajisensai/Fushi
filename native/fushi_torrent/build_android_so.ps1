@@ -56,26 +56,31 @@ if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
 # vcpkg 的 android toolchain 从 ANDROID_NDK_HOME 找编译器。
 $env:ANDROID_NDK_HOME = $NdkRoot
 
+. (Join-Path $scriptDir "vcpkg_baseline.ps1")
+Assert-VcpkgBaseline -VcpkgRoot $VcpkgRoot -ManifestPath (Join-Path $scriptDir "vcpkg.json")
+
 foreach ($abi in $Abis) {
     $triplet = $tripletByAbi[$abi]
     if ($null -eq $triplet) { throw "unknown ABI: $abi（支持 $($tripletByAbi.Keys -join ', ')）" }
 
-    Write-Host "==> vcpkg install libtorrent:$triplet (overlay: API 24)"
-    # overlay triplet 把依赖钉到 API 24（对齐 app minSdk）：vcpkg 自带 android
-    # triplet 钉 28，boost.asio 会引用 API 28 才有的 aligned_alloc，bridge 按
-    # android-24 链接直接 undefined symbol（详见 vcpkg-triplets/ 内注释）。
-    $overlay = Join-Path $scriptDir "vcpkg-triplets"
-    & $vcpkgExe install "libtorrent:$triplet" "--overlay-triplets=$overlay"
-    if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent:$triplet failed" }
+    # 依赖不再用 classic `vcpkg install` 单独装：vcpkg.json（manifest + overrides）
+    # 把 libtorrent 钉在 2.0.11，cmake configure 时 vcpkg 工具链自动按它装。
+    # BUG-1772：classic 模式的版本由 vcpkg 修订当下的 ports 决定，2026-08 漂到
+    # 2.1 后 Windows DLL 与 Android .so 一起编不出来。
 
     $buildDir = Join-Path $scriptDir "build-android-$abi"
     Write-Host "==> CMake configure ($abi / $triplet)"
     # vcpkg 工具链在前（find_package 解析到 triplet 的静态归档），chainload NDK
     # 工具链拿交叉编译器。ANDROID_PLATFORM 对齐 app minSdkVersion 24。
     # ANDROID_STL=c++_shared 与 app 内 fushidicts 一致（libc++_shared.so 已随包）。
+    # VCPKG_OVERLAY_TRIPLETS 必须给 cmake：manifest 模式下是工具链在装依赖，overlay
+    # 不参与就会静默退回 vcpkg 自带 arm64-android（API 28），即 vcpkg-triplets/ 注释
+    # 里那个 aligned_alloc undefined symbol。
+    $overlay = Join-Path $scriptDir "vcpkg-triplets"
     cmake -G Ninja -B $buildDir -S $scriptDir `
         "-DCMAKE_TOOLCHAIN_FILE=$vcpkgToolchain" `
         "-DVCPKG_TARGET_TRIPLET=$triplet" `
+        "-DVCPKG_OVERLAY_TRIPLETS=$overlay" `
         "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$androidToolchain" `
         "-DANDROID_ABI=$abi" `
         "-DANDROID_PLATFORM=android-24" `

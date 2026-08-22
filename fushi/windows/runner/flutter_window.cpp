@@ -1522,6 +1522,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "render") {
           win->RenderJson(StringFromValue(args, "json", ""));
           result->Success();
+        } else if (method == "gamepadAction") {
+          // 手柄重设计 P5：Dart 侧 GamepadService 独占路由 → host gamepadAction
+          // （词条导航/制卡/发音/滚动，动作名白名单在 window 实现里钉死）。
+          win->DispatchGamepadAction(StringFromValue(args, "action", ""),
+                                     DoubleFromValue(args, "dy", 0.0));
+          result->Success();
         } else if (method == "resize") {
           if (win == gal_lookup_card_window_.get()) {
             win->ResizeOffscreen(IntFromValue(args, "width", 0),

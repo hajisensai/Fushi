@@ -575,6 +575,42 @@
     color: inherit;
 }
 
+/* 「«」读作「来自」：右边那层变形接在左边这层之上，`-て « -いる « -た` 即
+   词典形先接て、再接いる、最后接た。与 Yomitan 同一种读法。分隔符走 ::before
+   而不是插 DOM 节点，选区复制时不会把它一起带走。 */
+.deinflection-tag:not(:first-child)::before {
+    content: '«';
+    margin-right: 4px;
+    margin-left: 2px;
+    opacity: 0.55;
+}
+
+/* 只有带语法说明的标签可点/可 hover（见 popup.js 的 createDeinflectionTag）。 */
+.deinflection-tag.has-description {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+
+/* 词形变化的语法说明浮层（桌面 hover；触屏走 .overlay）。位置由 JS 按锚点算好
+   写进 left/top，这里只管观感。 */
+.grammar-tooltip {
+    display: none;
+    position: fixed;
+    z-index: 728;
+    max-width: 460px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    color: var(--text-color);
+    background: var(--surface-container-high);
+    border: 1px solid var(--outline-variant);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+    pointer-events: none;
+}
+
 .frequency-group {
     display: inline-flex;
     font-size: 11px;

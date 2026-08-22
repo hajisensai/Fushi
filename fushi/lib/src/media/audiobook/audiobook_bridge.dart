@@ -464,9 +464,18 @@ window.__fushiAnnotate = function(chapterHref) {
       );
       return;
     }
+    // BUG-1742：VN 模式把整章正文搬出了 document（只留当前一屏的克隆），
+    // __fushiHighlight 的 document.querySelector 因此几乎必然落空并静默早退——
+    // 非 sasayaki 书（SRT/VTT/LRC 合成书）的自动跟随就是这样彻底失效的。
+    // VN 实现了 highlightSelectorCue（选择器 → 字符偏移 → 翻屏），优先用它；
+    // 分页/连续模式没有这个方法，回落原路径，行为零变化。
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiHighlight!=="undefined")'
-          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);',
+      source: 'if(window.fushiReader&&'
+          'typeof window.fushiReader.highlightSelectorCue==="function"){'
+          'window.fushiReader.highlightSelectorCue('
+          '${jsonEncode(raw)}, $reveal);'
+          '}else if(typeof __fushiHighlight!=="undefined"){'
+          '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled);}',
     );
   }
 

@@ -9,7 +9,8 @@ import 'package:flutter/services.dart'
         PhysicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
-import 'package:fushi/src/shortcuts/input_binding.dart' show ModifierKey;
+import 'package:fushi/src/shortcuts/input_binding.dart'
+    show GamepadButton, ModifierKey;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
@@ -598,4 +599,22 @@ bool keyDownMatchesHoldSpeed(
         physicalKey: event.physicalKey,
       ) ==
       ShortcutAction.videoHoldSpeed;
+}
+
+/// 手柄重设计 P3：浮层面板（字幕列表 / 剧集轨 / 侧栏）打开时**让位给通用焦点导航**
+/// 的按钮集合——D-pad 移焦、A 激活聚焦行（视频页把这些按钮直接交回 GamepadService
+/// 兜底，而不是解析成音量 / seek / 播放暂停）。其余按钮照常解析 video scope
+/// （LB/RB seek、Y 下一句等在面板开着时仍可用），B 经 universal globalBack 走既有
+/// 逐级退出阶梯关面板。
+bool isVideoPanelFocusNavButton(GamepadButton button) {
+  switch (button) {
+    case GamepadButton.dpadUp:
+    case GamepadButton.dpadDown:
+    case GamepadButton.dpadLeft:
+    case GamepadButton.dpadRight:
+    case GamepadButton.a:
+      return true;
+    default:
+      return false;
+  }
 }

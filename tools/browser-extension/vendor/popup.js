@@ -5,6 +5,8 @@
 function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+// 注意：scrollHeight 是**未乘 CSS zoom 的 layout px**。要和宿主几何（host CSS px）同单位，
+// 用下面的 __fushiReportedContentHeight()（BUG-1651 ②）。
 function __fushiScrollHeight(){ var c = __fushiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
 function __fushiSel(){ var r = window.__fushiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
 /* BUG-1078: composedPath() allocates a fresh array on every call and the wheel
@@ -505,6 +507,73 @@ function showDescription(element) {
 
 function closeOverlay() {
     __fushiRootNode().querySelector('.overlay').style.display = 'none';
+}
+
+/* 词形变化标签的语法说明浮层（桌面 hover）。
+   点击走 showDescription 的全屏 overlay——触屏上没有 hover，且窄屏放不下这块浮层。
+   浮层是懒创建的，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
+   这样扩展注入到宿主页面时也不会跑到词典的 Shadow DOM 外面去。 */
+function ensureGrammarTooltip() {
+    const root = __fushiRootNode();
+    let tooltip = root.querySelector('.grammar-tooltip');
+    if (!tooltip) {
+        tooltip = el('div', { className: 'grammar-tooltip' });
+        __fushiOverlayParent().appendChild(tooltip);
+        /* 浮层是 position:fixed 且挂在词条容器之外，唯一的隐藏入口原本只有标签自己的
+           mouseleave。于是：悬停着滚动列表，标签跟着滚走而浮层钉在旧坐标不动；新一次
+           查词把 #entries-container 整个重渲染掉时，被移除节点的 mouseleave 在各引擎
+           行为不一致，浮层可能一直挂着。捕获阶段监听覆盖嵌套滚动容器，只装一次。 */
+        document.addEventListener('scroll', hideGrammarTooltip, true);
+        document.addEventListener('pointerdown', hideGrammarTooltip, true);
+    }
+    return tooltip;
+}
+
+function showGrammarTooltip(element) {
+    /* 只有能 hover 的指针设备才显示。触屏浏览器会在 tap 时补发一次 mouseenter，
+       那样浮层会一直粘在屏幕上没人收（没有后续的 mouseleave）。 */
+    try {
+        if (window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
+    } catch (_) { /* matchMedia 不可用时按可 hover 处理 */ }
+
+    const description = element.getAttribute('data-description');
+    if (!description) return;
+
+    const tooltip = ensureGrammarTooltip();
+    tooltip.textContent = description;
+    tooltip.style.display = 'block';
+    /* 先落地再量：宽度受 CSS max-width 约束，量完才知道该往哪边收。 */
+    tooltip.style.left = '0px';
+    tooltip.style.top = '0px';
+
+    const anchor = element.getBoundingClientRect();
+    const box = tooltip.getBoundingClientRect();
+    const margin = 8;
+
+    let left = anchor.left;
+    const maxLeft = window.innerWidth - box.width - margin;
+    if (left > maxLeft) left = maxLeft;
+    if (left < margin) left = margin;
+
+    let top = anchor.bottom + 6;
+    if (top + box.height > window.innerHeight - margin) {
+        const above = anchor.top - box.height - 6;
+        /* 上方也放不下就维持在下方：宁可截断底部，也不要顶出视口外够不着。 */
+        if (above >= margin) top = above;
+    }
+    /* 「截断底部」必须真的只截底部：不 clamp 的话上下都放不下时 top 停在
+       anchor.bottom + 6，整块浮层落到视口外，用户悬停后什么也看不到——那不是截断，
+       是消失。先按底边收，再保证不越过上边（浮层比视口还高时贴顶、底部截断）。 */
+    top = Math.min(top, window.innerHeight - margin - box.height);
+    if (top < margin) top = margin;
+
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+}
+
+function hideGrammarTooltip() {
+    const tooltip = __fushiRootNode().querySelector('.grammar-tooltip');
+    if (tooltip) tooltip.style.display = 'none';
 }
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L171
@@ -2070,12 +2139,28 @@ function renderTaggedTermPairs(parent, pairs) {
 }
 
 function createDeinflectionTag(tag) {
+    // 语法说明来自 assets/transforms/<lang>.json，随 deinflectionTrace 一起送到。
+    // 文本变体归一的回落标签（colour → color）没有说明，这时不加 has-description：
+    // 不给指针手型、不挂 hover/click，免得点开一个空框。
+    const hasDescription = !!tag.description;
+    if (!hasDescription) {
+        return el('span', {
+            className: 'deinflection-tag',
+            textContent: tag.name
+        });
+    }
     return el('span', {
-        className: 'deinflection-tag',
+        className: 'deinflection-tag has-description',
         textContent: tag.name,
         'data-description': tag.description,
         onclick() {
             showDescription(this);
+        },
+        onmouseenter() {
+            showGrammarTooltip(this);
+        },
+        onmouseleave() {
+            hideGrammarTooltip();
         }
     });
 }
@@ -3018,6 +3103,27 @@ window.fushiPopupMineFirstEntry = async function() {
     return true;
 };
 
+// 手柄（Dart 侧 dictionaryPopup scope 派发，默认 Y）：播放第一个可见词条的发音。
+// 与 fushiPopupMineFirstEntry 同模板：点既有按钮复用其全部音源解析/回退/提示逻辑，
+// 绝不另起第二条音频桥。
+window.fushiPopupPlayFirstAudio = async function() {
+    const audioButton = __fushiRootNode().querySelector('.audio-button');
+    if (!audioButton || audioButton.disabled) {
+        return false;
+    }
+    audioButton.click();
+    return true;
+};
+
+// 手柄右摇杆（Dart 侧连续派发）：滚动弹窗内容 dy CSS 像素（正=向下）。不走 wheel
+// 事件——那条路挂着词条导航绑定判定（__fushiEntryWheelBindings），纯滚动直接动
+// 文档滚动元素即可。
+window.fushiPopupScrollBy = function(dy) {
+    const el = document.scrollingElement || document.documentElement;
+    el.scrollBy(0, dy);
+    return true;
+};
+
 // 查词弹窗的键盘快捷键（用户请求：「点那个加号的动作」要能用键盘触发）。
 // 实际覆盖面：app 内弹窗、浏览器扩展、以及 app 外**已获得焦点的剪贴板面板**。app 外的
 // 瞬态查词覆盖窗带 WS_EX_NOACTIVATE、永不接收键盘焦点（且 runner 无键盘转发），本监听在
@@ -3038,8 +3144,9 @@ const FUSHI_POPUP_KEY_DEFAULT_BINDINGS = {
     mine: [{ key: 'enter', mods: ['ctrl'] }],
     next: [],
     prev: [],
+    audio: [],
 };
-// 本次 keydown 命中哪个弹窗动作：'mine' / 'next' / 'prev' / null。判据与滚轮那套同构：
+// 本次 keydown 命中哪个弹窗动作：'mine' / 'next' / 'prev' / 'audio' / null。判据与滚轮那套同构：
 // 键名归一后相等，且当前按下的修饰键集合与某条绑定**全等**（故 Ctrl+Enter 绝不会被
 // Ctrl+Shift+Enter 误触）。
 function fushiPopupKeyAction(e) {
@@ -3061,6 +3168,7 @@ function fushiPopupKeyAction(e) {
     if (matches(cfg.mine)) return 'mine';
     if (matches(cfg.next)) return 'next';
     if (matches(cfg.prev)) return 'prev';
+    if (matches(cfg.audio)) return 'audio';
     return null;
 }
 // 扩展场景下本监听常驻在**宿主页面**的 document 上（弹窗是注入宿主页的 DOM，不是独立文档），
@@ -3085,6 +3193,8 @@ window.__fushiPopupKeyListener = async function(e) {
     try {
         if (action === 'mine') {
             handled = (await window.fushiPopupMineFirstEntry()) === true;
+        } else if (action === 'audio') {
+            handled = (await window.fushiPopupPlayFirstAudio()) === true;
         } else if (typeof window.fushiFocusDictionaryEntryMove === 'function') {
             // 与 Alt+滚轮同一执行体：只有焦点真的移动了才算接管；单词条 / 已到首尾时返回
             // 'blocked'，这一帧交还给页面（不吞按键）。
@@ -3786,11 +3896,39 @@ function _reportPopupHeight() {
     // relayout，避免 _firePopupRendered→relayout→report→relayout 的死循环。
     try {
         window.flutter_inappwebview.callHandler('popupRendered',
-            __fushiScrollHeight(),
-            window.__fushiRenderToken || 0);
+            __fushiReportedContentHeight(),
+            window.__fushiRenderToken || 0,
+            window.innerHeight || document.documentElement.clientHeight || 0);
     } catch (e) {
         console.error('[popup] popupRendered callHandler failed', e);
     }
+}
+
+// BUG-1651 ②：报给宿主的内容高度必须与 `window.innerHeight` **同单位**（host CSS px）。
+// `__fushiScrollHeight()` 读的是容器 `scrollHeight`——CSS `zoom` 不改它，返回的是**未乘
+// z 的 layout px**；而 `window.innerHeight` 是视口高度，不随元素 zoom 变。宿主
+// （dictionary_popup_layer.dart 的 resolveAutoFitPopupHeight）拿这两个数作差去增减弹窗
+// 外壳高，两者差一个 z 就按 z 倍收错：z>1 收得过狠（内容被裁 / 凭空出滚动条），z<1 收
+// 不干净。默认（界面大小 100% + 词典字号 16）z=1 恰好是恒等变换，所以默认设置下看不出来。
+// 宿主侧 global_lookup_host.js 的 measureContentHeight 用的是同一套换算
+// （Math.ceil(layoutPx * frameContentZoom(record))）。
+//
+// zoom 的落点有两处（同 popupCurrentZoom 的 BUG-688 说明）：in-app 弹窗由
+// popup_settings_injection.dart 写在 document.documentElement 上（popupContentZoom =
+// 界面大小 x 词典字号/16，Ctrl+滚轮还会就地改它，所以真值只能在 JS 侧现读）；扩展浮窗
+// 由 content.js 写在 shadow host 上。读不到或非法一律回落 1（= 不换算）。
+function __fushiPopupContentZoom(){
+    var host = window.__fushiRoot && window.__fushiRoot.host;
+    var raw = (host && host.style && host.style.zoom) ||
+        (document.documentElement && document.documentElement.style &&
+            document.documentElement.style.zoom);
+    var z = parseFloat(raw);
+    return (Number.isFinite(z) && z > 0) ? z : 1;
+}
+// popupRendered 的 args[0]：内容高度，host CSS px。Math.ceil 只防子像素短一格
+// （z=1 时 scrollHeight 本就是整数，换算逐字节等价于换算前）。
+function __fushiReportedContentHeight(){
+    return Math.ceil(__fushiScrollHeight() * __fushiPopupContentZoom());
 }
 
 // 性能（查词时延）：多词条渲染现在**双发**同一 token 的 popupRendered——首词条
@@ -3838,9 +3976,16 @@ function _firePopupRendered(stillRendering) {
 // 单卡时清掉 inline 回落到 CSS grid/block。CSS 规则原样保留作「无 JS 兜底」，故所有现有 grid
 // 守卫测试不受影响。高度变化（<details> 展开/收起、图片异步加载、ruby、字体替换）由挂在每张
 // 卡片上的 ResizeObserver 捕捉重排（不依赖 toggle 事件跨 shadow 边界）；宽度变化走 resize。
-const HAS_NATIVE_MASONRY = (() => {
-    try { return CSS.supports('display', 'grid-lanes'); } catch (e) { return false; }
-})();
+// 曾经这里有个 HAS_NATIVE_MASONRY = CSS.supports('display','grid-lanes')，命中时
+// layoutMasonry() 直接 return「交给 CSS 原生 masonry」。但 CSS 侧的那条分支**从未写过**
+// （全仓 grep `grid-lanes` 只命中这行检测本身），于是它把布局交给了一个不存在的分支。
+//
+// 2026-08 macOS 26 / Safari 26 的 WebKit 开始支持 `display: grid-lanes`，检测转为 true，
+// 弹窗在 macOS/iOS 上静默退化成 `.glossary-section > .category-body` 的**行对齐 grid**：
+// 同一行的词典卡按最高的那张对齐，矮卡（已折叠 / 义项少的词典）下方留出大片空洞。
+//
+// 特性检测只有在「对应实现确实存在」时才能提前返回。CSS 原生分支落地前，masonry 一律
+// 由 JS 铺。守卫测试：`fushi/test/pages/popup_masonry_no_dead_branch_guard_test.dart`。
 let masonryRaf = null;
 let masonryObserver = null;
 
@@ -3893,7 +4038,6 @@ function resetMasonryBody(body) {
 }
 
 function layoutMasonry() {
-    if (HAS_NATIVE_MASONRY) return; // 浏览器原生 masonry 时交给 CSS（未来分支）
     const configured = dictColumns();
     const gap = masonryGap();
     masonryBodies().forEach(body => {
@@ -3953,7 +4097,7 @@ function layoutMasonry() {
 }
 
 function observeMasonryTargets() {
-    if (HAS_NATIVE_MASONRY || !masonrySupported()) return;
+    if (!masonrySupported()) return;
     if (!masonryObserver) {
         masonryObserver = new ResizeObserver(scheduleMasonry);
     }
@@ -3967,7 +4111,7 @@ function observeMasonryTargets() {
 }
 
 function scheduleMasonry() {
-    if (HAS_NATIVE_MASONRY || !masonrySupported() || masonryRaf) return;
+    if (!masonrySupported() || masonryRaf) return;
     masonryRaf = requestAnimationFrame(() => {
         masonryRaf = null;
         layoutMasonry();
@@ -4477,8 +4621,9 @@ window.updatePopupIncremental = function() {
     window.fushiRelayoutDictionaries();
 
     window.flutter_inappwebview.callHandler('popupRendered',
-        __fushiScrollHeight(),
-        window.__fushiRenderToken || 0);
+        __fushiReportedContentHeight(),
+        window.__fushiRenderToken || 0,
+        window.innerHeight || document.documentElement.clientHeight || 0);
 };
 
 

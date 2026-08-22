@@ -433,6 +433,17 @@ extension _ReaderCaret on _ReaderFushiPageState {
       unawaited(_enterCaret());
       return true;
     }
+    // 手柄重设计 P2：排在 caret 路由**之后**、reader/audiobook 解析**之前**。
+    // caret 保留 dpad 四向（方向键移动字级光标去选词，是查词的操作方式本身，不能
+    // 让给词条翻页）；但 X / Y 在 reader+audiobook scope 都有绑定
+    // （audiobookNextSentence / readerToggleChrome），不在这里拦一次，P2 的制卡 /
+    // 发音两个默认绑定在阅读器里永远不可达——GamepadService 的弹窗兜底排在页面
+    // Actions 之后，页面已经消费掉了就永远轮不到。弹窗不可见时
+    // DictionaryPopupGamepadRegistry.current 为 null，直接返回 false，对非查词
+    // 场景零影响。
+    if (tryDictionaryPopupGamepadButton(appModel.shortcutRegistry, button)) {
+      return true;
+    }
     // TODO-700 T8: the bottom bar is excluded from focus traversal, so D-pad
     // Down no longer routes focus into the chrome. It falls through to normal
     // gamepad shortcut resolution below; the bar is operated by touch/mouse.

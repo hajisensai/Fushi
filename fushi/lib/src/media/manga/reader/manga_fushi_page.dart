@@ -46,8 +46,15 @@ import 'package:fushi/src/media/manga/reader/manga_rescan_result_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show InputBinding, ModifierKey, MouseBinding, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        ModifierKey,
+        MouseBinding,
+        activeModifierKeys;
 import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -114,7 +121,7 @@ enum MangaReaderInputAction {
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
 const double kMangaPanStepFraction = 0.15;
 
-enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey }
+enum _MangaReaderInputSource { flutter, nativeWebView, volumeKey, gamepad }
 
 /// Serializes burst page-turn input across asynchronous WebView window loads.
 ///
@@ -348,13 +355,14 @@ class MangaFushiPage extends BaseSourcePage {
   /// 再由 [resolveMangaArrowPageTurn] 按跨页方向校正——两步都在调用侧完成，本函数
   /// 只负责「拿到动作之后，当前上下文该不该执行它」这层门控。
   ///
-  /// [horizontalArrow] = 触发键是否为左/右方向键。它们是**跨页步进**语义，两道
-  /// 门控都不适用：webtoon 的纵向滚动不影响左右翻页；词典弹窗可见时也要「关弹窗
+  /// [crossPageStep] = 触发键是否为**跨页步进**语义（左/右方向键、D-pad 左右与
+  /// 手柄翻页键 RB/LB），两道门控都不适用：webtoon 的纵向滚动不影响跨页步进
+  /// （手柄没有原生滚动路径，webtoon 也用锚点跳页）；词典弹窗可见时也要「关弹窗
   /// 并翻页」（本页与阅读器的关键差异）。其余前进/后退键则要让位——弹窗可见时空格
   /// 归词典自己，webtoon 模式下纵向键归 WebView 原生滚动。
   static MangaReaderInputAction? inputActionForShortcut({
     required ShortcutAction? action,
-    required bool horizontalArrow,
+    required bool crossPageStep,
     required bool dictionaryShown,
     required MangaReadingMode mode,
   }) {
@@ -383,7 +391,7 @@ class MangaFushiPage extends BaseSourcePage {
       _ => null,
     };
     if (pan != null) return pan;
-    if (!horizontalArrow) {
+    if (!crossPageStep) {
       if (dictionaryShown) return null;
       if (mode == MangaReadingMode.webtoon) return null;
     }
@@ -784,13 +792,64 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool get popupVerticalWriting => _popupVerticalWriting;
 
   ReadingTimeTracker? _readingTimeTracker;
-  DateTime _sessionStartTime = DateTime.now();
+
+  /// 本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的 gap 守卫
+  /// tick 经 onDelta 累加（BUG-1052 同款，对齐 PDF）。取代旧的会话起点墙钟字段
+  /// ——旧实现把**整段** `now - 起点` 交给 gap 谓词判一次，而漫画只在退出/失焦
+  /// 才 flush，于是任何超过 120s 的正常阅读会话都被整段判成「非连续窗口」，时长
+  /// 直接丢弃。改成按 tick 累计后守卫仍逐 tick 生效（后台/睡眠照样不计），长会话
+  /// 正常累计。（守卫 manga_stats_dwell_guard_test 钉死旧形态不得回潮。）
+  int _sessionReadingMs = 0;
 
   /// 本次会话尚未落库的 OCR 字符数与页数，以及已记账过的页（同一页只计一次，来回
-  /// 翻页刷不出数）。字数口径与 EPUB 同源，见 [mangaAccumulateReadingStats]。
+  /// 翻页刷不出数；恢复存档时把恢复位置之前的页也预置进来，见
+  /// [_seedCountedPagesFromRestore]）。字数口径与 EPUB 同源，见
+  /// [mangaAccumulateReadingStats]。
   int _sessionCharsRead = 0;
   int _sessionPagesRead = 0;
   final Set<int> _sessionCountedPages = <int>{};
+
+  /// BUG-1761 停留门：页面成为当前页并停留 ≥ [_kPageDwellThreshold] 才入账。
+  /// 「到达即计」会把快速翻过/扫过的页全部记成已读——来回翻一圈就是整卷虚增；
+  /// 停留是「真的在读」的最低判据。
+  Timer? _pageDwellTimer;
+  int _pageDwellKey = -1;
+
+  /// 取自跨域共享的 [kArrivalDwellMs]：与视频的 cue 停留门是同一条产品判据
+  /// （到达 ≠ 看过），只应有一个数。
+  static const Duration _kPageDwellThreshold =
+      Duration(milliseconds: kArrivalDwellMs);
+
+  /// 当前页（spread 模式按跨页、webtoon 按页）起一个 [_kPageDwellThreshold] 定时，
+  /// 到期才真正入账；到期前位置变了就换目标重计时（旧目标从未入账）。
+  /// webtoon 页内滚动会连续触发 [_recordProgress]：同一页**不重置**计时，否则
+  /// 慢速连续滚读永远攒不满停留门。
+  void _armPageDwellCount() {
+    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    final int key = isWebtoon ? _currentPage : _currentSpread;
+    if (_pageDwellTimer != null && key == _pageDwellKey) return;
+    _pageDwellKey = key;
+    _pageDwellTimer?.cancel();
+    _pageDwellTimer = Timer(_kPageDwellThreshold, () {
+      _pageDwellTimer = null;
+      if (!mounted) return;
+      _countVisiblePages();
+    });
+  }
+
+  /// BUG-1761：恢复存档时把 0..[restoredPage]（含）预置为「已计过」。
+  ///
+  /// [_sessionCountedPages] 只活在一次页面 State 里：每次重开这卷都是空集，恢复
+  /// 位置附近以及本次会话回翻经过的旧页全部重算一遍，而 DB 侧按 (title, dateKey)
+  /// 纯累加、没有上限——170 页的卷被记成读了 400 页。与 EPUB 的
+  /// `sessionWatermarkAfterRestore`（TODO-147/BUG-211）同款语义：续读只计新推进的
+  /// 页；全新打开（无存档）不预置，首页正常入账；故意从头重读不再计页/字——
+  /// 「每页只在第一次读到时计一次」正是页数统计的本意。
+  void _seedCountedPagesFromRestore(int restoredPage) {
+    for (int index = 0; index <= restoredPage; index++) {
+      _sessionCountedPages.add(index);
+    }
+  }
 
   // 密集 OCR 命中层只保留当前 spread；图片页本身全部留在稳定的 lazy strip。
   static const int _kWindowRadius = 0;
@@ -881,6 +940,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();
     _progressDebounce?.cancel();
+    _pageDwellTimer?.cancel();
     _onlineGeometryPersistDebounce?.cancel();
     final MangaZoomPreferenceDebouncer? zoomDebouncer =
         _zoomPreferenceDebouncer;
@@ -915,8 +975,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       unawaited(_flushPosition());
       _readingTimeTracker?.stop();
     } else if (state == AppLifecycleState.resumed) {
-      // BUG-892 同款纪律：回前台重锚会话起点，否则整段后台时长被计入。
-      _sessionStartTime = DateTime.now();
+      // BUG-892 同款纪律：tracker 的 start() 自带重锚（_tickStart = now），后台
+      // 时长不会被计入；会话时长经 onDelta 与它共用同一个守卫时钟（BUG-1761）。
       _readingTimeTracker?.start();
       // OS 层焦点丢失后 Flutter 不保证归还到原节点：切窗回来若不收回，翻页键全死。
       _focusOwnership.reclaim(FocusReclaimCause.appResumed);
@@ -1079,9 +1139,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     }
 
-    _readingTimeTracker ??= ReadingTimeTracker(db, format: BookFormat.manga)
-      ..start();
-    _sessionStartTime = DateTime.now();
+    _readingTimeTracker ??= ReadingTimeTracker(
+      db,
+      format: BookFormat.manga,
+      onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
+    )..start();
+    // BUG-1761：续读不重复计——恢复位置之前（含恢复页）的页上个会话已入账。
+    if (saved != null) {
+      _seedCountedPagesFromRestore(restoredPage);
+    }
 
     final int restoredSpread =
         MangaFushiPage.restoreSpreadFromProgress(spreads, restoredPage);
@@ -1107,8 +1173,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _lastSavedFraction = saved != null ? restoredFraction : -1;
     });
     _pageNotifier.value = _currentPage;
-    // 首屏页也要进字数/页数账：开书直接停在恢复位置时不会再有 _recordProgress。
-    _countVisiblePages();
+    // 首屏页也要走停留门：开书直接停在恢复位置时不会再有 _recordProgress，但
+    // 停够 [_kPageDwellThreshold] 同样应入账（存档续读时该页已被预置，计 0）。
+    _armPageDwellCount();
     // A cancelled/background task intentionally does not replace manga.json,
     // but every atomic page cache is already safe to use. Restore those pages
     // after the first paint so opening a large book stays fast and both local
@@ -1321,10 +1388,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     restoredPage =
         restoredPage.clamp(0, math.max(0, payload.images.length - 1));
 
-    _readingTimeTracker ??=
-        ReadingTimeTracker(appModel.database, format: BookFormat.manga)
-          ..start();
-    _sessionStartTime = DateTime.now();
+    _readingTimeTracker ??= ReadingTimeTracker(
+      appModel.database,
+      format: BookFormat.manga,
+      onDelta: (int deltaMs) => _sessionReadingMs += deltaMs,
+    )..start();
+    // BUG-1761：只有存档续读预置已计页；initialPage 显式跳页不预置（是否读过未知，
+    // 宁可少算——反正跳过去的页没有 1.5s 停留也不会入账）。
+    if (saved != null) {
+      _seedCountedPagesFromRestore(restoredPage);
+    }
     final MangaReaderSession? previousSession = _pageSession;
     _pageSession = pageSession;
     _localPageIndices = <String, int>{
@@ -1350,7 +1423,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _lastSavedFraction = saved != null ? restoredFraction : -1;
     });
     _pageNotifier.value = _currentPage;
-    _countVisiblePages();
+    _armPageDwellCount();
     unawaited(_primeOnlinePages(restoredPage));
     unawaited(_recoverIncrementalOcrCache(directory.path, payload));
   }
@@ -2160,11 +2233,56 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         bound;
     return MangaFushiPage.inputActionForShortcut(
       action: corrected,
-      horizontalArrow: key == LogicalKeyboardKey.arrowLeft ||
+      crossPageStep: key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight,
       dictionaryShown: isDictionaryShown,
       mode: _mode,
     );
+  }
+
+  /// 手柄按钮 → 本页输入动作（桌面轮询 [GamepadButtonIntent] 与 Android 原生
+  /// gameButton* 键事件汇合到同一入口，与阅读器 `_handleGamepadButton` 同构）。
+  ///
+  /// 解析阶梯与键盘路径一致：manga scope 优先，未命中兜底 universal（「返回上一
+  /// 级」，默认手柄 B）——所以手柄 B 走的是与 Esc 相同的两级阶梯（弹窗可见先关
+  /// 弹窗、没弹窗才退出漫画），而不是 GamepadService 的全局 maybePop 兜底直接退页。
+  /// D-pad 左/右经 [resolveMangaDpadPageTurn] 按跨页方向（日漫默认 rtl）校正。
+  ///
+  /// 手柄翻页键一律**跨页步进**语义（crossPageStep: true）：手柄没有原生滚动路径，
+  /// webtoon 模式下也该用锚点跳页；弹窗可见时关弹窗并翻页。
+  MangaReaderInputAction? _resolveMangaGamepadAction(GamepadButton button) {
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    final ShortcutAction? bound = registry.resolveGamepad(
+          button,
+          scope: ShortcutScope.manga,
+        ) ??
+        registry.resolveGamepad(
+          button,
+          scope: ShortcutScope.universal,
+        );
+    final ShortcutAction? corrected = resolveMangaDpadPageTurn(
+          button: button,
+          rtl: _spreadDirection == 'rtl',
+          boundAction: bound,
+        ) ??
+        bound;
+    return MangaFushiPage.inputActionForShortcut(
+      action: corrected,
+      crossPageStep: true,
+      dictionaryShown: isDictionaryShown,
+      mode: _mode,
+    );
+  }
+
+  /// 消费一枚手柄按钮；false 交回 GamepadService 的兜底（A=激活、dpad=移焦）。
+  bool _handleGamepadButton(GamepadButton button) {
+    final MangaReaderInputAction? action = _resolveMangaGamepadAction(button);
+    if (action == null) return false;
+    _executeReaderInputAction(
+      action,
+      source: _MangaReaderInputSource.gamepad,
+    );
+    return true;
   }
 
   void _handleNativeNavigationKey(String key) {
@@ -2941,7 +3059,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     _currentPage = page;
     _pageNotifier.value = page;
-    _countVisiblePages();
+    _armPageDwellCount();
     // 600ms debounce：连续翻页/滚动只落最后一次。
     _progressDebounce?.cancel();
     _progressDebounce = Timer(const Duration(milliseconds: 600), () {
@@ -2951,6 +3069,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 把当前可见页记进本会话的字数/页数账（每页只记一次）。
   ///
+  /// 唯一调用方是 [_armPageDwellCount] 的停留定时器：页面停留 ≥
+  /// [_kPageDwellThreshold] 才走到这里，「到达即计」被停留门挡在外面（BUG-1761）。
   /// spread 模式当前 entry 的两页都算看过；webtoon 整本单文档竖滚，只有真正成为
   /// 「当前页」的那页算读过（快速滚过没停留的页不计，宁可少算不虚高）。
   void _countVisiblePages() {
@@ -3019,23 +3139,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 落本次会话的阅读时长 + OCR 字数 + 页数 + 首页「学习活动」事件。
   ///
-  /// 与 PDF 同款纪律、刻意不复用 EPUB 的实现：EPUB 那条以 `charsRead <= 0` 早退，
-  /// 漫画只有时长没字数的那些段会整段被丢。这里仍以**时长**为触发条件。
+  /// 与 PDF 同款纪律（BUG-1052）、刻意不复用 EPUB 的实现：EPUB 那条以
+  /// `charsRead <= 0` 早退，漫画只有时长没字数的那些段会整段被丢。
+  ///
+  /// 时长 = [_readingTimeTracker] 逐 tick 确认的累计增量（onDelta）。BUG-892 的
+  /// `isContinuousReadingGap` 守卫仍然生效，但作用在**每个 tick 窗口**上（tracker
+  /// 内部），不再拿整段会话去过一次守卫——旧写法把 `now - _sessionStartTime` 整段
+  /// 交给守卫判一次，而漫画只在退出/失焦才 flush，任何 >120s 的正常阅读会话都被
+  /// 整段判成非连续窗口，时长直接丢弃（BUG-1761 附带修复）。
   ///
   /// v60 起漫画同时落两个独立量纲：`charsRead` = 已读页的 OCR 实义字符数（口径与
   /// EPUB 同源），`pagesRead` = 已读页数。页数仍然绝不塞进 charsRead——那会污染
   /// 字数口径与阅读速度；两者分列，统计页分别展示。
   Future<void> _flushReadingStats() async {
+    // 先结算「上一次 tick 到现在」这段未满一个 tick 的窗口（不停表）。
+    _readingTimeTracker?.sampleNow();
     final EpubBookRow? row = _bookRow;
     if (row == null) return;
     final DateTime now = DateTime.now();
-    final int elapsedMs = now.difference(_sessionStartTime).inMilliseconds;
-    _sessionStartTime = now;
-    if (elapsedMs < 1000) return;
-    if (!isContinuousReadingGap(
-        now.subtract(Duration(milliseconds: elapsedMs)), now)) {
+    final int elapsedMs = _sessionReadingMs;
+    // 太短且无内容账的段不落库（生命周期抖动刷屏）；未达阈值时保留累计器，留到
+    // 下次 flush 一并计入。字数/页数与时长不同门：最后一段哪怕 <1s 也不能把已
+    // 停留入账的页丢掉（dispose 后没有下一次 flush 了）。
+    if (elapsedMs < 1000 && _sessionCharsRead <= 0 && _sessionPagesRead <= 0) {
       return;
     }
+    _sessionReadingMs = 0;
     // 未落库的字数/页数先取走再清零：落库失败时不重复计（下一段仍会记新翻的页），
     // 也不会因异常把同一批重复写进 DB。
     final int charsRead = _sessionCharsRead;
@@ -3246,43 +3375,56 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // 滚动的子树。
         // 键盘兜底必须包住正文、chrome 和词典弹层。旧结构只包正文 WebView，
         // 词典 WebView 获得焦点后变成 sibling，左右键/Escape 不再经过本处理器。
-        body: Focus(
-          focusNode: _focusNode,
-          autofocus: true,
-          onKeyEvent: _handleReaderKey,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              Positioned.fill(child: _buildBody()),
-              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
-              // WebView 持焦后会吞掉翻页键。
-              Positioned.fill(
-                key: const ValueKey<String>('manga_dictionary_host'),
-                child: buildDictionary(),
-              ),
-              if (_bookRow != null && !_loadFailed)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  child: SafeArea(
-                    child: IconButton(
-                      key: const ValueKey<String>('manga_reader_back_button'),
-                      tooltip:
-                          MaterialLocalizations.of(context).backButtonTooltip,
-                      color: Colors.white,
-                      icon: const Icon(Icons.arrow_back_ios_new),
-                      onPressed: () => Navigator.of(context).maybePop(),
+        //
+        // 手柄同理：桌面轮询路径把 GamepadButtonIntent 派给 primaryFocus 所在
+        // 子树的 Actions，Android 的 gameButton* 键事件经全局 wrapper 转成同一
+        // Intent——Actions 必须是正文 WebView 与词典弹层的共同祖先，词典 WebView
+        // 持焦时手柄键才仍经过本页（先关弹窗再退页的两级阶梯，而非全局 maybePop）。
+        body: Actions(
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+              onInvoke: (GamepadButtonIntent intent) =>
+                  _handleGamepadButton(intent.button),
+            ),
+          },
+          child: Focus(
+            focusNode: _focusNode,
+            autofocus: true,
+            onKeyEvent: _handleReaderKey,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Positioned.fill(child: _buildBody()),
+                // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+                // WebView 持焦后会吞掉翻页键。
+                Positioned.fill(
+                  key: const ValueKey<String>('manga_dictionary_host'),
+                  child: buildDictionary(),
+                ),
+                if (_bookRow != null && !_loadFailed)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: SafeArea(
+                      child: IconButton(
+                        key: const ValueKey<String>('manga_reader_back_button'),
+                        tooltip:
+                            MaterialLocalizations.of(context).backButtonTooltip,
+                        color: Colors.white,
+                        icon: const Icon(Icons.arrow_back_ios_new),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
                     ),
                   ),
-                ),
-              // 顶部 chrome：页码指示 + 阅读模式切换。
-              if (_bookRow != null && !_loadFailed)
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: SafeArea(child: _buildTopChrome()),
-                ),
-            ],
+                // 顶部 chrome：页码指示 + 阅读模式切换。
+                if (_bookRow != null && !_loadFailed)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: SafeArea(child: _buildTopChrome()),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

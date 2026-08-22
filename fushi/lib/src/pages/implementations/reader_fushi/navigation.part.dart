@@ -178,6 +178,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         charOffset: _initialCharOffset,
       ),
     );
+    // BUG-1762：恢复落定也是一次水位重锚——速度封顶的时间窗从这里重新起算。
+    _lastWatermarkAdvanceAt = DateTime.now();
+    // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+    _readChargeCreditMilliChars = 0;
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
     // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0
@@ -1015,10 +1019,24 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     _adoptLiveProgressAsRestoreAnchor(progress, charOffset);
     final int absoluteChars = _absoluteCharPosition(progress);
     // TODO-147 / BUG-211：按 high-water mark 增量计数，避免往返翻页重复累计。
-    final ReadProgressResult delta = accumulateSessionChars(
+    // BUG-1762：叠加阅读速度封顶——到达≠读过。封顶是**令牌桶**：额度按流逝时间累积、
+    // 跨次结转，计入时扣减。持续速率仍被 kMaxReadCharsPerSecond 卡死，但不惩罚上报
+    // 碎片化（连续模式一次甩动会被 50ms 节流拆成 5~8 次推进，按「距上次推进的时间」
+    // 收费会让后面几次各自只分到几毫秒的额度，正常阅读被砍掉八成）。
+    // 计时基准每次采样都推进；桶容量按 kMaxReadingGap 折算——挂机不攒无限额度。
+    final DateTime nowForChars = DateTime.now();
+    final int sinceSampleMs =
+        nowForChars.difference(_lastWatermarkAdvanceAt).inMilliseconds;
+    final int gapCapMs = kMaxReadingGap.inMilliseconds;
+    final ReadChargeResult delta = accumulateSessionCharsCapped(
       absoluteChars: absoluteChars,
       highWaterMark: _sessionMaxAbsoluteChars,
+      elapsedMs: sinceSampleMs > gapCapMs ? gapCapMs : sinceSampleMs,
+      creditMilliChars: _readChargeCreditMilliChars,
+      maxCreditMilliChars: gapCapMs * kMaxReadCharsPerSecond,
     );
+    _lastWatermarkAdvanceAt = nowForChars;
+    _readChargeCreditMilliChars = delta.creditMilliChars;
     _sessionCharsRead += delta.charsAdded;
     _sessionMaxAbsoluteChars = delta.highWaterMark;
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
@@ -1230,6 +1248,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       await appModel.database
           .markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
     }
+    if (!kMediaTrackingEnabled) return;
     await appModel.mediaTrackingService.recordBookProgress(
       bookKey: widget.bookKey,
       completedChapterCount: section + (progress >= 0.999 ? 1 : 0),
@@ -1358,6 +1377,18 @@ extension _ReaderNavigation on _ReaderFushiPageState {
 
   Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
+
+    // BUG-1762：进度条拖动是跳转不是阅读——先把统计水位抬到落点（不计数），否则
+    // 同章分支落点后的首个 _refreshProgress 会把「旧位置 → 落点」整段前缀计成本次
+    // 读到的新字数（跨章分支经导航链播种，同章分支此前完全裸奔）。往回拖低于水位
+    // 天然 no-op（只升不降）。语义同 _handleExplicitCueJump。
+    _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
+      _sessionMaxAbsoluteChars,
+      globalOffset,
+    );
+    _lastWatermarkAdvanceAt = DateTime.now();
+    // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+    _readChargeCreditMilliChars = 0;
 
     final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
       _chapterCumulativeChars,

@@ -46,6 +46,8 @@ import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+    show kMediaTrackingEnabled;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
@@ -76,6 +78,7 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/pointer_seek.dart';
+import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -104,7 +107,11 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
 import 'package:fushi/src/shortcuts/shortcut_registry.dart'
     show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
+    show
+        GamepadButtonIntent,
+        GamepadLongPressIntent,
+        focusedEditableText,
+        tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
@@ -380,6 +387,67 @@ ReadProgressResult accumulateSessionChars({
   return (charsAdded: 0, highWaterMark: highWaterMark);
 }
 
+/// BUG-1762：一秒真实阅读允许计入的最大字数（速度封顶）。
+///
+/// 2400 字/分是极快的日语阅读节奏，正常精读远够不到；按住翻页键连翻时相邻两次
+/// 水位推进只隔几百毫秒，每步就只计几十字——「到达即计」的虚增被物理上限杀掉。
+const int kMaxReadCharsPerSecond = 40;
+
+/// 速度封顶的结算结果：在 [ReadProgressResult] 之上带回剩余额度（千分之一字为单位）。
+typedef ReadChargeResult = ({
+  int charsAdded,
+  int highWaterMark,
+  int creditMilliChars,
+});
+
+/// BUG-1762：带阅读速度封顶的 session 字数推进（纯函数，**令牌桶**）。
+///
+/// [accumulateSessionChars] 的 high-water 语义只挡「重复计入」（往返回读），完全
+/// 不挡「首次快速掠过」：按住翻页键扫过的每一页都在到达瞬间全额入账（产品裁定：
+/// 到达≠读过，与漫画 BUG-1761 的停留门、视频 BUG-1763 的播放停留门同一条规则）。
+///
+/// 为什么是令牌桶而不是「本次可计入 ≤ 距上次推进的时间 × 速率」：那种写法按**上报
+/// 节奏**收费。连续模式的进度上报是 50ms 节流 + coalesce 的边滑边回传，一次甩动滚过
+/// 一屏会被拆成 5~8 次推进；第一次把攒下的额度一次吃光（且余量不回补），后面几次各自
+/// 只隔几十毫秒 ⇒ 每次只准计几个字。实测一屏 400 字读 60 秒、再甩过下一屏，只能计约
+/// 80 字，正常阅读被砍掉八成。整数除法还让 <25ms 的窗口 cap 直接为 0。
+///
+/// 令牌桶把「物理上限」和「上报粒度」解耦：额度按 [elapsedMs] × 速率累积、**跨次结转**，
+/// 计入时扣减。持续速率仍被 [kMaxReadCharsPerSecond] 卡死，但上报被拆成几份不再有惩罚。
+/// 桶容量由调用方经 [maxCreditMilliChars] 给出（按 `kMaxReadingGap` 折算——挂机不攒
+/// 无限额度）。超出额度的部分仍随水位**静默抬走**、不回补，回来重读也不再计。
+ReadChargeResult accumulateSessionCharsCapped({
+  required int absoluteChars,
+  required int highWaterMark,
+  required int elapsedMs,
+  required int creditMilliChars,
+  required int maxCreditMilliChars,
+}) {
+  final int clampedElapsedMs = elapsedMs < 0 ? 0 : elapsedMs;
+  int credit = creditMilliChars < 0 ? 0 : creditMilliChars;
+  credit += clampedElapsedMs * kMaxReadCharsPerSecond;
+  if (credit > maxCreditMilliChars) credit = maxCreditMilliChars;
+  final ReadProgressResult raw = accumulateSessionChars(
+    absoluteChars: absoluteChars,
+    highWaterMark: highWaterMark,
+  );
+  if (raw.charsAdded <= 0) {
+    return (
+      charsAdded: 0,
+      highWaterMark: raw.highWaterMark,
+      creditMilliChars: credit,
+    );
+  }
+  final int affordable = credit ~/ 1000;
+  final int charsAdded =
+      raw.charsAdded < affordable ? raw.charsAdded : affordable;
+  return (
+    charsAdded: charsAdded,
+    highWaterMark: raw.highWaterMark,
+    creditMilliChars: credit - charsAdded * 1000,
+  );
+}
+
 /// TODO-1192: 章节位置恢复完成后，本 session「历史最高已读绝对字符位置」水位应取
 /// 的值——只升不降：`max(currentWatermark, restoreAbsolute)`。
 ///
@@ -504,8 +572,9 @@ bool chapterTurnCoolingDown({
 /// `_onChapterLoadComplete` 的 spread 守卫（BUG-1280 ③）把整份正文引擎挡在门外，
 /// 而滚轮 / 横扫 / 键桥全在那份引擎里 ⇒ 进了双页页面滚轮和翻页键一起失效。三条通道
 /// 都直连**既有** Dart handler，Dart 侧不新增翻页语义：
-/// * `wheel` → `onWheelPaginate`（与正文 `_handlePagedWheelTick` 逐字同款：主轴取
-///   绝对值更大的那个，`delta > 0` = forward）；
+/// * `wheel` → `onWheelPaginate`（直接拼 [kPagedWheelGestureHelperJs]，与正文引擎
+///   注入的是**同一份**常量：主轴取绝对值更大的那个 + 抖动余量，`delta > 0` =
+///   forward，并回传 trackpad / mouse 供 Dart 侧的手势闸门分流）；
 /// * 单指横扫 → `onSwipe`（与正文 `touchend` 分支同款判据：横向分量占优，且位移过
 ///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ 900px/s」，`dx < 0`
 ///   = `'left'`）。阈值由调用方从 [ReaderSettings] 取同一真值传入，不在此另立默认；
@@ -562,17 +631,15 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
   });
   // BUG-1426：翻页输入。正文引擎（滚轮 / 横扫 / 键桥都在里面）对 spread 文档是
   // 被守卫挡住的，本文档必须自带，否则进了双页页面滚轮和翻页键一起没反应。
-  // 滚轮：与正文 _handlePagedWheelTick 逐字同款语义（主轴取绝对值更大的那个，
-  // delta > 0 = forward），直送既有 onWheelPaginate handler——节流 / 跨章冷却 /
+  // 滚轮：直接拼 [kPagedWheelGestureHelperJs]——正文引擎注入的就是同一个常量，
+  // 「逐字同款」由此成为**结构事实**而不再是一句注释承诺。节流 / 跨章冷却 /
   // 虚拟页翻页全在 Dart 侧那一份，这里不重复实现。
+  //
+  // BUG-1745：改动前这里是手抄的第二份实现（旧的「轴」判据、只传 2 个参数），
+  // 于是触摸板聚合闸门只修好了正文侧，双页模式上下滑一次照样翻 3 页。
+$kPagedWheelGestureHelperJs
   document.addEventListener('wheel', function(e){
-    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-    var delta = horizontal ? e.deltaX : e.deltaY;
-    if (delta === 0) return;
-    e.preventDefault();
-    window.flutter_inappwebview.callHandler('onWheelPaginate',
-      delta > 0 ? 'forward' : 'backward',
-      horizontal ? 'horizontal' : 'vertical');
+    _handlePagedWheelTick(e);
   }, {passive: false});
   // 单指横扫：判据与阈值同正文 touchend 分支（横向分量占优 + 距离/速度二选一），
   // 方向约定同样是 dx < 0 → 'left'，直送既有 onSwipe handler（那里按书写方向和
@@ -1450,6 +1517,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // flush 起新 session 时由调用方重置到当前位置。
   int _sessionMaxAbsoluteChars = 0;
 
+  /// BUG-1762：速度封顶令牌桶的计时基准 —— 上一次**采样**的时刻（不是上一次水位
+  /// 推进）。每次采样都推进它并按流逝时间给桶充值，所以额度是连续累积的，与进度
+  /// 上报被拆成几份无关（连续模式一次甩动会拆成 5~8 次上报，按「上次推进」计时会
+  /// 让后面几次各自只隔几十毫秒、几乎分不到额度）。
+  DateTime _lastWatermarkAdvanceAt = DateTime.now();
+
+  /// BUG-1762：速度封顶的剩余额度（千分之一字）。跨次结转，容量按 `kMaxReadingGap`
+  /// 折算 —— 挂机不攒无限额度，但正常阅读攒下的额度不会被第一个碎片一次吃光。
+  int _readChargeCreditMilliChars = 0;
+
   /// BUG-1052：本 session 尚未落库的阅读时长（ms），由 [_readingTimeTracker] 的
   /// gap 守卫 tick 累加（见 `ReadingTimeTracker.onDelta`）。
   ///
@@ -1844,8 +1921,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// BUG-1343：macOS 的 NSWindow 全局启用了透明标题栏 + full-size content，而默认 MD3 根壳
   /// 不挂 MacosWindow/ToolBar。阅读器需自行保留一条可拖拽标题栏，否则原生 WebView
   /// 吞满顶边后窗口没有稳定抓手。其它平台严格为 0。
+  ///
+  /// BUG-1744：原生全屏下这条带子必须归零。全屏时既没有标题栏也没有交通灯，窗口
+  /// 也不能被拖动——留着它就是一条纯浪费的不透明横带（用户报的「顶部横带」），
+  /// 还连带把正文整体下压 28pt。这里是单一真相源：[_readerTopOffset] /
+  /// [popupTopReserve] / `independentDocumentInsets` / 顶部进度条全部读它。
   double get _macosWindowTitlebarInset =>
-      Platform.isMacOS ? kMacTitleBarHeight : 0;
+      Platform.isMacOS && !_macosFullscreen ? kMacTitleBarHeight : 0;
+
+  /// macOS 原生全屏态。非 macOS 恒为 false。
+  bool _macosFullscreen = false;
 
   double get _readerTopOffset =>
       _stableTopInset + _macosWindowTitlebarInset + _topProgressReserve;
@@ -1882,6 +1967,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     WidgetsBinding.instance.addObserver(this);
     _exitFlushCallback =
         ExitFlushRegistry.instance.register(_flushAllForProcessExit);
+    // BUG-1744：macOS 全屏进出必须重算顶部让位并把新 inset 回喂给 WebView。
+    // didChangeDependencies 只比较 viewPadding，而桌面全屏切换通常不改
+    // viewPadding（两边都是 0），所以那条路径永远不会触发。
+    _macosFullscreen = MacosFullscreenState.instance.isFullscreen.value;
+    MacosFullscreenState.instance.isFullscreen
+        .addListener(_onMacosFullscreenChanged);
+    unawaited(MacosFullscreenState.instance.ensureRegistered());
     // The inset reading-content focus ring only paints in traditional
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
@@ -2229,6 +2321,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 未注入的书由此补齐，后续 spread 重建/预取不再逐章解析）。
       book.setChapterCharCountHints(counts);
       _sessionMaxAbsoluteChars = _absoluteCharPosition(_lastProgressValue);
+      _lastWatermarkAdvanceAt = DateTime.now();
+      // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+      _readChargeCreditMilliChars = 0;
       // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
       // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
       unawaited(_persistRecomputedCharCounts(counts));
@@ -2386,6 +2481,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
     _failNavigation();
+    MacosFullscreenState.instance.isFullscreen
+        .removeListener(_onMacosFullscreenChanged);
     assert(() {
       // TODO-2603：页面走了就释放钩子所有权，下一个阅读器才能装（无条件清，与旧行为
       // 逐字一致——钩子本来就是无条件清的，这里只多清一个所有者字段）。
@@ -2693,6 +2790,19 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _armResizeRepaginateDebounce();
   }
 
+  /// BUG-1744：全屏翻转 → 重算 [_macosWindowTitlebarInset] → 回喂 WebView 几何。
+  ///
+  /// 只 setState 是不够的：JS 侧的 `--chrome-top-inset` 由 [_applyChromeInsets]
+  /// 单独推送，不跟着 Flutter 重建走。漏了它，正文 padding-top 会停在旧的 28px
+  /// 上（全屏后顶部仍留一条空白带，正是要修的症状）。
+  void _onMacosFullscreenChanged() {
+    if (!mounted) return;
+    final bool next = MacosFullscreenState.instance.isFullscreen.value;
+    if (next == _macosFullscreen) return;
+    setState(() => _macosFullscreen = next);
+    unawaited(_applyChromeInsets());
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -2861,7 +2971,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           ),
                         ),
                       ),
-                    if (Platform.isMacOS)
+                    // BUG-1744：全屏时窗口不可拖动、也没有交通灯要让位——这条
+                    // 不透明带在全屏下纯粹是一条顶部横带，必须整体不挂。
+                    if (Platform.isMacOS && !_macosFullscreen)
                       Positioned(
                         top: 0,
                         left: 0,

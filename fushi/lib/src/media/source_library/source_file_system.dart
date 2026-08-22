@@ -25,6 +25,8 @@ import 'package:flutter/foundation.dart';
 import 'package:ftpconnect/ftpconnect.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/video/external_video.dart'
+    show sourceEntryBasename;
 import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 来源文件系统列目录返回的单个条目（文件或子目录）。
@@ -483,12 +485,20 @@ class NetworkSourceFileSystem implements SourceFileSystem {
           ? url.substring(0, url.length - 1)
           : url;
 
-  /// 从完整 URL 取解码后的末段文件名（PROPFIND href 可能是百分号编码的）。
+  /// 从远端路径取末段文件名，**不做解码**。
+  ///
+  /// 这里的入参是 [SourceFileEntry.path]，它已经是解码态了：WebDAV 的 PROPFIND
+  /// href 在 `webdav_ops.dart` 里就 `Uri.decodeFull` 过，SFTP/FTP 路径本就不是
+  /// 百分号编码。原实现走 `Uri.parse(url).pathSegments`，而 `pathSegments` 会对
+  /// 每段再做一次百分号解码 —— 于是页图真名含 `%`（`50% off.jpg`）时，这里在
+  /// `copyToLocal` 派生本地文件名的当口直接抛 `ArgumentError: Invalid URL
+  /// encoding`，整卷镜像失败；真名是 `p%20a.jpg` 时则被解成 `p a.jpg`，落地文件名
+  /// 与 mokuro 的 img_path 对不上。与 `sourceEntryBasename` 同口径。
   static String _urlBasename(String url) {
-    final Uri u = Uri.parse(url);
-    final List<String> segs =
-        u.pathSegments.where((String s) => s.isNotEmpty).toList();
-    return segs.isEmpty ? _remoteBasename(url) : segs.last;
+    // 与来源库其它取名点共用同一个实现（`sourceEntryBasename`），不再各写一份
+    // ——「远端路径末段」只该有一个答案。
+    final String last = sourceEntryBasename(_stripTrailingSlash(url));
+    return last.isEmpty ? _remoteBasename(url) : last;
   }
 
   Future<List<SourceFileEntry>> _listDav(

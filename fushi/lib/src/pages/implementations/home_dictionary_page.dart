@@ -38,6 +38,18 @@ abstract class HomeDictionarySearchDebug {
   /// 以便测试 await 失败路径，避免依赖 UI 文本输入的异步链。[writeHistory] 默认
   /// false 以隔离历史写入 / autoRead 等副作用，只验证查词状态机。
   Future<void> debugSearch(String term, {bool writeHistory});
+
+  /// 直接走 HomeDictionaryPage 的生产 `_pushNestedPopup` 路径打开 app 内查词浮层。
+  Future<int> debugOpenPopup(String term);
+
+  /// 当前顶层浮层按 DOM 测量得到的自适应总高；尚未测量/无层时为 null。
+  double? get debugTopPopupAutoFitHeight;
+
+  /// 在当前顶层浮层 WebView 内执行验收脚本（测试功能按钮与 DOM 状态）。
+  Future<dynamic> debugEvaluateTopPopup(String source);
+
+  /// 关闭整条浮层栈，等价于用户从顶层关闭。
+  void debugClosePopup();
 }
 
 /// The body content for the Dictionary tab in the main menu.
@@ -793,6 +805,32 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _lastDispatchedSearch = null;
     _search(term, writeHistory: writeHistory);
     return _lastDispatchedSearch ?? Future<void>.value();
+  }
+
+  @override
+  Future<int> debugOpenPopup(String term) => _pushNestedPopup(
+        term,
+        const Rect.fromLTWH(180, 180, 24, 24),
+        reuseWarmSlot: true,
+      );
+
+  @override
+  double? get debugTopPopupAutoFitHeight {
+    final int index = _popup.lastVisibleIndex;
+    return index < 0 ? null : _popup.entries[index].autoFitHeight;
+  }
+
+  @override
+  Future<dynamic> debugEvaluateTopPopup(String source) async {
+    final int index = _popup.lastVisibleIndex;
+    if (index < 0) return null;
+    return _popup.entries[index].webViewKey.currentState?.debugEval(source);
+  }
+
+  @override
+  void debugClosePopup() {
+    final int index = _popup.lastVisibleIndex;
+    if (index >= 0) _popNestedPopupAt(index);
   }
 
   // ── search results with nested popups ──────────────────────────────

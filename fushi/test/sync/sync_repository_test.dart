@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,39 +21,51 @@ void main() {
 
     await db.setPref(SyncRepository.syncStatsPreferenceKey, 'false');
     await db.setPref(SyncRepository.syncAudioBookPreferenceKey, 'false');
-    await db.setPref(SyncRepository.syncDictionaryPreferenceKey, 'true');
 
     expect(await repo.isSyncStatsEnabled(), isFalse);
     expect(await repo.isSyncAudioBookEnabled(), isTrue);
-    expect(await repo.isSyncDictionaryEnabled(), isTrue);
 
     await repo.setSyncStatsEnabled(true);
     await repo.setSyncAudioBookEnabled(false);
-    await repo.setSyncDictionaryEnabled(false);
 
     expect(await db.getPref(SyncRepository.syncStatsPreferenceKey), 'b:true');
     expect(
       await db.getPref(SyncRepository.syncAudioBookPreferenceKey),
       'b:true',
     );
-    expect(
-      await db.getPref(SyncRepository.syncDictionaryPreferenceKey),
-      'b:false',
-    );
   });
 
-  test('dictionary sync preference defaults to false', () async {
+  // 「同步词典」/「同步本地音频」两个开关已删除（改成设置页的显式上传 / 下载动作），
+  // 但存量库里的 `sync_dictionary_enabled` / `sync_local_audio_enabled` 还要被读**一次**：
+  // 升级前开着自动同步的用户升级后同步会静默停下，必须告知一次。
+  test('legacy asset auto-sync flags drive the one-time notice', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
 
-    expect(await repo.isSyncDictionaryEnabled(), isFalse);
+    // 从没开过的库：一次都不该看到提示。
+    expect(await repo.hadLegacyAssetAutoSync(), isFalse);
 
-    await repo.setSyncDictionaryEnabled(true);
-    expect(await repo.isSyncDictionaryEnabled(), isTrue);
+    // 存量库写的是未经 typed codec 的裸值，也必须认出来。
+    await db.setPref('sync_dictionary_enabled', 'true');
+    expect(await repo.hadLegacyAssetAutoSync(), isTrue);
 
-    await repo.setSyncDictionaryEnabled(false);
-    expect(await repo.isSyncDictionaryEnabled(), isFalse);
+    await repo.acknowledgeLegacyAssetAutoSync();
+    expect(await repo.hadLegacyAssetAutoSync(), isFalse,
+        reason: '确认后必须不再出现，否则每次进设置页都弹一遍');
+
+    // 另一个键单独为真同样要提示（任一即可）。
+    await db.setPref('sync_local_audio_enabled', 'true');
+    expect(await repo.hadLegacyAssetAutoSync(), isTrue);
+    await repo.acknowledgeLegacyAssetAutoSync();
+    expect(await repo.hadLegacyAssetAutoSync(), isFalse);
+  });
+
+  test('deleted sync toggles have no accessor left', () {
+    final String src =
+        File('lib/src/sync/sync_repository.dart').readAsStringSync();
+    expect(src.contains('isSyncDictionaryEnabled'), isFalse);
+    expect(src.contains('isSyncLocalAudioEnabled'), isFalse);
   });
 
   test('audiobook-files sync preference defaults false and round-trips',
@@ -361,7 +375,6 @@ void main() {
       expect(keys, isNot(contains('sync_auto_enabled')));
       expect(keys, isNot(contains('sync_stats_enabled')));
       expect(keys, isNot(contains('sync_audiobook_enabled')));
-      expect(keys, isNot(contains('sync_dictionary_enabled')));
       expect(keys, isNot(contains('sync_content_enabled')));
       expect(keys, isNot(contains('sync_root_folder_id')));
       expect(keys, isNot(contains('sync_folder_cache')));

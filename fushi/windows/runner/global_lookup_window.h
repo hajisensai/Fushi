@@ -139,6 +139,12 @@ class GlobalLookupWindow {
   // WebView2 finishes initial navigation if called too early.
   void RenderJson(const std::string& popup_json);
 
+  // 手柄重设计 P5：把一枚 Dart 侧解析好的手柄动作转发进 host
+  // (window.__globalLookupHost.gamepadAction)。动作名走实现里的白名单，
+  // 绝不把任意字符串拼进 ExecuteScript；WebView 未就绪时静默丢弃
+  // （手柄动作是瞬时输入，不做 pending 缓存）。
+  void DispatchGamepadAction(const std::string& action, double dy);
+
   // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
   // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to
   // window.__fushiBridgeResolve(id, json_value). Used by the audio handlers,

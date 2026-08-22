@@ -27,11 +27,16 @@ class JimakuFile {
     required this.name,
     required this.url,
     this.size,
+    this.lastModifiedMs,
   });
 
   final String name;
   final String url;
   final int? size;
+
+  /// API `last_modified`（ISO-8601）解析成的 epoch 毫秒；缺失/不可解析为
+  /// null。版本选择器的「N 天前」与最新文件判定用。
+  final int? lastModifiedMs;
 
   /// 文件扩展名（小写，不含点）；用于选解析器（srt/ass/vtt）。
   String get extension {
@@ -314,6 +319,7 @@ List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
         name: name,
         url: url,
         size: f['size'] is int ? f['size'] as int : null,
+        lastModifiedMs: parseJimakuTimestampMs(f['last_modified']),
       ));
     }
     return out;
@@ -328,6 +334,13 @@ List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
     }
     return const <JimakuFile>[];
   }
+}
+
+/// 解析 Jimaku 的 `last_modified`（ISO-8601 字符串）为 epoch 毫秒。
+/// 非字符串/不可解析 → null（时间只是增强信息，绝不让它挡住文件本身）。
+int? parseJimakuTimestampMs(Object? raw) {
+  if (raw is! String || raw.trim().isEmpty) return null;
+  return DateTime.tryParse(raw.trim())?.toUtc().millisecondsSinceEpoch;
 }
 
 /// Jimaku 请求失败。默认客户端路径仍可 fail-open；需要向用户区分「零结果」与「请求

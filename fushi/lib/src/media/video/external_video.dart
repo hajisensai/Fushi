@@ -34,6 +34,29 @@ bool isSupportedVideoFile(String path) {
 /// 派生点唯一，编码字节才不会渗进系列名/集标题/uid（网络来源 URL 路径与
 /// 本地路径在这些消费点上是同一种正常情况，不是特例分支）。解码失败（非法
 /// 百分号序列）原样返回，不抛。
+/// 取路径末段，**不做任何解码**。用于「来源库条目路径」。
+///
+/// 为什么要和 [decodedSourceBasename] 分成两个名字（而不是加个参数让调用点自己
+/// 声明）：路径串本身看不出它处于哪种编码状态，靠调用点记得传对参数，等于把
+/// 「有没有写对」推给每一个调用点。分成两个名字后，状态由函数名承载，选错就是
+/// 语义明显不通，而不是一个静默解错的布尔。
+///
+/// 两种状态的真相源：
+/// - **来源库条目路径已解码**：WebDAV 的 PROPFIND href 在 `webdav_ops.dart` 进入
+///   [SourceFileEntry.path] 之前就 `Uri.decodeFull` 过了；SFTP/FTP 路径本就不是
+///   百分号编码。所以来源库路径一律用本函数，再解一次会：① 真名里含 `%` 时
+///   （`50% off.jpg`）直接抛 `ArgumentError: Invalid URL encoding`；② 真名是
+///   `A%20B.jpg` 时被解成 `A B.jpg`，与查找表键对不上。
+/// - **用户粘贴的 URL 仍是编码的**：那类走 [decodedSourceBasename]。
+String sourceEntryBasename(String path) {
+  final int sep = path.lastIndexOf(RegExp(r'[\\/]'));
+  return sep >= 0 ? path.substring(sep + 1) : path;
+}
+
+/// 取路径末段，http(s) URL 会做一次百分号解码。
+///
+/// **只用于尚未解码的 URL**（例如用户粘贴的地址、m3u8 清单里的原始行）。
+/// 来源库条目路径已经解码过了，**不得**传进来——用 [sourceEntryBasename]。
 String decodedSourceBasename(String path) {
   final int sep = path.lastIndexOf(RegExp(r'[\\/]'));
   final String raw = sep >= 0 ? path.substring(sep + 1) : path;

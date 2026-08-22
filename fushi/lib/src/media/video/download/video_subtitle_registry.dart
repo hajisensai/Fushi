@@ -57,6 +57,21 @@ class VideoSubtitleRegistry {
     );
   }
 
+  /// 这条候选的来源 provider 是否允许为「正文语言探测」白下载一次。
+  ///
+  /// 判据必须落在 **provider 有没有下载配额** 上（见
+  /// [VideoSubtitleProvider.allowsFreeProbeDownload]），不能用「候选的 language
+  /// 字段是不是空的」代替——后者与配额毫无关系，而 OpenSubtitles 恰恰经常不给
+  /// language，于是最该被保护的源反而最常被探测。未知 provider 一律不许。
+  bool allowsFreeProbeDownload(VideoSubtitleCandidate candidate) {
+    for (final VideoSubtitleProvider value in providers) {
+      if (value.id == candidate.providerId) {
+        return value.allowsFreeProbeDownload;
+      }
+    }
+    return false;
+  }
+
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
   ) {

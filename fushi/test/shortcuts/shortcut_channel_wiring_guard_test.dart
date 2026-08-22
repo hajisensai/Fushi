@@ -196,11 +196,18 @@ void main() {
     );
   });
 
-  test('漫画 scope 只开放键盘，且默认表不含手柄绑定', () {
-    // 回归钉：这三个 action 曾带着 RB/LB/dpad/B 默认绑定发出去，而漫画页没有任何
-    // 手柄解析入口。要恢复必须先照 reader `_handleGamepadButton` 接上入口并真机验证。
+  test('漫画 scope 开放键盘+手柄，翻页动作双通道默认齐全', () {
+    // 历史教训（原「只开放键盘」回归钉的反转）：这批 action 曾带着 RB/LB/dpad/B
+    // 默认绑定发出去而页面没有任何手柄解析入口——「设置里能配、按了没反应」。
+    // 现在漫画页有真实入口（`_handleGamepadButton` → resolveGamepad manga →
+    // universal，见 manga_fushi_page.dart），通道随之打开；本测试钉住新不变式：
+    //   · 通道恰为 keyboard+gamepad（鼠标依旧没有解析入口，不得开）；
+    //   · 翻页动作必须键盘+手柄默认双全（RB/dpad右=前进、LB/dpad左=后退）；
+    //   · **不得**有任何 manga 动作默认绑手柄 B——退出/关弹窗归 universal
+    //     globalBack 的 B，两级阶梯不许被 manga scope 遮蔽（universal_back_test）。
     expect(ShortcutScope.manga.channels, <ShortcutChannel>{
       ShortcutChannel.keyboard,
+      ShortcutChannel.gamepad,
     });
     for (final TargetPlatform platform in <TargetPlatform>[
       TargetPlatform.windows,
@@ -211,8 +218,13 @@ void main() {
           ShortcutDefaults.forPlatform(platform);
       for (final ShortcutAction action in ShortcutAction.values
           .where((ShortcutAction a) => a.scope == ShortcutScope.manga)) {
-        expect(table[action]!.gamepadBindings, isEmpty,
-            reason: '$platform ${action.key} 不得有手柄默认绑定（漫画页没接手柄）');
+        expect(
+            table[action]!
+                .gamepadBindings
+                .where((GamepadBinding b) => b.button == GamepadButton.b),
+            isEmpty,
+            reason: '$platform ${action.key} 不得默认绑手柄 B'
+                '（B 归 universal globalBack 的两级阶梯）');
         // mangaDismissDict 是**有意**留空的可选动作：Esc 已归全 app 唯一的
         // 「返回上一级」(globalBack)，它在这里再绑一个键盘默认就会在 manga scope
         // 先命中，把「无弹窗时退出漫画」那一级永久遮蔽（v8 统一的核心不变式，
@@ -220,6 +232,14 @@ void main() {
         if (action == ShortcutAction.mangaDismissDict) continue;
         expect(table[action]!.keyboardBindings, isNotEmpty,
             reason: '$platform ${action.key} 必须有键盘默认绑定');
+      }
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.mangaPageForward,
+        ShortcutAction.mangaPageBackward,
+      ]) {
+        expect(table[action]!.gamepadBindings, isNotEmpty,
+            reason: '$platform ${action.key} 必须有手柄默认绑定'
+                '（v8→v9 迁移补发的就是这组，删了老用户就拿不到）');
       }
     }
   });

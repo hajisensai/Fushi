@@ -100,6 +100,12 @@ add_executable(fushi_utterance_window_test
 target_include_directories(fushi_utterance_window_test PRIVATE "include")
 add_test(NAME fushi_utterance_window_test COMMAND fushi_utterance_window_test)
 
+add_executable(fushi_voice_clip_energy_test
+  "tests/voice_clip_energy_test.cpp"
+)
+target_include_directories(fushi_voice_clip_energy_test PRIVATE "include")
+add_test(NAME fushi_voice_clip_energy_test COMMAND fushi_voice_clip_energy_test)
+
 add_executable(fushi_xaudio_source_format_test
   "tests/xaudio_source_format_test.cpp"
 )

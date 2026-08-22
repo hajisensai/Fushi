@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：确保视频页修复「导入着色器后空格失灵」的接线不被回退。
@@ -75,6 +76,38 @@ void main() {
         reason: '所有者必须持有本页的 _videoFocusNode');
     expect(src, contains('bool _canOwnVideoFocus(FocusReclaimCause cause)'),
         reason: '应有统一的「视频此刻应当持有键盘」判据，按 cause 分流');
+  });
+
+  test('可导航浮层面板打开期间，页面不得抢回焦点（手柄重设计 P3）', () {
+    // 面板（剧集轨 / 字幕列表 / 侧栏）打开时焦点归 PanelFocusScope。判据漏了这条
+    // 就是纯回归：字幕列表是 push-aside，视频区全程可点，用户点一下画面
+    // （reclaim(gesture)）或从字幕行查完词关浮层（reclaim(popupDismissed)）焦点就被
+    // 拽回页面节点；而 PanelFocusScope 只在 visible 边沿认领一次、不复领，面板却仍
+    // 开着 ⇒ dpad/A 继续让位给焦点兜底，结果 dpad 既进不了面板也不调音量/seek。
+    // 必须先屏蔽注释：本条断言的 token 也出现在上面那段说明里，直接扫原文的话，
+    // 代码被删而注释留着仍然绿——「断言塞注释」的假绿。
+    final String masked = maskComments(src);
+    final int start =
+        masked.indexOf('bool _canOwnVideoFocus(FocusReclaimCause cause)');
+    expect(start, greaterThan(0));
+    final String body = masked.substring(
+        start, masked.indexOf('${String.fromCharCode(10)}  }', start));
+    expect(
+      body.contains('_videoNavigablePanelOpen'),
+      isTrue,
+      reason: '_canOwnVideoFocus 必须把「可导航面板开着」计入判据，否则面板期 dpad 全失灵',
+    );
+  });
+
+  test('PanelFocusScope 归还焦点必须经宿主判据，不得裸持 FocusNode', () {
+    // 把 _videoFocusNode 递给 lib/src/focus/ 下的组件去裸调 requestFocus()，既绕过
+    // _canOwnVideoFocus 的全部判据，也绕过只扫 video_fushi* / reader_fushi* 目录的
+    // 焦点所有权守卫——「把节点递出去让别人代调」正是那条守卫防不住的形状。
+    final String maskedSrc = maskComments(src);
+    expect(maskedSrc, isNot(contains('restoreFocus: _videoFocusNode')),
+        reason: 'restoreFocus 必须传经 _focusOwnership 的回调，不能传裸节点');
+    expect(maskedSrc, contains('restoreFocus: () =>'),
+        reason: '三处面板都应传回调形式的 restoreFocus');
   });
 
   test('页面不得绕过 _focusOwnership 直接抢焦点', () {

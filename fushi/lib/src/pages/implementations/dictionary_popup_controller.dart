@@ -4,6 +4,7 @@ import 'dart:collection';
 import 'package:flutter/widgets.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
 /// Shared empty result used to mount the popup WebView during the search phase
 /// (BUG-080), so popup.html + JS + CSS cold-load in parallel with the FFI
@@ -52,6 +53,10 @@ class DictionaryPopupEntry {
   /// 是否已无更多结果可加载（分页到底）。
   bool allLoaded;
 
+  /// BUG-1651：本层按 DOM 内容测量得到的外壳总高度（Flutter 逻辑像素）。null 表示
+  /// 尚未测量，先按用户最大高度布局；每次新顶层查词重置，增量结果则在当前高度上伸缩。
+  double? autoFitHeight;
+
   /// 仅常驻热槽为 true：其 WebView 全程挂载复用，关栈时隐藏而非销毁。
   final bool isWarmSlot;
 
@@ -71,7 +76,33 @@ class DictionaryPopupController extends ChangeNotifier {
   DictionaryPopupController({
     required this.lowMemory,
     this.onLookupStackDepthChanged,
-  });
+  }) {
+    // 手柄重设计 P2：每个弹窗栈 controller 把自己登记为 dictionaryPopup scope 手柄
+    // 动作的执行体（GamepadService 在页面 Actions 未消费后按可见性取用）。7 个宿主
+    // （书内/漫画/视频/首页词典/独立查词/歌词浮窗/texthooker）由此免逐个接线。
+    // 纯回调对象，不引入 UI 依赖，controller 保持纯逻辑可测。
+    _gamepadHooks = DictionaryPopupGamepadHooks(
+      hasVisiblePopup: () => hasVisiblePopup,
+      entryMove: (bool forward) async =>
+          _topVisibleWebViewState?.focusEntryMove(forward),
+      mineFirstEntry: () async =>
+          _topVisibleWebViewState?.mineFirstVisibleEntry(),
+      playFirstAudio: () async =>
+          _topVisibleWebViewState?.playFirstVisibleAudio(),
+      scrollBy: (double dy) async =>
+          _topVisibleWebViewState?.scrollContentBy(dy),
+    );
+    DictionaryPopupGamepadRegistry.push(_gamepadHooks);
+  }
+
+  late final DictionaryPopupGamepadHooks _gamepadHooks;
+
+  /// 栈顶**可见**层的 WebView 状态（热槽隐身层不算）；无可见层或 WebView 未挂载
+  /// 返回 null（钩子就地变 no-op，不抛）。
+  DictionaryPopupWebViewState? get _topVisibleWebViewState {
+    final int index = lastVisibleIndex;
+    return index < 0 ? null : _entries[index].webViewKey.currentState;
+  }
 
   /// TODO-607 P0-2：查词栈「可见深度」变化时的注入回调（书内 / 视频 / 首页 / 安卓独立
   /// 查词窗各宿主在创建时注入 `ErrorLogService.instance.markLookupStackDepth`）。
@@ -193,6 +224,7 @@ class DictionaryPopupController extends ChangeNotifier {
       ..revealOnRender = false
       ..isSearching = false
       ..allLoaded = false;
+    e.autoFitHeight = null;
   }
 
   /// 顶层查词目标：能复用常驻热槽（首条且 isWarmSlot）就原地复用并丢弃子层；
@@ -218,6 +250,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..selectionRect = rect
         ..result = initialResult
         ..allLoaded = false
+        ..autoFitHeight = null
         ..isSearching = true
         ..revealOnRender = false
         ..visible = visible;
@@ -415,6 +448,7 @@ class DictionaryPopupController extends ChangeNotifier {
 
   @override
   void dispose() {
+    DictionaryPopupGamepadRegistry.pop(_gamepadHooks);
     // 防泄漏：销毁时取消所有挂起的兜底 Timer。
     for (final Timer t in _revealFailsafeTimers.values) {
       t.cancel();

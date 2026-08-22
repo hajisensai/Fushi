@@ -132,7 +132,18 @@ class DiscoveryRequest {
     this.page = 1,
     this.pageSize = 50,
   })  : assert(page > 0),
-        assert(pageSize > 0);
+        assert(pageSize > 0),
+        // BUG-1768：[query] 与 [path] 互斥。服务层按 [isSearch] 二选一分发，
+        // 两个都给时 [path] 会被**静默**丢弃，调用方却以为自己在浏览那个目录
+        // ——发现页当初就是这样把「进文件夹」变成「重发同一次全站搜索」的。
+        // 让它在构造点炸，而不是等用户看见同名目录无限自嵌套。
+        // 写成 `a == null || b == null`（不是 `query.trim().isEmpty`）是因为本类
+        // 有 const 构造点：const 断言只接受潜在常量表达式，方法调用会让所有
+        // `const DiscoveryRequest(...)` 编译不过。
+        assert(
+          query == null || path == null,
+          'DiscoveryRequest: query 与 path 互斥（isSearch 时 path 会被丢弃）',
+        );
 
   final DiscoveryMediaKind kind;
   final String? query;

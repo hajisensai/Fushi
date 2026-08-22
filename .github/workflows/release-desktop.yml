@@ -319,15 +319,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+          # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
+          # 一个都用不上；不 bump 的话 actions/cache 命中即不回存，会每次冷编
+          # （TODO-2668 记的同一处病灶）。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
-          if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
+          # 不再 classic `vcpkg install`：版本钉在 native/fushi_torrent/vcpkg.json
+          # （manifest + overrides = libtorrent 2.0.11），cmake configure 时工具链
+          # 自动按它装。BUG-1772：classic 模式装的是 runner 镜像内固化的 vcpkg 修订
+          # 当下的版本，镜像升到 20260818.277.1 后漂到 2.1，4 个 DLL 直接编不出来。
+          # baseline 可用性由 build_windows_dll.ps1 的 Assert-VcpkgBaseline 前置检查。
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁

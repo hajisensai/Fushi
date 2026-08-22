@@ -1939,6 +1939,27 @@ mixin _FushiDbVideoDomain
                 ]))
               .watch();
 
+  /// 每个订阅的 items 状态计数（外层 map 键 = subscriptionId，内层键 =
+  /// [VideoDownloadSubscriptionItemStatus] 值）。订阅面板卡片的
+  /// 「N 已入库 · M 排队中 · K 失败」摘要用；一条 GROUP BY 拿全量，
+  /// 避免面板对每张卡各发一查。
+  Future<Map<String, Map<String, int>>>
+      getVideoDownloadSubscriptionItemStatusCounts() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT subscription_id AS sid, status AS st, COUNT(*) AS cnt '
+      'FROM video_download_subscription_items '
+      'GROUP BY subscription_id, status',
+      readsFrom: <TableInfo<Table, Object?>>{videoDownloadSubscriptionItems},
+    ).get();
+    final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
+    for (final QueryRow row in rows) {
+      final String sid = row.read<String>('sid');
+      out.putIfAbsent(sid, () => <String, int>{})[row.read<String>('st')] =
+          row.read<int>('cnt');
+    }
+    return out;
+  }
+
   Future<int> updateVideoDownloadSubscriptionItem(
     int id,
     VideoDownloadSubscriptionItemsCompanion patch,

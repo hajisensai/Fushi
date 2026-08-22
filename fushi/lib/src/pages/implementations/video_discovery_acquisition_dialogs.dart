@@ -12,6 +12,7 @@ import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
+import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
@@ -23,6 +24,12 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobRow,
         VideoDownloadJobStage;
 import 'package:path/path.dart' as p;
+
+import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
+
+// 集数解析下沉后的源兼容出口（订阅聚合与既有测试从本文件 import 它）。
+export 'package:fushi/src/media/video/download/video_resource_version_groups.dart'
+    show episodeNumberFromReleaseTitle;
 
 typedef VideoDiscoveryDownloadSubmit = Future<void> Function(
   VideoDiscoveryDownloadSelection selection,
@@ -339,18 +346,9 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
   return <VideoSubscriptionCandidateGroup>[...grouped, ...ungroupable];
 }
 
-int? episodeNumberFromReleaseTitle(String title) {
-  final RegExpMatch? seasonEpisode = RegExp(
-    r'\bS\d{1,3}[ ._-]*E(\d{1,4})(?:v\d+)?\b',
-    caseSensitive: false,
-  ).firstMatch(title);
-  if (seasonEpisode != null) return int.tryParse(seasonEpisode.group(1)!);
-  final RegExpMatch? anime = RegExp(
-    r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
-    caseSensitive: false,
-  ).firstMatch(title);
-  return anime == null ? null : int.tryParse(anime.group(1)!);
-}
+// `episodeNumberFromReleaseTitle` 已下沉到 video_resource_version_groups.dart
+// （下载模式版本聚类需要），此处 re-export 保源兼容（订阅聚合与测试仍从本文件
+// import）。
 
 String videoDiscoverySubscriptionId(VideoMediaReference reference) {
   final String digest = sha256
@@ -705,6 +703,9 @@ class _VideoResourceSearchSurfaceState
       _loading = false;
     });
   }
+
+  /// 下载模式：true = 平铺全部条目（旧视图）；false（默认）= 版本卡视图。
+  bool _flatResourceView = false;
 
   void _select(VideoResourceCandidate candidate) {
     setState(() {
@@ -1114,10 +1115,54 @@ class _VideoResourceSearchSurfaceState
       return Center(child: Text(t.video_discovery_empty));
     }
     // 订阅模式下行单位 = 订阅生效单位（见 groupVideoSubscriptionCandidates 的
-    // 文档）；下载模式仍是一集一行，用户要挑的就是具体那一个发布。
+    // 文档）；下载模式默认「发布组 › 清晰度」版本卡（B2，参照
+    // RSS-Subtitle-Manager）——挑组一次、组内挑集，几十条发布不再平铺；
+    // 「全部条目」开关随时切回平铺视图。
     final List<VideoSubscriptionCandidateGroup>? groups = widget.subscription
         ? groupVideoSubscriptionCandidates(result.items)
         : null;
+    if (groups == null) {
+      final Widget toggle = Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: FilterChip(
+          key: const ValueKey<String>('video-resource-flat-toggle'),
+          label: Text(t.resource_version_view_flat),
+          selected: _flatResourceView,
+          onSelected: (bool value) => setState(() => _flatResourceView = value),
+        ),
+      );
+      if (!_flatResourceView) {
+        return Column(
+          children: <Widget>[
+            toggle,
+            const SizedBox(height: 4),
+            Expanded(
+              child: VideoResourceVersionGroupList(
+                groups: buildVideoResourceVersionGroups(result.items),
+                selectedIdentityKey: _selected?.identityKey,
+                onSelect: _select,
+                compact: !widget.pageMode,
+              ),
+            ),
+          ],
+        );
+      }
+      return Column(
+        children: <Widget>[
+          toggle,
+          const SizedBox(height: 4),
+          Expanded(child: _buildFlatResults(result, groups)),
+        ],
+      );
+    }
+    return _buildFlatResults(result, groups);
+  }
+
+  /// 平铺列表（订阅模式恒用；下载模式经「全部条目」开关可切回）。
+  Widget _buildFlatResults(
+    ProviderBatchResult<VideoResourceCandidate> result,
+    List<VideoSubscriptionCandidateGroup>? groups,
+  ) {
     return ListView.builder(
       key: const ValueKey<String>('video-resource-results'),
       itemCount: groups?.length ?? result.items.length,
@@ -1178,6 +1223,10 @@ class _VideoResourceSearchSurfaceState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Row(
+          // 左侧带 helperText、右侧没有：默认的居中对齐会把右侧输入框往下挤
+          // 半个 helper 高（两个框底边错位）。顶对齐让两个框同高齐边，helper
+          // 自然挂在左框下方。
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Expanded(
               child: DropdownButtonFormField<int>(

@@ -75,7 +75,8 @@ void main() {
         'sync_auto_enabled',
         'sync_content_enabled',
         'sync_stats_enabled',
-        'sync_dictionary_enabled',
+        // 'sync_dictionary_enabled' 曾在此：那个开关已随「词典改成显式上传 / 下载」
+        // 删除，键没有读写方了，再列在这里只是一条钉住死数据的空断言。
         // 内容注册表（backup_service 的 settingsPrefPredicate 明确保留的那批）。
         'favorite_sentences',
         'local_audio_dbs',

@@ -294,17 +294,25 @@ extension _VideoEpisode on _VideoFushiPageState {
           child: _withSidePanelOpaqueCursor(
             SafeArea(
               top: false,
-              child: VideoEpisodePanel(
-                key: const ValueKey<String>('video-episode-panel'),
-                episodes: _episodePanelEntries(),
-                currentIndex: _currentEpisode,
-                onTapEpisode: _handleEpisodeListTap,
-                onClose: _closeEpisodeList,
-                colorScheme: cs,
-                title: t.video_episode_list,
-                emptyHint: t.video_episode_list_empty,
-                fontSize: 14 * _videoUiScale,
-                height: panelHeight,
+              // 手柄重设计 P3：轨道打开即把焦点领进面板（关闭还给页面焦点），
+              // D-pad 才能选集——本面板常驻挂载靠 FadingChromeGate 显隐，认领
+              // 必须跟 visible 边沿走而非挂载。
+              child: PanelFocusScope(
+                visible: visible,
+                restoreFocus: () =>
+                    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+                child: VideoEpisodePanel(
+                  key: const ValueKey<String>('video-episode-panel'),
+                  episodes: _episodePanelEntries(),
+                  currentIndex: _currentEpisode,
+                  onTapEpisode: _handleEpisodeListTap,
+                  onClose: _closeEpisodeList,
+                  colorScheme: cs,
+                  title: t.video_episode_list,
+                  emptyHint: t.video_episode_list_empty,
+                  fontSize: 14 * _videoUiScale,
+                  height: panelHeight,
+                ),
               ),
             ),
           ),

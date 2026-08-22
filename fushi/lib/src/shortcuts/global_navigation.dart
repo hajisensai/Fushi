@@ -15,7 +15,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         arrowFocusMoveDirection,
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
-        gamepadMoveFocusInDirection;
+        gamepadMoveFocusInDirection,
+        tryDictionaryPopupGamepadButton;
 
 /// 顶层路由是不是一个**弹层**（对话框 / 下拉 / bottom sheet）。
 ///
@@ -448,6 +449,16 @@ Widget wrapWithGlobalNavigation({
       final KeyEventResult gamepadResult =
           dispatchNativeGamepadButtonIntent(event);
       if (gamepadResult == KeyEventResult.handled) return gamepadResult;
+      // 手柄重设计 P2（Android 键事件链）：页面 Actions 没消费的手柄按钮，弹窗
+      // 可见时按 dictionaryPopup scope 解析（词条导航/制卡/发音）——与桌面轮询
+      // 路径 GamepadService._dispatchButton 的弹窗兜底同一入口、同一次序。
+      if (event is KeyDownEvent) {
+        final GamepadButton? nativeButton = GamepadButton.fromKeyEvent(event);
+        if (nativeButton != null &&
+            tryDictionaryPopupGamepadButton(registry, nativeButton)) {
+          return KeyEventResult.handled;
+        }
+      }
       if (focusNavigationEnabled) {
         final KeyEventResult arrowResult =
             _handleGlobalArrowFocus(navigatorKey, event);

@@ -12,6 +12,7 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobStage;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/download/video_download_error_presentation.dart';
@@ -64,6 +65,76 @@ typedef VideoDownloadJobPriorityAction = Future<void> Function(
   VideoDownloadJobRow job,
   int priority,
 );
+
+/// 任务列表的排序维度（会话级，不落偏好——列表通常几十条，切换成本为零）。
+enum VideoDownloadJobSort { createdDesc, titleAsc, progressDesc, statusGroup }
+
+/// [VideoDownloadJobSort.statusGroup] 的分组次序：越需要用户看的越靠前。
+int videoDownloadLifecycleRank(String lifecycle) => switch (lifecycle) {
+      VideoDownloadJobLifecycle.needsAttention => 0,
+      VideoDownloadJobLifecycle.failed => 1,
+      VideoDownloadJobLifecycle.active => 2,
+      VideoDownloadJobLifecycle.cancelled => 3,
+      VideoDownloadJobLifecycle.completed => 4,
+      _ => 5,
+    };
+
+/// 任务在没有实时后端快照时的可比进度：完成恒 1，否则用持久的阶段进度。
+double videoDownloadJobComparableProgress(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.completed
+        ? 1
+        : job.stageProgress.clamp(0, 1).toDouble();
+
+/// 按 [sort] 返回新的有序列表。纯函数，稳定 tiebreak 用 createdAt 倒序 + jobId。
+List<VideoDownloadJobRow> sortedVideoDownloadJobs(
+  List<VideoDownloadJobRow> jobs,
+  VideoDownloadJobSort sort,
+) {
+  int byCreatedDesc(VideoDownloadJobRow a, VideoDownloadJobRow b) {
+    final int byCreated = b.createdAt.compareTo(a.createdAt);
+    return byCreated != 0 ? byCreated : a.jobId.compareTo(b.jobId);
+  }
+
+  final List<VideoDownloadJobRow> out = List<VideoDownloadJobRow>.of(jobs);
+  switch (sort) {
+    case VideoDownloadJobSort.createdDesc:
+      out.sort(byCreatedDesc);
+    case VideoDownloadJobSort.titleAsc:
+      out.sort((VideoDownloadJobRow a, VideoDownloadJobRow b) {
+        final int byTitle =
+            a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        return byTitle != 0 ? byTitle : byCreatedDesc(a, b);
+      });
+    case VideoDownloadJobSort.progressDesc:
+      out.sort((VideoDownloadJobRow a, VideoDownloadJobRow b) {
+        final int byProgress = videoDownloadJobComparableProgress(b)
+            .compareTo(videoDownloadJobComparableProgress(a));
+        return byProgress != 0 ? byProgress : byCreatedDesc(a, b);
+      });
+    case VideoDownloadJobSort.statusGroup:
+      out.sort((VideoDownloadJobRow a, VideoDownloadJobRow b) {
+        final int byRank = videoDownloadLifecycleRank(a.lifecycle)
+            .compareTo(videoDownloadLifecycleRank(b.lifecycle));
+        return byRank != 0 ? byRank : byCreatedDesc(a, b);
+      });
+  }
+  return out;
+}
+
+/// 搜索过滤：标题与资源发布名任一命中即留（与库页同一套归一化口径，全角/
+/// 片假名/标点差异不挡命中）。纯函数。
+List<VideoDownloadJobRow> filterVideoDownloadJobs(
+  List<VideoDownloadJobRow> jobs,
+  String query,
+) =>
+    filterByMediaSearch(
+      jobs,
+      query,
+      (VideoDownloadJobRow job) => <String>[
+        job.title,
+        if (job.resourceTitle?.trim().isNotEmpty ?? false) job.resourceTitle!,
+      ],
+    );
 
 /// Compact task surface for schema-v78 durable video downloads.
 ///
@@ -147,11 +218,22 @@ class VideoDownloadJobsPanel extends StatefulWidget {
 class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   late Stream<List<VideoDownloadJobRow>> _jobs;
   final Set<String> _busyJobIds = <String>{};
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
+  VideoDownloadJobSort _sort = VideoDownloadJobSort.createdDesc;
 
   @override
   void initState() {
     super.initState();
     _jobs = widget.store.watchJobs();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -293,56 +375,127 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               message: t.anime_download_no_tasks,
             );
           }
-          return _VideoDownloadJobList(
-            jobs: jobs,
-            metricsLoader: widget.metricsLoader,
-            selectedSizeLoader: widget.selectedSizeLoader,
-            itemBuilder: (
-              BuildContext context,
-              VideoDownloadJobRow job,
-              TorrentSnapshot? snapshot,
-              int? selectedSizeBytes,
-            ) =>
-                _VideoDownloadJobCard(
-              key: ValueKey<String>(
-                'video-download-job-${job.jobId}',
+          final List<VideoDownloadJobRow> visible = sortedVideoDownloadJobs(
+            filterVideoDownloadJobs(jobs, _searchQuery),
+            _sort,
+          );
+          return Column(
+            children: <Widget>[
+              _buildToolbar(),
+              Expanded(
+                child: visible.isEmpty
+                    ? _MessageState(
+                        icon: Icons.search_off,
+                        message: t.download_task_no_match,
+                      )
+                    : _buildJobList(visible),
               ),
-              job: job,
-              snapshot: snapshot,
-              selectedSizeBytes: selectedSizeBytes,
-              busy: _busyJobIds.contains(job.jobId),
-              onRetry: widget.onRetry == null
-                  ? null
-                  : () => _runAction(job, widget.onRetry!),
-              onResume: widget.onResume == null
-                  ? null
-                  : () => _runAction(job, widget.onResume!),
-              onCancel: widget.onCancel == null
-                  ? null
-                  : () => _runAction(job, widget.onCancel!),
-              onOpenDetails: widget.onOpenDetails == null
-                  ? null
-                  : () => _runAction(job, widget.onOpenDetails!),
-              onSetPriority: widget.onSetPriority == null
-                  ? null
-                  : (int priority) => _runAction(
-                        job,
-                        (VideoDownloadJobRow row) =>
-                            widget.onSetPriority!(row, priority),
-                      ),
-              // Mobile has no file-manager reveal contract; the action would
-              // always fail, so it is not offered there.
-              onOpenLocation: widget.locationLoader == null ||
-                      currentVideoDownloadRevealHost() == null
-                  ? null
-                  : () => _openLocation(job),
-              onDelete:
-                  widget.onDelete == null ? null : () => _confirmDelete(job),
-              lifecycleLabel: widget.lifecycleLabel,
-              stageLabel: widget.stageLabel,
-            ),
+            ],
           );
         },
+      ),
+    );
+  }
+
+  /// 任务列表上方的搜索 + 排序工具条（只在真有任务时出现）。
+  Widget _buildToolbar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: FushiSearchField(
+              fieldKey: const ValueKey<String>('video-download-job-search'),
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              hintText: t.download_task_search_hint,
+              onChanged: (String value) => setState(() => _searchQuery = value),
+              onSubmitted: (String value) =>
+                  setState(() => _searchQuery = value),
+              onClear: () => setState(() => _searchQuery = ''),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FushiOverflowMenu<VideoDownloadJobSort>(
+            key: const ValueKey<String>('video-download-job-sort'),
+            tooltip: t.sort_by,
+            onSelected: (VideoDownloadJobSort value) =>
+                setState(() => _sort = value),
+            items: <PopupMenuEntry<VideoDownloadJobSort>>[
+              for (final VideoDownloadJobSort value
+                  in VideoDownloadJobSort.values)
+                FushiPopupMenuItem<VideoDownloadJobSort>(
+                  value: value,
+                  label: _sortLabel(value),
+                  selected: _sort == value,
+                ),
+            ],
+            child: OutlinedButton.icon(
+              // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
+              onPressed: null,
+              icon: const Icon(Icons.sort, size: 18),
+              label: Text(_sortLabel(_sort)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _sortLabel(VideoDownloadJobSort sort) => switch (sort) {
+        VideoDownloadJobSort.createdDesc => t.download_task_sort_created,
+        VideoDownloadJobSort.titleAsc => t.sort_title,
+        VideoDownloadJobSort.progressDesc => t.download_task_sort_progress,
+        VideoDownloadJobSort.statusGroup => t.download_task_sort_status,
+      };
+
+  Widget _buildJobList(List<VideoDownloadJobRow> jobs) {
+    return _VideoDownloadJobList(
+      jobs: jobs,
+      metricsLoader: widget.metricsLoader,
+      selectedSizeLoader: widget.selectedSizeLoader,
+      itemBuilder: (
+        BuildContext context,
+        VideoDownloadJobRow job,
+        TorrentSnapshot? snapshot,
+        int? selectedSizeBytes,
+      ) =>
+          _VideoDownloadJobCard(
+        key: ValueKey<String>(
+          'video-download-job-${job.jobId}',
+        ),
+        job: job,
+        snapshot: snapshot,
+        selectedSizeBytes: selectedSizeBytes,
+        busy: _busyJobIds.contains(job.jobId),
+        onRetry: widget.onRetry == null
+            ? null
+            : () => _runAction(job, widget.onRetry!),
+        onResume: widget.onResume == null
+            ? null
+            : () => _runAction(job, widget.onResume!),
+        onCancel: widget.onCancel == null
+            ? null
+            : () => _runAction(job, widget.onCancel!),
+        onOpenDetails: widget.onOpenDetails == null
+            ? null
+            : () => _runAction(job, widget.onOpenDetails!),
+        onSetPriority: widget.onSetPriority == null
+            ? null
+            : (int priority) => _runAction(
+                  job,
+                  (VideoDownloadJobRow row) =>
+                      widget.onSetPriority!(row, priority),
+                ),
+        // Mobile has no file-manager reveal contract; the action would
+        // always fail, so it is not offered there.
+        onOpenLocation: widget.locationLoader == null ||
+                currentVideoDownloadRevealHost() == null
+            ? null
+            : () => _openLocation(job),
+        onDelete: widget.onDelete == null ? null : () => _confirmDelete(job),
+        lifecycleLabel: widget.lifecycleLabel,
+        stageLabel: widget.stageLabel,
       ),
     );
   }
@@ -747,40 +900,35 @@ class _VideoDownloadJobCard extends StatelessWidget {
                   // 优先级只对「还在排队/还没做完」的任务有意义：已完成或已取消
                   // 的任务再调也不会被重新取走，给了只会让人以为能插队。
                   if (onSetPriority != null && _canSetPriority)
-                    PopupMenuButton<int>(
-                      key: ValueKey<String>(
-                        'video-download-job-priority-${job.jobId}',
-                      ),
-                      enabled: !busy,
-                      tooltip: t.download_task_priority,
-                      initialValue: job.priority,
-                      onSelected: onSetPriority,
-                      itemBuilder: (BuildContext context) =>
-                          <PopupMenuEntry<int>>[
-                        PopupMenuItem<int>(
-                          value: 1,
-                          child: Text(t.download_task_priority_high),
-                        ),
-                        PopupMenuItem<int>(
-                          value: 0,
-                          child: Text(t.download_task_priority_normal),
-                        ),
-                        PopupMenuItem<int>(
-                          value: -1,
-                          child: Text(t.download_task_priority_low),
-                        ),
-                      ],
-                      child: OutlinedButton.icon(
-                        // 外层 PopupMenuButton 已接管点击；这里只借用按钮外观，
-                        // onPressed 必须为 null 才不会吞掉菜单的手势。
-                        onPressed: null,
-                        icon: const Icon(Icons.low_priority, size: 18),
-                        label: Text(
-                          '${t.download_task_priority} · '
-                          '${_priorityLabel(job.priority)}',
-                        ),
-                      ),
-                    ),
+                    busy
+                        ? _priorityButtonFace()
+                        // 走共享 MD3 菜单原语（圆角/浮层色/焦点可进），不再裸用
+                        // PopupMenuButton（用户截图：裸菜单没走 MD3 样式）。
+                        : FushiOverflowMenu<int>(
+                            key: ValueKey<String>(
+                              'video-download-job-priority-${job.jobId}',
+                            ),
+                            tooltip: t.download_task_priority,
+                            onSelected: onSetPriority!,
+                            items: <PopupMenuEntry<int>>[
+                              FushiPopupMenuItem<int>(
+                                value: 1,
+                                label: t.download_task_priority_high,
+                                selected: job.priority > 0,
+                              ),
+                              FushiPopupMenuItem<int>(
+                                value: 0,
+                                label: t.download_task_priority_normal,
+                                selected: job.priority == 0,
+                              ),
+                              FushiPopupMenuItem<int>(
+                                value: -1,
+                                label: t.download_task_priority_low,
+                                selected: job.priority < 0,
+                              ),
+                            ],
+                            child: _priorityButtonFace(),
+                          ),
                   if (onOpenLocation != null)
                     OutlinedButton.icon(
                       key: ValueKey<String>(
@@ -810,6 +958,16 @@ class _VideoDownloadJobCard extends StatelessWidget {
       ),
     );
   }
+
+  /// 优先级按钮的外观（真正的点击由外层菜单接管，onPressed 恒 null；busy 时
+  /// 直接单独渲染这张脸当禁用态）。
+  Widget _priorityButtonFace() => OutlinedButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.low_priority, size: 18),
+        label: Text(
+          '${t.download_task_priority} · ${_priorityLabel(job.priority)}',
+        ),
+      );
 
   /// Shows the untouched raw `lastError` diagnostics in a copyable dialog.
   Future<void> _showErrorDetail(BuildContext context) async {
