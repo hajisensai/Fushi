@@ -658,7 +658,12 @@ class _CustomFontsPageState extends BasePageState {
     }
     await _settings!.refreshFromDb();
     await appModel.refreshAppFont();
-    await GalHookTextOverlayController.instance.applyFontFromSettings();
+    // 平台门在**取单例之前**：GalHookTextOverlayController.instance 会把整套 galgame
+    // 单例图（含 GalIngameLookupController 与它挂上去、永不释放的监听器）建起来。
+    // 非 Windows 用户只是存了一次字体，不该因此拉起一整个 Windows 专属子系统。
+    if (GalHookTextOverlayController.isSupported) {
+      await GalHookTextOverlayController.instance.applyFontFromSettings();
+    }
     ReaderFushiSource.onSettingsChangedLive?.call();
   }
 
@@ -1455,7 +1460,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
 
   /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
   String get _rolesSummary => <String>[
-        for (final FontTarget target in FontTarget.values)
+        for (final FontTarget target in visibleFontTargets)
           if (widget.targets.contains(target)) _targetLabel(target),
       ].join(' · ');
 
@@ -1590,7 +1595,10 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: [
-                  for (final FontTarget target in FontTarget.values)
+                  // 只列当前平台真的存在的用途：游戏查词浮窗是 Windows 专属，
+                  // 在安卓/iOS/macOS/Linux 上多出这一枚 chip 是一个点了没有任何
+                  // 效果的开关。持久化不按平台裁剪（见 visibleFontTargets）。
+                  for (final FontTarget target in visibleFontTargets)
                     FilterChip(
                       label: Text(_targetLabel(target)),
                       selected: widget.targets.contains(target),

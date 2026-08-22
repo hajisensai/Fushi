@@ -35,6 +35,22 @@ enum FontTarget {
   gameLookup,
 }
 
+extension FontTargetAvailability on FontTarget {
+  /// 这个用途在当前平台上是否**存在**。
+  ///
+  /// 只用来决定 UI 列不列。持久化一律遍历 [FontTarget.values]：同一份 profile 会跨端
+  /// 同步，按平台裁剪读写就等于「在安卓上打开一次字体页，Windows 上配好的游戏查词
+  /// 字体被抹掉」。
+  bool get isAvailableOnThisPlatform =>
+      this != FontTarget.gameLookup || Platform.isWindows;
+}
+
+/// UI 里应当列出的字体用途。见 [FontTargetAvailability.isAvailableOnThisPlatform]。
+List<FontTarget> get visibleFontTargets => <FontTarget>[
+      for (final FontTarget target in FontTarget.values)
+        if (target.isAvailableOnThisPlatform) target,
+    ];
+
 /// All reader display/behavior settings, decoupled from the media source.
 ///
 /// Reads/writes share the same Drift `preferences` table keys as

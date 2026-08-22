@@ -225,10 +225,17 @@ constexpr uint32_t kXAudioDiagUnsupportedFormat = 0x00008000u;
 constexpr uint32_t kXAudioDiagRegistryExhausted = 0x00010000u;
 constexpr uint32_t kXAudioDiagCommitFailed = 0x00020000u;
 constexpr uint32_t kXAudioDiagCommitQueueExhausted = 0x00040000u;
-// At least one byte-exact compressed game voice resource was published by the
-// XAudio2 path.  Unlike kXAudioDiagPcmPublished, this is a resource-audio
-// readiness proof and lets the host prefer the original file even when no PCM
-// clip was active at the matching text timestamp (SGRE xWMA).
+// 至少发布过一条**取自引擎归档**的压缩语音资源（当前只有 SGRE 的 voice_body.bin）。
+// 与 kXAudioDiagPcmPublished 不同，这是 resource-audio 就绪证据：即使配对时刻没有
+// 活跃 PCM clip，host 也可以优先用它。
+//
+// 「byte-exact」到什么层次，必须说准（SOP §7 的 hash_verified 是按这个判的）：
+//   * fmt / dpds / 压缩负载三块**逐字节**取自归档，与源 entry 一致；
+//   * 但发布出去的 `.xwma` **文件**不逐字节等于归档里的任何一段——归档存的是无头
+//     chunk，RIFF 外壳是本进程合成的。所以能宣称的是「负载哈希一致」，不是「文件
+//     哈希一致」；要上 hash_verified 必须比对负载而不是整文件。
+//   * 解码后的 PCM（kXAudioDiagPcmPublished）更不在此列：XAPO 位于 XAudio2 重采样
+//     之后，实测拿到的是 48000Hz/float32，而 SGRE 源是 22050Hz/16bit。
 constexpr uint32_t kXAudioDiagGameResourcePublished = 0x00080000u;
 // SGRE profile 命中且 voice_body.bin 已映射（能力就位，不代表已捕获）。
 constexpr uint32_t kXAudioDiagSgreArchiveMapped = 0x00100000u;

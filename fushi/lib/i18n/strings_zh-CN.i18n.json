@@ -3738,5 +3738,6 @@
   "gal_hook_text_padding": "文字左右边距",
   "gal_hook_text_padding_hint": "让文字与窗口边缘和缩放手柄保持距离。",
   "gal_hook_text_corner_radius": "窗口圆角",
-  "gal_hook_text_corner_radius_hint": "调整窗口背景的圆角半径。"
+  "gal_hook_text_corner_radius_hint": "调整窗口背景的圆角半径。",
+  "game_hook_reason_capability_probe_failed": "捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。"
 }

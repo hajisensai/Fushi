@@ -43,6 +43,11 @@ struct XAudioPcmCaptureView {
 // reaches the game mix.  Process is real-time safe: fixed virtual memory,
 // atomics and bounded memcpy only.
 //
+// 这里拿到的**不是**源文件的原始采样：XAPO 挂在源 voice 的效果链上，位于 XAudio2
+// 的重采样/格式归一之后。SGRE 实测源是 22050Hz/1ch/16bit，而此处观测到 48000Hz/
+// 1ch/float32。所以这条链只能宣称「混音前的干净单源语音」，不能宣称与源 entry 哈希
+// 一致——那一级只有归档路径（见 kXAudioDiagGameResourcePublished）够得着。
+//
 // 发布边界不能只有 DestroyVoice。引擎复用 source voice 池、整局不 Destroy 是极常见
 // 做法（每句 Stop/Flush 后换下一段音频接着用同一个 voice），那种引擎在只认 Destroy 的
 // 实现下一整局拿不到任何语音。因此 Stop / FlushSourceBuffers 也是发布边界，各自取走

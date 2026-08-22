@@ -2955,7 +2955,18 @@ class GalHookSessionController extends ChangeNotifier {
     return null;
   }
 
-  Future<void> _applyNativeLoopbackPolicyToLiveEngines({
+  /// 把 native loopback 策略推给所有活跃引擎，返回**有多少个没确认**。
+  ///
+  /// 两处根因修复（原实现用 `throw StateError` 表示未确认）：
+  ///   ① 抛出会当场中断循环，后面的引擎连一次 deny 请求都收不到——而 deny 是隐私门，
+  ///      漏掉任何一个引擎就意味着那个游戏进程里的 loopback 还在录。所以这里逐个都发，
+  ///      单个引擎失败或抛出只累计计数，不打断其余引擎。
+  ///   ② 那个 StateError 被 [SerialJobQueue] 的 buildFailure 吞成 `false`，而调用方
+  ///      `.then<void>((bool _) {})` 把它丢掉，于是 fail-closed 契约在用户那边表现为
+  ///      fail-open：UI 一声不响，用户以为回环已经关了。计数返回给调用方，由它落进
+  ///      可见状态。
+  Future<({int unacknowledged, bool superseded})>
+      _applyNativeLoopbackPolicyToLiveEngines({
     required GalNativeLoopbackPolicy policy,
     required int sessionGeneration,
     required int policyRevision,
@@ -2968,18 +2979,45 @@ class GalHookSessionController extends ChangeNotifier {
     if (starting != null) engines.add(starting);
     if (active != null) engines.add(active);
     if (audio is EngineHookGalAudioSource) engines.add(audio);
+    int unacknowledged = 0;
     for (final EngineHookGalAudioSource engine in engines) {
-      final bool applied = await engine.requestNativeLoopbackPolicy(policy);
+      bool applied = false;
+      try {
+        applied = await engine.requestNativeLoopbackPolicy(policy);
+      } on Object {
+        applied = false;
+      }
       if (sessionGeneration != _operationGeneration ||
           policyRevision != _audioFallbackPolicyRevision) {
-        return;
+        return (unacknowledged: unacknowledged, superseded: true);
       }
-      if (!applied) {
-        throw StateError(
-          'native loopback policy ${policy.cliValue} was not acknowledged',
-        );
-      }
+      if (!applied) unacknowledged++;
     }
+    return (unacknowledged: unacknowledged, superseded: false);
+  }
+
+  /// 策略没能全部落地时，必须让用户看见——尤其是 deny：没确认就等于那个游戏进程里的
+  /// 回环可能还在录，而 UI 上策略已经显示成「干净源」了。
+  void _reportNativeLoopbackPolicyUnacknowledged({
+    required GalNativeLoopbackPolicy policy,
+    required int unacknowledged,
+  }) {
+    final String message = policy == GalNativeLoopbackPolicy.deny
+        ? 'Process loopback capture could not be confirmed stopped in '
+            '$unacknowledged running game(s); restart the game to be sure'
+        : 'Process loopback capture could not be re-enabled in '
+            '$unacknowledged running game(s)';
+    _setState(_state.copyWith(lastError: message));
+    _record(
+      GalHookEventSeverity.error,
+      'audio',
+      'audio.native_loopback_policy_unacknowledged',
+      message,
+      details: <String, Object?>{
+        'policy': policy.cliValue,
+        'unacknowledged': unacknowledged,
+      },
+    );
   }
 
   /// 用户切换降级策略：立即生效 + 按游戏记住。
@@ -3009,9 +3047,13 @@ class GalHookSessionController extends ChangeNotifier {
             sessionGeneration != _operationGeneration) {
           return true;
         }
+        final GalNativeLoopbackPolicy native = policy.allowsLoopback
+            ? GalNativeLoopbackPolicy.allow
+            : GalNativeLoopbackPolicy.deny;
+        final ({int unacknowledged, bool superseded}) result;
         if (policy.allowsLoopback) {
-          await _applyNativeLoopbackPolicyToLiveEngines(
-            policy: GalNativeLoopbackPolicy.allow,
+          result = await _applyNativeLoopbackPolicyToLiveEngines(
+            policy: native,
             sessionGeneration: sessionGeneration,
             policyRevision: revision,
           );
@@ -3027,11 +3069,19 @@ class GalHookSessionController extends ChangeNotifier {
             sessionGeneration: sessionGeneration,
             policyRevision: revision,
           );
-          await _applyNativeLoopbackPolicyToLiveEngines(
-            policy: GalNativeLoopbackPolicy.deny,
+          result = await _applyNativeLoopbackPolicyToLiveEngines(
+            policy: native,
             sessionGeneration: sessionGeneration,
             policyRevision: revision,
           );
+        }
+        if (result.superseded) return true;
+        if (result.unacknowledged > 0) {
+          _reportNativeLoopbackPolicyUnacknowledged(
+            policy: native,
+            unacknowledged: result.unacknowledged,
+          );
+          return false;
         }
         return true;
       },
