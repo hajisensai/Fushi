@@ -47,6 +47,7 @@
 #include "catsystem2_int.h"
 #include "malie_lib.h"
 #include "ffmpeg_runtime.h"
+#include "hook_original_registry.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
@@ -151,14 +152,17 @@ uint8_t* g_clip_base = nullptr;
 uint8_t* g_lb_ring_base = nullptr;
 uint8_t* g_lb_marker_base = nullptr;
 
-// MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
-// 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
+// MinHook 去重集：普通 hook 仍保持历史语义。只有确实会因 codec 出现多个 vtable target
+// 的 XAudio2 方法使用下面两个独立 trampoline 注册表；不能把全 DLL 的不同 detour 混进
+// 一个仅按 target 索引的表，否则共享实现地址会把某个 detour 绑定到别的 trampoline。
 CRITICAL_SECTION g_cs;
 bool g_cs_ready = false;
 CRITICAL_SECTION g_text_cs;
 bool g_text_cs_ready = false;
 void* g_hooked_fns[64] = {nullptr};
 int g_hooked_count = 0;
+fushi_voice_hook::HookOriginalRegistry<16> g_submit_source_buffer_originals;
+fushi_voice_hook::HookOriginalRegistry<16> g_flush_source_buffers_originals;
 
 // 原始语音流落盘的共用出口（KiriKiri 与 Siglus 都写同一目录，供 Dart 按 tick 配对）。
 std::wstring VoiceBaseName(const wchar_t* storagename) {
@@ -246,10 +250,8 @@ typedef HRESULT(STDMETHODCALLTYPE* CommitChanges_t)(IXAudio2* self,
 XAudio2Create_t g_orig_XAudio2Create9 = nullptr;
 XAudio2Create_t g_orig_XAudio2Create8 = nullptr;
 CreateSourceVoice_t g_orig_CreateSourceVoice = nullptr;
-SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
 SourceVoiceStartStop_t g_orig_SourceVoiceStart = nullptr;
 SourceVoiceStartStop_t g_orig_SourceVoiceStop = nullptr;
-FlushSourceBuffers_t g_orig_FlushSourceBuffers = nullptr;
 DestroyVoice_t g_orig_DestroyVoice = nullptr;
 CommitChanges_t g_orig_CommitChanges = nullptr;
 
@@ -351,6 +353,43 @@ bool HookFn(void* target, void* detour, void** original) {
   }
   LeaveCriticalSection(&g_cs);
   return ok;
+}
+
+// 多 codec XAudio2 方法专用：一个 detour 可以对应多个 target，每个 target 必须保留自己的
+// trampoline。注册表按 detour 分开，避免普通 HookFn 的跨适配器 target 去重语义被改写。
+template <size_t Capacity>
+bool HookFnWithOriginalRegistry(
+    void* target, void* detour,
+    fushi_voice_hook::HookOriginalRegistry<Capacity>* originals) {
+  if (target == nullptr || originals == nullptr || !g_cs_ready) return false;
+  bool ok = false;
+  EnterCriticalSection(&g_cs);
+  void* trampoline = originals->Lookup(target);
+  if (trampoline != nullptr) {
+    ok = true;
+  } else {
+    const MH_STATUS created = MH_CreateHook(target, detour, &trampoline);
+    if (created == MH_OK && originals->Publish(target, trampoline)) {
+      const MH_STATUS enabled = MH_EnableHook(target);
+      if (enabled == MH_OK || enabled == MH_ERROR_ENABLED) {
+        ok = true;
+      } else {
+        originals->Erase(target, trampoline);
+        MH_RemoveHook(target);
+      }
+    } else if (created == MH_OK) {
+      MH_RemoveHook(target);
+    }
+  }
+  LeaveCriticalSection(&g_cs);
+  return ok;
+}
+
+template <typename Function, size_t Capacity>
+Function OriginalHookForVtableSlot(
+    void* com_obj, size_t idx,
+    const fushi_voice_hook::HookOriginalRegistry<Capacity>& originals) {
+  return reinterpret_cast<Function>(originals.Lookup(VtableSlot(com_obj, idx)));
 }
 
 // 首次拿到可发布的 PCM 格式：block_align 最后写，作为跨进程「格式就绪」完成标记。
