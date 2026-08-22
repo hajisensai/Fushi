@@ -94,15 +94,10 @@ void main() {
           ReaderSelectionScripts.source(),
     };
 
+    // 断言一律锚在**可执行代码片段**上，不能是裸的标识符名——两份实现的注释里都
+    // 写着 isScanStop / isScanBoundary / `scanOffset === start`，裸 contains 会被
+    // 自己的注释假阳性满足，变异测试实测过（把桥接条件换成 `!text` 时裸断言照样绿）。
     sources.forEach((String label, String src) {
-      // 两个谓词必须都在：词边界（点击判定 / 词首回退）与扫描终点（前向扫描）。
-      expect(src.contains('isScanWhitespace'), isTrue,
-          reason: '[$label] 必须有 isScanWhitespace 谓词');
-      expect(src.contains('isScanStop'), isTrue,
-          reason: '[$label] 必须有 isScanStop 谓词（扫描终点，不含空白）');
-      expect(src.contains('isScanBoundary'), isTrue,
-          reason: '[$label] isScanBoundary 必须保留（点击命中判定 + 词首回退用）');
-
       // 前向扫描的 break 条件必须是 isScanStop。BUG-1773 的写法是 isScanBoundary，
       // 它把空白也当终点 → 短语被截断。
       expect(src.contains('if (this.isScanStop(char)) break;'), isTrue,
@@ -111,13 +106,15 @@ void main() {
           reason: '[$label] 前向扫描不得退回 isScanBoundary（BUG-1773 的根因写法）');
 
       // 桥接规则的三条终止条件必须齐：本节点开头 / 后无字符 / 后接空白或终点。
-      expect(src.contains('scanOffset === start'), isTrue,
-          reason: '[$label] 空白桥接必须要求左边已有本节点扫入的内容（跨节点不粘空白）');
-      expect(src.contains('nextChar === undefined'), isTrue,
-          reason: '[$label] 节点末尾的空白必须终止扫描');
+      // 两份实现缩进不同，故锚在去缩进的完整条件表达式上。
       expect(
-          src.contains(
-              'this.isScanWhitespace(nextChar) || this.isScanStop(nextChar)'),
+          src.contains('if (scanOffset === start || nextChar === undefined ||'),
+          isTrue,
+          reason: '[$label] 空白桥接必须要求左边已有本节点扫入的内容（跨节点不粘空白）'
+              '、且节点末尾的空白终止扫描');
+      expect(
+          src.contains('this.isScanWhitespace(nextChar) || '
+              'this.isScanStop(nextChar)) break;'),
           isTrue,
           reason: '[$label] 连续空白 / 空白后接终点必须终止扫描');
 
