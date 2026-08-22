@@ -242,10 +242,12 @@ void main() {
         isTrue,
         reason: 'States 必须带上 topmost，独立工具条窗才画得出高亮',
       );
+      // 工具栏字形已从 emoji 换成打包的 Material Symbols Rounded 子集，
+      // 置顶槽是 push_pin(U+F10D)——BMP 单 code unit，不再有代理对。
       expect(
-        toolbar.contains(r'return L"\U0001F4CC";'),
+        toolbar.contains(r'return L"\uF10D";'),
         isTrue,
-        reason: '置顶槽必须有 📌 字形',
+        reason: '置顶槽必须有 push_pin 字形',
       );
       expect(
         toolbar.contains('return states.topmost;'),
@@ -280,7 +282,7 @@ void main() {
       );
     });
 
-    test('最小宽度跟着槽数走（9 槽 = 350dip 行宽，下限必须更大）', () {
+    test('最小宽度跟着槽数与按钮尺寸走（下限不得窄于工具栏行）', () {
       final Match? declared =
           RegExp(r'kSlotCount\s*=\s*(\d+)\s*;').firstMatch(toolbarHeader);
       expect(declared, isNotNull);
@@ -289,8 +291,18 @@ void main() {
           RegExp(r'kHookTextMinStripWidthDip = ([\d.]+)f;').firstMatch(window);
       expect(minWidth, isNotNull);
       final double floor = double.parse(minWidth!.group(1)!);
-      // 行宽 = N * 按钮 30dip + (N-1) * 间隙 10dip。
-      final double rowWidth = slots * 30.0 + (slots - 1) * 10.0;
+      // 按钮尺寸/间隙也是源码常量，必须从源码读——写死数字的话，改了尺寸这条
+      // 守卫要么假红（尺寸变小）要么假绿（尺寸变大却不报），两种都比不守还糟。
+      final Match? btn =
+          RegExp(r'kHookTextButtonSizeDip = ([\d.]+)f;').firstMatch(window);
+      final Match? gap =
+          RegExp(r'kHookTextButtonGapDip = ([\d.]+)f;').firstMatch(window);
+      expect(btn, isNotNull, reason: '找不到 kHookTextButtonSizeDip');
+      expect(gap, isNotNull, reason: '找不到 kHookTextButtonGapDip');
+      final double buttonDip = double.parse(btn!.group(1)!);
+      final double gapDip = double.parse(gap!.group(1)!);
+      // 行宽 = N * 按钮 + (N-1) * 间隙。
+      final double rowWidth = slots * buttonDip + (slots - 1) * gapDip;
       expect(
         floor,
         greaterThanOrEqualTo(rowWidth),

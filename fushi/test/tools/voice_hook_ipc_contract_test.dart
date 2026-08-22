@@ -35,8 +35,10 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    // v15：保留 v14 的 hit/input/frame 查词区，并只追加截图抑制 applied-seq 确认。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 15;'));
+    // v16：保留 v15 的截图抑制 applied-seq 确认，并在头部**最尾**追加 injected
+    // WASAPI loopback 的 fail-closed 控制/确认四字（native_loopback_*）。纯追加，
+    // 既有字段偏移不动。
+    expect(source, contains('constexpr uint32_t kSharedVersion = 16;'));
   });
 
   test('v15：截图抑制必须 exact-match，且普通帧不能推进 applied ack', () {
