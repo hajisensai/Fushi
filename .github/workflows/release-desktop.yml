@@ -247,7 +247,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: fushi/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
@@ -868,7 +868,7 @@ jobs:
             ~/.cocoapods
             fushi/ios/Pods
             fushi/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
@@ -1368,7 +1368,7 @@ jobs:
             ~/.cocoapods
             fushi/ios/Pods
             fushi/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
