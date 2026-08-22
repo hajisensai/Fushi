@@ -22,7 +22,6 @@ on:
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/**'
-      - 'melos.yaml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   release:

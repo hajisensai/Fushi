@@ -196,31 +196,27 @@ if (-not $env:FUSHI_BOOTSTRAP_SKIP_NETCHECK) {
     }
 }
 
-$packages = @(
-    "$root\packages\fushi_core",
-    "$root\packages\fushi_dictionary",
-    "$root\packages\fushi_anki",
-    "$root\packages\fushi_audio",
-    "$root\packages\fushi_platform",
-    "$root\fushi"
-)
-
-foreach ($pkg in $packages) {
-    $name = Split-Path -Leaf $pkg
-    Write-Host "pub get: $name" -ForegroundColor Cyan
-    Push-Location $pkg
-    & $flutter pub get
-    if ($LASTEXITCODE -ne 0) {
-        Pop-Location
-        if ($proxy) {
-            throw "flutter pub get failed in $name（已经过代理 $proxy，来源: $($resolved.Source)）。若是网络错误，先确认该代理进程还活着、端口没变。"
-        }
-        throw ("flutter pub get failed in $name。若报 socket error / 超时，多半是直连 pub.dev 不通，而当前没有配置任何代理。`n`n" + (Get-ProxyHelpText))
-    }
+# Pub workspace：解析只在根发生一次，产出唯一的 pubspec.lock 和唯一的
+# .dart_tool/package_config.json，所有成员共用。
+#
+# 这里以前是逐个 cd 进 6 个包各跑一次 pub get —— 那是 Melos 6 的做法，也正是
+# 「主 app 与包各解析各的」的本地来源：fushi 被入库的 lock 钉在 sqlite3 3.3.3，
+# packages/fushi_core 自己解析却拿到 3.5.2，包测试验证的依赖版本和生产跑的不是
+# 同一个。改用 workspace 后各包的 pubspec.lock 由 pub 自动删除，再逐个 pub get
+# 既是浪费也会重新制造 stray files。
+Write-Host "pub get: workspace root" -ForegroundColor Cyan
+Push-Location $root
+& $flutter pub get
+if ($LASTEXITCODE -ne 0) {
     Pop-Location
+    if ($proxy) {
+        throw "flutter pub get failed in workspace root（已经过代理 $proxy，来源: $($resolved.Source)）。若是网络错误，先确认该代理进程还活着、端口没变。"
+    }
+    throw ("flutter pub get failed in workspace root。若报 socket error / 超时，多半是直连 pub.dev 不通，而当前没有配置任何代理。`n`n" + (Get-ProxyHelpText))
 }
+Pop-Location
 
-Write-Host "`nAll packages resolved." -ForegroundColor Green
+Write-Host "`nWorkspace resolved (single lockfile at repo root)." -ForegroundColor Green
 
 # Apply pub-cache patches for the non-vendored packages (single source of truth:
 # ci/apply-patches.sh). Requires bash (Git Bash) on PATH, same as CI.

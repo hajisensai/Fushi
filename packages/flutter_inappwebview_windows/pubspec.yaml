@@ -1,4 +1,5 @@
 name: flutter_inappwebview_windows
+resolution: workspace
 description: Windows implementation of the flutter_inappwebview plugin.
 version: 0.6.0
 homepage: https://inappwebview.dev/
@@ -14,7 +15,7 @@ topics:
   - browser
 
 environment:
-  sdk: ^3.5.0
+  sdk: ">=3.8.0 <4.0.0"
   flutter: ">=3.24.0"
 
 dependencies:
@@ -25,7 +26,11 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
+  # 与 fushi 对齐：pub workspace 下所有成员共用一份解析，两个不同 major 的
+  # flutter_lints 会直接让 version solving 失败。上游 fork 用的是 ^4.0.0，但
+  # lint 规则集只是 dev 依赖、不进运行时，且本包有自己的 analysis_options，
+  # 降到主 app 的版本没有行为影响。等 fushi 整体升 lint 时这里一起抬。
+  flutter_lints: ^2.0.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

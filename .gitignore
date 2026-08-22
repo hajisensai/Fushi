@@ -31,9 +31,18 @@ melos_*.iml
 .pub-cache/
 .pub/
 /build/
+# Melos 6 时代的产物：那时每个包各自解析，melos 用 pubspec_overrides.yaml 把
+# 兄弟包指到本地路径。改用 pub workspace 后解析只在根发生一次，这两样都不再生成
+# （规则留着兜底，防止有人用老版 melos 跑一次又把它们造出来）。
 **/pubspec_overrides.yaml
+# 各包的 pubspec.lock 也不再存在：workspace 只有根一份 lock。这条规则曾经是
+# 「主 app 与包各锁各的版本」能长期不被发现的条件——包侧的 lock 从来没进过
+# 版本库，CI 每次全新解析，于是生产与包测试可以跑在不同版本上。
 packages/*/pubspec.lock
 packages/*/build/
+# Flutter 为插件生成的符号链接目录（纯构建产物）。workspace 下 pub get 会连
+# example 工程一起解析，于是它也会出现在 packages/*/example 里。
+**/flutter/ephemeral/
 
 # Web related
 
