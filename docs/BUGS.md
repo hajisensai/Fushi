@@ -29,11 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1652 条。点号进各自文件。
+> 共 1654 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1777](bugs/BUG-1777-emphatic-full-collapse-phantom-match.md) | ✅ | ✅ | 查词促音丢失：强调折叠full模式常开产生吞字幻影匹配压过原形 |
+| [BUG-1776](bugs/BUG-1776-subtitle-list-adjacent-chain-dup.md) | ✅ | ✅ | 字幕列表不折叠同文本时间相接的卡拉OK交替事件 |
+| [BUG-1775](bugs/BUG-1775-ass-clip-cue-frame-anchor.md) | ✅ | ✅ | 带clip的ASS事件按容器基线定位与帧空间裁剪几何脱节 |
 | [BUG-1774](bugs/BUG-1774-xaudio-codec-trampoline-collision.md) | ✅ | ✅ | XAudio2 WMA Hook 覆盖 ADPCM trampoline 导致游戏静音 |
 | [BUG-1773](bugs/BUG-1773-phrase-lookup-truncated-at-word-end.md) | ✅ | ✅ | 点英文单词查词把查询串截到词尾导致短语词条永不匹配 |
 | [BUG-1772](bugs/BUG-1772-libtorrent-2-1-drift-breaks-native-build.md) | ✅ | ✅ | vcpkg 未钉版，libtorrent 2.0→2.1 漂移打断 Windows DLL 与 Android .so 构建 |

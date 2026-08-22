@@ -285,6 +285,69 @@ double assBlurValueToSigma(double blurValue, double assFontScale) {
   return sigma < 0 ? 0 : (sigma > 24 ? 24 : sigma);
 }
 
+/// [SubtitleClip] 的值指纹（BUG-1775）：同值裁剪 → 同串。分组键与 [_clipGroup] 的
+/// 「组内同裁剪才真裁」判据共用，使值相等但对象不同的 clip（同一特效拆多条 Dialogue）
+/// 不因 identity 差异而整组放弃裁剪。分数坐标截 4 位小数（与 \pos 分组键同精度）。
+@visibleForTesting
+String clipGroupFingerprint(SubtitleClip clip) {
+  final StringBuffer b = StringBuffer(clip.inverse ? 'i' : 'n');
+  for (final SubtitleClipSegment s in clip.segments) {
+    b
+      ..write(';')
+      ..write(s.op.index)
+      ..write(',')
+      ..write(s.x1.toStringAsFixed(4))
+      ..write(',')
+      ..write(s.y1.toStringAsFixed(4));
+    if (s.op == SubtitleClipOp.cubic) {
+      b
+        ..write(',')
+        ..write(s.x2.toStringAsFixed(4))
+        ..write(',')
+        ..write(s.y2.toStringAsFixed(4))
+        ..write(',')
+        ..write(s.x3.toStringAsFixed(4))
+        ..write(',')
+        ..write(s.y3.toStringAsFixed(4));
+    }
+  }
+  return b.toString();
+}
+
+/// 无 `\pos`/`\move` 但带静态 `\clip` 的 ASS 事件的**帧空间锚点分数**（BUG-1775）。
+///
+/// `\clip` 的矩形/路径映射在 fit:contain 视频内容矩形上（[_AssClipClipper]），而无 \pos
+/// 的普通 cue 此前按「用户底距 + 控制条避让」定位在**容器**坐标——两套几何脱节，字幕盒
+/// 可以滑出作者的裁剪窗：左右分屏卡拉OK（两条同文本事件各 \clip 半边、不同 Layer 同位
+/// 叠画拼成一行）被拆成两处错位片段，clip 竖向边带还会把字形拦腰裁半。libass 里排版与
+/// 裁剪同在帧空间：无 \pos 事件的锚点由 Alignment + Margin 对帧定位——
+/// 水平 左=MarginL / 居中=帧中心+(L-R)/2 / 右=1-MarginR；竖直 顶=MarginV / 中=0.5
+/// （MarginV 不参与）/ 底=1-MarginV。Margin 是 PlayRes 像素，缺 PlayRes 或无边距按 0。
+/// 返回分数与 `\pos` 同构，直接喂 [mapPosFractionToContainer] 走绝对定位。
+@visibleForTesting
+SubtitlePos resolveClipCueAnchorFraction(SubtitleMarkup markup) {
+  final SubtitleAnchor a = markup.anchor ??
+      const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
+  double frac(double? margin, double? playRes) =>
+      (margin != null && margin > 0 && playRes != null && playRes > 0)
+          ? margin / playRes
+          : 0;
+  final double ml = frac(markup.cueStyle?.marginL, markup.playResX);
+  final double mr = frac(markup.cueStyle?.marginR, markup.playResX);
+  final double mv = frac(markup.cueStyle?.marginV, markup.playResY);
+  final double xf = switch (a.horizontal) {
+    SubtitleHAlign.left => ml,
+    SubtitleHAlign.center => 0.5 + (ml - mr) / 2,
+    SubtitleHAlign.right => 1 - mr,
+  };
+  final double yf = switch (a.vertical) {
+    SubtitleVAlign.top => mv,
+    SubtitleVAlign.middle => 0.5,
+    SubtitleVAlign.bottom => 1 - mv,
+  };
+  return SubtitlePos(xf, yf);
+}
+
 /// 视频底部当前句字幕 overlay；监听 [VideoPlayerController.currentCue]。
 ///
 /// 字幕逐字符可点击：点击第 [int] 个 grapheme 时回调
@@ -1102,8 +1165,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (!widget.respectAssStyle) return child;
     final SubtitleClip? clip = group.first.markup?.clip;
     if (clip == null) return child;
+    // 同值即同裁剪（BUG-1775）：identity 相同免算指纹；值相等但对象不同（同一特效拆
+    // 多条 Dialogue 各自解析出等值 clip）也不放弃裁剪。
+    final String fp = clipGroupFingerprint(clip);
     for (final AudioCue cue in group.skip(1)) {
-      if (!identical(cue.markup?.clip, clip)) return child;
+      final SubtitleClip? other = cue.markup?.clip;
+      if (other == null) return child;
+      if (!identical(other, clip) && clipGroupFingerprint(other) != fp) {
+        return child;
+      }
     }
     return ClipPath(
       clipper: _AssClipClipper(clip: clip, videoW: videoW, videoH: videoH),
@@ -1195,6 +1265,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       if (m == null) return true; // 纯 SRT / 无 markup：底部居中、无 MarginV → 折叠
       if (m.posFraction != null) return false;
       if (widget.respectAssStyle && m.move != null) return false;
+      // 带 \clip 的 cue 走帧空间绝对定位（BUG-1775），不属于基线桶。
+      if (widget.respectAssStyle && m.clip != null) return false;
       final SubtitleVAlign v = m.anchor?.vertical ?? SubtitleVAlign.bottom;
       if (v != SubtitleVAlign.bottom) return false;
       final double? mv = m.cueStyle?.marginV;
@@ -1285,15 +1357,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // Layer 0（srt/vtt/无 Layer 列）不加后缀，既有分组键与槽位状态字面不变。
     final int layer = markup?.layer ?? 0;
     final String lk = layer != 0 ? ':L$layer' : '';
+    // 静态 \clip 纳入键（BUG-1775）：不同裁剪窗的事件（左右分屏卡拉OK各 \clip 半边）
+    // 绝不能同组进一个 Column——组内裁剪不一致会整组放弃裁剪、竖排还会把片段错位堆行。
+    // 各自成组后同位叠画，由各组的 [_clipGroup] 分别真裁。无 clip（srt/vtt/普通 ASS）
+    // 后缀为空，既有键字面不变。
+    final SubtitleClip? clip = widget.respectAssStyle ? markup?.clip : null;
+    final String ck = clip != null ? ':c${clipGroupFingerprint(clip)}' : '';
     if (pf != null) {
       return 'p:${pf.xFraction.toStringAsFixed(4)},'
-          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah$lk';
+          '${pf.yFraction.toStringAsFixed(4)}:$av:$ah$lk$ck';
     }
     // \move（TODO-1374）：自带绝对位置（起点）→ 各自成组走绝对定位，不与锚点 cue 同组。
     final SubtitleMove? move = widget.respectAssStyle ? markup?.move : null;
     if (move != null) {
       return 'mv:${move.x1Fraction.toStringAsFixed(4)},'
-          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah$lk';
+          '${move.y1Fraction.toStringAsFixed(4)}:$av:$ah$lk$ck';
     }
     // MarginV（同锚点内不同竖直边距）纳入键：消除旧「同锚点不同 MarginV 被裹挟进一个
     // Column 挤在一起」的降级（OP/ED 标题与多行歌词那样各在其 authored 高度）。
@@ -1303,6 +1381,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final int mv;
     if (mvRaw == null || mvRaw <= 0) {
       mv = -1;
+    } else if (clip != null) {
+      // 带 \clip 的 cue 走帧空间绝对定位（[resolveClipCueAnchorFraction]），MarginV 是
+      // 帧位置的一部分——不折基线桶（折叠会抹掉位置差、也会被 [_mergeBottomBaselineGroups]
+      // 拽回用户基线，与 clip 几何脱节，正是本 bug 的病根）。
+      mv = mvRaw.round();
     } else if (vertical == SubtitleVAlign.bottom) {
       // 底部锚点折叠判据用**原始 MarginV**（PlayRes 像素、显示无关），不用缩放值：缩放值
       // `_scaledMarginV` 随显示区高变化，大屏（显示区高 >> PlayResY）时第二语言对白的
@@ -1331,7 +1414,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final double mrRaw = markup?.cueStyle?.marginR ?? 0;
     final int ml = mlRaw > 0 ? mlRaw.round() : -1;
     final int mr = mrRaw > 0 ? mrRaw.round() : -1;
-    return 'a:$av:$ah:$mv:$ml:$mr$lk';
+    return 'a:$av:$ah:$mv:$ml:$mr$lk$ck';
   }
 
   /// TODO-1372/BUG-698：把一组的当前活动 cue 对齐进跨帧槽位表（不变量见 [_groupSlots]），
@@ -1394,6 +1477,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final SubtitleAnchor? ownAnchor = ownMarkup?.anchor;
     final bool ownNonBottom = ownPos != null ||
         ownMarkup?.move != null || // \move 自带绝对位置，不被强制锚定（TODO-1374）
+        // \clip 走帧空间绝对定位（BUG-1775）：强制置顶会把文本拽离作者裁剪窗。
+        ownMarkup?.clip != null ||
         (ownAnchor != null && ownAnchor.vertical != SubtitleVAlign.bottom);
     // TODO-2838：锚定解析收敛成统一函数（[resolveLayerForcedAnchor]）——用户锚定（含
     // 拖拽预览）、副字幕自动对侧、ASS 自带位置的优先级都在那一处，此处不再叠 if。
@@ -1453,6 +1538,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       final SubtitleAnchor anchor = posMarkup!.anchor ??
           const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
       return _absolutePositioned(posScreen, anchor, content);
+    }
+    // 无 \pos/\move 但带静态 \clip（BUG-1775）：排版必须与裁剪同一几何——按 libass 语义
+    // 用 Alignment + Margin 在帧空间合成锚点，走与 \pos 相同的绝对定位。不做控制条避让
+    // （dodge 会把文本推出固定在帧上的裁剪窗，重现「字被拦腰裁半」）。视频未解码时锚点
+    // 解不出（null），回退历史锚点路径（与 \pos 同款降级，首帧仍有字幕）。
+    if (posMarkup?.clip != null) {
+      final Offset? clipAnchorScreen =
+          _clipFrameAnchorScreen(posMarkup, container);
+      if (clipAnchorScreen != null) {
+        final SubtitleAnchor anchor = posMarkup!.anchor ??
+            const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
+        return _absolutePositioned(clipAnchorScreen, anchor, content,
+            dodge: false);
+      }
     }
     // 无 \pos：纯 SRT 副字幕强制顶部锚点；否则按 markup 锚点（null → 历史底居中）。
     final SubtitleAnchor? anchor = forceTop
@@ -2661,6 +2760,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return mapPosFractionToContainer(pf, w, h, container);
   }
 
+  /// 带静态 `\clip` 的无 \pos cue 的帧空间锚点 → 容器局部坐标（BUG-1775，语义见
+  /// [resolveClipCueAnchorFraction]）。无 clip / 视频未解码返回 null（回退锚点路径）。
+  Offset? _clipFrameAnchorScreen(SubtitleMarkup? markup, Size container) {
+    if (markup?.clip == null) return null;
+    final int? w = widget.controller.videoWidth;
+    final int? h = widget.controller.videoHeight;
+    if (w == null || h == null) return null;
+    return mapPosFractionToContainer(
+        resolveClipCueAnchorFraction(markup!), w, h, container);
+  }
+
   static double _hFrac(SubtitleHAlign h) => switch (h) {
         SubtitleHAlign.left => 0,
         SubtitleHAlign.center => 0.5,
@@ -2866,7 +2976,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 与历史像素级一致。控制条显隐用 [TweenAnimationBuilder] 在「作者位」与「避让位」之间
   /// 插值，时长/曲线与锚点分支的 [AnimatedPadding] 同源，两条分支跟手感一致。
   Widget _absolutePositioned(
-      Offset posScreen, SubtitleAnchor anchor, Widget content) {
+      Offset posScreen, SubtitleAnchor anchor, Widget content,
+      {bool dodge = true}) {
     final double anchorFx = _hFrac(anchor.horizontal);
     final double anchorFy = _vFrac(anchor.vertical);
     Widget layout(double dodgeProgress) => CustomSingleChildLayout(
@@ -2882,7 +2993,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         );
 
     final ValueListenable<bool>? visible = widget.controlsVisible;
-    if (visible == null) return layout(0);
+    // dodge=false（带 \clip 的帧锚 cue，BUG-1775）：裁剪窗固定在帧上，避让位移只会把
+    // 文本推出窗外——恒用作者位。
+    if (!dodge || visible == null) return layout(0);
     return ValueListenableBuilder<bool>(
       valueListenable: visible,
       builder: (BuildContext _, bool controlsVisible, Widget? child) {
