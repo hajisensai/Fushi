@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Les builds du canal de débogage peuvent être instables. Utilisez-les à vos risques et périls.",
   "update_download": "Télécharger",
   "update_download_failed": "échec du téléchargement",
-  "update_download_not_resumed": "non repris",
   "update_download_restarted_from_zero": "redémarré de zéro",
   "update_download_resume_status": "Reprise : $status",
   "update_download_resumed": "repris",

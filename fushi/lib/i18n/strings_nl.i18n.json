@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Builds van het debug-kanaal kunnen instabiel zijn. Gebruik op eigen risico.",
   "update_download": "Downloaden",
   "update_download_failed": "Download mislukt",
-  "update_download_not_resumed": "niet hervat",
   "update_download_restarted_from_zero": "opnieuw begonnen vanaf nul",
   "update_download_resume_status": "Hervatten: $status",
   "update_download_resumed": "hervat",

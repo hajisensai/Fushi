@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "เวอร์ชันช่องดีบักอาจไม่เสถียร ใช้ความเสี่ยงของคุณเอง",
   "update_download": "ดาวน์โหลด",
   "update_download_failed": "ดาวน์โหลดล้มเหลว",
-  "update_download_not_resumed": "ไม่ได้ดาวน์โหลดต่อ",
   "update_download_restarted_from_zero": "เริ่มดาวน์โหลดใหม่ตั้งแต่ต้น",
   "update_download_resume_status": "การดาวน์โหลดต่อ: $status",
   "update_download_resumed": "ดาวน์โหลดต่อแล้ว",

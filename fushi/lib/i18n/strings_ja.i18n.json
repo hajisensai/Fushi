@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "デバッグチャンネルのビルドは不安定な場合があります。自己責任でご使用ください。",
   "update_download": "ダウンロード",
   "update_download_failed": "ダウンロードに失敗しました",
-  "update_download_not_resumed": "レジュームせず",
   "update_download_restarted_from_zero": "最初からやり直し",
   "update_download_resume_status": "レジューム：$status",
   "update_download_resumed": "レジューム済み",

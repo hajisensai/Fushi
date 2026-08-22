@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Bản dựng kênh gỡ lỗi có thể không ổn định. Sử dụng theo rủi ro của bạn.",
   "update_download": "Tải xuống",
   "update_download_failed": "Tải xuống thất bại",
-  "update_download_not_resumed": "không tiếp tục",
   "update_download_restarted_from_zero": "đã tải lại từ đầu",
   "update_download_resume_status": "Tiếp tục: $status",
   "update_download_resumed": "đã tiếp tục",

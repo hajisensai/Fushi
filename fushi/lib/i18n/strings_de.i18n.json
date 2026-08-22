@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Debug-Kanal-Builds können instabil sein. Verwendung auf eigene Gefahr.",
   "update_download": "Herunterladen",
   "update_download_failed": "Download fehlgeschlagen",
-  "update_download_not_resumed": "nicht fortgesetzt",
   "update_download_restarted_from_zero": "von vorn begonnen",
   "update_download_resume_status": "Fortsetzen: $status",
   "update_download_resumed": "fortgesetzt",

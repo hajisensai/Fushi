@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "إصدارات قناة التصحيح قد تكون غير مستقرة. استخدمها على مسؤوليتك.",
   "update_download": "تنزيل",
   "update_download_failed": "فشل التنزيل",
-  "update_download_not_resumed": "لم يُستأنف",
   "update_download_restarted_from_zero": "أُعيد التنزيل من الصفر",
   "update_download_resume_status": "الاستئناف: $status",
   "update_download_resumed": "تم الاستئناف",

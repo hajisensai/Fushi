@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Сборки отладочного канала могут быть нестабильными. Используйте на свой риск.",
   "update_download": "Скачать",
   "update_download_failed": "Ошибка загрузки",
-  "update_download_not_resumed": "не продолжена",
   "update_download_restarted_from_zero": "начата заново",
   "update_download_resume_status": "Докачка: $status",
   "update_download_resumed": "продолжена",

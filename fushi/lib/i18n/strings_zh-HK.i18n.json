@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "偵錯頻道的建置版本可能不穩定。使用風險自負。",
   "update_download": "下載",
   "update_download_failed": "下載失敗",
-  "update_download_not_resumed": "未續傳",
   "update_download_restarted_from_zero": "已從頭重下",
   "update_download_resume_status": "續傳：$status",
   "update_download_resumed": "已續傳",

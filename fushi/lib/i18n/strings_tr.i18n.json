@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Hata ayıklama kanalı sürümleri kararsız olabilir. Riski size aittir.",
   "update_download": "İndir",
   "update_download_failed": "İndirme başarısız",
-  "update_download_not_resumed": "sürdürülmedi",
   "update_download_restarted_from_zero": "sıfırdan yeniden başlatıldı",
   "update_download_resume_status": "Sürdürme: $status",
   "update_download_resumed": "sürdürüldü",

@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Debug channel builds may be unstable. Use at your own risk.",
   "update_download": "Download",
   "update_download_failed": "Download failed",
-  "update_download_not_resumed": "not resumed",
   "update_download_restarted_from_zero": "restarted from zero",
   "update_download_resume_status": "Resume: $status",
   "update_download_resumed": "resumed",

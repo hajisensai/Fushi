@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Le build del canale di debug possono essere instabili. Usare a proprio rischio.",
   "update_download": "Scarica",
   "update_download_failed": "Download fallito",
-  "update_download_not_resumed": "non ripreso",
   "update_download_restarted_from_zero": "riavviato da zero",
   "update_download_resume_status": "Ripresa: $status",
   "update_download_resumed": "ripreso",

@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Build kanal debug mungkin tidak stabil. Gunakan dengan risiko sendiri.",
   "update_download": "Unduh",
   "update_download_failed": "Unduhan gagal",
-  "update_download_not_resumed": "tidak dilanjutkan",
   "update_download_restarted_from_zero": "diulang dari nol",
   "update_download_resume_status": "Lanjut: $status",
   "update_download_resumed": "dilanjutkan",

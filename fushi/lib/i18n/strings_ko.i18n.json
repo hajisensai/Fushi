@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "디버그 채널 빌드는 불안정할 수 있습니다. 본인 책임하에 사용하세요.",
   "update_download": "다운로드",
   "update_download_failed": "다운로드 실패",
-  "update_download_not_resumed": "이어받지 않음",
   "update_download_restarted_from_zero": "처음부터 다시 받음",
   "update_download_resume_status": "이어받기: $status",
   "update_download_resumed": "이어받음",

@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Builds do canal de depuração podem ser instáveis. Use por sua conta e risco.",
   "update_download": "Baixar",
   "update_download_failed": "Falha no download",
-  "update_download_not_resumed": "não retomado",
   "update_download_restarted_from_zero": "reiniciado do zero",
   "update_download_resume_status": "Retomada: $status",
   "update_download_resumed": "retomado",

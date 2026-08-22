@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "Las compilaciones del canal de depuración pueden ser inestables. Úselas bajo su propio riesgo.",
   "update_download": "Descargar",
   "update_download_failed": "Error al descargar",
-  "update_download_not_resumed": "no reanudada",
   "update_download_restarted_from_zero": "reiniciada desde cero",
   "update_download_resume_status": "Reanudación: $status",
   "update_download_resumed": "reanudada",

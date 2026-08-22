@@ -2059,7 +2059,6 @@
   "update_debug_channel_warning": "调试通道的构建可能不稳定。使用风险自负。",
   "update_download": "下载",
   "update_download_failed": "下载失败",
-  "update_download_not_resumed": "未续传",
   "update_download_restarted_from_zero": "已从零重下",
   "update_download_resume_status": "续传：$status",
   "update_download_resumed": "已续传",
