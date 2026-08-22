@@ -48,9 +48,13 @@ void main() {
     // 字形表必须覆盖 0..N-1（default 分支只是兜底，不算覆盖）。
     final String toolbarSource = toolbar.readAsStringSync();
     final int glyphStart = toolbarSource.indexOf('const wchar_t* SlotGlyph');
-    final int glyphEnd = toolbarSource.indexOf('bool SlotActive', glyphStart);
     expect(glyphStart, greaterThan(0), reason: '找不到 SlotGlyph 定义');
-    expect(glyphEnd, greaterThan(glyphStart));
+    // 切片终点取**本函数**在第 0 列的收尾大括号，不要拿相邻函数当分隔符：
+    // 原实现以 'bool SlotActive' 为终点，SlotActive 被挪到 SlotGlyph 之前时
+    // indexOf 返回 -1，守卫直接崩在切片上而不是报出真正的问题。
+    final int glyphEnd = toolbarSource.indexOf('\n}', glyphStart);
+    expect(glyphEnd, greaterThan(glyphStart),
+        reason: 'SlotGlyph 必须有第 0 列的收尾大括号');
     final String glyphBody = toolbarSource.substring(glyphStart, glyphEnd);
     final List<int> glyphCases = RegExp(r'case (\d+):')
         .allMatches(glyphBody)

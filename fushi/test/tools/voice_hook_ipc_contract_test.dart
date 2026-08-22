@@ -35,8 +35,10 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    // v15：保留 v14 的 hit/input/frame 查词区，并只追加截图抑制 applied-seq 确认。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 15;'));
+    // v16：在 v15 之上纯尾部追加 injected WASAPI loopback 的 fail-closed 控制/确认。
+    // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
+    // deny」。改它必须同时改契约头顶部的版本沿革说明。
+    expect(source, contains('constexpr uint32_t kSharedVersion = 16;'));
   });
 
   test('v15：截图抑制必须 exact-match，且普通帧不能推进 applied ack', () {

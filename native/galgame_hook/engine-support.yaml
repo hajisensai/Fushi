@@ -17,43 +17,60 @@
     {
       "id": "siglus",
       "display_name": "SiglusEngine",
-      "aliases": ["Siglus 3", "VisualArt's Siglus"],
+      "aliases": [
+        "Siglus 3",
+        "VisualArt's Siglus"
+      ],
       "family": {
         "id": "visualarts",
         "relation": "VisualArt's / Key 系引擎"
       },
       "detection": {
         "executable_names": {
-          "values": ["SiglusEngine.exe"],
+          "values": [
+            "SiglusEngine.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "anemoi 正式版，hibiki handoff 2026-07-19"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "anemoi SiglusEngine 1.1.141.3"
           }
         },
         "directory_files_all": {
-          "values": ["Gameexe.dat", "Scene.pck"],
+          "values": [
+            "Gameexe.dat",
+            "Scene.pck"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "renamed Siglus executable regression fixed by hibiki-hook d1601b9"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["dsound.dll"],
+          "values": [
+            "dsound.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "anemoi used DirectSound through CoCreateInstance"
           }
         },
         "resource_extensions": {
-          "values": [".ovk"],
+          "values": [
+            ".ovk"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "anemoi koe/*.ovk entries exported byte-identically"
@@ -148,7 +165,10 @@
     {
       "id": "elf_ai6",
       "display_name": "elf AI6",
-      "aliases": ["AI6WIN", "elf AI6"],
+      "aliases": [
+        "AI6WIN",
+        "elf AI6"
+      ],
       "family": {
         "id": "elf",
         "relation": "elf AI6 archive-based engine"
@@ -166,7 +186,10 @@
           "values": [],
           "evidence": null
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
           "values": [],
           "evidence": null
@@ -242,25 +265,48 @@
     {
       "id": "reallive",
       "display_name": "RealLive / old VisualArt's",
-      "aliases": ["RealLive", "VisualArt's RealLive"],
+      "aliases": [
+        "RealLive",
+        "VisualArt's RealLive"
+      ],
       "family": {
         "id": "visualarts",
         "relation": "older sibling of the verified Siglus OVK path"
       },
       "detection": {
-        "executable_names": {"values": [], "evidence": null},
-        "pe_architectures": {"values": [], "evidence": null},
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
-        "runtime_modules": {"values": [], "evidence": null},
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [],
+          "evidence": null
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".ovk"],
+          "values": [
+            ".ovk"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence"
           }
         },
-        "hashes": {"values": [], "evidence": null}
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "profile_pending_real_sample",
@@ -312,47 +358,78 @@
         "A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion."
       ],
       "adapter_path": "hook/adapters/reallive_adapter.inc",
-      "fixture_paths": ["tests/fixtures/reallive_replay.json"],
-      "test_paths": ["tests/reallive_adapter_test.cpp"]
+      "fixture_paths": [
+        "tests/fixtures/reallive_replay.json"
+      ],
+      "test_paths": [
+        "tests/reallive_adapter_test.cpp"
+      ]
     },
     {
       "id": "kirikiri_z",
       "display_name": "KiriKiri2 / KiriKiriZ",
-      "aliases": ["吉里吉里2", "Kirikiri 2", "吉里吉里Z", "Kirikiri Z"],
-      "family": {"id": "kirikiri", "relation": "KiriKiri family"},
+      "aliases": [
+        "吉里吉里2",
+        "Kirikiri 2",
+        "吉里吉里Z",
+        "Kirikiri Z"
+      ],
+      "family": {
+        "id": "kirikiri",
+        "relation": "KiriKiri family"
+      },
       "detection": {
         "executable_names": {
-          "values": ["otomeki.exe", "isekai-elf-sample.exe"],
+          "values": [
+            "otomeki.exe",
+            "isekai-elf-sample.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "otomeki.exe KiriKiriZ run (2026-07-18) and official BABEL KiriKiri2 experience version run (2026-07-23)"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Both recorded KiriKiriZ and KiriKiri2 samples are x86"
           }
         },
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["dsound.dll", "wuvorbis.dll"],
+          "values": [
+            "dsound.dll",
+            "wuvorbis.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "DirectSound was observed in otomeki.exe; the official BABEL experience version loaded wuvorbis.dll from the KiriKiri temp plugin directory"
           }
         },
         "resource_extensions": {
-          "values": [".xp3", ".ogg"],
+          "values": [
+            ".xp3",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "The official BABEL experience version ships data.xp3/plugin.xp3 and opens Ogg through wuvorbis"
           }
         },
         "hashes": {
-          "values": ["2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A"],
+          "values": [
+            "2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "SHA-256 of isekai-elf-sample.exe from the developer-hosted experience version"
@@ -440,7 +517,9 @@
         "Text-thread choice is not free on this engine: the same game exposes one EmbedKrkrZ thread carrying whole-string-doubled dialogue (folded correctly by the block-level normaliser) and several KiriKiriZ threads carrying per-character doubled/tripled strings that the artifact gate correctly drops. Selecting a KiriKiriZ thread leaves the workbench with zero lines forever and makes in-game mining fail silently. Tracked as BUG-1733/1734/1735; the native filtering is correct and must not be relaxed."
       ],
       "adapter_path": "hook/adapters/kirikiri_adapter.inc",
-      "fixture_paths": ["tests/fixtures/kirikiri_lookup_replay.tsv"],
+      "fixture_paths": [
+        "tests/fixtures/kirikiri_lookup_replay.tsv"
+      ],
       "test_paths": [
         "tests/resource_audio_ready_test.cpp",
         "tests/lookup_ipc_contract_test.cpp",
@@ -451,28 +530,57 @@
     {
       "id": "xaudio2_directsound",
       "display_name": "XAudio2 / DirectSound generic capture",
-      "aliases": ["XAudio2", "DirectSound", "Windows source PCM"],
-      "family": {"id": "windows_audio_api", "relation": "generic audio backend"},
+      "aliases": [
+        "XAudio2",
+        "DirectSound",
+        "Windows source PCM"
+      ],
+      "family": {
+        "id": "windows_audio_api",
+        "relation": "generic audio backend"
+      },
       "detection": {
-        "executable_names": {"values": [], "evidence": null},
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
         "pe_architectures": {
-          "values": ["x86", "x64"],
+          "values": [
+            "x86",
+            "x64"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Both helper architectures build; x86 KiriKiriZ/Siglus paths were exercised on real games."
           }
         },
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["xaudio2_9.dll", "xaudio2_8.dll", "dsound.dll"],
+          "values": [
+            "xaudio2_9.dll",
+            "xaudio2_8.dll",
+            "dsound.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "The shipped generic adapters resolve these loaded modules; DirectSound was observed on the recorded x86 samples."
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "create_suspended_preferred",
@@ -521,39 +629,68 @@
       ],
       "adapter_path": "hook/adapters/windows_audio_adapter.inc",
       "fixture_paths": [],
-      "test_paths": ["tests/session_reuse_test.cpp"]
+      "test_paths": [
+        "tests/session_reuse_test.cpp"
+      ]
     },
     {
       "id": "renpy_ffmpeg",
       "display_name": "Ren'Py / FFmpeg",
-      "aliases": ["Ren'Py", "libavcodec", "libavformat", "FFmpeg 54"],
-      "family": {"id": "renpy", "relation": "versioned FFmpeg runtime"},
+      "aliases": [
+        "Ren'Py",
+        "libavcodec",
+        "libavformat",
+        "FFmpeg 54"
+      ],
+      "family": {
+        "id": "renpy",
+        "relation": "versioned FFmpeg runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["Sakura Swim Club.exe"],
+          "values": [
+            "Sakura Swim Club.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Sakura Swim Club full-card run recorded in hibiki handoff 2026-07-18"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Recorded Ren'Py sample launches a child python.exe targeted by the legacy hook"
           }
         },
-        "directory_files_all": {"values": [], "evidence": null},
-        "pe_imports": {"values": [], "evidence": null},
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["avcodec-54.dll", "avformat-54.dll"],
+          "values": [
+            "avcodec-54.dll",
+            "avformat-54.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "The existing adapter targets the recorded legacy Ren'Py/FFmpeg runtime; the sample did not produce an adapter hit"
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "launcher_then_scored_game_child",
@@ -615,7 +752,9 @@
         "The real sample fell back to loopback; no clean decoder-level voice claim is made."
       ],
       "adapter_path": "hook/adapters/renpy_adapter.inc",
-      "fixture_paths": ["tests/fixtures/workflow_replay.json"],
+      "fixture_paths": [
+        "tests/fixtures/workflow_replay.json"
+      ],
       "test_paths": [
         "tests/ffmpeg_runtime_test.cpp",
         "tests/child_process_policy_test.cpp",
@@ -625,40 +764,62 @@
     {
       "id": "tyrano_nwjs",
       "display_name": "TyranoScript / NW.js",
-      "aliases": ["TyranoScript 5", "TyranoBuilder", "NW.js"],
-      "family": {"id": "tyrano", "relation": "NW.js packaged TyranoScript runtime"},
+      "aliases": [
+        "TyranoScript 5",
+        "TyranoBuilder",
+        "NW.js"
+      ],
+      "family": {
+        "id": "tyrano",
+        "relation": "NW.js packaged TyranoScript runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["kaerimichi.exe"],
+          "values": [
+            "kaerimichi.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "かえりみち official free Windows release from novelgame.jp, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x64"],
+          "values": [
+            "x64"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "kaerimichi.exe PE/COFF x86-64 runtime observation"
           }
         },
         "directory_files_all": {
-          "values": ["resources/app.asar", "ffmpeg.dll"],
+          "values": [
+            "resources/app.asar",
+            "ffmpeg.dll"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official sample package layout and live module inventory"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["ffmpeg.dll"],
+          "values": [
+            "ffmpeg.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Monolithic Chromium FFmpeg exports avformat_open_input and is loaded in the visible NW.js process"
           }
         },
         "resource_extensions": {
-          "values": [".ogg", ".m4a"],
+          "values": [
+            ".ogg",
+            ".m4a"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "app.asar contains paired OGG/M4A voice members under data/sound/v_*"
@@ -740,40 +901,63 @@
     {
       "id": "bgi_ethornell",
       "display_name": "BGI / Ethornell",
-      "aliases": ["BURIKO General Interpreter", "Ethornell"],
-      "family": {"id": "bgi", "relation": "BURIKO ARC20 runtime"},
+      "aliases": [
+        "BURIKO General Interpreter",
+        "Ethornell"
+      ],
+      "family": {
+        "id": "bgi",
+        "relation": "BURIKO ARC20 runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["BGI.exe"],
+          "values": [
+            "BGI.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "AUGUST official 千の刃濤、桃花染の皇姫 Web trial, inspected 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial BGI.exe PE/COFF static probe"
           }
         },
         "directory_files_all": {
-          "values": ["BGI.exe", "BGI.hvl", "data03110.arc"],
+          "values": [
+            "BGI.exe",
+            "BGI.hvl",
+            "data03110.arc"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial package layout"
           }
         },
         "pe_imports": {
-          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "values": [
+            "DSOUND.dll",
+            "KERNEL32.dll"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial BGI.exe import table"
           }
         },
-        "runtime_modules": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".arc", ".ogg"],
+          "values": [
+            ".arc",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "data03110.arc has a BURIKO ARC20 index and 146 bw-wrapped Ogg members"
@@ -848,46 +1032,68 @@
     {
       "id": "artemis_pfs",
       "display_name": "Artemis Engine / PF8",
-      "aliases": ["Artemis Engine", "Artemis", "PF8"],
-      "family": {"id": "artemis", "relation": "iarsys runtime with PF6/PF8 archives"},
+      "aliases": [
+        "Artemis Engine",
+        "Artemis",
+        "PF8"
+      ],
+      "family": {
+        "id": "artemis",
+        "relation": "iarsys runtime with PF6/PF8 archives"
+      },
       "detection": {
         "executable_names": {
-          "values": ["アマナツ体験版.exe"],
+          "values": [
+            "アマナツ体験版.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "あざらしそふと official アマナツ trial, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x64"],
+          "values": [
+            "x64"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial executable PE/COFF x86-64 static and live observation"
           }
         },
         "directory_files_all": {
-          "values": ["iarsys64.dll", "*.pfs"],
+          "values": [
+            "iarsys64.dll",
+            "*.pfs"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial portable package contains iarsys64.dll and a same-title PF8 archive"
           }
         },
         "pe_imports": {
-          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "values": [
+            "DSOUND.dll",
+            "KERNEL32.dll"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official trial executable import table"
           }
         },
         "runtime_modules": {
-          "values": ["iarsys64.dll"],
+          "values": [
+            "iarsys64.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Official trial launched through the x64 Hibiki injector and exposed the Artemis runtime next to the executable"
           }
         },
         "resource_extensions": {
-          "values": [".pfs", ".ogg"],
+          "values": [
+            ".pfs",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "PF8 index contains 797 Ogg voice members under sound/vo and sound/sysse/vo"
@@ -971,34 +1177,58 @@
     {
       "id": "catsystem2",
       "display_name": "CatSystem2 / KIF INT",
-      "aliases": ["CatSystem2", "CS2", "KIF INT"],
-      "family": {"id": "catsystem2", "relation": "ARES ADV runtime and KIF archives"},
+      "aliases": [
+        "CatSystem2",
+        "CS2",
+        "KIF INT"
+      ],
+      "family": {
+        "id": "catsystem2",
+        "relation": "ARES ADV runtime and KIF archives"
+      },
       "detection": {
         "executable_names": {
-          "values": ["cs2_open.exe", "cs2.exe"],
+          "values": [
+            "cs2_open.exe",
+            "cs2.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "ARES official CatSystem2 starter kit v3.01, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official cs2_open.exe PE/COFF i386 static and live observation"
           }
         },
         "directory_files_all": {
-          "values": ["config/startup.xml", "*.int"],
+          "values": [
+            "config/startup.xml",
+            "*.int"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official packaged starter-kit replay layout"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
-        "runtime_modules": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".int", ".ogg"],
+          "values": [
+            ".int",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official MakeInt.exe produced pcm_d.int with a named Ogg member that cs2_open.exe played through the pcm command"
@@ -1082,28 +1312,42 @@
     {
       "id": "malie_libp",
       "display_name": "Malie System / LIBP CFI",
-      "aliases": ["Malie", "Malie System", "LIBP", "CFI"],
+      "aliases": [
+        "Malie",
+        "Malie System",
+        "LIBP",
+        "CFI"
+      ],
       "family": {
         "id": "malie",
         "relation": "Greenwood Malie runtime and title-keyed LIBP archives"
       },
       "detection": {
         "executable_names": {
-          "values": ["malie.exe", "malie_dsp.exe", "malie_fabla.exe"],
+          "values": [
+            "malie.exe",
+            "malie_dsp.exe",
+            "malie_fabla.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Steam app 644540 build 21665074, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official malie.exe PE/COFF i386, Malie System 1.0.0.5"
           }
         },
         "directory_files_all": {
-          "values": ["malie.exe", "data2.dat"],
+          "values": [
+            "malie.exe",
+            "data2.dat"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Official Steam free common-route installation"
@@ -1122,9 +1366,15 @@
             "reference": "malie.exe import table and live file-I/O diagnostics"
           }
         },
-        "runtime_modules": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
         "resource_extensions": {
-          "values": [".dat", ".ogg"],
+          "values": [
+            ".dat",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "data2.dat contains 20,434 CFI-encrypted data\\voice\\*.ogg members"
@@ -1209,28 +1459,39 @@
     {
       "id": "qlie_filepack",
       "display_name": "QLIE / FilePack",
-      "aliases": ["QLIE", "FilePackVer3.1", "wuvorbis QLIE"],
+      "aliases": [
+        "QLIE",
+        "FilePackVer3.1",
+        "wuvorbis QLIE"
+      ],
       "family": {
         "id": "qlie",
         "relation": "Warmth / AMUSE CRAFT QLIE runtime and FilePack archives"
       },
       "detection": {
         "executable_names": {
-          "values": ["美少女万華鏡_体験版.exe"],
+          "values": [
+            "美少女万華鏡_体験版.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "美少女万華鏡 -理と迷宮の少女- 体験版 1.01, verified 2026-07-23"
           }
         },
         "pe_architectures": {
-          "values": ["x86"],
+          "values": [
+            "x86"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Measured trial executable PE/COFF i386"
           }
         },
         "directory_files_all": {
-          "values": ["DLL/wuvorbis.dll", "GameData/data0.pack"],
+          "values": [
+            "DLL/wuvorbis.dll",
+            "GameData/data0.pack"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "Measured trial directory; data0.pack tail contains FilePackVer3.1"
@@ -1241,14 +1502,19 @@
           "evidence": null
         },
         "runtime_modules": {
-          "values": ["wuvorbis.dll"],
+          "values": [
+            "wuvorbis.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "Live x86 process invoked wu_ov_open_callbacks and wu_ov_read; the wu_ov_read_float export was present and its detour reached hook-ready state"
           }
         },
         "resource_extensions": {
-          "values": [".pack", ".ogg"],
+          "values": [
+            ".pack",
+            ".ogg"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "GameData/data*.pack with GARbro-extracted character voice Ogg members"
@@ -1343,18 +1609,29 @@
     {
       "id": "unity_il2cpp",
       "display_name": "Unity IL2CPP",
-      "aliases": ["Unity", "UnityPlayer IL2CPP"],
-      "family": {"id": "unity", "relation": "IL2CPP runtime"},
+      "aliases": [
+        "Unity",
+        "UnityPlayer IL2CPP"
+      ],
+      "family": {
+        "id": "unity",
+        "relation": "IL2CPP runtime"
+      },
       "detection": {
         "executable_names": {
-          "values": ["manosaba.exe", "Sasasa.exe"],
+          "values": [
+            "manosaba.exe",
+            "Sasasa.exe"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "manosaba_game and 最悪なる災厄人間に捧ぐ runtime observations"
           }
         },
         "pe_architectures": {
-          "values": ["x64"],
+          "values": [
+            "x64"
+          ],
           "evidence": {
             "kind": "real_sample",
             "reference": "manosaba_game Unity IL2CPP sample"
@@ -1371,16 +1648,28 @@
             "reference": "manosaba_game directory inspection recorded in hibiki-hook README"
           }
         },
-        "pe_imports": {"values": [], "evidence": null},
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
         "runtime_modules": {
-          "values": ["UnityPlayer.dll", "GameAssembly.dll"],
+          "values": [
+            "UnityPlayer.dll",
+            "GameAssembly.dll"
+          ],
           "evidence": {
             "kind": "runtime_observation",
             "reference": "manosaba_game Unity IL2CPP sample"
           }
         },
-        "resource_extensions": {"values": [], "evidence": null},
-        "hashes": {"values": [], "evidence": null}
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
       },
       "process_strategy": {
         "launch": "create_suspended_early_injection",
@@ -1456,6 +1745,100 @@
         "tests/il2cpp_thread_scope_test.cpp",
         "tests/resource_audio_ready_test.cpp",
         "tests/adapter_structure_test.py"
+      ]
+    },
+    {
+      "id": "sgre",
+      "display_name": "M2 wind3d11 runtime (STEINS;GATE RE:BOOT)",
+      "aliases": [
+        "SGRE",
+        "STEINS;GATE RE:BOOT",
+        "wind3d11"
+      ],
+      "family": {
+        "id": "m2_wind3d11",
+        "relation": "M2 wind3d11 audio-archive runtime"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Luna text profile config/luna_hook_profiles.tsv:5 records an x64 Steam build; the audio path has no independent hashed sample yet."
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "wind3d11data/voice_body.bin"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "MatchesSgreProfile requires the archive to exist next to the hashed executable; character voices live in voice_body.bin."
+          }
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [
+            "75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Same executable SHA-256 the Luna text profile keys on, so text and audio identity cannot drift apart silently."
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_preferred",
+        "attach": "supported_for_objects_created_after_attach",
+        "follow_child_processes": false,
+        "notes": [
+          "The adapter registers a compressed-resource handler on the shared XAudio worker seam; the generic middleware holds no engine-specific knowledge."
+        ]
+      },
+      "text": {
+        "capabilities": [],
+        "codepage": "not_applicable",
+        "thread_selection_hint": "Text comes from the Luna profile keyed by the same executable SHA-256, not from this adapter."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "engine_archive_resource",
+            "format": "xWMA chunks taken verbatim from wind3d11data/voice_body.bin",
+            "status": "implemented_unverified",
+            "clean_voice": "yes"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "No real-game session has been run against this adapter: process_found through card_e2e are all not_run.",
+        "Archive membership is the role proof, and it only holds while the runtime keeps character voice in a separate voice_body.bin.",
+        "The emitted .xwma file is not byte-identical to an archive entry: the RIFF envelope is synthesised here. Only the fmt/dpds/payload chunks are verbatim.",
+        "Identity is the executable SHA-256, so a game patch disables both text and audio capture at once. That is deliberate -- it prevents a silent text/audio mismatch -- but it does mean a patched build stops working until the hash is re-measured."
+      ],
+      "adapter_path": "hook/adapters/sgre_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/sgre_adapter_test.cpp"
       ]
     }
   ]

@@ -3738,5 +3738,6 @@
   "gal_hook_text_padding": "Horizontal text padding",
   "gal_hook_text_padding_hint": "Keep text away from the window edges and resize grip.",
   "gal_hook_text_corner_radius": "Window corner radius",
-  "gal_hook_text_corner_radius_hint": "Adjust the background corner radius."
+  "gal_hook_text_corner_radius_hint": "Adjust the background corner radius.",
+  "game_hook_reason_capability_probe_failed": "The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again."
 }

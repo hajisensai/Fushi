@@ -606,5 +606,87 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("return 1;", source[rejection:polling])
 
 
+    def test_sgre_archive_stays_out_of_shared_middleware(self) -> None:
+        adapter = (
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
+        ).read_text(encoding="utf-8")
+        profile = (ROOT / "hook" / "adapters" / "sgre_profile.h").read_text(
+            encoding="utf-8"
+        )
+        sgre = (ROOT / "hook" / "adapters" / "sgre_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        # The generic XAudio middleware must hold no engine-specific knowledge:
+        # it only offers submissions through the registration seam.
+        for forbidden in ("Sgre", "sgre", "voice_body"):
+            self.assertNotIn(forbidden, adapter, forbidden)
+        self.assertIn("RegisterXAudioCompressedResourceHandler", sgre)
+        # Identity is the executable hash, i.e. the same anchor the Luna text
+        # profile keys on, so text and audio identity cannot drift apart.
+        # An executable *file name* would be a distribution property, not an
+        # engine identity, and CLAUDE.md forbids enabling shared middleware on
+        # that kind of match.
+        self.assertIn("kSgreExecutableSha256", profile)
+        self.assertNotIn("sgre_steam.exe", profile)
+        self.assertNotIn("sgre_steam.exe", adapter)
+
+    def test_unclaimed_xwma_submissions_are_published_not_dropped(self) -> None:
+        adapter = (
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
+        ).read_text(encoding="utf-8")
+        branch = adapter.split("XAudioSourceEncoding::kWmaudio2) {", 1)[1]
+        branch = branch.split("const bool is_adpcm", 1)[0]
+        # xWMA is the only voice outlet for these engines and this process has
+        # no WMA decoder, so a submission no engine profile claims must still
+        # be published as a compressed resource rebuilt from its own runtime
+        # fmt + dpds. Dropping it removes that engine's voice from the card
+        # pipeline entirely.
+        # An engine profile that claims the seam owns the verdict entirely;
+        # the generic rebuild only applies when nothing claims it, so an
+        # archive miss still means "not voice" for that engine.
+        self.assertIn("if (g_xaudio_compressed_resource_dispatch.available())",
+                      branch)
+        self.assertIn("BuildXwmaResource(", branch)
+        self.assertIn("kXAudioDiagRuntimeXwmaPublished", branch)
+        # Without an archive to compare against, the duration prefilter is the
+        # only thing separating a whole line from a chunk of streaming BGM.
+        self.assertIn("IsLikelyVoiceWmaSubmission", branch)
+        # Byte-exact and runtime-rebuilt resources must not share one
+        # diagnostic bit: only the archive path may claim payload hash
+        # identity with a source entry.
+        self.assertNotIn("kXAudioDiagGameResourcePublished", branch)
+
+    def test_hook_worker_contract_gate_covers_the_poll_pump(self) -> None:
+        main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        worker = main.split("DWORD WINAPI HookWorker", 1)[1]
+        # Whitespace-normalised so the assertion pins the control flow, not the
+        # formatter. A bare "there is a return somewhere between gate and pump"
+        # check is vacuous: SignalReady's own early return already satisfies it.
+        compact = " ".join(worker.split())
+        gate = compact.index("g_header->version != kSharedVersion")
+        self.assertLess(gate, compact.index("registry.Poll();"))
+        # Take the gate's own block by brace matching. A bare "there is a
+        # return somewhere between gate and pump" check is vacuous: SignalReady's
+        # own early return already satisfies it. What must hold is that the
+        # mismatch branch itself cannot fall through to the pump.
+        open_at = compact.index("{", gate)
+        depth = 0
+        close_at = -1
+        for i in range(open_at, len(compact)):
+            if compact[i] == "{":
+                depth += 1
+            elif compact[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    close_at = i
+                    break
+        self.assertGreater(close_at, open_at, "contract gate has no block")
+        self.assertIn("return 1;", compact[open_at:close_at])
+        registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        poll = registry.split("void Poll() {", 1)[1]
+        self.assertIn("loopback_.PollPolicy();", poll)
+
 if __name__ == "__main__":
     unittest.main()

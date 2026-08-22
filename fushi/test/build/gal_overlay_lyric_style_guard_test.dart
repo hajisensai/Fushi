@@ -21,17 +21,36 @@ void main() {
   final String controller =
       File('lib/src/lookup/gal_hook_text_overlay_controller.dart')
           .readAsStringSync();
+  final String prefs =
+      File('lib/src/models/preferences_repository.dart').readAsStringSync();
+  final String windowHeader =
+      File('windows/runner/floating_lyric_window.h').readAsStringSync();
 
   test('① 描边/投影是同一 text_layout_ 的偏移多遍绘制', () {
+    // 描边半径从固定常量 kLyricOutlineRadiusDip 改成了用户可配的 style_.outline_width，
+    // 所以这里不再钉常量名，而是钉「半径来自 style_ 且被夹在合法区间」——常量名没了不等于
+    // 渲染没接上，但取值不夹区间就是能把描边拉到吃掉整块文字。
     expect(
-      window.contains('kLyricOutlineRadiusDip'),
+      window.contains('std::clamp(style_.outline_width, 0.0, 8.0)'),
       isTrue,
-      reason: '描边半径常量必须存在，否则桌面歌词渲染根本没接上',
+      reason: '描边半径必须取自 style_.outline_width 并夹在 [0,8]',
     );
     expect(
       window.contains('kLyricShadowOffsetDip'),
       isTrue,
       reason: '投影偏移常量必须存在',
+    );
+    // 可配置化不得顺手改观感：默认值必须逐位等于改造前的硬编码值，否则所有没动过
+    // 这个设置的用户会在一次升级后发现描边变了，而 diff 里看不出任何「观感改动」。
+    expect(
+      prefs.contains('galHookTextOutlineWidthDefault = 1.6'),
+      isTrue,
+      reason: '描边默认值必须等于原 kLyricOutlineRadiusDip = 1.6f',
+    );
+    expect(
+      windowHeader.contains('bool bold = true;'),
+      isTrue,
+      reason: '半粗默认必须为真：改造前 hook 模式无条件半粗',
     );
     // 描边环必须把 text_layout_ 自己再画一遍（同一几何），而不是另建排版。
     expect(
@@ -60,11 +79,13 @@ void main() {
       reason: '注音描边遍必须被 hook_text_mode_ 门住',
     );
     expect(
-      RegExp(r'hook_text_mode_\s*\?\s*DWRITE_FONT_WEIGHT_SEMI_BOLD'
+      RegExp(r'hook_text_mode_ && style_\.bold\s*\?\s*'
+              r'DWRITE_FONT_WEIGHT_SEMI_BOLD'
               r'\s*:\s*DWRITE_FONT_WEIGHT_NORMAL')
           .hasMatch(window),
       isTrue,
-      reason: '半粗字重同样只允许在 hook 模式启用',
+      reason: '半粗字重同样只允许在 hook 模式启用（现在还叠一个用户开关，'
+          '但 hook_text_mode_ 这一层门不能被去掉——去掉就会改到歌词条/剪贴板窗）',
     );
   });
 

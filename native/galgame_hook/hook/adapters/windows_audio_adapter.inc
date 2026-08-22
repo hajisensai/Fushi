@@ -793,6 +793,9 @@ void ProcessPendingXAudioCaptureJobs() {
   DrainXAudioControlEvents();
   std::vector<uint8_t> encoded;
   std::vector<int16_t> decoded;
+  // 复用同一个缓冲跨作业：这条循环跑在 HookWorker 上，每作业新建一个 vector 只会
+  // 把分配器打得更热，没有任何收益。
+  std::vector<uint8_t> resource;
   for (XAudioCaptureJob& job : g_xaudio_capture_jobs) {
     // Claim before reading producer-owned fields.  Interlocked exchange is the
     // publication/acquire edge for the descriptor and its page chain.
@@ -871,12 +874,55 @@ void ProcessPendingXAudioCaptureJobs() {
             encoded.data() + job.encoded_bytes;
         submission.packet_count = job.wma_packet_count;
         submission.playback_timestamp_ms = playback_timestamp;
-        g_xaudio_compressed_resource_dispatch.Dispatch(submission);
+        if (g_xaudio_compressed_resource_dispatch.available()) {
+          // 有引擎 profile 认领了这条 seam：判决**完全**归它。归档没命中就是
+          // 「这不是角色语音」，不能再拿通用回退去兜——那会把 BGM/SE 也当资源发出去，
+          // 正好抹掉归档路径唯一比时长判据强的地方。
+          g_xaudio_compressed_resource_dispatch.Dispatch(submission);
+        } else {
+          // 没有任何引擎 profile 认领这条 seam。
+          //
+          // 丢弃**不是**合法出路：xWMA 是这类引擎语音的唯一出口，本进程里没有 WMA
+          // 解码器，下面的 legacy job 路径（ADPCM 解码 / PCM 直通）对它无能为力。
+          // 丢掉就等于「任何其它用 xWMA 语音的引擎，语音在制卡链路上彻底消失」。
+          //
+          // 这里重建的 RIFF/XWMA 全部取自**这次提交自己**：fmt 由 XAudio2 报的源格式
+          // 合成、dpds 用 XAUDIO2_BUFFER_WMA 的原表、压缩负载逐字节原样。不解码、不
+          // 重分类、不读任何引擎专属资产——共享中间件的边界没有被越过。
+          //
+          // 时长预筛把逐块流入的 BGM/SE 挡在外面：没有归档可比对时，它是唯一还能
+          // 区分「一整句」和「一小块背景音」的判据。
+          uint32_t decoded_bytes = 0;
+          std::memcpy(&decoded_bytes,
+                      submission.packet_cumulative_bytes +
+                          (static_cast<size_t>(job.wma_packet_count) - 1u) * 4u,
+                      sizeof(decoded_bytes));
+          if (fushi_voice_hook::IsLikelyVoiceWmaSubmission(
+                  job.source.format, job.wma_packet_count, decoded_bytes) &&
+              fushi_voice_hook::BuildXwmaResource(
+                  job.source.format, encoded.data(), job.encoded_bytes,
+                  submission.packet_cumulative_bytes, job.wma_packet_count,
+                  &resource) &&
+              resource.size() <= std::numeric_limits<uint32_t>::max()) {
+            wchar_t storage_name[128] = {};
+            swprintf_s(storage_name, L"xwma-%p-%llu-%llu-%llu.xwma",
+                       reinterpret_cast<void*>(job.source.source),
+                       static_cast<unsigned long long>(job.source.generation),
+                       static_cast<unsigned long long>(
+                           job.source.queue_generation),
+                       static_cast<unsigned long long>(playback_timestamp));
+            if (WriteVoiceOggAt(resource.data(),
+                                static_cast<uint32_t>(resource.size()),
+                                storage_name, playback_timestamp)) {
+              SetXAudioDiagnostic(
+                  fushi_voice_hook::kXAudioDiagRuntimeXwmaPublished);
+            }
+          }
+        }
       }
-      // Compressed WMA is never decoded or reclassified in shared middleware.
-      // An explicitly matched engine profile either proves and publishes an
-      // original resource through the worker seam or leaves the submission
-      // unknown; there is no PCM downgrade here.
+      // 压缩 WMA 在共享中间件里既不解码也不重新分类：认领它的引擎 profile 通过 worker
+      // seam 证明并发布原始资源，没人认领就退回上面那条纯运行时重建。两条路都不产出
+      // PCM——把压缩字节当 PCM 送进环形缓冲只会得到噪声。
       ReleaseXAudioCaptureJob(&job);
       continue;
     }
