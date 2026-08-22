@@ -181,6 +181,63 @@ void main() {
           300);
     });
 
+    test('通用类目：明细 = 类目根下直接子项，label 带顶层目录前缀，总量 = 明细之和', () async {
+      writeFile(p.join(docs.path, 'videos', 'a.mkv'), 700);
+      writeFile(p.join(docs.path, 'remote_videos', 'series', 'ep1.mp4'), 300);
+      writeFile(p.join(docs.path, 'mpv_shaders', 'Anime4K_Clamp.glsl'), 12);
+      writeFile(p.join(docs.path, 'custom_fonts', 'NotoSerif.ttf'), 55);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage video = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.videoDownloads);
+      // 跨 4 个根（videos / remote_videos / anime_downloads / manual_torrents）
+      // 的直接子项合成一张明细，按字节降序。
+      expect(video.bytes, 1000);
+      expect(video.entries.map((StorageEntryUsage e) => e.label).toList(),
+          <String>['videos/a.mkv', 'remote_videos/series']);
+      expect(video.entries[0].bytes, 700);
+      expect(video.entries[1].bytes, 300);
+      // 通用条目的 id 是绝对路径（没有域内主键）。
+      expect(video.entries[0].id, p.join(docs.path, 'videos', 'a.mkv'));
+
+      final StorageCategoryUsage shaders = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.shaders);
+      expect(shaders.entries.single.label, 'mpv_shaders/Anime4K_Clamp.glsl');
+      expect(shaders.bytes, 12);
+
+      final StorageCategoryUsage fonts = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.customFonts);
+      expect(fonts.entries.single.label, 'custom_fonts/NotoSerif.ttf');
+      expect(fonts.bytes, 55);
+    });
+
+    test('database 明细列出 support 根子项，且不含被单列的 OCR 模型目录', () async {
+      writeFile(p.join(support.path, 'fushi.sqlite'), 1000);
+      writeFile(p.join(support.path, 'local_audio_1.db'), 20);
+      writeFile(
+          p.join(support.path, kOcrModelsSupportChild, 'manga', 'a.onnx'), 300);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage db = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.database);
+      expect(db.bytes, 1020);
+      expect(db.entries.map((StorageEntryUsage e) => e.label).toList(),
+          <String>['support/fushi.sqlite', 'support/local_audio_1.db']);
+
+      final StorageCategoryUsage ocr = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.ocrModels);
+      expect(ocr.entries.single.label, 'ocr_models/manga');
+      expect(ocr.bytes, 300);
+    });
+
     test('每个类目恰好产出一次结果', () async {
       final List<StorageCategoryUsage> all = await service().scanCategories(
         books: const <StorageBookRef>[],

@@ -3600,11 +3600,9 @@
   "storage_entry_delete_dictionary_confirm_body": "将删除该词典及其已导入数据。",
   "storage_entry_delete_done": "已删除",
   "storage_entry_delete_failed": "删除失败：$reason",
-  "storage_modules_section": "可选模块",
   "storage_modules_anime4k_title": "Anime4K 着色器",
   "storage_modules_anime4k_hint": "可随时在视频设置的画质增强里重新下载",
   "storage_modules_anime4k_delete_done": "已删除 $n 个着色器文件",
-  "storage_modules_not_installed": "未安装",
   "storage_bundled_section": "随包组件",
   "storage_bundled_hint": "随安装包携带，删除后下次更新会自动恢复，此处仅展示。",
   "storage_dictionary_delete_incomplete": "词典删除未完成、条目仍在，详见错误日志",
@@ -3713,5 +3711,6 @@
   "resource_version_show_files": "显示文件",
   "manga_online_detail_load_failed": "无法载入这部漫画。",
   "manga_online_error_view_detail": "查看详情",
-  "discovery_sources_unavailable": "全部来源都不可用"
+  "discovery_sources_unavailable": "全部来源都不可用",
+  "storage_shaders_delete_anime4k": "删除 Anime4K 着色器"
 }

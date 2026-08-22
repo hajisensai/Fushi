@@ -3600,11 +3600,9 @@
   "storage_entry_delete_dictionary_confirm_body": "This removes the dictionary and its imported data.",
   "storage_entry_delete_done": "Deleted",
   "storage_entry_delete_failed": "Delete failed: $reason",
-  "storage_modules_section": "Optional modules",
   "storage_modules_anime4k_title": "Anime4K shaders",
   "storage_modules_anime4k_hint": "Can be downloaded again anytime in video settings",
   "storage_modules_anime4k_delete_done": "Deleted $n shader files",
-  "storage_modules_not_installed": "Not installed",
   "storage_bundled_section": "Bundled components",
   "storage_bundled_hint": "Shipped with the installer; deleted files come back on the next update, listed for reference only.",
   "storage_dictionary_delete_incomplete": "Dictionary still present after deletion, see error log",
@@ -3713,5 +3711,6 @@
   "resource_version_show_files": "Show files",
   "manga_online_detail_load_failed": "Could not load this manga.",
   "manga_online_error_view_detail": "View details",
-  "discovery_sources_unavailable": "All sources are unavailable"
+  "discovery_sources_unavailable": "All sources are unavailable",
+  "storage_shaders_delete_anime4k": "Delete Anime4K shaders"
 }

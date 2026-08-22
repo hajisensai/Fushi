@@ -4,19 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置 →「存储」目的地正文（经 [SettingsDestination.body] 逃生口渲染）。
 ///
-/// 三块：
+/// 两块：
 /// 1. 磁盘占用总览——[StorageUsageService.scanCategories] 逐类目渐进出结果，
-///    书籍/词典类目可展开明细并单条删除；
-/// 2. 可选模块——漫画 OCR 模型（删除/下载，接 [MangaOcrService] 既有原语）与
-///    Anime4K 着色器（只删清单内文件，恢复走视频设置既有下载入口）；
-/// 3. 随包组件——安装目录内随包携带的大件，**只展示**：更新 = 安装器整体重写
+///    **每个类目都可展开明细**：书籍/词典是 DB 已知条目（可单条删除），其余
+///    类目是类目根下的直接子项（只读，看清是哪个文件在吃盘）；着色器类目行
+///    额外挂 Anime4K 预设删除（只删清单内文件，恢复走视频设置既有下载入口）；
+/// 2. 随包组件——安装目录内随包携带的大件，**只展示**：更新 = 安装器整体重写
 ///    安装目录，删掉的必然回来，做删除按钮是假动作。
+///
+/// 漫画 OCR 模型的下载/删除**不在这里**：入口在漫画 OCR 设置区
+/// （`manga_ocr_settings_section.dart`），存储页只如实显示它占多少。
 ///
 /// 删除一律复用各域既有路径（见 [StorageUsageService] 头注释），本文件零裸
 /// `Directory.delete`。所有依赖经构造参数注入（服务/取数/删除回调），
@@ -24,7 +26,6 @@ import 'package:fushi/utils.dart';
 class StorageUsageView extends ConsumerStatefulWidget {
   const StorageUsageView({
     required this.service,
-    required this.ocrService,
     required this.booksProvider,
     required this.dictionaryNamesProvider,
     required this.deleteBook,
@@ -35,9 +36,6 @@ class StorageUsageView extends ConsumerStatefulWidget {
   });
 
   final StorageUsageService service;
-
-  /// 漫画 OCR 服务（与漫画 OCR 设置区同一单例；测试注 fake）。
-  final MangaOcrService ocrService;
 
   /// 书籍清单取数（真实现读 `epub_books` 表）。
   final Future<List<StorageBookRef>> Function() booksProvider;
@@ -84,11 +82,6 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   List<BundledComponentUsage> _bundled = const <BundledComponentUsage>[];
 
-  MangaOcrModelStatus? _ocrStatus;
-  bool _ocrBusy = false;
-  double? _ocrDownloadProgress;
-  StreamSubscription<MangaOcrDownloadEvent>? _ocrSub;
-
   int _anime4kBytes = 0;
   bool _anime4kBusy = false;
 
@@ -101,7 +94,6 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   @override
   void dispose() {
     unawaited(_scanSub?.cancel());
-    unawaited(_ocrSub?.cancel());
     super.dispose();
   }
 
@@ -111,7 +103,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       _scanning = true;
       _usage.clear();
     });
-    unawaited(_loadModules());
+    unawaited(_loadExtras());
     List<StorageBookRef> books = const <StorageBookRef>[];
     List<String> dictNames = const <String>[];
     try {
@@ -140,13 +132,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     );
   }
 
-  Future<void> _loadModules() async {
-    try {
-      final MangaOcrModelStatus ocr = await widget.ocrService.modelStatus();
-      if (mounted) setState(() => _ocrStatus = ocr);
-    } catch (e) {
-      debugPrint('[storage] ocr status failed: $e');
-    }
+  /// 总览之外的附加信息：Anime4K 预设占用（决定着色器类目行给不给删除按钮）
+  /// 与随包组件清单。与类目扫描并行跑，慢的一方不挡另一方。
+  Future<void> _loadExtras() async {
     try {
       final int bytes = await widget.anime4kBytesProvider();
       if (mounted) setState(() => _anime4kBytes = bytes);
@@ -222,72 +210,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     }
   }
 
-  // ── OCR 模型模块 ────────────────────────────────────────────────────
-
-  Future<void> _ocrDownload() async {
-    if (_ocrBusy) return;
-    setState(() {
-      _ocrBusy = true;
-      _ocrDownloadProgress = null;
-    });
-    await _ocrSub?.cancel();
-    _ocrSub = widget.ocrService.downloadModels().listen(
-      (MangaOcrDownloadEvent e) {
-        if (!mounted) return;
-        setState(() {
-          _ocrDownloadProgress =
-              e.totalBytes > 0 ? e.receivedBytes / e.totalBytes : null;
-        });
-      },
-      onError: (Object e) async {
-        debugPrint('[storage] ocr download failed: $e');
-        if (!mounted) return;
-        setState(() => _ocrBusy = false);
-        await _loadModules();
-      },
-      onDone: () async {
-        if (!mounted) return;
-        setState(() => _ocrBusy = false);
-        await _loadModules();
-        // 下载完成后总览里的 OCR 类目行同步长回来（与删除路径对称，审查 L3）。
-        await _rescan();
-      },
-    );
-  }
-
-  Future<void> _ocrDelete() async {
-    if (_ocrBusy) return;
-    if (!await _confirmDelete(
-      t.storage_category_ocr_models,
-      t.manga_ocr_delete_confirm_message,
-    )) {
-      return;
-    }
-    setState(() => _ocrBusy = true);
-    try {
-      await widget.ocrService.deleteModels();
-    } catch (e) {
-      // Windows 上模型文件被占用（推理还挂着）时 delete 会抛：如实报错，
-      // 不能静默吞成未处理异步异常（审查 L2）。
-      if (mounted) {
-        FushiToast.show(
-          msg: t.storage_entry_delete_failed(reason: '$e'),
-          severity: ToastSeverity.error,
-        );
-      }
-      return;
-    } finally {
-      if (mounted) setState(() => _ocrBusy = false);
-    }
-    if (!mounted) return;
-    FushiToast.show(
-      msg: t.manga_ocr_delete_done,
-      severity: ToastSeverity.success,
-    );
-    await _loadModules();
-    // OCR 类目行也要跟着归零。
-    await _rescan();
-  }
+  // ── Anime4K 预设删除 ────────────────────────────────────────────────
 
   Future<void> _anime4kDeleteAction() async {
     if (_anime4kBusy) return;
@@ -317,7 +240,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       msg: t.storage_modules_anime4k_delete_done(n: deleted.length),
       severity: ToastSeverity.success,
     );
-    await _loadModules();
+    await _loadExtras();
     await _rescan();
   }
 
@@ -371,8 +294,6 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _buildOverviewSection(),
-        const SizedBox(height: 12),
-        _buildModulesSection(),
         if (_bundled.isNotEmpty) ...<Widget>[
           const SizedBox(height: 12),
           _buildBundledSection(),
@@ -424,6 +345,11 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     // 显示占位。
     final bool expandable = usage != null && usage.entries.isNotEmpty;
     final bool expanded = _expanded.contains(id);
+    // Anime4K 预设是唯一「删了还能一键装回来」的着色器资产，而删除原语只此一处
+    //（视频设置的画质增强只有下载入口）：挂在着色器类目行上，只删清单内文件，
+    // 用户自己导入的同目录 .glsl 不碰。
+    final bool showAnime4kDelete =
+        id == StorageCategoryId.shaders && _anime4kBytes > 0;
     return <Widget>[
       FushiListItem(
         title: Text(_categoryTitle(id)),
@@ -431,6 +357,21 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (showAnime4kDelete)
+              _anime4kBusy
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      tooltip: t.storage_shaders_delete_anime4k,
+                      icon: const Icon(Icons.auto_fix_off_outlined, size: 18),
+                      onPressed: _anime4kDeleteAction,
+                    ),
             Text(usage == null ? '…' : formatStorageBytes(usage.bytes)),
             if (expandable) ...<Widget>[
               const SizedBox(width: 4),
@@ -452,6 +393,11 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     StorageCategoryId id,
     StorageCategoryUsage usage,
   ) {
+    // 只有书籍/词典明细接得上既有删除原语（`deleteBook` / `deleteDictionary`）；
+    // 其余类目的明细是磁盘子项，删它就是裸 `Directory.delete`——会绕过墓碑/
+    // 引用护栏，也可能删掉主库文件，故一律只读展示。
+    final bool deletable =
+        id == StorageCategoryId.books || id == StorageCategoryId.dictionaries;
     final List<StorageEntryUsage> visible =
         usage.entries.take(kMaxVisibleEntries).toList(growable: false);
     final List<StorageEntryUsage> rest =
@@ -465,19 +411,21 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           subtitle: Text(formatStorageBytes(entry.bytes)),
           padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
           density: FushiListDensity.compact,
-          trailing: _busyEntryId == entry.id
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : IconButton(
-                  tooltip: t.dialog_delete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: _busyEntryId != null
-                      ? null
-                      : () => _deleteEntry(id, entry),
-                ),
+          trailing: !deletable
+              ? null
+              : (_busyEntryId == entry.id
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : IconButton(
+                      tooltip: t.dialog_delete,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      onPressed: _busyEntryId != null
+                          ? null
+                          : () => _deleteEntry(id, entry),
+                    )),
         ),
       if (rest.isNotEmpty)
         FushiListItem(
@@ -489,74 +437,6 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           density: FushiListDensity.compact,
         ),
     ];
-  }
-
-  Widget _buildModulesSection() {
-    final MangaOcrModelStatus? ocr = _ocrStatus;
-    final bool ocrReady = ocr?.allReady ?? false;
-    final bool ocrPartial = !ocrReady && (ocr?.hasAnyFiles ?? false);
-    return AdaptiveSettingsSection(
-      title: t.storage_modules_section,
-      children: <Widget>[
-        // 漫画 OCR 模型：删除/下载接既有原语（与漫画 OCR 设置区同一 service）。
-        AdaptiveSettingsRow(
-          title: t.storage_category_ocr_models,
-          subtitle: ocr == null
-              ? null
-              : (ocrReady || ocrPartial
-                  ? formatStorageBytes(ocr.diskBytes)
-                  : t.storage_modules_not_installed),
-          icon: Icons.document_scanner_outlined,
-          showIcon: true,
-          trailing: _ocrBusy && _ocrDownloadProgress != null
-              ? SizedBox(
-                  width: 80,
-                  child: LinearProgressIndicator(value: _ocrDownloadProgress),
-                )
-              : (_ocrBusy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : (ocrReady || ocrPartial
-                      ? IconButton(
-                          tooltip: t.manga_ocr_delete,
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: _ocrDelete,
-                        )
-                      : IconButton(
-                          tooltip: t.manga_ocr_download,
-                          icon: const Icon(Icons.download_outlined),
-                          onPressed: _ocrDownload,
-                        ))),
-        ),
-        // Anime4K 着色器：只删清单内文件（用户自导入的同目录着色器不碰）；
-        // 恢复走视频设置 → 画质增强的既有预设下载入口。
-        AdaptiveSettingsRow(
-          title: t.storage_modules_anime4k_title,
-          subtitle: _anime4kBytes > 0
-              ? '${formatStorageBytes(_anime4kBytes)} · '
-                  '${t.storage_modules_anime4k_hint}'
-              : t.storage_modules_not_installed,
-          icon: Icons.auto_awesome_outlined,
-          showIcon: true,
-          trailing: _anime4kBusy
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : (_anime4kBytes > 0
-                  ? IconButton(
-                      tooltip: t.dialog_delete,
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: _anime4kDeleteAction,
-                    )
-                  : null),
-        ),
-      ],
-    );
   }
 
   Widget _buildBundledSection() {

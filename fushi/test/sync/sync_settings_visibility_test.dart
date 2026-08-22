@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
+import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
@@ -40,7 +41,7 @@ void main() {
     test('regroups into four intent-based sections', () {
       // 互联（client 配置 / LAN 发现 / host 模式）已拆到独立的
       // buildInterconnectDestination（见下方 group），「数据存储位置」已挪到
-      // 「系统」大类展示（buildDataStorageLocationSection，见下方 group），
+      // 「存储」大类展示（buildDataStorageLocationSection，见下方 group），
       // 同步分类剩：method / content / actions / backup。
       expect(dest.sections, hasLength(4));
       expect(
@@ -284,9 +285,10 @@ void main() {
   });
 
   group('buildDataStorageLocationSection placement', () {
-    test('the data-storage section now lives in the system destination', () {
-      // 用户拍板（2026-07-26）：数据根是设备级存储配置，与备份无关，从同步备份
-      // 大类挪到「系统」展示；item id 'sync.data_storage_location' 保持不变
+    test('the data-storage section now lives in the storage destination', () {
+      // 用户拍板：数据根是设备级存储配置，与备份无关（2026-07-26 从同步备份挪到
+      // 「系统」），「存储」大类落地后再挪进「存储」（2026-08-22）——「数据放哪」
+      // 与「占了多少」同页；item id 'sync.data_storage_location' 保持不变
       // （历史命名前缀，搜索/导航锚点）。
       final SettingsSection section = buildDataStorageLocationSection();
       expect(section.visible, isNotNull,
@@ -295,13 +297,22 @@ void main() {
         section.items.map((SettingsItem i) => i.id),
         <String>['sync.data_storage_location'],
       );
+      final SettingsDestination storage = buildStorageDestination();
+      expect(
+        storage.sections
+            .expand((SettingsSection s) => s.items)
+            .where((SettingsItem i) => i.id == 'sync.data_storage_location'),
+        hasLength(1),
+        reason: '存储大类必须恰好承载一份数据存储位置行',
+      );
+      // 系统大类不得再残留一份（两处都挂 = 搜索出双份、改一处另一处不动）。
       final SettingsDestination system = buildSystemDestination();
       expect(
         system.sections
             .expand((SettingsSection s) => s.items)
             .where((SettingsItem i) => i.id == 'sync.data_storage_location'),
-        hasLength(1),
-        reason: '系统大类必须恰好承载一份数据存储位置行',
+        isEmpty,
+        reason: '数据存储位置不再挂在系统大类',
       );
     });
   });
