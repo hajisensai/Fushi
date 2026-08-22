@@ -12,7 +12,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
-/// 视频字幕字体 ([videoSubtitle]). Each maps to its own persisted
+/// 视频字幕字体 ([videoSubtitle]) / 游戏查词窗口字体 ([gameLookup]). Each maps to its own persisted
 /// `[{name,path,enabled}]` list; see [ReaderSettings.fontKeyForTarget].
 enum FontTarget {
   /// App-wide UI (ThemeData) font — menus, buttons, settings, etc.
@@ -28,6 +28,11 @@ enum FontTarget {
   /// not libmpv — Hibiki renders text subtitles in the Flutter layer). New in
   /// TODO-864.
   videoSubtitle,
+
+  /// Windows galgame Hook text / click-to-lookup overlay font. The native
+  /// DirectWrite renderer consumes the first usable family/file in this target;
+  /// it is deliberately independent from dictionary-card and novel-body fonts.
+  gameLookup,
 }
 
 /// All reader display/behavior settings, decoupled from the media source.
@@ -563,6 +568,9 @@ class ReaderSettings {
   /// Sibling of the other `*_fonts` keys; backs [FontTarget.videoSubtitle].
   static const String fontKeyVideoSubtitle = 'video_sub_fonts';
 
+  /// Persistence key for the Windows galgame Hook text / lookup overlay font.
+  static const String fontKeyGameLookup = 'game_lookup_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -574,6 +582,7 @@ class ReaderSettings {
     fontKeyAppUi,
     fontKeyDictionary,
     fontKeyVideoSubtitle,
+    fontKeyGameLookup,
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -607,6 +616,8 @@ class ReaderSettings {
         fontKeyDictionary: _legacyFontListForKey(fontKeyDictionary),
       if (_cache.containsKey(fontKeyVideoSubtitle))
         fontKeyVideoSubtitle: _legacyFontListForKey(fontKeyVideoSubtitle),
+      if (_cache.containsKey(fontKeyGameLookup))
+        fontKeyGameLookup: _legacyFontListForKey(fontKeyGameLookup),
     };
   }
 
@@ -734,15 +745,12 @@ class ReaderSettings {
 
   List<Map<String, dynamic>> _fontListForTargetKey(String key) {
     final FontCatalogState state = _fontCatalogState();
-    // Historical body-seed compat (TODO-049): appUi/dictionary with no stored
-    // row inherited the body list so the split didn't change visuals for users
-    // who'd only set the legacy `custom_fonts` list. The video-subtitle target
-    // is new (TODO-864) and must NOT inherit body -- "unset" means platform
-    // default (null fontFamily), matching the old overlay behavior. Exclude it
-    // precisely (not a blanket non-three-target rule) so appUi/dictionary keep
-    // their compat seed.
-    if (key != fontKeyBody &&
-        key != fontKeyVideoSubtitle &&
+    // Historical body-seed compat (TODO-049): ONLY appUi/dictionary with no
+    // stored row inherited the body list so the split didn't change visuals for
+    // users who'd only set the legacy `custom_fonts` list. New targets (video
+    // subtitle and game lookup) must stay empty when unset, preserving their
+    // pre-target platform defaults.
+    if ((key == fontKeyAppUi || key == fontKeyDictionary) &&
         !state.hasTarget(key) &&
         state.hasTarget(fontKeyBody)) {
       final FontCatalogState seeded = state.withTargetFonts(
@@ -772,6 +780,11 @@ class ReaderSettings {
   List<Map<String, dynamic>> get videoSubtitleFonts =>
       _fontListForTargetKey(fontKeyVideoSubtitle);
 
+  /// Windows galgame Hook text / click-to-lookup overlay font list. Empty when
+  /// unset so the native renderer keeps its historical Yu Gothic UI default.
+  List<Map<String, dynamic>> get gameLookupFonts =>
+      _fontListForTargetKey(fontKeyGameLookup);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
@@ -779,6 +792,7 @@ class ReaderSettings {
         FontTarget.appUi => appUiFonts,
         FontTarget.dictionary => dictionaryFonts,
         FontTarget.videoSubtitle => videoSubtitleFonts,
+        FontTarget.gameLookup => gameLookupFonts,
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -817,6 +831,7 @@ class ReaderSettings {
         FontTarget.appUi => fontKeyAppUi,
         FontTarget.dictionary => fontKeyDictionary,
         FontTarget.videoSubtitle => fontKeyVideoSubtitle,
+        FontTarget.gameLookup => fontKeyGameLookup,
       };
 
   /// Persists the whole list for [target]. The body convenience overload

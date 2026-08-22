@@ -178,6 +178,66 @@ void main() {
     endpoints.dispose();
   });
 
+  test('BUG-1710 下一句先到、DestroyVoice 后到时，封口重试回填上一句角色语音', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _GrowingEngine engine = _GrowingEngine(
+      stepsByTs: <int, List<int>>{
+        // 台词到达时 XAPO 还不能发布整句。
+        111111: <int>[0],
+        222222: <int>[0],
+      },
+      // 下一句到达后的前三次带界 grab 仍早于 DestroyVoice；第三个 settle interval
+      // 后第四次带界 grab 才能看见上一句完整的 500ms PCM。
+      boundedStepsByTs: <int, List<int>>{
+        111111: <int>[0, 0, 0, kHalfSecondBytes],
+      },
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 7,
+          timestampMs: 111111,
+          text: 'DestroyVoice待ち',
+          threadId: 5,
+          hookName: 'UserHook1',
+        ),
+        GalHookedLine(
+          seq: 8,
+          timestampMs: 222222,
+          text: '次の台詞',
+          threadId: 5,
+          hookName: 'UserHook1',
+        ),
+      ],
+    );
+    final GalHookSessionController controller = buildController(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      settleInterval: const Duration(milliseconds: 10),
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'SGRE'),
+    );
+    await controller.selectTextThread(5);
+    for (int i = 0;
+        i < 100 &&
+            (service.entries.isEmpty ||
+                service.entries.first.audioDurationMs != 500);
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(service.entries.first.audioDurationMs, 500,
+        reason: '晚于下一句文本发布的 DestroyVoice 必须由有界封口重试回填');
+    expect(service.entries.first.audioBackend, 'engine_pcm');
+    expect(engine.callsFor(111111), 5, reason: '首取 + 四次带同一下一句上界的封口 grab');
+    expect(engine.endBoundsFor(111111).skip(1), everyElement(222222));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('BUG-1109 下一句在收敛 delay **期间**到达也必须收手（判据每轮复查）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -453,6 +513,7 @@ class _GrowingEngine extends EngineHookGalAudioSource {
     this.laterLines = const <GalHookedLine>[],
     this.laterAfter = Duration.zero,
     this.boundedBytesByTs = const <int, int>{},
+    this.boundedStepsByTs = const <int, List<int>>{},
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Map<int, List<int>> stepsByTs;
@@ -463,6 +524,7 @@ class _GrowingEngine extends EngineHookGalAudioSource {
   /// 一定**不多于**无界那次。桩不模拟这一点的话，「上界真的起作用」就测不出来——
   /// 只按调用序号返回会让带界的封口 grab 拿到和无界一样多的数据，等于假绿。
   final Map<int, int> boundedBytesByTs;
+  final Map<int, List<int>> boundedStepsByTs;
   final List<GalHookedLine> lines;
 
   /// 首批之后才到达的台词（[laterAfter] 之后的第一次 pollText 交出）：用来把「下一句
@@ -471,6 +533,7 @@ class _GrowingEngine extends EngineHookGalAudioSource {
   final Duration laterAfter;
 
   final Map<int, int> _calls = <int, int>{};
+  final Map<int, int> _boundedCalls = <int, int>{};
   final Map<int, List<int?>> _endBounds = <int, List<int?>>{};
   final Stopwatch _since = Stopwatch();
   bool _laterDelivered = false;
@@ -523,6 +586,17 @@ class _GrowingEngine extends EngineHookGalAudioSource {
     // BUG-1475：记下每次 grab 的前向上界，供「封口 grab 必须带界」的断言核对。
     (_endBounds[tsMs] ??= <int?>[]).add(endTsMs);
     if (endTsMs != null && endTsMs != 0) {
+      final List<int>? boundedSteps = boundedStepsByTs[tsMs];
+      if (boundedSteps != null && boundedSteps.isNotEmpty) {
+        final int boundedIndex = _boundedCalls[tsMs] ?? 0;
+        _boundedCalls[tsMs] = boundedIndex + 1;
+        final int bounded = boundedSteps[boundedIndex < boundedSteps.length
+            ? boundedIndex
+            : boundedSteps.length - 1];
+        return bounded <= 0
+            ? null
+            : GalAudioSlice(pcm: Uint8List(bounded), format: _format);
+      }
       final int? bounded = boundedBytesByTs[tsMs];
       if (bounded != null) {
         return bounded <= 0

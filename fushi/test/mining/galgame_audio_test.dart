@@ -22,7 +22,10 @@ Uint8List _craftPe(int machine) {
 }
 
 class _FakeProcess implements Process {
-  _FakeProcess() : stdin = IOSink(StreamController<List<int>>().sink);
+  _FakeProcess({this.onKill})
+      : stdin = IOSink(StreamController<List<int>>().sink);
+
+  final void Function()? onKill;
 
   final StreamController<List<int>> stdoutController =
       StreamController<List<int>>();
@@ -50,6 +53,7 @@ class _FakeProcess implements Process {
   @override
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
     killed = true;
+    onKill?.call();
     if (!_exitCode.isCompleted) _exitCode.complete(0);
     return true;
   }
@@ -125,6 +129,32 @@ void main() {
         parseEngineHookReadyFormat(<Object?, Object?>{
           'ready': false,
           'rawVoiceReady': false,
+        }),
+        isNull,
+      );
+    });
+
+    test('拒绝 SGRE 现场误报的 4-bit PCM，让控制器降级到 loopback', () {
+      expect(
+        parseEngineHookReadyFormat(<Object?, Object?>{
+          'ready': true,
+          'sampleRate': 47968,
+          'channels': 2,
+          'bitsPerSample': 4,
+          'isFloat': false,
+        }),
+        isNull,
+      );
+    });
+
+    test('拒绝非 float32 的浮点 PCM', () {
+      expect(
+        parseEngineHookReadyFormat(<Object?, Object?>{
+          'ready': true,
+          'sampleRate': 48000,
+          'channels': 2,
+          'bitsPerSample': 16,
+          'isFloat': true,
         }),
         isNull,
       );
@@ -415,6 +445,63 @@ void main() {
       expect(await src.start(), isNull);
     });
 
+    test('capability 不精确匹配时 fail closed，绝不启动注入命令', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki_helper_capability_gate_test_',
+      );
+      final File injector =
+          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      await injector.writeAsBytes(const <int>[0]);
+      var injectionStarts = 0;
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        targetPid: 2468,
+        injectorPath: injector.path,
+        capabilitiesProbe: (String executable) async {
+          expect(executable, injector.path);
+          return false;
+        },
+        processStarter: (String executable, List<String> arguments) async {
+          injectionStarts++;
+          throw StateError('injection must not start');
+        },
+      );
+      try {
+        expect(await source.start(), isNull);
+        expect(injectionStarts, 0);
+        expect(
+          source.lastFailure.failure,
+          GalHookInjectorFailure.protocolMismatch,
+        );
+      } finally {
+        await source.stop();
+        await temp.delete(recursive: true);
+      }
+    });
+
+    test('capability stdout 只接受退出码 0 的 exact single token', () {
+      expect(
+        hasGalNativeLoopbackPolicyCapability(
+          exitCode: 0,
+          stdout: 'native_loopback_policy_v1\r\n',
+        ),
+        isTrue,
+      );
+      expect(
+        hasGalNativeLoopbackPolicyCapability(
+          exitCode: 0,
+          stdout: 'warning\nnative_loopback_policy_v1',
+        ),
+        isFalse,
+      );
+      expect(
+        hasGalNativeLoopbackPolicyCapability(
+          exitCode: 1,
+          stdout: 'native_loopback_policy_v1',
+        ),
+        isFalse,
+      );
+    });
+
     test('launch PID 就绪后仍持续排空 helper stdout 和 stderr', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_output_test_',
@@ -436,8 +523,16 @@ void main() {
           case 'open':
             expect(call.arguments, <String, Object?>{'pid': 4321});
             return <String, Object?>{'ok': true};
-          case 'status':
+          case 'requestNativeLoopbackPolicy':
+            expect(call.arguments, <String, Object?>{'policy': 'deny'});
             return <String, Object?>{
+              'nativeLoopbackRequested': 0,
+              'nativeLoopbackRequestSeq': 1,
+              'nativeLoopbackState': 0,
+              'nativeLoopbackAppliedSeq': 1,
+            };
+          case 'status':
+            return <Object?, Object?>{
               'hooked': true,
               'textHooked': true,
               'audioHooksReady': true,
@@ -453,6 +548,7 @@ void main() {
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         launchExe: game.path,
         injectorPath: injector.path,
+        capabilitiesProbe: (String _) async => true,
         processStarter: (String executable, List<String> arguments) async {
           expect(executable, injector.path);
           expect(
@@ -461,6 +557,8 @@ void main() {
               '--launch',
               game.path,
               '--hold',
+              '--native-loopback-policy',
+              'deny',
               // 握手超时与 readyTimeout 同源下发（见 buildEngineHookInjectorArguments）。
               '--wait-ms',
               '1000',
@@ -530,6 +628,14 @@ void main() {
             openCalls++;
             expect(call.arguments, <String, Object?>{'pid': 2468});
             return <String, Object?>{'ok': true};
+          case 'requestNativeLoopbackPolicy':
+            expect(call.arguments, <String, Object?>{'policy': 'deny'});
+            return <String, Object?>{
+              'nativeLoopbackRequested': 0,
+              'nativeLoopbackRequestSeq': 1,
+              'nativeLoopbackState': 0,
+              'nativeLoopbackAppliedSeq': 1,
+            };
           case 'status':
             return <String, Object?>{
               'hooked': true,
@@ -547,6 +653,7 @@ void main() {
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         targetPid: 2468,
         injectorPath: injector.path,
+        capabilitiesProbe: (String _) async => true,
         processStarter: (String executable, List<String> arguments) async {
           expect(executable, injector.path);
           expect(arguments, containsAllInOrder(<String>['--pid', '2468']));
@@ -572,6 +679,100 @@ void main() {
         expect(openCalls, 1);
         expect(source.gamePid, 2468);
         expect(source.textHookReady, isTrue);
+      } finally {
+        await source.stop();
+        await process.dispose();
+        await temp.delete(recursive: true);
+      }
+    });
+
+    test('运行期策略只控制采集，stop 先 deny/ack 再 close/kill', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki_helper_native_policy_test_',
+      );
+      final File injector =
+          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      await injector.writeAsBytes(const <int>[0]);
+      final List<String> events = <String>[];
+      final _FakeProcess process = _FakeProcess(
+        onKill: () => events.add('kill'),
+      );
+      var requestSeq = 0;
+      var requested = 0;
+      var state = 0;
+      Map<Object?, Object?> policyStatus() => <Object?, Object?>{
+            'nativeLoopbackRequested': requested,
+            'nativeLoopbackRequestSeq': requestSeq,
+            'nativeLoopbackState': state,
+            'nativeLoopbackAppliedSeq': requestSeq,
+          };
+
+      setHandler((MethodCall call) async {
+        events.add(call.method);
+        switch (call.method) {
+          case 'open':
+            return <String, Object?>{'ok': true};
+          case 'requestNativeLoopbackPolicy':
+            final String policy =
+                (call.arguments as Map<Object?, Object?>)['policy']! as String;
+            events.add('policy:$policy');
+            requested = policy == 'allow' ? 1 : 0;
+            state = policy == 'allow' ? 2 : 0;
+            requestSeq++;
+            return policyStatus();
+          case 'status':
+            return <Object?, Object?>{
+              ...policyStatus(),
+              'hooked': true,
+              'textHooked': true,
+              'audioHooksReady': true,
+              'ready': false,
+              'rawVoiceReady': false,
+            };
+          case 'close':
+            return null;
+        }
+        fail('policy flow must not call playback/engine method ${call.method}');
+      });
+
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        targetPid: 2468,
+        injectorPath: injector.path,
+        capabilitiesProbe: (String _) async => true,
+        processStarter: (String executable, List<String> arguments) async {
+          expect(
+            arguments,
+            containsAllInOrder(<String>[
+              '--native-loopback-policy',
+              'deny',
+            ]),
+          );
+          scheduleMicrotask(() {
+            process.stdoutController.add(
+              'OK hooked pid=2468 mode=attach\n'.codeUnits,
+            );
+          });
+          return process;
+        },
+        readyTimeout: const Duration(seconds: 1),
+        pollInterval: Duration.zero,
+      );
+
+      try {
+        expect(await source.start(), isNull);
+        expect(
+          await source.requestNativeLoopbackPolicy(
+            GalNativeLoopbackPolicy.allow,
+          ),
+          isTrue,
+        );
+        await source.stop();
+        final int finalDeny = events.lastIndexOf('policy:deny');
+        final int close = events.lastIndexOf('close');
+        final int kill = events.lastIndexOf('kill');
+        expect(finalDeny, greaterThanOrEqualTo(0));
+        expect(close, greaterThan(finalDeny));
+        expect(kill, greaterThan(close));
       } finally {
         await source.stop();
         await process.dispose();
@@ -754,6 +955,8 @@ void main() {
           '--launch',
           r'D:\Games\old-vn.exe',
           '--hold',
+          '--native-loopback-policy',
+          'deny',
           '--wait-ms',
           '30000',
           '--japanese-locale',
@@ -765,7 +968,15 @@ void main() {
           launchExe: null,
           japaneseLocale: true,
         ),
-        <String>['--pid', '4567', '--hold', '--wait-ms', '30000'],
+        <String>[
+          '--pid',
+          '4567',
+          '--hold',
+          '--native-loopback-policy',
+          'deny',
+          '--wait-ms',
+          '30000',
+        ],
       );
     });
 
@@ -780,6 +991,8 @@ void main() {
           '--launch',
           r'D:\steam\steamapps\common\manosaba_game\manosaba.exe',
           '--hold',
+          '--native-loopback-policy',
+          'deny',
           '--wait-ms',
           '30000',
           '--luna-pchooks',
@@ -788,7 +1001,7 @@ void main() {
     });
 
     // 用户配置的游戏启动参数：一个 token 一个 `--arg`。空配置时**一个都不发**，
-    // 命令行与旧版逐字节相同——老 injector（用户尚未更新 helper）也不会看到新 flag。
+    // game argv 仍保持逐字节相同；v16 安全策略 flag 则必须始终显式存在。
     test('未配置启动参数时不发 --arg / --workdir（逐字节向后兼容）', () {
       expect(
         buildEngineHookInjectorArguments(
@@ -799,6 +1012,8 @@ void main() {
           '--launch',
           r'D:\Games\vn.exe',
           '--hold',
+          '--native-loopback-policy',
+          'deny',
           '--wait-ms',
           '30000',
         ],
@@ -817,6 +1032,8 @@ void main() {
           '--launch',
           r'D:\Games\vn.exe',
           '--hold',
+          '--native-loopback-policy',
+          'deny',
           '--wait-ms',
           '30000',
           '--workdir',
@@ -839,7 +1056,15 @@ void main() {
           gameArguments: <String>['-windowed'],
           workdir: r'D:\Games',
         ),
-        <String>['--pid', '4567', '--hold', '--wait-ms', '30000'],
+        <String>[
+          '--pid',
+          '4567',
+          '--hold',
+          '--native-loopback-policy',
+          'deny',
+          '--wait-ms',
+          '30000',
+        ],
       );
     });
 
@@ -849,7 +1074,15 @@ void main() {
           targetPid: 4567,
           launchExe: null,
         ),
-        <String>['--pid', '4567', '--hold', '--wait-ms', '30000'],
+        <String>[
+          '--pid',
+          '4567',
+          '--hold',
+          '--native-loopback-policy',
+          'deny',
+          '--wait-ms',
+          '30000',
+        ],
       );
     });
 
@@ -863,7 +1096,15 @@ void main() {
           launchExe: null,
           readyTimeoutMs: 45000,
         ),
-        <String>['--pid', '4567', '--hold', '--wait-ms', '45000'],
+        <String>[
+          '--pid',
+          '4567',
+          '--hold',
+          '--native-loopback-policy',
+          'deny',
+          '--wait-ms',
+          '45000',
+        ],
       );
       // 非正超时=不下发（保留 injector 自身默认），不构造非法参数。
       expect(
@@ -872,7 +1113,27 @@ void main() {
           launchExe: null,
           readyTimeoutMs: 0,
         ),
-        <String>['--pid', '4567', '--hold'],
+        <String>[
+          '--pid',
+          '4567',
+          '--hold',
+          '--native-loopback-policy',
+          'deny',
+        ],
+      );
+    });
+
+    test('只有显式 full 策略才下发 allow', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 4567,
+          launchExe: null,
+          nativeLoopbackPolicy: GalNativeLoopbackPolicy.allow,
+        ),
+        containsAllInOrder(<String>[
+          '--native-loopback-policy',
+          'allow',
+        ]),
       );
     });
   });

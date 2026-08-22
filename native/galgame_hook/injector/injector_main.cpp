@@ -63,6 +63,8 @@
 //               unity_audio_runtime\。注入运行时现在从安装目录外的副本启动（BUG-1708），
 //               而这套提取运行时有 140 MB、仍留在安装目录，故位置必须显式下发。
 //     --wait-ms 等待就绪事件的超时毫秒（默认 5000）
+//     --native-loopback-policy allow|deny  注入 DLL 的 WASAPI loopback；省略=deny
+//     --capabilities  无目标进程预检；输出 native_loopback_policy_v1 后成功退出
 //     --hold    注入并确认后保持运行（host 模式，维持共享内存存活）；缺省=probe 模式，
 //               确认后退出。launch 模式下 --hold 会一直挂到游戏进程退出。
 //     --follow-child-processes  等启动器产生真实游戏子进程后再注入；Ren'Py 目录签名会自动启用。
@@ -81,6 +83,8 @@ using fushi_voice_hook::kLoopbackMarkerCount;
 using fushi_voice_hook::kLoopbackSeconds;
 using fushi_voice_hook::kMaxLoopbackBytes;
 using fushi_voice_hook::kMaxRingBytes;
+using fushi_voice_hook::kNativeLoopbackAllow;
+using fushi_voice_hook::kNativeLoopbackDeny;
 using fushi_voice_hook::kRingSeconds;
 using fushi_voice_hook::kSharedMagic;
 using fushi_voice_hook::kSharedVersion;
@@ -250,6 +254,7 @@ struct LunaCtx {
   PFN_Luna_InsertHookCode insert_hook = nullptr;
   PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
+  bool normalize_mages_controls = false;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
   std::vector<std::wstring> blocked_hook_names;
@@ -872,9 +877,14 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
   if (g_luna.header != nullptr && text != nullptr) {
     g_luna.header->hook_diagnostics |= kDiagLunaOutputObserved;
     const int raw_len = static_cast<int>(wcslen(text));
+    const std::wstring normalized_storage =
+        fushi_voice_hook::LunaNormalizeMagesControls(
+            text, raw_len, g_luna.normalize_mages_controls);
+    const wchar_t* normalized_text = normalized_storage.c_str();
+    const int escaped_len = static_cast<int>(normalized_storage.size());
     const int normalized_len =
-        fushi_voice_hook::LunaNormalizedTextLengthForHook(hookname, text,
-                                                           raw_len);
+        fushi_voice_hook::LunaNormalizedTextLengthForHook(
+            hookname, normalized_text, escaped_len);
     if (LunaDiagEnabled()) {
       char u8[1024];
       LunaWideToUtf8(text, raw_len, u8, sizeof(u8));
@@ -892,15 +902,15 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
               normalized_len, u8);
       fflush(stderr);
     }
-    if (LunaPassesFilter(text, normalized_len)) {
+    if (LunaPassesFilter(normalized_text, normalized_len)) {
       // 先判伪影，再决定本行是否写入文本环。
       const bool artifact =
-          fushi_voice_hook::LunaTextIsArtifact(text, normalized_len);
+          fushi_voice_hook::LunaTextIsArtifact(normalized_text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
       // v12：预览必须写在门控**之前**且无条件（含伪影行）。预览区的全部意义就是让用户
       // 看见未被发布的线程；放到门控之后就只剩已选中的那条，等于没做。
-      WriteThreadPreview(g_luna.header, thread_id, artifact, text,
+      WriteThreadPreview(g_luna.header, thread_id, artifact, normalized_text,
                          normalized_len);
       // LunaHook 权威标记：游戏内 GDI 文本 hook 据此让位，避免双写者污染（见
       // voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
@@ -915,7 +925,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       }
       if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id,
-                          face_id, text, normalized_len);
+                          face_id, normalized_text, normalized_len);
       }
     }
   }
@@ -1055,7 +1065,7 @@ void LunaEmbed(const wchar_t* text, LunaThreadParam tp) {
 // 缺 DLL / 缺关键导出 / 加载失败 → 打日志跳过，**不致命**（仍走游戏内 GDI hook）。
 // target 是目标进程句柄（复用 InjectDll 把 LunaHook<arch>.dll 注入游戏）。成功接线返回 true。
 bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
-                  bool use_pc_hooks,
+                  bool use_pc_hooks, bool normalize_mages_controls,
                   const std::vector<std::wstring>& hook_codes,
                   const std::vector<std::wstring>& blocked_hook_codes,
                   const std::vector<std::wstring>& blocked_hook_names,
@@ -1085,6 +1095,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   g_luna.insert_hook = bridge.insert_hook;
   g_luna.remove_hook = bridge.remove_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
+  g_luna.normalize_mages_controls = normalize_mages_controls;
   g_luna.hook_codes = hook_codes;
   g_luna.blocked_hook_codes = blocked_hook_codes;
   g_luna.blocked_hook_names = blocked_hook_names;
@@ -1160,6 +1171,7 @@ void ShutdownLunaHook() {
     g_luna.blocked_hook_names.clear();
     g_luna.confirmed_blocked_hook_names.clear();
     g_luna.preferred_hook_codes.clear();
+    g_luna.normalize_mages_controls = false;
     InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
     InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
     g_luna.pid = 0;
@@ -1171,6 +1183,7 @@ struct LunaOptions {
   bool enabled = true;    // --no-luna 关闭
   int codepage = 932;     // --luna-codepage（日文默认 SHIFT_JIS）
   bool pc_hooks = false;  // --luna-pchooks 补装通用 PC hooks
+  bool normalize_mages_controls = false;
   uint32_t defer_until_running_ms = 0;
   std::vector<std::wstring> hook_codes;  // 版本专用、已验证的 H-code
   std::vector<std::wstring> blocked_hook_codes;  // SHA-256 精确匹配的危险自动 hook
@@ -1192,6 +1205,9 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
     const auto match = fushi_voice_hook::MatchLunaHookProfiles(tsv, identity);
     if (match.codepage > 0) options->codepage = match.codepage;
     if (match.enable_pc_hooks) options->pc_hooks = true;
+    if (match.normalize_mages_controls) {
+      options->normalize_mages_controls = true;
+    }
     if (match.defer_until_running_ms > options->defer_until_running_ms) {
       options->defer_until_running_ms = match.defer_until_running_ms;
       fprintf(stderr, "[luna] matched %s deferred guard: %u ms\n", source,
@@ -1323,6 +1339,74 @@ bool ResumeLaunchedGame(HANDLE process, HANDLE thread, const char* stage) {
   return false;
 }
 
+bool NativeLoopbackPolicyApplied(SharedHeader* header, uint32_t requested,
+                                 uint32_t request_seq) {
+  if (header == nullptr || request_seq == 0) return false;
+  const uint32_t applied = fushi_voice_hook::AtomicLoadShared32(
+      &header->native_loopback_applied_seq);
+  const uint32_t state = fushi_voice_hook::AtomicLoadShared32(
+      &header->native_loopback_state);
+  const bool state_matches =
+      requested == kNativeLoopbackAllow
+          ? (state == fushi_voice_hook::kNativeLoopbackStateRunning ||
+             state == fushi_voice_hook::kNativeLoopbackStateFailed)
+          : state == fushi_voice_hook::kNativeLoopbackStateStopped;
+  return applied == request_seq && state_matches;
+}
+
+bool NativeLoopbackCaptureMayBeActive(SharedHeader* header) {
+  if (header == nullptr) return false;
+  const uint32_t state = fushi_voice_hook::AtomicLoadShared32(
+      &header->native_loopback_state);
+  return state == fushi_voice_hook::kNativeLoopbackStateStarting ||
+         state == fushi_voice_hook::kNativeLoopbackStateRunning ||
+         state == fushi_voice_hook::kNativeLoopbackStateStopping ||
+         (fushi_voice_hook::AtomicLoadShared32(&header->loopback_diag) &
+          fushi_voice_hook::kLoopbackDiagWorkerEntered) != 0;
+}
+
+bool WaitForNativeLoopbackPolicy(SharedHeader* header, uint32_t requested,
+                                 uint32_t request_seq, DWORD wait_ms) {
+  const ULONGLONG deadline = GetTickCount64() + wait_ms;
+  do {
+    if (NativeLoopbackPolicyApplied(header, requested, request_seq)) {
+      return true;
+    }
+    Sleep(1);
+  } while (GetTickCount64() < deadline);
+  return NativeLoopbackPolicyApplied(header, requested, request_seq);
+}
+
+// Any failure after publishing allow must revoke that authority before the
+// injector releases its control-plane view. If the DLL may already be alive,
+// stopped/applied is the only confirmation that Stop/Release/thread reap has
+// completed. Merely closing this process's mapping handle does not unload the
+// DLL or stop its worker because the target owns its own mapping handle.
+bool RevokeNativeLoopbackForFailure(SharedHeader* header,
+                                    bool hook_may_apply_policy,
+                                    DWORD wait_ms) {
+  const uint32_t deny_seq = fushi_voice_hook::PublishNativeLoopbackRequest(
+      header, kNativeLoopbackDeny);
+  if (deny_seq == 0) {
+    fprintf(stderr, "failed to publish native loopback deny during cleanup\n");
+    return false;
+  }
+  if (!hook_may_apply_policy) return true;
+  if (WaitForNativeLoopbackPolicy(header, kNativeLoopbackDeny, deny_seq,
+                                  wait_ms)) {
+    return true;
+  }
+  fprintf(stderr,
+          "native loopback cleanup did not reach stopped ack "
+          "(seq=%u state=%u applied=%u)\n",
+          deny_seq,
+          fushi_voice_hook::AtomicLoadShared32(
+              &header->native_loopback_state),
+          fushi_voice_hook::AtomicLoadShared32(
+              &header->native_loopback_applied_seq));
+  return false;
+}
+
 // attach 与 launch 共用的注入编排。target=目标进程句柄，pid=目标 pid（命名共享内存/事件）。
 // resume_thread!=nullptr（launch 模式）时：注入完成后 ResumeThread 让挂起的游戏跑起来，再等就绪
 // 事件——保证 hook 在游戏调 DirectSoundCreate/WinMain 之前就装好。hold_process 在 --hold 时决定
@@ -1341,12 +1425,17 @@ bool ResumeLaunchedGame(HANDLE process, HANDLE thread, const char* stage) {
 int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                  DWORD wait_ms, bool hold, HANDLE resume_thread,
                  HANDLE hold_process, const LunaOptions& luna,
+                 uint32_t native_loopback_requested,
                  fushi_voice_hook::LaunchFailureReason* reason_out = nullptr,
                  bool* resumed_out = nullptr,
-                 bool created_suspended = false) {
+                 bool created_suspended = false,
+                 bool* loopback_stopped_on_failure_out = nullptr) {
   using fushi_voice_hook::LaunchFailureReason;
   if (reason_out != nullptr) *reason_out = LaunchFailureReason::kNone;
   if (resumed_out != nullptr) *resumed_out = false;
+  if (loopback_stopped_on_failure_out != nullptr) {
+    *loopback_stopped_on_failure_out = true;
+  }
   bool target_wow64 = false;
   if (!BitnessMatches(target, &target_wow64)) {
     fprintf(stderr,
@@ -1462,6 +1551,46 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             pid, header->text_hooked,
             static_cast<unsigned long long>(header->total_written));
   }
+  // v16 policy is published before InjectDll. Fresh mappings always reach
+  // seq=1 here; reuse advances only on a real allow/deny edge. Missing/unknown
+  // CLI policy has already normalized to deny, so an old/default caller cannot
+  // accidentally authorise AUDCLNT_STREAMFLAGS_LOOPBACK.
+  const uint32_t native_loopback_request_seq =
+      fushi_voice_hook::PublishNativeLoopbackRequest(
+          header, native_loopback_requested);
+  if (native_loopback_request_seq == 0) {
+    const DWORD cleanup_wait_ms =
+        created_suspended
+            ? fushi_voice_hook::SuspendedStartupWaitBudgetMs(wait_ms)
+            : wait_ms;
+    const bool stopped =
+        !reuse_ready ||
+        RevokeNativeLoopbackForFailure(header, true, cleanup_wait_ms);
+    if (loopback_stopped_on_failure_out != nullptr) {
+      *loopback_stopped_on_failure_out = stopped;
+    }
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return FailWith(reason_out,
+                    LaunchFailureReason::kSharedMemoryUnavailable, 1);
+  }
+  bool hook_may_apply_loopback_policy = reuse_ready;
+  const DWORD loopback_wait_ms =
+      created_suspended
+          ? fushi_voice_hook::SuspendedStartupWaitBudgetMs(wait_ms)
+          : wait_ms;
+  if (loopback_stopped_on_failure_out != nullptr &&
+      native_loopback_requested == kNativeLoopbackAllow) {
+    *loopback_stopped_on_failure_out = false;
+  }
+  const auto revoke_loopback_before_failure = [&]() {
+    const bool stopped = RevokeNativeLoopbackForFailure(
+        header, hook_may_apply_loopback_policy, loopback_wait_ms);
+    if (loopback_stopped_on_failure_out != nullptr) {
+      *loopback_stopped_on_failure_out = stopped;
+    }
+    return stopped;
+  };
   const UnityExtractorRuntime unity_extractor = FindUnityExtractorRuntime();
   const std::wstring unity_data_directory = FindUnityDataDirectory(target);
   if (unity_extractor.ready) {
@@ -1474,6 +1603,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
   HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, evt.c_str());
   if (ready == nullptr) {
+    revoke_loopback_before_failure();
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     Fail("CreateEvent failed");
@@ -1481,12 +1611,21 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                     LaunchFailureReason::kSharedMemoryUnavailable, 1);
   }
 
-  if (!reuse_ready && !InjectDll(target, dll_path)) {
-    CloseHandle(ready);
-    UnmapViewOfFile(header);
-    CloseHandle(mapping);
-    Fail("injection failed");
-    return FailWith(reason_out, LaunchFailureReason::kInjectionFailed, 1);
+  if (!reuse_ready) {
+    if (!InjectDll(target, dll_path)) {
+      // A failed remote LoadLibrary can still have raced far enough for the
+      // DLL to open the mapping. Publish deny regardless; wait only if hooked
+      // proves its worker reached the control plane.
+      hook_may_apply_loopback_policy =
+          NativeLoopbackCaptureMayBeActive(header);
+      revoke_loopback_before_failure();
+      CloseHandle(ready);
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      Fail("injection failed");
+      return FailWith(reason_out, LaunchFailureReason::kInjectionFailed, 1);
+    }
+    hook_may_apply_loopback_policy = true;
   }
 
   // 等 hook DLL 的 proof-of-life。超时=注入了但 DLL 没跑到通知点（arch/契约/权限问题）。
@@ -1495,11 +1634,36 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     if (w != WAIT_OBJECT_0) {
       fprintf(stderr, "注入完成但未收到就绪信号（%lums 超时）；hooked=%u\n",
               wait_ms, header->hooked);
+      hook_may_apply_loopback_policy =
+          NativeLoopbackCaptureMayBeActive(header);
+      revoke_loopback_before_failure();
       CloseHandle(ready);
       UnmapViewOfFile(header);
       CloseHandle(mapping);
       return FailWith(reason_out, LaunchFailureReason::kReadyTimeout, 2);
     }
+  }
+
+  // Ready proves DLL identity/mapping only. The separate policy ack proves the
+  // requested lifecycle boundary. For deny, stopped/applied means no worker is
+  // alive and any prior IAudioClient has been Stop/Release'd and joined.
+  const bool loopback_policy_applied = WaitForNativeLoopbackPolicy(
+      header, native_loopback_requested, native_loopback_request_seq,
+      loopback_wait_ms);
+  if (!loopback_policy_applied) {
+    fprintf(stderr,
+            "native loopback policy ack timed out (requested=%u seq=%u "
+            "state=%u applied=%u)\n",
+            native_loopback_requested, native_loopback_request_seq,
+            fushi_voice_hook::AtomicLoadShared32(
+                &header->native_loopback_state),
+            fushi_voice_hook::AtomicLoadShared32(
+                &header->native_loopback_applied_seq));
+    revoke_loopback_before_failure();
+    CloseHandle(ready);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return FailWith(reason_out, LaunchFailureReason::kReadyTimeout, 2);
   }
 
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
@@ -1514,6 +1678,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     }
     luna_initialized =
         InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                     luna.normalize_mages_controls,
                      luna.hook_codes, luna.blocked_hook_codes,
                      luna.blocked_hook_names, luna.preferred_hook_codes);
     if (!luna_initialized) return false;
@@ -1572,6 +1737,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                 "[luna] failed to initialize early blocked-hook guard; "
                 "refusing to resume suspended game\n");
         ShutdownLunaHook();
+        revoke_loopback_before_failure();
         CloseHandle(ready);
         UnmapViewOfFile(header);
         CloseHandle(mapping);
@@ -1582,6 +1748,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     // 只有游戏内 DLL 完成首轮音频导出 hook 后才允许游戏主线程继续。
     // Unity 会在启动早期创建 XAudio2 engine/source voice，提前恢复会永久错过这些对象。
     if (!ResumeLaunchedGame(target, resume_thread, "post-injection")) {
+      revoke_loopback_before_failure();
       CloseHandle(ready);
       UnmapViewOfFile(header);
       CloseHandle(mapping);
@@ -1609,6 +1776,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
           fprintf(stderr,
                   "[luna] failed to suspend running target for guarded "
                   "installation\n");
+          revoke_loopback_before_failure();
           CloseHandle(ready);
           UnmapViewOfFile(header);
           CloseHandle(mapping);
@@ -1625,6 +1793,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
         }
         if (!guarded_ready || !resumed) {
           ShutdownLunaHook();
+          revoke_loopback_before_failure();
           CloseHandle(ready);
           UnmapViewOfFile(header);
           CloseHandle(mapping);
@@ -1639,15 +1808,21 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     }
   }
 
-  printf("OK hooked pid=%lu hooked=%u ring=%u sr=%u ch=%u bits=%u float=%u\n",
+  printf("OK hooked pid=%lu hooked=%u ring=%u sr=%u ch=%u bits=%u float=%u "
+         "native_loopback_requested=%u request_seq=%u state=%u applied_seq=%u\n",
          pid, header->hooked, header->ring_capacity, header->sample_rate,
-         header->channels, header->bits_per_sample, header->is_float);
+         header->channels, header->bits_per_sample, header->is_float,
+         native_loopback_requested, native_loopback_request_seq,
+         fushi_voice_hook::AtomicLoadShared32(&header->native_loopback_state),
+         fushi_voice_hook::AtomicLoadShared32(
+             &header->native_loopback_applied_seq));
   fflush(stdout);
 
   // host 模式（--hold）才接入 LunaHook 全引擎文本 hook：写同一文本环，与游戏内 GDI hook
   // 并存（原子占号防撞槽）。probe 模式确认即退，LunaHook 没有捕获窗口，故不接。
   if (hold && luna.enabled && !luna_initialized) {
     InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                 luna.normalize_mages_controls,
                  luna.hook_codes, luna.blocked_hook_codes,
                  luna.blocked_hook_names,
                  luna.preferred_hook_codes);
@@ -2271,7 +2446,7 @@ HANDLE WaitForSteamGameProcess(const std::wstring& expected_exe,
 
 int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
                    const std::wstring& dll_path, DWORD wait_ms, bool hold,
-                   LunaOptions luna) {
+                   LunaOptions luna, uint32_t native_loopback_requested) {
   std::vector<wchar_t> absolute_buffer(32768, L'\0');
   const DWORD absolute_size = GetFullPathNameW(
       exe.c_str(), static_cast<DWORD>(absolute_buffer.size()),
@@ -2317,7 +2492,7 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   fushi_voice_hook::LaunchFailureReason reason =
       fushi_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
-                              target, luna, &reason);
+                              target, luna, native_loopback_requested, &reason);
   CloseHandle(target);
   if (rc != 0) ReportFailureReason(reason, rc);
   return rc;
@@ -2329,7 +2504,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               const std::vector<std::wstring>& extra_args,
               const std::wstring& dll_path, DWORD wait_ms, bool hold,
               bool follow_child_processes, bool japanese_locale,
-              bool force_direct_launch, const LunaOptions& luna) {
+              bool force_direct_launch, const LunaOptions& luna,
+              uint32_t native_loopback_requested) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
     Fail("目标 exe 不存在（--launch <exe路径>）");
     ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kGameExeMissing,
@@ -2403,7 +2579,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               "override\n");
     }
     return RunSteamLaunch(exe, steam_app_id, dll_path, wait_ms, hold,
-                          effective_luna);
+                          effective_luna, native_loopback_requested);
   }
   const DWORD creation_flags =
       (delayed_attach || follow_children) ? 0 : CREATE_SUSPENDED;
@@ -2551,15 +2727,19 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   fushi_voice_hook::LaunchFailureReason reason =
       fushi_voice_hook::LaunchFailureReason::kNone;
   bool resumed = false;
+  bool loopback_stopped_on_failure = true;
   const int rc = RunInjection(target_process, target_pid, dll_path, wait_ms,
                               hold, pi.hThread, target_process, effective_luna,
-                              &reason, &resumed, must_resume_after_injection);
+                              native_loopback_requested, &reason, &resumed,
+                              must_resume_after_injection,
+                              &loopback_stopped_on_failure);
 
   // 失败后的进程处置以**事实**为准（是否 CREATE_SUSPENDED、是否已恢复），不再按返回码
   // 猜测。旧实现：rc==1 一律 TerminateProcess（杀掉用户明明要玩的游戏）；rc==2 依据
   // 「超时但已 Resume」的注释放着不管——而 rc==2 的两个来源（就绪事件超时、旧映射不可
   // 复用）都发生在 ResumeThread 之前，游戏于是被永久留在挂起态：进程在、窗口永不出现，
-  // 用户看到的就是「启动失败」。现在任何失败都至少让游戏以无 hook 方式跑起来。
+  // 用户看到的就是「启动失败」。现在普通失败至少让游戏以无 hook 方式跑起来；唯一例外是
+  // allow 后连 native loopback stopped ack 都拿不到，此时不能用隐私违规换 degraded resume。
   // created_suspended 与上面 must_resume_after_injection 同源（launched_suspended），
   // 不再自己重算一套口径——旧实现这里漏了 locale 路径，且 pre-discovery 已恢复的情形
   // 也要算作「已恢复」。
@@ -2570,6 +2750,15 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         fushi_voice_hook::DecideLaunchedProcessDisposition(created_suspended,
                                                             already_resumed,
                                                             reason);
+    if (!loopback_stopped_on_failure) {
+      fprintf(stderr,
+              "[privacy] native loopback deny was not acknowledged stopped; "
+              "refusing degraded resume of a suspended game\n");
+      if (created_suspended && !already_resumed) {
+        disposition =
+            fushi_voice_hook::LaunchedProcessDisposition::kTerminate;
+      }
+    }
     if (disposition ==
         fushi_voice_hook::LaunchedProcessDisposition::kResumeDegraded) {
       if (!ResumeLaunchedGame(pi.hProcess, pi.hThread, "degraded")) {
@@ -2613,6 +2802,10 @@ int main() {
   bool hold = false;
   bool follow_child_processes = false;
   bool force_direct_launch = false;
+  bool capabilities = false;
+  bool invalid_native_loopback_policy = false;
+  std::wstring invalid_native_loopback_value;
+  uint32_t native_loopback_requested = kNativeLoopbackDeny;
   LunaOptions luna;
 
   if (argv != nullptr) {
@@ -2640,6 +2833,23 @@ int main() {
         follow_child_processes = true;
       } else if (a == L"--force-direct-launch") {
         force_direct_launch = true;
+      } else if (a == L"--capabilities") {
+        capabilities = true;
+      } else if (a == L"--native-loopback-policy") {
+        if (i + 1 >= argc) {
+          invalid_native_loopback_policy = true;
+          invalid_native_loopback_value = L"<missing>";
+        } else {
+          const std::wstring value = argv[++i];
+          if (value == L"allow") {
+            native_loopback_requested = kNativeLoopbackAllow;
+          } else if (value == L"deny") {
+            native_loopback_requested = kNativeLoopbackDeny;
+          } else {
+            invalid_native_loopback_policy = true;
+            invalid_native_loopback_value = value;
+          }
+        }
       } else if (a == L"--no-luna") {
         luna.enabled = false;
       } else if (a == L"--luna-pchooks") {
@@ -2655,15 +2865,34 @@ int main() {
     LocalFree(argv);
   }
 
+  if (invalid_native_loopback_policy) {
+    fwprintf(stderr,
+             L"invalid --native-loopback-policy value: %ls "
+             L"(expected allow or deny)\n",
+             invalid_native_loopback_value.c_str());
+    return 1;
+  }
+  if (capabilities) {
+    if (pid != 0 || !launch_exe.empty()) {
+      return Fail("--capabilities must be used without --pid/--launch");
+    }
+    // Exact single-token stdout is the machine-readable preflight contract.
+    // Old injectors ignore this flag and fail target validation instead.
+    printf("native_loopback_policy_v1\n");
+    return 0;
+  }
+
   if ((pid == 0) == launch_exe.empty()) {
     // 两个都没给 或 两个都给了。
     return Fail(
         "usage: fushi_voice_injector --pid <PID> [--dll <hook.dll>] "
-        "[--wait-ms N] [--hold]\n"
+        "[--wait-ms N] [--hold] [--native-loopback-policy allow|deny]\n"
         "   or: fushi_voice_injector --launch <exe> [--workdir <dir>] "
         "[--japanese-locale] "
         "[--arg <a>]... [--dll <hook.dll>] [--wait-ms N] [--hold] "
-        "[--follow-child-processes] [--force-direct-launch]\n"
+        "[--follow-child-processes] [--force-direct-launch] "
+        "[--native-loopback-policy allow|deny]\n"
+        "   or: fushi_voice_injector --capabilities\n"
         "LunaHook(host 侧全引擎文本 hook，仅 --hold 生效): [--no-luna] "
         "[--luna-pchooks] [--luna-codepage <cp=932>] "
         "[--luna-hook-code <H-code>]... [--luna-hook-profile <profiles.tsv>]");
@@ -2683,7 +2912,8 @@ int main() {
   if (!launch_exe.empty()) {
     return RunLaunch(launch_exe, workdir, launch_args, dll_path, wait_ms, hold,
                      follow_child_processes, japanese_locale,
-                     force_direct_launch, luna);
+                     force_direct_launch, luna,
+                     native_loopback_requested);
   }
 
   // attach 模式：注入已运行进程（老路径行为不变）。
@@ -2716,7 +2946,8 @@ int main() {
   fushi_voice_hook::LaunchFailureReason reason =
       fushi_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
-                              nullptr, effective_luna, &reason);
+                              nullptr, effective_luna,
+                              native_loopback_requested, &reason);
   CloseHandle(target);
   if (rc != 0) ReportFailureReason(reason, rc);
   return rc;

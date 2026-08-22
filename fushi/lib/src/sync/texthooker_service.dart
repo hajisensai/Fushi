@@ -663,6 +663,47 @@ class TexthookerService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 记录文本环里实际出现的一行，同时确保对应线程存在于可选目录。
+  ///
+  /// 正常启动时 native 的 `threadDiscovered` 事件会先注册线程，预览快照再提供
+  /// [observedLineCount]。但重连到一个仍在运行、仍已注入的游戏时，旧的发现事件不会
+  /// 重放，某些自定义 hook 也可能已经不在新的 helper 预览快照里；此时正文行本身就是
+  /// 唯一仍可靠的线程目录证据。正文仍由控制器的选中线程过滤器决定是否发布，这里只
+  /// 补目录和观测计数，不能把未选中的文本塞进 [_entries]。
+  void observeTextThreadLine({
+    required String key,
+    required String label,
+    required String text,
+    String? hookCode,
+    int? nativeThreadId,
+    DateTime? observedAt,
+  }) {
+    final String normalizedKey = key.trim();
+    final String normalizedText = text.trim();
+    if (normalizedKey.isEmpty || normalizedText.isEmpty) return;
+    final TexthookerTextThread? previous =
+        _discoveredTextThreads[normalizedKey];
+    final DateTime now = observedAt ?? DateTime.now();
+    _discoveredTextThreads[normalizedKey] = TexthookerTextThread(
+      key: normalizedKey,
+      label: label.trim().isEmpty
+          ? previous?.label ?? normalizedKey
+          : label.trim(),
+      hookCode: hookCode ?? previous?.hookCode,
+      nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
+      lineCount: previous?.lineCount ?? 0,
+      latestAt: now,
+      latestText: previous?.latestText,
+      audioLineCount: previous?.audioLineCount ?? 0,
+      previewText: normalizedText,
+      observedLineCount: (previous?.observedLineCount ?? 0) + 1,
+      observedArtifactCount: previous?.observedArtifactCount ?? 0,
+      previewIsArtifact: false,
+      recentPreviewTexts: previous?.recentPreviewTexts ?? const <String>[],
+    );
+    notifyListeners();
+  }
+
   /// [threadKey] 为 null 时返回所有行；否则只返回指定 Hook 线程的文本。
   List<TexthookerLineEntry> entriesForTextThread(String? threadKey) {
     if (threadKey == null) return entries;

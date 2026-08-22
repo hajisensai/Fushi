@@ -577,7 +577,7 @@ void TestCaptureSuppressHasExactControlIdentity() {
   }
 }
 
-// ── 4. v14/v15 都是纯追加 ───────────────────────────────────────────────────
+// ── 4. v14/v15/v16 都是纯追加 ───────────────────────────────────────────────
 
 void TestV14LookupRegionIsPureAppendOverV13() {
   // (a) 结构体层面：查词字段整体排在 v13 最后一个字段之后。中间插一个字段就会让所有
@@ -630,8 +630,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
         "查词区必须追加在所有 v13 区之后");
 }
 
-void TestV15OnlyAppendsCaptureSuppressAckOverV14() {
-  Check(kSharedVersion == 15, "本测试锁的是 v15 契约");
+void TestV16OnlyAppendsNativeLoopbackPolicyOverV15() {
+  Check(kSharedVersion == 16, "本测试锁的是 v16 契约");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -642,8 +642,21 @@ void TestV15OnlyAppendsCaptureSuppressAckOverV14() {
         "v15 applied seq 必须紧跟 v14 末字段，不能移动或填改既有查词字段");
   Check(only_v15_field % alignof(uint64_t) == 0,
         "v15 applied seq 必须保持 8 字节对齐");
-  Check(sizeof(SharedHeader) == only_v15_field + sizeof(uint64_t),
-        "v15 只能追加 lookup_frame_applied_seq，头尾不得再混入别的字段");
+  const size_t first_v16_field =
+      offsetof(SharedHeader, native_loopback_requested);
+  Check(first_v16_field == only_v15_field + sizeof(uint64_t),
+        "v16 policy 必须紧跟 v15 applied seq，不能移动任何既有字段");
+  Check(offsetof(SharedHeader, native_loopback_request_seq) ==
+            first_v16_field + sizeof(uint32_t) &&
+            offsetof(SharedHeader, native_loopback_state) ==
+                first_v16_field + 2 * sizeof(uint32_t) &&
+            offsetof(SharedHeader, native_loopback_applied_seq) ==
+                first_v16_field + 3 * sizeof(uint32_t),
+        "v16 四个 32 位 policy word 必须按契约连续尾追加");
+  Check(sizeof(SharedHeader) ==
+            offsetof(SharedHeader, native_loopback_applied_seq) +
+                sizeof(uint32_t),
+        "v16 末尾不得混入 policy 之外的字段");
 }
 
 // 头里的冗余自洽字段必须与编译期常量一致——否则读侧按 header 值寻址、写侧按常量写，
@@ -682,7 +695,7 @@ int main() {
   TestCaptureSuppressHasExactControlIdentity();
   TestAcceptedFramesAlwaysFitInsideTheirBitmapSlot();
   TestV14LookupRegionIsPureAppendOverV13();
-  TestV15OnlyAppendsCaptureSuppressAckOverV14();
+  TestV16OnlyAppendsNativeLoopbackPolicyOverV15();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {
     fprintf(stderr, "lookup ipc contract test failures: %d\n", g_failures);

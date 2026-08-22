@@ -2126,6 +2126,8 @@ class AppModel with ChangeNotifier {
       // TODO-1368/BUG-691: "Hibiki Symbols" = renamed 3-glyph subset of
       // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
       'dejavu-fonts',
+      // Windows galgame overlay toolbar: reduced official Google font subset.
+      'material-symbols-rounded',
     ];
 
     for (String packageName in packageNames) {
@@ -6855,6 +6857,51 @@ class AppModel with ChangeNotifier {
   double get galHookTextFontSize => prefsRepo.galHookTextFontSize;
   Future<void> setGalHookTextFontSize(double value) =>
       prefsRepo.setGalHookTextFontSize(value);
+
+  double get galHookTextLetterSpacing => prefsRepo.galHookTextLetterSpacing;
+  Future<void> setGalHookTextLetterSpacing(double value) =>
+      prefsRepo.setGalHookTextLetterSpacing(value);
+
+  double get galHookTextLineHeight => prefsRepo.galHookTextLineHeight;
+  Future<void> setGalHookTextLineHeight(double value) =>
+      prefsRepo.setGalHookTextLineHeight(value);
+
+  bool get galHookTextBold => prefsRepo.galHookTextBold;
+  Future<void> setGalHookTextBold(bool value) =>
+      prefsRepo.setGalHookTextBold(value);
+
+  String get galHookTextAlignment => prefsRepo.galHookTextAlignment;
+  Future<void> setGalHookTextAlignment(String value) =>
+      prefsRepo.setGalHookTextAlignment(value);
+
+  int get galHookTextColor => prefsRepo.galHookTextColor;
+  Future<void> setGalHookTextColor(int value) =>
+      prefsRepo.setGalHookTextColor(value);
+
+  int get galHookTextBackgroundColor => prefsRepo.galHookTextBackgroundColor;
+  Future<void> setGalHookTextBackgroundColor(int value) =>
+      prefsRepo.setGalHookTextBackgroundColor(value);
+
+  double get galHookTextBackgroundOpacity =>
+      prefsRepo.galHookTextBackgroundOpacity;
+  Future<void> setGalHookTextBackgroundOpacity(double value) =>
+      prefsRepo.setGalHookTextBackgroundOpacity(value);
+
+  int get galHookTextOutlineColor => prefsRepo.galHookTextOutlineColor;
+  Future<void> setGalHookTextOutlineColor(int value) =>
+      prefsRepo.setGalHookTextOutlineColor(value);
+
+  double get galHookTextOutlineWidth => prefsRepo.galHookTextOutlineWidth;
+  Future<void> setGalHookTextOutlineWidth(double value) =>
+      prefsRepo.setGalHookTextOutlineWidth(value);
+
+  double get galHookTextPadding => prefsRepo.galHookTextPadding;
+  Future<void> setGalHookTextPadding(double value) =>
+      prefsRepo.setGalHookTextPadding(value);
+
+  double get galHookTextCornerRadius => prefsRepo.galHookTextCornerRadius;
+  Future<void> setGalHookTextCornerRadius(double value) =>
+      prefsRepo.setGalHookTextCornerRadius(value);
 
   // KiriKiri 游戏内查词总开关（仅 Windows）：开着时命中的字会在**游戏渲染树内部**
   // 弹出与 app 内逐像素一致的词典卡片。

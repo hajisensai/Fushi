@@ -103,10 +103,20 @@ struct Layout {
   float margin_px = 0.0f;  // padding between the window edge and the row
 };
 
-// Glyph drawn for |slot| under |states| (never null).
-const wchar_t* SlotGlyph(int slot, const States& states);
 // Whether |slot| draws with the active (highlight) colour under |states|.
 bool SlotActive(int slot, const States& states);
+// Material Symbols Rounded codepoint for |slot| under |states|.
+const wchar_t* SlotGlyph(int slot, const States& states);
+// Loads the bundled subset from Flutter's packaged assets into an isolated
+// DirectWrite collection. The caller owns the returned reference.
+bool LoadMaterialSymbolsRoundedFontCollection(
+    IDWriteFactory* factory, IDWriteFontCollection** collection);
+// Draws a font-independent, optically aligned vector icon for |slot|. Keeping
+// this as a missing-asset fallback keeps the pass-through escape hatch usable
+// even if an incomplete development bundle omits the packaged font.
+void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
+                  const States& states, const D2D1_RECT_F& bounds,
+                  ID2D1Brush* brush);
 
 }  // namespace hook_toolbar
 
@@ -168,6 +178,7 @@ class HookToolbarWindow {
   bool class_registered_ = false;
   bool visible_ = false;
   bool hovered_ = false;
+  int hovered_slot_ = -1;
   bool tracking_mouse_leave_ = false;
 
   // Owner-drag state. |dragging_| only becomes true once the press travelled
@@ -189,6 +200,7 @@ class HookToolbarWindow {
 
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection> icon_font_collection_;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
 
   ActionCallback on_action_;

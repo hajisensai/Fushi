@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -30,7 +31,9 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show DictionaryPopupWebViewState, MinePopupResult;
+import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
+import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -418,6 +421,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
+    HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
     // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
@@ -455,6 +459,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void dispose() {
     _linePreviewResetTimer?.cancel();
+    HardwareKeyboard.instance.removeHandler(_handlePopupMineHardwareKey);
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
     final OverlayEntry? popupOverlay = _popupOverlayEntry;
@@ -1178,6 +1183,39 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _activeLineId = line.id;
       _activeSentence = line.text;
     });
+  }
+
+  /// App 内查词 WebView 不在 JS 侧处理制卡快捷键，避免同一次按键同时被
+  /// WebView 与 Flutter 消费后制出两张卡。因此 texthooker 必须像视频页一样，
+  /// 在宿主侧把 [ShortcutAction.popupMineEntry]（默认 Ctrl+Enter）接回当前
+  /// 顶层弹窗的既有制卡按钮；执行体仍走 WebView 的三态、查重与单飞门。
+  void _mineFromTopPopup() {
+    if (!_popup.hasVisiblePopup) return;
+    final int index = _topVisiblePopupIndex;
+    final DictionaryPopupWebViewState? popup =
+        _popup.entries[index].webViewKey.currentState;
+    if (popup == null) return;
+    unawaited(popup.mineFirstVisibleEntry());
+  }
+
+  /// Root Overlay 与原生 WebView 都不保证存在可用的 Flutter Focus 后代。
+  ///
+  /// 因此仅在 texthooker 查词弹窗可见时，从 [HardwareKeyboard] 的页面生命周期
+  /// handler 接收用户配置的制卡绑定。它先于 Focus/Shortcuts 路由处理命中的事件，
+  /// 不依赖浮层焦点，也不会让同一次按键再落到 WebView 形成重复制卡。
+  bool _handlePopupMineHardwareKey(KeyEvent event) {
+    if (!mounted || !_popup.hasVisiblePopup) return false;
+    for (final InputBinding binding in mixinAppModel.shortcutRegistry
+        .bindingsFor(ShortcutAction.popupMineEntry)
+        .keyboardBindings) {
+      if (binding
+          .toActivator(includeRepeats: false)
+          .accepts(event, HardwareKeyboard.instance)) {
+        _mineFromTopPopup();
+        return true;
+      }
+    }
+    return false;
   }
 
   /// 翻转某行收藏态（仅会话内存态，不落 DB）。service 通知 → [_onLines] setState 刷新徽章。
@@ -2025,6 +2063,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   Widget _buildPopupOverlay(BuildContext overlayContext) {
     if (!mounted || _overlayInert) return const SizedBox.shrink();
+    // 本浮层插在 root Overlay，不是 TexthookerPage 页面子树的后代；键盘接线由
+    // 页面生命周期内的 HardwareKeyboard handler 承担，不再依赖浮层 Focus 链。
     return FushiAppUiScaleNeutralizer(
       child: Theme(
         data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),

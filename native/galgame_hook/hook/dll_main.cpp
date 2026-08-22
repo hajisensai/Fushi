@@ -28,6 +28,8 @@
 
 #include <MinHook.h>
 
+#include <new>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -49,6 +51,7 @@
 #include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
+#include "sgre_voice_archive.h"
 #include "text_thread_identity.h"
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
@@ -56,6 +59,10 @@
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
+#include "xaudio_pcm_capture_xapo.h"
+#include "xaudio_source_format.h"
+#include "xaudio_trace.h"
+#include "xwma_resource.h"
 #include "generated/profile_includes.inc"
 
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
@@ -77,6 +84,13 @@
 //
 // loader lock 纪律：DllMain 里**不**做 IPC/同步/加载库/MinHook，只 DisableThreadLibraryCalls +
 // CreateThread 把活儿丢给工作线程（在 loader lock 之外跑），这是 hook DLL 的正确形态。
+//
+// 独立导出的固定 XAudio trace 不属于 SharedHeader ABI。ring_probe 从目标 DLL 的 PE export
+// 解析本符号 RVA，再用 ReadProcessMemory 读取；因此无需升级 IPC 版本，也不要求 probe 与目标
+// 同位数。初始化只含常量/零值，不在 loader lock 下做任何动作。
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::XAudioTraceBuffer FushiXAudioTraceV1 = {};
+
 namespace {
 
 using fushi_voice_hook::kClipCount;
@@ -136,10 +150,9 @@ uint8_t* g_clip_base = nullptr;
 
 // ── C.2f loopback 区基址（HookWorker 按 header 偏移一次性缓存；loopback 线程独占写）──────────
 // g_lb_ring_base：loopback 混音环（16-bit PCM）。g_lb_marker_base：时间戳↔位置标记表。
-// g_lb_thread：独立 loopback 捕获线程句柄（停机时 join）。
+// 线程句柄与独立 stop word 归 LoopbackAdapter 单一所有，避免策略快速切换产生双 worker。
 uint8_t* g_lb_ring_base = nullptr;
 uint8_t* g_lb_marker_base = nullptr;
-HANDLE g_lb_thread = nullptr;
 
 // MinHook 去重集：同一 SubmitSourceBuffer/CreateSourceVoice 实现常被多个实例共享同一 vtable，
 // 对同一函数地址只 MH_CreateHook 一次（重复 create 会报 MH_ERROR_ALREADY_CREATED）。
@@ -202,10 +215,17 @@ volatile LONG g_format_set = 0;
 // ── COM 方法 vtable 槽（按 xaudio2.h 接口声明顺序推定，跨 XAudio2 2.7/2.8/2.9 稳定）──────
 // IXAudio2 : IUnknown -> QueryInterface(0) AddRef(1) Release(2)
 //            RegisterForCallbacks(3) UnregisterForCallbacks(4) CreateSourceVoice(5) ...
+//            StartEngine(8) StopEngine(9) CommitChanges(10)
 constexpr size_t kIdxCreateSourceVoice = 5;
+constexpr size_t kIdxCommitChanges = 10;
 // IXAudio2Voice（**不**继承 IUnknown）: GetVoiceDetails(0)...DestroyVoice(18)
-// IXAudio2SourceVoice : Start(19) Stop(20) SubmitSourceBuffer(21) ...
+// IXAudio2SourceVoice : Start(19) Stop(20) SubmitSourceBuffer(21)
+//                       FlushSourceBuffers(22) ...
+constexpr size_t kIdxDestroyVoice = 18;
+constexpr size_t kIdxSourceVoiceStart = 19;
+constexpr size_t kIdxSourceVoiceStop = 20;
 constexpr size_t kIdxSubmitSourceBuffer = 21;
+constexpr size_t kIdxFlushSourceBuffers = 22;
 
 // 原函数（MinHook trampoline）。detour 经此调回原实现。
 typedef HRESULT(WINAPI* XAudio2Create_t)(IXAudio2** ppXAudio2, UINT32 Flags,
@@ -218,11 +238,23 @@ typedef HRESULT(STDMETHODCALLTYPE* CreateSourceVoice_t)(
 typedef HRESULT(STDMETHODCALLTYPE* SubmitSourceBuffer_t)(
     IXAudio2SourceVoice* self, const XAUDIO2_BUFFER* pBuffer,
     const XAUDIO2_BUFFER_WMA* pBufferWMA);
+typedef HRESULT(STDMETHODCALLTYPE* SourceVoiceStartStop_t)(
+    IXAudio2SourceVoice* self, UINT32 Flags, UINT32 OperationSet);
+typedef HRESULT(STDMETHODCALLTYPE* FlushSourceBuffers_t)(
+    IXAudio2SourceVoice* self);
+typedef void(STDMETHODCALLTYPE* DestroyVoice_t)(IXAudio2Voice* self);
+typedef HRESULT(STDMETHODCALLTYPE* CommitChanges_t)(IXAudio2* self,
+                                                     UINT32 OperationSet);
 
 XAudio2Create_t g_orig_XAudio2Create9 = nullptr;
 XAudio2Create_t g_orig_XAudio2Create8 = nullptr;
 CreateSourceVoice_t g_orig_CreateSourceVoice = nullptr;
 SubmitSourceBuffer_t g_orig_SubmitSourceBuffer = nullptr;
+SourceVoiceStartStop_t g_orig_SourceVoiceStart = nullptr;
+SourceVoiceStartStop_t g_orig_SourceVoiceStop = nullptr;
+FlushSourceBuffers_t g_orig_FlushSourceBuffers = nullptr;
+DestroyVoice_t g_orig_DestroyVoice = nullptr;
+CommitChanges_t g_orig_CommitChanges = nullptr;
 
 // ── DirectSound COM 方法 vtable 槽（按 dsound.h 接口声明顺序，跨 DS8 稳定）───────────
 // IDirectSound8 : IUnknown(0-2) 后 CreateSoundBuffer(3) GetCaps(4) DuplicateSoundBuffer(5)...
@@ -324,32 +356,35 @@ bool HookFn(void* target, void* detour, void** original) {
   return ok;
 }
 
-// 首次拿到语音 WAVEFORMATEX：填 header 的 sample_rate/channels/bits/is_float，block_align 最后
-// 写（作为「格式就绪」信号——SubmitSourceBuffer 回调据 block_align!=0 判定可安全换算字节）。
-void MaybeRecordFormat(const WAVEFORMATEX* wf) {
-  if (wf == nullptr || g_header == nullptr) {
+// 首次拿到可发布的 PCM 格式：block_align 最后写，作为跨进程「格式就绪」完成标记。
+// XAudio2 ADPCM 在工作线程解码成 16-bit 后也走这里，绝不把 4-bit 压缩源伪装成 PCM。
+void MaybeRecordPcmFormat(uint32_t sample_rate, uint32_t channels,
+                          uint32_t bits_per_sample, uint32_t is_float) {
+  if (g_header == nullptr || sample_rate == 0 || channels == 0 ||
+      bits_per_sample == 0 || bits_per_sample % 8 != 0) {
     return;
   }
   if (InterlockedCompareExchange(&g_format_set, 1, 0) != 0) {
     return;  // 已有其它 voice 抢先写过格式。
   }
-  g_header->sample_rate = wf->nSamplesPerSec;
-  g_header->channels = wf->nChannels;
-  g_header->bits_per_sample = wf->wBitsPerSample;
-  uint32_t is_float = 0;
-  if (wf->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-    is_float = 1;
-  } else if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-             wf->cbSize >=
-                 sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX)) {
-    const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(wf);
-    if (ext->SubFormat.Data1 == WAVE_FORMAT_IEEE_FLOAT) {
-      is_float = 1;
-    }
-  }
+  g_header->sample_rate = sample_rate;
+  g_header->channels = channels;
+  g_header->bits_per_sample = bits_per_sample;
   g_header->is_float = is_float;
-  g_header->block_align =
-      static_cast<uint32_t>(wf->nChannels) * (wf->wBitsPerSample / 8);
+  g_header->block_align = channels * (bits_per_sample / 8);
+}
+
+void MaybeRecordFormat(const WAVEFORMATEX* format) {
+  fushi_voice_hook::XAudioSourceFormat parsed;
+  if (!fushi_voice_hook::ParseXAudioSourceFormat(format, &parsed) ||
+      parsed.encoding ==
+          fushi_voice_hook::XAudioSourceEncoding::kMicrosoftAdpcm) {
+    return;
+  }
+  MaybeRecordPcmFormat(
+      parsed.sample_rate, parsed.channels, parsed.bits_per_sample,
+      parsed.encoding == fushi_voice_hook::XAudioSourceEncoding::kPcmFloat ? 1u
+                                                                           : 0u);
 }
 
 // ── 多写者安全的环形缓冲写入（无锁原子预留）─────────────────────────────────
@@ -412,7 +447,10 @@ inline uint32_t RingAppendVoice(const uint8_t* data, uint32_t len) {
 inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
                                uint64_t source_ptr, uint32_t sample_rate,
                                uint32_t channels, uint32_t bits_per_sample,
-                               uint32_t is_float) {
+                               uint32_t is_float,
+                               uint64_t timestamp_ms = 0,
+                               uint64_t total_at_write = 0,
+                               uint32_t clip_flags = 0) {
   if (g_clip_base == nullptr || g_header == nullptr || byte_len == 0) {
     return;
   }
@@ -424,15 +462,16 @@ inline void RecordVoiceClipFmt(uint32_t ring_offset, uint32_t byte_len,
       1));
   const size_t off = static_cast<size_t>(idx % kClipCount) * sizeof(VoiceClip);
   auto* clip = reinterpret_cast<VoiceClip*>(g_clip_base + off);
-  clip->timestamp_ms = GetTickCount64();
-  clip->total_at_write = g_header->total_written;  // 写后累计（含并发写者，判覆盖偏保守，安全）
+  clip->timestamp_ms = timestamp_ms == 0 ? GetTickCount64() : timestamp_ms;
+  clip->total_at_write = total_at_write == 0 ? g_header->total_written
+                                              : total_at_write;
   clip->ring_offset = ring_offset;
   clip->byte_len = byte_len;
   clip->sample_rate = sample_rate;
   clip->channels = channels;
   clip->bits_per_sample = bits_per_sample;
   clip->is_float = is_float;
-  clip->pad = 0;
+  clip->pad = clip_flags;
   clip->source_ptr = source_ptr;   // 该段所属源（区分语音源 vs BGM 源；解码路径=解码器句柄）
   clip->seq = idx + 1;             // 有效性完成标记，**最后**写
 }
@@ -518,6 +557,11 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
           reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
       g_lb_marker_base =
           reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
+      // Apply/ack native loopback policy before potentially expensive engine
+      // probing. Default deny therefore reaches stopped/applied immediately and
+      // still never creates the loopback worker; explicit allow remains
+      // independent of MinHook just as the historical fallback was.
+      registry.InstallFallbackAdapters();
       InitializeCriticalSection(&g_cs);
       g_cs_ready = true;
       InitializeCriticalSection(&g_text_cs);
@@ -531,9 +575,6 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
         g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
         registry.InstallStartupAdapters();
       }
-      // C.2f：起独立 loopback 混音捕获线程（兜底，与上述引擎级 hook 并行；不依赖 MinHook，故
-      // 即便 MH_Initialize 失败也起）。它自带 g_stop 退出门控 + COM 反序释放。
-      registry.InstallFallbackAdapters();
     }
   }
 

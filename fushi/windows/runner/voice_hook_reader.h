@@ -48,6 +48,12 @@ struct VoiceHookStatus {
   // 「分道没生效」和「道不够用」。
   int64_t text_lane_recycles = 0;   // 回收过多少次最久未写的非选定道
   int64_t text_lane_overflows = 0;  // 连可回收的道都没有、只能丢弃的行数
+  // v16 injected WASAPI loopback capture policy. These words describe only
+  // the capture worker lifecycle; they never pause or mute game playback.
+  uint32_t native_loopback_requested = 0;
+  uint32_t native_loopback_request_seq = 0;
+  uint32_t native_loopback_state = 0;
+  uint32_t native_loopback_applied_seq = 0;
 };
 
 // [VoiceHookReader::Open] 失败的**结构化原因**。
@@ -240,6 +246,12 @@ class VoiceHookReader {
 
   // 读当前 header 状态（格式/hooked/calibrating）。未打开返回 ok=false。
   VoiceHookStatus Status();
+
+  // Publish allow/deny to the injected capture worker. The shared IPC helper
+  // writes requested first and request_seq last; Dart waits on Status until
+  // applied_seq/state acknowledge the corresponding lifecycle boundary.
+  // Returns 0 when no compatible mapping is open.
+  uint32_t RequestNativeLoopbackPolicy(bool allow);
 
   // 把「最近 [back_ms] 毫秒」的语音 PCM 拷进 [out]（帧对齐，环形回绕处理）。缓冲不足则返回现有
   // 全部。未打开 / hook 未就绪 / 无数据时 [out] 清空、返回 ok=false。

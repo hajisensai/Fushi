@@ -91,7 +91,7 @@ void main() {
     );
   });
 
-  test('settings exposes one font catalog entry with four row targets', () {
+  test('settings exposes one font catalog entry with five row targets', () {
     final String schema =
         read('lib/src/settings/settings_schema_appearance.dart');
     expect(schema.contains("'appearance.font_catalog'"), isTrue);
@@ -118,5 +118,24 @@ void main() {
     expect(src.contains("fontKeyDictionary = 'dict_fonts'"), isTrue);
     // TODO-864: video subtitle font key is equally ironclad (backward-compat).
     expect(src.contains("fontKeyVideoSubtitle = 'video_sub_fonts'"), isTrue);
+    expect(src.contains("fontKeyGameLookup = 'game_lookup_fonts'"), isTrue);
+  });
+
+  test('native game lookup overlay consumes only the gameLookup font target',
+      () {
+    final String controller =
+        read('lib/src/lookup/gal_hook_text_overlay_controller.dart');
+    expect(controller.contains('settings.gameLookupFonts'), isTrue);
+    expect(controller.contains('resolveForNativeOverlay('), isTrue);
+    expect(controller.contains('settings.dictionaryFonts'), isFalse);
+
+    final String channel =
+        read('lib/src/platform/gal_hook_text_overlay_channel.dart');
+    expect(channel.contains("'fontFamily': fontFamily"), isTrue);
+    expect(channel.contains("'fontPath': fontPath"), isTrue);
+
+    final String native = read('windows/runner/floating_lyric_window.cpp');
+    expect(native.contains('CreateFontCollectionFromFontSet'), isTrue);
+    expect(native.contains('custom_font_collection_.Get()'), isTrue);
   });
 }

@@ -1,6 +1,7 @@
 #include "floating_lyric_window.h"
 
 #include <d2d1helper.h>
+#include <dwrite_3.h>
 #include <dwmapi.h>
 #include <windowsx.h>
 
@@ -27,18 +28,24 @@ constexpr float kCornerRadiusDip = 14.0f;
 constexpr float kHorizontalPaddingDip = 20.0f;
 constexpr float kButtonSizeDip = 30.0f;
 constexpr float kButtonGapDip = 10.0f;
+// Hook toolbar: 32dp hit areas with a compact 4dp rhythm. Keeping these
+// separate from the audiobook/clipboard controls lets the nine-icon row use a
+// deliberate 320dp width instead of inheriting the old sparse 350dp layout.
+constexpr float kHookTextButtonSizeDip = 32.0f;
+constexpr float kHookTextButtonGapDip = 4.0f;
 constexpr float kControlsTopDip = 8.0f;
 // Bottom-right resize grip and the min / max the user may drag the bar to.
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
-// Hook mode draws a centred 9-slot toolbar (9 * 30 + 8 * 10 = 350dip). The
+// Hook mode draws a centred 9-slot toolbar (9 * 32 + 8 * 4 = 320dip). The
 // generic 280dip floor would let the user drag the window narrower than its own
 // controls, clipping the leading voice buttons; hook mode therefore floors at
 // the toolbar width plus a small margin. Bump this whenever kSlotCount grows —
 // the floor is derived from the row width, not from a taste-based round number.
-constexpr float kHookTextMinStripWidthDip = 370.0f;
-// Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见 StartHoverLookupPolling）。
-// 60ms ≈ 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
+constexpr float kHookTextMinStripWidthDip = 340.0f;
+// Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见
+// StartHoverLookupPolling）。 60ms ≈
+// 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
 // 只在窗口内轮询，代价是一次 GetAsyncKeyState + 一次 DWrite 命中测试。
 constexpr UINT_PTR kHoverLookupTimerId = 1;
 constexpr UINT kHoverLookupPollMs = 60;
@@ -62,9 +69,7 @@ constexpr float kRubyLineGapScale = 1.25f;
 // text_layout_ 按 8 个方向偏移多画几遍：几何天然逐像素一致，点字 index、折行、
 // 滚动、注音全部不动。8 遍 + 阴影 + 填充共 10 次 DrawTextLayout，只在文本 /
 // 悬停 / 拖动变化时重绘，代价可忽略。
-constexpr float kLyricOutlineRadiusDip = 1.6f;
 constexpr float kLyricShadowOffsetDip = 2.0f;
-constexpr uint32_t kLyricOutlineColor = 0xE0000000;  // 88% 黑描边
 constexpr uint32_t kLyricShadowColor = 0x59000000;   // 35% 黑投影
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
@@ -113,7 +118,7 @@ constexpr float kTextGripWidthDip = 40.0f;
 constexpr float kTextGripHeightDip = 4.0f;
 constexpr float kTextGripTopDip = 9.0f;
 constexpr float kTextStripRestAlpha = 0.02f;   // near-invisible, still catchable
-constexpr float kTextStripHoverAlpha = 0.55f;  // visible toolbar band on hover
+constexpr float kTextStripHoverAlpha = 0.16f;  // subtle catch band on hover
 
 // BUG-1046: hook-text overlay body alpha floor. UpdateLayeredWindow windows are
 // hit-tested per PIXEL — alpha-0 pixels pass clicks through to the window
@@ -215,7 +220,77 @@ bool FloatingLyricWindow::EnsureTextResources() {
       return false;
     }
   }
+  if (icon_font_collection_ == nullptr) {
+    hook_toolbar::LoadMaterialSymbolsRoundedFontCollection(
+        dwrite_factory_.Get(), icon_font_collection_.GetAddressOf());
+  }
+  if (font_collection_dirty_) {
+    RebuildFontCollection();
+  }
   return true;
+}
+
+void FloatingLyricWindow::RebuildFontCollection() {
+  font_collection_dirty_ = false;
+  custom_font_collection_.Reset();
+  resolved_font_family_ =
+      style_.font_family.empty() ? L"Yu Gothic UI" : style_.font_family;
+  if (dwrite_factory_ == nullptr || style_.font_path.empty()) {
+    return;
+  }
+
+  Microsoft::WRL::ComPtr<IDWriteFactory5> factory5;
+  Microsoft::WRL::ComPtr<IDWriteFontSetBuilder1> builder;
+  Microsoft::WRL::ComPtr<IDWriteFontFile> font_file;
+  if (FAILED(dwrite_factory_.As(&factory5)) ||
+      FAILED(factory5->CreateFontSetBuilder(builder.GetAddressOf())) ||
+      FAILED(factory5->CreateFontFileReference(
+          style_.font_path.c_str(), nullptr, font_file.GetAddressOf())) ||
+      FAILED(builder->AddFontFile(font_file.Get()))) {
+    return;
+  }
+
+  // Keep the imported face first (so a catalog display-name mismatch can fall
+  // back to family 0), then append the system set for missing-glyph fallback.
+  Microsoft::WRL::ComPtr<IDWriteFontSet> system_fonts;
+  if (SUCCEEDED(factory5->GetSystemFontSet(system_fonts.GetAddressOf()))) {
+    builder->AddFontSet(system_fonts.Get());
+  }
+  Microsoft::WRL::ComPtr<IDWriteFontSet> font_set;
+  Microsoft::WRL::ComPtr<IDWriteFontCollection1> collection;
+  if (FAILED(builder->CreateFontSet(font_set.GetAddressOf())) ||
+      FAILED(factory5->CreateFontCollectionFromFontSet(
+          font_set.Get(), collection.GetAddressOf()))) {
+    return;
+  }
+  custom_font_collection_ = collection;
+
+  UINT32 family_index = 0;
+  BOOL family_exists = FALSE;
+  collection->FindFamilyName(resolved_font_family_.c_str(), &family_index,
+                             &family_exists);
+  if (family_exists || collection->GetFontFamilyCount() == 0) {
+    return;
+  }
+
+  // Imported catalog names are intentionally human-editable and may be based
+  // on the file name. Resolve the real OpenType family from the custom face so
+  // DirectWrite still renders it when those names differ.
+  Microsoft::WRL::ComPtr<IDWriteFontFamily> first_family;
+  Microsoft::WRL::ComPtr<IDWriteLocalizedStrings> family_names;
+  if (FAILED(collection->GetFontFamily(0, first_family.GetAddressOf())) ||
+      FAILED(first_family->GetFamilyNames(family_names.GetAddressOf())) ||
+      family_names->GetCount() == 0) {
+    return;
+  }
+  UINT32 name_length = 0;
+  if (FAILED(family_names->GetStringLength(0, &name_length))) {
+    return;
+  }
+  std::vector<wchar_t> name(name_length + 1, L'\0');
+  if (SUCCEEDED(family_names->GetString(0, name.data(), name_length + 1))) {
+    resolved_font_family_.assign(name.data(), name_length);
+  }
 }
 
 float FloatingLyricWindow::ScaleForDpi(float value) const {
@@ -440,7 +515,15 @@ void FloatingLyricWindow::Highlight(int start, int length) {
 }
 
 void FloatingLyricWindow::UpdateStyle(const Style& style) {
+  const bool font_changed = style.font_family != style_.font_family ||
+                            style.font_path != style_.font_path;
   style_ = style;
+  if (font_changed) {
+    font_collection_dirty_ = true;
+    if (dwrite_factory_ != nullptr) {
+      RebuildFontCollection();
+    }
+  }
   text_format_.Reset();
   ruby_format_.Reset();
   text_layout_.Reset();
@@ -669,11 +752,11 @@ hook_toolbar::Layout FloatingLyricWindow::ComputePassThroughToolbarLayout()
   if (!GetWindowRect(hwnd_, &wr)) {
     return layout;
   }
-  const float btn = ScaleForDpi(kButtonSizeDip);
-  const float gap = ScaleForDpi(kButtonGapDip);
+  const float btn = ScaleForDpi(kHookTextButtonSizeDip);
+  const float gap = ScaleForDpi(kHookTextButtonGapDip);
   const float margin = ScaleForDpi(kToolbarWindowMarginDip);
-  const float row_w = btn * kHookTextControlSlotCount +
-                      gap * (kHookTextControlSlotCount - 1);
+  const float row_w =
+      btn * kHookTextControlSlotCount + gap * (kHookTextControlSlotCount - 1);
   // Same origin the in-body toolbar draws at (centred row, kControlsTopDip from
   // the top), grown by |margin| so the pill has an edge to grab for dragging.
   const float body_w = static_cast<float>(wr.right - wr.left);
@@ -1155,17 +1238,35 @@ void FloatingLyricWindow::Render() {
 
   // 桌面歌词字重：hook 模式半粗（描边字太细会被描边吃掉笔画）；歌词条 / 剪贴板
   // 窗保持 NORMAL，逐像素不变。
-  const DWRITE_FONT_WEIGHT text_weight = hook_text_mode_
-                                             ? DWRITE_FONT_WEIGHT_SEMI_BOLD
-                                             : DWRITE_FONT_WEIGHT_NORMAL;
+  const DWRITE_FONT_WEIGHT text_weight =
+      hook_text_mode_ && style_.bold ? DWRITE_FONT_WEIGHT_SEMI_BOLD
+                                     : DWRITE_FONT_WEIGHT_NORMAL;
+  auto create_text_format = [&](float font_size,
+                                IDWriteTextFormat** format) -> HRESULT {
+    const wchar_t* family = resolved_font_family_.empty()
+                                ? L"Yu Gothic UI"
+                                : resolved_font_family_.c_str();
+    HRESULT hr = dwrite_factory_->CreateTextFormat(
+        family, custom_font_collection_.Get(), text_weight,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"",
+        format);
+    if (FAILED(hr) &&
+        (custom_font_collection_ != nullptr ||
+         resolved_font_family_ != L"Yu Gothic UI")) {
+      hr = dwrite_factory_->CreateTextFormat(
+          L"Yu Gothic UI", nullptr, text_weight, DWRITE_FONT_STYLE_NORMAL,
+          DWRITE_FONT_STRETCH_NORMAL, font_size, L"", format);
+    }
+    return hr;
+  };
   if (text_format_ == nullptr) {
-    dwrite_factory_->CreateTextFormat(
-        L"Yu Gothic UI", nullptr, text_weight,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-        static_cast<float>(ScaleForDpi(scaled_font)),
-        L"", text_format_.GetAddressOf());
+    create_text_format(static_cast<float>(ScaleForDpi(scaled_font)),
+                       text_format_.GetAddressOf());
     if (text_format_ != nullptr) {
-      text_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+      text_format_->SetTextAlignment(
+          hook_text_mode_ && style_.text_alignment == 1
+              ? DWRITE_TEXT_ALIGNMENT_LEADING
+              : DWRITE_TEXT_ALIGNMENT_CENTER);
       text_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
       text_format_->SetWordWrapping(
           hook_text_mode_ ? DWRITE_WORD_WRAPPING_WRAP
@@ -1178,10 +1279,7 @@ void FloatingLyricWindow::Render() {
   // 基准宽时向两侧对称溢出（DrawText 不带 CLIP 选项不会自己裁，外层已经用
   // PushAxisAlignedClip 把一切文字绘制框在 text_rect_ 里，绝不会画到控件带上）。
   if (has_ruby && ruby_format_ == nullptr) {
-    dwrite_factory_->CreateTextFormat(
-        L"Yu Gothic UI", nullptr, text_weight,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, ruby_font_px,
-        L"", ruby_format_.GetAddressOf());
+    create_text_format(ruby_font_px, ruby_format_.GetAddressOf());
     if (ruby_format_ != nullptr) {
       ruby_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
       ruby_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -1189,9 +1287,14 @@ void FloatingLyricWindow::Render() {
     }
   }
 
-  const float pad = ScaleForDpi(kHorizontalPaddingDip);
+  const float text_padding_dip =
+      hook_text_mode_
+          ? std::clamp(static_cast<float>(style_.text_padding), 0.0f, 120.0f)
+          : kHorizontalPaddingDip;
+  const float pad = ScaleForDpi(text_padding_dip);
   const float controls_h =
-      ScaleForDpi(kButtonSizeDip) + ScaleForDpi(kControlsTopDip);
+      ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip) +
+      ScaleForDpi(kControlsTopDip);
   // Both modes reserve controls_h at the top: the lyric strip for its transport
   // row, the text-only clipboard window for its thin Luna-style hover toolbar
   // (the text sits below the strip so the toolbar never overlaps it).
@@ -1212,10 +1315,23 @@ void FloatingLyricWindow::Render() {
                                         text_format_.Get(), text_rect_.width,
                                         text_rect_.height,
                                         text_layout_.GetAddressOf());
+      if (hook_text_mode_ && text_layout_ != nullptr &&
+          std::abs(style_.letter_spacing) > 0.001) {
+        Microsoft::WRL::ComPtr<IDWriteTextLayout1> layout1;
+        if (SUCCEEDED(text_layout_.As(&layout1))) {
+          const float spacing = ScaleForDpi(static_cast<float>(
+              std::clamp(style_.letter_spacing, -5.0, 20.0)));
+          const DWRITE_TEXT_RANGE all = {
+              0, static_cast<UINT32>(text_.size())};
+          layout1->SetCharacterSpacing(0.0f, spacing, 0.0f, all);
+        }
+      }
       // 有注音就把每行的行盒整体加高、基线整体下压 ruby_gap_px：多出来的空间
       // 正好落在每行字的**正上方**，注音画进去既不遮基准字，也不会压到上一行。
       // 只加高、不改宽，所以自动折行的断点与没有注音时完全一致。
-      if (has_ruby && text_layout_ != nullptr) {
+      if (text_layout_ != nullptr &&
+          (has_ruby ||
+           (hook_text_mode_ && std::abs(style_.line_height - 1.0) > 0.001))) {
         // 先问行数再按数分配：缓冲区不足时 DirectWrite 只回填 actualLineCount，
         // 并不写入 metrics，拿一个未初始化的行高去设行距会直接把排版搞乱。
         UINT32 line_count = 0;
@@ -1225,9 +1341,16 @@ void FloatingLyricWindow::Render() {
           if (SUCCEEDED(text_layout_->GetLineMetrics(lines.data(), line_count,
                                                      &line_count)) &&
               line_count > 0) {
-            text_layout_->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
-                                         lines[0].height + ruby_gap_px,
-                                         lines[0].baseline + ruby_gap_px);
+            const float line_height = hook_text_mode_
+                                          ? static_cast<float>(std::clamp(
+                                                style_.line_height, 0.8, 2.0))
+                                          : 1.0f;
+            const float extra = lines[0].height * (line_height - 1.0f);
+            text_layout_->SetLineSpacing(
+                DWRITE_LINE_SPACING_METHOD_UNIFORM,
+                lines[0].height + extra + (has_ruby ? ruby_gap_px : 0.0f),
+                std::max(0.0f, lines[0].baseline + extra * 0.5f +
+                                   (has_ruby ? ruby_gap_px : 0.0f)));
           }
         }
       }
@@ -1347,7 +1470,8 @@ void FloatingLyricWindow::Render() {
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_shadow;
       if (hook_text_mode_) {
         render_target_->CreateSolidColorBrush(
-            ColorFromArgb(kLyricOutlineColor), lyric_outline.GetAddressOf());
+            ColorFromArgb(style_.outline_color),
+            lyric_outline.GetAddressOf());
         render_target_->CreateSolidColorBrush(
             ColorFromArgb(kLyricShadowColor), lyric_shadow.GetAddressOf());
       }
@@ -1358,16 +1482,19 @@ void FloatingLyricWindow::Render() {
             D2D1::Point2F(text_rect_.left + shadow_off * 0.5f,
                           text_origin_y + shadow_off),
             text_layout_.Get(), lyric_shadow.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
-        const float r = ScaleForDpi(kLyricOutlineRadiusDip);
-        const float d = r * 0.7071f;
-        const D2D1_POINT_2F ring[8] = {
-            {r, 0.0f},  {-r, 0.0f}, {0.0f, r},  {0.0f, -r},
-            {d, d},     {d, -d},    {-d, d},    {-d, -d}};
-        for (const D2D1_POINT_2F& off : ring) {
-          render_target_->DrawTextLayout(
-              D2D1::Point2F(text_rect_.left + off.x, text_origin_y + off.y),
-              text_layout_.Get(), lyric_outline.Get(),
-              D2D1_DRAW_TEXT_OPTIONS_NONE);
+        const float r = ScaleForDpi(static_cast<float>(
+            std::clamp(style_.outline_width, 0.0, 8.0)));
+        if (r > 0.0f) {
+          const float d = r * 0.7071f;
+          const D2D1_POINT_2F ring[8] = {
+              {r, 0.0f},  {-r, 0.0f}, {0.0f, r},  {0.0f, -r},
+              {d, d},     {d, -d},    {-d, d},    {-d, -d}};
+          for (const D2D1_POINT_2F& off : ring) {
+            render_target_->DrawTextLayout(
+                D2D1::Point2F(text_rect_.left + off.x, text_origin_y + off.y),
+                text_layout_.Get(), lyric_outline.Get(),
+                D2D1_DRAW_TEXT_OPTIONS_NONE);
+          }
         }
       }
       render_target_->DrawTextLayout(
@@ -1405,19 +1532,22 @@ void FloatingLyricWindow::Render() {
               text_origin_y + box.top + ruby_gap_px);
           // 注音的桌面歌词描边：字小，半径收到 0.75 倍、不画投影。
           if (hook_text_mode_ && lyric_outline != nullptr) {
-            const float rr = ScaleForDpi(kLyricOutlineRadiusDip * 0.75f);
-            const float rd = rr * 0.7071f;
-            const D2D1_POINT_2F ruby_ring[8] = {
-                {rr, 0.0f}, {-rr, 0.0f}, {0.0f, rr},  {0.0f, -rr},
-                {rd, rd},   {rd, -rd},   {-rd, rd},   {-rd, -rd}};
-            for (const D2D1_POINT_2F& off : ruby_ring) {
-              const D2D1_RECT_F shifted = D2D1::RectF(
-                  ruby_rect.left + off.x, ruby_rect.top + off.y,
-                  ruby_rect.right + off.x, ruby_rect.bottom + off.y);
-              render_target_->DrawTextW(
-                  span.ruby.c_str(), static_cast<UINT32>(span.ruby.size()),
-                  ruby_format_.Get(), shifted, lyric_outline.Get(),
-                  D2D1_DRAW_TEXT_OPTIONS_NONE);
+            const float rr = ScaleForDpi(static_cast<float>(
+                std::clamp(style_.outline_width, 0.0, 8.0) * 0.75));
+            if (rr > 0.0f) {
+              const float rd = rr * 0.7071f;
+              const D2D1_POINT_2F ruby_ring[8] = {
+                  {rr, 0.0f}, {-rr, 0.0f}, {0.0f, rr},  {0.0f, -rr},
+                  {rd, rd},   {rd, -rd},   {-rd, rd},   {-rd, -rd}};
+              for (const D2D1_POINT_2F& off : ruby_ring) {
+                const D2D1_RECT_F shifted = D2D1::RectF(
+                    ruby_rect.left + off.x, ruby_rect.top + off.y,
+                    ruby_rect.right + off.x, ruby_rect.bottom + off.y);
+                render_target_->DrawTextW(
+                    span.ruby.c_str(), static_cast<UINT32>(span.ruby.size()),
+                    ruby_format_.Get(), shifted, lyric_outline.Get(),
+                    D2D1_DRAW_TEXT_OPTIONS_NONE);
+              }
             }
           }
           render_target_->DrawTextW(
@@ -1480,9 +1610,11 @@ void FloatingLyricWindow::Render() {
     // grabbed to move + can reveal its controls), showing only a grip hint at
     // rest and the lock + one-click-transparency buttons on hover. Geometry
     // mirrors ControlActionAt(text_only_) exactly.
-    const float t_btn = ScaleForDpi(kButtonSizeDip);
+    const float t_btn =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip);
     const float t_pad = ScaleForDpi(kHorizontalPaddingDip);
-    const float t_gap = ScaleForDpi(kButtonGapDip);
+    const float t_gap =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonGapDip : kButtonGapDip);
     const float t_top = ScaleForDpi(kControlsTopDip);
     const float strip_h = t_top + t_btn;
 
@@ -1493,15 +1625,15 @@ void FloatingLyricWindow::Render() {
     const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);
 
     // Full-width strip background: near-invisible at rest (still catches the
-    // mouse so the top edge is always grabbable), a visible band on hover so the
-    // whole strip stays catchable while sliding across to the buttons.
+    // mouse so the top edge is always grabbable), a visible band on hover so
+    // the whole strip stays catchable while sliding across to the buttons.
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> strip_bg;
-    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.bg_color | 0xFF000000),
-                                          strip_bg.GetAddressOf());
+    render_target_->CreateSolidColorBrush(
+        ColorFromArgb(style_.bg_color | 0xFF000000), strip_bg.GetAddressOf());
     strip_bg->SetOpacity(hovered_ ? kTextStripHoverAlpha : kTextStripRestAlpha);
-    D2D1_ROUNDED_RECT strip_rect = D2D1::RoundedRect(
-        D2D1::RectF(0, 0, static_cast<float>(width), strip_h),
-        ScaleForDpi(6), ScaleForDpi(6));
+    D2D1_ROUNDED_RECT strip_rect =
+        D2D1::RoundedRect(D2D1::RectF(0, 0, static_cast<float>(width), strip_h),
+                          ScaleForDpi(6), ScaleForDpi(6));
     if (draw_body_toolbar) {
       render_target_->FillRoundedRectangle(strip_rect, strip_bg.Get());
     }
@@ -1514,7 +1646,10 @@ void FloatingLyricWindow::Render() {
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
     render_target_->CreateSolidColorBrush(ColorFromArgb(style_.text_color),
                                           grip_brush.GetAddressOf());
-    grip_brush->SetOpacity(hovered_ ? 0.9f : 0.28f);
+    // Once the controls are visible the toolbar pill itself is the move
+    // affordance. Hiding the grip avoids the detached white dash floating over
+    // the centre button.
+    grip_brush->SetOpacity(hovered_ ? 0.0f : 0.28f);
     D2D1_ROUNDED_RECT grip_rect = D2D1::RoundedRect(
         D2D1::RectF(grip_x, grip_y, grip_x + grip_w, grip_y + grip_h),
         grip_h / 2.0f, grip_h / 2.0f);
@@ -1524,57 +1659,69 @@ void FloatingLyricWindow::Render() {
 
     // Controls appear only on hover. Clipboard mode keeps its historical
     // right-aligned buttons (transparency, pin/topmost, lock); Hook mode uses a
-    // centred shared-slot core toolbar. Their hit areas in ControlActionAt() are
-    // gated on hovered_ too, so a click can never hit an invisible button.
+    // centred shared-slot core toolbar. Their hit areas in ControlActionAt()
+    // are gated on hovered_ too, so a click can never hit an invisible button.
     if (hovered_ && draw_body_toolbar) {
-      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_active;
-      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
-                                            tb_bg.GetAddressOf());
-      render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
-                                            tb_fg.GetAddressOf());
+      render_target_->CreateSolidColorBrush(
+          ColorFromArgb(style_.button_text_color), tb_fg.GetAddressOf());
       render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                             tb_active.GetAddressOf());
-      auto draw_tbtn = [&](float bx, const wchar_t* glyph, bool active) {
-        D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
-            D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn), ScaleForDpi(6),
-            ScaleForDpi(6));
-        render_target_->FillRoundedRectangle(br, tb_bg.Get());
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
+      const hook_toolbar::States tb_states = ToolbarStates();
+      Microsoft::WRL::ComPtr<IDWriteTextFormat> icon_format;
+      if (icon_font_collection_ != nullptr) {
         dwrite_factory_->CreateTextFormat(
-            L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, t_btn * 0.5f,
-            L"", glyph_fmt.GetAddressOf());
-        if (glyph_fmt != nullptr) {
-          glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-          glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-          render_target_->DrawTextW(glyph, GlyphLength(glyph), glyph_fmt.Get(),
-                                    D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn),
-                                    active ? tb_active.Get() : tb_fg.Get());
+            L"Material Symbols Rounded", icon_font_collection_.Get(),
+            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, t_btn * 0.68f, L"",
+            icon_format.GetAddressOf());
+        if (icon_format != nullptr) {
+          icon_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+          icon_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+      }
+      auto draw_tbtn = [&](float bx, int slot, bool active) {
+        D2D1_ROUNDED_RECT br =
+            D2D1::RoundedRect(D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn),
+                              ScaleForDpi(6), ScaleForDpi(6));
+        if (active && tb_active != nullptr) {
+          tb_active->SetOpacity(0.16f);
+          render_target_->FillRoundedRectangle(br, tb_active.Get());
+          tb_active->SetOpacity(1.0f);
+        }
+        ID2D1SolidColorBrush* icon_brush =
+            active ? tb_active.Get() : tb_fg.Get();
+        if (icon_brush != nullptr) {
+          const D2D1_RECT_F icon_rect =
+              D2D1::RectF(bx, t_top, bx + t_btn, t_top + t_btn);
+          if (icon_format != nullptr) {
+            const wchar_t* glyph = hook_toolbar::SlotGlyph(slot, tb_states);
+            render_target_->DrawTextW(glyph, 1, icon_format.Get(), icon_rect,
+                                      icon_brush);
+          } else {
+            hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
+                                       slot, tb_states, icon_rect, icon_brush);
+          }
         }
       };
       if (hook_text_mode_) {
-        const float controls_total =
-            t_btn * kHookTextControlSlotCount +
-            t_gap * (kHookTextControlSlotCount - 1);
+        const float controls_total = t_btn * kHookTextControlSlotCount +
+                                     t_gap * (kHookTextControlSlotCount - 1);
         const float left = (width - controls_total) / 2.0f;
-        // Glyph + active tint come from the shared slot table, so the in-body
-        // toolbar and the standalone pass-through toolbar always draw the same
-        // buttons in the same order (BUG-951).
-        const hook_toolbar::States tb_states = ToolbarStates();
+        // No second pill behind the row: the full-width hover strip is already
+        // the toolbar surface. Only active buttons receive a local soft tint.
         for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
-          draw_tbtn(left + slot * (t_btn + t_gap),
-                    hook_toolbar::SlotGlyph(slot, tb_states),
+          draw_tbtn(left + slot * (t_btn + t_gap), slot,
                     hook_toolbar::SlotActive(slot, tb_states));
         }
       } else {
         const float lock_x = width - t_pad - t_btn;
         const float top_x = lock_x - t_gap - t_btn;
         const float trans_x = top_x - t_gap - t_btn;
-        draw_tbtn(trans_x, L"◐", false);  // one-click background transparency
-        draw_tbtn(top_x, L"📌", topmost_);  // pin: always-on-top
-        draw_tbtn(lock_x, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
+        draw_tbtn(trans_x, 4, false);   // one-click background transparency
+        draw_tbtn(top_x, 7, topmost_);  // pin: always-on-top
+        draw_tbtn(lock_x, 5, locked_);
       }
     }
 
@@ -1597,75 +1744,75 @@ void FloatingLyricWindow::Render() {
       }
     }
   } else {
-  // Controls row (only fully visible while hovered, like QQ Music). The hit
-  // areas in ControlActionAt() stay live regardless so a deliberate click on a
-  // half-faded button still works.
-  const float btn = ScaleForDpi(kButtonSizeDip);
-  const float gap = ScaleForDpi(kButtonGapDip);
-  const float ctrl_top = ScaleForDpi(kControlsTopDip);
-  const float controls_total =
-      btn * kControlSlotCount + gap * (kControlSlotCount - 1);
-  const float ctrl_left = (width - controls_total) / 2.0f;
-  const float control_alpha = hovered_ ? 1.0f : 0.35f;
+    // Controls row (only fully visible while hovered, like QQ Music). The hit
+    // areas in ControlActionAt() stay live regardless so a deliberate click on
+    // a half-faded button still works.
+    const float btn = ScaleForDpi(kButtonSizeDip);
+    const float gap = ScaleForDpi(kButtonGapDip);
+    const float ctrl_top = ScaleForDpi(kControlsTopDip);
+    const float controls_total =
+        btn * kControlSlotCount + gap * (kControlSlotCount - 1);
+    const float ctrl_left = (width - controls_total) / 2.0f;
+    const float control_alpha = hovered_ ? 1.0f : 0.35f;
 
-  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_bg;
-  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_fg;
-  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active;
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
-                                        btn_bg.GetAddressOf());
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
-                                        btn_fg.GetAddressOf());
-  render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
-                                        btn_active.GetAddressOf());
-  btn_bg->SetOpacity(control_alpha);
-  btn_fg->SetOpacity(control_alpha);
-  btn_active->SetOpacity(control_alpha);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_bg;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_fg;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active;
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_bg_color),
+                                          btn_bg.GetAddressOf());
+    render_target_->CreateSolidColorBrush(
+        ColorFromArgb(style_.button_text_color), btn_fg.GetAddressOf());
+    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
+                                          btn_active.GetAddressOf());
+    btn_bg->SetOpacity(control_alpha);
+    btn_fg->SetOpacity(control_alpha);
+    btn_active->SetOpacity(control_alpha);
 
-  auto draw_glyph = [&](int slot, const wchar_t* glyph, bool active) {
-    const float bx = ctrl_left + slot * (btn + gap);
-    D2D1_ROUNDED_RECT br = D2D1::RoundedRect(
-        D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
-        ScaleForDpi(6), ScaleForDpi(6));
-    render_target_->FillRoundedRectangle(br, btn_bg.Get());
-    Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
-    dwrite_factory_->CreateTextFormat(
-        L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, btn * 0.5f, L"",
-        glyph_fmt.GetAddressOf());
-    if (glyph_fmt != nullptr) {
-      glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-      glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-      render_target_->DrawTextW(
-          glyph, GlyphLength(glyph), glyph_fmt.Get(),
-          D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
-          active ? btn_active.Get() : btn_fg.Get());
+    auto draw_glyph = [&](int slot, const wchar_t* glyph, bool active) {
+      const float bx = ctrl_left + slot * (btn + gap);
+      D2D1_ROUNDED_RECT br =
+          D2D1::RoundedRect(D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
+                            ScaleForDpi(6), ScaleForDpi(6));
+      render_target_->FillRoundedRectangle(br, btn_bg.Get());
+      Microsoft::WRL::ComPtr<IDWriteTextFormat> glyph_fmt;
+      dwrite_factory_->CreateTextFormat(
+          L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, btn * 0.5f, L"",
+          glyph_fmt.GetAddressOf());
+      if (glyph_fmt != nullptr) {
+        glyph_fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        glyph_fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        render_target_->DrawTextW(
+            glyph, GlyphLength(glyph), glyph_fmt.Get(),
+            D2D1::RectF(bx, ctrl_top, bx + btn, ctrl_top + btn),
+            active ? btn_active.Get() : btn_fg.Get());
+      }
+    };
+
+    draw_glyph(0, L"⏮", false);                    // previous
+    draw_glyph(1, playing_ ? L"⏸" : L"▶", false);  // pause / play
+    draw_glyph(2, L"⏭", false);                    // next
+    // Lock: padlock glyph, tinted with the active colour while locked so the
+    // state is visible at a glance (mirrors the Android lock button).
+    draw_glyph(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
+    draw_glyph(4, L"✕", false);                                       // close
+
+    // Bottom-right resize grip: three short diagonal ticks hinting the corner
+    // can be dragged to size the bar.
+    {
+      const float grip = ScaleForDpi(kResizeGripDip);
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
+      render_target_->CreateSolidColorBrush(
+          ColorFromArgb(style_.button_text_color), grip_brush.GetAddressOf());
+      grip_brush->SetOpacity(control_alpha * 0.7f);
+      const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
+      for (int i = 1; i <= 3; ++i) {
+        const float off = grip * (i / 4.0f);
+        render_target_->DrawLine(D2D1::Point2F(width - off, height - 2.0f),
+                                 D2D1::Point2F(width - 2.0f, height - off),
+                                 grip_brush.Get(), stroke);
+      }
     }
-  };
-
-  draw_glyph(0, L"⏮", false);                       // previous
-  draw_glyph(1, playing_ ? L"⏸" : L"▶", false);  // pause / play
-  draw_glyph(2, L"⏭", false);                       // next
-  // Lock: padlock glyph, tinted with the active colour while locked so the
-  // state is visible at a glance (mirrors the Android lock button).
-  draw_glyph(3, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);  // lock
-  draw_glyph(4, L"✕", false);                        // close
-
-  // Bottom-right resize grip: three short diagonal ticks hinting the corner can
-  // be dragged to size the bar.
-  {
-    const float grip = ScaleForDpi(kResizeGripDip);
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> grip_brush;
-    render_target_->CreateSolidColorBrush(ColorFromArgb(style_.button_text_color),
-                                          grip_brush.GetAddressOf());
-    grip_brush->SetOpacity(control_alpha * 0.7f);
-    const float stroke = std::max(1.0f, ScaleForDpi(1.5f));
-    for (int i = 1; i <= 3; ++i) {
-      const float off = grip * (i / 4.0f);
-      render_target_->DrawLine(
-          D2D1::Point2F(width - off, height - 2.0f),
-          D2D1::Point2F(width - 2.0f, height - off), grip_brush.Get(), stroke);
-    }
-  }
   }  // else (lyric transport controls)
 
   HRESULT hr = render_target_->EndDraw();
@@ -1748,17 +1895,18 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
     RECT rc;
     GetClientRect(hwnd_, &rc);
     const float width = static_cast<float>(rc.right - rc.left);
-    const float btn = ScaleForDpi(kButtonSizeDip);
-    const float gap = ScaleForDpi(kButtonGapDip);
+    const float btn =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip);
+    const float gap =
+        ScaleForDpi(hook_text_mode_ ? kHookTextButtonGapDip : kButtonGapDip);
     const float pad = ScaleForDpi(kHorizontalPaddingDip);
     const float ctrl_top = ScaleForDpi(kControlsTopDip);
     if (y < ctrl_top || y > ctrl_top + btn) {
       return std::string();
     }
     if (hook_text_mode_) {
-      const float controls_total =
-          btn * kHookTextControlSlotCount +
-          gap * (kHookTextControlSlotCount - 1);
+      const float controls_total = btn * kHookTextControlSlotCount +
+                                   gap * (kHookTextControlSlotCount - 1);
       const float left = (width - controls_total) / 2.0f;
       for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
         const float bx = left + slot * (btn + gap);
