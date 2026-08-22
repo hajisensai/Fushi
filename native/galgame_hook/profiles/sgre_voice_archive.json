@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "sgre_voice_archive",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "75A83A0E2A7E22055417AE0474B47BE98418C4E42C695C548B558705C404B9D8"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": false,
+    "resource_audio": true,
+    "pcm_audio": false
+  },
+  "evidence": []
+}

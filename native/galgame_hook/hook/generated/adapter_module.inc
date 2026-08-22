@@ -6,3 +6,4 @@
         malie_libp_.onModuleLoaded(entry.szModule);
         qlie_.onModuleLoaded(entry.szModule);
         elf_ai6_.onModuleLoaded(entry.szModule);
+        sgre_voice_archive_.onModuleLoaded(entry.szModule);

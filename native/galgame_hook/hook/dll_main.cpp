@@ -533,49 +533,50 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     g_header = static_cast<SharedHeader*>(
         MapViewOfFile(g_mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
   }
-  if (g_header != nullptr) {
-    // 只信任 injector 建好、契约匹配的映射。
-    if (g_header->magic == kSharedMagic &&
-        g_header->version == kSharedVersion) {
-      g_header->hooked = 1;
+  // 只信任 injector 建好、契约匹配的映射。契约不匹配就地退出：
+  // 版本门必须罩住**整个**工作线程（含下面的 registry.Poll() 泵）。把泵留在门外，
+  // loopback 策略泵等隐私相关子系统就会在契约不匹配时照常跑——那正是本机制要关死的属性。
+  if (g_header == nullptr || g_header->magic != kSharedMagic ||
+      g_header->version != kSharedVersion) {
+    return 1;
+  }
+  g_header->hooked = 1;
 
-      // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
-      // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-      if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
+  // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
+  // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
+  if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
 
-      // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
-      g_ring_base =
-          reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
-      g_ring_capacity = g_header->ring_capacity;
-      // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
-      g_text_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
-      g_clip_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
-      // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
-      g_lb_ring_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
-      g_lb_marker_base =
-          reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
-      // Apply/ack native loopback policy before potentially expensive engine
-      // probing. Default deny therefore reaches stopped/applied immediately and
-      // still never creates the loopback worker; explicit allow remains
-      // independent of MinHook just as the historical fallback was.
-      registry.InstallFallbackAdapters();
-      InitializeCriticalSection(&g_cs);
-      g_cs_ready = true;
-      InitializeCriticalSection(&g_text_cs);
-      g_text_cs_ready = true;
-      InitializeCriticalSection(&g_dec_cs);
-      g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
-      InitializeCriticalSection(&g_renpy_cs);
-      g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
-      if (MH_Initialize() == MH_OK) {
-        g_mh_init = true;
-        g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
-        registry.InstallStartupAdapters();
-      }
-    }
+  // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
+  g_ring_base =
+      reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
+  g_ring_capacity = g_header->ring_capacity;
+  // v2：文本环 / clip 索引区基址（injector 已填偏移），供文本 hook 与 clip 记录用。
+  g_text_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->text_region_offset;
+  g_clip_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->clip_region_offset;
+  // C.2f：loopback 环 + 标记表基址（injector 已填偏移），供 loopback 线程写。
+  g_lb_ring_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_ring_offset;
+  g_lb_marker_base =
+      reinterpret_cast<uint8_t*>(g_header) + g_header->loopback_marker_offset;
+  // Apply/ack native loopback policy before potentially expensive engine
+  // probing. Default deny therefore reaches stopped/applied immediately and
+  // still never creates the loopback worker; explicit allow remains
+  // independent of MinHook just as the historical fallback was.
+  registry.InstallFallbackAdapters();
+  InitializeCriticalSection(&g_cs);
+  g_cs_ready = true;
+  InitializeCriticalSection(&g_text_cs);
+  g_text_cs_ready = true;
+  InitializeCriticalSection(&g_dec_cs);
+  g_dec_cs_ready = true;  // 解码器表锁须先于装解码 hook 就绪（detour 立即可能触发）。
+  InitializeCriticalSection(&g_renpy_cs);
+  g_renpy_cs_ready = true;  // Ren'Py 表锁须先于装 FFmpeg hook 就绪（detour 立即可能触发）。
+  if (MH_Initialize() == MH_OK) {
+    g_mh_init = true;
+    g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
+    registry.InstallStartupAdapters();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。

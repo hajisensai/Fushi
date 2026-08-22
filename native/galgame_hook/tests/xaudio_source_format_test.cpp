@@ -83,9 +83,9 @@ int main() {
   assert(std::memcmp(xwma.data() + 58, "data", 4) == 0);
   assert(std::memcmp(xwma.data() + 66, original_wma,
                      sizeof(original_wma)) == 0);
-  assert(fushi_voice_hook::IsSgreRoleWmaSubmission(
+  assert(fushi_voice_hook::IsLikelyVoiceWmaSubmission(
       wmaudio2_format, 3, 44100u * 2u));
-  assert(!fushi_voice_hook::IsSgreRoleWmaSubmission(
+  assert(!fushi_voice_hook::IsLikelyVoiceWmaSubmission(
       wmaudio2_format, 3, 44100u));
 
   const std::vector<uint8_t> format_bytes = MakeMonoFormat();

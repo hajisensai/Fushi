@@ -568,6 +568,80 @@ class AdapterStructureTest(unittest.TestCase):
             "Only the explicit force-direct launch may set SteamAppId.",
         )
 
+    def test_sgre_voice_archive_is_profile_gated_not_executable_named(self) -> None:
+        archive = (ROOT / "hook" / "sgre_voice_archive.h").read_text(
+            encoding="utf-8"
+        )
+        profile = (ROOT / "hook" / "adapters" / "sgre_profile.h").read_text(
+            encoding="utf-8"
+        )
+        adapter = (ROOT / "hook" / "adapters" / "sgre_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        # The engine-specific archive must never be reachable from an executable
+        # file name: that is a distribution property, not an engine identity, and
+        # CLAUDE.md forbids enabling shared middleware on a name match.
+        self.assertNotIn("sgre_steam.exe", archive)
+        self.assertNotIn("sgre_steam.exe", profile)
+        self.assertNotIn("GetModuleFileNameW", archive)
+        # Identity lives in the profile and is a directory-layout signature.
+        self.assertIn("wind3d11data", profile)
+        self.assertIn("voice_body.bin", profile)
+        self.assertIn("sound_body.bin", profile)
+        # Mapping is owned by an adapter that flips the profile flag, exactly like
+        # QlieAdapter owns g_qlie_profile_active.
+        self.assertIn("g_sgre_profile_active", adapter)
+        self.assertIn("MatchesSgreProfile", adapter)
+        self.assertIn("SgreProfileActive()", archive)
+        for name in ("includes", "startup", "shutdown", "module", "fields"):
+            generated = (
+                ROOT / "hook" / "generated" / f"adapter_{name}.inc"
+            ).read_text(encoding="utf-8")
+            self.assertIn("sgre", generated, name)
+
+    def test_generic_xwma_submissions_are_published_not_dropped(self) -> None:
+        adapter = (
+            ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
+        ).read_text(encoding="utf-8")
+        branch = adapter.split("XAudioSourceEncoding::kWmaudio2) {", 1)[1]
+        branch = branch.split("const bool is_adpcm", 1)[0]
+        # The archive lookup is double-gated: engine profile plus a duration
+        # prefilter, so a non-SGRE game never pays the 322 MiB scan and never
+        # has its audio judged by another engine's asset.
+        self.assertIn("SgreProfileActive()", branch)
+        self.assertIn("IsLikelyVoiceWmaSubmission", branch)
+        self.assertLess(
+            branch.index("SgreProfileActive()"),
+            branch.index("FindSgreVoiceArchiveResourceParts"),
+        )
+        # Engines without that archive must still get their compressed voice:
+        # xWMA is their only voice outlet, so a miss falls back to rebuilding the
+        # RIFF envelope from this submission's own runtime fmt/dpds.
+        self.assertIn("BuildXwmaResource(", branch)
+        self.assertIn("kXAudioDiagRuntimeXwmaPublished", branch)
+        # Byte-exact and runtime-rebuilt resources must not share one diagnostic
+        # bit: only the archive path may claim hash identity with a source entry.
+        self.assertIn("kXAudioDiagGameResourcePublished", branch)
+        archive_slice, generic_slice = branch.split("BuildXwmaResource(", 1)
+        self.assertNotIn("kXAudioDiagRuntimeXwmaPublished", archive_slice)
+        self.assertNotIn("kXAudioDiagGameResourcePublished", generic_slice)
+
+    def test_hook_worker_contract_gate_covers_the_poll_pump(self) -> None:
+        main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        worker = main.split("DWORD WINAPI HookWorker", 1)[1]
+        gate = worker.index("g_header->version != kSharedVersion")
+        pump = worker.index("registry.Poll();")
+        self.assertLess(gate, pump)
+        # Everything between the gate and the pump must be unreachable on a
+        # contract mismatch, or privacy-relevant pumps (loopback policy) run
+        # outside the version gate the contract promises they are behind.
+        self.assertIn("return 1;", worker[gate:pump])
+        registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        poll = registry.split("void Poll() {", 1)[1]
+        self.assertIn("loopback_.PollPolicy();", poll)
+
 
 if __name__ == "__main__":
     unittest.main()

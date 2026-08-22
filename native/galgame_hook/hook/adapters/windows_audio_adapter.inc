@@ -892,43 +892,88 @@ void ProcessPendingXAudioCaptureJobs() {
 
     if (job.source.format.encoding ==
         fushi_voice_hook::XAudioSourceEncoding::kWmaudio2) {
+      // xWMA 是这类引擎语音的**唯一**出口：本进程里没有 WMA 解码器，legacy job 路径
+      // （ADPCM 解码 / PCM 直通）对它无能为力。所以这里的出路只有「发布压缩资源」，
+      // 丢弃不是合法出路——丢掉就等于该引擎的语音在制卡链路上彻底消失。
       const uint64_t table_bytes =
           static_cast<uint64_t>(job.wma_packet_count) * 4u;
       const bool complete_submission =
           table_bytes != 0 &&
           static_cast<uint64_t>(job.encoded_bytes) + table_bytes ==
               encoded.size();
-      fushi_voice_hook::SgreVoiceArchiveResourceParts archive_parts;
-      const bool role_voice =
-          complete_submission &&
-          fushi_voice_hook::FindSgreVoiceArchiveResourceParts(
-              encoded.data(), job.encoded_bytes,
-              encoded.data() + job.encoded_bytes, job.wma_packet_count,
-              &archive_parts);
-      const bool complete_resource =
-          role_voice && fushi_voice_hook::BuildXwmaResourceFromChunks(
-                            archive_parts.fmt, archive_parts.fmt_bytes,
-                            archive_parts.dpds, archive_parts.dpds_bytes,
-                            encoded.data(), job.encoded_bytes, &resource);
-      if (role_voice && complete_resource &&
-          resource.size() <= std::numeric_limits<uint32_t>::max()) {
-        wchar_t storage_name[128] = {};
-        swprintf_s(storage_name, L"sgre-voicebody-%llu-%p-%llu-%llu.xwma",
-                   static_cast<unsigned long long>(archive_parts.body_offset),
-                   reinterpret_cast<void*>(job.source.source),
-                   static_cast<unsigned long long>(job.source.generation),
-                   static_cast<unsigned long long>(
-                       job.source.queue_generation));
-        if (WriteVoiceOggAt(resource.data(),
-                            static_cast<uint32_t>(resource.size()), storage_name,
-                            playback_timestamp)) {
-          SetXAudioDiagnostic(
-              fushi_voice_hook::kXAudioDiagGameResourcePublished);
+      if (complete_submission) {
+        const uint8_t* const runtime_dpds = encoded.data() + job.encoded_bytes;
+        uint32_t decoded_bytes = 0;
+        std::memcpy(&decoded_bytes,
+                    runtime_dpds +
+                        (static_cast<size_t>(job.wma_packet_count) - 1u) * 4u,
+                    sizeof(decoded_bytes));
+        bool published = false;
+
+        // ① 引擎归档路径（当前只有 SGRE 有）。归档命中同时给出两样东西：逐字节原始的
+        //    fmt/dpds，以及「这段是角色语音」的证明（voice_body.bin 只装角色语音）。
+        //    双重门控：profile 必须已激活，且时长先过一遍——归档 322 MiB，未命中一次
+        //    全扫约 30ms，不能让每段 BGM/SE 都去扫。
+        if (fushi_voice_hook::SgreProfileActive() &&
+            fushi_voice_hook::IsLikelyVoiceWmaSubmission(
+                job.source.format, job.wma_packet_count, decoded_bytes)) {
+          fushi_voice_hook::SgreVoiceArchiveResourceParts archive_parts;
+          if (fushi_voice_hook::FindSgreVoiceArchiveResourceParts(
+                  encoded.data(), job.encoded_bytes, runtime_dpds,
+                  job.wma_packet_count, &archive_parts) &&
+              fushi_voice_hook::BuildXwmaResourceFromChunks(
+                  archive_parts.fmt, archive_parts.fmt_bytes,
+                  archive_parts.dpds, archive_parts.dpds_bytes, encoded.data(),
+                  job.encoded_bytes, &resource) &&
+              resource.size() <= std::numeric_limits<uint32_t>::max()) {
+            wchar_t storage_name[128] = {};
+            swprintf_s(
+                storage_name, L"sgre-voicebody-%llu-%p-%llu-%llu.xwma",
+                static_cast<unsigned long long>(archive_parts.body_offset),
+                reinterpret_cast<void*>(job.source.source),
+                static_cast<unsigned long long>(job.source.generation),
+                static_cast<unsigned long long>(job.source.queue_generation));
+            published =
+                WriteVoiceOggAt(resource.data(),
+                                static_cast<uint32_t>(resource.size()),
+                                storage_name, playback_timestamp);
+            if (published) {
+              // 这条路径才允许宣称「逐字节等于源 entry」：fmt/dpds/负载三块全部取自
+              // voice_body.bin，外壳只是补了个 RIFF 头。
+              SetXAudioDiagnostic(
+                  fushi_voice_hook::kXAudioDiagGameResourcePublished);
+            }
+          }
+        }
+
+        // ② 通用路径：没有归档的引擎（以及归档没命中的提交）用运行时数据重建 RIFF/XWMA。
+        //    fmt 由 XAudio2 报的源格式合成、dpds 用 XAUDIO2_BUFFER_WMA 的原表、压缩负载
+        //    逐字节原样，全部来自本次提交本身，不依赖任何引擎专属资产。
+        if (!published &&
+            fushi_voice_hook::BuildXwmaResource(
+                job.source.format, encoded.data(), job.encoded_bytes,
+                runtime_dpds, job.wma_packet_count, &resource) &&
+            resource.size() <= std::numeric_limits<uint32_t>::max()) {
+          wchar_t storage_name[128] = {};
+          swprintf_s(storage_name, L"xwma-%p-%llu-%llu-%llu.xwma",
+                     reinterpret_cast<void*>(job.source.source),
+                     static_cast<unsigned long long>(job.source.generation),
+                     static_cast<unsigned long long>(
+                         job.source.queue_generation),
+                     static_cast<unsigned long long>(playback_timestamp));
+          published = WriteVoiceOggAt(resource.data(),
+                                      static_cast<uint32_t>(resource.size()),
+                                      storage_name, playback_timestamp);
+          if (published) {
+            // 单独一位：压缩负载确实是原样字节，但 fmt 由本进程按 XAudio2 报的源格式
+            // 合成，整个文件**不**逐字节等于任何源 entry，不能记进哈希一致那一级。
+            SetXAudioDiagnostic(
+                fushi_voice_hook::kXAudioDiagRuntimeXwmaPublished);
+          }
         }
       }
-      // SGRE WMAudio2 is also captured by the source XAPO for the explicit PCM
-      // fallback. This descriptor's primary purpose is the original compressed
-      // resource, so never decode or publish it through the legacy job path.
+      // 压缩负载本身不再走 legacy job 路径：那条路把字节当 PCM 用，对 xWMA 只会产出
+      // 噪声。解码后的 PCM 由该 source voice 的 XAPO 单独捕获发布。
       ReleaseXAudioCaptureJob(&job);
       continue;
     }

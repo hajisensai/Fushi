@@ -6,3 +6,4 @@
   MalieLibpAdapter malie_libp_;
   QlieAdapter qlie_;
   ElfAi6Adapter elf_ai6_;
+  SgreVoiceArchiveAdapter sgre_voice_archive_;

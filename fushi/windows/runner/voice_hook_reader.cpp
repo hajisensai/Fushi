@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <string>
 #include <utility>
 
@@ -23,6 +24,7 @@
 // 版本漂移在结构上不再可能（守卫见 test/mining/gal_ipc_contract_single_source_test.dart）。
 #include "../../../native/galgame_hook/include/voice_clip_energy.h"
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
+#include "../../../native/galgame_hook/include/voice_hook_source_window.h"
 #include "../../../native/galgame_hook/include/voice_hook_utterance_window.h"
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
@@ -322,20 +324,30 @@ std::vector<const fushi_voice_hook::VoiceClip*> CollectValidClipsLocked(
       valid.push_back(c);
     }
   }
-  const bool classifier_active = std::any_of(
-      valid.begin(), valid.end(), [](const fushi_voice_hook::VoiceClip* clip) {
-        return (clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0;
-      });
-  if (classifier_active) {
-    valid.erase(
-        std::remove_if(
-            valid.begin(), valid.end(),
-            [](const fushi_voice_hook::VoiceClip* clip) {
-              return (clip->pad & fushi_voice_hook::kVoiceClipFlagRoleVoice) ==
-                     0;
-            }),
-        valid.end());
+  // 分类结果的作用域是**发出它的那个源**，不是整个会话。
+  //
+  // 旧实现对整个 1024 槽窗口求 any_of(Classified)，为真就删掉所有不带 RoleVoice 的段。
+  // 但生产侧 8 个 RecordVoiceClipFmt 调用点里只有 XAPO 那一个会写 flags，其余
+  // （解码 worker / DirectSound / KiriKiri / Unity）一律 pad=0。于是只要有**一个**
+  // 源被分类且判为非语音（例如一声 <700ms 的 xWMA UI 提示音），窗口内所有其它源的
+  // 语音段就被一起清空，制卡退回系统 loopback 整机混音，而且一旦触发不自愈。
+  //
+  // 正确的域是 source_ptr：某个源被分类过，才用它自己的分类结论裁它自己的段；
+  // 从未被分类的源保持既有全量行为（这也正是 voice_hook_ipc.h 里那段契约的原文）。
+  std::unordered_set<uint64_t> classified_sources;
+  for (const fushi_voice_hook::VoiceClip* clip : valid) {
+    if ((clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0) {
+      classified_sources.insert(clip->source_ptr);
+    }
   }
+  valid.erase(
+      std::remove_if(
+          valid.begin(), valid.end(),
+          [&classified_sources](const fushi_voice_hook::VoiceClip* clip) {
+            return fushi_voice_hook::IsClipSuppressedByRoleClassifier(
+                clip->pad, classified_sources.count(clip->source_ptr) != 0);
+          }),
+      valid.end());
   return valid;
 }
 
@@ -1235,10 +1247,12 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
     filter_by_src = true;
     sel_src = target_source;
   } else {
-    // 每源：说话前窗口 [ts-900,ts-251] 与文本时刻窗口 [ts-250,ts+450] 的平均能量。
-    // SGRE 的角色 xWMA 实测会比 UserHook1 文本早约 156ms 开始播放；旧的 -150ms
-    // 前界会仅差数毫秒选不出已经通过 role-voice 分类器的源。这里与整句默认
-    // ts-200 回看窗口留出调度抖动余量，同时保持两段采样窗口不重叠。
+    // 每源：说话前窗口与文本时刻窗口的平均能量。两段窗口按引擎是否声明分类能力
+    // 分流——放宽只给分类器感知的引擎，未分类引擎逐字节保持旧窗口（含那条 100ms
+    // 守卫带），否则文本前 200ms 的 UI 音效会被算成「从静音跳到有声」抢赢真语音源。
+    // 具体数值与理由见 voice_hook_source_window.h。
+    const fushi_voice_hook::VoiceSourceSelectionWindow window =
+        fushi_voice_hook::SelectVoiceSourceWindow(role_classifier_active);
     std::map<uint64_t, double> e_before, e_at;
     std::map<uint64_t, int> n_before, n_at;
     std::map<uint64_t, uint64_t> bytes_at;  // 位深不认识时的格式无关代理判据
@@ -1259,10 +1273,11 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
       }
       const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                         static_cast<int64_t>(ts_ms);
-      if (d >= -250 && d <= 450) {
+      if (d >= window.at_begin_ms && d <= window.at_end_ms) {
         bytes_at[c->source_ptr] += c->byte_len;
       }
-      if (role_classifier_active && d >= -250 && d <= 450) {
+      if (role_classifier_active && d >= window.at_begin_ms &&
+          d <= window.at_end_ms) {
         const int64_t distance = d < 0 ? -d : d;
         if (distance < nearest_role_distance) {
           nearest_role_distance = distance;
@@ -1274,11 +1289,11 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
         continue;  // 位深真的不认识（8/16/24/32 与 float32 之外）
       }
       any_energy = true;
-      if (d >= -900 && d <= -251) {
+      if (d >= window.before_begin_ms && d <= window.before_end_ms) {
         e_before[c->source_ptr] += e;
         n_before[c->source_ptr]++;
       }
-      if (d >= -250 && d <= 450) {
+      if (d >= window.at_begin_ms && d <= window.at_end_ms) {
         e_at[c->source_ptr] += e;
         n_at[c->source_ptr]++;
       }
@@ -1438,6 +1453,15 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
   }
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(h) + sizeof(SharedHeader);
+  // 时刻窗必须与 GrabUtterance 用同一套（同一个 role_classifier_active、同一个
+  // SelectVoiceSourceWindow）。两边不一致的后果是：制卡按放宽后的窗口取到了语音，
+  // 而 UI 音轨列表按旧窗口显示「这句没轨在响」——用户看到的与实际制出来的对不上。
+  const bool role_classifier_active = std::any_of(
+      valid.begin(), valid.end(), [](const fushi_voice_hook::VoiceClip* clip) {
+        return (clip->pad & fushi_voice_hook::kVoiceClipFlagClassified) != 0;
+      });
+  const fushi_voice_hook::VoiceSourceSelectionWindow window =
+      fushi_voice_hook::SelectVoiceSourceWindow(role_classifier_active);
   // 按 source_ptr 聚合；order_index 按该源首次出现（valid 已按 seq 升序）分配。
   std::map<uint64_t, VoiceTrackInfo> tracks;
   std::map<uint64_t, uint64_t> sum_bytes;    // 段字节累计
@@ -1461,7 +1485,7 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
     sum_bytes[c->source_ptr] += c->byte_len;
     const int64_t d =
         static_cast<int64_t>(c->timestamp_ms) - static_cast<int64_t>(ts_ms);
-    if (d >= -150 && d <= 450) {
+    if (d >= window.at_begin_ms && d <= window.at_end_ms) {
       // 先无条件计数：这条轨在这句时刻窗内**有没有出声**与能不能算能量无关（BUG-1165）。
       // BUG-1769 之后能量对 8/16/24/32-bit 与 float32 全部算得出来，`e < 0` 只剩「位深真的
       // 不认识」这一种；这条无条件计数仍然保留，作为那种情况下的兜底。

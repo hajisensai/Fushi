@@ -118,9 +118,14 @@ inline bool BuildXwmaResource(
                                      encoded, encoded_bytes, output);
 }
 
-inline bool IsSgreRoleWmaSubmission(const XAudioSourceFormat& format,
-                                    uint32_t packet_count,
-                                    uint32_t decoded_bytes) {
+// 时长判据：这次 xWMA 提交解码后是否长到像一句台词（>=700ms）。
+//
+// 这**不是**角色身份证明，只是一道便宜的预筛：SGRE 实测电话/UI 音效在 100/410/560ms，
+// 角色台词在 1.37--6.04s。它的唯一职责是在昂贵的归档全扫（322 MiB，~30ms）之前把
+// BGM/SE 挡掉。真正的身份证明是归档里那次全缓冲逐字节比较。
+inline bool IsLikelyVoiceWmaSubmission(const XAudioSourceFormat& format,
+                                       uint32_t packet_count,
+                                       uint32_t decoded_bytes) {
   const uint64_t bytes_per_second =
       static_cast<uint64_t>(format.sample_rate) * format.channels *
       format.bits_per_sample / 8u;

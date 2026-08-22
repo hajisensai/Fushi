@@ -230,6 +230,12 @@ constexpr uint32_t kXAudioDiagCommitQueueExhausted = 0x00040000u;
 // readiness proof and lets the host prefer the original file even when no PCM
 // clip was active at the matching text timestamp (SGRE xWMA).
 constexpr uint32_t kXAudioDiagGameResourcePublished = 0x00080000u;
+// SGRE profile 命中且 voice_body.bin 已映射（能力就位，不代表已捕获）。
+constexpr uint32_t kXAudioDiagSgreArchiveMapped = 0x00100000u;
+// 由运行时 fmt/dpds 重建并发布的通用 xWMA 资源（**不是**引擎归档里的原始字节）。
+// 与 kXAudioDiagGameResourcePublished 分开的理由：前者能宣称逐字节等于源 entry，
+// 这一位不能——RIFF 外壳是本进程合成的。混成一位就没法在台账上区分这两级证据。
+constexpr uint32_t kXAudioDiagRuntimeXwmaPublished = 0x00200000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -347,11 +353,25 @@ struct VoiceClip {
 };
 
 // VoiceClip::pad flags.  A classifier-aware engine adapter marks every clip it
-// classifies, including rejected non-voice clips.  Once the host observes that
-// capability in a session it consumes only kVoiceClipFlagRoleVoice clips;
-// adapters that do not classify keep the legacy all-clips behaviour.
+// classifies, including rejected non-voice clips.
+//
+// The verdict's scope is the **source** that produced it (VoiceClip::source_ptr),
+// never the session.  The host drops a clip only when that same source_ptr has
+// been classified and this clip lacks kVoiceClipFlagRoleVoice; sources that were
+// never classified keep the legacy all-clips behaviour.  Session-wide filtering
+// would let one short non-voice submission from any single source silently wipe
+// every other adapter's voice clips out of the window -- and it never recovers,
+// because the offending clip stays in the ring.  Producers therefore only have to
+// be right about their own source, which is the only thing they can observe.
 constexpr uint32_t kVoiceClipFlagClassified = 1u << 0;
 constexpr uint32_t kVoiceClipFlagRoleVoice = 1u << 1;
+
+// The single place the rule above lives.  `source_classified` must be computed
+// over the clips of **this clip's own source_ptr**, never over the whole window.
+constexpr bool IsClipSuppressedByRoleClassifier(uint32_t clip_flags,
+                                                bool source_classified) {
+  return source_classified && (clip_flags & kVoiceClipFlagRoleVoice) == 0;
+}
 
 struct UnityVoiceEvent {
   volatile uint64_t seq;   // 全局序号，最后写；0=槽尚未完成

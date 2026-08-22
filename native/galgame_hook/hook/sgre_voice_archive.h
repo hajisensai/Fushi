@@ -9,6 +9,8 @@
 #include <limits>
 #include <string>
 
+#include "adapters/sgre_profile.h"
+
 namespace fushi_voice_hook {
 
 // Return the first exact byte-for-byte occurrence. SGRE stores character
@@ -57,25 +59,18 @@ struct SgreVoiceArchiveResourceParts {
   uint64_t body_offset = 0;
 };
 
+// 只在 SGRE profile 已激活时映射。门控在 profile 而不是 exe 文件名——理由见
+// adapters/sgre_profile.h。映射是一次性的（attempted 记住首次结果），失败不重试。
 inline bool OpenSgreVoiceArchive() {
   SgreVoiceArchiveView& view = g_sgre_voice_archive;
   if (view.attempted) return view.data != nullptr;
+  // profile 未激活时**不**记 attempted：adapter 安装与第一批音频作业之间没有顺序保证，
+  // 提前记一次失败会把这条路径在本次会话里永久毒死。
+  if (!SgreProfileActive()) return false;
   view.attempted = true;
 
-  wchar_t module_path[32768] = {};
-  const DWORD chars = GetModuleFileNameW(
-      nullptr, module_path,
-      static_cast<DWORD>(sizeof(module_path) / sizeof(module_path[0])));
-  if (chars == 0 || chars >= sizeof(module_path) / sizeof(module_path[0])) {
-    return false;
-  }
-  std::wstring path(module_path, chars);
-  const size_t slash = path.find_last_of(L"/\\");
-  const std::wstring exe_name =
-      slash == std::wstring::npos ? path : path.substr(slash + 1);
-  if (_wcsicmp(exe_name.c_str(), L"sgre_steam.exe") != 0) return false;
-  path.resize(slash == std::wstring::npos ? 0 : slash + 1);
-  path += L"wind3d11data\\voice_body.bin";
+  std::wstring path;
+  if (!SgreVoiceArchivePath(&path)) return false;
 
   view.file = CreateFileW(path.c_str(), GENERIC_READ,
                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -100,8 +95,9 @@ inline bool OpenSgreVoiceArchive() {
 inline bool FindSgreVoiceArchivePayload(const uint8_t* payload,
                                         size_t payload_bytes,
                                         uint64_t* body_offset) {
-  // Avoid scanning 322 MiB for malformed submissions. Exact full-buffer
-  // comparison, not this lower bound, is the role-resource proof.
+  // 归档实测 322 MiB，未命中一次全内存扫描约 30ms，跑在 HookWorker 上。调用方必须先用
+  // 时长判据把 BGM/SE 挡掉（见 windows_audio_adapter.inc 的 kWmaudio2 分支），这里只留
+  // 一条防畸形提交的下界。真正的角色资源证明是下面那次**全缓冲逐字节**比较，不是它。
   if (payload_bytes < 256 || !OpenSgreVoiceArchive()) return false;
   return FindSgrePayloadOffsetInBytes(
       g_sgre_voice_archive.data, g_sgre_voice_archive.bytes, payload,

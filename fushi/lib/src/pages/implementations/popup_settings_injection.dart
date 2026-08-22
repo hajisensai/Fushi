@@ -608,15 +608,17 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     appModel.shortcutRegistry,
     theme.platform,
   );
-  // Windows 的 in-app 弹窗同样是 WebView2：用户点击弹窗内容后，键盘焦点归 WebView，
-  // Ctrl+Enter / Esc 不会再经过宿主页面的 Flutter Shortcuts。此前这里给所有 in-app
-  // 表面注入 `null`，等于同时关掉了 WebView 侧的唯一消费者，texthooker 查词后便无法
-  // 用快捷键制卡。Windows 因而由当前持焦的一侧处理：焦点仍在 Flutter 时走页面
-  // Shortcuts；焦点进入 WebView2 后走 popup.js。事件不会跨焦点边界重复派发，且制卡
-  // 按钮自身仍有单飞门。其他平台保持原有宿主派发边界不变。
-  final bool webViewOwnsPopupKeyboard =
-      options.globalLookup || theme.platform == TargetPlatform.windows;
-  final String popupKeyBindings = webViewOwnsPopupKeyboard
+  // 弹窗键盘绑定只对 **app 外**的裸 WebView2 表面（全局查词窗 / 剪贴板面板）下发真值。
+  // in-app 宿主（app 内弹窗 / Android 悬浮词典 / 独立查词页）显式收 `null` 关掉 JS 侧
+  // 判定——那里键盘由 Flutter 派发（阅读器 readerCreateCardFromPopup、视频页读
+  // popupMineEntry 绑定）。两边同时开的话，一旦 WebView 把同一次按键既交给 JS 又冒泡回
+  // Flutter，就会制出两张卡；按宿主切开是结构上杜绝，而不是靠去重兜底。
+  //
+  // Windows in-app 弹窗确实存在「焦点进 WebView2 后 Ctrl+Enter 无人消费」的真问题
+  // （fork 的 inappwebview 只转鼠标不转键盘，见 docs/agent/focus-ownership.md:41），
+  // 但解法是把键盘事件桥回宿主、由**单一**所有者派发，不是两边都开——两边都开的失败
+  // 模式（双触发制两张卡）正是这条不变式写死要防的。该问题单开 PR 处理。
+  final String popupKeyBindings = options.globalLookup
       ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
       : 'null';
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
@@ -638,7 +640,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String customDictCSSJson = jsonEncode(appModel.customDictCSS);
 
   final String slotKey = '${options.globalLookup}|${options.mobileExternal}'
-      '|${options.sentenceDraftEnabled}|$webViewOwnsPopupKeyboard';
+      '|${options.sentenceDraftEnabled}';
   final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
   if (cached != null &&
       cached.themeVarsJs == themeVarsJs &&
