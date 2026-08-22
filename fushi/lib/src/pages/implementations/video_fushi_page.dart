@@ -329,33 +329,37 @@ bool _isLatinWordGrapheme(String grapheme) {
 final RegExp _kLatinWordCharRegExp =
     RegExp(r'^[\p{Script=Latin}0-9]', unicode: true);
 
-/// 点字幕第 [graphemeIndex] 个字位起的查词词面（TODO-916 症状③）。
+/// 点字幕第 [graphemeIndex] 个字位起的查询串。
 ///
-/// 默认（CJK / 日文）行为：从被点字位一直取到**句尾**，逐字查词（与历史一致，
-/// 不能套「延伸到词尾」——中日文按字 / 词查）。
+/// 查询串只由**起点**决定，终点恒为句尾——引擎按查询串做最长匹配并回报
+/// `bestLength`（弹窗 / 字幕据此高亮整词跨度），多喂的后文超出 `scanLength`
+/// （`FushiDicts.defaultScanLength` = 16 码点）自然丢弃。
 ///
-/// 仅当**被点字位本身是拉丁单词字符**时，回退到该拉丁单词的**词首**并延伸到
-/// **词尾**，返回整个单词。这样点 "hello" 的任意字母（含 'e' / 'o'）都返回
-/// "hello"，而不是旧 `skip(index)` 的 "ello" 查不到（拉丁词非逐字、点中间字母
-/// 取不到整词 → 查不到）。空格 / 标点 / 连字号 / CJK 都是词边界。
+/// 起点按脚本分：
+/// - CJK / 标点 / 空白：就是被点字位本身（逐字查词，点「永」命中「永遠」、
+///   点「遠」能单独查「遠」）。
+/// - 拉丁单词字符：回退到该单词的**词首**，这样点 "hello" 的任意字母（含
+///   'e' / 'o'）都从 "hello" 起查，而不是旧 `skip(index)` 的 "ello" 查不到
+///   （TODO-916 症状③）。空格 / 标点 / 连字号 / CJK 都是词首边界。
+///
+/// BUG-1773：拉丁分支此前**同时**把终点钉死在词尾，于是查询串被截成单个单词，
+/// `listen to` / `look forward to` 这类空格分词短语的词条永远匹配不到——点空格
+/// 反而能查出短语（走了 CJK 的「到句尾」分支）就是这个特例的照妖镜。终点从来
+/// 不该由脚本决定：C++ `scan_candidates` 明确禁止在空格分词语言的单词中间切
+/// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
+/// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
 @visibleForTesting
 String subtitleLookupTerm(String sentence, int graphemeIndex) {
   final List<String> graphemes = sentence.characters.toList();
   if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
-  // 非拉丁（CJK / 标点 / 空白）：维持历史「取到句尾逐字查」语义。
-  if (!_isLatinWordGrapheme(graphemes[graphemeIndex])) {
-    return graphemes.skip(graphemeIndex).join();
-  }
   int start = graphemeIndex;
-  while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
-    start--;
+  // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
+  if (_isLatinWordGrapheme(graphemes[graphemeIndex])) {
+    while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
+      start--;
+    }
   }
-  int end = graphemeIndex; // inclusive index of last word grapheme
-  while (
-      end + 1 < graphemes.length && _isLatinWordGrapheme(graphemes[end + 1])) {
-    end++;
-  }
-  return graphemes.sublist(start, end + 1).join();
+  return graphemes.skip(start).join();
 }
 
 @visibleForTesting
