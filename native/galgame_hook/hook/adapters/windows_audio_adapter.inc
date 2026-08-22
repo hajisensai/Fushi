@@ -1104,7 +1104,11 @@ HRESULT STDMETHODCALLTYPE Detour_FlushSourceBuffers(
   trace.detail0 = static_cast<uint32_t>(
       registered ? fushi_voice_hook::XAudioTraceLookupResult::kRegistered
                  : fushi_voice_hook::XAudioTraceLookupResult::kMissing);
-  const HRESULT hr = g_orig_FlushSourceBuffers(self);
+  const FlushSourceBuffers_t original =
+      OriginalHookForVtableSlot<FlushSourceBuffers_t>(
+          self, kIdxFlushSourceBuffers, g_flush_source_buffers_originals);
+  const HRESULT hr =
+      original != nullptr ? original(self) : XAUDIO2_E_INVALID_CALL;
   trace.hresult = static_cast<int32_t>(hr);
   if (SUCCEEDED(hr) && registered) {
     if (g_xaudio_formats.AdvanceQueueGeneration(source.source,
@@ -1285,7 +1289,12 @@ HRESULT STDMETHODCALLTYPE Detour_SubmitSourceBuffer(
   }
   trace.detail1 = static_cast<uint32_t>(rejection);
 
-  const HRESULT hr = g_orig_SubmitSourceBuffer(self, pBuffer, pBufferWMA);
+  const SubmitSourceBuffer_t original =
+      OriginalHookForVtableSlot<SubmitSourceBuffer_t>(
+          self, kIdxSubmitSourceBuffer, g_submit_source_buffer_originals);
+  const HRESULT hr = original != nullptr
+                         ? original(self, pBuffer, pBufferWMA)
+                         : XAUDIO2_E_INVALID_CALL;
   trace.hresult = static_cast<int32_t>(hr);
   if (FAILED(hr)) {
     if (staged != nullptr) ReleaseXAudioCaptureJob(staged);
@@ -1383,18 +1392,20 @@ HRESULT STDMETHODCALLTYPE Detour_CreateSourceVoice(
       IncrementXAudioCounter(&g_xaudio_capture_counters.unsupported_format);
       SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagUnsupportedFormat);
     }
-    HookFn(VtableSlot(*ppSourceVoice, kIdxSubmitSourceBuffer),
-           reinterpret_cast<void*>(&Detour_SubmitSourceBuffer),
-           reinterpret_cast<void**>(&g_orig_SubmitSourceBuffer));
+    HookFnWithOriginalRegistry(
+        VtableSlot(*ppSourceVoice, kIdxSubmitSourceBuffer),
+        reinterpret_cast<void*>(&Detour_SubmitSourceBuffer),
+        &g_submit_source_buffer_originals);
     HookFn(VtableSlot(*ppSourceVoice, kIdxSourceVoiceStart),
            reinterpret_cast<void*>(&Detour_SourceVoiceStart),
            reinterpret_cast<void**>(&g_orig_SourceVoiceStart));
     HookFn(VtableSlot(*ppSourceVoice, kIdxSourceVoiceStop),
            reinterpret_cast<void*>(&Detour_SourceVoiceStop),
            reinterpret_cast<void**>(&g_orig_SourceVoiceStop));
-    HookFn(VtableSlot(*ppSourceVoice, kIdxFlushSourceBuffers),
-           reinterpret_cast<void*>(&Detour_FlushSourceBuffers),
-           reinterpret_cast<void**>(&g_orig_FlushSourceBuffers));
+    HookFnWithOriginalRegistry(
+        VtableSlot(*ppSourceVoice, kIdxFlushSourceBuffers),
+        reinterpret_cast<void*>(&Detour_FlushSourceBuffers),
+        &g_flush_source_buffers_originals);
     HookFn(VtableSlot(*ppSourceVoice, kIdxDestroyVoice),
            reinterpret_cast<void*>(&Detour_DestroyVoice),
            reinterpret_cast<void**>(&g_orig_DestroyVoice));

@@ -42,6 +42,7 @@ add_library(fushi_voice_hook SHARED
   "hook/dll_main.cpp"
   "hook/adapter.h"
   "hook/ffmpeg_runtime.h"
+  "hook/hook_original_registry.h"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
   "hook/artemis_pfs.h"
@@ -117,6 +118,13 @@ target_compile_definitions(fushi_xaudio_source_format_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_xaudio_source_format_test
   COMMAND fushi_xaudio_source_format_test)
+
+add_executable(fushi_hook_original_registry_test
+  "tests/hook_original_registry_test.cpp"
+)
+target_include_directories(fushi_hook_original_registry_test PRIVATE "hook")
+add_test(NAME fushi_hook_original_registry_test
+  COMMAND fushi_hook_original_registry_test)
 
 add_executable(fushi_xaudio_trace_export_test
   "tests/xaudio_trace_export_test.cpp"

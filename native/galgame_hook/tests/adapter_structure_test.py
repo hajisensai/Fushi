@@ -139,11 +139,20 @@ class AdapterStructureTest(unittest.TestCase):
         submit = submit.split("Detour_CreateSourceVoice", 1)[0]
         self.assertLess(
             submit.index("PrepareXAudioCaptureJob("),
-            submit.index("g_orig_SubmitSourceBuffer("),
+            submit.index("OriginalHookForVtableSlot<SubmitSourceBuffer_t>"),
         )
         self.assertLess(
-            submit.index("g_orig_SubmitSourceBuffer("),
+            submit.index("OriginalHookForVtableSlot<SubmitSourceBuffer_t>"),
             submit.index("PublishXAudioCaptureJob("),
+        )
+        self.assertNotIn("g_orig_SubmitSourceBuffer", main)
+        self.assertNotIn("g_orig_FlushSourceBuffers", main)
+        self.assertIn("g_submit_source_buffer_originals", main)
+        self.assertIn("g_flush_source_buffers_originals", main)
+        self.assertIn("originals.Lookup(VtableSlot(com_obj, idx))", main)
+        self.assertLess(
+            main.index("originals->Publish(target, trampoline)"),
+            main.index("MH_EnableHook(target)"),
         )
         failed = submit.split("if (FAILED(hr))", 1)[1]
         failed = failed.split("return hr;", 1)[0]
