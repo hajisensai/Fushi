@@ -3578,7 +3578,6 @@
   "video_control_custom_action": "Shortcut $index",
   "video_control_custom_action_none": "Not assigned",
   "settings_destination_storage": "Storage",
-  "settings_destination_storage_summary": "Disk usage and reclaimable modules",
   "storage_overview_section": "Disk usage",
   "storage_overview_total": "Total",
   "storage_overview_refresh": "Rescan",
@@ -3712,5 +3711,6 @@
   "manga_online_detail_load_failed": "Could not load this manga.",
   "manga_online_error_view_detail": "View details",
   "discovery_sources_unavailable": "All sources are unavailable",
-  "storage_shaders_delete_anime4k": "Delete Anime4K shaders"
+  "storage_shaders_delete_anime4k": "Delete Anime4K shaders",
+  "settings_destination_storage_summary": "Data location and disk usage"
 }
