@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
@@ -10,10 +9,17 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show buildDataStorageLocationSection;
 import 'package:fushi/utils.dart';
 
-/// 「存储」一级设置分类：磁盘占用总览（书/词典可展开单条删除）+ 可选模块
-/// （OCR 模型 / Anime4K 着色器删除恢复）+ 随包组件展示。
+/// 「存储」一级设置分类：数据存储位置（数据根在哪）+ 磁盘占用总览（每个类目
+/// 都可展开明细，书/词典可单条删除）+ 随包组件展示。
+///
+/// 「数据存储位置」是本页唯一的 schema section（历史上挂过同步备份、后来挪到
+/// 「系统」）：它回答「数据放哪」，与下面「占了多少」是同一个问题的两半，放在
+/// 一起才成一页；item id 仍是 'sync.data_storage_location'，构建函数留在
+/// sync_settings_schema（行 widget 是该库私有 part）。
 ///
 /// 正文经 [SettingsDestination.body] 逃生口渲染 [StorageUsageView]；所有删除
 /// 都在这里接到各域既有路径（书 `ReaderFushiSource.deleteBook`、词典
@@ -24,10 +30,9 @@ SettingsDestination buildStorageDestination() {
     title: t.settings_destination_storage,
     summary: t.settings_destination_storage_summary,
     icon: Icons.sd_storage_outlined,
-    sections: const <SettingsSection>[],
+    sections: <SettingsSection>[buildDataStorageLocationSection()],
     body: (SettingsContext c) => StorageUsageView(
       service: StorageUsageService(),
-      ocrService: c.ref.read(mangaOcrServiceProvider),
       booksProvider: () async {
         final List<EpubBookRow> rows =
             await c.appModel.database.getAllEpubBooks();
@@ -97,10 +102,10 @@ SettingsDestination buildStorageDestination() {
         subtitle: t.storage_overview_total,
       ),
       SettingsBodySearchEntry(
-        id: 'storage.modules',
-        title: t.storage_modules_section,
-        subtitle: '${t.storage_category_ocr_models} · '
-            '${t.storage_modules_anime4k_title}',
+        id: 'storage.shaders',
+        title: t.storage_category_shaders,
+        subtitle: '${t.storage_modules_anime4k_title} · '
+            '${t.storage_shaders_delete_anime4k}',
       ),
       SettingsBodySearchEntry(
         id: 'storage.bundled',
