@@ -1017,10 +1017,16 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     return count;
   }
 
+  /// 邻接链折叠的最大空隙（BUG-1776）：链尾 endMs 与下一段 startMs 之间 ≤ 本值才视为
+  /// 「同一持续显示的特效链」。卡拉OK交替层的分段严格首尾相接（空隙 0），真实重复台词
+  /// 之间隔着静默段（远大于 40ms），阈值取小保证宁可漏合不错合。
+  static const int _kChainFoldGapMs = 40;
+
   /// BUG-841：按 `(startMs, 文本)` 折叠重复 cue，返回代表行 raw 下标（升序）并同步
   /// 刷新 [_cachedRepresentativeByRaw]（每个 raw → 其代表行 raw）。按 cues 身份 + 长度
   /// 记忆化（`setCues` 换列表即失效；[_clearCueCaches] 亦清）。特效叠加 / 多层同句拷贝
-  /// 同 start 同文本 → 折叠成一行；双语文本不同 → 各自保留。
+  /// 同 start 同文本 → 折叠成一行；双语文本不同 → 各自保留。同文本、时间窗首尾相接的
+  /// 连环分段（卡拉OK交替特效）再走第二轮邻接链折叠（BUG-1776，见函数尾）。
   List<int> _dedupedRawIndexes(List<AudioCue> cues) {
     if (identical(_cachedDedupCues, cues) &&
         _cachedDedupCuesLength == cues.length) {
@@ -1053,12 +1059,42 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         repByRaw[i] = rep;
       }
     }
+    // BUG-1776：第二轮**邻接链折叠**。卡拉OK交替特效把同一句歌词拆成时间上首尾相接、
+    // startMs 各异的多组事件（如每 1.5s 换一对 \clip 分屏层），精确键折不掉 → 列表同句
+    // 连出四行。判据「同文本 + 与该文本链尾窗口相接/重叠（空隙 ≤ [_kChainFoldGapMs]）」；
+    // 每个文本各自开链（歌词链与对白/翻译行在时间轴上交错是常态，单链头会被异文本行
+    // 打断）。链断开（真实静默段）即换新链头，隔静默的重复台词（「はい」连呼）不受影响。
+    // 代表行取链首，折进同一张 repByRaw（当前句落在链中任一段都高亮/定位到链首行）。
+    final Map<int, int> chainByRep = <int, int>{};
+    final List<int> chained = <int>[];
+    final Map<String, ({int head, int endMs})> openChains =
+        <String, ({int head, int endMs})>{};
+    for (final int rep in reps) {
+      final AudioCue c = mergedGroups.byRep[rep] ?? cues[rep];
+      final ({int head, int endMs})? chain = openChains[c.text];
+      if (chain != null && c.startMs <= chain.endMs + _kChainFoldGapMs) {
+        chainByRep[rep] = chain.head;
+        openChains[c.text] = (
+          head: chain.head,
+          endMs: c.endMs > chain.endMs ? c.endMs : chain.endMs,
+        );
+      } else {
+        openChains[c.text] = (head: rep, endMs: c.endMs);
+        chained.add(rep);
+      }
+    }
+    if (chainByRep.isNotEmpty) {
+      for (final MapEntry<int, int> e in repByRaw.entries.toList()) {
+        final int? head = chainByRep[e.value];
+        if (head != null) repByRaw[e.key] = head;
+      }
+    }
     _cachedDedupCues = cues;
     _cachedDedupCuesLength = cues.length;
-    _cachedDedupIndexes = reps;
+    _cachedDedupIndexes = chained;
     _cachedRepresentativeByRaw = repByRaw;
     _cachedMergedByRep = mergedGroups.byRep;
-    return reps;
+    return chained;
   }
 
   /// 某个**代表行**在列表里实际呈现/交互所用的 cue（TODO-1384）。逐字卡拉OK 组返回
