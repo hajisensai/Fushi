@@ -150,10 +150,22 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("g_submit_source_buffer_originals", main)
         self.assertIn("g_flush_source_buffers_originals", main)
         self.assertIn("originals.Lookup(VtableSlot(com_obj, idx))", main)
+        # 先发布 trampoline 再启用 hook：反过来的话 detour 已经在跑、original 还没
+        # 登记，正是这次要根治的崩溃形态。范围必须收在 codec 专用的那个安装函数体内
+        # ——dll_main.cpp 里还有一条普通 HookFn 路径（它用 g_hooked_fns 去重、根本
+        # 不碰 registry），全文件 index() 会先撞上那条路径的 MH_EnableHook(target)，
+        # 让这条断言在实现完全正确时也失败。
+        registry_installer = main.split(
+            "bool HookFnWithOriginalRegistry(", 1
+        )[1].split("\n}\n", 1)[0]
+        self.assertIn("originals->Publish(target, trampoline)", registry_installer)
         self.assertLess(
-            main.index("originals->Publish(target, trampoline)"),
-            main.index("MH_EnableHook(target)"),
+            registry_installer.index("originals->Publish(target, trampoline)"),
+            registry_installer.index("MH_EnableHook(target)"),
         )
+        # 发布成功但启用失败时必须把已登记的 trampoline 撤掉，否则 registry 会留下
+        # 一条指向已移除 hook 的 original。
+        self.assertIn("originals->Erase(target, trampoline)", registry_installer)
         failed = submit.split("if (FAILED(hr))", 1)[1]
         failed = failed.split("return hr;", 1)[0]
         self.assertIn("ReleaseXAudioCaptureJob(staged)", failed)
