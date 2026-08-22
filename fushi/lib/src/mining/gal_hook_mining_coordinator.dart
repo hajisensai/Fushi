@@ -32,6 +32,18 @@ typedef GalHookAudioCapture = Future<Uint8List?> Function({
   required String outputExtension,
 });
 
+/// 原始 SGRE 角色语音是 RIFF/XWMA。当行已经固化了 `.xwma` 资源 ID 时，
+/// 媒体名必须保留真实扩展名；否则会把 xWMA 字节写进 `.aac` 伪装文件。
+String galHookMinedAudioExtension({
+  required String fallback,
+  String? resourceId,
+}) {
+  if (resourceId?.toLowerCase().endsWith('.xwma') ?? false) {
+    return 'xwma';
+  }
+  return fallback;
+}
+
 class GalHookMiningResult {
   const GalHookMiningResult({
     this.outcome,
@@ -355,6 +367,10 @@ class GalHookMiningCoordinator {
       Error.throwWithStackTrace(audioError!, audioStack ?? StackTrace.current);
     }
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
+    final String minedAudioExtension = galHookMinedAudioExtension(
+      fallback: audioExtension,
+      resourceId: _lineLookup(entry.id)?.audioResourceId,
+    );
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
     // 拦成制卡失败，等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
@@ -377,8 +393,9 @@ class GalHookMiningCoordinator {
           screenshotBytes: coverBytes,
           coverName: coverName,
           audioBytes: audioBytes,
-          audioName:
-              sentenceAudioMissing ? null : 'galgame_audio.$audioExtension',
+          audioName: sentenceAudioMissing
+              ? null
+              : 'galgame_audio.$minedAudioExtension',
           documentTitle:
               window.title.isEmpty ? 'External window' : window.title,
           // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。

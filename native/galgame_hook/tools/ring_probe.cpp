@@ -1,17 +1,21 @@
 #include <windows.h>
+#include <tlhelp32.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "voice_clip_energy.h"
 #include "voice_hook_ipc.h"
 #include "voice_hook_utterance_window.h"
+#include "xaudio_trace.h"
 
 // galgame 一键制卡 C 阶段 —— 环形缓冲诊断读取器（x64 独立小工具）。
 //
@@ -30,6 +34,23 @@ using fushi_voice_hook::kSharedMagic;
 using fushi_voice_hook::kSharedVersion;
 using fushi_voice_hook::SharedHeader;
 using fushi_voice_hook::SharedMemoryName;
+
+const char* NativeLoopbackStateName(uint32_t state) {
+  switch (state) {
+    case fushi_voice_hook::kNativeLoopbackStateStopped:
+      return "stopped";
+    case fushi_voice_hook::kNativeLoopbackStateStarting:
+      return "starting";
+    case fushi_voice_hook::kNativeLoopbackStateRunning:
+      return "running";
+    case fushi_voice_hook::kNativeLoopbackStateStopping:
+      return "stopping";
+    case fushi_voice_hook::kNativeLoopbackStateFailed:
+      return "failed";
+    default:
+      return "unknown";
+  }
+}
 
 // int16 判定阈值：峰值 > 300（约 -40 dBFS）算 SOUND，否则 silent。float32 折算到 int16
 // 量纲（*32767）后同阈值比较。
@@ -329,7 +350,7 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
   if (valid.empty()) {
     return false;
   }
-  // 每源：说话前窗口 [ts-900,ts-250] 与文本时刻窗口 [ts-150,ts+450] 的平均能量。
+  // 每源：说话前窗口 [ts-900,ts-251] 与文本时刻窗口 [ts-250,ts+450] 的平均能量。
   std::map<uint64_t, double> e_before, e_at;
   std::map<uint64_t, int> n_before, n_at;
   bool any_energy = false;
@@ -341,11 +362,11 @@ bool DumpUtterance(const SharedHeader* h, const uint8_t* ring, uint64_t ts,
     any_energy = true;
     const int64_t d = static_cast<int64_t>(c->timestamp_ms) -
                       static_cast<int64_t>(ts);
-    if (d >= -900 && d <= -250) {
+    if (d >= -900 && d <= -251) {
       e_before[c->source_ptr] += e;
       n_before[c->source_ptr]++;
     }
-    if (d >= -150 && d <= 450) {
+    if (d >= -250 && d <= 450) {
       e_at[c->source_ptr] += e;
       n_at[c->source_ptr]++;
     }
@@ -713,14 +734,547 @@ void ListClips(const SharedHeader* h) {
     const double dur = br ? static_cast<double>(c->byte_len) / br * 1000.0 : 0;
     const long long dts =
         prev_ts ? static_cast<long long>(c->timestamp_ms - prev_ts) : 0;
-    printf("clip seq=%llu ts=%llu dts=%lld src=%08llx off=%u len=%u dur=%.0fms\n",
+    printf("clip seq=%llu ts=%llu dts=%lld src=%08llx off=%u len=%u dur=%.0fms flags=0x%08x\n",
            static_cast<unsigned long long>(seq),
            static_cast<unsigned long long>(c->timestamp_ms), dts,
            static_cast<unsigned long long>(c->source_ptr & 0xffffffffull),
-           c->ring_offset, c->byte_len, dur);
+           c->ring_offset, c->byte_len, dur, c->pad);
     prev_ts = c->timestamp_ms;
   }
   fflush(stdout);
+}
+
+struct RemoteHookModule {
+  uintptr_t base = 0;
+  uint32_t image_size = 0;
+  std::wstring name;
+  std::wstring path;
+};
+
+struct alignas(8) XAudioTraceHeaderSnapshot {
+  uint32_t magic = 0;
+  uint32_t version = 0;
+  uint32_t event_size = 0;
+  uint32_t slot_size = 0;
+  uint32_t capacity = 0;
+  uint32_t reserved = 0;
+  int64_t next_sequence = 0;
+  int64_t dropped_busy = 0;
+};
+
+static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
+                  offsetof(fushi_voice_hook::XAudioTraceBuffer, slots),
+              "remote XAudio trace header layout drifted");
+
+bool ReadRemoteExact(HANDLE process, uintptr_t address, void* destination,
+                     size_t length) {
+  SIZE_T read = 0;
+  return destination != nullptr &&
+         ReadProcessMemory(process, reinterpret_cast<const void*>(address),
+                           destination, length, &read) &&
+         read == length;
+}
+
+bool EnumerateRemoteModules(DWORD pid, std::vector<RemoteHookModule>* modules,
+                            DWORD* error_code) {
+  if (modules == nullptr) return false;
+  constexpr int kSnapshotAttempts = 8;
+  for (int attempt = 0; attempt < kSnapshotAttempts; ++attempt) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(
+        TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+      const DWORD error = GetLastError();
+      if (error == ERROR_BAD_LENGTH) continue;
+      if (error_code != nullptr) *error_code = error;
+      return false;
+    }
+    std::vector<RemoteHookModule> current;
+    MODULEENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    if (Module32FirstW(snapshot, &entry)) {
+      do {
+        RemoteHookModule module;
+        module.base = reinterpret_cast<uintptr_t>(entry.modBaseAddr);
+        module.image_size = entry.modBaseSize;
+        module.name = entry.szModule;
+        module.path = entry.szExePath;
+        current.push_back(std::move(module));
+        entry.dwSize = sizeof(entry);
+      } while (Module32NextW(snapshot, &entry));
+    }
+    const DWORD error = GetLastError();
+    CloseHandle(snapshot);
+    if (error == ERROR_BAD_LENGTH) continue;
+    if (current.empty()) {
+      if (error_code != nullptr) *error_code = error;
+      return false;
+    }
+    *modules = std::move(current);
+    return true;
+  }
+  if (error_code != nullptr) *error_code = ERROR_BAD_LENGTH;
+  return false;
+}
+
+bool RemoteModuleAddress(const RemoteHookModule& module, uint64_t rva,
+                         size_t length, uintptr_t* address) {
+  if (address == nullptr || rva > module.image_size ||
+      length > static_cast<uint64_t>(module.image_size) - rva ||
+      rva > (std::numeric_limits<uintptr_t>::max)() - module.base) {
+    return false;
+  }
+  *address = module.base + static_cast<uintptr_t>(rva);
+  return true;
+}
+
+template <typename T>
+bool ReadRemotePePod(HANDLE process, const RemoteHookModule& module,
+                     uint64_t rva, T* value) {
+  uintptr_t address = 0;
+  return value != nullptr &&
+         RemoteModuleAddress(module, rva, sizeof(T), &address) &&
+         ReadRemoteExact(process, address, value, sizeof(T));
+}
+
+bool RemotePeStringEquals(HANDLE process, const RemoteHookModule& module,
+                          uint32_t rva, const char* expected) {
+  if (expected == nullptr) return false;
+  const size_t length = std::strlen(expected);
+  if (length > 512) return false;
+  for (size_t i = 0; i <= length; ++i) {
+    uint8_t value = 0;
+    if (!ReadRemotePePod(process, module,
+                         static_cast<uint64_t>(rva) + i, &value) ||
+        value != static_cast<uint8_t>(expected[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ResolveRemotePeExportRva(HANDLE process,
+                              const RemoteHookModule& module,
+                              const char* export_name,
+                              uint32_t* resolved_rva) {
+  if (resolved_rva == nullptr) return false;
+  IMAGE_DOS_HEADER dos = {};
+  if (!ReadRemotePePod(process, module, 0, &dos) ||
+      dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew < 0) {
+    return false;
+  }
+  const uint64_t nt_rva = static_cast<uint64_t>(dos.e_lfanew);
+  DWORD signature = 0;
+  IMAGE_FILE_HEADER file_header = {};
+  if (!ReadRemotePePod(process, module, nt_rva, &signature) ||
+      signature != IMAGE_NT_SIGNATURE ||
+      !ReadRemotePePod(process, module, nt_rva + sizeof(signature),
+                       &file_header)) {
+    return false;
+  }
+  const uint64_t optional_rva =
+      nt_rva + sizeof(signature) + sizeof(file_header);
+  WORD optional_magic = 0;
+  if (!ReadRemotePePod(process, module, optional_rva, &optional_magic)) {
+    return false;
+  }
+  IMAGE_DATA_DIRECTORY export_directory = {};
+  uint32_t size_of_image = 0;
+  if (optional_magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC) {
+    if (file_header.SizeOfOptionalHeader < sizeof(IMAGE_OPTIONAL_HEADER32)) {
+      return false;
+    }
+    IMAGE_OPTIONAL_HEADER32 optional = {};
+    if (!ReadRemotePePod(process, module, optional_rva, &optional) ||
+        optional.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT) {
+      return false;
+    }
+    size_of_image = optional.SizeOfImage;
+    export_directory = optional.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+  } else if (optional_magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+    if (file_header.SizeOfOptionalHeader < sizeof(IMAGE_OPTIONAL_HEADER64)) {
+      return false;
+    }
+    IMAGE_OPTIONAL_HEADER64 optional = {};
+    if (!ReadRemotePePod(process, module, optional_rva, &optional) ||
+        optional.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT) {
+      return false;
+    }
+    size_of_image = optional.SizeOfImage;
+    export_directory = optional.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+  } else {
+    return false;
+  }
+  const uint64_t export_end =
+      static_cast<uint64_t>(export_directory.VirtualAddress) +
+      export_directory.Size;
+  if (size_of_image == 0 || size_of_image > module.image_size ||
+      export_directory.VirtualAddress == 0 ||
+      export_directory.Size < sizeof(IMAGE_EXPORT_DIRECTORY) ||
+      export_end > size_of_image) {
+    return false;
+  }
+  IMAGE_EXPORT_DIRECTORY exports = {};
+  if (!ReadRemotePePod(process, module, export_directory.VirtualAddress,
+                       &exports) ||
+      exports.NumberOfNames > size_of_image / sizeof(DWORD) ||
+      exports.NumberOfFunctions > size_of_image / sizeof(DWORD)) {
+    return false;
+  }
+  for (uint32_t i = 0; i < exports.NumberOfNames; ++i) {
+    DWORD name_rva = 0;
+    if (!ReadRemotePePod(
+            process, module,
+            static_cast<uint64_t>(exports.AddressOfNames) +
+                static_cast<uint64_t>(i) * sizeof(DWORD),
+            &name_rva)) {
+      return false;
+    }
+    if (!RemotePeStringEquals(process, module, name_rva, export_name)) {
+      continue;
+    }
+    WORD ordinal = 0;
+    if (!ReadRemotePePod(
+            process, module,
+            static_cast<uint64_t>(exports.AddressOfNameOrdinals) +
+                static_cast<uint64_t>(i) * sizeof(WORD),
+            &ordinal) ||
+        ordinal >= exports.NumberOfFunctions) {
+      return false;
+    }
+    DWORD value_rva = 0;
+    if (!ReadRemotePePod(
+            process, module,
+            static_cast<uint64_t>(exports.AddressOfFunctions) +
+                static_cast<uint64_t>(ordinal) * sizeof(DWORD),
+            &value_rva) ||
+        value_rva >= size_of_image ||
+        (value_rva >= export_directory.VirtualAddress &&
+         static_cast<uint64_t>(value_rva) < export_end)) {
+      return false;
+    }
+    *resolved_rva = value_rva;
+    return true;
+  }
+  return false;
+}
+
+bool IsExpectedHookModuleName(const std::wstring& name) {
+  return _wcsicmp(name.c_str(), L"fushi_voice_hook.dll") == 0 ||
+         _wcsicmp(name.c_str(), L"hibiki_voice_hook.dll") == 0;
+}
+
+bool FindRemoteXAudioTrace(HANDLE process, DWORD pid,
+                           RemoteHookModule* found_module,
+                           uint32_t* found_rva,
+                           XAudioTraceHeaderSnapshot* found_header,
+                           DWORD* error_code) {
+  if (found_module == nullptr || found_rva == nullptr ||
+      found_header == nullptr) {
+    return false;
+  }
+  std::vector<RemoteHookModule> modules;
+  if (!EnumerateRemoteModules(pid, &modules, error_code)) return false;
+  // Prefer the production basename, but inspect every loaded module by its
+  // remote export table so injector --dll renames and replaced-on-disk DLLs do
+  // not make the live evidence invisible or select a stale RVA.
+  std::stable_sort(modules.begin(), modules.end(),
+                   [](const RemoteHookModule& left,
+                      const RemoteHookModule& right) {
+                     return IsExpectedHookModuleName(left.name) &&
+                            !IsExpectedHookModuleName(right.name);
+                   });
+  for (const RemoteHookModule& module : modules) {
+    uint32_t export_rva = 0;
+    if (!ResolveRemotePeExportRva(
+            process, module, fushi_voice_hook::kXAudioTraceExportName,
+            &export_rva)) {
+      continue;
+    }
+    uintptr_t address = 0;
+    XAudioTraceHeaderSnapshot header;
+    if (!RemoteModuleAddress(module, export_rva, sizeof(header), &address) ||
+        !ReadRemoteExact(process, address, &header, sizeof(header)) ||
+        header.magic != fushi_voice_hook::kXAudioTraceMagic ||
+        header.version != fushi_voice_hook::kXAudioTraceVersion) {
+      continue;
+    }
+    *found_module = module;
+    *found_rva = export_rva;
+    *found_header = header;
+    return true;
+  }
+  if (error_code != nullptr) *error_code = ERROR_MOD_NOT_FOUND;
+  return false;
+}
+
+const char* XAudioTraceKindName(uint32_t kind) {
+  using Kind = fushi_voice_hook::XAudioTraceEventKind;
+  switch (static_cast<Kind>(kind)) {
+    case Kind::kCreate: return "create";
+    case Kind::kSubmit: return "submit";
+    case Kind::kStart: return "start";
+    case Kind::kStop: return "stop";
+    case Kind::kFlush: return "flush";
+    case Kind::kDestroy: return "destroy";
+    case Kind::kCommit: return "commit";
+    case Kind::kWorkerWait: return "worker_wait";
+    case Kind::kWorkerPublish: return "worker_publish";
+    case Kind::kWorkerInvalidate: return "worker_invalidate";
+  }
+  return "unknown";
+}
+
+const char* XAudioTraceOutcomeName(uint32_t outcome) {
+  using Outcome = fushi_voice_hook::XAudioTraceOutcome;
+  switch (static_cast<Outcome>(outcome)) {
+    case Outcome::kNone: return "none";
+    case Outcome::kSucceeded: return "succeeded";
+    case Outcome::kOriginalFailed: return "original_failed";
+    case Outcome::kFormatUnsupported: return "format_unsupported";
+    case Outcome::kRegistryRegistered: return "registry_registered";
+    case Outcome::kRegistryExhausted: return "registry_exhausted";
+    case Outcome::kLookupMiss: return "lookup_miss";
+    case Outcome::kQueued: return "queued";
+    case Outcome::kRejectedNullBuffer: return "reject_null_buffer";
+    case Outcome::kRejectedNullAudioData: return "reject_null_audio_data";
+    case Outcome::kRejectedZeroBytes: return "reject_zero_bytes";
+    case Outcome::kRejectedTooLarge: return "reject_too_large";
+    case Outcome::kRejectedQueueNotReady: return "reject_queue_not_ready";
+    case Outcome::kRejectedDescriptorExhausted:
+      return "reject_descriptor_exhausted";
+    case Outcome::kRejectedArenaExhausted:
+      return "reject_arena_exhausted";
+    case Outcome::kRejectedCopyFailed: return "reject_copy_failed";
+    case Outcome::kCaptureDisabled: return "capture_disabled";
+    case Outcome::kImmediateApplied: return "immediate_applied";
+    case Outcome::kDeferredStaged: return "deferred_staged";
+    case Outcome::kDeferredStageFailed: return "deferred_stage_failed";
+    case Outcome::kDeferredApplied: return "deferred_applied";
+    case Outcome::kDeferredInvalidated: return "deferred_invalidated";
+    case Outcome::kQueueGenerationAdvanced:
+      return "queue_generation_advanced";
+    case Outcome::kWaitingForStart: return "waiting_for_start";
+    case Outcome::kPublished: return "published";
+    case Outcome::kStaleInvalidated: return "stale_invalidated";
+    case Outcome::kDecodeRejected: return "decode_rejected";
+    case Outcome::kCommitQueued: return "commit_queued";
+    case Outcome::kCommitApplied: return "commit_applied";
+    case Outcome::kCommitQueueExhausted: return "commit_queue_exhausted";
+  }
+  return "unknown";
+}
+
+const char* XAudioTraceLookupName(uint32_t lookup) {
+  using Lookup = fushi_voice_hook::XAudioTraceLookupResult;
+  switch (static_cast<Lookup>(lookup)) {
+    case Lookup::kNotAttempted: return "not_attempted";
+    case Lookup::kRegistered: return "registered";
+    case Lookup::kMissing: return "missing";
+  }
+  return "unknown";
+}
+
+void PrintXAudioTraceFormat(const fushi_voice_hook::XAudioTraceFormat& format) {
+  if (format.present == 0) return;
+  printf(
+      " fmt={parse=%u enc=%u tag=0x%04x ch=%u rate=%u avg=%u align=%u "
+      "bits=%u cb=%u}",
+      format.parse_succeeded, format.normalized_encoding, format.format_tag,
+      format.channels, format.samples_per_sec, format.avg_bytes_per_sec,
+      format.block_align, format.bits_per_sample, format.cb_size);
+  if (format.format_tag == WAVE_FORMAT_EXTENSIBLE) {
+    printf(
+        " ext={valid=%u mask=0x%08x guid=%08x-%04x-%04x-"
+        "%02x%02x-%02x%02x%02x%02x%02x%02x}",
+        format.extensible_valid_bits, format.extensible_channel_mask,
+        format.subformat_data1, format.subformat_data2,
+        format.subformat_data3, format.subformat_data4[0],
+        format.subformat_data4[1], format.subformat_data4[2],
+        format.subformat_data4[3], format.subformat_data4[4],
+        format.subformat_data4[5], format.subformat_data4[6],
+        format.subformat_data4[7]);
+  }
+  if (format.extra_bytes_copied != 0) {
+    printf(" extra=");
+    const uint32_t copied = (std::min)(
+        format.extra_bytes_copied,
+        fushi_voice_hook::kXAudioTraceExtraPrefixBytes);
+    for (uint32_t i = 0; i < copied; ++i) {
+      printf("%02x", format.extra_prefix[i]);
+    }
+  }
+  if (format.adpcm_samples_per_block != 0 ||
+      format.adpcm_coefficient_count != 0) {
+    printf(" adpcm={spb=%u count=%u copied=%u coeff=",
+           format.adpcm_samples_per_block, format.adpcm_coefficient_count,
+           format.adpcm_coefficients_copied);
+    const uint32_t copied = (std::min)(
+        format.adpcm_coefficients_copied,
+        fushi_voice_hook::kXAudioTraceAdpcmCoefficientCount);
+    for (uint32_t i = 0; i < copied; ++i) {
+      printf("%s%d:%d", i == 0 ? "[" : ",",
+             format.adpcm_coefficients[i][0],
+             format.adpcm_coefficients[i][1]);
+    }
+    printf("%s}", copied == 0 ? "[]" : "]");
+  }
+}
+
+void PrintXAudioTraceEvent(const fushi_voice_hook::XAudioTraceEvent& event) {
+  printf(
+      "seq=%llu ts=%llu tid=%llu kind=%s outcome=%s hr=0x%08x "
+      "src=0x%llx engine=0x%llx gen=%llu qgen=%llu",
+      static_cast<unsigned long long>(event.sequence),
+      static_cast<unsigned long long>(event.timestamp_ms),
+      static_cast<unsigned long long>(event.thread_id),
+      XAudioTraceKindName(event.kind), XAudioTraceOutcomeName(event.outcome),
+      static_cast<uint32_t>(event.hresult),
+      static_cast<unsigned long long>(event.source),
+      static_cast<unsigned long long>(event.engine),
+      static_cast<unsigned long long>(event.source_generation),
+      static_cast<unsigned long long>(event.queue_generation));
+  using Kind = fushi_voice_hook::XAudioTraceEventKind;
+  const Kind kind = static_cast<Kind>(event.kind);
+  if (kind == Kind::kSubmit) {
+    printf(
+        " bytes=%u play=%u+%u flags=0x%08x ctx=%u wma=%u packets=%u "
+        "wma_range=%u wma_first_decoded_bytes=%u "
+        "wma_last_decoded_bytes=%u "
+        "lookup=%s reject=%s stale=%u submit_ts=%llu",
+        event.audio_bytes, event.play_begin, event.play_length,
+        event.buffer_flags, event.buffer_context_present, event.wma_present,
+        event.wma_packet_count, event.wma_decoded_range_present,
+        event.wma_first_decoded_bytes, event.wma_last_decoded_bytes,
+        XAudioTraceLookupName(event.detail0),
+        XAudioTraceOutcomeName(event.detail1), event.detail2,
+        static_cast<unsigned long long>(event.submit_timestamp_ms));
+  } else if (kind == Kind::kStart || kind == Kind::kStop ||
+             kind == Kind::kFlush || kind == Kind::kDestroy) {
+    printf(" opset=%u flags=0x%08x lookup=%s", event.operation_set,
+           event.buffer_flags, XAudioTraceLookupName(event.detail0));
+  } else if (kind == Kind::kCommit) {
+    if (event.detail0 == static_cast<uint32_t>(
+                             fushi_voice_hook::XAudioTraceCommitPhase::kObserved)) {
+      const uint64_t fence = static_cast<uint64_t>(event.detail1) |
+                             (static_cast<uint64_t>(event.detail2) << 32);
+      printf(" opset=%u phase=observed fence=%llu", event.operation_set,
+             static_cast<unsigned long long>(fence));
+    } else {
+      printf(" opset=%u phase=applied matched=%u applied=%u",
+             event.operation_set, event.detail1, event.detail2);
+    }
+  } else if (kind == Kind::kWorkerWait || kind == Kind::kWorkerPublish ||
+             kind == Kind::kWorkerInvalidate) {
+    printf(" bytes=%u play=%u+%u submit_ts=%llu detail0=%u detail1=%u",
+           event.audio_bytes, event.play_begin, event.play_length,
+           static_cast<unsigned long long>(event.submit_timestamp_ms),
+           event.detail0, event.detail1);
+  }
+  PrintXAudioTraceFormat(event.format);
+  printf("\n");
+}
+
+bool DumpXAudioTrace(DWORD pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION |
+                                   PROCESS_VM_READ,
+                               FALSE, pid);
+  if (process == nullptr) {
+    fprintf(stderr, "OpenProcess(pid=%lu) 失败：%lu\n", pid, GetLastError());
+    return false;
+  }
+  RemoteHookModule module;
+  uint32_t export_rva = 0;
+  XAudioTraceHeaderSnapshot header;
+  DWORD module_error = ERROR_SUCCESS;
+  if (!FindRemoteXAudioTrace(process, pid, &module, &export_rva, &header,
+                             &module_error)) {
+    fprintf(stderr,
+            "找不到 pid=%lu 中带 %s 数据导出的 live hook DLL：%lu\n",
+            pid, fushi_voice_hook::kXAudioTraceExportName, module_error);
+    CloseHandle(process);
+    return false;
+  }
+  if (export_rva > module.image_size ||
+      sizeof(fushi_voice_hook::XAudioTraceBuffer) >
+          static_cast<size_t>(module.image_size - export_rva) ||
+      module.base > (std::numeric_limits<uintptr_t>::max)() - export_rva) {
+    fprintf(stderr, "XAudio trace 导出 RVA 越过远程模块边界\n");
+    CloseHandle(process);
+    return false;
+  }
+  const uintptr_t trace_address = module.base + export_rva;
+  if (header.magic != fushi_voice_hook::kXAudioTraceMagic ||
+      header.version != fushi_voice_hook::kXAudioTraceVersion ||
+      header.event_size != sizeof(fushi_voice_hook::XAudioTraceEvent) ||
+      header.slot_size != sizeof(fushi_voice_hook::XAudioTraceSlot) ||
+      header.capacity != fushi_voice_hook::kXAudioTraceCapacity ||
+      header.next_sequence < 0 || header.dropped_busy < 0) {
+    fprintf(stderr,
+            "XAudio trace ABI 不匹配：magic=0x%08x version=%u event=%u "
+            "slot=%u capacity=%u\n",
+            header.magic, header.version, header.event_size, header.slot_size,
+            header.capacity);
+    CloseHandle(process);
+    return false;
+  }
+  printf(
+      "xaudio_trace pid=%lu module=%ls base=0x%llx export_rva=0x%08x "
+      "next=%llu dropped_busy=%llu capacity=%u\n",
+      pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
+      export_rva, static_cast<unsigned long long>(header.next_sequence),
+      static_cast<unsigned long long>(header.dropped_busy), header.capacity);
+
+  const uint64_t next = static_cast<uint64_t>(header.next_sequence);
+  const uint64_t first =
+      next > header.capacity ? next - header.capacity + 1u : 1u;
+  uint32_t accepted = 0;
+  uint32_t unstable = 0;
+  for (uint64_t expected = first; expected <= next; ++expected) {
+    const uint64_t index = (expected - 1u) % header.capacity;
+    const uint64_t slot_offset =
+        offsetof(fushi_voice_hook::XAudioTraceBuffer, slots) +
+        index * sizeof(fushi_voice_hook::XAudioTraceSlot);
+    if (slot_offset > (std::numeric_limits<uintptr_t>::max)() - trace_address) {
+      ++unstable;
+      continue;
+    }
+    const uintptr_t slot_address =
+        trace_address + static_cast<uintptr_t>(slot_offset);
+    const uintptr_t sequence_address =
+        slot_address + offsetof(fushi_voice_hook::XAudioTraceSlot, event) +
+        offsetof(fushi_voice_hook::XAudioTraceEvent, sequence);
+    LONG writing_before = 0;
+    LONG writing_after = 0;
+    uint64_t sequence_before = 0;
+    uint64_t sequence_after = 0;
+    fushi_voice_hook::XAudioTraceSlot slot;
+    // Cross-process seqlock read: publication sequence, entire numeric slot,
+    // then publication sequence again.  The try-claim flag closes the small
+    // window before a wrapping writer invalidates the old sequence.
+    const bool stable =
+        ReadRemoteExact(process, sequence_address, &sequence_before,
+                        sizeof(sequence_before)) &&
+        ReadRemoteExact(process, slot_address, &writing_before,
+                        sizeof(writing_before)) &&
+        ReadRemoteExact(process, slot_address, &slot, sizeof(slot)) &&
+        ReadRemoteExact(process, sequence_address, &sequence_after,
+                        sizeof(sequence_after)) &&
+        ReadRemoteExact(process, slot_address, &writing_after,
+                        sizeof(writing_after)) &&
+        writing_before == 0 && slot.writing == 0 && writing_after == 0 &&
+        sequence_before == expected && slot.event.sequence == expected &&
+        sequence_after == expected;
+    if (!stable) {
+      ++unstable;
+      continue;
+    }
+    ++accepted;
+    PrintXAudioTraceEvent(slot.event);
+  }
+  printf("xaudio_trace_summary accepted=%u gaps_or_unstable=%u\n", accepted,
+         unstable);
+  CloseHandle(process);
+  return true;
 }
 
 }  // namespace
@@ -730,6 +1284,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: fushi_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n"
             "  或导出: <pid> --dump-text | --dump-text-events | --list-clips\n"
+            "         <pid> --dump-xaudio-trace\n"
             "         <pid> --select-text-thread <thread_id|0>\n"
             "         <pid> --dump-wav|--dump-utterance <ts_ms> <out.wav>\n"
             "         <pid> --dump-sources <ts_ms> <prefix>\n"
@@ -741,6 +1296,13 @@ int main(int argc, char** argv) {
   const int interval_ms = (argc >= 4) ? atoi(argv[3]) : 500;
   const bool select_text_thread =
       argc >= 4 && strcmp(argv[2], "--select-text-thread") == 0;
+
+  // The fixed XAudio trace is exported by the remote hook DLL rather than the
+  // SharedHeader mapping.  Resolve and read it before opening shared IPC so the
+  // command remains useful even when the mapping is unavailable or mismatched.
+  if (argc >= 3 && strcmp(argv[2], "--dump-xaudio-trace") == 0) {
+    return DumpXAudioTrace(pid) ? 0 : 2;
+  }
 
   const std::wstring shm = SharedMemoryName(pid);
   // BUG-1594：映射必须带 FILE_MAP_WRITE，哪怕本工具一个字节都不写。文本槽枚举走契约头的
@@ -908,9 +1470,10 @@ int main(int argc, char** argv) {
     const uint64_t twc = header->text_write_count;
     const uint64_t cwc = header->clip_write_count;
     const uint64_t uwc = header->unity_voice_write_count;
-    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x hookio=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
+    printf("     [v10] text_hooked=%u luna_active=%u decdiag=0x%08x hookdiag=0x%08x hookio=0x%08x xaudiodiag=0x%08x text_events=%llu voice_clips=%llu unity_events=%llu",
            text_hooked, header->luna_active, header->reserved_luna,
            header->hook_diagnostics, header->reserved_hook_diagnostics,
+           header->xaudio_diagnostics,
            static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc),
            static_cast<unsigned long long>(uwc));
@@ -946,11 +1509,28 @@ int main(int argc, char** argv) {
       }
     }
     printf("\n");
-    // C.2f loopback 兜底捕获状态：诊断位 + 混音格式 + 累计字节 + 标记数（主代理据此确认 loopback
-    // 真在抓）。lbdiag 位：0x01 线程启动/0x02 设备就绪/0x04 捕获启动/0x08 抓到非静音/0x10 见静音包/
-    // 0x40 未知格式按静音填/0x80 初始化失败。
+    // C.2f/v16 loopback：policy 四元组是生命周期确认，diag/格式/字节只作观测。
+    // 0x20 精确表示已准备调用 AUDCLNT_STREAMFLAGS_LOOPBACK Initialize；deny 的隐私
+    // 证明必须是 requested=0、request_seq==applied_seq、state=stopped，且新会话 diag 无
+    // worker/Initialize 位，而不能只看 total==0。
+    const uint32_t native_loopback_requested =
+        fushi_voice_hook::AtomicLoadShared32(
+            &header->native_loopback_requested);
+    const uint32_t native_loopback_request_seq =
+        fushi_voice_hook::AtomicLoadShared32(
+            &header->native_loopback_request_seq);
+    const uint32_t native_loopback_state =
+        fushi_voice_hook::AtomicLoadShared32(&header->native_loopback_state);
+    const uint32_t native_loopback_applied_seq =
+        fushi_voice_hook::AtomicLoadShared32(
+            &header->native_loopback_applied_seq);
     printf(
-        "     [lb] lbdiag=0x%02x sr=%u ch=%u bits=%u total=%llu markers=%llu\n",
+        "     [lb] native_loopback_requested=%u request_seq=%u "
+        "state=%s(%u) applied_seq=%u lbdiag=0x%08x sr=%u ch=%u bits=%u "
+        "total=%llu markers=%llu\n",
+        native_loopback_requested, native_loopback_request_seq,
+        NativeLoopbackStateName(native_loopback_state), native_loopback_state,
+        native_loopback_applied_seq,
         header->loopback_diag, header->loopback_sample_rate,
         header->loopback_channels, header->loopback_bits_per_sample,
         static_cast<unsigned long long>(header->loopback_total_written),

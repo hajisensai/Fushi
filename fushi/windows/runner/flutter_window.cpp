@@ -2071,6 +2071,18 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                flutter::EncodableValue(s.text_lane_recycles)},
               {flutter::EncodableValue("textLaneOverflows"),
                flutter::EncodableValue(s.text_lane_overflows)},
+              {flutter::EncodableValue("nativeLoopbackRequested"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_requested))},
+              {flutter::EncodableValue("nativeLoopbackRequestSeq"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_request_seq))},
+              {flutter::EncodableValue("nativeLoopbackState"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_state))},
+              {flutter::EncodableValue("nativeLoopbackAppliedSeq"),
+               flutter::EncodableValue(
+                   static_cast<int64_t>(s.native_loopback_applied_seq))},
               {flutter::EncodableValue("ready"),
                flutter::EncodableValue(s.ok || s.raw_voice_ready)},
           };
@@ -2130,6 +2142,39 @@ void FlutterWindow::RegisterVoiceHookChannel() {
         if (method == "status") {
           result->Success(flutter::EncodableValue(
               status_map(fushi::VoiceHookReader::Instance().Status())));
+          return;
+        }
+        if (method == "requestNativeLoopbackPolicy") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          const std::string* policy = nullptr;
+          if (args != nullptr) {
+            const auto it =
+                args->find(flutter::EncodableValue("policy"));
+            if (it != args->end()) {
+              policy = std::get_if<std::string>(&it->second);
+            }
+          }
+          if (policy == nullptr ||
+              (*policy != "allow" && *policy != "deny")) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("invalid_policy"))}}));
+            return;
+          }
+          const uint32_t request_seq =
+              fushi::VoiceHookReader::Instance().RequestNativeLoopbackPolicy(
+                  *policy == "allow");
+          if (request_seq == 0) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("not_open"))}}));
+            return;
+          }
+          // Return a full snapshot so Dart can often satisfy an already-
+          // applied idempotent request without an extra status round-trip.
+          result->Success(flutter::EncodableValue(status_map(
+              fushi::VoiceHookReader::Instance().Status())));
           return;
         }
         if (method == "grabRecent") {

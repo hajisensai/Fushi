@@ -45,10 +45,11 @@ constexpr int kLunaMaxFoldScanChars = 4096;
 // Some MAGES scenario strings expose script controls literally. Under Japanese
 // fonts the reverse solidus is rendered as a yen sign, so a line break can
 // arrive as `\\n`, `¥n`, `￥n`, or the MAGES-native `%r`. Inline font colors use
-// `#RRGGBB;` (for example `#ff8A00;コスプレ`). Strip only the control prefix and
-// preserve the styled text. This transformation is profile-gated by executable
-// SHA-256; keeping it out of the global path avoids changing legitimate
-// prose/code in unrelated games.
+// `#RRGGBB;` (for example `#ff8A00;コスプレ`). Glyph-spacing controls use `%p;`
+// or `%p<signed integer>;` (for example `%p-1;─%p;─`). Strip only the control
+// prefix and preserve the styled/positioned text. This transformation is
+// profile-gated by executable SHA-256; keeping it out of the global path avoids
+// changing legitimate prose/code in unrelated games.
 inline std::wstring LunaNormalizeMagesControls(const wchar_t* text, int len,
                                                bool enabled) {
   if (text == nullptr || len <= 0) return std::wstring();
@@ -61,6 +62,24 @@ inline std::wstring LunaNormalizeMagesControls(const wchar_t* text, int len,
       normalized.push_back(L'\n');
       ++i;
       continue;
+    }
+    if (c == L'%' && i + 2 < len && text[i + 1] == L'p') {
+      int end = i + 2;
+      bool has_sign = false;
+      if (text[end] == L'+' || text[end] == L'-') {
+        has_sign = true;
+        ++end;
+      }
+      const int digits_begin = end;
+      while (end < len && text[end] >= L'0' && text[end] <= L'9') ++end;
+      const bool has_digits = end > digits_begin;
+      // `%p;` is the reset form. Signed forms require at least one digit so a
+      // malformed/literal `%p-;` remains visible rather than losing user text.
+      if (end < len && text[end] == L';' &&
+          ((!has_sign && !has_digits) || has_digits)) {
+        i = end;
+        continue;
+      }
     }
     if (c == L'#' && i + 7 < len && text[i + 7] == L';') {
       bool is_color = true;

@@ -368,6 +368,7 @@ class EvidenceContractTest(unittest.TestCase):
             {
                 "hookdiag": 0x00000001,
                 "hookio": 0x80000020,
+                "xaudiodiag": 0x00002808,
                 "lunadiag": 0x10000000,
             },
         )
@@ -384,6 +385,15 @@ class EvidenceContractTest(unittest.TestCase):
             [item["name"] for item in report["hookio"]["set"]],
         )
         self.assertEqual("0x00000000", report["hookio"]["unknown_bits"])
+        self.assertEqual(
+            [
+                "kXAudioDiagArenaExhausted",
+                "kXAudioDiagDeferredQueued",
+                "kXAudioDiagCommitObserved",
+            ],
+            [item["name"] for item in report["xaudiodiag"]["set"]],
+        )
+        self.assertEqual("0x00000000", report["xaudiodiag"]["unknown_bits"])
         self.assertIn(
             "kDiagSiglusOvkHooksReady",
             [item["name"] for item in report["lunadiag"]["set"]],

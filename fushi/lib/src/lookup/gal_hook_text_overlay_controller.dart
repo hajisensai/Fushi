@@ -980,8 +980,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
     if (result.aborted) {
       FushiToast.showMine(
-        msg:
-            '${t.external_window_capture_failed}：${result.failureReason ?? ''}',
+        // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
+        // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
+        msg: result.audioFallbackDisabled
+            ? t.game_audio_fallback_disabled_missing
+            : result.failureReason != null
+                ? '${t.external_window_capture_failed}：${result.failureReason}'
+                : t.external_window_capture_failed,
         status: MineToastStatus.failed,
       );
       return result.toPopupReply();

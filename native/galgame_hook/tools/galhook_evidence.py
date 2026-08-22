@@ -67,7 +67,7 @@ SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 ENGINE_ID = re.compile(r"^[a-z][a-z0-9_]{1,47}$")
 CAPABILITY_REF = re.compile(r"^(text|audio):[a-z][a-z0-9_]{1,63}$")
 DIAG_CONSTANT = re.compile(
-    r"constexpr\s+uint32_t\s+(kDiag[A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)u?;"
+    r"constexpr\s+uint32_t\s+(k(?:Diag|XAudioDiag)[A-Za-z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)u?;"
 )
 
 
@@ -800,12 +800,14 @@ def load_diag_constants(header: Path) -> dict[str, list[tuple[str, int]]]:
     anchors = {
         "hookdiag": "constexpr uint32_t kDiagStartupAudioHooksReady",
         "hookio": "constexpr uint32_t kDiagMalieArchiveHandleTracked",
+        "xaudiodiag": "constexpr uint32_t kXAudioDiagQueueReady",
         "lunadiag": "constexpr uint32_t kDiagKirikiriVoiceStreamHookReady",
     }
     offsets = {name: text.index(anchor) for name, anchor in anchors.items()}
     sections = {
         "hookdiag": text[offsets["hookdiag"] : offsets["hookio"]],
-        "hookio": text[offsets["hookio"] : offsets["lunadiag"]],
+        "hookio": text[offsets["hookio"] : offsets["xaudiodiag"]],
+        "xaudiodiag": text[offsets["xaudiodiag"] : offsets["lunadiag"]],
         "lunadiag": text[offsets["lunadiag"] :],
     }
     result: dict[str, list[tuple[str, int]]] = {}

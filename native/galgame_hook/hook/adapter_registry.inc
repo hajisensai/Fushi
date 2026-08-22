@@ -19,11 +19,11 @@ class GenericWindowsAudioAdapter final
   const char* id() const override { return "xaudio2_directsound"; }
   bool probe() const override { return true; }
   bool install() override {
-    InitializeXAudioAdpcmQueue();
+    const bool queue_ready = InitializeXAudioCaptureQueue();
     TryHookXAudio2Create();
     TryHookDirectSoundCreate();
-    installed_ = true;
-    return true;
+    installed_ = installed_ || queue_ready;
+    return queue_ready;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kPcmAudio;
@@ -36,14 +36,14 @@ class GenericWindowsAudioAdapter final
       install();
     }
   }
-  void ProcessPendingEvents() { ProcessPendingXAudioAdpcmJobs(); }
+  void ProcessPendingEvents() { ProcessPendingXAudioCaptureJobs(); }
   void shutdown() override {
-    ShutdownXAudioAdpcmQueue();
+    ShutdownXAudioCaptureQueue();
     installed_ = false;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
-            g_header == nullptr ? 0u : g_header->hook_diagnostics};
+            g_header == nullptr ? 0u : g_header->xaudio_diagnostics};
   }
 
  private:
@@ -303,23 +303,167 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
   const char* id() const override { return "process_loopback"; }
   bool probe() const override { return true; }
   bool install() override {
-    if (g_lb_thread == nullptr) {
-      g_lb_thread =
-          CreateThread(nullptr, 0, LoopbackWorker, nullptr, 0, nullptr);
-    }
-    installed_ = g_lb_thread != nullptr;
+    PollPolicy();
     return installed_;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
-  void shutdown() override {
-    if (g_lb_thread != nullptr) {
-      WaitForSingleObject(g_lb_thread, 2000);
-      CloseHandle(g_lb_thread);
-      g_lb_thread = nullptr;
+
+  // HookWorker is the single lifecycle controller. The capture worker only
+  // reports process-local phase; it never acknowledges shared policy, so an
+  // older generation cannot overwrite a newer request's state/applied_seq.
+  void PollPolicy() {
+    using fushi_voice_hook::NativeLoopbackPolicyAction;
+    using fushi_voice_hook::NativeLoopbackWorkerPhase;
+
+    const fushi_voice_hook::NativeLoopbackRequestSnapshot request =
+        fushi_voice_hook::ReadNativeLoopbackRequest(g_header);
+    if (!request.valid) return;  // uninitialised/tearing request is deny.
+
+    if (thread_ != nullptr && WaitForSingleObject(thread_, 0) == WAIT_OBJECT_0) {
+      DWORD exit_code = 1;
+      GetExitCodeThread(thread_, &exit_code);
+      const uint32_t completed_request_seq =
+          static_cast<uint32_t>(InterlockedCompareExchange(
+              &control_.request_seq, 0, 0));
+      const bool stop_was_requested =
+          InterlockedCompareExchange(&control_.stop_requested, 0, 0) != 0;
+      CloseHandle(thread_);
+      thread_ = nullptr;
+      installed_ = false;
+      InterlockedExchange(&control_.phase, kLbWorkerIdle);
+      InterlockedExchange(&control_.stop_requested, 0);
+      InterlockedExchange(&control_.request_seq, 0);
+      if (fushi_voice_hook::NativeLoopbackWorkerFailureApplies(
+              request, completed_request_seq, stop_was_requested,
+              exit_code)) {
+        failed_request_seq_ = request.seq;
+      } else {
+        failed_request_seq_ = 0;
+      }
     }
+
+    NativeLoopbackWorkerPhase phase = NativeLoopbackWorkerPhase::kAbsent;
+    if (thread_ != nullptr) {
+      const LONG worker_phase =
+          InterlockedCompareExchange(&control_.phase, 0, 0);
+      const bool generation_changed =
+          static_cast<uint32_t>(InterlockedCompareExchange(
+              &control_.request_seq, 0, 0)) != request.seq;
+      if (generation_changed) {
+        // Even allow->deny->allow entirely between two Poll calls cannot keep
+        // the old capture generation alive.
+        InterlockedExchange(&control_.stop_requested, 1);
+      }
+      const bool stopping = generation_changed ||
+          InterlockedCompareExchange(&control_.stop_requested, 0, 0) != 0 ||
+          worker_phase == kLbWorkerStopping || worker_phase == kLbWorkerExited;
+      if (stopping) {
+        phase = NativeLoopbackWorkerPhase::kStopping;
+      } else if (worker_phase == kLbWorkerRunning) {
+        phase = NativeLoopbackWorkerPhase::kRunning;
+      } else {
+        phase = NativeLoopbackWorkerPhase::kStarting;
+      }
+    }
+
+    const bool failed_for_request =
+        thread_ == nullptr && failed_request_seq_ == request.seq &&
+        request.requested == fushi_voice_hook::kNativeLoopbackAllow;
+    const NativeLoopbackPolicyAction action =
+        fushi_voice_hook::DecideNativeLoopbackPolicyAction(
+            request, phase, failed_for_request);
+    switch (action) {
+      case NativeLoopbackPolicyAction::kStartWorker:
+        // Revalidate immediately before the only loopback CreateThread call.
+        // The worker independently rechecks policy before COM/Initialize/Start.
+        if (!fushi_voice_hook::NativeLoopbackRequestMatches(g_header,
+                                                             request)) {
+          return;
+        }
+        failed_request_seq_ = 0;
+        InterlockedExchange(&control_.stop_requested, 0);
+        InterlockedExchange(&control_.request_seq,
+                            static_cast<LONG>(request.seq));
+        InterlockedExchange(&control_.phase, kLbWorkerStarting);
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStarting);
+        thread_ =
+            CreateThread(nullptr, 0, LoopbackWorker, &control_, 0, nullptr);
+        installed_ = thread_ != nullptr;
+        if (thread_ == nullptr) {
+          InterlockedExchange(&control_.phase, kLbWorkerIdle);
+          InterlockedExchange(&control_.request_seq, 0);
+          failed_request_seq_ = request.seq;
+          fushi_voice_hook::PublishNativeLoopbackApplied(
+              g_header, request,
+              fushi_voice_hook::kNativeLoopbackStateFailed);
+        }
+        return;
+      case NativeLoopbackPolicyAction::kRequestStop:
+        InterlockedExchange(&control_.stop_requested, 1);
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStopping);
+        return;
+      case NativeLoopbackPolicyAction::kPublishStarting:
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStarting);
+        return;
+      case NativeLoopbackPolicyAction::kPublishStopping:
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStopping);
+        return;
+      case NativeLoopbackPolicyAction::kAcknowledgeStopped:
+        // There is no worker HANDLE here: any previous thread has completed
+        // Stop/Release/CoUninitialize and was reaped above.
+        failed_request_seq_ = 0;
+        fushi_voice_hook::PublishNativeLoopbackApplied(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStopped);
+        return;
+      case NativeLoopbackPolicyAction::kAcknowledgeRunning:
+        fushi_voice_hook::PublishNativeLoopbackApplied(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateRunning);
+        return;
+      case NativeLoopbackPolicyAction::kAcknowledgeFailed:
+        fushi_voice_hook::PublishNativeLoopbackApplied(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateFailed);
+        return;
+      case NativeLoopbackPolicyAction::kNone:
+        return;
+    }
+  }
+
+  bool transition_pending() {
+    if (g_header == nullptr) return false;
+    const bool request_pending = fushi_voice_hook::AtomicLoadShared32(
+               &g_header->native_loopback_request_seq) !=
+               fushi_voice_hook::AtomicLoadShared32(
+                   &g_header->native_loopback_applied_seq);
+    const LONG phase = InterlockedCompareExchange(&control_.phase, 0, 0);
+    return request_pending ||
+           (thread_ != nullptr && phase != kLbWorkerRunning);
+  }
+
+  void shutdown() override {
+    if (thread_ != nullptr) {
+      InterlockedExchange(&control_.stop_requested, 1);
+      // This runs on HookWorker, outside loader lock. The context is a member
+      // of this stack object, so returning before the worker exits would be a
+      // use-after-free; wait for the complete COM reverse-release.
+      WaitForSingleObject(thread_, INFINITE);
+      CloseHandle(thread_);
+      thread_ = nullptr;
+    }
+    InterlockedExchange(&control_.phase, kLbWorkerIdle);
     installed_ = false;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
@@ -328,6 +472,9 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  HANDLE thread_ = nullptr;
+  LoopbackWorkerControl control_;
+  uint32_t failed_request_seq_ = 0;
   bool installed_ = false;
 };
 
@@ -357,9 +504,12 @@ class AdapterRegistry {
 #include "generated/adapter_startup.inc"
   }
 
+  // Policy is already present in the mapping before InjectDll. Exact deny
+  // acknowledges stopped without creating a loopback worker or entering COM.
   void InstallFallbackAdapters() { loopback_.install(); }
 
   void Poll() {
+    loopback_.PollPolicy();
     DispatchNewModules();
     generic_audio_.ProcessPendingEvents();
     unity_.ProcessPendingEvents();
@@ -405,7 +555,8 @@ class AdapterRegistry {
     }
   }
 
-  DWORD PollDelayMs() const {
+  DWORD PollDelayMs() {
+    if (loopback_.transition_pending()) return 10;
     return siglus_.probe() && !siglus_.audio_ready() ? 1 : 200;
   }
 

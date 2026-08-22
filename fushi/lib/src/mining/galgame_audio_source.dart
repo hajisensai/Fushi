@@ -943,6 +943,7 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 List<String> buildEngineHookInjectorArguments({
   required int targetPid,
   required String? launchExe,
+  GalNativeLoopbackPolicy nativeLoopbackPolicy = GalNativeLoopbackPolicy.deny,
   List<String> gameArguments = const <String>[],
   String workdir = '',
   bool japaneseLocale = false,
@@ -958,6 +959,13 @@ List<String> buildEngineHookInjectorArguments({
   final List<String> args = launchMode
       ? <String>['--launch', exe, '--hold']
       : <String>['--pid', '$targetPid', '--hold'];
+  // v16 fail-closed contract: the helper default is deny, but the host still
+  // spells out every decision. This keeps launch/attach/retry auditable and
+  // prevents an old implicit default from silently becoming capture-capable.
+  args.addAll(<String>[
+    '--native-loopback-policy',
+    nativeLoopbackPolicy.cliValue,
+  ]);
   if (readyTimeoutMs > 0) {
     args.addAll(<String>['--wait-ms', '$readyTimeoutMs']);
   }
@@ -1000,6 +1008,46 @@ typedef GalHookProcessStarter = Future<Process> Function(
   String executable,
   List<String> arguments,
 );
+
+/// Whether the installed injector proves the v16 fail-closed native loopback
+/// contract without opening or injecting any target process.
+typedef GalHookCapabilitiesProbe = Future<bool> Function(String executable);
+
+enum GalNativeLoopbackPolicy {
+  deny,
+  allow;
+
+  String get cliValue => name;
+}
+
+const String kGalNativeLoopbackPolicyCapability = 'native_loopback_policy_v1';
+
+/// The capability output is deliberately an exact, single-token contract.
+/// Accepting a substring would let an error message or an older multi-line
+/// helper accidentally pass the safety gate.
+bool hasGalNativeLoopbackPolicyCapability({
+  required int exitCode,
+  required Object? stdout,
+}) =>
+    exitCode == 0 &&
+    stdout is String &&
+    stdout.trim() == kGalNativeLoopbackPolicyCapability;
+
+Future<bool> _probeGalHookCapabilities(String executable) async {
+  try {
+    final ProcessResult result = await Process.run(
+      executable,
+      const <String>['--capabilities'],
+      runInShell: false,
+    );
+    return hasGalNativeLoopbackPolicyCapability(
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+    );
+  } on ProcessException {
+    return false;
+  }
+}
 
 typedef GalHookProcessOutputSink = void Function(
   bool isStderr,
@@ -1050,17 +1098,23 @@ class EngineHookGalAudioSource implements GalAudioSource {
     this.lunaCodepage,
     this.lunaHookProfilePath,
     this.lunaHookCodes = const <String>[],
+    GalNativeLoopbackPolicy nativeLoopbackPolicy = GalNativeLoopbackPolicy.deny,
     MethodChannel? channel,
     GalHookProcessStarter? processStarter,
+    GalHookCapabilitiesProbe? capabilitiesProbe,
     GalHookProcessOutputSink? processOutputSink,
     Duration readyTimeout = const Duration(seconds: 30),
     Duration pollInterval = const Duration(milliseconds: 200),
+    Duration nativeLoopbackPolicyTimeout = const Duration(seconds: 5),
   })  : _channel =
             channel ?? const MethodChannel('app.fushi.reader/voice_hook'),
         _processStarter = processStarter ?? _startGalHookProcess,
+        _capabilitiesProbe = capabilitiesProbe ?? _probeGalHookCapabilities,
         _processOutputSink = processOutputSink ?? _logGalHookProcessOutput,
         _readyTimeout = readyTimeout,
-        _pollInterval = pollInterval;
+        _pollInterval = pollInterval,
+        _nativeLoopbackPolicyTimeout = nativeLoopbackPolicyTimeout,
+        _nativeLoopbackPolicy = nativeLoopbackPolicy;
 
   /// **attach 模式**目标游戏进程 PID（注入对象）。仅 [launchExe] 为空时用；<=0 且无
   /// [launchExe] 视为无目标 -> 源不可用。
@@ -1113,9 +1167,26 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   final MethodChannel _channel;
   final GalHookProcessStarter _processStarter;
+  final GalHookCapabilitiesProbe _capabilitiesProbe;
   final GalHookProcessOutputSink _processOutputSink;
   final Duration _readyTimeout;
   final Duration _pollInterval;
+  final Duration _nativeLoopbackPolicyTimeout;
+
+  GalNativeLoopbackPolicy _nativeLoopbackPolicy;
+  bool _mappingOpen = false;
+  bool _startInProgress = false;
+  Completer<bool>? _mappingOpenCompleter;
+  Future<void>? _stopInFlight;
+
+  GalNativeLoopbackPolicy get nativeLoopbackPolicy => _nativeLoopbackPolicy;
+
+  /// Remember a policy before [start] builds the injector command line.
+  /// This is synchronous by design so the controller can restore per-game
+  /// settings before launch/attach/retry without opening any native resource.
+  void rememberNativeLoopbackPolicy(GalNativeLoopbackPolicy policy) {
+    _nativeLoopbackPolicy = policy;
+  }
 
   /// 拉起的 injector 子进程句柄（[stop] 时杀掉）。
   Process? _injector;
@@ -1255,8 +1326,128 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
+  static int _nativePolicyWord(Map<Object?, Object?> status, String key) {
+    final Object? value = status[key];
+    return value is int ? value : -1;
+  }
+
+  static bool _nativePolicyAcknowledged(
+    Map<Object?, Object?> status, {
+    required GalNativeLoopbackPolicy policy,
+    required int requestSeq,
+  }) {
+    if (requestSeq <= 0 ||
+        _nativePolicyWord(status, 'nativeLoopbackRequestSeq') != requestSeq ||
+        _nativePolicyWord(status, 'nativeLoopbackAppliedSeq') != requestSeq) {
+      return false;
+    }
+    final int requested = _nativePolicyWord(status, 'nativeLoopbackRequested');
+    final int state = _nativePolicyWord(status, 'nativeLoopbackState');
+    return switch (policy) {
+      GalNativeLoopbackPolicy.deny => requested == 0 && state == 0,
+      GalNativeLoopbackPolicy.allow => requested == 1 && state == 2,
+    };
+  }
+
+  /// Publish a runtime native-loopback policy and wait for the DLL lifecycle
+  /// acknowledgement. `deny` completes only after the worker is stopped and
+  /// reaped; `allow` completes only when it is running. This method controls
+  /// capture only—it never touches the game's render/output audio API.
+  ///
+  /// During injection, callers wait for [open] instead of returning early, so
+  /// a full→clean switch cannot lose the source merely because it is between
+  /// process spawn and shared-memory open. A newer request supersedes an older
+  /// waiter; the older waiter then exits without re-publishing stale policy.
+  Future<bool> requestNativeLoopbackPolicy(
+    GalNativeLoopbackPolicy policy,
+  ) async {
+    _nativeLoopbackPolicy = policy;
+    if (!_mappingOpen) {
+      final Completer<bool>? opened = _mappingOpenCompleter;
+      if (!_startInProgress || opened == null) {
+        return true; // remembered for the next injector command line
+      }
+      if (!await opened.future || !_mappingOpen) {
+        return policy == GalNativeLoopbackPolicy.deny;
+      }
+    }
+
+    while (_mappingOpen && _nativeLoopbackPolicy == policy) {
+      Map<Object?, Object?>? requested;
+      try {
+        requested = await _channel.invokeMethod<Map<Object?, Object?>>(
+          'requestNativeLoopbackPolicy',
+          <String, Object?>{'policy': policy.cliValue},
+        );
+      } on PlatformException {
+        return false;
+      } on MissingPluginException {
+        return false;
+      }
+      if (requested == null || requested['error'] != null) return false;
+      final int requestSeq =
+          _nativePolicyWord(requested, 'nativeLoopbackRequestSeq');
+      if (requestSeq <= 0) return false;
+
+      final Stopwatch wait = Stopwatch()..start();
+      Map<Object?, Object?> status = requested;
+      while (_mappingOpen && wait.elapsed < _nativeLoopbackPolicyTimeout) {
+        if (_nativePolicyAcknowledged(
+          status,
+          policy: policy,
+          requestSeq: requestSeq,
+        )) {
+          return true;
+        }
+        // The applied generation reached this request but allow failed. The
+        // helper has already cleaned up; do not pretend capture is running.
+        if (policy == GalNativeLoopbackPolicy.allow &&
+            _nativePolicyWord(status, 'nativeLoopbackAppliedSeq') ==
+                requestSeq &&
+            _nativePolicyWord(status, 'nativeLoopbackState') == 4) {
+          return false;
+        }
+        if (_nativeLoopbackPolicy != policy) return true;
+        final int observedRequest =
+            _nativePolicyWord(status, 'nativeLoopbackRequestSeq');
+        if (observedRequest > 0 && observedRequest != requestSeq) {
+          break; // superseded externally; re-publish only if still desired
+        }
+        if (_pollInterval > Duration.zero) {
+          await Future<void>.delayed(_pollInterval);
+        }
+        try {
+          final Map<Object?, Object?>? next =
+              await _channel.invokeMethod<Map<Object?, Object?>>('status');
+          if (next == null || next['error'] != null) return false;
+          status = next;
+        } on PlatformException {
+          return false;
+        } on MissingPluginException {
+          return false;
+        }
+      }
+      if (_nativeLoopbackPolicy != policy) return true;
+      if (!_mappingOpen) return policy == GalNativeLoopbackPolicy.deny;
+      if (wait.elapsed >= _nativeLoopbackPolicyTimeout) return false;
+    }
+    return policy == GalNativeLoopbackPolicy.deny ||
+        _nativeLoopbackPolicy != policy;
+  }
+
+  void _finishStartWait({required bool opened}) {
+    _startInProgress = false;
+    final Completer<bool>? completer = _mappingOpenCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(opened);
+    }
+  }
+
   @override
   Future<PcmFormat?> start() async {
+    _startInProgress = true;
+    _mappingOpen = false;
+    _mappingOpenCompleter = Completer<bool>();
     _textHookReady = false;
     _audioHooksReady = false;
     _rawVoiceReady = false;
@@ -1269,6 +1460,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _lastFailure = const GalHookInjectorDiagnostics(
         failure: GalHookInjectorFailure.helperMissing,
       );
+      _finishStartWait(opened: false);
       return null; // 无 injector -> 降级
     }
     final String? exe = launchExe;
@@ -1277,7 +1469,25 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _lastFailure = const GalHookInjectorDiagnostics(
         failure: GalHookInjectorFailure.targetMissing,
       );
+      _finishStartWait(opened: false);
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
+    }
+    // Safety gate: old helpers silently ignore unknown flags. Prove the exact
+    // v16 capability in a target-free process before we ever spawn an
+    // injection command; no capability means no launch, attach, or retry.
+    var supportsNativeLoopbackPolicy = false;
+    try {
+      supportsNativeLoopbackPolicy = await _capabilitiesProbe(path);
+    } on Object {
+      supportsNativeLoopbackPolicy = false;
+    }
+    if (!supportsNativeLoopbackPolicy) {
+      _lastFailure = const GalHookInjectorDiagnostics(
+        failure: GalHookInjectorFailure.protocolMismatch,
+        stderrTail: 'injector capability native_loopback_policy_v1 unavailable',
+      );
+      _finishStartWait(opened: false);
+      return null;
     }
     _sessionStartedAt = DateTime.now();
     final bool japaneseLocale = resolveJapaneseLocale(
@@ -1295,6 +1505,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
         buildEngineHookInjectorArguments(
           targetPid: targetPid,
           launchExe: exe,
+          nativeLoopbackPolicy: _nativeLoopbackPolicy,
           gameArguments: launchArguments,
           workdir: launchWorkdir,
           japaneseLocale: japaneseLocale,
@@ -1314,6 +1525,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
         failure: GalHookInjectorFailure.spawnFailed,
         stderrTail: error.message,
       );
+      _finishStartWait(opened: false);
       return null;
     }
     _beginInjectorOutputDrain(_injector!);
@@ -1357,6 +1569,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
         await stop();
         return null;
       }
+      _mappingOpen = true;
+      final Completer<bool>? mappingOpen = _mappingOpenCompleter;
+      if (mappingOpen != null && !mappingOpen.isCompleted) {
+        mappingOpen.complete(true);
+      }
     } on PlatformException catch (error) {
       await _captureFailure(
         fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
@@ -1374,6 +1591,20 @@ class EngineHookGalAudioSource implements GalAudioSource {
       await stop();
       return null;
     }
+    // Re-publish after Open even though the injector set the initial CLI
+    // policy. A policy change while injection was in flight must win, and the
+    // returned acknowledgement is the only proof of the DLL's actual state.
+    final GalNativeLoopbackPolicy desiredPolicy = _nativeLoopbackPolicy;
+    if (!await requestNativeLoopbackPolicy(desiredPolicy)) {
+      await _captureFailure(
+        fallback: GalHookInjectorFailure.handshakeTimeout,
+        nativeDetail:
+            'native loopback policy ${desiredPolicy.cliValue} was not applied',
+      );
+      await stop();
+      return null;
+    }
+    _finishStartWait(opened: true);
     final Stopwatch sw = Stopwatch()..start();
     while (sw.elapsed < _readyTimeout) {
       final PcmFormat? fmt = await _pollFormat();
@@ -1826,7 +2057,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
         }
         final String name = _fileBaseName(e.path);
         final String lower = name.toLowerCase();
-        if (lower.endsWith('.ogg')) {
+        if (lower.endsWith('.ogg') || lower.endsWith('.xwma')) {
           oggNames.add(name);
           voiceFiles.add(e);
         } else if (lower.endsWith('.wav')) {
@@ -1915,7 +2146,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
         if (e is! File) continue;
         final String name = _fileBaseName(e.path);
         final String lower = name.toLowerCase();
-        if (!lower.endsWith('.ogg') && !lower.endsWith('.wav')) continue;
+        if (!lower.endsWith('.ogg') &&
+            !lower.endsWith('.wav') &&
+            !lower.endsWith('.xwma')) {
+          continue;
+        }
         names.add(name);
       }
     } catch (_) {
@@ -1964,7 +2199,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
       return null;
     }
     final String lower = resourceId.toLowerCase();
-    if (!lower.endsWith('.ogg') && !lower.endsWith('.wav')) return null;
+    if (!lower.endsWith('.ogg') &&
+        !lower.endsWith('.wav') &&
+        !lower.endsWith('.xwma')) {
+      return null;
+    }
     final File file = File(
       '${_galVoiceDumpDir().path}${Platform.pathSeparator}$resourceId',
     );
@@ -1992,7 +2231,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return file.existsSync() ? path : null;
   }
 
-  /// 取这句台词的原始语音字节。
+  /// 取这句台词的原始语音字节。单个 xWMA 资源直接返回原文件字节，
+  /// 不做 AAC 二次有损编码；OGG/WAV 与多资源合成仍走既有制卡容器链。
   ///
   /// BUG-1605：同一句可能有多个角色同时配音，引擎为同一条文本读入多个资源。这里取的是
   /// **全部**（主语音在前），交给 [transcodeVoiceResourcesToMiningAudio] 合成一段音频；
@@ -2018,6 +2258,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
     for (final File file in picked) {
       await awaitStableVoiceDumpFile(file);
     }
+    if (picked.length == 1 &&
+        picked.single.path.toLowerCase().endsWith('.xwma')) {
+      final Uint8List bytes = await picked.single.readAsBytes();
+      return bytes.isEmpty ? null : bytes;
+    }
     return transcodeVoiceResourcesToMiningAudio(
       resourcePaths: <String>[for (final File file in picked) file.path],
       tempDir: Directory.systemTemp.path,
@@ -2027,11 +2272,13 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// 轻量清理语音 dump 目录（[_galVoiceDumpDir]）：hook DLL 持续 dump，跨会话会无限增长。删
   /// 掉超过 [maxAge] 的旧文件、并把总数压到最新 [keepNewest] 个（按修改时间保新弃旧）。在引擎
-  /// -hook 就绪时调一次即可（本会话新 dump 都留着，清的是上一局残留）。非 Windows / 目录不存在
-  /// / 任何 IO 异常静默返回（清理失败不该影响制卡）。
+  /// -hook 就绪时调一次即可。保留窗口必须长于一次常规视觉小说游戏会话：Fushi 在
+  /// 游戏仍运行时重启会回放文本环，历史台词仍需要之前落盘的原始资源。30 分钟/400 个会把
+  /// 这些有效证据误删，使同一句在 UI 重启后变成 `line_audio_not_cached`。非 Windows /
+  /// 目录不存在 / 任何 IO 异常静默返回（清理失败不该影响制卡）。
   Future<void> pruneVoiceDump({
-    int keepNewest = 400,
-    Duration maxAge = const Duration(minutes: 30),
+    int keepNewest = 5000,
+    Duration maxAge = const Duration(hours: 24),
   }) async {
     if (!Platform.isWindows) {
       return;
@@ -2131,7 +2378,26 @@ class EngineHookGalAudioSource implements GalAudioSource {
   }
 
   @override
-  Future<void> stop() async {
+  Future<void> stop() {
+    final Future<void>? inFlight = _stopInFlight;
+    if (inFlight != null) return inFlight;
+    final Future<void> stopping = _stopInternal();
+    _stopInFlight = stopping;
+    return stopping.whenComplete(() {
+      if (identical(_stopInFlight, stopping)) _stopInFlight = null;
+    });
+  }
+
+  Future<void> _stopInternal() async {
+    // Stop is a capture-policy transaction: publish deny and wait until the
+    // injected worker confirms stopped/reaped before closing the mapping or
+    // killing its keeper process. No playback/XAudio engine method is called.
+    _nativeLoopbackPolicy = GalNativeLoopbackPolicy.deny;
+    if (_mappingOpen) {
+      await requestNativeLoopbackPolicy(GalNativeLoopbackPolicy.deny);
+    }
+    _mappingOpen = false;
+    _finishStartWait(opened: false);
     try {
       await _channel.invokeMethod<void>('close');
     } on PlatformException {
