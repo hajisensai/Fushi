@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1690 条。点号进各自文件。
+> 共 1691 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1812](bugs/BUG-1812-ios-reader-zero-vh-vw-margins.md) | ✅ | ✅ | iOS阅读器WebView视口单位为零导致四边页边距失效 |
 | [BUG-1811](bugs/BUG-1811-ios-interconnect-remote-audio-unpinned-player.md) | ✅ | ✅ | iOS互联远端音频绕过证书钉扎导致无法播放 |
 | [BUG-1810](bugs/BUG-1810-comprehensive-imports-never-opens-books.md) | ✅ | ✅ | 综合导入实测未打开书架导致已导入图书不可见 |
 | [BUG-1809](bugs/BUG-1809-ios-lyrics-load-data-no-load-stop.md) | ✅ | ✅ | iOS歌词loadData返回后不触发onLoadStop导致永不ready |
