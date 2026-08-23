@@ -152,6 +152,79 @@ class DictStyleProps {
         if (fontScale != null) 'fontScale': fontScale,
         if (cornerRadius != null) 'cornerRadius': cornerRadius,
       };
+
+  /// 逐属性覆写。**省略 = 保持原值，显式传 null = 清除该属性**。
+  ///
+  /// 普通 `copyWith` 在这里是坏的：null 既是「没传」又是「清空」，而「把颜色改回
+  /// 默认」恰恰就是传 null。故用 [unset] 哨兵区分两者。
+  DictStyleProps copyWith({
+    Object? textColor = unset,
+    Object? backgroundColor = unset,
+    Object? bold = unset,
+    Object? italic = unset,
+    Object? underline = unset,
+    Object? fontScale = unset,
+    Object? cornerRadius = unset,
+  }) {
+    return DictStyleProps(
+      textColor:
+          identical(textColor, unset) ? this.textColor : textColor as int?,
+      backgroundColor: identical(backgroundColor, unset)
+          ? this.backgroundColor
+          : backgroundColor as int?,
+      bold: identical(bold, unset) ? this.bold : bold as bool?,
+      italic: identical(italic, unset) ? this.italic : italic as bool?,
+      underline:
+          identical(underline, unset) ? this.underline : underline as bool?,
+      fontScale:
+          identical(fontScale, unset) ? this.fontScale : fontScale as double?,
+      cornerRadius: identical(cornerRadius, unset)
+          ? this.cornerRadius
+          : cornerRadius as double?,
+    );
+  }
+
+  /// [copyWith] 的「未传参」哨兵。公开的：调用方在别的库里也要能显式表达
+  /// 「这个字段不动」。
+  static const Object unset = Object();
+}
+
+/// 取某个部位 + 作用域下的当前属性；没设过就是全空。
+DictStyleProps dictStylePropsFor(
+  List<DictStyleRule> rules,
+  DictStylePart part,
+  String? dictionaryName,
+) {
+  for (final DictStyleRule rule in rules) {
+    if (rule.part == part && rule.dictionaryName == dictionaryName) {
+      return rule.props;
+    }
+  }
+  return const DictStyleProps();
+}
+
+/// 写回某个部位 + 作用域的属性，返回新表。
+///
+/// 属性变空即整条移除——空规则不产 CSS，留着只会让「有没有设过」这个判断在
+/// 后面每一处都要多带一个特例。
+List<DictStyleRule> dictStyleRulesWith(
+  List<DictStyleRule> rules,
+  DictStylePart part,
+  String? dictionaryName,
+  DictStyleProps props,
+) {
+  final String? scope =
+      dictStylePartSupportsPerDictionary(part) ? dictionaryName : null;
+  final List<DictStyleRule> out = <DictStyleRule>[
+    for (final DictStyleRule rule in rules)
+      if (!(rule.part == part && rule.dictionaryName == scope)) rule,
+  ];
+  if (!props.isEmpty) {
+    out.add(
+      DictStyleRule(part: part, dictionaryName: scope, props: props),
+    );
+  }
+  return out;
 }
 
 /// 一条可视化样式规则。

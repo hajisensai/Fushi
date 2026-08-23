@@ -273,6 +273,129 @@ void main() {
     });
   });
 
+  group('按部位读写属性', () {
+    test('没设过返回全空属性', () {
+      expect(
+        dictStylePropsFor(
+          const <DictStyleRule>[],
+          DictStylePart.expression,
+          null,
+        ).isEmpty,
+        isTrue,
+      );
+    });
+
+    test('copyWith 省略保持原值，显式 null 清除', () {
+      // 「把颜色改回默认」就是传 null，普通 copyWith 分不出「没传」和「清空」。
+      const DictStyleProps base =
+          DictStyleProps(textColor: 0xFF112233, bold: true);
+      expect(base.copyWith(bold: false).textColor, 0xFF112233);
+      expect(base.copyWith(textColor: null).textColor, isNull);
+      expect(base.copyWith(textColor: null).bold, isTrue);
+    });
+
+    test('写回后能读出来，且不影响其它部位', () {
+      List<DictStyleRule> rules = <DictStyleRule>[];
+      rules = dictStyleRulesWith(
+        rules,
+        DictStylePart.expression,
+        null,
+        const DictStyleProps(bold: true),
+      );
+      rules = dictStyleRulesWith(
+        rules,
+        DictStylePart.pitch,
+        null,
+        const DictStyleProps(italic: true),
+      );
+      expect(
+        dictStylePropsFor(rules, DictStylePart.expression, null).bold,
+        isTrue,
+      );
+      expect(
+        dictStylePropsFor(rules, DictStylePart.pitch, null).italic,
+        isTrue,
+      );
+      expect(rules.length, 2);
+    });
+
+    test('同部位同作用域重复写不产生第二条', () {
+      List<DictStyleRule> rules = dictStyleRulesWith(
+        <DictStyleRule>[],
+        DictStylePart.expression,
+        null,
+        const DictStyleProps(bold: true),
+      );
+      rules = dictStyleRulesWith(
+        rules,
+        DictStylePart.expression,
+        null,
+        const DictStyleProps(bold: false),
+      );
+      expect(rules.length, 1);
+      expect(
+        dictStylePropsFor(rules, DictStylePart.expression, null).bold,
+        isFalse,
+      );
+    });
+
+    test('属性清空即整条移除', () {
+      List<DictStyleRule> rules = dictStyleRulesWith(
+        <DictStyleRule>[],
+        DictStylePart.expression,
+        null,
+        const DictStyleProps(bold: true),
+      );
+      rules = dictStyleRulesWith(
+        rules,
+        DictStylePart.expression,
+        null,
+        const DictStyleProps(),
+      );
+      expect(rules, isEmpty);
+    });
+
+    test('非释义部位带词典名写入时作用域被强制降为全局', () {
+      // UI 会灰掉这种组合，但写入路径不能指望 UI 守规矩——否则存下一条永远
+      // 命不中的规则，用户看见设了却没反应。
+      final List<DictStyleRule> rules = dictStyleRulesWith(
+        <DictStyleRule>[],
+        DictStylePart.expression,
+        '三省堂',
+        const DictStyleProps(bold: true),
+      );
+      expect(rules.single.dictionaryName, isNull);
+      expect(
+        dictStylePropsFor(rules, DictStylePart.expression, null).bold,
+        isTrue,
+      );
+    });
+
+    test('释义部位的全局与单典规则互不干扰', () {
+      List<DictStyleRule> rules = dictStyleRulesWith(
+        <DictStyleRule>[],
+        DictStylePart.glossaryContent,
+        null,
+        const DictStyleProps(bold: true),
+      );
+      rules = dictStyleRulesWith(
+        rules,
+        DictStylePart.glossaryContent,
+        '三省堂',
+        const DictStyleProps(italic: true),
+      );
+      expect(rules.length, 2);
+      expect(
+        dictStylePropsFor(rules, DictStylePart.glossaryContent, null).bold,
+        isTrue,
+      );
+      expect(
+        dictStylePropsFor(rules, DictStylePart.glossaryContent, '三省堂').italic,
+        isTrue,
+      );
+    });
+  });
+
   group('非 Dart 消费方的产物缓存', () {
     test('全空返回空串，消费方一个 if 就能短路', () {
       expect(encodeCompiledDictStyleCss(const <DictStyleRule>[]), '');
