@@ -13,9 +13,24 @@
 长按菜单**（`games_library_page.dart:851 _editGameLanguage`，菜单动作 `'language'` 在
 `:1634`），**不在字体管理页**。
 
-用户找的是字体库里「这个字体用在哪些用途」那排开关（`FontTarget`），那是另一个维度，
-由更早的 **PR #938**（`d945be5796`，2026-08-21，计数 10043）加的 `FontTarget.gameLookup`
-提供。两个维度分散在两处，是用户困惑的来源，但不是 bug 本身。
+用户找的是字体库里「这个字体用在哪些用途」那排开关（`FontTarget`），那是另一个维度。
+
+**用户口中的"近两个外部 PR"实际是这两条**（作者均为外部贡献者 W1ght，均 2026-08-22 合入）：
+- **PR #938** `feat(galgame): 完成 Windows 浮窗与 SGRE 原始语音制卡链路`
+  （`d945be5796`，计数 10043）——**正是它加的 `FontTarget.gameLookup`**，即字体库里
+  「游戏查词窗口字体」那一项，以及「设置·游戏·Hook 文本字体」入口。
+- **PR #941** `fix(galgame): 隔离 XAudio2 codec trampoline`。
+
+⚠️ 注意 `gameLookup` 是 **2026-08-22** 才有的，**晚于** #858/#872。所以：
+① 构建于 8-22 之前的包，字体库里本来就没有"游戏"这一项，与那两条内容语言 PR 无关；
+② #938 做对了调用侧（认真传了 `target: FontTarget.gameLookup`），却栽在下面根因①的
+类型退化上——**入口加了、参数传了、就是不生效**，这正是用户的观感来源。
+
+另注：wrds 此前在 `feature/gal-hook-lyric-overlay-style` 上写过一版同类功能
+（`3cf2a2ccb3`，枚举名 `galHookText`，键 `gal_hook_fonts`），**未合入 develop**，与 #938
+的 `gameLookup` / `game_lookup_fonts` 是两套独立实现。若哪天要合那条分支，两个偏好键是
+硬冲突，需要迁移而非改名；且 wrds 版的 native 默认字族 `Yu Gothic`（非 UI 版）与"默认
+全宽假名"两项改动也没跟进到 develop。
 
 ### 根因（三条，都在"设了不生效"这一类）
 
