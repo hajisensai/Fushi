@@ -85,7 +85,7 @@ class TexthookerPage extends ConsumerStatefulWidget {
 }
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, WidgetsBindingObserver {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -94,6 +94,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   final GalHookSessionController _session = GalHookSessionController.instance;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
+
+  /// BUG-1778：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
+  /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
+  bool _revalidatingMined = false;
   bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
@@ -421,6 +425,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
+    // BUG-1778：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
+    WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
@@ -434,7 +440,49 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
       _maybeScheduleCaptureSetupDialog();
+      // BUG-1778：进页也复核一次——卡可能是在别的页面制的、随后在 Anki 里被删掉，
+      // 那种路径不经过本页的前台切换事件。
+      unawaited(_revalidateMinedLines());
     });
+  }
+
+  /// BUG-1778：切回前台就复核「已制卡」徽章。用户的原始路径正是「在本页制卡 →
+  /// 切到 Anki 删掉那张卡 → 切回 Hibiki」，`resumed` 就是这条路径回到 app 的那一刻。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_revalidateMinedLines());
+    }
+  }
+
+  /// BUG-1778：把本会话所有「已制卡且带 note id」的行拿去问 Anki，凡是 Anki 明确
+  /// 应答「这张 note 不存在」的，把对应行的徽章清掉。
+  ///
+  /// 复核的真相源是 Anki 本身，与 [BUG-186] 给查词弹窗 ✓ 定下的口径一致：徽章不是
+  /// 装饰，它表示「Anki 里现在有这张卡」。
+  ///
+  /// **不可达绝不清**：`findDeletedNotes` 在查询失败 / AnkiConnect 不可达时返回空集
+  /// （见其文档），因此 Anki 没开着的时候本方法什么都不做，而不是把满屏徽章清空。
+  Future<void> _revalidateMinedLines() async {
+    if (_revalidatingMined) return;
+    final Set<int> noteIds = TexthookerService.instance.minedNoteIds;
+    if (noteIds.isEmpty) return;
+    if (!mounted || !_appModel.isInitialised) return;
+    _revalidatingMined = true;
+    try {
+      final BaseAnkiRepository repo =
+          _appModel.platformServices.createAnkiRepository();
+      final Set<int> deleted = await repo.findDeletedNotes(noteIds);
+      if (deleted.isEmpty) return;
+      TexthookerService.instance.clearMinedForNotes(deleted);
+    } catch (e, stack) {
+      // 复核是纯装饰性刷新，任何失败都不得冒泡打断捕获工作台。
+      debugPrint('TexthookerPage._revalidateMinedLines: $e');
+      debugPrint('$stack');
+    } finally {
+      _revalidatingMined = false;
+    }
   }
 
   @override
@@ -460,6 +508,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   void dispose() {
     _linePreviewResetTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_handlePopupMineHardwareKey);
+    WidgetsBinding.instance.removeObserver(this);
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
     final OverlayEntry? popupOverlay = _popupOverlayEntry;
@@ -557,7 +606,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       final String? lineId = _activeLineId;
       if (result.ankiConnect && lineId != null) {
-        TexthookerService.instance.markLineMined(lineId);
+        // BUG-1778：带上 note id，供日后向 Anki 复核这张卡是否还在。
+        TexthookerService.instance.markLineMined(
+          lineId,
+          noteId: result.noteId,
+        );
       }
       return result;
     }

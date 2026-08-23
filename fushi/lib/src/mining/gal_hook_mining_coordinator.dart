@@ -432,8 +432,15 @@ class GalHookMiningCoordinator {
       final MineOutcome outcome = mined.outcome! as MineOutcome;
       // 制卡成功回写行模型：把该行标记为「已制卡」，供捕获工作台列表显示徽章。
       // 幂等（markLineMined 内部去重），覆写既有卡（updateNoteId）成功同样视作已制卡。
+      //
+      // BUG-1778：连同后端回传的 note id 一起记下，这行日后才能向 Anki 复核那张卡
+      // 是否还活着（用户在 Anki 里删了就把徽章清掉）。覆写既有卡时 outcome 不带新 id，
+      // 退回本次覆写的目标 id —— 那正是这行现在对应的那张卡。
       if (outcome.result == MineResult.success) {
-        _textService.markLineMined(entry.id);
+        _textService.markLineMined(
+          entry.id,
+          noteId: outcome.noteId ?? updateNoteId,
+        );
       }
       return GalHookMiningResult(
         outcome: outcome,
