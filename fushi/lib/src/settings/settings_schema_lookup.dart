@@ -145,8 +145,8 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsActionItem(
             id: 'lookup.custom_css',
-            title: t.custom_dict_css,
-            icon: Icons.code_outlined,
+            title: t.dict_style_title,
+            icon: Icons.palette_outlined,
             onTap: (SettingsContext settingsContext) {
               return showSettingsDialog(
                 settingsContext,

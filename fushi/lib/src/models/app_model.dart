@@ -42,6 +42,8 @@ import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -2892,8 +2894,10 @@ class AppModel with ChangeNotifier {
 
   RemotePopupDictionaryCss browserExtensionPopupDictionaryCss() {
     final Map<String, String> styles = FushiDicts.dictionaryStyles;
-    final String globalCss = globalDictCSS;
-    final Map<String, String> customCss = customDictCSS;
+    // 与 in-app 注入同源：扩展也必须吃到可视化规则的编译产物，否则同一份
+    // popup.js 在两个宿主里呈现不一致。
+    final String globalCss = effectiveGlobalDictCSS;
+    final Map<String, String> customCss = effectiveCustomDictCSS;
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
@@ -4615,7 +4619,6 @@ class AppModel with ChangeNotifier {
       dictionarySearchAgainNotifier.notifyListeners();
     }
   }
-
 
   // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
 
@@ -6346,6 +6349,64 @@ class AppModel with ChangeNotifier {
 
   String get globalDictCSS => prefsRepo.globalDictCSS;
   Future<void> setGlobalDictCSS(String css) => prefsRepo.setGlobalDictCSS(css);
+
+  // ── 可视化样式规则 ───────────────────────────────────────────────────
+  //
+  // 上面两个 getter 是**用户手写的原文**，编辑器要拿它回填文本框，绝不能混进
+  // 编译产物。下面的 effective* 才是注入弹窗的最终值（产物在前、手写在后）。
+
+  /// 可视化样式规则表（真相源：偏好 [dictStyleRulesPrefKey]）。
+  ///
+  /// 偏好没就绪时返回空表而不是崩：弹窗注入链（`buildPopupStaticSettingsJs`）会
+  /// 在偏好未初始化的裸 AppModel 上被 widget 测试调到，而「还没有偏好」的正确
+  /// 语义就是「一条规则都没设」。
+  List<DictStyleRule> get dictStyleRules => isPreferencesReady
+      ? decodeDictStyleRules(prefsRepo.dictStyleRulesRaw)
+      : const <DictStyleRule>[];
+
+  /// 保存规则表，并同步刷新 CSS 编译产物缓存。
+  ///
+  /// 缓存只为跑不了 Dart 编译器的消费方存在（Android 独立弹窗 Activity 直连
+  /// prefs 表）。这里是它唯一的写入点——冗余数据必须单点收口，否则迟早不同步。
+  Future<void> saveDictStyleRules(List<DictStyleRule> rules) async {
+    await prefsRepo.setDictStyleRulesRaw(encodeDictStyleRules(rules));
+    await prefsRepo.setDictStyleRulesCss(encodeCompiledDictStyleCss(rules));
+    notifyListeners();
+  }
+
+  /// 注入弹窗的全局 CSS：可视化产物 + 用户手写。
+  ///
+  /// 手写那半走 [globalDictCSS] 而不是 `prefsRepo.globalDictCSS`：前者是可被子类
+  /// 覆写的公开面，测试里的假 AppModel 正是靠覆写它来喂值的；直接穿透到
+  /// prefsRepo 会把覆写全部绕过去（且在偏好未就绪时空指针）。
+  String get effectiveGlobalDictCSS => mergeGeneratedAndAuthoredCss(
+        buildGlobalDictStyleCss(dictStyleRules),
+        globalDictCSS,
+      );
+
+  /// 注入弹窗的单典 CSS：可视化产物 + 用户手写，逐本合并。
+  ///
+  /// 键集是两边的并集——只设了可视化规则、没写过手写 CSS 的词典也必须出现在
+  /// 结果里，否则规则静默失效。
+  Map<String, String> get effectiveCustomDictCSS {
+    final List<DictStyleRule> rules = dictStyleRules;
+    // 同 [effectiveGlobalDictCSS]：走可覆写的公开 getter，别穿透 prefsRepo。
+    final Map<String, String> authored = customDictCSS;
+    final Set<String> names = <String>{
+      ...authored.keys,
+      ...dictionariesWithStyleRules(rules),
+    };
+    final Map<String, String> out = <String, String>{};
+    for (final String name in names) {
+      final String merged = mergeGeneratedAndAuthoredCss(
+        buildPerDictionaryStyleCss(rules, name),
+        authored[name] ?? '',
+      );
+      if (merged.trim().isEmpty) continue;
+      out[name] = merged;
+    }
+    return out;
+  }
 
   // ── audio sources (delegated) ────────────────────────────────────────
 
