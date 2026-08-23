@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
@@ -73,7 +75,8 @@ void main() {
 
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       expect(navTargets.length, greaterThanOrEqualTo(2));
-      final bool focusedDict = await driver.focusWidget(navTargets[1]);
+      final bool focusedDict =
+          await driver.focusWidget(findNavTargetForTab(HomeTab.dictionaries));
       expect(focusedDict, isTrue,
           reason: 'Dictionary tab must be reachable by focus');
       await driver.activate();
@@ -103,5 +106,6 @@ Future<List<int>> _loadSystemFontBytes() async {
   for (final File file in candidates) {
     if (await file.exists()) return file.readAsBytes();
   }
-  fail('No system TrueType font fixture was found');
+  final data = await rootBundle.load('assets/fonts/MaterialSymbolsRounded.ttf');
+  return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 }

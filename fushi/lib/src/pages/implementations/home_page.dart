@@ -143,6 +143,17 @@ HomeTab homeInitialTab({
   return fallback;
 }
 
+/// Whether startup may automatically push the first-run onboarding route.
+/// Production uses [WidgetsFlutterBinding]; automated tests use a test binding
+/// and must not have their feature route covered mid-probe.
+@visibleForTesting
+bool startupOnboardingAutoLaunchAllowed({
+  required bool onboardingCompleted,
+}) {
+  if (onboardingCompleted) return false;
+  return WidgetsBinding.instance is WidgetsFlutterBinding;
+}
+
 int homeVisualIndexForTab({
   required List<HomeTab> tabs,
   required HomeTab tab,
@@ -396,7 +407,10 @@ class _HomePageState extends BasePageState<HomePage>
 
       // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/
       // 跳过/返回）后统一标记完成，之后可从「设置 → 系统」随时重新打开。
-      if (mounted && !appModel.onboardingCompleted) {
+      if (mounted &&
+          startupOnboardingAutoLaunchAllowed(
+            onboardingCompleted: appModel.onboardingCompleted,
+          )) {
         await Navigator.of(context).push(
           adaptivePageRoute<void>(
             context: context,

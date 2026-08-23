@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
@@ -43,7 +45,14 @@ Directory observeScreenshotDir() {
     final String? runId = fushiTestRunId();
     final String runLeaf =
         (runId != null && runId.isNotEmpty) ? runId : 'local';
-    base = Directory('.codex-test/observe/$runLeaf');
+    final bool mobile = defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.android;
+    base = mobile
+        ? Directory(
+            '${Directory.systemTemp.path}${Platform.pathSeparator}'
+            'fushi-observe${Platform.pathSeparator}$runLeaf',
+          )
+        : Directory('.codex-test/observe/$runLeaf');
   }
   final Directory dir = Directory('${base.path}/screenshots');
   dir.createSync(recursive: true);

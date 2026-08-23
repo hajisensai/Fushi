@@ -123,6 +123,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _pendingLyricsHintOnReady = true;
         await _loadLyricsPage();
       } else {
+        _lyricsDocumentLoadInFlight = false;
         await _resolveAndApplyProfile(appModelNoUpdate.database);
         await _exitLyricsMode();
         try {
@@ -196,12 +197,18 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     // spread 守卫把歌词分支一起挡掉 → 歌词永远不就绪。标记的含义是「WebView 里
     // 现在是不是 spread 文档」，所以每个装载点都必须写它。
     _spreadDocumentLoaded = false;
-    await _controller!.loadData(
-      data: html,
-      mimeType: 'text/html',
-      encoding: 'utf-8',
-      baseUrl: WebUri('https://fushi.local/lyrics'),
-    );
+    _lyricsDocumentLoadInFlight = true;
+    try {
+      await _controller!.loadData(
+        data: html,
+        mimeType: 'text/html',
+        encoding: 'utf-8',
+        baseUrl: WebUri('https://fushi.local/lyrics'),
+      );
+    } catch (_) {
+      _lyricsDocumentLoadInFlight = false;
+      rethrow;
+    }
   }
 
   /// TODO-368: 歌词字幕文字色——用户设过自定义色（[ReaderFushiSource.lyricsTextColor]

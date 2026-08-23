@@ -359,6 +359,21 @@ window.__lyricsScrollToCue = function(index) {
   if (index >= 0 && index < _cues.length) scrollToCenter(_cues[index]);
 };
 
+// iOS WKWebView can complete loadData() without delivering onLoadStop. Register
+// this notifier immediately after the sentinel API exists, before optional
+// interaction wiring can throw. Poll for the injected bridge with a finite 5s
+// budget instead of guessing one platform-ready moment.
+(function notifyLyricsReady(attempt) {
+  var bridge = window.flutter_inappwebview;
+  if (bridge && typeof bridge.callHandler === 'function') {
+    requestAnimationFrame(function() { bridge.callHandler('onLyricsReady'); });
+    return;
+  }
+  if (attempt < 100) {
+    window.setTimeout(function() { notifyLyricsReady(attempt + 1); }, 50);
+  }
+})(0);
+
 // ── 点击：所有句子→查词 ──
 // BUG-280: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程
 // 未被宿主层认领」时由浏览器合成；当 Flutter 端弹窗可见时，整屏有一层 translucent

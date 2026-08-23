@@ -29,10 +29,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1662 条。点号进各自文件。
+> 共 1673 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1810](bugs/BUG-1810-comprehensive-imports-never-opens-books.md) | 🚧 | 🚧 | 综合导入实测未打开书架导致已导入图书不可见 |
+| [BUG-1809](bugs/BUG-1809-ios-lyrics-load-data-no-load-stop.md) | 🚧 | 🚧 | iOS歌词loadData返回后不触发onLoadStop导致永不ready |
+| [BUG-1808](bugs/BUG-1808-lyrics-itest-concrete-activation.md) | 🚧 | 🚧 | 歌词模式实测未激活具体reader-action焦点节点 |
+| [BUG-1807](bugs/BUG-1807-ios-media-sources-scrape-actions-hidden.md) | ✅ | ✅ | iOS视频来源页隐藏全部刮削与任务入口 |
+| [BUG-1806](bugs/BUG-1806-observe-capture-ios-unwritable-relative-dir.md) | 🚧 | 🚧 | 实机截图helper在iOS写相对codex-test目录失败 |
+| [BUG-1805](bugs/BUG-1805-video-library-section-focus-lost.md) | ✅ | ✅ | 视频库切分区后分段导航焦点丢失 |
+| [BUG-1804](bugs/BUG-1804-video-source-itest-section-type-drift.md) | 🚧 | 🚧 | 视频来源实测仍按旧两段库页导航驱动 |
+| [BUG-1803](bugs/BUG-1803-dictionary-overlay-dispose-without-remove.md) | 🚧 | 🚧 | 查词页根Overlay卸载时先dispose仍登记的OverlayEntry |
+| [BUG-1802](bugs/BUG-1802-comprehensive-imports-dictionary-tab-index-drift.md) | 🚧 | 🚧 | 综合导入实测按固定索引误把书架当查词 |
+| [BUG-1801](bugs/BUG-1801-comprehensive-imports-ios-font-fixture.md) | 🚧 | 🚧 | 综合导入实测在iOS找不到字体fixture |
+| [BUG-1800](bugs/BUG-1800-itest-fresh-install-onboarding-hides-home.md) | 🚧 | 🚧 | 实机集成测试把首次引导前的短暂首页误判为可用 |
 | [BUG-1789](bugs/BUG-1789-pdf-import-whitelists.md) | ✅ | ✅ | PDF 导入白名单三处漏抄：漫画框选不中、拖放不认、文件夹扫描跳过 |
 | [BUG-1787](bugs/BUG-1787-font-library-scope-target-dead-param.md) | ✅ | ✅ | 字体库作用域参数不生效：从游戏入口导入的字体挂到小说正文 |
 | [BUG-1785](bugs/BUG-1785-download-organize-tv-preview-blocks-batch.md) | ✅ | ✅ | TV 整理被无集号特典文件整批卡死 |

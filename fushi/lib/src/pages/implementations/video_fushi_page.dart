@@ -160,6 +160,7 @@ import 'package:fushi/src/platform/windows_ime_space_channel.dart';
 import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -3643,9 +3644,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
-      // remove() asserts if already detached（路由先 pop 时根 Overlay 可能已摘除）。
-      if (entry.mounted) entry.remove();
-      entry.dispose();
+      removeAndDisposeOwnedOverlayEntry(entry);
       _popupOverlayEntry = null;
     }
     _popup.clear();
@@ -4291,8 +4290,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
+        removeAndDisposeOwnedOverlayEntry(entry);
         _popupOverlayEntry = null;
       }
       return;

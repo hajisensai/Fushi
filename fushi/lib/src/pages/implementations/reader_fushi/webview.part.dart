@@ -2439,6 +2439,14 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (cue != null) _audiobookController!.playCueAndContinue(cue);
           },
         );
+
+        // BUG-1809：iOS WKWebView 的 loadData() 可返回却不发 onLoadStop。
+        // LyricsModeHtml 在 DOM API 全部就绪后主动回传；与 onLoadStop 共用幂等
+        // finalize，谁先到谁完成，另一条只读到 ready 后早返回。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsReady',
+          callback: (_) => _finalizeLyricsDocumentIfReady(controller),
+        );
       },
       shouldInterceptRequest: (controller, request) async {
         return await _interceptRequest(request.url);
@@ -2448,7 +2456,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
-        if (_isNavigatingToChapter) {
+        if (_isNavigatingToChapter || _lyricsDocumentLoadInFlight) {
           return NavigationActionPolicy.ALLOW;
         }
         // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
@@ -2469,12 +2477,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         debugPrint('[ReaderFushi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode) {
-          if (!await _isLoadedLyricsDocument(controller)) {
+          if (!await _finalizeLyricsDocumentIfReady(controller)) {
             debugPrint('[ReaderFushi] onLoadStop: stale non-lyrics page '
                 'while lyrics mode is active, ignoring');
-            return;
           }
-          await _onChapterLoadComplete(controller);
           return;
         }
         final String expectedUrl = _chapterUrl(chapterSnapshot);
@@ -2504,6 +2510,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           return;
         }
         if (request.isForMainFrame ?? false) {
+          _lyricsDocumentLoadInFlight = false;
           debugPrint('[ReaderFushi] onReceivedError: ${error.description} '
               'url=${request.url}');
           // Windows 拦截域 (fushi.local) 的 NavigationCompleted 假失败已在 fork
@@ -2562,6 +2569,23 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       ErrorLogService.instance
           .log('ReaderFushi.isLoadedLyricsDocument', e, stack);
       return false;
+    }
+  }
+
+  Future<bool> _finalizeLyricsDocumentIfReady(
+      InAppWebViewController controller) async {
+    if (!mounted || !_lyricsMode) return false;
+    if (_lyricsPageReady) return true;
+    if (_lyricsReadyFinalizing) return false;
+    _lyricsReadyFinalizing = true;
+    try {
+      if (!await _isLoadedLyricsDocument(controller)) return false;
+      if (!mounted || !_lyricsMode) return false;
+      if (!_lyricsPageReady) await _onChapterLoadComplete(controller);
+      _lyricsDocumentLoadInFlight = false;
+      return _lyricsPageReady;
+    } finally {
+      _lyricsReadyFinalizing = false;
     }
   }
 

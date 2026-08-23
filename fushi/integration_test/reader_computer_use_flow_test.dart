@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, ModifierKey;
@@ -187,7 +188,8 @@ Future<void> _openSeededBook(
 ) async {
   final List<Finder> navTargets = findPrimaryNavigationTargets();
   expect(navTargets, isNotEmpty, reason: 'primary navigation must be present');
-  final bool focusedBooks = await driver.focusWidget(navTargets.first);
+  final bool focusedBooks =
+      await driver.focusWidget(findNavTargetForTab(HomeTab.books));
   expect(focusedBooks, isTrue, reason: 'Books tab must be reachable by focus');
   await driver.activate();
   await tester.pump(const Duration(milliseconds: 500));

@@ -20,6 +20,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/utils.dart';
 
 /// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
@@ -299,8 +300,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // Overlay 重建 [_buildPopupOverlay]，杜绝销毁期用失效 State 重建浮层（照搬 video）。
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
-      if (entry.mounted) entry.remove();
-      entry.dispose();
+      removeAndDisposeOwnedOverlayEntry(entry);
       _popupOverlayEntry = null;
     }
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
@@ -925,8 +925,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
+        removeAndDisposeOwnedOverlayEntry(entry);
         _popupOverlayEntry = null;
       }
       return;
