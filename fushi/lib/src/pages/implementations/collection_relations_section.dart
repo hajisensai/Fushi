@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/collections/collection_relation.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 合集详情页「相关作品」横滚区（TODO-2484 UI）。
 ///
-/// 数据来自 `collection_relations`（PR#663 数据层，刮削时顺带落库）；无任何关系
-/// 边时整块不渲染（未刮削/无关联的合集与本功能引入前逐像素一致）。
+/// 数据来自 `collection_relations`。当前生产关系由本地拆季写入；历史外部源关系仍可
+/// 读取和绑定。无任何关系边时整块不渲染。
 ///
 /// 卡片 = 2:3 封面（coverPath 本地优先 → coverUrl 网络回落 → 占位图标）+
 /// 关系类型徽标 + 两行标题。点击分两路：
 /// - targetCollectionId 非空（已绑定本地合集）→ [onOpenCollection] 跳详情；
-/// - 空（纯刮削边）→ 小菜单「去下载」（[onDownload]，预填标题开下载对话框）/
+/// - 空（历史未绑定边）→ 小菜单「去下载」（[onDownload]，预填标题开下载对话框）/
 ///   「绑定到已有合集」（列本地合集选择后写 bindCollectionRelationTarget）。
 class CollectionRelationsSection extends StatefulWidget {
   const CollectionRelationsSection({

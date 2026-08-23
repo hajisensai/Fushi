@@ -270,6 +270,10 @@ String buildStackRenderScript({
   // measureAndReport）。默认 'cascade' 时 payload 不带 layoutMode 键，瞬态窗
   // 载荷与改动前逐字节相同（Never break userspace）。
   String layoutMode = 'cascade',
+  // BUG-1793 — per-origin UI capability. Galgame text-overlay lookups still use
+  // the desktop HWND/route, so the renderer must carry this explicit bit rather
+  // than asking host.js to infer it from route identity.
+  bool clipboardHistoryAvailable = true,
   double cardBgAlpha = 1.0,
   // 真机第 4 轮 — 面板选词区的引擎命中区间（码点下标），只作用于面板 root
   // 帧的 settingsJs；cascade 模式忽略。
@@ -333,7 +337,10 @@ String buildStackRenderScript({
     map['settingsJs'] = settingsJs;
     popups.add(map);
   }
-  final Map<String, Object?> payloadObj = <String, Object?>{'popups': popups};
+  final Map<String, Object?> payloadObj = <String, Object?>{
+    'popups': popups,
+    'clipboardHistoryAvailable': clipboardHistoryAvailable,
+  };
   // spec 2026-07-10 — 仅面板模式携带 layoutMode 键；cascade 载荷字节不变。
   if (layoutMode == 'panel') {
     payloadObj['layoutMode'] = 'panel';

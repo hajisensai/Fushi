@@ -45,6 +45,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -1190,7 +1191,8 @@ class _HomePageState extends BasePageState<HomePage>
     );
     final String fingerprint = <Object>[
       config.tmdbApiKey,
-      config.bangumiToken,
+      config.anidbClientName,
+      config.anidbClientVersion ?? 0,
       config.locale,
     ].join('\u0000');
     final VideoDiscoveryController? existing = _videoDiscoveryController;
@@ -1863,12 +1865,9 @@ class _HomePageState extends BasePageState<HomePage>
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
     );
     final String fingerprint = <Object>[
-      config.primaryProvider.name,
       config.tmdbApiKey,
-      config.fanartApiKey,
-      config.bangumiToken,
-      config.doubanEndpoint,
-      config.doubanToken,
+      config.anidbClientName,
+      config.anidbClientVersion ?? 0,
       config.locale,
     ].join('\u0000');
     if (existing != null &&
@@ -1981,6 +1980,13 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return;
     FushiToast.show(msg: t.video_source_scrape_background_started);
     unawaited(_openVideoSourceScrapeTasks());
+  }
+
+  Future<void> _clearAllVideoScrapeRecords() async {
+    await showClearAllVideoScrapeRecordsAction(
+      context: context,
+      database: appModel.database,
+    );
   }
 
   Future<({bool proceed, bool grant})> _confirmProtectedSidecarOverwrite(
@@ -2146,6 +2152,7 @@ class _HomePageState extends BasePageState<HomePage>
           libraryRefreshSignal: _videoLibraryRefreshSignal,
           scrapeTaskController: _videoSourceScrapeController,
           onScrapeAll: _scrapeAllVideosFromSources,
+          onClearAllScrapeRecords: _clearAllVideoScrapeRecords,
           onScrapeSource: _scrapeVideoSource,
           onVideoScanCompleted: _onVideoSourceScanCompleted,
           onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),

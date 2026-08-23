@@ -12,6 +12,7 @@
 // InjectLookupInput 的 [kind] 是跨进程契约的一部分，在这里手抄 0..4 就又造一个漂移源。
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 
+#include <algorithm>
 #include <cmath>
 #include <charconv>
 #include <fstream>
@@ -401,8 +402,8 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
 // 缩放会让卡片文字糊掉，而卡片的价值就是"与 Hibiki 自身像素一致"——宁可切也不缩。
 // 全程 HRESULT 校验、零异常（runner 以 _HAS_EXCEPTIONS=0 编译）。
 bool DecodePngStreamToStraightBgra(IStream* stream, uint32_t max_width,
-                            uint32_t max_height, std::vector<uint8_t>* out,
-                            uint32_t* out_width, uint32_t* out_height,
+                             uint32_t max_height, std::vector<uint8_t>* out,
+                             uint32_t* out_width, uint32_t* out_height,
                             uint32_t* out_pitch, bool* out_clamped) {
   if (stream == nullptr || out == nullptr || out_width == nullptr ||
       out_height == nullptr || out_pitch == nullptr || out_clamped == nullptr) {
@@ -485,6 +486,132 @@ bool DecodePngStreamToStraightBgra(IStream* stream, uint32_t max_width,
   *out_height = static_cast<uint32_t>(height);
   *out_pitch = static_cast<uint32_t>(pitch);
   return true;
+}
+
+// BUG-1609 — CapturePreview captures the WebView2 composition surface, not the
+// HWND region installed by SetWindowRgn.  A promoted iframe/scrollbar gutter can
+// therefore leave square opaque pixels outside the host shell even though the
+// desktop window itself has a correct rounded HRGN.  galCard sends that BGRA
+// buffer straight into the game, so enforce the host's per-shell silhouette on
+// the pixels at the final boundary.
+//
+// The buffer uses STRAIGHT alpha.  For anti-aliased edge pixels we multiply only
+// alpha (never RGB); fully transparent pixels are cleared to black as well so a
+// texture sampler cannot bleed the old square canvas colour into the curve.
+struct PhysicalRoundedShell {
+  double left = 0.0;
+  double top = 0.0;
+  double right = 0.0;
+  double bottom = 0.0;
+  double radius = 0.0;
+};
+
+double RoundedShellCoverage(const PhysicalRoundedShell& shell, double x,
+                            double y) {
+  if (x < shell.left || x >= shell.right || y < shell.top ||
+      y >= shell.bottom) {
+    return 0.0;
+  }
+
+  // Signed-distance coverage for a rounded rectangle, sampled at the pixel
+  // centre.  The 0.5px ramp preserves a smooth edge without changing the
+  // straight-alpha RGB contract.
+  const double inner_left = shell.left + shell.radius;
+  const double inner_right = shell.right - shell.radius;
+  const double inner_top = shell.top + shell.radius;
+  const double inner_bottom = shell.bottom - shell.radius;
+  const double nearest_x = std::clamp(x, inner_left, inner_right);
+  const double nearest_y = std::clamp(y, inner_top, inner_bottom);
+  const double dx = x - nearest_x;
+  const double dy = y - nearest_y;
+  const double distance_squared = dx * dx + dy * dy;
+  const double fully_covered = shell.radius - 0.5;
+  if (fully_covered >= 0.0 &&
+      distance_squared <= fully_covered * fully_covered) {
+    return 1.0;
+  }
+  const double fully_clear = shell.radius + 0.5;
+  if (distance_squared >= fully_clear * fully_clear) {
+    return 0.0;
+  }
+  // sqrt is needed only in the one-pixel anti-aliasing band; the overwhelming
+  // majority of a captured card takes one of the squared-distance fast paths.
+  return std::clamp(fully_clear - std::sqrt(distance_squared), 0.0, 1.0);
+}
+
+void ApplyRoundedShellUnionAlphaMask(
+    const std::vector<std::array<double, 4>>& shell_rects_css, double dpr,
+    std::vector<uint8_t>* bgra, uint32_t width, uint32_t height,
+    uint32_t pitch) {
+  if (bgra == nullptr || shell_rects_css.empty() || !std::isfinite(dpr) ||
+      dpr <= 0.0 || width == 0 || height == 0 ||
+      pitch < static_cast<uint64_t>(width) * 4u ||
+      bgra->size() < static_cast<uint64_t>(pitch) * height) {
+    return;
+  }
+
+  std::vector<PhysicalRoundedShell> shells;
+  shells.reserve(shell_rects_css.size());
+  for (const std::array<double, 4>& rect : shell_rects_css) {
+    if (!std::isfinite(rect[0]) || !std::isfinite(rect[1]) ||
+        !std::isfinite(rect[2]) || !std::isfinite(rect[3]) || rect[2] <= 0.0 ||
+        rect[3] <= 0.0) {
+      continue;
+    }
+    PhysicalRoundedShell shell;
+    shell.left = rect[0] * dpr;
+    shell.top = rect[1] * dpr;
+    shell.right = (rect[0] + rect[2]) * dpr;
+    shell.bottom = (rect[1] + rect[3]) * dpr;
+    shell.radius = std::min(10.0 * dpr,
+                            std::min((shell.right - shell.left) * 0.5,
+                                     (shell.bottom - shell.top) * 0.5));
+    if (shell.radius > 0.0 && shell.right > 0.0 && shell.bottom > 0.0 &&
+        shell.left < static_cast<double>(width) &&
+        shell.top < static_cast<double>(height)) {
+      shells.push_back(shell);
+    }
+  }
+  if (shells.empty()) {
+    return;
+  }
+
+  for (uint32_t y = 0; y < height; ++y) {
+    uint8_t* row = bgra->data() + static_cast<size_t>(y) * pitch;
+    const double sample_y = static_cast<double>(y) + 0.5;
+    for (uint32_t x = 0; x < width; ++x) {
+      const double sample_x = static_cast<double>(x) + 0.5;
+      double coverage = 0.0;
+      for (const PhysicalRoundedShell& shell : shells) {
+        coverage =
+            std::max(coverage, RoundedShellCoverage(shell, sample_x, sample_y));
+        if (coverage >= 1.0) {
+          break;
+        }
+      }
+      uint8_t* pixel = row + static_cast<size_t>(x) * 4u;
+      if (coverage <= 0.0) {
+        pixel[0] = 0;
+        pixel[1] = 0;
+        pixel[2] = 0;
+        pixel[3] = 0;
+      } else if (coverage < 1.0) {
+        const uint32_t mask_alpha =
+            static_cast<uint32_t>(std::lround(coverage * 255.0));
+        // Treat the geometry mask as an alpha ceiling.  min() is idempotent when
+        // Chromium already anti-aliased the same curve; multiplying would clip
+        // that edge twice (for example 0.5 -> 0.25) and create a dark/thin halo.
+        const uint8_t masked_alpha = static_cast<uint8_t>(
+            std::min(static_cast<uint32_t>(pixel[3]), mask_alpha));
+        if (masked_alpha == 0) {
+          pixel[0] = 0;
+          pixel[1] = 0;
+          pixel[2] = 0;
+        }
+        pixel[3] = masked_alpha;
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -1652,10 +1779,26 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
   // WRL 的 Callback 要求可调用对象可拷贝，而 BgraFrameCallback 只保证可移动语义可用；
   // 包一层 shared_ptr 既满足可拷贝，又保证 continuation 只有一份状态。
   auto sink = std::make_shared<BgraFrameCallback>(std::move(done));
+  // Snapshot geometry at the same instant CapturePreview is issued. The PNG
+  // completion is asynchronous; a later lookup may already have replaced the
+  // member rects by then, and using those would cut the captured older frame
+  // with a different card's silhouette.
+  std::vector<std::array<double, 4>> capture_shell_rects;
+  double capture_dpr = 1.0;
+  if (route_context_.source == "galCard" && !shell_rects_css_.empty()) {
+    capture_shell_rects = shell_rects_css_;
+    UINT dpi = hwnd_ == nullptr ? 96 : GetDpiForWindow(hwnd_);
+    if (dpi == 0) {
+      dpi = 96;
+    }
+    capture_dpr = static_cast<double>(dpi) / 96.0;
+  }
   const HRESULT hr = webview_->CapturePreview(
       COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, stream.get(),
       Callback<ICoreWebView2CapturePreviewCompletedHandler>(
-          [stream, sink, max_width, max_height](HRESULT result) -> HRESULT {
+          [stream, sink, max_width, max_height,
+           capture_shell_rects = std::move(capture_shell_rects),
+           capture_dpr](HRESULT result) -> HRESULT {
             std::vector<uint8_t> bgra;
             uint32_t width = 0;
             uint32_t height = 0;
@@ -1666,6 +1809,10 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
                 DecodePngStreamToStraightBgra(stream.get(), max_width, max_height,
                                        &bgra, &width, &height, &pitch,
                                        &clamped);
+            if (ok && !capture_shell_rects.empty()) {
+              ApplyRoundedShellUnionAlphaMask(capture_shell_rects, capture_dpr,
+                                              &bgra, width, height, pitch);
+            }
             (*sink)(ok, clamped, bgra, width, height, pitch);
             return S_OK;
           })
@@ -2152,7 +2299,17 @@ void GlobalLookupWindow::ConfigureWebView() {
               // log is not spammed once per measure pass.
               if (body.find("\"handler\":\"shellRects\"") !=
                   std::string::npos) {
-                SetShellRectsFromCsv(body);
+                // A CapturePreview completion uses a by-value geometry snapshot.
+                // Do not let a delayed shellRects message from the preceding
+                // lookup replace the current route's mask before that snapshot
+                // is taken.
+                const RouteContext shell_route = RouteForMessage(body);
+                if (!route_context_bound_ ||
+                    (shell_route.source == route_context_.source &&
+                     shell_route.route_epoch == route_context_.route_epoch &&
+                     shell_route.lookup_epoch == route_context_.lookup_epoch)) {
+                  SetShellRectsFromCsv(body);
+                }
                 return S_OK;
               }
               if (body.find("\"handler\":\"beginWindowDrag\"") !=
@@ -2346,8 +2503,20 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // full_script is the complete JS built in Dart (settings + lookupEntries +
   // renderPopup), mirroring dictionary_popup_webview._pushResults. Cached until
   // the page finishes loading (renderPopup must exist).
+  // BUG-1793 follow-up — surface identity belongs to this physical HWND, not to
+  // mutable/replayed JS route state.  Append the native truth AFTER renderStack:
+  // a galCard window synchronously removes the process-wide clipboard-history
+  // chrome before WebView2 presents the frame; desktop/panel windows retain it.
+  // The guarded call remains compatible with a host page from before BUG-1793.
+  std::string routed_script = full_script;
+  if (route_context_.source == "galCard") {
+    routed_script +=
+        "\n;(function(h){if(h&&typeof h.setClipboardHistoryAvailable==="
+        "'function'){h.setClipboardHistoryAvailable(false);}})"
+        "(window.__globalLookupHost);";
+  }
   if (recovering_ || !webview_ready_ || !webview_) {
-    pending_json_ = full_script;
+    pending_json_ = routed_script;
     return;
   }
   // TODO-1268 (BUG-693) -- deterministic dead-surface detection. The overlay
@@ -2367,9 +2536,9 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // RecoverDeadWebView which caches this script and rebuilds the
   // environment/controller/webview; NavigationCompleted then replays it, so
   // the very lookup that DISCOVERS the dead surface still renders a real card.
-  const std::string script_copy = full_script;
+  const std::string script_copy = routed_script;
   HRESULT sync_hr = webview_->ExecuteScript(
-      Utf8ToWide(full_script).c_str(),
+      Utf8ToWide(routed_script).c_str(),
       Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
           [this, script_copy](HRESULT error_code, LPCWSTR) -> HRESULT {
             if (FAILED(error_code)) {
@@ -2384,7 +2553,7 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   if (FAILED(sync_hr)) {
     ReportOverlayError("overlay ExecuteScript call failed; recovering",
                        sync_hr);
-    RecoverDeadWebView(full_script);
+    RecoverDeadWebView(routed_script);
   }
 }
 

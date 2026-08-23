@@ -478,11 +478,11 @@ void main() {
     await store.apply(
       work,
       VideoMetadataWork(
-        provider: VideoMetadataProviderKind.bangumi,
+        provider: VideoMetadataProviderKind.anidb,
         kind: VideoMetadataMediaKind.tv,
         title: '主源标题',
         ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'bangumi', value: '200'),
+          VideoMetadataId(type: 'anidb', value: '200'),
         ],
         seasons: <VideoMetadataSeason>[
           VideoMetadataSeason(
@@ -651,6 +651,36 @@ void main() {
         (await database.getVideoScrapeMeta('movie-1'))!;
     expect(legacy.subjectId, '42');
     expect(legacy.detailUrl, 'https://www.themoviedb.org/movie/42');
+  });
+
+  test('取回 AniDB 主身份与持久 TMDB crossref lookup', () async {
+    await store.apply(
+      localWork,
+      VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anidb,
+        kind: VideoMetadataMediaKind.movie,
+        title: 'Example Movie',
+        episodeGroupId: 'group-42',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '17617', isDefault: true),
+          VideoMetadataId(type: 'tmdb', value: '42'),
+        ],
+      ),
+    );
+
+    final List<VideoMetadataLookup> lookups = await store.lookupsForWork(
+      localWork,
+    );
+
+    expect(lookups, hasLength(2));
+    expect(lookups[0].provider, VideoMetadataProviderKind.anidb);
+    expect(lookups[0].externalId, '17617');
+    expect(lookups[0].mediaKind, VideoMetadataMediaKind.movie);
+    expect(lookups[0].episodeGroupId, isNull);
+    expect(lookups[1].provider, VideoMetadataProviderKind.tmdb);
+    expect(lookups[1].externalId, '42');
+    expect(lookups[1].mediaKind, VideoMetadataMediaKind.movie);
+    expect(lookups[1].episodeGroupId, 'group-42');
   });
 }
 

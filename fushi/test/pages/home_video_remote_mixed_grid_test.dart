@@ -86,7 +86,7 @@ void main() {
   // 旧用例守的墙(_buildLocalVideoSlivers)一比一搬进了 series。
   Widget buildApp(
     RemoteVideoClient client, {
-    VideoLibrarySection section = VideoLibrarySection.series,
+    VideoLibrarySection section = VideoLibrarySection.allVideos,
   }) =>
       ProviderScope(
         overrides: <Override>[

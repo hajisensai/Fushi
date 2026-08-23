@@ -307,6 +307,11 @@ function descriptor(id, parentIndex, settingsJs) {
       !iframe.hasAttribute('sandbox'),
       'iframe must NOT carry a sandbox attribute (bridge contract)',
     );
+    assert.strictEqual(
+      iframe.contentDocument.documentElement.style.background,
+      'linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0))',
+      'fresh host enforces the transparent canvas guard even with cached popup.css',
+    );
   }
   assert.strictEqual(host.topPopupId(), 'frame-1', 'top = deepest frame');
 }
@@ -660,13 +665,12 @@ function flushTimers() {
     'the shell and reported bbox share the planned-height ceiling');
 }
 
-// 16. F2 shell chrome: the injected gate <style> carries ONLY the hoshi radius +
-//     transparent background (the iframe paints the card fill + the single
-//     visible border). It draws NO border (TODO-893 double-border) and NO
-//     box-shadow: the overlay HWND is non-layered/opaque, so a CSS shadow paints
-//     as an ~11px DARK HALO outside the card that SetWindowRgn cannot clip (the
-//     reported "black border outside the rounded corners") instead of a real
-//     translucent shadow. The rounded silhouette comes from SetWindowRgn.
+// 16. F2 shell chrome: the base shell is transparent until the iframe theme is
+//     available. Runtime transfers the card fill to the fixed shell and its one
+//     border to a non-layout ::after layer; the iframe body keeps a transparent
+//     border allocation so width/height/zoom measurement does not move. It draws
+//     NO hard-coded second border and NO box-shadow: on this non-layered HWND a
+//     CSS shadow becomes a dark halo rather than a desktop-composited shadow.
 {
   const { host, document } = freshHost();
   host.renderStack({ popups: [descriptor('frame-0', -1)] });
@@ -675,14 +679,17 @@ function flushTimers() {
   const css = style.textContent;
   assert.ok(/\.global-lookup-frame-shell\{/.test(css), 'shell rule present');
   assert.ok(!/border:1px solid rgba\(120,120,128,0\.36\)/.test(css),
-    'TODO-893: shell must NOT draw a border (single border lives on the iframe '
-    + 'body) — this was the double-border main cause');
+    'host must not hard-code a second theme border');
+  assert.ok(/\.global-lookup-frame-shell::after\{[^}]*position:absolute;[^}]*inset:0;[^}]*--global-lookup-shell-border-width/.test(css),
+    'the one visible border is a viewport-stable, non-layout shell layer');
+  assert.ok(/pointer-events:none;z-index:4/.test(css),
+    'shell border cannot intercept lookup or resize input');
   assert.ok(/border-radius:10px/.test(css), 'hoshi 10px card radius');
   assert.ok(!/box-shadow/.test(css),
     'shell must cast NO box-shadow: on the non-layered opaque WebView2 window a '
     + 'CSS shadow renders as a dark halo outside the card, not a real shadow');
   assert.ok(/background:transparent/.test(css),
-    'shell background transparent (iframe paints the fill, no double layer)');
+    'pre-load shell does not flash a hard-coded fill');
   const shell = shellsOf(document)[0];
   const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
   assert.strictEqual(iframe.parentNode, shell,
@@ -1974,6 +1981,93 @@ function historyOverlayIn(shell) {
   assert.ok(
     hostPostLog.some((m) => m.handler === 'clipboardHistory'),
     'transient 🕘 posts clipboardHistory',
+  );
+}
+
+// CH4. BUG-1793：galCard 是游戏内查词表面，不显示进程级复制历史入口，也拒绝
+//      迟到的历史 payload；同一个稳定 root shell 切回 desktop 后必须恢复入口。
+{
+  const { host, document } = freshHost();
+  host.beginLookup('frame-0', {
+    source: 'galCard',
+    routeEpoch: 7,
+    lookupEpoch: 1,
+  });
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  const rootShell = shellsOf(document)[0];
+  assert.ok(
+    !(rootShell.children || []).some(
+      (c) => c.className === 'global-lookup-history',
+    ),
+    'galCard root has no clipboard-history button',
+  );
+  assert.strictEqual(
+    host.showClipboardHistory({ entries: [{ text: 'desktop secret' }] }),
+    false,
+    'galCard rejects a delayed clipboard-history overlay payload',
+  );
+  assert.strictEqual(
+    historyOverlayIn(rootShell),
+    null,
+    'galCard never mounts clipboard history into the game card',
+  );
+
+  host.beginLookup('frame-0', {
+    source: 'desktop',
+    routeEpoch: 8,
+    lookupEpoch: 1,
+  });
+  host.renderStack({ popups: [descriptor('frame-0', -1)] });
+  assert.ok(
+    (rootShell.children || []).some(
+      (c) => c.className === 'global-lookup-history',
+    ),
+    'the reused root restores clipboard history after returning to desktop',
+  );
+
+  // Native physical-window identity is the final authority. Model a galCard
+  // RenderJson postlude arriving while the JS route still says desktop.
+  host.setClipboardHistoryAvailable(false);
+  assert.ok(
+    !(rootShell.children || []).some(
+      (c) => c.className === 'global-lookup-history',
+    ),
+    'native galCard identity removes history even under a stale desktop route',
+  );
+  assert.strictEqual(
+    host.showClipboardHistory({ entries: [{ text: 'still hidden' }] }),
+    false,
+    'native galCard identity also blocks delayed history payloads',
+  );
+  host.setClipboardHistoryAvailable(true);
+  assert.ok(
+    (rootShell.children || []).some(
+      (c) => c.className === 'global-lookup-history',
+    ),
+    'native desktop identity restores history on the reused root',
+  );
+
+  // The galgame TEXT overlay uses the desktop HWND, so its explicit render
+  // capability bit (not route/source) must suppress the button too.
+  host.renderStack({
+    popups: [descriptor('frame-0', -1)],
+    clipboardHistoryAvailable: false,
+  });
+  assert.ok(
+    !(rootShell.children || []).some(
+      (c) => c.className === 'global-lookup-history',
+    ),
+    'galgame text-overlay payload hides history on the desktop route',
+  );
+  host.renderStack({
+    popups: [descriptor('frame-0', -1)],
+    clipboardHistoryAvailable: true,
+  });
+  assert.ok(
+    (rootShell.children || []).some(
+      (c) => c.className === 'global-lookup-history',
+    ),
+    'a later ordinary desktop payload restores history',
   );
 }
 

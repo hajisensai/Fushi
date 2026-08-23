@@ -3,9 +3,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:fushi/src/media/metadata/credential_redaction.dart';
-import 'package:fushi/src/media/video/scraper/bangumi_client.dart'
-    show ScrapeNetworkException;
-import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
+import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 
 /// BUG-1219 审查发现的凭据泄露守卫。
 ///
@@ -16,29 +17,35 @@ import 'package:fushi/src/media/video/scraper/tmdb_client.dart';
 void main() {
   const String key = 'SECRET_TMDB_KEY_1234567890';
 
-  /// 复刻 package:http `IOClient` 在 DNS 失败时的真实抛法：
-  /// `_ClientSocketException extends ClientException`，`super(e.message, request.url)`，
-  /// 其 `toString()` 是 `'ClientException: $message, uri=$uri'`。
-  TmdbClient clientThatFailsTransport() => TmdbClient(
-        apiKey: key,
-        client: MockClient((http.Request req) async {
-          throw http.ClientException(
-              "Failed host lookup: 'api.themoviedb.org'", req.url);
-        }),
-      );
-
-  test('TMDB 传输失败：抛出的异常文本不含 api_key 值，但保留参数名与主机名', () async {
+  test('metadata_v2 TMDB 传输失败不泄露 query 中的 api_key', () async {
+    final VideoMetadataHttpClient transport = VideoMetadataHttpClient(
+      client: MockClient((http.Request request) async {
+        throw http.ClientException(
+          "Failed host lookup: 'api.themoviedb.org'",
+          request.url,
+        );
+      }),
+      maxAttempts: 1,
+    );
+    addTearDown(transport.close);
+    final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+      apiKey: key,
+      transport: transport,
+    );
     try {
-      await clientThatFailsTransport().search('Yani Neko');
+      await provider.search(
+        const VideoMetadataSearchRequest(
+          title: 'Yani Neko',
+          mediaKind: VideoMetadataMediaKind.tv,
+        ),
+      );
       fail('should throw');
-    } on ScrapeNetworkException catch (e) {
-      final String text = e.toString();
-      // 🔴 核心：用户的 key 一个字符都不能出现。
+    } on VideoMetadataNetworkException catch (error) {
+      final String text = error.toString();
       expect(text.contains(key), isFalse, reason: 'api_key 值泄露进了异常文本：$text');
-      // 仍要留下可排查的信息：知道带了 api_key、知道是哪个主机、知道底层原因。
-      expect(text, contains('api_key=$kRedactedPlaceholder'));
-      expect(text, contains('api.themoviedb.org'));
-      expect(text, contains('Failed host lookup'));
+      expect(text, isNot(contains('api_key=')));
+      expect(text, contains('TMDB search'));
+      expect(text, contains('ClientException'));
     }
   });
 
@@ -56,18 +63,26 @@ void main() {
   });
 
   test('纯函数：值终止符覆盖引号/括号/空白包裹的真实拼法', () {
-    expect(redactCredentialsInText('a?api_key=XYZ was refused'),
-        'a?api_key=$kRedactedPlaceholder was refused');
-    expect(redactCredentialsInText('("https://h/p?token=XYZ")'),
-        '("https://h/p?token=$kRedactedPlaceholder")');
-    expect(redactCredentialsInText('h/p?key=XYZ&next=1'),
-        'h/p?key=$kRedactedPlaceholder&next=1');
+    expect(
+      redactCredentialsInText('a?api_key=XYZ was refused'),
+      'a?api_key=$kRedactedPlaceholder was refused',
+    );
+    expect(
+      redactCredentialsInText('("https://h/p?token=XYZ")'),
+      '("https://h/p?token=$kRedactedPlaceholder")',
+    );
+    expect(
+      redactCredentialsInText('h/p?key=XYZ&next=1'),
+      'h/p?key=$kRedactedPlaceholder&next=1',
+    );
   });
 
   test('纯函数：空值与无 query 文本不被破坏', () {
     expect(redactCredentialsInText(''), '');
-    expect(redactCredentialsInText('SocketException: no route to host'),
-        'SocketException: no route to host');
+    expect(
+      redactCredentialsInText('SocketException: no route to host'),
+      'SocketException: no route to host',
+    );
     // 空值参数保持原样（没有值可泄露，也不该凭空插入占位符）。
     expect(redactCredentialsInText('?api_key=&x=1'), '?api_key=&x=1');
   });

@@ -702,6 +702,7 @@ class GalIngameLookupController {
         query,
         sentence: hit.line,
         showSentenceBanner: false,
+        allowClipboardHistory: false,
         miningHandler: _miningResolver?.call(hit.line),
       ),
     );

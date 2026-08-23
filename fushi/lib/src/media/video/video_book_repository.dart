@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -11,15 +10,9 @@ import 'package:fushi/src/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
-import 'package:fushi/src/media/video/scraper/scraper_types.dart'
-    show
-        ScrapeInfoboxEntry,
-        ScrapeMetadata,
-        ScrapeSource,
-        ScrapeTag,
-        ScrapedMediaImage;
 import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -76,75 +69,8 @@ class VideoBookRepository {
   Future<bool> assignSourceIfNull(String bookUid, int sourceId) async =>
       await _db.assignVideoBookSourceIfNull(bookUid, sourceId) > 0;
 
-  // ── 条目刮削资料（video_scrape_meta，v54）─────────────────────────
-
-  /// 落一本视频的条目资料（重刮即覆盖）。标签/infobox 在这里序列化成 JSON 列，
-  /// 读回时由 [scrapeMetadata] 反序列化——JSON 编解码只在本仓库层出现一次，
-  /// 展示层和刮削层都只见领域对象 [ScrapeMetadata]。
-  Future<void> saveScrapeMetadata(String bookUid, ScrapeMetadata meta) {
-    return _db.upsertVideoScrapeMeta(
-      VideoScrapeMetaCompanion.insert(
-        bookUid: bookUid,
-        source: meta.source.name,
-        subjectId: meta.subjectId,
-        title: meta.title,
-        originalTitle: Value<String?>(meta.originalTitle),
-        summary: Value<String?>(meta.summary),
-        airDate: Value<String?>(meta.airDate),
-        rating: Value<double?>(meta.rating),
-        ratingCount: Value<int?>(meta.ratingCount),
-        episodeCount: Value<int?>(meta.episodeCount),
-        tagsJson: Value<String?>(
-          meta.tags.isEmpty
-              ? null
-              : jsonEncode(<Map<String, Object?>>[
-                  for (final ScrapeTag t in meta.tags) t.toJson(),
-                ]),
-        ),
-        infoboxJson: Value<String?>(
-          meta.infobox.isEmpty
-              ? null
-              : jsonEncode(<Map<String, Object?>>[
-                  for (final ScrapeInfoboxEntry e in meta.infobox) e.toJson(),
-                ]),
-        ),
-        detailUrl: Value<String?>(meta.detailUrl),
-        scrapedAt: DateTime.now(),
-      ),
-    );
-  }
-
-  /// 读一本视频的条目资料；未刮过返回 null。JSON 列损坏时该列降级为空列表（其余
-  /// 字段照常返回），不因一列坏掉丢掉整条资料。
-  Future<ScrapeMetadata?> scrapeMetadata(String bookUid) async {
-    final VideoScrapeMetaRow? row = await _db.getVideoScrapeMeta(bookUid);
-    if (row == null) return null;
-    return ScrapeMetadata(
-      source:
-          ScrapeSource.values.asNameMap()[row.source] ?? ScrapeSource.bangumi,
-      subjectId: row.subjectId,
-      title: row.title,
-      originalTitle: row.originalTitle,
-      summary: row.summary,
-      airDate: row.airDate,
-      rating: row.rating,
-      ratingCount: row.ratingCount,
-      episodeCount: row.episodeCount,
-      tags: _decodeJsonList<ScrapeTag>(row.tagsJson, ScrapeTag.fromJson),
-      infobox: _decodeJsonList<ScrapeInfoboxEntry>(
-        row.infoboxJson,
-        ScrapeInfoboxEntry.fromJson,
-      ),
-      detailUrl: row.detailUrl,
-    );
-  }
-
-  /// 已刮出资料的 bookUid 集合（自动刮削一次性排除已刮的，避免逐本 N+1 查询）。
-  Future<Set<String>> scrapedBookUids() => _db.scrapedVideoBookUids();
-
-  /// 一本视频的刮削资料**原始行**（播放器剧集面板判「真·集级集名」要
-  /// `episodeNumber` 列，领域对象 [ScrapeMetadata] 没带它——与合集详情页
-  /// `_episodeMetaByUid` 同一判据同一取数口）。
+  /// 一本视频的历史刮削资料原始行（播放器剧集面板判「真·集级集名」要
+  /// `episodeNumber` 列，与合集详情页 `_episodeMetaByUid` 同一判据同一取数口）。
   Future<VideoScrapeMetaRow?> episodeScrapeMeta(String bookUid) =>
       _db.getVideoScrapeMeta(bookUid);
 
@@ -156,48 +82,6 @@ class VideoBookRepository {
   /// titleCard/backdrop，Jellyfin Episode Primary → Series Thumb 的本仓版）。
   Future<List<MediaImageRow>> collectionMediaImages(int collectionId) =>
       _db.getMediaImagesForCollection(collectionId);
-
-  /// v68：整体替换一本视频的附加图组行（散装电影 backdrop/logo/titleCard，
-  /// 重刮即替换）。文件已由刮削层落 `video_covers/images/`，本层只写行。
-  Future<void> replaceMediaImages(
-    String bookUid,
-    List<ScrapedMediaImage> images,
-  ) =>
-      _db.replaceMediaImagesForBook(bookUid, <MediaImagesCompanion>[
-        for (final ScrapedMediaImage image in images)
-          MediaImagesCompanion.insert(
-            bookUid: Value<String?>(bookUid),
-            kind: image.kind.dbValue,
-            position: Value<int>(image.position),
-            path: image.path,
-            sourceUrl: Value<String?>(image.sourceUrl),
-          ),
-      ]);
-
-  /// 删一本的条目资料（「重新刮削」前先清）。
-  Future<void> deleteScrapeMetadata(String bookUid) =>
-      _db.deleteVideoScrapeMeta(bookUid);
-
-  /// 解 JSON 数组列为领域对象列表；null / 非数组 / 解析异常一律降级为空列表。
-  static List<T> _decodeJsonList<T>(
-    String? json,
-    T? Function(Object?) fromJson,
-  ) {
-    if (json == null || json.isEmpty) return const <Never>[];
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(json);
-    } catch (_) {
-      return const <Never>[];
-    }
-    if (decoded is! List<Object?>) return const <Never>[];
-    final List<T> out = <T>[];
-    for (final Object? item in decoded) {
-      final T? parsed = fromJson(item);
-      if (parsed != null) out.add(parsed);
-    }
-    return out;
-  }
 
   /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户导入视频
   /// 成功后**调用：[VideoImportDialog] 各路径（单文件 / 文件夹单集 / 播放列表首集 /
@@ -495,7 +379,9 @@ class VideoBookRepository {
   /// 统一合集：写合集**自有**封面绝对路径（`MediaCollections.coverPath`）。
   /// 作品级竖版海报的唯一归宿（用户 2026-08-02）。
   Future<void> updateMediaCollectionCoverPath(int id, String? coverPath) =>
-      _db.updateMediaCollectionCoverPath(id, coverPath);
+      VideoCoverMutationGate.runExclusive(
+        () => _db.updateMediaCollectionCoverPath(id, coverPath),
+      );
 
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
@@ -506,8 +392,25 @@ class VideoBookRepository {
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
   /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。
-  Future<List<VideoBookRow>> listForShelf() async =>
-      _repairMovedCoverPaths(await _db.allVideoBooks());
+  Future<List<VideoBookRow>> listForShelf() {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    // maintenance 活跃时仍允许纯读展示，但绝不在它结束后拿旧快照做路径自愈写回。
+    if (lease == null) return _db.allVideoBooks();
+    return _listForShelfUnlocked().whenComplete(lease.release);
+  }
+
+  /// 书架展示的**读**路径不持 [VideoCoverMutationGate]。
+  ///
+  /// 这条路径每次库页刷新都会走，而 gate 是一条**进程级全局串行队列**：整段读挂在
+  /// 队列上，一是把所有封面写入排到每一次列表加载之后（过度串行），二是这条读的
+  /// future 一旦被丢弃（页面销毁、widget 树拆除、测试 zone 结束），队列尾就永远
+  /// 不完成，此后全进程的封面写入**全部死锁**。真正需要串行的只有下面
+  /// [_repairMovedCoverPaths] 里那次极少发生的指针回写，锁就只加在那里。
+  Future<List<VideoBookRow>> _listForShelfUnlocked() async {
+    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    return _repairMovedCoverPaths(rows);
+  }
 
   /// TODO-1255：自愈被数据根迁移遗弃的封面绝对路径。
   ///
@@ -537,8 +440,21 @@ class VideoBookRepository {
       coversDir ??= await VideoStorage.coversDir();
       final String candidate = p.join(coversDir.path, p.basename(cover));
       if (candidate != cover && File(candidate).existsSync()) {
-        await _db.updateVideoBookCover(row.bookUid, candidate);
-        out.add(row.copyWith(coverPath: Value<String?>(candidate)));
+        // 只有这一次指针回写需要与其他封面写入串行。锁内必须按 bookUid 重读当前
+        // cover_path：这批 rows 是进锁前的快照，期间用户可能刚手选了封面，拿旧快照
+        // 覆盖等于把手选结果抹掉（正是 gate 当初要防的那个竞态）。
+        final bool repaired = await VideoCoverMutationGate.runExclusive(
+          () async {
+            final VideoBookRow? current =
+                await _db.getVideoBookByBookUid(row.bookUid);
+            if (current == null || current.coverPath != cover) return false;
+            await _db.updateVideoBookCover(row.bookUid, candidate);
+            return true;
+          },
+        );
+        out.add(repaired
+            ? row.copyWith(coverPath: Value<String?>(candidate))
+            : row);
       } else {
         out.add(row);
       }
@@ -759,11 +675,28 @@ class VideoBookRepository {
   }
 
   /// 更新视频封面图绝对路径（书架/视频库长按菜单手动设置封面）。
-  Future<void> updateCover(String bookUid, String coverPath) =>
-      _db.updateVideoBookCover(bookUid, coverPath);
+  Future<void> updateCover(String bookUid, String coverPath) {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<void>.error(StateError('视频刮削资料正在清理'));
+    }
+    return VideoCoverMutationGate.runExclusive(
+      () => _db.updateVideoBookCover(bookUid, coverPath),
+    ).whenComplete(lease.release);
+  }
 
   /// 清空视频封面图路径（存量子篇作品海报摘除，见 `member_cover_cleanup.dart`）。
-  Future<void> clearCover(String bookUid) => _db.clearVideoBookCover(bookUid);
+  Future<void> clearCover(String bookUid) {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<void>.error(StateError('视频刮削资料正在清理'));
+    }
+    return VideoCoverMutationGate.runExclusive(
+      () => _db.clearVideoBookCover(bookUid),
+    ).whenComplete(lease.release);
+  }
 
   /// 更新视频/播放列表标题（视频库长按菜单「重命名」）。
   Future<void> updateTitle(String bookUid, String title) =>
@@ -806,32 +739,98 @@ class VideoBookRepository {
   /// DB compaction are best-effort and run outside the delete transaction.
   Future<bool> deleteVideoBookAndReclaimAssets(
     String bookUid, {
+    DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
-  }) async {
-    final VideoBookRow? book = await getByBookUid(bookUid);
-    if (book == null) return false;
+    Future<void> Function()? afterDeleteBeforeReclaim,
+  }) {
+    return deleteVideoBooksAndReclaimAssets(
+      <String>[bookUid],
+      scope: scope,
+      compactDatabase: compactDatabase,
+      afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+    ).then((int deletedCount) => deletedCount > 0);
+  }
 
-    final String? deletedCoverPath = book.coverPath;
-    final String? deletedSubtitlePath = book.subtitleSource;
-    final String deletedVideoPath = book.videoPath;
-    // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
-    // 同一顺序约束——行一删就再也推导不出来，见 collection_asset_reclaim）。
-    final List<String> deletedImagePaths = <String>[
-      for (final MediaImageRow row in await _db.getMediaImagesForBook(bookUid))
-        row.path,
-    ];
-    await deleteVideoBook(bookUid);
-    await reclaimDeletedVideoBookAssets(
-      deletedBookUid: bookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
-      deletedImagePaths: deletedImagePaths,
-    );
-    if (compactDatabase) {
-      await compactAfterVideoDeleteBestEffort();
+  /// Deletes multiple video rows under one operation/mutation boundary.
+  ///
+  /// [afterDeleteBeforeReclaim] lets UI callers rebuild and release file-backed
+  /// widgets after the rows disappear while still preventing scrape maintenance
+  /// from entering before every deleted row's app-owned assets are reclaimed.
+  Future<int> deleteVideoBooksAndReclaimAssets(
+    Iterable<String> bookUids, {
+    DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool compactDatabase = true,
+    Future<void> Function()? afterDeleteBeforeReclaim,
+  }) {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<int>.error(StateError('视频刮削资料正在清理'));
     }
-    return true;
+    return VideoCoverMutationGate.runExclusive(
+      () => _deleteVideoBooksAndReclaimAssetsUnlocked(
+        bookUids,
+        scope: scope,
+        compactDatabase: compactDatabase,
+        afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+      ),
+    ).whenComplete(lease.release);
+  }
+
+  Future<int> _deleteVideoBooksAndReclaimAssetsUnlocked(
+    Iterable<String> bookUids, {
+    required DeleteScope scope,
+    required bool compactDatabase,
+    required Future<void> Function()? afterDeleteBeforeReclaim,
+  }) async {
+    final deleted =
+        <
+          ({
+            String bookUid,
+            String? coverPath,
+            String? subtitlePath,
+            String videoPath,
+            List<String> imagePaths,
+          })
+        >[];
+    for (final String bookUid in bookUids.toSet()) {
+      final VideoBookRow? book = await getByBookUid(bookUid);
+      if (book == null) continue;
+      // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与
+      // coverPath 同一顺序约束——行一删就再也推导不出来）。
+      final List<String> imagePaths = <String>[
+        for (final MediaImageRow row in await _db.getMediaImagesForBook(
+          bookUid,
+        ))
+          row.path,
+      ];
+      await deleteVideoBook(bookUid, scope: scope);
+      deleted.add((
+        bookUid: bookUid,
+        coverPath: book.coverPath,
+        subtitlePath: book.subtitleSource,
+        videoPath: book.videoPath,
+        imagePaths: imagePaths,
+      ));
+    }
+
+    try {
+      await afterDeleteBeforeReclaim?.call();
+    } finally {
+      for (final snapshot in deleted) {
+        await _reclaimDeletedVideoBookAssetsUnlocked(
+          deletedBookUid: snapshot.bookUid,
+          deletedCoverPath: snapshot.coverPath,
+          deletedSubtitlePath: snapshot.subtitlePath,
+          deletedVideoPath: snapshot.videoPath,
+          deletedImagePaths: snapshot.imagePaths,
+        );
+      }
+      if (compactDatabase && deleted.isNotEmpty) {
+        await compactAfterVideoDeleteBestEffort();
+      }
+    }
+    return deleted.length;
   }
 
   /// Reclaims app-owned video assets for a row that has already been deleted.
@@ -847,6 +846,27 @@ class VideoBookRepository {
     required String? deletedSubtitlePath,
     required String deletedVideoPath,
     List<String> deletedImagePaths = const <String>[],
+  }) {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) return Future<void>.value();
+    return VideoCoverMutationGate.runExclusive(
+      () => _reclaimDeletedVideoBookAssetsUnlocked(
+        deletedBookUid: deletedBookUid,
+        deletedCoverPath: deletedCoverPath,
+        deletedSubtitlePath: deletedSubtitlePath,
+        deletedVideoPath: deletedVideoPath,
+        deletedImagePaths: deletedImagePaths,
+      ),
+    ).whenComplete(lease.release);
+  }
+
+  Future<void> _reclaimDeletedVideoBookAssetsUnlocked({
+    required String deletedBookUid,
+    required String? deletedCoverPath,
+    required String? deletedSubtitlePath,
+    required String deletedVideoPath,
+    required List<String> deletedImagePaths,
   }) async {
     try {
       final ({Set<String> covers, Set<String> subtitles}) refs =

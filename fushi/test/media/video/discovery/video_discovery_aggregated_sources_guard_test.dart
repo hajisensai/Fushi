@@ -6,7 +6,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 
 /// BUG-1538 守卫：发现页在「下载代理 direct / proxy」两种模式下都用同一份
-/// 聚合来源（AniList + TMDB + Bangumi），来源选择不随代理开关分叉降级。
+/// 聚合来源（AniList + TMDB），来源选择不随代理开关分叉降级。
 ///
 /// 两层钉法：
 /// 1. 行为层：[VideoDiscoveryService.production] 的签名里没有任何代理输入，
@@ -15,18 +15,17 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 ///    （`DownloadNetworkProxy*` / `download_network_proxy.dart`），
 ///    杜绝将来有人把来源选择接到代理模式上。
 void main() {
-  test('production discovery service aggregates AniList + TMDB + Bangumi', () {
+  test('production discovery service aggregates only AniList + TMDB', () {
     final VideoDiscoveryService service = VideoDiscoveryService.production(
-      const VideoSourceScrapeGlobalConfig(
-        tmdbApiKey: 'test-key',
-        bangumiToken: 'test-token',
-      ),
+      const VideoSourceScrapeGlobalConfig(tmdbApiKey: 'test-key'),
     );
     addTearDown(service.close);
+    final Set<String> providerIds = service.providerIdsForTesting.toSet();
     expect(
-      service.providerIdsForTesting.toSet(),
-      <String>{'anilist', 'tmdb', 'bangumi'},
+      providerIds,
+      <String>{'anilist', 'tmdb'},
     );
+    expect(providerIds, isNot(contains('bangumi')));
   });
 
   test('discovery source selection has no dependency on download proxy mode',

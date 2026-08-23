@@ -290,8 +290,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'coverPath',
       PathRebaseKind.documentsRooted,
       'BUG-1211 合集自有封面：<documents>/video_covers/collections/<id>.jpg'
-          '（VideoStorage.collectionCoversDir，落盘唯一入口 '
-          'cover_scraper_service.dart downloadCollectionCover）。与 '
+          '（VideoStorage.collectionCoversDir；现有下载导入与历史刮削记录均可能写入）。与 '
           'video_books.cover_path / galgames.cover_path 完全同型 → 不改写 = '
           '换过封面的合集在换数据根后全部退回成员借用链，用户看到封面「自己变了」。'),
 
@@ -301,7 +300,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── video_scrape_meta（刮削快照）───────────────────────────────────
   PathRebaseColumn('VideoScrapeMeta', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
   PathRebaseColumn('VideoScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
       '标签 JSON 数组，无路径。'),
   PathRebaseColumn('VideoScrapeMeta', 'infoboxJson', PathRebaseKind.notAPath,
@@ -311,7 +310,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── collection_scrape_meta（合集级刮削资料，schema v64 / BUG-1310）────
   PathRebaseColumn('CollectionScrapeMeta', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
   PathRebaseColumn('CollectionScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
       '标签 JSON 数组，无路径。'),
   PathRebaseColumn('CollectionScrapeMeta', 'infoboxJson',
@@ -324,7 +323,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.documentsRooted,
       'BUG-1310 合集横版背景：<documents>/video_covers/collections/'
           '<id>_backdrop.jpg（与同表兄弟 media_collections.cover_path 同目录、'
-          '同落盘入口 cover_scraper_service.dart applyCandidateToCollection）。'
+          '现仅作为历史本地刮削资产继续读取）。'
           '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
           'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。'),
 
@@ -346,7 +345,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
   PathRebaseColumn('CollectionRelations', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
   PathRebaseColumn('CollectionRelations', 'coverUrl', PathRebaseKind.notAPath,
       '关联条目封面的远端 URL，不是本机路径。'),
   PathRebaseColumn(

@@ -135,11 +135,37 @@ void main() {
       // 四方法收敛到 runImport 后，本文件不应再出现手写 finally 或直接
       // ErrorLogService 调用——防止未来新增导入方法复制旧的 try{}finally{}
       // 形态（无 catch，异常静默逃逸 async zone）回归。
+      // 禁的是「无 catch 的 try/finally」那种形态：异常穿过 finally 后无人接，
+      // 静默逃逸 async zone（BUG-1117）。**释放句柄**用 finally 是对的，而且必须
+      // 用 finally——异常照常向上传到 runImport 的 catch，什么都没被吞。所以判据
+      // 从「整文件不许出现 finally」收成「只有登记的函数可以用」：新增导入方法
+      // 抄旧的 try{}finally{} 仍然当场红。
+      const Set<String> allowedFinallyFunctions = <String>{
+        // 封面写入闸门的 lease 释放：try 里只有一句 await，没有 catch，异常原样
+        // 上抛给 runImport 模板。
+        '_runVideoImportCoverMutation',
+      };
+      // `(?:<[^>]*>)?` 是必需的：泛型函数 `Future<T> _foo<T>(` 的名字与 `(` 之间
+      // 夹着类型参数，少了它整条声明匹配不到，归属会退回 <file-scope>。
+      final RegExp declaration = RegExp(
+          r'^ {0,2}(?:static )?(?:[\w<>?,]+ )+(\w+)\s*(?:<[^>]*>)?\s*[({]');
+      final Set<String> finallyOwners = <String>{};
+      String current = '<file-scope>';
+      for (final String line in source.split('\n')) {
+        // 形参行（`Future<T> Function(bool x) action,`）与声明行同形，靠尾逗号
+        // 区分：真声明行以 `{` 或 `(` 收尾，形参行以 `,` 收尾。
+        final String trimmedEnd = line.trimRight();
+        final RegExpMatch? decl =
+            trimmedEnd.endsWith(',') ? null : declaration.firstMatch(line);
+        if (decl != null) current = decl.group(1)!;
+        if (line.contains('} finally {')) finallyOwners.add(current);
+      }
       expect(
-        source.contains('} finally {'),
-        isFalse,
+        finallyOwners,
+        allowedFinallyFunctions,
         reason: '新增导入方法必须走 ImportFlowMixin.runImport 模板，'
-            '不要手写 try/finally（BUG-1117 回归风险）',
+            '不要手写 try/finally（BUG-1117 回归风险）。'
+            '实际=$finallyOwners 登记=$allowedFinallyFunctions',
       );
       expect(
         source.contains('ErrorLogService.instance.log('),

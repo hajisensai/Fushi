@@ -32,6 +32,58 @@ class VideoMetadataDatabaseStore {
 
   final FushiDatabase database;
 
+  /// Returns every persisted work identity, with the primary identity first.
+  ///
+  /// The canonical AniDB binding and its secondary TMDB cross-reference must
+  /// survive independently of generated NFO files. Callers can therefore
+  /// reuse an already-confirmed TMDB id/episode group without title-searching
+  /// and potentially rebinding the same AniDB work on every rescrape.
+  Future<List<VideoMetadataLookup>> lookupsForWork(
+    VideoSourceScrapeWork localWork,
+  ) async {
+    final VideoMetadataWorkRow? row = localWork.collection == null
+        ? await database.getVideoMetadataWorkByBook(
+            localWork.members.single.bookUid,
+          )
+        : await database.getVideoMetadataWorkByCollection(
+            localWork.collection!.id,
+          );
+    if (row == null) return const <VideoMetadataLookup>[];
+    final VideoMetadataMediaKind? kind =
+        VideoMetadataMediaKind.values.asNameMap()[row.mediaType];
+    if (kind == null) return const <VideoMetadataLookup>[];
+    final List<VideoMetadataProviderIdentityRow> identities =
+        await database.getVideoMetadataProviderIdentities(workId: row.id);
+    final List<VideoMetadataProviderIdentityRow> ordered =
+        <VideoMetadataProviderIdentityRow>[
+      ...identities.where(
+        (VideoMetadataProviderIdentityRow value) => value.isPrimary,
+      ),
+      ...identities.where(
+        (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
+      ),
+    ];
+    final List<VideoMetadataLookup> result = <VideoMetadataLookup>[];
+    for (final VideoMetadataProviderIdentityRow identity in ordered) {
+      final VideoMetadataProviderKind? provider =
+          VideoMetadataProviderKind.values.asNameMap()[identity.provider];
+      if (provider == null ||
+          provider == VideoMetadataProviderKind.local ||
+          provider == VideoMetadataProviderKind.fanart) {
+        continue;
+      }
+      result.add(VideoMetadataLookup(
+        provider: provider,
+        externalId: identity.externalId,
+        mediaKind: kind,
+        episodeGroupId: provider == VideoMetadataProviderKind.tmdb
+            ? row.episodeGroupId
+            : null,
+      ));
+    }
+    return result;
+  }
+
   Future<VideoMetadataLookup?> confirmedLookup(
     VideoSourceScrapeWork localWork,
   ) async {
@@ -870,6 +922,8 @@ class VideoMetadataDatabaseStore {
     final VideoMetadataId? id = _primaryId(work);
     if (id == null) return null;
     return switch (work.provider) {
+      VideoMetadataProviderKind.local => null,
+      VideoMetadataProviderKind.anidb => 'https://anidb.net/anime/${id.value}',
       VideoMetadataProviderKind.tmdb =>
         'https://www.themoviedb.org/${work.kind.name}/${id.value}',
       VideoMetadataProviderKind.bangumi => 'https://bgm.tv/subject/${id.value}',

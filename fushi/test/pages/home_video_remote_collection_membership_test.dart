@@ -94,7 +94,7 @@ void main() {
                 repo: VideoBookRepository(db),
                 // #792 分区化：home 分区只渲染 dashboard 概览，合集封面卡与远端
                 // 占位卡所在的混排墙（_buildLocalVideoSlivers）搬进了 series 分区。
-                section: VideoLibrarySection.series,
+                section: VideoLibrarySection.allVideos,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),

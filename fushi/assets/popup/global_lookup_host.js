@@ -55,6 +55,17 @@
   var POPUP_SRC = 'https://hibiki.popup/popup.html';
   var LAYER_ID = 'global-lookup-host-layer';
   var STYLE_ID = 'global-lookup-host-style';
+  var FRAME_CHROME_STYLE_ID = 'global-lookup-frame-chrome-owner-style';
+  var FRAME_CHROME_CLASS = 'global-lookup-frame-chrome-owned';
+  // BUG-1609 follow-up — the popup document is served by WebView2's persistent
+  // virtual-host cache, while this host script is loaded from the current app
+  // bundle and injected by C++ on every process launch.  Keep the canvas guard
+  // here so a rebuilt app cannot keep painting the old square document canvas
+  // merely because a stale popup.css response survived under hibiki.popup.
+  // A present-but-fully-transparent background prevents CSS body-background
+  // propagation without adding a single opaque pixel.
+  var FRAME_CANVAS_GUARD_BACKGROUND =
+      'linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0))';
 
   // D1 — reveal gate. A shell paints only when BOTH flags are 'true'. The
   // attribute selector below is the single source of truth for visibility; JS
@@ -176,6 +187,10 @@
     routeEpoch: 0,
     lookupEpoch: 0,
   };
+  // BUG-1793 follow-up — the native host owns two physical lookup windows and
+  // therefore has the final, non-racy surface identity. Defaults on for legacy
+  // hosts; GlobalLookupWindow::RenderJson synchronizes it after every render.
+  var clipboardHistoryAvailable = true;
 
   function normalizeRoute(route, routeEpoch, lookupEpoch) {
     var source = 'desktop';
@@ -419,14 +434,14 @@
     var style = document.createElement('style');
     style.id = STYLE_ID;
     // F2 — outer SHELL chrome (ported from hoshi reader-popup-host.js shell).
-    // TODO-893 — RESPONSIBILITY SPLIT to kill the double-border (symptom 1):
-    // the iframe inside the shell already paints the THEME card background AND
-    // the single visible card border (popup.css `html.global-lookup body`
-    // border + radius + padding). The shell therefore owns ONLY the rounded
-    // clip — it must NOT draw a second `border` (that produced two concentric
-    // grey rings with a white gap between them). `border-radius` stays so the
-    // overflow clip follows the same rounded silhouette as the body border;
-    // `background:transparent` keeps the shell from painting a second fill.
+    // The base state stays transparent/borderless until the iframe has loaded
+    // its actual theme. syncFrameShellChrome then transfers the iframe body's
+    // ONE computed fill + border to this fixed viewport shell and disables the
+    // duplicate body chrome. The shell must own the final silhouette: body is a
+    // scrolling document, and its right edge stops before WebView2's reserved
+    // scrollbar gutter, so body-owned radius leaves the visible right corners
+    // square even while the native HRGN correctly rounds a transparent strip
+    // farther out. No hard-coded theme colour lives in the host.
     //
     // BUG-709 — NO `box-shadow`. The overlay HWND is a NON-layered, OPAQUE
     // WebView2 window (global_lookup_window.cpp: "No WS_EX_LAYERED"). On such a
@@ -455,6 +470,7 @@
         '.global-lookup-frame-shell{visibility:hidden;opacity:0;}' +
          '.global-lookup-frame-shell{' +
          'box-sizing:border-box;overflow:hidden;background:transparent;' +
+         'border:0;' +
          'border-radius:10px;' +
         // TODO-890 — slide-out close: the shell tweens transform+opacity so a
         // dismiss slides the card off-screen instead of vanishing instantly
@@ -462,6 +478,16 @@
         // ease-out matches the Flutter side. Scoped to the shell selector so
         // it never leaks into the in-app popup (which never loads host.js).
          'transition:transform 200ms ease-out, opacity 200ms ease-out;}' +
+        // Paint the ONE visible border without giving it layout width.  The
+        // iframe body keeps its existing (transparent) border allocation, so
+        // content width, scrollHeight and zoom measurement stay byte-for-byte
+        // compatible while the viewport-stable shell owns the actual pixels.
+        '.global-lookup-frame-shell::after{' +
+        'content:"";position:absolute;inset:0;box-sizing:border-box;' +
+        'border:var(--global-lookup-shell-border-width,0px) ' +
+        'var(--global-lookup-shell-border-style,solid) ' +
+        'var(--global-lookup-shell-border-color,transparent);' +
+        'border-radius:inherit;pointer-events:none;z-index:4;}' +
         // WebView2 promotes each iframe to its own composition surface.  In the
         // game-card CapturePreview path that surface can escape the parent's
         // overflow:hidden clip, leaving the iframe canvas square beyond the
@@ -1109,6 +1135,65 @@
     return btn;
   }
 
+  // BUG-1793 — clipboard history belongs to desktop/global lookup and the
+  // persistent clipboard panel.  A galCard is a game-scoped dictionary surface:
+  // exposing the process-wide copy history there both leaks unrelated desktop
+  // text into the game overlay and adds chrome the user did not ask for.
+  function routeAllowsClipboardHistory(routeSnapshot) {
+    return clipboardHistoryAvailable &&
+        normalizeRoute(routeSnapshot || activeRoute).source !== 'galCard';
+  }
+
+  // The stable root iframe/shell can be reused across routed lookups. Reconcile
+  // the host-chrome button on every render instead of deciding only at shell
+  // creation, otherwise a desktop -> galCard transition keeps the old clock (or
+  // a galCard -> desktop transition permanently loses it).
+  function syncRootHistoryButton(record) {
+    if (!record || !record.shell ||
+        typeof record.parentIndex !== 'number' || record.parentIndex >= 0) {
+      return;
+    }
+    var children = record.shell.children || [];
+    var existing = null;
+    for (var i = 0; i < children.length; i++) {
+      if (children[i] && children[i].className === 'global-lookup-history') {
+        existing = children[i];
+        break;
+      }
+    }
+    var shouldShow = layoutMode !== 'panel' &&
+        routeAllowsClipboardHistory(record.route);
+    if (!shouldShow) {
+      if (existing && typeof record.shell.removeChild === 'function') {
+        record.shell.removeChild(existing);
+      }
+      return;
+    }
+    if (!existing && typeof record.shell.appendChild === 'function') {
+      var historyBtn = createHistoryButton();
+      if (historyBtn) {
+        record.shell.appendChild(historyBtn);
+      }
+    }
+  }
+
+  // Called by the Windows physical-window host after each render. This is
+  // intentionally separate from beginLookup(): cached/replayed render scripts
+  // may transiently carry the legacy desktop route, but a galCard HWND can never
+  // become a desktop lookup window. Reconcile synchronously before WebView2 can
+  // present the rendered frame.
+  function setClipboardHistoryAvailable(available) {
+    clipboardHistoryAvailable = available === true;
+    if (!clipboardHistoryAvailable) {
+      hideClipboardHistory();
+    }
+    if (frames && typeof frames.forEach === 'function') {
+      frames.forEach(function (record) {
+        syncRootHistoryButton(record);
+      });
+    }
+  }
+
   // 历史覆盖层渲染进 ROOT 卡 shell（parentIndex < 0；面板模式该卡带 data-panel-root，
   // 瞬态模式即级联根卡）。挂进 shell 内而非窗口层：瞬态窗被 native 按 shell 卡矩形裁剪，
   // 挂窗口层的覆盖层会落到透明裁剪区外不可见（BUG-749 同源）。返回 root shell 或 null。
@@ -1169,6 +1254,13 @@
   // entries 顺序=最新在前（Dart 已 reverse）。每行点选 → lookupClipboardHistoryEntry
   // 让 Dart 重查该文本；清空 → clearClipboardHistory；× / 选中一条后自动关层。
   function showClipboardHistory(payload) {
+    // Defense in depth for routed/stale native messages: even if a delayed
+    // clipboardHistory response arrives after the surface became galCard, never
+    // mount the process-wide history overlay into the game lookup card.
+    if (!routeAllowsClipboardHistory(activeRoute)) {
+      hideClipboardHistory();
+      return false;
+    }
     var data = payload;
     if (typeof payload === 'string') {
       try {
@@ -1327,11 +1419,13 @@
       if (grip) {
         shell.appendChild(grip);
       }
-      // 剪贴板复制历史按钮（🕘）——瞬态窗无面板栏，挂 root 卡左上角（躲 native
-      // shell 裁剪）。postToHost('clipboardHistory') → Dart 重载并注入覆盖层。
-      var histBtn = createHistoryButton();
-      if (histBtn) {
-        shell.appendChild(histBtn);
+      // 剪贴板复制历史按钮（🕘）只属于桌面瞬态查词。galCard 游戏浮窗不显示；
+      // syncRootHistoryButton 还会处理稳定 root shell 的跨路由复用。
+      if (routeAllowsClipboardHistory(activeRoute)) {
+        var histBtn = createHistoryButton();
+        if (histBtn) {
+          shell.appendChild(histBtn);
+        }
       }
     }
     layer.appendChild(shell);
@@ -1599,9 +1693,141 @@
       // even for an empty body so the equality check stays stable.
       record.injectedSettingsJs =
           (typeof d.settingsJs === 'string') ? d.settingsJs : '';
+      syncFrameShellChrome(record);
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  function ensureFrameChromeOwnerStyle(doc) {
+    if (!doc || typeof doc.createElement !== 'function') {
+      return false;
+    }
+    if (typeof doc.getElementById === 'function' &&
+        doc.getElementById(FRAME_CHROME_STYLE_ID)) {
+      return true;
+    }
+    var style = doc.createElement('style');
+    style.id = FRAME_CHROME_STYLE_ID;
+    // Keep the body's border allocation, padding, min-height and scroll
+    // semantics exactly as authored. Only its pixels move: transparent border
+    // preserves layout while the shell pseudo-element draws the one visible ring.
+    style.textContent =
+        'html.global-lookup.' + FRAME_CHROME_CLASS + ' body{' +
+        'background:transparent!important;' +
+        'border-color:transparent!important;}';
+    var parent = doc.head || doc.documentElement;
+    if (!parent || typeof parent.appendChild !== 'function') {
+      return false;
+    }
+    parent.appendChild(style);
+    return true;
+  }
+
+  function scaledFrameChromePx(value, zoom, fallback) {
+    var px = parseFloat(value);
+    if (!isFinite(px) || px < 0) {
+      return fallback;
+    }
+    return (px * zoom) + 'px';
+  }
+
+  function clearFrameShellChrome(shell) {
+    if (!shell || !shell.style) {
+      return;
+    }
+    shell.style.background = 'transparent';
+    shell.style.border = '0';
+    if (typeof shell.style.setProperty === 'function') {
+      shell.style.setProperty('--global-lookup-shell-border-width', '0px');
+      shell.style.setProperty('--global-lookup-shell-border-style', 'solid');
+      shell.style.setProperty(
+          '--global-lookup-shell-border-color', 'transparent');
+    }
+  }
+
+  // BUG-1609 final root fix — the viewport-stable host shell owns the visible
+  // card fill/border/radius; the scrolling iframe body owns content layout only.
+  // This closes the reserved-scrollbar-gutter hole where native HRGN rounded a
+  // transparent outer strip while the inset body fill still ended in a square
+  // right edge. The values are copied from getComputedStyle AFTER settingsJs, so
+  // light/dark/e-ink, MD3 dynamic colours and panel opacity keep one truth source.
+  // The host script itself is injected from the current bundle at document-start,
+  // so the ownership rule also does not depend on a fresh popup.css cache entry.
+  function syncFrameShellChrome(record) {
+    var classes = null;
+    var shell = record && record.shell;
+    var ownershipRemoved = false;
+    try {
+      var doc = record && record.iframe && record.iframe.contentDocument;
+      var root = doc && doc.documentElement;
+      if (!root || !root.style) {
+        return;
+      }
+      if (typeof root.style.setProperty === 'function') {
+        root.style.setProperty(
+            'background', FRAME_CANVAS_GUARD_BACKGROUND, 'important');
+      } else {
+        // Minimal DOM harness / ancient engine fallback. Inline style still
+        // outranks the cached author stylesheet in both cases.
+        root.style.background = FRAME_CANVAS_GUARD_BACKGROUND;
+      }
+      var body = doc.body;
+      var frame = record.iframe;
+      classes = root.classList;
+      var view = doc.defaultView || (frame && frame.contentWindow);
+      if (!body || !shell || !shell.style || !frame || !frame.style ||
+          !classes || typeof classes.remove !== 'function' ||
+          typeof classes.add !== 'function' || !view ||
+          typeof view.getComputedStyle !== 'function' ||
+          !ensureFrameChromeOwnerStyle(doc)) {
+        return;
+      }
+
+      // Reused frames already carry the ownership class. Remove it briefly so
+      // computed style exposes the freshly injected author theme, then restore
+      // ownership after copying the values to the shell.
+      classes.remove(FRAME_CHROME_CLASS);
+      ownershipRemoved = true;
+      var computed = view.getComputedStyle(body);
+      var background = computed && computed.backgroundColor;
+      if (!background || background === 'transparent' ||
+          background === 'rgba(0, 0, 0, 0)') {
+        // Stylesheet/navigation failure: clear any reused shell theme and leave
+        // the ownership class off, so body remains the self-contained fallback.
+        clearFrameShellChrome(shell);
+        return;
+      }
+      var borderWidth = computed.borderTopWidth || '0px';
+      var borderStyle = computed.borderTopStyle || 'none';
+      var borderColor = computed.borderTopColor || 'transparent';
+      var zoom = frameContentZoom(record);
+      var radius = scaledFrameChromePx(
+          computed.borderTopLeftRadius || '10px', zoom, '10px');
+      var visibleBorderWidth = (borderStyle === 'none' || borderWidth === '0px')
+          ? '0px'
+          : scaledFrameChromePx(borderWidth, zoom, '0px');
+
+      shell.style.background = background;
+      shell.style.border = '0';
+      shell.style.setProperty(
+          '--global-lookup-shell-border-width', visibleBorderWidth);
+      shell.style.setProperty(
+          '--global-lookup-shell-border-style', borderStyle);
+      shell.style.setProperty(
+          '--global-lookup-shell-border-color', borderColor);
+      shell.style.borderRadius = radius;
+      frame.style.borderRadius = radius;
+      frame.style.clipPath = 'inset(0 round ' + radius + ')';
+      classes.add(FRAME_CHROME_CLASS);
+      ownershipRemoved = false;
+    } catch (e) {
+      // Same-origin access is part of the host contract. If navigation failed,
+      // clear stale shell paint and restore body-owned degraded behaviour.
+      if (ownershipRemoved) {
+        clearFrameShellChrome(shell);
+      }
     }
   }
 
@@ -1688,6 +1914,7 @@
       record.descriptor = descriptor;
     }
     bindRecordRoute(record, activeRoute);
+    syncRootHistoryButton(record);
     applyShellStyle(record.shell, descriptor);
     // D1 / TODO-1231 v3 — geometry is placed for this layer, so reveal-ready is
     // eligible. The shell still stays hidden until content-ready also flips (the
@@ -1905,6 +2132,12 @@
 
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    // BUG-1793 — this bit identifies the originating UI surface, not merely the
+    // physical HWND route. A galgame text-overlay tap intentionally uses the
+    // desktop lookup window, but still must not expose process-wide copy history.
+    // Missing = true for compatibility with older renderers.
+    setClipboardHistoryAvailable(
+        !payload || payload.clipboardHistoryAvailable !== false);
     // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
     // measure so the very first reveal already commits the headroom-covered origin.
     applyOriginFloor(payload && payload.originFloor);
@@ -2841,6 +3074,7 @@
     setPanelBlockCaptureVisual: setPanelBlockCaptureVisual,
     scrollRootToTop: scrollRootToTop,
     // 剪贴板复制历史覆盖层（Dart 注入渲染 / 关闭）。
+    setClipboardHistoryAvailable: setClipboardHistoryAvailable,
     showClipboardHistory: showClipboardHistory,
     hideClipboardHistory: hideClipboardHistory,
     _frames: frames,

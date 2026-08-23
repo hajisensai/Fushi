@@ -29,18 +29,24 @@ void main() {
     Directory sourceDirFor(String arch, {int payload = 1}) {
       final Directory source = Directory(p.join(root.path, 'install', arch))
         ..createSync(recursive: true);
-      for (final String name
-          in GalgameHookRuntimeStage.stagedFilesForArch(arch)) {
+      for (final String name in GalgameHookRuntimeStage.stagedFilesForArch(
+        arch,
+      )) {
         File(p.join(source.path, name))
           ..createSync(recursive: true)
           ..writeAsBytesSync(List<int>.filled(payload, payload % 256));
       }
       // 安装目录里真实存在、但**不该**被搬走的大件（140 MB 的提取运行时）。
-      Directory(p.join(source.path, 'unity_audio_runtime'))
-          .createSync(recursive: true);
-      File(p.join(source.path, 'unity_audio_runtime',
-              'fushi_unity_audio_extract.exe'))
-          .writeAsStringSync('extractor');
+      Directory(
+        p.join(source.path, 'unity_audio_runtime'),
+      ).createSync(recursive: true);
+      File(
+        p.join(
+          source.path,
+          'unity_audio_runtime',
+          'fushi_unity_audio_extract.exe',
+        ),
+      ).writeAsStringSync('extractor');
       return source;
     }
 
@@ -71,8 +77,9 @@ void main() {
       // galHookHelperArchTag 从 injector 路径的**父目录名**认架构；父目录一旦不叫
       // x86/x64，架构标签会静默变成空串，诊断与 helper 校验一起失真。
       final Directory source = sourceDirFor('x64');
-      final String? injector =
-          await stageFor((_) => source).ensureStaged(arch: 'x64');
+      final String? injector = await stageFor(
+        (_) => source,
+      ).ensureStaged(arch: 'x64');
 
       expect(p.basename(p.dirname(injector!)), 'x64');
     });
@@ -108,18 +115,21 @@ void main() {
 
     test('不搬 140 MB 的 unity 提取运行时', () async {
       final Directory source = sourceDirFor('x64');
-      final String? injector =
-          await stageFor((_) => source).ensureStaged(arch: 'x64');
+      final String? injector = await stageFor(
+        (_) => source,
+      ).ensureStaged(arch: 'x64');
 
       expect(
-        Directory(p.join(p.dirname(injector!), 'unity_audio_runtime'))
-            .existsSync(),
+        Directory(
+          p.join(p.dirname(injector!), 'unity_audio_runtime'),
+        ).existsSync(),
         isFalse,
         reason: '提取运行时只被短命子进程用，且安装器能杀掉它，没有理由复制 140 MB',
       );
       expect(
-        GalgameHookRuntimeStage.stagedFilesForArch('x64')
-            .any((String name) => name.contains('unity')),
+        GalgameHookRuntimeStage.stagedFilesForArch(
+          'x64',
+        ).any((String name) => name.contains('unity')),
         isFalse,
       );
     });
@@ -128,12 +138,14 @@ void main() {
       // 应用内更新是 Inno 直接覆盖文件、不重写 installed.sha256，所以分版必须看内容。
       // 共用目录会让被旧宿主锁住的旧副本永远挡着新版落地。
       final Directory first = sourceDirFor('x64', payload: 1);
-      final String? before =
-          await stageFor((_) => first).ensureStaged(arch: 'x64');
+      final String? before = await stageFor(
+        (_) => first,
+      ).ensureStaged(arch: 'x64');
 
       final Directory second = sourceDirFor('x64', payload: 7);
-      final String? after =
-          await stageFor((_) => second).ensureStaged(arch: 'x64');
+      final String? after = await stageFor(
+        (_) => second,
+      ).ensureStaged(arch: 'x64');
 
       expect(before, isNotNull);
       expect(after, isNotNull);
@@ -147,16 +159,40 @@ void main() {
       expect(await stageFor((_) => source).ensureStaged(arch: 'x64'), isNull);
     });
 
+    test('部分清理后即使完整 injector 被锁也能补回缺失 DLL', () async {
+      final Directory source = sourceDirFor('x64');
+      final GalgameHookRuntimeStage stage = stageFor((_) => source);
+      final String injector = (await stage.ensureStaged(arch: 'x64'))!;
+      final File hook = File(
+        p.join(File(injector).parent.path, 'fushi_voice_hook.dll'),
+      );
+      hook.deleteSync();
+
+      // 只读属性稳定模拟 Windows 上被运行中进程锁住、无法覆盖的完整 injector。
+      // 旧实现会先覆盖它并失败，永远补不到下一项缺失的 hook DLL。
+      final ProcessResult locked = await Process.run('attrib', <String>[
+        '+R',
+        injector,
+      ]);
+      expect(locked.exitCode, 0);
+      try {
+        expect(await stage.ensureStaged(arch: 'x64'), injector);
+        expect(hook.existsSync(), isTrue);
+      } finally {
+        await Process.run('attrib', <String>['-R', injector]);
+      }
+    });
+
     test('并发请求同一架构只暂存一次', () async {
       final Directory source = sourceDirFor('x64');
       final GalgameHookRuntimeStage stage = stageFor((_) => source);
 
       final List<String?> results =
           await Future.wait<String?>(<Future<String?>>[
-        stage.ensureStaged(arch: 'x64'),
-        stage.ensureStaged(arch: 'x64'),
-        stage.ensureStaged(arch: 'x64'),
-      ]);
+            stage.ensureStaged(arch: 'x64'),
+            stage.ensureStaged(arch: 'x64'),
+            stage.ensureStaged(arch: 'x64'),
+          ]);
 
       expect(results.toSet().length, 1);
       expect(results.first, isNotNull);
@@ -164,8 +200,9 @@ void main() {
 
     test('unity 运行时位置仍指向安装目录', () async {
       final Directory source = sourceDirFor('x64');
-      final String? unity =
-          stageFor((_) => source).unityRuntimeDirectory(arch: 'x64');
+      final String? unity = stageFor(
+        (_) => source,
+      ).unityRuntimeDirectory(arch: 'x64');
 
       expect(unity, isNotNull);
       expect(p.isWithin(source.path, unity!), isTrue);

@@ -147,7 +147,7 @@ void main() {
             body: HomeVideoPage(
               repo: repo,
               // #792 起混排墙在 series 分区(home 是 dashboard)。
-              section: VideoLibrarySection.series,
+              section: VideoLibrarySection.allVideos,
               // 互联启用时给互联 client；关掉后返 null → 页面回退云盘分支，
               // 与生产的 `_resolveRemoteVideoClient` 语义一致。
               remoteVideoClientLoader: () async =>
@@ -221,7 +221,7 @@ void main() {
           home: Scaffold(
             body: HomeVideoPage(
               repo: repo,
-              section: VideoLibrarySection.series,
+              section: VideoLibrarySection.allVideos,
               remoteVideoClientLoader: () async =>
                   interconnectEnabled ? interconnect : null,
               cloudRemoteVideoClientLoader: () async => cloud,
@@ -277,7 +277,7 @@ void main() {
           home: Scaffold(
             body: HomeVideoPage(
               repo: repo,
-              section: VideoLibrarySection.series,
+              section: VideoLibrarySection.allVideos,
               remoteVideoClientLoader: () async => interconnect,
             ),
           ),

@@ -29,18 +29,27 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1662 条。点号进各自文件。
+> 共 1671 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1796](bugs/BUG-1796-gal-ingame-nested-popup-height-clipped.md) | ✅ | ✅ | 游戏内嵌套查词卡被父弹窗锚点空间裁短 |
+| [BUG-1795](bugs/BUG-1795-gal-ingame-card-capture-includes-popup.md) | ✅ | 🚧 | 游戏内查词制卡截图包含查词框 |
+| [BUG-1794](bugs/BUG-1794-video-scrape-cleanup-entry-hidden.md) | ✅ | ✅ | 视频导入页看不到清理全部刮削记录入口 |
+| [BUG-1793](bugs/BUG-1793-gal-ingame-lookup-hides-clipboard-history.md) | ✅ | ✅ | 游戏浮窗查词不应显示复制历史入口 |
+| [BUG-1792](bugs/BUG-1792-recommended-dictionary-font-size-cap.md) | ✅ | ✅ | 推荐字体超过8MiB导致词典字体静默不生效 |
+| [BUG-1791](bugs/BUG-1791-recommended-font-library-reentry.md) | ✅ | ✅ | 推荐字体重进字体库显示未持久化 |
+| [BUG-1790](bugs/BUG-1790-gal-resource-poll-freeze.md) | ✅ | ✅ | 资源语音待匹配全量轮询导致 Fushi 与浮窗冻结 |
 | [BUG-1789](bugs/BUG-1789-pdf-import-whitelists.md) | ✅ | ✅ | PDF 导入白名单三处漏抄：漫画框选不中、拖放不认、文件夹扫描跳过 |
 | [BUG-1787](bugs/BUG-1787-font-library-scope-target-dead-param.md) | ✅ | ✅ | 字体库作用域参数不生效：从游戏入口导入的字体挂到小说正文 |
 | [BUG-1785](bugs/BUG-1785-download-organize-tv-preview-blocks-batch.md) | ✅ | ✅ | TV 整理被无集号特典文件整批卡死 |
 | [BUG-1784](bugs/BUG-1784-download-nyaa-retry-loses-magnet.md) | ✅ | ✅ | 下载重试丢失已选 magnet 致 nyaa notFound |
 | [BUG-1783](bugs/BUG-1783-chapter-markers-safearea-basis-mismatch.md) | ✅ | ✅ | 移动端章节标记与进度条基准分叉：标记层多套一层 SafeArea，刘海横屏下整排斜切错位 |
 | [BUG-1782](bugs/BUG-1782-jimaku-anilist-silent-degrade-cross-season.md) | ✅ | ✅ | Jimaku 搜索时好时坏：AniList 失败被静默吞成空结果，退化成跨季文本搜索 |
+| [BUG-1781](bugs/BUG-1781-gal-ingame-popup-input-rendering.md) | ✅ | 🚧 | 游戏内查词位图卡渲染错位且滚轮、按钮与制卡失效 |
 | [BUG-1780](bugs/BUG-1780-android-local-manga-ocr-gate.md) | ✅ | ✅ | 安卓本地漫画 OCR 不可用：整卷平台白名单漏掉 Android，模型下载入口被同一闸门连坐关闭 |
 | [BUG-1779](bugs/BUG-1779-anki-media-filename-hibiki-prefix.md) | ✅ | ✅ | 制卡媒体文件名仍带 hibiki 旧名前缀 |
+| [BUG-1778](bugs/BUG-1778-ruby-overhang-compacts-glossary-base-spacing.md) | ✅ | ✅ | 振假名横向预留拉开正文汉字间距 |
 | [BUG-1777](bugs/BUG-1777-emphatic-full-collapse-phantom-match.md) | ✅ | ✅ | 查词促音丢失：强调折叠full模式常开产生吞字幻影匹配压过原形 |
 | [BUG-1776](bugs/BUG-1776-subtitle-list-adjacent-chain-dup.md) | ✅ | ✅ | 字幕列表不折叠同文本时间相接的卡拉OK交替事件 |
 | [BUG-1775](bugs/BUG-1775-ass-clip-cue-frame-anchor.md) | ✅ | ✅ | 带clip的ASS事件按容器基线定位与帧空间裁剪几何脱节 |

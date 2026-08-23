@@ -33,6 +33,7 @@ import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
@@ -154,6 +155,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     _appModel = ref.read(appProvider);
     _db = _appModel.database;
     widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
+    if (widget.mediaKind == 'video') {
+      videoScrapeCleanupRevision.addListener(_onVideoScrapeCleanupChanged);
+    }
     // BUG-1560：互联总开关的另一个写入口是同步设置页；不订阅这条广播，本视图的
     // 开关就停在开页那一刻的值（反之亦然）。真值仍从 preferences 重读。
     SyncRepository.interconnectEnabledRevision
@@ -172,6 +176,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   @override
   void dispose() {
     widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
+    if (widget.mediaKind == 'video') {
+      videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
+    }
     SyncRepository.interconnectEnabledRevision
         .removeListener(_onInterconnectEnabledChanged);
     super.dispose();
@@ -253,6 +260,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     for (final int sourceId in sourceIds) {
       unawaited(_refreshLatestScrapeRun(sourceId));
     }
+  }
+
+  void _onVideoScrapeCleanupChanged() {
+    if (mounted) unawaited(_load());
   }
 
   /// 一次性查出每个来源累计拥有的媒体条目数（按 mediaKind 选表）。
@@ -1027,11 +1038,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
         enabled: Value<bool>(existing?.enabled ?? true),
-        providerOverride: Value<String?>(draft.providerOverride),
+        // 旧列保留作数据库兼容；新保存一律清空，AniDB 是固定主身份源。
+        providerOverride: const Value<String?>(null),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
         writeNfo: Value<bool>(draft.writeNfo),
         writeImages: Value<bool>(draft.writeImages),
-        fanartEnabled: Value<bool>(draft.fanartEnabled),
         nfoPolicy: Value<String>(draft.nfoPolicy),
         imagePolicy: Value<String>(draft.imagePolicy),
         allowExternalOverwrite: Value<bool>(draft.allowExternalOverwrite),
@@ -1187,11 +1198,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
 class _VideoSourceScrapeSettingsDraft {
   const _VideoSourceScrapeSettingsDraft({
-    required this.providerOverride,
     required this.autoAfterScan,
     required this.writeNfo,
     required this.writeImages,
-    required this.fanartEnabled,
     required this.nfoPolicy,
     required this.imagePolicy,
     required this.allowExternalOverwrite,
@@ -1200,30 +1209,19 @@ class _VideoSourceScrapeSettingsDraft {
   factory _VideoSourceScrapeSettingsDraft.fromRow(
     VideoSourceScrapeSettingRow? row,
   ) {
-    const Set<String> providers = <String>{
-      'tmdb',
-      'douban',
-      'bangumi',
-      'anilist',
-    };
-    final String? provider = row?.providerOverride;
     return _VideoSourceScrapeSettingsDraft(
-      providerOverride: providers.contains(provider) ? provider : null,
       autoAfterScan: row?.autoAfterScan ?? false,
       writeNfo: row?.writeNfo ?? true,
       writeImages: row?.writeImages ?? true,
-      fanartEnabled: row?.fanartEnabled ?? true,
       nfoPolicy: _validPolicy(row?.nfoPolicy),
       imagePolicy: _validPolicy(row?.imagePolicy),
       allowExternalOverwrite: row?.allowExternalOverwrite ?? false,
     );
   }
 
-  final String? providerOverride;
   final bool autoAfterScan;
   final bool writeNfo;
   final bool writeImages;
-  final bool fanartEnabled;
   final String nfoPolicy;
   final String imagePolicy;
   final bool allowExternalOverwrite;
@@ -1246,13 +1244,9 @@ class _VideoSourceScrapeSettingsDialog extends StatefulWidget {
 
 class _VideoSourceScrapeSettingsDialogState
     extends State<_VideoSourceScrapeSettingsDialog> {
-  static const String _inheritProvider = '';
-
-  late String _provider = widget.initial.providerOverride ?? _inheritProvider;
   late bool _autoAfterScan = widget.initial.autoAfterScan;
   late bool _writeNfo = widget.initial.writeNfo;
   late bool _writeImages = widget.initial.writeImages;
-  late bool _fanartEnabled = widget.initial.fanartEnabled;
   late String _nfoPolicy = widget.initial.nfoPolicy;
   late String _imagePolicy = widget.initial.imagePolicy;
   late bool _allowExternalOverwrite = widget.initial.allowExternalOverwrite;
@@ -1261,11 +1255,9 @@ class _VideoSourceScrapeSettingsDialogState
     Navigator.pop(
       context,
       _VideoSourceScrapeSettingsDraft(
-        providerOverride: _provider.isEmpty ? null : _provider,
         autoAfterScan: _autoAfterScan,
         writeNfo: _writeNfo,
         writeImages: _writeImages,
-        fanartEnabled: _fanartEnabled,
         nfoPolicy: _nfoPolicy,
         imagePolicy: _imagePolicy,
         allowExternalOverwrite: _allowExternalOverwrite,
@@ -1283,34 +1275,6 @@ class _VideoSourceScrapeSettingsDialogState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              AdaptiveSettingsPickerRow<String>(
-                title: t.video_source_scrape_provider,
-                selected: _provider,
-                options: <AdaptiveSettingsPickerOption<String>>[
-                  AdaptiveSettingsPickerOption<String>(
-                    value: _inheritProvider,
-                    label: t.video_source_scrape_provider_inherit,
-                  ),
-                  const AdaptiveSettingsPickerOption<String>(
-                    value: 'tmdb',
-                    label: 'TMDB',
-                  ),
-                  const AdaptiveSettingsPickerOption<String>(
-                    value: 'douban',
-                    label: 'Douban',
-                  ),
-                  const AdaptiveSettingsPickerOption<String>(
-                    value: 'bangumi',
-                    label: 'Bangumi',
-                  ),
-                  const AdaptiveSettingsPickerOption<String>(
-                    value: 'anilist',
-                    label: 'AniList',
-                  ),
-                ],
-                onChanged: (String value) => setState(() => _provider = value),
-                controlBelow: true,
-              ),
               AdaptiveSettingsSwitchRow(
                 title: t.video_source_scrape_auto_after_scan,
                 subtitle: t.video_source_scrape_auto_after_scan_hint,
@@ -1327,12 +1291,6 @@ class _VideoSourceScrapeSettingsDialogState
                 title: t.video_source_scrape_write_images,
                 value: _writeImages,
                 onChanged: (bool value) => setState(() => _writeImages = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_use_fanart,
-                value: _fanartEnabled,
-                onChanged: (bool value) =>
-                    setState(() => _fanartEnabled = value),
               ),
               AdaptiveSettingsPickerRow<String>(
                 title: t.video_source_scrape_nfo_policy,

@@ -29,9 +29,9 @@ void main() {
     return elements.isEmpty ? null : elements.first.innerText.trim();
   }
 
-  test('movie 输出 UTF-8、多 ID、MoviePilot 默认 ID 与完整人物字段', () {
+  test('movie 输出 UTF-8、多 ID、AniDB 默认 ID 与完整人物字段', () {
     final VideoMetadataWork work = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.tmdb,
+      provider: VideoMetadataProviderKind.anidb,
       kind: VideoMetadataMediaKind.movie,
       title: '你 & 我 <电影>',
       originalTitle: 'You & Me',
@@ -48,6 +48,7 @@ void main() {
       keywords: const <String>['异世界'],
       ids: const <VideoMetadataId>[
         VideoMetadataId(type: 'TMDB', value: '42', isDefault: true),
+        VideoMetadataId(type: 'anidb', value: '17617'),
         VideoMetadataId(type: 'imdb', value: 'tt0042'),
         VideoMetadataId(type: 'tvdb', value: '420'),
         VideoMetadataId(type: 'tmdb', value: '42'),
@@ -86,15 +87,16 @@ void main() {
     expect(firstText(document, 'title'), '你 & 我 <电影>');
     expect(firstText(document, 'plot'), '第一幕 <开始> & 第二幕');
     expect(firstText(document, 'outline'), '第一幕 <开始> & 第二幕');
+    expect(firstText(document, 'anidbid'), '17617');
     expect(firstText(document, 'tmdbid'), '42');
     expect(firstText(document, 'imdbid'), 'tt0042');
     expect(firstText(document, 'tvdbid'), '420');
 
     final List<XmlElement> ids = document.findAllElements('uniqueid').toList();
-    expect(ids, hasLength(3));
+    expect(ids, hasLength(4));
     expect(
       ids
-          .singleWhere((XmlElement id) => id.getAttribute('type') == 'imdb')
+          .singleWhere((XmlElement id) => id.getAttribute('type') == 'anidb')
           .getAttribute('default'),
       'true',
     );
@@ -122,14 +124,14 @@ void main() {
         'https://www.themoviedb.org/person/12');
   });
 
-  test('tvshow 使用选定非 TMDB 主源 ID，并写 season/episode=-1', () {
+  test('tvshow 使用 AniDB 主源 ID，并写 season/episode=-1', () {
     final VideoMetadataWork work = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.bangumi,
+      provider: VideoMetadataProviderKind.anidb,
       kind: VideoMetadataMediaKind.tv,
       title: '作品',
       ids: const <VideoMetadataId>[
         VideoMetadataId(type: 'tmdb', value: '100', isDefault: true),
-        VideoMetadataId(type: 'bangumi', value: '200'),
+        VideoMetadataId(type: 'anidb', value: '200'),
       ],
     );
 
@@ -137,10 +139,11 @@ void main() {
     expect(document.rootElement.name.local, 'tvshow');
     expect(firstText(document, 'season'), '-1');
     expect(firstText(document, 'episode'), '-1');
+    expect(firstText(document, 'anidbid'), '200');
     final XmlElement defaultId = document
         .findAllElements('uniqueid')
         .singleWhere((XmlElement id) => id.getAttribute('default') == 'true');
-    expect(defaultId.getAttribute('type'), 'bangumi');
+    expect(defaultId.getAttribute('type'), 'anidb');
     expect(defaultId.innerText, '200');
   });
 
@@ -151,20 +154,29 @@ void main() {
       plot: '季简介',
       airDate: '2025-04-01',
       ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '202'),
         VideoMetadataId(type: 'tmdb', value: '222'),
       ],
     );
 
     final XmlDocument document = parse(VideoNfoBuilder.buildSeason(
       season,
-      primaryProvider: VideoMetadataProviderKind.tmdb,
+      primaryProvider: VideoMetadataProviderKind.anidb,
     ));
     expect(document.rootElement.name.local, 'season');
     expect(firstText(document, 'title'), '第二季');
     expect(firstText(document, 'premiered'), '2025-04-01');
     expect(firstText(document, 'releasedate'), '2025-04-01');
     expect(firstText(document, 'seasonnumber'), '2');
+    expect(firstText(document, 'anidbid'), '202');
     expect(firstText(document, 'tmdbid'), '222');
+    expect(
+        document
+            .findAllElements('uniqueid')
+            .singleWhere(
+                (XmlElement id) => id.getAttribute('default') == 'true')
+            .getAttribute('type'),
+        'anidb');
   });
 
   test('episode 只输出确定字段，使用真实分集 ID 和客串资料', () {
@@ -176,6 +188,7 @@ void main() {
       airDate: '2026-01-07',
       rating: 7.5,
       ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '17007'),
         VideoMetadataId(type: 'tmdb', value: '7007'),
       ],
       credits: <VideoMetadataCredit>[
@@ -188,11 +201,19 @@ void main() {
 
     final Uint8List bytes = VideoNfoBuilder.buildEpisode(
       episode,
-      primaryProvider: VideoMetadataProviderKind.tmdb,
+      primaryProvider: VideoMetadataProviderKind.anidb,
     );
     final XmlDocument document = parse(bytes);
     expect(document.rootElement.name.local, 'episodedetails');
+    expect(firstText(document, 'anidbid'), '17007');
     expect(firstText(document, 'tmdbid'), '7007');
+    expect(
+        document
+            .findAllElements('uniqueid')
+            .singleWhere(
+                (XmlElement id) => id.getAttribute('default') == 'true')
+            .getAttribute('type'),
+        'anidb');
     expect(firstText(document, 'season'), '1');
     expect(firstText(document, 'episode'), '7');
     expect(firstText(document, 'year'), '2026');
@@ -220,7 +241,7 @@ void main() {
   test('共享 DTO 防止调用方事后修改集合并提供深相等', () {
     final List<String> aliases = <String>['A'];
     final VideoMetadataWork first = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.anilist,
+      provider: VideoMetadataProviderKind.local,
       kind: VideoMetadataMediaKind.tv,
       title: '标题',
       aliases: aliases,
@@ -230,7 +251,7 @@ void main() {
     );
     aliases.add('B');
     final VideoMetadataWork second = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.anilist,
+      provider: VideoMetadataProviderKind.local,
       kind: VideoMetadataMediaKind.tv,
       title: '标题',
       aliases: const <String>['A'],

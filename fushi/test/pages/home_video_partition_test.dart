@@ -19,6 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 去碎片方案 A（spec 2026-07-12 分区拍板）+ 封面卡形态（用户拍板 2026-07-22）
@@ -83,7 +84,8 @@ void main() {
       videoPath: const Value('/abs/ep2.mp4'),
       importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
     ));
-    final int collectionId = await db.createMediaCollection(
+    final int collectionId = await createSeriesCollection(
+      db,
       '某番剧',
       collectionType: 'playlist',
     );
@@ -113,6 +115,10 @@ void main() {
       videoPath: const Value('/abs/loose_b.mp4'),
       importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
     ));
+    // 「系列」墙只收有 AniDB 主身份的条目。本文件测的是「合集封面卡排在所有散卡
+    // 之前、二者合成单一混排墙」——散卡不种身份就根本不进墙，混排顺序无从断言。
+    await seedAniDbLooseIdentity(db, 'video/looseA', title: 'Loose New');
+    await seedAniDbLooseIdentity(db, 'video/looseB', title: 'Loose Old');
   });
 
   tearDown(() async {

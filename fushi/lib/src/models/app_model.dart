@@ -558,20 +558,9 @@ class AppModel with ChangeNotifier {
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
-      extractVideoCover: (
-              {required String videoPath, required String bookUid}) =>
-          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
-      // host 收到 DELETE /api/library/videos/<id> 时的磁盘回收（VideoDeletionHost）：
-      // 复用本机长按删除的同一函数，按「仍在 app 资产目录内 + 无其它条目引用」回收
-      // 封面 / 字幕缓存。**不碰用户自己导入的原始视频文件**——远端删除与本地删除
-      // 在「删掉哪些字节」上必须完全同语义，否则同一动作在两端后果不同。
-      cleanupVideoOnDisk: (VideoBookRow row) =>
-          VideoBookRepository(database).reclaimDeletedVideoBookAssets(
-        deletedBookUid: row.bookUid,
-        deletedCoverPath: row.coverPath,
-        deletedSubtitlePath: row.subtitleSource,
-        deletedVideoPath: row.videoPath,
-      ),
+      extractVideoCover:
+          ({required String videoPath, required String bookUid}) =>
+              extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
@@ -694,6 +683,7 @@ class AppModel with ChangeNotifier {
   Future<void> _applyConfirmedDeletions(
     List<DeletionPropagationCandidate> confirmed,
   ) async {
+    bool deletedVideoBook = false;
     for (final DeletionPropagationCandidate c in confirmed) {
       try {
         // 命名统一 Phase 3.4：墓碑 mediaType 经 [SyncTombstoneKind.tryParse]
@@ -708,10 +698,13 @@ class AppModel with ChangeNotifier {
               scope: DeleteScope.keepLocalOnly,
             );
           case SyncTombstoneKind.video:
-            await VideoBookRepository(database).deleteVideoBook(
-              c.itemKey,
-              scope: DeleteScope.keepLocalOnly,
-            );
+            final bool deleted = await VideoBookRepository(database)
+                .deleteVideoBookAndReclaimAssets(
+                  c.itemKey,
+                  scope: DeleteScope.keepLocalOnly,
+                  compactDatabase: false,
+                );
+            deletedVideoBook = deletedVideoBook || deleted;
           case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
                 .deleteAudiobook(c.itemKey, propagateDeletion: false);
@@ -748,6 +741,9 @@ class AppModel with ChangeNotifier {
       } catch (e) {
         debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');
       }
+    }
+    if (deletedVideoBook) {
+      await VideoBookRepository(database).compactAfterVideoDeleteBestEffort();
     }
     // 删完刷新受影响的本地库缓存/书架（书 + 视频 + 有声书都可能变）。
     ReaderMediaType.instance.refreshTab();
@@ -4029,7 +4025,7 @@ class AppModel with ChangeNotifier {
         resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       ),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
-      // （AniList/TMDB id + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
+      // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
       onWorkScraped: _backfillSubtitlesForScrapedWork,
     );

@@ -88,7 +88,7 @@ void main() {
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
                 // #792 分区化后远端占位卡混排进 series 分区的混排墙，钉住该分区。
-                section: VideoLibrarySection.series,
+                section: VideoLibrarySection.allVideos,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),

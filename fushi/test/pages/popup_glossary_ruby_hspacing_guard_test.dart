@@ -109,35 +109,30 @@ void main() {
     );
   });
 
-  // BUG-850: the compaction above (absolute rt → base box collapses to the kanji
-  // width) reserves the vertical axis via padding-top but reserves NOTHING on the
-  // horizontal axis, so a reading wider than its kanji (明鏡-style 逐字 ruby, e.g.
-  // 教<rt>きょう</rt>法<rt>ほう</rt>) overhangs and collides with the next base's
-  // reading — the "few px spill" BUG-345 accepted became a full overlap for
-  // >=3-kana readings. The fix injects an in-flow, zero-height twin of the
-  // reading (.ruby-reserve) into each .ruby-unit so the unit's shrink-to-fit
-  // width grows to max(kanji, reading); the base centres under its reading and
-  // adjacent readings never overlap. Ruby geometry can't render headless, so
-  // guard both halves of the contract in source.
+  // BUG-1778 reverses BUG-850's horizontal reserve trade-off: widening every
+  // base unit to max(base, reading) prevents annotation collisions, but pulls
+  // ordinary正文 apart (体/からだ visibly inserts space around 体). Reference ruby
+  // keeps the base run compact and lets annotation ink overhang. Keep the
+  // historical twin out of flow so it cannot dictate base spacing.
   test(
-      'popup.css reserves horizontal room via an in-flow, zero-height '
-      '.ruby-reserve sized to the reading (BUG-850)', () {
+      'popup.css keeps .ruby-reserve out of flow so furigana cannot widen the '
+      'base run (BUG-1778)', () {
     final RegExp reserveRule = RegExp(
       r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*\.ruby-reserve\s*\{([^}]*)\}',
     );
     final RegExpMatch? match = reserveRule.firstMatch(css);
     expect(match, isNotNull,
-        reason: 'popup.css must scope a .ruby-reserve block to the glossary '
-            'surfaces — that in-flow twin is what widens the per-base unit to '
-            'the reading width so adjacent furigana cannot overlap (BUG-850)');
+        reason: 'popup.css must scope the legacy .ruby-reserve twin to the '
+            'glossary surfaces');
     final String body = match!.group(1)!;
+    expect(RegExp(r'position\s*:\s*absolute').hasMatch(body), isTrue,
+        reason: '.ruby-reserve must be removed from inline flow; otherwise its '
+            'reading width separates the surrounding正文 (BUG-1778)');
     expect(RegExp(r'width\s*:\s*(-webkit-)?max-content').hasMatch(body), isTrue,
-        reason: '.ruby-reserve must be width:max-content so it shrink-wraps to '
-            'the reading and drives the unit width (BUG-850)');
+        reason: 'the inert twin may retain its intrinsic reading geometry');
     expect(RegExp(r'height\s*:\s*0\b').hasMatch(body), isTrue,
         reason: '.ruby-reserve must be height:0 so it reserves horizontal room '
-            'WITHOUT shifting the base off its baseline — the BUG-108/363 '
-            'vertical reserve must stay unchanged (BUG-850)');
+            'without shifting the base off its baseline');
     // BUG-1655: 不再硬编码 0.5em —— 振假名尺寸是可调的产品值（已调到 0.6em）。
     // 真正的不变量是「孪生体与注音盒同字号」：一旦分叉，预留的宽度就不等于注音实际
     // 渲染的宽度，汉字会被撑开（预留偏大）或相邻注音重叠（预留偏小）。
@@ -155,8 +150,8 @@ void main() {
     expect(RegExp(r'^[\d.]+em$').hasMatch(reserveSize!), isTrue,
         reason: '.ruby-reserve 的字号必须是 em，才能随 popupContentZoom 等比缩放（BUG-363）');
     expect(reserveSize, equals(boxSize),
-        reason: '.ruby-reserve must match the .ruby-rt font-size so its width '
-            'equals the rendered reading width (BUG-850) — 现为 '
+        reason: '.ruby-reserve must match the .ruby-rt font-size for DOM '
+            'geometry parity — 现为 '
             'reserve=$reserveSize / box=$boxSize');
   });
 
