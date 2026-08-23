@@ -4,7 +4,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
+import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
 @immutable
 class FushiFocusId {
@@ -97,6 +99,12 @@ class FushiFocusController extends ChangeNotifier {
   bool _repairScheduled = false;
   bool _repairMicrotaskScheduled = false;
 
+  /// BUG-1619：有一次被动修复因为「主窗不在前台」被挡下了，欠着。
+  ///
+  /// 主窗真正回到前台时必须补上，否则用户切回来会发现整页没有焦点、键盘 /
+  /// 手柄快捷键全不响应（正是 TODO-900 当初要修的症状）。
+  bool _repairDeferredWhileBackgrounded = false;
+
   BuildContext? get activeContext {
     final FushiFocusTargetEntry? active = _currentEntry();
     if (active != null && active.context.mounted) return active.context;
@@ -145,14 +153,32 @@ class FushiFocusController extends ChangeNotifier {
     _rootContext = rootContext;
     if (!_attached) {
       FocusManager.instance.addListener(_handleFocusChange);
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
+      // 与 [_handleFocusChange] 里那条 deferred 补票**并存**是有意的：这条走
+      // window_manager 的窗口事件（可能因 channel 延迟晚到），那条走进程内的
+      // FocusManager 通知（不依赖 channel），两条覆盖不同故障模式。
+      mainWindowForegroundNotifier.addListener(_onMainWindowForegroundChanged);
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
+      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
+      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
       _attached = true;
     }
+    scheduleRepair();
+  }
+
+  void _onMainWindowForegroundChanged() {
+    if (!_attached || !mainWindowForegroundNotifier.value) return;
+    _repairDeferredWhileBackgrounded = false;
     scheduleRepair();
   }
 
   void detach() {
     if (_attached) {
       FocusManager.instance.removeListener(_handleFocusChange);
+      mainWindowForegroundNotifier
+          .removeListener(_onMainWindowForegroundChanged);
       _attached = false;
     }
     _entries.clear();
@@ -291,6 +317,24 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   void ensureFocus() {
+    // BUG-1619：[ensureFocus] 是**被动焦点修复**的汇合点（attach / register /
+    // unregister / scheduleRepair 全落这里），它下面每一条分支都会 requestFocus。
+    //
+    // 桌面版 Fushi 是多顶层窗口进程。主窗不在前台时（用户正在游戏 / 浏览器里，
+    // 剪贴板查词面板浮在上面），Flutter 引擎会把 requestFocus 翻译成
+    // SetFocus(FlutterView)，而 Win32 语义下 SetFocus(子窗) 会**连带激活它的
+    // 顶层窗口** —— 主界面凭空盖住用户正在用的窗口。真机链路：拖面板顶栏结束
+    // → windowMoved → setClipboardPanelRect → PreferencesRepository
+    // .notifyListeners() → 首页重建 → 焦点目标重新 register → scheduleRepair
+    // → 这里 → 主窗被抬到前台。
+    //
+    // 判据只挡**被动修复**：用户显式输入触发的 [move] / [requestById] 不经这里
+    // 的早退（那时主窗必然已经是前台）。被挡下时记账，等主窗真的回到前台再补
+    // 修一次（见 [_handleFocusChange]），否则切回来就没有焦点、快捷键全失效。
+    if (!DesktopForegroundGuard.isMainWindowForeground()) {
+      _repairDeferredWhileBackgrounded = true;
+      return;
+    }
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     if (_isUsablePrimary(primary)) {
       _handleFocusChange();
@@ -648,6 +692,15 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   void _handleFocusChange() {
+    // BUG-1619：主窗回到前台的补票口。FlutterView 重新拿到 OS 焦点会走到这里，
+    // 此时把「后台期间欠下的那次被动修复」补上——这条路径覆盖同进程内从剪贴板
+    // 面板切回主窗（那种切换不产生 AppLifecycleState.resumed，首页那条 resumed
+    // 回收补不到）。
+    if (_repairDeferredWhileBackgrounded &&
+        DesktopForegroundGuard.isMainWindowForeground()) {
+      _repairDeferredWhileBackgrounded = false;
+      scheduleRepair();
+    }
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     for (final FushiFocusTargetEntry entry in _entries.values) {
       if (identical(entry.focusNode, primary)) {
