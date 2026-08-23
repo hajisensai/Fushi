@@ -3736,5 +3736,6 @@
   "gal_hook_text_padding_hint": "Keep text away from the window edges and resize grip.",
   "gal_hook_text_corner_radius": "Window corner radius",
   "gal_hook_text_corner_radius_hint": "Adjust the background corner radius.",
-  "storage_shaders_delete_anime4k": "Delete Anime4K shaders"
+  "storage_shaders_delete_anime4k": "Delete Anime4K shaders",
+  "custom_fonts_target_unsupported": "Unavailable for this font format"
 }

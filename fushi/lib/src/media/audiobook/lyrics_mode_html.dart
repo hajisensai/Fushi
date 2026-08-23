@@ -17,6 +17,8 @@ class LyricsModeHtml {
     double marginRight = 0,
     bool vertical = false,
     bool blur = false,
+    String fontFamilyCss = '',
+    String fontFaceCss = '',
   }) {
     final StringBuffer cueHtml = StringBuffer();
     for (int i = 0; i < cues.length; i++) {
@@ -65,6 +67,14 @@ class LyricsModeHtml {
     // 对**所有**句（.cue）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。模糊
     // 维度与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
     final String blurBodyClass = blur ? ' class="lyrics-blur"' : '';
+    // 歌词模式此前硬编码 "Noto Serif JP", "Noto Sans JP", serif：同一本书在正文视图
+    // 用用户设的阅读字体、切到歌词就变回 Noto。这里接上 FontTarget.body 的
+    // @font-face + family（调用方传 ReaderSettings.buildCustomFontCss()）。
+    // 用户没设字体时 fontFamilyCss 为空，整条链与改动前逐字节相同。
+    const String lyricsFallbackFonts = '"Noto Serif JP", "Noto Sans JP", serif';
+    final String bodyFontFamily = fontFamilyCss.isEmpty
+        ? lyricsFallbackFonts
+        : '$fontFamilyCss, $lyricsFallbackFonts';
 
     return '''
 <!DOCTYPE html>
@@ -89,7 +99,8 @@ html, body {
   scrollbar-width: thin;
   scrollbar-color: $textColor transparent;
 }
-body { font-family: "Noto Serif JP", "Noto Sans JP", serif; }
+$fontFaceCss
+body { font-family: $bodyFontFamily; }
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

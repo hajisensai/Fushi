@@ -2398,11 +2398,18 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     Text(t.game_no_active_line)
                   else ...<Widget>[
                     // 正文 + 音频元信息：原「最新台词」卡的核心内容，不因换面板丢失。
-                    Text(
-                      line.text,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            height: 1.5,
-                          ),
+                    // 台词跟 FontTarget.gameLookup（与 native hook 浮窗同一设置），
+                    // 不跟界面字体——否则同一句话在浮窗和这里是两种字体。
+                    Consumer(
+                      builder: (_, WidgetRef ref, __) => Text(
+                        line.text,
+                        style: ref.watch(appProvider).applyGameTextFont(
+                              Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(height: 1.5),
+                            ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     _MetadataRow(
@@ -3073,7 +3080,7 @@ Iterable<(int, String)> _indexedWords(List<String> words) sync* {
 /// 查询串则由调用方取「从该字到行尾」的一段，交给引擎做最长匹配并回报
 /// `bestLength`——这与浮窗/歌词/阅读器一致，也是引擎本来就为之设计的用法。
 /// 词与词之间不插任何间距，视觉上仍是原来那一串分好词的正文。
-class _WordSpan extends StatelessWidget {
+class _WordSpan extends ConsumerWidget {
   const _WordSpan({
     required this.word,
     required this.startIndex,
@@ -3089,9 +3096,12 @@ class _WordSpan extends StatelessWidget {
   final void Function(int charIndex, Rect rect) onTapChar;
 
   @override
-  Widget build(BuildContext context) {
-    final TextStyle? style =
-        Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6);
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 逐字命中区的字形也跟 gameLookup：字宽变了命中矩形要跟着变，样式与度量必须
+    // 同源，否则点击位置和看到的字会错开。
+    final TextStyle? style = ref.watch(appProvider).applyGameTextFont(
+          Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+        );
     final Color hover =
         Theme.of(context).colorScheme.primary.withValues(alpha: 0.1);
     int offset = startIndex;

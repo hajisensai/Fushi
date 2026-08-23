@@ -1650,6 +1650,30 @@ class AppModel with ChangeNotifier {
   String? _subtitleFontFamily;
   String? get subtitleFontFamily => _subtitleFontFamily;
 
+  /// [FontTarget.gameLookup] 在 **Flutter 侧**解析出的字体链（texthooker 页面等
+  /// 游戏文本面用），由 [refreshAppFont] 注册进引擎。
+  ///
+  /// 与 native hook 浮窗同一个用户设置、两端各取所能：native 分层窗只吃第一条裸
+  /// sfnt（`AppFontLoader.resolveForNativeOverlay`），Flutter 侧能解码 WOFF/WOFF2
+  /// 且能整链缺字回退，所以这里走 `resolveAndLoadAll` 取全链。
+  List<String> _gameLookupFontFamilies = const <String>[];
+
+  /// 游戏文本字体链；空 = 用户没设，调用方退回主题默认（appUi 链）。
+  List<String> get gameLookupFontFamilies => _gameLookupFontFamilies;
+
+  /// 把游戏文本字体链套到 [base] 上（texthooker 台词等）。
+  ///
+  /// 链为空（用户没为「游戏」设字体）时**原样返回**，让文本继续跟主题走——
+  /// 不猜、不塞兜底 CJK 族：链首放一个 CJK face 会把西文排版一并接管，
+  /// 与内容语言链同一条戒律（见 `content_font_chain.dart`）。
+  TextStyle? applyGameTextFont(TextStyle? base) {
+    if (base == null || _gameLookupFontFamilies.isEmpty) return base;
+    return base.copyWith(
+      fontFamily: _gameLookupFontFamilies.first,
+      fontFamilyFallback: _gameLookupFontFamilies.skip(1).toList(),
+    );
+  }
+
   /// Loads **all** enabled entries of the `appUiFonts` target as the app-wide UI
   /// font chain (registering each file with the Flutter engine via
   /// [AppFontLoader]) and rebuilds the theme. Falls back to the display
@@ -1670,12 +1694,20 @@ class AppModel with ChangeNotifier {
     // 故仍取单个家族，不走链。
     final String? subtitleFamily =
         await AppFontLoader.resolveAndLoad(settings.videoSubtitleFonts);
+    // 游戏文本目标同样在这里解析：texthooker 页面（Flutter 层）此前只跟主题字体，
+    // 用户在字体库里为「游戏」设的字体只作用于 native hook 浮窗，同一批台词在
+    // app 内页面里不跟随——两个表面各说各话。整链解析，理由见
+    // [_gameLookupFontFamilies]。
+    final List<String> gameFamilies =
+        await AppFontLoader.resolveAndLoadAll(settings.gameLookupFonts);
     if (listEquals(families, _appFontFamilies) &&
-        subtitleFamily == _subtitleFontFamily) {
+        subtitleFamily == _subtitleFontFamily &&
+        listEquals(gameFamilies, _gameLookupFontFamilies)) {
       return;
     }
     _appFontFamilies = families;
     _subtitleFontFamily = subtitleFamily;
+    _gameLookupFontFamilies = gameFamilies;
     notifyListeners();
   }
 
@@ -2429,6 +2461,10 @@ class AppModel with ChangeNotifier {
       // TODO-864: 视频字幕字体同样在首帧前从 videoSubtitle 目标解析。
       _subtitleFontFamily =
           await AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
+      // 游戏文本字体链也在首帧前解析：否则 texthooker 页面首次打开会先用主题字体
+      // 画一帧再跳变（refreshAppFont 要等到用户改设置才跑）。
+      _gameLookupFontFamilies =
+          await AppFontLoader.resolveAndLoadAll(readerSettings.gameLookupFonts);
       ReaderFushiSource.readerSettings = readerSettings;
 
       // Start polling physical controllers on platforms that need it (desktop);

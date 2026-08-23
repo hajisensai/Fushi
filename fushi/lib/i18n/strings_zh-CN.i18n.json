@@ -3736,5 +3736,6 @@
   "gal_hook_text_padding_hint": "让文字与窗口边缘和缩放手柄保持距离。",
   "gal_hook_text_corner_radius": "窗口圆角",
   "gal_hook_text_corner_radius_hint": "调整窗口背景的圆角半径。",
-  "storage_shaders_delete_anime4k": "删除 Anime4K 着色器"
+  "storage_shaders_delete_anime4k": "删除 Anime4K 着色器",
+  "custom_fonts_target_unsupported": "该字体格式不支持此用途"
 }

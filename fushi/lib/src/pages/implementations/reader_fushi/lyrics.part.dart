@@ -167,6 +167,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
     String colorToCss(Color c) => readerColorToCssRgba(c);
 
+    // 歌词视图跟正文用同一份自定义字体（FontTarget.body）：它显示的就是这本书的
+    // 文本，切个视图不该换字体。readerSettings 为 null（极早期调用）时退回空串，
+    // 歌词页保持历史 Noto 链。
+    final ({String fontFamily, String fontFaces})? bodyFont =
+        ReaderFushiSource.readerSettings?.buildCustomFontCss();
+
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
       currentIndex: cueWindow.currentIndex,
@@ -180,6 +186,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       marginRight: ReaderFushiSource.instance.lyricsMarginRight,
       vertical: ReaderFushiSource.instance.lyricsVerticalWriting,
       blur: ReaderFushiSource.instance.lyricsBlur,
+      fontFamilyCss: bodyFont?.fontFamily ?? '',
+      fontFaceCss: bodyFont?.fontFaces ?? '',
     );
 
     // BUG-1280：歌词是第三个把文档交给 WebView 的地方（另两个是
