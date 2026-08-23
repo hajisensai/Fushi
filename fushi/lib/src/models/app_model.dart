@@ -7167,7 +7167,7 @@ class _AppModelRemoteLookupService
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     final Directory tmp =
-        Directory.systemTemp.createTempSync('hibiki_fwd_mine_');
+        Directory.systemTemp.createTempSync('fushi_fwd_mine_');
     try {
       // ① 封面 → 临时文件 → context.coverPath
       String? coverPath;
