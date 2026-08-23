@@ -233,6 +233,10 @@ extension _VideoLayout on _VideoFushiPageState {
           _controlLayoutNotifier,
           _subtitleListVisible,
           _episodeListVisible,
+          // BUG-1798：查词浮层也进 theme 的 `hideMouseOnControlsRemoval` 判据
+          // （controls_theme.part.dart），同 r5 的教训——不并进来就是「值改了、theme 不重建」，
+          // 弹窗一开控制条 theme 仍是上一轮的 true，光标照样被 fork 那层 cursor:none 吃掉。
+          _lookupOverlayActive,
           // 自定义「快捷键」按钮绑定：改绑后按钮的图标 / tooltip / 执行体全变，且
           // 「从未绑定变成已绑定」还决定它显不显示（见 `_shouldRenderControlItem`）。
           // 不并进来就是「设置里改了、播放器上纹丝不动」。
