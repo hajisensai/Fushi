@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 63886 (3758 per locale)
+/// Strings: 63784 (3752 per locale)
 ///
-/// Built on 2026-08-23 at 10:05 UTC
+/// Built on 2026-08-23 at 13:50 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -609,8 +609,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
   String get browser_extension_mobile_unsupported =>
       'Mobile browsers cannot load this extension. Use in-app lookup in the reader or video player instead.';
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   String get browser_extension_prepare_button => 'Prepare extension files';
   String get browser_extension_prepare_hint =>
       'Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.';
@@ -3080,8 +3078,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_mining_image_mode => 'Video card image';
   String get video_mining_image_mode_current_frame => 'Screenshot at mining';
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   String get video_next_episode => 'Next episode';
@@ -3661,8 +3657,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Match cover for ${name}';
   String get gal_mining_image_mode => 'Galgame card image';
   String get gal_mining_image_mode_screenshot => 'Screenshot';
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
   String get shortcut_scope_manga => 'Manga';
   String get shortcut_action_manga_page_forward => 'Next page';
   String get shortcut_action_manga_page_backward => 'Previous page';
@@ -3935,11 +3929,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get mining_animated_format_webp => 'WebP (wider support)';
   String get mining_animated_format_gif => 'GIF (most compatible)';
   String get video_mining_animated_format => 'Video card animation format';
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
   String get gal_mining_animated_format => 'Game card animation format';
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   String get scrape_all => 'Scrape all';
   String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
   String scrape_all_running({required Object current, required Object total}) =>
@@ -4720,8 +4710,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get mining_still_format_jpg => 'JPG (smaller)';
   String get mining_still_format_png => 'PNG (lossless)';
   String get gal_mining_still_format => 'Game card screenshot format';
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
   String get manga_global_search_title => 'Search all sources';
@@ -5942,9 +5930,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'لا يمكن لمتصفحات الأجهزة المحمولة تحميل هذا الامتداد. استخدم البحث داخل التطبيق في القارئ أو مشغّل الفيديو بدلاً من ذلك.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -10366,9 +10351,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -11372,9 +11354,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -11821,13 +11800,7 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -13171,9 +13144,6 @@ class _StringsAr extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -14740,9 +14710,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Mobile Browser können diese Erweiterung nicht laden. Nutze stattdessen die App-interne Suche im Reader oder Videoplayer.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -19216,9 +19183,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -20230,9 +20194,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -20679,13 +20640,7 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -22029,9 +21984,6 @@ class _StringsDe extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -23597,9 +23549,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Los navegadores móviles no pueden cargar esta extensión. Usa la búsqueda dentro de la app en el lector o el reproductor de vídeo.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -28088,9 +28037,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -29104,9 +29050,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -29553,13 +29496,7 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -30903,9 +30840,6 @@ class _StringsEs extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -32473,9 +32407,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Les navigateurs mobiles ne peuvent pas charger cette extension. Utilisez plutôt la recherche intégrée dans le lecteur ou le lecteur vidéo.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -36974,9 +36905,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -37990,9 +37918,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -38439,13 +38364,7 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -39789,9 +39708,6 @@ class _StringsFr extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -41352,9 +41268,6 @@ class _StringsId extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Peramban seluler tidak dapat memuat ekstensi ini. Gunakan pencarian dalam aplikasi di pembaca atau pemutar video sebagai gantinya.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -45798,9 +45711,6 @@ class _StringsId extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -46806,9 +46716,6 @@ class _StringsId extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -47255,13 +47162,7 @@ class _StringsId extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -48605,9 +48506,6 @@ class _StringsId extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -50171,9 +50069,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'I browser mobili non possono caricare questa estensione. Usa invece la ricerca nell\'app nel lettore o nel player video.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -54652,9 +54547,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -55666,9 +55558,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -56115,13 +56004,7 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -57465,9 +57348,6 @@ class _StringsIt extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -59013,9 +58893,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'モバイルブラウザーではこの拡張機能を読み込めません。代わりにアプリ内のリーダーや動画プレーヤーで辞書引きしてください。';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -63356,9 +63233,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -64343,9 +64217,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -64792,13 +64663,7 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -66142,9 +66007,6 @@ class _StringsJa extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -67692,9 +67554,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       '모바일 브라우저에서는 이 확장 프로그램을 로드할 수 없습니다. 대신 앱 내 리더나 동영상 플레이어에서 사전 검색을 사용하세요.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -72038,9 +71897,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -73028,9 +72884,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -73477,13 +73330,7 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -74827,9 +74674,6 @@ class _StringsKo extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -76394,9 +76238,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Mobiele browsers kunnen deze extensie niet laden. Gebruik in plaats daarvan het opzoeken in de app in de lezer of videospeler.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -80858,9 +80699,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -81868,9 +81706,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -82317,13 +82152,7 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -83667,9 +83496,6 @@ class _StringsNl extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -85235,9 +85061,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Navegadores móveis não conseguem carregar esta extensão. Use a busca no app no leitor ou no player de vídeo.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -89707,9 +89530,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -90720,9 +90540,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -91169,13 +90986,7 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -92519,9 +92330,6 @@ class _StringsPtBr extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -94084,9 +93892,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Мобильные браузеры не могут загрузить это расширение. Используйте поиск в приложении — в читалке или видеоплеере.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -98550,9 +98355,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -99559,9 +99361,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -100008,13 +99807,7 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -101358,9 +101151,6 @@ class _StringsRu extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -102917,9 +102707,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'เบราว์เซอร์บนมือถือไม่สามารถโหลดส่วนขยายนี้ได้ ให้ใช้การค้นหาคำในแอปที่โปรแกรมอ่านหรือเครื่องเล่นวิดีโอแทน';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -107343,9 +107130,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -108346,9 +108130,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -108795,13 +108576,7 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -110145,9 +109920,6 @@ class _StringsTh extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -111711,9 +111483,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Mobil tarayıcılar bu uzantıyı yükleyemez. Bunun yerine okuyucu veya video oynatıcıdaki uygulama içi aramayı kullanın.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -116156,9 +115925,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -117164,9 +116930,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -117613,13 +117376,7 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -118963,9 +118720,6 @@ class _StringsTr extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -120527,9 +120281,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       'Trình duyệt di động không thể tải tiện ích này. Thay vào đó, hãy dùng tra cứu trong ứng dụng ở trình đọc hoặc trình phát video.';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -124964,9 +124715,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -125968,9 +125716,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -126417,13 +126162,7 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -127768,9 +127507,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
   @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
-  @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
   @override
@@ -128659,7 +128395,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anime_download_generic_hint => '磁力链接';
   @override
-  String get anime_download_generic_title => '粘贴链接下载（书、视频等）';
+  String get anime_download_generic_title => '粘贴链接下载';
   @override
   String get anime_download_include_subs => '附带字幕';
   @override
@@ -128699,7 +128435,7 @@ class _StringsZhCn extends _StringsEn {
       '失败，磁盘与库都未改动：${reason}';
   @override
   String get anime_download_relocate_hint =>
-      'Fushi 通过下载引擎改名/移动，因此不会掐断做种。在资源管理器里改名则永远无法挽回。';
+      'Fushi 通过下载引擎改名/移动，因此不会掐断做种。外部改名将无法做种。';
   @override
   String anime_download_relocate_library_failed({required Object reason}) =>
       '文件已移动，但库仍指向旧路径：${reason}';
@@ -128726,7 +128462,7 @@ class _StringsZhCn extends _StringsEn {
   String get anime_download_search_hint => '番剧名';
   @override
   String get anime_download_search_start_hint =>
-      '在上方搜索作品名，自动匹配种子与字幕。下载不限视频：书籍、漫画、有声书、游戏也会自动入库。';
+      '在上方搜索作品名，视频会自动匹配字幕。';
   @override
   String get anime_download_sort_date => '发布时间';
   @override
@@ -128880,7 +128616,7 @@ class _StringsZhCn extends _StringsEn {
   String get app_ui_scale => '界面大小';
   @override
   String get app_ui_scale_hint =>
-      '整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。大屏设备上界面偏小可调高。';
+      '整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。';
   @override
   String get app_version => '应用版本';
   @override
@@ -129056,7 +128792,7 @@ class _StringsZhCn extends _StringsEn {
   String backup_export_failed({required Object message}) => '备份导出失败：${message}';
   @override
   String get backup_export_hint =>
-      '选择要包含的内容。阅读数据（进度、统计、设置）始终包含；取消「书籍」可完整排除书籍，取消大文件（本地音频、视频）可缩小备份。';
+      '选择要包含的内容。';
   @override
   String get backup_export_no_books => '没有可选的书籍';
   @override
@@ -129277,9 +129013,6 @@ class _StringsZhCn extends _StringsEn {
   String get browser_extension_mobile_unsupported =>
       '手机浏览器无法加载此扩展，请直接在 app 内阅读器/视频中查词。';
   @override
-  String get browser_extension_page_intro =>
-      '在电脑的 Chrome / Edge 里直接划词查词、解析字幕、一键制卡。先在下面准备扩展文件，再按步骤加载到浏览器。';
-  @override
   String get browser_extension_prepare_button => '准备扩展文件';
   @override
   String get browser_extension_prepare_hint =>
@@ -129298,7 +129031,7 @@ class _StringsZhCn extends _StringsEn {
   String get browser_extension_step_dev_mode => '打开右上角的「开发者模式」开关。';
   @override
   String get browser_extension_step_done_auto =>
-      '完成。扩展已自动配置好，装好后会直接连上本应用查词，你不用手动填写任何设置。';
+      '完成。扩展已自动配置好，装好后会直接连上本应用查词。';
   @override
   String get browser_extension_step_load_unpacked => '点击「加载已解压的扩展程序」。';
   @override
@@ -129674,7 +129407,7 @@ class _StringsZhCn extends _StringsEn {
   String get dark_mode_system => '跟随系统';
   @override
   String data_root_unavailable_message({required Object path}) =>
-      '你设置的数据位置 ${path} 暂时读不到（盘可能在休眠、被占用或未连接）。你的数据是安全的、原封不动留在那里——没有丢失。请点「重试」,等盘就绪即可用回你的数据；或选择用默认位置临时启动（不会改动你原来的数据）。';
+      '你设置的数据位置 ${path} 暂时读不到（盘可能在休眠、被占用或未连接）。请点「重试」,等盘就绪重启Fushi即可用回你的数据；或选择用默认位置临时启动（不会改动你原来的数据）。';
   @override
   String get data_root_unavailable_title => '数据位置未响应';
   @override
@@ -130783,7 +130516,7 @@ class _StringsZhCn extends _StringsEn {
   String game_text_thread_audio_count({required Object count}) =>
       '${count} 行有音频';
   @override
-  String get game_text_thread_hint => '像 Luna Translator 一样选择干净的台词线程';
+  String get game_text_thread_hint => '选择干净的台词线程';
   @override
   String get game_track_auto => '自动选择';
   @override
@@ -130794,7 +130527,7 @@ class _StringsZhCn extends _StringsEn {
   String get game_track_exclude_bgm => '标记为 BGM';
   @override
   String get game_track_exclusion_hint =>
-      '把 BGM/环境音轨标记为排除，自动选源便不会把它当成语音——没有语音的台词也不会再读到 BGM。';
+      '把 BGM/环境音轨标记为排除，自动选源便不会把它当成语音。';
   @override
   String get game_track_exclusion_title => '排除音轨';
   @override
@@ -133423,9 +133156,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => '动图 GIF（字幕片段）';
   @override
-  String get video_mining_image_mode_hint =>
-      '视频卡片封面用字幕区间动图，还是某一帧静态截图（取哪一帧也在这里选）';
-  @override
   String get video_mining_image_mode_subtitle_start => '字幕开头截图';
   @override
   String get video_next_episode => '下一集';
@@ -134188,7 +133918,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_dedup_unavailable => '需要本机运行 Anki（AnkiConnect）。';
   @override
-  String get anki_dedup_run_hint => '先扫描并列出将要删除的文件，你确认之后才会真正删除。';
+  String get anki_dedup_run_hint => '先扫描并列出将要删除的文件。';
   @override
   String get anki_dedup_plan_title => '将要删除的文件';
   @override
@@ -134288,7 +134018,7 @@ class _StringsZhCn extends _StringsEn {
   String get anki_dedup_auto => '自动处理';
   @override
   String get anki_dedup_auto_hint =>
-      '默认关闭。打开后 Fushi 会在启动时扫描（最多每周一次）并先把清单给你看，你不确认就不会删任何文件。';
+      '默认关闭。打开后 Fushi 会在启动时扫描（最多每周一次）并展示清单。';
   @override
   String get anki_dedup_auto_delete => '自动直接删除（不再询问）';
   @override
@@ -134346,9 +134076,6 @@ class _StringsZhCn extends _StringsEn {
   String get gal_mining_image_mode => 'Galgame 制卡配图';
   @override
   String get gal_mining_image_mode_screenshot => '静态截图';
-  @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame 一句台词内画面基本不动，静态截图通常更小、信息量一样。';
   @override
   String get shortcut_scope_manga => '漫画';
   @override
@@ -134621,7 +134348,7 @@ class _StringsZhCn extends _StringsEn {
   String get anki_lapis_visual_editor => '可视化编辑';
   @override
   String get anki_lapis_visual_editor_hint =>
-      '预览 Lapis 卡片，选中区域后直接改样式、位置和字段映射，无需手写 CSS。';
+      '预览并修改 Lapis 卡片。';
   @override
   String get anki_lapis_visual_front => '正面';
   @override
@@ -134748,21 +134475,15 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get collection_sort_by_season => '按季排序';
   @override
-  String get mining_animated_format_avif => 'AVIF（体积最小）';
+  String get mining_animated_format_avif => 'AVIF（体积最小，最推荐）';
   @override
   String get mining_animated_format_webp => 'WebP（兼容性更广）';
   @override
-  String get mining_animated_format_gif => 'GIF（兼容性最好）';
+  String get mining_animated_format_gif => 'GIF（兼容性最好，体积最大，无压缩）';
   @override
   String get video_mining_animated_format => '视频制卡动图格式';
   @override
-  String get video_mining_animated_format_hint =>
-      '同画质下 AVIF 体积远小于 GIF，最高清晰度档也允许比 GIF/WebP 更高的分辨率与帧率。捆绑的编码器产不出时会自动回退 GIF。';
-  @override
   String get gal_mining_animated_format => '游戏制卡动图格式';
-  @override
-  String get gal_mining_animated_format_hint =>
-      '与视频制卡同样的格式，但分开保存：galgame 一句台词内画面基本静止，取舍不同。';
   @override
   String get scrape_all => '全部刮削';
   @override
@@ -134868,7 +134589,7 @@ class _StringsZhCn extends _StringsEn {
       '可留空，默认用内置 Key。仅当刮削失效或你想用自己的配额时才需要填写。';
   @override
   String get about_tmdb_attribution =>
-      'This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.';
+      '本应用使用 TMDB 及 TMDB API，但未获 TMDB 认可或认证。';
   @override
   String get anki_lapis_visual_layout => '布局';
   @override
@@ -135988,7 +135709,7 @@ class _StringsZhCn extends _StringsEn {
       'Galgame 捕获组件被占用：PID ${pid} - ${path}（这是你正在玩的游戏或它的捕获宿主进程）。请先关闭游戏再更新。';
   @override
   String get game_hook_reason_protocol_mismatch =>
-      '捕获组件与本体版本不一致。组件已内置在 Fushi 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明磁盘上的组件比 Fushi 旧——上次更新 Fushi 时游戏正开着，安装器换不掉被占用的组件文件。请关闭所有游戏，然后重新运行一次 Fushi 安装程序。';
+      '捕获组件与本体版本不一致。请尝试关闭游戏，然后重新运行一次 Fushi。若无法解决请联系开发者。';
   @override
   String get video_mining_still_format => '视频卡片截图格式';
   @override
@@ -135997,12 +135718,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get mining_still_format_jpg => 'JPG（体积更小）';
   @override
-  String get mining_still_format_png => 'PNG（无损）';
+  String get mining_still_format_png => 'PNG';
   @override
   String get gal_mining_still_format => '游戏卡片截图格式';
-  @override
-  String get gal_mining_still_format_hint =>
-      '与视频卡片同样的格式，但分开保存。游戏窗口抓图本身是 PNG：选 PNG 无损但大好几倍，选 JPG 与这些截图过去的压缩方式一致。';
   @override
   String get manga_source_cloudflare_blocked =>
       '该来源受 Cloudflare 保护，内置阅读器暂时无法访问。';
@@ -137446,9 +137164,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get browser_extension_mobile_unsupported =>
       '手機瀏覽器無法載入此擴充功能，請直接在 app 內閱讀器／影片中查詞。';
-  @override
-  String get browser_extension_page_intro =>
-      'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
   @override
   String get browser_extension_prepare_button => 'Prepare extension files';
   @override
@@ -141741,9 +141456,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_mining_image_mode_gif => 'Animated GIF (subtitle clip)';
   @override
-  String get video_mining_image_mode_hint =>
-      'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
-  @override
   String get video_mining_image_mode_subtitle_start =>
       'Screenshot at subtitle start';
   @override
@@ -142719,9 +142431,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get gal_mining_image_mode_screenshot => 'Screenshot';
   @override
-  String get gal_mining_image_mode_hint =>
-      'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
-  @override
   String get shortcut_scope_manga => 'Manga';
   @override
   String get shortcut_action_manga_page_forward => 'Next page';
@@ -143168,13 +142877,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_mining_animated_format => 'Video card animation format';
   @override
-  String get video_mining_animated_format_hint =>
-      'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
-  @override
   String get gal_mining_animated_format => 'Game card animation format';
-  @override
-  String get gal_mining_animated_format_hint =>
-      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
   @override
   String get scrape_all => 'Scrape all';
   @override
@@ -144517,9 +144220,6 @@ class _StringsZhHk extends _StringsEn {
   String get mining_still_format_png => 'PNG (lossless)';
   @override
   String get gal_mining_still_format => 'Game card screenshot format';
-  @override
-  String get gal_mining_still_format_hint =>
-      'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
   @override
   String get manga_source_cloudflare_blocked =>
       'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
@@ -145972,8 +145672,6 @@ extension on _StringsEn {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Mobile browsers cannot load this extension. Use in-app lookup in the reader or video player instead.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -149951,8 +149649,6 @@ extension on _StringsEn {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -150821,8 +150517,6 @@ extension on _StringsEn {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -151189,12 +150883,8 @@ extension on _StringsEn {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -152365,8 +152055,6 @@ extension on _StringsEn {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -153694,8 +153382,6 @@ extension on _StringsAr {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'لا يمكن لمتصفحات الأجهزة المحمولة تحميل هذا الامتداد. استخدم البحث داخل التطبيق في القارئ أو مشغّل الفيديو بدلاً من ذلك.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -157670,8 +157356,6 @@ extension on _StringsAr {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -158541,8 +158225,6 @@ extension on _StringsAr {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -158909,12 +158591,8 @@ extension on _StringsAr {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -160085,8 +159763,6 @@ extension on _StringsAr {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -161416,8 +161092,6 @@ extension on _StringsDe {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Mobile Browser können diese Erweiterung nicht laden. Nutze stattdessen die App-interne Suche im Reader oder Videoplayer.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -165411,8 +165085,6 @@ extension on _StringsDe {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -166283,8 +165955,6 @@ extension on _StringsDe {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -166651,12 +166321,8 @@ extension on _StringsDe {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -167827,8 +167493,6 @@ extension on _StringsDe {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -169159,8 +168823,6 @@ extension on _StringsEs {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Los navegadores móviles no pueden cargar esta extensión. Usa la búsqueda dentro de la app en el lector o el reproductor de vídeo.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -173153,8 +172815,6 @@ extension on _StringsEs {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -174024,8 +173684,6 @@ extension on _StringsEs {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -174392,12 +174050,8 @@ extension on _StringsEs {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -175568,8 +175222,6 @@ extension on _StringsEs {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -176901,8 +176553,6 @@ extension on _StringsFr {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Les navigateurs mobiles ne peuvent pas charger cette extension. Utilisez plutôt la recherche intégrée dans le lecteur ou le lecteur vidéo.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -180899,8 +180549,6 @@ extension on _StringsFr {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -181771,8 +181419,6 @@ extension on _StringsFr {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -182139,12 +181785,8 @@ extension on _StringsFr {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -183315,8 +182957,6 @@ extension on _StringsFr {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -184646,8 +184286,6 @@ extension on _StringsId {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Peramban seluler tidak dapat memuat ekstensi ini. Gunakan pencarian dalam aplikasi di pembaca atau pemutar video sebagai gantinya.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -188629,8 +188267,6 @@ extension on _StringsId {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -189500,8 +189136,6 @@ extension on _StringsId {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -189868,12 +189502,8 @@ extension on _StringsId {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -191044,8 +190674,6 @@ extension on _StringsId {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -192375,8 +192003,6 @@ extension on _StringsIt {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'I browser mobili non possono caricare questa estensione. Usa invece la ricerca nell\'app nel lettore o nel player video.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -196371,8 +195997,6 @@ extension on _StringsIt {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -197243,8 +196867,6 @@ extension on _StringsIt {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -197611,12 +197233,8 @@ extension on _StringsIt {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -198787,8 +198405,6 @@ extension on _StringsIt {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -200110,8 +199726,6 @@ extension on _StringsJa {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'モバイルブラウザーではこの拡張機能を読み込めません。代わりにアプリ内のリーダーや動画プレーヤーで辞書引きしてください。';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -204079,8 +203693,6 @@ extension on _StringsJa {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -204948,8 +204560,6 @@ extension on _StringsJa {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -205316,12 +204926,8 @@ extension on _StringsJa {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -206492,8 +206098,6 @@ extension on _StringsJa {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -207816,8 +207420,6 @@ extension on _StringsKo {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return '모바일 브라우저에서는 이 확장 프로그램을 로드할 수 없습니다. 대신 앱 내 리더나 동영상 플레이어에서 사전 검색을 사용하세요.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -211787,8 +211389,6 @@ extension on _StringsKo {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -212657,8 +212257,6 @@ extension on _StringsKo {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -213025,12 +212623,8 @@ extension on _StringsKo {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -214201,8 +213795,6 @@ extension on _StringsKo {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -215531,8 +215123,6 @@ extension on _StringsNl {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Mobiele browsers kunnen deze extensie niet laden. Gebruik in plaats daarvan het opzoeken in de app in de lezer of videospeler.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -219521,8 +219111,6 @@ extension on _StringsNl {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -220394,8 +219982,6 @@ extension on _StringsNl {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -220762,12 +220348,8 @@ extension on _StringsNl {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -221938,8 +221520,6 @@ extension on _StringsNl {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -223269,8 +222849,6 @@ extension on _StringsPtBr {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Navegadores móveis não conseguem carregar esta extensão. Use a busca no app no leitor ou no player de vídeo.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -227257,8 +226835,6 @@ extension on _StringsPtBr {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -228128,8 +227704,6 @@ extension on _StringsPtBr {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -228496,12 +228070,8 @@ extension on _StringsPtBr {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -229672,8 +229242,6 @@ extension on _StringsPtBr {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -231004,8 +230572,6 @@ extension on _StringsRu {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Мобильные браузеры не могут загрузить это расширение. Используйте поиск в приложении — в читалке или видеоплеере.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -234996,8 +234562,6 @@ extension on _StringsRu {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -235867,8 +235431,6 @@ extension on _StringsRu {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -236235,12 +235797,8 @@ extension on _StringsRu {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -237411,8 +236969,6 @@ extension on _StringsRu {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -238739,8 +238295,6 @@ extension on _StringsTh {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'เบราว์เซอร์บนมือถือไม่สามารถโหลดส่วนขยายนี้ได้ ให้ใช้การค้นหาคำในแอปที่โปรแกรมอ่านหรือเครื่องเล่นวิดีโอแทน';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -242718,8 +242272,6 @@ extension on _StringsTh {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -243589,8 +243141,6 @@ extension on _StringsTh {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -243957,12 +243507,8 @@ extension on _StringsTh {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -245133,8 +244679,6 @@ extension on _StringsTh {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -246463,8 +246007,6 @@ extension on _StringsTr {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Mobil tarayıcılar bu uzantıyı yükleyemez. Bunun yerine okuyucu veya video oynatıcıdaki uygulama içi aramayı kullanın.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -250448,8 +249990,6 @@ extension on _StringsTr {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -251320,8 +250860,6 @@ extension on _StringsTr {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -251688,12 +251226,8 @@ extension on _StringsTr {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -252864,8 +252398,6 @@ extension on _StringsTr {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -254194,8 +253726,6 @@ extension on _StringsVi {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return 'Trình duyệt di động không thể tải tiện ích này. Thay vào đó, hãy dùng tra cứu trong ứng dụng ở trình đọc hoặc trình phát video.';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -258176,8 +257706,6 @@ extension on _StringsVi {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -259047,8 +258575,6 @@ extension on _StringsVi {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -259415,12 +258941,8 @@ extension on _StringsVi {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -260591,8 +260113,6 @@ extension on _StringsVi {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':
@@ -261323,7 +260843,7 @@ extension on _StringsZhCn {
       case 'anime_download_generic_hint':
         return '磁力链接';
       case 'anime_download_generic_title':
-        return '粘贴链接下载（书、视频等）';
+        return '粘贴链接下载';
       case 'anime_download_include_subs':
         return '附带字幕';
       case 'anime_download_kind_auto':
@@ -261361,7 +260881,7 @@ extension on _StringsZhCn {
       case 'anime_download_relocate_engine_failed':
         return ({required Object reason}) => '失败，磁盘与库都未改动：${reason}';
       case 'anime_download_relocate_hint':
-        return 'Fushi 通过下载引擎改名/移动，因此不会掐断做种。在资源管理器里改名则永远无法挽回。';
+        return 'Fushi 通过下载引擎改名/移动，因此不会掐断做种。外部改名将无法做种。';
       case 'anime_download_relocate_library_failed':
         return ({required Object reason}) => '文件已移动，但库仍指向旧路径：${reason}';
       case 'anime_download_relocate_move_title':
@@ -261385,7 +260905,7 @@ extension on _StringsZhCn {
       case 'anime_download_search_hint':
         return '番剧名';
       case 'anime_download_search_start_hint':
-        return '在上方搜索作品名，自动匹配种子与字幕。下载不限视频：书籍、漫画、有声书、游戏也会自动入库。';
+        return '在上方搜索作品名，视频会自动匹配字幕。';
       case 'anime_download_sort_date':
         return '发布时间';
       case 'anime_download_sort_seeders':
@@ -261531,7 +261051,7 @@ extension on _StringsZhCn {
       case 'app_ui_scale':
         return '界面大小';
       case 'app_ui_scale_hint':
-        return '整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。大屏设备上界面偏小可调高。';
+        return '整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。';
       case 'app_version':
         return '应用版本';
       case 'apply_theme':
@@ -261699,7 +261219,7 @@ extension on _StringsZhCn {
       case 'backup_export_failed':
         return ({required Object message}) => '备份导出失败：${message}';
       case 'backup_export_hint':
-        return '选择要包含的内容。阅读数据（进度、统计、设置）始终包含；取消「书籍」可完整排除书籍，取消大文件（本地音频、视频）可缩小备份。';
+        return '选择要包含的内容。';
       case 'backup_export_no_books':
         return '没有可选的书籍';
       case 'backup_export_no_videos':
@@ -261910,8 +261430,6 @@ extension on _StringsZhCn {
         return '提示：请先在上方开启「Yomitan API 服务器」并设置 API 密钥，扩展才能被自动配置为可用连接。';
       case 'browser_extension_mobile_unsupported':
         return '手机浏览器无法加载此扩展，请直接在 app 内阅读器/视频中查词。';
-      case 'browser_extension_page_intro':
-        return '在电脑的 Chrome / Edge 里直接划词查词、解析字幕、一键制卡。先在下面准备扩展文件，再按步骤加载到浏览器。';
       case 'browser_extension_prepare_button':
         return '准备扩展文件';
       case 'browser_extension_prepare_hint':
@@ -261929,7 +261447,7 @@ extension on _StringsZhCn {
       case 'browser_extension_step_dev_mode':
         return '打开右上角的「开发者模式」开关。';
       case 'browser_extension_step_done_auto':
-        return '完成。扩展已自动配置好，装好后会直接连上本应用查词，你不用手动填写任何设置。';
+        return '完成。扩展已自动配置好，装好后会直接连上本应用查词。';
       case 'browser_extension_step_load_unpacked':
         return '点击「加载已解压的扩展程序」。';
       case 'browser_extension_step_open_page':
@@ -262290,7 +261808,7 @@ extension on _StringsZhCn {
         return '跟随系统';
       case 'data_root_unavailable_message':
         return ({required Object path}) =>
-            '你设置的数据位置 ${path} 暂时读不到（盘可能在休眠、被占用或未连接）。你的数据是安全的、原封不动留在那里——没有丢失。请点「重试」,等盘就绪即可用回你的数据；或选择用默认位置临时启动（不会改动你原来的数据）。';
+            '你设置的数据位置 ${path} 暂时读不到（盘可能在休眠、被占用或未连接）。请点「重试」,等盘就绪重启Fushi即可用回你的数据；或选择用默认位置临时启动（不会改动你原来的数据）。';
       case 'data_root_unavailable_title':
         return '数据位置未响应';
       case 'data_root_use_default_button':
@@ -263336,7 +262854,7 @@ extension on _StringsZhCn {
       case 'game_text_thread_audio_count':
         return ({required Object count}) => '${count} 行有音频';
       case 'game_text_thread_hint':
-        return '像 Luna Translator 一样选择干净的台词线程';
+        return '选择干净的台词线程';
       case 'game_track_auto':
         return '自动选择';
       case 'game_track_clips':
@@ -263346,7 +262864,7 @@ extension on _StringsZhCn {
       case 'game_track_exclude_bgm':
         return '标记为 BGM';
       case 'game_track_exclusion_hint':
-        return '把 BGM/环境音轨标记为排除，自动选源便不会把它当成语音——没有语音的台词也不会再读到 BGM。';
+        return '把 BGM/环境音轨标记为排除，自动选源便不会把它当成语音。';
       case 'game_track_exclusion_title':
         return '排除音轨';
       case 'game_track_preview':
@@ -265862,8 +265380,6 @@ extension on _StringsZhCn {
         return '制卡时截图';
       case 'video_mining_image_mode_gif':
         return '动图 GIF（字幕片段）';
-      case 'video_mining_image_mode_hint':
-        return '视频卡片封面用字幕区间动图，还是某一帧静态截图（取哪一帧也在这里选）';
       case 'video_mining_image_mode_subtitle_start':
         return '字幕开头截图';
       case 'video_next_episode':
@@ -266583,7 +266099,7 @@ extension on _StringsZhCn {
       case 'anki_dedup_unavailable':
         return '需要本机运行 Anki（AnkiConnect）。';
       case 'anki_dedup_run_hint':
-        return '先扫描并列出将要删除的文件，你确认之后才会真正删除。';
+        return '先扫描并列出将要删除的文件。';
       case 'anki_dedup_plan_title':
         return '将要删除的文件';
       case 'anki_dedup_plan_intro':
@@ -266676,7 +266192,7 @@ extension on _StringsZhCn {
       case 'anki_dedup_auto':
         return '自动处理';
       case 'anki_dedup_auto_hint':
-        return '默认关闭。打开后 Fushi 会在启动时扫描（最多每周一次）并先把清单给你看，你不确认就不会删任何文件。';
+        return '默认关闭。打开后 Fushi 会在启动时扫描（最多每周一次）并展示清单。';
       case 'anki_dedup_auto_delete':
         return '自动直接删除（不再询问）';
       case 'anki_dedup_auto_delete_hint':
@@ -266726,8 +266242,6 @@ extension on _StringsZhCn {
         return 'Galgame 制卡配图';
       case 'gal_mining_image_mode_screenshot':
         return '静态截图';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame 一句台词内画面基本不动，静态截图通常更小、信息量一样。';
       case 'shortcut_scope_manga':
         return '漫画';
       case 'shortcut_action_manga_page_forward':
@@ -266961,7 +266475,7 @@ extension on _StringsZhCn {
       case 'anki_lapis_visual_editor':
         return '可视化编辑';
       case 'anki_lapis_visual_editor_hint':
-        return '预览 Lapis 卡片，选中区域后直接改样式、位置和字段映射，无需手写 CSS。';
+        return '预览并修改 Lapis 卡片。';
       case 'anki_lapis_visual_front':
         return '正面';
       case 'anki_lapis_visual_back':
@@ -267081,19 +266595,15 @@ extension on _StringsZhCn {
       case 'collection_sort_by_season':
         return '按季排序';
       case 'mining_animated_format_avif':
-        return 'AVIF（体积最小）';
+        return 'AVIF（体积最小，最推荐）';
       case 'mining_animated_format_webp':
         return 'WebP（兼容性更广）';
       case 'mining_animated_format_gif':
-        return 'GIF（兼容性最好）';
+        return 'GIF（兼容性最好，体积最大，无压缩）';
       case 'video_mining_animated_format':
         return '视频制卡动图格式';
-      case 'video_mining_animated_format_hint':
-        return '同画质下 AVIF 体积远小于 GIF，最高清晰度档也允许比 GIF/WebP 更高的分辨率与帧率。捆绑的编码器产不出时会自动回退 GIF。';
       case 'gal_mining_animated_format':
         return '游戏制卡动图格式';
-      case 'gal_mining_animated_format_hint':
-        return '与视频制卡同样的格式，但分开保存：galgame 一句台词内画面基本静止，取舍不同。';
       case 'scrape_all':
         return '全部刮削';
       case 'scrape_all_title':
@@ -267190,7 +266700,7 @@ extension on _StringsZhCn {
       case 'video_setting_tmdb_key_hint':
         return '可留空，默认用内置 Key。仅当刮削失效或你想用自己的配额时才需要填写。';
       case 'about_tmdb_attribution':
-        return 'This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.';
+        return '本应用使用 TMDB 及 TMDB API，但未获 TMDB 认可或认证。';
       case 'anki_lapis_visual_layout':
         return '布局';
       case 'anki_lapis_visual_layout_hint':
@@ -268249,7 +267759,7 @@ extension on _StringsZhCn {
         return ({required Object pid, required Object path}) =>
             'Galgame 捕获组件被占用：PID ${pid} - ${path}（这是你正在玩的游戏或它的捕获宿主进程）。请先关闭游戏再更新。';
       case 'game_hook_reason_protocol_mismatch':
-        return '捕获组件与本体版本不一致。组件已内置在 Fushi 里，不需要单独安装：先彻底关掉游戏再重开一次（游戏进程里可能还挂着上一次注入的旧组件）。若重开后仍提示不一致，说明磁盘上的组件比 Fushi 旧——上次更新 Fushi 时游戏正开着，安装器换不掉被占用的组件文件。请关闭所有游戏，然后重新运行一次 Fushi 安装程序。';
+        return '捕获组件与本体版本不一致。请尝试关闭游戏，然后重新运行一次 Fushi。若无法解决请联系开发者。';
       case 'video_mining_still_format':
         return '视频卡片截图格式';
       case 'video_mining_still_format_hint':
@@ -268257,11 +267767,9 @@ extension on _StringsZhCn {
       case 'mining_still_format_jpg':
         return 'JPG（体积更小）';
       case 'mining_still_format_png':
-        return 'PNG（无损）';
+        return 'PNG';
       case 'gal_mining_still_format':
         return '游戏卡片截图格式';
-      case 'gal_mining_still_format_hint':
-        return '与视频卡片同样的格式，但分开保存。游戏窗口抓图本身是 PNG：选 PNG 无损但大好几倍，选 JPG 与这些截图过去的压缩方式一致。';
       case 'manga_source_cloudflare_blocked':
         return '该来源受 Cloudflare 保护，内置阅读器暂时无法访问。';
       case 'manga_global_search_title':
@@ -269582,8 +269090,6 @@ extension on _StringsZhHk {
         return 'Tip: enable "Yomitan API server" and set an API key above first, so the extension is auto-configured with a working connection.';
       case 'browser_extension_mobile_unsupported':
         return '手機瀏覽器無法載入此擴充功能，請直接在 app 內閱讀器／影片中查詞。';
-      case 'browser_extension_page_intro':
-        return 'On desktop, look up words, parse subtitles and mine cards right inside Chrome or Edge. Prepare the extension below, then load it in your browser.';
       case 'browser_extension_prepare_button':
         return 'Prepare extension files';
       case 'browser_extension_prepare_hint':
@@ -273547,8 +273053,6 @@ extension on _StringsZhHk {
         return 'Screenshot at mining';
       case 'video_mining_image_mode_gif':
         return 'Animated GIF (subtitle clip)';
-      case 'video_mining_image_mode_hint':
-        return 'Whether the video card cover is an animation of the subtitle clip or a single still frame — and which frame';
       case 'video_mining_image_mode_subtitle_start':
         return 'Screenshot at subtitle start';
       case 'video_next_episode':
@@ -274415,8 +273919,6 @@ extension on _StringsZhHk {
         return 'Galgame card image';
       case 'gal_mining_image_mode_screenshot':
         return 'Screenshot';
-      case 'gal_mining_image_mode_hint':
-        return 'Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.';
       case 'shortcut_scope_manga':
         return 'Manga';
       case 'shortcut_action_manga_page_forward':
@@ -274783,12 +274285,8 @@ extension on _StringsZhHk {
         return 'GIF (most compatible)';
       case 'video_mining_animated_format':
         return 'Video card animation format';
-      case 'video_mining_animated_format_hint':
-        return 'AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.';
       case 'gal_mining_animated_format':
         return 'Game card animation format';
-      case 'gal_mining_animated_format_hint':
-        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       case 'scrape_all':
         return 'Scrape all';
       case 'scrape_all_title':
@@ -275959,8 +275457,6 @@ extension on _StringsZhHk {
         return 'PNG (lossless)';
       case 'gal_mining_still_format':
         return 'Game card screenshot format';
-      case 'gal_mining_still_format_hint':
-        return 'Same formats as video cards, stored separately. Game window grabs come in as PNG: keeping PNG is lossless but several times larger, while JPG matches how these screenshots were compressed before.';
       case 'manga_source_cloudflare_blocked':
         return 'This source is protected by Cloudflare and can\'t be reached by the built-in reader yet.';
       case 'manga_global_search_title':

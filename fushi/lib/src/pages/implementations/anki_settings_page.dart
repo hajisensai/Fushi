@@ -502,7 +502,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget _buildVideoMiningImageModePicker() {
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
       title: t.video_mining_image_mode,
-      subtitle: t.video_mining_image_mode_hint,
       icon: Icons.photo_library_outlined,
       controlBelow: true,
       selected: appModel.videoMiningImageMode,
@@ -536,7 +535,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget _buildGalMiningImageModePicker() {
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
       title: t.gal_mining_image_mode,
-      subtitle: t.gal_mining_image_mode_hint,
       icon: Icons.photo_camera_back_outlined,
       controlBelow: true,
       // 历史值可能是 subtitleStart（与视频项共用枚举）：按 isStill 归到静态截图，
@@ -568,7 +566,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 场景无关，没必要为两个页面各写一份会漂开的文案。
   Widget _buildAnimatedFormatPicker({
     required String title,
-    required String subtitle,
+    String? subtitle,
     required MiningAnimatedFormat selected,
     required void Function(MiningAnimatedFormat) onChanged,
   }) {
@@ -601,14 +599,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildVideoMiningAnimatedFormatPicker() => _buildAnimatedFormatPicker(
         title: t.video_mining_animated_format,
-        subtitle: t.video_mining_animated_format_hint,
         selected: appModel.videoMiningAnimatedFormat,
         onChanged: appModel.setVideoMiningAnimatedFormat,
       );
 
   Widget _buildGalMiningAnimatedFormatPicker() => _buildAnimatedFormatPicker(
         title: t.gal_mining_animated_format,
-        subtitle: t.gal_mining_animated_format_hint,
         selected: appModel.galMiningAnimatedFormat,
         onChanged: appModel.setGalMiningAnimatedFormat,
       );
@@ -624,7 +620,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 三档共用一套 option 文案 —— 格式含义与场景无关。
   Widget _buildStillFormatPicker({
     required String title,
-    required String subtitle,
+    String? subtitle,
     required MiningStillFormat selected,
     required void Function(MiningStillFormat) onChanged,
   }) {
@@ -660,7 +656,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildGalMiningStillFormatPicker() => _buildStillFormatPicker(
         title: t.gal_mining_still_format,
-        subtitle: t.gal_mining_still_format_hint,
         selected: appModel.galMiningStillFormat,
         onChanged: appModel.setGalMiningStillFormat,
       );
