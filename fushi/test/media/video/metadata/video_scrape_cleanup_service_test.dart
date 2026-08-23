@@ -21,6 +21,10 @@ FushiDatabase _freshDatabase() => FushiDatabase.forTesting(
 );
 
 void main() {
+  // 清理服务删掉封面后要经 MediaCoverService.applyCoverRemoval 驱逐解码缓存
+  // （BUG-1118 的删侧），那条路径读 PaintingBinding.instance.imageCache——没有
+  // binding 会在删除成功那一刻抛 'Binding has not yet been initialized'。
+  TestWidgetsFlutterBinding.ensureInitialized();
   late FushiDatabase database;
   late Directory temporaryDirectory;
   late Directory sourceDirectory;

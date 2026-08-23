@@ -99,6 +99,11 @@ void main() {
   late GlobalKey<NavigatorState> toastNavigatorKey;
 
   setUp(() async {
+    // 视频删除与封面回填共用 VideoCoverMutationGate（进程级锁）。带真实资产的用例
+    // 会真跑一次抽帧，用例结束时那个 action 若还在飞，它的 Zone 不再推进、锁永不
+    // 释放；下一条用例于是排进一条永不被移交的队列——删除静默不执行，断言只会说
+    // 「没删掉」，看不出因果。逐条清锁（与下面 resetAppOwnedVideoAssetDirs 同性质）。
+    VideoCoverMutationGate.debugResetForTesting();
     // TODO-935 E1：桌面测试宿主 isDesktopPlatform=true，AppPaths._resolveDataRoot
     // 会读 SharedPreferences 的 data_root。未 mock 时 getInstance() 在本绑定下挂起，
     // 连累经 VideoStorage→AppPaths 的资产回收（封面/字幕目录解析永不返回 → 回收

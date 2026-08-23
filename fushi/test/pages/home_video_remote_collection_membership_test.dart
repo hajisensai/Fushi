@@ -22,12 +22,19 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
 
-/// 多端库联合视图 §2.3 任务10：远端视频占位卡的合集归属。host 下发的
-/// [RemoteVideoInfo.collection]（自然键 name+type）解析到本地合集 → 远端占位折进该
-/// 合集（封面卡形态：计入集数角标 + 卡带云角标，成员收进详情页）；解析不到本地
-/// 合集 → 散卡降级（不硬造合集卡）。
+/// 多端库联合视图 §2.3 任务10：远端视频占位卡的合集归属。
+///
+/// ⚠️ 契约在 2026-08-24（PR #954 的「系列只收 AniDB 已刮削作品」）**变了**：
+/// 远端占位没有本机 canonical identity，不得仅凭同名合集混进「系列」墙
+/// （`home_video_page._buildLocalVideoSlivers` 的 `groupedRemoteVideos` 在
+/// series 分区恒空）。于是「远端占位折进本地合集卡、计进集数角标、卡带云角标」
+/// 这条能力**已不存在**：远端占位现在只出现在「全部视频」与首页远端联合视图，
+/// 而那两处不做合集折叠。本文件因此改为守新契约——系列墙渲染本地合集卡但不含
+/// 远端、全部视频渲染远端散卡但不折合集——原来的折叠断言不是被放宽，是它守的
+/// 那个行为被有意移除了。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -81,7 +88,11 @@ void main() {
     }
   });
 
-  Widget buildApp(RemoteVideoClient client) => ProviderScope(
+  Widget buildApp(
+    RemoteVideoClient client, {
+    VideoLibrarySection section = VideoLibrarySection.allVideos,
+  }) =>
+      ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -92,9 +103,10 @@ void main() {
             home: Scaffold(
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
-                // #792 分区化：home 分区只渲染 dashboard 概览，合集封面卡与远端
-                // 占位卡所在的混排墙（_buildLocalVideoSlivers）搬进了 series 分区。
-                section: VideoLibrarySection.allVideos,
+                // #792 分区化：home 分区只渲染 dashboard 概览，混排墙在 series；
+                // 远端占位则只在「全部视频」出现（见文件头的契约变更说明），故
+                // 两个分区都要测，由调用方指定。
+                section: section,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
@@ -104,7 +116,7 @@ void main() {
         ),
       );
 
-  testWidgets('远端归属命中本地合集 → 折进合集封面卡（计数含远端 + 云角标）', (WidgetTester tester) async {
+  testWidgets('系列墙：本地合集卡渲染，但远端占位既不折进也不出现', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -119,46 +131,52 @@ void main() {
       videoPath: Value('/abs/ep1.mp4'),
     ));
     await db.addToCollection(cid, MediaKind.video, 'video/local-ep1');
+    // 系列墙的入墙资格是「有 AniDB primary identity 的规范作品」，与本用例要守的
+    // 「远端占位进不进系列墙」正交；不种身份的话合集卡根本不渲染，测不到正题。
+    await seedAniDbSeriesIdentity(db, cid, title: 'MyShow');
 
     // 远端有归属同一合集的第二集。
-    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
-      <RemoteVideoInfo>[
-        const RemoteVideoInfo(
-          id: 'video/remote-ep2',
-          title: 'Remote Ep2',
-          collection: RemoteCollectionMembership(
-            collectionName: 'MyShow',
-            collectionType: 'collection',
-            sortIndex: 1,
+    await tester.pumpWidget(buildApp(
+      _ListFakeRemoteVideoClient(
+        <RemoteVideoInfo>[
+          const RemoteVideoInfo(
+            id: 'video/remote-ep2',
+            title: 'Remote Ep2',
+            collection: RemoteCollectionMembership(
+              collectionName: 'MyShow',
+              collectionType: 'collection',
+              sortIndex: 1,
+            ),
           ),
-        ),
-      ],
-    )));
+        ],
+      ),
+      section: VideoLibrarySection.series,
+    ));
     await tester.pumpAndSettle();
 
     final Finder collectionCard =
         find.byKey(ValueKey<String>('home_video_collection_card_$cid'));
     expect(collectionCard, findsOneWidget, reason: '本地合集封面卡必须渲染');
-    // 远端成员折进合集卡：不再单独渲染散卡（成员收进详情页）。
+    // 远端占位在系列墙上**整个不出现**：既不折进合集卡，也不降级成散卡。
     expect(
       find.byKey(const ValueKey<String>('remote_video_card_video_remote-ep2')),
       findsNothing,
-      reason: '远端占位归属命中本地合集 → 折进合集卡，不再渲染独立散卡',
+      reason: '远端占位无本机 canonical identity，不进系列墙（PR #954）',
     );
-    // 集数角标含远端占位成员（BUG-790 口径：1 本地 + 1 远端 = 2）。
+    // 集数角标只数本地成员——远端那一集不再计入（旧契约是 1 本地 + 1 远端 = 2）。
     expect(
       find.descendant(
         of: collectionCard,
-        matching: find.text(t.video_playlist_episodes(count: 2)),
+        matching: find.text(t.video_playlist_episodes(count: 1)),
       ),
       findsOneWidget,
-      reason: '集数角标必须计入远端占位成员（本地+远端同源）',
+      reason: '系列墙的集数角标只含本地成员',
     );
-    // 含远端占位成员 → 合集卡右上云角标。
+    // 云角标同理消失：合集卡上已没有远端成员可标。
     expect(
       find.byKey(ValueKey<String>('home_video_collection_cloud_$cid')),
-      findsOneWidget,
-      reason: '含远端占位成员的合集卡必须带云角标',
+      findsNothing,
+      reason: '系列墙的合集卡不含远端成员，不该再画云角标',
     );
   });
 
@@ -201,37 +219,39 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1699：合集同步落库后视频页自动重组（无需下拉刷新/重启）',
+  testWidgets('BUG-1699：合集落库后视频页自动重组（无需下拉刷新/重启）',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // 首帧：本地无 'LateShow' 合集 → 远端占位散卡。
-    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
-      <RemoteVideoInfo>[
-        const RemoteVideoInfo(
-          id: 'video/remote-late',
-          title: 'Remote Late',
-          collection: RemoteCollectionMembership(
-            collectionName: 'LateShow',
-            collectionType: 'collection',
-            sortIndex: 0,
-          ),
-        ),
-      ],
-    )));
+    // BUG-1699 守的是「_collectionsById 不能停在首帧快照」，与「谁被折叠」无关。
+    // 原用例拿远端占位当被折叠方，而远端占位已不进系列墙（见文件头契约变更），
+    // 于是改用**本地视频**：它同样只有在合集表变化被监听到之后才会折进合集卡。
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/late-ep1'),
+      title: Value('Late Ep1'),
+      videoPath: Value('/abs/late1.mp4'),
+    ));
+    await seedAniDbLooseIdentity(db, 'video/late-ep1', title: 'Late Ep1');
+
+    await tester.pumpWidget(buildApp(
+      _ListFakeRemoteVideoClient(const <RemoteVideoInfo>[]),
+      section: VideoLibrarySection.series,
+    ));
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey<String>('remote_video_card_video_remote-late')),
+      find.byKey(const ValueKey<String>('home_video_video/late-ep1')),
       findsOneWidget,
-      reason: '前置：合集未落库时占位卡是散卡',
+      reason: '前置：合集未落库时该视频是散卡',
     );
 
     // 模拟后台合集同步落库（互联 live / 云清单 / 备份导入任一写入者）。
     final int cid = await db.createMediaCollection('LateShow',
         collectionType: 'collection');
+    await db.addToCollection(cid, MediaKind.video, 'video/late-ep1');
+    await seedAniDbSeriesIdentity(db, cid, title: 'LateShow');
     // 合集表 watch 有 300ms 合并窗口。
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
@@ -243,9 +263,9 @@ void main() {
           '此前 _collectionsById 停在首帧快照，恒散卡直到重启）',
     );
     expect(
-      find.byKey(const ValueKey<String>('remote_video_card_video_remote-late')),
+      find.byKey(const ValueKey<String>('home_video_video/late-ep1')),
       findsNothing,
-      reason: '占位卡自动折进新落库的合集，不再渲染独立散卡',
+      reason: '成员自动折进新落库的合集，不再渲染独立散卡',
     );
   });
 }

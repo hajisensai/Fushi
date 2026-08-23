@@ -785,6 +785,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (!isLocalFrameExtractableVideoSource(path)) {
           continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
         }
+        if (!File(path).existsSync()) {
+          // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
+          // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
+          // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
+          // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
+          continue;
+        }
         if (!CoverBackfillLedger.instance.shouldAttempt(path)) {
           continue; // 此前失败且文件未变：不再白烧 ffmpeg。
         }
