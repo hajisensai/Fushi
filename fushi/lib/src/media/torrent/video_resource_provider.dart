@@ -46,6 +46,7 @@ abstract class VideoResourceCandidate {
     this.releaseGroup,
     this.trusted = false,
     this.detailsUrl,
+    this.magnetUri,
   });
 
   final String providerId;
@@ -64,6 +65,12 @@ abstract class VideoResourceCandidate {
   final String? releaseGroup;
   final bool trusted;
   final String? detailsUrl;
+
+  /// 选择时刻就已在手的持久磁力链接（`magnet:` 前缀），入队时随任务落库
+  /// （BUG-1784）：重启/重试解析 payload 不再依赖回索引器重搜——发布名分词
+  /// 搜不回或条目被下架都会让「资源还在、钥匙丢了」变成 notFound。只有
+  /// 临时 URL（Torznab .torrent 下载链）的 provider 留 null，走重搜兜底。
+  final String? magnetUri;
 
   /// Cross-indexer dedupe uses the info hash; provider-local identity is a
   /// safe fallback when an indexer does not expose one.

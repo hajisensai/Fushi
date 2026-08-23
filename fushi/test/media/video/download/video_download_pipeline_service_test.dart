@@ -144,6 +144,64 @@ void main() {
     expect(jobAtCheckpoint!.torrentHash, _torrentHash);
   });
 
+  test('enqueue persists the candidate magnet and skips re-search (BUG-1784)',
+      () async {
+    const String candidateMagnet =
+        'magnet:?xt=urn:btih:$_torrentHash&dn=Show+S01E01'
+        '&tr=udp%3A%2F%2Ftracker.example%3A1337%2Fannounce';
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+      candidateMagnetUri: candidateMagnet,
+    );
+    addTearDown(environment.close);
+
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    final VideoDownloadJobRow downloading = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    expect(downloading.magnetUri, candidateMagnet);
+    // payload 从任务行磁链物化，物化不回索引器重搜/重解析。
+    expect(environment.provider.searchCalls, 0);
+    expect(environment.provider.resolveCalls, 0);
+    expect(backend.addCalls, 1);
+  });
+
+  test('legacy job without magnet recovers offline from its info hash '
+      'when re-search misses (BUG-1784)', () async {
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.25)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+    );
+    addTearDown(environment.close);
+    // 存量任务行形态：入队时没落磁链，且条目已从索引器搜不回。
+    environment.provider.returnEmptySearch = true;
+
+    final String jobId = await environment.service.enqueue(
+      environment.enqueueRequest(),
+    );
+    final VideoDownloadJobRow downloading = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    // 离线重建的磁链（info hash + 该索引器固定 tracker）落回任务行。
+    expect(downloading.magnetUri, startsWith('magnet:?xt=urn:btih:'));
+    expect(downloading.magnetUri, contains(_torrentHash));
+    expect(environment.provider.resolveCalls, 0);
+    expect(backend.addCalls, 1);
+  });
+
   test('long enqueue renews its lease and cannot be claimed by another worker',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend(
@@ -1654,6 +1712,7 @@ class _PipelineEnvironment {
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
     Duration pollInterval = const Duration(hours: 1),
+    String? candidateMagnetUri,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -1667,7 +1726,8 @@ class _PipelineEnvironment {
         createdAt: 1,
       ),
     );
-    final _FakeResourceProvider provider = _FakeResourceProvider();
+    final _FakeResourceProvider provider =
+        _FakeResourceProvider(candidateMagnetUri: candidateMagnetUri);
     final VideoResourceRegistry resourceRegistry =
         VideoResourceRegistry(<VideoResourceProvider>[provider]);
     final VideoSubtitleRegistry? subtitleRegistry = subtitleProvider == null
@@ -1830,7 +1890,7 @@ VideoMediaReference _mediaReference() => VideoMediaReference(
     );
 
 class _FakeResourceCandidate extends VideoResourceCandidate {
-  _FakeResourceCandidate()
+  _FakeResourceCandidate({String? magnetUri})
       : super(
           providerId: 'nyaa',
           providerInstanceId: 'test-instance',
@@ -1838,6 +1898,7 @@ class _FakeResourceCandidate extends VideoResourceCandidate {
           title: 'Show S01E01',
           providerPriority: 0,
           infoHash: _torrentHash,
+          magnetUri: magnetUri,
         );
 }
 
@@ -1899,11 +1960,15 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
 }
 
 class _FakeResourceProvider implements VideoResourceProvider {
-  _FakeResourceProvider() : candidate = _FakeResourceCandidate();
+  _FakeResourceProvider({String? candidateMagnetUri})
+      : candidate = _FakeResourceCandidate(magnetUri: candidateMagnetUri);
 
   final _FakeResourceCandidate candidate;
   int searchCalls = 0;
   int resolveCalls = 0;
+
+  /// true = 重搜找不回已选条目（条目下架/发布名搜不中），search 返回空成功。
+  bool returnEmptySearch = false;
 
   @override
   String get id => 'nyaa';
@@ -1923,7 +1988,9 @@ class _FakeResourceProvider implements VideoResourceProvider {
   ) async {
     searchCalls += 1;
     return ProviderBatchResult<VideoResourceCandidate>.success(
-      <VideoResourceCandidate>[candidate],
+      returnEmptySearch
+          ? const <VideoResourceCandidate>[]
+          : <VideoResourceCandidate>[candidate],
     );
   }
 

@@ -138,6 +138,78 @@ void main() {
     );
   });
 
+  test('episodic organizer routes unnumbered specials to Extras (BUG-1785)',
+      () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-organizer-extras-',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    const String releaseRoot = '[VCB-Studio] Hibike! Euphonium 2 [Ma10p_1080p]';
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: '響け！ユーフォニアム 2',
+        year: 2016,
+        kind: VideoOrganizationKind.episodic,
+        defaultSeasonNumber: 2,
+        sourceRoot: root.path,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: root.path,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: '$releaseRoot/'
+              '[VCB-Studio] Hibike! Euphonium 2 [01][Ma10p_1080p][x265_flac].mkv',
+          size: 900,
+          progress: 1,
+          index: 0,
+        ),
+        // 内置引擎在 Windows 上报反斜杠路径（用户原始报错原样）。
+        const TorrentFileEntry(
+          name: '$releaseRoot\\Previews\\'
+              '[VCB-Studio] Hibike! Euphonium 2 [WEB Preview02][Ma10p_1080p][x265_flac].mkv',
+          size: 30,
+          progress: 1,
+          index: 1,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/SPs/'
+              '[VCB-Studio] Hibike! Euphonium 2 [NCOP][Ma10p_1080p][x265_flac].mkv',
+          size: 40,
+          progress: 1,
+          index: 2,
+        ),
+      ],
+    );
+
+    final Map<int, VideoOrganizationFilePlan> byIndex =
+        <int, VideoOrganizationFilePlan>{
+      for (final VideoOrganizationFilePlan file in plan.files)
+        file.backendFileIndex: file,
+    };
+    expect(
+      byIndex[0]!.targetRelativePath,
+      '響け！ユーフォニアム 2 (2016)/Season 02/'
+      '響け！ユーフォニアム 2 (2016) - S02E01.mkv',
+    );
+    expect(byIndex[0]!.episodeNumber, 1);
+    expect(
+      byIndex[1]!.targetRelativePath,
+      '響け！ユーフォニアム 2 (2016)/Extras/Previews/'
+      '[VCB-Studio] Hibike! Euphonium 2 [WEB Preview02][Ma10p_1080p][x265_flac].mkv',
+    );
+    expect(byIndex[1]!.episodeNumber, isNull);
+    expect(
+      byIndex[2]!.targetRelativePath,
+      '響け！ユーフォニアム 2 (2016)/Extras/SPs/'
+      '[VCB-Studio] Hibike! Euphonium 2 [NCOP][Ma10p_1080p][x265_flac].mkv',
+    );
+  });
+
   test('unparseable episodic filename blocks before backend mutation',
       () async {
     final Directory root = await Directory.systemTemp.createTemp(
