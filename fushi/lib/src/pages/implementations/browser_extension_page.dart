@@ -166,8 +166,6 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        Text(t.browser_extension_page_intro, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 16),
         _statusCard(theme,
             serverOn: serverOn,
             connected: connected,
