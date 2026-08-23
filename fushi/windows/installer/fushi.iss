@@ -234,10 +234,25 @@ begin
   StringChangeEx(EscapedDir, '''', '''''', True);
   Cmd := '-NoProfile -NonInteractive -Command "$d = ''' + EscapedDir + '''; ' +
     'if (-not $d.EndsWith(''\'')) { $d += ''\'' }; ' +
-    'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) } | ' +
+    'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) ' +
+    '-and $_.ProcessName -ne ''fushi_update_launcher'' } | ' +
     'Stop-Process -Force -ErrorAction SilentlyContinue"';
-  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Cmd, '',
-       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // BUG-1786：必须走 {sysnative} 而不是 {sys}。本安装器是 **32 位**进程
+  // （日志里的「64-bit install mode: No」），{sys} 会被 WOW64 重定向到 SysWOW64 的
+  // **32 位** PowerShell，而 32 位 PowerShell 读不到 64 位进程的 .Path（底层 MainModule
+  // 跨位宽访问失败，属性取到空串）。于是过滤条件 `$_.Path -and ...` 对**每一个** 64 位
+  // 进程都恒假——fushi.exe / injector / ffmpeg 一个都杀不掉，这个过程长期是发哑弹。
+  // 实测（同一份命令、同一个 x64 目标进程）：
+  // 64 位 PowerShell → alive=False，文件随即可写；
+  // 32 位 PowerShell → alive=True，文件仍被占用，且 Path 取到空串。
+  // {sysnative} 在 64 位 Windows 上绕过 WOW64 重定向指向真正的 System32；32 位 Windows
+  // 上它等同 {sys}，故无平台回归。
+  //
+  // launcher 被显式排除（上面的 ProcessName 判断）：它是拉起本安装器的进程，且要活到
+  // 安装结束才能在失败时把 app 拉回来（BUG-1708）。杀了它等于用那条 bug 的复发换这次
+  // 复制成功。它自己占住的文件由 MakeWayForRunningLauncher 改名让路解决。
+  Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'), Cmd,
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 { BUG-1675: 能不能真的换掉这个文件——用「独占写方式打开」实测，而不是猜。

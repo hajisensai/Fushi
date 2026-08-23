@@ -59,6 +59,24 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
 ——本来只要重跑一次那个包就能自愈，判据错了之后连包都没了。修好 ③ 之后这条自然消失
 （判为失败就不再走回收分支），无需为它单独加特例。
 
+**④ `KillProcessesUnderDir` 是发哑弹（32 位 Inno × 64 位进程）。**
+`PrepareToInstall` 本来就想在复制前清掉安装目录下的占用进程，它却从来没生效过：本安装器是
+**32 位**进程（安装日志「64-bit install mode: No」，`[Setup]` 里没有
+`ArchitecturesInstallIn64BitMode`），`ExpandConstant('{sys}')` 被 WOW64 重定向到
+`SysWOW64`，拿到的是 **32 位 PowerShell**；而 32 位 PowerShell 读不到 64 位进程的 `.Path`
+（底层 `MainModule` 跨位宽访问失败，属性取到空串），于是过滤条件 `$_.Path -and ...` 对
+**每一个** 64 位进程恒假 —— `fushi.exe` / `fushi_voice_injector.exe` / `ffmpeg.exe` 一个都杀不掉。
+
+实测（同一份命令、同一个 x64 目标进程）：
+
+| 调用者 | 目标存活 | 文件可写 | 32 位 PS 看到的 Path |
+|---|---|---|---|
+| 64 位 PowerShell | 否（被杀） | True | — |
+| **32 位 PowerShell** | **是** | **False** | **空串** |
+
+这条也正面证实了 ①：launcher 全程活着（用户现场 14:58:32 安装回滚、14:58:35 app 被拉起，
+正是 launcher 的 `EnsureAppBack` 干的），而不是「被杀掉后由杀软持有句柄」。
+
 ### 修复
 
 1. **`platform_updater.dart`**：新增 `stageWindowsUpdateLauncher()`，把 launcher 复制到 updates
@@ -76,9 +94,16 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
    回滚收尾写的是「**Un**installation process succeeded.」，裸 `contains` 会把**回滚自身的成功**
    读成安装成功，正好在最该报失败的那条日志上给出相反结论。
 
-- **[x] ① 已修复** — 上述四处
+5. **`fushi.iss`（④）**：`KillProcessesUnderDir` 改走 `{sysnative}`（64 位 Windows 上绕过 WOW64
+   重定向指向真正的 System32；32 位 Windows 上等同 `{sys}`，无平台回归），并**显式排除
+   `fushi_update_launcher`**——清扫一旦真正生效，杀掉 launcher 就等于 BUG-1708 当场复发；
+   它占住的文件已由 ③ 的改名让路处理。实测：修好后 helper 进程被杀、launcher 存活。
+
+- **[x] ① 已修复** — 上述五处
 - **[x] ② 已加自动化测试** — `fushi/test/utils/misc/update_launcher_self_lock_test.dart`（9 条，
-  含用**用户真实失败日志**做 fixture）+ `fushi/test/build/update_launcher_relaunch_guard_test.dart`
+  含用**用户真实失败日志**做 fixture）+ `fushi/test/build/windows_installer_launcher_lock_guard_test.dart`
+  （2 条，钉住「改名让路而非杀进程」与「sysnative + 放过 launcher」）
+  + `fushi/test/build/update_launcher_relaunch_guard_test.dart`
   更新（BUG-1708 守卫跟随新契约：`--app-exe` 优先、同目录回退仍在）
 
 ### 验证
@@ -92,9 +117,15 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
   | control（无修复） | 5 | 是 | **NEW** | **OLD** ← 精确复现用户现场 |
   | fixed（带修复） | 0 | 否 | NEW | **NEW** |
 
-- 变异实测：`\b` 去掉退化成 `contains` → 精确红 1 条（`Expected: true, Actual: false`，
-  即回滚被读成成功）；还原后 sha256 与变异前逐字节一致
-  （`894ad1ee2eedc80c307f47f7885fd1042e15344fa1465e5758bd015e4cbd28e6`）。
+- 变异实测（三处，每次还原后 sha256 与变异前逐字节一致）：
+  - `\b` 去掉退化成 `contains` → 精确红 1 条（`Expected: true, Actual: false`，即回滚被读成
+    成功）；`update_handoff.dart` 还原校验
+    `894ad1ee2eedc80c307f47f7885fd1042e15344fa1465e5758bd015e4cbd28e6`。
+  - `{sysnative}` 退回 `{sys}` → 精确红 1 条；`fushi.iss` 还原校验
+    `7164c29a6a42a2516d0295835a1582154754df76a8a7f780f394fde543357ad4`。
+  - 删掉 launcher 的 `ProcessName` 排除 → 精确红 1 条；同一 sha256 还原。
+- ④ 的行为实测：同目录下同时跑 launcher 与一个 helper，用修好的命令清扫 →
+  `launcher alive=True` / `helper alive=False`（兜底保住、占用真被清掉）。
 - `update_launcher.cpp`：MSVC `cl /c /utf-8 /std:c++17` 编译通过（exit 0）。
 - `fushi.iss`：ISCC 6.7.1 完整编译通过（exit 0），`[Code]` 段编译无误。
 - `flutter analyze`（含 test）：No issues found。
@@ -104,9 +135,17 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
 
 ### 备注
 
-- **生效节奏**：③④ 随新版落地即生效；①② 中 `.iss` 那一半（改名让路）对**存量用户下一次更新**
-  即生效——正是它让这一版能装完整；`--app-exe` + 副本运行要等这一版装上之后的**再下一次**更新
-  才走新路径。
+- **存量用户不需要手动操作**，下一次应用内更新即自愈。关键在于**安装器的行为由新包决定**：
+  旧 app 下载新包 → 旧 launcher（仍在安装目录、仍占着自己）拉起**新包的 Inno** →
+  新 `.iss` 的 `PrepareToInstall` 探测到占用 → 改名让路 → 整包装完。
+  这条通道不要求用户先装上新 launcher，所以不存在「先有鸡还是先有蛋」。
+  A/B 实测正是这个场景（运行中的 launcher + 仅 `.iss` 有无修复之差）：control 组回滚、
+  `app.so` 停在旧版；fixed 组装完整。
+  唯一需要手动装一次的是**已经卡在半更新态**的用户——他们的 exe 已是新版，更新器不会再提示
+  同版本更新，得手动跑一次完整安装包才能让 `app.so` 追上（本轮用户即属此列）。
+- **生效节奏**：`.iss` 那三条（改名让路 / `{sysnative}` / 放过 launcher）与握手判据修复随新版
+  落地，对**存量用户下一次更新**即生效；`--app-exe` + 副本运行要等这一版装上之后的
+  **再下一次**更新才走新路径（那之后安装目录里的 launcher 根本不再被持有，连改名都不需要）。
 - 用户机器当前处于半更新态（新 exe + 8-19 的 app.so），需**手动跑一次完整安装包**恢复一致；
   在装上带本修复的版本之前，再点应用内更新仍会重蹈覆辙。
 - 未做（明确记一句）：Dart 侧没有独立于 exe 版本资源的「运行中代码版本」常量，所以
