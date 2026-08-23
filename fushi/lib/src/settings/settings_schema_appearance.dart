@@ -90,8 +90,10 @@ SettingsDestination buildAppearanceDestination() {
         // 改字体都多一次展开点击，收益（省一行高度）远小于代价。
         title: t.section_typography,
         items: <SettingsItem>[
-          // TODO-231: one visible font library; each row manages app UI /
-          // body / dictionary target membership via font_catalog/font_targets.
+          // TODO-231: 全app 只有一个可见字体库；每行字体自己管「用在哪些用途」
+          // （font_catalog / font_targets 两个偏好键）。用途集合 = FontTarget.values
+          // 全量，UI 侧遍历枚举渲染，新增用途不需要改这里。
+          // 不传 target：外观入口是全局作用域，新增字体默认挂 FontTarget.body。
           SettingsNavigationItem(
             id: 'appearance.font_catalog',
             title: t.custom_fonts_catalog_title,

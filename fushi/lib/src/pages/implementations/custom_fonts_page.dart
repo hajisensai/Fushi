@@ -568,8 +568,12 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 
 class CustomFontsPage extends BasePage {
-  /// TODO-049: which of the three independent font targets this page manages.
-  /// Defaults to [FontTarget.body] so the legacy reader call site is unchanged.
+  /// 本次进入字体库的**作用域用途**：决定新导入/新添加的字体默认挂到哪个
+  /// [FontTarget]。默认 [FontTarget.body]，所以从外观设置进来的历史路径行为不变。
+  ///
+  /// 这个参数曾经是死参数（声明了但 State 从不读），导致从「设置·游戏·Hook 文本
+  /// 字体」进来导入的字体被挂到小说正文，游戏浮窗永远不变——用户看到的就是
+  /// 「字体库里没有游戏」。
   const CustomFontsPage({super.key, this.target = FontTarget.body});
 
   final FontTarget target;
@@ -583,7 +587,10 @@ class CustomFontsPage extends BasePage {
 String _readerPrefKey(String shortKey) =>
     dbSourcePrefKey(kReaderSourcePersistedKey, shortKey);
 
-class _CustomFontsPageState extends BasePageState {
+/// 必须显式写 `BasePageState<CustomFontsPage>`：裸写 `BasePageState` 会让 `T`
+/// 退化成 `BasePage`，`widget` 的静态类型随之退化，[CustomFontsPage.target]
+/// 在 State 里**根本访问不到**——这才是那个参数当初沦为死参数的真正原因。
+class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   ReaderSettings? _settings;
 
   List<CustomFontCatalogRow> _fonts = [];
@@ -604,6 +611,14 @@ class _CustomFontsPageState extends BasePageState {
       _loadFonts(_settings!);
     }
   }
+
+  /// 新导入/新添加字体的默认用途集合：跟随本次进入字体库的作用域
+  /// [CustomFontsPage.target]，而不是恒定 [FontTarget.body]。
+  ///
+  /// 四个新增入口（文件导入 / 压缩包解包 / 推荐字体下载 / 系统字体）共用它，
+  /// 保证「从哪个设置入口进来，导入的字体就为哪个用途生效」。
+  Map<FontTarget, bool> _newFontTargets() =>
+      <FontTarget, bool>{widget.target: true};
 
   Future<void> _loadFonts(ReaderSettings settings) async {
     final FontCatalogState state = await _readCatalogState(settings);
@@ -725,7 +740,7 @@ class _CustomFontsPageState extends BasePageState {
       id: null,
       name: name,
       path: destPath,
-      targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+      targetEnabled: _newFontTargets(),
     );
     if (mounted) {
       setState(() => _fonts.add(entry));
@@ -835,7 +850,7 @@ class _CustomFontsPageState extends BasePageState {
           id: null,
           name: overrideName,
           path: destPath,
-          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+          targetEnabled: _newFontTargets(),
         );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
@@ -856,7 +871,7 @@ class _CustomFontsPageState extends BasePageState {
           id: null,
           name: baseName,
           path: destPath,
-          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+          targetEnabled: _newFontTargets(),
         );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
@@ -1103,7 +1118,7 @@ class _CustomFontsPageState extends BasePageState {
         id: null,
         name: selected,
         path: null,
-        targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+        targetEnabled: _newFontTargets(),
       ));
     });
     _save();
@@ -1227,6 +1242,7 @@ class _CustomFontsPageState extends BasePageState {
                       onDelete: () => _removeFont(index),
                       onMoveUp: () => _onReorder(index, index - 1),
                       onMoveDown: () => _onReorder(index, index + 1),
+                      initiallyExpandRoles: widget.target != FontTarget.body,
                     );
                   },
                 ),
@@ -1423,12 +1439,17 @@ class CustomFontCatalogTile extends StatefulWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.initiallyExpandRoles = false,
     super.key,
   });
 
   final String name;
   final bool isFile;
   final Set<FontTarget> targets;
+
+  /// 进页时就展开用途开关。从非默认作用域（如「设置·游戏·Hook 文本字体」）进来时
+  /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
+  final bool initiallyExpandRoles;
   final int index;
   final bool isLast;
   final ValueChanged<FontTarget> onTargetToggled;
@@ -1441,9 +1462,10 @@ class CustomFontCatalogTile extends StatefulWidget {
 }
 
 class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
-  // 4 个字体用途开关（System UI / Novel Text / Dictionary / Video Subtitle）
-  // 默认折叠：每行不再被四枚 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
-  bool _rolesExpanded = false;
+  // 字体用途开关（逐个 FontTarget 一枚 FilterChip，见 _targetLabel 的穷尽 switch）。
+  // 默认折叠：每行不再被整排 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
+  // 但从带作用域的入口进来时（initiallyExpandRoles）出生即展开。
+  late bool _rolesExpanded = widget.initiallyExpandRoles;
 
   String _targetLabel(FontTarget target) => switch (target) {
         FontTarget.appUi => t.font_target_app_ui,
