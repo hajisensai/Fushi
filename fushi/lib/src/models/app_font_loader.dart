@@ -37,18 +37,6 @@ class AppFontLoader {
   /// family, so re-registering the same one is wasteful and pointless.
   static final Set<String> _loadedFamilies = <String>{};
 
-  /// Resolves the first font the Windows native DirectWrite overlay can use.
-  ///
-  /// System fonts carry only a family name. Imported fonts additionally carry
-  /// their canonical file path so the runner can build a private DirectWrite
-  /// font collection without installing the font globally. DirectWrite's local
-  /// file API accepts raw OpenType containers; WOFF/WOFF2 entries are therefore
-  /// skipped here and resolution continues to the next enabled entry (Flutter
-  /// targets still support them through [_resolveEntry]'s decoder).
-  ///
-  /// Returning a record keeps the MethodChannel boundary explicit and avoids
-  /// pretending a process-private Flutter [FontLoader] registration is visible
-  /// to the separate Win32 DirectWrite renderer.
   /// 这个字体条目能否被 Windows native 分层窗（DirectWrite）真正用上。
   ///
   /// [path] 为 null = 系统字体，native 按族名找，恒 true。文件字体只有裸 sfnt
@@ -62,6 +50,18 @@ class AppFontLoader {
       path == null ||
       _directExtensions.contains(p.extension(path).toLowerCase());
 
+  /// Resolves the first font the Windows native DirectWrite overlay can use.
+  ///
+  /// System fonts carry only a family name. Imported fonts additionally carry
+  /// their canonical file path so the runner can build a private DirectWrite
+  /// font collection without installing the font globally. DirectWrite's local
+  /// file API accepts raw OpenType containers; WOFF/WOFF2 entries are therefore
+  /// skipped here and resolution continues to the next enabled entry (Flutter
+  /// targets still support them through [_resolveEntry]'s decoder).
+  ///
+  /// Returning a record keeps the MethodChannel boundary explicit and avoids
+  /// pretending a process-private Flutter [FontLoader] registration is visible
+  /// to the separate Win32 DirectWrite renderer.
   static ({String family, String? path})? resolveForNativeOverlay(
     List<Map<String, dynamic>> fonts, {
     required Iterable<String> allowedDirectories,
