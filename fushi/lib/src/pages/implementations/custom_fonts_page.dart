@@ -631,6 +631,23 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   Map<FontTarget, bool> _newFontTargets() =>
       <FontTarget, bool>{widget.target: true};
 
+  /// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
+  ///
+  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup]）的 DirectWrite 只吃裸
+  /// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
+  /// 同一个 [AppFontLoader.nativeOverlayCanUse]，两处不会漂开。
+  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) {
+    final String? path = row.path;
+    if (AppFontLoader.nativeOverlayCanUse(path)) {
+      return const <FontTarget, String>{};
+    }
+    return <FontTarget, String>{
+      FontTarget.gameLookup: t.import_unsupported_file_format(
+        ext: p.extension(path!).toLowerCase(),
+      ),
+    };
+  }
+
   Future<void> _loadFonts(ReaderSettings settings) async {
     final FontCatalogState state = await _readCatalogState(settings);
     if (!mounted) return;
@@ -1263,10 +1280,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                       initiallyExpandRoles: widget.target != FontTarget.body,
                       // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会
                       // 静默跳过，这里直接把那枚开关置灰，别让用户白设。
-                      unsupportedTargets:
-                          AppFontLoader.nativeOverlayCanUse(entry.path)
-                              ? const <FontTarget>{}
-                              : const <FontTarget>{FontTarget.gameLookup},
+                      unsupportedTargets: _unsupportedTargetsFor(entry),
                     );
                   },
                 ),
@@ -1464,7 +1478,7 @@ class CustomFontCatalogTile extends StatefulWidget {
     required this.onMoveUp,
     required this.onMoveDown,
     this.initiallyExpandRoles = false,
-    this.unsupportedTargets = const <FontTarget>{},
+    this.unsupportedTargets = const <FontTarget, String>{},
     super.key,
   });
 
@@ -1476,10 +1490,13 @@ class CustomFontCatalogTile extends StatefulWidget {
   /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
   final bool initiallyExpandRoles;
 
-  /// 本字体**格式上**用不了的用途：开关置灰并给出说明，而不是让用户勾一个下游会
+  /// 本字体**格式上**用不了的用途 → 置灰时给用户看的原因，而不是让他勾一个下游会
   /// 静默忽略的组合。当前唯一来源是 WOFF/WOFF2 遇上 [FontTarget.gameLookup]
   /// （native DirectWrite 只吃裸 sfnt），判据见 `AppFontLoader.nativeOverlayCanUse`。
-  final Set<FontTarget> unsupportedTargets;
+  ///
+  /// 传的是**成文的原因**而不是裸枚举集合：拼文案要知道具体扩展名，而这只有持有
+  /// 字体行的页面侧知道。
+  final Map<FontTarget, String> unsupportedTargets;
   final int index;
   final bool isLast;
   final ValueChanged<FontTarget> onTargetToggled;
@@ -1647,11 +1664,11 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
                 runSpacing: tokens.spacing.gap,
                 children: [
                   for (final FontTarget target in _visibleTargets)
-                    if (widget.unsupportedTargets.contains(target))
+                    if (widget.unsupportedTargets.containsKey(target))
                       // 置灰而非隐藏：用户需要知道「这个用途存在，但这个字体格式
                       // 用不了」，隐藏只会让人继续找不到、以为是 app 少做了。
                       Tooltip(
-                        message: t.custom_fonts_target_unsupported,
+                        message: widget.unsupportedTargets[target]!,
                         child: FilterChip(
                           label: Text(_targetLabel(target)),
                           selected: false,
