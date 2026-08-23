@@ -23,6 +23,8 @@ AppModelLibraryHostService _makeService({
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
     ..createSync(recursive: true);
+  final Directory coversRoot = Directory(p.join(tmp.path, 'covers'))
+    ..createSync(recursive: true);
   return AppModelLibraryHostService(
     db: db,
     dictionaryResourceRoot: dictRoot,
@@ -31,6 +33,7 @@ AppModelLibraryHostService _makeService({
     runExclusive: (Future<void> Function() body) => body(),
     videoSubtitleLangCode: langCode,
     uploadedVideoRoot: uploadedVideoRoot,
+    videoCoversDirectory: coversRoot,
     extractVideoCover: extractVideoCover,
   );
 }

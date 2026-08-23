@@ -58,9 +58,12 @@ import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 
@@ -393,6 +396,27 @@ class SourceLibraryScanner {
   /// media count / timestamp; any throw records its text in lastScanError
   /// (mediaCount reflects the count successfully inserted before the failure).
   Future<SourceScanSummary> scan(
+    SourceLibraryRow source, {
+    SourceFileSystem? fs,
+  }) {
+    if (source.mediaKind != SourceLibraryKind.video.dbValue) {
+      return _scanUnlocked(source, fs: fs);
+    }
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<SourceScanSummary>.value(SourceScanSummary(
+        sourceId: source.id,
+        mediaKind: source.mediaKind,
+        discoveredPaths: const <String>[],
+        importedMediaCount: 0,
+        error: '视频刮削资料正在清理',
+      ));
+    }
+    return _scanUnlocked(source, fs: fs).whenComplete(lease.release);
+  }
+
+  Future<SourceScanSummary> _scanUnlocked(
     SourceLibraryRow source, {
     SourceFileSystem? fs,
   }) async {
@@ -844,31 +868,14 @@ class SourceLibraryScanner {
           subtitleFormat = fmt;
         }
 
-        // Cover only for local files (extractVideoCover needs a local path);
-        // network cover extraction is deferred to M2/M3. Cover is an OPTIONAL
-        // enhancement: ffmpeg-missing returns null, and any unexpected failure
-        // (e.g. path_provider unavailable) must never abort the whole scan, so
-        // it is caught here and degrades to a null cover (shelf placeholder).
-        String? coverPath;
-        if (fs.isLocal) {
-          try {
-            coverPath = await extractVideoCover(
-              videoPath: item.videoPath,
-              bookUid: bookUid,
-            );
-          } catch (e) {
-            debugPrint('SourceLibraryScanner cover extract failed for '
-                '$bookUid: $e');
-          }
-        }
-
         // 标题用解码后的文件名：WebDAV 条目路径是百分号编码的 href，直接取
         // basename 会把 %20 之类渗进书架标题。
         final String title = streamInPlace
             ? p.basenameWithoutExtension(sourceEntryBasename(item.videoPath))
             : p.basenameWithoutExtension(item.videoPath);
-        await _videoRepo.saveVideoBook(
-          VideoBooksCompanion(
+        Future<void> persistVideo(String? coverPath) =>
+            _videoRepo.saveVideoBook(
+              VideoBooksCompanion(
             bookUid: Value(bookUid),
             title: Value(title),
             videoPath: Value(item.videoPath),
@@ -881,8 +888,53 @@ class SourceLibraryScanner {
                 : const Value<int?>(null),
             importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
-          sourceId: sourceId,
-        );
+              sourceId: sourceId,
+            );
+
+        // Cover only for local files (extractVideoCover needs a local path).
+        // 准入、文件替换、book pointer 与 provenance 同处封面串行边界；远端流
+        // 不抽帧，直接以空封面入库。
+        if (fs.isLocal) {
+          await VideoCoverMutationGate.runExclusive(() async {
+            String? coverPath;
+            CoverMetaStore? autoFrameMetaStore;
+            try {
+              final CoverMetaStore store =
+                  CoverMetaStore(await VideoStorage.coversDir());
+              if (await store.allowsAutoFrameWrite(bookUid)) {
+                autoFrameMetaStore = store;
+                coverPath = await extractVideoCover(
+                  videoPath: item.videoPath,
+                  bookUid: bookUid,
+                );
+              }
+            } catch (e) {
+              debugPrint('SourceLibraryScanner cover extract failed for '
+                  '$bookUid: $e');
+            }
+            await persistVideo(coverPath);
+            if (coverPath != null && autoFrameMetaStore != null) {
+              try {
+                final bool committed = await autoFrameMetaStore
+                    .markAutoFrameAfterWrite(bookUid);
+                if (!committed) {
+                  debugPrint(
+                    'SourceLibraryScanner cover provenance changed during '
+                    'write for $bookUid',
+                  );
+                }
+              } catch (e) {
+                // 来源仍是旧 legacy/空状态；生成帧不会被误标成用户保护资产。
+                debugPrint(
+                  'SourceLibraryScanner cover provenance commit failed '
+                  'for $bookUid: $e',
+                );
+              }
+            }
+          });
+        } else {
+          await persistVideo(null);
+        }
         if (cues.isNotEmpty) {
           await _videoRepo.saveCues(bookUid: bookUid, cues: cues);
         }
@@ -1019,13 +1071,29 @@ class SourceLibraryScanner {
         // never aborts the scan.
         if (fs.isLocal) {
           try {
-            final String? coverPath = await extractPlaylistCover(
-              episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
-              bookUid: result.episodeUids.first,
-            );
-            if (coverPath != null) {
-              await _videoRepo.updateCover(result.episodeUids.first, coverPath);
-            }
+            await VideoCoverMutationGate.runExclusive(() async {
+              final String firstUid = result.episodeUids.first;
+              final CoverMetaStore store =
+                  CoverMetaStore(await VideoStorage.coversDir());
+              if (await store.allowsAutoFrameWrite(firstUid)) {
+                final String? coverPath = await extractPlaylistCover(
+                  episodePaths:
+                      entries.map((PlaylistEntry e) => e.path).toList(),
+                  bookUid: firstUid,
+                );
+                if (coverPath != null) {
+                  await _videoRepo.updateCover(firstUid, coverPath);
+                  final bool committed =
+                      await store.markAutoFrameAfterWrite(firstUid);
+                  if (!committed) {
+                    debugPrint(
+                      'SourceLibraryScanner playlist cover provenance '
+                      'changed during write for $firstUid',
+                    );
+                  }
+                }
+              }
+            });
           } catch (e) {
             debugPrint('SourceLibraryScanner playlist cover extract failed for '
                 '${result.collectionId}: $e');

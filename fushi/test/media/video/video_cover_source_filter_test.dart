@@ -110,7 +110,7 @@ void main() {
       return source.substring(start, end > start ? end : source.length);
     }
 
-    test('_maybeBackfillCovers：候选过滤 + 失败记账双闸门都在环内', () {
+    test('_maybeBackfillCovers：候选、临界区重查与失败记账都在环内', () {
       final String body = methodBody('_maybeBackfillCovers');
       // ① m3u8 清单/流 URL/空路径 统一走来源判据，不进抽帧队列。
       expect(body, contains('isLocalFrameExtractableVideoSource(path)'));
@@ -120,6 +120,14 @@ void main() {
         contains('CoverBackfillLedger.instance.shouldAttempt(path)'),
       );
       expect(body, contains('CoverBackfillLedger.instance.recordFailure('));
+      // ③ 排队取得封面写锁后必须丢弃旧 listAll 快照，重读当前路径/封面；否则
+      // 刮削或手选刚提交的封面仍会被后台帧覆盖。
+      final int gate = body.indexOf('VideoCoverMutationGate.runExclusive');
+      final int freshBook = body.indexOf('widget.repo.getByBookUid(', gate);
+      final int currentCover = body.indexOf('File(currentCover).existsSync()');
+      expect(gate, greaterThanOrEqualTo(0));
+      expect(freshBook, greaterThan(gate));
+      expect(currentCover, greaterThan(freshBook));
     });
 
     test('_pullToRefresh：显式刷新是唯一清账入口', () {

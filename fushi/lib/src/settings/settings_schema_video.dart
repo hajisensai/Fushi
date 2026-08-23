@@ -11,14 +11,67 @@ import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+
+bool _videoScrapeCleanupRunning = false;
+
+Future<void> _clearAllVideoScrapeRecords(
+  SettingsContext settingsContext,
+) async {
+  if (_videoScrapeCleanupRunning) {
+    _showVideoSettingsSnackBar(
+      settingsContext,
+      t.video_source_scrape_clear_all_in_progress,
+    );
+    return;
+  }
+  // 在弹确认框前就占住 single-flight，快速双击不能堆两个确认框并在稍后重复清理。
+  _videoScrapeCleanupRunning = true;
+  try {
+    final bool confirmed = await showSettingsConfirmationDialog(
+      settingsContext,
+      title: t.video_source_scrape_clear_all_confirm_title,
+      body: t.video_source_scrape_clear_all_confirm_body,
+      confirmLabel: t.video_source_scrape_clear_all_confirm_action,
+      destructive: true,
+    );
+    if (!confirmed || !settingsContext.context.mounted) return;
+    final VideoScrapeCleanupResult result =
+        await VideoScrapeCleanupService(
+      database: settingsContext.appModel.database,
+    ).clearAll();
+    if (!settingsContext.context.mounted) return;
+    settingsContext.refresh();
+    _showVideoSettingsSnackBar(
+      settingsContext,
+      result.preservedFiles
+          ? t.video_source_scrape_clear_all_completed_protected
+          : t.video_source_scrape_clear_all_completed,
+    );
+  } on VideoScrapeCleanupBusyException {
+    _showVideoSettingsSnackBar(
+      settingsContext,
+      t.video_source_scrape_clear_all_busy,
+    );
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('video.scrape.clearAll', error, stack);
+    _showVideoSettingsSnackBar(
+      settingsContext,
+      t.video_source_scrape_clear_all_failed,
+    );
+  } finally {
+    _videoScrapeCleanupRunning = false;
+  }
+}
 
 Future<void> _commitVideoMetadataRuntimePreference(
   SettingsContext settingsContext,
@@ -393,6 +446,13 @@ SettingsDestination buildVideoDestination() {
                 value,
               );
             },
+          ),
+          SettingsActionItem(
+            id: 'video.library.scrape_records_clear_all',
+            title: t.video_source_scrape_clear_all,
+            subtitle: t.video_source_scrape_clear_all_hint,
+            icon: Icons.delete_sweep_outlined,
+            onTap: _clearAllVideoScrapeRecords,
           ),
         ],
       ),

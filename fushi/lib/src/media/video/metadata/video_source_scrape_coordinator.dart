@@ -19,6 +19,7 @@ import 'package:fushi/src/media/video/metadata/video_nfo_reader.dart';
 import 'package:fushi/src/media/video/metadata/video_sidecar_artifact_store.dart';
 import 'package:fushi/src/media/video/metadata/video_sidecar_target_resolver.dart';
 import 'package:fushi/src/media/video/metadata/video_sidecar_writer.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
@@ -200,6 +201,36 @@ class VideoSourceScrapeCoordinator
 
   @override
   Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    Map<String, VideoMetadataLookup> confirmedLookups =
+        const <String, VideoMetadataLookup>{},
+    String runScope = 'source',
+  }) {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<SourceScrapeReport>.error(
+        StateError('视频刮削资料正在清理'),
+      );
+    }
+    return _scrapeSourceUnlocked(
+      source,
+      cancellationToken: cancellationToken,
+      onProgress: onProgress,
+      onConfirmation: onConfirmation,
+      batchContext: batchContext,
+      plannedWorks: plannedWorks,
+      confirmedLookups: confirmedLookups,
+      runScope: runScope,
+    ).whenComplete(lease.release);
+  }
+
+  Future<SourceScrapeReport> _scrapeSourceUnlocked(
     SourceLibraryRow source, {
     required VideoSourceScrapeCancellationToken cancellationToken,
     required VideoSourceScrapeProgressCallback onProgress,
@@ -1232,20 +1263,33 @@ class VideoSourceScrapeCoordinator
       final String coverPath = localPathByUrl[cover.url]!;
       final DatabaseSidecarGeneratedArtifactChecker generated =
           DatabaseSidecarGeneratedArtifactChecker(database);
-      if (localWork.collection case final MediaCollectionRow collection) {
-        if (collection.coverPath == null ||
-            await generated
-                .isUnmodifiedGeneratedArtifact(collection.coverPath!)) {
-          await database.updateMediaCollectionCoverPath(
-              collection.id, coverPath);
+      await VideoCoverMutationGate.runExclusive(() async {
+        if (localWork.collection case final MediaCollectionRow collection) {
+          final MediaCollectionRow? current =
+              await database.getMediaCollectionById(collection.id);
+          if (current != null &&
+              (current.coverPath == null ||
+                  await generated.isUnmodifiedGeneratedArtifact(
+                    current.coverPath!,
+                  ))) {
+            await database.updateMediaCollectionCoverPath(
+              collection.id,
+              coverPath,
+            );
+          }
+        } else {
+          final VideoBookRow planned = localWork.members.single;
+          final VideoBookRow? current =
+              await database.getVideoBookByBookUid(planned.bookUid);
+          if (current != null &&
+              (current.coverPath == null ||
+                  await generated.isUnmodifiedGeneratedArtifact(
+                    current.coverPath!,
+                  ))) {
+            await database.updateVideoBookCover(planned.bookUid, coverPath);
+          }
         }
-      } else {
-        final VideoBookRow book = localWork.members.single;
-        if (book.coverPath == null ||
-            await generated.isUnmodifiedGeneratedArtifact(book.coverPath!)) {
-          await database.updateVideoBookCover(book.bookUid, coverPath);
-        }
-      }
+      });
     }
 
     final List<MediaImagesCompanion> workImages = _legacyImageRows(

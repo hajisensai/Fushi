@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -46,6 +48,27 @@ Future<({File nfo, int sourceId})> _createMovieFixture(
 }
 
 void main() {
+  test('maintenance lease blocks direct metadata backfill before it writes work',
+      () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final Directory root = await Directory.systemTemp.createTemp(
+      'video_indexer_gate_',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    final ({File nfo, int sourceId}) fixture =
+        await _createMovieFixture(db, root);
+    final SourceLibraryRow source =
+        (await db.getMediaSourceById(fixture.sourceId))!;
+    final VideoScrapeOperationLease lease =
+        VideoScrapeOperationGate.tryEnterMaintenance()!;
+    addTearDown(lease.release);
+
+    await VideoSourceMetadataIndexer(db).index(source);
+
+    expect(await db.getAllVideoMetadataWorks(), isEmpty);
+  });
+
   test('Kodi local extra names are classified without matching normal episodes',
       () {
     expect(

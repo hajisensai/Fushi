@@ -3701,5 +3701,15 @@
   "video_source_scrape_anidb_client_version_hint": "在 AniDB 登记的正整数版本；两项均有效前不会启用 HTTP API",
   "video_scrape_view_source": "查看来源详情",
   "video_setting_auto_scrape_hint": "媒体库扫描后自动识别并获取视频元数据",
-  "video_resource_identity_provider": "资源身份来源"
+  "video_resource_identity_provider": "资源身份来源",
+  "video_source_scrape_clear_all": "清理全部刮削记录",
+  "video_source_scrape_clear_all_hint": "清除全部视频刮削资料，以及 Fushi 生成的封面和 NFO。",
+  "video_source_scrape_clear_all_confirm_title": "清理全部视频刮削记录？",
+  "video_source_scrape_clear_all_confirm_body": "这会清除全部视频刮削资料和来源绑定、清空“系列”结果，并删除 Fushi 生成且未被修改的封面与 NFO。视频文件、媒体库条目、底层分组、观看进度、字幕、标签、手动选择的封面及用户修改过的旁车文件都会保留。此操作无法撤销。",
+  "video_source_scrape_clear_all_confirm_action": "清理",
+  "video_source_scrape_clear_all_completed": "已清理全部视频刮削记录。",
+  "video_source_scrape_clear_all_completed_protected": "刮削记录已清理；被修改或无法验证的旁车文件已保留。",
+  "video_source_scrape_clear_all_busy": "视频扫描或刮削仍在运行，请等待任务结束后重试。",
+  "video_source_scrape_clear_all_failed": "未能清理全部刮削记录；未删除任何无法验证的用户文件。",
+  "video_source_scrape_clear_all_in_progress": "正在清理刮削记录，请稍候。"
 }

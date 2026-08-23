@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_nfo_reader.dart';
 import 'package:fushi/src/media/video/metadata/video_sidecar_artifact_store.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -22,8 +23,17 @@ class VideoSourceMetadataIndexer {
 
   final FushiDatabase database;
 
-  Future<void> index(SourceLibraryRow source) async {
-    if (source.mediaKind != 'video' || source.transport != 'local') return;
+  Future<void> index(SourceLibraryRow source) {
+    if (source.mediaKind != 'video' || source.transport != 'local') {
+      return Future<void>.value();
+    }
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) return Future<void>.value();
+    return _indexUnlocked(source).whenComplete(lease.release);
+  }
+
+  Future<void> _indexUnlocked(SourceLibraryRow source) async {
     final List<VideoSourceScrapeWork> allWorks =
         await VideoSourceWorkPlanner(database).plan(source);
     final List<VideoSourceScrapeWork> works = <VideoSourceScrapeWork>[

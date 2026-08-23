@@ -192,5 +192,27 @@ void main() {
       );
       expect(removed, 0);
     });
+
+    test('只删图片候选，永不碰 provenance、临时文件或 cleanup quarantine', () async {
+      final File orphan = writeFile(covers, 'orphan.jpg');
+      final List<File> protectedFiles = <File>[
+        writeFile(covers, 'cover_meta.json'),
+        writeFile(covers, 'cover_meta.json.corrupt'),
+        writeFile(covers, 'poster.jpg.tmp.42'),
+        writeFile(covers, 'poster.jpg.fushi-scrape-cleanup'),
+        writeFile(covers, 'notes.txt'),
+      ];
+
+      final int removed = await VideoStorage.gcOrphanCovers(
+        referencedCoverPaths: const <String>[],
+        coversDirectory: covers,
+      );
+
+      expect(removed, 1);
+      expect(orphan.existsSync(), isFalse);
+      for (final File file in protectedFiles) {
+        expect(file.existsSync(), isTrue, reason: p.basename(file.path));
+      }
+    });
   });
 }

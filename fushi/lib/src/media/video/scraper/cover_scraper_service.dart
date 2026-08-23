@@ -9,6 +9,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/scraper/sidecar_scanner.dart';
@@ -88,7 +89,27 @@ class CoverScraperService {
   final Directory? _coversDirectory;
 
   /// 对单个本地视频应用用户 sidecar；未命中时不修改任何状态。
-  Future<ScrapeOutcome> applySidecarCover(VideoBookRow book) async {
+  Future<ScrapeOutcome> applySidecarCover(
+    VideoBookRow book, {
+    bool requireBatchEligibility = false,
+  }) async {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) return const ScrapeFailed('scrape-cleanup-running');
+    try {
+      return await _applySidecarCoverUnlocked(
+        book,
+        requireBatchEligibility: requireBatchEligibility,
+      );
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<ScrapeOutcome> _applySidecarCoverUnlocked(
+    VideoBookRow book, {
+    required bool requireBatchEligibility,
+  }) async {
     final String path = book.videoPath;
     if (path.isEmpty || _isRemotePath(path)) {
       return const ScrapeNotEligible('remote-or-empty-path');
@@ -103,13 +124,27 @@ class CoverScraperService {
       return const ScrapeNoSidecar();
     }
 
-    final String coverPath = await _copySidecarCover(poster, book.bookUid);
-    await _repo.updateCover(book.bookUid, coverPath);
-    await _coverMeta.set(
-      book.bookUid,
-      const CoverMeta(origin: CoverOrigin.sidecar),
-    );
-    return ScrapeApplied(coverPath: coverPath);
+    return VideoCoverMutationGate.runExclusive(() async {
+      if (requireBatchEligibility) {
+        final CoverOrigin origin =
+            (await _coverMeta.getFresh(book.bookUid))?.origin ??
+            CoverOrigin.autoFrame;
+        final bool becameCollectionMember =
+            (await _repo.multiMemberCollectionIds())[book.bookUid] != null;
+        if (origin != CoverOrigin.autoFrame || becameCollectionMember) {
+          return ScrapeSkippedProtected(origin);
+        }
+      }
+      // 来源标记先落稳；失败时不覆盖用户/旧封面。后续失败只会留下过度保护标记，
+      // 比暴露一张无 provenance 的用户 sidecar 安全。
+      await _coverMeta.set(
+        book.bookUid,
+        const CoverMeta(origin: CoverOrigin.sidecar),
+      );
+      final String coverPath = await _copySidecarCover(poster, book.bookUid);
+      await _repo.updateCover(book.bookUid, coverPath);
+      return ScrapeApplied(coverPath: coverPath);
+    });
   }
 
   /// 批量检查 sidecar。只允许覆盖自动抽帧占位封面；用户封面、历史刮削封面和
@@ -131,7 +166,7 @@ class CoverScraperService {
           final bool allowed = memberCollectionIds[book.bookUid] == null &&
               origin == CoverOrigin.autoFrame;
           outcome = allowed
-              ? await applySidecarCover(book)
+              ? await applySidecarCover(book, requireBatchEligibility: true)
               : ScrapeSkippedProtected(origin);
         }
       } catch (error) {

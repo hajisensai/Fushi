@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -40,6 +41,8 @@ import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 class MediaCoverService {
   const MediaCoverService._();
 
+  static int _temporarySerial = 0;
+
   /// 统一落盘入口（文件源）：把 [source] 原子地写到 [destPath]（先写
   /// `<dest>.tmp` 再删旧文件 rename——Windows rename 不覆盖；失败清 .tmp、
   /// **不动旧封面**并 rethrow），成功后**必然**双键驱逐旧解码缓存
@@ -52,9 +55,8 @@ class MediaCoverService {
     required File source,
     required String destPath,
   }) async {
-    final File tmp = File('$destPath.tmp');
+    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
     try {
-      if (await tmp.exists()) await tmp.delete();
       await source.copy(tmp.path);
       final File dest = File(destPath);
       if (await dest.exists()) await dest.delete();
@@ -76,9 +78,8 @@ class MediaCoverService {
     required List<int> bytes,
     required String destPath,
   }) async {
-    final File tmp = File('$destPath.tmp');
+    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
     try {
-      if (await tmp.exists()) await tmp.delete();
       await tmp.writeAsBytes(bytes, flush: true);
       final File dest = File(destPath);
       if (await dest.exists()) await dest.delete();
@@ -122,8 +123,8 @@ class MediaCoverService {
   /// 视频：用用户手选的图片设置封面，返回落盘路径。
   ///
   /// 薄路由到 [setVideoCoverFromPickedFile]（拷盘 + 双键驱逐 + 落库 `coverPath`），
-  /// 再补记 [CoverOrigin.manual] 保护标记——批量在线刮削永不覆盖手动封面。
-  /// 标记为 best-effort：元数据记账失败不影响封面已设置。
+  /// 先持久化 [CoverOrigin.manual] 保护标记，再覆盖文件与 `coverPath`；标记失败
+  /// 时 fail closed，不把一张尚未受保护的用户文件暴露给自动维护流程。
   /// [coversDirectory] 是测试接缝：默认生产封面目录 [VideoStorage.coversDir]。
   static Future<String> applyVideoCoverManual({
     required VideoBookRepository repo,
@@ -131,21 +132,25 @@ class MediaCoverService {
     required String pickedPath,
     Directory? coversDirectory,
   }) async {
-    final String dest = await setVideoCoverFromPickedFile(
-      repo: repo,
-      bookUid: bookUid,
-      pickedPath: pickedPath,
-      coversDirectory: coversDirectory,
-    );
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
     try {
-      final Directory covers =
-          coversDirectory ?? await VideoStorage.coversDir();
-      await CoverMetaStore(covers)
-          .set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
-    } catch (_) {
-      // 元数据记账失败不影响封面已设置（best-effort，保护性标记）。
+      return await VideoCoverMutationGate.runExclusive(() async {
+        final Directory covers =
+            coversDirectory ?? await VideoStorage.coversDir();
+        await CoverMetaStore(covers)
+            .set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
+        return setVideoCoverFromPickedFile(
+          repo: repo,
+          bookUid: bookUid,
+          pickedPath: pickedPath,
+          coversDirectory: covers,
+        );
+      });
+    } finally {
+      lease.release();
     }
-    return dest;
   }
 
   /// 游戏：用用户手选的图片设置封面，返回落盘路径；失败返回 null。

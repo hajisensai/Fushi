@@ -24,6 +24,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart'
     show CoverMeta, CoverOrigin;
@@ -128,6 +129,29 @@ List<MemberCoverCleanup> planMemberCoverCleanup({
 ///
 /// [coversDirectory] / [collectionCoversDirectory] 是测试接缝，默认生产目录。
 Future<int> runMemberCoverCleanup({
+  required VideoBookRepository repo,
+  CoverMetaStore? coverMetaStore,
+  Directory? coversDirectory,
+  Directory? collectionCoversDirectory,
+}) async {
+  final VideoScrapeOperationLease? lease =
+      VideoScrapeOperationGate.tryEnterOperation();
+  if (lease == null) return 0;
+  try {
+    return await VideoCoverMutationGate.runExclusive(
+      () => _runMemberCoverCleanupUnlocked(
+        repo: repo,
+        coverMetaStore: coverMetaStore,
+        coversDirectory: coversDirectory,
+        collectionCoversDirectory: collectionCoversDirectory,
+      ),
+    );
+  } finally {
+    lease.release();
+  }
+}
+
+Future<int> _runMemberCoverCleanupUnlocked({
   required VideoBookRepository repo,
   CoverMetaStore? coverMetaStore,
   Directory? coversDirectory,

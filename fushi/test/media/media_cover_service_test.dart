@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -306,6 +307,32 @@ void main() {
       final CoverMeta? meta = await CoverMetaStore(covers).get('video/test_ep');
       expect(meta?.origin, CoverOrigin.manual,
           reason: '手动封面必须记 manual，批量刮削永不覆盖');
+    });
+
+    test('全局清理 maintenance 已入场时手动封面在落盘前失败', () async {
+      final Directory covers = Directory(p.join(tempDir.path, 'video_covers'));
+      final File picked = writePng(tempDir, 'blocked.png');
+      final VideoScrapeOperationLease lease =
+          VideoScrapeOperationGate.tryEnterMaintenance()!;
+      addTearDown(lease.release);
+
+      await expectLater(
+        MediaCoverService.applyVideoCoverManual(
+          repo: repo,
+          bookUid: 'video/test_ep',
+          pickedPath: picked.path,
+          coversDirectory: covers,
+        ),
+        throwsStateError,
+      );
+
+      expect((await row()).coverPath, isNull);
+      expect(await CoverMetaStore(covers).get('video/test_ep'), isNull);
+      expect(
+        File(p.join(covers.path, videoCoverFileName('video/test_ep')))
+            .existsSync(),
+        isFalse,
+      );
     });
 
     test('同路径覆盖写后双键驱逐（修复：旧代码只清 FileImage 键）', () async {

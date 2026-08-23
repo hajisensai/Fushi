@@ -3452,9 +3452,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _loadSingle(updated);
   }
 
-  /// 缺失态删除：二次确认后复用 home_video_page._confirmDelete 的删除序列
-  /// （deleteVideoBook + reclaimDeletedVideoBookAssets + compactAfterVideoDeleteBestEffort），
-  /// 删完退回视频库。与库内删除粒度 / 资产回收完全一致，不重写删除逻辑。
+  /// 缺失态删除：二次确认后复用 repository 的完整删除 operation，DB 行、app-owned
+  /// 资产回收与压缩处在同一维护门边界内；删完退回视频库。
   Future<void> _confirmMissingResourceDelete(VideoBookRow row) async {
     final NavigatorState nav = Navigator.of(context);
     final bool? confirmed = await showAppDialog<bool>(
@@ -3478,17 +3477,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
     );
     if (confirmed != true || !mounted) return;
-    final String? deletedCoverPath = row.coverPath;
-    final String? deletedSubtitlePath = row.subtitleSource;
-    final String deletedVideoPath = row.videoPath;
-    await widget.repo.deleteVideoBook(row.bookUid);
-    await widget.repo.reclaimDeletedVideoBookAssets(
-      deletedBookUid: row.bookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
-    );
-    await widget.repo.compactAfterVideoDeleteBestEffort();
+    await widget.repo.deleteVideoBookAndReclaimAssets(row.bookUid);
     if (mounted) nav.pop();
   }
 
