@@ -437,10 +437,18 @@ Future<void> deletePersistedVideoDownloadJob({
     final Set<String> removedNormalized =
         removedPaths.map(normalizeVideoPath).toSet();
     final VideoBookRepository repository = VideoBookRepository(database);
+    bool deletedVideoBook = false;
     for (final VideoBookRow book in await repository.listAll()) {
       if (removedNormalized.contains(normalizeVideoPath(book.videoPath))) {
-        await repository.deleteVideoBook(book.bookUid);
+        final bool deleted = await repository.deleteVideoBookAndReclaimAssets(
+          book.bookUid,
+          compactDatabase: false,
+        );
+        deletedVideoBook = deletedVideoBook || deleted;
       }
+    }
+    if (deletedVideoBook) {
+      await repository.compactAfterVideoDeleteBestEffort();
     }
     database.notifyVideoLibraryChanged();
   }

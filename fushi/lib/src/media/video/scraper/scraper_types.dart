@@ -181,6 +181,15 @@ enum CoverOrigin {
   /// 历史自动在线刮削所得。当前代码不再写入。
   autoScraped,
 
+  /// 全量清理已为历史自动封面持久化内容摘要，但尚未完成文件与 DB 指针提交。
+  /// 仅供崩溃恢复；正常完成后删除，发现同路径替换物时转成
+  /// [cleanupReplacement]。
+  cleanupPending,
+
+  /// 清理隔离窗口内出现的同路径替换物。该来源永久按用户资产保护；单独枚举值也
+  /// 让下一轮能安全识别并收走崩溃遗留的旧 quarantine，而不猜测普通 manual 文件。
+  cleanupReplacement,
+
   /// 历史手动在线匹配所得，批量任务永不覆盖。当前代码不再写入。
   userScraped,
 
@@ -194,6 +203,7 @@ class CoverMeta {
     required this.origin,
     this.source,
     this.entryId,
+    this.contentSha256,
   });
 
   final CoverOrigin origin;
@@ -203,18 +213,41 @@ class CoverMeta {
   final ScrapeSource? source;
   final String? entryId;
 
+  /// 历史自动刮削封面的所有权摘要；进入 [CoverOrigin.cleanupPending] 后继续作为
+  /// 崩溃恢复 CAS。旧 autoScraped 记录通常没有它，因此清理必须 fail closed。
+  final String? contentSha256;
+
   Map<String, Object?> toJson() => <String, Object?>{
-        'origin': origin.name,
+        // 新清理状态对旧版本降级成既有保护来源，避免旧客户端把未知枚举回退为
+        // autoFrame 后覆盖替换物；新版本通过 cleanupState 无损恢复真实状态。
+        'origin': switch (origin) {
+          CoverOrigin.cleanupPending => CoverOrigin.scraped.name,
+          CoverOrigin.cleanupReplacement => CoverOrigin.manual.name,
+          _ => origin.name,
+        },
+        if (origin == CoverOrigin.cleanupPending)
+          'cleanupState': 'pending',
+        if (origin == CoverOrigin.cleanupReplacement)
+          'cleanupState': 'replacement',
         if (source != null) 'source': source!.name,
         if (entryId != null) 'entryId': entryId,
+        if (contentSha256 != null) 'contentSha256': contentSha256,
       };
 
-  static CoverMeta fromJson(Map<String, Object?> json) => CoverMeta(
-        origin: CoverOrigin.values.asNameMap()[json['origin']] ??
-            CoverOrigin.autoFrame,
-        source: json['source'] is String
-            ? ScrapeSource.values.asNameMap()[json['source']]
-            : null,
-        entryId: json['entryId'] as String?,
-      );
+  static CoverMeta fromJson(Map<String, Object?> json) {
+    final CoverOrigin origin = switch (json['cleanupState']) {
+      'pending' => CoverOrigin.cleanupPending,
+      'replacement' => CoverOrigin.cleanupReplacement,
+      _ => CoverOrigin.values.asNameMap()[json['origin']] ??
+          CoverOrigin.autoFrame,
+    };
+    return CoverMeta(
+      origin: origin,
+      source: json['source'] is String
+          ? ScrapeSource.values.asNameMap()[json['source']]
+          : null,
+      entryId: json['entryId'] as String?,
+      contentSha256: json['contentSha256'] as String?,
+    );
+  }
 }

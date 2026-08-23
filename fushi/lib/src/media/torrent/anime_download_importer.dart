@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
@@ -98,47 +100,66 @@ Future<AnimeDownloadImportOutcome?> Function(
     }
 
     if (result.episodeUids.isNotEmpty) {
-      // ① 作品海报 → 合集自有封面（见函数注释）。文件名遵循合集封面目录约定；
-      //    gcOrphanCovers 非递归，天然免疫。
-      final String? coverUrl = plan.coverUrl;
-      if (coverUrl != null && coverUrl.isNotEmpty) {
+      final VideoScrapeOperationLease? lease =
+          VideoScrapeOperationGate.tryEnterOperation();
+      if (lease != null) {
         try {
-          final Directory covers = collectionCoversDirectory ??
-              await VideoStorage.collectionCoversDir();
-          final String? collectionCoverPath = await downloadVideoCoverToPath(
-            coverUrl: coverUrl,
-            outputPath: p.join(
-              covers.path,
-              videoCoverFileName('${result.collectionId}'),
-            ),
-            httpClient: httpClient,
-          );
-          if (collectionCoverPath != null) {
-            await db.updateMediaCollectionCoverPath(
-              result.collectionId,
-              collectionCoverPath,
-            );
-          }
-        } catch (_) {}
-      }
+          await VideoCoverMutationGate.runExclusive(() async {
+            // ① 作品海报 → 合集自有封面（见函数注释）。文件名遵循合集封面目录
+            // 约定；gcOrphanCovers 非递归，天然免疫。
+            final String? coverUrl = plan.coverUrl;
+            if (coverUrl != null && coverUrl.isNotEmpty) {
+              try {
+                final Directory covers = collectionCoversDirectory ??
+                    await VideoStorage.collectionCoversDir();
+                final String? collectionCoverPath =
+                    await downloadVideoCoverToPath(
+                  coverUrl: coverUrl,
+                  outputPath: p.join(
+                    covers.path,
+                    videoCoverFileName('${result.collectionId}'),
+                  ),
+                  httpClient: httpClient,
+                );
+                if (collectionCoverPath != null) {
+                  await db.updateMediaCollectionCoverPath(
+                    result.collectionId,
+                    collectionCoverPath,
+                  );
+                }
+              } catch (_) {}
+            }
 
-      // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
-      try {
-        final String firstUid = result.episodeUids.first;
-        final String? framePath = await extractVideoCover(
-          videoPath: sorted.first,
-          bookUid: firstUid,
-        );
-        if (framePath != null) {
-          await repo.updateCover(firstUid, framePath);
-          // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化 'video|<uid>'，
-          // compositeKey 生成串与历史手写插值逐字节一致。
-          await db.updateMediaCollectionCover(
-            result.collectionId,
-            MediaKind.video.compositeKey(firstUid),
-          );
+            // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
+            try {
+              final String firstUid = result.episodeUids.first;
+              final CoverMetaStore store =
+                  CoverMetaStore(await VideoStorage.coversDir());
+              if (await store.allowsAutoFrameWrite(firstUid)) {
+                final String? framePath = await extractVideoCover(
+                  videoPath: sorted.first,
+                  bookUid: firstUid,
+                );
+                if (framePath != null) {
+                  await repo.updateCover(firstUid, framePath);
+                  final bool committed =
+                      await store.markAutoFrameAfterWrite(firstUid);
+                  if (committed) {
+                    // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化
+                    // 'video|<uid>'，compositeKey 与历史手写插值逐字节一致。
+                    await db.updateMediaCollectionCover(
+                      result.collectionId,
+                      MediaKind.video.compositeKey(firstUid),
+                    );
+                  }
+                }
+              }
+            } catch (_) {}
+          });
+        } finally {
+          lease.release();
         }
-      } catch (_) {}
+      }
     }
 
     return AnimeDownloadImportOutcome(collectionId: result.collectionId);

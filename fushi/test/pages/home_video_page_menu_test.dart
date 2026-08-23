@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -41,7 +42,6 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   final Completer<void> deletesCommitted = Completer<void>();
   final Completer<void> allowDeleteReturn = Completer<void>();
   int deleteCalls = 0;
-  int reclaimCalls = 0;
   int compactCalls = 0;
 
   @override
@@ -55,24 +55,6 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
       deletesCommitted.complete();
       await allowDeleteReturn.future;
     }
-  }
-
-  @override
-  Future<void> reclaimDeletedVideoBookAssets({
-    required String deletedBookUid,
-    required String? deletedCoverPath,
-    required String? deletedSubtitlePath,
-    required String deletedVideoPath,
-    List<String> deletedImagePaths = const <String>[],
-  }) async {
-    reclaimCalls++;
-    await super.reclaimDeletedVideoBookAssets(
-      deletedBookUid: deletedBookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
-      deletedImagePaths: deletedImagePaths,
-    );
   }
 
   @override
@@ -766,6 +748,16 @@ void main() {
     });
     expect(await db.getVideoBookByBookUid('video/1'), isNull);
     expect(await db.getVideoBookByBookUid('video/2'), isNull);
+    expect(selectedOne.cover.existsSync(), isTrue);
+    expect(selectedOne.subtitle.existsSync(), isTrue);
+    expect(selectedOne.embeddedCache.existsSync(), isTrue);
+    expect(selectedTwo.cover.existsSync(), isTrue);
+    expect(selectedTwo.subtitle.existsSync(), isTrue);
+    expect(selectedTwo.embeddedCache.existsSync(), isTrue);
+    final VideoScrapeOperationLease? maintenance =
+        VideoScrapeOperationGate.tryEnterMaintenance();
+    maintenance?.release();
+    expect(maintenance, isNull, reason: '删行后、卡片卸载与资产回收前 maintenance 不得入场');
 
     await tester.pumpWidget(const SizedBox.shrink());
     repo.allowDeleteReturn.complete();
@@ -780,7 +772,7 @@ void main() {
           !selectedTwo.embeddedCache.existsSync(),
     );
 
-    expect(repo.reclaimCalls, 2);
+    expect(repo.deleteCalls, 2);
     expect(repo.compactCalls, 1);
     expect(selectedOne.cover.existsSync(), isFalse);
     expect(selectedOne.subtitle.existsSync(), isFalse);

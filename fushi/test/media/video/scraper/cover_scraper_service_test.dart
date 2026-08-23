@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
@@ -22,6 +23,37 @@ class _StubGeneratedArtifactChecker implements SidecarGeneratedArtifactChecker {
   @override
   Future<bool> isUnmodifiedGeneratedArtifact(String absolutePath) async =>
       result;
+}
+
+/// 模拟批处理在排队前拿到旧 autoFrame 快照；临界区 fresh read 必须看到已提交 manual。
+class _StaleFirstReadCoverMetaStore extends CoverMetaStore {
+  _StaleFirstReadCoverMetaStore(super.directory);
+
+  bool _servedStaleRead = false;
+
+  @override
+  Future<CoverMeta?> get(String bookUid) async {
+    if (!_servedStaleRead) {
+      _servedStaleRead = true;
+      return const CoverMeta(origin: CoverOrigin.autoFrame);
+    }
+    return super.get(bookUid);
+  }
+}
+
+/// 模拟批处理读完合集快照后，条目才被加入多成员合集。
+class _StaleFirstMembershipRepository extends VideoBookRepository {
+  _StaleFirstMembershipRepository(FushiDatabase database, this.bookUid)
+      : super(database);
+
+  final String bookUid;
+  int _reads = 0;
+
+  @override
+  Future<Map<String, int>> multiMemberCollectionIds() async {
+    _reads++;
+    return _reads == 1 ? <String, int>{} : <String, int>{bookUid: 7};
+  }
 }
 
 void main() {
@@ -52,10 +84,12 @@ void main() {
 
   CoverScraperService build({
     SidecarGeneratedArtifactChecker? generatedArtifactChecker,
+    CoverMetaStore? coverMetaStore,
+    VideoBookRepository? repository,
   }) =>
       CoverScraperService(
-        repository: repo,
-        coverMetaStore: coverMeta,
+        repository: repository ?? repo,
+        coverMetaStore: coverMetaStore ?? coverMeta,
         generatedSidecarArtifactChecker: generatedArtifactChecker,
         coversDirectory: covers,
       );
@@ -121,6 +155,23 @@ void main() {
     expect((await coverMeta.get(book.bookUid))!.origin, CoverOrigin.sidecar);
   });
 
+  test('全局清理 maintenance 已入场时 sidecar 不触碰文件、DB 或 provenance',
+      () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/blocked-sidecar',
+      fileName: 'blocked.mkv',
+    );
+    await writePoster();
+    final VideoScrapeOperationLease lease =
+        VideoScrapeOperationGate.tryEnterMaintenance()!;
+    addTearDown(lease.release);
+
+    expect(await build().applySidecarCover(book), isA<ScrapeFailed>());
+    expect((await repo.getByBookUid(book.bookUid))!.coverPath, isNull);
+    expect(await coverMeta.get(book.bookUid), isNull);
+    expect(await covers.list().toList(), isEmpty);
+  });
+
   test('未改动的 Hibiki 生成海报不会伪装成用户 sidecar', () async {
     final VideoBookRow book = await seed(
       bookUid: 'video/generated',
@@ -151,6 +202,52 @@ void main() {
         await build().scrapeLibrary(<VideoBookRow>[book]).toList();
     expect(progress.single.outcome, isA<ScrapeSkippedProtected>());
     expect((await repo.getByBookUid(book.bookUid))!.coverPath, isNull);
+  });
+
+  test('批处理在封面写锁内重新校验来源，不采用排队前的 autoFrame 旧快照', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/manual-race',
+      fileName: 'manual-race.mkv',
+    );
+    await writePoster();
+    final _StaleFirstReadCoverMetaStore staleStore =
+        _StaleFirstReadCoverMetaStore(covers);
+    await staleStore.set(
+      book.bookUid,
+      const CoverMeta(origin: CoverOrigin.manual),
+    );
+
+    final List<BatchScrapeProgress> progress = await build(
+      coverMetaStore: staleStore,
+    ).scrapeLibrary(<VideoBookRow>[book]).toList();
+
+    expect(progress.single.outcome, isA<ScrapeSkippedProtected>());
+    expect((await staleStore.getFresh(book.bookUid))?.origin, CoverOrigin.manual);
+    expect((await repo.getByBookUid(book.bookUid))!.coverPath, isNull);
+    expect(
+      (await covers.list().toList()).map(
+        (FileSystemEntity entity) => p.basename(entity.path),
+      ),
+      <String>['cover_meta.json'],
+    );
+  });
+
+  test('批处理在封面写锁内重查合集归属，不覆盖刚加入多成员合集的子篇', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/member-race',
+      fileName: 'member-race.mkv',
+    );
+    await writePoster();
+    final _StaleFirstMembershipRepository staleRepository =
+        _StaleFirstMembershipRepository(db, book.bookUid);
+
+    final List<BatchScrapeProgress> progress = await build(
+      repository: staleRepository,
+    ).scrapeLibrary(<VideoBookRow>[book]).toList();
+
+    expect(progress.single.outcome, isA<ScrapeSkippedProtected>());
+    expect((await repo.getByBookUid(book.bookUid))!.coverPath, isNull);
+    expect(await coverMeta.get(book.bookUid), isNull);
   });
 
   test('多成员合集子篇不采用作品级 sidecar 海报', () async {

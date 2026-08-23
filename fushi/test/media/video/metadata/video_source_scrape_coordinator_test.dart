@@ -1400,8 +1400,9 @@ class _AuthorityAniDbProvider implements VideoMetadataProvider {
     VideoMetadataLookup lookup, {
     required int seasonNumber,
   }) async {
-    if (throwEpisodeFetch)
+    if (throwEpisodeFetch) {
       throw StateError('AniDB episode response incomplete');
+    }
     return work.seasons.single.episodes;
   }
 

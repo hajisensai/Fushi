@@ -3,13 +3,125 @@
 // test/utils/desktop_audio_clipper_test.dart 随实现迁入，用例内容不变。
 
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart';
 
 void main() {
+  test('封面 mutation 串行且允许同一异步链安全重入', () async {
+    final Completer<void> firstEntered = Completer<void>();
+    final Completer<void> releaseFirst = Completer<void>();
+    final List<String> order = <String>[];
+
+    final Future<void> first = VideoCoverMutationGate.runExclusive(() async {
+      order.add('first-enter');
+      firstEntered.complete();
+      await releaseFirst.future;
+      await VideoCoverMutationGate.runExclusive(() async {
+        order.add('nested');
+      });
+      order.add('first-exit');
+    });
+    await firstEntered.future;
+    final Future<void> second = VideoCoverMutationGate.runExclusive(() async {
+      order.add('second');
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(order, <String>['first-enter']);
+
+    releaseFirst.complete();
+    await Future.wait<void>(<Future<void>>[first, second]);
+    expect(order, <String>['first-enter', 'nested', 'first-exit', 'second']);
+  });
+
+  test('同一外层 action 并发启动的 nested siblings 仍严格串行', () async {
+    final Completer<void> firstEntered = Completer<void>();
+    final Completer<void> releaseFirst = Completer<void>();
+    final Completer<void> secondEntered = Completer<void>();
+    final List<String> order = <String>[];
+
+    await VideoCoverMutationGate.runExclusive(() async {
+      final Future<void> first = VideoCoverMutationGate.runExclusive(() async {
+        order.add('first-enter');
+        firstEntered.complete();
+        await releaseFirst.future;
+        await VideoCoverMutationGate.runExclusive(() async {
+          order.add('deep-nested');
+        });
+        order.add('first-exit');
+      });
+      final Future<void> second = VideoCoverMutationGate.runExclusive(() async {
+        order.add('second');
+        secondEntered.complete();
+      });
+
+      await firstEntered.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(secondEntered.isCompleted, isFalse);
+      releaseFirst.complete();
+      await Future.wait<void>(<Future<void>>[first, second]);
+    });
+
+    expect(order, <String>[
+      'first-enter',
+      'deep-nested',
+      'first-exit',
+      'second',
+    ]);
+  });
+
+  test('外层释放后，继承旧 Zone 的未等待后代不能绕过新持锁者', () async {
+    final Completer<void> invokeDescendant = Completer<void>();
+    final Completer<void> descendantStarted = Completer<void>();
+    final Completer<void> secondEntered = Completer<void>();
+    final Completer<void> releaseSecond = Completer<void>();
+    late Future<void> descendant;
+
+    await VideoCoverMutationGate.runExclusive(() async {
+      unawaited(
+        invokeDescendant.future.then((_) {
+          descendant = VideoCoverMutationGate.runExclusive(() async {
+            descendantStarted.complete();
+          });
+        }),
+      );
+    });
+    final Future<void> second = VideoCoverMutationGate.runExclusive(() async {
+      secondEntered.complete();
+      await releaseSecond.future;
+    });
+    await secondEntered.future;
+
+    invokeDescendant.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(descendantStarted.isCompleted, isFalse);
+
+    releaseSecond.complete();
+    await second;
+    await descendant;
+    expect(descendantStarted.isCompleted, isTrue);
+  });
+
+  test('maintenance 在路径解析与 ffmpeg I/O 前阻止自动封面写入', () async {
+    final VideoScrapeOperationLease lease =
+        VideoScrapeOperationGate.tryEnterMaintenance()!;
+    try {
+      expect(
+        await extractVideoCover(
+          videoPath: 'must-not-be-read.mkv',
+          bookUid: 'blocked',
+        ),
+        isNull,
+      );
+    } finally {
+      lease.release();
+    }
+  });
+
   group('buildFfmpegEmbeddedCoverArgs', () {
     test('maps only the attached_pic video stream (no trailing ? marker)', () {
       final List<String> args = buildFfmpegEmbeddedCoverArgs(
