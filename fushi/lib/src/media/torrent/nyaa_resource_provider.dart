@@ -166,6 +166,7 @@ class _NyaaResourceCandidate extends VideoResourceCandidate {
           releaseGroup: torrent.releaseGroup,
           trusted: torrent.trusted,
           detailsUrl: torrent.pageUrl,
+          magnetUri: torrent.magnet,
         );
 
   final NyaaTorrent torrent;

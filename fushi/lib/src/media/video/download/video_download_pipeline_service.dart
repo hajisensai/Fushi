@@ -18,6 +18,11 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/metadata/credential_redaction.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/magnet_utils.dart';
+import 'package:fushi/src/media/torrent/nyaa_client.dart' show kNyaaTrackers;
+import 'package:fushi/src/media/torrent/public_video_index_client.dart'
+    show kPublicVideoIndexTrackers;
+import 'package:fushi/src/media/torrent/public_video_index_provider.dart'
+    show kApibayResourceProviderId, kKnabenResourceProviderId;
 import 'package:fushi/src/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
@@ -649,6 +654,10 @@ class VideoDownloadPipelineService {
         selectedResourceId: Value<String>(request.resource.remoteId),
         resourceTitle: Value<String?>(request.resource.title),
         torrentHash: Value<String?>(request.resource.infoHash?.toLowerCase()),
+        // 候选自带的持久磁链随任务落库（BUG-1784）：重启/重试直接用它物化
+        // payload，不再依赖回索引器重搜发布名——搜不回条目会把还活着的资源
+        // 误报成 notFound。
+        magnetUri: Value<String?>(_persistableMagnetOf(request.resource)),
         metadataProvider: Value<String?>(request.media.providerId),
         externalId: Value<String?>(request.media.mediaId),
         mediaKind: Value<String>(request.media.mediaKind.name),
@@ -1440,14 +1449,12 @@ class VideoDownloadPipelineService {
     );
   }
 
-  Future<TorrentAddPayload> _resolvePayload(VideoDownloadJobRow job) {
+  Future<TorrentAddPayload> _resolvePayload(VideoDownloadJobRow job) async {
     final String? magnet = job.magnetUri;
     if (magnet != null && magnet.isNotEmpty) {
-      return Future<TorrentAddPayload>.value(
-        TorrentMagnetPayload(
-          magnetUri: magnet,
-          torrentId: parseMagnetInfoHash(magnet) ?? job.torrentHash,
-        ),
+      return TorrentMagnetPayload(
+        magnetUri: magnet,
+        torrentId: parseMagnetInfoHash(magnet) ?? job.torrentHash,
       );
     }
     // 手动 .torrent 任务：payload 从入队时落盘的元数据文件重新物化（带
@@ -1455,18 +1462,80 @@ class VideoDownloadPipelineService {
     if (job.resourceProvider == kManualVideoDownloadResourceProvider) {
       return _resolveManualMetainfoPayload(job);
     }
-    return resourceRegistry.resolveSelection(
-      selection: VideoResourceSelection(
-        providerId: job.resourceProvider,
-        remoteId: job.selectedResourceId,
-        title: job.resourceTitle ?? job.title,
-      ),
-      request: VideoResourceSearchRequest(
-        media: _mediaReference(job),
-        query: job.resourceTitle ?? job.title,
-        season: job.season,
-      ),
+    final TorrentAddPayload payload;
+    try {
+      payload = await resourceRegistry.resolveSelection(
+        selection: VideoResourceSelection(
+          providerId: job.resourceProvider,
+          remoteId: job.selectedResourceId,
+          title: job.resourceTitle ?? job.title,
+        ),
+        request: VideoResourceSearchRequest(
+          media: _mediaReference(job),
+          query: job.resourceTitle ?? job.title,
+          season: job.season,
+        ),
+      );
+    } on Object {
+      // 重搜找不回（条目下架/发布名分词搜不中/索引器故障）不代表资源没了：
+      // 公共索引器（nyaa/apibay/knaben）的磁链本就是 info hash + 固定
+      // tracker 现场拼出来的，任务行里的 hash 就够重建（BUG-1784 存量行）。
+      final TorrentMagnetPayload? recovered = _recoverPublicMagnetPayload(job);
+      if (recovered == null) rethrow;
+      await _persistResolvedMagnet(job, recovered.magnetUri);
+      return recovered;
+    }
+    // 重搜成功解析出的磁链写回任务行：下次重启/重试不再吃索引器可用性。
+    if (payload is TorrentMagnetPayload) {
+      await _persistResolvedMagnet(job, payload.magnetUri);
+    }
+    return payload;
+  }
+
+  /// 公共索引器任务的离线磁链重建：`magnet:?xt=urn:btih:<hash>` + 该索引器
+  /// 的固定 tracker 集。私有 Torznab（DHT 关闭、需 .torrent 凭据）返回 null，
+  /// 保持原失败语义。
+  TorrentMagnetPayload? _recoverPublicMagnetPayload(VideoDownloadJobRow job) {
+    final String provider = job.resourceProvider;
+    bool isProvider(String id) =>
+        provider == id || provider.startsWith('$id:');
+    final List<String>? trackers = isProvider('nyaa')
+        ? kNyaaTrackers
+        : isProvider(kApibayResourceProviderId) ||
+                isProvider(kKnabenResourceProviderId)
+            ? kPublicVideoIndexTrackers
+            : null;
+    if (trackers == null) return null;
+    final String hash =
+        (job.torrentHash ?? job.selectedResourceId).toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(hash)) return null;
+    final StringBuffer magnet = StringBuffer('magnet:?xt=urn:btih:$hash');
+    final String name = (job.resourceTitle ?? job.title).trim();
+    if (name.isNotEmpty) {
+      magnet.write('&dn=${Uri.encodeQueryComponent(name)}');
+    }
+    for (final String tracker in trackers) {
+      magnet.write('&tr=${Uri.encodeQueryComponent(tracker)}');
+    }
+    return TorrentMagnetPayload(magnetUri: magnet.toString(), torrentId: hash);
+  }
+
+  Future<void> _persistResolvedMagnet(
+    VideoDownloadJobRow job,
+    String magnetUri,
+  ) async {
+    if (!magnetUri.startsWith('magnet:')) return;
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(magnetUri: Value<String?>(magnetUri)),
     );
+  }
+
+  /// 入队时可落库的候选磁链（DB CHECK 约束要求 `magnet:` 前缀）。
+  static String? _persistableMagnetOf(VideoResourceCandidate resource) {
+    final String? magnet = resource.magnetUri?.trim();
+    if (magnet == null || !magnet.startsWith('magnet:')) return null;
+    return magnet;
   }
 
   /// 读取 `<manualTorrentDirectory>/<jobId>.torrent` 并复核 info hash。

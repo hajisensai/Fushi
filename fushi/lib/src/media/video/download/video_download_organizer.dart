@@ -107,45 +107,46 @@ class VideoDownloadOrganizer {
                       b.size.compareTo(a.size)))
                 .first
             : null;
+    final String? sharedRoot = _sharedRootSegment(videoFiles);
     final Set<String> targetKeys = <String>{};
     final List<VideoOrganizationFilePlan> planned =
         <VideoOrganizationFilePlan>[];
+    var recognizedEpisodes = 0;
     for (final TorrentFileEntry file in videoFiles) {
       final String extension = p.extension(file.name).toLowerCase();
       late final String relative;
       int? seasonNumber;
       int? episodeNumber;
-      if (request.kind == VideoOrganizationKind.movie) {
-        if (identical(file, mainMovie)) {
-          relative = _portableJoin(<String>[
-            displayRoot,
-            '$displayRoot$extension',
-          ]);
-        } else {
-          final String extraName = _safeSegment(
-            p.basenameWithoutExtension(file.name),
-          );
-          relative = _portableJoin(<String>[
-            displayRoot,
-            'Extras',
-            '$extraName$extension',
-          ]);
-        }
-      } else {
-        final VideoNameInfo parsed = parseVideoFilename(p.basename(file.name));
+      // 剧集与电影共用同一条 Extras 规则：认得出集号的进 Season 目录，其余
+      // 一律镜像进 Extras（预告/特典/菜单等，BUG-1785），下游 `kind: 'extra'`
+      // 已是既有概念。电影额外把最大文件抬成正片。
+      if (request.kind == VideoOrganizationKind.episodic) {
+        final VideoNameInfo parsed =
+            parseVideoFilename(_segments(file.name).last);
         episodeNumber = parsed.episode;
-        if (episodeNumber == null) {
-          throw FormatException(
-            'unable to determine episode number: ${file.name}',
-          );
+        if (episodeNumber != null) {
+          seasonNumber = parsed.season ?? request.defaultSeasonNumber;
         }
-        seasonNumber = parsed.season ?? request.defaultSeasonNumber;
+      }
+      if (episodeNumber != null) {
+        recognizedEpisodes += 1;
         final String season = seasonNumber.toString().padLeft(2, '0');
         final String episode = episodeNumber.toString().padLeft(2, '0');
         relative = _portableJoin(<String>[
           displayRoot,
           'Season $season',
           '$displayRoot - S${season}E$episode$extension',
+        ]);
+      } else if (identical(file, mainMovie)) {
+        relative = _portableJoin(<String>[
+          displayRoot,
+          '$displayRoot$extension',
+        ]);
+      } else {
+        relative = _portableJoin(<String>[
+          displayRoot,
+          'Extras',
+          ..._extraSegments(file.name, sharedRoot: sharedRoot),
         ]);
       }
       final String targetKey =
@@ -165,6 +166,14 @@ class VideoDownloadOrganizer {
         seasonNumber: seasonNumber,
         episodeNumber: episodeNumber,
       ));
+    }
+    // 一集都认不出说明种子与「剧集」判定不符（比如误标 kind），全 Extras 的
+    // 静默入库只会把问题藏起来，仍然显式失败。
+    if (request.kind == VideoOrganizationKind.episodic &&
+        recognizedEpisodes == 0) {
+      throw FormatException(
+        'unable to determine episode number: ${videoFiles.first.name}',
+      );
     }
     return VideoOrganizationPlan(remoteSourceRoot: remoteRoot, files: planned);
   }
@@ -257,4 +266,42 @@ class VideoDownloadOrganizer {
 
   static String _normalizeRelative(String value) =>
       value.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+
+  /// 种子内相对路径切段（`/` 与 `\` 都认：qBittorrent 返回 `/`，内置引擎在
+  /// Windows 上返回 `\`）。
+  static List<String> _segments(String name) => name
+      .split(RegExp(r'[\\/]+'))
+      .where((String s) => s.trim().isNotEmpty)
+      .toList(growable: false);
+
+  /// 单根种子的发布目录名（所有视频文件共享的第一段）；平铺种子返回 null。
+  /// Extras 镜像时剥掉它，免得多出一层 `[Group] Title [1080p]` 噪音目录。
+  static String? _sharedRootSegment(List<TorrentFileEntry> files) {
+    String? root;
+    for (final TorrentFileEntry file in files) {
+      final List<String> segments = _segments(file.name);
+      if (segments.length < 2) return null;
+      if (root == null) {
+        root = segments.first;
+      } else if (segments.first != root) {
+        return null;
+      }
+    }
+    return root;
+  }
+
+  /// Extras 目标段：镜像种子内目录结构（剥共享根），路径天然唯一，不同子目录
+  /// 里的同名特典不会互相顶掉。每段过 [_safeSegment]，末段扩展名统一小写。
+  static List<String> _extraSegments(String name, {String? sharedRoot}) {
+    final List<String> segments = _segments(name);
+    final List<String> inner = sharedRoot != null && segments.length > 1
+        ? segments.sublist(1)
+        : segments;
+    final String extension = p.extension(inner.last).toLowerCase();
+    final String stem = _safeSegment(p.basenameWithoutExtension(inner.last));
+    return <String>[
+      ...inner.sublist(0, inner.length - 1).map(_safeSegment),
+      '$stem$extension',
+    ];
+  }
 }

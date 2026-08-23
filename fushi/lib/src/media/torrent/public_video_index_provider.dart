@@ -42,6 +42,7 @@ class PublicVideoIndexCandidate extends VideoResourceCandidate {
           resolution: torrent.resolution,
           releaseGroup: torrent.releaseGroup,
           detailsUrl: torrent.detailsUrl,
+          magnetUri: torrent.magnet,
         );
 
   final PublicVideoIndexTorrent torrent;
