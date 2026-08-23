@@ -48,16 +48,26 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
 安装，`fushi.exe` 排在 `fushi_update_launcher.exe` 之前、`data\app.so` 排在它之后，于是稳定
 落在「新 exe + 旧 Dart 代码」。
 
-**③ 失败被误判成成功 ⇒ 用户零感知。**
-`WindowsUpdateHandoff.reconcile` 用 `currentVersion >= targetVersion` 判断装没装上，而 Windows 上
-`package_info_plus` 的版本号**读自 exe 的版本资源**——exe 恰恰是已经被换掉的那个。于是握手宣告
-`installed`，用户收到「更新成功」，继续跑旧代码。这就是用户连着几天觉得「修好的 bug 没生效」的
-直接原因：每一次自更新都在同一处静默回滚，而每一次都报成功。
+**③ 「更新成功」这句话根本不看装没装上。**
+`WindowsUpdateHandoff.reconcile` 判成功的唯一判据是 `currentVersion >= targetVersion`，而这条判据
+在 debug/beta 通道**恒为真**：
+
+- `targetVersion` 取自下载 meta，形如 `2.2.1-debug.12067`（现场 `*.meta.json` 实物为证）；
+- `currentVersion` 是 `packageInfo.version`，Windows 上读 exe 的版本资源，只有语义版本 `2.2.1`，
+  **不带** `-debug.N` 后缀；
+- `_compareVersions` 按 SemVer 规矩办事：`leftPre == null` 时 `return 1`（正式版 > 同号预发布版）
+  ⇒ `2.2.1 > 2.2.1-debug.12067` ⇒ 恒真。
+
+所以它既不是「因为 exe 被换了才误判」，也不是偶发——**安装中途 Abort 回滚要报成功，安装器压根
+没跑起来、日志一个字节都没写也照样报成功**。用户连着几天收到「更新成功」，跑的却始终是旧
+Dart 代码。（正式版通道下这条判据尚有意义：target 无预发布后缀时，exe 没被换掉会比出 false。
+但那也只挡得住「exe 没换」，挡不住本 bug 的「exe 换了、app.so 没换」。）
 
 误判还会**顺手销毁重试材料**：`reconcile` 的 installed 分支按 TODO-1089 立刻回收
 `updates\*-windows-setup.exe`。用户现场 updates 目录里只剩一堆 `.meta.json`，安装包一个不剩
-——本来只要重跑一次那个包就能自愈，判据错了之后连包都没了。修好 ③ 之后这条自然消失
-（判为失败就不再走回收分支），无需为它单独加特例。
+——本来只要重跑一次那个包就能自愈，判据错了之后连包都没了。
+
+修好 ③ 之后回收安装包这条自然消失（判为失败就不再走 installed 分支），无需单独加特例。
 
 **④ `KillProcessesUnderDir` 是发哑弹（32 位 Inno × 64 位进程）。**
 `PrepareToInstall` 本来就想在复制前清掉安装目录下的占用进程，它却从来没生效过：本安装器是
@@ -89,10 +99,15 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
 3. **`fushi.iss`**：`PrepareToInstall` 里 `MakeWayForRunningLauncher()`——探测到 launcher 被占用就
    **改名**（Windows 允许给运行中的 exe 改名，只是不能删除/覆盖）让路，不杀进程，兜底能力不受损。
    这一条是给**存量用户**的救援：他们跑的仍是安装目录里的旧 launcher，只有靠它才能把这一版装完整。
-4. **`update_handoff.dart`**：新增纯函数 `windowsInnoLogReportsAbortedInstall()`，让 **Inno 日志的
-   收尾结论否决版本号判据**。判据取最后一条结论行而非「出现过某词」，且 `\b` 词边界是关键——
-   回滚收尾写的是「**Un**installation process succeeded.」，裸 `contains` 会把**回滚自身的成功**
-   读成安装成功，正好在最该报失败的那条日志上给出相反结论。
+4. **`update_handoff.dart`**：判「装成功」改为**必须拿到正面证据**。新增
+   `windowsInnoLogVerdict()` 返回三态 `succeeded / aborted / unknown`，`reconcile` 只在
+   `succeeded && 版本到位` 时才判 `installed`；`aborted`（回滚）与 `unknown`（日志缺失 =
+   安装没跑起来）一律走失败分支，让用户看见诊断而不是一句成功。
+   `unknown` 必须判失败而不是「大概成了」——旧判据恒真的那一半正是靠「没看到失败」蒙混过关的。
+   两个细节：判据取**最后一条**结论行而非「出现过某词」（Inno 在 `Rolling back changes.` 之后
+   还会写回滚自身的进度）；`\b` 词边界是关键——回滚收尾写的是「**Un**installation process
+   succeeded.」，裸 `contains` 会把**回滚自身的成功**读成安装成功，正好在最该报失败的那条日志上
+   给出相反结论。版本判据保留为 AND 条件（正式版通道下它仍能识别「exe 根本没被换掉」）。
 
 5. **`fushi.iss`（④）**：`KillProcessesUnderDir` 改走 `{sysnative}`（64 位 Windows 上绕过 WOW64
    重定向指向真正的 System32；32 位 Windows 上等同 `{sys}`，无平台回归），并**显式排除
@@ -101,7 +116,11 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
 
 - **[x] ① 已修复** — 上述五处
 - **[x] ② 已加自动化测试** — `fushi/test/utils/misc/update_launcher_self_lock_test.dart`（9 条，
-  含用**用户真实失败日志**做 fixture）+ `fushi/test/build/windows_installer_launcher_lock_guard_test.dart`
+  含用**用户真实失败日志**做 fixture）
+  + `fushi/test/utils/misc/update_handoff_success_verdict_test.dart`（3 条，走真实 `reconcile`
+  黑盒断言「回滚不报成功 / 装完仍报成功 / **日志缺失不得报成功**」；第三条在改判据前实测为红，
+  即旧代码确实会把「安装压根没跑起来」说成更新成功）
+  + `fushi/test/build/windows_installer_launcher_lock_guard_test.dart`
   （2 条，钉住「改名让路而非杀进程」与「sysnative + 放过 launcher」）
   + `fushi/test/build/update_launcher_relaunch_guard_test.dart`
   更新（BUG-1708 守卫跟随新契约：`--app-exe` 优先、同目录回退仍在）

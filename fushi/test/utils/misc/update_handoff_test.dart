@@ -14,6 +14,28 @@ Future<File> _markerFile() async {
   return WindowsUpdateHandoff.markerFile(dir);
 }
 
+/// 一份「安装真的装完了」的 Inno 日志，放在 [marker] 同目录，返回其路径。
+///
+/// BUG-1786：`reconcile` 判成功现在要求**正面证据**——Inno 日志明确写了
+/// `Installation process succeeded.`。在此之前唯一的判据是
+/// `currentVersion >= targetVersion`，而它在 debug/beta 通道恒为真（SemVer 里
+/// 正式版 `2.2.1` > 同号预发布版 `2.2.1-debug.12067`），于是整包回滚要报成功、
+/// 安装器压根没跑起来也报成功——用户连着几天收到「更新成功」却一直跑旧代码。
+///
+/// 下面几条成功路径用例原本把 `innoLogPath` 填成一个**不存在**的 `C:\tmp\...` 占位，
+/// 它们真正要钉的是 marker 生命周期（清理 / 幂等 / prompted 版本），不是「没有日志也算
+/// 成功」。所以这里补上真日志，让它们继续钉住原本的东西。
+Future<String> _succeededInnoLog(File marker) async {
+  final File log = File(
+    '${marker.parent.path}${Platform.pathSeparator}install.log',
+  );
+  await log.writeAsString(
+    '2026-06-17 10:31:00.000   Successfully installed the file.\n'
+    '2026-06-17 10:31:02.000   Installation process succeeded.\n',
+  );
+  return log.path;
+}
+
 void main() {
   group('WindowsUpdateHandoff marker', () {
     test('writes the target version, installer, Inno log, and launch result',
@@ -206,7 +228,7 @@ void main() {
         markerFile: marker,
         targetVersion: '1.2.3',
         installerPath: r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
-        innoLogPath: r'C:\tmp\hibiki-1.2.3.install.log',
+        innoLogPath: await _succeededInnoLog(marker),
         startedAt: DateTime.utc(2026, 6, 17, 10, 30),
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
@@ -233,7 +255,7 @@ void main() {
         markerFile: marker,
         targetVersion: '1.2.3',
         installerPath: r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
-        innoLogPath: r'C:\tmp\hibiki-1.2.3.install.log',
+        innoLogPath: await _succeededInnoLog(marker),
         startedAt: DateTime.utc(2026, 6, 17, 10, 30),
       );
       await WindowsUpdateHandoff.markLaunchSucceeded(
@@ -265,7 +287,7 @@ void main() {
           WindowsUpdateHandoffRecord.fromJson(<String, dynamic>{
         'targetVersion': '1.2.3',
         'installerPath': r'C:\tmp\hibiki-1.2.3-windows-setup.exe',
-        'innoLogPath': r'C:\tmp\hibiki-1.2.3.install.log',
+        'innoLogPath': await _succeededInnoLog(marker),
         'startedAt': '2026-06-17T10:30:00Z',
         'installerLaunchSucceeded': true,
         'lastPromptedAppVersion': '1.2.3',
@@ -414,7 +436,7 @@ void main() {
         markerFile: marker,
         targetVersion: '0.5.1-debug.19',
         installerPath: r'C:\tmp\hibiki-0.5.1-debug.19-windows-setup.exe',
-        innoLogPath: r'C:\tmp\hibiki-debug.install.log',
+        innoLogPath: await _succeededInnoLog(marker),
         startedAt: DateTime.utc(2026, 6, 17, 10, 30),
       );
 

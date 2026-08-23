@@ -652,16 +652,23 @@ abstract final class WindowsUpdateHandoff {
   }) async {
     final WindowsUpdateHandoffRecord? record = await read(markerFile);
     if (record == null) return null;
-    // BUG-1786：版本号到达**不等于**整包装上了。currentVersion 读自 exe 的版本资源
-    // （package_info_plus 在 Windows 上就是这么取的），而 Inno 按文件逐个安装、
-    // fushi.exe 排在 data\app.so 之前——中途 Abort 会留下「新 exe + 旧 Dart 代码」，
-    // 版本号已经是新的，旧判据据此宣告成功，用户于是收到一个「更新成功」并继续跑着
-    // 旧代码（现场：用户连续几天报告「已修好的 bug 没生效」，而每次自更新都在同一处
-    // 静默回滚）。Inno 日志才是这次安装到底成没成的真相源，让它否决版本号。
-    final bool installerAborted = windowsInnoLogReportsAbortedInstall(
+    // BUG-1786：判「装成功」必须拿到**正面证据**，而不是「没看到失败」。
+    //
+    // 旧判据只有 `currentVersion >= targetVersion` 一条，它在 debug/beta 通道**恒为真**：
+    // Windows 上 package_info 读的是 exe 版本资源，拿到的是语义版本 `2.2.1`（不带
+    // `-debug.N`），而 targetVersion 是 `2.2.1-debug.12067`；SemVer 规定「正式版 > 同号
+    // 预发布版」⇒ `2.2.1 > 2.2.1-debug.12067` ⇒ 永远成立。也就是说它根本不看装没装上：
+    // 安装中途 Abort 回滚要报成功，安装器压根没跑起来同样报成功。用户现场因此连着几天
+    // 收到「更新成功」，跑的却始终是旧 Dart 代码。
+    //
+    // 现在以 Inno 日志的收尾结论为主判据：只有日志明确写了「Installation process
+    // succeeded」才可能是成功；aborted（回滚）与 unknown（日志缺失 = 安装没跑起来）
+    // 一律走失败分支，让用户看见诊断而不是一句成功。版本判据保留为 AND 条件——它在
+    // 正式版通道仍能识别「exe 根本没被换掉」这种失败。
+    final WindowsInnoInstallVerdict verdict = windowsInnoLogVerdict(
       await _readInnoLogContents(record.innoLogPath),
     );
-    if (!installerAborted &&
+    if (verdict == WindowsInnoInstallVerdict.succeeded &&
         _isVersionAtLeast(currentVersion, record.targetVersion)) {
       // Idempotency guard mirroring the failure branch below: if we already
       // surfaced the success dialog for this app version, stay silent. Relying
@@ -944,6 +951,13 @@ List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
       .toList(growable: false);
 }
 
+/// Inno 日志对「这次安装到底成没成」的收尾结论。
+///
+/// [unknown] 指日志缺失 / 读不到 / 没写出任何收尾行——**不是**「大概成了」。正常路径下
+/// 日志一定存在（`/LOG=` 是我们自己传给安装器的），拿不到通常意味着 launcher 没起来、
+/// Inno 没运行或中途崩了，那些都该按失败处置。
+enum WindowsInnoInstallVerdict { succeeded, aborted, unknown }
+
 /// Inno 日志是否表明**这次安装以中止/回滚收场**（而不是装完了）。
 ///
 /// 存在的理由（BUG-1786）：握手原本只用「当前版本号 >= 目标版本号」判断安装是否成功，
@@ -958,8 +972,14 @@ List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
 ///
 /// 无日志（null / 空 / 读不到）返回 false —— 宁可沿用旧的版本号判据，也不要因为读不到
 /// 日志就把一次真正成功的更新报成失败。
-bool windowsInnoLogReportsAbortedInstall(String? contents) {
-  if (contents == null || contents.trim().isEmpty) return false;
+bool windowsInnoLogReportsAbortedInstall(String? contents) =>
+    windowsInnoLogVerdict(contents) == WindowsInnoInstallVerdict.aborted;
+
+/// 取日志里**最后一条**收尾结论。见 [WindowsInnoInstallVerdict] 关于 unknown 的语义。
+WindowsInnoInstallVerdict windowsInnoLogVerdict(String? contents) {
+  if (contents == null || contents.trim().isEmpty) {
+    return WindowsInnoInstallVerdict.unknown;
+  }
   const List<String> abortedMarkers = <String>[
     'user canceled the installation process',
     'rolling back changes',
@@ -971,25 +991,25 @@ bool windowsInnoLogReportsAbortedInstall(String? contents) {
   // 没有词边界），只有真正的 'Installation process succeeded.' 才算。
   final RegExp succeeded = RegExp(r'\binstallation process succeeded');
   final RegExp aborting = RegExp(r'\binstallation process aborted');
-  bool? aborted;
+  WindowsInnoInstallVerdict? verdict;
   for (final String line in const LineSplitter().convert(contents)) {
     final String lower = line.toLowerCase();
     if (succeeded.hasMatch(lower)) {
-      aborted = false;
+      verdict = WindowsInnoInstallVerdict.succeeded;
       continue;
     }
     if (aborting.hasMatch(lower)) {
-      aborted = true;
+      verdict = WindowsInnoInstallVerdict.aborted;
       continue;
     }
     for (final String marker in abortedMarkers) {
       if (lower.contains(marker)) {
-        aborted = true;
+        verdict = WindowsInnoInstallVerdict.aborted;
         break;
       }
     }
   }
-  return aborted ?? false;
+  return verdict ?? WindowsInnoInstallVerdict.unknown;
 }
 
 String _fingerprintPart(String value) =>
