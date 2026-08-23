@@ -275,6 +275,7 @@ Future<Directory> _fixturesDir() async {
 Future<String> seedAudiobook(
   WidgetTester tester, {
   String title = 'Hibiki Test Audiobook',
+  Duration audioDuration = const Duration(seconds: 3),
 }) async {
   final AppModel appModel = await readyAppModel(tester);
   await showBooksTab(tester);
@@ -296,7 +297,10 @@ Future<String> seedAudiobook(
 
   final Directory dir = await _fixturesDir();
   final String audioPath = '${dir.path}${Platform.pathSeparator}$bookKey.m4a';
-  final File audioFile = await generateSilentAudio(outPath: audioPath);
+  final File audioFile = await generateSilentAudio(
+    outPath: audioPath,
+    duration: audioDuration,
+  );
 
   // 用真实 bookKey 重建 cue（chapterHref 与 EPUB 内 spine 一致）。
   final List<AudioCue> cues =

@@ -158,6 +158,125 @@ void main() {
     expect(url, 'http://new:8765/api/lookup/audio/file?id=abc');
   });
 
+  test(
+      'pinned https audio fetch keeps the peer trust chain and returns a '
+      'local file', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    const List<int> audioBytes = <int>[0x49, 0x44, 0x33, 1, 2, 3, 4];
+    final List<String> requests = <String>[];
+    final List<String> fingerprints = <String>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      httpClient: MockClient((http.Request request) async {
+        fail('a pinned https peer must never use the unpinned shared client');
+      }),
+      pinnedClientFactory: (String expectedFingerprint) {
+        fingerprints.add(expectedFingerprint);
+        return MockClient((http.Request request) async {
+          requests.add('${request.method} ${request.url.path}');
+          if (request.method == 'POST') {
+            return http.Response.bytes(
+              utf8.encode(jsonEncode(<String, dynamic>{
+                'type': 'audioResult',
+                'url':
+                    'https://pinned:38765/api/lookup/audio/file?id=opaque',
+                'contentType': 'audio/mpeg',
+              })),
+              200,
+              headers: const <String, String>{
+                'content-type': 'application/json; charset=utf-8',
+              },
+            );
+          }
+          return http.Response.bytes(
+            audioBytes,
+            200,
+            headers: const <String, String>{'content-type': 'audio/mpeg'},
+          );
+        });
+      },
+    );
+
+    final String? ref = await client.lookupAudioUrl(
+      expression: '猫',
+      reading: 'ねこ',
+    );
+    addTearDown(() async {
+      if (ref != null && !ref.startsWith('http')) {
+        final File file = File(ref);
+        if (await file.exists()) await file.delete();
+      }
+    });
+
+    expect(ref, isNotNull);
+    expect(ref!.startsWith('http'), isFalse,
+        reason: 'self-signed peer URLs cannot be handed to iOS WebView/player; '
+            'the pinned client must materialize the bytes first');
+    if (!ref.startsWith('http')) {
+      expect(await File(ref).readAsBytes(), audioBytes);
+    }
+    expect(requests, <String>[
+      'POST /api/lookup/audio',
+      'GET /api/lookup/audio/file',
+    ]);
+    expect(fingerprints, <String>['aa:bb:cc', 'aa:bb:cc'],
+        reason: 'both hops must validate the exact paired-peer fingerprint');
+  });
+
+  test('pinned audio rejects a token URL outside the winning peer origin',
+      () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final List<String> requests = <String>[];
+    final List<String> fingerprints = <String>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (String expectedFingerprint) {
+        fingerprints.add(expectedFingerprint);
+        return MockClient((http.Request request) async {
+          requests.add('${request.method} ${request.url.host}');
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://attacker.test/api/lookup/audio/file?id=opaque',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        });
+      },
+    );
+
+    expect(await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+        isNull,
+        reason: 'the opaque asset URL must stay on the authenticated peer');
+    expect(requests, <String>['POST pinned'],
+        reason: 'a different-origin GET must never be issued');
+    expect(fingerprints, <String>['aa:bb:cc']);
+  });
+
   // TODO-961 gap①：https 带指纹的候选必须走钉扎 client，即使外部注入了共享
   // keep-alive client（生产 AppModel 就是注入的）——注入 client 只服务明文 http。
   test('https candidate with fingerprint always uses the pinned client',

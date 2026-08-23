@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -69,7 +70,7 @@ class InterconnectPostTransport {
     final String? fallbackToken = await _repo.getFushiClientToken();
     if (candidates.isEmpty) {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
-      return (json: null, allUnreachable: false);
+      return (json: null, allUnreachable: false, candidate: null);
     }
 
     bool attempted = false;
@@ -117,12 +118,13 @@ class InterconnectPostTransport {
         }
         final dynamic decoded = jsonDecode(response.body);
         if (decoded is Map<String, dynamic>) {
-          return (json: decoded, allUnreachable: false);
+          return (json: decoded, allUnreachable: false, candidate: candidate);
         }
         if (decoded is Map) {
           return (
             json: Map<String, dynamic>.from(decoded),
             allUnreachable: false,
+            candidate: candidate,
           );
         }
       } catch (_) {
@@ -138,16 +140,88 @@ class InterconnectPostTransport {
     if (authError != null) throw authError;
     // 只有「试过且一个响应都没拿到」才算全部不可达（传输层失败），可达但无结果
     // 仍是普通 null。
-    return (json: null, allUnreachable: attempted && !anyResponse);
+    return (
+      json: null,
+      allUnreachable: attempted && !anyResponse,
+      candidate: null,
+    );
+  }
+
+  /// Fetches the short-lived lookup-audio asset issued by [candidate] while
+  /// preserving the exact trust decision used by [post].
+  ///
+  /// The JSON lookup hop can succeed through a fingerprint-pinned client, but
+  /// handing its self-signed HTTPS URL to a WebView/platform player loses that
+  /// pin. iOS then correctly rejects the second TLS handshake. Keep the second
+  /// hop here, bind it to the winning peer origin, and use the same fingerprint.
+  /// The opaque token endpoint needs no Basic header; its short-lived `id` is
+  /// the credential (the server intentionally exempts this one path so browser
+  /// audio elements can consume it too).
+  Future<InterconnectBytesOutcome?> getLookupAudioBytes({
+    required FushiClientUrl candidate,
+    required Uri uri,
+    required Duration timeout,
+    int maxBytes = 16 * 1024 * 1024,
+  }) async {
+    final Uri? candidateOrigin = interconnectEndpointUri(candidate.url, '/');
+    if (candidateOrigin == null ||
+        !_sameOrigin(candidateOrigin, uri) ||
+        uri.path != '/api/lookup/audio/file') {
+      return null;
+    }
+
+    final String? fp = candidate.fingerprintSha256;
+    final bool usePinned =
+        uri.isScheme('https') && fp != null && fp.isNotEmpty;
+    final http.Client client =
+        usePinned ? _pinnedClientFactory(fp) : _httpClient;
+    try {
+      final http.StreamedResponse response = await client
+          .send(http.Request('GET', uri))
+          .timeout(timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.stream.drain<void>().timeout(timeout);
+        return null;
+      }
+      final int? declaredLength = response.contentLength;
+      if (declaredLength != null && declaredLength > maxBytes) {
+        return null;
+      }
+      final BytesBuilder bytes = BytesBuilder(copy: false);
+      await for (final List<int> chunk in response.stream.timeout(timeout)) {
+        if (bytes.length + chunk.length > maxBytes) return null;
+        bytes.add(chunk);
+      }
+      final Uint8List body = bytes.takeBytes();
+      if (body.isEmpty) return null;
+      return (
+        bytes: body,
+        contentType: response.headers['content-type'],
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      if (usePinned) client.close();
+    }
   }
 }
-
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。
 typedef InterconnectPostOutcome = ({
   Map<String, dynamic>? json,
-  bool allUnreachable
+  bool allUnreachable,
+  FushiClientUrl? candidate,
 });
+
+typedef InterconnectBytesOutcome = ({
+  Uint8List bytes,
+  String? contentType,
+});
+
+bool _sameOrigin(Uri a, Uri b) =>
+    a.scheme.toLowerCase() == b.scheme.toLowerCase() &&
+    a.host.toLowerCase() == b.host.toLowerCase() &&
+    a.port == b.port;
 
 /// 把候选基址 [baseUrl] 与端点 [path] 拼成请求 URI；基址畸形返回 null（调用方跳过
 /// 该候选）。查询串一律清空——互联端点的入参全部走 JSON 请求体。

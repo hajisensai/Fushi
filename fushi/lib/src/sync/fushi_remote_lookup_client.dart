@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
 /// 互联配对查询：本次调用尝试了至少一个已启用候选地址，但**没有任何一个候选
 /// 返回过 HTTP 响应**（连接拒绝 / 超时 / DNS 解析失败等传输层失败）——即
@@ -134,7 +137,8 @@ class FushiRemoteLookupClient {
   }
 
   /// 查远端单词音频。三种结局：
-  /// - 返回 URL：某候选可达且有音频；
+  /// - 返回可播放 ref：明文 HTTP peer 保持短命 URL；带指纹的 HTTPS peer 由本类
+  ///   使用同一指纹取回字节并物化成本地文件，避免 WebView/native player 丢失钉扎；
   /// - 返回 null：可达但无音频（含 404/405/非 2xx/正常空结果），或根本未配对；
   /// - 抛 [RemoteLookupUnreachableError]：所有已启用候选全部传输层失败
   ///   （连接拒绝/超时/DNS）——「配对设备死了」，供上层计入失败冷却。
@@ -157,8 +161,29 @@ class FushiRemoteLookupClient {
     }
     final Map<String, dynamic>? json = outcome.json;
     if (json == null || json['type'] != 'audioResult') return null;
-    final String? url = json['url'] as String?;
-    return (url == null || url.isEmpty) ? null : url;
+    final String? urlText = json['url'] as String?;
+    if (urlText == null || urlText.isEmpty) return null;
+    final Uri? uri = Uri.tryParse(urlText);
+    final FushiClientUrl? candidate = outcome.candidate;
+    final String? fingerprint = candidate?.fingerprintSha256;
+    final bool needsPinnedMaterialization = uri != null &&
+        uri.isScheme('https') &&
+        candidate != null &&
+        fingerprint != null &&
+        fingerprint.isNotEmpty;
+    if (!needsPinnedMaterialization) return urlText;
+
+    final InterconnectBytesOutcome? asset =
+        await _transport.getLookupAudioBytes(
+      candidate: candidate,
+      uri: uri,
+      timeout: _timeout,
+    );
+    if (asset == null) return null;
+    return _materializePinnedAudio(
+      asset.bytes,
+      contentType: asset.contentType ?? json['contentType']?.toString(),
+    );
   }
 
   Future<InterconnectPostOutcome> _postLookup({
@@ -172,4 +197,50 @@ class FushiRemoteLookupClient {
       authErrorMessage: 'Fushi server rejected remote lookup token',
     );
   }
+}
+
+Future<String?> _materializePinnedAudio(
+  List<int> bytes, {
+  required String? contentType,
+}) async {
+  if (bytes.isEmpty) return null;
+  final String digest = sha256.convert(bytes).toString();
+  final String extension = _audioExtensionForContentType(contentType);
+  final Directory cache = Directory(
+    p.join(Directory.systemTemp.path, 'fushi_remote_lookup_audio'),
+  );
+  await cache.create(recursive: true);
+  final File output = File(p.join(cache.path, '$digest.$extension'));
+  if (await output.exists()) return output.path;
+
+  // Publish atomically: simultaneous lookups for the same clip may race, but
+  // no player should ever observe a half-written file.
+  final Directory staging = await cache.createTemp('write_');
+  try {
+    final File temporary = File(p.join(staging.path, 'audio.$extension'));
+    await temporary.writeAsBytes(bytes, flush: true);
+    try {
+      await temporary.rename(output.path);
+    } on FileSystemException {
+      if (!await output.exists()) rethrow;
+    }
+    return output.path;
+  } finally {
+    if (await staging.exists()) {
+      await staging.delete(recursive: true);
+    }
+  }
+}
+
+String _audioExtensionForContentType(String? raw) {
+  final String contentType =
+      (raw ?? '').split(';').first.trim().toLowerCase();
+  return switch (contentType) {
+    'audio/ogg' || 'audio/opus' => 'ogg',
+    'audio/mp4' || 'audio/aac' => 'm4a',
+    'audio/wav' || 'audio/x-wav' => 'wav',
+    'audio/flac' || 'audio/x-flac' => 'flac',
+    'audio/webm' => 'webm',
+    _ => 'mp3',
+  };
 }
