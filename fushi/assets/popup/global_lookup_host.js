@@ -436,12 +436,16 @@
     // onto the window's own transparent (=hard dark) surface as an ~11px DARK
     // HALO ringing the card's corners/edges, which the native rounded window
     // region (SetWindowRgn) cannot clip away. That halo is exactly the "black
-    // border outside the rounded corners" the user reported. A real drop-shadow
+    // border outside the rounded corners" the user reported. A CSS drop-shadow
     // is physically impossible on a non-layered WebView2 window (the design
-    // already conceded this), so the shell casts none: the rounded silhouette
-    // comes from SetWindowRgn + the body's 1px card border, with nothing painted
-    // outside the card. All rules scoped to .global-lookup-frame-shell -> the
-    // in-app popup (no host.js) is never touched.
+    // already conceded this), so the shell casts none IN CSS: the rounded
+    // silhouette comes from SetWindowRgn + the body's 1px card border, with
+    // nothing painted outside the card. The real per-card soft shadow is drawn
+    // NATIVELY by the companion layered shadow window (global_lookup_shadow.cpp,
+    // 2026-08-23) sitting right below this HWND — do NOT reintroduce a CSS
+    // box-shadow here on top of it. All rules scoped to
+    // .global-lookup-frame-shell -> the in-app popup (no host.js) is never
+    // touched.
     // D1 reveal gate: a shell paints only when BOTH data-* flags are 'true'.
     style.textContent =
         // D1 reveal gate FIRST (kept as its own rule so the gate contract stays

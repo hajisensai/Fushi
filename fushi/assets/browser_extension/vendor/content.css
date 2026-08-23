@@ -127,37 +127,59 @@
     padding: 0 10px 10px;
 }
 
-/* Themed scrollbar (mirrors reader_content_styles.dart / lyrics_mode_html.dart).
-   The track stays transparent so it shows the popup background; the thumb takes
-   --text-color (onSurface, injected by dictionary_popup_webview _themeVariablesJs),
-   so dark themes get a light thumb and light themes a dark one. The standard
-   props cover Firefox/Chromium 121+; the -webkit pseudo-elements cover Android
-   WebView / Windows WebView2 / macOS WKWebView. color-scheme is pinned per theme
-   in the html[data-theme] blocks below -- WebView2's Fluent overlay scrollbar
-   ignores ::-webkit-scrollbar and only follows the UA color-scheme. */
-:where(#entries-container) {
-    scrollbar-width: thin;
-    scrollbar-color: var(--text-color) transparent;
-}
-
-:where(#entries-container) ::-webkit-scrollbar {
+/* Themed scrollbar — Niratan 对齐（2026-08-23，取代 TODO-789 的常驻细滚动条）。
+   静止时完全隐形；鼠标落在文档上（:hover）或滚动进行中（popup.js 的滚动监听给
+   根节点加 .popup-scroll-active，900ms 衰减，覆盖触屏无 hover 的情形）才浮现
+   胶囊 thumb —— 逐字对齐 Niratan popup.css 的 overlay 滚动条（宽 8px、透明
+   track、999px 胶囊、2px 内缩 content-box、min-height 36px）。
+   有意不再设标准 scrollbar-width / scrollbar-color：Chromium 121+ 一旦标准
+   属性生效会整族禁用 ::-webkit-scrollbar 伪元素（BUG-753 记录的引擎行为），
+   而「静止隐形、悬停浮现」只有伪元素表达得出来。副作用一并消化：没有标准
+   thin 属性后 WebView2 可能回到 Fluent overlay 滚动条（忽略伪元素、只认 UA
+   color-scheme）——那形态本来就是静止隐形的浮层，与本设计同向；color-scheme
+   仍按主题钉在 html[data-theme] 块里。gutter 消失不影响圆角：TODO-893 的
+   右上/右下方角根因已由 html.global-lookup 的透明渐变背景根治，不再依赖
+   「内容右缘与 shell 右缘重合」。thumb 颜色变量在 html[data-theme] 块按主题
+   定义，不再用 --text-color 实心色（黑/白实心太扎眼，Niratan 用半透明灰）。 */
+:where(#entries-container, #entries-container *)::-webkit-scrollbar {
     width: 8px;
     height: 8px;
-}
-
-:where(#entries-container) ::-webkit-scrollbar-track {
     background: transparent;
 }
 
-:where(#entries-container) ::-webkit-scrollbar-thumb {
-    background-color: var(--text-color);
-    background-clip: padding-box;
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-track,
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-track-piece,
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-corner {
+    background: transparent;
+    border: 0;
+}
+
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-thumb {
+    min-height: 36px;
     border: 2px solid transparent;
-    border-radius: 8px;
+    border-radius: 999px;
+    background-color: transparent;
+    background-clip: content-box;
 }
 
-:where(#entries-container) ::-webkit-scrollbar-corner {
-    background: transparent;
+/* 通用形（不枚举 html/body/.overlay）：任一滚动容器被悬停、或被 popup.js 打上
+   .popup-scroll-active，就显形**它自己**的 thumb。比 Niratan 的枚举式更简，且
+   content.css 生成器把 `*` 前缀重根为 #entries-container 及其后代后，扩展里
+   无论真正的滚动容器是哪层都被覆盖（枚举 html/body 在扩展里会失配）。 */
+:where(#entries-container, #entries-container *):hover::-webkit-scrollbar-thumb,
+:where(#entries-container, #entries-container *).popup-scroll-active::-webkit-scrollbar-thumb {
+    background-color: var(--popup-scrollbar-thumb, rgba(128, 128, 128, 0.42));
+}
+
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-thumb:hover,
+:where(#entries-container, #entries-container *)::-webkit-scrollbar-thumb:active {
+    background-color: var(--popup-scrollbar-thumb-active, rgba(128, 128, 128, 0.64));
 }
 
 .entry {
@@ -1382,6 +1404,9 @@
     --background-color: #fff;
     --background-color-light: #fff;
     --text-color: #000;
+    /* Niratan 对齐（2026-08-23）— 悬停浮现滚动条的胶囊色（半透明灰，非实心）。 */
+    --popup-scrollbar-thumb: rgba(80, 80, 80, 0.42);
+    --popup-scrollbar-thumb-active: rgba(80, 80, 80, 0.64);
     /* Prefer the MD3 ColorScheme values Dart injects (--md-*); the per-theme
        literals stay as fallbacks for hosts that don't inject (Android native). */
     --surface-container: var(--md-surface-container, #F0F1EC);
@@ -1396,6 +1421,9 @@
     --background-color: #000;
     --background-color-light: #000;
     --text-color: #fff;
+    /* Niratan 对齐（2026-08-23）— 悬停浮现滚动条的胶囊色（半透明白）。 */
+    --popup-scrollbar-thumb: rgba(255, 255, 255, 0.34);
+    --popup-scrollbar-thumb-active: rgba(255, 255, 255, 0.56);
     --text-color-light1: #aaaaaa;
     --text-color-light2: #999999;
     --text-color-light3: #888888;

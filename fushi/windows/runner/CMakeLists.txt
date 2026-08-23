@@ -28,6 +28,7 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
+  "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"

@@ -771,6 +771,8 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   revealed_ = false;
   offscreen_active_ = false;
   shell_rects_css_.clear();  // BUG-749 — stale rects must not clip a rebuild.
+  // 锚窗已死，投影窗不能留在桌面上变成"孤儿影子"。
+  shadow_.Hide();
 }
 
 bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
@@ -933,6 +935,9 @@ void GlobalLookupWindow::Reveal(int width, int height) {
     fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
+  // 投影：上面 SetWindowPos 触发的 WM_WINDOWPOSCHANGED 到达时 revealed_ 还是
+  // false（置位在其后），漏斗那次同步判为隐藏——首帧必须在标志置位后显式补一次。
+  SyncShadow();
 }
 
 void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
@@ -1017,6 +1022,9 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
+  // 投影：与 Reveal 同因——上面 SetWindowPos 触发漏斗时 revealed_ 还是 false，
+  // 标志置位后显式补一次，首帧才有影。
+  SyncShadow();
 }
 
 void GlobalLookupWindow::ResizeTo(int width, int height) {
@@ -1263,6 +1271,8 @@ void GlobalLookupWindow::ApplyBlockCapture() {
   if (hwnd_ == nullptr) {
     return;
   }
+  // 投影窗与锚窗联动排除捕获：录屏里"凭空一圈影子"同样泄露卡片轮廓。
+  shadow_.SetBlockCapture(block_capture_);
   // WDA_EXCLUDEFROMCAPTURE：窗口对用户可见但从截图 / 录屏 / 屏幕共享里排除
   // （查词内容不外泄）。Win10<2004 该值不被支持 -> API 失败，回退 WDA_MONITOR
   // （被捕获处画成黑块，同样不泄露内容）。关闭时 WDA_NONE 恢复正常可截。
@@ -1333,6 +1343,9 @@ void GlobalLookupWindow::Hide(bool notify) {
   shell_rects_css_.clear();
   ReleaseDismissHooks();
   StopTopmostGuard();
+  // 投影窗随卡片同步隐藏（WM_WINDOWPOSCHANGED 也会兜到，这里显式先藏，
+  // 避免"卡没了影子晚一拍"）。
+  shadow_.Hide();
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }
@@ -2514,6 +2527,26 @@ void GlobalLookupWindow::ApplyRoundedRegion() {
   }
 }
 
+// 2026-08-23 弹窗观感 — 投影同步单漏斗（调用点：WM_WINDOWPOSCHANGED /
+// SetShellRectsFromCsv / WM_EXITSIZEMOVE；Hide 与 ForgetDeadWindow 直接
+// shadow_.Hide()）。
+//
+// 可见性判据 = revealed_ && visible_：离屏渲染（ShowAt 的 OffscreenX 停靠、
+// PrewarmWebView、gal 采集面 ResizeOffscreen）全程不带影；卡片真正上屏
+// （Reveal/RevealStack 置位）后影子才出现。卡矩形用 shellRects（BUG-749 的
+// 卡片几何真相源，瞬态级联逐卡画影）；面板实例 shellRects 恒空 → 整窗一影。
+// 模态 resize 循环（resizing_）中卡矩形已失真且每帧重画会拖慢拖拽：传
+// defer_repaint 让影子窗"几何脏了就先藏"，WM_EXITSIZEMOVE 复原。半径 10
+// 与 ApplyRoundedRegion 的 10 逻辑 px（diameter 20）同源，两者必须一起改。
+void GlobalLookupWindow::SyncShadow() {
+  const bool show = revealed_ && visible_ && hwnd_ != nullptr &&
+                    IsWindowVisible(hwnd_);
+  shadow_.Sync(hwnd_, show,
+               resizing_ ? std::vector<std::array<double, 4>>{}
+                         : shell_rects_css_,
+               10, resizing_);
+}
+
 // BUG-749 — parse {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…']} (window-
 // relative CSS px, numbers only — produced by global_lookup_host.js
 // measureAndReport) and re-apply the window region. A malformed payload (or a
@@ -2567,6 +2600,8 @@ void GlobalLookupWindow::SetShellRectsFromCsv(const std::string& body) {
   }
   shell_rects_css_ = std::move(rects);
   ApplyRoundedRegion();
+  // 2026-08-23 弹窗观感 — 卡矩形变了（级联增删卡/卡尺寸变化），投影跟着重画。
+  SyncShadow();
 }
 
 void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
@@ -2620,6 +2655,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       HandleGlobalWheel(fushi::UnpackMouseHookPoint(wparam),
                         fushi::UnpackMouseHookWheel(lparam));
       return 0;
+    case WM_WINDOWPOSCHANGED:
+      // 2026-08-23 弹窗观感 — 投影同步单漏斗：移动/缩放/显隐/Z 序变化（含
+      // ReassertTopmost 的置顶重申与 Reveal/ResizeTo 的每一次 SetWindowPos）
+      // 全部经过本消息，投影窗在此一处跟随，杜绝散落的手工同步点漂移。
+      // 必须交回 DefWindowProc：WM_SIZE / WM_MOVE 是它在这里派生的。
+      SyncShadow();
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case WM_SIZE:
       if (controller_) {
         RECT rc;
@@ -2707,6 +2749,8 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // Phase C — 先复原 resize 期间临时挂起的 shell 区域裁剪（resizing_ 归零后重算）。
       resizing_ = false;
       ApplyRoundedRegion();
+      // 拖拽期间投影因防掉帧被隐藏（见 SyncShadow），拖完立刻恢复。
+      SyncShadow();
       if (message_cb_ && hwnd_ != nullptr) {
         RECT r{};
         GetWindowRect(hwnd_, &r);

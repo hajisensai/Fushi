@@ -84,7 +84,9 @@ String _themeVariablesJs({
   final ColorScheme scheme = theme.colorScheme;
   final Map<String, String> vars = buildPopupThemeCssVars(
     scheme: scheme,
-    backgroundColor: appModel.overrideDictionaryColor ?? scheme.surface,
+    // Niratan 对齐（2026-08-23）：默认卡面纯白/纯黑，override 优先级不变。
+    backgroundColor: popupCardSurface(
+        scheme: scheme, override: appModel.overrideDictionaryColor),
     surfaceContainerHigh: scheme.surfaceContainerHigh,
     dictionaryColumns: appModel.popupDictionaryColumns,
   );

@@ -120,7 +120,9 @@ void main() {
         // BUG-752: the scope must be the specificity-neutral `:where(...)` form.
         for (final String scoped in const <String>[
           ':where(#entries-container) ::selection',
-          ':where(#entries-container) ::-webkit-scrollbar',
+          // Niratan 对齐（2026-08-23）：滚动条伪元素改「容器自身 + 后代」重根
+          // （旧的纯后代形漏掉 #entries-container 自己作为滚动容器的场景）。
+          ':where(#entries-container, #entries-container *)::-webkit-scrollbar',
           ':where(#entries-container)[data-theme="dark"]',
         ]) {
           expect(content.contains(scoped), isTrue,

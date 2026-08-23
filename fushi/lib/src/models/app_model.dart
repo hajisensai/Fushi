@@ -2891,7 +2891,10 @@ class AppModel with ChangeNotifier {
   Map<String, String> browserExtensionThemeColors() {
     final ColorScheme s = themeNotifier.buildColorScheme(
         themeNotifier.isDarkMode ? Brightness.dark : Brightness.light);
-    final Color bgColor = _overrideDictionaryColor ?? s.surface;
+    // Niratan 对齐（2026-08-23）：默认卡面纯白/纯黑（popupCardSurface），
+    // 不再用 tinted scheme.surface；override 优先级不变。
+    final Color bgColor =
+        popupCardSurface(scheme: s, override: _overrideDictionaryColor);
     // BUG-736：核心色/圆角/列数变量的取值统一来自 buildPopupThemeCssVars——与 in-app
     // 弹窗注入器（popup_settings_injection / dictionary_popup_webview）同一真源，
     // 根除「扩展漏抄一处、退化成灰高亮/白字/直角」的手抄漂移。
