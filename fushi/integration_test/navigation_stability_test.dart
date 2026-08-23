@@ -12,6 +12,8 @@ import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart'
     show DictionaryDialogPage;
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab, homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart'
+    show OnboardingWizardPage;
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart'
     show ShortcutSettingsPage;
 import 'package:fushi/src/settings/settings_detail_page.dart'
@@ -144,6 +146,12 @@ void main() {
           driver,
           destination: t.settings_destination_system,
           item: t.shortcut_settings_title,
+        );
+        await _openDeepRoute<OnboardingWizardPage>(
+          tester,
+          driver,
+          destination: t.settings_destination_system,
+          item: t.onboarding_reopen,
         );
         await _openDeepRoute<DictionaryDialogPage>(
           tester,

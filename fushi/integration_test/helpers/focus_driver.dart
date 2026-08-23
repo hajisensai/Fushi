@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -99,6 +100,7 @@ class FocusDriver {
       // 语义；纯焦点状态操作，非坐标点击。不能用 unfocus——那会把遍历重置回
       // scope 起点，若首个 tab stop 恰是该输入框就永远乒乓）。
       if (key == LogicalKeyboardKey.tab &&
+          defaultTargetPlatform == TargetPlatform.macOS &&
           identical(focused, before) &&
           _insideEditableText(focused)) {
         focused?.nextFocus();
@@ -113,6 +115,7 @@ class FocusDriver {
       // reachable again; _focusOwns deliberately never treats the scope itself
       // as success.
       if (key == LogicalKeyboardKey.tab &&
+          defaultTargetPlatform == TargetPlatform.macOS &&
           identical(focused, before) &&
           focused is FocusScopeNode) {
         focused?.nextFocus();

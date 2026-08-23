@@ -7,6 +7,7 @@ class LyricsModeHtml {
   static String generate({
     required List<AudioCue> cues,
     required int currentIndex,
+    int loadGeneration = 0,
     required String backgroundColor,
     required String textColor,
     required String accentColor,
@@ -352,6 +353,7 @@ function setCue(index, scroll) {
 }
 
 // ── Dart bridge ──
+window.__fushiLyricsLoadGeneration = $loadGeneration;
 window.__lyricsSetCue = function(index, scroll) { setCue(index, scroll); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 // 供 fushiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
@@ -366,7 +368,7 @@ window.__lyricsScrollToCue = function(index) {
 (function notifyLyricsReady(attempt) {
   var bridge = window.flutter_inappwebview;
   if (bridge && typeof bridge.callHandler === 'function') {
-    requestAnimationFrame(function() { bridge.callHandler('onLyricsReady'); });
+    requestAnimationFrame(function() { bridge.callHandler('onLyricsReady', $loadGeneration); });
     return;
   }
   if (attempt < 100) {

@@ -2467,7 +2467,17 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         // finalize，谁先到谁完成，另一条只读到 ready 后早返回。
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsReady',
-          callback: (_) => _finalizeLyricsDocumentIfReady(controller),
+          callback: (args) {
+            final dynamic raw = args.isEmpty ? null : args.first;
+            final int? generation = raw is num
+                ? raw.toInt()
+                : int.tryParse(raw?.toString() ?? '');
+            if (generation == null) return false;
+            return _finalizeLyricsDocumentIfReady(
+              controller,
+              generation: generation,
+            );
+          },
         );
       },
       shouldInterceptRequest: (controller, request) async {
@@ -2499,7 +2509,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         debugPrint('[ReaderFushi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode) {
-          if (!await _finalizeLyricsDocumentIfReady(controller)) {
+          if (!await _finalizeLyricsDocumentIfReady(
+            controller,
+            generation: _lyricsLoadGeneration,
+          )) {
             debugPrint('[ReaderFushi] onLoadStop: stale non-lyrics page '
                 'while lyrics mode is active, ignoring');
           }
@@ -2580,11 +2593,12 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }
 
   Future<bool> _isLoadedLyricsDocument(
-      InAppWebViewController controller) async {
+    InAppWebViewController controller, {
+    required int generation,
+  }) async {
     try {
       final dynamic result = await controller.evaluateJavascript(
-        source:
-            "Boolean(window.__lyricsSetCue && document.getElementById('lc'))",
+        source: '''Boolean(window.__lyricsSetCue && document.getElementById('lc') && window.__fushiLyricsLoadGeneration === $generation)''',
       );
       return result == true || result == 'true' || result == 1 || result == '1';
     } catch (e, stack) {
@@ -2595,23 +2609,53 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }
 
   Future<bool> _finalizeLyricsDocumentIfReady(
-      InAppWebViewController controller) async {
-    if (!mounted || !_lyricsMode) return false;
+    InAppWebViewController controller, {
+    required int generation,
+  }) async {
+    if (!mounted ||
+        !_lyricsMode ||
+        generation != _lyricsLoadGeneration) {
+      return false;
+    }
     if (_lyricsPageReady) return true;
-    if (_lyricsReadyFinalizing) return false;
-    _lyricsReadyFinalizing = true;
+    if (_lyricsReadyFinalizingGeneration == generation) return false;
+    _lyricsReadyFinalizingGeneration = generation;
     try {
-      if (!await _isLoadedLyricsDocument(controller)) return false;
-      if (!mounted || !_lyricsMode) return false;
-      if (!_lyricsPageReady) await _onChapterLoadComplete(controller);
+      if (!await _isLoadedLyricsDocument(
+        controller,
+        generation: generation,
+      )) {
+        return false;
+      }
+      if (!mounted ||
+          !_lyricsMode ||
+          generation != _lyricsLoadGeneration) {
+        return false;
+      }
+      if (!_lyricsPageReady) {
+        await _onChapterLoadComplete(
+          controller,
+          lyricsGeneration: generation,
+        );
+      }
+      if (!mounted ||
+          !_lyricsMode ||
+          generation != _lyricsLoadGeneration) {
+        return false;
+      }
       _lyricsDocumentLoadInFlight = false;
       return _lyricsPageReady;
     } finally {
-      _lyricsReadyFinalizing = false;
+      if (_lyricsReadyFinalizingGeneration == generation) {
+        _lyricsReadyFinalizingGeneration = null;
+      }
     }
   }
 
-  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+  Future<void> _onChapterLoadComplete(
+    InAppWebViewController controller, {
+    int? lyricsGeneration,
+  }) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
@@ -2637,6 +2681,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       return;
     }
     if (_lyricsMode) {
+      bool currentLyricsLoad() => mounted &&
+          _lyricsMode &&
+          lyricsGeneration != null &&
+          lyricsGeneration == _lyricsLoadGeneration;
+      if (!currentLyricsLoad()) return;
       if (!_readerContentReady) {
         // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
         _clearContentReadyTimeout();
@@ -2645,6 +2694,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           _hasEverLoaded = true;
         });
       }
+      if (!currentLyricsLoad()) return;
       _lyricsPageReady = true;
       // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
       // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
@@ -2656,6 +2706,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
       await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.source());
+      if (!currentLyricsLoad()) return;
       if (mounted) {
         await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.initInvocation(
@@ -2665,13 +2716,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           ),
         );
       }
+      if (!currentLyricsLoad()) return;
       _onCueChanged();
       await _applyLyricsFavorites();
+      if (!currentLyricsLoad()) return;
       // BUG-844: 歌词是独立文档，正文 setup 脚本（下发 window.__hoverAutoLookup 初值）
       // 不在此分支注入。歌词页的 mousemove 悬停查词监听据此全局跳过 Shift 门控（纯悬停即
       // 查词），必须在页面就绪时把当前开关值同步进新文档，否则纯悬停查词要等一次设置热更
       // 才生效。Shift-悬停不依赖此全局（监听器直接读 e.shiftKey），本行只补齐纯悬停路径。
       if (mounted) await _applyHoverAutoLookupLive();
+      if (!currentLyricsLoad()) return;
       // BUG-767: 此前（BUG-755）在歌词页就绪即强夺阅读焦点，想让 ESC 从进入那刻就能退。
       // 但桌面 loadData 后强夺 Flutter 焦点会把原生 WebView2 顶焦、重置其滚动到顶
       // （→ 高亮看似回第一句），并与页面自身抢焦点抖动；一旦叠加重载路径每次 loadData

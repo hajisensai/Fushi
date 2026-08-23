@@ -34,7 +34,7 @@ void main() {
   test('notifies Dart only after the lyrics DOM API is initialized', () {
     final String source = html();
     final int sentinel = source.indexOf('window.__lyricsSetCue');
-    final int ready = source.indexOf("callHandler('onLyricsReady')");
+    final int ready = source.indexOf("callHandler('onLyricsReady'");
     expect(sentinel, greaterThanOrEqualTo(0));
     expect(ready, greaterThan(sentinel));
     expect(source, contains("typeof bridge.callHandler === 'function'"));

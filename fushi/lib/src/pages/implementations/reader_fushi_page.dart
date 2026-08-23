@@ -1760,7 +1760,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   });
 
   bool _lyricsPageReady = false;
-  bool _lyricsReadyFinalizing = false;
+  int _lyricsLoadGeneration = 0;
+  int? _lyricsReadyFinalizingGeneration;
   bool _lyricsDocumentLoadInFlight = false;
   // 首次进入歌词模式的提示对话框的一次性待弹旗：_toggleLyricsMode 进入分支置 true，
   // 歌词文档真正就绪（_onChapterLoadComplete 歌词分支，_lyricsPageReady 置位点）消费。

@@ -141,6 +141,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   Future<void> _loadLyricsPage() async {
+    final int loadGeneration = ++_lyricsLoadGeneration;
     _lyricsPageReady = false;
     final AudiobookPlayerController ctrl = _audiobookController!;
     final LyricsCueWindow cueWindow = LyricsCueWindow.select(
@@ -177,6 +178,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
       currentIndex: cueWindow.currentIndex,
+      loadGeneration: loadGeneration,
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
@@ -196,6 +198,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     // 歌词模式时 `_spreadDocumentLoaded` 会残留为真，`_onChapterLoadComplete` 的
     // spread 守卫把歌词分支一起挡掉 → 歌词永远不就绪。标记的含义是「WebView 里
     // 现在是不是 spread 文档」，所以每个装载点都必须写它。
+    if (!mounted ||
+        !_lyricsMode ||
+        loadGeneration != _lyricsLoadGeneration ||
+        _controller == null) {
+      return;
+    }
     _spreadDocumentLoaded = false;
     _lyricsDocumentLoadInFlight = true;
     try {
@@ -206,7 +214,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         baseUrl: WebUri('https://fushi.local/lyrics'),
       );
     } catch (_) {
-      _lyricsDocumentLoadInFlight = false;
+      if (loadGeneration == _lyricsLoadGeneration) {
+        _lyricsDocumentLoadInFlight = false;
+      }
       rethrow;
     }
   }
@@ -291,6 +301,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   Future<void> _exitLyricsMode() async {
+    ++_lyricsLoadGeneration;
+    _lyricsReadyFinalizingGeneration = null;
+    _lyricsDocumentLoadInFlight = false;
     // 离开歌词模式会重载 reader 章节，lyrics caret JS 随之消失；复位 surface，
     // 否则方向键/A 会被误路由到已不存在的 fushiLyricsCaret。
     if (_caretSurface == CaretSurface.lyrics) {

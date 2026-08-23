@@ -4,6 +4,20 @@ import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 
 void main() {
   group('LyricsModeHtml', () {
+    test('ready bridge reports the document load generation', () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+      );
+
+      expect(html, contains('window.__fushiLyricsLoadGeneration = 0;'));
+      expect(html, contains("callHandler('onLyricsReady', 0)"));
+    });
+
     test('includes reader selection highlight styles in the standalone page',
         () {
       final String html = LyricsModeHtml.generate(

@@ -34,6 +34,9 @@ class RemoteLookupUnreachableError implements Exception {
 /// 「可达但无结果」不进冷却。
 const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
 
+const Duration kRemoteAudioMaterializedCacheTtl = Duration(days: 7);
+const int kRemoteAudioMaterializedCacheMaxBytes = 64 * 1024 * 1024;
+
 class FushiRemoteLookupClient {
   FushiRemoteLookupClient({
     required SyncRepository repo,
@@ -166,12 +169,11 @@ class FushiRemoteLookupClient {
     final Uri? uri = Uri.tryParse(urlText);
     final FushiClientUrl? candidate = outcome.candidate;
     final String? fingerprint = candidate?.fingerprintSha256;
-    final bool needsPinnedMaterialization = uri != null &&
-        uri.isScheme('https') &&
-        candidate != null &&
+    final bool pinnedCandidate = candidate != null &&
         fingerprint != null &&
         fingerprint.isNotEmpty;
-    if (!needsPinnedMaterialization) return urlText;
+    if (!pinnedCandidate) return urlText;
+    if (uri == null || !uri.isScheme('https')) return null;
 
     final InterconnectBytesOutcome? asset =
         await _transport.getLookupAudioBytes(
@@ -210,8 +212,12 @@ Future<String?> _materializePinnedAudio(
     p.join(Directory.systemTemp.path, 'fushi_remote_lookup_audio'),
   );
   await cache.create(recursive: true);
+  await _pruneRemoteAudioCache(cache);
   final File output = File(p.join(cache.path, '$digest.$extension'));
-  if (await output.exists()) return output.path;
+  if (await output.exists()) {
+    await output.setLastAccessed(DateTime.now());
+    return output.path;
+  }
 
   // Publish atomically: simultaneous lookups for the same clip may race, but
   // no player should ever observe a half-written file.
@@ -224,10 +230,64 @@ Future<String?> _materializePinnedAudio(
     } on FileSystemException {
       if (!await output.exists()) rethrow;
     }
+    await output.setLastAccessed(DateTime.now());
+    await _pruneRemoteAudioCache(cache, protectedPath: output.path);
     return output.path;
   } finally {
     if (await staging.exists()) {
       await staging.delete(recursive: true);
+    }
+  }
+}
+
+Future<void> _pruneRemoteAudioCache(
+  Directory cache, {
+  String? protectedPath,
+}) async {
+  final DateTime now = DateTime.now();
+  final DateTime expiresBefore = now.subtract(kRemoteAudioMaterializedCacheTtl);
+  final DateTime staleStagingBefore = now.subtract(const Duration(hours: 1));
+  final List<({File file, FileStat stat})> survivors =
+      <({File file, FileStat stat})>[];
+
+  await for (final FileSystemEntity entity
+      in cache.list(followLinks: false)) {
+    try {
+      final FileStat stat = await entity.stat();
+      if (entity is Directory) {
+        if (p.basename(entity.path).startsWith('write_') &&
+            stat.modified.isBefore(staleStagingBefore)) {
+          await entity.delete(recursive: true);
+        }
+        continue;
+      }
+      if (entity is! File) continue;
+      if (entity.path != protectedPath &&
+          stat.accessed.isBefore(expiresBefore)) {
+        await entity.delete();
+        continue;
+      }
+      survivors.add((file: entity, stat: stat));
+    } on FileSystemException {
+      // Cache cleanup is best-effort. A concurrent lookup can rename/delete an
+      // entry between list() and stat()/delete(); the next pass reconciles it.
+    }
+  }
+
+  int totalBytes = survivors.fold<int>(
+    0,
+    (int total, ({File file, FileStat stat}) entry) =>
+        total + entry.stat.size,
+  );
+  survivors.sort((a, b) => a.stat.accessed.compareTo(b.stat.accessed));
+  for (final ({File file, FileStat stat}) entry in survivors) {
+    if (totalBytes <= kRemoteAudioMaterializedCacheMaxBytes) break;
+    if (entry.file.path == protectedPath) continue;
+    try {
+      await entry.file.delete();
+      totalBytes -= entry.stat.size;
+    } on FileSystemException {
+      // Concurrent cache consumers may already have removed this entry.
     }
   }
 }
