@@ -45,4 +45,32 @@ void main() {
       );
     });
   });
+
+  group('video scrape cleanup labels', () {
+    test('direct getters and dynamic flat maps are available in every locale',
+        () {
+      for (final AppLocale locale in AppLocale.values) {
+        final strings = locale.translations;
+        expect(
+          strings.video_source_scrape_clear_all,
+          isNotEmpty,
+          reason: '${locale.name} direct getter',
+        );
+        expect(
+          strings['video_source_scrape_clear_all'],
+          isNotNull,
+          reason: '${locale.name} flat-map lookup',
+        );
+        expect(
+          strings['video_source_scrape_clear_all_in_progress'],
+          isNotNull,
+          reason: '${locale.name} in-progress flat-map lookup',
+        );
+      }
+      expect(
+        AppLocale.zhCn.translations.video_source_scrape_clear_all,
+        '清理全部刮削记录',
+      );
+    });
+  });
 }

@@ -70,9 +70,14 @@ void main() {
 
   group('BUG-880 Shift 静止光标查词（keydown 反查最后指针位置）', () {
     test('页面根持续记录全局指针位置', () {
+      // BUG-1798：这个回调从箭头函数改成了块体（先按 [_isSyntheticControlsHover] 滤掉
+      // [_pokeControlsVisible] 派发的合成 hover，再记账——合成事件的位置恒为视频区几何
+      // 中心，写进来会把「用户光标在哪」记成画面正中，Shift 反查随即查错位置）。故正则
+      // 同时容纳箭头体与块体：本条守卫要守的是「页面根确实记录了指针位置」，回调写成哪
+      // 种形式不是它的约束对象。
       expect(
-        RegExp(r'onPointerHover:\s*\(PointerHoverEvent event\) =>\s*'
-                r'_lastGlobalPointerPos = event\.position')
+        RegExp(r'onPointerHover:\s*\(PointerHoverEvent event\)\s*(?:=>|\{)'
+                r'[\s\S]{0,400}?_lastGlobalPointerPos = event\.position')
             .hasMatch(src),
         isTrue,
         reason: 'Shift 按下时要用最后指针位置反查，必须先在页面根记录它',

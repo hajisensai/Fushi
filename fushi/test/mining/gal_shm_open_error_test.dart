@@ -165,7 +165,8 @@ void main() {
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         targetPid: 4321,
         injectorPath: injector.path,
-        capabilitiesProbe: (String _) async => true,
+        capabilitiesProbe: (String _) async =>
+            GalHookCapabilityProbeResult.supported,
         processStarter: (String executable, List<String> arguments) async {
           scheduleMicrotask(() {
             process.stdoutController.add(injectorStdout.codeUnits);

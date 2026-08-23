@@ -35,9 +35,9 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    // v16：保留 v15 的截图抑制 applied-seq 确认，并在头部**最尾**追加 injected
-    // WASAPI loopback 的 fail-closed 控制/确认四字（native_loopback_*）。纯追加，
-    // 既有字段偏移不动。
+    // v16：在 v15 之上纯尾部追加 injected WASAPI loopback 的 fail-closed 控制/确认。
+    // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
+    // deny」。改它必须同时改契约头顶部的版本沿革说明。
     expect(source, contains('constexpr uint32_t kSharedVersion = 16;'));
   });
 

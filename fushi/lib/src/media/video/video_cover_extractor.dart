@@ -32,6 +32,7 @@ import 'package:fushi/src/media/media_extensions.dart'
 import 'package:fushi/src/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show extractVideoFrameViaFfmpeg;
@@ -185,6 +186,21 @@ Future<String?> downloadVideoCoverToPath({
   required String coverUrl,
   required String outputPath,
   http.Client? httpClient,
+}) {
+  final VideoScrapeOperationLease? lease =
+      VideoScrapeOperationGate.tryEnterOperation();
+  if (lease == null) return Future<String?>.value();
+  return _downloadVideoCoverToPathUnlocked(
+    coverUrl: coverUrl,
+    outputPath: outputPath,
+    httpClient: httpClient,
+  ).whenComplete(lease.release);
+}
+
+Future<String?> _downloadVideoCoverToPathUnlocked({
+  required String coverUrl,
+  required String outputPath,
+  required http.Client? httpClient,
 }) async {
   final Uri? uri = Uri.tryParse(coverUrl);
   if (uri == null || !uri.hasScheme) return null;
@@ -225,6 +241,23 @@ Future<String?> extractVideoCover({
   double atSeconds = 10.0,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给抽帧 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+}) {
+  final VideoScrapeOperationLease? lease =
+      VideoScrapeOperationGate.tryEnterOperation();
+  if (lease == null) return Future<String?>.value();
+  return _extractVideoCoverUnlocked(
+    videoPath: videoPath,
+    bookUid: bookUid,
+    atSeconds: atSeconds,
+    tlsPinSha256: tlsPinSha256,
+  ).whenComplete(lease.release);
+}
+
+Future<String?> _extractVideoCoverUnlocked({
+  required String videoPath,
+  required String bookUid,
+  required double atSeconds,
+  required String? tlsPinSha256,
 }) async {
   // BUG-1564：**本地**播放列表清单（.m3u8/.m3u）是文本列表不是媒体流，两条 ffmpeg
   // 路（内嵌封面 / 抽帧）对它都必然失败（`Invalid data found`）——在抽取器层直接

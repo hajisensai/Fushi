@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.2.1+1223
+version: 2.2.1+1225
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
@@ -176,6 +176,9 @@ flutter:
     # 的 PNG，把同目录的矢量原图 blue_square_1.svg（provenance 真相源）与 README.md
     # （来源/哈希/禁改说明 + 栅格化配方）留在仓库里、不进应用包。
     - assets/attribution/tmdb/logo_tmdb.png
+    # 内置 AnkiConnect 插件包（新手引导「一键安装插件」解压进 Anki 的
+    # addons21；来源/许可见 assets/licenses/anki-connect.txt）。
+    - assets/anki/
     - assets/browser_extension/
     - assets/browser_extension/vendor/
     - assets/gamepad/xbox/

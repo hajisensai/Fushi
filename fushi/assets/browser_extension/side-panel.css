@@ -87,6 +87,46 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   margin-top: 8px;
 }
 
+/* ── Jimaku 查字幕（asb 式云端字幕搜索） ── */
+.jimaku-row {
+  display: grid;
+  grid-template-columns: 1fr 52px 40px;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.jimaku-row input {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.jimaku-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.jimaku-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.jimaku-item-name { font-weight: 600; word-break: break-all; }
+.jimaku-item-meta { color: var(--muted); font-size: 12px; }
+.jimaku-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+
 #offset-value { text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .subtitle-list {
@@ -133,6 +173,11 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
 }
 
 .lookup-pane {
+  /* 拖拽调整大小：浏览器原生右下角把手（Side Panel 是独立文档，无宿主页 CSS 战争）。
+     配套的 userResized 门在 side-panel.js（主题下发不再覆盖用户宽高 + 回写 app 尺寸键）。 */
+  resize: both;
+  min-width: 250px;
+  min-height: 120px;
   position: fixed;
   z-index: 4;
   top: 0;

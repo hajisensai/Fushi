@@ -17,7 +17,7 @@ test('subtitle row click seeks unless this row owns a native text selection', ()
     /row\.addEventListener\('click'[\s\S]*?!selection\.isCollapsed[\s\S]*?row\.contains\(anchorElement\)[\s\S]*?fushiSubtitleSidePanelSeek/,
   );
   assert.match(SIDE_PANEL, /timestamp\.addEventListener\('click'[\s\S]*?event\.stopPropagation\(\)/);
-  assert.doesNotMatch(SIDE_PANEL, /text\.addEventListener\('click'/);
+  // 行内文字 click=查词已恢复（详见下方专项守卫）；seek 只属于时间戳与行空白区域。
 });
 
 test('Shift scans immediately at the last pointer without changing native selection', () => {
@@ -28,6 +28,32 @@ test('Shift scans immediately at the last pointer without changing native select
     /event\.key === 'Shift'[\s\S]*?!event\.repeat[\s\S]*?lookupAtPointer\(lastPointer, true\)/,
   );
   assert.doesNotMatch(SIDE_PANEL, /removeAllRanges|preventDefault\(\)/);
+});
+
+test('subtitle text click looks up the word (restored after native side-panel migration)', () => {
+  // 行内文字单击=查词曾在 4ade5cae5f（迁原生 Side Panel）时随旧 UI 层一起丢失，用户复诉
+  // 「点击查词不见了，只能 Shift 查」。钉三件事：text 有 click 监听、带选区守卫（保住双击
+  // 选择文本）、stopPropagation（不冒泡成 row 的 seek），且走显式手势分支（announceMissing=true）。
+  assert.match(
+    SIDE_PANEL,
+    /text\.addEventListener\('click'[\s\S]*?isCollapsed[\s\S]*?stopPropagation\(\)[\s\S]*?lookupAtPointer\(\{[\s\S]*?\}, true\)/,
+  );
+});
+
+test('lookup pane closes on manual play dismiss / panel blur / list scroll', () => {
+  assert.match(SIDE_PANEL, /msg\.type === 'fushiLookupDismiss'[\s\S]*?closeLookup\(\)/);
+  assert.match(SIDE_PANEL, /window\.addEventListener\('blur', function \(\) \{ closeLookup\(\); \}\)/);
+  assert.match(SIDE_PANEL, /listEl\.addEventListener\('wheel', function \(\) \{ closeLookup\(\); \}, \{ passive: true \}\)/);
+  // 面板真关掉时通知 content 恢复由查词暂停的视频。
+  assert.match(SIDE_PANEL, /wasOpen[\s\S]*?fushiSubtitleSidePanelLookupClosed/);
+});
+
+test('lookup pane is user-resizable and persists via the popupSize channel', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'side-panel.css'), 'utf8');
+  assert.match(css, /\.lookup-pane \{[^}]*resize: both/);
+  assert.match(SIDE_PANEL, /lookupUserResized = true;[\s\S]*?type: 'popupSize'/);
+  // 用户拖过后主题下发不得再覆盖宽高。
+  assert.match(SIDE_PANEL, /if \(!lookupUserResized\) \{[\s\S]*?--fushi-popup-max-width/);
 });
 
 test('side-panel lookup reuses the Shift popup host model and parsed results', () => {

@@ -22,14 +22,9 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
-import 'package:fushi/src/media/video/cover_ui/collection_scrape_dialog.dart';
-import 'package:fushi/src/media/video/cover_ui/cover_match_dialog.dart';
-import 'package:fushi/src/media/video/cover_ui/scrape_info_dialog.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
-import 'package:fushi/src/media/video/scraper/offline_index.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
@@ -41,8 +36,10 @@ import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
@@ -234,6 +231,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   StreamSubscription<void>? _collectionTablesSub;
   Timer? _collectionsReloadDebounce;
 
+  /// 刮削展示表变化监听。清理 work/identity 时视频 uid 与合集成员都不变，前两条
+  /// watcher 均不会让系列页重读；单独订阅 canonical/兼容投影，批量写入后防抖刷新。
+  StreamSubscription<void>? _scrapePresentationSub;
+  Timer? _scrapePresentationReloadDebounce;
+
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
   final CardDropRegistry<VideoBookRow> _cardDropRegistry =
@@ -316,12 +318,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       const <int, CollectionScrapeMetaRow>{};
   Map<int, VideoMetadataWorkRow> _metadataWorkByCollection =
       const <int, VideoMetadataWorkRow>{};
+  Set<int> _aniDbScrapedCollectionIds = const <int>{};
+  Set<String> _aniDbScrapedBookUids = const <String>{};
+  Map<String, int> _aniDbScrapedCollectionByBookUid = const <String, int>{};
+  Map<String, int> _aniDbScrapedSortIndexByBookUid = const <String, int>{};
   Map<String, VideoMetadataWorkRow> _metadataWorkByBook =
       const <String, VideoMetadataWorkRow>{};
   Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
       const <int, List<VideoMetadataImageRow>>{};
   Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
   Set<String> _localExtraBookUids = const <String>{};
+
+  /// [_loadLibraryMaps] 的 latest-request-wins 代次。全量清理会触发一轮新的空快照；
+  /// 清理前已在途的慢查询不得晚到后把旧 AniDB 映射重新写回页面状态。
+  int _libraryMapsRequestGeneration = 0;
 
   /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
   /// 与散装视频（续播行横卡）。与 [_loadLibraryMaps] 同批预取（一次全表查询）。
@@ -365,6 +375,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _collectionTablesSub = appModelNoUpdate.database
         .watchCollectionTablesChanged()
         .listen(_onCollectionTablesChanged);
+    _scrapePresentationSub = appModelNoUpdate.database
+        .watchVideoScrapePresentationChanged()
+        .listen(_onScrapePresentationChanged);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
@@ -410,6 +423,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _videoUidsSub?.cancel();
     _collectionTablesSub?.cancel();
     _collectionsReloadDebounce?.cancel();
+    _scrapePresentationSub?.cancel();
+    _scrapePresentationReloadDebounce?.cancel();
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     _autoScrape?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
@@ -449,6 +464,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
       if (mounted) _loadLibraryMaps();
     });
+  }
+
+  void _onScrapePresentationChanged(void _) {
+    _scrapePresentationReloadDebounce?.cancel();
+    _scrapePresentationReloadDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () {
+        if (mounted) _refresh();
+      },
+    );
   }
 
   /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
@@ -519,6 +544,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
   /// watch-stats 最近观看，外加偏好里的排序方式。
   Future<void> _loadLibraryMaps() async {
+    final int requestGeneration = ++_libraryMapsRequestGeneration;
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     final ShelfSortMode sortMode =
@@ -532,8 +558,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
     // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
     // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
+    final List<MediaCollectionItemRow> collectionItems = await db
+        .getAllCollectionItems();
     final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+    for (final MediaCollectionItemRow m in collectionItems) {
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
     }
@@ -572,12 +600,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     };
     final Map<int, CollectionScrapeMetaRow> collectionMetaById =
         <int, CollectionScrapeMetaRow>{
-      for (final CollectionScrapeMetaRow r
-          in await db.getAllCollectionScrapeMeta())
-        r.collectionId: r,
-    };
-    final List<VideoMetadataWorkRow> metadataWorks =
-        await db.getAllVideoMetadataWorks();
+          for (final CollectionScrapeMetaRow r
+              in await db.getAllCollectionScrapeMeta())
+            r.collectionId: r,
+        };
+    final List<VideoMetadataWorkRow> metadataWorks = await db
+        .getAllVideoMetadataWorks();
+    final Set<int> aniDbScrapedCollectionIds = await db
+        .aniDbScrapedVideoCollectionIds();
+    final Set<String> aniDbScrapedBookUids = await db
+        .aniDbScrapedVideoBookUids();
+    final Map<String, int> aniDbScrapedCollectionByBookUid = <String, int>{};
+    final Map<String, int> aniDbScrapedSortIndexByBookUid = <String, int>{};
+    for (final MediaCollectionItemRow item in collectionItems) {
+      if (item.mediaType != MediaKind.video.dbValue ||
+          !aniDbScrapedCollectionIds.contains(item.collectionId)) {
+        continue;
+      }
+      final int? current = aniDbScrapedCollectionByBookUid[item.entryKey];
+      if (current == null || item.collectionId < current) {
+        aniDbScrapedCollectionByBookUid[item.entryKey] = item.collectionId;
+        aniDbScrapedSortIndexByBookUid[item.entryKey] = item.sortIndex;
+      }
+    }
     final Map<int, VideoMetadataWorkRow> metadataWorkByCollection =
         <int, VideoMetadataWorkRow>{
       for (final VideoMetadataWorkRow work in metadataWorks)
@@ -623,28 +668,31 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(row);
       }
     }
-    if (mounted) {
-      setState(() {
-        _sortMode = sortMode;
-        _memberSortIndex = memberSortIndex;
-        _collectionsById = <int, MediaCollectionRow>{
-          for (final MediaCollectionRow c in collections) c.id: c,
-        };
-        _primaryCollectionByEntry = primaryMap;
-        _watchAtByUid = watchByUid;
-        _legacyWatchAtByTitle = legacyByTitle;
-        _airYearByUid = airYearByUid;
-        _videoScrapeMetaByUid = scrapeMetaByUid;
-        _collectionScrapeMetaById = collectionMetaById;
-        _metadataWorkByCollection = metadataWorkByCollection;
-        _metadataWorkByBook = metadataWorkByBook;
-        _metadataImagesByWork = metadataImagesByWork;
-        _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
-        _localExtraBookUids = localExtraBookUids;
-        _mediaImagesByCollection = imagesByCollection;
-        _mediaImagesByBookUid = imagesByBookUid;
-      });
-    }
+    if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;
+    setState(() {
+      _sortMode = sortMode;
+      _memberSortIndex = memberSortIndex;
+      _collectionsById = <int, MediaCollectionRow>{
+        for (final MediaCollectionRow c in collections) c.id: c,
+      };
+      _primaryCollectionByEntry = primaryMap;
+      _watchAtByUid = watchByUid;
+      _legacyWatchAtByTitle = legacyByTitle;
+      _airYearByUid = airYearByUid;
+      _videoScrapeMetaByUid = scrapeMetaByUid;
+      _collectionScrapeMetaById = collectionMetaById;
+      _metadataWorkByCollection = metadataWorkByCollection;
+      _aniDbScrapedCollectionIds = aniDbScrapedCollectionIds;
+      _aniDbScrapedBookUids = aniDbScrapedBookUids;
+      _aniDbScrapedCollectionByBookUid = aniDbScrapedCollectionByBookUid;
+      _aniDbScrapedSortIndexByBookUid = aniDbScrapedSortIndexByBookUid;
+      _metadataWorkByBook = metadataWorkByBook;
+      _metadataImagesByWork = metadataImagesByWork;
+      _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
+      _localExtraBookUids = localExtraBookUids;
+      _mediaImagesByCollection = imagesByCollection;
+      _mediaImagesByBookUid = imagesByBookUid;
+    });
   }
 
   /// 附加图组里按种类偏好取首张可用图的 provider（文件悬空 = 视作没有）。
@@ -719,6 +767,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [_backfillingCovers] 防并发重入。
   Future<void> _maybeBackfillCovers() async {
     if (_backfillingCovers) return;
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    // 自动抽帧是可重试增强。全局清理已入场时直接跳过，不能在其隔离窗口重建
+    // 同名 `<uid>.jpg`，否则新帧或稍后的 coverPath 会被旧快照误清。
+    if (lease == null) return;
     _backfillingCovers = true;
     try {
       final List<VideoBookRow> rows = await widget.repo.listAll();
@@ -732,11 +785,48 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (!isLocalFrameExtractableVideoSource(path)) {
           continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
         }
+        if (!File(path).existsSync()) {
+          // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
+          // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
+          // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
+          // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
+          continue;
+        }
         if (!CoverBackfillLedger.instance.shouldAttempt(path)) {
           continue; // 此前失败且文件未变：不再白烧 ffmpeg。
         }
-        final String? extracted =
-            await extractVideoCover(videoPath: path, bookUid: row.bookUid);
+        bool admitted = false;
+        final String? extracted = await VideoCoverMutationGate.runExclusive(
+          () async {
+            // listAll 快照与真正拿到封面写锁之间，路径自愈、刮削或手选封面都可能已经
+            // 提交。临界区内重读当前行，已有可用封面或视频路径已变时不再拿旧快照覆盖。
+            final VideoBookRow? current = await widget.repo.getByBookUid(
+              row.bookUid,
+            );
+            if (current == null || current.videoPath != path) return null;
+            final String? currentCover = current.coverPath;
+            if (currentCover != null &&
+                currentCover.isNotEmpty &&
+                File(currentCover).existsSync()) {
+              return null;
+            }
+            final CoverMetaStore? coverMetaStore = await _prepareAutoFrameCover(
+              row.bookUid,
+            );
+            if (coverMetaStore == null) return null;
+            admitted = true;
+            final String? result = await extractVideoCover(
+              videoPath: path,
+              bookUid: row.bookUid,
+            );
+            if (result == null) return null;
+            await widget.repo.updateCover(row.bookUid, result);
+            return await _commitAutoFrameCover(coverMetaStore, row.bookUid)
+                ? result
+                : null;
+          },
+        );
+        if (!admitted) continue;
         if (extracted == null) {
           CoverBackfillLedger.instance.recordFailure(
             path,
@@ -745,12 +835,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           continue;
         }
         CoverBackfillLedger.instance.clear(path);
-        await widget.repo.updateCover(row.bookUid, extracted);
         if (!mounted) return;
         setState(() => _future = widget.repo.listForShelf());
       }
     } finally {
       _backfillingCovers = false;
+      lease.release();
     }
   }
 
@@ -1051,29 +1141,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // 再删选中散卡的媒体本体（现状语义）。
     final Set<String> toDelete = Set<String>.of(_selectedUids);
-    final List<VideoBookRow> deletedBooks = <VideoBookRow>[];
-    for (final String bookUid in toDelete) {
-      final VideoBookRow? book = await widget.repo.getByBookUid(bookUid);
-      if (book == null) continue;
-      await widget.repo.deleteVideoBook(bookUid, scope: scope);
-      deletedBooks.add(book);
-    }
-    final int deleted = deletedBooks.length;
-    if (mounted) {
+    final int deleted = await widget.repo.deleteVideoBooksAndReclaimAssets(
+      toDelete,
+      scope: scope,
+      afterDeleteBeforeReclaim: () async {
+        if (!mounted) return;
+        _exitSelectionMode();
+        _refreshAfterTagChange();
+        await _waitForVideoCardsToUnmount();
+      },
+    );
+    // 纯解散合集时上面的视频删除集合为空，仍需刷新页面。
+    if (toDelete.isEmpty && mounted) {
       _exitSelectionMode();
       _refreshAfterTagChange();
       await _waitForVideoCardsToUnmount();
-    }
-    for (final VideoBookRow book in deletedBooks) {
-      await widget.repo.reclaimDeletedVideoBookAssets(
-        deletedBookUid: book.bookUid,
-        deletedCoverPath: book.coverPath,
-        deletedSubtitlePath: book.subtitleSource,
-        deletedVideoPath: book.videoPath,
-      );
-    }
-    if (deleted > 0) {
-      await widget.repo.compactAfterVideoDeleteBestEffort();
     }
     if (!mounted) return;
     // 复查 #7：零成功（deleted==0 且 dissolved==0）时兜底文案按「选择构成」诚实分派——
@@ -1790,11 +1872,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
     // 单独抽好后再 updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，
     // 移动端无 ffmpeg 时留空占位，与本地导入一致）。
-    final String? coverPath =
-        await extractVideoCover(videoPath: dest.path, bookUid: bookUid);
-    if (coverPath != null) {
-      await widget.repo.updateCover(bookUid, coverPath);
-      if (mounted) _refresh();
+    final VideoScrapeOperationLease? coverLease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (coverLease == null) return;
+    try {
+      final bool wroteCover = await VideoCoverMutationGate.runExclusive(
+        () async {
+          final CoverMetaStore? coverMetaStore = await _prepareAutoFrameCover(
+            bookUid,
+          );
+          if (coverMetaStore == null) return false;
+          final String? coverPath = await extractVideoCover(
+            videoPath: dest.path,
+            bookUid: bookUid,
+          );
+          if (coverPath == null) return false;
+          await widget.repo.updateCover(bookUid, coverPath);
+          return _commitAutoFrameCover(coverMetaStore, bookUid);
+        },
+      );
+      if (wroteCover && mounted) _refresh();
+    } finally {
+      coverLease.release();
     }
   }
 
@@ -1827,25 +1926,69 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // 封面：先试云端封面资产（可选，无封面记录返回 false 不抛）；失败/无则本地抽帧兜底。
     // 与建行解耦（抽帧走 ffmpeg 慢，绝不挡建行落库），抽好后 updateCover 回写并刷新一次。
-    bool gotCover = false;
+    final VideoScrapeOperationLease? coverLease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (coverLease == null) return;
     try {
-      final File coverDest = await _cloudCoverDestination(bookUid);
-      gotCover = await cloud.getRemoteVideoCover(bookUid, coverDest);
-      if (gotCover) {
-        await widget.repo.updateCover(bookUid, coverDest.path);
-        if (mounted) _refresh();
-      }
-    } catch (e) {
-      debugPrint('[home-video] cloud video cover download failed: $e');
-      gotCover = false;
+      final bool wroteCover = await VideoCoverMutationGate.runExclusive(
+        () async {
+          final CoverMetaStore? coverMetaStore = await _prepareAutoFrameCover(
+            bookUid,
+          );
+          if (coverMetaStore == null) return false;
+          try {
+            final File coverDest = await _cloudCoverDestination(bookUid);
+            if (await cloud.getRemoteVideoCover(bookUid, coverDest)) {
+              await widget.repo.updateCover(bookUid, coverDest.path);
+              return _commitAutoFrameCover(coverMetaStore, bookUid);
+            }
+          } catch (e) {
+            debugPrint('[home-video] cloud video cover download failed: $e');
+          }
+          final String? coverPath = await extractVideoCover(
+            videoPath: dest.path,
+            bookUid: bookUid,
+          );
+          if (coverPath == null) return false;
+          await widget.repo.updateCover(bookUid, coverPath);
+          return _commitAutoFrameCover(coverMetaStore, bookUid);
+        },
+      );
+      if (wroteCover && mounted) _refresh();
+    } finally {
+      coverLease.release();
     }
-    if (!gotCover) {
-      final String? coverPath =
-          await extractVideoCover(videoPath: dest.path, bookUid: bookUid);
-      if (coverPath != null) {
-        await widget.repo.updateCover(bookUid, coverPath);
-        if (mounted) _refresh();
+  }
+
+  Future<CoverMetaStore?> _prepareAutoFrameCover(String bookUid) async {
+    try {
+      final Directory covers = await VideoStorage.coversDir();
+      final CoverMetaStore store = CoverMetaStore(covers);
+      return await store.allowsAutoFrameWrite(bookUid) ? store : null;
+    } on Object catch (error) {
+      debugPrint('[home-video] cover provenance admission failed: $error');
+      return null;
+    }
+  }
+
+  Future<bool> _commitAutoFrameCover(
+    CoverMetaStore store,
+    String bookUid,
+  ) async {
+    try {
+      final bool committed = await store.markAutoFrameAfterWrite(bookUid);
+      if (!committed) {
+        debugPrint(
+          '[home-video] cover provenance changed during automatic write: '
+          '$bookUid',
+        );
       }
+      return committed;
+    } on Object catch (error) {
+      // 旧 autoScraped/cleanupPending 标记保持不变，下一次全量清理仍会把这张
+      // 自动生成物当作可重建资产收走；不能把元数据提交失败伪装成受保护成功。
+      debugPrint('[home-video] cover provenance commit failed: $error');
+      return false;
     }
   }
 
@@ -1939,22 +2082,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onPressed: () {
               Navigator.pop(dialogContext);
               _pickCover(book);
-            },
-          ),
-          DialogQuickAction(
-            label: t.video_scrape_online_match,
-            icon: Icons.image_search,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _openCoverMatch(book);
-            },
-          ),
-          DialogQuickAction(
-            label: t.video_scrape_info,
-            icon: Icons.info_outline,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _openScrapeInfo(book);
             },
           ),
           DialogQuickAction(
@@ -2148,88 +2275,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  /// 单项匹配、自动刮削与来源页整库刮削共用同一套依赖组装。
-  Future<VideoScraperBundle> _scraperBundle() async {
-    final String userTmdbKey = ref
-        .read(appProvider)
-        .prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    return createVideoScraperBundle(
-      repository: widget.repo,
-      configuredTmdbKey: userTmdbKey,
-      artifactDatabase: ref.read(appProvider).database,
-    );
-  }
+  /// 旧封面流水线只组装 sidecar / 本地封面能力，不装配在线 metadata client。
+  Future<CoverScraperService> _scraperService() => createVideoScraperService(
+        repository: widget.repo,
+        artifactDatabase: ref.read(appProvider).database,
+      );
 
-  /// 本视频所属合集的全部成员 uid（用于「同时应用到本合集全部 N 集」）；不属任何合集
-  /// 时返回仅含自身的单元素列表。
-  Future<List<String>> _collectionMemberUids(String bookUid) async {
-    final int? collectionId =
-        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
-    if (collectionId == null) return <String>[bookUid];
-    final List<MediaCollectionItemRow> items =
-        await ref.read(appProvider).database.getCollectionItems(collectionId);
-    final List<String> uids = <String>[
-      for (final MediaCollectionItemRow m in items)
-        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
-    ];
-    return uids.isEmpty ? <String>[bookUid] : uids;
-  }
-
-  /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
-  Future<void> _openCoverMatch(VideoBookRow book) async {
-    final ({
-      CoverScraperService service,
-      CoverScraperService Function(OfflineIndex offline) rebuild,
-      Directory scraperDir,
-    }) bundle = await _scraperBundle();
-    if (!mounted) return;
-    final List<String> members = await _collectionMemberUids(book.bookUid);
-    if (!mounted) return;
-    await showCoverMatchDialog(
-      context: context,
-      service: bundle.service,
-      book: book,
-      collectionMemberUids: members,
-      onApplied: _refresh,
-    );
-  }
-
-  /// 长按菜单「条目信息」：读本地已刮到的 Bangumi 条目资料并展示（只读，不发网络）。
-  /// 「重新刮削」= 删掉该书资料行 + 忘掉本进程的尝试记录，再跑一次自动刮削。
-  Future<void> _openScrapeInfo(VideoBookRow book) async {
-    final ScrapeMetadata? meta = await widget.repo.scrapeMetadata(book.bookUid);
-    if (!mounted) return;
-    await showScrapeInfoDialog(
-      context: context,
-      fallbackTitle: book.title,
-      metadata: meta,
-      onRescrape: () async {
-        await widget.repo.deleteScrapeMetadata(book.bookUid);
-        _autoScrape?.forget(book.bookUid);
-        if (book.sourceId == null) {
-          await _maybeAutoScrape();
-        } else if (mounted) {
-          await _openCoverMatch(book);
-        }
-      },
-      // 添加/修改 Bangumi 映射：跳到在线匹配弹窗（可搜索或贴条目 ID/URL 改绑）。
-      onEditMapping: () => _openCoverMatch(book),
-    );
-  }
-
-  /// 自动刮削：进视频页 + 每次库变化（新视频入库）后跑一遍，把还没有条目资料的
-  /// 本地视频静默补齐（封面 + Bangumi 条目资料）。取代了原页头「批量匹配海报」
-  /// 按钮——用户不必再记得点它。
+  /// 本地封面补齐：进视频页 + 每次库变化（新视频入库）后跑一遍，仅识别 sidecar
+  /// 并落本地封面。在线元数据由来源页的 canonical coordinator 负责。
   ///
-  /// 受 [AppModel.videoAutoScrape] 总闸门控（默认开，设置页「媒体库」可关）。
+  /// 受兼容偏好 [AppModel.videoAutoScrape] 门控；该偏好不再在设置页暴露。
   /// 服务自身负责串行/节流/去重与「每本每进程只试一次」，本方法只管喂书单，
   /// 重复调用是廉价的。刮完静默 [_refresh] 让新封面立即出现在网格里。
   Future<void> _maybeAutoScrape() async {
     final VideoScrapeAutoService service =
         _autoScrape ??= VideoScrapeAutoService(
       repository: widget.repo,
-      serviceFactory: () async => (await _scraperBundle()).service,
+      serviceFactory: _scraperService,
       // 每轮进场读一次总闸：设置里关掉后下一轮立刻停，无需重建服务。
       isEnabled: () => ref.read(appProvider).videoAutoScrape,
     );
@@ -2238,7 +2300,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     final int before = service.attemptedCount;
     await service.sweep(books);
-    // 有书真被刮过才重绘：没新刮到东西时避免无谓的整页重查（本方法每次 _refresh
+    // 有书真尝试过才重绘：没有新项时避免无谓的整页重查（本方法每次 _refresh
     // 都会被调用，无条件 setState 会形成刷新环）。
     if (mounted && service.attemptedCount != before) {
       setState(() {
@@ -2289,21 +2351,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       db: ref.read(appProvider).database,
     );
     if (scope == null || !mounted) return;
-    final String? deletedCoverPath = book.coverPath;
-    final String? deletedSubtitlePath = book.subtitleSource;
-    final String deletedVideoPath = book.videoPath;
-    await widget.repo.deleteVideoBook(book.bookUid, scope: scope);
-    if (mounted) {
-      _refreshAfterTagChange();
-      await _waitForVideoCardsToUnmount();
-    }
-    await widget.repo.reclaimDeletedVideoBookAssets(
-      deletedBookUid: book.bookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
+    await widget.repo.deleteVideoBookAndReclaimAssets(
+      book.bookUid,
+      scope: scope,
+      afterDeleteBeforeReclaim: () async {
+        if (!mounted) return;
+        _refreshAfterTagChange();
+        await _waitForVideoCardsToUnmount();
+      },
     );
-    await widget.repo.compactAfterVideoDeleteBestEffort();
   }
 
   @override
@@ -2399,8 +2455,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 整组存活、折叠出合集组）。
                 return keepMemberUnderTagFilter(
                   memberMatched: filter.contains(b.bookUid),
-                  primaryCollectionId: _primaryCollectionByEntry[
-                      MediaKind.video.compositeKey(b.bookUid)],
+                  primaryCollectionId: _effectiveCollectionIdForBook(b),
                   collectionFilter: collectionFilter,
                 );
               }).toList();
@@ -2409,8 +2464,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         final List<VideoBookRow> searched = _searchQuery.trim().isEmpty
             ? books
             : books.where((VideoBookRow b) {
-                final int? collectionId = _primaryCollectionByEntry[
-                    MediaKind.video.compositeKey(b.bookUid)];
+                final int? collectionId = _effectiveCollectionIdForBook(b);
                 return matchesMediaSearch(
                   query: _searchQuery,
                   titles: <String>[
@@ -2433,6 +2487,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           for (final VideoBookRow b in searched)
             if (!(widget.section == VideoLibrarySection.series &&
                     _localExtraBookUids.contains(b.bookUid)) &&
+                (widget.section != VideoLibrarySection.series ||
+                    _isAniDbScrapedSeriesMember(b)) &&
                 _yearFilter.matches(_airYearByUid[b.bookUid]) &&
                 matchesVideoWatchStatus(
                   filter: _watchStatusFilter,
@@ -2534,6 +2590,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
       },
     );
+  }
+
+  /// 标签过滤、标题搜索与最终分组共用同一份归属。普通分区沿用用户合集的
+  /// primary；“系列”只认 AniDB canonical collection，book-owned 结果因此为
+  /// loose（null），不会被同时加入的普通播放列表吞掉。
+  int? _effectiveCollectionIdForBook(VideoBookRow book) {
+    if (widget.section == VideoLibrarySection.series) {
+      return _aniDbScrapedCollectionByBookUid[book.bookUid];
+    }
+    return _primaryCollectionByEntry[MediaKind.video.compositeKey(
+      book.bookUid,
+    )];
+  }
+
+  /// “系列”不是文件夹归组的同义词。collection-owned 与 book-owned work 只要
+  /// 绑定了 primary AniDB identity 都是刮削结果；local provisional、TMDB-only
+  /// 和普通用户合集不进入本页。
+  bool _isAniDbScrapedSeriesMember(VideoBookRow book) {
+    return _aniDbScrapedCollectionByBookUid.containsKey(book.bookUid) ||
+        _aniDbScrapedBookUids.contains(book.bookUid);
   }
 
   /// TODO-2486（hayase 式改版）：顶部区 = 全宽 backdrop hero 轮播（最近在看的
@@ -3766,13 +3842,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<RemoteVideoInfo> remoteVideos,
     ({int columns, double cardWidth}) cardLayout,
   ) {
+    final bool seriesOnly = widget.section == VideoLibrarySection.series;
+    // 远端 placeholder 没有本机 canonical identity 证据，不得仅凭同名合集混进
+    // “系列”。它仍完整保留在“全部视频”与首页远端联合视图。
+    final List<RemoteVideoInfo> groupedRemoteVideos = seriesOnly
+        ? const <RemoteVideoInfo>[]
+        : remoteVideos;
     // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
-    if (all.isEmpty && remoteVideos.isEmpty) {
+    if (all.isEmpty && groupedRemoteVideos.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
       ];
     }
-    if (books.isEmpty && remoteVideos.isEmpty) {
+    if (books.isEmpty && groupedRemoteVideos.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
@@ -3783,11 +3865,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 本地无 id——按 (name, type) 对本地合集表解析（[_resolveLocalCollectionId]），解析不到
     // = 散卡降级（不硬造合集行）。云视频占位 collection 恒 null（散卡）。局部拷贝页级
     // 映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
-    final Map<String, int> primaryByEntry =
-        Map<String, int>.of(_primaryCollectionByEntry);
-    final Map<String, int> memberSortIndex =
-        Map<String, int>.of(_memberSortIndex);
-    for (final RemoteVideoInfo video in remoteVideos) {
+    final Map<String, int> primaryByEntry = Map<String, int>.of(
+      _primaryCollectionByEntry,
+    );
+    final Map<String, int> memberSortIndex = Map<String, int>.of(
+      _memberSortIndex,
+    );
+    if (seriesOnly) {
+      for (final VideoBookRow book in books) {
+        final String key = MediaKind.video.compositeKey(book.bookUid);
+        final int? effectiveCollectionId = _effectiveCollectionIdForBook(book);
+        if (effectiveCollectionId != null) {
+          primaryByEntry[key] = effectiveCollectionId;
+          memberSortIndex[key] =
+              _aniDbScrapedSortIndexByBookUid[book.bookUid] ?? 0;
+        } else {
+          // 独立电影即使同时被用户放进普通播放列表，也应按 book-owned 刮削结果
+          // 作为 loose 卡展示，而不是被未刮削合集吞掉后过滤。
+          primaryByEntry.remove(key);
+          memberSortIndex.remove(key);
+        }
+      }
+    }
+    for (final RemoteVideoInfo video in groupedRemoteVideos) {
       final RemoteCollectionMembership? membership = video.collection;
       if (membership == null) continue;
       final int? cid = _resolveLocalCollectionId(
@@ -3800,7 +3900,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       memberSortIndex[key] = membership.sortIndex;
     }
     final List<CollectionGroup<_VideoSlot>> groups =
-        _groupVideos(books, remoteVideos, primaryByEntry, memberSortIndex);
+        <CollectionGroup<_VideoSlot>>[
+          for (final CollectionGroup<_VideoSlot> group in _groupVideos(
+            books,
+            groupedRemoteVideos,
+            primaryByEntry,
+            memberSortIndex,
+          ))
+            if (!seriesOnly ||
+                (group.collection != null &&
+                    _aniDbScrapedCollectionIds.contains(
+                      group.collection!.id,
+                    )) ||
+                group.collection == null)
+              group,
+        ];
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。
     // 合集卡（及其成员）按此显隐；散卡由 filteredVideoBookUidsProvider 另行过滤。
     final Set<int>? collectionFilter =
@@ -3859,7 +3973,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       for (final _VideoLooseCard card in loose) card.entry,
     ];
-    if (cells.isEmpty) return const <Widget>[];
+    if (cells.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
+      ];
+    }
     return <Widget>[
       _buildVideoWallSliver(
         cells,
@@ -4870,8 +4988,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         icon: Icons.bar_chart_outlined,
         onTap: _openStatistics,
       ),
-      // 自动刮削仍会在进页面 / 新视频入库时后台跑（[_maybeAutoScrape]）；单本纠错
-      // 仍在长按菜单的「在线匹配封面」。
+      // 旧后台流水线仍会在进页面 / 新视频入库时补本地 sidecar；在线元数据刮削
+      // 统一从来源页进入 canonical coordinator。
       // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
       // 为它单占一格。
     ];
@@ -5391,46 +5509,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         }
       },
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
-      // 视频合集特有项（与合集详情页 AppBar 能力对齐）：整合集刮削封面 / 批量
-      // 拉字幕。对话框负责先关自身，这里不 pop。
+      // 视频合集特有项只保留批量字幕；在线元数据刮削统一从来源页进入。
       extraListActions: <DialogListAction>[
-        DialogListAction(
-          // 文案含「刮削」（BUG-1662）：这一项内部就是整套合集刮削（资料 + 封面），
-          // 叫「在线匹配封面」会让想「重新刮削」的用户按字面找不到入口。
-          label: t.video_collection_scrape,
-          icon: Icons.image_search,
-          onPressed: () => _openCollectionCoverMatch(collection),
-        ),
         DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           onPressed: () => _openCollectionSubtitles(collection),
-        ),
+        )
       ],
-    );
-  }
-
-  /// 合集右键「刮削资料与封面」：流程本体在 [showCollectionScrapeDialog]
-  /// （BUG-1662 抽出，与合集详情页管理菜单共用；语义约束——只写合集自身、
-  /// 不动成员（BUG-1211）——见其文档注释）。
-  Future<void> _openCollectionCoverMatch(MediaCollectionRow collection) {
-    return showCollectionScrapeDialog(
-      context: context,
-      db: ref.read(appProvider).database,
-      repository: widget.repo,
-      configuredTmdbKey: ref
-          .read(appProvider)
-          .prefsRepo
-          .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String,
-      collection: collection,
-      onApplied: _refresh,
     );
   }
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
   /// （绑定 AniList 系列 → 逐集拉最佳字幕）。collection 行重取一次拿最新
   /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，给可见提示而不是静默返回
-  /// （理由同 [_openCollectionCoverMatch]）。
+  /// （避免菜单关闭后静默无响应）。
   Future<void> _openCollectionSubtitles(MediaCollectionRow collection) async {
     final FushiDatabase db = ref.read(appProvider).database;
     final List<MediaCollectionItemRow> items =
@@ -5505,10 +5598,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
           remote: remote,
-          // 详情页管理菜单「刮削资料与封面」+ 集卡「条目信息」（BUG-1662）：注入
-          // 库页同一套刮削入口，合集语境下的重刮不再是断头路。
-          onScrapeCollection: _openCollectionCoverMatch,
-          onEpisodeScrapeInfo: _openScrapeInfo,
           onDeleteMembersMedia: (List<VideoBookRow> members) async {
             for (final VideoBookRow member in members) {
               await repo.deleteVideoBookAndReclaimAssets(

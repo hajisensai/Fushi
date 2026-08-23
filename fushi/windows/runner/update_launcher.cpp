@@ -269,6 +269,11 @@ struct ParsedArgs {
   std::wstring marker_path;
   DWORD parent_pid = 0;
   std::wstring installer_path;
+  // 要拉回来的 fushi.exe 绝对路径。BUG-1786：launcher 现在从**安装目录之外**的副本
+  // 运行（否则它自己占着 {app}\fushi_update_launcher.exe，Inno 装到这个文件必然
+  // DeleteFile code 5、静默 Abort、整包回滚），所以「同目录找 fushi.exe」这个旧判据
+  // 在副本处失效，必须由 app 显式下发。空 = 老调用方，回退同目录（向后兼容）。
+  std::wstring app_exe_path;
   std::vector<std::wstring> installer_args;
 };
 
@@ -292,6 +297,11 @@ bool ParseArgs(int argc, wchar_t** argv, ParsedArgs* parsed) {
     }
     if (arg == L"--installer" && i + 1 < argc) {
       parsed->installer_path = argv[i + 1];
+      i += 2;
+      continue;
+    }
+    if (arg == L"--app-exe" && i + 1 < argc) {
+      parsed->app_exe_path = argv[i + 1];
       i += 2;
       continue;
     }
@@ -452,8 +462,11 @@ bool WaitForAppAlive(DWORD timeout_ms) {
   }
 }
 
-// 与 launcher 同目录的 fushi.exe（安装器把两者装在一起）。
-std::wstring AppExecutablePath() {
+// 要拉回来的 fushi.exe。[explicit_path] 由 app 经 --app-exe 下发（BUG-1786 起
+// launcher 从安装目录外的副本运行，副本同目录没有 fushi.exe）；为空时回退到
+// 「与 launcher 同目录」的旧判据，保证老调用方与手工执行仍可用。
+std::wstring AppExecutablePath(const std::wstring& explicit_path) {
+  if (!explicit_path.empty()) return explicit_path;
   wchar_t buffer[MAX_PATH] = {0};
   const DWORD length = ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
   if (length == 0 || length >= MAX_PATH) return std::wstring();
@@ -496,7 +509,7 @@ void EnsureAppBack(const ParsedArgs& args, DWORD installer_exit_code,
                         {"appAliveCheckedAt", JsonString(NowIsoUtc())}});
     return;
   }
-  const std::wstring app = AppExecutablePath();
+  const std::wstring app = AppExecutablePath(args.app_exe_path);
   const bool started = !app.empty() && StartApp(app);
   AppendMarkerFields(
       args.marker_path,

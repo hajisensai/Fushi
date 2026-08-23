@@ -225,11 +225,20 @@ constexpr uint32_t kXAudioDiagUnsupportedFormat = 0x00008000u;
 constexpr uint32_t kXAudioDiagRegistryExhausted = 0x00010000u;
 constexpr uint32_t kXAudioDiagCommitFailed = 0x00020000u;
 constexpr uint32_t kXAudioDiagCommitQueueExhausted = 0x00040000u;
-// At least one byte-exact compressed game voice resource was published by the
-// XAudio2 path.  Unlike kXAudioDiagPcmPublished, this is a resource-audio
-// readiness proof and lets the host prefer the original file even when no PCM
-// clip was active at the matching text timestamp (SGRE xWMA).
+// 至少发布过一条**取自引擎归档**的压缩语音资源（当前只有 SGRE 的 voice_body.bin）。
+// 与 kXAudioDiagPcmPublished 不同，这是 resource-audio 就绪证据：即使配对时刻没有
+// 活跃 PCM clip，host 也可以优先用它。
+//
+// 「byte-exact」到什么层次，必须说准（SOP 第 7 节的 hash_verified 是按这个判的）：
+//   * fmt / dpds / 压缩负载三块**逐字节**取自归档，与源 entry 一致；
+//   * 但发布出去的 `.xwma` **文件**不逐字节等于归档里的任何一段——归档存的是无头
+//     chunk，RIFF 外壳是本进程合成的。所以能宣称的是「负载哈希一致」，不是「文件
+//     哈希一致」；要上 hash_verified 必须比对负载而不是整文件。
 constexpr uint32_t kXAudioDiagGameResourcePublished = 0x00080000u;
+// 由运行时 fmt/dpds 重建并发布的**通用** xWMA 资源（没有引擎归档可比对的引擎）。
+// 与上面那位分开的理由：那位能宣称负载逐字节等于源 entry，这一位不能——fmt 是本
+// 进程按 XAudio2 报的源格式合成的。混成一位，台账上就分不出这两级证据。
+constexpr uint32_t kXAudioDiagRuntimeXwmaPublished = 0x00100000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM

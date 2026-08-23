@@ -125,8 +125,13 @@ void main() {
     expect(provider.requests, hasLength(1));
     final VideoResourceSearchRequest request = provider.requests.single;
     expect(request.query, 'hibike!');
-    expect(request.media?.providerId, 'anilist');
-    expect(request.media?.anilistId, 21085);
+    // 手动检索的默认外部 ID 源已从 anilist 改为 anidb（PR #954：AniDB 是动画
+    // 作品/文件/分集的身份核心，TMDB 只做补充）。本用例守的是「填齐身份后按钮
+    // 真触发搜索且把身份带进请求」，与具体是哪一家无关，跟着默认值走。
+    expect(request.media?.providerId, 'anidb');
+    expect(request.media?.anidbId, 21085);
+    expect(request.media?.anilistId, isNull,
+        reason: 'anidb 分支不该同时填 anilistId');
     expect(request.media?.year, 2016);
   });
 }

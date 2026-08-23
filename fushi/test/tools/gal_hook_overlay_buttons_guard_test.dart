@@ -49,11 +49,12 @@ void main() {
     final String toolbarSource = toolbar.readAsStringSync();
     final int glyphStart = toolbarSource.indexOf('const wchar_t* SlotGlyph');
     expect(glyphStart, greaterThan(0), reason: '找不到 SlotGlyph 定义');
-    // 切到 SlotGlyph 自己的收尾大括号（行首 `}`），而不是「下一个函数的名字」：
-    // 后者把守卫绑在了两个函数的书写顺序上，一旦重排就 indexOf → -1 直接打红，
-    // 而那跟被守的不变量（字形表覆盖 0..N-1）毫无关系。
+    // 切片终点取**本函数**在第 0 列的收尾大括号，不要拿相邻函数当分隔符：
+    // 原实现以 'bool SlotActive' 为终点，SlotActive 被挪到 SlotGlyph 之前时
+    // indexOf 返回 -1，守卫直接崩在切片上而不是报出真正的问题。
     final int glyphEnd = toolbarSource.indexOf('\n}', glyphStart);
-    expect(glyphEnd, greaterThan(glyphStart), reason: 'SlotGlyph 函数体没有闭合');
+    expect(glyphEnd, greaterThan(glyphStart),
+        reason: 'SlotGlyph 必须有第 0 列的收尾大括号');
     final String glyphBody = toolbarSource.substring(glyphStart, glyphEnd);
     final List<int> glyphCases = RegExp(r'case (\d+):')
         .allMatches(glyphBody)

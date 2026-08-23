@@ -5,6 +5,11 @@
 // engine.launch_or_inject_failed。改为按 Gameexe.dat + Scene.pck 文件夹签名识别后即使 exe
 // 改名也能判为 Siglus 从而延迟附着。本测试用假文件表固定“两签名齐全才判定、缺一不误报”。
 
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉，
+// 于是这个测试无论断言对不对都恒绿——与 BUG-1157「零测试执行伪装成通过」同一族。
+// 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include <cstdio>
 #include <set>
 #include <string>

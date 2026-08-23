@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -21,6 +22,14 @@ void main() {
   test('host snapshot includes only the explicit cross-device allowlist',
       () async {
     await db.setPref('jimaku_api_key', PrefCodec.encode('jimaku-secret'));
+    await db.setPref(
+      kVideoMetadataAniDbClientNamePref,
+      PrefCodec.encode('fushi-client'),
+    );
+    await db.setPref(
+      kVideoMetadataAniDbClientVersionPref,
+      PrefCodec.encode('7'),
+    );
     await db.setPref('video_scraper_tmdb_api_key', PrefCodec.encode('tmdb'));
     await db.setPref(
       'video_metadata_fanart_api_key',
@@ -66,25 +75,29 @@ void main() {
         InterconnectServiceConfigSnapshot.sharedPreferenceKeys);
     expect(snapshot.preferences['jimaku_api_key'],
         PrefCodec.encode('jimaku-secret'));
-    // 外部服务身份跟着用户的设备走（同一个账号在哪台设备上都该刮到同一份资料 /
-    // 搜到同一批字幕）；本机入站 API、配对凭据、设备身份与本地路径仍然不出境。
+    // 现行外部服务身份跟着用户的设备走；退役的视频刮削凭据与本机入站
+    // API、配对凭据、设备身份和本地路径都不出境。
     expect(snapshot.preferences['video_scraper_tmdb_api_key'],
         PrefCodec.encode('tmdb'));
     expect(
-      snapshot.preferences['video_metadata_fanart_api_key'],
-      PrefCodec.encode('fanart-secret'),
+      snapshot.preferences[kVideoMetadataAniDbClientNamePref],
+      PrefCodec.encode('fushi-client'),
     );
     expect(
-      snapshot.preferences['video_metadata_bangumi_token'],
-      PrefCodec.encode('bangumi-secret'),
+      snapshot.preferences[kVideoMetadataAniDbClientVersionPref],
+      PrefCodec.encode('7'),
     );
     expect(
-      snapshot.preferences['video_metadata_douban_authorized_endpoint'],
-      PrefCodec.encode('https://private.example/douban'),
+        snapshot.preferences, isNot(contains('video_metadata_fanart_api_key')));
+    expect(
+        snapshot.preferences, isNot(contains('video_metadata_bangumi_token')));
+    expect(
+      snapshot.preferences,
+      isNot(contains('video_metadata_douban_authorized_endpoint')),
     );
     expect(
-      snapshot.preferences['video_metadata_douban_authorized_token'],
-      PrefCodec.encode('douban-secret'),
+      snapshot.preferences,
+      isNot(contains('video_metadata_douban_authorized_token')),
     );
     expect(
       snapshot.preferences[kBangumiAccessTokenPref],
@@ -109,6 +122,14 @@ void main() {
 
     expect(snapshot.preferences['jimaku_api_key'], PrefCodec.encode(''));
     expect(
+      snapshot.preferences[kVideoMetadataAniDbClientNamePref],
+      PrefCodec.encode(''),
+    );
+    expect(
+      snapshot.preferences[kVideoMetadataAniDbClientVersionPref],
+      PrefCodec.encode(''),
+    );
+    expect(
       snapshot.preferences['manga_online_catalog_base_url'],
       PrefCodec.encode('https://mokuro.moe'),
     );
@@ -127,13 +148,15 @@ void main() {
       'schemaVersion': 1,
       'preferences': <String, Object?>{
         'jimaku_api_key': PrefCodec.encode('new'),
+        kVideoMetadataAniDbClientNamePref: PrefCodec.encode('synced-client'),
+        kVideoMetadataAniDbClientVersionPref: PrefCodec.encode('9'),
         'manga_online_catalog_enabled': PrefCodec.encode(false),
         'sync_device_id': PrefCodec.encode('attacker-device'),
         'future_secret': PrefCodec.encode('attacker-secret'),
       },
     });
 
-    expect(await snapshot.applyTo(db), 2);
+    expect(await snapshot.applyTo(db), 4);
     expect(
       await db.getPref('jimaku_api_key'),
       PrefCodec.encode('new'),
@@ -141,6 +164,14 @@ void main() {
     expect(
       await db.getPref('manga_online_catalog_enabled'),
       PrefCodec.encode(false),
+    );
+    expect(
+      await db.getPref(kVideoMetadataAniDbClientNamePref),
+      PrefCodec.encode('synced-client'),
+    );
+    expect(
+      await db.getPref(kVideoMetadataAniDbClientVersionPref),
+      PrefCodec.encode('9'),
     );
     expect(
       await db.getPref('sync_device_id'),

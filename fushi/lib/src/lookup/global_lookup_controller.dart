@@ -194,6 +194,12 @@ class GlobalLookupController {
   // 字幕等既有带句路径不变），仅热键路径显式传 false。Reset per lookup。
   bool _showSentenceBanner = true;
 
+  // BUG-1793 — whether this lookup surface may expose process-wide clipboard
+  // history. Normal global/clipboard lookups keep it; a word opened from the
+  // galgame text overlay explicitly disables it. Kept as per-card state so
+  // nested dictionary links inherit the originating surface semantics.
+  bool _allowClipboardHistory = true;
+
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
       <String, DictionarySearchResult>{};
@@ -544,6 +550,7 @@ class GlobalLookupController {
     String sentence = '',
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    bool allowClipboardHistory = true,
     bool passiveStream = false,
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
@@ -559,6 +566,7 @@ class GlobalLookupController {
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
         showSentenceBanner: showSentenceBanner,
+        allowClipboardHistory: allowClipboardHistory,
         passiveStream: passiveStream,
         autoRead: autoRead,
         miningHandler: miningHandler,
@@ -571,6 +579,7 @@ class GlobalLookupController {
     required String sentence,
     required Rect? anchorScreenRect,
     required bool showSentenceBanner,
+    required bool allowClipboardHistory,
     required bool passiveStream,
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
@@ -609,6 +618,7 @@ class GlobalLookupController {
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
         showSentenceBanner: showSentenceBanner,
+        allowClipboardHistory: allowClipboardHistory,
         autoRead: autoRead,
         miningHandler: miningHandler);
     return true;
@@ -698,6 +708,7 @@ class GlobalLookupController {
     required String sentence,
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    bool allowClipboardHistory = true,
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
   }) async {
@@ -721,6 +732,7 @@ class GlobalLookupController {
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
       _showSentenceBanner = showSentenceBanner;
+      _allowClipboardHistory = allowClipboardHistory;
 
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: text,
@@ -1163,6 +1175,7 @@ class GlobalLookupController {
     }
     // 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入）并注入覆盖层。
     if (handler == 'clipboardHistory') {
+      if (!_allowClipboardHistory) return;
       unawaited(_showClipboardHistory());
       return;
     }
@@ -1579,6 +1592,7 @@ class GlobalLookupController {
       // child then never moves the origin -> zero parent displacement).
       originFloorLeft: _originFloorLeft,
       originFloorTop: _originFloorTop,
+      clipboardHistoryAvailable: _allowClipboardHistory,
     );
     // Cold-create and process-recovery paths cache exactly one complete script
     // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so

@@ -235,6 +235,14 @@ body {
     scroll-margin-bottom: 14px;
 }
 
+/* design-2026-08 讨论区反馈: 顶栏贴近词头——首词条不再叠加自己的 8px 顶距（顶部呼吸空间由
+   Flutter 顶栏 + 振假名 0.55em 预留区承担），词条之间的 8px 节奏不变。
+   :first-child 的语义恰好精确：句子横幅(.global-lookup-sentence)或汉字卡
+   (kanjiSection)在场时首词条不是 first-child，自动保留原间距不贴死。 */
+.entry:first-child {
+    padding-top: 0;
+}
+
 .entry-header {
     display: flex;
     align-items: center;
@@ -302,28 +310,21 @@ body {
     opacity: 0.6;
 }
 
-.kanji-breakdown {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 4px 0 2px;
-}
-
-.kanji-tag {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    padding: 0 6px;
-    border-radius: 4px;
-    background: rgba(128, 128, 128, 0.15);
-    font-size: 16px;
+/* design-2026-08 讨论区反馈: inline kanji tap targets inside the headword (replace the old
+   kanji-breakdown chip row that duplicated every kanji on its own line). A
+   faint dotted underline is the affordance; text-underline-offset keeps it
+   clear of the glyph without colliding with the next line, and the colour is
+   muted so the headword still reads as one word. The characters stay live,
+   selectable text (BUG-110/123/125/129). */
+.kanji-inline {
     cursor: pointer;
-    -webkit-user-select: none;
+    text-decoration: underline dotted;
+    text-decoration-color: rgba(128, 128, 128, 0.55);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.12em;
 }
 
-.kanji-tag:active {
+.kanji-inline:active {
     opacity: 0.6;
 }
 
@@ -1067,8 +1068,8 @@ html[data-theme="dark"] .glossary-group {
     /* 预留带 = 注音字号 x 1.1（BUG-1655: 0.55em -> 0.66em，跟随 .ruby-rt 的 0.6em）。 */
     padding-top: 0.66em;
     vertical-align: baseline;
-    /* BUG-850: when .ruby-reserve widens the unit to the reading width, centre
-       the base kanji under its reading (the absolute rt is already centred). */
+    /* Keep the base and its absolutely positioned reading centred on the same
+       compact base-width anchor. */
     text-align: center;
 }
 
@@ -1144,21 +1145,18 @@ html[data-theme="dark"] .glossary-group {
     font-size: 1em;
 }
 
-/* BUG-850 (horizontal reserve — completes the compaction's missing axis): the
-   <rt> above is position:absolute, so it reserves NO horizontal room and a
-   reading wider than its kanji (明鏡-style 逐字 ruby, e.g. 教<rt>きょう</rt>法<rt>ほう</rt>)
-   used to overhang and collide with the NEXT base's reading (the "few px spill"
-   BUG-345 accepted becomes a full overlap for >=3-kana readings). postProcessRuby
-   injects an in-flow, zero-height twin of the reading (.ruby-reserve) into each
-   .ruby-unit, so the unit's shrink-to-fit width grows to max(kanji, reading);
-   the base then centres under its reading and adjacent readings never overlap.
-   The twin is height:0 so the base keeps its own baseline (the BUG-108/363
-   vertical reserve is unchanged) and every length is font-size-relative, so it
-   stays zoom-immune. Units whose reading fits its kanji keep the old compaction.
-   The twin is aria-hidden + user-select:none so it never affects ruby lookup
-   selection (BUG-110/123/125/129). */
+/* BUG-1778: the hidden reading twin must NOT participate in inline layout.
+   BUG-850 made it in-flow to widen every base unit to max(base, reading), which
+   prevents adjacent readings from touching but visibly pulls Japanese正文 apart
+   whenever a short base has a long reading (体<rt>からだ</rt> is the clearest
+   case). Native/reference ruby permits annotation ink to overhang the compact
+   base run instead. Keep the twin only as inert semantic-compatible markup and
+   absolutely position it out of flow: base glyph spacing stays natural, while
+   .ruby-rt remains centred on the base and the vertical padding reserve is
+   unchanged. */
 :where(.glossary-group, .glossary-content, .expression) .ruby-reserve {
     display: block;
+    position: absolute;
     width: -webkit-max-content;
     width: max-content;
     height: 0;
@@ -1941,11 +1939,15 @@ html.eink[data-theme="dark"] {
    白底黑字），比灰阶底更清晰。 */
 html.eink .expr-tag,
 html.eink .deinflection-tag,
-html.eink .kanji-tag,
 html.eink .glossary-tag,
 html.eink .pitch-transcription-tag {
     background-color: transparent;
     border: 1px solid currentColor;
+}
+
+/* design-2026-08 讨论区反馈: 半透明灰点线在墨水屏上是抖动灰，压成 currentColor 实点。 */
+html.eink .kanji-inline {
+    text-decoration-color: currentColor;
 }
 
 html.eink .frequency-dict-label {

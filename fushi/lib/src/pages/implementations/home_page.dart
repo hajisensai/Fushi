@@ -16,6 +16,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
@@ -45,6 +46,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -653,6 +655,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// （Never break userspace）——对话框关闭时各自的返回点会归还焦点。
   void _reclaimHomeFocusIfOwned() {
     if (!mounted) return;
+    // BUG-1619：进程级 resumed ≠ 主窗回到前台（剪贴板面板 / 查词覆盖窗夺焦
+    // 也会触发它）。主窗不在前台就抢焦点 = 引擎 SetFocus(FlutterView) 连带
+    // 把主界面激活到用户的游戏 / 浏览器之上。判据与共享入口
+    // [PageFocusOwnership.reclaim] 同一条，见那里的完整说明。
+    if (!DesktopForegroundGuard.isMainWindowForeground()) return;
     final ModalRoute<Object?>? owner = ModalRoute.of(context);
     if (owner != null && !owner.isCurrent) return;
     final FushiFocusController? controller =
@@ -1204,7 +1211,8 @@ class _HomePageState extends BasePageState<HomePage>
     );
     final String fingerprint = <Object>[
       config.tmdbApiKey,
-      config.bangumiToken,
+      config.anidbClientName,
+      config.anidbClientVersion ?? 0,
       config.locale,
     ].join('\u0000');
     final VideoDiscoveryController? existing = _videoDiscoveryController;
@@ -1877,12 +1885,9 @@ class _HomePageState extends BasePageState<HomePage>
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
     );
     final String fingerprint = <Object>[
-      config.primaryProvider.name,
       config.tmdbApiKey,
-      config.fanartApiKey,
-      config.bangumiToken,
-      config.doubanEndpoint,
-      config.doubanToken,
+      config.anidbClientName,
+      config.anidbClientVersion ?? 0,
       config.locale,
     ].join('\u0000');
     if (existing != null &&
@@ -1995,6 +2000,13 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return;
     FushiToast.show(msg: t.video_source_scrape_background_started);
     unawaited(_openVideoSourceScrapeTasks());
+  }
+
+  Future<void> _clearAllVideoScrapeRecords() async {
+    await showClearAllVideoScrapeRecordsAction(
+      context: context,
+      database: appModel.database,
+    );
   }
 
   Future<({bool proceed, bool grant})> _confirmProtectedSidecarOverwrite(
@@ -2160,6 +2172,7 @@ class _HomePageState extends BasePageState<HomePage>
           libraryRefreshSignal: _videoLibraryRefreshSignal,
           scrapeTaskController: _videoSourceScrapeController,
           onScrapeAll: _scrapeAllVideosFromSources,
+          onClearAllScrapeRecords: _clearAllVideoScrapeRecords,
           onScrapeSource: _scrapeVideoSource,
           onVideoScanCompleted: _onVideoSourceScanCompleted,
           onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),

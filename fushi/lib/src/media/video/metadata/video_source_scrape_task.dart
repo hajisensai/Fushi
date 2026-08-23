@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 enum VideoSourceScrapePhase {
@@ -420,6 +421,13 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
         StateError('已有视频来源扫描或刮削任务正在运行'),
       );
     }
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<SourceScrapeReport>.error(
+        StateError('视频刮削资料正在清理'),
+      );
+    }
     final VideoSourceScrapeCancellationToken token =
         VideoSourceScrapeCancellationToken();
     _token = token;
@@ -436,6 +444,7 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     _active = future;
     notifyListeners();
     void clear() {
+      lease.release();
       if (identical(_active, future)) {
         _active = null;
         _token = null;
@@ -457,12 +466,16 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     if (_active != null || _scanningSourceId != null) {
       throw StateError('已有视频来源扫描或刮削任务正在运行');
     }
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
     _scanningSourceId = sourceId;
     notifyListeners();
     try {
       return await operation();
     } finally {
       if (_scanningSourceId == sourceId) _scanningSourceId = null;
+      lease.release();
       if (!_disposed) notifyListeners();
     }
   }
@@ -486,6 +499,13 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     }
     final List<SourceLibraryRow> sources =
         sourceIterable.toList(growable: false);
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return Future<SourceScrapeReport>.error(
+        StateError('视频刮削资料正在清理'),
+      );
+    }
     final VideoSourceScrapeCancellationToken token =
         VideoSourceScrapeCancellationToken(
       allowProtectedOverwrite: allowProtectedOverwrite,
@@ -504,6 +524,7 @@ class VideoSourceScrapeTaskController extends ChangeNotifier {
     // 否则监听者会在 planning 阶段读到 isBusy=false，直到下一条网络进度才出现。
     notifyListeners();
     void clear() {
+      lease.release();
       if (identical(_active, future)) {
         _active = null;
         _token = null;

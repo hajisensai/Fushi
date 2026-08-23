@@ -1,4 +1,5 @@
 import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -17,7 +18,7 @@ class InterconnectServiceConfigSnapshot {
   ///
   /// 判据是**这条配置描述的是「外部服务」还是「本机」**，不是「它像不像凭据」：
   /// 用户在一台设备上配好的第三方服务账号（Bangumi 追番、Jimaku、OpenSubtitles、
-  /// TMDB/Fanart 刮削、Torznab 索引器、qBittorrent 连接），在他自己的另一台已配对
+  /// AniDB/TMDB 刮削、Torznab 索引器、qBittorrent 连接），在他自己的另一台已配对
   /// 设备上就应该照样能用——否则「互联」只搬内容不搬能力，用户得在每台设备上重填
   /// 一遍同一个 token。本通道是**已配对 + 已认证**的点对点链路，对端是用户自己的
   /// 设备，与备份 zip 落第三方云盘、Profile 分享 JSON 给别人是不同的出境等级
@@ -41,11 +42,9 @@ class InterconnectServiceConfigSnapshot {
     kBangumiAccountNamePref,
     // 视频刮削 / 字幕 / 资源索引器的外部服务身份：同一套账号在哪台设备上都该
     // 刮到同一份资料、搜到同一批字幕。
-    'video_metadata_bangumi_token',
+    kVideoMetadataAniDbClientNamePref,
+    kVideoMetadataAniDbClientVersionPref,
     'video_scraper_tmdb_api_key',
-    'video_metadata_fanart_api_key',
-    'video_metadata_douban_authorized_endpoint',
-    'video_metadata_douban_authorized_token',
     'video_subtitle_opensubtitles_config',
     'video_resource_torznab_config',
   };
@@ -58,11 +57,9 @@ class InterconnectServiceConfigSnapshot {
     'manga_online_catalog_enabled': PrefCodec.encode(true),
     kBangumiAccessTokenPref: PrefCodec.encode(''),
     kBangumiAccountNamePref: PrefCodec.encode(''),
-    'video_metadata_bangumi_token': PrefCodec.encode(''),
+    kVideoMetadataAniDbClientNamePref: PrefCodec.encode(''),
+    kVideoMetadataAniDbClientVersionPref: PrefCodec.encode(''),
     'video_scraper_tmdb_api_key': PrefCodec.encode(''),
-    'video_metadata_fanart_api_key': PrefCodec.encode(''),
-    'video_metadata_douban_authorized_endpoint': PrefCodec.encode(''),
-    'video_metadata_douban_authorized_token': PrefCodec.encode(''),
     'video_subtitle_opensubtitles_config': PrefCodec.encode(''),
     'video_resource_torznab_config': PrefCodec.encode(''),
   };

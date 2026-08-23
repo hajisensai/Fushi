@@ -200,6 +200,19 @@ abstract class BaseAnkiRepository {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
+  /// BUG-1799：复核 [noteIds] 里哪些 note **已经不在 Anki 中了**（用户在 Anki 里删了卡）。
+  ///
+  /// 返回值口径是本方法的全部要害：**只返回「后端明确应答、且应答里没有这张 note」的 id**。
+  /// 查询失败、后端不可达、后端不支持一律返回**空集**，而不是「全都当成已删除」——
+  /// 调用方拿它去清「已制卡」标记，一旦把「问不到」误判成「已删除」，Anki 没开着就会
+  /// 把满屏徽章全部清空，那比不复核更糟。这也是本方法返回**已删除集合**而不是
+  /// `bool` / `Map<int,bool>` 的原因：`bool` 表达不了「不知道」这个第三态，
+  /// 空集天然等于「没有任何一张被确认删除」。
+  ///
+  /// **默认实现 = 优雅降级**：基类恒返回空集（拿不到 note 存在性的后端 —— AnkiDroid
+  /// 只回 bool 查重、AnkiMobile 只有 URL scheme —— 保持既有 latch 行为不变）。
+  Future<Set<int>> findDeletedNotes(Set<int> noteIds) async => const <int>{};
+
   Future<bool> isDuplicate(String expression, String reading);
 
   /// Create [template] as a note type in the backend. Idempotent: returns

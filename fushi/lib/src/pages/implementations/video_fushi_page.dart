@@ -28,7 +28,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -1870,6 +1870,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
+    // 打开 / 关闭时光标策略不重跑，鼠标悬在弹窗上仍被上一轮的 `cursor: none` 吃掉。
+    _lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
@@ -3453,9 +3456,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _loadSingle(updated);
   }
 
-  /// 缺失态删除：二次确认后复用 home_video_page._confirmDelete 的删除序列
-  /// （deleteVideoBook + reclaimDeletedVideoBookAssets + compactAfterVideoDeleteBestEffort），
-  /// 删完退回视频库。与库内删除粒度 / 资产回收完全一致，不重写删除逻辑。
+  /// 缺失态删除：二次确认后复用 repository 的完整删除 operation，DB 行、app-owned
+  /// 资产回收与压缩处在同一维护门边界内；删完退回视频库。
   Future<void> _confirmMissingResourceDelete(VideoBookRow row) async {
     final NavigatorState nav = Navigator.of(context);
     final bool? confirmed = await showAppDialog<bool>(
@@ -3479,17 +3481,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
     );
     if (confirmed != true || !mounted) return;
-    final String? deletedCoverPath = row.coverPath;
-    final String? deletedSubtitlePath = row.subtitleSource;
-    final String deletedVideoPath = row.videoPath;
-    await widget.repo.deleteVideoBook(row.bookUid);
-    await widget.repo.reclaimDeletedVideoBookAssets(
-      deletedBookUid: row.bookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
-    );
-    await widget.repo.compactAfterVideoDeleteBestEffort();
+    await widget.repo.deleteVideoBookAndReclaimAssets(row.bookUid);
     if (mounted) nav.pop();
   }
 
@@ -3692,6 +3684,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-1798：与上面六个门控同批摘监听（顺序同理——回调读多个 notifier，先摘再 dispose）。
+    _lookupOverlayActive.removeListener(_applyControlsVisibilityFromMediaKit);
+    _lookupOverlayActive.dispose();
     _subtitleListVisible.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
@@ -3809,12 +3804,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
   /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
   /// 画面光标（BUG-258）。
+  ///
+  /// BUG-1798：**查词浮层栈**（根 Overlay 的 [_popupOverlayEntry]）此前漏在集外。它是本页
+  /// 最需要光标的覆盖层——用户要在弹窗里点词、点发音、拖 resize 把手、滚正文——但查词期间
+  /// 控制条照常 2s 自动淡出，`visible=false && !_hasVideoOverlay` 于是把 [_cursorHidden]
+  /// 置真，[_buildCursorOverlay] 铺一层 `cursor: none` 盖满视频区。查词浮层子树除右下角
+  /// resize 把手外不声明任何 cursor（`dictionary_popup_layer.dart` 唯一一处 MouseRegion），
+  /// cursor 解析下穿到该层 → **鼠标悬在弹窗上时 OS 光标直接消失**。media_kit fork 侧的
+  /// `hideMouseOnControlsRemoval`（`controls_theme.part.dart`）同样只排除了字幕列表 / 选集
+  /// 列表，对查词弹窗也是漏项，两层 `none` 叠加。搜索中（[DictionaryPopupController.isSearchingUi]）
+  /// 与已出结果同等对待：dismiss barrier 在搜索期就已挂上（见 [shouldShowLookupDismissBarrier]），
+  /// 那一刻起指针语义就归浮层，光标不能消失。
   bool get _hasVideoOverlay =>
       _videoSidePanel.value != null ||
       _videoControlPopover.value != null ||
       _subtitleListVisible.value ||
       _episodeListVisible.value ||
-      _videoControlEditMode.value;
+      _videoControlEditMode.value ||
+      _lookupOverlayActive.value;
+
+  /// 「查词浮层此刻占着指针」的门控真值（BUG-1798）。
+  ///
+  /// 与 [_hasVideoOverlay] 其余五项一样是 [ValueNotifier]——[_applyControlsVisibilityFromMediaKit]
+  /// 的输入必须全是可订阅的 notifier，否则值变了没有任何东西触发重跑派生（光标策略会停在
+  /// 上一次的结论上）。真值由 [_syncPopupOverlay] 单向推入（那里是浮层栈变化的唯一收口），
+  /// getter 一律读这里，不再各处直接读 [_popup]，避免两个真相源漂移。
+  ///
+  /// 判据与 [shouldShowLookupDismissBarrier] 同源：**有可见浮层或正在搜索**即为真。barrier
+  /// 在搜索期就已挂上并接管全屏命中，那一刻起光标就该归浮层管。
+  final ValueNotifier<bool> _lookupOverlayActive = ValueNotifier<bool>(false);
 
   /// 手柄重设计 P3：可用 D-pad 逐行浏览的三类面板任一打开（字幕列表 / 剧集轨 /
   /// 侧栏）。与 [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是
@@ -3993,28 +4011,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// slot remains.
   int get _topVisiblePopupIndex => _popup.lastVisibleIndex;
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook 经 base_source_page、home_dictionary、texthooker 共用同一
-  /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
-  /// [ReaderFushiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
-  /// 与旧行为一致）。过阈关一层 = [_popNestedPopupAt]（_topVisiblePopupIndex），与
-  /// 光标 B/Esc / 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onDismissBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onDismissBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onDismissBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      _popNestedPopupAt(_topVisiblePopupIndex);
-    }
+  /// TODO-1052：查词浮层 barrier 上「水平拖过阈关一层」。判轴/累积/阈值全部收在
+  /// [LookupDismissBarrier] 内（BUG-1757：横拖不再进手势竞技场，判轴改为可单测的
+  /// 显式规则）。过阈关一层 =
+  /// [_popNestedPopupAt]（[_topVisiblePopupIndex]），与光标 B/Esc / 返回键逐层退回
+  /// 同语义，不清整栈（清整栈仍是点真空白的 tap）。
+  void _dismissTopNestedPopup() {
+    _popNestedPopupAt(_topVisiblePopupIndex);
   }
 
   /// Shift-悬停在 barrier 上「连续切换查词」的节流锚 + 去重键（TODO-756a，与阅读器
@@ -4038,6 +4041,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
   /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
   void _onDismissBarrierHover(PointerHoverEvent event) {
+    // BUG-1798：先滤掉[_pokeControlsVisible]派发的**合成** hover。它不是用户的鼠标：位置恒为
+    // [_videoControlsContext]（整个视频区）的几何中心，设备是固定的 [_syntheticHoverDevice]。
+    // 浮层一开，全屏 opaque 的 dismiss barrier 就接管了命中测试，合成 hover 再也到不了
+    // media_kit 自己的 MouseRegion（poke 本该续命控制条，此时已必然哑火），却**全量落进本
+    // 回调**被当成真实鼠标消费，三处污染：
+    // ① `_lastGlobalPointerPos` 被写成画面正中 → BUG-880 的「静止光标 + 按 Shift 立即换词」
+    //    改在画面中心反查，用户光标下的词查不到；
+    // ② 未按 Shift 时下面那条分支把 `_barrierHoverLastPos/Sentence/Grapheme` 三个去重键清零
+    //    → 用户鼠标在**同一个字**上再抖一下就被判成新词，`_lookupAt(replaceStack: true)` 整栈
+    //    替换，正在看的弹窗内容被换掉、滚动位置丢失；
+    // ③ 按住 Shift / 开了「悬停即查词」时更直接：合成位置若命中字幕字符就立即换词。
+    // 且 [_handleSubtitleHover] 自己就调 [_pokeControlsVisible]，构成 hover→poke→hover 自激。
+    // 同页 [_handleVideoControlsHover] 早就用同一判据滤过合成事件（controls_visibility.part.dart），
+    // 本路径与它不对称纯属遗漏——这里补齐，语义即「合成事件不代表用户指针，不参与任何指针记账」。
+    if (_isSyntheticControlsHover(event)) return;
     // BUG-880：浮层打开时 barrier 盖住一切、页面根 Listener 收不到 hover，故在此持续更新
     // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
     // 未按 Shift 也照常记录）。
@@ -4287,6 +4305,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 路由，本页 `Stack` 会被全屏路由盖住；根 Overlay 浮在所有路由之上，窗口/全屏统一。
   void _syncPopupOverlay() {
     if (!mounted) return;
+    // BUG-1798：把浮层栈的「占着指针」真值推给门控 notifier。这里是栈 push/pop/搜索态变化的
+    // 唯一收口（[DictionaryPageMixin] 各路径都 setState → 重 build → post-frame 调本方法），
+    // 故也是唯一写入点。[ValueNotifier] 自带同值去重，每帧调用不会产生多余通知；值真变时其
+    // 监听（[_applyControlsVisibilityFromMediaKit]）重跑光标策略，弹窗一开光标即恢复可见。
+    _lookupOverlayActive.value = _hasVisiblePopup || _popup.isSearchingUi;
     if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
@@ -4352,35 +4375,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   hiddenByDialog: lookupPopupHiddenByDialog,
                 ))
                   Positioned.fill(
-                    // BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，
-                    // 字幕盒 MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
+                    // BUG-861：barrier 转发 hover——首弹后 barrier 盖住字幕，字幕盒
+                    // MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
                     // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
-                    child: Listener(
+                    //
+                    // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+                    // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+                    child: LookupDismissBarrier(
+                      // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并保持
+                      // 暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                      onTapDismiss: _onDismissBarrierTap,
+                      // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
+                      onSwipeDismiss: _dismissTopNestedPopup,
+                      swipeEnabled:
+                          ReaderFushiSource.instance.enableSwipeToClose,
+                      sensitivity:
+                          ReaderFushiSource.instance.dismissSwipeSensitivity,
                       onPointerHover: _onDismissBarrierHover,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
-                        // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                        onTapUp: (TapUpDetails d) =>
-                            _onDismissBarrierTap(d.globalPosition),
-                        // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
-                        // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
-                        // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
-                        // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
-                        onHorizontalDragStart:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragStart
-                                : null,
-                        onHorizontalDragUpdate:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragUpdate
-                                : null,
-                        onHorizontalDragEnd:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragEnd
-                                : null,
-                        child: const ColoredBox(color: Colors.transparent),
-                      ),
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
@@ -5024,10 +5035,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // BUG-880：页面根持续记录全局指针位置（不消费、不影响下层控制条 / 查词手势），供
         // Shift 按下时反查。浮层打开后 barrier 盖住这里收不到 hover，由 [_onDismissBarrierHover]
         // 接力更新同一字段。
+        // BUG-1798：与那个接力点用同一条判据滤掉合成 hover——[_pokeControlsVisible] 的合成事件
+        // 位置恒为视频区几何中心，写进来就是把「用户光标在哪」记成画面正中，Shift 反查随即查错
+        // 位置。合成事件不代表用户指针，两个记账点必须同时滤，只滤一个仍会从另一个漏进来。
         child: Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerHover: (PointerHoverEvent event) =>
-              _lastGlobalPointerPos = event.position,
+          onPointerHover: (PointerHoverEvent event) {
+            if (_isSyntheticControlsHover(event)) return;
+            _lastGlobalPointerPos = event.position;
+          },
           child: child,
         ),
       ),
@@ -5076,10 +5092,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
   }
 
+  /// 标题项落在顶部哪个槽（用户可把它拖到 topLeft / topCenter / topRight）；没放置
+  /// 或被移除时返回 null。标题是单实例项（[VideoControlItem.isSingleInstance]），
+  /// `VideoControlLayout` 保证它最多出现在一个槽里。
+  VideoControlSlot? _topBarTitleSlot() {
+    for (final VideoControlSlot slot in const <VideoControlSlot>[
+      VideoControlSlot.topLeft,
+      VideoControlSlot.topCenter,
+      VideoControlSlot.topRight,
+    ]) {
+      if (_controlLayout.itemsIn(slot).contains(VideoControlItem.title)) {
+        return slot;
+      }
+    }
+    return null;
+  }
+
+  /// 标题在顶栏里夹在哪两段按钮之间（喂给 [VideoTopBarSlots]）。
+  VideoTopBarTitlePlacement _topBarTitlePlacement() {
+    switch (_topBarTitleSlot()) {
+      case VideoControlSlot.topLeft:
+        return VideoTopBarTitlePlacement.left;
+      case VideoControlSlot.topRight:
+        return VideoTopBarTitlePlacement.right;
+      default:
+        return VideoTopBarTitlePlacement.center;
+    }
+  }
+
   Widget _topBarTitle() {
-    if (!_controlLayout.itemsIn(VideoControlSlot.topCenter).contains(
-          VideoControlItem.title,
-        )) {
+    final VideoControlSlot? slot = _topBarTitleSlot();
+    if (slot == null) {
       // 标题项没配置：交回零宽占位，整条顶栏宽都归两侧按钮组。绝不能返回 Spacer
       // （= Expanded/FlexFit.tight）——那会让「空的中段」硬占一份顶栏宽，用户把标题
       // 关掉后中间明明是空白、右上角按钮却照旧被挤进滚动区裁掉（本轮修复的现象）。
@@ -5088,29 +5131,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-642 → 本轮：标题不再参与 Row 的 flex 分配（旧实现是 Flexible(loose)，与
     // 左右按钮组各占 flex:1 → Flex 把整宽**平分**成三份，loose 用不完的空间又不回流，
     // 所以右侧按钮组无论如何最多只拿 1/3 顶栏宽、多出来的按钮被裁进横滚区）。改由
-    // [_TopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整可见，
-    // 标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    // [VideoTopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整
+    // 可见，标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    //
+    // 标题被拖进按钮槽时也走这里（不再有 220 宽的内联块跟同组按钮抢位）：位置由
+    // [_topBarTitlePlacement] 交给顶栏布局还原，对齐跟随所在槽——落在 topRight 就靠
+    // 右贴住它后面那段按钮，其余靠左。
     //
     // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
-    // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
-    // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有顺序。
+    // 监听 _titleNotifier 才能在全屏换集后刷新标题。
     return _topBarTitleText(
-      alignment: AlignmentDirectional.centerStart,
-    );
-  }
-
-  Widget _topBarInlineTitle(VideoControlSlot slot) {
-    final bool alignEnd = slot == VideoControlSlot.topRight;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8 * _videoUiScale),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 220 * _videoUiScale),
-        child: _topBarTitleText(
-          alignment: alignEnd
-              ? AlignmentDirectional.centerEnd
-              : AlignmentDirectional.centerStart,
-        ),
-      ),
+      alignment: slot == VideoControlSlot.topRight
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
     );
   }
 
@@ -5379,13 +5412,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     VideoPlayerController controller, {
     required VideoControlLayout layout,
     required bool desktop,
+    required VideoTopBarSegment segment,
   }) {
     final List<VideoControlItem> rawItems = layout.itemsIn(slot);
+    // 标题项被拖进按钮槽时，它在槽内的索引位置有语义（`VideoControlLayout` 保序），
+    // 所以按标题把该槽切成 lead / tail 两段按钮，标题本身由顶栏的 title 槽渲染、
+    // **最后**才分宽（[VideoTopBarSlots]）。此前标题是组内一个 220 宽的内联块，会跟
+    // 同组按钮抢横向空间、把按钮挤进横滚区——那正是「名称挡住按钮」的另一半根因。
+    final int titleIndex = rawItems.indexOf(VideoControlItem.title);
+    final List<VideoControlItem> scoped;
+    if (titleIndex < 0) {
+      scoped = segment == VideoTopBarSegment.lead
+          ? rawItems
+          : const <VideoControlItem>[];
+    } else {
+      scoped = segment == VideoTopBarSegment.lead
+          ? rawItems.sublist(0, titleIndex)
+          : rawItems.sublist(titleIndex + 1);
+    }
     final List<VideoControlItem> items = <VideoControlItem>[
-      for (final VideoControlItem item in rawItems)
-        if (item == VideoControlItem.title ||
-            (item.isChipRenderable && _shouldRenderControlItem(item)))
-          item,
+      for (final VideoControlItem item in scoped)
+        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
     ];
     if (items.isEmpty) return const SizedBox.shrink();
 
@@ -5454,11 +5501,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   ? MainAxisAlignment.end
                   : MainAxisAlignment.start,
               children: <Widget>[
-                for (final VideoControlItem item in items)
-                  if (item == VideoControlItem.title)
-                    _topBarInlineTitle(slot)
-                  else
-                    buttonFor(item),
+                for (final VideoControlItem item in items) buttonFor(item),
               ],
             ),
           ],

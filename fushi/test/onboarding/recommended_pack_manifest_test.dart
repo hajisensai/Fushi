@@ -1,8 +1,52 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
+  group('google drive route', () {
+    test('direct url embeds the shared file id and skips the confirm page', () {
+      expect(
+        kRecommendedPackGoogleDriveDirectUrl,
+        startsWith('https://drive.usercontent.google.com/download'),
+      );
+      expect(
+        kRecommendedPackGoogleDriveDirectUrl,
+        contains('id=$kRecommendedPackGoogleDriveFileId'),
+      );
+      expect(kRecommendedPackGoogleDriveDirectUrl, contains('confirm=t'));
+      // 分享页与直下链指向同一个文件 id，换包时两处一起换。
+      expect(
+        kRecommendedPackGoogleDriveUrl,
+        contains(kRecommendedPackGoogleDriveFileId),
+      );
+    });
+
+    test('fileName override names the pack file; default falls back to URL',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('recommended_pack_test');
+      addTearDown(() => dir.delete(recursive: true));
+      // Google 直下 URL 尾段是 'download'，不是文件名——线路必须显式覆盖，
+      // 覆盖名沿用内置直链包名，半截文件才能跨线路续传。
+      final RecommendedPackDownloader google = RecommendedPackDownloader(
+        packDir: dir,
+        url: kRecommendedPackGoogleDriveDirectUrl,
+        fileName: kRecommendedPackFileName,
+      );
+      expect(p.basename(google.packFile.path), kRecommendedPackFileName);
+      expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
+
+      final RecommendedPackDownloader bare = RecommendedPackDownloader(
+        packDir: dir,
+        url: 'https://dl.wrds.xyz/a.zip',
+      );
+      expect(p.basename(bare.packFile.path), 'a.zip');
+    });
+  });
+
   group('parseRecommendedPackManifest', () {
     test('valid manifest parses and lowercases sha256', () {
       final String sha = 'A' * 64;

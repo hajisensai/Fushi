@@ -194,7 +194,7 @@ void main() {
     );
     expect(
       buildManualVideoMediaReference(
-        providerId: 'anilist',
+        providerId: 'anidb',
         mediaId: '',
         title: '测试动画',
         yearText: '2026',
@@ -203,22 +203,33 @@ void main() {
       ),
       isNull,
     );
+    expect(
+      buildManualVideoMediaReference(
+        providerId: 'bangumi',
+        mediaId: '100',
+        title: '测试动画',
+        yearText: '2026',
+        category: VideoDiscoveryCategory.anime,
+        mediaKind: VideoMetadataMediaKind.tv,
+      ),
+      isNull,
+    );
     final VideoMediaReference reference = buildManualVideoMediaReference(
-      providerId: 'anilist',
+      providerId: 'anidb',
       mediaId: '100',
       title: '测试动画',
       yearText: '2026',
       category: VideoDiscoveryCategory.anime,
       mediaKind: VideoMetadataMediaKind.tv,
     )!;
-    expect(reference.providerId, 'anilist');
+    expect(reference.providerId, 'anidb');
     expect(reference.mediaId, '100');
-    expect(reference.anilistId, 100);
+    expect(reference.anidbId, 100);
     expect(reference.year, 2026);
     expect(reference.mediaKind, VideoMetadataMediaKind.tv);
 
     final VideoMediaReference animeMovie = buildManualVideoMediaReference(
-      providerId: 'anilist',
+      providerId: 'anidb',
       mediaId: '200',
       title: '动画电影',
       yearText: '2026',

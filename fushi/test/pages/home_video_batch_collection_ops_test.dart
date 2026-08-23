@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 块2/3/4 视频库批量合集操作 widget 测试（真写穿内存 DB）：
@@ -84,6 +85,10 @@ void main() {
       videoPath: Value('/abs/$uid.mp4'),
       importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
+    // 「系列」墙只收有 AniDB 主身份的条目；本文件测的是批量选择/合并/解散，散卡
+    // 不种身份的话根本不渲染，勾都勾不到。入了已刮削合集的成员照常按合集归属折叠
+    // （_effectiveCollectionIdForBook 优先取合集），不会因此变成两张卡。
+    await seedAniDbLooseIdentity(db, uid, title: title);
   }
 
   // #792 分区化：合集封面卡+散卡混排墙（_buildLocalVideoSlivers）搬进 series
@@ -129,7 +134,7 @@ void main() {
   testWidgets('块2：合集封面卡勾选 → 整合集入选中集；成员卡不在库页', (WidgetTester tester) async {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
-    final int cid = await db.createMediaCollection('合集甲');
+    final int cid = await createSeriesCollection(db, '合集甲');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
     await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
@@ -195,7 +200,7 @@ void main() {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     await seedVideo('video/looseL', '散卡L');
-    final int cid = await db.createMediaCollection('合集乙');
+    final int cid = await createSeriesCollection(db, '合集乙');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
     await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
@@ -230,10 +235,10 @@ void main() {
     await seedVideo('video/b1', 'B1');
     await seedVideo('video/b2', 'B2');
     await seedVideo('video/b3', 'B3');
-    final int small = await db.createMediaCollection('小集');
+    final int small = await createSeriesCollection(db, '小集');
     await db.addToCollection(small, MediaKind.video, 'video/a1');
     await db.addToCollection(small, MediaKind.video, 'video/a2');
-    final int big = await db.createMediaCollection('大集');
+    final int big = await createSeriesCollection(db, '大集');
     await db.addToCollection(big, MediaKind.video, 'video/b1');
     await db.addToCollection(big, MediaKind.video, 'video/b2');
     await db.addToCollection(big, MediaKind.video, 'video/b3');
@@ -277,7 +282,7 @@ void main() {
       (WidgetTester tester) async {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
-    final int cid = await db.createMediaCollection('待解散');
+    final int cid = await createSeriesCollection(db, '待解散');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
     await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
@@ -306,7 +311,7 @@ void main() {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     await seedVideo('video/looseL', '散卡L');
-    final int cid = await db.createMediaCollection('某合集');
+    final int cid = await createSeriesCollection(db, '某合集');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
     await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
@@ -336,7 +341,7 @@ void main() {
       videoPath: const Value('/abs/fresh.mp4'),
       importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
-    final int cid = await db.createMediaCollection('合集甲');
+    final int cid = await createSeriesCollection(db, '合集甲');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
 
     // #792 分区化：hero 轮播 + 最近添加行只在 home 分区（dashboard 概览），而
@@ -349,7 +354,7 @@ void main() {
         find.byKey(const ValueKey<String>('home_video_recent_video/fresh'));
     expect(recentCard, findsOneWidget, reason: '前置：最近添加行须出现');
 
-    await tester.pumpWidget(buildApp(section: VideoLibrarySection.allVideos));
+    await tester.pumpWidget(buildApp(section: VideoLibrarySection.series));
     await tester.pumpAndSettle();
     await enterSelectionMode(tester);
     await tester.pumpWidget(buildApp(section: VideoLibrarySection.home));

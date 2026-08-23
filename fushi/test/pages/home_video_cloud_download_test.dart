@@ -99,7 +99,7 @@ void main() {
                 repo: repo,
                 // #792 分区化：home 分区只渲染 dashboard 概览，云占位卡所在的
                 // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
-                section: VideoLibrarySection.series,
+                section: VideoLibrarySection.allVideos,
                 // 互联 client 缺省 → _resolveRemoteVideoClient 返 null，走云后端分支。
                 cloudRemoteVideoClientLoader: () async => cloud,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>

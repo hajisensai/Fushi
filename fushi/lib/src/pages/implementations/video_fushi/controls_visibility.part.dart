@@ -34,6 +34,16 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     if (_videoSidePanel.value != null) return;
     if (_subtitleListVisible.value) return;
     if (_videoControlEditMode.value) return;
+    // BUG-1798：查词浮层开着时同样早退，与上面四个门控同族（「控制条本被遮住/压制，续命只会
+    // 打架」）。浮层的 dismiss barrier 是全屏 **opaque** 命中层（`ColoredBox` 的 render object
+    // 命中行为为 opaque），它一挂上，合成 hover 就再也到不了 media_kit 自己的 MouseRegion——
+    // 本方法赖以工作的那条「命中 fork 的 onHover → 重置隐藏 Timer」路径 100% 断掉，派发是**纯
+    // 无效**的。而事件并不会凭空消失：它改落进 barrier 的 [_onDismissBarrierHover]，污染指针
+    // 记账与换词去重键（那侧已按设备滤掉，此处再从源头掐断，两道都不是补丁——前者是「合成事件
+    // 不参与指针记账」的不变量，后者是「明知到不了目标就不派发」）。
+    // 顺带消除一个自激环：[_handleSubtitleHover] 收到字幕 hover 就调本方法，而合成 hover 又会
+    // 被 barrier 收走再触发换词逻辑。
+    if (_lookupOverlayActive.value) return;
     if (!_isDesktopVideoControls) {
       // 移动端：底部按钮栏按下时经此续命 media_kit 隐藏 Timer（fork 只在整屏 tap / seek 时
       // 重置，按按钮不重置 → 手指还在按控制条却隐藏 = 误触）。移动无 hover 语义，故不派合成

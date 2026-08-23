@@ -294,7 +294,12 @@ class {class_name}Adapter final : public fushi_voice_hook::EngineAdapter {{
         encoding="utf-8",
     )
     native_test.write_text(
-        f'''#include "../hook/adapters/{engine_id}_profile.h"
+        f'''// CI builds with --config Release, where MSVC defines NDEBUG and compiles
+// bare assert() out entirely. Undefine it before any include or this test is
+// green no matter what it checks. Guard: tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
+#include "../hook/adapters/{engine_id}_profile.h"
 int main() {{ return fushi_voice_hook::Matches{class_name}Profile(nullptr) ? 1 : 0; }}
 ''',
         encoding="utf-8",

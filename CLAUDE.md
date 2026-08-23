@@ -36,6 +36,7 @@
 - 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
 - galgame 制卡：Flutter 侧 `fushi/lib/src/lookup/`（overlay 浮窗）+ `fushi/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip，再由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地，运行期不下载任何组件。helper **不链接进 `fushi.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
+- 动画刮削上游参考：`references/ShokoServer/`（官方 ShokoServer git submodule，只作只读架构参考，不参与本仓构建/运行）。
 - 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1` / `run_mac_itest.ps1`；`fushi/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart`。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
 
@@ -85,6 +86,15 @@
 - 每轮只修原始路径上第一个未通过边界。引擎/保护壳/加载时序特例必须收进 profile/adapter；共享中间件不得仅凭 DLL 名启用，且须有跨引擎负向测试。
 - Loopback 只是显式降级，不能证明引擎 Hook、逐句配对或纯人声已验证；任何必需测试、双架构构建、replay 或真机门被跳过/阻塞，只能标 `implemented_unverified`，不得宣称“已支持/已修好”。
 - 支持升级必须回到原始启动路径完成“当前文本 → 对应语音 → 当前画面 → 真卡写入”E2E；宣称原始逐句资源时还须记录与源 entry 的字节哈希一致性，并只通过 `native/galgame_hook/engine-support.yaml` 真相源更新支持状态。
+
+## 动画刮削参考与 provider 边界
+
+- `references/ShokoServer/` 固定官方 `ShokoAnime/ShokoServer`，是动画文件识别、作品/分集模型、缓存和补源编排的长期参考。它是 git submodule：不得复制进 Fushi 构建、不得修改其源码来实现 Hibiki 功能；升级 gitlink 前必须先审上游差异并在本仓提交中说明采用了什么架构变化。
+- 动画**元数据刮削**对齐 Shoko 的生产 provider 边界：AniDB 是文件、作品、分集身份的核心；TMDB 只能在 AniDB 身份之后提供交叉映射、图片、演职员、别名和分集排序等补充。新增或重构时优先参考 `Shoko.Server/Providers/AniDB/`、`Shoko.Server/Providers/TMDB/`、`Scheduling/Jobs/AniDB/`、`Scheduling/Jobs/TMDB/` 与 `Services/VideoHashingService.cs` 的分层，不照搬 C# 实现。
+- 动画元数据刮削不得重新引入 Bangumi、Douban、AniList、Jikan/MAL、Fanart.tv 等并行主源或补源。历史数据库 provider 字符串属于兼容输入，可读、可迁移，但不能据此重新装配网络 client 或在新 UI 暴露来源。
+- 本地 `.nfo` sidecar 是用户已有资料的离线兼容输入，可以继续作为字段权威来源；其中遗留的 Bangumi/Douban/AniList 等 ID 只能保留、迁移或作为无网络的交叉引用提示，不能触发对应 provider client，也不能越过 AniDB 作品身份门控。
+- 发现、字幕、资源搜索与元数据刮削是不同域：AniList 若仍用于发现/字幕身份，不得进入刮削 registry；Nyaa/Torznab/OpenSubtitles/Jimaku 等资源或字幕模块不受“刮削 provider”清单约束。Fushi 发现页不得装配或展示 Bangumi source。
+- AniDB 协议必须遵守其客户端注册、限流和缓存规则；没有已登记的 client identity 或所需凭据时必须在发请求前判 unavailable，不得冒用 Shoko 的 client 标识，也不得靠无界重试绕过限流。
 
 ## i18n 纪律
 
@@ -149,6 +159,7 @@
 | `tools/browser-extension/` | JS | 浏览器查词扩展（根级 `tools/`，非 `tool/`） | — |
 | `third_party/` | — | 11 个 path-override vendored 补丁包 + 1 个 CI 自编二进制（ffmpeg-min，Windows 最小化 ffmpeg.exe）：carousel_slider、desktop_drop、fading_edge_scrollview、ffmpeg_kit_flutter、flutter_inappwebview_android、media_kit_libs_{android,ios,macos,windows}_video、media_kit_video、network_to_file_image；vendor 原因见 `fushi/pubspec.yaml` dependency_overrides 逐包注释。另有 `m_extension_server/`（**不是** pub 包）：Mihon 桌面 sidecar 的 Kotlin 源码，上游 GitHub 仓库已删除，按 MPL-2.0 整树 vendored 在 `upstream_src/`（pristine）+ `overlay/`（Hibiki 安全边界）+ `server-build.gradle.patch`，构建走 `tool/mihon/build_desktop_runtime.{sh,ps1}`，规则见该目录 `UPSTREAM` | — |
 | `references/ReinaManager` | — | git submodule：galgame 库信息架构参考（AGPL-3.0，不参与构建） | — |
+| `references/ShokoServer` | C# | git submodule：动画识别/刮削长期参考；AniDB 核心身份 + TMDB 补充（MIT，不参与构建） | [上游 README](references/ShokoServer/README.md) |
 
 > 完整架构、技术栈、构建命令、致谢见 [README.md](README.md)。`file_picker` 用 pub.dev 版（**不是** fork）。依赖补丁机制（vendored vs apply-patches）见 [docs/agent/build.md](docs/agent/build.md)。
 

@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -131,28 +132,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 退回同语义；TODO-834 后这与「点 barrier 真空白清整栈」不同——滑动是明确的
   /// 关前置弹窗手势，对齐手机顶栏 [SwipeDismissWrapper] 的逐层关），仅当
   /// [ReaderFushiSource.enableSwipeToClose] 开启时生效。
-  /// 单击经 Flutter 手势竞技场仍走 onTap，与拖动互斥。阈值/灵敏度复用
-  /// [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同一公式，不漂移）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    // 双向水平（左右皆可），与手机 [SwipeDismissWrapper] 的 _dragX.abs() 一致；
-    // 过阈关一层（[dismissTopPopup]）。阈值/位移累积由共享纯追踪器统一，不漂移。
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      dismissTopPopup();
-    }
-  }
-
+  ///
+  /// BUG-1757：接线（判轴 + 累积 + 阈值）全部收在 [LookupDismissBarrier] 里，页面
+  /// 只提供「过阈了要关哪一层」，不再各自持 tracker + 三个转发方法。横拖走该
+  /// widget 内不入手势竞技场的 raw Listener，判轴规则写在可单测的代码里。
   bool get isDictionaryShown => _hasVisiblePopup(_popup.entries);
 
   @protected
@@ -629,42 +612,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 children: [
                   if (hasVisiblePopup || searching)
                     Positioned.fill(
-                      child: Listener(
+                      // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**的
+                      // 真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
+                      // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
+                      // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
+                      // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
+                      // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
+                      // TODO-1027：tap 带全局坐标转发给 [onDismissBarrierTap]
+                      // （阅读器覆写为「命中词→换新查词」，默认表面仍清整栈）。
+                      child: LookupDismissBarrier(
+                        onTapDismiss: onDismissBarrierTap,
+                        // TODO-716：水平拖过阈关一层（逐层，与光标 B/Esc 同语义）。
+                        onSwipeDismiss: dismissTopPopup,
+                        swipeEnabled:
+                            ReaderFushiSource.instance.enableSwipeToClose,
+                        sensitivity:
+                            ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
                         onPointerSignal: onDismissBarrierPointerSignal,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**
-                          // 的真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
-                          // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
-                          // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
-                          // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
-                          // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
-                          // TODO-1027：barrier 上 onTapUp 拿全局坐标转发给
-                          // [onDismissBarrierTap]（阅读器覆写为「命中词→换新查词」，
-                          // 默认表面仍清整栈）。onTapUp 与 onHorizontalDrag* 经
-                          // Flutter 手势竞技场天然分流（单击 vs 横拖），互斥不冲突。
-                          onTapUp: (details) =>
-                              onDismissBarrierTap(details.globalPosition),
-                          // TODO-716：桌面对齐手机——在 barrier 上水平拖过阈同样关一层。
-                          // 仅当滑动关闭开关开启时挂横拖识别（否则只 onTap，与旧行为一致）。
-                          // 竞技场天然分流：单击走 onTap、横拖走 onHorizontalDrag*，互斥。
-                          onHorizontalDragStart:
-                              ReaderFushiSource.instance.enableSwipeToClose
-                                  ? _onBarrierHorizontalDragStart
-                                  : null,
-                          onHorizontalDragUpdate:
-                              ReaderFushiSource.instance.enableSwipeToClose
-                                  ? _onBarrierHorizontalDragUpdate
-                                  : null,
-                          onHorizontalDragEnd:
-                              ReaderFushiSource.instance.enableSwipeToClose
-                                  ? _onBarrierHorizontalDragEnd
-                                  : null,
-                          child: Container(
-                            color: Colors.transparent,
-                          ),
-                        ),
                       ),
                     ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),

@@ -159,12 +159,11 @@ void main() {
     late String host;
     setUpAll(() => host = read('assets/popup/global_lookup_host.js'));
 
-    test('shell carries ONLY the radius, NO border and NO box-shadow', () {
-      // TODO-893 symptom 1 — RESPONSIBILITY SPLIT. The single visible card
-      // border belongs to the iframe (popup.css `html.global-lookup body`); the
-      // shell must NOT draw a second border (that produced two concentric grey
-      // rings with a white gap = the reported "white frame"). The shell keeps
-      // the radius so the overflow clip follows the rounded card.
+    test('shell base carries radius and no box-shadow', () {
+      // The shell starts transparent/borderless, then syncFrameShellChrome moves
+      // the ONE computed body fill+border onto it after the iframe theme loads.
+      // It must still cast no shadow: the non-layered window would turn it into
+      // a hard dark halo.
       //
       // BUG-709 — the shell must ALSO cast NO box-shadow. The overlay HWND is a
       // NON-layered, opaque WebView2 window (global_lookup_window.cpp: "No
@@ -186,21 +185,33 @@ void main() {
               'it is a dark halo outside the card, not a real shadow (lock)');
     });
 
-    test('shell draws NO solid border (single border lives on the iframe body)',
-        () {
-      // The fix is exactly the removal of the shell border. Lock it so a later
-      // edit cannot reintroduce the double-border. The border lives ONLY in
-      // popup.css `html.global-lookup body` now.
+    test('shell receives the single computed border at runtime', () {
+      // No hard-coded second border belongs in host CSS. Runtime ownership copies
+      // the authored body border; the injected frame rule makes that border
+      // transparent but keeps its layout allocation, so exactly one ring remains.
       expect(host.contains('border:1px solid rgba(120,120,128,0.36)'), isFalse,
-          reason: 'shell border was the double-border main cause; it is gone');
+          reason: 'host must not duplicate the theme border literal');
       expect(host.contains('border-color:rgba(255,255,255,0.34)'), isFalse,
-          reason: 'the dark shell border-color override is gone too');
+          reason: 'dark colour still comes from iframe computed style');
+      expect(host.contains('computed.borderTopWidth'), isTrue);
+      expect(host.contains('computed.borderTopStyle'), isTrue);
+      expect(host.contains('computed.borderTopColor'), isTrue);
+      expect(host.contains("'background:transparent!important;'"), isTrue,
+          reason: 'once transferred, body must not paint a duplicate fill');
+      expect(host.contains("'border-color:transparent!important;}'"), isTrue,
+          reason: 'body keeps border layout but must not paint a second ring');
+      expect(host.contains('.global-lookup-frame-shell::after{'), isTrue,
+          reason: 'the one visible border belongs to a non-layout shell layer');
+      expect(host.contains('var(--global-lookup-shell-border-width,0px)'),
+          isTrue);
+      expect(host.contains("shell.style.border = '0';"), isTrue,
+          reason: 'the shell border must not change iframe geometry or height');
     });
 
-    test('the SINGLE border lives on the iframe body (popup.css), not doubled',
-        () {
+    test('popup.css remains the theme source for the transferred border', () {
       final String css = read('assets/popup/popup.css');
-      // popup.css owns the one visible border.
+      // popup.css authors the value; host reads it with getComputedStyle and
+      // transfers it to the fixed shell.
       expect(css.contains('html.global-lookup body {'), isTrue);
       final int bodyAt = css.indexOf('html.global-lookup body {');
       final String bodyRule = css.substring(bodyAt, css.indexOf('}', bodyAt));
@@ -210,10 +221,11 @@ void main() {
           reason: 'the iframe body owns the one visible card border');
     });
 
-    test('shell background stays transparent (iframe paints the card fill)',
-        () {
-      // The iframe (popup.html) already paints the THEME background + the
-      // html.global-lookup body border, so the shell must NOT add a second fill.
+    test('shell base is transparent then owns the computed card fill', () {
+      // Before iframe load there is no theme yet, so the base stays transparent.
+      // After settings injection, the body fill is copied to the fixed shell and
+      // disabled on body. This fills the reserved scrollbar gutter up to the
+      // native rounded edge without double-compositing translucent backgrounds.
       // The chrome rule is the .global-lookup-frame-shell block carrying the
       // radius (the first such block is the D1 reveal-gate visibility rule).
       final int chromeAt = host.indexOf('border-radius:10px');
@@ -222,7 +234,17 @@ void main() {
       final String rule =
           host.substring(ruleStart, host.indexOf('}', chromeAt));
       expect(rule.contains('background:transparent'), isTrue,
-          reason: 'shell owns only the rounded clip + shadow, not the fill');
+          reason: 'pre-load shell must not flash a hard-coded colour');
+      expect(host.contains('function syncFrameShellChrome(record)'), isTrue);
+      expect(host.contains('var background = computed && computed.backgroundColor'),
+          isTrue);
+      expect(host.contains('shell.style.background = background'), isTrue);
+      expect(host.contains('classes.add(FRAME_CHROME_CLASS)'), isTrue,
+          reason: 'body chrome is disabled only after shell owns its values');
+      expect(host.contains('clearFrameShellChrome(shell);'), isTrue,
+          reason: 'a reused frame failure must not retain stale shell paint');
+      expect(host.contains('scaledFrameChromePx(borderWidth, zoom'), isTrue,
+          reason: 'host chrome must track document zoom without moving layout');
     });
 
     test('shell stamps data-theme from the render payload (no themed shadow)',
@@ -388,18 +410,31 @@ void main() {
       );
     });
 
-    test('symptom 2 — popup.css makes html.global-lookup transparent', () {
-      // The opaque documentElement fill clipped by the shell radius is the
-      // residual "white frame"; transparent <html> leaves only body's rounded
-      // card. Scoped so the in-app popup (no global-lookup class) is untouched.
+    test('symptom 2 — global lookup keeps a transparent canvas background', () {
+      // A present-but-transparent background prevents CSS from propagating the
+      // body's fill to the square document canvas. Scoped so the in-app popup
+      // (no global-lookup class) is untouched.
       final String css = read('assets/popup/popup.css');
       expect(
-        RegExp(r'html\.global-lookup\s*\{[^}]*background:\s*transparent')
+        RegExp(
+          r'html\.global-lookup\s*\{[^}]*background:\s*linear-gradient\('
+          r'rgba\(0,\s*0,\s*0,\s*0\),\s*rgba\(0,\s*0,\s*0,\s*0\)\)',
+        )
             .hasMatch(css),
         isTrue,
-        reason: 'html.global-lookup must be transparent so the clipped corners '
-            'show the desktop, not opaque theme colour',
+        reason: 'html.global-lookup needs a real but fully transparent layer so '
+            'body background propagation cannot square the right corners',
       );
+      // WebView2 keeps a persistent virtual-host cache. The top-level host JS is
+      // injected from the current bundle on every launch, so it must reassert
+      // the same canvas contract after every iframe load even if popup.css in
+      // the profile is stale.
+      final String host = read('assets/popup/global_lookup_host.js');
+      expect(host.contains('function syncFrameShellChrome(record)'),
+          isTrue);
+      expect(host.contains("'background', FRAME_CANVAS_GUARD_BACKGROUND, "
+          "'important'"), isTrue);
+      expect(host.contains('syncFrameShellChrome(record);'), isTrue);
       // The in-app html background rule stays (no global-lookup scope on it).
       expect(css.contains('html.global-lookup body {'), isTrue,
           reason: 'in-app vs global-lookup body scoping must remain intact');

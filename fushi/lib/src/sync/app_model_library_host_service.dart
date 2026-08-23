@@ -16,6 +16,10 @@ import 'package:fushi/src/media/media_source.dart'
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/series_playback_prefs.dart'
     show
         effectiveSeriesAudioTrackId,
@@ -30,6 +34,7 @@ import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_manager.dart'
@@ -78,7 +83,6 @@ class AppModelLibraryHostService
     required Future<void> Function(Future<void> Function() body) runExclusive,
     Future<String?> Function(File epubFile)? importBookFromFile,
     Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
-    Future<void> Function(VideoBookRow row)? cleanupVideoOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
@@ -86,25 +90,28 @@ class AppModelLibraryHostService
     Future<void> Function(String displayName)? removeLocalAudioEntry,
     String videoSubtitleLangCode = 'ja',
     Directory? uploadedVideoRoot,
-    Future<String?> Function(
-            {required String videoPath, required String bookUid})?
-        extractVideoCover,
-  })  : _db = db,
-        _dictionaryResourceRoot = dictionaryResourceRoot,
-        _packages = packages,
-        _refreshDictionaryCache = refreshDictionaryCache,
-        _runExclusive = runExclusive,
-        _importBookFromFile = importBookFromFile,
-        _cleanupBookOnDisk = cleanupBookOnDisk,
-        _cleanupVideoOnDisk = cleanupVideoOnDisk,
-        _localAudioEntries = localAudioEntries,
-        _localAudioStagingDir = localAudioStagingDir,
-        _onLocalAudioImported = onLocalAudioImported,
-        _audioDatabaseRoot = audioDatabaseRoot,
-        _removeLocalAudioEntry = removeLocalAudioEntry,
-        _videoSubtitleLangCode = videoSubtitleLangCode,
-        _uploadedVideoRoot = uploadedVideoRoot,
-        _extractVideoCover = extractVideoCover;
+    Directory? videoCoversDirectory,
+    Future<String?> Function({
+      required String videoPath,
+      required String bookUid,
+    })?
+    extractVideoCover,
+  }) : _db = db,
+       _dictionaryResourceRoot = dictionaryResourceRoot,
+       _packages = packages,
+       _refreshDictionaryCache = refreshDictionaryCache,
+       _runExclusive = runExclusive,
+       _importBookFromFile = importBookFromFile,
+       _cleanupBookOnDisk = cleanupBookOnDisk,
+       _localAudioEntries = localAudioEntries,
+       _localAudioStagingDir = localAudioStagingDir,
+       _onLocalAudioImported = onLocalAudioImported,
+       _audioDatabaseRoot = audioDatabaseRoot,
+       _removeLocalAudioEntry = removeLocalAudioEntry,
+       _videoSubtitleLangCode = videoSubtitleLangCode,
+       _uploadedVideoRoot = uploadedVideoRoot,
+       _videoCoversDirectory = videoCoversDirectory,
+       _extractVideoCover = extractVideoCover;
 
   final FushiDatabase _db;
   final Directory _dictionaryResourceRoot;
@@ -129,11 +136,6 @@ class AppModelLibraryHostService
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
   /// 生产传 ReaderFushiSource 实例的磁盘清理部分。
   final Future<void> Function(EpubBookRow row)? _cleanupBookOnDisk;
-
-  /// 视频磁盘清理回调（可选；null 时只执行 DB 删除 + 上传副本目录回收）。
-  /// 生产传 `VideoBookRepository.reclaimDeletedVideoBookAssets` 的等价闭包——它按
-  /// 「仍在 app 资产目录内 + 无其它条目引用」回收封面 / 字幕缓存，**不碰原始视频文件**。
-  final Future<void> Function(VideoBookRow row)? _cleanupVideoOnDisk;
 
   // ── 本地音频（T3.1）──────────────────────────────────────────────────────
 
@@ -167,6 +169,7 @@ class AppModelLibraryHostService
   /// 生产传 `<documents>/remote_videos`（[AppPaths.remoteVideosDirectory] 同目录，与
   /// client 下载远端视频落点一致）。
   final Directory? _uploadedVideoRoot;
+  final Directory? _videoCoversDirectory;
 
   /// 上传视频后的封面抽取回调（可选、best-effort；null 时上传的视频无封面占位）。
   /// 生产传 `extractVideoCover`（桌面 ffmpeg 抽帧；移动端无 ffmpeg 返 null 留空占位）。
@@ -1697,45 +1700,33 @@ class AppModelLibraryHostService
 
   /// 从 host 视频库删除 bookUid 为 [id] 的视频（[VideoDeletionHost]）。
   ///
-  /// 与 host 用户在自己视频库长按删除同语义（镜像 `VideoBookRepository.deleteVideoBook`
-  /// + `reclaimDeletedVideoBookAssets`）：DB 行 + 字幕 cue + 合集引用 + 删除墓碑，磁盘侧
-  /// **只回收 app 自己拥有的字节**。用户自己导入的原始视频文件绝不删除。
+  /// 与 host 用户在自己视频库长按删除同语义：repository 的完整删除 operation 负责
+  /// DB 行 + 字幕 cue + 合集引用 + 删除墓碑及 app-owned 配图/字幕回收；host 再回收
+  /// 自己接收上传时创建的视频副本。用户自己导入的原始视频文件绝不删除。
   @override
   Future<void> deleteVideo(String id) async {
     _assertSafeVideoId(id);
-    await _runExclusive(() async {
-      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-      if (row == null) return; // 幂等：不存在则静默跳过
-
-      // DB 事务：删 VideoBooks 行 + 本视频的 audio_cues（标签映射经 FK cascade）。
-      await _db.deleteVideoBook(id);
-      // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade），镜像本地
-      // 删除路径，避免留孤儿成员 / 合集卡数量虚高。
-      await _db.removeEntryFromAllCollections(MediaKind.video, id);
-      // 记删除墓碑：host 的其它已配对设备下次同步会拉到并逐条确认删除，使
-      // 「从所有设备删除」在 client→host→其它 client 链路上闭合。best-effort。
-      try {
-        await _db.writeSyncDeletionTombstone(
-          SyncTombstoneKind.video.dbValue,
-          id,
-          DateTime.now().millisecondsSinceEpoch,
-        );
-      } catch (_) {
-        // best-effort：记账失败不影响视频已删。
-      }
-
-      // 磁盘回收，两条都只碰「能证明是 app 自己写进来的」字节：
-      // ① client 上传副本目录（本 host 自己按 uid 建的，见 importVideo）。
-      await _deleteUploadedVideoCopy(row);
-      // ② 封面 / 字幕缓存交注入回调（与 deleteBook 的 cleanupBookOnDisk 同构，生产接
-      //    VideoBookRepository.reclaimDeletedVideoBookAssets，其内部有「仍在 app 资产
-      //    目录内 + 无其它条目引用」双重判据）。
-      try {
-        await _cleanupVideoOnDisk?.call(row);
-      } catch (_) {
-        // best-effort：磁盘回收失败不影响 DB 已删。
-      }
-    });
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
+    try {
+      await _runExclusive(
+        () => VideoCoverMutationGate.runExclusive(() async {
+          final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+          if (row == null) return; // 幂等：不存在则静默跳过
+          final bool deleted = await VideoBookRepository(_db)
+              .deleteVideoBookAndReclaimAssets(
+                id,
+                scope: DeleteScope.syncEverywhere,
+                compactDatabase: false,
+              );
+          if (!deleted) return;
+          await _deleteUploadedVideoCopy(row);
+        }),
+      );
+    } finally {
+      lease.release();
+    }
   }
 
   /// 删除 client 上传副本目录——当且仅当该行的 `videoPath` 确实落在本 host 的
@@ -1798,16 +1789,42 @@ class AppModelLibraryHostService
         {required String videoPath,
         required String bookUid})? extractor = _extractVideoCover;
     if (extractor != null) {
-      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-      if (row != null) {
+      final VideoScrapeOperationLease? lease =
+          VideoScrapeOperationGate.tryEnterOperation();
+      if (lease != null) {
         try {
-          final String? coverPath =
-              await extractor(videoPath: row.videoPath, bookUid: id);
-          if (coverPath != null && coverPath.isNotEmpty) {
-            await _db.updateVideoBookCover(id, coverPath);
-          }
-        } catch (_) {
+          await VideoCoverMutationGate.runExclusive(() async {
+            final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+            if (row == null) return;
+            final CoverMetaStore store = CoverMetaStore(
+              _videoCoversDirectory ?? await VideoStorage.coversDir(),
+            );
+            if (!await store.allowsAutoFrameWrite(id)) return;
+            final String? coverPath = await extractor(
+              videoPath: row.videoPath,
+              bookUid: id,
+            );
+            if (coverPath != null && coverPath.isNotEmpty) {
+              await _db.updateVideoBookCover(id, coverPath);
+              final bool committed = await store.markAutoFrameAfterWrite(id);
+              if (!committed) {
+                ErrorLogService.instance.log(
+                  'sync.videoCover.provenanceConflict',
+                  StateError('封面来源在自动抽帧期间发生变化: $id'),
+                  StackTrace.current,
+                );
+              }
+            }
+          });
+        } catch (error, stack) {
           // best-effort：封面失败不影响上传成功。
+          ErrorLogService.instance.log(
+            'sync.videoCover.backfill',
+            error,
+            stack,
+          );
+        } finally {
+          lease.release();
         }
       }
     }

@@ -145,13 +145,16 @@ void main() {
             '这两个值必须一起调（BUG-1655: 0.6em 盒 / 0.66em 带）');
   });
 
-  test('.ruby-reserve 与注音盒同字号，宽度预留才等于实际渲染宽度（BUG-850）', () {
+  test('.ruby-reserve 与注音盒同字号但必须脱离正文横向排版（BUG-1778）', () {
     final String? reserve = bodyOfSelector('.ruby-reserve');
     expect(reserve, isNotNull,
         reason: 'popup.css 必须为 glossary 面作用域化 .ruby-reserve');
+    final String reserveBody = reserve!;
+    expect(RegExp(r'position\s*:\s*absolute').hasMatch(reserveBody), isTrue,
+        reason: '孪生体若留在 inline flow，会按长注音宽度撑开一个汉字并拉散正文');
     expect(
-        fontSizeOf(reserve!), equals(fontSizeOf(bodyOfSelector('.ruby-rt')!)),
-        reason: 'in-flow 孪生体必须与注音盒同字号；两者一旦分叉，unit 预留的宽度就不等于注音'
-            '真正渲染的宽度，汉字会被撑开或注音会溢出');
+        fontSizeOf(reserveBody),
+        equals(fontSizeOf(bodyOfSelector('.ruby-rt')!)),
+        reason: '脱离排版后的孪生体仍与注音盒保持同一 em 尺寸，避免 DOM 几何语义漂移');
   });
 }

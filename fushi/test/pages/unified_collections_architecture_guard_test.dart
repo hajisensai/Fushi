@@ -322,7 +322,19 @@ void main() {
     expect(remotePartSrc.contains('_buildRemoteBookCard'), isTrue);
     expect(remotePartSrc.contains('remote_book_cloud_badge'), isTrue,
         reason: '远端书占位卡必须带云角标 ☁');
-    expect(homeSrc.contains('_groupVideos(books, remoteVideos'), isTrue,
+    // 断言的是「同一次分组调用同时吃本地与远端两路」，不是某一串写法：形参名与
+    // 换行都可能随重构变（曾写死 `_groupVideos(books, remoteVideos` 整串，一次
+    // 改名 + dart format 换行就假红）。守的是 union 折叠这件事本身。
+    final int groupCallAt = homeSrc.indexOf('_groupVideos(');
+    expect(groupCallAt, greaterThanOrEqualTo(0),
+        reason: '视频库必须有 _groupVideos 调用（union 折叠入口）');
+    final String groupCallArgs = homeSrc.substring(
+      groupCallAt,
+      (groupCallAt + 240).clamp(0, homeSrc.length),
+    );
+    expect(groupCallArgs.contains('books'), isTrue,
+        reason: '_groupVideos 必须吃本地视频');
+    expect(RegExp(r'[Rr]emoteVideos').hasMatch(groupCallArgs), isTrue,
         reason: '远端视频占位须混入 _groupVideos（union 折叠 + 排序模式统一排序）');
     expect(homeSrc.contains('_buildRemoteVideoCard'), isTrue);
     expect(homeSrc.contains('remote_video_cloud_badge'), isTrue,

@@ -2,7 +2,6 @@ import 'dart:async' show Timer, unawaited;
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 
 import 'package:path/path.dart' as p;
@@ -14,6 +13,8 @@ import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
+import 'package:fushi/src/media/collections/collection_relation.dart';
+import 'package:fushi/src/media/collections/collection_scrape_metadata_compat.dart';
 import 'package:fushi/src/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
@@ -26,10 +27,6 @@ import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
-import 'package:fushi/src/media/video/scraper/bangumi_client.dart';
-import 'package:fushi/src/media/video/scraper/collection_relations_scrape.dart'
-    show CollectionRelationType;
-import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -48,7 +45,6 @@ import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -62,8 +58,6 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.onOpenEpisode,
     this.remote,
     required this.onChanged,
-    this.onScrape,
-    this.onEpisodeScrapeInfo,
     this.onDeleteMembersMedia,
     super.key,
   });
@@ -87,14 +81,6 @@ class MediaCollectionDetailPage extends StatefulWidget {
 
   /// 改名 / 删除后刷新库页。
   final VoidCallback onChanged;
-
-  /// 管理菜单「刮削资料与封面」（BUG-1662）：与库页合集菜单同一套刮削弹窗，由
-  /// 调用方（持 repo + TMDB key）注入。null = 菜单不出该项。合集详情页此前没有
-  /// 任何刮削入口——刮错了的用户从「详情」进来是条断头路。
-  final Future<void> Function()? onScrape;
-
-  /// 集卡菜单「条目信息」（含重新刮削单集资料，BUG-1662）。null = 不出该项。
-  final Future<void> Function(VideoBookRow episode)? onEpisodeScrapeInfo;
 
   /// 「删除合集」时可选连同各集视频本体一起删（默认不删，保持只解链语义）。
   /// 调用方（持 [VideoBookRepository]）注入：按 [VideoBookRow] 删视频 DB 行 +
@@ -227,7 +213,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (slot.local case final VideoBookRow row) row,
     ];
     // 刮削资料与合集行一起重取：刮削**经用户确认后可能回写合集名**
-    //（`applyCollectionScrape` 的 confirmedTitle），而 widget.collection 是进页时的
+    //（旧刮削流程的用户确认改名），而 widget.collection 是进页时的
     // 快照，只认它会让详情页标题停在旧文件夹名。
     final CollectionScrapeMetaRow? metaRow =
         await widget.database.getCollectionScrapeMeta(widget.collection.id);
@@ -520,7 +506,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// hero 是约 2.7:1 的宽幅槽，理应喂横图。刮削若拿到了 TMDB 的横版图组就落在
   /// media_images 里，槽向天然吻合、直接 cover 铺满即可。
   ///
-  /// 返回 null = 该源没有横版图（Bangumi / 离线库只有竖版海报，恒为空），此时
+  /// 返回 null = 该源没有横版图（离线库只有竖版海报时恒为空），此时
   /// 背景回落到海报 + [LandscapeCoverImage] 的模糊垫底。那不是权宜之计，是这些源
   /// 的常态路径。
   ImageProvider? get _heroBackdrop {
@@ -874,57 +860,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 本合集是否绑定 Bangumi 刮削源（「在 Bangumi 打开本集」菜单项的显示门）。
-  bool get _boundToBangumi => _scrapeMeta?.source == ScrapeSource.bangumi;
-
-  /// 「在 Bangumi 打开本集」（TODO-2488 降级实现）：Bangumi API v0 **没有**公开的
-  /// 章节吐槽接口（全量 spec 零 comment 端点；吐槽只存在于未文档化的私有
-  /// next.bgm.tv p1 API），不自建社区功能——降级为外链：经公开无鉴权的
-  /// `/v0/episodes` 把集号解析成章节 id，浏览器打开 `bgm.tv/ep/<id>`；解析不到
-  /// （集号缺失/源无该集）明示提示并退到条目页；网络失败明示错误、同样退条目页。
-  Future<void> _openEpisodeOnBangumi(CollectionEpisodeSlot slot) async {
-    final ScrapeMetadata? meta = _scrapeMeta;
-    if (meta == null) return;
-    final int? episodeNumber = _episodeNumberOf(slot);
-    final BangumiClient bangumi = BangumiClient();
-    int? episodeId;
-    try {
-      if (episodeNumber != null) {
-        for (final BangumiEpisodeInfo info
-            in await bangumi.fetchSubjectEpisodes(meta.subjectId)) {
-          if (info.episodeNumber == episodeNumber) {
-            episodeId = info.id;
-            break;
-          }
-        }
-        if (episodeId == null) {
-          FushiToast.show(
-            msg: t.collection_episode_bangumi_not_found,
-            severity: ToastSeverity.warning,
-          );
-        }
-      } else {
-        // 集号都解析不出（文件名无集号且无集级刮削）：同样明示降级去向，
-        // 不静默换成条目页（复核意见）。
-        FushiToast.show(
-          msg: t.collection_episode_bangumi_not_found,
-          severity: ToastSeverity.warning,
-        );
-      }
-    } on ScrapeNetworkException catch (e) {
-      FushiToast.show(
-        msg: t.collection_episode_bangumi_open_failed(error: e.toString()),
-        severity: ToastSeverity.error,
-      );
-    } finally {
-      bangumi.close();
-    }
-    final String url = episodeId != null
-        ? 'https://bgm.tv/ep/$episodeId'
-        : 'https://bgm.tv/subject/${meta.subjectId}';
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-  }
-
   /// 「补齐缺集」：按文件名集号找 1..max 的第一个缺口；无内部缺口但刮削话数
   /// 大于 max → 下一集（max+1）。真没有缺集（或一集集号都解不出）→ 提示。
   void _fillMissingEpisodes() {
@@ -1050,7 +985,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             <CollectionRelationsCompanion>[];
         if (k > 0) {
           final int prev = seasonIndexes[k - 1];
-          edges.add(_localRelationEdge(
+          edges.add(createLocalCollectionRelation(
             collectionId: newIds[i],
             type: CollectionRelationType.prequel,
             targetCollectionId: newIds[prev],
@@ -1060,7 +995,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         }
         if (k < seasonIndexes.length - 1) {
           final int next = seasonIndexes[k + 1];
-          edges.add(_localRelationEdge(
+          edges.add(createLocalCollectionRelation(
             collectionId: newIds[i],
             type: CollectionRelationType.sequel,
             targetCollectionId: newIds[next],
@@ -1086,25 +1021,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return;
     }
     await _reload();
-  }
-
-  /// 本地拆分产生的关系边（source='local'，subjectId='collection:<目标id>'）。
-  CollectionRelationsCompanion _localRelationEdge({
-    required int collectionId,
-    required CollectionRelationType type,
-    required int targetCollectionId,
-    required String title,
-    required int sortIndex,
-  }) {
-    return CollectionRelationsCompanion.insert(
-      collectionId: collectionId,
-      relationType: type.wire,
-      sortIndex: Value<int>(sortIndex),
-      targetCollectionId: Value<int?>(targetCollectionId),
-      source: 'local',
-      subjectId: 'collection:$targetCollectionId',
-      title: title,
-    );
   }
 
   Future<void> _delete() async {
@@ -1267,7 +1183,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             // 背景分两条路，取决于**这次刮削的源有没有横版图**：
             // ① 有 backdrop（TMDB）→ 槽向天然吻合，直接 cover 铺满，海报另以独立
             //    2:3 卡片出现在左侧（Jellyfin 式，各就各位）；
-            // ② 无 backdrop（Bangumi / 离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
+            // ② 无 backdrop（离线库 / 未刮削）→ 只有 2:3 海报或 16:9 抽帧
             //    可用，朝向判定交给 [LandscapeCoverImage]：横图 cover 铺满，竖版海报
             //    模糊垫底 + 靠右完整显示（BUG-1298）。此时不再另放海报卡，否则同一张
             //    图在同一屏出现两次。
@@ -2348,32 +2264,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             ],
           ),
         ),
-        // 仅 Bangumi 绑定的合集出现（TMDB/未刮削没有对应的公开章节页可开）。
-        if (_boundToBangumi)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.openBangumi,
-            child: Row(
-              children: <Widget>[
-                const Icon(Icons.open_in_new, size: 20),
-                const SizedBox(width: 12),
-                Text(t.collection_episode_open_bangumi),
-              ],
-            ),
-          ),
-        // 单集条目信息（含「重新刮削」，BUG-1662）：某一集刮错了，此前在合集
-        // 语境下没有任何 UI 路径可以重刮——库页墙上只有合集卡，摸不到成员。
-        // 远端集在本机没有条目行可刮 —— 不出这一项（点了只会打开一个空壳）。
-        if (widget.onEpisodeScrapeInfo != null && episode.local != null)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.scrapeInfo,
-            child: Row(
-              children: <Widget>[
-                const Icon(Icons.info_outline, size: 20),
-                const SizedBox(width: 12),
-                Text(t.video_scrape_info),
-              ],
-            ),
-          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -2390,14 +2280,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     switch (action) {
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
-      case _EpisodeMenuAction.openBangumi:
-        await _openEpisodeOnBangumi(episode);
-      case _EpisodeMenuAction.scrapeInfo:
-        if (episode.local case final VideoBookRow row) {
-          await widget.onEpisodeScrapeInfo?.call(row);
-        }
-        // 重刮会改写集级资料/标题，重载让新集名立即上卡。
-        if (mounted) await _reload();
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
@@ -2407,12 +2289,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _handleManageAction(_CollectionManageAction action) async {
     switch (action) {
-      case _CollectionManageAction.scrape:
-        // 弹窗关闭即返回；刮削可能改写合集名/封面/集级资料，详情页重载自己
-        // （库页刷新由调用方注入的 onApplied 负责，见 showCollectionScrapeDialog）。
-        await widget.onScrape?.call();
-        if (mounted) await _reload();
-        return;
       case _CollectionManageAction.sortBySeason:
         await _sortBySeason();
         return;
@@ -2476,14 +2352,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               unawaited(_handleManageAction(action)),
           itemBuilder: (BuildContext context) =>
               <PopupMenuEntry<_CollectionManageAction>>[
-            // 刮削放最前（BUG-1662）：它是集名/集号/字幕匹配等其余管理能力的数据
-            // 源头，也是「刮错了要重刮」的用户进详情页找的那一项。
-            if (widget.onScrape != null)
-              _manageMenuItem(
-                _CollectionManageAction.scrape,
-                Icons.image_search,
-                t.video_collection_scrape,
-              ),
             _manageMenuItem(
               _CollectionManageAction.sortBySeason,
               Icons.segment,
@@ -2609,13 +2477,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 /// 集卡上下文菜单动作。
 enum _EpisodeMenuAction {
   download,
-  openBangumi,
-  scrapeInfo,
   removeFromCollection,
 }
 
 enum _CollectionManageAction {
-  scrape,
   sortBySeason,
   subtitles,
   renameEpisodes,

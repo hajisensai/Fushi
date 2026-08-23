@@ -26,6 +26,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 4. host 的 hook 转发 gap 点击（handleGlobalClick 未命中 shell）必须**立即**
 ///    post dismissPopupAt——同一次物理点击此刻也落进了底下的应用并可能已发起
 ///    新 lookup，200ms slide 延迟的 dismiss 会杀掉新卡（stale-dismiss 竞态）。
+/// 5. galCard 的 CapturePreview PNG 不继承 HWND region；WIC 解码后必须用同一批
+///    shell rects 的 per-shell 圆角并集裁 alpha，且异步捕获只能使用调用时快照。
 ///
 /// 覆盖窗真渲染依赖 native WebView2，headless 测不了，故源码扫描钉住契约；
 /// 行为面由 node harness（global_lookup_host_test.mjs R1-R3）覆盖。
@@ -88,6 +90,41 @@ void main() {
         hdr, contains('void SetShellRectsFromCsv(const std::string& body);'));
     expect(
         hdr, contains('std::vector<std::array<double, 4>> shell_rects_css_;'));
+  });
+
+  test('galCard BGRA 在 CapturePreview 解码后应用 per-shell 圆角 alpha mask', () {
+    final String capture =
+        functionBody(cpp, 'void GlobalLookupWindow::CaptureBgraAsync(');
+    expect(cpp, contains('void ApplyRoundedShellUnionAlphaMask('),
+        reason: 'CapturePreview 不承诺继承 HWND region，必须在 BGRA 边界裁 alpha');
+    expect(capture, contains('route_context_.source == "galCard"'),
+        reason: '像素破坏操作只属于游戏内 galCard 路由');
+    expect(capture, contains('capture_shell_rects = shell_rects_css_'),
+        reason: '异步 CapturePreview 必须按值快照本次 lookup 的 shell 几何');
+    expect(capture, contains('ApplyRoundedShellUnionAlphaMask('),
+        reason: 'WIC 解码成功后、交给共享内存回调前必须应用 mask');
+    expect(capture.indexOf('ApplyRoundedShellUnionAlphaMask('),
+        lessThan(capture.indexOf('(*sink)(')),
+        reason: '裁剪必须发生在 BGRA 发布之前');
+
+    final String mask =
+        functionBody(cpp, 'void ApplyRoundedShellUnionAlphaMask(');
+    expect(mask, contains('for (const PhysicalRoundedShell& shell : shells)'),
+        reason: '多级查词卡必须逐 shell 做并集，不得给 union bbox 套一个大圆角');
+    expect(mask, contains('std::max(coverage'),
+        reason: '重叠 shell 的 alpha coverage 取并集');
+    expect(mask, contains('pixel[3] = 0'),
+        reason: '所有 shell 外的方形画布像素必须变为透明');
+  });
+
+  test('迟到的 shellRects 路由不能覆盖当前 lookup 的 capture mask', () {
+    final int intercept = cpp.indexOf('"\\"handler\\":\\"shellRects\\""');
+    final int set = cpp.indexOf('SetShellRectsFromCsv(body)', intercept);
+    final String gate = cpp.substring(intercept, set);
+    expect(gate, contains('RouteForMessage(body)'));
+    expect(gate, contains('shell_route.route_epoch == route_context_.route_epoch'));
+    expect(gate,
+        contains('shell_route.lookup_epoch == route_context_.lookup_epoch'));
   });
 
   test('host：measureAndReport 发 shellRects 且在 overlaySize 之前', () {

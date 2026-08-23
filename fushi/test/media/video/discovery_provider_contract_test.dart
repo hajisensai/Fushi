@@ -73,6 +73,19 @@ void main() {
     expect(movie.identityKeys.intersection(series.identityKeys), isEmpty);
   });
 
+  test('AniDB identity is carried as a strong cross-provider key', () {
+    final VideoMediaReference reference = VideoMediaReference(
+      providerId: 'anidb',
+      mediaId: '17617',
+      mediaKind: VideoMetadataMediaKind.tv,
+      discoveryCategory: VideoDiscoveryCategory.anime,
+      title: 'Frieren',
+      anidbId: 17617,
+    );
+
+    expect(reference.identityKeys, contains('anidb:17617'));
+  });
+
   test('empty success plus provider failure remains a partial batch', () {
     final ProviderBatchResult<int> result = ProviderBatchResult.merge<int>(
       <ProviderBatchResult<int>>[

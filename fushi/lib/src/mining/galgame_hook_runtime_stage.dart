@@ -36,8 +36,8 @@ class GalgameHookRuntimeStage {
   GalgameHookRuntimeStage({
     Directory Function(String arch)? sourceDirectoryOverride,
     Future<Directory> Function()? stageRootOverride,
-  })  : _sourceDirectoryOverride = sourceDirectoryOverride,
-        _stageRootOverride = stageRootOverride;
+  }) : _sourceDirectoryOverride = sourceDirectoryOverride,
+       _stageRootOverride = stageRootOverride;
 
   static final GalgameHookRuntimeStage instance = GalgameHookRuntimeStage();
 
@@ -110,18 +110,21 @@ class GalgameHookRuntimeStage {
       // [galHookHelperArchTag] 从 injector 路径的**父目录名**认架构，父目录一旦不叫
       // x86/x64，架构标签就静默变成空串（诊断、日志与 helper 校验一起失真）。
       final Directory target = Directory(p.join(stageRoot.path, version, arch));
-      final String injectorPath =
-          p.join(target.path, 'fushi_voice_injector.exe');
+      final String injectorPath = p.join(
+        target.path,
+        'fushi_voice_injector.exe',
+      );
 
       if (!_stagedCopyIsComplete(target, files, sourceFiles)) {
         await _copyInto(target, files, sourceFiles);
       }
-      if (!File(injectorPath).existsSync()) return null;
+      if (!_stagedCopyIsComplete(target, files, sourceFiles)) return null;
 
       // 清理上一版副本。删不掉说明还有宿主进程持有它——那正是我们要容忍的状态，
       // 跳过即可，下次启动再清。
       unawaited(
-          _pruneStaleStages(stageRoot, keep: p.join(stageRoot.path, version)));
+        _pruneStaleStages(stageRoot, keep: p.join(stageRoot.path, version)),
+      );
       return injectorPath;
     } catch (_) {
       return null;
@@ -154,6 +157,17 @@ class GalgameHookRuntimeStage {
     await target.create(recursive: true);
     for (int i = 0; i < files.length; i++) {
       final File destination = File(p.join(target.path, files[i]));
+      // 清理旧版本副本是尽力而为的递归删除：目录内若有 injector / DLL 正被宿主持有，
+      // Windows 可能先删掉未占用文件、再在占用文件处失败，留下一个「部分缺失但其余文件
+      // 仍被锁住」的内容版本目录。修复该目录时若无条件从第一项开始覆盖，会先撞上已锁定
+      // 且本来正确的 injector，永远走不到真正缺失的 DLL，最终被上层误报成 helper 缺失。
+      //
+      // 内容版本目录已经由全部源文件的 SHA-256 决定；同路径、同长度的现有文件正是
+      // [_stagedCopyIsComplete] 使用的完整性契约，修复时应保留它，只补缺失/截断项。
+      if (destination.existsSync() &&
+          destination.lengthSync() == sourceFiles[i].lengthSync()) {
+        continue;
+      }
       await destination.parent.create(recursive: true);
       await sourceFiles[i].copy(destination.path);
     }
@@ -196,9 +210,7 @@ class GalgameHookRuntimeStage {
     final Directory Function(String arch)? override = _sourceDirectoryOverride;
     if (override != null) return override(arch);
     final String exeDir = File(Platform.resolvedExecutable).parent.path;
-    return Directory(
-      p.join(exeDir, kGalgameHelperInstallDirectoryName, arch),
-    );
+    return Directory(p.join(exeDir, kGalgameHelperInstallDirectoryName, arch));
   }
 
   Future<Directory> _stageRoot() async {
@@ -228,13 +240,15 @@ class GalgameHookRuntimeStage {
 /// 供测试断言复制清单与安装包清单一致：暂存清单必须是分发清单的子集，否则会搬出一个
 /// 缺依赖的半套运行时（比如漏了 LunaHost，文本 hook 全哑）。
 bool stagedFilesAreSubsetOfDistribution(String arch) {
-  final Set<String> distribution =
-      galgameHelperRequiredFiles(arch).map(p.normalize).toSet();
-  return GalgameHookRuntimeStage.stagedFilesForArch(arch)
-      .map(p.normalize)
-      .every(distribution.contains);
+  final Set<String> distribution = galgameHelperRequiredFiles(
+    arch,
+  ).map(p.normalize).toSet();
+  return GalgameHookRuntimeStage.stagedFilesForArch(
+    arch,
+  ).map(p.normalize).every(distribution.contains);
 }
 
 /// 仅用于诊断输出/日志：把清单渲染成稳定字符串。
-String describeStagedFiles(String arch) => const JsonEncoder()
-    .convert(GalgameHookRuntimeStage.stagedFilesForArch(arch));
+String describeStagedFiles(String arch) => const JsonEncoder().convert(
+  GalgameHookRuntimeStage.stagedFilesForArch(arch),
+);

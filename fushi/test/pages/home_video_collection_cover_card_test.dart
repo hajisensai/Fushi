@@ -110,6 +110,12 @@ void main() {
     ));
   }
 
+  /// 建合集并给它一条 **AniDB 主身份**。
+  ///
+  /// 系列墙的入墙资格是「有 AniDB primary identity 的规范作品」（
+  /// `aniDbScrapedVideoCollectionIds()`，见 video_library_series_structure_guard）。
+  /// 本文件测的是封面借用链与角标，不是入墙资格；不种身份的话每条用例都会停在
+  /// 「合集卡根本没渲染」上，测不到它真正要守的东西。
   Future<int> seedCollection(List<String> uids, {String name = '某番剧'}) async {
     final int cid = await db.createMediaCollection(
       name,
@@ -118,6 +124,26 @@ void main() {
     for (final String uid in uids) {
       await db.addToCollection(cid, MediaKind.video, uid);
     }
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        mediaType: 'tv',
+        title: name,
+        collectionId: Value<int?>(cid),
+        updatedAt: DateTime(2026, 1, 1).millisecondsSinceEpoch,
+      ),
+    );
+    await db.replaceVideoMetadataProviderIdentities(
+      workId: workId,
+      identities: <VideoMetadataProviderIdentitiesCompanion>[
+        VideoMetadataProviderIdentitiesCompanion.insert(
+          identityKey: 'work:$workId:anidb',
+          provider: 'anidb',
+          externalId: 'anidb-$cid',
+          isPrimary: const Value<bool>(true),
+          updatedAt: DateTime(2026, 1, 1).millisecondsSinceEpoch,
+        ),
+      ],
+    );
     return cid;
   }
 

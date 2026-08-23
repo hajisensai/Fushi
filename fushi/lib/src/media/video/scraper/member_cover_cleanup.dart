@@ -7,10 +7,10 @@
 /// 不出现在计划里。
 ///
 /// 安全边界（每一条都是「不该动的绝不动」）：
-/// * **只认 [CoverOrigin.autoScraped]**——它是当前代码里**唯一**由自动刮削写下
-///   作品海报时打的标记。`manual` / `userScraped` / `sidecar` 是用户亲自定的
+/// * **只认 [CoverOrigin.autoScraped]**——它是旧自动在线刮削写下作品海报时的
+///   明确标记。`manual` / `userScraped` / `sidecar` 是用户亲自定的
 ///   （BUG-1325 的红线），`scraped` 是来源不明的存量（分不清是自动刮的还是用户
-///   在旧版本弹窗里选的，按 [CoverOverwritePolicy.legacyStrict] 同样保守放过），
+///   在旧版本弹窗里选的，同样保守放过），
 ///   `autoFrame` / 无记录本来就是我们想保留的抽帧缩略图。
 /// * **路径只来自被清那一行自己的 `coverPath` 字段**：不枚举目录、不按 uid 猜
 ///   文件名——猜出来的路径可能是别人的封面。
@@ -24,6 +24,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart'
     show CoverMeta, CoverOrigin;
@@ -128,6 +129,29 @@ List<MemberCoverCleanup> planMemberCoverCleanup({
 ///
 /// [coversDirectory] / [collectionCoversDirectory] 是测试接缝，默认生产目录。
 Future<int> runMemberCoverCleanup({
+  required VideoBookRepository repo,
+  CoverMetaStore? coverMetaStore,
+  Directory? coversDirectory,
+  Directory? collectionCoversDirectory,
+}) async {
+  final VideoScrapeOperationLease? lease =
+      VideoScrapeOperationGate.tryEnterOperation();
+  if (lease == null) return 0;
+  try {
+    return await VideoCoverMutationGate.runExclusive(
+      () => _runMemberCoverCleanupUnlocked(
+        repo: repo,
+        coverMetaStore: coverMetaStore,
+        coversDirectory: coversDirectory,
+        collectionCoversDirectory: collectionCoversDirectory,
+      ),
+    );
+  } finally {
+    lease.release();
+  }
+}
+
+Future<int> _runMemberCoverCleanupUnlocked({
   required VideoBookRepository repo,
   CoverMetaStore? coverMetaStore,
   Directory? coversDirectory,

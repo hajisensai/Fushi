@@ -37,8 +37,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
@@ -85,7 +85,7 @@ class TexthookerPage extends ConsumerStatefulWidget {
 }
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
-    with DictionaryPageMixin {
+    with DictionaryPageMixin, WidgetsBindingObserver {
   final DictionaryPopupController _popup = DictionaryPopupController(
     lowMemory: false,
     onLookupStackDepthChanged: recordLookupStackDepth,
@@ -94,6 +94,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   final GalHookSessionController _session = GalHookSessionController.instance;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
+
+  /// BUG-1799：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
+  /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
+  bool _revalidatingMined = false;
   bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
@@ -421,6 +425,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
+    // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
+    WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
@@ -434,7 +440,49 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
       _maybeScheduleCaptureSetupDialog();
+      // BUG-1799：进页也复核一次——卡可能是在别的页面制的、随后在 Anki 里被删掉，
+      // 那种路径不经过本页的前台切换事件。
+      unawaited(_revalidateMinedLines());
     });
+  }
+
+  /// BUG-1799：切回前台就复核「已制卡」徽章。用户的原始路径正是「在本页制卡 →
+  /// 切到 Anki 删掉那张卡 → 切回 Hibiki」，`resumed` 就是这条路径回到 app 的那一刻。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_revalidateMinedLines());
+    }
+  }
+
+  /// BUG-1799：把本会话所有「已制卡且带 note id」的行拿去问 Anki，凡是 Anki 明确
+  /// 应答「这张 note 不存在」的，把对应行的徽章清掉。
+  ///
+  /// 复核的真相源是 Anki 本身，与 [BUG-186] 给查词弹窗 ✓ 定下的口径一致：徽章不是
+  /// 装饰，它表示「Anki 里现在有这张卡」。
+  ///
+  /// **不可达绝不清**：`findDeletedNotes` 在查询失败 / AnkiConnect 不可达时返回空集
+  /// （见其文档），因此 Anki 没开着的时候本方法什么都不做，而不是把满屏徽章清空。
+  Future<void> _revalidateMinedLines() async {
+    if (_revalidatingMined) return;
+    final Set<int> noteIds = TexthookerService.instance.minedNoteIds;
+    if (noteIds.isEmpty) return;
+    if (!mounted || !_appModel.isInitialised) return;
+    _revalidatingMined = true;
+    try {
+      final BaseAnkiRepository repo =
+          _appModel.platformServices.createAnkiRepository();
+      final Set<int> deleted = await repo.findDeletedNotes(noteIds);
+      if (deleted.isEmpty) return;
+      TexthookerService.instance.clearMinedForNotes(deleted);
+    } catch (e, stack) {
+      // 复核是纯装饰性刷新，任何失败都不得冒泡打断捕获工作台。
+      debugPrint('TexthookerPage._revalidateMinedLines: $e');
+      debugPrint('$stack');
+    } finally {
+      _revalidatingMined = false;
+    }
   }
 
   @override
@@ -460,6 +508,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   void dispose() {
     _linePreviewResetTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_handlePopupMineHardwareKey);
+    WidgetsBinding.instance.removeObserver(this);
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
     final OverlayEntry? popupOverlay = _popupOverlayEntry;
@@ -557,7 +606,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       final String? lineId = _activeLineId;
       if (result.ankiConnect && lineId != null) {
-        TexthookerService.instance.markLineMined(lineId);
+        // BUG-1799：带上 note id，供日后向 Anki 复核这张卡是否还在。
+        TexthookerService.instance.markLineMined(
+          lineId,
+          noteId: result.noteId,
+        );
       }
       return result;
     }
@@ -1122,10 +1175,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     });
   }
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook、video、home_dictionary 共用 [BarrierSwipeDismissTracker]）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
   /// texthooker 每次点词复用热槽（`reuseWarmSlot: true`），可见栈至多一层（+ 隐藏热槽）；
   /// 关一层即收起当前查词。逐层关索引取最后可见层（无可见层回退 0，与 barrier 只在有可见层
   /// 时才渲染一致）。
@@ -1134,20 +1183,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return i < 0 ? 0 : i;
   }
 
-  void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      popNestedPopupAt(_topVisiblePopupIndex, _popup);
-    }
+  /// TODO-1052：barrier 水平拖过阈关一层（判轴/累积/阈值收在
+  /// [LookupDismissBarrier] 内，BUG-1757：横拖不进手势竞技场）。
+  void _dismissTopNestedPopup() {
+    popNestedPopupAt(_topVisiblePopupIndex, _popup);
   }
 
   /// 从命中的那个字起做查词（BUG-1478）。
@@ -1998,20 +2037,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         hiddenByDialog: lookupPopupHiddenByDialog,
       ))
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => popNestedPopupAt(_topVisiblePopupIndex, _popup),
-            onHorizontalDragStart: ReaderFushiSource.instance.enableSwipeToClose
-                ? _onBarrierHorizontalDragStart
-                : null,
-            onHorizontalDragUpdate:
-                ReaderFushiSource.instance.enableSwipeToClose
-                    ? _onBarrierHorizontalDragUpdate
-                    : null,
-            onHorizontalDragEnd: ReaderFushiSource.instance.enableSwipeToClose
-                ? _onBarrierHorizontalDragEnd
-                : null,
-            child: const ColoredBox(color: Colors.transparent),
+          // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，横拖走它
+          // 内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+          child: LookupDismissBarrier(
+            onTapDismiss: (_) =>
+                popNestedPopupAt(_topVisiblePopupIndex, _popup),
+            onSwipeDismiss: _dismissTopNestedPopup,
+            swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
           ),
         ),
       // 搜索期加载占位卡（搜索→就绪才显示，与首页查词同观感）。
@@ -2099,6 +2132,12 @@ class _SessionOverviewCard extends StatelessWidget {
         readiness == GalWorkbenchReadiness.waitingForThread;
     final String audio = galHookAudioBackendLabel(state.audioBackend);
     final String phase = galHookSessionPhaseLabel(state.phase);
+    // 转区标记**窄屏也留着**：它和降级原因同属「不显示就没有第二处能看到」的事实。
+    // `auto` 档在设置页只显示「自动」，真正转没转是启动时按系统 ACP + 目标位数现算的，
+    // 判错时用户看到的只有游戏文字乱码，没有任何线索指向 Hibiki 改了区域。
+    final String localeSuffix = state.japaneseLocaleApplied
+        ? ' · ${t.game_session_japanese_locale}'
+        : '';
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
@@ -2136,13 +2175,29 @@ class _SessionOverviewCard extends StatelessWidget {
                   waitingForThread
                       ? '$phase · ${t.game_text_thread_unset}'
                       : compact
-                          ? '$phase · $audio'
+                          ? '$phase · $audio$localeSuffix'
                           : '$phase · $audio'
-                              '${format == null ? '' : ' · $format'}',
+                              '${format == null ? '' : ' · $format'}'
+                              '$localeSuffix',
                   maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                // 转区的**可执行处置**：上面那行只说「已转区」，这里说清它可能造成什么、
+                // 以及去哪关。误转区（多语言版 / 汉化版落进 `auto` 的「32 位 ⇒ 日文原版」
+                // 判据）会把游戏自己的 GBK/UTF-8 字符串按 CP932 解坏，症状从窗口标题乱码
+                // 到脚本加载失败都有。[resolveJapaneseLocale] 已经论证过 `auto` 不可能总
+                // 判对、真正兜底的是用户手动选「永不转区」——够得着那个档位的前提就是这
+                // 一行。compact 下省掉：窄屏留短标记即可，长句会把整张卡挤爆。
+                if (state.japaneseLocaleApplied && !compact)
+                  Text(
+                    t.game_session_japanese_locale_hint,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
                 // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
                 // 请同样以管理员身份启动 Hibiki」之类）。旧实现把 `engine_attach_failed`
                 // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。

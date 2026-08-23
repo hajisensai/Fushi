@@ -36,6 +36,7 @@ class MediaSourcesPage extends ConsumerStatefulWidget {
     super.key,
     this.navigation,
     this.onScrapeAll,
+    this.onClearAllScrapeRecords,
     this.onScrapeSource,
     this.onVideoScanCompleted,
     this.scrapeTaskController,
@@ -51,6 +52,9 @@ class MediaSourcesPage extends ConsumerStatefulWidget {
 
   /// 视频来源页专用的整库刮削动作；其它媒体种类即使误传也不会显示。
   final Future<void> Function()? onScrapeAll;
+
+  /// 视频来源页专用的整库刮削记录清理动作；其它媒体种类即使误传也不会显示。
+  final Future<void> Function()? onClearAllScrapeRecords;
 
   /// 单个视频来源的刮削入口。
   final Future<void> Function(SourceLibraryRow source)? onScrapeSource;
@@ -80,6 +84,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
 
   /// BUG-513 同款纪律：AppModel 在 initState 捕获，async gap 之后不再 `ref.read`。
   late final AppModel _appModel = ref.read(appProvider);
+  bool _clearingScrapeRecords = false;
 
   @override
   void initState() {
@@ -103,6 +108,21 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
 
   void _taskChanged() {
     if (mounted) setState(() {});
+  }
+
+  bool get _busy => _clearingScrapeRecords ||
+      widget.scrapeTaskController?.isBusy == true ||
+      _viewKey.currentState?.isBusy == true;
+
+  Future<void> _clearAllScrapeRecords() async {
+    final Future<void> Function()? clear = widget.onClearAllScrapeRecords;
+    if (clear == null || _busy) return;
+    setState(() => _clearingScrapeRecords = true);
+    try {
+      await clear();
+    } finally {
+      if (mounted) setState(() => _clearingScrapeRecords = false);
+    }
   }
 
   @override
@@ -236,8 +256,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   /// 原页头的「添加来源」收敛到此（TODO-2930 用户反馈：页头按钮与页内来源区
   /// 割裂）；Cupertino 布局本就不渲染页头，这里也顺带补上了 iOS 的添加入口。
   Widget _buildSourcesSectionHeader() {
-    final bool busy = widget.scrapeTaskController?.isBusy == true ||
-        _viewKey.currentState?.isBusy == true;
+    final bool busy = _busy;
     return Row(
       children: <Widget>[
         Expanded(
@@ -260,8 +279,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   }
 
   Widget _buildHeader() {
-    final bool busy = widget.scrapeTaskController?.isBusy == true ||
-        _viewKey.currentState?.isBusy == true;
+    final bool busy = _busy;
     final List<Widget> actions = <Widget>[
       if (widget.mediaKind == 'video' && widget.onScrapeAll != null)
         FushiIconButton(
@@ -272,6 +290,16 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
           onTap: () {
             if (!busy) unawaited(widget.onScrapeAll!());
           },
+        ),
+      if (widget.mediaKind == 'video' &&
+          widget.onClearAllScrapeRecords != null)
+        FushiIconButton(
+          tooltip: t.video_source_scrape_clear_all,
+          label: t.video_source_scrape_clear_all,
+          icon: Icons.delete_sweep_outlined,
+          enabledColor: Theme.of(context).colorScheme.error,
+          enabled: !busy,
+          onTap: _clearAllScrapeRecords,
         ),
       if (widget.mediaKind == 'video' && widget.onOpenScrapeTasks != null)
         FushiIconButton(

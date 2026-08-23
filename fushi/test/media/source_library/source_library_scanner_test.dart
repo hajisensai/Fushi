@@ -23,6 +23,7 @@ import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -393,6 +394,33 @@ void main() {
       expect(summary.createdVideoUids, <String>[videos.single.bookUid]);
       expect(summary.reusedVideoUids, isEmpty);
       expect(summary.createdCollectionIds, isEmpty);
+    });
+
+    test('maintenance lease blocks the real video scanner before any IO',
+        () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoBookRepository repo = VideoBookRepository(db);
+      File(p.join(tmp.path, 'blocked.mp4')).writeAsStringSync('fake-mp4');
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Blocked videos',
+        mediaKind: 'video',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      final VideoScrapeOperationLease lease =
+          VideoScrapeOperationGate.tryEnterMaintenance()!;
+      addTearDown(lease.release);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.succeeded, isFalse);
+      expect(summary.error, contains('正在清理'));
+      expect(summary.discoveredPaths, isEmpty);
+      expect(await repo.listAll(), isEmpty);
+      expect(await db.getAllVideoMetadataWorks(), isEmpty);
     });
 
     test('nested episodic videos form one additive, stable playlist', () async {
