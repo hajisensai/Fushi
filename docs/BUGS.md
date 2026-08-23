@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1676 条。点号进各自文件。
+> 共 1677 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -139,6 +139,7 @@
 | [BUG-1694](bugs/BUG-1694-jimaku-anime-filter.md) | ✅ | ✅ | Jimaku 搜索永不传 anime 参数，真人剧/日剧字幕永远 0 结果 |
 | [BUG-1693](bugs/BUG-1693-interconnect-peer-offline-misreported-as-network-error.md) | ✅ | ✅ | 互联对端关闭时误报为网络错误 |
 | [BUG-1692](bugs/BUG-1692-macos-lookup-popup-webview-ignores-pointer.md) | ✅ | ✅ | macOS 查词浮层 WebView 完全收不到指针事件（点击/拖拽全失效，Flutter 外壳正常） |
+| [BUG-1691](bugs/BUG-1691-gal-japanese-locale-invisible.md) | ✅ | ✅ | 转区静默生效解坏多语言版游戏文字，用户无从发现 |
 | [BUG-1690](bugs/BUG-1690-startup-audio-warmup-interrupts-music.md) | ✅ | ✅ | 启动静音预热在音频设备上开流,打断其他应用正在播放的音乐 |
 | [BUG-1689](bugs/BUG-1689-lookup-grip-activates-main-window.md) | ✅ | ✅ | 点剪贴板查词面板把 Hibiki 主界面抬到用户窗口之上 |
 | [BUG-1688](bugs/BUG-1688-vn-chrome-inset-viewport.md) | ✅ | ✅ | VN 模式忽略 chrome inset 与页面尺寸，正文被顶栏/底栏与刘海压住（iOS 最严重） |

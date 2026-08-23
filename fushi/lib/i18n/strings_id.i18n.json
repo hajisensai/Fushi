@@ -3731,5 +3731,7 @@
   "video_source_scrape_clear_all_completed_protected": "Scrape records were cleared. Modified or unverifiable sidecar files were kept.",
   "video_source_scrape_clear_all_busy": "A video scan or scrape is still running. Try again after it finishes.",
   "video_source_scrape_clear_all_failed": "Could not clear all scrape records. No unverified user files were deleted.",
-  "video_source_scrape_clear_all_in_progress": "A scrape-record cleanup is already in progress."
+  "video_source_scrape_clear_all_in_progress": "A scrape-record cleanup is already in progress.",
+  "game_session_japanese_locale": "Japanese locale",
+  "game_session_japanese_locale_hint": "The game was started under a Japanese (CP932) locale. If its text looks garbled or a script error appears, set this game's Japanese locale to Never."
 }

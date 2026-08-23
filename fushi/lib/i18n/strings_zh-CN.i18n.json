@@ -3731,5 +3731,7 @@
   "video_source_scrape_clear_all_completed_protected": "刮削记录已清理；被修改或无法验证的旁车文件已保留。",
   "video_source_scrape_clear_all_busy": "视频扫描或刮削仍在运行，请等待任务结束后重试。",
   "video_source_scrape_clear_all_failed": "未能清理全部刮削记录；未删除任何无法验证的用户文件。",
-  "video_source_scrape_clear_all_in_progress": "正在清理刮削记录，请稍候。"
+  "video_source_scrape_clear_all_in_progress": "正在清理刮削记录，请稍候。",
+  "game_session_japanese_locale": "已转区",
+  "game_session_japanese_locale_hint": "本局以日文区域 (CP932) 启动。若游戏文字乱码或脚本报错，可把该游戏的日语区域改为「永不转区」。"
 }
