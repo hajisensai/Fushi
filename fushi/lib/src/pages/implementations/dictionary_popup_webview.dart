@@ -274,6 +274,52 @@ class DictionaryPopupWebViewState
       _controller?.evaluateJavascript(source: source);
   bool _ready = false;
   bool _refreshWhenReady = false;
+  double? _layoutWidth;
+  double? _layoutHeight;
+
+  void _capturePopupLayout(BoxConstraints constraints) {
+    final double? width = constraints.hasBoundedWidth &&
+            constraints.maxWidth.isFinite &&
+            constraints.maxWidth > 0
+        ? constraints.maxWidth
+        : null;
+    final double? height = constraints.hasBoundedHeight &&
+            constraints.maxHeight.isFinite &&
+            constraints.maxHeight > 0
+        ? constraints.maxHeight
+        : null;
+    if (_layoutWidth == width && _layoutHeight == height) return;
+    _layoutWidth = width;
+    _layoutHeight = height;
+    if (!_ready) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_applyPopupViewportSize());
+    });
+  }
+
+  /// BUG-1812：iOS WKWebView 的 popup 文档可出现 `window.innerWidth == 0`，
+  /// 即使 Flutter platform view 已有真实非零布局。把 Flutter 约束写成文档宽度，
+  /// 让 `#entries-container`、弹窗 JS 与 HTML5 音频控件拥有真实可见视口。
+  Future<void> _applyPopupViewportSize() async {
+    final InAppWebViewController? controller = _controller;
+    final double? width = _layoutWidth;
+    final double? height = _layoutHeight;
+    if (controller == null || width == null || width <= 0) return;
+    final String heightValue = height == null ? '0' : '$height';
+    await controller.evaluateJavascript(source: '''(function(){
+  var w = $width, h = $heightValue;
+  document.documentElement.style.width = w + 'px';
+  document.documentElement.style.minWidth = w + 'px';
+  document.body.style.width = w + 'px';
+  document.body.style.minWidth = w + 'px';
+  document.documentElement.style.setProperty('--fushi-popup-viewport-width', w + 'px');
+  if (h > 0) {
+    document.documentElement.style.setProperty('--fushi-popup-viewport-height', h + 'px');
+  }
+  window.__fushiPopupViewportWidth = w;
+  window.__fushiPopupViewportHeight = h;
+})();''');
+  }
 
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
   /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
@@ -2161,8 +2207,9 @@ JSON.stringify((function(){
         );
         controller
             .evaluateJavascript(source: ReaderCaretScripts.source())
-            .then((_) {
+            .then((_) async {
           if (!mounted) return;
+          await _applyPopupViewportSize();
           unawaited(_pushInstantScrollPreference());
           if (_refreshWhenReady || _lastSearchTerm == null) {
             _pushResults();
@@ -2212,8 +2259,9 @@ JSON.stringify((function(){
     // appUiScale 空间。非 Windows 平台不包 GestureDetector，保持原生菜单行为不变。
     // [HitTestBehavior.translucent] 让右键之外的所有指针事件照常落到 WebView（不抢左键
     // 框选 / 滚动 / 点击）。
+    final Widget guardedWebView;
     if (isWindowsPlatform) {
-      return KeyedSubtree(
+      guardedWebView = KeyedSubtree(
         key: _deathGuard.rebuildKey,
         child: Focus(
           // BUG-1451 键盘那一半（BUG-402 当年只修了阅读器正文，弹窗漏修）：Windows 的
@@ -2234,8 +2282,16 @@ JSON.stringify((function(){
           ),
         ),
       );
+    } else {
+      guardedWebView =
+          KeyedSubtree(key: _deathGuard.rebuildKey, child: webView);
     }
-    return KeyedSubtree(key: _deathGuard.rebuildKey, child: webView);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        _capturePopupLayout(constraints);
+        return guardedWebView;
+      },
+    );
   }
 
   /// Windows 弹窗内的「Ctrl+C 复制选中文字」兼容层（BUG-1451，BUG-402 同根）。

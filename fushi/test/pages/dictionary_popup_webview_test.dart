@@ -52,6 +52,28 @@ void main() {
             'navigate to assets/popup/popup.html as its main frame.',
       );
     });
+    test('BUG-1812 iOS zero innerWidth is replaced by Flutter layout width',
+        () {
+      final String source = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+      expect(source, contains('Future<void> _applyPopupViewportSize()'));
+      expect(source, contains('document.documentElement.style.width'));
+      expect(source, contains('document.body.style.width'));
+      expect(source, contains('LayoutBuilder('),
+          reason: 'the popup must measure its actual Flutter constraints');
+      final int onLoadStopAt = source.indexOf('onLoadStop:');
+      final int applyAt =
+          source.indexOf('await _applyPopupViewportSize();', onLoadStopAt);
+      final int pushAt = source.indexOf('_pushResults();', applyAt);
+      expect(onLoadStopAt, isNonNegative);
+      expect(applyAt, isNonNegative);
+      expect(
+        applyAt,
+        lessThan(pushAt),
+        reason: 'the width must be fixed before renderPopup creates entries',
+      );
+    });
   });
 
   group('dictionary popup scroll lifecycle', () {

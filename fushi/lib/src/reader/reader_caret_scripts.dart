@@ -417,12 +417,33 @@ window.fushiCaret = {
   },
 
   // ── Viewport (current page) ────────────────────────────────────────
-  _viewport: function() {
+  _viewportFrame: function() {
+    // BUG-1812: WKWebView may expose a real Dart-sized body while reporting
+    // window.innerWidth/innerHeight as 0. Vertical-rl also anchors that body
+    // in a negative horizontal frame (for example [-375, 0]). Reuse the
+    // reader's authoritative CSS sizes and the actual body border-box, exactly
+    // like pagination, so Enter can find visible characters on iOS.
+    var rootCs = getComputedStyle(document.documentElement);
+    var bodyRect = document.body.getBoundingClientRect();
+    var width = parseFloat(rootCs.getPropertyValue('--page-width')) ||
+      window.innerWidth || document.body.clientWidth;
+    var height =
+      parseFloat(rootCs.getPropertyValue('--reader-viewport-height')) ||
+      window.innerHeight || document.body.clientHeight;
     return {
-      left: 0,
-      top: this.insetTop || 0,
-      right: window.innerWidth,
-      bottom: window.innerHeight - (this.insetBottom || 0)
+      left: Number.isFinite(bodyRect.left) ? bodyRect.left : 0,
+      top: Number.isFinite(bodyRect.top) ? bodyRect.top : 0,
+      width: width,
+      height: height
+    };
+  },
+  _viewport: function() {
+    var frame = this._viewportFrame();
+    return {
+      left: frame.left,
+      top: frame.top + (this.insetTop || 0),
+      right: frame.left + frame.width,
+      bottom: frame.top + frame.height - (this.insetBottom || 0)
     };
   },
   _inViewport: function(rect) {
@@ -678,7 +699,8 @@ window.fushiCaret = {
     return { status: 'blocked' };
   },
   _viewportSize: function() {
-    return this._vertical() ? window.innerWidth : window.innerHeight;
+    var frame = this._viewportFrame();
+    return this._vertical() ? frame.width : frame.height;
   },
   _scrollIntoView: function(rect) {
     var vertical = this._vertical();
