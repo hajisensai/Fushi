@@ -54,6 +54,11 @@ Inno 的回滚只撤销了 `[InstallDelete]` 建的目录，**已经复制成功
 `installed`，用户收到「更新成功」，继续跑旧代码。这就是用户连着几天觉得「修好的 bug 没生效」的
 直接原因：每一次自更新都在同一处静默回滚，而每一次都报成功。
 
+误判还会**顺手销毁重试材料**：`reconcile` 的 installed 分支按 TODO-1089 立刻回收
+`updates\*-windows-setup.exe`。用户现场 updates 目录里只剩一堆 `.meta.json`，安装包一个不剩
+——本来只要重跑一次那个包就能自愈，判据错了之后连包都没了。修好 ③ 之后这条自然消失
+（判为失败就不再走回收分支），无需为它单独加特例。
+
 ### 修复
 
 1. **`platform_updater.dart`**：新增 `stageWindowsUpdateLauncher()`，把 launcher 复制到 updates
