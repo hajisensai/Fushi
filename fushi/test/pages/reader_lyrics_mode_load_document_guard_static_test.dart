@@ -19,11 +19,20 @@ void main() {
     );
 
     final int lyricsModeBranch = onLoadStop.indexOf('if (_lyricsMode)');
-    final int guardCall =
-        onLoadStop.indexOf('_isLoadedLyricsDocument(controller)');
-    final int completeCall =
-        onLoadStop.indexOf('_onChapterLoadComplete(controller)');
+    final int finalizeCall =
+        onLoadStop.indexOf('_finalizeLyricsDocumentIfReady(controller)');
     expect(lyricsModeBranch, isNonNegative);
+    expect(finalizeCall, isNonNegative);
+
+    final String finalize = _functionSource(
+      source,
+      '  Future<bool> _finalizeLyricsDocumentIfReady(',
+      '  Future<void> _onChapterLoadComplete(',
+    );
+    final int guardCall =
+        finalize.indexOf('_isLoadedLyricsDocument(controller)');
+    final int completeCall =
+        finalize.indexOf('_onChapterLoadComplete(controller)');
     expect(guardCall, isNonNegative);
     expect(completeCall, isNonNegative);
     expect(

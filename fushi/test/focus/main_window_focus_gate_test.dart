@@ -47,7 +47,7 @@ void main() {
     expect(probe.hasFocus, isFalse,
         reason: '主窗不在前台时请求焦点 = 引擎 SetFocus(FlutterView) = 把主界面'
             '抢到用户的游戏 / 浏览器前面（BUG-1619）');
-  });
+  }, skip: !mainWindowFocusGateApplies);
 
   testWidgets('门开着：焦点照常工作（不改变正常使用）', (WidgetTester tester) async {
     final FocusNode probe = FocusNode(debugLabel: 'probe');
@@ -58,7 +58,7 @@ void main() {
     probe.requestFocus();
     await tester.pumpAndSettle();
     expect(probe.hasFocus, isTrue);
-  });
+  }, skip: !mainWindowFocusGateApplies);
 
   testWidgets('关门会让出既有焦点，开门后由焦点控制器补回内容焦点', (WidgetTester tester) async {
     final FocusNode probe = FocusNode(debugLabel: 'probe');
@@ -86,5 +86,5 @@ void main() {
     expect(controller.primaryFocusIsManagedTarget, isTrue,
         reason: '开门后必须补一次焦点修复，否则用户切回主窗整页没有焦点、'
             '键盘 / 手柄快捷键全不响应（TODO-900 的老症状）');
-  });
+  }, skip: !mainWindowFocusGateApplies);
 }
