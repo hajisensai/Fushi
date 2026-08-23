@@ -340,12 +340,12 @@ class TexthookerLineEntry {
   /// 本行是否已成功制卡（会话内存态，不落 DB）。制卡成功由
   /// [GalHookMiningCoordinator] / fallback 制卡回写（见 [TexthookerService.markLineMined]）。
   ///
-  /// BUG-1797：这**不是**单向 latch —— 用户在 Anki 里把那张卡删了之后，
+  /// BUG-1799：这**不是**单向 latch —— 用户在 Anki 里把那张卡删了之后，
   /// [TexthookerService.clearMinedForNotes] 会把它清回 false，徽章随之消失。
   /// 复核凭据是 [minedNoteId]。
   final bool mined;
 
-  /// BUG-1797：本行制出的那张 Anki note 的 id，用于日后复核它是否还活着。
+  /// BUG-1799：本行制出的那张 Anki note 的 id，用于日后复核它是否还活着。
   ///
   /// 仅当后端回传了真实 note id（AnkiConnect；galgame 制卡是 Windows 专属车道，
   /// 因此实际总有 id）时非空。为 null 时 [mined] 退化回旧的单向 latch —— 没有身份
@@ -796,7 +796,7 @@ class TexthookerService extends ChangeNotifier {
     return true;
   }
 
-  /// 把 [id] 行标记为已制卡，[noteId] 是后端回传的 note id（BUG-1797 的复核凭据，
+  /// 把 [id] 行标记为已制卡，[noteId] 是后端回传的 note id（BUG-1799 的复核凭据，
   /// 无 id 的后端传 null）。制卡成功后由挖矿编排回写，供列表显示「已制卡」徽章。
   ///
   /// 幂等口径：已是 mined **且** note id 没变化才跳过；已 mined 的行拿到了新的
@@ -813,7 +813,7 @@ class TexthookerService extends ChangeNotifier {
     return true;
   }
 
-  /// BUG-1797：把 note 已被删除的行清回「未制卡」。[deletedNoteIds] 必须是
+  /// BUG-1799：把 note 已被删除的行清回「未制卡」。[deletedNoteIds] 必须是
   /// **确认已从 Anki 删除**的 id 集合（见 `BaseAnkiRepository.findDeletedNotes`
   /// 的口径：查不到 / 不可达一律给空集，绝不当成已删除）。
   ///
@@ -835,7 +835,7 @@ class TexthookerService extends ChangeNotifier {
     return cleared;
   }
 
-  /// BUG-1797：当前所有「已制卡且带 note id」的行的 note id 集合，供页面拿去
+  /// BUG-1799：当前所有「已制卡且带 note id」的行的 note id 集合，供页面拿去
   /// 向 Anki 批量复核。没有 id 的行不参与（复核不了）。
   Set<int> get minedNoteIds => _entries
       .where((TexthookerLineEntry e) => e.mined && e.minedNoteId != null)

@@ -1,4 +1,4 @@
-## BUG-1797 · galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核
+## BUG-1799 · galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核
 - **报告**：2026-08-23（用户原话：「anki扫描好像不是实时的 我制卡后然后去anki删了，还是显示已制卡。」）
 - **真实性**：✅ 真 bug — 根因 `fushi/lib/src/sync/texthooker_service.dart:341`（旧 `final bool mined`）
   + `:745` 旧 `markLineMined(String id)`。

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-// BUG-1797：「已制卡」标记必须能被 Anki 的真实状态推翻——用户在 Anki 里删掉那张卡
+// BUG-1799：「已制卡」标记必须能被 Anki 的真实状态推翻——用户在 Anki 里删掉那张卡
 // 之后，标记要消失。复核入口是 BaseAnkiRepository.findDeletedNotes。
 //
 // 这组测试守的是它**返回值口径**，那才是要害：只报「后端明确应答、且应答里没有这张
@@ -52,7 +52,7 @@ class _Repo extends AnkiConnectRepository {
 }
 
 void main() {
-  group('BUG-1797 findDeletedNotes 只报「确认已删除」', () {
+  group('BUG-1799 findDeletedNotes 只报「确认已删除」', () {
     test('Anki 应答里缺席的 note 被判为已删除', () async {
       final service = _NotesService(present: <int>{11, 33});
       final Set<int> deleted =
@@ -105,7 +105,7 @@ void main() {
     });
   });
 
-  group('BUG-1797 基类默认降级', () {
+  group('BUG-1799 基类默认降级', () {
     test('拿不到 note 存在性的后端恒返回空集（保持旧 latch 行为）', () async {
       expect(await _DegradedRepo().findDeletedNotes(<int>{1, 2}), isEmpty);
     });

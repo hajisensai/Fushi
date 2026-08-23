@@ -461,6 +461,66 @@ window.fushiSelection = {
       }
     });
   },
+  // BUG-1797：可见正文盒 = body 的 content box ∩ 视口。
+  //
+  // 分页模式把整章内容当**一根** multicol，靠移动 scrollLeft/scrollTop 看每一页，所以
+  // 相邻页的列在几何上就真实地落在 body 的 padding（页边距）带里。body{overflow:hidden}
+  // 只在 border-box 裁，裁不掉 padding 带**内**的东西；真正遮住它的是 body 的 clip-path
+  // 和 html::before 覆盖条（reader_content_styles.dart 的 contentClipCss / TODO-1285），
+  // 两者都是**绘制期**机制。而命中测试是**布局期**的：caretPositionFromPoint 把落点 clamp
+  // 到最近字符，getClientRects 完全无视 clip-path 与覆盖条 —— 于是「看不见」和「点得到」
+  // 用了两套互不相干的真相，点页边距就查到了相邻页的词（横排在左右间距、竖排在上下间距）。
+  //
+  // 修法不是给页边距加特例分支，而是让两者同源：判据从「找得到字符」变成「这个字符可见吗」。
+  // 盒子取 body 的 content box（border-box 内缩 computed padding，与 contentClipCss 逐项
+  // 一致），computed 值已由引擎把 vh/vw/calc/var 解析成 px，不在 JS 里重算一遍 CSS、也就
+  // 不会跟 CSS 那侧漂移。三种布局零特例：分页下 body 是钉在视口帧上的 scroller，content
+  // box 恰等于 clip 出的可见区；连续模式 body 随内容滚动，与视口取交后滚出去的那截不会被
+  // 误判成不可见；VN 模式 body padding 为 0，盒 == 整视口、判据近似恒真。
+  visibleContentBox: function() {
+    try {
+      var body = document.body;
+      if (!body) return null;
+      var rect = body.getBoundingClientRect();
+      var cs = window.getComputedStyle(body);
+      var px = function(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; };
+      var left = rect.left + px(cs.borderLeftWidth) + px(cs.paddingLeft);
+      var top = rect.top + px(cs.borderTopWidth) + px(cs.paddingTop);
+      var right = rect.right - px(cs.borderRightWidth) - px(cs.paddingRight);
+      var bottom = rect.bottom - px(cs.borderBottomWidth) - px(cs.paddingBottom);
+      var vw = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (left < 0) left = 0;
+      if (top < 0) top = 0;
+      if (vw > 0 && right > vw) right = vw;
+      if (vh > 0 && bottom > vh) bottom = vh;
+      if (!(right > left) || !(bottom > top)) return null;
+      return { left: left, top: top, right: right, bottom: bottom };
+    } catch (err) {
+      return null;
+    }
+  },
+  // BUG-1797：这个字符真的可见吗（字形矩形与可见正文盒有正面积交集）。命中链上每个候选
+  // 字符都要过这一关，页边距带里被 clip 掉的相邻页字符因此永远成不了查词/选词目标；跨在
+  // 边界上、还露出半个的字符仍算可见（clip 后用户确实看得到，点它就该查得到）。
+  // [box] 由调用方一次算好往下传：逐字符兜底扫描会跑上千次，每次现算 getComputedStyle
+  // 就是上千次强制 reflow。拿不到盒（无 body / 退化几何）一律返回 true —— 这道守卫只负责
+  // 拦下**确证不可见**的字符，绝不在几何未知时把正常查词一起拦掉。
+  charRangeVisible: function(charRange, box) {
+    if (box === undefined) box = this.visibleContentBox();
+    if (!box) return true;
+    var rects = charRange.getClientRects();
+    var list = (rects && rects.length) ? rects : [charRange.getBoundingClientRect()];
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (!r) continue;
+      if (Math.min(r.right, box.right) > Math.max(r.left, box.left) &&
+          Math.min(r.bottom, box.bottom) > Math.max(r.top, box.top)) {
+        return true;
+      }
+    }
+    return false;
+  },
   inCharRange: function(charRange, x, y, pad) {
     // TODO-916 症状④：字符矩形按 [pad]（默认 0 = 旧的精确包含）外扩一圈再判包含，
     // 消除落在字缝/行距/描边外缘的 miss。pad 仅在 getCaretRange 的逐字符兜底里传入小值，
@@ -487,7 +547,10 @@ window.fushiSelection = {
     var dy = cy - y;
     return dx * dx + dy * dy;
   },
-  getCaretRange: function(x, y) {
+  // BUG-1797：[box] 是调用方算好的可见正文盒（见 visibleContentBox），沿命中链往下传，
+  // 逐字符兜底扫描才不会每个字符都现算一次 getComputedStyle。不传时自己算一份。
+  getCaretRange: function(x, y, box) {
+    if (box === undefined) box = this.visibleContentBox();
     // BUG-765 续修：`caretPositionFromPoint` 命中「非文本 / 振假名」节点时**不再早退**，
     // 落到下面的 `elementFromPoint`+最近字符几何兜底。根因：拖选区手柄时手指压在手柄
     // div 上，即便 `moveSelectionHandle` 已把手柄 `pointer-events:none`，部分 Android
@@ -519,7 +582,8 @@ window.fushiSelection = {
       for (var i = 0; i < node.textContent.length; i++) {
         range.setStart(node, i);
         range.setEnd(node, i + 1);
-        if (this.inCharRange(range, x, y)) {
+        // BUG-1797：命中还不够，字符得真的可见 —— 页边距带里的相邻页字符会被这里剔掉。
+        if (this.inCharRange(range, x, y) && this.charRangeVisible(range, box)) {
           range.collapse(true);
           return range;
         }
@@ -540,6 +604,9 @@ window.fushiSelection = {
         if (distSq >= bestDistSq) continue;
         var rect = range.getClientRects()[0] || range.getBoundingClientRect();
         if (!rect) continue;
+        // BUG-1797：不可见字符不得参与「最近字符」竞争 —— 否则页边距带里的相邻页字符
+        // 会以更近的距离抢走本页边缘字符的名额，落点从「查错词」变成「查不到词」。
+        if (!this.charRangeVisible(range, box)) continue;
         var tol = Math.max(6, Math.max(rect.width, rect.height) / 2);
         if (distSq <= tol * tol) {
           bestDistSq = distSq;
@@ -556,7 +623,9 @@ window.fushiSelection = {
     return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
   },
   getCharacterAtPoint: function(x, y) {
-    var range = this.getCaretRange(x, y);
+    // BUG-1797：整条命中链共用同一个可见正文盒，一次 hit-test 只量一次几何。
+    var box = this.visibleContentBox();
+    var range = this.getCaretRange(x, y, box);
     if (!range) return null;
     var node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE || this.isFurigana(node)) return null;
@@ -573,7 +642,12 @@ window.fushiSelection = {
         var charRange = document.createRange();
         charRange.setStart(node, offset);
         charRange.setEnd(node, offset + 1);
-        if (this.inCharRange(charRange, x, y, pads[p])) {
+        // BUG-1797：caretPositionFromPoint 的快路把落点 clamp 到最近字符，页边距上的点
+        // 因此照样解析出一个字符；这里的可见性确认是「不可见就不可点」这条不变式在查词/
+        // 选词全部入口（selectText / beginRangeSelection / updateRangeSelection /
+        // moveSelectionHandle / tapHasCharacter）上的唯一收口。
+        if (this.inCharRange(charRange, x, y, pads[p]) &&
+            this.charRangeVisible(charRange, box)) {
           if (this.isScanBoundary(text[offset])) return null;
           return { node: node, offset: offset };
         }

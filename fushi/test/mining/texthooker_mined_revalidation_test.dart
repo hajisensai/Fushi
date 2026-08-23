@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 
-// BUG-1797：galgame 捕获工作台台词列表的「已制卡」徽章，此前是**单向内存 latch**
+// BUG-1799：galgame 捕获工作台台词列表的「已制卡」徽章，此前是**单向内存 latch**
 // （markLineMined 只能 false→true，永不复核 Anki）。用户在 Anki 里把那张卡删掉之后，
 // 徽章仍然亮着——这就是「anki 扫描不是实时的」的真身。
 //
@@ -24,7 +24,7 @@ void main() {
 
   bool minedOf(String id) => service.entryById(id)!.mined;
 
-  group('BUG-1797 制卡回写记下 note id', () {
+  group('BUG-1799 制卡回写记下 note id', () {
     test('markLineMined 记下 note id，徽章点亮', () {
       final String id = appendLine('こんにちは');
       expect(service.markLineMined(id, noteId: 1700000000001), isTrue);
@@ -59,7 +59,7 @@ void main() {
     });
   });
 
-  group('BUG-1797 卡被删则徽章消失', () {
+  group('BUG-1799 卡被删则徽章消失', () {
     test('确认删除的 note 对应的行清回未制卡', () {
       final String id = appendLine('こんにちは');
       service.markLineMined(id, noteId: 42);
@@ -104,7 +104,7 @@ void main() {
     });
   });
 
-  group('BUG-1797 绝不误清（本组是核心不变式）', () {
+  group('BUG-1799 绝不误清（本组是核心不变式）', () {
     test('空集什么都不清 —— Anki 不可达时走的正是这条', () {
       final String id = appendLine('こんにちは');
       service.markLineMined(id, noteId: 42);

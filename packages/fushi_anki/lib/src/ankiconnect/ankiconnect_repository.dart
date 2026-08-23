@@ -1137,7 +1137,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
-  // BUG-1797：复核哪些 note 已被用户在 Anki 里删掉。一次 `notesInfo` 批量往返
+  // BUG-1799：复核哪些 note 已被用户在 Anki 里删掉。一次 `notesInfo` 批量往返
   // （常数 1 次，不随 id 数增长），把「应答里没出现」的 id 当作已删除。
   //
   // `notesInfoMany` 对不存在的 note 收到的是**空对象项**（没有 noteId 字段），

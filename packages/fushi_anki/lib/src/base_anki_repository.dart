@@ -200,7 +200,7 @@ abstract class BaseAnkiRepository {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
-  /// BUG-1797：复核 [noteIds] 里哪些 note **已经不在 Anki 中了**（用户在 Anki 里删了卡）。
+  /// BUG-1799：复核 [noteIds] 里哪些 note **已经不在 Anki 中了**（用户在 Anki 里删了卡）。
   ///
   /// 返回值口径是本方法的全部要害：**只返回「后端明确应答、且应答里没有这张 note」的 id**。
   /// 查询失败、后端不可达、后端不支持一律返回**空集**，而不是「全都当成已删除」——

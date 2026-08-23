@@ -95,7 +95,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
 
-  /// BUG-1797：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
+  /// BUG-1799：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
   /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
   bool _revalidatingMined = false;
   bool _popupOverlayRebuildScheduled = false;
@@ -425,7 +425,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
-    // BUG-1797：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
+    // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
@@ -440,13 +440,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
       _maybeScheduleCaptureSetupDialog();
-      // BUG-1797：进页也复核一次——卡可能是在别的页面制的、随后在 Anki 里被删掉，
+      // BUG-1799：进页也复核一次——卡可能是在别的页面制的、随后在 Anki 里被删掉，
       // 那种路径不经过本页的前台切换事件。
       unawaited(_revalidateMinedLines());
     });
   }
 
-  /// BUG-1797：切回前台就复核「已制卡」徽章。用户的原始路径正是「在本页制卡 →
+  /// BUG-1799：切回前台就复核「已制卡」徽章。用户的原始路径正是「在本页制卡 →
   /// 切到 Anki 删掉那张卡 → 切回 Hibiki」，`resumed` 就是这条路径回到 app 的那一刻。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -456,7 +456,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
-  /// BUG-1797：把本会话所有「已制卡且带 note id」的行拿去问 Anki，凡是 Anki 明确
+  /// BUG-1799：把本会话所有「已制卡且带 note id」的行拿去问 Anki，凡是 Anki 明确
   /// 应答「这张 note 不存在」的，把对应行的徽章清掉。
   ///
   /// 复核的真相源是 Anki 本身，与 [BUG-186] 给查词弹窗 ✓ 定下的口径一致：徽章不是
@@ -606,7 +606,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       final String? lineId = _activeLineId;
       if (result.ankiConnect && lineId != null) {
-        // BUG-1797：带上 note id，供日后向 Anki 复核这张卡是否还在。
+        // BUG-1799：带上 note id，供日后向 Anki 复核这张卡是否还在。
         TexthookerService.instance.markLineMined(
           lineId,
           noteId: result.noteId,
