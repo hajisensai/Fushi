@@ -418,12 +418,24 @@ class JimakuClient {
         'Accept': 'application/json',
       };
 
+  /// 组 `/entries/search` 的 query 参数。Jimaku 的 `anime` 是**硬相等过滤且服务端默认
+  /// true**：不显式带 `anime=false` 永远搜不到真人剧/日剧条目（jimaku.cc 的 dramas 区）。
+  /// [anime] 为 null 时不带该参数（= 旧行为，只搜番剧），true/false 显式透传。
+  static Map<String, String> buildEntrySearchParams(
+    Map<String, String> base, {
+    bool? anime,
+  }) {
+    if (anime == null) return base;
+    return <String, String>{...base, 'anime': anime ? 'true' : 'false'};
+  }
+
   /// 按 AniList id 搜 Jimaku 条目。
   ///
   /// [animeFilter] 见 [JimakuAnimeFilter]；缺省 [JimakuAnimeFilter.either]
   /// （动画搜不到再搜真人）。调用方知道种类时显式传，可省掉那次兜底请求。
   Future<List<JimakuEntry>> searchByAnilistId(
     int anilistId, {
+    bool? anime,
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
@@ -437,6 +449,7 @@ class JimakuClient {
   /// 按文本搜 Jimaku 条目（AniList 匹配不到时的回退）。
   Future<List<JimakuEntry>> searchByQuery(
     String query, {
+    bool? anime,
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
@@ -475,12 +488,14 @@ class JimakuClient {
   Future<List<JimakuEntry>> searchEntries({
     int? anilistId,
     List<String> queryFallbacks = const <String>[],
+    bool? anime,
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
     if (anilistId != null) {
       final List<JimakuEntry> byId = await searchByAnilistId(
         anilistId,
+        anime: anime,
         throwOnError: throwOnError,
         animeFilter: animeFilter,
       );
@@ -490,6 +505,7 @@ class JimakuClient {
       if (query.trim().isEmpty) continue;
       final List<JimakuEntry> byQuery = await searchByQuery(
         query,
+        anime: anime,
         throwOnError: throwOnError,
         animeFilter: animeFilter,
       );

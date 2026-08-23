@@ -157,6 +157,15 @@
         e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp') {
       return;
     }
+    // Shadow DOM 里的编辑器：e.target 被 retarget 成宿主自定义元素，isEditable 会误判 false，
+    // Ctrl+Shift+Z（编辑器重做）等会被快捷键抢走。composedPath()[0] 才是真实目标。
+    var realTarget = e.target;
+    try {
+      if (typeof e.composedPath === 'function') {
+        var path = e.composedPath();
+        if (path && path.length) realTarget = path[0];
+      }
+    } catch (_) {}
     var decision = api.decide(
       {
         key: e.key,
@@ -164,7 +173,7 @@
         ctrl: e.ctrlKey || e.metaKey,
         shift: e.shiftKey,
         alt: e.altKey,
-        editable: isEditable(e.target),
+        editable: isEditable(realTarget),
       },
       {
         enabled: true,
