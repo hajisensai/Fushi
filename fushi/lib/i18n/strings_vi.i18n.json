@@ -3733,7 +3733,6 @@
   "dict_style_part_entry_card": "Entry card",
   "dict_style_part_expression": "Headword",
   "dict_style_part_ruby": "Furigana",
-  "dict_style_part_expression_tag": "Word tags",
   "dict_style_part_deinflection_tag": "Deinflection chain",
   "dict_style_part_frequency": "Frequency",
   "dict_style_part_pitch": "Pitch accent",
@@ -3752,5 +3751,9 @@
   "dict_style_global_only": "Only adjustable for all dictionaries",
   "dict_style_preview_title": "Preview",
   "dict_style_pick_hint": "Tap a part in the preview to jump to it",
-  "dict_style_prop_default": "Default"
+  "dict_style_prop_default": "Default",
+  "dict_style_part_expression_tag": "Expression tags",
+  "dict_style_prop_on": "On",
+  "dict_style_prop_off": "Off",
+  "dict_style_title": "Dictionary styling"
 }

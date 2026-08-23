@@ -1265,7 +1265,23 @@ JSON.stringify((function(){
     _inlineAssetsPreload = null;
   }
 
-  /// 测试专用：构造当前内联资产下的 popup HTML（走生产 memo 路径）。
+  /// 本平台的 WebView 能否可靠地把 popup.html 当 file:// 主框架加载。
+  ///
+  /// 公开给别的 popup 宿主（如设置里的样式预览）复用同一判断——各处自己抄一份
+  /// 平台清单，迟早在某个平台上分叉成两种加载行为。
+  static bool get shouldInlinePopupAssets => _shouldInlinePopupAssets;
+
+  /// 构造内联资产版的 popup HTML，供 [shouldInlinePopupAssets] 为真的平台使用。
+  ///
+  /// 与 in-app 弹窗同一份 memo 路径，故预览与真实弹窗吃的是同一份 popup.js /
+  /// popup.css，不会出现「预览好看、真弹窗不一样」。
+  static String buildInlinePopupHtml({
+    required String themeAttr,
+    required String bgHex,
+  }) =>
+      _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex);
+
+  /// 测试专用别名，保留既有调用点。
   @visibleForTesting
   static String debugBuildInlinePopupHtml({
     required String themeAttr,

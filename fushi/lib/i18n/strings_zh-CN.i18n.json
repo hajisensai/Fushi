@@ -3733,7 +3733,6 @@
   "dict_style_part_entry_card": "词条卡",
   "dict_style_part_expression": "词头",
   "dict_style_part_ruby": "振假名",
-  "dict_style_part_expression_tag": "词性标签",
   "dict_style_part_deinflection_tag": "去屈折链",
   "dict_style_part_frequency": "频率",
   "dict_style_part_pitch": "音调",
@@ -3752,5 +3751,9 @@
   "dict_style_global_only": "此部位只能对全部词典设置",
   "dict_style_preview_title": "预览",
   "dict_style_pick_hint": "点预览里的部位可直接跳过去",
-  "dict_style_prop_default": "默认"
+  "dict_style_prop_default": "默认",
+  "dict_style_part_expression_tag": "表达标签",
+  "dict_style_prop_on": "开",
+  "dict_style_prop_off": "关",
+  "dict_style_title": "词典样式"
 }
