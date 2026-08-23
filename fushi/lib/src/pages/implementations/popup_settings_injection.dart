@@ -629,8 +629,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
   final String hiddenNames =
       jsonEncode(appModel.hiddenDictionaryNames.toList());
-  final String globalDictCSS = appModel.globalDictCSS;
-  final String customDictCSSJson = jsonEncode(appModel.customDictCSS);
+  // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
+  // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
+  final String globalDictCSS = appModel.effectiveGlobalDictCSS;
+  final String customDictCSSJson = jsonEncode(appModel.effectiveCustomDictCSS);
 
   final String slotKey = '${options.globalLookup}|${options.mobileExternal}'
       '|${options.sentenceDraftEnabled}';

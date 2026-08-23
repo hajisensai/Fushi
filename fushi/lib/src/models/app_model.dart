@@ -42,6 +42,8 @@ import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -2856,8 +2858,10 @@ class AppModel with ChangeNotifier {
 
   RemotePopupDictionaryCss browserExtensionPopupDictionaryCss() {
     final Map<String, String> styles = FushiDicts.dictionaryStyles;
-    final String globalCss = globalDictCSS;
-    final Map<String, String> customCss = customDictCSS;
+    // 与 in-app 注入同源：扩展也必须吃到可视化规则的编译产物，否则同一份
+    // popup.js 在两个宿主里呈现不一致。
+    final String globalCss = effectiveGlobalDictCSS;
+    final Map<String, String> customCss = effectiveCustomDictCSS;
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
@@ -4576,7 +4580,6 @@ class AppModel with ChangeNotifier {
       dictionarySearchAgainNotifier.notifyListeners();
     }
   }
-
 
   // ── dictionary auto-update (TODO-861③, ported from Hoshi 94d0c41) ────
 
@@ -6307,6 +6310,54 @@ class AppModel with ChangeNotifier {
 
   String get globalDictCSS => prefsRepo.globalDictCSS;
   Future<void> setGlobalDictCSS(String css) => prefsRepo.setGlobalDictCSS(css);
+
+  // ── 可视化样式规则 ───────────────────────────────────────────────────
+  //
+  // 上面两个 getter 是**用户手写的原文**，编辑器要拿它回填文本框，绝不能混进
+  // 编译产物。下面的 effective* 才是注入弹窗的最终值（产物在前、手写在后）。
+
+  /// 可视化样式规则表（真相源：偏好 [dictStyleRulesPrefKey]）。
+  List<DictStyleRule> get dictStyleRules =>
+      decodeDictStyleRules(prefsRepo.dictStyleRulesRaw);
+
+  /// 保存规则表，并同步刷新 CSS 编译产物缓存。
+  ///
+  /// 缓存只为跑不了 Dart 编译器的消费方存在（Android 独立弹窗 Activity 直连
+  /// prefs 表）。这里是它唯一的写入点——冗余数据必须单点收口，否则迟早不同步。
+  Future<void> saveDictStyleRules(List<DictStyleRule> rules) async {
+    await prefsRepo.setDictStyleRulesRaw(encodeDictStyleRules(rules));
+    await prefsRepo.setDictStyleRulesCss(encodeCompiledDictStyleCss(rules));
+    notifyListeners();
+  }
+
+  /// 注入弹窗的全局 CSS：可视化产物 + 用户手写。
+  String get effectiveGlobalDictCSS => mergeGeneratedAndAuthoredCss(
+        buildGlobalDictStyleCss(dictStyleRules),
+        prefsRepo.globalDictCSS,
+      );
+
+  /// 注入弹窗的单典 CSS：可视化产物 + 用户手写，逐本合并。
+  ///
+  /// 键集是两边的并集——只设了可视化规则、没写过手写 CSS 的词典也必须出现在
+  /// 结果里，否则规则静默失效。
+  Map<String, String> get effectiveCustomDictCSS {
+    final List<DictStyleRule> rules = dictStyleRules;
+    final Map<String, String> authored = prefsRepo.customDictCSS;
+    final Set<String> names = <String>{
+      ...authored.keys,
+      ...dictionariesWithStyleRules(rules),
+    };
+    final Map<String, String> out = <String, String>{};
+    for (final String name in names) {
+      final String merged = mergeGeneratedAndAuthoredCss(
+        buildPerDictionaryStyleCss(rules, name),
+        authored[name] ?? '',
+      );
+      if (merged.trim().isEmpty) continue;
+      out[name] = merged;
+    }
+    return out;
+  }
 
   // ── audio sources (delegated) ────────────────────────────────────────
 

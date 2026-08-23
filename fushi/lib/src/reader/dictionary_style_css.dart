@@ -5,6 +5,8 @@
 /// 一行不用改，三个消费面（app 内 / Android 独立弹窗 / 浏览器扩展）自动吃到。
 library;
 
+import 'dart:convert';
+
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 
 /// 编译全局规则（[DictStyleRule.dictionaryName] == null）。
@@ -52,6 +54,32 @@ Set<String> dictionariesWithStyleRules(List<DictStyleRule> rules) => <String>{
             dictStylePartSupportsPerDictionary(rule.part))
           rule.dictionaryName!,
     };
+
+/// 把规则表编译成给**非 Dart 消费方**读的产物缓存（JSON）。
+///
+/// 形状 `{"global": "...", "byDictionary": {"词典名": "..."}}`。两份都要——只存
+/// 全局的话，per-dictionary 规则会在 Android 独立弹窗里静默失效，而用户在设置里
+/// 明明看见自己设过。
+///
+/// 消费方职责：把 `global` 拼在 `global_dict_css` **之前**，把 `byDictionary[名]`
+/// 拼在 `custom_dict_css[名]` **之前**（手写在后 → 手写优先），与 Dart 侧的
+/// [mergeGeneratedAndAuthoredCss] 语义一致。
+String encodeCompiledDictStyleCss(List<DictStyleRule> rules) {
+  final Map<String, String> byDictionary = <String, String>{};
+  for (final String name in dictionariesWithStyleRules(rules)) {
+    final String css = buildPerDictionaryStyleCss(rules, name);
+    if (css.trim().isEmpty) continue;
+    byDictionary[name] = css;
+  }
+  final String global = buildGlobalDictStyleCss(rules);
+  // 全空就返回空串：与「从未设过」在偏好层同形，消费方一个 if 就能短路，
+  // 不用先 jsonDecode 再发现里面啥也没有。
+  if (global.trim().isEmpty && byDictionary.isEmpty) return '';
+  return jsonEncode(<String, Object>{
+    'global': global,
+    'byDictionary': byDictionary,
+  });
+}
 
 /// 把编译产物与用户手写 CSS 拼成最终下发文本。
 ///

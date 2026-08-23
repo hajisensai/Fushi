@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -1780,6 +1781,30 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setGlobalDictCSS(String css) async {
     await setPref('global_dict_css', css);
+  }
+
+  // ── 可视化样式规则（结构化真相源 + CSS 编译产物缓存）────────────────
+  //
+  // 与上面的手写 CSS **分开存**：可视化面板改规则表，手写框改 CSS 文本，注入时
+  // 拼接。共用一份文本就得反向解析手写 CSS 才能回填面板，往返编辑必坏。
+
+  String get dictStyleRulesRaw =>
+      getPref(dictStyleRulesPrefKey, defaultValue: '') as String;
+
+  Future<void> setDictStyleRulesRaw(String raw) async {
+    await setPref(dictStyleRulesPrefKey, raw);
+  }
+
+  /// 规则表的 CSS 编译产物缓存。
+  ///
+  /// 供跑不了 Dart 编译器的消费方直接读（Android 独立弹窗 Activity 直连 prefs
+  /// 表）。Dart 侧一律走 `AppModel.effective*DictCSS` 现算，不读这个缓存——
+  /// 冗余数据只允许有一个写入点（`AppModel.saveDictStyleRules`）和一类读者。
+  String get dictStyleRulesCss =>
+      getPref(dictStyleRulesCssPrefKey, defaultValue: '') as String;
+
+  Future<void> setDictStyleRulesCss(String css) async {
+    await setPref(dictStyleRulesCssPrefKey, css);
   }
 
   // ── audio sources ────────────────────────────────────────────────────
