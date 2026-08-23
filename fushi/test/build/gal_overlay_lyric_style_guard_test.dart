@@ -21,28 +21,36 @@ void main() {
   final String controller =
       File('lib/src/lookup/gal_hook_text_overlay_controller.dart')
           .readAsStringSync();
+  final String prefs =
+      File('lib/src/models/preferences_repository.dart').readAsStringSync();
+  final String windowHeader =
+      File('windows/runner/floating_lyric_window.h').readAsStringSync();
 
   test('① 描边/投影是同一 text_layout_ 的偏移多遍绘制', () {
-    // 描边半径本身是用户可调项（gal_hook_text_outline_width），不再是编译期常量；
-    // 守的是「半径有界」而不是「叫什么名字」——无界半径会让 8 遍描边把整窗涂满。
-    // 主文本遍与注音遍各用一次，必须**每一处**都经 clamp：只要求「存在一处 clamp」
-    // 的话，另一处失去限幅是抓不到的。
-    final int outlineUses =
-        RegExp(r'style_\.outline_width').allMatches(window).length;
-    final int clampedUses =
-        RegExp(r'std::clamp\(style_\.outline_width,').allMatches(window).length;
-    expect(outlineUses, greaterThan(0),
-        reason: '描边半径必须取自 style_.outline_width');
+    // 描边半径从固定常量 kLyricOutlineRadiusDip 改成了用户可配的 style_.outline_width，
+    // 所以这里不再钉常量名，而是钉「半径来自 style_ 且被夹在合法区间」——常量名没了不等于
+    // 渲染没接上，但取值不夹区间就是能把描边拉到吃掉整块文字。
     expect(
-      clampedUses,
-      outlineUses,
-      reason: '每一处 style_.outline_width 都必须经 clamp 限幅，'
-          '否则用户能把描边半径调到把整窗涂满',
+      window.contains('std::clamp(style_.outline_width, 0.0, 8.0)'),
+      isTrue,
+      reason: '描边半径必须取自 style_.outline_width 并夹在 [0,8]',
     );
     expect(
       window.contains('kLyricShadowOffsetDip'),
       isTrue,
       reason: '投影偏移常量必须存在',
+    );
+    // 可配置化不得顺手改观感：默认值必须逐位等于改造前的硬编码值，否则所有没动过
+    // 这个设置的用户会在一次升级后发现描边变了，而 diff 里看不出任何「观感改动」。
+    expect(
+      prefs.contains('galHookTextOutlineWidthDefault = 1.6'),
+      isTrue,
+      reason: '描边默认值必须等于原 kLyricOutlineRadiusDip = 1.6f',
+    );
+    expect(
+      windowHeader.contains('bool bold = true;'),
+      isTrue,
+      reason: '半粗默认必须为真：改造前 hook 模式无条件半粗',
     );
     // 描边环必须把 text_layout_ 自己再画一遍（同一几何），而不是另建排版。
     expect(
@@ -73,11 +81,13 @@ void main() {
     // 允许在 hook_text_mode_ 之后再 && 上更严的条件（现在是用户的 style_.bold），
     // 但 hook_text_mode_ 必须仍在这个三元的条件里——否则歌词条会被改字重。
     expect(
-      RegExp(r'hook_text_mode_[^?\n]*\s*\?\s*DWRITE_FONT_WEIGHT_SEMI_BOLD'
+      RegExp(r'hook_text_mode_ && style_\.bold\s*\?\s*'
+              r'DWRITE_FONT_WEIGHT_SEMI_BOLD'
               r'\s*:\s*DWRITE_FONT_WEIGHT_NORMAL')
           .hasMatch(window),
       isTrue,
-      reason: '半粗字重同样只允许在 hook 模式启用',
+      reason: '半粗字重同样只允许在 hook 模式启用（现在还叠一个用户开关，'
+          '但 hook_text_mode_ 这一层门不能被去掉——去掉就会改到歌词条/剪贴板窗）',
     );
   });
 

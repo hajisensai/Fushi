@@ -103,21 +103,24 @@ void main() {
     });
 
     test('padlock glyphs are drawn as full UTF-16 strings', () {
+      // 这条守卫原本把缩进写死在断言里（负向断言匹配的是 'DrawTextW(' + 换行 +
+      // 10 个空格 + 'glyph, 1,'）。后来新增的 hook 工具栏把同样的调用写成单行，
+      // 于是整个从它旁边溜了过去。改成「按调用点计数」：任何一个 glyph 绘制不走
+      // GlyphLength 就红，与缩进、换行、参数换行位置全部无关。
       expect(cpp.contains('GlyphLength'), isTrue,
           reason: 'Emoji glyphs need their full UTF-16 code-unit length.');
-      // 匹配换行与缩进都不能写死：一次 clang-format 就能让这条守卫失配，而
-      // 「失配」在第三条那里表现为**假通过**（禁止串再也匹配不上任何东西）。
-      expect(
-          RegExp(r'DrawTextW\(\s*glyph,\s*GlyphLength\(glyph\),').hasMatch(cpp),
-          isTrue,
-          reason: 'DrawTextW must not truncate surrogate-pair glyphs.');
-      // 歌词条这条路径用 Segoe UI Symbol 画 emoji（挂锁是 U+1F512/U+1F513 代理
-      // 对），长度必须是 GlyphLength。hook 工具栏另一条路径走打包的 Material
-      // Symbols 子集，字形都在 BMP，那里的 length 1 是正确的——所以这里按
-      // **画笔格式**限定范围，而不是笼统禁掉所有 length 1。
-      expect(RegExp(r'DrawTextW\(\s*glyph,\s*1,\s*glyph_fmt').hasMatch(cpp),
-          isFalse,
-          reason: 'Length 1 truncates U+1F512/U+1F513 padlock glyphs.');
+      final Iterable<RegExpMatch> glyphDraws =
+          RegExp(r'DrawTextW\(\s*glyph,\s*([^,]+),').allMatches(cpp);
+      expect(glyphDraws, isNotEmpty,
+          reason: 'The glyph draw call must still exist.');
+      for (final RegExpMatch m in glyphDraws) {
+        expect(
+          m.group(1)!.trim(),
+          'GlyphLength(glyph)',
+          reason: 'Every glyph DrawTextW must pass the full UTF-16 length; a '
+              'literal length truncates U+1F512/U+1F513-class glyphs.',
+        );
+      }
     });
   });
 

@@ -117,6 +117,26 @@ inline bool BuildXwmaResource(
                                      encoded, encoded_bytes, output);
 }
 
+// 时长判据：这次 xWMA 提交解码后是否长到像一句台词（>=700ms）。
+//
+// 这**不是**角色身份证明，只是一道便宜的预筛。没有引擎归档可用时，通用路径靠它把
+// 逐块流入的 BGM/SE 挡在资源发布之外——否则每一小块 BGM 都会落成一个资源文件，既
+// 撑爆 dump 目录，也会在按时间戳配对时和真语音抢。
+inline bool IsLikelyVoiceWmaSubmission(const XAudioSourceFormat& format,
+                                       uint32_t packet_count,
+                                       uint32_t decoded_bytes) {
+  // WAVEFORMATEX 对 WMAUDIO2 通常填 wBitsPerSample=16，但不是所有引擎都填。填 0 时
+  // 直接算会让 bytes_per_second 恒为 0、判据恒假 —— 那是一条**静默丢弃**路径，比
+  // 判错更糟。WMA 解码输出按定义是 16-bit PCM，所以缺值时按 16 算，而不是放弃。
+  const uint32_t bits =
+      format.bits_per_sample != 0 ? format.bits_per_sample : 16u;
+  const uint64_t bytes_per_second =
+      static_cast<uint64_t>(format.sample_rate) * format.channels * bits / 8u;
+  return format.encoding == XAudioSourceEncoding::kWmaudio2 &&
+         packet_count != 0 && decoded_bytes != 0 && bytes_per_second != 0 &&
+         static_cast<uint64_t>(decoded_bytes) * 1000u >=
+             bytes_per_second * 700u;
+}
 }  // namespace fushi_voice_hook
 
 #endif  // FUSHI_VOICE_HOOK_XWMA_RESOURCE_H_

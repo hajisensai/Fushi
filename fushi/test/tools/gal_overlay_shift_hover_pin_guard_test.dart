@@ -236,18 +236,24 @@ void main() {
       );
     });
 
-    test('按钮状态：📌 字形 + 真实 topmost 高亮 + 状态参与重绘比对', () {
+    test('按钮状态：push_pin 字形 + 真实 topmost 高亮 + 状态参与重绘比对', () {
       expect(
         toolbarHeader.contains('bool topmost = true;'),
         isTrue,
         reason: 'States 必须带上 topmost，独立工具条窗才画得出高亮',
       );
-      // 工具栏字形已从 emoji 换成打包的 Material Symbols Rounded 子集，
-      // 置顶槽是 push_pin(U+F10D)——BMP 单 code unit，不再有代理对。
+      // 字形从 emoji 📌(U+1F4CC) 换成了 Material Symbols Rounded 的 push_pin
+      // (U+F10D)：整条工具栏统一走图标字体。断言跟着换码点，同时把**矢量兜底**
+      // 一起钉住——图标字体加载失败时若没有兜底，用户看到的是一整排空按钮。
       expect(
         toolbar.contains(r'return L"\uF10D";'),
         isTrue,
-        reason: '置顶槽必须有 push_pin 字形',
+        reason: '置顶槽必须有 push_pin 字形（Material Symbols U+F10D）',
+      );
+      expect(
+        toolbar.contains('void DrawSlotIcon('),
+        isTrue,
+        reason: '图标字体缺失时必须还有矢量兜底，否则整排按钮画不出来',
       );
       expect(
         toolbar.contains('return states.topmost;'),
@@ -282,7 +288,7 @@ void main() {
       );
     });
 
-    test('最小宽度跟着槽数与按钮尺寸走（下限不得窄于工具栏行）', () {
+    test('最小宽度跟着槽数走（下限必须不小于真实工具栏行宽）', () {
       final Match? declared =
           RegExp(r'kSlotCount\s*=\s*(\d+)\s*;').firstMatch(toolbarHeader);
       expect(declared, isNotNull);
@@ -291,18 +297,17 @@ void main() {
           RegExp(r'kHookTextMinStripWidthDip = ([\d.]+)f;').firstMatch(window);
       expect(minWidth, isNotNull);
       final double floor = double.parse(minWidth!.group(1)!);
-      // 按钮尺寸/间隙也是源码常量，必须从源码读——写死数字的话，改了尺寸这条
-      // 守卫要么假红（尺寸变小）要么假绿（尺寸变大却不报），两种都比不守还糟。
+      // 行宽 = N * 按钮 + (N-1) * 间隙。两个尺寸必须**从源码读**：守卫自抄一份
+      // 数字，就会在源码把 30/10 调成 32/4 时继续用旧值算，算出的下限既不是
+      // 真实行宽、也没人发现它已经不看真实值了。
       final Match? btn =
           RegExp(r'kHookTextButtonSizeDip = ([\d.]+)f;').firstMatch(window);
       final Match? gap =
           RegExp(r'kHookTextButtonGapDip = ([\d.]+)f;').firstMatch(window);
       expect(btn, isNotNull, reason: '找不到 kHookTextButtonSizeDip');
       expect(gap, isNotNull, reason: '找不到 kHookTextButtonGapDip');
-      final double buttonDip = double.parse(btn!.group(1)!);
-      final double gapDip = double.parse(gap!.group(1)!);
-      // 行宽 = N * 按钮 + (N-1) * 间隙。
-      final double rowWidth = slots * buttonDip + (slots - 1) * gapDip;
+      final double rowWidth = slots * double.parse(btn!.group(1)!) +
+          (slots - 1) * double.parse(gap!.group(1)!);
       expect(
         floor,
         greaterThanOrEqualTo(rowWidth),

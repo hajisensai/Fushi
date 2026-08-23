@@ -458,7 +458,7 @@ void main() {
         injectorPath: injector.path,
         capabilitiesProbe: (String executable) async {
           expect(executable, injector.path);
-          return false;
+          return GalHookCapabilityProbeResult.unsupported;
         },
         processStarter: (String executable, List<String> arguments) async {
           injectionStarts++;
@@ -476,6 +476,80 @@ void main() {
         await source.stop();
         await temp.delete(recursive: true);
       }
+    });
+
+    test('capability 探测答不上来时报「探测失败」而不是「组件太老」', () async {
+      // 两种失败的处置相反：unsupported 只能换版本，probeFailed 要查杀软/权限/
+      // 挂住的进程。旧实现用一个 bool + `on Object` 把任意错误都翻成
+      // protocolMismatch（「组件太老」），把用户引向一个做了也没用的动作。
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki_helper_capability_probe_failed_test_',
+      );
+      final File injector =
+          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      await injector.writeAsBytes(const <int>[0]);
+      var injectionStarts = 0;
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        targetPid: 2468,
+        injectorPath: injector.path,
+        capabilitiesProbe: (String _) async =>
+            GalHookCapabilityProbeResult.probeFailed,
+        processStarter: (String executable, List<String> arguments) async {
+          injectionStarts++;
+          throw StateError('injection must not start');
+        },
+      );
+      try {
+        expect(await source.start(), isNull);
+        expect(injectionStarts, 0, reason: '仍然 fail closed，绝不启动注入');
+        expect(
+          source.lastFailure.failure,
+          GalHookInjectorFailure.capabilityProbeFailed,
+        );
+        expect(
+          source.lastFailure.failure,
+          isNot(GalHookInjectorFailure.protocolMismatch),
+        );
+      } finally {
+        await source.stop();
+        await temp.delete(recursive: true);
+      }
+    });
+
+    test('capability 探测抛异常也归类成探测失败，且不毒化调用方', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'hibiki_helper_capability_probe_throw_test_',
+      );
+      final File injector =
+          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      await injector.writeAsBytes(const <int>[0]);
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        targetPid: 2468,
+        injectorPath: injector.path,
+        capabilitiesProbe: (String _) async =>
+            throw StateError('probe blew up'),
+        processStarter: (String executable, List<String> arguments) async =>
+            throw StateError('injection must not start'),
+      );
+      try {
+        // start() 必须正常返回 null（异常不能穿出去把串行队列毒死），
+        // 同时诊断必须如实说是探测失败。
+        expect(await source.start(), isNull);
+        expect(
+          source.lastFailure.failure,
+          GalHookInjectorFailure.capabilityProbeFailed,
+        );
+      } finally {
+        await source.stop();
+        await temp.delete(recursive: true);
+      }
+    });
+
+    test('capability 探测有硬超时上限（不会让 start() 永不返回）', () {
+      // 探测是目标无关的一次性子进程调用；没有上限，helper 一挂住整条
+      // _audioFallbackPolicyQueue 就永久堵死。
+      expect(kGalHookCapabilityProbeTimeout.inSeconds, greaterThan(0));
+      expect(kGalHookCapabilityProbeTimeout.inMinutes, lessThan(1));
     });
 
     test('capability stdout 只接受退出码 0 的 exact single token', () {
@@ -548,7 +622,8 @@ void main() {
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         launchExe: game.path,
         injectorPath: injector.path,
-        capabilitiesProbe: (String _) async => true,
+        capabilitiesProbe: (String _) async =>
+            GalHookCapabilityProbeResult.supported,
         processStarter: (String executable, List<String> arguments) async {
           expect(executable, injector.path);
           expect(
@@ -653,7 +728,8 @@ void main() {
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         targetPid: 2468,
         injectorPath: injector.path,
-        capabilitiesProbe: (String _) async => true,
+        capabilitiesProbe: (String _) async =>
+            GalHookCapabilityProbeResult.supported,
         processStarter: (String executable, List<String> arguments) async {
           expect(executable, injector.path);
           expect(arguments, containsAllInOrder(<String>['--pid', '2468']));
@@ -738,7 +814,8 @@ void main() {
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         targetPid: 2468,
         injectorPath: injector.path,
-        capabilitiesProbe: (String _) async => true,
+        capabilitiesProbe: (String _) async =>
+            GalHookCapabilityProbeResult.supported,
         processStarter: (String executable, List<String> arguments) async {
           expect(
             arguments,

@@ -40,6 +40,8 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
         t.game_hook_reason_shared_memory_unavailable,
       GalHookInjectorFailure.protocolMismatch =>
         t.game_hook_reason_protocol_mismatch,
+      GalHookInjectorFailure.capabilityProbeFailed =>
+        t.game_hook_reason_capability_probe_failed,
       GalHookInjectorFailure.handshakeTimeout =>
         t.game_hook_reason_handshake_timeout,
     };

@@ -282,6 +282,13 @@ enum GalHookInjectorFailure {
   /// injector 已 hooked、共享内存已开，但超时内既没有 PCM 格式也没有文本 hook。
   handshakeTimeout,
 
+  /// capability 探测没能给出答案：helper 拉不起来、崩了、或超时没退出。
+  ///
+  /// 与 [protocolMismatch] 分开是因为**处置相反**：那条是组件比本体旧、只能换版本；
+  /// 这条是这台机器上 helper 根本没跑起来或没响应（多为杀软删档/锁定、权限不足、
+  /// 进程挂住），换多少个版本都不会好。
+  capabilityProbeFailed,
+
   /// 有失败但无法归类（保留原始 stderr 尾巴供诊断）。
   unknown,
 }
@@ -952,9 +959,32 @@ typedef GalHookProcessStarter = Future<Process> Function(
   List<String> arguments,
 );
 
+/// capability 探测的三态结果。
+///
+/// 「答了但没这个能力」和「根本没答上来」必须分开：前者是组件版本旧、只能换版本；
+/// 后者是这台机器上 helper 拉不起来或没响应（杀软删档/权限不足/进程挂住），换版本
+/// 一点用没有。合成一个 bool 就只能二选一地误报，而误报的那一半会把用户引向一个
+/// 做了也没用的动作。
+enum GalHookCapabilityProbeResult {
+  /// helper 跑起来了，并明确应答了 v16 capability。
+  supported,
+
+  /// helper 跑起来也答了，但答案里没有这个 capability——组件比本体旧。
+  unsupported,
+
+  /// helper 没能给出答案：拉不起来、崩了、或超时没退出。
+  probeFailed,
+}
+
+/// capability 探测的硬上限。探测是**目标无关**的一次性子进程调用，正常在毫秒级返回；
+/// 没有这个上限，helper 一挂住 `start()` 就永不返回，`_audioFallbackPolicyQueue`
+/// 随之永久堵死（串行队列在等这一个 job）。
+const Duration kGalHookCapabilityProbeTimeout = Duration(seconds: 5);
+
 /// Whether the installed injector proves the v16 fail-closed native loopback
 /// contract without opening or injecting any target process.
-typedef GalHookCapabilitiesProbe = Future<bool> Function(String executable);
+typedef GalHookCapabilitiesProbe = Future<GalHookCapabilityProbeResult>
+    Function(String executable);
 
 enum GalNativeLoopbackPolicy {
   deny,
@@ -976,19 +1006,42 @@ bool hasGalNativeLoopbackPolicyCapability({
     stdout is String &&
     stdout.trim() == kGalNativeLoopbackPolicyCapability;
 
-Future<bool> _probeGalHookCapabilities(String executable) async {
+Future<GalHookCapabilityProbeResult> _probeGalHookCapabilities(
+  String executable,
+) async {
+  final Process process;
   try {
-    final ProcessResult result = await Process.run(
+    process = await Process.start(
       executable,
       const <String>['--capabilities'],
       runInShell: false,
     );
-    return hasGalNativeLoopbackPolicyCapability(
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-    );
   } on ProcessException {
-    return false;
+    return GalHookCapabilityProbeResult.probeFailed;
+  }
+  // 必须自己起进程而不是用 Process.run：`Process.run(...).timeout(...)` 只是放弃
+  // 等待，子进程照样活着、管道照样被引用，挂住的 helper 会一直挂着。这里超时后
+  // 真的把它杀掉。
+  final Future<String> stdoutText =
+      process.stdout.transform(utf8.decoder).join();
+  final Future<void> drainedStderr = process.stderr.drain<void>();
+  try {
+    final int exitCode =
+        await process.exitCode.timeout(kGalHookCapabilityProbeTimeout);
+    final String stdout =
+        await stdoutText.timeout(kGalHookCapabilityProbeTimeout);
+    await drainedStderr.timeout(kGalHookCapabilityProbeTimeout);
+    return hasGalNativeLoopbackPolicyCapability(
+      exitCode: exitCode,
+      stdout: stdout,
+    )
+        ? GalHookCapabilityProbeResult.supported
+        : GalHookCapabilityProbeResult.unsupported;
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    return GalHookCapabilityProbeResult.probeFailed;
+  } on ProcessException {
+    return GalHookCapabilityProbeResult.probeFailed;
   }
 }
 
@@ -1453,16 +1506,26 @@ class EngineHookGalAudioSource implements GalAudioSource {
     // Safety gate: old helpers silently ignore unknown flags. Prove the exact
     // v16 capability in a target-free process before we ever spawn an
     // injection command; no capability means no launch, attach, or retry.
-    var supportsNativeLoopbackPolicy = false;
+    GalHookCapabilityProbeResult capability =
+        GalHookCapabilityProbeResult.probeFailed;
     try {
-      supportsNativeLoopbackPolicy = await _capabilitiesProbe(path);
+      capability = await _capabilitiesProbe(path);
     } on Object {
-      supportsNativeLoopbackPolicy = false;
+      // 探测器自身抛出（含注入的测试替身）也只是「没答上来」，不是「组件太老」。
+      // 兜住异常是为了不毒化调用它的串行队列，但兜住之后必须如实归类。
+      capability = GalHookCapabilityProbeResult.probeFailed;
     }
-    if (!supportsNativeLoopbackPolicy) {
-      _lastFailure = const GalHookInjectorDiagnostics(
-        failure: GalHookInjectorFailure.protocolMismatch,
-        stderrTail: 'injector capability native_loopback_policy_v1 unavailable',
+    if (capability != GalHookCapabilityProbeResult.supported) {
+      final bool tooOld =
+          capability == GalHookCapabilityProbeResult.unsupported;
+      _lastFailure = GalHookInjectorDiagnostics(
+        // 处置相反：unsupported 只能换版本；probeFailed 要查杀软/权限/挂住的进程。
+        failure: tooOld
+            ? GalHookInjectorFailure.protocolMismatch
+            : GalHookInjectorFailure.capabilityProbeFailed,
+        stderrTail: tooOld
+            ? 'injector capability native_loopback_policy_v1 unavailable'
+            : 'injector capability probe produced no answer',
       );
       _finishStartWait(opened: false);
       return null;

@@ -23,6 +23,8 @@ void main() {
       File('windows/runner/floating_lyric_window.h').readAsStringSync();
   final String channelHost =
       File('windows/runner/flutter_window.cpp').readAsStringSync();
+  final String prefs =
+      File('lib/src/models/preferences_repository.dart').readAsStringSync();
 
   test('① 注音几何复用 HitTestTextRange，不自建排版', () {
     expect(
@@ -74,17 +76,31 @@ void main() {
       isTrue,
       reason: '必须有一个统一的 has_ruby 门，空注音时行距与绘制都不动',
     );
-    // 行距门现在还额外收 hook 模式的自定义行高，所以门的形状不再固定；真正要守的
-    // 不变量是「ruby 让出来的那段间距只在有注音时加」——它同时保证无注音的老浮窗
-    // 逐像素不变。两处（行高与基线）都必须挂在同一个 has_ruby 三元上。
+    // 行距门现在有两个入口：注音（has_ruby）和 hook 模式下用户自定的行高。两个入口
+    // 都必须在同一个 if 里，且必须都是有条件的——无条件改行距会让所有老浮窗观感变化。
+    final Match? spacingGate = RegExp(
+      r'if \(text_layout_ != nullptr &&\s*\(has_ruby \|\|'
+      r'[\s\S]{0,80}?hook_text_mode_ &&[\s\S]{0,80}?style_\.line_height'
+      r'[\s\S]{0,900}?SetLineSpacing',
+    ).firstMatch(window);
     expect(
-      RegExp(r'SetLineSpacing\([\s\S]{0,400}?'
-              r'\(has_ruby \? ruby_gap_px : 0\.0f\)[\s\S]{0,200}?'
-              r'\(has_ruby \? ruby_gap_px : 0\.0f\)')
+      spacingGate,
+      isNotNull,
+      reason: '加高行距必须同时挂在 has_ruby 与 hook_text_mode_ 两个门后；'
+          '任一入口无条件化都会改到歌词条 / 剪贴板窗',
+    );
+    // 可配置化不得顺手改观感：默认行高必须是 1.0（恒等），没动过这个设置的用户
+    // 排版逐像素等于改造前。守卫只放宽正则不补这条，就是给「默认值悄悄变了」开门。
+    expect(
+      prefs.contains('galHookTextLineHeightDefault = 1.0'),
+      isTrue,
+      reason: '行高默认必须是恒等值 1.0',
+    );
+    expect(
+      RegExp(r'std::clamp\(\s*style_\.line_height,\s*0\.8,\s*2\.0\s*\)')
           .hasMatch(window),
       isTrue,
-      reason: '加高行距与下压基线都必须挂在 has_ruby 上；'
-          '无条件加 ruby 间距会让所有老浮窗观感变化',
+      reason: '行高必须夹在 [0.8,2.0]，否则能把整块文字推出可视区',
     );
     expect(
       RegExp(r'if \(has_ruby && ruby_format_ != nullptr\)').hasMatch(window),
