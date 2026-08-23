@@ -583,6 +583,16 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
+/// 字体用途的显示名。穷尽 switch：新增 [FontTarget] 时这里编译报错，逼着补文案，
+/// 而不是让新用途悄悄顶着枚举名出现在 UI 上。页面标题与每行的用途开关共用。
+String fontTargetLabel(FontTarget target) => switch (target) {
+      FontTarget.appUi => t.font_target_app_ui,
+      FontTarget.body => t.font_target_body,
+      FontTarget.dictionary => t.font_target_dictionary,
+      FontTarget.videoSubtitle => t.font_target_video_subtitle,
+      FontTarget.gameLookup => t.font_target_game_lookup,
+    };
+
 /// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_fushi`
 /// 是冻结的历史 sourceId，旧数据兼容，勿改）。
 String _readerPrefKey(String shortKey) =>
@@ -1172,7 +1182,14 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
-      title: Text(t.custom_fonts_catalog_title),
+      // 带作用域进来时把用途写进标题：用户从「设置·游戏·Hook 文本字体」点进来，
+      // 看到的是同一个全量字体库，不说明的话没法知道自己新导入的字体会挂到哪。
+      title: Text(
+        widget.target == FontTarget.body
+            ? t.custom_fonts_catalog_title
+            : '${t.custom_fonts_catalog_title} · '
+                '${fontTargetLabel(widget.target)}',
+      ),
       children: [
         AdaptiveSettingsSection(
           children: [
@@ -1480,13 +1497,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
   // 但从带作用域的入口进来时（initiallyExpandRoles）出生即展开。
   late bool _rolesExpanded = widget.initiallyExpandRoles;
 
-  String _targetLabel(FontTarget target) => switch (target) {
-        FontTarget.appUi => t.font_target_app_ui,
-        FontTarget.body => t.font_target_body,
-        FontTarget.dictionary => t.font_target_dictionary,
-        FontTarget.videoSubtitle => t.font_target_video_subtitle,
-        FontTarget.gameLookup => t.font_target_game_lookup,
-      };
+  String _targetLabel(FontTarget target) => fontTargetLabel(target);
 
   /// 本平台真有消费端的用途。gameLookup 只有 Windows 有 native 分层窗消费，
   /// 其余平台勾上等于写一个永远没人读的偏好键——显示出来只会让用户以为设好了。
