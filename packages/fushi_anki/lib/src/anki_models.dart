@@ -987,7 +987,11 @@ String mimeTypeForPath(String path) {
 String ankiDictionaryMediaCacheDirPath() =>
     '${Directory.systemTemp.path}/anki-media';
 
-/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<sha1(dictionary NUL path)>.<ext>`。
+/// 词典媒体在缓存目录中的文件名：`fushi_dict_<sha1(dictionary NUL path)>.<ext>`。
+///
+/// 与 popup.js 注入的占位符 `fushi_dict_<序号>.<ext>` 同前缀但不会互相误伤：本函数
+/// 的中段恒为 40 位 sha1 hex，永远匹配不上 `fushi_dict_0.svg` 这种序号形态，
+/// [BaseAnkiRepository.buildMinedFields] 的 `replaceAll` 因此不会二次替换自己的产物。
 ///
 /// 哈希输入是 **词典名 + NUL(`\u0000`) 分隔 + 相对路径**（BUG-904）：只对 `path`
 /// 求哈希时，两本词典含同一相对路径的外字（例如都叫 `gaiji/参照.svg`）会算出同一
@@ -1007,7 +1011,7 @@ String ankiDictionaryMediaCacheFilename(String dictionary, String path) {
       ? path.substring(lastDot + 1)
       : 'bin';
   final digest = sha1.convert(utf8.encode('$dictionary\u0000$path')).toString();
-  return 'hibiki_dict_$digest.$ext';
+  return 'fushi_dict_$digest.$ext';
 }
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the

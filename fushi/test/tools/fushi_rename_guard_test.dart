@@ -309,6 +309,24 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     regex: RegExp(r'hibiki-backup|hibiki_(?:debug|error)_log'),
   ),
   _ForbiddenPattern(
+    // 制卡产物落进 Anki collection.media 的**文件名前缀**已是 fushi_*：
+    // `fushi_cover_`（封面 / {card-image} / {video-clip}）、`fushi_audio_`（词与
+    // 句音频）、`fushi_dict_`（词典外字缓存名，三端原样当 media 名）、
+    // `fushi_media_`（prefix 被 sanitize 成空串时的兜底）。
+    //
+    // 读侧从不按前缀识别媒体——去重走「全量列举 + 同大小才算 sha256 + 删前逐字节
+    // 复核」，删除按记录的确切文件名，AnkiDroid staging 只看是否在 systemTemp 下。
+    // 所以没有任何兼容读入口需要白名单，旧名再冒出来纯属残留，而且是用户在 Anki
+    // 媒体库里直接看得见的那种（iOS/AnkiMobile 连词典外字名都原样进 /media/ URL）。
+    //
+    // 与上一条同口径：只圈**进得了 Anki 的媒体名**。`hibiki_gal_gif_` 那类进程内
+    // 不可见的 systemTemp 前缀族不在此列（它们的对外名在上传时被重算成
+    // fushi_<sha256>）。`hibiki_dict_export` / `hibiki_dict_in` 两个同步临时名与本
+    // 词根撞车，已一并改成 fushi_，故这里无需为它们开例外。
+    name: 'hibiki_* Anki 媒体文件名前缀',
+    regex: RegExp(r'hibiki_(?:cover|dict|media|audio)_'),
+  ),
+  _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。
     name: 'Hibiki*-类名族',

@@ -2860,7 +2860,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
     }
     final Directory jobDirectory = await Directory.systemTemp.createTemp(
-      'hibiki-gal-mining-job-',
+      'fushi-gal-mining-job-',
     );
     try {
       final Uint8List? encoded = await pcmSliceToAacBytes(

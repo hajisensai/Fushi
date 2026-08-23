@@ -16,7 +16,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 已有 handlebar_card_image_test / handlebar_video_clip_test 只测孤立 renderer（手动
 /// 构造 <img src> context）。本测补上缺失的一环：走完整 mineEntry 落卡链（真 .gif
 /// → 存媒体 → 渲染字段），断言映射到 {book-cover} 的 Picture 字段真拿到
-/// <img src="hibiki_cover_<sha>.gif">，且与 {card-image} / {video-clip} 逐字节相同。
+/// <img src="fushi_cover_<sha>.gif">，且与 {card-image} / {video-clip} 逐字节相同。
 /// 撤掉三键任一别名、或让 backend 按 handlebar 名特判封面 → 本测转红。
 void main() {
   final List<int> gifBytes = <int>[
@@ -96,7 +96,7 @@ void main() {
         expect(picture, isNotNull);
         expect(
           picture,
-          matches(RegExp(r'^<img src="hibiki_cover_[0-9a-f]{64}\.gif">$')),
+          matches(RegExp(r'^<img src="fushi_cover_[0-9a-f]{64}\.gif">$')),
           reason: '老 {book-cover} 模板视频制卡必须产 GIF <img>，否则用户被迫手改',
         );
       });
@@ -225,7 +225,7 @@ void main() {
 
         expect(outcome.result, MineResult.error);
         final String coverFilename = service.storedMedia
-            .singleWhere((entry) => entry.filename.startsWith('hibiki_cover_'))
+            .singleWhere((entry) => entry.filename.startsWith('fushi_cover_'))
             .filename;
         expect(
           service.deletedMedia,
@@ -294,7 +294,7 @@ void main() {
       expect(picture, isNotNull);
       expect(
         picture!,
-        matches(RegExp(r'^<img src="hibiki_cover_[0-9a-f]{64}\.gif">$')),
+        matches(RegExp(r'^<img src="fushi_cover_[0-9a-f]{64}\.gif">$')),
       );
     });
 
@@ -377,7 +377,7 @@ class _CoordinatedFailingMediaAnkiConnectService
 
   @override
   Future<bool> mediaFileExists(String filename) async =>
-      preexistingCover && filename.startsWith('hibiki_cover_');
+      preexistingCover && filename.startsWith('fushi_cover_');
 
   @override
   Future<void> storeMediaFile({

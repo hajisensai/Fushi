@@ -72,7 +72,7 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
   // 本就只有 Windows）。不做平台早退硬编码——ffmpeg 后端跑不起来时下面自然 fail-open。
   Directory? tempDir;
   try {
-    tempDir = await Directory.systemTemp.createTemp('hibiki_gal_gif_');
+    tempDir = await Directory.systemTemp.createTemp('fushi_gal_gif_');
     // 连续抓帧：任一帧失败跳过该帧；帧间 sleep [intervalMs]（捕获本身还有 WGC 延迟）。
     int captured = 0;
     final GalHookCaptureLease? captureLease =
