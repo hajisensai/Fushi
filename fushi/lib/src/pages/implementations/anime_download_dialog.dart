@@ -364,11 +364,20 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       anilist = AniListClient(
         client: await ref.read(appProvider).createDownloadHttpClient(),
       );
-      final List<AniListMedia> media =
+      final AniListSearchOutcome outcome =
           await anilist.searchAnime(query).timeout(kDownloadDiscoveryTimeout);
       if (!mounted) return;
+      // BUG-1782：非 200（含 429 限流）此前被 searchAnime 内部吞成空列表，走不到下面的
+      // catch，于是限流被显示成「无结果」。现在如实并入既有失败态，用户拿到重试 + 原因。
+      if (outcome.degraded) {
+        setState(() {
+          _animeSearchError = true;
+          _animeSearchErrorDetail = outcome.failure;
+        });
+        return;
+      }
       setState(() {
-        _animeMatches = media;
+        _animeMatches = outcome.media;
         _searchedAnime = true;
       });
     } catch (error) {

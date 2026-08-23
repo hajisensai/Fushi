@@ -3736,5 +3736,6 @@
   "gal_hook_text_padding_hint": "让文字与窗口边缘和缩放手柄保持距离。",
   "gal_hook_text_corner_radius": "窗口圆角",
   "gal_hook_text_corner_radius_hint": "调整窗口背景的圆角半径。",
-  "storage_shaders_delete_anime4k": "删除 Anime4K 着色器"
+  "storage_shaders_delete_anime4k": "删除 Anime4K 着色器",
+  "video_jimaku_series_lookup_degraded": "这次没能在 AniList 上确认系列，下面是按标题直接搜出来的结果，可能混入同系列其他季。"
 }

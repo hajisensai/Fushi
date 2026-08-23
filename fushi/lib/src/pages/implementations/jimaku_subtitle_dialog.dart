@@ -197,6 +197,7 @@ class JimakuSubtitleDialog extends StatefulWidget {
     this.httpClientFactory,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
+    this.debugInitialSeriesLookupFailed = false,
     super.key,
   });
 
@@ -238,6 +239,11 @@ class JimakuSubtitleDialog extends StatefulWidget {
   @visibleForTesting
   final List<AniListMedia>? debugInitialSeriesMatches;
 
+  /// 仅测试用：预置「上一次 AniList 系列解析没问上」（BUG-1782），免去为验证降级提示
+  /// 条而搭一整套 429 HTTP + registry 桩。与上面两个注入点同款。
+  @visibleForTesting
+  final bool debugInitialSeriesLookupFailed;
+
   @override
   State<JimakuSubtitleDialog> createState() => _JimakuSubtitleDialogState();
 }
@@ -253,6 +259,10 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
 
   bool _searching = false;
   bool _searched = false;
+
+  /// BUG-1782：上一次 AniList 系列解析**没问上**（网络 / 429 限流），而不是「查无此番」。
+  /// 为真时本次结果是纯文本回退搜出来的，可能横跨同系列多季，结果区据此如实告知。
+  bool _seriesLookupFailed = false;
   String? _busyName; // 正在下载的文件名
   String? _busySourceKey; // 正在下载的候选 identityKey（版本卡视图用）
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
@@ -309,6 +319,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _seriesMatches = List<AniListMedia>.unmodifiable(seedSeries);
       _selectedSeriesId = seedSeries.first.id;
     }
+    _seriesLookupFailed = widget.debugInitialSeriesLookupFailed;
   }
 
   /// 把记忆/选中的筛选（语言 + 类型）与当前候选对齐：本次结果里没出现的值 → 退回
@@ -359,6 +370,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       _candidates = const <JimakuCandidate>[];
       _seriesMatches = const <AniListMedia>[];
       _selectedSeriesId = null;
+      _seriesLookupFailed = false;
     });
     // BUG-1509：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
     // 代理 client 初始化和联网。旧顺序先 await onApiKeyChanged，慢磁盘/数据库下点击后
@@ -378,11 +390,26 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
       );
       // ① 先经 AniList 把番名解析成候选系列（romaji/english/native 都能匹上）；存全部
       //   候选供用户消歧，默认取首条（相关度最高）。② AniList 无命中时回退文本直接搜。
-      final List<AniListMedia> media = await anilist.searchAnime(query);
+      final AniListSearchOutcome outcome = await anilist.searchAnime(query);
       if (!mounted) return;
-      setState(() => _seriesMatches = media);
+      // BUG-1782：`degraded` 时 media 为空**不代表**查无此番，只代表这次没问上（网络 /
+      // 429 限流；放送日历页共用同一个 client 翻页拉 airingSchedules，很容易把配额烧掉）。
+      // 此前两种情况共用空列表，回退路径把同系列所有季平铺给用户，且既无提示也无日志——
+      // 用户看到的就是「筛选时好时坏、不知怎么触发」。这里如实分开：留诊断日志 + 记状态
+      // 供结果区如实告知，用户可重试而不是对着一堆跨季结果发懵。
+      if (outcome.degraded) {
+        ErrorLogService.instance.logDiagnostic(
+          'JimakuSubtitleDialog.searchAnime',
+          'AniList 搜索降级（${outcome.failure}）：「$query」退化为纯文本条目搜索，'
+              '结果可能横跨同系列多季',
+        );
+      }
+      setState(() {
+        _seriesMatches = outcome.media;
+        _seriesLookupFailed = outcome.degraded;
+      });
       await _fetchCandidates(
-        anilistId: media.isNotEmpty ? media.first.id : null,
+        anilistId: outcome.media.isNotEmpty ? outcome.media.first.id : null,
         queryFallback: query,
         episode: episode,
       );
@@ -823,10 +850,57 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
     );
   }
 
-  /// 结果区（宽屏右栏 / 窄屏下段）：搜索中 spinner → 无结果提示（含「显示全部集」
+  /// 结果区外壳：AniList 系列解析降级时在正文**上方**加一条如实说明（BUG-1782）。
+  ///
+  /// 降级下拿到的候选是纯文本搜出来的，会横跨同系列各季（`Yuru Yuri` 搜出 `San Hai!` /
+  /// `♪♪` / `Nachuyachumi!+`）。此前这与「正常搜到一季」在 UI 上完全无法区分，用户只能
+  /// 观察到「筛选时好时坏」。这里不改结果本身（回退结果仍然有用，总比什么都没有强），
+  /// 只把「这批结果为什么不可靠 + 可以重试」讲清楚。
+  ///
+  /// 只有降级时才多包一层：正常路径的 widget 树与改动前逐字节一致，不碰 BUG-279 的
+  /// 有界高度 / ListView 滚动不变量。
+  Widget _buildResultsArea(ThemeData theme) {
+    final Widget body = _buildResultsBody(theme);
+    if (!_seriesLookupFailed || _searching) return body;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(
+                Icons.warning_amber_outlined,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  t.video_jimaku_series_lookup_degraded,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _searching ? null : _search,
+                child: Text(t.retry),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
+  /// 结果区正文（宽屏右栏 / 窄屏下段）：搜索中 spinner → 无结果提示（含「显示全部集」
   /// 逃生口）→ 候选列表。列表由外层给定有界高度、内部普通（非 shrinkWrap）ListView
   /// 滚动，保留 BUG-279 不变量。
-  Widget _buildResultsArea(ThemeData theme) {
+  Widget _buildResultsBody(ThemeData theme) {
     if (_searching) {
       return buildLoading();
     }
