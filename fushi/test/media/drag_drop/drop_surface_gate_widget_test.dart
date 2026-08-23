@@ -236,6 +236,7 @@ void main() {
               libraryRefreshSignal: refreshSignal,
               scrapeTaskController: scrapeController,
               onScrapeAll: () async {},
+              onClearAllScrapeRecords: () async {},
               onScrapeSource: (_) async {},
               onVideoScanCompleted: (_, __) async {},
               onOpenScrapeTasks: () {},

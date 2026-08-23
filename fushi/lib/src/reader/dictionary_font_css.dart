@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -27,12 +28,12 @@ class DictionaryFontCss {
   /// decoder for the inlined `data:` URL.
   static const Map<String, ({String mime, String format})> _fontTypes =
       <String, ({String mime, String format})>{
-    '.ttf': (mime: 'font/ttf', format: 'truetype'),
-    '.otf': (mime: 'font/otf', format: 'opentype'),
-    '.ttc': (mime: 'font/collection', format: 'collection'),
-    '.woff': (mime: 'font/woff', format: 'woff'),
-    '.woff2': (mime: 'font/woff2', format: 'woff2'),
-  };
+        '.ttf': (mime: 'font/ttf', format: 'truetype'),
+        '.otf': (mime: 'font/otf', format: 'opentype'),
+        '.ttc': (mime: 'font/collection', format: 'collection'),
+        '.woff': (mime: 'font/woff', format: 'woff'),
+        '.woff2': (mime: 'font/woff2', format: 'woff2'),
+      };
 
   /// Builds the dictionary font CSS for [fonts] (a `[{name,path,enabled}]`
   /// list). [allowedDirectories] gates which file paths may be inlined (same
@@ -42,10 +43,11 @@ class DictionaryFontCss {
   static ({String fontFamily, String fontFaces, List<String> families}) build(
     Iterable<Map<String, dynamic>> fonts, {
     Iterable<String> allowedDirectories = const <String>[],
-    int maxFileBytes = _defaultMaxFileBytes,
+    int maxFileBytes = defaultMaxFileBytes,
   }) {
-    final Iterable<Map<String, dynamic>> enabled =
-        fonts.where((Map<String, dynamic> e) => e['enabled'] as bool? ?? true);
+    final Iterable<Map<String, dynamic>> enabled = fonts.where(
+      (Map<String, dynamic> e) => e['enabled'] as bool? ?? true,
+    );
     final List<String> families = <String>[];
     // 内容语言字体链要把用户字体接在每条 :lang() 规则的链首，而那条链自己负责加
     // 引号，所以这里同时留一份**裸**家族名（families 里是 CSS 化后带引号的形态）。
@@ -57,8 +59,9 @@ class DictionaryFontCss {
       final String? rawName = e['name'] as String?;
       if (rawName == null || rawName.trim().isEmpty) continue;
       final String cssName = ReaderCustomFontCss.cssFontFamilyName(rawName);
-      final String bareName =
-          ReaderCustomFontCss.normalizedFontFamilyName(rawName);
+      final String bareName = ReaderCustomFontCss.normalizedFontFamilyName(
+        rawName,
+      );
 
       final String? fontPath = e['path'] as String?;
       if (fontPath == null) {
@@ -78,8 +81,11 @@ class DictionaryFontCss {
       );
       if (safePath == null) continue;
 
-      final String? dataUrl =
-          _inlineFontDataUrl(safePath, type.mime, maxFileBytes);
+      final String? dataUrl = _inlineFontDataUrl(
+        safePath,
+        type.mime,
+        maxFileBytes,
+      );
       if (dataUrl == null) continue;
 
       families.add(cssName);
@@ -98,10 +104,12 @@ class DictionaryFontCss {
     );
   }
 
-  /// Default cap on a single inlined font file (8 MiB). A `data:` URL embeds the
-  /// whole file in the injected CSS string, so an unbounded read could bloat the
-  /// payload; CJK fonts above this are skipped (system-name fonts are unaffected).
-  static const int _defaultMaxFileBytes = 8 * 1024 * 1024;
+  /// Default cap on a single inlined font file (32 MiB). Recommended CJK fonts
+  /// such as Klee One and Noto Sans JP are commonly 8–10 MiB, so the former
+  /// 8 MiB limit silently removed them from dictionary popup CSS. The bounded
+  /// cap still prevents an arbitrary-size synchronous read/data-URL payload.
+  @visibleForTesting
+  static const int defaultMaxFileBytes = 32 * 1024 * 1024;
 
   /// BUG-717 ③：启用字体条目的内容指纹，供上层对 [build] 的**最终产物**做 memo。
   ///
@@ -134,9 +142,11 @@ class DictionaryFontCss {
         ..write('\u0001');
       try {
         final FileStat stat = FileStat.statSync(fontPath);
-        buffer.write(stat.type == FileSystemEntityType.notFound
-            ? 'missing'
-            : '${stat.modified.microsecondsSinceEpoch}:${stat.size}');
+        buffer.write(
+          stat.type == FileSystemEntityType.notFound
+              ? 'missing'
+              : '${stat.modified.microsecondsSinceEpoch}:${stat.size}',
+        );
       } catch (_) {
         buffer.write('err');
       }
@@ -161,7 +171,7 @@ class DictionaryFontCss {
   /// 浪费。文件被原地覆盖时 mtime/size 变化自动失效；路径变（导入落盘名带时间
   /// 戳、启动自愈迁移）天然换键，无需接任何设置变更通知。
   static final Map<String, ({int mtimeUs, int size, String dataUrl})>
-      _dataUrlCache = <String, ({int mtimeUs, int size, String dataUrl})>{};
+  _dataUrlCache = <String, ({int mtimeUs, int size, String dataUrl})>{};
 
   static String? _inlineFontDataUrl(String path, String mime, int maxBytes) {
     try {

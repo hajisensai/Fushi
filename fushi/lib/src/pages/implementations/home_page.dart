@@ -45,6 +45,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -1981,6 +1982,13 @@ class _HomePageState extends BasePageState<HomePage>
     unawaited(_openVideoSourceScrapeTasks());
   }
 
+  Future<void> _clearAllVideoScrapeRecords() async {
+    await showClearAllVideoScrapeRecordsAction(
+      context: context,
+      database: appModel.database,
+    );
+  }
+
   Future<({bool proceed, bool grant})> _confirmProtectedSidecarOverwrite(
     Iterable<SourceLibraryRow> sources,
   ) async {
@@ -2144,6 +2152,7 @@ class _HomePageState extends BasePageState<HomePage>
           libraryRefreshSignal: _videoLibraryRefreshSignal,
           scrapeTaskController: _videoSourceScrapeController,
           onScrapeAll: _scrapeAllVideosFromSources,
+          onClearAllScrapeRecords: _clearAllVideoScrapeRecords,
           onScrapeSource: _scrapeVideoSource,
           onVideoScanCompleted: _onVideoSourceScanCompleted,
           onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),

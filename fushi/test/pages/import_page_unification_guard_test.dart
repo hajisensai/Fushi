@@ -41,7 +41,7 @@ void main() {
       expect(
         _methodSlice(page, 'Widget _buildHeader()'),
         isNot(contains('t.media_source_add')),
-        reason: '页头只留视频的全部刮削 / 后台任务',
+        reason: '页头只留视频的刮削、清理记录与后台任务',
       );
       expect(
         _methodSlice(page, 'Widget _buildSourcesSectionHeader()'),

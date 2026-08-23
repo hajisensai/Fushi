@@ -986,8 +986,8 @@
     /* 预留带 = 注音字号 x 1.1（BUG-1655: 0.55em -> 0.66em，跟随 .ruby-rt 的 0.6em）。 */
     padding-top: 0.66em;
     vertical-align: baseline;
-    /* BUG-850: when .ruby-reserve widens the unit to the reading width, centre
-       the base kanji under its reading (the absolute rt is already centred). */
+    /* Keep the base and its absolutely positioned reading centred on the same
+       compact base-width anchor. */
     text-align: center;
 }
 
@@ -1063,21 +1063,18 @@
     font-size: 1em;
 }
 
-/* BUG-850 (horizontal reserve — completes the compaction's missing axis): the
-   <rt> above is position:absolute, so it reserves NO horizontal room and a
-   reading wider than its kanji (明鏡-style 逐字 ruby, e.g. 教<rt>きょう</rt>法<rt>ほう</rt>)
-   used to overhang and collide with the NEXT base's reading (the "few px spill"
-   BUG-345 accepted becomes a full overlap for >=3-kana readings). postProcessRuby
-   injects an in-flow, zero-height twin of the reading (.ruby-reserve) into each
-   .ruby-unit, so the unit's shrink-to-fit width grows to max(kanji, reading);
-   the base then centres under its reading and adjacent readings never overlap.
-   The twin is height:0 so the base keeps its own baseline (the BUG-108/363
-   vertical reserve is unchanged) and every length is font-size-relative, so it
-   stays zoom-immune. Units whose reading fits its kanji keep the old compaction.
-   The twin is aria-hidden + user-select:none so it never affects ruby lookup
-   selection (BUG-110/123/125/129). */
+/* BUG-1778: the hidden reading twin must NOT participate in inline layout.
+   BUG-850 made it in-flow to widen every base unit to max(base, reading), which
+   prevents adjacent readings from touching but visibly pulls Japanese正文 apart
+   whenever a short base has a long reading (体<rt>からだ</rt> is the clearest
+   case). Native/reference ruby permits annotation ink to overhang the compact
+   base run instead. Keep the twin only as inert semantic-compatible markup and
+   absolutely position it out of flow: base glyph spacing stays natural, while
+   .ruby-rt remains centred on the base and the vertical padding reserve is
+   unchanged. */
 :where(.glossary-group, .glossary-content, .expression) .ruby-reserve {
     display: block;
+    position: absolute;
     width: -webkit-max-content;
     width: max-content;
     height: 0;

@@ -860,6 +860,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // 台词浮窗本身已经显示完整句子；查词卡只保留词典正文。完整 sentence 仍会
       // 进入 mining 上下文，不因关闭可见横幅而丢失。
       showSentenceBanner: false,
+      // 游戏台词浮窗的点词卡不暴露进程级复制历史；这条路径使用 desktop HWND，
+      // 不能依靠 galCard route 判断，必须由调用表面显式声明。
+      allowClipboardHistory: false,
       // 卡片锚在被点中的那个词上（native 给的屏幕逻辑 px 矩形），而不是鼠标位置：
       // 浮窗里点词跟阅读器/剪贴板面板一样是「点哪个词看哪个词」。老 native 不带
       // 矩形时为 null，自动回落到光标定位。

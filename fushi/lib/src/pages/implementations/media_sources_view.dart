@@ -33,6 +33,7 @@ import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
@@ -154,6 +155,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     _appModel = ref.read(appProvider);
     _db = _appModel.database;
     widget.scrapeTaskController?.addListener(_onScrapeTaskChanged);
+    if (widget.mediaKind == 'video') {
+      videoScrapeCleanupRevision.addListener(_onVideoScrapeCleanupChanged);
+    }
     // BUG-1560：互联总开关的另一个写入口是同步设置页；不订阅这条广播，本视图的
     // 开关就停在开页那一刻的值（反之亦然）。真值仍从 preferences 重读。
     SyncRepository.interconnectEnabledRevision
@@ -172,6 +176,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   @override
   void dispose() {
     widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
+    if (widget.mediaKind == 'video') {
+      videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
+    }
     SyncRepository.interconnectEnabledRevision
         .removeListener(_onInterconnectEnabledChanged);
     super.dispose();
@@ -253,6 +260,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     for (final int sourceId in sourceIds) {
       unawaited(_refreshLatestScrapeRun(sourceId));
     }
+  }
+
+  void _onVideoScrapeCleanupChanged() {
+    if (mounted) unawaited(_load());
   }
 
   /// 一次性查出每个来源累计拥有的媒体条目数（按 mediaKind 选表）。

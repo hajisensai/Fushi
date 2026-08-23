@@ -25,6 +25,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.libraryRefreshSignal,
     required this.scrapeTaskController,
     required this.onScrapeAll,
+    required this.onClearAllScrapeRecords,
     required this.onScrapeSource,
     required this.onVideoScanCompleted,
     required this.onOpenScrapeTasks,
@@ -40,6 +41,7 @@ class VideoLibraryShell extends StatefulWidget {
   final Listenable libraryRefreshSignal;
   final VideoSourceScrapeTaskController scrapeTaskController;
   final Future<void> Function() onScrapeAll;
+  final Future<void> Function() onClearAllScrapeRecords;
   final Future<void> Function(SourceLibraryRow source) onScrapeSource;
   final Future<void> Function(
     SourceLibraryRow source,
@@ -227,6 +229,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       navigation,
                     ),
                     onScrapeAll: widget.onScrapeAll,
+                    onClearAllScrapeRecords:
+                        widget.onClearAllScrapeRecords,
                     onScrapeSource: widget.onScrapeSource,
                     onVideoScanCompleted: widget.onVideoScanCompleted,
                     scrapeTaskController: widget.scrapeTaskController,

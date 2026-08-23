@@ -111,6 +111,21 @@ void main() {
     expect(page.contains('customFontLegacyListsFromRows'), isTrue);
   });
 
+  test('font catalog init reads DB without watching ProviderScope', () {
+    final String page =
+        read('lib/src/pages/implementations/custom_fonts_page.dart');
+    final int start = page.indexOf('Future<void> _initializeFonts()');
+    final int end = page.indexOf('Future<void> _persistFontState(');
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final String initAndRead = page.substring(start, end);
+    expect(initAndRead.contains('appModelNoUpdate.database'), isTrue);
+    expect(initAndRead.contains('appModel.database'), isFalse,
+        reason: 'BasePageState.appModel uses ref.watch and is illegal during '
+            'initState; initialization must use the cache populated by '
+            'super.initState().');
+  });
+
   test('the legacy body key is never renamed (backward-compat ironclad)', () {
     final String src = read('lib/src/reader/reader_settings.dart');
     expect(src.contains("fontKeyBody = 'custom_fonts'"), isTrue);
