@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1671 条。点号进各自文件。
+> 共 1672 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1797](bugs/BUG-1797-texthooker-mined-badge-never-revalidated.md) | ✅ | ✅ | galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核 |
 | [BUG-1796](bugs/BUG-1796-gal-ingame-nested-popup-height-clipped.md) | ✅ | ✅ | 游戏内嵌套查词卡被父弹窗锚点空间裁短 |
 | [BUG-1795](bugs/BUG-1795-gal-ingame-card-capture-includes-popup.md) | ✅ | 🚧 | 游戏内查词制卡截图包含查词框 |
 | [BUG-1794](bugs/BUG-1794-video-scrape-cleanup-entry-hidden.md) | ✅ | ✅ | 视频导入页看不到清理全部刮削记录入口 |

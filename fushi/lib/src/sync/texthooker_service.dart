@@ -308,6 +308,7 @@ class TexthookerLineEntry {
     this.audioDurationMs,
     this.fallbackReason,
     this.mined = false,
+    this.minedNoteId,
     this.favorited = false,
     this.rubySpans = const <RubySpan>[],
   });
@@ -338,7 +339,18 @@ class TexthookerLineEntry {
 
   /// 本行是否已成功制卡（会话内存态，不落 DB）。制卡成功由
   /// [GalHookMiningCoordinator] / fallback 制卡回写（见 [TexthookerService.markLineMined]）。
+  ///
+  /// BUG-1797：这**不是**单向 latch —— 用户在 Anki 里把那张卡删了之后，
+  /// [TexthookerService.clearMinedForNotes] 会把它清回 false，徽章随之消失。
+  /// 复核凭据是 [minedNoteId]。
   final bool mined;
+
+  /// BUG-1797：本行制出的那张 Anki note 的 id，用于日后复核它是否还活着。
+  ///
+  /// 仅当后端回传了真实 note id（AnkiConnect；galgame 制卡是 Windows 专属车道，
+  /// 因此实际总有 id）时非空。为 null 时 [mined] 退化回旧的单向 latch —— 没有身份
+  /// 就无从复核，此时**保持点亮**而不是清掉（宁可陈旧，不可误清）。
+  final int? minedNoteId;
 
   /// 本行是否已被用户收藏（会话内存态，不落 DB；重启即失）。
   final bool favorited;
@@ -367,9 +379,11 @@ class TexthookerLineEntry {
     int? audioDurationMs,
     String? fallbackReason,
     bool? mined,
+    int? minedNoteId,
     bool? favorited,
     bool clearAudioResourceId = false,
     bool clearFallbackReason = false,
+    bool clearMinedNoteId = false,
   }) {
     return TexthookerLineEntry(
       id: id,
@@ -391,6 +405,7 @@ class TexthookerLineEntry {
       fallbackReason:
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
       mined: mined ?? this.mined,
+      minedNoteId: clearMinedNoteId ? null : minedNoteId ?? this.minedNoteId,
       favorited: favorited ?? this.favorited,
       rubySpans: rubySpans,
     );
@@ -781,15 +796,51 @@ class TexthookerService extends ChangeNotifier {
     return true;
   }
 
-  /// 把 [id] 行标记为已制卡（幂等：已是 mined 直接返回 false 不重复通知）。
-  /// 制卡成功后由挖矿编排回写，供列表显示「已制卡」徽章。
-  bool markLineMined(String id) {
+  /// 把 [id] 行标记为已制卡，[noteId] 是后端回传的 note id（BUG-1797 的复核凭据，
+  /// 无 id 的后端传 null）。制卡成功后由挖矿编排回写，供列表显示「已制卡」徽章。
+  ///
+  /// 幂等口径：已是 mined **且** note id 没变化才跳过；已 mined 的行拿到了新的
+  /// note id（覆写既有卡、或先前那次制卡没带回 id）仍要写进去，否则这行永远复核不了。
+  bool markLineMined(String id, {int? noteId}) {
     final int index = _entries.indexWhere((entry) => entry.id == id);
-    if (index < 0 || _entries[index].mined) return false;
-    _entries[index] = _entries[index].copyWith(mined: true);
+    if (index < 0) return false;
+    final TexthookerLineEntry entry = _entries[index];
+    if (entry.mined && (noteId == null || entry.minedNoteId == noteId)) {
+      return false;
+    }
+    _entries[index] = entry.copyWith(mined: true, minedNoteId: noteId);
     notifyListeners();
     return true;
   }
+
+  /// BUG-1797：把 note 已被删除的行清回「未制卡」。[deletedNoteIds] 必须是
+  /// **确认已从 Anki 删除**的 id 集合（见 `BaseAnkiRepository.findDeletedNotes`
+  /// 的口径：查不到 / 不可达一律给空集，绝不当成已删除）。
+  ///
+  /// 只碰 [TexthookerLineEntry.minedNoteId] 落在集合里的行；没有 note id 的行
+  /// （拿不到 id 的后端）保持原样点亮 —— 没有身份就没有复核依据。
+  /// 返回被清掉的行数；一行都没动时不发通知。
+  int clearMinedForNotes(Set<int> deletedNoteIds) {
+    if (deletedNoteIds.isEmpty) return 0;
+    int cleared = 0;
+    for (int i = 0; i < _entries.length; i++) {
+      final TexthookerLineEntry entry = _entries[i];
+      final int? noteId = entry.minedNoteId;
+      if (!entry.mined || noteId == null) continue;
+      if (!deletedNoteIds.contains(noteId)) continue;
+      _entries[i] = entry.copyWith(mined: false, clearMinedNoteId: true);
+      cleared++;
+    }
+    if (cleared > 0) notifyListeners();
+    return cleared;
+  }
+
+  /// BUG-1797：当前所有「已制卡且带 note id」的行的 note id 集合，供页面拿去
+  /// 向 Anki 批量复核。没有 id 的行不参与（复核不了）。
+  Set<int> get minedNoteIds => _entries
+      .where((TexthookerLineEntry e) => e.mined && e.minedNoteId != null)
+      .map((TexthookerLineEntry e) => e.minedNoteId!)
+      .toSet();
 
   /// 设置 [id] 行的收藏态（会话内存态，不落 DB）。状态无变化时不通知。
   bool setLineFavorite(String id, bool favorited) {
