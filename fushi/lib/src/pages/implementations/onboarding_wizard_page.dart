@@ -189,10 +189,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         final RecommendedPackManifest? manifest =
             await fetchRecommendedPackManifest();
         if (manifest != null) {
-          _manifestDownloader = RecommendedPackDownloader(
+          _manifestDownloader = RecommendedPackDownloader.fromManifest(
             packDir: _packDir,
-            url: manifest.url,
-            sha256Hex: manifest.sha256,
+            manifest: manifest,
           );
         }
       }
