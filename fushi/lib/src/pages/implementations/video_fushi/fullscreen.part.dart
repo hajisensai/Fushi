@@ -34,6 +34,28 @@ part of '../video_fushi_page.dart';
 /// controls_theme.part.dart in batch11) is left untouched in the main shell — it
 /// is a batch11 leftover, not part of this fullscreen block, so it is not moved.
 extension _VideoFullscreen on _VideoFushiPageState {
+  /// 当前是否真的处于 **media_kit 全屏路由**（BUG-1783）。
+  ///
+  /// 给叠在控制条 Stack 上的**兄弟层**（章节刻度 / 缩略图预览）判断该不该吃系统安全区用：
+  /// 它们不在 controls 子树里，拿不到 media_kit 的 Fullscreen InheritedWidget，只能经
+  /// [_videoControlsContext]（controls 子树内 Builder 捕获）反查。
+  ///
+  /// 移动端**直接短路 false**：BUG-221 已把移动端全屏路由统一 no-op 掉，横屏沉浸态是唯一
+  /// 形态。短路同时避开「兄弟层在同帧早于 Builder 回调执行、只能读到上一帧 context」的时序
+  /// 依赖——移动端恰恰是本 bug 的唯一暴露面，不能让它的正确性挂在帧序上。
+  bool get _isVideoFullscreenRoute {
+    if (isMobilePlatform) return false;
+    final BuildContext? ctx = _videoControlsContext;
+    return ctx != null && ctx.mounted && isFullscreen(ctx);
+  }
+
+  /// 控制条兄弟层与 media_kit 控制条**同源**的外层 padding（BUG-1783）。
+  /// 几何收敛进纯函数 [videoControlsChromeInsets]，页面与测试同源调用。
+  EdgeInsets _videoControlsChromeInsets() => videoControlsChromeInsets(
+        isFullscreenRoute: _isVideoFullscreenRoute,
+        systemPadding: MediaQuery.of(context).padding,
+      );
+
   Future<void> _toggleVideoFullscreen(BuildContext context) {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
     // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
