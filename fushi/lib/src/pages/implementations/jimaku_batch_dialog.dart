@@ -143,8 +143,9 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
       anilist = AniListClient(
         client: await _createHttpClient(),
       );
-      final List<AniListMedia> media = await anilist.searchAnime(query);
+      final AniListSearchOutcome outcome = await anilist.searchAnime(query);
       if (!mounted || generation != _seriesResolutionGeneration) return;
+      final List<AniListMedia> media = outcome.media;
       setState(() => _seriesMatches = media);
       if (media.isNotEmpty) {
         await _selectSeries(
@@ -154,6 +155,15 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
         );
       } else {
         // AniList 无命中 → 用文本直接搜 Jimaku 条目（无 anilist 绑定）。
+        // BUG-1782：`degraded` 时这不是「无命中」而是「没问上」，回退结果会横跨同系列
+        // 各季。留一条诊断日志，否则事后无从判断某次批量搜的是不是这个降级路径。
+        if (outcome.degraded) {
+          ErrorLogService.instance.logDiagnostic(
+            'JimakuBatchDialog.searchAnime',
+            'AniList 搜索降级（${outcome.failure}）：「$query」退化为纯文本条目搜索，'
+                '结果可能横跨同系列多季',
+          );
+        }
         await _resolveEntriesByQuery(query, generation: generation);
       }
     } finally {

@@ -188,6 +188,31 @@ class AniListRequestException implements Exception {
   String toString() => 'AniList HTTP $statusCode: $message';
 }
 
+/// [AniListClient.searchAnime] 的结果（BUG-1782）。
+///
+/// **为什么不能只返回 `List<AniListMedia>`**：空列表此前同时表示「AniList 说没有这部番」
+/// 和「这次根本没问上（网络挂 / 429 限流 / 解析失败）」两件完全不同的事，调用方无从区分，
+/// 只能一律当「没搜到」处理。下游 Jimaku 因此在 AniList 被限流时静默退化成纯文本搜索，
+/// 把同系列所有季的字幕平铺给用户，而 AniList 恢复后又自己好了——用户报「更新之后筛选
+/// 怎么坏了」「起了怪了，现在又行了，不知如何触发」。把失败**带出来**是这条链能被诊断的
+/// 前提，也是 UI 能如实告诉用户「结果不可靠」而不是假装一切正常的前提。
+class AniListSearchOutcome {
+  const AniListSearchOutcome.ok(this.media) : failure = null;
+
+  const AniListSearchOutcome.failed(String this.failure)
+      : media = const <AniListMedia>[];
+
+  final List<AniListMedia> media;
+
+  /// 非 null = 搜索链路发生过失败，此时 [media] 为空**不代表**查无此番。
+  final String? failure;
+
+  /// 搜索没能给出可信答案（调用方据此决定要不要把降级说给用户听）。
+  bool get degraded => failure != null;
+
+  bool get isEmpty => media.isEmpty;
+}
+
 /// 解析 airingSchedules GraphQL 响应。纯函数，结构不符 → 空页（HTTP 层错误
 /// 由 [AniListClient.fetchAiringSchedulePage] 以 [AniListRequestException] 上抛）。
 AniListAiringPage parseAniListAiringResponse(String body) {
@@ -263,11 +288,20 @@ query ($search: String) {
   }
 }''';
 
-  /// 按 [title] 搜索番剧。网络/解析失败返回空列表（不抛，调用方按空处理）。
+  /// 按 [title] 搜索番剧。**不抛**，但会经 [AniListSearchOutcome.failure] 如实带回
+  /// 「这次没问上」（BUG-1782）——空结果与失败不再共用同一个返回值。
+  ///
   /// 搜索词先做 macron 归一化（见 [normalizeAniListSearch]），让带官方 romaji
   /// 长音（ū ō…）的输入也能命中 AniList；全标题无结果时再尝试逗号前的主标题，
   /// 兼容罗马字连写/分写别名差异。
-  Future<List<AniListMedia>> searchAnime(String title) async {
+  ///
+  /// 失败判定按「**所有**候选查询都没能给出成功响应」：只要有一次拿到 200 并解析成功，
+  /// 哪怕结果为空，都算「AniList 明确答了没有」（`ok`）；一次成功都没有才是 `failed`。
+  /// 429 尤其要算失败——放送日历页共用同一个 client 按 `perPage: 50` 翻页拉 airingSchedules，
+  /// 配额被它烧掉时字幕搜索这边此前是静默降级的。
+  Future<AniListSearchOutcome> searchAnime(String title) async {
+    String? lastFailure;
+    bool anySuccess = false;
     for (final String query in aniListSearchQueries(title)) {
       try {
         final http.Response res = await _client.post(
@@ -281,17 +315,26 @@ query ($search: String) {
             'variables': <String, dynamic>{'search': query},
           }),
         );
-        if (res.statusCode != 200) continue;
+        if (res.statusCode != 200) {
+          lastFailure = 'HTTP ${res.statusCode}';
+          continue;
+        }
         // 显式 UTF-8 解码（res.body 无 charset 时按 latin1 → 日文/罗马音乱码）。
         final List<AniListMedia> matches = parseAniListSearchResponse(
           utf8.decode(res.bodyBytes, allowMalformed: true),
         );
-        if (matches.isNotEmpty) return matches;
-      } catch (_) {
-        // Try the next conservative fallback; callers still receive [].
+        anySuccess = true;
+        if (matches.isNotEmpty) return AniListSearchOutcome.ok(matches);
+        // 200 且解析成功但结果为空 = AniList 明确答了「没有」，继续试下一个更保守的
+        // 查询词。只要有过这么一次，就说明链路是通的，末尾不再报降级。
+      } catch (e) {
+        lastFailure = e.toString();
       }
     }
-    return const <AniListMedia>[];
+    if (!anySuccess && lastFailure != null) {
+      return AniListSearchOutcome.failed(lastFailure);
+    }
+    return const AniListSearchOutcome.ok(<AniListMedia>[]);
   }
 
   static const String _airingQuery = r'''
