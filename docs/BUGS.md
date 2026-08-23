@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1674 条。点号进各自文件。
+> 共 1675 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -42,6 +42,7 @@
 | [BUG-1791](bugs/BUG-1791-recommended-font-library-reentry.md) | ✅ | ✅ | 推荐字体重进字体库显示未持久化 |
 | [BUG-1790](bugs/BUG-1790-gal-resource-poll-freeze.md) | ✅ | ✅ | 资源语音待匹配全量轮询导致 Fushi 与浮窗冻结 |
 | [BUG-1789](bugs/BUG-1789-pdf-import-whitelists.md) | ✅ | ✅ | PDF 导入白名单三处漏抄：漫画框选不中、拖放不认、文件夹扫描跳过 |
+| [BUG-1788](bugs/BUG-1788-popup-kanji-chip-row-never-deleted.md) | ✅ | ✅ | 查词弹窗词头下方的单字 chip 行仍在渲染：删除提交从未合并进 develop |
 | [BUG-1787](bugs/BUG-1787-font-library-scope-target-dead-param.md) | ✅ | ✅ | 字体库作用域参数不生效：从游戏入口导入的字体挂到小说正文 |
 | [BUG-1786](bugs/BUG-1786-win-update-launcher-self-lock.md) | ✅ | ✅ | 自更新永远装不上 app.so：launcher 占着自己的文件让 Inno 整包回滚 |
 | [BUG-1785](bugs/BUG-1785-download-organize-tv-preview-blocks-batch.md) | ✅ | ✅ | TV 整理被无集号特典文件整批卡死 |
