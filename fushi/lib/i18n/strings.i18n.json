@@ -2731,7 +2731,7 @@
   "media_tracking_manual_required_hint": "These local items already have progress but are not linked to Bangumi.",
   "media_tracking_no_local_history": "No local watch, reading, or game progress needs linking.",
   "media_tracking_more_manual_required": "$n more items need manual links",
-  "manga_import_hint": "Pick a manga folder, a .cbz/.zip page archive, or a .mokuro file.",
+  "manga_import_hint": "Pick a manga folder, a .cbz/.zip page archive, a .pdf, or a .mokuro file.",
   "manga_import_pick_file": "Pick manga file",
   "manga_import_pick_folder": "Pick manga folder",
   "manga_import_missing_input": "Pick a manga file or folder first.",

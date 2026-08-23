@@ -1,8 +1,13 @@
 import 'package:path/path.dart' as p;
 
-/// 书籍扩展名（不带点，小写）。= epub + TextToEpub.supportedExtensions。
+/// 书籍扩展名（不带点，小写）。= epub + pdf + TextToEpub.supportedExtensions。
+///
+/// `pdf` 在列：PDF 是 `EpubBooks.format` 的三种书身份之一（`ImportCarrier.pdf` →
+/// `PdfImporter`），导入对话框的文件选择器一直认它。此前只有这份拖放白名单漏了，
+/// 于是「按钮能导、拖进去说不支持」——同一件东西两个入口两种答案（用户实报）。
 const Set<String> kDragBookExtensions = <String>{
   'epub',
+  'pdf',
   'txt',
   'html',
   'htm',
