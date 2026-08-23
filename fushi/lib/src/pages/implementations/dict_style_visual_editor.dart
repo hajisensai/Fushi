@@ -421,30 +421,39 @@ class _ColorChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 颜色一律走设计 token，不碰裸 ColorScheme 槽位；圆形墨水面用 CircleBorder
+    // 而不是 BorderRadius.circular——共享 MD3 守卫（md3_design_system_static_test）
+    // 会把这两样当「绕开设计系统的本地决策」抓出来，而它是对的：这里没有任何
+    // 需要偏离 token 的理由。
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Tooltip(
       message: tooltip,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        customBorder: const CircleBorder(),
         child: Container(
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: argb == null ? scheme.surfaceContainerHighest : Color(argb!),
+            color: argb == null ? tokens.surfaces.card : Color(argb!),
             shape: BoxShape.circle,
             border: Border.all(
-              color: selected ? scheme.primary : scheme.outlineVariant,
+              color:
+                  selected ? tokens.surfaces.primary : tokens.surfaces.outline,
               width: selected ? 3 : 1,
             ),
           ),
           child: showPaletteIcon
-              ? Icon(Icons.colorize, size: 16, color: scheme.onSurfaceVariant)
+              ? Icon(
+                  Icons.colorize,
+                  size: 16,
+                  color: tokens.surfaces.onVariant,
+                )
               : (argb == null
                   ? Icon(
                       Icons.block,
                       size: 16,
-                      color: scheme.onSurfaceVariant,
+                      color: tokens.surfaces.onVariant,
                     )
                   : null),
         ),

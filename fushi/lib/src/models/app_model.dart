@@ -6317,8 +6317,13 @@ class AppModel with ChangeNotifier {
   // 编译产物。下面的 effective* 才是注入弹窗的最终值（产物在前、手写在后）。
 
   /// 可视化样式规则表（真相源：偏好 [dictStyleRulesPrefKey]）。
-  List<DictStyleRule> get dictStyleRules =>
-      decodeDictStyleRules(prefsRepo.dictStyleRulesRaw);
+  ///
+  /// 偏好没就绪时返回空表而不是崩：弹窗注入链（`buildPopupStaticSettingsJs`）会
+  /// 在偏好未初始化的裸 AppModel 上被 widget 测试调到，而「还没有偏好」的正确
+  /// 语义就是「一条规则都没设」。
+  List<DictStyleRule> get dictStyleRules => isPreferencesReady
+      ? decodeDictStyleRules(prefsRepo.dictStyleRulesRaw)
+      : const <DictStyleRule>[];
 
   /// 保存规则表，并同步刷新 CSS 编译产物缓存。
   ///
@@ -6331,9 +6336,13 @@ class AppModel with ChangeNotifier {
   }
 
   /// 注入弹窗的全局 CSS：可视化产物 + 用户手写。
+  ///
+  /// 手写那半走 [globalDictCSS] 而不是 `prefsRepo.globalDictCSS`：前者是可被子类
+  /// 覆写的公开面，测试里的假 AppModel 正是靠覆写它来喂值的；直接穿透到
+  /// prefsRepo 会把覆写全部绕过去（且在偏好未就绪时空指针）。
   String get effectiveGlobalDictCSS => mergeGeneratedAndAuthoredCss(
         buildGlobalDictStyleCss(dictStyleRules),
-        prefsRepo.globalDictCSS,
+        globalDictCSS,
       );
 
   /// 注入弹窗的单典 CSS：可视化产物 + 用户手写，逐本合并。
@@ -6342,7 +6351,8 @@ class AppModel with ChangeNotifier {
   /// 结果里，否则规则静默失效。
   Map<String, String> get effectiveCustomDictCSS {
     final List<DictStyleRule> rules = dictStyleRules;
-    final Map<String, String> authored = prefsRepo.customDictCSS;
+    // 同 [effectiveGlobalDictCSS]：走可覆写的公开 getter，别穿透 prefsRepo。
+    final Map<String, String> authored = customDictCSS;
     final Set<String> names = <String>{
       ...authored.keys,
       ...dictionariesWithStyleRules(rules),
