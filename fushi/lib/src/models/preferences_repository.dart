@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -2372,9 +2373,10 @@ class PreferencesRepository extends ChangeNotifier {
   /// 削弱隐私边界——真正的上传闸门是 [ensureGoogleLensDisclosure] 的逐设备一次性
   /// 同意弹窗，用户拒绝即不发任何字节；想彻底离线的用户把本偏好改回 `auto`，
   /// `auto` 的解析链依旧永不跨到 Lens。
-  String get mangaOcrEnginePreference =>
-      getPref('manga_ocr_engine_preference', defaultValue: 'google_lens')
-          as String;
+  String get mangaOcrEnginePreference => getPref(
+        'manga_ocr_engine_preference',
+        defaultValue: kDefaultMangaOcrEnginePreference.key,
+      ) as String;
 
   Future<void> setMangaOcrEnginePreference(String value) async {
     await setPref('manga_ocr_engine_preference', value);
