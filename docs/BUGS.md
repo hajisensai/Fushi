@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1692 条。点号进各自文件。
+> 共 1694 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1815](bugs/BUG-1815-lyrics-load-guard-stale-finalizer-test.md) | ✅ | ✅ | 歌词文档守卫静态测试未跟随 finalizer 重构 |
+| [BUG-1814](bugs/BUG-1814-main-window-focus-gate-nonwindows-test.md) | ✅ | ✅ | Windows 焦点闸门单测在非 Windows 误红 |
 | [BUG-1813](bugs/BUG-1813-macos-popup-viewport-teardown.md) | ✅ | ✅ | macOS 词典弹窗视口注入销毁竞态 |
 | [BUG-1812](bugs/BUG-1812-ios-reader-zero-vh-vw-margins.md) | ✅ | ✅ | iOS阅读器WebView视口单位为零导致四边页边距失效 |
 | [BUG-1811](bugs/BUG-1811-ios-interconnect-remote-audio-unpinned-player.md) | ✅ | ✅ | iOS互联远端音频绕过证书钉扎导致无法播放 |
