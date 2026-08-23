@@ -306,7 +306,8 @@ class DictionaryPopupWebViewState
     final double? height = _layoutHeight;
     if (controller == null || width == null || width <= 0) return;
     final String heightValue = height == null ? '0' : '$height';
-    await controller.evaluateJavascript(source: '''(function(){
+    try {
+      await controller.evaluateJavascript(source: '''(function(){
   var w = $width, h = $heightValue;
   document.documentElement.style.width = w + 'px';
   document.documentElement.style.minWidth = w + 'px';
@@ -319,6 +320,14 @@ class DictionaryPopupWebViewState
   window.__fushiPopupViewportWidth = w;
   window.__fushiPopupViewportHeight = h;
 })();''');
+    } catch (_) {
+      // macOS WKWebView may tear down its platform controller after this
+      // asynchronous call has started (for example when a lookup is cleared).
+      // That is a normal lifecycle completion, not an app error. Preserve real
+      // JavaScript/platform failures while this exact controller is still live.
+      if (!mounted || !identical(_controller, controller)) return;
+      rethrow;
+    }
   }
 
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
@@ -2210,6 +2219,7 @@ JSON.stringify((function(){
             .then((_) async {
           if (!mounted) return;
           await _applyPopupViewportSize();
+          if (!mounted) return;
           unawaited(_pushInstantScrollPreference());
           if (_refreshWhenReady || _lastSearchTerm == null) {
             _pushResults();

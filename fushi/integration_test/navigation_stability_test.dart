@@ -11,12 +11,12 @@ import 'package:fushi/src/pages/implementations/custom_fonts_page.dart'
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart'
     show DictionaryDialogPage;
 import 'package:fushi/src/pages/implementations/home_page.dart'
-    show HomePage, HomeTab;
+    show HomePage, HomeTab, homeShellTabNotifier;
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart'
     show ShortcutSettingsPage;
 import 'package:fushi/src/settings/settings_detail_page.dart'
     show SettingsDetailPage;
-import 'package:fushi/utils.dart' show t;
+import 'package:fushi/utils.dart' show FushiListItem, t;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show seedReaderBook;
@@ -68,6 +68,19 @@ void main() {
             );
             await driver.activate();
             await tester.pump(const Duration(milliseconds: 200));
+            // Wide desktop settings intentionally replaces the primary rail
+            // with a full-width two-pane surface and a back exit. Leave it via
+            // the production Escape/PopScope path before the next round; the
+            // next dashboard target cannot be focus-reachable while the rail
+            // is deliberately absent.
+            if (homeShellTabNotifier.value == HomeTab.settings) {
+              await driver.back();
+              await _pumpUntil(
+                tester,
+                () => homeShellTabNotifier.value != HomeTab.settings,
+                reason: 'Settings back must restore the previous primary tab',
+              );
+            }
           }
         }
         expect(
@@ -101,18 +114,21 @@ void main() {
 
         debugPrint('[M4] === All settings destinations ===');
         for (final String label in destinations) {
-          await _openSettingsDestination(tester, driver, label);
+          final bool pushedDetail =
+              await _openSettingsDestination(tester, driver, label);
           expect(
             tester.takeException(),
             isNull,
             reason: '$label detail page must not throw',
           );
-          await _systemBack(tester);
-          await _pumpUntil(
-            tester,
-            () => find.byType(SettingsDetailPage).evaluate().isEmpty,
-            reason: '$label must return to the settings home',
-          );
+          if (pushedDetail) {
+            await _systemBack(tester);
+            await _pumpUntil(
+              tester,
+              () => find.byType(SettingsDetailPage).evaluate().isEmpty,
+              reason: '$label must return to the settings home',
+            );
+          }
           debugPrint('[M4] ✓ $label open/back');
         }
 
@@ -210,7 +226,7 @@ Future<void> _selectHomeTab(WidgetTester tester, HomeTab tab) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
-Future<void> _openSettingsDestination(
+Future<bool> _openSettingsDestination(
   WidgetTester tester,
   FocusDriver driver,
   String label,
@@ -225,14 +241,27 @@ Future<void> _openSettingsDestination(
   await driver.activate();
   await _pumpUntil(
     tester,
-    () => find.byType(SettingsDetailPage).evaluate().isNotEmpty,
-    reason: '$label must open SettingsDetailPage',
+    () => find.byType(SettingsDetailPage).evaluate().isNotEmpty ||
+        _wideDestinationSelected(label),
+    reason: '$label must open a narrow detail route or become the selected '
+        'wide-layout destination',
   );
   expect(
     find.text(label),
     findsWidgets,
     reason: '$label title must remain visible on its detail page',
   );
+  return find.byType(SettingsDetailPage).evaluate().isNotEmpty;
+}
+
+bool _wideDestinationSelected(String label) {
+  final Finder selectedRows = find.byWidgetPredicate(
+    (Widget widget) => widget is FushiListItem && widget.selected,
+  );
+  return find
+      .ancestor(of: find.text(label), matching: selectedRows)
+      .evaluate()
+      .isNotEmpty;
 }
 
 Future<void> _openDeepRoute<T extends Widget>(
@@ -241,7 +270,8 @@ Future<void> _openDeepRoute<T extends Widget>(
   required String destination,
   required String item,
 }) async {
-  await _openSettingsDestination(tester, driver, destination);
+  final bool pushedDetail =
+      await _openSettingsDestination(tester, driver, destination);
   final Finder itemTarget = find.text(item).first;
   expect(
     await driver.focusWidget(itemTarget, maxSteps: 360),
@@ -267,13 +297,21 @@ Future<void> _openDeepRoute<T extends Widget>(
     () => find.byType(T).evaluate().isEmpty,
     reason: '$item deep page must return to its destination',
   );
-  expect(find.byType(SettingsDetailPage), findsOneWidget);
-  await _systemBack(tester);
-  await _pumpUntil(
-    tester,
-    () => find.byType(SettingsDetailPage).evaluate().isEmpty,
-    reason: '$destination must return to settings home',
-  );
+  if (pushedDetail) {
+    expect(find.byType(SettingsDetailPage), findsOneWidget);
+    await _systemBack(tester);
+    await _pumpUntil(
+      tester,
+      () => find.byType(SettingsDetailPage).evaluate().isEmpty,
+      reason: '$destination must return to settings home',
+    );
+  } else {
+    expect(
+      _wideDestinationSelected(destination),
+      isTrue,
+      reason: 'wide settings must retain $destination after closing $item',
+    );
+  }
   debugPrint('[M4] ✓ $destination → $item open/back/back');
 }
 

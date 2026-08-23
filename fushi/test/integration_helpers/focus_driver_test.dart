@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../integration_test/helpers/focus_driver.dart';
@@ -46,5 +47,44 @@ void main() {
     expect(ok, isTrue, reason: 'btn1 必须可达');
     await driver.activate();
     expect(activatedIndex, 1, reason: 'Space 必须激活当前焦点按钮');
+  });
+
+  testWidgets(
+      'focusWidget recovers traversal when a native-view boundary leaves only '
+      'the route FocusScope focused', (tester) async {
+    final FocusScopeNode routeScope = FocusScopeNode(debugLabel: 'route scope');
+    addTearDown(routeScope.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.tab):
+                DoNothingAndStopPropagationIntent(),
+          },
+          child: FocusScope(
+            node: routeScope,
+            autofocus: true,
+            child: Scaffold(
+              body: TextButton(
+                onPressed: () {},
+                child: const Text('after native view'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    routeScope.requestFocus();
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus, same(routeScope));
+
+    final FocusDriver driver = FocusDriver(tester);
+    expect(
+      await driver.focusWidget(find.text('after native view'), maxSteps: 3),
+      isTrue,
+      reason: 'macOS native WebView can hand Flutter back only its route scope; '
+          'semantic Tab traversal must resume at the first concrete control',
+    );
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 // ignore: depend_on_referenced_packages  — 测试桩需直接实现该平台接口（flutter_inappwebview 的传递依赖）
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
@@ -153,6 +155,35 @@ void main() {
       await harness.firePopupRendered();
       expect(state.refreshCurrentResult(), isFalse);
       expect(harness.pushCount, 2);
+    });
+  });
+
+  group('popup WebView lifecycle', () {
+    testWidgets(
+        'controller teardown during viewport injection does not escape as an '
+        'unhandled Flutter error', (WidgetTester tester) async {
+      harness.blockViewportInjection = true;
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: DictionaryPopupWebView(result: makeResult('語')),
+        ),
+      );
+      await tester.pump(); // onWebViewCreated → onLoadStop
+      await tester.pump(); // caret bootstrap → viewport injection starts
+
+      final Completer<dynamic>? viewport = harness.pendingViewportInjection;
+      expect(viewport, isNotNull,
+          reason: 'the real popup must have started the Flutter-sized viewport '
+              'injection before teardown');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      viewport!.completeError(StateError('controller disposed mid-flight'));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull,
+          reason: 'a platform controller can be disposed after the JS call '
+              'starts; that lifecycle race must stay inside the popup');
     });
   });
 
@@ -334,6 +365,8 @@ class RecordingWebViewHarness {
   final List<String> scripts = <String>[];
   final Map<String, JavaScriptHandlerCallback> handlers =
       <String, JavaScriptHandlerCallback>{};
+  bool blockViewportInjection = false;
+  Completer<dynamic>? pendingViewportInjection;
 
   static final RegExp _tokenPattern =
       RegExp(r'window\.__fushiRenderToken = (\d+);');
@@ -451,6 +484,12 @@ class _RecordingPlatformController extends PlatformInAppWebViewController {
   Future<dynamic> evaluateJavascript(
       {required String source, ContentWorld? contentWorld}) async {
     harness.scripts.add(source);
+    if (harness.blockViewportInjection &&
+        source.contains('--fushi-popup-viewport-width')) {
+      final Completer<dynamic> pending = Completer<dynamic>();
+      harness.pendingViewportInjection = pending;
+      return pending.future;
+    }
     return null;
   }
 

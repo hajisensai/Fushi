@@ -105,6 +105,20 @@ class FocusDriver {
         await tester.pump(_settle);
         if (reached()) return true;
       }
+      // macOS native platform views (notably WKWebView) can release their OS
+      // focus without restoring a concrete Flutter node. The framework then
+      // exposes only the route's FocusScope as primaryFocus, and a synthetic
+      // Tab has no leaf from which to resume traversal. Advance that scope by
+      // the same semantic next-focus operation so the first real control is
+      // reachable again; _focusOwns deliberately never treats the scope itself
+      // as success.
+      if (key == LogicalKeyboardKey.tab &&
+          identical(focused, before) &&
+          focused is FocusScopeNode) {
+        focused?.nextFocus();
+        await tester.pump(_settle);
+        if (reached()) return true;
+      }
     }
     // 步数耗尽：把当前焦点落点打出来，避免「不可达」失败只剩一个 false。
     final FocusNode? f = focused;

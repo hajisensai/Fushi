@@ -121,7 +121,7 @@ void main() {
 
       // === F5: Profile Management ===
       debugPrint('[M3] === F5: Profile Management ===');
-      expect(await driver.focusWidget(settingsTab), isTrue,
+      expect(await driver.focusWidget(settingsTab, maxSteps: 320), isTrue,
           reason: 'Settings tab must be reachable by focus');
       await driver.activate(); // Settings tab
       await tester.pump(const Duration(milliseconds: 500));
