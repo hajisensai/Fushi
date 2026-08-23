@@ -106,8 +106,12 @@ consumer `proguard.txt`**，app 三处 proguard 也没有 keep。从 `.so` 提�
   而该分支在出包五端已不可达，只剩「将来某端 native 被摘掉」的理论兜底。key 保留
   （删了等于删掉降级出口），文案措辞未改，避免为一句不可达文案改动 17 个语言文件。
 
-- **[x] ① 已修复** — 见上「修复」段
-- **[x] ② 已加自动化测试** — 见上「测试」段（两条新守卫均已变异实测）
+- **[x] ① 已修复** — `40ad94fe04`，见上「修复」段
+- **[x] ② 已加自动化测试** — `40ad94fe04`：
+  `fushi/test/ocr/onnxruntime_r8_keep_guard_test.dart`（新增）、
+  `fushi/test/ocr/manga_ocr_service_impl_test.dart`（闸门源码守卫）、
+  `fushi/test/media/manga/manga_ocr_settings_section_ui_test.dart`（出厂默认引擎下
+  下载入口可达）。两条新守卫均已变异实测。
 - **备注**：Android 走纯 CPU 执行提供者（`selectOcrExecutionProviders` 对 `android`
   早有显式分支，见 `fushi/test/ocr/manga_ocr_service_impl_test.dart` 的「Linux /
   Android：纯 CPU」），不会踩 BUG-1149 那条「传了插件不认的 EP」。整卷在低端安卓
