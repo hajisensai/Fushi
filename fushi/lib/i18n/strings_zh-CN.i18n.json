@@ -2731,7 +2731,7 @@
   "media_tracking_manual_required_hint": "这些本地条目已有观看、阅读或游玩记录，但还没有关联到 Bangumi。",
   "media_tracking_no_local_history": "暂无需要关联的本地观看、阅读或游玩记录。",
   "media_tracking_more_manual_required": "另有 $n 项需要手动关联",
-  "manga_import_hint": "选择漫画文件夹、.cbz/.zip 页图压缩包，或 .mokuro 文件。",
+  "manga_import_hint": "选择漫画文件夹、.cbz/.zip 页图压缩包、.pdf，或 .mokuro 文件。",
   "manga_import_pick_file": "选择漫画文件",
   "manga_import_pick_folder": "选择漫画文件夹",
   "manga_import_missing_input": "请先选择漫画文件或文件夹。",

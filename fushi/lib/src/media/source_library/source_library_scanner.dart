@@ -50,6 +50,7 @@ import 'package:fushi/src/media/manga/manga_storage.dart'
 import 'package:fushi/src/media/manga/mokuro_payload.dart'
     show MokuroImage, MokuroPayload, parseMokuro;
 import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/external_video.dart'
@@ -64,8 +65,13 @@ import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 
-/// EPUB extensions (lowercase, no leading dot).
-const Set<String> kScanEpubExtensions = <String>{'epub'};
+/// 书文件扩展名（小写、不带点）。
+///
+/// `pdf` 在列：PDF 是 `EpubBooks.format` 的三种书身份之一，单本导入对话框一直认
+/// 它（`ImportCarrier.pdf` → `PdfImporter`）。此前这份扫描白名单只有 `epub`，于是
+/// 「导入文件夹」把目录里每一份 PDF 静默跳过——不报错、不计数，看起来像扫描漏掉了
+/// 文件（用户实报）。导入分流见 [SourceLibraryScanner._importBooks]。
+const Set<String> kScanBookExtensions = <String>{'epub', 'pdf'};
 
 /// Subtitle whitelist shared with the video import dialog (no lrc).
 const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
@@ -82,13 +88,18 @@ const Set<String> kScanMangaExtensions = <String>{'mokuro'};
 @immutable
 class ScanBookItem {
   const ScanBookItem({
-    required this.epubPath,
+    required this.bookPath,
     this.subtitlePath,
     this.audioPaths = const <String>[],
   });
 
-  /// EPUB 文件完整路径（来源命名空间）。
-  final String epubPath;
+  /// 书文件完整路径（来源命名空间）。扩展名决定用哪个导入器——`.pdf` 走
+  /// [PdfImporter]，其余走 [EpubImporter]。字段名不再叫 `epubPath`：它装的
+  /// 是「一本书的文件」，装进 PDF 后那个名字就是句谎话。
+  final String bookPath;
+
+  /// 这份书文件是不是 PDF（决定导入器与能否挂有声书）。
+  bool get isPdf => p.extension(bookPath).toLowerCase() == '.pdf';
 
   /// 同名字幕完整路径；无同名字幕为 null。
   final String? subtitlePath;
@@ -97,18 +108,22 @@ class ScanBookItem {
   final List<String> audioPaths;
 
   /// 是否应导成有声书：同名字幕与音频齐备（音频必配字幕）。
-  bool get isAudiobook => subtitlePath != null && audioPaths.isNotEmpty;
+  ///
+  /// PDF 恒 false：对齐拿 EPUB 的章节正文与字幕逐句配，PDF 行的 `chaptersJson`
+  /// 是 `'[]'`、根本没有可配的正文，喂进去只会产出一本空对齐的假有声书。
+  bool get isAudiobook =>
+      !isPdf && subtitlePath != null && audioPaths.isNotEmpty;
 
   @override
   bool operator ==(Object other) =>
       other is ScanBookItem &&
-      other.epubPath == epubPath &&
+      other.bookPath == bookPath &&
       other.subtitlePath == subtitlePath &&
       _listEquals(other.audioPaths, audioPaths);
 
   @override
   int get hashCode =>
-      Object.hash(epubPath, subtitlePath, Object.hashAll(audioPaths));
+      Object.hash(bookPath, subtitlePath, Object.hashAll(audioPaths));
 }
 
 bool _listEquals(List<String> a, List<String> b) {
@@ -240,7 +255,7 @@ String _extOf(String name) =>
 /// Pure function: classifies a listed [files] set into a scan plan. No IO.
 ///
 /// - Skips directory entries (recursive listing yields only files anyway).
-/// - EPUB (ext in [kScanEpubExtensions]) -> [ScanPlan.epubPaths].
+/// - EPUB (ext in [kScanBookExtensions]) -> [ScanPlan.epubPaths].
 /// - Video (ext in [kVideoExtensions]) -> [ScanPlan.videos], associating the
 ///   same-stem subtitle found by [selectSidecarNames] within the same directory.
 /// - Subtitles are not inserted on their own; they only attach to a video.
@@ -285,7 +300,7 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
       mangas.add(ScanMangaItem(mokuroPath: e.path));
       continue;
     }
-    if (kScanEpubExtensions.contains(ext)) {
+    if (kScanBookExtensions.contains(ext)) {
       // TODO-946：EPUB 同目录扫同名字幕 + 音频（wantAudio:true，字幕扩展含 lrc）。
       // 命中音频 -> 导成有声书（字幕作对齐源）；否则纯 EPUB。同目录作用域，与
       // 视频 sidecar 关联一致。
@@ -299,7 +314,7 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
       final Map<String, String> dirPaths =
           pathByDir[dir] ?? const <String, String>{};
       books.add(ScanBookItem(
-        epubPath: e.path,
+        bookPath: e.path,
         subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
         audioPaths: sel.audio.map((String n) => dirPaths[n] ?? n).toList(),
       ));
@@ -432,7 +447,7 @@ class SourceLibraryScanner {
       );
       final ScanPlan plan = planScanFromFileList(entries);
       discoveredPaths = <String>[
-        for (final ScanBookItem item in plan.books) item.epubPath,
+        for (final ScanBookItem item in plan.books) item.bookPath,
         for (final ScanVideoItem item in plan.videos) item.videoPath,
         for (final ScanPlaylistItem item in plan.playlists) item.playlistPath,
         for (final ScanMangaItem item in plan.mangas) item.mokuroPath,
@@ -520,23 +535,36 @@ class SourceLibraryScanner {
     Directory? epubTmp;
     for (final ScanBookItem item in plan.books) {
       try {
-        // 网络来源：先把远端 EPUB 下载到临时盘（导入器只吃本地路径）；本地原样。
-        String localEpub = item.epubPath;
+        // 网络来源：先把远端书文件下载到临时盘（导入器只吃本地路径）；本地原样。
+        String localBook = item.bookPath;
         if (!fs.isLocal) {
           epubTmp ??= Directory.systemTemp.createTempSync('m1c_scan_books_');
-          localEpub = await fs.copyToLocal(item.epubPath, epubTmp.path);
+          localBook = await fs.copyToLocal(item.bookPath, epubTmp.path);
         }
         // DuplicatePolicy.skip() reuses the sanitizeTtuFilename identity key so a
         // re-scan / same-batch duplicate throws DuplicateImportCancelledException
         // (caught below) instead of a silent "X (2)" (BUG-443). The returned
         // bookKey is the audiobook anchor when a sidecar audio attaches.
-        final String bookKey = await EpubImporter.importFromPath(
-          db: _db,
-          filePath: localEpub,
-          fileName: p.basename(item.epubPath),
-          sourceId: sourceId,
-          policy: const DuplicatePolicy.skip(),
-        );
+        //
+        // PDF 分流到 [PdfImporter]：同一套 bookKey 身份、同一条 skip 语义、同一张
+        // `EpubBooks` 表，差别只在产物（拷 document.pdf + 栅格化首页当封面）。标题
+        // 取文件名去扩展名——PDF 元数据里的标题不可靠，与单本导入对话框同口径。
+        final String bookKey = item.isPdf
+            ? await PdfImporter.importFromPath(
+                db: _db,
+                filePath: localBook,
+                fileName: p.basename(item.bookPath),
+                title: p.basenameWithoutExtension(item.bookPath),
+                sourceId: sourceId,
+                policy: const DuplicatePolicy.skip(),
+              )
+            : await EpubImporter.importFromPath(
+                db: _db,
+                filePath: localBook,
+                fileName: p.basename(item.bookPath),
+                sourceId: sourceId,
+                policy: const DuplicatePolicy.skip(),
+              );
         count++;
         // TODO-946：同目录有同名字幕 + 音频 -> 复用对话框抽出的非 UI 落库 service
         // 把这本 EPUB 升级成有声书（字幕做对齐源 + 音频）。仅本地传输支持（service
@@ -547,7 +575,7 @@ class SourceLibraryScanner {
             repo: SrtBookRepository(_db),
             audiobookRepo: AudiobookRepository(_db),
             bookKey: bookKey,
-            title: p.basenameWithoutExtension(item.epubPath),
+            title: p.basenameWithoutExtension(item.bookPath),
             subtitlePath: item.subtitlePath!,
             audioPaths: item.audioPaths,
           );
@@ -559,7 +587,7 @@ class SourceLibraryScanner {
         // 时才对齐，保证重复重扫幂等、不重跑 matcher、不覆盖用户手动重匹配。
         await _attachSidecarAudiobookToExisting(item, e.title, fs);
         debugPrint('SourceLibraryScanner skip duplicate book '
-            '${e.title} (${item.epubPath})');
+            '${e.title} (${item.bookPath})');
       }
     }
     if (epubTmp != null) {
@@ -595,7 +623,7 @@ class SourceLibraryScanner {
       repo: SrtBookRepository(_db),
       audiobookRepo: audiobookRepo,
       bookKey: bookKey,
-      title: p.basenameWithoutExtension(item.epubPath),
+      title: p.basenameWithoutExtension(item.bookPath),
       subtitlePath: item.subtitlePath!,
       audioPaths: item.audioPaths,
     );

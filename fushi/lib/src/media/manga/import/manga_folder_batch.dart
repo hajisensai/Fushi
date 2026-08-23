@@ -6,6 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
+import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show enumerateMangaPages, naturalCompare;
@@ -153,9 +154,17 @@ Future<MangaBatchVolumeResult> _importOneVolume({
           title: title,
           policy: const DuplicatePolicy.skip(),
         );
+      case ImportCarrier.pdf:
+        // 一卷扫描版漫画常常就是一份 PDF；与单卷路径同一条实现（逐页栅格化）。
+        await importMangaFromPdf(
+          db: db,
+          pdfPath: volumePath,
+          fileName: p.basename(volumePath),
+          title: title,
+          policy: const DuplicatePolicy.skip(),
+        );
       case ImportCarrier.mangaFolder:
       case ImportCarrier.mangaBatchFolder:
-      case ImportCarrier.pdf:
       case ImportCarrier.epub:
       case ImportCarrier.text:
         // 扩展名对得上但内容不是漫画：词典 `.zip`、文字 `.epub`。不静默吞，
