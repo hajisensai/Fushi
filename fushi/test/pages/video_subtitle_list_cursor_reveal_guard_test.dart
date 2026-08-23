@@ -185,14 +185,19 @@ void main() {
           reason: '管 1·2a：hideMouseOnControlsRemoval 不得是裸 true（列表开时必须翻 false）');
       // r5：选集列表 [_episodeListVisible] 与字幕列表同为 push-aside 侧栏，机理相同 → 必须
       // 一并排除（去掉首尾空白后匹配，容忍 dart format 折行）。只排字幕列表会让选集列表光标照样隐藏。
-      final String normalized =
-          src.replaceAll(RegExp(r'\s+'), '').replaceAll(',', '');
-      expect(
-          normalized.contains(
-              'hideMouseOnControlsRemoval:!(_subtitleListVisible.value||_episodeListVisible.value)'),
-          isTrue,
-          reason:
-              'r5·管 1·2a：hideMouseOnControlsRemoval 须同时排除字幕列表与选集列表可见（!(_subtitleListVisible.value || _episodeListVisible.value)）');
+      // BUG-1798：查词浮层 [_lookupOverlayActive] 成为第三个豁免项。断言改为**锁语义**——
+      // 只要求取值是 `!( 豁免条件 )` 且两个列表 notifier 都在豁免条件里，不再把豁免项的
+      // 个数与顺序写死（本条守卫要守的是「列表开时必须豁免」，不是「有且只有两项」）。
+      final RegExp negatedExpr =
+          RegExp(r'hideMouseOnControlsRemoval:\s*!\(([\s\S]*?)\),');
+      final RegExpMatch? m = negatedExpr.firstMatch(src);
+      expect(m, isNotNull,
+          reason: '管 1·2a：hideMouseOnControlsRemoval 必须是 `!( 豁免条件 )` 形式');
+      final String exemptions = m!.group(1)!.replaceAll(RegExp(r'\s+'), '');
+      expect(exemptions.contains('_subtitleListVisible.value'), isTrue,
+          reason: 'r5·管 1·2a：字幕列表可见时必须豁免（否则列表开时光标照样被隐藏）');
+      expect(exemptions.contains('_episodeListVisible.value'), isTrue,
+          reason: 'r5·管 1·2a：选集列表可见时必须豁免（只排字幕列表会让选集列表光标照样隐藏）');
     });
 
     test(

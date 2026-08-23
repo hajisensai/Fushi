@@ -67,11 +67,21 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // r5：选集列表 [_episodeListVisible] 与字幕列表同为 push-aside 侧栏（[_videoWithSubtitlePanel]
       // 的 Row 兄弟列），机理完全相同 → 必须一并排除，否则切到选集列表时视频列 controls MouseRegion
       // 仍走 cursor:none 分支、跨列 none→basic 竞态复现（此前只排除字幕列表 = 选集列表光标照样隐藏）。
-      // ⚠️ 防哑火：本值依赖 [_subtitleListVisible] / [_episodeListVisible]，但构造本 theme 的 builder
-      // （layout.part.dart :_buildVideoControlsInner）必须同时监听这两个 notifier、否则其翻转时 theme
-      // 不重建 = 改了值也白改（见 layout.part.dart 的 ListenableBuilder.merge）。仅桌面 theme，移动端不动。
-      hideMouseOnControlsRemoval:
-          !(_subtitleListVisible.value || _episodeListVisible.value),
+      // BUG-1798：**查词浮层**（[_lookupOverlayActive]）同样必须排除，且这是本条最要紧的一项。
+      // 它与两个 push-aside 侧栏的机理不同但结论相同：浮层是盖在视频列**正上方**的根 Overlay，
+      // 用户此刻全部注意力和指针操作都在弹窗里（点词、点发音、拖 resize 把手、滚正文），而控制条
+      // 照常 2s 自动淡出 → fork 的控制条 MouseRegion（`mount=false` 分支）把整条视频列判成
+      // `cursor:none`，鼠标悬在弹窗上时 OS 光标直接消失（查词浮层子树除右下角 resize 把手外不声明
+      // 任何 cursor，解析必然下穿到这层）。Hibiki 侧 [_buildCursorOverlay] 那层 `none` 已由
+      // [_hasVideoOverlay] 纳入 [_lookupOverlayActive] 修掉，但**两层是独立的**：只修一层，另一层
+      // 照样把光标吃掉，必须同时排除才有效。
+      // ⚠️ 防哑火：本值依赖 [_subtitleListVisible] / [_episodeListVisible] / [_lookupOverlayActive]，
+      // 但构造本 theme 的 builder（layout.part.dart :_buildVideoControlsInner）必须同时监听这三个
+      // notifier、否则其翻转时 theme 不重建 = 改了值也白改（见 layout.part.dart 的
+      // ListenableBuilder.merge）。仅桌面 theme，移动端不动。
+      hideMouseOnControlsRemoval: !(_subtitleListVisible.value ||
+          _episodeListVisible.value ||
+          _lookupOverlayActive.value),
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，
       // BUG-130）。字幕字符点击在更上层 [VideoSubtitleOverlay] 的 opaque GestureDetector
       // 独立处理、不会冒泡到这里，故启用后点字幕仍是查词、点空白区才暂停，不冲突。

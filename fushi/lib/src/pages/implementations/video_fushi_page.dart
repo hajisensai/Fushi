@@ -1869,6 +1869,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
+    // 打开 / 关闭时光标策略不重跑，鼠标悬在弹窗上仍被上一轮的 `cursor: none` 吃掉。
+    _lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
@@ -3682,6 +3685,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-1798：与上面六个门控同批摘监听（顺序同理——回调读多个 notifier，先摘再 dispose）。
+    _lookupOverlayActive.removeListener(_applyControlsVisibilityFromMediaKit);
+    _lookupOverlayActive.dispose();
     _subtitleListVisible.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
@@ -3799,12 +3805,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
   /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
   /// 画面光标（BUG-258）。
+  ///
+  /// BUG-1798：**查词浮层栈**（根 Overlay 的 [_popupOverlayEntry]）此前漏在集外。它是本页
+  /// 最需要光标的覆盖层——用户要在弹窗里点词、点发音、拖 resize 把手、滚正文——但查词期间
+  /// 控制条照常 2s 自动淡出，`visible=false && !_hasVideoOverlay` 于是把 [_cursorHidden]
+  /// 置真，[_buildCursorOverlay] 铺一层 `cursor: none` 盖满视频区。查词浮层子树除右下角
+  /// resize 把手外不声明任何 cursor（`dictionary_popup_layer.dart` 唯一一处 MouseRegion），
+  /// cursor 解析下穿到该层 → **鼠标悬在弹窗上时 OS 光标直接消失**。media_kit fork 侧的
+  /// `hideMouseOnControlsRemoval`（`controls_theme.part.dart`）同样只排除了字幕列表 / 选集
+  /// 列表，对查词弹窗也是漏项，两层 `none` 叠加。搜索中（[DictionaryPopupController.isSearchingUi]）
+  /// 与已出结果同等对待：dismiss barrier 在搜索期就已挂上（见 [shouldShowLookupDismissBarrier]），
+  /// 那一刻起指针语义就归浮层，光标不能消失。
   bool get _hasVideoOverlay =>
       _videoSidePanel.value != null ||
       _videoControlPopover.value != null ||
       _subtitleListVisible.value ||
       _episodeListVisible.value ||
-      _videoControlEditMode.value;
+      _videoControlEditMode.value ||
+      _lookupOverlayActive.value;
+
+  /// 「查词浮层此刻占着指针」的门控真值（BUG-1798）。
+  ///
+  /// 与 [_hasVideoOverlay] 其余五项一样是 [ValueNotifier]——[_applyControlsVisibilityFromMediaKit]
+  /// 的输入必须全是可订阅的 notifier，否则值变了没有任何东西触发重跑派生（光标策略会停在
+  /// 上一次的结论上）。真值由 [_syncPopupOverlay] 单向推入（那里是浮层栈变化的唯一收口），
+  /// getter 一律读这里，不再各处直接读 [_popup]，避免两个真相源漂移。
+  ///
+  /// 判据与 [shouldShowLookupDismissBarrier] 同源：**有可见浮层或正在搜索**即为真。barrier
+  /// 在搜索期就已挂上并接管全屏命中，那一刻起光标就该归浮层管。
+  final ValueNotifier<bool> _lookupOverlayActive = ValueNotifier<bool>(false);
 
   /// 手柄重设计 P3：可用 D-pad 逐行浏览的三类面板任一打开（字幕列表 / 剧集轨 /
   /// 侧栏）。与 [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是
@@ -4013,6 +4042,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
   /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
   void _onDismissBarrierHover(PointerHoverEvent event) {
+    // BUG-1798：先滤掉[_pokeControlsVisible]派发的**合成** hover。它不是用户的鼠标：位置恒为
+    // [_videoControlsContext]（整个视频区）的几何中心，设备是固定的 [_syntheticHoverDevice]。
+    // 浮层一开，全屏 opaque 的 dismiss barrier 就接管了命中测试，合成 hover 再也到不了
+    // media_kit 自己的 MouseRegion（poke 本该续命控制条，此时已必然哑火），却**全量落进本
+    // 回调**被当成真实鼠标消费，三处污染：
+    // ① `_lastGlobalPointerPos` 被写成画面正中 → BUG-880 的「静止光标 + 按 Shift 立即换词」
+    //    改在画面中心反查，用户光标下的词查不到；
+    // ② 未按 Shift 时下面那条分支把 `_barrierHoverLastPos/Sentence/Grapheme` 三个去重键清零
+    //    → 用户鼠标在**同一个字**上再抖一下就被判成新词，`_lookupAt(replaceStack: true)` 整栈
+    //    替换，正在看的弹窗内容被换掉、滚动位置丢失；
+    // ③ 按住 Shift / 开了「悬停即查词」时更直接：合成位置若命中字幕字符就立即换词。
+    // 且 [_handleSubtitleHover] 自己就调 [_pokeControlsVisible]，构成 hover→poke→hover 自激。
+    // 同页 [_handleVideoControlsHover] 早就用同一判据滤过合成事件（controls_visibility.part.dart），
+    // 本路径与它不对称纯属遗漏——这里补齐，语义即「合成事件不代表用户指针，不参与任何指针记账」。
+    if (_isSyntheticControlsHover(event)) return;
     // BUG-880：浮层打开时 barrier 盖住一切、页面根 Listener 收不到 hover，故在此持续更新
     // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
     // 未按 Shift 也照常记录）。
@@ -4262,6 +4306,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 路由，本页 `Stack` 会被全屏路由盖住；根 Overlay 浮在所有路由之上，窗口/全屏统一。
   void _syncPopupOverlay() {
     if (!mounted) return;
+    // BUG-1798：把浮层栈的「占着指针」真值推给门控 notifier。这里是栈 push/pop/搜索态变化的
+    // 唯一收口（[DictionaryPageMixin] 各路径都 setState → 重 build → post-frame 调本方法），
+    // 故也是唯一写入点。[ValueNotifier] 自带同值去重，每帧调用不会产生多余通知；值真变时其
+    // 监听（[_applyControlsVisibilityFromMediaKit]）重跑光标策略，弹窗一开光标即恢复可见。
+    _lookupOverlayActive.value = _hasVisiblePopup || _popup.isSearchingUi;
     if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
@@ -4988,10 +5037,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // BUG-880：页面根持续记录全局指针位置（不消费、不影响下层控制条 / 查词手势），供
         // Shift 按下时反查。浮层打开后 barrier 盖住这里收不到 hover，由 [_onDismissBarrierHover]
         // 接力更新同一字段。
+        // BUG-1798：与那个接力点用同一条判据滤掉合成 hover——[_pokeControlsVisible] 的合成事件
+        // 位置恒为视频区几何中心，写进来就是把「用户光标在哪」记成画面正中，Shift 反查随即查错
+        // 位置。合成事件不代表用户指针，两个记账点必须同时滤，只滤一个仍会从另一个漏进来。
         child: Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerHover: (PointerHoverEvent event) =>
-              _lastGlobalPointerPos = event.position,
+          onPointerHover: (PointerHoverEvent event) {
+            if (_isSyntheticControlsHover(event)) return;
+            _lastGlobalPointerPos = event.position;
+          },
           child: child,
         ),
       ),
