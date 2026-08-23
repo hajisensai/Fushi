@@ -5030,3 +5030,34 @@ document.addEventListener('mousemove', function(e) {
         window.fushiSelection.selectText(e.clientX, e.clientY, 20);
     }
 }, {passive: true});
+
+// Niratan 对齐（2026-08-23）— 滚动条静止隐形、滚动时浮现。popup.css 的
+// ::-webkit-scrollbar-thumb 静止透明，靠 :hover 或 .popup-scroll-active 显形；
+// hover 只覆盖桌面鼠标，这里补触屏/键盘滚动：任意滚动事件给根节点 + body +
+// 事件目标挂 .popup-scroll-active，900ms 无滚动后整体清除（与 Niratan
+// setPopupScrollIndicatorActive 同法同参）。capture:true 才收得到内部滚动容器
+// （.overlay / .expression-scroll 等）的 scroll（scroll 不冒泡）。
+var __fushiPopupScrollIndicatorTimer = 0;
+document.addEventListener('scroll', function (event) {
+    var root = document.documentElement;
+    var body = document.body;
+    var activeClass = 'popup-scroll-active';
+    root.classList.add(activeClass);
+    if (body) body.classList.add(activeClass);
+    var scrollTarget = event.target && event.target.nodeType === Node.ELEMENT_NODE
+        ? event.target
+        : null;
+    if (scrollTarget && scrollTarget.classList) {
+        scrollTarget.classList.add(activeClass);
+    }
+    if (__fushiPopupScrollIndicatorTimer) {
+        clearTimeout(__fushiPopupScrollIndicatorTimer);
+    }
+    __fushiPopupScrollIndicatorTimer = setTimeout(function () {
+        root.classList.remove(activeClass);
+        if (body) body.classList.remove(activeClass);
+        document.querySelectorAll('.' + activeClass).forEach(function (element) {
+            element.classList.remove(activeClass);
+        });
+    }, 900);
+}, { passive: true, capture: true });

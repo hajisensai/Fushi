@@ -28,10 +28,23 @@ String cssRgbTriplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
 /// [c] 的 `rgba(r, g, b, 0.35)` 串——查到词高亮色（primary @0.35 alpha）的固定配方。
 String cssRgba035(Color c) => 'rgba(${cssRgbTriplet(c)}, 0.35)';
 
+/// Niratan 对齐（2026-08-23）：弹窗卡面默认**纯白/纯黑**，不再用 MD3 tinted
+/// `scheme.surface`。Niratan 的弹窗表面就是 #FFF/#000
+/// （DictionaryPopupMaterial.GetOpaqueSurfaceColor），MD3 种子色染出的
+/// surface（浅色偏米/偏绿、深色偏灰）正是「我们的弹窗观感发闷」的来源之一。
+/// 用户手动指定的词典底色 [override]（overrideDictionaryColor）优先级不变；
+/// 四个消费方（AppModel 扩展 theme map、两个 in-app 注入器、热槽 WebView
+/// 初始 HTML）统一走本 helper，防再漂移（BUG-688/736 同型教训）。
+Color popupCardSurface({required ColorScheme scheme, Color? override}) =>
+    override ??
+    (scheme.brightness == Brightness.dark
+        ? const Color(0xFF000000)
+        : const Color(0xFFFFFFFF));
+
 /// 三个弹窗表面共用的核心主题变量（变量名 → CSS 值，保序）。
 ///
 /// 调用点差异通过参数表达，不在此分支：
-/// - [backgroundColor]：`overrideDictionaryColor ?? scheme.surface`（词典底色覆盖）；
+/// - [backgroundColor]：`popupCardSurface(...)`（默认纯白/纯黑，词典底色覆盖优先）；
 /// - [surfaceContainerHigh]：in-app 两个注入器传 `scheme.surfaceContainerHigh`，
 ///   浏览器扩展侧历史行为是 `overrideDictionaryColor ?? scheme.surfaceContainerHigh`；
 /// - [dictionaryColumns]：`popupDictionaryColumns` 偏好。

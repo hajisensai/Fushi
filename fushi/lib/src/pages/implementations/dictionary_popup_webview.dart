@@ -905,7 +905,9 @@ JSON.stringify((function(){
     // popup CSS 在属性缺席时回退 1（经典单列不受影响）。
     final Map<String, String> vars = buildPopupThemeCssVars(
       scheme: scheme,
-      backgroundColor: appModel.overrideDictionaryColor ?? scheme.surface,
+      // Niratan 对齐（2026-08-23）：默认卡面纯白/纯黑，override 优先级不变。
+      backgroundColor: popupCardSurface(
+          scheme: scheme, override: appModel.overrideDictionaryColor),
       surfaceContainerHigh: scheme.surfaceContainerHigh,
       dictionaryColumns: appModel.popupDictionaryColumns,
     );
@@ -1307,8 +1309,11 @@ JSON.stringify((function(){
     );
     final t = Translations.of(context);
     final appModel = ref.read(appProvider);
-    final Color bgColor = appModel.overrideDictionaryColor ??
-        Theme.of(context).colorScheme.surface;
+    // Niratan 对齐（2026-08-23）：初始 HTML 底色与主题注入器同源纯白/纯黑，
+    // 避免「先 tinted 后纯色」的一帧闪变。
+    final Color bgColor = popupCardSurface(
+        scheme: Theme.of(context).colorScheme,
+        override: appModel.overrideDictionaryColor);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';

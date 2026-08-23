@@ -40,6 +40,9 @@
 
 // BUG-1166 — 滚轮载荷类型（fushi::MouseHookWheel）来自钩子线程的消息契约。
 #include "low_level_mouse_hook.h"
+// 2026-08-23 弹窗观感 — layered 伴随投影窗（region 窗口拿不到 DWM 系统投影，
+// 见 global_lookup_shadow.h 头注释）。
+#include "global_lookup_shadow.h"
 
 class GlobalLookupWindow {
  public:
@@ -389,6 +392,11 @@ class GlobalLookupWindow {
   std::wstring LoadAdapterScript() const;
   // TODO-867 P3c — reads global_lookup_host.js for top-level injection.
   std::wstring LoadHostScript() const;
+  // 2026-08-23 弹窗观感 — 投影同步单漏斗：锚窗每次 WM_WINDOWPOSCHANGED
+  // （移动/缩放/显隐/置顶重申都会经过）+ shellRects 更新 + Hide 显式调用。
+  // 投影可见性 = revealed_ && visible_（离屏渲染/预热/gal 采集面绝不带影）；
+  // 模态 resize 循环中（resizing_）几何脏时不重画只隐藏，防拖拽掉帧。
+  void SyncShadow();
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
@@ -469,6 +477,10 @@ class GlobalLookupWindow {
   // composition 模式下 WebView2 请求的光标（add_CursorChanged 回调更新）；
   // WM_SETCURSOR 据此 SetCursor，让 hover 链接/文本时光标形状正确。
   HCURSOR composition_cursor_ = nullptr;
+
+  // 2026-08-23 弹窗观感 — 伴随投影窗（每实例一个：瞬态查词窗按 shellRects
+  // 逐卡画影，面板整窗一影）。生命周期随本实例；显隐由 SyncShadow 驱动。
+  LookupShadowWindow shadow_;
 
   MediaResolver media_resolver_;
   MessageCallback message_cb_;

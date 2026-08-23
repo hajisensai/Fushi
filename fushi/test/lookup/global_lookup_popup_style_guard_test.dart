@@ -204,8 +204,9 @@ void main() {
       expect(css.contains('html.global-lookup body {'), isTrue);
       final int bodyAt = css.indexOf('html.global-lookup body {');
       final String bodyRule = css.substring(bodyAt, css.indexOf('}', bodyAt));
-      expect(bodyRule.contains('border: 1px solid rgba(120, 120, 128, 0.36)'),
-          isTrue,
+      // Niratan 对齐（2026-08-23）：描边改系统分隔线灰 #D1D1D6（暗色 #3A3A3C
+      // 在 html.global-lookup[data-theme="dark"] body 覆盖）。
+      expect(bodyRule.contains('border: 1px solid #D1D1D6'), isTrue,
           reason: 'the iframe body owns the one visible card border');
     });
 
