@@ -176,6 +176,15 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     if (token != null) {
       // 让 flutter_onnxruntime 的 MethodChannel 调用可从本后台 isolate 发出。
       BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+    } else {
+      // 没有 token 就没有 MethodChannel：后面第一次 ORT 调用会以
+      // 「No implementation found」告终，而那条报错完全看不出根因在这里。
+      // 与上面 CUDA 探测失败一样留痕，别让它静默跳过。
+      developer.log(
+        'manga OCR volume job started without a RootIsolateToken; '
+        'ORT MethodChannel calls from this isolate will fail',
+        name: kOcrLogName,
+      );
     }
     final OrtOcrSessionFactory factory = OrtOcrSessionFactory();
     final List<String> degradeReasons = <String>[];
@@ -427,14 +436,32 @@ class MangaOcrServiceImpl implements MangaOcrService {
   static Future<Directory> defaultMangaOcrModelsDir() =>
       model_fp.defaultMangaOcrModelsDir();
 
-  /// 整卷本地 OCR 的平台闸门 = **桌面三端 + iOS**，且本机确有 ORT native
-  /// （[isLocalOnnxRuntimeAvailable]）。
+  /// 整卷本地 OCR 的平台闸门 = **本机确有 ORT native**（[isLocalOnnxRuntimeAvailable]），
+  /// 不再维护第二份平台白名单。
+  ///
+  /// 白名单存在的那段时间里，这一个布尔位承担了两个**互不相同**的语义——「本机能
+  /// 不能跑本地 ONNX 推理」和「整卷这种重活允不允许」。设置页的模型区（下载 / 删除 /
+  /// 占用）和框选识别只需要前者，却被后者连坐关掉：安卓因此陷入「点框选识别 → 提示
+  /// 去设置下载模型 → 设置里根本没有下载按钮」的死循环，已下一半的几百 MB 既下不完
+  /// 也删不掉（BUG-1780）。一个概念一个真相源，这类特殊情况才不会再长出来。
   ///
   /// macOS 是 2026-08 随 flutter_onnxruntime fork 重新接上 Apple native 后开的：
   /// 它就是桌面，和 Windows / Linux 同一档重活预算。
   ///
   /// iOS 一并开——整卷是重活，但 iPhone/iPad 上既没有外部 mokuro CLI 也没有桌面
   /// 可用，不开就等于「iOS 永远没有本地整卷 OCR」。
+  ///
+  /// **Android 于 2026-08-23 开启**（BUG-1780，用户明确要求）：它此前不开的理由
+  /// 不是技术阻塞——ORT native 一直正常注册，执行提供者也早有明确定义
+  /// （[selectOcrExecutionProviders] 对 android 返回纯 CPU）——而是低端机的重活
+  /// 预算顾虑。那是「慢」，与下面 A13 的量级同档；做成硬闸门等于替用户做了决定，
+  /// 还顺手废掉了本该可用的模型管理和框选识别。
+  ///
+  /// 说清楚一件事，免得下一个人误读：框选识别的闸门（`isLocalRescanSupported`）
+  /// 一直是 ORT 可用性、在安卓一直为真，但**这不等于它在安卓跑过**——模型下载
+  /// 入口被这同一个位连坐关掉，门开着而门后没路。所以本次是 Android 上第一次
+  /// 真正执行 ORT，与 BUG-1613 里 Apple CoreML「分支存在但从未被执行」同形，
+  /// 别把「闸门为真」当成「已验证」。
   ///
   /// **真机实测（2026-08-14，`integration_test/manga_ocr_volume_e2e_itest.dart`，
   /// 4 块竖排气泡的 1200×1700 页，识别逐字 100% 正确）**：
@@ -448,15 +475,7 @@ class MangaOcrServiceImpl implements MangaOcrService {
   /// 一页 10~15 块，A13 上折合约 35~50s/页。也就是说整卷在老机型上是「挂着跑几
   /// 小时」的量级——能用，但别当交互操作。新机型（A17/A18）大致快 3~4 倍。
   /// 用户不接受这个量级时，向导里的「已配对主机代跑」和 Google Lens 仍在。
-  ///
-  /// **Android 仍不开**：与本次改动无关，其闸门从来就不是 ORT 可用性决定的
-  /// （Android native 一直正常注册），而是低端机的重活预算问题，另案评估。
-  static bool defaultPlatformSupport() =>
-      (Platform.isWindows ||
-          Platform.isLinux ||
-          Platform.isMacOS ||
-          Platform.isIOS) &&
-      isLocalOnnxRuntimeAvailable;
+  static bool defaultPlatformSupport() => isLocalOnnxRuntimeAvailable;
 
   @override
   bool get isSupportedPlatform => _platformSupport();

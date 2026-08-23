@@ -15,6 +15,16 @@ enum MangaOcrEnginePreference {
   pairedHost,
 }
 
+/// 出厂默认引擎偏好——**唯一真相源**。
+///
+/// BUG-1780：这个默认值曾经有两份。偏好仓库读的是 `'google_lens'`，而设置区
+/// `_readEnginePreference()` 在未注入 getter 时回退 `'auto'`。分叉的直接后果不是
+/// 显示错乱，而是**守卫恒绿**：UI 测试不注 getter 就走 `auto`，`auto` 算「用得到
+/// 本地模型」，于是「出厂默认引擎下模型下载入口整块消失」这个真实回归在测试里
+/// 永远复现不出来，一路进了 develop。默认值这种东西只能有一处。
+const MangaOcrEnginePreference kDefaultMangaOcrEnginePreference =
+    MangaOcrEnginePreference.googleLens;
+
 extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
   String get key {
     switch (this) {

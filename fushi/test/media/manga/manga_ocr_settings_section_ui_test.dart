@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
 
@@ -97,6 +98,10 @@ void main() {
       mokuroPathGetter: () => '',
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => null,
+      // 这条测的是「引擎用得到本地模型」时的完整块，必须把这个前提**显式**写出来。
+      // 以前它靠 `_readEnginePreference()` 的回退值隐式拿到 `auto`，而生产出厂默认
+      // 是 `google_lens`——测试因此长期在跑一条用户碰不到的分支（BUG-1780）。
+      enginePreferenceGetter: () => 'auto',
     )));
     await tester.pumpAndSettle();
 
@@ -241,6 +246,40 @@ void main() {
     expect(find.text(t.manga_ocr_model_status_missing), findsNothing);
   });
 
+  testWidgets('出厂默认引擎下，模型下载入口仍然可达（BUG-1780）',
+      (WidgetTester tester) async {
+    // 「不劝你下」被实现成了「不给你下的机会」：引擎用不到本地模型且磁盘干净时，
+    // 这一整块曾经直接 SizedBox.shrink()。而出厂默认引擎恰恰就是用不到本地模型的
+    // Google Lens，于是「全新安装 + 从没下过模型」这条最常见的路径上，下载入口
+    // 根本不存在——想切到离线引擎的用户无处可点。
+    //
+    // 这条守卫刻意用 kDefaultMangaOcrEnginePreference 而不是硬写 'google_lens'：
+    // 出厂默认值将来再改，这条也跟着改，不会重新分叉。
+    final _FakeOcrService service = _FakeOcrService(ready: false);
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: service,
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => kDefaultMangaOcrEnginePreference.key,
+      enginePreferenceSetter: (String _) async {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.widgetWithText(TextButton, t.manga_ocr_download),
+      findsOneWidget,
+      reason: '出厂默认引擎下必须仍能找到下载入口（次级形态：普通按钮，不是主按钮）',
+    );
+    // 分寸不能丢：当前引擎本来就不需要模型，那不是「缺陷状态」，不该喊「未下载」。
+    expect(find.text(t.manga_ocr_model_status_missing), findsNothing);
+    expect(
+      find.widgetWithText(FilledButton, t.manga_ocr_download),
+      findsNothing,
+      reason: '次级入口不许升级成主按钮，否则又变成劝一个只用 Lens 的用户下 450 MB',
+    );
+  });
+
   testWidgets('local models left on disk stay deletable under a cloud engine',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(
@@ -311,6 +350,8 @@ void main() {
       mokuroPathGetter: () => '',
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => null,
+      // 完整块（主下载按钮 + 进度条）只在引擎用得到本地模型时出现；显式声明前提。
+      enginePreferenceGetter: () => 'auto',
     )));
     await tester.pumpAndSettle();
 

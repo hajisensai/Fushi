@@ -96,6 +96,9 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
+    // BUG-1780：这个位现在就是「本机能不能跑本地 ONNX 推理」（ORT native 可用性），
+    // 不再是一份独立的平台白名单。它为真的每一端都要加载模型状态——不只整卷 OCR
+    // 用这套模型，阅读器的框选识别也用同一套，而后者的闸门本来就是 ORT 可用性。
     if (widget.service.isSupportedPlatform) {
       unawaited(_loadStatus());
     } else {
@@ -128,7 +131,10 @@ class _MangaOcrSettingsSectionState
   String _readEnginePreference() {
     final String Function()? getter = widget.enginePreferenceGetter;
     if (getter != null) return getter();
-    return MangaOcrEnginePreference.auto.key;
+    // 回退值必须与偏好仓库的出厂默认同源（BUG-1780）：这里曾经硬写 `auto`，
+    // 而生产默认是 `google_lens`，两者分叉让 UI 守卫恒绿——测试永远在跑一条
+    // 用户碰不到的分支。
+    return kDefaultMangaOcrEnginePreference.key;
   }
 
   Future<void> _writeEnginePreference(
@@ -379,7 +385,8 @@ class _MangaOcrSettingsSectionState
       ),
       // 互联「配对主机代跑」：服务端/客户端链路早已完整（/api/ocr/job*），此前
       // 只是没进偏好枚举，导致它永远只能被 auto 兜底顺序选中、无法显式指定。
-      // 移动端没有本地 ONNX 时这是唯一可用的整卷引擎。
+      // 手机上本地整卷虽已可用（BUG-1780），但那是「挂着跑几十分钟」的量级；
+      // 把重活推给局域网里的桌面仍然是移动端最实用的选择。
       _EngineOption(
         preference: MangaOcrEnginePreference.pairedHost,
         label: t.manga_remote_ocr_engine,
@@ -485,7 +492,7 @@ class _MangaOcrSettingsSectionState
   /// - 引擎用得到（auto / 本地 ONNX）→ 完整块：状态 + 下载/删除。
   /// - 引擎用不到但**磁盘上还留着文件** → 只给「用不到 + 占用多少 + 删除」，
   ///   这正是「应该支持删除 ocr 模型」的落点：换了引擎之后那几百 MB 得能清掉。
-  /// - 引擎用不到且磁盘干净 → 整块不渲染，不再劝下载。
+  /// - 引擎用不到且磁盘干净 → **次级入口**（不劝，但也不藏）。
   Widget _buildLocalModelArea(ThemeData theme) {
     if (_loadingStatus) {
       return _inset(
@@ -500,9 +507,48 @@ class _MangaOcrSettingsSectionState
     }
     final MangaOcrModelStatus? status = _status;
     if (status == null || !status.hasAnyFiles) {
-      return const SizedBox.shrink();
+      return _buildDormantModelEntry(theme);
     }
     return _buildOrphanModelBlock(theme, status);
+  }
+
+  /// 引擎用不到、磁盘也干净时的**次级下载入口**。
+  ///
+  /// BUG-1780：这里原先直接 `SizedBox.shrink()`，本意是「别劝一个只用 Lens 的
+  /// 用户去下 450 MB」。但**出厂默认引擎就是 Google Lens**（偏好
+  /// `manga_ocr_engine_preference` 的默认值），于是「全新安装 + 从没下过模型」
+  /// 这条最常见的路径恰好命中该分支：整块连同下载按钮一起不存在，想预先备好
+  /// 离线模型的用户无处可点。本意是「不该劝你下」，落地成了「不给你下的机会」。
+  ///
+  /// 次级形态的分寸：用普通 [TextButton] 而不是主按钮，状态行也不喊「模型未
+  /// 下载」（当前引擎本来就不需要它，那不是缺陷状态）——不劝，但也不藏。
+  Widget _buildDormantModelEntry(ThemeData theme) {
+    // 在这个形态下点了下载就切回完整块：否则进度条、取消按钮全都无处可见。
+    if (_downloading) {
+      return _buildModelBlock(theme);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          title: t.manga_ocr_model_unused_by_engine,
+          subtitle: _modelSizeSubtitle(_status),
+          icon: Icons.download_outlined,
+          showIcon: true,
+        ),
+        const SizedBox(height: 8),
+        _inset(
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _startDownload,
+              icon: const Icon(Icons.download_outlined, size: 18),
+              label: Text(t.manga_ocr_download),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除。

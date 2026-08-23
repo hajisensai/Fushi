@@ -90,3 +90,18 @@
 -keep,allowshrinking,allowobfuscation class uy.kohesive.injekt.api.TypeReference
 -keep,allowshrinking,allowobfuscation class uy.kohesive.injekt.api.FullTypeReference
 -keep,allowshrinking,allowobfuscation class * extends uy.kohesive.injekt.api.FullTypeReference
+
+# ONNX Runtime (manga OCR local inference, BUG-1780).
+# libonnxruntime4j_jni.so resolves these classes by NAME via JNI FindClass, so letting
+# R8 rename them makes every build-session / build-tensor / throw path fail at runtime.
+# This is release-only and invisible in debug (minifyEnabled is false there) -- the same
+# shape as the Mihon kotlin.Lazy breakage.
+# Verified against onnxruntime-android 1.23.0: the AAR ships classes.jar ONLY, with no
+# consumer proguard.txt, so nothing keeps these unless we do. Descriptors hardcoded in
+# the .so: MapInfo NodeInfo OnnxMap OnnxModelMetadata OnnxSequence OnnxSparseTensor
+# OnnxTensor OnnxValue OrtException SequenceInfo TensorInfo ValueInfo.
+# AGP's default -keepclasseswithmembernames,includedescriptorclasses only covers classes
+# that declare native methods or appear in their descriptors; TensorInfo, OrtException,
+# MapInfo, SequenceInfo and ValueInfo fall outside it -- a throws clause is not part of a
+# method descriptor, so OrtException is unreachable that way.
+-keep class ai.onnxruntime.** { *; }

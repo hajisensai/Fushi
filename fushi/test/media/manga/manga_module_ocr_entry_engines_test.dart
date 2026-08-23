@@ -2,8 +2,12 @@
 ///
 /// 阅读器对已入库漫画跑整卷 OCR 走 [MangaModule.openBookOcr]；它此前自己手抄了
 /// 一份向导构造参数表，抄漏了 `remoteRunner`，于是 `pairedHost` 引擎的 `supported`
-/// 恒 false ——「配对主机」选项在阅读器入口**永不出现**。安卓没有本地 ONNX 引擎、
-/// 也没有外部 mokuro CLI，这条洞让它只剩 Google Lens。
+/// 恒 false ——「配对主机」选项在阅读器入口**永不出现**。当时安卓既没有本地 ONNX
+/// 引擎、也没有外部 mokuro CLI，这条洞让它只剩 Google Lens。
+///
+/// （BUG-1780 起安卓已开本地 ONNX，所以那句「只剩 Google Lens」是历史背景，不再
+/// 是当前事实；下面的 [_UnsupportedOcrService] 也随之变成一个**构造出来的**
+/// 「平台不支持」形态，而不是在描述某个真实平台。）
 ///
 /// 修复方式不是补一个参数，而是把整套引擎依赖收成 [MangaOcrWizardEngines]（向导
 /// 的必填参数，漏传编译不过）并只在 [MangaOcrWizardEngines.resolve] 装配一次，
@@ -36,7 +40,10 @@ import 'package:path/path.dart' as p;
 
 import '../../helpers/test_platform_services.dart';
 
-/// 移动端形态的内置服务：平台不支持（安卓真相，`pairedHost` 是关键补位引擎）。
+/// 内置服务不可用的形态：`pairedHost` 是关键补位引擎。
+///
+/// 注入的是一个**假想**平台，不再对应任何出包平台（BUG-1780 后五端 ORT 全可用）；
+/// 它守的是「本地引擎缺席时配对主机必须补位」这条逻辑，与哪个 OS 无关。
 class _UnsupportedOcrService implements MangaOcrService {
   @override
   bool get isSupportedPlatform => false;
