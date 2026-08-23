@@ -159,12 +159,12 @@ VideoSourceScrapeConfirmationCandidate _candidate({
 }) =>
     VideoSourceScrapeConfirmationCandidate(
       lookup: VideoMetadataLookup(
-        provider: VideoMetadataProviderKind.tmdb,
+        provider: VideoMetadataProviderKind.anidb,
         externalId: id,
         mediaKind: VideoMetadataMediaKind.tv,
       ),
       work: VideoMetadataWork(
-        provider: VideoMetadataProviderKind.tmdb,
+        provider: VideoMetadataProviderKind.anidb,
         kind: VideoMetadataMediaKind.tv,
         title: title,
         year: year,
@@ -178,7 +178,7 @@ Future<int> _seedUnresolvedRun(FushiDatabase db, int sourceId) =>
         sourceId: Value<int?>(sourceId),
         scope: 'source',
         status: 'completed',
-        provider: const Value<String?>('tmdb'),
+        provider: const Value<String?>('anidb'),
         succeededWorks: const Value<int>(22),
         pendingConfirmations: const Value<int>(2),
         failedWorks: const Value<int>(4),
@@ -345,7 +345,8 @@ void main() {
     }
   });
 
-  testWidgets('source settings persist provider and safe output toggles',
+  testWidgets(
+      'source settings keep AniDB fixed and persist safe output toggles',
       (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
@@ -354,12 +355,13 @@ void main() {
 
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
-    expect(find.text('Use global default'), findsOneWidget);
-
-    await tester.tap(find.text('Use global default'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Bangumi').last);
-    await tester.pumpAndSettle();
+    expect(find.text('Use global default'), findsNothing);
+    expect(find.text('AniDB'), findsNothing);
+    expect(find.text('TMDB'), findsNothing);
+    expect(find.text('Use Fanart images'), findsNothing);
+    expect(find.text('Bangumi'), findsNothing);
+    expect(find.text('Douban'), findsNothing);
+    expect(find.text('AniList'), findsNothing);
     await tester.tap(find.text('Scrape after scanning'));
     await tester.tap(find.text('Write image files'));
     await tester.tap(find.text('SAVE'));
@@ -367,11 +369,15 @@ void main() {
 
     final VideoSourceScrapeSettingRow settings =
         (await db.getVideoSourceScrapeSettings(sourceId))!;
-    expect(settings.providerOverride, 'bangumi');
+    expect(settings.providerOverride, isNull);
     expect(settings.autoAfterScan, isTrue);
     expect(settings.writeNfo, isTrue);
     expect(settings.writeImages, isFalse);
-    expect(settings.fanartEnabled, isTrue);
+    expect(
+      settings.fanartEnabled,
+      isTrue,
+      reason: 'legacy column stays compatible even though the UI ignores it',
+    );
     expect(settings.allowExternalOverwrite, isFalse);
   });
 
@@ -537,13 +543,14 @@ void main() {
     expect(runner.queries, <String>['Doraemon Movies']);
 
     await tester.tap(find.byKey(
-      const ValueKey<String>('video-source-candidate-tmdb-65733'),
+      const ValueKey<String>('video-source-candidate-anidb-65733'),
     ));
     await tester.pumpAndSettle();
 
     expect(runner.boundTitles, <String>['Doraemon Movies']);
     expect(runner.boundLookups.single.externalId, '65733');
-    expect(runner.boundLookups.single.provider, VideoMetadataProviderKind.tmdb);
+    expect(
+        runner.boundLookups.single.provider, VideoMetadataProviderKind.anidb);
     // 处理完的条目从待办里消失，用户看得见进度。
     expect(find.text('Doraemon Movies'), findsNothing);
   });

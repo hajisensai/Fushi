@@ -3,17 +3,16 @@ import 'package:flutter/services.dart';
 
 import 'package:fushi/utils.dart';
 
-/// 刮削失败态的统一展示件（视频「在线匹配海报」弹窗 / 书籍「在线匹配封面」弹窗共用）。
+/// 书籍、游戏等交互式元数据刮削的统一失败态展示件。
 ///
 /// 为什么把技术详情摆到界面上（BUG-1219）：底层异常的 `toString()` 本身就是完整因果
-/// 链（如 `ScrapeNetworkException: Bangumi search request failed: ClientException with
+/// 链（如 `BookScrapeException: Bangumi search request failed: ClientException with
 /// SocketException: Failed host lookup: 'api.bgm.tv'`，或 `Bangumi search HTTP 502`），
 /// 此前只落错误日志、界面只留一句「没能从封面源取到有效响应」——用户无从区分 DNS 不
 /// 通、代理没生效、被限流还是对面 5xx，只能换页翻日志。一句可行动的话回答「我该做
 /// 什么」，完整详情回答「到底怎么了」，两者都留在出错的地方。
 ///
-/// 两个弹窗共用一份而不是各写各的：它们此前是逐字重复的两段 Column，各改各的必然
-/// 漂开。差异只在标题文案与原因折叠规则，都由调用方传入。
+/// 差异只在标题文案与原因折叠规则，均由调用方传入。
 class ScrapeFailureView extends StatefulWidget {
   const ScrapeFailureView({
     super.key,

@@ -84,17 +84,9 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
         '落盘，自己一个字节都不写。当年正因为「派生在这、裸写在那」，逐文件判据两边'
         '都不命中；现在这半边由本注册表钉住，写盘那半边由 writesViaService 钉住。',
   ),
-  'lib/src/media/video/scraper/cover_downloader.dart': (
-    CoverDeriverRole.writesViaService,
-    '刮削封面下载路，字节走 applyCoverBytes。',
-  ),
   'lib/src/media/video/scraper/cover_scraper_service.dart': (
     CoverDeriverRole.writesViaService,
-    '刮削换封面，字节走 applyCoverBytes。',
-  ),
-  'lib/src/media/video/scraper/episode_scrape_service.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '每集刮削只算目的地路径，落盘交给 cover_downloader。',
+    '本地 sidecar 封面复制走 applyCoverFile。',
   ),
   'lib/src/media/video/scraper/member_cover_cleanup.dart': (
     CoverDeriverRole.writesViaService,
@@ -102,9 +94,9 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
   ),
   'lib/src/media/video/cover_ui/video_scrape_actions.dart': (
     CoverDeriverRole.derivesPathOnly,
-    '运行时依赖组装层只派生 coversDir/video_scraper 目录，并把封面目录注入 '
-        'CoverMetaStore 与 CoverScraperService；实际图片字节由服务内的 '
-        'CoverDownloader 经 MediaCoverService.applyCoverBytes 落盘。',
+    '运行时依赖组装层只派生 coversDir，并把封面目录注入 CoverMetaStore 与 '
+        'CoverScraperService；实际 sidecar 图片由服务经 '
+        'MediaCoverService.applyCoverFile 落盘。',
   ),
   'lib/src/media/video/video_book_repository.dart': (
     CoverDeriverRole.derivesPathOnly,

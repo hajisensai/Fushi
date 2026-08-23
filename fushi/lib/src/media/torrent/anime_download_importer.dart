@@ -98,8 +98,8 @@ Future<AnimeDownloadImportOutcome?> Function(
     }
 
     if (result.episodeUids.isNotEmpty) {
-      // ① 作品海报 → 合集自有封面（见函数注释）。文件名/目录与
-      //    applyCandidateToCollection 同约定；gcOrphanCovers 非递归，天然免疫。
+      // ① 作品海报 → 合集自有封面（见函数注释）。文件名遵循合集封面目录约定；
+      //    gcOrphanCovers 非递归，天然免疫。
       final String? coverUrl = plan.coverUrl;
       if (coverUrl != null && coverUrl.isNotEmpty) {
         try {

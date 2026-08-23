@@ -7,6 +7,7 @@ import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi/src/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_nfo_reader.dart';
 import 'package:fushi/src/media/video/metadata/video_sidecar_artifact_store.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
@@ -51,8 +52,17 @@ class VideoSourceMetadataIndexer {
           for (final VideoBookRow member in work.members) member.videoPath,
         ],
       );
+      final VideoMetadataLookup? existingLookup =
+          existing == null ? null : await store.confirmedLookup(work);
+      final bool existingIsAniDb =
+          existingLookup?.provider == VideoMetadataProviderKind.anidb;
       int workId;
-      if (existing != null && nfoMetadata == null) {
+      if (existing != null && (existingIsAniDb || nfoMetadata == null)) {
+        // A source rescan never replaces an established AniDB identity (or
+        // its TMDB cross references) from a sidecar snapshot. With no external
+        // NFO it also preserves pre-AniDB metadata and historical identities;
+        // the canonical scrape path can migrate those only after AniDB has
+        // resolved successfully instead of erasing them during local indexing.
         workId = existing.id;
       } else {
         final VideoMetadataWork metadata = nfoMetadata ?? _provisional(work);
@@ -130,7 +140,7 @@ class VideoSourceMetadataIndexer {
     }
     final bool episodic = work.isEpisodic || episodes.isNotEmpty;
     return VideoMetadataWork(
-      provider: VideoMetadataProviderKind.tmdb,
+      provider: VideoMetadataProviderKind.local,
       kind: episodic ? VideoMetadataMediaKind.tv : VideoMetadataMediaKind.movie,
       title: work.title,
       seasons: <VideoMetadataSeason>[

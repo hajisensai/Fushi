@@ -1231,7 +1231,7 @@ class RevealedImages extends Table {
 // 为什么不是复用 [VideoScrapeMeta]：那张表主键是 bookUid、外键指向 VideoBooks，
 // 承载的是**单集**资料。而简介 / 评分 / 放送日期 / 标签本质属于「一部作品」——
 // 在统一合集模型里，「一部作品」就是合集，不是它的第 7 集。合集此前没有元数据
-// 宿主，于是合集刮削只能下一张海报就结束（`cover_match_dialog` 的合集分支），
+// 宿主，于是旧合集封面匹配流程只能下一张海报就结束，
 // 用户看到的详情页除了标题和进度什么都没有。
 //
 // 也不是往 [MediaCollections] 加十来个可空列：与 VideoScrapeMeta 同一条理由——

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -13,13 +12,6 @@ import 'package:fushi/src/media/video/external_video.dart'
 import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
-import 'package:fushi/src/media/video/scraper/scraper_types.dart'
-    show
-        ScrapeInfoboxEntry,
-        ScrapeMetadata,
-        ScrapeSource,
-        ScrapeTag,
-        ScrapedMediaImage;
 import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -76,75 +68,8 @@ class VideoBookRepository {
   Future<bool> assignSourceIfNull(String bookUid, int sourceId) async =>
       await _db.assignVideoBookSourceIfNull(bookUid, sourceId) > 0;
 
-  // ── 条目刮削资料（video_scrape_meta，v54）─────────────────────────
-
-  /// 落一本视频的条目资料（重刮即覆盖）。标签/infobox 在这里序列化成 JSON 列，
-  /// 读回时由 [scrapeMetadata] 反序列化——JSON 编解码只在本仓库层出现一次，
-  /// 展示层和刮削层都只见领域对象 [ScrapeMetadata]。
-  Future<void> saveScrapeMetadata(String bookUid, ScrapeMetadata meta) {
-    return _db.upsertVideoScrapeMeta(
-      VideoScrapeMetaCompanion.insert(
-        bookUid: bookUid,
-        source: meta.source.name,
-        subjectId: meta.subjectId,
-        title: meta.title,
-        originalTitle: Value<String?>(meta.originalTitle),
-        summary: Value<String?>(meta.summary),
-        airDate: Value<String?>(meta.airDate),
-        rating: Value<double?>(meta.rating),
-        ratingCount: Value<int?>(meta.ratingCount),
-        episodeCount: Value<int?>(meta.episodeCount),
-        tagsJson: Value<String?>(
-          meta.tags.isEmpty
-              ? null
-              : jsonEncode(<Map<String, Object?>>[
-                  for (final ScrapeTag t in meta.tags) t.toJson(),
-                ]),
-        ),
-        infoboxJson: Value<String?>(
-          meta.infobox.isEmpty
-              ? null
-              : jsonEncode(<Map<String, Object?>>[
-                  for (final ScrapeInfoboxEntry e in meta.infobox) e.toJson(),
-                ]),
-        ),
-        detailUrl: Value<String?>(meta.detailUrl),
-        scrapedAt: DateTime.now(),
-      ),
-    );
-  }
-
-  /// 读一本视频的条目资料；未刮过返回 null。JSON 列损坏时该列降级为空列表（其余
-  /// 字段照常返回），不因一列坏掉丢掉整条资料。
-  Future<ScrapeMetadata?> scrapeMetadata(String bookUid) async {
-    final VideoScrapeMetaRow? row = await _db.getVideoScrapeMeta(bookUid);
-    if (row == null) return null;
-    return ScrapeMetadata(
-      source:
-          ScrapeSource.values.asNameMap()[row.source] ?? ScrapeSource.bangumi,
-      subjectId: row.subjectId,
-      title: row.title,
-      originalTitle: row.originalTitle,
-      summary: row.summary,
-      airDate: row.airDate,
-      rating: row.rating,
-      ratingCount: row.ratingCount,
-      episodeCount: row.episodeCount,
-      tags: _decodeJsonList<ScrapeTag>(row.tagsJson, ScrapeTag.fromJson),
-      infobox: _decodeJsonList<ScrapeInfoboxEntry>(
-        row.infoboxJson,
-        ScrapeInfoboxEntry.fromJson,
-      ),
-      detailUrl: row.detailUrl,
-    );
-  }
-
-  /// 已刮出资料的 bookUid 集合（自动刮削一次性排除已刮的，避免逐本 N+1 查询）。
-  Future<Set<String>> scrapedBookUids() => _db.scrapedVideoBookUids();
-
-  /// 一本视频的刮削资料**原始行**（播放器剧集面板判「真·集级集名」要
-  /// `episodeNumber` 列，领域对象 [ScrapeMetadata] 没带它——与合集详情页
-  /// `_episodeMetaByUid` 同一判据同一取数口）。
+  /// 一本视频的历史刮削资料原始行（播放器剧集面板判「真·集级集名」要
+  /// `episodeNumber` 列，与合集详情页 `_episodeMetaByUid` 同一判据同一取数口）。
   Future<VideoScrapeMetaRow?> episodeScrapeMeta(String bookUid) =>
       _db.getVideoScrapeMeta(bookUid);
 
@@ -156,48 +81,6 @@ class VideoBookRepository {
   /// titleCard/backdrop，Jellyfin Episode Primary → Series Thumb 的本仓版）。
   Future<List<MediaImageRow>> collectionMediaImages(int collectionId) =>
       _db.getMediaImagesForCollection(collectionId);
-
-  /// v68：整体替换一本视频的附加图组行（散装电影 backdrop/logo/titleCard，
-  /// 重刮即替换）。文件已由刮削层落 `video_covers/images/`，本层只写行。
-  Future<void> replaceMediaImages(
-    String bookUid,
-    List<ScrapedMediaImage> images,
-  ) =>
-      _db.replaceMediaImagesForBook(bookUid, <MediaImagesCompanion>[
-        for (final ScrapedMediaImage image in images)
-          MediaImagesCompanion.insert(
-            bookUid: Value<String?>(bookUid),
-            kind: image.kind.dbValue,
-            position: Value<int>(image.position),
-            path: image.path,
-            sourceUrl: Value<String?>(image.sourceUrl),
-          ),
-      ]);
-
-  /// 删一本的条目资料（「重新刮削」前先清）。
-  Future<void> deleteScrapeMetadata(String bookUid) =>
-      _db.deleteVideoScrapeMeta(bookUid);
-
-  /// 解 JSON 数组列为领域对象列表；null / 非数组 / 解析异常一律降级为空列表。
-  static List<T> _decodeJsonList<T>(
-    String? json,
-    T? Function(Object?) fromJson,
-  ) {
-    if (json == null || json.isEmpty) return const <Never>[];
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(json);
-    } catch (_) {
-      return const <Never>[];
-    }
-    if (decoded is! List<Object?>) return const <Never>[];
-    final List<T> out = <T>[];
-    for (final Object? item in decoded) {
-      final T? parsed = fromJson(item);
-      if (parsed != null) out.add(parsed);
-    }
-    return out;
-  }
 
   /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户导入视频
   /// 成功后**调用：[VideoImportDialog] 各路径（单文件 / 文件夹单集 / 播放列表首集 /

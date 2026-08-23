@@ -31,8 +31,8 @@ void main() {
     const CoverMeta manual = CoverMeta(origin: CoverOrigin.manual);
     const CoverMeta scraped = CoverMeta(
       origin: CoverOrigin.scraped,
-      source: ScrapeSource.bangumi,
-      entryId: '325285',
+      source: ScrapeSource.anidb,
+      entryId: '16498',
     );
 
     await store.set('book-1', manual);
@@ -44,8 +44,8 @@ void main() {
 
     final CoverMeta? got2 = await store.get('book-2');
     expect(got2!.origin, CoverOrigin.scraped);
-    expect(got2.source, ScrapeSource.bangumi);
-    expect(got2.entryId, '325285');
+    expect(got2.source, ScrapeSource.anidb);
+    expect(got2.entryId, '16498');
 
     final Map<String, CoverMeta> all = await store.all();
     expect(all.keys, containsAll(<String>['book-1', 'book-2']));

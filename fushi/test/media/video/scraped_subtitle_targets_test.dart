@@ -40,6 +40,7 @@ void main() {
     test('外部 id 全量带过去——Jimaku 按 anilist_id 直查、OpenSubtitles 按 imdb', () {
       final VideoMediaReference ref = scrapedMediaReference(
         _work(ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '17617'),
           VideoMetadataId(type: 'anilist', value: '154587'),
           VideoMetadataId(type: 'tmdb', value: '209867'),
           VideoMetadataId(type: 'imdb', value: 'tt22248376'),
@@ -49,6 +50,7 @@ void main() {
         season: 1,
         episode: 5,
       );
+      expect(ref.anidbId, 17617);
       expect(ref.anilistId, 154587);
       expect(ref.tmdbId, 209867);
       expect(ref.imdbId, 'tt22248376');
@@ -81,7 +83,20 @@ void main() {
   });
 
   group('scrapedDiscoveryCategory（决定 Jimaku 的 anime 硬过滤走哪一档）', () {
-    test('有 AniList id → anime', () {
+    test('有 AniDB id → anime', () {
+      expect(
+        scrapedDiscoveryCategory(
+          _work(
+            ids: const <VideoMetadataId>[
+              VideoMetadataId(type: 'anidb', value: '17617'),
+            ],
+          ),
+        ),
+        VideoDiscoveryCategory.anime,
+      );
+    });
+
+    test('历史 AniList id 仍识别为 anime', () {
       expect(
         scrapedDiscoveryCategory(_work(ids: const <VideoMetadataId>[
           VideoMetadataId(type: 'anilist', value: '154587'),
@@ -90,7 +105,7 @@ void main() {
       );
     });
 
-    test('无 AniList id → 按 movie/tv 分', () {
+    test('无动画专库 id → 按 movie/tv 分', () {
       expect(scrapedDiscoveryCategory(_work()), VideoDiscoveryCategory.tv);
       expect(
         scrapedDiscoveryCategory(_work(kind: VideoMetadataMediaKind.movie)),

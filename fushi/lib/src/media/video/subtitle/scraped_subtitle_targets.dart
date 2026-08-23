@@ -75,6 +75,7 @@ VideoMediaReference scrapedMediaReference(
       if (id.value.trim().isNotEmpty) id.type.trim().toLowerCase(): id.value,
   };
   int? intId(String key) => int.tryParse(ids[key] ?? '');
+  final int? anidbId = intId('anidb');
   final int? anilistId = intId('anilist');
   return VideoMediaReference(
     providerId: metadata.provider.name,
@@ -87,6 +88,7 @@ VideoMediaReference scrapedMediaReference(
     year: metadata.year,
     season: season,
     episode: episode,
+    anidbId: anidbId,
     tmdbId: intId('tmdb'),
     imdbId: ids['imdb'],
     tvdbId: intId('tvdb'),
@@ -99,16 +101,20 @@ VideoMediaReference scrapedMediaReference(
 /// 刮削元数据 → 发现层分类。
 ///
 /// `VideoMetadataMediaKind` 只有 movie/tv，动画与真人共用同一个值——分类信息在
-/// 刮削侧只能从「有没有 AniList id」推：AniList 是动画专库，挂上 AniList id 的
-/// 作品就是动画。这不是完美判据（少数真人特摄也被收录），但它决定的只是 Jimaku
+/// 刮削侧优先从「有没有 AniDB id」推；历史数据仍接受 AniList id。两者都是动画
+/// 专库，挂上对应 id 的作品视为动画。这不是完美判据，但它决定的只是 Jimaku
 /// 的 anime 过滤档，而那一档现在两边都试得到（[JimakuAnimeFilter.either]），
 /// 判错的代价只是多一次请求。
 VideoDiscoveryCategory scrapedDiscoveryCategory(VideoMetadataWork metadata) {
-  final bool hasAnilist = metadata.ids.any(
+  final bool hasAnimeId = metadata.ids.any(
     (VideoMetadataId id) =>
-        id.type.trim().toLowerCase() == 'anilist' && id.value.trim().isNotEmpty,
+        const <String>{
+          'anidb',
+          'anilist',
+        }.contains(id.type.trim().toLowerCase()) &&
+        id.value.trim().isNotEmpty,
   );
-  if (hasAnilist) return VideoDiscoveryCategory.anime;
+  if (hasAnimeId) return VideoDiscoveryCategory.anime;
   return metadata.kind == VideoMetadataMediaKind.movie
       ? VideoDiscoveryCategory.movie
       : VideoDiscoveryCategory.tv;

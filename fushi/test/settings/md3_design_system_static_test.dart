@@ -1055,19 +1055,6 @@ void main() {
               'audio status capsules) are live hook-subsystem content '
               'indicators, not ordinary page chrome — same reviewed content '
               'exception class as the video-subsystem content rows.',
-      // PR#387：海报刮削「在线匹配」对话框把候选海报行渲染为搜索结果内容——竖版
-      // 缩略图（ClipRRect + 圆角 + 破图占位 surfaceContainerHighest）、置信度徽章、
-      // 「使用」按钮，以及「一并应用到合集 N 集」的内容勾选行——是视频子系统的
-      // 瞬态搜索结果内容对话框，非普通页面 chrome，同 anki_mined_card_action_sheet /
-      // sentence_context_dialog 的内容对话框豁免类。
-      'lib/src/media/video/cover_ui/cover_match_dialog.dart':
-          'Poster-scrape online-match dialog renders candidate poster rows as '
-              'search-result content (portrait thumbnail clip + confidence '
-              'badge + broken-image fallback surface + an "apply to N collection '
-              'episodes" content checkbox), a transient video-subsystem search '
-              'result dialog, not ordinary page chrome — same reviewed content '
-              'exception class as anki_mined_card_action_sheet and '
-              'sentence_context_dialog.',
       // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
       // 触发整库任务，故此处不再需要它的豁免条目。
       'lib/src/anki/anki_mined_card_action_sheet.dart':
@@ -1176,10 +1163,6 @@ void main() {
       'lib/src/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
         'fontSize:'
-      },
-      'lib/src/media/video/cover_ui/cover_match_dialog.dart': <String>{
-        'BorderRadius.circular(',
-        'CheckboxListTile('
       },
       'lib/src/media/video/danmaku_manual_match_panel.dart': <String>{
         'ListTile('

@@ -3987,7 +3987,7 @@ class AppModel with ChangeNotifier {
         resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       ),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
-      // （AniList/TMDB id + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
+      // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
       onWorkScraped: _backfillSubtitlesForScrapedWork,
     );

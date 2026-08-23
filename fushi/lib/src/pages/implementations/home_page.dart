@@ -1190,7 +1190,8 @@ class _HomePageState extends BasePageState<HomePage>
     );
     final String fingerprint = <Object>[
       config.tmdbApiKey,
-      config.bangumiToken,
+      config.anidbClientName,
+      config.anidbClientVersion ?? 0,
       config.locale,
     ].join('\u0000');
     final VideoDiscoveryController? existing = _videoDiscoveryController;
@@ -1863,12 +1864,9 @@ class _HomePageState extends BasePageState<HomePage>
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
     );
     final String fingerprint = <Object>[
-      config.primaryProvider.name,
       config.tmdbApiKey,
-      config.fanartApiKey,
-      config.bangumiToken,
-      config.doubanEndpoint,
-      config.doubanToken,
+      config.anidbClientName,
+      config.anidbClientVersion ?? 0,
       config.locale,
     ].join('\u0000');
     if (existing != null &&

@@ -126,6 +126,7 @@ bool isAttachableVideoDownloadJob(
   }
   return switch (provider) {
     'tmdb' => externalId == reference.tmdbId?.toString(),
+    'anidb' => externalId == reference.anidbId?.toString(),
     'anilist' => externalId == reference.anilistId?.toString(),
     'bangumi' => externalId == reference.bangumiId?.toString(),
     'imdb' => externalId == reference.imdbId?.trim().toLowerCase(),
@@ -359,7 +360,8 @@ String videoDiscoverySubscriptionId(VideoMediaReference reference) {
 }
 
 /// 下载“资源”页没有现成发现卡片时，要求用户显式提供可确认的元数据身份。
-/// 不生成 `manual` 假身份，保证后续精确刮削不会因为缺 provider binding 而停住。
+/// 不生成 `manual` 假身份；AniDB 可成为后续刮削的规范身份，TMDB/AniList 只作为
+/// 发现与下载阶段的可追踪交叉引用，导入后仍须经过 AniDB 身份门控。
 VideoMediaReference? buildManualVideoMediaReference({
   required String providerId,
   required String mediaId,
@@ -373,7 +375,7 @@ VideoMediaReference? buildManualVideoMediaReference({
   final String normalizedTitle = title.trim();
   final int? numericId = int.tryParse(id);
   final int? year = int.tryParse(yearText.trim());
-  if (!const <String>{'tmdb', 'anilist', 'bangumi'}.contains(provider) ||
+  if (!const <String>{'anidb', 'tmdb', 'anilist'}.contains(provider) ||
       numericId == null ||
       numericId <= 0 ||
       normalizedTitle.isEmpty ||
@@ -393,9 +395,9 @@ VideoMediaReference? buildManualVideoMediaReference({
     discoveryCategory: category,
     title: normalizedTitle,
     year: year,
+    anidbId: provider == 'anidb' ? numericId : null,
     tmdbId: provider == 'tmdb' ? numericId : null,
     anilistId: provider == 'anilist' ? numericId : null,
-    bangumiId: provider == 'bangumi' ? numericId : null,
     externalIds: <String, String>{provider: id},
   );
 }
@@ -615,7 +617,7 @@ class _VideoResourceSearchSurfaceState
   final TextEditingController _startAfterController = TextEditingController();
   VideoDiscoveryCategory _manualCategory = VideoDiscoveryCategory.anime;
   VideoMetadataMediaKind _manualMediaKind = VideoMetadataMediaKind.tv;
-  String _manualProvider = 'anilist';
+  String _manualProvider = 'anidb';
   ProviderBatchResult<VideoResourceCandidate>? _result;
   VideoResourceCandidate? _selected;
   int? _sourceId;
@@ -875,7 +877,7 @@ class _VideoResourceSearchSurfaceState
                         _manualMediaKind = VideoMetadataMediaKind.tv;
                       }
                       _manualProvider = value == VideoDiscoveryCategory.anime
-                          ? 'anilist'
+                          ? 'anidb'
                           : 'tmdb';
                       _result = null;
                       _selected = null;
@@ -954,9 +956,13 @@ class _VideoResourceSearchSurfaceState
                   key: const ValueKey<String>('video-resource-provider'),
                   initialValue: _manualProvider,
                   decoration: InputDecoration(
-                    labelText: t.video_source_scrape_provider,
+                    labelText: t.video_resource_identity_provider,
                   ),
                   items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem<String>(
+                      value: 'anidb',
+                      child: Text('AniDB'),
+                    ),
                     DropdownMenuItem<String>(
                       value: 'tmdb',
                       child: Text('TMDB'),
@@ -964,10 +970,6 @@ class _VideoResourceSearchSurfaceState
                     DropdownMenuItem<String>(
                       value: 'anilist',
                       child: Text('AniList'),
-                    ),
-                    DropdownMenuItem<String>(
-                      value: 'bangumi',
-                      child: Text('Bangumi'),
                     ),
                   ],
                   onChanged: (String? value) {

@@ -12,7 +12,7 @@ import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart
 import 'package:fushi/utils.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
-/// request out to TMDB, AniList and Bangumi, but the UI receives one redacted
+/// request out to TMDB and AniList, but the UI receives one redacted
 /// partial-success result and does not depend on provider clients directly.
 abstract interface class VideoDiscoveryController {
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(

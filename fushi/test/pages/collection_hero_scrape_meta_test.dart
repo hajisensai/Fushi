@@ -6,8 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:fushi/src/media/video/scraper/collection_scrape_apply.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -61,38 +59,41 @@ void main() {
     // 改名只在用户于确认弹窗点了确认时发生（BUG-1310 复议）；hero 资料本身与改名
     // 无关，故默认不改名，只有专测标题回写的用例才传。
     String? confirmedTitle,
-  }) =>
-      applyCollectionScrape(
-        db,
-        collectionId,
-        CollectionScrapeResult(
-          coverPath: coverPath,
-          // v68：横版背景改走 media_images 图组（apply 落行，页面读表）。
-          images: <ScrapedMediaImage>[
-            if (backdropPath != null)
-              ScrapedMediaImage(
-                kind: MediaImageKind.backdrop,
-                path: backdropPath,
-              ),
-          ],
-          metadata: const ScrapeMetadata(
-            source: ScrapeSource.tmdb,
-            subjectId: '100',
-            title: '转生王女与天才令嬢的魔法革命',
-            originalTitle: '転生王女と天才令嬢の魔法革命',
-            summary: '公主与令嬢携手掀起魔法革命的故事。',
-            airDate: '2023-01-04',
-            rating: 8.2,
-            ratingCount: 1234,
-            episodeCount: 12,
-            tags: <ScrapeTag>[
-              ScrapeTag(name: '奇幻', count: 900),
-              ScrapeTag(name: '百合', count: 800),
-            ],
-          ),
+  }) async {
+    await db.updateMediaCollectionCoverPath(collectionId, coverPath);
+    await db.upsertCollectionScrapeMeta(
+      CollectionScrapeMetaCompanion.insert(
+        collectionId: Value<int>(collectionId),
+        source: 'tmdb',
+        subjectId: '100',
+        title: '转生王女与天才令嬢的魔法革命',
+        originalTitle: const Value<String?>('転生王女と天才令嬢の魔法革命'),
+        summary: const Value<String?>('公主与令嬢携手掀起魔法革命的故事。'),
+        airDate: const Value<String?>('2023-01-04'),
+        rating: const Value<double?>(8.2),
+        ratingCount: const Value<int?>(1234),
+        episodeCount: const Value<int?>(12),
+        tagsJson: const Value<String?>(
+          '[{"name":"奇幻","count":900},{"name":"百合","count":800}]',
         ),
-        confirmedTitle: confirmedTitle,
-      );
+        scrapedAt: DateTime(2026, 1, 1),
+      ),
+    );
+    await db.replaceMediaImagesForCollection(
+      collectionId,
+      <MediaImagesCompanion>[
+        if (backdropPath != null)
+          MediaImagesCompanion.insert(
+            collectionId: Value<int?>(collectionId),
+            kind: MediaImageKind.backdrop.dbValue,
+            path: backdropPath,
+          ),
+      ],
+    );
+    if (confirmedTitle != null) {
+      await db.renameMediaCollection(collectionId, confirmedTitle);
+    }
+  }
 
   Widget buildApp() => TranslationProvider(
         child: MaterialApp(
@@ -305,7 +306,7 @@ void main() {
     expect(
       find.byType(LandscapeCoverImage),
       findsOneWidget,
-      reason: 'Bangumi / 离线库没有横版图，这是它们的常态路径',
+      reason: '历史资料没有横版图时必须保留本地封面回退路径',
     );
     expect(
       find.byKey(const ValueKey<String>('collection-hero-backdrop')),

@@ -342,6 +342,7 @@ void main() {
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
     expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(t.video_import_pick_subtitle, isNot(contains('srt')));
     expect(t.video_import_pick_subtitle, isNot(contains('vtt')));
     expect(t.video_import_pick_subtitle, isNot(contains('ass')));
@@ -385,6 +386,7 @@ void main() {
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
     expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.add_to_collection), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });

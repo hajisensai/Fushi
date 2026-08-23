@@ -22,14 +22,8 @@ import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
-import 'package:fushi/src/media/video/cover_ui/collection_scrape_dialog.dart';
-import 'package:fushi/src/media/video/cover_ui/cover_match_dialog.dart';
-import 'package:fushi/src/media/video/cover_ui/scrape_info_dialog.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
-import 'package:fushi/src/media/video/scraper/offline_index.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
@@ -1942,22 +1936,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             },
           ),
           DialogQuickAction(
-            label: t.video_scrape_online_match,
-            icon: Icons.image_search,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _openCoverMatch(book);
-            },
-          ),
-          DialogQuickAction(
-            label: t.video_scrape_info,
-            icon: Icons.info_outline,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _openScrapeInfo(book);
-            },
-          ),
-          DialogQuickAction(
             label: t.video_import_pick_subtitle,
             icon: Icons.subtitles_outlined,
             onPressed: () {
@@ -2148,88 +2126,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (mounted) _refresh();
   }
 
-  /// 单项匹配、自动刮削与来源页整库刮削共用同一套依赖组装。
-  Future<VideoScraperBundle> _scraperBundle() async {
-    final String userTmdbKey = ref
-        .read(appProvider)
-        .prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    return createVideoScraperBundle(
-      repository: widget.repo,
-      configuredTmdbKey: userTmdbKey,
-      artifactDatabase: ref.read(appProvider).database,
-    );
-  }
+  /// 旧封面流水线只组装 sidecar / 本地封面能力，不装配在线 metadata client。
+  Future<CoverScraperService> _scraperService() => createVideoScraperService(
+        repository: widget.repo,
+        artifactDatabase: ref.read(appProvider).database,
+      );
 
-  /// 本视频所属合集的全部成员 uid（用于「同时应用到本合集全部 N 集」）；不属任何合集
-  /// 时返回仅含自身的单元素列表。
-  Future<List<String>> _collectionMemberUids(String bookUid) async {
-    final int? collectionId =
-        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
-    if (collectionId == null) return <String>[bookUid];
-    final List<MediaCollectionItemRow> items =
-        await ref.read(appProvider).database.getCollectionItems(collectionId);
-    final List<String> uids = <String>[
-      for (final MediaCollectionItemRow m in items)
-        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
-    ];
-    return uids.isEmpty ? <String>[bookUid] : uids;
-  }
-
-  /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
-  Future<void> _openCoverMatch(VideoBookRow book) async {
-    final ({
-      CoverScraperService service,
-      CoverScraperService Function(OfflineIndex offline) rebuild,
-      Directory scraperDir,
-    }) bundle = await _scraperBundle();
-    if (!mounted) return;
-    final List<String> members = await _collectionMemberUids(book.bookUid);
-    if (!mounted) return;
-    await showCoverMatchDialog(
-      context: context,
-      service: bundle.service,
-      book: book,
-      collectionMemberUids: members,
-      onApplied: _refresh,
-    );
-  }
-
-  /// 长按菜单「条目信息」：读本地已刮到的 Bangumi 条目资料并展示（只读，不发网络）。
-  /// 「重新刮削」= 删掉该书资料行 + 忘掉本进程的尝试记录，再跑一次自动刮削。
-  Future<void> _openScrapeInfo(VideoBookRow book) async {
-    final ScrapeMetadata? meta = await widget.repo.scrapeMetadata(book.bookUid);
-    if (!mounted) return;
-    await showScrapeInfoDialog(
-      context: context,
-      fallbackTitle: book.title,
-      metadata: meta,
-      onRescrape: () async {
-        await widget.repo.deleteScrapeMetadata(book.bookUid);
-        _autoScrape?.forget(book.bookUid);
-        if (book.sourceId == null) {
-          await _maybeAutoScrape();
-        } else if (mounted) {
-          await _openCoverMatch(book);
-        }
-      },
-      // 添加/修改 Bangumi 映射：跳到在线匹配弹窗（可搜索或贴条目 ID/URL 改绑）。
-      onEditMapping: () => _openCoverMatch(book),
-    );
-  }
-
-  /// 自动刮削：进视频页 + 每次库变化（新视频入库）后跑一遍，把还没有条目资料的
-  /// 本地视频静默补齐（封面 + Bangumi 条目资料）。取代了原页头「批量匹配海报」
-  /// 按钮——用户不必再记得点它。
+  /// 本地封面补齐：进视频页 + 每次库变化（新视频入库）后跑一遍，仅识别 sidecar
+  /// 并落本地封面。在线元数据由来源页的 canonical coordinator 负责。
   ///
-  /// 受 [AppModel.videoAutoScrape] 总闸门控（默认开，设置页「媒体库」可关）。
+  /// 受兼容偏好 [AppModel.videoAutoScrape] 门控；该偏好不再在设置页暴露。
   /// 服务自身负责串行/节流/去重与「每本每进程只试一次」，本方法只管喂书单，
   /// 重复调用是廉价的。刮完静默 [_refresh] 让新封面立即出现在网格里。
   Future<void> _maybeAutoScrape() async {
     final VideoScrapeAutoService service =
         _autoScrape ??= VideoScrapeAutoService(
       repository: widget.repo,
-      serviceFactory: () async => (await _scraperBundle()).service,
+      serviceFactory: _scraperService,
       // 每轮进场读一次总闸：设置里关掉后下一轮立刻停，无需重建服务。
       isEnabled: () => ref.read(appProvider).videoAutoScrape,
     );
@@ -2238,7 +2151,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     final int before = service.attemptedCount;
     await service.sweep(books);
-    // 有书真被刮过才重绘：没新刮到东西时避免无谓的整页重查（本方法每次 _refresh
+    // 有书真尝试过才重绘：没有新项时避免无谓的整页重查（本方法每次 _refresh
     // 都会被调用，无条件 setState 会形成刷新环）。
     if (mounted && service.attemptedCount != before) {
       setState(() {
@@ -4870,8 +4783,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         icon: Icons.bar_chart_outlined,
         onTap: _openStatistics,
       ),
-      // 自动刮削仍会在进页面 / 新视频入库时后台跑（[_maybeAutoScrape]）；单本纠错
-      // 仍在长按菜单的「在线匹配封面」。
+      // 旧后台流水线仍会在进页面 / 新视频入库时补本地 sidecar；在线元数据刮削
+      // 统一从来源页进入 canonical coordinator。
       // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
       // 为它单占一格。
     ];
@@ -5391,46 +5304,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         }
       },
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
-      // 视频合集特有项（与合集详情页 AppBar 能力对齐）：整合集刮削封面 / 批量
-      // 拉字幕。对话框负责先关自身，这里不 pop。
+      // 视频合集特有项只保留批量字幕；在线元数据刮削统一从来源页进入。
       extraListActions: <DialogListAction>[
-        DialogListAction(
-          // 文案含「刮削」（BUG-1662）：这一项内部就是整套合集刮削（资料 + 封面），
-          // 叫「在线匹配封面」会让想「重新刮削」的用户按字面找不到入口。
-          label: t.video_collection_scrape,
-          icon: Icons.image_search,
-          onPressed: () => _openCollectionCoverMatch(collection),
-        ),
         DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           onPressed: () => _openCollectionSubtitles(collection),
-        ),
+        )
       ],
-    );
-  }
-
-  /// 合集右键「刮削资料与封面」：流程本体在 [showCollectionScrapeDialog]
-  /// （BUG-1662 抽出，与合集详情页管理菜单共用；语义约束——只写合集自身、
-  /// 不动成员（BUG-1211）——见其文档注释）。
-  Future<void> _openCollectionCoverMatch(MediaCollectionRow collection) {
-    return showCollectionScrapeDialog(
-      context: context,
-      db: ref.read(appProvider).database,
-      repository: widget.repo,
-      configuredTmdbKey: ref
-          .read(appProvider)
-          .prefsRepo
-          .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String,
-      collection: collection,
-      onApplied: _refresh,
     );
   }
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
   /// （绑定 AniList 系列 → 逐集拉最佳字幕）。collection 行重取一次拿最新
   /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，给可见提示而不是静默返回
-  /// （理由同 [_openCollectionCoverMatch]）。
+  /// （避免菜单关闭后静默无响应）。
   Future<void> _openCollectionSubtitles(MediaCollectionRow collection) async {
     final FushiDatabase db = ref.read(appProvider).database;
     final List<MediaCollectionItemRow> items =
@@ -5505,10 +5393,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
           remote: remote,
-          // 详情页管理菜单「刮削资料与封面」+ 集卡「条目信息」（BUG-1662）：注入
-          // 库页同一套刮削入口，合集语境下的重刮不再是断头路。
-          onScrapeCollection: _openCollectionCoverMatch,
-          onEpisodeScrapeInfo: _openScrapeInfo,
           onDeleteMembersMedia: (List<VideoBookRow> members) async {
             for (final VideoBookRow member in members) {
               await repo.deleteVideoBookAndReclaimAssets(
