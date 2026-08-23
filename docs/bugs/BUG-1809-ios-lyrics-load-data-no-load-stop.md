@@ -1,6 +1,6 @@
 ## BUG-1809 · iOS歌词loadData返回后不触发onLoadStop导致永不ready
 - **报告**：2026-08-24（`iPhone pay` / iOS 26.6 物理机，从有声书快速设置进入歌词模式）
 - **真实性**：✅ 真 bug。阶段探针证明状态持久化、歌词 profile、5 cues / 78KB HTML 生成与 `loadData` 均返回，但 iOS 没有歌词 onLoadStop/ready。继续追到 `webview.part.dart:2505-2519`：iOS 会把 `loadData(baseUrl: https://fushi.local/lyrics)` 交给 `shouldOverrideUrlLoading`，而现有代码只放行 `_isNavigatingToChapter`，歌词主文档没有该旗，遂被当普通链接 `CANCEL`。所以旧正文仍留在 WebView，HTML 内 ready bridge 也没有机会执行。既有 BUG-649 只过滤旧正文 onLoadStop，没有给歌词主文档导航放行。
-- **[x] ① 已修复** — 放行歌词主文档导航并增加幂等 ready bridge；提交 `bb1f2ddf7`。
-- **[x] ② 已加自动化测试** — HTML ready 契约与 iPhone 歌词 DOM/截图 GREEN；RED 曾连续 60 秒超时并停在 `loadData returned`。
-- **备注**：`_lyricsDocumentLoadInFlight` 只在歌词主文档 loadData 窗口放行 shouldOverride，sentinel finalize/主帧错误/退出歌词时清除，不放开后续普通链接。LyricsModeHtml 在 sentinel API 建好后以最多 5 秒的条件轮询等待 JS bridge；Dart `onLyricsReady` 与原 onLoadStop 共用幂等 finalize，避免双回调重复初始化。
+- **[x] ① 已修复** — 放行歌词主文档导航并增加 ready bridge；提交 `bb1f2ddf7`。完成前并发审查发现多个未等待 `_loadLyricsPage()` 可交错，原全局 bool finalizer 锁会丢掉新文档 ready、让旧 load 清新 load 状态。提交 `a3e82e646` 为每次 load 分配单调 generation，写入 HTML/DOM 并随 `onLyricsReady` 回传；sentinel、finalizer、每个异步注入边界和退出模式均核对/失效 generation，旧文档不能完成新文档。
+- **[x] ② 已加自动化测试** — HTML ready 契约与 iPhone 歌词 DOM/截图 GREEN；RED 曾连续 60 秒超时并停在 `loadData returned`。generation 加固新增 HTML token/bridge 测试和完整 source-chain 守卫；缺 token、旧直接调用锚点、无 generation 校验均实测红，相邻 36 条歌词测试全绿。
+- **备注**：`_lyricsDocumentLoadInFlight` 只在当前 generation 的歌词主文档 loadData 窗口放行 shouldOverride，sentinel finalize/主帧错误/退出歌词时清除，不放开后续普通链接。LyricsModeHtml 在 sentinel API 建好后以最多 5 秒的条件轮询等待 JS bridge；Dart `onLyricsReady` 与原 onLoadStop 共享 generation-aware finalize，双回调幂等、跨 load 回调隔离。
