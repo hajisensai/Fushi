@@ -446,6 +446,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onFontScaleIndexChanged,
     this.hoverAutoLookupEnabled = false,
     this.fontSize = 14,
+    this.fontFamily,
     this.width = 320,
   });
 
@@ -498,6 +499,13 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final bool hoverAutoLookupEnabled;
 
   final double fontSize;
+
+  /// 列表行字幕文本的字体族，由页面层传 [FontTarget.videoSubtitle] 解析出的
+  /// `appModel.subtitleFontFamily`。
+  ///
+  /// null = 用户没设字幕字体，跟主题走（向后兼容，也是测试的默认）。此前这里恒为
+  /// null：同一句台词在画面上是用户设的字幕字体、在这个侧栏里却是界面字体，两套。
+  final String? fontFamily;
   final double width;
 
   @override
@@ -623,10 +631,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   /// 行内字幕文本的样式。测量（[_measureRowExtent]）与渲染（[_buildRowText]）共用，
   /// 保证 `itemExtentBuilder` 给出的行高与真实换行结果一致（BUG-1034）。
+  /// [VideoSubtitleJumpPanel.fontFamily] 同时进测量与渲染：字体换了字宽就变，
+  /// 换行结果跟着变，而 `itemExtentBuilder` 是硬约束——两者不同源会把长句裁掉
+  /// （BUG-1034 的原始故障形态）。
   TextStyle _rowTextStyle({required bool bold, Color? color}) => TextStyle(
         color: color,
         fontSize: _effectiveFontSize,
         fontWeight: bold ? FontWeight.w600 : null,
+        fontFamily: widget.fontFamily,
         height: 1.25,
       );
 

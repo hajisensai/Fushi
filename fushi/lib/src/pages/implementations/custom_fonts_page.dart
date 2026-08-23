@@ -9,6 +9,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -1243,6 +1244,12 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                       onMoveUp: () => _onReorder(index, index - 1),
                       onMoveDown: () => _onReorder(index, index + 1),
                       initiallyExpandRoles: widget.target != FontTarget.body,
+                      // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会
+                      // 静默跳过，这里直接把那枚开关置灰，别让用户白设。
+                      unsupportedTargets:
+                          AppFontLoader.nativeOverlayCanUse(entry.path)
+                              ? const <FontTarget>{}
+                              : const <FontTarget>{FontTarget.gameLookup},
                     );
                   },
                 ),
@@ -1440,6 +1447,7 @@ class CustomFontCatalogTile extends StatefulWidget {
     required this.onMoveUp,
     required this.onMoveDown,
     this.initiallyExpandRoles = false,
+    this.unsupportedTargets = const <FontTarget>{},
     super.key,
   });
 
@@ -1450,6 +1458,11 @@ class CustomFontCatalogTile extends StatefulWidget {
   /// 进页时就展开用途开关。从非默认作用域（如「设置·游戏·Hook 文本字体」）进来时
   /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
   final bool initiallyExpandRoles;
+
+  /// 本字体**格式上**用不了的用途：开关置灰并给出说明，而不是让用户勾一个下游会
+  /// 静默忽略的组合。当前唯一来源是 WOFF/WOFF2 遇上 [FontTarget.gameLookup]
+  /// （native DirectWrite 只吃裸 sfnt），判据见 `AppFontLoader.nativeOverlayCanUse`。
+  final Set<FontTarget> unsupportedTargets;
   final int index;
   final bool isLast;
   final ValueChanged<FontTarget> onTargetToggled;
@@ -1475,9 +1488,19 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         FontTarget.gameLookup => t.font_target_game_lookup,
       };
 
+  /// 本平台真有消费端的用途。gameLookup 只有 Windows 有 native 分层窗消费，
+  /// 其余平台勾上等于写一个永远没人读的偏好键——显示出来只会让用户以为设好了。
+  ///
+  /// 只影响**显示**：已存的 targetEnabled 由 customFontLegacyListsFromRows 按
+  /// FontTarget.values 全量回写，跨平台同步过来的勾选不会被这里的隐藏抹掉。
+  static List<FontTarget> get _visibleTargets => <FontTarget>[
+        for (final FontTarget target in FontTarget.values)
+          if (isFontTargetAvailableOnPlatform(target)) target,
+      ];
+
   /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
   String get _rolesSummary => <String>[
-        for (final FontTarget target in FontTarget.values)
+        for (final FontTarget target in _visibleTargets)
           if (widget.targets.contains(target)) _targetLabel(target),
       ].join(' · ');
 
@@ -1612,12 +1635,24 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: [
-                  for (final FontTarget target in FontTarget.values)
-                    FilterChip(
-                      label: Text(_targetLabel(target)),
-                      selected: widget.targets.contains(target),
-                      onSelected: (_) => widget.onTargetToggled(target),
-                    ),
+                  for (final FontTarget target in _visibleTargets)
+                    if (widget.unsupportedTargets.contains(target))
+                      // 置灰而非隐藏：用户需要知道「这个用途存在，但这个字体格式
+                      // 用不了」，隐藏只会让人继续找不到、以为是 app 少做了。
+                      Tooltip(
+                        message: t.custom_fonts_target_unsupported,
+                        child: FilterChip(
+                          label: Text(_targetLabel(target)),
+                          selected: false,
+                          onSelected: null,
+                        ),
+                      )
+                    else
+                      FilterChip(
+                        label: Text(_targetLabel(target)),
+                        selected: widget.targets.contains(target),
+                        onSelected: (_) => widget.onTargetToggled(target),
+                      ),
                 ],
               ),
             ],

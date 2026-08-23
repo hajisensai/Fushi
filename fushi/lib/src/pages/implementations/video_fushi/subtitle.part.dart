@@ -1459,6 +1459,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
                                 onCopyCue: _copyCueText,
                                 onFavoriteCue: _toggleFavoriteCueForVideo,
                                 isCueFavorited: _isCueFavorited,
+                                // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
+                                // 与画面上的字幕同一套，不再各用各的。
+                                fontFamily: appModel.subtitleFontFamily,
                                 // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
                                 initialAutoScroll:
                                     appModel.videoSubtitleListAutoScroll,

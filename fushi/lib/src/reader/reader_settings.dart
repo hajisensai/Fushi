@@ -29,11 +29,35 @@ enum FontTarget {
   /// TODO-864.
   videoSubtitle,
 
-  /// Windows galgame Hook text / click-to-lookup overlay font. The native
-  /// DirectWrite renderer consumes the first usable family/file in this target;
-  /// it is deliberately independent from dictionary-card and novel-body fonts.
+  /// Windows galgame **hook 台词浮窗**（native 分层窗 `FloatingLyricWindow`，
+  /// DirectWrite 自绘）的字体。
+  ///
+  /// ⚠️ 覆盖面只有 hook 台词浮窗这一个表面。**游戏内查词卡不归它管**——那是
+  /// `GlobalLookupRoute.galCard`，和 app 内词典弹窗共用 [dictionary]
+  /// （`popup_settings_injection.dart` 读 `settings.dictionaryFonts`）。
+  /// 旧注释写的 "click-to-lookup overlay" 是错的，别照着它接线；
+  /// 守卫 `test/reader/font_targets_wiring_guard_test.dart` 钉死了这条分界。
+  ///
+  /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`
+  /// （DirectWrite 不吃 WOFF/WOFF2，见 [FontTarget] 消费端 `AppFontLoader
+  /// .resolveForNativeOverlay`）；缺字回退靠 native 追加的系统字体集，
+  /// **不是**用户列表里的第二条。语义与 [appUi] 的整链回退不同。
   gameLookup,
 }
+
+/// 这个用途在当前平台**是否真有消费端**。
+///
+/// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
+/// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
+/// 自己已经设好了。其余用途五平台通用。
+bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
+      FontTarget.gameLookup => Platform.isWindows,
+      FontTarget.appUi ||
+      FontTarget.body ||
+      FontTarget.dictionary ||
+      FontTarget.videoSubtitle =>
+        true,
+    };
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
