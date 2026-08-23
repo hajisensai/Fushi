@@ -157,6 +157,8 @@ void main() {
       // === Inject the harness ===
       final injectResult = await eval!(paginationHarnessJs);
       debugPrint('[M1] Harness inject result: $injectResult');
+      debugPrint('[M1] visible bounds: '
+          '${await eval('JSON.stringify(window.fushiTestHarness.visibleBounds())')}');
 
       // === Full chapter scan ===
       debugPrint('[M1] === Full Chapter Scan ===');

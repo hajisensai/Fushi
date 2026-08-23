@@ -688,6 +688,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
       chromeBottomInset: _readerBottomReserve,
       dartPageWidth: screenSize.width,
       dartPageHeight: screenSize.height,
+      marginTop: s.marginTop,
+      marginBottom: s.marginBottom,
+      marginLeft: s.marginLeft,
+      marginRight: s.marginRight,
       blurImages: s.blurImages,
       // TODO-1289：把本次会话已揭开的防剧透图 key 下发，重载时不再重新遮罩。
       revealedKeys: _revealedImageKeys.toList(),
@@ -761,6 +765,24 @@ install: function(C) {
     try { var c = document.getElementById('fushi-cloak'); if (c) c.remove(); } catch (_ignored) {}
   });
   window.scanNonJapaneseText = C.scanNonJapaneseText;
+  // BUG-1812: WKWebView may report innerWidth/innerHeight as 0 even though
+  // Dart has the real logical viewport. Raw vh/vw margins then collapse to
+  // zero. Materialize all four percentages into px from the same Dart-sized
+  // viewport used by pagination, and expose one resize hook to every shell.
+  window.__fushiApplyReaderMargins = function(width, height) {
+    var w = Math.max(0, Number(width) || 0);
+    var h = Math.max(0, Number(height) || 0);
+    var root = document.documentElement;
+    function pct(value) {
+      var n = Number(value);
+      return Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 0;
+    }
+    root.style.setProperty('--reader-margin-top', (h * pct(C.marginTop) / 100) + 'px');
+    root.style.setProperty('--reader-margin-bottom', (h * pct(C.marginBottom) / 100) + 'px');
+    root.style.setProperty('--reader-margin-left', (w * pct(C.marginLeft) / 100) + 'px');
+    root.style.setProperty('--reader-margin-right', (w * pct(C.marginRight) / 100) + 'px');
+  };
+  window.__fushiApplyReaderMargins(C.dartPageWidth, C.dartPageHeight);
   $selectionJs
   $paginationJs
   window.__fushiInstallShell(C);

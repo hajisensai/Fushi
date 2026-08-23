@@ -11,12 +11,29 @@ const String paginationHarnessJs = r'''
 (function() {
   window.fushiTestHarness = {
     visibleBounds: function() {
+      var rootCs = getComputedStyle(document.documentElement);
       var cs = getComputedStyle(document.body);
-      var top = Math.max(0, parseFloat(cs.paddingTop) || 0);
-      var bottom = Math.max(top, window.innerHeight -
+      // BUG-1812: WKWebView can report window.innerWidth/innerHeight as 0.
+      // The reader already publishes the Dart-sized authoritative viewport;
+      // the device harness must measure the same box or every marker becomes
+      // "invisible" despite a real 375x667 body.
+      var viewportWidth = parseFloat(rootCs.getPropertyValue('--page-width')) ||
+        window.innerWidth || document.body.clientWidth;
+      var viewportHeight =
+        parseFloat(rootCs.getPropertyValue('--reader-viewport-height')) ||
+        window.innerHeight || document.body.clientHeight;
+      // In WKWebView vertical-rl with innerWidth=0, client rect coordinates
+      // use a negative horizontal frame (for example body [-375, 0]). Anchor
+      // the content box to the body's actual border box instead of assuming
+      // viewport origin (0,0), or every visible vertical marker sits at x<0.
+      var frame = document.body.getBoundingClientRect();
+      var frameTop = Number.isFinite(frame.top) ? frame.top : 0;
+      var frameLeft = Number.isFinite(frame.left) ? frame.left : 0;
+      var top = frameTop + Math.max(0, parseFloat(cs.paddingTop) || 0);
+      var bottom = Math.max(top, frameTop + viewportHeight -
         Math.max(0, parseFloat(cs.paddingBottom) || 0));
-      var left = Math.max(0, parseFloat(cs.paddingLeft) || 0);
-      var right = Math.max(left, window.innerWidth -
+      var left = frameLeft + Math.max(0, parseFloat(cs.paddingLeft) || 0);
+      var right = Math.max(left, frameLeft + viewportWidth -
         Math.max(0, parseFloat(cs.paddingRight) || 0));
       return { top: top, bottom: bottom, left: left, right: right };
     },

@@ -43,6 +43,10 @@ class ReaderEngineConfig {
     required this.chromeBottomInset,
     required this.dartPageWidth,
     required this.dartPageHeight,
+    required this.marginTop,
+    required this.marginBottom,
+    required this.marginLeft,
+    required this.marginRight,
     required this.blurImages,
     required this.revealedKeys,
     required this.perfTraceEnabled,
@@ -90,6 +94,10 @@ class ReaderEngineConfig {
   final double chromeBottomInset;
   final double? dartPageWidth;
   final double? dartPageHeight;
+  final double marginTop;
+  final double marginBottom;
+  final double marginLeft;
+  final double marginRight;
 
   // ── 图片 ──────────────────────────────────────────────────────────
   final bool blurImages;
@@ -134,6 +142,10 @@ class ReaderEngineConfig {
         'chromeBottomInset': chromeBottomInset,
         'dartPageWidth': dartPageWidth?.round(),
         'dartPageHeight': dartPageHeight?.round(),
+        'marginTop': marginTop,
+        'marginBottom': marginBottom,
+        'marginLeft': marginLeft,
+        'marginRight': marginRight,
         'blurImages': blurImages,
         'revealedKeys': revealedKeys,
         'perfTraceEnabled': perfTraceEnabled,
