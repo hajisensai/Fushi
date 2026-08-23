@@ -1743,7 +1743,7 @@ class GalHookSessionController extends ChangeNotifier {
     try {
       final Directory dir = Directory(
         '${Directory.systemTemp.path}${Platform.pathSeparator}'
-        'hibiki_gal_track_preview',
+        'fushi_gal_track_preview',
       );
       await dir.create(recursive: true);
       final File out = File(
@@ -1807,7 +1807,7 @@ class GalHookSessionController extends ChangeNotifier {
       try {
         final Directory dir = Directory(
           '${Directory.systemTemp.path}${Platform.pathSeparator}'
-          'hibiki_gal_track_preview',
+          'fushi_gal_track_preview',
         );
         await dir.create(recursive: true);
         final File out = File(
@@ -2860,7 +2860,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
     }
     final Directory jobDirectory = await Directory.systemTemp.createTemp(
-      'hibiki-gal-mining-job-',
+      'fushi-gal-mining-job-',
     );
     try {
       final Uint8List? encoded = await pcmSliceToAacBytes(

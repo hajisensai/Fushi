@@ -139,7 +139,7 @@ class GalHookMiningCoordinator {
       captureWindowGifBytes(hwnd: hwnd, format: format);
 
   static Future<Directory> _defaultCreateTempDirectory() =>
-      Directory.systemTemp.createTemp('hibiki-gal-card-job-');
+      Directory.systemTemp.createTemp('fushi-gal-card-job-');
 
   /// 单帧截图落卡前统一降采样。
   ///

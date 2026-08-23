@@ -381,25 +381,25 @@ void main() {
         () async {
       final issued = <http.Request>[];
       final bool exists = await withMock(
-        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        (s) => s.mediaFileExists('fushi_cover_abc.gif'),
         sink: issued,
         result: <String>[
-          'hibiki_cover_abc.gif',
-          'hibiki_cover_abc.gif.bak',
+          'fushi_cover_abc.gif',
+          'fushi_cover_abc.gif.bak',
         ],
       );
       final body = bodyOf(issued.single);
       expect(body['action'], 'getMediaFilesNames');
-      expect((body['params'] as Map)['pattern'], 'hibiki_cover_abc.gif');
+      expect((body['params'] as Map)['pattern'], 'fushi_cover_abc.gif');
       expect(exists, isTrue);
     });
 
     test('mediaFileExists does not accept a neighbouring glob result',
         () async {
       final bool exists = await withMock(
-        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        (s) => s.mediaFileExists('fushi_cover_abc.gif'),
         sink: <http.Request>[],
-        result: <String>['hibiki_cover_abc.gif.bak'],
+        result: <String>['fushi_cover_abc.gif.bak'],
       );
       expect(exists, isFalse);
     });

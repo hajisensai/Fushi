@@ -224,7 +224,7 @@ class AppModelLibraryHostService
     if (!exists) throw StateError('dictionary not found: $name');
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_dict_export');
+        Directory.systemTemp.createTempSync('fushi_dict_export');
     final File out = File(p.join(tmpDir.path, '$name$_dictionaryAssetSuffix'));
     await _packages.exportDictionaryPackage(
       dictionaryName: name,

@@ -418,7 +418,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         final data = AnkiAudioRef.decodeDataUri(audio);
         if (data == null) return const _AnkiMobileAudioField('');
         final tempFile = File('${Directory.systemTemp.path}'
-            '${Platform.pathSeparator}hibiki_word_audio_'
+            '${Platform.pathSeparator}fushi_word_audio_'
             '${DateTime.now().microsecondsSinceEpoch}.${data.extension}');
         try {
           await tempFile.writeAsBytes(data.bytes);
@@ -475,7 +475,7 @@ class _AnkiMobileMediaServer {
 
   static Future<_AnkiMobileMediaServer> start() async {
     final tempDir =
-        await Directory.systemTemp.createTemp('hibiki_ankimobile_media_');
+        await Directory.systemTemp.createTemp('fushi_ankimobile_media_');
     try {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       return _AnkiMobileMediaServer._(server, tempDir);

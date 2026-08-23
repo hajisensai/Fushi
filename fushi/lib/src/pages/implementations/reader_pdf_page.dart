@@ -573,7 +573,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       String? coverPath;
       final Uint8List? pagePng = await _renderCurrentPagePng();
       if (pagePng != null) {
-        tempDir = await Directory.systemTemp.createTemp('hibiki_pdf_mine_');
+        tempDir = await Directory.systemTemp.createTemp('fushi_pdf_mine_');
         final File file = File(p.join(tempDir.path, 'page.png'));
         await file.writeAsBytes(pagePng, flush: true);
         coverPath = file.path;

@@ -668,7 +668,7 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<String?> _addCoverImage(String path) async {
     final preferredName = await _preferredMediaNameForFile(
       path,
-      'hibiki_cover_',
+      'fushi_cover_',
     );
     if (preferredName == null) return null;
     final raw = await _addMediaFile(path, preferredName, mimeTypeForPath(path));
@@ -855,7 +855,7 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 路径。AnkiDroid 通过原生 `FileProvider.getUriForFile` 摄取媒体，而 FileProvider
   /// 只能服务 `provider_paths.xml` 声明过的根（code_cache / files / cache / external*）。
   /// Dart 的 [Directory.systemTemp] 解析到 app 的 `code_cache`，所以已经写在那里的媒体
-  /// （句子音频 `hibiki_mine_sentence_audio_*`、词典媒体、下载音频、视频制卡封面）都能被
+  /// （句子音频 `fushi_mine_sentence_audio_*`、词典媒体、下载音频、视频制卡封面）都能被
   /// FileProvider 服务。但**书籍封面**是直接从 EPUB 解压目录取的——解压目录 base 是
   /// `getApplicationDocumentsDirectory()` = `/data/data/<pkg>/app_flutter`（`files` 的
   /// 兄弟目录，**不在任何配置根下**）。对该路径调用 `getUriForFile` 会抛

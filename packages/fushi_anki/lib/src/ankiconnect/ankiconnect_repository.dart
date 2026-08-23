@@ -164,7 +164,7 @@ Future<String> fushiAnkiBase64EncodeAsync(List<int> bytes) {
 
 String _safeMediaPrefix(String prefix) {
   final String safe = prefix.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-  return safe.isEmpty ? 'hibiki_media_' : safe;
+  return safe.isEmpty ? 'fushi_media_' : safe;
 }
 
 String _mediaExtensionFromSource(
@@ -811,7 +811,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               service,
               mediaTransaction,
               context.coverPath!,
-              'hibiki_cover_',
+              'fushi_cover_',
             )
           : Future<String?>.value(null),
       context.sentenceAudioPath != null

@@ -1434,7 +1434,7 @@ class FushiSyncServer {
       id: name,
       cacheKind: 'dict',
       notFoundMessage: 'Dictionary not found',
-      tempPrefix: 'hibiki_dict_in',
+      tempPrefix: 'fushi_dict_in',
       tempExtension: '.fushidict',
       export: () => svc.exportDictionary(name),
       import: svc.importDictionary,

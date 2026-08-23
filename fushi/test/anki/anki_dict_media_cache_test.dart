@@ -17,7 +17,7 @@ void main() {
       // backend 会偶发读不到缓存里的 SVG。
       expect(
         ankiDictionaryMediaCacheFilename('明鏡', path),
-        'hibiki_dict_74259f28356918b3397453d0a5b467182d1ba404.svg',
+        'fushi_dict_74259f28356918b3397453d0a5b467182d1ba404.svg',
       );
       expect(
           ankiDictionaryMediaCacheFilename('明鏡', path), isNot(contains('-')));
@@ -25,9 +25,9 @@ void main() {
 
     test('falls back to bin when no usable extension', () {
       expect(ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/noext'),
-          'hibiki_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin');
+          'fushi_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin');
       expect(ankiDictionaryMediaCacheFilename('明鏡', 'trailingdot.'),
-          'hibiki_dict_17f7764207115aa3b04a6466c0c0b8d8e6f2d3bf.bin');
+          'fushi_dict_17f7764207115aa3b04a6466c0c0b8d8e6f2d3bf.bin');
     });
 
     test('same dict+path is stable within a run', () {
