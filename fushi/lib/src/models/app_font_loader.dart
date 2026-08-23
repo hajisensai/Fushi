@@ -37,6 +37,19 @@ class AppFontLoader {
   /// family, so re-registering the same one is wasteful and pointless.
   static final Set<String> _loadedFamilies = <String>{};
 
+  /// 这个字体条目能否被 Windows native 分层窗（DirectWrite）真正用上。
+  ///
+  /// [path] 为 null = 系统字体，native 按族名找，恒 true。文件字体只有裸 sfnt
+  /// （[_directExtensions]）能被 DirectWrite 的本地文件 API 吃下；WOFF/WOFF2 在
+  /// Flutter 侧能解码（[_resolveEntry]），native 侧不能。
+  ///
+  /// [resolveForNativeOverlay] 用它跳过不可用项，字体库 UI 用它把对应用途的开关
+  /// 置灰——**同一个判据两处共用**，否则 UI 会让用户勾一个浮窗静默忽略的字体，
+  /// 表现就是「设了不生效」且毫无反馈。
+  static bool nativeOverlayCanUse(String? path) =>
+      path == null ||
+      _directExtensions.contains(p.extension(path).toLowerCase());
+
   /// Resolves the first font the Windows native DirectWrite overlay can use.
   ///
   /// System fonts carry only a family name. Imported fonts additionally carry
@@ -67,9 +80,7 @@ class AppFontLoader {
 
       final String? rawPath = font['path'] as String?;
       if (rawPath == null) return (family: family, path: null);
-      if (!_directExtensions.contains(p.extension(rawPath).toLowerCase())) {
-        continue;
-      }
+      if (!nativeOverlayCanUse(rawPath)) continue;
       final String? safePath = ReaderCustomFontCss.safeFontPath(
         rawPath,
         allowedRoots: allowedRoots,

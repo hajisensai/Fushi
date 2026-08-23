@@ -2398,11 +2398,18 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                     Text(t.game_no_active_line)
                   else ...<Widget>[
                     // 正文 + 音频元信息：原「最新台词」卡的核心内容，不因换面板丢失。
-                    Text(
-                      line.text,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            height: 1.5,
-                          ),
+                    // 台词跟 FontTarget.gameLookup（与 native hook 浮窗同一设置），
+                    // 不跟界面字体——否则同一句话在浮窗和这里是两种字体。
+                    Consumer(
+                      builder: (_, WidgetRef ref, __) => Text(
+                        line.text,
+                        style: ref.watch(appProvider).applyGameTextFont(
+                              Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(height: 1.5),
+                            ),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     _MetadataRow(
@@ -2702,7 +2709,7 @@ class _StatusPill extends StatelessWidget {
 /// 一行文本：日语分词成可点 span（引擎未初始化时按字符降级，widget 测试不崩）。
 /// [words] 由页级 [_TexthookerWordCache] 按行 id 预分词后注入（本 widget 不再自行
 /// textToWords），避免每来一行整页 rebuild 时重复分词。
-class _TexthookerLine extends StatelessWidget {
+class _TexthookerLine extends ConsumerWidget {
   const _TexthookerLine({
     required this.line,
     required this.words,
@@ -2758,10 +2765,16 @@ class _TexthookerLine extends StatelessWidget {
   ) onCharTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String source =
         line.sourceLabel ?? texthookerLineSourceLabel(line.source);
+    // 台词字体在**行级**解析一次再传给每个 [_WordSpan]：一行有几十个词，若每个词
+    // 各自 watch(appProvider)，AppModel 每次 notifyListeners 都会把整行逐词重建。
+    // 样式与命中度量必须同源——字宽变了命中矩形要跟着变，否则点击位置和看到的字错开。
+    final TextStyle? wordStyle = ref.watch(appProvider).applyGameTextFont(
+          Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
+        );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: FushiCard(
@@ -2873,6 +2886,7 @@ class _TexthookerLine extends StatelessWidget {
                   _WordSpan(
                     word: word,
                     startIndex: start,
+                    style: wordStyle,
                     onTapChar: (int charIndex, Rect rect) =>
                         onCharTap(line, charIndex, rect),
                   ),
@@ -3077,10 +3091,16 @@ class _WordSpan extends StatelessWidget {
   const _WordSpan({
     required this.word,
     required this.startIndex,
+    required this.style,
     required this.onTapChar,
   });
 
   final String word;
+
+  /// 台词文本样式，由行级的 [_TexthookerLine] 解析一次后传下来（含
+  /// [FontTarget.gameLookup] 字体链）。不在这里自己 watch：一行几十个词，逐词订阅
+  /// 会让 AppModel 每次 notify 都把整行重建。
+  final TextStyle? style;
 
   /// 本词首字在整行文本里的 UTF-16 偏移。
   final int startIndex;
@@ -3090,8 +3110,6 @@ class _WordSpan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle? style =
-        Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6);
     final Color hover =
         Theme.of(context).colorScheme.primary.withValues(alpha: 0.1);
     int offset = startIndex;

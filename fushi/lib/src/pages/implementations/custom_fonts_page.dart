@@ -9,6 +9,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -568,8 +569,12 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
 // ── 主页面 ────────────────────────────────────────────────────────────────────
 
 class CustomFontsPage extends BasePage {
-  /// TODO-049: which of the three independent font targets this page manages.
-  /// Defaults to [FontTarget.body] so the legacy reader call site is unchanged.
+  /// 本次进入字体库的**作用域用途**：决定新导入/新添加的字体默认挂到哪个
+  /// [FontTarget]。默认 [FontTarget.body]，所以从外观设置进来的历史路径行为不变。
+  ///
+  /// 这个参数曾经是死参数（声明了但 State 从不读），导致从「设置·游戏·Hook 文本
+  /// 字体」进来导入的字体被挂到小说正文，游戏浮窗永远不变——用户看到的就是
+  /// 「字体库里没有游戏」。
   const CustomFontsPage({super.key, this.target = FontTarget.body});
 
   final FontTarget target;
@@ -578,12 +583,25 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
+/// 字体用途的显示名。穷尽 switch：新增 [FontTarget] 时这里编译报错，逼着补文案，
+/// 而不是让新用途悄悄顶着枚举名出现在 UI 上。页面标题与每行的用途开关共用。
+String fontTargetLabel(FontTarget target) => switch (target) {
+      FontTarget.appUi => t.font_target_app_ui,
+      FontTarget.body => t.font_target_body,
+      FontTarget.dictionary => t.font_target_dictionary,
+      FontTarget.videoSubtitle => t.font_target_video_subtitle,
+      FontTarget.gameLookup => t.font_target_game_lookup,
+    };
+
 /// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_fushi`
 /// 是冻结的历史 sourceId，旧数据兼容，勿改）。
 String _readerPrefKey(String shortKey) =>
     dbSourcePrefKey(kReaderSourcePersistedKey, shortKey);
 
-class _CustomFontsPageState extends BasePageState {
+/// 必须显式写 `BasePageState<CustomFontsPage>`：裸写 `BasePageState` 会让 `T`
+/// 退化成 `BasePage`，`widget` 的静态类型随之退化，[CustomFontsPage.target]
+/// 在 State 里**根本访问不到**——这才是那个参数当初沦为死参数的真正原因。
+class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   ReaderSettings? _settings;
 
   List<CustomFontCatalogRow> _fonts = [];
@@ -603,6 +621,31 @@ class _CustomFontsPageState extends BasePageState {
     } else {
       _loadFonts(_settings!);
     }
+  }
+
+  /// 新导入/新添加字体的默认用途集合：跟随本次进入字体库的作用域
+  /// [CustomFontsPage.target]，而不是恒定 [FontTarget.body]。
+  ///
+  /// 四个新增入口（文件导入 / 压缩包解包 / 推荐字体下载 / 系统字体）共用它，
+  /// 保证「从哪个设置入口进来，导入的字体就为哪个用途生效」。
+  Map<FontTarget, bool> _newFontTargets() =>
+      <FontTarget, bool>{widget.target: true};
+
+  /// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
+  ///
+  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup]）的 DirectWrite 只吃裸
+  /// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
+  /// 同一个 [AppFontLoader.nativeOverlayCanUse]，两处不会漂开。
+  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) {
+    final String? path = row.path;
+    if (AppFontLoader.nativeOverlayCanUse(path)) {
+      return const <FontTarget, String>{};
+    }
+    return <FontTarget, String>{
+      FontTarget.gameLookup: t.import_unsupported_file_format(
+        ext: p.extension(path!).toLowerCase(),
+      ),
+    };
   }
 
   Future<void> _loadFonts(ReaderSettings settings) async {
@@ -725,7 +768,7 @@ class _CustomFontsPageState extends BasePageState {
       id: null,
       name: name,
       path: destPath,
-      targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+      targetEnabled: _newFontTargets(),
     );
     if (mounted) {
       setState(() => _fonts.add(entry));
@@ -835,7 +878,7 @@ class _CustomFontsPageState extends BasePageState {
           id: null,
           name: overrideName,
           path: destPath,
-          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+          targetEnabled: _newFontTargets(),
         );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
@@ -856,7 +899,7 @@ class _CustomFontsPageState extends BasePageState {
           id: null,
           name: baseName,
           path: destPath,
-          targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+          targetEnabled: _newFontTargets(),
         );
         if (mounted) {
           setState(() => _fonts.add(fontEntry));
@@ -1103,7 +1146,7 @@ class _CustomFontsPageState extends BasePageState {
         id: null,
         name: selected,
         path: null,
-        targetEnabled: <FontTarget, bool>{FontTarget.body: true},
+        targetEnabled: _newFontTargets(),
       ));
     });
     _save();
@@ -1156,7 +1199,14 @@ class _CustomFontsPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsScaffold(
-      title: Text(t.custom_fonts_catalog_title),
+      // 带作用域进来时把用途写进标题：用户从「设置·游戏·Hook 文本字体」点进来，
+      // 看到的是同一个全量字体库，不说明的话没法知道自己新导入的字体会挂到哪。
+      title: Text(
+        widget.target == FontTarget.body
+            ? t.custom_fonts_catalog_title
+            : '${t.custom_fonts_catalog_title} · '
+                '${fontTargetLabel(widget.target)}',
+      ),
       children: [
         AdaptiveSettingsSection(
           children: [
@@ -1227,6 +1277,10 @@ class _CustomFontsPageState extends BasePageState {
                       onDelete: () => _removeFont(index),
                       onMoveUp: () => _onReorder(index, index - 1),
                       onMoveDown: () => _onReorder(index, index + 1),
+                      initiallyExpandRoles: widget.target != FontTarget.body,
+                      // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会
+                      // 静默跳过，这里直接把那枚开关置灰，别让用户白设。
+                      unsupportedTargets: _unsupportedTargetsFor(entry),
                     );
                   },
                 ),
@@ -1423,12 +1477,26 @@ class CustomFontCatalogTile extends StatefulWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.initiallyExpandRoles = false,
+    this.unsupportedTargets = const <FontTarget, String>{},
     super.key,
   });
 
   final String name;
   final bool isFile;
   final Set<FontTarget> targets;
+
+  /// 进页时就展开用途开关。从非默认作用域（如「设置·游戏·Hook 文本字体」）进来时
+  /// 为 true：那条路径上的用户要找的正是「这个字体给游戏用不用」，折叠着等于没有。
+  final bool initiallyExpandRoles;
+
+  /// 本字体**格式上**用不了的用途 → 置灰时给用户看的原因，而不是让他勾一个下游会
+  /// 静默忽略的组合。当前唯一来源是 WOFF/WOFF2 遇上 [FontTarget.gameLookup]
+  /// （native DirectWrite 只吃裸 sfnt），判据见 `AppFontLoader.nativeOverlayCanUse`。
+  ///
+  /// 传的是**成文的原因**而不是裸枚举集合：拼文案要知道具体扩展名，而这只有持有
+  /// 字体行的页面侧知道。
+  final Map<FontTarget, String> unsupportedTargets;
   final int index;
   final bool isLast;
   final ValueChanged<FontTarget> onTargetToggled;
@@ -1441,21 +1509,26 @@ class CustomFontCatalogTile extends StatefulWidget {
 }
 
 class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
-  // 4 个字体用途开关（System UI / Novel Text / Dictionary / Video Subtitle）
-  // 默认折叠：每行不再被四枚 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
-  bool _rolesExpanded = false;
+  // 字体用途开关（逐个 FontTarget 一枚 FilterChip，见 _targetLabel 的穷尽 switch）。
+  // 默认折叠：每行不再被整排 FilterChip 撑高，一屏能看到更多字体。展开后才显示。
+  // 但从带作用域的入口进来时（initiallyExpandRoles）出生即展开。
+  late bool _rolesExpanded = widget.initiallyExpandRoles;
 
-  String _targetLabel(FontTarget target) => switch (target) {
-        FontTarget.appUi => t.font_target_app_ui,
-        FontTarget.body => t.font_target_body,
-        FontTarget.dictionary => t.font_target_dictionary,
-        FontTarget.videoSubtitle => t.font_target_video_subtitle,
-        FontTarget.gameLookup => t.font_target_game_lookup,
-      };
+  String _targetLabel(FontTarget target) => fontTargetLabel(target);
+
+  /// 本平台真有消费端的用途。gameLookup 只有 Windows 有 native 分层窗消费，
+  /// 其余平台勾上等于写一个永远没人读的偏好键——显示出来只会让用户以为设好了。
+  ///
+  /// 只影响**显示**：已存的 targetEnabled 由 customFontLegacyListsFromRows 按
+  /// FontTarget.values 全量回写，跨平台同步过来的勾选不会被这里的隐藏抹掉。
+  static List<FontTarget> get _visibleTargets => <FontTarget>[
+        for (final FontTarget target in FontTarget.values)
+          if (isFontTargetAvailableOnPlatform(target)) target,
+      ];
 
   /// 折叠态摘要：把已启用的用途拼成一行，用户不展开也能一眼看到该字体用在哪。
   String get _rolesSummary => <String>[
-        for (final FontTarget target in FontTarget.values)
+        for (final FontTarget target in _visibleTargets)
           if (widget.targets.contains(target)) _targetLabel(target),
       ].join(' · ');
 
@@ -1590,12 +1663,24 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: [
-                  for (final FontTarget target in FontTarget.values)
-                    FilterChip(
-                      label: Text(_targetLabel(target)),
-                      selected: widget.targets.contains(target),
-                      onSelected: (_) => widget.onTargetToggled(target),
-                    ),
+                  for (final FontTarget target in _visibleTargets)
+                    if (widget.unsupportedTargets.containsKey(target))
+                      // 置灰而非隐藏：用户需要知道「这个用途存在，但这个字体格式
+                      // 用不了」，隐藏只会让人继续找不到、以为是 app 少做了。
+                      Tooltip(
+                        message: widget.unsupportedTargets[target]!,
+                        child: FilterChip(
+                          label: Text(_targetLabel(target)),
+                          selected: false,
+                          onSelected: null,
+                        ),
+                      )
+                    else
+                      FilterChip(
+                        label: Text(_targetLabel(target)),
+                        selected: widget.targets.contains(target),
+                        onSelected: (_) => widget.onTargetToggled(target),
+                      ),
                 ],
               ),
             ],
