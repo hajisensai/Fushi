@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1675 条。点号进各自文件。
+> 共 1676 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -73,6 +73,7 @@
 | [BUG-1760](bugs/BUG-1760-manga-wheel-zoomed-misturn.md) | ✅ | ✅ | 漫画放大态滚轮误翻页应页内平移贴边才翻 |
 | [BUG-1759](bugs/BUG-1759-manga-zoom-out-aliasing.md) | ✅ | ✅ | 漫画缩放低于100%锯齿严重需放大到150%才恢复清晰 |
 | [BUG-1758](bugs/BUG-1758-manga-resize-stale-projection.md) | ✅ | ✅ | 漫画阅读器调整窗口大小后显示错误跨页直到翻页 |
+| [BUG-1757](bugs/BUG-1757-popup-close-latch-native-callback-race.md) | ✅ | ✅ | 安卓独立查词窗连续查词后卡死关不掉——原生关闭回调被销毁中的旧 Activity 清掉，Dart 闭锁随即锁死 |
 | [BUG-1756](bugs/BUG-1756-dict-delete-mmap-lock.md) | ✅ | ✅ | 词典删除/覆盖更新失败：引擎 mmap 未卸载就删目录 |
 | [BUG-1755](bugs/BUG-1755-ass-wrap-width-anchored-to-window.md) | ✅ | ✅ | 字幕换行宽度锚在窗口而非视频画面，最大化后排版突变（BUG-1730 续） |
 | [BUG-1754](bugs/BUG-1754-drop-video-folder-ignored.md) | ✅ | ✅ | 视频页拖入文件夹完全静默 |
