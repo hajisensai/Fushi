@@ -8,6 +8,7 @@
 #include <cstring>
 #include <vector>
 
+#include "../hook/adapters/sgre_lookup.h"
 #include "../hook/adapters/sgre_profile.h"
 #include "../hook/adapters/sgre_voice_archive.h"
 #include "../hook/xaudio_resource_dispatch.h"
@@ -44,6 +45,37 @@ int main() {
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(wrong_hash.data(),
                                                       wrong_hash.size()));
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(nullptr, 0));
+
+  // The admitted build renders scenario text in a 1920x1080 design surface.
+  // Geometry from TextRender is relative to the dialogue origin and scales to
+  // the real client instead of assuming a particular Windows DPI mode.
+  const fushi_voice_hook::SgreLookupGlyphGeometry glyphs[] = {
+      {0.0f, 44.0f, 52.0f, 0},
+      {44.0f, 44.0f, 52.0f, 0},
+      {0.0f, 44.0f, 52.0f, 1},
+  };
+  fushi_voice_hook::SgreLookupRect rect;
+  assert(fushi_voice_hook::SgreLookupRectForGlyph(glyphs[0], 56.0f, 1920, 1080,
+                                                  &rect));
+  assert(rect.x == 320 && rect.y == 830 && rect.width == 44);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 1920, 1080,
+                                               365, 840, &rect) == 1);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 3840, 2160,
+                                               650, 1670, &rect) == 0);
+  // Non-16:9 clients keep the 1920x1080 render surface aspect-fitted. The
+  // black-bar offset must be included in cursor hit testing.
+  assert(fushi_voice_hook::SgreLookupRectForGlyph(glyphs[0], 56.0f, 2622, 1206,
+                                                  &rect));
+  assert(rect.x == 596 && rect.y == 927 && rect.width == 49);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 2622, 1206,
+                                               600, 940, &rect) == 0);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 1920, 1080,
+                                               320, 890, &rect) == 2);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 1920, 1080,
+                                               100, 100, &rect) == -1);
+  auto invalid = glyphs[0];
+  invalid.width = -1.0f;
+  assert(!fushi_voice_hook::IsSaneSgreLookupGlyph(invalid));
 
   // Generic dispatch is inert until an explicitly matched engine registers a
   // handler. This is the cross-engine negative boundary: WMA by itself never

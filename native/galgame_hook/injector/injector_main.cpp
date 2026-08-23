@@ -942,10 +942,17 @@ void LunaConnect(DWORD pid) {
     g_luna.header->text_hooked = 1;
   }
   if (g_luna.insert_hook != nullptr) {
+    bool inserted_any = false;
     for (const std::wstring& code : g_luna.hook_codes) {
       const bool inserted = g_luna.insert_hook(pid, code.c_str());
+      inserted_any = inserted_any || inserted;
       fprintf(stderr, "[luna] known hook %ls pid=%lu result=%d\n",
               code.c_str(), pid, inserted ? 1 : 0);
+    }
+    if (inserted_any && g_luna.header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_luna.header)) {
+      g_luna.header->lookup_diag |=
+          fushi_voice_hook::kLookupDiagLunaKnownHookReady;
     }
   }
   if (g_luna.use_pc_hooks && g_luna.insert_pc != nullptr) {

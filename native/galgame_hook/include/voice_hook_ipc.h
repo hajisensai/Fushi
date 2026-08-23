@@ -460,6 +460,10 @@ constexpr uint32_t kLookupDiagFallbackPngMissing = 0x00080000u; // 降级路的 
 // 卡片层退回了普通 Layer（自定义子类建不出来）。卡片能显示，但卡片内的鼠标事件
 // 转发失效——降级发生了就要看得见，不许悄悄发生。
 constexpr uint32_t kLookupDiagCardPlainFallback = 0x00100000u;
+// Helper 已完成显式 Luna H-code 的插入。与 kDiagLunaConnected 分开：Connect 回调先置后者、
+// 随后才逐条 InsertHook；同一入口还要叠加原生查词 detour 时，必须等到这一步完成才能稳定链式
+// 安装，不能拿“管道已连上”冒充“目标地址已改写”。
+constexpr uint32_t kLookupDiagLunaKnownHookReady = 0x00200000u;
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
