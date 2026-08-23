@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1654 条。点号进各自文件。
+> 共 1655 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1787](bugs/BUG-1787-font-library-scope-target-dead-param.md) | ✅ | ✅ | 字体库作用域参数不生效：从游戏入口导入的字体挂到小说正文 |
 | [BUG-1777](bugs/BUG-1777-emphatic-full-collapse-phantom-match.md) | ✅ | ✅ | 查词促音丢失：强调折叠full模式常开产生吞字幻影匹配压过原形 |
 | [BUG-1776](bugs/BUG-1776-subtitle-list-adjacent-chain-dup.md) | ✅ | ✅ | 字幕列表不折叠同文本时间相接的卡拉OK交替事件 |
 | [BUG-1775](bugs/BUG-1775-ass-clip-cue-frame-anchor.md) | ✅ | ✅ | 带clip的ASS事件按容器基线定位与帧空间裁剪几何脱节 |
