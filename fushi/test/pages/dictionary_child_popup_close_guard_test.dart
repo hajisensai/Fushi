@@ -101,10 +101,20 @@ void main() {
 
     // (A) barrier 全屏 onTapUp 转发给可覆写钩子，默认实现清整栈（会话级路径，
     // 触发 onAllPopupsDismissed + 留热槽）。TODO-1027 把硬编码 onTap 改成钩子。
-    expect(base, contains('onTapUp: (details) =>'),
-        reason: 'barrier 点所有弹窗外经 onTapUp 拿全局坐标转发');
-    expect(base, contains('onDismissBarrierTap(details.globalPosition)'),
+    // BUG-1757 起 barrier 的手势接线收口进 LookupDismissBarrier 原语，宿主页面
+    // 只负责把可覆写钩子接上去。判据因此拆成两半：宿主用原语 + 原语确实按坐标转发。
+    // （盯宿主里的 `onTapUp: (details) =>` 字面量会被这次正当收口撞成假红，而它守的
+    // 「必须带全局坐标、不能退回无参 onTap」并没有变。）
+    expect(base, contains('LookupDismissBarrier('),
+        reason: 'barrier 必须走收口原语，不在页面各写一份手势接线');
+    expect(base, contains('onTapDismiss: onDismissBarrierTap'),
         reason: 'barrier 转发给可覆写钩子（阅读器据此命中词换新查词）');
+    final String barrier =
+        read('lib/src/utils/misc/lookup_dismiss_barrier.dart');
+    expect(barrier, contains('onTapUp:'),
+        reason: '原语必须用 onTapUp（带坐标），退回无参 onTap 就分流不了落点');
+    expect(barrier, contains('widget.onTapDismiss(d.globalPosition)'),
+        reason: '原语必须把**全局坐标**交给宿主钩子');
     expect(
         base,
         contains(

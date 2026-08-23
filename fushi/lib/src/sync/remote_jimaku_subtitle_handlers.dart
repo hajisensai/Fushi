@@ -69,20 +69,18 @@ Future<Map<String, dynamic>> buildJimakuSearchResponse(
   final bool? anime = rawAnime is bool ? rawAnime : null;
 
   try {
-    List<JimakuEntry> entries = await client.searchEntries(
+    // 种类三态收在 [JimakuAnimeFilter] 一处：调用方没指明 → either（先番剧、空再
+    // 真人，由客户端一趟内完成），指明了 → 只搜那一边、不做二次补搜。
+    // 曾经这里传的是 bool `anime:`，而客户端实际按 animeFilter 分流——两个真相源，
+    // 传了不生效，显式 anime=false 照样多打一次补搜请求。
+    final List<JimakuEntry> entries = await client.searchEntries(
       anilistId: anilistId,
       queryFallbacks: <String>[if (query.isNotEmpty) query],
-      anime: anime,
+      animeFilter: anime == null
+          ? JimakuAnimeFilter.either
+          : (anime ? JimakuAnimeFilter.anime : JimakuAnimeFilter.liveAction),
       throwOnError: true,
     );
-    if (entries.isEmpty && anime == null) {
-      entries = await client.searchEntries(
-        anilistId: anilistId,
-        queryFallbacks: <String>[if (query.isNotEmpty) query],
-        anime: false,
-        throwOnError: true,
-      );
-    }
     final List<Map<String, dynamic>> candidates = <Map<String, dynamic>>[];
     bool truncated = entries.length > kJimakuSearchMaxEntries;
     for (final JimakuEntry entry in entries.take(kJimakuSearchMaxEntries)) {

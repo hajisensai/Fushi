@@ -68,7 +68,15 @@ void main() {
     expect(pIdx, isNonNegative);
     expect(tIdx, greaterThan(pIdx));
     expect(uIdx, greaterThan(tIdx));
-    expect(src, contains('PopupEngineHolder.setOnFinish(null)'));
+    // BUG-1757：关闭回调改成**按注册方作用域**。旧写法 `setOnFinish(null)` 是裸字段，
+    // 任何实例都能清掉任何实例的回调；Android 的「新实例 onCreate → 旧实例 onDestroy」
+    // 顺序让「关一个查词窗、紧接着查下一个词」必然踩中，表现为弹窗关不掉。
+    expect(src, contains('PopupEngineHolder.setOnFinish(this)'),
+        reason: '注册必须带 owner，holder 才知道该不该让某个实例注销');
+    expect(src, contains('PopupEngineHolder.clearOnFinish(this)'),
+        reason: '注销必须带 owner——旧 Activity 不能清掉新窗刚注册的回调');
+    expect(src, isNot(contains('setOnFinish(null)')),
+        reason: '无条件清空入口存在多久，这个竞态就存在多久（BUG-1757 有意不留）');
   });
 
   // BUG-193 / TODO-110: the :popup Flutter engine renders dictionary entries in

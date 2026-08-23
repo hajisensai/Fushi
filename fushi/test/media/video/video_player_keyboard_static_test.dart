@@ -439,9 +439,16 @@ void main() {
 
     test('dismiss barrier uses onTapUp -> _onDismissBarrierTap (coord check)',
         () {
-      expect(page.contains('onTapUp: (TapUpDetails d) =>'), isTrue);
-      expect(page.contains('_onDismissBarrierTap(d.globalPosition)'), isTrue,
+      // BUG-1757 起手势接线收口进 LookupDismissBarrier 原语：页面只接钩子，
+      // onTapUp 与坐标转发在原语里。守的「必须带坐标、不能是无参盲 pop」没变。
+      expect(page.contains('onTapDismiss: _onDismissBarrierTap'), isTrue,
           reason: 'barrier needs a coordinate check, not a blind pop');
+      final String barrier = File(
+        'lib/src/utils/misc/lookup_dismiss_barrier.dart',
+      ).readAsStringSync();
+      expect(barrier.contains('onTapUp:'), isTrue);
+      expect(barrier.contains('widget.onTapDismiss(d.globalPosition)'), isTrue,
+          reason: 'the primitive must hand the host a global position');
     });
 
     test('_onDismissBarrierTap: hit char -> lookup handler; else dismiss', () {

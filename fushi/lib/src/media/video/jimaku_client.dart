@@ -435,7 +435,6 @@ class JimakuClient {
   /// （动画搜不到再搜真人）。调用方知道种类时显式传，可省掉那次兜底请求。
   Future<List<JimakuEntry>> searchByAnilistId(
     int anilistId, {
-    bool? anime,
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
@@ -449,7 +448,6 @@ class JimakuClient {
   /// 按文本搜 Jimaku 条目（AniList 匹配不到时的回退）。
   Future<List<JimakuEntry>> searchByQuery(
     String query, {
-    bool? anime,
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
@@ -488,14 +486,12 @@ class JimakuClient {
   Future<List<JimakuEntry>> searchEntries({
     int? anilistId,
     List<String> queryFallbacks = const <String>[],
-    bool? anime,
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
   }) async {
     if (anilistId != null) {
       final List<JimakuEntry> byId = await searchByAnilistId(
         anilistId,
-        anime: anime,
         throwOnError: throwOnError,
         animeFilter: animeFilter,
       );
@@ -505,7 +501,6 @@ class JimakuClient {
       if (query.trim().isEmpty) continue;
       final List<JimakuEntry> byQuery = await searchByQuery(
         query,
-        anime: anime,
         throwOnError: throwOnError,
         animeFilter: animeFilter,
       );

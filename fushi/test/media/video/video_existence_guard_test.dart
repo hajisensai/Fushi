@@ -59,15 +59,16 @@ void main() {
     final String repo = File(
       'lib/src/media/video/video_book_repository.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
-    final int implAt =
-        repo.indexOf('_deleteVideoBooksAndReclaimAssetsUnlocked(');
+    const String implSignature =
+        'Future<int> _deleteVideoBooksAndReclaimAssetsUnlocked(';
+    final int implAt = repo.indexOf(implSignature);
     expect(implAt, greaterThanOrEqualTo(0),
         reason: '删除入口的实现体消失了；改名了就同步改本守卫');
     // 必须把范围夹到**方法体内**：截到文件末尾的话，后面那些方法的**定义行**
     // （`Future<void> compactAfterVideoDeleteBestEffort()`）会让 contains 恒真，
     // 断言变空——实测把调用删掉后守卫照样绿，就是这么发现的。
     final int implEnd = repo.indexOf(RegExp(r'\n  (?:///|Future<|@)'),
-        implAt + '_deleteVideoBooksAndReclaimAssetsUnlocked('.length);
+        implAt + implSignature.length);
     expect(implEnd, greaterThan(implAt),
         reason: '找不到删除入口实现体的结尾（下一个同级成员）');
     final String impl = repo.substring(implAt, implEnd);

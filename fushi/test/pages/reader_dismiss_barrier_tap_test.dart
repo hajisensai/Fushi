@@ -200,11 +200,19 @@ void main() {
     test(
         'barrier forwards onTapUp.globalPosition to onDismissBarrierTap, not a '
         'hardcoded onTap: clearDictionaryResult', () {
-      expect(base.contains('onTapUp: (details) =>'), isTrue,
-          reason: 'barrier must capture the tap-up global position');
-      expect(
-          base.contains('onDismissBarrierTap(details.globalPosition)'), isTrue,
-          reason: 'barrier must route through the overridable hook');
+      // BUG-1757 起 barrier 手势收口进 LookupDismissBarrier 原语：宿主接钩子，
+      // onTapUp + 坐标转发在原语里。守的语义（必须带全局坐标、不能是无参硬编码
+      // onTap）没变，只是判据分两处。
+      expect(base.contains('LookupDismissBarrier('), isTrue,
+          reason: 'the barrier must go through the shared primitive');
+      expect(base.contains('onTapDismiss: onDismissBarrierTap'), isTrue,
+          reason: 'the host must hand its overridable hook to the primitive');
+      final String barrier = File(
+        'lib/src/utils/misc/lookup_dismiss_barrier.dart',
+      ).readAsStringSync();
+      expect(barrier.contains('onTapUp:'), isTrue);
+      expect(barrier.contains('widget.onTapDismiss(d.globalPosition)'), isTrue,
+          reason: 'the primitive forwards the GLOBAL position');
       expect(base.contains('onTap: clearDictionaryResult'), isFalse,
           reason: 'the barrier must NOT hardcode onTap: clearDictionaryResult '
               '(reader overrides the hook to forward taps to lookup)');
