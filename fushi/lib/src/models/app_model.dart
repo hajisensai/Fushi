@@ -2157,6 +2157,8 @@ class AppModel with ChangeNotifier {
       'dejavu-fonts',
       // Windows galgame overlay toolbar: reduced official Google font subset.
       'material-symbols-rounded',
+      // 内置 AnkiConnect 插件包（assets/anki/，GPLv3，新手引导一键安装用）。
+      'anki-connect',
     ];
 
     for (String packageName in packageNames) {
