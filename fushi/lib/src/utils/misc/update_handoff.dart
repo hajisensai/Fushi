@@ -652,7 +652,17 @@ abstract final class WindowsUpdateHandoff {
   }) async {
     final WindowsUpdateHandoffRecord? record = await read(markerFile);
     if (record == null) return null;
-    if (_isVersionAtLeast(currentVersion, record.targetVersion)) {
+    // BUG-1786：版本号到达**不等于**整包装上了。currentVersion 读自 exe 的版本资源
+    // （package_info_plus 在 Windows 上就是这么取的），而 Inno 按文件逐个安装、
+    // fushi.exe 排在 data\app.so 之前——中途 Abort 会留下「新 exe + 旧 Dart 代码」，
+    // 版本号已经是新的，旧判据据此宣告成功，用户于是收到一个「更新成功」并继续跑着
+    // 旧代码（现场：用户连续几天报告「已修好的 bug 没生效」，而每次自更新都在同一处
+    // 静默回滚）。Inno 日志才是这次安装到底成没成的真相源，让它否决版本号。
+    final bool installerAborted = windowsInnoLogReportsAbortedInstall(
+      await _readInnoLogContents(record.innoLogPath),
+    );
+    if (!installerAborted &&
+        _isVersionAtLeast(currentVersion, record.targetVersion)) {
       // Idempotency guard mirroring the failure branch below: if we already
       // surfaced the success dialog for this app version, stay silent. Relying
       // solely on deleting the marker is fragile — the delete can fail on real
@@ -749,6 +759,9 @@ abstract final class WindowsUpdateHandoff {
       failureFingerprint: fingerprint,
     );
   }
+
+  static Future<String?> _readInnoLogContents(String path) async =>
+      (await _readInnoLog(path)).contents;
 
   static Future<_WindowsInnoLogSnapshot> _readInnoLog(String path) async {
     try {
@@ -929,6 +942,54 @@ List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
   return failures
       .where((WindowsInnoDeleteFileFailure failure) => failure.path.isNotEmpty)
       .toList(growable: false);
+}
+
+/// Inno 日志是否表明**这次安装以中止/回滚收场**（而不是装完了）。
+///
+/// 存在的理由（BUG-1786）：握手原本只用「当前版本号 >= 目标版本号」判断安装是否成功，
+/// 而 Windows 上版本号读自 `fushi.exe` 的版本资源。Inno 逐个文件安装，`fushi.exe` 的
+/// 字母序排在 `data\app.so`（全部 Dart 代码）之前——安装在中间被 Abort 时，exe 已经换成
+/// 新的、Dart 代码还是旧的，版本号判据于是宣告「安装成功」，用户拿着一个跑旧代码的 app
+/// 却收到成功提示。日志里的收尾结论才是这次安装的真相源。
+///
+/// 判据取**最后一条**结论行，而不是「是否出现过某个词」：Inno 在 `Rolling back changes.`
+/// 之后还会写回滚自身的进度，只按包含关系匹配会把回滚的成功当成安装的成功。同理，成功
+/// 安装的日志里也可能因为某个文件重试而出现过 `DeleteFile failed`，那不构成整包失败。
+///
+/// 无日志（null / 空 / 读不到）返回 false —— 宁可沿用旧的版本号判据，也不要因为读不到
+/// 日志就把一次真正成功的更新报成失败。
+bool windowsInnoLogReportsAbortedInstall(String? contents) {
+  if (contents == null || contents.trim().isEmpty) return false;
+  const List<String> abortedMarkers = <String>[
+    'user canceled the installation process',
+    'rolling back changes',
+  ];
+  // `\b` 是关键，不能退化成 contains：回滚收尾写的是「**Un**installation process
+  // succeeded.」，而 'uninstallation process succeeded' 里就含有子串 'installation
+  // process succeeded'——按包含关系匹配会把**回滚自身的成功**读成安装成功，正好在最需要
+  // 报失败的那条日志上给出相反结论。词边界让 'uninstallation' 不再命中（'n' 与 'i' 之间
+  // 没有词边界），只有真正的 'Installation process succeeded.' 才算。
+  final RegExp succeeded = RegExp(r'\binstallation process succeeded');
+  final RegExp aborting = RegExp(r'\binstallation process aborted');
+  bool? aborted;
+  for (final String line in const LineSplitter().convert(contents)) {
+    final String lower = line.toLowerCase();
+    if (succeeded.hasMatch(lower)) {
+      aborted = false;
+      continue;
+    }
+    if (aborting.hasMatch(lower)) {
+      aborted = true;
+      continue;
+    }
+    for (final String marker in abortedMarkers) {
+      if (lower.contains(marker)) {
+        aborted = true;
+        break;
+      }
+    }
+  }
+  return aborted ?? false;
 }
 
 String _fingerprintPart(String value) =>

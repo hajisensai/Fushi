@@ -312,6 +312,42 @@ begin
     Result := FirstLockedFileInDir(Base + 'x64');
 end;
 
+// BUG-1786：给正在运行的 update launcher 让路。
+//
+// 应用内更新时 {app}\fushi_update_launcher.exe **必然**处于运行中——它就是拉起本安装器
+// 的那个进程，而且必须一直活到安装结束：BUG-1708 把「安装失败后谁把 app 拉回来」这一环
+// 交给了它（app 为让出文件锁已经 exit 了，Inno 走不到 [Run] 就没人负责）。于是复制阶段
+// 撞上「文件正被使用」→ DeleteFile code 5 → /SUPPRESSMSGBOXES 对 Abort/Retry/Ignore
+// 默认取 **Abort** → 整包回滚。排在它后面的 data\app.so（全部 Dart 代码）和 flutter_assets
+// 一个都装不上，而字母序在它之前的 fushi.exe 已经落地并被保留——半更新态：新 exe + 旧
+// Dart 代码，版本号（读自 exe 资源）却显示为新版，用户完全无从察觉（现场：用户连报
+// 「修好的 bug 怎么没生效」）。
+//
+// 这里**故意不杀 launcher**：杀了它就没人在安装失败时把 app 拉回来，等于用 BUG-1708 的
+// 复发换这次复制成功。Windows 允许给正在运行的 exe **改名**（同卷，只是不能删除/覆盖），
+// 改名后目标路径空出来让 Inno 正常写入新文件，而那个进程的映像仍然有效、照样兜底。
+//
+// 新版 app 起已改为从安装目录**外**的副本运行 launcher（platform_updater.dart 的
+// stageWindowsUpdateLauncher），届时这里探测不到占用、直接返回；本过程是给**存量旧版**
+// 用户的救援——他们跑的仍是安装目录里的 launcher，只有靠这一步才能把这一版装完整。
+procedure MakeWayForRunningLauncher(const AppDir: String);
+var
+  Launcher: String;
+  Stale: String;
+begin
+  Launcher := AddBackslash(AppDir) + 'fushi_update_launcher.exe';
+  Stale := AddBackslash(AppDir) + 'fushi_update_launcher.old.exe';
+  { 上一轮改名留下的残留：那个进程早已退出，这次能删就删干净，不让它无限堆积。 }
+  if FileExists(Stale) then
+    DeleteFile(Stale);
+  if not FileExists(Launcher) then
+    Exit;
+  { 没被占用就什么都不做——不给正常路径平添一次改名和一个残留文件。 }
+  if not FileLockedForWrite(Launcher) then
+    Exit;
+  RenameFile(Launcher, Stale);
+end;
+
 { Runs after the user confirms install, before file copy — the last hook where
   we can still release file locks. Empty result string = proceed. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -322,6 +358,8 @@ begin
   Result := '';
   KillProcessesUnderDir(ExpandConstant('{app}'));
   Sleep(500);
+  { KillProcessesUnderDir 杀不到 launcher，也**不该**杀它（见上）。改名让路。 }
+  MakeWayForRunningLauncher(ExpandConstant('{app}'));
 
   { BUG-1675：KillProcessesUnderDir 按**主模块路径**杀进程，杀得掉安装目录里的
     fushi_voice_injector.exe，却杀不掉真正的占用大头——**用户正在玩的游戏**：它的

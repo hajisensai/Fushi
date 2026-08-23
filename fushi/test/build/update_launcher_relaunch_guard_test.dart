@@ -55,10 +55,20 @@ void main() {
     expect(source, contains('kInstallerExitTimeoutMs'));
   });
 
-  test('重启目标是与 launcher 同目录的 fushi.exe', () {
-    final int index = source.indexOf('std::wstring AppExecutablePath()');
+  test('重启目标：优先用 app 下发的 --app-exe，回退到与 launcher 同目录的 fushi.exe', () {
+    // BUG-1786：launcher 改从安装目录**外**的副本运行（住在安装目录里就会自己占着
+    // 自己的文件，Inno 复制到它必然 code 5 → 静默 Abort → 整包回滚，data\app.so 永远
+    // 装不上）。副本同目录没有 fushi.exe，所以「拉回 app」的路径必须能由 app 显式下发；
+    // 同目录判据保留为回退，老调用方与手工执行照旧可用。
+    // 断言字面量（勿改）: '--app-exe'
+    expect(source, contains('--app-exe'));
+    final int index = source.indexOf('std::wstring AppExecutablePath(');
     expect(index, greaterThan(0));
-    expect(source.substring(index, index + 600), contains('fushi.exe'));
+    final String body = source.substring(index, index + 700);
+    // 显式路径优先。
+    expect(body, contains('explicit_path'));
+    // 同目录回退仍在。
+    expect(body, contains('fushi.exe'));
   });
 
   test('恢复结果写进 handoff marker，供 app 起来后向用户交代', () {
