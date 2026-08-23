@@ -77,6 +77,24 @@ int main() {
   invalid.width = -1.0f;
   assert(!fushi_voice_hook::IsSaneSgreLookupGlyph(invalid));
 
+  // SGRE continuously emits other TextRender surfaces after a valid scenario
+  // layout. Invalid, short and genuinely mismatched captures are noise and
+  // must retain the visible line. A wrapped line may contain more text than
+  // the current visual row has glyphs; mapping that captured prefix is valid.
+  using fushi_voice_hook::SgreLookupActiveUpdate;
+  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(false, 0, 0, 0) ==
+         SgreLookupActiveUpdate::kIgnore);
+  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 8, 8, 8) ==
+         SgreLookupActiveUpdate::kReplace);
+  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 8, 7, 8) ==
+         SgreLookupActiveUpdate::kIgnore);
+  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 37, 37, 32) ==
+         SgreLookupActiveUpdate::kIgnore);
+  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 37, 32, 32) ==
+         SgreLookupActiveUpdate::kReplace);
+  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 2, 2, 2) ==
+         SgreLookupActiveUpdate::kIgnore);
+
   // Generic dispatch is inert until an explicitly matched engine registers a
   // handler. This is the cross-engine negative boundary: WMA by itself never
   // activates SGRE archive logic.

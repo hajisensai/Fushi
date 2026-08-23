@@ -33,6 +33,31 @@ struct SgreLookupRect {
   int32_t height = 0;
 };
 
+enum class SgreLookupActiveUpdate : uint8_t {
+  kIgnore,
+  kReplace,
+};
+
+// TextRender also runs for transient/system surfaces whose layout has no
+// usable glyphs or exposes a text/glyph count from a different render surface.
+// Those calls must not erase the last valid scenario line: in the admitted
+// SGRE build they continuously follow each dialogue layout and would otherwise
+// make Shift lookup miss every visible line. TextRender exposes one visual row
+// at a time, so a wrapped line can have more normalized units than this capture
+// has glyphs; the caller maps only the captured prefix. A capture may replace
+// the active row only when every glyph in that row has a character index and
+// the full line reaches the same minimum length used by the mining resolver.
+inline SgreLookupActiveUpdate ResolveSgreLookupActiveUpdate(
+    bool capture_valid, size_t normalized_units, size_t mapped_glyphs,
+    size_t captured_glyphs) {
+  if (!capture_valid) return SgreLookupActiveUpdate::kIgnore;
+  if (normalized_units >= 8 && captured_glyphs != 0 &&
+      mapped_glyphs == captured_glyphs) {
+    return SgreLookupActiveUpdate::kReplace;
+  }
+  return SgreLookupActiveUpdate::kIgnore;
+}
+
 inline bool IsSaneSgreLookupGlyph(const SgreLookupGlyphGeometry& glyph) {
   return std::isfinite(glyph.x) && std::isfinite(glyph.width) &&
          std::isfinite(glyph.height) && glyph.x >= -64.0f &&

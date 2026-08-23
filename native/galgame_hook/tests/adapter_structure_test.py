@@ -36,6 +36,19 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertIn(marker, path.read_text(encoding="utf-8"))
             self.assertIn(f'#include "adapters/{filename}"', source)
 
+    def test_sgre_lookup_snapshots_entry_text_before_layout_mutates_it(self) -> None:
+        source = (
+            ROOT / "hook" / "adapters" / "sgre_lookup.inc"
+        ).read_text(encoding="utf-8")
+        detour = source.split("bool __fastcall SgreTextLayoutDetour", 1)[1]
+        detour = detour.split("bool InstallSgreLookupSensor", 1)[0]
+        snapshot = detour.index("CopySgreLookupEntryText(text, &entry_text)")
+        original = detour.index("g_sgre_text_layout_original(")
+        geometry = detour.index("CopySgreLookupGeometry(text_render, capture)")
+        self.assertLess(snapshot, original)
+        self.assertLess(original, geometry)
+        self.assertNotIn("CopySgreLookupCapture(text_render, text", detour)
+
     def test_native_loopback_is_policy_gated_and_generation_owned(self) -> None:
         registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
             encoding="utf-8"
