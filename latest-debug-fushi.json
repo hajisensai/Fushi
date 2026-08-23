@@ -8,22 +8,22 @@
   "notes": "Automated desktop debug-channel build from develop @ b20d7b8. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.2.1-debug.12100-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12100-ios.ipa",
-      "releaseSequence": 12100,
-      "tag": "v2.2.1-debug.12100+8a253c1",
-      "version": "2.2.1-debug.12100"
-    },
-    {
-      "name": "fushi-2.2.1-debug.12100-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12100-macos.zip",
-      "releaseSequence": 12100,
-      "tag": "v2.2.1-debug.12100+8a253c1",
-      "version": "2.2.1-debug.12100"
-    },
-    {
       "name": "fushi-2.2.1-debug.12103-b20d7b8-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12103-b20d7b8-debug.apk",
+      "releaseSequence": 12103,
+      "tag": "v2.2.1-debug.12103+b20d7b8",
+      "version": "2.2.1-debug.12103"
+    },
+    {
+      "name": "fushi-2.2.1-debug.12103-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12103-ios.ipa",
+      "releaseSequence": 12103,
+      "tag": "v2.2.1-debug.12103+b20d7b8",
+      "version": "2.2.1-debug.12103"
+    },
+    {
+      "name": "fushi-2.2.1-debug.12103-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12103-macos.zip",
       "releaseSequence": 12103,
       "tag": "v2.2.1-debug.12103+b20d7b8",
       "version": "2.2.1-debug.12103"
