@@ -1,34 +1,31 @@
-## BUG-1827 · 查词弹窗英语音标溢出词典卡
-- **报告**：2026-08-24（用户：「查词的字出了框」，截图为三栏并排查词结果，OALDPEX En-Cn 那栏有一块内容画到了栏外、压在左边 OALD 栏的正文上；用户澄清「不是嵌套弹窗，是正常查词，那个英语的音标会溢出」）
-- **真实性**：⏳ **未定性**——机制尚未查实。已用实测**排除两条**看似成立的假设，记录在此避免以后重走弯路。
+## BUG-1827 · 查词弹窗释义里的不可断短语溢出词典卡
+- **报告**：2026-08-24（用户：「查词的字出了框」，截图为三栏并排查词结果，某栏有内容画到栏外、压在左边那栏的正文上。用户先后澄清：不是嵌套弹窗、是正常查词；「那就不叫音标，可能是斜体的单词之类的」）
+- **真实性**：✅ 真 bug。根因 `fushi/assets/popup/popup.css` 的 `.glossary-group` 从未声明断词规则，卡内**找不到断点的短语**会画到卡片外。
 
-### 已排除：假设 A「IPA 是无断点长串，撑破/溢出列宽」
+### 根因（实测取证）
 
-推理曾是：BUG-860 给 `a` 加过 `overflow-wrap: anywhere`（无空格长 URL 找不到断点会把卡片撑出右边界），而音标不是链接、不受该规则保护；`.glossary-group` 也没有 overflow 裁剪，故 IPA 串溢出。
+典型样本是释义里的 `somebody/something` 这类 `词/词` 短语：UAX #14 把 `/` 归为 **SY** 类，而 **`SY × AL`（斜杠后紧跟字母）不允许断行**，整个短语于是是一个不可断单元。它的 min-content 宽度就是整串宽度：
 
-**实测否定**。用 headless Edge 载入**完整** `popup.css`（不截片段拼探针），复刻 `popup.js layoutMasonry` 的几何约束（卡片 `position:absolute` + 硬设 `width`，列宽取最窄合法值 `DICT_COLUMN_MIN_WIDTH`=170px），用 `Range.getBoundingClientRect()` 量文本**实际渲染**矩形与卡片内容盒右边界之差：
+- CSS grid 回落模式下撑破 `.glossary-section > .category-body` 的 `minmax(0, 1fr)` track；
+- masonry 模式下更直接——卡片是 `position:absolute` + JS 硬设 `width: columnWidth`（`popup.js layoutMasonry`），盒子宽度钉死撑不大，于是**内容整条溢出到卡外**，而 `.glossary-group` 没有任何 overflow 裁剪，溢出部分正好压在相邻列的正文上。
 
-| 用例 | `.glossary-group` 无 overflow-wrap | 加 `overflow-wrap: anywhere` |
+headless Edge 实测（载入**完整** popup.css，复刻 `layoutMasonry` 的几何 + `DICT_COLUMN_MIN_WIDTH`=170px 最窄列宽，用 `getClientRects()` **逐换行片段**量右边界与卡片内容盒之差）：
+
+| `resting on the surface of <i>somebody/something</i>` | 片段数 | 最差片段越界 |
 |---|---|---|
-| `UK: /ˈəʊvə(r)/` | 出框 0px（单行） | 出框 0px |
-| `/ˌɪntəˈnæʃnəlaɪˈzeɪʃn̩ˈoʊvərˈəʊvə(r)/` | 出框 0px（**自行折成 2 行**） | 出框 0px（2 行） |
+| 未修（`.glossary-group` 无断词规则） | 1 | **+1.91px** |
+| 加 `overflow-wrap: anywhere` | 2（折行） | **−15.41px**（框内） |
 
-结论：IPA 串**本身就有断点**（`/`、`(`、`)`、`ˈ`、`ˌ` 在 UAX #14 下均可断行），根本不是「无断点长串」。加 `overflow-wrap` 对该现象零作用，故**已撤销**该改动，未留在代码里。
+BUG-860 当时只给 `<a>` 加过这条规则（那次的长串恰好是裸 URL），但「找不到断点」与元素是不是链接无关——释义里的斜体词组、结构化内容里的长词一概漏在保护外。
 
-> 附带教训：第一版探针用 `scrollWidth - clientWidth` 量溢出，修复前后都得 0 —— 溢出的**内联文本**不增加块元素的 `scrollWidth`（它只反映滚动区域），那是个恒为 0 的无效测量。是「修复前也必须为真」的对照法暴露了它，否则会拿到一个假绿。
+### 三次测量教训（本条的主要成本都花在这里）
 
-### 已排除：假设 B「弹窗宽度变化后 masonry 不重排，卡片停在旧位置」
+1. **`scrollWidth - clientWidth` 量不出文字出框**：溢出的**内联文本**不增加块元素的 `scrollWidth`（它只反映滚动区域），修复前后都得 0 —— 恒为 0 的无效测量。是「修复前必须为真」的对照法暴露了它，否则会拿到假绿。
+2. **`getBoundingClientRect()` 对跨行 inline 元素返回所有片段的并集**：一个占满整行的片段会让并集右边界贴住容器右缘，读起来像越界却不是任何单行的真实越界量。必须用 `getClientRects()` 逐片段量。
+3. **拿一个能自然断行的样本否定了整个假设**：第一轮反例用的是 IPA 串 `/ˌɪntəˈnæʃn̩ˈoʊvər.../`，它含 `(` `)`（OP 类，前面可断）所以自行折成 2 行、出框 0px，据此曾错误地写下「假设 A 已排除」并提交过一版（`3a832ebef1`）。实际 `词/词` 短语才是不可断的那类。**样本能断 ≠ 该类内容都能断。**
 
-推理曾是：`observeMasonryTargets()` 的 `ResizeObserver` **只观察 item、不观察 body**（`popup.js` 注释明写「容器宽度变化由 window resize 覆盖」），而 item 的 `width` 是 JS 硬设的固定 px，body 变窄时 item 尺寸不变 → observer 不触发 → 不重排 → 卡片按旧列宽停在旧 `translate` 上，整张卡偏出栏外。
+另外排除了一条：曾怀疑「弹窗宽度变化后 masonry 不重排」（`ResizeObserver` 确实只观察 item 不观察容器）。否定理由：app 内查词弹窗**整个 WebView 就是弹窗**，宽度变化即 viewport 变化，`window.addEventListener('resize', scheduleMasonry)` 会正常触发重排。该假设只在浏览器扩展形态下才可能成立。
 
-**否定理由**：app 内查词弹窗**整个 WebView 就是弹窗**，弹窗宽度变化即 viewport 变化，`window.addEventListener('resize', scheduleMasonry)` 会正常触发重排。该假设只在浏览器扩展形态（弹窗是宿主页上的浮层 div，宽度变化不改 window 尺寸）下才可能成立，而用户报的是 app 内。
-
-### 当前最强假设（未验证）：词典自带的结构化内容样式画到卡外
-
-截图里那块越界内容的观感——不透明白底 + 圆角 + 投影 + A1 徽章 + 绿色 `Preposition` 标题框——**都不是 Hibiki 的样式**：`.glossary-group` 在 popup.css 里是**无 background 填充**的描边卡。这些视觉元素来自 OALDPEX 的 **Yomitan 结构化内容自带 style**。若其中含 `position:absolute/fixed`、负 margin 或超出列宽的固定 `width`，就会画到卡外、压住相邻列，而 `.glossary-group` 没有任何裁剪或包含块约束拦得住。
-
-若成立，根因层修法应是**约束词典内容容器**（如给内容容器建立包含块 + `overflow: clip`，必要时用 `overflow-clip-margin` 给 ruby 上溢留边距），消除「词典自带样式可以画到卡外」这个特殊情况，而不是针对某本词典打补丁。
-
-- **[ ] ① 未修复** — 机制未查实，不做猜测式修复。**需要一条区分信息**：换成别的英语词典（非 OALDPEX）查同一个词还出框吗？只有 OALDPEX 会 ⇒ 词典自带样式，按上面的容器约束修；所有词典都会 ⇒ 是 Hibiki 布局问题，需重新排查。另可用真机 DOM 取证直接定位越界元素（`docs/agent/computer-use-testing.md` / WebView2 浮窗视觉取证）。
-- **[ ] ② 未加自动化测试** — 待根因定性后，在能复现该几何的最强层加（若为词典自带样式，可用完整 popup.css + 构造含 absolute/超宽元素的结构化内容做 headless 几何断言，探针脚手架已验证可行）。
-- **备注**：本条**未做**猜测式修复。曾按假设 A 改过三镜像 `popup.css` + 重新生成两份 `content.css` 并配了守卫，实测否定后全部撤销，仓库未留下该改动。与同轮的 BUG-1798（查词浮层与控制条自动显隐竞态）是两回事，那条已修复并有守卫。
+- **[x] ① 已修复** — `.glossary-group` 加 `overflow-wrap: anywhere`（继承属性，一次声明覆盖卡内全部后代，消除「哪些元素受保护」这个特殊情况，而不是再给某类内容补选择器）。用 `anywhere` 而非 `break-word`：两者都只在没有其它断点时才任意处折行（正常带空格文本与 CJK 不受影响），但只有 `anywhere` 同时**缩小 min-content**，卡片才不会被撑宽。已同步三份 popup.css 镜像并重跑 `generate-content-css.mjs` 生成两份 content.css。
+- **[x] ② 已加自动化测试** — `fushi/test/dictionary/popup_glossary_overflow_wrap_guard_test.dart`（4 tests）。断言全部跑在剥 CSS 注释之后（修复注释里就有 `overflow-wrap` / `anywhere` 字样，朴素匹配会被注释假阳性命中）。覆盖三份 popup.css + 两份 content.css，并交叉断言 BUG-860 的 `a{}` 规则未被当作冗余删掉。
+- **备注**：**遗留未解决**——斜体另有 2~3px 的 **ink overflow**（字形墨迹超出 advance width，canvas `actualBoundingBoxRight` 实测 `formal` 3.31px vs 正体 0.63px）。它不受 `overflow-wrap` 影响，只在文本正好顶满行宽时露出几像素。试过给斜体加 `padding-inline-end` 补偿，实测反而把 layout 越界从 +1.91px 推到 **+3.09px**（padding 加宽了 inline 盒），故**不采用**，留待需要时再解。本条**未做真机复测**，证据是 headless Edge 对同一份完整 popup.css 的 before/after 几何测量。
