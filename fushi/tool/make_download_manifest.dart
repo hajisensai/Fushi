@@ -14,9 +14,9 @@
 //     --mode range --version 2026-08-14
 //
 //   dart run tool/make_download_manifest.dart \
-//     --input ...zip --mode slice --part-size 1GiB --out-dir D:\packs\slices \
+//     --input ...zip --mode slice --part-size 256MiB --out-dir D:\packs\slices \
 //     --whole-url https://dl.wrds.xyz/....zip \
-//     --part-base-url https://github.com/hajisensai/Fushi/releases/download/pack-2026-08-14 \
+//     --part-base-url https://github.com/hajisensai/fushi-pack/releases/download/pack-2026-08-14 \
 //     --mirror https://mirror2.example/....zip
 //
 // 切片文件名固定为 `<包名>.NNN`（三位十进制，从 000 起），与清单里的 `name` 对应。
@@ -167,6 +167,38 @@ class _DigestSink implements Sink<Digest> {
   void close() {}
 }
 
+/// 包分片**不能**放主 app 仓库（hajisensai/Fushi）的 release。
+///
+/// 那个仓库的 `.github/workflows/mirror-releases.yml` 挂在 `release: published`
+/// 上且**没有 tag 过滤**，只跳过预发布。一旦在那里发布包 release，它会：
+/// ① 把整包（约 9.5 GB）拉进 runner；② 每个分片都超过 MAX_ASSET_MB=300 被跳过上传；
+/// ③ 仍然**无条件**把一份资产列表为空的 manifest.json 覆盖写进 R2；
+/// ④ 按 KEEP_RELEASES 轮转，删掉上一版 app 的镜像文件。
+/// 净结果是 fushi.moe/releases 下载当场失效。
+///
+/// 所以这里直接拒绝，而不是写进文档指望人记得——包分片放独立仓库 fushi-pack。
+/// 将来若给那个 workflow 加了 tag 过滤，改这一个函数即可。
+/// 测试入口：驱动**真实**的参数解析路径。
+///
+/// 只测 [hazardousReleaseHost] 纯函数的话，把 `_Args.parse` 里那两行调用删掉，
+/// 纯函数的用例照样全绿——守卫就成了摆设。测试经由这里走真实校验，
+/// 调用点一旦消失当场红。
+void parseArgsForTest(List<String> argv) => _Args.parse(argv);
+
+String? hazardousReleaseHost(String url) {
+  final Uri? parsed = Uri.tryParse(url);
+  if (parsed == null) return null;
+  if (parsed.host.toLowerCase() != 'github.com') return null;
+  final List<String> seg = parsed.pathSegments;
+  if (seg.length < 2) return null;
+  if (seg[0].toLowerCase() != 'hajisensai') return null;
+  if (seg[1].toLowerCase() != 'fushi') return null;
+  return '拒绝：$url 指向主 app 仓库的 release。'
+      '在那里发布包会触发 mirror-releases.yml，用空资产清单覆盖 R2 的 '
+      'manifest.json 并轮转删除上一版镜像，fushi.moe/releases 会当场失效。'
+      '请改用独立仓库，例如 https://github.com/hajisensai/fushi-pack/releases/download/<tag>。';
+}
+
 class _Args {
   _Args({
     required this.input,
@@ -225,6 +257,8 @@ class _Args {
       if (!url.startsWith('https://')) {
         throw FormatException('镜像/切片地址必须是 https：$url');
       }
+      final String? hazard = hazardousReleaseHost(url);
+      if (hazard != null) throw FormatException(hazard);
     }
 
     final String mode = single['--mode'] ?? 'slice';
