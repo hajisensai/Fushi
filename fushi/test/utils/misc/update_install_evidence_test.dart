@@ -122,6 +122,94 @@ void main() {
     });
   });
 
+  group('代码版本并不总是可比', () {
+    test('跨通道不可比 ⇒ 退回日志判据，不能硬判成功', () {
+      // 用户从 debug 通道切到 beta，target 是 `2.2.1-beta.30`，安装失败且没留日志，
+      // 跑的仍是 `2.2.1-debug.12215`。SemVer 会把 `debug` 排在 `beta` 之后，于是
+      // 「代码版本 >= 目标」为真——纯属字符串巧合。硬信它就是把失败报成成功。
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-debug.12215',
+          targetVersion: '2.2.1-beta.30',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        isWindowsUpdateInstalled(
+          verdict: WindowsInnoInstallVerdict.unknown,
+          targetVersion: '2.2.1-beta.30',
+          executableVersion: exeVersion,
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        isFalse,
+      );
+    });
+
+    test('正式版 vs 同号预发布版不可比（BUG-1786 抱怨的「恒为真」）', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1',
+          targetVersion: target,
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+    });
+
+    test('基版本不同一律可比，与通道无关', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.3.0',
+          targetVersion: target,
+        ),
+        RunningCodeVersionEvidence.atLeastTarget,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.1.9-beta.4',
+          targetVersion: target,
+        ),
+        RunningCodeVersionEvidence.belowTarget,
+      );
+    });
+
+    test('同通道按序号比，前导 v 与 +metadata 不影响', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: 'v$target+abc1234',
+          targetVersion: target,
+        ),
+        RunningCodeVersionEvidence.atLeastTarget,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: oldCode,
+          targetVersion: target,
+        ),
+        RunningCodeVersionEvidence.belowTarget,
+      );
+    });
+
+    test('两边都是正式版且同号 ⇒ 达标', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1',
+          targetVersion: '2.2.1',
+        ),
+        RunningCodeVersionEvidence.atLeastTarget,
+      );
+    });
+
+    test('未注入 ⇒ 不可比（不是「未达标」）', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: null,
+          targetVersion: target,
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+    });
+  });
+
   group('normalizeFushiBuildVersion', () {
     test('未注入（空串 / 空白）折叠成 null，绝不当版本号参与比较', () {
       expect(normalizeFushiBuildVersion(''), isNull);

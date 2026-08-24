@@ -1079,13 +1079,13 @@ List<Map<String, dynamic>> _listOfMaps(Object? raw) {
 ///
 /// 判定表（`runningCodeVersion == null` 时逐行退化成 BUG-1786 的旧行为）：
 ///
-/// | verdict   | 代码版本 >= 目标 | 结果 |
-/// |-----------|------------------|------|
-/// | aborted   | 任意             | 失败 |
-/// | succeeded | 是 / 未知且 exe 版本达标 | 成功 |
-/// | succeeded | 否               | 失败 |
-/// | unknown   | 是               | 成功 |
-/// | unknown   | 否 / 未知        | 失败 |
+/// | verdict   | 代码版本证据 | 结果 |
+/// |-----------|--------------|------|
+/// | aborted   | 任意         | 失败 |
+/// | 任意      | 达标         | 成功 |
+/// | 任意      | 未达标       | 失败 |
+/// | succeeded | 不可比       | 看 exe 版本（旧判据） |
+/// | unknown   | 不可比       | 失败（旧判据） |
 bool isWindowsUpdateInstalled({
   required WindowsInnoInstallVerdict verdict,
   required String targetVersion,
@@ -1098,14 +1098,82 @@ bool isWindowsUpdateInstalled({
   // 代码版本达标也不能判成功——装到一半的包必须让用户看见诊断。
   if (verdict == WindowsInnoInstallVerdict.aborted) return false;
 
-  if (runningCodeVersion != null) {
-    return _isVersionAtLeast(runningCodeVersion, targetVersion);
+  switch (classifyRunningCodeVersion(
+    runningCodeVersion: runningCodeVersion,
+    targetVersion: targetVersion,
+  )) {
+    case RunningCodeVersionEvidence.atLeastTarget:
+      return true;
+    case RunningCodeVersionEvidence.belowTarget:
+      return false;
+    case RunningCodeVersionEvidence.inconclusive:
+      // 拿不到（历史版本 / 本地构建）或不可比（跨通道）：退回旧判据，行为逐字
+      // 不变——日志明确成功 AND exe 版本达标。
+      return verdict == WindowsInnoInstallVerdict.succeeded &&
+          _isVersionAtLeast(executableVersion, targetVersion);
+  }
+}
+
+/// 「运行中代码版本」这条证据的三种结论。
+///
+/// 刻意**不是** bool：版本号之间并不总是可比。`2.2.1-debug.12215` 和
+/// `2.2.1-beta.30` 谁新谁旧，SemVer 只会按字符串把 `debug` 排在 `beta` 后面，那是
+/// 巧合不是事实；同理 SemVer 规定「正式版 > 同号预发布版」，于是 `2.2.1` 恒 >
+/// `2.2.1-debug.12215`——BUG-1786 抱怨的「判据恒为真」正是这条。把这类情况诚实地
+/// 标成 [inconclusive] 退回日志判据，比硬编出一个大小关系安全得多。
+enum RunningCodeVersionEvidence {
+  /// 运行中的代码确实是目标版本或更新的构建。
+  atLeastTarget,
+
+  /// 运行中的代码明确比目标旧——更新没落地。
+  belowTarget,
+
+  /// 拿不到（未注入）或两者不可比（跨通道）。这条证据不可用，不代表失败。
+  inconclusive,
+}
+
+/// 判定 [runningCodeVersion] 相对 [targetVersion] 的证据结论。
+///
+/// 基版本不同的一律可比（`2.3.0` 比 `2.2.1-debug.x` 新是事实，与通道无关）；
+/// 基版本相同时才看预发布段，且**只有通道标签相同**（都是 `debug.` / 都是
+/// `beta.` / 都是正式版）才比序号，否则不可比。
+RunningCodeVersionEvidence classifyRunningCodeVersion({
+  required String? runningCodeVersion,
+  required String targetVersion,
+}) {
+  if (runningCodeVersion == null) {
+    return RunningCodeVersionEvidence.inconclusive;
+  }
+  final String running =
+      _stripBuildMetadata(_stripLeadingV(runningCodeVersion.trim()));
+  final String target =
+      _stripBuildMetadata(_stripLeadingV(targetVersion.trim()));
+
+  final int base = _compareBase(_basePart(running), _basePart(target));
+  if (base != 0) {
+    return base > 0
+        ? RunningCodeVersionEvidence.atLeastTarget
+        : RunningCodeVersionEvidence.belowTarget;
   }
 
-  // 拿不到代码版本（本次改动之前发布的历史版本、本地 `flutter run`）：退回旧判据，
-  // 行为逐字不变——日志明确成功 AND exe 版本达标。
-  return verdict == WindowsInnoInstallVerdict.succeeded &&
-      _isVersionAtLeast(executableVersion, targetVersion);
+  final String? runningPre = _prereleasePart(running);
+  final String? targetPre = _prereleasePart(target);
+  if (runningPre == null && targetPre == null) {
+    return RunningCodeVersionEvidence.atLeastTarget;
+  }
+  if (_channelLabelOf(runningPre) != _channelLabelOf(targetPre)) {
+    return RunningCodeVersionEvidence.inconclusive;
+  }
+  return _comparePrerelease(runningPre!, targetPre!) >= 0
+      ? RunningCodeVersionEvidence.atLeastTarget
+      : RunningCodeVersionEvidence.belowTarget;
+}
+
+/// 预发布段的通道标签（`debug.12215` → `debug`）；正式版为 `null`。
+String? _channelLabelOf(String? prerelease) {
+  if (prerelease == null) return null;
+  final String label = prerelease.split('.').first;
+  return label.isEmpty ? null : label;
 }
 
 bool _isVersionAtLeast(String current, String target) {
