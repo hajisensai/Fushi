@@ -870,7 +870,25 @@ const double _kSegmentNarrowGlyphWidthFactor = 0.62;
 
 /// Estimated advance width of [label] (logical pixels) at [scaledFont],
 /// classifying each rune as wide (CJK/fullwidth, >= U+1100) or narrow.
-double _segmentLabelContentWidth(String label, double scaledFont) {
+double _segmentLabelContentWidth(String label, double scaledFont) =>
+    estimateLabelAdvanceWidth(
+      label: label,
+      fontSize: scaledFont,
+      textScaleFactor: 1.0,
+    );
+
+/// 一段标签文案的估算横向进距（逻辑像素），CJK / 全角按 1em、其余按 0.62em。
+///
+/// Build 期可算（只依赖文案 / 字号 / 文字缩放，不依赖布局），供两类顶栏控件共用：
+/// [segmentedStripCellWidth]（分段条的等宽单元格）与库页顶栏 [LibrarySectionTabs]
+/// 的 tab 自然宽。两者的换行 / 滚动兜底判据必须出自同一张字宽表，否则同一批文案
+/// 在两个控件上会得出不同的「摆得下吗」结论。
+double estimateLabelAdvanceWidth({
+  required String label,
+  required double fontSize,
+  required double textScaleFactor,
+}) {
+  final double scaledFont = fontSize * textScaleFactor;
   double width = 0.0;
   for (final int rune in label.runes) {
     width += scaledFont *
@@ -1147,12 +1165,15 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
   final AlignmentGeometry alignment;
 
   /// Uniform per-segment width floor (logical pixels), applied only while the
-  /// widened strip still fits its host. Library-page top bars pass
-  /// [kLibrarySectionTabMinSegmentWidth] so all four modules' section tabs read
-  /// as the same control regardless of per-page label lengths (TODO-2937);
-  /// when the floor does not fit, the strip falls back to its natural width,
-  /// then to horizontal scrolling -- the floor never forces a scroll that the
-  /// natural width would avoid.
+  /// widened strip still fits its host. Callers that host several strips in one
+  /// view pass a shared floor so they read as the same control regardless of
+  /// per-strip label lengths; when the floor does not fit, the strip falls back
+  /// to its natural width, then to horizontal scrolling -- the floor never
+  /// forces a scroll that the natural width would avoid.
+  ///
+  /// 库页顶栏曾是本参数最大的消费者（TODO-2937 的统一段宽），2026-08-24 起顶栏改走
+  /// MD3 tabs（[LibrarySectionTabs]），四页观感一致由「同一个控件」保证，不再需要
+  /// 估算出来的等宽下限。
   final double? minSegmentWidth;
 
   @override

@@ -132,27 +132,33 @@ void main() {
     WidgetTester tester,
     VideoLibrarySection section,
   ) async {
-    final FushiSegmentedStrip<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSegmentedStrip<VideoLibrarySection>),
+    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
+      find.byType(FushiSectionTabBar<VideoLibrarySection>),
     );
     strip.onChanged(section);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('页签顺序固定为首页、发现、系列、全部视频、来源、设置', (WidgetTester tester) async {
+  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是在线发现，最后才是管理类分区
+  // ——与书 / 漫画 / 游戏同位。发现曾夹在首页与系列之间，一排里「自己的库 → 推荐 →
+  // 自己的库」来回跳（2026-08-24 用户反馈），是四个模块里唯一的例外。
+  testWidgets('页签顺序固定为首页、系列、全部视频、发现、来源、设置',
+      (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
 
-    final FushiSegmentedStrip<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSegmentedStrip<VideoLibrarySection>),
+    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
+      find.byType(FushiSectionTabBar<VideoLibrarySection>),
     );
     expect(
-      strip.segments.map((segment) => segment.value).toList(),
+      strip.tabs
+          .map((LibrarySectionTab<VideoLibrarySection> tab) => tab.value)
+          .toList(),
       <VideoLibrarySection>[
         VideoLibrarySection.home,
-        VideoLibrarySection.discover,
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
+        VideoLibrarySection.discover,
         VideoLibrarySection.sources,
         VideoLibrarySection.settings,
       ],

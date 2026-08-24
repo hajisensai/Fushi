@@ -195,8 +195,8 @@ void main() {
 
       dropped.clear();
       tester
-          .widget<FushiSegmentedStrip<MediaLibraryViewKind>>(
-            find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
+          .widget<FushiSectionTabBar<MediaLibraryViewKind>>(
+            find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
           )
           .onChanged(MediaLibraryViewKind.discover);
       await tester.pumpAndSettle();
@@ -264,8 +264,8 @@ void main() {
 
       dropped.clear();
       tester
-          .widget<FushiSegmentedStrip<VideoLibrarySection>>(
-            find.byType(FushiSegmentedStrip<VideoLibrarySection>),
+          .widget<FushiSectionTabBar<VideoLibrarySection>>(
+            find.byType(FushiSectionTabBar<VideoLibrarySection>),
           )
           .onChanged(VideoLibrarySection.discover);
       await tester.pumpAndSettle();
