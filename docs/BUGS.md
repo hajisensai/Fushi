@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1681 条。点号进各自文件。
+> 共 1682 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1807](bugs/BUG-1807-url-keyboard-missing-across-app.md) | 🚧 | 🚧 | 全仓 10 处 URL/host 输入框漏声明 keyboardType，与 BUG-1804 同族 |
 | [BUG-1806](bugs/BUG-1806-mihon-store-url-not-editable.md) | ✅ | ✅ | 扩展仓库地址不可编辑，只能删了重加 |
 | [BUG-1805](bugs/BUG-1805-mihon-store-zero-extensions-silent.md) | ✅ | ✅ | 仓库拉到 0 条扩展时静默空列表，无任何提示 |
 | [BUG-1804](bugs/BUG-1804-mihon-store-url-fullwidth-rejected.md) | ✅ | ✅ | 添加扩展仓库输入框无 URL 键盘类型，中文输入法全角标点被拒 INVALID_URL |
