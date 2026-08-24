@@ -147,12 +147,6 @@ HomeTab homeInitialTab({
   return fallback;
 }
 
-@visibleForTesting
-bool startupOnboardingAutoLaunchAllowed({
-  required bool onboardingCompleted,
-}) =>
-    !onboardingCompleted;
-
 int homeVisualIndexForTab({
   required List<HomeTab> tabs,
   required HomeTab tab,
@@ -409,10 +403,7 @@ class _HomePageState extends BasePageState<HomePage>
 
       // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/
       // 跳过/返回）后统一标记完成，之后可从「设置 → 系统」随时重新打开。
-      if (mounted &&
-          startupOnboardingAutoLaunchAllowed(
-            onboardingCompleted: appModel.onboardingCompleted,
-          )) {
+      if (mounted && !appModel.onboardingCompleted) {
         await Navigator.of(context).push(
           adaptivePageRoute<void>(
             context: context,
