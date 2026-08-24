@@ -39,11 +39,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   bool get _paginationInFlight =>
       _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
 
-  /// TODO-1229 v2：记一次「跨章相关的惯性输入」发生时刻，把跨章冷却窗滑到当下。
-  /// 在两处调用：① 惯性 tick 被 [_paginationInFlight] 丢弃时（换章加载期的残余惯性）；
-  /// ② 冷却期内被拒的跨章尝试。持续惯性会不断把冷却窗前推，直到输入静默才让窗关闭。
-  void _noteChapterTurnInput() {
-    _lastChapterTurnInputAt = DateTime.now();
+  /// TODO-1229 / BUG-1829：记一次**真正的跨章**发生时刻，开启跨章冷却窗。
+  ///
+  /// 只在跨章事件上调用：① 各入口确实要调 [_handlePageTurnLimit] 之前；② 该次跨章落地的
+  /// 新章 content-ready 时的重锚（[_noteChapterTurnSettledIfPending]）。
+  /// **绝不在被拦截/被丢弃的输入上调用**——那会把闸门的钥匙交给被闸门拦住的那一方，用户
+  /// 持续拨轮就永远等不到窗口过期（BUG-1829，见 [_lastChapterTurnAt] 的说明）。
+  void _noteChapterTurn() {
+    _lastChapterTurnAt = DateTime.now();
   }
 
   /// TODO-1229 第三次复诉：标记「一次惯性跨章已真正发起导航」。只在惯性输入
@@ -61,22 +64,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
   void _noteChapterTurnSettledIfPending() {
     if (!_inertiaChapterTurnPending) return;
     _inertiaChapterTurnPending = false;
-    _noteChapterTurnInput();
+    _noteChapterTurn();
   }
 
-  /// TODO-1229 v2：跨章冷却闸门。距上次「跨章输入/跨章」不足 [_kChapterTurnCooldown] 则
-  /// 判为同一手势的残余惯性、拒绝本次跨章并把冷却窗滑到当下（返回 true=正在冷却=拦截）；
-  /// 已静默超过冷却窗则放行（返回 false），不刷新——让真正落地的那次跨章自行 stamp。
+  /// TODO-1229 / BUG-1829：跨章冷却闸门。距上次**真正跨章**不足 [_kChapterTurnCooldown]
+  /// 则判为同一手势的残余惯性、拒绝本次跨章（返回 true=正在冷却=拦截），否则放行。
   /// 只在惯性型输入(滚轮/触摸)的跨章决策处调用；键盘/手柄(throttleMs==0)不经此闸门。
-  bool _chapterTurnCoolingDown() {
-    final bool cooling = chapterTurnCoolingDown(
-      lastInputAt: _lastChapterTurnInputAt,
-      now: DateTime.now(),
-      cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
-    );
-    if (cooling) _lastChapterTurnInputAt = DateTime.now();
-    return cooling;
-  }
+  ///
+  /// **纯读，无副作用（BUG-1829）**：旧实现在拦截时把 [_lastChapterTurnAt] 写成当下，把
+  /// 窗口滑走，于是被拦的输入自己给自己续期——真实滚轮每 30~100ms 一个事件，用户只要还在
+  /// 拨，窗口就永远不过期。窗口只能由跨章事件推进（[_noteChapterTurn]）。
+  bool _chapterTurnCoolingDown() => chapterTurnCoolingDown(
+        lastTurnAt: _lastChapterTurnAt,
+        now: DateTime.now(),
+        cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
+      );
 
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
@@ -89,9 +91,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
     // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
     if (_paginationInFlight) {
-      // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗，避免
-      // restore 落定后残余惯性立刻在短章边界再次跨章（跳两章真因）。
-      if (throttleMs > 0) _noteChapterTurnInput();
+      // BUG-1829：换章加载期到达的输入只丢弃，**不**滑动跨章冷却窗。v2 曾在这里
+      // stamp，用来盖住「加载期无续窗 tick → 窗口早过期 → 残余惯性二次跨章」；v3 改用
+      // 新章 content-ready 重锚（[_noteChapterTurnSettledIfPending]）后，这条已由更晚、
+      // 更准的锚点覆盖，留着只会让持续输入自我续期，把单页章变成滚轮死区。
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
@@ -127,7 +130,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
         // 在短章边界的二次跨章被拦（并滑动冷却窗）；键盘/手柄(throttleMs==0)不受限。
         if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-        _noteChapterTurnInput();
+        _noteChapterTurn();
         _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
       } else {
         await _refreshProgress();
@@ -147,7 +150,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     } else {
       // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
       if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-      _noteChapterTurnInput();
+      _noteChapterTurn();
       _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
     }
   }

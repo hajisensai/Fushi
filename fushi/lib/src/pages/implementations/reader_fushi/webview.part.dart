@@ -2232,9 +2232,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
             // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
             // 加载未落定时再次跨章 → 跳两章。与 _paginate 入口同一 _paginationInFlight。
-            // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗。
+            // BUG-1829：换章加载期到达的 tick 只丢弃，**不**滑动跨章冷却窗——与 _paginate
+            // 入口同一处理。新章 content-ready 的重锚（_noteChapterTurnSettledIfPending）
+            // 已经覆盖这段窗口；在这里 stamp 只会让持续输入自我续期、永远等不到放行。
             if (_paginationInFlight) {
-              _noteChapterTurnInput();
               return;
             }
             // Boundary swipe → chapter turn also stole focus to the WebView
@@ -2261,7 +2262,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
                 'chapter=$_currentChapter');
-            _noteChapterTurnInput();
+            _noteChapterTurn();
             if (dir == 'forward') {
               _handlePageTurnLimit('forward', inertia: true);
             } else if (dir == 'backward') {
