@@ -668,16 +668,19 @@ abstract final class WindowsUpdateHandoff {
     //
     // BUG-1836 根因修复：判据升级为三源证据表（见 [isWindowsUpdateInstalled]）。
     // 旧判据只有「Inno 日志 + exe 版本资源」两源，两源都不是**被替换的产物本身**：
-    // 日志只在 app 自己拉起安装器时才存在（手动救援装成功也判失败），版本资源和
-    // Dart 代码是两个文件（半更新态里它报新版本、跑的是旧代码）。现在加入编译进
-    // `app.so` 的 [kFushiBuildVersionDefine]，它与被替换的产物同体，是唯一伪造
-    // 不了的证据。没有它的历史版本/本地构建行为与旧判据完全一致。
+    // 日志只在 app 自己拉起安装器时才存在（手动救援装成功也判失败，这就是
+    // BUG-1836），版本资源和 Dart 代码是两个文件（半更新态里它报新版本、跑的是旧
+    // 代码）。现在加入编译进 `app.so` 的 [kFushiBuildVersionDefine]，它与被替换的
+    // 产物同体，是唯一伪造不了的证据。没有它的历史版本/本地构建行为与旧判据完全
+    // 一致。
     final String? runningCodeVersion =
         normalizeFushiBuildVersion(runningCodeVersionDefine);
-    // 「这条提示是不是已经弹过」的幂等键。优先用代码版本：Windows 上 exe 版本资源
-    // 丢后缀，同一 base 的两个 debug 构建拿到的 `currentVersion` 完全相同
-    // （`2.2.1` == `2.2.1`），marker 若因 AV 占用删不掉就会把**下一次**更新的提示
-    // 一并吞掉。代码版本带 `-debug.N`，粒度精确到构建。
+    // 「这条提示是不是已经弹过」的幂等键。优先用代码版本：它来自 `app.so`，
+    // `currentVersion` 来自 exe 版本资源，半更新态下两者会指向不同的构建，而这个
+    // 键要回答的正是「跑着的这份代码有没有被提示过」。beta 通道另有一层——那里
+    // `--build-name` 本身就是裸 `2.2.1`（见 build_version.dart 的说明），
+    // `currentVersion` 在同 base 的两个 beta 构建之间根本区分不开，marker 若因 AV
+    // 占用删不掉就会把**下一次**更新的提示一并吞掉。
     final String promptedVersionKey = runningCodeVersion ?? currentVersion;
     final WindowsInnoInstallVerdict verdict = windowsInnoLogVerdict(
       await _readInnoLogContents(record.innoLogPath),
@@ -1074,8 +1077,9 @@ List<Map<String, dynamic>> _listOfMaps(Object? raw) {
 ///   的证据——`app.so` 没被换掉它就报旧值。见 `build_version.dart`。
 /// - [verdict]：Inno 日志的收尾结论。只有 app 自己经 `/LOG=` 拉起安装器时才有；
 ///   缺失（`unknown`）**不等于**失败，只等于「这条证据不可用」。
-/// - [executableVersion]：exe 版本资源（`PackageInfo`）。Windows 上丢预发布后缀，
-///   且与 `app.so` 是两个文件，只能识别「exe 根本没被换掉」这一种失败。
+/// - [executableVersion]：exe 版本资源（`PackageInfo`）。与 `app.so` 是两个文件，
+///   只能识别「exe 根本没被换掉」这一种失败；beta 通道上它还是裸 `2.2.1`
+///   （`--build-name` 本身丢后缀），对同 base 的升级恒为真。
 ///
 /// 判定表（`runningCodeVersion == null` 时逐行退化成 BUG-1786 的旧行为）：
 ///
@@ -1161,10 +1165,20 @@ RunningCodeVersionEvidence classifyRunningCodeVersion({
   if (runningPre == null && targetPre == null) {
     return RunningCodeVersionEvidence.atLeastTarget;
   }
-  if (_channelLabelOf(runningPre) != _channelLabelOf(targetPre)) {
+  final String? runningLabel = _channelLabelOf(runningPre);
+  final String? targetLabel = _channelLabelOf(targetPre);
+  // 一侧是正式版、通道标签不同、或标签取不到（`2.2.1-.1` 这类畸形串——marker
+  // 是磁盘上的 JSON，手改或损坏都可能喂进来）⇒ 不可比。这里**不用 `!`**：
+  // `_channelLabelOf` 对空标签也返回 null，光比标签会让 `'.1'` 与「无预发布段」
+  // 判成同通道，随后 `targetPre!` 抛 TypeError。
+  if (runningPre == null ||
+      targetPre == null ||
+      runningLabel == null ||
+      targetLabel == null ||
+      runningLabel != targetLabel) {
     return RunningCodeVersionEvidence.inconclusive;
   }
-  return _comparePrerelease(runningPre!, targetPre!) >= 0
+  return _comparePrerelease(runningPre, targetPre) >= 0
       ? RunningCodeVersionEvidence.atLeastTarget
       : RunningCodeVersionEvidence.belowTarget;
 }

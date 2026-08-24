@@ -199,6 +199,33 @@ void main() {
       );
     });
 
+    test('畸形版本串不得抛异常（marker 是磁盘 JSON，可能被手改或损坏）', () {
+      // `2.2.1-.1` 的预发布段首个 token 为空：光比「通道标签」会把它和「无预发布
+      // 段」判成同通道，随后拿 null 去比较就抛 TypeError。reconcile 跑在启动路径
+      // 上，这里抛异常等于开机崩。
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1',
+          targetVersion: '2.2.1-.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-.1',
+          targetVersion: '2.2.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-',
+          targetVersion: '2.2.1-debug.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+    });
+
     test('未注入 ⇒ 不可比（不是「未达标」）', () {
       expect(
         classifyRunningCodeVersion(

@@ -111,11 +111,13 @@ Future<LogUploadOutcome> performLogUpload({
 /// 收集设备/版本元信息（平台 + OS 版本字符串，无需额外插件）。
 Future<({String appVersion, String platform, String device})>
     _collectMeta() async {
-  String appVersion = 'unknown';
+  // 编译期常量拿不到才是真 unknown：`PackageInfo` 抛异常时它照样可用。
+  String appVersion = fushiRunningCodeVersion ?? 'unknown';
   try {
     final PackageInfo info = await PackageInfo.fromPlatform();
-    // 优先报运行中这份 Dart 代码的版本：Windows 的 exe 版本资源丢 `-debug.N`，
-    // 服务端看到的全是 `2.2.1+12215`，分不出通道，也认不出「新 exe + 旧 app.so」。
+    // 优先报运行中这份 Dart 代码的版本：exe 版本资源和 `app.so` 是两个文件，
+    // 半更新态下前者报新版本、跑的却是旧代码，服务端拿到的版本会指向一份根本没
+    // 在跑的构建（BUG-1786 就是这么排查了好几天）。
     final String version = fushiRunningCodeVersion ?? info.version;
     appVersion = '$version+${info.buildNumber}';
   } catch (_) {}
