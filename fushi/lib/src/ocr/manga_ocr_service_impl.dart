@@ -498,11 +498,19 @@ class MangaOcrServiceImpl implements MangaOcrService {
     bool detectorReady = true;
     bool recognizerReady = true;
     int totalBytes = 0;
+    int obtainedBytes = 0;
     for (final MangaOcrModelFile model in _manifest) {
       totalBytes += model.expectedBytes;
       final File file = File(p.join(dir.path, model.fileName));
       if (isMangaOcrModelFileReady(file)) {
+        obtainedBytes += file.lengthSync();
         continue;
+      }
+      // 未就绪的文件若留着 `.part`，那些字节下次点下载会被 Range 续上，必须
+      // 算进「已下多少」——否则用户看到的进度会在每次重进设置页时归零。
+      final File part = File('${file.path}.part');
+      if (part.existsSync()) {
+        obtainedBytes += part.lengthSync();
       }
       if (model.role == MangaOcrModelRole.detector) {
         detectorReady = false;
@@ -517,6 +525,7 @@ class MangaOcrServiceImpl implements MangaOcrService {
       // 用户看到的数字必须能被「删除」兑现（BUG-1732）。
       diskBytes: await measureDirectoryBytes(dir),
       totalBytes: totalBytes,
+      obtainedBytes: obtainedBytes,
     );
   }
 

@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
 
@@ -14,6 +16,7 @@ class _FakeOcrService implements MangaOcrService {
     this.supported = true,
     this.ready = false,
     this.diskBytesOverride,
+    this.obtainedBytesOverride,
     this.downloadEvents,
   });
 
@@ -23,6 +26,9 @@ class _FakeOcrService implements MangaOcrService {
   /// 磁盘占用与「清单是否齐全」解耦：残留 `.part`/遗留档就是「不 ready 但占着
   /// 磁盘」，这正是引擎用不到时仍须可删的那一档。
   final int? diskBytesOverride;
+
+  /// 已拿到手的字节数（就绪档 + `.part` 残留），驱动「继续下载」文案。
+  final int? obtainedBytesOverride;
 
   /// 自定义下载事件源（不给则走默认单文件两条）。
   ///
@@ -41,6 +47,8 @@ class _FakeOcrService implements MangaOcrService {
         recognizerReady: ready,
         diskBytes: diskBytesOverride ?? (ready ? 40 * 1024 * 1024 : 0),
         totalBytes: 40 * 1024 * 1024,
+        obtainedBytes:
+            obtainedBytesOverride ?? (ready ? 40 * 1024 * 1024 : 0),
       );
 
   @override
@@ -78,6 +86,24 @@ class _FakeOcrService implements MangaOcrService {
     String? volumeTitle,
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
+}
+
+/// 记录调用的导入器：UI 测试只关心「入口接线对不对」，真实拷贝/解压逻辑由
+/// `test/ocr/manga_ocr_model_import_test.dart` 单独盯。
+class _FakeImporter extends MangaOcrModelImporter {
+  _FakeImporter(this.result);
+
+  final MangaOcrModelImportResult result;
+  final List<List<String>> calls = <List<String>>[];
+
+  @override
+  Future<MangaOcrModelImportResult> import({
+    required List<String> sourcePaths,
+    required Directory targetDir,
+  }) async {
+    calls.add(sourcePaths);
+    return result;
+  }
 }
 
 void main() {
@@ -380,5 +406,142 @@ void main() {
       )),
       findsOneWidget,
     );
+  });
+
+  testWidgets('未就绪时给出手动导入入口（下不动模型的用户唯一的出路）',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: false),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('manga_ocr_import_button')),
+        findsOneWidget);
+  });
+
+  testWidgets('有半成品时下载按钮说「继续下载」，而不是让人以为要重下',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(
+        ready: false,
+        obtainedBytesOverride: 17 * 1024 * 1024,
+      ),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FilledButton, t.manga_ocr_download_resume),
+        findsOneWidget);
+    expect(find.widgetWithText(FilledButton, t.manga_ocr_download), findsNothing);
+  });
+
+  testWidgets('全新安装没有半成品时仍说「下载模型」', (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: false),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FilledButton, t.manga_ocr_download),
+        findsOneWidget);
+    expect(find.widgetWithText(FilledButton, t.manga_ocr_download_resume),
+        findsNothing);
+  });
+
+  testWidgets('导入对话框先列出所需文件，再把选中的路径交给导入器',
+      (WidgetTester tester) async {
+    final Directory tempDir =
+        Directory.systemTemp.createTempSync('manga_ocr_ui_import_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final _FakeImporter importer = _FakeImporter(
+      const MangaOcrModelImportResult(
+        imported: <String>['vocab.txt'],
+        skipped: <String>[],
+        rejected: <MangaOcrModelImportRejection>[],
+        stillMissing: <String>[],
+      ),
+    );
+
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: false),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      modelsDirProvider: () async => tempDir,
+      modelImporter: importer,
+      pickImportPaths: (bool folderMode) async =>
+          folderMode ? <String>['/picked/dir'] : <String>['/picked/file'],
+    )));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_ocr_import_button')));
+    await tester.pumpAndSettle();
+
+    // 用户点进来最缺的信息是「到底要哪几个文件」——清单必须在选择器之前出现。
+    expect(find.text(t.manga_ocr_import_title), findsOneWidget);
+    expect(find.textContaining('vocab.txt'), findsOneWidget);
+
+    await tester.tap(
+        find.byKey(const ValueKey<String>('manga_ocr_import_pick_folder')));
+    await tester.pumpAndSettle();
+
+    expect(importer.calls, <List<String>>[
+      <String>['/picked/dir']
+    ]);
+  });
+
+  testWidgets('选「选择文件」走的是文件模式，不是文件夹模式',
+      (WidgetTester tester) async {
+    final _FakeImporter importer = _FakeImporter(
+      const MangaOcrModelImportResult(
+        imported: <String>[],
+        skipped: <String>[],
+        rejected: <MangaOcrModelImportRejection>[],
+        stillMissing: <String>['vocab.txt'],
+      ),
+    );
+    final Directory tempDir =
+        Directory.systemTemp.createTempSync('manga_ocr_ui_import2_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: false),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      modelsDirProvider: () async => tempDir,
+      modelImporter: importer,
+      pickImportPaths: (bool folderMode) async =>
+          folderMode ? <String>['/picked/dir'] : <String>['/picked/file'],
+    )));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_ocr_import_button')));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_ocr_import_pick_files')));
+    await tester.pumpAndSettle();
+
+    expect(importer.calls, <List<String>>[
+      <String>['/picked/file']
+    ]);
   });
 }

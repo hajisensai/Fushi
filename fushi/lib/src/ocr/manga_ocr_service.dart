@@ -42,6 +42,7 @@ class MangaOcrModelStatus {
     required this.recognizerReady,
     required this.diskBytes,
     required this.totalBytes,
+    this.obtainedBytes = 0,
   });
 
   final bool detectorReady;
@@ -58,7 +59,21 @@ class MangaOcrModelStatus {
   /// 全套模型的预期总字节数（清单常量之和，用于展示「需要下多少」）。
   final int totalBytes;
 
+  /// 朝着 [totalBytes] **已经拿到手**的有效字节数：已就绪文件 + 未完成下载的
+  /// `.part` 里攒下的部分。
+  ///
+  /// 与 [diskBytes] 是两个数，别混：[diskBytes] 是目录真实占用（含上游漂移后
+  /// 的遗留旧档），回答「删掉能腾出多少」；这个数回答「还差多少下完」。
+  ///
+  /// 有这个数才能把「上次下到一半」说清楚。没有它，用户取消或断网后回到设置页
+  /// 只看到一个「下载模型」按钮，会以为那 176 MB 白下了——实际下载器一直有
+  /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
+  final int obtainedBytes;
+
   bool get allReady => detectorReady && recognizerReady;
+
+  /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
+  bool get hasResumableDownload => !allReady && obtainedBytes > 0;
 
   /// 磁盘上是否还留着任何模型文件（含未完成的 `.part` 与遗留档）。
   ///

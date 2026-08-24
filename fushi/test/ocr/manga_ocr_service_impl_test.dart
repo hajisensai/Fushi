@@ -133,6 +133,37 @@ void main() {
       expect(status.diskBytes, 4);
     });
 
+    test('obtainedBytes 把 .part 残留算进「已下多少」', () async {
+      // 一个已就绪档 + 一个下到一半的 .part：用户看到的进度必须是两者之和，
+      // 否则每次重进设置页那半截下载就像白下了（下载器一直有 Range 续传）。
+      File(p.join(modelsDir.path, 'detector-v4-s_int8.onnx'))
+          .writeAsBytesSync(<int>[1, 2, 3, 4]);
+      File(p.join(modelsDir.path, 'encoder_model.onnx.part'))
+          .writeAsBytesSync(<int>[1, 2, 3]);
+
+      final MangaOcrModelStatus status =
+          await service(_FakeRunner()).modelStatus();
+
+      expect(status.obtainedBytes, 4 + 3);
+      expect(status.hasResumableDownload, isTrue);
+    });
+
+    test('全新安装：obtainedBytes 为 0，不显示「继续下载」', () async {
+      final MangaOcrModelStatus status =
+          await service(_FakeRunner()).modelStatus();
+      expect(status.obtainedBytes, 0);
+      expect(status.hasResumableDownload, isFalse);
+    });
+
+    test('全部就绪后不再是「可续传」状态', () async {
+      writeAllModels();
+      final MangaOcrModelStatus status =
+          await service(_FakeRunner()).modelStatus();
+      expect(status.obtainedBytes, status.totalBytes);
+      expect(status.hasResumableDownload, isFalse,
+          reason: '已经下完了还提示「继续下载」只会让人以为没下完');
+    });
+
     test('零字节文件不算就绪', () async {
       File(p.join(modelsDir.path, 'detector-v4-s_int8.onnx')).createSync();
       final MangaOcrModelStatus status =

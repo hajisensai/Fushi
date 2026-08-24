@@ -3750,5 +3750,19 @@
   "onboarding_anki_addon_installed": "已装好 AnkiConnect：启动或重启 Anki，然后点「测试连接」。",
   "onboarding_anki_addon_no_anki": "没找到 Anki 数据目录：请先安装 Anki 并打开一次，再回来重试。",
   "onboarding_anki_addon_failed": "安装失败：$message",
-  "game_hook_reason_capability_probe_failed": "捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。"
+  "game_hook_reason_capability_probe_failed": "捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。",
+  "manga_ocr_download_resume": "继续下载",
+  "manga_ocr_import": "导入本地模型",
+  "manga_ocr_import_title": "导入已下载的模型",
+  "manga_ocr_import_intro": "如果应用内下载不通，可以自行下载下面的文件后从这里导入；也支持包含这些文件的 zip 包。",
+  "manga_ocr_import_copy_urls": "复制下载链接",
+  "manga_ocr_import_urls_copied": "下载链接已复制",
+  "manga_ocr_import_pick_folder": "选择文件夹",
+  "manga_ocr_import_pick_files": "选择文件",
+  "manga_ocr_import_running": "正在导入…",
+  "manga_ocr_import_done": "已导入 $count 个文件",
+  "manga_ocr_import_matched_nothing": "没有认出可用的模型文件",
+  "manga_ocr_import_size_mismatch": "$file 大小不对：应为 $expected，实为 $actual",
+  "manga_ocr_import_still_missing": "还缺 $count 个文件",
+  "manga_ocr_import_failed": "模型导入失败"
 }

@@ -3750,5 +3750,19 @@
   "onboarding_anki_addon_installed": "AnkiConnect is installed. Start (or restart) Anki, then tap Test connection.",
   "onboarding_anki_addon_no_anki": "Anki data folder not found. Install Anki and open it once, then try again.",
   "onboarding_anki_addon_failed": "Install failed: $message",
-  "game_hook_reason_capability_probe_failed": "The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again."
+  "game_hook_reason_capability_probe_failed": "The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.",
+  "manga_ocr_download_resume": "Resume download",
+  "manga_ocr_import": "Import local model",
+  "manga_ocr_import_title": "Import a downloaded model",
+  "manga_ocr_import_intro": "If the in-app download will not go through, download these files yourself and import them here. A zip containing them works too.",
+  "manga_ocr_import_copy_urls": "Copy download links",
+  "manga_ocr_import_urls_copied": "Download links copied",
+  "manga_ocr_import_pick_folder": "Pick folder",
+  "manga_ocr_import_pick_files": "Pick files",
+  "manga_ocr_import_running": "Importing…",
+  "manga_ocr_import_done": "Imported $count file(s)",
+  "manga_ocr_import_matched_nothing": "No usable model files were recognised",
+  "manga_ocr_import_size_mismatch": "$file has the wrong size: expected $expected, got $actual",
+  "manga_ocr_import_still_missing": "Still missing $count file(s)",
+  "manga_ocr_import_failed": "Model import failed"
 }
