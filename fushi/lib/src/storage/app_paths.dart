@@ -335,7 +335,7 @@ class AppPaths {
       _legacyFlatDocumentsRoot = stored == documentsLayoutFlat;
       return;
     }
-    final bool flat = await _existingInstallHasDatabase();
+    final bool flat = await existingInstallHasDatabase();
     _legacyFlatDocumentsRoot = flat;
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
     // 探测的判据（主库文件是否存在）此时只会更成立，不会翻转成新布局。
@@ -346,6 +346,12 @@ class AppPaths {
       debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
     }
   }
+
+  /// 供 [resolve] 之前就需要「默认位置」定义的调用方（安装器数据根引导）提前定下容器名，
+  /// 保证它算出的 [defaultLocationDocumentsRoot] 与紧随其后的 [resolve] 是同一个；
+  /// [resolve] 内再调时已判定、直接沿用。
+  static Future<void> ensureDocumentsContainerDecided() async =>
+      _ensureDocumentsContainerDecided(await _prefsOrNull());
 
   /// Fushi 改名（Phase 3）：判定 + 固化 nested 容器名。锚点已有直接用；没有则
   /// 探测一次：老容器 `<Documents>/Hibiki/data` 存在而新容器不存在 → 存量安装，
@@ -391,7 +397,7 @@ class AppPaths {
   /// 兼看旧文件名 [legacyHibikiDatabaseFileName]：老安装在第一次开库前主库还叫
   /// `hibiki.db`（开库时 fushi_core 才做一次性改名），这里若只认新名会把老安装
   /// 误判成全新安装。
-  static Future<bool> _existingInstallHasDatabase() async {
+  static Future<bool> existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();
       Future<bool> dbExists(String fileName) =>
