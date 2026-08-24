@@ -3764,5 +3764,11 @@
   "manga_ocr_import_matched_nothing": "No usable model files were recognised",
   "manga_ocr_import_size_mismatch": "$file has the wrong size: expected $expected, got $actual",
   "manga_ocr_import_still_missing": "Still missing $count file(s)",
-  "manga_ocr_import_failed": "Model import failed"
+  "manga_ocr_import_failed": "Model import failed",
+  "manga_tap_ocr_notice_title": "Tap to recognise",
+  "manga_tap_ocr_notice_body": "This page has no text data yet. Fushi will recognise it with the OCR engine you picked in settings, then you can tap words to look them up. You can change the engine or turn this off in Settings › Manga OCR.",
+  "manga_tap_ocr_notice_confirm": "Recognise now",
+  "manga_tap_ocr_running": "Recognising this page…",
+  "manga_tap_to_ocr": "Tap to recognise",
+  "manga_tap_to_ocr_desc": "Tap an unrecognised speech bubble to recognise the page and look words up right away."
 }

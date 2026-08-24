@@ -457,6 +457,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'downloads/Ban relative progress cheat':
       'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
+  // 「点一下没识别的对话框就地开跑 OCR」。生效点整条都在 WebView 里：JS 空白点
+  // 带落页 payload 回传 → Dart 起任务 → 该页文字层热替换 → 回放点击查词。widget
+  // 树上看不到任何变化，故由 JS 契约守卫 + 引擎选择单测覆盖。
+  'manga/Tap to recognise':
+      'test/media/manga/manga_tap_ocr_overlay_contract_test.dart + '
+          'test/media/manga/ocr/manga_ocr_auto_start_test.dart',
   'reading/Spread direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
   // TODO-1029：开关显示名改为「悬浮控制栏」(en: 'Floating control bar')，覆盖 map

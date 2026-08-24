@@ -3764,5 +3764,11 @@
   "manga_ocr_import_matched_nothing": "没有认出可用的模型文件",
   "manga_ocr_import_size_mismatch": "$file 大小不对：应为 $expected，实为 $actual",
   "manga_ocr_import_still_missing": "还缺 $count 个文件",
-  "manga_ocr_import_failed": "模型导入失败"
+  "manga_ocr_import_failed": "模型导入失败",
+  "manga_tap_ocr_notice_title": "点一下就识别",
+  "manga_tap_ocr_notice_body": "这一页还没有文字数据。Fushi 会用你在设置里选的 OCR 引擎就地识别，识别完就能点词查询。可以在「设置 › 漫画 OCR」里更换引擎或关掉这个行为。",
+  "manga_tap_ocr_notice_confirm": "开始识别",
+  "manga_tap_ocr_running": "正在识别本页…",
+  "manga_tap_to_ocr": "点击即识别",
+  "manga_tap_to_ocr_desc": "点一下还没识别的对话框，就地识别本页并直接查词。"
 }
