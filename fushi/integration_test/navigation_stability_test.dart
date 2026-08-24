@@ -16,9 +16,11 @@ import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart'
     show OnboardingWizardPage;
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart'
     show ShortcutSettingsPage;
+import 'package:fushi/src/settings/settings_destination.dart'
+    show SettingsDestinationId;
 import 'package:fushi/src/settings/settings_detail_page.dart'
     show SettingsDetailPage;
-import 'package:fushi/utils.dart' show FushiListItem, t;
+import 'package:fushi/utils.dart' show t;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart' show seedReaderBook;
@@ -92,71 +94,139 @@ void main() {
         );
         debugPrint('[M4] ✓ 5 full tab rounds');
 
-        final List<String> destinations = <String>[
-          t.settings_destination_appearance,
-          t.settings_destination_reading,
-          t.manga_library,
-          t.settings_destination_listening,
-          t.settings_destination_video,
-          t.nav_downloads,
-          t.settings_destination_lookup,
-          t.settings_destination_card_creation,
-          t.settings_destination_profiles,
-          t.settings_destination_sync_backup,
-          t.settings_destination_interconnect,
-          t.settings_destination_storage,
-          t.settings_destination_system,
+        // 每条 destination 必须带 id：断言只认「详情面板的身份」，不认「这一行
+        // 被高亮」——后者在宽屏第一帧就为真（settings_home_page 无条件把
+        // _selectedDestinationId 落到 destinations.first = appearance），和有没有
+        // 发生过导航完全无关。
+        final List<_SettingsDestinationCase> destinations =
+            <_SettingsDestinationCase>[
+          (
+            id: SettingsDestinationId.appearance,
+            label: t.settings_destination_appearance,
+          ),
+          (
+            id: SettingsDestinationId.reading,
+            label: t.settings_destination_reading,
+          ),
+          (id: SettingsDestinationId.manga, label: t.manga_library),
+          (
+            id: SettingsDestinationId.listening,
+            label: t.settings_destination_listening,
+          ),
+          (
+            id: SettingsDestinationId.video,
+            label: t.settings_destination_video,
+          ),
+          (id: SettingsDestinationId.downloads, label: t.nav_downloads),
+          (
+            id: SettingsDestinationId.lookup,
+            label: t.settings_destination_lookup,
+          ),
+          (
+            id: SettingsDestinationId.cardCreation,
+            label: t.settings_destination_card_creation,
+          ),
+          (
+            id: SettingsDestinationId.profiles,
+            label: t.settings_destination_profiles,
+          ),
+          (
+            id: SettingsDestinationId.syncBackup,
+            label: t.settings_destination_sync_backup,
+          ),
+          (
+            id: SettingsDestinationId.interconnect,
+            label: t.settings_destination_interconnect,
+          ),
+          (
+            id: SettingsDestinationId.storage,
+            label: t.settings_destination_storage,
+          ),
+          (
+            id: SettingsDestinationId.system,
+            label: t.settings_destination_system,
+          ),
         ];
-        final Set<String> uniqueDestinations = destinations.toSet();
+        final Set<String> uniqueDestinations =
+            destinations.map((_SettingsDestinationCase c) => c.label).toSet();
         expect(
           uniqueDestinations.length,
           destinations.length,
           reason: 'Destination labels must be unique in the active locale',
         );
 
+        // 把选中项挪到列表最后一项，这样第一条（appearance）的「打开前它不该已
+        // 经在显示」前置条件才是真检查，而不是被默认选中蒙混过关。
+        await _openSettingsDestination(
+          tester,
+          driver,
+          destinations.last,
+          requireTransition: false,
+        );
+        if (find.byType(SettingsDetailPage).evaluate().isNotEmpty) {
+          await _systemBack(tester);
+          await _pumpUntil(
+            tester,
+            () => find.byType(SettingsDetailPage).evaluate().isEmpty,
+            reason: 'priming destination must return to the settings home',
+          );
+        }
+
         debugPrint('[M4] === All settings destinations ===');
-        for (final String label in destinations) {
+        for (final _SettingsDestinationCase destination in destinations) {
           final bool pushedDetail =
-              await _openSettingsDestination(tester, driver, label);
+              await _openSettingsDestination(tester, driver, destination);
           expect(
             tester.takeException(),
             isNull,
-            reason: '$label detail page must not throw',
+            reason: '${destination.label} detail page must not throw',
           );
           if (pushedDetail) {
             await _systemBack(tester);
             await _pumpUntil(
               tester,
               () => find.byType(SettingsDetailPage).evaluate().isEmpty,
-              reason: '$label must return to the settings home',
+              reason: '${destination.label} must return to the settings home',
             );
           }
-          debugPrint('[M4] ✓ $label open/back');
+          debugPrint('[M4] ✓ ${destination.label} open/back');
         }
 
         debugPrint('[M4] === Deep settings routes ===');
         await _openDeepRoute<CustomFontsPage>(
           tester,
           driver,
-          destination: t.settings_destination_appearance,
+          destination: (
+            id: SettingsDestinationId.appearance,
+            label: t.settings_destination_appearance,
+          ),
           item: t.custom_fonts_catalog_title,
         );
         await _openDeepRoute<ShortcutSettingsPage>(
           tester,
           driver,
-          destination: t.settings_destination_system,
+          destination: (
+            id: SettingsDestinationId.system,
+            label: t.settings_destination_system,
+          ),
           item: t.shortcut_settings_title,
         );
         await _openDeepRoute<OnboardingWizardPage>(
           tester,
           driver,
-          destination: t.settings_destination_system,
+          destination: (
+            id: SettingsDestinationId.system,
+            label: t.settings_destination_system,
+          ),
           item: t.onboarding_reopen,
         );
         await _openDeepRoute<DictionaryDialogPage>(
           tester,
           driver,
-          destination: t.settings_destination_lookup,
+          destination: (
+            id: SettingsDestinationId.lookup,
+            label: t.settings_destination_lookup,
+          ),
           item: t.dictionaries,
         );
 
@@ -234,12 +304,28 @@ Future<void> _selectHomeTab(WidgetTester tester, HomeTab tab) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
+/// 一条 settings 分类用例：id 用于断言**详情面板身份**，label 只用于聚焦这一行。
+typedef _SettingsDestinationCase = ({SettingsDestinationId id, String label});
+
 Future<bool> _openSettingsDestination(
   WidgetTester tester,
   FocusDriver driver,
-  String label,
-) async {
+  _SettingsDestinationCase destination, {
+  bool requireTransition = true,
+}) async {
+  final String label = destination.label;
   await _selectHomeTab(tester, HomeTab.settings);
+  if (requireTransition) {
+    // 前置条件：目标详情面板**还没在显示**。没有这一条，宽屏下第一条
+    // （appearance）的等待条件在进入设置的第一帧就已满足，整个用例退化成
+    // 「这一行存在且能聚焦」——activate() 完全不做事也照样绿。
+    expect(
+      _settingsDestinationShown(destination.id),
+      isFalse,
+      reason: '$label must not already be the shown destination before it is '
+          'activated, otherwise this case asserts nothing',
+    );
+  }
   final Finder target = find.text(label).first;
   expect(
     await driver.focusWidget(target, maxSteps: 320),
@@ -249,10 +335,9 @@ Future<bool> _openSettingsDestination(
   await driver.activate();
   await _pumpUntil(
     tester,
-    () => find.byType(SettingsDetailPage).evaluate().isNotEmpty ||
-        _wideDestinationSelected(label),
-    reason: '$label must open a narrow detail route or become the selected '
-        'wide-layout destination',
+    () => _settingsDestinationShown(destination.id),
+    reason: '$label must open its own detail page (narrow) or its own wide '
+        'detail pane — a highlighted row is not proof of navigation',
   );
   expect(
     find.text(label),
@@ -262,29 +347,43 @@ Future<bool> _openSettingsDestination(
   return find.byType(SettingsDetailPage).evaluate().isNotEmpty;
 }
 
-bool _wideDestinationSelected(String label) {
-  final Finder selectedRows = find.byWidgetPredicate(
-    (Widget widget) => widget is FushiListItem && widget.selected,
-  );
-  return find
-      .ancestor(of: find.text(label), matching: selectedRows)
+/// 该分类的详情内容是否真的在屏上——按**身份**判，不按「哪一行高亮」判。
+///
+/// - 窄屏：`SettingsDetailPage` 自带 `destination`（settings_detail_page.dart）。
+/// - 宽屏：详情面板外层是 `KeyedSubtree(key: ValueKey<SettingsDestinationId>(id))`
+///   （settings_home_page.dart）。
+bool _settingsDestinationShown(SettingsDestinationId id) {
+  final bool pushedDetail = find
+      .byWidgetPredicate(
+        (Widget widget) =>
+            widget is SettingsDetailPage && widget.destination.id == id,
+      )
       .evaluate()
       .isNotEmpty;
+  if (pushedDetail) return true;
+  return find.byKey(ValueKey<SettingsDestinationId>(id)).evaluate().isNotEmpty;
 }
 
 Future<void> _openDeepRoute<T extends Widget>(
   WidgetTester tester,
   FocusDriver driver, {
-  required String destination,
+  required _SettingsDestinationCase destination,
   required String item,
 }) async {
-  final bool pushedDetail =
-      await _openSettingsDestination(tester, driver, destination);
+  // 深路由用例连着开同一个分类两次（system → 快捷键 / system → 新手引导），
+  // 宽屏下第二次目标本来就在显示，所以这里不要求「必须发生切换」——真正的断言
+  // 是 find.byType(T)，它不会恒真。
+  final bool pushedDetail = await _openSettingsDestination(
+    tester,
+    driver,
+    destination,
+    requireTransition: false,
+  );
   final Finder itemTarget = find.text(item).first;
   expect(
     await driver.focusWidget(itemTarget, maxSteps: 360),
     isTrue,
-    reason: '$item must be focus reachable inside $destination',
+    reason: '$item must be focus reachable inside ${destination.label}',
   );
   await driver.activate();
   await _pumpUntil(
@@ -305,22 +404,24 @@ Future<void> _openDeepRoute<T extends Widget>(
     () => find.byType(T).evaluate().isEmpty,
     reason: '$item deep page must return to its destination',
   );
+  final String destinationLabel = destination.label;
   if (pushedDetail) {
     expect(find.byType(SettingsDetailPage), findsOneWidget);
     await _systemBack(tester);
     await _pumpUntil(
       tester,
       () => find.byType(SettingsDetailPage).evaluate().isEmpty,
-      reason: '$destination must return to settings home',
+      reason: '$destinationLabel must return to settings home',
     );
   } else {
     expect(
-      _wideDestinationSelected(destination),
+      _settingsDestinationShown(destination.id),
       isTrue,
-      reason: 'wide settings must retain $destination after closing $item',
+      reason: 'wide settings must retain the $destinationLabel detail pane '
+          'after closing $item',
     );
   }
-  debugPrint('[M4] ✓ $destination → $item open/back/back');
+  debugPrint('[M4] ✓ $destinationLabel → $item open/back/back');
 }
 
 Future<void> _systemBack(WidgetTester tester) async {
