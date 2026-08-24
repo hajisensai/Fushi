@@ -415,7 +415,10 @@ SettingsDestination buildLookupDestination() {
       ),
       // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
       SettingsSection(
+        // 发音 / 触感反馈：装完调一次的偏好，默认折叠（与阅读、视频同一条规则：
+        // 一个分类只默认展开最常调的一两组）。
         title: t.settings_section_lookup_audio,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
@@ -955,7 +958,9 @@ SettingsDestination buildLookupDestination() {
       // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
       // 参与查词」的接线项，与本机查词触发行为分开。
       SettingsSection(
+        // 外部集成（浏览器扩展 / 外部工具）：一次性接线，默认折叠。
         title: t.settings_section_lookup_integrations,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
           // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。

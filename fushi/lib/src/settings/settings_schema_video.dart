@@ -316,7 +316,10 @@ SettingsDestination buildVideoDestination() {
         ],
       ),
       SettingsSection(
+        // 刮削凭据 / 语言 / 清库：装完配一次就不再碰，默认折叠（与阅读、查词
+        // 同一条规则：一个分类只默认展开最常调的一两组）。
         title: t.section_video_library,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsTextItem(
             id: 'video.library.metadata_anidb_client',

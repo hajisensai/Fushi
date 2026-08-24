@@ -20,9 +20,10 @@ SettingsDestination buildReadingDestination() {
     id: SettingsDestinationId.reading,
     group: SettingsDestinationGroup.content,
     title: t.settings_destination_reading,
-    // 副标题带上「有声书」：听书并入本分类后，一级列表上「阅读」是听书设置的
-    // 唯一入口，标题本身看不出这一点。用既有分区名拼，不新增 i18n key。
-    summary: '${t.section_layout} · ${t.section_audiobook}',
+    // 副标题带上「听书」：并入后本分类是听书设置的唯一入口，标题本身看不出这
+    // 一点；且 summary 参与设置搜索的命中面（settings_search 的 haystack），
+    // 用户搜「听书」才还能落到这里。复用原一级分类名，不新增 i18n key。
+    summary: '${t.section_layout} · ${t.settings_destination_listening}',
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       // 「模式与排版方向」：阅读呈现的模式与方向选择（翻页/滚动、竖排、跨页展开、
