@@ -608,6 +608,12 @@
             "format": "secondary/output buffer PCM",
             "status": "verified",
             "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "xwma_compressed_resource",
+            "format": "RIFF/XWMA rebuilt from the submission's own fmt + dpds",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
           }
         ]
       },
@@ -625,7 +631,8 @@
       "known_limitations": [
         "A backend hit does not prove clean voice: software-mixed buffers can be equivalent to loopback.",
         "Attach cannot retroactively hook already-created engine/source objects.",
-        "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine."
+        "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine.",
+        "xWMA source voices publish a compressed resource rebuilt from the runtime format and the XAUDIO2_BUFFER_WMA dpds table. The compressed payload is verbatim, but the RIFF envelope is synthesised here, so the emitted file is not byte-identical to any archive entry. No real game has been run against this path yet."
       ],
       "adapter_path": "hook/adapters/windows_audio_adapter.inc",
       "fixture_paths": [],
