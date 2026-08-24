@@ -355,6 +355,7 @@ using LookupResult = flutter::MethodResult<flutter::EncodableValue>;
 // 故不需要锁。共享内存那部分的并发由 ReaderState::mutex 管，两者不重叠。
 struct LookupPumpState {
   std::unique_ptr<LookupChannel> channel;
+  VoiceHookReader::LookupDirectPresenter direct_presenter;
   VoiceHookReader::LookupCaptureRequest capture;
   VoiceHookReader::LookupInputSink input_sink;
   // CapturePreview completes asynchronously.  A dismiss or a newer present
@@ -556,6 +557,13 @@ int64_t ReadLookupInt(const flutter::MethodCall<flutter::EncodableValue>& call,
   return it->second.TryGetLongValue().value_or(0);
 }
 
+uint32_t ReadLookupDimension(
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    const char* key) {
+  const int64_t value = ReadLookupInt(call, key);
+  return value > 0 && value <= 0x10000 ? static_cast<uint32_t>(value) : 0;
+}
+
 bool ReadLookupBool(const flutter::MethodCall<flutter::EncodableValue>& call,
                     const char* key) {
   const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
@@ -598,6 +606,34 @@ void HandleLookupPresent(
   if (gate != VoiceHookLookupError::kNone) {
     result->Success(LookupErrorMap(gate));
     return;
+  }
+  const uint32_t card_width = ReadLookupDimension(call, "cardWidth");
+  const uint32_t card_height = ReadLookupDimension(call, "cardHeight");
+  const uint32_t view_width = ReadLookupDimension(call, "viewWidth");
+  const uint32_t view_height = ReadLookupDimension(call, "viewHeight");
+  if (pump.direct_presenter && card_width > 0 && card_height > 0 &&
+      view_width > 0 && view_height > 0) {
+    if (pump.direct_presenter(meta.anchor_x, meta.anchor_y, card_width,
+                              card_height, view_width, view_height)) {
+      // Only retire the old bitmap AFTER the live composition surface is in
+      // place. Dismissing first created a guaranteed blank interval whenever
+      // direct presentation failed and CapturePreview had to recover.
+      const VoiceHookLookupError dismiss = reader.WriteLookupDismiss(meta.seq);
+      if (dismiss != VoiceHookLookupError::kNone) {
+        result->Success(LookupErrorMap(dismiss));
+        return;
+      }
+      result->Success(flutter::EncodableValue(flutter::EncodableMap{
+          {flutter::EncodableValue("ok"), flutter::EncodableValue(true)},
+          {flutter::EncodableValue("directSurface"),
+           flutter::EncodableValue(true)},
+          {flutter::EncodableValue("width"),
+           flutter::EncodableValue(static_cast<int64_t>(card_width))},
+          {flutter::EncodableValue("height"),
+           flutter::EncodableValue(static_cast<int64_t>(card_height))},
+      }));
+      return;
+    }
   }
   if (!pump.capture) {
     result->Success(
@@ -896,6 +932,12 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
     StartLookupPump();
   }
   return out;
+}
+
+uint32_t VoiceHookReader::CurrentPid() {
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  return ProtocolMatches(st.header) ? st.pid : 0;
 }
 
 VoiceHookStatus VoiceHookReader::Status() {
@@ -1521,6 +1563,7 @@ void VoiceHookReader::DetachLookupChannel() {
   // 同上：从没注册过 handler，所以这里也不能注销（注销会把 flutter_window 那份
   // 一起清掉）。只丢自己的通道对象。
   pump.channel.reset();
+  pump.direct_presenter = nullptr;
   pump.capture = nullptr;
   pump.input_sink = nullptr;
   ++pump.capture_generation;
@@ -1534,6 +1577,11 @@ bool VoiceHookReader::TryHandleLookupMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result) {
   return HandleLookupCall(call, result);
+}
+
+void VoiceHookReader::SetLookupDirectPresenter(
+    LookupDirectPresenter presenter) {
+  Pump().direct_presenter = std::move(presenter);
 }
 
 void VoiceHookReader::SetLookupCaptureRequest(LookupCaptureRequest request) {

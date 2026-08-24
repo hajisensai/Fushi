@@ -115,23 +115,31 @@ class GlobalLookupWindow {
   // Resizes an off-screen render surface without applying the on-screen work-
   // area clamp. The galgame card capture window must stay parked outside the
   // virtual desktop while WebView2 remains shown for layout and capture.
-  void ResizeOffscreen(int width, int height);
-  // Resizes the off-screen nested-card union and commits the same host-layer
-  // shift used by RevealStack, without ever moving the HWND on-screen.
-  void ResizeStackOffscreen(int width, int height, double bbox_left,
-                            double bbox_top);
+  // Returns true only when Win32 accepted the requested HWND geometry.  The
+  // geometry-epoch caller must not acknowledge a failed resize to the host.
+  bool ResizeOffscreen(int width, int height);
+  // Updates the gal-card nested union. Before direct presentation this keeps the
+  // renderer off-screen; once the composition HWND is attached to the game it
+  // resizes/repositions that SAME visible HWND in place, preserving every live
+  // iframe instead of flashing the whole stack away.
+  void ResizeStackForGal(int dx, int dy, int width, int height,
+                         double bbox_left, double bbox_top,
+                         int64_t geometry_epoch);
   // Moves the off-screen-rendered card to the pending cursor anchor at its final
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
   // measure->resize jitter. Pass <=0 to keep the current size.
-  void Reveal(int width, int height);
+  void Reveal(int width, int height, bool clamp_to_work_area = true);
   // TODO-867 P3c E1 — reveals/resizes to the nested-stack union bounding box.
   // |dx|/|dy| offset the window from the pending cursor anchor (physical px; the
   // host bbox origin × dpr) so a left/up cascade shifts the window while the root
   // card stays pinned at the cursor; |width|/|height| are the bbox size (physical
-  // px). Clamps to the monitor work area like Reveal/ResizeTo.
+  // px). Clamps to the monitor work area like Reveal/ResizeTo. The epoch is
+  // forwarded only after SetWindowPos succeeds, allowing the host to reveal
+  // shells that were gated against exactly this geometry transaction.
   void RevealStack(int dx, int dy, int width, int height,
-                   double bbox_left, double bbox_top);
+                   double bbox_left, double bbox_top,
+                   int64_t geometry_epoch);
   // TODO-1233 -- [notify]=true (default) fires the HiddenCallback on a genuine
   // dismissal; the programmatic reset before a fresh lookup passes false so the
   // between-lookups reset does not look like a user dismissal.
@@ -260,17 +268,24 @@ class GlobalLookupWindow {
   // （真相源是 voice_hook_ipc.h 的 v14 查词区注释）。写成预乘不会报错，只会让卡片
   // 半透明边缘发暗——所以格式不由这里"看着办"，由契约钉死。
   //
-  // MVP 路径：`CapturePreview`（PNG 流）+ WIC 解码成 32bppBGRA。够 P1 静态卡片
-  // （一次查词一帧，编解码 ~10-20ms 落在 host 线程，不占游戏主线程）。
-  // 升级路径（P2 交互式高帧率才需要）：自持
-  // `IDXGIFactory2::CreateSwapChainForComposition` 作 WebView2 的
-  // root visual target，然后 `ID3D11DeviceContext::CopyResource` 到 D3D11_USAGE_STAGING
-  // 纹理、`Map(D3D11_MAP_READ)` 直接读回 BGRA——省掉整条 PNG 编解码，代价是要自己管
-  // swap chain 生命周期与 DPI/尺寸变化。**不要**在没有实测帧率不足前先做它。
+  // 回退路径：`CapturePreview`（JPEG/PNG 流）+ WIC 解码成 32bppBGRA。WebView2 的
+  // composition controller 不暴露它私有 visual tree 的 texture/surface；RootVisualTarget
+  // 也只接受宿主 visual，不能用自建 swap chain 读回 WebView 内容。交互主路因此直接把
+  // composition HWND 贴到游戏客户区，只有该路径不可用时才走这里的压缩整帧回退。
   //
   // 必须在平台线程（本窗的消息循环线程）调用；continuation 也在该线程回调。
   void CaptureBgraAsync(uint32_t max_width, uint32_t max_height,
                         BgraFrameCallback done);
+
+  // BUG-1804 — 把已渲染的 composition WebView 直接贴到目标进程的游戏客户区。
+  // [anchor_*]/[view_*] 属于游戏 primaryLayer 像素域。目前仅在它与实际
+  // 客户区逐像素一致（容忍 1 px 整数取整）时直接呈现；非 1:1 尺寸
+  // 需要 DComp scale transform + 输入逆变换，不得用 SetWindowPos 缩放
+  // WebView viewport 并触发重排。
+  bool RevealOverProcessClient(uint32_t pid, int32_t anchor_x,
+                               int32_t anchor_y, uint32_t card_width,
+                               uint32_t card_height, uint32_t view_width,
+                               uint32_t view_height);
 
   // 把游戏侧转发来的一条 LookupInputSlot 喂给已有的 composition controller。
   // [kind] 取 voice_hook_ipc.h 的 kLookupInput*（0=move 1=leftDown 2=leftUp
@@ -335,6 +350,13 @@ class GlobalLookupWindow {
   // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
+  // Geometry epochs are monotonic within one routed host-document lifetime.
+  // Equal values are retries; a lower (or legacy zero after epochs started)
+  // request is stale and must not move the live HWND or acknowledge the host.
+  bool BeginGeometryRequest(int64_t geometry_epoch);
+  bool CommitPendingShellGeometry(int64_t geometry_epoch);
+  void FinalizePendingShellGeometry(int64_t geometry_epoch);
+  void ClearPendingShellGeometry();
 
   // Tear down the dismissal hooks (foreground WinEvent + low-level mouse) and
   // give up hook ownership if it is ours.
@@ -413,6 +435,18 @@ class GlobalLookupWindow {
   bool offscreen_active_ = false;
   int pending_x_ = 0;
   int pending_y_ = 0;
+  // BUG-1806 — direct gal composition geometry. bbox dx/dy are in the same
+  // primaryLayer/WebView physical-pixel domain as the root anchor. The current
+  // visible union starts at root+bbox; caching the root lets nested growth move
+  // the HWND in place without recomputing an anchor from the larger union.
+  bool direct_process_client_active_ = false;
+  HWND direct_game_hwnd_ = nullptr;
+  int32_t direct_root_anchor_x_ = 0;
+  int32_t direct_root_anchor_y_ = 0;
+  int32_t direct_bbox_dx_ = 0;
+  int32_t direct_bbox_dy_ = 0;
+  uint32_t direct_view_width_ = 0;
+  uint32_t direct_view_height_ = 0;
   bool webview_ready_ = false;
   // TODO-1268 (BUG-693): a dead-surface rebuild is in flight; renders
   // cache into pending_json_ until NavigationCompleted re-arms
@@ -458,11 +492,19 @@ class GlobalLookupWindow {
   std::string pending_json_;
   RouteContext route_context_;
   bool route_context_bound_ = false;
+  int64_t latest_geometry_epoch_ = 0;
   // BUG-749 — host-reported shell rects (window-relative CSS px, one
   // {l,t,w,h} per card). Non-empty only on the transient cascade instance
   // (the panel host short-circuits measureAndReport and never posts them).
   // Cleared on Hide()/ForgetDeadWindow() so a fresh lookup re-posts.
   std::vector<std::array<double, 4>> shell_rects_css_;
+  // shellRects arrives before its matching HWND resize. Keep the announced
+  // region separate from the last committed shadow geometry so SetWindowRgn's
+  // synchronous WM_WINDOWPOSCHANGED cannot raster the new cards against the old
+  // (often much larger) window bounds.
+  bool shell_geometry_pending_ = false;
+  int64_t pending_shell_geometry_epoch_ = 0;
+  std::vector<std::array<double, 4>> pending_shell_rects_css_;
 
   wil::com_ptr<ICoreWebView2Environment> env_;
   wil::com_ptr<ICoreWebView2Controller> controller_;

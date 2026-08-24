@@ -166,6 +166,127 @@ function mineEntryKey(expression, reading) {
     return `${expression || ''}\u0000${reading || ''}`;
 }
 
+// BUG-1804 follow-up: favorite/Anki state is decoration for each result header,
+// not a prerequisite for revealing the dictionary card. A large lookup can
+// contain dozens of entry headers; firing both bridges while synchronously
+// building every header floods Dart/Anki for seconds after the popup is gone and
+// steals time from the next (including nested) lookup. Observe each button and
+// start its checks only when it reaches the viewport prefetch margin. Repeated
+// expression/reading pairs entering together share the same in-flight promise;
+// settled answers are not cached because Anki/favorite state can change live.
+//
+// A full render resets the epoch, disconnecting work which never became visible
+// and preventing already-started checks from painting a newer DOM. Environments
+// without IntersectionObserver keep the old eager, fail-soft behaviour.
+let entryStateCheckEpoch = 0;
+let entryStateCheckObserver = null;
+let entryStateCheckJobs = new WeakMap();
+let entryStateCheckRuns = new WeakMap();
+const entryStateCheckPromises = new Map();
+
+function resetEntryStateChecks() {
+    entryStateCheckEpoch += 1;
+    entryStateCheckObserver?.disconnect();
+    entryStateCheckObserver = null;
+    entryStateCheckJobs = new WeakMap();
+    entryStateCheckRuns = new WeakMap();
+    entryStateCheckPromises.clear();
+}
+
+function invalidateEntryStateCheck(anchor) {
+    entryStateCheckObserver?.unobserve(anchor);
+    entryStateCheckJobs.delete(anchor);
+    entryStateCheckRuns.delete(anchor);
+    anchor.__fushiEntryStateVersion =
+        (anchor.__fushiEntryStateVersion || 0) + 1;
+}
+
+// A user can click a just-rendered header before IntersectionObserver delivers
+// its first callback. Let correctness-sensitive actions (the mine button reads
+// data-mined to choose create vs. existing-card handling) join or start that
+// same lazy probe instead of treating the temporary "+" placeholder as truth.
+async function runEntryStateCheckNow(anchor) {
+    const job = entryStateCheckJobs.get(anchor);
+    if (job) {
+        entryStateCheckObserver?.unobserve(anchor);
+        entryStateCheckJobs.delete(anchor);
+        await job();
+        return;
+    }
+    const run = entryStateCheckRuns.get(anchor);
+    if (run) await run;
+}
+
+function scheduleEntryStateCheck(anchor, key, fetchState, applyState) {
+    const epoch = entryStateCheckEpoch;
+    anchor.__fushiEntryStateVersion = anchor.__fushiEntryStateVersion || 0;
+    const version = anchor.__fushiEntryStateVersion;
+    const applyIfCurrent = (value) => {
+        if (epoch !== entryStateCheckEpoch) return;
+        if (anchor.__fushiEntryStateVersion !== version) return;
+        if (anchor.isConnected === false) return;
+        return applyState(value);
+    };
+
+    const start = () => {
+        if (epoch !== entryStateCheckEpoch) return;
+        const existingRun = entryStateCheckRuns.get(anchor);
+        if (existingRun) return existingRun;
+        let pending = entryStateCheckPromises.get(key);
+        if (!pending) {
+            try {
+                pending = Promise.resolve(fetchState());
+            } catch (error) {
+                pending = Promise.reject(error);
+            }
+            entryStateCheckPromises.set(key, pending);
+            pending.then(
+                () => {
+                    if (entryStateCheckPromises.get(key) === pending) {
+                        entryStateCheckPromises.delete(key);
+                    }
+                },
+                () => {
+                    if (entryStateCheckPromises.get(key) === pending) {
+                        entryStateCheckPromises.delete(key);
+                    }
+                },
+            );
+        }
+        // Resolve the joinable run after the backend answer and synchronous
+        // state paint. An optional secondary probe (for example overwrite note
+        // id) may continue without delaying a click that only needs ✓/+ truth.
+        const run = pending.then((value) => {
+            const applied = applyIfCurrent(value);
+            Promise.resolve(applied).catch(() => {});
+        }).catch(() => {});
+        entryStateCheckRuns.set(anchor, run);
+        return run;
+    };
+
+    entryStateCheckJobs.set(anchor, start);
+
+    // Old WebViews and the lightweight JS behaviour harness do not expose an
+    // observer. Preserve their eager semantics rather than dropping status.
+    if (typeof IntersectionObserver !== 'function') {
+        start();
+        return;
+    }
+
+    if (!entryStateCheckObserver) {
+        entryStateCheckObserver = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                const job = entryStateCheckJobs.get(entry.target);
+                entryStateCheckObserver?.unobserve(entry.target);
+                entryStateCheckJobs.delete(entry.target);
+                job?.();
+            }
+        }, { root: null, rootMargin: '240px 0px', threshold: 0 });
+    }
+    entryStateCheckObserver.observe(anchor);
+}
+
 // Normalize the mineEntry/updateEntry handler reply into {ankiConnect, noteId}.
 // The Dart handler now returns the structured MinePopupResult JSON; older/edge
 // returns (a bare boolean, or null) are tolerated so a handler that has not been
@@ -2662,6 +2783,7 @@ function createFavoriteButton(expression, reading) {
     const button = el('button', {
         className: 'inline-action-button favorite-button',
         onclick: async () => {
+            invalidateEntryStateCheck(button);
             button.disabled = true;
             try {
                 const nowFav = await window.flutter_inappwebview.callHandler(
@@ -2677,13 +2799,17 @@ function createFavoriteButton(expression, reading) {
         }
     });
     setButtonIcon(button, 'favorite');
-    // 初始状态：查询是否已收藏，设收藏图标。
-    window.flutter_inappwebview.callHandler('favoriteCheck', { expression, reading })
-        .then(isFav => {
+    // 初始状态：接近可见时查询是否已收藏，避免不可见词条挤占首屏渲染。
+    scheduleEntryStateCheck(
+        button,
+        `favorite\u0000${mineEntryKey(expression, reading)}`,
+        () => window.flutter_inappwebview.callHandler(
+            'favoriteCheck', { expression, reading }),
+        (isFav) => {
             setButtonIcon(button, isFav ? 'favorited' : 'favorite');
             button.classList.toggle('favorited', !!isFav);
-        })
-        .catch(() => {});
+        },
+    );
     return button;
 }
 
@@ -2878,6 +3004,11 @@ function createEntryHeader(entry, idx) {
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
+                // IntersectionObserver may not have delivered its first callback
+                // yet. Join/start the scheduled duplicateCheck before consulting
+                // data-mined, then invalidate late decoration work for this click.
+                await runEntryStateCheckNow(mineButton);
+                invalidateEntryStateCheck(mineButton);
                 if (mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
                     // TODO-270 D green ✓⤺: this is the latest mined card and it
                     // carries a real note id → OVERWRITE that note in place with
@@ -3041,22 +3172,37 @@ function createEntryHeader(entry, idx) {
     // earlier card to the editable ✓↩ latest state so a single click overwrites
     // it in place — no need to have mined it in this popup session. A null reply
     // keeps the ordinary two-state behaviour (Never break userspace).
-    window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading }).then(async isDuplicate => {
-        if (isDuplicate && !isLatestEditable(expression, reading)) {
-            try {
-                const noteId = await window.flutter_inappwebview.callHandler(
-                    'overwriteTargetNoteId', { expression, reading });
-                if (typeof noteId === 'number' && Number.isFinite(noteId)) {
-                    rememberLatestMined(expression, reading, noteId);
+    scheduleEntryStateCheck(
+        mineButton,
+        `duplicate\u0000${mineEntryKey(expression, reading)}`,
+        () => window.flutter_inappwebview.callHandler(
+            'duplicateCheck', { expression, reading }),
+        async (isDuplicate) => {
+            const stateEpoch = entryStateCheckEpoch;
+            const stateVersion = mineButton.__fushiEntryStateVersion || 0;
+            // Paint ✓/+ as soon as duplicateCheck answers. The optional
+            // overwrite-target probe is a second Anki round trip and must not
+            // hold the basic lookup-time state hostage.
+            setMineState(isDuplicate);
+            if (isDuplicate && !isLatestEditable(expression, reading)) {
+                try {
+                    const noteId = await window.flutter_inappwebview.callHandler(
+                        'overwriteTargetNoteId', { expression, reading });
+                    if (stateEpoch !== entryStateCheckEpoch ||
+                        stateVersion !== (mineButton.__fushiEntryStateVersion || 0) ||
+                        mineButton.isConnected === false) return;
+                    if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+                        rememberLatestMined(expression, reading, noteId);
+                        setMineState(true);
+                    }
+                } catch (e) {
+                    // A failed overwrite-target probe must never break the ✓/+ paint;
+                    // fall back to the ordinary mined state below.
+                    console.error('overwriteTargetNoteId probe failed', e);
                 }
-            } catch (e) {
-                // A failed overwrite-target probe must never break the ✓/+ paint;
-                // fall back to the ordinary mined state below.
-                console.error('overwriteTargetNoteId probe failed', e);
             }
-        }
-        setMineState(isDuplicate);
-    });
+        },
+    );
 
     // TODO-393「查词窗口句子上下文制卡」：仅支持草稿的表面（书籍/有声书/视频；宿主接受
     // setSentenceContext）渲染「上 N 句 / 下 N 句」上下文选择器。选「上 N」「下 N」把当前
@@ -4146,13 +4292,33 @@ function observeMasonryTargets() {
 
 function scheduleMasonry() {
     if (!masonrySupported() || masonryRaf) return;
+    const generation = window._renderGeneration;
     masonryRaf = requestAnimationFrame(() => {
         masonryRaf = null;
+        if (generation !== window._renderGeneration) return;
         layoutMasonry();
         // 铺完复报高度（容器高度已由 masonry 改写），让宿主给弹窗重新定尺。
         _reportPopupHeight();
     });
 }
+
+// BUG-1804 — the global lookup host parks and rebinds a physical iframe realm.
+// Retire every callback/observer that belongs to the old logical card before
+// the realm can receive a new frame id. The generation checks cover font/tail/
+// masonry callbacks; explicit cancellation also lets the new render schedule
+// its own masonry immediately instead of being blocked by an old non-null rAF.
+window.__fushiPrepareRealmForReuse = () => {
+    window._renderGeneration += 1;
+    window._renderInProgress = false;
+    resetEntryStateChecks();
+    if (masonryRaf != null) {
+        try { cancelAnimationFrame(masonryRaf); } catch (_) { /* no-op */ }
+        masonryRaf = null;
+    }
+    try { masonryObserver?.disconnect(); } catch (_) { /* no-op */ }
+    masonryObserver = null;
+    return window._renderGeneration;
+};
 
 // 宿主改列数 / 外部触发时可调；渲染钩子已在 _firePopupRendered / updatePopupIncremental 里调。
 window.fushiRelayoutDictionaries = () => {
@@ -4311,6 +4477,14 @@ function prependSentenceBanner(container) {
 
 window.renderPopup = function() {
     const t0 = performance.now();
+    // Invalidate every deferred dictionary-block task from the preceding DOM
+    // before taking ANY early return. Previously no-results/kanji-only paths
+    // returned before advancing this generation, so an old multi-entry timer
+    // could append stale cards into the freshly-rendered empty state.
+    const gen = ++window._renderGeneration;
+    // Cancel not-yet-visible status probes from the previous DOM before any new
+    // entry headers are built. In-flight probes are epoch-gated on completion.
+    resetEntryStateChecks();
     // 真机第 5 轮 — settingsJs 可能刚更新了 --dict-columns；渲染前按当前视口
     // 重算有效列数（resize 监听兜住渲染后的窗口拖拽）。
     updateEffectiveDictColumns();
@@ -4342,8 +4516,6 @@ window.renderPopup = function() {
         _emitPopupRenderPerf('complete', t0, 0, { noResults: true });
         return;
     }
-
-    const gen = ++window._renderGeneration;
 
     // TODO-833: entries that the hidden-dictionary filter leaves with no visible
     // glossary are skipped (buildEntryElement returns null), so the rendered DOM

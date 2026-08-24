@@ -426,8 +426,9 @@ function createPopupContext() {
   return context;
 }
 
-function loadPopup() {
+function loadPopup(configureContext) {
   const context = createPopupContext();
+  configureContext?.(context);
   vm.runInNewContext(fs.readFileSync(dictMediaPath, 'utf8'), context, {
     filename: dictMediaPath,
   });
@@ -436,6 +437,55 @@ function loadPopup() {
   });
   return context;
 }
+
+function testRealmReuseCancelsStaleMasonryPresentation() {
+  const queuedFrames = [];
+  const cancelledFrames = [];
+  const bridgeCalls = [];
+  let observerDisconnects = 0;
+  const context = loadPopup((value) => {
+    value.requestAnimationFrame = (callback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    };
+    value.cancelAnimationFrame = (id) => cancelledFrames.push(id);
+    value.ResizeObserver = class {
+      observe() {}
+      disconnect() { observerDisconnects += 1; }
+    };
+    value.document.getElementById = () => null;
+    value.window.flutter_inappwebview.callHandler = (handler, ...args) => {
+      bridgeCalls.push({handler, args});
+      return Promise.resolve(true);
+    };
+  });
+
+  context.window.fushiRelayoutDictionaries();
+  assert.equal(queuedFrames.length, 1,
+    'masonry relayout queues one presentation callback');
+  const staleMasonry = queuedFrames[0];
+  const generationBeforeReuse = context.window._renderGeneration;
+  context.window.__fushiPrepareRealmForReuse();
+  assert.ok(context.window._renderGeneration > generationBeforeReuse,
+    'realm reuse retires callbacks from the previous logical card');
+  assert.deepEqual(cancelledFrames, [1],
+    'realm reuse cancels the pending masonry frame');
+  assert.equal(observerDisconnects, 1,
+    'realm reuse disconnects the previous card ResizeObserver');
+
+  // A browser may still deliver a callback that was already dequeued when it
+  // was cancelled. Its captured generation must suppress both layout and the
+  // popupRendered height signal, otherwise the host can reveal the replacement
+  // child before its own content/geometry is ready.
+  staleMasonry(0);
+  assert.equal(
+    bridgeCalls.filter((call) => call.handler === 'popupRendered').length,
+    0,
+    'stale masonry callback cannot publish popupRendered for the rebound realm',
+  );
+}
+
+testRealmReuseCancelsStaleMasonryPresentation();
 
 function testEmSizedWideImagesUseHorizontalScrollWrapper() {
   const context = loadPopup();
@@ -1345,11 +1395,126 @@ function buildMineHeader(context) {
 }
 
 async function flush() {
-  // Drain microtasks (the in-flight duplicateCheck/mineEntry promises).
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  // Drain microtasks (the visibility scheduler + in-flight
+  // duplicateCheck/overwriteTargetNoteId/mineEntry promises).
+  for (let i = 0; i < 6; i++) {
+    await Promise.resolve();
+  }
 }
+
+// BUG-1804 follow-up: a real browser exposes IntersectionObserver. Initial
+// favorite/duplicate decoration must stay off the synchronous card-render path,
+// repeated words must share one backend call, and a superseding render must make
+// an already-started result stale.
+async function testEntryStateChecksAreVisibleLazyDedupedAndEpochGated() {
+  const observers = [];
+  class FakeIntersectionObserver {
+    constructor(callback, options) {
+      this.callback = callback;
+      this.options = options;
+      this.targets = new Set();
+      this.disconnected = false;
+      observers.push(this);
+    }
+
+    observe(target) {
+      this.targets.add(target);
+    }
+
+    unobserve(target) {
+      this.targets.delete(target);
+    }
+
+    disconnect() {
+      this.disconnected = true;
+      this.targets.clear();
+    }
+
+    reveal(target) {
+      this.callback([{target, isIntersecting: true}]);
+    }
+  }
+
+  const context = loadPopup((value) => {
+    value.IntersectionObserver = FakeIntersectionObserver;
+  });
+  let fetches = 0;
+  const applied = [];
+  const first = {};
+  const second = {};
+  const fetchState = () => {
+    fetches += 1;
+    return Promise.resolve(true);
+  };
+
+  context.scheduleEntryStateCheck(
+    first, 'duplicate\u0000刀\u0000刀', fetchState,
+    (value) => applied.push(['first', value]));
+  context.scheduleEntryStateCheck(
+    second, 'duplicate\u0000刀\u0000刀', fetchState,
+    (value) => applied.push(['second', value]));
+
+  assert.equal(fetches, 0, 'off-viewport headers must not call the backend');
+  assert.equal(observers.length, 1, 'one observer serves the whole render');
+  assert.equal(observers[0].options.rootMargin, '240px 0px');
+
+  observers[0].reveal(first);
+  observers[0].reveal(second);
+  await flush();
+  assert.equal(fetches, 1, 'same word entering together reuses one in-flight promise');
+  assert.deepEqual(applied, [['first', true], ['second', true]]);
+
+  // A real user can click before the observer's first delivery. The click must
+  // force/join the lazy duplicate probe and route an existing card through the
+  // existing-card action, never through a speculative new mine from the "+"
+  // placeholder.
+  let earlyActionCalls = 0;
+  let earlyMineCalls = 0;
+  context.window.__fushiMinedCardActionNative = true;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'minedCardAction') {
+      earlyActionCalls += 1;
+      return Promise.resolve({ankiConnect: false, noteId: null});
+    }
+    if (name === 'mineEntry') {
+      earlyMineCalls += 1;
+      return Promise.resolve({ankiConnect: false, noteId: null});
+    }
+    if (name === 'resolveWordAudio') return Promise.resolve(null);
+    return Promise.resolve(true);
+  };
+  const earlyMineButton = buildMineHeader(context);
+  assert.equal(earlyMineButton.textContent, '+',
+    'before observer delivery the button is only a temporary placeholder');
+  await earlyMineButton.onclick();
+  await flush();
+  assert.equal(earlyActionCalls, 1,
+    'click-before-observer joins the state probe and opens existing-card handling');
+  assert.equal(earlyMineCalls, 0,
+    'click-before-observer must not create a duplicate from placeholder state');
+
+  let resolveStale;
+  const stale = {};
+  context.scheduleEntryStateCheck(
+    stale, 'duplicate\u0000犬\u0000犬',
+    () => new Promise((resolve) => { resolveStale = resolve; }),
+    () => applied.push(['stale', true]));
+  observers[0].reveal(stale);
+  context.resetEntryStateChecks();
+  resolveStale(true);
+  await flush();
+  assert.equal(observers[0].disconnected, true,
+    'a new render disconnects never-visible jobs from the old DOM');
+  assert.ok(!applied.some(([name]) => name === 'stale'),
+    'an old in-flight result cannot repaint a newer render');
+}
+
+testEntryStateChecksAreVisibleLazyDedupedAndEpochGated().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 // LOOKUP-TIME DETECTION (primary mechanism): when the popup renders a word the
 // initial duplicateCheck queries Anki and sets the ACCURATE button state.
@@ -1943,9 +2108,12 @@ function testRenderPopupNoKanjiNoEntriesShowsNoResults() {
 
   context.window.lookupEntries = [];
   context.window.kanjiResults = [];
+  const generationBefore = context.window._renderGeneration;
 
   context.window.renderPopup();
 
+  assert.ok(context.window._renderGeneration > generationBefore,
+    'no-results render must retire deferred dictionary tasks from the old card');
   // No kanji + no entries keeps the original no-results behaviour: the
   // container's innerHTML is set to the no-results placeholder markup.
   assert.ok((container.textContent || '').includes('No results') ||
