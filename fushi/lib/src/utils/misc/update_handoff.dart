@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi/src/utils/misc/build_version.dart';
+
 enum WindowsUpdateHandoffStatus {
   installed,
   incomplete,
@@ -645,9 +647,12 @@ abstract final class WindowsUpdateHandoff {
     );
   }
 
+  /// [runningCodeVersionDefine] 默认就是编译进本份 `app.so` 的常量，生产路径无需
+  /// 传参；测试用它注入任意「运行中代码版本」。空串 = 未注入 = 该证据不可用。
   static Future<WindowsUpdateHandoffResult?> reconcile({
     required File markerFile,
     required String currentVersion,
+    String runningCodeVersionDefine = kFushiBuildVersionDefine,
     DateTime? now,
   }) async {
     final WindowsUpdateHandoffRecord? record = await read(markerFile);
@@ -661,22 +666,35 @@ abstract final class WindowsUpdateHandoff {
     // 安装中途 Abort 回滚要报成功，安装器压根没跑起来同样报成功。用户现场因此连着几天
     // 收到「更新成功」，跑的却始终是旧 Dart 代码。
     //
-    // 现在以 Inno 日志的收尾结论为主判据：只有日志明确写了「Installation process
-    // succeeded」才可能是成功；aborted（回滚）与 unknown（日志缺失 = 安装没跑起来）
-    // 一律走失败分支，让用户看见诊断而不是一句成功。版本判据保留为 AND 条件——它在
-    // 正式版通道仍能识别「exe 根本没被换掉」这种失败。
+    // BUG-1836 根因修复：判据升级为三源证据表（见 [isWindowsUpdateInstalled]）。
+    // 旧判据只有「Inno 日志 + exe 版本资源」两源，两源都不是**被替换的产物本身**：
+    // 日志只在 app 自己拉起安装器时才存在（手动救援装成功也判失败），版本资源和
+    // Dart 代码是两个文件（半更新态里它报新版本、跑的是旧代码）。现在加入编译进
+    // `app.so` 的 [kFushiBuildVersionDefine]，它与被替换的产物同体，是唯一伪造
+    // 不了的证据。没有它的历史版本/本地构建行为与旧判据完全一致。
+    final String? runningCodeVersion =
+        normalizeFushiBuildVersion(runningCodeVersionDefine);
+    // 「这条提示是不是已经弹过」的幂等键。优先用代码版本：Windows 上 exe 版本资源
+    // 丢后缀，同一 base 的两个 debug 构建拿到的 `currentVersion` 完全相同
+    // （`2.2.1` == `2.2.1`），marker 若因 AV 占用删不掉就会把**下一次**更新的提示
+    // 一并吞掉。代码版本带 `-debug.N`，粒度精确到构建。
+    final String promptedVersionKey = runningCodeVersion ?? currentVersion;
     final WindowsInnoInstallVerdict verdict = windowsInnoLogVerdict(
       await _readInnoLogContents(record.innoLogPath),
     );
-    if (verdict == WindowsInnoInstallVerdict.succeeded &&
-        _isVersionAtLeast(currentVersion, record.targetVersion)) {
+    if (isWindowsUpdateInstalled(
+      verdict: verdict,
+      targetVersion: record.targetVersion,
+      executableVersion: currentVersion,
+      runningCodeVersion: runningCodeVersion,
+    )) {
       // Idempotency guard mirroring the failure branch below: if we already
       // surfaced the success dialog for this app version, stay silent. Relying
       // solely on deleting the marker is fragile — the delete can fail on real
       // machines (antivirus/indexer locks, permission errors in the updates
       // dir) and is swallowed by the catch, leaving the marker in place so the
       // success dialog pops on every startup (TODO-1035 / BUG-483).
-      if (record.lastPromptedAppVersion == currentVersion) {
+      if (record.lastPromptedAppVersion == promptedVersionKey) {
         // Best-effort cleanup is still worth retrying in case the lock cleared.
         try {
           if (await markerFile.exists()) await markerFile.delete();
@@ -688,7 +706,7 @@ abstract final class WindowsUpdateHandoff {
       // Persist the prompted version *before* attempting deletion so that even
       // if the delete fails, the next startup is silenced by the guard above.
       final WindowsUpdateHandoffRecord prompted = record.copyWith(
-        lastPromptedAppVersion: currentVersion,
+        lastPromptedAppVersion: promptedVersionKey,
         lastPromptedAt: now ?? DateTime.now(),
       );
       try {
@@ -709,13 +727,13 @@ abstract final class WindowsUpdateHandoff {
 
     final WindowsUpdateHandoffRecord enriched =
         await _enrichFailureDiagnostics(record);
-    if (enriched.lastPromptedAppVersion == currentVersion &&
+    if (enriched.lastPromptedAppVersion == promptedVersionKey &&
         enriched.lastPromptedFailureFingerprint ==
             enriched.failureFingerprint) {
       return null;
     }
     final WindowsUpdateHandoffRecord prompted = enriched.copyWith(
-      lastPromptedAppVersion: currentVersion,
+      lastPromptedAppVersion: promptedVersionKey,
       lastPromptedFailureFingerprint: enriched.failureFingerprint,
       lastPromptedAt: now ?? DateTime.now(),
     );
@@ -1046,6 +1064,48 @@ List<Map<String, dynamic>> _listOfMaps(Object? raw) {
         ),
       )
       .toList(growable: false);
+}
+
+/// 「这次 Windows 更新到底装上了没有」的唯一判据，纯函数。
+///
+/// 三个证据源，按可信度排（BUG-1786 / BUG-1831 / BUG-1836 三条现场换来的顺序）：
+///
+/// - [runningCodeVersion]：编译进 `app.so` 的构建版本。**唯一与被替换的产物同体**
+///   的证据——`app.so` 没被换掉它就报旧值。见 `build_version.dart`。
+/// - [verdict]：Inno 日志的收尾结论。只有 app 自己经 `/LOG=` 拉起安装器时才有；
+///   缺失（`unknown`）**不等于**失败，只等于「这条证据不可用」。
+/// - [executableVersion]：exe 版本资源（`PackageInfo`）。Windows 上丢预发布后缀，
+///   且与 `app.so` 是两个文件，只能识别「exe 根本没被换掉」这一种失败。
+///
+/// 判定表（`runningCodeVersion == null` 时逐行退化成 BUG-1786 的旧行为）：
+///
+/// | verdict   | 代码版本 >= 目标 | 结果 |
+/// |-----------|------------------|------|
+/// | aborted   | 任意             | 失败 |
+/// | succeeded | 是 / 未知且 exe 版本达标 | 成功 |
+/// | succeeded | 否               | 失败 |
+/// | unknown   | 是               | 成功 |
+/// | unknown   | 否 / 未知        | 失败 |
+bool isWindowsUpdateInstalled({
+  required WindowsInnoInstallVerdict verdict,
+  required String targetVersion,
+  required String executableVersion,
+  required String? runningCodeVersion,
+}) {
+  // 回滚是「整包不一致」的正面证据，优先级高于任何版本比较：Inno 的回滚**保留**
+  // 被覆盖的文件、只删本次新建的文件，所以回滚之后 `app.so` 完全可能已经是新版
+  // （BUG-1786 现场就是「新 exe + 新 app.so + 旧插件 dll」这类半更新态）。此时
+  // 代码版本达标也不能判成功——装到一半的包必须让用户看见诊断。
+  if (verdict == WindowsInnoInstallVerdict.aborted) return false;
+
+  if (runningCodeVersion != null) {
+    return _isVersionAtLeast(runningCodeVersion, targetVersion);
+  }
+
+  // 拿不到代码版本（本次改动之前发布的历史版本、本地 `flutter run`）：退回旧判据，
+  // 行为逐字不变——日志明确成功 AND exe 版本达标。
+  return verdict == WindowsInnoInstallVerdict.succeeded &&
+      _isVersionAtLeast(executableVersion, targetVersion);
 }
 
 bool _isVersionAtLeast(String current, String target) {

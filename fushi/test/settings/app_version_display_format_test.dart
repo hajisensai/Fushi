@@ -40,6 +40,60 @@ void main() {
     });
   });
 
+  /// BUG-1836 / BUG-1786：Windows 的 exe 版本资源丢 `-debug.N`，关于页只显示
+  /// `2.2.1`，用户看不出自己跑在哪个构建上；「新 exe + 旧 app.so」的半更新态更是
+  /// 完全不可见。有了编译进 `app.so` 的构建版本，这两件事都能在关于页直接看出来。
+  group('运行中代码版本优先展示', () {
+    PackageInfo windowsInfo() => PackageInfo(
+          appName: 'Fushi',
+          packageName: 'app.hibiki.reader',
+          // Windows 上 package_info 读 exe VERSIONINFO，必然只有基版本。
+          version: '2.2.1',
+          buildNumber: '12215',
+        );
+
+    test('注入了代码版本就显示带后缀的真值', () {
+      expect(
+        formatAppVersionDisplay(
+          windowsInfo(),
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        '2.2.1-debug.12215 (12215)',
+      );
+    });
+
+    test('没注入时退回 exe 版本资源，形状不变', () {
+      expect(formatAppVersionDisplay(windowsInfo()), '2.2.1 (12215)');
+    });
+
+    test('基版本不一致时并排显示 exe 版本（半更新态的可见症状）', () {
+      final PackageInfo info = PackageInfo(
+        appName: 'Fushi',
+        packageName: 'app.hibiki.reader',
+        version: '2.3.0',
+        buildNumber: '12300',
+      );
+
+      expect(
+        formatAppVersionDisplay(
+          info,
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        '2.2.1-debug.12215 (12300) ≠ exe 2.3.0',
+      );
+    });
+
+    test('只有后缀不同不算不一致（否则每个 debug 构建都会报警）', () {
+      expect(
+        formatAppVersionDisplay(
+          windowsInfo(),
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        isNot(contains('≠')),
+      );
+    });
+  });
+
   group('source guard', () {
     test(
         'settings_schema_system.dart no longer concatenates version+buildNumber',
