@@ -3001,7 +3001,6 @@
   "collection_episode_watched_at": "Bekeken tot $position",
   "collection_episode_rename_partial": "$n afleveringen hernoemd, $m mislukt",
   "sync_err_browser_timeout": "De browser heeft de autorisatie nooit geretourneerd. Probeer opnieuw en zorg dat je proxy 127.0.0.1 doorlaat.",
-  "manga_rescan_hint": "Sleep een kader rond de tekst die je wilt herkennen.",
   "manga_rescan_running": "Geselecteerd kader herkennen...",
   "manga_rescan_empty": "Geen tekst herkend in dit kader.",
   "stat_hourly_band_epub": "Tekstboeken",
@@ -3793,5 +3792,8 @@
   "manga_rescan_run": "Re-OCR selected area",
   "manga_rescan_failed": "Re-OCR of the selected area failed",
   "manga_rescan_region_updated": "Selected area re-recognized and saved to the page",
-  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader."
+  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader.",
+  "manga_rescan_hint": "Drag a box over the text you want to re-run OCR on. The result replaces the existing text layer inside that box.",
+  "manga_rescan_undone": "Restored the text layer from before the re-scan",
+  "manga_rescan_undo_failed": "Could not restore the previous text layer"
 }

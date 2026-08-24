@@ -3001,7 +3001,6 @@
   "collection_episode_watched_at": "Visto fino a $position",
   "collection_episode_rename_partial": "Rinominati $n episodi, $m falliti",
   "sync_err_browser_timeout": "Il browser non ha restituito l'autorizzazione. Riprova e assicurati che il proxy lasci passare 127.0.0.1.",
-  "manga_rescan_hint": "Disegna un riquadro intorno al testo che vuoi riconoscere.",
   "manga_rescan_running": "Riconoscimento del riquadro selezionato...",
   "manga_rescan_empty": "Nessun testo riconosciuto in questo riquadro.",
   "stat_hourly_band_epub": "Libri di testo",
@@ -3793,5 +3792,8 @@
   "manga_rescan_run": "Re-OCR selected area",
   "manga_rescan_failed": "Re-OCR of the selected area failed",
   "manga_rescan_region_updated": "Selected area re-recognized and saved to the page",
-  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader."
+  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader.",
+  "manga_rescan_hint": "Drag a box over the text you want to re-run OCR on. The result replaces the existing text layer inside that box.",
+  "manga_rescan_undone": "Restored the text layer from before the re-scan",
+  "manga_rescan_undo_failed": "Could not restore the previous text layer"
 }

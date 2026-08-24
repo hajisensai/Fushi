@@ -3001,7 +3001,6 @@
   "collection_episode_watched_at": "$position까지 시청함",
   "collection_episode_rename_partial": "$n개 에피소드 이름 변경됨, $m개 실패",
   "sync_err_browser_timeout": "브라우저에서 인증을 반환하지 않았습니다. 다시 시도하고 프록시가 127.0.0.1을 통과시키는지 확인하세요.",
-  "manga_rescan_hint": "인식할 텍스트 주위에 박스를 드래그하세요.",
   "manga_rescan_running": "선택한 박스를 인식하는 중...",
   "manga_rescan_empty": "이 박스에서 텍스트를 인식하지 못했습니다.",
   "stat_hourly_band_epub": "텍스트 도서",
@@ -3793,5 +3792,8 @@
   "manga_rescan_run": "Re-OCR selected area",
   "manga_rescan_failed": "Re-OCR of the selected area failed",
   "manga_rescan_region_updated": "Selected area re-recognized and saved to the page",
-  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader."
+  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader.",
+  "manga_rescan_hint": "Drag a box over the text you want to re-run OCR on. The result replaces the existing text layer inside that box.",
+  "manga_rescan_undone": "Restored the text layer from before the re-scan",
+  "manga_rescan_undo_failed": "Could not restore the previous text layer"
 }

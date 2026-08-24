@@ -3001,7 +3001,6 @@
   "collection_episode_watched_at": "看到 $position",
   "collection_episode_rename_partial": "已重命名 $n 集 · $m 集失敗",
   "sync_err_browser_timeout": "瀏覽器授權沒有返回到應用。請重試，並確認代理放行了本機回環地址 127.0.0.1。",
-  "manga_rescan_hint": "拖動框選想要識別的文字。",
   "manga_rescan_running": "正在識別所選區域…",
   "manga_rescan_empty": "該區域未識別出文字。",
   "stat_hourly_band_epub": "文字書",
@@ -3790,8 +3789,11 @@
   "game_hook_btn_workbench": "Open the capture workbench",
   "game_hook_btn_topmost": "Keep on top",
   "game_hook_btn_close": "Close the overlay",
-  "manga_rescan_run": "Re-OCR selected area",
-  "manga_rescan_failed": "Re-OCR of the selected area failed",
-  "manga_rescan_region_updated": "Selected area re-recognized and saved to the page",
-  "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader."
+  "manga_rescan_run": "重新識別框選區域",
+  "manga_rescan_failed": "重新識別框選區域失敗",
+  "manga_rescan_region_updated": "已重新識別該區域並回寫本頁",
+  "manga_ocr_mobile_note": "移動端下載的模型供漫畫閱讀頁的本地引擎使用：整卷、點擊、框選區域識別都走它。",
+  "manga_rescan_hint": "拖動框選要重新識別的文字。識別結果會替換框內已有的文字層。",
+  "manga_rescan_undone": "已還原重新識別前的文字層",
+  "manga_rescan_undo_failed": "還原上一版文字層失敗"
 }

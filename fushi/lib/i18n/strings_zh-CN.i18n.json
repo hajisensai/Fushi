@@ -3002,7 +3002,6 @@
   "collection_episode_watched_at": "看到 $position",
   "collection_episode_rename_partial": "已重命名 $n 集 · $m 集失败",
   "sync_err_browser_timeout": "浏览器授权没有返回到应用。请重试，并确认代理放行了本机回环地址 127.0.0.1。",
-  "manga_rescan_hint": "拖动框选想要识别的文字。",
   "manga_rescan_running": "正在识别所选区域…",
   "manga_rescan_empty": "该区域未识别出文字。",
   "stat_hourly_band_epub": "文字书",
@@ -3793,5 +3792,8 @@
   "manga_rescan_run": "重新识别框选区域",
   "manga_rescan_failed": "重新识别框选区域失败",
   "manga_rescan_region_updated": "已重新识别该区域并回写本页",
-  "manga_ocr_mobile_note": "移动端下载的模型供漫画阅读页的本地引擎使用：整卷、点击、框选区域识别都走它。"
+  "manga_ocr_mobile_note": "移动端下载的模型供漫画阅读页的本地引擎使用：整卷、点击、框选区域识别都走它。",
+  "manga_rescan_hint": "拖动框选要重新识别的文字。识别结果会替换框内已有的文字层。",
+  "manga_rescan_undone": "已还原重新识别前的文字层",
+  "manga_rescan_undo_failed": "还原上一版文字层失败"
 }
