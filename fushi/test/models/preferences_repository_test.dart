@@ -63,16 +63,22 @@ void main() {
       expect(repo.moduleVideoEnabled, true);
       expect(repo.moduleGamesEnabled, true);
       expect(repo.moduleBrowserExtensionEnabled, true);
+      expect(repo.moduleDownloadsEnabled, true);
+      expect(repo.moduleDictionariesEnabled, true);
       await repo.setModuleBooksEnabled(false);
       await repo.setModuleMangaEnabled(false);
       await repo.setModuleVideoEnabled(false);
       await repo.setModuleGamesEnabled(false);
       await repo.setModuleBrowserExtensionEnabled(false);
+      await repo.setModuleDownloadsEnabled(false);
+      await repo.setModuleDictionariesEnabled(false);
       expect(repo.moduleBooksEnabled, false);
       expect(repo.moduleMangaEnabled, false);
       expect(repo.moduleVideoEnabled, false);
       expect(repo.moduleGamesEnabled, false);
       expect(repo.moduleBrowserExtensionEnabled, false);
+      expect(repo.moduleDownloadsEnabled, false);
+      expect(repo.moduleDictionariesEnabled, false);
     });
 
     test('currentHomeTabIndex defaults to 0', () {

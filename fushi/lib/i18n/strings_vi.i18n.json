@@ -3797,5 +3797,7 @@
   "manga_ocr_mobile_note": "On mobile, these models power the local engine for whole-volume, tap and selected-area OCR in the manga reader.",
   "manga_rescan_hint": "Drag a box over the text you want to re-run OCR on. The result replaces the existing text layer inside that box.",
   "manga_rescan_undone": "Restored the text layer from before the re-scan",
-  "manga_rescan_undo_failed": "Could not restore the previous text layer"
+  "manga_rescan_undo_failed": "Could not restore the previous text layer",
+  "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
+  "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions."
 }

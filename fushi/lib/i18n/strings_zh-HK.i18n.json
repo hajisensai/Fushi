@@ -3797,5 +3797,7 @@
   "manga_ocr_mobile_note": "移動端下載的模型供漫畫閱讀頁的本地引擎使用：整卷、點擊、框選區域識別都走它。",
   "manga_rescan_hint": "拖動框選要重新識別的文字。識別結果會替換框內已有的文字層。",
   "manga_rescan_undone": "已還原重新識別前的文字層",
-  "manga_rescan_undo_failed": "還原上一版文字層失敗"
+  "manga_rescan_undo_failed": "還原上一版文字層失敗",
+  "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
+  "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions."
 }

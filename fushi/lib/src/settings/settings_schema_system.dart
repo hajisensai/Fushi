@@ -145,9 +145,10 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
-      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 的显隐开关
-      // （与新手引导的功能选择写同一真值）。首页/下载/词典/设置恒在，不提供开关；
-      // games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
+      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词 两个
+      // 工具 tab 的显隐开关（库页那几项与新手引导的功能选择写同一真值）。首页/设置
+      // 恒在，不提供开关；games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
+      // 顺序与底栏一致：库页 → 下载 → 查词 → 扩展。
       SettingsSection(
         title: t.settings_section_modules,
         items: <SettingsItem>[
@@ -197,6 +198,31 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.appModel.moduleGamesEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setModuleGamesEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.module_downloads',
+            title: t.nav_downloads,
+            subtitle: t.module_tool_toggle_hint,
+            icon: Icons.download_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleDownloadsEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setModuleDownloadsEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.module_lookup',
+            title: t.nav_lookup,
+            subtitle: t.module_tool_toggle_hint,
+            icon: Icons.search_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.moduleDictionariesEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setModuleDictionariesEnabled(value);
               settingsContext.refresh();
             },
           ),

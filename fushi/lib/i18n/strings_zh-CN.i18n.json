@@ -3797,5 +3797,7 @@
   "manga_ocr_mobile_note": "移动端下载的模型供漫画阅读页的本地引擎使用：整卷、点击、框选区域识别都走它。",
   "manga_rescan_hint": "拖动框选要重新识别的文字。识别结果会替换框内已有的文字层。",
   "manga_rescan_undone": "已还原重新识别前的文字层",
-  "manga_rescan_undo_failed": "还原上一版文字层失败"
+  "manga_rescan_undo_failed": "还原上一版文字层失败",
+  "module_tool_toggle_hint": "在底栏/侧栏显示该页；关闭即隐藏",
+  "module_downloads_hidden_hint": "「下载」页已在 设置 → 系统 → 功能模块 中隐藏；重新打开它才能管理订阅。"
 }

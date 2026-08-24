@@ -55,9 +55,18 @@ abstract class HomeDictionarySearchDebug {
 
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
-  const HomeDictionaryPage({super.key, this.focusSignal});
+  const HomeDictionaryPage({
+    super.key,
+    this.focusSignal,
+    this.showBackButton = false,
+  });
 
   final ValueNotifier<int>? focusSignal;
+
+  /// 本页作为**独立路由**承载时（查词 tab 被「功能模块」隐藏，热键/桌面取词仍要有
+  /// 落地面，见 HomePage 的 `_revealDictionary`）在页头左侧显示返回箭头。作为 tab
+  /// 内容时恒 false —— 切 tab 不产生路由栈，画一个返回箭头没有可返回的目标。
+  final bool showBackButton;
 
   @override
   BaseTabPageState<HomeDictionaryPage> createState() =>
@@ -440,6 +449,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Widget _buildPageHeader() {
     return FushiPageHeader(
       title: t.nav_lookup,
+      leading: widget.showBackButton
+          ? FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-route-back'),
+              tooltip: t.back,
+              icon: Icons.arrow_back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
       actions: <Widget>[
         FushiIconButton(
           tooltip: t.clear_dictionary_title,
