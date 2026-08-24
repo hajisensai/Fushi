@@ -494,6 +494,9 @@ img.block-img {
   -webkit-column-break-inside: avoid !important;
   object-fit: contain$readerStylePriority;
   cursor: pointer;
+  /* BUG-1828：命中区 = 图片本身。`img.block-img` 用 max-width/max-height + width/
+     height:auto，盒子等于图片，不产生 letterbox，所以整个盒子都可点。 */
+  pointer-events: auto !important;
 }
 .block-img-wrapper {
   display: flex !important;
@@ -501,6 +504,14 @@ img.block-img {
   align-items: center !important;
   break-inside: avoid !important;
   -webkit-column-break-inside: avoid !important;
+  /* BUG-1828：wrapper 是**纯居中布局盒**，横向撑满整列，图片只是 margin:auto 居中在
+     里面。命中判据 `_fushiBlockImageUrl` 走 `target.closest('.block-img-wrapper')`，
+     判的是「在不在这个盒子里」而不是「有没有点在图片上」——于是图片两侧的留白也算
+     点中图片，`onTapEmpty` 永远触发不到，底栏唤不出来（整章只有一张图时全页无一处
+     例外，用户被关死在页内）。让布局盒不参与命中，留白处 elementFromPoint 就落回
+     正文，closest 自然返回 null。一条不变量同时管住 tap / touch / contextmenu /
+     右键四个命中点，不必给每个调用点补坐标参数。 */
+  pointer-events: none !important;
 }
 img:not(.block-img) {
   max-width: 100% !important;
@@ -532,6 +543,15 @@ svg.block-img {
   height: var(--fushi-image-max-height, $imageMaxHeight)$readerStylePriority;
   margin: auto$readerStylePriority;
   cursor: pointer;
+  /* BUG-1828：与 `img.block-img` 不同，这里是**定值** width/height（上面那段注释解释了
+     为什么必须给定值盒），于是内部 `<image>` 按 `xMidYMid meet` 在盒内 letterbox——盒子
+     远宽于画面（实测 1364px 视口下盒 1295px、画面仅 549px）。所以 svg 盒子本身不参与
+     命中，只有内部 `<image>` 可点，命中区才等于用户看得见的那张图。 */
+  pointer-events: none !important;
+}
+svg.block-img image {
+  /* BUG-1828：真正的命中区。`<image>` 的边框盒就是 meet 之后画面所占的矩形。 */
+  pointer-events: auto !important;
 }
 $blurImagesCss
 $furiganaCss
