@@ -3757,5 +3757,7 @@
   "download_backend_qb_hint": "连接到你已经在运行的 qBittorrent WebUI。",
   "download_backend_setup_start": "开始配置",
   "download_backend_embedded_unavailable": "本次安装缺少内置引擎运行库。请重装完整安装包，或改用外接 qBittorrent。",
-  "download_backend_qb_url_invalid": "请填完整地址，例如 http://127.0.0.1:8080"
+  "download_backend_qb_url_invalid": "请填完整地址，例如 http://127.0.0.1:8080",
+  "mihon_store_zero_extensions": "该仓库返回 0 个扩展，地址可能指向了旧版索引。",
+  "mihon_store_edit": "编辑仓库地址"
 }
