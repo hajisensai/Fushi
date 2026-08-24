@@ -128,8 +128,8 @@ class _MangaOcrSettingsSectionState
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
     // BUG-1780：这个位现在就是「本机能不能跑本地 ONNX 推理」（ORT native 可用性），
-    // 不再是一份独立的平台白名单。它为真的每一端都要加载模型状态——不只整卷 OCR
-    // 用这套模型，阅读器的框选识别也用同一套，而后者的闸门本来就是 ORT 可用性。
+    // 不再是一份独立的平台白名单。它为真的每一端都要加载模型状态——整卷 / 点击 /
+    // 框选区域重识别走的都是同一个本地 ONNX 引擎，闸门本来就是 ORT 可用性。
     if (widget.service.isSupportedPlatform) {
       unawaited(_loadStatus());
     } else {
