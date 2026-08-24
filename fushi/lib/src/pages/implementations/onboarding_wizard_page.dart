@@ -104,7 +104,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   String get _packBrowserUrl {
     switch (_packRoute) {
       case _PackRoute.cloudflare:
-        return _manifestDownloader?.url ?? kRecommendedPackCloudflareUrl;
+        return _manifestDownloader?.url ?? kRecommendedPackWholeFileUrl;
       case _PackRoute.googleDrive:
         return kRecommendedPackGoogleDriveUrl;
     }
