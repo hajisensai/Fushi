@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "sgre_lookup.h"
 #include "sgre_voice_archive.h"
 
 #pragma comment(lib, "bcrypt.lib")
