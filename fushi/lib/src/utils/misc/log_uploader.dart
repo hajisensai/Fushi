@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
@@ -113,7 +114,10 @@ Future<({String appVersion, String platform, String device})>
   String appVersion = 'unknown';
   try {
     final PackageInfo info = await PackageInfo.fromPlatform();
-    appVersion = '${info.version}+${info.buildNumber}';
+    // 优先报运行中这份 Dart 代码的版本：Windows 的 exe 版本资源丢 `-debug.N`，
+    // 服务端看到的全是 `2.2.1+12215`，分不出通道，也认不出「新 exe + 旧 app.so」。
+    final String version = fushiRunningCodeVersion ?? info.version;
+    appVersion = '$version+${info.buildNumber}';
   } catch (_) {}
   return (
     appVersion: appVersion,
