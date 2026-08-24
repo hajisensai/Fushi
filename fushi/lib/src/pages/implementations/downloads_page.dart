@@ -16,6 +16,9 @@ import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
+import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show MediaSourceRow, VideoDownloadJobRow;
@@ -448,8 +451,31 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                         ),
                         const VideoDownloadSubscriptionsPanel(),
                         ListView(
-                          children: const <Widget>[
-                            TorrentSettingsSection(constrainWidth: false),
+                          children: <Widget>[
+                            const TorrentSettingsSection(constrainWidth: false),
+                            // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
+                            // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
+                            // 番剧下载对话框「去设置」落到这里仍能一步到达。
+                            Builder(
+                              builder: (BuildContext rowContext) =>
+                                  AdaptiveSettingsNavigationRow(
+                                title: t.settings_destination_services,
+                                subtitle: t.settings_services_link_subtitle,
+                                icon: Icons.cloud_outlined,
+                                showIcon: true,
+                                onTap: () => Navigator.of(rowContext).push(
+                                  adaptivePageRoute(
+                                    context: rowContext,
+                                    builder: (_) => SettingsDetailPage(
+                                      destination: buildServicesDestination(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const VideoExternalProviderSettingsSection(
+                              scope: VideoExternalProviderScope.downloadRouting,
+                            ),
                           ],
                         ),
                       ],

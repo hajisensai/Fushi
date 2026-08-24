@@ -1,7 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
@@ -12,23 +11,12 @@ import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
-
-Future<void> _commitVideoMetadataRuntimePreference(
-  SettingsContext settingsContext,
-  String key,
-  String value,
-) async {
-  await settingsContext.appModel.prefsRepo.setPref(key, value.trim());
-  await settingsContext.appModel.reloadVideoDownloadPipelineRuntime();
-}
 
 /// 视频设置唯一真相源（阶段 B）：每个条目声明一次，同时服务两个宿主——
 /// 全局设置页（本 destination 的 sections 直接渲染；无 host 时读写纯 pref、下次
@@ -317,66 +305,8 @@ SettingsDestination buildVideoDestination() {
       SettingsSection(
         title: t.section_video_library,
         items: <SettingsItem>[
-          SettingsTextItem(
-            id: 'video.library.metadata_anidb_client',
-            title: t.video_source_scrape_anidb_client,
-            subtitle: t.video_source_scrape_anidb_client_hint,
-            icon: Icons.badge_outlined,
-            value: (SettingsContext settingsContext) => settingsContext
-                .appModel.prefsRepo
-                .getPref(kVideoMetadataAniDbClientNamePref,
-                    defaultValue: '') as String,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await _commitVideoMetadataRuntimePreference(
-                settingsContext,
-                kVideoMetadataAniDbClientNamePref,
-                value,
-              );
-            },
-          ),
-          SettingsTextItem(
-            id: 'video.library.metadata_anidb_client_version',
-            title: t.video_source_scrape_anidb_client_version,
-            subtitle: t.video_source_scrape_anidb_client_version_hint,
-            icon: Icons.numbers_outlined,
-            placeholder: '1',
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.prefsRepo.getPref(
-              kVideoMetadataAniDbClientVersionPref,
-              defaultValue: '',
-            ) as String,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await _commitVideoMetadataRuntimePreference(
-                settingsContext,
-                kVideoMetadataAniDbClientVersionPref,
-                value,
-              );
-            },
-          ),
-          // 自定义 TMDB API key —— **内置 key 的逃生口**，不是必填项。
-          //
-          // 刮削默认用随包内置的项目 key（见 tmdb_default_key.dart），绝大多数用户
-          // 永远不需要碰这里。留这个入口只为两种情况：① 内置 key 被 TMDB 吊销/限流
-          // 时用户能自救；② 用户想用自己的配额。留空 = 用内置 key。
-          //
-          // secret: true → 明文遮蔽 + 眼睛按钮，与其它 API key 项一致。
-          SettingsTextItem(
-            id: 'video.library.tmdb_api_key',
-            title: t.video_setting_tmdb_key,
-            subtitle: t.video_setting_tmdb_key_hint,
-            icon: Icons.key_outlined,
-            secret: true,
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
-                as String,
-            onChanged: (SettingsContext settingsContext, String value) =>
-                _commitVideoMetadataRuntimePreference(
-              settingsContext,
-              kVideoScraperTmdbApiKeyPref,
-              value,
-            ),
-          ),
+          // AniDB 客户端身份 / TMDB key 已迁到「在线服务」分区（第三方凭据一个家，
+          // 见 settings_schema_services.dart）；这里只留刮削行为本身的偏好。
           SettingsTextItem(
             id: 'video.library.metadata_locale',
             title: t.video_source_scrape_locale,
@@ -388,7 +318,7 @@ SettingsDestination buildVideoDestination() {
                     .getPref(kVideoMetadataLocalePref, defaultValue: 'zh-CN')
                 as String,
             onChanged: (SettingsContext settingsContext, String value) async {
-              await _commitVideoMetadataRuntimePreference(
+              await commitVideoMetadataRuntimePreference(
                 settingsContext,
                 kVideoMetadataLocalePref,
                 value,
@@ -1147,42 +1077,13 @@ SettingsDestination buildVideoDestination() {
                   .setVideoSubtitleBackfillAfterScrape(value);
             },
           ),
-          // ── 在线字幕来源（Jimaku + OpenSubtitles + 默认字幕语言）──────────
-          // 字幕来源此前分居两处：Jimaku key 是这儿的两个 schema item，
-          // OpenSubtitles 只在设置 → 下载 → 外部来源。同一个能力两个家，用户在
-          // 这里配完 Jimaku 就以为「字幕来源配完了」，而播放页找字幕与下载自动配
-          // 字幕走的是同一套 registry（两家一起搜）。
-          //
-          // 现在两家一起内联**同一份**编辑组件（不复制 UI、不第二份真相源）：
-          // 下载页那一区列的也是这一份，用户在任一处看到的都是完整的来源清单
-          // （BUG-1712）。Jimaku 的 key / 默认字幕语言仍写同样的偏好键，只是
-          // 编辑面从 schema item 换成了这份组件里的字段。
-          SettingsCustomItem(
-            id: 'video.subtitle.opensubtitles',
-            // 搜索得命中两家品牌名，否则搜 "Jimaku" 会是死胡同。
-            searchTitle: 'Jimaku · ${t.video_opensubtitles_settings_title}',
-            builder: (SettingsContext settingsContext) =>
-                const VideoExternalProviderSettingsSection(
-              onlySubtitleSources: true,
-            ),
-          ),
-        ],
-      ),
-      // ── 媒体服务器（Jellyfin / Emby）───────────────────────────────────
-      // 登录后服务器条目混排进视频库网格（home_video_page 远端源解析链），
-      // 点击直连串流播放；配置读写全在 JellyfinConfigWidget（SyncRepository
-      // `sync_jellyfin_server`，设备本地键，不随备份跨设备）。
-      SettingsSection(
-        title: t.jellyfin_settings_title,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'video.media_server.jellyfin',
-            // 搜索得命中品牌名（Jellyfin/Emby），t 标题只有「媒体服务器」语义。
-            searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
-            builder: (SettingsContext settingsContext) =>
-                JellyfinConfigWidget(settingsContext: settingsContext),
-          ),
+          // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
+          // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
+          // 「一个能力两个家」修法是双挂载——那是把症状固化）。第三方凭据现在只
+          // 有一个家：settings_schema_services.dart；这里留一条跳转，用户在字幕
+          // 分区仍能一步到达，且「刮削后自动补字幕」的依赖（要配 Jimaku key）
+          // 同屏可见。媒体服务器（Jellyfin/Emby）同理迁走。
+          buildOpenServicesItem('video.subtitle.online_sources'),
         ],
       ),
       SettingsSection(
@@ -1231,25 +1132,8 @@ SettingsDestination buildVideoDestination() {
               await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
             },
           ),
-          // 弹幕来源配置只剩自建/镜像 Dandanplay 服务器地址（高级项，空=官方
-          // api.dandanplay.net）。官方 AppId/AppSecret 已内置（dandanplay_secret.dart，
-          // 见 DandanplayConfig.embeddedAppId），请求自动 v2 签名，用户**无需手动输入
-          // API**——故原 AppId/AppSecret 两个输入框已删除。写入 videoDanmakuConfig
-          // （纯 pref），同步推进程级 DandanplayConfig.current，下次匹配弹幕即生效。
-          SettingsTextItem(
-            id: 'video.danmaku.server_url',
-            title: t.video_setting_danmaku_server_url,
-            icon: Icons.dns_outlined,
-            keyboardType: TextInputType.url,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuConfig.baseUrl,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await _commitVideoDanmakuConfig(
-                settingsContext,
-                (DandanplayConfig c) => c.copyWith(baseUrl: value.trim()),
-              );
-            },
-          ),
+          // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
+          // （settings_schema_services.dart）；弹幕行为开关留在这里。
         ],
       ),
       // ── 播放中专属（控制器绑定 / 仅播放页有意义）───────────────────────────
@@ -1622,15 +1506,6 @@ SettingsDestination buildVideoDestination() {
 }
 
 /// 读改写 videoDanmakuConfig（纯 pref）：decode 当前 → 应用 [mutate] → 落盘 → 刷新面板。
-Future<void> _commitVideoDanmakuConfig(
-  SettingsContext settingsContext,
-  DandanplayConfig Function(DandanplayConfig config) mutate,
-) async {
-  final DandanplayConfig current = settingsContext.appModel.videoDanmakuConfig;
-  await settingsContext.appModel.setVideoDanmakuConfig(mutate(current));
-  settingsContext.refresh();
-}
-
 /// 轻量提示条（与 settings_schema_lookup.dart 的 `_showSettingsSnackBar` 同款）。
 void _showVideoSettingsSnackBar(
     SettingsContext settingsContext, String message) {

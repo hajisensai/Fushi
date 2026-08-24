@@ -35,6 +35,18 @@ VideoQuickSettingsHost? videoQuickSettingsHostOf(SettingsContext context) {
 bool videoHostVisible(SettingsContext context) =>
     videoQuickSettingsHostOf(context) != null;
 
+/// 刮削运行期偏好（AniDB 客户端身份 / TMDB key / 刮削语言）的统一写穿：落
+/// prefsRepo 后重建下载流水线的刮削快照，下一次刮削即用新值。视频·媒体库
+/// （刮削语言）与在线服务（AniDB / TMDB 凭据）两个分区共用。
+Future<void> commitVideoMetadataRuntimePreference(
+  SettingsContext settingsContext,
+  String key,
+  String value,
+) async {
+  await settingsContext.appModel.prefsRepo.setPref(key, value.trim());
+  await settingsContext.appModel.reloadVideoDownloadPipelineRuntime();
+}
+
 // ── videoAsbplayerConfig（手势/播放行为 JSON pref）────────────────────────────
 
 VideoAsbplayerConfig currentVideoAsbConfig(SettingsContext context) {
