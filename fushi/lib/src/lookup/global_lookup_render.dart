@@ -334,7 +334,7 @@ String buildStackRenderScript({
   // union instead of allowing the live surface to grow only where a child lands.
   double originFloorLeft = 0,
   double originFloorTop = 0,
-  // BUG-1806 — screenWidth/Height is the FULL game viewport while maxWidth/
+  // BUG-1829 — screenWidth/Height is the FULL game viewport while maxWidth/
   // Height remains the SINGLE-CARD cap. The gal route uses the same above/below,
   // anchor-side height fitting as the in-app dictionary layer; otherwise a
   // nearly full-height child is clamped across the selected word. Keep this
@@ -353,7 +353,7 @@ String buildStackRenderScript({
   // 帧的 settingsJs；cascade 模式忽略。
   int sentenceHitStart = -1,
   int sentenceHitLength = 0,
-  // BUG-1804 — static settings revisions already acknowledged by this physical
+  // BUG-1827 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a
   // 9.6 MB custom font must not become a ~13 MB data-URL platform message on
   // every Shift lookup. Unknown/new frames still receive a self-contained

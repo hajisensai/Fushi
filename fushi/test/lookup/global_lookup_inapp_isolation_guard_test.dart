@@ -410,7 +410,7 @@ void main() {
     });
 
     test(
-      'BUG-1804: close/back uses id-only retainStack, never full survivor payload',
+      'BUG-1827: close/back uses id-only retainStack, never full survivor payload',
       () {
         final int builderAt = render.indexOf('String buildRetainStackScript(');
         final int builderEnd = render.indexOf(
@@ -492,7 +492,7 @@ void main() {
     );
 
     test(
-      'BUG-1804: ancestor replacement skips the prefix-only intermediate render',
+      'BUG-1827: ancestor replacement skips the prefix-only intermediate render',
       () {
         final int lookupAt = controller.indexOf('Future<void> _lookupNested(');
         final int lookupEnd = controller.indexOf(
@@ -704,7 +704,7 @@ void main() {
       );
     });
 
-    test('BUG-1804: nested reveal waits for the exact committed full geometry', () {
+    test('BUG-1827: nested reveal waits for the exact committed full geometry', () {
       // Origin-only coverage missed the SGRE down/right case: the child's
       // top-left sat inside the old HWND while its right/bottom edge was clipped.
       // The gate now requires a matching bbox + shellRects epoch and verifies the

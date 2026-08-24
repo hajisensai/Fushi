@@ -166,7 +166,7 @@ function mineEntryKey(expression, reading) {
     return `${expression || ''}\u0000${reading || ''}`;
 }
 
-// BUG-1804 follow-up: favorite/Anki state is decoration for each result header,
+// BUG-1827 follow-up: favorite/Anki state is decoration for each result header,
 // not a prerequisite for revealing the dictionary card. A large lookup can
 // contain dozens of entry headers; firing both bridges while synchronously
 // building every header floods Dart/Anki for seconds after the popup is gone and
@@ -4302,7 +4302,7 @@ function scheduleMasonry() {
     });
 }
 
-// BUG-1804 — the global lookup host parks and rebinds a physical iframe realm.
+// BUG-1827 — the global lookup host parks and rebinds a physical iframe realm.
 // Retire every callback/observer that belongs to the old logical card before
 // the realm can receive a new frame id. The generation checks cover font/tail/
 // masonry callbacks; explicit cancellation also lets the new render schedule

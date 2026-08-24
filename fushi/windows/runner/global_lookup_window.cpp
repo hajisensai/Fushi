@@ -1447,7 +1447,7 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
   }
-  // BUG-1806 — layout already used the FULL game viewport; width/height is the
+  // BUG-1829 — layout already used the FULL game viewport; width/height is the
   // resulting all-card union, not the single-card cap. If direct composition is
   // active, resize/reposition the currently visible HWND around the frozen root
   // anchor and never park it at OffscreenX between nested frames. Before direct
@@ -2169,7 +2169,7 @@ void GlobalLookupWindow::CaptureBgraAsync(uint32_t max_width,
     }
     capture_dpr = static_cast<double>(dpi) / 96.0;
   }
-  // BUG-1804 — PNG CapturePreview is catastrophically slow for a 1592x1020
+  // BUG-1827 — PNG CapturePreview is catastrophically slow for a 1592x1020
   // text-heavy card: the live SGRE path measured 180-230 ms for every full
   // frame, so wheel scrolling could only update at about 5 FPS. WebView2 has no
   // raw-texture capture API in the pinned SDK; JPEG is its only lower-latency
@@ -3242,7 +3242,7 @@ void GlobalLookupWindow::SyncShadow() {
                10, resizing_);
 }
 
-// BUG-749 / BUG-1804 — parse
+// BUG-749 / BUG-1827 — parse
 // {handler:'shellRects', args:['l,t,w,h;l,t,w,h;…', geometryEpoch]}.
 // shellRects announces the bbox transaction before Dart's revealStack arrives.
 // Advancing the native epoch high-water here prevents a delayed A resize from
@@ -3325,7 +3325,7 @@ void GlobalLookupWindow::SetShellRectsFromCsv(const std::string& body) {
   // then its completion calls FinalizePendingShellGeometry once both origins
   // agree. Keeping HRGN (rather than disabling it for DComp) is required so
   // transparent gaps remain true Win32 click/wheel pass-through regions.
-  // BUG-1804 — shellRects 是即将到来的同 epoch resize 的几何预告。此刻 HWND
+  // BUG-1827 — shellRects 是即将到来的同 epoch resize 的几何预告。此刻 HWND
   // 仍是旧尺寸；同步重画不仅会提交错误事务的影子，还会在 overlaySize 消息送达
   // Dart 之前阻塞 UI 线程。matching resize/reveal 成功后会以新 HWND 尺寸和刚
   // 提交的 shell_rects_css_ 显式同步一次；WM_WINDOWPOSCHANGED 若已先画过，几何

@@ -277,7 +277,7 @@ class GlobalLookupWindow {
   void CaptureBgraAsync(uint32_t max_width, uint32_t max_height,
                         BgraFrameCallback done);
 
-  // BUG-1804 — 把已渲染的 composition WebView 直接贴到目标进程的游戏客户区。
+  // BUG-1827 — 把已渲染的 composition WebView 直接贴到目标进程的游戏客户区。
   // [anchor_*]/[view_*] 属于游戏 primaryLayer 像素域。目前仅在它与实际
   // 客户区逐像素一致（容忍 1 px 整数取整）时直接呈现；非 1:1 尺寸
   // 需要 DComp scale transform + 输入逆变换，不得用 SetWindowPos 缩放
@@ -435,7 +435,7 @@ class GlobalLookupWindow {
   bool offscreen_active_ = false;
   int pending_x_ = 0;
   int pending_y_ = 0;
-  // BUG-1806 — direct gal composition geometry. bbox dx/dy are in the same
+  // BUG-1829 — direct gal composition geometry. bbox dx/dy are in the same
   // primaryLayer/WebView physical-pixel domain as the root anchor. The current
   // visible union starts at root+bbox; caching the root lets nested growth move
   // the HWND in place without recomputing an anchor from the larger union.

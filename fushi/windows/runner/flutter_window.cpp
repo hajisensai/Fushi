@@ -1513,7 +1513,7 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           if (cap_w > 0 && cap_h > 0) {
             work_w = cap_w;
             work_h = cap_h;
-            // BUG-1806 — preserve the full viewport plus its non-zero root
+            // BUG-1829 — preserve the full viewport plus its non-zero root
             // origin. The old 0,0 reply trapped every nested card inside the
             // single-card-sized red rectangle.
             cursor_work_x = IntFromValue(args, "capX", 0);

@@ -24,7 +24,7 @@
 //      the host safety timer (no card stuck invisible);
 //  10. D2 convergence: a content-ready burst across layers coalesces into a
 //      single union-bbox overlaySize per frame (no thrash), de-duped on the box.
-//  11. BUG-1804: one static revision materialises imported font bytes once as a
+//  11. BUG-1827: one static revision materialises imported font bytes once as a
 //      same-origin Blob URL; nested/reloaded frames never eval the base64 source.
 
 import assert from 'node:assert';
@@ -525,7 +525,7 @@ function commitLatestGeometry(host) {
     'child open reuses the clean root measurement instead of forcing layout');
 }
 
-// BUG-1804 close hot path — retainStack sends only the stable id prefix. A
+// BUG-1827 close hot path — retainStack sends only the stable id prefix. A
 // deep 5 -> 1 collapse must not re-inject the root dictionary body, must retire
 // bridge/realm state exactly once for the single parked candidate, and must
 // still publish one causally ordered region+bbox geometry transaction.
@@ -566,42 +566,42 @@ function commitLatestGeometry(host) {
   hostPostLog = [];
 
   assert.strictEqual(host.retainStack(['global-lookup-root']), true,
-    'BUG-1804: a validated live prefix is retained');
+    'BUG-1827: a validated live prefix is retained');
   assert.strictEqual(shellsOf(document).length, 1,
-    'BUG-1804: all descendants are removed in one truncate');
+    'BUG-1827: all descendants are removed in one truncate');
   assert.strictEqual(shellsOf(document)[0], rootBefore,
-    'BUG-1804: root shell/iframe identity is unchanged');
+    'BUG-1827: root shell/iframe identity is unchanged');
   assert.ok(!evalLog.some((entry) =>
     /ROOT-ENTRIES-80|ROOT-RENDER-80/.test(entry.code)),
-  'BUG-1804: retainStack never re-injects the surviving root dictionary body');
+  'BUG-1827: retainStack never re-injects the surviving root dictionary body');
   assert.strictEqual(rootIframe.contentWindow.__hasChildPopup, false,
-    'BUG-1804: the new top receives the direct cheap hasChild=false update');
+    'BUG-1827: the new top receives the direct cheap hasChild=false update');
   assert.strictEqual(rootIframe.contentWindow._clearSelectionCount, 1,
-    'BUG-1804: the new leaf clears the selection that opened the removed child');
+    'BUG-1827: the new leaf clears the selection that opened the removed child');
 
   const prepareAfter = allIframes.reduce(
     (sum, frame) => sum + (frame.contentWindow._prepareReuseCount || 0), 0);
   const cancelAfter = allIframes.reduce(
     (sum, frame) => sum + (frame.contentWindow._bridgeCancelCount || 0), 0);
   assert.strictEqual(prepareAfter - prepareBefore, 1,
-    'BUG-1804: a deep collapse prepares exactly one realm for reuse');
+    'BUG-1827: a deep collapse prepares exactly one realm for reuse');
   assert.strictEqual(cancelAfter - cancelBefore, 1,
-    'BUG-1804: only the parked realm runs the explicit bridge cancel');
+    'BUG-1827: only the parked realm runs the explicit bridge cancel');
   const parkedIframe = standbyShellsOf(document)[0].children.find(
     (c) => c.tagName === 'IFRAME',
   );
   assert.strictEqual(parkedIframe, deepestIframe,
-    'BUG-1804: the deepest/hottest removed realm is the sole standby');
+    'BUG-1827: the deepest/hottest removed realm is the sole standby');
 
   const geometryMessages = hostPostLog.filter((message) =>
     message.handler === 'shellRects' || message.handler === 'overlaySize');
   assert.deepStrictEqual(
     geometryMessages.map((message) => message.handler),
     ['shellRects', 'overlaySize'],
-    'BUG-1804: truncate still commits exactly one ordered geometry transaction',
+    'BUG-1827: truncate still commits exactly one ordered geometry transaction',
   );
   assert.ok(geometryMessages[1].args[1].geometryEpoch > 0,
-    'BUG-1804: retained stack geometry stays epoch-versioned');
+    'BUG-1827: retained stack geometry stays epoch-versioned');
 }
 
 // 5. empty payload clears the whole stack.
@@ -615,19 +615,19 @@ function commitLatestGeometry(host) {
   assert.strictEqual(host.topPopupId(), null, 'topPopupId null when empty');
 }
 
-// BUG-1804 — the first nested card must consume an already-loaded standby
+// BUG-1827 — the first nested card must consume an already-loaded standby
 // popup realm, and closing/reopening that depth must park/rebind the SAME realm
 // instead of navigating a fresh iframe. Frame ids still rotate so a late message
 // from the retired logical layer cannot attach to its replacement.
 {
   const { host, document } = freshHost();
   assert.strictEqual(standbyShellsOf(document).length, 1,
-    'BUG-1804: host preloads exactly one bounded child iframe');
+    'BUG-1827: host preloads exactly one bounded child iframe');
   const initiallyWarmIframe = standbyShellsOf(document)[0].children.find(
     (c) => c.tagName === 'IFRAME',
   );
   assert.ok(initiallyWarmIframe && initiallyWarmIframe._loaded,
-    'BUG-1804: standby popup.html realm is loaded before the first child lookup');
+    'BUG-1827: standby popup.html realm is loaded before the first child lookup');
   hostPostLog = [];
   initiallyWarmIframe.contentWindow.chrome.webview.postMessage({
     handler: 'popupRendered', args: [0], __bridgeId: 17,
@@ -635,12 +635,12 @@ function commitLatestGeometry(host) {
   assert.deepStrictEqual(
     initiallyWarmIframe.contentWindow._bridgeResolved,
     [{ id: 17, value: null }],
-    'BUG-1804: inactive standby calls settle locally instead of leaking Promises',
+    'BUG-1827: inactive standby calls settle locally instead of leaking Promises',
   );
   assert.strictEqual(hostPostLog.length, 0,
-    'BUG-1804: inactive standby never publishes a native host message');
+    'BUG-1827: inactive standby never publishes a native host message');
   assert.strictEqual(host._bridgeRoutes.size, 0,
-    'BUG-1804: inactive standby never owns a host bridge route');
+    'BUG-1827: inactive standby never owns a host bridge route');
 
   host.renderStack({
     popups: [revisionDescriptor(
@@ -653,7 +653,7 @@ function commitLatestGeometry(host) {
     e.frameId.startsWith('__global-lookup-standby-') &&
       /STATIC-HEAD-70/.test(e.code));
   assert.ok(warmStatic && !/ROOT-RENDER-70/.test(warmStatic.code),
-    'BUG-1804: standby installs static/font settings without rendering stale root content');
+    'BUG-1827: standby installs static/font settings without rendering stale root content');
 
   evalLog = [];
   host.renderStack({
@@ -675,19 +675,19 @@ function commitLatestGeometry(host) {
     (c) => c.tagName === 'IFRAME',
   );
   assert.strictEqual(firstChildIframe, initiallyWarmIframe,
-    'BUG-1804: first child reuses the preloaded iframe object');
+    'BUG-1827: first child reuses the preloaded iframe object');
   assert.strictEqual(firstChildIframe._ancestorMoveCount || 0, 0,
-    'BUG-1804: acquisition never reparents the mounted shell/reloads its iframe realm');
+    'BUG-1827: acquisition never reparents the mounted shell/reloads its iframe realm');
   const firstChildEval = evalLog.find((e) =>
     e.frameId === 'frame-100' && /CHILD-ENTRIES-100/.test(e.code));
   assert.ok(firstChildEval && !/STATIC-HEAD-70|STATIC-TAIL-70/.test(firstChildEval.code),
-    'BUG-1804: a primed child injects only dynamic entries/render JS');
+    'BUG-1827: a primed child injects only dynamic entries/render JS');
 
   firstChildIframe.contentWindow.chrome.webview.postMessage({
     handler: 'favoriteEntry', args: [], __bridgeId: 41,
   });
   assert.strictEqual(host._bridgeRoutes.size, 1,
-    'BUG-1804: setup creates one pending route owned by the first logical child');
+    'BUG-1827: setup creates one pending route owned by the first logical child');
   const cancelCountBeforePark = firstChildIframe.contentWindow._bridgeCancelCount || 0;
   const prepareCountBeforePark = firstChildIframe.contentWindow._prepareReuseCount || 0;
 
@@ -698,20 +698,20 @@ function commitLatestGeometry(host) {
     )],
   });
   assert.strictEqual(host._bridgeRoutes.size, 0,
-    'BUG-1804: parking a child retires every pending bridge route for its old id');
+    'BUG-1827: parking a child retires every pending bridge route for its old id');
   assert.strictEqual(firstChildIframe.contentWindow._bridgeCancelCount,
     cancelCountBeforePark + 1,
-    'BUG-1804: parking settles frame-local pending Promises before realm reuse');
+    'BUG-1827: parking settles frame-local pending Promises before realm reuse');
   assert.strictEqual(firstChildIframe.contentWindow._prepareReuseCount,
     prepareCountBeforePark + 1,
-    'BUG-1804: parking invalidates popup.js callbacks before realm reuse');
+    'BUG-1827: parking invalidates popup.js callbacks before realm reuse');
   assert.strictEqual(standbyShellsOf(document).length, 1,
-    'BUG-1804: the child pool stays bounded at one parked realm');
+    'BUG-1827: the child pool stays bounded at one parked realm');
   const parkedIframe = standbyShellsOf(document)[0].children.find(
     (c) => c.tagName === 'IFRAME',
   );
   assert.strictEqual(parkedIframe, firstChildIframe,
-    'BUG-1804: closing the child parks its live iframe instead of destroying it');
+    'BUG-1827: closing the child parks its live iframe instead of destroying it');
 
   host.renderStack({
     popups: [
@@ -730,21 +730,21 @@ function commitLatestGeometry(host) {
   );
   const reboundIframe = reboundShell.children.find((c) => c.tagName === 'IFRAME');
   assert.strictEqual(reboundIframe, firstChildIframe,
-    'BUG-1804: replacement frame id rebinds the same warm iframe realm');
+    'BUG-1827: replacement frame id rebinds the same warm iframe realm');
   assert.strictEqual(reboundShell.getAttribute('data-content-ready'), 'false',
-    'BUG-1804: rebound content gate cannot inherit readiness from the retired card');
+    'BUG-1827: rebound content gate cannot inherit readiness from the retired card');
   assert.strictEqual(reboundShell.getAttribute('data-reveal-ready'), 'false',
-    'BUG-1804: rebound child waits for its native geometry transaction');
+    'BUG-1827: rebound child waits for its native geometry transaction');
   commitLatestGeometry(host);
   assert.strictEqual(reboundShell.getAttribute('data-reveal-ready'), 'true',
-    'BUG-1804: matching native geometry ack releases the rebound child');
+    'BUG-1827: matching native geometry ack releases the rebound child');
 
   host.renderStack({ popups: [] });
   assert.strictEqual(standbyShellsOf(document).length, 0,
-    'BUG-1804: an empty stack releases the warm realm and its retained settings');
+    'BUG-1827: an empty stack releases the warm realm and its retained settings');
 }
 
-// BUG-1804 — replenishing the one look-ahead realm must not start a second
+// BUG-1827 — replenishing the one look-ahead realm must not start a second
 // popup.html navigation in the same turn as the acquired child presentation.
 {
   const { host, document } = freshHost({
@@ -765,15 +765,15 @@ function commitLatestGeometry(host) {
     ],
   });
   assert.strictEqual(standbyShellsOf(document).length, 0,
-    'BUG-1804: child presentation turn does not synchronously create its replacement');
+    'BUG-1827: child presentation turn does not synchronously create its replacement');
   assert.ok(pendingAnimationFrames.length >= 1,
-    'BUG-1804: normal replacement waits for the compositor path');
+    'BUG-1827: normal replacement waits for the compositor path');
   const refill = pendingTimers.find((timer) => timer.ms === 50);
   assert.ok(refill,
-    'BUG-1804: a watchdog covers rAF suspension in the off-screen game WebView');
+    'BUG-1827: a watchdog covers rAF suspension in the off-screen game WebView');
   refill.fn();
   assert.strictEqual(standbyShellsOf(document).length, 1,
-    'BUG-1804: deferred turn restores the bounded look-ahead realm');
+    'BUG-1827: deferred turn restores the bounded look-ahead realm');
 }
 
 // 6. per-frame settingsJs is eval'd inside that frame's contentWindow realm.
@@ -1574,7 +1574,7 @@ function flushTimers() {
   );
 }
 
-// BUG-1804 ancestor replacement — logical depth comes from the incoming
+// BUG-1827 ancestor replacement — logical depth comes from the incoming
 // payload, not from the physical Map. The old suffix deliberately remains in
 // that Map while its replacement is rendered; deriving C's z-index from it
 // would transiently assign depth 3 to the logical depth-1 child.
@@ -1609,7 +1609,7 @@ function flushTimers() {
     'grandchild remains stacked above its replacement parent');
 }
 
-// BUG-1804 ancestor replacement atomicity — R,A,B -> R,C must keep the visible
+// BUG-1827 ancestor replacement atomicity — R,A,B -> R,C must keep the visible
 // outgoing suffix until C has both rendered and joined the matching native
 // geometry transaction. Removing A/B at renderStack return leaves one or more
 // compositor opportunities where only R paints because C is still reveal-gated.
@@ -2182,7 +2182,7 @@ function flushTimers() {
     'committing the new lookup origin covers frame-2 (reveals in place)');
 }
 
-// BUG-1804 geometry transaction: replacing child A with B before A's native
+// BUG-1827 geometry transaction: replacing child A with B before A's native
 // resize returns must reject A's stale epoch. Only B's matching epoch may move
 // the layer, reveal B, and publish captureReady; epoch stays monotonic across a
 // normal beginLookup even though per-lookup transaction state is retired.
@@ -3015,7 +3015,7 @@ function historyOverlayIn(shell) {
     'BUG-1166: 缝隙滚轮不该误投给任何一帧');
 }
 
-// P1 (BUG-1804) — a stable host revision carries the multi-megabyte custom-font
+// P1 (BUG-1827) — a stable host revision carries the multi-megabyte custom-font
 // static payload once. Later lookups only eval entries + the render body, while
 // a prewarmed iframe hydrates from the host-level revision cache before it is
 // rebound, so acquisition only evaluates the child-specific dynamic body.
@@ -3028,12 +3028,12 @@ function historyOverlayIn(shell) {
     )],
   });
   const first = evalLog.find((e) => /ENTRIES-1/.test(e.code));
-  assert.ok(first, 'BUG-1804: first revision renders the root');
+  assert.ok(first, 'BUG-1827: first revision renders the root');
   assert.ok(
     first.code.indexOf('STATIC-HEAD-7') < first.code.indexOf('ENTRIES-1') &&
       first.code.indexOf('ENTRIES-1') < first.code.indexOf('STATIC-TAIL-7') &&
       first.code.indexOf('STATIC-TAIL-7') < first.code.indexOf('RENDER-1'),
-    'BUG-1804: cold injection preserves head -> entries -> tail -> render order',
+    'BUG-1827: cold injection preserves head -> entries -> tail -> render order',
   );
 
   evalLog = [];
@@ -3043,9 +3043,9 @@ function historyOverlayIn(shell) {
     )],
   });
   const hot = evalLog.find((e) => /ENTRIES-2/.test(e.code));
-  assert.ok(hot, 'BUG-1804: changed entries still render on the stable root');
+  assert.ok(hot, 'BUG-1827: changed entries still render on the stable root');
   assert.ok(!/STATIC-HEAD-7|STATIC-TAIL-7/.test(hot.code),
-    'BUG-1804: hot lookup does not re-eval the font/static payload');
+    'BUG-1827: hot lookup does not re-eval the font/static payload');
 
   evalLog = [];
   host.renderStack({
@@ -3056,7 +3056,7 @@ function historyOverlayIn(shell) {
   });
   const child = evalLog.find((e) => e.frameId === 'frame-1' && /CHILD-ENTRIES/.test(e.code));
   assert.ok(child && !/STATIC-HEAD-7|STATIC-TAIL-7/.test(child.code),
-    'BUG-1804: the prewarmed iframe keeps static state and acquires dynamic-only content');
+    'BUG-1827: the prewarmed iframe keeps static state and acquires dynamic-only content');
 
   // A navigation replaces the iframe realm but not the host record/cache.
   evalLog = [];
@@ -3067,7 +3067,7 @@ function historyOverlayIn(shell) {
   assert.notStrictEqual(
     rootIframe.contentWindow.chrome.webview.postMessage,
     navigatedNativePost,
-    'BUG-1804: navigation replaces and then re-wraps the frame bridge',
+    'BUG-1827: navigation replaces and then re-wraps the frame bridge',
   );
   hostPostLog = [];
   rootIframe.contentWindow.chrome.webview.postMessage({
@@ -3077,10 +3077,10 @@ function historyOverlayIn(shell) {
     (message) => message.handler === 'popupRendered',
   );
   assert.ok(routedAfterReload && routedAfterReload.__frameId === 'frame-0',
-    'BUG-1804: reloaded realm messages are stamped with the live logical id');
+    'BUG-1827: reloaded realm messages are stamped with the live logical id');
   const reloaded = evalLog.find((e) => e.frameId === 'frame-0' && /ENTRIES-2/.test(e.code));
   assert.ok(reloaded && /STATIC-HEAD-7/.test(reloaded.code),
-    'BUG-1804: iframe reload re-applies cached static before pending dynamic');
+    'BUG-1827: iframe reload re-applies cached static before pending dynamic');
 
   evalLog = [];
   host.renderStack({
@@ -3091,10 +3091,10 @@ function historyOverlayIn(shell) {
   });
   const changed = evalLog.find((e) => /ENTRIES-3/.test(e.code));
   assert.ok(changed && /STATIC-HEAD-8/.test(changed.code) && /STATIC-TAIL-8/.test(changed.code),
-    'BUG-1804: a changed revision installs its new static payload');
+    'BUG-1827: a changed revision installs its new static payload');
 }
 
-// P1b (BUG-1804) — imported font bytes are materialised once as a same-origin
+// P1b (BUG-1827) — imported font bytes are materialised once as a same-origin
 // Blob resource. Root, nested, and reloaded iframe realms eval only the compact
 // blob: URL while every @font-face semantic besides src stays unchanged.
 {
@@ -3112,33 +3112,33 @@ function historyOverlayIn(shell) {
   host.renderStack({ popups: [rootDescriptor] });
 
   assert.strictEqual(fontBlobCreateLog.length, 1,
-    'BUG-1804: one revision creates one Blob for one imported font');
+    'BUG-1827: one revision creates one Blob for one imported font');
   assert.deepStrictEqual(
     { type: fontBlobCreateLog[0].type, size: fontBlobCreateLog[0].size },
     { type: 'font/ttf', size: 4 },
-    'BUG-1804: Blob preserves MIME and decoded font bytes',
+    'BUG-1827: Blob preserves MIME and decoded font bytes',
   );
   assert.ok(!Object.prototype.hasOwnProperty.call(rootDescriptor, 'staticHeadJs') &&
       !Object.prototype.hasOwnProperty.call(rootDescriptor, 'staticTailJs'),
-    'BUG-1804: the live frame descriptor releases the base64 source');
+    'BUG-1827: the live frame descriptor releases the base64 source');
   const root = evalLog.find((e) =>
     e.frameId === 'font-root' && /FONT-ROOT-ENTRIES/.test(e.code));
-  assert.ok(root, 'BUG-1804: root rendered with the shared font resource');
+  assert.ok(root, 'BUG-1827: root rendered with the shared font resource');
   assert.ok(!root.code.includes(rawDataUrl),
-    'BUG-1804: root iframe does not eval the base64 source');
+    'BUG-1827: root iframe does not eval the base64 source');
   assert.ok(root.code.includes(fontBlobCreateLog[0].url),
-    'BUG-1804: root iframe receives the host Blob URL');
+    'BUG-1827: root iframe receives the host Blob URL');
   assert.ok(root.code.includes('font-family: "Noto Sans JP"') &&
       root.code.includes('format("truetype")') &&
       root.code.includes('font-style: italic') &&
       root.code.includes('font-weight: 500') &&
       root.code.includes('font-display: swap'),
-    'BUG-1804: family/format/style/weight/display CSS remains unchanged');
+    'BUG-1827: family/format/style/weight/display CSS remains unchanged');
   const warmChildRealm = evalLog.find((e) =>
     e.frameId.startsWith('__global-lookup-standby-') &&
       e.code.includes(fontBlobCreateLog[0].url));
   assert.ok(warmChildRealm && !warmChildRealm.code.includes(rawDataUrl),
-    'BUG-1804: standby child realm installs the shared Blob URL before acquire');
+    'BUG-1827: standby child realm installs the shared Blob URL before acquire');
 
   evalLog = [];
   host.renderStack({
@@ -3156,11 +3156,11 @@ function historyOverlayIn(shell) {
   const child = evalLog.find((e) =>
     e.frameId === 'font-child' && /FONT-CHILD-ENTRIES/.test(e.code));
   assert.ok(child && !child.code.includes(fontBlobCreateLog[0].url),
-    'BUG-1804: acquired child skips already-installed static font settings');
+    'BUG-1827: acquired child skips already-installed static font settings');
   assert.ok(!child.code.includes(rawDataUrl),
-    'BUG-1804: nested iframe never evals base64 font data');
+    'BUG-1827: nested iframe never evals base64 font data');
   assert.strictEqual(fontBlobCreateLog.length, 1,
-    'BUG-1804: nested hydration does not duplicate the font resource');
+    'BUG-1827: nested hydration does not duplicate the font resource');
 
   evalLog = [];
   const rootIframe = shellsOf(document)
@@ -3171,7 +3171,7 @@ function historyOverlayIn(shell) {
     e.frameId === 'font-root' && /FONT-ROOT-ENTRIES/.test(e.code));
   assert.ok(reloaded && reloaded.code.includes(fontBlobCreateLog[0].url) &&
       !reloaded.code.includes(rawDataUrl),
-    'BUG-1804: iframe reload still reuses the one host resource');
+    'BUG-1827: iframe reload still reuses the one host resource');
   assert.strictEqual(fontBlobCreateLog.length, 1);
 
   const oldObjectUrl = fontBlobCreateLog[0].url;
@@ -3182,9 +3182,9 @@ function historyOverlayIn(shell) {
     )],
   });
   assert.strictEqual(fontBlobCreateLog.length, 2,
-    'BUG-1804: a new static revision owns its own resource');
+    'BUG-1827: a new static revision owns its own resource');
   assert.ok(fontBlobRevokeLog.includes(oldObjectUrl),
-    'BUG-1804: pruning the old revision revokes its Blob URL');
+    'BUG-1827: pruning the old revision revokes its Blob URL');
 }
 
 // P1b — gal direct geometry starts compact, but after a real up/left child grows
@@ -3235,7 +3235,7 @@ function historyOverlayIn(shell) {
     'retained root shell rect is translated into the held -80 window origin');
 }
 
-// P2 (BUG-1804) — a whole-WebView recovery loses the host cache. A dynamic-only
+// P2 (BUG-1827) — a whole-WebView recovery loses the host cache. A dynamic-only
 // descriptor must stay content-gated and request exactly one routed static
 // resend; once supplied, the pending dynamic body renders normally.
 {
@@ -3248,22 +3248,22 @@ function historyOverlayIn(shell) {
     (m) => m.handler === 'staticSettingsRequired' && m.args[0] === 11,
   );
   assert.strictEqual(requests().length, 1,
-    'BUG-1804: cache miss requests one static resend');
+    'BUG-1827: cache miss requests one static resend');
   assert.ok(!evalLog.some((e) => /RECOVERY-ENTRIES/.test(e.code)),
-    'BUG-1804: dynamic content is not rendered without its static revision');
+    'BUG-1827: dynamic content is not rendered without its static revision');
   assert.strictEqual(
     shellsOf(document)[0].getAttribute('data-content-ready'),
     'false',
-    'BUG-1804: missing static keeps the shell content-gated',
+    'BUG-1827: missing static keeps the shell content-gated',
   );
   assert.strictEqual(
     hostPostLog.filter((m) => m.handler === 'overlaySize').length,
     0,
-    'BUG-1804: missing static cannot publish bootstrap geometry for a blank iframe',
+    'BUG-1827: missing static cannot publish bootstrap geometry for a blank iframe',
   );
   host.renderStack({ popups: [missing] });
   assert.strictEqual(requests().length, 1,
-    'BUG-1804: repeated missing descriptors coalesce the resend request');
+    'BUG-1827: repeated missing descriptors coalesce the resend request');
 
   host.renderStack({
     popups: [revisionDescriptor(
@@ -3273,12 +3273,12 @@ function historyOverlayIn(shell) {
   });
   const recovered = evalLog.find((e) => /RECOVERY-ENTRIES/.test(e.code));
   assert.ok(recovered && /RECOVERY-HEAD/.test(recovered.code),
-    'BUG-1804: routed static resend replays pending dynamic content');
+    'BUG-1827: routed static resend replays pending dynamic content');
   assert.ok(hostPostLog.some((m) => m.handler === 'overlaySize'),
-    'BUG-1804: successful recovery resumes geometry reporting');
+    'BUG-1827: successful recovery resumes geometry reporting');
 }
 
-// P3 (BUG-1804) — resend coalescing is route-scoped. If route A's request is
+// P3 (BUG-1827) — resend coalescing is route-scoped. If route A's request is
 // rejected after a newer lookup takes ownership, route B must issue its own
 // request for the same revision instead of remaining gated forever.
 {
@@ -3298,12 +3298,12 @@ function historyOverlayIn(shell) {
     (m) => m.handler === 'staticSettingsRequired' && m.args[0] === 12,
   );
   assert.strictEqual(routedRequests.length, 2,
-    'BUG-1804: route B retries the revision even when route A already requested it');
+    'BUG-1827: route B retries the revision even when route A already requested it');
   assert.strictEqual(routedRequests[0].__lookupEpoch, 1);
   assert.strictEqual(routedRequests[1].__lookupEpoch, 2);
 }
 
-// P4 (BUG-1804) — static payloads can contain a 9.6 MB font. Revisions no
+// P4 (BUG-1827) — static payloads can contain a 9.6 MB font. Revisions no
 // longer used by any live descriptor are evicted instead of accumulating for
 // the process lifetime.
 {
@@ -3329,7 +3329,7 @@ function historyOverlayIn(shell) {
   });
   assert.ok(hostPostLog.some(
     (m) => m.handler === 'staticSettingsRequired' && m.args[0] === 20,
-  ), 'BUG-1804: a no-longer-live revision was evicted from the host cache');
+  ), 'BUG-1827: a no-longer-live revision was evicted from the host cache');
 }
 
 console.log('global_lookup_host_test: PASS');

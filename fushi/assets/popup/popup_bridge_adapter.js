@@ -46,7 +46,7 @@
       : JSON.parse(jsonValue));
   };
 
-  // BUG-1804 — a nested lookup can park and reuse this physical iframe realm.
+  // BUG-1827 — a nested lookup can park and reuse this physical iframe realm.
   // Any native calls still pending for the retired logical frame must settle
   // before reuse; otherwise their resolve closures accumulate forever and a
   // late result could continue old card work in the replacement generation.

@@ -105,7 +105,7 @@ class GlobalLookupController {
   /// owner coalesces these notifications into bitmap recaptures.
   void Function(GlobalLookupRoute route)? onRoutedDirty;
   GlobalLookupRoute? _activeRoute;
-  // BUG-1804 — static popup settings already installed in each physical host
+  // BUG-1827 — static popup settings already installed in each physical host
   // (desktop and galCard are different WebView2 realms). A configured custom
   // font can make this payload ~13 MB, so only revisions not yet acknowledged
   // by the current host ride the render call. The host can demand a resend after
@@ -221,7 +221,7 @@ class GlobalLookupController {
   final Map<String, DictionarySearchResult> _frameResults =
       <String, DictionarySearchResult>{};
   int _frameSeq = 0;
-  // BUG-1805 — nested searches share one route and may complete out of order.
+  // BUG-1828 — nested searches share one route and may complete out of order.
   // The latest valid source-frame intent wins, matching the app-in popup's
   // _searchGeneration gate instead of letting an older result append later.
   int _nestedLookupGeneration = 0;
@@ -554,7 +554,7 @@ class GlobalLookupController {
   /// 2555x2160（22 MB），既超预算，又让 anchor 的 `clamp(0, viewW - cardW)` 上界
   /// 变负、整个塌成 (0,0)——卡片钉在左上角不跟着字走，正是这个原因。
   ({int w, int h})? _physicalCap;
-  // BUG-1806 — the single-card bitmap cap above and the cascade layout work
+  // BUG-1829 — the single-card bitmap cap above and the cascade layout work
   // area are different constraints. A gal card is capped to ~60% of the game,
   // while its children may use the WHOLE game viewport. Keeping the root origin
   // alongside that viewport also puts computeFrameRect in the same coordinate
@@ -920,7 +920,7 @@ class GlobalLookupController {
       // lurch a visible parent. The gal route now resizes its already-visible
       // composition HWND in place; reserving from a non-zero game root to (0,0)
       // would instead create a mostly-transparent near-viewport-sized union and
-      // recreate the fixed red range reported in BUG-1806.
+      // recreate the fixed red range reported in BUG-1829.
       final ({double left, double top}) floor = route.source == 'galCard'
           ? (left: 0.0, top: 0.0)
           : computeCascadeHeadroomSeed(
@@ -1198,7 +1198,7 @@ class GlobalLookupController {
 
   void _onJsMessage(Map<String, Object?> message) {
     final Object? handler = message['handler'];
-    // BUG-1804 — galFrameDirty 可随滚动/异步 hydration 达到每秒几十次；glog 当前是
+    // BUG-1827 — galFrameDirty 可随滚动/异步 hydration 达到每秒几十次；glog 当前是
     // writeAsStringSync + flush:true，把每个浏览器帧都变成 UI isolate 的同步磁盘刷写。
     // dirty 只是调度信号，成功本身没有诊断价值；失败/呈现状态仍由 present 日志覆盖。
     if (handler != 'galFrameDirty' &&
@@ -1882,7 +1882,7 @@ class GlobalLookupController {
       // child then never moves the origin -> zero parent displacement).
       originFloorLeft: _originFloorLeft,
       originFloorTop: _originFloorTop,
-      // BUG-1806 — only the game-card surface is constrained to the game
+      // BUG-1829 — only the game-card surface is constrained to the game
       // viewport. Match the in-app child popup's above/below fitting there while
       // preserving the desktop global-lookup cascade.
       fitNestedHeightToAnchorSide: route.source == 'galCard',
