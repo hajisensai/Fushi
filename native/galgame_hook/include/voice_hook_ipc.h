@@ -383,9 +383,9 @@ struct LoopbackMarker {
 //   frame : host → hook，双缓冲（避免 host 写下一帧时撕裂 hook 正在拷的这一帧）
 //
 // **像素格式：BGRA8，直通（非预乘）alpha，自顶向下。** 两端都按直通最省事——host 侧
-// WebView2 取帧经 PNG 解码出来的本来就是直通；注入侧 KiriKiri 的 ltAlpha 也正是直通
-// （预乘对应的是 ltAddAlpha）。任何一侧擅自改成预乘，症状是卡片半透明边缘发暗，不会
-// 报错，只会看起来"有点脏"——所以在这里写死，别靠两边默契。
+// WebView2 取帧经 WIC 解码并由 shell mask 重建透明边界；注入侧 KiriKiri 的 ltAlpha
+// 是直通（预乘对应的是 ltAddAlpha）。任何一侧擅自改成预乘，症状是卡片半透明边缘发暗，
+// 不会报错，只会看起来"有点脏"——所以在这里写死，别靠两边默契。
 constexpr uint32_t kLookupLineBytes = 1024;      // 单行台词 UTF-8 上限（整行，不截断）
 constexpr uint32_t kLookupInputSlotCount = 64;   // 输入转发环槽数
 constexpr uint32_t kLookupFrameCount = 2;        // 位图双缓冲
@@ -393,7 +393,7 @@ constexpr uint32_t kLookupFrameCount = 2;        // 位图双缓冲
 // host 负责钳制卡片尺寸，注入侧只做校验和拒绝，绝不按收到的 width/height 盲拷。
 // 单张卡片位图的字节预算（双缓冲，共享内存占 2 倍）。
 //
-// 超预算时 runner 只能**裁**（DecodePngStreamToStraightBgra 直接改小 width/height
+// 超预算时 runner 只能**裁**（DecodeCaptureStreamToStraightBgra 直接改小 width/height
 // 按左上角取块），不是缩——也就是说预算定小了，用户看到的是被切掉半张的卡片。
 // 原来的 3 MiB 只够 786432 像素，1920x1440 视口下取 0.6 就已经逼近；抬到 8 MiB
 // 后可容 2097152 像素（约 1600x1200 / 1920x1092），正常卡片不可能撞到。

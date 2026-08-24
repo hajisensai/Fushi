@@ -1,8 +1,14 @@
 /// 系统自带 OCR 的平台能力面。
 ///
-/// 存在的理由是用户那句「安装后不用下载模型也能用」：设备自己就带着文字识别
-/// （Android 的 ML Kit 打包模型 / Apple Vision / Windows.Media.Ocr），装完即用、
-/// 完全离线、一个字节都不上传。
+/// 存在的理由是用户那句「安装后不用下载模型也能用」：模型由**系统**保管而不是
+/// 由我们打进包里（Android 走 unbundled ML Kit，模型住在 Google Play 服务、多个
+/// app 共享，安装时由 manifest 的 DEPENDENCIES meta-data 触发取下；Apple Vision /
+/// Windows.Media.Ocr 本来就是系统组件）。一个字节都不上传。
+///
+/// 反过来说，这条路依赖系统组件到位。**不到位时不许静默**：Android 侧把 ML Kit 的
+/// UNAVAILABLE 单独报成 `MODEL_UNAVAILABLE`，这里映射成
+/// [SystemOcrUnavailableException]，与真正的识别失败分开——两者合成一类的话，
+/// 用户看到「识别失败」会去怀疑图片，而实际该做的是等模型下完或换引擎。
 ///
 /// **别把它当主力**。这些通用识别器是冲着横排印刷体去的，对漫画的竖排气泡和
 /// 手写拟声词明显不如 manga-ocr；它在这里的定位是「零成本兜底档」——没下模型、
@@ -104,14 +110,24 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
     Uint8List imageBytes, {
     required String language,
   }) async {
-    final Map<Object?, Object?>? raw =
-        await _channel.invokeMapMethod<Object?, Object?>(
-      'recognize',
-      <String, Object?>{
-        'bytes': imageBytes,
-        'language': language,
-      },
-    );
+    final Map<Object?, Object?>? raw;
+    try {
+      raw = await _channel.invokeMapMethod<Object?, Object?>(
+        'recognize',
+        <String, Object?>{
+          'bytes': imageBytes,
+          'language': language,
+        },
+      );
+    } on PlatformException catch (error) {
+      // 模型没就绪（unbundled ML Kit 的模型由 Google Play 服务保管，可能还在下、
+      // 或本机压根没有 GMS）不是「这张图识别失败」：调用方据此该提示等待或换引擎，
+      // 而不是让用户去怀疑图片。原生侧用 MODEL_UNAVAILABLE 把它单独标出来。
+      if (error.code == 'MODEL_UNAVAILABLE') {
+        throw const SystemOcrUnavailableException('model_unavailable');
+      }
+      rethrow;
+    }
     if (raw == null) {
       throw const SystemOcrUnavailableException('empty_response');
     }

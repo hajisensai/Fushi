@@ -244,6 +244,10 @@ class VoiceHookReader {
   // 打不开时 error 说明是哪一种打不开，detail 带上 win32 码 / 映射名 / 双方版本对照。
   VoiceHookOpenResult Open(uint32_t pid);
 
+  // 当前已打开共享映射所属的游戏 PID；未打开返回 0。游戏内 composition surface
+  // 用它找真实客户区，避免把 primaryLayer 坐标误当成桌面坐标。
+  uint32_t CurrentPid();
+
   // 读当前 header 状态（格式/hooked/calibrating）。未打开返回 ok=false。
   VoiceHookStatus Status();
 
@@ -322,6 +326,11 @@ class VoiceHookReader {
       uint32_t height, uint32_t pitch)>;
   using LookupCaptureRequest = std::function<void(
       uint32_t max_width, uint32_t max_height, LookupCaptureCallback done)>;
+  // 已渲染 WebView2 的零拷贝呈现主路。返回 true 表示 composition HWND 已直接贴到
+  // 游戏客户区；false 时调用方保留 CapturePreview 位图回退。
+  using LookupDirectPresenter = std::function<bool(
+      int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
+      uint32_t card_height, uint32_t view_width, uint32_t view_height)>;
   // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
   // [GlobalLookupWindow::InjectLookupInput]）。
   using LookupInputSink = std::function<bool(uint32_t kind, int32_t x,
@@ -356,12 +365,14 @@ class VoiceHookReader {
       const flutter::MethodCall<flutter::EncodableValue>& call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>& result);
 
-  // 接像素源 / 输入落点。两者都在平台线程上被调用。未接线时 galLookupPresent 返回
-  // kNoCaptureSource（而不是投一张空帧假装成功），输入事件仍会上报 Dart。
+  // 接直接 composition 呈现 / 位图回退 / 输入落点。三者都在平台线程上被调用。
+  // direct 不可用且 capture 未接线时 galLookupPresent 返回 kNoCaptureSource（而不是
+  // 投一张空帧假装成功），输入事件仍会上报 Dart。
   //
   // 输入注入是 **Dart 驱动**的：泵把 input 上报成 onGalLookupInput，Dart 决定要不要
   // 喂（卡片没显示时就不该喂），再经 galLookupInput 落到这个 sink。泵**不**自己直接
   // 喂——两处都喂就是每个事件注入两次，鼠标会被判成双击、滚轮会翻倍。
+  void SetLookupDirectPresenter(LookupDirectPresenter presenter);
   void SetLookupCaptureRequest(LookupCaptureRequest request);
   void SetLookupInputSink(LookupInputSink sink);
 

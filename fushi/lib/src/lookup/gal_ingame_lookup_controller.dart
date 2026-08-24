@@ -8,18 +8,18 @@
 //        ▼
 //   本控制器 ── 走 app 既有查词链（GlobalLookupController.lookupText →
 //        │       AppModel.searchDictionary → 离屏 WebView2 popup.html）
-//        │ galLookupPresent(seq, anchor, highlight)
+//        │ galLookupPresent(seq, anchor, card/view size)
 //        ▼
-//   runner（取帧）→ 共享内存 → hook memcpy 进游戏 Layer
+//   runner → 透明 WebView2 composition HWND 贴住游戏客户区
+//          ↘ 找不到可用游戏 HWND 时才 CapturePreview → hook bitmap 回退
 //
 // 本文件里**一行查词逻辑都没有**：不分词、不筛词典、不定 maximumTerms、不排版。
 // 词条从哪来、去屈折怎么做、卡片长什么样，全部与阅读器 / 视频 / 剪贴板查词同一份
 // 实现；这里只回答三个问题——查哪个串、卡片放哪、高亮哪一段。
 //
-// 坐标域纪律：hook 报上来的 glyph/view 尺寸在**游戏 primaryLayer 像素**域，卡片位图
-// 是逐像素 memcpy 进 Layer 的，所以「卡片在游戏里的尺寸」== 位图的**物理像素**尺寸
-// （GlobalLookupController.onRoutedRevealed 回报的就是它）。两者同域可直接比较，全程不乘
-// dpr——dpr 只属于 Windows 窗口那一侧。
+// 坐标域纪律：hook 报上来的 glyph/view 尺寸在**游戏 primaryLayer 像素**域，
+// GlobalLookupController.onRoutedRevealed 回报卡片 WebView 的物理像素。两者先在同域
+// 算 anchor，再由 runner 用真实游戏客户区 / view 比例整体映射；Dart 全程不乘 dpr。
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -41,10 +41,8 @@ import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
 /// 偏好读取口。与 `GalHookPreferenceReader` 同形——独立声明只为不让台词浮窗控制器与
 /// 本控制器互相 import 成环，语义完全一致（key + 默认值，测试可注入替身）。
-typedef GalIngameLookupPreferenceReader = Object? Function(
-  String key, {
-  required Object? defaultValue,
-});
+typedef GalIngameLookupPreferenceReader =
+    Object? Function(String key, {required Object? defaultValue});
 
 /// 按台词文本回溯本局会话里的行，给出该行的 gal 制卡 handler（截图 + 语音 + 标签）。
 ///
@@ -52,6 +50,16 @@ typedef GalIngameLookupPreferenceReader = Object? Function(
 /// mining coordinator、Anki repo 与全部制卡偏好。这里只要一个「这句话对应哪一行」
 /// 的解析口，绝不复制那条链。找不到对应行返回 null（卡照样能建，只是没有 gal 媒体）。
 typedef GalIngameMiningResolver = OverlayMiningHandler? Function(String line);
+
+/// Converts the fixed root-card anchor into the current nested-union anchor.
+/// All values are primaryLayer/WebView physical pixels; no DPR conversion is
+/// legal at this boundary.
+@visibleForTesting
+({int x, int y}) offsetGalLookupAnchor(
+  ({int x, int y}) root,
+  int bboxDx,
+  int bboxDy,
+) => (x: root.x + bboxDx, y: root.y + bboxDy);
 
 /// 游戏内查词编排器（进程级单例）。
 class GalIngameLookupController {
@@ -110,11 +118,7 @@ class GalIngameLookupController {
   GalLookupHit? _latestSubmitHit;
 
   /// latest-wins 待处理命中：查词在途时又点了新字，只留最后一个（连点不排队）。
-  ({
-    GalLookupHit hit,
-    int generation,
-    GlobalLookupRoute route,
-  })? _pendingLookup;
+  ({GalLookupHit hit, int generation, GlobalLookupRoute route})? _pendingLookup;
   bool _draining = false;
   Completer<void>? _drainCompleter;
 
@@ -133,8 +137,13 @@ class GalIngameLookupController {
   Timer? _recaptureTurn;
   bool _recaptureDirty = false;
   bool _recaptureInFlight = false;
+  bool _directSurfaceActive = false;
+  bool _recaptureTraceLogged = false;
   int _cardPhysicalWidth = 0;
   int _cardPhysicalHeight = 0;
+  int _cardPhysicalDx = 0;
+  int _cardPhysicalDy = 0;
+  ({int x, int y})? _rootCardAnchor;
 
   /// 游戏画面截图期间的原子可见性门。native 的 capture-suppress 在游戏主线程确认
   /// 卡片与高亮都已隐藏后才回执；Dart 同时挡住所有 dirty/reveal 触发的 recapture，
@@ -185,10 +194,11 @@ class GalIngameLookupController {
     if (_started) return;
     _started = true;
     final GlobalLookupController overlay = GlobalLookupController.instance;
-    overlay.onRoutedRevealed = (GlobalLookupRoute route, int w, int h) {
-      if (!_acceptsRoute(route)) return;
-      _onOverlayRevealed(route, w, h);
-    };
+    overlay.onRoutedRevealed =
+        (GlobalLookupRoute route, int w, int h, int dx, int dy) {
+          if (!_acceptsRoute(route)) return;
+          _onOverlayRevealed(route, w, h, dx, dy);
+        };
     overlay.onRoutedHidden = (GlobalLookupRoute route) {
       if (!_acceptsRoute(route)) return;
       unawaited(_onOverlayHidden(route));
@@ -197,24 +207,26 @@ class GalIngameLookupController {
     // 手柄重设计 P5：会话期把游戏内卡片登记为手柄的**独占**路由。卡片可见
     // （_activeRoute 非空）时 GamepadService 把弹窗动作转发进卡片、吞掉其余
     // 按钮——绝不让游戏里的手柄输入驱动后台 app 的页面/焦点/返回。
-    GalIngameLookupGamepadRoute.set(DictionaryPopupGamepadHooks(
-      // 前台门是独占的**前提**，不是可选项：独占的全部理由是「游戏在前台、app 在
-      // 后台，手柄输入属于游戏那一侧」。少了它，用户在游戏里查了词、不 dismiss 直接
-      // Alt-Tab 回 Fushi，卡片仍活着（_activeRoute 非空）⇒ app 内按钮 / 左摇杆 /
-      // 长按被**全部**吞掉转发给游戏后面那张看不见的卡片，连 B 都吞，app 里没有任何
-      // 出路。卡片是 blit 进游戏 Layer 的，不是独立窗口，native 的前台钩子收不掉它，
-      // 所以只能在这里判。非 Windows 恒 false，但那边 isSupported 早已挡住不登记。
-      hasVisiblePopup: () =>
-          _started &&
-          _enabledNow &&
-          _activeRoute != null &&
-          !DesktopForegroundGuard.isForegroundOwnedByCurrentProcess(),
-      entryMove: (bool forward) =>
-          _dispatchGamepadAction(forward ? 'next' : 'prev'),
-      mineFirstEntry: () => _dispatchGamepadAction('mine'),
-      playFirstAudio: () => _dispatchGamepadAction('audio'),
-      scrollBy: (double dy) => _dispatchGamepadAction('scroll', dy: dy),
-    ));
+    GalIngameLookupGamepadRoute.set(
+      DictionaryPopupGamepadHooks(
+        // 前台门是独占的**前提**，不是可选项：独占的全部理由是「游戏在前台、app 在
+        // 后台，手柄输入属于游戏那一侧」。少了它，用户在游戏里查了词、不 dismiss 直接
+        // Alt-Tab 回 Fushi，卡片仍活着（_activeRoute 非空）⇒ app 内按钮 / 左摇杆 /
+        // 长按被**全部**吞掉转发给游戏后面那张看不见的卡片，连 B 都吞，app 里没有任何
+        // 出路。卡片是 blit 进游戏 Layer 的，不是独立窗口，native 的前台钩子收不掉它，
+        // 所以只能在这里判。非 Windows 恒 false，但那边 isSupported 早已挡住不登记。
+        hasVisiblePopup: () =>
+            _started &&
+            _enabledNow &&
+            _activeRoute != null &&
+            !DesktopForegroundGuard.isForegroundOwnedByCurrentProcess(),
+        entryMove: (bool forward) =>
+            _dispatchGamepadAction(forward ? 'next' : 'prev'),
+        mineFirstEntry: () => _dispatchGamepadAction('mine'),
+        playFirstAudio: () => _dispatchGamepadAction('audio'),
+        scrollBy: (double dy) => _dispatchGamepadAction('scroll', dy: dy),
+      ),
+    );
   }
 
   /// 手柄动作 → 卡片窗 host（native gamepadAction → 顶层帧 popup.js 入口）。
@@ -263,9 +275,13 @@ class GalIngameLookupController {
   /// `lookup_enabled=0` 即零写入，不留半开状态。
   Future<void> setSessionActive(bool active) async {
     if (_sessionActive == active) {
-      // active phase 重复通知也是 reader/mapping 换代后重放意图的机会。
-      // 不能因为上一个 mapping 曾成功 enable 就用 _pushedEnabled 早退。
-      if (active) await _syncEnabled();
+      // ReaderState owns mapping-generation replay: Open() reapplies its
+      // persisted lookup_enabled_desired to every new shared-memory segment.
+      // Session line/audio updates can arrive many times per second, so do not
+      // resend the same platform call (and synchronously flush a diagnostic log)
+      // after the desired state was acknowledged. A failed first send remains
+      // retryable because _pushedEnabled stays false.
+      if (active && !_pushedEnabled) await _syncEnabled();
       return;
     }
     if (active) {
@@ -332,11 +348,8 @@ class GalIngameLookupController {
     _drainCompleter = drainCompleter;
     try {
       while (_pendingLookup != null) {
-        final ({
-          GalLookupHit hit,
-          int generation,
-          GlobalLookupRoute route,
-        }) next = _pendingLookup!;
+        final ({GalLookupHit hit, int generation, GlobalLookupRoute route})
+        next = _pendingLookup!;
         _pendingLookup = null;
         await _runLookup(next.hit, next.generation, next.route);
       }
@@ -353,22 +366,16 @@ class GalIngameLookupController {
   Future<void> handleInput(GalLookupInput input) {
     final GlobalLookupRoute? route = _activeRoute;
     final int generation = _activeLookupGeneration;
-    final bool traceInput = input.kind != 0;
-    if (traceInput) {
-      glog('gal-ingame: input recv seq=${input.seq} kind=${input.kind} '
-          'wheel=${input.wheel} started=$_started enabled=$_enabledNow '
-          'suppressed=$_captureSuppressed active=${_activeHit != null} '
-          'generation=$generation/$_lookupGeneration '
-          'route=${route == null ? "none" : GlobalLookupChannel.isRouteValid(route)}');
-    }
     if (_captureSuppressed ||
         !_started ||
         !_enabledNow ||
         _activeHit == null ||
         route == null) {
-      if (traceInput) {
-        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
-            'at=entry_gate');
+      if (input.kind != 0) {
+        glog(
+          'gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+          'at=entry_gate',
+        );
       }
       return Future<void>.value();
     }
@@ -392,7 +399,8 @@ class GalIngameLookupController {
       if (!done.isCompleted) done.complete();
     } catch (error, stackTrace) {
       glog(
-          'gal-ingame: input kind=${input.kind} EXCEPTION $error\n$stackTrace');
+        'gal-ingame: input kind=${input.kind} EXCEPTION $error\n$stackTrace',
+      );
       if (!done.isCompleted) done.complete();
     }
   }
@@ -406,8 +414,10 @@ class GalIngameLookupController {
     // 只会在不可见 DOM 上触发按钮或滚轮，并制造一张本不该在截图中途恢复的 dirty 帧。
     if (_captureSuppressed || !_isCurrentLookup(generation, route)) {
       if (input.kind != 0) {
-        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
-            'at=queue_gate');
+        glog(
+          'gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+          'at=queue_gate',
+        );
       }
       return;
     }
@@ -418,13 +428,12 @@ class GalIngameLookupController {
       glog('gal-ingame: input kind=${input.kind} FAILED ${result.error}');
       return;
     }
-    if (input.kind != 0) {
-      glog('gal-ingame: input seq=${input.seq} kind=${input.kind} -> ok');
-    }
     if (!_isCurrentLookup(generation, route)) {
       if (input.kind != 0) {
-        glog('gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
-            'at=reply_gate');
+        glog(
+          'gal-ingame: input DROP seq=${input.seq} kind=${input.kind} '
+          'at=reply_gate',
+        );
       }
       return;
     }
@@ -440,6 +449,9 @@ class GalIngameLookupController {
   void markRoutedDirty(GlobalLookupRoute route) {
     final int generation = _activeLookupGeneration;
     if (!_isCurrentLookup(generation, route)) return;
+    // composition HWND 上屏后 DOM 与滚动由 WebView2 自己以显示器刷新率合成。继续响应
+    // galFrameDirty 只会无意义地重走压缩截图回退，并把 60Hz 输入拖回约 6 FPS。
+    if (_directSurfaceActive) return;
     _scheduleRecapture(generation, route);
   }
 
@@ -483,6 +495,20 @@ class GalIngameLookupController {
           'native capture suspend failed: ${result.error ?? "unknown"}',
         );
       }
+      // Direct composition is outside the injected game Layer, so the native
+      // lookup-suppress acknowledgement alone cannot hide it from WGC/window
+      // capture. Hide the same routed WebView HWND synchronously before granting
+      // the lease; release keeps the DOM alive and _drainRecapture reveals it at
+      // the latest anchor. Bitmap fallback remains covered by the hook ack above.
+      // The suppress call may have yielded while a newer lookup replaced this
+      // route. Hide the currently-owned physical galCard surface; using the
+      // stale token would be silently dropped at the channel boundary.
+      final GlobalLookupRoute hideRoute = _activeRoute ?? route;
+      await GlobalLookupChannel.runWithRoute(
+        hideRoute,
+        () => GlobalLookupChannel.hide(notify: false),
+      );
+      _directSurfaceActive = false;
       return _GalIngameCaptureLease(
         () => _releaseMiningCaptureLease(leaseEpoch),
       );
@@ -531,8 +557,10 @@ class GalIngameLookupController {
       if (suspendedSeq != null && suspendedSessionEpoch == _sessionRouteEpoch) {
         final GalLookupCallResult result =
             await GalHookTextOverlayChannel.galLookupDismiss(suspendedSeq);
-        glog('gal-ingame: capture restore dismiss seq=$suspendedSeq '
-            '-> ${result.error ?? "ok"}');
+        glog(
+          'gal-ingame: capture restore dismiss seq=$suspendedSeq '
+          '-> ${result.error ?? "ok"}',
+        );
       }
     } catch (error, stackTrace) {
       // release 位于 capture 的 finally；它绝不能用恢复异常覆盖“已成功采到的像素”，
@@ -599,8 +627,9 @@ class GalIngameLookupController {
           continue;
         }
 
-        // 每轮都真正下发，不用 _pushedEnabled 早退。这使同一 active
-        // phase 在 shared mapping 换代后仍能重放 enable 意图。
+        // A real state edge/retry is always sent. Mapping-generation replay is
+        // lower-layer state owned by VoiceHookReader::Open, which carries the
+        // last desired value into a replacement shared-memory segment.
         final GalLookupCallResult result =
             await GalHookTextOverlayChannel.galLookupSetEnabled(desired);
         if (generation != _enableSyncGeneration) continue;
@@ -613,8 +642,10 @@ class GalIngameLookupController {
           // disable 失败也不伪称仍已 enable；runner 会自行保留关闭意图。
           _pushedEnabled = false;
         }
-        glog('gal-ingame: setEnabled=$desired session=$_sessionActive '
-            '-> ${result.error ?? "ok"}');
+        glog(
+          'gal-ingame: setEnabled=$desired session=$_sessionActive '
+          '-> ${result.error ?? "ok"}',
+        );
 
         if (desired != latestDesired) {
           _enableSyncPending = true;
@@ -654,6 +685,7 @@ class GalIngameLookupController {
 
   void _applyCardSizeCap(GalLookupHit hit) {
     if (hit.viewW <= 0 || hit.viewH <= 0) {
+      _rootCardAnchor = null;
       GlobalLookupController.instance.setPhysicalCap();
       return;
     }
@@ -666,8 +698,22 @@ class GalIngameLookupController {
       w *= shrink;
       h *= shrink;
     }
-    GlobalLookupController.instance
-        .setPhysicalCap(width: w.floor(), height: h.floor());
+    final int capW = w.floor();
+    final int capH = h.floor();
+    // Use the cap-sized root for both the layout origin and presentation. The
+    // rendered body may be shorter, but keeping this one conservative anchor
+    // removes a pre-render/post-render zero-point change and guarantees that the
+    // complete nested union stays inside the reported game viewport.
+    final ({int x, int y}) rootAnchor = _resolveAnchor(hit, capW, capH);
+    _rootCardAnchor = rootAnchor;
+    GlobalLookupController.instance.setPhysicalCap(
+      width: capW,
+      height: capH,
+      workWidth: hit.viewW,
+      workHeight: hit.viewH,
+      workOriginX: rootAnchor.x,
+      workOriginY: rootAnchor.y,
+    );
   }
 
   Future<void> _runLookup(
@@ -686,16 +732,20 @@ class GalIngameLookupController {
     if (!hit.hasConsistentCharCount) {
       // 不丢弃（下标本身已经过范围校验），但必须留痕：这是「两侧字符计数单位漂了」
       // 的唯一早期信号，静默下去只会表现成「高亮总是偏几个字」。
-      glog('gal-ingame: charCount mismatch seq=${hit.seq} '
-          'reported=${hit.charCount} actual=${hit.line.length}');
+      glog(
+        'gal-ingame: charCount mismatch seq=${hit.seq} '
+        'reported=${hit.charCount} actual=${hit.line.length}',
+      );
     }
     // 必须在进入 lookupText 前挂上 active token：host 的 overlaySize/reveal 可以在
     // lookupText Future 返回前已经到达。generation 门会拒绝后来新 submit 已作废的旧回调。
     _activeHit = hit;
     _activeLookupGeneration = generation;
     _applyCardSizeCap(hit);
-    glog('gal-ingame: lookup seq=${hit.seq} idx=${hit.charIndex} '
-        'query="$query"');
+    glog(
+      'gal-ingame: lookup seq=${hit.seq} idx=${hit.charIndex} '
+      'query="$query"',
+    );
     final bool taken = await GlobalLookupChannel.runWithRoute(
       route,
       () => GlobalLookupController.instance.lookupText(
@@ -724,6 +774,8 @@ class GalIngameLookupController {
     GlobalLookupRoute route,
     int physicalWidth,
     int physicalHeight,
+    int physicalDx,
+    int physicalDy,
   ) {
     final GalLookupHit? hit = _activeHit;
     if (hit == null || !_enabledNow) return;
@@ -731,8 +783,12 @@ class GalIngameLookupController {
     if (physicalWidth <= 0 || physicalHeight <= 0) return;
     _cardPhysicalWidth = physicalWidth;
     _cardPhysicalHeight = physicalHeight;
-    glog('gal-ingame: rendered seq=${hit.seq} '
-        'card=${physicalWidth}x$physicalHeight');
+    _cardPhysicalDx = physicalDx;
+    _cardPhysicalDy = physicalDy;
+    glog(
+      'gal-ingame: rendered seq=${hit.seq} '
+      'card=${physicalWidth}x$physicalHeight',
+    );
     _scheduleRecapture(_activeLookupGeneration, route);
   }
 
@@ -767,19 +823,33 @@ class GalIngameLookupController {
       if (!_isCurrentLookup(generation, route)) return;
       final int start = hit.charIndex;
       final int len = _highlightLength(hit);
-      final ({int x, int y}) anchor =
-          _resolveAnchor(hit, physicalWidth, physicalHeight);
-      glog('gal-ingame: recapture seq=${hit.seq} '
+      final ({int x, int y}) rootAnchor =
+          _rootCardAnchor ?? _resolveAnchor(hit, physicalWidth, physicalHeight);
+      final ({int x, int y}) anchor = offsetGalLookupAnchor(
+        rootAnchor,
+        _cardPhysicalDx,
+        _cardPhysicalDy,
+      );
+      if (!_recaptureTraceLogged) {
+        _recaptureTraceLogged = true;
+        glog(
+          'gal-ingame: present seq=${hit.seq} '
           'anchor=(${anchor.x},${anchor.y}) '
-          'card=${physicalWidth}x$physicalHeight hl=$start+$len');
+          'card=${physicalWidth}x$physicalHeight hl=$start+$len',
+        );
+      }
       await _present(hit, anchor, start, len, generation, route);
     } finally {
       _recaptureInFlight = false;
-      // 输入/bridge 在 CapturePreview 期间又把页面改脏：下一 turn 再抓一张，既给
-      // WebView compositor 提交绘制的机会，也避免在一个 async while 里自旋。
-      final GlobalLookupRoute? route = _activeRoute;
-      if (!_captureSuppressed && _recaptureDirty && route != null) {
-        _scheduleRecapture(_activeLookupGeneration, route);
+      if (_directSurfaceActive) {
+        _recaptureDirty = false;
+      } else {
+        // 输入/bridge 在 CapturePreview 期间又把页面改脏：下一 turn 再抓一张，既给
+        // WebView compositor 提交绘制的机会，也避免在一个 async while 里自旋。
+        final GlobalLookupRoute? route = _activeRoute;
+        if (!_captureSuppressed && _recaptureDirty && route != null) {
+          _scheduleRecapture(_activeLookupGeneration, route);
+        }
       }
     }
   }
@@ -788,8 +858,13 @@ class GalIngameLookupController {
     _recaptureTurn?.cancel();
     _recaptureTurn = null;
     _recaptureDirty = false;
+    _directSurfaceActive = false;
+    _recaptureTraceLogged = false;
     _cardPhysicalWidth = 0;
     _cardPhysicalHeight = 0;
+    _cardPhysicalDx = 0;
+    _cardPhysicalDy = 0;
+    _rootCardAnchor = null;
   }
 
   Future<void> _present(
@@ -803,20 +878,34 @@ class GalIngameLookupController {
     if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     final GalLookupCallResult result =
         await GalHookTextOverlayChannel.galLookupPresent(
-      seq: hit.seq,
-      anchorX: anchor.x,
-      anchorY: anchor.y,
-      highlightStart: highlightStart,
-      highlightLen: highlightLen,
-    );
+          seq: hit.seq,
+          anchorX: anchor.x,
+          anchorY: anchor.y,
+          highlightStart: highlightStart,
+          highlightLen: highlightLen,
+          cardWidth: _cardPhysicalWidth,
+          cardHeight: _cardPhysicalHeight,
+          viewWidth: hit.viewW,
+          viewHeight: hit.viewH,
+        );
     if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     if (!result.ok) {
       glog('gal-ingame: present seq=${hit.seq} FAILED ${result.error}');
       return;
     }
+    // A successful present is the authoritative mode transition. In
+    // particular, direct composition may become unavailable after a mining
+    // hide; a successful bitmap fallback must re-enable dirty recaptures.
+    _directSurfaceActive = result.directSurface;
+    if (_directSurfaceActive) {
+      _recaptureDirty = false;
+      glog('gal-ingame: direct WebView surface active seq=${hit.seq}');
+    }
     if (result.clamped) {
-      glog('gal-ingame: present seq=${hit.seq} CLAMPED to '
-          '${result.width}x${result.height}');
+      glog(
+        'gal-ingame: present seq=${hit.seq} CLAMPED to '
+        '${result.width}x${result.height}',
+      );
     }
   }
 

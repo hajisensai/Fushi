@@ -605,5 +605,73 @@ void main() {
       expect(books.single.title, 'OddNames');
       expect(fs.copyToLocalCalls, 3, reason: '三张页图都要镜像成功');
     });
+
+    testWidgets('远端漫画：卷子目录布局（img_path 是裸文件名）也能镜像并导入',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // BUG-1830 的远端同源分身：mokuro 的另一种惯例是 img_path 只写裸文件名，
+      // 页图躺在与 `.mokuro` 同名的子目录里。镜像阶段此前硬按「相对 .mokuro 同级」
+      // 查表（键 `DLRAW.TO_00001.jpeg`），而远端真实相对路径是
+      // `Vol1/DLRAW.TO_00001.jpeg`，于是整卷在查表阶段就 Missing manga page image。
+      final String pageA = p.join(tmp.path, 'bare_a.jpg');
+      final String pageB = p.join(tmp.path, 'bare_b.jpg');
+      File(pageA).writeAsBytesSync(<int>[7, 7]);
+      File(pageB).writeAsBytesSync(<int>[8, 8]);
+      final String mokuroLocal = p.join(tmp.path, 'Vol1.mokuro');
+      File(mokuroLocal).writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'BareVolume',
+        'pages': <Object?>[
+          for (final String rel in <String>[
+            'DLRAW.TO_00001.jpeg',
+            'DLRAW.TO_00002.jpeg',
+          ])
+            <String, Object?>{
+              'img_width': 800,
+              'img_height': 1200,
+              'img_path': rel,
+              'blocks': <Object?>[],
+            },
+        ],
+      }));
+
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '/remote/manga/Vol1.mokuro': mokuroLocal,
+        '/remote/manga/Vol1/DLRAW.TO_00001.jpeg': pageA,
+        '/remote/manga/Vol1/DLRAW.TO_00002.jpeg': pageB,
+      });
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Bare Manga',
+        mediaKind: 'manga',
+        rootPath: '/remote/manga',
+        transport: const Value('sftp'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull,
+          reason: '硬编码同级会在这里留下 Missing manga page image；'
+              '实际值=${after.lastScanError}');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.title, 'BareVolume');
+      expect(books.single.format, 'manga');
+      expect(fs.copyToLocalCalls, 2, reason: '两张页图都要镜像成功');
+      // 落库产物与本地导入同构：裸 img_path → destRel 只加 images/ 前缀。
+      expect(books.single.coverPath, 'images/DLRAW.TO_00001.jpeg');
+      expect(
+        File(p.join(books.single.extractDir, 'images', 'DLRAW.TO_00001.jpeg'))
+            .readAsBytesSync(),
+        <int>[7, 7],
+      );
+    });
   });
 }
