@@ -179,6 +179,45 @@ void main() {
       );
     });
 
+    test('downloadsEnabled=false 只隐藏下载 tab，词典仍紧随最后一个媒体库页', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: true,
+        gamesEnabled: true,
+        downloadsEnabled: false,
+      );
+      expect(tabs, isNot(contains(HomeTab.downloads)));
+      expect(
+          tabs.indexOf(HomeTab.dictionaries), tabs.indexOf(HomeTab.games) + 1);
+      expect(tabs, contains(HomeTab.settings));
+    });
+
+    test('dictionariesEnabled=false 只隐藏查词 tab，下载仍在', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: true,
+        browserExtensionEnabled: true,
+        dictionariesEnabled: false,
+      );
+      expect(tabs, isNot(contains(HomeTab.dictionaries)));
+      expect(tabs, contains(HomeTab.downloads));
+      expect(
+        tabs.indexOf(HomeTab.browserExtension),
+        tabs.indexOf(HomeTab.downloads) + 1,
+      );
+    });
+
+    test('七个模块全关时只剩首页/设置（安全回退面）', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        videoEnabled: false,
+        booksEnabled: false,
+        mangaEnabled: false,
+        gamesEnabled: false,
+        downloadsEnabled: false,
+        dictionariesEnabled: false,
+        browserExtensionEnabled: false,
+      );
+      expect(tabs, <HomeTab>[HomeTab.home, HomeTab.settings]);
+    });
+
     test('隐藏 tab 后越界视觉索引回退到恒在的 home（不再是可隐藏的书架）', () {
       final List<HomeTab> tabs = homeActiveTabs(
         videoEnabled: false,

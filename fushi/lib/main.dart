@@ -1790,6 +1790,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                               appModel.moduleVideoEnabled,
                                           mangaEnabled:
                                               appModel.moduleMangaEnabled,
+                                          downloadsEnabled:
+                                              appModel.moduleDownloadsEnabled,
+                                          dictionariesEnabled: appModel
+                                              .moduleDictionariesEnabled,
                                           // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
                                           // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
                                           browserExtensionEnabled:
