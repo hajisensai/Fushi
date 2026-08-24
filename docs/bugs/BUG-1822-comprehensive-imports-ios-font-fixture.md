@@ -1,4 +1,4 @@
-## BUG-1801 · 综合导入实测在iOS找不到字体fixture
+## BUG-1822 · 综合导入实测在iOS找不到字体fixture
 - **报告**：2026-08-23（`iPhone pay` / iOS 26.6 物理机运行 `integration_test/comprehensive_imports_test.dart`）
 - **真实性**：✅ 真 bug（测试基建）。`fushi/integration_test/comprehensive_imports_test.dart:98-107` 的字体 fixture 只枚举 Windows、macOS、Linux 宿主绝对路径；iOS App 沙盒不存在这些路径，真实 EPUB 导入通过后必然在 `_loadSystemFontBytes` 报 `No system TrueType font fixture was found`。
 - **[x] ① 已修复** — iOS fallback 读取随包 TTF；提交 `bb1f2ddf7`。

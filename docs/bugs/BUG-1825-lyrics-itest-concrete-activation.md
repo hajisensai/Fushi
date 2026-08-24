@@ -1,4 +1,4 @@
-## BUG-1808 · 歌词模式实测未激活具体reader-action焦点节点
+## BUG-1825 · 歌词模式实测未激活具体reader-action焦点节点
 - **报告**：2026-08-24（`iPhone pay` / iOS 26.6 物理机有声书进入歌词模式）
 - **真实性**：✅ 真 bug（测试基建）。第一轮未请求具体 action；加固后实机已证明具体 `reader-action` FocusNode、`ActivateIntent=true`、quick settings 关闭均成功，但仍无歌词 loadData。继续回溯发现物理机 app container 跨测试保留 `ReaderFushiSource.lyricsMode`：原值为 true 时开书先启动 pending auto-restore，本用例随后手动 toggle 会撞 `_lyricsModeTransition` 早返回。用例没有保存/归零/恢复该持久化前置，结果取决于上次会话状态。
 - **[x] ① 已修复** — 用例保存/归零/恢复 lyricsMode 并激活具体 action；提交 `bb1f2ddf7`。
