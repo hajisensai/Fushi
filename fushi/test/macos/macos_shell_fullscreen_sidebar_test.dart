@@ -77,8 +77,25 @@ void main() {
     expect(body, contains('MacosBackButton'),
         reason: 'settings tab must expose a back button independent of the '
             'sidebar so it can never be trapped.');
-    expect(body, contains('_selectTab(_previousTab)'),
+    expect(body, contains('_selectTab(_previousVisibleTab)'),
         reason: 'back returns to the tab the user came from.');
+    // 真正的不变量是「回不去就困死」，不是某个字面量。
+    // 「功能模块」开关可以把 _previousTab 指向的 tab 藏掉，而 _selectTab
+    // 对隐藏 tab 直接 return——那时返回键会变成空点击，用户困在设置页。
+    // 所以返回目标必须经过一层可见性回落，而不能裸用 _previousTab。
+    expect(home, contains('HomeTab get _previousVisibleTab'),
+        reason: 'back target must go through a visibility fallback.');
+    final int getterStart = home.indexOf('HomeTab get _previousVisibleTab');
+    final String getterBody = home.substring(getterStart, getterStart + 200);
+    expect(getterBody, contains('_activeTabs().contains(_previousTab)'),
+        reason: 'the fallback must test the previous tab against the active '
+            'tab set, otherwise a hidden module traps the user in settings.');
+    expect(getterBody, contains('HomeTab.home'),
+        reason: 'when the previous tab is hidden, fall back to a tab that is '
+            'always present.');
+    expect(body, isNot(contains('_selectTab(_previousTab)')),
+        reason: 'the macOS back button must not bypass the visibility '
+            'fallback.');
   });
 
   test('reader re-feeds chrome inset to pagination on viewport inset change',
