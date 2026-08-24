@@ -65,19 +65,29 @@ void main() {
     );
   });
 
-  test('系列只渲染 AniDB 已刮削结果，全部视频仍保留原始条目', () {
+  test('系列不按刮削 provider 门控：合集与散卡照常入墙，全部视频仍保留原始条目', () {
     final String page = File(
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
 
-    expect(
-      page,
-      contains('aniDbScrapedVideoCollectionIds()'),
-      reason: '系列资格必须来自 AniDB primary identity，不能用 provisional work 冒充',
-    );
-    expect(page, contains('aniDbScrapedVideoBookUids()'));
-    expect(page, contains('_aniDbScrapedCollectionIds'));
-    expect(page, contains('_aniDbScrapedBookUids'));
+    // BUG-1839：曾经的判据是「必须有 AniDB primary identity」。用户真实库里 anidb
+    // 身份 0 条（AniDB HTTP 身份要求注册 client，没配就写不出来），primary 全是
+    // tmdb —— 整个系列页恒空。用户拍板「没刮削也应该进，合集就应该在系列里面」。
+    // 系列与「全部视频」的区别是**折叠方式**，不是刮削资格。
+    for (final String forbidden in <String>[
+      '_isAniDbScrapedSeriesMember',
+      '_aniDbScrapedCollectionIds',
+      '_aniDbScrapedBookUids',
+      '_aniDbScrapedCollectionByBookUid',
+      'aniDbScrapedVideoCollectionIds()',
+      'aniDbScrapedVideoBookUids()',
+    ]) {
+      expect(
+        page,
+        isNot(contains(forbidden)),
+        reason: '系列准入不得再按刮削 provider 门控（BUG-1839 回归形态）：$forbidden',
+      );
+    }
 
     final int orderedStart = page.indexOf(
       'final List<VideoBookRow> ordered = <VideoBookRow>[',
@@ -89,34 +99,14 @@ void main() {
     expect(orderedStart, greaterThanOrEqualTo(0));
     expect(orderedEnd, greaterThan(orderedStart));
     final String orderedBlock = page.substring(orderedStart, orderedEnd);
-    expect(orderedBlock, contains('VideoLibrarySection.series'));
     expect(
       orderedBlock,
-      contains('_isAniDbScrapedSeriesMember(b)'),
-      reason: '系列入口要先排除无 AniDB 刮削身份的本地散项',
+      contains('_localExtraBookUids.contains(b.bookUid)'),
+      reason: '放宽准入不等于放行花絮：父作品的短篇/花絮仍须排除',
     );
-    final int membershipGuardStart = page.indexOf(
-      'bool _isAniDbScrapedSeriesMember(',
-    );
-    final int membershipGuardEnd = page.indexOf(
-      '\n  ///',
-      membershipGuardStart,
-    );
-    expect(membershipGuardStart, greaterThanOrEqualTo(0));
-    expect(membershipGuardEnd, greaterThan(membershipGuardStart));
-    final String membershipGuard = page.substring(
-      membershipGuardStart,
-      membershipGuardEnd,
-    );
-    expect(
-      RegExp(
-        r'_aniDbScrapedCollectionByBookUid\s*\.containsKey\(',
-      ).hasMatch(membershipGuard),
-      isTrue,
-      reason: '多合集成员须优先按 AniDB 已刮削合集归属判断，不能被普通主合集吞掉',
-    );
-    expect(membershipGuard, contains('_aniDbScrapedBookUids.contains'));
 
+    // 归属单一口径：标签过滤 / 标题搜索 / 最终分组共用 _effectiveCollectionIdForBook，
+    // 且它自身不得再按分区分叉（分叉正是合集在系列页折不出来的根因）。
     final int effectiveCollectionStart = page.indexOf(
       'int? _effectiveCollectionIdForBook(',
     );
@@ -130,13 +120,12 @@ void main() {
       effectiveCollectionStart,
       effectiveCollectionEnd,
     );
-    expect(effectiveCollection, contains('VideoLibrarySection.series'));
+    expect(effectiveCollection, contains('_primaryCollectionByEntry['));
     expect(
       effectiveCollection,
-      contains('_aniDbScrapedCollectionByBookUid[book.bookUid]'),
-      reason: '系列筛选、搜索和分组必须共用 canonical collection，book-owned 返回 null',
+      isNot(contains('VideoLibrarySection.series')),
+      reason: '归属解析不得按分区分叉，否则三处口径又会各走各的',
     );
-    expect(effectiveCollection, contains('_primaryCollectionByEntry['));
 
     final int libraryBodyStart = page.indexOf(
       'Widget _buildVideoLibraryBody()',
@@ -164,64 +153,14 @@ void main() {
       seriesBuilderStart,
       allVideosBuilderStart,
     );
-
     expect(
       seriesBuilder,
-      contains(
-        'final bool seriesOnly = '
-        'widget.section == VideoLibrarySection.series;',
-      ),
-    );
-    expect(
-      RegExp(
-        r'groupedRemoteVideos\s*=\s*seriesOnly\s*\?\s*'
-        r'const\s*<RemoteVideoInfo>\[\]\s*:\s*remoteVideos',
-      ).hasMatch(seriesBuilder),
-      isTrue,
-      reason: '远端 placeholder 没有本机 canonical identity 证据，不能进系列',
+      contains('final List<RemoteVideoInfo> groupedRemoteVideos = remoteVideos;'),
+      reason: '远端占位卡也不再被整体挡在系列外（同一条准入放宽）',
     );
     expect(
       seriesBuilder,
       contains('for (final RemoteVideoInfo video in groupedRemoteVideos)'),
-    );
-
-    final int groupLoopStart = seriesBuilder.indexOf(
-      'for (final CollectionGroup<_VideoSlot> group in groups)',
-    );
-    final int groupLoopEnd = seriesBuilder.indexOf(
-      'loose.sort(',
-      groupLoopStart,
-    );
-    expect(groupLoopStart, greaterThanOrEqualTo(0));
-    expect(groupLoopEnd, greaterThan(groupLoopStart));
-    final String groupLoop = seriesBuilder.substring(
-      groupLoopStart,
-      groupLoopEnd,
-    );
-    expect(
-      RegExp(
-        r'_aniDbScrapedCollectionIds\s*\.contains\(\s*'
-        r'group\.collection!\.id\s*,?\s*\)',
-      ).hasMatch(seriesBuilder),
-      isTrue,
-      reason: '系列封面卡本身也必须再做 AniDB 刮削集合门控',
-    );
-    expect(
-      RegExp(
-        r'if\s*\(\s*group\.collection\s*==\s*null\s*\)',
-      ).hasMatch(groupLoop),
-      isTrue,
-      reason: 'book-owned primary AniDB 结果必须继续作为 loose 卡显示',
-    );
-    expect(
-      seriesBuilder,
-      contains('_effectiveCollectionIdForBook(book)'),
-      reason: 'Series 分组必须覆盖普通 primary collection，优先 canonical 合集',
-    );
-    expect(
-      seriesBuilder,
-      contains('primaryByEntry.remove(key)'),
-      reason: '独立 AniDB 作品须解除普通播放列表折叠并作为 loose 结果显示',
     );
     expect(
       seriesBuilder,
@@ -251,6 +190,7 @@ void main() {
       );
     }
   });
+
 
   test('作品详情同时覆盖合集和独立电影，并包含资料、人物及附件区域', () {
     final String route = File(

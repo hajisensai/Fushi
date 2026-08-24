@@ -324,10 +324,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       const <int, CollectionScrapeMetaRow>{};
   Map<int, VideoMetadataWorkRow> _metadataWorkByCollection =
       const <int, VideoMetadataWorkRow>{};
-  Set<int> _aniDbScrapedCollectionIds = const <int>{};
-  Set<String> _aniDbScrapedBookUids = const <String>{};
-  Map<String, int> _aniDbScrapedCollectionByBookUid = const <String, int>{};
-  Map<String, int> _aniDbScrapedSortIndexByBookUid = const <String, int>{};
   Map<String, VideoMetadataWorkRow> _metadataWorkByBook =
       const <String, VideoMetadataWorkRow>{};
   Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
@@ -612,23 +608,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         };
     final List<VideoMetadataWorkRow> metadataWorks = await db
         .getAllVideoMetadataWorks();
-    final Set<int> aniDbScrapedCollectionIds = await db
-        .aniDbScrapedVideoCollectionIds();
-    final Set<String> aniDbScrapedBookUids = await db
-        .aniDbScrapedVideoBookUids();
-    final Map<String, int> aniDbScrapedCollectionByBookUid = <String, int>{};
-    final Map<String, int> aniDbScrapedSortIndexByBookUid = <String, int>{};
-    for (final MediaCollectionItemRow item in collectionItems) {
-      if (item.mediaType != MediaKind.video.dbValue ||
-          !aniDbScrapedCollectionIds.contains(item.collectionId)) {
-        continue;
-      }
-      final int? current = aniDbScrapedCollectionByBookUid[item.entryKey];
-      if (current == null || item.collectionId < current) {
-        aniDbScrapedCollectionByBookUid[item.entryKey] = item.collectionId;
-        aniDbScrapedSortIndexByBookUid[item.entryKey] = item.sortIndex;
-      }
-    }
     final Map<int, VideoMetadataWorkRow> metadataWorkByCollection =
         <int, VideoMetadataWorkRow>{
       for (final VideoMetadataWorkRow work in metadataWorks)
@@ -688,10 +667,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _videoScrapeMetaByUid = scrapeMetaByUid;
       _collectionScrapeMetaById = collectionMetaById;
       _metadataWorkByCollection = metadataWorkByCollection;
-      _aniDbScrapedCollectionIds = aniDbScrapedCollectionIds;
-      _aniDbScrapedBookUids = aniDbScrapedBookUids;
-      _aniDbScrapedCollectionByBookUid = aniDbScrapedCollectionByBookUid;
-      _aniDbScrapedSortIndexByBookUid = aniDbScrapedSortIndexByBookUid;
       _metadataWorkByBook = metadataWorkByBook;
       _metadataImagesByWork = metadataImagesByWork;
       _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
@@ -2491,10 +2466,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // lastPositionMs 三档判。
         final List<VideoBookRow> ordered = <VideoBookRow>[
           for (final VideoBookRow b in searched)
+            // BUG-1839：系列页**不按刮削身份门控**。用户拍板「没刮削也应该进，
+            // 合集就应该在系列里面」——AniDB primary 身份对没注册 client 的用户
+            // 结构上永远写不出来（isHttpApiAvailable 恒 false），拿它当准入门等于
+            // 把整页清空。系列与「全部视频」的区别是**折叠方式**（合集折成一张卡
+            // vs 逐条平铺），不是刮削资格。只保留花絮/短篇排除。
             if (!(widget.section == VideoLibrarySection.series &&
                     _localExtraBookUids.contains(b.bookUid)) &&
-                (widget.section != VideoLibrarySection.series ||
-                    _isAniDbScrapedSeriesMember(b)) &&
                 _yearFilter.matches(_airYearByUid[b.bookUid]) &&
                 matchesVideoWatchStatus(
                   filter: _watchStatusFilter,
@@ -2598,24 +2576,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 标签过滤、标题搜索与最终分组共用同一份归属。普通分区沿用用户合集的
-  /// primary；“系列”只认 AniDB canonical collection，book-owned 结果因此为
-  /// loose（null），不会被同时加入的普通播放列表吞掉。
+  /// 标签过滤、标题搜索与最终分组共用同一份归属：条目所属的**主合集**。
+  ///
+  /// BUG-1839：这里曾按分区分叉（系列只认 AniDB canonical collection），于是
+  /// 用户合集在系列页既折不出合集卡、成员也被判成「无归属」。用户拍板合集就该
+  /// 在系列里，分叉去掉后三处（标签过滤 / 标题搜索 / 最终分组）天然同口径。
   int? _effectiveCollectionIdForBook(VideoBookRow book) {
-    if (widget.section == VideoLibrarySection.series) {
-      return _aniDbScrapedCollectionByBookUid[book.bookUid];
-    }
     return _primaryCollectionByEntry[MediaKind.video.compositeKey(
       book.bookUid,
     )];
-  }
-
-  /// “系列”不是文件夹归组的同义词。collection-owned 与 book-owned work 只要
-  /// 绑定了 primary AniDB identity 都是刮削结果；local provisional、TMDB-only
-  /// 和普通用户合集不进入本页。
-  bool _isAniDbScrapedSeriesMember(VideoBookRow book) {
-    return _aniDbScrapedCollectionByBookUid.containsKey(book.bookUid) ||
-        _aniDbScrapedBookUids.contains(book.bookUid);
   }
 
   /// TODO-2486（hayase 式改版）：顶部区 = 全宽 backdrop hero 轮播（最近在看的
@@ -3868,12 +3837,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<RemoteVideoInfo> remoteVideos,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    final bool seriesOnly = widget.section == VideoLibrarySection.series;
-    // 远端 placeholder 没有本机 canonical identity 证据，不得仅凭同名合集混进
-    // “系列”。它仍完整保留在“全部视频”与首页远端联合视图。
-    final List<RemoteVideoInfo> groupedRemoteVideos = seriesOnly
-        ? const <RemoteVideoInfo>[]
-        : remoteVideos;
+    // BUG-1839：远端占位卡曾被整体挡在系列外（理由是「没有本机 canonical identity
+    // 证据」）。准入门去掉后这条也一起去：系列与「全部视频」的区别是折叠方式，
+    // 不是条目资格；远端占位照常按 host 下发的主合集归属折进合集卡。
+    final List<RemoteVideoInfo> groupedRemoteVideos = remoteVideos;
     // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
     if (all.isEmpty && groupedRemoteVideos.isEmpty) {
       return <Widget>[
@@ -3897,22 +3864,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Map<String, int> memberSortIndex = Map<String, int>.of(
       _memberSortIndex,
     );
-    if (seriesOnly) {
-      for (final VideoBookRow book in books) {
-        final String key = MediaKind.video.compositeKey(book.bookUid);
-        final int? effectiveCollectionId = _effectiveCollectionIdForBook(book);
-        if (effectiveCollectionId != null) {
-          primaryByEntry[key] = effectiveCollectionId;
-          memberSortIndex[key] =
-              _aniDbScrapedSortIndexByBookUid[book.bookUid] ?? 0;
-        } else {
-          // 独立电影即使同时被用户放进普通播放列表，也应按 book-owned 刮削结果
-          // 作为 loose 卡展示，而不是被未刮削合集吞掉后过滤。
-          primaryByEntry.remove(key);
-          memberSortIndex.remove(key);
-        }
-      }
-    }
     for (final RemoteVideoInfo video in groupedRemoteVideos) {
       final RemoteCollectionMembership? membership = video.collection;
       if (membership == null) continue;
@@ -3933,13 +3884,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             primaryByEntry,
             memberSortIndex,
           ))
-            if (!seriesOnly ||
-                (group.collection != null &&
-                    _aniDbScrapedCollectionIds.contains(
-                      group.collection!.id,
-                    )) ||
-                group.collection == null)
-              group,
+            group,
         ];
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。
     // 合集卡（及其成员）按此显隐；散卡由 filteredVideoBookUidsProvider 另行过滤。

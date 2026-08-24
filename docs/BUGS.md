@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1679 条。点号进各自文件。
+> 共 1680 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1839](bugs/BUG-1839-series-tab-anidb-admission-empties-page.md) | ✅ | ✅ | 系列页按 AniDB primary 身份门控，整页变空（用户库 anidb=0/tmdb=875） |
 | [BUG-1808](bugs/BUG-1808-video-home-row-card-tags.md) | ✅ | ✅ | 视频首页横滚行卡不显示标签（拆 section 后首页只剩横滚卡，标签层只画在墙格卡上） |
 | [BUG-1799](bugs/BUG-1799-texthooker-mined-badge-never-revalidated.md) | ✅ | ✅ | galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核 |
 | [BUG-1798](bugs/BUG-1798-video-lookup-controls-autohide-race.md) | ✅ | ✅ | 查词浮层与控制条自动显隐竞态 |

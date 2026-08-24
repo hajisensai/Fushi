@@ -116,7 +116,8 @@ void main() {
         ),
       );
 
-  testWidgets('系列墙：本地合集卡渲染，但远端占位既不折进也不出现', (WidgetTester tester) async {
+  testWidgets('系列墙：远端占位照常折进本地合集（BUG-1839 准入不再看 canonical 身份）',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -131,8 +132,8 @@ void main() {
       videoPath: Value('/abs/ep1.mp4'),
     ));
     await db.addToCollection(cid, MediaKind.video, 'video/local-ep1');
-    // 系列墙的入墙资格是「有 AniDB primary identity 的规范作品」，与本用例要守的
-    // 「远端占位进不进系列墙」正交；不种身份的话合集卡根本不渲染，测不到正题。
+    // BUG-1839 起入墙资格不再看刮削身份；这里仍种一条 AniDB 作品身份，是为了让
+    // 本用例与改动前逐字节可比（种不种都该渲染，见 home_video_series_admission_test）。
     await seedAniDbSeriesIdentity(db, cid, title: 'MyShow');
 
     // 远端有归属同一合集的第二集。
@@ -157,26 +158,28 @@ void main() {
     final Finder collectionCard =
         find.byKey(ValueKey<String>('home_video_collection_card_$cid'));
     expect(collectionCard, findsOneWidget, reason: '本地合集封面卡必须渲染');
-    // 远端占位在系列墙上**整个不出现**：既不折进合集卡，也不降级成散卡。
+    // 远端那一集折进合集卡，不另出独立散卡。
     expect(
       find.byKey(const ValueKey<String>('remote_video_card_video_remote-ep2')),
       findsNothing,
-      reason: '远端占位无本机 canonical identity，不进系列墙（PR #954）',
+      reason: '归属解析得到本地合集 → 折进合集卡，不降级成散卡',
     );
-    // 集数角标只数本地成员——远端那一集不再计入（旧契约是 1 本地 + 1 远端 = 2）。
+    // 集数角标含远端成员：1 本地 + 1 远端 = 2。PR #954 曾按「远端无 canonical 身份」
+    // 把远端整体挡在系列外（角标退回 1），BUG-1839 撤掉准入门后这条依据一并失效——
+    // 否则同一部剧在系列页看着比「全部视频」少集。
     expect(
       find.descendant(
         of: collectionCard,
-        matching: find.text(t.video_playlist_episodes(count: 1)),
+        matching: find.text(t.video_playlist_episodes(count: 2)),
       ),
       findsOneWidget,
-      reason: '系列墙的集数角标只含本地成员',
+      reason: '系列墙的集数角标必须含 host 上那一集',
     );
-    // 云角标同理消失：合集卡上已没有远端成员可标。
+    // 含远端成员 → 云角标回来。
     expect(
       find.byKey(ValueKey<String>('home_video_collection_cloud_$cid')),
-      findsNothing,
-      reason: '系列墙的合集卡不含远端成员，不该再画云角标',
+      findsOneWidget,
+      reason: '合集含远端成员就该画云角标，与全部视频同口径',
     );
   });
 
