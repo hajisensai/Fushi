@@ -145,6 +145,45 @@ void main() {
       );
     });
 
+    test('beta → 正式版：不可比，失败的安装不得被判成成功', () {
+      // beta 包升同 base 的正式版（`2.2.1-beta.30` → `2.2.1`），安装彻底失败且没
+      // 留日志。若把 beta 的代码版本误当成裸 `2.2.1`（修复前 workflow 就是这么注入
+      // 的），两边都成了「无预发布段且相等」⇒ 判成功，实际还跑着 beta 的代码。
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-beta.30',
+          targetVersion: '2.2.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        isWindowsUpdateInstalled(
+          verdict: WindowsInnoInstallVerdict.unknown,
+          targetVersion: '2.2.1',
+          executableVersion: '2.2.1-beta.30',
+          runningCodeVersion: '2.2.1-beta.30',
+        ),
+        isFalse,
+      );
+    });
+
+    test('beta → 更新的 beta：同通道，按序号比得出来', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-beta.31',
+          targetVersion: '2.2.1-beta.31',
+        ),
+        RunningCodeVersionEvidence.atLeastTarget,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-beta.30',
+          targetVersion: '2.2.1-beta.31',
+        ),
+        RunningCodeVersionEvidence.belowTarget,
+      );
+    });
+
     test('正式版 vs 同号预发布版不可比（BUG-1786 抱怨的「恒为真」）', () {
       expect(
         classifyRunningCodeVersion(

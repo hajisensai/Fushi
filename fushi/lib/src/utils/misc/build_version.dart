@@ -13,9 +13,10 @@
 ///    （**不是**因为版本资源丢后缀：Windows VERSIONINFO 的字符串字段
 ///    `ProductVersion` 保留完整 build-name，实测本机 `fushi.exe` =
 ///    `2.2.1-debug.12215+12215`，丢后缀的只是 `FILEVERSION` 那四段数字字段，而
-///    package_info 读的正是字符串字段。真正丢后缀的是 **beta 通道的 `--build-name`
-///    本身**——`release-desktop.yml` 只给 debug tag 覆盖 `BUILD_VERSION_NAME`，
-///    beta 包的版本名在任何来源里都是裸 `2.2.1`。）
+///    package_info 读的正是字符串字段。真正丢后缀的曾是 **beta 通道的 `--build-name`
+///    本身**——`release-desktop.yml` 原先只给 debug tag 覆盖 `BUILD_VERSION_NAME`，
+///    beta 包的版本名在任何来源里都是裸 `2.2.1`，这条证据在 beta 上直接退化成常量；
+///    同一次改动已把版本名对所有版本 tag 派生，与 Android 那条 workflow 对齐。）
 /// 2. **Inno 安装日志**。它只在 app 自己发起更新、经 `/LOG=` 传路径时才存在；
 ///    用户手动双击安装包救援时 Inno 一个字都不写，判据拿不到证据只能判失败
 ///    （BUG-1836 的真根因就是这一条）。

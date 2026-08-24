@@ -677,10 +677,7 @@ abstract final class WindowsUpdateHandoff {
         normalizeFushiBuildVersion(runningCodeVersionDefine);
     // 「这条提示是不是已经弹过」的幂等键。优先用代码版本：它来自 `app.so`，
     // `currentVersion` 来自 exe 版本资源，半更新态下两者会指向不同的构建，而这个
-    // 键要回答的正是「跑着的这份代码有没有被提示过」。beta 通道另有一层——那里
-    // `--build-name` 本身就是裸 `2.2.1`（见 build_version.dart 的说明），
-    // `currentVersion` 在同 base 的两个 beta 构建之间根本区分不开，marker 若因 AV
-    // 占用删不掉就会把**下一次**更新的提示一并吞掉。
+    // 键要回答的正是「跑着的这份代码有没有被提示过」。
     final String promptedVersionKey = runningCodeVersion ?? currentVersion;
     final WindowsInnoInstallVerdict verdict = windowsInnoLogVerdict(
       await _readInnoLogContents(record.innoLogPath),
@@ -1078,8 +1075,7 @@ List<Map<String, dynamic>> _listOfMaps(Object? raw) {
 /// - [verdict]：Inno 日志的收尾结论。只有 app 自己经 `/LOG=` 拉起安装器时才有；
 ///   缺失（`unknown`）**不等于**失败，只等于「这条证据不可用」。
 /// - [executableVersion]：exe 版本资源（`PackageInfo`）。与 `app.so` 是两个文件，
-///   只能识别「exe 根本没被换掉」这一种失败；beta 通道上它还是裸 `2.2.1`
-///   （`--build-name` 本身丢后缀），对同 base 的升级恒为真。
+///   只能识别「exe 根本没被换掉」这一种失败。
 ///
 /// 判定表（`runningCodeVersion == null` 时逐行退化成 BUG-1786 的旧行为）：
 ///
