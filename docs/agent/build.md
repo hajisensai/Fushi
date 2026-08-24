@@ -88,6 +88,25 @@ gh release view v<version> --repo hajisensai/Fushi --json assets \
 - Windows 老用户**不需要**桥包：他们按 `-windows-setup.exe` 后缀直接拿
   `fushi-<version>-windows-setup.exe`，Inno `AppId` 未变 → 原地升级，数据由
   `legacy_support_dir_migration.dart` 自动搬迁。所以别给桥分支发桌面产物。
+- Windows 安装器的「数据存储位置」页（`fushi/windows/installer/fushi.iss`）**只在全新
+  安装出现**。`IsFreshInstall` 是**三个**条件的 and：无卸载键、`%APPDATA%\Fushi\Fushi`
+  不存在、`%APPDATA%\Hibiki\Hibiki` 也不存在（第三条兜改名前的老用户「卸载留数据后
+  重装」——首启 `migrateLegacySupportDir` 会把旧名搬成新名并认出旧库，那台机器不该被
+  再问一次）。用户的选择写进 `{app}\data_root.bootstrap`，app 首启在 `AppPaths.resolve()`
+  之前由 `lib/src/storage/installer_data_root_bootstrap.dart` 一次性消费**后删除**。
+  「消费」不等于「采纳」：app 侧还会独立否决安装器的选择——已有 `data_root` 偏好、平台
+  support 根下已有主库、路径不是绝对路径、与安装目录相同或互相包含、目标下已有非空
+  `documents`/`support` 子树，任何一条命中都只删文件不写偏好；**选中默认位置**
+  （`<Documents>\Fushi`）同样**不写** pref，按全新安装的固定落点走。升级 / 保留数据重装 /
+  静默自更新都不弹这页、不写这个文件；安装器是一次性写者，数据根的唯一真相源仍是 app 的
+  `data_root` 偏好（要搬走走设置里的迁移）。
+  改 iss 后本机可用 `ISCC.exe /DAppVersion=0.0.0 /DSourceDir=<任意含一个文件的目录>
+  /DOutputDir=<临时目录> fushi.iss` 验编译，但**别运行**产物——同 AppId 会覆盖本机真实
+  安装的卸载键。**CI 不编译这个 iss**：`build-multiplatform.yml` 的 `windows` 检查根本
+  不碰它，真正跑 ISCC 的 `release-desktop.yml` 没有 `pull_request` 触发。所以 Pascal 侧
+  的唯一门是源码守卫 `test/build/windows_installer_data_root_page_guard_test.dart`——
+  它钉的是**效果**（整式比对、每条校验后必须 `Result := False;`、`if ... then Exit;`
+  成对、跨语句顺序），改动 iss 后新增断言必须做变异实测再提交。
 
 ### 快速发版（跳测试）
 
