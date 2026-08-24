@@ -3798,5 +3798,7 @@
   "game_hook_btn_lock": "Lock the position",
   "game_hook_btn_workbench": "Open the capture workbench",
   "game_hook_btn_topmost": "Keep on top",
-  "game_hook_btn_close": "Close the overlay"
+  "game_hook_btn_close": "Close the overlay",
+  "video_jimaku_search_failed": "Subtitle search failed",
+  "video_subtitle_error_with_code": "${msg} (HTTP ${code})"
 }

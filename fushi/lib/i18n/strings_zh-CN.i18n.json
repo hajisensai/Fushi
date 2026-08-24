@@ -3798,5 +3798,7 @@
   "game_hook_btn_lock": "锁定位置",
   "game_hook_btn_workbench": "打开取材工作台",
   "game_hook_btn_topmost": "保持置顶",
-  "game_hook_btn_close": "关闭浮窗"
+  "game_hook_btn_close": "关闭浮窗",
+  "video_jimaku_search_failed": "字幕搜索失败",
+  "video_subtitle_error_with_code": "${msg}（HTTP ${code}）"
 }

@@ -29,13 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1705 条。点号进各自文件。
+> 共 1710 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1849](bugs/BUG-1849-jimaku-live-action-no-tmdb-key.md) | ✅ | ✅ | Jimaku 真人剧检索没有权威关联键：TMDB id 被解析器丢弃，只能靠标题模糊命中 |
 | [BUG-1848](bugs/BUG-1848-playlist-subtitle-restore-no-fallback.md) | ✅ | ✅ | 合集里下载的字幕退出再进就没了：恢复链只走一支、零兜底 |
+| [BUG-1847](bugs/BUG-1847-manual-subtitle-search-missing-file-hash.md) | ✅ | ✅ | 播放页手动检索字幕不带 OSDb 文件哈希，精确匹配分支永远走不到 |
 | [BUG-1846](bugs/BUG-1846-opensubtitles-zh-language-code.md) | ✅ | ✅ | OpenSubtitles 搜索传裸 zh 语言码，中文字幕永远搜不到 |
+| [BUG-1845](bugs/BUG-1845-subtitle-download-filename-path-traversal.md) | ✅ | ✅ | 在线字幕落盘直接拼远端文件名，可路径穿越写出目标目录 |
+| [BUG-1844](bugs/BUG-1844-jimaku-download-error-hidden-behind-dialog.md) | ✅ | ✅ | 下载失败提示被对话框盖住且没有原因 |
+| [BUG-1843](bugs/BUG-1843-jimaku-series-list-cleared-before-refetch.md) | ✅ | ✅ | 填集数再搜后系列列表消失且搜不出结果 |
+| [BUG-1842](bugs/BUG-1842-jimaku-search-uses-display-name.md) | ✅ | ✅ | Jimaku 搜索拿显示名去猜，刮削存下的 AniList ID 从没被用过 |
 | [BUG-1841](bugs/BUG-1841-custom-theme-edit-persists-blank-draft.md) | ✅ | ✅ | 自定义主题「+新建」和「编辑」图标进编辑页前就落库空主题 |
 | [BUG-1840](bugs/BUG-1840-settings-custom-item-left-baseline.md) | ✅ | ✅ | 视频设置页 Jimaku/OpenSubtitles 块贴边，比标准设置行更靠左 |
 | [BUG-1838](bugs/BUG-1838-ankiconnect-installer-launcher-not-found.md) | 🚧 | 🚧 | AnkiConnect 一键代装误报 Anki 没运行：新版 launcher 下找不到入口 exe |
