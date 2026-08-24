@@ -198,7 +198,7 @@ void main() {
           .widget<FushiSectionTabBar<MediaLibraryViewKind>>(
             find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
           )
-          .onChanged(MediaLibraryViewKind.discover);
+          .onChanged!(MediaLibraryViewKind.discover);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
@@ -267,7 +267,7 @@ void main() {
           .widget<FushiSectionTabBar<VideoLibrarySection>>(
             find.byType(FushiSectionTabBar<VideoLibrarySection>),
           )
-          .onChanged(VideoLibrarySection.discover);
+          .onChanged!(VideoLibrarySection.discover);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);

@@ -135,7 +135,7 @@ void main() {
     final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
       find.byType(FushiSectionTabBar<VideoLibrarySection>),
     );
-    strip.onChanged(section);
+    strip.onChanged!(section);
     await tester.pumpAndSettle();
   }
 
