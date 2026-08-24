@@ -488,7 +488,9 @@ void main() {
       );
       expect(doc.contains('onImageTap'), isFalse,
           reason: '裸图单击必须留在阅读器，不再打开独立大图');
-      expect(doc.contains("b.callHandler('onTapEmpty')"), isTrue);
+      // onTapEmpty 从无参变成带落页 payload（点击即识别要知道该识别哪一页）。
+      // 这条断言看的仍是同一件事：裸图单击走空白回传、留在阅读器。
+      expect(doc.contains("b.callHandler('onTapEmpty', JSON.stringify("), isTrue);
       expect(doc.contains('function _hitOcrChar(x, y)'), isTrue);
       expect(doc.contains('r.left - 4'), isTrue,
           reason: '不同缩放下都必须保留 Niratan 的 4 屏幕像素命中余量');

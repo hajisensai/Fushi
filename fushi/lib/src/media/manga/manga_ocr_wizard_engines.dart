@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -32,6 +33,7 @@ class MangaOcrWizardEngines {
     this.externalRunner,
     this.remoteRunner,
     this.lensRunner,
+    this.systemOcrRunner,
     this.initialEnginePreference,
     this.initialLensLanguage,
     this.lensLanguageSetter,
@@ -62,6 +64,7 @@ class MangaOcrWizardEngines {
       remoteRunner: remoteRunnerOverride ??
           InterconnectMangaOcrClient(repo: SyncRepository(db)),
       lensRunner: GoogleLensMangaOcrService(),
+      systemOcrRunner: SystemOcrMangaService(),
       initialEnginePreference: appModel.mangaOcrEnginePreference,
       initialLensLanguage: appModel.mangaOcrLensLanguage,
       lensLanguageSetter: appModel.setMangaOcrLensLanguage,
@@ -80,6 +83,11 @@ class MangaOcrWizardEngines {
 
   /// Google Lens whole-page runner. Null keeps Lens absent in isolated tests.
   final GoogleLensMangaOcrRunner? lensRunner;
+
+  /// 设备自带 OCR；null = 该引擎不出现（隔离测试 / 尚未实现原生侧的平台）。
+  /// 注意「runner 非空」只表示代码路径在，能不能真跑要问
+  /// [SystemOcrMangaRunner.isAvailable]——原生侧没实现时它回 false。
+  final SystemOcrMangaRunner? systemOcrRunner;
 
   /// 默认引擎偏好键；null 时向导按 `auto` 解析。
   final String? initialEnginePreference;

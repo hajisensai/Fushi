@@ -18,6 +18,8 @@ public final class ChannelNames {
     public static final String ICON_SWITCH = PREFIX + "/icon_switch";
     public static final String SCREEN_BRIGHTNESS = PREFIX + "/screen_brightness";
     public static final String SELECTION_ACTIONS = PREFIX + "/selection_actions";
+    // 设备自带文字识别（ML Kit bundled 模型）：漫画 OCR 的零下载兜底引擎。
+    public static final String SYSTEM_OCR = PREFIX + "/system_ocr";
     // TODO-1232 A3: render-backend toggle (persist the "disable Impeller / use
     // Skia" experiment flag; applied at next launch via MainActivity's
     // getFlutterShellArgs override).

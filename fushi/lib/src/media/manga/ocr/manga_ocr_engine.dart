@@ -2,6 +2,12 @@ library;
 
 enum MangaOcrEngineId {
   localOnnx,
+
+  /// 设备自带的文字识别（Android ML Kit 打包模型 / Apple Vision /
+  /// Windows.Media.Ocr）。装完即用、完全离线、零上传，但对竖排气泡和手写体
+  /// 明显不如 manga-ocr——它是兜底档，不是主力，UI 上必须如实这么说。
+  systemOcr,
+
   googleLens,
   externalMokuro,
   pairedHost,
@@ -10,6 +16,7 @@ enum MangaOcrEngineId {
 enum MangaOcrEnginePreference {
   auto,
   localOnnx,
+  systemOcr,
   googleLens,
   externalMokuro,
   pairedHost,
@@ -32,6 +39,8 @@ extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
         return 'auto';
       case MangaOcrEnginePreference.localOnnx:
         return 'local_onnx';
+      case MangaOcrEnginePreference.systemOcr:
+        return 'system_ocr';
       case MangaOcrEnginePreference.googleLens:
         return 'google_lens';
       case MangaOcrEnginePreference.externalMokuro:
@@ -47,6 +56,8 @@ extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
         return null;
       case MangaOcrEnginePreference.localOnnx:
         return MangaOcrEngineId.localOnnx;
+      case MangaOcrEnginePreference.systemOcr:
+        return MangaOcrEngineId.systemOcr;
       case MangaOcrEnginePreference.googleLens:
         return MangaOcrEngineId.googleLens;
       case MangaOcrEnginePreference.externalMokuro:
@@ -60,6 +71,8 @@ extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
     switch (raw) {
       case 'local_onnx':
         return MangaOcrEnginePreference.localOnnx;
+      case 'system_ocr':
+        return MangaOcrEnginePreference.systemOcr;
       case 'google_lens':
         return MangaOcrEnginePreference.googleLens;
       case 'external_mokuro':
@@ -117,8 +130,12 @@ MangaOcrEngineId? resolveMangaOcrEngine({
     for (final MangaOcrEngineCapability capability in capabilities)
       capability.id: capability,
   };
+  // 回退顺序 = 质量优先、其次本机可用性。系统 OCR 排在本地模型之后（它识别
+  // 竖排气泡明显更差），但排在外部 CLI 和远程主机之前（那两个要么只在桌面存在、
+  // 要么要有另一台机器开着）。Lens 依旧刻意缺席：auto 的契约就是不自作主张上传。
   for (final MangaOcrEngineId candidate in const <MangaOcrEngineId>[
     MangaOcrEngineId.localOnnx,
+    MangaOcrEngineId.systemOcr,
     MangaOcrEngineId.externalMokuro,
     MangaOcrEngineId.pairedHost,
   ]) {

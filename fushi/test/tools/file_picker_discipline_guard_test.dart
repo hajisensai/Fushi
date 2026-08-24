@@ -85,6 +85,10 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
       'Mihon 扩展 APK：选中即 readAsBytes 拷进 app 存储的 tmp/extension-<sha>.apk.part 再校验安装，原路径不入库',
   'lib/src/media/manga/manga_sources_page.dart':
       'Aidoku 扩展 .aix：选中即 inspect 校验并 AidokuPackageStore.install 拷进 app 存储，原路径不入库（与上面 Mihon APK 同语义）',
+  'lib/src/media/manga/manga_ocr_settings_section.dart':
+      '手动导入的 OCR 模型文件 / zip：选中即按清单校验字节数并拷进 app 的模型目录'
+          '（MangaOcrModelImporter，原子 rename），原路径不入库。同一入口的「选择'
+          '文件夹」走 pickRealDirectoryPath——那条要的是真实目录路径，不是当场消费。',
   // (a) 长期引用，但**仅 Windows** 路径可达，安卓那条腿根本跑不到：
   // （2026-08-13 选 exe 逻辑从 games_library_page 收敛到共享动作 galgame_add_flow）
   'lib/src/mining/galgame_add_flow.dart':

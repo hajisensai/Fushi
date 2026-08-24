@@ -31,6 +31,18 @@ SettingsSection buildMangaOcrSection() {
           lensLanguageSetter: c.appModel.setMangaOcrLensLanguage,
         ),
       ),
+      // 「点一下没识别的对话框就地开跑」。默认开——这条路径存在的全部意义就是
+      // 让用户不必先去点识别模式；关掉即回到旧行为（空白点只回收焦点），给不
+      // 希望被动触发联网/耗电的人留后路。
+      SettingsSwitchItem(
+        id: 'manga.tap_to_ocr',
+        title: t.manga_tap_to_ocr,
+        subtitle: t.manga_tap_to_ocr_desc,
+        icon: Icons.touch_app_outlined,
+        value: (SettingsContext c) => c.appModel.mangaTapToOcr,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaTapToOcr(value),
+      ),
       // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）。空串/尾斜杠由
       // MokuroMoeClient 的 normalizeMokuroMoeBaseUrl 归一回默认站点，故这里
       // 只 trim 存原值、不做格式校验。
