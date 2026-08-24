@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
 /// 互联配对查询：本次调用尝试了至少一个已启用候选地址，但**没有任何一个候选
 /// 返回过 HTTP 响应**（连接拒绝 / 超时 / DNS 解析失败等传输层失败）——即
@@ -31,23 +35,36 @@ class RemoteLookupUnreachableError implements Exception {
 /// 「可达但无结果」不进冷却。
 const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
 
+const Duration kRemoteAudioMaterializedCacheTtl = Duration(days: 7);
+const int kRemoteAudioMaterializedCacheMaxBytes = 64 * 1024 * 1024;
+
 class FushiRemoteLookupClient {
   FushiRemoteLookupClient({
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
+    Future<Directory> Function()? pinnedAudioCacheDirectoryProvider,
     Duration timeout = const Duration(seconds: 3),
   })  : _transport = InterconnectPostTransport(
           repo: repo,
           httpClient: httpClient,
           pinnedClientFactory: pinnedClientFactory,
         ),
-        _timeout = timeout;
+        _timeout = timeout,
+        _pinnedAudioCacheDirectoryProvider =
+            pinnedAudioCacheDirectoryProvider ??
+                _defaultPinnedAudioCacheDirectory;
 
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
   final InterconnectPostTransport _transport;
   final Duration _timeout;
+  final Future<Directory> Function() _pinnedAudioCacheDirectoryProvider;
+
+  static Future<Directory> _defaultPinnedAudioCacheDirectory() async {
+    final Directory supportRoot = await AppPaths.supportRootDirectory();
+    return Directory(p.join(supportRoot.path, 'remote_lookup_audio_cache'));
+  }
 
   /// 查远端词典。三种结局（与 [lookupAudioUrl] 对称）：
   /// - 返回结果：某候选可达且有词条；
@@ -134,7 +151,8 @@ class FushiRemoteLookupClient {
   }
 
   /// 查远端单词音频。三种结局：
-  /// - 返回 URL：某候选可达且有音频；
+  /// - 返回可播放 ref：明文 HTTP peer 保持短命 URL；带指纹的 HTTPS peer 由本类
+  ///   使用同一指纹取回字节并物化成本地文件，避免 WebView/native player 丢失钉扎；
   /// - 返回 null：可达但无音频（含 404/405/非 2xx/正常空结果），或根本未配对；
   /// - 抛 [RemoteLookupUnreachableError]：所有已启用候选全部传输层失败
   ///   （连接拒绝/超时/DNS）——「配对设备死了」，供上层计入失败冷却。
@@ -157,8 +175,39 @@ class FushiRemoteLookupClient {
     }
     final Map<String, dynamic>? json = outcome.json;
     if (json == null || json['type'] != 'audioResult') return null;
-    final String? url = json['url'] as String?;
-    return (url == null || url.isEmpty) ? null : url;
+    final String? urlText = json['url'] as String?;
+    if (urlText == null || urlText.isEmpty) return null;
+    final Uri? uri = Uri.tryParse(urlText);
+    final FushiClientUrl? candidate = outcome.candidate;
+    final String? fingerprint = candidate?.fingerprintSha256;
+    final bool pinnedCandidate = candidate != null &&
+        fingerprint != null &&
+        fingerprint.isNotEmpty;
+    if (!pinnedCandidate) return urlText;
+    if (uri == null || !uri.isScheme('https')) return null;
+
+    final InterconnectBytesOutcome? asset;
+    try {
+      asset = await _transport.getLookupAudioBytes(
+        candidate: candidate,
+        uri: uri,
+        timeout: _timeout,
+      );
+    } on InterconnectAssetUnreachableError catch (error, stack) {
+      Error.throwWithStackTrace(
+        RemoteLookupUnreachableError(
+          'paired candidate succeeded at /api/lookup/audio but its pinned '
+          'audio asset was unreachable: $error',
+        ),
+        stack,
+      );
+    }
+    if (asset == null) return null;
+    return _materializePinnedAudio(
+      asset.bytes,
+      cache: await _pinnedAudioCacheDirectoryProvider(),
+      contentType: asset.contentType ?? json['contentType']?.toString(),
+    );
   }
 
   Future<InterconnectPostOutcome> _postLookup({
@@ -172,4 +221,121 @@ class FushiRemoteLookupClient {
       authErrorMessage: 'Fushi server rejected remote lookup token',
     );
   }
+}
+
+Future<String?> _materializePinnedAudio(
+  List<int> bytes, {
+  required Directory cache,
+  required String? contentType,
+}) async {
+  if (bytes.isEmpty) return null;
+  final String digest = sha256.convert(bytes).toString();
+  final String extension = _audioExtensionForContentType(contentType);
+  await cache.create(recursive: true);
+  await _pruneRemoteAudioCache(cache);
+  final File output = File(p.join(cache.path, '$digest.$extension'));
+  if (await output.exists()) {
+    if (await _fileMatchesDigest(output, digest)) {
+      await output.setLastAccessed(DateTime.now());
+      return output.path;
+    }
+    await output.delete();
+  }
+
+  // Publish atomically: simultaneous lookups for the same clip may race, but
+  // no player should ever observe a half-written file.
+  final Directory staging = await cache.createTemp('write_');
+  try {
+    final File temporary = File(p.join(staging.path, 'audio.$extension'));
+    await temporary.writeAsBytes(bytes, flush: true);
+    try {
+      await temporary.rename(output.path);
+    } on FileSystemException {
+      if (!await output.exists() ||
+          !await _fileMatchesDigest(output, digest)) {
+        rethrow;
+      }
+    }
+    await output.setLastAccessed(DateTime.now());
+    await _pruneRemoteAudioCache(cache, protectedPath: output.path);
+    return output.path;
+  } finally {
+    if (await staging.exists()) {
+      await staging.delete(recursive: true);
+    }
+  }
+}
+
+Future<bool> _fileMatchesDigest(File file, String expectedDigest) async {
+  try {
+    final Digest actual = await sha256.bind(file.openRead()).first;
+    return actual.toString() == expectedDigest;
+  } on FileSystemException {
+    return false;
+  }
+}
+
+Future<void> _pruneRemoteAudioCache(
+  Directory cache, {
+  String? protectedPath,
+}) async {
+  final DateTime now = DateTime.now();
+  final DateTime expiresBefore = now.subtract(kRemoteAudioMaterializedCacheTtl);
+  final DateTime staleStagingBefore = now.subtract(const Duration(hours: 1));
+  final List<({File file, FileStat stat})> survivors =
+      <({File file, FileStat stat})>[];
+
+  await for (final FileSystemEntity entity
+      in cache.list(followLinks: false)) {
+    try {
+      final FileStat stat = await entity.stat();
+      if (entity is Directory) {
+        if (p.basename(entity.path).startsWith('write_') &&
+            stat.modified.isBefore(staleStagingBefore)) {
+          await entity.delete(recursive: true);
+        }
+        continue;
+      }
+      if (entity is! File) continue;
+      if (entity.path != protectedPath &&
+          stat.accessed.isBefore(expiresBefore)) {
+        await entity.delete();
+        continue;
+      }
+      survivors.add((file: entity, stat: stat));
+    } on FileSystemException {
+      // Cache cleanup is best-effort. A concurrent lookup can rename/delete an
+      // entry between list() and stat()/delete(); the next pass reconciles it.
+    }
+  }
+
+  int totalBytes = survivors.fold<int>(
+    0,
+    (int total, ({File file, FileStat stat}) entry) =>
+        total + entry.stat.size,
+  );
+  survivors.sort((a, b) => a.stat.accessed.compareTo(b.stat.accessed));
+  for (final ({File file, FileStat stat}) entry in survivors) {
+    if (totalBytes <= kRemoteAudioMaterializedCacheMaxBytes) break;
+    if (entry.file.path == protectedPath) continue;
+    try {
+      await entry.file.delete();
+      totalBytes -= entry.stat.size;
+    } on FileSystemException {
+      // Concurrent cache consumers may already have removed this entry.
+    }
+  }
+}
+
+String _audioExtensionForContentType(String? raw) {
+  final String contentType =
+      (raw ?? '').split(';').first.trim().toLowerCase();
+  return switch (contentType) {
+    'audio/ogg' || 'audio/opus' => 'ogg',
+    'audio/mp4' || 'audio/aac' => 'm4a',
+    'audio/wav' || 'audio/x-wav' => 'wav',
+    'audio/flac' || 'audio/x-flac' => 'flac',
+    'audio/webm' => 'webm',
+    _ => 'mp3',
+  };
 }

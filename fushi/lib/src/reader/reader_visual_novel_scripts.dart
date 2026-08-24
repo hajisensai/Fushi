@@ -3080,6 +3080,9 @@ $sharedInitViewport
           root.style.setProperty('--reader-viewport-height', h + 'px');
         }
       }
+      if (window.__fushiApplyReaderMargins) {
+        window.__fushiApplyReaderMargins(w, h);
+      }
       this.refitScreensToCurrentViewport();
     };
   }

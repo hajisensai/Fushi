@@ -69,8 +69,9 @@ TODO-831 引入这次 await 的动机是「pop 动画首帧下层书架不闪播
 
 ### 备注
 
-- 验证限制：本地 Android 14 模拟器上测试书未配对音频、QA 视频文件缺失，**播放态未在真机复现**；
-  且 `adb input swipe` 注入事件触发不了 SystemUI 的边缘返回手势（未播放态基线可用返回键复现：
-  返回正常退回书架）。根因与修复由退出链代码路径 + 上述行为层测试确证。
+- 2026-08-24 已补 iPhone SE（iOS 26.6）播放态设备回归：
+  `integration_test/ios_audiobook_exit_reentry_itest.dart` 以框架 system-back 完成事件驱动
+  与 iOS 边缘侧滑相同的 `PopScope → onWillPop → onSourcePagePop` 链，30 秒 AAC 正在播放时
+  首次返回即退出，未等待句子结束；随后 native 真止声、路由不恢复，重进正文非黑屏。
 - 相邻未改：视频页 `_handleBackOrExit` 也在 pop 前 `await _controller?.flushPosition()`，
   但只是 DB 写、不停播放器，与本 bug 结构不同；如果之后出现「视频播放中返回迟钝」再单独处理。

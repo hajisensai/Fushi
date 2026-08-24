@@ -513,6 +513,28 @@ void main() {
   });
 
   group('ReaderContentStyles chrome inset CSS variables', () {
+    test('BUG-1812 reader margins use Dart-sized CSS vars, never raw vh/vw',
+        () async {
+      final ReaderSettings settings = await _defaultSettings();
+      await settings.setMarginTop(1.3);
+      await settings.setMarginBottom(2.7);
+      await settings.setMarginLeft(3.1);
+      await settings.setMarginRight(4.2);
+
+      for (final String mode in <String>['paginated', 'continuous', 'vn']) {
+        await settings.setViewMode(mode);
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('var(--reader-margin-top, 1.3vh)'),
+            reason: '$mode top margin must have a pre-init fallback');
+        expect(css, contains('var(--reader-margin-bottom, 2.7vh)'));
+        expect(css, contains('var(--reader-margin-left, 3.1vw)'));
+        expect(css, contains('var(--reader-margin-right, 4.2vw)'));
+        expect(css, isNot(contains('padding-top: calc(1.3vh')),
+            reason: '$mode must consume the Dart-sized variable on iOS where '
+                'window.innerHeight is 0');
+      }
+    });
+
     test('paginated layout contains --chrome-top-inset in padding-top',
         () async {
       final ReaderSettings settings = await _defaultSettings();
@@ -537,7 +559,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-top: calc(${settings.marginTop}vh + var(--chrome-top-inset, 0px))'));
+              'padding-top: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px))'));
     });
 
     test(
@@ -548,7 +570,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
     });
 
     test('continuous layout contains --chrome-top-inset in padding-top',
@@ -597,7 +619,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(${settings.marginBottom}vh + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
     });
 
     // TODO-729：单一量纲。column-gap 固定为常量（22px），inset/margin/fontSize 不再
@@ -627,7 +649,7 @@ void main() {
       expect(
           css,
           contains(
-              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
     });
 
     test('horizontal paginated column-gap is the same fixed constant',
@@ -647,7 +669,7 @@ void main() {
       expect(
           css,
           contains(
-              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)'));
+              'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw))'));
     });
 
     // TODO-1285：每页列数（pageColumns）根因修复。旧实现（TODO-729 遗留）只发
@@ -675,7 +697,7 @@ void main() {
       // 根因修复断言：column-width 必须均分成子列宽 (content-box − (N−1)·22px)/N，
       // 绝不再是整页 content-box（否则实际列数被压回 1 列，回归失效）。
       final String base =
-          'calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw)';
+          'calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw))';
       expect(
           css,
           contains(
@@ -685,7 +707,7 @@ void main() {
       expect(
           css,
           isNot(contains(
-              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw) !important;')),
+              'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw)) !important;')),
           reason: '整页列宽会把 column-count:N 压成 1 列 → 每页列数失效（旧 bug）');
     });
 
@@ -704,7 +726,7 @@ void main() {
       expect(
           css,
           contains(
-              'column-width: calc(var(--page-width, 100vw) - ${settings.marginLeft}vw - ${settings.marginRight}vw) !important;'));
+              'column-width: calc(var(--page-width, 100vw) - var(--reader-margin-left, ${settings.marginLeft}vw) - var(--reader-margin-right, ${settings.marginRight}vw)) !important;'));
       expect(css, isNot(contains('max(1px, calc(')));
     });
 
@@ -805,17 +827,17 @@ void main() {
       expect(
           css,
           contains(
-              'border-top-width: calc(${settings.marginTop}vh + var(--chrome-top-inset, 0px)) !important;'));
+              'border-top-width: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px)) !important;'));
       expect(
           css,
           contains(
-              'border-right-width: ${settings.marginRight}vw !important;'));
+              'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;'));
       expect(
           css,
           contains(
-              'border-bottom-width: calc(${settings.marginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;'));
+              'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;'));
       expect(css,
-          contains('border-left-width: ${settings.marginLeft}vw !important;'));
+          contains('border-left-width: var(--reader-margin-left, ${settings.marginLeft}vw) !important;'));
       // 覆盖条色 == 页背景色（不透明覆盖泄露文字）。
       expect(css, contains('html::before {'));
       // z-index 必须低于 caret（2147483646）以免遮住焦点/查词 caret。
@@ -1001,12 +1023,17 @@ void main() {
       expect(prefs['src:reader_fushi:margin_right'], '2.0');
     });
 
-    test('default css emits 2vw left/right padding and 0vh top/bottom',
+    test('default css emits viewport-backed margin vars on all four sides',
         () async {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
-      // paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw'
-      expect(css, contains('padding: 0.0vh 2.0vw 0.0vh 2.0vw !important;'));
+      expect(
+          css,
+          contains(
+              'padding: var(--reader-margin-top, 0.0vh) '
+              'var(--reader-margin-right, 2.0vw) '
+              'var(--reader-margin-bottom, 0.0vh) '
+              'var(--reader-margin-left, 2.0vw) !important;'));
     });
 
     test('normalizeMarginPercent clamps to [0, 50] and maps non-finite to 0',
@@ -1035,7 +1062,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(${settings.marginBottom}vh + 128px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + 128px + var(--chrome-bottom-inset, 0px))'));
       // TODO-729：字号缩放从 column-gap 移到 column-width(content-box)——gap 固定 22px。
       // TODO-734：基准改为 --reader-viewport-height(纯 V)。竖排 content-box 高扣掉
       // fontSize(128px) 一项，列周期随字号变。
@@ -1043,7 +1070,7 @@ void main() {
       expect(
           css,
           contains(
-              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - ${settings.marginTop}vh - ${settings.marginBottom}vh - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
       // column-gap 固定常量，不再把 fontSize 塞进去。
       expect(css, contains('column-gap: 22px !important;'));
       // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。
@@ -1063,7 +1090,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(${settings.marginBottom}vh + 96px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + 96px + var(--chrome-bottom-inset, 0px))'));
     });
 
     test('source margin getters fall back to the 2% defaults', () async {

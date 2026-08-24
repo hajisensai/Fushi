@@ -51,8 +51,8 @@ Future<AppModel> readyAppModel(WidgetTester tester) async {
 ///
 /// 书架（books）是惰性构建的保活 tab（home_page.dart 的 `_visitedKeepAliveTabs`：
 /// 没访问过就不预建），而冷启动初始 tab 是 dashboard（`HomeTab.home`）。不切过去
-/// 时 `book_entry_*` / `srt_entry_*` 书卡根本不在 widget 树中——任何等书卡出现的
-/// 轮询（含 [seedReaderBook] 的可见性轮询）都必然超时。等待书卡的测试必须先调这里。
+/// 时 `book_entry_*` / `srt_entry_*` 书卡根本不在 widget 树中。共享播种 helper
+/// 自己调用本函数；其它直接写 DB 后等待书卡的测试也必须先调这里。
 Future<void> showBooksTab(WidgetTester tester) async {
   expect(HomePage.debugSelectTab, isNotNull,
       reason: 'HomePage.debugSelectTab 钩子应已注册（debug/profile build）');
@@ -101,6 +101,7 @@ Future<String> seedReaderBook(
   String fileName = 'test_library.epub',
 }) async {
   final AppModel appModel = await readyAppModel(tester);
+  await showBooksTab(tester);
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -274,8 +275,10 @@ Future<Directory> _fixturesDir() async {
 Future<String> seedAudiobook(
   WidgetTester tester, {
   String title = 'Hibiki Test Audiobook',
+  Duration audioDuration = const Duration(seconds: 3),
 }) async {
   final AppModel appModel = await readyAppModel(tester);
+  await showBooksTab(tester);
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
@@ -294,7 +297,10 @@ Future<String> seedAudiobook(
 
   final Directory dir = await _fixturesDir();
   final String audioPath = '${dir.path}${Platform.pathSeparator}$bookKey.m4a';
-  final File audioFile = await generateSilentAudio(outPath: audioPath);
+  final File audioFile = await generateSilentAudio(
+    outPath: audioPath,
+    duration: audioDuration,
+  );
 
   // 用真实 bookKey 重建 cue（chapterHref 与 EPUB 内 spine 一致）。
   final List<AudioCue> cues =

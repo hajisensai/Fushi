@@ -30,4 +30,14 @@ void main() {
     // 焦点激活时 setCue 只换高亮、不抢滚动。
     expect(html(), contains('__lyricsCaretActive'));
   });
+
+  test('notifies Dart only after the lyrics DOM API is initialized', () {
+    final String source = html();
+    final int sentinel = source.indexOf('window.__lyricsSetCue');
+    final int ready = source.indexOf("callHandler('onLyricsReady'");
+    expect(sentinel, greaterThanOrEqualTo(0));
+    expect(ready, greaterThan(sentinel));
+    expect(source, contains("typeof bridge.callHandler === 'function'"));
+    expect(source, contains('attempt < 100'));
+  });
 }

@@ -724,6 +724,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     $iconFontJs
     $zoomWheelJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
+    window.__fushiApplyPopupViewport?.();
     // TODO-1353: Ctrl+滚轮缩放查词内容需要在 JS 侧就地重算 zoom（即时反馈），故把
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
     // 最新真值）。滚轮监听器（dictionary_popup_webview 的 _zoomWheelJs，onLoadStop 装一次）

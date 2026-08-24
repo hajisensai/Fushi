@@ -214,9 +214,34 @@ void main() {
       expect(decoded['chromeBottomInset'], 64);
       expect(decoded['furiganaMode'], 'toggle');
       expect(decoded['dartPageWidth'], 800);
+      expect(decoded['marginTop'], 1.3);
+      expect(decoded['marginRight'], 4.2);
       expect((decoded['sentenceAudioCues'] as List<dynamic>).length, 1);
       expect(_sampleConfig().toJsLiteral().contains('"sentenceAudioCues":null'),
           isTrue);
+    });
+
+    test('BUG-1812 engine turns margin percentages into Dart-sized pixels',
+        () {
+      final String engine = readerFushiEngineSource();
+      expect(engine, contains('window.__fushiApplyReaderMargins = function'));
+      expect(engine, contains('h * pct(C.marginTop) / 100'));
+      expect(engine, contains('w * pct(C.marginRight) / 100'));
+      expect(engine, contains("setProperty('--reader-margin-top'"));
+      expect(
+        ReaderPaginationScripts.paginatedShellSource(),
+        contains(
+            'window.__fushiApplyReaderMargins(newWidth, newViewportHeight)'),
+        reason: 'resizing a paginated reader must recompute pixel margins',
+      );
+      expect(
+        ReaderPaginationScripts.continuousShellSource(),
+        contains('window.__fushiApplyReaderMargins(newWidth, newHeight)'),
+      );
+      expect(
+        ReaderVisualNovelScripts.vnShellScript(),
+        contains('window.__fushiApplyReaderMargins(w, h)'),
+      );
     });
 
     test('三种 shell 回传 immutable navigation generation', () {
@@ -347,6 +372,10 @@ ReaderEngineConfig _sampleConfig({String? sentenceAudioCuesJson}) =>
       chromeBottomInset: 64,
       dartPageWidth: 800,
       dartPageHeight: 600,
+      marginTop: 1.3,
+      marginBottom: 2.7,
+      marginLeft: 3.1,
+      marginRight: 4.2,
       blurImages: false,
       revealedKeys: const <String>[],
       perfTraceEnabled: false,

@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:macos_ui/macos_ui.dart' show MacosWindow;
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show fushiMaterialNavKey;
 
@@ -30,7 +30,7 @@ void main() {
 
   testWidgets('macOS default auto renders the MD3 home and settings shell',
       (WidgetTester tester) async {
-    app.main();
+    await launchFushiTestApp();
 
     // Boot can take a while (DB open, dictionary preload). Pump until the
     // Material navigation shell appears, up to 90s.

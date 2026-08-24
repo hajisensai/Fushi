@@ -7,6 +7,7 @@ class LyricsModeHtml {
   static String generate({
     required List<AudioCue> cues,
     required int currentIndex,
+    int loadGeneration = 0,
     required String backgroundColor,
     required String textColor,
     required String accentColor,
@@ -352,12 +353,28 @@ function setCue(index, scroll) {
 }
 
 // ── Dart bridge ──
+window.__fushiLyricsLoadGeneration = $loadGeneration;
 window.__lyricsSetCue = function(index, scroll) { setCue(index, scroll); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 // 供 fushiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
 window.__lyricsScrollToCue = function(index) {
   if (index >= 0 && index < _cues.length) scrollToCenter(_cues[index]);
 };
+
+// iOS WKWebView can complete loadData() without delivering onLoadStop. Register
+// this notifier immediately after the sentinel API exists, before optional
+// interaction wiring can throw. Poll for the injected bridge with a finite 5s
+// budget instead of guessing one platform-ready moment.
+(function notifyLyricsReady(attempt) {
+  var bridge = window.flutter_inappwebview;
+  if (bridge && typeof bridge.callHandler === 'function') {
+    requestAnimationFrame(function() { bridge.callHandler('onLyricsReady', $loadGeneration); });
+    return;
+  }
+  if (attempt < 100) {
+    window.setTimeout(function() { notifyLyricsReady(attempt + 1); }, 50);
+  }
+})(0);
 
 // ── 点击：所有句子→查词 ──
 // BUG-280: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程

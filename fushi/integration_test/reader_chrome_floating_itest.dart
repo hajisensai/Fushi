@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'support/test_app_launcher.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/media.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
@@ -67,7 +68,7 @@ void main() {
       };
 
       try {
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
         await tester.pump(const Duration(seconds: 2));
 

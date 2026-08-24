@@ -5,18 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
     show AnkiSettingsBody;
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
+import 'package:fushi/src/pages/implementations/reading_statistics_page.dart'
+    show ReadingStatisticsPage;
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/utils.dart' show t;
 
 import 'helpers/focus_driver.dart';
-import 'helpers/library_fixture.dart' show seedDictionary;
+import 'helpers/library_fixture.dart' show seedDictionary, seedReaderBook;
 import 'test_helpers.dart';
 
 /// M3: Feature Flow tests.
@@ -42,7 +44,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
 
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
@@ -71,6 +73,7 @@ void main() {
       // 与 comprehensive_reader_lookup_test 同范式：种生成词典，然后硬断言。
       expect(await seedDictionary(tester), isTrue,
           reason: 'generated test dictionary must be installed for F2');
+      await seedReaderBook(tester, fileName: 'feature_flow_tags.epub');
 
       // 顶层 tab 是条件化列表（video/downloads/games 按开关插入，见 home_page.dart
       // homeActiveTabs），且 index 0 是 dashboard 而非书架——按位置索引取 target
@@ -118,7 +121,7 @@ void main() {
 
       // === F5: Profile Management ===
       debugPrint('[M3] === F5: Profile Management ===');
-      expect(await driver.focusWidget(settingsTab), isTrue,
+      expect(await driver.focusWidget(settingsTab, maxSteps: 320), isTrue,
           reason: 'Settings tab must be reachable by focus');
       await driver.activate(); // Settings tab
       await tester.pump(const Duration(milliseconds: 500));
@@ -126,26 +129,26 @@ void main() {
       // 标签用生产 i18n 真值（settings_schema_profiles.dart 同一 key）：硬编码
       // 英文在非英文 locale 的 Mac 上永远找不到，整段被静默跳过。
       final String profilesLabel = t.settings_destination_profiles;
-      await _scrollToFind(tester, profilesLabel);
-      if (find.text(profilesLabel).evaluate().isNotEmpty) {
-        expect(await driver.focusWidget(find.text(profilesLabel).first), isTrue,
-            reason: 'Configuration Schemes entry must be reachable by focus');
-        await driver.activate();
-        await tester.pump(const Duration(milliseconds: 500));
+      expect(
+          await driver.focusWidget(find.text(profilesLabel).first,
+              maxSteps: 220),
+          isTrue,
+          reason: 'Configuration Schemes entry must be reachable by focus');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
 
-        debugPrint('[M3] ✓ Profile management page opened');
-        await takeScreenshot(binding, 'm3_profile_management');
+      debugPrint('[M3] ✓ Profile management page opened');
+      await takeScreenshot(binding, 'm3_profile_management');
 
-        // Page reached without crash is the feature-flow signal; a fresh
-        // install may legitimately have no saved profiles yet.
-        final profileCount = find.byType(ListTile).evaluate().length;
-        debugPrint('[M3] Profile items visible: $profileCount');
-        expect(tester.takeException(), isNull,
-            reason: 'Profile page must not throw');
+      // Page reached without crash is the feature-flow signal; a fresh
+      // install may legitimately have no saved profiles yet.
+      final profileCount = find.byType(ListTile).evaluate().length;
+      debugPrint('[M3] Profile items visible: $profileCount');
+      expect(tester.takeException(), isNull,
+          reason: 'Profile page must not throw');
 
-        debugPrint('[M3] ✓ F5: Profile management accessible');
-        await _goBack(tester);
-      }
+      debugPrint('[M3] ✓ F5: Profile management accessible');
+      await _goBack(tester);
 
       // === F8: Reading Statistics ===
       debugPrint('[M3] === F8: Reading Statistics ===');
@@ -157,11 +160,14 @@ void main() {
 
       // Look for statistics access point (usually in the top bar)
       final statsIcon = find.byIcon(Icons.bar_chart);
+      final statsIconOutlined = find.byIcon(Icons.bar_chart_outlined);
       final statsIcon2 = find.byIcon(Icons.insert_chart);
       final statsIcon3 = find.byIcon(Icons.analytics);
 
       Finder? statsButton;
-      if (statsIcon.evaluate().isNotEmpty) {
+      if (statsIconOutlined.evaluate().isNotEmpty) {
+        statsButton = statsIconOutlined;
+      } else if (statsIcon.evaluate().isNotEmpty) {
         statsButton = statsIcon;
       } else if (statsIcon2.evaluate().isNotEmpty) {
         statsButton = statsIcon2;
@@ -170,20 +176,32 @@ void main() {
       }
 
       if (statsButton != null) {
-        if (await driver.focusWidget(statsButton.first)) {
-          await driver.activate();
-        } else {
-          // Icon-only top-bar buttons can be focus targets registered late;
-          // fall back to the framework activate intent on the focused node.
-          await driver.activateIntent();
-        }
-        await tester.pump(const Duration(milliseconds: 500));
-        debugPrint('[M3] ✓ F8: Reading statistics page opened');
-        await takeScreenshot(binding, 'm3_reading_statistics');
-        await _goBack(tester);
+        expect(await driver.requestFocusInside(statsButton.first), isTrue,
+            reason: 'Reading Statistics icon must own a focus node');
+        await driver.activate();
       } else {
-        debugPrint('[M3] ⚠ F8: Statistics icon not found on home page');
+        // 手机窄屏时 FushiPageHeader 会把全部 FushiIconButton 收进 ⋯，
+        // 统计入口仍存在于菜单，不应把“图标没直接渲染”误判成入口缺失。
+        final Finder overflow = find.byIcon(Icons.more_vert);
+        expect(overflow, findsWidgets,
+            reason: 'Cramped Books header must expose its overflow menu');
+        expect(await driver.requestFocusInside(overflow.first), isTrue,
+            reason: 'Books overflow button must own a focus node');
+        await driver.activate();
+        await tester.pump(const Duration(milliseconds: 250));
+        final Finder statisticsMenuItem = find.text(t.reading_statistics);
+        expect(statisticsMenuItem, findsOneWidget,
+            reason: 'Books overflow must contain Reading Statistics');
+        expect(await driver.focusWidget(statisticsMenuItem), isTrue,
+            reason: 'Reading Statistics overflow item must be focus reachable');
+        await driver.activate();
       }
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(ReadingStatisticsPage), findsOneWidget,
+          reason: 'Reading Statistics action must open the page');
+      debugPrint('[M3] ✓ F8: Reading statistics page opened');
+      await takeScreenshot(binding, 'm3_reading_statistics');
+      await _goBack(tester);
 
       // === F10: Sync Settings ===
       debugPrint('[M3] === F10: Sync Settings ===');
@@ -192,15 +210,15 @@ void main() {
       // i18n 真值：en 标签实际是 "Sync & Backup (Experimental)"，旧硬编码
       // 'Sync & Backup' 连英文 locale 都精确匹配不上。
       final String syncLabel = t.settings_destination_sync_backup;
-      await _scrollToFind(tester, syncLabel);
-      if (find.text(syncLabel).evaluate().isNotEmpty) {
-        expect(await driver.focusWidget(find.text(syncLabel).first), isTrue,
-            reason: 'Sync & Backup entry must be reachable by focus');
-        await driver.activate();
-        await tester.pump(const Duration(milliseconds: 500));
+      expect(
+          await driver.focusWidget(find.text(syncLabel).first, maxSteps: 220),
+          isTrue,
+          reason: 'Sync & Backup entry must be reachable by focus');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
 
-        debugPrint('[M3] ✓ Sync & Backup page opened');
-        await takeScreenshot(binding, 'm3_sync_settings');
+      debugPrint('[M3] ✓ Sync & Backup page opened');
+      await takeScreenshot(binding, 'm3_sync_settings');
 
         // Check backend selector exists
         final backendLabels = ['WebDAV', 'Google Drive'];
@@ -212,29 +230,26 @@ void main() {
           }
         }
 
-        if (foundBackend) {
-          debugPrint('[M3] ✓ F10: Sync backend options visible');
-        } else {
-          debugPrint('[M3] ⚠ F10: No sync backend options found');
-        }
+      expect(foundBackend, isTrue,
+          reason: 'Sync page must expose at least one backend option');
+      debugPrint('[M3] ✓ F10: Sync backend options visible');
 
-        await _goBack(tester);
-      }
+      await _goBack(tester);
 
       // === F9: Anki Settings (degraded — no AnkiDroid) ===
       debugPrint('[M3] === F9: Anki Settings ===');
       await _selectTab(tester, HomeTab.settings);
 
       final String cardCreationLabel = t.settings_destination_card_creation;
-      await _scrollToFind(tester, cardCreationLabel);
-      if (find.text(cardCreationLabel).evaluate().isNotEmpty) {
-        expect(await driver.focusWidget(find.text(cardCreationLabel).first),
-            isTrue,
-            reason: 'Card Creation entry must be reachable by focus');
-        await driver.activate();
-        await tester.pump(const Duration(milliseconds: 500));
+      expect(
+          await driver.focusWidget(find.text(cardCreationLabel).first,
+              maxSteps: 220),
+          isTrue,
+          reason: 'Card Creation entry must be reachable by focus');
+      await driver.activate();
+      await tester.pump(const Duration(milliseconds: 500));
 
-        debugPrint('[M3] ✓ Card Creation page opened');
+      debugPrint('[M3] ✓ Card Creation page opened');
 
         // Card Creation 已把整段 Anki 正文平铺进本页（settings_schema_
         // card_creation.dart: body → AnkiSettingsBody），页内不再有「Anki 设置」
@@ -242,21 +257,21 @@ void main() {
         // focusWidget(该文本) 在桌面两栏恰好命中主列表里 Card Creation 行自身
         // 的 subtitle（重开同页，伪通过），在 iOS 全页布局上则对不可聚焦的
         // 头部文本耗尽步数。按真实结构断言：打开本页即达 Anki 配置正文。
-        expect(find.byType(AnkiSettingsBody), findsOneWidget,
-            reason: 'Card Creation page must flat-embed AnkiSettingsBody '
-                '(settings_schema_card_creation.dart body)');
-        debugPrint('[M3] ✓ F9: Anki settings body embedded (no crash)');
-        await takeScreenshot(binding, 'm3_anki_settings');
+      expect(find.byType(AnkiSettingsBody), findsOneWidget,
+          reason: 'Card Creation page must flat-embed AnkiSettingsBody '
+              '(settings_schema_card_creation.dart body)');
+      debugPrint('[M3] ✓ F9: Anki settings body embedded (no crash)');
+      await takeScreenshot(binding, 'm3_anki_settings');
 
-        await _goBack(tester);
-      }
+      await _goBack(tester);
 
       // === F6: Tag Management (via book long press) ===
       debugPrint('[M3] === F6: Tag Management ===');
       await _selectTab(tester, HomeTab.books);
 
       final bookEntries = findBookEntries();
-      if (bookEntries.evaluate().isNotEmpty) {
+      expect(bookEntries, findsWidgets,
+          reason: 'F6 seeded book must be present for tag management');
         // Focus-driven long-press: focus the book card, then dispatch the same
         // GamepadLongPressIntent the gamepad layer fires on a held A button —
         // it invokes the identical onLongPress as a mouse long-press, opening
@@ -274,16 +289,15 @@ void main() {
 
         // Look for Tags option
         final tagsChip = find.text(t.tag_label);
-        if (tagsChip.evaluate().isNotEmpty) {
-          debugPrint('[M3] ✓ F6: Tags option visible in context menu');
-        }
+        expect(tagsChip, findsWidgets,
+            reason: 'Book context menu must expose Tags');
+        debugPrint('[M3] ✓ F6: Tags option visible in context menu');
 
         // Dismiss the context menu via the keyboard (Escape pops the menu
         // route) instead of a coordinate tap, so no screen-position guess can
         // miss the barrier.
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
-      }
 
       // === Final summary ===
       debugPrint('[M3] === Feature Flows Complete ===');
@@ -305,20 +319,12 @@ Future<void> _selectTab(WidgetTester tester, HomeTab tab) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
-Future<void> _scrollToFind(WidgetTester tester, String text) async {
-  for (int i = 0; i < 15; i++) {
-    if (find.text(text).evaluate().isNotEmpty) return;
-    final scrollables = find.byType(Scrollable);
-    if (scrollables.evaluate().isEmpty) return;
-    await tester.drag(scrollables.first, const Offset(0, -200));
-    await tester.pumpAndSettle();
-  }
-}
-
 Future<void> _goBack(WidgetTester tester) async {
-  // Focus-driven back: the global FushiPopIntent (gameButtonB) pops the route
-  // without depending on a Back button's coordinates / tooltip locale.
-  await FocusDriver(tester).back();
+  // Coordinate-free system back: on iOS this drives the same Navigator pop
+  // that a completed edge swipe reaches, without depending on an external
+  // keyboard Escape mapping or a localized Back tooltip.
+  expect(await tester.binding.handlePopRoute(), isTrue,
+      reason: 'the current feature page must accept system back');
   await tester.pump(const Duration(milliseconds: 250));
 }
 
