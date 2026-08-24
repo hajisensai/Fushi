@@ -16,7 +16,10 @@ import 'package:fushi/src/utils/misc/update_handoff.dart';
 void main() {
   const String target = '2.2.1-debug.12215';
   const String oldCode = '2.2.1-debug.12067';
-  // Windows 的 exe 版本资源恒为基版本（丢 `-debug.N`），现场取到的就是这个值。
+  // 版本资源里只剩基版本的那种包。**不是**因为 Windows VERSIONINFO 丢后缀
+  // （字符串字段保留完整 build-name，package_info 读的正是它）——而是版本名本身
+  // 就没带后缀：修复前的 beta 包（`--build-name` 只给 debug tag 派生）、以及
+  // Apple 包（`CFBundleShortVersionString` 只收至多三段数字）都是这个形状。
   const String exeVersion = '2.2.1';
 
   group('三源证据判定表', () {
@@ -308,11 +311,49 @@ void main() {
       for (final String path in sources) {
         final File file = File(path);
         expect(file.existsSync(), isTrue, reason: path);
+        // 先剔掉注释再断言。`settings_schema_system.dart` 是几千行的大文件，光是
+        // 解释这条规矩的注释里就出现了 `resolveCurrentAppVersion`；裸 `contains`
+        // 会被散文喂饱，把「删掉真实调用、只留注释」的改动放行。
+        final String code = stripDartLineComments(file.readAsStringSync());
+        // 断言布尔而不是把整份源码丢给 `contains` matcher：这两个文件都是几千行，
+        // 失败时 matcher 会把全文当 `Actual` 打出来，真正的失败原因被埋掉。
         expect(
-          file.readAsStringSync(),
-          contains('resolveCurrentAppVersion('),
+          code.contains('resolveCurrentAppVersion('),
+          isTrue,
           reason: '$path 的更新检查绕开了「本机当前版本」的真值入口',
         );
+
+        // 负向断言：喂给 `scheduleCheck` 的**位置参数**里不得出现裸的
+        // `packageInfo.version`（那是 exe 版本资源，半更新态下它谎报新版本）。
+        // 正向断言只证明文件里还有这个函数名，证明不了它的结果真流进了更新检查。
+        const String callToken = 'UpdateChecker.scheduleCheck(';
+        int at = code.indexOf(callToken);
+        expect(at, isNot(-1), reason: '$path 里扫不到 $callToken，守卫扫空了（调用被改名/删除？）');
+        while (at >= 0) {
+          final int argsStart = at + callToken.length;
+          // 位置参数止于第一个命名参数。`currentBuildNumber:` 两个调用点都传，
+          // 它要是没了，下面的 isNot(-1) 会把守卫变红而不是悄悄放行。
+          final int argsEnd = code.indexOf('currentBuildNumber:', argsStart);
+          expect(
+            argsEnd,
+            isNot(-1),
+            reason:
+                '$path 的 scheduleCheck 不再传 currentBuildNumber，'
+                '位置参数边界没法定位了',
+          );
+          final String positionalArgs = code.substring(argsStart, argsEnd);
+          if (positionalArgs.contains('packageInfo.version')) {
+            expect(
+              positionalArgs.contains('resolveCurrentAppVersion('),
+              isTrue,
+              reason:
+                  '$path 把 exe 版本资源直接喂给了更新检查（位置参数 '
+                  '`${positionalArgs.trim()}`）；半更新态下 exe 版本资源谎报新版本，'
+                  '客户端会据它永判「已是最新」',
+            );
+          }
+          at = code.indexOf(callToken, argsStart);
+        }
       }
     });
   });
@@ -409,4 +450,18 @@ void main() {
       expect(result!.status, WindowsUpdateHandoffStatus.launchFailed);
     });
   });
+}
+
+/// 剔除 Dart 行注释（`//` 与 `///`），只留代码。
+///
+/// 只处理行注释：本守卫的目标文件里没有 `/* */` 块注释，多一层状态机只是多一个
+/// 出错面。也不识别字符串字面量——会被误剔的只有字面量里的 `//`（如 URL），而本
+/// 守卫断言的 token 都不会出现在 URL 里。
+String stripDartLineComments(String source) {
+  final StringBuffer out = StringBuffer();
+  for (final String line in const LineSplitter().convert(source)) {
+    final int idx = line.indexOf('//');
+    out.writeln(idx < 0 ? line : line.substring(0, idx));
+  }
+  return out.toString();
 }

@@ -93,31 +93,81 @@ commit message 一个字没提 beta，后来被逐字复制进 macOS / iOS 三�
 - **幂等键**（`lastPromptedAppVersion`）改用代码版本：它来自 `app.so`，而 `currentVersion`
   来自 exe 版本资源，半更新态下两者指向不同的构建，而这个键要回答的正是「跑着的这份代码
   有没有被提示过」。
-- **关于页与日志上传**改报真实构建版本；两者**逐字**不一致时关于页并排显示 `≠ exe <ver>`
+- **关于页与日志上传**改报真实构建版本；两者不一致时关于页并排显示 `≠ exe <ver>`
   ——「新 exe + 旧 app.so」的半更新态第一次变得可自查（这正是 BUG-1786 备注里列的「未做」项）。
-  比对必须逐字而不是只比基版本：半更新态的形状恰恰是 `2.2.1-debug.12216` 的 exe 配
-  `2.2.1-debug.12215` 的 app.so，基版本相同、只差序号一位。不会误报——注入值与 `--build-name`
-  同源，同一次构建两侧必然逐字相等。
 
-守卫 `fushi/test/build/build_version_define_guard_test.dart` 按 `- name:` 切步骤（**不用固定行
+  判据是「**逐字相等** 或 版本资源等于代码版本**剥掉预发布段**后的值」，两条缺一不可：
+
+  - 只比基版本会对唯一需要它的输入闭眼——半更新态的形状恰恰是 `2.2.1-debug.12216` 的 exe
+    配 `2.2.1-debug.12215` 的 app.so，基版本相同、只差序号一位。
+  - 只逐字比会在 **Apple 上恒为真地误报**。注入值与 `--build-name` **故意解耦**（见上面的
+    「唯一例外」）：iOS 的 `CFBundleShortVersionString` 拿的是剥了预发布段的 `2.2.1`，而
+    `--dart-define` 注入的是完整的 `2.2.1-beta.30`，同一次构建两侧本来就不逐字相等。原生
+    版本资源是代码版本的一种**有损渲染**，判据必须吃下这层有损。第一版实现漏了这条，
+    让每个 iOS debug/beta 包的关于页常驻一句 `2.2.1-beta.30 (30) ≠ exe 2.2.1`——正是
+    BUG-1786 想避开的「警告退化成噪音」。
+
+  **已知残留假阴性**：Windows「正式版 exe `2.2.1` + 同 base 预发布 app.so」这种跨通道半更新
+  态会被静默——它与 Apple 的正常态在字符串层面完全同形，分开只能靠平台特例分支。影响有界：
+  更新检查侧走 `resolveCurrentAppVersion` 吃的是代码版本，这种机器仍会照常收到新版本提示。
+
+守卫 `fushi/test/build/build_version_define_guard_test.dart` 按 YAML 列表项切步骤（**不用固定行
 窗口**——BUG-1831 踩过一次：新增注释把被断言的语句顶出窗口，守卫悄悄失效），钉死 7 处
-`--build-name` 每处都配同值的 `--dart-define`，漏一处 CI 红。
+`--build-name` 每处都配同值的 `--dart-define`，漏一处 CI 红。切步骤的边界认**任意**以
+`- <key>:` 打头的行而不只是 `- name:`（步骤不一定把 `name` 写第一行，只认 `name` 会把两个
+步骤并成一个，让 A 步的 define 去满足 B 步的 build-name），并**剔除整行注释**（这份 workflow
+的散文里就有好几处 `--build-name`，把散文当构建点会让守卫红在根本不存在的构建上）。
 
-- **[x] ① 已修复** — commit `83b6df61e8`
+另外两条守卫钉死本条的其余不变式：iOS/IPA 的 `--build-name` 必须传剥了预发布段的
+`apple_build_version_name`（反向守卫——看到 iOS 与其它平台不一致时「顺手统一」会让
+TestFlight 上传在 `altool --validate-app` 直接红）；`BUILD_VERSION_NAME` 的 tag 派生守门 if
+不得再带 `-debug` 过滤。
+
+- **[x] ① 已修复** — 三轮：
+  - `83b6df61e8` 三源证据表 + 构建期注入（PR #990）
+  - PR #995 纠正 PR #990 的错误前提（版本资源并不丢后缀）、版本名对所有版本 tag 派生、
+    更新检查改吃代码版本、关于页比对改逐字
+  - `13da1391fb` 修 PR #995 引入的 Apple 端恒为真误报：关于页判据改「逐字相等
+    或版本资源 == 代码版本剥掉预发布段」，并清掉 `update_handoff.dart` 里残留的
+    「Windows 版本资源丢后缀」错前提注释
 - **[x] ② 已加自动化测试** — `fushi/test/utils/misc/update_install_evidence_test.dart`（三源
-  判定表 8 例 + reconcile 端到端 3 例）、`fushi/test/build/build_version_define_guard_test.dart`
-  （构建期注入配对守卫）、`fushi/test/settings/app_version_display_format_test.dart`（关于页
-  展示 4 例）。四个变异（漏注入一处 / 两侧 define 名字对不上 / 判据忽略代码版本 / 回滚不再
-  一票否决）实测各自精确变红。
+  判定表 8 例 + 版本可比性 9 例 + 「本机当前版本」真值入口 3 例 + reconcile 端到端 3 例）、
+  `fushi/test/build/build_version_define_guard_test.dart`（构建期注入配对 / tag 派生 / iOS 剥
+  预发布段 / 两侧 define 同名 4 条守卫）、`fushi/test/settings/app_version_display_format_test.dart`
+  （关于页展示 6 例 + 有损渲染判据 7 例）。
+
+  变异实测（**每条守卫都实测过真红**，还原用唯一锚点精确回改 + sha256 比对确认逐字一致）：
+
+  | 变异 | 被改坏的地方 | 实测结果 |
+  |---|---|---|
+  | 漏注入一处 `--dart-define` | workflow 某个构建步骤 | 精确变红（PR #990） |
+  | 两侧 define 名字对不上 | `build_version.dart` 的 `String.fromEnvironment` | 精确变红（PR #990） |
+  | 判据忽略代码版本 | `isWindowsUpdateInstalled` | 精确变红（PR #990） |
+  | 回滚不再一票否决 | `isWindowsUpdateInstalled` 的 aborted 分支 | 精确变红（PR #990） |
+  | 判据退回「只逐字比较」 | `_isSameBuildVersion` 去掉剥段分支 | 红 3 条（iOS beta / iOS debug / 已知边界） |
+  | 判据退成「只比基版本」 | `_isSameBuildVersion` 两侧都剥段 | 红 3 条（含 BUG-1786 现场那条） |
+  | 真值入口只剩注释 | `home_page.dart` 的 `appVersion` 改成裸 `packageInfo.version`，函数名只留在注释里 | 红 1 条（**旧的裸 `contains` 会被注释喂饱通过**，剔注释后才红） |
+  | exe 版本资源内联进更新检查 | `UpdateChecker.scheduleCheck` 第二个位置参数 | 红 1 条（负向断言） |
 
 ### 备注
 
 - **仅 Windows**：Inno 日志判据是 Windows 专有。macOS 的 `Info.plist` 用
   `$(FLUTTER_BUILD_NAME)`，**完整保留** `-debug.N`，版本判据本来就有效，未改动。
-- **更新检查**不受后缀丢失影响：`currentReleaseSequence()` 早已用 `buildNumber` 反解 seq
-  绕过（BUG-457 / BUG-846），本轮未动那条链。
+- **更新检查那条链本轮改了**（早前版本的备注写反了，别照抄）：`currentReleaseSequence()` 用
+  `buildNumber` 反解 seq 只解决「版本名没带后缀」（BUG-457 / BUG-846），解决不了**半更新态**
+  ——那时 exe 版本资源与 `buildNumber` **都**报新值，客户端据它永判「已是最新」，用户被困在旧
+  代码里没有出路。所以两个更新检查入口都改吃代码版本 `resolveCurrentAppVersion`：
+  `home_page.dart:330-332`（启动期后台检查）与 `settings_schema_system.dart:411-413`（设置页
+  手动检查）。源码守卫在 `update_install_evidence_test.dart` 里钉死这两处，且**剔除注释后**
+  才断言（大文件里注释提到同名函数会把裸 `contains` 喂饱），另有负向断言禁止把
+  `packageInfo.version` 直接喂给 `UpdateChecker.scheduleCheck` 的位置参数。
 - **生效节奏**：注入在构建期，所以只有装上带本修复的包之后，下一次更新的判据才吃到代码
   版本；在那之前逐行退化成旧判据（行为不变）。
+- **存量 beta 用户拿不到这次修复的好处，必须手动装一次**：他们机器上的包是版本名派生修复
+  之前构建的，仍自称裸 `2.2.1`，而新 beta 的 tag 是 `2.2.1-beta.31`；SemVer 规定「正式版 >
+  同号预发布版」⇒ `2.2.1 > 2.2.1-beta.31` ⇒ 客户端仍永判「已是最新」，自更新永远不会把他们
+  捞出来。脱困路径只有一条：手动下载并安装一次新 beta 包，之后版本名带上后缀，比较才恢复
+  正常。（debug 通道不受影响——它的版本名一直是 tag 派生的。）
 - 与 [BUG-1831](BUG-1831-win-update-launcher-vanished.md) 相邻但不同因：1831 是 launcher 消失
   导致**安装器起不来**，本条是安装器**跑成功了却判不出来**。
 - 严重性低（一次性误报、不触发重试），但它命中的正是「用户刚照着指引把机器修好」的时刻，

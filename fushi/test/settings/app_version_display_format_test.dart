@@ -94,6 +94,103 @@ void main() {
     });
   });
 
+  /// 原生版本资源是代码版本的一种**有损渲染**：Apple 的
+  /// `CFBundleShortVersionString` 只收「至多三段非负整数」，所以
+  /// `release-desktop.yml` 给 iOS/IPA 的 `--build-name` 传的是剥掉预发布段的
+  /// `apple_build_version_name`，而 `--dart-define=FUSHI_BUILD_VERSION` 仍是完整
+  /// 版本名（`build_version_define_guard_test.dart` 把这两条一起钉死）。
+  ///
+  /// 逐字比较会因此在**每一个** iOS debug/beta 包的关于页上常驻一句
+  /// `2.2.1-beta.30 (30) ≠ exe 2.2.1` —— 一个恒为真的「你的安装坏了」告警，正是
+  /// BUG-1786 想避开的「警告退化成噪音」。判据必须吃下这层有损渲染。
+  group('版本资源的有损渲染（Apple 只收数字段）', () {
+    PackageInfo appleInfo(String version, String buildNumber) => PackageInfo(
+          appName: 'Fushi',
+          packageName: 'app.hibiki.reader',
+          version: version,
+          buildNumber: buildNumber,
+        );
+
+    test('iOS beta：Info.plist 剥了预发布段，不是半更新态 ⇒ 不告警', () {
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.1', '30'),
+          runningCodeVersion: '2.2.1-beta.30',
+        ),
+        '2.2.1-beta.30 (30)',
+      );
+    });
+
+    test('iOS debug：同样静默', () {
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.1', '12215'),
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        isNot(contains('≠')),
+      );
+    });
+
+    test('Windows 半更新态仍照常告警（剥段后 ≠ exe）', () {
+      // 回归钉子：宽松化判据时最容易顺手把这条一起放过去。
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.1-debug.12216', '12216'),
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        contains('≠ exe 2.2.1-debug.12216'),
+      );
+    });
+
+    test('Windows 正常包：两侧逐字相等 ⇒ 静默', () {
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.1-debug.12215', '12215'),
+          runningCodeVersion: '2.2.1-debug.12215',
+        ),
+        isNot(contains('≠')),
+      );
+    });
+
+    test('基版本不同 ⇒ 剥段也救不了，照常告警', () {
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.0', '29'),
+          runningCodeVersion: '2.2.1-beta.30',
+        ),
+        contains('≠ exe 2.2.0'),
+      );
+    });
+
+    test('反方向（exe 有预发布段、代码没有）不被剥段规则放过', () {
+      // 剥段只允许发生在**代码版本**一侧（版本资源才是有损的那个）。
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.1-beta.30', '30'),
+          runningCodeVersion: '2.2.1',
+        ),
+        contains('≠ exe 2.2.1-beta.30'),
+      );
+    });
+
+    test('已知边界：Windows 正式版 exe + 同 base 预发布 app.so 会被静默', () {
+      // 这是**当前行为**，不是期望值：跨通道半更新态（正式版 exe `2.2.1` 配
+      // `2.2.1-beta.31` 的 app.so）与 Apple 的正常态在字符串层面完全同形，分开
+      // 只能靠平台特例分支。记录在案，别当成没有。
+      //
+      // 影响有界：更新检查侧走 `resolveCurrentAppVersion` 吃的是代码版本，这种
+      // 机器仍会照常收到新版本提示，不会被困住。
+      expect(
+        formatAppVersionDisplay(
+          appleInfo('2.2.1', '31'),
+          runningCodeVersion: '2.2.1-beta.31',
+        ),
+        isNot(contains('≠')),
+        reason: '已知残留假阴性——行为变了就该重新评估这条取舍，而不是默默改掉',
+      );
+    });
+  });
+
   group('source guard', () {
     test(
         'settings_schema_system.dart no longer concatenates version+buildNumber',
