@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -51,14 +49,14 @@ class TorrentSettingsSection extends ConsumerStatefulWidget {
 
 class _TorrentSettingsSectionState
     extends ConsumerState<TorrentSettingsSection> {
-  /// 本平台是否具备内置引擎（桌面 + Android；与
-  /// `AppModel._supportsEmbeddedTorrent` 同一判据）。
+  /// 本平台是否具备内置引擎（桌面 + Android）。
+  ///
+  /// 走 [AppModel.supportsEmbeddedTorrent] 这**一个**真相源，不再手抄
+  /// `Platform.isXxx` 串——判据抄成两份，某次加平台时 UI 和运行时后端解析就会
+  /// 悄悄分叉（一边显示得出选择器、另一边解析不出后端）。
   bool get _supportsEmbedded =>
       widget.embeddedSupportedOverride ??
-      (Platform.isWindows ||
-          Platform.isMacOS ||
-          Platform.isLinux ||
-          Platform.isAndroid);
+      ref.read(appProvider).supportsEmbeddedTorrent;
 
   QbConnectionConfig get _config =>
       effectiveTorrentConfig(ref.read(appProvider).qbConnectionConfig);
@@ -382,6 +380,8 @@ class _TorrentSettingsSectionState
             label: t.download_network_proxy_custom_label,
             initial: proxy.customProxy,
             hint: t.update_custom_proxy_hint,
+            // 同文件的 qB 地址框与语义相同的系统更新代理项都声明了，这里漏了。
+            keyboard: TextInputType.url,
             errorText: proxy.customProxy.trim().isNotEmpty &&
                     normalizeUserProxyHostPort(proxy.customProxy) == null
                 ? t.update_custom_proxy_invalid
@@ -398,14 +398,16 @@ class _TorrentSettingsSectionState
         // 比没有选项更糟。改为一行说明交代本平台只有外接 qb。
         if (_supportsEmbedded) ...<Widget>[
           FushiSegmentedStrip<String>(
+            // 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），
+            // 也是开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                value: QbConnectionConfig.backendQbittorrent,
-                label: Text(t.video_setting_torrent_backend_qb),
-              ),
               ButtonSegment<String>(
                 value: QbConnectionConfig.backendEmbedded,
                 label: Text(t.video_setting_torrent_backend_embedded),
+              ),
+              ButtonSegment<String>(
+                value: QbConnectionConfig.backendQbittorrent,
+                label: Text(t.video_setting_torrent_backend_qb),
               ),
             ],
             selected: backend,

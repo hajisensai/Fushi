@@ -32,6 +32,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/platform/desktop/windows_process_query.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 
 /// 进程级「用户手填代理」读取器——[applyAppProxy] 不显式传 `userProxy` 时的取值来源。
 ///
@@ -58,7 +59,9 @@ String Function() appUserProxyReader = () => '';
 /// 公开（非 @visibleForTesting）：除测试外，设置页输入框也实时调用它做格式校验
 /// （`settings_schema_system.dart`），故是真实生产 API。
 String? normalizeUserProxyHostPort(String raw) {
-  String value = raw.trim();
+  // 先折全角：下面按 `://` `/` `:` 逐段拆，全角标点会让 scheme 剥不掉、
+  // host 与 port 也分不开，最终整串被判非法（BUG-1807）。
+  String value = normalizeUrlInput(raw);
   if (value.isEmpty) return null;
   // 剥可选 scheme 前缀（大小写不敏感）。
   for (final String scheme in const <String>['https://', 'http://']) {

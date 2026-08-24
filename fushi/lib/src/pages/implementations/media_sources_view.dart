@@ -41,6 +41,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -1539,7 +1540,9 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     final String key = _keyController.text.trim();
     if (_isWebDav) {
       // WebDAV：URL 既是连接目标也是来源 rootPath；host/port 仅供列表展示，从 URL 派生。
-      final String url = _urlController.text.trim();
+      // 归一化必须在这里做而不是只靠输入框的 url 键盘：这串 url 会原样存进
+      // remotePath，粘贴进来的全角会被一起存下去，之后每次连接都用错的地址。
+      final String url = normalizeUrlInput(_urlController.text);
       final Uri u = Uri.tryParse(url) ?? Uri();
       Navigator.pop(
         context,
@@ -1560,7 +1563,9 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
       context,
       _NetworkSourceResult(
         transport: _transport,
-        host: _hostController.text.trim(),
+        // 主机名同样折全角：FTP/SFTP 的 host 常是 `ssh.example.com` 或局域网 IP，
+        // 中文输入法把点转成句号后会原样存库（BUG-1807）。
+        host: normalizeUrlInput(_hostController.text),
         port: _port,
         username: _userController.text.trim(),
         remotePath: _pathController.text.trim(),
@@ -1607,6 +1612,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                   controller: _urlController,
                   labelText: t.sync_webdav_url,
                   hintText: 'https://dav.example.com/dav/books',
+                  keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -1615,6 +1621,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                   controller: _hostController,
                   labelText: t.sync_host,
                   hintText: _isSftp ? 'ssh.example.com' : 'ftp.example.com',
+                  keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 12),
                 FushiTextField(

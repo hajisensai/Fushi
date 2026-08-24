@@ -117,6 +117,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_page_animation',
   'manga_reading_direction',
   'manga_spread_preference',
+  'manga_tap_to_ocr',
+  'manga_tap_to_ocr_notice_shown',
   'manga_tap_zone_paging',
   'manga_volume_key_paging',
   'manga_zoom_percent',

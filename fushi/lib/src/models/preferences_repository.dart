@@ -2386,6 +2386,31 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 漫画阅读器「点一下没识别的对话框就地开跑 OCR」。
+  ///
+  /// 默认开：这条路径存在的全部意义就是让用户不必先去点识别模式。关掉它等于
+  /// 回到旧行为（空白点只回收焦点），给不希望被动触发联网/耗电的人留后路。
+  bool get mangaTapToOcr =>
+      getPref('manga_tap_to_ocr', defaultValue: true) as bool;
+
+  Future<void> setMangaTapToOcr(bool value) async {
+    await setPref('manga_tap_to_ocr', value);
+    notifyListeners();
+  }
+
+  /// 「点击即识别」的首次说明是否已经给过。
+  ///
+  /// 单独一个键而不是复用 Lens 的上传告知：那条只在 Lens 引擎下出现，而本次要
+  /// 说的是「你这一点会触发一次识别、用的是你在设置里选的哪个引擎」——两件事，
+  /// 只是恰好在 Lens 下会前后脚出现。
+  bool get mangaTapToOcrNoticeShown =>
+      getPref('manga_tap_to_ocr_notice_shown', defaultValue: false) as bool;
+
+  Future<void> setMangaTapToOcrNoticeShown(bool value) async {
+    await setPref('manga_tap_to_ocr_notice_shown', value);
+    notifyListeners();
+  }
+
   String get mangaSpreadPreference =>
       getPref('manga_spread_preference', defaultValue: 'auto') as String;
 

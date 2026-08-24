@@ -1,13 +1,21 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置区「漫画 OCR」组的正文（隶属**漫画**设置分类）。
@@ -31,6 +39,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.enginePreferenceSetter,
     this.lensLanguageGetter,
     this.lensLanguageSetter,
+    this.modelsDirProvider,
+    this.modelImporter,
+    this.pickImportPaths,
+    this.systemOcrRunner,
     super.key,
   });
 
@@ -54,6 +66,19 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// Google Lens 识别语言偏好读写（可选：省略时下拉不出现）。
   final String Function()? lensLanguageGetter;
   final Future<void> Function(String value)? lensLanguageSetter;
+
+  /// 手动导入的落地目录；null = 真实模型目录。
+  final Future<Directory> Function()? modelsDirProvider;
+
+  /// 手动导入器；null = 真实清单的 [MangaOcrModelImporter]。
+  final MangaOcrModelImporter? modelImporter;
+
+  /// 导入来源选择注入口（测试用）：`folderMode` 为真表示用户选了「选择文件夹」。
+  /// null = 走真实系统选择器。返回 null / 空表示用户取消。
+  final Future<List<String>?> Function(bool folderMode)? pickImportPaths;
+
+  /// 系统 OCR 可用性探测；null = 走真实平台通道。
+  final SystemOcrMangaRunner? systemOcrRunner;
 
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
@@ -84,6 +109,12 @@ class _MangaOcrSettingsSectionState
 
   bool _deleting = false;
 
+  /// 手动导入态（导入期间禁用下载/删除，避免两条路径同时动同一批文件）。
+  bool _importing = false;
+
+  /// 本机有没有系统自带 OCR。默认 false：未探测出结果之前不假装可用。
+  bool _systemOcrAvailable = false;
+
   // 外部探测态。
   bool _probing = false;
   String? _probeResult;
@@ -104,6 +135,7 @@ class _MangaOcrSettingsSectionState
     } else {
       _loadingStatus = false;
     }
+    unawaited(_probeSystemOcr());
   }
 
   @override
@@ -150,6 +182,22 @@ class _MangaOcrSettingsSectionState
     await widget.lensLanguageSetter?.call(language);
   }
 
+  /// 探测系统 OCR 是否可用（决定下拉里那一项是否置灰）。
+  ///
+  /// 失败一律当成不可用：这个探测只是决定一个选项灰不灰，为它弹错误提示纯属
+  /// 噪音。
+  Future<void> _probeSystemOcr() async {
+    bool available = false;
+    try {
+      available = await (widget.systemOcrRunner ?? SystemOcrMangaService())
+          .isAvailable();
+    } catch (_) {
+      available = false;
+    }
+    if (!mounted) return;
+    setState(() => _systemOcrAvailable = available);
+  }
+
   Future<void> _loadStatus() async {
     setState(() => _loadingStatus = true);
     MangaOcrModelStatus? status;
@@ -172,6 +220,7 @@ class _MangaOcrSettingsSectionState
       _receivedByFile.values.fold<int>(0, (int a, int b) => a + b);
 
   void _startDownload() {
+    if (_importing) return;
     setState(() {
       _downloading = true;
       _downloadingFile = null;
@@ -253,6 +302,213 @@ class _MangaOcrSettingsSectionState
       severity: ToastSeverity.success,
     );
     await _loadStatus();
+  }
+
+  // ── 手动导入模型 ─────────────────────────────────────────────────────
+  //
+  // 470 MB 走 huggingface 直连，在部分网络下是「连不上」而不是「慢」。下载器的
+  // 镜像回退覆盖大多数这类用户，这条路径是给连镜像也不通的人留的最后一扇门：
+  // 文件他们能用别的手段拿到，缺的只是把文件交给 app 的入口。
+
+  Future<Directory> _modelsDir() {
+    final Future<Directory> Function()? provider = widget.modelsDirProvider;
+    if (provider != null) {
+      return provider();
+    }
+    return MangaOcrServiceImpl.defaultMangaOcrModelsDir();
+  }
+
+  /// 导入入口对话框：**先说要哪些文件，再给选择器**。
+  ///
+  /// 顺序不能反。用户点进来时最缺的信息不是「怎么选文件」，而是「到底要哪几个
+  /// 文件、各多大」；直接弹系统选择器等于让人回去猜，猜错了就是又一次几百 MB
+  /// 的白费功夫。
+  Future<void> _showImportDialog() async {
+    final bool? folderMode = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final ThemeData dialogTheme = Theme.of(ctx);
+        return AlertDialog(
+          title: Text(t.manga_ocr_import_title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(t.manga_ocr_import_intro),
+                const SizedBox(height: 12),
+                for (final MangaOcrModelFile model in kMangaOcrModelManifest)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${model.fileName} · ${_formatBytes(model.expectedBytes)}',
+                      style: dialogTheme.textTheme.bodySmall,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => unawaited(_copyModelUrls()),
+                    icon: const Icon(Icons.link, size: 18),
+                    label: Text(t.manga_ocr_import_copy_urls),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t.dialog_cancel),
+            ),
+            TextButton(
+              key: const ValueKey<String>('manga_ocr_import_pick_files'),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t.manga_ocr_import_pick_files),
+            ),
+            FilledButton(
+              key: const ValueKey<String>('manga_ocr_import_pick_folder'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.manga_ocr_import_pick_folder),
+            ),
+          ],
+        );
+      },
+    );
+    if (folderMode == null || !mounted) return;
+    await _runImport(folderMode: folderMode);
+  }
+
+  /// 复制全部候选下载链接（主源 + 镜像）。
+  ///
+  /// 给的是候选序列而不是单条主源：会走到这个入口的用户，多半正是主源连不上的
+  /// 那批人，只给主源等于什么都没给。
+  Future<void> _copyModelUrls() async {
+    final StringBuffer buffer = StringBuffer();
+    for (final MangaOcrModelFile model in kMangaOcrModelManifest) {
+      for (final String url in mangaOcrModelUrlCandidates(model)) {
+        buffer.writeln(url);
+      }
+    }
+    await Clipboard.setData(ClipboardData(text: buffer.toString()));
+    FushiToast.show(
+      msg: t.manga_ocr_import_urls_copied,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  Future<void> _runImport({required bool folderMode}) async {
+    if (_importing || _downloading) return;
+    final List<String>? paths = await _pickImportPaths(folderMode);
+    if (paths == null || paths.isEmpty || !mounted) return;
+
+    setState(() => _importing = true);
+    MangaOcrModelImportResult? result;
+    Object? failure;
+    try {
+      final MangaOcrModelImporter importer =
+          widget.modelImporter ?? MangaOcrModelImporter();
+      result = await importer.import(
+        sourcePaths: paths,
+        targetDir: await _modelsDir(),
+      );
+    } on Object catch (error) {
+      failure = error;
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+    if (!mounted) return;
+    if (result == null) {
+      FushiToast.show(
+        msg: '${t.manga_ocr_import_failed}: $failure',
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    _reportImport(result);
+    await _loadStatus();
+  }
+
+  Future<List<String>?> _pickImportPaths(bool folderMode) async {
+    final Future<List<String>?> Function(bool)? injected =
+        widget.pickImportPaths;
+    if (injected != null) {
+      return injected(folderMode);
+    }
+    if (folderMode) {
+      // 安卓走 SAF 真实路径封装：file_picker 的 tree URI 串喂不进 dart:io。
+      final String? dir = await pickRealDirectoryPath(
+        context: context,
+        appModel: ref.read(appProvider),
+      );
+      return dir == null ? null : <String>[dir];
+    }
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.any,
+    );
+    if (picked == null) {
+      return null;
+    }
+    return picked.files
+        .map((PlatformFile file) => file.path)
+        .whereType<String>()
+        .toList();
+  }
+
+  /// 把导入结果讲清楚：**成功了几个、为什么拒了、还差几个**。
+  ///
+  /// 一条 toast 说完而不是弹三次：这三件事对用户是同一个答案的三个部分，拆开
+  /// 只会让人看完最后一条忘了第一条。
+  void _reportImport(MangaOcrModelImportResult result) {
+    final List<String> lines = <String>[];
+    if (result.imported.isNotEmpty) {
+      lines.add(t.manga_ocr_import_done(count: result.imported.length));
+    }
+    if (result.matchedNothing) {
+      lines.add(t.manga_ocr_import_matched_nothing);
+    }
+    for (final MangaOcrModelImportRejection rejection in result.rejected) {
+      if (rejection.reason != MangaOcrModelImportRejectReason.sizeMismatch) {
+        continue;
+      }
+      lines.add(t.manga_ocr_import_size_mismatch(
+        file: rejection.source,
+        expected: _formatBytes(rejection.expectedBytes ?? 0),
+        actual: _formatBytes(rejection.actualBytes ?? 0),
+      ));
+    }
+    if (!result.allReady && !result.matchedNothing) {
+      lines.add(
+        t.manga_ocr_import_still_missing(count: result.stillMissing.length),
+      );
+    }
+    if (lines.isEmpty) {
+      return;
+    }
+    FushiToast.show(
+      msg: lines.join('\n'),
+      severity: result.allReady
+          ? ToastSeverity.success
+          : (result.changed ? ToastSeverity.warning : ToastSeverity.error),
+    );
+  }
+
+  /// 「导入本地模型」按钮：下载中/导入中禁用（两条路径会动同一批文件）。
+  Widget _importButton() {
+    return TextButton.icon(
+      key: const ValueKey<String>('manga_ocr_import_button'),
+      onPressed:
+          (_importing || _downloading) ? null : () => unawaited(_showImportDialog()),
+      icon: _importing
+          ? const SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.drive_folder_upload_outlined, size: 18),
+      label: Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import),
+    );
   }
 
   Future<void> _detectExternal() async {
@@ -370,6 +626,15 @@ class _MangaOcrSettingsSectionState
         label: t.manga_ocr_engine_local_onnx,
         description: t.manga_ocr_engine_local_onnx_desc,
         enabled: widget.service.isSupportedPlatform,
+      ),
+      // 设备自带识别：装完即用、零下载、零上传。排在本地模型之后是因为它对
+      // 竖排气泡和手写体明显更弱——描述里如实写出来，别让用户以为捡到便宜。
+      // 与其他项同构：恒保留、由 _systemOcrAvailable 决定是否置灰。
+      _EngineOption(
+        preference: MangaOcrEnginePreference.systemOcr,
+        label: t.manga_ocr_engine_system,
+        description: t.manga_ocr_engine_system_desc,
+        enabled: _systemOcrAvailable,
       ),
       _EngineOption(
         preference: MangaOcrEnginePreference.googleLens,
@@ -540,10 +805,17 @@ class _MangaOcrSettingsSectionState
         _inset(
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: _startDownload,
-              icon: const Icon(Icons.download_outlined, size: 18),
-              label: Text(t.manga_ocr_download),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: _importing ? null : _startDownload,
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: Text(t.manga_ocr_download),
+                ),
+                _importButton(),
+              ],
             ),
           ),
         ),
@@ -551,7 +823,10 @@ class _MangaOcrSettingsSectionState
     );
   }
 
-  /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除。
+  /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除 + 给继续导入。
+  ///
+  /// 导入入口在这里不是可有可无：「磁盘上有残留但模型不全」最常见的来源恰恰是
+  /// 「导入/下载到一半」，只给删除等于让这些人把已经搬进来的几百 MB 先删掉重来。
   Widget _buildOrphanModelBlock(ThemeData theme, MangaOcrModelStatus status) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -568,7 +843,14 @@ class _MangaOcrSettingsSectionState
         _inset(
           Align(
             alignment: Alignment.centerLeft,
-            child: _deleteButton(),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: <Widget>[
+                _deleteButton(),
+                _importButton(),
+              ],
+            ),
           ),
         ),
       ],
@@ -626,10 +908,24 @@ class _MangaOcrSettingsSectionState
               alignment: Alignment.centerLeft,
               child: ready
                   ? _deleteButton()
-                  : FilledButton.icon(
-                      onPressed: _startDownload,
-                      icon: const Icon(Icons.download_outlined, size: 18),
-                      label: Text(t.manga_ocr_download),
+                  : Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: <Widget>[
+                        FilledButton.icon(
+                          onPressed: _importing ? null : _startDownload,
+                          icon: const Icon(Icons.download_outlined, size: 18),
+                          // 「继续下载」不是新能力：下载器一直有 Range 续传。
+                          // 文案分叉只是把已有能力说出来——用户取消或断网后看到
+                          // 的若还是「下载模型」，就会以为那几百 MB 白下了。
+                          label: Text(
+                            (status?.hasResumableDownload ?? false)
+                                ? t.manga_ocr_download_resume
+                                : t.manga_ocr_download,
+                          ),
+                        ),
+                        _importButton(),
+                      ],
                     ),
             ),
           ),
@@ -664,11 +960,18 @@ class _MangaOcrSettingsSectionState
     if (status.allReady) {
       return usage;
     }
-    final String? needed = status.totalBytes > 0
-        ? t.manga_ocr_model_download_size(
-            size: _formatBytes(status.totalBytes),
-          )
-        : null;
+    // 有半成品就直接给「已下 / 共」的绝对进度，而不是干巴巴一句「需下载
+    // 470 MB」——后者在下过一半的用户眼里等于「刚才那趟没算数」。
+    final String? needed = status.totalBytes <= 0
+        ? null
+        : status.obtainedBytes > 0
+            ? t.manga_ocr_download_total_progress(
+                done: _formatBytes(status.obtainedBytes),
+                total: _formatBytes(status.totalBytes),
+              )
+            : t.manga_ocr_model_download_size(
+                size: _formatBytes(status.totalBytes),
+              );
     final String joined =
         <String?>[usage, needed].whereType<String>().join(' · ');
     return joined.isEmpty ? null : joined;

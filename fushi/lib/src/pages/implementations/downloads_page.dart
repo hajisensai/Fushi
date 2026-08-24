@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
-
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -10,6 +8,7 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
+import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
@@ -122,7 +121,20 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     });
   }
 
-  Widget _buildResourceTab(BuildContext tabContext) {
+  /// 「后端没配好」空态的动作：就地弹配置引导，配完重算前置条件——与
+  /// [_addVideoSource] 同一姿态，不把用户支去设置 tab 再走回来。
+  Future<void> _openBackendSetup() async {
+    final bool done = await promptDownloadBackendSetup(
+      context: context,
+      appModel: ref.read(appProvider),
+    );
+    if (!mounted || !done) return;
+    setState(() {
+      _resourceDependencies = _loadResourceDependencies();
+    });
+  }
+
+  Widget _buildResourceTab() {
     return FutureBuilder<_DownloadsResourceState>(
       future: _resourceDependencies,
       builder: (
@@ -144,13 +156,14 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 label: t.download_add_video_source,
                 onPressed: _addVideoSource,
               ),
+            // 空态动作直接开配置引导（同 [_addVideoSource] 的就地补齐姿态）：
+            // 「后端没配」缺的就是那三两个字段，不该把用户支到整页设置里找。
             DownloadsResourceNoBackend(detail: final String? detail) =>
               _buildResourceGate(
                 message: detail ?? t.download_backend_not_configured,
-                icon: Icons.settings_outlined,
-                label: t.download_open_settings,
-                onPressed: () =>
-                    DefaultTabController.of(tabContext).animateTo(3),
+                icon: Icons.download_outlined,
+                label: t.download_backend_setup_start,
+                onPressed: _openBackendSetup,
               ),
           };
         }
@@ -210,65 +223,46 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     );
   }
 
-  /// 统一门头：分段条（资源 / 任务 / 订阅 / 设置）作页头主位 + 页头动作，与其余
-  /// 顶层库页同构。分段条选中态跟随 [TabController]（横滑切页后高亮同步），点段
-  /// 走 animateTo；独立 push 进来（无 home 壳）时在 leading 位保留返回按钮——
-  /// 旧 AppBar 的自动返回键由这里承接。
+  /// 统一门头：分区导航（资源 / 任务 / 订阅 / 设置）作页头主位 + 页头动作，与其余
+  /// 顶层库页同构；独立 push 进来（无 home 壳）时在 leading 位保留返回按钮——旧
+  /// AppBar 的自动返回键由这里承接。
+  ///
+  /// 走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动 [TabBarView]，
+  /// 交给导航组件共用那一个即可。此前这里是「分段条镜像 controller」——外面套
+  /// [AnimatedBuilder] 读 index、点段回调 animateTo，两处都只是把 controller 的状态
+  /// 抄一遍；抄出来的指示器在横滑 TabBarView 时只能在越过一半时跳一下，共用同一个
+  /// controller 才跟手连续滑动。
   Widget _buildHeader(BuildContext tabContext) {
-    final TabController tabController = DefaultTabController.of(tabContext);
     final bool canPop = Navigator.of(context).canPop();
-    return AnimatedBuilder(
-      animation: tabController,
-      builder: (BuildContext context, _) {
-        final int index = tabController.index;
-        void select(int value) {
-          if (value != tabController.index) tabController.animateTo(value);
-        }
-
-        return FushiPageHeader.customTitle(
-          leading: canPop
-              ? FushiIconButton(
-                  icon: Icons.arrow_back,
-                  tooltip: t.back,
-                  onTap: () => Navigator.of(context).maybePop(),
-                )
-              : null,
-          title: FushiAdjustableSegmented<int>(
-            values: const <int>[0, 1, 2, 3],
-            selected: index,
-            onChanged: select,
-            focusIdPrefix: 'downloads-tab',
-            focusId: const FushiFocusId('downloads-tab-sections'),
-            child: FushiSegmentedStrip<int>(
-              segments: <ButtonSegment<int>>[
-                ButtonSegment<int>(
-                  value: 0,
-                  label: Text(t.download_resources_tab),
-                ),
-                ButtonSegment<int>(value: 1, label: Text(t.download_tasks_tab)),
-                ButtonSegment<int>(
-                  value: 2,
-                  label: Text(t.download_subscriptions_tab),
-                ),
-                ButtonSegment<int>(value: 3, label: Text(t.settings)),
-              ],
-              selected: index,
-              onChanged: select,
-            ),
-          ),
-          // 页头动作只留「添加任务」（2026-08-21 用户点名）：旧「放送日历」
-          // 「在线目录」入口都不是下载动作，前者迁往发现页（独立改造），后者
-          // 在漫画库页「浏览」视图仍然可达。
-          actions: <Widget>[
-            FushiIconButton(
-              icon: Icons.add,
-              tooltip: t.download_task_add,
-              label: t.download_task_add,
-              onTap: _openManualTaskDialog,
-            ),
-          ],
-        );
-      },
+    return FushiPageHeader.customTitle(
+      leading: canPop
+          ? FushiIconButton(
+              icon: Icons.arrow_back,
+              tooltip: t.back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
+      title: LibrarySectionTabs<int>.controlled(
+        tabs: <LibrarySectionTab<int>>[
+          LibrarySectionTab<int>(value: 0, label: t.download_resources_tab),
+          LibrarySectionTab<int>(value: 1, label: t.download_tasks_tab),
+          LibrarySectionTab<int>(value: 2, label: t.download_subscriptions_tab),
+          LibrarySectionTab<int>(value: 3, label: t.settings),
+        ],
+        controller: DefaultTabController.of(tabContext),
+        focusIdPrefix: 'downloads-tab',
+      ),
+      // 页头动作只留「添加任务」（2026-08-21 用户点名）：旧「放送日历」
+      // 「在线目录」入口都不是下载动作，前者迁往发现页（独立改造），后者
+      // 在漫画库页「浏览」视图仍然可达。
+      actions: <Widget>[
+        FushiIconButton(
+          icon: Icons.add,
+          tooltip: t.download_task_add,
+          label: t.download_task_add,
+          onTap: _openManualTaskDialog,
+        ),
+      ],
     );
   }
 
@@ -310,7 +304,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                   Expanded(
                     child: TabBarView(
                       children: <Widget>[
-                        _buildResourceTab(tabContext),
+                        _buildResourceTab(),
                         // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                         // 统一下载中心的同屏任务视图。
                         //

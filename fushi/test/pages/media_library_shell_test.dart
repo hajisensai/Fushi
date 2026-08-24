@@ -92,14 +92,14 @@ void main() {
     WidgetTester tester,
     MediaLibraryViewKind kind,
   ) async {
-    final FushiSegmentedStrip<MediaLibraryViewKind> strip = tester.widget(
-      find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
+    final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
+      find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
     );
-    strip.onChanged(kind);
+    strip.onChanged!(kind);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('分段条包在 FushiAdjustableSegmented 里（裸 SegmentedButton 即转红）',
+  testWidgets('分区导航包在 FushiAdjustableSegmented 里（裸 TabBar 即转红）',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
       spec(0, MediaLibraryViewKind.library, '书架'),
@@ -110,14 +110,14 @@ void main() {
     expect(
       find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
       findsOneWidget,
-      reason: '方向焦点控制器只遍历已注册 target；裸 SegmentedButton 会被整个跳过，'
+      reason: '方向焦点控制器只遍历已注册 target；裸 TabBar 会被整个跳过，'
           '手柄/键盘用户切不了视图',
     );
-    // 且它必须真的包着本壳的分段条（不是树里别处碰巧有一个）。
+    // 且它必须真的包着本壳的分区导航（不是树里别处碰巧有一个）。
     expect(
       find.descendant(
         of: find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
-        matching: find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
+        matching: find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
       ),
       findsOneWidget,
     );

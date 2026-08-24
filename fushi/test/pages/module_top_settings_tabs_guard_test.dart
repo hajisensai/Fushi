@@ -11,14 +11,14 @@ bool _containsCode(String source, String needle) =>
 
 /// 下载页的「设置」顶部段。
 ///
-/// PR#820 把下载页门头从 `AppBar + TabBar` 换成与库页同构的
-/// `FushiPageHeader.customTitle` + `FushiSegmentedStrip`，承载形态从
-/// `Tab(text: …)` 变成 `ButtonSegment(value: …, label: Text(…))`。守卫要守的
-/// **行为**没变（设置是常驻的第四个顶部段，不是临时齿轮模式），锚点跟着搬到
-/// 新形态即可——别因为形态换了就把断言删掉。
+/// 承载形态换过三次：`Tab(text: …)` → PR#820 与库页同构的
+/// `ButtonSegment(value: …, label: Text(…))` → 2026-08-24 库页顶栏改走 MD3 tabs 后的
+/// `LibrarySectionTab(value: …, label: …)`。守卫要守的**行为**三次都没变（设置是常驻的
+/// 第四个顶部段，不是临时齿轮模式），锚点跟着搬到新形态即可——别因为形态换了就把断言
+/// 删掉。
 bool _hasSettingsSegment(String source) => RegExp(
-      r'\bButtonSegment<int>\s*\(\s*value:\s*3\s*,\s*'
-      r'label:\s*Text\s*\(\s*t\.settings\s*\)\s*\)',
+      r'\bLibrarySectionTab<int>\s*\(\s*value:\s*3\s*,\s*'
+      r'label:\s*t\.settings\s*\)',
     ).hasMatch(_code(source));
 
 bool _hasFullWidthTorrentSettings(String source) => RegExp(
@@ -33,7 +33,7 @@ void main() {
 // kind: MediaLibraryViewKind.settings
 /* value: GameSection.settings
 value: VideoLibrarySection.settings
-ButtonSegment<int>(value: 3, label: Text(t.settings))
+LibrarySectionTab<int>(value: 3, label: t.settings)
 TorrentSettingsSection(constrainWidth: false)
 */
 ''';
@@ -62,7 +62,7 @@ const String decoy = '''
 kind: MediaLibraryViewKind.settings
 value: GameSection.settings
 value: VideoLibrarySection.settings
-ButtonSegment<int>(value: 3, label: Text(t.settings))
+LibrarySectionTab<int>(value: 3, label: t.settings)
 TorrentSettingsSection(constrainWidth: false)
 ''';
 """;
@@ -123,10 +123,10 @@ TorrentSettingsSection(constrainWidth: false)
 
     final String downloadsCode = _code(downloads);
     final int subscriptions = downloadsCode.indexOf(
-      'Text(t.download_subscriptions_tab)',
+      'label: t.download_subscriptions_tab',
     );
     final Match? settings = RegExp(
-      r'label:\s*Text\s*\(\s*t\.settings\s*\)',
+      r'label:\s*t\.settings\b',
     ).firstMatch(downloadsCode);
     expect(subscriptions, greaterThanOrEqualTo(0));
     expect(settings, isNotNull);

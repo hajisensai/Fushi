@@ -944,12 +944,10 @@ String _mangaGestureJs({
     rescanEl.style.width = Math.abs(x - rescanStart.x) + 'px';
     rescanEl.style.height = Math.abs(y - rescanStart.y) + 'px';
   }
-  function _rescanFinish(x, y){
-    var start = rescanStart;
-    _rescanClear();
-    if (!start) return;
-    if (Math.abs(x - start.x) < 8 || Math.abs(y - start.y) < 8) return;
-    var cx = (start.x + x) / 2, cy = (start.y + y) / 2;
+  // 视口坐标 → 落在哪一页 + 该页的像素换算器。框选松手与「点击处按需识别」
+  // 用的是同一套几何：spread 跨页时以给定点判定落页，坐标 clamp 进该页。
+  // 两处各写一遍的话，迟早有一处在 spread/缩放下算错而另一处没错。
+  function _pageAt(cx, cy){
     var pages = document.querySelectorAll('.manga-page');
     var target = null, tr = null;
     for (var i = 0; i < pages.length; i++) {
@@ -960,22 +958,40 @@ String _mangaGestureJs({
         break;
       }
     }
-    if (!target || tr.width <= 0 || tr.height <= 0) return;
+    if (!target || tr.width <= 0 || tr.height <= 0) return null;
     var pw = parseFloat(target.getAttribute('data-pw')) || 0;
     var ph = parseFloat(target.getAttribute('data-ph')) || 0;
-    if (pw <= 0 || ph <= 0) return;
-    var pageIndex = parseInt(target.getAttribute('data-page'), 10) || 0;
-    function toPx(v){ return Math.min(pw, Math.max(0, (v - tr.left) / tr.width * pw)); }
-    function toPy(v){ return Math.min(ph, Math.max(0, (v - tr.top) / tr.height * ph)); }
+    if (pw <= 0 || ph <= 0) return null;
+    return {
+      el: target,
+      rect: tr,
+      pw: pw,
+      ph: ph,
+      pageIndex: parseInt(target.getAttribute('data-page'), 10) || 0,
+      toPx: function(v){
+        return Math.min(pw, Math.max(0, (v - tr.left) / tr.width * pw));
+      },
+      toPy: function(v){
+        return Math.min(ph, Math.max(0, (v - tr.top) / tr.height * ph));
+      }
+    };
+  }
+  function _rescanFinish(x, y){
+    var start = rescanStart;
+    _rescanClear();
+    if (!start) return;
+    if (Math.abs(x - start.x) < 8 || Math.abs(y - start.y) < 8) return;
+    var page = _pageAt((start.x + x) / 2, (start.y + y) / 2);
+    if (!page) return;
     RESCAN = false;
     var b = _bridge();
     if (!b) return;
     b.callHandler('onMangaBoxSelected', JSON.stringify({
-      pageIndex: pageIndex,
-      left: toPx(Math.min(start.x, x)),
-      top: toPy(Math.min(start.y, y)),
-      right: toPx(Math.max(start.x, x)),
-      bottom: toPy(Math.max(start.y, y))
+      pageIndex: page.pageIndex,
+      left: page.toPx(Math.min(start.x, x)),
+      top: page.toPy(Math.min(start.y, y)),
+      right: page.toPx(Math.max(start.x, x)),
+      bottom: page.toPy(Math.max(start.y, y))
     }));
   }
   document.addEventListener('pointermove', function(e){
@@ -1289,8 +1305,23 @@ String _mangaGestureJs({
     var zone = _tapZoneTurn(x);
     if (zone) { b.callHandler('onMangaTurn', zone); return; }
     // 裸图 / 尚未完成 OCR 的区域不打开大图，继续留在阅读器。
-    b.callHandler('onTapEmpty');
+    //
+    // 但空白点不再是纯 no-op：带上「点在哪一页、该页有没有文字层」，Dart 侧据此
+    // 决定要不要就地开跑 OCR。判据是**该页有没有 .ocr-box**，不是「这一点没命中
+    // 文字」——已识别的页面上点空隙本来就该什么都不做，那不是缺 OCR。
+    var page = _pageAt(x, y);
+    b.callHandler('onTapEmpty', JSON.stringify(page ? {
+      pageIndex: page.pageIndex,
+      x: x,
+      y: y,
+      hasOcr: page.el.querySelector('.ocr-box') !== null
+    } : {}));
   }
+  // Dart 在按需 OCR 落地该页文字层之后回放原点击点，把「点一下 → 识别 → 查词」
+  // 接成一次操作。找不到字就静默——用户可能已经翻页或点的本就是空白。
+  window.__mangaTapLookupAt = function(x, y){
+    try { return _selectOcrChar(x, y, false); } catch (e) { return false; }
+  };
   function _end(x, y){
     // 无配对 pointerdown（has=false）：合成事件或捕获丢失，没有位移可判 swipe →
     // 只能是 tap，直接走 tap 路径（不丢选词）。

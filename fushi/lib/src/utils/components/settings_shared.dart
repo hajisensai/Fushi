@@ -870,7 +870,53 @@ const double _kSegmentNarrowGlyphWidthFactor = 0.62;
 
 /// Estimated advance width of [label] (logical pixels) at [scaledFont],
 /// classifying each rune as wide (CJK/fullwidth, >= U+1100) or narrow.
-double _segmentLabelContentWidth(String label, double scaledFont) {
+double _segmentLabelContentWidth(String label, double scaledFont) =>
+    estimateLabelAdvanceWidth(
+      label: label,
+      fontSize: scaledFont,
+      textScaleFactor: 1.0,
+    );
+
+/// 估算一排 MD3 tab（库页顶栏 [LibrarySectionTabs]）按各自文案取宽时的自然总宽
+/// （逻辑像素）。[horizontalPaddingPerTab] 是单侧 label 内边距。
+///
+/// 逐段求和，不是「段数 × 最宽段」——后者是等宽分段条 [estimateSegmentedStripWidth]
+/// 的算法，tab 各自取宽，用错会高估近一倍。
+///
+/// 字号 / 文字缩放在这里就地取自 tokens 与 [MediaQuery]，调用点不再重复那三行样板，
+/// 也不必自己碰 `fontSize`——顶栏字号是共享组件层的决策，页面侧不该重开。
+double estimateSectionTabBarWidth(
+  BuildContext context,
+  List<String> labels, {
+  required double horizontalPaddingPerTab,
+}) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
+  final double textScaleFactor = MediaQuery.textScalerOf(context).scale(1);
+  double total = 0.0;
+  for (final String label in labels) {
+    total += estimateLabelAdvanceWidth(
+          label: label,
+          fontSize: fontSize,
+          textScaleFactor: textScaleFactor,
+        ) +
+        horizontalPaddingPerTab * 2;
+  }
+  return total;
+}
+
+/// 一段标签文案的估算横向进距（逻辑像素），CJK / 全角按 1em、其余按 0.62em。
+///
+/// Build 期可算（只依赖文案 / 字号 / 文字缩放，不依赖布局），供两类顶栏控件共用：
+/// [segmentedStripCellWidth]（分段条的等宽单元格）与库页顶栏 [LibrarySectionTabs]
+/// 的 tab 自然宽。两者的换行 / 滚动兜底判据必须出自同一张字宽表，否则同一批文案
+/// 在两个控件上会得出不同的「摆得下吗」结论。
+double estimateLabelAdvanceWidth({
+  required String label,
+  required double fontSize,
+  required double textScaleFactor,
+}) {
+  final double scaledFont = fontSize * textScaleFactor;
   double width = 0.0;
   for (final int rune in label.runes) {
     width += scaledFont *
@@ -1147,12 +1193,15 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
   final AlignmentGeometry alignment;
 
   /// Uniform per-segment width floor (logical pixels), applied only while the
-  /// widened strip still fits its host. Library-page top bars pass
-  /// [kLibrarySectionTabMinSegmentWidth] so all four modules' section tabs read
-  /// as the same control regardless of per-page label lengths (TODO-2937);
-  /// when the floor does not fit, the strip falls back to its natural width,
-  /// then to horizontal scrolling -- the floor never forces a scroll that the
-  /// natural width would avoid.
+  /// widened strip still fits its host. Callers that host several strips in one
+  /// view pass a shared floor so they read as the same control regardless of
+  /// per-strip label lengths; when the floor does not fit, the strip falls back
+  /// to its natural width, then to horizontal scrolling -- the floor never
+  /// forces a scroll that the natural width would avoid.
+  ///
+  /// 库页顶栏曾是本参数最大的消费者（TODO-2937 的统一段宽），2026-08-24 起顶栏改走
+  /// MD3 tabs（[LibrarySectionTabs]），四页观感一致由「同一个控件」保证，不再需要
+  /// 估算出来的等宽下限。
   final double? minSegmentWidth;
 
   @override

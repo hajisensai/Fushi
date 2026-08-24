@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:http/http.dart' as http;
 
 const int kMaximumAidokuRepositoryBytes = 8 * 1024 * 1024;
@@ -67,7 +68,9 @@ class AidokuRepositoryClient {
   final Duration timeout;
 
   static Uri normalizeRepositoryUri(String value) {
-    final String input = value.trim();
+    // 与 Mihon 仓库同族：中文/日文输入法会把 URL 结构字符转成全角，
+    // 其中全角句点还能骗过 hasAuthority。必须在解析前折回半角。
+    final String input = normalizeUrlInput(value);
     if (input.isEmpty || input.length > 2048) {
       throw const AidokuRepositoryException(
         'INVALID_URL',

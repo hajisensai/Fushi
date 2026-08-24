@@ -122,6 +122,12 @@ Future<void> openLocalVideoBook({
 
 enum _AllVideosLayout { grid, list }
 
+/// 卡面标签 chip 的渲染形状（BUG-1808）：本地条目带库里的颜色；互联远端条目 host
+/// 只下发标签**名**（[RemoteVideoInfo.tags]，标签本身每设备本地），同名标签在本机
+/// 存在就借本机颜色，否则 [color] 为 null 走 chip 默认色。归一成同一形状后，本地
+/// 卡与远端卡共用一条渲染路径，不再各画各的。
+typedef _VideoTagChip = ({String label, Color? color});
+
 /// 首页「视频」tab 的内容：已导入视频的库（独立于书架的 EPUB/有声书分区）。
 ///
 /// 仅在实验性视频开关开启时由 [HomePage] 装配进底栏（见 home_page.dart 的
@@ -3323,6 +3329,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           coverHeight: coverHeight,
           onTap: () => _openSlot(target, playlistCollectionId: cid),
           onLongPress: () => _showCollectionContextMenu(collection),
+          tags: _collectionTagChips(cid),
           episodeNumber: targetIndex + 1,
           secondaryText: t.video_home_next_episode_number(n: targetIndex + 1),
           cloudBadge: target.local == null,
@@ -3414,6 +3421,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           coverHeight: coverHeight,
           onTap: () => _openCollectionDetail(collection),
           onLongPress: () => _showCollectionContextMenu(collection),
+          tags: _collectionTagChips(cid),
           episodeNumber: episodeNumber,
           secondaryText: episodeNumber == null
               ? t.video_playlist_episodes(count: allMembers.length)
@@ -3495,6 +3503,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [CoverOrientationBuilder] 探测与卡内封面共用同一 provider 键，零额外解码）。
   /// 底边进度条、集数/「新」/云角标，两行标题 + 溢出 Tooltip（TODO-2490 同款）。
   ///
+  /// [tags] = 该条目已打的用户标签（BUG-1808）：封面左上角 chip 列，与墙卡
+  /// [_buildCard] / 合集墙卡 [_buildCollectionCoverCard] 同一渲染同一位置。视频
+  /// 首页（[VideoLibrarySection.home]）自 series-first 拆分后只剩横滚行、墙格移
+  /// 去「系列 / 全部视频」，标签层若只画在墙卡上，首页就一个标签都看不见。远端
+  /// 占位卡无本地条目、无标签，留空即可。
   Widget _buildRowMediaCard({
     required Key cardKey,
     required FushiFocusId focusId,
@@ -3506,6 +3519,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     double? progressFraction,
     int? episodeNumber,
     String? secondaryText,
+    List<_VideoTagChip> tags = const <_VideoTagChip>[],
     bool newBadge = false,
     bool cloudBadge = false,
   }) {
@@ -3572,6 +3586,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                               _buildPlaylistBadge(episodeNumber),
                           ],
                         ),
+                      ),
+                    // BUG-1808：标签 chip 列（左上，与墙卡 / 合集墙卡同位同形）。
+                    // 右上是「新」/集数角标、右下是云角标，互不重叠；横滚卡是墙
+                    // 内容的快捷镜像、不参与勾选，故无勾选框让位问题。
+                    if (tags.isNotEmpty)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: _buildTagLabels(tags),
                       ),
                     if (cloudBadge)
                       const Positioned(
@@ -3660,6 +3683,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _open(book),
       onLongPress: () => _showVideoMenu(book),
+      tags: _videoBookTagChips(book.bookUid),
       progressFraction: videoWatchFraction(
         completed: book.completedAt != null,
         currentEpisode: book.currentEpisode,
@@ -3706,6 +3730,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ));
       },
       onLongPress: () => _showCollectionContextMenu(collection),
+      tags: _collectionTagChips(collection.id),
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
       episodeNumber: currentIndex + 1,
@@ -3728,6 +3753,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _openRemote(video),
       onLongPress: () => _showRemoteVideoDialog(video),
+      tags: _remoteTagChips(video.tags),
       secondaryText: video.isPlaylist
           ? t.video_playlist_episodes(count: video.episodes.length)
           : t.remote_video_info,
@@ -3747,6 +3773,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _open(book, playlistCollectionId: cid),
       onLongPress: () => _showVideoMenu(book),
+      tags: _videoBookTagChips(book.bookUid),
       episodeNumber: playlistEpisodeCount(book.playlistJson) > 1
           ? book.currentEpisode + 1
           : null,
@@ -3772,6 +3799,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => unawaited(_openRemote(video)),
       onLongPress: () => _showRemoteVideoDialog(video),
+      tags: _remoteTagChips(video.tags),
       episodeNumber: video.isPlaylist ? video.currentEpisode + 1 : null,
       secondaryText: video.isPlaylist
           ? t.video_home_recent_episode_number(n: video.currentEpisode + 1)
@@ -4430,9 +4458,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
   }) {
     final MediaCollectionRow collection = group.collection!;
-    final List<BookTagRow> tags =
-        ref.watch(collectionTagMapProvider).valueOrNull?[collection.id] ??
-            const <BookTagRow>[];
+    final List<_VideoTagChip> tags = _collectionTagChips(collection.id);
     final int memberCount = group.items.length;
     final bool hasRemoteMember = group.items.any(
         (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
@@ -4731,6 +4757,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }) {
     final String safeKey = _safeRemoteKey(video.id);
     final Widget? downloadBadge = _remoteDownloadBadge(video, safeKey);
+    final List<_VideoTagChip> remoteTags = _remoteTagChips(video.tags);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
     return FushiCard(
@@ -4780,12 +4807,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 什么都没发生的占位卡。角标是恒定出口，重进页面照样在。
                 if (downloadBadge != null)
                   Positioned(top: 6, right: 6, child: downloadBadge),
-                // 字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
-                if (video.hasSubtitle)
-                  const Positioned(
+                // 左上一列：远端标签 chip（BUG-1808，host 清单下发标签名）在上、
+                // 字幕角标在下。标签补画前这个角只有字幕角标，两者并成一列后谁都
+                // 不遮谁。字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
+                if (remoteTags.isNotEmpty || video.hasSubtitle)
+                  Positioned(
                     top: 6,
                     left: 6,
-                    child: CoverBadge(icon: Icons.subtitles_outlined),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        if (remoteTags.isNotEmpty) _buildTagLabels(remoteTags),
+                        if (video.hasSubtitle)
+                          const CoverBadge(icon: Icons.subtitles_outlined),
+                      ],
+                    ),
                   ),
                 // TODO-885: 远端播放列表集数角标（与本地卡同款，左下避开右上字幕/下载）。
                 if (video.isPlaylist)
@@ -5645,9 +5682,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String displayTitle = widget.section == VideoLibrarySection.series
         ? (_metadataWorkByBook[book.bookUid]?.title ?? book.title)
         : book.title;
-    final List<BookTagRow> tags =
-        ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
-            const <BookTagRow>[];
+    final List<_VideoTagChip> tags = _videoBookTagChips(book.bookUid);
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     // TODO-1346：视频观看进度分数（null=无可展示进度 → 不画进度条）。
     final double? watchFrac = videoWatchFraction(
@@ -5957,19 +5992,55 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
+  /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
+  /// 写一遍 watch——首页当初漏画标签层，正是因为标签只跟着墙卡那一处写法走。
+  List<_VideoTagChip> _videoBookTagChips(String bookUid) => _tagChipsOf(
+      ref.watch(videoBookTagMapProvider).valueOrNull?[bookUid]);
+
+  /// 合集的用户标签（与 [_videoBookTagChips] 同形，键是 collectionId）。
+  List<_VideoTagChip> _collectionTagChips(int collectionId) => _tagChipsOf(
+      ref.watch(collectionTagMapProvider).valueOrNull?[collectionId]);
+
+  /// 互联远端条目的标签（BUG-1808）：host 清单下发的是标签**名**（标签本身每设备
+  /// 本地，见 [RemoteVideoInfo.tags]），本机有同名标签就借它的颜色，没有就走 chip
+  /// 默认色——远端卡此前一处都没画标签，数据其实一直在清单里。
+  List<_VideoTagChip> _remoteTagChips(List<String> names) {
+    if (names.isEmpty) return const <_VideoTagChip>[];
+    final List<BookTagRow> local =
+        ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
+    final Map<String, int> colorByName = <String, int>{
+      for (final BookTagRow tag in local) tag.name: tag.colorValue,
+    };
+    return <_VideoTagChip>[
+      for (final String name in names)
+        (
+          label: name,
+          color: colorByName[name] == null ? null : Color(colorByName[name]!),
+        ),
+    ];
+  }
+
+  List<_VideoTagChip> _tagChipsOf(List<BookTagRow>? tags) {
+    if (tags == null || tags.isEmpty) return const <_VideoTagChip>[];
+    return <_VideoTagChip>[
+      for (final BookTagRow tag in tags)
+        (label: tag.name, color: Color(tag.colorValue)),
+    ];
+  }
+
   /// 卡片标签层：最多显示前 3 个 chip，超出折叠成「+N」（与书架卡风格一致）。
-  Widget _buildTagLabels(List<BookTagRow> tags) {
+  Widget _buildTagLabels(List<_VideoTagChip> tags) {
     const int maxVisible = 3;
-    final List<BookTagRow> visible = tags.take(maxVisible).toList();
+    final List<_VideoTagChip> visible = tags.take(maxVisible).toList();
     final int overflow = tags.length - visible.length;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        for (final BookTagRow tag in visible)
+        for (final _VideoTagChip chip in visible)
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
-            child: FushiTagChip(label: tag.name, color: Color(tag.colorValue)),
+            child: FushiTagChip(label: chip.label, color: chip.color),
           ),
         if (overflow > 0) FushiTagChip(label: '+$overflow'),
       ],
