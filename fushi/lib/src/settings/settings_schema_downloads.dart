@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
+import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
 
 /// 「下载」一级设置分类（阶段 G，演示新增大类路径）。
@@ -44,19 +45,24 @@ SettingsDestination buildDownloadsDestination() {
               );
             },
           ),
+          // 索引器 / 字幕来源 / 发现来源已迁到「在线服务」分区（第三方凭据一个家，
+          // settings_schema_services.dart）；下载语境里留一条跳转。
+          buildOpenServicesItem('downloads.online_services'),
         ],
       ),
     ],
     // 内联既有 torrent 设置组件（不改写）。包一层 AdaptiveSettingsSection 让它拿到
     // 与其它 section 一致的卡片表面（body 契约：自带 section 布局、不自带脚手架/滚动）。
     // constrainWidth:false —— 下载页那套「560 居中限宽」在设置详情 pane 里会让本组
-    // 左边缘变成 (paneWidth-560)/2，与其它 12 个分类的设置行完全对不齐。
-    // 发现来源开关区跟在外部资源/字幕来源之后：三块「来源开关」（内置视频索引器、
-    // 在线字幕来源、发现来源）因而同屏可比，用户不必去三个页面找同一件事。
+    // 左边缘变成 (paneWidth-560)/2，与其它分类的设置行完全对不齐。
+    // 下载落盘管道（路径映射 / 目标视频来源）是本机配置，跟在后端配置之后；它与
+    // 后端表单是平级兄弟而非嵌套——各自承接同一条 rowHorizontal 基线。
     body: (SettingsContext context) => const AdaptiveSettingsSection(
       children: <Widget>[
         TorrentSettingsSection(constrainWidth: false),
-        DiscoverySourceSettingsSection(),
+        VideoExternalProviderSettingsSection(
+          scope: VideoExternalProviderScope.downloadRouting,
+        ),
       ],
     ),
   );

@@ -11,6 +11,7 @@ import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+import 'package:fushi/utils.dart';
 
 class _FakeStore implements VideoExternalSettingsStore {
   _FakeStore(this.snapshot);
@@ -73,20 +74,33 @@ class _FakeStore implements VideoExternalSettingsStore {
   }
 }
 
-Widget _harness(_FakeStore store, {bool onlySubtitleSources = false}) =>
+/// 生产里三段各挂各的分区（字幕来源 / 资源索引器 → 在线服务，下载落盘 → 下载）；
+/// harness 默认把三段叠在一起，等价于拆分前的全量渲染，跨段用例不必各开一个
+/// 挂载点。每段一个独立 State、共用同一个 fake store。
+Widget _harness(
+  _FakeStore store, {
+  List<VideoExternalProviderScope> scopes = VideoExternalProviderScope.values,
+  double width = 560,
+}) =>
     ProviderScope(
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
         home: Scaffold(
           body: SizedBox(
-            width: 560,
+            width: width,
             child: SingleChildScrollView(
-              child: VideoExternalProviderSettingsSection(
-                // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑 initState /
-                // _load），换 store 的用例会读到上一次的 store。
-                key: ValueKey<bool>(onlySubtitleSources),
-                store: store,
-                onlySubtitleSources: onlySubtitleSources,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (final VideoExternalProviderScope scope in scopes)
+                    VideoExternalProviderSettingsSection(
+                      // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑
+                      // initState / _load），换 store 的用例会读到上一次的 store。
+                      key: ValueKey<String>('$scope@$width#${scopes.length}'),
+                      store: store,
+                      scope: scope,
+                    ),
+                ],
               ),
             ),
           ),
@@ -97,22 +111,12 @@ Widget _harness(_FakeStore store, {bool onlySubtitleSources = false}) =>
 /// 宽窗 harness：原 bug 只在 pane 明显宽于内容宽度时才看得出来——560 的窄
 /// harness 下输入框（旧上限 480）与开关（占满 560）只差 80px，肉眼和断言都容易
 /// 放过；1400 下差距是好几百像素，正是用户截图里的样子。
-Widget _wideHarness(_FakeStore store) => ProviderScope(
-      child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Scaffold(
-          body: SizedBox(
-            width: 1400,
-            child: SingleChildScrollView(
-              child: VideoExternalProviderSettingsSection(
-                key: const ValueKey<String>('wide'),
-                store: store,
-                onlySubtitleSources: true,
-              ),
-            ),
-          ),
-        ),
-      ),
+Widget _wideHarness(_FakeStore store) => _harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+      width: 1400,
     );
 
 Finder _textField(Key key) => find.descendant(
@@ -365,50 +369,127 @@ void main() {
     expect(store.languageWrites.last, 'zh');
   });
 
-  // BUG-1712：字幕来源清单必须两家都在。Jimaku 只在设置 → 视频 → 字幕露过脸，
-  // 下载页那一区只有 OpenSubtitles，用户据此以为 app 不支持 Jimaku。
-  testWidgets('both subtitle providers are editable in either placement',
+  // BUG-1712：字幕来源清单必须两家都在。Jimaku 曾只在设置 → 视频 → 字幕露过脸，
+  // 下载页那一区只有 OpenSubtitles，用户据此以为 app 不支持 Jimaku。现在两家只有
+  // 一个家（在线服务·字幕来源 = subtitleSources 段），且必须并列出现在这一段里。
+  testWidgets('subtitle sources scope lists both providers side by side',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 3200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    for (final bool onlySubtitleSources in <bool>[false, true]) {
-      final _FakeStore store = _FakeStore(
-        const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
-      );
-      await tester.pumpWidget(
-        _harness(store, onlySubtitleSources: onlySubtitleSources),
-      );
-      await tester.pumpAndSettle();
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
+    );
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
 
-      const ValueKey<String> jimakuKeyId =
-          ValueKey<String>('video-jimaku-api-key');
-      final Finder jimakuKey = find.byKey(jimakuKeyId);
-      expect(
-        jimakuKey,
-        findsOneWidget,
-        reason: 'Jimaku must be listed next to OpenSubtitles '
-            '(onlySubtitleSources=$onlySubtitleSources)',
-      );
-      expect(
-        find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('video-subtitle-default-language')),
-        findsOneWidget,
-      );
-      expect(
-        tester.widget<TextField>(_textField(jimakuKeyId)).obscureText,
-        isTrue,
-      );
+    const ValueKey<String> jimakuKeyId =
+        ValueKey<String>('video-jimaku-api-key');
+    final Finder jimakuKey = find.byKey(jimakuKeyId);
+    expect(jimakuKey, findsOneWidget,
+        reason: 'Jimaku must be listed next to OpenSubtitles');
+    expect(
+      find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-default-language')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<TextField>(_textField(jimakuKeyId)).obscureText,
+      isTrue,
+    );
 
-      await _show(tester, jimakuKey);
-      await tester.enterText(jimakuKey, 'typed-key');
-      await _settleAutosave(tester);
-      expect(store.jimakuKeyWrites.last, 'typed-key');
-    }
+    await _show(tester, jimakuKey);
+    await tester.enterText(jimakuKey, 'typed-key');
+    await _settleAutosave(tester);
+    expect(store.jimakuKeyWrites.last, 'typed-key');
+  });
+
+  // 三段互斥：资源索引器段不得再夹带字幕来源，下载落盘段不得夹带索引器——否则
+  // 又回到「同一能力两个家」。
+  testWidgets('scopes render disjoint content', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
+    );
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.resourceSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('video-torznab-add')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+        findsNothing);
+    expect(find.byKey(const ValueKey<String>('video-path-mapping-add')),
+        findsNothing);
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.downloadRouting,
+      ],
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('video-path-mapping-add')),
+        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey<String>('video-torznab-add')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+        findsNothing);
+  });
+
+  // 用户截图：视频设置页里 Jimaku / OpenSubtitles 整块比上一行「刮削后自动补
+  // 字幕」（标准设置行）更靠左——schema 的 SettingsCustomItem 裸渲染不给内边距，
+  // 本组件此前靠宿主 TorrentSettingsSection 补边距，单独挂进分区就贴边了。
+  // 不变式：本段内容左沿 == 设计 token 的 rowHorizontal（与标准设置行同一条基线）。
+  testWidgets('section content sits on the shared row baseline',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 3200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    final Finder content = find.byKey(
+      const ValueKey<VideoExternalProviderScope>(
+        VideoExternalProviderScope.subtitleSources,
+      ),
+    );
+    expect(content, findsOneWidget);
+    final BuildContext context = tester.element(content);
+    final double baseline = FushiDesignTokens.of(context).spacing.rowHorizontal;
+    expect(baseline, greaterThan(0));
+    expect(
+      tester.getTopLeft(content).dx,
+      moreOrLessEquals(baseline, epsilon: 0.5),
+      reason: '内容左沿必须落在 rowHorizontal 基线上，不得贴到宿主左沿',
+    );
+    // 右侧同样留基线：560 上限 + 两侧边距在 800 宽的 pane 里都放得下。
+    expect(
+      tester.getSize(content).width,
+      lessThanOrEqualTo(800 - 2 * baseline + 0.5),
+    );
   });
 
   // BUG-1712：内置 Nyaa 一直在跑（动漫），但设置里一个字都没有，用户看到的是
@@ -505,7 +586,12 @@ void main() {
       const VideoExternalSettingsSnapshot(jimakuApiKey: 'legacy-key'),
     );
 
-    await tester.pumpWidget(_harness(store, onlySubtitleSources: true));
+    await tester.pumpWidget(_harness(
+      store,
+      scopes: const <VideoExternalProviderScope>[
+        VideoExternalProviderScope.subtitleSources,
+      ],
+    ));
     await tester.pumpAndSettle();
 
     final Finder jimaku =

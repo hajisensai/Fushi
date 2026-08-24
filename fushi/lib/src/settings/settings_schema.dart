@@ -14,6 +14,7 @@ import 'package:fushi/src/media/tracking/media_tracking_service.dart'
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
@@ -100,6 +101,9 @@ List<SettingsDestination> _buildDestinations() {
     if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
     buildDownloadsDestination(),
+    // 「在线服务」大类：第三方 API / 索引器 / 媒体服务器凭据的唯一的家，紧跟
+    // 它们喂养的视频/下载之后（详见 buildServicesDestination）。
+    buildServicesDestination(),
     // 「游戏」大类：游戏库 / 捕获工作台 / 诊断的可搜导航入口（仅 Windows，详见
     // buildGameDestination）。
     buildGameDestination(),

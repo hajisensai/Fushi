@@ -19,6 +19,12 @@ enum SettingsDestinationId {
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
   downloads,
+  // 「在线服务」一级分类：第三方 API / 索引器 / 媒体服务器的凭据与端点
+  // （Jimaku、OpenSubtitles、Torznab、内置索引器、发现来源、Jellyfin/Emby、AniDB、
+  // TMDB、Dandanplay 服务器）唯一的家。此前按「服务于哪个媒介」散在视频/下载两
+  // 页，同一组件甚至双挂载；用户配完一处不知道另一处还有（BUG-1712 的真根因）。
+  // 本机后端（qBittorrent）、云盘备份后端、Anki/Yomitan 是各自域的核心，不归此。
+  services,
   // 「游戏」一级分类（审计 K/Phase 3.12）：游戏库 / 捕获工作台 / 兼容性诊断此前
   // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
   // 同门控（仅 Windows，galgame hook 平台边界）。
