@@ -129,6 +129,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_image_quality',
   'module_books_enabled',
   'module_browser_extension_enabled',
+  'module_dictionaries_enabled',
+  'module_downloads_enabled',
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
