@@ -40,7 +40,7 @@ https://github.com/hajisensai/Fushi/releases/latest
 
 ### 1. استيراد القواميس المُوصى بها (قواميس الكلمات + النبر الصوتي + التكرار) والصوت المحلي (قاعدتا بيانات صوتية لليابانية والإنجليزية) (يُوصى به بشدة للمبتدئين!!! · اختياري)
 
-[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [التنزيل عبر Cloudflare (‏9.5 غيغابايت)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing)
 
 داخل التطبيق: الإعدادات -> المزامنة والنسخ الاحتياطي -> اضغط على **استيراد نسخة احتياطية**.
 

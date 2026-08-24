@@ -40,7 +40,7 @@ Gli APK il cui nome inizia con `bridge-` sono ponti di migrazione per gli **uten
 
 ### 1. Importare i dizionari consigliati (dizionari di parole + accento tonale + frequenza) e l'audio locale (database audio giapponese e inglese) (Altamente consigliato per i principianti!!! · facoltativo)
 
-[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing) · [Download da Cloudflare (9,5 GB)](https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip)
+[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing)
 
 Nell'app: Impostazioni -> Sincronizzazione e backup -> tocca **Importa backup**.
 
