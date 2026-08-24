@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1702 条。点号进各自文件。
+> 共 1705 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1849](bugs/BUG-1849-jimaku-live-action-no-tmdb-key.md) | ✅ | ✅ | Jimaku 真人剧检索没有权威关联键：TMDB id 被解析器丢弃，只能靠标题模糊命中 |
+| [BUG-1848](bugs/BUG-1848-playlist-subtitle-restore-no-fallback.md) | ✅ | ✅ | 合集里下载的字幕退出再进就没了：恢复链只走一支、零兜底 |
+| [BUG-1846](bugs/BUG-1846-opensubtitles-zh-language-code.md) | ✅ | ✅ | OpenSubtitles 搜索传裸 zh 语言码，中文字幕永远搜不到 |
 | [BUG-1841](bugs/BUG-1841-custom-theme-edit-persists-blank-draft.md) | ✅ | ✅ | 自定义主题「+新建」和「编辑」图标进编辑页前就落库空主题 |
 | [BUG-1840](bugs/BUG-1840-settings-custom-item-left-baseline.md) | ✅ | ✅ | 视频设置页 Jimaku/OpenSubtitles 块贴边，比标准设置行更靠左 |
 | [BUG-1838](bugs/BUG-1838-ankiconnect-installer-launcher-not-found.md) | 🚧 | 🚧 | AnkiConnect 一键代装误报 Anki 没运行：新版 launcher 下找不到入口 exe |
