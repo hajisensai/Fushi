@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/dict_style_preview.dart';
 import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
 @visibleForTesting
@@ -37,7 +38,9 @@ class AudioSourcesDialog extends StatefulWidget {
   /// `{term}` / `{reading}` 占位符（否则播放时无法代入查词参数）。
   @visibleForTesting
   static bool isValidRemoteUrl(String text) {
-    final String value = text.trim();
+    // 折全角后再判：否则合法模板会被拒，而错误提示只说「地址无效」，
+    // 用户完全看不出问题出在标点上（BUG-1807）。
+    final String value = normalizeUrlInput(text);
     final Uri? uri = Uri.tryParse(value);
     if (uri == null || !uri.hasAuthority) return false;
     if (uri.scheme != 'http' && uri.scheme != 'https') return false;
@@ -346,6 +349,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           // 编辑态给出可见标签，让「这一栏现在改的是已有那行、不是新增」有据可依。
           labelText: editing ? t.audio_source_edit_url : null,
           hintText: 'https://...{term}...{reading}',
+          keyboardType: TextInputType.url,
           onChanged: (String value) => setState(
             () => _urlValid = AudioSourcesDialog.isValidRemoteUrl(value),
           ),
@@ -432,7 +436,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   /// 输入框提交：编辑态改写目标行的 URL，否则按新增插到最前。
   void _commitRemoteUrl() {
-    final String text = _controller.text.trim();
+    // 存归一化后的值，而不是原始文本：否则校验（已折全角）会通过，落库的却仍是
+    // 全角地址，变成「加的时候没报错、播放时永远失败」。
+    final String text = normalizeUrlInput(_controller.text);
     if (!AudioSourcesDialog.isValidRemoteUrl(text)) {
       _showSnack(t.audio_source_url_invalid);
       return;

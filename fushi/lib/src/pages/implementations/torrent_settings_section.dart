@@ -382,6 +382,8 @@ class _TorrentSettingsSectionState
             label: t.download_network_proxy_custom_label,
             initial: proxy.customProxy,
             hint: t.update_custom_proxy_hint,
+            // 同文件的 qB 地址框与语义相同的系统更新代理项都声明了，这里漏了。
+            keyboard: TextInputType.url,
             errorText: proxy.customProxy.trim().isNotEmpty &&
                     normalizeUserProxyHostPort(proxy.customProxy) == null
                 ? t.update_custom_proxy_invalid

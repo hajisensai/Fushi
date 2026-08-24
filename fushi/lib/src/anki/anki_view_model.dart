@@ -7,6 +7,7 @@ import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
 class AnkiUiState {
@@ -358,7 +359,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 ({String host, int? port, bool? useHttps}) normalizeAnkiConnectHostInput(
   String raw,
 ) {
-  var s = raw.trim();
+  // 先折全角：这个函数按 `:` `/` 逐字符拆 scheme/host/port，全角标点会让每一步
+  // 都判空，最终把 `192．168．1．5` 整串当主机名存下去（BUG-1807）。
+  var s = normalizeUrlInput(raw);
   bool? useHttps;
   // 只接受并保留明确的 HTTP(S) scheme；其它 scheme 不能被静默降级。
   final schemeSep = s.indexOf('://');

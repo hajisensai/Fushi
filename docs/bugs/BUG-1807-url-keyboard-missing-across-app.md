@@ -45,8 +45,61 @@
 
 ### 修复
 
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复** — 按备注要求做两层收口，**主防线在消费端**：
+
+  **第一层：消费端归一化（真正的防线）。** 每个「把用户字符串变成地址」的函数
+  自己折全角，粘贴 / 扫码 / 配置回填一并覆盖：
+
+  | file | 改动 |
+  |---|---|
+  | `sync/jellyfin_video_client.dart:289` `normalizeServerUrl` | 入口 `raw.trim()` → `normalizeUrlInput`。该函数纯字符串拼接、不过 `Uri`，全角会**原样**进请求 |
+  | `anki/anki_view_model.dart:358` `normalizeAnkiConnectHostInput` | 同上。它按 `:` `/` 逐字符拆 scheme/host/port，全角让每步判空，整串被当主机名存下 |
+  | `utils/net/app_proxy.dart:60` `normalizeUserProxyHostPort` | 同上。全角让 scheme 剥不掉、host/port 分不开，整串判非法 |
+  | `media/torrent/magnet_utils.dart:8` `parseMagnetInfoHash` | 同上。全角下连 `magnet:` 前缀都匹配不上 |
+  | `dictionary_settings_dialog_page.dart:39` `isValidRemoteUrl` + `_commitRemoteUrl` | 校验与**落库**都归一化。只改校验会变成「加的时候没报错、播放时永远失败」 |
+  | `sync_settings_schema/backend_config.part.dart` | WebDAV/FTP/SFTP 的 `_save` **与 `_runTest` 同口径**，否则出现「测试通过、保存后连不上」的错位 |
+  | `media_sources_view.dart:1542/1563` | WebDAV url（同时是落库的 `remotePath`）与 FTP/SFTP host |
+
+  **第二层：11 个输入框补 `keyboardType`**（让手输那一路从源头就是半角）：
+  Jellyfin 服务器、WebDAV URL、FTP/SFTP 主机 ×2 组、AnkiConnect 主机、
+  词典音频源、两处磁力链、下载代理、`websocket_dialog_page`。
+
+  **第三层：源码扫描守卫** `fushi/test/tools/url_input_keyboard_guard_test.dart`
+  兜住新增：扫 `fushi/lib` 全树，凡 `TextField` / `TextFormField` / `FushiTextField` /
+  `AdaptiveSettingsTextField` / `_CredentialFieldSpec` 的实参命中 URL 语义
+  （`https://`/`wss://`/`magnet:` 字面量、`_url`/`_host`/`_address` 词族、示例域名）
+  却没声明 `keyboardType`，即报错并指出 `file:line`。
+  判据刻意只看**声明是否存在**、不强制值必须是 `.url`：有的地址框合理地用别的类型，
+  守卫要拦的是「压根没想过这件事」。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/utils/url_consumer_normalization_test.dart`（11 条）：逐个锁住上述
+    5 个消费端函数。每组**成对**断言「全角输入与半角输入得到同一个结果」——
+    只断言「全角不为 null」放得过「解析出一个不同的、错的地址」。
+    同时反向锁住既有规则不因归一化松动（代理带路径仍被拒、音频源缺占位符仍被拒、
+    非磁力链仍返回 null）。
+  - `fushi/test/tools/url_input_keyboard_guard_test.dart`：上述守卫，含扫描面自证
+    （扫到的文件数 / 输入框数低于阈值即失败，堵住「一个文件都没扫到却绿着」）。
+  - **四条变异实测**：拿掉 Jellyfin 的 `keyboardType` → 守卫精确报出该行且只报一次；
+    把 `.dart` 后缀改坏 → 自证条款报「扫到 0 个文件」而非静默通过；
+    磁力链与 AnkiConnect 各自回退成 `raw.trim()` → 对应用例变红。
+    四次还原后全部文件 sha256 与基线逐字节一致。
+- **覆盖边界（不要读成「全仓 URL 都归一化了」）**：消费端归一化只做了本 bug 清单里的
+  10 处 + BUG-1804 的 Mihon / Aidoku 两处。**其余「已声明 `keyboardType` 因而不在清单里」
+  的输入框，其消费端并未逐个审计**（`video_import_dialog`、`custom_fonts_page`、
+  `video_shader_dialog`、`interconnect`、`video_external_provider` 等）。
+  那些路径手输已是半角，但**粘贴一段带全角的地址仍会中招**——概率低，不为零。
+  守卫只管 UI 层声明，管不到消费端，所以这个缺口不会被自动发现。
+  彻底收口需要把「解析用户输入的 URL」做成一个调用方无法绕过的原语并全仓改造，
+  那是比本轮更大的一次重构，应单独立项。
+- **发现的额外事实**：
+  - 守卫首次运行就抓出一处**我自己漏掉的** —— 改了 Jellyfin 的消费端却忘了给输入框
+    补 `keyboardType`。这正是守卫存在的意义。
+  - 守卫初版有两个实现缺陷，已修：`TextField(` 是 `FushiTextField(` 的后缀导致同一处
+    被数两遍（改为要求左边界非标识符字符）；`obscureText: true` 的 token 框因
+    `suffixIcon` 里嵌了 `accessTokenUrl` 跳转按钮而误报（改为遮蔽输入直接排除）。
+  - `pages/implementations/websocket_dialog_page.dart` 全仓**只有自身定义、零引用**，
+    确认是死代码。本轮只给它补了 `keyboardType` 让守卫通过；**是否整体删除应单独决定**，
+    不混进 URL 修复。
 - **备注**：**不要只是逐个补 `keyboardType` 参数就收工。** 那是给症状打补丁：
   下一个加 URL 框的人照样会漏，清单会再长出来一轮。两层收口缺一不可：
   1. **消费端归一化**才是根本防线——键盘类型只影响用户手输，粘贴、扫码、同步回填

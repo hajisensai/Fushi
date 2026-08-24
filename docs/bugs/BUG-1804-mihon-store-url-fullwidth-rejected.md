@@ -39,7 +39,10 @@ content: FushiTextField(
 垃圾域名一路走到网络层，最终报成一个与真实原因无关的网络错误。
 
 同族：`fushi/lib/src/media/manga/aidoku/aidoku_repository_client.dart:73/82` 是同一套
-`INVALID_URL` 判据，Aidoku 仓库输入框若同样缺 `keyboardType` 则同病。
+`INVALID_URL` 判据（Aidoku 的输入框本身已声明 `keyboardType`，但归一化同样需要）。
+全仓扫描后发现同一根因还有 10 处，见 [BUG-1807](BUG-1807-url-keyboard-missing-across-app.md)
+——那一条同时补上了「消费端归一化 + 源码扫描守卫」两层收口，本 bug 的
+`normalizeUrlInput` 就是被它复用的原语。
 
 ### 修复
 
