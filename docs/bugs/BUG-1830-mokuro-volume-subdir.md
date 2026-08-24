@@ -22,7 +22,7 @@
   - 失败 toast 走默认 `Toast.LENGTH_SHORT`（桌面 2000ms，含两端 200ms 淡入淡出，
     实际可读约 1.6s），一条带路径的长错误读不完就消失。
 
-- **[x] ① 已修复** — 提交哈希见下方「备注」补记。根因修复，不是加参数绕过：
+- **[x] ① 已修复** — `07c30508d9`。根因修复，不是加参数绕过：
   1. 新增**唯一**页图根解析原语 `resolveMokuroPageRoot` / `mokuroPageRootCandidates` /
      `joinMokuroPageRoot`（`fushi/lib/src/media/manga/mokuro_payload.dart`）。零 IO：
      存在性探针由调用方注入，本地传文件系统 stat、远端传相对路径查找表，于是
