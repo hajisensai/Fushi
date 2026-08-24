@@ -25,6 +25,17 @@ import 'package:flutter/foundation.dart';
 ///
 /// 全程 fail-soft：找不到 Anki 窗口、非 Windows、FFI 加载失败都退回「什么都不做」，
 /// 与修复前的行为一致，绝不让制卡链路因此报错。
+///
+/// BUG-1837：上面这套只有在**认得出 Anki 进程**时才成立，而「窗口所属进程的 exe
+/// 叫 anki.exe」这个判据在 Anki 的新 launcher 架构下必错——用户装的 `anki.exe`
+/// 只是个启动器，一个窗口都没有；真正跑 aqt、持有全部窗口、监听 AnkiConnect 端口
+/// 的是 venv 里的 `pythonw.exe`。判据落空 → pid 为 null → 让渡与兜底整套空转，
+/// 症状精确回到修复前（「浏览」窗口已开着时只闪任务栏）。
+///
+/// 所以认 Anki 的首选判据换成**「谁在监听我正在对话的这个 AnkiConnect 端口」**
+/// （[AnkiDesktopForegroundBackend.findProcessListeningOnPort]）：那必然就是要授权
+/// 和要拉前台的那个进程，与 exe 叫什么、装在哪、是不是 venv 全无关系。进程名判据
+/// 降级为兜底（端口表读不到时才用）。
 abstract final class AnkiDesktopForeground {
   /// 单测替身：注入后完全取代真实 Win32 后端（含平台判断）。
   @visibleForTesting
@@ -72,18 +83,35 @@ abstract final class AnkiDesktopForeground {
 
   /// 把前台权限让渡给本机 Anki 进程，返回它的 pid（找不到/不适用时 null）。
   ///
+  /// [ankiConnectPort] 是调用方**正在对话的那个** AnkiConnect 的端口——认 Anki
+  /// 的首选判据（BUG-1837），进程名只作兜底。
+  ///
   /// 返回值交给 [raiseAnkiWindow]，避免在这里存跨调用的可变全局状态。
-  static int? grantForegroundToAnki() {
+  static int? grantForegroundToAnki({required int ankiConnectPort}) {
     final AnkiDesktopForegroundBackend? backend = _backend;
     if (backend == null) return null;
     try {
-      final int? pid = backend.findAnkiProcessId();
+      final int? pid = resolveAnkiProcessId(backend, ankiConnectPort);
       if (pid == null) return null;
       backend.allowSetForegroundWindow(pid);
       return pid;
     } on Object {
       return null;
     }
+  }
+
+  /// 认 Anki 进程：先问「谁在监听 AnkiConnect 端口」（精确：那就是我们这条 HTTP
+  /// 请求的收件人），端口表读不到时才退回「窗口 + exe 名叫 anki.exe」。
+  ///
+  /// 兜底之所以保留：端口表在极少数环境读不到（权限/异常 IPv6-only 绑定），而旧版
+  /// 单进程 Anki 在那种环境下仍能被进程名认出来。两个判据都空才算找不到。
+  @visibleForTesting
+  static int? resolveAnkiProcessId(
+    AnkiDesktopForegroundBackend backend,
+    int ankiConnectPort,
+  ) {
+    return backend.findProcessListeningOnPort(ankiConnectPort) ??
+        backend.findAnkiProcessId();
   }
 
   /// 兜底把 [ankiPid] 的顶层窗口拉到前台；前台已经归它时立即返回。
@@ -111,7 +139,13 @@ abstract final class AnkiDesktopForeground {
 /// [AnkiDesktopForeground] 依赖的平台原语，抽出来是为了让编排逻辑可单测（真实实现
 /// 全是 Win32 调用，测试环境里跑不了）。
 abstract interface class AnkiDesktopForegroundBackend {
+  /// 本机监听 TCP [port] 的进程 id；没有人监听 / 读不到监听表时返回 null。
+  int? findProcessListeningOnPort(int port);
+
   /// 本机正在运行的 Anki 桌面端进程 id；没找到返回 null。
+  ///
+  /// 判据是「有可见顶层窗口且 exe 叫 anki.exe」，在新 launcher 架构下会落空
+  /// （BUG-1837），只作 [AnkiDesktopForeground.resolveAnkiProcessId] 的兜底。
   int? findAnkiProcessId();
 
   /// `AllowSetForegroundWindow`：把本进程的前台权限让渡给 [pid]。
@@ -163,10 +197,14 @@ final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
             _QueryFullProcessImageNameDart>('QueryFullProcessImageNameW'),
         _closeHandle =
             _kernel32.lookupFunction<_CloseHandleNative, _CloseHandleDart>(
-                'CloseHandle');
+                'CloseHandle'),
+        _getExtendedTcpTable = _iphlpapi.lookupFunction<
+            _GetExtendedTcpTableNative,
+            _GetExtendedTcpTableDart>('GetExtendedTcpTable');
 
   static final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
   static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
+  static final DynamicLibrary _iphlpapi = DynamicLibrary.open('iphlpapi.dll');
 
   static final _WindowsAnkiForeground instance = _WindowsAnkiForeground._();
 
@@ -183,14 +221,83 @@ final class _WindowsAnkiForeground implements AnkiDesktopForegroundBackend {
   final _OpenProcessDart _openProcess;
   final _QueryFullProcessImageNameDart _queryFullProcessImageName;
   final _CloseHandleDart _closeHandle;
+  final _GetExtendedTcpTableDart _getExtendedTcpTable;
 
   static const int _gwHwndNext = 2;
   static const int _swRestore = 9;
   static const int _processQueryLimitedInformation = 0x1000;
   static const int _imagePathBufferLength = 32768;
 
+  static const int _afInet = 2;
+  static const int _afInet6 = 23;
+
+  /// `TCP_TABLE_OWNER_PID_LISTENER`：只要 LISTEN 状态的行，正好是我们要的。
+  static const int _tcpTableOwnerPidListener = 3;
+  static const int _noError = 0;
+  static const int _errorInsufficientBuffer = 122;
+
+  /// `MIB_TCPROW_OWNER_PID` = 6 个 DWORD（state / localAddr / localPort /
+  /// remoteAddr / remotePort / owningPid）。
+  static const int _tcpRowWords = 6;
+  static const int _tcpRowPortWord = 2;
+  static const int _tcpRowPidWord = 5;
+
+  /// `MIB_TCP6ROW_OWNER_PID` = 56 字节：localAddr[16] / localScopeId /
+  /// localPort / remoteAddr[16] / remoteScopeId / remotePort / state /
+  /// owningPid，全部 4 字节对齐，按 DWORD 数就是 14。
+  static const int _tcp6RowWords = 14;
+  static const int _tcp6RowPortWord = 5;
+  static const int _tcp6RowPidWord = 13;
+
   /// 顶层窗口链的遍历上限；纯粹是防御异常的 Z 序环，正常桌面远达不到。
   static const int _enumerationGuard = 4096;
+
+  /// 谁在监听 [port]：IPv4 监听表优先，空了再看 IPv6（AnkiConnect 默认绑
+  /// `0.0.0.0`，但用户可以把它配成 `::`）。
+  @override
+  int? findProcessListeningOnPort(int port) {
+    return _pidListeningOnPort(port, _afInet) ??
+        _pidListeningOnPort(port, _afInet6);
+  }
+
+  int? _pidListeningOnPort(int port, int family) {
+    final int rowWords = family == _afInet6 ? _tcp6RowWords : _tcpRowWords;
+    final int portWord =
+        family == _afInet6 ? _tcp6RowPortWord : _tcpRowPortWord;
+    final int pidWord = family == _afInet6 ? _tcp6RowPidWord : _tcpRowPidWord;
+    final Pointer<Uint32> size = calloc<Uint32>();
+    Pointer<Uint8> table = nullptr;
+    try {
+      // 第一趟只问尺寸：监听表大小随系统连接数变化，不能拍脑袋定长。
+      final int probe = _getExtendedTcpTable(
+          nullptr, size, 0, family, _tcpTableOwnerPidListener, 0);
+      if (probe != _errorInsufficientBuffer && probe != _noError) return null;
+      if (size.value == 0) return null;
+      table = calloc<Uint8>(size.value);
+      final int rc = _getExtendedTcpTable(
+          table.cast(), size, 0, family, _tcpTableOwnerPidListener, 0);
+      if (rc != _noError) return null;
+      final Pointer<Uint32> words = table.cast<Uint32>();
+      final int rows = words[0];
+      // 表头是 dwNumEntries 一个 DWORD，行从第 1 个 DWORD 起。
+      final int capacity = (size.value ~/ 4 - 1) ~/ rowWords;
+      final int count = rows < capacity ? rows : capacity;
+      for (int i = 0; i < count; i++) {
+        final int base = 1 + i * rowWords;
+        if (_portFromNetworkOrder(words[base + portWord]) != port) continue;
+        final int pid = words[base + pidWord];
+        if (pid != 0) return pid;
+      }
+      return null;
+    } finally {
+      if (table != nullptr) calloc.free(table);
+      calloc.free(size);
+    }
+  }
+
+  /// `dwLocalPort` 的低 16 位是**网络字节序**，高 16 位是没定义的填充。
+  static int _portFromNetworkOrder(int raw) =>
+      ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF);
 
   @override
   int? findAnkiProcessId() {
@@ -352,3 +459,20 @@ typedef _QueryFullProcessImageNameDart = int Function(
 
 typedef _CloseHandleNative = Int32 Function(IntPtr handle);
 typedef _CloseHandleDart = int Function(int handle);
+
+typedef _GetExtendedTcpTableNative = Uint32 Function(
+  Pointer<Void> tcpTable,
+  Pointer<Uint32> size,
+  Int32 order,
+  Uint32 family,
+  Uint32 tableClass,
+  Uint32 reserved,
+);
+typedef _GetExtendedTcpTableDart = int Function(
+  Pointer<Void> tcpTable,
+  Pointer<Uint32> size,
+  int order,
+  int family,
+  int tableClass,
+  int reserved,
+);
