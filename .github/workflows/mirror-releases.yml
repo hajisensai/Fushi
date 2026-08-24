@@ -1,9 +1,9 @@
 name: Mirror release assets to R2
 
-# 把正式发布的安装包镜像一份到 Cloudflare R2，给 dl.fushi.moe 当主下载源。
+# 把正式发布的安装包镜像一份到 Cloudflare R2，给 fushi.moe/releases 当主下载源。
 #
 # 为什么值得做：R2 出网免费，走 CF 的路由对多数地区比 GitHub Releases 稳；
-# 更重要的是它给下载链路提供了第二份存储——GitHub 挂掉时，dl.fushi.moe
+# 更重要的是它给下载链路提供了第二份存储——GitHub 挂掉时，fushi.moe/releases
 # 仍能从 R2 里的 manifest.json + 资产把包发出去。
 #
 # 这个 workflow 刻意独立于 release.yml：只在 release 发布完成之后被动触发，
@@ -103,13 +103,14 @@ jobs:
 
       - name: Setup Node
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
       - name: Install wrangler
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
-        run: npm install --no-save wrangler@^4.125.0
+        # 只需要 Wrangler CLI；锁死版本并禁用依赖生命周期脚本，避免 CI 执行供应链侧代码。
+        run: npm install --ignore-scripts --no-save --package-lock=false wrangler@4.125.0
 
       - name: Upload assets to R2
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
@@ -132,7 +133,7 @@ jobs:
               continue
             fi
             echo "上传 $name ($((size / 1024 / 1024))MB)"
-            npx wrangler r2 object put "$BUCKET/releases/$TAG/$name" --file "$f" --remote
+            ./node_modules/.bin/wrangler r2 object put "$BUCKET/releases/$TAG/$name" --file "$f" --remote
           done
 
           # manifest.json 是「GitHub 挂了下载还活着」的那一环：
@@ -153,7 +154,7 @@ jobs:
             fs.writeFileSync("manifest.json", JSON.stringify(m, null, 2));
             console.log("清单收录 " + m.assets.length + " 个资产，跳过 " + skipped.size + " 个");
           '
-          npx wrangler r2 object put "$BUCKET/manifest.json" --file manifest.json --content-type application/json --remote
+          ./node_modules/.bin/wrangler r2 object put "$BUCKET/manifest.json" --file manifest.json --content-type application/json --remote
 
       - name: Prune old mirrored releases
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
@@ -166,7 +167,7 @@ jobs:
 
           # R2 的 list 不在 wrangler CLI 里，所以自己维护一份「镜像了哪些 tag、
           # 每个 tag 有哪些文件」的台账，删除时才知道该删什么。
-          if npx wrangler r2 object get "$BUCKET/mirrored.json" --file mirrored.json --remote 2>/dev/null; then
+          if ./node_modules/.bin/wrangler r2 object get "$BUCKET/mirrored.json" --file mirrored.json --remote 2>/dev/null; then
             echo "读到已有台账"
           else
             echo '{"releases":[]}' > mirrored.json
@@ -197,21 +198,25 @@ jobs:
             while IFS= read -r key; do
               [ -z "$key" ] && continue
               echo "删除 $key"
-              npx wrangler r2 object delete "$BUCKET/$key" --remote || echo "::warning::删除 $key 失败，跳过"
+              ./node_modules/.bin/wrangler r2 object delete "$BUCKET/$key" --remote || echo "::warning::删除 $key 失败，跳过"
             done < to-delete.txt
           fi
 
           # 台账最后写：中途失败时宁可下次重复删一遍（删不存在的对象是无害的），
           # 也不要台账已更新而对象还在，那会变成永远没人认领的存量。
-          npx wrangler r2 object put "$BUCKET/mirrored.json" --file mirrored.json --content-type application/json --remote
+          ./node_modules/.bin/wrangler r2 object put "$BUCKET/mirrored.json" --file mirrored.json --content-type application/json --remote
 
       - name: Summary
         if: always() && steps.guard.outputs.ready == 'true'
+        env:
+          TARGET_TAG: ${{ steps.target.outputs.tag }}
+          TARGET_SKIPPED: ${{ steps.target.outputs.skip }}
+          ASSET_COUNT: ${{ steps.download.outputs.count }}
         run: |
           {
             echo "### R2 镜像"
             echo ""
-            echo "- tag: \`${{ steps.target.outputs.tag }}\`"
-            echo "- 是否跳过: \`${{ steps.target.outputs.skip }}\`"
-            echo "- 资产数: \`${{ steps.download.outputs.count || '0' }}\`"
+            printf -- '- tag: `%s`\n' "${TARGET_TAG:-}"
+            printf -- '- 是否跳过: `%s`\n' "${TARGET_SKIPPED:-}"
+            printf -- '- 资产数: `%s`\n' "${ASSET_COUNT:-0}"
           } >> "$GITHUB_STEP_SUMMARY"
