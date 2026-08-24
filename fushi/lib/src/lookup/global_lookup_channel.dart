@@ -85,16 +85,19 @@ abstract final class GlobalLookupChannel {
     bool atCursor = false,
     int capWidth = 0,
     int capHeight = 0,
-  }) =>
-      _impl.showAt(
-        x: x,
-        y: y,
-        width: width,
-        height: height,
-        atCursor: atCursor,
-        capWidth: capWidth,
-        capHeight: capHeight,
-      );
+    int capOriginX = 0,
+    int capOriginY = 0,
+  }) => _impl.showAt(
+    x: x,
+    y: y,
+    width: width,
+    height: height,
+    atCursor: atCursor,
+    capWidth: capWidth,
+    capHeight: capHeight,
+    capOriginX: capOriginX,
+    capOriginY: capOriginY,
+  );
 
   static Future<void> render(String popupJson) => _impl.render(popupJson);
 
@@ -117,17 +120,18 @@ abstract final class GlobalLookupChannel {
     required int dy,
     required int width,
     required int height,
+    required int geometryEpoch,
     double left = 0,
     double top = 0,
-  }) =>
-      _impl.revealStack(
-        dx: dx,
-        dy: dy,
-        width: width,
-        height: height,
-        left: left,
-        top: top,
-      );
+  }) => _impl.revealStack(
+    dx: dx,
+    dy: dy,
+    width: width,
+    height: height,
+    geometryEpoch: geometryEpoch,
+    left: left,
+    top: top,
+  );
 
   /// 防截屏（与剪贴板面板同一 pref）：把 display affinity 应用到瞬态覆盖窗。
   static Future<void> setBlockCapture(bool block) =>
@@ -143,12 +147,11 @@ abstract final class GlobalLookupChannel {
     void Function()? onOverlayHidden,
     void Function(OverlayReverseEvent event)? onRoutedJsMessage,
     void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
-  }) =>
-      _impl.setHandlers(
-        onGetMedia: onGetMedia,
-        onJsMessage: onJsMessage,
-        onOverlayHidden: onOverlayHidden,
-        onRoutedJsMessage: onRoutedJsMessage,
-        onRoutedOverlayHidden: onRoutedOverlayHidden,
-      );
+  }) => _impl.setHandlers(
+    onGetMedia: onGetMedia,
+    onJsMessage: onJsMessage,
+    onOverlayHidden: onOverlayHidden,
+    onRoutedJsMessage: onRoutedJsMessage,
+    onRoutedOverlayHidden: onRoutedOverlayHidden,
+  );
 }

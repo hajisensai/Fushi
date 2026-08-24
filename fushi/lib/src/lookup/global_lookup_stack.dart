@@ -110,11 +110,12 @@ class GlobalLookupFrame {
 class GlobalLookupStack {
   /// 用一份 frame 列表构造栈；内部存为不可修改副本，防止外部别名后篡改。
   GlobalLookupStack(List<GlobalLookupFrame> frames)
-      : frames = List<GlobalLookupFrame>.unmodifiable(frames);
+    : frames = List<GlobalLookupFrame>.unmodifiable(frames);
 
   /// 空栈常量入口。
-  static final GlobalLookupStack empty =
-      GlobalLookupStack(const <GlobalLookupFrame>[]);
+  static final GlobalLookupStack empty = GlobalLookupStack(
+    const <GlobalLookupFrame>[],
+  );
 
   /// 栈中各层，index 0 为根，末尾为最深子窗。不可修改。
   final List<GlobalLookupFrame> frames;
@@ -176,10 +177,7 @@ GlobalLookupStack pushLookupFrame(
 /// 对齐 hoshi `closeChildPopups(popups, parentIndex) = popups.take(parentIndex+1)`。
 /// `parentIndex` 越界时安全 clamp：负数 -> 清空整栈（保留 0 层）；>= 末尾 ->
 /// 原样返回（无子窗可关）。
-GlobalLookupStack closeChildPopups(
-  GlobalLookupStack stack,
-  int parentIndex,
-) {
+GlobalLookupStack closeChildPopups(GlobalLookupStack stack, int parentIndex) {
   if (parentIndex < 0) {
     return GlobalLookupStack.empty;
   }
@@ -187,6 +185,61 @@ GlobalLookupStack closeChildPopups(
     return stack;
   }
   return GlobalLookupStack(stack.frames.sublist(0, parentIndex + 1));
+}
+
+/// 一次嵌套查词真正归属的父层，以及按该父层截断后代后的栈。
+///
+/// iframe bridge 会把触发消息的 frame id 写进 `__frameId`。调用方必须以这个来源层
+/// 决定新 child 的 parent，不能默认取当前栈顶；否则从仍可见的 root / 中间层点词时，
+/// 新卡会错误挂到旧的最深 child 下面。
+@immutable
+class GlobalLookupNestedParent {
+  const GlobalLookupNestedParent({
+    required this.stack,
+    required this.frameId,
+    required this.parentIndex,
+  });
+
+  /// 已截断 [parentIndex] 之后全部旧后代的栈。
+  final GlobalLookupStack stack;
+
+  /// 来源父层的稳定 id，用于异步查询返回后的身份复核。
+  final String frameId;
+
+  /// 来源父层在 [stack] 中的插入顺序 index。
+  final int parentIndex;
+}
+
+/// 解析嵌套查词消息的来源父层，并先截断该层的全部旧后代。
+///
+/// 有 [sourceFrameId] 时只接受仍在栈内的精确 frame；未知 id 代表迟到的旧 iframe
+/// 消息，必须丢弃（返回 null），不能误挂到当前 top。仅旧版、完全没有 frame id 的
+/// 消息才兼容性回退到当前栈顶。该截断不 bump clear-selection 信号：与 app 内
+/// `prunePopupStack(index + 1)` 相同，新查询随后会在来源层高亮新的命中词。
+GlobalLookupNestedParent? resolveNestedLookupParent(
+  GlobalLookupStack stack,
+  String? sourceFrameId,
+) {
+  if (stack.isEmpty) {
+    return null;
+  }
+
+  int parentIndex = stack.length - 1;
+  if (sourceFrameId != null) {
+    parentIndex = stack.frames.indexWhere(
+      (GlobalLookupFrame frame) => frame.id == sourceFrameId,
+    );
+    if (parentIndex < 0) {
+      return null;
+    }
+  }
+
+  final GlobalLookupFrame parent = stack.frames[parentIndex];
+  return GlobalLookupNestedParent(
+    stack: closeChildPopups(stack, parentIndex),
+    frameId: parent.id,
+    parentIndex: parentIndex,
+  );
 }
 
 /// 关掉 `parentIndex` 子窗并给该父级发一次清选区信号。
@@ -201,11 +254,11 @@ GlobalLookupStack closeChildPopupsAndClearSelection(
   if (parentIndex < 0 || parentIndex >= stack.frames.length) {
     return stack;
   }
-  final List<GlobalLookupFrame> truncated =
-      stack.frames.sublist(0, parentIndex + 1);
-  return GlobalLookupStack(
-    _bumpClearSignalAt(truncated, parentIndex),
+  final List<GlobalLookupFrame> truncated = stack.frames.sublist(
+    0,
+    parentIndex + 1,
   );
+  return GlobalLookupStack(_bumpClearSignalAt(truncated, parentIndex));
 }
 
 /// 关闭 `index` 处的弹窗及其所有子窗。
@@ -215,10 +268,7 @@ GlobalLookupStack closeChildPopupsAndClearSelection(
 ///   - `index > 0` -> 回退到父级（截断到 `index - 1`，含父级），并给父级发一次
 ///     清选区信号。
 /// `index` 越界（负数或 >= 长度）安全处理：负数视作关根（清空）；过大视作无操作。
-GlobalLookupStack dismissPopupAt(
-  GlobalLookupStack stack,
-  int index,
-) {
+GlobalLookupStack dismissPopupAt(GlobalLookupStack stack, int index) {
   if (index <= 0) {
     return GlobalLookupStack.empty;
   }
@@ -226,11 +276,11 @@ GlobalLookupStack dismissPopupAt(
     return stack;
   }
   final int parentIndex = index - 1;
-  final List<GlobalLookupFrame> truncated =
-      stack.frames.sublist(0, parentIndex + 1);
-  return GlobalLookupStack(
-    _bumpClearSignalAt(truncated, parentIndex),
+  final List<GlobalLookupFrame> truncated = stack.frames.sublist(
+    0,
+    parentIndex + 1,
   );
+  return GlobalLookupStack(_bumpClearSignalAt(truncated, parentIndex));
 }
 
 /// 父窗滚动 / 重选词后，砍掉其所有子窗并给父级发清选区信号。
@@ -249,11 +299,11 @@ GlobalLookupStack closeChildPopupsForScrolledParent(
     // 已是末层（含越界过大），无子窗可砍 -> 恒等返回。
     return stack;
   }
-  final List<GlobalLookupFrame> truncated =
-      stack.frames.sublist(0, parentIndex + 1);
-  return GlobalLookupStack(
-    _bumpClearSignalAt(truncated, parentIndex),
+  final List<GlobalLookupFrame> truncated = stack.frames.sublist(
+    0,
+    parentIndex + 1,
   );
+  return GlobalLookupStack(_bumpClearSignalAt(truncated, parentIndex));
 }
 
 /// 把列表里 `targetIndex` 处 frame 的 clearSelectionSignal +1，返回新列表。
@@ -261,8 +311,10 @@ List<GlobalLookupFrame> _bumpClearSignalAt(
   List<GlobalLookupFrame> frames,
   int targetIndex,
 ) {
-  final List<GlobalLookupFrame> next =
-      List<GlobalLookupFrame>.from(frames, growable: false);
+  final List<GlobalLookupFrame> next = List<GlobalLookupFrame>.from(
+    frames,
+    growable: false,
+  );
   if (targetIndex >= 0 && targetIndex < next.length) {
     final GlobalLookupFrame parent = next[targetIndex];
     next[targetIndex] = parent.copyWith(

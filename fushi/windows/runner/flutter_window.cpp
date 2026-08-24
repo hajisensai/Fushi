@@ -1135,8 +1135,20 @@ void FlutterWindow::RegisterGalHookTextChannel() {
   // 两个面，Dart 侧的 GalHookTextOverlayController 已经守着这条通道。
   fushi::VoiceHookReader::Instance().AttachLookupChannel(
       flutter_controller_->engine()->messenger());
-  // 像素源与输入落点都指向懒建的第三个 GlobalLookupWindow 实例。lambda 里每次重新
+  // 交互主路把懒建的第三个 GlobalLookupWindow composition surface 直接贴到游戏
+  // 客户区；CapturePreview 只作独占全屏/找不到 HWND 时的保底。lambda 里每次重新
   // Ensure：用户可能在会话中途才开启查词，那时才建得起来。
+  fushi::VoiceHookReader::Instance().SetLookupDirectPresenter(
+      [this](int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
+             uint32_t card_height, uint32_t view_width,
+             uint32_t view_height) {
+        GlobalLookupWindow* card = EnsureGalLookupCardWindow();
+        if (card == nullptr) return false;
+        const uint32_t pid = fushi::VoiceHookReader::Instance().CurrentPid();
+        return card->RevealOverProcessClient(
+            pid, anchor_x, anchor_y, card_width, card_height, view_width,
+            view_height);
+      });
   fushi::VoiceHookReader::Instance().SetLookupCaptureRequest(
       [this](uint32_t max_width, uint32_t max_height,
              fushi::VoiceHookReader::LookupCaptureCallback done) {
@@ -1491,19 +1503,21 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
             cursor_work_y = y - mi.rcWork.top;
             monitor_dpr = FlutterDesktopGetDpiForMonitor(monitor) / 96.0;
           }
-          // 🔴 布局工作区上限（游戏内查词专用）。卡片最终画在**游戏画面**里，可用
-          // 空间是游戏视口，不是这块显示器的工作区。不覆盖的话弹窗按 2560x1440 排版，
-          // 排完再被缩到卡片尺寸，而取帧超尺寸时是**裁不是缩**——真机表现为工具栏与
-          // 第三栏词典被切在画面外，看起来像"少了很多功能"，其实只是没进画面。
+          // 🔴 游戏内级联的工作区覆盖。capW/H 表示**完整游戏 viewport**，
+          // 绝不是 Dart 侧按位图预算/视口比例算出的**单卡 cap**。capX/Y 则是
+          // 冻结根卡左上角在该 viewport 内的物理 px 原点；Dart 用它把 host-local
+          // 选词矩形提升到同一 viewport 坐标域。不覆盖时桌面 route 仍使用显示器
+          // 工作区；卡片自身的尺寸上限不在这里处理。
           const int cap_w = IntFromValue(args, "capW", 0);
           const int cap_h = IntFromValue(args, "capH", 0);
           if (cap_w > 0 && cap_h > 0) {
             work_w = cap_w;
             work_h = cap_h;
-            // 卡片在游戏里的落点由 hook 按 anchor 决定，与 Windows 光标所在显示器
-            // 无关；工作区原点因此就是卡片原点。
-            cursor_work_x = 0;
-            cursor_work_y = 0;
+            // BUG-1806 — preserve the full viewport plus its non-zero root
+            // origin. The old 0,0 reply trapped every nested card inside the
+            // single-card-sized red rectangle.
+            cursor_work_x = IntFromValue(args, "capX", 0);
+            cursor_work_y = IntFromValue(args, "capY", 0);
           }
           flutter::EncodableMap reply = {
               {flutter::EncodableValue("ok"), flutter::EncodableValue(ok)},
@@ -1538,9 +1552,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           }
           result->Success();
         } else if (method == "reveal") {
-          // 🔴 游戏内卡片窗**永远不上屏**：reveal 是"把离屏渲染好的窗口挪到屏幕上"
-          // 这一步，对它只保留定尺寸。放过去就等于把桌面浮窗换成另一个桌面浮窗，
-          // 用户要的恰恰是别弹窗。卡片像素由 CaptureBgraAsync 取走后投进游戏图层。
+          // galCard 的通用 reveal-safety 在 native presenter 选定输出模式前只负责
+          // 让 WebView 离屏完成定尺与绘制。后续若 direct presenter 可用，
+          // RevealOverProcessClient 会把同一 composition HWND 贴到游戏客户区；
+          // 否则 CaptureBgraAsync 仍从这个离屏 surface 取帧。这里不提前把它
+          // 当成普通桌面浮窗上屏。
           if (win == gal_lookup_card_window_.get()) {
             win->ResizeOffscreen(IntFromValue(args, "width", 0),
                                  IntFromValue(args, "height", 0));
@@ -1552,18 +1568,24 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
         } else if (method == "revealStack") {
           // TODO-867 P3c E1 — reveal/resize to the nested-stack union bbox.
           if (win == gal_lookup_card_window_.get()) {
-            // 同上：嵌套栈只更新离屏尺寸与 host layer 位移，不上屏。
-            win->ResizeStackOffscreen(
+            // direct-active 时围绕冻结根卡原点原位扩缩已贴在游戏上的
+            // HWND，不把它停回 OffscreenX；尚未进入 direct mode 或 direct 不可用
+            // 时，同一方法才执行离屏 resize + layer shift/captureReady 回退。
+            win->ResizeStackForGal(
+                IntFromValue(args, "dx", 0),
+                IntFromValue(args, "dy", 0),
                 IntFromValue(args, "width", 0),
                 IntFromValue(args, "height", 0),
                 DoubleFromValue(args, "left", 0.0),
-                DoubleFromValue(args, "top", 0.0));
+                DoubleFromValue(args, "top", 0.0),
+                Int64FromValue(args, "geometryEpoch", 0));
           } else {
             win->RevealStack(
                 IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
                 IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
                 DoubleFromValue(args, "left", 0.0),
-                DoubleFromValue(args, "top", 0.0));
+                DoubleFromValue(args, "top", 0.0),
+                Int64FromValue(args, "geometryEpoch", 0));
           }
           result->Success();
         } else if (method == "resolveBridge") {
@@ -1769,7 +1791,8 @@ void FlutterWindow::RegisterClipboardPanelChannel() {
               IntFromValue(args, "dx", 0), IntFromValue(args, "dy", 0),
               IntFromValue(args, "width", 0), IntFromValue(args, "height", 0),
               DoubleFromValue(args, "left", 0.0),
-              DoubleFromValue(args, "top", 0.0));
+              DoubleFromValue(args, "top", 0.0),
+              Int64FromValue(args, "geometryEpoch", 0));
           result->Success();
         } else if (method == "resolveBridge") {
           clipboard_panel_window_->ResolveBridge(

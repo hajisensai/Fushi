@@ -35,6 +35,47 @@ double RoundedRectDistance(double px, double py,
   return outside + inside - r;
 }
 
+// 返回 sample_y 这一物理像素扫描线上，圆角矩形内部覆盖的 [x0, x1)。
+//
+// Paint 的热路径只需要在卡片外围的阴影带执行 RoundedRectDistance/exp；卡片
+// 内部原本逐像素算完 d<=0 后直接 continue，既不产出任何像素，又会让大卡在
+// Debug 构建里付出数百万次 sqrt。按扫描线一次求出内部连续区间后，可以整段
+// 跳过；punch-out 也可复用同一区间做连续清零。像素中心约定与旧实现完全一致
+// （px + 0.5 / py + 0.5），圆角外的四个角仍会进入阴影计算。
+bool RoundedRectInteriorSpan(double sample_y,
+                             const std::array<double, 4>& rect, double radius,
+                             int limit_width, int* x0, int* x1) {
+  if (x0 == nullptr || x1 == nullptr || limit_width <= 0 || rect[2] <= 0 ||
+      rect[3] <= 0) {
+    return false;
+  }
+  const double half_w = rect[2] / 2.0;
+  const double half_h = rect[3] / 2.0;
+  // 与 RoundedRectDistance 的旧语义同源：不能把 r 钳到半宽/半高。虽然正常
+  // popup 远大于 2r，极窄的防御性输入在旧公式里会退化成以中心为基准的胶囊/
+  // 圆；这里必须跳过完全相同的像素集合，不能借性能改动悄悄改变轮廓。
+  const double r = std::max(radius, 0.0);
+  const double cx = rect[0] + half_w;
+  const double cy = rect[1] + half_h;
+  const double bx = std::max(half_w - r, 0.0);
+  const double by = std::max(half_h - r, 0.0);
+  const double dy = std::max(std::abs(sample_y - cy) - by, 0.0);
+  if (dy > r) {
+    return false;
+  }
+  const double corner_dx =
+      std::sqrt(std::max(r * r - dy * dy, 0.0));
+  const double left = cx - bx - corner_dx;
+  const double right = cx + bx + corner_dx;
+  // 旧循环判断的是像素中心是否落在闭区间 [left, right]。
+  const int first = static_cast<int>(std::ceil(left - 0.5));
+  const int last_exclusive =
+      static_cast<int>(std::floor(right - 0.5)) + 1;
+  *x0 = std::clamp(first, 0, limit_width);
+  *x1 = std::clamp(last_exclusive, 0, limit_width);
+  return *x0 < *x1;
+}
+
 }  // namespace
 
 LookupShadowWindow::~LookupShadowWindow() {
@@ -222,7 +263,9 @@ bool LookupShadowWindow::Paint(
   std::fill(pixels, pixels + static_cast<size_t>(width) * height, 0u);
 
   for (const std::array<double, 4>& card : cards_px) {
-    // 只扫本卡影响的包围盒（卡矩形外扩 margin），级联多卡时避免整图 × 卡数。
+    // 只扫本卡影响的外围阴影带（卡矩形外扩 margin），级联多卡时避免整图 ×
+    // 卡数。卡内本来就不画；按扫描线跳过内部连续区间，避免大卡逐像素执行
+    // RoundedRectDistance/sqrt 后才 continue。
     const int margin_px =
         static_cast<int>(std::lround(kMarginCss * dpr));
     const int x0 = std::max(0, static_cast<int>(std::floor(card[0])) - margin_px);
@@ -233,33 +276,42 @@ bool LookupShadowWindow::Paint(
         height, static_cast<int>(std::ceil(card[1] + card[3])) + margin_px);
     for (int py = y0; py < y1; ++py) {
       uint32_t* row = pixels + static_cast<size_t>(py) * width;
-      for (int px = x0; px < x1; ++px) {
-        const double fx = px + 0.5;
-        const double fy = py + 0.5;
-        const double d = RoundedRectDistance(fx, fy, card, radius_px);
-        if (d <= 0) {
-          continue;  // 卡内不画（punch-out 在下面统一做）
+      int inside_x0 = 0;
+      int inside_x1 = 0;
+      const bool has_inside = RoundedRectInteriorSpan(
+          py + 0.5, card, radius_px, width, &inside_x0, &inside_x1);
+      const auto paint_range = [&](int range_x0, int range_x1) {
+        for (int px = range_x0; px < range_x1; ++px) {
+          const double fx = px + 0.5;
+          const double fy = py + 0.5;
+          const double d = RoundedRectDistance(fx, fy, card, radius_px);
+          const double dk =
+              RoundedRectDistance(fx, fy - key_dy, card, radius_px);
+          const double ambient =
+              kAmbientAlpha * std::exp(-(d * d) / (sigma_a * sigma_a));
+          const double key =
+              dk <= 0 ? kKeyAlpha
+                      : kKeyAlpha * std::exp(-(dk * dk) / (sigma_k * sigma_k));
+          const double alpha = 1.0 - (1.0 - ambient) * (1.0 - key);
+          const uint32_t a = static_cast<uint32_t>(std::lround(
+              std::clamp(alpha, 0.0, 1.0) * 255.0));
+          if (a == 0) {
+            continue;
+          }
+          // 多卡重叠区取较深者（max）——比相加更接近真实阴影且不会过曝。
+          const uint32_t existing = row[px] >> 24;
+          if (a > existing) {
+            // 纯黑影：预乘 ARGB = (a, 0, 0, 0)。
+            row[px] = a << 24;
+          }
         }
-        const double dk =
-            RoundedRectDistance(fx, fy - key_dy, card, radius_px);
-        const double ambient =
-            kAmbientAlpha * std::exp(-(d * d) / (sigma_a * sigma_a));
-        const double key =
-            dk <= 0 ? kKeyAlpha
-                    : kKeyAlpha * std::exp(-(dk * dk) / (sigma_k * sigma_k));
-        const double alpha = 1.0 - (1.0 - ambient) * (1.0 - key);
-        const uint32_t a =
-            static_cast<uint32_t>(std::lround(std::clamp(alpha, 0.0, 1.0) * 255.0));
-        if (a == 0) {
-          continue;
-        }
-        // 多卡重叠区取较深者（max）——比相加更接近真实阴影且不会过曝。
-        const uint32_t existing = row[px] >> 24;
-        if (a > existing) {
-          // 纯黑影：预乘 ARGB = (a, 0, 0, 0)。
-          row[px] = a << 24;
-        }
+      };
+      if (!has_inside) {
+        paint_range(x0, x1);
+        continue;
       }
+      paint_range(x0, std::min(x1, inside_x0));
+      paint_range(std::max(x0, inside_x1), x1);
     }
   }
   // punch-out：任何卡矩形内部一律 alpha=0。面板可开整窗 LWA_ALPHA 半透明，
@@ -272,11 +324,16 @@ bool LookupShadowWindow::Paint(
     const int y1 = std::min(height, static_cast<int>(std::ceil(card[1] + card[3])));
     for (int py = y0; py < y1; ++py) {
       uint32_t* row = pixels + static_cast<size_t>(py) * width;
-      for (int px = x0; px < x1; ++px) {
-        const double d = RoundedRectDistance(px + 0.5, py + 0.5, card,
-                                             radius_px);
-        if (d <= 0) {
-          row[px] = 0;
+      int inside_x0 = 0;
+      int inside_x1 = 0;
+      if (RoundedRectInteriorSpan(py + 0.5, card, radius_px, width,
+                                  &inside_x0, &inside_x1)) {
+        // 连续写零仍是 O(card area) 的内存带宽，但不再为每个像素做
+        // RoundedRectDistance/sqrt/branch。
+        const int clear_x0 = std::max(x0, inside_x0);
+        const int clear_x1 = std::min(x1, inside_x1);
+        if (clear_x0 < clear_x1) {
+          std::fill(row + clear_x0, row + clear_x1, 0u);
         }
       }
     }
