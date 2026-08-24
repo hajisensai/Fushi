@@ -16,6 +16,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -325,7 +326,10 @@ class HomePage extends BasePage {
 
 class _HomePageState extends BasePageState<HomePage>
     with WidgetsBindingObserver {
-  String get appVersion => appModel.packageInfo.version;
+  /// BUG-1836：更新检查的「本机当前版本」走 [resolveCurrentAppVersion]，
+  /// 半更新态下 exe 版本资源会谎报新版本，客户端据它永判「已是最新」。
+  String get appVersion =>
+      resolveCurrentAppVersion(appModel.packageInfo.version);
 
   HomeTab _currentTab = HomeTab.home;
 

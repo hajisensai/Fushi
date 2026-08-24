@@ -407,7 +407,10 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后
   // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
   // 原「正在检查…」提示。
-  final String currentVersion = settingsContext.appModel.packageInfo.version;
+  // BUG-1836：同 home_page，半更新态下 exe 版本资源谎报新版本，
+  // 据它比较会永判「已是最新」，用户困在旧代码里没有出路。
+  final String currentVersion =
+      resolveCurrentAppVersion(settingsContext.appModel.packageInfo.version);
   final String currentBuildNumber =
       settingsContext.appModel.packageInfo.buildNumber;
   final UpdateChannel channel = _channelFromSettings(settingsContext);

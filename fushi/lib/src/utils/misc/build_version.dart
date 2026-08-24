@@ -52,3 +52,18 @@ String? normalizeFushiBuildVersion(String rawDefine) {
   final String trimmed = rawDefine.trim();
   return trimmed.isEmpty ? null : trimmed;
 }
+
+/// 「本机当前是哪个版本」的唯一真值入口：有代码版本就用它，否则退回原生版本资源。
+///
+/// 更新检查必须走这里。半更新态下 exe 版本资源与 `buildNumber` **都**报新值，
+/// 只看它们的话客户端会认为自己已是最新 ⇒ 不再提示更新 ⇒ 用户被困在旧代码里且
+/// 没有出路（BUG-1786 现场就差这一步就永久卡死）。代码版本来自 `app.so`，它才知道
+/// 跑着的到底是哪个构建；`currentReleaseSequence` 也会优先取它的 `-<channel>.<seq>`
+/// 尾号，于是序号比较跟着一起回到真值。
+///
+/// 包一致时（绝大多数情况）两者逐字相等，行为零变化。
+String resolveCurrentAppVersion(
+  String executableVersion, {
+  String runningCodeVersionDefine = kFushiBuildVersionDefine,
+}) =>
+    normalizeFushiBuildVersion(runningCodeVersionDefine) ?? executableVersion;

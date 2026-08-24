@@ -276,6 +276,47 @@ void main() {
     });
   });
 
+  /// BUG-1836：半更新态下 exe 版本资源与 `buildNumber` **都**报新值，只看它们的话
+  /// 客户端会认为自己已是最新 ⇒ 不再提示更新 ⇒ 用户被困在旧代码里且没有出路。
+  group('更新检查的「本机当前版本」', () {
+    test('有代码版本就用它，哪怕 exe 报的是更新的版本', () {
+      expect(
+        resolveCurrentAppVersion(
+          '2.2.1-debug.12216',
+          runningCodeVersionDefine: '2.2.1-debug.12215',
+        ),
+        '2.2.1-debug.12215',
+      );
+    });
+
+    test('未注入时退回 exe 版本资源', () {
+      expect(
+        resolveCurrentAppVersion(
+          '2.2.1-debug.12216',
+          runningCodeVersionDefine: '',
+        ),
+        '2.2.1-debug.12216',
+      );
+    });
+
+    test('两个更新检查入口都必须走这里（源码守卫）', () {
+      // 绕过任一入口，那条路径就在半更新态下永判「已是最新」。
+      const List<String> sources = <String>[
+        'lib/src/pages/implementations/home_page.dart',
+        'lib/src/settings/settings_schema_system.dart',
+      ];
+      for (final String path in sources) {
+        final File file = File(path);
+        expect(file.existsSync(), isTrue, reason: path);
+        expect(
+          file.readAsStringSync(),
+          contains('resolveCurrentAppVersion('),
+          reason: '$path 的更新检查绕开了「本机当前版本」的真值入口',
+        );
+      }
+    });
+  });
+
   group('normalizeFushiBuildVersion', () {
     test('未注入（空串 / 空白）折叠成 null，绝不当版本号参与比较', () {
       expect(normalizeFushiBuildVersion(''), isNull);
