@@ -3750,5 +3750,12 @@
   "onboarding_anki_addon_installed": "AnkiConnect ist installiert. Starten Sie Anki (neu) und tippen Sie dann auf „Verbindung testen\".",
   "onboarding_anki_addon_no_anki": "Anki-Datenordner nicht gefunden. Installieren Sie Anki und öffnen Sie es einmal, dann versuchen Sie es erneut.",
   "onboarding_anki_addon_failed": "Installation fehlgeschlagen: $message",
-  "game_hook_reason_capability_probe_failed": "Die Erfassungskomponente hat die Fähigkeitsprüfung nicht beantwortet. Sie wurde auf dem Datenträger gefunden, konnte aber nicht ausgeführt werden oder hat nicht rechtzeitig geantwortet – möglicherweise blockiert ein Antivirenprogramm sie, Fushi fehlt die Berechtigung zum Starten, oder ein verbleibender Helper-Prozess hängt. Schließen Sie alle Spiele, prüfen Sie die Quarantäne Ihres Antivirenprogramms und versuchen Sie es erneut."
+  "game_hook_reason_capability_probe_failed": "Die Erfassungskomponente hat die Fähigkeitsprüfung nicht beantwortet. Sie wurde auf dem Datenträger gefunden, konnte aber nicht ausgeführt werden oder hat nicht rechtzeitig geantwortet – möglicherweise blockiert ein Antivirenprogramm sie, Fushi fehlt die Berechtigung zum Starten, oder ein verbleibender Helper-Prozess hängt. Schließen Sie alle Spiele, prüfen Sie die Quarantäne Ihres Antivirenprogramms und versuchen Sie es erneut.",
+  "download_backend_setup_title": "Set up download backend",
+  "download_backend_setup_intro": "Pick which engine runs your downloads. You can change this any time in download settings.",
+  "download_backend_embedded_hint": "Recommended. Downloads run inside Fushi - nothing else to install.",
+  "download_backend_qb_hint": "Connect Fushi to a qBittorrent WebUI you already run.",
+  "download_backend_setup_start": "Set up now",
+  "download_backend_embedded_unavailable": "The built-in engine runtime is missing from this install. Reinstall the complete package, or use external qBittorrent instead.",
+  "download_backend_qb_url_invalid": "Enter a full address, e.g. http://127.0.0.1:8080"
 }

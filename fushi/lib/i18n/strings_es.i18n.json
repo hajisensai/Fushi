@@ -3750,5 +3750,12 @@
   "onboarding_anki_addon_installed": "AnkiConnect está instalado. Inicie (o reinicie) Anki, luego toque Probar conexión.",
   "onboarding_anki_addon_no_anki": "No se encontró la carpeta de datos de Anki. Instale Anki y ábralo una vez, luego inténtelo de nuevo.",
   "onboarding_anki_addon_failed": "La instalación falló: $message",
-  "game_hook_reason_capability_probe_failed": "El componente de captura no respondió a la verificación de capacidades. Se encontró en disco pero no pudo ejecutarse o no respondió a tiempo — el antivirus puede estar bloqueándolo, Fushi puede no tener permisos para lanzarlo, o un proceso helper residual puede estar atascado. Cierre todos los juegos, revise la cuarentena del antivirus, luego inténtelo de nuevo."
+  "game_hook_reason_capability_probe_failed": "El componente de captura no respondió a la verificación de capacidades. Se encontró en disco pero no pudo ejecutarse o no respondió a tiempo — el antivirus puede estar bloqueándolo, Fushi puede no tener permisos para lanzarlo, o un proceso helper residual puede estar atascado. Cierre todos los juegos, revise la cuarentena del antivirus, luego inténtelo de nuevo.",
+  "download_backend_setup_title": "Set up download backend",
+  "download_backend_setup_intro": "Pick which engine runs your downloads. You can change this any time in download settings.",
+  "download_backend_embedded_hint": "Recommended. Downloads run inside Fushi - nothing else to install.",
+  "download_backend_qb_hint": "Connect Fushi to a qBittorrent WebUI you already run.",
+  "download_backend_setup_start": "Set up now",
+  "download_backend_embedded_unavailable": "The built-in engine runtime is missing from this install. Reinstall the complete package, or use external qBittorrent instead.",
+  "download_backend_qb_url_invalid": "Enter a full address, e.g. http://127.0.0.1:8080"
 }

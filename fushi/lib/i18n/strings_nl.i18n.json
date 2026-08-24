@@ -3750,5 +3750,12 @@
   "onboarding_anki_addon_installed": "AnkiConnect is geïnstalleerd. Start Anki (opnieuw) en tik dan op Verbinding testen.",
   "onboarding_anki_addon_no_anki": "Anki-gegevensmap niet gevonden. Installeer Anki en open het eenmaal, en probeer dan opnieuw.",
   "onboarding_anki_addon_failed": "Installatie mislukt: $message",
-  "game_hook_reason_capability_probe_failed": "De opnamecomponent heeft de mogelijkheidscontrole niet beantwoord. Het is gevonden op de schijf maar kon niet worden uitgevoerd of reageerde niet op tijd — antivirus kan het blokkeren, Fushi heeft mogelijk geen toestemming om het te starten, of een achtergebleven helperproces zit vast. Sluit elk spel, controleer je antivirusquarantaine en probeer dan opnieuw."
+  "game_hook_reason_capability_probe_failed": "De opnamecomponent heeft de mogelijkheidscontrole niet beantwoord. Het is gevonden op de schijf maar kon niet worden uitgevoerd of reageerde niet op tijd — antivirus kan het blokkeren, Fushi heeft mogelijk geen toestemming om het te starten, of een achtergebleven helperproces zit vast. Sluit elk spel, controleer je antivirusquarantaine en probeer dan opnieuw.",
+  "download_backend_setup_title": "Set up download backend",
+  "download_backend_setup_intro": "Pick which engine runs your downloads. You can change this any time in download settings.",
+  "download_backend_embedded_hint": "Recommended. Downloads run inside Fushi - nothing else to install.",
+  "download_backend_qb_hint": "Connect Fushi to a qBittorrent WebUI you already run.",
+  "download_backend_setup_start": "Set up now",
+  "download_backend_embedded_unavailable": "The built-in engine runtime is missing from this install. Reinstall the complete package, or use external qBittorrent instead.",
+  "download_backend_qb_url_invalid": "Enter a full address, e.g. http://127.0.0.1:8080"
 }

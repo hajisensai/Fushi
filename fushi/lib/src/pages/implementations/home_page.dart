@@ -16,6 +16,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
@@ -1311,6 +1312,14 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// 后端没配好时的统一出口：**直接弹配置引导**，而不是甩一句「请先配置下载
+  /// 后端」让用户自己去翻设置。配完再点一次原入口即可继续。
+  Future<void> _promptDownloadBackendSetup(BuildContext context) =>
+      promptDownloadBackendSetup(
+        context: context,
+        appModel: appModelNoUpdate,
+      );
+
   Future<void> _openVideoDiscoveryResourceSearch(
     BuildContext context,
     VideoDiscoveryItem item,
@@ -1320,7 +1329,7 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoDownloadPipelineService? pipeline =
         appModelNoUpdate.videoDownloadPipelineService;
     if (registry == null || pipeline == null) {
-      _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      unawaited(_promptDownloadBackendSetup(context));
       return;
     }
     final List<MediaSourceRow> sources =
@@ -1340,7 +1349,7 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     } on Object {
       if (context.mounted) {
-        _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+        unawaited(_promptDownloadBackendSetup(context));
       }
       return;
     }
@@ -1389,7 +1398,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (registry == null ||
         appModelNoUpdate.videoDownloadPipelineService == null ||
         appModelNoUpdate.videoDownloadSubscriptionService == null) {
-      _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+      unawaited(_promptDownloadBackendSetup(context));
       return;
     }
     final List<MediaSourceRow> sources =
@@ -1409,7 +1418,7 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     } on Object {
       if (context.mounted) {
-        _showVideoDiscoveryMessage(context, t.download_backend_not_configured);
+        unawaited(_promptDownloadBackendSetup(context));
       }
       return;
     }
