@@ -398,14 +398,16 @@ class _TorrentSettingsSectionState
         // 比没有选项更糟。改为一行说明交代本平台只有外接 qb。
         if (_supportsEmbedded) ...<Widget>[
           FushiSegmentedStrip<String>(
+            // 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），
+            // 也是开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
             segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                value: QbConnectionConfig.backendQbittorrent,
-                label: Text(t.video_setting_torrent_backend_qb),
-              ),
               ButtonSegment<String>(
                 value: QbConnectionConfig.backendEmbedded,
                 label: Text(t.video_setting_torrent_backend_embedded),
+              ),
+              ButtonSegment<String>(
+                value: QbConnectionConfig.backendQbittorrent,
+                label: Text(t.video_setting_torrent_backend_qb),
               ),
             ],
             selected: backend,

@@ -21,6 +21,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -1131,6 +1132,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   // ---------------------------------------------------------------- 渲染
 
+  /// 「开始配置」：直接弹后端配置引导（只问「谁来下载」+ 所选后端的必填项），
+  /// 配完当场重算就绪状态。用户不再被丢进整页下载设置自己找字段。
+  Future<void> _openBackendSetup() async {
+    final bool done = await promptDownloadBackendSetup(
+      context: context,
+      appModel: ref.read(appProvider),
+    );
+    if (done && mounted) setState(() {});
+  }
+
+  /// 后端没就绪时的统一出口：**先弹引导**再决定要不要继续，而不是甩一句
+  /// 「请先配置下载后端」把动作丢掉。返回 true = 现在可以继续原动作。
+  Future<bool> _ensureBackendReady() async {
+    if (torrentBackendReady(ref.read(appProvider))) return true;
+    await _openBackendSetup();
+    if (!mounted) return false;
+    return torrentBackendReady(ref.read(appProvider));
+  }
+
   /// 「去设置」：embedded 由下载页回调切页内设置面板；独立对话框（视频页入口）
   /// push 下载页并直落设置面板——两个入口都能一键走到配置，不再让新用户死路。
   void _openBackendSettings() {
@@ -1176,6 +1196,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             ),
           ),
           const SizedBox(width: 8),
+          // 主动作是引导（配完就能下）；「去设置」留给要调限速/上传/做种的用户。
+          TextButton(
+            onPressed: _openBackendSetup,
+            child: Text(t.download_backend_setup_start),
+          ),
           TextButton(
             onPressed: _openBackendSettings,
             child: Text(t.download_open_settings),
@@ -2235,11 +2260,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// torrent-missing 超时从头算）。addTorrent 报失败但种子已在后端列表
   /// （入库失败类重试的常态——重复添加被后端拒绝）也算在下，交回轮询重走完成流程。
   Future<void> _retryPlan(AnimeDownloadPlan plan) async {
+    if (!await _ensureBackendReady()) return;
     final AppModel appModel = ref.read(appProvider);
-    if (!torrentBackendReady(appModel)) {
-      _snack(t.download_backend_not_configured);
-      return;
-    }
     final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
     if (store == null) {
       _snack(t.anime_download_store_unavailable);
@@ -2313,11 +2335,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     AnimeDownloadPlan plan, {
     required bool pause,
   }) async {
+    if (!await _ensureBackendReady()) return;
     final AppModel appModel = ref.read(appProvider);
-    if (!torrentBackendReady(appModel)) {
-      _snack(t.download_backend_not_configured);
-      return;
-    }
     final TorrentBackend backend = appModel.createTorrentBackend(
       effectiveTorrentConfig(appModel.qbConnectionConfig),
     );
