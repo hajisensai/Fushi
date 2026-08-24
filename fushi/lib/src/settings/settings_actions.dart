@@ -281,25 +281,6 @@ Widget buildLanguageSelector(SettingsContext settingsContext) {
   );
 }
 
-/// TODO-930: the default seed for a brand-new custom theme. Sticks with the
-/// 928 brand-teal default (the new theme then follows the current global
-/// brightness, decision 6); kept as a helper so the swatch row and editor agree.
-Color blankCustomThemeSeed() => const Color(kCustomThemeDefaultSeed);
-
-/// TODO-930: create + persist a brand-new empty custom theme and return it.
-/// upsert adds it to the list and selects it; the caller then pushes the editor
-/// for `entry.id`. The seed defaults to [blankCustomThemeSeed]; name is empty so
-/// the UI shows the `Custom N` default until the user types one.
-Future<CustomThemeEntry> createBlankCustomTheme(AppModel appModel) async {
-  final CustomThemeEntry entry = CustomThemeEntry(
-    id: 'ct-${DateTime.now().microsecondsSinceEpoch}',
-    name: '',
-    seed: blankCustomThemeSeed().toARGB32(),
-  );
-  await appModel.upsertCustomTheme(entry);
-  return entry;
-}
-
 Widget buildThemeSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   final Color systemColor =
@@ -404,9 +385,10 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             },
           );
         }),
-        // TODO-930 M1: 末尾「+新建」圈。新建一个空 entry（种子取当前全局明暗对应
-        // 的品牌默认色，沿用 928），upsert 后进编辑页编辑它。焦点/手柄用户单击
-        // （Enter / A）即可新建，无需长按。
+        // TODO-930 M1: 末尾「+新建」圈。打开一个空草稿编辑页（种子取品牌默认色，
+        // 沿用 928），用户点「应用」才写进列表。焦点/手柄用户单击（Enter / A）
+        // 即可新建，无需长按。
+        // BUG-1841：进编辑页前不得 upsert——否则只是点开看看也会多出一个主题。
         FushiSchemeSwatch(
           colors: fushiSchemeSwatchColors(
             buildFushiColorScheme(
@@ -419,19 +401,17 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           selected: false,
           overlay: const Icon(Icons.add),
           onTap: () async {
-            final CustomThemeEntry created = await createBlankCustomTheme(
-              appModel,
-            );
             await pushSettingsPage(
               settingsContext,
-              (_) => CustomThemePage(themeId: created.id),
+              (_) => const CustomThemePage(),
             );
             notifyReaderSettingsChanged(settingsContext);
           },
         ),
         // TODO-930 M1: 焦点/手柄没有长按，故保留一个焦点可达的「编辑」按钮，编辑
         // 当前活跃的自定义主题（先切到某个自定义 swatch，再用此按钮编辑它）。
-        // 列表为空时无活跃 entry，按钮新建一个再编辑。
+        // 当前不在自定义主题上时没有活跃 entry，按钮打开空草稿编辑页（同「+」，
+        // BUG-1841：不预先落库）。
         // Material 祖先：Cupertino 渲染器下没有 Material，FushiIconButton 的
         // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
         Material(
@@ -444,12 +424,10 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
               height: _swatchSize,
             ),
             onTap: () async {
-              final CustomThemeEntry? active = appModel.activeCustomThemeEntry;
-              final String themeId =
-                  active?.id ?? (await createBlankCustomTheme(appModel)).id;
+              final String? activeId = appModel.activeCustomThemeEntry?.id;
               await pushSettingsPage(
                 settingsContext,
-                (_) => CustomThemePage(themeId: themeId),
+                (_) => CustomThemePage(themeId: activeId),
               );
               notifyReaderSettingsChanged(settingsContext);
             },
