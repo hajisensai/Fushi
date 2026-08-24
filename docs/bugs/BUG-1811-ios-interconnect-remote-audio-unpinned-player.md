@@ -36,7 +36,34 @@
   - 每个缓存用例注入自己由 `createTemp` 创建、结束递归删除的目录；预算只统计该用例目录，
     不再与其它 agent/worktree 共用 `/tmp/fushi_remote_lookup_audio`。新增第二跳 TLS 失败进入
     `RemoteLookupUnreachableError`、第二跳 404 保持普通 `null` 的成对回归。
-- **备注**：根因不是 iOS 音频解码或自动播放策略，而是同一个互联操作被拆成「已钉扎
+### 合入 develop 前的两处收口（2026-08-25）
+
+1. **超时量纲错配 —— 本 PR 唯一的行为回归**。上面 ① 里写的「整段下载超时……转换为
+   `RemoteLookupUnreachableError` 让既有 45 秒失败冷却生效」在实现上把 RPC 往返预算
+   （`FushiRemoteLookupClient` 默认 3s，`app_model` 走默认值）原样交给
+   `getLookupAudioBytes`，而后者把 `.timeout(timeout)` 套在**整个流式下载**外面
+   （`maxBytes` 默认 16 MiB）。结果是：一个活着但网慢的 peer 被判成「设备死了」，
+   经 `InterconnectAssetUnreachableError → RemoteLookupUnreachableError →
+   word_audio_resolver.dart` 的 `kRemoteAudioFailureCooldown` 关进 45 秒冷却——这个副作用在
+   修复前不存在。
+   **改法（根因）**：把两个阶段分开。`timeout` 只覆盖到拿到响应头（连接阶段，量的是
+   「对端还活着吗」，超时仍算不可达）；整包字节下载走独立的 `transferTimeout`
+   （`kInterconnectAssetTransferTimeout = 30s`），**传输超时返回 `null`（可达但慢 = 这次没音频），
+   不转 Unreachable、不制造假冷却**。
+2. **资产第二跳未禁重定向**。`_sameOrigin` + `uri.path == '/api/lookup/audio/file'` 白名单只作用于
+   初始 URI，而 `http.Request` 默认 `followRedirects = true`（Dart 默认还跟随 https→http），一个 302
+   即可把这个带凭据语义的 GET 引到任意主机。已改为 `..followRedirects = false`；3xx 落进既有
+   「非 2xx = 没音频」分支。
+3. **缓存 prune 挪出命中路径**。`_pruneRemoteAudioCache` 原本在 `output.exists()` 之前跑，缓存命中
+   也要付一次「全目录 list + 逐文件 stat」。自动发音是热路径，prune 现在只发生在 miss/写路径上。
+
+测试（均变异实测）：`fushi/test/sync/fushi_remote_lookup_client_test.dart` 新增
+`a slow asset transfer is "no audio" (null), never a false unreachable cooldown`（去掉传输超时的独立
+catch → 红）、`a connect-phase timeout on the asset hop is still unreachable`、
+`the asset hop never follows redirects`（去掉 `followRedirects = false` → 红）。
+
+- **备注**：`interconnect_remote_audio_tls_ios_itest.dart` 不在任何 runner 里（真单测门
+  `flutter_test_failures.dart` 只跑 `test/`），只能真机/模拟器手跑。根因不是 iOS 音频解码或自动播放策略，而是同一个互联操作被拆成「已钉扎
   JSON POST」与「未钉扎媒体 GET」两条信任链。修复必须让第二跳继续绑定命中的 peer 与
   其指纹，并把取回的短音频物化为本地文件后再交给既有 WebView/native 播放路径；不得
   关闭 TLS 校验或给 WebView 全局放行自签名证书。修复后实机门通过。

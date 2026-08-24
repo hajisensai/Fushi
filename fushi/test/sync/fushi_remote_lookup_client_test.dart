@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -207,8 +208,7 @@ void main() {
             return http.Response.bytes(
               utf8.encode(jsonEncode(<String, dynamic>{
                 'type': 'audioResult',
-                'url':
-                    'https://pinned:38765/api/lookup/audio/file?id=opaque',
+                'url': 'https://pinned:38765/api/lookup/audio/file?id=opaque',
                 'contentType': 'audio/mpeg',
               })),
               200,
@@ -266,8 +266,7 @@ void main() {
           return http.Response(
             jsonEncode(<String, dynamic>{
               'type': 'audioResult',
-              'url':
-                  'https://pinned:38765/api/lookup/audio/file?id=opaque',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=opaque',
             }),
             200,
           );
@@ -301,8 +300,7 @@ void main() {
           return http.Response(
             jsonEncode(<String, dynamic>{
               'type': 'audioResult',
-              'url':
-                  'https://pinned:38765/api/lookup/audio/file?id=expired',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=expired',
             }),
             200,
           );
@@ -320,8 +318,7 @@ void main() {
   test('materialized pinned audio cache evicts expired and over-budget files',
       () async {
     final Directory cache = await _isolatedAudioCache();
-    final String marker =
-        'qa_${DateTime.now().microsecondsSinceEpoch}_${pid}_';
+    final String marker = 'qa_${DateTime.now().microsecondsSinceEpoch}_${pid}_';
     final File expired = File('${cache.path}/${marker}expired.bin');
     final File freshA = File('${cache.path}/${marker}fresh_a.bin');
     final File freshB = File('${cache.path}/${marker}fresh_b.bin');
@@ -329,7 +326,8 @@ void main() {
       await file.create();
     }
     await expired.writeAsBytes(<int>[1]);
-    final DateTime tenDaysAgo = DateTime.now().subtract(const Duration(days: 10));
+    final DateTime tenDaysAgo =
+        DateTime.now().subtract(const Duration(days: 10));
     await expired.setLastModified(tenDaysAgo);
     await expired.setLastAccessed(tenDaysAgo);
     await freshA.open(mode: FileMode.write).then((raf) async {
@@ -361,8 +359,7 @@ void main() {
           return http.Response.bytes(
             utf8.encode(jsonEncode(<String, dynamic>{
               'type': 'audioResult',
-              'url':
-                  'https://pinned:38765/api/lookup/audio/file?id=$marker',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=$marker',
               'contentType': 'audio/mpeg',
             })),
             200,
@@ -387,6 +384,171 @@ void main() {
     }
     expect(totalBytes, lessThanOrEqualTo(64 * 1024 * 1024),
         reason: 'remote lookup audio cache must have a hard byte budget');
+  });
+
+  // 「RPC 往返延迟」和「整包字节传输」不是一个量纲。第二跳资产下载最大 16 MiB，
+  // 却曾与 /api/lookup/audio 的 POST 共用同一个 3s 预算，且超时被译成
+  // InterconnectAssetUnreachableError → RemoteLookupUnreachableError → 上层把整个
+  // hibiki-remote 源关进 45s 失败冷却。结果是「活着但网慢的 peer」被判成「设备
+  // 死了」。传输阶段必须有独立预算，且超时 = 可达但慢 = 无音频，不制造假冷却。
+  test(
+      'a slow asset transfer is "no audio" (null), never a false unreachable '
+      'cooldown', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+
+    // 响应头立刻到（连接阶段健康），body 永远不来（链路慢）。
+    final StreamController<List<int>> stalled = StreamController<List<int>>();
+    addTearDown(() async {
+      if (!stalled.isClosed) await stalled.close();
+    });
+
+    final List<String> methods = <String>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      timeout: const Duration(seconds: 3),
+      audioTransferTimeout: const Duration(milliseconds: 120),
+      pinnedClientFactory: (_) => MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream _) async {
+          methods.add(request.method);
+          if (request.method == 'POST') {
+            final List<int> payload = utf8.encode(jsonEncode(
+              <String, dynamic>{
+                'type': 'audioResult',
+                'url': 'https://pinned:38765/api/lookup/audio/file?id=slow',
+                'contentType': 'audio/mpeg',
+              },
+            ));
+            return http.StreamedResponse(
+              Stream<List<int>>.value(payload),
+              200,
+              contentLength: payload.length,
+              headers: const <String, String>{
+                'content-type': 'application/json; charset=utf-8',
+              },
+            );
+          }
+          return http.StreamedResponse(
+            stalled.stream,
+            200,
+            headers: const <String, String>{'content-type': 'audio/mpeg'},
+          );
+        },
+      ),
+    );
+
+    final String? url =
+        await client.lookupAudioUrl(expression: '猫', reading: 'ねこ');
+
+    expect(url, isNull, reason: '传输慢 = 这次没拿到音频，不是设备死了');
+    expect(methods, <String>['POST', 'GET'],
+        reason: '资产 GET 必须真被发出过（否则测的不是传输阶段）');
+  });
+
+  // 上面的传输超时不算不可达，但**连接阶段**超时仍必须算不可达，否则真死掉的
+  // peer 会被无限重试。两条一起才把「快/慢/死」三态钉住。
+  test('a connect-phase timeout on the asset hop is still unreachable',
+      () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      timeout: const Duration(milliseconds: 120),
+      audioTransferTimeout: const Duration(seconds: 30),
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=dead',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }
+        // 响应头都不来：连接阶段死。
+        await Future<void>.delayed(const Duration(seconds: 5));
+        return http.Response.bytes(<int>[1, 2, 3], 200);
+      }),
+    );
+
+    await expectLater(
+      client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+      throwsA(isA<RemoteLookupUnreachableError>()),
+    );
+  });
+
+  // origin + path 白名单只校验初始 URI；http.Request 默认 followRedirects=true
+  // （且 Dart 默认允许 https→http 降级），一个 302 就能把这个带凭据语义的 GET
+  // 引到任意主机。资产端点本来也不该发 3xx，跟随只会绕过校验。
+  test('the asset hop never follows redirects', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+
+    final List<bool> assetFollowRedirects = <bool>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=redirect',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }
+        assetFollowRedirects.add(request.followRedirects);
+        return http.Response(
+          '',
+          302,
+          headers: const <String, String>{
+            'location': 'https://attacker.test/steal',
+          },
+        );
+      }),
+    );
+
+    final String? url =
+        await client.lookupAudioUrl(expression: '猫', reading: 'ねこ');
+
+    expect(assetFollowRedirects, <bool>[false], reason: '资产 GET 必须显式关闭重定向跟随');
+    expect(url, isNull, reason: '3xx 是非 2xx，按「没音频」处理，不得当成可用资产');
   });
 
   test('pinned audio rejects a token URL outside the winning peer origin',
@@ -425,8 +587,7 @@ void main() {
       },
     );
 
-    expect(await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
-        isNull,
+    expect(await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'), isNull,
         reason: 'the opaque asset URL must stay on the authenticated peer');
     expect(requests, <String>['POST pinned'],
         reason: 'a different-origin GET must never be issued');

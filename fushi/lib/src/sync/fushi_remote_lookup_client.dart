@@ -45,12 +45,14 @@ class FushiRemoteLookupClient {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Future<Directory> Function()? pinnedAudioCacheDirectoryProvider,
     Duration timeout = const Duration(seconds: 3),
+    Duration audioTransferTimeout = kInterconnectAssetTransferTimeout,
   })  : _transport = InterconnectPostTransport(
           repo: repo,
           httpClient: httpClient,
           pinnedClientFactory: pinnedClientFactory,
         ),
         _timeout = timeout,
+        _audioTransferTimeout = audioTransferTimeout,
         _pinnedAudioCacheDirectoryProvider =
             pinnedAudioCacheDirectoryProvider ??
                 _defaultPinnedAudioCacheDirectory;
@@ -58,7 +60,12 @@ class FushiRemoteLookupClient {
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
   final InterconnectPostTransport _transport;
+
+  /// RPC 往返预算：量的是「对端还活着吗」。
   final Duration _timeout;
+
+  /// 音频资产整包下载预算：量的是字节传输，与 [_timeout] 不同量纲（BUG-1811 续）。
+  final Duration _audioTransferTimeout;
   final Future<Directory> Function() _pinnedAudioCacheDirectoryProvider;
 
   static Future<Directory> _defaultPinnedAudioCacheDirectory() async {
@@ -180,9 +187,8 @@ class FushiRemoteLookupClient {
     final Uri? uri = Uri.tryParse(urlText);
     final FushiClientUrl? candidate = outcome.candidate;
     final String? fingerprint = candidate?.fingerprintSha256;
-    final bool pinnedCandidate = candidate != null &&
-        fingerprint != null &&
-        fingerprint.isNotEmpty;
+    final bool pinnedCandidate =
+        candidate != null && fingerprint != null && fingerprint.isNotEmpty;
     if (!pinnedCandidate) return urlText;
     if (uri == null || !uri.isScheme('https')) return null;
 
@@ -192,6 +198,7 @@ class FushiRemoteLookupClient {
         candidate: candidate,
         uri: uri,
         timeout: _timeout,
+        transferTimeout: _audioTransferTimeout,
       );
     } on InterconnectAssetUnreachableError catch (error, stack) {
       Error.throwWithStackTrace(
@@ -232,7 +239,6 @@ Future<String?> _materializePinnedAudio(
   final String digest = sha256.convert(bytes).toString();
   final String extension = _audioExtensionForContentType(contentType);
   await cache.create(recursive: true);
-  await _pruneRemoteAudioCache(cache);
   final File output = File(p.join(cache.path, '$digest.$extension'));
   if (await output.exists()) {
     if (await _fileMatchesDigest(output, digest)) {
@@ -241,6 +247,10 @@ Future<String?> _materializePinnedAudio(
     }
     await output.delete();
   }
+
+  // 淘汰只发生在写路径上：自动发音是热路径，缓存命中不该再付一次「全目录 list +
+  // 逐文件 stat」。写前 prune 保证新文件落盘后不会把缓存顶出上限。
+  await _pruneRemoteAudioCache(cache);
 
   // Publish atomically: simultaneous lookups for the same clip may race, but
   // no player should ever observe a half-written file.
@@ -251,8 +261,7 @@ Future<String?> _materializePinnedAudio(
     try {
       await temporary.rename(output.path);
     } on FileSystemException {
-      if (!await output.exists() ||
-          !await _fileMatchesDigest(output, digest)) {
+      if (!await output.exists() || !await _fileMatchesDigest(output, digest)) {
         rethrow;
       }
     }
@@ -285,8 +294,7 @@ Future<void> _pruneRemoteAudioCache(
   final List<({File file, FileStat stat})> survivors =
       <({File file, FileStat stat})>[];
 
-  await for (final FileSystemEntity entity
-      in cache.list(followLinks: false)) {
+  await for (final FileSystemEntity entity in cache.list(followLinks: false)) {
     try {
       final FileStat stat = await entity.stat();
       if (entity is Directory) {
@@ -311,8 +319,7 @@ Future<void> _pruneRemoteAudioCache(
 
   int totalBytes = survivors.fold<int>(
     0,
-    (int total, ({File file, FileStat stat}) entry) =>
-        total + entry.stat.size,
+    (int total, ({File file, FileStat stat}) entry) => total + entry.stat.size,
   );
   survivors.sort((a, b) => a.stat.accessed.compareTo(b.stat.accessed));
   for (final ({File file, FileStat stat}) entry in survivors) {
@@ -328,8 +335,7 @@ Future<void> _pruneRemoteAudioCache(
 }
 
 String _audioExtensionForContentType(String? raw) {
-  final String contentType =
-      (raw ?? '').split(';').first.trim().toLowerCase();
+  final String contentType = (raw ?? '').split(';').first.trim().toLowerCase();
   return switch (contentType) {
     'audio/ogg' || 'audio/opus' => 'ogg',
     'audio/mp4' || 'audio/aac' => 'm4a',
