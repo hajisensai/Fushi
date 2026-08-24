@@ -250,12 +250,14 @@ class _Args {
     if (input == null) throw const FormatException('--input 必填');
     final String? wholeUrl = single['--whole-url'];
     if (wholeUrl == null) throw const FormatException('--whole-url 必填');
-    if (!wholeUrl.startsWith('https://')) {
-      throw const FormatException('--whole-url 必须是 https');
-    }
-    for (final String url in <String>[...mirrors, ...partBaseUrls]) {
+    // 所有外发下载地址走同一道门。别再给某一类 URL 开单独分支——
+    // wholeUrl 曾经就是单独只查 https、漏掉 hazardousReleaseHost，而它正是
+    // 真实下载源（会作为 DownloadSource 挂到每一个分片上），于是
+    // `--whole-url https://github.com/hajisensai/fushi/releases/...` 可以完整
+    // 绕过守卫——正是守卫想拦的那种事故形态。
+    for (final String url in <String>[wholeUrl, ...mirrors, ...partBaseUrls]) {
       if (!url.startsWith('https://')) {
-        throw FormatException('镜像/切片地址必须是 https：$url');
+        throw FormatException('下载地址必须是 https：$url');
       }
       final String? hazard = hazardousReleaseHost(url);
       if (hazard != null) throw FormatException(hazard);
