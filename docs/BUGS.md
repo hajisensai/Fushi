@@ -33,6 +33,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1820](bugs/BUG-1820-ios-media-sources-scrape-actions-hidden.md) | ✅ | ✅ | iOS视频来源页隐藏全部刮削与任务入口 |
+| [BUG-1819](bugs/BUG-1819-observe-capture-ios-unwritable-relative-dir.md) | ✅ | ✅ | 实机截图helper在iOS写相对codex-test目录失败 |
+| [BUG-1818](bugs/BUG-1818-video-library-section-focus-lost.md) | ✅ | ✅ | 视频库切分区后分段导航焦点丢失 |
+| [BUG-1817](bugs/BUG-1817-video-source-itest-section-type-drift.md) | ✅ | ✅ | 视频来源实测仍按旧两段库页导航驱动 |
 | [BUG-1816](bugs/BUG-1816-focus-driver-scope-fallback-nonmac.md) | ✅ | ✅ | FocusDriver Scope 兜底掩盖非 macOS Tab 回归 |
 | [BUG-1815](bugs/BUG-1815-lyrics-load-guard-stale-finalizer-test.md) | ✅ | ✅ | 歌词文档守卫静态测试未跟随 finalizer 重构 |
 | [BUG-1814](bugs/BUG-1814-main-window-focus-gate-nonwindows-test.md) | ✅ | ✅ | Windows 焦点闸门单测在非 Windows 误红 |
@@ -42,10 +46,6 @@
 | [BUG-1810](bugs/BUG-1810-comprehensive-imports-never-opens-books.md) | ✅ | ✅ | 综合导入实测未打开书架导致已导入图书不可见 |
 | [BUG-1809](bugs/BUG-1809-ios-lyrics-load-data-no-load-stop.md) | ✅ | ✅ | iOS歌词loadData返回后不触发onLoadStop导致永不ready |
 | [BUG-1808](bugs/BUG-1808-lyrics-itest-concrete-activation.md) | ✅ | ✅ | 歌词模式实测未激活具体reader-action焦点节点 |
-| [BUG-1807](bugs/BUG-1807-ios-media-sources-scrape-actions-hidden.md) | ✅ | ✅ | iOS视频来源页隐藏全部刮削与任务入口 |
-| [BUG-1806](bugs/BUG-1806-observe-capture-ios-unwritable-relative-dir.md) | ✅ | ✅ | 实机截图helper在iOS写相对codex-test目录失败 |
-| [BUG-1805](bugs/BUG-1805-video-library-section-focus-lost.md) | ✅ | ✅ | 视频库切分区后分段导航焦点丢失 |
-| [BUG-1804](bugs/BUG-1804-video-source-itest-section-type-drift.md) | ✅ | ✅ | 视频来源实测仍按旧两段库页导航驱动 |
 | [BUG-1803](bugs/BUG-1803-dictionary-overlay-dispose-without-remove.md) | ✅ | ✅ | 查词页根Overlay卸载时先dispose仍登记的OverlayEntry |
 | [BUG-1802](bugs/BUG-1802-comprehensive-imports-dictionary-tab-index-drift.md) | ✅ | ✅ | 综合导入实测按固定索引误把书架当查词 |
 | [BUG-1801](bugs/BUG-1801-comprehensive-imports-ios-font-fixture.md) | ✅ | ✅ | 综合导入实测在iOS找不到字体fixture |
