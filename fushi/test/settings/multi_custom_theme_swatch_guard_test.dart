@@ -32,11 +32,20 @@ void main() {
           reason: 'long-press must open the editor for that entry');
     });
 
-    test('has a +new swatch that creates a blank theme then edits it', () {
-      expect(actions.contains('createBlankCustomTheme(appModel)'), isTrue,
-          reason: 'missing the +new swatch create path');
+    test('has a +new swatch that opens a draft editor (BUG-1841: no upsert)',
+        () {
+      expect(actions.contains('(_) => const CustomThemePage()'), isTrue,
+          reason: 'missing the +new swatch draft-editor path');
       expect(actions.contains('Icons.add'), isTrue,
           reason: 'the +new swatch needs an add overlay icon');
+      // BUG-1841：swatch 行任何入口都不得在进编辑页前写主题列表；只有编辑页
+      // 「应用」才 upsert。行为层由 test/pages/custom_theme_page_draft_no_persist_test
+      // 断言，这里守住源码不再长出预落库 helper。
+      expect(actions.contains('upsertCustomTheme('), isFalse,
+          reason:
+              'swatch row must not persist a theme before the editor opens');
+      expect(actions.contains('createBlankCustomTheme'), isFalse,
+          reason: 'pre-persisting blank-theme helper must stay deleted');
     });
 
     test('keeps a focus-reachable edit button', () {

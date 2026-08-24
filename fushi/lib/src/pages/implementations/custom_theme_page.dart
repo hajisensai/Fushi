@@ -3,12 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show kCustomThemeDefaultSeed;
 import 'package:fushi/utils.dart';
 
 class CustomThemePage extends BasePage {
-  // TODO-930: edit an existing custom theme by id, or (null) create a new one.
-  // The swatch row passes a concrete id (long-press / edit button / +new after
-  // upsert); a null id keeps the legacy "edit the active custom theme" path.
+  // TODO-930: edit an existing custom theme by id, or (null) draft a new one.
+  // BUG-1841: a draft lives only in this page's state until the user taps
+  // "apply" — opening the editor must never write to the theme list. The swatch
+  // row's +new / edit-with-no-active entry points therefore pass null instead of
+  // pre-persisting a blank entry.
   const CustomThemePage({super.key, this.themeId});
 
   final String? themeId;
@@ -40,9 +44,14 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   bool _useLinkColor = false;
 
   // TODO-930: the entry being edited. Resolved in initState from widget.themeId
-  // (or the active custom theme / a fresh id when null). Name is optional.
+  // (a fresh id when null). Name is optional.
   late String _entryId;
   late TextEditingController _nameController;
+
+  // BUG-1841: true when [_entryId] is not in the persisted list yet (a draft
+  // opened via +new / edit-with-no-active). Nothing exists to delete, and apply
+  // is the only path that writes it.
+  late bool _isDraft;
 
   ScrollHoldController? _pickerScrollHold;
 
@@ -54,54 +63,49 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   @override
   void initState() {
     super.initState();
-    // TODO-930: resolve which entry we are editing. Prefer the explicit
-    // widget.themeId; else fall back to the active custom theme; else a fresh
-    // id for a brand-new theme. Initial colors come from that entry when it
-    // exists, otherwise from the legacy flat getters (keeps the pre-930
-    // single-theme edit path identical for a null/missing id).
-    final CustomThemeEntry? entry = widget.themeId != null
+    // TODO-930 / BUG-1841: resolve which entry we are editing. A persisted
+    // entry (by widget.themeId) seeds the editor from its stored colors; any
+    // other case (null id, or an id that is not in the list) is a draft: a
+    // fresh blank entry with the brand default seed and no role overrides that
+    // exists only in this State until apply upserts it.
+    final CustomThemeEntry? persisted = widget.themeId != null
         ? appModelNoUpdate.customThemeById(widget.themeId!)
-        : appModelNoUpdate.activeCustomThemeEntry;
-    _entryId = entry?.id ??
-        widget.themeId ??
-        'ct-${DateTime.now().microsecondsSinceEpoch}';
-    _nameController = TextEditingController(text: entry?.name ?? '');
+        : null;
+    _isDraft = persisted == null;
+    final CustomThemeEntry entry = persisted ??
+        CustomThemeEntry(
+          id: widget.themeId ?? 'ct-${DateTime.now().microsecondsSinceEpoch}',
+          name: '',
+          seed: kCustomThemeDefaultSeed,
+        );
+    _entryId = entry.id;
+    _nameController = TextEditingController(text: entry.name);
 
-    Color? roleColor(int? fromEntry, Color? Function() legacy) {
-      if (entry != null) return fromEntry != null ? Color(fromEntry) : null;
-      return legacy();
-    }
+    Color? roleColor(int? fromEntry) =>
+        fromEntry != null ? Color(fromEntry) : null;
 
-    _seed =
-        entry != null ? Color(entry.seed) : appModelNoUpdate.customThemeSeed;
+    _seed = Color(entry.seed);
     _brightnessMode = appModelNoUpdate.brightnessMode;
-    _fontColor = roleColor(
-        entry?.fontColor, () => appModelNoUpdate.customThemeFontColor);
+    _fontColor = roleColor(entry.fontColor);
     _useFontColor = _fontColor != null;
     _fontColor ??= Colors.black;
-    _bgColor = roleColor(
-        entry?.bgColor, () => appModelNoUpdate.customThemeBackgroundColor);
+    _bgColor = roleColor(entry.bgColor);
     _useBgColor = _bgColor != null;
     _bgColor ??= Colors.white;
-    _selectionColor = roleColor(entry?.selectionColor,
-        () => appModelNoUpdate.customThemeSelectionColor);
+    _selectionColor = roleColor(entry.selectionColor);
     _useSelectionColor = _selectionColor != null;
     _selectionColor ??= Colors.grey;
     final ColorScheme generated = _generatedScheme;
-    _primaryColor = roleColor(
-        entry?.primaryColor, () => appModelNoUpdate.customThemePrimaryColor);
+    _primaryColor = roleColor(entry.primaryColor);
     _usePrimaryColor = _primaryColor != null;
     _primaryColor ??= generated.primary;
-    _secondaryColor = roleColor(entry?.secondaryColor,
-        () => appModelNoUpdate.customThemeSecondaryColor);
+    _secondaryColor = roleColor(entry.secondaryColor);
     _useSecondaryColor = _secondaryColor != null;
     _secondaryColor ??= generated.secondary;
-    _tertiaryColor = roleColor(
-        entry?.tertiaryColor, () => appModelNoUpdate.customThemeTertiaryColor);
+    _tertiaryColor = roleColor(entry.tertiaryColor);
     _useTertiaryColor = _tertiaryColor != null;
     _tertiaryColor ??= generated.tertiary;
-    _containerColor = roleColor(entry?.containerColor,
-        () => appModelNoUpdate.customThemeContainerColor);
+    _containerColor = roleColor(entry.containerColor);
     _useContainerColor = _containerColor != null;
     _containerColor ??= generated.primaryContainer;
     // TODO-977：音频高亮色是**全局偏好**（与主题解耦），从 appModel.audioHighlightColor
@@ -111,8 +115,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     _useSentenceAudioHighlightColor = _sentenceAudioHighlightColor != null;
     _sentenceAudioHighlightColor ??=
         FushiColor.defaultSentenceAudioHighlightColor;
-    _linkColor = roleColor(
-        entry?.linkColor, () => appModelNoUpdate.customThemeLinkColor);
+    _linkColor = roleColor(entry.linkColor);
     _useLinkColor = _linkColor != null;
     _linkColor ??= generated.primary;
   }
@@ -681,17 +684,21 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           icon: const Icon(Icons.check),
           label: Text(t.apply_theme),
         ),
-        SizedBox(height: tokens.spacing.gap),
         // TODO-930 M2: 删除当前编辑的主题（确认后），回退由 deleteCustomTheme +
         // _resolveThemeKeyAfterDelete 处理（决策 1：列表非空选第一项，空→system）。
-        OutlinedButton.icon(
-          onPressed: _confirmDelete,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
+        // BUG-1841：草稿还没进列表、没有东西可删，也不该借删除去改全局主题键——
+        // 直接不渲染删除按钮，返回即丢弃草稿。
+        if (!_isDraft) ...[
+          SizedBox(height: tokens.spacing.gap),
+          OutlinedButton.icon(
+            onPressed: _confirmDelete,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            icon: const Icon(Icons.delete_outline),
+            label: Text(t.delete_custom_theme),
           ),
-          icon: const Icon(Icons.delete_outline),
-          label: Text(t.delete_custom_theme),
-        ),
+        ],
       ],
     );
   }
