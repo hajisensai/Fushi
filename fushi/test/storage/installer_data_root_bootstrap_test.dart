@@ -292,8 +292,43 @@ void main() {
 
       final AppPaths paths = await AppPaths.resolve();
 
-      expect(paths.documentsRoot.path, p.join(picked, 'documents'));
-      expect(paths.supportRoot.path, p.join(picked, 'support'));
+      expect(
+        paths.documentsRoot.path,
+        p.join(picked, AppPaths.dataRootDocumentsChild),
+      );
+      expect(
+        paths.supportRoot.path,
+        p.join(picked, AppPaths.dataRootSupportChild),
+      );
     },
   );
+
+  // 生产落点这条腿：上面所有用例都注入 bootstrapFile:，`_productionBootstrapFile()`
+  // 一次都没被执行过。写错目录与写错文件名后果完全等价——安装器写了没人读，且全程
+  // 无声；文件名由源码守卫钉，目录由这两条钉。
+  group('bootstrapFileForExecutable', () {
+    test('locates the file next to the exe on Windows', () {
+      final String exe = p.join('C:', 'Program Files', 'Fushi', 'fushi.exe');
+
+      final File? file = bootstrapFileForExecutable(exe, isWindows: true);
+
+      expect(file, isNotNull);
+      expect(
+        file!.path,
+        p.join(p.dirname(exe), installerDataRootBootstrapFileName),
+      );
+      expect(p.basename(file.path), installerDataRootBootstrapFileName);
+      expect(p.dirname(file.path), p.dirname(exe));
+    });
+
+    test('is Windows-only (no such installer elsewhere)', () {
+      expect(
+        bootstrapFileForExecutable(
+          '/Applications/Fushi.app/fushi',
+          isWindows: false,
+        ),
+        isNull,
+      );
+    });
+  });
 }

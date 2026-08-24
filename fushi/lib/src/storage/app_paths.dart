@@ -112,10 +112,10 @@ class AppPaths {
 
   /// `<dataRoot>` 下「内容/书库」子目录名。dataRoot 覆盖生效时，documentsRoot 落这里，
   /// 不与 supportRoot 子目录冲突（两根共一个 dataRoot 时仍各有独立子树）。
-  static const String _dataRootDocumentsChild = 'documents';
+  static const String dataRootDocumentsChild = 'documents';
 
   /// `<dataRoot>` 下「数据库/支持」子目录名。
-  static const String _dataRootSupportChild = 'support';
+  static const String dataRootSupportChild = 'support';
 
   /// BUG-1115：**默认** documents 根的布局键（SharedPreferences，与 [dataRootPrefKey]
   /// 同一通道，DB 打开前可读）。值只有两个：[documentsLayoutFlat] /
@@ -258,7 +258,7 @@ class AppPaths {
     if (test != null) return test;
     final Directory? dataRoot = await _resolveDataRoot();
     if (dataRoot != null) {
-      return Directory(p.join(dataRoot.path, _dataRootDocumentsChild));
+      return Directory(p.join(dataRoot.path, dataRootDocumentsChild));
     }
     return _resolveDefaultDocumentsRoot();
   }
@@ -425,7 +425,7 @@ class AppPaths {
     if (test != null) return test;
     final Directory? dataRoot = await _resolveDataRoot();
     if (dataRoot != null) {
-      return Directory(p.join(dataRoot.path, _dataRootSupportChild));
+      return Directory(p.join(dataRoot.path, dataRootSupportChild));
     }
     return getApplicationSupportDirectory();
   }
@@ -441,8 +441,8 @@ class AppPaths {
     String dataRootPath,
   ) =>
       (
-        Directory(p.join(dataRootPath, _dataRootDocumentsChild)),
-        Directory(p.join(dataRootPath, _dataRootSupportChild)),
+        Directory(p.join(dataRootPath, dataRootDocumentsChild)),
+        Directory(p.join(dataRootPath, dataRootSupportChild)),
       );
 
   /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
