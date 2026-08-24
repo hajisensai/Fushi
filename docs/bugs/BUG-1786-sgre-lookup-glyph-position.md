@@ -1,6 +1,6 @@
 ## BUG-1786 · SGRE 内嵌查词读取错误字形坐标导致命中错位
 - **报告**：2026-08-24（用户：查词位置很多时候不对，角色台词也受影响）
-- **真实性**：✅ 真 bug。真机字形对象显示纹理盒宽高为 `80×80`，相邻日文字形布局锚点却只推进 `25`；`native/galgame_hook/hook/adapters/sgre_lookup.h:121` 原命中矩形直接使用 80 宽度，导致相邻矩形重叠并总是命中更靠左的字。真实 draw 函数还处理 `33×33` UI 小字和空 surface，未分流时会覆盖角色台词几何。
-- **[x] ① 已修复** — `native/galgame_hook/hook/adapters/sgre_lookup.h:121` 以同一行下一个/上一个锚点的 advance 收窄命中格；`native/galgame_hook/hook/adapters/sgre_lookup.inc:63` 再按精确 vtable、80-unit 行高/字形和横向 advance 限定角色台词 surface（本提交）。
-- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/sgre_adapter_test.cpp:77` 覆盖 80 宽/25 advance 的相邻字命中和 surface 正负筛选；定向 CTest 通过（本提交）。
-- **备注**：角色台词固定设计原点已覆盖；回顾界面的父级动态变换尚未取得可复核坐标，因此本提交会拒绝非角色台词 surface，而不再把它错误映射到角色台词位置。
+- **真实性**：✅ 真 bug，且第一次修复不完整。目标 exe 的真实绘制循环 `0x35c99 → 0x362a0` 明确从 `glyph[0x40/0x44]` 取得每字绘制点；第一次修复却误读 `glyph[0x94]`。对当前进程只读复核得到真实 X 为 `0,80,160…`，旧字段为 `0,25,50…`；用户 3840×2160 截图的可见字符起点也实测约为 `649,729,809…`（80 px 步进），而错误 hook 发布 `640,690,740…`（50 px 步进），每向右一字累计偏 30 px。WebView 卡片只是忠实锚到了错误命中格。
+- **[x] ① 已修复** — `native/galgame_hook/hook/adapters/sgre_lookup.inc` 改读绘制循环实际使用的 `glyph[0x40/0x44]`；`sgre_lookup.h` 保留已证明的 scenario 根锚点，只把每字偏移及 `80×80` 命中格改为游戏实际物理绘制单位，不引入 1.6 截图拟合系数，也不把真机为 0 的 surface 内部平移字段误当根坐标。命中宽仍按相邻真实 draw anchor 收敛。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/sgre_adapter_test.cpp` 锁定 80 physical-px 的真实绘制步进、scenario 根锚点、16:9 与非 16:9 变换；结构测试锁定 X/Y draw 字段接线。仅运行用户允许的定向 Windows x64 测试与构建。
+- **备注**：角色台词的动态绘制变换已覆盖；回顾界面仍由精确 scenario vtable/80-unit 指标门拒绝，不把未证明的其他 surface 映射成角色台词。

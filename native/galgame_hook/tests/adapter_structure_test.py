@@ -52,6 +52,8 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("kSgreScenarioTextVtableRva", header)
         self.assertIn("kSgreDrawVisibleGlyphsOffset", source)
         self.assertIn("kSgreGlyphCharacterOffset", source)
+        self.assertIn("kSgreGlyphDrawXOffset", source)
+        self.assertIn("kSgreGlyphDrawYOffset", source)
         self.assertIn("MatchesSgreScenarioDrawMetrics", source)
         self.assertNotIn("g_sgre_text_layout_original", source)
         self.assertNotIn("LunaNormalizeMagesControls", source)

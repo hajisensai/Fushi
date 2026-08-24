@@ -46,71 +46,51 @@ int main() {
                                                       wrong_hash.size()));
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(nullptr, 0));
 
-  // The admitted build renders scenario text in a 1920x1080 design surface.
-  // Geometry from TextRender is relative to the dialogue origin and scales to
-  // the real client instead of assuming a particular Windows DPI mode.
+  // The scenario root is positioned in the 1920x1080 design surface, but the
+  // glyph draw point and texture cell are already physical units. These are
+  // live values from the admitted 3840x2160 process: glyph+0x40 advances 80,
+  // while the discarded pre-draw glyph+0x94 field advances only 25.
   const fushi_voice_hook::SgreLookupGlyphGeometry glyphs[] = {
-      {0.0f, 44.0f, 52.0f, 0},
-      {44.0f, 44.0f, 52.0f, 0},
-      {0.0f, 44.0f, 52.0f, 1},
+      {0.0f, 0.0f, 80.0f, 80.0f, 0},
+      {80.0f, 0.0f, 80.0f, 80.0f, 0},
+      {0.0f, 80.0f, 80.0f, 80.0f, 1},
   };
   fushi_voice_hook::SgreLookupRect rect;
-  assert(fushi_voice_hook::SgreLookupRectForGlyph(glyphs[0], 56.0f, 1920, 1080,
-                                                  &rect));
-  assert(rect.x == 320 && rect.y == 830 && rect.width == 44);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 1920, 1080,
-                                               365, 840, &rect) == 1);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 3840, 2160,
-                                               650, 1670, &rect) == 0);
+  assert(fushi_voice_hook::SgreLookupRectForGlyph(glyphs[0], 1920, 1080,
+                                                   &rect));
+  assert(rect.x == 320 && rect.y == 830 && rect.width == 80 &&
+         rect.height == 80);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 1920, 1080, 401, 840,
+                                               &rect) == 1);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 3840, 2160, 721, 1670,
+                                               &rect) == 1);
+  assert(rect.x == 720 && rect.y == 1660 && rect.width == 80 &&
+         rect.height == 80);
   // Non-16:9 clients keep the 1920x1080 render surface aspect-fitted. The
   // black-bar offset must be included in cursor hit testing.
-  assert(fushi_voice_hook::SgreLookupRectForGlyph(glyphs[0], 56.0f, 2622, 1206,
-                                                  &rect));
-  assert(rect.x == 596 && rect.y == 927 && rect.width == 49);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 2622, 1206,
-                                               600, 940, &rect) == 0);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 1920, 1080,
-                                               320, 890, &rect) == 2);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 56.0f, 1920, 1080,
-                                               100, 100, &rect) == -1);
+  assert(fushi_voice_hook::SgreLookupRectForGlyph(glyphs[0], 2622, 1206,
+                                                   &rect));
+  assert(rect.x == 596 && rect.y == 927 && rect.width == 80);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 2622, 1206, 600, 940,
+                                               &rect) == 0);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 1920, 1080, 321, 920,
+                                               &rect) == 2);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(glyphs, 3, 1920, 1080, 100, 100,
+                                               &rect) == -1);
   auto invalid = glyphs[0];
   invalid.width = -1.0f;
   assert(!fushi_voice_hook::IsSaneSgreLookupGlyph(invalid));
 
-  // The real SGRE TextRender surface exposes an 80-unit texture box while
-  // adjacent Japanese glyph anchors advance by 25 units. Hit cells must use
-  // the advance so the first wide box cannot steal later characters.
-  const fushi_voice_hook::SgreLookupGlyphGeometry overlapping_glyphs[] = {
-      {0.0f, 80.0f, 80.0f, 0},
-      {25.0f, 80.0f, 80.0f, 0},
-      {50.0f, 80.0f, 80.0f, 0},
-      {0.0f, 80.0f, 80.0f, 1},
-  };
-  assert(fushi_voice_hook::SgreLookupHitWidth(overlapping_glyphs, 4, 0) ==
-         25.0f);
-  assert(fushi_voice_hook::SgreLookupHitWidth(overlapping_glyphs, 4, 1) ==
-         25.0f);
-  assert(fushi_voice_hook::SgreLookupHitWidth(overlapping_glyphs, 4, 2) ==
-         25.0f);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(
-             overlapping_glyphs, 4, 80.0f, 1920, 1080, 346, 840, &rect) ==
-         1);
-  assert(rect.x == 345 && rect.width == 25);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(
-             overlapping_glyphs, 4, 80.0f, 1920, 1080, 371, 840, &rect) ==
-         2);
-  assert(rect.x == 370 && rect.width == 25);
-  assert(fushi_voice_hook::FindSgreLookupGlyph(
-             overlapping_glyphs, 4, 80.0f, 1920, 1080, 321, 920, &rect) ==
-         3);
+  assert(fushi_voice_hook::SgreLookupHitWidth(glyphs, 3, 0) == 80.0f);
+  assert(fushi_voice_hook::SgreLookupHitWidth(glyphs, 3, 1) == 80.0f);
 
   // The admitted draw surface stores one flattened glyph vector. Both native
   // and automatic line breaks reset (or repeat) the next x anchor, so visual
   // rows can be derived without interpreting UserHook1/MAGES control codes.
-  assert(!fushi_voice_hook::StartsNextSgreLookupLine(0.0f, 25.0f));
-  assert(!fushi_voice_hook::StartsNextSgreLookupLine(25.0f, 50.0f));
-  assert(fushi_voice_hook::StartsNextSgreLookupLine(775.0f, 0.0f));
-  assert(fushi_voice_hook::StartsNextSgreLookupLine(25.0f, 25.0f));
+  assert(!fushi_voice_hook::StartsNextSgreLookupLine(0.0f, 80.0f));
+  assert(!fushi_voice_hook::StartsNextSgreLookupLine(80.0f, 160.0f));
+  assert(fushi_voice_hook::StartsNextSgreLookupLine(2480.0f, 0.0f));
+  assert(fushi_voice_hook::StartsNextSgreLookupLine(80.0f, 80.0f));
   assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f,
                                                           true));
   assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(33.0f, 33.0f,

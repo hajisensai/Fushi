@@ -14,9 +14,13 @@ constexpr size_t kSgreDrawGlyphsBeginOffset = 0x2d0;
 constexpr size_t kSgreDrawGlyphsEndOffset = 0x2d8;
 constexpr size_t kSgreDrawVisibleGlyphsOffset = 0x3cc;
 constexpr size_t kSgreGlyphCharacterOffset = 0x00;
+// TextDraw +0x202/+0x22b forms the actual per-glyph draw point from 0x40/0x44.
+// glyph+0x94 is only the pre-draw layout advance. It advances 25 units while
+// the rendered Japanese cells advance 80, so it must never drive hit testing.
+constexpr size_t kSgreGlyphDrawXOffset = 0x40;
+constexpr size_t kSgreGlyphDrawYOffset = 0x44;
 constexpr size_t kSgreGlyphWidthOffset = 0x48;
 constexpr size_t kSgreGlyphHeightOffset = 0x4c;
-constexpr size_t kSgreGlyphXOffset = 0x94;
 
 struct SgreLookupCapture {
   volatile LONG64 seq = 0;
@@ -58,6 +62,7 @@ enum class SgreLookupCaptureResult : uint32_t {
   kNoGlyphs = 12,
   kSurfaceClass = 13,
   kSurfaceMetrics = 14,
+  kGlyphY = 15,
 };
 
 SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
@@ -114,7 +119,9 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
       }
       fushi_voice_hook::SgreLookupGlyphGeometry geometry;
       geometry.x =
-          *reinterpret_cast<const float*>(glyph + kSgreGlyphXOffset);
+          *reinterpret_cast<const float*>(glyph + kSgreGlyphDrawXOffset);
+      geometry.y =
+          *reinterpret_cast<const float*>(glyph + kSgreGlyphDrawYOffset);
       geometry.width =
           *reinterpret_cast<const float*>(glyph + kSgreGlyphWidthOffset);
       geometry.height =
@@ -133,8 +140,12 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
       }
       geometry.line = line;
       if (!std::isfinite(geometry.x) || geometry.x < -64.0f ||
-          geometry.x > 2048.0f) {
+          geometry.x > 4096.0f) {
         return SgreLookupCaptureResult::kGlyphX;
+      }
+      if (!std::isfinite(geometry.y) || geometry.y < -64.0f ||
+          geometry.y > 2048.0f) {
+        return SgreLookupCaptureResult::kGlyphY;
       }
       if (!std::isfinite(geometry.width) || geometry.width <= 0.0f ||
           geometry.width > 256.0f) {
@@ -170,6 +181,7 @@ bool IsSgreLookupCaptureFault(SgreLookupCaptureResult result) {
     case SgreLookupCaptureResult::kGlyphPointer:
     case SgreLookupCaptureResult::kGlyphCharacter:
     case SgreLookupCaptureResult::kGlyphX:
+    case SgreLookupCaptureResult::kGlyphY:
     case SgreLookupCaptureResult::kGlyphWidth:
     case SgreLookupCaptureResult::kGlyphHeight:
     case SgreLookupCaptureResult::kException:
@@ -356,8 +368,8 @@ void ProcessSgreLookupTick() {
   const int32_t client_height = client.bottom - client.top;
   fushi_voice_hook::SgreLookupRect hit_rect;
   const int glyph_index = fushi_voice_hook::FindSgreLookupGlyph(
-      active.glyphs, active.glyph_count, active.line_height, client_width,
-      client_height, cursor.x, cursor.y, &hit_rect);
+      active.glyphs, active.glyph_count, client_width, client_height, cursor.x,
+      cursor.y, &hit_rect);
 
   if (submit && glyph_index >= 0) {
     PublishSgreLookupHit(g_sgre_lookup_active_line,
