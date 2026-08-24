@@ -37,13 +37,60 @@ void main() {
     );
     // 改名而不是删除：Windows 允许给运行中的 exe 改名，但删不掉；而且**不能**杀它
     // ——BUG-1708 把「安装失败后把 app 拉回来」交给了它。
+    // 过程体取到下一个 procedure/function 为止，**不用固定字符窗口**：BUG-1831 补进来
+    // 的注释一度把真正的让路语句挤出了 900 字符窗口，守卫于是改为被别处的 RenameFile
+    // 蒙混通过——一条守卫因为无关的注释增删而悄悄失去覆盖，比没有守卫更坏。
     final int makeWayAt = iss.indexOf('procedure MakeWayForRunningLauncher(');
-    final String body = iss.substring(makeWayAt, makeWayAt + 900);
-    expect(body, contains('RenameFile('), reason: '让路手段必须是改名');
+    final int makeWayEnd = iss.indexOf('function PrepareToInstall(', makeWayAt);
+    expect(makeWayEnd, greaterThan(makeWayAt));
+    final String body = iss.substring(makeWayAt, makeWayEnd);
+    // 断言字面量（勿改）: 'RenameFile(Launcher, Stale)'
+    // 方向要钉死：Launcher → Stale 才是让路，反过来是 BUG-1831 的恢复分支，
+    // 两者都必须在，任一缺失都是一条独立的复发路径。
+    expect(
+      body,
+      contains('RenameFile(Launcher, Stale)'),
+      reason: '让路手段必须是改名（把占用中的原件改走），不能是删除、也不能是杀进程',
+    );
     expect(
       body,
       contains('FileLockedForWrite('),
       reason: '只在真的被占用时才改名，别给正常路径平添残留文件',
+    );
+  });
+
+  test('BUG-1831：launcher 已消失、只剩残留时，把残留改回去而不是删掉', () {
+    final String iss = readInstallerScript();
+    final int makeWayAt = iss.indexOf('procedure MakeWayForRunningLauncher(');
+    expect(makeWayAt, greaterThan(0));
+    final int endAt = iss.indexOf('function PrepareToInstall(', makeWayAt);
+    expect(endAt, greaterThan(makeWayAt));
+    final String body = iss.substring(makeWayAt, endAt);
+
+    // 断言字面量（勿改）: 'RenameFile(Stale, Launcher)'
+    //
+    // 「改名让路」把 launcher 从「必然存在的文件」变成了「可以永久消失的文件」：改名后
+    // 目标路径是空的，Inno 往里写的是**新建**文件，而回滚会删除本次新建的文件（只有被
+    // 覆盖的文件才原样保留）。让路成功但本次安装仍然回滚 ⇒ 原件已改名 + 新件被删 ⇒
+    // 安装目录里再没有 launcher，旧版 app 只认这一个路径，从此每次更新都止步
+    // not found，安装器一次都起不来。残留是同一份映像，必须改回去。
+    expect(
+      body,
+      contains('RenameFile(Stale, Launcher)'),
+      reason: 'launcher 缺失时必须用残留把它恢复回去，否则这台机器永远发不出更新',
+    );
+
+    // 顺序不变式：先判「原件在不在」，再谈删残留。反过来（现状之前就是如此）会在
+    // 最需要残留的那一刻把它删掉，把「还能自愈」变成「永久卡死」。
+    final int missingCheckAt = body.indexOf('if not FileExists(Launcher) then');
+    final int firstDeleteAt = body.indexOf('DeleteFile(Stale)');
+    expect(missingCheckAt, greaterThan(0));
+    expect(firstDeleteAt, greaterThan(0));
+    expect(
+      missingCheckAt,
+      lessThan(firstDeleteAt),
+      reason: '删残留必须发生在「原件在位」这个分支里；'
+          '无条件先删会毁掉唯一的恢复材料',
     );
   });
 

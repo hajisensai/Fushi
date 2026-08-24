@@ -489,6 +489,12 @@ List<String> windowsInstallerArgs(
 
 const String kWindowsUpdateLauncherExecutable = 'fushi_update_launcher.exe';
 
+/// 「改名让路」在安装目录里留下的 launcher 残留名（`fushi.iss` 的
+/// `MakeWayForRunningLauncher`）。它和 [kWindowsUpdateLauncherExecutable] 是**同一份
+/// 可执行映像**，只是换了个文件名，照样能拉起 Inno。
+const String kWindowsUpdateLauncherStaleExecutable =
+    'fushi_update_launcher.old.exe';
+
 String windowsUpdateLauncherPath({String? currentExecutablePath}) {
   final String executablePath =
       currentExecutablePath ?? Platform.resolvedExecutable;
@@ -496,6 +502,72 @@ String windowsUpdateLauncherPath({String? currentExecutablePath}) {
   if (sep < 0) return kWindowsUpdateLauncherExecutable;
   return '${executablePath.substring(0, sep)}'
       '${Platform.pathSeparator}$kWindowsUpdateLauncherExecutable';
+}
+
+/// 解析一个**实际存在**的 launcher 可执行文件：先要原件，原件不在就用「改名让路」
+/// 留下的 `.old` 残留。两个都没有返回 null（调用方据此抛 not found）。
+///
+/// 根因（BUG-1831）：BUG-1786 的「改名让路」把 launcher 从「必然存在的文件」变成了
+/// **可以永久消失的文件**。改名之后 `fushi_update_launcher.exe` 这个路径是空的，Inno
+/// 往里写的是一个**新建**文件——而 Inno 的回滚会删除本次新建的文件（只有被覆盖的文件
+/// 才原样保留）。于是任何一次「改名让路后仍然回滚」的安装都留下：原件已改名成 `.old`、
+/// 新件被回滚删掉 ⇒ 安装目录里**再也没有** launcher。
+///
+/// 此后每一次应用内更新都在 `runAndExit` 抛 `update launcher not found`，安装器一次都
+/// 起不来（连 Inno 日志都不会产生），BUG-1786 备注里「下一次应用内更新即自愈」的通道
+/// 被自己切断，用户只剩手动跑安装包一条路。现场：`{app}` 下只有
+/// `fushi_update_launcher.old.exe`，`data\app.so` 停在四天前。
+///
+/// `.old` 与原件是同一份映像，拿它当 stage 源即可自愈：这次更新照常跑完，Inno 会把
+/// 新 launcher 装回原位。
+/// 让路残留名的公共前缀。让路目标一旦删不掉就退让到带序号的名字
+/// （`fushi_update_launcher.old1.exe`…），所以这里按**前缀**认而不是逐个名字硬编码
+/// ——两侧靠一份命名约定对齐，不靠一张必须同步维护的名字清单。
+const String kWindowsUpdateLauncherStalePrefix = 'fushi_update_launcher.old';
+
+String? resolveWindowsUpdateLauncherSource({
+  required String installedLauncherPath,
+  bool Function(String path)? exists,
+  List<String> Function(String dirPath)? listDirectory,
+}) {
+  final bool Function(String path) probe =
+      exists ?? (String path) => File(path).existsSync();
+  if (probe(installedLauncherPath)) return installedLauncherPath;
+
+  final int sep = _lastPathSeparatorIndex(installedLauncherPath);
+  if (sep < 0) return null;
+  final String dirPath = installedLauncherPath.substring(0, sep);
+  String joined(String name) => '$dirPath${Platform.pathSeparator}$name';
+
+  // 常态残留名优先，命中就不必列目录。
+  final String stalePath = joined(kWindowsUpdateLauncherStaleExecutable);
+  if (probe(stalePath)) return stalePath;
+
+  // 带序号的退让名（`.old1.exe`…）。名字不固定，只能扫。
+  final List<String> Function(String dirPath) list = listDirectory ??
+      (String path) {
+        try {
+          return Directory(path)
+              .listSync(followLinks: false)
+              .whereType<File>()
+              .map((File f) => f.path.substring(
+                  _lastPathSeparatorIndex(f.path) + 1))
+              .toList();
+        } catch (_) {
+          return const <String>[];
+        }
+      };
+  final List<String> candidates = list(dirPath)
+      .where((String name) =>
+          name.toLowerCase().startsWith(kWindowsUpdateLauncherStalePrefix) &&
+          name.toLowerCase().endsWith('.exe'))
+      .toList()
+    ..sort();
+  for (final String name in candidates) {
+    final String path = joined(name);
+    if (probe(path)) return path;
+  }
+  return null;
 }
 
 List<String> windowsUpdateLauncherArgs({
@@ -764,10 +836,25 @@ class WindowsInstaller {
       // BUG-1786：从安装目录**外**的副本运行 launcher。留在安装目录里运行等于自己占着
       // 自己的文件，Inno 复制到它必然 code 5 → /SUPPRESSMSGBOXES 默认 Abort → 整包回滚，
       // data\app.so（全部 Dart 代码）永远装不上。副本失败则退化成旧行为，不阻断更新。
+      // BUG-1831：原件可能已被「改名让路 + 本次安装回滚」的组合抹掉，安装目录里只剩
+      // `fushi_update_launcher.old.exe`。它是同一份映像，拿它接着走即可自愈；不接受
+      // 它就等于让这台机器永远发不出更新（安装器一次都起不来，连日志都不会有）。
+      final String launcherSourcePath = resolveWindowsUpdateLauncherSource(
+            installedLauncherPath: installedLauncherPath,
+          ) ??
+          installedLauncherPath;
+      if (useDelayedLauncher && launcherSourcePath != installedLauncherPath) {
+        ErrorLogService.instance.log(
+          'WindowsInstaller.staleLauncher',
+          'Update launcher missing at $installedLauncherPath; falling back to '
+              'the rename-out-of-the-way leftover at $launcherSourcePath '
+              '(same image). This install will put the real one back.',
+        );
+      }
       final String? stagedLauncherPath =
           useDelayedLauncher && Platform.isWindows
               ? await stageWindowsUpdateLauncher(
-                  launcherPath: installedLauncherPath,
+                  launcherPath: launcherSourcePath,
                   stageRoot: handoffMarkerFile.parent,
                 )
               : null;
@@ -783,7 +870,7 @@ class WindowsInstaller {
         );
       }
       final String executable = useDelayedLauncher
-          ? (stagedLauncherPath ?? installedLauncherPath)
+          ? (stagedLauncherPath ?? launcherSourcePath)
           : installerPath;
       final List<String> launchArgs = useDelayedLauncher
           ? windowsUpdateLauncherArgs(
