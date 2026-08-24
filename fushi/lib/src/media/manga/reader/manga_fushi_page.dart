@@ -23,6 +23,8 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show SystemOcrUnavailableException;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
@@ -40,7 +42,7 @@ import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
-import 'package:fushi/src/media/manga/ocr/manga_region_ocr.dart';
+import 'package:fushi/src/media/manga/ocr/manga_region_rescan.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
@@ -2873,7 +2875,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MokuroPayload? payload = _payload;
     final String? imagesDir = _imagesDir;
     final EpubBookRow? row = _bookRow;
-    if (payload == null || imagesDir == null || row == null || _rescanBusy) {
+    // `_wholeVolumeOcrOpen`（向导 modal 开着）也要显式挡：现在靠 modal 遮住 WebView
+    // 让 JS 发不出框选，那是布局巧合不是不变量——向导一旦改成非模态就会漏进来，
+    // 而向导落盘是**整份覆写**，途中回写的区域会被整段吞掉。
+    if (payload == null ||
+        imagesDir == null ||
+        row == null ||
+        _rescanBusy ||
+        _wholeVolumeOcrOpen) {
       return;
     }
     // 整卷任务收尾时会拿结果文件整份覆写 manga.json，途中回写的区域会被吞掉；
@@ -2912,10 +2921,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       await _reocrRegion(
         row: row,
+        payload: payload,
         pageIndex: pageIndex,
         imagePath: imagePath,
         box: box,
       );
+    } on SystemOcrUnavailableException catch (error, stack) {
+      // ML Kit 的 unbundled 模型在能力探测里报 available，真跑起来才发现 Play 服务
+      // 里没装（`MODEL_UNAVAILABLE`）。冒成通用失败的话用户只会看到「重新识别框选
+      // 区域失败」，拿不到「去装识别模型」这个可操作原因。
+      ErrorLogService.instance.log('MangaFushiPage.rescan', error, stack);
+      if (mounted) {
+        FushiToast.show(
+          msg: t.manga_ocr_engine_system_unavailable,
+          severity: ToastSeverity.warning,
+        );
+      }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaFushiPage.rescan', error, stack);
       if (mounted) {
@@ -2929,76 +2950,149 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 裁框 → 偏好引擎 → 区域替换回写 → 热替换该页文字层。
+  /// 裁框 → 偏好引擎 → 区域替换回写 → 热替换该页文字层 → 挂撤销。
   ///
-  /// 引擎链跑的是一个只装着裁图的临时目录，所以在线章节也能用（裁图是本地字节，
-  /// 不必像整卷那样被迫走 Lens）。识别为空时**不动**旧块：用户框的是想重认的
-  /// 气泡，把它认成「没字」再抹掉原文字层只会更糟。
+  /// 编排本体在 `ocr/manga_region_rescan.dart`（`runMangaRegionRescan`，无 UI、可
+  /// 直测）；这里只做「注入引擎选取」和「把终局翻译成 UI」。引擎链跑的是一个只装着
+  /// 裁图的临时目录，所以在线章节也能用（裁图是本地字节，不必像整卷那样被迫走
+  /// Lens）。
   Future<void> _reocrRegion({
     required EpubBookRow row,
+    required MokuroPayload payload,
     required int pageIndex,
     required String imagePath,
     required Rect box,
   }) async {
-    final MangaRegionCrop crop =
-        await cropMangaRegionToTempDir(imagePath: imagePath, box: box);
-    try {
-      if (!mounted) return;
-      final MangaOcrAutoStartResult start =
-          await startMangaOcrWithPreferredEngine(
-        context: context,
-        db: appModel.database,
-        bookKey: widget.bookKey,
-        imageDirPath: crop.imageDir.path,
-        startPage: 0,
-        lensLanguage: appModel.mangaOcrLensLanguage,
-      );
-      if (!mounted) return;
-      if (!start.started) {
-        // 用户自己在 Lens 告知里点了取消：不该再弹一句报错骂他一遍。
-        if (start.cancelled) return;
+    final String mangaJsonPath = p.join(row.extractDir, row.epubPath);
+    final MangaRegionRescanOutcome outcome = await runMangaRegionRescan(
+      imagePath: imagePath,
+      mangaJsonPath: mangaJsonPath,
+      pageIndex: pageIndex,
+      box: box,
+      pageBlocks: payload.images[pageIndex].blocks,
+      startEngine: (String imageDirPath) async {
+        // 裁框有 await（解码整页图），页面可能已经关了；拿死 context 去弹 Lens 告知
+        // 等于替用户点了同意。
+        if (!mounted) return const MangaOcrAutoStartResult.cancelled();
+        return startMangaOcrWithPreferredEngine(
+          context: context,
+          db: appModel.database,
+          bookKey: widget.bookKey,
+          imageDirPath: imageDirPath,
+          startPage: 0,
+          lensLanguage: appModel.mangaOcrLensLanguage,
+        );
+      },
+      onEngineStarted: () {
+        if (!mounted) return;
         FushiToast.show(
-          msg: start.unavailableReason ?? t.manga_ocr_engine_none,
+          msg: t.manga_rescan_running,
+          severity: ToastSeverity.info,
+        );
+      },
+      // 在线几何 debounce 到期时会把当时的 `_payload` 整份写回。它若插在「区域落盘」
+      // 与下面的 setState 之间，写的就是**不含新块**的旧快照，刚回写的区域当场被吞。
+      // 几何本来就会在下次翻页/滚动时重新排程。
+      onBeforeWriteback: () => _onlineGeometryPersistDebounce?.cancel(),
+    );
+    if (!mounted) return;
+    switch (outcome.status) {
+      // 用户自己在 Lens 告知里点了取消（或页面已关）：不该再弹一句报错骂他一遍。
+      case MangaRegionRescanStatus.cancelled:
+        return;
+      case MangaRegionRescanStatus.unavailable:
+        FushiToast.show(
+          msg: outcome.unavailableReason ?? t.manga_ocr_engine_none,
           severity: ToastSeverity.warning,
         );
-        return;
-      }
-      FushiToast.show(
-        msg: t.manga_rescan_running,
-        severity: ToastSeverity.info,
-      );
-      final List<MokuroBlock> blocks = await collectMangaRegionOcrBlocks(
-        start.job!.events,
-        origin: crop.rect.topLeft,
-      );
-      if (!mounted) return;
-      if (blocks.isEmpty) {
+      case MangaRegionRescanStatus.empty:
         FushiToast.show(
           msg: t.manga_rescan_empty,
           severity: ToastSeverity.info,
         );
-        return;
-      }
-      // 在线几何 debounce 到期时会把当时的 `_payload` 整份写回。它若插在「区域落盘」
-      // 与下面的 setState 之间，写的就是**不含新块**的旧快照，刚回写的区域当场被吞。
-      // 先取消它；几何本来就会在下次翻页/滚动时重新排程。
-      _onlineGeometryPersistDebounce?.cancel();
-      // 锁内已经产出了落盘后的 payload，直接用——锁外重读会读到别的写者的版本。
-      final MokuroPayload updated = await replaceMangaBlocksInRegion(
-        mangaJsonPath: p.join(row.extractDir, row.epubPath),
-        pageIndex: pageIndex,
-        region: crop.rect,
-        blocks: blocks,
-      );
-      if (!mounted) return;
-      setState(() => _payload = updated);
-      await _replacePageOcrOverlay(pageIndex, updated.images[pageIndex]);
+      case MangaRegionRescanStatus.replaced:
+        // 锁内已经产出了落盘后的 payload，直接用——锁外重读会读到别的写者的版本。
+        final MokuroPayload updated = outcome.payload!;
+        setState(() => _payload = updated);
+        await _replacePageOcrOverlay(pageIndex, updated.images[pageIndex]);
+        if (!mounted) return;
+        _offerRegionRescanUndo(
+          mangaJsonPath: mangaJsonPath,
+          pageIndex: pageIndex,
+          previousPage: outcome.previousPage!,
+        );
+    }
+  }
+
+  /// 区域替换成功提示 + 撤销入口。
+  ///
+  /// 区域替换是**磁盘上的破坏性写**（旧文字块从 manga.json 里永久消失，外部 mokuro
+  /// 工具与其它设备读的是同一份）。识别结果比原文差是常态，所以成功提示必须带一条
+  /// 回头路，而不是只报一句「已回写」。没有 ScaffoldMessenger（理论上不该发生）时
+  /// 降级为普通 toast，绝不静默。
+  void _offerRegionRescanUndo({
+    required String mangaJsonPath,
+    required int pageIndex,
+    required MokuroImage previousPage,
+  }) {
+    final ScaffoldMessengerState? messenger =
+        ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) {
       FushiToast.show(
         msg: t.manga_rescan_region_updated,
         severity: ToastSeverity.success,
       );
-    } finally {
-      await deleteMangaRegionCrop(crop.root);
+      return;
+    }
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(t.manga_rescan_region_updated),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: t.undo,
+          onPressed: () => unawaited(
+            _undoRegionRescan(
+              mangaJsonPath: mangaJsonPath,
+              pageIndex: pageIndex,
+              previousPage: previousPage,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 把该页整页还原成区域替换前的快照并热替换文字层。
+  Future<void> _undoRegionRescan({
+    required String mangaJsonPath,
+    required int pageIndex,
+    required MokuroImage previousPage,
+  }) async {
+    try {
+      // 与回写同一条理由：几何 debounce 插在还原与 setState 之间会把还原吞掉。
+      _onlineGeometryPersistDebounce?.cancel();
+      final MokuroPayload restored = await restoreMangaPage(
+        mangaJsonPath: mangaJsonPath,
+        pageIndex: pageIndex,
+        page: previousPage,
+      );
+      if (!mounted) return;
+      setState(() => _payload = restored);
+      await _replacePageOcrOverlay(pageIndex, restored.images[pageIndex]);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.manga_rescan_undone,
+        severity: ToastSeverity.success,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.rescanUndo', error, stack);
+      if (mounted) {
+        FushiToast.show(
+          msg: t.manga_rescan_undo_failed,
+          severity: ToastSeverity.error,
+        );
+      }
     }
   }
 

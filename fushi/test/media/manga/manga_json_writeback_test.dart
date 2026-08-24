@@ -133,7 +133,8 @@ void main() {
 
     test('区域盖住旧块 → 旧块被换掉，不再残留双层文字', () async {
       final File file = _writeTempMangaJson();
-      final MokuroPayload returned = await replaceMangaBlocksInRegion(
+      final MangaRegionReplaceResult returned =
+          await replaceMangaBlocksInRegion(
         mangaJsonPath: file.path,
         pageIndex: 1,
         region: const Rect.fromLTRB(0, 0, 200, 300),
@@ -141,7 +142,7 @@ void main() {
           _block(const Rect.fromLTRB(12, 22, 108, 218), '重识别'),
         ],
       );
-      final MokuroImage page = returned.images[1];
+      final MokuroImage page = returned.payload.images[1];
       expect(page.blocks, hasLength(1));
       expect(page.blocks.single.lines, <String>['重识别']);
       expect(page.blocks.single.zIndex, 0);
@@ -176,7 +177,8 @@ void main() {
 
     test('返回落盘后的 payload：调用方不必（也不该）锁外重读文件', () async {
       final File file = _writeTempMangaJson();
-      final MokuroPayload returned = await replaceMangaBlocksInRegion(
+      final MangaRegionReplaceResult returned =
+          await replaceMangaBlocksInRegion(
         mangaJsonPath: file.path,
         pageIndex: 0,
         region: const Rect.fromLTRB(0, 0, 50, 50),
@@ -184,11 +186,16 @@ void main() {
           _block(const Rect.fromLTRB(0, 0, 50, 50), 'inline'),
         ],
       );
-      expect(returned.images[0].blocks.single.lines, <String>['inline']);
+      expect(
+          returned.payload.images[0].blocks.single.lines, <String>['inline']);
       // 返回值与磁盘一致（不是凭空构造的另一份）。
       final MokuroPayload onDisk = parseMangaJson(file.readAsStringSync());
       expect(onDisk.images[0].blocks.single.lines, <String>['inline']);
-      expect(returned.ocr?.engineSignature, onDisk.ocr?.engineSignature);
+      expect(
+          returned.payload.ocr?.engineSignature, onDisk.ocr?.engineSignature);
+      // 替换前快照来自锁内读到的那一份（撤销的唯一依据）。
+      expect(returned.previousPage.url, 'p001.jpg');
+      expect(returned.previousPage.blocks, isEmpty);
     });
 
     test('页越界 / 文件缺失 → StateError', () async {
@@ -198,7 +205,7 @@ void main() {
           mangaJsonPath: file.path,
           pageIndex: 2,
           region: const Rect.fromLTRB(0, 0, 10, 10),
-          blocks: const <MokuroBlock>[],
+          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
         ),
         throwsA(isA<StateError>()),
       );
@@ -207,7 +214,7 @@ void main() {
           mangaJsonPath: p.join(p.dirname(file.path), 'missing.json'),
           pageIndex: 0,
           region: const Rect.fromLTRB(0, 0, 10, 10),
-          blocks: const <MokuroBlock>[],
+          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
         ),
         throwsA(isA<StateError>()),
       );
@@ -253,7 +260,7 @@ void main() {
           mangaJsonPath: file.path,
           pageIndex: 99,
           region: const Rect.fromLTRB(0, 0, 10, 10),
-          blocks: const <MokuroBlock>[],
+          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
         ),
         throwsA(isA<StateError>()),
       );
@@ -265,6 +272,94 @@ void main() {
       );
       final MokuroPayload payload = parseMangaJson(file.readAsStringSync());
       expect(payload.images[0].blocks.single.lines, <String>['ok']);
+    });
+  });
+
+  group('空结果不落盘 + 撤销还原', () {
+    test('blocks 为空 → ArgumentError，manga.json 一个字节都不变', () async {
+      final File file = _writeTempMangaJson();
+      final List<int> before = file.readAsBytesSync();
+      await expectLater(
+        replaceMangaBlocksInRegion(
+          mangaJsonPath: file.path,
+          pageIndex: 1,
+          region: const Rect.fromLTRB(0, 0, 900, 1200),
+          blocks: const <MokuroBlock>[],
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        file.readAsBytesSync(),
+        before,
+        reason: '空结果清空整块文字层是纯损失；这条挡在写侧，页面重构也不该能绕过',
+      );
+      expect(File('${file.path}.tmp').existsSync(), isFalse);
+    });
+
+    test('restoreMangaPage 把整页还原成替换前快照（含 z_index 层序）', () async {
+      final File file = _writeTempMangaJson();
+      final MangaRegionReplaceResult replaced =
+          await replaceMangaBlocksInRegion(
+        mangaJsonPath: file.path,
+        pageIndex: 1,
+        region: const Rect.fromLTRB(0, 0, 200, 300),
+        blocks: <MokuroBlock>[
+          _block(const Rect.fromLTRB(12, 22, 108, 218), '重识别'),
+        ],
+      );
+      expect(
+        parseMangaJson(file.readAsStringSync()).images[1].blocks.single.lines,
+        <String>['重识别'],
+      );
+
+      final MokuroPayload restored = await restoreMangaPage(
+        mangaJsonPath: file.path,
+        pageIndex: 1,
+        page: replaced.previousPage,
+      );
+      final MokuroImage page =
+          parseMangaJson(file.readAsStringSync()).images[1];
+      expect(page.blocks.single.lines, <String>['既存ブロック']);
+      expect(page.blocks.single.zIndex, 0);
+      expect(page.blocks.single.linesCoords, isNotNull, reason: '行多边形也要原样回来');
+      expect(page.url, 'sub/p002.jpg');
+      // 返回值与磁盘一致，且 ocr 元数据没被撤销抹掉。
+      expect(restored.images[1].blocks.single.lines, <String>['既存ブロック']);
+      expect(restored.ocr?.engineSignature, 'sig-abc');
+      // 其余页不受影响。
+      expect(restored.images[0].size, const Size(1000, 1600));
+      expect(File('${file.path}.tmp').existsSync(), isFalse);
+    });
+
+    test('撤销与回写共用同一把锁：交叠不丢更新', () async {
+      final File file = _writeTempMangaJson();
+      final MangaRegionReplaceResult first = await replaceMangaBlocksInRegion(
+        mangaJsonPath: file.path,
+        pageIndex: 1,
+        region: const Rect.fromLTRB(0, 0, 200, 300),
+        blocks: <MokuroBlock>[
+          _block(const Rect.fromLTRB(12, 22, 108, 218), '重识别'),
+        ],
+      );
+      await Future.wait(<Future<void>>[
+        restoreMangaPage(
+          mangaJsonPath: file.path,
+          pageIndex: 1,
+          page: first.previousPage,
+        ),
+        replaceMangaBlocksInRegion(
+          mangaJsonPath: file.path,
+          pageIndex: 0,
+          region: const Rect.fromLTRB(0, 0, 50, 50),
+          blocks: <MokuroBlock>[
+            _block(const Rect.fromLTRB(0, 0, 50, 50), 'p0')
+          ],
+        ),
+      ]);
+      final MokuroPayload after = parseMangaJson(file.readAsStringSync());
+      expect(after.images[0].blocks.single.lines, <String>['p0']);
+      expect(after.images[1].blocks.single.lines, <String>['既存ブロック']);
+      expect(File('${file.path}.tmp').existsSync(), isFalse);
     });
   });
 

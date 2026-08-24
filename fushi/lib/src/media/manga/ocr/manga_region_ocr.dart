@@ -8,7 +8,18 @@
 ///
 /// 1. 裁框落盘（[cropMangaRegionToTempDir]）：clamp 进页内、整数像素、PNG。
 /// 2. 结果块平移回页图坐标（[offsetMangaBlocks]）：块框、字符区域、行多边形一起移。
-/// 3. 区域内旧块换新块（[replaceMangaPageRegion]）：判据是块面积过半落在区域内。
+/// 3. 区域内旧块换新块（[replaceMangaPageRegion]）：判据是块被裁图矩形**完整覆盖**。
+///
+/// ## 「删哪些块」与「裁多大的图」必须是同一块像素
+///
+/// 用户框（[isMangaBlockInsideRegion]：块面积过半落在框内）只表达**意图**——它会
+/// 圈中只有一部分落在框内的竖排气泡。若照着用户框裁图，那个气泡会被整条删掉、却只
+/// 有框内那部分被重新识别，用户静默丢字。
+///
+/// 所以裁图矩形先经 [expandMangaRegionToBlocks] 扩成「用户框 ∪ 被它圈中的旧块框」
+/// 的包围盒，落盘删块的判据再换成 [isMangaBlockCoveredByRegion]（完整落在裁图矩形
+/// 内）。两者合起来给出一条不变量：**被删的块必然被裁图完整覆盖，因而必然被完整重新
+/// 识别**——「部分重叠」这个边界情况被消掉，而不是加分支绕开。
 ///
 /// 前身是只走本地识别器、弹结果卡片再手点「回写」的「框选识别」；它对默认引擎是
 /// Lens 的用户装完即不可用（没模型），且识别结果不直接进文字层。
@@ -199,8 +210,11 @@ List<MokuroBlock> offsetMangaBlocks(List<MokuroBlock> blocks, Offset origin) {
   ];
 }
 
-/// 纯函数：块是否属于区域——块面积过半落在 [region] 内（阈值
+/// 纯函数：块是否**被用户框圈中**——块面积过半落在 [region] 内（阈值
 /// [kMangaRegionBlockOverlapRatio]）。零面积块退化为「左上角在区域内」。
+///
+/// 这只是**意图**判据（用户框到哪些块），只喂给 [expandMangaRegionToBlocks]。落盘删
+/// 块用的是 [isMangaBlockCoveredByRegion]。
 bool isMangaBlockInsideRegion(Rect block, Rect region) {
   final double blockArea = block.width * block.height;
   if (blockArea <= 0) {
@@ -214,10 +228,41 @@ bool isMangaBlockInsideRegion(Rect block, Rect region) {
       blockArea * kMangaRegionBlockOverlapRatio;
 }
 
-/// 纯函数：用 [blocks] 替换 [page] 上属于 [region] 的旧块。
+/// 纯函数：块是否被 [region] **完整覆盖**（左上闭、右下闭）。
 ///
-/// 区域外的块原样保留、保序在前；新块接在后面；z_index 按最终顺序重新编号
-/// （相对次序不变，编号连续）。
+/// 这是落盘删块的唯一判据。传进来的 [region] 是[裁图矩形][MangaRegionCrop.rect]，
+/// 所以「被删」等价于「被裁图完整覆盖」⇒ 必然被完整重新识别，绝不会出现「删了一整
+/// 条、只认回来一半」。
+bool isMangaBlockCoveredByRegion(Rect block, Rect region) {
+  return block.left >= region.left &&
+      block.top >= region.top &&
+      block.right <= region.right &&
+      block.bottom <= region.bottom;
+}
+
+/// 纯函数：把用户框 [region] 扩成「[region] ∪ 被它圈中的旧块框」的包围盒。
+///
+/// 「圈中」用的是意图判据 [isMangaBlockInsideRegion]（面积过半）。只扩一轮、不迭代
+/// 到不动点：包围盒本身是矩形，再迭代一轮就会把只擦到包围盒边的邻块也拉进来，密集
+/// 页上会链式膨胀到整页——用户框一个气泡却整页被重识别，比部分重叠更糟。
+///
+/// 扩完的框仍要过 [clampMangaRegion] 才是最终裁图矩形（本函数不做 clamp：页图尺寸
+/// 只有解码后才知道）。
+Rect expandMangaRegionToBlocks(Rect region, List<MokuroBlock> pageBlocks) {
+  Rect expanded = region;
+  for (final MokuroBlock block in pageBlocks) {
+    if (isMangaBlockInsideRegion(block.rectangle, region)) {
+      expanded = expanded.expandToInclude(block.rectangle);
+    }
+  }
+  return expanded;
+}
+
+/// 纯函数：用 [blocks] 替换 [page] 上被 [region] 完整覆盖的旧块。
+///
+/// [region] 必须是[裁图矩形][MangaRegionCrop.rect]（见本库文档的不变量）。区域外的
+/// 块原样保留、保序在前；新块接在后面；z_index 按最终顺序重新编号（相对次序不变，
+/// 编号连续）。
 MokuroImage replaceMangaPageRegion(
   MokuroImage page,
   Rect region,
@@ -225,7 +270,7 @@ MokuroImage replaceMangaPageRegion(
 ) {
   final List<MokuroBlock> merged = <MokuroBlock>[
     for (final MokuroBlock block in page.blocks)
-      if (!isMangaBlockInsideRegion(block.rectangle, region)) block,
+      if (!isMangaBlockCoveredByRegion(block.rectangle, region)) block,
     ...blocks,
   ];
   return MokuroImage(

@@ -1,9 +1,10 @@
 /// 「重新识别框选区域」能力层的纯函数与裁框落盘契约。
 ///
-/// 守的是四件事：① 裁框 clamp / 取整口径；② 裁图真的落在临时根目录的子目录里
+/// 守的是五件事：① 裁框 clamp / 取整口径；② 裁图真的落在临时根目录的子目录里
 /// （外部 mokuro 把 `.mokuro` 写到被扫描目录同级，不放一层子目录就漏到临时根外）；
-/// ③ 结果块（含字符区域与行多边形）平移回页图坐标；④ 「块属于区域」判据与区域
-/// 换块的保序 / 重编号。
+/// ③ 结果块（含字符区域与行多边形）平移回页图坐标；④ 意图判据（面积过半）与落盘
+/// 删块判据（完整覆盖）各司其职、区域换块的保序 / 重编号；⑤ **「被删的块必然被裁图
+/// 完整覆盖」**——扩框 + 覆盖判据合起来消掉「部分重叠 ⇒ 整块删、只认回来一半」。
 library;
 
 import 'dart:io';
@@ -213,6 +214,88 @@ void main() {
     });
   });
 
+  group('isMangaBlockCoveredByRegion', () {
+    const Rect region = Rect.fromLTRB(100, 100, 200, 200);
+
+    test('完整落在区域内（含贴边）→ 覆盖', () {
+      expect(
+        isMangaBlockCoveredByRegion(
+            const Rect.fromLTRB(110, 110, 190, 190), region),
+        isTrue,
+      );
+      expect(
+        isMangaBlockCoveredByRegion(
+            const Rect.fromLTRB(100, 100, 200, 200), region),
+        isTrue,
+        reason: '边界闭：裁图矩形取整时是向外取整，贴边块仍被完整裁进去',
+      );
+    });
+
+    test('伸出去一点点就不算覆盖（哪怕面积过半在内）', () {
+      expect(
+        isMangaBlockCoveredByRegion(
+            const Rect.fromLTRB(110, 110, 190, 200.5), region),
+        isFalse,
+      );
+      expect(
+        isMangaBlockInsideRegion(
+            const Rect.fromLTRB(110, 110, 190, 200.5), region),
+        isTrue,
+        reason: '这正是两条判据的分工：意图会圈中它，落盘删块不会',
+      );
+    });
+  });
+
+  group('expandMangaRegionToBlocks', () {
+    // 用户框只圈住竖排气泡的上 80%：照用户框裁图会「整条删、只认回来 80%」。
+    const Rect userBox = Rect.fromLTRB(100, 100, 200, 200);
+    final MokuroBlock bubble =
+        _block(const Rect.fromLTRB(120, 120, 180, 220), '气泡');
+    final MokuroBlock neighbour =
+        _block(const Rect.fromLTRB(190, 100, 300, 200), '邻块');
+
+    test('被圈中的块把框撑成包围盒，只擦到边的邻块不参与', () {
+      expect(
+        expandMangaRegionToBlocks(userBox, <MokuroBlock>[bubble, neighbour]),
+        const Rect.fromLTRB(100, 100, 200, 220),
+      );
+    });
+
+    test('一个块都没圈中 → 原样返回（不无端扩框）', () {
+      expect(
+        expandMangaRegionToBlocks(userBox, <MokuroBlock>[neighbour]),
+        userBox,
+      );
+      expect(
+          expandMangaRegionToBlocks(userBox, const <MokuroBlock>[]), userBox);
+    });
+
+    test('不变量：每个被圈中的块都被扩后的框完整覆盖', () {
+      final List<MokuroBlock> page = <MokuroBlock>[bubble, neighbour];
+      final Rect expanded = expandMangaRegionToBlocks(userBox, page);
+      for (final MokuroBlock block in page) {
+        if (!isMangaBlockInsideRegion(block.rectangle, userBox)) continue;
+        expect(
+          isMangaBlockCoveredByRegion(block.rectangle, expanded),
+          isTrue,
+          reason: '删掉的块必须整块落在裁图里，否则用户静默丢字',
+        );
+      }
+    });
+
+    test('只扩一轮、不迭代到不动点：邻块不会被链式拉进来', () {
+      // 扩后的框 (100,100,200,220) 仍然只擦到邻块左侧 10px；再迭代一轮就会把它
+      // 也吞进去，密集页上会链式膨胀到整页。
+      final Rect expanded =
+          expandMangaRegionToBlocks(userBox, <MokuroBlock>[bubble, neighbour]);
+      expect(
+        expandMangaRegionToBlocks(expanded, <MokuroBlock>[bubble, neighbour]),
+        expanded,
+        reason: '邻块在扩后的框里仍不足半面积，扩框对本页已是不动点',
+      );
+    });
+  });
+
   group('replaceMangaPageRegion', () {
     test('区域内旧块被换掉，区域外保序在前，新块在后，z_index 连续重编', () {
       final MokuroImage page = MokuroImage(
@@ -241,6 +324,27 @@ void main() {
       expect(
         replaced.blocks.map((MokuroBlock b) => b.zIndex).toList(),
         <int>[0, 1, 2, 3],
+      );
+    });
+
+    test('只被盖住一部分的旧块不删：删它就等于丢掉裁图外那段文字', () {
+      final MokuroImage replaced = replaceMangaPageRegion(
+        MokuroImage(
+          url: 'p',
+          size: const Size(1000, 1600),
+          // 竖排气泡的下 20% 伸出裁图矩形之外。
+          blocks: <MokuroBlock>[
+            _block(const Rect.fromLTRB(120, 120, 180, 220), 'half-out'),
+          ],
+        ),
+        const Rect.fromLTRB(100, 100, 200, 200),
+        <MokuroBlock>[_block(const Rect.fromLTRB(130, 130, 170, 190), 'new')],
+      );
+      expect(
+        replaced.blocks.map((MokuroBlock b) => b.lines.single).toList(),
+        <String>['half-out', 'new'],
+        reason: '真实调用里裁图矩形已被 expandMangaRegionToBlocks 撑到盖住整块；'
+            '若哪天有人绕过扩框直接传用户框，宁可留双层也不能静默截断',
       );
     });
 
