@@ -18,6 +18,29 @@ void main() {
       expect(html, contains("callHandler('onLyricsReady', 0)"));
     });
 
+    // BUG-1815/1809: generation token 是「这份文档是不是我刚发的那一份」的唯一
+    // 机制（webview.part.dart 的 _finalizeLyricsDocumentIfReady 靠它丢弃过期
+    // finalize）。只测默认值 0 等于什么都没测——把两处 `$loadGeneration` 写死成
+    // 0 也照样绿。必须用一个非默认值把插值真正钉死。
+    test('load generation is interpolated, not hard-coded to the default 0',
+        () {
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0)],
+        currentIndex: 0,
+        loadGeneration: 7,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+      );
+
+      expect(html, contains('window.__fushiLyricsLoadGeneration = 7;'));
+      expect(html, contains("callHandler('onLyricsReady', 7)"));
+      // 两处都不得残留默认值（写死成 0 的复发形态）。
+      expect(html, isNot(contains('window.__fushiLyricsLoadGeneration = 0;')));
+      expect(html, isNot(contains("callHandler('onLyricsReady', 0)")));
+    });
+
     test('includes reader selection highlight styles in the standalone page',
         () {
       final String html = LyricsModeHtml.generate(

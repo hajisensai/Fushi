@@ -361,20 +361,50 @@ window.__lyricsScrollToCue = function(index) {
   if (index >= 0 && index < _cues.length) scrollToCenter(_cues[index]);
 };
 
-// iOS WKWebView can complete loadData() without delivering onLoadStop. Register
-// this notifier immediately after the sentinel API exists, before optional
-// interaction wiring can throw. Poll for the injected bridge with a finite 5s
-// budget instead of guessing one platform-ready moment.
-(function notifyLyricsReady(attempt) {
-  var bridge = window.flutter_inappwebview;
-  if (bridge && typeof bridge.callHandler === 'function') {
-    requestAnimationFrame(function() { bridge.callHandler('onLyricsReady', $loadGeneration); });
-    return;
+// BUG-1809: iOS WKWebView can complete loadData() without delivering
+// onLoadStop, so the page tells Dart it is ready by itself. Register the
+// notifier immediately after the sentinel API exists, before optional
+// interaction wiring can throw.
+//
+// The ready primitive is the bridge object, not a timer and not an event:
+// `window.flutter_inappwebview` is installed by the plugin's own user script at
+// AT_DOCUMENT_START (iOS InAppWebView.swift:557 + JavaScriptBridgeJS.swift:16,
+// Android InAppWebView.java:564 + JavaScriptBridgeJS.java:12), which by spec
+// runs before any inline script in this document. So the bridge is already
+// there when this line executes — call it synchronously.
+//
+// `flutterInAppWebViewPlatformReady` must NOT be the primary signal: every
+// platform dispatches it from the very native callback that also emits
+// onLoadStop (iOS InAppWebView.swift:1925 vs :1934, Android
+// InAppWebViewClient.java:240 vs :249, Windows in_app_webview.cpp:647), i.e.
+// exactly the callback BUG-1809 is about. On iOS/macOS it does not even set a
+// `_platformReady` latch. It is armed only as a belt for a late bridge.
+//
+// No requestAnimationFrame either: an offscreen / backgrounded WebView
+// throttles or never runs rAF, which is the same class of state that eats
+// onLoadStop — that would be tunnelling one unreliable callback through
+// another.
+(function() {
+  var fired = false;
+  function notifyLyricsReady() {
+    if (fired) return;
+    var bridge = window.flutter_inappwebview;
+    if (!bridge || typeof bridge.callHandler !== 'function') return;
+    fired = true;
+    try {
+      bridge.callHandler('onLyricsReady', $loadGeneration);
+    } catch (err) {
+      // Do not let a bridge failure kill the interaction wiring below; keep the
+      // event belt armed and leave the reason readable for a device probe.
+      fired = false;
+      window.__fushiLyricsReadyError = String(err);
+    }
   }
-  if (attempt < 100) {
-    window.setTimeout(function() { notifyLyricsReady(attempt + 1); }, 50);
+  notifyLyricsReady();
+  if (!fired) {
+    window.addEventListener('flutterInAppWebViewPlatformReady', notifyLyricsReady, {once: true});
   }
-})(0);
+})();
 
 // ── 点击：所有句子→查词 ──
 // BUG-280: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程
