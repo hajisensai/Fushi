@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1717 条。点号进各自文件。
+> 共 1718 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1850](bugs/BUG-1850-settings-destination-itest-vacuous-selected-row.md) | ✅ | ✅ | 集成测试用恒真的选中行谓词当设置分类打开判据 |
 | [BUG-1838](bugs/BUG-1838-ankiconnect-installer-launcher-not-found.md) | 🚧 | 🚧 | AnkiConnect 一键代装误报 Anki 没运行：新版 launcher 下找不到入口 exe |
 | [BUG-1837](bugs/BUG-1837-anki-open-foreground-pid-launcher.md) | ✅ | ✅ | 制卡后在 Anki 中打开仍不到前台：新版 Anki launcher 下进程识别失效 |
 | [BUG-1836](bugs/BUG-1836-manual-install-rescue-reports-failure.md) | ✅ | ✅ | 手动跑安装包救援成功后仍必报更新失败（Inno 日志判据拿不到证据） |
@@ -50,10 +51,10 @@
 | [BUG-1824](bugs/BUG-1824-dictionary-overlay-dispose-without-remove.md) | ✅ | ✅ | 查词页根Overlay卸载时先dispose仍登记的OverlayEntry |
 | [BUG-1823](bugs/BUG-1823-comprehensive-imports-dictionary-tab-index-drift.md) | ✅ | ✅ | 综合导入实测按固定索引误把书架当查词 |
 | [BUG-1822](bugs/BUG-1822-comprehensive-imports-ios-font-fixture.md) | ✅ | ✅ | 综合导入实测在iOS找不到字体fixture |
-| [BUG-1821](bugs/BUG-1821-itest-fresh-install-onboarding-hides-home.md) | ✅ | ✅ | 实机集成测试把首次引导前的短暂首页误判为可用 |
-| [BUG-1820](bugs/BUG-1820-ios-media-sources-scrape-actions-hidden.md) | ✅ | ✅ | iOS视频来源页隐藏全部刮削与任务入口 |
+| [BUG-1821](bugs/BUG-1821-itest-fresh-install-onboarding-hides-home.md) | ✅ | 🚧 | 实机集成测试把首次引导前的短暂首页误判为可用 |
+| [BUG-1820](bugs/BUG-1820-ios-media-sources-scrape-actions-hidden.md) | 🚧 | 🚧 | iOS视频来源页隐藏全部刮削与任务入口 |
 | [BUG-1819](bugs/BUG-1819-observe-capture-ios-unwritable-relative-dir.md) | ✅ | ✅ | 实机截图helper在iOS写相对codex-test目录失败 |
-| [BUG-1818](bugs/BUG-1818-video-library-section-focus-lost.md) | ✅ | ✅ | 视频库切分区后分段导航焦点丢失 |
+| [BUG-1818](bugs/BUG-1818-video-library-section-focus-lost.md) | 🚧 | 🚧 | 视频库切分区后分段导航焦点丢失 |
 | [BUG-1817](bugs/BUG-1817-video-source-itest-section-type-drift.md) | ✅ | ✅ | 视频来源实测仍按旧两段库页导航驱动 |
 | [BUG-1816](bugs/BUG-1816-focus-driver-scope-fallback-nonmac.md) | ✅ | ✅ | FocusDriver Scope 兜底掩盖非 macOS Tab 回归 |
 | [BUG-1815](bugs/BUG-1815-lyrics-load-guard-stale-finalizer-test.md) | ✅ | ✅ | 歌词文档守卫静态测试未跟随 finalizer 重构 |

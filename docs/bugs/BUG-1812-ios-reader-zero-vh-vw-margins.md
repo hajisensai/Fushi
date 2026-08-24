@@ -33,6 +33,8 @@
     连续模式 `body.top=-1600` 时可见字符仍命中，分页 vertical-rl 继续保留负 X body frame。
     `integration_test/reader_caret_continuous_viewport_itest.dart` 在真实 WKWebView 滚过一屏后
     断言 body 已离开 client 原点，生产 `enter()` 仍选中屏内字符；iPhone/macOS 实机门均通过。
+  - ⚠ 本条引用的所有 `integration_test/*_itest.dart` **不在任何 runner 里**（真单测门
+    `fushi/tool/flutter_test_failures.dart` 只传 `'test'`），只能真机/模拟器手跑，CI 不会替你跑。
   - `integration_test/popup_hittest_probe_itest.dart` 在真实弹窗词条渲染完成后强制
     `documentElement.zoom=1.5`，断言 content 盒视觉宽 + body 两侧 padding 恰等 Flutter
     视口，且收藏/制卡按钮中心都由 `elementFromPoint` 真命中；iPhone 与 macOS 均通过。

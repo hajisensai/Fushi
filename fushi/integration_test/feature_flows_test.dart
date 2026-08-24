@@ -220,15 +220,15 @@ void main() {
       debugPrint('[M3] ✓ Sync & Backup page opened');
       await takeScreenshot(binding, 'm3_sync_settings');
 
-        // Check backend selector exists
-        final backendLabels = ['WebDAV', 'Google Drive'];
-        bool foundBackend = false;
-        for (final label in backendLabels) {
-          if (find.text(label).evaluate().isNotEmpty) {
-            foundBackend = true;
-            debugPrint('[M3] Found backend option: $label');
-          }
+      // Check backend selector exists
+      final backendLabels = ['WebDAV', 'Google Drive'];
+      bool foundBackend = false;
+      for (final label in backendLabels) {
+        if (find.text(label).evaluate().isNotEmpty) {
+          foundBackend = true;
+          debugPrint('[M3] Found backend option: $label');
         }
+      }
 
       expect(foundBackend, isTrue,
           reason: 'Sync page must expose at least one backend option');
@@ -251,12 +251,12 @@ void main() {
 
       debugPrint('[M3] ✓ Card Creation page opened');
 
-        // Card Creation 已把整段 Anki 正文平铺进本页（settings_schema_
-        // card_creation.dart: body → AnkiSettingsBody），页内不再有「Anki 设置」
-        // 子页入口行；t.anki_settings_label 只是本分类的 summary 文案。旧的
-        // focusWidget(该文本) 在桌面两栏恰好命中主列表里 Card Creation 行自身
-        // 的 subtitle（重开同页，伪通过），在 iOS 全页布局上则对不可聚焦的
-        // 头部文本耗尽步数。按真实结构断言：打开本页即达 Anki 配置正文。
+      // Card Creation 已把整段 Anki 正文平铺进本页（settings_schema_
+      // card_creation.dart: body → AnkiSettingsBody），页内不再有「Anki 设置」
+      // 子页入口行；t.anki_settings_label 只是本分类的 summary 文案。旧的
+      // focusWidget(该文本) 在桌面两栏恰好命中主列表里 Card Creation 行自身
+      // 的 subtitle（重开同页，伪通过），在 iOS 全页布局上则对不可聚焦的
+      // 头部文本耗尽步数。按真实结构断言：打开本页即达 Anki 配置正文。
       expect(find.byType(AnkiSettingsBody), findsOneWidget,
           reason: 'Card Creation page must flat-embed AnkiSettingsBody '
               '(settings_schema_card_creation.dart body)');
@@ -272,32 +272,32 @@ void main() {
       final bookEntries = findBookEntries();
       expect(bookEntries, findsWidgets,
           reason: 'F6 seeded book must be present for tag management');
-        // Focus-driven long-press: focus the book card, then dispatch the same
-        // GamepadLongPressIntent the gamepad layer fires on a held A button —
-        // it invokes the identical onLongPress as a mouse long-press, opening
-        // the single-book context menu. Position-independent, three-end safe.
-        expect(await driver.focusWidget(bookEntries.first), isTrue,
-            reason: 'Book card must be reachable by focus');
-        final bool longPressed = _dispatchGamepadLongPress();
-        expect(longPressed, isTrue,
-            reason: 'focused book card must expose GamepadLongPressIntent '
-                '(the keyboard/gamepad equivalent of a long-press)');
-        await tester.pump(const Duration(milliseconds: 500));
-        debugPrint('[M3] Long pressed book entry (via GamepadLongPressIntent)');
+      // Focus-driven long-press: focus the book card, then dispatch the same
+      // GamepadLongPressIntent the gamepad layer fires on a held A button —
+      // it invokes the identical onLongPress as a mouse long-press, opening
+      // the single-book context menu. Position-independent, three-end safe.
+      expect(await driver.focusWidget(bookEntries.first), isTrue,
+          reason: 'Book card must be reachable by focus');
+      final bool longPressed = _dispatchGamepadLongPress();
+      expect(longPressed, isTrue,
+          reason: 'focused book card must expose GamepadLongPressIntent '
+              '(the keyboard/gamepad equivalent of a long-press)');
+      await tester.pump(const Duration(milliseconds: 500));
+      debugPrint('[M3] Long pressed book entry (via GamepadLongPressIntent)');
 
-        await takeScreenshot(binding, 'm3_book_context_menu');
+      await takeScreenshot(binding, 'm3_book_context_menu');
 
-        // Look for Tags option
-        final tagsChip = find.text(t.tag_label);
-        expect(tagsChip, findsWidgets,
-            reason: 'Book context menu must expose Tags');
-        debugPrint('[M3] ✓ F6: Tags option visible in context menu');
+      // Look for Tags option
+      final tagsChip = find.text(t.tag_label);
+      expect(tagsChip, findsWidgets,
+          reason: 'Book context menu must expose Tags');
+      debugPrint('[M3] ✓ F6: Tags option visible in context menu');
 
-        // Dismiss the context menu via the keyboard (Escape pops the menu
-        // route) instead of a coordinate tap, so no screen-position guess can
-        // miss the barrier.
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
+      // Dismiss the context menu via the keyboard (Escape pops the menu
+      // route) instead of a coordinate tap, so no screen-position guess can
+      // miss the barrier.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
 
       // === Final summary ===
       debugPrint('[M3] === Feature Flows Complete ===');
