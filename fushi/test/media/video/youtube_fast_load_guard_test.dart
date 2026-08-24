@@ -134,9 +134,9 @@ void main() {
         reason: 'connecting 阶段必须在 buildStreamVideoLaunch（慢网可数秒）之前置起');
   });
 
-  test('A2：字幕解析只做一次 getPlayerResponse（不再取多余 WatchPage）', () {
-    // 不再 import watch_page.dart、不再调用 WatchPage.get（androidVr getPlayerResponse 无需
-    // WatchPage 即返回全部字幕轨，实测省 ~1.3s 往返）。注意断言真实用法而非注释里的词。
+  test('A2：字幕解析只做 getPlayerResponse（不再取多余 WatchPage）', () {
+    // 不再 import watch_page.dart、不再调用 WatchPage.get（getPlayerResponse 无需 WatchPage
+    // 即返回全部字幕轨，实测省 ~1.3s 往返）。注意断言真实用法而非注释里的词。
     expect(
       resolverSrc.contains('watch_page.dart'),
       isFalse,
@@ -147,11 +147,19 @@ void main() {
       isFalse,
       reason: 'A2：字幕解析不得再取 WatchPage',
     );
+    // BUG-1832：client 不再钉死 androidVr（它对部分视频返回 0 条字幕轨），改为按
+    // kYoutubeManifestClientFallback 逐个试；这里锁的仍是「每个 client 只做一次
+    // getPlayerResponse、不再补 WatchPage 往返」。
     expect(
-      resolverSrc
-          .contains('.getPlayerResponse(id, yt.YoutubeApiClient.androidVr)'),
+      resolverSrc.contains('.getPlayerResponse(id, api)'),
       isTrue,
-      reason: 'A2：字幕只做一次 androidVr getPlayerResponse',
+      reason: 'A2：单 client 取轨只做一次 getPlayerResponse',
+    );
+    // 单行锚点：跨行匹配在 CRLF 检出下会恒不成立，令守卫静默空转。
+    expect(
+      resolverSrc.contains('fetchFirstNonEmptyByClient<YoutubeCaptionTrack>('),
+      isTrue,
+      reason: 'BUG-1832：字幕取轨必须走整条兜底链，不得钉死单一 client',
     );
   });
 }
