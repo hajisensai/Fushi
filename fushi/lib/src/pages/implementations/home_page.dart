@@ -117,21 +117,24 @@ List<HomeTab> homeActiveTabs({
   bool booksEnabled = true,
   bool mangaEnabled = true,
   bool gamesEnabled = false,
+  bool downloadsEnabled = true,
+  bool dictionariesEnabled = true,
   bool browserExtensionEnabled = false,
 }) =>
     <HomeTab>[
       HomeTab.home,
-      // 小说/漫画/视频/游戏/浏览器扩展五个库页 tab 可按「功能模块」偏好隐藏
-      // （新手引导的功能选择与 设置 → 系统 → 功能模块 写同一真值）；首页/下载/
-      // 词典/设置恒在，是隐藏后的安全回退面。
+      // 小说/漫画/视频/游戏/浏览器扩展五个库页 tab 与 下载/查词 两个工具 tab 都可
+      // 按「功能模块」偏好隐藏（设置 → 系统 → 功能模块；新手引导的功能选择只写
+      // 库页那几项）；首页/设置恒在，是全部隐藏后的安全回退面。
       if (booksEnabled) HomeTab.books,
       if (mangaEnabled) HomeTab.manga,
       if (videoEnabled) HomeTab.video,
       if (gamesEnabled) HomeTab.games,
-      // 下载 tab 恒在（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与
-      // 漫画「在线目录」卷下载队列，不再随视频开关隐藏；位置在视频/游戏之后。
-      HomeTab.downloads,
-      HomeTab.dictionaries,
+      // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
+      // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
+      // 视频/游戏之后。
+      if (downloadsEnabled) HomeTab.downloads,
+      if (dictionariesEnabled) HomeTab.dictionaries,
       // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
       // 不支持加载未解压扩展，故按平台而非实验开关门控），位置紧邻设置之前。
       if (browserExtensionEnabled) HomeTab.browserExtension,
@@ -773,6 +776,8 @@ class _HomePageState extends BasePageState<HomePage>
         videoEnabled: appModel.moduleVideoEnabled,
         mangaEnabled: appModel.moduleMangaEnabled,
         gamesEnabled: Platform.isWindows && appModel.moduleGamesEnabled,
+        downloadsEnabled: appModel.moduleDownloadsEnabled,
+        dictionariesEnabled: appModel.moduleDictionariesEnabled,
         browserExtensionEnabled: DesktopLookupService.isDesktop &&
             appModel.moduleBrowserExtensionEnabled,
       );
@@ -785,9 +790,17 @@ class _HomePageState extends BasePageState<HomePage>
     return tabs.contains(_currentTab) ? _currentTab : HomeTab.home;
   }
 
+  /// 设置页返回箭头的目标：来源 tab 若在设置里刚被「功能模块」关掉，回落首页。
+  HomeTab get _previousVisibleTab =>
+      _activeTabs().contains(_previousTab) ? _previousTab : HomeTab.home;
+
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
-  /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键）都走这里，保证 _previousTab 一致。
+  /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键 / 程序化跳转）都走这里，保证
+  /// _previousTab 一致。目标 tab 已被「功能模块」隐藏时直接忽略：隐藏即该页
+  /// 不可达，快捷键 / 「查看下载」/ 桌面查词请求都不该把用户莫名其妙甩到首页
+  /// （旧行为：`_currentTab` 设成隐藏 tab 后由 [_visibleTab] 兜底成首页）。
   void _selectTab(HomeTab tab) {
+    if (!_activeTabs().contains(tab)) return;
     // A same-route home-tab switch (IndexedStack, no route push/pop) still
     // changes the visible screen, so reset any focus ring lit on the old tab so
     // it is not carried onto the new one (BUG-398). Route-based navigation is
@@ -1007,7 +1020,7 @@ class _HomePageState extends BasePageState<HomePage>
           leading: showSettingsBack
               ? MacosBackButton(
                   fillColor: Colors.transparent,
-                  onPressed: () => _selectTab(_previousTab),
+                  onPressed: () => _selectTab(_previousVisibleTab),
                 )
               : null,
           automaticallyImplyLeading: false,
@@ -2205,7 +2218,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget _buildSettingsTabContent({required bool showBackButton}) {
     return HomeSettingsTabContent(
       showBackButton: showBackButton,
-      onReturnToPreviousTab: () => _selectTab(_previousTab),
+      onReturnToPreviousTab: () => _selectTab(_previousVisibleTab),
     );
   }
 }

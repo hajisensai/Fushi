@@ -5907,6 +5907,12 @@ class AppModel with ChangeNotifier {
   bool get moduleGamesEnabled => prefsRepo.moduleGamesEnabled;
   Future<void> setModuleGamesEnabled(bool value) =>
       prefsRepo.setModuleGamesEnabled(value);
+  bool get moduleDownloadsEnabled => prefsRepo.moduleDownloadsEnabled;
+  Future<void> setModuleDownloadsEnabled(bool value) =>
+      prefsRepo.setModuleDownloadsEnabled(value);
+  bool get moduleDictionariesEnabled => prefsRepo.moduleDictionariesEnabled;
+  Future<void> setModuleDictionariesEnabled(bool value) =>
+      prefsRepo.setModuleDictionariesEnabled(value);
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
