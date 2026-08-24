@@ -87,7 +87,7 @@ void main() {
         isTrue,
         reason: 'global_lookup_controller 嵌套查词未高亮父卡片',
       );
-      // BUG-1805：父层必须来自 host stamp 的 __frameId，不能默认当前 top；用来源层
+      // BUG-1828：父层必须来自 host stamp 的 __frameId，不能默认当前 top；用来源层
       // index + 匹配字数驱动，且只在有词条时高亮。
       expect(
         src.contains("message['__frameId'] as String?"),

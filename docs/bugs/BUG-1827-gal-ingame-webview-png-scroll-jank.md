@@ -1,4 +1,4 @@
-## BUG-1804 · 游戏内 WebView 查词卡 PNG 全帧重采导致弹出与滚动卡顿
+## BUG-1827 · 游戏内 WebView 查词卡 PNG 全帧重采导致弹出与滚动卡顿
 - **报告**：2026-08-24（用户运行时报告，已脱敏）
 - **真实性**：✅ 真 bug。SGRE 的 1592×1020 游戏内查词卡每次弹出或滚动都经
   `GlobalLookupWindow::CaptureBgraAsync` 调用 WebView2 `CapturePreview(PNG)`，再做 WIC
@@ -54,7 +54,7 @@
   iframe 的 revision 初始为空，仍会重新 `eval` 整份静态脚本。运行日志中暖 root 到 direct
   surface 中位约 203.9 ms；新 nested 且 union 变化时中位约 902.2 ms，其中 nested accept 到
   geometry 中位约 321.3 ms。故字体可解释冷嵌套和其他模块首次新建子 WebView 的部分延迟，
-  不能解释 BUG-1806 的固定红框，也没有证据表明稳定复用的其他模块 root 查词被本轮缓存
+  不能解释 BUG-1829 的固定红框，也没有证据表明稳定复用的其他模块 root 查词被本轮缓存
   改动拖慢。字体资源 URL / `document.fonts.ready` reveal 门应在同构开关字体 A/B 后另行落地，
   后续新构建 7 个完整 nested 样本进一步得到总时延中位 968.0 ms：host accept→geometry
   260.7 ms、geometry→captureReady 589.5 ms、captureReady→direct surface 3.9 ms；因此本轮

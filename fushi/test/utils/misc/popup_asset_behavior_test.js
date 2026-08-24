@@ -1402,7 +1402,7 @@ async function flush() {
   }
 }
 
-// BUG-1804 follow-up: a real browser exposes IntersectionObserver. Initial
+// BUG-1827 follow-up: a real browser exposes IntersectionObserver. Initial
 // favorite/duplicate decoration must stay off the synchronous card-render path,
 // repeated words must share one backend call, and a superseding render must make
 // an already-started result stale.

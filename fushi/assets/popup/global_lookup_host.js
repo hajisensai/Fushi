@@ -95,13 +95,13 @@
   var FRAME_CONTENT_TOP = 0;
 
   var frames = new Map();
-  // BUG-1804 ancestor replacement — a logical stack can replace a whole suffix
+  // BUG-1827 ancestor replacement — a logical stack can replace a whole suffix
   // in one render (R,A,B -> R,C). Keep that retiring suffix painted until every
   // frame in the incoming suffix has both rendered and joined the matching
   // native geometry transaction; otherwise removeMissing exposes a root-only
   // compositor frame while the replacement is still reveal-gated.
   var pendingSuffixSwap = null;
-  // BUG-1804 — logical child ids stay monotonic (late messages fail closed), but
+  // BUG-1827 — logical child ids stay monotonic (late messages fail closed), but
   // the expensive popup.html browsing context is physical and reusable. Keep one
   // hidden child realm warm: enough for the first nested lookup, then replenish
   // one look-ahead slot while the user reads the current card. The bound is
@@ -114,7 +114,7 @@
   var standbyRefillScheduled = false;
   var standbyRefillGeneration = 0;
   var STANDBY_REFILL_WATCHDOG_MS = 50;
-  // BUG-1804 — large immutable popup settings (notably an inlined custom font)
+  // BUG-1827 — large immutable popup settings (notably an inlined custom font)
   // belong to the host lifetime, not to a single lookup. The host converts each
   // data:font/...;base64 source into ONE same-origin Blob URL per revision, then
   // drops the base64 descriptor. Every iframe still receives exactly the same
@@ -148,7 +148,7 @@
   // but MUST still refresh the native hit/paint region, or clicks on the new
   // card would fall through the stale region hole.
   var lastShellRectsKey = '';
-  // BUG-1804 follow-up — bbox and shellRects form one native geometry
+  // BUG-1827 follow-up — bbox and shellRects form one native geometry
   // transaction. A nested shell must not paint merely because popup.js finished:
   // the HWND may still have the previous right/bottom extent (or the old HRGN
   // may still contain a transparent gap). Keep epochs monotonic for the whole
@@ -2766,7 +2766,7 @@
     if (record.loaded) {
       wrapFrameBridge(record);
       observeGalFrameDirty(record, record.route);
-      // BUG-1804 / TODO-1231 P1 — immutable settings are keyed by a small
+      // BUG-1827 / TODO-1231 P1 — immutable settings are keyed by a small
       // revision; entries + the per-frame render body are the only per-lookup
       // strings. This keeps a custom data-URL font out of the hot descriptor and
       // still skips a parent re-render when only hasChildPopup changed.
@@ -3169,7 +3169,7 @@
     if (!popups.length) {
       pendingSuffixSwap = null;
       removeMissing([]);
-      // BUG-1804 — no lookup is visible, so release the one look-ahead realm
+      // BUG-1827 — no lookup is visible, so release the one look-ahead realm
       // along with its decoded font/static document state.  The next host
       // activation recreates it before a child lookup can be requested.
       destroyStandbyPool();
@@ -4255,7 +4255,7 @@
     ensureStandbyPool(ensureLayer());
   }
 
-  // BUG-1804 — load popup.html, its scripts/styles, and the iframe bridge while
+  // BUG-1827 — load popup.html, its scripts/styles, and the iframe bridge while
   // the root host is idle.  A Shift/nested lookup can then rebind this realm
   // instead of paying WebView2 document creation on the interaction path.
   if (document.readyState === 'loading' &&
