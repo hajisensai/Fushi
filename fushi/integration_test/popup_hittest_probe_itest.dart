@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -31,7 +31,7 @@ void main() {
 
   testWidgets('dictionary WebView controls are reachable by real hit-testing',
       (WidgetTester tester) async {
-    app.main();
+    await launchFushiTestApp();
 
     expect(await waitForHome(tester), isTrue,
         reason: 'Home must render before probing the dictionary WebView');
@@ -69,6 +69,10 @@ void main() {
     // `hitIsSelf` 为 true 才代表用户点在按钮上真能点到它。
     const String probeSource = r'''
 (() => {
+  const viewportWidth = Number(window.__fushiPopupViewportWidth) ||
+      window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = Number(window.__fushiPopupViewportHeight) ||
+      window.innerHeight || document.documentElement.clientHeight || 0;
   const probe = (selector) => {
     const el = document.querySelector(selector);
     if (!el) return {present: false};
@@ -80,8 +84,8 @@ void main() {
       present: true,
       rect: [r.left, r.top, r.width, r.height],
       center: [cx, cy],
-      inViewport: cy >= 0 && cy <= (window.innerHeight || 0) &&
-                  cx >= 0 && cx <= (window.innerWidth || 0),
+      inViewport: cy >= 0 && cy <= viewportHeight &&
+                  cx >= 0 && cx <= viewportWidth,
       hitTag: hit ? hit.tagName : null,
       hitIsSelf: !!hit && (hit === el || el.contains(hit) || hit.contains(el)),
       pointerEvents: getComputedStyle(el).pointerEvents,
@@ -91,6 +95,13 @@ void main() {
     ready: document.readyState,
     innerHeight: window.innerHeight,
     innerWidth: window.innerWidth,
+    viewportHeight,
+    viewportWidth,
+    zoom: parseFloat(document.documentElement.style.zoom) || 1,
+    containerWidth: document.getElementById('entries-container')
+        .getBoundingClientRect().width,
+    bodyPaddingLeft: parseFloat(getComputedStyle(document.body).paddingLeft) || 0,
+    bodyPaddingRight: parseFloat(getComputedStyle(document.body).paddingRight) || 0,
     clientHeight: document.documentElement.clientHeight,
     clientWidth: document.documentElement.clientWidth,
     visualViewportHeight:
@@ -122,12 +133,36 @@ void main() {
     expect(probe, isNotNull,
         reason: 'dictionary WebView must render the favorite control');
 
+    // A3: force a non-1 document zoom only after renderPopup/settings have
+    // settled. The visual content box plus body padding must still occupy
+    // exactly the Flutter viewport rather than W * zoom.
+    await webView.debugEval('''
+      document.documentElement.style.zoom = '1.5';
+      window.__fushiApplyPopupViewport?.();
+    ''');
+    await tester.pump(const Duration(milliseconds: 250));
+    probe = ((await webView.debugEval(probeSource)) as Map)
+        .cast<Object?, Object?>();
+
     // 视口塌陷是「点哪儿都没反应」的最直接机制：坐标落在 0 高视口外，命中恒空。
     expect(
-      (probe!['innerHeight']! as num).toDouble(),
+      (probe['viewportHeight']! as num).toDouble(),
       greaterThan(0),
       reason: 'WKWebView 视口高为 0 时 DOM 命中测试整体落空，真实点击点不到任何'
           '元素（JS 直接 .click() 仍会成功，故旧测试测不出）',
+    );
+    expect((probe['zoom']! as num).toDouble(), closeTo(1.5, 0.01));
+    final double zoom = (probe['zoom']! as num).toDouble();
+    final double visualOuterWidth =
+        (probe['containerWidth']! as num).toDouble() +
+            ((probe['bodyPaddingLeft']! as num).toDouble() +
+                    (probe['bodyPaddingRight']! as num).toDouble()) *
+                zoom;
+    expect(
+      visualOuterWidth,
+      closeTo((probe['viewportWidth']! as num).toDouble(), 2),
+      reason: 'non-1 zoom must not inflate the popup container beyond the '
+          'Flutter viewport',
     );
 
     for (final String key in <String>['favorite', 'mine']) {

@@ -159,6 +159,24 @@ void main() {
   });
 
   group('popup WebView lifecycle', () {
+    testWidgets('live viewport injection failure still pushes first results',
+        (WidgetTester tester) async {
+      harness.failViewportInjection = true;
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: DictionaryPopupWebView(result: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(harness.pushCount, 1,
+          reason: 'viewport sizing is best-effort; lookup content must render');
+      expect(tester.takeException(), isNull,
+          reason: 'a live platform JS failure must be logged, not unhandled');
+    });
+
     testWidgets(
         'controller teardown during viewport injection does not escape as an '
         'unhandled Flutter error', (WidgetTester tester) async {
@@ -366,6 +384,7 @@ class RecordingWebViewHarness {
   final Map<String, JavaScriptHandlerCallback> handlers =
       <String, JavaScriptHandlerCallback>{};
   bool blockViewportInjection = false;
+  bool failViewportInjection = false;
   Completer<dynamic>? pendingViewportInjection;
 
   static final RegExp _tokenPattern =
@@ -489,6 +508,10 @@ class _RecordingPlatformController extends PlatformInAppWebViewController {
       final Completer<dynamic> pending = Completer<dynamic>();
       harness.pendingViewportInjection = pending;
       return pending.future;
+    }
+    if (harness.failViewportInjection &&
+        source.contains('--fushi-popup-viewport-width')) {
+      throw StateError('viewport JS rejected');
     }
     return null;
   }

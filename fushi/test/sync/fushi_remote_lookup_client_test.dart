@@ -29,7 +29,24 @@ Future<SyncRepository> _repo({
   return repo;
 }
 
+Future<Directory> _isolatedAudioCache() async {
+  final Directory cache =
+      await Directory.systemTemp.createTemp('fushi-remote-audio-test-');
+  addTearDown(() async {
+    if (await cache.exists()) await cache.delete(recursive: true);
+  });
+  return cache;
+}
+
 void main() {
+  test('default pinned audio cache is under the app-private support root', () {
+    final String source = File(
+      'lib/src/sync/fushi_remote_lookup_client.dart',
+    ).readAsStringSync();
+    expect(source, contains('AppPaths.supportRootDirectory()'));
+    expect(source, isNot(contains('Directory.systemTemp.path')));
+  });
+
   test('dictionary lookup fails over enabled candidate urls', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
@@ -175,8 +192,10 @@ void main() {
     const List<int> audioBytes = <int>[0x49, 0x44, 0x33, 1, 2, 3, 4];
     final List<String> requests = <String>[];
     final List<String> fingerprints = <String>[];
+    final Directory cache = await _isolatedAudioCache();
     final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
+      pinnedAudioCacheDirectoryProvider: () async => cache,
       httpClient: MockClient((http.Request request) async {
         fail('a pinned https peer must never use the unpinned shared client');
       }),
@@ -211,12 +230,6 @@ void main() {
       expression: '猫',
       reading: 'ねこ',
     );
-    addTearDown(() async {
-      if (ref != null && !ref.startsWith('http')) {
-        final File file = File(ref);
-        if (await file.exists()) await file.delete();
-      }
-    });
 
     expect(ref, isNotNull);
     expect(ref!.startsWith('http'), isFalse,
@@ -233,12 +246,80 @@ void main() {
         reason: 'both hops must validate the exact paired-peer fingerprint');
   });
 
+  test('pinned audio second-hop TLS failure preserves unreachable cooldown',
+      () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url':
+                  'https://pinned:38765/api/lookup/audio/file?id=opaque',
+            }),
+            200,
+          );
+        }
+        throw const HandshakeException('certificate pin mismatch');
+      }),
+    );
+
+    await expectLater(
+      client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+      throwsA(isA<RemoteLookupUnreachableError>()),
+    );
+  });
+
+  test('pinned audio second-hop 404 is reachable-no-audio', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url':
+                  'https://pinned:38765/api/lookup/audio/file?id=expired',
+            }),
+            200,
+          );
+        }
+        return http.Response('expired', 404);
+      }),
+    );
+
+    expect(
+      await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+      isNull,
+    );
+  });
+
   test('materialized pinned audio cache evicts expired and over-budget files',
       () async {
-    final Directory cache = Directory(
-      '${Directory.systemTemp.path}/fushi_remote_lookup_audio',
-    );
-    await cache.create(recursive: true);
+    final Directory cache = await _isolatedAudioCache();
     final String marker =
         'qa_${DateTime.now().microsecondsSinceEpoch}_${pid}_';
     final File expired = File('${cache.path}/${marker}expired.bin');
@@ -274,6 +355,7 @@ void main() {
     final List<int> uniqueAudio = utf8.encode('$marker-audio');
     final FushiRemoteLookupClient client = FushiRemoteLookupClient(
       repo: repo,
+      pinnedAudioCacheDirectoryProvider: () async => cache,
       pinnedClientFactory: (_) => MockClient((http.Request request) async {
         if (request.method == 'POST') {
           return http.Response.bytes(
@@ -293,14 +375,8 @@ void main() {
 
     final String? materialized =
         await client.lookupAudioUrl(expression: marker, reading: '');
-    addTearDown(() async {
-      for (final File file in <File>[expired, freshA, freshB]) {
-        if (await file.exists()) await file.delete();
-      }
-      if (materialized != null && await File(materialized).exists()) {
-        await File(materialized).delete();
-      }
-    });
+    expect(materialized, isNotNull);
+    expect(File(materialized!).parent.path, cache.path);
 
     expect(await expired.exists(), isFalse,
         reason: 'remote lookup audio must not survive past its cache TTL');

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'support/test_app_launcher.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/media.dart';
@@ -56,7 +57,7 @@ void main() {
 
     double? origMarginTop;
     try {
-      app.main();
+      await launchFushiTestApp();
 
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render within 90s');

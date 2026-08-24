@@ -4,6 +4,7 @@
    resolve inside the shadow (fall back to document before the shadow exists). */
 function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
+function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
 // 注意：scrollHeight 是**未乘 CSS zoom 的 layout px**。要和宿主几何（host CSS px）同单位，
 // 用下面的 __fushiReportedContentHeight()（BUG-1651 ②）。
@@ -551,7 +552,7 @@ function showGrammarTooltip(element) {
     const margin = 8;
 
     let left = anchor.left;
-    const maxLeft = window.innerWidth - box.width - margin;
+    const maxLeft = __fushiViewportWidth() - box.width - margin;
     if (left > maxLeft) left = maxLeft;
     if (left < margin) left = margin;
 
@@ -1308,9 +1309,9 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 const shouldUseNaturalPixels = !isSvg && img.naturalWidth > 0 && img.naturalHeight > 0 && (!useEmUnits || hasMismatchedNaturalAspectRatio(img, invAspectRatio));
                 if (shouldUseNaturalPixels) {
                     if (!hasDimensions) {
-                        imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                        imageContainer.style.width = `${Math.min(img.naturalWidth, __fushiViewportWidth() - 20)}px`;
                     } else if (hasMismatchedNaturalAspectRatio(img, invAspectRatio)) {
-                        imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                        imageContainer.style.width = `${Math.min(img.naturalWidth, __fushiViewportWidth() - 20)}px`;
                     } else if (useEmUnits) {
                         imageContainer.style.width = `${usedWidth}px`;
                     }
@@ -1321,7 +1322,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                         imageContainer.style.maxWidth = '100%';
                     }
                 } else if (!hasDimensions && !isSvg) {
-                    imageContainer.style.width = `${Math.min(img.naturalWidth, window.innerWidth - 20)}px`;
+                    imageContainer.style.width = `${Math.min(img.naturalWidth, __fushiViewportWidth() - 20)}px`;
                     aspectRatioSizer.style.paddingTop = `${(img.naturalHeight / img.naturalWidth) * 100}%`;
                 }
             }, {once: true});
@@ -1780,7 +1781,7 @@ function showInlineHint(button, message) {
     const btnRect = button.getBoundingClientRect();
     const hintRect = hint.getBoundingClientRect();
     let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
-    left = Math.max(4, Math.min(left, window.innerWidth - hintRect.width - 4));
+    left = Math.max(4, Math.min(left, __fushiViewportWidth() - hintRect.width - 4));
     let top = btnRect.top - hintRect.height - 6;
     if (top < 4) top = btnRect.bottom + 6;
     hint.style.left = left + 'px';
@@ -2556,7 +2557,7 @@ function __fushiShowButtonTip(button) {
     const btnRect = button.getBoundingClientRect();
     const tipRect = __fushiBtnTipEl.getBoundingClientRect();
     let left = btnRect.left + btnRect.width / 2 - tipRect.width / 2;
-    left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
+    left = Math.max(4, Math.min(left, __fushiViewportWidth() - tipRect.width - 4));
     let top = btnRect.bottom + 6;
     if (top + tipRect.height > window.innerHeight - 4) {
         top = btnRect.top - tipRect.height - 6;
@@ -2623,7 +2624,7 @@ function showNoAudioHint(button) {
     const btnRect = button.getBoundingClientRect();
     const hintRect = hint.getBoundingClientRect();
     let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
-    left = Math.max(4, Math.min(left, window.innerWidth - hintRect.width - 4));
+    left = Math.max(4, Math.min(left, __fushiViewportWidth() - hintRect.width - 4));
     let top = btnRect.top - hintRect.height - 6;
     if (top < 4) top = btnRect.bottom + 6;
     hint.style.left = left + 'px';
@@ -4276,7 +4277,7 @@ function effectiveDictColumns() {
         configured = 1;
     }
     if (!(configured > 0)) configured = 1;
-    const width = window.innerWidth || 0;
+    const width = __fushiViewportWidth();
     const fit = width > 0
         ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
         : configured;

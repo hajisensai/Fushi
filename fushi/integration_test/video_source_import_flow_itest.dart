@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
@@ -41,7 +41,7 @@ void main() {
     await runFushiItest(
       label: 'video-source-import',
       body: () async {
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
         final AppModel appModel = await enableFocusNavigation(tester);
         await appModel.setVideoAutoScrape(false);

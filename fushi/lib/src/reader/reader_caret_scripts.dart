@@ -418,21 +418,23 @@ window.fushiCaret = {
 
   // ── Viewport (current page) ────────────────────────────────────────
   _viewportFrame: function() {
-    // BUG-1812: WKWebView may expose a real Dart-sized body while reporting
-    // window.innerWidth/innerHeight as 0. Vertical-rl also anchors that body
-    // in a negative horizontal frame (for example [-375, 0]). Reuse the
-    // reader's authoritative CSS sizes and the actual body border-box, exactly
-    // like pagination, so Enter can find visible characters on iOS.
+    // WKWebView may report zero inner dimensions, so size comes from the
+    // Flutter-authored CSS variables. Position is mode-specific: paged
+    // vertical-rl really does move the body frame into negative X; continuous
+    // mode scrolls documentElement and body is content, so body.top/left move
+    // with scroll while Range rects stay client-relative. Anchoring continuous
+    // carets to bodyRect would make every glyph disappear after one viewport.
     var rootCs = getComputedStyle(document.documentElement);
     var bodyRect = document.body.getBoundingClientRect();
+    var useBodyFrame = this._paged();
     var width = parseFloat(rootCs.getPropertyValue('--page-width')) ||
       window.innerWidth || document.body.clientWidth;
     var height =
       parseFloat(rootCs.getPropertyValue('--reader-viewport-height')) ||
       window.innerHeight || document.body.clientHeight;
     return {
-      left: Number.isFinite(bodyRect.left) ? bodyRect.left : 0,
-      top: Number.isFinite(bodyRect.top) ? bodyRect.top : 0,
+      left: useBodyFrame && Number.isFinite(bodyRect.left) ? bodyRect.left : 0,
+      top: useBodyFrame && Number.isFinite(bodyRect.top) ? bodyRect.top : 0,
       width: width,
       height: height
     };

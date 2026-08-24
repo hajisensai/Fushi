@@ -5,7 +5,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart'
     show NowListeningMiniBar;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
@@ -107,7 +107,7 @@ void main() {
       await runFushiItest(
         label: 'ios-audiobook-exit-reentry',
         body: () async {
-          app.main();
+          await launchFushiTestApp();
           expect(
             await waitForHome(tester),
             isTrue,

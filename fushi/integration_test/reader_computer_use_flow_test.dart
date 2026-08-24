@@ -10,7 +10,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
@@ -57,7 +57,7 @@ void main() {
 
       try {
         evidence = ComputerUseEvidence.forTask('reader_computer_use_flow');
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: 'Home must render');
         await tester.pump(const Duration(seconds: 2));
         await evidence.captureWidgetTree(tester, 'home-ready');

@@ -1,11 +1,43 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:http/http.dart' as http;
+
+/// The lookup POST reached its paired peer, but the short-lived audio asset
+/// failed at the transport layer. This is deliberately distinct from a
+/// reachable HTTP response with no usable asset.
+class InterconnectAssetUnreachableError implements Exception {
+  const InterconnectAssetUnreachableError({
+    required this.uri,
+    required this.cause,
+  });
+
+  final Uri uri;
+  final Object cause;
+
+  @override
+  String toString() =>
+      'InterconnectAssetUnreachableError: $uri is unreachable ($cause)';
+}
+
+Never _throwAssetUnreachable(
+  Uri uri,
+  Object error,
+  StackTrace stack,
+) {
+  debugPrint('[Fushi] interconnect audio asset unreachable: $uri ($error)');
+  Error.throwWithStackTrace(
+    InterconnectAssetUnreachableError(uri: uri, cause: error),
+    stack,
+  );
+}
 
 /// 互联客户端的 JSON POST 传输层：**唯一**一份「已启用候选按序 fallback +
 /// `Basic base64(hibiki:token)` 鉴权 + https 带指纹强制走钉扎 client + 每候选独立
@@ -176,30 +208,50 @@ class InterconnectPostTransport {
     final http.Client client =
         usePinned ? _pinnedClientFactory(fp) : _httpClient;
     try {
-      final http.StreamedResponse response = await client
-          .send(http.Request('GET', uri))
-          .timeout(timeout);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        await response.stream.drain<void>().timeout(timeout);
-        return null;
-      }
-      final int? declaredLength = response.contentLength;
-      if (declaredLength != null && declaredLength > maxBytes) {
-        return null;
-      }
-      final BytesBuilder bytes = BytesBuilder(copy: false);
-      await for (final List<int> chunk in response.stream.timeout(timeout)) {
-        if (bytes.length + chunk.length > maxBytes) return null;
-        bytes.add(chunk);
-      }
-      final Uint8List body = bytes.takeBytes();
-      if (body.isEmpty) return null;
-      return (
-        bytes: body,
-        contentType: response.headers['content-type'],
-      );
-    } catch (_) {
-      return null;
+      return await (() async {
+        final http.StreamedResponse response =
+            await client.send(http.Request('GET', uri));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          await response.stream.drain<void>();
+          debugPrint('[Fushi] interconnect audio asset returned HTTP '
+              '${response.statusCode}: $uri');
+          return null;
+        }
+        final int? declaredLength = response.contentLength;
+        if (declaredLength != null && declaredLength > maxBytes) {
+          debugPrint('[Fushi] interconnect audio asset rejected: declared '
+              'length $declaredLength exceeds $maxBytes bytes ($uri)');
+          return null;
+        }
+        final BytesBuilder bytes = BytesBuilder(copy: false);
+        await for (final List<int> chunk in response.stream) {
+          if (bytes.length + chunk.length > maxBytes) {
+            debugPrint('[Fushi] interconnect audio asset rejected: streamed '
+                'body exceeds $maxBytes bytes ($uri)');
+            return null;
+          }
+          bytes.add(chunk);
+        }
+        final Uint8List body = bytes.takeBytes();
+        if (body.isEmpty) {
+          debugPrint('[Fushi] interconnect audio asset was empty: $uri');
+          return null;
+        }
+        return (
+          bytes: body,
+          contentType: response.headers['content-type'],
+        );
+      })().timeout(timeout);
+    } on TimeoutException catch (error, stack) {
+      _throwAssetUnreachable(uri, error, stack);
+    } on HandshakeException catch (error, stack) {
+      _throwAssetUnreachable(uri, error, stack);
+    } on TlsException catch (error, stack) {
+      _throwAssetUnreachable(uri, error, stack);
+    } on SocketException catch (error, stack) {
+      _throwAssetUnreachable(uri, error, stack);
+    } on http.ClientException catch (error, stack) {
+      _throwAssetUnreachable(uri, error, stack);
     } finally {
       if (usePinned) client.close();
     }

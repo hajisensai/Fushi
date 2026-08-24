@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
@@ -33,7 +33,7 @@ void main() {
       await runFushiItest(
         label: 'interconnect-remote-audio-tls-ios',
         body: () async {
-          app.main();
+          await launchFushiTestApp();
           expect(
             await waitForHome(tester),
             isTrue,

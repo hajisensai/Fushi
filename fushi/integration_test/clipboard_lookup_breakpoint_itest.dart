@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
@@ -32,7 +32,7 @@ void main() {
       'in both directions', (WidgetTester tester) async {
     if (!DesktopLookupService.isDesktop) return;
 
-    app.main();
+    await launchFushiTestApp();
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
     final AppModel appModel = await readyAppModel(tester);
 

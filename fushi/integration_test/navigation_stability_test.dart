@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart'
@@ -44,7 +44,7 @@ void main() {
       };
 
       try {
-        app.main();
+        await launchFushiTestApp();
         expect(
           await waitForHome(tester),
           isTrue,

@@ -52,27 +52,46 @@ void main() {
             'navigate to assets/popup/popup.html as its main frame.',
       );
     });
-    test('BUG-1812 iOS zero innerWidth is replaced by Flutter layout width',
+    test('iOS zero innerWidth uses a zoom-correct popup container width',
         () {
       final String source = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
       ).readAsStringSync();
       expect(source, contains('Future<void> _applyPopupViewportSize()'));
-      expect(source, contains('document.documentElement.style.width'));
-      expect(source, contains('document.body.style.width'));
+      expect(source, isNot(contains('document.documentElement.style.width')));
+      expect(source, isNot(contains('document.body.style.width')));
+      expect(source, contains('window.__fushiApplyPopupViewport'));
+      expect(source, contains('width / z'));
+      expect(source, contains('bodyStyle.paddingLeft'));
+      expect(source, contains('bodyStyle.paddingRight'));
+      expect(source, contains("getElementById('entries-container')"));
       expect(source, contains('LayoutBuilder('),
           reason: 'the popup must measure its actual Flutter constraints');
-      final int onLoadStopAt = source.indexOf('onLoadStop:');
-      final int applyAt =
-          source.indexOf('await _applyPopupViewportSize();', onLoadStopAt);
+      final int completeLoadAt =
+          source.indexOf('Future<void> _completePopupLoad');
+      final int applyAt = source.indexOf(
+        'await _applyPopupViewportSize();',
+        completeLoadAt,
+      );
       final int pushAt = source.indexOf('_pushResults();', applyAt);
-      expect(onLoadStopAt, isNonNegative);
+      expect(completeLoadAt, isNonNegative);
       expect(applyAt, isNonNegative);
       expect(
         applyAt,
         lessThan(pushAt),
         reason: 'the width must be fixed before renderPopup creates entries',
       );
+    });
+
+    test('every in-app zoom change reapplies the Flutter viewport width', () {
+      final String popup = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+      final String injection = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
+      expect(popup, contains('window.__fushiApplyPopupViewport();'));
+      expect(injection, contains('window.__fushiApplyPopupViewport?.();'));
     });
   });
 

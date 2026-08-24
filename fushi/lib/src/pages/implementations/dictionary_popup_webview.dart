@@ -298,8 +298,9 @@ class DictionaryPopupWebViewState
   }
 
   /// BUG-1812：iOS WKWebView 的 popup 文档可出现 `window.innerWidth == 0`，
-  /// 即使 Flutter platform view 已有真实非零布局。把 Flutter 约束写成文档宽度，
-  /// 让 `#entries-container`、弹窗 JS 与 HTML5 音频控件拥有真实可见视口。
+  /// 即使 Flutter platform view 已有真实非零布局。把 Flutter 约束发布给弹窗 JS，
+  /// 并按当前 document zoom 折回 layout px 后约束 `#entries-container`；不能直接写
+  /// html/body width，否则 zoom != 1 时实占宽度会再次越过真实视口。
   Future<void> _applyPopupViewportSize() async {
     final InAppWebViewController? controller = _controller;
     final double? width = _layoutWidth;
@@ -309,25 +310,56 @@ class DictionaryPopupWebViewState
     try {
       await controller.evaluateJavascript(source: '''(function(){
   var w = $width, h = $heightValue;
-  document.documentElement.style.width = w + 'px';
-  document.documentElement.style.minWidth = w + 'px';
-  document.body.style.width = w + 'px';
-  document.body.style.minWidth = w + 'px';
   document.documentElement.style.setProperty('--fushi-popup-viewport-width', w + 'px');
   if (h > 0) {
     document.documentElement.style.setProperty('--fushi-popup-viewport-height', h + 'px');
   }
   window.__fushiPopupViewportWidth = w;
   window.__fushiPopupViewportHeight = h;
+  window.__fushiApplyPopupViewport = function(){
+    var width = Number(window.__fushiPopupViewportWidth) || 0;
+    var z = parseFloat(document.documentElement.style.zoom);
+    if (!(z > 0) || !isFinite(z)) z = 1;
+    var container = document.getElementById('entries-container');
+    if (container && width > 0) {
+      var bodyStyle = getComputedStyle(document.body);
+      var leftInset = parseFloat(bodyStyle.paddingLeft) || 0;
+      var rightInset = parseFloat(bodyStyle.paddingRight) || 0;
+      var layoutWidth = Math.max(0, width / z - leftInset - rightInset);
+      container.style.width = layoutWidth + 'px';
+      container.style.maxWidth = layoutWidth + 'px';
+    }
+  };
+  window.__fushiApplyPopupViewport();
 })();''');
-    } catch (_) {
+    } catch (e, stack) {
       // macOS WKWebView may tear down its platform controller after this
       // asynchronous call has started (for example when a lookup is cleared).
-      // That is a normal lifecycle completion, not an app error. Preserve real
-      // JavaScript/platform failures while this exact controller is still live.
+      // That is a normal lifecycle completion, not an app error. A live
+      // controller failure is logged, but must not skip the first result push.
       if (!mounted || !identical(_controller, controller)) return;
-      rethrow;
+      ErrorLogService.instance
+          .log('DictPopupWebview.applyPopupViewportSize', e, stack);
     }
+  }
+
+  Future<void> _completePopupLoad(
+      InAppWebViewController controller) async {
+    try {
+      await controller.evaluateJavascript(source: ReaderCaretScripts.source());
+      if (!mounted) return;
+      await _applyPopupViewportSize();
+    } catch (e, stack) {
+      if (mounted) {
+        ErrorLogService.instance.log('DictPopupWebview.loadBootstrap', e, stack);
+      }
+    }
+    if (!mounted) return;
+    unawaited(_pushInstantScrollPreference());
+    if (_refreshWhenReady || _lastSearchTerm == null) {
+      _pushResults();
+    }
+    _setHasChildPopupJs(widget.hasChildPopup);
   }
 
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
@@ -473,6 +505,7 @@ class DictionaryPopupWebViewState
     if (z < 0.3) z = 0.3;
     if (z > 8) z = 8;
     document.documentElement.style.zoom = z.toFixed(4);
+    window.__fushiApplyPopupViewport?.();
     try { window.flutter_inappwebview.callHandler('popupZoomFont', fs); } catch (err) {}
   };
   window.addEventListener('wheel', function(e){
@@ -2214,20 +2247,7 @@ JSON.stringify((function(){
                 : widget.inputSpec,
           ),
         );
-        controller
-            .evaluateJavascript(source: ReaderCaretScripts.source())
-            .then((_) async {
-          if (!mounted) return;
-          await _applyPopupViewportSize();
-          if (!mounted) return;
-          unawaited(_pushInstantScrollPreference());
-          if (_refreshWhenReady || _lastSearchTerm == null) {
-            _pushResults();
-          }
-          // TODO-869：冷加载就绪后显式下发一次当前 hasChildPopup（默认 false 也下发，
-          // 保证叶子层 __hasChildPopup 明确为 false）。
-          _setHasChildPopupJs(widget.hasChildPopup);
-        });
+        unawaited(_completePopupLoad(controller));
       },
       onReceivedError: (controller, request, error) {
         // TODO-058 fail-safe：主框架加载失败（弹窗 WebView 进程异常 / 资源拦截

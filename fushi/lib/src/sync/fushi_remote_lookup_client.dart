@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -42,18 +43,28 @@ class FushiRemoteLookupClient {
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
+    Future<Directory> Function()? pinnedAudioCacheDirectoryProvider,
     Duration timeout = const Duration(seconds: 3),
   })  : _transport = InterconnectPostTransport(
           repo: repo,
           httpClient: httpClient,
           pinnedClientFactory: pinnedClientFactory,
         ),
-        _timeout = timeout;
+        _timeout = timeout,
+        _pinnedAudioCacheDirectoryProvider =
+            pinnedAudioCacheDirectoryProvider ??
+                _defaultPinnedAudioCacheDirectory;
 
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
   final InterconnectPostTransport _transport;
   final Duration _timeout;
+  final Future<Directory> Function() _pinnedAudioCacheDirectoryProvider;
+
+  static Future<Directory> _defaultPinnedAudioCacheDirectory() async {
+    final Directory supportRoot = await AppPaths.supportRootDirectory();
+    return Directory(p.join(supportRoot.path, 'remote_lookup_audio_cache'));
+  }
 
   /// 查远端词典。三种结局（与 [lookupAudioUrl] 对称）：
   /// - 返回结果：某候选可达且有词条；
@@ -175,15 +186,26 @@ class FushiRemoteLookupClient {
     if (!pinnedCandidate) return urlText;
     if (uri == null || !uri.isScheme('https')) return null;
 
-    final InterconnectBytesOutcome? asset =
-        await _transport.getLookupAudioBytes(
-      candidate: candidate,
-      uri: uri,
-      timeout: _timeout,
-    );
+    final InterconnectBytesOutcome? asset;
+    try {
+      asset = await _transport.getLookupAudioBytes(
+        candidate: candidate,
+        uri: uri,
+        timeout: _timeout,
+      );
+    } on InterconnectAssetUnreachableError catch (error, stack) {
+      Error.throwWithStackTrace(
+        RemoteLookupUnreachableError(
+          'paired candidate succeeded at /api/lookup/audio but its pinned '
+          'audio asset was unreachable: $error',
+        ),
+        stack,
+      );
+    }
     if (asset == null) return null;
     return _materializePinnedAudio(
       asset.bytes,
+      cache: await _pinnedAudioCacheDirectoryProvider(),
       contentType: asset.contentType ?? json['contentType']?.toString(),
     );
   }
@@ -203,20 +225,21 @@ class FushiRemoteLookupClient {
 
 Future<String?> _materializePinnedAudio(
   List<int> bytes, {
+  required Directory cache,
   required String? contentType,
 }) async {
   if (bytes.isEmpty) return null;
   final String digest = sha256.convert(bytes).toString();
   final String extension = _audioExtensionForContentType(contentType);
-  final Directory cache = Directory(
-    p.join(Directory.systemTemp.path, 'fushi_remote_lookup_audio'),
-  );
   await cache.create(recursive: true);
   await _pruneRemoteAudioCache(cache);
   final File output = File(p.join(cache.path, '$digest.$extension'));
   if (await output.exists()) {
-    await output.setLastAccessed(DateTime.now());
-    return output.path;
+    if (await _fileMatchesDigest(output, digest)) {
+      await output.setLastAccessed(DateTime.now());
+      return output.path;
+    }
+    await output.delete();
   }
 
   // Publish atomically: simultaneous lookups for the same clip may race, but
@@ -228,7 +251,10 @@ Future<String?> _materializePinnedAudio(
     try {
       await temporary.rename(output.path);
     } on FileSystemException {
-      if (!await output.exists()) rethrow;
+      if (!await output.exists() ||
+          !await _fileMatchesDigest(output, digest)) {
+        rethrow;
+      }
     }
     await output.setLastAccessed(DateTime.now());
     await _pruneRemoteAudioCache(cache, protectedPath: output.path);
@@ -237,6 +263,15 @@ Future<String?> _materializePinnedAudio(
     if (await staging.exists()) {
       await staging.delete(recursive: true);
     }
+  }
+}
+
+Future<bool> _fileMatchesDigest(File file, String expectedDigest) async {
+  try {
+    final Digest actual = await sha256.bind(file.openRead()).first;
+    return actual.toString() == expectedDigest;
+  } on FileSystemException {
+    return false;
   }
 }
 

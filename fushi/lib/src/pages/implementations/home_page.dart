@@ -145,21 +145,11 @@ HomeTab homeInitialTab({
   return fallback;
 }
 
-/// Whether startup may automatically push the first-run onboarding route.
-/// Production uses [WidgetsFlutterBinding]; automated tests use a test binding
-/// and must not have their feature route covered mid-probe.
-const bool _allowStartupOnboardingInAutomatedBinding = bool.fromEnvironment(
-  'FUSHI_TEST_ALLOW_STARTUP_ONBOARDING',
-);
-
 @visibleForTesting
 bool startupOnboardingAutoLaunchAllowed({
   required bool onboardingCompleted,
-}) {
-  if (onboardingCompleted) return false;
-  return _allowStartupOnboardingInAutomatedBinding ||
-      WidgetsBinding.instance is WidgetsFlutterBinding;
-}
+}) =>
+    !onboardingCompleted;
 
 int homeVisualIndexForTab({
   required List<HomeTab> tabs,
