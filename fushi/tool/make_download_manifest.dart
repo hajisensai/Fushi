@@ -10,14 +10,14 @@
 // 用法（在 `fushi/` 下）：
 //   dart run tool/make_download_manifest.dart \
 //     --input D:\packs\fushi-recommended-2026-08-14.fushi.zip \
-//     --whole-url https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip \
+//     --whole-url https://fushi.moe/pack/pack-2026-08-14/fushi-recommended.fushi.zip \
 //     --mode range --version 2026-08-14
 //
 //   dart run tool/make_download_manifest.dart \
 //     --input ...zip --mode slice --part-size 256MiB --out-dir D:\packs\slices \
-//     --whole-url https://dl.wrds.xyz/....zip \
-//     --part-base-url https://github.com/hajisensai/fushi-pack/releases/download/pack-2026-08-14 \
-//     --mirror https://mirror2.example/....zip
+//     --whole-url https://fushi.moe/pack/pack-2026-08-14/fushi-recommended.fushi.zip \
+//     --part-base-url https://github.com/hajisensai/fushi-pack/releases/download/pack-2026-08-14 \n//     --part-base-url https://fushi.moe/pack/pack-2026-08-14 \
+//     --mirror https://fushi.moe/pack/pack-2026-08-14/fushi-recommended.fushi.zip
 //
 // 切片文件名固定为 `<包名>.NNN`（三位十进制，从 000 起），与清单里的 `name` 对应。
 

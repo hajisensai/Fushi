@@ -10,10 +10,18 @@ import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
-/// 官方推荐包（词典 + 日/英发音音频库，Fushi 备份 zip 格式）分发地址。
-/// 与 `docs/user-guide.md` 的链接同源；这是**清单拉取失败时的回退直链**——
-/// 正常更新路径是改 [kRecommendedPackManifestUrl] 指向的清单（换包零发版），
-/// 只有清单机制本身变更时才需要动这里。
+/// 官方推荐包（词典 + 日/英发音音频库，Fushi 备份 zip 格式）的**整包**回退直链。
+///
+/// 正常路径根本走不到这里：清单（[kRecommendedPackManifestUrls]）挂在官网和
+/// GitHub 两个主机上，拿到清单就走分片并发 + 双源。这条只在两个主机都拉不到
+/// 清单时兜底。
+///
+/// **为什么它还在这个域名上**：整包约 9.5 GB，官网和 GitHub 都放不下——
+/// GitHub Release 单资产上限 2 GB（所以包才要切片），R2 免费额度共 10 GB
+/// 且要留给 app 的发布镜像。搬走它需要另找一个能存 9.5 GB 单文件的主机；
+/// 在那之前别把它改成 fushi.moe 下的路径，那只会得到 404。
+/// 另一条独立的整包线路是 Google Drive（[kRecommendedPackGoogleDriveDirectUrl]），
+/// UI 里可手动切换。
 const String kRecommendedPackCloudflareUrl =
     'https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip';
 const String kRecommendedPackGoogleDriveFileId =
@@ -35,14 +43,26 @@ final String kRecommendedPackFileName =
 
 /// 推荐包**稳定清单**地址：换包时上传新 zip + 更新这份 json 即可，app 零发版。
 /// 格式（字段见 [RecommendedPackManifest]）：
-/// `{"version":"2026-08-14","url":"https://dl.wrds.xyz/….fushi.zip",`
+/// `{"version":"2026-08-14","url":"https://fushi.moe/pack/….fushi.zip",`
 /// `"sha256":"<hex>","size_bytes":10200000000}`
 ///
 /// 分片分发（可选，见 [RecommendedPackManifest.toDownloadPlan]）再加：
 /// `"mirrors":[…整包镜像…]`、`"part_size_bytes":268435456`，或物理切片的
 /// `"parts":[{"name":…,"offset":…,"length":…,"sha256":…}]` + `"part_base_urls":[…]`。
-const String kRecommendedPackManifestUrl =
-    'https://dl.wrds.xyz/fushi-recommended-manifest.json';
+/// 首选清单地址：官网。Worker 的 `/pack` 路由把它代理到 `fushi-pack` 最新
+/// release 的 `manifest.json`，所以换包只需在那个仓库发一个 release，
+/// 这个地址永远不变。
+const String kRecommendedPackManifestUrl = 'https://fushi.moe/pack/manifest.json';
+
+/// 清单候选，按序尝试。
+///
+/// 清单只有几 KB，多挂一个主机就让「清单拉不到」不再等价于「官网不可达」——
+/// 而清单是「换包零发版」的唯一支点，值得这份冗余。两个候选指向同一个 release
+/// 的同一个资产（官网那条就是 GitHub 那条的边缘代理），内容天然一致。
+const List<String> kRecommendedPackManifestUrls = <String>[
+  kRecommendedPackManifestUrl,
+  'https://github.com/hajisensai/fushi-pack/releases/latest/download/manifest.json',
+];
 
 /// 展示用体积标签（近似值，随包更新；清单带 size_bytes 时以清单为准展示）。
 const String kRecommendedPackSizeLabel = '9.5 GB';
@@ -255,11 +275,21 @@ Future<RecommendedPackManifest?> fetchRecommendedPackManifest() async {
         responseType: ResponseType.plain,
       ),
     );
-    final Response<String> response =
-        await dio.get<String>(kRecommendedPackManifestUrl);
-    final String? body = response.data;
-    if (body == null) return null;
-    return parseRecommendedPackManifest(body);
+    for (final String url in kRecommendedPackManifestUrls) {
+      try {
+        final Response<String> response = await dio.get<String>(url);
+        final String? body = response.data;
+        if (body == null) continue;
+        final RecommendedPackManifest? parsed =
+            parseRecommendedPackManifest(body);
+        if (parsed != null) return parsed;
+        // 拿到了却解析不出来（半截响应 / 被网关塞了门户页）：换下一个候选，
+        // 而不是当成「没有清单」直接退回整包直链。
+      } catch (_) {
+        // 单个候选失败不影响后面的，全挂才返回 null。
+      }
+    }
+    return null;
   } catch (_) {
     return null;
   }
