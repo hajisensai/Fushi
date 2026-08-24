@@ -40,56 +40,56 @@ void main() {
     });
   });
 
-  /// BUG-1836 / BUG-1786：Windows 的 exe 版本资源丢 `-debug.N`，关于页只显示
-  /// `2.2.1`，用户看不出自己跑在哪个构建上；「新 exe + 旧 app.so」的半更新态更是
-  /// 完全不可见。有了编译进 `app.so` 的构建版本，这两件事都能在关于页直接看出来。
+  /// BUG-1786：exe 版本资源与 `app.so` 是**两个文件**，Inno 回滚保留被覆盖的文件、
+  /// 只删本次新建的文件，所以「新 exe + 旧 app.so」的半更新态完全可能落地，而版本
+  /// 资源照样报新版本。关于页是用户唯一能自查这件事的地方。
   group('运行中代码版本优先展示', () {
-    PackageInfo windowsInfo() => PackageInfo(
+    PackageInfo windowsInfo(String version) => PackageInfo(
           appName: 'Fushi',
           packageName: 'app.hibiki.reader',
-          // Windows 上 package_info 读 exe VERSIONINFO，必然只有基版本。
-          version: '2.2.1',
+          // Windows 的 VERSIONINFO **字符串**字段保留完整 build-name（丢后缀的只是
+          // FILEVERSION 那四段数字），package_info 读的正是字符串字段。实测本机
+          // fushi.exe: ProductVersion = 2.2.1-debug.12215+12215。
+          version: version,
           buildNumber: '12215',
         );
 
-    test('注入了代码版本就显示带后缀的真值', () {
+    test('同一次构建：显示代码版本，不加警告', () {
       expect(
         formatAppVersionDisplay(
-          windowsInfo(),
+          windowsInfo('2.2.1-debug.12215'),
           runningCodeVersion: '2.2.1-debug.12215',
         ),
         '2.2.1-debug.12215 (12215)',
       );
     });
 
-    test('没注入时退回 exe 版本资源，形状不变', () {
-      expect(formatAppVersionDisplay(windowsInfo()), '2.2.1 (12215)');
-    });
-
-    test('基版本不一致时并排显示 exe 版本（半更新态的可见症状）', () {
-      final PackageInfo info = PackageInfo(
-        appName: 'Fushi',
-        packageName: 'app.hibiki.reader',
-        version: '2.3.0',
-        buildNumber: '12300',
-      );
-
+    test('半更新态：exe 比 app.so 新一位序号，必须报出来', () {
+      // BUG-1786 现场的真实形状。基版本相同、只差预发布序号一位——只比基版本
+      // 的实现会对这个输入完全沉默。
       expect(
         formatAppVersionDisplay(
-          info,
+          windowsInfo('2.2.1-debug.12216'),
           runningCodeVersion: '2.2.1-debug.12215',
         ),
-        '2.2.1-debug.12215 (12300) ≠ exe 2.3.0',
+        '2.2.1-debug.12215 (12215) ≠ exe 2.2.1-debug.12216',
       );
     });
 
-    test('只有后缀不同不算不一致（否则每个 debug 构建都会报警）', () {
+    test('前导 v 与 +metadata 不算不一致', () {
       expect(
         formatAppVersionDisplay(
-          windowsInfo(),
-          runningCodeVersion: '2.2.1-debug.12215',
+          windowsInfo('2.2.1-debug.12215'),
+          runningCodeVersion: 'v2.2.1-debug.12215+abc1234',
         ),
         isNot(contains('≠')),
+      );
+    });
+
+    test('没注入时退回 exe 版本资源，形状不变', () {
+      expect(
+        formatAppVersionDisplay(windowsInfo('2.2.1-debug.12215')),
+        '2.2.1-debug.12215 (12215)',
       );
     });
   });

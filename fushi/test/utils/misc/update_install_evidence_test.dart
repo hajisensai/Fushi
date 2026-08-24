@@ -145,6 +145,45 @@ void main() {
       );
     });
 
+    test('beta → 正式版：不可比，失败的安装不得被判成成功', () {
+      // beta 包升同 base 的正式版（`2.2.1-beta.30` → `2.2.1`），安装彻底失败且没
+      // 留日志。若把 beta 的代码版本误当成裸 `2.2.1`（修复前 workflow 就是这么注入
+      // 的），两边都成了「无预发布段且相等」⇒ 判成功，实际还跑着 beta 的代码。
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-beta.30',
+          targetVersion: '2.2.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        isWindowsUpdateInstalled(
+          verdict: WindowsInnoInstallVerdict.unknown,
+          targetVersion: '2.2.1',
+          executableVersion: '2.2.1-beta.30',
+          runningCodeVersion: '2.2.1-beta.30',
+        ),
+        isFalse,
+      );
+    });
+
+    test('beta → 更新的 beta：同通道，按序号比得出来', () {
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-beta.31',
+          targetVersion: '2.2.1-beta.31',
+        ),
+        RunningCodeVersionEvidence.atLeastTarget,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-beta.30',
+          targetVersion: '2.2.1-beta.31',
+        ),
+        RunningCodeVersionEvidence.belowTarget,
+      );
+    });
+
     test('正式版 vs 同号预发布版不可比（BUG-1786 抱怨的「恒为真」）', () {
       expect(
         classifyRunningCodeVersion(
@@ -199,6 +238,33 @@ void main() {
       );
     });
 
+    test('畸形版本串不得抛异常（marker 是磁盘 JSON，可能被手改或损坏）', () {
+      // `2.2.1-.1` 的预发布段首个 token 为空：光比「通道标签」会把它和「无预发布
+      // 段」判成同通道，随后拿 null 去比较就抛 TypeError。reconcile 跑在启动路径
+      // 上，这里抛异常等于开机崩。
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1',
+          targetVersion: '2.2.1-.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-.1',
+          targetVersion: '2.2.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+      expect(
+        classifyRunningCodeVersion(
+          runningCodeVersion: '2.2.1-',
+          targetVersion: '2.2.1-debug.1',
+        ),
+        RunningCodeVersionEvidence.inconclusive,
+      );
+    });
+
     test('未注入 ⇒ 不可比（不是「未达标」）', () {
       expect(
         classifyRunningCodeVersion(
@@ -207,6 +273,47 @@ void main() {
         ),
         RunningCodeVersionEvidence.inconclusive,
       );
+    });
+  });
+
+  /// BUG-1836：半更新态下 exe 版本资源与 `buildNumber` **都**报新值，只看它们的话
+  /// 客户端会认为自己已是最新 ⇒ 不再提示更新 ⇒ 用户被困在旧代码里且没有出路。
+  group('更新检查的「本机当前版本」', () {
+    test('有代码版本就用它，哪怕 exe 报的是更新的版本', () {
+      expect(
+        resolveCurrentAppVersion(
+          '2.2.1-debug.12216',
+          runningCodeVersionDefine: '2.2.1-debug.12215',
+        ),
+        '2.2.1-debug.12215',
+      );
+    });
+
+    test('未注入时退回 exe 版本资源', () {
+      expect(
+        resolveCurrentAppVersion(
+          '2.2.1-debug.12216',
+          runningCodeVersionDefine: '',
+        ),
+        '2.2.1-debug.12216',
+      );
+    });
+
+    test('两个更新检查入口都必须走这里（源码守卫）', () {
+      // 绕过任一入口，那条路径就在半更新态下永判「已是最新」。
+      const List<String> sources = <String>[
+        'lib/src/pages/implementations/home_page.dart',
+        'lib/src/settings/settings_schema_system.dart',
+      ];
+      for (final String path in sources) {
+        final File file = File(path);
+        expect(file.existsSync(), isTrue, reason: path);
+        expect(
+          file.readAsStringSync(),
+          contains('resolveCurrentAppVersion('),
+          reason: '$path 的更新检查绕开了「本机当前版本」的真值入口',
+        );
+      }
     });
   });
 

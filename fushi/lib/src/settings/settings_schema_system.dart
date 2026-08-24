@@ -407,7 +407,10 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后
   // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
   // 原「正在检查…」提示。
-  final String currentVersion = settingsContext.appModel.packageInfo.version;
+  // BUG-1836：同 home_page，半更新态下 exe 版本资源谎报新版本，
+  // 据它比较会永判「已是最新」，用户困在旧代码里没有出路。
+  final String currentVersion =
+      resolveCurrentAppVersion(settingsContext.appModel.packageInfo.version);
   final String currentBuildNumber =
       settingsContext.appModel.packageInfo.buildNumber;
   final UpdateChannel channel = _channelFromSettings(settingsContext);
@@ -565,11 +568,12 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
 /// 绝不能用 semver 的 `+` build-metadata 把 versionCode 拼进 versionName，
 /// 否则会渲染出畸形的 `0.11.1-debug.5613+1000561300`。用括号并列展示。
 ///
-/// [runningCodeVersion] 是编译进 `app.so` 的构建版本（见 `build_version.dart`）。
-/// 有它就用它当版本名——Windows 的 exe 版本资源丢掉了 `-debug.N` 整段后缀，
-/// 只显示 `2.2.1` 时用户根本看不出自己跑在哪个构建上，BUG-1786 现场就是这么被
-/// 蒙了好几天。两者**基版本**不一致时并排显示 exe 那个值：这正是「新 exe + 旧
-/// app.so」半更新态的可见症状，关于页是用户唯一能自查它的地方。
+/// [runningCodeVersion] 是编译进 `app.so` 的构建版本（见 `build_version.dart`），
+/// [PackageInfo.version] 则来自 exe / Info.plist / manifest 的版本资源。两者是
+/// **两个文件**：Inno 的回滚保留被覆盖的文件、只删本次新建的文件，所以「新 exe +
+/// 旧 app.so」这种半更新态完全可能落地（BUG-1786 现场），而版本资源照样报新版本。
+///
+/// 不一致时并排显示 exe 那个值——关于页是用户唯一能自查这件事的地方。
 @visibleForTesting
 String formatAppVersionDisplay(
   PackageInfo packageInfo, {
@@ -579,16 +583,23 @@ String formatAppVersionDisplay(
   final String shown = runningCodeVersion ?? executableVersion;
   final String display = '$shown (${packageInfo.buildNumber})';
   if (runningCodeVersion == null) return display;
-  if (_baseVersionOf(runningCodeVersion) ==
-      _baseVersionOf(executableVersion)) {
+  if (_isSameBuildVersion(runningCodeVersion, executableVersion)) {
     return display;
   }
   return '$display ≠ exe $executableVersion';
 }
 
-/// 取语义版本的基版本段（`2.2.1-debug.12215+abc` → `2.2.1`）。
+/// 两个版本串是否来自同一次构建。
 ///
-/// 只比基版本，不比后缀：exe 版本资源在 Windows 上**必然**丢后缀，拿后缀去比
-/// 会让每个 debug 构建都显示成不一致，警告立刻退化成噪音。
-String _baseVersionOf(String version) =>
-    version.trim().split('+').first.split('-').first;
+/// **逐字比较**（只归一化前导 `v` 与 `+metadata`），不是只比基版本：半更新态的
+/// 形状恰恰是 `2.2.1-debug.12216` 的 exe 配 `2.2.1-debug.12215` 的 app.so，基版本
+/// 相同、只差预发布序号一位。只比基版本等于对唯一需要它的输入闭眼。
+///
+/// 也不会误报：`--dart-define=FUSHI_BUILD_VERSION` 与 `--build-name` 取同一个表达式
+/// （守卫 `test/build/build_version_define_guard_test.dart` 钉死这条配对），同一次
+/// 构建两侧必然逐字相等。
+bool _isSameBuildVersion(String a, String b) =>
+    _normalizedVersion(a) == _normalizedVersion(b);
+
+String _normalizedVersion(String version) =>
+    version.trim().replaceFirst(RegExp('^[vV]'), '').split('+').first;

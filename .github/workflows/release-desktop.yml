@@ -182,10 +182,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # TODO-1049: the debug channel publishes to ONE fixed rolling GitHub
           # Release tag (`debug-rolling`) instead of a new
@@ -219,6 +233,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
@@ -811,10 +826,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
           # the historical `debug-rolling`. Must match release.yml.
@@ -839,6 +868,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
@@ -1312,10 +1342,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
           # the historical `debug-rolling`. Must match release.yml.
@@ -1340,6 +1384,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
@@ -1391,7 +1436,7 @@ jobs:
         working-directory: fushi
         run: >-
           flutter build ios --release --no-codesign
-          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Prepare unsigned iOS IPA release asset
@@ -1589,7 +1634,7 @@ jobs:
         run: >-
           flutter build ipa --release
           --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
-          --build-name "${{ steps.channel.outputs.build_version_name }}"
+          --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Upload to TestFlight
@@ -1752,10 +1797,24 @@ jobs:
               fi
               ;;
           esac
-          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
             BUILD_VERSION_NAME="${TAG#v}"
             BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
           fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
 
           # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
           # the historical `debug-rolling`. Must match release.yml.
@@ -1780,6 +1839,7 @@ jobs:
             echo "publish_manifest=$PUBLISH_MANIFEST"
             echo "manifest_channel=$MANIFEST_CHANNEL"
             echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
             echo "release_sequence=$RELEASE_SEQUENCE"
             echo "body<<EOF"
             echo "$BODY"
