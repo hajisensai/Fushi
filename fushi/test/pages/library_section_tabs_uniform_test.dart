@@ -123,6 +123,46 @@ void main() {
     );
   });
 
+  testWidgets('宿主拒绝切换时指示器不许停在未生效的分区上', (WidgetTester tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1600, 900));
+
+    // 宿主收下点击但**不改** selected——真实存在的分支：游戏页的「设置」段可由宿主
+    // 改成打开别的页面而不切分区。TabBar 自己已经把指示器移过去了，若没有「controller
+    // 只是 selected 的投影」这条校正，指示器会停在一个并未生效的分区上。
+    final List<int> taps = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: LibrarySectionTabs<int>(
+              tabs: <LibrarySectionTab<int>>[
+                for (int i = 0; i < videoTabs.length; i++)
+                  LibrarySectionTab<int>(value: i, label: videoTabs[i]),
+              ],
+              selected: 0,
+              onChanged: taps.add,
+              focusIdPrefix: 'reject-test',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(Tab, '全部视频'));
+    await tester.pumpAndSettle();
+
+    expect(taps, <int>[2], reason: '点击必须照常上报给宿主');
+    expect(
+      tester.widget<TabBar>(find.byType(TabBar)).controller!.index,
+      0,
+      reason: '宿主没改 selected，指示器必须被拉回——controller 是 selected 的投影，'
+          '不是第二份真相',
+    );
+  });
+
   test('四模块顶栏分区导航收敛到 LibrarySectionTabs（不许各写一份）', () {
     const Map<String, String> topBarSources = <String, String>{
       '书架/漫画': 'lib/src/pages/implementations/media_library_shell.dart',

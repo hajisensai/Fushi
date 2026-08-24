@@ -128,12 +128,24 @@ class _FushiSectionTabBarState<T extends Object>
     super.dispose();
   }
 
-  /// 把 controller 拉回 [widget.selected] 的投影。同值直接返回，不会自激。
+  bool _projectionScheduled = false;
+
+  /// 把 controller 拉回 [widget.selected] 的投影。
+  ///
+  /// 判据只看 `_controller.index`——切换动画进行中它已经是**目标**下标，此时无需干预，
+  /// 让动画自己走完；若还去 `animateTo` 同一个下标，只会把动画反复推倒重来。
+  ///
+  /// build 与 onTap 各调一次，缺一不可：宿主接受本次切换时走 build（父 rebuild），
+  /// 宿主**拒绝**时父可能根本不 rebuild（游戏页「设置」段可由宿主改成打开别的页面），
+  /// 那一路只剩 onTap 这次校正把指示器拉回真正生效的分区。一帧内去重。
   void _scheduleProjection() {
+    if (_projectionScheduled) return;
+    _projectionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _projectionScheduled = false;
       if (!mounted) return;
       final int index = _selectedIndex;
-      if (_controller.index == index && !_controller.indexIsChanging) return;
+      if (_controller.index == index) return;
       _controller.animateTo(index);
     });
   }
@@ -170,7 +182,12 @@ class _FushiSectionTabBarState<T extends Object>
       // MD3 的 tab 分隔线会横贯整条 TabBar，而这里 TabBar 只占页头标题槽、右边还有
       // 动作区——画出来是条半截线，故去掉；页头自身的留白已经分隔了内容。
       dividerHeight: 0,
-      onTap: (int index) => widget.onChanged(widget.tabs[index].value),
+      onTap: (int index) {
+        widget.onChanged(widget.tabs[index].value);
+        // TabBar 已把指示器移过去了；宿主若不接受这次切换（不改 selected、也不
+        // rebuild），得靠这次校正把它拉回来。
+        _scheduleProjection();
+      },
       tabs: <Widget>[
         for (final LibrarySectionTab<T> tab in widget.tabs)
           Tab(text: tab.label),
