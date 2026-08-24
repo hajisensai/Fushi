@@ -40,34 +40,95 @@ class LibrarySectionTab<T> {
 /// * 页头协作——经 [FushiHeaderCrampScope] 上报自然宽，页头据此决定窄屏是否把动作
 ///   收进 ⋯ 菜单。
 class LibrarySectionTabs<T extends Object> extends StatelessWidget {
+  /// 组件自持选中态：宿主只给「当前是哪个」和「点了哪个」，内部 [TabController]
+  /// 是 [selected] 的投影。四个库页壳（书架 / 漫画 / 视频 / 游戏）用这个形态——
+  /// 它们的子视图是 [Offstage] 保活的独立页面，页内没有 [TabBarView]。
   const LibrarySectionTabs({
     required this.tabs,
-    required this.selected,
-    required this.onChanged,
+    required T this.selected,
+    required ValueChanged<T> this.onChanged,
     required this.focusIdPrefix,
     super.key,
-  });
+  }) : controller = null;
+
+  /// 宿主已持有 [TabController]（页内还有 [TabBarView] 由它驱动）：直接共用那一个，
+  /// **不**再镜像出第二份选中态。
+  ///
+  /// 差别不只是少一个对象：镜像形态下横滑 [TabBarView] 时，宿主 index 只在越过一半
+  /// 时跳变，镜像出的指示器只能跟着 `animateTo` 一跳；共用同一个 controller 时指示器
+  /// 跟手连续滑动，那才是 MD3 tabs 与 [TabBarView] 配对时的正常行为。
+  ///
+  /// 值域即下标：`tabs[i].value` 必须与 controller 的第 i 个 tab 对应。
+  const LibrarySectionTabs.controlled({
+    required this.tabs,
+    required TabController this.controller,
+    required this.focusIdPrefix,
+    super.key,
+  })  : selected = null,
+        onChanged = null;
 
   final List<LibrarySectionTab<T>> tabs;
-  final T selected;
-  final ValueChanged<T> onChanged;
+
+  /// 仅自持形态；[LibrarySectionTabs.controlled] 下为 null（真相在 [controller]）。
+  final T? selected;
+  final ValueChanged<T>? onChanged;
+
+  /// 仅 [LibrarySectionTabs.controlled] 形态；自持形态下为 null。
+  final TabController? controller;
 
   /// focusId 前缀（如 `game-library-tab`），焦点停靠点 id 为 `<prefix>-sections`。
   final String focusIdPrefix;
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _focusShell({
+    required T selectedValue,
+    required ValueChanged<T> onSelect,
+    required Widget child,
+  }) {
     return FushiAdjustableSegmented<T>(
       values: <T>[for (final LibrarySectionTab<T> tab in tabs) tab.value],
-      selected: selected,
-      onChanged: onChanged,
+      selected: selectedValue,
+      onChanged: onSelect,
       focusIdPrefix: focusIdPrefix,
       focusId: FushiFocusId('$focusIdPrefix-sections'),
-      child: FushiSectionTabBar<T>(
-        tabs: tabs,
-        selected: selected,
-        onChanged: onChanged,
-      ),
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TabController? host = controller;
+    if (host == null) {
+      final T selectedValue = selected as T;
+      final ValueChanged<T> onSelect = onChanged!;
+      return _focusShell(
+        selectedValue: selectedValue,
+        onSelect: onSelect,
+        child: FushiSectionTabBar<T>(
+          tabs: tabs,
+          selected: selectedValue,
+          onChanged: onSelect,
+        ),
+      );
+    }
+    // 焦点外壳要的是「当前值 + 怎么切」，从宿主 controller 就地派生；监听它才能让
+    // 横滑 / 外部 animateTo 之后方向键的起点跟着走。
+    return AnimatedBuilder(
+      animation: host,
+      builder: (BuildContext context, Widget? child) {
+        final int index = host.index.clamp(0, tabs.length - 1);
+        return _focusShell(
+          selectedValue: tabs[index].value,
+          onSelect: (T value) {
+            final int target =
+                tabs.indexWhere((LibrarySectionTab<T> tab) => tab.value == value);
+            if (target >= 0 && target != host.index) host.animateTo(target);
+          },
+          child: FushiSectionTabBar<T>.controlled(
+            tabs: tabs,
+            controller: host,
+          ),
+        );
+      },
     );
   }
 }
@@ -79,16 +140,27 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
 /// 情形——游戏页的「设置」段可由宿主改成打开别的页面而不改分区值，此时 [TabBar] 自己
 /// 已经把指示器移过去了，若不校正，指示器会停在一个并未生效的分区上。
 class FushiSectionTabBar<T extends Object> extends StatefulWidget {
+  /// 自持形态：内部 controller 是 [selected] 的投影。
   const FushiSectionTabBar({
     required this.tabs,
-    required this.selected,
-    required this.onChanged,
+    required T this.selected,
+    required ValueChanged<T> this.onChanged,
     super.key,
-  });
+  }) : controller = null;
+
+  /// 宿主持有形态：直接用宿主的 controller（页内 [TabBarView] 也由它驱动），不投影、
+  /// 不接管点击、不负责它的生命周期。
+  const FushiSectionTabBar.controlled({
+    required this.tabs,
+    required TabController this.controller,
+    super.key,
+  })  : selected = null,
+        onChanged = null;
 
   final List<LibrarySectionTab<T>> tabs;
-  final T selected;
-  final ValueChanged<T> onChanged;
+  final T? selected;
+  final ValueChanged<T>? onChanged;
+  final TabController? controller;
 
   @override
   State<FushiSectionTabBar<T>> createState() => _FushiSectionTabBarState<T>();
@@ -96,7 +168,10 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 
 class _FushiSectionTabBarState<T extends Object>
     extends State<FushiSectionTabBar<T>> with TickerProviderStateMixin {
-  late TabController _controller = _createController();
+  /// 自持形态下由本 State 创建并负责 dispose；宿主持有形态下恒为 null。
+  TabController? _owned;
+
+  TabController get _controller => widget.controller ?? _owned!;
 
   int get _selectedIndex {
     final int index = widget.tabs
@@ -111,19 +186,35 @@ class _FushiSectionTabBarState<T extends Object>
       );
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.controller == null) _owned = _createController();
+  }
+
+  @override
   void didUpdateWidget(covariant FushiSectionTabBar<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != null) {
+      // 换成宿主持有：自持时期的 controller 不再是任何东西的真相，就地释放。
+      _owned?.dispose();
+      _owned = null;
+      return;
+    }
+    if (_owned == null) {
+      _owned = _createController();
+      return;
+    }
     // 段数变了（模块按能力增删分区）才需要换 controller；选中值的变化由每帧末尾的
     // 投影校正统一承接，不在这里分叉。
     if (widget.tabs.length != oldWidget.tabs.length) {
-      _controller.dispose();
-      _controller = _createController();
+      _owned!.dispose();
+      _owned = _createController();
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _owned?.dispose();
     super.dispose();
   }
 
@@ -161,7 +252,9 @@ class _FushiSectionTabBarState<T extends Object>
       ),
     );
 
-    _scheduleProjection();
+    // 宿主持有 controller 时它本身就是真相，没有第二份要对齐的东西。
+    final bool hostControlled = widget.controller != null;
+    if (!hostControlled) _scheduleProjection();
 
     return TabBar(
       controller: _controller,
@@ -172,12 +265,16 @@ class _FushiSectionTabBarState<T extends Object>
       // MD3 的 tab 分隔线会横贯整条 TabBar，而这里 TabBar 只占页头标题槽、右边还有
       // 动作区——画出来是条半截线，故去掉；页头自身的留白已经分隔了内容。
       dividerHeight: 0,
-      onTap: (int index) {
-        widget.onChanged(widget.tabs[index].value);
-        // TabBar 已把指示器移过去了；宿主若不接受这次切换（不改 selected、也不
-        // rebuild），得靠这次校正把它拉回来。
-        _scheduleProjection();
-      },
+      // 宿主持有形态不接管点击：TabBar 自己 animateTo 那一个 controller，页内的
+      // TabBarView 跟着走，中间不该再插一手。
+      onTap: hostControlled
+          ? null
+          : (int index) {
+              widget.onChanged!(widget.tabs[index].value);
+              // TabBar 已把指示器移过去了；宿主若不接受这次切换（不改 selected、
+              // 也不 rebuild），得靠这次校正把它拉回来。
+              _scheduleProjection();
+            },
       tabs: <Widget>[
         for (final LibrarySectionTab<T> tab in widget.tabs)
           Tab(text: tab.label),

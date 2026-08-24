@@ -50,10 +50,11 @@ void main() {
       'lib/src/pages/implementations/downloads_page.dart',
     ).readAsStringSync();
 
-    // PR#820 起下载页门头是 FushiSegmentedStrip（与库页同构），首段承载形态
-    // 由 `Tab(text: …)` 变为 `ButtonSegment(value: 0, label: Text(…))`；本条守的
-    // 行为不变：第一段必须是「资源」，不是第二个 discovery 页。
-    expect(source, contains('label: Text(t.download_resources_tab)'));
+    // 首段的**承载形态**换过三次：`Tab(text: …)` → PR#820 与库页同构的
+    // `ButtonSegment(value: 0, label: Text(…))` → 2026-08-24 库页改走 MD3 tabs 后的
+    // `LibrarySectionTab(value: 0, label: …)`。本条守的**行为**三次都没变：第一段
+    // 必须是「资源」，不是第二个 discovery 页。
+    expect(source, contains('value: 0, label: t.download_resources_tab'));
     expect(source, contains('VideoResourceSearchSurface('));
     expect(source, contains('VideoDownloadJobsPanel.database('));
     expect(source, contains('VideoDownloadSubscriptionsPanel()'));

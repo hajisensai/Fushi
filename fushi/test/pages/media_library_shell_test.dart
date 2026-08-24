@@ -95,7 +95,7 @@ void main() {
     final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
       find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
     );
-    strip.onChanged(kind);
+    strip.onChanged!(kind);
     await tester.pumpAndSettle();
   }
 

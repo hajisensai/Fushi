@@ -163,11 +163,63 @@ void main() {
     );
   });
 
-  test('四模块顶栏分区导航收敛到 LibrarySectionTabs（不许各写一份）', () {
+  testWidgets('controlled 形态共用宿主 TabController，不镜像出第二份选中态',
+      (WidgetTester tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1600, 900));
+
+    // 宿主（下载页）自己持有 controller 驱动 TabBarView。导航组件必须共用**那一个**：
+    // 镜像出第二个 controller 时，横滑 TabBarView 的连续进度传不到指示器上，指示器
+    // 只能在宿主 index 越过一半跳变时跟着跳一下。
+    final TabController host = TabController(length: 4, vsync: const TestVSync());
+    addTearDown(host.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: LibrarySectionTabs<int>.controlled(
+              tabs: const <LibrarySectionTab<int>>[
+                LibrarySectionTab<int>(value: 0, label: '资源'),
+                LibrarySectionTab<int>(value: 1, label: '任务'),
+                LibrarySectionTab<int>(value: 2, label: '订阅'),
+                LibrarySectionTab<int>(value: 3, label: '设置'),
+              ],
+              controller: host,
+              focusIdPrefix: 'controlled-test',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      identical(tester.widget<TabBar>(find.byType(TabBar)).controller, host),
+      isTrue,
+      reason: 'TabBar 必须挂在宿主那一个 controller 上，不得自建第二个',
+    );
+
+    // 点击必须直接落到宿主 controller（页内 TabBarView 靠它换页）。
+    await tester.tap(find.widgetWithText(Tab, '订阅'));
+    await tester.pumpAndSettle();
+    expect(host.index, 2, reason: '点段必须真的驱动宿主 controller');
+
+    // 反向：宿主自己换页（横滑 / 外部 animateTo）时指示器跟着走。
+    host.animateTo(0);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
+  });
+
+  test('顶层页分区导航收敛到 LibrarySectionTabs（不许各写一份）', () {
     const Map<String, String> topBarSources = <String, String>{
       '书架/漫画': 'lib/src/pages/implementations/media_library_shell.dart',
       '视频': 'lib/src/pages/implementations/video_library_shell.dart',
       '游戏': 'lib/src/pages/implementations/game_shared.dart',
+      // 下载页也是顶层 tab、也切四个独立目的地，同属这条收敛（它页内还有
+      // TabBarView，走 controlled 形态共用同一个 TabController）。
+      '下载': 'lib/src/pages/implementations/downloads_page.dart',
     };
     for (final MapEntry<String, String> entry in topBarSources.entries) {
       final String src = File(entry.value).readAsStringSync();
