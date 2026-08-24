@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
 /// Mihon 扩展仓库与安装管理。
@@ -89,6 +90,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           labelText: t.mihon_store_url,
           hintText: 'https://example.org/repo.json',
           autofocus: true,
+          // 不声明就是普通文本键盘，中文/日文输入法会把 `:` `/` `.` 转成
+          // 全角，用户根本输不进任何合法地址（BUG-1804）。归一化在
+          // normalizeUrlInput 里兜底，这里让键盘一开始就给半角。
+          keyboardType: TextInputType.url,
         ),
         actions: <Widget>[
           adaptiveDialogAction(
@@ -99,8 +104,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           adaptiveDialogAction(
             context: dialogContext,
             isDefaultAction: true,
+            // 在出口处归一化一次，后面的 scheme 判定与 addStore 就都拿到
+            // 半角地址；否则全角输入会让 `scheme == 'http'` 判空而漏掉
+            // 明文确认。
             onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
+                Navigator.pop(dialogContext, normalizeUrlInput(controller.text)),
             child: Text(t.mihon_store_add),
           ),
         ],
@@ -115,6 +123,62 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
     try {
       await _manager!.addStore(url, allowInsecure: allowInsecure);
+    } catch (error) {
+      if (mounted) {
+        unawaited(showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: error,
+        ));
+      }
+    }
+  }
+
+  /// 改仓库地址（BUG-1806）。输入框预填当前地址——改地址的典型场景是
+  /// 「同一个仓库换了路径」，从零重打一遍长 URL 没有道理。
+  Future<void> _editStore(MangaExtensionStoreRow store) async {
+    final TextEditingController controller =
+        TextEditingController(text: store.indexUrl);
+    final String? url = await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.mihon_store_edit),
+        content: FushiTextField(
+          controller: controller,
+          labelText: t.mihon_store_url,
+          hintText: 'https://example.org/repo.json',
+          autofocus: true,
+          keyboardType: TextInputType.url,
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: dialogContext,
+            isDefaultAction: true,
+            onPressed: () =>
+                Navigator.pop(dialogContext, normalizeUrlInput(controller.text)),
+            child: Text(t.mihon_store_edit),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || url == null || url.isEmpty || url == store.indexUrl) return;
+    bool allowInsecure = false;
+    if (Uri.tryParse(url)?.scheme == 'http') {
+      allowInsecure = await _confirmInsecureUrl(url);
+      if (!allowInsecure) return;
+    }
+    try {
+      await _manager!.editStoreUrl(
+        store.indexUrl,
+        url,
+        allowInsecure: allowInsecure,
+      );
     } catch (error) {
       if (mounted) {
         unawaited(showErrorDetails(
@@ -618,20 +682,49 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         itemCount: manager.stores.length,
         itemBuilder: (BuildContext context, int index) {
           final MangaExtensionStoreRow store = manager.stores[index];
+          // 「请求成功但目录为空」以前是一条完全无声的路径：lastError 会在
+          // 刷新成功时被清空，页面上只剩一张干净的卡片配零插件，用户拿不到
+          // 任何线索（BUG-1805）。上游把 legacy 的 index.min.json 掏空成
+          // 「你的 app 太旧」占位哨兵之后，这恰恰是最常见的失败形态。
+          //
+          // 判据必须带上 `!manager.loading`：`available` 是**纯内存**字段（不落
+          // 库），进程重启后恒为空，而 `stores` 一读 DB 就 notify。少这一条，每个
+          // 进程第一次进这页、在整个刷新窗口内（单次预算 30s）都会给每张正常仓库
+          // 卡挂上「返回 0 个扩展，地址可能指向了旧版索引」——正好把用户推去改一个
+          // 完全没问题的地址。误报比无声更糟。
+          final bool returnedNothing = store.enabled &&
+              !manager.loading &&
+              store.lastError == null &&
+              !manager.available.any(
+                (MihonAvailableExtension item) =>
+                    item.storeUrl == store.indexUrl,
+              );
+          final String detail = switch ((store.lastError, returnedNothing)) {
+            (final String error, _) => '${store.indexUrl}\n$error',
+            (null, true) =>
+              '${store.indexUrl}\n${t.mihon_store_zero_extensions}',
+            (null, false) => store.indexUrl,
+          };
           return FushiCard(
             padding: EdgeInsets.zero,
             child: FushiListItem(
               leading: const Icon(Icons.hub_outlined),
               title: Text(store.name),
-              subtitle: Text(
-                store.lastError == null
-                    ? store.indexUrl
-                    : '${store.indexUrl}\n${store.lastError}',
-              ),
-              trailing: IconButton(
-                tooltip: t.mihon_store_remove,
-                onPressed: () => unawaited(_removeStore(store)),
-                icon: const Icon(Icons.delete_outline),
+              subtitle: Text(detail),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  IconButton(
+                    tooltip: t.mihon_store_edit,
+                    onPressed: () => unawaited(_editStore(store)),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                  IconButton(
+                    tooltip: t.mihon_store_remove,
+                    onPressed: () => unawaited(_removeStore(store)),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
               ),
             ),
           );

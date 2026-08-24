@@ -4488,6 +4488,10 @@ class AppModel with ChangeNotifier {
     ));
   }
 
+  /// 本平台是否具备内置 libtorrent 引擎。UI（后端选择器 / 配置引导）与运行时
+  /// 后端解析共用同一判据，别再各处手抄一份 `Platform.isXxx` 串。
+  bool get supportsEmbeddedTorrent => _supportsEmbeddedTorrent();
+
   /// 内置 libtorrent 支持的平台：桌面 + Android（`libfushi_torrent_ffi.so`
   /// 经 jniLibs 随包）。iOS 不支持：从不构建也从不打包内置引擎产物。
   bool _supportsEmbeddedTorrent() =>

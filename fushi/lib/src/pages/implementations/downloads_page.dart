@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
+import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
@@ -122,7 +123,20 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     });
   }
 
-  Widget _buildResourceTab(BuildContext tabContext) {
+  /// 「后端没配好」空态的动作：就地弹配置引导，配完重算前置条件——与
+  /// [_addVideoSource] 同一姿态，不把用户支去设置 tab 再走回来。
+  Future<void> _openBackendSetup() async {
+    final bool done = await promptDownloadBackendSetup(
+      context: context,
+      appModel: ref.read(appProvider),
+    );
+    if (!mounted || !done) return;
+    setState(() {
+      _resourceDependencies = _loadResourceDependencies();
+    });
+  }
+
+  Widget _buildResourceTab() {
     return FutureBuilder<_DownloadsResourceState>(
       future: _resourceDependencies,
       builder: (
@@ -144,13 +158,14 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                 label: t.download_add_video_source,
                 onPressed: _addVideoSource,
               ),
+            // 空态动作直接开配置引导（同 [_addVideoSource] 的就地补齐姿态）：
+            // 「后端没配」缺的就是那三两个字段，不该把用户支到整页设置里找。
             DownloadsResourceNoBackend(detail: final String? detail) =>
               _buildResourceGate(
                 message: detail ?? t.download_backend_not_configured,
-                icon: Icons.settings_outlined,
-                label: t.download_open_settings,
-                onPressed: () =>
-                    DefaultTabController.of(tabContext).animateTo(3),
+                icon: Icons.download_outlined,
+                label: t.download_backend_setup_start,
+                onPressed: _openBackendSetup,
               ),
           };
         }
@@ -310,7 +325,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                   Expanded(
                     child: TabBarView(
                       children: <Widget>[
-                        _buildResourceTab(tabContext),
+                        _buildResourceTab(),
                         // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                         // 统一下载中心的同屏任务视图。
                         //

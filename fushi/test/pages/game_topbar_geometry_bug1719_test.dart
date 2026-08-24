@@ -21,8 +21,13 @@ import '../helpers/test_platform_services.dart';
 /// 最长标签更窄，「捕获工作台」折成两行，分段条比兄弟页签高 8px——顶栏肉眼可见地
 /// 下沉/跳动。（该页签其后已改短为「工作台」，TODO-2937 拍板；测试断言当前标签。）
 ///
+/// 2026-08-24 起顶栏改走 MD3 tabs（[LibrarySectionTabs] / [FushiSectionTabBar]）：
+/// 等宽布局连同上面那个估算一起退出顶栏，tab 各自按文案取宽，本 bug 的成因在结构上
+/// 消失。两条不变式**原样保留**——它们守的是「切页签时顶栏不许动、标签不许折行」这个
+/// 用户可见结果，与用什么控件实现无关，换控件后同样必须成立。
+///
 /// 守卫两条不变式（zh-CN，多档窗宽）：
-/// 1. 六个子区的分段条 top 与 height 完全一致（切页签顶栏纹丝不动）；
+/// 1. 六个子区的分区导航 top 与 height 完全一致（切页签顶栏纹丝不动）；
 /// 2. 「工作台」（monitor 页签）标签永远单行（任何分支都不允许把段挤到折行）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
@@ -62,9 +67,9 @@ void main() {
     await tester.pump();
     final Finder f = find.descendant(
       of: find.byKey(sectionKey),
-      matching: find.byType(SegmentedButton<GameSection>),
+      matching: find.byType(FushiSectionTabBar<GameSection>),
     );
-    expect(f, findsOneWidget, reason: '子区 $section 应有分段条');
+    expect(f, findsOneWidget, reason: '子区 $section 应有分区导航');
     // 「工作台」在该子区的分段条里必须单行（高度 = 一行行高）。折行是
     // BUG-1719 的直接症状：段被钳到比最长标签窄。
     final Finder label = find.descendant(

@@ -14,8 +14,37 @@ import 'package:fushi/src/media/video/download/video_download_pipeline_service.d
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
+
+/// 「管线 + 后端身份」的一次性解析结果。两者要么都有（可以开表单），要么就是
+/// 后端没配好——把它们收成一个值，调用方的重试路径才不用把三个变量各自搬一遍。
+class _ManualDownloadBackend {
+  const _ManualDownloadBackend({this.pipeline, this.identity, this.error});
+
+  final VideoDownloadPipelineService? pipeline;
+  final VideoDownloadBackendIdentity? identity;
+
+  /// 身份解析抛出的原因（后端配了但连不上时透传给用户）。
+  final Object? error;
+
+  bool get usable => pipeline != null && identity != null;
+}
+
+Future<_ManualDownloadBackend> _resolveBackend(AppModel appModel) async {
+  final VideoDownloadPipelineService? pipeline =
+      appModel.videoDownloadPipelineService;
+  if (pipeline == null) return const _ManualDownloadBackend();
+  try {
+    return _ManualDownloadBackend(
+      pipeline: pipeline,
+      identity: await appModel.currentVideoDownloadBackendIdentity(),
+    );
+  } on Object catch (error) {
+    return _ManualDownloadBackend(pipeline: pipeline, error: error);
+  }
+}
 
 /// 手动添加下载任务的唯一入口（下载页页头「添加任务」）。
 ///
@@ -25,25 +54,31 @@ Future<void> showManualDownloadTaskDialog({
   required BuildContext context,
   required AppModel appModel,
 }) async {
-  final VideoDownloadPipelineService? pipeline =
-      appModel.videoDownloadPipelineService;
-  if (pipeline == null) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(t.download_backend_not_configured)),
+  _ManualDownloadBackend resolved = await _resolveBackend(appModel);
+  if (!resolved.usable) {
+    if (!context.mounted) return;
+    // 后端没配好：**直接弹引导**，配完当场重试一次，而不是甩一句提示把用户
+    // 想做的事丢掉。用户取消引导 = 明确放弃，不再补提示。
+    final bool configured = await promptDownloadBackendSetup(
+      context: context,
+      appModel: appModel,
     );
-    return;
-  }
-  final VideoDownloadBackendIdentity identity;
-  try {
-    identity = await appModel.currentVideoDownloadBackendIdentity();
-  } on Object catch (error) {
-    if (context.mounted) {
+    if (!configured || !context.mounted) return;
+    resolved = await _resolveBackend(appModel);
+    if (!context.mounted) return;
+    if (!resolved.usable) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('$error')),
+        SnackBar(
+          content: Text(
+            resolved.error?.toString() ?? t.download_backend_not_configured,
+          ),
+        ),
       );
+      return;
     }
-    return;
   }
+  final VideoDownloadPipelineService pipeline = resolved.pipeline!;
+  final VideoDownloadBackendIdentity identity = resolved.identity!;
   final List<MediaSourceRow> sources =
       await appModel.getManagedVideoDownloadSources();
   if (!context.mounted) return;

@@ -49,6 +49,8 @@ const DiagBit kDiagBits[] = {
     {fushi_voice_hook::kLookupDiagClassicTextSource, "classic_patch_installed"},
     {fushi_voice_hook::kLookupDiagClassicGeometry, "classic_geometry_captured"},
     {fushi_voice_hook::kLookupDiagClassicProcessCh, "classic_processch_fired"},
+    {fushi_voice_hook::kLookupDiagLunaKnownHookReady,
+     "luna_known_hook_ready"},
 };
 
 void PrintDiag(uint32_t diag) {

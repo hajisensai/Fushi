@@ -6,6 +6,7 @@ import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
 import 'package:fushi/utils.dart';
@@ -20,7 +21,14 @@ enum GenericPushOutcome {
 }
 
 /// 下载后端是否就绪：内置引擎宿主就绪（桌面 + DLL）且未显式选外接 qb → 就绪；
-/// 否则走外接 qb，需填了地址。下载对话框与下载页共用同一判断（去重）。
+/// 否则走外接 qb，需填了**能解析出身份**的地址。下载对话框与下载页共用同一判断。
+///
+/// 「地址非空」不够：`buildVideoDownloadBackendIdentity` 用
+/// [normalizeQbBackendAddress] 解析身份，它要求 http/https scheme + 非空 host，
+/// 而 qb 用户最常见的手输形式恰恰是 `127.0.0.1:8080`（实测被判非法）。两套判据
+/// 一松一严时，「非空」这套会放行 → 落库 → 身份解析抛 ArgumentError → 调用方把
+/// 它当「未配置」再弹一次配置引导，字段原样、无错误提示，用户出不去。所以两处
+/// 必须是同一个函数，而不是各判各的。
 bool torrentBackendReady(AppModel appModel) {
   final QbConnectionConfig config =
       effectiveTorrentConfig(appModel.qbConnectionConfig);
@@ -28,7 +36,7 @@ bool torrentBackendReady(AppModel appModel) {
       config.backend != QbConnectionConfig.backendQbittorrent) {
     return true;
   }
-  return config.baseUrl.trim().isNotEmpty;
+  return normalizeQbBackendAddress(config.baseUrl).isNotEmpty;
 }
 
 /// 首次下载弹「上传/做种」一次性提示（默认关上传、询问开启、可配限速/时长/
