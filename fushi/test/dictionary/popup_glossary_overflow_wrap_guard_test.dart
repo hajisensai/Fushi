@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 守卫（BUG-1827）：查词弹窗的词典义项卡 `.glossary-group` 必须在**卡片层**声明
 /// `overflow-wrap: anywhere`，让卡内找不到断点的短语能折行，而不是画到卡片外。
 ///
@@ -29,8 +31,12 @@ void main() {
   String read(String p) => File(p).readAsStringSync();
 
   /// 剥掉 CSS 块注释（CSS 只有 `/* */` 一种），只留真实声明。
-  String stripCssComments(String css) =>
-      css.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+  ///
+  /// 委托给共享词法掩码 [maskCssComments]：它把注释换成**等长空白**而非删除，下标可直接
+  /// 回原串切片；手写 `replaceAll(RegExp(r'/\*...'))` 是删除式，会让后续下标整体前移，
+  /// 且本仓已因「每个守卫各写一份剥离逻辑」反复出过假绿（`banned_comment_strip.dart`
+  /// 那条元守卫就是为此把手写形态钉死的）。
+  String stripCssComments(String css) => maskCssComments(css);
 
   /// 取剥注释后的顶层 `.glossary-group { ... }` 规则块。
   String extractGlossaryGroupRule(String path) {
