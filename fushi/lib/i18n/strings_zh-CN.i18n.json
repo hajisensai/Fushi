@@ -3770,5 +3770,8 @@
   "manga_tap_ocr_notice_confirm": "开始识别",
   "manga_tap_ocr_running": "正在识别本页…",
   "manga_tap_to_ocr": "点击即识别",
-  "manga_tap_to_ocr_desc": "点一下还没识别的对话框，就地识别本页并直接查词。"
+  "manga_tap_to_ocr_desc": "点一下还没识别的对话框，就地识别本页并直接查词。",
+  "manga_ocr_engine_system": "设备自带",
+  "manga_ocr_engine_system_desc": "用设备自带的文字识别。不用下载、完全离线、不上传任何内容；但对竖排气泡和手写体明显不如本地模型。",
+  "manga_ocr_engine_system_unavailable": "此设备没有可用的系统文字识别"
 }

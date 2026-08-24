@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
@@ -104,6 +105,26 @@ class _FakeImporter extends MangaOcrModelImporter {
     calls.add(sourcePaths);
     return result;
   }
+}
+
+/// 系统 OCR 可用性桩：设置区据此决定「设备自带」那项灰不灰。
+class _FakeSystemOcr implements SystemOcrMangaRunner {
+  _FakeSystemOcr(this.available);
+
+  final bool available;
+
+  @override
+  Future<bool> isAvailable() async => available;
+
+  @override
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+    bool onlyMissing = true,
+    required String language,
+  }) =>
+      const Stream<MangaOcrVolumeEvent>.empty();
 }
 
 void main() {
@@ -543,5 +564,53 @@ void main() {
     expect(importer.calls, <List<String>>[
       <String>['/picked/file']
     ]);
+  });
+
+  testWidgets('设备自带 OCR：可用时下拉里那项可选', (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: false),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      enginePreferenceSetter: (String _) async {},
+      systemOcrRunner: _FakeSystemOcr(true),
+    )));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_ocr_default_engine')));
+    await tester.pumpAndSettle();
+    expect(find.text(t.manga_ocr_engine_system), findsWidgets);
+    // 取舍必须写在选项自己身上：用户没有别的依据判断该不该选它。
+    expect(find.textContaining(t.manga_ocr_engine_system_desc), findsWidgets);
+  });
+
+  testWidgets('设备自带 OCR：本机没有就置灰，不假装能跑',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: false),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      enginePreferenceSetter: (String _) async {},
+      systemOcrRunner: _FakeSystemOcr(false),
+    )));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_ocr_default_engine')));
+    await tester.pumpAndSettle();
+    final Iterable<DropdownMenuItem<MangaOcrEnginePreference>> items = tester
+        .widgetList<DropdownMenuItem<MangaOcrEnginePreference>>(
+          find.byType(DropdownMenuItem<MangaOcrEnginePreference>),
+        );
+    final DropdownMenuItem<MangaOcrEnginePreference> system = items.firstWhere(
+      (DropdownMenuItem<MangaOcrEnginePreference> item) =>
+          item.value == MangaOcrEnginePreference.systemOcr,
+    );
+    expect(system.enabled, isFalse,
+        reason: '选得中一个跑不了的引擎，只会换来一句没头没脑的报错');
   });
 }

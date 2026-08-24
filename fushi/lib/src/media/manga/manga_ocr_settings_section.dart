@@ -10,6 +10,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
@@ -41,6 +42,7 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.modelsDirProvider,
     this.modelImporter,
     this.pickImportPaths,
+    this.systemOcrRunner,
     super.key,
   });
 
@@ -75,6 +77,9 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// null = 走真实系统选择器。返回 null / 空表示用户取消。
   final Future<List<String>?> Function(bool folderMode)? pickImportPaths;
 
+  /// 系统 OCR 可用性探测；null = 走真实平台通道。
+  final SystemOcrMangaRunner? systemOcrRunner;
+
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
       _MangaOcrSettingsSectionState();
@@ -107,6 +112,9 @@ class _MangaOcrSettingsSectionState
   /// 手动导入态（导入期间禁用下载/删除，避免两条路径同时动同一批文件）。
   bool _importing = false;
 
+  /// 本机有没有系统自带 OCR。默认 false：未探测出结果之前不假装可用。
+  bool _systemOcrAvailable = false;
+
   // 外部探测态。
   bool _probing = false;
   String? _probeResult;
@@ -127,6 +135,7 @@ class _MangaOcrSettingsSectionState
     } else {
       _loadingStatus = false;
     }
+    unawaited(_probeSystemOcr());
   }
 
   @override
@@ -171,6 +180,22 @@ class _MangaOcrSettingsSectionState
 
   Future<void> _writeLensLanguage(String language) async {
     await widget.lensLanguageSetter?.call(language);
+  }
+
+  /// 探测系统 OCR 是否可用（决定下拉里那一项是否置灰）。
+  ///
+  /// 失败一律当成不可用：这个探测只是决定一个选项灰不灰，为它弹错误提示纯属
+  /// 噪音。
+  Future<void> _probeSystemOcr() async {
+    bool available = false;
+    try {
+      available = await (widget.systemOcrRunner ?? SystemOcrMangaService())
+          .isAvailable();
+    } catch (_) {
+      available = false;
+    }
+    if (!mounted) return;
+    setState(() => _systemOcrAvailable = available);
   }
 
   Future<void> _loadStatus() async {
@@ -601,6 +626,15 @@ class _MangaOcrSettingsSectionState
         label: t.manga_ocr_engine_local_onnx,
         description: t.manga_ocr_engine_local_onnx_desc,
         enabled: widget.service.isSupportedPlatform,
+      ),
+      // 设备自带识别：装完即用、零下载、零上传。排在本地模型之后是因为它对
+      // 竖排气泡和手写体明显更弱——描述里如实写出来，别让用户以为捡到便宜。
+      // 与其他项同构：恒保留、由 _systemOcrAvailable 决定是否置灰。
+      _EngineOption(
+        preference: MangaOcrEnginePreference.systemOcr,
+        label: t.manga_ocr_engine_system,
+        description: t.manga_ocr_engine_system_desc,
+        enabled: _systemOcrAvailable,
       ),
       _EngineOption(
         preference: MangaOcrEnginePreference.googleLens,

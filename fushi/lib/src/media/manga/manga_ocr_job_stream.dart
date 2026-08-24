@@ -23,6 +23,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_fingerprint.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
@@ -77,6 +78,8 @@ Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(
   switch (spec.engine) {
     case MangaOcrEngineId.localOnnx:
       return mangaOcrLocalEvents(spec);
+    case MangaOcrEngineId.systemOcr:
+      return mangaOcrSystemEvents(spec);
     case MangaOcrEngineId.googleLens:
       return mangaOcrLensEvents(spec);
     case MangaOcrEngineId.externalMokuro:
@@ -231,6 +234,58 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
   }
   await for (final MangaOcrVolumeEvent event
       in spec.engines.lensRunner!.ocrFolder(
+    imageDirPath: dir,
+    volumeTitle: spec.volumeTitle,
+    startPage: spec.startPage,
+    onlyMissing: spec.onlyMissing,
+    language: spec.lensLanguage,
+  )) {
+    if (event.finished) {
+      yield MangaOcrBackgroundEvent.finished(
+        pagesTotal: event.pagesTotal,
+        resultPath: event.mangaJsonPath!,
+        external: false,
+      );
+      continue;
+    }
+    final int orderIndex = event.pagesDone - 1;
+    final int? pageIndex =
+        orderIndex >= 0 && orderIndex < order.length ? order[orderIndex] : null;
+    final MokuroImage? page = pageIndex == null
+        ? null
+        : await cache.read(pageIndex, pages[pageIndex]);
+    yield MangaOcrBackgroundEvent.progress(
+      pagesDone: event.pagesDone,
+      pagesTotal: event.pagesTotal,
+      pageIndex: pageIndex,
+      page: page,
+    );
+  }
+}
+
+/// 设备自带 OCR。编排与 Lens 同构（当前页优先 + 逐页发布 + per-page 缓存），
+/// 差别只在识别发给谁。
+Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
+  MangaOcrJobSpec spec,
+) async* {
+  final String dir = spec.imageDirPath;
+  final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
+  final int start =
+      pages.isEmpty ? 0 : spec.startPage.clamp(0, pages.length - 1);
+  final List<int> order = <int>[
+    for (int index = start; index < pages.length; index++) index,
+    for (int index = 0; index < start; index++) index,
+  ];
+  final GoogleLensPageCache cache = GoogleLensPageCache(
+    Directory(p.join(
+      dir,
+      kMangaOcrOutDirName,
+      kMangaOcrPagesCacheDirName,
+      systemOcrEngineSignature(spec.lensLanguage),
+    )),
+  );
+  await for (final MangaOcrVolumeEvent event
+      in spec.engines.systemOcrRunner!.ocrFolder(
     imageDirPath: dir,
     volumeTitle: spec.volumeTitle,
     startPage: spec.startPage,

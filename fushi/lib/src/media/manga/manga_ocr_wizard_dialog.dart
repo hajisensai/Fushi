@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
@@ -109,6 +110,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   /// 探到了已配对主机，但它明确报模型未下载：选项保留、置灰、下方说明原因。
   bool _remoteModelsMissing = false;
   bool _lensAvailable = false;
+  bool _systemAvailable = false;
   MangaOcrRemoteTarget? _remoteTarget;
   bool _checkingEngines = false;
   MangaOcrEngineId _engine = MangaOcrEngineId.localOnnx;
@@ -140,7 +142,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           ? _WizardStage.configure
           : _WizardStage.pick;
       if (_folderStatus == MangaOcrFolderStatus.valid) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _refreshEngines());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(_refreshEngines());
+          unawaited(_probeSystemOcr());
+        });
       }
       return;
     }
@@ -152,7 +157,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           ? _WizardStage.configure
           : _WizardStage.pick;
       if (_folderStatus == MangaOcrFolderStatus.valid) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _refreshEngines());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(_refreshEngines());
+          unawaited(_probeSystemOcr());
+        });
       }
     }
   }
@@ -181,6 +189,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           : _WizardStage.pick;
     });
     if (status == MangaOcrFolderStatus.valid) {
+      unawaited(_probeSystemOcr());
       await _refreshEngines();
     }
   }
@@ -293,10 +302,31 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       mangaOcrBackgroundEvents(_jobSpec(dir));
 
 
+  /// 系统 OCR 可用性单独探测，**不并进 `_checkingEngines`**。
+  ///
+  /// 它是一个引擎的可用位，不该卡住整块引擎选择器：把它串进那条闸门，向导在
+  /// 探测返回前会一直渲染「正在检查引擎」的转圈，而无限动画会让任何
+  /// `pumpAndSettle` 永远 settle 不了（既有的三条入口测试当场超时）。UI 上的
+  /// 表现与「已配对主机」一致——先灰着，探测回来再亮。
+  Future<void> _probeSystemOcr() async {
+    final SystemOcrMangaRunner? runner = widget.engines.systemOcrRunner;
+    if (runner == null) return;
+    bool available = false;
+    try {
+      available = await runner.isAvailable();
+    } catch (_) {
+      available = false;
+    }
+    if (!mounted || available == _systemAvailable) return;
+    setState(() => _systemAvailable = available);
+  }
+
   bool get _selectedEngineAvailable {
     switch (_engine) {
       case MangaOcrEngineId.localOnnx:
         return _builtinAvailable;
+      case MangaOcrEngineId.systemOcr:
+        return _systemAvailable;
       case MangaOcrEngineId.googleLens:
         return _lensAvailable;
       case MangaOcrEngineId.externalMokuro:
@@ -367,6 +397,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     switch (_engine) {
       case MangaOcrEngineId.localOnnx:
         _runBuiltin(dir);
+      case MangaOcrEngineId.systemOcr:
+        _runSystem(dir);
       case MangaOcrEngineId.googleLens:
         _runLens(dir);
       case MangaOcrEngineId.externalMokuro:
@@ -411,6 +443,32 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         _error = '${t.manga_ocr_wizard_failed}: $error';
       });
     }
+  }
+
+  void _runSystem(String dir) {
+    _runSub = widget.engines.systemOcrRunner!
+        .ocrFolder(
+      imageDirPath: dir,
+      volumeTitle: _title,
+      startPage: widget.startPage,
+      onlyMissing: widget.onlyMissing,
+      language: _lensLanguage,
+    )
+        .listen(
+      (MangaOcrVolumeEvent event) {
+        if (!mounted) return;
+        if (event.finished) {
+          unawaited(_onOcrFinished(event.mangaJsonPath!, external: false));
+        } else {
+          setState(() {
+            _indeterminate = event.pagesTotal <= 0;
+            _pagesDone = event.pagesDone;
+            _pagesTotal = event.pagesTotal;
+          });
+        }
+      },
+      onError: (Object error) => _onOcrError(error),
+    );
   }
 
   void _runLens(String dir) {
@@ -759,6 +817,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         ? _errorText(theme, t.manga_remote_ocr_not_ready)
         : null;
     if (!_builtinAvailable &&
+        !_systemAvailable &&
         !_lensAvailable &&
         !_externalAvailable &&
         !_remoteAvailable) {
@@ -777,6 +836,13 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         value: MangaOcrEngineId.localOnnx,
         enabled: _builtinAvailable,
         label: Text(t.manga_ocr_engine_local_onnx),
+      ),
+      // 系统 OCR 排在本地模型之后、Lens 之前：它离线且零下载，但识别竖排
+      // 气泡明显更弱，不该抢在真正好用的引擎前面。
+      ButtonSegment<MangaOcrEngineId>(
+        value: MangaOcrEngineId.systemOcr,
+        enabled: _systemAvailable,
+        label: Text(t.manga_ocr_engine_system),
       ),
       ButtonSegment<MangaOcrEngineId>(
         value: MangaOcrEngineId.googleLens,

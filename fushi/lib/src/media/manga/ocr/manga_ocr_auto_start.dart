@@ -78,6 +78,14 @@ Future<List<MangaOcrEngineCapability>> probeMangaOcrCapabilities(
       external = false;
     }
   }
+  bool system = false;
+  if (engines.systemOcrRunner != null) {
+    try {
+      system = await engines.systemOcrRunner!.isAvailable();
+    } catch (_) {
+      system = false;
+    }
+  }
   MangaOcrRemoteTarget? remote;
   if (engines.remoteRunner != null) {
     try {
@@ -91,6 +99,16 @@ Future<List<MangaOcrEngineCapability>> probeMangaOcrCapabilities(
       id: MangaOcrEngineId.localOnnx,
       supported: engines.service.isSupportedPlatform,
       ready: builtin,
+      requiresNetwork: false,
+      uploadsImages: false,
+      supportsIncremental: true,
+    ),
+    MangaOcrEngineCapability(
+      id: MangaOcrEngineId.systemOcr,
+      supported: engines.systemOcrRunner != null,
+      // supported 只说明代码路径在；ready 才是「这台设备真有系统 OCR」。原生侧
+      // 未实现的平台上 isAvailable() 回 false，选项因此不会假装可用。
+      ready: system,
       requiresNetwork: false,
       uploadsImages: false,
       supportsIncremental: true,
@@ -127,6 +145,8 @@ String mangaOcrEngineUnavailableReason(MangaOcrEngineId engine) {
   switch (engine) {
     case MangaOcrEngineId.localOnnx:
       return t.manga_ocr_model_status_missing;
+    case MangaOcrEngineId.systemOcr:
+      return t.manga_ocr_engine_system_unavailable;
     case MangaOcrEngineId.googleLens:
       return t.manga_ocr_engine_none;
     case MangaOcrEngineId.externalMokuro:

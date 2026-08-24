@@ -266,6 +266,17 @@ dependencies {
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
     implementation 'com.github.umair13adil:RxLogs:v1.0.18'
     implementation 'androidx.documentfile:documentfile:1.0.1'
+    // 设备自带文字识别（漫画 OCR 的零下载兜底引擎，见 SystemOcrChannel.java）。
+    // **必须是 bundled 版**（com.google.mlkit:text-recognition-*），不是
+    // play-services-mlkit-text-recognition-*：后者的模型要经 Google Play services
+    // 按需下载，在下不动 huggingface 的网络环境里同样下不动，等于没解决用户那句
+    // 「安装后不用下载模型」。代价是每种文字约 4 MB 的 APK 体积。
+    // 四种一起带是因为 Fushi 没有全局学习语言（内容语言由调用方传入），只带日文
+    // 等于替用户假设了学习语言。
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-japanese:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
 
     // Mihon extension host ABI/runtime. Versions follow M-Extension-Server
     // v1.0.5.0 and current extensions-lib 1.4/1.6 expectations.
