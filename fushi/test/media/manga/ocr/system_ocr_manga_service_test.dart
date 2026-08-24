@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui' show Rect;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -127,6 +126,56 @@ void main() {
       expect(
         () => parseSystemOcrPayload(<Object?, Object?>{'width': 0, 'height': 0}),
         throwsA(isA<SystemOcrUnavailableException>()),
+      );
+    });
+
+    // 模型由 Google Play 服务保管（unbundled ML Kit），可能还在下、或本机没有 GMS。
+    // 这跟「这张图识别失败」是两回事：前者该提示等待或换引擎，后者才该怀疑图片。
+    // 两者塌成同一个错误码的话，用户看到「识别失败」会去查错方向。
+    test('模型未就绪单独成一类，不冒充识别失败', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel =
+          MethodChannel('test.fushi/system_ocr_unavailable');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        throw PlatformException(
+          code: 'MODEL_UNAVAILABLE',
+          message: 'Waiting for the text recognition model to be downloaded',
+        );
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      const MethodChannelSystemOcr platform =
+          MethodChannelSystemOcr(channel: channel);
+      await expectLater(
+        () => platform.recognize(Uint8List(0), language: 'ja'),
+        throwsA(isA<SystemOcrUnavailableException>()),
+        reason: '模型未就绪必须报成「不可用」，让上层去提示等待/换引擎',
+      );
+    });
+
+    test('真正的识别失败不被冒充成「不可用」', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel =
+          MethodChannel('test.fushi/system_ocr_failed');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        throw PlatformException(code: 'RECOGNIZE_FAILED', message: 'boom');
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      const MethodChannelSystemOcr platform =
+          MethodChannelSystemOcr(channel: channel);
+      await expectLater(
+        () => platform.recognize(Uint8List(0), language: 'ja'),
+        throwsA(isA<PlatformException>()),
+        reason: '识别失败原样上抛；被吞成 Unavailable 就等于把两类失败又合回一类',
       );
     });
 

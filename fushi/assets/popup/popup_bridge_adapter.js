@@ -45,4 +45,22 @@
       ? null
       : JSON.parse(jsonValue));
   };
+
+  // BUG-1833 — a nested lookup can park and reuse this physical iframe realm.
+  // Any native calls still pending for the retired logical frame must settle
+  // before reuse; otherwise their resolve closures accumulate forever and a
+  // late result could continue old card work in the replacement generation.
+  window.__fushiBridgeCancelPending = function () {
+    var pending = _pending;
+    _pending = {};
+    var ids = Object.keys(pending);
+    for (var i = 0; i < ids.length; i++) {
+      try {
+        pending[ids[i]](null);
+      } catch (e) {
+        // One consumer cannot prevent the remaining retired calls settling.
+      }
+    }
+    return ids.length;
+  };
 })();

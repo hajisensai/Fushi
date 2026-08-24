@@ -44,7 +44,8 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
   ///    [action] 自己做**（各对话框 pop 语义不同：book 回 bool、video 回 bookUid）；
   /// 3. 失败被捕获（绝不逃逸 zone）：[ErrorLogService] 以 [logTag] 为源落日志 +
   ///    `debugPrint`（[debugMessage] 可定制，默认 `'$logTag failed: $e'`）+ toast
-  ///    `t.srt_import_error: $e`——**不 pop**，对话框留在原地供用户改参重试；
+  ///    `t.srt_import_error: $e`（LENGTH_LONG——错误文案带着唯一的可诊断原因，
+  ///    SHORT 的 2s 读不完）——**不 pop**，对话框留在原地供用户改参重试；
   /// 4. finally `setState(() => importing = false)` 复位（mounted 门控）。
   ///
   /// [isCancelled] / [onCancelled]：用户主动取消类异常（如同名书弹窗选「否」）
@@ -71,6 +72,11 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
           FushiToast.show(
             msg: '${t.srt_import_error}: $e',
             severity: ToastSeverity.error,
+            // 失败 toast 必须走 LONG：这条文案带着**唯一**的可诊断原因（哪一页缺、
+            // 搜过哪些目录）。默认 SHORT 在桌面只有 2000ms（含两端 200ms 淡入淡出，
+            // 实际可读约 1.6s），一条带路径的长错误根本读不完就没了，用户只能靠
+            // 逐帧截图去抓——那不是提示，是障碍。
+            toastLength: Toast.LENGTH_LONG,
           );
         }
       }

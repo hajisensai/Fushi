@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
     show enumerateMangaPages, naturalCompare;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一个目录里「每个文件一卷」的整卷载体文件，按文件名自然序。
 ///
@@ -183,7 +184,17 @@ Future<MangaBatchVolumeResult> _importOneVolume({
       path: volumePath,
       status: MangaBatchVolumeStatus.duplicate,
     );
-  } catch (error) {
+  } catch (error, stack) {
+    // 逐卷失败原因必须在**吞掉它的这一层**落盘。批量路径把每卷异常收进报告、只给
+    // 调用方一句「成功 N / 失败 M」的汇总，于是 ImportFlowMixin.runImport 那道
+    // ErrorLogService 永远拿不到真正的原因——用户事后翻错误日志是空的（用户报的
+    // 「error_log.txt 里翻不到」就是这个洞）。放这里而不是放某一个对话框里，是因为
+    // 报告有多个消费方，落日志不该跟着 UI 走。
+    ErrorLogService.instance.log(
+      'MangaBatchImport.volume',
+      '${p.basename(volumePath)}: $error',
+      stack,
+    );
     return MangaBatchVolumeResult(
       path: volumePath,
       status: MangaBatchVolumeStatus.failed,

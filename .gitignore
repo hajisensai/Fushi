@@ -150,3 +150,10 @@ third_party/media_kit_video/macos/Headers/
 
 # Magpie 精简包的组包产物（tools/build_magpie_slim.ps1 生成，随主包发行不入库）
 /dist/
+
+# Android 签名凭据：任何层级都不得入库。
+# fushi/android/.gitignore 里的同名规则只作用于它自己那一层，改名前遗留的
+# hibiki/android/ 下就躺着正式 keystore 和明文口令，此前在 git status 里是裸的，
+# 离泄漏只差一次 git add -A。keystore 泄漏不可撤销：任何人都能签发覆盖安装的伪造更新。
+**/key.properties
+**/*.jks

@@ -11,7 +11,8 @@
 //   4. runner 的失败是编码在应答里的 error token，不是异常——不许被吞成"成功"。
 //
 // 坐标域纪律（错了就是卡片乱跑）：hit 的 glyph/view 与 present 的 anchor 全在**游戏
-// primaryLayer 像素**域；卡片尺寸是位图的物理像素。两者同域，全程不乘 dpr。
+// primaryLayer 像素**域；卡片尺寸是 WebView 的物理像素。两者同域，全程不乘 dpr；
+// runner 再用 view 尺寸把它们一起映射到实际游戏客户区。
 
 import 'dart:io';
 
@@ -153,10 +154,14 @@ void main() {
       expect(_hit(line: 'あいうえお', charIndex: 4).isAddressable, isTrue);
       // 软门：两侧计数单位若哪天漂了，硬丢会让功能静默死掉；越界本身已被硬门挡住。
       expect(
-          _hit(line: 'あいうえお', charCount: 99).hasConsistentCharCount, isFalse);
-      expect(_hit(line: 'あいうえお', charCount: 99, charIndex: 2).isAddressable,
-          isTrue,
-          reason: '字符数对不上不构成丢弃理由——只要下标还指得到字，就照常查');
+        _hit(line: 'あいうえお', charCount: 99).hasConsistentCharCount,
+        isFalse,
+      );
+      expect(
+        _hit(line: 'あいうえお', charCount: 99, charIndex: 2).isAddressable,
+        isTrue,
+        reason: '字符数对不上不构成丢弃理由——只要下标还指得到字，就照常查',
+      );
       expect(_hit(line: 'あいうえお').hasConsistentCharCount, isTrue);
     });
 
@@ -204,8 +209,11 @@ void main() {
     test('字幕贴近底部时卡片翻到字形上方（避让字幕本身）', () {
       final GalLookupHit hit = _hit(glyphX: 600, glyphY: 660, viewH: 720);
       final ({int x, int y}) anchor = resolveAnchor(hit, cardW, cardH);
-      expect(anchor.y + cardH, lessThanOrEqualTo(hit.glyphY + hit.glyphH),
-          reason: '下方放不下就必须整张翻到字形上方，而不是压在字幕上');
+      expect(
+        anchor.y + cardH,
+        lessThanOrEqualTo(hit.glyphY + hit.glyphH),
+        reason: '下方放不下就必须整张翻到字形上方，而不是压在字幕上',
+      );
       expectInsideView(anchor, hit);
     });
 
@@ -224,16 +232,24 @@ void main() {
     });
 
     test('卡片比游戏画面还大时贴左上角，绝不给负坐标', () {
-      final GalLookupHit hit =
-          _hit(viewW: 320, viewH: 240, glyphX: 100, glyphY: 100);
+      final GalLookupHit hit = _hit(
+        viewW: 320,
+        viewH: 240,
+        glyphX: 100,
+        glyphY: 100,
+      );
       final ({int x, int y}) anchor = resolveAnchor(hit, cardW, cardH);
       expect(anchor.x, 0);
       expect(anchor.y, 0);
     });
 
     test('hook 没报视口尺寸时退化成字形正下方，不猜屏幕边界', () {
-      final GalLookupHit hit =
-          _hit(viewW: 0, viewH: 0, glyphX: 700, glyphY: 640);
+      final GalLookupHit hit = _hit(
+        viewW: 0,
+        viewH: 0,
+        glyphX: 700,
+        glyphY: 640,
+      );
       final ({int x, int y}) anchor = resolveAnchor(hit, cardW, cardH);
       expect(anchor.x, 700);
       expect(anchor.y, 640 + 26 + _kCardGap);
@@ -242,7 +258,20 @@ void main() {
     test('同一命中反复算落点结果稳定（纯函数，不许有隐藏状态）', () {
       final GalLookupHit hit = _hit(glyphX: 333, glyphY: 421);
       expect(
-          resolveAnchor(hit, cardW, cardH), resolveAnchor(hit, cardW, cardH));
+        resolveAnchor(hit, cardW, cardH),
+        resolveAnchor(hit, cardW, cardH),
+      );
+    });
+
+    test('nested union anchor = fixed root anchor + union bbox origin', () {
+      const ({int x, int y}) root = (x: 1120, y: 64);
+      expect(
+        offsetGalLookupAnchor(root, -620, 510),
+        (x: 500, y: 574),
+        reason:
+            'growing the union must not recompute placement from union width/height',
+      );
+      expect(offsetGalLookupAnchor(root, 0, 0), root);
     });
   });
 
@@ -253,9 +282,9 @@ void main() {
       calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        calls.add(call);
-        return reply(call);
-      });
+            calls.add(call);
+            return reply(call);
+          });
     }
 
     test('galLookupSetEnabled 的方法名与参数键', () async {
@@ -267,18 +296,28 @@ void main() {
       expect(result.ok, isTrue);
     });
 
-    test('galLookupPresent 送出 seq / anchor / 高亮范围', () async {
-      mockRunner((_) => <String, Object?>{'width': 480, 'height': 320});
+    test('galLookupPresent 送出 anchor / 卡片 / 游戏视口，并识别 direct surface', () async {
+      mockRunner(
+        (_) => <String, Object?>{
+          'width': 480,
+          'height': 320,
+          'directSurface': true,
+        },
+      );
       final GalLookupHit hit = _hit(seq: 9, glyphX: 600, glyphY: 200);
       final ({int x, int y}) anchor = resolveAnchor(hit, 480, 320);
       final GalLookupCallResult result =
           await GalHookTextOverlayChannel.galLookupPresent(
-        seq: hit.seq,
-        anchorX: anchor.x,
-        anchorY: anchor.y,
-        highlightStart: hit.charIndex,
-        highlightLen: 2,
-      );
+            seq: hit.seq,
+            anchorX: anchor.x,
+            anchorY: anchor.y,
+            highlightStart: hit.charIndex,
+            highlightLen: 2,
+            cardWidth: 480,
+            cardHeight: 320,
+            viewWidth: hit.viewW,
+            viewHeight: hit.viewH,
+          );
       expect(calls.single.method, 'galLookupPresent');
       expect(calls.single.arguments, <String, Object?>{
         'seq': 9,
@@ -286,11 +325,16 @@ void main() {
         'anchorY': anchor.y,
         'highlightStart': hit.charIndex,
         'highlightLen': 2,
+        'cardWidth': 480,
+        'cardHeight': 320,
+        'viewWidth': 1280,
+        'viewHeight': 720,
       });
       expect(result.ok, isTrue);
       expect(result.width, 480);
       expect(result.height, 320);
       expect(result.clamped, isFalse);
+      expect(result.directSurface, isTrue);
     });
 
     test('galLookupDismiss 带上要撤掉的那次命中序号', () async {
@@ -304,12 +348,16 @@ void main() {
       mockRunner((_) => <String, Object?>{'error': 'lookup_region_missing'});
       final GalLookupCallResult result =
           await GalHookTextOverlayChannel.galLookupPresent(
-        seq: 1,
-        anchorX: 0,
-        anchorY: 0,
-        highlightStart: 0,
-        highlightLen: 1,
-      );
+            seq: 1,
+            anchorX: 0,
+            anchorY: 0,
+            highlightStart: 0,
+            highlightLen: 1,
+            cardWidth: 480,
+            cardHeight: 320,
+            viewWidth: 1280,
+            viewHeight: 720,
+          );
       expect(result.ok, isFalse);
       expect(result.error, 'lookup_region_missing');
     });
@@ -319,35 +367,117 @@ void main() {
         'lib/src/lookup/gal_ingame_lookup_controller.dart',
       ).readAsStringSync();
       expect(source, contains('GlobalLookupController.instance.lookupText('));
-      expect(source, contains('GlobalLookupRoute.galCard('),
-          reason: '每次游戏内查词必须分配不可复用的离屏 route token');
-      expect(source, contains('GlobalLookupChannel.runWithRoute('),
-          reason: '查词 Future/Timer 必须继承当次 galCard route，不能读进程级可变 target');
-      expect(source, isNot(contains('GlobalLookupChannel.setTarget(')),
-          reason: '不得把迟到的旧查词改道到新 surface');
-      expect(source, contains('_finishDisableRouting('),
-          reason: '不能在旧 galCard 渲染尚未结束时提前切回桌面，否则迟到 reveal 会形成双弹窗');
-      expect(source, contains('_hideThenInvalidateRoute('),
-          reason: '终止必须先隐藏离屏 popup，再废止 route token');
-      expect(source, contains('showSentenceBanner: false'),
-          reason: '内嵌模式只隐藏 popup 顶部整句横幅，不能另造一套卡片');
-      expect(source, contains('GalHookTextOverlayChannel.galLookupPresent('),
-          reason: '渲染完成后必须抓取 Fushi popup 的 BGRA 位图投给游戏 Layer');
+      expect(
+        source,
+        contains('GlobalLookupRoute.galCard('),
+        reason: '每次游戏内查词必须分配不可复用的离屏 route token',
+      );
+      expect(
+        source,
+        contains('GlobalLookupChannel.runWithRoute('),
+        reason: '查词 Future/Timer 必须继承当次 galCard route，不能读进程级可变 target',
+      );
+      expect(
+        source,
+        isNot(contains('GlobalLookupChannel.setTarget(')),
+        reason: '不得把迟到的旧查词改道到新 surface',
+      );
+      expect(
+        source,
+        contains('_finishDisableRouting('),
+        reason: '不能在旧 galCard 渲染尚未结束时提前切回桌面，否则迟到 reveal 会形成双弹窗',
+      );
+      expect(
+        source,
+        contains('_hideThenInvalidateRoute('),
+        reason: '终止必须先隐藏离屏 popup，再废止 route token',
+      );
+      expect(
+        source,
+        contains('showSentenceBanner: false'),
+        reason: '内嵌模式只隐藏 popup 顶部整句横幅，不能另造一套卡片',
+      );
+      expect(
+        source,
+        contains('GalHookTextOverlayChannel.galLookupPresent('),
+        reason: '渲染完成后必须请求 runner 呈现同一份 Fushi popup',
+      );
+      expect(
+        source,
+        contains('if (_directSurfaceActive) return;'),
+        reason: 'composition 上屏后滚动不得再触发整帧 CapturePreview',
+      );
+      expect(
+        source,
+        contains('_directSurfaceActive = result.directSurface;'),
+        reason: 'direct→bitmap 降级必须恢复 dirty 重抓，不能保留陈旧 direct 状态',
+      );
+      final int acquireAt = source.indexOf(
+        'Future<GalHookCaptureLease> acquireMiningCaptureLease()',
+      );
+      final int suppressAt = source.indexOf(
+        'galLookupSuspendForCapture(hit.seq)',
+        acquireAt,
+      );
+      final int currentRouteAt = source.indexOf(
+        'final GlobalLookupRoute hideRoute = _activeRoute ?? route;',
+        suppressAt,
+      );
+      final int directHideAt = source.indexOf(
+        'GlobalLookupChannel.hide(notify: false)',
+        currentRouteAt,
+      );
+      final int leaseAt = source.indexOf(
+        'return _GalIngameCaptureLease(',
+        directHideAt,
+      );
+      expect(
+        acquireAt < suppressAt &&
+            suppressAt < currentRouteAt &&
+            currentRouteAt < directHideAt &&
+            directHideAt < leaseAt,
+        isTrue,
+        reason: '制卡截图 lease 只能在 hook suppress ack + 当前 direct HWND hide 后发放',
+      );
       expect(source, contains('static const int _kCardBitmapBytes ='));
-      expect(source, isNot(contains('galLookupPresentTextCard(')),
-          reason: 'v14 主路不再下发结构化 NativeText payload');
+      expect(
+        source,
+        isNot(contains('galLookupPresentTextCard(')),
+        reason: 'v14 主路不再下发结构化 NativeText payload',
+      );
     });
 
     test('enable 失败可重试，迟到回执不能覆盖更新状态', () {
       final String source = File(
         'lib/src/lookup/gal_ingame_lookup_controller.dart',
       ).readAsStringSync();
+      final String reader = File(
+        'windows/runner/voice_hook_reader.cpp',
+      ).readAsStringSync();
       expect(
-          source, contains('final int generation = ++_enableSyncGeneration;'));
-      expect(source,
-          contains('if (generation != _enableSyncGeneration) continue;'));
-      expect(source, contains('if (result.ok && desired == latestDesired) {'),
-          reason: '失败回执不能伪装成已推送，否则同一 active phase 无法重试');
+        source,
+        contains('final int generation = ++_enableSyncGeneration;'),
+      );
+      expect(
+        source,
+        contains('if (generation != _enableSyncGeneration) continue;'),
+      );
+      expect(
+        source,
+        contains('if (result.ok && desired == latestDesired) {'),
+        reason: '失败回执不能伪装成已推送，否则同一 active phase 无法重试',
+      );
+      expect(
+        source,
+        contains('if (active && !_pushedEnabled) await _syncEnabled();'),
+        reason: '成功后的重复 session 通知不得持续占用 Shift 查词热路径',
+      );
+      expect(
+        reader,
+        contains('lookup_enabled_desired = enabled;'),
+        reason: 'mapping 换代重放意图由持有真实 mapping 身份的 reader 负责',
+      );
+      expect(reader, contains('if (st.lookup_enabled_desired &&'));
     });
 
     test('submit 查词是 latest-wins，hover 不作废在途 submit', () {
@@ -357,9 +487,11 @@ void main() {
       expect(source, contains('if (!hit.submit)'));
       expect(source, contains('final int generation = ++_lookupGeneration;'));
       expect(
-          source,
-          contains(
-              '_pendingLookup = (hit: hit, generation: generation, route: route);'));
+        source,
+        contains(
+          '_pendingLookup = (hit: hit, generation: generation, route: route);',
+        ),
+      );
       expect(source, contains('generation == _lookupGeneration'));
     });
 
@@ -377,8 +509,11 @@ void main() {
           anchorY: 0,
           highlightStart: 0,
           highlightLen: 1,
-        ))
-            .error,
+          cardWidth: 480,
+          cardHeight: 320,
+          viewWidth: 1280,
+          viewHeight: 720,
+        )).error,
         'unsupported_platform',
       );
       expect(

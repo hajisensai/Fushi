@@ -314,6 +314,35 @@ void main() {
       );
     });
 
+    test('多源时首轮就摊到所有来源，而不是全压首选源', () async {
+      // 「GitHub 放切片、CF 放整包」要真的并拉，前提是并发的各片**首轮**就分散到
+      // 不同来源。只按 attempt 取模会让首轮全部打 sources[0]，第二个源沦为纯故障
+      // 转移——带宽只吃一家、另一家永远闲着。这条断言钉死那个退化。
+      final Uint8List body = _payload(400);
+      final _FakeHost host = _FakeHost()
+        ..resources['https://cf/pack.zip'] = body
+        ..resources['https://gh/pack.zip'] = body;
+      final DownloadPlan plan = DownloadPlan.ranged(
+        urls: const <String>['https://cf/pack.zip', 'https://gh/pack.zip'],
+        totalBytes: body.length,
+        partSize: 100,
+      );
+
+      final File out = await build(plan, host).download();
+
+      expect(out.readAsBytesSync(), body);
+      int hits(String url) => host.requests
+          .where((MapEntry<String, String?> e) => e.key == url)
+          .length;
+      // 两个源都活着，4 片应当各取一次、零重试；否则下面的分布断言就失去意义。
+      expect(host.requests.length, 4, reason: '不该出现失败重试');
+      expect(hits('https://cf/pack.zip'), 2);
+      expect(
+        hits('https://gh/pack.zip'),
+        2,
+        reason: '第二个来源必须真的分到片，而不是只在故障时才顶上',
+      );
+    });
     test('切片来源忽略 Range（回 200）时按整片重写，结果仍正确', () async {
       // 物理切片：URL 指向的就是这一片，200 回的整个 body 正好是本片内容。
       final Uint8List body = _payload(240);

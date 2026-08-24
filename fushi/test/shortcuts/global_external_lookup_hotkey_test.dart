@@ -149,10 +149,13 @@ void main() {
         controllerSrc.contains('ShortcutAction.globalExternalLookup'),
         isTrue,
       );
+      // 不能写成单行字面量：实参一旦换行（dart format 在参数变长时必然这么做）
+      // 就匹配不上，而「从 registry 读绑定」这条语义一点没变。允许中间有空白。
       expect(
-        controllerSrc
-            .contains('bindingsFor(ShortcutAction.globalExternalLookup)'),
+        RegExp(r'bindingsFor\(\s*ShortcutAction\.globalExternalLookup\s*[,)]')
+            .hasMatch(controllerSrc),
         isTrue,
+        reason: 'controller 必须从 registry 取绑定，不得写死按键',
       );
       expect(
         controllerSrc.contains('addListener(_onRegistryChanged)'),

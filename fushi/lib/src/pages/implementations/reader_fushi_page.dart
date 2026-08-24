@@ -501,22 +501,30 @@ int computeCharWatermark({
   return chapterCumulativeChars[chapter] + (progress * chapterChars).round();
 }
 
-/// TODO-1229 v2：跨章去抖判据（纯函数，供单测锁定「一次连续手势=一次跨章」语义）。
+/// TODO-1229 / BUG-1829：跨章去抖判据（纯函数，供单测锁定「一次连续手势=一次跨章」语义）。
 ///
-/// BUG-568 案A 的 `_paginationInFlight` 守卫只覆盖「换章加载+restore」瞬态窗口，滚轮/
-/// 触控板一次连续惯性手势产生的 tick 流常长于该窗口+章内节流窗（两者都锚定手势起点）。
-/// 两窗口在手势中途失效后，残余惯性会在刚落地的短章(插图/单页章)边界再次触发跨章 →
-/// **跳两章**。本判据把「下一次跨章」冷却锚定到**输入真正停止**：距 [lastInputAt] 不足
-/// [cooldown] 即判为同一手势的残余惯性 → 返回 true（拦截）；调用方在拦截 / 丢弃惯性输入时
-/// 把 [lastInputAt] 滑到当下，冷却窗随惯性前推，惟有输入静默满 [cooldown] 才放行。
-/// [lastInputAt] 为 null（从未跨章）恒放行。
+/// 危险窗是「**刚跨完一章**」那一段：残余惯性会在刚落地的短章(插图/单页章)边界上再次
+/// 触发跨章 → **跳两章**。所以冷却锚定的是**跨章事件本身**——[lastTurnAt] 只在两种真实
+/// 事件上 stamp：① 真正发起一次跨章；② 该次跨章落地的新章 content-ready（
+/// `_noteChapterTurnSettledIfPending`，TODO-1229 v3 的重锚，覆盖「加载 >450ms 时窗口早
+/// 过期」的洞）。距 [lastTurnAt] 不足 [cooldown] 即判为同一手势的残余惯性 → 返回 true
+/// （拦截）。[lastTurnAt] 为 null（从未跨章）恒放行。
+///
+/// **BUG-1829：被拦截 / 被丢弃的输入绝不 stamp。** v2 曾让调用方在拦截和在飞丢弃时把
+/// 时间戳滑到当下，想用「输入静默」当手势结束的判据；v3 换成 content-ready 重锚之后那条
+/// 滑窗已经多余，却留了下来，于是变成纯粹的危害：真实滚轮每 30~100ms 一个事件，用户只要
+/// 还在拨，窗口就被自己的输入无限续期、**永远等不到过期**——拨得越快越不动。单页章
+/// （封面/插图/目录/版权页）里每一次滚轮都必须走跨章判定，整章因此成为滚轮死区（实测
+/// 100ms 间隔连发 5 次：零跨章；同一本书正文长章同样节奏则正常翻页）。判据维度必须是
+/// 「距上次**跨章**多久」，不是「距上次**输入**多久」——后者由用户持续输入控制，等于把
+/// 闸门的钥匙交给了被闸门拦住的那一方。
 bool chapterTurnCoolingDown({
-  required DateTime? lastInputAt,
+  required DateTime? lastTurnAt,
   required DateTime now,
   required Duration cooldown,
 }) {
-  if (lastInputAt == null) return false;
-  return now.difference(lastInputAt) < cooldown;
+  if (lastTurnAt == null) return false;
+  return now.difference(lastTurnAt) < cooldown;
 }
 
 /// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
@@ -1681,21 +1689,27 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 纵向鼠标滚轮仍保留既有的固定窗口节流手感。
   final ReaderWheelGestureGate _pagedWheelGestureGate =
       ReaderWheelGestureGate();
-  // TODO-1229 v2：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568 案A
-  // 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而 _lastPaginateTime
-  // 节流窗口锚定在手势起点(第一 tick)。滚轮/触控板一次连续惯性手势会持续产生 tick 达
-  // 数百 ms~1s，长于 restore 窗口与节流窗口——两窗口都在手势中途失效后，残余惯性 tick 会
-  // 在刚落地的短章(章首插图页/单页章)边界上再次触发跨章 → **跳两章**（用户复诉 6783 仍跳两次
-  // 的真因）。本时间戳把「下一次跨章」的冷却锚定到**输入真正停止**那一刻：每次被在飞守卫丢弃
-  // 的惯性输入、以及冷却期内被拒的跨章尝试都刷新它 → 冷却窗随惯性滑动，惟有输入静默
-  // [_kChapterTurnCooldown] 之后才允许下一次跨章。一次连续手势 = 一次跨章。只作用于惯性型
-  // 输入(滚轮/触摸，throttleMs>0)的跨章决策，不影响章内翻页，也不节流键盘/手柄(throttleMs=0)。
-  DateTime? _lastChapterTurnInputAt;
+  // TODO-1229 / BUG-1829：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568
+  // 案A 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而
+  // _lastPaginateTime 节流窗口锚定在手势起点(第一 tick)。两窗口都在手势中途失效后，残余
+  // 惯性会在刚落地的短章(章首插图页/单页章)边界上再次触发跨章 → **跳两章**。
+  //
+  // 本时间戳把「下一次跨章」的冷却锚定到**跨章事件本身**，只在两种真实事件上 stamp：
+  //   ① [_noteChapterTurn]：真正发起一次跨章；
+  //   ② [_noteChapterTurnSettledIfPending]：该次跨章落地的新章 content-ready（v3 重锚，
+  //      覆盖「加载 >450ms、期间没有续窗 tick」的洞）。
+  // **被冷却闸门拒掉、或被在飞守卫丢弃的输入一律不 stamp**（BUG-1829）：v2 曾靠它们把窗口
+  // 滑到当下，用「输入静默」当手势结束判据；v3 的 content-ready 重锚落地后这条滑窗已多余，
+  // 却留了下来，于是真实滚轮（每 30~100ms 一个事件）只要用户还在拨就把窗口无限续期，永远
+  // 等不到过期——拨得越快越不动，单页章直接成滚轮死区。判据维度是「距上次**跨章**」，不是
+  // 「距上次**输入**」。只作用于惯性型输入(滚轮/触摸，throttleMs>0)的跨章决策，不影响章内
+  // 翻页，也不节流键盘/手柄(throttleMs=0)。
+  DateTime? _lastChapterTurnAt;
   // TODO-1229 第三次复诉（滚轮仍双跳）：v2 冷却窗只靠「换章加载期不断到达的惯性 tick」
-  // (_paginationInFlight 分支的 _noteChapterTurnInput) 把时间戳滑到当下来维持。但鼠标滚轮
+  // 把时间戳滑到当下来维持（那条滑窗已由 BUG-1829 删除，见上）。但鼠标滚轮
   // 是**离散**事件流——用户拨两三格越过章末边界后 burst 就结束了，换章加载（整章解析+渲染
   // +restore，常 >450ms）期间**没有**后续 tick 续窗；等新章(短插图/单页章)在边界上
-  // 出现时冷却窗早已过期(now - lastInputAt > 450ms)，紧随其后的残余滚动在新章边界二次跨章 →
+  // 出现时冷却窗早已过期(now - 上次跨章 > 450ms)，紧随其后的残余滚动在新章边界二次跨章 →
   // 「第一次正常然后很快又跳一次」。根因=冷却窗锚在「输入」，而危险窗其实是「新章刚出现的
   // 那一刻」；长加载把两者拉开出一个洞。修法：惯性跨章真正发起导航时置本旗，等新章内容
   // 就绪(content-ready)那一刻**重新把冷却窗 stamp 到当下**——无论加载多久、期间有没有

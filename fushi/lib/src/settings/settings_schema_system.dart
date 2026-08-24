@@ -7,6 +7,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
@@ -550,7 +551,10 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
   final packageInfo = settingsContext.appModel.packageInfo;
   return AdaptiveSettingsRow(
     title: t.app_version,
-    subtitle: formatAppVersionDisplay(packageInfo),
+    subtitle: formatAppVersionDisplay(
+      packageInfo,
+      runningCodeVersion: fushiRunningCodeVersion,
+    ),
     icon: Icons.info_outline,
     showIcon: true,
   );
@@ -560,6 +564,31 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
 /// buildNumber 是 Android versionCode（如 `1000561300`），两者语义不同：
 /// 绝不能用 semver 的 `+` build-metadata 把 versionCode 拼进 versionName，
 /// 否则会渲染出畸形的 `0.11.1-debug.5613+1000561300`。用括号并列展示。
+///
+/// [runningCodeVersion] 是编译进 `app.so` 的构建版本（见 `build_version.dart`）。
+/// 有它就用它当版本名——Windows 的 exe 版本资源丢掉了 `-debug.N` 整段后缀，
+/// 只显示 `2.2.1` 时用户根本看不出自己跑在哪个构建上，BUG-1786 现场就是这么被
+/// 蒙了好几天。两者**基版本**不一致时并排显示 exe 那个值：这正是「新 exe + 旧
+/// app.so」半更新态的可见症状，关于页是用户唯一能自查它的地方。
 @visibleForTesting
-String formatAppVersionDisplay(PackageInfo packageInfo) =>
-    '${packageInfo.version} (${packageInfo.buildNumber})';
+String formatAppVersionDisplay(
+  PackageInfo packageInfo, {
+  String? runningCodeVersion,
+}) {
+  final String executableVersion = packageInfo.version;
+  final String shown = runningCodeVersion ?? executableVersion;
+  final String display = '$shown (${packageInfo.buildNumber})';
+  if (runningCodeVersion == null) return display;
+  if (_baseVersionOf(runningCodeVersion) ==
+      _baseVersionOf(executableVersion)) {
+    return display;
+  }
+  return '$display ≠ exe $executableVersion';
+}
+
+/// 取语义版本的基版本段（`2.2.1-debug.12215+abc` → `2.2.1`）。
+///
+/// 只比基版本，不比后缀：exe 版本资源在 Windows 上**必然**丢后缀，拿后缀去比
+/// 会让每个 debug 构建都显示成不一致，警告立刻退化成噪音。
+String _baseVersionOf(String version) =>
+    version.trim().split('+').first.split('-').first;

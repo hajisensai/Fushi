@@ -171,6 +171,7 @@ Dart 代码。（正式版通道下这条判据尚有意义：target 无预发�
   **再下一次**更新才走新路径（那之后安装目录里的 launcher 根本不再被持有，连改名都不需要）。
 - 用户机器当前处于半更新态（新 exe + 8-19 的 app.so），需**手动跑一次完整安装包**恢复一致；
   在装上带本修复的版本之前，再点应用内更新仍会重蹈覆辙。
-- 未做（明确记一句）：Dart 侧没有独立于 exe 版本资源的「运行中代码版本」常量，所以
-  「exe 与 app.so 不同步」目前只能靠 Inno 日志间接发现，无法自检。要根治得在构建期把版本注入
-  Dart（`--dart-define`）并让关于页/握手同时比对两个来源，属独立改动，本轮未做。
+- ~~未做~~ **已补做**（2026-08-24，见 [BUG-1836](BUG-1836-manual-install-rescue-reports-failure.md)）：
+  构建期 `--dart-define=FUSHI_BUILD_VERSION` 已注入 Dart（`fushi/lib/src/utils/misc/build_version.dart`），
+  握手判据改吃这条与产物同体的证据，关于页在两个来源基版本不一致时并排显示 exe 版本
+  ——「exe 与 app.so 不同步」从此可自检，不再只能靠 Inno 日志间接发现。

@@ -48,7 +48,13 @@ import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_storage.dart'
     show MangaImportException;
 import 'package:fushi/src/media/manga/mokuro_payload.dart'
-    show MokuroImage, MokuroPayload, parseMokuro;
+    show
+        MokuroImage,
+        MokuroPayload,
+        joinMokuroPageRoot,
+        mokuroPageRootCandidates,
+        parseMokuro,
+        resolveMokuroPageRoot;
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
@@ -763,12 +769,34 @@ class SourceLibraryScanner {
         remoteByRel[segs.join('/')] = e.path;
       }
 
+      // 页图根与本地导入同一口径（[resolveMokuroPageRoot]）：远端同样有「img_path
+      // 自带卷名前缀」和「卷子目录布局裸文件名」两种惯例，这里若仍硬编码同级，
+      // 卷子目录布局的远端卷在查表阶段就报缺图（BUG-1830 的远端同源分身）。
+      final String remoteVolumeName = p.basenameWithoutExtension(mokuroName);
+      final List<String>? pageRoot = resolveMokuroPageRoot(
+        payload: payload,
+        volumeName: remoteVolumeName,
+        pageExists: remoteByRel.containsKey,
+      );
+      if (pageRoot == null) {
+        final String searched =
+            mokuroPageRootCandidates(volumeName: remoteVolumeName)
+                .map((List<String> candidate) => candidate.isEmpty
+                    ? parentDir
+                    : '$prefix${candidate.join('/')}')
+                .join(', ');
+        throw MangaImportException(
+          'Missing manga page image: ${payload.images.first.url} '
+          '(searched: $searched)',
+        );
+      }
+
       final Directory tmp =
           Directory.systemTemp.createTempSync('m1c_scan_manga_');
       try {
-        // 逐页镜像（保留相对子目录布局——导入器按 payload.url 相对 `.mokuro`
-        // 同级解析）。`..` 段直接拒绝：临时镜像在书目录 sanitize 之前落盘，
-        // 不能靠后面那道防穿越。
+        // 逐页镜像，**连页图根一起原样保留**（`<根>/<url>`）：本地导入器对着镜像
+        // 目录再解析一次根，两边同一口径，于是镜像布局与远端逐段同构。`..` 段直接
+        // 拒绝：临时镜像在书目录 sanitize 之前落盘，不能靠后面那道防穿越。
         for (final MokuroImage page in payload.images) {
           final List<String> segs = page.url
               .split(RegExp(r'[\\/]+'))
@@ -777,12 +805,17 @@ class SourceLibraryScanner {
           if (segs.isEmpty || segs.contains('..')) {
             throw MangaImportException('Invalid manga page path: ${page.url}');
           }
-          final String? remotePath = remoteByRel[segs.join('/')];
+          final String rel = joinMokuroPageRoot(pageRoot, segs.join('/'));
+          final String? remotePath = remoteByRel[rel];
           if (remotePath == null) {
-            throw MangaImportException('Missing manga page image: ${page.url}');
+            throw MangaImportException('Missing manga page image: $rel');
           }
-          final Directory destDir = Directory(p.joinAll(
-              <String>[tmp.path, ...segs.sublist(0, segs.length - 1)]));
+          final List<String> destSegs = <String>[
+            ...pageRoot,
+            ...segs.sublist(0, segs.length - 1),
+          ];
+          final Directory destDir =
+              Directory(p.joinAll(<String>[tmp.path, ...destSegs]));
           destDir.createSync(recursive: true);
           await fs.copyToLocal(remotePath, destDir.path);
         }

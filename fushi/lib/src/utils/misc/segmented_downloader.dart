@@ -218,7 +218,12 @@ class SegmentedDownloader {
     StackTrace? lastStack;
     for (int attempt = 0; attempt < maxAttemptsPerPart; attempt++) {
       _throwIfCancelled();
-      final DownloadSource source = part.sources[attempt % part.sources.length];
+      // 源轮换把**分片序号**也算进去：只按 attempt 取模的话，第一轮所有并发分片
+      // 全打 sources[0]，第二个源只有失败重试才用得上——那是故障转移，不是双源并拉。
+      // 加上 part.index 后，片 0→源 0、片 1→源 1……天然摊到所有来源；而 attempt+1
+      // 仍然换到下一个源，重试换源的性质原样保留。
+      final DownloadSource source =
+          part.sources[(part.index + attempt) % part.sources.length];
       try {
         await _fetchPartFrom(part, source);
         return;

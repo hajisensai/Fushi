@@ -9,6 +9,7 @@ import androidx.annotation.Nullable;
 
 import app.fushi.reader.constants.ChannelNames;
 
+import com.google.mlkit.common.MlKitException;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
@@ -28,13 +29,18 @@ import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
 
 /**
- * 设备自带文字识别（ML Kit，**bundled** 模型）。
+ * 设备自带文字识别（ML Kit，**unbundled** 模型 —— 模型由 Google Play 服务保管）。
  *
- * <p>存在的理由是用户那句「安装后不用下载模型也能用」。这里刻意用 bundled 依赖
- * （{@code com.google.mlkit:text-recognition-*}）而不是 unbundled 的
- * {@code play-services-mlkit-text-recognition-*}：后者的模型要经 Google Play
- * services 按需下载，在下不动 huggingface 的网络环境里同样下不动，等于没解决问题。
- * 代价是 APK 变大（每种文字约 4 MB），换来的是装完即用、完全离线。
+ * <p>存在的理由是用户那句「安装后不用下载模型也能用」。这件事由
+ * {@code AndroidManifest.xml} 里的 {@code com.google.mlkit.vision.DEPENDENCIES}
+ * meta-data 兑现：Play 服务在**安装时**就把声明的四套文字模型取下来，而不是拖到第一次
+ * 识别才现下。模型住在系统侧、多个 app 共享，所以 APK 只带 API 壳，不像 bundled 版
+ * 那样每种文字往包里塞约 4 MB（四种合计约 16 MB，而用户实际只会用到其中一两套）。
+ *
+ * <p>代价是它依赖 Google Play 服务。**这条依赖不允许静默**：模型没就绪时 ML Kit 抛
+ * {@link MlKitException#UNAVAILABLE}，这里单独映射成 {@code MODEL_UNAVAILABLE}，与
+ * 真正的识别失败 {@code RECOGNIZE_FAILED} 分开——两者塞进同一个错误码的话，用户看到的
+ * 是「识别失败」，会去怀疑图片或引擎，而真正该做的是等模型下完或换引擎。
  *
  * <p><b>别把它当主力</b>：ML Kit 是通用识别器，对漫画的竖排气泡和手写拟声词明显
  * 不如 manga-ocr。Dart 侧把它定位成兜底档，UI 文案也如实这么写。
@@ -106,7 +112,15 @@ public final class SystemOcrChannel {
             })
             .addOnFailureListener(error -> {
                 bitmap.recycle();
-                result.error("RECOGNIZE_FAILED", error.getMessage(), null);
+                // 「模型还没就绪」和「这张图识别失败」是两回事，不能塌成同一个码：
+                // 前者要么等 Play 服务把模型下完、要么换引擎，后者才该怀疑图片。
+                // unbundled 版模型缺失时 ML Kit 抛的正是 UNAVAILABLE。
+                final boolean unavailable = error instanceof MlKitException
+                    && ((MlKitException) error).getErrorCode() == MlKitException.UNAVAILABLE;
+                result.error(
+                    unavailable ? "MODEL_UNAVAILABLE" : "RECOGNIZE_FAILED",
+                    error.getMessage(),
+                    null);
             });
     }
 

@@ -54,6 +54,7 @@ void main() {
 
     expect(ok, isTrue);
     expect(events, <String>[
+      'listen:8765',
       'find',
       'allow:4321',
       'http:guiBrowse',
@@ -77,7 +78,14 @@ void main() {
     await repo.openNoteInAnki(305);
 
     expect(
-        events, <String>['find', 'allow:4321', 'http:guiBrowse', 'foreground?'],
+        events,
+        <String>[
+          'listen:8765',
+          'find',
+          'allow:4321',
+          'http:guiBrowse',
+          'foreground?'
+        ],
         reason: 'Anki 自己已经上来了，再 SetForegroundWindow 只会抢焦点');
   });
 
@@ -116,7 +124,7 @@ void main() {
     final bool ok = await repo.openNoteInAnki(305);
 
     expect(ok, isTrue);
-    expect(events, <String>['find', 'http:guiBrowse']);
+    expect(events, <String>['listen:8765', 'find', 'http:guiBrowse']);
   });
 
   test('窗口一次没拉上来时重试，且总次数有上限', () async {
@@ -144,6 +152,71 @@ void main() {
     );
 
     expect(await repo.openNoteInAnki(305), isTrue);
+  });
+
+  /// BUG-1837：认 Anki 进程的判据。用户装的 `anki.exe` 在新 launcher 架构下只是个
+  /// 启动器——**一个窗口都没有**，真正跑 aqt、持有全部窗口、监听 AnkiConnect 端口的
+  /// 是 venv 里的 `pythonw.exe`。所以「窗口所属进程的 exe 叫 anki.exe」必然落空，
+  /// 整套让渡 + 兜底空转，症状精确回到 BUG-1641 修复前（浏览窗已开着时只闪任务栏）。
+  group('认 Anki 进程（BUG-1837）', () {
+    test('进程名判据落空时，仍按「谁在监听 AnkiConnect 端口」找到 Anki', () async {
+      final List<String> events = <String>[];
+      AnkiDesktopForeground.debugBackend = _FakeForegroundBackend(
+        events: events,
+        // 新 launcher 架构：没有任何窗口的属主进程叫 anki.exe。
+        ankiPid: null,
+        listenerPid: 13324,
+        foregroundPidSequence: <int?>[null, 13324],
+      );
+      final AnkiConnectRepository repo = AnkiConnectRepository(
+        service: AnkiConnectService(client: clientRecording(events)),
+      );
+
+      final bool ok = await repo.openNoteInAnki(305);
+
+      expect(ok, isTrue);
+      expect(events, <String>[
+        'listen:8765',
+        'allow:13324',
+        'http:guiBrowse',
+        'foreground?',
+        'raise:13324',
+        'foreground?',
+      ], reason: '端口判据命中就够了，不必再问进程名；让渡与兜底都必须打在 13324 上');
+    });
+
+    test('端口判据用的是这个 service 的真实端口，不是硬编码 8765', () async {
+      final List<String> events = <String>[];
+      AnkiDesktopForeground.debugBackend = _FakeForegroundBackend(
+        events: events,
+        ankiPid: null,
+        listenerPid: 777,
+        foregroundPidSequence: <int?>[777],
+      );
+      final AnkiConnectRepository repo = AnkiConnectRepository(
+        service: AnkiConnectService(
+          client: clientRecording(events),
+          port: 8790,
+        ),
+      );
+
+      await repo.openNoteInAnki(305);
+
+      expect(events.first, 'listen:8790');
+    });
+
+    test('监听表读不到时退回进程名判据（旧版单进程 Anki 仍能被认出）', () {
+      final List<String> events = <String>[];
+      final _FakeForegroundBackend backend = _FakeForegroundBackend(
+        events: events,
+        ankiPid: 4321,
+        listenerPid: null,
+        foregroundPidSequence: <int?>[null],
+      );
+
+      expect(AnkiDesktopForeground.resolveAnkiProcessId(backend, 8765), 4321);
+      expect(events, <String>['listen:8765', 'find']);
+    });
   });
 
   /// 代装 AnkiConnect 要拿 `anki.exe` 的路径。刻意只认**正在运行的进程**报出来
@@ -196,6 +269,7 @@ class _FakeForegroundBackend implements AnkiDesktopForegroundBackend {
     required List<int?> foregroundPidSequence,
     this.raiseSucceeds = true,
     this.ankiExecutablePath,
+    this.listenerPid,
   }) : _foregroundPidSequence = foregroundPidSequence;
 
   final List<String> events;
@@ -203,9 +277,18 @@ class _FakeForegroundBackend implements AnkiDesktopForegroundBackend {
   final bool raiseSucceeds;
   final String? ankiExecutablePath;
 
+  /// 监听 AnkiConnect 端口的进程；null = 监听表读不到（退回进程名判据）。
+  final int? listenerPid;
+
   /// 依次返回的「当前前台进程」；用完后保持最后一个值。
   final List<int?> _foregroundPidSequence;
   int _foregroundReads = 0;
+
+  @override
+  int? findProcessListeningOnPort(int port) {
+    events.add('listen:$port');
+    return listenerPid;
+  }
 
   @override
   int? findAnkiProcessId() {
@@ -243,6 +326,10 @@ class _FakeForegroundBackend implements AnkiDesktopForegroundBackend {
 }
 
 class _ThrowingForegroundBackend implements AnkiDesktopForegroundBackend {
+  @override
+  int? findProcessListeningOnPort(int port) =>
+      throw StateError('iphlpapi unavailable');
+
   @override
   int? findAnkiProcessId() => throw StateError('user32 unavailable');
 

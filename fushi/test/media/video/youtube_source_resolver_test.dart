@@ -169,10 +169,13 @@ void main() {
     });
   });
 
-  // TODO-1307 A1：多 client 兜底顺序——androidVr 首选（零回归），失败才回落 ios、tv。
+  // TODO-1307 A1：多 client 兜底顺序——androidVr 首选（零回归），失败才逐个回落。
+  // BUG-1832：链里补入 android（实测存在只有它能出流的视频，如 D8uACXBAqkE），并排在
+  // ios 之前（android 成功 ~3s，ios 取流失败要等满首流 HEAD 403 探测 ~16s）。
   group('A1 多 client 兜底顺序 (TODO-1307)', () {
-    test('kYoutubeManifestClientFallback = androidVr -> ios -> tv', () {
-      expect(kYoutubeManifestClientFallback.length, 3);
+    test('kYoutubeManifestClientFallback = androidVr -> android -> ios -> tv',
+        () {
+      expect(kYoutubeManifestClientFallback.length, 4);
       expect(
         identical(
             kYoutubeManifestClientFallback[0], yt.YoutubeApiClient.androidVr),
@@ -180,11 +183,17 @@ void main() {
         reason: 'androidVr 必须首选（其直链无需签名解密、libmpv 普通 UA 可拉取）',
       );
       expect(
-        identical(kYoutubeManifestClientFallback[1], yt.YoutubeApiClient.ios),
+        identical(
+            kYoutubeManifestClientFallback[1], yt.YoutubeApiClient.android),
+        isTrue,
+        reason: 'BUG-1832：android 缺席会让只有它能出流的视频彻底打不开',
+      );
+      expect(
+        identical(kYoutubeManifestClientFallback[2], yt.YoutubeApiClient.ios),
         isTrue,
       );
       expect(
-        identical(kYoutubeManifestClientFallback[2], yt.YoutubeApiClient.tv),
+        identical(kYoutubeManifestClientFallback[3], yt.YoutubeApiClient.tv),
         isTrue,
       );
     });

@@ -367,6 +367,7 @@ jobs:
           flutter build windows --release -v
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       # 失败时把 CMake 自己的日志捞出来：-v 打的是 flutter 侧，CMake 配置期的
       # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
       - name: Upload Windows build logs on failure
@@ -885,6 +886,7 @@ jobs:
           flutter build macos --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |
@@ -1391,6 +1393,7 @@ jobs:
           flutter build ios --release --no-codesign
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Prepare unsigned iOS IPA release asset
         working-directory: fushi
         shell: bash
@@ -1588,6 +1591,7 @@ jobs:
           --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Upload to TestFlight
         if: steps.signing.outputs.testflight == 'true'
         working-directory: fushi

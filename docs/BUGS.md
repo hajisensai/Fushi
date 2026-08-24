@@ -29,12 +29,22 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1707 条。点号进各自文件。
+> 共 1717 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1836](bugs/BUG-1836-manual-install-rescue-reports-failure.md) | 🚧 | 🚧 | 手动跑安装包救援成功后仍必报更新失败（Inno 日志判据拿不到证据） |
+| [BUG-1838](bugs/BUG-1838-ankiconnect-installer-launcher-not-found.md) | 🚧 | 🚧 | AnkiConnect 一键代装误报 Anki 没运行：新版 launcher 下找不到入口 exe |
+| [BUG-1837](bugs/BUG-1837-anki-open-foreground-pid-launcher.md) | ✅ | ✅ | 制卡后在 Anki 中打开仍不到前台：新版 Anki launcher 下进程识别失效 |
+| [BUG-1836](bugs/BUG-1836-manual-install-rescue-reports-failure.md) | ✅ | ✅ | 手动跑安装包救援成功后仍必报更新失败（Inno 日志判据拿不到证据） |
+| [BUG-1835](bugs/BUG-1835-gal-ingame-nested-card-placement.md) | 🚧 | ✅ | 游戏内嵌套查词子卡未按选词正上正下布局 |
+| [BUG-1834](bugs/BUG-1834-gal-lookup-nested-source-frame.md) | ✅ | ✅ | 游戏内嵌套查词丢失来源层导致子卡挂错谱系 |
+| [BUG-1833](bugs/BUG-1833-gal-ingame-webview-png-scroll-jank.md) | 🚧 | ✅ | 游戏内 WebView 查词卡 PNG 全帧重采导致弹出与滚动卡顿 |
+| [BUG-1832](bugs/BUG-1832-youtube-client-fallback-missing-android.md) | ✅ | ✅ | YouTube 部分视频打不开：兜底 client 链缺 android |
 | [BUG-1831](bugs/BUG-1831-win-update-launcher-vanished.md) | ✅ | ✅ | 改名让路后新 launcher 被回滚删除，安装目录再无 launcher，自更新永久卡死 |
+| [BUG-1830](bugs/BUG-1830-mokuro-volume-subdir.md) | ✅ | ✅ | mokuro 卷子目录布局导入必失败（img_path 裸文件名） |
+| [BUG-1829](bugs/BUG-1829-reader-wheel-chapter-cooldown-starvation.md) | ✅ | ✅ | 快速拨滚轮永远跨不了章：跨章冷却窗被每次被拦输入自我续期 |
+| [BUG-1828](bugs/BUG-1828-reader-image-wrapper-swallows-empty-tap.md) | ✅ | ✅ | 阅读器大图两侧留白被判成点中图片，底栏永远唤不出来 |
+| [BUG-1827](bugs/BUG-1827-popup-phonetic-overflows-card.md) | ✅ | ✅ | 查词弹窗释义里的不可断短语溢出词典卡 |
 | [BUG-1826](bugs/BUG-1826-mihon-loading-gate-blocks-store-edit.md) | 🚧 | 🚧 | 漫画扩展页 loading 一位两义：初始化联网刷新期间连添加/编辑仓库都点不动 |
 | [BUG-1825](bugs/BUG-1825-lyrics-itest-concrete-activation.md) | ✅ | ✅ | 歌词模式实测未激活具体reader-action焦点节点 |
 | [BUG-1824](bugs/BUG-1824-dictionary-overlay-dispose-without-remove.md) | ✅ | ✅ | 查词页根Overlay卸载时先dispose仍登记的OverlayEntry |
