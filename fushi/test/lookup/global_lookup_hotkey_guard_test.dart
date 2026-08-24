@@ -161,7 +161,10 @@ void main() {
       final int at = controllerSrc.indexOf('hotkey: empty selection');
       expect(at, greaterThan(-1), reason: 'hotkey 分支必须存在');
       final String tail = controllerSrc.substring(at);
-      final int callAt = tail.indexOf('_lookupExternal(text,');
+      // 锚点不能写成 `_lookupExternal(text,` 这种**单行**字面量：实参一旦换行
+      // （dart format 在参数变多时必然这么做）它就找不到了，而语义一点没变。
+      // 只认调用名，参数怎么排都行。
+      final int callAt = tail.indexOf('_lookupExternal(');
       expect(callAt, greaterThan(-1), reason: 'hotkey 必须走 _lookupExternal');
       final String call = tail.substring(callAt, tail.indexOf(';', callAt));
       expect(call.contains('showSentenceBanner: false'), isTrue,

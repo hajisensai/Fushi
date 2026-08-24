@@ -15,26 +15,31 @@ void main() {
 
   final List<String> globalCalls = <String>[];
   final List<String> panelCalls = <String>[];
+  MethodCall? lastGlobalCall;
   MethodCall? lastPanelCall;
 
   setUp(() {
     globalCalls.clear();
     panelCalls.clear();
+    lastGlobalCall = null;
     lastPanelCall = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.globalLookup,
-            (MethodCall call) async {
-      globalCalls.add(call.method);
-      return null;
-    });
+        .setMockMethodCallHandler(FushiChannels.globalLookup, (
+          MethodCall call,
+        ) async {
+          globalCalls.add(call.method);
+          lastGlobalCall = call;
+          return null;
+        });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel,
-            (MethodCall call) async {
-      panelCalls.add(call.method);
-      lastPanelCall = call;
-      if (call.method == 'applyBackdrop') return true;
-      return null;
-    });
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel, (
+          MethodCall call,
+        ) async {
+          panelCalls.add(call.method);
+          lastPanelCall = call;
+          if (call.method == 'applyBackdrop') return true;
+          return null;
+        });
   });
 
   tearDown(() {
@@ -51,9 +56,54 @@ void main() {
     expect(panelCalls, isEmpty);
   });
 
+  test(
+    'gal layout work area carries full viewport and fixed root origin',
+    () async {
+      await GlobalLookupChannel.showAt(
+        x: 0,
+        y: 0,
+        width: 1600,
+        height: 1020,
+        capWidth: 3840,
+        capHeight: 2160,
+        capOriginX: 1120,
+        capOriginY: 64,
+      );
+      final Map<Object?, Object?> args =
+          lastGlobalCall!.arguments as Map<Object?, Object?>;
+      expect(args['capW'], 3840, reason: 'stack uses the full game viewport');
+      expect(args['capH'], 2160);
+      expect(args['capX'], 1120, reason: 'root is not assumed to start at 0,0');
+      expect(args['capY'], 64);
+    },
+  );
+
+  test('revealStack forwards the renderer geometry epoch', () async {
+    await GlobalLookupChannel.revealStack(
+      dx: -40,
+      dy: 12,
+      width: 960,
+      height: 640,
+      geometryEpoch: 37,
+      left: -20,
+      top: 6,
+    );
+    expect(lastGlobalCall?.method, 'revealStack');
+    final Map<Object?, Object?> args =
+        lastGlobalCall!.arguments as Map<Object?, Object?>;
+    expect(args['dx'], -40);
+    expect(args['dy'], 12);
+    expect(args['width'], 960);
+    expect(args['height'], 640);
+    expect(args['geometryEpoch'], 37);
+    expect(args['left'], -20);
+    expect(args['top'], 6);
+  });
+
   test('面板实例走 clipboard_panel channel，与 global_lookup 互不串线', () async {
-    const OverlayWindowChannel panel =
-        OverlayWindowChannel(FushiChannels.clipboardPanel);
+    const OverlayWindowChannel panel = OverlayWindowChannel(
+      FushiChannels.clipboardPanel,
+    );
     await panel.hide();
     await panel.setPinned(true);
     expect(await panel.applyBackdrop(), isTrue);
@@ -62,8 +112,9 @@ void main() {
   });
 
   test('resolveBridge 保持双重 jsonEncode 契约（adapter JSON.parse(arg)）', () async {
-    const OverlayWindowChannel panel =
-        OverlayWindowChannel(FushiChannels.clipboardPanel);
+    const OverlayWindowChannel panel = OverlayWindowChannel(
+      FushiChannels.clipboardPanel,
+    );
     await panel.resolveBridge(7, <String, Object?>{'ok': true});
     final Map<Object?, Object?> args =
         lastPanelCall!.arguments as Map<Object?, Object?>;
@@ -74,23 +125,29 @@ void main() {
 
   test('showAt 解析 native map 回复（work area + 窗口原点偏移）', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel,
-            (MethodCall call) async {
-      return <String, Object?>{
-        'ok': true,
-        'workW': 2560,
-        'workH': 1400,
-        'cursorWorkX': 120,
-        'cursorWorkY': 80,
-        // BUG-859 — 光标显示器 dpr（native 用 FlutterDesktopGetDpiForMonitor
-        // 上报）；Dart 必须用它（而非主窗口 dpr）把上面的物理 px 换算成 CSS px。
-        'monitorDpr': 1.25,
-      };
-    });
-    const OverlayWindowChannel panel =
-        OverlayWindowChannel(FushiChannels.clipboardPanel);
-    final GlobalLookupShowResult r =
-        await panel.showAt(x: 100, y: 60, width: 380, height: 520);
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel, (
+          MethodCall call,
+        ) async {
+          return <String, Object?>{
+            'ok': true,
+            'workW': 2560,
+            'workH': 1400,
+            'cursorWorkX': 120,
+            'cursorWorkY': 80,
+            // BUG-859 — 光标显示器 dpr（native 用 FlutterDesktopGetDpiForMonitor
+            // 上报）；Dart 必须用它（而非主窗口 dpr）把上面的物理 px 换算成 CSS px。
+            'monitorDpr': 1.25,
+          };
+        });
+    const OverlayWindowChannel panel = OverlayWindowChannel(
+      FushiChannels.clipboardPanel,
+    );
+    final GlobalLookupShowResult r = await panel.showAt(
+      x: 100,
+      y: 60,
+      width: 380,
+      height: 520,
+    );
     expect(r.ok, isTrue);
     expect(r.workWidth, 2560);
     expect(r.workHeight, 1400);
@@ -103,14 +160,20 @@ void main() {
     // BUG-859 — 旧 native / 查询失败：monitorDpr 缺省 0，controller 据此回退主窗口
     // dpr（行为与修复前逐字节一致，Never break userspace）。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel,
-            (MethodCall call) async {
-      return <String, Object?>{'ok': true, 'workW': 1920, 'workH': 1040};
-    });
-    const OverlayWindowChannel panel =
-        OverlayWindowChannel(FushiChannels.clipboardPanel);
-    final GlobalLookupShowResult r =
-        await panel.showAt(x: 0, y: 0, width: 380, height: 520);
+        .setMockMethodCallHandler(FushiChannels.clipboardPanel, (
+          MethodCall call,
+        ) async {
+          return <String, Object?>{'ok': true, 'workW': 1920, 'workH': 1040};
+        });
+    const OverlayWindowChannel panel = OverlayWindowChannel(
+      FushiChannels.clipboardPanel,
+    );
+    final GlobalLookupShowResult r = await panel.showAt(
+      x: 0,
+      y: 0,
+      width: 380,
+      height: 520,
+    );
     expect(r.monitorDpr, 0);
   });
 }

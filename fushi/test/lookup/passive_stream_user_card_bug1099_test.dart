@@ -31,9 +31,9 @@ void main() {
     DesktopForegroundGuard.debugHiddenWindowsRunner = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('app.fushi/window'),
-      (MethodCall call) async => null,
-    );
+          const MethodChannel('app.fushi/window'),
+          (MethodCall call) async => null,
+        );
   });
   tearDown(() {
     DesktopLookupService.instance.debugReset();
@@ -42,7 +42,9 @@ void main() {
     DesktopForegroundGuard.debugHiddenWindowsRunner = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-            const MethodChannel('app.fushi/window'), null);
+          const MethodChannel('app.fushi/window'),
+          null,
+        );
   });
 
   group('keepUserOwnedCardForPassiveStream（面板/瞬态窗共用判据）', () {
@@ -97,10 +99,14 @@ void main() {
     test('剪贴板监听（processClipboardText）排队的请求 passiveStream=true', () {
       DesktopLookupService.instance.processClipboardText('お前はもう死んでいる');
       expect(
-          DesktopLookupService.instance.pendingRequest?.passiveStream, isTrue,
-          reason: '剪贴板变化由 OS 事件驱动，用户没有对 Hibiki 做任何动作 = 被动流');
-      expect(DesktopLookupService.instance.pendingRequest?.origin,
-          DesktopLookupOrigin.clipboard);
+        DesktopLookupService.instance.pendingRequest?.passiveStream,
+        isTrue,
+        reason: '剪贴板变化由 OS 事件驱动，用户没有对 Hibiki 做任何动作 = 被动流',
+      );
+      expect(
+        DesktopLookupService.instance.pendingRequest?.origin,
+        DesktopLookupOrigin.clipboard,
+      );
     });
 
     test('抓选区括号期回放的剪贴板事件同样是被动流（同一条环境通道）', () {
@@ -111,7 +117,9 @@ void main() {
       DesktopLookupService.instance.endSelfInflictedCapture(<String>['自产选区']);
       expect(DesktopLookupService.instance.pendingRequest?.text, '真实复制');
       expect(
-          DesktopLookupService.instance.pendingRequest?.passiveStream, isTrue);
+        DesktopLookupService.instance.pendingRequest?.passiveStream,
+        isTrue,
+      );
     });
 
     test('显式查词（悬浮字幕点词 triggerLookup）passiveStream=false', () {
@@ -121,73 +129,99 @@ void main() {
         isFalse,
         reason: '用户点词是显式意图，必须正常替换当前卡',
       );
-      expect(DesktopLookupService.instance.pendingRequest?.origin,
-          DesktopLookupOrigin.explicit);
+      expect(
+        DesktopLookupService.instance.pendingRequest?.origin,
+        DesktopLookupOrigin.explicit,
+      );
     });
 
     test('热键路径源码不标被动流（热键是最显式的意图）', () {
-      final String src =
-          File('lib/src/sync/desktop_lookup_service.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/desktop_lookup_service.dart',
+      ).readAsStringSync();
       final int at = src.indexOf('Future<void> _onHotKey()');
       expect(at, greaterThan(0));
       final int end = src.indexOf('\n  }', at);
-      expect(src.substring(at, end).contains('passiveStream'), isFalse,
-          reason: '热键必须保持默认 passiveStream:false，否则用户按热键查词会被吞');
+      expect(
+        src.substring(at, end).contains('passiveStream'),
+        isFalse,
+        reason: '热键必须保持默认 passiveStream:false，否则用户按热键查词会被吞',
+      );
     });
   });
 
   group('消费面接线（源码扫描；运行时链要真覆盖窗）', () {
-    final String panelSrc =
-        File('lib/src/lookup/clipboard_panel_controller.dart')
-            .readAsStringSync();
-    final String glcSrc =
-        File('lib/src/lookup/global_lookup_controller.dart').readAsStringSync();
-    final String dispatcherSrc =
-        File('lib/src/lookup/desktop_lookup_dispatcher.dart')
-            .readAsStringSync();
+    final String panelSrc = File(
+      'lib/src/lookup/clipboard_panel_controller.dart',
+    ).readAsStringSync();
+    final String glcSrc = File(
+      'lib/src/lookup/global_lookup_controller.dart',
+    ).readAsStringSync();
+    final String dispatcherSrc = File(
+      'lib/src/lookup/desktop_lookup_dispatcher.dart',
+    ).readAsStringSync();
 
     test('面板 update 用共享判据决定「只换横幅」，不再自己拼条件', () {
       final int at = panelSrc.indexOf('Future<void> update(');
       expect(at, greaterThan(0));
-      final int guardAt =
-          panelSrc.indexOf('keepUserOwnedCardForPassiveStream(', at);
+      final int guardAt = panelSrc.indexOf(
+        'keepUserOwnedCardForPassiveStream(',
+        at,
+      );
       final int seedAt = panelSrc.indexOf('_seedRootFrame(request.text', at);
       expect(guardAt, greaterThan(at), reason: 'update 必须先过被动流判据');
-      expect(seedAt, greaterThan(guardAt),
-          reason: '判据必须在整帧重置（_seedRootFrame）之前，否则释义已经没了');
+      expect(
+        seedAt,
+        greaterThan(guardAt),
+        reason: '判据必须在整帧重置（_seedRootFrame）之前，否则释义已经没了',
+      );
     });
 
     test('dispatcher 把 passiveStream 透传给瞬态覆盖窗', () {
-      expect(dispatcherSrc.contains('passiveStream: request.passiveStream'),
-          isTrue,
-          reason: 'transient 分区不透传标记，瞬态窗那侧的保护就永远收不到信号');
+      expect(
+        dispatcherSrc.contains('passiveStream: request.passiveStream'),
+        isTrue,
+        reason: 'transient 分区不透传标记，瞬态窗那侧的保护就永远收不到信号',
+      );
     });
 
     test('瞬态窗 lookupText 在被动流命中判据时早退（不重建 root、不清尺寸）', () {
       final int at = glcSrc.indexOf('Future<bool> lookupText(');
       expect(at, greaterThan(0));
-      final int guardAt =
-          glcSrc.indexOf('keepUserOwnedCardForPassiveStream(', at);
+      final int guardAt = glcSrc.indexOf(
+        'keepUserOwnedCardForPassiveStream(',
+        at,
+      );
       final int hideAt = glcSrc.indexOf('GlobalLookupChannel.hide(', at);
       expect(guardAt, greaterThan(at));
-      expect(hideAt, greaterThan(guardAt),
-          reason: '早退必须在 hide + _lookupExternal 之前，否则窗口已经被清空缩回去了');
+      expect(
+        hideAt,
+        greaterThan(guardAt),
+        reason: '早退必须在 hide + _lookupExternal 之前，否则窗口已经被清空缩回去了',
+      );
     });
 
     test('瞬态窗所有权：用户动作置位、真正关卡复位（保护不会永久粘住）', () {
-      expect(glcSrc.contains('_userOwnedCard = !passiveStream'), isTrue,
-          reason: '显式意图开的卡归用户，被动流开的卡不归');
+      expect(
+        glcSrc.contains('_userOwnedCard = !passiveStream'),
+        isTrue,
+        reason: '显式意图开的卡归用户，被动流开的卡不归',
+      );
       final int nestedAt = glcSrc.indexOf('Future<void> _lookupNested(');
       expect(nestedAt, greaterThan(0));
-      final int nestedEnd = glcSrc.indexOf('\n  }', nestedAt);
+      final int nestedEnd = glcSrc.indexOf(
+        '\n  /// Resets the stack to a single root frame',
+        nestedAt,
+      );
+      expect(nestedEnd, greaterThan(nestedAt));
       expect(
-          glcSrc
-              .substring(nestedAt, nestedEnd)
-              .contains('_userOwnedCard = true'),
-          isTrue,
-          reason: '用户在卡里点词开级联，这张卡当然归用户');
-      final int hiddenAt =
-          glcSrc.indexOf('void _onOverlayHidden([GlobalLookupRoute? routed])');
+        glcSrc.substring(nestedAt, nestedEnd).contains('_userOwnedCard = true'),
+        isTrue,
+        reason: '用户在卡里点词开级联，这张卡当然归用户',
+      );
+      final int hiddenAt = glcSrc.indexOf(
+        'void _onOverlayHidden([GlobalLookupRoute? routed])',
+      );
       expect(hiddenAt, greaterThan(0));
       final int hiddenEnd = glcSrc.indexOf('\n  }', hiddenAt);
       expect(

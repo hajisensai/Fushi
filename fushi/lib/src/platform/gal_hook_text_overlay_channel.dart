@@ -23,11 +23,11 @@ class GalHookTextWindowRect {
   bool get isValid => width > 0 && height > 0;
 
   Map<String, Object?> toMap() => <String, Object?>{
-        'left': left,
-        'top': top,
-        'width': width,
-        'height': height,
-      };
+    'left': left,
+    'top': top,
+    'width': width,
+    'height': height,
+  };
 
   static GalHookTextWindowRect? fromMap(Map<Object?, Object?> map) {
     int? value(String key) => (map[key] as num?)?.toInt();
@@ -41,12 +41,13 @@ class GalHookTextWindowRect {
   }
 }
 
-typedef GalHookTextLookupHandler = FutureOr<void> Function(
-  String lineId,
-  String text,
-  int index,
-  Rect? wordRect,
-);
+typedef GalHookTextLookupHandler =
+    FutureOr<void> Function(
+      String lineId,
+      String text,
+      int index,
+      Rect? wordRect,
+    );
 typedef GalHookTextEventHandler = FutureOr<void> Function();
 typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
 
@@ -98,11 +99,11 @@ class GalLookupHit {
 
   /// 命中字形矩形（primaryLayer px）。
   Rect get glyphRect => Rect.fromLTWH(
-        glyphX.toDouble(),
-        glyphY.toDouble(),
-        glyphW.toDouble(),
-        glyphH.toDouble(),
-      );
+    glyphX.toDouble(),
+    glyphY.toDouble(),
+    glyphW.toDouble(),
+    glyphH.toDouble(),
+  );
 
   /// [charIndex] 是否真的指得到 [line] 里的一个字。**硬门**：指不到就丢弃，不去猜
   /// ——猜出来的下标会让高亮与查词落在完全无关的字上。
@@ -188,11 +189,13 @@ class GalLookupCallResult {
     this.width = 0,
     this.height = 0,
     this.clamped = false,
+    this.directSurface = false,
   });
 
   /// 平台不支持（非 Windows）时的常量结果：不是失败，是「这条链在这个平台不存在」。
-  static const GalLookupCallResult unsupported =
-      GalLookupCallResult(error: 'unsupported_platform');
+  static const GalLookupCallResult unsupported = GalLookupCallResult(
+    error: 'unsupported_platform',
+  );
 
   /// runner 给的错误 token；null = 成功。
   final String? error;
@@ -203,6 +206,10 @@ class GalLookupCallResult {
 
   /// 卡片被裁过（源画面超维度上界，或字节超预算按行裁）——处置是「把卡片做小点」。
   final bool clamped;
+
+  /// true = runner 已把 WebView2 composition surface 直接贴到游戏客户区；此后
+  /// DOM/滚动由浏览器合成器原生刷新，不再需要 CapturePreview dirty 帧。
+  final bool directSurface;
 
   bool get ok => error == null;
 
@@ -215,6 +222,7 @@ class GalLookupCallResult {
       width: (map['width'] as num?)?.toInt() ?? 0,
       height: (map['height'] as num?)?.toInt() ?? 0,
       clamped: map['clamped'] == true,
+      directSurface: map['directSurface'] == true,
     );
   }
 }
@@ -222,12 +230,10 @@ class GalLookupCallResult {
 /// native 侧穿透态被否决 / 变更时的回传（BUG-951）。native 建不出逃生工具条窗
 /// 时会拒绝进入穿透并把自己摁回 false；Dart 必须跟着退回，否则它的标志卡在
 /// true，用户下一次按 `↗` 会变成一次看不出反应的空点击。
-typedef GalHookTextPassThroughHandler = FutureOr<void> Function(
-  bool passThrough,
-);
-typedef GalHookTextBoundsHandler = FutureOr<void> Function(
-  GalHookTextWindowRect rect,
-);
+typedef GalHookTextPassThroughHandler =
+    FutureOr<void> Function(bool passThrough);
+typedef GalHookTextBoundsHandler =
+    FutureOr<void> Function(GalHookTextWindowRect rect);
 
 /// Hook 台词浮窗的默认字号（逻辑 px）。
 ///
@@ -317,8 +323,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   static Future<void> _handleNativeCall(MethodCall call) async {
     final Object? arguments = call.arguments;
-    final Map<Object?, Object?> args =
-        arguments is Map ? arguments.cast<Object?, Object?>() : const {};
+    final Map<Object?, Object?> args = arguments is Map
+        ? arguments.cast<Object?, Object?>()
+        : const {};
     switch (call.method) {
       case 'lookupText':
         final String lineId = args['lineId']?.toString() ?? '';
@@ -522,10 +529,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>(
       'setVoiceState',
-      <String, Object?>{
-        'replaying': replaying,
-        'recapturing': recapturing,
-      },
+      <String, Object?>{'replaying': replaying, 'recapturing': recapturing},
     );
   }
 
@@ -541,10 +545,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   static Future<void> setLocked(bool locked) async {
     if (!_instance.isSupported) return;
-    await _instance.channel.invokeMethod<void>(
-      'setLocked',
-      <String, Object?>{'locked': locked},
-    );
+    await _instance.channel.invokeMethod<void>('setLocked', <String, Object?>{
+      'locked': locked,
+    });
   }
 
   // ── 游戏内查词（Dart → runner）────────────────────────────────────────────
@@ -575,18 +578,24 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     required int anchorY,
     required int highlightStart,
     required int highlightLen,
+    required int cardWidth,
+    required int cardHeight,
+    required int viewWidth,
+    required int viewHeight,
   }) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
-    final Object? reply = await _instance.channel.invokeMethod<Object?>(
-      'galLookupPresent',
-      <String, Object?>{
-        'seq': seq,
-        'anchorX': anchorX,
-        'anchorY': anchorY,
-        'highlightStart': highlightStart,
-        'highlightLen': highlightLen,
-      },
-    );
+    final Object? reply = await _instance.channel
+        .invokeMethod<Object?>('galLookupPresent', <String, Object?>{
+          'seq': seq,
+          'anchorX': anchorX,
+          'anchorY': anchorY,
+          'highlightStart': highlightStart,
+          'highlightLen': highlightLen,
+          'cardWidth': cardWidth,
+          'cardHeight': cardHeight,
+          'viewWidth': viewWidth,
+          'viewHeight': viewHeight,
+        });
     return GalLookupCallResult.fromReply(reply);
   }
 
@@ -604,16 +613,14 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     required int highlightLen,
   }) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
-    final Object? reply = await _instance.channel.invokeMethod<Object?>(
-      'galLookupPresentHighlight',
-      <String, Object?>{
-        'seq': seq,
-        'anchorX': anchorX,
-        'anchorY': anchorY,
-        'highlightStart': highlightStart,
-        'highlightLen': highlightLen,
-      },
-    );
+    final Object? reply = await _instance.channel
+        .invokeMethod<Object?>('galLookupPresentHighlight', <String, Object?>{
+          'seq': seq,
+          'anchorX': anchorX,
+          'anchorY': anchorY,
+          'highlightStart': highlightStart,
+          'highlightLen': highlightLen,
+        });
     return GalLookupCallResult.fromReply(reply);
   }
 
@@ -654,17 +661,15 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   ) async {
     if (!_instance.isSupported) return GalLookupCallResult.unsupported;
     return GalLookupCallResult.fromReply(
-      await _instance.channel.invokeMethod<Object?>(
-        'galLookupInput',
-        <String, Object?>{
-          'seq': input.seq,
-          'x': input.x,
-          'y': input.y,
-          'kind': input.kind,
-          'wheel': input.wheel,
-          'keys': input.keys,
-        },
-      ),
+      await _instance.channel
+          .invokeMethod<Object?>('galLookupInput', <String, Object?>{
+            'seq': input.seq,
+            'x': input.x,
+            'y': input.y,
+            'kind': input.kind,
+            'wheel': input.wheel,
+            'keys': input.keys,
+          }),
     );
   }
 }
