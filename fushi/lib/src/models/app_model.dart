@@ -28,6 +28,7 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
+import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
@@ -2195,6 +2196,9 @@ class AppModel with ChangeNotifier {
   /// the application. [AppModel] is initialised in the main function before
   /// [runApp] is executed.
   Future<void> _prepareRuntimeDirectories() async {
+    // Windows 安装向导里选的「数据存储位置」经一次性引导文件送达，必须在 resolve
+    // 读 data_root pref 之前消费（全新安装才生效，见该函数契约）。
+    await consumeInstallerDataRootBootstrap();
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
     // [fushiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();

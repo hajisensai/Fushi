@@ -335,7 +335,7 @@ class AppPaths {
       _legacyFlatDocumentsRoot = stored == documentsLayoutFlat;
       return;
     }
-    final bool flat = await _existingInstallHasDatabase();
+    final bool flat = await existingInstallHasDatabase();
     _legacyFlatDocumentsRoot = flat;
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
     // 探测的判据（主库文件是否存在）此时只会更成立，不会翻转成新布局。
@@ -391,7 +391,7 @@ class AppPaths {
   /// 兼看旧文件名 [legacyHibikiDatabaseFileName]：老安装在第一次开库前主库还叫
   /// `hibiki.db`（开库时 fushi_core 才做一次性改名），这里若只认新名会把老安装
   /// 误判成全新安装。
-  static Future<bool> _existingInstallHasDatabase() async {
+  static Future<bool> existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();
       Future<bool> dbExists(String fileName) =>

@@ -129,6 +129,11 @@ Root: HKCU; Subkey: "Software\Classes\.webm\OpenWithProgids"; ValueType: none; V
 Root: HKCU; Subkey: "Software\Classes\.mov\OpenWithProgids"; ValueType: none; ValueName: "Hibiki.Video"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: none; ValueName: "Hibiki.Video"; Flags: deletevalue
 
+[UninstallDelete]
+; 数据存储位置引导文件（见 [Code] WriteDataRootBootstrap）。app 首启即消费并删除；
+; 装完从没启动过就卸载时由这里收尾，别在安装目录留一个孤儿文件。
+Type: files; Name: "{app}\data_root.bootstrap"
+
 [Run]
 Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall
 
@@ -444,6 +449,87 @@ begin
   Result := not FileExists(ExpandConstant('{userdesktop}\Fushi.lnk'));
 end;
 
+// ── 数据存储位置（全新安装向导页）──────────────────────────────────────────
+// 安装目录 ({app}) 与数据目录是两回事：书库/漫画/视频封面字幕/词典/数据库全落数据根，
+// 体积可能远大于程序本身。旧行为是 app 首启无条件用默认根（<Documents>\Fushi\data +
+// %APPDATA%\Fushi\Fushi），用户只能装完再去「设置 → 数据存储位置」整树迁移 + 重启。
+// 这里在全新安装时多问一页；用户的选择经 {app}\data_root.bootstrap 一次性交给 app
+// （lib/src/storage/installer_data_root_bootstrap.dart 首启消费后删除、之后唯一真相源
+// 仍是 app 自己的 data_root 偏好）。安装器只是一次性写者，不是第二个配置来源。
+//
+// 只对全新安装显示：升级/重装时 app 已经有自己的数据根（默认或自定义），从安装器再
+// 塞一个进去只会让既有书库「消失」；要搬走走设置里的迁移（连 DB 内绝对路径一起 rebase）。
+const
+  DataRootBootstrapFileName = 'data_root.bootstrap';
+  { [Setup] AppId 去掉 ISPP 转义后的真值 + Inno 卸载键固定后缀。PrivilegesRequired=lowest
+    → 卸载键在 HKCU。Pascal 字符串字面量不做常量展开，只能照抄；与 [Setup] AppId 的
+    一致性由 test/build/windows_installer_data_root_page_guard_test.dart 守住。 }
+  FushiUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}_is1';
+
+var
+  DataRootPage: TInputDirWizardPage;
+  { ShouldSkipPage 里判定并记住「本次真的向用户展示了数据目录页」。ssPostInstall 时卸载键
+    已经写好，届时再调 IsFreshInstall 恒为 False，所以必须在页面阶段落下这个标记。 }
+  DataRootPageOffered: Boolean;
+
+{ 全新安装 = 卸载键不存在（没装过 / 已卸载）且 app 的平台固定落点
+  %APPDATA%\Fushi\Fushi（path_provider 取 exe 版本资源 CompanyName\ProductName）不存在。
+  后者兜住「卸载但保留了数据」的重装：那种机器上 app 首启会认出旧库，安装器不该再问。 }
+function IsFreshInstall(): Boolean;
+begin
+  Result := (not RegKeyExists(HKCU, FushiUninstallKey))
+    and (not DirExists(ExpandConstant('{userappdata}\Fushi\Fushi')));
+end;
+
+{ A 等于 B、或是 B 的祖先目录（大小写不敏感、按整段路径前缀比较：尾部补反斜杠后
+  'C:\Fushi\' 不会误配 'C:\FushiData\'）。 }
+function IsSameOrAncestorDir(const A, B: String): Boolean;
+begin
+  Result := Pos(Lowercase(AddBackslash(A)), Lowercase(AddBackslash(B))) = 1;
+end;
+
+procedure InitializeWizard();
+begin
+  DataRootPageOffered := False;
+  DataRootPage := CreateInputDirPage(wpSelectDir,
+    '选择数据存储位置',
+    '导入的书籍、漫画、视频封面与字幕、词典和数据库存放在哪里？',
+    '这些数据可能远大于程序本身，建议选一个空间充足的位置。' + #13#10 +
+    '之后可以在「设置 → 数据存储位置」里迁移。' + #13#10#13#10 +
+    '点击「下一步」继续。',
+    False, 'Fushi');
+  DataRootPage.Add('');
+  DataRootPage.Values[0] := ExpandConstant('{userdocs}\Fushi');
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (DataRootPage <> nil) and (PageID = DataRootPage.ID) then
+  begin
+    DataRootPageOffered := IsFreshInstall();
+    Result := not DataRootPageOffered;
+  end;
+end;
+
+{ ssPostInstall：把用户选的数据目录交给 app。默认值也照写——「选的是不是默认位置」由
+  app 按它自己的默认根定义归一化，安装器不复制这条规则。 }
+procedure WriteDataRootBootstrap();
+var
+  Lines: TArrayOfString;
+  Target: String;
+begin
+  if not DataRootPageOffered then
+    Exit;
+  Target := RemoveBackslashUnlessRoot(Trim(DataRootPage.Values[0]));
+  if Target = '' then
+    Exit;
+  SetArrayLength(Lines, 1);
+  Lines[0] := Target;
+  if not SaveStringsToUTF8File(ExpandConstant('{app}\' + DataRootBootstrapFileName), Lines, False) then
+    Log('WriteDataRootBootstrap: 写入失败，app 将使用默认数据位置');
+end;
+
 // Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
 // 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
 // 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
@@ -456,6 +542,8 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
+
+  WriteDataRootBootstrap();
 
   // 旧名可执行文件：Inno 只覆盖同名文件，改了名的旧 exe 不清就会与 fushi.exe
   // 并存，旧快捷方式还能把上一版拉起来。
@@ -551,6 +639,8 @@ begin
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  DataRoot: String;
 begin
   Result := True;
   if CurPageID = wpSelectDir then
@@ -562,6 +652,33 @@ begin
         + ExpandConstant('{localappdata}\Fushi') + '）。' + #13#10#13#10
         + '不建议装进需要管理员权限的目录：即使以管理员身份重装到该目录，'
         + '应用日常以普通权限运行，之后每次自动更新都需要再次提权。',
+        mbError, MB_OK);
+      Result := False;
+    end;
+  end
+  else if (DataRootPage <> nil) and (CurPageID = DataRootPage.ID) then
+  begin
+    DataRoot := RemoveBackslashUnlessRoot(Trim(DataRootPage.Values[0]));
+    { 数据目录与安装目录不得相同或互相包含：自动更新 / 安装回滚会整体处理安装目录，
+      数据压在下面会被一起清；反过来安装目录落在数据根里则迁移会拒绝（含运行中 exe）。
+      与 app 侧 validateDataRootTarget 的 containsExecutable 是同一条规则。 }
+    if IsSameOrAncestorDir(DataRoot, WizardDirValue)
+      or IsSameOrAncestorDir(WizardDirValue, DataRoot) then
+    begin
+      MsgBox('数据存储位置不能与安装目录相同或互相包含：' + #13#10
+        + '安装目录：' + WizardDirValue + #13#10
+        + '数据目录：' + DataRoot + #13#10#13#10
+        + '请另选一个独立的目录（推荐默认 '
+        + ExpandConstant('{userdocs}\Fushi') + '）。',
+        mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    if not InstallDirWritable(DataRoot) then
+    begin
+      MsgBox('当前权限无法写入所选数据目录：' + #13#10 + DataRoot + #13#10#13#10
+        + '请改选用户可写的目录（推荐默认 '
+        + ExpandConstant('{userdocs}\Fushi') + '）。',
         mbError, MB_OK);
       Result := False;
     end;
