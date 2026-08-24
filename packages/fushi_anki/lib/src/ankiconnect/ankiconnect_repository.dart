@@ -1171,12 +1171,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   //
   // 只对本机 Anki 生效：host 非 loopback 时说的是另一台机器上的 AnkiConnect，
   // 去激活本机窗口毫无意义。
+  //
+  // BUG-1837：认 Anki 进程要用 **service.port**（谁在监听我们正在对话的这个
+  // AnkiConnect），而不是「exe 叫 anki.exe」——新版 Anki 的 anki.exe 只是启动器，
+  // 真正持有窗口的是 venv 里的 pythonw.exe，按名字找必然落空、整套让渡空转。
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
       final service = await _getService();
       final int? ankiPid = ankiConnectHostIsLoopback(service.host)
-          ? AnkiDesktopForeground.grantForegroundToAnki()
+          ? AnkiDesktopForeground.grantForegroundToAnki(
+              ankiConnectPort: service.port)
           : null;
       await service.guiBrowse(noteId);
       await AnkiDesktopForeground.raiseAnkiWindow(ankiPid);

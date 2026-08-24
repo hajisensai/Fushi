@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1690 条。点号进各自文件。
+> 共 1692 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1838](bugs/BUG-1838-ankiconnect-installer-launcher-not-found.md) | 🚧 | 🚧 | AnkiConnect 一键代装误报 Anki 没运行：新版 launcher 下找不到入口 exe |
+| [BUG-1837](bugs/BUG-1837-anki-open-foreground-pid-launcher.md) | ✅ | ✅ | 制卡后在 Anki 中打开仍不到前台：新版 Anki launcher 下进程识别失效 |
 | [BUG-1836](bugs/BUG-1836-manual-install-rescue-reports-failure.md) | 🚧 | 🚧 | 手动跑安装包救援成功后仍必报更新失败（Inno 日志判据拿不到证据） |
 | [BUG-1831](bugs/BUG-1831-win-update-launcher-vanished.md) | ✅ | ✅ | 改名让路后新 launcher 被回滚删除，安装目录再无 launcher，自更新永久卡死 |
 | [BUG-1826](bugs/BUG-1826-mihon-loading-gate-blocks-store-edit.md) | 🚧 | 🚧 | 漫画扩展页 loading 一位两义：初始化联网刷新期间连添加/编辑仓库都点不动 |
