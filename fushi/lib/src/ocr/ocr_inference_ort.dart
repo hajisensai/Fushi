@@ -32,7 +32,8 @@ const String kOcrLogName = 'hibiki.ocr';
 ///
 /// 保留这个具名闸门而不是直接写 `true`：它是「本地推理可不可用」的唯一判定点，
 /// 将来任一端的 native 再被摘掉（换 ORT 版本、平台下限回退），只改这里，
-/// 调用方（`MangaOcrServiceImpl` 整卷入口、`MangaBoxRescan` 单框入口）无须改动。
+/// 调用方（`MangaOcrServiceImpl` 的整卷 / 点击 / 框选区域三个入口——框选区域自 PR
+/// #1000 起复用同一条引擎链，不再有独立的单框 OCR 服务）无须改动。
 bool get isLocalOnnxRuntimeAvailable =>
     Platform.isWindows ||
     Platform.isLinux ||
