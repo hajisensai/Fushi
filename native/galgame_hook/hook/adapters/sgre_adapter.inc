@@ -4,6 +4,8 @@
 #include "sgre_profile.h"
 #include "sgre_voice_archive.h"
 
+#include "sgre_lookup.inc"
+
 fushi_voice_hook::SgreVoiceArchiveView g_sgre_voice_archive;
 
 bool HandleSgreCompressedResource(
@@ -52,7 +54,11 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   const char* id() const override { return "sgre"; }
 
   bool probe() const override {
-    return fushi_voice_hook::MatchesSgreProfile(nullptr);
+    if (!profile_probed_) {
+      profile_matched_ = fushi_voice_hook::MatchesSgreProfile(nullptr);
+      profile_probed_ = true;
+    }
+    return profile_matched_;
   }
 
   bool install() override {
@@ -74,7 +80,12 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
   fushi_voice_hook::AdapterCapability capabilities() const override {
-    return fushi_voice_hook::AdapterCapability::kResourceAudio;
+    return fushi_voice_hook::AdapterCapability::kText |
+           fushi_voice_hook::AdapterCapability::kResourceAudio;
+  }
+
+  void ProcessPendingEvents() {
+    if (probe()) ProcessSgreLookupTick();
   }
 
   void onModuleLoaded(const wchar_t*) override {}
@@ -92,5 +103,7 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  mutable bool profile_probed_ = false;
+  mutable bool profile_matched_ = false;
   bool installed_ = false;
 };

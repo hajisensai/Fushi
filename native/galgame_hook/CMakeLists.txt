@@ -70,6 +70,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
   "hook/adapters/sgre_adapter.inc"
+  "hook/adapters/sgre_lookup.h"
+  "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"
   "hook/adapters/sgre_voice_archive.h"
 )
@@ -435,7 +437,7 @@ add_executable(fushi_elf_ai6_adapter_test "tests/elf_ai6_adapter_test.cpp")
 target_include_directories(fushi_elf_ai6_adapter_test PRIVATE "hook")
 add_test(NAME fushi_elf_ai6_adapter_test COMMAND fushi_elf_ai6_adapter_test)
 add_executable(fushi_sgre_adapter_test "tests/sgre_adapter_test.cpp")
-target_include_directories(fushi_sgre_adapter_test PRIVATE "hook")
+target_include_directories(fushi_sgre_adapter_test PRIVATE "hook" "include")
 target_compile_definitions(fushi_sgre_adapter_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_sgre_adapter_test PRIVATE bcrypt)

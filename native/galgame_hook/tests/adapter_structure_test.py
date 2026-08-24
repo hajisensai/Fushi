@@ -36,6 +36,29 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertIn(marker, path.read_text(encoding="utf-8"))
             self.assertIn(f'#include "adapters/{filename}"', source)
 
+    def test_sgre_lookup_uses_game_parsed_draw_state(self) -> None:
+        source = (
+            ROOT / "hook" / "adapters" / "sgre_lookup.inc"
+        ).read_text(encoding="utf-8")
+        header = (
+            ROOT / "hook" / "adapters" / "sgre_lookup.h"
+        ).read_text(encoding="utf-8")
+        detour = source.split("void __fastcall SgreTextDrawDetour", 1)[1]
+        detour = detour.split("bool InstallSgreLookupSensor", 1)[0]
+        snapshot = detour.index("CaptureSgreLookupDrawState(text_surface)")
+        original = detour.index("g_sgre_text_draw_original(text_surface)")
+        self.assertLess(snapshot, original)
+        self.assertIn("kSgreTextDrawRva", header)
+        self.assertIn("kSgreScenarioTextVtableRva", header)
+        self.assertIn("kSgreDrawVisibleGlyphsOffset", source)
+        self.assertIn("kSgreGlyphCharacterOffset", source)
+        self.assertIn("kSgreGlyphDrawXOffset", source)
+        self.assertIn("kSgreGlyphDrawYOffset", source)
+        self.assertIn("MatchesSgreScenarioDrawMetrics", source)
+        self.assertNotIn("g_sgre_text_layout_original", source)
+        self.assertNotIn("LunaNormalizeMagesControls", source)
+        self.assertNotIn("kLookupDiagLunaKnownHookReady", source)
+
     def test_native_loopback_is_policy_gated_and_generation_owned(self) -> None:
         registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
             encoding="utf-8"

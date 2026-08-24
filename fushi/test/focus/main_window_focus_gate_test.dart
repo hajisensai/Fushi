@@ -31,7 +31,14 @@ Widget _app(FocusNode probe) {
 }
 
 void main() {
-  tearDown(() => mainWindowForegroundNotifier.value = true);
+  // 闸门的平台判据是 Platform.isWindows。不覆盖它的话，CI（Linux）上 build 直接
+  // 返回 child、initState 也不订阅，于是「关门」什么都没做：下面的断言不是被满足，
+  // 而是压根没被执行到。本机 Windows 全绿、CI 两条红就是这么来的（run 32656498068）。
+  setUp(() => debugMainWindowFocusGateAppliesOverride = true);
+  tearDown(() {
+    debugMainWindowFocusGateAppliesOverride = null;
+    mainWindowForegroundNotifier.value = true;
+  });
 
   testWidgets('门关着：任何 requestFocus 都拿不到焦点', (WidgetTester tester) async {
     final FocusNode probe = FocusNode(debugLabel: 'probe');
@@ -47,7 +54,7 @@ void main() {
     expect(probe.hasFocus, isFalse,
         reason: '主窗不在前台时请求焦点 = 引擎 SetFocus(FlutterView) = 把主界面'
             '抢到用户的游戏 / 浏览器前面（BUG-1619）');
-  }, skip: !mainWindowFocusGateApplies);
+  });
 
   testWidgets('门开着：焦点照常工作（不改变正常使用）', (WidgetTester tester) async {
     final FocusNode probe = FocusNode(debugLabel: 'probe');
@@ -58,7 +65,7 @@ void main() {
     probe.requestFocus();
     await tester.pumpAndSettle();
     expect(probe.hasFocus, isTrue);
-  }, skip: !mainWindowFocusGateApplies);
+  });
 
   testWidgets('关门会让出既有焦点，开门后由焦点控制器补回内容焦点', (WidgetTester tester) async {
     final FocusNode probe = FocusNode(debugLabel: 'probe');
@@ -86,5 +93,25 @@ void main() {
     expect(controller.primaryFocusIsManagedTarget, isTrue,
         reason: '开门后必须补一次焦点修复，否则用户切回主窗整页没有焦点、'
             '键盘 / 手柄快捷键全不响应（TODO-900 的老症状）');
-  }, skip: !mainWindowFocusGateApplies);
+  });
+
+  testWidgets('判据不适用的平台上闸门完全透传（不改变既有语义）',
+      (WidgetTester tester) async {
+    // 反向用例：锁住「非 Windows 恒 true」这条设计承诺。没有它，上面三条全靠覆盖
+    // 开关跑，谁把判据改成恒真都不会有人发现——而恒真意味着 Android / iOS 上凭空
+    // 多出一个会吃掉 requestFocus 的闸门。
+    debugMainWindowFocusGateAppliesOverride = false;
+    final FocusNode probe = FocusNode(debugLabel: 'probe');
+    addTearDown(probe.dispose);
+    await tester.pumpWidget(_app(probe));
+    await tester.pumpAndSettle();
+
+    mainWindowForegroundNotifier.value = false;
+    await tester.pumpAndSettle();
+
+    probe.requestFocus();
+    await tester.pumpAndSettle();
+    expect(probe.hasFocus, isTrue,
+        reason: '判据不适用时前台真值不该影响焦点，闸门必须是纯透传');
+  });
 }

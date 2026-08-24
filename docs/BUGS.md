@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1695 条。点号进各自文件。
+> 共 1699 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,9 +46,13 @@
 | [BUG-1810](bugs/BUG-1810-comprehensive-imports-never-opens-books.md) | ✅ | ✅ | 综合导入实测未打开书架导致已导入图书不可见 |
 | [BUG-1809](bugs/BUG-1809-ios-lyrics-load-data-no-load-stop.md) | ✅ | ✅ | iOS歌词loadData返回后不触发onLoadStop导致永不ready |
 | [BUG-1808](bugs/BUG-1808-lyrics-itest-concrete-activation.md) | ✅ | ✅ | 歌词模式实测未激活具体reader-action焦点节点 |
+| [BUG-1803](bugs/BUG-1803-sgre-layout-argument-forwarding.md) | ✅ | ✅ | SGRE 查词 detour 丢失布局参数导致游戏控制码不转义 |
 | [BUG-1803](bugs/BUG-1803-dictionary-overlay-dispose-without-remove.md) | ✅ | ✅ | 查词页根Overlay卸载时先dispose仍登记的OverlayEntry |
+| [BUG-1802](bugs/BUG-1802-sgre-lookup-glyph-position.md) | ✅ | ✅ | SGRE 内嵌查词读取错误字形坐标导致命中错位 |
 | [BUG-1802](bugs/BUG-1802-comprehensive-imports-dictionary-tab-index-drift.md) | ✅ | ✅ | 综合导入实测按固定索引误把书架当查词 |
+| [BUG-1801](bugs/BUG-1801-sgre-lookup-stale-line.md) | ✅ | ✅ | SGRE 内嵌查词保留旧台词导致查询不实时 |
 | [BUG-1801](bugs/BUG-1801-comprehensive-imports-ios-font-fixture.md) | ✅ | ✅ | 综合导入实测在iOS找不到字体fixture |
+| [BUG-1800](bugs/BUG-1800-sgre-shift-tap-missed.md) | ✅ | ✅ | SGRE 内嵌查词短按 Shift 在轮询间隙被漏掉 |
 | [BUG-1800](bugs/BUG-1800-itest-fresh-install-onboarding-hides-home.md) | ✅ | ✅ | 实机集成测试把首次引导前的短暂首页误判为可用 |
 | [BUG-1799](bugs/BUG-1799-texthooker-mined-badge-never-revalidated.md) | ✅ | ✅ | galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核 |
 | [BUG-1798](bugs/BUG-1798-video-lookup-controls-autohide-race.md) | ✅ | ✅ | 查词浮层与控制条自动显隐竞态 |
