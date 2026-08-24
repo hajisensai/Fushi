@@ -15,6 +15,10 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -80,7 +84,11 @@ void main() {
     }
   });
 
-  Widget buildApp() => ProviderScope(
+  Widget buildApp({
+    VideoLibrarySection section = VideoLibrarySection.home,
+    List<RemoteVideoInfo> remote = const <RemoteVideoInfo>[],
+  }) =>
+      ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -91,19 +99,26 @@ void main() {
             home: Scaffold(
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
-                section: VideoLibrarySection.home,
+                section: section,
+                remoteVideoClientLoader: remote.isEmpty
+                    ? null
+                    : () async => _ListFakeRemoteVideoClient(remote),
               ),
             ),
           ),
         ),
       );
 
-  Future<void> pumpHome(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1400, 1600);
+  Future<void> pumpHome(
+    WidgetTester tester, {
+    VideoLibrarySection section = VideoLibrarySection.home,
+    List<RemoteVideoInfo> remote = const <RemoteVideoInfo>[],
+  }) async {
+    tester.view.physicalSize = const Size(1400, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(buildApp());
+    await tester.pumpWidget(buildApp(section: section, remote: remote));
     await tester.pumpAndSettle();
   }
 
@@ -177,4 +192,138 @@ void main() {
       reason: '合集的标签走 collectionTagMapProvider，与合集墙卡同一口径',
     );
   });
+
+  // ── 远端占位卡：host 清单下发的是标签**名**（标签本身每设备本地） ──────────
+
+  testWidgets('继续观看行的远端占位卡显示 host 下发的标签', (WidgetTester tester) async {
+    await pumpHome(
+      tester,
+      remote: const <RemoteVideoInfo>[
+        RemoteVideoInfo(
+          id: 'video/remote-watching',
+          title: 'Remote Watching',
+          positionMs: 60000,
+          positionUpdatedAtMs: 1700000000000,
+          tags: <String>['HostTag'],
+        ),
+      ],
+    );
+
+    expect(
+      tagTextIn('home_video_continue_remote_video_remote-watching', 'HostTag'),
+      findsOneWidget,
+      reason: 'RemoteVideoInfo.tags 一直在清单里，远端卡不该是唯一看不到标签的卡',
+    );
+  });
+
+  testWidgets('远端标签借本机同名标签的颜色，本机没有则走 chip 默认色',
+      (WidgetTester tester) async {
+    const int knownColor = 0xFF9C27B0;
+    await db.createTag('Known', knownColor);
+
+    await pumpHome(
+      tester,
+      remote: const <RemoteVideoInfo>[
+        RemoteVideoInfo(
+          id: 'video/remote-colored',
+          title: 'Remote Colored',
+          positionMs: 60000,
+          positionUpdatedAtMs: 1700000000000,
+          tags: <String>['Known', 'Unknown'],
+        ),
+      ],
+    );
+
+    final FushiTagChip known = tester.widget<FushiTagChip>(find.ancestor(
+      of: find.text('Known'),
+      matching: find.byType(FushiTagChip),
+    ));
+    final FushiTagChip unknown = tester.widget<FushiTagChip>(find.ancestor(
+      of: find.text('Unknown'),
+      matching: find.byType(FushiTagChip),
+    ));
+
+    expect(known.color, const Color(knownColor),
+        reason: '本机有同名标签就借它的颜色，两端看同一条标签颜色才一致');
+    expect(unknown.color, isNull,
+        reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色');
+  });
+
+  testWidgets('「全部视频」墙格里的远端占位卡也显示标签（与字幕角标并成一列）',
+      (WidgetTester tester) async {
+    await pumpHome(
+      tester,
+      section: VideoLibrarySection.allVideos,
+      remote: const <RemoteVideoInfo>[
+        RemoteVideoInfo(
+          id: 'video/remote-wall',
+          title: 'Remote Wall',
+          hasSubtitle: true,
+          tags: <String>['WallTag'],
+        ),
+      ],
+    );
+
+    expect(
+      tagTextIn('remote_video_card_video_remote-wall', 'WallTag'),
+      findsOneWidget,
+      reason: '墙格远端卡此前左上角只有字幕角标，标签整层缺失',
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+            const ValueKey<String>('remote_video_card_video_remote-wall')),
+        matching: find.byIcon(Icons.subtitles_outlined),
+      ),
+      findsOneWidget,
+      reason: '补标签不能把字幕角标挤掉——两者并成一列，谁都不遮谁',
+    );
+  });
+}
+
+class _ListFakeRemoteVideoClient implements RemoteVideoClient {
+  _ListFakeRemoteVideoClient(this._videos);
+  final List<RemoteVideoInfo> _videos;
+
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
+
+  @override
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
+
+  @override
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
+          {int episodeIndex = 0}) async =>
+      const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
+
+  @override
+  Future<void> getRemoteVideoSubtitle(
+    String id,
+    File dest, {
+    int? embeddedStreamIndex,
+    void Function(double progress)? onProgress,
+    int episodeIndex = 0,
+  }) async {}
+
+  @override
+  Future<void> downloadRemoteVideo(
+    String id,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) async {}
+
+  @override
+  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
+    String id, {
+    int episodeIndex = 0,
+  }) async =>
+      (positionMs: 0, updatedAtMs: 0);
+
+  @override
+  Future<void> putRemoteVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+  }) async {}
 }
