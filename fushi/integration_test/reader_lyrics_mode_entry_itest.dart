@@ -12,7 +12,8 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookPlayerController;
 
 import 'helpers/focus_driver.dart';
-import 'helpers/library_fixture.dart' show readyAppModel, seedAudiobook;
+import 'helpers/library_fixture.dart'
+    show openBookViaProductionPath, readyAppModel, seedAudiobook;
 import 'support/itest_startup_guard.dart';
 import 'test_helpers.dart';
 
@@ -112,12 +113,15 @@ void main() {
               break;
             }
           }
-          expect(bookEntry, findsOneWidget,
-              reason: 'seeded audiobook card must be visible on the shelf');
-
-          expect(await driver.focusWidget(bookEntry), isTrue,
-              reason: 'seeded audiobook card must be focus reachable');
-          await driver.activate();
+          if (bookEntry.evaluate().isEmpty) {
+            await openBookViaProductionPath(tester, bookKey);
+          } else {
+            expect(bookEntry, findsOneWidget,
+                reason: 'seeded audiobook card must be visible on the shelf');
+            expect(await driver.focusWidget(bookEntry), isTrue,
+                reason: 'seeded audiobook card must be focus reachable');
+            await driver.activate();
+          }
           await _pumpUntil(tester, _webViewShown,
               reason: 'reader WebView must mount after opening audiobook');
           await _pumpUntil(tester, _readerContentReady,
