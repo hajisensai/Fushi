@@ -40,6 +40,7 @@ import 'package:fushi/src/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 
 /// 1 毫秒 = 10000 个 Jellyfin tick（100ns）。
 const int kTicksPerMs = 10000;
@@ -285,9 +286,13 @@ class JellyfinApi {
 
   final http.Client _client;
 
-  /// 归一化用户输入的服务器地址：补 scheme（缺省 http，局域网常态）、去尾斜杠。
+  /// 归一化用户输入的服务器地址：折全角、补 scheme（缺省 http，局域网常态）、去尾斜杠。
+  ///
+  /// 全角必须在这里折：这个函数不走 `Uri`，纯字符串拼接，全角标点会**原样**进到
+  /// 请求里（`http://192．168．1．10:8096`），失败时报成一个与真实原因无关的网络错误。
+  /// 而 Jellyfin 地址是典型的局域网 IP，冒号加三个点，中文输入法下全中（BUG-1807）。
   static String normalizeServerUrl(String raw) {
-    String url = raw.trim();
+    String url = normalizeUrlInput(raw);
     if (url.isEmpty) return url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'http://$url';

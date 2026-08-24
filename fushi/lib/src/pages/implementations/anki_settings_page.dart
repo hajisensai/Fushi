@@ -142,6 +142,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               label: t.anki_connect_host,
               value: settings.ankiConnectHost,
               hint: 'localhost',
+              // 移动端连局域网 Anki 桌面版要手输 192.168.x.x，中文输入法会把
+              // 点转成句号（BUG-1807）；旁边的 port 框一直有声明，这里漏了。
+              keyboardType: TextInputType.url,
               onChanged: vm.updateAnkiConnectHost,
             ),
             _AnkiConnectionField(

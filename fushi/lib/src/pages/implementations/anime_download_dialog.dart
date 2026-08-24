@@ -1312,6 +1312,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             controller: _magnetCtrl,
             minLines: 1,
             maxLines: 2,
+            keyboardType: TextInputType.url,
             decoration: InputDecoration(
               labelText: t.anime_download_generic_hint,
               isDense: true,

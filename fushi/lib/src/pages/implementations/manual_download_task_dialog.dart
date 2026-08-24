@@ -274,6 +274,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
                   prefixIcon: const Icon(Icons.link),
                 ),
                 maxLines: 1,
+                keyboardType: TextInputType.url,
                 onChanged: _onMagnetChanged,
               ),
               SizedBox(height: tokens.spacing.gap),

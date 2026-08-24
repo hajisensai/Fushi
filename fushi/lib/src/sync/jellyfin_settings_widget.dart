@@ -156,6 +156,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
           controller: _urlController,
           labelText: t.jellyfin_server_url,
           hintText: 'http://192.168.1.10:8096',
+          // 局域网 IP：scheme 冒号 + 三个点 + 端口冒号，中文输入法下全中
+          // （BUG-1807）。归一化在 JellyfinApi.normalizeServerUrl 里兜底。
+          keyboardType: TextInputType.url,
         ),
         const SizedBox(height: 12),
         FushiTextField(

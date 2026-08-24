@@ -48,3 +48,18 @@ bool _isNonAsciiWhitespace(int rune) {
       rune == 0x200B || // ZERO WIDTH SPACE
       rune == 0xFEFF; // ZERO WIDTH NO-BREAK SPACE / BOM
 }
+
+/// 解析**用户提供的** URL —— 手输、粘贴、扫码、从旧配置或同步回填读回来的都算。
+///
+/// 这是全仓解析用户 URL 的**唯一正门**：`Uri.tryParse(userInput)` 直接调是错的，
+/// 因为它对全角输入有三种不同败法，其中一种（全角句点）**不报错**，而是产出
+/// `host%EF%BC%8Ecom` 这样的垃圾 authority 一路走到网络层——详见
+/// [normalizeUrlInput] 的表格与 BUG-1804。
+///
+/// 输入框声明 `keyboardType: TextInputType.url` 只能改善手输那一路，粘贴与回填
+/// 照样能把全角带进来，所以归一化必须落在**消费端**，不能指望 UI 拦住。
+///
+/// 返回 null 表示这串东西根本不是 URL。**不**在这里判 scheme 或 authority：
+/// 不同调用方的要求不一样（有的允许裸 host 后面补 `https://`，有的必须 https），
+/// 那些策略留给调用方，这里只负责「把用户那串东西正确地变成 Uri」这一件事。
+Uri? tryParseUserUrl(String raw) => Uri.tryParse(normalizeUrlInput(raw));
