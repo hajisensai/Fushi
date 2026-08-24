@@ -8,17 +8,85 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
+/// Jimaku 条目标记位。
+///
+/// API 层把服务端内部的 u32 bitfield 展开成 JSON 对象再返回（服务端 `models.rs` 注释
+/// 原文：*At the API level, we expand the flags to a dict*），故此处按对象解析；字段缺失
+/// 一律按 `false`（与服务端 `#[serde(default)]` 同语义）。
+class JimakuEntryFlags {
+  const JimakuEntryFlags({
+    this.anime = false,
+    this.unverified = false,
+    this.external = false,
+    this.movie = false,
+    this.adult = false,
+  });
+
+  /// 该条目属于动画。
+  final bool anime;
+
+  /// 尚未经编辑审核。
+  final bool unverified;
+
+  /// 条目来自外部来源（如 kitsunekko/jpsubbers 镜像）。
+  final bool external;
+
+  /// 该条目是电影（而非剧集）。
+  final bool movie;
+
+  /// 面向成人受众。
+  final bool adult;
+
+  /// 是否为真人条目：`anime` 位取反。UI 用它给条目打「真人」标。
+  bool get isLiveAction => !anime;
+}
+
+/// 解析 Jimaku entry 的 `flags` 字段；非对象（或缺失）返回全 false 的默认值。
+///
+/// 只认对象形态：API 只会返回对象，站点页面里内嵌的 u32 bitfield 不是本客户端的输入，
+/// 不为不存在的情况写解析分支。
+JimakuEntryFlags parseJimakuEntryFlags(Object? raw) {
+  if (raw is! Map) return const JimakuEntryFlags();
+  bool read(String key) => raw[key] == true;
+  return JimakuEntryFlags(
+    anime: read('anime'),
+    unverified: read('unverified'),
+    external: read('external'),
+    movie: read('movie'),
+    adult: read('adult'),
+  );
+}
+
+/// 按 Jimaku 的 TMDB ID 编码拼串：`tv:<id>` / `movie:<id>`。
+///
+/// 编码来自服务端 schema 的 `pattern = (tv|movie):(\d+)`；Hibiki 侧的 TMDB 元数据
+/// （`TmdbVideoMetadataProvider`）只给出裸数字 id + 媒体种类，需经此函数转换。
+/// TMDB 的电影与剧集是两个独立号段，种类必须一起编码，否则会张冠李戴。
+String jimakuTmdbId({required bool movie, required int tmdbId}) =>
+    '${movie ? 'movie' : 'tv'}:$tmdbId';
+
 /// Jimaku（jimaku.cc）字幕条目：一个番剧/作品。
 class JimakuEntry {
   const JimakuEntry({
     required this.id,
     required this.name,
     this.anilistId,
+    this.tmdbId,
+    this.japaneseName,
+    this.flags = const JimakuEntryFlags(),
   });
 
   final int id;
   final String name;
   final int? anilistId;
+
+  /// `tv:<id>` / `movie:<id>` 形态的 TMDB ID；动画条目通常为 null（BUG-1849）。
+  final String? tmdbId;
+
+  /// 日文（含汉字假名）名。真人剧的用户输入常是日文原名，服务端模糊搜索也会匹配此字段。
+  final String? japaneseName;
+
+  final JimakuEntryFlags flags;
 }
 
 /// Jimaku 条目下的一个字幕文件。
@@ -144,14 +212,21 @@ List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
       }
       final String primaryName = (e['name'] as String?)?.trim() ?? '';
       final String englishName = (e['english_name'] as String?)?.trim() ?? '';
+      final String japaneseName = (e['japanese_name'] as String?)?.trim() ?? '';
+      final String tmdbId = (e['tmdb_id'] as String?)?.trim() ?? '';
       out.add(JimakuEntry(
         id: id,
         name: primaryName.isNotEmpty
             ? primaryName
             : englishName.isNotEmpty
                 ? englishName
-                : '#$id',
+                : japaneseName.isNotEmpty
+                    ? japaneseName
+                    : '#$id',
         anilistId: e['anilist_id'] as int?,
+        tmdbId: tmdbId.isEmpty ? null : tmdbId,
+        japaneseName: japaneseName.isEmpty ? null : japaneseName,
+        flags: parseJimakuEntryFlags(e['flags']),
       ));
     }
     return out;
@@ -445,6 +520,25 @@ class JimakuClient {
     );
   }
 
+  /// 按 TMDB ID（`tv:<id>` / `movie:<id>`，见 [jimakuTmdbId]）精确搜条目。
+  ///
+  /// 真人剧的权威关联键：AniList ID 是动画专属键，真人剧此前只剩「按显示名模糊搜」这一条
+  /// 路（BUG-1849）。注意 Jimaku 的 `anime` 硬相等过滤**先于** ID 匹配执行，所以种类未知时
+  /// 必须靠 [JimakuAnimeFilter.either] 两档都试，只查一边会漏。
+  Future<List<JimakuEntry>> searchByTmdbId(
+    String tmdbId, {
+    bool throwOnError = false,
+    JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
+  }) async {
+    final String trimmed = tmdbId.trim();
+    if (trimmed.isEmpty) return const <JimakuEntry>[];
+    return _searchWithAnimeFilter(
+      <String, String>{'tmdb_id': trimmed},
+      animeFilter,
+      throwOnError: throwOnError,
+    );
+  }
+
   /// 按文本搜 Jimaku 条目（AniList 匹配不到时的回退）。
   Future<List<JimakuEntry>> searchByQuery(
     String query, {
@@ -485,6 +579,7 @@ class JimakuClient {
   /// 「其实有字幕却报无字幕」。纯委托，便于用 fake [http.Client] 单测。
   Future<List<JimakuEntry>> searchEntries({
     int? anilistId,
+    String? tmdbId,
     List<String> queryFallbacks = const <String>[],
     bool throwOnError = false,
     JimakuAnimeFilter animeFilter = JimakuAnimeFilter.either,
@@ -496,6 +591,16 @@ class JimakuClient {
         animeFilter: animeFilter,
       );
       if (byId.isNotEmpty) return byId;
+    }
+    // 权威 ID 键先于模糊标题：TMDB 是真人剧唯一的精确关联键（BUG-1849），AniList 在
+    // 真人条目上恒空，两者都空才退到显示名。
+    if (tmdbId != null && tmdbId.trim().isNotEmpty) {
+      final List<JimakuEntry> byTmdb = await searchByTmdbId(
+        tmdbId,
+        throwOnError: throwOnError,
+        animeFilter: animeFilter,
+      );
+      if (byTmdb.isNotEmpty) return byTmdb;
     }
     for (final String query in queryFallbacks) {
       if (query.trim().isEmpty) continue;

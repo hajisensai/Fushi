@@ -307,6 +307,131 @@ void main() {
     });
   });
 
+  group('TMDB 精确匹配（BUG-1849）', () {
+    test('jimakuTmdbId 按服务端 (tv|movie):(\\d+) 编码', () {
+      expect(jimakuTmdbId(movie: false, tmdbId: 12345), 'tv:12345');
+      expect(jimakuTmdbId(movie: true, tmdbId: 669204), 'movie:669204');
+    });
+
+    test('parseJimakuEntryFlags 解析对象，缺字段/非对象 → false', () {
+      final JimakuEntryFlags flags = parseJimakuEntryFlags(<String, Object?>{
+        'anime': false,
+        'movie': true,
+        'adult': false,
+      });
+      expect(flags.anime, isFalse);
+      expect(flags.movie, isTrue);
+      expect(flags.unverified, isFalse); // 缺字段
+      expect(flags.isLiveAction, isTrue);
+
+      const JimakuEntryFlags empty = JimakuEntryFlags();
+      expect(parseJimakuEntryFlags(null).anime, empty.anime);
+      expect(parseJimakuEntryFlags(8).movie, isFalse); // 不解析 bitfield 形态
+    });
+
+    test('parseJimakuEntries 解析 tmdb_id / japanese_name / flags', () {
+      const String body = '''
+[{"id":6270,"name":"\\"Kakure Bitch\\" Yattemashita","japanese_name":"かくれビッチやってました",
+  "tmdb_id":"movie:669204","flags":{"anime":false,"movie":true,"adult":false,
+  "external":false,"unverified":false}}]''';
+      final List<JimakuEntry> entries = parseJimakuEntries(body);
+      final JimakuEntry entry = entries.single;
+      expect(entry.tmdbId, 'movie:669204');
+      expect(entry.japaneseName, 'かくれビッチやってました');
+      expect(entry.flags.isLiveAction, isTrue);
+      expect(entry.flags.movie, isTrue);
+    });
+
+    test('name 空时回退 japanese_name（真人条目常无 romaji 名）', () {
+      final List<JimakuEntry> entries = parseJimakuEntries(
+        '[{"id":9,"name":"","english_name":"","japanese_name":"最愛"}]',
+      );
+      expect(entries.single.name, '最愛');
+    });
+
+    test('searchByTmdbId 走 tmdb_id 检索键，缺省 either 两档都试', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        seen.add('${p['anime']}:${p['tmdb_id']}');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      // 分类过滤先于 ID 匹配执行：只查一边会漏（TMDB 既可能挂真人条目，也可能挂动画剧场版）。
+      await jc.searchByTmdbId('  tv:12345  ');
+      expect(seen, <String>['true:tv:12345', 'false:tv:12345']);
+    });
+
+    test('已知真人 → 只发一次 anime=false（复用既有三态，不多打请求）', () async {
+      final List<String> seen = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        seen.add('${p['anime']}:${p['tmdb_id']}');
+        return http.Response.bytes(utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchByTmdbId(
+        'tv:126991',
+        animeFilter: JimakuAnimeFilter.liveAction,
+      );
+      expect(entries.single.name, '最愛');
+      expect(seen, <String>['false:tv:126991']);
+    });
+
+    test('空 tmdb_id 不发请求', () async {
+      final MockClient client = MockClient((http.Request req) async {
+        fail('空 TMDB id 不该产生网络请求：${req.url}');
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      expect(await jc.searchByTmdbId('   '), isEmpty);
+    });
+
+    test('searchEntries 顺序：anilist → tmdb → 文本；权威键命中即停', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        if (p.containsKey('anilist_id')) {
+          calls.add('anilist');
+          return http.Response('[]', 200); // 真人条目从不挂 AniList id
+        }
+        if (p.containsKey('tmdb_id')) {
+          calls.add('tmdb:${p['tmdb_id']}');
+          return http.Response.bytes(
+              utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+        }
+        calls.add('query:${p['query']}');
+        return http.Response('[]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      final List<JimakuEntry> entries = await jc.searchEntries(
+        anilistId: 21,
+        tmdbId: 'tv:126991',
+        queryFallbacks: <String>['最愛'],
+        animeFilter: JimakuAnimeFilter.liveAction,
+      );
+      expect(entries.single.name, '最愛');
+      // TMDB 命中后不得再拿显示名去模糊碰——那正是本 bug 之前唯一的路。
+      expect(calls, <String>['anilist', 'tmdb:tv:126991']);
+    });
+
+    test('无 tmdbId 时行为与改动前逐字节一致（不多发请求）', () async {
+      final List<String> calls = <String>[];
+      final MockClient client = MockClient((http.Request req) async {
+        final Map<String, String> p = req.url.queryParameters;
+        expect(p.containsKey('tmdb_id'), isFalse);
+        calls.add(p.containsKey('anilist_id') ? 'anilist' : 'query');
+        return http.Response('[{"id":1,"name":"a"}]', 200);
+      });
+      final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
+      await jc.searchEntries(
+        anilistId: 21,
+        queryFallbacks: <String>['x'],
+        animeFilter: JimakuAnimeFilter.anime,
+      );
+      expect(calls, <String>['anilist']);
+    });
+  });
+
   group('JimakuClient.listFiles strict availability check', () {
     test('默认保持 fail-open，预检查严格模式保留 HTTP 状态码', () async {
       final JimakuClient jc = JimakuClient(
