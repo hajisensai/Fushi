@@ -193,6 +193,78 @@ void main() {
     expect(await storedDataRoot(), isNull);
   });
 
+  test('subdirectory of the install dir is rejected', () async {
+    await writeBootstrap(p.join(appDir.path, 'data'));
+
+    await consume();
+
+    expect(
+      await storedDataRoot(),
+      isNull,
+      reason: 'data under {app} is taken along by uninstall / update rollback',
+    );
+  });
+
+  test(
+    'target with a pre-existing non-empty documents/ subtree is rejected',
+    () async {
+      final String picked = p.join(tmp.path, 'Downloads');
+      File(p.join(picked, 'documents', 'thesis.docx'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('mine');
+      await writeBootstrap(picked);
+
+      await consume();
+
+      expect(
+        await storedDataRoot(),
+        isNull,
+        reason:
+            'the user\'s own documents/ must never become a Fushi-owned tree',
+      );
+      expect(bootstrap.existsSync(), isFalse);
+    },
+  );
+
+  test(
+    'target with a pre-existing non-empty support/ subtree is rejected',
+    () async {
+      final String picked = p.join(tmp.path, 'OldRoot');
+      File(p.join(picked, 'support', 'fushi.db'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('old');
+      await writeBootstrap(picked);
+
+      await consume();
+
+      expect(await storedDataRoot(), isNull);
+    },
+  );
+
+  test('target with empty documents/ and support/ dirs is accepted', () async {
+    final String picked = p.join(tmp.path, 'Empty');
+    Directory(p.join(picked, 'documents')).createSync(recursive: true);
+    Directory(p.join(picked, 'support')).createSync(recursive: true);
+    await writeBootstrap(picked);
+
+    await consume();
+
+    expect(await storedDataRoot(), picked);
+  });
+
+  test('concurrent callers share one consumption', () async {
+    final String picked = p.join(tmp.path, 'Once');
+    await writeBootstrap(picked);
+
+    final Future<void> first = consume();
+    final Future<void> second = consume();
+    expect(identical(first, second), isTrue);
+    await Future.wait(<Future<void>>[first, second]);
+
+    expect(await storedDataRoot(), picked);
+    expect(bootstrap.existsSync(), isFalse);
+  });
+
   test('relative path is rejected', () async {
     await writeBootstrap(p.join('relative', 'FushiData'));
 

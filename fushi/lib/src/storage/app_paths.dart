@@ -347,6 +347,12 @@ class AppPaths {
     }
   }
 
+  /// 供 [resolve] 之前就需要「默认位置」定义的调用方（安装器数据根引导）提前定下容器名，
+  /// 保证它算出的 [defaultLocationDocumentsRoot] 与紧随其后的 [resolve] 是同一个；
+  /// [resolve] 内再调时已判定、直接沿用。
+  static Future<void> ensureDocumentsContainerDecided() async =>
+      _ensureDocumentsContainerDecided(await _prefsOrNull());
+
   /// Fushi 改名（Phase 3）：判定 + 固化 nested 容器名。锚点已有直接用；没有则
   /// 探测一次：老容器 `<Documents>/Hibiki/data` 存在而新容器不存在 → 存量安装，
   /// 锚 `Hibiki`（目录与 DB 内绝对路径都不动）；否则锚 `Fushi`（新装）。

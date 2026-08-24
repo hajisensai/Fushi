@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -13,8 +14,12 @@ import 'package:fushi/src/storage/data_root_migrator.dart'
 /// 文件里（`windows/installer/fushi.iss` 的 `ssPostInstall` 写；文件名两侧由
 /// `test/build/windows_installer_data_root_page_guard_test.dart` 守住一致）。
 ///
-/// 内容：UTF-8（安装器写 BOM）、单行绝对目录路径。
+/// 内容：UTF-8（安装器写 BOM，Dart 的 utf8 解码器自动剥掉）、单行绝对目录路径。
 const String installerDataRootBootstrapFileName = 'data_root.bootstrap';
+
+/// 用户挑的目录可能在网络盘 / 移动盘上：所有触碰它的 IO 都封顶，与 [AppPaths] 的
+/// `_probeDataRootExists` 同一纪律（启动最早期，绝不让一个掉线的盘挂住主 isolate）。
+const Duration _pickedRootIoTimeout = Duration(seconds: 2);
 
 /// 生产：引导文件恒在 exe 同目录（`{app}` = 安装目录，安装器就写在那里，app 用
 /// [Platform.resolvedExecutable] 定位，不猜安装位置）。非 Windows 没有这个安装器 → null。
@@ -27,6 +32,11 @@ File? _productionBootstrapFile() {
     ),
   );
 }
+
+/// 进行中的消费。`AppModel.initialise` 的 Retry 可能在上一轮还没跑完（IO 超时被
+/// `_guardInitIo` 抛出但底层 future 仍在）时再次进入；两轮各读一次文件、各写一次 pref
+/// 就是两个数据根写者。同一进程内只允许一次消费在飞，后来者等它。
+Future<void>? _inFlight;
 
 /// 首启前消费安装包写下的数据根引导文件，把用户在安装向导里选的目录变成
 /// [AppPaths.dataRootPrefKey]。必须在 [AppPaths.resolve] **之前**调用（数据根解析读的
@@ -41,19 +51,38 @@ File? _productionBootstrapFile() {
 ///    （[AppPaths.existingInstallHasDatabase]）→ 忽略。卸载后保留数据再重装、用户在向导里
 ///    另选了目录时，绝不能让旧书库从新根下「消失」；用户要搬走走设置里的迁移（连 DB 内
 ///    绝对路径一起 rebase）。
-///  - 路径须为绝对路径，且不能是安装目录或其祖先（与 `validateDataRootTarget` 的
-///    `containsExecutable` 同一条规则：自动更新/回滚会整体处理安装目录，数据不能压在下面）。
+///  - 路径须为绝对路径，且与安装目录**不得相同或互相包含**（比设置页的
+///    `containsExecutable` 更严：数据落在 `{app}` 之下会被卸载 / 自更新回滚一起处理）。
+///  - 目标下已派生出非空的 `documents` / `support` 子树 → 拒绝（同设置页
+///    `targetNotEmpty`）：把用户自己的 `D:\Downloads\documents` 当成 Fushi 私有树，
+///    之后的整树迁移会连用户文件一起搬走 / 删掉。
 ///  - 归一化与设置页迁移共用 [resolveDataRootMigrationTarget]：用户选中默认位置
 ///    （`<Documents>\Fushi` 或 `<Documents>\Fushi\data`）= 与全新安装同形 → **不写** pref，
 ///    DB 留在平台固定落点，而不是派生成 `<Documents>\Fushi\{documents,support}` 第三种布局。
-///  - 目录建不出来 → 不写 pref，退回默认根并打日志（此时没有任何数据，不构成数据丢失；
-///    用户可在设置里再选）。
+///    归一化前先让 [AppPaths.ensureDocumentsContainerDecided] 定下容器名，与紧随其后的
+///    `resolve()` 用同一个「默认位置」。
+///  - 目录建不出来 / pref 写失败 → 不采纳，退回默认根并打日志（此时没有任何数据，不构成
+///    数据丢失；用户可在设置里再选）。
 ///
 /// [bootstrapFile] / [executablePath] 仅供测试注入；生产走 exe 同目录与
 /// [Platform.resolvedExecutable]。
 Future<void> consumeInstallerDataRootBootstrap({
   File? bootstrapFile,
   String? executablePath,
+}) {
+  final Future<void>? running = _inFlight;
+  if (running != null) return running;
+  final Future<void> run = _consumeOnce(
+    bootstrapFile: bootstrapFile,
+    executablePath: executablePath,
+  ).whenComplete(() => _inFlight = null);
+  _inFlight = run;
+  return run;
+}
+
+Future<void> _consumeOnce({
+  required File? bootstrapFile,
+  required String? executablePath,
 }) async {
   final File? file = bootstrapFile ?? _productionBootstrapFile();
   if (file == null || !await file.exists()) return;
@@ -84,12 +113,9 @@ Future<void> consumeInstallerDataRootBootstrap({
   }
 }
 
-/// 剥 BOM、取第一个非空行、去首尾空白；没有有效行返回 null。
+/// 取第一个非空行、去首尾空白；没有有效行返回 null。
 String? _readPickedPath(String raw) {
-  // U+FEFF：Inno 的 SaveStringsToUTF8File 会写 BOM。
-  final String bom = String.fromCharCode(0xFEFF);
-  final String text = raw.startsWith(bom) ? raw.substring(bom.length) : raw;
-  for (final String line in text.split(RegExp(r'\r?\n'))) {
+  for (final String line in raw.split(RegExp(r'\r?\n'))) {
     final String trimmed = line.trim();
     if (trimmed.isNotEmpty) return trimmed;
   }
@@ -115,11 +141,15 @@ Future<void> _applyPickedDataRoot({
     return;
   }
   final String canonPicked = p.canonicalize(picked);
-  if (p.isWithin(canonPicked, p.canonicalize(executablePath))) {
-    debugPrint('InstallerDataRootBootstrap: 路径包含安装目录，忽略: $picked');
+  final String canonExeDir = p.canonicalize(p.dirname(executablePath));
+  if (p.equals(canonPicked, canonExeDir) ||
+      p.isWithin(canonPicked, canonExeDir) ||
+      p.isWithin(canonExeDir, canonPicked)) {
+    debugPrint('InstallerDataRootBootstrap: 与安装目录相同或互相包含，忽略: $picked');
     return;
   }
 
+  await AppPaths.ensureDocumentsContainerDecided();
   final Directory defaultDocs = await AppPaths.defaultLocationDocumentsRoot();
   final Directory platformSupport = await getApplicationSupportDirectory();
   final DataRootMigrationTarget target = resolveDataRootMigrationTarget(
@@ -131,16 +161,40 @@ Future<void> _applyPickedDataRoot({
     debugPrint('InstallerDataRootBootstrap: 选中默认位置，按全新安装布局');
     return;
   }
+  if (await _hasFiles(target.documentsRoot) ||
+      await _hasFiles(target.supportRoot)) {
+    debugPrint(
+      'InstallerDataRootBootstrap: 目标下已有非空 documents/support 子树，忽略: $picked',
+    );
+    return;
+  }
 
   final String dataRoot = target.dataRootPrefValue!;
   try {
-    await Directory(dataRoot).create(recursive: true);
+    await Directory(
+      dataRoot,
+    ).create(recursive: true).timeout(_pickedRootIoTimeout);
   } catch (e) {
     debugPrint('InstallerDataRootBootstrap: 建目录失败，退回默认根: $dataRoot: $e');
     return;
   }
-  await prefs.setString(AppPaths.dataRootPrefKey, dataRoot);
+  // shared_preferences_windows 写盘失败是返回 false 而非抛错；设置页的提交同样看这个
+  // 布尔值（data_root.part.dart）。
+  if (!await prefs.setString(AppPaths.dataRootPrefKey, dataRoot)) {
+    debugPrint('InstallerDataRootBootstrap: 写 data_root 失败，退回默认根: $dataRoot');
+    return;
+  }
   debugPrint('InstallerDataRootBootstrap: 采纳安装器数据根: $dataRoot');
+}
+
+/// 目录存在且至少有一个条目。探测超时 / 抛错按「有内容」处理（保守：拿不准就不接管）。
+Future<bool> _hasFiles(Directory dir) async {
+  try {
+    if (!await dir.exists().timeout(_pickedRootIoTimeout)) return false;
+    return !await dir.list().isEmpty.timeout(_pickedRootIoTimeout);
+  } catch (_) {
+    return true;
+  }
 }
 
 Future<void> _deleteQuietly(File file) async {

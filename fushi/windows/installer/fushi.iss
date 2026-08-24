@@ -461,10 +461,6 @@ end;
 // 塞一个进去只会让既有书库「消失」；要搬走走设置里的迁移（连 DB 内绝对路径一起 rebase）。
 const
   DataRootBootstrapFileName = 'data_root.bootstrap';
-  { [Setup] AppId 去掉 ISPP 转义后的真值 + Inno 卸载键固定后缀。PrivilegesRequired=lowest
-    → 卸载键在 HKCU。Pascal 字符串字面量不做常量展开，只能照抄；与 [Setup] AppId 的
-    一致性由 test/build/windows_installer_data_root_page_guard_test.dart 守住。 }
-  FushiUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}_is1';
 
 var
   DataRootPage: TInputDirWizardPage;
@@ -472,13 +468,27 @@ var
     已经写好，届时再调 IsFreshInstall 恒为 False，所以必须在页面阶段落下这个标记。 }
   DataRootPageOffered: Boolean;
 
-{ 全新安装 = 卸载键不存在（没装过 / 已卸载）且 app 的平台固定落点
-  %APPDATA%\Fushi\Fushi（path_provider 取 exe 版本资源 CompanyName\ProductName）不存在。
-  后者兜住「卸载但保留了数据」的重装：那种机器上 app 首启会认出旧库，安装器不该再问。 }
+{ Inno 卸载键：HKCU（PrivilegesRequired=lowest）\...\Uninstall\<AppId>_is1。AppId 直接
+  经 ISPP 从 Setup 段取，再让 ExpandConstant 做双左括号 → 单左括号的转义——Setup 段里
+  写的是双括号包着的 GUID，真值是「单左括号 + GUID + 双右括号」（尾部两个右括号是 Inno
+  的既定行为，不是笔误）。手抄 GUID 会漏掉这一层，键永远匹配不上。
+  注意：本注释任何一行都不能以「[」开头——Inno 段解析先于 Code 段，会当成段标签。 }
+function FushiUninstallKey(): String;
+begin
+  Result := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\'
+    + ExpandConstant('{#SetupSetting("AppId")}') + '_is1';
+end;
+
+{ 全新安装 = 卸载键不存在（没装过 / 已卸载）且 app 的平台固定落点不存在——
+  %APPDATA%\Fushi\Fushi（path_provider 取 exe 版本资源 CompanyName\ProductName），
+  兼看改名前的 %APPDATA%\Hibiki\Hibiki（app 首启 migrateLegacySupportDir 会把它搬成新名，
+  随后认出旧库、丢弃安装器的选择）。这两条兜住「卸载但保留了数据」的重装：那种机器上
+  app 首启会认出旧库，安装器不该再问。 }
 function IsFreshInstall(): Boolean;
 begin
-  Result := (not RegKeyExists(HKCU, FushiUninstallKey))
-    and (not DirExists(ExpandConstant('{userappdata}\Fushi\Fushi')));
+  Result := (not RegKeyExists(HKCU, FushiUninstallKey()))
+    and (not DirExists(ExpandConstant('{userappdata}\Fushi\Fushi')))
+    and (not DirExists(ExpandConstant('{userappdata}\Hibiki\Hibiki')));
 end;
 
 { A 等于 B、或是 B 的祖先目录（大小写不敏感、按整段路径前缀比较：尾部补反斜杠后
@@ -507,7 +517,10 @@ begin
   Result := False;
   if (DataRootPage <> nil) and (PageID = DataRootPage.ID) then
   begin
-    DataRootPageOffered := IsFreshInstall();
+    { 静默安装（/SILENT、/VERYSILENT：无人值守部署、app 内自更新）没人回答这页，
+      Inno 仍会逐页 ClickThrough——NextButtonClick 返回 False 会整个安装中止。
+      静默 = 不问、不写引导文件，app 按默认根走，与改动前逐字节一致。 }
+    DataRootPageOffered := (not WizardSilent()) and IsFreshInstall();
     Result := not DataRootPageOffered;
   end;
 end;
@@ -661,7 +674,7 @@ begin
     DataRoot := RemoveBackslashUnlessRoot(Trim(DataRootPage.Values[0]));
     { 数据目录与安装目录不得相同或互相包含：自动更新 / 安装回滚会整体处理安装目录，
       数据压在下面会被一起清；反过来安装目录落在数据根里则迁移会拒绝（含运行中 exe）。
-      与 app 侧 validateDataRootTarget 的 containsExecutable 是同一条规则。 }
+      app 侧 installer_data_root_bootstrap.dart 首启再做一次同样的双向判定。 }
     if IsSameOrAncestorDir(DataRoot, WizardDirValue)
       or IsSameOrAncestorDir(WizardDirValue, DataRoot) then
     begin
@@ -670,6 +683,19 @@ begin
         + '数据目录：' + DataRoot + #13#10#13#10
         + '请另选一个独立的目录（推荐默认 '
         + ExpandConstant('{userdocs}\Fushi') + '）。',
+        mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    { app 会在所选目录下派生 documents\ 与 support\ 两棵私有子树并整树接管；用户自己的
+      目录里已经有同名子目录（典型：把 D:\Downloads 选成数据根）就不能选——否则之后的
+      数据根迁移会把用户文件当 Fushi 数据整树搬走 / 删掉。app 首启同样拒绝（targetNotEmpty），
+      这里提前拦，别让用户装完才发现选择被丢弃。 }
+    if DirExists(AddBackslash(DataRoot) + 'documents')
+      or DirExists(AddBackslash(DataRoot) + 'support') then
+    begin
+      MsgBox('所选目录下已经存在 documents 或 support 子目录：' + #13#10 + DataRoot + #13#10#13#10
+        + 'Fushi 会在数据目录下创建并接管这两个子目录，请选一个空目录或新建一个目录。',
         mbError, MB_OK);
       Result := False;
       Exit;
