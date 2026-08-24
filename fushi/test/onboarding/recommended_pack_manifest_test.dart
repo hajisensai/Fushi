@@ -274,6 +274,19 @@ void main() {
       expect(hosts, contains('github.com'));
     });
 
+    test('整包回退直链必须是活着的主机，且落盘名不带版本', () {
+      // 旧的私有分发域名已整站 404，指着它等于保证失败一次；这条钉住别再回潮。
+      expect(kRecommendedPackWholeFileUrl, isNot(contains('dl.wrds.xyz')));
+      expect(kRecommendedPackWholeFileUrl, startsWith('https://'));
+      // 整包回退只能落在还存得下 9.5 GB 单文件的主机上。
+      expect(kRecommendedPackWholeFileUrl, contains('drive.usercontent.google.com'));
+      expect(kRecommendedPackWholeFileUrl, contains('confirm=t'),
+          reason: '少了 confirm=t 会拿到病毒扫描确认页而不是文件');
+      // 换包不该再改文件名——版本隔离由清单的 version + sha256 负责。
+      expect(kRecommendedPackFileName, isNot(matches(RegExp(r'\d{4}-\d{2}-\d{2}'))));
+      expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
+    });
+
     test('候选一律 https', () {
       for (final String u in kRecommendedPackManifestUrls) {
         expect(u, startsWith('https://'), reason: u);

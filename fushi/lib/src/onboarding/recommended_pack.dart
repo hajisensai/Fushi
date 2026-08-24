@@ -16,30 +16,30 @@ import 'package:path/path.dart' as p;
 /// GitHub 两个主机上，拿到清单就走分片并发 + 双源。这条只在两个主机都拉不到
 /// 清单时兜底。
 ///
-/// **为什么它还在这个域名上**：整包约 9.5 GB，官网和 GitHub 都放不下——
+/// **为什么是 Google Drive**：原来的私有分发域名已**整站 404**（实测连根路径
+/// 都是），指着它等于保证失败一次。整包约 9.5 GB，官网和 GitHub 都放不下——
 /// GitHub Release 单资产上限 2 GB（所以包才要切片），R2 免费额度共 10 GB
-/// 且要留给 app 的发布镜像。搬走它需要另找一个能存 9.5 GB 单文件的主机；
-/// 在那之前别把它改成 fushi.moe 下的路径，那只会得到 404。
-/// 另一条独立的整包线路是 Google Drive（[kRecommendedPackGoogleDriveDirectUrl]），
-/// UI 里可手动切换。
-const String kRecommendedPackCloudflareUrl =
-    'https://dl.wrds.xyz/fushi-recommended-2026-08-14.fushi.zip';
+/// 且要留给 app 的发布镜像。Drive 是目前唯一还活着的整包源（实测 206、支持
+/// Range），所以这条只能是它。别把它改成 fushi.moe 下的路径，那只会得到 404。
+const String kRecommendedPackWholeFileUrl = kRecommendedPackGoogleDriveDirectUrl;
 const String kRecommendedPackGoogleDriveFileId =
     '1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp';
 const String kRecommendedPackGoogleDriveUrl =
     'https://drive.google.com/file/d/$kRecommendedPackGoogleDriveFileId/view?usp=sharing';
 
 /// Google Drive 应用内直下地址（`confirm=t` 跳过大文件病毒扫描确认页）。
-/// 与 [kRecommendedPackCloudflareUrl] 指向同一份包；URL 尾段不含文件名，
+/// 整包回退直链 [kRecommendedPackWholeFileUrl] 就是它；URL 尾段不含文件名，
 /// 下载器须显式传 [RecommendedPackDownloader.fileName]。
 const String kRecommendedPackGoogleDriveDirectUrl =
     'https://drive.usercontent.google.com/download'
     '?id=$kRecommendedPackGoogleDriveFileId&export=download&confirm=t';
 
-/// 从内置回退直链推导的包文件名（Google 线路等无文件名 URL 复用它落盘，
-/// 两条线路指向同一份包，半截文件因此天然可跨线路续传）。
-final String kRecommendedPackFileName =
-    Uri.parse(kRecommendedPackCloudflareUrl).pathSegments.last;
+/// 落盘用的包文件名。**刻意不带版本/日期**：换包不需要改这里，各条线路也共用
+/// 同一个名字，半截文件因此天然可跨线路续传。
+///
+/// 版本隔离不靠文件名——续传进度绑的是清单的 version + sha256 + 总长
+/// （见 `segmented_downloader.dart`），对不上会整份作废重来。
+const String kRecommendedPackFileName = 'fushi-recommended.fushi.zip';
 
 /// 推荐包**稳定清单**地址：换包时上传新 zip + 更新这份 json 即可，app 零发版。
 /// 格式（字段见 [RecommendedPackManifest]）：
@@ -309,7 +309,7 @@ Future<RecommendedPackManifest?> fetchRecommendedPackManifest() async {
 class RecommendedPackDownloader {
   RecommendedPackDownloader({
     required Directory packDir,
-    this.url = kRecommendedPackCloudflareUrl,
+    this.url = kRecommendedPackWholeFileUrl,
     this.sha256Hex,
     this.manifest,
     this.concurrency = SegmentedDownloader.kDefaultDownloadConcurrency,
