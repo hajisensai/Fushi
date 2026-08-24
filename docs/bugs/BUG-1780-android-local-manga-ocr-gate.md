@@ -21,9 +21,12 @@
   占用）整块吊在 `if (widget.service.isSupportedPlatform)` 上 → 安卓**不渲染下载和
   删除按钮**，只显示一行「内置漫画 OCR 暂不支持当前平台」。
 - 同文件 `initState` 也按同一个位决定要不要 `_loadStatus()` → 安卓上 `_status` 恒 null。
-- 而框选识别（单框重扫）的闸门是 `fushi/lib/src/media/manga/ocr/manga_box_rescan.dart`
+- 而框选识别（单框重扫）当时的闸门是 `fushi/lib/src/media/manga/ocr/manga_box_rescan.dart`
   的 `isLocalRescanSupported => isLocalOnnxRuntimeAvailable`，**在安卓为真、本该可用**，
-  它需要同一套识别模型。
+  它需要同一套识别模型。（该文件已在 PR #1000 删除：框选区域改为复用整卷 / 点击那条
+  五引擎链 `startMangaOcrWithPreferredEngine`，能力层现在是
+  `fushi/lib/src/media/manga/ocr/manga_region_ocr.dart` + `manga_region_rescan.dart`，
+  不再有独立的本地 OCR 闸门。此处保留原文只为记录当时的根因现场。）
 
 结果是死循环：安卓用户在阅读器点「框选识别」→ 提示 `manga_rescan_model_missing`
 （"请先在设置里下载漫画 OCR 模型"）→ 设置里安卓根本没有那个下载按钮。已经下了一半
