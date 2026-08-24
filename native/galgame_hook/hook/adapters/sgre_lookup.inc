@@ -1,13 +1,22 @@
 // SGRE in-game lookup sensor. The executable identity gate lives in
-// sgre_profile.h; this file only knows the one admitted TextRender layout.
-// The detour copies bounded POD snapshots after the original returns. UTF-8
-// conversion, cursor polling and IPC publication stay on HookWorker.
+// sgre_profile.h. UserHook1 (0x328e0) is a pre-layout stream: it can run ahead
+// of the visible dialogue and still contains MAGES controls. The sensor hooks
+// the admitted draw boundary instead, copies the renderer's flattened visible
+// glyph vector, and therefore receives both game-parsed text and live geometry.
+// UTF-8 conversion, cursor polling and IPC publication stay on HookWorker.
 
 constexpr size_t kSgreLookupCaptureSlots = 4;
 constexpr size_t kSgreLookupMaxTextUnits = 512;
 constexpr size_t kSgreLookupMaxGlyphs = 512;
 constexpr size_t kSgreLookupMaxLines = 8;
-constexpr size_t kSgreLookupLineStride = 0x48;
+constexpr size_t kSgreDrawLineHeightOffset = 0x208;
+constexpr size_t kSgreDrawGlyphsBeginOffset = 0x2d0;
+constexpr size_t kSgreDrawGlyphsEndOffset = 0x2d8;
+constexpr size_t kSgreDrawVisibleGlyphsOffset = 0x3cc;
+constexpr size_t kSgreGlyphCharacterOffset = 0x00;
+constexpr size_t kSgreGlyphWidthOffset = 0x48;
+constexpr size_t kSgreGlyphHeightOffset = 0x4c;
+constexpr size_t kSgreGlyphXOffset = 0x94;
 
 struct SgreLookupCapture {
   volatile LONG64 seq = 0;
@@ -19,15 +28,10 @@ struct SgreLookupCapture {
   fushi_voice_hook::SgreLookupGlyphGeometry glyphs[kSgreLookupMaxGlyphs] = {};
 };
 
-struct SgreLookupEntryText {
-  uint32_t text_units = 0;
-  wchar_t text[kSgreLookupMaxTextUnits] = {};
-};
+using SgreTextDrawFn = void(__fastcall*)(void*);
 
-using SgreTextLayoutFn = bool(__fastcall*)(void*, const wchar_t*, int, int,
-                                           int);
-
-SgreTextLayoutFn g_sgre_text_layout_original = nullptr;
+SgreTextDrawFn g_sgre_text_draw_original = nullptr;
+const void* g_sgre_scenario_text_vtable = nullptr;
 SgreLookupCapture g_sgre_lookup_captures[kSgreLookupCaptureSlots] = {};
 volatile LONG64 g_sgre_lookup_capture_count = 0;
 uint64_t g_sgre_lookup_processed_seq = 0;
@@ -41,116 +45,130 @@ bool g_sgre_lookup_active_valid = false;
 enum class SgreLookupCaptureResult : uint32_t {
   kOk = 0,
   kNullInput = 1,
-  kTextLength = 2,
-  kLinesPointer = 3,
-  kLinesShape = 4,
-  kRingShape = 5,
-  kGlyphPointer = 6,
+  kGlyphVectorPointer = 2,
+  kGlyphVectorShape = 3,
+  kVisibleGlyphCount = 4,
+  kGlyphPointer = 5,
+  kGlyphCharacter = 6,
   kGlyphX = 7,
   kGlyphWidth = 8,
   kGlyphHeight = 9,
-  kException = 10,
-  kNoGlyphs = 11,
+  kLineCount = 10,
+  kException = 11,
+  kNoGlyphs = 12,
+  kSurfaceClass = 13,
+  kSurfaceMetrics = 14,
 };
 
-SgreLookupCaptureResult CopySgreLookupEntryText(
-    const wchar_t* text, SgreLookupEntryText* snapshot) {
-  if (text == nullptr || snapshot == nullptr) {
+SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
+                                                SgreLookupCapture* capture) {
+  if (text_surface == nullptr || capture == nullptr) {
     return SgreLookupCaptureResult::kNullInput;
   }
-  uint32_t text_units = 0;
   __try {
-    while (text_units < kSgreLookupMaxTextUnits && text[text_units] != L'\0') {
-      snapshot->text[text_units] = text[text_units];
-      ++text_units;
+    const auto* object = static_cast<const uint8_t*>(text_surface);
+    if (*reinterpret_cast<const void* const*>(object) !=
+        g_sgre_scenario_text_vtable) {
+      return SgreLookupCaptureResult::kSurfaceClass;
     }
+    const float line_height =
+        *reinterpret_cast<const float*>(object + kSgreDrawLineHeightOffset);
+    const auto* glyphs_begin =
+        *reinterpret_cast<const uint8_t* const*>(
+            object + kSgreDrawGlyphsBeginOffset);
+    const auto* glyphs_end =
+        *reinterpret_cast<const uint8_t* const*>(
+            object + kSgreDrawGlyphsEndOffset);
+    const int32_t visible_glyphs =
+        *reinterpret_cast<const int32_t*>(object +
+                                         kSgreDrawVisibleGlyphsOffset);
+    if (visible_glyphs <= 0) return SgreLookupCaptureResult::kNoGlyphs;
+    if (glyphs_begin == nullptr || glyphs_end == nullptr ||
+        glyphs_end < glyphs_begin) {
+      return SgreLookupCaptureResult::kGlyphVectorPointer;
+    }
+    const size_t glyph_bytes =
+        static_cast<size_t>(glyphs_end - glyphs_begin);
+    if (glyph_bytes % sizeof(void*) != 0 ||
+        glyph_bytes / sizeof(void*) > kSgreLookupMaxGlyphs) {
+      return SgreLookupCaptureResult::kGlyphVectorShape;
+    }
+    const size_t glyph_count = glyph_bytes / sizeof(void*);
+    if (static_cast<size_t>(visible_glyphs) > glyph_count ||
+        visible_glyphs > static_cast<int32_t>(kSgreLookupMaxGlyphs)) {
+      return SgreLookupCaptureResult::kVisibleGlyphCount;
+    }
+
+    uint16_t line = 0;
+    float previous_x = 0.0f;
+    bool has_horizontal_advance = false;
+    float first_glyph_height = 0.0f;
+    for (int32_t i = 0; i < visible_glyphs; ++i) {
+      const auto* glyph = *reinterpret_cast<const uint8_t* const*>(
+          glyphs_begin + static_cast<size_t>(i) * sizeof(void*));
+      if (glyph == nullptr) return SgreLookupCaptureResult::kGlyphPointer;
+      const wchar_t character =
+          *reinterpret_cast<const wchar_t*>(glyph + kSgreGlyphCharacterOffset);
+      if (character == L'\0') {
+        return SgreLookupCaptureResult::kGlyphCharacter;
+      }
+      fushi_voice_hook::SgreLookupGlyphGeometry geometry;
+      geometry.x =
+          *reinterpret_cast<const float*>(glyph + kSgreGlyphXOffset);
+      geometry.width =
+          *reinterpret_cast<const float*>(glyph + kSgreGlyphWidthOffset);
+      geometry.height =
+          *reinterpret_cast<const float*>(glyph + kSgreGlyphHeightOffset);
+      if (i == 0) first_glyph_height = geometry.height;
+      if (i != 0 && std::isfinite(previous_x) &&
+          std::isfinite(geometry.x) && geometry.x > previous_x) {
+        has_horizontal_advance = true;
+      }
+      if (i != 0 && fushi_voice_hook::StartsNextSgreLookupLine(
+                        previous_x, geometry.x)) {
+        ++line;
+      }
+      if (line >= kSgreLookupMaxLines) {
+        return SgreLookupCaptureResult::kLineCount;
+      }
+      geometry.line = line;
+      if (!std::isfinite(geometry.x) || geometry.x < -64.0f ||
+          geometry.x > 2048.0f) {
+        return SgreLookupCaptureResult::kGlyphX;
+      }
+      if (!std::isfinite(geometry.width) || geometry.width <= 0.0f ||
+          geometry.width > 256.0f) {
+        return SgreLookupCaptureResult::kGlyphWidth;
+      }
+      if (!std::isfinite(geometry.height) || geometry.height <= 0.0f ||
+          geometry.height > 256.0f) {
+        return SgreLookupCaptureResult::kGlyphHeight;
+      }
+      capture->text[i] = character;
+      capture->glyphs[i] = geometry;
+      previous_x = geometry.x;
+    }
+    if (!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(
+            line_height, first_glyph_height, has_horizontal_advance)) {
+      return SgreLookupCaptureResult::kSurfaceMetrics;
+    }
+    capture->text_units = static_cast<uint32_t>(visible_glyphs);
+    capture->glyph_count = static_cast<uint32_t>(visible_glyphs);
+    capture->line_height = line_height;
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return SgreLookupCaptureResult::kException;
   }
-  if (text_units == 0 || text_units == kSgreLookupMaxTextUnits) {
-    return SgreLookupCaptureResult::kTextLength;
-  }
-  snapshot->text_units = text_units;
-  return SgreLookupCaptureResult::kOk;
-}
-
-SgreLookupCaptureResult CopySgreLookupGeometry(void* text_render,
-                                               SgreLookupCapture* capture) {
-  if (text_render == nullptr || capture == nullptr) {
-    return SgreLookupCaptureResult::kNullInput;
-  }
-  uint32_t glyph_count = 0;
-  float line_height = 0.0f;
-  __try {
-    const auto* object = static_cast<const uint8_t*>(text_render);
-    line_height = *reinterpret_cast<const float*>(object + 0x158);
-    const auto* lines_begin =
-        *reinterpret_cast<const uint8_t* const*>(object + 0x208);
-    const auto* lines_end =
-        *reinterpret_cast<const uint8_t* const*>(object + 0x210);
-    if (lines_begin == nullptr || lines_end < lines_begin) {
-      return SgreLookupCaptureResult::kLinesPointer;
-    }
-    const size_t lines_bytes = static_cast<size_t>(lines_end - lines_begin);
-    if (lines_bytes == 0 || lines_bytes % kSgreLookupLineStride != 0 ||
-        lines_bytes / kSgreLookupLineStride > kSgreLookupMaxLines) {
-      return SgreLookupCaptureResult::kLinesShape;
-    }
-
-    const size_t line_count = lines_bytes / kSgreLookupLineStride;
-    for (size_t line = 0; line < line_count; ++line) {
-      const uint8_t* row = lines_begin + line * kSgreLookupLineStride;
-      auto* glyph_ring = *reinterpret_cast<void* const* const*>(row + 0x08);
-      const uint64_t ring_capacity =
-          *reinterpret_cast<const uint64_t*>(row + 0x10);
-      const uint64_t ring_begin =
-          *reinterpret_cast<const uint64_t*>(row + 0x18);
-      const uint64_t ring_size = *reinterpret_cast<const uint64_t*>(row + 0x20);
-      if (ring_size == 0) continue;
-      if (glyph_ring == nullptr || ring_capacity == 0 ||
-          (ring_capacity & (ring_capacity - 1)) != 0 || ring_capacity > 4096 ||
-          ring_size > ring_capacity ||
-          glyph_count + ring_size > kSgreLookupMaxGlyphs) {
-        return SgreLookupCaptureResult::kRingShape;
-      }
-      for (uint64_t i = 0; i < ring_size; ++i) {
-        const uint64_t index = (ring_begin + i) & (ring_capacity - 1);
-        const auto* glyph = static_cast<const uint8_t*>(glyph_ring[index]);
-        if (glyph == nullptr) return SgreLookupCaptureResult::kGlyphPointer;
-        fushi_voice_hook::SgreLookupGlyphGeometry geometry;
-        geometry.x = *reinterpret_cast<const float*>(glyph + 0x94);
-        geometry.width = *reinterpret_cast<const float*>(glyph + 0x48);
-        geometry.height = *reinterpret_cast<const float*>(glyph + 0x4c);
-        geometry.line = static_cast<uint16_t>(line);
-        if (!std::isfinite(geometry.x) || geometry.x < -64.0f ||
-            geometry.x > 2048.0f) {
-          return SgreLookupCaptureResult::kGlyphX;
-        }
-        if (!std::isfinite(geometry.width) || geometry.width <= 0.0f ||
-            geometry.width > 256.0f) {
-          return SgreLookupCaptureResult::kGlyphWidth;
-        }
-        if (!std::isfinite(geometry.height) || geometry.height <= 0.0f ||
-            geometry.height > 256.0f) {
-          return SgreLookupCaptureResult::kGlyphHeight;
-        }
-        capture->glyphs[glyph_count++] = geometry;
-      }
-    }
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    return SgreLookupCaptureResult::kException;
-  }
-  if (glyph_count == 0) return SgreLookupCaptureResult::kNoGlyphs;
-  capture->glyph_count = glyph_count;
-  capture->line_height = line_height;
   return SgreLookupCaptureResult::kOk;
 }
 
 bool IsSgreLookupCaptureFault(SgreLookupCaptureResult result) {
   switch (result) {
     case SgreLookupCaptureResult::kNullInput:
-    case SgreLookupCaptureResult::kRingShape:
+    case SgreLookupCaptureResult::kGlyphVectorPointer:
+    case SgreLookupCaptureResult::kGlyphVectorShape:
+    case SgreLookupCaptureResult::kVisibleGlyphCount:
     case SgreLookupCaptureResult::kGlyphPointer:
+    case SgreLookupCaptureResult::kGlyphCharacter:
     case SgreLookupCaptureResult::kGlyphX:
     case SgreLookupCaptureResult::kGlyphWidth:
     case SgreLookupCaptureResult::kGlyphHeight:
@@ -161,52 +179,54 @@ bool IsSgreLookupCaptureFault(SgreLookupCaptureResult result) {
   }
 }
 
-bool __fastcall SgreTextLayoutDetour(void* text_render, const wchar_t* text,
-                                     int flags, int width, int layout_mode) {
+void CaptureSgreLookupDrawState(void* text_surface) {
   const bool capture_requested =
       !g_stop && g_header != nullptr &&
       fushi_voice_hook::HasLookupRegion(g_header) &&
       g_header->lookup_enabled != 0;
-  SgreLookupEntryText entry_text;
-  const SgreLookupCaptureResult entry_text_result =
-      capture_requested ? CopySgreLookupEntryText(text, &entry_text)
-                        : SgreLookupCaptureResult::kNullInput;
-  const bool result = g_sgre_text_layout_original != nullptr
-                          ? g_sgre_text_layout_original(
-                                text_render, text, flags, width, layout_mode)
-                          : false;
-  if (!capture_requested || g_stop || g_header == nullptr ||
-      !fushi_voice_hook::HasLookupRegion(g_header) ||
-      g_header->lookup_enabled == 0) {
-    return result;
+  if (!capture_requested) return;
+  SgreLookupCapture snapshot;
+  const SgreLookupCaptureResult capture_result =
+      CopySgreLookupDrawState(text_surface, &snapshot);
+  if (capture_result == SgreLookupCaptureResult::kOk) {
+    snapshot.valid = 1;
+    g_header->lookup_diag |= fushi_voice_hook::kLookupDiagGeometryObserved;
+  } else {
+    if (IsSgreLookupCaptureFault(capture_result)) {
+      g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorFault;
+    }
+    return;
   }
   const uint64_t seq = static_cast<uint64_t>(InterlockedIncrement64(
       reinterpret_cast<volatile LONG64*>(&g_sgre_lookup_capture_count)));
   SgreLookupCapture* capture =
       &g_sgre_lookup_captures[seq % kSgreLookupCaptureSlots];
   InterlockedExchange64(&capture->seq, 0);
-  capture->valid = 0;
-  capture->text_units = 0;
-  capture->glyph_count = 0;
-  SgreLookupCaptureResult capture_result = entry_text_result;
-  if (entry_text_result == SgreLookupCaptureResult::kOk) {
-    capture->text_units = entry_text.text_units;
-    memcpy(capture->text, entry_text.text,
-           static_cast<size_t>(entry_text.text_units) * sizeof(wchar_t));
-    capture_result = CopySgreLookupGeometry(text_render, capture);
+  capture->valid = snapshot.valid;
+  capture->text_units = snapshot.text_units;
+  capture->glyph_count = snapshot.glyph_count;
+  capture->line_height = snapshot.line_height;
+  if (snapshot.text_units != 0) {
+    memcpy(capture->text, snapshot.text,
+           static_cast<size_t>(snapshot.text_units) * sizeof(wchar_t));
   }
-  if (capture_result == SgreLookupCaptureResult::kOk) {
-    capture->valid = 1;
-    g_header->lookup_diag |= fushi_voice_hook::kLookupDiagGeometryObserved;
-  } else if (IsSgreLookupCaptureFault(capture_result)) {
-    g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorFault;
+  if (snapshot.glyph_count != 0) {
+    memcpy(capture->glyphs, snapshot.glyphs,
+           static_cast<size_t>(snapshot.glyph_count) *
+               sizeof(capture->glyphs[0]));
   }
   InterlockedExchange64(&capture->seq, static_cast<LONG64>(seq));
-  return result;
+}
+
+void __fastcall SgreTextDrawDetour(void* text_surface) {
+  CaptureSgreLookupDrawState(text_surface);
+  if (g_sgre_text_draw_original != nullptr) {
+    g_sgre_text_draw_original(text_surface);
+  }
 }
 
 bool InstallSgreLookupSensor() {
-  if (g_sgre_text_layout_original != nullptr) {
+  if (g_sgre_text_draw_original != nullptr) {
     if (g_header != nullptr) {
       g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorInstalled;
     }
@@ -216,10 +236,13 @@ bool InstallSgreLookupSensor() {
   if (executable == nullptr) return false;
   auto* target =
       reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(executable) +
-                              fushi_voice_hook::kSgreTextLayoutRva);
+                              fushi_voice_hook::kSgreTextDrawRva);
+  g_sgre_scenario_text_vtable =
+      reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(executable) +
+                              fushi_voice_hook::kSgreScenarioTextVtableRva);
   const bool installed =
-      HookFn(target, reinterpret_cast<void*>(&SgreTextLayoutDetour),
-             reinterpret_cast<void**>(&g_sgre_text_layout_original));
+      HookFn(target, reinterpret_cast<void*>(&SgreTextDrawDetour),
+             reinterpret_cast<void**>(&g_sgre_text_draw_original));
   if (installed && g_header != nullptr) {
     g_header->lookup_diag |= fushi_voice_hook::kLookupDiagSensorInstalled;
   }
@@ -291,10 +314,7 @@ void ProcessSgreLookupTick() {
     g_sgre_lookup_last_shift_down = false;
     g_sgre_lookup_active_valid = false;
     g_sgre_lookup_active_line.clear();
-    return;
-  }
-  if ((g_header->lookup_diag &
-       fushi_voice_hook::kLookupDiagLunaKnownHookReady) == 0) {
+    g_sgre_lookup_active_mapped = 0;
     return;
   }
   if (!InstallSgreLookupSensor()) return;
@@ -303,28 +323,25 @@ void ProcessSgreLookupTick() {
   uint64_t capture_seq = 0;
   if (ReadLatestSgreLookupCapture(&capture, &capture_seq)) {
     g_sgre_lookup_processed_seq = capture_seq;
-    if (capture.valid != 0) {
-      std::wstring line = fushi_voice_hook::LunaNormalizeMagesControls(
-          capture.text, static_cast<int>(capture.text_units), true);
-      size_t mapped = 0;
-      for (size_t i = 0; i < line.size() && mapped < capture.glyph_count; ++i) {
-        if (line[i] == L'\r' || line[i] == L'\n') continue;
-        g_sgre_lookup_active_char_indices[mapped++] = static_cast<uint32_t>(i);
+    if (capture.valid == 1 && capture.text_units != 0 &&
+        capture.text_units == capture.glyph_count) {
+      memcpy(&g_sgre_lookup_active_capture, &capture, sizeof(capture));
+      g_sgre_lookup_active_line.assign(
+          capture.text, capture.text + capture.text_units);
+      for (size_t i = 0; i < capture.glyph_count; ++i) {
+        // Draw-state characters are already game-parsed and are exactly
+        // one-to-one with the flattened visible glyph vector.
+        g_sgre_lookup_active_char_indices[i] = static_cast<uint32_t>(i);
       }
-      const auto update = fushi_voice_hook::ResolveSgreLookupActiveUpdate(
-          true, line.size(), mapped, capture.glyph_count);
-      if (update == fushi_voice_hook::SgreLookupActiveUpdate::kReplace) {
-        memcpy(&g_sgre_lookup_active_capture, &capture, sizeof(capture));
-        g_sgre_lookup_active_line = std::move(line);
-        g_sgre_lookup_active_mapped = mapped;
-        g_sgre_lookup_active_valid = true;
-      }
+      g_sgre_lookup_active_mapped = capture.glyph_count;
+      g_sgre_lookup_active_valid = true;
     }
   }
 
-  const bool shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-  const bool submit = shift_down && !g_sgre_lookup_last_shift_down;
-  g_sgre_lookup_last_shift_down = shift_down;
+  const uint16_t shift_state =
+      static_cast<uint16_t>(GetAsyncKeyState(VK_SHIFT));
+  const bool submit = fushi_voice_hook::ConsumeSgreLookupShiftSample(
+      shift_state, &g_sgre_lookup_last_shift_down);
   if (!g_sgre_lookup_active_valid || g_sgre_lookup_active_mapped == 0) return;
   const SgreLookupCapture& active = g_sgre_lookup_active_capture;
 

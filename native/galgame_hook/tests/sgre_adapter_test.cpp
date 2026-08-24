@@ -77,23 +77,64 @@ int main() {
   invalid.width = -1.0f;
   assert(!fushi_voice_hook::IsSaneSgreLookupGlyph(invalid));
 
-  // SGRE continuously emits other TextRender surfaces after a valid scenario
-  // layout. Invalid, short and genuinely mismatched captures are noise and
-  // must retain the visible line. A wrapped line may contain more text than
-  // the current visual row has glyphs; mapping that captured prefix is valid.
-  using fushi_voice_hook::SgreLookupActiveUpdate;
-  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(false, 0, 0, 0) ==
-         SgreLookupActiveUpdate::kIgnore);
-  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 8, 8, 8) ==
-         SgreLookupActiveUpdate::kReplace);
-  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 8, 7, 8) ==
-         SgreLookupActiveUpdate::kIgnore);
-  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 37, 37, 32) ==
-         SgreLookupActiveUpdate::kIgnore);
-  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 37, 32, 32) ==
-         SgreLookupActiveUpdate::kReplace);
-  assert(fushi_voice_hook::ResolveSgreLookupActiveUpdate(true, 2, 2, 2) ==
-         SgreLookupActiveUpdate::kIgnore);
+  // The real SGRE TextRender surface exposes an 80-unit texture box while
+  // adjacent Japanese glyph anchors advance by 25 units. Hit cells must use
+  // the advance so the first wide box cannot steal later characters.
+  const fushi_voice_hook::SgreLookupGlyphGeometry overlapping_glyphs[] = {
+      {0.0f, 80.0f, 80.0f, 0},
+      {25.0f, 80.0f, 80.0f, 0},
+      {50.0f, 80.0f, 80.0f, 0},
+      {0.0f, 80.0f, 80.0f, 1},
+  };
+  assert(fushi_voice_hook::SgreLookupHitWidth(overlapping_glyphs, 4, 0) ==
+         25.0f);
+  assert(fushi_voice_hook::SgreLookupHitWidth(overlapping_glyphs, 4, 1) ==
+         25.0f);
+  assert(fushi_voice_hook::SgreLookupHitWidth(overlapping_glyphs, 4, 2) ==
+         25.0f);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(
+             overlapping_glyphs, 4, 80.0f, 1920, 1080, 346, 840, &rect) ==
+         1);
+  assert(rect.x == 345 && rect.width == 25);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(
+             overlapping_glyphs, 4, 80.0f, 1920, 1080, 371, 840, &rect) ==
+         2);
+  assert(rect.x == 370 && rect.width == 25);
+  assert(fushi_voice_hook::FindSgreLookupGlyph(
+             overlapping_glyphs, 4, 80.0f, 1920, 1080, 321, 920, &rect) ==
+         3);
+
+  // The admitted draw surface stores one flattened glyph vector. Both native
+  // and automatic line breaks reset (or repeat) the next x anchor, so visual
+  // rows can be derived without interpreting UserHook1/MAGES control codes.
+  assert(!fushi_voice_hook::StartsNextSgreLookupLine(0.0f, 25.0f));
+  assert(!fushi_voice_hook::StartsNextSgreLookupLine(25.0f, 50.0f));
+  assert(fushi_voice_hook::StartsNextSgreLookupLine(775.0f, 0.0f));
+  assert(fushi_voice_hook::StartsNextSgreLookupLine(25.0f, 25.0f));
+  assert(fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f,
+                                                          true));
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(33.0f, 33.0f,
+                                                           true));
+  assert(!fushi_voice_hook::MatchesSgreScenarioDrawMetrics(80.0f, 80.0f,
+                                                           false));
+
+  // The production worker polls every 16 ms. Preserve held-key edge behavior,
+  // but also consume a complete press/release reported only by the low bit.
+  bool last_shift_down = false;
+  assert(!fushi_voice_hook::ConsumeSgreLookupShiftSample(0x0000,
+                                                         &last_shift_down));
+  assert(fushi_voice_hook::ConsumeSgreLookupShiftSample(0x8001,
+                                                        &last_shift_down));
+  assert(last_shift_down);
+  assert(!fushi_voice_hook::ConsumeSgreLookupShiftSample(0x8000,
+                                                         &last_shift_down));
+  assert(!fushi_voice_hook::ConsumeSgreLookupShiftSample(0x0000,
+                                                         &last_shift_down));
+  assert(!last_shift_down);
+  assert(fushi_voice_hook::ConsumeSgreLookupShiftSample(0x0001,
+                                                        &last_shift_down));
+  assert(!last_shift_down);
+  assert(!fushi_voice_hook::ConsumeSgreLookupShiftSample(0x0000, nullptr));
 
   // Generic dispatch is inert until an explicitly matched engine registers a
   // handler. This is the cross-engine negative boundary: WMA by itself never

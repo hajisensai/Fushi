@@ -5,19 +5,22 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "luna_text_selector.h"
-
 namespace fushi_voice_hook {
 
 // Exact RVA in the single executable admitted by sgre_profile.h. This is the
-// MAGES TextRender UTF-16 layout routine used by the existing Luna profile.
-inline constexpr uintptr_t kSgreTextLayoutRva = 0x328e0u;
+// TextRender draw boundary, not UserHook1's pre-layout routine at 0x328e0.
+// At draw time the flattened glyph vector contains only the sentence that the
+// player can currently see and its control codes have already gone through the
+// game's own parser.
+inline constexpr uintptr_t kSgreTextDrawRva = 0x35aa0u;
+inline constexpr uintptr_t kSgreScenarioTextVtableRva = 0x5be330u;
 
 inline constexpr int32_t kSgreDesignWidth = 1920;
 inline constexpr int32_t kSgreDesignHeight = 1080;
 inline constexpr float kSgreDialogueOriginX = 320.0f;
 inline constexpr float kSgreDialogueOriginY = 830.0f;
 inline constexpr float kSgreFallbackLineHeight = 56.0f;
+inline constexpr float kSgreScenarioLineHeight = 80.0f;
 
 struct SgreLookupGlyphGeometry {
   float x = 0.0f;
@@ -33,29 +36,37 @@ struct SgreLookupRect {
   int32_t height = 0;
 };
 
-enum class SgreLookupActiveUpdate : uint8_t {
-  kIgnore,
-  kReplace,
-};
+// HookWorker samples input every 16 ms. A complete Shift press/release can
+// happen between two samples, leaving the high bit clear even though Windows
+// reports the transition in GetAsyncKeyState's low bit. Consume both signals:
+// the high bit preserves the normal held-key edge, while the low bit recovers
+// a tap that completed between polls. Never emit twice for one held press.
+inline bool ConsumeSgreLookupShiftSample(uint16_t async_state,
+                                         bool* last_down) {
+  if (last_down == nullptr) return false;
+  const bool down = (async_state & 0x8000u) != 0;
+  const bool pressed_since_poll = (async_state & 0x0001u) != 0;
+  const bool submit = (down && !*last_down) || (!down && pressed_since_poll);
+  *last_down = down;
+  return submit;
+}
 
-// TextRender also runs for transient/system surfaces whose layout has no
-// usable glyphs or exposes a text/glyph count from a different render surface.
-// Those calls must not erase the last valid scenario line: in the admitted
-// SGRE build they continuously follow each dialogue layout and would otherwise
-// make Shift lookup miss every visible line. TextRender exposes one visual row
-// at a time, so a wrapped line can have more normalized units than this capture
-// has glyphs; the caller maps only the captured prefix. A capture may replace
-// the active row only when every glyph in that row has a character index and
-// the full line reaches the same minimum length used by the mining resolver.
-inline SgreLookupActiveUpdate ResolveSgreLookupActiveUpdate(
-    bool capture_valid, size_t normalized_units, size_t mapped_glyphs,
-    size_t captured_glyphs) {
-  if (!capture_valid) return SgreLookupActiveUpdate::kIgnore;
-  if (normalized_units >= 8 && captured_glyphs != 0 &&
-      mapped_glyphs == captured_glyphs) {
-    return SgreLookupActiveUpdate::kReplace;
-  }
-  return SgreLookupActiveUpdate::kIgnore;
+// The admitted renderer stores a flattened glyph list. A native line break
+// resets the next glyph's x anchor instead of inserting a '\n' glyph. Derive
+// the visual row from that reset so explicit and automatic game layout remain
+// authoritative.
+inline bool StartsNextSgreLookupLine(float previous_x, float current_x) {
+  return std::isfinite(previous_x) && std::isfinite(current_x) &&
+         current_x <= previous_x;
+}
+
+inline bool MatchesSgreScenarioDrawMetrics(float line_height,
+                                           float glyph_height,
+                                           bool has_horizontal_advance) {
+  return std::isfinite(line_height) && std::isfinite(glyph_height) &&
+         std::abs(line_height - kSgreScenarioLineHeight) <= 0.5f &&
+         std::abs(glyph_height - kSgreScenarioLineHeight) <= 0.5f &&
+         has_horizontal_advance;
 }
 
 inline bool IsSaneSgreLookupGlyph(const SgreLookupGlyphGeometry& glyph) {
@@ -100,6 +111,39 @@ inline bool SgreLookupRectForGlyph(const SgreLookupGlyphGeometry& glyph,
          rect->x + rect->width > 0 && rect->y + rect->height > 0;
 }
 
+// TextRender's glyph width is the font/texture box, not the horizontal
+// advance. In the admitted SGRE build an 80-unit box commonly advances only
+// 25 units, so using width directly makes three or four adjacent hit boxes
+// overlap and a left-to-right scan returns an earlier character. Bound each
+// hit cell by the next anchor on the same visual row; for the row's last glyph
+// reuse the previous advance. The raw box remains the fallback for a lone or
+// malformed anchor sequence.
+inline float SgreLookupHitWidth(const SgreLookupGlyphGeometry* glyphs,
+                                size_t glyph_count, size_t glyph_index) {
+  if (glyphs == nullptr || glyph_index >= glyph_count ||
+      !IsSaneSgreLookupGlyph(glyphs[glyph_index])) {
+    return 0.0f;
+  }
+  const auto& current = glyphs[glyph_index];
+  if (glyph_index + 1 < glyph_count) {
+    const auto& next = glyphs[glyph_index + 1];
+    const float advance = next.x - current.x;
+    if (next.line == current.line && std::isfinite(next.x) &&
+        advance > 0.0f && advance <= 256.0f) {
+      return std::min(current.width, advance);
+    }
+  }
+  if (glyph_index != 0) {
+    const auto& previous = glyphs[glyph_index - 1];
+    const float advance = current.x - previous.x;
+    if (previous.line == current.line && std::isfinite(previous.x) &&
+        advance > 0.0f && advance <= 256.0f) {
+      return std::min(current.width, advance);
+    }
+  }
+  return current.width;
+}
+
 inline int FindSgreLookupGlyph(const SgreLookupGlyphGeometry* glyphs,
                                size_t glyph_count, float line_height,
                                int32_t client_width, int32_t client_height,
@@ -107,8 +151,10 @@ inline int FindSgreLookupGlyph(const SgreLookupGlyphGeometry* glyphs,
                                SgreLookupRect* hit_rect) {
   if (glyphs == nullptr || glyph_count == 0) return -1;
   for (size_t i = 0; i < glyph_count; ++i) {
+    SgreLookupGlyphGeometry hit_glyph = glyphs[i];
+    hit_glyph.width = SgreLookupHitWidth(glyphs, glyph_count, i);
     SgreLookupRect rect;
-    if (!SgreLookupRectForGlyph(glyphs[i], line_height, client_width,
+    if (!SgreLookupRectForGlyph(hit_glyph, line_height, client_width,
                                 client_height, &rect)) {
       continue;
     }
