@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.1-debug.12239",
-  "tag": "v2.2.1-debug.12239+2f510d4",
+  "version": "2.2.1-debug.12246",
+  "tag": "v2.2.1-debug.12246+5f18429",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 12239,
-  "notes": "Automated release-signed debug-channel build from develop @ 2f510d4. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 12246,
+  "notes": "Automated release-signed debug-channel build from develop @ 5f18429. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.1-debug.12217-ios.ipa",
@@ -29,11 +29,11 @@
       "version": "2.2.1-debug.12217"
     },
     {
-      "name": "fushi-2.2.1-debug.12239-2f510d4-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12239-2f510d4-debug.apk",
-      "releaseSequence": 12239,
-      "tag": "v2.2.1-debug.12239+2f510d4",
-      "version": "2.2.1-debug.12239"
+      "name": "fushi-2.2.1-debug.12246-5f18429-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12246-5f18429-debug.apk",
+      "releaseSequence": 12246,
+      "tag": "v2.2.1-debug.12246+5f18429",
+      "version": "2.2.1-debug.12246"
     }
   ]
 }
