@@ -63,6 +63,13 @@ content: FushiTextField(
     `keyboardType` 断言。
   - 变异实测：给 U+3002 分支加 `&& false` → 归一化测试红；删掉编辑框的
     `keyboardType` → 对应用例红。还原后两文件 sha256 与基线逐字节一致。
+- **真机验证缺口（不要当成已验证）**：`normalizeUrlInput` 的行为由 13 条单测覆盖
+  （含真机上实际撞到的三种全角形态），UI 两处 `keyboardType` 由 widget 测试断言。
+  但**「Gboard 中文模式下 `TextInputType.url` 是否真的弹半角键盘」这一条没有真机跑过**：
+  用户手机是 release 通道（versionCode 1001217000），本地 debug 包
+  （1000122500）装不进去，`-d` 也被拒；不接受用卸载重装绕过（会丢用户全部阅读数据），
+  也不接受硬拔高 versionCode（会让用户后续正式版更新装不上）。
+  本机模拟器没有中文输入法，复现不了该条件。下次有可装的构建时补验。
 - **备注**：与 [BUG-1805](BUG-1805-mihon-store-zero-extensions-silent.md)（拉到 0 条扩展静默无提示）、
   [BUG-1806](BUG-1806-mihon-store-url-not-editable.md)（仓库地址不可编辑）同批，三者叠加才构成用户
   「看不到插件、又改不了地址」的完整死局。
