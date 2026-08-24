@@ -857,6 +857,40 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
     position: relative;
     margin-top: 5px;
     min-width: 0;
+    /* BUG-1827：卡内**找不到断点的短语**会画到卡片外、压在相邻列的正文上
+       （用户报「查词的字出了框」，多见于释义里的斜体词组）。
+
+       典型样本是 `somebody/something` 这类 `词/词` 短语：UAX #14 把 `/` 归为 SY 类，
+       而 `SY x AL`（斜杠后紧跟字母）**不允许断行**，整个短语于是成为一个不可断单元。
+       它的 min-content 宽度就是整串宽度：CSS grid 回落模式下撑破 `minmax(0, 1fr)` 的
+       track；masonry 模式下更直接——卡片是 `position:absolute` + JS 硬设
+       `width: columnWidth`（popup.js `layoutMasonry`），盒子宽度钉死撑不大，于是内容
+       整条溢出到卡外，而 `.glossary-group` 没有任何 overflow 裁剪。
+
+       headless Edge 实测（完整 popup.css + 复刻 layoutMasonry 的 170px 最窄列宽，用
+       `getClientRects()` **逐换行片段**量右边界与卡片内容盒之差）：
+         未修 — `somebody/something` 1 个片段，越界 +1.91px；
+         已修 — 折成 2 个片段，最差 -15.41px（完全在框内）。
+       注意必须逐片段量：`getBoundingClientRect()` 对跨行 inline 元素返回所有片段的
+       **并集**，占满整行的片段会让并集贴住容器右缘，读起来像越界却不是任何单行的真实
+       越界量。也不能用 `scrollWidth - clientWidth`——溢出的内联文本不增加块元素的
+       `scrollWidth`，那是个恒为 0 的无效测量。
+
+       BUG-860 当时只给 `<a>` 加了这条规则（那次的长串恰好是裸 URL），但「找不到断点」
+       与元素是不是链接无关——释义里的斜体词组、结构化内容里的长词一概漏在保护外。故把
+       规则提到卡片层：`overflow-wrap` 是**继承**属性，一次声明覆盖卡内全部后代，消除
+       「哪些元素受保护」这个特殊情况，而不是再给某类内容补一个选择器。
+
+       `anywhere` 而非 `break-word`：两者都只在没有其它断点时才任意处折行（正常带空格
+       文本与 CJK 不受影响），但只有 `anywhere` 同时**缩小 min-content**，卡片才不会被
+       撑宽。对已声明 `white-space: nowrap` 的后代（`.gloss-image-container` / 频率标签）
+       本属性天然失效，那些元素行为不变。
+
+       遗留（本条未解决）：斜体还有 2~3px 的 ink overflow（字形墨迹超出 advance width，
+       实测 `formal` 3.31px vs 正体 0.63px）。它不受本规则影响，只在文本正好顶满行宽时
+       露出几像素。试过给斜体加 `padding-inline-end` 补偿，实测反而把 layout 越界从
+       +1.91px 推到 +3.09px（padding 加宽了 inline 盒），故不采用。 */
+    overflow-wrap: anywhere;
     padding: 6px 8px;
     border-radius: 8px;
     border: 1px solid rgba(0, 0, 0, 0.14);
