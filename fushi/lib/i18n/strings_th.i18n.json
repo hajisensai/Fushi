@@ -3789,5 +3789,14 @@
   "section_services_subtitles": "Subtitle sources",
   "section_services_resources": "Resource indexers",
   "section_services_metadata": "Metadata scraping",
-  "settings_services_link_subtitle": "Jimaku, OpenSubtitles, Torznab, Jellyfin, AniDB and TMDB are configured together here"
+  "settings_services_link_subtitle": "Jimaku, OpenSubtitles, Torznab, Jellyfin, AniDB and TMDB are configured together here",
+  "game_hook_btn_replay": "Replay this line's voice",
+  "game_hook_btn_recapture": "Recapture the voice",
+  "game_hook_btn_follow": "Follow new lines",
+  "game_hook_btn_passthrough": "Click through to the game",
+  "game_hook_btn_transparency": "Toggle the background",
+  "game_hook_btn_lock": "Lock the position",
+  "game_hook_btn_workbench": "Open the capture workbench",
+  "game_hook_btn_topmost": "Keep on top",
+  "game_hook_btn_close": "Close the overlay"
 }

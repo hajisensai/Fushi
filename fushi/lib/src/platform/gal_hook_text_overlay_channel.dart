@@ -415,10 +415,15 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     bool passThrough = false,
     bool locked = false,
     bool hoverAutoLookup = false,
+    List<String>? slotTooltips,
   }) {
     return _instance.showImpl(<String, Object?>{
       'fontSize': fontSize,
       'fontFamily': fontFamily,
+      // 工具条 9 槽悬停提示，下标与 native hook_toolbar::kSlotActions 严格对齐。
+      // 不传 = native 侧无提示（老 payload 行为），工具条本身照常可点。
+      if (slotTooltips != null && slotTooltips.isNotEmpty)
+        'slotTooltips': slotTooltips,
       if (fontPath != null) 'fontPath': fontPath,
       'letterSpacing': letterSpacing,
       'lineHeight': lineHeight,

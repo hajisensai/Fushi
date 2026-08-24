@@ -3789,5 +3789,14 @@
   "section_services_subtitles": "字幕来源",
   "section_services_resources": "资源索引器",
   "section_services_metadata": "元数据刮削",
-  "settings_services_link_subtitle": "Jimaku、OpenSubtitles、Torznab、Jellyfin、AniDB、TMDB 统一在此配置"
+  "settings_services_link_subtitle": "Jimaku、OpenSubtitles、Torznab、Jellyfin、AniDB、TMDB 统一在此配置",
+  "game_hook_btn_replay": "重播本句语音",
+  "game_hook_btn_recapture": "重新录制语音",
+  "game_hook_btn_follow": "跟随新台词",
+  "game_hook_btn_passthrough": "鼠标穿透到游戏",
+  "game_hook_btn_transparency": "切换底板",
+  "game_hook_btn_lock": "锁定位置",
+  "game_hook_btn_workbench": "打开取材工作台",
+  "game_hook_btn_topmost": "保持置顶",
+  "game_hook_btn_close": "关闭浮窗"
 }

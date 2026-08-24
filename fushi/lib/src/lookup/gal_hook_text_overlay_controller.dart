@@ -524,6 +524,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         passThrough: _passThrough,
         locked: _locked,
         hoverAutoLookup: hoverAutoLookup,
+        slotTooltips: _slotTooltips,
       );
       _pushedHoverAutoLookup = hoverAutoLookup;
       // native 在 show 里把语音控件复位（见 flutter_window.cpp），本地镜像跟着复位，
@@ -548,6 +549,21 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 高亮才不会停在已结束的状态上。
     await _syncVoiceState();
   }
+
+  /// 工具条槽位悬停提示文案，**下标与 native `hook_toolbar::kSlotActions`
+  /// 严格同序**（重播 / 重录 / 跟随 / 穿透 / 底板 / 锁定 / 工作台 / 置顶 /
+  /// 关闭）。native 不持有 i18n，文案只能由这里按当前 locale 下发。
+  List<String> get _slotTooltips => <String>[
+        t.game_hook_btn_replay,
+        t.game_hook_btn_recapture,
+        t.game_hook_btn_follow,
+        t.game_hook_btn_passthrough,
+        t.game_hook_btn_transparency,
+        t.game_hook_btn_lock,
+        t.game_hook_btn_workbench,
+        t.game_hook_btn_topmost,
+        t.game_hook_btn_close,
+      ];
 
   int get _backgroundColor {
     final int alpha = (_opacity.clamp(0.0, 1.0) * 255).round();

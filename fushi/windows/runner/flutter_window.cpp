@@ -657,6 +657,41 @@ std::wstring WideFromValue(const flutter::EncodableMap* args, const char* key,
   return result;
 }
 
+// List<String> 载荷 -> UTF-16。缺键 / 类型不符返回空 vector（老 payload 不带
+// 提示表时就当没有提示，工具条照常可用）。非字符串元素按空串占位，绝不移位
+// ——下标即槽位，一旦压缩就会让第 5 颗按钮顶着第 4 颗的说明。
+std::vector<std::wstring> WideListFromValue(const flutter::EncodableMap* args,
+                                            const char* key) {
+  std::vector<std::wstring> result;
+  if (args == nullptr) {
+    return result;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return result;
+  }
+  const auto* list = std::get_if<flutter::EncodableList>(&it->second);
+  if (list == nullptr) {
+    return result;
+  }
+  result.reserve(list->size());
+  for (const flutter::EncodableValue& item : *list) {
+    const auto* s = std::get_if<std::string>(&item);
+    if (s == nullptr || s->empty()) {
+      result.emplace_back();
+      continue;
+    }
+    const int size = MultiByteToWideChar(CP_UTF8, 0, s->data(),
+                                         static_cast<int>(s->size()), nullptr,
+                                         0);
+    std::wstring wide(size, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s->data(), static_cast<int>(s->size()),
+                        wide.data(), size);
+    result.push_back(std::move(wide));
+  }
+  return result;
+}
+
 std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
                             const std::string& fallback) {
   if (args == nullptr) {
@@ -1182,6 +1217,12 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         if (method == "canDrawOverlays") {
           result->Success(flutter::EncodableValue(true));
         } else if (method == "show") {
+          // 工具条 9 槽悬停提示文案（与 hook_toolbar::kSlotActions 同下标）。
+          // 按 locale 由 Dart 在 show 载荷里下发：native 不持有 i18n，正文内
+          // 工具条与穿透工具条窗读的是这同一张表。缺键 = 无提示，老 payload
+          // 不受影响。
+          hook_toolbar::SetSlotTooltips(WideListFromValue(args,
+                                                          "slotTooltips"));
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
