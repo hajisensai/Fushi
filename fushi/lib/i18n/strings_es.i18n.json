@@ -3799,7 +3799,6 @@
   "game_hook_btn_workbench": "Open the capture workbench",
   "game_hook_btn_topmost": "Keep on top",
   "game_hook_btn_close": "Close the overlay",
-  "module_downloads_label": "Downloads",
-  "module_lookup_label": "Lookup",
-  "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it"
+  "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
+  "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions."
 }

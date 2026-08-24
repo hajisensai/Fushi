@@ -3799,7 +3799,6 @@
   "game_hook_btn_workbench": "打开取材工作台",
   "game_hook_btn_topmost": "保持置顶",
   "game_hook_btn_close": "关闭浮窗",
-  "module_downloads_label": "下载",
-  "module_lookup_label": "查词",
-  "module_tool_toggle_hint": "在底栏/侧栏显示该页；关闭即隐藏"
+  "module_tool_toggle_hint": "在底栏/侧栏显示该页；关闭即隐藏",
+  "module_downloads_hidden_hint": "「下载」页已在 设置 → 系统 → 功能模块 中隐藏；重新打开它才能管理订阅。"
 }

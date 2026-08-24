@@ -203,7 +203,7 @@ SettingsDestination buildSystemDestination() {
           ),
           SettingsSwitchItem(
             id: 'system.module_downloads',
-            title: t.module_downloads_label,
+            title: t.nav_downloads,
             subtitle: t.module_tool_toggle_hint,
             icon: Icons.download_outlined,
             value: (SettingsContext settingsContext) =>
@@ -215,7 +215,7 @@ SettingsDestination buildSystemDestination() {
           ),
           SettingsSwitchItem(
             id: 'system.module_lookup',
-            title: t.module_lookup_label,
+            title: t.nav_lookup,
             subtitle: t.module_tool_toggle_hint,
             icon: Icons.search_outlined,
             value: (SettingsContext settingsContext) =>

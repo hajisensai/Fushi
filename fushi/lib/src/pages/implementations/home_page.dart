@@ -142,11 +142,18 @@ List<HomeTab> homeActiveTabs({
       HomeTab.settings,
     ];
 
+/// 启动落地 tab。「启动默认打开查词」只在查词 tab 真的可见时成立——查词模块被
+/// 关掉时返回它会让 `_currentTab` 从第一帧起就指向一个不在 [homeActiveTabs] 里的
+/// tab（渲染由 `_visibleTab` 兜到首页，但选中身份一直是脏的，底栏高亮与
+/// `_previousTab` 都跟着错），所以门控要在取值处，而不是靠下游兜底。
 HomeTab homeInitialTab({
   required bool startupDefaultDictionaryTab,
   required HomeTab fallback,
+  bool dictionariesEnabled = true,
 }) {
-  if (startupDefaultDictionaryTab) return HomeTab.dictionaries;
+  if (startupDefaultDictionaryTab && dictionariesEnabled) {
+    return HomeTab.dictionaries;
+  }
   return fallback;
 }
 
@@ -371,6 +378,7 @@ class _HomePageState extends BasePageState<HomePage>
 
     _currentTab = homeInitialTab(
       startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
+      dictionariesEnabled: appModelNoUpdate.moduleDictionariesEnabled,
       fallback: _currentTab,
     );
     // Seed the shared shell notifier (drives the macOS root sidebar) and listen
@@ -583,7 +591,7 @@ class _HomePageState extends BasePageState<HomePage>
   void _onHomeDictionaryTabRequested() {
     if (!mounted) return;
     if (_currentTab == HomeTab.dictionaries) return;
-    _selectTab(HomeTab.dictionaries);
+    _revealDictionary();
   }
 
   @override
@@ -798,6 +806,52 @@ class _HomePageState extends BasePageState<HomePage>
   HomeTab get _previousVisibleTab =>
       _activeTabs().contains(_previousTab) ? _previousTab : HomeTab.home;
 
+  /// 查词 tab 被「功能模块」隐藏时用来承载查词页的独立路由（见 [_revealDictionary]）。
+  /// 存住它是为了「已经开着就把它翻到最上层」而不是叠第二份 —— 同一时刻全 app 只能有
+  /// 一个 [HomeDictionaryPage]，否则 mainTab 分区的 pending 查词会被双消费。
+  Route<void>? _standaloneDictionaryRoute;
+
+  /// 查词的**唯一**落地入口：热键（homeTabDict / homeFocusSearch）、桌面悬浮字幕点词
+  /// （[AppModel.homeDictionaryTabRequest]）、剪贴板 mainTab 分区都走这里。
+  ///
+  /// 「功能模块 → 查词」关掉的是**导航项**，不是查词能力本身：全局热键、桌面取词、
+  /// 浏览器扩展回流都指向查词，若此时 [_selectTab] 直接吞掉请求，用户按热键只会看到
+  /// 窗口被唤到前台却什么也不显示、[DesktopLookupService.pendingText] 永远挂着。
+  /// 所以 tab 在时切 tab，tab 不在时推一个独立的查词路由 —— 同一个
+  /// [HomeDictionaryPage]，同一条消费路径，只是换了个承载面。
+  void _revealDictionary({bool focusSearch = false}) {
+    if (!mounted) return;
+    if (_activeTabs().contains(HomeTab.dictionaries)) {
+      _selectTab(HomeTab.dictionaries);
+      if (focusSearch) _dictFocusSignal.value++;
+      return;
+    }
+    final Route<void>? existing = _standaloneDictionaryRoute;
+    if (existing != null && existing.isActive) {
+      // 已经开着：翻到最上层即可，绝不叠第二个查词页。
+      Navigator.of(context)
+          .popUntil((Route<Object?> route) => route == existing);
+      if (focusSearch) _dictFocusSignal.value++;
+      return;
+    }
+    final Route<void> route = adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => _StandaloneDictionaryRoute(focusSignal: _dictFocusSignal),
+    );
+    _standaloneDictionaryRoute = route;
+    unawaited(Navigator.of(context).push<void>(route).whenComplete(() {
+      if (identical(_standaloneDictionaryRoute, route)) {
+        _standaloneDictionaryRoute = null;
+      }
+    }));
+    // focusSearch 的 signal 在页面挂载后才有监听者，推完这一帧再发。
+    if (focusSearch) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _dictFocusSignal.value++;
+      });
+    }
+  }
+
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
   /// 所有切 tab 入口（侧栏 / 底栏 / 快捷键 / 程序化跳转）都走这里，保证
   /// _previousTab 一致。目标 tab 已被「功能模块」隐藏时直接忽略：隐藏即该页
@@ -850,7 +904,7 @@ class _HomePageState extends BasePageState<HomePage>
         _selectTab(HomeTab.books);
         return KeyEventResult.handled;
       case ShortcutAction.homeTabDict:
-        _selectTab(HomeTab.dictionaries);
+        _revealDictionary();
         return KeyEventResult.handled;
       case ShortcutAction.homeTabSettings:
         _selectTab(HomeTab.settings);
@@ -862,8 +916,7 @@ class _HomePageState extends BasePageState<HomePage>
         _cycleTab(-1);
         return KeyEventResult.handled;
       case ShortcutAction.homeFocusSearch:
-        _selectTab(HomeTab.dictionaries);
-        _dictFocusSignal.value++;
+        _revealDictionary(focusSearch: true);
         return KeyEventResult.handled;
       case ShortcutAction.globalBack:
         Navigator.of(context).maybePop();
@@ -1234,27 +1287,50 @@ class _HomePageState extends BasePageState<HomePage>
     return controller;
   }
 
-  VideoDiscoveryActions get _productionVideoDiscoveryActions =>
-      VideoDiscoveryActions(
-        loadDetails: _loadVideoDiscoveryDetails,
-        watchStatus: _watchVideoDiscoveryStatus,
-        onSearchResource: _openVideoDiscoveryResourceSearch,
-        onSearchSubtitle: _openVideoDiscoverySubtitleSearch,
-        onSubscribe: _openVideoDiscoverySubscription,
-        onPlay: _openLocalVideoDiscoveryWork,
-        onOpenDownloads: () => _openDownloadsTab(0),
-        onOpenSubscriptions: _openVideoDiscoverySubscriptionsPanel,
-      );
+  /// 下载页当前是否可达（「功能模块 → 下载」开着）。指向下载页的入口一律先问这里：
+  /// 页面不可达时入口就不该渲染，而不是渲染出来再在点击时静默失败。
+  bool get _downloadsReachable => _activeTabs().contains(HomeTab.downloads);
 
-  void _openVideoDiscoverySubscriptionsPanel() {
-    // 不能只 pop 一层。发现页是 Offstage 内联在 home 里的，所以「切到下载页订阅 tab」
-    // 的前提是先真正回到 home 这一层路由。旧写法把「回到 home」编码成「pop 一次」：
-    // home → 详情（深度 1）成立，而 home → 放送日历 → 详情（深度 2）只会退回日历页，
-    // 切的是被日历完全盖住的 tab —— 用户点「管理订阅」屏幕纹丝不动。用 popUntil
-    // 收口，与栈深无关。
-    Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
-    if (mounted) _openDownloadsTab(2);
+  VideoDiscoveryActions get _productionVideoDiscoveryActions {
+    // 「查看下载」「管理订阅」两个端口本就是 nullable、消费端已按 null 不渲染
+    // （video_discovery_page 的页头按钮、detail 页的订阅按钮），所以下载模块关掉时
+    // 直接不接线即可 —— 不必在点击路径上再加一个「其实去不了」的特例分支。
+    final bool downloadsReachable = _downloadsReachable;
+    return VideoDiscoveryActions(
+      loadDetails: _loadVideoDiscoveryDetails,
+      watchStatus: _watchVideoDiscoveryStatus,
+      onSearchResource: _openVideoDiscoveryResourceSearch,
+      onSearchSubtitle: _openVideoDiscoverySubtitleSearch,
+      // 订阅本身与下载 tab 无关（订阅在后台照常拉取），故不随下载模块门控。
+      onSubscribe: _openVideoDiscoverySubscription,
+      onPlay: _openLocalVideoDiscoveryWork,
+      onOpenDownloads: downloadsReachable ? () => _openDownloadsTab(0) : null,
+      onOpenSubscriptions:
+          downloadsReachable ? _openVideoDiscoverySubscriptionsPanel : null,
+    );
   }
+
+  /// 「先回到 home 这一层路由，再切下载 tab 并定位子 tab」的唯一出口。
+  ///
+  /// 不能只 pop 一层。发现页是 Offstage 内联在 home 里的，所以「切到下载页订阅 tab」
+  /// 的前提是先真正回到 home 这一层路由。旧写法把「回到 home」编码成「pop 一次」：
+  /// home → 详情（深度 1）成立，而 home → 放送日历 → 详情（深度 2）只会退回日历页，
+  /// 切的是被日历完全盖住的 tab —— 用户点「管理订阅」屏幕纹丝不动。用 popUntil
+  /// 收口，与栈深无关。
+  ///
+  /// **顺序是硬约束**：下载 tab 可被「功能模块」隐藏，隐藏后 [_selectTab] 会拒绝切换。
+  /// 若先 popUntil 再发现去不了，用户的详情页 / 放送日历会被弹掉、界面停在首页且毫无
+  /// 提示 —— 比「什么都不做」更坏。所以可达性判定必须在动导航栈**之前**。
+  /// 返回是否真的落地到了下载页，调用方据此给出可操作提示。
+  bool _popToDownloadsTab(int tabIndex) {
+    if (!_downloadsReachable) return false;
+    Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
+    if (!mounted) return false;
+    _openDownloadsTab(tabIndex);
+    return true;
+  }
+
+  void _openVideoDiscoverySubscriptionsPanel() => _popToDownloadsTab(2);
 
   Future<VideoDiscoveryDetailData> _loadVideoDiscoveryDetails(
     VideoDiscoveryItem item,
@@ -1404,10 +1480,13 @@ class _HomePageState extends BasePageState<HomePage>
         await _matchingVideoDiscoverySubscriptions(item.reference);
     if (!context.mounted) return;
     if (existing.any((VideoDownloadSubscriptionRow row) => row.enabled)) {
-      // 同 [_openVideoDiscoverySubscriptionsPanel]：单层 pop 在
-      // home → 放送日历 → 详情 这条更深的栈上退不回 home，切的 tab 被日历盖住。
-      Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
-      _openDownloadsTab(2);
+      // 已订阅 → 唯一有意义的动作是「去管理」，落在下载页订阅 tab。
+      // 下载模块关掉时 onOpenSubscriptions 端口不接线，订阅按钮会退化成本回调，
+      // 于是这条分支仍可达；[_popToDownloadsTab] 先判可达再动导航栈，去不了就只
+      // 给一句可操作提示，绝不把用户的详情页弹掉后无声消失。
+      if (!_popToDownloadsTab(2)) {
+        _showVideoDiscoveryMessage(context, t.module_downloads_hidden_hint);
+      }
       return;
     }
     final VideoResourceRegistry? registry =
@@ -2339,4 +2418,27 @@ class _LocalDiscoveryTarget {
 
   final VideoMetadataWorkRow? work;
   final int? collectionId;
+}
+
+/// 查词 tab 被「功能模块」隐藏时的查词承载面（见 [_HomePageState._revealDictionary]）。
+///
+/// 只是给同一个 [HomeDictionaryPage] 套一层可 pop 的 [Scaffold]：查词能力（全局热键、
+/// 桌面取词、悬浮字幕点词、浏览器扩展回流）不随导航项一起消失，而 mainTab 分区的
+/// pending 查词仍由**唯一**的 HomeDictionaryPage 消费，分区互斥不变。
+class _StandaloneDictionaryRoute extends StatelessWidget {
+  const _StandaloneDictionaryRoute({required this.focusSignal});
+
+  final ValueNotifier<int> focusSignal;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: HomeDictionaryPage(
+          focusSignal: focusSignal,
+          showBackButton: true,
+        ),
+      ),
+    );
+  }
 }
