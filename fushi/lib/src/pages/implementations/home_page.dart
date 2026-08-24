@@ -1428,25 +1428,6 @@ class _HomePageState extends BasePageState<HomePage>
     final List<MediaSourceRow> sources =
         await appModelNoUpdate.getManagedVideoDownloadSources();
     if (!context.mounted) return;
-    if (sources.isEmpty) {
-      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
-      return;
-    }
-    final VideoDownloadBackendIdentity identity;
-    try {
-      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
-    } on VideoDownloadBackendUnavailable catch (error) {
-      if (context.mounted) {
-        _showVideoDiscoveryMessage(context, error.message);
-      }
-      return;
-    } on Object {
-      if (context.mounted) {
-        unawaited(_promptDownloadBackendSetup(context));
-      }
-      return;
-    }
-    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoveryResourceSearchPage(
@@ -1456,6 +1437,8 @@ class _HomePageState extends BasePageState<HomePage>
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+            final VideoDownloadBackendIdentity identity =
+                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: selection.media,
@@ -1500,25 +1483,6 @@ class _HomePageState extends BasePageState<HomePage>
     final List<MediaSourceRow> sources =
         await appModelNoUpdate.getManagedVideoDownloadSources();
     if (!context.mounted) return;
-    if (sources.isEmpty) {
-      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
-      return;
-    }
-    final VideoDownloadBackendIdentity identity;
-    try {
-      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
-    } on VideoDownloadBackendUnavailable catch (error) {
-      if (context.mounted) {
-        _showVideoDiscoveryMessage(context, error.message);
-      }
-      return;
-    } on Object {
-      if (context.mounted) {
-        unawaited(_promptDownloadBackendSetup(context));
-      }
-      return;
-    }
-    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoverySubscriptionPage(
@@ -1528,6 +1492,8 @@ class _HomePageState extends BasePageState<HomePage>
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
+            final VideoDownloadBackendIdentity identity =
+                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
             final int now = DateTime.now().millisecondsSinceEpoch;
             final String subscriptionId =
                 videoDiscoverySubscriptionId(item.reference);
