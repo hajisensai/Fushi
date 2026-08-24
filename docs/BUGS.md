@@ -29,13 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1695 条。点号进各自文件。
+> 共 1697 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1836](bugs/BUG-1836-manual-install-rescue-reports-failure.md) | 🚧 | 🚧 | 手动跑安装包救援成功后仍必报更新失败（Inno 日志判据拿不到证据） |
 | [BUG-1835](bugs/BUG-1835-gal-ingame-nested-card-placement.md) | 🚧 | ✅ | 游戏内嵌套查词子卡未按选词正上正下布局 |
 | [BUG-1834](bugs/BUG-1834-gal-lookup-nested-source-frame.md) | ✅ | ✅ | 游戏内嵌套查词丢失来源层导致子卡挂错谱系 |
 | [BUG-1833](bugs/BUG-1833-gal-ingame-webview-png-scroll-jank.md) | 🚧 | ✅ | 游戏内 WebView 查词卡 PNG 全帧重采导致弹出与滚动卡顿 |
+| [BUG-1831](bugs/BUG-1831-win-update-launcher-vanished.md) | ✅ | ✅ | 改名让路后新 launcher 被回滚删除，安装目录再无 launcher，自更新永久卡死 |
 | [BUG-1830](bugs/BUG-1830-mokuro-volume-subdir.md) | ✅ | ✅ | mokuro 卷子目录布局导入必失败（img_path 裸文件名） |
 | [BUG-1829](bugs/BUG-1829-reader-wheel-chapter-cooldown-starvation.md) | ✅ | ✅ | 快速拨滚轮永远跨不了章：跨章冷却窗被每次被拦输入自我续期 |
 | [BUG-1828](bugs/BUG-1828-reader-image-wrapper-swallows-empty-tap.md) | ✅ | ✅ | 阅读器大图两侧留白被判成点中图片，底栏永远唤不出来 |
