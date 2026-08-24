@@ -159,10 +159,6 @@ class FushiFocusController extends ChangeNotifier {
       // window_manager 的窗口事件（可能因 channel 延迟晚到），那条走进程内的
       // FocusManager 通知（不依赖 channel），两条覆盖不同故障模式。
       mainWindowForegroundNotifier.addListener(_onMainWindowForegroundChanged);
-      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
-      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
-      // BUG-1619：主窗回到前台就补一次修复。焦点闸门在关门期间让出了焦点，
-      // 不补的话用户切回来整页没有焦点、键盘 / 手柄快捷键全不响应。
       _attached = true;
     }
     scheduleRepair();
