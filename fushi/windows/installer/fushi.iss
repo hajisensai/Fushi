@@ -534,6 +534,10 @@ var
 begin
   if not DataRootPageOffered then
     Exit;
+  { DataRootPageOffered 只可能在 ShouldSkipPage 里被置真，那时 DataRootPage 必非 nil；
+    显式再判一次，别让这条隐式不变式成为一次改动就能踩穿的解引用。 }
+  if DataRootPage = nil then
+    Exit;
   Target := RemoveBackslashUnlessRoot(Trim(DataRootPage.Values[0]));
   if Target = '' then
     Exit;
@@ -672,6 +676,30 @@ begin
   else if (DataRootPage <> nil) and (CurPageID = DataRootPage.ID) then
   begin
     DataRoot := RemoveBackslashUnlessRoot(Trim(DataRootPage.Values[0]));
+    { 绝对路径预检，必须排在其余三条业务校验之前。TInputDirWizardPage 的编辑框允许清空、
+      也照收相对路径，Inno 对自定义页的取值不做任何自动校验，而下面三条业务校验对这两种
+      输入**全部放行**（Inno 6.7.3 实测，不是推断）：
+        AddBackslash('') = ''           → 子目录探测变成相对路径 'documents'，DirExists 假
+        IsSameOrAncestorDir 两向         → 都假
+        DirExists('') = False，但 ForceDirectories('') = True，SaveStringToFile 也成功
+                                        → InstallDirWritable('') 返回 True
+      后果：空串一路走到 WriteDataRootBootstrap，被那里的空串兜底 Exit 掉——不写坏数据，
+      但用户的选择被**静默丢弃**；相对路径更糟，安装器会在 setup 自己的工作目录（用户的
+      下载目录）里真建出一个目录、写探针、再把相对路径原样写进引导文件，直到 app 侧
+      installer_data_root_bootstrap.dart 的绝对路径判定才被丢掉，而那条拒绝路径是无声的。
+      路径合法性不能整层下放给 app：这里就得判死并告诉用户。
+      判据：盘符路径 X:\...（含盘符根 X:\，长度 3）或 UNC \\server\share。正斜杠写法
+      C:/Fushi 也判非法——Inno 的目录选择框只产出反斜杠，手打正斜杠给明确报错，
+      好过一路放行到 app 再无声丢弃。 }
+    if (Length(DataRoot) < 3)
+      or ((Copy(DataRoot, 2, 2) <> ':\') and (Copy(DataRoot, 1, 2) <> '\\')) then
+    begin
+      MsgBox('数据存储位置必须是完整的绝对路径（例如 D:\FushiData）。' + #13#10#13#10
+        + '当前填写的是：' + #13#10 + DataRoot,
+        mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
     { 数据目录与安装目录不得相同或互相包含：自动更新 / 安装回滚会整体处理安装目录，
       数据压在下面会被一起清；反过来安装目录落在数据根里则迁移会拒绝（含运行中 exe）。
       app 侧 installer_data_root_bootstrap.dart 首启再做一次同样的双向判定。 }
@@ -687,7 +715,9 @@ begin
       Result := False;
       Exit;
     end;
-    { app 会在所选目录下派生 documents\ 与 support\ 两棵私有子树并整树接管；用户自己的
+    { app 会在所选目录下派生 documents\ 与 support\ 两棵私有子树并整树接管（子目录名的
+      真相源是 Dart 侧 AppPaths.dataRootDocumentsChild / dataRootSupportChild，源码守卫
+      把两侧绑在一起，改了 Dart 常量这里会当场变红而不是静默放行）；用户自己的
       目录里已经有同名子目录（典型：把 D:\Downloads 选成数据根）就不能选——否则之后的
       数据根迁移会把用户文件当 Fushi 数据整树搬走 / 删掉。app 首启同样拒绝（targetNotEmpty），
       这里提前拦，别让用户装完才发现选择被丢弃。 }
