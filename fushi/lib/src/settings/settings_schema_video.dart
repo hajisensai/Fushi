@@ -40,6 +40,7 @@ Future<void> _commitVideoMetadataRuntimePreference(
 SettingsDestination buildVideoDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.video,
+    group: SettingsDestinationGroup.content,
     title: t.settings_destination_video,
     summary: t.video_settings_title,
     icon: Icons.movie_outlined,

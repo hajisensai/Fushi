@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/utils.dart';
 
 SettingsDestination buildReadingDestination() {
@@ -17,8 +18,11 @@ SettingsDestination buildReadingDestination() {
       c.readerSource.readerViewMode == 'paginated';
   return SettingsDestination(
     id: SettingsDestinationId.reading,
+    group: SettingsDestinationGroup.content,
     title: t.settings_destination_reading,
-    summary: t.section_layout,
+    // 副标题带上「有声书」：听书并入本分类后，一级列表上「阅读」是听书设置的
+    // 唯一入口，标题本身看不出这一点。用既有分区名拼，不新增 i18n key。
+    summary: '${t.section_layout} · ${t.section_audiobook}',
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       // 「模式与排版方向」：阅读呈现的模式与方向选择（翻页/滚动、竖排、跨页展开、
@@ -407,12 +411,120 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
+      // 「高级选项」紧跟「排版」（同一件事的粗调/细调两半，读者调完字号行高就地
+      // 往下找字距/两端对齐，不必翻过翻页与听书四组）：文字两端对齐、竖排字距/
+      // VPAL、优先阅读器样式、图片防剧透模糊、合并插图页。默认折叠，与各项
+      // id/持久化 key/ReaderPlacement 全不变，仅调 section 相对位置。
+      SettingsSection(
+        title: t.section_advanced_typography,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'reading_display.text_justify',
+            title: t.reader_text_justify,
+            icon: Icons.format_align_justify,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 14,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerEnableTextJustification,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setReaderEnableTextJustification(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.vert_kerning',
+            title: t.reader_vert_kerning,
+            icon: Icons.space_bar,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 15,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerEnableVerticalFontKerning,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setReaderEnableVerticalFontKerning(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.font_vpal',
+            title: t.reader_font_vpal,
+            icon: Icons.format_shapes,
+            visible: isVertical,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 16,
+            ),
+            value: (SettingsContext c) => c.readerSource.readerEnableFontVPAL,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setReaderEnableFontVPAL(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_display.prioritize_reader_styles',
+            title: t.reader_reader_styles,
+            icon: Icons.style_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 17,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerPrioritizeReaderStyles,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setReaderPrioritizeReaderStyles(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          // TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。加 `blurred` 类需重跑
+          // 分页脚本（非纯 CSS），故走结构 reload（notifyReaderLayoutChanged）。
+          SettingsSwitchItem(
+            id: 'reading_display.blur_images',
+            title: t.reader_blur_images,
+            icon: Icons.blur_on_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 19,
+            ),
+            value: (SettingsContext c) => c.readerSource.readerBlurImages,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setReaderBlurImages(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          // TODO-1128（受限方案 A）：把 0 字符单图 spine 章并入相邻正文章连续显示，
+          // 不再各占一页/一条目录。结构性布局键（改虚拟页映射 + 注入章 DOM），故走
+          // notifyReaderLayoutChanged（重建 spread map + 重排）。**默认开**
+          // （ReaderSettings.mergeImagePages 的 `_get` 真值就是 true）——旧注释写
+          // 「默认关」已过期。
+          SettingsSwitchItem(
+            id: 'reading_display.merge_image_pages',
+            title: t.reader_merge_image_pages,
+            subtitle: t.reader_merge_image_pages_subtitle,
+            icon: Icons.collections_bookmark_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 20,
+            ),
+            value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.setReaderMergeImagePages(value);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+        ],
+      ),
       // 原「导航」13 项混杂平铺，拆两组：阅读界面（进度条/悬浮 chrome/底栏提示/
       // 常亮 + 从「底栏布局」并入的「反转阅读器底栏」）与翻页与交互（点击高亮/音量
       // 翻页/滚轮/滑动灵敏度）。纯展示重组：item id、持久化 key、ReaderPlacement
       // 全部不变（快捷面板分组不动）。
       SettingsSection(
         title: t.settings_section_reader_chrome,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'reading_controls.show_top_progress_bar',
@@ -585,6 +697,7 @@ SettingsDestination buildReadingDestination() {
       ),
       SettingsSection(
         title: t.settings_section_page_turn_input,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'reading_controls.highlight_on_tap',
@@ -738,112 +851,10 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
-      // 「高级选项」现移到最后（低频排版微调）：文字两端对齐、竖排字距/VPAL、
-      // 优先阅读器样式、图片防剧透模糊、合并插图页。collapsedByDefault 与各项
-      // id/持久化 key/ReaderPlacement 全不变，仅调 section 相对位置。
-      SettingsSection(
-        title: t.section_advanced_typography,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'reading_display.text_justify',
-            title: t.reader_text_justify,
-            icon: Icons.format_align_justify,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 14,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.readerEnableTextJustification,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderEnableTextJustification(value);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_display.vert_kerning',
-            title: t.reader_vert_kerning,
-            icon: Icons.space_bar,
-            visible: isVertical,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 15,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.readerEnableVerticalFontKerning,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderEnableVerticalFontKerning(value);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_display.font_vpal',
-            title: t.reader_font_vpal,
-            icon: Icons.format_shapes,
-            visible: isVertical,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 16,
-            ),
-            value: (SettingsContext c) => c.readerSource.readerEnableFontVPAL,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderEnableFontVPAL(value);
-              notifyReaderSettingsChanged(c);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'reading_display.prioritize_reader_styles',
-            title: t.reader_reader_styles,
-            icon: Icons.style_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 17,
-            ),
-            value: (SettingsContext c) =>
-                c.readerSource.readerPrioritizeReaderStyles,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderPrioritizeReaderStyles(value);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          // TODO-861④（移植 Hoshi `f286108`）：图片防剧透模糊。加 `blurred` 类需重跑
-          // 分页脚本（非纯 CSS），故走结构 reload（notifyReaderLayoutChanged）。
-          SettingsSwitchItem(
-            id: 'reading_display.blur_images',
-            title: t.reader_blur_images,
-            icon: Icons.blur_on_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 19,
-            ),
-            value: (SettingsContext c) => c.readerSource.readerBlurImages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderBlurImages(value);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-          // TODO-1128（受限方案 A）：把 0 字符单图 spine 章并入相邻正文章连续显示，
-          // 不再各占一页/一条目录。结构性布局键（改虚拟页映射 + 注入章 DOM），故走
-          // notifyReaderLayoutChanged（重建 spread map + 重排）。**默认开**
-          // （ReaderSettings.mergeImagePages 的 `_get` 真值就是 true）——旧注释写
-          // 「默认关」已过期。
-          SettingsSwitchItem(
-            id: 'reading_display.merge_image_pages',
-            title: t.reader_merge_image_pages,
-            subtitle: t.reader_merge_image_pages_subtitle,
-            icon: Icons.collections_bookmark_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 20,
-            ),
-            value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderMergeImagePages(value);
-              notifyReaderLayoutChanged(c);
-            },
-          ),
-        ],
-      ),
+      // 「听书」原为独立一级分类，现并入本分类末尾（有声书 + 悬浮歌词两组）——
+      // 见 buildListeningSections 的合并说明。放在阅读六组之后：同一本 EPUB 的
+      // 「读」与「听」是一件事的两面，但绝大多数会话只读不听，故排最后。
+      ...buildListeningSections(),
     ],
   );
 }

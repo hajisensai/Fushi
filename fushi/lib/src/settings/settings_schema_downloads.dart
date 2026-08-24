@@ -25,6 +25,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildDownloadsDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.downloads,
+    group: SettingsDestinationGroup.content,
     title: t.nav_downloads,
     summary: t.download_settings,
     icon: Icons.download_outlined,

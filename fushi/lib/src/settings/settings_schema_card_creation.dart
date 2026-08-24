@@ -9,6 +9,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildCardCreationDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.cardCreation,
+    group: SettingsDestinationGroup.tools,
     title: t.settings_destination_card_creation,
     summary: t.anki_settings_label,
     icon: Icons.style_outlined,

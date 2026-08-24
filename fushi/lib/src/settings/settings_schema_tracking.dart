@@ -7,6 +7,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildMediaTrackingDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.mediaTracking,
+    group: SettingsDestinationGroup.content,
     title: t.settings_destination_tracking,
     summary: t.media_tracking_summary,
     icon: Icons.auto_awesome_motion_outlined,

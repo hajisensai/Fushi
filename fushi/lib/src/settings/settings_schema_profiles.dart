@@ -7,6 +7,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildProfilesDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.profiles,
+    group: SettingsDestinationGroup.data,
     title: t.settings_destination_profiles,
     summary: t.profile_management,
     icon: Icons.manage_accounts_outlined,

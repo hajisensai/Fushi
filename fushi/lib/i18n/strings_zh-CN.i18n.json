@@ -3750,5 +3750,8 @@
   "onboarding_anki_addon_installed": "已装好 AnkiConnect：启动或重启 Anki，然后点「测试连接」。",
   "onboarding_anki_addon_no_anki": "没找到 Anki 数据目录：请先安装 Anki 并打开一次，再回来重试。",
   "onboarding_anki_addon_failed": "安装失败：$message",
-  "game_hook_reason_capability_probe_failed": "捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。"
+  "game_hook_reason_capability_probe_failed": "捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。",
+  "settings_group_content": "内容",
+  "settings_group_tools": "工具",
+  "settings_group_data": "数据与设备"
 }

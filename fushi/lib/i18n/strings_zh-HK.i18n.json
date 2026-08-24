@@ -3750,5 +3750,8 @@
   "onboarding_anki_addon_installed": "AnkiConnect is installed. Start (or restart) Anki, then tap Test connection.",
   "onboarding_anki_addon_no_anki": "Anki data folder not found. Install Anki and open it once, then try again.",
   "onboarding_anki_addon_failed": "Install failed: $message",
-  "game_hook_reason_capability_probe_failed": "The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again."
+  "game_hook_reason_capability_probe_failed": "The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.",
+  "settings_group_content": "內容",
+  "settings_group_tools": "工具",
+  "settings_group_data": "資料與裝置"
 }

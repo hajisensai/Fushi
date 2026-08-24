@@ -124,6 +124,7 @@ Future<void> _terminatePortOwnerAndRetry(
 SettingsDestination buildLookupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.lookup,
+    group: SettingsDestinationGroup.tools,
     title: t.settings_destination_lookup,
     summary: t.dictionary_settings,
     icon: Icons.manage_search_outlined,

@@ -33,6 +33,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildGameDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.game,
+    group: SettingsDestinationGroup.content,
     title: t.nav_game,
     summary: t.game_home_subtitle,
     icon: Icons.sports_esports_outlined,

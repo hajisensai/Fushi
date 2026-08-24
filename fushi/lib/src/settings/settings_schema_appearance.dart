@@ -10,6 +10,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildAppearanceDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.appearance,
+    group: SettingsDestinationGroup.interface,
     title: t.settings_destination_appearance,
     summary: t.design_system_hint,
     icon: Icons.palette_outlined,

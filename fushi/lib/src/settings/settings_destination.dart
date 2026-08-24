@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
@@ -14,7 +15,9 @@ enum SettingsDestinationId {
   lookup,
   cardCreation,
   video,
-  listening,
+  // 注：曾有 `listening`（听书）一级分类，2026-08-24 并入 `reading`——两个分类装
+  // 的是同一本 EPUB 的读与听。它没有任何持久化用途（只做内存态选中项身份），故
+  // 直接删除而非保留兼容值；分区本身在 settings_schema_listening.dart 存活。
   mediaTracking,
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
@@ -46,6 +49,85 @@ enum SettingsDestinationId {
   // (ShortcutSettingsPage)；own id so the shell no longer borrows `system` for
   // content that isn't the system destination（与 appIcon 同款约定）。
   shortcuts,
+}
+
+/// 设置主页一级分类的分块。原先这四块只活在 `_buildDestinations()` 的注释里——
+/// 顺序确实按块排，但 UI 上是 13 个分类平铺进同一张卡片，用户看不出块界，也就没法
+/// 「先定位到块、再在块内找」。本枚举把那份注释变成数据，主页据此渲染成四张带组
+/// 标题的卡片（真相源仍是 `_buildDestinations()` 的调用顺序，见
+/// [groupSettingsDestinations]）。
+///
+/// 声明顺序无意义：组的先后由 destination 在 schema 里的出现顺序决定，本枚举只负
+/// 责给块起名。
+enum SettingsDestinationGroup {
+  /// 全局界面（当前只有「外观」）。单成员组不渲染标题头——一个标题带一行是噪音，
+  /// 见 [settingsDestinationGroupTitle]。
+  interface,
+
+  /// 内容：阅读（含听书）/ 漫画 / 视频 / 下载 / 游戏。
+  content,
+
+  /// 横切工具：查词 / 制卡（各内容域共用）。
+  tools,
+
+  /// 数据与设备：配置方案 / 同步备份 / 互联 / 存储 / 系统。
+  data,
+}
+
+/// 组标题；null = 该组只渲染成一张无标题卡片。
+String? settingsDestinationGroupTitle(SettingsDestinationGroup group) {
+  switch (group) {
+    // 「外观」独占一块，标题只会重复它自己。
+    case SettingsDestinationGroup.interface:
+      return null;
+    case SettingsDestinationGroup.content:
+      return t.settings_group_content;
+    case SettingsDestinationGroup.tools:
+      return t.settings_group_tools;
+    case SettingsDestinationGroup.data:
+      return t.settings_group_data;
+  }
+}
+
+/// 主页分类列表的一批：一个组标题 + 该组的分类（组内顺序 = schema 顺序）。
+class SettingsDestinationBatch {
+  const SettingsDestinationBatch({
+    required this.title,
+    required this.destinations,
+  });
+
+  /// null = 不渲染组标题头。
+  final String? title;
+  final List<SettingsDestination> destinations;
+}
+
+/// 把一级分类按 [SettingsDestination.group] 切成有序批次，两个渲染器共用。
+///
+/// **组的先后不是第二处真相源**：这里按「各组在 [destinations] 里首次出现的次序」
+/// 排批次，所以块顺序仍完全由 `_buildDestinations()` 决定（它有顺序守卫）。同组的
+/// 分类必须在 schema 里相邻——否则后面那段会被并回前面那批，UI 顺序与 schema 顺序
+/// 脱节；`settings_destination_group_guard_test` 钉住这条不变式。
+///
+/// [SettingsDestination.group] 为 null 的（阅读器/视频快捷面板等 synthetic
+/// destination）落进一批无标题卡片，行为与分组前一致。
+List<SettingsDestinationBatch> groupSettingsDestinations(
+  List<SettingsDestination> destinations,
+) {
+  // Dart 的 Map 字面量是插入序的 LinkedHashMap，故首次出现次序即批次次序。
+  final Map<SettingsDestinationGroup?, List<SettingsDestination>> buckets =
+      <SettingsDestinationGroup?, List<SettingsDestination>>{};
+  for (final SettingsDestination destination in destinations) {
+    buckets
+        .putIfAbsent(destination.group, () => <SettingsDestination>[])
+        .add(destination);
+  }
+  return buckets.entries
+      .map((MapEntry<SettingsDestinationGroup?, List<SettingsDestination>> e) =>
+          SettingsDestinationBatch(
+            title: e.key == null ? null : settingsDestinationGroupTitle(e.key!),
+            destinations: List<SettingsDestination>.unmodifiable(e.value),
+          ))
+      .toList(growable: false);
 }
 
 /// 书内快捷面板的分组维度，与全局 [SettingsDestinationId] 正交。
@@ -112,6 +194,7 @@ class SettingsDestination {
     required this.title,
     required this.icon,
     required this.sections,
+    this.group,
     this.summary,
     this.visible,
     this.body,
@@ -121,6 +204,12 @@ class SettingsDestination {
   final SettingsDestinationId id;
   final String title;
   final IconData icon;
+
+  /// 主页分块归属；null = 不参与分组（synthetic destination：阅读器/视频快捷面板、
+  /// 推入式子页）。真实一级分类必须声明——由 `settings_destination_group_guard_test`
+  /// 钉住，新增分类漏填会红。
+  final SettingsDestinationGroup? group;
+
   final String? summary;
   final SettingsVisibility? visible;
   final List<SettingsSection> sections;

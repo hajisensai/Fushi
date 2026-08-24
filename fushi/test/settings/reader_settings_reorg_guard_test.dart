@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 
 /// TODO-725 守卫：阅读器设置面板重新归类/排序。
@@ -39,11 +38,10 @@ void main() {
     return grouped;
   }
 
+  // 听书 2026-08-24 并入阅读，其分区由 buildReadingDestination 展开，故这里只需
+  // 一个 destination 就能覆盖到 `listening.volume_key_sentence_nav` 的 placement。
   Map<ReaderGroup, List<SettingsItem>> collected() => collectFrom(
-        <SettingsDestination>[
-          buildReadingDestination(),
-          buildListeningDestination(),
-        ],
+        <SettingsDestination>[buildReadingDestination()],
       );
 
   test('view_mode（翻页/滚动）归 layout 组且为该组首项（TODO-725）', () {
