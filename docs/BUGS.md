@@ -33,6 +33,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1803](bugs/BUG-1803-sgre-layout-argument-forwarding.md) | ✅ | ✅ | SGRE 查词 detour 丢失布局参数导致游戏控制码不转义 |
+| [BUG-1802](bugs/BUG-1802-sgre-lookup-glyph-position.md) | ✅ | ✅ | SGRE 内嵌查词读取错误字形坐标导致命中错位 |
+| [BUG-1801](bugs/BUG-1801-sgre-lookup-stale-line.md) | ✅ | ✅ | SGRE 内嵌查词保留旧台词导致查询不实时 |
+| [BUG-1800](bugs/BUG-1800-sgre-shift-tap-missed.md) | ✅ | ✅ | SGRE 内嵌查词短按 Shift 在轮询间隙被漏掉 |
 | [BUG-1799](bugs/BUG-1799-texthooker-mined-badge-never-revalidated.md) | ✅ | ✅ | galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核 |
 | [BUG-1798](bugs/BUG-1798-video-lookup-controls-autohide-race.md) | ✅ | ✅ | 查词浮层与控制条自动显隐竞态 |
 | [BUG-1797](bugs/BUG-1797-reader-padding-hit-leak.md) | ✅ | ✅ | 阅读器页边距能点到相邻页的词查词（不可见却可命中） |
@@ -43,13 +47,9 @@
 | [BUG-1790](bugs/BUG-1790-gal-resource-poll-freeze.md) | ✅ | ✅ | 资源语音待匹配全量轮询导致 Fushi 与浮窗冻结 |
 | [BUG-1789](bugs/BUG-1789-pdf-import-whitelists.md) | ✅ | ✅ | PDF 导入白名单三处漏抄：漫画框选不中、拖放不认、文件夹扫描跳过 |
 | [BUG-1788](bugs/BUG-1788-popup-kanji-chip-row-never-deleted.md) | ✅ | ✅ | 查词弹窗词头下方的单字 chip 行仍在渲染：删除提交从未合并进 develop |
-| [BUG-1787](bugs/BUG-1787-sgre-layout-argument-forwarding.md) | ✅ | ✅ | SGRE 查词 detour 丢失布局参数导致游戏控制码不转义 |
 | [BUG-1787](bugs/BUG-1787-font-library-scope-target-dead-param.md) | ✅ | ✅ | 字体库作用域参数不生效：从游戏入口导入的字体挂到小说正文 |
 | [BUG-1786](bugs/BUG-1786-win-update-launcher-self-lock.md) | ✅ | ✅ | 自更新永远装不上 app.so：launcher 占着自己的文件让 Inno 整包回滚 |
-| [BUG-1786](bugs/BUG-1786-sgre-lookup-glyph-position.md) | ✅ | ✅ | SGRE 内嵌查词读取错误字形坐标导致命中错位 |
-| [BUG-1785](bugs/BUG-1785-sgre-lookup-stale-line.md) | ✅ | ✅ | SGRE 内嵌查词保留旧台词导致查询不实时 |
 | [BUG-1785](bugs/BUG-1785-download-organize-tv-preview-blocks-batch.md) | ✅ | ✅ | TV 整理被无集号特典文件整批卡死 |
-| [BUG-1784](bugs/BUG-1784-sgre-shift-tap-missed.md) | ✅ | ✅ | SGRE 内嵌查词短按 Shift 在轮询间隙被漏掉 |
 | [BUG-1784](bugs/BUG-1784-download-nyaa-retry-loses-magnet.md) | ✅ | ✅ | 下载重试丢失已选 magnet 致 nyaa notFound |
 | [BUG-1783](bugs/BUG-1783-chapter-markers-safearea-basis-mismatch.md) | ✅ | ✅ | 移动端章节标记与进度条基准分叉：标记层多套一层 SafeArea，刘海横屏下整排斜切错位 |
 | [BUG-1782](bugs/BUG-1782-jimaku-anilist-silent-degrade-cross-season.md) | ✅ | ✅ | Jimaku 搜索时好时坏：AniList 失败被静默吞成空结果，退化成跨季文本搜索 |
