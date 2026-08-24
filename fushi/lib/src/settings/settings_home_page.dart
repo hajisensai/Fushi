@@ -29,10 +29,11 @@ class SettingsHomePage extends BasePage {
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     with SettingsContextHost<SettingsHomePage> {
-  // 默认选中 schema 首个可见分类（当前重排后是「阅读」），与宽屏导航列表的
+  // 默认选中 schema 首个可见分类（当前是「外观」块的首项），与宽屏导航列表的
   // 视觉首项一致：不再硬编码某个 id——分类顺序的唯一真相源是 buildSettingsSchema
   // （有顺序守卫），这里在 build 里首次解析时取 destinations.first.id，顺序调整
-  // 时默认项自动跟随，不会再脱节。
+  // 时默认项自动跟随，不会再脱节。分块渲染同样不改顺序（groupSettingsDestinations
+  // 只切段），故首项仍是视觉首项。
   SettingsDestinationId? _selectedDestinationId;
 
   // 设置搜索：跨全部分类按标题/副标题/分区/分类名过滤配置项，点结果跳转到

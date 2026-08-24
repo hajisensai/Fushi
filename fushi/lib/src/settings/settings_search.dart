@@ -125,6 +125,10 @@ List<SettingsSearchEntry> filterSettingsEntries(
       e.item.subtitle,
       e.sectionTitle,
       e.destination.title,
+      // 分类副标题也算命中面：它就印在一级列表上、是用户看得见的分类描述，
+      // 搜不到它才是意外。合并类分类尤其依赖这条——「听书」并入「阅读」后，
+      // 「听书」只剩在阅读的 summary 里出现（见 buildReadingDestination）。
+      e.destination.summary,
     ].whereType<String>().join('\n').toLowerCase();
     if (haystack.contains(q)) return 2;
     return -1;

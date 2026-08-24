@@ -22,6 +22,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -145,5 +146,28 @@ void main() {
             .any((SettingsItem i) => i.id == 'listening.floating_lyric'))
         .length;
     expect(owners, 1, reason: '听书分区只应挂在「阅读」一处');
+  });
+
+  testWidgets('搜「听书」仍落到阅读分类（合并后它只活在 summary 里）',
+      (WidgetTester tester) async {
+    final SettingsContext sctx = await makeContext(tester);
+    final List<SettingsSearchEntry> hits = filterSettingsEntries(
+      flattenVisibleSettings(buildSettingsSchema(sctx), sctx),
+      // 默认 locale 是 en，对应 settings_destination_listening 的英文值。
+      'listening',
+    );
+    expect(hits, isNotEmpty, reason: '听书并入阅读后，这个词必须仍能搜到');
+    expect(
+      hits.map((SettingsSearchEntry e) => e.destination.id).toSet(),
+      contains(SettingsDestinationId.reading),
+    );
+    // 命中面确实来自分类 summary，而不是碰巧撞上了某条 item 标题。
+    final SettingsSearchEntry viaSummary = hits.firstWhere(
+      (SettingsSearchEntry e) =>
+          e.destination.id == SettingsDestinationId.reading,
+    );
+    expect(viaSummary.title.toLowerCase(), isNot(contains('listening')));
+    expect(viaSummary.destination.summary?.toLowerCase(),
+        contains('listening'));
   });
 }
