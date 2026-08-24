@@ -3783,5 +3783,7 @@
   "manga_ocr_engine_system": "Device OCR",
   "manga_ocr_engine_system_desc": "Uses the text recognition built into your device. No download, fully offline, nothing uploaded — but noticeably weaker on vertical speech bubbles and handwriting than the local model.",
   "manga_ocr_engine_system_unavailable": "This device has no built-in text recognition available",
-  "manga_tap_ocr_online_lens_only": "Online chapters are not stored locally, so only Google Lens can read them — the page image is uploaded to Google."
+  "manga_tap_ocr_online_lens_only": "Online chapters are not stored locally, so only Google Lens can read them — the page image is uploaded to Google.",
+  "video_jimaku_search_failed": "Subtitle search failed",
+  "video_subtitle_error_with_code": "${msg} (HTTP ${code})"
 }
