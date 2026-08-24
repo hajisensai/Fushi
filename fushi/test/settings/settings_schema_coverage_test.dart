@@ -527,44 +527,48 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
+  // 下面这批「有声书 / 悬浮字幕」项的 key 前缀在 2026-08-24 从 `listening/` 变成
+  // `reading/`：听书并入阅读一级分类，本表的 key 是「destination/标题」，归属换了
+  // key 就得跟着换（item id 仍是 `listening.*`，没动）。
+  //
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
   // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/
   // persist/restore 经 DB，运行时分流由偏好默认 + dispose 源码守卫覆盖。
-  'listening/Keep playing after exit':
+  'reading/Keep playing after exit':
       'test/models/preferences_repository_test.dart + test/media/audiobook/audiobook_exit_stop_policy_static_test.dart',
-  'listening/Show media notification':
+  'reading/Show media notification':
       'DEVICE: native AudioHandler notification',
   // TODO-038: now visible on Windows desktop too (no longer Android-only). The
   // strip is a runner-owned Win32 window, so the real overlay needs a desktop;
   // covered by source guards + device backlog.
-  'listening/Floating lyric overlay':
+  'reading/Floating lyric overlay':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + test/settings/floating_lyric_settings_visibility_guard_test.dart + DEVICE: native always-on-top strip',
-  'listening/Floating subtitle font size':
+  'reading/Floating subtitle font size':
       'test/media/audiobook/desktop_floating_lyric_test.dart + DEVICE: native strip font size',
   // TODO-370: 文字 / 按钮底色透明度作用于 ARGB alpha 通道，效果由 scaleAlpha 纯函数测试
   // 覆盖；落到原生悬浮窗的实际像素需真机。
-  'listening/Floating subtitle text opacity':
+  'reading/Floating subtitle text opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip text alpha',
-  'listening/Floating subtitle button background opacity':
+  'reading/Floating subtitle button background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip button alpha',
   // TODO-576: 条背景透明度（默认 70=更不挡视野）作用于条背景 ARGB alpha；缩放由
   // scaleAlpha 纯函数测试覆盖，落到原生悬浮窗的实际像素需真机。
-  'listening/Floating subtitle background opacity':
+  'reading/Floating subtitle background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + test/settings/floating_lyric_bg_opacity_test.dart + DEVICE: native strip bg alpha',
   // TODO-708 P2: 圆角半径 / 宽度（dp，0=平台原生观感）。偏好往返 + 默认哨兵 + 两个样式
   // 构造点喂入由专项测试覆盖；落到原生悬浮窗的实际圆角/窗宽像素需真机点验。
-  'listening/Floating subtitle corner radius':
+  'reading/Floating subtitle corner radius':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip corner radius (Android GradientDrawable / Windows D2D)',
-  'listening/Floating subtitle width':
+  'reading/Floating subtitle width':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip window width (Android LayoutParams / Windows SetWindowPos)',
   // TODO-708 P4: 悬浮字幕前后 N 行上下文块（N=0 单行）。偏好往返 + 上下文行区间
   // 构建（当前行 start/length 高亮）由专项测试覆盖；落到原生悬浮窗的多行渲染 +
   // 当前行明暗需真机点验。
-  'listening/Floating subtitle context lines':
+  'reading/Floating subtitle context lines':
       'test/media/audiobook/floating_lyric_context_pref_test.dart + test/media/audiobook/floating_lyric_context_test.dart + DEVICE: native strip multi-line context + current-line highlight (Android FloatingLyricService / Windows floating_lyric_window)',
-  'listening/Tap floating subtitle to look up':
+  'reading/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
-  'listening/Volume key sentence navigation':
+  'reading/Volume key sentence navigation':
       'DEVICE: native volume-key cue nav',
   'system/Update channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',

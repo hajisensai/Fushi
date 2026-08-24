@@ -69,7 +69,6 @@ void main() {
       'buildLookupDestination()',
       'buildCardCreationDestination()',
       'buildVideoDestination()',
-      'buildListeningDestination()',
       'buildSyncBackupDestination()',
       'buildSystemDestination()',
     ],
@@ -97,9 +96,11 @@ void main() {
       'SettingsDestination buildVideoDestination()',
       'SettingsDestinationId.video',
     ],
+    // 听书 2026-08-24 并入阅读：不再是 destination，但仍是自己的领域 library
+    // （返回分区，由 buildReadingDestination 展开）——「一域一文件」契约不变。
     'lib/src/settings/settings_schema_listening.dart': <String>[
-      'SettingsDestination buildListeningDestination()',
-      'SettingsDestinationId.listening',
+      'List<SettingsSection> buildListeningSections()',
+      "id: 'listening.audiobook_background_play'",
     ],
     'lib/src/settings/settings_schema_system.dart': <String>[
       'SettingsDestination buildSystemDestination()',
@@ -290,7 +291,6 @@ void main() {
       'SettingsDestinationId.reading',
       'SettingsDestinationId.lookup',
       'SettingsDestinationId.cardCreation',
-      'SettingsDestinationId.listening',
       'SettingsDestinationId.syncBackup',
       'SettingsDestinationId.system',
     ]) {
@@ -300,6 +300,9 @@ void main() {
     expect(
         combined, isNot(contains('SettingsDestinationId.dictionaryAndCards')));
     expect(combined, isNot(contains('SettingsDestinationId.audiobook')));
+    // 听书并入阅读后该 id 被删（无持久化用途）；留着会让「听书是独立一级分类」
+    // 的假设悄悄复活。
+    expect(combined, isNot(contains('SettingsDestinationId.listening')));
     expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 

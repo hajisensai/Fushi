@@ -55,8 +55,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    final List<Widget> rows = <Widget>[
-      for (final SettingsDestination destination in destinations)
+    List<Widget> rowsFor(List<SettingsDestination> group) => <Widget>[
+      for (final SettingsDestination destination in group)
         FushiListItem(
           selected: destination.id == selectedDestinationId,
           // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
@@ -87,6 +87,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         ),
     ];
 
+    // 一级分类按四块渲染成带组标题的多张卡片（外观那块单成员，标题为 null 即无题
+    // 卡）。分组本身是数据层的事，两个渲染器共用 groupSettingsDestinations——这里
+    // 只负责把批次画成卡片，不重排顺序。
     return ListView(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -95,10 +98,13 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         tokens.spacing.page + mediaPadding.bottom,
       ),
       children: <Widget>[
-        AdaptiveSettingsSection(
-          surfaceColor: tokens.surfaces.card,
-          children: rows,
-        ),
+        for (final SettingsDestinationBatch batch
+            in groupSettingsDestinations(destinations))
+          AdaptiveSettingsSection(
+            title: batch.title,
+            surfaceColor: tokens.surfaces.card,
+            children: rowsFor(batch.destinations),
+          ),
       ],
     );
   }

@@ -77,6 +77,7 @@ part 'sync_settings_schema/data_root.part.dart';
 SettingsDestination buildSyncBackupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.syncBackup,
+    group: SettingsDestinationGroup.data,
     title: t.settings_destination_sync_backup,
     summary: t.sync_summary,
     icon: Icons.sync,
@@ -442,6 +443,7 @@ SettingsDestination buildInterconnectDestination() {
       _syncSettings(ctx).interconnectEnabled;
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,
+    group: SettingsDestinationGroup.data,
     title: t.settings_destination_interconnect,
     summary: t.interconnect_summary,
     icon: Icons.devices_outlined,

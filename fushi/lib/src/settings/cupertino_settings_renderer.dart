@@ -31,7 +31,12 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
           CupertinoSliverNavigationBar(
             largeTitle: Text(settingsContext.context.t.settings),
           ),
-          SliverFillRemaining(child: list),
+          // buildDestinationList 返回的是不可滚动的 section 列表，高度随分类数
+          // 增长（分块后又多了几个组标题头）。SliverFillRemaining 会把它钉死在
+          // 「剩余视口高度」里、内容超出即 RenderFlex 溢出；SliverToBoxAdapter 让
+          // 它按自身高度参与外层 CustomScrollView 的滚动（宽屏那条路径已由主页的
+          // SingleChildScrollView 兜住，见 settings_home_page）。
+          SliverToBoxAdapter(child: list),
         ],
       ),
     );
@@ -47,28 +52,46 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
   }) {
     final Color primaryColor =
         CupertinoTheme.of(settingsContext.context).primaryColor;
-    return CupertinoListSection.insetGrouped(
-      backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
-        settingsContext.context,
-      ),
-      children: destinations.map((SettingsDestination destination) {
-        return CupertinoListTile(
-          leading: Icon(destination.icon, color: primaryColor),
-          title: Text(destination.title),
-          subtitle:
-              destination.summary != null ? Text(destination.summary!) : null,
-          trailing: const CupertinoListTileChevron(),
-          onTap: () {
-            onDestinationSelected(destination.id);
-            if (!pushRoutes) return;
-            Navigator.of(settingsContext.context).push(
-              CupertinoPageRoute<void>(
-                builder: (_) => SettingsDetailPage(destination: destination),
-              ),
-            );
-          },
-        );
-      }).toList(growable: false),
+    final Color background = CupertinoColors.systemGroupedBackground.resolveFrom(
+      settingsContext.context,
+    );
+    CupertinoListTile tileFor(SettingsDestination destination) {
+      return CupertinoListTile(
+        leading: Icon(destination.icon, color: primaryColor),
+        title: Text(destination.title),
+        subtitle:
+            destination.summary != null ? Text(destination.summary!) : null,
+        trailing: const CupertinoListTileChevron(),
+        onTap: () {
+          onDestinationSelected(destination.id);
+          if (!pushRoutes) return;
+          Navigator.of(settingsContext.context).push(
+            CupertinoPageRoute<void>(
+              builder: (_) => SettingsDetailPage(destination: destination),
+            ),
+          );
+        },
+      );
+    }
+
+    // 与 Material 侧同款分块（groupSettingsDestinations 是共享真相源）：每批一个
+    // inset-grouped section，组标题落在 header。列表整体不再是单个 section，故这里
+    // 自带 Column——buildHomePage 的 SliverFillRemaining 与主页窄布局都给了滚动。
+    final List<SettingsDestinationBatch> batches =
+        groupSettingsDestinations(destinations);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (final SettingsDestinationBatch batch in batches)
+          CupertinoListSection.insetGrouped(
+            backgroundColor: background,
+            header: batch.title != null ? Text(batch.title!) : null,
+            children: batch.destinations
+                .map(tileFor)
+                .toList(growable: false),
+          ),
+      ],
     );
   }
 

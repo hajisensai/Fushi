@@ -5,15 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// 顶层大类顺序守卫：设置 schema 四块分层（外观 → 内容 → 横切工具 →
 /// 数据与设备/系统）。
 ///
-/// 这是「用户决策过的位置」（2026-07-26 用户拍板，取代阶段 G 纯任务优先排序）：
-/// 外观置顶；内容块内相关项相邻（阅读→听书、视频→下载→游戏）；查词/制卡是跨媒体
-/// 横切工具排内容之后；Profile / 同步备份 / 互联 / 系统殿后。锁死顺序让未来漂移
-/// 必须是有意为之（改分类顺序时同步改本守卫）。用源码顺序断言
-/// （零 harness 依赖：无需构造 SettingsContext + AppModel 即可校验列表次序）。
+/// 这是「用户决策过的位置」（2026-07-26 用户拍板，取代阶段 G 纯任务优先排序；
+/// 2026-08-24 听书并入阅读）：外观置顶；内容块内相关项相邻（阅读→漫画→视频→
+/// 下载→游戏）；查词/制卡是跨媒体横切工具排内容之后；Profile / 同步备份 / 互联 /
+/// 系统殿后。锁死顺序让未来漂移必须是有意为之（改分类顺序时同步改本守卫）。用源码
+/// 顺序断言（零 harness 依赖：无需构造 SettingsContext + AppModel 即可校验次序）。
 ///
 /// 顺序真相源是 `_buildDestinations()`——`buildSettingsSchema()` 自 schema 缓存
-/// （见 settings_schema_cache_test.dart）起只是读快照的薄入口，13 个分类调用留在
-/// 前者体内。
+/// （见 settings_schema_cache_test.dart）起只是读快照的薄入口，分类调用留在前者
+/// 体内。主页的分块渲染也读同一份顺序（见 settings_destination_group_guard_test）。
 void main() {
   test('_buildDestinations keeps the four-block top-level destination order',
       () {
@@ -31,7 +31,8 @@ void main() {
       'buildAppearanceDestination()',
       'buildReadingDestination()',
       'buildMangaDestination()',
-      'buildListeningDestination()',
+      // 「听书」2026-08-24 并入「阅读」，不再是一级分类（分区在
+      // settings_schema_listening.dart 由 buildReadingDestination 展开）。
       'buildVideoDestination()',
       'buildDownloadsDestination()',
       'buildGameDestination()',

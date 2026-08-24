@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 SettingsDestination buildSystemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
+    group: SettingsDestinationGroup.data,
     title: t.settings_destination_system,
     summary: t.settings_destination_system_summary,
     icon: Icons.settings_suggest_outlined,

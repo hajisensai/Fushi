@@ -27,6 +27,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildStorageDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.storage,
+    group: SettingsDestinationGroup.data,
     title: t.settings_destination_storage,
     summary: t.settings_destination_storage_summary,
     icon: Icons.sd_storage_outlined,

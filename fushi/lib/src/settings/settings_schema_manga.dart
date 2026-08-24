@@ -21,6 +21,7 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildMangaDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.manga,
+    group: SettingsDestinationGroup.content,
     title: t.manga_library,
     summary: t.settings_destination_manga_summary,
     icon: Icons.auto_stories_outlined,
