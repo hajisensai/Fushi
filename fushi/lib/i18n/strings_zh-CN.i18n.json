@@ -3105,7 +3105,7 @@
   "video_work_extras": "花絮",
   "video_work_details": "作品资料",
   "video_work_external_ids": "外部 ID",
-  "video_work_metadata_pending": "暂无详细资料。请在",
+  "video_work_metadata_pending": "尚未刮削详细资料。请在「来源」中重试此来源，然后重新打开作品。",
   "video_work_genres": "类型",
   "video_work_keywords": "标签",
   "video_work_studios": "工作室",

@@ -187,7 +187,10 @@ void main() {
     );
     expect(find.text('Tensei Oujo v2 播放列表'), findsOneWidget);
     expect(find.textContaining('已看完'), findsWidgets);
-    expect(find.textContaining('暂无详细资料'), findsOneWidget);
+    // 旧锚点是「暂无详细资料」——那是 #792 引入时就断在半截的文案
+    // （`暂无详细资料。请在`，介词悬空），断句处恰好在锚点之后，所以这条断言
+    // 从来没能发现它。文案补全后锚点跟着走，仍只匹配待刮削态这一句。
+    expect(find.textContaining('尚未刮削详细资料'), findsOneWidget);
     expect(find.textContaining('★'), findsNothing, reason: '没有评分就不该出现评分符号');
     expect(
       find.text('全 1 话'),

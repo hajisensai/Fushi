@@ -29,8 +29,18 @@ import 'package:window_manager/window_manager.dart';
 final ValueNotifier<bool> mainWindowForegroundNotifier =
     ValueNotifier<bool>(true);
 
+/// 测试用平台判据覆盖。**只给测试用**，生产路径永远读 [Platform.isWindows]。
+///
+/// 没有它这条守卫在 CI 上是空的：CI 跑 Linux，判据为假 → 闸门整个短路成透传 →
+/// 「关门后 requestFocus 拿不到焦点」这类断言不是被满足，而是根本没被执行到，
+/// 于是本机 Windows 全绿、CI 两条红（run 32656498068）。平台判据写死在 widget
+/// 里读不出来，正是这条不变量唯一无法在 CI 验证的原因。
+@visibleForTesting
+bool? debugMainWindowFocusGateAppliesOverride;
+
 /// 本平台是否需要这条不变量。
-bool get mainWindowFocusGateApplies => Platform.isWindows;
+bool get mainWindowFocusGateApplies =>
+    debugMainWindowFocusGateAppliesOverride ?? Platform.isWindows;
 
 /// 监听主窗自己的 focus / blur（window_manager 底层是主窗 `WM_NCACTIVATE`，
 /// 窗口级信号，不是 `AppLifecycleState.resumed` 那种进程级信号），刷新
@@ -109,9 +119,10 @@ class _MainWindowFocusGateState extends State<MainWindowFocusGate> {
 
   @override
   void dispose() {
-    if (mainWindowFocusGateApplies) {
-      mainWindowForegroundNotifier.removeListener(_onForegroundChanged);
-    }
+    // 无条件退订：removeListener 对没订阅过的监听器本就是 no-op，而「订阅时判一
+    // 次、退订时再判一次」会在判据中途变化时漏退订（测试覆盖开关就会这样变）。
+    // 少一个特殊情况，就少一处泄漏。
+    mainWindowForegroundNotifier.removeListener(_onForegroundChanged);
     _gateNode.dispose();
     super.dispose();
   }
