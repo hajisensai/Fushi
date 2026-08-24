@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -60,7 +60,7 @@ void main() {
     ReaderSettings? liveSettings;
     String? originalMode;
     try {
-      app.main();
+      await launchFushiTestApp();
 
       // 1) Real app initialises + renders home in the off-screen runner.
       final bool homeReady = await waitForHome(tester);

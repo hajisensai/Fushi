@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
@@ -29,7 +29,7 @@ void main() {
       collectedErrors: errors,
       body: () async {
         TexthookerService.instance.clear();
-        app.main();
+        await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
         final appModel = await readyAppModel(tester);
         UpdateChecker.cancelActiveCheck();

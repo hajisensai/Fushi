@@ -49,8 +49,10 @@ typedef _LayoutCssArgs = ({
   String vertKerningCss,
   String vpalCss,
   String textOrientCss,
-  double clampedMarginTop,
-  double clampedMarginBottom,
+  String marginTopCss,
+  String marginBottomCss,
+  String marginLeftCss,
+  String marginRightCss,
 });
 
 class ReaderContentStyles {
@@ -84,7 +86,7 @@ class ReaderContentStyles {
     required double marginBottomVh,
     required int fontSizePx,
   }) =>
-      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - ${marginTopVh}vh - ${marginBottomVh}vh - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
+      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${marginTopVh}vh) - var(--reader-margin-bottom, ${marginBottomVh}vh) - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
 
   /// TODO-1285：每页多列（pageColumns）的单个子列宽度。给定单列时的 content-box 基准
   /// 表达式 [baseContentBoxCss]（横排=宽、竖排=高，均为 CSS calc/max 串），当
@@ -251,7 +253,12 @@ class ReaderContentStyles {
     final double ml = math.max(0, settings.marginLeft);
     final double mr = math.max(0, settings.marginRight);
 
-    final String paddingCss = '${mt}vh ${mr}vw ${mb}vh ${ml}vw';
+    final String marginTopCss = 'var(--reader-margin-top, ${mt}vh)';
+    final String marginBottomCss = 'var(--reader-margin-bottom, ${mb}vh)';
+    final String marginLeftCss = 'var(--reader-margin-left, ${ml}vw)';
+    final String marginRightCss = 'var(--reader-margin-right, ${mr}vw)';
+    final String paddingCss =
+        '$marginTopCss $marginRightCss $marginBottomCss $marginLeftCss';
     // TODO-792 续（相邻页/列露出 bleed 修复）：分页模式视口比单列周期大（viewport > pageStep），
     // 多出的部分在页边缘露出上/下页（竖排）或左/右页（横排）的相邻列。clip-path 以 body 边框盒
     // （固定视口帧，margin/border=0 即视口）为基准、裁到**正文内容盒**（= 全 padding：四边各等于
@@ -260,8 +267,8 @@ class ReaderContentStyles {
     // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+F+chromeBottom，
     // 左右=ml/mr vw），裁边恰在列边缘、不切正文。
     final String contentClipCss =
-        'inset(calc(${mt}vh + var(--chrome-top-inset, 0px)) ${mr}vw '
-        'calc(${mb}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) ${ml}vw)';
+        'inset(calc($marginTopCss + var(--chrome-top-inset, 0px)) $marginRightCss '
+        'calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) $marginLeftCss)';
     // TODO-729：column-gap 固定为常量（= 安卓 calc(0vh + 22px)）。它只是相邻列之间
     // 的恒定空隙，**不再**承载 margin / fontSize / chrome inset —— 那些 inset 全部由
     // padding 承载（横排在 padding 左右 + perpendicular 的 padding-top/bottom；竖排在
@@ -290,7 +297,7 @@ class ReaderContentStyles {
             marginBottomVh: mb,
             fontSizePx: settings.fontSize.round(),
           )
-        : 'calc(var(--page-width, 100vw) - ${ml}vw - ${mr}vw)';
+        : 'calc(var(--page-width, 100vw) - $marginLeftCss - $marginRightCss)';
     // TODO-1285：每页列数（pageColumns）根因修复。旧实现只发 `column-count:N` 却把
     // column-width 钉死在整页 content-box —— CSS multicol 规范下并存时实际列数 =
     // min(N, floor((content-box+gap)/(column-width+gap))) = min(N,1) = 1，N 被整页列宽
@@ -399,8 +406,10 @@ svg.block-img.blurred {
       vertKerningCss: vertKerningCss,
       vpalCss: vpalCss,
       textOrientCss: textOrientCss,
-      clampedMarginTop: mt,
-      clampedMarginBottom: mb,
+      marginTopCss: marginTopCss,
+      marginBottomCss: marginBottomCss,
+      marginLeftCss: marginLeftCss,
+      marginRightCss: marginRightCss,
     );
     final String layoutCss = settings.isVnMode
         ? _vnLayoutCss(layoutArgs)
@@ -411,8 +420,6 @@ svg.block-img.blurred {
                 columnGapCss: columnGapCss,
                 columnWidthCss: columnWidthCss,
                 columnsCss: columnsCss,
-                clampedMarginLeft: ml,
-                clampedMarginRight: mr,
                 contentClipCss: contentClipCss,
               );
 
@@ -855,8 +862,6 @@ a {
     required String columnGapCss,
     required String columnWidthCss,
     required String columnsCss,
-    required double clampedMarginLeft,
-    required double clampedMarginRight,
     required String contentClipCss,
   }) {
     // 公共参数解构自 _LayoutCssArgs（局部名 / 值与旧命名参数一致）；isVertical 本生成器不用，
@@ -871,8 +876,10 @@ a {
     final String vertKerningCss = a.vertKerningCss;
     final String vpalCss = a.vpalCss;
     final String textOrientCss = a.textOrientCss;
-    final double clampedMarginTop = a.clampedMarginTop;
-    final double clampedMarginBottom = a.clampedMarginBottom;
+    final String marginTopCss = a.marginTopCss;
+    final String marginBottomCss = a.marginBottomCss;
+    final String marginLeftCss = a.marginLeftCss;
+    final String marginRightCss = a.marginRightCss;
     return '''
 html, body {
   overflow: hidden !important;
@@ -918,8 +925,8 @@ body {
      受用(1 列无可均摊，零行为变化)。 */
   column-fill: auto !important;
   padding: $paddingCss !important;
-  padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
-  padding-bottom: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  padding-top: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
+  padding-bottom: calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
   /* TODO-810 + TODO-792：clip-path 以 body 边框盒（border-box·margin/border=0 即固定视口帧）为
      基准裁到**正文内容盒**（四边各 = body 实际 padding），一举两用：① 裁掉 notch/状态栏安全带里
      滚入的上一页文字（原 TODO-810 只裁 chrome inset 那一截）；② 裁掉分页模式因 viewport > 单列
@@ -957,10 +964,10 @@ html::before {
   z-index: 2147483000 !important;
   border-style: solid !important;
   border-color: ${colors.backgroundColor} !important;
-  border-top-width: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
-  border-right-width: ${clampedMarginRight}vw !important;
-  border-bottom-width: calc(${clampedMarginBottom}vh + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
-  border-left-width: ${clampedMarginLeft}vw !important;
+  border-top-width: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
+  border-right-width: $marginRightCss !important;
+  border-bottom-width: calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  border-left-width: $marginLeftCss !important;
 }''';
   }
 
@@ -983,8 +990,8 @@ html::before {
     final String vertKerningCss = a.vertKerningCss;
     final String vpalCss = a.vpalCss;
     final String textOrientCss = a.textOrientCss;
-    final double clampedMarginTop = a.clampedMarginTop;
-    final double clampedMarginBottom = a.clampedMarginBottom;
+    final String marginTopCss = a.marginTopCss;
+    final String marginBottomCss = a.marginBottomCss;
     // TODO-958：VN 居中需区分主轴。flex 容器 `.fushi-vn-screen` 的物理主轴恒为水平
     // （flex-direction:row），但「沿主轴居中」的语义在两种写排下不同：竖排
     // vertical-rl 文字列沿水平主轴展开，水平居中即左右居中；横排文字行沿垂直交叉轴
@@ -1023,8 +1030,8 @@ body {
   box-sizing: border-box !important;
   /* Reserve the reader chrome (top/bottom bars) + the user's vertical margins
      so the screen never sits under the notch or the bottom chrome. */
-  padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
-  padding-bottom: calc(${clampedMarginBottom}vh + var(--chrome-bottom-inset, 0px)) !important;
+  padding-top: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
+  padding-bottom: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
 }
 .fushi-vn-screen {
   box-sizing: border-box !important;
@@ -1068,8 +1075,8 @@ body {
     final String vertKerningCss = a.vertKerningCss;
     final String vpalCss = a.vpalCss;
     final String textOrientCss = a.textOrientCss;
-    final double clampedMarginTop = a.clampedMarginTop;
-    final double clampedMarginBottom = a.clampedMarginBottom;
+    final String marginTopCss = a.marginTopCss;
+    final String marginBottomCss = a.marginBottomCss;
     // TODO-788：连续模式无 multicol 翻页周期，padding-bottom 只用 marginBottom + chrome-bottom-inset，
     // 不再像分页模式 (_paginatedLayoutCss :507) 那样塞一份独立的 fontSize px 预留项——分页那份 F
     // 是承载几何项（镜像 verticalColumnWidthCss/JS contentBox 维持 pageStep==realPitch 不变式）必须保留，
@@ -1111,8 +1118,8 @@ body {
   box-sizing: border-box !important;
   $viewportConstraintCss
   padding: $paddingCss !important;
-  padding-top: calc(${clampedMarginTop}vh + var(--chrome-top-inset, 0px)) !important;
-  padding-bottom: calc(${clampedMarginBottom}vh + var(--chrome-bottom-inset, 0px)) !important;
+  padding-top: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
+  padding-bottom: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
   /* TODO-810：连续模式与分页同理：竖排纵向滚动轴与顶部透明 padding 安全带同轴，需在 inset 带硬裁
      防上一屏文字滚入 notch。clip-path 以 body 边框盒（border-box）为基准只裁顶/底 padding 透明带，
      正文不受影响；不动高度/scrollTop 几何。 */

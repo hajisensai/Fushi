@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/pages.dart';
 
 import 'test_helpers.dart';
@@ -39,7 +39,7 @@ void main() {
 
   testWidgets('directional keys traverse the home; gameButtonB pops',
       (WidgetTester tester) async {
-    app.main();
+    await launchFushiTestApp();
 
     final bool homeReady = await waitForHome(tester);
     expect(homeReady, isTrue, reason: 'Home must render');

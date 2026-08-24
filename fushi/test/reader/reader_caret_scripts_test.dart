@@ -155,6 +155,17 @@ void main() {
       expect(js, contains('isActive:'));
     });
 
+    test('BUG-1812 caret viewport survives zero iOS inner dimensions', () {
+      expect(js, contains('_viewportFrame: function()'));
+      expect(js, contains("getPropertyValue('--page-width')"));
+      expect(js, contains("getPropertyValue('--reader-viewport-height')"));
+      expect(js, contains('document.body.getBoundingClientRect()'),
+          reason: 'vertical-rl iOS uses a negative horizontal body frame');
+      expect(js, contains('right: frame.left + frame.width'));
+      expect(js,
+          contains('return this._vertical() ? frame.width : frame.height'));
+    });
+
     test(
         'popup glossary images are caret-reachable (img in the interactive '
         'selector so A bubbles img.click() to open the image lightbox)', () {

@@ -46,4 +46,9 @@
     并用不打开的 gate + `timeout` 把死锁钉成红。
 - **备注**：两条守卫测试在编写时都被**自己的解释性注释**误触发（注释里必然要写出被禁的
   `await _playActivationTail` / `grid-lanes` 字样），故均先剥掉整行 `//` 注释再匹配可执行代码。
-  未做真机验收（用户侧仍在使用旧构建）。
+  2026-08-24 已在 iPhone SE（iOS 26.6）补齐真机验收：
+  `integration_test/ios_audiobook_exit_reentry_itest.dart` 生成 30 秒 AAC，播放态完成系统
+  返回后验证 native 止声、会话清空、两秒后页面不恢复；重进 WebView DOM 有正文而非黑屏。
+  另开「退出后续播」后验证首页 `NowListeningMiniBar` 的停止语义可操作并真正止声。
+  ⚠ 该 `*_itest.dart` **不在任何 runner 里**（真单测门 `fushi/tool/flutter_test_failures.dart`
+  只传 `'test'`），只能真机/模拟器手跑，CI 不会替你跑。

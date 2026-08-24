@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -29,7 +30,24 @@ Future<SyncRepository> _repo({
   return repo;
 }
 
+Future<Directory> _isolatedAudioCache() async {
+  final Directory cache =
+      await Directory.systemTemp.createTemp('fushi-remote-audio-test-');
+  addTearDown(() async {
+    if (await cache.exists()) await cache.delete(recursive: true);
+  });
+  return cache;
+}
+
 void main() {
+  test('default pinned audio cache is under the app-private support root', () {
+    final String source = File(
+      'lib/src/sync/fushi_remote_lookup_client.dart',
+    ).readAsStringSync();
+    expect(source, contains('AppPaths.supportRootDirectory()'));
+    expect(source, isNot(contains('Directory.systemTemp.path')));
+  });
+
   test('dictionary lookup fails over enabled candidate urls', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
@@ -156,6 +174,472 @@ void main() {
 
     expect(requestedHosts, <String>['old', 'new']);
     expect(url, 'http://new:8765/api/lookup/audio/file?id=abc');
+  });
+
+  test(
+      'pinned https audio fetch keeps the peer trust chain and returns a '
+      'local file', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    const List<int> audioBytes = <int>[0x49, 0x44, 0x33, 1, 2, 3, 4];
+    final List<String> requests = <String>[];
+    final List<String> fingerprints = <String>[];
+    final Directory cache = await _isolatedAudioCache();
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedAudioCacheDirectoryProvider: () async => cache,
+      httpClient: MockClient((http.Request request) async {
+        fail('a pinned https peer must never use the unpinned shared client');
+      }),
+      pinnedClientFactory: (String expectedFingerprint) {
+        fingerprints.add(expectedFingerprint);
+        return MockClient((http.Request request) async {
+          requests.add('${request.method} ${request.url.path}');
+          if (request.method == 'POST') {
+            return http.Response.bytes(
+              utf8.encode(jsonEncode(<String, dynamic>{
+                'type': 'audioResult',
+                'url': 'https://pinned:38765/api/lookup/audio/file?id=opaque',
+                'contentType': 'audio/mpeg',
+              })),
+              200,
+              headers: const <String, String>{
+                'content-type': 'application/json; charset=utf-8',
+              },
+            );
+          }
+          return http.Response.bytes(
+            audioBytes,
+            200,
+            headers: const <String, String>{'content-type': 'audio/mpeg'},
+          );
+        });
+      },
+    );
+
+    final String? ref = await client.lookupAudioUrl(
+      expression: '猫',
+      reading: 'ねこ',
+    );
+
+    expect(ref, isNotNull);
+    expect(ref!.startsWith('http'), isFalse,
+        reason: 'self-signed peer URLs cannot be handed to iOS WebView/player; '
+            'the pinned client must materialize the bytes first');
+    if (!ref.startsWith('http')) {
+      expect(await File(ref).readAsBytes(), audioBytes);
+    }
+    expect(requests, <String>[
+      'POST /api/lookup/audio',
+      'GET /api/lookup/audio/file',
+    ]);
+    expect(fingerprints, <String>['aa:bb:cc', 'aa:bb:cc'],
+        reason: 'both hops must validate the exact paired-peer fingerprint');
+  });
+
+  test('pinned audio second-hop TLS failure preserves unreachable cooldown',
+      () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=opaque',
+            }),
+            200,
+          );
+        }
+        throw const HandshakeException('certificate pin mismatch');
+      }),
+    );
+
+    await expectLater(
+      client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+      throwsA(isA<RemoteLookupUnreachableError>()),
+    );
+  });
+
+  test('pinned audio second-hop 404 is reachable-no-audio', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=expired',
+            }),
+            200,
+          );
+        }
+        return http.Response('expired', 404);
+      }),
+    );
+
+    expect(
+      await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+      isNull,
+    );
+  });
+
+  test('materialized pinned audio cache evicts expired and over-budget files',
+      () async {
+    final Directory cache = await _isolatedAudioCache();
+    final String marker = 'qa_${DateTime.now().microsecondsSinceEpoch}_${pid}_';
+    final File expired = File('${cache.path}/${marker}expired.bin');
+    final File freshA = File('${cache.path}/${marker}fresh_a.bin');
+    final File freshB = File('${cache.path}/${marker}fresh_b.bin');
+    for (final File file in <File>[expired, freshA, freshB]) {
+      await file.create();
+    }
+    await expired.writeAsBytes(<int>[1]);
+    final DateTime tenDaysAgo =
+        DateTime.now().subtract(const Duration(days: 10));
+    await expired.setLastModified(tenDaysAgo);
+    await expired.setLastAccessed(tenDaysAgo);
+    await freshA.open(mode: FileMode.write).then((raf) async {
+      await raf.truncate(40 * 1024 * 1024);
+      await raf.close();
+    });
+    await freshB.open(mode: FileMode.write).then((raf) async {
+      await raf.truncate(40 * 1024 * 1024);
+      await raf.close();
+    });
+
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final List<int> uniqueAudio = utf8.encode('$marker-audio');
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedAudioCacheDirectoryProvider: () async => cache,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=$marker',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+          );
+        }
+        return http.Response.bytes(uniqueAudio, 200,
+            headers: const <String, String>{'content-type': 'audio/mpeg'});
+      }),
+    );
+
+    final String? materialized =
+        await client.lookupAudioUrl(expression: marker, reading: '');
+    expect(materialized, isNotNull);
+    expect(File(materialized!).parent.path, cache.path);
+
+    expect(await expired.exists(), isFalse,
+        reason: 'remote lookup audio must not survive past its cache TTL');
+    final List<FileSystemEntity> survivors = await cache.list().toList();
+    int totalBytes = 0;
+    for (final File entity in survivors.whereType<File>()) {
+      totalBytes += await entity.length();
+    }
+    expect(totalBytes, lessThanOrEqualTo(64 * 1024 * 1024),
+        reason: 'remote lookup audio cache must have a hard byte budget');
+  });
+
+  // 「RPC 往返延迟」和「整包字节传输」不是一个量纲。第二跳资产下载最大 16 MiB，
+  // 却曾与 /api/lookup/audio 的 POST 共用同一个 3s 预算，且超时被译成
+  // InterconnectAssetUnreachableError → RemoteLookupUnreachableError → 上层把整个
+  // hibiki-remote 源关进 45s 失败冷却。结果是「活着但网慢的 peer」被判成「设备
+  // 死了」。传输阶段必须有独立预算，且超时 = 可达但慢 = 无音频，不制造假冷却。
+  test(
+      'a slow asset transfer is "no audio" (null), never a false unreachable '
+      'cooldown', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+
+    // 响应头立刻到（连接阶段健康），body 永远不来（链路慢）。
+    final StreamController<List<int>> stalled = StreamController<List<int>>();
+    addTearDown(() async {
+      if (!stalled.isClosed) await stalled.close();
+    });
+
+    final List<String> methods = <String>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      timeout: const Duration(seconds: 3),
+      audioTransferTimeout: const Duration(milliseconds: 120),
+      pinnedClientFactory: (_) => MockClient.streaming(
+        (http.BaseRequest request, http.ByteStream _) async {
+          methods.add(request.method);
+          if (request.method == 'POST') {
+            final List<int> payload = utf8.encode(jsonEncode(
+              <String, dynamic>{
+                'type': 'audioResult',
+                'url': 'https://pinned:38765/api/lookup/audio/file?id=slow',
+                'contentType': 'audio/mpeg',
+              },
+            ));
+            return http.StreamedResponse(
+              Stream<List<int>>.value(payload),
+              200,
+              contentLength: payload.length,
+              headers: const <String, String>{
+                'content-type': 'application/json; charset=utf-8',
+              },
+            );
+          }
+          return http.StreamedResponse(
+            stalled.stream,
+            200,
+            headers: const <String, String>{'content-type': 'audio/mpeg'},
+          );
+        },
+      ),
+    );
+
+    final String? url =
+        await client.lookupAudioUrl(expression: '猫', reading: 'ねこ');
+
+    expect(url, isNull, reason: '传输慢 = 这次没拿到音频，不是设备死了');
+    expect(methods, <String>['POST', 'GET'],
+        reason: '资产 GET 必须真被发出过（否则测的不是传输阶段）');
+  });
+
+  // 上面的传输超时不算不可达，但**连接阶段**超时仍必须算不可达，否则真死掉的
+  // peer 会被无限重试。两条一起才把「快/慢/死」三态钉住。
+  test('a connect-phase timeout on the asset hop is still unreachable',
+      () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      timeout: const Duration(milliseconds: 120),
+      audioTransferTimeout: const Duration(seconds: 30),
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=dead',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }
+        // 响应头都不来：连接阶段死。
+        await Future<void>.delayed(const Duration(seconds: 5));
+        return http.Response.bytes(<int>[1, 2, 3], 200);
+      }),
+    );
+
+    await expectLater(
+      client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+      throwsA(isA<RemoteLookupUnreachableError>()),
+    );
+  });
+
+  // origin + path 白名单只校验初始 URI；http.Request 默认 followRedirects=true
+  // （且 Dart 默认允许 https→http 降级），一个 302 就能把这个带凭据语义的 GET
+  // 引到任意主机。资产端点本来也不该发 3xx，跟随只会绕过校验。
+  test('the asset hop never follows redirects', () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+
+    final List<bool> assetFollowRedirects = <bool>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (_) => MockClient((http.Request request) async {
+        if (request.method == 'POST') {
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://pinned:38765/api/lookup/audio/file?id=redirect',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }
+        assetFollowRedirects.add(request.followRedirects);
+        return http.Response(
+          '',
+          302,
+          headers: const <String, String>{
+            'location': 'https://attacker.test/steal',
+          },
+        );
+      }),
+    );
+
+    final String? url =
+        await client.lookupAudioUrl(expression: '猫', reading: 'ねこ');
+
+    expect(assetFollowRedirects, <bool>[false], reason: '资产 GET 必须显式关闭重定向跟随');
+    expect(url, isNull, reason: '3xx 是非 2xx，按「没音频」处理，不得当成可用资产');
+  });
+
+  test('pinned audio rejects a token URL outside the winning peer origin',
+      () async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final SyncRepository repo = await _repo(
+      db: db,
+      urls: const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://pinned:38765',
+          fingerprintSha256: 'aa:bb:cc',
+        ),
+      ],
+    );
+    final List<String> requests = <String>[];
+    final List<String> fingerprints = <String>[];
+    final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+      repo: repo,
+      pinnedClientFactory: (String expectedFingerprint) {
+        fingerprints.add(expectedFingerprint);
+        return MockClient((http.Request request) async {
+          requests.add('${request.method} ${request.url.host}');
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': 'https://attacker.test/api/lookup/audio/file?id=opaque',
+              'contentType': 'audio/mpeg',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        });
+      },
+    );
+
+    expect(await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'), isNull,
+        reason: 'the opaque asset URL must stay on the authenticated peer');
+    expect(requests, <String>['POST pinned'],
+        reason: 'a different-origin GET must never be issued');
+    expect(fingerprints, <String>['aa:bb:cc']);
+  });
+
+  test('pinned audio rejects non-HTTPS asset URLs from the winning peer',
+      () async {
+    for (final String assetUrl in <String>[
+      'http://pinned:38765/api/lookup/audio/file?id=downgrade',
+      'file:///tmp/stolen.m4a',
+      'data:audio/mp4;base64,AAAA',
+    ]) {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <FushiClientUrl>[
+          FushiClientUrl(
+            url: 'https://pinned:38765',
+            fingerprintSha256: 'aa:bb:cc',
+          ),
+        ],
+      );
+      final List<String> requests = <String>[];
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+        repo: repo,
+        pinnedClientFactory: (_) => MockClient((http.Request request) async {
+          requests.add(request.method);
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': assetUrl,
+              'contentType': 'audio/mp4',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }),
+      );
+
+      expect(
+        await client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+        isNull,
+        reason: 'a fingerprint-pinned peer must not downgrade or switch the '
+            'player to an untrusted URI scheme: $assetUrl',
+      );
+      expect(requests, <String>['POST'],
+          reason: 'the rejected asset URI must never be fetched');
+    }
   });
 
   // TODO-961 gap①：https 带指纹的候选必须走钉扎 client，即使外部注入了共享

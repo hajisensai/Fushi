@@ -688,6 +688,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
       chromeBottomInset: _readerBottomReserve,
       dartPageWidth: screenSize.width,
       dartPageHeight: screenSize.height,
+      marginTop: s.marginTop,
+      marginBottom: s.marginBottom,
+      marginLeft: s.marginLeft,
+      marginRight: s.marginRight,
       blurImages: s.blurImages,
       // TODO-1289：把本次会话已揭开的防剧透图 key 下发，重载时不再重新遮罩。
       revealedKeys: _revealedImageKeys.toList(),
@@ -761,6 +765,24 @@ install: function(C) {
     try { var c = document.getElementById('fushi-cloak'); if (c) c.remove(); } catch (_ignored) {}
   });
   window.scanNonJapaneseText = C.scanNonJapaneseText;
+  // BUG-1812: WKWebView may report innerWidth/innerHeight as 0 even though
+  // Dart has the real logical viewport. Raw vh/vw margins then collapse to
+  // zero. Materialize all four percentages into px from the same Dart-sized
+  // viewport used by pagination, and expose one resize hook to every shell.
+  window.__fushiApplyReaderMargins = function(width, height) {
+    var w = Math.max(0, Number(width) || 0);
+    var h = Math.max(0, Number(height) || 0);
+    var root = document.documentElement;
+    function pct(value) {
+      var n = Number(value);
+      return Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 0;
+    }
+    root.style.setProperty('--reader-margin-top', (h * pct(C.marginTop) / 100) + 'px');
+    root.style.setProperty('--reader-margin-bottom', (h * pct(C.marginBottom) / 100) + 'px');
+    root.style.setProperty('--reader-margin-left', (w * pct(C.marginLeft) / 100) + 'px');
+    root.style.setProperty('--reader-margin-right', (w * pct(C.marginRight) / 100) + 'px');
+  };
+  window.__fushiApplyReaderMargins(C.dartPageWidth, C.dartPageHeight);
   $selectionJs
   $paginationJs
   window.__fushiInstallShell(C);
@@ -2441,6 +2463,24 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (cue != null) _audiobookController!.playCueAndContinue(cue);
           },
         );
+
+        // BUG-1809：iOS WKWebView 的 loadData() 可返回却不发 onLoadStop。
+        // LyricsModeHtml 在 DOM API 全部就绪后主动回传；与 onLoadStop 共用幂等
+        // finalize，谁先到谁完成，另一条只读到 ready 后早返回。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsReady',
+          callback: (args) {
+            final dynamic raw = args.isEmpty ? null : args.first;
+            final int? generation = raw is num
+                ? raw.toInt()
+                : int.tryParse(raw?.toString() ?? '');
+            if (generation == null) return false;
+            return _finalizeLyricsDocumentIfReady(
+              controller,
+              generation: generation,
+            );
+          },
+        );
       },
       shouldInterceptRequest: (controller, request) async {
         return await _interceptRequest(request.url);
@@ -2450,7 +2490,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
-        if (_isNavigatingToChapter) {
+        if (_isNavigatingToChapter || _isCurrentLyricsDocumentUrl(url)) {
           return NavigationActionPolicy.ALLOW;
         }
         // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
@@ -2471,12 +2511,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         debugPrint('[ReaderFushi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode) {
-          if (!await _isLoadedLyricsDocument(controller)) {
+          if (!await _finalizeLyricsDocumentIfReady(
+            controller,
+            generation: _lyricsLoadGeneration,
+          )) {
             debugPrint('[ReaderFushi] onLoadStop: stale non-lyrics page '
                 'while lyrics mode is active, ignoring');
-            return;
           }
-          await _onChapterLoadComplete(controller);
           return;
         }
         final String expectedUrl = _chapterUrl(chapterSnapshot);
@@ -2506,6 +2547,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           return;
         }
         if (request.isForMainFrame ?? false) {
+          final int? failedLyricsGeneration =
+              _lyricsDocumentGenerationFromUrl(request.url.toString());
+          if (failedLyricsGeneration != null &&
+              failedLyricsGeneration == _lyricsDocumentLoadGeneration &&
+              failedLyricsGeneration == _lyricsLoadGeneration) {
+            _lyricsDocumentLoadGeneration = null;
+          }
           debugPrint('[ReaderFushi] onReceivedError: ${error.description} '
               'url=${request.url}');
           // Windows 拦截域 (fushi.local) 的 NavigationCompleted 假失败已在 fork
@@ -2553,11 +2601,12 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }
 
   Future<bool> _isLoadedLyricsDocument(
-      InAppWebViewController controller) async {
+    InAppWebViewController controller, {
+    required int generation,
+  }) async {
     try {
       final dynamic result = await controller.evaluateJavascript(
-        source:
-            "Boolean(window.__lyricsSetCue && document.getElementById('lc'))",
+        source: '''Boolean(window.__lyricsSetCue && document.getElementById('lc') && window.__fushiLyricsLoadGeneration === $generation)''',
       );
       return result == true || result == 'true' || result == 1 || result == '1';
     } catch (e, stack) {
@@ -2567,7 +2616,75 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     }
   }
 
-  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+  Future<bool> _finalizeLyricsDocumentIfReady(
+    InAppWebViewController controller, {
+    required int generation,
+  }) async {
+    if (!mounted ||
+        !_lyricsMode ||
+        generation != _lyricsLoadGeneration) {
+      return false;
+    }
+    if (_lyricsPageReady) return true;
+    if (_lyricsReadyFinalizingGeneration == generation) return false;
+    _lyricsReadyFinalizingGeneration = generation;
+    try {
+      if (!await _isLoadedLyricsDocument(
+        controller,
+        generation: generation,
+      )) {
+        return false;
+      }
+      if (!mounted ||
+          !_lyricsMode ||
+          generation != _lyricsLoadGeneration) {
+        return false;
+      }
+      if (!_lyricsPageReady) {
+        await _onChapterLoadComplete(
+          controller,
+          lyricsGeneration: generation,
+        );
+      }
+      if (!mounted ||
+          !_lyricsMode ||
+          generation != _lyricsLoadGeneration) {
+        return false;
+      }
+      if (_lyricsDocumentLoadGeneration == generation) {
+        _lyricsDocumentLoadGeneration = null;
+      }
+      return _lyricsPageReady;
+    } finally {
+      if (_lyricsReadyFinalizingGeneration == generation) {
+        _lyricsReadyFinalizingGeneration = null;
+      }
+    }
+  }
+
+  int? _lyricsDocumentGenerationFromUrl(String? raw) {
+    final Uri? uri = raw == null ? null : Uri.tryParse(raw);
+    if (uri == null ||
+        !uri.isScheme('https') ||
+        uri.host != 'fushi.local' ||
+        uri.path != '/lyrics') {
+      return null;
+    }
+    return int.tryParse(uri.queryParameters['generation'] ?? '');
+  }
+
+  bool _isCurrentLyricsDocumentUrl(String raw) {
+    final int? generation = _lyricsDocumentGenerationFromUrl(raw);
+    return _lyricsMode &&
+        generation != null &&
+        generation == _lyricsDocumentLoadGeneration &&
+        generation == _lyricsLoadGeneration;
+  }
+
+  Future<void> _onChapterLoadComplete(
+    InAppWebViewController controller, {
+    int? lyricsGeneration,
+  }) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
@@ -2593,6 +2710,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       return;
     }
     if (_lyricsMode) {
+      bool currentLyricsLoad() => mounted &&
+          _lyricsMode &&
+          lyricsGeneration != null &&
+          lyricsGeneration == _lyricsLoadGeneration;
+      if (!currentLyricsLoad()) return;
       if (!_readerContentReady) {
         // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
         _clearContentReadyTimeout();
@@ -2601,6 +2723,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           _hasEverLoaded = true;
         });
       }
+      if (!currentLyricsLoad()) return;
       _lyricsPageReady = true;
       // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
       // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
@@ -2612,6 +2735,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
       await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.source());
+      if (!currentLyricsLoad()) return;
       if (mounted) {
         await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.initInvocation(
@@ -2621,13 +2745,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           ),
         );
       }
+      if (!currentLyricsLoad()) return;
       _onCueChanged();
       await _applyLyricsFavorites();
+      if (!currentLyricsLoad()) return;
       // BUG-844: 歌词是独立文档，正文 setup 脚本（下发 window.__hoverAutoLookup 初值）
       // 不在此分支注入。歌词页的 mousemove 悬停查词监听据此全局跳过 Shift 门控（纯悬停即
       // 查词），必须在页面就绪时把当前开关值同步进新文档，否则纯悬停查词要等一次设置热更
       // 才生效。Shift-悬停不依赖此全局（监听器直接读 e.shiftKey），本行只补齐纯悬停路径。
       if (mounted) await _applyHoverAutoLookupLive();
+      if (!currentLyricsLoad()) return;
       // BUG-767: 此前（BUG-755）在歌词页就绪即强夺阅读焦点，想让 ESC 从进入那刻就能退。
       // 但桌面 loadData 后强夺 Flutter 焦点会把原生 WebView2 顶焦、重置其滚动到顶
       // （→ 高亮看似回第一句），并与页面自身抢焦点抖动；一旦叠加重载路径每次 loadData

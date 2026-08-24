@@ -18,7 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -38,7 +38,7 @@ void main() {
   testWidgets(
     'danmaku settings: style sliders + block filter + manual match reachable',
     (WidgetTester tester) async {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue);
       await tester.pump(const Duration(seconds: 2));
 

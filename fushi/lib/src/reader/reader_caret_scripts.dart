@@ -417,12 +417,35 @@ window.fushiCaret = {
   },
 
   // ── Viewport (current page) ────────────────────────────────────────
-  _viewport: function() {
+  _viewportFrame: function() {
+    // WKWebView may report zero inner dimensions, so size comes from the
+    // Flutter-authored CSS variables. Position is mode-specific: paged
+    // vertical-rl really does move the body frame into negative X; continuous
+    // mode scrolls documentElement and body is content, so body.top/left move
+    // with scroll while Range rects stay client-relative. Anchoring continuous
+    // carets to bodyRect would make every glyph disappear after one viewport.
+    var rootCs = getComputedStyle(document.documentElement);
+    var bodyRect = document.body.getBoundingClientRect();
+    var useBodyFrame = this._paged();
+    var width = parseFloat(rootCs.getPropertyValue('--page-width')) ||
+      window.innerWidth || document.body.clientWidth;
+    var height =
+      parseFloat(rootCs.getPropertyValue('--reader-viewport-height')) ||
+      window.innerHeight || document.body.clientHeight;
     return {
-      left: 0,
-      top: this.insetTop || 0,
-      right: window.innerWidth,
-      bottom: window.innerHeight - (this.insetBottom || 0)
+      left: useBodyFrame && Number.isFinite(bodyRect.left) ? bodyRect.left : 0,
+      top: useBodyFrame && Number.isFinite(bodyRect.top) ? bodyRect.top : 0,
+      width: width,
+      height: height
+    };
+  },
+  _viewport: function() {
+    var frame = this._viewportFrame();
+    return {
+      left: frame.left,
+      top: frame.top + (this.insetTop || 0),
+      right: frame.left + frame.width,
+      bottom: frame.top + frame.height - (this.insetBottom || 0)
     };
   },
   _inViewport: function(rect) {
@@ -678,7 +701,8 @@ window.fushiCaret = {
     return { status: 'blocked' };
   },
   _viewportSize: function() {
-    return this._vertical() ? window.innerWidth : window.innerHeight;
+    var frame = this._viewportFrame();
+    return this._vertical() ? frame.width : frame.height;
   },
   _scrollIntoView: function(rect) {
     var vertical = this._vertical();

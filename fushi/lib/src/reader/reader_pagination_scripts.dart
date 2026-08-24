@@ -2724,6 +2724,7 @@ $_sharedInitViewport
   // 成对只用 V，杜绝列底边漏出 (O−F) 进底栏。
   var viewportHeight = dartH || window.innerHeight;
   var pageHeight = viewportHeight + $bottomOverlapPx;
+  window.__fushiApplyReaderMargins(pageWidth, viewportHeight);
   console.log('[FushiInit] dartW=' + dartW + ' dartH=' + dartH
     + ' innerW=' + window.innerWidth + ' innerH=' + window.innerHeight
     + ' usedW=' + pageWidth + ' usedH=' + pageHeight + ' viewportH=' + viewportHeight);
@@ -2776,6 +2777,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
+  window.__fushiApplyReaderMargins(newWidth, newViewportHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
@@ -3350,6 +3352,7 @@ $_sharedInitViewport
   this._imageWidthRatio = $imageWidthRatio;
   var dartH = C.dartPageHeight;
   var contHeight = dartH || window.innerHeight;
+  window.__fushiApplyReaderMargins(C.dartPageWidth || window.innerWidth, contHeight);
   document.documentElement.style.setProperty('--fushi-continuous-height', contHeight + 'px');
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
@@ -3384,6 +3387,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var inFlight = this._reanchorPending === true;
   var progress = (changed && !inFlight) ? this.calculateProgress() : 0;
   document.documentElement.style.setProperty('--fushi-continuous-height', newHeight + 'px');
+  window.__fushiApplyReaderMargins(newWidth, newHeight);
   var __imgBox = this._imageMaxBox();
   document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');

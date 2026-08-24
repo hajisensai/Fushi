@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1710 条。点号进各自文件。
+> 共 1728 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1850](bugs/BUG-1850-settings-destination-itest-vacuous-selected-row.md) | ✅ | ✅ | 集成测试用恒真的选中行谓词当设置分类打开判据 |
 | [BUG-1849](bugs/BUG-1849-jimaku-live-action-no-tmdb-key.md) | ✅ | ✅ | Jimaku 真人剧检索没有权威关联键：TMDB id 被解析器丢弃，只能靠标题模糊命中 |
 | [BUG-1848](bugs/BUG-1848-playlist-subtitle-restore-no-fallback.md) | ✅ | ✅ | 合集里下载的字幕退出再进就没了：恢复链只走一支、零兜底 |
 | [BUG-1847](bugs/BUG-1847-manual-subtitle-search-missing-file-hash.md) | ✅ | ✅ | 播放页手动检索字幕不带 OSDb 文件哈希，精确匹配分支永远走不到 |
@@ -56,6 +57,23 @@
 | [BUG-1828](bugs/BUG-1828-reader-image-wrapper-swallows-empty-tap.md) | ✅ | ✅ | 阅读器大图两侧留白被判成点中图片，底栏永远唤不出来 |
 | [BUG-1827](bugs/BUG-1827-popup-phonetic-overflows-card.md) | ✅ | ✅ | 查词弹窗释义里的不可断短语溢出词典卡 |
 | [BUG-1826](bugs/BUG-1826-mihon-loading-gate-blocks-store-edit.md) | 🚧 | 🚧 | 漫画扩展页 loading 一位两义：初始化联网刷新期间连添加/编辑仓库都点不动 |
+| [BUG-1825](bugs/BUG-1825-lyrics-itest-concrete-activation.md) | ✅ | ✅ | 歌词模式实测未激活具体reader-action焦点节点 |
+| [BUG-1824](bugs/BUG-1824-dictionary-overlay-dispose-without-remove.md) | ✅ | ✅ | 查词页根Overlay卸载时先dispose仍登记的OverlayEntry |
+| [BUG-1823](bugs/BUG-1823-comprehensive-imports-dictionary-tab-index-drift.md) | ✅ | ✅ | 综合导入实测按固定索引误把书架当查词 |
+| [BUG-1822](bugs/BUG-1822-comprehensive-imports-ios-font-fixture.md) | ✅ | ✅ | 综合导入实测在iOS找不到字体fixture |
+| [BUG-1821](bugs/BUG-1821-itest-fresh-install-onboarding-hides-home.md) | ✅ | 🚧 | 实机集成测试把首次引导前的短暂首页误判为可用 |
+| [BUG-1820](bugs/BUG-1820-ios-media-sources-scrape-actions-hidden.md) | 🚧 | 🚧 | iOS视频来源页隐藏全部刮削与任务入口 |
+| [BUG-1819](bugs/BUG-1819-observe-capture-ios-unwritable-relative-dir.md) | ✅ | ✅ | 实机截图helper在iOS写相对codex-test目录失败 |
+| [BUG-1818](bugs/BUG-1818-video-library-section-focus-lost.md) | 🚧 | 🚧 | 视频库切分区后分段导航焦点丢失 |
+| [BUG-1817](bugs/BUG-1817-video-source-itest-section-type-drift.md) | ✅ | ✅ | 视频来源实测仍按旧两段库页导航驱动 |
+| [BUG-1816](bugs/BUG-1816-focus-driver-scope-fallback-nonmac.md) | ✅ | ✅ | FocusDriver Scope 兜底掩盖非 macOS Tab 回归 |
+| [BUG-1815](bugs/BUG-1815-lyrics-load-guard-stale-finalizer-test.md) | ✅ | ✅ | 歌词文档守卫静态测试未跟随 finalizer 重构 |
+| [BUG-1814](bugs/BUG-1814-main-window-focus-gate-nonwindows-test.md) | ✅ | ✅ | Windows 焦点闸门单测在非 Windows 误红 |
+| [BUG-1813](bugs/BUG-1813-macos-popup-viewport-teardown.md) | ✅ | ✅ | macOS 词典弹窗视口注入销毁竞态 |
+| [BUG-1812](bugs/BUG-1812-ios-reader-zero-vh-vw-margins.md) | ✅ | ✅ | iOS阅读器WebView视口单位为零导致四边页边距失效 |
+| [BUG-1811](bugs/BUG-1811-ios-interconnect-remote-audio-unpinned-player.md) | ✅ | ✅ | iOS互联远端音频绕过证书钉扎导致无法播放 |
+| [BUG-1810](bugs/BUG-1810-comprehensive-imports-never-opens-books.md) | ✅ | ✅ | 综合导入实测未打开书架导致已导入图书不可见 |
+| [BUG-1809](bugs/BUG-1809-ios-lyrics-load-data-no-load-stop.md) | ✅ | ✅ | iOS歌词loadData返回后不触发onLoadStop导致永不ready |
 | [BUG-1808](bugs/BUG-1808-video-home-row-card-tags.md) | ✅ | ✅ | 视频首页横滚行卡不显示标签（拆 section 后首页只剩横滚卡，标签层只画在墙格卡上） |
 | [BUG-1807](bugs/BUG-1807-url-keyboard-missing-across-app.md) | ✅ | ✅ | 全仓 10 处 URL/host 输入框漏声明 keyboardType，与 BUG-1804 同族 |
 | [BUG-1806](bugs/BUG-1806-mihon-store-url-not-editable.md) | ✅ | ✅ | 扩展仓库地址不可编辑，只能删了重加 |

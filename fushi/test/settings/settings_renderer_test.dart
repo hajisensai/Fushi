@@ -1113,6 +1113,68 @@ void main() {
     );
   });
 
+  // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 外观）的详情
+  // 面板：settings_home_page.dart 在 _selectedDestinationId 为 null 时无条件落到
+  // destinations.first.id，material_settings_renderer 的 `selected:` 也不区分窄/
+  // 宽屏。
+  //
+  // 这条事实是 integration_test/navigation_stability_test.dart 的地雷：任何形如
+  // 「外观这一行被高亮」/「外观的详情面板存在」的等待条件，在 activate() 什么都
+  // 没做的情况下同样成立，整条外观用例会退化成「这一行存在且能聚焦」。那边因此
+  // 必须先把选中项挪走、再要求「打开前目标不在显示」。这里把机制钉住：哪天默认
+  // 预选被改掉，这条会红，届时那边的 priming 才可以撤。
+  testWidgets(
+      'wide settings preselects and renders destinations.first before any '
+      'navigation (why navigation_stability primes the selection)',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(db);
+    SettingsContext? captured;
+    await tester.pumpWidget(
+      _harness(
+        // 默认 800x600 测试画布 > 720，走宽屏二栏（settings_home_page.dart 的
+        // `wide = constraints.maxWidth >= 720`）。
+        platform: TargetPlatform.windows,
+        appModel: appModel,
+        builder: (SettingsContext settingsContext) {
+          captured = settingsContext;
+          return SettingsHomePage(embedded: true, onBack: () {});
+        },
+      ),
+    );
+    await tester.pump();
+
+    final SettingsContext? settingsContext = captured;
+    if (settingsContext == null) fail('settings harness did not build');
+    final SettingsDestination first = buildSettingsSchema(settingsContext).first;
+    expect(
+      first.id,
+      SettingsDestinationId.appearance,
+      reason: 'schema 第一项变了的话，下面两条与 itest 的 priming 都要重估',
+    );
+
+    // ① 详情面板身份：第一帧就是 destinations.first 的面板，没有任何导航发生。
+    expect(
+      find.byKey(ValueKey<SettingsDestinationId>(first.id)),
+      findsOneWidget,
+      reason: '宽屏首帧就渲染了第一分类的详情面板 —— 「面板存在」本身不构成导航证据',
+    );
+
+    // ② 行高亮：第一帧就为 true，所以「这一行 selected」更不是导航证据。
+    final Finder firstRow = find.ancestor(
+      of: find.text(first.title),
+      matching: find.byWidgetPredicate(
+        (Widget widget) => widget is FushiListItem && widget.selected,
+      ),
+    );
+    expect(
+      firstRow,
+      findsWidgets,
+      reason: '宽屏首帧第一分类行已是 selected —— itest 不能拿它当「打开成功」',
+    );
+  });
+
   // TODO-1143：master-detail 左父菜单在最窄布局（supportingPaneWidthForLayout
   // clamp 280..360，下界 280px）下曾把长分类标签（如「同步与备份（实验性）」）用
   // FushiListItem 默认 titleMaxLines:1 + ellipsis 截成「同步与…」。修复给

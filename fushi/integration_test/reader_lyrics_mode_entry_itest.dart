@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage;
 import 'package:fushi_audio/fushi_audio.dart' show AudiobookPlayerController;
 
 import 'helpers/focus_driver.dart';
-import 'helpers/library_fixture.dart' show readyAppModel, seedAudiobook;
+import 'helpers/library_fixture.dart'
+    show openBookViaProductionPath, readyAppModel, seedAudiobook;
 import 'support/itest_startup_guard.dart';
 import 'test_helpers.dart';
 
@@ -66,7 +68,7 @@ void main() {
       await runFushiItest(
         label: 'lyrics-mode-entry',
         body: () async {
-          app.main();
+          await launchFushiTestApp();
           expect(await waitForHome(tester), isTrue,
               reason: 'home must render before seeding an audiobook');
 
@@ -76,6 +78,14 @@ void main() {
             await tester.pump(const Duration(milliseconds: 250));
           }
 
+          // 物理机 flutter test 会复用 app container；上一次会话若停在歌词模式，
+          // 开书会自动发起 pending restore，与本用例的手动 toggle 竞争。
+          final bool originalLyricsMode = ReaderFushiSource.instance.lyricsMode;
+          addTearDown(() async {
+            await ReaderFushiSource.instance.setLyricsMode(originalLyricsMode);
+          });
+          await ReaderFushiSource.instance.setLyricsMode(false);
+
           final String bookKey = await seedAudiobook(
             tester,
             title: 'Lyrics Mode Automation',
@@ -84,7 +94,7 @@ void main() {
 
           final List<Finder> navTargets = findPrimaryNavigationTargets();
           if (navTargets.isNotEmpty) {
-            await driver.focusWidget(navTargets.first);
+            await driver.focusWidget(findNavTargetForTab(HomeTab.books));
             await driver.activate();
             await tester.pump(const Duration(seconds: 1));
           }
@@ -103,12 +113,15 @@ void main() {
               break;
             }
           }
-          expect(bookEntry, findsOneWidget,
-              reason: 'seeded audiobook card must be visible on the shelf');
-
-          expect(await driver.focusWidget(bookEntry), isTrue,
-              reason: 'seeded audiobook card must be focus reachable');
-          await driver.activate();
+          if (bookEntry.evaluate().isEmpty) {
+            await openBookViaProductionPath(tester, bookKey);
+          } else {
+            expect(bookEntry, findsOneWidget,
+                reason: 'seeded audiobook card must be visible on the shelf');
+            expect(await driver.focusWidget(bookEntry), isTrue,
+                reason: 'seeded audiobook card must be focus reachable');
+            await driver.activate();
+          }
           await _pumpUntil(tester, _webViewShown,
               reason: 'reader WebView must mount after opening audiobook');
           await _pumpUntil(tester, _readerContentReady,
@@ -128,9 +141,30 @@ void main() {
               find.byKey(const ValueKey<String>('fushi_lyrics_mode_toggle'));
           expect(lyricsToggle, findsOneWidget,
               reason: 'quick settings must expose the lyrics-mode action');
-          expect(await driver.focusWidget(lyricsToggle), isTrue,
-              reason: 'lyrics-mode action must be reachable by focus');
-          await driver.activate();
+          expect(
+            await driver.requestFocusInside(
+              lyricsToggle,
+              debugLabelContains: 'reader-action',
+            ),
+            isTrue,
+            reason:
+                'lyrics-mode action must expose a concrete reader-action focus node',
+          );
+          expect(await driver.activateIntent(), isTrue,
+              reason: 'lyrics-mode reader-action must handle ActivateIntent');
+          await tester.pump(const Duration(seconds: 1));
+          expect(lyricsToggle, findsNothing,
+              reason: 'activating lyrics mode must dismiss quick settings');
+          expect(find.byType(ReaderFushiPage), findsOneWidget,
+              reason:
+                  'lyrics action must not activate the neighboring exit action');
+          await _pumpUntil(
+            tester,
+            () => ReaderFushiSource.instance.lyricsMode,
+            reason:
+                'lyrics action must persist the entering state before loading HTML',
+            polls: 10,
+          );
 
           await _pumpUntil(tester, _lyricsReady,
               reason:
