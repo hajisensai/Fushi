@@ -349,17 +349,45 @@ procedure MakeWayForRunningLauncher(const AppDir: String);
 var
   Launcher: String;
   Stale: String;
+  Attempt: Integer;
 begin
   Launcher := AddBackslash(AppDir) + 'fushi_update_launcher.exe';
   Stale := AddBackslash(AppDir) + 'fushi_update_launcher.old.exe';
-  { 上一轮改名留下的残留：那个进程早已退出，这次能删就删干净，不让它无限堆积。 }
-  if FileExists(Stale) then
-    DeleteFile(Stale);
+  { BUG-1831：launcher 不在位、只剩残留 —— 上一轮让路之后那次安装**仍然回滚了**。
+    改名之后 Launcher 这个路径是空的，Inno 往里写的是一个**新建**文件，而回滚会删除
+    本次新建的文件（只有被覆盖的文件才原样保留）⇒ 原件已改名、新件被删，安装目录里
+    再没有 launcher。此时必须把残留**改回去**：它是同一份映像，旧版 app 又只认
+    fushi_update_launcher.exe 这一个路径。先删掉它等于把「还能自愈」变成「这台机器
+    永远发不出更新」（安装器一次都起不来，连 Inno 日志都不会产生）。
+    改回去之后本次安装照常覆盖它，一次装完即回到正常态。 }
   if not FileExists(Launcher) then
+  begin
+    if FileExists(Stale) then
+      RenameFile(Stale, Launcher);
     Exit;
-  { 没被占用就什么都不做——不给正常路径平添一次改名和一个残留文件。 }
+  end;
+  { 没被占用就什么都不做——不给正常路径平添一次改名和一个残留文件。
+    顺手清掉上一轮的残留：原件在位说明它早已完成使命，不让它无限堆积。 }
   if not FileLockedForWrite(Launcher) then
+  begin
+    if FileExists(Stale) then
+      DeleteFile(Stale);
     Exit;
+  end;
+  { 让路目标必须先空出来，否则 RenameFile 直接失败、等于没让路。残留可能正是
+    **拉起本安装器的那个进程**（BUG-1831 的自愈路径上 app 就是从 .old 起的 launcher），
+    删不掉就换个序号名——绝不因为一个删不掉的残留放弃整次安装。 }
+  Attempt := 0;
+  while FileExists(Stale) do
+  begin
+    if DeleteFile(Stale) then
+      Break;
+    Attempt := Attempt + 1;
+    if Attempt > 8 then
+      Exit;
+    Stale := AddBackslash(AppDir) + 'fushi_update_launcher.old' +
+      IntToStr(Attempt) + '.exe';
+  end;
   RenameFile(Launcher, Stale);
 end;
 
