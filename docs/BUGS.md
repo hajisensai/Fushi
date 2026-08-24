@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1678 条。点号进各自文件。
+> 共 1681 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1806](bugs/BUG-1806-mihon-store-url-not-editable.md) | ✅ | ✅ | 扩展仓库地址不可编辑，只能删了重加 |
+| [BUG-1805](bugs/BUG-1805-mihon-store-zero-extensions-silent.md) | ✅ | ✅ | 仓库拉到 0 条扩展时静默空列表，无任何提示 |
+| [BUG-1804](bugs/BUG-1804-mihon-store-url-fullwidth-rejected.md) | ✅ | ✅ | 添加扩展仓库输入框无 URL 键盘类型，中文输入法全角标点被拒 INVALID_URL |
 | [BUG-1799](bugs/BUG-1799-texthooker-mined-badge-never-revalidated.md) | ✅ | ✅ | galgame 台词列表「已制卡」徽章是单向内存 latch，Anki 删卡后永不复核 |
 | [BUG-1798](bugs/BUG-1798-video-lookup-controls-autohide-race.md) | ✅ | ✅ | 查词浮层与控制条自动显隐竞态 |
 | [BUG-1797](bugs/BUG-1797-reader-padding-hit-leak.md) | ✅ | ✅ | 阅读器页边距能点到相邻页的词查词（不可见却可命中） |

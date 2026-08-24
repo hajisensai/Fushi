@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 
 const int mihonStoreMaxBytes = 10 * 1024 * 1024;
 const int mihonExtensionApkMaxBytes = 100 * 1024 * 1024;
@@ -409,7 +410,9 @@ class MihonExtensionStoreClient {
     String rawUrl, {
     required bool allowInsecure,
   }) {
-    final Uri? uri = Uri.tryParse(rawUrl.trim());
+    // 归一化必须在解析之前：全角句点能骗过 hasAuthority，带着
+    // `host%EF%BC%8Ecom` 这样的垃圾域名走到网络层，事后补救抓不到它。
+    final Uri? uri = Uri.tryParse(normalizeUrlInput(rawUrl));
     if (uri == null || !uri.hasAuthority) {
       throw const MihonRuntimeException(
         'INVALID_URL',

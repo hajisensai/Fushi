@@ -307,6 +307,79 @@ class MihonManager extends ChangeNotifier {
     await reload();
   }
 
+  /// 改仓库地址。
+  ///
+  /// `indexUrl` 是 `MangaExtensionStores` 的主键（表注释：仓库入口 URL 同时是
+  /// 稳定身份），所以数据层没有「改地址」这个动作，只能删旧行 + 插新行。
+  /// 之前 UI 索性不提供入口，用户只能删了重加——而在 [BUG-1804] 修好之前
+  /// 重加那条路本身是堵死的，于是「删掉官方仓库 → 加了个坏的 → 想改回来」
+  /// 变成死局（BUG-1806）。
+  ///
+  /// 顺序上**先把新地址完整拉通再动数据库**：拉不通就抛异常，旧行原封不动。
+  /// 反过来先删再拉，一旦新地址有问题，用户会同时失去旧仓库和新仓库。
+  Future<void> editStoreUrl(
+    String oldIndexUrl,
+    String newIndexUrl, {
+    bool allowInsecure = false,
+  }) async {
+    await _guarded(() async {
+      final MangaExtensionStoreRow? existing = stores
+          .where((MangaExtensionStoreRow row) => row.indexUrl == oldIndexUrl)
+          .firstOrNull;
+      if (existing == null) {
+        throw const MihonRuntimeException(
+          'STORE_MISSING',
+          'The extension store is no longer configured',
+        );
+      }
+      final MihonStoreFetchResult fetched = await _storeClient.fetchStore(
+        newIndexUrl,
+        allowInsecure: allowInsecure,
+      );
+      final MihonStore store = fetched.store!;
+      // 索引可能把我们重定向到另一个入口地址（legacy 分支跟随 index_v2），
+      // 落库的身份必须是解析后的那个，不是用户输入的那个。
+      if (store.indexUrl != oldIndexUrl &&
+          stores.any((MangaExtensionStoreRow row) =>
+              row.indexUrl == store.indexUrl)) {
+        throw const MihonRuntimeException(
+          'STORE_DUPLICATE',
+          'Another extension store already uses this URL',
+        );
+      }
+      final List<MihonAvailableExtension> extensions =
+          await _storeClient.fetchExtensions(
+        store,
+        allowInsecure: allowInsecure,
+      );
+      await database.deleteMangaExtensionStore(oldIndexUrl);
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: store.indexUrl,
+          name: store.name,
+          format: store.format.name,
+          badgeLabel: Value(store.badgeLabel),
+          signingKey: Value(store.signingKey),
+          contactJson: Value(jsonEncode(store.contact)),
+          extensionListUrl: Value(store.extensionListUrl),
+          // 改的是地址，不是这一行的其他状态——启用位和排序必须跟着走，
+          // 否则「改个地址」会顺手把仓库关掉或者甩到列表末尾。
+          enabled: Value(existing.enabled),
+          sortOrder: Value(existing.sortOrder),
+          etag: Value(fetched.etag),
+          lastModified: Value(fetched.lastModified),
+          lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
+      available = <MihonAvailableExtension>[
+        ...available.where((MihonAvailableExtension item) =>
+            item.storeUrl != oldIndexUrl && item.storeUrl != store.indexUrl),
+        ...extensions,
+      ];
+      await reload();
+    });
+  }
+
   Future<void> removeStore(String indexUrl) async {
     await database.deleteMangaExtensionStore(indexUrl);
     available = available
