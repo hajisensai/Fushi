@@ -149,11 +149,14 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       }
       image ??= await _recognizePage(page, language);
       results[pageIndex] = image;
+      // 先写缓存再报进度。顺序不能反：进度事件是 UI 热替换该页文字层的信号，
+      // 而 UI 拿该页数据读的正是这个 per-page 缓存（见 mangaOcrSystemEvents）；
+      // 先通知后落盘，热替换会读到空。
+      //
+      // 中途取消的成果也由这个缓存兜住，**不**逐页重写整份 manga.json——那是
+      // 同一个目的的第二套持久化，而且是 O(n²)：200 页的卷、每份 json 几 MB，
+      // 累计写入能到 GB 级。Lens 那条链同样只在最后写一次。
       await cache.write(pageIndex, page, image);
-      // 先落盘再报进度。顺序不能反：进度事件是 UI 热替换该页文字层的信号，
-      // 收到信号就可能去读 manga.json——先通知后落盘，读到的是上一版。
-      // 逐页落盘同时意味着中途取消也留得住已识别的部分，不用从头再来。
-      await _writePayload(imageDirPath, pages, results, language);
       done++;
       onProgress(done, pages.length);
     }

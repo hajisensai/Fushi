@@ -823,7 +823,10 @@ class _MangaOcrSettingsSectionState
     );
   }
 
-  /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除。
+  /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除 + 给继续导入。
+  ///
+  /// 导入入口在这里不是可有可无：「磁盘上有残留但模型不全」最常见的来源恰恰是
+  /// 「导入/下载到一半」，只给删除等于让这些人把已经搬进来的几百 MB 先删掉重来。
   Widget _buildOrphanModelBlock(ThemeData theme, MangaOcrModelStatus status) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -840,7 +843,14 @@ class _MangaOcrSettingsSectionState
         _inset(
           Align(
             alignment: Alignment.centerLeft,
-            child: _deleteButton(),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: <Widget>[
+                _deleteButton(),
+                _importButton(),
+              ],
+            ),
           ),
         ),
       ],

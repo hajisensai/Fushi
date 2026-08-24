@@ -48,6 +48,16 @@ public final class SystemOcrChannel {
     private static final String ARG_BYTES = "bytes";
     private static final String ARG_LANGUAGE = "language";
 
+    /**
+     * 按语言缓存的识别器。
+     *
+     * <p>每页新建再销毁一个 TextRecognizer 等于每页重新加载一次模型——一卷两百页
+     * 就是两百次。识别器本身是线程安全的可复用对象，缓存起来只占一份模型内存。
+     *
+     * <p>不主动 close：进程存活期间它就是要被反复用的；进程结束时随之释放。
+     */
+    private static final Map<String, TextRecognizer> RECOGNIZERS = new HashMap<>();
+
     private SystemOcrChannel() {}
 
     public static void registerWith(@NonNull FlutterEngine flutterEngine) {
@@ -85,21 +95,45 @@ public final class SystemOcrChannel {
             return;
         }
 
-        final TextRecognizer recognizer = TextRecognition.getClient(optionsFor(language));
+        final TextRecognizer recognizer = recognizerFor(language);
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener(text -> {
                 try {
                     result.success(toPayload(text, bitmap.getWidth(), bitmap.getHeight()));
                 } finally {
-                    recognizer.close();
                     bitmap.recycle();
                 }
             })
             .addOnFailureListener(error -> {
-                recognizer.close();
                 bitmap.recycle();
                 result.error("RECOGNIZE_FAILED", error.getMessage(), null);
             });
+    }
+
+    /** 取（或建）该语言的识别器。调用恒在平台主线程，无需额外同步。 */
+    private static TextRecognizer recognizerFor(@Nullable String language) {
+        final String key = scriptKeyFor(language);
+        TextRecognizer cached = RECOGNIZERS.get(key);
+        if (cached == null) {
+            cached = TextRecognition.getClient(optionsFor(language));
+            RECOGNIZERS.put(key, cached);
+        }
+        return cached;
+    }
+
+    /** 缓存键取「用哪套文字模型」而不是原始语言标签：ja-JP 与 ja 共用一个。 */
+    private static String scriptKeyFor(@Nullable String language) {
+        final String tag = language == null ? "" : language.toLowerCase();
+        if (tag.startsWith("ja")) {
+            return "ja";
+        }
+        if (tag.startsWith("zh")) {
+            return "zh";
+        }
+        if (tag.startsWith("ko")) {
+            return "ko";
+        }
+        return "latn";
     }
 
     /**

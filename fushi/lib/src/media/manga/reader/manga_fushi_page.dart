@@ -2522,6 +2522,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
       final OnlineMangaReaderChapter? online = _onlineChapter;
       if (online != null) {
+        // 在线章节的页面是网络流，本地没有图片目录，Lens 是唯一能读它的引擎。
+        // 这跟「绝不悄悄换引擎」并不矛盾——但必须说出来：设了离线引擎的用户点
+        // 一下就拿到 Lens，不告知就等于替他把上传的决定做了。上传同意门
+        // （ensureGoogleLensDisclosure）仍在 _buildOnlineOcrJob 里把关。
+        if (_preferredOfflineEngineForTapOcr() != null) {
+          FushiToast.show(
+            msg: t.manga_tap_ocr_online_lens_only,
+            severity: ToastSeverity.info,
+          );
+        }
         final MangaOcrBackgroundJob? job = await _buildOnlineOcrJob(online);
         if (job == null || !mounted) {
           _pendingTapLookup = null;
@@ -2568,6 +2578,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     } finally {
       _tapOcrStarting = false;
+    }
+  }
+
+  /// 用户显式选了某个**离线**引擎时返回它，否则返回 null。
+  ///
+  /// 只用来决定在线章节要不要多说一句「这里只能用 Lens」：偏好本来就是 Lens
+  /// 或 auto 的用户不需要被提醒，提醒多了就成了噪音。
+  MangaOcrEngineId? _preferredOfflineEngineForTapOcr() {
+    final MangaOcrEngineId? explicit = MangaOcrEnginePreferenceKey.fromKey(
+      appModel.mangaOcrEnginePreference,
+    ).explicitEngine;
+    switch (explicit) {
+      case MangaOcrEngineId.localOnnx:
+      case MangaOcrEngineId.systemOcr:
+      case MangaOcrEngineId.externalMokuro:
+        return explicit;
+      case MangaOcrEngineId.googleLens:
+      case MangaOcrEngineId.pairedHost:
+      case null:
+        return null;
     }
   }
 

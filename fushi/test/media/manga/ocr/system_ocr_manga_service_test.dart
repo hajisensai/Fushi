@@ -309,11 +309,11 @@ void main() {
           isNot(systemOcrEngineSignature('en')));
     });
 
-    test('逐页落盘：中途取消也留得住已识别的页', () async {
-      final SystemOcrMangaService service =
-          SystemOcrMangaService(platform: platformWithText());
+    test('中途取消：已识别的页留在 per-page 缓存里，重跑只补没跑过的', () async {
+      final _FakePlatform interrupted = platformWithText();
       final Stream<MangaOcrVolumeEvent> stream =
-          service.ocrFolder(imageDirPath: dir.path, language: 'ja');
+          SystemOcrMangaService(platform: interrupted)
+              .ocrFolder(imageDirPath: dir.path, language: 'ja');
       // 收第一页进度后立刻断开订阅，模拟用户中途取消。
       final Completer<MangaOcrVolumeEvent> firstSeen =
           Completer<MangaOcrVolumeEvent>();
@@ -326,10 +326,21 @@ void main() {
       await sub.cancel();
       // 让后台把当前页的收尾跑完再断言——否则断的是一个还在动的状态。
       await Future<void>.delayed(const Duration(milliseconds: 50));
+      final int beforeCancel = interrupted.requestSizes.length;
+      expect(beforeCancel, greaterThan(0));
+      expect(beforeCancel, lessThan(3), reason: '取消要真的止住后面的页');
+
+      final _FakePlatform resumed = platformWithText();
+      await SystemOcrMangaService(platform: resumed)
+          .ocrFolder(imageDirPath: dir.path, language: 'ja')
+          .toList();
+
+      // 两次加起来正好识别三页：取消掉的那部分成果留在 per-page 缓存里，
+      // 重跑只补没跑过的，没有一页被白识别两次。
+      expect(beforeCancel + resumed.requestSizes.length, 3);
       final File output =
           File(p.join(dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName));
-      expect(output.existsSync(), isTrue,
-          reason: '只在最后写 manga.json 的话，取消 = 前功尽弃');
+      expect(output.existsSync(), isTrue);
       final Map<String, Object?> decoded =
           jsonDecode(output.readAsStringSync()) as Map<String, Object?>;
       expect(decoded['pages'], isA<List<Object?>>());
