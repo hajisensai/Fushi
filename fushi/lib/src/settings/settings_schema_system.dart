@@ -589,17 +589,39 @@ String formatAppVersionDisplay(
   return '$display ≠ exe $executableVersion';
 }
 
-/// 两个版本串是否来自同一次构建。
+/// [codeVersion]（`app.so` 里的构建版本）与 [executableVersion]（exe / Info.plist /
+/// manifest 的版本资源）是否来自同一次构建。
 ///
-/// **逐字比较**（只归一化前导 `v` 与 `+metadata`），不是只比基版本：半更新态的
-/// 形状恰恰是 `2.2.1-debug.12216` 的 exe 配 `2.2.1-debug.12215` 的 app.so，基版本
-/// 相同、只差预发布序号一位。只比基版本等于对唯一需要它的输入闭眼。
+/// **不对称**：原生版本资源是代码版本的一种**有损渲染**——在版本字段只收数字段的
+/// 平台上（Apple：`CFBundleShortVersionString` 至多三段非负整数），`release-desktop.yml`
+/// 给 `--build-name` 传的是剥掉预发布段的 `apple_build_version_name`，而
+/// `--dart-define=FUSHI_BUILD_VERSION` 注入的仍是完整版本名（守卫
+/// `test/build/build_version_define_guard_test.dart` 同时钉死这两条）。所以两侧
+/// **故意解耦**：iOS 上同一次构建就是 `2.2.1-beta.30` 的代码配 `2.2.1` 的 Info.plist。
 ///
-/// 也不会误报：`--dart-define=FUSHI_BUILD_VERSION` 与 `--build-name` 取同一个表达式
-/// （守卫 `test/build/build_version_define_guard_test.dart` 钉死这条配对），同一次
-/// 构建两侧必然逐字相等。
-bool _isSameBuildVersion(String a, String b) =>
-    _normalizedVersion(a) == _normalizedVersion(b);
+/// 判据因此是「逐字相等 **或** 版本资源等于代码版本剥掉预发布段后的值」：
+///
+/// - Windows 半更新态 exe `2.2.1-debug.12216` / 代码 `2.2.1-debug.12215`：剥段得
+///   `2.2.1` ≠ exe ⇒ 照常告警（BUG-1786 现场，基版本相同、只差序号一位，只比基
+///   版本的实现会对唯一需要它的输入闭眼）。
+/// - Apple 预发布包 exe `2.2.1` / 代码 `2.2.1-beta.30`：剥段后相等 ⇒ 静默。
+///
+/// **已知残留假阴性**：Windows「正式版 exe `2.2.1` + 同 base 预发布 app.so」的跨通道
+/// 半更新态会被这条判据静默。这是有意的取舍——它与 Apple 的正常态在字符串层面完全
+/// 同形，分开只能靠平台特例分支；换来的是 Apple 端不再常驻一个恒为真的「你的安装
+/// 坏了」告警。真出这种跨通道半更新态时，更新检查侧（[resolveCurrentAppVersion] 吃
+/// 代码版本）仍会照常提示新版本，用户不会被困住。
+bool _isSameBuildVersion(String codeVersion, String executableVersion) {
+  final String code = _normalizedVersion(codeVersion);
+  final String executable = _normalizedVersion(executableVersion);
+  if (code == executable) return true;
+  return executable == _withoutPrerelease(code);
+}
 
 String _normalizedVersion(String version) =>
     version.trim().replaceFirst(RegExp('^[vV]'), '').split('+').first;
+
+/// 剥掉 semver 预发布段（`2.2.1-beta.30` → `2.2.1`）——原生版本字段只收数字段的
+/// 平台上，版本资源里落地的就是这个值。
+String _withoutPrerelease(String normalizedVersion) =>
+    normalizedVersion.split('-').first;

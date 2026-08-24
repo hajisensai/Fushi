@@ -659,12 +659,18 @@ abstract final class WindowsUpdateHandoff {
     if (record == null) return null;
     // BUG-1786：判「装成功」必须拿到**正面证据**，而不是「没看到失败」。
     //
-    // 旧判据只有 `currentVersion >= targetVersion` 一条，它在 debug/beta 通道**恒为真**：
-    // Windows 上 package_info 读的是 exe 版本资源，拿到的是语义版本 `2.2.1`（不带
-    // `-debug.N`），而 targetVersion 是 `2.2.1-debug.12067`；SemVer 规定「正式版 > 同号
-    // 预发布版」⇒ `2.2.1 > 2.2.1-debug.12067` ⇒ 永远成立。也就是说它根本不看装没装上：
-    // 安装中途 Abort 回滚要报成功，安装器压根没跑起来同样报成功。用户现场因此连着几天
-    // 收到「更新成功」，跑的却始终是旧 Dart 代码。
+    // 旧判据只有 `currentVersion >= targetVersion` 一条，而 `currentVersion` 来自 exe
+    // 版本资源——它和 `app.so` 是**两个文件**，所以这条判据根本不看运行中的代码换没换：
+    // 安装中途 Abort 回滚（保留被覆盖的旧 app.so）要报成功，半更新态同样报成功。
+    //
+    // 更糟的是它在 beta 通道曾**恒为真**。注意机制不是「Windows 版本资源丢后缀」——
+    // VERSIONINFO 的字符串字段保留完整 build-name（丢后缀的只是 `FILEVERSION` 那四段
+    // 数字，而 package_info 读的是字符串字段），debug 包实测就是 `2.2.1-debug.12215`。
+    // 真正丢后缀的是 **beta 的 `--build-name` 本身**：`release-desktop.yml` 原先只给
+    // debug tag 覆盖 `BUILD_VERSION_NAME`，beta 包在版本资源里一律自称裸 `2.2.1`，而
+    // targetVersion 是 `2.2.1-beta.30`；SemVer 规定「正式版 > 同号预发布版」⇒
+    // `2.2.1 > 2.2.1-beta.30` ⇒ 永远成立（版本名派生已在 BUG-1836 一并修掉）。
+    // 用户现场因此连着几天收到「更新成功」，跑的却始终是旧 Dart 代码。
     //
     // BUG-1836 根因修复：判据升级为三源证据表（见 [isWindowsUpdateInstalled]）。
     // 旧判据只有「Inno 日志 + exe 版本资源」两源，两源都不是**被替换的产物本身**：
