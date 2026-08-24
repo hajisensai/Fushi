@@ -260,4 +260,32 @@ void main() {
       expect(plan!.parts.length, 1, reason: '退回整包 Range 单段');
     });
   });
+
+  group('清单候选地址', () {
+    test('官网优先、GitHub 兜底，且两者不同主机', () {
+      expect(kRecommendedPackManifestUrls.length, greaterThanOrEqualTo(2));
+      expect(kRecommendedPackManifestUrls.first,
+          startsWith('https://fushi.moe/pack/'));
+      final Set<String> hosts = kRecommendedPackManifestUrls
+          .map((String u) => Uri.parse(u).host)
+          .toSet();
+      expect(hosts.length, kRecommendedPackManifestUrls.length,
+          reason: '候选全挤在一个主机上就不叫兜底了');
+      expect(hosts, contains('github.com'));
+    });
+
+    test('候选一律 https', () {
+      for (final String u in kRecommendedPackManifestUrls) {
+        expect(u, startsWith('https://'), reason: u);
+      }
+    });
+
+    test('清单关键路径上不得再出现旧的私有分发域名', () {
+      // 清单是「换包零发版」的唯一支点，必须落在官网 + GitHub 这两个我们能控的
+      // 主机上。旧域名只允许继续留在整包回退直链里（9.5 GB 单文件那两家都放不下）。
+      for (final String u in kRecommendedPackManifestUrls) {
+        expect(u, isNot(contains('dl.wrds.xyz')), reason: u);
+      }
+    });
+  });
 }
