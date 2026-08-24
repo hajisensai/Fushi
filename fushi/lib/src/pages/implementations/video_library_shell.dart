@@ -130,11 +130,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value: VideoLibrarySection.home,
           label: t.nav_home,
         ),
-        // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删）。
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.discover,
-          label: t.library_view_browse,
-        ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.series,
           label: t.series,
@@ -142,6 +137,14 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.allVideos,
           label: t.video_library_all_videos,
+        ),
+        // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删），
+        // **也同位**：本地库的各视图排完才是在线发现，最后才是管理类分区。此前发现夹在
+        // 首页与系列 / 全部视频之间，一排里「自己的库 → 推荐 → 自己的库」来回跳，是四个
+        // 模块里唯一的例外（2026-08-24 用户反馈）。
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.discover,
+          label: t.library_view_browse,
         ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
