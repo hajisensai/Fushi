@@ -877,6 +877,34 @@ double _segmentLabelContentWidth(String label, double scaledFont) =>
       textScaleFactor: 1.0,
     );
 
+/// 估算一排 MD3 tab（库页顶栏 [LibrarySectionTabs]）按各自文案取宽时的自然总宽
+/// （逻辑像素）。[horizontalPaddingPerTab] 是单侧 label 内边距。
+///
+/// 逐段求和，不是「段数 × 最宽段」——后者是等宽分段条 [estimateSegmentedStripWidth]
+/// 的算法，tab 各自取宽，用错会高估近一倍。
+///
+/// 字号 / 文字缩放在这里就地取自 tokens 与 [MediaQuery]，调用点不再重复那三行样板，
+/// 也不必自己碰 `fontSize`——顶栏字号是共享组件层的决策，页面侧不该重开。
+double estimateSectionTabBarWidth(
+  BuildContext context,
+  List<String> labels, {
+  required double horizontalPaddingPerTab,
+}) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
+  final double textScaleFactor = MediaQuery.textScalerOf(context).scale(1);
+  double total = 0.0;
+  for (final String label in labels) {
+    total += estimateLabelAdvanceWidth(
+          label: label,
+          fontSize: fontSize,
+          textScaleFactor: textScaleFactor,
+        ) +
+        horizontalPaddingPerTab * 2;
+  }
+  return total;
+}
+
 /// 一段标签文案的估算横向进距（逻辑像素），CJK / 全角按 1em、其余按 0.62em。
 ///
 /// Build 期可算（只依赖文案 / 字号 / 文字缩放，不依赖布局），供两类顶栏控件共用：

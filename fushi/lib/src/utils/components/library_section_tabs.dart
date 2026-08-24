@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
@@ -152,23 +151,14 @@ class _FushiSectionTabBarState<T extends Object>
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
-    final double textScale = MediaQuery.textScalerOf(context).scale(1);
     // 自然宽是纯 build 期可算量（只依赖文案 / 字号 / 缩放）：页头用它判定「左边摆得
-    // 下吗」，据此决定是否把动作收进 ⋯ 菜单。tab 各自取宽，故是逐段求和而不是
-    // 「段数 × 最宽段」——后者是等宽分段条的算法，用在这里会高估近一倍。
-    double naturalWidth = 0.0;
-    for (final LibrarySectionTab<T> tab in widget.tabs) {
-      naturalWidth += estimateLabelAdvanceWidth(
-            label: tab.label,
-            fontSize: fontSize,
-            textScaleFactor: textScale,
-          ) +
-          _kSectionTabHorizontalPadding * 2;
-    }
+    // 下吗」，据此决定是否把动作收进 ⋯ 菜单。
     FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(
-      naturalWidth,
+      estimateSectionTabBarWidth(
+        context,
+        <String>[for (final LibrarySectionTab<T> tab in widget.tabs) tab.label],
+        horizontalPaddingPerTab: _kSectionTabHorizontalPadding,
+      ),
     );
 
     _scheduleProjection();
