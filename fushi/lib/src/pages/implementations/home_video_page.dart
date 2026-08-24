@@ -3495,6 +3495,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [CoverOrientationBuilder] 探测与卡内封面共用同一 provider 键，零额外解码）。
   /// 底边进度条、集数/「新」/云角标，两行标题 + 溢出 Tooltip（TODO-2490 同款）。
   ///
+  /// [tags] = 该条目已打的用户标签（BUG-1808）：封面左上角 chip 列，与墙卡
+  /// [_buildCard] / 合集墙卡 [_buildCollectionCoverCard] 同一渲染同一位置。视频
+  /// 首页（[VideoLibrarySection.home]）自 series-first 拆分后只剩横滚行、墙格移
+  /// 去「系列 / 全部视频」，标签层若只画在墙卡上，首页就一个标签都看不见。远端
+  /// 占位卡无本地条目、无标签，留空即可。
   Widget _buildRowMediaCard({
     required Key cardKey,
     required FushiFocusId focusId,
@@ -3506,6 +3511,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     double? progressFraction,
     int? episodeNumber,
     String? secondaryText,
+    List<BookTagRow> tags = const <BookTagRow>[],
     bool newBadge = false,
     bool cloudBadge = false,
   }) {
@@ -3572,6 +3578,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                               _buildPlaylistBadge(episodeNumber),
                           ],
                         ),
+                      ),
+                    // BUG-1808：标签 chip 列（左上，与墙卡 / 合集墙卡同位同形）。
+                    // 右上是「新」/集数角标、右下是云角标，互不重叠；横滚卡是墙
+                    // 内容的快捷镜像、不参与勾选，故无勾选框让位问题。
+                    if (tags.isNotEmpty)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: _buildTagLabels(tags),
                       ),
                     if (cloudBadge)
                       const Positioned(
@@ -3660,6 +3675,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _open(book),
       onLongPress: () => _showVideoMenu(book),
+      tags: _videoBookTags(book.bookUid),
       progressFraction: videoWatchFraction(
         completed: book.completedAt != null,
         currentEpisode: book.currentEpisode,
@@ -3706,6 +3722,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ));
       },
       onLongPress: () => _showCollectionContextMenu(collection),
+      tags: _collectionTags(collection.id),
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
       episodeNumber: currentIndex + 1,
@@ -3747,6 +3764,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       coverHeight: coverHeight,
       onTap: () => _open(book, playlistCollectionId: cid),
       onLongPress: () => _showVideoMenu(book),
+      tags: _videoBookTags(book.bookUid),
       episodeNumber: playlistEpisodeCount(book.playlistJson) > 1
           ? book.currentEpisode + 1
           : null,
@@ -4430,9 +4448,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
   }) {
     final MediaCollectionRow collection = group.collection!;
-    final List<BookTagRow> tags =
-        ref.watch(collectionTagMapProvider).valueOrNull?[collection.id] ??
-            const <BookTagRow>[];
+    final List<BookTagRow> tags = _collectionTags(collection.id);
     final int memberCount = group.items.length;
     final bool hasRemoteMember = group.items.any(
         (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
@@ -5645,9 +5661,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String displayTitle = widget.section == VideoLibrarySection.series
         ? (_metadataWorkByBook[book.bookUid]?.title ?? book.title)
         : book.title;
-    final List<BookTagRow> tags =
-        ref.watch(videoBookTagMapProvider).valueOrNull?[book.bookUid] ??
-            const <BookTagRow>[];
+    final List<BookTagRow> tags = _videoBookTags(book.bookUid);
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     // TODO-1346：视频观看进度分数（null=无可展示进度 → 不画进度条）。
     final double? watchFrac = videoWatchFraction(
@@ -5958,6 +5972,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 卡片标签层：最多显示前 3 个 chip，超出折叠成「+N」（与书架卡风格一致）。
+  /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
+  /// 写一遍 watch——首页当初漏画标签层，正是因为标签只跟着墙卡那一处写法走。
+  List<BookTagRow> _videoBookTags(String bookUid) =>
+      ref.watch(videoBookTagMapProvider).valueOrNull?[bookUid] ??
+      const <BookTagRow>[];
+
+  /// 合集的用户标签（与 [_videoBookTags] 同形，键是 collectionId）。
+  List<BookTagRow> _collectionTags(int collectionId) =>
+      ref.watch(collectionTagMapProvider).valueOrNull?[collectionId] ??
+      const <BookTagRow>[];
+
   Widget _buildTagLabels(List<BookTagRow> tags) {
     const int maxVisible = 3;
     final List<BookTagRow> visible = tags.take(maxVisible).toList();
