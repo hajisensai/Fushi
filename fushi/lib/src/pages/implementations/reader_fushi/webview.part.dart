@@ -2488,7 +2488,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
-        if (_isNavigatingToChapter || _lyricsDocumentLoadInFlight) {
+        if (_isNavigatingToChapter || _isCurrentLyricsDocumentUrl(url)) {
           return NavigationActionPolicy.ALLOW;
         }
         // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
@@ -2545,7 +2545,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           return;
         }
         if (request.isForMainFrame ?? false) {
-          _lyricsDocumentLoadInFlight = false;
+          final int? failedLyricsGeneration =
+              _lyricsDocumentGenerationFromUrl(request.url.toString());
+          if (failedLyricsGeneration != null &&
+              failedLyricsGeneration == _lyricsDocumentLoadGeneration &&
+              failedLyricsGeneration == _lyricsLoadGeneration) {
+            _lyricsDocumentLoadGeneration = null;
+          }
           debugPrint('[ReaderFushi] onReceivedError: ${error.description} '
               'url=${request.url}');
           // Windows 拦截域 (fushi.local) 的 NavigationCompleted 假失败已在 fork
@@ -2643,13 +2649,34 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           generation != _lyricsLoadGeneration) {
         return false;
       }
-      _lyricsDocumentLoadInFlight = false;
+      if (_lyricsDocumentLoadGeneration == generation) {
+        _lyricsDocumentLoadGeneration = null;
+      }
       return _lyricsPageReady;
     } finally {
       if (_lyricsReadyFinalizingGeneration == generation) {
         _lyricsReadyFinalizingGeneration = null;
       }
     }
+  }
+
+  int? _lyricsDocumentGenerationFromUrl(String? raw) {
+    final Uri? uri = raw == null ? null : Uri.tryParse(raw);
+    if (uri == null ||
+        !uri.isScheme('https') ||
+        uri.host != 'fushi.local' ||
+        uri.path != '/lyrics') {
+      return null;
+    }
+    return int.tryParse(uri.queryParameters['generation'] ?? '');
+  }
+
+  bool _isCurrentLyricsDocumentUrl(String raw) {
+    final int? generation = _lyricsDocumentGenerationFromUrl(raw);
+    return _lyricsMode &&
+        generation != null &&
+        generation == _lyricsDocumentLoadGeneration &&
+        generation == _lyricsLoadGeneration;
   }
 
   Future<void> _onChapterLoadComplete(

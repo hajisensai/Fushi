@@ -123,7 +123,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _pendingLyricsHintOnReady = true;
         await _loadLyricsPage();
       } else {
-        _lyricsDocumentLoadInFlight = false;
+        _lyricsDocumentLoadGeneration = null;
         await _resolveAndApplyProfile(appModelNoUpdate.database);
         await _exitLyricsMode();
         try {
@@ -205,17 +205,23 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       return;
     }
     _spreadDocumentLoaded = false;
-    _lyricsDocumentLoadInFlight = true;
+    _lyricsDocumentLoadGeneration = loadGeneration;
     try {
       await _controller!.loadData(
         data: html,
         mimeType: 'text/html',
         encoding: 'utf-8',
-        baseUrl: WebUri('https://fushi.local/lyrics'),
+        baseUrl: WebUri(
+          Uri.parse('https://fushi.local/lyrics').replace(
+            queryParameters: <String, String>{
+              'generation': '$loadGeneration',
+            },
+          ).toString(),
+        ),
       );
     } catch (_) {
-      if (loadGeneration == _lyricsLoadGeneration) {
-        _lyricsDocumentLoadInFlight = false;
+      if (_lyricsDocumentLoadGeneration == loadGeneration) {
+        _lyricsDocumentLoadGeneration = null;
       }
       rethrow;
     }
@@ -303,7 +309,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   Future<void> _exitLyricsMode() async {
     ++_lyricsLoadGeneration;
     _lyricsReadyFinalizingGeneration = null;
-    _lyricsDocumentLoadInFlight = false;
+    _lyricsDocumentLoadGeneration = null;
     // 离开歌词模式会重载 reader 章节，lyrics caret JS 随之消失；复位 surface，
     // 否则方向键/A 会被误路由到已不存在的 fushiLyricsCaret。
     if (_caretSurface == CaretSurface.lyrics) {

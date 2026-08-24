@@ -52,6 +52,12 @@ void main() {
     expect(source, contains('loadGeneration: loadGeneration'));
     expect(source, contains('generation != _lyricsLoadGeneration'));
     expect(source, contains('lyricsGeneration: generation'));
+    expect(source, contains('int? _lyricsDocumentLoadGeneration;'));
+    expect(source, contains(r"'generation': '$loadGeneration'"));
+    expect(source, contains('_isCurrentLyricsDocumentUrl(url)'));
+    expect(source,
+        contains('_lyricsDocumentGenerationFromUrl(request.url.toString())'));
+    expect(source, isNot(contains('bool _lyricsDocumentLoadInFlight')));
   });
 }
 
