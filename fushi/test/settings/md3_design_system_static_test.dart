@@ -778,20 +778,23 @@ void main() {
           'Estimates the MokuroBlock.fontSize data field (sqrt(area/chars)) '
               'for OCR-produced manga.json blocks; pure data layer, no UI '
               'code.',
-      // BUG-1414：PR#692 的框选回写是 manga.json 的**第四个生产者**，与上面三条
+      // BUG-1414：PR#692 的框选回写曾是 manga.json 的**第四个生产者**，与上面三条
       // 豁免的是同一个数据字段——`MokuroBlock(fontSize: …)` 落盘成 `font_size`，
       // 由 manga_overlay_html.dart:46 折算成 WebView 覆盖层的 CSS `cqi` 命中框字号，
       // 从不进任何 Flutter `TextStyle`。判据本身表达不了这个区分：那串禁用子串
       // 与 `TextStyle(...)` 里的同名实参逐字符同形，要分辨只能知道外层构造器
       // 是谁，也就是把这个子串扫描器换成 Dart 语法分析——那是它有意不做的事。
       // 所以走守卫自己在失败信息里写明的机制（reviewed allowlist reason），
-      // 并由下面「manga.json 回写层保持纯数据层」把「无 UI 代码」这句话钉成可证伪
-      // 的断言，防止这条豁免退化成整文件免检。
-      'lib/src/media/manga/manga_json_writeback.dart':
-          'Writes the MokuroBlock.fontSize data field when appending a '
-              'user-drawn block to manga.json (estimate + serialize); pure '
-              'data layer with no Flutter import, same reviewed exception '
-              'class as mokuro_payload / manga_ocr_folder_job / '
+      // 并由下面「框选区域重识别层保持纯数据层」把「无 UI 代码」这句话钉成可证伪
+      // 的断言，防止这条豁免退化成整文件免检。「框选识别」改成「重新识别框选
+      // 区域」后，写侧 manga_json_writeback.dart 不再自己构造块（块由引擎链产出），
+      // 携带这个数据字段穿过平移 / 区域替换的是 manga_region_ocr.dart。
+      'lib/src/media/manga/ocr/manga_region_ocr.dart':
+          'Carries the MokuroBlock.fontSize data field through offsetting '
+              're-recognized region blocks back to page pixels and replacing '
+              'the region in a page (copy of an existing field, no estimate); '
+              'pure data layer with no Flutter import, same reviewed '
+              'exception class as mokuro_payload / manga_ocr_folder_job / '
               'google_lens_ocr_service.',
       'lib/src/pages/implementations/reader_fushi_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
@@ -1166,7 +1169,7 @@ void main() {
         'BorderRadius.circular(',
         'surfaceContainerHighest'
       },
-      'lib/src/media/manga/manga_json_writeback.dart': <String>{'fontSize:'},
+      'lib/src/media/manga/ocr/manga_region_ocr.dart': <String>{'fontSize:'},
       'lib/src/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
         'fontSize:'
@@ -1608,6 +1611,45 @@ void main() {
     }
   });
 
+  test('manga region re-OCR layer stays a pure data layer', () {
+    // 与 manga_json_writeback / system_ocr_manga_service 同款纪律：豁免的是
+    // MokuroBlock.fontSize 这个数据字段，不是这份文件。
+    final String source = File(
+      'lib/src/media/manga/ocr/manga_region_ocr.dart',
+    ).readAsStringSync();
+    final String code = maskComments(source);
+
+    expect(code, isNot(contains('package:flutter/')),
+        reason: 'manga_region_ocr.dart is allowlisted as a pure data layer; '
+            'a Flutter import invalidates that reason');
+
+    // 两处命中都只是把既有块的字段原样搬到新块（平移 / 重编号），不估算、不排版。
+    final List<String> dataFieldLines = code
+        .split('\n')
+        .where((String line) => line.contains('fontSize:'))
+        .map((String line) => line.trim())
+        .toList(growable: false);
+    expect(
+        dataFieldLines,
+        <String>[
+          'fontSize: block.fontSize,',
+          'fontSize: merged[index].fontSize,',
+        ],
+        reason: 'the allowlisted hits must stay MokuroBlock data-field copies, '
+            'not page typography');
+
+    for (final String chrome in const <String>[
+      'TextStyle(',
+      'Card(',
+      'ListTile(',
+      'BorderRadius.circular(',
+      'Widget build(',
+    ]) {
+      expect(code, isNot(contains(chrome)),
+          reason: 'the reviewed exemption must not start covering page chrome');
+    }
+  });
+
   test('manga.json writeback stays a pure data layer', () {
     final String source = File(
       'lib/src/media/manga/manga_json_writeback.dart',
@@ -1619,15 +1661,17 @@ void main() {
         reason: 'manga_json_writeback.dart is allowlisted as a pure data '
             'layer; a Flutter import invalidates that reason');
 
-    // 唯一的那个名参必须是 MokuroBlock 数据字段的估算写入，不是排版。
+    // 写侧不再自己构造块（块由引擎链产出、经 manga_region_ocr.dart 平移/替换），
+    // 这里一个 fontSize: 都不该再有；有了就是有人把排版或块构造塞回了写侧。
     final List<String> dataFieldLines = code
         .split('\n')
         .where((String line) => line.contains('fontSize:'))
         .map((String line) => line.trim())
         .toList(growable: false);
-    expect(dataFieldLines, <String>['fontSize: estimateMangaBlockFontSize('],
-        reason: 'the allowlisted hit must stay the MokuroBlock data-field '
-            'write, not page typography');
+    expect(dataFieldLines, isEmpty,
+        reason: 'manga_json_writeback.dart no longer writes MokuroBlock '
+            'fields itself; a fontSize: here means block construction or '
+            'typography leaked back into the write side');
 
     for (final String chrome in const <String>[
       'TextStyle(',
