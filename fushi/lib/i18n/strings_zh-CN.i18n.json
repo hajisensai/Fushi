@@ -3783,5 +3783,14 @@
   "manga_ocr_engine_system": "设备自带",
   "manga_ocr_engine_system_desc": "用设备自带的文字识别。不用下载、完全离线、不上传任何内容；但对竖排气泡和手写体明显不如本地模型。",
   "manga_ocr_engine_system_unavailable": "此设备没有可用的系统文字识别",
-  "manga_tap_ocr_online_lens_only": "在线章节的页面不在本地，只能用 Google Lens 识别——页面图片会上传给 Google。"
+  "manga_tap_ocr_online_lens_only": "在线章节的页面不在本地，只能用 Google Lens 识别——页面图片会上传给 Google。",
+  "game_hook_btn_replay": "重播本句语音",
+  "game_hook_btn_recapture": "重新录制语音",
+  "game_hook_btn_follow": "跟随新台词",
+  "game_hook_btn_passthrough": "鼠标穿透到游戏",
+  "game_hook_btn_transparency": "切换底板",
+  "game_hook_btn_lock": "锁定位置",
+  "game_hook_btn_workbench": "打开取材工作台",
+  "game_hook_btn_topmost": "保持置顶",
+  "game_hook_btn_close": "关闭浮窗"
 }

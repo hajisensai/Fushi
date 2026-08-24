@@ -7,9 +7,12 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+#include <commctrl.h>
+
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 // BUG-951 — the galgame hook overlay's pass-through escape hatch.
 //
@@ -118,6 +121,44 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory, int slot,
                   const States& states, const D2D1_RECT_F& bounds,
                   ID2D1Brush* brush);
 
+// 槽位悬停提示文案（本地化，由 Dart 在 show 载荷里按 locale 下发；未下发 /
+// 越界 = 空串 = 不显示）。与 kSlotActions 同下标，单一真相：正文内工具条和
+// 穿透工具条问的是同一张表，两处提示不可能各说各话。主线程专用（与整个模块
+// 同一约束）。
+void SetSlotTooltips(std::vector<std::wstring> tooltips);
+const std::wstring& SlotTooltip(int slot);
+
+// 手动追踪式 Win32 tooltip（TOOLTIPS_CLASS + TTM_TRACKACTIVATE）。
+//
+// 两个工具条窗都是 WS_EX_NOACTIVATE 的自绘分层窗，永远拿不到激活态，所以用
+// TTS_ALWAYSTIP；又因为按钮矩形每次 Render 都随窗宽居中重算，挂不了固定矩形的
+// TTF_SUBCLASS 工具，而是由宿主在 WM_MOUSEMOVE 里报「现在悬停在第几槽 + 该槽
+// 屏幕坐标」，本类只负责建窗、换文案、摆位置。
+class SlotTooltipHost {
+ public:
+  SlotTooltipHost() = default;
+  ~SlotTooltipHost();
+
+  SlotTooltipHost(const SlotTooltipHost&) = delete;
+  SlotTooltipHost& operator=(const SlotTooltipHost&) = delete;
+
+  // 在屏幕物理坐标 (|screen_x|, |screen_y|) 为 |slot| 显示提示。slot 未变则
+  // no-op（提示钉在初次进入处，不随抖动跳）；slot < 0 或该槽文案为空则隐藏。
+  void Update(HWND owner, int slot, int screen_x, int screen_y);
+  void Hide();
+
+ private:
+  bool EnsureWindow(HWND owner);
+
+  HWND hwnd_ = nullptr;
+  int active_slot_ = -1;
+  // TOOLINFOW::lpszText 是裸指针，comctl32 在整个提示生命周期内都会回读它。
+  // 绝不能指向 SetSlotTooltips 那张共享表的内部缓冲：整表 move 赋值时旧串析构，
+  // tool_ 就握着悬垂指针。本类自持一份，lpszText 只指向自己的成员。
+  std::wstring current_text_;
+  TOOLINFOW tool_ = {};
+};
+
 }  // namespace hook_toolbar
 
 class HookToolbarWindow {
@@ -180,6 +221,9 @@ class HookToolbarWindow {
   bool hovered_ = false;
   int hovered_slot_ = -1;
   bool tracking_mouse_leave_ = false;
+
+  // 槽位悬停提示（文案来自 hook_toolbar::SlotTooltip 共享表）。
+  hook_toolbar::SlotTooltipHost tooltip_;
 
   // Owner-drag state. |dragging_| only becomes true once the press travelled
   // past the threshold, so a still press on the background is not a 1px drag.

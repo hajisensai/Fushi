@@ -11,6 +11,10 @@
 //   ③ 最终填充遍仍是滚动守卫锚定的那次原点绘制（text_rect_.left, text_origin_y）。
 //   ④ Dart 侧默认背景全透明（可读性由描边承担），且 ◐ 一键底板的恢复值非零
 //      ——否则 toggle 会在 0 ↔ 0 之间死循环。
+//   ⑤ 兜底字族按模式分派：hook 台词用全宽假名的 Yu Gothic，有声书歌词条 /
+//      剪贴板文字窗仍用界面字体 Yu Gothic UI。同 ②，这是「其余浮窗逐像素不变」
+//      的一部分——字族解析在 RebuildFontCollection 里是**全局**的，谁把
+//      Yu Gothic 提成全局兜底，另外两个表面就跟着换了脸。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -114,6 +118,57 @@ void main() {
       double.parse(m!.group(1)!),
       greaterThan(0),
       reason: '恢复值为 0 会让 ◐ 在 0 ↔ 0 之间空转',
+    );
+  });
+
+  test('⑤ 兜底字族按模式分派，非 hook 表面仍是 Yu Gothic UI', () {
+    // 唯一的分派点。DefaultFontFamily 是全部「模式相关字族知识」的所在。
+    expect(
+      RegExp(r'return hook_text_mode_ \? L"Yu Gothic" : L"Yu Gothic UI";')
+          .hasMatch(window),
+      isTrue,
+      reason: 'DefaultFontFamily 必须按 hook_text_mode_ 分派：'
+          'hook 台词用全宽假名 Yu Gothic，其余表面保持 Yu Gothic UI',
+    );
+    // RebuildFontCollection 的兜底必须走 DefaultFontFamily()，且用户显式设过
+    // style_.font_family 时仍然优先用用户的——兜底只在没设时兜。
+    expect(
+      RegExp(r'resolved_font_family_ = style_\.font_family\.empty\(\)\s*'
+              r'\?\s*std::wstring\(DefaultFontFamily\(\)\)\s*'
+              r':\s*style_\.font_family;')
+          .hasMatch(window),
+      isTrue,
+      reason: '兜底必须走 DefaultFontFamily()，且不得覆盖用户显式选的字族',
+    );
+    // 全宽假名字族在整份 runner 源码里**只允许出现一次**，就是上面那个三元的
+    // hook 分支。多一处 = 有人把它写成了全局兜底或第二个入口，歌词条 / 剪贴板
+    // 窗会跟着换脸；正是 develop 把字族解析从 Render() 挪进
+    // RebuildFontCollection() 之后最容易踩的坑。
+    expect(
+      RegExp(r'L"Yu Gothic"').allMatches(window).length,
+      1,
+      reason: 'L"Yu Gothic" 只允许出现在 DefaultFontFamily 的 hook 分支里',
+    );
+    // 最后一道兜底（不带自定义 collection、系统必装字族）必须仍钉死字面量：
+    // 换成 DefaultFontFamily() 会让 hook 模式下的判据恒假、重试整条消失。
+    expect(
+      window.contains('resolved_font_family_ != L"Yu Gothic UI")) {'),
+      isTrue,
+      reason: '重试判据比较的是重试目标字面量，不是本表面的默认字族',
+    );
+    expect(
+      RegExp(r'L"Yu Gothic UI", nullptr, text_weight, DWRITE_FONT_STYLE_NORMAL')
+          .hasMatch(window),
+      isTrue,
+      reason: 'CreateTextFormat 的最终兜底必须是无 collection 的 Yu Gothic UI',
+    );
+    // 模式一变，上一次解析出来的字族就属于另一个模式，必须重解析。
+    expect(
+      RegExp(r'void SetHookTextMode\(bool enabled\) \{[\s\S]{0,400}?'
+              r'font_collection_dirty_ = true;')
+          .hasMatch(windowHeader),
+      isTrue,
+      reason: 'SetHookTextMode 必须让字体集合失效，否则兜底字族停在旧模式上',
     );
   });
 }

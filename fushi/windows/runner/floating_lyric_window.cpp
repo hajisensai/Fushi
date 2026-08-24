@@ -230,11 +230,22 @@ bool FloatingLyricWindow::EnsureTextResources() {
   return true;
 }
 
+const wchar_t* FloatingLyricWindow::DefaultFontFamily() const {
+  // 「Yu Gothic UI」的假名是为界面窄栏压窄过的半宽字形，整句日文台词排下来又挤
+  // 又断气；「Yu Gothic」是同一套设计的正文版，假名全宽。hook 台词浮窗是唯一
+  // 在读整句日文的表面，所以只有它换。有声书歌词条 / 剪贴板文字窗共用同一个
+  // FloatingLyricWindow 类，必须继续拿 Yu Gothic UI —— 它们逐像素不变是
+  // gal_overlay_lyric_style_guard_test ② 的前提。
+  return hook_text_mode_ ? L"Yu Gothic" : L"Yu Gothic UI";
+}
+
 void FloatingLyricWindow::RebuildFontCollection() {
   font_collection_dirty_ = false;
   custom_font_collection_.Reset();
-  resolved_font_family_ =
-      style_.font_family.empty() ? L"Yu Gothic UI" : style_.font_family;
+  // 用户显式选了字族就用用户的，兜底只在没选时兜。
+  resolved_font_family_ = style_.font_family.empty()
+                              ? std::wstring(DefaultFontFamily())
+                              : style_.font_family;
   if (dwrite_factory_ == nullptr || style_.font_path.empty()) {
     return;
   }
@@ -453,6 +464,8 @@ void FloatingLyricWindow::Hide() {
   visible_ = false;
   hovered_ = false;
   tracking_mouse_leave_ = false;
+  // 隐藏后收不到 WM_MOUSELEAVE：提示留着就是一块浮在桌面上的孤儿。
+  slot_tooltip_.Hide();
   // BUG-1471: a hidden window never receives the WM_LBUTTONUP that would end an
   // in-flight press. Clearing only `dragging_` here left `pressed_` stuck true
   // across the hide, and MaybeHoverLookup bails on `pressed_` -- hover lookup
@@ -755,12 +768,13 @@ hook_toolbar::Layout FloatingLyricWindow::ComputePassThroughToolbarLayout()
   const float btn = ScaleForDpi(kHookTextButtonSizeDip);
   const float gap = ScaleForDpi(kHookTextButtonGapDip);
   const float margin = ScaleForDpi(kToolbarWindowMarginDip);
-  const float row_w =
-      btn * kHookTextControlSlotCount + gap * (kHookTextControlSlotCount - 1);
+  const float row_w = HookToolbarRowWidth();
   // Same origin the in-body toolbar draws at (centred row, kControlsTopDip from
   // the top), grown by |margin| so the pill has an edge to grab for dragging.
+  // 这里用的是 window rect 宽而不是 client 宽：本窗是无边框 WS_POPUP 分层窗，
+  // 两者相等，但语义不同——这条 offset 要落到屏幕坐标上。
   const float body_w = static_cast<float>(wr.right - wr.left);
-  const float row_x = wr.left + (body_w - row_w) / 2.0f;
+  const float row_x = wr.left + HookToolbarRowLeft(body_w);
   const float row_y = wr.top + ScaleForDpi(kControlsTopDip);
   layout.rect.left = static_cast<LONG>(std::lround(row_x - margin));
   layout.rect.top = static_cast<LONG>(std::lround(row_y - margin));
@@ -957,6 +971,18 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // onShiftHover 同语义）。命中新字才派发一次，见 MaybeHoverLookup。
       MaybeHoverLookup(static_cast<float>(GET_X_LPARAM(lparam)),
                        static_cast<float>(GET_Y_LPARAM(lparam)));
+      // 工具条槽位悬停提示（仅 hook 模式）：按钮只在 hovered_ 时可见且可点
+      // （ControlActionAt 同门），提示走同一道门；按压 / 拖拽途中不冒提示。
+      if (hook_text_mode_ && !pressed_ && !dragging_) {
+        const int slot =
+            hovered_ ? HookToolbarSlotAt(
+                           static_cast<float>(GET_X_LPARAM(lparam)),
+                           static_cast<float>(GET_Y_LPARAM(lparam)))
+                     : -1;
+        POINT cursor;
+        GetCursorPos(&cursor);
+        slot_tooltip_.Update(hwnd_, slot, cursor.x + 12, cursor.y + 22);
+      }
       return 0;
     }
     case WM_TIMER: {
@@ -986,6 +1012,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       tracking_mouse_leave_ = false;
       StopHoverLookupPolling();
       ResetHoverLookupAnchor();
+      slot_tooltip_.Hide();
       if (hovered_ && !dragging_) {
         hovered_ = false;
         RequestRender();
@@ -993,6 +1020,8 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       return 0;
     }
     case WM_LBUTTONDOWN: {
+      // 按下即操作：提示的活儿到此为止，留着会盖在刚变过状态的按钮上。
+      slot_tooltip_.Hide();
       const float x = static_cast<float>(GET_X_LPARAM(lparam));
       const float y = static_cast<float>(GET_Y_LPARAM(lparam));
 
@@ -1247,12 +1276,17 @@ void FloatingLyricWindow::Render() {
   auto create_text_format = [&](float font_size,
                                 IDWriteTextFormat** format) -> HRESULT {
     const wchar_t* family = resolved_font_family_.empty()
-                                ? L"Yu Gothic UI"
+                                ? DefaultFontFamily()
                                 : resolved_font_family_.c_str();
     HRESULT hr = dwrite_factory_->CreateTextFormat(
         family, custom_font_collection_.Get(), text_weight,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"",
         format);
+    // 最后一道兜底：不带自定义 collection、钉死系统必装的 Yu Gothic UI。这里的
+    // 两个 L"Yu Gothic UI" 是**重试目标**，不是「本表面的默认字族」，所以绝不能
+    // 换成 DefaultFontFamily()——一换，hook 模式下 resolved 就等于重试目标，
+    // 判据恒假、重试整条消失，DirectWrite 在 Yu Gothic 上失手时连兜底都没有。
+    // 判据本身只回答一件事：这次重试是否与刚失败的那次不同。
     if (FAILED(hr) &&
         (custom_font_collection_ != nullptr ||
          resolved_font_family_ != L"Yu Gothic UI")) {
@@ -1712,9 +1746,11 @@ void FloatingLyricWindow::Render() {
         }
       };
       if (hook_text_mode_) {
-        const float controls_total = t_btn * kHookTextControlSlotCount +
-                                     t_gap * (kHookTextControlSlotCount - 1);
-        const float left = (width - controls_total) / 2.0f;
+        // 绘制是 HookToolbarSlotAt 的逆向：同一条 RowLeft 决定起点，逐槽步进
+        // (btn + gap)。命中与绘制共用起点，两者不可能各画各的。
+        // Render 的 |width| 是 client px 的 int；显式转 float 与改造前
+        // 「(width - controls_total) / 2.0f」的隐式提升逐位等价。
+        const float left = HookToolbarRowLeft(static_cast<float>(width));
         // No second pill behind the row: the full-width hover strip is already
         // the toolbar surface. Only active buttons receive a local soft tint.
         for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
@@ -1889,6 +1925,40 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
   }
 }
 
+float FloatingLyricWindow::HookToolbarRowWidth() const {
+  const float btn = ScaleForDpi(kHookTextButtonSizeDip);
+  const float gap = ScaleForDpi(kHookTextButtonGapDip);
+  return btn * kHookTextControlSlotCount +
+         gap * (kHookTextControlSlotCount - 1);
+}
+
+float FloatingLyricWindow::HookToolbarRowLeft(float width) const {
+  return (width - HookToolbarRowWidth()) / 2.0f;
+}
+
+int FloatingLyricWindow::HookToolbarSlotAt(float x, float y) const {
+  if (hwnd_ == nullptr || !hook_text_mode_) {
+    return -1;
+  }
+  RECT rc;
+  GetClientRect(hwnd_, &rc);
+  const float width = static_cast<float>(rc.right - rc.left);
+  const float btn = ScaleForDpi(kHookTextButtonSizeDip);
+  const float gap = ScaleForDpi(kHookTextButtonGapDip);
+  const float ctrl_top = ScaleForDpi(kControlsTopDip);
+  if (y < ctrl_top || y > ctrl_top + btn) {
+    return -1;
+  }
+  const float left = HookToolbarRowLeft(width);
+  for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+    const float bx = left + slot * (btn + gap);
+    if (x >= bx && x <= bx + btn) {
+      return slot;
+    }
+  }
+  return -1;
+}
+
 std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
   if (text_only_) {
     // Text-only Luna toolbar: only the lock + one-click-transparency buttons are
@@ -1911,18 +1981,12 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
       return std::string();
     }
     if (hook_text_mode_) {
-      const float controls_total = btn * kHookTextControlSlotCount +
-                                   gap * (kHookTextControlSlotCount - 1);
-      const float left = (width - controls_total) / 2.0f;
-      for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
-        const float bx = left + slot * (btn + gap);
-        if (x < bx || x > bx + btn) continue;
-        // Shared slot table (hook_toolbar::kSlotActions): the standalone
-        // pass-through toolbar indexes the very same array, so the two windows
-        // physically cannot disagree about what a button does.
-        return hook_toolbar::kSlotActions[slot];
-      }
-      return std::string();
+      // Shared slot table (hook_toolbar::kSlotActions): the standalone
+      // pass-through toolbar indexes the very same array, so the two windows
+      // physically cannot disagree about what a button does. 几何走
+      // HookToolbarSlotAt——悬停提示问的是同一个入口，提示与命中永远指同一颗。
+      const int slot = HookToolbarSlotAt(x, y);
+      return slot >= 0 ? hook_toolbar::kSlotActions[slot] : std::string();
     }
     const float lock_x = width - pad - btn;
     const float top_x = lock_x - gap - btn;

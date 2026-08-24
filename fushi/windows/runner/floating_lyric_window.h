@@ -181,6 +181,10 @@ class FloatingLyricWindow {
   void SetHookTextMode(bool enabled) {
     hook_text_mode_ = enabled;
     if (enabled) text_only_ = true;
+    // 兜底字族按模式分派（DefaultFontFamily：hook 用全宽假名的 Yu Gothic，其余
+    // 表面保持界面字体 Yu Gothic UI）。模式一变，上一次解析出来的
+    // resolved_font_family_ 就可能属于另一个模式，必须重解析。
+    font_collection_dirty_ = true;
   }
   // Window title = the taskbar / Alt+Tab label. The text-only clipboard window
   // shows in the taskbar (WS_EX_APPWINDOW) so the fully transparent overlay is
@@ -242,6 +246,22 @@ class FloatingLyricWindow {
 
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);
+
+  // hook 模式工具条几何的唯一真相（物理 px）。绘制（Render）、命中
+  // （ControlActionAt）、穿透工具条窗定位（ComputePassThroughToolbarLayout）
+  // 与悬停提示四处共用，谁也不可能自己算偏。
+  //  * RowWidth：一行 kHookTextControlSlotCount 颗按钮的总宽；
+  //  * RowLeft ：该行在宽 |width| 的容器里居中后的左起点；
+  //  * SlotAt  ：client 点落在第几槽（-1 = 不在任何按钮上）。SlotAt 只判几何，
+  //    「按钮此刻是否可见/可点」（hovered_）留给调用方，与改造前逐字节同门。
+  float HookToolbarRowWidth() const;
+  float HookToolbarRowLeft(float width) const;
+  int HookToolbarSlotAt(float x, float y) const;
+
+  // 当前表面的兜底字族：hook 台词浮窗用 Yu Gothic（全宽假名），有声书歌词条 /
+  // 剪贴板文字窗仍用界面字体 Yu Gothic UI。用户显式设了 style_.font_family 时
+  // 兜底不参与（见 RebuildFontCollection）。
+  const wchar_t* DefaultFontFamily() const;
 
   // 把 client 点上的那个字送去查词（回调带屏幕逻辑 px 的词矩形）。点击查词与
   // Shift-悬停查词共用这一个出口，两条路径的取词、坐标换算、载荷永远同形。
@@ -458,6 +478,10 @@ class FloatingLyricWindow {
   // BUG-951: the always-clickable toolbar used while the body is click-through.
   // Only ever created / shown for hook_text_mode_ instances in pass-through.
   HookToolbarWindow pass_through_toolbar_;
+
+  // 正文内工具条的槽位悬停提示（文案共享 hook_toolbar::SlotTooltip 表，与
+  // 穿透工具条窗同一张，两处提示不可能各说各话）。
+  hook_toolbar::SlotTooltipHost slot_tooltip_;
 
   LookupCallback on_lookup_;
   ContextLookupCallback on_context_lookup_;
