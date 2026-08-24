@@ -2172,9 +2172,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get settings_destination_tracking => 'Media tracking';
   String get settings_destination_video => 'Video';
   String get settings_experimental_suffix => ' (experimental)';
-  String get settings_group_content => 'Content';
-  String get settings_group_data => 'Data & device';
-  String get settings_group_tools => 'Tools';
   String get settings_search_hint => 'Search settings';
   String get settings_search_no_results => 'No matching settings';
   String get settings_secret_hide => 'Hide value';
@@ -5098,6 +5095,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Install failed: ${message}';
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  String get settings_group_content => 'Content';
+  String get settings_group_tools => 'Tools';
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -8679,12 +8679,6 @@ class _StringsAr extends _StringsEn {
   String get settings_destination_video => 'فيديو';
   @override
   String get settings_experimental_suffix => ' (تجريبي، قد يكون غير مستقر)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -13802,6 +13796,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -17417,12 +17417,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (experimentell, kann instabil sein)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -22571,6 +22565,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -26194,12 +26194,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (experimental, puede ser inestable)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -31356,6 +31350,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -34988,12 +34988,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (expérimental, peut être instable)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -40153,6 +40147,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -43743,12 +43743,6 @@ class _StringsId extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (eksperimental, mungkin tidak stabil)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -48880,6 +48874,12 @@ class _StringsId extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -52496,12 +52496,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (sperimentale, potrebbe essere instabile)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -57651,6 +57645,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -61180,12 +61180,6 @@ class _StringsJa extends _StringsEn {
   String get settings_destination_video => '動画';
   @override
   String get settings_experimental_suffix => '（実験的機能、不安定な場合があります）';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -66239,6 +66233,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -69769,12 +69769,6 @@ class _StringsKo extends _StringsEn {
   String get settings_destination_video => '비디오';
   @override
   String get settings_experimental_suffix => ' (실험적, 불안정할 수 있음)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -74835,6 +74829,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -78438,12 +78438,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (experimenteel, mogelijk instabiel)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -83586,6 +83580,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -87200,12 +87200,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (experimental, pode ser instável)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -92349,6 +92343,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -95955,12 +95955,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (экспериментально, возможна нестабильность)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -101099,6 +101093,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -104673,12 +104673,6 @@ class _StringsTh extends _StringsEn {
   String get settings_destination_video => 'วิดีโอ';
   @override
   String get settings_experimental_suffix => ' (ทดลอง, อาจไม่เสถียร)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -109797,6 +109791,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -113392,12 +113392,6 @@ class _StringsTr extends _StringsEn {
   String get settings_destination_video => 'Video';
   @override
   String get settings_experimental_suffix => ' (deneysel, kararsız olabilir)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -118526,6 +118520,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -122115,12 +122115,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get settings_experimental_suffix =>
       ' (thử nghiệm, có thể chưa ổn định)';
-  @override
-  String get settings_group_content => 'Content';
-  @override
-  String get settings_group_data => 'Data & device';
-  @override
-  String get settings_group_tools => 'Tools';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -127241,6 +127235,12 @@ class _StringsVi extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => 'Content';
+  @override
+  String get settings_group_tools => 'Tools';
+  @override
+  String get settings_group_data => 'Data & device';
 }
 
 // Path: <root>
@@ -130590,12 +130590,6 @@ class _StringsZhCn extends _StringsEn {
   String get settings_destination_video => '视频';
   @override
   String get settings_experimental_suffix => '（实验性）';
-  @override
-  String get settings_group_content => '内容';
-  @override
-  String get settings_group_data => '数据与设备';
-  @override
-  String get settings_group_tools => '工具';
   @override
   String get settings_search_hint => '搜索设置';
   @override
@@ -135302,6 +135296,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       '捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。';
+  @override
+  String get settings_group_content => '内容';
+  @override
+  String get settings_group_tools => '工具';
+  @override
+  String get settings_group_data => '数据与设备';
 }
 
 // Path: <root>
@@ -138791,12 +138791,6 @@ class _StringsZhHk extends _StringsEn {
   String get settings_destination_video => '影片';
   @override
   String get settings_experimental_suffix => '（實驗性）';
-  @override
-  String get settings_group_content => '內容';
-  @override
-  String get settings_group_data => '資料與裝置';
-  @override
-  String get settings_group_tools => '工具';
   @override
   String get settings_search_hint => 'Search settings';
   @override
@@ -143815,6 +143809,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get game_hook_reason_capability_probe_failed =>
       'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+  @override
+  String get settings_group_content => '內容';
+  @override
+  String get settings_group_tools => '工具';
+  @override
+  String get settings_group_data => '資料與裝置';
 }
 
 /// Flat map(s) containing all translations.
@@ -147021,12 +147021,6 @@ extension on _StringsEn {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (experimental)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -151515,6 +151509,12 @@ extension on _StringsEn {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -154721,12 +154721,6 @@ extension on _StringsAr {
         return 'فيديو';
       case 'settings_experimental_suffix':
         return ' (تجريبي، قد يكون غير مستقر)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -159213,6 +159207,12 @@ extension on _StringsAr {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -162431,12 +162431,6 @@ extension on _StringsDe {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (experimentell, kann instabil sein)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -166933,6 +166927,12 @@ extension on _StringsDe {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -170152,12 +170152,6 @@ extension on _StringsEs {
         return 'Vídeo';
       case 'settings_experimental_suffix':
         return ' (experimental, puede ser inestable)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -174652,6 +174646,12 @@ extension on _StringsEs {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -177875,12 +177875,6 @@ extension on _StringsFr {
         return 'Vidéo';
       case 'settings_experimental_suffix':
         return ' (expérimental, peut être instable)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -182377,6 +182371,12 @@ extension on _StringsFr {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -185589,12 +185589,6 @@ extension on _StringsId {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (eksperimental, mungkin tidak stabil)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -190084,6 +190078,12 @@ extension on _StringsId {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -193300,12 +193300,6 @@ extension on _StringsIt {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (sperimentale, potrebbe essere instabile)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -197805,6 +197799,12 @@ extension on _StringsIt {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -201003,12 +201003,6 @@ extension on _StringsJa {
         return '動画';
       case 'settings_experimental_suffix':
         return '（実験的機能、不安定な場合があります）';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -205488,6 +205482,12 @@ extension on _StringsJa {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -208688,12 +208688,6 @@ extension on _StringsKo {
         return '비디오';
       case 'settings_experimental_suffix':
         return ' (실험적, 불안정할 수 있음)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -213175,6 +213169,12 @@ extension on _StringsKo {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -216391,12 +216391,6 @@ extension on _StringsNl {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (experimenteel, mogelijk instabiel)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -220890,6 +220884,12 @@ extension on _StringsNl {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -224106,12 +224106,6 @@ extension on _StringsPtBr {
         return 'Vídeo';
       case 'settings_experimental_suffix':
         return ' (experimental, pode ser instável)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -228602,6 +228596,12 @@ extension on _StringsPtBr {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -231821,12 +231821,6 @@ extension on _StringsRu {
         return 'Видео';
       case 'settings_experimental_suffix':
         return ' (экспериментально, возможна нестабильность)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -236319,6 +236313,12 @@ extension on _StringsRu {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -239525,12 +239525,6 @@ extension on _StringsTh {
         return 'วิดีโอ';
       case 'settings_experimental_suffix':
         return ' (ทดลอง, อาจไม่เสถียร)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -244019,6 +244013,12 @@ extension on _StringsTh {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -247231,12 +247231,6 @@ extension on _StringsTr {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (deneysel, kararsız olabilir)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -251728,6 +251722,12 @@ extension on _StringsTr {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -254938,12 +254938,6 @@ extension on _StringsVi {
         return 'Video';
       case 'settings_experimental_suffix':
         return ' (thử nghiệm, có thể chưa ổn định)';
-      case 'settings_group_content':
-        return 'Content';
-      case 'settings_group_data':
-        return 'Data & device';
-      case 'settings_group_tools':
-        return 'Tools';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -259433,6 +259427,12 @@ extension on _StringsVi {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return 'Content';
+      case 'settings_group_tools':
+        return 'Tools';
+      case 'settings_group_data':
+        return 'Data & device';
       default:
         return null;
     }
@@ -262619,12 +262619,6 @@ extension on _StringsZhCn {
         return '视频';
       case 'settings_experimental_suffix':
         return '（实验性）';
-      case 'settings_group_content':
-        return '内容';
-      case 'settings_group_data':
-        return '数据与设备';
-      case 'settings_group_tools':
-        return '工具';
       case 'settings_search_hint':
         return '搜索设置';
       case 'settings_search_no_results':
@@ -267081,6 +267075,12 @@ extension on _StringsZhCn {
         return ({required Object message}) => '安装失败：${message}';
       case 'game_hook_reason_capability_probe_failed':
         return '捕获组件没有回应能力探测：文件在，但跑不起来或没在时限内回应。多为杀毒软件拦截、权限不足，或上一局残留的 helper 进程挂住了。请关闭所有游戏、检查杀软隔离区后重试。';
+      case 'settings_group_content':
+        return '内容';
+      case 'settings_group_tools':
+        return '工具';
+      case 'settings_group_data':
+        return '数据与设备';
       default:
         return null;
     }
@@ -270278,12 +270278,6 @@ extension on _StringsZhHk {
         return '影片';
       case 'settings_experimental_suffix':
         return '（實驗性）';
-      case 'settings_group_content':
-        return '內容';
-      case 'settings_group_data':
-        return '資料與裝置';
-      case 'settings_group_tools':
-        return '工具';
       case 'settings_search_hint':
         return 'Search settings';
       case 'settings_search_no_results':
@@ -274759,6 +274753,12 @@ extension on _StringsZhHk {
         return ({required Object message}) => 'Install failed: ${message}';
       case 'game_hook_reason_capability_probe_failed':
         return 'The capture component did not answer the capability check. It was found on disk but could not run or did not respond in time - antivirus may be blocking it, Fushi may lack permission to launch it, or a leftover helper process may be stuck. Close every game, check your antivirus quarantine, then try again.';
+      case 'settings_group_content':
+        return '內容';
+      case 'settings_group_tools':
+        return '工具';
+      case 'settings_group_data':
+        return '資料與裝置';
       default:
         return null;
     }
