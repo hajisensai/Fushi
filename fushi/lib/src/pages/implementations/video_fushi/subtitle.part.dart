@@ -381,6 +381,32 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     )
                 : null,
           ),
+        // BUG-1861：与远端**主**字幕轨行完全同形——本机落盘的字幕档
+        // （[_pickAndImportRemoteSecondarySubtitle] 拷进 video_subtitles/）也要有自己的
+        // 行。否则「导入成功、副字幕生效、列表里找不到它、也切不回来」，正是主字幕那半
+        // 已修掉的同一个洞。与 host sidecar 行按路径去重。
+        for (final SubtitleSource source in _importedSubtitleSources)
+          if (hostSub == null ||
+              !sameExternalSubtitlePathForMenu(source, hostSub))
+            ListTile(
+              leading: const Icon(Icons.subtitles),
+              title: Text(source.label),
+              selected: subtitleSourceMatchesPersistedForMenu(
+                source,
+                _currentSecondarySubtitleSource,
+              ),
+              selectedColor: cs.primary,
+              enabled: !_subtitleLoadingShown,
+              onTap: _subtitleLoadingShown
+                  ? null
+                  : () => unawaited(
+                        _applyRemoteSecondarySubtitle(
+                          controller,
+                          source.externalPath!,
+                          label: source.label,
+                        ),
+                      ),
+            ),
       ];
     }
     return <Widget>[
@@ -542,10 +568,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 有效性 gate 掉。现在两份列表各自独立、渲染时合并（见
   /// [mergeImportedSubtitleSourcesForMenu]）。
   ///
-  /// 只收**外挂字幕档案路径**（[isImportedExternalSubtitlePath]：非 `embedded:<n>`、扩展名
-  /// 受支持）；远端内封轨抽取出来的临时档由 `embedded:<n>` 源指针自己的行承载，不进这里。
+  /// 只收**外挂字幕档案路径**（[isExternalSubtitleFilePathForMenu]：非 `embedded:<n>`
+  /// 源指针、非 `off:` 哨兵、非空）；远端内封轨抽取出来的临时档由 `embedded:<n>` 源指针
+  /// 自己的行承载，不进这里。**刻意不按扩展名过滤**——Jimaku / OpenSubtitles 给的
+  /// `fileName` 不受白名单约束，拿扩展名当门会让 `.sup` / `.smi` / `.ttml` 下完之后在
+  /// 列表里彻底消失，与本函数两个调用点「坏档也该列出来、不按应用成功门控」的约定矛盾
+  /// （BUG-1861）。
+  ///
+  /// 首行判 [mounted]：四个调用点全在 FilePicker / 网络下载 / `File.copy` 等 await 之后，
+  /// 而 `_rebuild` 就是裸 `setState`。BUG-1861 去掉 `_isRemote` 早退之后，远端两条导入
+  /// 路径首次成为可达的 setState 路径，用户在拷贝期间退出视频页就会 setState-after-dispose。
   void _registerImportedSubtitleSource(String path) {
-    if (!isImportedExternalSubtitlePath(path)) return;
+    if (!mounted) return;
+    if (!isExternalSubtitleFilePathForMenu(path)) return;
     final bool alreadyListed = _importedSubtitleSources.any(
       (SubtitleSource source) => sameExternalSubtitlePathForMenu(source, path),
     );
@@ -1153,6 +1188,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } catch (_) {
       // 保留原始 pick 路径应用；本次可用，只是可能不持久。
     }
+    // BUG-1861：与远端主字幕导入同理，档案要在**副**字幕轨列表里有自己的行。
+    _registerImportedSubtitleSource(applyPath);
     await _applyRemoteSecondarySubtitle(controller, applyPath);
   }
 

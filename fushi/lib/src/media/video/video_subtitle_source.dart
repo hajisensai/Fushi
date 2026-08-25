@@ -899,6 +899,28 @@ bool sameExternalSubtitlePathForMenu(
 bool sameSubtitleFilePath(String a, String b) =>
     _subtitleMenuPathKey(a) == _subtitleMenuPathKey(b);
 
+/// **纯函数**：[path] 是否是一个可以进字幕轨菜单的**外挂档案路径**，而不是源指针
+/// （`embedded:<n>` 内封轨指针 / `off:` 显式关闭哨兵 / 空串）。
+///
+/// BUG-1861：这是「本会话落盘的档案」登记路径（`_registerImportedSubtitleSource`）的
+/// 唯一过滤条件，**刻意不看扩展名**。登记的语义是「这个档案就在盘上、刚刚被应用」，
+/// 而扩展名是 provider 给的：Jimaku / OpenSubtitles 的 `fileName` 只经
+/// `safeSubtitleFileName` 防路径逃逸，不做白名单，`.sup` / `.smi` / `.ttml` 一样会落进
+/// `<dataRoot>/documents/video_subtitles/`。拿扩展名当登记门 = 下完之后列表里连它的名字
+/// 都看不到，用户只能猜自己有没有下成功——与「坏档也该列出来、不按应用成功门控」
+/// （`_openJimakuDialog` / `_importExternalSubtitleInner` 的既有约定）自相矛盾。
+///
+/// 与 [isImportedExternalSubtitlePath] 是**两件事**，不要合并：那个判的是「一条**持久化
+/// 值**是否可以按路径直接重放」，扩展名是它的必要条件（restore 时要真去解析这个档），
+/// 消费方在 [shouldReusePersistedSubtitleAcrossEpisode] 与视频页的换集恢复链路上，保持
+/// 不变。
+bool isExternalSubtitleFilePathForMenu(String path) {
+  if (path.trim().isEmpty) return false;
+  if (path.startsWith(SubtitleSource.embeddedPrefix)) return false;
+  if (SubtitleSource.isOff(path)) return false;
+  return true;
+}
+
 /// **纯函数**：把「本次播放会话里落盘并应用过的外挂字幕档」[imported] 并进字幕轨菜单
 /// 的枚举结果 [enumerated]，返回最终要渲染的列表（导入档排在前，与
 /// [includeCurrentPersistedSubtitleForMenu] 的「当前导入排最前」约定一致）。

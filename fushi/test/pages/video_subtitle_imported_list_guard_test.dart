@@ -102,6 +102,38 @@ void main() {
     });
   });
 
+  group('isExternalSubtitleFilePathForMenu', () {
+    test('普通档案路径收下——含 provider 可能给出的非白名单扩展名', () {
+      // BUG-1861：Jimaku / OpenSubtitles 的 fileName 只经 safeSubtitleFileName 防路径
+      // 逃逸，不做扩展名白名单。拿扩展名当登记门 = 这些档下完之后在列表里彻底消失。
+      for (final String path in <String>[
+        '/docs/video_subtitles/a.srt',
+        '/docs/video_subtitles/a.ass',
+        '/docs/video_subtitles/a.sup',
+        '/docs/video_subtitles/a.smi',
+        '/docs/video_subtitles/a.ttml',
+        '/docs/video_subtitles/A.SRT',
+        '/docs/video_subtitles/no-extension-at-all',
+      ]) {
+        expect(isExternalSubtitleFilePathForMenu(path), isTrue, reason: path);
+      }
+    });
+
+    test('源指针 / 哨兵 / 空串不收', () {
+      expect(isExternalSubtitleFilePathForMenu('embedded:2'), isFalse);
+      expect(isExternalSubtitleFilePathForMenu('off:'), isFalse);
+      expect(isExternalSubtitleFilePathForMenu(''), isFalse);
+      expect(isExternalSubtitleFilePathForMenu('   '), isFalse);
+    });
+
+    test('与 isImportedExternalSubtitlePath 是两件事，不得互相取代', () {
+      // 后者判的是「一条**持久化值**能不能按路径直接重放」，扩展名是它的必要条件；
+      // 它在换集恢复链路上还有消费方，这条测试钉住两者的行为差异不被合并掉。
+      expect(isImportedExternalSubtitlePath('/d/a.sup'), isFalse);
+      expect(isExternalSubtitleFilePathForMenu('/d/a.sup'), isTrue);
+    });
+  });
+
   group('BUG-1861 调用点契约', () {
     final String src = readVideoFushiSource();
     final String code = maskCommentsAndScriptLines(src);
@@ -134,6 +166,28 @@ void main() {
           isTrue,
           reason: '新档写进独立的导入档列表，而不是枚举缓存——后到的枚举结果会整体覆盖'
               '枚举缓存，写那里等于让新档随时可能被冲掉（BUG-1861）');
+      // 扩展名同样不得成为登记的前置条件：provider 给的 fileName 不受白名单约束，
+      // `.sup` / `.smi` / `.ttml` 一样落进 video_subtitles/，被扩展名门吃掉就等于
+      // 「下完之后列表里连名字都看不到」，与两个调用点「坏档也该列出来」的约定矛盾。
+      expect(body.contains('isImportedExternalSubtitlePath'), isFalse,
+          reason: '登记不按扩展名门控（BUG-1861）；那条判据是给「持久化值能否按路径'
+              '重放」用的，两者不得互相取代');
+      expect(body.contains('isExternalSubtitleFilePathForMenu(path)'), isTrue,
+          reason: '登记只滤掉源指针 / 哨兵 / 空串（BUG-1861）');
+    });
+
+    test('登记首行判 mounted（四个调用点全在 await 之后）', () {
+      final String body = region(
+        'void _registerImportedSubtitleSource(String path) {',
+        '/// 字幕轨 / 副字幕轨行共用',
+      );
+      final int mountedGate = body.indexOf('if (!mounted) return;');
+      expect(mountedGate, greaterThanOrEqualTo(0),
+          reason: '_rebuild 是裸 setState；BUG-1861 去掉 _isRemote 早退后，远端两条导入'
+              '路径首次成为可达的 setState 路径，await 期间退页即 setState-after-dispose');
+      final int firstRebuild = body.indexOf('_rebuild(');
+      expect(firstRebuild, greaterThan(mountedGate),
+          reason: 'mounted 判必须在任何 _rebuild 之前');
     });
 
     test('本地字幕轨行与副字幕行都读合并后的列表', () {
@@ -153,14 +207,27 @@ void main() {
       );
     });
 
-    test('远端字幕轨列表给本机导入档留了行', () {
-      expect(
-        code.contains(
-            'for (final SubtitleSource source in _importedSubtitleSources)'),
-        isTrue,
-        reason: '远端行原本只有 YouTube 轨 / host sidecar / host 内封轨，本机下载的档案'
-            '没有任何行能承载它——应用上了却在列表里找不到（BUG-1861）',
+    test('远端主 / 副字幕轨列表都给本机导入档留了行', () {
+      // 只断「语料里有这一行」不够：主字幕那半修了、副字幕那半没修，`contains` 照样绿。
+      // 两处各自切窗口断，再用总数钉死不多不少。
+      const String row =
+          'for (final SubtitleSource source in _importedSubtitleSources)';
+      expect(row.allMatches(code).length, 2,
+          reason: '远端主字幕轨行 + 远端副字幕轨行，各一处（BUG-1861）');
+      final String primary = region(
+        'Widget _buildSubtitleTrackRows(',
+        'List<Widget> _buildSecondarySubtitleRows(',
       );
+      expect(primary.contains(row), isTrue,
+          reason: '远端主字幕行原本只有 YouTube 轨 / host sidecar / host 内封轨，本机'
+              '下载的档案没有任何行能承载它——应用上了却在列表里找不到（BUG-1861）');
+      final String secondary = region(
+        'List<Widget> _buildSecondarySubtitleRows(',
+        '/// 弹「字幕源」菜单',
+      );
+      expect(secondary.contains(row), isTrue,
+          reason: '远端**副**字幕行是同一个洞的另一半：导入成功、副字幕生效、列表里'
+              '找不到它也切不回来（BUG-1861）');
     });
 
     test('远端下载 / 导入两条落盘路径都登记', () {
@@ -187,27 +254,52 @@ void main() {
         isTrue,
         reason: '远端手动导入也要登记（BUG-1861）',
       );
+      final String remoteSecondaryImport = region(
+        'Future<void> _pickAndImportRemoteSecondarySubtitle(',
+        'Future<void> _clearRemoteSecondarySubtitle(',
+      );
+      expect(
+        remoteSecondaryImport
+            .contains('_registerImportedSubtitleSource(applyPath)'),
+        isTrue,
+        reason: '远端**副**字幕手动导入同样拷进 video_subtitles/，同样要登记，否则'
+            '副字幕列表里没有承载它的行（BUG-1861）',
+      );
     });
 
     test('换视频源时导入档一并清空（本地换源 + 远端换集两条路径）', () {
-      expect(
-        '_importedSubtitleSources = const <SubtitleSource>[]'
-            .allMatches(code)
-            .length,
-        greaterThanOrEqualTo(2),
-        reason: '本地 _applyLoad 换源分支与远端 _loadRemoteEpisode 都要清，否则上一集'
-            '下载的档案会挂在新集的字幕轨列表上（BUG-1861）',
+      const String clear = '_importedSubtitleSources = const <SubtitleSource>[]';
+      // 计数必须**排除字段声明**：`List<SubtitleSource> _importedSubtitleSources =
+      // const <SubtitleSource>[];` 也含这个子串。不排除的话声明本身就占掉一个名额，
+      // `>= 2` 在「本地那处清空被整段删掉」时照样成立——这条断言就成了空转
+      // （审查变异实测：删掉本地清空，全组依旧全绿）。
+      const String decl = 'List<SubtitleSource> $clear';
+      final int clears =
+          clear.allMatches(code).length - decl.allMatches(code).length;
+      expect(clears, 2,
+          reason: '恰好两处清空：本地 _applyLoad 的换源分支 + 远端 _loadRemoteEpisode；'
+              '多了说明又长出第三份作用域，少了说明有一条换源路径漏清（BUG-1861）');
+
+      // 本地：清空必须落在 `clipExportSourceChanged` 那个块里（与枚举缓存同一作用域），
+      // 而不是块外的某处——块外清等于每次 load 都清，同一视频重载也会把刚下的档冲掉。
+      final String localReset = region(
+        'if (clipExportSourceChanged) {',
+        '_currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;',
       );
+      expect(localReset.contains('_subtitleMenuSourcesPath = null;'), isTrue,
+          reason: '窗口自校验：切出来的必须是 BUG-939 那个换源复位块，否则下面这条'
+              '断言读的根本不是它（空操作变异）');
+      expect(localReset.contains(clear), isTrue,
+          reason: '本地换源必须清导入档，否则同页重载（_relinkMissingResource）后上一个'
+              '源的档案会继续挂在列表上（BUG-1861）');
+
       final String remote = region(
         '_remoteSubtitleUserDismissed = false;',
         'final int initialPositionMs =',
       );
-      expect(
-        remote.contains('_importedSubtitleSources = const <SubtitleSource>[]'),
-        isTrue,
-        reason: '远端换集必须清导入档（远端 _currentVideoPath 恒 null，走不到本地换源'
-            '分支的那次清空）',
-      );
+      expect(remote.contains(clear), isTrue,
+          reason: '远端换集必须清导入档（远端 _currentVideoPath 恒 null，走不到本地换源'
+              '分支的那次清空）');
     });
   });
 }
