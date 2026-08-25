@@ -154,6 +154,59 @@ bool isLocalFrameExtractableVideoSource(String videoPath) {
   return true;
 }
 
+/// 封面回填候选判据默认探测的头部字节数（[hasHollowMediaHeader]）。
+const int kHollowMediaHeaderProbeBytes = 64 * 1024;
+
+/// 纯函数：[head]（文件**头部**若干字节）是否说明「内容尚未落盘」——空，或全为 `0x00`。
+///
+/// BUG-1867：判据的正当性在于**每种被支持的容器头部都有魔数**——MPEG-TS 的 `0x47`
+/// sync 字节（`.m2ts` 是 192 字节步长、前 4 字节 TP_extra_header）、MP4/MOV 的 `ftyp`、
+/// Matroska 的 `1A 45 DF A3`、AVI/WAV 的 `RIFF`、FLV 的 `FLV`。合法媒体文件的头部
+/// **不可能**全零，所以「全零 = 还不是媒体」没有误伤面。
+bool isHollowMediaHeaderBytes(List<int> head) {
+  if (head.isEmpty) return true;
+  for (final int byte in head) {
+    if (byte != 0) return false;
+  }
+  return true;
+}
+
+/// [path] 的头 [probeBytes] 字节是否「尚未落盘」（见 [isHollowMediaHeaderBytes]）。
+///
+/// BUG-1867 根因②：torrent **预分配但未下载完成**的文件在文件系统层与真视频完全
+/// 一致——正确的扩展名、正确的字节数（甚至 8GB）、路径存在，`existsSync()` 与
+/// [isLocalFrameExtractableVideoSource] 两道判据都放行，只有**内容**还是空洞。喂给
+/// ffmpeg 的结果恒是 `Error opening input files: Invalid data found when processing
+/// input`。
+///
+/// 这条判据买的**不是**时间：ffmpeg 在头部就 probe 失败，实测 0.02s/条（本机 12 条
+/// 空洞 BDMV 合计 0.3s），一次 64KB 读只把它压到 1.3ms。买的是三件事——
+/// ① 不为一个必然失败的抽帧去排 `VideoCoverMutationGate` 的队（同期的删除、手选封面、
+/// 刮削要等在后面）；② 把「还没下完」与「这文件坏了」分成两个可诊断的原因，而不是
+/// 混成同一个 `extract-failed`；③ 判定不依赖 ffmpeg 的具体行为（构建裁掉某个 demuxer
+/// 或换版本都不影响这条判据的正确性）。
+///
+/// 读失败（权限 / 盘掉线 / 竞态删除）返回 `true`：读不出头部的文件此刻同样抽不出帧，
+/// 与其让 ffmpeg 再失败一次，不如按「暂不可用」跳过——文件恢复后 mtime/size 变化会
+/// 让 `CoverBackfillLedger` 自动放行重试。
+bool hasHollowMediaHeader(String path,
+    {int probeBytes = kHollowMediaHeaderProbeBytes}) {
+  RandomAccessFile? handle;
+  try {
+    handle = File(path).openSync();
+    final int length = handle.lengthSync();
+    if (length <= 0) return true;
+    final int wanted = length < probeBytes ? length : probeBytes;
+    return isHollowMediaHeaderBytes(handle.readSync(wanted));
+  } catch (_) {
+    return true;
+  } finally {
+    try {
+      handle?.closeSync();
+    } catch (_) {}
+  }
+}
+
 /// 由 [bookUid] 生成视频封面文件名（无目录），把路径分隔符与 `:` 等非法字符
 /// 归一成 `_`，避免 `video/playlist/...` 这类带 `/` `:` 的 bookUid 当文件名非法
 /// （尤其 Windows）。纯函数，便于单测。
@@ -241,6 +294,9 @@ Future<String?> extractVideoCover({
   double atSeconds = 10.0,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给抽帧 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // BUG-1867：best-effort 后台产线（书架封面回填）把抽帧失败降级成诊断日志，见
+  // [extractVideoFrameViaFfmpeg]。用户主动触发的导入/换封面路径保持默认 false。
+  bool diagnosticOnly = false,
 }) {
   final VideoScrapeOperationLease? lease =
       VideoScrapeOperationGate.tryEnterOperation();
@@ -250,6 +306,7 @@ Future<String?> extractVideoCover({
     bookUid: bookUid,
     atSeconds: atSeconds,
     tlsPinSha256: tlsPinSha256,
+    diagnosticOnly: diagnosticOnly,
   ).whenComplete(lease.release);
 }
 
@@ -258,6 +315,7 @@ Future<String?> _extractVideoCoverUnlocked({
   required String bookUid,
   required double atSeconds,
   required String? tlsPinSha256,
+  required bool diagnosticOnly,
 }) async {
   // BUG-1564：**本地**播放列表清单（.m3u8/.m3u）是文本列表不是媒体流，两条 ffmpeg
   // 路（内嵌封面 / 抽帧）对它都必然失败（`Invalid data found`）——在抽取器层直接
@@ -267,6 +325,11 @@ Future<String?> _extractVideoCoverUnlocked({
   final bool isRemoteInput =
       videoPath.startsWith('http://') || videoPath.startsWith('https://');
   if (!isRemoteInput && isPlaylistManifestPath(videoPath)) return null;
+  // BUG-1867：**本地**文件的内容尚未落盘（头部全零 —— torrent 预分配的空洞文件）时，
+  // 两条 ffmpeg 路对它同样必然失败（`Invalid data found`）。与上面的清单拒收同层收口：
+  // 所有调用方（回填 / 导入 / 拆集 / host 服务）一并免疫，给出确定性的 null 而不是靠
+  // ffmpeg 的行为兜底。远端输入不做本判据（读不到本地字节，且 ffmpeg 能直接吃流）。
+  if (!isRemoteInput && hasHollowMediaHeader(videoPath)) return null;
   // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
   // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
   // 迁移白名单 `video_covers` 一致，避免自定义数据根下新封面落回平台 Documents。
@@ -284,6 +347,7 @@ Future<String?> _extractVideoCoverUnlocked({
     outputPath: outputPath,
     atSeconds: atSeconds,
     tlsPinSha256: tlsPinSha256,
+    diagnosticOnly: diagnosticOnly,
   );
 }
 

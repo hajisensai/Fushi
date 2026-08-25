@@ -716,6 +716,12 @@ Future<String?> extractVideoFrameViaFfmpeg({
   FfmpegFailureReporter? onFailure,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // BUG-1867：调用方是 best-effort 后台产线（书架封面回填）——「这文件给不出帧」是
+  // 预期内的正常结果（无视频流的 BDMV 音轨 m2ts、seek 落在空洞区…），与上游
+  // [extractEmbeddedVideoCoverViaFfmpeg] 把「容器没有内嵌封面」判为正常同层，不该
+  // 进用户可见错误日志页。ffmpeg **根本起不来**（ProcessException）仍是真错误，
+  // 不受本开关影响。
+  bool diagnosticOnly = false,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
@@ -742,7 +748,8 @@ Future<String?> extractVideoFrameViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure);
+    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure,
+        diagnosticOnly: diagnosticOnly);
     return null;
   } on ProcessException catch (e, stack) {
     _reportFfmpegProcessException(
