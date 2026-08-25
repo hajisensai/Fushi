@@ -3984,6 +3984,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 无取帧器（远端流）：取帧函数恒返回 null，调度器据此 timestampOnly。
           : (int _) async => null,
       durationMsProvider: () => _controller?.durationMs ?? 0,
+      // 已取过的位置同步命中，零延迟出图、不闪 spinner（回扫 / 抖动的常态路径）。
+      cachedFrameLookup: grabber?.cachedFrame,
+      // 首次 hover 就把离屏 Player 建好、媒体头解析完，别让这段算进第一张图的等待。
+      onWarmUp: grabber == null ? null : () => unawaited(grabber.warmUp()),
     );
   }
 

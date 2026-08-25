@@ -689,6 +689,10 @@ List<String> buildFfmpegFrameArgs({
   bool decodeFromStart = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // TODO-1082：目标宽度（高按原比例，`-2` 保证偶数以满足 yuv420 约束）。进度条
+  // 缩略图只显示几百像素宽，让 ffmpeg 在编码前就缩好，省掉全尺寸 JPEG 的编码、
+  // 落盘、读回、解码四段开销。null / <=0 表示不缩放（封面等既有调用方的行为不变）。
+  int? scaleWidth,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   return <String>[
@@ -699,6 +703,10 @@ List<String> buildFfmpegFrameArgs({
     inputPath,
     if (decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-an',
+    if (scaleWidth != null && scaleWidth > 0) ...<String>[
+      '-vf',
+      'scale=$scaleWidth:-2',
+    ],
     '-frames:v',
     '1',
     '-update',
@@ -731,6 +739,8 @@ Future<String?> extractVideoFrameViaFfmpeg({
   // 时这条失败**不计入错误计数、不落盘**，转入日志页的诊断/取证分节（证据仍随复制
   // /上传带走）。ffmpeg **根本起不来**（ProcessException）仍是真错误，不受本开关影响。
   bool diagnosticOnly = false,
+  // TODO-1082：缩略图消费方按目标宽度出图（见 [buildFfmpegFrameArgs]）；null 保持原尺寸。
+  int? scaleWidth,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
@@ -745,6 +755,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         atSeconds: atSeconds,
         decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
+        scaleWidth: scaleWidth,
       ),
       const Duration(seconds: 30),
     );
