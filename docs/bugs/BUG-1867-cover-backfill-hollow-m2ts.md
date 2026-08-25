@@ -1,8 +1,8 @@
 ## BUG-1867 · 封面回填把 best-effort 失败刷进用户错误日志，且对未落盘文件仍走 ffmpeg
 - **报告**：2026-08-25（用户：错误日志页连刷 `extractVideoFrameViaFfmpeg ffmpeg exit -1094995529 … Error opening input files: Invalid data found when processing input`）
 - **真实性**：✅ 真 bug（本机生产库实测复现，三类失败全部拿到 ffmpeg 原始 stderr 与逐条耗时）
-- **[x] ① 已修复** — `1cd7ad0` 见下「修复」
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_cover_source_filter_test.dart`（新增 9 例，4 个变异实测全部抓住）
+- **[x] ① 已修复** — `501ccabefd` 见下「修复」
+- **[x] ② 已加自动化测试** — `501ccabefd` · `fushi/test/media/video/video_cover_source_filter_test.dart`（新增 9 例，4 个变异实测全部抓住）
 - **备注**：调查中另量到一个**独立**的性能问题（C/OK 类抽帧 18–75s/条），未在本轮修，见文末「相邻发现」。
 
 ### 复现与证据（本机生产库 `D:\APP\HIBIKI_date\support\fushi.db`，随包 `D:\APP\Hibiki\ffmpeg.exe` n7.1.5）
