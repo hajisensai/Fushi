@@ -2254,7 +2254,13 @@ void FloatingLyricWindow::MaybeHoverLookup(float x, float y) {
   // 只有 gal hook 浮窗走悬停查词：歌词条 / 剪贴板文本窗保持「点字才查」，一字不改。
   // 按下左键的那段（pending press / 拖窗 / 拉伸）里也不查——那是另一套手势，用户
   // 正在移动窗口，不是在读词。
-  if (!hook_text_mode_ || !click_lookup_enabled_ || pressed_ || dragging_) {
+  //
+  // BUG-1860 追补：拖滚动条 thumb 同样是「另一套手势」，而且它**不**经过
+  // pressed_ / dragging_。WM_MOUSEMOVE 里的 return 只挡得住内联那一条路；轮询
+  // 表（WM_TIMER）拿的是实时光标，拖 thumb 时指针横向飘回正文上就会命中
+  // CharIndexAt，于是拖到一半弹出查词卡。判据必须写在这里，两条路径才同一份答案。
+  if (!hook_text_mode_ || !click_lookup_enabled_ || pressed_ || dragging_ ||
+      scroll_thumb_dragging_) {
     return;
   }
   // BUG-1480：穿透态不再整窗吃掉查词。
