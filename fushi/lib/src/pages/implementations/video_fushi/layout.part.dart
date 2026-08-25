@@ -173,6 +173,15 @@ extension _VideoLayout on _VideoFushiPageState {
   /// 在」。本层是这些 overlay 的共同祖先，且窗口与全屏复用同一 controls builder，两种
   /// 场景一并覆盖。
   ///
+  /// **覆盖面到此为止**：只盖得住本 builder [Stack] 内的兄弟层（side panel / rail /
+  /// popover / 布局编辑层）。push-aside 字幕跳转列表（TODO-314）与剧集轨（TODO-638）由
+  /// [_videoWithSubtitlePanel] 包在 `Video` **外面**（`Row[Expanded(video), 面板列]`），
+  /// 是 controls builder 的兄弟而非后代，本层不在它们的祖先链上。窗口模式下它们的 Esc
+  /// 仍由本页 [PopScope] → [_dismissTopForegroundLayer] 接住，闭合；**全屏模式下是已知
+  /// 缺口**——全屏路由没有 [PopScope]，焦点被 `PanelFocusScope` 领进这两个面板后按 Esc
+  /// 会走全局 back 把全屏路由 pop 掉（退出全屏），面板仍开着。该缺口 BUG-1862 之前就
+  /// 存在、本次未修；要修得把兜底层再上提到 [_videoWithSubtitlePanel] 之外。
+  ///
   /// 只在 [_dismissTopForegroundLayer] **真的关掉了一层**时消费按键；没有前台层可关时
   /// 返回 [KeyEventResult.ignored] 原样放行，退全屏 / 退页仍走既有路径——不新增第二条
   /// 退出语义，也不吞任何其它按键。文本框持焦时关闭物理键回退（与 `_handleGlobalBack`

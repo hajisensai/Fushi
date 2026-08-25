@@ -4452,8 +4452,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _onUpdateEntryImpl(noteId, fields);
 
   /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才 await
-  /// 落库后真正 pop 路由。[PopScope] 与 Escape 快捷键共用同一份层级表
-  /// [_dismissTopForegroundLayer]，保证两条退出路径行为一致。
+  /// 落库后真正 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
+  /// 按钮**（[_activateVideoControlItem] 的 [VideoControlItem.back]）共用同一份层级表
+  /// [_dismissTopForegroundLayer]，四条通道行为一致。
+  ///
+  /// 「返回箭头也逐级退一层」是 BUG-1862 的**有意**取舍，不是顺带的副作用：收敛的意义
+  /// 就是「返回上一级」只有一份语义，不为屏幕按钮再开第二套。用户可见变化：push-aside
+  /// 字幕跳转列表打开时控制条与 rail 仍可见可用（BUG-371），此时点返回箭头**改前退出
+  /// 视频页、改后先关字幕列表**。
   ///
   /// BUG-1862：此前本方法只关词典浮层，逐级退出的其余五层（控制布局编辑态 / 字幕跳转
   /// 列表 / 剧集列表 / 设置侧栏 / 沉浸锁）只写在 Escape 快捷键回调里，于是两条路径根本
@@ -4783,8 +4789,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       escape: () {
         // 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
         // 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
-        // [PopScope]、系统返回键、手柄 B 共用同一份），这里只保留「没有前台层可关」之后
-        // 的两级：全屏 → 退全屏；窗口 → 退页。
+        // [PopScope]、系统返回键、手柄 B、屏幕返回按钮共用同一份），这里只保留「没有前台
+        // 层可关」之后的两级：全屏 → 退全屏；窗口 → 退页。
+        //
+        // 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
+        // navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
+        // 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
         if (_dismissTopForegroundLayer()) return;
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
