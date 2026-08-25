@@ -108,7 +108,7 @@ class VideoDownloadOrganizer {
                 .first
             : null;
     final String? sharedRoot = _sharedRootSegment(videoFiles);
-    final Set<String> targetKeys = <String>{};
+    final Map<String, String> claimedTargets = <String, String>{};
     final List<VideoOrganizationFilePlan> planned =
         <VideoOrganizationFilePlan>[];
     var recognizedEpisodes = 0;
@@ -120,7 +120,14 @@ class VideoDownloadOrganizer {
       // 剧集与电影共用同一条 Extras 规则：认得出集号的进 Season 目录，其余
       // 一律镜像进 Extras（预告/特典/菜单等，BUG-1785），下游 `kind: 'extra'`
       // 已是既有概念。电影额外把最大文件抬成正片。
-      if (request.kind == VideoOrganizationKind.episodic) {
+      //
+      // 集号只对**正片**有意义（BUG-1865）：发布组把特典收进 `EXTRA/` `SPs/`
+      // `Previews/` 时，那些文件名同样以 `- 05` / `[SP05]` 结尾，硬解析会让
+      // 「Making Video Collection - 05」和真正的第 5 集抢同一个目标名。所以
+      // 先按目录判正片/特典、再解析集号；顺序反过来就只能靠撞号事后发现，
+      // 而**没撞上的那些会被静默改名成正片**——后者才是更贵的一半。
+      if (request.kind == VideoOrganizationKind.episodic &&
+          !_isInExtraDirectory(file.name, sharedRoot: sharedRoot)) {
         final VideoNameInfo parsed =
             parseVideoFilename(_segments(file.name).last);
         episodeNumber = parsed.episode;
@@ -151,9 +158,16 @@ class VideoDownloadOrganizer {
       }
       final String targetKey =
           Platform.isWindows ? relative.toLowerCase() : relative;
-      if (!targetKeys.add(targetKey)) {
-        throw FormatException('organization target collision: $relative');
+      // 冲突消息必须点名**两个**源文件：只报目标名的话，用户看到
+      // 「S03E05 撞了」根本不知道是哪两个文件在抢，也就无从判断该删哪个。
+      final String? claimedBy = claimedTargets[targetKey];
+      if (claimedBy != null) {
+        throw FormatException(
+          'organization target collision: $relative '
+          '(claimed by "$claimedBy", also matched by "${file.name}")',
+        );
       }
+      claimedTargets[targetKey] = file.name;
       final String finalPath = p.normalize(p.joinAll(<String>[
         request.sourceRoot,
         ...relative.split('/'),
@@ -168,11 +182,17 @@ class VideoDownloadOrganizer {
       ));
     }
     // 一集都认不出说明种子与「剧集」判定不符（比如误标 kind），全 Extras 的
-    // 静默入库只会把问题藏起来，仍然显式失败。
+    // 静默入库只会把问题藏起来，仍然显式失败。报的样本取**正片候选**里的第一个
+    // ——报特典目录里的文件只会把人往「特典没识别」的错方向带。
     if (request.kind == VideoOrganizationKind.episodic &&
         recognizedEpisodes == 0) {
+      final TorrentFileEntry sample = videoFiles.firstWhere(
+        (TorrentFileEntry file) =>
+            !_isInExtraDirectory(file.name, sharedRoot: sharedRoot),
+        orElse: () => videoFiles.first,
+      );
       throw FormatException(
-        'unable to determine episode number: ${videoFiles.first.name}',
+        'unable to determine episode number: ${sample.name}',
       );
     }
     return VideoOrganizationPlan(remoteSourceRoot: remoteRoot, files: planned);
@@ -289,6 +309,66 @@ class VideoDownloadOrganizer {
     }
     return root;
   }
+
+  /// 发布组显式划为「非正片」的目录名（归一化后比较，见 [_normalizedSegment]）。
+  ///
+  /// 只用来判**目录段**，绝不拿去扫文件名：正片文件名天然带 `S3` `BD Rip`
+  /// `FLACx3` 这类词，同一张表扫文件名迟早误伤真番剧标题（`Extra Olympia
+  /// Kyklos`、`Special A`）。目录是发布组自己划的边界，语义确定得多；表里没有
+  /// 的目录名只会退回旧口径（按集号判），不会把正片错判成特典。
+  static const Set<String> _extraDirectoryNames = <String>{
+    'bdscan',
+    'bdscans',
+    'bonus',
+    'cd',
+    'cds',
+    'cm',
+    'extra',
+    'extras',
+    'interview',
+    'interviews',
+    'making',
+    'menu',
+    'menus',
+    'misc',
+    'nc',
+    'nced',
+    'ncop',
+    'other',
+    'others',
+    'preview',
+    'previews',
+    'pv',
+    'scan',
+    'scans',
+    'sp',
+    'special',
+    'specials',
+    'sps',
+    'trailer',
+    'trailers',
+    'webpreview',
+    'webpreviews',
+  };
+
+  /// 该文件是否躺在发布组标记的特典目录里（共享根与文件名段都不参与判定）。
+  static bool _isInExtraDirectory(String name, {String? sharedRoot}) {
+    final List<String> segments = _segments(name);
+    final List<String> inner = sharedRoot != null && segments.length > 1
+        ? segments.sublist(1)
+        : segments;
+    for (final String segment in inner.take(inner.length - 1)) {
+      if (_extraDirectoryNames.contains(_normalizedSegment(segment))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 目录名归一化：转小写并去掉所有非字母数字，`SPs` → `sps`、`[SP]` → `sp`、
+  /// `Web Previews` → `webpreviews`、`BD Scans` → `bdscans`。
+  static String _normalizedSegment(String value) =>
+      value.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
 
   /// Extras 目标段：镜像种子内目录结构（剥共享根），路径天然唯一，不同子目录
   /// 里的同名特典不会互相顶掉。每段过 [_safeSegment]，末段扩展名统一小写。
