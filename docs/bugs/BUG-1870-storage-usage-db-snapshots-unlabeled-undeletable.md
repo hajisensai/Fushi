@@ -19,7 +19,7 @@
     可删性从「按类目」改为「按条目」，视图里 `category == books ? … : …` 的特判随之消失；
   - `_scanDatabase` 把全部快照残留聚成**一条** `databaseSnapshots` 条目（标题
     「数据库备份快照（N 个文件）」，字节数=各文件之和，`paths`=清单），活库与其它 support
-    子项仍只读单列；删除经 `settings_schema_storage.dart` 接 fushi_core 原语（提交 `<hash>`）。
+    子项仍只读单列；删除经 `settings_schema_storage.dart` 接 fushi_core 原语（提交 `50a8610e62`）。
 - **[x] ② 已加自动化测试** —
   - `packages/fushi_core/test/database_snapshot_files_test.dart`：口径正/反例（现行 corrupt-bak、
     pre-restore、历史 bak.v16 / WIPED / before-v20 命中；新旧活库与三种侧车、`local_audio_*.db`、

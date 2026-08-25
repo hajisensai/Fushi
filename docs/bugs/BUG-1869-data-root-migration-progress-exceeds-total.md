@@ -9,7 +9,7 @@
   文件 → 分子恰好多 3（623 / 620）；`local_audio_*.db` 等顶层大件同理。
 - **[x] ① 已修复** — 顶层单文件分支先 `progress.addToTotal(1)` 再复制；同时把「copy + 字节数
   校验」抽成 `_copyFileVerified(src, dst, label)`，整树路径与顶层单文件共用一份校验口径
-  （提交 `<hash>`）。
+  （提交 `50a8610e62`）。
 - **[x] ② 已加自动化测试** — `fushi/test/storage/data_root_migrator_test.dart`
   `BUG-1869：跨盘 copy 进度分子永不越过分母，收尾时 copied == total`：用 `seedDb`（support 顶层
   有 fushi.db + 侧车 + local_audio_1.db）+ 旧 support 顶层再放一个 `shared_preferences.json`
