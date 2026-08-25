@@ -1,10 +1,20 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:drift/native.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/reader/dictionary_font_css.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/test_platform_services.dart';
 
 /// BUG-1868：`dictionaryFontWebResourceResponse` 是本次唯一一段**直接把磁盘字节吐给
 /// WebView** 的代码。它的三道校验和 403/null 的分流原本全靠人眼，这里补上回归保护。
@@ -156,4 +166,140 @@ void main() {
     expect(isDictionaryFontUrl(Uri.parse('https://fushi.local/fonts/x')),
         isFalse);
   });
+
+  test('.ttc 在 URL 模式下的 Content-Type 与内联模式一致（font/collection）', () async {
+    final File ttc = File(p.join(allowed.path, 'Collection.ttc'));
+    // 'ttcf' 魔数：TrueType Collection。
+    await ttc.writeAsBytes(Uint8List.fromList(<int>[
+      0x74, 0x74, 0x63, 0x66, 0x00, 0x01, 0x00, 0x00,
+    ]));
+    final WebResourceResponse? r = await serve(
+      dictionaryFontUrl(ttc.path),
+      whitelist: <String>{p.canonicalize(ttc.path)},
+    );
+    expect(r?.statusCode, 200);
+    expect(r?.contentType, 'font/collection',
+        reason: '内联模式用 DictionaryFontCss._fontTypes 的 font/collection；'
+            'URL 模式漏掉 .ttc 就会退化成 application/octet-stream，'
+            '同一个字体文件两条注入路径 MIME 不一致');
+  });
+
+  // ── BUG-1868：白名单的**真实取值路径** ─────────────────────────────────
+  //
+  // 上面所有用例都把 whitelistedPaths 当实参手工构造，因此拦截器怎么**得到**这个
+  // 集合从来没有被测过——PR #1014 把「注入侧读 ReaderSettings」与「拦截器侧读
+  // ReaderSettings」写成两份判据、且拦截器那份漏了 DB 兜底，这条确定性的 Android
+  // 回归就是这样零成本溜过去的。以下用例走 configuredDictionaryFontPaths 本体。
+  group('configuredDictionaryFontPaths（生产取值路径）', () {
+    late FushiDatabase db;
+    late File disabledFont;
+    late _PopupProcessAppModel appModel;
+
+    setUp(() async {
+      disabledFont = File(p.join(allowed.path, 'Disabled.ttf'));
+      await disabledFont.writeAsBytes(ttfBytes());
+
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      // 用 ReaderSettings 的公开写入 API 落真实持久化格式（font_catalog /
+      // font_targets），而不是手工拼 JSON——手工拼的话格式一漂移这条测试就变成
+      // 自说自话。
+      final ReaderSettings seed = ReaderSettings(db);
+      await seed.loadFromPrefsSnapshot(const <String, String>{});
+      await seed.addFontForTarget(FontTarget.dictionary,
+          name: 'Good', path: goodFont.path);
+      await seed.addFontForTarget(FontTarget.dictionary,
+          name: 'Disabled', path: disabledFont.path);
+      await seed.toggleFontForTarget(FontTarget.dictionary, 1);
+
+      final PreferencesRepository prefs = PreferencesRepository(db);
+      await prefs.loadFromDb();
+      appModel = _PopupProcessAppModel(db, prefs);
+
+      // Android 独立 :popup 进程的恒定形态：initialiseForDictionaryPopup() 从不给
+      // 这个静态赋值，所以它在那个进程里永远是 null。
+      ReaderFushiSource.readerSettings = null;
+    });
+
+    tearDown(() async {
+      ReaderFushiSource.readerSettings = null;
+      await db.close();
+    });
+
+    test('readerSettings 为 null 但 DB 就绪时白名单非空（app 外查词字体不能失效）',
+        () async {
+      expect(ReaderFushiSource.readerSettings, isNull);
+      final Set<String> whitelist = configuredDictionaryFontPaths(appModel);
+      expect(whitelist, isNotEmpty,
+          reason: '空白名单 = 注入的 CSS 引了字体、拦截器每条都回 403，'
+              '词典字体在 app 外查词时静默失效（回退到 popup.css 硬编码字体）');
+      expect(whitelist, contains(p.canonicalize(goodFont.path)));
+    });
+
+    test('停用的字体不进白名单（可读集合收敛到最小）', () {
+      final Set<String> whitelist = configuredDictionaryFontPaths(appModel);
+      expect(whitelist, isNot(contains(p.canonicalize(disabledFont.path))),
+          reason: '产 CSS 的 DictionaryFontCss.build 过滤了 enabled==false；'
+              '白名单不过滤的话，被用户停用的字体文件仍可经 /dictfonts/ 读出');
+    });
+
+    test('注入侧产的每条字体 URL，拦截器都必须放行（两侧同源的端到端断言）',
+        () async {
+      // 注入侧：与 popup_settings_injection 完全同一条取值 + 同一个 URL 构造器。
+      final ReaderSettings? injected =
+          ReaderFushiSource.resolveEffectiveReaderSettings(appModel);
+      expect(injected, isNotNull);
+      final ({String fontFamily, String fontFaces, List<String> families}) css =
+          DictionaryFontCss.build(
+        injected!.dictionaryFonts,
+        allowedDirectories: <String>[allowed.path],
+        fontUrlBuilder: dictionaryFontUrl,
+      );
+      final List<String> urls = RegExp(r'url\("([^"]+)"\)')
+          .allMatches(css.fontFaces)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toList();
+      expect(urls, isNotEmpty,
+          reason: '注入侧必须真的产出了 /dictfonts/ URL，否则这条断言是空转');
+
+      // 拦截器侧：白名单来自生产取值路径，不是手工构造。
+      final Set<String> whitelist = configuredDictionaryFontPaths(appModel);
+      for (final String url in urls) {
+        final WebResourceResponse? r = await dictionaryFontWebResourceResponse(
+          Uri.parse(url),
+          allowedRoots: <String>[allowed.path],
+          whitelistedPaths: whitelist,
+        );
+        expect(r?.statusCode, 200,
+            reason: 'CSS 里引了 $url，拦截器却拒绝供给 —— 正是「两边不一致」的哑失败');
+      }
+    });
+
+    test('DB / prefs 未就绪时返回空集而不是抛异常', () {
+      expect(configuredDictionaryFontPaths(_UnreadyAppModel()), isEmpty);
+    });
+  });
+}
+
+/// Android 独立 `:popup` 进程的 AppModel 形态：DB 与偏好仓库都就绪，但
+/// `ReaderFushiSource.readerSettings` 恒为 null（`initialiseForDictionaryPopup()`
+/// 从不给它赋值）。
+class _PopupProcessAppModel extends AppModel {
+  _PopupProcessAppModel(this._db, this._prefs) : super(testPlatformServices());
+
+  final FushiDatabase _db;
+  final PreferencesRepository _prefs;
+
+  @override
+  bool get isDatabaseReady => true;
+  @override
+  FushiDatabase get database => _db;
+  @override
+  bool get isPreferencesReady => true;
+  @override
+  PreferencesRepository get prefsRepo => _prefs;
+}
+
+/// 初始化早期 / 测试 seam：late 字段还没赋值，读它会抛 LateInitializationError。
+class _UnreadyAppModel extends AppModel {
+  _UnreadyAppModel() : super(testPlatformServices());
 }

@@ -56,6 +56,11 @@ const Map<String, String> kMimeTypeByExtension = <String, String>{
   'woff2': 'font/woff2',
   'ttf': 'font/ttf',
   'otf': 'font/otf',
+  // BUG-1868：`.ttc`（TrueType Collection）缺项时词典字体在 URL 模式下按
+  // [kFallbackMimeType] 下发，而内联 data: 模式用的是 `font/collection`
+  // （`DictionaryFontCss._fontTypes`）——同一个字体文件两条注入路径 MIME 不一致，
+  // 正是 `_fontFileUsable` 注释里自述禁止的那种分歧。
+  'ttc': 'font/collection',
   // ── 音频 ──
   'mp3': 'audio/mpeg',
   'm4a': 'audio/mp4',

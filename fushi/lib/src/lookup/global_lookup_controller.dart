@@ -2241,9 +2241,6 @@ class GlobalLookupController {
   }
 }
 
-/// Parses one non-negative renderer geometry epoch from a MethodChannel value.
-/// Integral doubles are accepted because native JSON bridges may materialise a
-/// JavaScript integer as either an int or a double.
 /// host.js `staticSettingsRequired` 的载荷解析（`args = [revision, geometryEpoch]`）。
 ///
 /// 抽出来共享是因为它有**两个**消费方（桌面/galCard 的 GlobalLookupController 与剪贴板
@@ -2274,6 +2271,9 @@ class GlobalLookupController {
   );
 }
 
+/// Parses one non-negative renderer geometry epoch from a MethodChannel value.
+/// Integral doubles are accepted because native JSON bridges may materialise a
+/// JavaScript integer as either an int or a double.
 int? parseGlobalLookupGeometryEpoch(Object? value) {
   if (value is int) {
     return value >= 0 ? value : null;

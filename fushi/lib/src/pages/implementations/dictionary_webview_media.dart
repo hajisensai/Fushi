@@ -174,6 +174,10 @@ void _logFontDenial(String reason) {
   ErrorLogService.instance.log('DictionaryFont.denied', reason);
 }
 
+/// 宿主在**进不了**校验链时（例如字体根目录还解析不出来）用的显式拒绝响应。
+/// 语义与内部三道校验的拒绝完全一致：403 而不是 null，理由见 [_fontDenied]。
+WebResourceResponse dictionaryFontDeniedResponse() => _fontDenied();
+
 WebResourceResponse _fontDenied() => WebResourceResponse(
       contentType: 'text/plain',
       statusCode: 403,

@@ -191,18 +191,17 @@ void debugResetDictionaryFontStyleMemo() {
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
   // injected and popup.css's hard-coded "Hiragino Sans" fell back to the system
-  // font. The dictionary font list is persisted in the DB (`dict_fonts`), so
-  // read it through a DB-backed ReaderSettings when no reader is live — the
+  // font. The dictionary font list is persisted in the DB (`dict_fonts`), so it
+  // is read through a DB-backed ReaderSettings when no reader is live — the
   // overlay then applies the SAME font whether or not a book is open.
-  // Prefer the live reader's settings; otherwise a DB-backed ReaderSettings so
-  // the persisted dictionary font list still applies with no book open. Only
-  // touch `appModel.database` when it is actually open — early / test seams leave
-  // it uninitialised and reading it would throw LateInitializationError. When
-  // unavailable, fall back to no injected font (pre-fix behaviour); in the real
-  // app-external lookup flow the DB is always open by then, so the font applies.
+  //
+  // BUG-1868：这份「当前生效的 ReaderSettings」判据**只能有一份**。字体 URL 拦截器
+  // 的白名单（configuredDictionaryFontPaths）必须解析出与这里同一份设置，两边分叉
+  // 就是「CSS 里引了某个字体、拦截器却回 403」的哑失败。所以取值统一走
+  // [ReaderFushiSource.resolveEffectiveReaderSettings]，不要在这里重新拼一次。
+  // 拿不到（DB / prefs 仓库未就绪）时退回不注入字体，与修复前一致。
   final ReaderSettings? settings =
-      ReaderFushiSource.readerSettings ??
-      (appModel.isDatabaseReady ? ReaderSettings(appModel.database) : null);
+      ReaderFushiSource.resolveEffectiveReaderSettings(appModel);
   if (settings == null) {
     return (
       cacheKey: 'no-settings',

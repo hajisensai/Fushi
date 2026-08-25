@@ -35,6 +35,15 @@ class DictionaryFontCss {
         '.woff2': (mime: 'font/woff2', format: 'woff2'),
       };
 
+  /// 一条 `[{name,path,enabled}]` 条目是否启用（缺 `enabled` 视为启用，兼容旧数据）。
+  ///
+  /// 唯一判据：[build]（产 CSS）、[fontListFingerprint]（产 memo 键）和字体 URL
+  /// 拦截器的白名单（`configuredDictionaryFontPaths`）必须用同一个谓词。三处各写
+  /// 一遍的话，被用户停用的字体会出现在其中一处而不在另一处——BUG-1868 里拦截器就
+  /// 漏了这个过滤，于是停用的字体文件仍可经 `/dictfonts/` 读出。
+  static bool isEntryEnabled(Map<String, dynamic> e) =>
+      e['enabled'] as bool? ?? true;
+
   /// Builds the dictionary font CSS for [fonts] (a `[{name,path,enabled}]`
   /// list). [allowedDirectories] gates which file paths may be inlined (same
   /// whitelist model as the reader's font serving). Reads happen synchronously;
@@ -59,9 +68,7 @@ class DictionaryFontCss {
     int maxFileBytes = defaultMaxFileBytes,
     String Function(String safePath)? fontUrlBuilder,
   }) {
-    final Iterable<Map<String, dynamic>> enabled = fonts.where(
-      (Map<String, dynamic> e) => e['enabled'] as bool? ?? true,
-    );
+    final Iterable<Map<String, dynamic>> enabled = fonts.where(isEntryEnabled);
     final List<String> families = <String>[];
     // 内容语言字体链要把用户字体接在每条 :lang() 规则的链首，而那条链自己负责加
     // 引号，所以这里同时留一份**裸**家族名（families 里是 CSS 化后带引号的形态）。
@@ -144,7 +151,7 @@ class DictionaryFontCss {
   }) {
     final StringBuffer buffer = StringBuffer();
     for (final Map<String, dynamic> e in fonts) {
-      if (!(e['enabled'] as bool? ?? true)) continue;
+      if (!isEntryEnabled(e)) continue;
       final String? name = e['name'] as String?;
       if (name == null || name.trim().isEmpty) continue;
       buffer

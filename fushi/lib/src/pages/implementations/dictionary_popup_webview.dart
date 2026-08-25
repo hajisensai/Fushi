@@ -16,8 +16,10 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/platform/selection_external_actions.dart';
+import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
@@ -90,6 +92,42 @@ double? resolvePopupViewportHeight({
     return layoutHeight;
   }
   return null;
+}
+
+/// BUG-1868：字体 URL 拦截器（`/dictfonts/`）的**条目**白名单——当前真正启用在词典
+/// 字体里的那几个文件的规范化绝对路径。
+///
+/// 光有目录白名单不够：`custom_fonts/` 里常年躺着历次导入的一堆字体文件，而注入的
+/// CSS 是可被内容影响的，所以只放行「此刻确实启用了的路径」，把可读集合收敛到最小。
+///
+/// 两条判据都必须与注入侧同源，否则就是哑失败：
+///   * **设置从哪来**：走 [ReaderFushiSource.resolveEffectiveReaderSettings]。直接读
+///     `ReaderFushiSource.readerSettings` 在 Android 独立 `:popup` 进程恒为 null，
+///     于是注入侧照常产出 `https://fushi.local/dictfonts/...` 的 CSS、拦截器却拿到空
+///     白名单，每条字体请求都 403 → 词典字体在 app 外查词时静默失效。
+///   * **哪些条目算数**：用 [DictionaryFontCss.isEntryEnabled]，与产 CSS 的
+///     `DictionaryFontCss.build` 同一个谓词。少过滤一次 `enabled`，被用户停用的字体
+///     文件仍可经 `/dictfonts/` 读出。
+///
+/// 顶层函数而不是 State 私有方法：这是唯一能被测试**直接**调到的真实取值路径，
+/// 而这条回归当初正是因为所有用例都手工构造白名单才零成本溜过去的。
+Set<String> configuredDictionaryFontPaths(AppModel appModel) {
+  final ReaderSettings? settings;
+  try {
+    settings = ReaderFushiSource.resolveEffectiveReaderSettings(appModel);
+  } catch (_) {
+    // 早期 / 测试 seam 里 AppModel 的 late 字段可能还没赋值；拿不到就整条短路，
+    // 与「没有配置任何字体」同义（那时也不会有字体 URL 请求）。
+    return const <String>{};
+  }
+  final List<Map<String, dynamic>> fonts =
+      settings?.dictionaryFonts ?? const <Map<String, dynamic>>[];
+  return fonts
+      .where(DictionaryFontCss.isEntryEnabled)
+      .map((Map<String, dynamic> e) => e['path'] as String?)
+      .whereType<String>()
+      .map(p.canonicalize)
+      .toSet();
 }
 
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
@@ -450,17 +488,13 @@ class DictionaryPopupWebViewState
 
   /// 字体 URL 拦截器的**条目**白名单：当前真正配置在词典字体里的那几个文件。
   ///
-  /// 光有目录白名单不够。目录里可能躺着历史导入的一堆字体文件，而注入的 CSS 是可被
-  /// 内容影响的；只放行「此刻确实配置了的路径」，把可读集合收敛到最小。
+  /// 取值全部委托给顶层的 [configuredDictionaryFontPaths]——与注入侧共用同一份
+  /// ReaderSettings 解析入口，且那是唯一能被测试直接调到的真实取值路径。这里只补
+  /// widget 生命周期守卫：`ref` 在 dispose 之后不能碰（资源请求回调由平台侧驱动，
+  /// 完全可能在 widget 已 dispose、WebView 尚未销毁完的窗口里到达）。
   Set<String> _configuredDictionaryFontPaths() {
-    final List<Map<String, dynamic>> fonts =
-        ReaderFushiSource.readerSettings?.dictionaryFonts ??
-            const <Map<String, dynamic>>[];
-    return fonts
-        .map((Map<String, dynamic> e) => e['path'] as String?)
-        .whereType<String>()
-        .map(p.canonicalize)
-        .toSet();
+    if (!mounted) return const <String>{};
+    return configuredDictionaryFontPaths(ref.read(appProvider));
   }
 
   /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__fushiResetPopupScroll` 钩子 +
@@ -1629,7 +1663,11 @@ JSON.stringify((function(){
         // 参数在传参之前就求值了，只挡输出挡不住开销）。
         if (isDictionaryFontUrl(request.url)) {
           final List<String>? roots = _resolveDictionaryFontRoots();
-          if (roots == null) return null;
+          // 根解析不出来（widget 已 dispose / appDirectory 还是未初始化的 late
+          // 字段）时同样要**干脆地拒绝**。返回 null 会让请求穿透到真实网络，而
+          // `fushi.local` 并不存在，于是变成一次 DNS 失败的干等；403 让 WebView
+          // 立刻回退到字体链的下一位。
+          if (roots == null) return dictionaryFontDeniedResponse();
           return dictionaryFontWebResourceResponse(
             request.url,
             allowedRoots: roots,
