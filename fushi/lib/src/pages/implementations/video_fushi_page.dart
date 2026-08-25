@@ -98,11 +98,13 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding;
+    show GamepadButton, InputBinding, activeModifierKeys;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
+import 'package:fushi/src/media/video/video_foreground_layers.dart'
+    show VideoForegroundLayer, topVideoForegroundLayer;
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_chapter_panel.dart';
@@ -4449,18 +4451,60 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ) =>
       _onUpdateEntryImpl(noteId, fields);
 
-  /// 退出/返回汇聚点：浮层栈有可见层先关栈（一层层退），否则 await 落库后真正
-  /// pop 路由。[PopScope] 与 Escape 快捷键共用，保证两条退出路径行为一致。
+  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才 await
+  /// 落库后真正 pop 路由。[PopScope] 与 Escape 快捷键共用同一份层级表
+  /// [_dismissTopForegroundLayer]，保证两条退出路径行为一致。
   ///
-  /// 只有 VISIBLE 浮层拦截 back；常驻隐藏的热槽（BUG-094）让栈非空但不得吞掉退出。
+  /// BUG-1862：此前本方法只关词典浮层，逐级退出的其余五层（控制布局编辑态 / 字幕跳转
+  /// 列表 / 剧集列表 / 设置侧栏 / 沉浸锁）只写在 Escape 快捷键回调里，于是两条路径根本
+  /// 不一致。而那份快捷键表装在 media_kit controls 子树内的 [CallbackShortcuts] 上
+  /// （media_kit `material_desktop.dart`），本页自建的 overlay（[_buildVideoSidePanelOverlay]
+  /// 等）在 controls builder 的 Stack 里是它的**兄弟**、不是后代——侧栏一打开就把键盘
+  /// 焦点领进自己（`PanelFocusScope`），Esc 便绕过整张表冒泡到全局 back →
+  /// `Navigator.maybePop` → 本页 [PopScope] → 本方法 → 直接 pop 整页。用户看到的就是
+  /// 「设置侧栏开着按 Esc，视频页退了、侧栏没关」。Android 系统返回键与手柄 B 走同一条
+  /// [PopScope] 路径，症状相同。层级判定收敛到 [_dismissTopForegroundLayer] 单点后，
+  /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
-    if (_hasVisiblePopup) {
-      _popNestedPopupAt(_topVisiblePopupIndex);
-      return;
-    }
+    if (_dismissTopForegroundLayer()) return;
     final NavigatorState nav = Navigator.of(context);
     await _controller?.flushPosition();
     if (mounted) nav.pop();
+  }
+
+  /// 逐级退出的**唯一**层级表（BUG-1862）：从最前台到最后台关掉一层并返回 true；一层
+  /// 都没开返回 false，调用方这才可以真正退全屏 / 退页。
+  ///
+  /// 顺序判据本身在纯函数 [topVideoForegroundLayer]（`video_foreground_layers.dart`）里，
+  /// 可直接单测；本方法只负责「读页面状态 → 查表 → 执行对应关闭动作」，不再自带顺序。
+  /// push-aside 字幕列表（TODO-314）、剧集列表（TODO-638）与侧栏是三条独立可见性，
+  /// 分别关闭。
+  bool _dismissTopForegroundLayer() {
+    final VideoForegroundLayer? layer = topVideoForegroundLayer(
+      hasVisibleDictionaryPopup: _hasVisiblePopup,
+      controlEditActive: _videoControlEditMode.value,
+      subtitleListVisible: _subtitleListVisible.value,
+      episodeListVisible: _episodeListVisible.value,
+      sidePanelOpen: _videoSidePanel.value != null,
+      immersiveLocked: _immersiveLocked.value,
+    );
+    switch (layer) {
+      case null:
+        return false;
+      case VideoForegroundLayer.dictionaryPopup:
+        _popNestedPopupAt(_topVisiblePopupIndex);
+      case VideoForegroundLayer.controlEdit:
+        _hideVideoControlEditOverlay(revealControls: false);
+      case VideoForegroundLayer.subtitleList:
+        _toggleSubtitleJumpList();
+      case VideoForegroundLayer.episodeList:
+        _closeEpisodeList();
+      case VideoForegroundLayer.sidePanel:
+        _hideVideoSidePanel();
+      case VideoForegroundLayer.immersiveLock:
+        _toggleImmersiveLock();
+    }
+    return true;
   }
 
   /// 桌面键盘快捷键，整表覆盖 media_kit 默认（[MaterialDesktopVideoControlsThemeData.
@@ -4732,30 +4776,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 沉浸查词门控在 _enterSubtitleCaret 内按 _immersiveAllowsLookup 判）。
       enterCaret: () => _handleEnterCaretAction(controller),
       escape: () {
-        if (_videoControlEditMode.value) {
-          _hideVideoControlEditOverlay(revealControls: false);
-          return;
-        }
-        // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
-        // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-        // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
-        if (_subtitleListVisible.value) {
-          _toggleSubtitleJumpList();
-          return;
-        }
-        // TODO-638：剧集列表 push-aside 侧栏开着时，Esc 先关它（逐级退出）。
-        if (_episodeListVisible.value) {
-          _closeEpisodeList();
-          return;
-        }
-        if (_videoSidePanel.value != null) {
-          _hideVideoSidePanel();
-          return;
-        }
-        if (_immersiveLocked.value) {
-          _toggleImmersiveLock();
-          return;
-        }
+        // 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
+        // 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
+        // [PopScope]、系统返回键、手柄 B 共用同一份），这里只保留「没有前台层可关」之后
+        // 的两级：全屏 → 退全屏；窗口 → 退页。
+        if (_dismissTopForegroundLayer()) return;
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
           unawaited(_exitVideoFullscreen(ctx));

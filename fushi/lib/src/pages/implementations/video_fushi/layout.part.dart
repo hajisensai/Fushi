@@ -156,7 +156,49 @@ extension _VideoLayout on _VideoFushiPageState {
     // isFullscreen 判定不会被窗口侧重建覆写。
     return VideoControlsFocusGate(
       fullscreenRouteActive: _videoFullscreenActive,
-      child: _buildVideoControlsInner(state, controller),
+      child: _wrapVideoControlsBackKey(
+        _buildVideoControlsInner(state, controller),
+      ),
+    );
+  }
+
+  /// BUG-1862：把「返回上一级」键的兜底装在 controls builder 的**最外层**，覆盖那些
+  /// 挂在 media_kit controls 旁边、却不在它快捷键表作用域里的自建 overlay。
+  ///
+  /// media_kit 的整表快捷键（[_videoKeyboardShortcuts]）由它自己的 [CallbackShortcuts]
+  /// 承载，而那层只包住 media_kit 的 controls 子树；本页的设置 / 速度 / 章节侧栏、side
+  /// rail、控制按钮 popover、布局编辑层都是本 builder 里 [Stack] 的**兄弟节点**。侧栏
+  /// 打开时 `PanelFocusScope` 会把键盘焦点领进侧栏，于是 Esc 的冒泡路径根本不经过那张
+  /// 表，一路走到全局 back 把整页 pop 掉——用户看到「侧栏开着按 Esc，页面退了、侧栏还
+  /// 在」。本层是这些 overlay 的共同祖先，且窗口与全屏复用同一 controls builder，两种
+  /// 场景一并覆盖。
+  ///
+  /// 只在 [_dismissTopForegroundLayer] **真的关掉了一层**时消费按键；没有前台层可关时
+  /// 返回 [KeyEventResult.ignored] 原样放行，退全屏 / 退页仍走既有路径——不新增第二条
+  /// 退出语义，也不吞任何其它按键。文本框持焦时关闭物理键回退（与 `_handleGlobalBack`
+  /// 同款判据，避免 IME 打字误触，TODO-847）。
+  Widget _wrapVideoControlsBackKey(Widget child) {
+    return Focus(
+      // 纯观察层：不夺焦、不进 Tab 遍历，只在键盘事件冒泡路上看一眼。
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode _, KeyEvent event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final PhysicalKeyboardKey? imeFallbackPhysicalKey =
+            focusedEditableText() == null ? event.physicalKey : null;
+        final ShortcutAction? action =
+            appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: activeModifierKeys(),
+          scope: ShortcutScope.universal,
+          physicalKey: imeFallbackPhysicalKey,
+        );
+        if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
+        return _dismissTopForegroundLayer()
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      },
+      child: child,
     );
   }
 
