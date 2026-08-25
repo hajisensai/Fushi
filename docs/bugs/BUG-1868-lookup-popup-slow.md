@@ -5,11 +5,12 @@
   调 `buildStackRenderScript` 时**完全没传** `knownStaticRevisions` /
   `emittedStaticRevisions`（当时是可选形参），于是 BUG-1833 那套静态段去重对剪贴板
   面板整条路径失效。
-- **[x] ① 已修复** — `1532f2331d`（四条根因）+ `8408b83dde`（字体改走 URL，⚠ 见备注）
+- **[x] ① 已修复** — `1532f2331d`（四条根因）+ `8408b83dde`（字体改走 URL，已端到端验证 `392c2a22ff`）
 - **[x] ② 已加自动化测试** — `fushi/test/lookup/popup_static_revision_dedup_guard_test.dart`（新）、
   `fushi/test/utils/misc/popup_dict_css_memo_test.{js,dart}`（新）、
   `fushi/test/reader/dictionary_font_css_test.dart`（增 URL 模式 4 例）、
-  `fushi/test/pages/popup_settings_injection_memo_test.dart`（改用真账本走 cold→commit→hot）
+  `fushi/test/pages/popup_settings_injection_memo_test.dart`（改用真账本走 cold→commit→hot）、
+  `fushi/integration_test/dict_popup_font_url_itest.dart`（新，Windows 真 WebView2 端到端 + 负向对照）
 - **备注**：
 
 ### 量级（用户真实配置）
@@ -65,21 +66,32 @@ revision 已缓存，`dropDescriptorStaticSource` 直接丢掉。**整整 33.7 M
    三元组 memo；外层用 css 串本身分桶，内容变了自然落新桶，无需失效钩子。三份
    dict-media.js（app + 扩展两镜像）同步移植。
 
-### ⚠ 未验证部分（`8408b83dde`）
+### in-app 字体走 URL（`8408b83dde`）—— 已端到端验证（Windows）
 
-in-app 弹窗字体改走 URL（`https://fushi.local/dictfonts/<enc>`）是唯一能根治嵌套那条
-路的办法：嵌套每层都是新 WebView（新 realm，静态段必须重发），去重救不了，只能让被
-重发的东西本身从 33.7 MB 降到 KB 级；URL 还能跨 WebView 共享 HTTP 缓存，`data:` 永远
-共享不了。
+嵌套那条路去重救不了：每层都是新 WebView（新 realm，静态段必须重发）。唯一的根治是
+让被重发的东西本身从 33.7 MB 降到 KB 级——字体改走
+`https://fushi.local/dictfonts/<enc>`，字节由弹窗 WebView 的 `shouldInterceptRequest`
+按需供，且**跨 WebView 共享 HTTP 缓存**（`data:` 每次都是全新资源，永远共享不了）。
 
-已有代码级证据（Windows fork `web_resource_response.cpp:59-66` 确实把 headers 逐条
-`AppendHeader` 进 WebView2），但**没有端到端证据**。风险方向是「字体静默不生效」，比慢
-更糟：Android 的 `file://` 与 Windows `initialData` 的 opaque origin 都是跨源，成败取决
-于 ACAO 头是否被插件如实传给浏览器。阅读器那条同机制路径是**同源**的，其生产表现不能
-直接推断这里。**合入前必须在真机打开查词弹窗确认词典字体仍生效。**
+Windows 离屏实测（`392c2a22ff`，`tool/run_windows_itest.ps1`，隔离 app data + 隔离
+WebView2 profile，**不启动 app、不碰生产库**）：
 
-平台边界：iOS / macOS 只有 `WKURLSchemeHandler`，其 `URLResponse` 带不了任何 header，
-字体会被 CORS 拒，故这两个平台继续内联——不是偷懒，是能力边界。
+```
+[cors]   fetch:200 | bytes:3936 | load:ok | check:true | faces:ItestFont=loaded
+[nocors] fetch-threw:TypeError: Failed to fetch | check:false | faces:ItestFont=error
+```
+
+负向对照（同样字节、同样 200，唯独抽掉 `Access-Control-Allow-Origin`）确实失败，
+证明该环境真在检查 CORS，正向那条绿不是恒真。
+
+覆盖边界：只实测了 **Windows**。Android 走同一套 `shouldInterceptRequest` +
+`WebResourceResponse` headers 机制（阅读器 `fushi.local/fonts/` 已在生产用它），但
+**未实测**。iOS / macOS 只有 `WKURLSchemeHandler`，其 `URLResponse` 带不了任何 header，
+字体会被 CORS 拒 → 这两个平台继续内联，不受影响（能力边界，非偷懒）。
+
+验证过程中修掉两个**测试自身**的坑（已写进测试文件注释）：`evaluateJavascript` 不会
+await Promise（头两轮的「失败」全是假的）；`Directory.systemTemp` 在 Windows 给反斜杠，
+手拼 `/` 造出混合分隔符会被白名单挡下。
 
 ### 尚未处理（收益递减，另开）
 
