@@ -3,6 +3,18 @@
    lookup / overlay append / selection / height read through these helpers so they
    resolve inside the shadow (fall back to document before the shadow exists). */
 function __fushiRootNode(){ return window.__fushiRoot || document; }
+/* 渲染热路径上的诊断日志门控（默认关）。
+   每条 console.log 都是一次跨进程消息：宿主 in-app 表面在 onConsoleMessage 里
+   debugPrint 之，并把带调试前缀的那几类**写进 ErrorLogService**（落盘 + 通知监听
+   者）。而 [RICHTEXT_HTML] 是**每行释义**打一条、[IMG_CREATE] 是**每张词典图**打
+   一条——一次多词条查词就是成百上千条，全部压在 UI isolate 与落盘串行链上，直接
+   偷走下一次（含嵌套）查词的时间。
+   这里不删日志（排障时它们有价值），改为默认关闭：需要取证时在弹窗 WebView 控制台
+   里 `window.__fushiPopupDebug = true` 即可实时打开，无需重新构建。错误路径
+   （[IMG_ERROR] 之类）不受门控，照常无条件输出。
+   门控一律写成 `if (window.__fushiPopupDebug)` 包住**整条语句**，而不是包一个
+   打日志的 helper：参数里的 substring / 字符串拼接 / toFixed 在传给 helper 之前
+   就已经求值了，只挡输出等于没挡住热路径上的那部分开销。 */
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
@@ -1368,7 +1380,9 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     
     if (typeof border === 'string') { imageContainer.style.border = border; }
     if (typeof borderRadius === 'string') { imageContainer.style.borderRadius = borderRadius; }
-    console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (useEmUnits ? 'em' : 'px'));
+    if (window.__fushiPopupDebug) {
+        console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (useEmUnits ? 'em' : 'px'));
+    }
     if (useEmUnits) {
         imageContainer.style.width = `${usedWidth}em`;
     } else if (!hasDimensions && isSvg) {
@@ -2039,7 +2053,7 @@ function appendRichTextLine(parent, line) {
         });
         html = tmp2.innerHTML;
     }
-    if (hasHtml) {
+    if (hasHtml && window.__fushiPopupDebug) {
         console.log('[RICHTEXT_HTML] input=' + line.substring(0, 150) + ' | sanitized=' + html.substring(0, 150));
     }
     const frag = document.createElement('span');
@@ -4538,7 +4552,7 @@ window.renderPopup = function() {
         }
         applyCustomCSS();
         window._renderedGlossaryCounts = [];
-        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=0 kanji=1');
+        if (window.__fushiPopupDebug) { console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=0 kanji=1'); }
         _firePopupRendered();
         _emitPopupRenderPerf('complete', t0, 0, { kanjiOnly: true });
         return;
@@ -4580,7 +4594,7 @@ window.renderPopup = function() {
         window._renderedGlossaryCounts = entries.map(
             e => (e && Array.isArray(e.glossaries)) ? e.glossaries.length : 0);
         window._entryDomIndex = entryDomIndex;
-        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1');
+        if (window.__fushiPopupDebug) { console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) + 'ms entries=1'); }
         _firePopupRendered();
         _emitPopupRenderPerf('complete', t0, 1, { firstVisible: true });
         return;
@@ -4591,7 +4605,7 @@ window.renderPopup = function() {
     // counts/domIndex 在途值只作占位，最终值由 finishRemainingEntries 写齐。
     window._renderedGlossaryCounts = [entries[0].glossaries.length];
     window._entryDomIndex = [entryDomIndex[0]];
-    console.log('[popup-perf] renderPopup first-entry: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length);
+    if (window.__fushiPopupDebug) { console.log('[popup-perf] renderPopup first-entry: ' + (performance.now() - t0).toFixed(1) + 'ms entries=' + entries.length); }
     _firePopupRendered(true);
     _emitPopupRenderPerf('first-entry-dom', t0, entries.length);
 
@@ -4610,8 +4624,10 @@ window.renderPopup = function() {
         window._renderedGlossaryCounts = completed.map(
             e => (e && Array.isArray(e.glossaries)) ? e.glossaries.length : 0);
         window._entryDomIndex = entryDomIndex.slice(0, completedCount);
-        console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) +
-            'ms entries=' + completedCount + '/' + entries.length);
+        if (window.__fushiPopupDebug) {
+            console.log('[popup-perf] renderPopup: ' + (performance.now() - t0).toFixed(1) +
+                'ms entries=' + completedCount + '/' + entries.length);
+        }
         _firePopupRendered();
         _emitPopupRenderPerf(terminalPhase, t0, completedCount, {
             expectedEntryCount: entries.length,

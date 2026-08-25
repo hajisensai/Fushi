@@ -76,6 +76,20 @@ class ClipboardPanelController {
   static const OverlayWindowChannel _channel =
       OverlayWindowChannel(FushiChannels.clipboardPanel);
 
+  /// 本面板在静态段账本里的宿主标识。面板窗是**独立的 WebView2 realm**（native 给
+  /// 它单独的 user-data leaf），与桌面瞬态窗 / galCard 各算一个物理宿主，账本不能混。
+  static const String _kPanelHostKey = 'clipboardPanel';
+
+  /// 面板宿主已装载的静态设置版本（BUG-1833 的去重账本）。
+  ///
+  /// 这条路径此前**完全没有参与去重**：[buildStackRenderScript] 的对应形参当时是
+  /// 可选的，面板一个都没传，于是每次查词——包括每次在面板里点词的嵌套查词——都把
+  /// 完整静态段重新序列化、过平台通道、在 WebView2 里解析一遍，然后被 host.js 按
+  /// revision 认出是已缓存版本、当场丢弃。用户导入两个 CJK 词典字体（base64 内联
+  /// 后合计几十 MB）时，这就是每查一个词白传几十 MB。
+  final PopupStaticRevisionCache _hostStaticRevisions =
+      PopupStaticRevisionCache();
+
   /// BUG-1210 — 查词后自动朗读。此前**只有瞬态覆盖窗接了线**，本面板整条路径没有
   /// 任何朗读调用：同一个全局开关 `autoReadOnLookup` 在那个表面生效、在这里完全
   /// 无效，用户表现为「面板查词不读，必须手动点 ♪」。实现与覆盖窗共用同一份
@@ -474,7 +488,7 @@ class ClipboardPanelController {
             leadingUnits: model.lookupLeadingStripUnits(rootQuery),
             bestLength: rootResult.bestLength,
           );
-    final String script = buildStackRenderScript(
+    final StackRenderScript stackRender = buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
@@ -488,6 +502,10 @@ class ClipboardPanelController {
       cardBgAlpha: 1.0,
       sentenceHitStart: hit.length > 0 ? hit.start : -1,
       sentenceHitLength: hit.length,
+      // 面板是独立的 WebView2 realm（flutter_window.cpp 给它单独的 user-data
+      // leaf），所以它有自己的静态段账本，不与桌面瞬态窗 / galCard 共用。
+      staticRevisions: _hostStaticRevisions,
+      hostKey: _kPanelHostKey,
     );
     // pin 视觉态并进同一渲染脚本：native pending_json_ 是单槽缓存，冷启动时
     // 独立脚本会互相覆盖；同一 ExecuteScript 保证 pin 图标与卡片同帧就位。
@@ -507,13 +525,33 @@ class ClipboardPanelController {
         ? '\nwindow.__globalLookupHost && '
             'window.__globalLookupHost.scrollRootToTop();'
         : '';
-    await _channel
-        .render('$script\n$pinVisualJs\n$blockCaptureVisualJs$scrollResetJs');
+    await _channel.render(
+      '${stackRender.script}\n$pinVisualJs\n$blockCaptureVisualJs$scrollResetJs',
+    );
+    // 与瞬态窗同一纪律：平台侧收下完整脚本之后才记账。发送失败/被作废时版本必须
+    // 保持「未装载」，让下一次渲染重新带上自足的静态段。
+    _hostStaticRevisions.commit(_kPanelHostKey, stackRender.pendingRevisions);
   }
 
   void _onJsMessage(Map<String, Object?> message) {
     final Object? handler = message['handler'];
     final AppModel? model = _appModel;
+    // host.js 自报某个静态设置版本在它那儿没了（整块 WebView 恢复、iframe realm 重
+    // 建等）。**去重与这条回补通道是一对，缺一不可**：只做去重不接回补，宿主一旦
+    // 丢掉缓存就再也等不到静态段，卡片会永远停在没主题/没字体/没词典样式的状态。
+    // 这里把该版本从账本划掉并重渲，下一次渲染就会重新带上自足的静态段。
+    if (handler == 'staticSettingsRequired') {
+      final Object? args = message['args'];
+      final Object? first = (args is List && args.isNotEmpty) ? args.first : null;
+      final int? revision = first is num
+          ? first.toInt()
+          : (first is String ? int.tryParse(first) : null);
+      if (revision != null) {
+        _hostStaticRevisions.invalidate(_kPanelHostKey, revision);
+        unawaited(_rerender());
+      }
+      return;
+    }
     // 九根 DEFERRED 桥走共享权威 handler，经本 channel 的 resolveBridge 回传
     // （与瞬态覆盖窗同一实现，spec 红线：绝不复制）。
     if (maybeHandleOverlayDeferredBridge(

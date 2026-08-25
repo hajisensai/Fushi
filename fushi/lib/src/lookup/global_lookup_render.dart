@@ -222,6 +222,48 @@ const double kGlobalLookupCascadeStep = 28.0;
 const double kGlobalLookupLayoutBoundsWidthFactor = 2.4;
 const double kGlobalLookupLayoutBoundsHeightFactor = 2.0;
 
+/// 每个**物理宿主**（一个独立的 WebView2 realm：桌面瞬态窗 / galCard 浮窗 /
+/// 剪贴板面板各算一个）已经装载好的静态设置版本号集合。
+///
+/// BUG-1833 起，静态设置段（主题变量 + 词典字体 + 词典样式 + 自定义 CSS + 各种
+/// window.* 开关）按 [PopupStaticSettingsJs.revision] 去重：宿主已经装过的版本不再
+/// 随渲染负载重发。这件事非做不可——用户导入的词典字体是 `data:` URL 内联的，两个
+/// CJK 字体就能让这一段到几十 MB；每次查词重发一遍，等于每次查词都往平台通道里灌
+/// 几十 MB、在 WebView2 里解析一遍，然后被宿主按 revision 认出是旧相识、原样丢弃。
+///
+/// 这个类存在的理由是「让漏做去重在结构上不可能」：去重状态曾经由每个调用方自己
+/// 拿 `Map<String, Set<int>>` 拼，而 [buildStackRenderScript] 的对应形参是**可选**
+/// 的——于是剪贴板面板那条路径压根没传，整套去重对它完全失效，每次查词（包括每次
+/// 在面板里点词的嵌套查词）都重发全量静态段。现在形参必填、待确认版本从返回值带
+/// 出，少传一个就是编译错误。
+class PopupStaticRevisionCache {
+  final Map<String, Set<int>> _byHost = <String, Set<int>>{};
+
+  /// [hostKey] 宿主当前已确认装载的版本集合（可直接读，不要外部改写）。
+  Set<int> knownFor(String hostKey) =>
+      _byHost.putIfAbsent(hostKey, () => <int>{});
+
+  /// 把本次渲染真正发出去的版本记为「已装载」。
+  ///
+  /// **必须等平台侧 render 调用成功之后再调**：脚本没送到宿主就先记账，会让后续
+  /// 渲染以为宿主已经有这个版本而不再下发，卡片就永远拿不到主题/字体/样式。
+  void commit(String hostKey, Set<int> emitted) {
+    if (emitted.isEmpty) return;
+    knownFor(hostKey).addAll(emitted);
+  }
+
+  /// 宿主自报某个版本没了（整块 WebView 恢复、iframe realm 重建等，见 host.js 的
+  /// `staticSettingsRequired`），把它从已装载集合里划掉，下一次渲染重新带上。
+  void invalidate(String hostKey, int revision) {
+    _byHost[hostKey]?.remove(revision);
+  }
+}
+
+/// [buildStackRenderScript] 的产物：要执行的脚本，以及**本次真正带上了静态段**的
+/// 版本号集合。调用方在平台 render 成功后把后者交给
+/// [PopupStaticRevisionCache.commit]。
+typedef StackRenderScript = ({String script, Set<int> pendingRevisions});
+
 /// TODO-1095 — the STABLE root frame id reused across hotkey lookups. Before
 /// this, every hotkey lookup minted a fresh `frame-N` id, so the host tore the
 /// root popup.html iframe down (removeMissing) and rebuilt it (createRecord ->
@@ -319,7 +361,7 @@ String buildPlayWordAudioScript(String frameId, String url, int token) {
 /// [screenWidth]/[screenHeight] and [maxWidth]/[maxHeight] are CSS / logical px
 /// (NOT physical — see global_lookup_layout coordinate rule): the dpr boundary
 /// is the C++ window geometry, never this layout math.
-String buildStackRenderScript({
+StackRenderScript buildStackRenderScript({
   required BuildContext context,
   required AppModel appModel,
   required List<GlobalLookupFramePayload> payloads,
@@ -354,14 +396,21 @@ String buildStackRenderScript({
   int sentenceHitStart = -1,
   int sentenceHitLength = 0,
   // BUG-1833 — static settings revisions already acknowledged by this physical
-  // host. The stable root iframe survives lookup-to-lookup, so a
-  // 9.6 MB custom font must not become a ~13 MB data-URL platform message on
-  // every Shift lookup. Unknown/new frames still receive a self-contained
-  // static payload. [emittedStaticRevisions] lets the caller commit the cache
-  // only after the native render call succeeds.
-  Set<int> knownStaticRevisions = const <int>{},
-  Set<int>? emittedStaticRevisions,
+  // host. The stable root iframe survives lookup-to-lookup, so a custom font
+  // (two CJK faces already run to tens of MB once base64-inlined) must not ride
+  // the platform message on every lookup. Unknown/new frames still receive a
+  // self-contained static payload.
+  //
+  // 这两个参数**必填**，而且是同一件事的两半：从哪个宿主的账本上查（[hostKey]），
+  // 查到的账本是谁（[staticRevisions]）。曾经它们是带默认值的可选参数，剪贴板面板
+  // 那条调用路径就那么静默地一个都没传，去重对它完全失效——每次查词重发几十 MB。
+  // 必填之后，少传就是编译错误。本次真正发出去的版本从返回值的 pendingRevisions
+  // 带出，调用方在 render 成功后 commit。
+  required PopupStaticRevisionCache staticRevisions,
+  required String hostKey,
 }) {
+  final Set<int> knownStaticRevisions = staticRevisions.knownFor(hostKey);
+  final Set<int> emittedStaticRevisions = <int>{};
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
   // vars live INSIDE each iframe). So the shell's dark/light border variant can't
@@ -425,7 +474,7 @@ String buildStackRenderScript({
     if (!availableStaticRevisions.contains(settings.staticRevision)) {
       map['staticHeadJs'] = settings.staticHeadJs;
       map['staticTailJs'] = settings.staticTailJs;
-      emittedStaticRevisions?.add(settings.staticRevision);
+      emittedStaticRevisions.add(settings.staticRevision);
       availableStaticRevisions.add(settings.staticRevision);
     }
     popups.add(map);
@@ -452,8 +501,12 @@ String buildStackRenderScript({
     };
   }
   final String payloadJson = jsonEncode(payloadObj);
-  return 'window.__globalLookupHost && '
-      'window.__globalLookupHost.renderStack($payloadJson);';
+  return (
+    script:
+        'window.__globalLookupHost && '
+        'window.__globalLookupHost.renderStack($payloadJson);',
+    pendingRevisions: emittedStaticRevisions,
+  );
 }
 
 /// Resolves ONE frame's shell rect (CSS px) for the host payload. With a real

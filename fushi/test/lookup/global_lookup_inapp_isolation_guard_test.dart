@@ -64,7 +64,12 @@ void main() {
       () {
         final String render = read('lib/src/lookup/global_lookup_render.dart');
         // buildStackRenderScript must end by calling the host renderStack entry.
-        final int at = render.indexOf('String buildStackRenderScript(');
+        // 返回类型是 StackRenderScript（脚本 + 本次真正下发的静态段版本号，供调用方
+        // 在平台 render 成功后记账去重），不再是裸 String。这里钉的不变量与返回类型
+        // 无关：栈渲染器必须驱动 host 的 renderStack diff。
+        final int at = render.indexOf(
+          'StackRenderScript buildStackRenderScript(',
+        );
         expect(
           at,
           greaterThan(-1),

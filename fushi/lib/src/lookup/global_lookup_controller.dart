@@ -110,7 +110,8 @@ class GlobalLookupController {
   // font can make this payload ~13 MB, so only revisions not yet acknowledged
   // by the current host ride the render call. The host can demand a resend after
   // a whole-WebView recovery via `staticSettingsRequired`.
-  final Map<String, Set<int>> _hostStaticRevisions = <String, Set<int>>{};
+  final PopupStaticRevisionCache _hostStaticRevisions =
+      PopupStaticRevisionCache();
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
@@ -1212,7 +1213,7 @@ class GlobalLookupController {
       if (revision != null) {
         final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
         final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
-        _hostStaticRevisions[hostKey]?.remove(revision);
+        _hostStaticRevisions.invalidate(hostKey, revision);
         final Object? requestArgs = message['args'];
         final int? hostGeometryCounter =
             requestArgs is List && requestArgs.length > 1
@@ -1860,12 +1861,7 @@ class GlobalLookupController {
     final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
-    final Set<int> knownStaticRevisions = _hostStaticRevisions.putIfAbsent(
-      hostKey,
-      () => <int>{},
-    );
-    final Set<int> emittedStaticRevisions = <int>{};
-    final String stackScript = buildStackRenderScript(
+    final StackRenderScript stackRender = buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
@@ -1887,21 +1883,21 @@ class GlobalLookupController {
       // preserving the desktop global-lookup cascade.
       fitNestedHeightToAnchorSide: route.source == 'galCard',
       clipboardHistoryAvailable: _allowClipboardHistory,
-      knownStaticRevisions: knownStaticRevisions,
-      emittedStaticRevisions: emittedStaticRevisions,
+      staticRevisions: _hostStaticRevisions,
+      hostKey: hostKey,
     );
     // Cold-create and process-recovery paths cache exactly one complete script
     // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so
     // last-wins caching cannot discard the immutable route epoch while retaining
     // the pixels.  Subsequent nested/visual-only renders omit the prelude.
     final String script = beginRoute == null
-        ? stackScript
-        : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}$stackScript';
+        ? stackRender.script
+        : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}${stackRender.script}';
     await GlobalLookupChannel.render(script);
     // Commit only after the platform call accepted the complete script. A
     // thrown/invalidated send must leave the revision unknown so the next render
     // remains self-contained.
-    knownStaticRevisions.addAll(emittedStaticRevisions);
+    _hostStaticRevisions.commit(hostKey, stackRender.pendingRevisions);
   }
 
   /// TODO-867 P3c C2 — parses the onLinkClick anchor arg ({x,y,width,height} in
