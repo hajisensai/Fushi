@@ -321,7 +321,13 @@ void main() {
       if (await root.exists()) await root.delete(recursive: true);
     });
     // 第二个真实种子（VCB-Studio Hibike! Euphonium 2）：编号写在方括号里
-    // （`[SP05]` `[Menu05]` `[WEB Preview05]`），与正片 `[05]` 同形。
+    // （`[SP05]` `[Menu05]` `[WEB Preview05]`）。
+    //
+    // 注意这三种**方括号编号** `parseVideoFilename` 其实解不出集号（实测
+    // `[SP05]` → `episode=null`），BUG-1785 之后它们本来就进 Extras——只拿它们
+    // 当语料的话，去掉目录判定这条用例照样绿，那就不是负向对照而只是形状文档。
+    // 所以额外放一个**解得出集号**的特典（`… - 05`，与正片 `[05]` 同解 5）：去掉
+    // 目录判定时它会和正片抢同一个 `S02E05`，用例必红。
     const String releaseRoot = '[VCB-Studio] Hibike! Euphonium 2 [Ma10p_1080p]';
     final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
       VideoOrganizationRequest(
@@ -365,6 +371,16 @@ void main() {
           progress: 1,
           index: 3,
         ),
+        // 负向对照的承重件：这条**解得出** `episode=5`（`- 05`），只有目录判定
+        // 拦得住它。
+        const TorrentFileEntry(
+          name: '$releaseRoot/SPs/'
+              '[VCB-Studio] Hibike! Euphonium 2 [SP] Bonus Interview - 05 '
+              '[Ma10p_1080p][x265_flac].mkv',
+          size: 43,
+          progress: 1,
+          index: 4,
+        ),
       ],
     );
 
@@ -390,6 +406,119 @@ void main() {
       byIndex[3]!.targetRelativePath,
       startsWith('響け！ユーフォニアム 2 (2016)/Extras/Previews/'),
     );
+    expect(
+      byIndex[4]!.targetRelativePath,
+      startsWith('響け！ユーフォニアム 2 (2016)/Extras/SPs/'),
+    );
+    expect(byIndex[4]!.episodeNumber, isNull);
+    // Season 目录下有且只有正片一个文件。
+    expect(
+      plan.files
+          .where(
+            (VideoOrganizationFilePlan file) =>
+                file.targetRelativePath.contains('/Season '),
+          )
+          .map((VideoOrganizationFilePlan file) => file.backendFileIndex),
+      <int>[0],
+    );
+  });
+
+  test(
+      'a specials-only torrent falls back to filename parsing instead of '
+      'failing (BUG-1865)', () {
+    // 纯特典种子（用户单独下的 SP 盘）：所有视频都在 `SPs/` 下，先分类会一集都
+    // 认不出。这时必须退回旧口径按文件名解集号，而不是抛
+    // `unable to determine episode number` 把任务打进 needsAttention——那是把一
+    // 个修复前能正常整理的种子弄坏。
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: 'Show',
+        kind: VideoOrganizationKind.episodic,
+        sourceRoot: _localRoot,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: _localRoot,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Show SP Disc/SPs/Show - 01.mkv',
+          size: 10,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'Show SP Disc/SPs/Show - 02.mkv',
+          size: 11,
+          progress: 1,
+          index: 1,
+        ),
+      ],
+    );
+
+    expect(
+      plan.files.map((VideoOrganizationFilePlan f) => f.targetRelativePath),
+      <String>[
+        'Show/Season 01/Show - S01E01.mkv',
+        'Show/Season 01/Show - S01E02.mkv',
+      ],
+    );
+    expect(plan.files.first.episodeNumber, 1);
+    expect(plan.files.last.episodeNumber, 2);
+  });
+
+  test('a CJK-named extras directory is classified like EXTRA (BUG-1865)', () {
+    // `特典映像` / `映像特典` / `メニュー` 是日语/华语发布组最常见的特典目录名。
+    // 归一化一旦把非 ASCII 删光，这些目录名恒归一成空串、词表结构上不可能命中，
+    // 用户看到的仍然是与正片一模一样的撞号。`【】` 这类标点则必须继续被去掉。
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: 'Show',
+        kind: VideoOrganizationKind.episodic,
+        sourceRoot: _localRoot,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: _localRoot,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Show/Show - 05.mkv',
+          size: 100,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'Show/【特典映像】/Show - 05.mkv',
+          size: 10,
+          progress: 1,
+          index: 1,
+        ),
+        const TorrentFileEntry(
+          name: 'Show/メニュー/Show - 05.mkv',
+          size: 11,
+          progress: 1,
+          index: 2,
+        ),
+      ],
+    );
+
+    expect(
+      plan.files.first.targetRelativePath,
+      'Show/Season 01/Show - S01E05.mkv',
+    );
+    expect(
+      plan.files[1].targetRelativePath,
+      'Show/Extras/【特典映像】/Show - 05.mkv',
+    );
+    expect(plan.files[1].episodeNumber, isNull);
+    expect(
+      plan.files.last.targetRelativePath,
+      'Show/Extras/メニュー/Show - 05.mkv',
+    );
+    expect(plan.files.last.episodeNumber, isNull);
   });
 
   test('a Season subdirectory is not mistaken for an extras directory', () {

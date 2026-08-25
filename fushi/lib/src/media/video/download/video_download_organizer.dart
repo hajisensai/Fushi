@@ -108,6 +108,55 @@ class VideoDownloadOrganizer {
                 .first
             : null;
     final String? sharedRoot = _sharedRootSegment(videoFiles);
+    // 先按目录判正片/特典、再解析集号（BUG-1865）。纯特典种子（用户单独下的
+    // SP 盘）在这一口径下会一集都认不出——那不是「种子与 kind 不符」，只是这个
+    // 种子里根本没有正片。这种情况退回旧口径（只按文件名解集号）再走一遍，别
+    // 把一个本来能整理的种子打成硬失败。
+    _OrganizationPass pass = _planFiles(
+      request,
+      videoFiles,
+      displayRoot: displayRoot,
+      sharedRoot: sharedRoot,
+      mainMovie: mainMovie,
+      classifyExtraDirectories: true,
+    );
+    if (request.kind == VideoOrganizationKind.episodic &&
+        pass.recognizedEpisodes == 0) {
+      pass = _planFiles(
+        request,
+        videoFiles,
+        displayRoot: displayRoot,
+        sharedRoot: sharedRoot,
+        mainMovie: mainMovie,
+        classifyExtraDirectories: false,
+      );
+    }
+    // 两种口径都一集认不出，才是真的与「剧集」判定不符（比如误标 kind）：全
+    // Extras 的静默入库只会把问题藏起来，仍然显式失败。
+    if (request.kind == VideoOrganizationKind.episodic &&
+        pass.recognizedEpisodes == 0) {
+      throw FormatException(
+        'unable to determine episode number: ${videoFiles.first.name}',
+      );
+    }
+    return VideoOrganizationPlan(
+      remoteSourceRoot: remoteRoot,
+      files: pass.files,
+    );
+  }
+
+  /// 单趟排布：把每个视频文件映射到目标相对路径，并记账认出了多少集正片。
+  ///
+  /// [classifyExtraDirectories] 为 false 时不看目录，退回「只按文件名解集号」的
+  /// 旧口径——只有第一趟一集都没认出（纯特典种子）时才会用到。
+  _OrganizationPass _planFiles(
+    VideoOrganizationRequest request,
+    List<TorrentFileEntry> videoFiles, {
+    required String displayRoot,
+    required String? sharedRoot,
+    required TorrentFileEntry? mainMovie,
+    required bool classifyExtraDirectories,
+  }) {
     final Map<String, String> claimedTargets = <String, String>{};
     final List<VideoOrganizationFilePlan> planned =
         <VideoOrganizationFilePlan>[];
@@ -127,7 +176,8 @@ class VideoDownloadOrganizer {
       // 先按目录判正片/特典、再解析集号；顺序反过来就只能靠撞号事后发现，
       // 而**没撞上的那些会被静默改名成正片**——后者才是更贵的一半。
       if (request.kind == VideoOrganizationKind.episodic &&
-          !_isInExtraDirectory(file.name, sharedRoot: sharedRoot)) {
+          !(classifyExtraDirectories &&
+              _isInExtraDirectory(file.name, sharedRoot: sharedRoot))) {
         final VideoNameInfo parsed =
             parseVideoFilename(_segments(file.name).last);
         episodeNumber = parsed.episode;
@@ -181,21 +231,10 @@ class VideoDownloadOrganizer {
         episodeNumber: episodeNumber,
       ));
     }
-    // 一集都认不出说明种子与「剧集」判定不符（比如误标 kind），全 Extras 的
-    // 静默入库只会把问题藏起来，仍然显式失败。报的样本取**正片候选**里的第一个
-    // ——报特典目录里的文件只会把人往「特典没识别」的错方向带。
-    if (request.kind == VideoOrganizationKind.episodic &&
-        recognizedEpisodes == 0) {
-      final TorrentFileEntry sample = videoFiles.firstWhere(
-        (TorrentFileEntry file) =>
-            !_isInExtraDirectory(file.name, sharedRoot: sharedRoot),
-        orElse: () => videoFiles.first,
-      );
-      throw FormatException(
-        'unable to determine episode number: ${sample.name}',
-      );
-    }
-    return VideoOrganizationPlan(remoteSourceRoot: remoteRoot, files: planned);
+    return _OrganizationPass(
+      files: planned,
+      recognizedEpisodes: recognizedEpisodes,
+    );
   }
 
   Future<VideoOrganizationResult> organize({
@@ -349,6 +388,14 @@ class VideoDownloadOrganizer {
     'trailers',
     'webpreview',
     'webpreviews',
+    // 中日文命名的特典目录（归一化保留汉字/假名后才谈得上命中，见
+    // [_normalizedSegment]）。日语/华语发布组用这几个词比用 `EXTRA` 更常见。
+    '映像特典',
+    '特典',
+    '特典映像',
+    'メニュー',
+    '予告',
+    '菜单',
   };
 
   /// 该文件是否躺在发布组标记的特典目录里（共享根与文件名段都不参与判定）。
@@ -365,10 +412,18 @@ class VideoDownloadOrganizer {
     return false;
   }
 
-  /// 目录名归一化：转小写并去掉所有非字母数字，`SPs` → `sps`、`[SP]` → `sp`、
-  /// `Web Previews` → `webpreviews`、`BD Scans` → `bdscans`。
+  /// 目录名归一化：转小写并去掉分隔符与标点，`SPs` → `sps`、`[SP]` → `sp`、
+  /// `Web Previews` → `webpreviews`、`BD Scans` → `bdscans`、`【特典映像】` →
+  /// `特典映像`。
+  ///
+  /// 去的是**标点**，不是「非 ASCII」：旧口径写成 `[^a-z0-9]`，等于把中日文目录
+  /// 名整段删成空串，`特典` / `映像特典` / `メニュー` 在词表里永远不可能命中——
+  /// 而这恰恰是本仓最常见的发布组命名。`\p{L}` 收字母（含汉字、假名，`ー` 是
+  /// `Lm` 也在内），`\p{N}` 收数字，其余（空格 / `[]` / `【】` / `・` / `-`）全去。
+  static final RegExp _segmentNoise = RegExp(r'[^\p{L}\p{N}]', unicode: true);
+
   static String _normalizedSegment(String value) =>
-      value.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
+      value.toLowerCase().replaceAll(_segmentNoise, '');
 
   /// Extras 目标段：镜像种子内目录结构（剥共享根），路径天然唯一，不同子目录
   /// 里的同名特典不会互相顶掉。每段过 [_safeSegment]，末段扩展名统一小写。
@@ -384,4 +439,18 @@ class VideoDownloadOrganizer {
       '$stem$extension',
     ];
   }
+}
+
+/// 一趟排布的产物：目标计划 + 认出的正片集数。
+///
+/// 集数是**换口径重来**的唯一判据（见 [VideoDownloadOrganizer.plan]），所以它跟
+/// 计划一起返回，而不是让调用方回头去数 `episodeNumber != null`。
+class _OrganizationPass {
+  const _OrganizationPass({
+    required this.files,
+    required this.recognizedEpisodes,
+  });
+
+  final List<VideoOrganizationFilePlan> files;
+  final int recognizedEpisodes;
 }
