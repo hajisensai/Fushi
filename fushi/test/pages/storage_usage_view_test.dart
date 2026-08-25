@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_core/fushi_core.dart' show deleteDatabaseSnapshotFiles;
+import 'package:fushi_core/fushi_core.dart'
+    show DatabaseSnapshotDeletionResult, deleteDatabaseSnapshotFiles;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
@@ -56,7 +57,7 @@ void main() {
     required StorageUsageService service,
     Future<List<StorageBookRef>> Function()? books,
     Future<String?> Function(String bookKey)? deleteBook,
-    Future<List<String>> Function()? deleteDatabaseSnapshots,
+    Future<DatabaseSnapshotDeletionResult> Function()? deleteDatabaseSnapshots,
     Future<int> Function()? anime4kBytes,
     Future<List<String>> Function()? anime4kDelete,
   }) {
@@ -66,8 +67,11 @@ void main() {
       dictionaryNamesProvider: () async => const <String>[],
       deleteBook: deleteBook ?? (String _) async => null,
       deleteDictionary: (String _) async => null,
-      deleteDatabaseSnapshots:
-          deleteDatabaseSnapshots ?? () async => const <String>[],
+      deleteDatabaseSnapshots: deleteDatabaseSnapshots ??
+          () async => const DatabaseSnapshotDeletionResult(
+                deleted: <String>[],
+                failures: <String, String>{},
+              ),
       anime4kBytesProvider: anime4kBytes ?? () async => 0,
       anime4kDelete: anime4kDelete ?? () async => const <String>[],
     );
@@ -152,7 +156,7 @@ void main() {
   testWidgets('BUG-1870：数据库快照残留聚成一条带文件数的可删条目，确认后走注入原语并重扫',
       (WidgetTester tester) async {
     writeFile(p.join(support.path, 'fushi.db'), 1000);
-    writeFile(p.join(support.path, 'fushi.db.corrupt-bak-1'), 7);
+    writeFile(p.join(support.path, 'fushi.db.corrupt-bak-1.db'), 7);
     writeFile(p.join(support.path, 'hibiki.db.bak.v16.1780592923530'), 3);
     writeFile(p.join(support.path, 'hibiki.db-wal.bak.v20.1'), 1);
     int deleteCalls = 0;
@@ -174,7 +178,7 @@ void main() {
     // 原始文件名不再逐条铺开，取而代之的是一条带文件数的翻译标题。
     final String title = t.storage_entry_database_snapshots_label(n: 3);
     expect(find.text(title), findsOneWidget);
-    expect(find.text('support/fushi.db.corrupt-bak-1'), findsNothing);
+    expect(find.text('support/fushi.db.corrupt-bak-1.db'), findsNothing);
     expect(find.text('support/hibiki.db.bak.v16.1780592923530'), findsNothing);
     // 活库仍只读单列。
     expect(find.text('support/fushi.db'), findsOneWidget);
@@ -204,12 +208,63 @@ void main() {
 
     expect(deleteCalls, 1);
     // 真删了快照、活库一字节没动。
-    expect(File(p.join(support.path, 'fushi.db.corrupt-bak-1')).existsSync(),
+    expect(File(p.join(support.path, 'fushi.db.corrupt-bak-1.db')).existsSync(),
         isFalse);
     expect(File(p.join(support.path, 'fushi.db')).lengthSync(), 1000);
     // 重扫后聚合条目消失（已无快照），活库条目仍在。
     expect(find.text(title), findsNothing);
     expect(find.text('support/fushi.db'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('BUG-1870 审查：部分快照删不掉时报出失败原因，但成功的那些照样重扫掉',
+      (WidgetTester tester) async {
+    writeFile(p.join(support.path, 'fushi.db'), 1000);
+    writeFile(p.join(support.path, 'fushi.db.corrupt-bak-1.db'), 7);
+    writeFile(p.join(support.path, 'fushi.db.corrupt-bak-2.db'), 3);
+    final String stuckPath = p.join(support.path, 'fushi.db.corrupt-bak-2.db');
+
+    await tester.pumpWidget(wrap(view(
+      service: service(),
+      // 真原语删掉能删的，再手工塞一条失败——模拟 Windows 上被占用的那一个。
+      deleteDatabaseSnapshots: () async {
+        File(p.join(support.path, 'fushi.db.corrupt-bak-1.db')).deleteSync();
+        return DatabaseSnapshotDeletionResult(
+          deleted: <String>[p.join(support.path, 'fushi.db.corrupt-bak-1.db')],
+          failures: <String, String>{stuckPath: '另一个程序正在使用此文件'},
+        );
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text(t.storage_category_database));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.storage_category_database));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byTooltip(t.dialog_delete));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip(t.dialog_delete));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
+    for (int i = 0; i < 20; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      if (!File(p.join(support.path, 'fushi.db.corrupt-bak-1.db'))
+              .existsSync() &&
+          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
+    }
+
+    // 关键：删得掉的真删了，且页面重扫回到「还剩 1 个」——旧实现在失败分支
+    // 直接跳过重扫，数字会停在删除前的 2 个。
+    expect(File(p.join(support.path, 'fushi.db.corrupt-bak-1.db')).existsSync(),
+        isFalse);
+    expect(File(stuckPath).existsSync(), isTrue);
+    expect(find.text(t.storage_entry_database_snapshots_label(n: 1)),
+        findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 

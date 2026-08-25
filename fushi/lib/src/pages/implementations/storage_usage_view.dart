@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
@@ -55,8 +57,10 @@ class StorageUsageView extends ConsumerStatefulWidget {
 
   /// 删除 support 根下全部主库快照残留（BUG-1870；真实现 fushi_core
   /// `deleteDatabaseSnapshotFiles(supportRoot)`，识别口径与扫描侧同源：
-  /// 展示什么就删什么，活库与侧车结构上删不到）。返回已删路径。
-  final Future<List<String>> Function() deleteDatabaseSnapshots;
+  /// 展示什么就删什么，活库/侧车/待恢复副本结构上删不到）。返回逐文件容错的
+  /// 结果——部分文件被占用时其余照删，失败清单原样带给用户。
+  final Future<DatabaseSnapshotDeletionResult> Function()
+      deleteDatabaseSnapshots;
 
   /// Anime4K 已下载字节数 / 删除（默认真实现；测试注临时目录版）。
   final Future<int> Function() anime4kBytesProvider;
@@ -198,32 +202,50 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     if (!await _confirmDelete(_entryTitle(entry), body)) return;
     setState(() => _busyEntryId = entry.id);
     String? failure;
+    // 磁盘是否真的变了。快照删除是逐文件容错的：**部分**成功也必须重扫，否则
+    // 页面上的字节数会一直停在删除前的旧值（审查 M3）。
+    bool changed = false;
     try {
-      failure = switch (entry.kind) {
-        StorageEntryKind.book => await widget.deleteBook(entry.id),
-        StorageEntryKind.dictionary => await widget.deleteDictionary(entry.id),
-        StorageEntryKind.databaseSnapshots =>
-          await widget.deleteDatabaseSnapshots().then((List<String> _) => null),
-        StorageEntryKind.readOnly => throw StateError('read-only entry'),
-      };
+      switch (entry.kind) {
+        case StorageEntryKind.book:
+          failure = await widget.deleteBook(entry.id);
+          changed = failure == null;
+        case StorageEntryKind.dictionary:
+          failure = await widget.deleteDictionary(entry.id);
+          changed = failure == null;
+        case StorageEntryKind.databaseSnapshots:
+          final DatabaseSnapshotDeletionResult result =
+              await widget.deleteDatabaseSnapshots();
+          changed = result.deleted.isNotEmpty;
+          failure = _snapshotDeleteFailureReason(result);
+        case StorageEntryKind.readOnly:
+          throw StateError('read-only entry');
+      }
     } catch (e) {
       failure = '$e';
     } finally {
       if (mounted) setState(() => _busyEntryId = null);
     }
     if (!mounted) return;
-    if (failure == null) {
-      FushiToast.show(
-        msg: t.storage_entry_delete_done,
-        severity: ToastSeverity.success,
-      );
-      await _rescan();
-    } else {
-      FushiToast.show(
-        msg: t.storage_entry_delete_failed(reason: failure),
-        severity: ToastSeverity.error,
-      );
-    }
+    FushiToast.show(
+      msg: failure == null
+          ? t.storage_entry_delete_done
+          : t.storage_entry_delete_failed(reason: failure),
+      severity: failure == null ? ToastSeverity.success : ToastSeverity.error,
+    );
+    if (changed) await _rescan();
+  }
+
+  /// 快照批量删除的失败摘要：全成功 → null；否则「第一个失败的文件名: 原因
+  /// (+还有几个)」。不新增 i18n key，直接填进既有的
+  /// `storage_entry_delete_failed(reason:)` 模板。
+  static String? _snapshotDeleteFailureReason(
+      final DatabaseSnapshotDeletionResult result) {
+    if (!result.hasFailures) return null;
+    final MapEntry<String, String> first = result.failures.entries.first;
+    final int rest = result.failures.length - 1;
+    final String head = '${p.basename(first.key)}: ${first.value}';
+    return rest > 0 ? '$head (+$rest)' : head;
   }
 
   // ── Anime4K 预设删除 ────────────────────────────────────────────────

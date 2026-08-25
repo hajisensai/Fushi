@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:fushi_core/fushi_core.dart'
-    show fnv1a32Hex, fushiDatabaseFileName, isDatabaseSnapshotFileName;
+    show databaseSnapshotMainFileName, fnv1a32Hex, isDeletableDatabaseSnapshot;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -438,15 +438,22 @@ class StorageUsageService {
     // support 根的直接子项，减去 OCR 模型子目录（后者单列一类）。明细里因此
     // 能看到主库 `fushi.db`、本地发音库副本 `local_audio_*.db` 等具体大件。
     //
-    // BUG-1870：主库快照残留（`fushi.db.corrupt-bak-*`、旧 `hibiki.db.bak.v16.*` 等，
-    // 用户机器上实测几十个）不再逐个按原始文件名铺开，而是聚成**一条**可删条目——
-    // 识别口径直接用 fushi_core 的 [isDatabaseSnapshotFileName]，与删除原语同源。
+    // BUG-1870：主库快照残留（`fushi.db.corrupt-bak-<stamp>.db*`、旧
+    // `hibiki.db.bak.v16.*` 等，用户机器上实测几十个）不再逐个按原始文件名铺开，
+    // 而是聚成**一条**可删条目——识别口径直接用 fushi_core 的
+    // [isDeletableDatabaseSnapshot]（形态白名单 + 恢复流程所有权门控），与删除
+    // 原语同源。所有权门控需要「同目录还有哪些文件」，这份清单 [raw] 里已经有了，
+    // 不再二次 IO。
     final List<Map<String, Object>> raw =
         await _run(() => _childEntriesSync(<String>[support.path]));
+    final Set<String> supportChildNames = <String>{
+      for (final Map<String, Object> e in raw) p.basename(e['path'] as String),
+    };
     final List<Map<String, Object>> snapshots = <Map<String, Object>>[
       for (final Map<String, Object> e in raw)
         if (e['isFile'] as bool &&
-            isDatabaseSnapshotFileName(p.basename(e['path'] as String)))
+            isDeletableDatabaseSnapshot(
+                p.basename(e['path'] as String), supportChildNames))
           e,
     ];
     final List<String> snapshotPaths = <String>[
@@ -460,7 +467,8 @@ class StorageUsageService {
       if (snapshots.isNotEmpty)
         StorageEntryUsage(
           id: kDatabaseSnapshotsEntryId,
-          label: '${p.basename(support.path)}/$fushiDatabaseFileName.*',
+          label: '${p.basename(support.path)}/'
+              '${_snapshotStemLabel(snapshotPaths)}.*',
           bytes: snapshots.fold<int>(
               0, (int sum, Map<String, Object> e) => sum + (e['bytes'] as int)),
           paths: snapshotPaths,
@@ -473,6 +481,19 @@ class StorageUsageService {
       bytes: _sumBytes(entries),
       entries: entries,
     );
+  }
+
+  /// 快照聚合条目 fallback label 里的库名部分。按**实际命中的**主库名生成：
+  /// 老用户盘上几十个文件全是 `hibiki.db.*`，写死 `fushi.db.*` 一个都描述不到
+  /// （BUG-1870 审查）。两个库名都命中时并列列出。
+  static String _snapshotStemLabel(final List<String> snapshotPaths) {
+    final List<String> stems = <String>{
+      for (final String path in snapshotPaths)
+        if (databaseSnapshotMainFileName(p.basename(path)) case final String s)
+          s,
+    }.toList()
+      ..sort();
+    return stems.length == 1 ? stems.single : '{${stems.join(',')}}';
   }
 
   /// 通用类目扫描：类目根下每个直接子项一条明细，类目总量 = 明细求和。

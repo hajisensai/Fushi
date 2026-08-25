@@ -246,6 +246,12 @@ Future<QueryExecutor> _openWithRecovery(
 /// `.corrupt-bak` snapshot of the main DB + each sidecar is taken first (mirrors
 /// backup_service's `.pre-restore.bak`) so a user can hand-recover the last
 /// un-checkpointed writes if needed.
+///
+/// Exact names produced (the whitelist in [databaseSnapshotMainFileName] must
+/// match these verbatim): `fushi.db.corrupt-bak-<stamp>.db`,
+/// `fushi.db.corrupt-bak-<stamp>.db-wal`, `fushi.db.corrupt-bak-<stamp>.db-shm`
+/// — the copied file's own extension is appended AFTER the stamp, so a snapshot
+/// never ends in a bare `-wal` / `-shm`.
 Future<void> _rebuildSidecar(File dbFile) async {
   final String path = dbFile.path;
   final File wal = File('$path-wal');
@@ -297,52 +303,165 @@ const String fushiDatabaseFileName = 'fushi.db';
 /// app 层「本机是否已有安装」的判据也要兼看它（旧安装升级后第一次开库前旧名还在）。
 const String legacyHibikiDatabaseFileName = 'hibiki.db';
 
-/// 主库**快照残留**的唯一识别口径（BUG-1870；存储页「数据库备份快照」条目与
+/// 主库**快照残留**的识别口径（BUG-1870；存储页「数据库备份快照」条目与
 /// [deleteDatabaseSnapshotFiles] 共用，展示什么就删什么）。
 ///
-/// 规则只有一条：文件名以主库名（[fushiDatabaseFileName] 或旧名
-/// [legacyHibikiDatabaseFileName]）开头，但**不是**主库本体及其 `-wal` / `-shm` /
-/// `-journal` 侧车。覆盖 [_rebuildSidecar] 产的 `fushi.db.corrupt-bak-<stamp>[-wal|-shm]`、
-/// backup_service 的 `fushi.db.pre-restore.bak`，以及历史迁移留下的
-/// `hibiki.db.bak.v16.<stamp>` / `hibiki.db-wal.bak.*` 之类。它们都只是整文件副本，
-/// 没有任何表、偏好或引用指向它们，删掉不影响活库；活库与侧车被显式排除，永远不会
-/// 落进这个集合（旧名 `hibiki.db` 尚未被 [_migrateLegacyDatabaseFileName] 改名时同样受保护）。
-bool isDatabaseSnapshotFileName(final String name) {
-  for (final String db in <String>[
+/// 判据是**两层**，缺一层就会误删活数据：
+///
+/// **层 (a) 形态白名单（本函数）** —— 只认代码**真的产过**的「整文件副本」命名，
+/// 逐条列举，不做「不在排除表里就算残留」的黑名单推断：
+///
+/// - [_rebuildSidecar] 的崩溃恢复快照：`<主库名>.corrupt-bak-<毫秒戳>.db`
+///   / `.db-wal` / `.db-shm`（副本名以 `.db*` 结尾，不是 `-wal`/`-shm`）；
+/// - 旧版降级救援副本（`from > to` 的销毁式分支早已删除，只在老用户盘上留着）：
+///   `<主库名>[-wal|-shm].bak.v<旧schema>.<毫秒戳>`；
+/// - `backup_service` 的导入前快照：`<主库名>.pre-restore.bak`
+///   / `<主库名>.pre-merge.bak`。
+///
+/// 黑名单在这里是**危险**的：`backup_service` 把一整族**活控制文件**放在同一个
+/// support 根、且同样以主库名开头 —— `fushi.db.sync-preserve.json`（待恢复标记）、
+/// `fushi.db.merge-preserve.json`、`fushi.db.merge-src[-wal|-shm]`、
+/// `fushi.db.merge-preview-src`。它们不是副本，删掉会让 `recoverPendingRestore`
+/// 在下次启动时静默 `return`，用户的 LAN 配对 / 同步基线 / 被排除的 settings、
+/// profiles 层永久丢失。白名单让「新加一个控制文件」默认安全（不认识 ⇒ 不碰），
+/// 黑名单则默认危险（忘了补一行 ⇒ 可删）。
+///
+/// **层 (b) 所有权门控（[isDeletableDatabaseSnapshot]）** —— 形态命中也未必是
+/// 残留：`pre-restore.bak` 由 `sync-preserve.json` 持有、`pre-merge.bak` 由
+/// `merge-preserve.json` 持有。恢复流程半途失败时**两个文件都会被刻意保留**，
+/// 下次启动靠它们补完（见 `backup_service.recoverPendingRestore`）。只要 sidecar
+/// 还在，被它拥有的副本就是活的恢复输入，不得列出、不得删除；sidecar 不在时它
+/// 才是孤儿。「能不能删」因此由「有没有活的恢复流程指向它」这个真实关系决定，
+/// 而不是由文件名碰巧不在某个排除表里决定。
+///
+/// 活库本体与 `-wal` / `-shm` / `-journal` 侧车形态上就不在白名单里，结构上永远
+/// 不可能命中（旧名 `hibiki.db` 尚未被 [_migrateLegacyDatabaseFileName] 改名时同样）。
+bool isDatabaseSnapshotFileName(final String name) =>
+    databaseSnapshotMainFileName(name) != null;
+
+/// 崩溃恢复快照后缀（[_rebuildSidecar]：`.corrupt-bak-<stamp>` + 被复制文件的
+/// `.db` / `.db-wal` / `.db-shm`）。
+final RegExp _kCorruptBakSuffix =
+    RegExp(r'^\.corrupt-bak-\d+\.db(-wal|-shm)?$');
+
+/// 旧降级救援副本后缀（`.bak.v<旧schema>.<毫秒戳>`）。
+final RegExp _kLegacyDowngradeBakSuffix = RegExp(r'^\.bak\.v\d+\.\d+$');
+
+/// `backup_service` 导入前快照的后缀（只挂主库名，不挂侧车名）。
+const List<String> _kImportBakSuffixes = <String>[
+  '.pre-restore.bak',
+  '.pre-merge.bak',
+];
+
+/// 层 (b) 的所有权表：**快照文件名 → 持有它的恢复流程标记文件名**。真相源是
+/// `backup_service`（`_preserveSidecar` / `_mergeSidecar` 与 `recoverPendingRestore`
+/// / `recoverMergeRestore` 的成对删除）。
+const Map<String, String> _kSnapshotOwnerSidecar = <String, String>{
+  '$fushiDatabaseFileName.pre-restore.bak':
+      '$fushiDatabaseFileName.sync-preserve.json',
+  '$fushiDatabaseFileName.pre-merge.bak':
+      '$fushiDatabaseFileName.merge-preserve.json',
+  '$legacyHibikiDatabaseFileName.pre-restore.bak':
+      '$legacyHibikiDatabaseFileName.sync-preserve.json',
+  '$legacyHibikiDatabaseFileName.pre-merge.bak':
+      '$legacyHibikiDatabaseFileName.merge-preserve.json',
+};
+
+/// 层 (a)：[name] 命中快照白名单时返回它所属的主库名（[fushiDatabaseFileName] 或
+/// [legacyHibikiDatabaseFileName]），否则返回 null。存储页用它给聚合条目起
+/// 「实际命中的是哪个库名」的标题，形态判定因此只有这一份实现。
+String? databaseSnapshotMainFileName(final String name) {
+  for (final String db in const <String>[
     fushiDatabaseFileName,
     legacyHibikiDatabaseFileName,
   ]) {
     if (!name.startsWith(db)) continue;
-    final String rest = name.substring(db.length);
-    return rest.isNotEmpty &&
-        rest != '-wal' &&
-        rest != '-shm' &&
-        rest != '-journal';
+    // 旧降级救援把活库的 `-wal` / `-shm` 也整份复制过，所以词干允许带侧车后缀；
+    // 长的先试，否则 `hibiki.db-wal.bak.v20.1` 会先被裸库名截走。
+    for (final String stem in <String>['$db-wal', '$db-shm', db]) {
+      if (!name.startsWith(stem)) continue;
+      final String rest = name.substring(stem.length);
+      if (_kLegacyDowngradeBakSuffix.hasMatch(rest)) return db;
+      if (stem == db &&
+          (_kCorruptBakSuffix.hasMatch(rest) ||
+              _kImportBakSuffixes.contains(rest))) {
+        return db;
+      }
+      break;
+    }
+    return null;
   }
-  return false;
+  return null;
 }
 
-/// [supportRoot] **直接**子层里的主库快照残留文件（同步、不递归、不追 symlink；
-/// 存储页在扫描 isolate 里调用）。
+/// 层 (b)：返回**可能**持有 [name] 的恢复流程标记文件名；null = 没有任何流程会
+/// 持有它（形态上就是纯残留副本）。
+String? databaseSnapshotOwnerFileName(final String name) =>
+    _kSnapshotOwnerSidecar[name];
+
+/// 「这个文件现在可以列出/删除吗」的**唯一**对外判据：形态命中白名单，且没有活
+/// 的恢复流程持有它。[siblingFileNames] 是该文件所在目录的直接子项名集合
+/// （存储页在扫描 isolate 里已经有这份清单，无需二次 IO）。
+bool isDeletableDatabaseSnapshot(
+  final String name,
+  final Set<String> siblingFileNames,
+) {
+  if (!isDatabaseSnapshotFileName(name)) return false;
+  final String? owner = databaseSnapshotOwnerFileName(name);
+  return owner == null || !siblingFileNames.contains(owner);
+}
+
+/// [supportRoot] **直接**子层里可删的主库快照残留（同步、不递归、不追 symlink；
+/// 存储页在扫描 isolate 里调用）。所有权门控的兄弟名集合取自同一次 listSync，
+/// 所以「列出」与「删除」看到的是同一个目录快照。
 List<File> listDatabaseSnapshotFiles(final Directory supportRoot) {
   if (!supportRoot.existsSync()) return const <File>[];
+  final List<FileSystemEntity> children =
+      supportRoot.listSync(followLinks: false);
+  final Set<String> names = <String>{
+    for (final FileSystemEntity e in children) p.basename(e.path),
+  };
   return <File>[
-    for (final FileSystemEntity e in supportRoot.listSync(followLinks: false))
-      if (e is File && isDatabaseSnapshotFileName(p.basename(e.path))) e,
+    for (final FileSystemEntity e in children)
+      if (e is File && isDeletableDatabaseSnapshot(p.basename(e.path), names))
+        e,
   ];
 }
 
-/// 删除 [supportRoot] 下全部主库快照残留，返回已删路径。识别口径与
-/// [listDatabaseSnapshotFiles] 同源，故活库/侧车结构上不可能被删到。
-/// 单个文件删不掉（被占用等）照实抛——调用方按失败提示用户，不吞。
-Future<List<String>> deleteDatabaseSnapshotFiles(
+/// [deleteDatabaseSnapshotFiles] 的结果。删除是**逐文件容错**的：Windows 上
+/// Defender / 索引器临时占住某个副本是常态，一个失败就整批中止会让用户点了删除
+/// 却几十个文件一个没少。
+class DatabaseSnapshotDeletionResult {
+  const DatabaseSnapshotDeletionResult({
+    required this.deleted,
+    required this.failures,
+  });
+
+  /// 已删除的绝对路径。
+  final List<String> deleted;
+
+  /// 删不掉的：路径 → 失败原因（原样带给 UI 提示，不吞）。
+  final Map<String, String> failures;
+
+  bool get hasFailures => failures.isNotEmpty;
+}
+
+/// 删除 [supportRoot] 下全部可删的主库快照残留。识别口径与
+/// [listDatabaseSnapshotFiles] 同源（含所有权门控），故活库/侧车/待恢复副本结构
+/// 上不可能被删到。单个文件删不掉不中止整批：收集失败原因后继续删剩下的。
+Future<DatabaseSnapshotDeletionResult> deleteDatabaseSnapshotFiles(
     final Directory supportRoot) async {
   final List<String> deleted = <String>[];
+  final Map<String, String> failures = <String, String>{};
   for (final File f in listDatabaseSnapshotFiles(supportRoot)) {
-    await f.delete();
-    deleted.add(f.path);
+    try {
+      await f.delete();
+      deleted.add(f.path);
+    } on FileSystemException catch (e) {
+      failures[f.path] = e.osError?.message ?? e.message;
+    }
   }
-  return deleted;
+  return DatabaseSnapshotDeletionResult(deleted: deleted, failures: failures);
 }
 
 /// Fushi 终局清算 W1：`hibiki.db` → `fushi.db` 一次性文件改名，必须发生在任何
