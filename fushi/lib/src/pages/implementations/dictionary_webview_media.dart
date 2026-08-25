@@ -4,6 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/dictionary/dictionary_media_types.dart';
+import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show isValidFontData;
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -12,6 +17,124 @@ const List<String> dictionaryMediaCustomSchemes = <String>[
   'image',
   'dictmedia',
 ];
+
+/// in-app 查词弹窗给导入词典字体用的虚拟 URL 前缀。
+///
+/// 为什么字体不能再走 `data:` 内联：内联把字体塞进了「每次渲染都要重新注入的那段
+/// 脚本」。两个 CJK 字体（8.3 MB + 17 MB）base64 之后是三十多 MB，而 in-app 弹窗
+/// **每嵌套一层就新建一个 WebView**（新 JS realm，window.* 全空，静态段必须重发）
+/// ——于是「在弹窗里点词」每点一次就重新序列化、跨平台通道、重新解析这三十多 MB。
+/// 这正是用户报的「查词弹窗慢的逆天，特别是嵌套查词开始」。
+///
+/// 换成 URL 之后，字节由下面的拦截器按需供，而且**跨 WebView 共享 HTTP 缓存**
+/// （`data:` URL 每次都是一个全新资源，永远共享不了）。
+///
+/// host 沿用阅读器那套 `fushi.local`（与阅读器 WebView 各自拦截，互不干扰），
+/// 路径段是 URI 编码后的绝对路径。
+const String kDictionaryFontUrlPrefix = 'https://fushi.local/dictfonts/';
+
+/// in-app 查词弹窗能不能用 URL 投递字体，取决于该平台有没有**能带 CORS 头**的资源
+/// 拦截器。字体是强制 CORS 模式的子资源，而弹窗文档与 `fushi.local` 从来不同源
+/// （Android 是 `file://`，Windows 是 `initialData` 的 opaque origin），拿不到
+/// `Access-Control-Allow-Origin` 就会被静默拒绝——表现为「字体没生效」，比慢更糟。
+///
+///   - Android：`useShouldInterceptRequest: true` 让所有请求进 Dart，
+///     `WebResourceResponse` 支持 headers。✅（阅读器的 `fushi.local/fonts/` 已在
+///     生产用同一套机制跑了很久）
+///   - Windows：fork 的 `WebResourceRequested` 对 file/http/https 恒触发，并把
+///     `shouldInterceptRequest` 的响应连同 headers 灌回去。✅
+///   - iOS / macOS：**没有** `shouldInterceptRequest`，只有 `WKURLSchemeHandler`，
+///     而它构造的 `URLResponse` 带不了任何 header。❌ 这两个平台继续内联 `data:`
+///     URL——不是偷懒，是平台能力边界；要绕开只能把 popup 文档本身改成从自定义
+///     scheme 加载以取得同源，那是另一个量级的改动。
+bool get kInAppPopupFontUrlSupported =>
+    defaultTargetPlatform == TargetPlatform.android ||
+    defaultTargetPlatform == TargetPlatform.windows;
+
+/// 把通过白名单校验的绝对字体路径编成 [kDictionaryFontUrlPrefix] 下的 URL。
+String dictionaryFontUrl(String safePath) =>
+    '$kDictionaryFontUrlPrefix${Uri.encodeComponent(safePath)}';
+
+/// 服务 [kDictionaryFontUrlPrefix] 下的字体请求；不是字体 URL 时返回 null（交回
+/// 其它拦截分支）。
+///
+/// 三道校验照抄阅读器 `/fonts/` 那条已在生产跑了很久的路径，一道都不少：
+///   ① 路径必须落在 [allowedRoots]（`safeCustomFontPath` 做规范化 + 前缀比对，
+///      挡 `..` 逃逸）；
+///   ② 路径必须在**当前配置的字体白名单**里——光有目录白名单不够，
+///      那样任何能影响注入 CSS 的人都能读走该目录下的任意文件；
+///   ③ 字节必须通过字体魔数校验，避免把任意文件当字体吐出去。
+/// 另外必须带 `Access-Control-Allow-Origin`：字体是强制 CORS 模式的子资源，而弹窗
+/// 文档在 Android 是 `file://`、在 Windows 是 opaque origin，都与 `fushi.local`
+/// 不同源，没有这个头字体会被静默拒绝（表现为「字体没生效」而不是报错）。
+Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
+  Uri url, {
+  required Iterable<String> allowedRoots,
+  required Set<String> whitelistedPaths,
+}) async {
+  final String full = url.toString();
+  if (!full.startsWith(kDictionaryFontUrlPrefix)) return null;
+  final String raw = full.substring(kDictionaryFontUrlPrefix.length);
+  if (raw.isEmpty) return null;
+
+  String requested;
+  try {
+    requested = Uri.decodeComponent(raw);
+  } catch (e, stack) {
+    _logDictionaryMediaSkip('font url undecodable: $raw ($e)', stack);
+    return _fontDenied();
+  }
+
+  final String? safePath = ReaderFushiSource.safeCustomFontPath(
+    requested,
+    allowedRoots: allowedRoots,
+  );
+  if (safePath == null) {
+    _logDictionaryMediaSkip('font outside allowed directory: $requested');
+    return _fontDenied();
+  }
+  if (!whitelistedPaths.contains(p.canonicalize(safePath))) {
+    _logDictionaryMediaSkip('font not in configured list: $requested');
+    return _fontDenied();
+  }
+
+  try {
+    final File file = File(safePath);
+    if (!file.existsSync()) {
+      _logDictionaryMediaSkip('font not found: $safePath');
+      return _fontDenied();
+    }
+    final Uint8List data = await file.readAsBytes();
+    if (!isValidFontData(data)) {
+      _logDictionaryMediaSkip('font corrupted: $safePath (${data.length} B)');
+      return _fontDenied();
+    }
+    return WebResourceResponse(
+      contentType: fallbackMimeType(safePath),
+      statusCode: 200,
+      reasonPhrase: 'OK',
+      headers: const <String, String>{
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'max-age=3600',
+      },
+      data: data,
+    );
+  } catch (e, stack) {
+    _logDictionaryMediaSkip('font read failed: $safePath ($e)', stack);
+    return _fontDenied();
+  }
+}
+
+/// 拒绝一条字体请求：回 403 空体而不是 null。
+///
+/// 返回 null 会让请求**穿透**到真实网络（`fushi.local` 不存在，最终是一次 DNS 失败
+/// 的等待），而不是干脆地失败；给个明确的 403 让浏览器立刻回退到字体链的下一位。
+WebResourceResponse _fontDenied() => WebResourceResponse(
+      contentType: 'text/plain',
+      statusCode: 403,
+      reasonPhrase: 'Forbidden',
+      data: Uint8List(0),
+    );
 
 /// 制卡前把 JS 负载里的词典媒体（gaiji 外字等）字节落盘到 Anki 媒体缓存目录，
 /// 供 [BaseAnkiRepository] 的 storeMediaFile 读取嵌进卡片。

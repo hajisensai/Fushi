@@ -12,7 +12,9 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
@@ -414,6 +416,30 @@ class DictionaryPopupWebViewState
   /// 串做全串比较，现在只存 int（builder 侧按输入 memo，同内容 ⇒ 同 revision）。
   /// 页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
   int? _lastSentStaticRevision;
+
+  /// 字体 URL 拦截器的目录白名单：只有导入字体落盘的那一个目录。
+  ///
+  /// 与注入侧 [_dictionaryFontStyleJsMemo] 用的白名单同源——两边不一致的话，会出现
+  /// 「CSS 里引了某个字体，拦截器却拒绝供给」的哑失败（字体静默不生效）。
+  List<String> _dictionaryFontAllowedRoots() {
+    final appModel = ref.read(appProvider);
+    return <String>[p.join(appModel.appDirectory.path, 'custom_fonts')];
+  }
+
+  /// 字体 URL 拦截器的**条目**白名单：当前真正配置在词典字体里的那几个文件。
+  ///
+  /// 光有目录白名单不够。目录里可能躺着历史导入的一堆字体文件，而注入的 CSS 是可被
+  /// 内容影响的；只放行「此刻确实配置了的路径」，把可读集合收敛到最小。
+  Set<String> _configuredDictionaryFontPaths() {
+    final List<Map<String, dynamic>> fonts =
+        ReaderFushiSource.readerSettings?.dictionaryFonts ??
+            const <Map<String, dynamic>>[];
+    return fonts
+        .map((Map<String, dynamic> e) => e['path'] as String?)
+        .whereType<String>()
+        .map(p.canonicalize)
+        .toSet();
+  }
 
   /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__fushiResetPopupScroll` 钩子 +
   /// 句子上下文 i18n 文案 + `sentenceContextPreviewEnabled`）的键。该块只随静态段
@@ -1058,6 +1084,10 @@ JSON.stringify((function(){
     final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
       appModel: appModel,
       theme: Theme.of(context),
+      // 导入字体以 URL 引用下发，字节由本 WebView 的 shouldInterceptRequest 供
+      // （见 dictionaryFontWebResourceResponse）。仅在宿主真有能带 CORS 头的拦截器
+      // 时启用——否则字体会被静默拒绝，那比慢更糟。见 kInAppPopupFontUrlSupported。
+      fontUrlBuilder: kInAppPopupFontUrlSupported ? dictionaryFontUrl : null,
       options: PopupSettingsOptions(
         // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
         mobileExternal: widget.transparentDocumentBackground,
@@ -1568,6 +1598,15 @@ JSON.stringify((function(){
         disableContextMenu: isWindowsPlatform,
       ),
       shouldInterceptRequest: (controller, request) async {
+        // 字体先于词典媒体判：两者 URL 形状不重叠，字体分支不命中时返回 null，
+        // 原有的 image:// / dictmedia:// 路径逐字不变。
+        final WebResourceResponse? font =
+            await dictionaryFontWebResourceResponse(
+          request.url,
+          allowedRoots: _dictionaryFontAllowedRoots(),
+          whitelistedPaths: _configuredDictionaryFontPaths(),
+        );
+        if (font != null) return font;
         return dictionaryMediaWebResourceResponse(request.url);
       },
       onWebViewCreated: (controller) {
