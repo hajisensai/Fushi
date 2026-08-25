@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1739 条。点号进各自文件。
+> 共 1740 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1864](bugs/BUG-1864-video-fullscreen-space-pause-panel.md) | ✅ | ✅ | 视频全屏路由漏掉页级裸空格覆盖：焦点在字幕列表面板时按空格不暂停 |
 | [BUG-1862](bugs/BUG-1862-video-esc-skips-overlay-dismiss.md) | ✅ | ✅ | 视频页 Esc/返回键在侧栏等前台浮层打开时直接退出页面，未逐级关闭 |
 | [BUG-1860](bugs/BUG-1860-gal-overlay-scrollbar-not-draggable.md) | ✅ | ✅ | gal 查词浮窗滚动条只是指示条：按住拖 thumb 变成拖窗 |
 | [BUG-1859](bugs/BUG-1859-gal-overlay-passthrough-wheel-gate.md) | ✅ | ✅ | gal 查词浮窗穿透态滚轮不滚：ScrollBy 的 pass_through_ 门是 WS_EX_TRANSPARENT 时代遗物 |
