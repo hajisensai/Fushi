@@ -3,7 +3,10 @@
 - **真实性**：✅ 真 bug（本机生产库实测复现，三类失败全部拿到 ffmpeg 原始 stderr 与逐条耗时）
 - **[x] ① 已修复** — `501ccabefd` 见下「修复」
 - **[x] ② 已加自动化测试** — `501ccabefd` · `fushi/test/media/video/video_cover_source_filter_test.dart`（新增 9 例，4 个变异实测全部抓住）
-- **备注**：调查中另量到一个**独立**的性能问题（C/OK 类抽帧 18–75s/条），未在本轮修，见文末「相邻发现」。
+- **备注**：本轮只让**失败变安静**，没让封面补上来。**「封面始终补不上」的真根因是另一件事**：
+  `-ss 10` 对 BDMV 的 m2ts 要 18–75s/条，一轮 34 条要 339s，而 `_maybeBackfillCovers` 里的
+  `if (!mounted) return;` 让用户切走页面就中断——本机那 4 条「能成功」的至今 `cover_path` 仍为空，
+  说明它们从来没轮到过。**需单独立项**，见文末「相邻发现」。
 
 ### 复现与证据（本机生产库 `D:\APP\HIBIKI_date\support\fushi.db`，随包 `D:\APP\Hibiki\ffmpeg.exe` n7.1.5）
 
@@ -49,24 +52,49 @@ B/C/OK 的 22 条**全部**为 False（零假阳性零假阴性）。对照样�
 
 ### 修复
 
-- ① 回填路径的抽帧失败降级为诊断日志：`extractVideoFrameViaFfmpeg` / `extractVideoCover` 加
-  `diagnosticOnly`（复用既有机制 `desktop_audio_clipper.dart:373`），`_maybeBackfillCovers` 传 `true`。
-  与 `extractEmbeddedVideoCoverViaFfmpeg` 的既有判据对齐。**`ProcessException`（ffmpeg 根本起不来）
-  仍进错误日志**——那是真错误，不受本开关影响；用户主动触发的导入/换封面路径保持默认 `false`。
+- ① 回填路径的 ffmpeg 失败降级为诊断：`extractVideoFrameViaFfmpeg` /
+  `extractEmbeddedVideoCoverViaFfmpeg` / `extractVideoCover` 加 `diagnosticOnly`（复用既有机制
+  `desktop_audio_clipper.dart` 的 `_logFfmpegSummary`），`_maybeBackfillCovers` 传 `true`。
+  **两段都要降**：只降抽帧那一段的话，ffmpeg 缺失时内嵌封面那一段仍会按错误级刷满 34 条。
+  降级的确切含义是**不计入错误计数、不落盘，转入日志页的「诊断/取证」分节**——证据仍随复制/分享/
+  上传带走，不是删证据。**`ProcessException`（ffmpeg 根本起不来）仍进错误日志**；用户主动触发的
+  导入/换封面路径保持默认 `false`。
 - ② 新增 `isHollowMediaHeaderBytes` / `hasHollowMediaHeader`（`video_cover_extractor.dart`）。
-  两处接线：抽取器层 `_extractVideoCoverUnlocked` 早退（与 BUG-1564 的清单拒收同层收口，所有调用方
-  一并免疫）+ page 层 `_maybeBackfillCovers` 在**进闸门之前**判掉并记账 `reason: 'hollow-header'`。
-  判据安全性：每种被支持的容器头部都有魔数（TS `0x47` / MP4 `ftyp` / MKV `1A45DFA3` / RIFF / FLV），
-  合法媒体文件头部不可能全零，无误伤面。读失败（权限/掉盘/竞态删除）返回 true = 按「此刻不可用」跳过。
+  接线**只有一处**：抽取器层 `_extractVideoCoverUnlocked` 早退（与 BUG-1564 的清单拒收同层收口，
+  所有调用方——回填 / 导入 / 拆集 / host 服务——一并免疫）。判据安全性：每种被支持的容器头部都有
+  魔数（TS `0x47` / MP4 `ftyp` / MKV `1A45DFA3` / RIFF / FLV），合法媒体文件头部不可能全零，无误伤面。
+- **读不出来 != 空壳**：打开/读取失败（权限、掉盘、竞态删除、传进来的根本不是普通文件）返回
+  `false` 并记一条诊断，**不是** `true`。返回 true 会让所有调用方静默拿到 null——一条日志都没有，
+  用户主动触发的导入/换封面也查不出「为什么没有封面」。返回 false 是把这类输入交回下游 ffmpeg，
+  让它走原本那条可诊断路径（严重性由各调用方的 `diagnosticOnly` 决定）。
 - ledger 持久化**不做**：失败重烧的时间大头不在 A 类（见上表），持久化解决不了它，反而要付 schema
   迁移 + 陈旧账本的代价。保持 BUG-1564 的原取舍。
 
+**审查采纳后删掉的两样东西（如实记账）**：
+
+- page 层 `_maybeBackfillCovers` 里的**空洞预判**已删。它与抽取器层是同一事实的两处真相源，
+  同一个文件会被读两次 64KB。删掉后空洞候选照旧被抽取器层判掉（确定性 null，不起 ffmpeg 子进程），
+  只是改由既有的 `extract-failed` 记账收尾。
+- 随之删掉的还有 `reason: 'hollow-header'`。原先声称的收益「把『还没下完』与『这文件坏了』分成两个
+  可诊断的原因」**当前不可观测**：`CoverBackfillLedger.failureReason()` 全仓零消费者（既不进日志、
+  也不进 UI），这个区分只活在内存里给不存在的读者看。等真有消费端时再加，不先欠一笔。
+
 ### 测试
 
-`fushi/test/media/video/video_cover_source_filter_test.dart` 新增 9 例：纯函数判据（空/全零/尾字节非零/
-四种真容器魔数）、真文件 IO（空洞预分配 / 192 字节步长的真 m2ts 布局 / 内容只在探测窗之后 / 短于探测窗 /
-零长 / 不存在）、抽取器层拒收（无 path_provider mock、无 ffmpeg，靠早退才不炸 MissingPluginException）、
-两条视频页接线守卫（空洞判据必须在闸门之前 + 回填必须 `diagnosticOnly: true`）。
+`fushi/test/media/video/video_cover_source_filter_test.dart`：
+
+- 纯函数判据：空 / 全零 / 只有尾字节非零 / 四种真容器魔数；
+- 真文件 IO：空洞预分配 / 192 字节步长的真 m2ts 布局 / 内容只在探测窗之后 / 短于探测窗 / 零长 /
+  单字节 `0x00`；**读失败契约**——不存在的路径与目录都返回 `false`，各留一条
+  `source == 'hasHollowMediaHeader'` 的诊断，且用户可见错误计数不变；
+- 抽取器层**双向**：空洞文件返回 null（无 path_provider mock、无 ffmpeg，靠早退才不炸
+  MissingPluginException）+ **正向对照**——真容器头必须*穿过*拒收继续走到
+  `AppPaths.videoCoversDirectory()` 并抛。没有这条正向对照，把 `_extractVideoCoverUnlocked`
+  改成无条件 `return null` 也照样绿；
+- 抽取器接线守卫（源码扫描）：空洞拒收是唯一一道门且在 AppPaths/ffmpeg 之前 / 两段 ffmpeg 都吃到
+  `diagnosticOnly` / 读失败分支必须是「记诊断 + return false」；
+- 视频页接线守卫：回填必须 `diagnosticOnly: true`，且 page 层**不得**再出现 `hasHollowMediaHeader`
+  （判据唯一真相源）。
 
 变异实测（二进制读写、唯一锚点、sha256 校验回滚，4/4 全部抓住）：
 真删除 page 层判据整块 → 顺序守卫红；删 `diagnosticOnly: true` → 分级守卫红；
