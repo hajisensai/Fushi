@@ -1411,41 +1411,83 @@ try {
 // 隐藏字幕就等于同时废掉制卡，那是把功能做成 bug。Netflix 批量录制路径 (fushiRunNetflixBatch)
 // 用的也是 visibility:hidden，此处与之同策。
 //
-// 所有权：本模块是 subtitleHidden 的**唯一**持有者（读 storage、注入 style、翻转、toast）。
+// 所有权：本模块是**字幕遮蔽**的唯一持有者（读 storage、注入 style、翻转、toast）。
 // subtitle-panel.js 只是把快捷键转发过来——因为面板整体受 netflixSubtitlePanel 门控且默认关，
 // 状态若放在面板里，用户没开面板时隐藏字幕就会失效。
+//
+// 遮蔽有**两个互不相干的来源**，故状态是「原因集合」而不是一个 bool：
+//   'manual'  = 用户主动隐藏字幕（Shift+H / options 开关，storage.subtitleHidden）→ 站点原生
+//               字幕和扩展自绘覆盖层**一起**藏（用户就是想什么都别看，先听后看）。
+//   'replace' = 「用 Fushi 字幕替代站点原生字幕」生效中（subtitle-panel.js 判定并推过来）→
+//               只藏站点原生字幕，**必须保留**自绘覆盖层，否则替代模式等于把字幕全关了。
+// 两者同时成立时取并集（manual 更强，全藏）。用 bool + 特例分支会立刻长出
+// 「谁把 style 摘掉了」的竞态，原因集合让「谁要求藏什么」变成可直接读的数据。
 const FUSHI_HIDE_SUBS_ID = 'fushi-hide-subs';
-let fushiSubtitleHidden = false;
+let fushiSubtitleHidden = false;                       // 'manual' 原因的镜像（storage 同步用）
+const fushiSubtitleHideReasons = new Set();
 
-function fushiSubtitleHideSelectors() {
+// 站点原生字幕渲染层。制卡取词（fushiSubtitleTextNow / fushiSubtitleCaretAtPoint）要读这些
+// 节点的 textContent 和 rect，所以只能 visibility 不能 display:none（见上）。
+function fushiNativeSubtitleSelectors() {
   return [
     '.player-timedtext',             // Netflix
     '.ytp-caption-window-container', // YouTube
     '.captions-text',                // 通用（部分播放器）
     '.libassjs-canvas-parent',       // ASS/SSA 渲染层
-    '#fushi-subtitle-overlay',      // 扩展自绘覆盖层
   ];
 }
+// 扩展自绘覆盖层（subtitle-panel.js 的 #fushi-subtitle-overlay）。
+function fushiOwnSubtitleSelectors() {
+  return ['#fushi-subtitle-overlay'];
+}
+// 兼容旧调用点/测试：默认（manual 语义）= 原生 + 自绘全藏。
+function fushiSubtitleHideSelectors() {
+  return fushiNativeSubtitleSelectors().concat(fushiOwnSubtitleSelectors());
+}
 
-function fushiApplySubtitleHiding(hide) {
+// 按当前原因集合重算注入样式。样式内容随原因变化，所以「已存在就 return」是错的——
+// manual→replace 的降级必须真的把自绘覆盖层从选择器里摘掉，否则替代模式下一片空白。
+function fushiApplySubtitleHiding() {
   const existing = document.getElementById(FUSHI_HIDE_SUBS_ID);
-  if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
-  if (existing) return;
-  const style = document.createElement('style');
-  style.id = FUSHI_HIDE_SUBS_ID;
+  if (!fushiSubtitleHideReasons.size) {
+    if (existing) { try { existing.remove(); } catch (_) {} }
+    return;
+  }
+  const manual = fushiSubtitleHideReasons.has('manual');
+  const selectors = manual ? fushiSubtitleHideSelectors() : fushiNativeSubtitleSelectors();
   // ::cue（原生 <track> 字幕）必须单独成一条规则：它只接受受限属性集，且与普通选择器
   // 并列时若被浏览器判为无效会**整条规则**失效，连带把上面的站点字幕也藏不掉。
-  style.textContent =
-      fushiSubtitleHideSelectors().join(',') + '{visibility:hidden!important}' +
+  const css = selectors.join(',') + '{visibility:hidden!important}' +
       'video::cue{visibility:hidden!important}';
-  try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
+  const style = existing || document.createElement('style');
+  style.id = FUSHI_HIDE_SUBS_ID;
+  if (style.textContent !== css) style.textContent = css;
+  if (!existing) {
+    try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
+  }
 }
+
+// 置位/清除一个遮蔽原因。幂等；变化才重算样式。
+function fushiSetSubtitleHideReason(reason, on) {
+  const had = fushiSubtitleHideReasons.has(reason);
+  if (!!on === had) return;
+  if (on) fushiSubtitleHideReasons.add(reason);
+  else fushiSubtitleHideReasons.delete(reason);
+  fushiApplySubtitleHiding();
+}
+
+// 「用 Fushi 字幕替代站点原生字幕」的执行端。判定在 subtitle-panel.js（它才知道当前活动轨
+// 是不是真的整集轨、有没有 cue）；这里只负责按结果藏/放站点原生字幕。判定方一旦发现
+// 「整轨没到 / 用户关了替代 / 切了视频」就会推 false，绝不会让用户落到「原生藏了、自绘也没有」。
+window.fushiSetNativeSubtitleReplaced = function (on) {
+  fushiSetSubtitleHideReason('replace', on === true);
+};
 
 // 快捷键执行端（subtitle-panel.js 的 fushiSubtitleShortcut 转发过来）。翻转 → 立即生效 →
 // 落 storage（options 页的开关与之双向同步）→ toast 反馈。返回 true 表示已接管这次按键。
 window.fushiToggleSubtitleHiding = function () {
   fushiSubtitleHidden = !fushiSubtitleHidden;
-  fushiApplySubtitleHiding(fushiSubtitleHidden);
+  fushiSetSubtitleHideReason('manual', fushiSubtitleHidden);
   try { chrome.storage.local.set({ subtitleHidden: fushiSubtitleHidden }); } catch (_) {}
   try {
     if (typeof window.fushiToast === 'function') {
@@ -1459,7 +1501,7 @@ function fushiReadSubtitleHidden() {
   try {
     chrome.storage.local.get(['subtitleHidden'], (r) => {
       fushiSubtitleHidden = !!(r && r.subtitleHidden === true);
-      fushiApplySubtitleHiding(fushiSubtitleHidden);
+      fushiSetSubtitleHideReason('manual', fushiSubtitleHidden);
     });
   } catch (_) {}
 }
@@ -1468,7 +1510,7 @@ try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.subtitleHidden) {
       fushiSubtitleHidden = changes.subtitleHidden.newValue === true;
-      fushiApplySubtitleHiding(fushiSubtitleHidden);
+      fushiSetSubtitleHideReason('manual', fushiSubtitleHidden);
     }
   });
 } catch (_) {}
@@ -2231,11 +2273,11 @@ function fushiComputeResizedSize(start, delta, zoom, bounds) {
   return { width: width, height: height };
 }
 
-// 基准最大宽/高的允许范围（逻辑像素）。与 app 设置页两滑杆 + Dart 侧
-// effective_lookup_size.dart 的 kLookupPopupMin/MaxWidth/Height 单一同源——拖拽与滑杆写同一
-// 真值，故边界必须一致，否则拖拽能写出滑杆写不出的越界值（app 侧仍会再 clamp 一次兜底）。
-const FUSHI_POPUP_MIN_WIDTH = 250;
-const FUSHI_POPUP_MIN_HEIGHT = 200;
+// 基准最大宽/高的允许范围（逻辑像素）定义在 popup-size.js（FUSHI_POPUP_MIN_WIDTH /
+// FUSHI_POPUP_MIN_HEIGHT，manifest 里排在本文件之前）。与 app 设置页两滑杆 + Dart 侧
+// effective_lookup_size.dart 的 kLookupPopupMin/MaxWidth/Height 单一同源——拖拽把手、
+// 扩展「查词框大小」覆盖、滑杆写的是同一个真值，故边界必须一致，否则某条路径能写出别的
+// 路径写不出的越界值（app 侧仍会再 clamp 一次兜底）。这里不再复制这两个数字。
 const FUSHI_RESIZE_GRIP_SIZE = 18;
 
 // 把拖拽把手移到弹窗当前渲染矩形的右下角（视口坐标；host 是 fixed，坐标即视口系）。
@@ -2388,6 +2430,20 @@ function fushiRenderEntries(popupJson) {
   return true;
 }
 
+// 把 app 下发的弹窗尺寸镜像进 storage，供扩展设置页回显「当前多大」（它拿不到查词响应）。
+// 只写变化值（storage.set 会触发 onChanged，无脑写会让设置页每次查词都闪一下）。
+let fushiMirroredPopupSize = null;
+function fushiMirrorPopupSize(width, height) {
+  const w = Math.round(width);
+  const h = Math.round(height);
+  if (fushiMirroredPopupSize &&
+      fushiMirroredPopupSize.width === w && fushiMirroredPopupSize.height === h) {
+    return;
+  }
+  fushiMirroredPopupSize = { width: w, height: h };
+  try { chrome.storage.local.set({ popupSizeFromApp: fushiMirroredPopupSize }); } catch (_) {}
+}
+
 // 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
 // 尺寸盒**（width/maxWidth/maxHeight/zoom）——嵌套查词是原地换内容，弹窗尺寸以及 place() 按
 // 「不遮被查词」夹出来的 maxHeight 必须原样保持；重写尺寸盒会把那次夹取悄悄丢掉。
@@ -2428,15 +2484,21 @@ function fushiApplyTheme(c, theme, applyBox) {
   }
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
-    fushiHost.style.width = theme['--fushi-popup-max-width'] || '400px';
+    // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经
+    // POST /api/extension/popup-size）。视口夹取交给下面 fushiPlacePopup 的既有逻辑
+    // （它还要额外满足「不遮住被查词」），这里只解析出基准尺度的宽/高/zoom，不传 viewport。
+    const box = fushiResolvePopupBox(theme, null);
+    // 设置页要显示「当前多大」，但它读不到查词响应。这里把下发值镜像进 storage 供其回显。
+    // 只是镜像，不参与任何决策——真相源仍是 app。
+    fushiMirrorPopupSize(box.width, box.maxHeight);
+    fushiHost.style.width = box.width + 'px';
     fushiHost.style.maxWidth = 'calc(100vw - 16px)';
-    // BUG-1726：记住 theme 原始 maxHeight（CSS 串 + px 数）。落点/复算写 maxHeight 时把
+    // BUG-1726：记住原始 maxHeight（CSS 串 + px 数）。落点/复算写 maxHeight 时把
     // 「所选一侧可用空间」与它取 min 写回——夹取只缩不放，不放大用户配置的弹窗上限。
-    fushiHostBaseMaxHeight =
-        'min(' + (theme['--fushi-popup-max-height'] || '360px') + ', 80vh)';
-    fushiThemeMaxHeightPx = parseFloat(theme['--fushi-popup-max-height']) || 360;
+    fushiHostBaseMaxHeight = 'min(' + box.maxHeight + 'px, 80vh)';
+    fushiThemeMaxHeightPx = box.maxHeight;
     fushiHost.style.maxHeight = fushiHostBaseMaxHeight;
-    fushiHost.style.zoom = theme['--fushi-popup-zoom'] || '1';
+    fushiHost.style.zoom = String(box.zoom);
   }
 }
 

@@ -168,9 +168,10 @@
       lookupPaneEl.style.left = '0px';
       lookupPaneEl.style.top = '0px';
     }
-    if (!lookupUserResized) {
-      lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
-    }
+    // lookupBaseMaxHeight 已由 applyLookupBox 按「视口 80% ÷ zoom」折算成基准尺度 px，
+    // 这里不能再套一层 `min(..., 80vh)`：vh 不随 zoom 缩放，zoom>1 时那个上限会被放大到
+    // 视口之外，等于没夹（正是弹窗纵向超出侧边栏的原因）。
+    if (!lookupUserResized) lookupPaneEl.style.maxHeight = lookupBaseMaxHeight;
     requestAnimationFrame(function () {
       if (requestId !== lookupRequestId || lookupPaneEl.hidden) return;
       var gap = 4;
@@ -221,13 +222,27 @@
     window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
-    if (!lookupUserResized) {
-      lookupPaneEl.style.width = theme['--fushi-popup-max-width'] || '400px';
-      lookupBaseMaxHeight = theme['--fushi-popup-max-height'] || '360px';
-      lookupPaneEl.style.maxHeight = 'min(' + lookupBaseMaxHeight + ', 80vh)';
-    }
+    lookupThemeForBox = theme;
+    applyLookupBox();
+  }
+
+  // 侧边栏弹窗的尺寸盒。与页面弹窗（content.js fushiApplyTheme）同一个决策器，额外把
+  // **本文档视口**交给它做夹取——侧边栏可以窄到 300px，而主题宽度是按 app 窗口定的
+  // （400~600px），且这些 px 长度写在 CSS `zoom` 之下：zoom=1.4 时 400px 渲染成 560px，
+  // 连 `max-width: calc(100vw - 16px)` 这个上限本身也一起被 zoom 放大，根本拦不住 →
+  // 弹窗横向溢出，被 `.lookup-pane{overflow-x:hidden}` 硬切掉右半边（用户看到「查词框被切了」）。
+  // fushiResolvePopupBox 把上限折回基准尺度；压到最窄可读宽度仍放不下时改压 zoom，
+  // 让整窗等比缩小而不是切内容。
+  var lookupThemeForBox = null;
+  function applyLookupBox() {
+    if (lookupUserResized) return; // 用户手动拖过尺寸：本会话内不再自动改写
+    var box = fushiResolvePopupBox(
+      lookupThemeForBox, { width: window.innerWidth, height: window.innerHeight });
+    lookupPaneEl.style.width = box.width + 'px';
+    lookupBaseMaxHeight = box.maxHeight + 'px';
+    lookupPaneEl.style.maxHeight = lookupBaseMaxHeight;
     lookupPaneEl.style.maxWidth = 'calc(100vw - 16px)';
-    lookupPaneEl.style.zoom = theme['--fushi-popup-zoom'] || '1';
+    lookupPaneEl.style.zoom = String(box.zoom);
   }
 
   function renderLookupData(value, data, cacheHit) {
@@ -1019,6 +1034,14 @@
       lookupPaneEl.addEventListener('wheel', window.__fushiPopupWheelListener, { passive: false });
     }
   }, { once: true });
+
+  // 侧边栏宽度是用户随时可拖的：变窄后原尺寸盒必然溢出被裁。视口一变就按新可用空间
+  // 重算尺寸盒，并对开着的弹窗重跑落点（positionLookup 内部自带 hidden 守卫）。
+  window.addEventListener('resize', function () {
+    applyLookupBox();
+    if (!lookupPaneEl.hidden) positionLookup();
+  });
+
 
   try {
     chrome.tabs.onActivated.addListener(function () { refresh(true); });

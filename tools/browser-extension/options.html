@@ -10,6 +10,45 @@
   <div class="shell">
     <div class="layout">
       <main class="main-column">
+        <section class="section" aria-labelledby="popup-size-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">查词弹窗</p>
+              <h2 id="popup-size-heading">查词框大小</h2>
+            </div>
+            <span class="section-note">下次查词生效</span>
+          </div>
+
+          <div class="setting-list">
+            <label class="setting-row" for="popupSizeWidth">
+              <span class="setting-copy">
+                <strong>最大宽度</strong>
+                <small>250–2000 像素。改这里等于在 Fushi 设置页调「浏览器扩展独立尺寸」的宽度滑杆
+                  —— 同一个值，改哪边都一样，不会互相盖。</small>
+              </span>
+              <input class="size-input" id="popupSizeWidth" type="number" min="250" max="2000" step="10"
+                     inputmode="numeric" placeholder="查词后读取">
+            </label>
+            <label class="setting-row" for="popupSizeHeight">
+              <span class="setting-copy">
+                <strong>最大高度</strong>
+                <small>200–1600 像素。超出即在框内滚动。首次填写会自动打开 Fushi 的
+                  「浏览器扩展独立尺寸」，此后浏览器里的查词框不再跟随 app 内弹窗尺寸。</small>
+              </span>
+              <input class="size-input" id="popupSizeHeight" type="number" min="200" max="1600" step="10"
+                     inputmode="numeric" placeholder="查词后读取">
+            </label>
+            <div class="setting-row">
+              <span class="setting-copy">
+                <strong>侧边栏空间不足时</strong>
+                <small>侧边栏比查词框窄时自动按可用宽度收敛，必要时整窗等比缩小，不再把右半边裁掉。
+                  此行为恒开，不占设置。想让浏览器查词框重新跟随 app 内弹窗，去 Fushi 设置页关掉
+                  「浏览器扩展独立尺寸」。</small>
+              </span>
+            </div>
+          </div>
+        </section>
+
         <section class="section" aria-labelledby="subtitle-heading">
           <div class="section-heading">
             <div>
@@ -47,6 +86,15 @@
                 <small>播放时自动把当前字幕滚到列表中部。</small>
               </span>
               <span class="switch"><input id="subtitleAutoScroll" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleReplaceNative">
+              <span class="setting-copy">
+                <strong>用 Fushi 字幕替代站点原生字幕</strong>
+                <small>预先取回整条字幕轨，按整句自绘在视频上，并藏掉站点原生字幕。专治 YouTube
+                  自动生成字幕——它是一个词一个词往外蹦的，划词和制卡永远只能拿到半句。整轨没取到时
+                  自动保持原生字幕可见。</small>
+              </span>
+              <span class="switch"><input id="subtitleReplaceNative" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleOverlayAllTracks">
               <span class="setting-copy">
@@ -272,6 +320,7 @@
 
   <div class="save-toast" id="status" role="status" aria-live="polite"></div>
   <script src="fushi-defaults.js"></script>
+  <script src="popup-size.js"></script>
   <script src="connection-diagnostics.js"></script>
   <script src="self-update.js"></script>
   <script src="options.js"></script>

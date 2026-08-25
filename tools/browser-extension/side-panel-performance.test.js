@@ -53,7 +53,16 @@ test('lookup pane is user-resizable and persists via the popupSize channel', () 
   assert.match(css, /\.lookup-pane \{[^}]*resize: both/);
   assert.match(SIDE_PANEL, /lookupUserResized = true;[\s\S]*?type: 'popupSize'/);
   // 用户拖过后主题下发不得再覆盖宽高。
-  assert.match(SIDE_PANEL, /if \(!lookupUserResized\) \{[\s\S]*?--fushi-popup-max-width/);
+  assert.match(SIDE_PANEL, /if \(lookupUserResized\) return;/);
+  // 尺寸盒必须经 popup-size.js 的决策器并带上**本文档视口**：直接写 theme px 的老写法
+  // 在 CSS zoom 之下必然溢出窄侧边栏（右半边被 overflow-x 切掉）。
+  assert.match(
+    SIDE_PANEL,
+    /fushiResolvePopupBox\(\s*lookupThemeForBox, \{ width: window\.innerWidth, height: window\.innerHeight \}\)/,
+  );
+  assert.doesNotMatch(SIDE_PANEL, /style\.width = theme\[/);
+  // 侧边栏宽度可拖：视口一变就重算尺寸盒，否则变窄后仍按旧宽渲染 = 又被切。
+  assert.match(SIDE_PANEL, /addEventListener\('resize', function \(\) \{\s*applyLookupBox\(\)/);
 });
 
 test('side-panel lookup reuses the Shift popup host model and parsed results', () => {

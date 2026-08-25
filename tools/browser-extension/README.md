@@ -25,7 +25,8 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 中文文案（纯函数） |
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
-| `options.html/css/js` | options | 设置页：连接、字幕偏好、逐动作视频快捷键、版本与更新卡片 |
+| `options.html/css/js` | options | 设置页：连接、字幕偏好、查词框大小、逐动作视频快捷键、版本与更新卡片 |
+| `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
 
@@ -77,6 +78,28 @@ app 升级
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
 服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
 
+## 查词框大小（单一真相源 + 窄侧边栏自动收敛）
+
+**尺寸真相源只有一个**：app 的 `extension_popup_max_width/height` 偏好（app 设置页「浏览器
+扩展独立尺寸」开关 + 两个滑杆），经查词响应的 theme 变量 `--fushi-popup-max-width/height/zoom`
+下发。**写入口也只有一条**：`POST /api/extension/popup-size {maxWidth,maxHeight}`——
+① 页面弹窗右下角拖拽把手 ② 侧边栏弹窗拖拽把手 ③ 扩展设置页「查词框大小」，三处都发
+background.js 的 `popupSize` 消息走它（app 侧统一 clamp 250-2000/200-1600 + 「拖即解锁」
+`extensionPopupIndependentSize=true` + 只写扩展键）。扩展本地**不存**任何尺寸值；设置页
+回显的是 content.js 每次查词镜像下来的 `popupSizeFromApp`（只读，不参与决策）。
+边界常量 `FUSHI_POPUP_MIN/MAX_WIDTH/HEIGHT` 与 Dart 侧 `kLookupPopupMin/MaxWidth/Height`
+逐个对齐，四条写入路径写同一个真值。
+
+**窄侧边栏自动收敛**（`popup-size.js` 的 `fushiResolvePopupBox(theme, viewport)`，页面弹窗与
+侧边栏弹窗共用）：侧边栏可以窄到 300px，而 theme 宽度是按 app 窗口定的，且这些 px 长度写在
+CSS `zoom` **之下**——`zoom=1.4` 时 400px 渲染成 560px，连 `max-width: calc(100vw - 16px)`
+这个上限本身也一起被放大，根本拦不住，右半边被 `overflow-x` 切掉。决策器把上限**折回基准
+尺度**（渲染尺寸 = 基准 × zoom，故视口上限要 ÷ zoom）；压到最小可用宽度仍放不下时改压
+zoom，让整窗等比缩小而不是切内容。侧边栏宽度可拖，`resize` 即重算。
+
+行为测试 `popup-size.test.js`（含 zoom 折算的根因回归 + 「不得出现第二真相源」守卫）+
+源码守卫在 `side-panel-performance.test.js`，均已变异实测。
+
 ## 字幕轨数据流（原生 Side Panel 零站点特例）
 
 所有来源写同一个 store：`window.fushiEpisodeCues['${videoKey}|${lang}'] = [{startMs,endMs,text}]`，
@@ -86,6 +109,20 @@ YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitl
 播放器运行态完整 captionTracks（youtube-bridge；本地服务端仅作超时兜底）④ 原生
 `video.textTracks` 收割 ⑤ DOM 字幕采样 live 轨兜底 ⑥ 用户外挂文件（`外挂:` 前缀轨）。
 时轴偏移是**读取侧**的（store 永远存原始 cue），任意轨可偏移，会话内记忆。
+
+### 用 Fushi 字幕替代站点原生字幕（`subtitleReplaceNative`，默认关）
+
+YouTube 的自动生成（ASR）字幕在 DOM 里是**逐词滚动**渲染的——一句话要好几秒才凑齐，
+`⑤ DOM 采样 live 轨` 采到的因此永远是半句，划词和制卡都跟着残缺。而 `③ youtube-bridge`
+早就把整集 srv3 轨（`<p>` 段 = 整句）预取进 store 了，只是渲染侧默认不用它（站点自带轨
+不叠加，免得双份字幕）。打开这个开关后：当前活动轨是整集轨时，用自绘覆盖层显示整句，
+并让 `content.js` 藏掉站点原生字幕层。
+
+判定在 `subtitle-panel.js` 的 `replaceNativeEffective()`，四个条件缺一不可（面板启用 /
+覆盖层启用 / 活动轨非 `live` / 该轨真有 cue）——任一不成立立刻放回原生字幕，绝不出现
+「原生藏了、自绘也没有」。执行在 `content.js`：遮蔽状态是**原因集合**而非 bool，
+`'manual'`（Shift+H / 设置开关）藏原生 + 自绘，`'replace'` 只藏原生。
+行为测试 `subtitle-replace-native.test.js`（9 条不变式已变异实测）。
 
 ## 站点适配状态
 
