@@ -34,6 +34,9 @@ permissions:
 env:
   # 保留最近几个版本。每个正式版约 1.3GB，R2 免费额度 10GB。
   KEEP_RELEASES: '2'
+  # R2 免费层是 10 GB-month，但平台没有硬消费上限。专用桶只允许计划到 8 GB，
+  # 留 2 GB 给计量误差/元数据；预计超限整次跳过，绝不先上传后告警。
+  MAX_BUCKET_BYTES: '8000000000'
   # wrangler r2 object put 是单次上传，超过这个大小会失败。
   # 与其让整个 job 红掉，不如跳过该文件并明确报出来——下载会自动回退 GitHub。
   MAX_ASSET_MB: '300'
@@ -112,104 +115,135 @@ jobs:
         # 只需要 Wrangler CLI；锁死版本并禁用依赖生命周期脚本，避免 CI 执行供应链侧代码。
         run: npm install --ignore-scripts --no-save --package-lock=false wrangler@4.125.0
 
-      - name: Upload assets to R2
+      - name: Build bounded mirror manifest
+        id: manifest
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.target.outputs.tag }}
         run: |
           set -euo pipefail
           MAX_BYTES=$(( MAX_ASSET_MB * 1024 * 1024 ))
-          SKIPPED=""
 
-          for f in assets/*; do
-            name="$(basename "$f")"
-            size="$(stat -c %s "$f")"
-            if [ "$size" -gt "$MAX_BYTES" ]; then
-              echo "::warning::$name 有 $((size / 1024 / 1024))MB，超过单次上传上限 ${MAX_ASSET_MB}MB，跳过镜像（该平台的下载会回退 GitHub）"
-              SKIPPED="$SKIPPED $name"
-              continue
-            fi
-            echo "上传 $name ($((size / 1024 / 1024))MB)"
-            ./node_modules/.bin/wrangler r2 object put "$BUCKET/releases/$TAG/$name" --file "$f" --remote
-          done
-
-          # manifest.json 是「GitHub 挂了下载还活着」的那一环：
-          # Worker 拿不到 GitHub API 时，就靠它知道最新版本有哪些文件。
-          # 跳过的大文件不能写进去——写了会让 Worker 以为镜像里有，白绕一圈才回退。
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
             --json tagName,publishedAt,assets \
             -q '{tag: .tagName, publishedAt: .publishedAt, assets: [.assets[] | {name: .name, size: .size, url: .url}]}' \
             > manifest-full.json
 
-          export SKIPPED
-          node -e '
+          MAX_BYTES="$MAX_BYTES" node -e '
             const fs = require("fs");
             const m = JSON.parse(fs.readFileSync("manifest-full.json", "utf8"));
-            const skipped = new Set((process.env.SKIPPED || "").trim().split(/\s+/).filter(Boolean));
-            m.assets = m.assets.filter((a) => !skipped.has(a.name));
+            const max = Number(process.env.MAX_BYTES);
+            m.assets = m.assets.filter((asset) => {
+              const path = "assets/" + asset.name;
+              if (!fs.existsSync(path)) return false;
+              asset.size = fs.statSync(path).size;
+              if (asset.size > max) {
+                console.log("跳过超限资产 " + asset.name + " (" + asset.size + " bytes)");
+                return false;
+              }
+              return true;
+            });
+            if (m.assets.length === 0) throw new Error("没有可镜像的限额内资产");
             m.mirroredAt = new Date().toISOString();
             fs.writeFileSync("manifest.json", JSON.stringify(m, null, 2));
-            console.log("清单收录 " + m.assets.length + " 个资产，跳过 " + skipped.size + " 个");
+            console.log("清单收录 " + m.assets.length + " 个资产");
           '
-          ./node_modules/.bin/wrangler r2 object put "$BUCKET/manifest.json" --file manifest.json --content-type application/json --remote
 
-      - name: Prune old mirrored releases
+      - name: Read current R2 ledger
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if ! ./node_modules/.bin/wrangler r2 object get "$BUCKET/mirrored.json" --file mirrored-original.json --remote; then
+            echo "::error::读取 R2 容量台账失败。为防止把未知存量当 0，本次 fail closed；新桶必须先人工写入 schemaVersion=2 的空台账。"
+            exit 1
+          fi
+          echo "读到已有容量台账"
+
+      - name: Plan bounded R2 mirror
+        id: capacity
+        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          node --test tool/r2_mirror_plan.test.mjs
+          node tool/r2_mirror_plan.mjs \
+            --ledger mirrored-original.json \
+            --manifest manifest.json \
+            --keep "$KEEP_RELEASES" \
+            --max-bytes "$MAX_BUCKET_BYTES" \
+            --out-ledger mirrored-planned.json \
+            --rollback-ledger mirrored-rollback.json \
+            --delete-list to-delete.txt \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Skip mirror when the free-tier budget would be exceeded
+        if: steps.capacity.outputs.allowed == 'false'
+        env:
+          INCOMING: ${{ steps.capacity.outputs.incoming_bytes }}
+          RETAINED: ${{ steps.capacity.outputs.retained_bytes }}
+          PLANNED: ${{ steps.capacity.outputs.planned_bytes }}
+        run: |
+          echo "::warning::R2 镜像预计 ${PLANNED} bytes（保留 ${RETAINED} + 新增 ${INCOMING}），超过 ${MAX_BUCKET_BYTES} bytes 安全线；整次跳过，下载回退 GitHub。"
+
+      - name: Prune old releases before uploading
+        if: steps.capacity.outputs.allowed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -s to-delete.txt ]; then
+            while IFS= read -r key || [ -n "$key" ]; do
+              [ -z "$key" ] && continue
+              echo "上传前删除 $key"
+              ./node_modules/.bin/wrangler r2 object delete "$BUCKET/$key" --remote
+            done < to-delete.txt
+          fi
+
+      - name: Upload assets and commit ledger
+        if: steps.capacity.outputs.allowed == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TAG: ${{ steps.target.outputs.tag }}
         run: |
           set -euo pipefail
-
-          # R2 的 list 不在 wrangler CLI 里，所以自己维护一份「镜像了哪些 tag、
-          # 每个 tag 有哪些文件」的台账，删除时才知道该删什么。
-          if ./node_modules/.bin/wrangler r2 object get "$BUCKET/mirrored.json" --file mirrored.json --remote 2>/dev/null; then
-            echo "读到已有台账"
-          else
-            echo '{"releases":[]}' > mirrored.json
-          fi
-
           node -e '
-            const fs = require("fs");
-            const led = JSON.parse(fs.readFileSync("mirrored.json", "utf8"));
-            const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
-            const tag = process.env.TAG;
-            const keep = Number(process.env.KEEP_RELEASES || "2");
-
-            led.releases = (led.releases || []).filter((r) => r.tag !== tag);
-            led.releases.push({ tag, files: manifest.assets.map((a) => a.name) });
-
-            const drop = led.releases.slice(0, Math.max(0, led.releases.length - keep));
-            led.releases = led.releases.slice(-keep);
-
-            fs.writeFileSync("mirrored.json", JSON.stringify(led, null, 2));
-            fs.writeFileSync(
-              "to-delete.txt",
-              drop.flatMap((r) => r.files.map((f) => "releases/" + r.tag + "/" + f)).join("\n"),
-            );
-            console.log("保留 " + led.releases.length + " 个版本，待删 " + drop.length + " 个旧版本");
+            const m = JSON.parse(require("fs").readFileSync("manifest.json", "utf8"));
+            require("fs").writeFileSync("mirror-files.txt", m.assets.map((a) => a.name).join("\n"));
           '
 
-          if [ -s to-delete.txt ]; then
-            # `|| [ -n "$key" ]` 不是冗余：to-delete.txt 由 node 的 `.join("\n")`
-            # 生成，**没有尾随换行**，而 `read` 读到 EOF 时返回非零——最后一行会被
-            # 静默跳过（实测：a\nb\nc 只读出 a、b）。而台账是删除之后才写的、当作
-            # 已删，于是每批都会留下一个永远没人认领的孤儿对象，正好抵消这个
-            # prune 步骤存在的意义（R2 免费额度 10GB）。
-            while IFS= read -r key || [ -n "$key" ]; do
-              [ -z "$key" ] && continue
-              echo "删除 $key"
-              ./node_modules/.bin/wrangler r2 object delete "$BUCKET/$key" --remote || echo "::warning::删除 $key 失败，跳过"
-            done < to-delete.txt
-          fi
+          while IFS= read -r name || [ -n "$name" ]; do
+            [ -z "$name" ] && continue
+            echo "上传 $name"
+            ./node_modules/.bin/wrangler r2 object put "$BUCKET/releases/$TAG/$name" --file "assets/$name" --remote
+          done < mirror-files.txt
 
-          # 台账最后写：中途失败时宁可下次重复删一遍（删不存在的对象是无害的），
-          # 也不要台账已更新而对象还在，那会变成永远没人认领的存量。
-          ./node_modules/.bin/wrangler r2 object put "$BUCKET/mirrored.json" --file mirrored.json --content-type application/json --remote
+          # ledger 先于滚动 manifest：如果最后一步失败，旧 manifest 仍然可用；
+          # cleanup 会删半成品并恢复“已完成预清理”的 ledger。
+          ./node_modules/.bin/wrangler r2 object put "$BUCKET/mirrored.json" --file mirrored-planned.json --content-type application/json --remote
+          ./node_modules/.bin/wrangler r2 object put "$BUCKET/manifest.json" --file manifest.json --content-type application/json --remote
+
+      - name: Roll back partial upload on failure
+        if: failure() && steps.capacity.outputs.allowed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set +e
+          if [ -f mirror-files.txt ]; then
+            while IFS= read -r name || [ -n "$name" ]; do
+              [ -z "$name" ] && continue
+              ./node_modules/.bin/wrangler r2 object delete "$BUCKET/releases/$TAG/$name" --remote
+            done < mirror-files.txt
+          fi
+          if [ -f mirrored-rollback.json ]; then
+            ./node_modules/.bin/wrangler r2 object put "$BUCKET/mirrored.json" --file mirrored-rollback.json --content-type application/json --remote
+          fi
 
       - name: Summary
         if: always() && steps.guard.outputs.ready == 'true'
@@ -217,6 +251,8 @@ jobs:
           TARGET_TAG: ${{ steps.target.outputs.tag }}
           TARGET_SKIPPED: ${{ steps.target.outputs.skip }}
           ASSET_COUNT: ${{ steps.download.outputs.count }}
+          CAPACITY_ALLOWED: ${{ steps.capacity.outputs.allowed }}
+          PLANNED_BYTES: ${{ steps.capacity.outputs.planned_bytes }}
         run: |
           {
             echo "### R2 镜像"
@@ -224,4 +260,6 @@ jobs:
             printf -- '- tag: `%s`\n' "${TARGET_TAG:-}"
             printf -- '- 是否跳过: `%s`\n' "${TARGET_SKIPPED:-}"
             printf -- '- 资产数: `%s`\n' "${ASSET_COUNT:-0}"
+            printf -- '- 容量守卫通过: `%s`\n' "${CAPACITY_ALLOWED:-未运行}"
+            printf -- '- 计划桶容量: `%s bytes`\n' "${PLANNED_BYTES:-0}"
           } >> "$GITHUB_STEP_SUMMARY"
