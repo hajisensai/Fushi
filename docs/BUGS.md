@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1730 条。点号进各自文件。
+> 共 1733 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1857](bugs/BUG-1857-gal-overlay-resize-card-does-not-follow-drag.md) | ✅ | ✅ | 查词浮窗拖右下角调大小时卡片不跟手，松手才跳到位 |
+| [BUG-1854](bugs/BUG-1854-gal-mining-capture-includes-title-bar.md) | ✅ | ✅ | 制卡截图把游戏窗口标题栏截进去了，应裁到客户区 |
+| [BUG-1853](bugs/BUG-1853-gal-passthrough-glyph-holes-fall-through.md) | ✅ | ✅ | 穿透态点到文字笔画镂空处直接透给游戏，碰撞箱应为行矩形 |
 | [BUG-1852](bugs/BUG-1852-manga-region-rescan-lookup-action-removed.md) | 🚧 | 🚧 | 框选区域重识别移除了旧「框选查词」直通词典的入口 |
 | [BUG-1851](bugs/BUG-1851-manga-region-rescan-auto-engine-mix.md) | 🚧 | 🚧 | auto 引擎偏好下区域重识别可能与整卷用不同引擎，页内混引擎且 ocr 元数据仍写旧引擎 |
 | [BUG-1850](bugs/BUG-1850-settings-destination-itest-vacuous-selected-row.md) | ✅ | ✅ | 集成测试用恒真的选中行谓词当设置分类打开判据 |
