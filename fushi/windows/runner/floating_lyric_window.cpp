@@ -1441,6 +1441,44 @@ void FloatingLyricWindow::Render() {
           text_rect_.top + text_rect_.height);
       render_target_->PushAxisAlignedClip(text_clip,
                                           D2D1_ANTIALIAS_MODE_ALIASED);
+      // BUG-1853 — 穿透态的碰撞箱改成「文字行矩形并集」。
+      //
+      // 穿透态整窗背景是真 alpha 0（上面 body_bg &= 0x00FFFFFF），OS 逐像素判定
+      // 下「窗口存在的像素」只剩字形本身：口/国/目 的内部、笔画之间、字距行距的
+      // 镂空全是 alpha 0，点上去直接透给游戏 → 台词被推进/误触分支。这里在每一
+      // 行文字的行盒里铺一层 kHookTextMinCatchAlpha 的不可见 catch fill（与非穿
+      // 透态整窗 alpha 兜底同一技法），让行矩形内任何一点都算「点在字上」；行矩
+      // 形外仍是 alpha 0，「点背景推台词」的不变式不动。行盒来自 DirectWrite
+      // 自己的 HitTestTextRange（有注音时行盒已被 SetLineSpacing 加高，注音带自
+      // 然在内），坐标换算与下面高亮框 / CharIndexAt 同一公式，再由外层
+      // text_clip 裁掉滚出视口的行。不引入 WS_EX_TRANSPARENT / HTTRANSPARENT /
+      // 定时器（BUG-951 / PR#460 两次事故的老路）。
+      if (hook_text_mode_ && pass_through_ && !text_.empty()) {
+        UINT32 line_hit_count = 0;
+        text_layout_->HitTestTextRange(0, static_cast<UINT32>(text_.size()), 0,
+                                       0, nullptr, 0, &line_hit_count);
+        if (line_hit_count > 0) {
+          std::vector<DWRITE_HIT_TEST_METRICS> line_metrics(line_hit_count);
+          if (SUCCEEDED(text_layout_->HitTestTextRange(
+                  0, static_cast<UINT32>(text_.size()), 0, 0,
+                  line_metrics.data(), line_hit_count, &line_hit_count))) {
+            Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> catch_brush;
+            render_target_->CreateSolidColorBrush(
+                ColorFromArgb((kHookTextMinCatchAlpha << 24) |
+                              (style_.bg_color & 0x00FFFFFF)),
+                catch_brush.GetAddressOf());
+            if (catch_brush != nullptr) {
+              for (const auto& m : line_metrics) {
+                render_target_->FillRectangle(
+                    D2D1::RectF(text_rect_.left + m.left, text_origin_y + m.top,
+                                text_rect_.left + m.left + m.width,
+                                text_origin_y + m.top + m.height),
+                    catch_brush.Get());
+              }
+            }
+          }
+        }
+      }
       // Highlight range background.
       if (highlight_start_ >= 0 && highlight_length_ > 0) {
         DWRITE_TEXT_RANGE range = {static_cast<UINT32>(highlight_start_),
