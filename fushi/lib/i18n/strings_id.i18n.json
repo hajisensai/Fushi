@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "Cari semua sumber",
   "manga_global_search_hint": "Cari setiap sumber yang aktif",
   "manga_global_search_prompt": "Ketik judul untuk mencari setiap sumber manga yang aktif sekaligus.",
-  "manga_global_search_no_sources": "Tidak ada sumber manga yang aktif. Instal dan aktifkan ekstensi terlebih dahulu.",
   "anki_connect_addon_install": "Instal AnkiConnect",
   "anki_connect_addon_install_hint": "Mengunduh AnkiConnect dari AnkiWeb dan menyerahkannya ke Anki yang sedang berjalan. Anki akan meminta Anda untuk mengonfirmasi, lalu menyarankan restart.",
   "anki_connect_addon_handed": "AnkiConnect diserahkan ke Anki. Konfirmasi dialog di Anki, lalu restart Anki sesuai saran.",
@@ -3803,5 +3802,8 @@
   "book_file_location_open": "Open file location",
   "book_file_location_failed": "Could not open this book's file location.",
   "storage_entry_database_snapshots_label": "Database backup snapshots ($n files)",
-  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched."
+  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }

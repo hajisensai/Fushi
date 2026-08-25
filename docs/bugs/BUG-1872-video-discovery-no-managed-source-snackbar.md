@@ -1,0 +1,6 @@
+## BUG-1872 · 视频发现搜索资源/订阅在缺受管视频来源时只弹「暂无来源」snackbar
+- **报告**：2026-08-25（用户：截图——视频发现详情页点「搜索资源」，底部只弹「暂无来源」；「这里的暂无来源不对，看上去只是没配置下载后端。应该给弹窗配置」）
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/home_page.dart:1432` / `:1504`（修前）`_openVideoDiscoveryResourceSearch` / `_openVideoDiscoverySubscription`：`registry`/`pipeline` 非空（后端**已就绪**）后 `getManagedVideoDownloadSources()` 为空 → `_showVideoDiscoveryMessage(t.media_source_no_sources)`。真正缺的是「下载完成后落地用的本地视频文件夹」（`app_model.dart:3938` 过滤 `transport == 'local'` 且目录存在），snackbar 既不说缺什么也没处点，用户自然猜成「没配下载后端」。下载页早在 BUG-1706 把这一环拆成 `DownloadsResourceNoManagedSource` → 就地开 `MediaSourcesDialog(mediaKind: 'video')`（`downloads_page.dart:110`），首页发现路径漏改。
+- **[x] ① 已修复** — `c953b9494d`：新增 `fushi/lib/src/pages/implementations/managed_video_source_prompt.dart`（`promptManagedVideoSourceSetup` + `ManagedVideoSourcePromptDialog`，与 `promptDownloadBackendSetup` 同姿态：一句说清缺的是落地用的视频文件夹 + 「添加视频来源」按钮就地开 `MediaSourcesDialog`）；`home_page.dart` 两条流程统一走 `_managedVideoDownloadSourcesOrPrompt`，用户加完来源后重读清单继续原动作，取消 = 明确放弃。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/managed_video_source_prompt_test.dart`：确认 → 来源对话框开一次、返回 true、不再出现「暂无来源」；取消 → 不开对话框、返回 false。
+- **备注**：`VideoDownloadBackendUnavailable`（后端配了但连不上，如内置引擎缺运行时）仍按原样透传后端自己的原因，不改成配置引导——用户已经配过了。

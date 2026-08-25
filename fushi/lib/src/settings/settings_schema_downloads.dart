@@ -32,10 +32,13 @@ SettingsDestination buildDownloadsDestination() {
     sections: <SettingsSection>[
       SettingsSection(
         items: <SettingsItem>[
+          // 副标题说清它打开的是下载**页**（任务 / 资源 / 订阅）。此前写的是
+          // `download_settings`（「下载设置」），与本 destination 的 summary 同一个
+          // 词——用户看到的就是「下载设置里面还有一个下载设置」。
           SettingsNavigationItem(
             id: 'downloads.open_page',
             title: t.nav_downloads,
-            subtitle: t.download_settings,
+            subtitle: t.settings_downloads_open_page_hint,
             icon: Icons.download_outlined,
             showIcon: true,
             onTap: (SettingsContext settingsContext) async {

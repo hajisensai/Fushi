@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "모든 소스 검색",
   "manga_global_search_hint": "활성화된 모든 소스 검색",
   "manga_global_search_prompt": "제목을 입력하면 활성화된 모든 만화 소스를 한 번에 검색합니다.",
-  "manga_global_search_no_sources": "활성화된 만화 소스가 없습니다. 먼저 확장을 설치하고 활성화하세요.",
   "anki_connect_addon_install": "AnkiConnect 설치",
   "anki_connect_addon_install_hint": "AnkiWeb에서 AnkiConnect를 다운로드하여 실행 중인 Anki에 전달합니다. Anki에서 확인을 요청한 후 재시작을 안내합니다.",
   "anki_connect_addon_handed": "AnkiConnect를 Anki에 전달했습니다. Anki의 프롬프트를 확인한 후 안내에 따라 Anki를 재시작하세요.",
@@ -3803,5 +3802,8 @@
   "book_file_location_open": "Open file location",
   "book_file_location_failed": "Could not open this book's file location.",
   "storage_entry_database_snapshots_label": "Database backup snapshots ($n files)",
-  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched."
+  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }

@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "Alle Quellen durchsuchen",
   "manga_global_search_hint": "Jede aktivierte Quelle durchsuchen",
   "manga_global_search_prompt": "Geben Sie einen Titel ein, um alle aktivierten Manga-Quellen gleichzeitig zu durchsuchen.",
-  "manga_global_search_no_sources": "Keine aktivierten Manga-Quellen. Installieren und aktivieren Sie zuerst eine Erweiterung.",
   "anki_connect_addon_install": "AnkiConnect installieren",
   "anki_connect_addon_install_hint": "Lädt AnkiConnect von AnkiWeb herunter und übergibt es dem laufenden Anki. Anki wird Sie zur Bestätigung auffordern und dann einen Neustart empfehlen.",
   "anki_connect_addon_handed": "AnkiConnect an Anki übergeben. Bestätigen Sie die Aufforderung in Anki und starten Sie Anki wie empfohlen neu.",
@@ -3803,5 +3802,8 @@
   "book_file_location_open": "Open file location",
   "book_file_location_failed": "Could not open this book's file location.",
   "storage_entry_database_snapshots_label": "Database backup snapshots ($n files)",
-  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched."
+  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }

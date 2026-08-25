@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
 
 void main() {
+  setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
+
   AidokuInstalledPackage package(String id, String name) =>
       AidokuInstalledPackage(
         id: id,
@@ -59,6 +62,77 @@ void main() {
     expect(
       find.textContaining('Cloudflare'),
       findsOneWidget,
+    );
+  });
+
+  // 空态此前只有一句「请先安装并启用扩展」：漫画库里根本没有叫「扩展」的 tab
+  // （来源都在「导入」视图装），而且没有任何可点的东西。现在文案指向「导入」，
+  // 并给一个按钮：先 pop 本页、再让调用方切壳视图（顺序不能反）。
+  testWidgets(
+      'no sources: empty state names the Import tab and its button pops then opens it',
+      (WidgetTester tester) async {
+    int opened = 0;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MangaGlobalSearchPage(
+                      mihonManager: null,
+                      mihonSources: const <Never>[],
+                      aidokuPackages: const <AidokuInstalledPackage>[],
+                      onOpenSources: () => opened++,
+                    ),
+                  ),
+                ),
+                child: const Text('shell'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('shell'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_global_search_no_sources), findsOneWidget);
+    expect(
+      t.manga_global_search_no_sources,
+      contains(t.library_view_import),
+      reason: '空态文案必须点名用户真能找到的那个 tab（「导入」），不是「扩展」',
+    );
+    final Finder button =
+        find.byKey(const ValueKey<String>('manga_global_search_open_sources'));
+    expect(button, findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(opened, 1);
+    expect(find.byType(MangaGlobalSearchPage), findsNothing,
+        reason: '按钮先把搜索页弹掉，用户回到壳里才看得见切过去的「导入」视图');
+  });
+
+  testWidgets('no sources without a shell to switch: text only, no button',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: MangaGlobalSearchPage(
+            mihonManager: null,
+            mihonSources: const <Never>[],
+            aidokuPackages: const <AidokuInstalledPackage>[],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text(t.manga_global_search_no_sources), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('manga_global_search_open_sources')),
+      findsNothing,
     );
   });
 }

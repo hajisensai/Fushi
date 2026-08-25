@@ -18,6 +18,7 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
+import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
@@ -1413,6 +1414,22 @@ class _HomePageState extends BasePageState<HomePage>
         appModel: appModelNoUpdate,
       );
 
+  /// 受管视频来源清单；为空时**弹「添加视频来源」引导**，用户加完再读一次。
+  ///
+  /// 此前这一环被折叠成一条「暂无来源」snackbar：后端配得好好的，用户看到的却
+  /// 是一句既不说缺什么、也没处点的提示（下载页在 BUG-1706 已拆开，这里漏改）。
+  /// 返回空表 = 用户取消或加完仍为空，调用方直接返回。
+  Future<List<MediaSourceRow>> _managedVideoDownloadSourcesOrPrompt(
+    BuildContext context,
+  ) async {
+    final List<MediaSourceRow> sources =
+        await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (sources.isNotEmpty || !context.mounted) return sources;
+    final bool added = await promptManagedVideoSourceSetup(context: context);
+    if (!added) return const <MediaSourceRow>[];
+    return appModelNoUpdate.getManagedVideoDownloadSources();
+  }
+
   Future<void> _openVideoDiscoveryResourceSearch(
     BuildContext context,
     VideoDiscoveryItem item,
@@ -1426,12 +1443,8 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     }
     final List<MediaSourceRow> sources =
-        await appModelNoUpdate.getManagedVideoDownloadSources();
-    if (!context.mounted) return;
-    if (sources.isEmpty) {
-      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
-      return;
-    }
+        await _managedVideoDownloadSourcesOrPrompt(context);
+    if (!context.mounted || sources.isEmpty) return;
     final VideoDownloadBackendIdentity identity;
     try {
       identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
@@ -1498,12 +1511,8 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     }
     final List<MediaSourceRow> sources =
-        await appModelNoUpdate.getManagedVideoDownloadSources();
-    if (!context.mounted) return;
-    if (sources.isEmpty) {
-      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
-      return;
-    }
+        await _managedVideoDownloadSourcesOrPrompt(context);
+    if (!context.mounted || sources.isEmpty) return;
     final VideoDownloadBackendIdentity identity;
     try {
       identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();

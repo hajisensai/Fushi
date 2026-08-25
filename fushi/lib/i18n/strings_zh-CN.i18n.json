@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "搜索全部来源",
   "manga_global_search_hint": "搜索所有已启用来源",
   "manga_global_search_prompt": "输入书名，一次搜索所有已启用的漫画来源。",
-  "manga_global_search_no_sources": "没有已启用的漫画来源，请先安装并启用扩展。",
   "anki_connect_addon_install": "安装 AnkiConnect",
   "anki_connect_addon_install_hint": "从 AnkiWeb 下载 AnkiConnect 并交给正在运行的 Anki。Anki 会弹窗请你确认，之后按它的提示重启。",
   "anki_connect_addon_handed": "已把 AnkiConnect 交给 Anki。请在 Anki 弹出的确认框中同意，然后按 Anki 的提示重启。",
@@ -3803,5 +3802,8 @@
   "book_file_location_open": "打开文件位置",
   "book_file_location_failed": "无法打开这本书的文件位置。",
   "storage_entry_database_snapshots_label": "数据库备份快照（$n 个文件）",
-  "storage_entry_delete_database_snapshots_confirm_body": "将删除全部数据库备份快照残留（corrupt-bak / pre-restore / 旧版本迁移副本）。正在使用的数据库及其 -wal/-shm 侧车不受影响。"
+  "storage_entry_delete_database_snapshots_confirm_body": "将删除全部数据库备份快照残留（corrupt-bak / pre-restore / 旧版本迁移副本）。正在使用的数据库及其 -wal/-shm 侧车不受影响。",
+  "manga_global_search_no_sources": "还没有已启用的漫画来源，去「导入」添加一个。",
+  "manga_global_search_open_sources": "去导入",
+  "settings_downloads_open_page_hint": "打开下载页（任务 / 资源 / 订阅）"
 }

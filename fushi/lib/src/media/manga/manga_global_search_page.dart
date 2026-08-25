@@ -30,10 +30,16 @@ class MangaGlobalSearchPage extends StatefulWidget {
     super.key,
     this.aidokuRuntime,
     this.initialQuery,
+    this.onOpenSources,
   });
 
   /// Mihon 宿主。不支持的平台传 `null`（此时 [mihonSources] 必为空）。
   final MihonManager? mihonManager;
+
+  /// 一个源都没有时空态按钮的去处：本页先 pop 自己，再调它把用户带到漫画库的
+  /// 「导入」视图（来源都在那里装 / 启用）。为 null 时只显示文案不显示按钮——
+  /// 调用方不在库页壳里、没有「导入」视图可切。
+  final VoidCallback? onOpenSources;
 
   /// 已启用、且扩展也启用的 Mihon 在线源。
   final List<MangaOnlineSourceRow> mihonSources;
@@ -171,14 +177,39 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     );
   }
 
+  /// 空态按钮：先把本页弹掉，再切库页壳到「导入」——顺序不能反，切视图发生在
+  /// 本页下面的壳里，本页留着用户什么都看不到。
+  void _openSources() {
+    final VoidCallback? onOpenSources = widget.onOpenSources;
+    if (onOpenSources == null) return;
+    Navigator.of(context).pop();
+    onOpenSources();
+  }
+
   Widget _buildBody() {
     if (_sources().isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(
-            t.manga_global_search_no_sources,
-            textAlign: TextAlign.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                t.manga_global_search_no_sources,
+                textAlign: TextAlign.center,
+              ),
+              if (widget.onOpenSources != null) ...<Widget>[
+                const SizedBox(height: 16),
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>(
+                    'manga_global_search_open_sources',
+                  ),
+                  onPressed: _openSources,
+                  icon: const Icon(Icons.extension_outlined),
+                  label: Text(t.manga_global_search_open_sources),
+                ),
+              ],
+            ],
           ),
         ),
       );
