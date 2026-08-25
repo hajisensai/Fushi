@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "グローバル検索",
   "manga_global_search_hint": "すべてのソースを検索",
   "manga_global_search_prompt": "タイトルを入力して、すべての有効なマンガソースを一括検索します。",
-  "manga_global_search_no_sources": "有効なマンガソースがありません。まず拡張機能をインストールして有効にしてください。",
   "anki_connect_addon_install": "AnkiConnectをインストール",
   "anki_connect_addon_install_hint": "AnkiWebからAnkiConnectをダウンロードし、実行中のAnkiに渡します。Ankiが確認を求め、再起動を促します。",
   "anki_connect_addon_handed": "AnkiConnectをAnkiに渡しました。Ankiのプロンプトを確認し、指示通りにAnkiを再起動してください。",
@@ -3801,5 +3800,8 @@
   "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
   "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
   "book_file_location_open": "Open file location",
-  "book_file_location_failed": "Could not open this book's file location."
+  "book_file_location_failed": "Could not open this book's file location.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }

@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "Tìm kiếm tất cả nguồn",
   "manga_global_search_hint": "Tìm kiếm mọi nguồn đã bật",
   "manga_global_search_prompt": "Nhập tựa đề để tìm kiếm tất cả nguồn truyện tranh đã bật cùng lúc.",
-  "manga_global_search_no_sources": "Không có nguồn truyện tranh nào được bật. Cài đặt và bật một tiện ích mở rộng trước.",
   "anki_connect_addon_install": "Cài đặt AnkiConnect",
   "anki_connect_addon_install_hint": "Tải AnkiConnect từ AnkiWeb và chuyển cho Anki đang chạy. Anki sẽ yêu cầu bạn xác nhận, sau đó khuyên khởi động lại.",
   "anki_connect_addon_handed": "Đã chuyển AnkiConnect cho Anki. Xác nhận lời nhắc trong Anki, rồi khởi động lại Anki theo hướng dẫn.",
@@ -3801,5 +3800,8 @@
   "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
   "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
   "book_file_location_open": "Open file location",
-  "book_file_location_failed": "Could not open this book's file location."
+  "book_file_location_failed": "Could not open this book's file location.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }

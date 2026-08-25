@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "Alle bronnen doorzoeken",
   "manga_global_search_hint": "Doorzoek elke ingeschakelde bron",
   "manga_global_search_prompt": "Typ een titel om elke ingeschakelde mangabron tegelijk te doorzoeken.",
-  "manga_global_search_no_sources": "Geen ingeschakelde mangabronnen. Installeer en schakel eerst een extensie in.",
   "anki_connect_addon_install": "AnkiConnect installeren",
   "anki_connect_addon_install_hint": "Downloadt AnkiConnect van AnkiWeb en overhandigt het aan de draaiende Anki. Anki zal je vragen om te bevestigen en dan een herstart adviseren.",
   "anki_connect_addon_handed": "AnkiConnect aan Anki overhandigd. Bevestig het verzoek in Anki en herstart Anki dan zoals geadviseerd.",
@@ -3801,5 +3800,8 @@
   "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
   "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
   "book_file_location_open": "Open file location",
-  "book_file_location_failed": "Could not open this book's file location."
+  "book_file_location_failed": "Could not open this book's file location.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }

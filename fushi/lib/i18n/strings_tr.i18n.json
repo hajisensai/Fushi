@@ -3368,7 +3368,6 @@
   "manga_global_search_title": "Tüm kaynaklarda ara",
   "manga_global_search_hint": "Etkin tüm kaynaklarda ara",
   "manga_global_search_prompt": "Etkin tüm manga kaynaklarında aynı anda aramak için bir başlık yazın.",
-  "manga_global_search_no_sources": "Etkin manga kaynağı yok. Önce bir eklenti yükleyip etkinleştirin.",
   "anki_connect_addon_install": "AnkiConnect'i yükle",
   "anki_connect_addon_install_hint": "AnkiConnect'i AnkiWeb'den indirir ve çalışan Anki'ye iletir. Anki onaylamanızı isteyecek, ardından yeniden başlatmanızı tavsiye edecektir.",
   "anki_connect_addon_handed": "AnkiConnect Anki'ye iletildi. Anki'deki istemi onaylayın, ardından Anki'yi tavsiye ettiği gibi yeniden başlatın.",
@@ -3801,5 +3800,8 @@
   "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
   "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
   "book_file_location_open": "Open file location",
-  "book_file_location_failed": "Could not open this book's file location."
+  "book_file_location_failed": "Could not open this book's file location.",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_open_sources": "Go to Import",
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
 }
