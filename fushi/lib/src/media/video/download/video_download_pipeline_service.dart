@@ -1477,29 +1477,32 @@ class VideoDownloadPipelineService {
     if (job.resourceProvider == kManualVideoDownloadResourceProvider) {
       return _resolveManualMetainfoPayload(job);
     }
-    final TorrentAddPayload payload;
-    try {
-      payload = await resourceRegistry.resolveSelection(
-        selection: VideoResourceSelection(
-          providerId: job.resourceProvider,
-          remoteId: job.selectedResourceId,
-          title: job.resourceTitle ?? job.title,
-        ),
-        request: VideoResourceSearchRequest(
-          media: _mediaReference(job),
-          query: job.resourceTitle ?? job.title,
-          season: job.season,
-        ),
-      );
-    } on Object {
-      // 重搜找不回（条目下架/发布名分词搜不中/索引器故障）不代表资源没了：
-      // 公共索引器（nyaa/apibay/knaben）的磁链本就是 info hash + 固定
-      // tracker 现场拼出来的，任务行里的 hash 就够重建（BUG-1784 存量行）。
-      final TorrentMagnetPayload? recovered = _recoverPublicMagnetPayload(job);
-      if (recovered == null) rethrow;
-      await _persistResolvedMagnet(job, recovered.magnetUri);
-      return recovered;
+    // 公共索引器（nyaa/apibay/knaben）的 payload 就是「info hash + 该索引器的
+    // 固定 tracker 集」拼出来的磁链——那是任务行里**已有数据的纯函数**，压根
+    // 不需要网络（BUG-1866）。此前它只是重搜失败后的兜底，正常路径先拿完整
+    // 发布名回索引器全文搜：nyaa 对
+    // `[Airota&VCB-Studio] Gekijouban … BDRip [MOVIE]` 这种串必然搜不中，于是
+    // 每次重启/重试都要先把一个还活着的资源误报成 notFound、再被兜底捞回来。
+    // 把纯函数摆到联网之前，这条误报就没有产生的余地了；产出与联网重搜等价
+    // （同一 hash、同一 tracker 集，只有 `dn` 显示名的编码可能不同）。
+    // 真正必须重搜的只剩私有 Torznab：它的 .torrent 走临时凭据 URL，不落库。
+    final TorrentMagnetPayload? offline = _publicIndexerMagnetPayload(job);
+    if (offline != null) {
+      await _persistResolvedMagnet(job, offline.magnetUri);
+      return offline;
     }
+    final TorrentAddPayload payload = await resourceRegistry.resolveSelection(
+      selection: VideoResourceSelection(
+        providerId: job.resourceProvider,
+        remoteId: job.selectedResourceId,
+        title: job.resourceTitle ?? job.title,
+      ),
+      request: VideoResourceSearchRequest(
+        media: _mediaReference(job),
+        query: job.resourceTitle ?? job.title,
+        season: job.season,
+      ),
+    );
     // 重搜成功解析出的磁链写回任务行：下次重启/重试不再吃索引器可用性。
     if (payload is TorrentMagnetPayload) {
       await _persistResolvedMagnet(job, payload.magnetUri);
@@ -1507,13 +1510,15 @@ class VideoDownloadPipelineService {
     return payload;
   }
 
-  /// 公共索引器任务的离线磁链重建：`magnet:?xt=urn:btih:<hash>` + 该索引器
-  /// 的固定 tracker 集。私有 Torznab（DHT 关闭、需 .torrent 凭据）返回 null，
-  /// 保持原失败语义。
-  TorrentMagnetPayload? _recoverPublicMagnetPayload(VideoDownloadJobRow job) {
+  /// 公共索引器任务的离线磁链：`magnet:?xt=urn:btih:<hash>` + 该索引器的固定
+  /// tracker 集。私有 Torznab（DHT 关闭、需 .torrent 凭据）返回 null，由调用方
+  /// 回索引器重搜，保持原失败语义。
+  ///
+  /// 只认 40 位 v1 hash：BT v2 的 64 位 hash 要走 `urn:btmh:`，拿它拼 `btih`
+  /// 只会得到一个谁也认不出的磁链，宁可退回重搜。
+  TorrentMagnetPayload? _publicIndexerMagnetPayload(VideoDownloadJobRow job) {
     final String provider = job.resourceProvider;
-    bool isProvider(String id) =>
-        provider == id || provider.startsWith('$id:');
+    bool isProvider(String id) => provider == id || provider.startsWith('$id:');
     final List<String>? trackers = isProvider('nyaa')
         ? kNyaaTrackers
         : isProvider(kApibayResourceProviderId) ||
