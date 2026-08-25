@@ -532,14 +532,10 @@ class DataRootMigrator {
         plan.deferredCopy = true;
         deferredSourceDeletions.add(entity);
       } else if (entity is File) {
-        await File(target).parent.create(recursive: true);
-        await entity.copy(target);
-        final int srcLen = await entity.length();
-        final int dstLen = await File(target).length();
-        if (srcLen != dstLen) {
-          throw DataRootMigrationException(
-              '跨盘复制校验失败：$name 字节数不一致（$srcLen != $dstLen）');
-        }
+        // BUG-1869：顶层单文件也是一个进度单元——先计入分母再复制，否则分子会越过分母
+        //（support 根顶层的 fushi.db / -wal / -shm 各多算一次 → 「623 / 620」）。
+        progress.addToTotal(1);
+        await _copyFileVerified(entity, File(target), name);
         progress.fileCopied();
         plan.deferredCopy = true;
         deferredSourceDeletions.add(entity);
@@ -603,16 +599,26 @@ class DataRootMigrator {
       if (entity is Directory) {
         await Directory(target).create(recursive: true);
       } else if (entity is File) {
-        await Directory(p.dirname(target)).create(recursive: true);
-        await entity.copy(target);
-        final int srcLen = await entity.length();
-        final int dstLen = await File(target).length();
-        if (srcLen != dstLen) {
-          throw DataRootMigrationException(
-              '跨盘复制校验失败：$rel 字节数不一致（$srcLen != $dstLen）');
-        }
+        await _copyFileVerified(entity, File(target), rel);
         progress?.fileCopied();
       }
+    }
+  }
+
+  /// 跨盘复制的最小单元：单文件 copy + 字节数校验。[label] 只进错误信息（相对路径
+  /// 或顶层名）。整树路径与选择性搬移的顶层单文件共用，两边校验口径不可能漂移。
+  static Future<void> _copyFileVerified(
+    File src,
+    File dst,
+    String label,
+  ) async {
+    await dst.parent.create(recursive: true);
+    await src.copy(dst.path);
+    final int srcLen = await src.length();
+    final int dstLen = await dst.length();
+    if (srcLen != dstLen) {
+      throw DataRootMigrationException(
+          '跨盘复制校验失败：$label 字节数不一致（$srcLen != $dstLen）');
     }
   }
 

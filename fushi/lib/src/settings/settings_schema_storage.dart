@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show bookTagMapProvider, srtBookTagMapProvider;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
@@ -80,6 +81,9 @@ SettingsDestination buildStorageDestination() {
         }
         return result.deleted ? null : result.failureReason;
       },
+      // BUG-1870：主库快照残留的删除原语在 fushi_core（与扫描侧识别口径同源）。
+      deleteDatabaseSnapshots: () async =>
+          deleteDatabaseSnapshotFiles(await AppPaths.supportRootDirectory()),
       deleteDictionary: (String name) async {
         // AppModel.deleteDictionary 内部 catch-all 不上抛（自弹失败 toast），
         // 「无异常」不等于成功——以「删除后该名是否仍在词典表」为准回报

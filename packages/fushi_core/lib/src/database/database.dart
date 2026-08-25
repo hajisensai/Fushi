@@ -297,6 +297,54 @@ const String fushiDatabaseFileName = 'fushi.db';
 /// app 层「本机是否已有安装」的判据也要兼看它（旧安装升级后第一次开库前旧名还在）。
 const String legacyHibikiDatabaseFileName = 'hibiki.db';
 
+/// 主库**快照残留**的唯一识别口径（BUG-1870；存储页「数据库备份快照」条目与
+/// [deleteDatabaseSnapshotFiles] 共用，展示什么就删什么）。
+///
+/// 规则只有一条：文件名以主库名（[fushiDatabaseFileName] 或旧名
+/// [legacyHibikiDatabaseFileName]）开头，但**不是**主库本体及其 `-wal` / `-shm` /
+/// `-journal` 侧车。覆盖 [_rebuildSidecar] 产的 `fushi.db.corrupt-bak-<stamp>[-wal|-shm]`、
+/// backup_service 的 `fushi.db.pre-restore.bak`，以及历史迁移留下的
+/// `hibiki.db.bak.v16.<stamp>` / `hibiki.db-wal.bak.*` 之类。它们都只是整文件副本，
+/// 没有任何表、偏好或引用指向它们，删掉不影响活库；活库与侧车被显式排除，永远不会
+/// 落进这个集合（旧名 `hibiki.db` 尚未被 [_migrateLegacyDatabaseFileName] 改名时同样受保护）。
+bool isDatabaseSnapshotFileName(final String name) {
+  for (final String db in <String>[
+    fushiDatabaseFileName,
+    legacyHibikiDatabaseFileName,
+  ]) {
+    if (!name.startsWith(db)) continue;
+    final String rest = name.substring(db.length);
+    return rest.isNotEmpty &&
+        rest != '-wal' &&
+        rest != '-shm' &&
+        rest != '-journal';
+  }
+  return false;
+}
+
+/// [supportRoot] **直接**子层里的主库快照残留文件（同步、不递归、不追 symlink；
+/// 存储页在扫描 isolate 里调用）。
+List<File> listDatabaseSnapshotFiles(final Directory supportRoot) {
+  if (!supportRoot.existsSync()) return const <File>[];
+  return <File>[
+    for (final FileSystemEntity e in supportRoot.listSync(followLinks: false))
+      if (e is File && isDatabaseSnapshotFileName(p.basename(e.path))) e,
+  ];
+}
+
+/// 删除 [supportRoot] 下全部主库快照残留，返回已删路径。识别口径与
+/// [listDatabaseSnapshotFiles] 同源，故活库/侧车结构上不可能被删到。
+/// 单个文件删不掉（被占用等）照实抛——调用方按失败提示用户，不吞。
+Future<List<String>> deleteDatabaseSnapshotFiles(
+    final Directory supportRoot) async {
+  final List<String> deleted = <String>[];
+  for (final File f in listDatabaseSnapshotFiles(supportRoot)) {
+    await f.delete();
+    deleted.add(f.path);
+  }
+  return deleted;
+}
+
 /// Fushi 终局清算 W1：`hibiki.db` → `fushi.db` 一次性文件改名，必须发生在任何
 /// SQLite 连接打开之前（WAL 库的 `-wal`/`-shm` 与主文件名绑定，开着连接改名等于
 /// 撕裂 sidecar）。改名顺序刻意是 **sidecar 先、主文件最后**：判据只看两个主文件

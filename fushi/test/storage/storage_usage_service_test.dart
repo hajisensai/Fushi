@@ -238,6 +238,76 @@ void main() {
       expect(ocr.bytes, 300);
     });
 
+    test('BUG-1870：database 明细把主库快照残留聚成一条可删条目，活库/侧车仍只读单列', () async {
+      // 用户机器实测：support 根下几十个 hibiki.db.bak.v16.* / fushi.db.corrupt-bak-*
+      // 逐条按原始文件名铺开、没有删除按钮。修复后它们聚成一条 databaseSnapshots。
+      writeFile(p.join(support.path, 'fushi.db'), 1000);
+      writeFile(p.join(support.path, 'fushi.db-wal'), 100);
+      writeFile(p.join(support.path, 'fushi.db-shm'), 10);
+      writeFile(p.join(support.path, 'fushi.db.corrupt-bak-1'), 7);
+      writeFile(p.join(support.path, 'fushi.db.corrupt-bak-1-wal'), 5);
+      writeFile(p.join(support.path, 'hibiki.db.bak.v16.1780592923530'), 3);
+      writeFile(p.join(support.path, 'hibiki.db-wal.bak.v20.1'), 1);
+      writeFile(p.join(support.path, 'local_audio_1.db'), 20);
+      // 同名子目录不是文件，不进快照集合（按只读目录单列）。
+      writeFile(p.join(support.path, 'fushi.db.corrupt-bak-dir', 'x'), 2);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+      final StorageCategoryUsage db = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.database);
+
+      final StorageEntryUsage snapshots = db.entries.singleWhere(
+          (StorageEntryUsage e) =>
+              e.kind == StorageEntryKind.databaseSnapshots);
+      expect(snapshots.id, StorageUsageService.kDatabaseSnapshotsEntryId);
+      expect(snapshots.bytes, 7 + 5 + 3 + 1);
+      expect(
+        snapshots.paths.map(p.basename).toSet(),
+        <String>{
+          'fushi.db.corrupt-bak-1',
+          'fushi.db.corrupt-bak-1-wal',
+          'hibiki.db.bak.v16.1780592923530',
+          'hibiki.db-wal.bak.v20.1',
+        },
+      );
+      // 其余条目全是只读，且活库 + 侧车 + 无关文件 + 同名目录一个不少、一个不多。
+      final List<StorageEntryUsage> readOnly = db.entries
+          .where((StorageEntryUsage e) => e.kind == StorageEntryKind.readOnly)
+          .toList();
+      expect(
+        readOnly.map((StorageEntryUsage e) => e.label).toSet(),
+        <String>{
+          'support/fushi.db',
+          'support/fushi.db-wal',
+          'support/fushi.db-shm',
+          'support/local_audio_1.db',
+          'support/fushi.db.corrupt-bak-dir',
+        },
+      );
+      // 类目总量 = 全部明细之和（快照没有被算两次、也没有丢）。
+      expect(db.bytes, 1000 + 100 + 10 + 7 + 5 + 3 + 1 + 20 + 2);
+      expect(db.entries.length, readOnly.length + 1);
+    });
+
+    test('无快照残留时 database 明细不出现空的聚合条目', () async {
+      writeFile(p.join(support.path, 'fushi.db'), 1000);
+      writeFile(p.join(support.path, 'fushi.db-wal'), 100);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+      final StorageCategoryUsage db = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.database);
+      expect(
+        db.entries.map((StorageEntryUsage e) => e.kind).toSet(),
+        <StorageEntryKind>{StorageEntryKind.readOnly},
+      );
+    });
+
     test('每个类目恰好产出一次结果', () async {
       final List<StorageCategoryUsage> all = await service().scanCategories(
         books: const <StorageBookRef>[],

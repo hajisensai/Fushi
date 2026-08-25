@@ -3801,5 +3801,7 @@
   "module_tool_toggle_hint": "在底栏/侧栏显示该页；关闭即隐藏",
   "module_downloads_hidden_hint": "「下载」页已在 设置 → 系统 → 功能模块 中隐藏；重新打开它才能管理订阅。",
   "book_file_location_open": "打开文件位置",
-  "book_file_location_failed": "无法打开这本书的文件位置。"
+  "book_file_location_failed": "无法打开这本书的文件位置。",
+  "storage_entry_database_snapshots_label": "数据库备份快照（$n 个文件）",
+  "storage_entry_delete_database_snapshots_confirm_body": "将删除全部数据库备份快照残留（corrupt-bak / pre-restore / 旧版本迁移副本）。正在使用的数据库及其 -wal/-shm 侧车不受影响。"
 }
