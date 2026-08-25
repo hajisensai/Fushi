@@ -500,7 +500,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 坐标，而 [showMenu] 的 [RelativeRect] 落在根 Navigator 的 Overlay 坐标系，界面
   /// 大小≠100% 时要经 `Overlay.globalToLocal` 换算才不偏移（BUG-781 同族）。
   /// 字幕抽取进行中（[_subtitleLoadingShown]）不弹：与行本身 `enabled: false` 一致，
-  /// 避免删掉正在抽取 / 解析的那个档案。
+  /// 避免删掉正在抽取 / 解析的那个档案。菜单是压在本页之上的覆盖层、会夺焦，按
+  /// docs/agent/focus-ownership.md 用 [PageFocusOwnership.guardOverlay] 包 `await`
+  /// 点，任何退出路径（选中 / 点外部 / Esc）都归还焦点。
   Future<void> _showSubtitleFileMenu(
     BuildContext context,
     VideoPlayerController controller,
@@ -513,80 +515,78 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool? delete = await showMenu<bool>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: <PopupMenuEntry<bool>>[
-        PopupMenuItem<bool>(
-          value: true,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(Icons.delete_outline, size: 20, color: scheme.error),
-              const SizedBox(width: 12),
-              Text(
-                t.video_subtitle_delete,
-                style: TextStyle(color: scheme.error),
-              ),
-            ],
-          ),
+    final bool? delete = await _focusOwnership.guardOverlay(
+      () => showMenu<bool>(
+        context: context,
+        position: RelativeRect.fromRect(
+          Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+          Offset.zero & overlay.size,
         ),
-      ],
+        items: <PopupMenuEntry<bool>>[
+          FushiPopupMenuItem<bool>(
+            value: true,
+            label: t.video_subtitle_delete,
+            icon: Icons.delete_outline,
+            color: scheme.error,
+          ),
+        ],
+      ),
     );
     if (delete != true || !mounted) return;
     await _deleteSubtitleFile(controller, source);
   }
 
   /// 删除一个外挂字幕档案（[SubtitleSource.external]）：二次确认（显示完整路径）→
-  /// 删磁盘文件 → 若它正是当前主 / 副字幕则走**既有**关闭路径 → 从两份列表移除。
+  /// 删磁盘文件 → 若它正是当前主字幕则把选择清回「无偏好」、当前副字幕则走既有
+  /// 关闭路径 → 从两份列表移除。
   ///
-  /// 为什么必须先关字幕再删列表项：单视频模式下 [_selectSubtitleSource] 把解析出的
+  /// 为什么必须先清字幕再删列表项：单视频模式下 [_selectSubtitleSource] 把解析出的
   /// cue 与源指针一起落库（BUG-081），只删文件不清库，重开视频时 `loadCues` 仍命中
-  /// 旧 cue、把已删字幕原样显示回来；副字幕 / 远端同理各有自己的持久化指针。复用
-  /// [_selectSubtitleOff] / [_selectSecondarySubtitleOff]（远端 [_clearRemoteSubtitle]
-  /// / [_clearRemoteSecondarySubtitle]）而不另写一套清理，保证与用户手点「关闭」
-  /// 的落库形状完全一致。判「是否当前源」用 [sameExternalSubtitlePathForMenu]
-  /// （大小写 / 分隔符归一），与列表高亮同一判据。
+  /// 旧 cue、把已删字幕原样显示回来；副字幕 / 远端同理各有自己的持久化指针。
+  ///
+  /// 主字幕**不**复用 [_selectSubtitleOff] / [_clearRemoteSubtitle]：它们落的是
+  /// `off:` 显式关闭哨兵（TODO-818），下次起播会短路 sidecar 探测 / 内嵌轨自动抽取
+  /// / host 默认字幕。「删掉一个下错的字幕档」≠「我不要字幕」——用户删掉错误的
+  /// Jimaku 档后，下次重开理应像从没选过一样自动挑同目录 sidecar / 内嵌轨。故走
+  /// [_forgetDeletedSubtitleSelection] 清回 `null`（无偏好）。副字幕没有自动选择，
+  /// `null` 与 `off:` 恢复行为相同，直接复用 [_selectSecondarySubtitleOff] /
+  /// [_clearRemoteSecondarySubtitle]。判「是否当前源」用
+  /// [sameExternalSubtitlePathForMenu]（大小写 / 分隔符归一），与列表高亮同一判据。
   ///
   /// 列表项从 [_subtitleMenuSources]（枚举结果）与 [_importedSubtitleSources]
   /// （本会话登记）两份都移除：渲染走 [mergeImportedSubtitleSourcesForMenu] 合并，
   /// 只删一份另一份还会把它合回来。不重跑 ffmpeg 枚举——删的是本地档案，容器内封
   /// 轨的缓存仍然有效。
+  ///
+  /// 先删文件再清字幕不会自锁：外挂字幕只解析进内存 cue，libmpv 侧收到的是
+  /// `SubtitleTrack.no()`，app 自身不持有该文件句柄。
   Future<void> _deleteSubtitleFile(
     VideoPlayerController controller,
     SubtitleSource source,
   ) async {
     final String? path = source.externalPath;
     if (path == null) return;
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext ctx) => AlertDialog(
-            title: Text(t.video_subtitle_delete),
-            content: Text(t.video_subtitle_delete_confirm(path: path)),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(t.dialog_cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!mounted) return;
-    // 菜单 + 对话框都是模态、会夺焦；无论删不删，关闭后把焦点还给视频（BUG-131 同族）。
-    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.overlayClosed);
-    if (!confirmed) return;
+    // 全 app 统一的「确认销毁」对话框（FushiDestructiveConfirmDialog）；pop null =
+    // 取消。对话框是覆盖层、会夺焦，guardOverlay 在任何退出路径归还焦点。
+    final FushiDestructiveConfirmResult? confirmed =
+        await _focusOwnership.guardOverlay(
+      () => showAppDialog<FushiDestructiveConfirmResult>(
+        context: context,
+        builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+          title: t.video_subtitle_delete,
+          message: t.video_subtitle_delete_confirm(path: path),
+        ),
+      ),
+    );
+    if (confirmed == null || !mounted) return;
     try {
       final File file = File(path);
       if (await file.exists()) await file.delete();
-    } catch (_) {
+    } catch (e) {
+      // 占用 / 只读 / 权限各不相同，用户报「删除失败」时要能从日志判型。
+      debugPrint(
+        '[video-playback] delete external subtitle failed path=$path: $e',
+      );
       if (!mounted) return;
       _showOsd(
         t.video_subtitle_delete_failed(label: source.label),
@@ -597,9 +597,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!mounted) return;
     final String? primary = _currentSubtitleSource;
     if (primary != null && sameExternalSubtitlePathForMenu(source, primary)) {
-      await (_isRemote
-          ? _clearRemoteSubtitle(controller)
-          : _selectSubtitleOff(controller));
+      await _forgetDeletedSubtitleSelection(controller);
     }
     if (!mounted) return;
     final String? secondary = _currentSecondarySubtitleSource;
@@ -618,6 +616,34 @@ extension _VideoSubtitle on _VideoFushiPageState {
           _importedSubtitleSources.where(notDeleted).toList();
     });
     _showOsd(t.video_subtitle_deleted(label: source.label));
+  }
+
+  /// 当前主字幕档案已被删除：清空 overlay cue，并把持久化指针清回 `null`（无偏好）。
+  ///
+  /// 与 [_selectSubtitleOff] / [_clearRemoteSubtitle] 的唯一差别是落 `null` 而非
+  /// `off:` 哨兵（TODO-818 三态：非空=具体源 / `off:`=显式关闭 / `null`=无偏好→
+  /// 下次起播自动选默认），也**不**置 [_remoteSubtitleUserDismissed]——用户没有表达
+  /// 「不要字幕」。落库形状与各自的关闭路径逐项对齐：单视频 cue + 指针原子写
+  /// （BUG-081）、播放列表只写指针、远端经 [AppModel.setRemoteSubtitleSource]。
+  Future<void> _forgetDeletedSubtitleSelection(
+    VideoPlayerController controller,
+  ) async {
+    controller.setCues(const <AudioCue>[]);
+    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (_isRemote) {
+      final (String uid, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+      unawaited(appModel.setRemoteSubtitleSource(uid, ep, null));
+    } else if (_episodes.isEmpty) {
+      await widget.repo.saveSubtitleSelection(
+        bookUid: widget.bookUid,
+        subtitleSource: null,
+        cues: const <AudioCue>[],
+      );
+    } else {
+      await widget.repo.updateSubtitleSource(widget.bookUid, null);
+    }
+    if (!mounted) return;
+    _rebuild(() => _currentSubtitleSource = null);
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
