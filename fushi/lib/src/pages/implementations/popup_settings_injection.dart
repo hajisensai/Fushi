@@ -131,8 +131,16 @@ String _themeVariablesJs({
 /// `data:` URL `@font-face` for imported files). Returns an empty string when no
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
-String dictionaryFontStyleJs(AppModel appModel) =>
-    _dictionaryFontStyleJsMemo(appModel).js;
+/// [fontUrlBuilder] 语义同 [buildPopupStaticSettingsJs]：非空则字体以 URL 引用产出，
+/// 为空则内联 `data:` URL。
+///
+/// **必须转发**而不是写死内联：这是个公开函数，写死的话任何将来的调用方都会静默拿到
+/// 几十 MB 的内联版本，而它自己完全看不出为什么慢。
+String dictionaryFontStyleJs(
+  AppModel appModel, {
+  String Function(String safePath)? fontUrlBuilder,
+}) =>
+    _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
 
 /// BUG-717 ③：[dictionaryFontStyleJs] 最终产物的进程内 memo。
 ///
@@ -144,14 +152,41 @@ String dictionaryFontStyleJs(AppModel appModel) =>
 /// 停启用 / 文件原地覆盖 / 导入换路径 / 目录变化都会换键重建；命中时返回同一
 /// 实例，零拷贝。瞬时读盘失败（[DictionaryFontCss.inlineFailureCount] 变化）的
 /// 降级产物不进 memo，下次查词自然重试。
-String? _fontStyleJsMemoKey;
-String _fontStyleJsMemoValue = '';
-Object _fontStyleJsMemoToken = Object();
+/// 一个字体投递模式的 memo 槽。
+///
+/// **必须按模式分槽**，不能共用一个：两种模式的产物完全不同（一个内嵌 base64
+/// 字节、一个只有 URL），而两个消费者（in-app 弹窗走 URL、app 外裸 WebView2 仍走
+/// 内联）在同一个进程里交替调用。共用单槽会让每次交替都 miss 并重建，而内联模式
+/// 的一次重建正是几十 MB 的 base64 编码——那比不缓存还糟。
+class _FontStyleMemoSlot {
+  String? key;
+  String value = '';
+  Object token = Object();
+}
+
+final _FontStyleMemoSlot _fontStyleMemoInline = _FontStyleMemoSlot();
+final _FontStyleMemoSlot _fontStyleMemoUrl = _FontStyleMemoSlot();
 final Object _noSettingsFontStyleToken = Object();
 
+/// 测试用：清空两个字体 memo 槽，避免用例之间互相污染。
+@visibleForTesting
+void debugResetDictionaryFontStyleMemo() {
+  _fontStyleMemoInline
+    ..key = null
+    ..value = ''
+    ..token = Object();
+  _fontStyleMemoUrl
+    ..key = null
+    ..value = ''
+    ..token = Object();
+}
+
 ({String cacheKey, Object cacheToken, String js}) _dictionaryFontStyleJsMemo(
-  AppModel appModel,
-) {
+  AppModel appModel, {
+  String Function(String safePath)? fontUrlBuilder,
+}) {
+  final _FontStyleMemoSlot slot =
+      fontUrlBuilder == null ? _fontStyleMemoInline : _fontStyleMemoUrl;
   // BUG: `ReaderFushiSource.readerSettings` is only populated while a book /
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
@@ -214,16 +249,16 @@ final Object _noSettingsFontStyleToken = Object();
       .join('|');
   final String cacheKey =
       '${DictionaryFontCss.fontListFingerprint(fonts, allowedDirectories: allowedDirectories)}|$languageFingerprint|$defaultContentLanguage|$lookupLanguage|${defaultTargetPlatform.name}';
-  if (cacheKey == _fontStyleJsMemoKey) {
-    return (
-      cacheKey: cacheKey,
-      cacheToken: _fontStyleJsMemoToken,
-      js: _fontStyleJsMemoValue,
-    );
+  if (cacheKey == slot.key) {
+    return (cacheKey: cacheKey, cacheToken: slot.token, js: slot.value);
   }
   final int inlineFailuresBefore = DictionaryFontCss.inlineFailureCount;
   final ({String fontFamily, String fontFaces, List<String> families}) css =
-      DictionaryFontCss.build(fonts, allowedDirectories: allowedDirectories);
+      DictionaryFontCss.build(
+        fonts,
+        allowedDirectories: allowedDirectories,
+        fontUrlBuilder: fontUrlBuilder,
+      );
   String js = '';
   // 语言分流 CSS 现在**总是**产出（哪怕用户没配任何词典字体）——popup.css 的
   // 内建链只写了 macOS 的 Hiragino，Windows/Android/Linux 上一个存在的 CJK 家族
@@ -260,10 +295,11 @@ final Object _noSettingsFontStyleToken = Object();
       })();''';
   }
   if (DictionaryFontCss.inlineFailureCount == inlineFailuresBefore) {
-    _fontStyleJsMemoKey = cacheKey;
-    _fontStyleJsMemoValue = js;
-    _fontStyleJsMemoToken = Object();
-    return (cacheKey: cacheKey, cacheToken: _fontStyleJsMemoToken, js: js);
+    slot
+      ..key = cacheKey
+      ..value = js
+      ..token = Object();
+    return (cacheKey: cacheKey, cacheToken: slot.token, js: js);
   }
   // Do not let the outer static-settings memo pin a transient degraded result.
   // A unique token forces the next lookup to retry even though the stable font
@@ -613,9 +649,7 @@ int _staticSettingsRevision = 0;
 /// 互相污染。revision 计数不重置（单调性是契约）。
 @visibleForTesting
 void debugResetPopupSettingsInjectionCaches() {
-  _fontStyleJsMemoKey = null;
-  _fontStyleJsMemoValue = '';
-  _fontStyleJsMemoToken = Object();
+  debugResetDictionaryFontStyleMemo();
   _staticSettingsMemo.clear();
 }
 
@@ -623,10 +657,25 @@ void debugResetPopupSettingsInjectionCaches() {
 /// CSS）：只随主题、设置、词典集变化，不随查词变化。in-app 路径按产物
 /// [PopupStaticSettingsJs.revision] 去重，变了才随下一次推送重发（BUG-717 ③：
 /// 原先命中后仍有 4~5 遍 MB 级串拷贝/转义/比较，现在命中路径零 MB 级操作）。
+/// [fontUrlBuilder] 非空时，导入字体以 URL 引用写进 `@font-face`，由宿主 WebView
+/// 的资源拦截器按需供字节；为空则内联成 `data:` URL（历史行为）。
+///
+/// 谁传谁不传，取决于**宿主有没有能带 CORS 头的资源拦截器**：
+///   - in-app 弹窗（Android / Windows）：有 `shouldInterceptRequest`，传。字体是强制
+///     CORS 模式的子资源，拦截器回 `Access-Control-Allow-Origin` 才拿得到。
+///   - in-app 弹窗（iOS / macOS）：只有 WKURLSchemeHandler，它构造的 URLResponse
+///     带不了任何 header，字体会被 CORS 拒；只能继续内联。
+///   - app 外裸 WebView2（全局查词窗 / 剪贴板面板）：字节走 native 侧另一条通道，
+///     暂仍内联（见 global_lookup_render 的调用点）。
+///
+/// 之所以是「调用方传」而不是在这里判平台：这个函数不知道自己产出的脚本要注入进
+/// 哪个宿主，而同一个平台上两类宿主的答案不同（Windows 的 in-app 能拦、裸 WebView2
+/// 这条路还没接）。让宿主自己声明能力，比在这里猜宿主身份可靠。
 PopupStaticSettingsJs buildPopupStaticSettingsJs({
   required AppModel appModel,
   required ThemeData theme,
   required PopupSettingsOptions options,
+  String Function(String safePath)? fontUrlBuilder,
 }) {
   final String themeVarsJs = _themeVariablesJs(
     appModel: appModel,
@@ -635,7 +684,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     mobileExternal: options.mobileExternal,
   );
   final ({String cacheKey, Object cacheToken, String js}) fontStyle =
-      _dictionaryFontStyleJsMemo(appModel);
+      _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder);
   final String wheelBindingsJson = popupEntryWheelBindingsJson(
     appModel.shortcutRegistry,
     theme.platform,
