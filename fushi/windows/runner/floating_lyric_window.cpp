@@ -705,7 +705,13 @@ FloatingLyricWindow::ScrollBarGeometry FloatingLyricWindow::ComputeScrollBar()
   const float hit_half =
       std::max(g.bar_w, ScaleForDpi(kScrollBarHitWidthDip)) * 0.5f;
   const float bar_center = g.bar_x + g.bar_w * 0.5f;
-  g.hit_left = bar_center - hit_half;
+  // 命中带只许长在 text_rect_ 右侧的**留白**里，一个像素都不许伸进正文：
+  // 轨道中心在 width - pad/2，命中带半宽 7dp，所以 pad < 14dp（滑杆最小 0，
+  // 默认 20）时它会盖住正文最右边 (7 - pad/2) dp —— 那一列的点击本该是「点字
+  // 查词」，却会变成起拖 thumb。夹到正文右沿，让「按滚动条」和「点字」永远
+  // 不争同一个像素。
+  g.hit_left =
+      std::max(bar_center - hit_half, text_rect_.left + text_rect_.width);
   g.hit_right = std::min(width, bar_center + hit_half);
   return g;
 }
