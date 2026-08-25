@@ -3801,5 +3801,9 @@
   "module_tool_toggle_hint": "在底栏/侧栏显示该页；关闭即隐藏",
   "module_downloads_hidden_hint": "「下载」页已在 设置 → 系统 → 功能模块 中隐藏；重新打开它才能管理订阅。",
   "book_file_location_open": "打开文件位置",
-  "book_file_location_failed": "无法打开这本书的文件位置。"
+  "book_file_location_failed": "无法打开这本书的文件位置。",
+  "video_subtitle_delete": "删除字幕文件",
+  "video_subtitle_delete_confirm": "确定从磁盘删除这个字幕文件？此操作不可撤销。\\n$path",
+  "video_subtitle_deleted": "已删除字幕文件：$label",
+  "video_subtitle_delete_failed": "删除字幕文件失败：$label"
 }

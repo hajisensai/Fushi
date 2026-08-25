@@ -233,9 +233,46 @@ extension _VideoSubtitle on _VideoFushiPageState {
         for (final SubtitleSource source in _importedSubtitleSources)
           if (hostSub == null ||
               !sameExternalSubtitlePathForMenu(source, hostSub))
+            _withSubtitleFileMenu(
+              context,
+              controller,
+              source,
+              ListTile(
+                leading: const Icon(Icons.subtitles),
+                title: Text(source.label),
+                selected: subtitleSourceMatchesPersistedForMenu(
+                  source,
+                  _currentSubtitleSource,
+                ),
+                selectedColor: cs.primary,
+                enabled: !_subtitleLoadingShown,
+                onTap: _subtitleLoadingShown
+                    ? null
+                    : () => unawaited(
+                          _applyRemoteSubtitle(
+                            controller,
+                            source.externalPath!,
+                            label: source.label,
+                          ),
+                        ),
+              ),
+            ),
+      if (!_isRemote)
+        for (final SubtitleSource source in _menuSubtitleSources)
+          _withSubtitleFileMenu(
+            context,
+            controller,
+            source,
             ListTile(
-              leading: const Icon(Icons.subtitles),
+              leading: Icon(
+                source.isGraphicEmbedded
+                    ? Icons.image_outlined
+                    : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+              ),
               title: Text(source.label),
+              subtitle: source.isGraphicEmbedded
+                  ? Text(t.video_subtitle_graphic_hint)
+                  : null,
               selected: subtitleSourceMatchesPersistedForMenu(
                 source,
                 _currentSubtitleSource,
@@ -244,35 +281,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
               enabled: !_subtitleLoadingShown,
               onTap: _subtitleLoadingShown
                   ? null
-                  : () => unawaited(
-                        _applyRemoteSubtitle(
-                          controller,
-                          source.externalPath!,
-                          label: source.label,
-                        ),
-                      ),
+                  : () => unawaited(_selectSubtitleSource(controller, source)),
             ),
-      if (!_isRemote)
-        for (final SubtitleSource source in _menuSubtitleSources)
-          ListTile(
-            leading: Icon(
-              source.isGraphicEmbedded
-                  ? Icons.image_outlined
-                  : (source.isEmbedded ? Icons.movie : Icons.subtitles),
-            ),
-            title: Text(source.label),
-            subtitle: source.isGraphicEmbedded
-                ? Text(t.video_subtitle_graphic_hint)
-                : null,
-            selected: subtitleSourceMatchesPersistedForMenu(
-              source,
-              _currentSubtitleSource,
-            ),
-            selectedColor: cs.primary,
-            enabled: !_subtitleLoadingShown,
-            onTap: _subtitleLoadingShown
-                ? null
-                : () => unawaited(_selectSubtitleSource(controller, source)),
           ),
       // TODO-857 / TODO-1312 视频双字幕：副字幕入口。副字幕走 Flutter overlay 副层
       // cue 流（可逐字符查词）。TODO-2837：远端也支持（host sidecar / host 内嵌轨
@@ -388,24 +398,29 @@ extension _VideoSubtitle on _VideoFushiPageState {
         for (final SubtitleSource source in _importedSubtitleSources)
           if (hostSub == null ||
               !sameExternalSubtitlePathForMenu(source, hostSub))
-            ListTile(
-              leading: const Icon(Icons.subtitles),
-              title: Text(source.label),
-              selected: subtitleSourceMatchesPersistedForMenu(
-                source,
-                _currentSecondarySubtitleSource,
-              ),
-              selectedColor: cs.primary,
-              enabled: !_subtitleLoadingShown,
-              onTap: _subtitleLoadingShown
-                  ? null
-                  : () => unawaited(
-                        _applyRemoteSecondarySubtitle(
-                          controller,
-                          source.externalPath!,
-                          label: source.label,
+            _withSubtitleFileMenu(
+              context,
+              controller,
+              source,
+              ListTile(
+                leading: const Icon(Icons.subtitles),
+                title: Text(source.label),
+                selected: subtitleSourceMatchesPersistedForMenu(
+                  source,
+                  _currentSecondarySubtitleSource,
+                ),
+                selectedColor: cs.primary,
+                enabled: !_subtitleLoadingShown,
+                onTap: _subtitleLoadingShown
+                    ? null
+                    : () => unawaited(
+                          _applyRemoteSecondarySubtitle(
+                            controller,
+                            source.externalPath!,
+                            label: source.label,
+                          ),
                         ),
-                      ),
+              ),
             ),
       ];
     }
@@ -428,22 +443,181 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 下载的档案），外挂字幕文件也能选为副字幕。图标与主字幕轨行一致：图形轨
       // image / 内嵌 movie / 外挂 subtitles。
       for (final SubtitleSource source in _menuSubtitleSources)
-        ListTile(
-          leading: Icon(
-            source.isGraphicEmbedded
-                ? Icons.image_outlined
-                : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+        _withSubtitleFileMenu(
+          context,
+          controller,
+          source,
+          ListTile(
+            leading: Icon(
+              source.isGraphicEmbedded
+                  ? Icons.image_outlined
+                  : (source.isEmbedded ? Icons.movie : Icons.subtitles),
+            ),
+            title: Text(source.label),
+            selected: source.matchesPersisted(_currentSecondarySubtitleSource),
+            selectedColor: cs.primary,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(
+                      _selectSecondarySubtitleSource(controller, source),
+                    ),
           ),
-          title: Text(source.label),
-          selected: source.matchesPersisted(_currentSecondarySubtitleSource),
-          selectedColor: cs.primary,
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () =>
-                  unawaited(_selectSecondarySubtitleSource(controller, source)),
         ),
     ];
+  }
+
+  /// 外挂字幕行的长按 / 右键上下文菜单包装（主字幕轨行与副字幕轨行共用）。
+  ///
+  /// 只有磁盘上真有档案的外挂源（[SubtitleSource.external]：视频同目录 sidecar /
+  /// 导入副本 / Jimaku 下载）才挂手势；内嵌轨（`embedded:<n>`）没有任何可删除的
+  /// 东西，原样返回——「不给菜单」比「给一个禁用的删除项」少一个特殊状态。
+  /// 桌面右键 [GestureDetector.onSecondaryTapDown]、触屏长按
+  /// [GestureDetector.onLongPressStart] 都落到 [_showSubtitleFileMenu]；
+  /// [ListTile.onTap] 的单击选轨路径不动。
+  Widget _withSubtitleFileMenu(
+    BuildContext context,
+    VideoPlayerController controller,
+    SubtitleSource source,
+    Widget row,
+  ) {
+    if (source.isEmbedded) return row;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPressStart: (LongPressStartDetails d) => unawaited(
+        _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+      ),
+      onSecondaryTapDown: (TapDownDetails d) => unawaited(
+        _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+      ),
+      child: row,
+    );
+  }
+
+  /// 在 [globalPosition] 处弹外挂字幕档案的上下文菜单：目前只有「删除字幕文件」
+  /// 一项（[_deleteSubtitleFile]）。照仓库既有长按 / 右键菜单范式
+  /// （tag_management_page `_showTagMenu`）：[globalPosition] 是手势报的真实视口
+  /// 坐标，而 [showMenu] 的 [RelativeRect] 落在根 Navigator 的 Overlay 坐标系，界面
+  /// 大小≠100% 时要经 `Overlay.globalToLocal` 换算才不偏移（BUG-781 同族）。
+  /// 字幕抽取进行中（[_subtitleLoadingShown]）不弹：与行本身 `enabled: false` 一致，
+  /// 避免删掉正在抽取 / 解析的那个档案。
+  Future<void> _showSubtitleFileMenu(
+    BuildContext context,
+    VideoPlayerController controller,
+    SubtitleSource source,
+    Offset globalPosition,
+  ) async {
+    if (_subtitleLoadingShown) return;
+    final RenderObject? overlay =
+        Overlay.of(context).context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final Offset anchor = overlay.globalToLocal(globalPosition);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool? delete = await showMenu<bool>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<bool>>[
+        PopupMenuItem<bool>(
+          value: true,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.delete_outline, size: 20, color: scheme.error),
+              const SizedBox(width: 12),
+              Text(
+                t.video_subtitle_delete,
+                style: TextStyle(color: scheme.error),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (delete != true || !mounted) return;
+    await _deleteSubtitleFile(controller, source);
+  }
+
+  /// 删除一个外挂字幕档案（[SubtitleSource.external]）：二次确认（显示完整路径）→
+  /// 删磁盘文件 → 若它正是当前主 / 副字幕则走**既有**关闭路径 → 从两份列表移除。
+  ///
+  /// 为什么必须先关字幕再删列表项：单视频模式下 [_selectSubtitleSource] 把解析出的
+  /// cue 与源指针一起落库（BUG-081），只删文件不清库，重开视频时 `loadCues` 仍命中
+  /// 旧 cue、把已删字幕原样显示回来；副字幕 / 远端同理各有自己的持久化指针。复用
+  /// [_selectSubtitleOff] / [_selectSecondarySubtitleOff]（远端 [_clearRemoteSubtitle]
+  /// / [_clearRemoteSecondarySubtitle]）而不另写一套清理，保证与用户手点「关闭」
+  /// 的落库形状完全一致。判「是否当前源」用 [sameExternalSubtitlePathForMenu]
+  /// （大小写 / 分隔符归一），与列表高亮同一判据。
+  ///
+  /// 列表项从 [_subtitleMenuSources]（枚举结果）与 [_importedSubtitleSources]
+  /// （本会话登记）两份都移除：渲染走 [mergeImportedSubtitleSourcesForMenu] 合并，
+  /// 只删一份另一份还会把它合回来。不重跑 ffmpeg 枚举——删的是本地档案，容器内封
+  /// 轨的缓存仍然有效。
+  Future<void> _deleteSubtitleFile(
+    VideoPlayerController controller,
+    SubtitleSource source,
+  ) async {
+    final String? path = source.externalPath;
+    if (path == null) return;
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: Text(t.video_subtitle_delete),
+            content: Text(t.video_subtitle_delete_confirm(path: path)),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(t.dialog_cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(t.dialog_delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!mounted) return;
+    // 菜单 + 对话框都是模态、会夺焦；无论删不删，关闭后把焦点还给视频（BUG-131 同族）。
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.overlayClosed);
+    if (!confirmed) return;
+    try {
+      final File file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      if (!mounted) return;
+      _showOsd(
+        t.video_subtitle_delete_failed(label: source.label),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    final String? primary = _currentSubtitleSource;
+    if (primary != null && sameExternalSubtitlePathForMenu(source, primary)) {
+      await (_isRemote
+          ? _clearRemoteSubtitle(controller)
+          : _selectSubtitleOff(controller));
+    }
+    if (!mounted) return;
+    final String? secondary = _currentSecondarySubtitleSource;
+    if (secondary != null &&
+        sameExternalSubtitlePathForMenu(source, secondary)) {
+      await (_isRemote
+          ? _clearRemoteSecondarySubtitle(controller)
+          : _selectSecondarySubtitleOff(controller));
+    }
+    if (!mounted) return;
+    bool notDeleted(SubtitleSource s) =>
+        !sameExternalSubtitlePathForMenu(s, path);
+    _rebuild(() {
+      _subtitleMenuSources = _subtitleMenuSources.where(notDeleted).toList();
+      _importedSubtitleSources =
+          _importedSubtitleSources.where(notDeleted).toList();
+    });
+    _showOsd(t.video_subtitle_deleted(label: source.label));
   }
 
   /// 弹「字幕源」菜单：枚举当前视频的全部字幕源（内嵌轨 + 同目录外挂文件）+
