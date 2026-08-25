@@ -1,6 +1,13 @@
 ## BUG-1871 · 漫画全源搜索空态文案指向不存在的「扩展」且无导入引导按钮
 - **报告**：2026-08-25（用户：截图——「搜索全部来源」页正文只有一句「没有已启用的漫画来源，请先安装并启用扩展。」，「这里提示不对，而且应该有按钮引导去导入」）
 - **真实性**：✅ 真 bug。`fushi/lib/src/media/manga/manga_global_search_page.dart:175`（修前）`_buildBody` 在 `_sources().isEmpty` 时只渲染一段 `Text(t.manga_global_search_no_sources)`：文案叫用户去「安装并启用扩展」，可漫画库的三视图是「书架 / 发现 / 导入」（`manga_library_page.dart:56` `library_view_import`），根本没有叫「扩展」的入口；而且整页没有任何可点的东西，用户只能按返回自己翻。壳早就为这类空态准备了 `MediaLibraryShellScope.select(MediaLibraryViewKind.sources)`（`media_library_shell.dart:54`），本页没接。
-- **[x] ① 已修复** — `c953b9494d`：`MangaGlobalSearchPage` 新增 `onOpenSources` 回调；空态文案改为「还没有已启用的漫画来源，去「导入」添加一个。」并渲染「去导入」按钮（`manga_global_search_open_sources`），点击**先 pop 本页再调回调**（切视图发生在本页下面的壳里，顺序反了用户什么都看不到）。`MangaDiscoveryPage._submitSearch` 经 `MediaLibraryShellScope.maybeOf` 接回调；不在壳里（被独立 push）时为 null，只显示文案不显示按钮。
-- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_global_search_page_test.dart`：「no sources: empty state names the Import tab and its button pops then opens it」断言文案包含 `library_view_import`、按钮存在、点击后回调计数 1 且搜索页已 pop；「no sources without a shell to switch」断言无回调时无按钮。变异实测：去掉 `Navigator.pop()` → 红。
-- **备注**：i18n 用 `--remove` + `--add` 重写同名 key（不是改名），其余 16 语回落英文待译。
+- **[x] ① 已修复** — `c953b9494d` 首修 + PR #1018 复审补完：`MangaGlobalSearchPage` 新增 `onOpenSources` 回调，空态文案改为「还没有已启用的漫画来源，去「导入」添加一个。」并渲染「去导入」按钮（`manga_global_search_open_sources`，图标 `library_add_outlined`——原来的 `extension_outlined` 拼图块正是本 bug 的病根）。
+  - **导航所有权收进壳**：首修把「弹掉本页」写在搜索页自己的 `_openSources()` 里（`Navigator.pop()` 只弹一层），正确性因此被硬编码成「本页正好是壳上面唯一一层路由」这个隐式前提。全仓推 `MangaGlobalSearchPage` 的有**两处**，第二处（`manga_discovery_detail_page.dart:227` `_openGlobalSearch`）这个前提不成立：弹掉搜索页后详情页仍盖在壳上面，用户看不到切过去的「导入」视图。现在 pop 收进 `MediaLibraryShellScope.select`（`media_library_shell.dart:105` `_select`）：以壳自己的 `ModalRoute` 为界 `popUntil` 一次弹到底，调用方压了几层都对，「顺序不能反」从口头契约变成结构保证。
+  - **两个调用点都接上**：`MangaDiscoveryPage._submitSearch` 与 `_openEntry`（推详情页）都走新的 `_openSourcesAction()`；详情页是 pushed route（挂在 Navigator 下面，`MediaLibraryShellScope.maybeOf` 在那里恒为 null），去处必须由调用方解析好随构造参数传进去（新增 `MangaDiscoveryDetailPage.onOpenSources`）。
+  - **判据从「壳在」改成「壳有该视图」**：`MediaLibraryShellScope` 新增 `kinds` + `actionFor(kind)`，视图不存在返回 null。`select` 对不存在的视图是**静默忽略**（`_select` 在 `index < 0` 时直接 return），照「壳在」渲染按钮的话，将来某个域裁掉 sources 视图时用户点按钮 → 搜索页被 pop → 什么都没发生且完全静默。
+- **[x] ② 已加自动化测试**
+  - `fushi/test/media/manga/manga_global_search_page_test.dart`：改成**在真 `MediaLibraryShell` 里**跑端到端——「压一层」（发现 → 搜索页）与「压两层」（发现 → 详情页 → 搜索页）两条，各断言点按钮后搜索页与中间层都被弹掉、「导入」视图可见；另断言文案含 `library_view_import`、图标是 `library_add_outlined`、无去处时不渲染按钮。
+  - `fushi/test/pages/media_library_shell_test.dart`：壳层三条——压一层 / 压两层各自弹干净，`actionFor` 在壳没声明该视图时返回 null。
+  - `fushi/test/media/manga/discovery/manga_discovery_detail_page_test.dart`：详情页必须把去处透传给兜底搜索页；不传时搜索页只给文案。
+  - 变异实测：删掉 `_select` 里的 `popUntil` → 壳层两条红；删掉详情页的 `onOpenSources: widget.onOpenSources` → 详情页透传那条红（另一条「不在壳里」的仍绿，说明断言分得开）。
+- **备注**：i18n 用 `--remove` + `--add` 重写同名 key（不是改名），其余 16 语回落英文待译。`reader_fushi_history_page.dart:2003` 的书架空态也用「壳在不在」当判据，同一个根、本轮未动（属封面回填/书架并发改动区），后续可一并换成 `actionFor`。

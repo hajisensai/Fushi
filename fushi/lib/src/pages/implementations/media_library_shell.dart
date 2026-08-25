@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
@@ -53,20 +54,37 @@ class MediaLibraryViewSpec {
 /// 调用方自行回退（如直接开导入对话框）。
 class MediaLibraryShellScope extends InheritedWidget {
   const MediaLibraryShellScope({
+    required this.kinds,
     required this.select,
     required super.child,
     super.key,
   });
 
+  /// 本壳**真正声明了**哪些视图。各域只声明自己有的东西（见 [MediaLibraryViewKind]），
+  /// 所以「壳在」不等于「这个视图在」——判据必须是后者，见 [actionFor]。
+  final Set<MediaLibraryViewKind> kinds;
+
   /// 切到指定视图；壳没有该视图时静默忽略。
+  ///
+  /// **导航所有权在壳这边**：壳上面压着从壳里推出去的页面（全源搜索页 / 发现详情页）
+  /// 时，本方法先把它们弹掉再切视图，调用方不必再遵守「先 pop 再 select」这条口头
+  /// 契约——那条契约只在「调用页正好是壳上面唯一一层路由」时才成立，第二个调用点
+  /// 就不成立了（BUG-1871）。
   final void Function(MediaLibraryViewKind kind) select;
+
+  /// 切到 [kind] 的动作；本壳没有该视图时返回 null。
+  ///
+  /// 空态引导按钮的唯一正确判据：[select] 对不存在的视图是静默忽略，拿「壳在不在」
+  /// 当判据会渲染出一个点了什么都不发生的按钮。
+  VoidCallback? actionFor(MediaLibraryViewKind kind) =>
+      kinds.contains(kind) ? () => select(kind) : null;
 
   static MediaLibraryShellScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<MediaLibraryShellScope>();
 
   @override
   bool updateShouldNotify(MediaLibraryShellScope oldWidget) =>
-      select != oldWidget.select;
+      select != oldWidget.select || !setEquals(kinds, oldWidget.kinds);
 }
 
 /// 库页视图导航壳：在一个顶层 tab 内切换 [MediaLibraryViewSpec] 声明的若干视图。
@@ -105,7 +123,15 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   void _select(MediaLibraryViewKind kind) {
     final int index = widget.views
         .indexWhere((MediaLibraryViewSpec spec) => spec.kind == kind);
-    if (index < 0 || index == _currentIndex) return;
+    if (index < 0) return;
+    // 「回到壳」的导航所有权收在这一处：切视图发生在壳里，壳上面压着的路由不弹掉
+    // 用户就什么都看不见。以本壳自己的路由为界一次弹到底，与调用方压了几层无关
+    // （全源搜索页从「发现」直接推是一层，从「发现详情页」推是两层）。
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      Navigator.of(context).popUntil((Route<dynamic> above) => above == route);
+    }
+    if (index == _currentIndex) return;
     setState(() {
       _currentIndex = index;
       _visited.add(index);
@@ -127,14 +153,19 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   @override
   Widget build(BuildContext context) {
     final List<MediaLibraryViewSpec> views = widget.views;
+    final Set<MediaLibraryViewKind> kinds = <MediaLibraryViewKind>{
+      for (final MediaLibraryViewSpec spec in views) spec.kind,
+    };
     if (views.length < 2) {
       return MediaLibraryShellScope(
+        kinds: kinds,
         select: _select,
         child: views.first.builder(context, const SizedBox.shrink()),
       );
     }
     final Widget navigation = _buildNavigation(views);
     return MediaLibraryShellScope(
+      kinds: kinds,
       select: _select,
       child: Stack(
         children: <Widget>[

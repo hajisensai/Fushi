@@ -75,4 +75,57 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // BUG-1871 复审：本页是全仓第二个（也是漏改的那个）推 [MangaGlobalSearchPage]
+  // 的地方。不把「去导入」的去处透传下去，一个源都没有的用户在兜底搜索页里看到的
+  // 仍然是「只有文案没有按钮」——与修前一模一样。
+  //
+  // 去处必须由**调用方**给：本页是 pushed route，挂在 Navigator 下面，
+  // `MediaLibraryShellScope.maybeOf(context)` 在这里恒为 null。
+  testWidgets('无命中 → 全源搜索页：把「去导入」的去处透传下去', (WidgetTester tester) async {
+    int opened = 0;
+    await tester.pumpWidget(
+      wrap(
+        MangaDiscoveryDetailPage(
+          entry: entry,
+          matchSourcesOverride: const <MangaMatchSource>[],
+          onOpenSources: () => opened++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_discovery_global_search')),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder button =
+        find.byKey(const ValueKey<String>('manga_global_search_open_sources'));
+    expect(button, findsOneWidget, reason: '兜底搜索页的空态必须也有「去导入」按钮');
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(opened, 1);
+  });
+
+  testWidgets('不在壳里（去处为 null）：兜底搜索页只给文案不给按钮',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        MangaDiscoveryDetailPage(
+          entry: entry,
+          matchSourcesOverride: const <MangaMatchSource>[],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_discovery_global_search')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('manga_global_search_open_sources')),
+      findsNothing,
+    );
+  });
 }

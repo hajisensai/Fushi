@@ -193,6 +193,12 @@ void main() {
     );
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
+    // 加载中就要把卡片条的高度占住，否则加载完成那一刻凭空插入 222px，标题下方
+    // 所有内容整体下移。`pumpAndSettle` 会跳过中间帧，钉不住这一条——必须在
+    // pending 态直接量行高，再与 done 态比。
+    final double pendingHeight =
+        tester.getSize(find.byType(MangaDiscoverySourceRow)).height;
+
     pending.complete(<MangaDiscoverySourceItem>[
       MangaDiscoverySourceItem(
         title: '慢源的热门作品',
@@ -202,6 +208,11 @@ void main() {
       ),
     ]);
     await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(MangaDiscoverySourceRow)).height,
+      pendingHeight,
+      reason: '加载完成不得改变行高（占位高度必须与卡片条一致）',
+    );
     expect(header, findsOneWidget);
     expect(find.text('慢源的热门作品'), findsOneWidget);
     expect(

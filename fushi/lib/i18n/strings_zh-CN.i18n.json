@@ -3805,5 +3805,6 @@
   "storage_entry_delete_database_snapshots_confirm_body": "将删除全部数据库备份快照残留（corrupt-bak / pre-restore / 旧版本迁移副本）。正在使用的数据库及其 -wal/-shm 侧车不受影响。",
   "manga_global_search_no_sources": "还没有已启用的漫画来源，去「导入」添加一个。",
   "manga_global_search_open_sources": "去导入",
-  "settings_downloads_open_page_hint": "打开下载页（任务 / 资源 / 订阅）"
+  "settings_downloads_open_page_hint": "打开下载页（任务 / 资源 / 订阅）",
+  "download_video_source_required": "需要视频来源"
 }

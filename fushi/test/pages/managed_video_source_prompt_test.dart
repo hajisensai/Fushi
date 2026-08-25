@@ -45,7 +45,17 @@ void main() {
     await pump(tester, openSourcesDialog: (BuildContext _) async => opened++);
 
     expect(find.text(t.download_no_managed_video_source), findsOneWidget);
-    expect(find.text('暂无来源'), findsNothing);
+    // 标题说状态、主按钮说动作：同一句话在同一个对话框里出现两遍是撞词。
+    // （旧断言 `find.text('暂无来源')` 是恒真的——本对话框任何分支都不渲染那个
+    // 硬编码中文串，改回旧 snackbar 写法它照样绿。）
+    expect(find.text(t.download_video_source_required), findsOneWidget);
+    expect(
+      t.download_video_source_required,
+      isNot(t.download_add_video_source),
+      reason: '对话框标题不能与主按钮同文案',
+    );
+    expect(find.text(t.download_add_video_source), findsOneWidget,
+        reason: '「添加视频来源」只出现在主按钮上，不再兼任标题');
 
     await tester.tap(
       find.byKey(const ValueKey<String>('managed_video_source_prompt_add')),

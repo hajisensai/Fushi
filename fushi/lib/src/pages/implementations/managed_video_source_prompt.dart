@@ -10,8 +10,10 @@ import 'package:fushi/utils.dart';
 /// 让用户自己猜缺什么、去哪补（下载页早已按 BUG-1706 把这一环拆开，首页发现路径
 /// 此前漏改）。
 ///
-/// 返回 true = 用户走完了「添加视频来源」对话框；调用方据此重新读取来源清单并
-/// 重试原动作。用户取消 = 明确放弃，不再补提示。
+/// 返回 true = 用户走进了「添加视频来源」对话框并把它关掉，**不表示真加成了**
+/// （来源对话框是通用的增删界面，不回报增量）。调用方必须重新读取来源清单确认，
+/// 并在仍为空时自己给回提示——本引导不是终点，静默结束比修前那句 snackbar 还糟。
+/// 用户取消 = 明确放弃，不再补提示。
 ///
 /// [openSourcesDialog] 只给测试注入：默认开 [MediaSourcesDialog]（视频域），它要
 /// 真 AppModel。
@@ -61,8 +63,10 @@ class ManagedVideoSourcePromptDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // 标题说**状态**、主按钮说**动作**：两处都用 `download_add_video_source`
+          // 会让同一句「添加视频来源」在一个对话框里出现两遍。
           Text(
-            t.download_add_video_source,
+            t.download_video_source_required,
             style: textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),

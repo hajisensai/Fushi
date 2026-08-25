@@ -3805,5 +3805,6 @@
   "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched.",
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
-  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)"
+  "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
+  "download_video_source_required": "Video source required"
 }

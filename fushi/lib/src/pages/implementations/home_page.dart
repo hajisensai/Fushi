@@ -1416,9 +1416,16 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 受管视频来源清单；为空时**弹「添加视频来源」引导**，用户加完再读一次。
   ///
-  /// 此前这一环被折叠成一条「暂无来源」snackbar：后端配得好好的，用户看到的却
-  /// 是一句既不说缺什么、也没处点的提示（下载页在 BUG-1706 已拆开，这里漏改）。
+  /// 此前这一环用错了 i18n key：拿通用扫描根的 `media_source_no_sources`
+  /// （「暂无来源」）去描述「缺下载落地文件夹」，既说不清缺什么也没处点，用户自然
+  /// 猜成「没配下载后端」（下载页在 BUG-1706 已把原因拆开，这里漏改）。
   /// 返回空表 = 用户取消或加完仍为空，调用方直接返回。
+  ///
+  /// **重读仍为空必须给回一句提示**：本条路径上没有可停留的空态门（下载页有，
+  /// `downloads_page.dart` 的 `_addVideoSource` 关掉对话框后重算前置条件、空态门
+  /// 继续留在页面上说明缺什么），静默返回等于整个流程无声消失——比修前那句 snackbar
+  /// 还糟。`promptManagedVideoSourceSetup` 返回 true 只表示用户走进了来源对话框，
+  /// 不表示真加成了。
   Future<List<MediaSourceRow>> _managedVideoDownloadSourcesOrPrompt(
     BuildContext context,
   ) async {
@@ -1427,7 +1434,12 @@ class _HomePageState extends BasePageState<HomePage>
     if (sources.isNotEmpty || !context.mounted) return sources;
     final bool added = await promptManagedVideoSourceSetup(context: context);
     if (!added) return const <MediaSourceRow>[];
-    return appModelNoUpdate.getManagedVideoDownloadSources();
+    final List<MediaSourceRow> retried =
+        await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (retried.isEmpty && context.mounted) {
+      _showVideoDiscoveryMessage(context, t.download_no_managed_video_source);
+    }
+    return retried;
   }
 
   Future<void> _openVideoDiscoveryResourceSearch(
