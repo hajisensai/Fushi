@@ -747,8 +747,10 @@ void FloatingLyricWindow::SetLocked(bool locked) {
   locked_ = locked;
   // A lock taken while a press / drag was pending must not strand the strip in
   // a half-dragging state; drop any in-flight gesture so the next click is
-  // interpreted fresh.
-  if (locked_ && (pressed_ || dragging_)) {
+  // interpreted fresh. BUG-1860: scroll_thumb_dragging_ is a third in-flight
+  // gesture and must be listed here too, or "SetLocked ends every gesture"
+  // is only true for two of the three.
+  if (locked_ && (pressed_ || dragging_ || scroll_thumb_dragging_)) {
     CancelPointerGesture();
   }
   RequestRender();
@@ -2042,7 +2044,7 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
     // The lock button toggles the position lock locally and reports the new
     // state to Dart; it is never a no-op (unlike the old desktop strip).
     locked_ = !locked_;
-    if (locked_ && (pressed_ || dragging_)) {
+    if (locked_ && (pressed_ || dragging_ || scroll_thumb_dragging_)) {
       // BUG-1471: this used to clear the flags without releasing capture, while
       // the channel path (SetLocked) released it — same action, two behaviours.
       CancelPointerGesture();
