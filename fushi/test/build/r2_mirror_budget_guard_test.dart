@@ -14,6 +14,9 @@ void main() {
     expect(workflow, contains('Roll back partial upload on failure'));
     expect(workflow, contains('mirrored-rollback.json'));
     expect(workflow, contains('未知存量当 0'));
+    expect(workflow, contains('Bootstrap verified-empty R2 ledger'));
+    expect(workflow, contains('容量台账已经存在，拒绝覆盖'));
+    expect(workflow, contains('本次不会上传任何 Release 资产'));
     expect(
       workflow,
       isNot(contains("echo '{\"schemaVersion\":2,\"releases\":[]}'")),
