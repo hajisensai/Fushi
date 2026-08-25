@@ -368,9 +368,18 @@ class MiningMediaCompression {
   }
 }
 
-/// 把一条 ffmpeg 失败摘要落进日志。[diagnosticOnly] = 调用方**还会用降级参数再试一次**
-/// （能力探测），此时失败是预期内的正常降级，只进诊断日志（不计错误数、不进用户可见
-/// 错误日志页）；否则进错误日志。默认 false = 既有行为逐字等价。
+/// 把一条 ffmpeg 失败摘要落进日志。
+///
+/// [diagnosticOnly] = 这条失败**是预期内的正常结果，不是 app 出错**。两种调用方都算：
+/// * **能力探测**：调用方还会用降级参数再试一次（GIF 编码器/滤镜链回退），中途失败是
+///   正常降级路径；
+/// * **best-effort 产线**（BUG-1867，书架封面回填）：失败就是**终局**，没有重试，但
+///   「这文件给不出封面」（无视频流的 BDMV 音轨 m2ts、seek 落空、torrent 还没下完）
+///   本来就是预期内结果——书架显示占位图就是给用户的反馈。
+///
+/// 两者共用同一条通道：走 [ErrorLogService.logDiagnostic]，**不计入错误计数、不落盘**，
+/// 转入日志页的「诊断/取证」分节，随复制/分享/上传一并带走（降严重性，不删证据）。
+/// 否则走 [ErrorLogService.log] 进用户可见错误列表。默认 false = 既有行为逐字等价。
 void _logFfmpegSummary(String source, String summary, StackTrace stack,
     {required bool diagnosticOnly}) {
   if (diagnosticOnly) {
@@ -718,9 +727,9 @@ Future<String?> extractVideoFrameViaFfmpeg({
   String? tlsPinSha256,
   // BUG-1867：调用方是 best-effort 后台产线（书架封面回填）——「这文件给不出帧」是
   // 预期内的正常结果（无视频流的 BDMV 音轨 m2ts、seek 落在空洞区…），与上游
-  // [extractEmbeddedVideoCoverViaFfmpeg] 把「容器没有内嵌封面」判为正常同层，不该
-  // 进用户可见错误日志页。ffmpeg **根本起不来**（ProcessException）仍是真错误，
-  // 不受本开关影响。
+  // [extractEmbeddedVideoCoverViaFfmpeg] 把「容器没有内嵌封面」判为正常同层。置 true
+  // 时这条失败**不计入错误计数、不落盘**，转入日志页的诊断/取证分节（证据仍随复制
+  // /上传带走）。ffmpeg **根本起不来**（ProcessException）仍是真错误，不受本开关影响。
   bool diagnosticOnly = false,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {

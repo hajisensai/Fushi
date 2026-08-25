@@ -94,6 +94,10 @@ List<String> buildFfmpegEmbeddedCoverArgs({
 Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
   required String inputPath,
   required String outputPath,
+  // BUG-1867：best-effort 后台产线（书架封面回填）把「这文件给不出封面」降级成诊断
+  // 日志，与下游 [extractVideoFrameViaFfmpeg] 的同名开关同级同义。用户主动触发的
+  // 导入/换封面路径保持默认 false。
+  bool diagnosticOnly = false,
 }) async {
   if (!File(inputPath).existsSync()) return null;
   final File output = File(outputPath);
@@ -120,13 +124,29 @@ Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
     if (output.existsSync() && output.lengthSync() > 0) return outputPath;
     return null;
   } on ProcessException catch (e, stack) {
-    ErrorLogService.instance
-        .log('extractEmbeddedVideoCoverViaFfmpeg', e, stack);
+    _logEmbeddedCoverFailure(e, stack, diagnosticOnly: diagnosticOnly);
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance
-        .log('extractEmbeddedVideoCoverViaFfmpeg', e, stack);
+    _logEmbeddedCoverFailure(e, stack, diagnosticOnly: diagnosticOnly);
     return null;
+  }
+}
+
+/// BUG-1867：内嵌封面这一步的异常（ffmpeg 起不来 / 目录建不出）与抽帧失败是同一件
+/// 事——「这文件给不出封面」。回填这条 best-effort 产线传 `diagnosticOnly: true`，
+/// 让**两段**都不计入用户可见错误计数、不落盘，只转入日志页的诊断/取证分节；否则
+/// 保持既有错误级上报。只降级严重性，不吞证据。
+void _logEmbeddedCoverFailure(
+  Object error,
+  StackTrace stack, {
+  required bool diagnosticOnly,
+}) {
+  if (diagnosticOnly) {
+    ErrorLogService.instance
+        .logDiagnostic('extractEmbeddedVideoCoverViaFfmpeg', error);
+  } else {
+    ErrorLogService.instance
+        .log('extractEmbeddedVideoCoverViaFfmpeg', error, stack);
   }
 }
 
@@ -171,7 +191,8 @@ bool isHollowMediaHeaderBytes(List<int> head) {
   return true;
 }
 
-/// [path] 的头 [probeBytes] 字节是否「尚未落盘」（见 [isHollowMediaHeaderBytes]）。
+/// [path] 的头 [kHollowMediaHeaderProbeBytes] 字节是否「尚未落盘」
+/// （见 [isHollowMediaHeaderBytes]）。
 ///
 /// BUG-1867 根因②：torrent **预分配但未下载完成**的文件在文件系统层与真视频完全
 /// 一致——正确的扩展名、正确的字节数（甚至 8GB）、路径存在，`existsSync()` 与
@@ -180,26 +201,28 @@ bool isHollowMediaHeaderBytes(List<int> head) {
 /// input`。
 ///
 /// 这条判据买的**不是**时间：ffmpeg 在头部就 probe 失败，实测 0.02s/条（本机 12 条
-/// 空洞 BDMV 合计 0.3s），一次 64KB 读只把它压到 1.3ms。买的是三件事——
-/// ① 不为一个必然失败的抽帧去排 `VideoCoverMutationGate` 的队（同期的删除、手选封面、
-/// 刮削要等在后面）；② 把「还没下完」与「这文件坏了」分成两个可诊断的原因，而不是
-/// 混成同一个 `extract-failed`；③ 判定不依赖 ffmpeg 的具体行为（构建裁掉某个 demuxer
-/// 或换版本都不影响这条判据的正确性）。
+/// 空洞 BDMV 合计 0.3s），一次 64KB 读只把它压到 1.3ms。买的是「还没下完」这件事
+/// 被判成**确定性的 null**，而不是靠 ffmpeg 的错误文本去反推；判定也因此不依赖
+/// ffmpeg 的具体行为（构建裁掉某个 demuxer 或换版本都不影响它的正确性）。
 ///
-/// 读失败（权限 / 盘掉线 / 竞态删除）返回 `true`：读不出头部的文件此刻同样抽不出帧，
-/// 与其让 ffmpeg 再失败一次，不如按「暂不可用」跳过——文件恢复后 mtime/size 变化会
-/// 让 `CoverBackfillLedger` 自动放行重试。
-bool hasHollowMediaHeader(String path,
-    {int probeBytes = kHollowMediaHeaderProbeBytes}) {
+/// **读不出来 ≠ 空壳。** 打开/读取失败（权限、盘掉线、竞态删除、传进来的根本不是
+/// 普通文件）一律返回 `false`，并记一条诊断。把读失败算成空壳会让所有调用方静默拿到
+/// null——一条日志都没有，用户主动触发的导入/换封面也查不出「为什么没有封面」。返回
+/// false 是把这类输入交回给下游 ffmpeg，让它按原本那条**可诊断**路径失败
+/// （严重性由各调用方的 `diagnosticOnly` 决定）。
+bool hasHollowMediaHeader(String path) {
   RandomAccessFile? handle;
   try {
     handle = File(path).openSync();
     final int length = handle.lengthSync();
     if (length <= 0) return true;
-    final int wanted = length < probeBytes ? length : probeBytes;
+    final int wanted = length < kHollowMediaHeaderProbeBytes
+        ? length
+        : kHollowMediaHeaderProbeBytes;
     return isHollowMediaHeaderBytes(handle.readSync(wanted));
-  } catch (_) {
-    return true;
+  } catch (e) {
+    ErrorLogService.instance.logDiagnostic('hasHollowMediaHeader', '$path: $e');
+    return false;
   } finally {
     try {
       handle?.closeSync();
@@ -329,6 +352,9 @@ Future<String?> _extractVideoCoverUnlocked({
   // 两条 ffmpeg 路对它同样必然失败（`Invalid data found`）。与上面的清单拒收同层收口：
   // 所有调用方（回填 / 导入 / 拆集 / host 服务）一并免疫，给出确定性的 null 而不是靠
   // ffmpeg 的行为兜底。远端输入不做本判据（读不到本地字节，且 ffmpeg 能直接吃流）。
+  //
+  // 这里是这条判据的**唯一**一道门：调用方（含书架回填）不再各自预判一次，否则同一
+  // 事实两处真相源，且两处会各读一次 64KB。
   if (!isRemoteInput && hasHollowMediaHeader(videoPath)) return null;
   // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
   // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
@@ -339,6 +365,7 @@ Future<String?> _extractVideoCoverUnlocked({
   final String? embedded = await extractEmbeddedVideoCoverViaFfmpeg(
     inputPath: videoPath,
     outputPath: outputPath,
+    diagnosticOnly: diagnosticOnly,
   );
   if (embedded != null) return embedded;
   // ② 无自带封面：退回抽帧。
