@@ -1483,8 +1483,14 @@ class VideoDownloadPipelineService {
     // 发布名回索引器全文搜：nyaa 对
     // `[Airota&VCB-Studio] Gekijouban … BDRip [MOVIE]` 这种串必然搜不中，于是
     // 每次重启/重试都要先把一个还活着的资源误报成 notFound、再被兜底捞回来。
-    // 把纯函数摆到联网之前，这条误报就没有产生的余地了；产出与联网重搜等价
-    // （同一 hash、同一 tracker 集，只有 `dn` 显示名的编码可能不同）。
+    // 把纯函数摆到联网之前，这条误报就没有产生的余地了。
+    //
+    // 与联网重搜的差别只在 tracker 与 `dn` 编码，info hash 一定相同：nyaa 与
+    // apibay 联网走的也是同一份常量 tracker（`NyaaTorrent.magnet` /
+    // `buildPublicVideoIndexMagnet`），完全等价；**Knaben 例外**——它的 API 直接
+    // 给 `magnetUrl`，联网时原样透传，离线路径统一换成
+    // `kPublicVideoIndexTrackers`，可能丢掉 knaben 自带的少量 tracker。公共
+    // tracker + DHT 足以补齐，用一条必然发生的 notFound 误报换它不划算。
     // 真正必须重搜的只剩私有 Torznab：它的 .torrent 走临时凭据 URL，不落库。
     final TorrentMagnetPayload? offline = _publicIndexerMagnetPayload(job);
     if (offline != null) {
