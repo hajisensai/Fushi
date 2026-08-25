@@ -5056,13 +5056,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // BUG-1798：与那个接力点用同一条判据滤掉合成 hover——[_pokeControlsVisible] 的合成事件
         // 位置恒为视频区几何中心，写进来就是把「用户光标在哪」记成画面正中，Shift 反查随即查错
         // 位置。合成事件不代表用户指针，两个记账点必须同时滤，只滤一个仍会从另一个漏进来。
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerHover: (PointerHoverEvent event) {
-            if (_isSyntheticControlsHover(event)) return;
-            _lastGlobalPointerPos = event.position;
-          },
-          child: child,
+        //
+        // BUG-1864：页级裸空格覆盖 [_withPageSpaceOverride] 挂在**本 wrapper 之内**
+        // （Focus 的后代），因为窗口与全屏是这层唯一的共同祖先。原先它只挂在
+        // `_buildScaffold` 上，而全屏是推到根 navigator 的独立路由、不经过 Scaffold，
+        // 于是全屏下「焦点不精确在 [_videoFocusNode]」（打开字幕列表 / 剧集轨 / 侧栏后
+        // [PanelFocusScope] 就会抢焦）时裸空格一路冒泡到全局中和层被吞 =「按了没反应」。
+        // 位置必须在 Focus 之内：CallbackShortcuts 作为后代先于本层 onKeyEvent 处理，
+        // 与窗口模式原有的相对顺序完全一致（caret / holdSpeed / IME 空格的既有语义不变）。
+        child: _withPageSpaceOverride(
+          Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerHover: (PointerHoverEvent event) {
+              if (_isSyntheticControlsHover(event)) return;
+              _lastGlobalPointerPos = event.position;
+            },
+            child: child,
+          ),
         ),
       ),
     );
@@ -7028,12 +7038,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                       videoController == null ||
                       !_videoReadyToShow)
                   ? _buildLoadingBody()
-                  : _withPageSpaceOverride(
+                  // BUG-1864：裸空格覆盖不再挂这里——它已上提到窗口与全屏共用的
+                  // [_wrapVideoGamepadControls]（全屏是独立路由，不经过本 Scaffold）。
+                  : _pageDropTarget(
                       controller,
-                      _pageDropTarget(
-                        controller,
-                        _buildVideoBody(controller, videoController),
-                      ),
+                      _buildVideoBody(controller, videoController),
                     ),
     );
   }
@@ -7247,10 +7256,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 在 [_videoFocusNode]」时的兜底。语义与注册表 [_videoKeyboardShortcuts] 的
   /// `togglePlayPause` 完全一致（经 [_runWhenImmersiveAllowsShortcuts] 尊重
   /// 沉浸锁门控），不引入特例分支。
-  Widget _withPageSpaceOverride(
-    VideoPlayerController controller,
-    Widget child,
-  ) {
+  ///
+  /// BUG-1864：挂载点是**唯一的** [_wrapVideoGamepadControls]（窗口 `build()` 与全屏
+  /// 路由 `pageBuilder` 的共同外层），不再是 `_buildScaffold`。全屏是推到根 navigator
+  /// 的独立路由、不经过本页 Scaffold，此前那条路径上根本没有本层：打开字幕列表 /
+  /// 剧集轨 / 侧栏后 [PanelFocusScope] 抢焦，裸空格既够不到 media_kit
+  /// `keyboardShortcuts`（那层只包 `AdaptiveVideoControls` 子树，面板是它的兄弟），
+  /// 又没有页级兜底，直落全局中和层被吞 =「按了没反应」。与 BUG-697 把手柄输入层
+  /// 提到同一 wrapper 是同一条边界：窗口与全屏共用一处，不加全屏特判。
+  Widget _withPageSpaceOverride(Widget child) {
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.space): () {
@@ -7260,6 +7274,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             _dismissTopVisiblePopup();
             return;
           }
+          // BUG-1864：controller 从页面字段 [_controller] 现取，不再由调用方传参。
+          // 本层已上提到窗口 / 全屏共用的 [_wrapVideoGamepadControls]，而全屏路由的
+          // pageBuilder 拿不到 `_buildScaffold` 那个局部变量；读同一个字段让两条路径
+          // 共用一份真相源，也顺带覆盖了加载态（此时 controller 为 null，按空格什么都
+          // 不做——与本层挂载前「被全局中和层吞掉」的观感一致，无行为回归）。
+          final VideoPlayerController? controller = _controller;
+          if (controller == null) return;
           _runWhenImmersiveAllowsShortcuts(
             () => unawaited(controller.playOrPause()),
           );
