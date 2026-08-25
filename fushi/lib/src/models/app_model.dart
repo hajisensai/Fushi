@@ -3870,7 +3870,9 @@ class AppModel with ChangeNotifier {
       torrentMatcher: (LegacyTorrentProbe probe) async {
         final VideoDownloadBackendIdentity? confirmedIdentity = identity;
         if (confirmedIdentity == null) return null;
-        if (probe.category != confirmedIdentity.category) return null;
+        // 旧记录自己的分类就是它的事实：拿它去后端核对 hash+title 即可。
+        // 不能再要求它等于**当前配置**的分类——用户改一次分类（或升级后默认
+        // 分类漂移）会让全部旧任务无法被认领（BUG-1879）。
         final TorrentBackend? backend = _createExactTorrentBackend(config);
         if (backend == null) return null;
         try {
@@ -3927,12 +3929,25 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// 当前新任务必须绑定的真实后端身份。UI 只保存此快照，流水线执行时还会再次
-  /// 对比 fingerprint/profile/category，配置切换后不会被另一实例隐式接管。
+  /// 当前新任务必须绑定的真实后端**实例身份**。UI 只保存此快照，流水线执行时
+  /// 还会再次对比 kind/profile/fingerprint，配置切换后不会被另一实例隐式接管。
+  /// 分类不在身份里（BUG-1879），要新任务的落点请用
+  /// [currentVideoDownloadBackendTarget]。
   Future<VideoDownloadBackendIdentity> currentVideoDownloadBackendIdentity() =>
       _currentVideoDownloadBackendIdentity(
         effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       );
+
+  /// 当前新任务的落点：后端实例身份 + 此刻设置里的投放分类。分类会被快照进
+  /// 新任务行，之后该任务始终用自己那一份，不再与当前设置比较。
+  Future<VideoDownloadBackendTarget> currentVideoDownloadBackendTarget() async {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    return VideoDownloadBackendTarget(
+      identity: await _currentVideoDownloadBackendIdentity(config),
+      category: config.category,
+    );
+  }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
   Future<List<MediaSourceRow>> getManagedVideoDownloadSources() async {

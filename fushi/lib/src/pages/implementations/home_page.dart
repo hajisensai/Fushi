@@ -1432,9 +1432,9 @@ class _HomePageState extends BasePageState<HomePage>
       _showVideoDiscoveryMessage(context, t.media_source_no_sources);
       return;
     }
-    final VideoDownloadBackendIdentity identity;
+    final VideoDownloadBackendTarget target;
     try {
-      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+      target = await appModelNoUpdate.currentVideoDownloadBackendTarget();
     } on VideoDownloadBackendUnavailable catch (error) {
       if (context.mounted) {
         _showVideoDiscoveryMessage(context, error.message);
@@ -1460,7 +1460,7 @@ class _HomePageState extends BasePageState<HomePage>
               VideoDownloadEnqueueRequest(
                 media: selection.media,
                 resource: selection.resource,
-                backendIdentity: identity,
+                backendTarget: target,
                 targetSourceId: selection.source.id,
                 subtitlePolicy: selection.subtitlePolicy,
                 coverUrl: item.posterUrl,
@@ -1504,9 +1504,9 @@ class _HomePageState extends BasePageState<HomePage>
       _showVideoDiscoveryMessage(context, t.media_source_no_sources);
       return;
     }
-    final VideoDownloadBackendIdentity identity;
+    final VideoDownloadBackendTarget target;
     try {
-      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+      target = await appModelNoUpdate.currentVideoDownloadBackendTarget();
     } on VideoDownloadBackendUnavailable catch (error) {
       if (context.mounted) {
         _showVideoDiscoveryMessage(context, error.message);
@@ -1556,10 +1556,10 @@ class _HomePageState extends BasePageState<HomePage>
                       : 'ongoing',
                 ),
                 startAfterEpisode: Value<int?>(selection.startAfterEpisode),
-                backendKind: identity.kind,
-                backendProfileId: Value<String?>(identity.profileId),
-                fingerprint: identity.fingerprint,
-                category: Value<String?>(identity.category),
+                backendKind: target.kind,
+                backendProfileId: Value<String?>(target.profileId),
+                fingerprint: target.fingerprint,
+                category: Value<String?>(target.category),
                 targetSourceId: Value<int?>(selection.download.source.id),
                 organizationPolicy: const Value<String>('library'),
                 subtitlePolicy:
