@@ -18,6 +18,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   final String src =
       File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
@@ -192,17 +194,18 @@ void main() {
     // 文字上，与「穿透态点字查词」是同一份判定。ScrollBy 再拿 pass_through_ 拦
     // 一道，事件只会被 DefWindowProc 吞掉（无父窗、到不了游戏），穿透态永远滚
     // 不动。
-    // 注释里可以（也应该）解释为什么没有这道门，所以只看剥掉 // 注释后的代码。
-    final String scrollBy = _stripLineComments(
+    // 注释里可以（也应该）解释为什么没有这道门，所以只看掩掉注释后的代码。
+    // 用共享的 maskComments（行+块注释一起掩、下标不错位），不自己写剥离。
+    final String scrollBy = maskComments(
         _functionSource(src, 'bool FloatingLyricWindow::ScrollBy('));
     expect(scrollBy.contains('pass_through_'), isFalse,
         reason: 'ScrollBy 不准按穿透态拦滚轮');
-    final String setOffset = _stripLineComments(
+    final String setOffset = maskComments(
         _functionSource(src, 'bool FloatingLyricWindow::SetScrollOffset('));
     expect(setOffset.contains('pass_through_'), isFalse);
     final int w = src.indexOf('case WM_MOUSEWHEEL:');
     final String wheelCase =
-        _stripLineComments(src.substring(w, src.indexOf('case WM_SIZE:', w)));
+        maskComments(src.substring(w, src.indexOf('case WM_SIZE:', w)));
     expect(wheelCase.contains('if (ScrollBy(step)) {'), isTrue,
         reason: '滚轮唯一的接管判定是 ScrollBy 的返回值');
     expect(wheelCase.contains('pass_through_'), isFalse,
@@ -300,10 +303,6 @@ void main() {
         reason: '有声书歌词条「拖高放大」是既有行为，不得连坐');
   });
 }
-
-/// 剥掉 `//` 行注释（只剩代码），让守卫不被注释里出现的标识符假阳性命中。
-String _stripLineComments(String code) =>
-    code.replaceAll(RegExp(r'//[^\n]*'), '');
 
 /// 截出 C++ 函数源码：从 [signature] 起到第一个顶格 `}` 行止（本文件里的成员
 /// 函数都是顶格闭合，内部作用域缩进两格）。
