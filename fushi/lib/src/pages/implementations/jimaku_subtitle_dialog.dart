@@ -1289,7 +1289,14 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(t.video_jimaku_fetch, style: theme.textTheme.titleLarge),
+          // 标题限两行：窄机 + 键盘下正文 Flexible 已缩到 0，标题与底栏是仅剩的
+          // 固定高，标题再无限换行就把底栏挤出对话框（法语 4 行实测溢出 8px）。
+          Text(
+            t.video_jimaku_fetch,
+            style: theme.textTheme.titleLarge,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           const SizedBox(height: 16),
           // 正文按内容宽自适应：宽屏左右两栏（筛选|结果，手绘稿布局），窄屏上下两段。
           Flexible(
@@ -1306,14 +1313,18 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
           // 正文滚动的槽位——它此前跟着输入框放在筛选面板（可滚区）里，iPhone 横屏
           // 弹出数字键盘后视口只剩百来 dp，面板只露出一个输入框，按钮滚出视野；
           // 而 iOS 数字键盘没有回车键，onSubmitted 也触发不了——用户只看得见「取消」。
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          // OverflowBar 而非裸 Row：320dp 窄机内容宽只剩 240，en/de/ru 两个按钮并排
+          // 装不下（裸 Row 实测溢出 13~70px），OverflowBar 放不下自动改竖排。
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            overflowAlignment: OverflowBarAlignment.end,
+            spacing: 8,
+            overflowSpacing: 4,
             children: <Widget>[
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: Text(t.dialog_cancel),
               ),
-              const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: _searching ? null : _search,
                 icon: const Icon(Icons.search),

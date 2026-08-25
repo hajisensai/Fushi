@@ -249,4 +249,31 @@ void main() {
       reason: '搜索按钮必须真能被点中（没被遮、没被裁）',
     );
   });
+
+  testWidgets(
+      'regression: 320dp phone + keyboard, every locale: action bar never overflows',
+      (WidgetTester tester) async {
+    // 审查发现：底栏若用裸 Row，320dp 窄机（内容宽 240）下 en/de/ru 的「取消 +
+    // 搜索」并排溢出 13~70px。OverflowBar 放不下改竖排——17 语种逐个过。
+    final AppLocale previous = LocaleSettings.currentLocale;
+    addTearDown(() => LocaleSettings.setLocale(previous));
+    const Size screen = Size(320, 568);
+    const double keyboard = 260;
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboard);
+    addTearDown(tester.view.resetViewInsets);
+    for (final AppLocale locale in AppLocale.values) {
+      LocaleSettings.setLocale(locale);
+      await pumpDialog(tester, screen: screen, candidateCount: 0, seriesCount: 0);
+      expect(tester.takeException(), isNull,
+          reason: '$locale：操作栏不得 RenderFlex 溢出');
+      final Rect btn = tester.getRect(find.byType(FilledButton));
+      final Rect dialog = tester.getRect(find.byType(Dialog));
+      expect(btn.right, lessThanOrEqualTo(dialog.right + 0.5),
+          reason: '$locale：搜索按钮不得伸出对话框右缘');
+      expect(btn.bottom, lessThanOrEqualTo(screen.height - keyboard + 0.5),
+          reason: '$locale：搜索按钮必须落在键盘上方');
+      await tester.tap(find.byType(FilledButton), warnIfMissed: false);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
 }
