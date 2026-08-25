@@ -452,7 +452,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                         const VideoDownloadSubscriptionsPanel(),
                         ListView(
                           children: <Widget>[
-                            const TorrentSettingsSection(constrainWidth: false),
+                            const TorrentSettingsSection(),
                             // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
                             // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
                             // 番剧下载对话框「去设置」落到这里仍能一步到达。

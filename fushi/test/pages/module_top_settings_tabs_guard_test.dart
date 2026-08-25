@@ -21,8 +21,11 @@ bool _hasSettingsSegment(String source) => RegExp(
       r'label:\s*t\.settings\s*\)',
     ).hasMatch(_code(source));
 
+/// BUG-1858 起 `constrainWidth` 参数已删：全宽不再是调用点的一个选项，而是
+/// [TorrentSettingsSection] 唯一的形态。守的**行为**没变（下载页的设置面是全宽的），
+/// 锚点跟着搬到无参调用。
 bool _hasFullWidthTorrentSettings(String source) => RegExp(
-      r'\bTorrentSettingsSection\s*\(\s*constrainWidth:\s*false\s*\)',
+      r'\bTorrentSettingsSection\s*\(\s*\)',
     ).hasMatch(_code(source));
 
 void main() {
@@ -34,7 +37,7 @@ void main() {
 /* value: GameSection.settings
 value: VideoLibrarySection.settings
 LibrarySectionTab<int>(value: 3, label: t.settings)
-TorrentSettingsSection(constrainWidth: false)
+TorrentSettingsSection()
 */
 ''';
     expect(
@@ -63,7 +66,7 @@ kind: MediaLibraryViewKind.settings
 value: GameSection.settings
 value: VideoLibrarySection.settings
 LibrarySectionTab<int>(value: 3, label: t.settings)
-TorrentSettingsSection(constrainWidth: false)
+TorrentSettingsSection()
 ''';
 """;
     expect(

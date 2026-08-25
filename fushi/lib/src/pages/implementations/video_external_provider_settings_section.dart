@@ -14,8 +14,6 @@ import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
-import 'package:fushi/src/pages/implementations/torrent_settings_section.dart'
-    show kTorrentSettingsContentMaxWidth;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -445,33 +443,21 @@ class _VideoExternalProviderSettingsSectionState
     bool secret = false,
     TextInputType? keyboardType,
   }) {
-    // 宽度由整段的外层容器（[_constrainSectionWidth]）统一承接，这里不再自己
-    // 缩到 480——那份局部限宽正是几何撕裂的来源：同一个 Column 里输入框缩到
+    // 宽度由整段的外层容器（[_alignSectionBaseline]）统一承接，字段自己不再加
+    // 一层 maxWidth——那份局部限宽正是几何撕裂的来源：同一个 Column 里输入框缩到
     // 480、Switch 吃满 stretch 紧约束占满整宽、用户名/密码 Row 又各占一半，
-    // 三种行三套左右边界。
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: SizedBox(
-        width: double.infinity,
-        child: TextFormField(
-          key: key,
-          initialValue: initialValue,
-          obscureText: secret,
-          enableSuggestions: !secret,
-          autocorrect: !secret,
-          keyboardType: keyboardType,
-          decoration: InputDecoration(
-            labelText: label,
-            hintText: hint,
-            helperText: helper,
-            helperMaxLines: 3,
-            errorText: errorText,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: onChanged,
-        ),
-      ),
+    // 三种行三套左右边界。这条契约现在写在 [SettingsFormField] 上，下载设置那段
+    // 用的是同一个原语。
+    return SettingsFormField(
+      key: key,
+      label: label,
+      initialValue: initialValue,
+      obscureText: secret,
+      keyboardType: keyboardType,
+      hintText: hint,
+      helperText: helper,
+      errorText: errorText,
+      onChanged: onChanged,
     );
   }
 
@@ -905,36 +891,29 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
-  /// 把整段收进与下载设置同一个内容宽度（[kTorrentSettingsContentMaxWidth]）并
-  /// **左对齐**。
+  /// 把整段落到与普通设置行同一条 16px 左右基线上，正文吃满剩下的宽度。
   ///
   /// 这一段此前三种行各有一套左右边界：输入框自己缩到 480；`SwitchListTile`
   /// 直接吃 `CrossAxisAlignment.stretch` 的紧约束、贴到 pane 最右；用户名/密码
   /// 的 `Row` 又是全宽再各占一半。宽窗下看起来就是「输入框只占左半边、开关孤零
   /// 零在最右、中间一大片空白」。
   ///
-  /// 收进同一个容器后三者边界一致，同时保住 BUG-1084 的结论（4K 全屏下输入框
-  /// 不会被拉到三千像素）。用左对齐而不是 BUG-1278 的居中：这一段嵌在设置详情
-  /// 的行流里，居中会与上下普通设置行的左基线再撕一次。
-  ///
   /// 左右基线由本组件自己承接（`rowHorizontal`，与 `DiscoverySourceSettingsSection`
   /// / 普通设置行同一条）：设置 schema 的 `SettingsCustomItem` 是裸渲染、不给
   /// 内边距，此前本段被宿主 [TorrentSettingsSection] 包着才有边距，一旦单独挂进
   /// 设置分区就整块贴到卡片左沿，标题/输入框比上一行的图标还靠左（用户截图）。
-  Widget _constrainSectionWidth(BuildContext context, Widget content) {
+  ///
+  /// BUG-1858：基线之外此前还收了一层 560 右边界（BUG-1084/BUG-1278 的结论）。
+  /// 但那层只加在本组件和下载设置上，同一个「在线服务」页里下面的元数据刮削行
+  /// （`SettingsTextItem`）照旧撑满 pane——于是一页之内两种输入框宽度。用户
+  /// 2026-08-25 实报并拍板统一成撑满，右边界这层随之删除：全 app 设置输入框只
+  /// 剩「吃满内容区」这一条规则（见 [SettingsFormField] 的宽度契约）。
+  Widget _alignSectionBaseline(BuildContext context, Widget content) {
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
       ),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: kTorrentSettingsContentMaxWidth,
-          ),
-          child: SizedBox(width: double.infinity, child: content),
-        ),
-      ),
+      child: SizedBox(width: double.infinity, child: content),
     );
   }
 
@@ -966,7 +945,7 @@ class _VideoExternalProviderSettingsSectionState
       VideoExternalProviderScope.downloadRouting =>
         _downloadRoutingBlocks(theme),
     };
-    return _constrainSectionWidth(
+    return _alignSectionBaseline(
       context,
       Column(
         key: ValueKey<VideoExternalProviderScope>(widget.scope),

@@ -140,7 +140,12 @@ void main() {
   /// 用户名/密码 `Row` 又是全宽再各占一半。用户看到的是「输入框只占左半边、
   /// 开关孤零零贴在最右、中间一大片空白」。
   ///
-  /// 不变式：整段收进同一个内容宽度容器后，三者右边缘必须重合。
+  /// 不变式：整段共用同一条左右基线后，三者边缘必须重合。
+  ///
+  /// BUG-1858：这条基线之外此前还收了一层 560 右边界。那层只加在本段和下载设置
+  /// 上，同一个「在线服务」页里下面的元数据刮削行照旧撑满 pane，于是一页之内两种
+  /// 输入框宽度。用户 2026-08-25 拍板统一成撑满，右边界改为「pane 宽减两边各
+  /// 16px」。
   testWidgets('BUG-1747：宽窗下输入框/开关/双列行的左右边界一致', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1600);
     tester.view.devicePixelRatio = 1;
@@ -190,9 +195,11 @@ void main() {
     expect(password.right, moreOrLessEquals(endpointRect.right, epsilon: 1.0),
         reason: '双列行右边界要与单列框一致（此前密码框一路铺到 pane 最右）');
 
-    // 同时保住 BUG-1084：4K 全屏下输入框不得被拉成三千像素。
-    expect(endpointRect.width, lessThanOrEqualTo(561),
-        reason: '整段仍受内容宽度上限约束（BUG-1084）');
+    // BUG-1858：唯一的宽度规则是「吃满 pane 宽减两边各 16px」，不再另设上限。
+    expect(endpointRect.width, moreOrLessEquals(1400 - 2 * 16, epsilon: 1.0),
+        reason: '输入框吃满内容区（BUG-1858：与其余设置行同一条规则）');
+    expect(endpointRect.left, moreOrLessEquals(16, epsilon: 1.0),
+        reason: '左边缘落在普通设置行的 16px 基线上');
   });
 
   testWidgets('secret fields are masked and unsafe remote HTTP is not saved',
