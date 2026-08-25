@@ -364,6 +364,15 @@ class GalIngameLookupController {
 
   /// hook 转发的卡片内输入：严格按上报顺序丢回 runner 的既有 popup 输入注入口。
   Future<void> handleInput(GalLookupInput input) {
+    if (input.kind == GalLookupInput.dismissOutsideKind) {
+      final Completer<void> done = Completer<void>();
+      _inputTail = _inputTail.then<void>(
+        (_) => _runQueuedOutsideDismiss(input, done),
+        onError: (Object _, StackTrace __) =>
+            _runQueuedOutsideDismiss(input, done),
+      );
+      return done.future;
+    }
     final GlobalLookupRoute? route = _activeRoute;
     final int generation = _activeLookupGeneration;
     if (_captureSuppressed ||
@@ -386,6 +395,26 @@ class GalIngameLookupController {
           _runQueuedInput(input, generation, route, done),
     );
     return done.future;
+  }
+
+  Future<void> _runQueuedOutsideDismiss(
+    GalLookupInput input,
+    Completer<void> done,
+  ) async {
+    try {
+      // This is a session control event, not route-scoped WebView input.  The
+      // visible bitmap may have been followed by a newer hit before the event
+      // crosses native -> Dart; always retire the lookup that is current when
+      // this ordered control operation executes.
+      if (_started) await _terminateCurrentLookup();
+      if (!done.isCompleted) done.complete();
+    } catch (error, stackTrace) {
+      glog(
+        'gal-ingame: outside dismiss seq=${input.seq} EXCEPTION '
+        '$error\n$stackTrace',
+      );
+      if (!done.isCompleted) done.complete();
+    }
   }
 
   Future<void> _runQueuedInput(

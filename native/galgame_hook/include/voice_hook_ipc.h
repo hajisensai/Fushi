@@ -570,7 +570,7 @@ constexpr uint32_t kLookupFrameHighlightOnly = 0x00000002u;
 // 当前 route；截图完成后 host 通过一张普通 full frame 恢复。hook 必须等 TJS hide/update 成功且
 // 又经过一次 continuous callback 后，才把本帧 seq 写进 lookup_frame_applied_seq。
 constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;
-// hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
+// hook → host：需要喂给离屏 WebView2 的卡内输入，或由注入侧判定的弹框控制事件。
 struct LookupInputSlot {
   volatile uint64_t seq;  // 单调；**最后**写
   int32_t x;              // 卡片局部坐标（已减去 anchor）
@@ -586,6 +586,11 @@ constexpr uint32_t kLookupInputLeftDown = 1;
 constexpr uint32_t kLookupInputLeftUp = 2;
 constexpr uint32_t kLookupInputWheel = 3;
 constexpr uint32_t kLookupInputLeave = 4;
+// Injected bitmap presenters cannot receive a window message for a click that
+// lands on the game outside their layered HWND.  They publish this control
+// event after consuming that raw DirectInput transaction so Dart can retire the
+// same lookup session instead of merely hiding one stale bitmap.
+constexpr uint32_t kLookupInputDismissOutside = 5;
 
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。

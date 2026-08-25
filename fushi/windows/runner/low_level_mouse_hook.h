@@ -31,7 +31,7 @@ namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
 //   wparam = 打包的屏幕物理坐标 ((uint32)x << 32) | (uint32)y
-//   lparam = 1 表示点击落在目标窗口 rect 内，0 表示在外
+//   lparam = 1 表示点击真实命中目标 window region/子窗，0 表示在透明区或窗外
 // 窗口线程自己决定「转发给 host / 关闭浮窗」——钩子线程不碰任何 C++ 对象。
 constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
 

@@ -2104,6 +2104,8 @@ static_assert(fushi_voice_hook::kLookupInputWheel == 3,
               "lookup input kind drift");
 static_assert(fushi_voice_hook::kLookupInputLeave == 4,
               "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputDismissOutside == 5,
+              "lookup input kind drift");
 
 bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
                                            int32_t wheel, uint32_t keys) {

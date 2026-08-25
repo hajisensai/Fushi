@@ -314,7 +314,8 @@ bool PointInWindowClient(HWND window, POINT point) {
   return PtInRect(&screen_client, point) != FALSE;
 }
 
-bool ShouldConsumeGameClientClick(HWND target, HWND game, POINT point) {
+bool ShouldConsumeGameClientClick(HWND target, HWND game, HWND hit,
+                                  POINT point) {
   if (game == nullptr || !IsWindow(game) || !PointInWindowClient(game, point)) {
     return false;
   }
@@ -322,7 +323,6 @@ bool ShouldConsumeGameClientClick(HWND target, HWND game, POINT point) {
   // WindowFromPoint 认 SetWindowRgn/子窗：查词栈的 bbox 中间可能有透明缝隙，
   // 只用 GetWindowRect 会把缝隙错当成卡内。真正命中 popup 时必须放行，交给
   // WebView2 处理按钮/嵌套查词。
-  const HWND hit = WindowFromPoint(point);
   if (hit == target || (hit != nullptr && IsChild(target, hit))) return false;
   if (hit == nullptr) return false;
 
@@ -392,10 +392,13 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     return CallNextHookEx(nullptr, code, wparam, lparam);
   }
   if (is_button_down) {
-    RECT rc{};
-    // GetWindowRect 是跨线程安全的只读查询；命中判定留在这里，是为了让窗口线程
-    // 拿到的消息自带结论，不必在忙碌时再回头查几何。
-    const BOOL inside = GetWindowRect(target, &rc) && PtInRect(&rc, info->pt);
+    // SetWindowRgn 把级联卡片裁成若干圆角 shell；它们的包围矩形包含圆角和卡间
+    // 透明 hole。WindowFromPoint 遵守真实 window region，因此这里传给窗口线程的
+    // inside 必须与吞点击判定使用同一份几何真相，不能退回 GetWindowRect。
+    const HWND point_window = WindowFromPoint(info->pt);
+    const bool inside = point_window == target ||
+                        (point_window != nullptr &&
+                         IsChild(target, point_window));
     const HWND consume_owner = reinterpret_cast<HWND>(
         GetPropW(target, kConsumeOutsideOwnerProperty));
     const uint32_t bit = button_bit;
@@ -416,7 +419,8 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     }
     const bool consume_click =
         bit != 0 &&
-        ShouldConsumeGameClientClick(target, consume_owner, info->pt);
+        ShouldConsumeGameClientClick(target, consume_owner, point_window,
+                                     info->pt);
     if (consume_click) {
       // Freeze the paired-up transaction BEFORE notifying the window thread.
       // That thread may process PostMessage immediately and Hide/Disarm, clearing
