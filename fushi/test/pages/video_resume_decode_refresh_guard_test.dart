@@ -50,6 +50,9 @@ void main() {
     });
 
     test('纯音频 / 首帧未出画不刷新', () {
+      // 注意 hasVideo 取的是 hasFirstFrame，**只增不减**——它等价于「本次 load 曾经
+      // 出过画」，不代表「现在需要刷」。判据整体是「每次真后台返回都刷」，三个入参
+      // 只排除「刷了没用 / 刷了有害」的场合（BUG-1863）。
       expect(
         VideoPlayerController.shouldRefreshDecodeOnResume(
           enteredRealBackground: true,
@@ -61,8 +64,10 @@ void main() {
       );
     });
 
-    test('不可 seek（直播 / 时长未知）不刷新', () {
-      // 直播流上这一 seek 可能把播放头甩走，宁可留着灰屏也不打断直播。
+    test('duration 未知（=0）不刷新', () {
+      // 未知时长流上这一 seek 可能把播放头甩走，宁可留着灰屏。**不要把这条读成**
+      // 「挡住直播」：HLS / DASH 滑动窗口直播通常上报非零 duration（= 可 seek 窗口
+      // 长度），会正常穿过判据（BUG-1863 备注 1）。
       expect(
         VideoPlayerController.shouldRefreshDecodeOnResume(
           enteredRealBackground: true,

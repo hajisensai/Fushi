@@ -1190,8 +1190,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 真相，渲染时由 `mergeImportedSubtitleSourcesForMenu` 合并。独立存放的理由见该函数
   /// 注释：枚举可能失败 / 在途 / 因换集失配，而「这个档案就在盘上、刚被应用」是不依赖
   /// 枚举的既成事实，不能被枚举缓存的有效性 gate 掉（那正是用户报的「字幕应用上了但
-  /// 列表里没有」）。远端模式同样维护它——远端字幕轨行只覆盖 host sidecar / YouTube 轨 /
-  /// host 内封轨，本机下载的档案此前在远端根本没有对应行。换视频源时清空。
+  /// 列表里没有」）。远端模式同样维护它——远端主 / 副字幕轨行都只覆盖 host sidecar /
+  /// YouTube 轨 / host 内封轨，本机下载或导入的档案此前在远端根本没有对应行（两栏都
+  /// 没有）。换视频源时清空。
   List<SubtitleSource> _importedSubtitleSources = const <SubtitleSource>[];
 
   /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是
@@ -1963,7 +1964,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  /// BUG-1863：从真后台回前台后按需重建视频解码链（消除「静止的地方变成灰色」）。
+  /// BUG-1863：从真后台回前台后重建一次视频解码链（消除「静止的地方变成灰色」）。
+  ///
+  /// **每一次真后台返回都刷，不是「检测到灰了才刷」**——解码器被系统回收没有可读信号，
+  /// 判据 [VideoPlayerController.shouldRefreshDecodeOnResume] 只排除「刷了没用 / 刷了
+  /// 有害」的场合，不判断「这次是否真的需要」。取舍与代价见该判据的文档。
   ///
   /// 标记**无条件**清掉，判据不成立只是这一轮不刷新，不能让它攒到下一次 resume 才放
   /// （那会变成「某次切窗后莫名 seek 一下」）。刷新本身 fire-and-forget：它只是把播放

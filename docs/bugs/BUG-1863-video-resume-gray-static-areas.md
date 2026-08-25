@@ -30,9 +30,37 @@
   会 flush 解码器并从目标之前的关键帧重新解码，DPB 被重新填满，concealment 的灰块被真实
   像素取代。走 `Player.seek` 而不是 `seekMs`——播放位置根本没变，不该清主动跳转快照、不该
   作废「只播这一句就停」、不该触发字幕权威重算。标记在任何早退之前无条件清掉，不会攒到
-  下一次 resume 变成「某次切窗后莫名 seek 一下」。直播 / 时长未知流不刷新（那一 seek 可能
-  把播放头甩走，宁可留着灰屏也不打断直播）；桌面不做（窗口失焦不会让系统回收解码器）。
+  下一次 resume 变成「某次切窗后莫名 seek 一下」。桌面不做（窗口失焦不会让系统回收解码器）。
   提交：见本分支 `fix(video): ...` commit。
+
+  **措辞校准（审查采纳）——这是「每次真后台返回都刷一次」，不是「按需刷」。** 解码器被系统
+  回收这件事**没有任何可读信号**：mpv 不上报、media_kit 不上报、画面已经解错了也不上报。
+  三个入参没有一个能区分「这次真需要刷」和「这次白刷」，它们只把**刷了没用 / 刷了有害**的
+  场合排除掉：
+  - `hasVideo` 取 `hasFirstFrame`，而它**只增不减**（media_kit 只在 `video-params` 到达时置位，
+    解码器被回收后不会归零），等价于「本次 load 曾经出过画」，对「现在是否需要刷」零信息量。
+  - `seekable` 挡的是 **duration == 0（未知时长流）**，**不是「直播」**：HLS / DASH 滑动窗口
+    直播通常上报非零 duration（= 可 seek 窗口长度），会正常穿过判据。原文写「直播不刷新」
+    过宽，已改。
+  - 代价可量化：每次从后台回来吃一次精确 seek 的解码延迟（media_kit 初始化时无条件下发
+    `hr-seek=yes` + `hr-seek-framedrop=no`，所以位置精确、但不靠丢帧掩盖这段延迟），长 GOP
+    片源上可感；换来的是灰屏不会一直挂到下一个 IDR。这是取舍，不是免费的。
+
+- **已知缺口（本次**不**修，如实记账）**：
+  1. **Android 上会与 media_kit 自己的 `widListener` 双发 seek**。
+     `third_party/media_kit_video/.../android_video_controller/real.dart` 的 `widListener` 在
+     `wid` 变化后尾部就是 `player.seek(currentPosition)`。surface 真被重建的那一次 resume，
+     两条路径各 seek 一次（各持不同的锁，不会合并）= 双倍卡顿。要合并得给 controller 加
+     「本次 resume 已刷过」的去抖，涉及跨包状态，不在本次范围。
+  2. **`player.state.position` 是事件驱动的最后观测值，不是实时读**（mpv `time-pos` 属性事件
+     → Dart 事件循环）。而视频页真后台并不暂停播放，若后台期间 Dart 侧停摆（系统冻结进程）
+     而 mpv 仍在推进，这里读到的是陈旧值，这一 seek 会把播放头真往回拉，偏差 = 停摆时长。
+     media_kit 的 `widListener` 有同一问题；本修复把这条路径的触发频率从「surface 重建时」
+     提到「每次真后台返回」，因此偏差的暴露面也跟着变大。要根治得让 seek 目标改读 mpv 的
+     实时 `time-pos`（跨 FFI 同步读），同样超出本次范围。
+  3. **iOS 是外推，本仓没有取证**。机制证据只有 Android 侧（MediaCodec 有限资源、前台优先
+     回收）；iOS 走 `NativeVideoController` + videotoolbox，「后台丢解码会话」在业界是已知
+     现象，但本仓既没有 iOS 复现记录也没有像素证据，判据里把 iOS 纳入是按同类处理。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/video_resume_decode_refresh_guard_test.dart`：
   `shouldRefreshDecodeOnResume` 五种输入组合的行为单测 + 调用点静态守卫（标记只在
   paused/hidden 置、resumed 分支真调刷新、标记在第一个 return 之前就清、刷新不走 `seekMs`
