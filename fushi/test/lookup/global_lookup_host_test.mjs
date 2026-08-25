@@ -3332,4 +3332,100 @@ function historyOverlayIn(shell) {
   ), 'BUG-1833: a no-longer-live revision was evicted from the host cache');
 }
 
+// BUG-1857 — grip 拖拽期间 root 卡跟随 viewport（live-fit）。
+//   a. grip mousedown 武装：root 尺寸 = 按下时尺寸 + viewport 增量；
+//   b. 未武装 / endLiveResize 之后的 resize 是 no-op（嵌套卡改窗口尺寸不得拉大 root）；
+//   c. 子卡不动；live 期间置 contentMeasureDirty，松手后重排不会拿旧宽度的内容高度封顶；
+//   d. renderStack 接管：Dart 权威 frame 覆盖 live 尺寸并解除武装；
+//   e. 面板模式不武装（root 本就 100%）；取不到 viewport（老 harness）不武装。
+{
+  const { host, document, window } = freshHost();
+  window.innerWidth = 400;
+  window.innerHeight = 500;
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 20, top: 30, width: 360, height: 450 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 60, top: 80, width: 300, height: 200 }, settingsJs: '' },
+    ],
+  });
+  const rootShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-0');
+  const childShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1');
+  // b. 未武装：viewport 变了 root 不动。
+  window.innerWidth = 480;
+  window.innerHeight = 560;
+  assert.strictEqual(host.handleWindowResize(), false, 'unarmed resize is a no-op');
+  assert.strictEqual(rootShell.style.width, '360px');
+  assert.strictEqual(rootShell.style.height, '450px');
+  window.innerWidth = 400;
+  window.innerHeight = 500;
+  // a. grip mousedown 武装并进模态循环。
+  const grip = rootShell.children.find((c) => c.className === 'global-lookup-resize-grip');
+  assert.ok(grip, 'root shell carries the resize grip');
+  hostPostLog = [];
+  grip._listeners['mousedown'][0]({ stopPropagation: () => {}, preventDefault: () => {} });
+  assert.ok(hostPostLog.some((m) => m.handler === 'beginWindowResize'),
+    'grip mousedown still enters the native modal size loop');
+  rootShell.__lookupRecord.contentMeasureDirty = false;
+  window.innerWidth = 460;   // +60
+  window.innerHeight = 420;  // -80
+  assert.strictEqual(host.handleWindowResize(), true, 'armed resize applies');
+  assert.strictEqual(rootShell.style.width, '420px', 'root width = start + viewport delta');
+  assert.strictEqual(rootShell.style.height, '370px', 'root height = start + viewport delta');
+  assert.strictEqual(rootShell.__lookupRecord.contentMeasureDirty, true,
+    'live-fit marks the root for a real re-measure at the new width');
+  // c. 子卡不动。
+  assert.strictEqual(childShell.style.width, '300px');
+  assert.strictEqual(childShell.style.height, '200px');
+  // 增量是相对按下时的 viewport（不是上一帧），且有下限。
+  window.innerWidth = 10;
+  window.innerHeight = 10;
+  host.handleWindowResize();
+  assert.strictEqual(rootShell.style.width, '80px', 'live width floors at the minimum');
+  assert.strictEqual(rootShell.style.height, '80px', 'live height floors at the minimum');
+  window.innerWidth = 500;
+  window.innerHeight = 600;
+  host.handleWindowResize();
+  assert.strictEqual(rootShell.style.width, '460px', 'delta is measured from the arm-time viewport');
+  assert.strictEqual(rootShell.style.height, '550px');
+  // b. WM_EXITSIZEMOVE → endLiveResize 之后的 resize 不再动 root。
+  host.endLiveResize();
+  window.innerWidth = 700;
+  window.innerHeight = 700;
+  assert.strictEqual(host.handleWindowResize(), false);
+  assert.strictEqual(rootShell.style.width, '460px', 'after release the root stops following');
+  // d. 武装后 renderStack 接管：Dart 的 frame 覆盖 live 尺寸并解除武装。
+  assert.strictEqual(host.beginLiveResize(), true);
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 20, top: 30, width: 520, height: 400 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(rootShell.style.width, '520px', 'Dart authoritative frame wins');
+  assert.strictEqual(rootShell.style.height, '400px');
+  window.innerWidth = 900;
+  assert.strictEqual(host.handleWindowResize(), false, 'renderStack disarms live-fit');
+  assert.strictEqual(rootShell.style.width, '520px');
+  // e. 面板模式不武装。
+  host.renderStack({
+    layoutMode: 'panel',
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(host.beginLiveResize(), false, 'panel root already fills the viewport');
+}
+{
+  // e. 取不到 viewport（window.innerWidth 缺失）→ 不武装，不写 NaN。
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const rootShell = shellsOf(document)[0];
+  assert.strictEqual(host.beginLiveResize(), false);
+  assert.strictEqual(host.handleWindowResize(), false);
+  assert.strictEqual(rootShell.style.width, '360px');
+}
+
 console.log('global_lookup_host_test: PASS');

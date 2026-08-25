@@ -93,6 +93,51 @@ void AppendDiagnostic(WindowCaptureResult* out, const char* note, HRESULT hr) {
   out->diagnostics += line;
 }
 
+// BUG-1854：把 WGC 整窗纹理裁到窗口**客户区**。
+//
+// `CreateForWindow` 拿到的 item 覆盖窗口的整个 DWM 视觉（= DWMWA_EXTENDED_FRAME_BOUNDS），
+// 标题栏 / 菜单栏 / 边框全在里面，窗口化跑的 galgame 制卡必然把标题栏拍进卡片。
+// 裁剪原点 = 客户区屏幕原点（ClientToScreen）− 扩展框架原点：不能用 GetWindowRect
+// 的 left/top，Win10+ 的不可见 resize 边框会让它比 DWM 视觉原点偏出几像素（OBS 的
+// 「Client Area」选项是同一套算法）。本进程是 per-monitor DPI aware，这几个 API 与 WGC
+// 纹理同为物理像素，无需再换算。
+//
+// 返回 true 时 [box] 是 [width]×[height] 纹理内的一个非空子矩形（已与纹理求交）；
+// 任何一步失败（窗口最小化 / API 失败 / 退化成空矩形）返回 false，调用方回退整窗——
+// 宁可多一条标题栏，也不能因为裁剪把卡片图弄丢。
+bool ComputeClientCropBox(HWND hwnd, UINT width, UINT height, RECT* box) {
+  if (hwnd == nullptr || box == nullptr || width == 0 || height == 0) {
+    return false;
+  }
+  RECT client{};
+  RECT frame{};
+  POINT origin{0, 0};
+  if (!GetClientRect(hwnd, &client) || client.right <= 0 ||
+      client.bottom <= 0 ||
+      FAILED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame,
+                                   sizeof(frame))) ||
+      !ClientToScreen(hwnd, &origin)) {
+    return false;
+  }
+  const LONG left = std::max<LONG>(0, origin.x - frame.left);
+  const LONG top = std::max<LONG>(0, origin.y - frame.top);
+  if (left >= static_cast<LONG>(width) || top >= static_cast<LONG>(height)) {
+    return false;
+  }
+  const LONG right =
+      std::min<LONG>(static_cast<LONG>(width), left + client.right);
+  const LONG bottom =
+      std::min<LONG>(static_cast<LONG>(height), top + client.bottom);
+  if (right <= left || bottom <= top) {
+    return false;
+  }
+  box->left = left;
+  box->top = top;
+  box->right = right;
+  box->bottom = bottom;
+  return true;
+}
+
 // 读窗口标题（无标题返回空串）。
 std::wstring ReadWindowTitle(HWND hwnd) {
   const int len = GetWindowTextLengthW(hwnd);
@@ -479,8 +524,25 @@ void CaptureCore(HWND hwnd, WindowCaptureResult* out) {
   context->CopyResource(staging.Get(), texture.Get());
   D3D11_MAPPED_SUBRESOURCE mapped = {};
   if (SUCCEEDED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
-    out->png = EncodeBgraToPng(static_cast<const uint8_t*>(mapped.pData),
-                               desc.Width, desc.Height, mapped.RowPitch,
+    // BUG-1854：只编码客户区子矩形（标题栏 / 菜单栏 / 边框不进卡片）。指针按
+    // 行距偏移到子矩形左上角即可，行距不变，不必再拷一次纹理。裁不出来就整窗
+    // 编码并记一条 diagnostics，让「这张图为什么带标题栏」可证。
+    RECT crop{};
+    const uint8_t* pixels = static_cast<const uint8_t*>(mapped.pData);
+    UINT encode_w = desc.Width;
+    UINT encode_h = desc.Height;
+    if (ComputeClientCropBox(hwnd, desc.Width, desc.Height, &crop)) {
+      pixels += static_cast<size_t>(crop.top) * mapped.RowPitch +
+                static_cast<size_t>(crop.left) * 4;
+      encode_w = static_cast<UINT>(crop.right - crop.left);
+      encode_h = static_cast<UINT>(crop.bottom - crop.top);
+    } else {
+      AppendDiagnostic(out,
+                       "client-area crop unavailable; encoded the whole "
+                       "window (title bar included)",
+                       S_OK);
+    }
+    out->png = EncodeBgraToPng(pixels, encode_w, encode_h, mapped.RowPitch,
                                &out->error);
     context->Unmap(staging.Get(), 0);
   } else {

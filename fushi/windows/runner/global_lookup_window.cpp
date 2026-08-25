@@ -3509,6 +3509,15 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       ApplyRoundedRegion();
       // 拖拽期间投影因防掉帧被隐藏（见 SyncShadow），拖完立刻恢复。
       SyncShadow();
+      // BUG-1857 — 拖拽期间 host 让 root 卡随 viewport 长（live-fit）；松手先解除，
+      // 再回报 windowMoved 让 Dart 权威重排接管 root 尺寸。顺序有意：先解除后回报，
+      // Dart 重排到达时 host 已不在 live 态。
+      if (webview_ != nullptr) {
+        webview_->ExecuteScript(
+            L"window.__globalLookupHost && "
+            L"window.__globalLookupHost.endLiveResize();",
+            nullptr);
+      }
       if (message_cb_ && hwnd_ != nullptr) {
         RECT r{};
         GetWindowRect(hwnd_, &r);
