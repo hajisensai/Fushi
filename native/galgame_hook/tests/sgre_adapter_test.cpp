@@ -46,6 +46,51 @@ int main() {
                                                       wrong_hash.size()));
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(nullptr, 0));
 
+  // BUG-1869 — SGRE polls c_dfDIMouse2 directly, so swallowing Win32 mouse
+  // messages cannot stop the game from seeing the click. Pin the exact profile
+  // address/ABI and the button-only release latch used by the injected detour.
+  assert(fushi_voice_hook::kSgreDirectInputMouseDeviceRva == 0xA96E18u);
+  assert(fushi_voice_hook::kSgreDirectInputGetDeviceStateVtableIndex == 9u);
+  uint8_t mouse_state[fushi_voice_hook::kSgreDirectInputMouseStateBytes] = {};
+  mouse_state[0] = 0x11;   // lX bytes must survive unchanged.
+  mouse_state[8] = 0x22;   // lZ bytes must survive unchanged.
+  mouse_state[12] = 0x80;  // button 0 down.
+  mouse_state[19] = 0x80;  // button 7 down.
+  uint8_t latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      true, mouse_state, sizeof(mouse_state), 0);
+  assert(latched == 0x81);
+  assert(mouse_state[0] == 0x11 && mouse_state[8] == 0x22);
+  assert(mouse_state[12] == 0 && mouse_state[19] == 0);
+
+  // Popup is already gone but both physical buttons are still held: the same
+  // down transaction remains invisible until each raw up is observed.
+  mouse_state[12] = 0x80;
+  mouse_state[19] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0x81 && mouse_state[12] == 0 && mouse_state[19] == 0);
+  mouse_state[12] = 0;
+  mouse_state[19] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0x80 && mouse_state[19] == 0);
+  mouse_state[19] = 0;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0);
+
+  // Once inactive and drained, unrelated real input must pass untouched. An
+  // unknown state layout is also a strict no-op.
+  mouse_state[13] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0 && mouse_state[13] == 0x80);
+  uint8_t unsupported[16] = {};
+  unsupported[12] = 0x80;
+  assert(fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+             true, unsupported, sizeof(unsupported), 0x04) == 0x04);
+  assert(unsupported[12] == 0x80);
+
   // The scenario root is positioned in the 1920x1080 design surface, but the
   // glyph draw point and texture cell are already physical units. These are
   // live values from the admitted 3840x2160 process: glyph+0x40 advances 80,

@@ -1456,22 +1456,11 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（identity 在
+    // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
+    // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
+    // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
     if (!context.mounted || sources.isEmpty) return;
-    final VideoDownloadBackendIdentity identity;
-    try {
-      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
-    } on VideoDownloadBackendUnavailable catch (error) {
-      if (context.mounted) {
-        _showVideoDiscoveryMessage(context, error.message);
-      }
-      return;
-    } on Object {
-      if (context.mounted) {
-        unawaited(_promptDownloadBackendSetup(context));
-      }
-      return;
-    }
-    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoveryResourceSearchPage(
@@ -1481,6 +1470,8 @@ class _HomePageState extends BasePageState<HomePage>
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+            final VideoDownloadBackendIdentity identity =
+                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: selection.media,
@@ -1524,22 +1515,11 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（identity 在
+    // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
+    // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
+    // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
     if (!context.mounted || sources.isEmpty) return;
-    final VideoDownloadBackendIdentity identity;
-    try {
-      identity = await appModelNoUpdate.currentVideoDownloadBackendIdentity();
-    } on VideoDownloadBackendUnavailable catch (error) {
-      if (context.mounted) {
-        _showVideoDiscoveryMessage(context, error.message);
-      }
-      return;
-    } on Object {
-      if (context.mounted) {
-        unawaited(_promptDownloadBackendSetup(context));
-      }
-      return;
-    }
-    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoverySubscriptionPage(
@@ -1549,6 +1529,8 @@ class _HomePageState extends BasePageState<HomePage>
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
+            final VideoDownloadBackendIdentity identity =
+                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
             final int now = DateTime.now().millisecondsSinceEpoch;
             final String subscriptionId =
                 videoDiscoverySubscriptionId(item.reference);

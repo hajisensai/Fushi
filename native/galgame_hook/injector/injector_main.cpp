@@ -20,6 +20,7 @@
 
 #include "voice_hook_ipc.h"
 #include "voice_hook_session.h"
+#include "hook_module_identity.h"
 #include "child_process_policy.h"
 #include "ffmpeg_runtime.h"
 #include "launch_command_line.h"
@@ -1200,6 +1201,7 @@ struct LunaOptions {
 };
 
 std::string ReadUtf8File(const std::wstring& path);
+std::string Sha256File(const std::wstring& path);
 fushi_voice_hook::LunaTargetIdentity BuildTargetIdentity(
     const std::wstring& executable, DWORD pid);
 
@@ -1429,6 +1431,76 @@ bool RevokeNativeLoopbackForFailure(SharedHeader* header,
 // 承载了两种互斥含义：「本策略不需要 resume」（Siglus/follow-child：进程没被挂起创建）
 // 与「本该 resume 但句柄没拿到」（Locale Emulator 未回填 hThread）。后者被静默当成前者
 // 跳过，游戏永久挂起而 injector 照报 OK hooked。拆成两个参数就消掉了这个二义性。
+std::wstring NormalizeAbsoluteModulePath(const std::wstring& path) {
+  if (path.empty()) return {};
+  const DWORD required = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
+  if (required == 0) return {};
+  std::vector<wchar_t> buffer(static_cast<size_t>(required), L'\0');
+  const DWORD written = GetFullPathNameW(
+      path.c_str(), static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
+  if (written == 0 || written >= buffer.size()) return {};
+  std::wstring normalized(buffer.data(), written);
+  std::replace(normalized.begin(), normalized.end(), L'/', L'\\');
+  // Toolhelp 通常返回 DOS 路径；兼容调用方显式传入 Win32 extended path。
+  if (normalized.rfind(L"\\\\?\\UNC\\", 0) == 0) {
+    normalized = L"\\\\" + normalized.substr(8);
+  } else if (normalized.rfind(L"\\\\?\\", 0) == 0) {
+    normalized.erase(0, 4);
+  }
+  return normalized;
+}
+
+std::wstring ModuleBaseName(const std::wstring& path) {
+  const size_t slash = path.find_last_of(L"\\/");
+  return slash == std::wstring::npos ? path : path.substr(slash + 1);
+}
+
+bool FindResidentModulePath(DWORD pid, const std::wstring& module_basename,
+                            std::wstring* loaded_path) {
+  if (loaded_path == nullptr || module_basename.empty()) return false;
+  loaded_path->clear();
+  // Toolhelp documents ERROR_BAD_LENGTH as retryable for module snapshots.
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(
+        TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+      if (GetLastError() == ERROR_BAD_LENGTH) continue;
+      return false;
+    }
+    MODULEENTRY32W module = {0};
+    module.dwSize = sizeof(module);
+    bool found = false;
+    if (Module32FirstW(snapshot, &module)) {
+      do {
+        if (_wcsicmp(module.szModule, module_basename.c_str()) == 0) {
+          *loaded_path = module.szExePath;
+          found = true;
+          break;
+        }
+      } while (Module32NextW(snapshot, &module));
+    }
+    const DWORD enumeration_error = GetLastError();
+    CloseHandle(snapshot);
+    if (found) return true;
+    if (enumeration_error != ERROR_BAD_LENGTH) return false;
+  }
+  return false;
+}
+
+fushi_voice_hook::HookModuleIdentityStatus InspectResidentHookIdentity(
+    DWORD pid, const std::wstring& requested_dll_path) {
+  const std::wstring requested =
+      NormalizeAbsoluteModulePath(requested_dll_path);
+  std::wstring loaded_raw;
+  const bool found = FindResidentModulePath(
+      pid, ModuleBaseName(requested_dll_path), &loaded_raw);
+  const std::wstring loaded = NormalizeAbsoluteModulePath(loaded_raw);
+  const std::string requested_sha = Sha256File(requested);
+  const std::string loaded_sha = Sha256File(loaded);
+  return fushi_voice_hook::EvaluateHookModuleIdentity(
+      found, requested, loaded, requested_sha, loaded_sha);
+}
+
 int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                  DWORD wait_ms, bool hold, HANDLE resume_thread,
                  HANDLE hold_process, const LunaOptions& luna,
@@ -1506,15 +1578,44 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
   const uint32_t expected_clip_offset =
       static_cast<uint32_t>(expected_text_offset + text_region_bytes);
+  const auto resident_hook_identity =
+      mapping_already_exists
+          ? InspectResidentHookIdentity(pid, dll_path)
+          : fushi_voice_hook::HookModuleIdentityStatus::kMatch;
   const MappingSessionAction mapping_action = InspectMappingSession(
       mapping_already_exists, header, ring_capacity, expected_text_offset,
-      expected_clip_offset);
+      expected_clip_offset,
+      resident_hook_identity ==
+          fushi_voice_hook::HookModuleIdentityStatus::kMatch);
   if (mapping_action == MappingSessionAction::kRejectStale) {
-    fprintf(stderr,
-            "已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）；请重启一次游戏以清理旧 DLL。\n");
+    const bool resident_hook_requires_restart =
+        fushi_voice_hook::HookModuleIdentityRequiresRestart(
+            resident_hook_identity);
+    if (resident_hook_identity !=
+        fushi_voice_hook::HookModuleIdentityStatus::kMatch) {
+      fprintf(stderr,
+              "[session] resident hook identity mismatch (%s); refusing "
+              "ready mapping reuse\n",
+              fushi_voice_hook::HookModuleIdentityStatusToken(
+                  resident_hook_identity));
+    }
+    if (resident_hook_requires_restart) {
+      fprintf(stderr,
+              "已存在但不可复用的 hook 会话（驻留 DLL 路径或摘要与本次请求不匹配）；"
+              "请重启一次游戏以清理旧 DLL。\n");
+    } else {
+      fprintf(stderr,
+              "已存在但暂不可复用的 hook 会话（契约、hooked 或驻留 DLL 身份暂不可确认）；"
+              "将由宿主有界重试。\n");
+    }
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    return FailWith(reason_out, LaunchFailureReason::kStaleSession, 2);
+    return FailWith(
+        reason_out,
+        resident_hook_requires_restart
+            ? LaunchFailureReason::kResidentHookMismatch
+            : LaunchFailureReason::kStaleSession,
+        2);
   }
   const bool reuse_ready = mapping_action == MappingSessionAction::kReuseReady;
   if (!reuse_ready) {

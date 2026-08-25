@@ -2456,6 +2456,127 @@ void _bug950Guard() {
       endpoints.dispose();
     });
 
+    test('residentHookMismatch 要求重启游戏，对同一 PID 不自动重试', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource stale = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.residentHookMismatch,
+          exitCode: 2,
+          stderrTail: '已存在但不可复用的 hook 会话；请重启游戏',
+        ),
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+        }) {
+          factoryCalls++;
+          return stale;
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await waitForEvent(controller, 'engine.retry_skipped');
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.residentHookMismatch,
+      );
+      expect(controller.state.injectorDetail, contains('exit=2'));
+      final List<String> codes =
+          controller.events.map((GalHookEvent e) => e.code).toList();
+      expect(codes, contains('engine.retry_skipped'));
+      expect(codes, isNot(contains('engine.retry_scheduled')));
+      expect(factoryCalls, 1);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('staleSession 的旧映射消失后会有界重试并恢复', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource stale = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.staleSession,
+          exitCode: 2,
+          stderrTail: '已存在但暂不可复用的 hook 会话；将由宿主有界重试',
+        ),
+      );
+      final _FakeEngineSource recovered =
+          _FakeEngineSource(pairedBytes: Uint8List(0));
+      final List<_FakeEngineSource> queue = <_FakeEngineSource>[
+        stale,
+        recovered,
+      ];
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+        }) {
+          factoryCalls++;
+          return queue.isEmpty ? recovered : queue.removeAt(0);
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await waitForEvent(controller, 'engine.retry_scheduled');
+      await waitForEvent(controller, 'engine.attach_recovered');
+
+      expect(factoryCalls, 2);
+      expect(controller.state.injectorFailure, GalHookInjectorFailure.none);
+      expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
     test('启动注入失败但游戏已在跑：保留会话降级重试，不报「启动失败」', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();

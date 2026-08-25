@@ -33,6 +33,8 @@ struct SgreLookupCapture {
 };
 
 using SgreTextDrawFn = void(__fastcall*)(void*);
+using SgreGetDeviceStateFn =
+    HRESULT(STDMETHODCALLTYPE*)(void*, DWORD, LPVOID);
 
 SgreTextDrawFn g_sgre_text_draw_original = nullptr;
 const void* g_sgre_scenario_text_vtable = nullptr;
@@ -45,6 +47,308 @@ std::wstring g_sgre_lookup_active_line;
 uint32_t g_sgre_lookup_active_char_indices[kSgreLookupMaxGlyphs] = {};
 size_t g_sgre_lookup_active_mapped = 0;
 bool g_sgre_lookup_active_valid = false;
+
+// BUG-1869 — SGRE does not advance from WM_LBUTTONDOWN. It polls the
+// GUID_SysMouse IDirectInputDevice8 immediate state every frame. The popup HWND
+// published on the game window is the host-owned liveness token; the button
+// latch is injected-side state so teardown cannot expose the held half of a
+// click after its down was already hidden.
+SgreGetDeviceStateFn g_sgre_get_device_state_original = nullptr;
+void* g_sgre_get_device_state_target = nullptr;
+std::atomic<void*> g_sgre_mouse_device{nullptr};
+std::atomic<uint8_t> g_sgre_direct_input_latched_buttons{0};
+std::atomic<HWND> g_sgre_direct_input_game_window{nullptr};
+HWND g_sgre_direct_input_property_window = nullptr;
+ULONGLONG g_sgre_direct_input_last_health_tick = 0;
+constexpr ULONGLONG kSgreDirectInputHealthIntervalMs = 1000;
+
+HWND GetValidPublishedSgreDirectInputShieldPopup(HWND game) {
+  if (game == nullptr) return nullptr;
+  const HWND popup = reinterpret_cast<HWND>(GetPropW(
+      game, fushi_voice_hook::kSgreDirectInputShieldWindowProperty));
+  // Idle GetDeviceState hot path stops at the single null property read.  Pay
+  // HWND/owner/class validation only while a host actually published a card.
+  if (popup == nullptr || !IsWindow(game) || !IsWindow(popup) ||
+      GetWindow(popup, GW_OWNER) != game) {
+    return nullptr;
+  }
+  wchar_t class_name[64] = {};
+  if (GetClassNameW(popup, class_name,
+                    static_cast<int>(sizeof(class_name) /
+                                     sizeof(class_name[0]))) <= 0 ||
+      lstrcmpW(class_name, L"FushiGlobalLookupWindow") != 0) {
+    return nullptr;
+  }
+  return popup;
+}
+
+bool IsPublishedSgreDirectInputShieldActive(HWND game) {
+  if (GetValidPublishedSgreDirectInputShieldPopup(game) == nullptr) {
+    return false;
+  }
+  return reinterpret_cast<uintptr_t>(GetPropW(
+             game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty)) ==
+         fushi_voice_hook::kSgreDirectInputShieldReadyValue;
+}
+
+HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
+                                                    DWORD state_bytes,
+                                                    LPVOID state) {
+  const SgreGetDeviceStateFn original = g_sgre_get_device_state_original;
+  if (original == nullptr) return E_FAIL;
+  const HRESULT result = original(device, state_bytes, state);
+  if (FAILED(result) || state == nullptr ||
+      device != g_sgre_mouse_device.load(std::memory_order_acquire) ||
+      state_bytes != fushi_voice_hook::kSgreDirectInputMouseStateBytes) {
+    return result;
+  }
+  const HWND game =
+      g_sgre_direct_input_game_window.load(std::memory_order_acquire);
+  const bool shield_active = IsPublishedSgreDirectInputShieldActive(game);
+  const uint8_t initial_latch =
+      g_sgre_direct_input_latched_buttons.load(std::memory_order_acquire);
+  if (!shield_active && initial_latch == 0) {
+    return result;
+  }
+  auto* bytes = static_cast<uint8_t*>(state);
+  uint8_t raw_buttons[fushi_voice_hook::kSgreDirectInputMouseButtonCount] = {};
+  for (size_t index = 0;
+       index < fushi_voice_hook::kSgreDirectInputMouseButtonCount; ++index) {
+    raw_buttons[index] =
+        bytes[fushi_voice_hook::kSgreDirectInputMouseButtonsOffset + index];
+  }
+  // The admitted callsite is single-threaded, but make the latch linearizable
+  // anyway: a future second poller must not lose another button's bit through a
+  // load -> filter -> store last-writer-wins race.
+  uint8_t observed = initial_latch;
+  for (;;) {
+    for (size_t index = 0;
+         index < fushi_voice_hook::kSgreDirectInputMouseButtonCount; ++index) {
+      bytes[fushi_voice_hook::kSgreDirectInputMouseButtonsOffset + index] =
+          raw_buttons[index];
+    }
+    const uint8_t next = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+        shield_active, bytes, state_bytes, observed);
+    if (g_sgre_direct_input_latched_buttons.compare_exchange_weak(
+            observed, next, std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+      break;
+    }
+  }
+  return result;
+}
+
+void RevokeSgreDirectInputShieldReady(HWND game) {
+  if (game != nullptr && IsWindow(game)) {
+    RemovePropW(game,
+                fushi_voice_hook::kSgreDirectInputShieldWindowProperty);
+    RemovePropW(game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty);
+  }
+  if (g_header != nullptr) {
+    InterlockedAnd(
+        reinterpret_cast<volatile LONG*>(&g_header->lookup_diag),
+        static_cast<LONG>(
+            ~fushi_voice_hook::kLookupDiagSgreDirectInputShieldReady));
+  }
+}
+
+HWND ResolveSgreDirectInputPropertyWindow() {
+  if (g_sgre_direct_input_property_window != nullptr &&
+      IsWindow(g_sgre_direct_input_property_window)) {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(g_sgre_direct_input_property_window, &pid);
+    if (pid == GetCurrentProcessId()) {
+      return g_sgre_direct_input_property_window;
+    }
+  }
+  g_sgre_direct_input_property_window = FindGameMainWindow();
+  return g_sgre_direct_input_property_window;
+}
+
+bool RefreshSgreDirectInputPropertyWindow() {
+  const HWND previous = g_sgre_direct_input_property_window;
+  const HWND current = FindGameMainWindow();
+  if (current == nullptr) {
+    // Minimize/restore can temporarily leave no visible owner candidate.  Keep
+    // an otherwise live cached HWND; the next health tick will rediscover it or
+    // migrate when a replacement main window appears.
+    if (previous != nullptr && IsWindow(previous)) return true;
+    RevokeSgreDirectInputShieldReady(previous);
+    g_sgre_direct_input_property_window = nullptr;
+    g_sgre_direct_input_game_window.store(nullptr,
+                                           std::memory_order_release);
+    return false;
+  }
+  if (current == previous) return true;
+
+  if (GetValidPublishedSgreDirectInputShieldPopup(previous) != nullptr) {
+    // Never tear down a live host publication underneath an on-screen lookup.
+    // Its owner remains the previous HWND; after host Hide removes Window, the
+    // next 1s health pass can safely migrate Required -> Ready to |current|.
+    return true;
+  }
+
+  // SGRE may replace its visible top-level window while retaining the old HWND
+  // (fullscreen / mode transitions).  Move the whole Required -> Ready contract
+  // instead of leaving Fushi to misclassify the new main window as a generic
+  // HHOOK-only game.
+  RevokeSgreDirectInputShieldReady(previous);
+  if (previous != nullptr && IsWindow(previous)) {
+    RemovePropW(previous,
+                fushi_voice_hook::kSgreDirectInputShieldRequiredProperty);
+  }
+  g_sgre_direct_input_property_window = current;
+  g_sgre_direct_input_game_window.store(nullptr, std::memory_order_release);
+  g_sgre_direct_input_last_health_tick = 0;
+  return true;
+}
+
+bool PublishSgreDirectInputShieldRequired() {
+  const HWND game = ResolveSgreDirectInputPropertyWindow();
+  if (game == nullptr) return false;
+  if (reinterpret_cast<uintptr_t>(GetPropW(
+          game, fushi_voice_hook::kSgreDirectInputShieldRequiredProperty)) ==
+      fushi_voice_hook::kSgreDirectInputShieldRequiredValue) {
+    return true;
+  }
+  return SetPropW(
+             game,
+             fushi_voice_hook::kSgreDirectInputShieldRequiredProperty,
+             reinterpret_cast<HANDLE>(
+                 fushi_voice_hook::kSgreDirectInputShieldRequiredValue)) !=
+         FALSE;
+}
+
+void MarkSgreDirectInputShieldNotReady() {
+  RevokeSgreDirectInputShieldReady(g_sgre_direct_input_property_window);
+  g_sgre_direct_input_game_window.store(nullptr, std::memory_order_release);
+  // A hidden down remains suppressed through its raw up even if the health
+  // contract is revoked mid-click.  Preserve the hooked self while the latch is
+  // non-zero; the detour's inactive path drains it on the matching raw release.
+  if (g_sgre_direct_input_latched_buttons.load(std::memory_order_acquire) == 0) {
+    g_sgre_mouse_device.store(nullptr, std::memory_order_release);
+  }
+  g_sgre_direct_input_last_health_tick = 0;
+}
+
+bool PublishSgreDirectInputShieldReady() {
+  const HWND game = ResolveSgreDirectInputPropertyWindow();
+  if (game == nullptr) return false;
+  // Injected-side cache first, Ready property last. Ready is the cross-process
+  // commit observed by Fushi; publishing it earlier leaves a first-frame window
+  // where host shows the popup while the detour still reads game == nullptr.
+  g_sgre_direct_input_game_window.store(game, std::memory_order_release);
+  if (reinterpret_cast<uintptr_t>(GetPropW(
+          game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty)) !=
+          fushi_voice_hook::kSgreDirectInputShieldReadyValue &&
+      !SetPropW(game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty,
+                reinterpret_cast<HANDLE>(
+                    fushi_voice_hook::kSgreDirectInputShieldReadyValue))) {
+    g_sgre_direct_input_game_window.store(nullptr, std::memory_order_release);
+    return false;
+  }
+  if (g_header != nullptr) {
+    InterlockedOr(
+        reinterpret_cast<volatile LONG*>(&g_header->lookup_diag),
+        static_cast<LONG>(
+            fushi_voice_hook::kLookupDiagSgreDirectInputShieldReady));
+  }
+  g_sgre_direct_input_last_health_tick = GetTickCount64();
+  return true;
+}
+
+bool InstallSgreDirectInputShield() {
+  HMODULE executable = GetModuleHandleW(nullptr);
+  if (executable == nullptr) {
+    PublishSgreDirectInputShieldRequired();
+    MarkSgreDirectInputShieldNotReady();
+    return false;
+  }
+  void* mouse_device = nullptr;
+  void* target = nullptr;
+  __try {
+    mouse_device = *reinterpret_cast<void**>(
+        reinterpret_cast<uintptr_t>(executable) +
+        fushi_voice_hook::kSgreDirectInputMouseDeviceRva);
+    if (mouse_device != nullptr) {
+      target = VtableSlot(
+          mouse_device,
+          fushi_voice_hook::kSgreDirectInputGetDeviceStateVtableIndex);
+    }
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    mouse_device = nullptr;
+    target = nullptr;
+  }
+  const ULONGLONG now = GetTickCount64();
+  const HWND cached_game =
+      g_sgre_direct_input_game_window.load(std::memory_order_acquire);
+  if (mouse_device != nullptr && target != nullptr &&
+      target == g_sgre_get_device_state_target &&
+      mouse_device == g_sgre_mouse_device.load(std::memory_order_acquire) &&
+      cached_game != nullptr &&
+      cached_game == g_sgre_direct_input_property_window &&
+      IsWindow(cached_game) &&
+      g_sgre_direct_input_last_health_tick != 0 &&
+      now - g_sgre_direct_input_last_health_tick <
+          kSgreDirectInputHealthIntervalMs) {
+    // Steady-state worker tick: in-process device/method reads plus a cheap HWND
+    // liveness check prove the admitted binding is unchanged. Avoid EnumWindows
+    // and property traffic at the 16 ms lookup polling cadence; do the full
+    // main-window selection and cross-process contract refresh once per second.
+    return true;
+  }
+  if (!RefreshSgreDirectInputPropertyWindow()) {
+    MarkSgreDirectInputShieldNotReady();
+    return false;
+  }
+  if (!PublishSgreDirectInputShieldRequired()) {
+    MarkSgreDirectInputShieldNotReady();
+    return false;
+  }
+  if (mouse_device == nullptr || target == nullptr) {
+    if (g_sgre_get_device_state_target != nullptr &&
+        g_sgre_mouse_device.load(std::memory_order_acquire) != nullptr &&
+        GetValidPublishedSgreDirectInputShieldPopup(
+            g_sgre_direct_input_property_window) != nullptr) {
+      // Exact SGRE initializes/releases this global outside the admitted
+      // per-frame callsite.  A transient null health sample must not revoke a
+      // live popup contract; the already-hooked self keeps filtering and the
+      // next health pass retries the slot.
+      return PublishSgreDirectInputShieldReady();
+    }
+    MarkSgreDirectInputShieldNotReady();
+    return false;
+  }
+
+  // The implementation address is normally shared by every DirectInput mouse
+  // instance. Refuse a surprising target change instead of repointing one
+  // global trampoline while an older detour may still be executing.
+  if (g_sgre_get_device_state_target != nullptr &&
+      g_sgre_get_device_state_target != target) {
+    MarkSgreDirectInputShieldNotReady();
+    return false;
+  }
+  if (g_sgre_get_device_state_target == nullptr) {
+    if (!HookFn(target, reinterpret_cast<void*>(&SgreGetDeviceStateDetour),
+                reinterpret_cast<void**>(
+                    &g_sgre_get_device_state_original)) ||
+        g_sgre_get_device_state_original == nullptr) {
+      MarkSgreDirectInputShieldNotReady();
+      return false;
+    }
+    g_sgre_get_device_state_target = target;
+  }
+  g_sgre_mouse_device.store(mouse_device, std::memory_order_release);
+  return PublishSgreDirectInputShieldReady();
+}
+
+void ShutdownSgreDirectInputShield() {
+  // Keep Required on an exact SGRE process after helper teardown: any later
+  // host must fail closed until a working detour republishes Ready. Removing it
+  // would misclassify this known DirectInput game as a generic HHOOK game.
+  MarkSgreDirectInputShieldNotReady();
+  g_sgre_direct_input_last_health_tick = 0;
+}
 
 enum class SgreLookupCaptureResult : uint32_t {
   kOk = 0,

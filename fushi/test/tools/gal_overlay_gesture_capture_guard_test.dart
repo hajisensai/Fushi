@@ -29,14 +29,17 @@ void main() {
 
   setUpAll(() {
     body = File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
-    bodyHeader =
-        File('windows/runner/floating_lyric_window.h').readAsStringSync();
+    bodyHeader = File(
+      'windows/runner/floating_lyric_window.h',
+    ).readAsStringSync();
     toolbar = File('windows/runner/hook_toolbar_window.cpp').readAsStringSync();
-    toolbarHeader =
-        File('windows/runner/hook_toolbar_window.h').readAsStringSync();
+    toolbarHeader = File(
+      'windows/runner/hook_toolbar_window.h',
+    ).readAsStringSync();
     lookup = File('windows/runner/global_lookup_window.cpp').readAsStringSync();
-    lookupHeader =
-        File('windows/runner/global_lookup_window.h').readAsStringSync();
+    lookupHeader = File(
+      'windows/runner/global_lookup_window.h',
+    ).readAsStringSync();
   });
 
   /// C++ 函数体：从签名处起做花括号配对。注释先掩成等长空白，免得散文里的
@@ -92,7 +95,9 @@ void main() {
     test('浮窗正文：三个手势标志只在 CancelPointerGesture 里清零', () {
       final String masked = maskComments(body);
       final String cancel = functionBody(
-          body, 'void FloatingLyricWindow::CancelPointerGesture()');
+        body,
+        'void FloatingLyricWindow::CancelPointerGesture()',
+      );
       for (final String flag in <String>[
         'pressed_ = false;',
         'dragging_ = false;',
@@ -102,7 +107,8 @@ void main() {
         expect(
           terminatingClears(masked, flag),
           1,
-          reason: '$flag 在 CancelPointerGesture 之外还有**终止**语义的清零点——'
+          reason:
+              '$flag 在 CancelPointerGesture 之外还有**终止**语义的清零点——'
               '「各清一半」正是 pressed_ 卡死的成因（BUG-1471）',
         );
       }
@@ -113,14 +119,19 @@ void main() {
     test('工具条：同一条规则', () {
       final String masked = maskComments(toolbar);
       final String cancel = functionBody(
-          toolbar, 'void HookToolbarWindow::CancelPointerGesture()');
+        toolbar,
+        'void HookToolbarWindow::CancelPointerGesture()',
+      );
       for (final String flag in <String>[
         'pressed_ = false;',
         'dragging_ = false;',
       ]) {
         expect(countOf(cancel, flag), 1);
-        expect(terminatingClears(masked, flag), 1,
-            reason: '$flag 在唯一终止函数之外还有**终止**语义的清零点');
+        expect(
+          terminatingClears(masked, flag),
+          1,
+          reason: '$flag 在唯一终止函数之外还有**终止**语义的清零点',
+        );
       }
       expect(cancel.contains('ReleaseCapture()'), isTrue);
       expect(toolbarHeader.contains('void CancelPointerGesture();'), isTrue);
@@ -128,13 +139,17 @@ void main() {
 
     test('Hide() 必须走终止函数（旧写法只清了 dragging_，pressed_ 跨隐藏卡住）', () {
       expect(
-        functionBody(body, 'void FloatingLyricWindow::Hide()')
-            .contains('CancelPointerGesture();'),
+        functionBody(
+          body,
+          'void FloatingLyricWindow::Hide()',
+        ).contains('CancelPointerGesture();'),
         isTrue,
       );
       expect(
-        functionBody(toolbar, 'void HookToolbarWindow::Hide()')
-            .contains('CancelPointerGesture();'),
+        functionBody(
+          toolbar,
+          'void HookToolbarWindow::Hide()',
+        ).contains('CancelPointerGesture();'),
         isTrue,
       );
     });
@@ -147,12 +162,16 @@ void main() {
         ('hook_toolbar_window.cpp', toolbar),
       ]) {
         final String masked = maskComments(src);
-        expect(masked.contains('SetCapture(hwnd_)'), isTrue,
-            reason: '$name 前提变了：不再取 capture 的话本守卫要重写');
+        expect(
+          masked.contains('SetCapture(hwnd_)'),
+          isTrue,
+          reason: '$name 前提变了：不再取 capture 的话本守卫要重写',
+        );
         expect(
           masked.contains('case WM_CAPTURECHANGED:'),
           isTrue,
-          reason: '$name 取了 capture 却不处理被收走的情况。'
+          reason:
+              '$name 取了 capture 却不处理被收走的情况。'
               '这是 WS_EX_NOACTIVATE 后台线程窗的必然路径（游戏抢回前台），'
               '不接就等于 button-up 永不到达、手势状态永久卡住',
         );
@@ -174,25 +193,34 @@ void main() {
     test('解钩三件套只有一个出口', () {
       final String masked = maskComments(lookup);
       final String release = functionBody(
-          lookup, 'void GlobalLookupWindow::ReleaseDismissHooks()');
+        lookup,
+        'void GlobalLookupWindow::ReleaseDismissHooks()',
+      );
       expect(release.contains('UnhookWinEvent(foreground_hook_)'), isTrue);
-      expect(release.contains('DisarmLowLevelMouseHook()'), isTrue);
+      expect(release.contains('DisarmLowLevelMouseHook(hwnd_)'), isTrue);
       expect(release.contains('s_hook_owner_ = nullptr;'), isTrue);
       expect(
         countOf(masked, 'UnhookWinEvent(foreground_hook_)'),
         1,
         reason: '解钩散在多处 = 迟早有一条路径漏掉（ForgetDeadWindow 就漏过）',
       );
-      expect(countOf(masked, 'DisarmLowLevelMouseHook()'), 1);
+      expect(
+        countOf(masked, 'DisarmLowLevelMouseHook(hwnd_)'),
+        3,
+        reason: '常规 Release 出口加 direct cold-arm/SetWindowPos 两条上屏失败回滚',
+      );
       expect(lookupHeader.contains('void ReleaseDismissHooks();'), isTrue);
     });
 
     test('ForgetDeadWindow 必须解钩：低级鼠标钩子有 1s 重装定时器，泄漏不会自愈', () {
       expect(
-        functionBody(lookup, 'void GlobalLookupWindow::ForgetDeadWindow()')
-            .contains('ReleaseDismissHooks();'),
+        functionBody(
+          lookup,
+          'void GlobalLookupWindow::ForgetDeadWindow()',
+        ).contains('ReleaseDismissHooks();'),
         isTrue,
-        reason: 'HWND 被外部销毁时若不解钩，存活性定时器会把一条指向死窗口的'
+        reason:
+            'HWND 被外部销毁时若不解钩，存活性定时器会把一条指向死窗口的'
             '纯放行钩子永久续命在链上',
       );
     });

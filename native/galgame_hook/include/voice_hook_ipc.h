@@ -70,6 +70,28 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 constexpr uint32_t kSharedVersion = 16;
 constexpr uint32_t kStableIpcVersion = 1;
 
+// BUG-1869 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
+// Win32 mouse-message 队列。direct galCard 因此需要一条很窄的跨进程发布面：
+//
+//   * injected SGRE adapter 先把 Required 置 1，声明该精确游戏不允许退回已经
+//     证伪的 HHOOK-only 路径；GetDeviceState detour 真正就绪后才最后提交 Ready；
+//   * Fushi 看到 Required 但没有 Ready 时 fail closed；只有 Ready 同时存在才把
+//     当前 direct popup HWND 发布到游戏 HWND；
+//   * detour 只接受仍存在、且 owner 正是游戏 HWND 的该 popup，随后仅清
+//     DIMOUSESTATE2::rgbButtons，绝不碰 lX/lY/lZ。
+//
+// HWND 自带进程崩溃生命周期：Fushi 退出后窗口会被系统销毁，注入侧即使看到陈旧
+// property 也会因 IsWindow/GW_OWNER 校验而 fail open，不会把游戏永久锁死。这里没有
+// 改 SharedHeader 布局，所以不升 kSharedVersion；两端共享名字只是为了杜绝手抄漂移。
+inline constexpr wchar_t kSgreDirectInputShieldReadyProperty[] =
+    L"Fushi.SGRE.DirectInputShield.Ready";
+inline constexpr wchar_t kSgreDirectInputShieldRequiredProperty[] =
+    L"Fushi.SGRE.DirectInputShield.Required";
+inline constexpr wchar_t kSgreDirectInputShieldWindowProperty[] =
+    L"Fushi.SGRE.DirectInputShield.Window";
+inline constexpr uintptr_t kSgreDirectInputShieldReadyValue = 1u;
+inline constexpr uintptr_t kSgreDirectInputShieldRequiredValue = 1u;
+
 // v16 native loopback policy/control ABI. Only the exact value 1 authorises
 // creation of the loopback worker; zero and every unknown value are deny.
 constexpr uint32_t kNativeLoopbackDeny = 0;
@@ -464,6 +486,9 @@ constexpr uint32_t kLookupDiagCardPlainFallback = 0x00100000u;
 // 随后才逐条 InsertHook；同一入口还要叠加原生查词 detour 时，必须等到这一步完成才能稳定链式
 // 安装，不能拿“管道已连上”冒充“目标地址已改写”。
 constexpr uint32_t kLookupDiagLunaKnownHookReady = 0x00200000u;
+// 精确 SGRE profile 的 DirectInput mouse GetDeviceState detour 已装，且 ready
+// property 已发布到当前游戏主窗。它只证明输入盾可被 host 启用，不声称 popup 正显示。
+constexpr uint32_t kLookupDiagSgreDirectInputShieldReady = 0x00400000u;
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。

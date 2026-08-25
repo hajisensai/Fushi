@@ -40,11 +40,23 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $BundleDirectory,
 
-  [string] $DistDirectory
+  [string] $DistDirectory,
+
+  # Local Debug builds intentionally allow the native helper distribution to
+  # be absent.  In that case the bundle must not keep plain helper files from
+  # an older build: injecting a stale DLL is worse than reporting the helper as
+  # unavailable.  Release/CI callers omit this switch and remain fail-closed.
+  [switch] $AllowMissingDistribution
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+$fingerprintScript = Join-Path $PSScriptRoot 'helper_source_fingerprint.ps1'
+if (-not (Test-Path -LiteralPath $fingerprintScript -PathType Leaf)) {
+  throw "Helper source fingerprint script is missing: $fingerprintScript"
+}
+. $fingerprintScript
 
 # Must stay identical to galgameHelperRequiredFiles() in
 # fushi/lib/src/mining/galgame_helper_installer.dart. Two copies of a contract
@@ -91,24 +103,71 @@ if (-not $DistDirectory) {
   $DistDirectory = Join-Path $PSScriptRoot '..\dist'
 }
 $DistDirectory = [IO.Path]::GetFullPath($DistDirectory)
-if (-not (Test-Path -LiteralPath $DistDirectory -PathType Container)) {
-  throw "Helper dist directory does not exist (run build_distribution.ps1 first): $DistDirectory"
+
+$distributionArtifacts = @()
+foreach ($arch in @('x86', 'x64')) {
+  $zip = Join-Path $DistDirectory "voice_hook_$arch.zip"
+  $distributionArtifacts += $zip
+  $distributionArtifacts += "$zip.sha256"
+}
+$sourceFingerprintFile = Join-Path $DistDirectory 'voice_hook_source.sha256'
+$distributionArtifacts += $sourceFingerprintFile
+$missingArtifacts = @(
+  $distributionArtifacts |
+    Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
+)
+
+# BUG-1449 removed runtime zip installation.  An incremental Flutter build may
+# still contain galgame_helper/ or voice_hook/ from an older checkout/build;
+# remove the legacy archive unconditionally so it cannot repopulate stale plain
+# files after this script returns.
+$legacyBundle = Join-Path $BundleDirectory 'galgame_helper'
+if (Test-Path -LiteralPath $legacyBundle) {
+  Remove-Item -LiteralPath $legacyBundle -Recurse -Force
+}
+
+if ($missingArtifacts.Count -gt 0) {
+  if (-not $AllowMissingDistribution) {
+    throw "Missing galgame helper build artifact(s): $($missingArtifacts -join ', ') (run build_distribution.ps1 first)"
+  }
+
+  # A Debug build without a fresh dist is allowed, but it must be honestly
+  # unavailable.  Leaving yesterday's voice_hook directory in the incremental
+  # bundle caused BUG-1868: SGRE injected pre-fix glyph geometry and selected a
+  # different character (or no character) even though Flutter had just rebuilt.
+  $plainBundle = Join-Path $BundleDirectory 'voice_hook'
+  if (Test-Path -LiteralPath $plainBundle) {
+    Remove-Item -LiteralPath $plainBundle -Recurse -Force
+  }
+  Write-Host "galgame helper distribution is absent; removed stale helper files from optional bundle: $BundleDirectory"
+  return
+}
+
+$recordedSourceFingerprint =
+  ((Get-Content -LiteralPath $sourceFingerprintFile -Raw) -replace '[^0-9a-fA-F]', '').ToLowerInvariant()
+$currentSourceFingerprint =
+  Get-FushiHelperSourceFingerprint -SourceRoot ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')))
+if ($recordedSourceFingerprint -ne $currentSourceFingerprint) {
+  if (-not $AllowMissingDistribution) {
+    throw "Galgame helper distribution is stale: recorded=$recordedSourceFingerprint current=$currentSourceFingerprint (run build_distribution.ps1 again)"
+  }
+  $plainBundle = Join-Path $BundleDirectory 'voice_hook'
+  if (Test-Path -LiteralPath $plainBundle) {
+    Remove-Item -LiteralPath $plainBundle -Recurse -Force
+  }
+  Write-Host "galgame helper distribution is stale; removed old helper files from optional bundle: $BundleDirectory"
+  return
 }
 
 foreach ($arch in @('x86', 'x64')) {
   $zip = Join-Path $DistDirectory "voice_hook_$arch.zip"
   $sidecar = "$zip.sha256"
-  foreach ($required in @($zip, $sidecar)) {
-    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-      throw "Missing galgame helper build artifact: $required"
-    }
-  }
 
   # Build-time fail-closed. An archive that cannot be proven intact must never be
   # unpacked into a shipping bundle: what is inside is an injector executable and
   # a DLL that gets loaded into the user's game process.
   $expected = ((Get-Content -LiteralPath $sidecar -Raw) -replace '[^0-9a-fA-F]', '').ToLowerInvariant()
-  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+  $actual = Get-FushiFileSha256Hex -Path $zip
   if ($expected -ne $actual) {
     throw "Helper archive sha256 mismatch for ${arch}: sidecar=$expected actual=$actual"
   }

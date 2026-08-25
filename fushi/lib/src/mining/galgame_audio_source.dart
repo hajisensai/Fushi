@@ -244,8 +244,13 @@ enum GalHookInjectorFailure {
   /// 游戏 exe 路径不存在（被移动/删除/盘符变化）。
   gameExeMissing,
 
-  /// 上一局的共享内存还在，但契约不匹配或 hooked=0：需重启游戏清理旧 DLL。
+  /// 已有共享映射暂不可复用，但尚未证明驻留 DLL 确实不同。旧 injector 退出、
+  /// Toolhelp/文件系统竞态或 hooked 发布中的短窗口可能自愈，因此允许有界重试。
   staleSession,
+
+  /// 已证明目标进程驻留的 hook DLL 路径或摘要与本次请求不同。
+  /// Windows 不会卸载已注入 DLL；同一 PID 原地重试无效，必须重启游戏。
+  residentHookMismatch,
 
   /// 注入完成但 DLL 未在超时内发出就绪信号。
   readyTimeout,
@@ -296,8 +301,10 @@ enum GalHookInjectorFailure {
 /// 该失败原因是否值得原地重试。
 ///
 /// 判据是「同一台机器、同一个游戏、什么都不做的情况下再试一次有没有可能成功」：
-/// 引擎初始化竞态、DLL 加载慢、旧会话残留会随时间自愈；架构不符、缺文件、需要提权
-/// 不会。重试不能用来掩盖后者——那类必须把可执行的处置说给用户。
+/// 引擎初始化竞态、DLL 加载慢、暂不可复用的 staleSession 可能随时间自愈；
+/// 架构不符、缺文件、需要提权不会。residentHookMismatch 里的旧 hook DLL 会驻留到
+/// 游戏退出，对同一 PID 原地重试也不会改变。
+/// 重试不能用来掩盖这些必须说给用户的可执行处置。
 bool galHookFailureIsRetryable(GalHookInjectorFailure failure) =>
     switch (failure) {
       GalHookInjectorFailure.readyTimeout ||

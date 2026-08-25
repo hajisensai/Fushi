@@ -145,36 +145,40 @@ install(CODE "
   endif()
 " COMPONENT Runtime)
 
-# === galgame hook helper 随包归档（可选，本地/CI 事先构建）===
-# helper（injector exe + hook DLL）**绝不链接进 fushi.exe**，它以隔离子进程/DLL
-# 运行，随主包分发的是两架构 zip + sha256 侧车，app 校验后解压到 voice_hook/<arch>/。
-# 运行期定位是「exe 同级的 galgame_helper/」（galgame_helper_installer.dart 的
-# _bundledDirectory）。
+# === galgame hook helper 随包普通文件（可选，本地/CI 事先构建）===
+# helper（injector exe + hook DLL）**绝不链接进 fushi.exe**。BUG-1449 起，两个架构由
+# install_into_bundle.ps1 在构建期校验 zip 后解包到 exe 同级 voice_hook/<arch>/；安装包
+# 不再携带 galgame_helper/ zip，也不再依赖运行期把第二份副本同步到 plain files。
 #
-# 🔴 这条规则存在的唯一理由是**开发构建也要拿得到 helper**（BUG-1196）：在此之前
-# galgame_helper/ 只由 CI 在 `flutter build windows` 之后的一个独立 YAML 步骤拷贝，
-# 于是 `flutter run` / `flutter build windows --debug` 出来的 exe 旁边永远没有这个
-# 目录，_installBundledHelper 直接返回 false，galgame hook 在开发模式下**完全用不了**。
-# 现在改由 install 规则从 build_distribution.ps1 的产出目录直接拷 —— 与 release 同源、
-# 同文件名、同目标目录，**发布产物的结构一个字节都没变**（CI 那步照旧，且它跑在
-# 本规则之后，是幂等覆盖）。
-#
-# OPTIONAL 是必需的：判定发生在 install 时而不是 configure 时，且没构建过 helper 的
-# 机器（绝大多数改 UI 的人）照常 `flutter build windows` 成功，只是 app 内点「启动
-# 游戏」时提示 helper 未随包 —— 与今天的行为一致。
-# 要在本地拿到它：native/galgame_hook 下跑 tools/build_distribution.ps1。
+# 本地 Debug 仍允许没跑 build_distribution.ps1：这对只改 UI 的开发机构建是必要的。
+# 但增量输出目录可能残留上一次构建的 voice_hook/。若这次 dist 不完整，或 dist 的源码
+# 指纹不属于当前 checkout，安装脚本必须主动删掉残留而不是把旧 DLL 伪装成新构建
+#（BUG-1868）；功能明确不可用胜过静默注入旧件。
+# CI/Release 随后仍会无 AllowMissingDistribution 调用同一脚本，分发物缺失或损坏时失败。
+# 要在本地拿到 helper：先在 native/galgame_hook 下跑 tools/build_distribution.ps1。
 set(FUSHI_GALGAME_HELPER_DIST_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/galgame_hook/dist")
-set(FUSHI_GALGAME_HELPER_FILES
-  "voice_hook_x64.zip"
-  "voice_hook_x64.zip.sha256"
-  "voice_hook_x86.zip"
-  "voice_hook_x86.zip.sha256")
-foreach(_helper_file ${FUSHI_GALGAME_HELPER_FILES})
-  install(FILES "${FUSHI_GALGAME_HELPER_DIST_DIR}/${_helper_file}"
-    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/galgame_helper"
-    COMPONENT Runtime OPTIONAL)
-endforeach()
+set(FUSHI_GALGAME_HELPER_INSTALL_SCRIPT
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/galgame_hook/tools/install_into_bundle.ps1")
+install(CODE "
+  execute_process(
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
+      -File \"${FUSHI_GALGAME_HELPER_INSTALL_SCRIPT}\"
+      -BundleDirectory \"${CMAKE_INSTALL_PREFIX}\"
+      -DistDirectory \"${FUSHI_GALGAME_HELPER_DIST_DIR}\"
+      -AllowMissingDistribution
+    RESULT_VARIABLE _galgame_helper_result
+    OUTPUT_VARIABLE _galgame_helper_stdout
+    ERROR_VARIABLE _galgame_helper_stderr)
+  if(NOT _galgame_helper_result EQUAL 0)
+    message(FATAL_ERROR
+      \"install_into_bundle.ps1 failed (\${_galgame_helper_result}):\\n\"
+      \"\${_galgame_helper_stdout}\\n\${_galgame_helper_stderr}\")
+  endif()
+  if(NOT \"\${_galgame_helper_stdout}\" STREQUAL \"\")
+    message(STATUS \"\${_galgame_helper_stdout}\")
+  endif()
+" COMPONENT Runtime)
 
 # === Magpie 随包精简归档（可选，本地/CI 事先构建）===
 # 与上面的 helper 规则同源同理由（BUG-1246）：Magpie 删掉下载链路之后，`magpie_bundle/`

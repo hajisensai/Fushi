@@ -34,10 +34,14 @@ int main() {
   assert(fushi_voice_hook::PublishNativeLoopbackApplied(
       &header, deny, fushi_voice_hook::kNativeLoopbackStateStopped));
 
-  assert(InspectMappingSession(false, &header, kRing, kText, kClip) ==
+  assert(InspectMappingSession(false, &header, kRing, kText, kClip, false) ==
          MappingSessionAction::kInitializeFresh);
-  assert(InspectMappingSession(true, &header, kRing, kText, kClip) ==
+  assert(InspectMappingSession(true, &header, kRing, kText, kClip, true) ==
          MappingSessionAction::kReuseReady);
+  // ready 映射不代表本次请求的 DLL 已驻留。更新后的 injector 遇到旧 DLL 时必须
+  // fail closed，不能沿用 hooked=1 跳过注入并伪装新能力已经生效。
+  assert(InspectMappingSession(true, &header, kRing, kText, kClip, false) ==
+         MappingSessionAction::kRejectStale);
 
   // Reconnect must not memset a live mapping. A real policy edge advances the
   // request while preserving the old ack until the injected DLL applies it;
@@ -51,15 +55,15 @@ int main() {
   assert(fushi_voice_hook::AtomicLoadShared32(
              &header.native_loopback_state) ==
          fushi_voice_hook::kNativeLoopbackStateStopped);
-  assert(InspectMappingSession(true, &header, kRing, kText, kClip) ==
+  assert(InspectMappingSession(true, &header, kRing, kText, kClip, true) ==
          MappingSessionAction::kReuseReady);
 
   header.hooked = 0;
-  assert(InspectMappingSession(true, &header, kRing, kText, kClip) ==
+  assert(InspectMappingSession(true, &header, kRing, kText, kClip, true) ==
          MappingSessionAction::kRejectStale);
   header.hooked = 1;
   header.version++;
-  assert(InspectMappingSession(true, &header, kRing, kText, kClip) ==
+  assert(InspectMappingSession(true, &header, kRing, kText, kClip, true) ==
          MappingSessionAction::kRejectStale);
   return 0;
 }
