@@ -7239,16 +7239,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 页内局部「裸空格 = 播放/暂停」覆盖（TODO-755，回归 c152fcd91）。
   ///
-  /// 全局导航层（[wrapWithGlobalNavigation]）无条件把裸空格中和成
-  /// [DoNothingIntent]（`global_navigation.dart`，[DoNothingAction.consumesKey]
-  /// 为 true → 真消费按键），使焦点确认永不走空格。视频空格的正常路径是
+  /// 全局导航层（[wrapWithGlobalNavigation]）把裸空格中和掉（`global_navigation.dart`
+  /// 的 `_neutralizeBareSpace`），使焦点确认永不走空格。**它只在没有文本框持焦时中和**
+  /// ——BUG-962 专门为此加了 `focusedEditableText()` 豁免，否则输入框里打不出空格。
+  /// 本层比它更近、先看到按键，所以**必须自带同一条豁免**（见 [decidePageSpaceOverride]）。
+  /// 视频空格的正常路径是
   /// media_kit 桌面 controls 的 `keyboardShortcuts`（[_videoKeyboardShortcuts]），
   /// 但那只在 [_videoFocusNode]（或 controls 内置 Focus）**精确持焦**时才生效；
   /// 一旦焦点落在视频页子树里其它节点（关对话框/菜单后短暂失焦、点了非视频区控件
-  /// 等），裸空格就会上浮到全局 [DoNothingIntent] 被吞掉 → 「按了没反应」。
+  /// 等），裸空格就会上浮到全局中和层被吞掉 → 「按了没反应」。
   ///
-  /// 本层是页内局部 [CallbackShortcuts]，位于全局 [DoNothingIntent] 之下、离视频
-  /// 更近：只要焦点落在视频页子树内**任意**节点，裸空格都先被这层消费、永不下沉到
+  /// 本层是页内局部的旁观 [Focus]（判据 [decidePageSpaceOverride]），位于全局中和之下、
+  /// 离视频更近：只要焦点落在视频页子树内**任意**节点，裸空格都先被这层消费、永不下沉到
   /// 全局中和层。与阅读器 [resolveReaderSpaceOverride] / 有声书 audiobookPlayPause
   /// 同范式——只在本页子树内覆盖裸空格，不碰全局中和（非视频界面空格仍被中和，
   /// 不破坏 TODO-112「空格不确认焦点」）。media_kit 的 `keyboardShortcuts` 在精确
@@ -7265,26 +7267,53 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 又没有页级兜底，直落全局中和层被吞 =「按了没反应」。与 BUG-697 把手柄输入层
   /// 提到同一 wrapper 是同一条边界：窗口与全屏共用一处，不加全屏特判。
   Widget _withPageSpaceOverride(Widget child) {
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): () {
-          // BUG-924：词典浮层可见时，裸空格也先关浮层（与 [_videoKeyboardShortcuts] 守卫
-          // 同语义），而非在浮层后面 play/pause。浮层不可见时保持原「裸空格=播放/暂停」覆写。
-          if (_hasVisiblePopup) {
+    // BUG-1864 跟进：本层不能再用 [CallbackShortcuts]。它**匹配即 handled**
+    // （Flutter `shortcuts.dart` 的 `CallbackShortcuts.build`：activator 一命中就返回
+    // handled，与回调做没做事无关），根本表达不了「这次让开、别消费」。而本层上提到
+    // [_wrapVideoGamepadControls] 之后罩住了全屏路由，全屏侧栏里有 mpv.conf 多行框、
+    // 弹幕屏蔽规则多行框、弹幕手动匹配搜索框——无条件吞裸空格 = 把 BUG-962
+    // （「文本框物理键盘空格被全局中和吞掉」）在页级原样重挖一遍：既打不出空格，
+    // 又误触播放/暂停。改成旁观 [Focus]（不夺焦、不进 Tab 遍历，与本页其它键盘观察层
+    // 同款），判据交给纯函数 [decidePageSpaceOverride]，让「让开」有得表达。
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode _, KeyEvent event) {
+        // controller 从页面字段 [_controller] 现取，不再由调用方传参（BUG-1864）：
+        // 全屏路由的 pageBuilder 拿不到 `_buildScaffold` 的局部变量，读同一个字段让
+        // 窗口与全屏两条路径共用一份真相源。
+        final VideoPlayerController? controller = _controller;
+        final PageSpaceOverrideDecision decision = decidePageSpaceOverride(
+          event: event,
+          // [SingleActivator] 的 `_shouldAcceptModifiers` 是逐个精确比对，
+          // `SingleActivator(space)` 在任一修饰键按下时就不匹配；这里用与
+          // [_handleVideoImeSpacePlayPause] 同一条读法复刻那个匹配面。
+          hasModifier: HardwareKeyboard.instance.isControlPressed ||
+              HardwareKeyboard.instance.isShiftPressed ||
+              HardwareKeyboard.instance.isAltPressed ||
+              HardwareKeyboard.instance.isMetaPressed,
+          hasEditableFocus: focusedEditableText() != null,
+          hasVisiblePopup: _hasVisiblePopup,
+          hasController: controller != null,
+        );
+        switch (decision) {
+          case PageSpaceOverrideDecision.passThrough:
+          case PageSpaceOverrideDecision.yieldToTextInput:
+            return KeyEventResult.ignored;
+          case PageSpaceOverrideDecision.swallowRepeat:
+            return KeyEventResult.handled;
+          case PageSpaceOverrideDecision.dismissPopup:
+            // BUG-924：词典浮层可见时裸空格先关浮层（与 [_videoKeyboardShortcuts]
+            // 守卫同语义），而非在浮层后面 play/pause。
             _dismissTopVisiblePopup();
-            return;
-          }
-          // BUG-1864：controller 从页面字段 [_controller] 现取，不再由调用方传参。
-          // 本层已上提到窗口 / 全屏共用的 [_wrapVideoGamepadControls]，而全屏路由的
-          // pageBuilder 拿不到 `_buildScaffold` 那个局部变量；读同一个字段让两条路径
-          // 共用一份真相源，也顺带覆盖了加载态（此时 controller 为 null，按空格什么都
-          // 不做——与本层挂载前「被全局中和层吞掉」的观感一致，无行为回归）。
-          final VideoPlayerController? controller = _controller;
-          if (controller == null) return;
-          _runWhenImmersiveAllowsShortcuts(
-            () => unawaited(controller.playOrPause()),
-          );
-        },
+            return KeyEventResult.handled;
+          case PageSpaceOverrideDecision.togglePlayPause:
+            // [decidePageSpaceOverride] 只在 `hasController` 为真时给出本结论。
+            _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(controller!.playOrPause()),
+            );
+            return KeyEventResult.handled;
+        }
       },
       child: child,
     );
