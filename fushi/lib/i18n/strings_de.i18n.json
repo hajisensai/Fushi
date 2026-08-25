@@ -3801,5 +3801,7 @@
   "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
   "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
   "book_file_location_open": "Open file location",
-  "book_file_location_failed": "Could not open this book's file location."
+  "book_file_location_failed": "Could not open this book's file location.",
+  "storage_entry_database_snapshots_label": "Database backup snapshots ($n files)",
+  "storage_entry_delete_database_snapshots_confirm_body": "This removes all leftover database backup snapshots (corrupt-bak / pre-restore / legacy migration copies). The live database and its -wal/-shm sidecars are not touched."
 }

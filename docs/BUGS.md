@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1745 条。点号进各自文件。
+> 共 1747 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1870](bugs/BUG-1870-storage-usage-db-snapshots-unlabeled-undeletable.md) | ✅ | ✅ | 存储页「数据库与内部数据」把几十个数据库快照残留按原始文件名逐条列出且无法删除 |
+| [BUG-1869](bugs/BUG-1869-data-root-migration-progress-exceeds-total.md) | ✅ | ✅ | 数据迁移进度「已复制 623 / 620」超过总数：选择性搬移的顶层单文件只加分子不加分母 |
 | [BUG-1867](bugs/BUG-1867-cover-backfill-hollow-m2ts.md) | ✅ | ✅ | 封面回填把 best-effort 失败刷进用户错误日志，且对未落盘文件仍走 ffmpeg |
 | [BUG-1866](bugs/BUG-1866-resolve-public-indexer-needs-network.md) | ✅ | ✅ | 公共索引器重解析非要联网重搜，搜不中就把活资源误报 notFound |
 | [BUG-1865](bugs/BUG-1865-organizer-numbered-extras.md) | ✅ | ✅ | 剧集整理把带编号的特典当正片，与真正片撞号整批失败 |
