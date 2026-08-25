@@ -131,8 +131,16 @@ String _themeVariablesJs({
 /// `data:` URL `@font-face` for imported files). Returns an empty string when no
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
-String dictionaryFontStyleJs(AppModel appModel) =>
-    _dictionaryFontStyleJsMemo(appModel).js;
+/// [fontUrlBuilder] 语义同 [buildPopupStaticSettingsJs]：非空则字体以 URL 引用产出，
+/// 为空则内联 `data:` URL。
+///
+/// **必须转发**而不是写死内联：这是个公开函数，写死的话任何将来的调用方都会静默拿到
+/// 几十 MB 的内联版本，而它自己完全看不出为什么慢。
+String dictionaryFontStyleJs(
+  AppModel appModel, {
+  String Function(String safePath)? fontUrlBuilder,
+}) =>
+    _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
 
 /// BUG-717 ③：[dictionaryFontStyleJs] 最终产物的进程内 memo。
 ///

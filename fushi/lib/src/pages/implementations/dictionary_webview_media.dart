@@ -109,8 +109,8 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
   String requested;
   try {
     requested = Uri.decodeComponent(raw);
-  } catch (e, stack) {
-    _logDictionaryMediaSkip('font url undecodable: $raw ($e)', stack);
+  } catch (e) {
+    _logFontDenial('font url undecodable: $raw ($e)');
     return _fontDenied();
   }
 
@@ -119,23 +119,23 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
     allowedRoots: allowedRoots,
   );
   if (safePath == null) {
-    _logDictionaryMediaSkip('font outside allowed directory: $requested');
+    _logFontDenial('font outside allowed directory: $requested');
     return _fontDenied();
   }
   if (!whitelistedPaths.contains(p.canonicalize(safePath))) {
-    _logDictionaryMediaSkip('font not in configured list: $requested');
+    _logFontDenial('font not in configured list: $requested');
     return _fontDenied();
   }
 
   try {
     final File file = File(safePath);
     if (!file.existsSync()) {
-      _logDictionaryMediaSkip('font not found: $safePath');
+      _logFontDenial('font not found: $safePath');
       return _fontDenied();
     }
     final Uint8List data = await file.readAsBytes();
     if (!isValidFontData(data)) {
-      _logDictionaryMediaSkip('font corrupted: $safePath (${data.length} B)');
+      _logFontDenial('font corrupted: $safePath (${data.length} B)');
       return _fontDenied();
     }
     return WebResourceResponse(
@@ -148,8 +148,8 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
       },
       data: data,
     );
-  } catch (e, stack) {
-    _logDictionaryMediaSkip('font read failed: $safePath ($e)', stack);
+  } catch (e) {
+    _logFontDenial('font read failed: $safePath ($e)');
     return _fontDenied();
   }
 }
@@ -158,6 +158,22 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
 ///
 /// 返回 null 会让请求**穿透**到真实网络（`fushi.local` 不存在，最终是一次 DNS 失败
 /// 的等待），而不是干脆地失败；给个明确的 403 让浏览器立刻回退到字体链的下一位。
+/// 同一条路径的拒绝只记一次日志。
+///
+/// 字体静默失配正是本次改动最大的风险方向，而**每个新建的嵌套 WebView 都会重新请求
+/// 一遍字体**：不去重的话，一次失配就会沿着刚优化过的那条落盘链刷出成串日志（还会
+/// 顶掉 512 KB 窗口里真正有价值的记录）。集合有上限，防止被构造出来的路径撑爆。
+final Set<String> _loggedFontDenials = <String>{};
+
+void _logFontDenial(String reason) {
+  if (_loggedFontDenials.length > 64) _loggedFontDenials.clear();
+  if (!_loggedFontDenials.add(reason)) return;
+  debugPrint('[DictionaryFont] $reason');
+  // 用独立 tag：这不是词典媒体缓存的问题，混进 DictionaryMedia.cache 会把排查引向
+  // 错误的子系统。
+  ErrorLogService.instance.log('DictionaryFont.denied', reason);
+}
+
 WebResourceResponse _fontDenied() => WebResourceResponse(
       contentType: 'text/plain',
       statusCode: 403,

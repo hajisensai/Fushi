@@ -405,7 +405,10 @@ void main() {
         reason: 'modern global lookup diffs a small revision, not an MB font',
       );
       expect(hostJs.contains('staticSettingsByRevision'), isTrue);
-      expect(render.contains('knownStaticRevisions'), isTrue);
+      // 钉的不变量是「渲染前先问宿主账本已经装过哪些静态段版本」。锚点从旧的局部
+      // 变量名 knownStaticRevisions 换成账本接口本身：账本现在是必填参数
+      // （PopupStaticRevisionCache），比一个可以随手改名的局部变量更贴近不变量。
+      expect(render.contains('staticRevisions.snapshotFor(hostKey)'), isTrue);
       expect(render.contains("map['entriesJs']"), isTrue);
       expect(
         render.contains("map['staticHeadJs']"),

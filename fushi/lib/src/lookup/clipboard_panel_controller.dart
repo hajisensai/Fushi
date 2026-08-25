@@ -19,6 +19,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart'
     show
         GlobalLookupController,
         GlobalLookupMediaRequest,
+        parseStaticSettingsRequired,
         resolveGlobalLookupMedia;
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/clipboard_history_payload.dart';
@@ -541,11 +542,9 @@ class ClipboardPanelController {
     // 丢掉缓存就再也等不到静态段，卡片会永远停在没主题/没字体/没词典样式的状态。
     // 这里把该版本从账本划掉并重渲，下一次渲染就会重新带上自足的静态段。
     if (handler == 'staticSettingsRequired') {
-      final Object? args = message['args'];
-      final Object? first = (args is List && args.isNotEmpty) ? args.first : null;
-      final int? revision = first is num
-          ? first.toInt()
-          : (first is String ? int.tryParse(first) : null);
+      // 与瞬态窗共用同一份载荷解析：同一条协议消息被两边各解析一份，等协议再加
+      // 参数时必然漂移（正是本轮修的那个 bug 的形状——同一件事分散在多处各做各的）。
+      final int? revision = parseStaticSettingsRequired(message).revision;
       if (revision != null) {
         _hostStaticRevisions.invalidate(_kPanelHostKey, revision);
         unawaited(_rerender());

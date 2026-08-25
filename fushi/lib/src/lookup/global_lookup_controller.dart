@@ -1209,17 +1209,14 @@ class GlobalLookupController {
       glog('js: handler=$handler args=${message['args']}');
     }
     if (handler == 'staticSettingsRequired') {
-      final int? revision = _firstIntArg(message);
+      final ({int? revision, int? hostGeometryEpoch}) req =
+          parseStaticSettingsRequired(message);
+      final int? revision = req.revision;
       if (revision != null) {
         final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
         final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
         _hostStaticRevisions.invalidate(hostKey, revision);
-        final Object? requestArgs = message['args'];
-        final int? hostGeometryCounter =
-            requestArgs is List && requestArgs.length > 1
-            ? parseGlobalLookupGeometryEpoch(requestArgs[1])
-            : null;
-        if (hostGeometryCounter == 0) {
+        if (req.hostGeometryEpoch == 0) {
           // A whole-WebView recovery restarts the host counter. Its first bbox
           // can equal the retired document's epoch and bounds, so clear Dart's
           // de-dup only for this fresh-realm signal. Ordinary child cache misses
@@ -2247,6 +2244,36 @@ class GlobalLookupController {
 /// Parses one non-negative renderer geometry epoch from a MethodChannel value.
 /// Integral doubles are accepted because native JSON bridges may materialise a
 /// JavaScript integer as either an int or a double.
+/// host.js `staticSettingsRequired` 的载荷解析（`args = [revision, geometryEpoch]`）。
+///
+/// 抽出来共享是因为它有**两个**消费方（桌面/galCard 的 GlobalLookupController 与剪贴板
+/// 面板），而两边原先各写了一份 num/String 兼容解析。同一条协议消息被解析成两份，等
+/// 协议再加一个参数时必然漂移——这正是本轮修的那个 bug 的形状（同一件事分散在多处各做
+/// 各的，漏掉一处就静默失效）。
+///
+/// [revision] 为 null 表示载荷不合法，调用方应整条忽略。
+/// [hostGeometryEpoch] 仅桌面路径消费（面板模式下 host.js 短路了 measureAndReport）。
+({int? revision, int? hostGeometryEpoch}) parseStaticSettingsRequired(
+  Map<String, Object?> message,
+) {
+  final Object? args = message['args'];
+  if (args is! List || args.isEmpty) {
+    return (revision: null, hostGeometryEpoch: null);
+  }
+  int? asInt(Object? v) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  return (
+    revision: asInt(args.first),
+    hostGeometryEpoch: args.length > 1
+        ? parseGlobalLookupGeometryEpoch(args[1])
+        : null,
+  );
+}
+
 int? parseGlobalLookupGeometryEpoch(Object? value) {
   if (value is int) {
     return value >= 0 ? value : null;

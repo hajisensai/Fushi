@@ -239,8 +239,15 @@ const double kGlobalLookupLayoutBoundsHeightFactor = 2.0;
 class PopupStaticRevisionCache {
   final Map<String, Set<int>> _byHost = <String, Set<int>>{};
 
-  /// [hostKey] 宿主当前已确认装载的版本集合（可直接读，不要外部改写）。
-  Set<int> knownFor(String hostKey) =>
+  /// [hostKey] 宿主当前已确认装载的版本集合的**可变副本**。
+  ///
+  /// 刻意不返回内部集合本身。这个类存在的全部动机就是「别让漏做去重在结构上成为
+  /// 可能」，那么把「请不要改写我返回的 Set」这条纪律寄托在一句注释上就是自相矛盾
+  /// ——渲染器拿到它之后本来就要往里加本次发出的版本，一不小心加到内部集合上，
+  /// 就等于在平台调用还没发生时先记了账。
+  Set<int> snapshotFor(String hostKey) => <int>{..._known(hostKey)};
+
+  Set<int> _known(String hostKey) =>
       _byHost.putIfAbsent(hostKey, () => <int>{});
 
   /// 把本次渲染真正发出去的版本记为「已装载」。
@@ -249,7 +256,7 @@ class PopupStaticRevisionCache {
   /// 渲染以为宿主已经有这个版本而不再下发，卡片就永远拿不到主题/字体/样式。
   void commit(String hostKey, Set<int> emitted) {
     if (emitted.isEmpty) return;
-    knownFor(hostKey).addAll(emitted);
+    _known(hostKey).addAll(emitted);
   }
 
   /// 宿主自报某个版本没了（整块 WebView 恢复、iframe realm 重建等，见 host.js 的
@@ -409,7 +416,9 @@ StackRenderScript buildStackRenderScript({
   required PopupStaticRevisionCache staticRevisions,
   required String hostKey,
 }) {
-  final Set<int> knownStaticRevisions = staticRevisions.knownFor(hostKey);
+  // 本次渲染开始时宿主已装载的版本（副本）；下面每发出一个新版本就往里加，
+  // 同一次调用内的后续帧据此不再重复携带同一份静态段。
+  final Set<int> availableStaticRevisions = staticRevisions.snapshotFor(hostKey);
   final Set<int> emittedStaticRevisions = <int>{};
   // TODO-867 P3c F2 — the host shell (.global-lookup-frame-shell) is built in the
   // TOP-LEVEL host document, which carries no data-theme of its own (the theme
@@ -433,7 +442,6 @@ StackRenderScript buildStackRenderScript({
     cardH: maxHeight,
   );
   final List<Map<String, Object?>> popups = <Map<String, Object?>>[];
-  final Set<int> availableStaticRevisions = <int>{...knownStaticRevisions};
   for (int i = 0; i < payloads.length; i++) {
     final GlobalLookupFramePayload p = payloads[i];
     final bool isPanelRoot = layoutMode == 'panel' && p.frame.parentIndex < 0;
