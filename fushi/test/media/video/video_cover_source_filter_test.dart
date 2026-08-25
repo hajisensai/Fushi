@@ -93,6 +93,127 @@ void main() {
     });
   });
 
+  group('isHollowMediaHeaderBytes（BUG-1867 内容已落盘判据 · 纯函数）', () {
+    test('空 / 全零 -> true', () {
+      expect(isHollowMediaHeaderBytes(const <int>[]), isTrue);
+      expect(isHollowMediaHeaderBytes(List<int>.filled(65536, 0)), isTrue);
+    });
+
+    test('任一非零字节 -> false（含只有最后一字节非零）', () {
+      final List<int> tailOnly = List<int>.filled(65536, 0);
+      tailOnly[65535] = 0x47;
+      expect(isHollowMediaHeaderBytes(tailOnly), isFalse);
+      // 真容器魔数：MPEG-TS sync / MP4 ftyp / Matroska EBML / RIFF。
+      expect(
+        isHollowMediaHeaderBytes(const <int>[0x47, 0x40, 0x00, 0x10]),
+        isFalse,
+      );
+      expect(
+        isHollowMediaHeaderBytes(
+          const <int>[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70],
+        ),
+        isFalse,
+      );
+      expect(
+        isHollowMediaHeaderBytes(const <int>[0x1A, 0x45, 0xDF, 0xA3]),
+        isFalse,
+      );
+      expect(isHollowMediaHeaderBytes('RIFF'.codeUnits), isFalse);
+    });
+  });
+
+  group('hasHollowMediaHeader（BUG-1867 · 真文件）', () {
+    late Directory tmp;
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('fushi_hollow_');
+    });
+    tearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    File write(String name, List<int> bytes) {
+      final File f = File('${tmp.path}${Platform.pathSeparator}$name');
+      f.writeAsBytesSync(bytes);
+      return f;
+    }
+
+    test('torrent 预分配的空洞文件（探测窗全零）-> true', () {
+      final File hollow = write(
+        'preallocated.m2ts',
+        List<int>.filled(kHollowMediaHeaderProbeBytes * 2, 0),
+      );
+      expect(hasHollowMediaHeader(hollow.path), isTrue);
+    });
+
+    test('已下载完成的 m2ts（192 字节步长的 TS sync）-> false', () {
+      // 真 .m2ts 布局：4 字节 TP_extra_header + 0x47 sync + 187 字节负载。
+      final List<int> bytes = <int>[];
+      while (bytes.length < kHollowMediaHeaderProbeBytes * 2) {
+        bytes.addAll(<int>[0x26, 0xF0, 0x4B, 0xE8, 0x47]);
+        bytes.addAll(List<int>.filled(187, 0xFF));
+      }
+      final File complete = write('downloaded.m2ts', bytes);
+      expect(hasHollowMediaHeader(complete.path), isFalse);
+    });
+
+    test('内容只在探测窗之后才出现 -> 仍判 true（ffmpeg 此刻同样打不开）', () {
+      final List<int> bytes =
+          List<int>.filled(kHollowMediaHeaderProbeBytes * 3, 0);
+      bytes[kHollowMediaHeaderProbeBytes + 4] = 0x47;
+      final File partial = write('midfile.m2ts', bytes);
+      expect(hasHollowMediaHeader(partial.path), isTrue);
+    });
+
+    test('短于探测窗的小文件按实际长度判定（不因读不满而误判）', () {
+      expect(
+        hasHollowMediaHeader(write('tiny_ok.ts', <int>[0x47, 1, 2]).path),
+        isFalse,
+      );
+      expect(
+        hasHollowMediaHeader(write('tiny_hollow.ts', <int>[0, 0, 0]).path),
+        isTrue,
+      );
+    });
+
+    test('零长文件 / 不存在的路径 -> true（此刻同样抽不出帧）', () {
+      expect(
+        hasHollowMediaHeader(write('empty.mkv', const <int>[]).path),
+        isTrue,
+      );
+      expect(
+        hasHollowMediaHeader('${tmp.path}${Platform.pathSeparator}nope.mkv'),
+        isTrue,
+      );
+    });
+  });
+
+  group('extractVideoCover 抽取器层拒收空洞文件（BUG-1867）', () {
+    test('头部全零的本地文件直接返回 null，不烧 ffmpeg 子进程', () async {
+      // 与上面的清单拒收同一手法：早退发生在 AppPaths / ffmpeg 之前。若有人删掉抽取器
+      // 层的空洞拒收，这里会因 path_provider 的 MissingPluginException 立即红。
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('fushi_cover_hollow_');
+      addTearDown(() {
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final File hollow =
+          File('${tmp.path}${Platform.pathSeparator}00014.m2ts');
+      hollow.writeAsBytesSync(
+        List<int>.filled(kHollowMediaHeaderProbeBytes * 2, 0),
+      );
+
+      final String? cover = await extractVideoCover(
+        videoPath: hollow.path,
+        bookUid: 'video/local/bdmv-00014',
+      );
+      expect(cover, isNull);
+    });
+  });
+
   group('视频页回填接线守卫（源码扫描）', () {
     late String source;
     setUpAll(() {
@@ -128,6 +249,27 @@ void main() {
       expect(gate, greaterThanOrEqualTo(0));
       expect(freshBook, greaterThan(gate));
       expect(currentCover, greaterThan(freshBook));
+    });
+
+    test('_maybeBackfillCovers：空洞判据必须在封面写锁闸门之前（BUG-1867）', () {
+      final String body = methodBody('_maybeBackfillCovers');
+      final int hollow = body.indexOf('hasHollowMediaHeader(path)');
+      final int gate = body.indexOf('VideoCoverMutationGate.runExclusive');
+      expect(hollow, greaterThanOrEqualTo(0),
+          reason: '回填必须在进 ffmpeg 前判「内容是否已落盘」');
+      expect(gate, greaterThan(hollow),
+          reason: '判据在闸门之后 = 一个必然失败的抽帧仍会独占进程级封面写锁');
+      // 判掉的路径要记账，否则同一会话每轮 listAll 都重读一次头部。
+      expect(body, contains("reason: 'hollow-header'"));
+    });
+
+    test('_maybeBackfillCovers：回填抽帧失败只进诊断日志（BUG-1867）', () {
+      final String body = methodBody('_maybeBackfillCovers');
+      final int call = body.indexOf('extractVideoCover(');
+      expect(call, greaterThanOrEqualTo(0));
+      final int flag = body.indexOf('diagnosticOnly: true', call);
+      expect(flag, greaterThan(call),
+          reason: 'best-effort 回填的「给不出帧」不是 app 错误，不该刷用户可见错误日志页');
     });
 
     test('_pullToRefresh：显式刷新是唯一清账入口', () {

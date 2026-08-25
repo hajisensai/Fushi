@@ -28,7 +28,7 @@ import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
-    show isLocalFrameExtractableVideoSource;
+    show hasHollowMediaHeader, isLocalFrameExtractableVideoSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
@@ -801,6 +801,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (!CoverBackfillLedger.instance.shouldAttempt(path)) {
           continue; // 此前失败且文件未变：不再白烧 ffmpeg。
         }
+        if (hasHollowMediaHeader(path)) {
+          // BUG-1867：路径在、字节数对（torrent 预分配的 8GB 也「在」），但内容还没
+          // 落盘——头部全零，喂进去恒是 `Invalid data found`。判据与上面的 existsSync
+          // 同层、同理由：不为一个必然失败的抽帧去占进程级封面写锁，让同期的删除、
+          // 手选封面、刮削等在后面。记账用独立原因 `hollow-header`（区别于「文件坏了」
+          // 的 extract-failed），下载有进展（mtime/size 变）后账本自动放行重试。
+          CoverBackfillLedger.instance
+              .recordFailure(path, reason: 'hollow-header');
+          continue;
+        }
         bool admitted = false;
         final String? extracted = await VideoCoverMutationGate.runExclusive(
           () async {
@@ -824,6 +834,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final String? result = await extractVideoCover(
               videoPath: path,
               bookUid: row.bookUid,
+              // BUG-1867：回填是 best-effort 后台产线，「这文件给不出帧」（无视频流的
+              // BDMV 音轨 m2ts、seek 落在空洞区）是预期内的正常结果，不该刷用户可见
+              // 错误日志页——书架显示占位图本身就是反馈。证据仍进诊断日志。
+              diagnosticOnly: true,
             );
             if (result == null) return null;
             await widget.repo.updateCover(row.bookUid, result);
