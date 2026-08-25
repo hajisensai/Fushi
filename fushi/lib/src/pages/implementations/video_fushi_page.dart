@@ -3964,13 +3964,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _disposeThumbnailPreview();
       return;
     }
-    // 路径未变且已建好 → 复用（避免每次 load 重建离屏 Player）。
+    // 路径未变且已建好 → 复用（避免每次 load 丢掉已经攒起来的帧缓存）。
     final bool pathChanged = _thumbnailGrabber?.videoPath != videoPath;
     if (_thumbnailPreview != null && !pathChanged) return;
 
     _disposeThumbnailPreview();
 
-    // 远端流（http/s）或无本地路径 → 不建离屏取帧器（调度器仍建，走 timestampOnly）。
+    // 远端流（http/s）或无本地路径 → 不建取帧器（调度器仍建，走 timestampOnly）。
     final bool isLocalFile = videoPath != null &&
         !_isRemote &&
         Uri.tryParse(videoPath)?.scheme != 'http' &&
@@ -3986,7 +3986,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       durationMsProvider: () => _controller?.durationMs ?? 0,
       // 已取过的位置同步命中，零延迟出图、不闪 spinner（回扫 / 抖动的常态路径）。
       cachedFrameLookup: grabber?.cachedFrame,
-      // 首次 hover 就把离屏 Player 建好、媒体头解析完，别让这段算进第一张图的等待。
+      // 首次 hover 就探明取帧可不可用并暖一格缓存，别让这段算进第一张图的等待。
       onWarmUp: grabber == null ? null : () => unawaited(grabber.warmUp()),
     );
   }

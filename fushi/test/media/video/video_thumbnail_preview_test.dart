@@ -272,11 +272,15 @@ void main() {
       );
     });
 
-    test('量化后仍落在 [0, duration] 内且两端可达', () {
+    test('量化后落在 [0, duration) 内，且末端永不等于总时长', () {
       expect(thumbnailBucketTargetMs(0.0, 120000), 0);
-      expect(thumbnailBucketTargetMs(1.0, 120000), 120000);
       expect(thumbnailBucketTargetMs(-1.0, 120000), 0);
-      expect(thumbnailBucketTargetMs(2.0, 120000), 120000);
+      // 最后一格的代表点是它的**起点**，不是视频末尾——`ffmpeg -ss <duration>`
+      // 那里没有帧可取，允许取到总时长会让进度条最右端永远只剩时间戳。
+      final int last = thumbnailBucketTargetMs(1.0, 120000)!;
+      expect(last, lessThan(120000));
+      expect(last, 119800);
+      expect(thumbnailBucketTargetMs(2.0, 120000), last);
     });
 
     test('无时长返回 null', () {
@@ -289,8 +293,8 @@ void main() {
       for (int i = 0; i <= 4000; i++) {
         targets.add(thumbnailBucketTargetMs(i / 4000, 600000)!);
       }
-      expect(targets.length, kThumbnailBuckets + 1,
-          reason: '4000 个采样点只应压缩成 600 格（+两端），这就是缓存命中率的来源');
+      expect(targets.length, kThumbnailBuckets,
+          reason: '4000 个采样点只应压缩成 600 格，这就是缓存命中率的来源');
     });
   });
 

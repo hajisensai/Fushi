@@ -77,7 +77,12 @@ const int kThumbnailBuckets = 600;
 int? thumbnailBucketTargetMs(double fraction, int durationMs) {
   if (durationMs <= 0) return null;
   final double clamped = fraction.clamp(0.0, 1.0);
-  final int bucket = (clamped * kThumbnailBuckets).round();
+  // 取的是「落在第几格」，代表点是那一格的**起点**——所以 floor 而不是 round，
+  // 并且最后一格是 `kThumbnailBuckets - 1`。若允许取到第 600 格，目标就正好等于
+  // 总时长，而那里没有帧可取（`ffmpeg -ss <duration>` 必然产不出画面），进度条
+  // 最右端就永远只剩时间戳。
+  final int bucket =
+      (clamped * kThumbnailBuckets).floor().clamp(0, kThumbnailBuckets - 1);
   final int ms = (bucket / kThumbnailBuckets * durationMs).round();
   return ms.clamp(0, durationMs);
 }
@@ -373,6 +378,9 @@ class OffscreenVideoFrameGrabber {
   int _ffmpegSeq = 0;
   int _consecutiveFailures = 0;
 
+  /// 本取帧器是否成功取到过哪怕一帧。见 [isUnavailable]。
+  bool _everSucceeded = false;
+
   /// 当前在跑的取帧。数据根迁移前要 `await` 它跑完，别让 ffmpeg 子进程握着视频
   /// 文件句柄去撞同盘 rename（TODO-1212 的约束在换成 ffmpeg 后依然成立）。
   Future<void>? _inFlightGrab;
@@ -384,8 +392,13 @@ class OffscreenVideoFrameGrabber {
   /// 注销）。数据根迁移前经注册表 `await` 真等在跑的取帧收尾。
   MediaHandleReleaseCallback? _mediaHandleRegistration;
 
-  /// 取帧是否已被熔断停用（连续失败达 [consecutiveFailureLimit]）。
-  bool get isUnavailable => _consecutiveFailures >= consecutiveFailureLimit;
+  /// 取帧是否已被熔断停用。
+  ///
+  /// 熔断要回答的是「这台机器到底有没有可用的 ffmpeg」，所以**一旦成功过就永不
+  /// 熔断**：个别位置取不到帧（片尾、损坏的 GOP）是正常的，不该因此把整个视频的
+  /// 缩略图关掉。只有从头到尾一次都没成功过，才认定环境不具备取帧能力。
+  bool get isUnavailable =>
+      !_everSucceeded && _consecutiveFailures >= consecutiveFailureLimit;
 
   /// 预热：hover 刚进入进度条时由调度器调用，取一次片头帧。
   ///
@@ -433,6 +446,7 @@ class OffscreenVideoFrameGrabber {
         return null;
       }
       _consecutiveFailures = 0;
+      _everSucceeded = true;
       if (_disposed) {
         decoded.dispose();
         return null;
