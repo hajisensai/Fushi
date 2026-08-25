@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      bootstrap_empty_ledger:
+        description: '仅初始化已人工确认为空的 fushi-releases 容量台账，不镜像资产'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: mirror-releases
@@ -62,7 +67,7 @@ jobs:
 
       - name: Resolve target release
         id: target
-        if: steps.guard.outputs.ready == 'true'
+        if: steps.guard.outputs.ready == 'true' && github.event.inputs.bootstrap_empty_ledger != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
@@ -105,19 +110,34 @@ jobs:
           echo "count=$(ls -1 assets | wc -l)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
-        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
+        if: steps.guard.outputs.ready == 'true' && (github.event.inputs.bootstrap_empty_ledger == 'true' || steps.target.outputs.skip == 'false')
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
       - name: Install wrangler
-        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
+        if: steps.guard.outputs.ready == 'true' && (github.event.inputs.bootstrap_empty_ledger == 'true' || steps.target.outputs.skip == 'false')
         # 只需要 Wrangler CLI；锁死版本并禁用依赖生命周期脚本，避免 CI 执行供应链侧代码。
         run: npm install --ignore-scripts --no-save --package-lock=false wrangler@4.125.0
 
+      - name: Bootstrap verified-empty R2 ledger
+        if: steps.guard.outputs.ready == 'true' && github.event.inputs.bootstrap_empty_ledger == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if ./node_modules/.bin/wrangler r2 object get "$BUCKET/mirrored.json" --file existing-ledger.json --remote 2>/dev/null; then
+            echo "::error::容量台账已经存在，拒绝覆盖。"
+            exit 1
+          fi
+          echo '{"schemaVersion":2,"releases":[]}' > mirrored-bootstrap.json
+          ./node_modules/.bin/wrangler r2 object put "$BUCKET/mirrored.json" --file mirrored-bootstrap.json --content-type application/json --remote
+          echo "已初始化空容量台账；本次不会上传任何 Release 资产。"
+
       - name: Build bounded mirror manifest
         id: manifest
-        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
+        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false' && github.event.inputs.bootstrap_empty_ledger != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.target.outputs.tag }}
@@ -151,7 +171,7 @@ jobs:
           '
 
       - name: Read current R2 ledger
-        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false'
+        if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false' && github.event.inputs.bootstrap_empty_ledger != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
