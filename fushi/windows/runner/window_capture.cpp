@@ -99,8 +99,15 @@ void AppendDiagnostic(WindowCaptureResult* out, const char* note, HRESULT hr) {
 // 标题栏 / 菜单栏 / 边框全在里面，窗口化跑的 galgame 制卡必然把标题栏拍进卡片。
 // 裁剪原点 = 客户区屏幕原点（ClientToScreen）− 扩展框架原点：不能用 GetWindowRect
 // 的 left/top，Win10+ 的不可见 resize 边框会让它比 DWM 视觉原点偏出几像素（OBS 的
-// 「Client Area」选项是同一套算法）。本进程是 per-monitor DPI aware，这几个 API 与 WGC
-// 纹理同为物理像素，无需再换算。
+// 「Client Area」选项是同一套算法）。
+//
+// **两个角都必须经 ClientToScreen**，不能拿屏幕空间的原点去加 GetClientRect 的宽高。
+// 本进程是 PerMonitorV2（runner.exe.manifest），ClientToScreen / 扩展框架原点 / WGC
+// 纹理三者同为物理像素；但 `GetClientRect` 返回的是**目标窗口自己坐标空间**里的尺寸，
+// 而老 galgame 大量是 DPI-unaware 进程 —— 在缩放屏上 DWM 会把它整窗放大，纹理是放大
+// 后的物理尺寸，GetClientRect 却仍是放大前的逻辑尺寸。两者直接相加会把裁剪框算小，
+// 而且 right/bottom 仍然大于 left/top，走不到下面的失败回退，是一次**静默**的错裁。
+// 把右下角也过一遍 ClientToScreen，两个角就落在同一个坐标系里，缩放与否都对。
 //
 // 返回 true 时 [box] 是 [width]×[height] 纹理内的一个非空子矩形（已与纹理求交）；
 // 任何一步失败（窗口最小化 / API 失败 / 退化成空矩形）返回 false，调用方回退整窗——
@@ -119,15 +126,20 @@ bool ComputeClientCropBox(HWND hwnd, UINT width, UINT height, RECT* box) {
       !ClientToScreen(hwnd, &origin)) {
     return false;
   }
+  // 右下角走同一条换算，别用 origin + GetClientRect 的宽高（见函数头注释）。
+  POINT far_corner{client.right, client.bottom};
+  if (!ClientToScreen(hwnd, &far_corner)) {
+    return false;
+  }
   const LONG left = std::max<LONG>(0, origin.x - frame.left);
   const LONG top = std::max<LONG>(0, origin.y - frame.top);
   if (left >= static_cast<LONG>(width) || top >= static_cast<LONG>(height)) {
     return false;
   }
   const LONG right =
-      std::min<LONG>(static_cast<LONG>(width), left + client.right);
+      std::min<LONG>(static_cast<LONG>(width), far_corner.x - frame.left);
   const LONG bottom =
-      std::min<LONG>(static_cast<LONG>(height), top + client.bottom);
+      std::min<LONG>(static_cast<LONG>(height), far_corner.y - frame.top);
   if (right <= left || bottom <= top) {
     return false;
   }

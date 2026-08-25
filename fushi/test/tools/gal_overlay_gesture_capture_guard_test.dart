@@ -56,8 +56,17 @@ void main() {
     fail('花括号不配对：$signature');
   }
 
+  /// 数**标识符边界上**的出现次数，不是裸子串。
+  ///
+  /// BUG-1860 的教训：新成员 `scroll_thumb_dragging_` 的清零行本身就以
+  /// `dragging_ = false;` 结尾，裸 `String.allMatches` 会把它当成第二个
+  /// 「dragging_ 的清零点」，于是一个**命名完全正当**的新成员把这条守卫判红。
+  /// 新成员名可以合法地以被数的 flag（`dragging_` / `pressed_` …）结尾，
+  /// 所以左边界必须钉死：紧邻的前一个字符不能是标识符字符。
   int countOf(String haystack, String needle) =>
-      needle.allMatches(haystack).length;
+      RegExp('(?<![A-Za-z0-9_])${RegExp.escape(needle)}')
+          .allMatches(haystack)
+          .length;
 
   /// `dragging_ = false;` 有两种合法出现：终止（在 CancelPointerGesture 里）与
   /// **起始**（WM_LBUTTONDOWN 里紧跟 `pressed_ = true;` 的初始化）。后者不是
@@ -65,7 +74,11 @@ void main() {
   /// 往前看一小段，若紧邻 `pressed_ = true;` 就判为起始初始化。
   int terminatingClears(String maskedSource, String flag) {
     int count = 0;
-    for (final Match m in flag.allMatches(maskedSource)) {
+    // 同 countOf：左边界不能是标识符字符，否则 `scroll_thumb_dragging_ =
+    // false;` 会被当成 `dragging_ = false;` 的第二个终止点。
+    for (final Match m
+        in RegExp('(?<![A-Za-z0-9_])${RegExp.escape(flag)}')
+            .allMatches(maskedSource)) {
       final int from = m.start - 80 < 0 ? 0 : m.start - 80;
       if (maskedSource.substring(from, m.start).contains('pressed_ = true;')) {
         continue; // 手势起始的初始化，不是终止

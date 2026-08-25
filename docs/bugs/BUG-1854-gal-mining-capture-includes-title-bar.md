@@ -27,6 +27,15 @@
   回退整窗写 diagnostics。
 - **备注**：⚠️ **真机未复验**（本轮真机验证已取消）。复验点：① 窗口化游戏制卡，卡片图不含标题栏 /
   菜单栏，四边无 DWM 边框黑线；② 无边框全屏游戏（客户区 == 窗口）图不变；③ 150% 缩放显示器上
-  裁剪不偏；④ Magpie 缩放窗绑定时裁的是源窗客户区。另：texthooker 页制卡（`texthooker_page.dart`
+  裁剪不偏；④ Magpie 缩放窗绑定时裁的是源窗客户区。
+  - 2026-08-25 审查追修：初版把**屏幕空间**的裁剪原点（`ClientToScreen`）与**窗口自己
+    坐标空间**的尺寸（`GetClientRect`）直接相加。本进程是 PerMonitorV2
+    （`fushi/windows/runner/runner.exe.manifest`），`ClientToScreen` / 扩展框架原点 /
+    WGC 纹理三者同为物理像素；但 `GetClientRect` 给的是**目标窗口**坐标空间里的尺寸，
+    而窗口化跑的老 galgame 大量是 DPI-unaware 进程 —— 缩放屏上 DWM 会整窗放大它，纹理
+    是放大后的物理尺寸、`GetClientRect` 仍是放大前的逻辑尺寸，两者相加把裁剪框算小，
+    且 `right > left && bottom > top` 仍成立、走不到失败回退 = **静默错裁**（卡片图右下
+    被切）。已改成右下角也过一遍 `ClientToScreen` 再减扩展框架原点，两角同坐标系。
+    ⚠️ 这条同样**未真机复验**，正是上面复验点 ③（150% 缩放）要打的靶。另：texthooker 页制卡（`texthooker_page.dart`
   `_mineActiveLine`）没传 `captureLeaseFactory`，游戏内查词卡开着时从该页制卡 BUG-1634 的隐藏屏障
   不生效——与本条正交的独立缺口，未在本轮处理。
