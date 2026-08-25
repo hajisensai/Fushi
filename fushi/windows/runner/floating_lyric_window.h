@@ -350,6 +350,29 @@ class FloatingLyricWindow {
   // 非 hook 模式、穿透模式、没有溢出时恒为 no-op，歌词条与剪贴板文本
   // 窗逐像素不变。
   bool ScrollBy(float delta_px);
+  // 把滚动偏移写成 |offset_px|（夹到 [0, scroll_max_px_]）；变了就重绘并返回
+  // true。ScrollBy（滚轮）与拖 thumb（BUG-1860）共用的唯一写入口。
+  bool SetScrollOffset(float offset_px);
+
+  // BUG-1860 — 滚动条几何（客户区物理 px），绘制 / 命中 / 拖 thumb 的唯一真相。
+  // visible=false 时其余字段无意义。
+  struct ScrollBarGeometry {
+    bool visible = false;
+    float bar_x = 0.0f;  // 画出来的细条左沿
+    float bar_w = 0.0f;
+    float track_top = 0.0f;
+    float track_bottom = 0.0f;
+    float thumb_y = 0.0f;
+    float thumb_h = 0.0f;
+    float hit_left = 0.0f;  // 命中带（比细条宽，见 kScrollBarHitWidthDip）
+    float hit_right = 0.0f;
+  };
+  ScrollBarGeometry ComputeScrollBar() const;
+  // 客户区点是否落在滚动条命中带里（hook 模式且真有溢出时才可能为 true）。
+  bool ScrollBarContains(float x, float y) const;
+  // 从客户区 y 开始拖 thumb：按在 thumb 外先把 thumb 中心搬到指针下。返回 false
+  // = 没有可拖行程（thumb 撑满轨道），调用方按普通按压处理。
+  bool BeginScrollThumbDrag(float y);
 
   // Minimum visible margin (in 96-DPI logical px) that must always stay inside
   // the target monitor's work area, so the strip can never be dragged or
@@ -446,6 +469,12 @@ class FloatingLyricWindow {
   // 把偏移留在旧行程外。
   float scroll_offset_px_ = 0.0f;
   float scroll_max_px_ = 0.0f;
+  // BUG-1860 — 拖滚动条 thumb 的手势状态。与 pressed_ / dragging_ 互斥，同样由
+  // CancelPointerGesture 统一终结。
+  bool scroll_thumb_dragging_ = false;
+  float scroll_drag_origin_y_ = 0.0f;      // 按下时的客户区 y
+  float scroll_drag_start_offset_ = 0.0f;  // 按下时的 scroll_offset_px_
+  float scroll_drag_px_per_px_ = 0.0f;     // 指针走 1px ↔ 内容滚多少 px
 
   // Press / drag / resize state for moving and sizing the strip.
   //

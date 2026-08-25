@@ -8,9 +8,12 @@
 //   ② 绘制原点随偏移上移（滚动的实现方式），裁剪框不动；
 //   ③ 命中测试在视口判边界、在布局取坐标（滚动后点字不错行）；
 //   ④ 新台词回到顶部；
-//   ⑤ 接管条件（hook 模式 / 非穿透 / 有溢出）集中在 ScrollBy，滚到头不吞事件；
-//   ⑥ 滚动条画在文本区右侧留白里，且只在 hook 模式真溢出时画；
-//   ⑦ 不滚动时逐像素不变（歌词条 / 剪贴板文本窗完全不受影响）。
+//   ⑤ 接管条件（hook 模式 / 有溢出）集中在 ScrollBy，滚到头不吞事件；
+//   ⑥ 滚动条几何唯一真相 ComputeScrollBar：画在文本区右侧留白里，只在 hook 模式
+//      真溢出时存在，Render 与命中同源；
+//   ⑦ 不滚动时逐像素不变（歌词条 / 剪贴板文本窗完全不受影响）；
+//   ⑧ BUG-1859：穿透态滚轮照滚——ScrollBy / WM_MOUSEWHEEL 不按 pass_through_ 拦；
+//   ⑨ BUG-1860：滚动条是控件——按 thumb 拖动内容不拖窗，穿透态命中带铺 catch fill。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -108,11 +111,9 @@ void main() {
 
   test('⑤ 接管条件集中在 ScrollBy，滚到头不吞事件', () {
     expect(
-      src.contains(
-          'if (!hook_text_mode_ || pass_through_ || scroll_max_px_ <= 0.0f) {'),
+      src.contains('if (!hook_text_mode_ || scroll_max_px_ <= 0.0f) {'),
       isTrue,
-      reason: '三个前置条件必须写在一处：hook 模式 / 非穿透 / 真有溢出。'
-          '穿透 = 鼠标整个属于游戏，顶部恢复带也不例外',
+      reason: '两个前置条件必须写在一处：hook 模式 / 真有溢出',
     );
     expect(src.contains('case WM_MOUSEWHEEL:'), isTrue, reason: '滚轮是最低交互要求');
     expect(
@@ -122,12 +123,18 @@ void main() {
     );
     // 到顶 / 到底时 ScrollBy 返回 false，滚轮落回 DefWindowProc，
     // 窗口不做吃掉滚轮的黑洞。
-    final int i = src.indexOf('bool FloatingLyricWindow::ScrollBy(');
-    expect(i, greaterThan(0));
-    final String scrollBy = src.substring(
-        i, src.indexOf('void FloatingLyricWindow::SetLocked(', i));
+    final String scrollBy =
+        _functionSource(src, 'bool FloatingLyricWindow::ScrollBy(');
     expect(
-      scrollBy.contains('if (next == scroll_offset_px_) {'),
+      scrollBy
+          .contains('return SetScrollOffset(scroll_offset_px_ + delta_px);'),
+      isTrue,
+      reason: 'ScrollBy 只做前置判断，写偏移走唯一入口 SetScrollOffset',
+    );
+    final String setOffset =
+        _functionSource(src, 'bool FloatingLyricWindow::SetScrollOffset(');
+    expect(
+      setOffset.contains('if (next == scroll_offset_px_) {'),
       isTrue,
       reason: '偏移没变就不能返回 true，否则窗口会变成吃掉滚轮的黑洞',
     );
@@ -144,22 +151,136 @@ void main() {
   test('⑥ 滚动条画在右侧留白，且只在 hook 模式真溢出时出现', () {
     expect(src.contains('kScrollBarWidthDip'), isTrue);
     expect(src.contains('kScrollBarMinThumbDip'), isTrue);
+    final String geometry = _functionSource(src,
+        'FloatingLyricWindow::ScrollBarGeometry FloatingLyricWindow::ComputeScrollBar()');
     expect(
-      src.contains('if (hook_text_mode_ && scroll_max_px_ > 0.0f) {'),
+      geometry
+          .contains('g.visible = hook_text_mode_ && scroll_max_px_ > 0.0f;'),
       isTrue,
-      reason: '没有溢出就一个像素都不画（不滚动时逐像素不变）',
+      reason: '没有溢出就一个像素都不画、一次命中都不算（不滚动时逐像素不变）',
     );
     expect(
-      src.contains('static_cast<float>(width) - pad * 0.5f - bar_w * 0.5f;'),
+      geometry.contains('g.bar_x = width - pad * 0.5f - g.bar_w * 0.5f;'),
       isTrue,
       reason: '轨道必须落在 text_rect_ 右侧的留白里：压到文字就要缩窄换行宽度，'
           '而换行宽度会反过来改行程，形成回环',
     );
     expect(
-      src.contains('text_rect_.height - ScaleForDpi(kResizeGripDip)'),
+      geometry.contains('text_rect_.height - ScaleForDpi(kResizeGripDip)'),
       isTrue,
       reason: '轨道底端要让开右下角 resize grip，两个可拖拽的东西不叠在一起',
     );
+    // Render 只准问 ComputeScrollBar，不准自己再算一遍几何。
+    final String render =
+        _functionSource(src, 'void FloatingLyricWindow::Render()');
+    expect(render.contains('const ScrollBarGeometry sb = ComputeScrollBar();'),
+        isTrue,
+        reason: '绘制几何必须与命中几何同源');
+    final int sb =
+        render.indexOf('const ScrollBarGeometry sb = ComputeScrollBar();');
+    final String bar =
+        render.substring(sb, render.indexOf('if (text_only_) {', sb));
+    expect(bar.contains('if (sb.visible) {'), isTrue);
+    expect(bar.contains('kResizeGripDip'), isFalse,
+        reason: 'Render 的滚动条段不该再有第二份几何');
+    expect(bar.contains('kScrollBarMinThumbDip'), isFalse,
+        reason: 'Render 的滚动条段不该再有第二份几何');
+  });
+
+  test('⑧ 穿透态滚轮照滚：ScrollBy 没有 pass_through_ 门（BUG-1859）', () {
+    // BUG-1480 之后穿透态靠逐像素 alpha 分流：滚轮能投到正文窗就说明它落在
+    // 文字上，与「穿透态点字查词」是同一份判定。ScrollBy 再拿 pass_through_ 拦
+    // 一道，事件只会被 DefWindowProc 吞掉（无父窗、到不了游戏），穿透态永远滚
+    // 不动。
+    // 注释里可以（也应该）解释为什么没有这道门，所以只看剥掉 // 注释后的代码。
+    final String scrollBy = _stripLineComments(
+        _functionSource(src, 'bool FloatingLyricWindow::ScrollBy('));
+    expect(scrollBy.contains('pass_through_'), isFalse,
+        reason: 'ScrollBy 不准按穿透态拦滚轮');
+    final String setOffset = _stripLineComments(
+        _functionSource(src, 'bool FloatingLyricWindow::SetScrollOffset('));
+    expect(setOffset.contains('pass_through_'), isFalse);
+    final int w = src.indexOf('case WM_MOUSEWHEEL:');
+    final String wheelCase =
+        _stripLineComments(src.substring(w, src.indexOf('case WM_SIZE:', w)));
+    expect(wheelCase.contains('if (ScrollBy(step)) {'), isTrue,
+        reason: '滚轮唯一的接管判定是 ScrollBy 的返回值');
+    expect(wheelCase.contains('pass_through_'), isFalse,
+        reason: 'WM_MOUSEWHEEL 也不准自己加穿透态分支');
+  });
+
+  test('⑨ 滚动条是控件不是正文：按 thumb 拖动内容，不拖窗（BUG-1860）', () {
+    // 状态 + 唯一终结者：拖 thumb 与拖窗 / 查词按压是同一笔互斥事务。
+    expect(hdr.contains('bool scroll_thumb_dragging_ = false;'), isTrue);
+    expect(hdr.contains('bool ScrollBarContains(float x, float y) const;'),
+        isTrue);
+    expect(hdr.contains('bool BeginScrollThumbDrag(float y);'), isTrue);
+    final String cancel = _functionSource(
+        src, 'void FloatingLyricWindow::CancelPointerGesture()');
+    expect(cancel.contains('scroll_thumb_dragging_ = false;'), isTrue,
+        reason: 'WM_CAPTURECHANGED / Hide / SetLocked 都经 CancelPointerGesture '
+            '终结手势，拖 thumb 漏掉就会像 BUG-1471 那样卡死');
+
+    // WM_LBUTTONDOWN：滚动条命中要在「正文按压」之前判，且不依赖 locked_
+    //（锁的是位置，不是滚动）。
+    final int down = src.indexOf('case WM_LBUTTONDOWN: {');
+    final int capture = src.indexOf('case WM_CAPTURECHANGED:', down);
+    expect(down, greaterThan(0));
+    final String downCase = src.substring(down, capture);
+    final int scrollHit = downCase
+        .indexOf('if (ScrollBarContains(x, y) && BeginScrollThumbDrag(y)) {');
+    final int bodyPress = downCase.indexOf('pressed_ = true;');
+    expect(scrollHit, greaterThan(0), reason: '按在滚动条上必须走 thumb 手势');
+    expect(bodyPress, greaterThan(scrollHit),
+        reason: '滚动条判定必须在正文按压（pressed_ = true）之前，否则松手前'
+            '移动几个像素就被提升成拖窗');
+    expect(
+      downCase.substring(0, scrollHit).contains('locked_'),
+      isFalse,
+      reason: '锁定只锁位置，锁定态滚动条照样能拖',
+    );
+
+    // WM_MOUSEMOVE：拖 thumb 分支在拖窗分支之前，按轨道↔行程等比换算，且 return
+    // 掉不让 Shift-悬停查词在滚动条上乱出词。
+    final int move = src.indexOf('case WM_MOUSEMOVE: {');
+    final String moveCase =
+        src.substring(move, src.indexOf('case WM_TIMER:', move));
+    final int thumb = moveCase.indexOf('if (scroll_thumb_dragging_) {');
+    final int windowDrag = moveCase.indexOf('if (dragging_) {');
+    expect(thumb, greaterThan(0));
+    expect(windowDrag, greaterThan(thumb), reason: '拖 thumb 分支必须先于拖窗分支');
+    expect(
+      moveCase.contains('(y - scroll_drag_origin_y_) * scroll_drag_px_per_px_'),
+      isTrue,
+      reason: '指针位移 ↔ 内容偏移必须按轨道行程等比换算',
+    );
+
+    // 几何同源：命中带 / 绘制 / 拖动全部问 ComputeScrollBar。
+    final String contains =
+        _functionSource(src, 'bool FloatingLyricWindow::ScrollBarContains(');
+    expect(contains.contains('ComputeScrollBar()'), isTrue);
+    final String begin =
+        _functionSource(src, 'bool FloatingLyricWindow::BeginScrollThumbDrag(');
+    expect(begin.contains('ComputeScrollBar()'), isTrue);
+    expect(begin.contains('SetCapture(hwnd_);'), isTrue,
+        reason: '拖 thumb 出窗也要继续跟，必须 capture');
+    expect(src.contains('kScrollBarHitWidthDip'), isTrue,
+        reason: '4dp 视觉细条抓不住，命中带要比它宽');
+
+    // 穿透态：命中带要铺 catch fill，否则 alpha-0 像素把按下透给游戏。
+    final String render =
+        _functionSource(src, 'void FloatingLyricWindow::Render()');
+    final int sb =
+        render.indexOf('const ScrollBarGeometry sb = ComputeScrollBar();');
+    final String bar =
+        render.substring(sb, render.indexOf('if (text_only_) {', sb));
+    expect(bar.contains('if (pass_through_) {'), isTrue);
+    expect(
+      bar.contains('D2D1::RectF(sb.hit_left, sb.track_top, sb.hit_right,'),
+      isTrue,
+      reason: '穿透态命中带必须整块铺 kHookTextMinCatchAlpha 的 catch fill',
+    );
+    expect(bar.contains('kHookTextMinCatchAlpha << 24'), isTrue);
   });
 
   test('⑦ 歌词条 / 剪贴板文本窗不受滚动影响', () {
@@ -178,4 +299,19 @@ void main() {
         src.contains('strip_height_dip_ / kBaseStripHeightForFontDip'), isTrue,
         reason: '有声书歌词条「拖高放大」是既有行为，不得连坐');
   });
+}
+
+/// 剥掉 `//` 行注释（只剩代码），让守卫不被注释里出现的标识符假阳性命中。
+String _stripLineComments(String code) =>
+    code.replaceAll(RegExp(r'//[^\n]*'), '');
+
+/// 截出 C++ 函数源码：从 [signature] 起到第一个顶格 `}` 行止（本文件里的成员
+/// 函数都是顶格闭合，内部作用域缩进两格）。
+String _functionSource(String src, String signature) {
+  final int start = src.indexOf(signature);
+  expect(start, greaterThanOrEqualTo(0), reason: '找不到函数签名：$signature');
+  final Match? close = RegExp(r'\r?\n}\r?\n').firstMatch(src.substring(start));
+  return close == null
+      ? src.substring(start)
+      : src.substring(start, start + close.end);
 }

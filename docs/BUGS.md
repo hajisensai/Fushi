@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1733 条。点号进各自文件。
+> 共 1735 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1860](bugs/BUG-1860-gal-overlay-scrollbar-not-draggable.md) | ✅ | ✅ | gal 查词浮窗滚动条只是指示条：按住拖 thumb 变成拖窗 |
+| [BUG-1859](bugs/BUG-1859-gal-overlay-passthrough-wheel-gate.md) | ✅ | ✅ | gal 查词浮窗穿透态滚轮不滚：ScrollBy 的 pass_through_ 门是 WS_EX_TRANSPARENT 时代遗物 |
 | [BUG-1857](bugs/BUG-1857-gal-overlay-resize-card-does-not-follow-drag.md) | ✅ | ✅ | 查词浮窗拖右下角调大小时卡片不跟手，松手才跳到位 |
 | [BUG-1854](bugs/BUG-1854-gal-mining-capture-includes-title-bar.md) | ✅ | ✅ | 制卡截图把游戏窗口标题栏截进去了，应裁到客户区 |
 | [BUG-1853](bugs/BUG-1853-gal-passthrough-glyph-holes-fall-through.md) | ✅ | ✅ | 穿透态点到文字笔画镂空处直接透给游戏，碰撞箱应为行矩形 |
