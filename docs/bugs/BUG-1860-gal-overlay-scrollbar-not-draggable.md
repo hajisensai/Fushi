@@ -12,4 +12,20 @@
   - 穿透态：`Render` 给命中带整块铺 `kHookTextMinCatchAlpha` 的不可见 catch fill（与 BUG-1853 行盒同一技法），「看得见的滚动条」与「按得到的滚动条」是同一块像素。
   - 提交见 PR（叠在 PR #1003 之上）。
 - **[x] ② 已加自动化测试** — `fushi/test/build/gal_overlay_scroll_guard_test.dart` ⑥ 改断几何同源、新增 ⑨：状态与终结者、`WM_LBUTTONDOWN` 判定次序与不依赖 `locked_`、`WM_MOUSEMOVE` 分支次序与等比换算、capture、命中带常量、穿透态 catch fill。
+- **[x] ③ 审查追修（2026-08-25）** —
+  - 命中带不许伸进正文：轨道中心在 `width - pad/2`、命中带半宽 7dp，所以「文字边距」滑杆
+    调到 `pad < 14dp`（最小 0，默认 20）时它会盖住正文最右边 `(7 - pad/2)` dp，那一列的
+    点击本该是「点字查词」却变成起拖 thumb。`ComputeScrollBar()` 里把 `hit_left` 夹到
+    `text_rect_.left + text_rect_.width`。
+  - `MaybeHoverLookup` 的早退补上 `scroll_thumb_dragging_`：`WM_MOUSEMOVE` 里的 `return`
+    只挡内联那一条路，`WM_TIMER` 轮询表拿实时光标，拖 thumb 时指针横向飘回正文上照样命中
+    `CharIndexAt` → 拖到一半弹查词卡。判据写进 `MaybeHoverLookup`，两条路径同一份答案。
+  - `SetLocked` 与 `lock` 动作的终结判据由 `(pressed_ || dragging_)` 补成
+    `(pressed_ || dragging_ || scroll_thumb_dragging_)` —— 原文声称的「SetLocked 一个都不
+    会漏」此前只对三个手势里的两个成立。
+- **已知缺口（审查发现，本轮未修）**：`ComputeScrollBar()` 用
+  `text_rect_.left + text_rect_.width + pad` 反推窗口宽度，但 `Render` 写的是
+  `text_rect_.width = std::max(1.0f, width - pad * 2)` —— 一旦 `width < 2*pad + 1`（窗口很窄
+  且 padding 拉到 80）夹取生效，反推值就偏，滚动条会画到窗外、命中带跟着错位。可行修法：把
+  `Render` 算出的 `width` 存成成员，或让 `ComputeScrollBar` 自己 `GetClientRect`。
 - **备注**：C++ 分层窗无法在 Dart 测试里执行，测试层是源码守卫；真机复验清单：①非穿透态按 thumb 拖→文本滚、窗不动；②按轨道空白→thumb 跳到指针下再跟手；③锁定态同样能拖；④穿透态按 thumb 旁 5px 内→仍是滚动、不推台词；⑤拖出窗外继续跟、松手后 hover 查词正常。本轮未真机复验。

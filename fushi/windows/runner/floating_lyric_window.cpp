@@ -1204,10 +1204,18 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       //
       // BUG-951: there is deliberately NO pass-through branch here any more.
       // HTTRANSPARENT only walks same-thread windows, so it never reached the
-      // galgame (a different process) — the click was simply swallowed. Real
-      // pass-through is WS_EX_TRANSPARENT on the whole body window, applied in
-      // ApplyPassThroughExStyle(); while it is set this handler is not called
-      // at all, which is exactly the point.
+      // galgame (a different process) — the click was simply swallowed.
+      //
+      // BUG-1480 UPDATE — the old second half of this comment ("real
+      // pass-through is WS_EX_TRANSPARENT ... while it is set this handler is
+      // not called at all") is no longer true and was actively misleading:
+      // ApplyPassThroughExStyle() deliberately does NOT set that bit any more.
+      // Routing is done by the OS at composition time from the layered window's
+      // per-pixel alpha — the background is forced to a true alpha 0, while the
+      // text line boxes (BUG-1853) and the scroll-bar hit band (BUG-1860) carry
+      // kHookTextMinCatchAlpha. So this handler DOES run in pass-through mode,
+      // but only for the pixels the OS has already decided are ours; it must
+      // keep answering HTBOTTOMRIGHT / HTCLIENT and nothing else.
       POINT screen = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       POINT client = screen;
       ScreenToClient(hwnd_, &client);

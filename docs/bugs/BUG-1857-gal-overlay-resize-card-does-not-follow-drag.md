@@ -36,3 +36,19 @@
   ④ 面板模式不受影响。另观察到但**未改**：composition 实例在 `WM_ENTERSIZEMOVE` / `WM_EXITSIZEMOVE` /
   `SetShellRectsFromCsv` 三处被无条件 `ApplyRoundedRegion`，与 `WM_SIZE` 自己写的「composition 不设
   region」不变量矛盾——但 direct 模式当前的点击路由正依赖 shellRects region，无真机证据不动。
+  （2026-08-25 审查复核：`git diff` 确认这三处 `ApplyRoundedRegion` 在 merge-base 上就已是
+  无条件调用，本 PR 对 `global_lookup_window.cpp` 的全部改动只有 +9 行 `endLiveResize`，
+  既未引入也未加剧该矛盾。）
+- **已知缺口（审查发现，本轮未修）**：
+  - **gal direct（贴游戏）模式下 live-fit 只跟「变大」不跟「变小」。**
+    `global_lookup_window.cpp` 的 `WM_SIZE` 在 `direct_process_client_active_ && visible_ &&
+    revealed_` 时对 WebView Bounds 取**高水位**（`rc.right = max(rc.right, current.right)`），
+    随后 `EqualRect` 相等就不调 `put_Bounds`。于是拖 grip 缩小时 Chromium viewport 不变 →
+    `window.innerWidth` 不变 → `handleWindowResize()` 什么也不做 → **缩小方向仍然是「松手才
+    跳」**。用户报的正是 gal 查词弹窗，所以这条症状只修好了一半。可行修法：`resizing_` 期间
+    豁免高水位分支。⚠️ 代码推断，未真机复验。
+  - **live-fit 的夹取区间与 Dart 权威折算不同源。** host 只有 `LIVE_RESIZE_MIN_PX = 80`
+    下限、**无上限**；Dart `resolveOverlayResizeFromDelta` 夹到 `[250,2000]×[200,1600]`；
+    窗口侧又没有 `WM_GETMINMAXINFO`，可以被拖到任意小。拖到极端时卡片先跟到 80px、松手
+    再跳回 250px —— 正是本条要消灭的那个跳，只是退到了边界上。可行修法：把 min/max 随
+    descriptor 下发给 host。
