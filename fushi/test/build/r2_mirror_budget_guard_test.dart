@@ -9,6 +9,10 @@ void main() {
     ).readAsStringSync();
 
     expect(workflow, contains("MAX_BUCKET_BYTES: '8000000000'"));
+    expect(
+      workflow,
+      contains('actions/checkout@11d5960a326750d5838078e36cf38b85af677262'),
+    );
     expect(workflow, contains('node --test tool/r2_mirror_plan.test.mjs'));
     expect(workflow, contains("if: steps.capacity.outputs.allowed == 'true'"));
     expect(workflow, contains('Roll back partial upload on failure'));
