@@ -283,4 +283,3 @@ jobs:
             printf -- '- 容量守卫通过: `%s`\n' "${CAPACITY_ALLOWED:-未运行}"
             printf -- '- 计划桶容量: `%s bytes`\n' "${PLANNED_BYTES:-0}"
           } >> "$GITHUB_STEP_SUMMARY"
-
