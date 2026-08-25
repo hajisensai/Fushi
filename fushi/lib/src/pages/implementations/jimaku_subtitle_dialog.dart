@@ -1020,14 +1020,8 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
             ),
             onSubmitted: (_) => _search(),
           ),
-          const SizedBox(height: 12),
-          // 搜索按钮跟着搜索输入走（手绘稿：左栏 KEY→TITLE→SEARCH），不再窝在对话框
-          // 右下角和「取消」挤一排。
-          FilledButton.icon(
-            onPressed: _searching ? null : _search,
-            icon: const Icon(Icons.search),
-            label: Text(t.video_jimaku_search),
-          ),
+          // 搜索按钮不在这里：本面板是可滚动区，主操作放进来在矮视口下结构上
+          // 不可达（见 build 里底部操作栏的注释）。
           _buildSeriesSection(theme),
           if (_candidates.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
@@ -1295,7 +1289,14 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(t.video_jimaku_fetch, style: theme.textTheme.titleLarge),
+          // 标题限两行：窄机 + 键盘下正文 Flexible 已缩到 0，标题与底栏是仅剩的
+          // 固定高，标题再无限换行就把底栏挤出对话框（法语 4 行实测溢出 8px）。
+          Text(
+            t.video_jimaku_fetch,
+            style: theme.textTheme.titleLarge,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           const SizedBox(height: 16),
           // 正文按内容宽自适应：宽屏左右两栏（筛选|结果，手绘稿布局），窄屏上下两段。
           Flexible(
@@ -1308,12 +1309,28 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
             ),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
-            ),
+          // 底部固定操作栏：「取消」+「搜索」。搜索是本框唯一主操作，必须在不随
+          // 正文滚动的槽位——它此前跟着输入框放在筛选面板（可滚区）里，iPhone 横屏
+          // 弹出数字键盘后视口只剩百来 dp，面板只露出一个输入框，按钮滚出视野；
+          // 而 iOS 数字键盘没有回车键，onSubmitted 也触发不了——用户只看得见「取消」。
+          // OverflowBar 而非裸 Row：320dp 窄机内容宽只剩 240，en/de/ru 两个按钮并排
+          // 装不下（裸 Row 实测溢出 13~70px），OverflowBar 放不下自动改竖排。
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            overflowAlignment: OverflowBarAlignment.end,
+            spacing: 8,
+            overflowSpacing: 4,
+            children: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton.icon(
+                onPressed: _searching ? null : _search,
+                icon: const Icon(Icons.search),
+                label: Text(t.video_jimaku_search),
+              ),
+            ],
           ),
         ],
       ),

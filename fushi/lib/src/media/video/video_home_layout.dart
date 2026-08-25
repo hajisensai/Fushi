@@ -185,6 +185,24 @@ int? nextEpisodeAfterLatestPlayed(
   return current + 1;
 }
 
+/// 「继续观看」行的合集目标集（Next-Up 语义，与 hero 大卡的
+/// `continueMemberIndex` 同口径）：
+///
+/// * 最近实际播放的那集**没看完**（有进度）→ 停在它；
+/// * 它**已看完** → 紧接的下一集（整部看完、没有下一集 → null，不再占继续行）；
+/// * 没有播放痕迹、或有痕迹但位置被拖回 0 且未标完成 → null（与改动前一致）。
+///
+/// 此前本行只认第一种情况：一集从头看到尾再退出，`completedAt` 一落库合集就从
+/// 「继续观看」消失、只剩「下一集」行有它；中途退出的反而在。用户视角是同一部番
+/// 在首页时有时无。看完一集的用户下一步显然是看下一集——那就是「继续观看」。
+int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
+  final int? current = latestPlayedSeriesIndex(members);
+  if (current == null) return null;
+  final VideoSeriesPlaybackState state = members[current];
+  if (state.completed) return nextEpisodeAfterLatestPlayed(members);
+  return state.positionMs > 0 ? current : null;
+}
+
 /// 条目级看完状态判定（本地即筛）：
 /// * completed —— `completedAt` 非空；
 /// * watching —— 未完成但有播放痕迹（`lastPositionMs > 0`）；

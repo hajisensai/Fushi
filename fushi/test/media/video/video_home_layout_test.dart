@@ -312,6 +312,86 @@ void main() {
       expect(nextEpisodeAfterLatestPlayed(members), 2);
     });
 
+    // 用户实报：一集从头看完再退出，合集就从「继续观看」消失（只剩「下一集」行）；
+    // 中途退出的反而在。本行改走 Next-Up 口径：看完 → 下一集。
+    test('继续观看：最近播放那集已看完 → 落到紧接的下一集', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), 1);
+    });
+
+    test('继续观看：最近播放那集没看完 → 停在它自己', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 60000,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), 1);
+    });
+
+    test('继续观看：整部看完（最后一集已完成）→ 不进本行', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 100,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: true,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(members), isNull);
+    });
+
+    test('继续观看：无痕迹 / 位置拖回 0 且未完成 → 不进本行', () {
+      const List<VideoSeriesPlaybackState> untouched =
+          <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(untouched), isNull);
+      const List<VideoSeriesPlaybackState> rewound = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(continueWatchingSeriesIndex(rewound), isNull);
+    });
+
     test('最后一集之后没有下一集', () {
       const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
         VideoSeriesPlaybackState(
