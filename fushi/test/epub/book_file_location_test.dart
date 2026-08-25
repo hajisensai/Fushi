@@ -5,12 +5,17 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/epub/book_file_location.dart';
+import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 
 /// 书架「打开文件位置」的路径决策。
 ///
-/// 这里守的是两件容易悄悄坏掉的事：
-/// * EPUB / PDF / 漫画三种书身份取磁盘路径**是同一件事**（同一张表、同样两列），
-///   一旦有人给某一种加 `format` 分支，本文件的三条同构断言会同时变得可疑。
+/// 这里守的是三件容易悄悄坏掉的事：
+/// * EPUB 行的主产物是**解压书目录本身**，盘上没有 `.epub`（BUG-088）。谁把它
+///   「统一」成 `p.join(extractDir, epubPath)`，拼出来的就是一条永远不存在的路径——
+///   不崩，只是每一本 EPUB 都静默走退回分支，下一个拿这个路径去「分享/拷贝主文件」
+///   的调用方会踩空。
+/// * `bookMainFilePath` 与 `BookFormatRebuild.probeSource(...).sourcePath` 必须是
+///   同一个答案：「这本书的源在哪」只允许一份真相源。
 /// * `epubPath` 存量里有「书目录内文件名」和「绝对路径」两种形态。无条件 join 会
 ///   把后者拼成一条谁都打不开的字符串；这条退化路径没有 UI 报错，只会表现成
 ///   「点了打开文件位置，资源管理器开在别处」。
@@ -54,18 +59,15 @@ void main() {
 
       final String path = bookMainFilePath(row);
 
-      expect(p.basename(path), 'manga.json',
-          reason: '用户手改 mokuro 数据要的就是这个文件被选中');
+      expect(
+        p.basename(path),
+        'manga.json',
+        reason: '用户手改 mokuro 数据要的就是这个文件被选中',
+      );
       expect(p.equals(p.dirname(path), '/books/Volume 01'), isTrue);
     });
 
-    test('EPUB 与 PDF 走同一条语句，不按 format 分叉', () async {
-      final EpubBookRow epub = await _seedBook(
-        bookKey: 'Novel',
-        epubPath: 'novel.epub',
-        extractDir: '/books/Novel',
-        format: 'epub',
-      );
+    test('PDF 指向书目录里的那个 PDF', () async {
       final EpubBookRow pdf = await _seedBook(
         bookKey: 'Paper',
         epubPath: 'book.pdf',
@@ -73,9 +75,35 @@ void main() {
         format: 'pdf',
       );
 
-      expect(p.equals(bookMainFilePath(epub), '/books/Novel/novel.epub'),
-          isTrue);
       expect(p.equals(bookMainFilePath(pdf), '/books/Paper/book.pdf'), isTrue);
+    });
+
+    test('EPUB 的主产物是解压书目录本身，不是 extractDir/epubPath', () async {
+      final EpubBookRow epub = await _seedBook(
+        bookKey: 'Novel',
+        epubPath: 'novel.epub',
+        extractDir: '/books/Novel',
+        format: 'epub',
+      );
+
+      expect(
+        p.equals(bookMainFilePath(epub), '/books/Novel'),
+        isTrue,
+        reason:
+            '本仓 EPUB 导入即解压、盘上没有 .epub；'
+            '拼 novel.epub 得到的是一条永远不存在的路径（BUG-088）',
+      );
+    });
+
+    test('未知 format 按 EPUB 处理（与 BookFormat.parseOrEpub 同口径）', () async {
+      final EpubBookRow row = await _seedBook(
+        bookKey: 'Legacy',
+        epubPath: 'legacy.epub',
+        extractDir: '/books/Legacy',
+        format: 'something-new',
+      );
+
+      expect(p.equals(bookMainFilePath(row), '/books/Legacy'), isTrue);
     });
 
     // `/…` 开头在 windows 与 posix 两种 path context 下都算 rooted，故这条断言在
@@ -83,23 +111,49 @@ void main() {
     test('绝对 epubPath 原样返回，不被拼到书目录后面', () async {
       final EpubBookRow row = await _seedBook(
         bookKey: 'External',
-        epubPath: '/elsewhere/original.epub',
+        epubPath: '/elsewhere/original.pdf',
         extractDir: '/books/External',
-        format: 'epub',
+        format: 'pdf',
       );
 
-      expect(p.equals(bookMainFilePath(row), '/elsewhere/original.epub'),
-          isTrue);
+      expect(
+        p.equals(bookMainFilePath(row), '/elsewhere/original.pdf'),
+        isTrue,
+      );
     });
+  });
+
+  group('与 BookFormatRebuild.probeSource 同一份真相源', () {
+    for (final (String format, String epubPath) in <(String, String)>[
+      ('epub', 'novel.epub'),
+      ('pdf', 'document.pdf'),
+      ('manga', 'manga.json'),
+    ]) {
+      test('$format 行两处答案一致', () async {
+        final EpubBookRow row = await _seedBook(
+          bookKey: 'Probe $format',
+          epubPath: epubPath,
+          extractDir: '/books/Probe $format',
+          format: format,
+        );
+
+        // 目录不存在，probe 只会报 sourceExists=false，不碰真实磁盘内容。
+        expect(
+          BookFormatRebuild.probeSource(row).sourcePath,
+          bookMainFilePath(row),
+          reason: '转化探测与「打开文件位置」对「源在哪」不许各答各的',
+        );
+      });
+    }
   });
 
   group('revealBookLocation', () {
     Future<EpubBookRow> mangaRow() => _seedBook(
-          bookKey: 'Volume 02',
-          epubPath: 'manga.json',
-          extractDir: '/books/Volume 02',
-          format: 'manga',
-        );
+      bookKey: 'Volume 02',
+      epubPath: 'manga.json',
+      extractDir: '/books/Volume 02',
+      format: 'manga',
+    );
 
     test('主文件在就只定位主文件，不退回目录', () async {
       final EpubBookRow row = await mangaRow();
@@ -144,25 +198,30 @@ void main() {
       );
     });
 
-    test('主文件路径退化成书目录本身时不重复调用', () async {
+    test('EPUB 行只有书目录一个目标，打不开也不重复调用', () async {
       final EpubBookRow row = await _seedBook(
-        bookKey: 'Degenerate',
-        epubPath: '',
-        extractDir: '/books/Degenerate',
+        bookKey: 'Novel 2',
+        epubPath: 'novel.epub',
+        extractDir: '/books/Novel 2',
         format: 'epub',
       );
-      int calls = 0;
+      final List<String> targets = <String>[];
 
       final bool revealed = await revealBookLocation(
         row,
-        reveal: (String _) async {
-          calls++;
+        reveal: (String path) async {
+          targets.add(path);
           return false;
         },
       );
 
       expect(revealed, isFalse);
-      expect(calls, 1);
+      expect(targets, hasLength(1));
+      expect(
+        p.equals(targets.single, '/books/Novel 2'),
+        isTrue,
+        reason: 'EPUB 的主产物就是书目录，没有第二个目标可退',
+      );
     });
   });
 }
