@@ -3799,5 +3799,7 @@
   "manga_rescan_undone": "已还原重新识别前的文字层",
   "manga_rescan_undo_failed": "还原上一版文字层失败",
   "module_tool_toggle_hint": "在底栏/侧栏显示该页；关闭即隐藏",
-  "module_downloads_hidden_hint": "「下载」页已在 设置 → 系统 → 功能模块 中隐藏；重新打开它才能管理订阅。"
+  "module_downloads_hidden_hint": "「下载」页已在 设置 → 系统 → 功能模块 中隐藏；重新打开它才能管理订阅。",
+  "book_file_location_open": "打开文件位置",
+  "book_file_location_failed": "无法打开这本书的文件位置。"
 }

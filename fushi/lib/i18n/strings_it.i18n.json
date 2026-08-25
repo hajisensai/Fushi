@@ -3799,5 +3799,7 @@
   "manga_rescan_undone": "Restored the text layer from before the re-scan",
   "manga_rescan_undo_failed": "Could not restore the previous text layer",
   "module_tool_toggle_hint": "Show this tab in the navigation bar; turn off to hide it",
-  "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions."
+  "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
+  "book_file_location_open": "Open file location",
+  "book_file_location_failed": "Could not open this book's file location."
 }
