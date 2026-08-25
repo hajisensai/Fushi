@@ -890,8 +890,48 @@ bool sameExternalSubtitlePathForMenu(
   String currentSubtitleSource,
 ) {
   if (source.isEmbedded || source.externalPath == null) return false;
-  return _subtitleMenuPathKey(source.externalPath!) ==
-      _subtitleMenuPathKey(currentSubtitleSource);
+  return sameSubtitleFilePath(source.externalPath!, currentSubtitleSource);
+}
+
+/// **纯函数**：两个字幕文件路径是否指向同一个档案（大小写 / 分隔符 / `..` 归一）。
+/// [sameExternalSubtitlePathForMenu] 的裸路径版，供尚未包成 [SubtitleSource] 的登记 /
+/// 去重路径复用同一判据（BUG-1861）。
+bool sameSubtitleFilePath(String a, String b) =>
+    _subtitleMenuPathKey(a) == _subtitleMenuPathKey(b);
+
+/// **纯函数**：把「本次播放会话里落盘并应用过的外挂字幕档」[imported] 并进字幕轨菜单
+/// 的枚举结果 [enumerated]，返回最终要渲染的列表（导入档排在前，与
+/// [includeCurrentPersistedSubtitleForMenu] 的「当前导入排最前」约定一致）。
+///
+/// BUG-1861：这一层存在的理由是**枚举结果与「用户刚拿到的字幕档」是两件独立的事实**。
+/// [listAllSubtitleSources] 按设计只看内封轨 + 视频同目录 sidecar；Jimaku 下载 / 手动
+/// 导入的档案住在 `<dataRoot>/documents/video_subtitles/`，它永远枚举不到。而枚举本身
+/// 会失败（ffprobe 不可用 / 超时）、会在途（大容器探测数秒到数十秒）、也会因换集而让
+/// 缓存 key 失配。BUG-1329 把「并入新档」挂在「枚举缓存有效」这个前置条件上，于是上述
+/// 三种情况下新档被**静默丢弃** —— 用户看到「字幕明明应用上了、列表里却没有它」。
+///
+/// 两份列表在渲染时合并（而不是把新档写进枚举缓存）：枚举缓存保持「纯枚举结果」语义，
+/// 后到的枚举结果整体覆盖它时也不会把导入档冲掉。按路径去重（[sameSubtitleFilePath]），
+/// 导入档若同时是视频同目录 sidecar（已在 [enumerated] 里）则不重复列出。
+List<SubtitleSource> mergeImportedSubtitleSourcesForMenu(
+  List<SubtitleSource> enumerated,
+  List<SubtitleSource> imported,
+) {
+  if (imported.isEmpty) return enumerated;
+  final List<SubtitleSource> extras = <SubtitleSource>[];
+  for (final SubtitleSource source in imported) {
+    final String? path = source.externalPath;
+    if (path == null) continue;
+    final bool listed =
+        enumerated.any((SubtitleSource s) =>
+                sameExternalSubtitlePathForMenu(s, path)) ||
+            extras.any((SubtitleSource s) =>
+                sameExternalSubtitlePathForMenu(s, path));
+    if (listed) continue;
+    extras.add(source);
+  }
+  if (extras.isEmpty) return enumerated;
+  return <SubtitleSource>[...extras, ...enumerated];
 }
 
 SubtitleSource? firstTextEmbeddedSubtitleSource(

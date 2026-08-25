@@ -1173,8 +1173,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （用户报「字幕轨每次都要加载、明明没可加载的地方；之前有的字幕还会消失要等」）。
   /// null=尚未为当前视频枚举 / 已失效（换视频）→ 下次打开重新枚举。BUG-1329：导入或
   /// 下载新字幕档**不**作废这个 key（那会换来一整趟无谓的容器重探 + 长时间加载条），
-  /// 新档由 `_registerImportedSubtitleSource` 就地并入 `_subtitleMenuSources`。
+  /// 新档由 `_registerImportedSubtitleSource` 记进 `_importedSubtitleSources`，渲染时
+  /// 与本枚举结果合并（BUG-1861，不再写进本缓存）。
   String? _subtitleMenuSourcesPath;
+
+  /// BUG-1861：本次播放会话里**落盘并应用过**的外挂字幕档（Jimaku 下载 / 手动导入）。
+  ///
+  /// 与 `_subtitleMenuSources`（纯枚举结果：内封轨 + 视频同目录 sidecar）是两份独立
+  /// 真相，渲染时由 `mergeImportedSubtitleSourcesForMenu` 合并。独立存放的理由见该函数
+  /// 注释：枚举可能失败 / 在途 / 因换集失配，而「这个档案就在盘上、刚被应用」是不依赖
+  /// 枚举的既成事实，不能被枚举缓存的有效性 gate 掉（那正是用户报的「字幕应用上了但
+  /// 列表里没有」）。远端模式同样维护它——远端字幕轨行只覆盖 host sidecar / YouTube 轨 /
+  /// host 内封轨，本机下载的档案此前在远端根本没有对应行。换视频源时清空。
+  List<SubtitleSource> _importedSubtitleSources = const <SubtitleSource>[];
 
   /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是
   /// [VideoPlayerController.refreshChapters] open 后**异步**填充的，故缓存这个布尔并由
@@ -2292,6 +2303,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
     _remoteSubtitleUserDismissed = false;
+    // BUG-1861：本会话导入 / 下载的字幕档按视频源作用域，远端换集一并清空（上一集下的
+    // 档案不该继续挂在新集的字幕轨列表里）。本地换源在 [_applyLoad] 的
+    // `clipExportSourceChanged` 分支清（远端 `_currentVideoPath` 恒 null，走不到那里）。
+    _importedSubtitleSources = const <SubtitleSource>[];
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
     _youtubeVariants = const <YoutubeVideoVariant>[];
     _selectedYoutubeVariantIndex = -1;
@@ -3227,6 +3242,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
         _subtitleMenuSourcesPath = null;
+        // BUG-1861：导入档登记同样按视频源作用域，换源一并清空（换集后上一集下载的
+        // 档案不该继续挂在新集的字幕轨列表里）。
+        _importedSubtitleSources = const <SubtitleSource>[];
       }
       // externalSubtitlePath 即持久化值：外挂路径 / `embedded:<n>` / `off:`（显式关闭
       // 哨兵，TODO-818）都按原样写进 _currentSubtitleSource 供菜单高亮。内嵌自动加载
