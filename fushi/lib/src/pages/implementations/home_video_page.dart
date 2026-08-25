@@ -3123,14 +3123,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           lastWatched = at;
         }
       }
-      final int? currentIndex = latestPlayedSeriesIndex(
+      // Next-Up 口径（[continueWatchingSeriesIndex]）：续播用户最后实际播放且尚未
+      // 完成的那一集；那集已看完则落到紧接的下一集。不能退回序列中更早的未完成
+      // 集，也不能误跳到合集最后一集；整部看完不进本行。
+      final int? currentIndex = continueWatchingSeriesIndex(
         _seriesPlaybackStates(members),
       );
       if (currentIndex == null) return;
-      final VideoBookRow current = members[currentIndex];
-      // “继续观看”只续播用户最后实际播放且尚未完成的那一集，不能退回序列中
-      // 更早的未完成集，也不能误跳到合集最后一集。
-      if (current.completedAt != null || current.lastPositionMs <= 0) return;
       final MediaCollectionRow collection = _collectionsById[cid]!;
       items.add(_VideoRowItem(
         recentMs: lastWatched?.millisecondsSinceEpoch ?? 0,
@@ -3734,12 +3733,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
       episodeNumber: currentIndex + 1,
-      secondaryText: _continueSecondaryText(
-        members[currentIndex],
-        episodeNumber: currentIndex + 1,
-      ),
+      // 目标集还没开播（上一集看完落到的下一集）→「下一集 · 第 N 集」；
+      // 有进度 →「看到第 N 集 · 剩 M 分钟」。由成员自身状态决定，不另传标志。
+      secondaryText: _isUnstarted(members[currentIndex])
+          ? t.video_home_next_episode_number(n: currentIndex + 1)
+          : _continueSecondaryText(
+              members[currentIndex],
+              episodeNumber: currentIndex + 1,
+            ),
     );
   }
+
+  static bool _isUnstarted(VideoBookRow book) =>
+      book.completedAt == null && book.lastPositionMs <= 0;
 
   /// 继续观看行·远端占位卡：点击流播（BUG-995 血缘——只看远端也有续播入口）；
   /// 云角标；远端无完成口径，不画进度条。
