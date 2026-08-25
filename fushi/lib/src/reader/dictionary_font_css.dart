@@ -201,13 +201,23 @@ class DictionaryFontCss {
       final FileStat stat = FileStat.statSync(path);
       if (stat.type == FileSystemEntityType.notFound) return false;
       final int length = stat.size;
-      return length > 0 && length <= maxBytes;
+      if (length <= 0 || length > maxBytes) return false;
+      // 只 stat 是**不够**的：内联路径会真的 readAsBytesSync，于是「文件在、大小
+      // 合法、但读不出来」（权限、被独占、路径其实是目录）在那边会抛 → 计入
+      // _inlineFailureCount → 跳过该条且本次产物不进 memo。URL 路径若只 stat 就
+      // 放行，同一份字体列表在两种模式下会选出**不同**的字体集合（正是本函数
+      // 声称要避免的事），而且更糟：那条坏字体的产物会被 memo 永久缓存，拦截器
+      // 每次请求都 403 并写一条错误日志。
+      // 这里开一下再关，代价是一次 open/close，不读任何内容。
+      final RandomAccessFile handle = File(path).openSync();
+      handle.closeSync();
+      return true;
     } catch (e, stack) {
-      // 与内联路径同样计入瞬时失败：上层 memo 用「build 前后计数未变」判定本次
-      // 产物没有瞬时降级、可安全缓存。stat 失败却不计数，会把一次「字体临时读不到」
-      // 的残缺产物永久缓存下来。
+      // 与内联路径同一套失败记账：上层 memo 用「build 前后计数未变」判定本次产物
+      // 没有瞬时降级、可安全缓存。失败却不计数，会把一次「字体临时读不到」的残缺
+      // 产物永久缓存下来。
       _inlineFailureCount++;
-      ErrorLogService.instance.log('DictionaryFontCss.stat', e, stack);
+      ErrorLogService.instance.log('DictionaryFontCss.probe', e, stack);
       return false;
     }
   }

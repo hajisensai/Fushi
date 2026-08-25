@@ -419,11 +419,33 @@ class DictionaryPopupWebViewState
 
   /// 字体 URL 拦截器的目录白名单：只有导入字体落盘的那一个目录。
   ///
-  /// 与注入侧 [_dictionaryFontStyleJsMemo] 用的白名单同源——两边不一致的话，会出现
+  /// 与注入侧 [buildPopupStaticSettingsJs] 用的白名单同源——两边不一致的话，会出现
   /// 「CSS 里引了某个字体，拦截器却拒绝供给」的哑失败（字体静默不生效）。
-  List<String> _dictionaryFontAllowedRoots() {
-    final appModel = ref.read(appProvider);
-    return <String>[p.join(appModel.appDirectory.path, 'custom_fonts')];
+  ///
+  /// 惰性解析并缓存，三个约束一起满足：
+  ///   * **不每次请求都读**：`useShouldInterceptRequest` 让本 WebView 的每一条子资源
+  ///     请求都进拦截器闭包，在那里 `ref.read` + 拼路径是白付的重复开销；
+  ///   * **dispose 之后不碰 `ref`**：资源请求回调由平台侧驱动，完全可能在 widget 已
+  ///     dispose、WebView 尚未销毁完的窗口里到达，那时 `ref.read` 会抛 StateError，
+  ///     而且是在 async 回调里抛 → 未捕获异常。故先看 `mounted`；
+  ///   * **AppModel 未初始化时不炸**：`appDirectory` 是 late 字段，widget 测试里的裸
+  ///     AppModel 读它会抛 LateInitializationError。拿不到就返回 null，让字体分支
+  ///     整个短路——真实 app 里等到 appDirectory 就绪自然会拿到，而那之前也不可能有
+  ///     字体 URL 请求（URL 是注入侧产的，注入侧同样要 appDirectory）。
+  List<String>? _dictionaryFontRootsCache;
+
+  List<String>? _resolveDictionaryFontRoots() {
+    final List<String>? cached = _dictionaryFontRootsCache;
+    if (cached != null) return cached;
+    if (!mounted) return null;
+    try {
+      final String appDir = ref.read(appProvider).appDirectory.path;
+      return _dictionaryFontRootsCache = <String>[
+        p.join(appDir, 'custom_fonts'),
+      ];
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 字体 URL 拦截器的**条目**白名单：当前真正配置在词典字体里的那几个文件。
@@ -1598,15 +1620,22 @@ JSON.stringify((function(){
         disableContextMenu: isWindowsPlatform,
       ),
       shouldInterceptRequest: (controller, request) async {
-        // 字体先于词典媒体判：两者 URL 形状不重叠，字体分支不命中时返回 null，
-        // 原有的 image:// / dictmedia:// 路径逐字不变。
-        final WebResourceResponse? font =
-            await dictionaryFontWebResourceResponse(
-          request.url,
-          allowedRoots: _dictionaryFontAllowedRoots(),
-          whitelistedPaths: _configuredDictionaryFontPaths(),
-        );
-        if (font != null) return font;
+        // 前缀判定必须在**最前面**：`useShouldInterceptRequest: true` 让本闭包接住
+        // 这个 WebView 的**每一条**子资源请求（popup.html / popup.css / popup.js /
+        // 每张词典图 / 每条发音）。把两个白名单当实参写在调用处，它们会在前缀判定
+        // 之前就被求值——而 _configuredDictionaryFontPaths() 内部要把 font_catalog
+        // 和 font_targets 两串 JSON 全量 decode 一遍。那等于在一个「消除重复开销」
+        // 的改动里新引入一条同形状的重复开销（与本轮 popup.js 门控踩的是同一个坑：
+        // 参数在传参之前就求值了，只挡输出挡不住开销）。
+        if (isDictionaryFontUrl(request.url)) {
+          final List<String>? roots = _resolveDictionaryFontRoots();
+          if (roots == null) return null;
+          return dictionaryFontWebResourceResponse(
+            request.url,
+            allowedRoots: roots,
+            whitelistedPaths: _configuredDictionaryFontPaths(),
+          );
+        }
         return dictionaryMediaWebResourceResponse(request.url);
       },
       onWebViewCreated: (controller) {

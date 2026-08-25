@@ -1897,6 +1897,14 @@ class GlobalLookupController {
     // Commit only after the platform call accepted the complete script. A
     // thrown/invalidated send must leave the revision unknown so the next render
     // remains self-contained.
+    //
+    // 🔴 光 await 是**不够**的：[OverlayWindowChannel._invoke] 在路由失效时直接
+    // `return Future.value()` 把整条调用丢掉（挡住旧 zone 里排队的 Future 复活
+    // 老窗口），await 它正常完成，看不出脚本压根没送出去。若就此记账，宿主会被
+    // 标成「已装载」而它其实什么都没收到——下一次渲染不再下发静态段，卡片停在
+    // 没主题/没字体/没词典样式的状态，正是这套去重最怕的那个方向。
+    // 所以记账前再确认一次路由：宁可漏记（下次重发，只多一次带宽），不可误记。
+    if (!_isCurrentRoute) return;
     _hostStaticRevisions.commit(hostKey, stackRender.pendingRevisions);
   }
 

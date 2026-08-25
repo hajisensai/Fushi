@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 查词弹窗静态设置段的**去重完整性**守卫。
 ///
 /// 背景：`buildStackRenderScript` 产出的渲染负载里，静态段（主题变量 + 词典字体 +
@@ -31,10 +33,12 @@ void main() {
     final List<File> callers = <File>[];
     for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final String src = _codeOnly(entity.readAsStringSync());
-      if (!src.contains('buildStackRenderScript(')) continue;
+      final String src = entity.readAsStringSync();
+      if (!containsCodeLine(src, 'buildStackRenderScript(')) continue;
       // 跳过定义处本身（它声明返回类型，调用点不会）。
-      if (src.contains('StackRenderScript buildStackRenderScript(')) continue;
+      if (containsCodeLine(src, 'StackRenderScript buildStackRenderScript(')) {
+        continue;
+      }
       callers.add(entity);
     }
 
@@ -47,19 +51,19 @@ void main() {
     );
 
     for (final File caller in callers) {
-      final String src = _codeOnly(caller.readAsStringSync());
+      final String src = caller.readAsStringSync();
       final String path = caller.path;
       expect(
-        src,
-        contains('.commit('),
+        containsCodeLine(src, '.commit('),
+        isTrue,
         reason:
             '$path 调用了 buildStackRenderScript 却没有 commit 已发出的版本。'
             '不记账 = 下一次渲染仍认为宿主没装过 = 每次查词都重发几十 MB 静态段。'
             'commit 必须在平台 render 调用成功之后进行。',
       );
       expect(
-        src,
-        contains("== 'staticSettingsRequired'"),
+        containsCodeLine(src, "== 'staticSettingsRequired'"),
+        isTrue,
         reason:
             '$path 参与了静态段去重，却没有处理 host 的 staticSettingsRequired '
             '回补请求。去重与回补是一对：宿主整块 WebView 恢复 / realm 重建后会丢掉'
@@ -72,52 +76,34 @@ void main() {
   test('the render builder exposes no optional dedup escape hatch', () {
     final File render = File('lib/src/lookup/global_lookup_render.dart');
     expect(render.existsSync(), isTrue);
-    final String src = _codeOnly(render.readAsStringSync());
+    final String src = render.readAsStringSync();
 
     expect(
-      src,
-      contains('required PopupStaticRevisionCache staticRevisions'),
+      containsCodeLine(src, 'required PopupStaticRevisionCache staticRevisions'),
+      isTrue,
       reason:
           '宿主账本必须是必填参数——一旦退回可选（带默认值），'
           '新调用方就能像剪贴板面板当初那样静默地完全不去重',
     );
     expect(
-      src,
-      contains('required String hostKey'),
+      containsCodeLine(src, 'required String hostKey'),
+      isTrue,
       reason:
           'hostKey 必须必填：不同 WebView2 realm 的账本不能混，'
           '混了会让 A 宿主的已装载记录挡住 B 宿主的首次下发',
     );
     // 旧的两个可选形参不得复活。
     expect(
-      src,
-      isNot(contains('Set<int> knownStaticRevisions = const <int>{}')),
+      containsCodeLine(src, 'Set<int> knownStaticRevisions = const <int>{}'),
+      isFalse,
       reason: '带默认值的 knownStaticRevisions 形参正是事故根源，不得复活',
     );
     expect(
-      src,
-      isNot(contains('Set<int>? emittedStaticRevisions')),
+      containsCodeLine(src, 'Set<int>? emittedStaticRevisions'),
+      isFalse,
       reason:
           '可空的 emittedStaticRevisions 出参正是事故根源，不得复活；'
           '待确认版本应从返回值的 pendingRevisions 带出',
     );
   });
-}
-
-/// 剥掉 `//` 行注释与 `/* */` 块注释，只留下真正的代码。
-///
-/// 这一步不是洁癖：本仓的注释密度很高，而这条守卫要找的恰恰是
-/// `staticSettingsRequired` / `commit` 这类**会被大段中文注释反复提及**的词。不剥
-/// 注释直接 `contains`，守卫会被自己的说明文字喂饱、对真实代码的缺失视而不见——
-/// 即「输出可信但结论错」的经典形状。实测：把面板的回补分支改名注入变异后，不剥
-/// 注释的版本照样全绿，剥注释的版本才抓得住。
-String _codeOnly(String source) {
-  final String withoutBlocks = source.replaceAll(
-    RegExp(r'/\*.*?\*/', dotAll: true),
-    '',
-  );
-  return withoutBlocks
-      .split('\n')
-      .where((String line) => !line.trimLeft().startsWith('//'))
-      .join('\n');
 }

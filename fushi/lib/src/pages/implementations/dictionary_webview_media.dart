@@ -52,8 +52,33 @@ bool get kInAppPopupFontUrlSupported =>
     defaultTargetPlatform == TargetPlatform.windows;
 
 /// 把通过白名单校验的绝对字体路径编成 [kDictionaryFontUrlPrefix] 下的 URL。
-String dictionaryFontUrl(String safePath) =>
-    '$kDictionaryFontUrlPrefix${Uri.encodeComponent(safePath)}';
+///
+/// URL 末尾带 `?v=<mtimeUs>-<size>` 内容版本戳。**不是装饰**：内联路径的缓存键本来
+/// 就是 `(path, mtime, size)`（见 DictionaryFontCss 的 _dataUrlCache，注释写明「文件
+/// 被原地覆盖时 mtime/size 变化自动失效」）。换成 URL 之后，如果 URL 只含路径，用户
+/// 用同名文件覆盖导入的字体后产出的 URL 一字不变，而响应带着 `max-age`——浏览器可能
+/// 在缓存期内继续用旧字节。那是相对内联模式的**行为倒退**。版本戳让覆盖后的 URL 天然
+/// 变成一条新资源。stat 失败时退化成不带版本（仍可用，只是失去自动失效）。
+String dictionaryFontUrl(String safePath) {
+  String version = '';
+  try {
+    final FileStat stat = FileStat.statSync(safePath);
+    if (stat.type != FileSystemEntityType.notFound) {
+      version = '?v=${stat.modified.microsecondsSinceEpoch}-${stat.size}';
+    }
+  } catch (_) {
+    // 拿不到版本不影响可用性，只是少了自动失效。
+  }
+  return '$kDictionaryFontUrlPrefix${Uri.encodeComponent(safePath)}$version';
+}
+
+/// 这条 URL 是否是字体请求。
+///
+/// 拦截器闭包必须先用它做**廉价前缀判定**，再去构造白名单实参——`shouldInterceptRequest`
+/// 接住的是 WebView 的每一条子资源请求，把白名单当实参写在调用处会让它们在前缀判定
+/// 之前就被求值（其中一个要全量 decode 两串 JSON）。
+bool isDictionaryFontUrl(Uri url) =>
+    url.toString().startsWith(kDictionaryFontUrlPrefix);
 
 /// 服务 [kDictionaryFontUrlPrefix] 下的字体请求；不是字体 URL 时返回 null（交回
 /// 其它拦截分支）。
@@ -74,7 +99,11 @@ Future<WebResourceResponse?> dictionaryFontWebResourceResponse(
 }) async {
   final String full = url.toString();
   if (!full.startsWith(kDictionaryFontUrlPrefix)) return null;
-  final String raw = full.substring(kDictionaryFontUrlPrefix.length);
+  String raw = full.substring(kDictionaryFontUrlPrefix.length);
+  // 剥掉 `?v=<mtime>-<size>` 内容版本戳：它只为让覆盖字体后的 URL 成为新资源，
+  // 不参与路径解析。
+  final int q = raw.indexOf('?');
+  if (q >= 0) raw = raw.substring(0, q);
   if (raw.isEmpty) return null;
 
   String requested;
