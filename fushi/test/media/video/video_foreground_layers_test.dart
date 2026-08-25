@@ -13,6 +13,7 @@ void main() {
         hasVisibleDictionaryPopup:
             open.contains(VideoForegroundLayer.dictionaryPopup),
         controlEditActive: open.contains(VideoForegroundLayer.controlEdit),
+        controlPopoverOpen: open.contains(VideoForegroundLayer.controlPopover),
         subtitleListVisible: open.contains(VideoForegroundLayer.subtitleList),
         episodeListVisible: open.contains(VideoForegroundLayer.episodeList),
         sidePanelOpen: open.contains(VideoForegroundLayer.sidePanel),
@@ -48,6 +49,36 @@ void main() {
     );
   });
 
+  test('pin 住的控制按钮 popover 开着时先关它，绝不越过它去退页', () {
+    expect(
+      top(<VideoForegroundLayer>{VideoForegroundLayer.controlPopover}),
+      VideoForegroundLayer.controlPopover,
+    );
+    // popover 画在 side panel 之上、布局编辑态之下（controls Stack 的兄弟顺序）。
+    expect(
+      top(<VideoForegroundLayer>{
+        VideoForegroundLayer.controlPopover,
+        VideoForegroundLayer.sidePanel,
+      }),
+      VideoForegroundLayer.controlPopover,
+    );
+    expect(
+      top(<VideoForegroundLayer>{
+        VideoForegroundLayer.controlEdit,
+        VideoForegroundLayer.controlPopover,
+      }),
+      VideoForegroundLayer.controlEdit,
+    );
+    // BUG-792：popover 与 push-aside 字幕列表刻意共存，此时先关更晚打开的 popover。
+    expect(
+      top(<VideoForegroundLayer>{
+        VideoForegroundLayer.controlPopover,
+        VideoForegroundLayer.subtitleList,
+      }),
+      VideoForegroundLayer.controlPopover,
+    );
+  });
+
   test('词典浮层永远最前台，压过其它任何一层', () {
     for (final VideoForegroundLayer other in VideoForegroundLayer.values) {
       expect(
@@ -60,7 +91,7 @@ void main() {
     }
   });
 
-  test('六层全开时反复按返回：按视觉层序一层层剥到底，不重复也不跳过', () {
+  test('所有前台层全开时反复按返回：按视觉层序一层层剥到底，不重复也不跳过', () {
     final Set<VideoForegroundLayer> open = VideoForegroundLayer.values.toSet();
     final List<VideoForegroundLayer> dismissed = <VideoForegroundLayer>[];
     for (int i = 0; i < VideoForegroundLayer.values.length; i++) {

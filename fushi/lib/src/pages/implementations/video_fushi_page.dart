@@ -4478,11 +4478,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 顺序判据本身在纯函数 [topVideoForegroundLayer]（`video_foreground_layers.dart`）里，
   /// 可直接单测；本方法只负责「读页面状态 → 查表 → 执行对应关闭动作」，不再自带顺序。
   /// push-aside 字幕列表（TODO-314）、剧集列表（TODO-638）与侧栏是三条独立可见性，
-  /// 分别关闭。
+  /// 分别关闭。控制按钮 popover（音量 / 倍速轻浮层）点击打开那次会被 pin 住常驻，
+  /// 必须一并进表——漏掉它就是「pinned popover 开着按 Esc，页面退了、浮层还在」，
+  /// 与 BUG-1862 的原始症状同形。
   bool _dismissTopForegroundLayer() {
     final VideoForegroundLayer? layer = topVideoForegroundLayer(
       hasVisibleDictionaryPopup: _hasVisiblePopup,
       controlEditActive: _videoControlEditMode.value,
+      controlPopoverOpen: _videoControlPopover.value != null,
       subtitleListVisible: _subtitleListVisible.value,
       episodeListVisible: _episodeListVisible.value,
       sidePanelOpen: _videoSidePanel.value != null,
@@ -4495,6 +4498,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _popNestedPopupAt(_topVisiblePopupIndex);
       case VideoForegroundLayer.controlEdit:
         _hideVideoControlEditOverlay(revealControls: false);
+      case VideoForegroundLayer.controlPopover:
+        _hideControlPopover();
       case VideoForegroundLayer.subtitleList:
         _toggleSubtitleJumpList();
       case VideoForegroundLayer.episodeList:

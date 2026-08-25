@@ -69,6 +69,26 @@ void main() {
     }
   });
 
+  test('层级表覆盖 controls Stack 里可关的兄弟层，pinned popover 不许漏', () {
+    final String src = read(page);
+    final int at = src.indexOf('bool _dismissTopForegroundLayer() {');
+    expect(at, greaterThan(0), reason: '找不到 _dismissTopForegroundLayer 定义');
+    final int end = src.indexOf('\n  }\n', at);
+    expect(end, greaterThan(at), reason: '_dismissTopForegroundLayer 方法体没有闭合');
+    final String body = src.substring(at, end);
+    expect(
+      body.contains('controlPopoverOpen: _videoControlPopover.value != null'),
+      isTrue,
+      reason: '层级表必须读控制按钮 popover 的开合：点击打开那次会被 pin 住常驻，'
+          '漏了就是「pinned popover 开着按 Esc，页面退了、浮层还在」（BUG-1862 同形）',
+    );
+    final int popoverGate =
+        body.indexOf('controlPopoverOpen: _videoControlPopover.value != null');
+    final int popoverClose = body.indexOf('_hideControlPopover();');
+    expect(popoverClose, greaterThan(popoverGate),
+        reason: '层级表读了 popover 却没关它，等于只判不做');
+  });
+
   test('层级表只有一处：关闭动作不在页面里散落第二份', () {
     final String src = read(page);
     // 每个关闭动作在整份主体里只应被层级表调用一次（定义处的调用）。
