@@ -31,16 +31,18 @@ void main() {
     return src.substring(start, next < 0 ? src.length : next);
   }
 
-  test('副字幕行遍历完整 _subtitleMenuSources（不得过滤成 isEmbedded）', () {
+  test('副字幕行遍历完整可用列表（不得过滤成 isEmbedded）', () {
     final String src = source.readAsStringSync();
     final String body =
         methodBody(src, 'List<Widget> _buildSecondarySubtitleRows(');
 
+    // BUG-1861 起「同一份可用列表」是 `_menuSubtitleSources`（枚举结果 ∪ 本会话导入 /
+    // 下载的档案），不再是裸 `_subtitleMenuSources`（只有枚举结果）。BUG-900 的不变量
+    // 没变——副字幕要与主字幕轨行读同一份——只是那份列表的名字换了。
     expect(
-      body.contains(
-          'for (final SubtitleSource source in _subtitleMenuSources)'),
+      body.contains('for (final SubtitleSource source in _menuSubtitleSources)'),
       isTrue,
-      reason: '副字幕行必须遍历完整 _subtitleMenuSources（与主字幕同一份可用列表）',
+      reason: '副字幕行必须遍历完整 _menuSubtitleSources（与主字幕同一份可用列表）',
     );
     expect(
       body.contains('.where((SubtitleSource s) => s.isEmbedded)'),

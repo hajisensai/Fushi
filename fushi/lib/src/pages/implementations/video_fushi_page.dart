@@ -1167,6 +1167,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
 
+  /// BUG-1863：本页在前台期间是否真的进过后台（`paused` / `hidden`，**不含**
+  /// `inactive`）。回前台时据它决定要不要重建视频解码链，见
+  /// [_refreshDecodeAfterResumeIfNeeded]。
+  bool _enteredRealBackground = false;
+
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
   /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
@@ -1932,9 +1937,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
         _watchTracker?.stop();
+        // BUG-1863：记下「真的进过后台」。移动端在 app 不可见期间可能被系统回收硬件
+        // 解码器，回来后解码从非关键帧继续、参考帧缺失 → 静止区域被 libavcodec 的
+        // error concealment 填成中性灰。`inactive` 不置这个标记（那期间 app 仍持有
+        // 解码器，白白刷新只是给用户一次无谓卡顿）。
+        _enteredRealBackground = true;
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
         _watchTracker?.start();
+        // BUG-1863：从真后台回来先把视频解码链重建一次（详见
+        // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
+        _refreshDecodeAfterResumeIfNeeded();
         // TODO-158/BUG-219: 回前台重申沉浸隐藏系统栏（移动端）。后台 / 通知栏下拉 /
         // 多任务切回后 Android 会把系统栏恢复显示，immersiveSticky 只在进入时设一次
         // 不会自动复申 → 这里主动重设，保证「一直隐藏」。桌面 no-op。
@@ -1946,6 +1959,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case AppLifecycleState.detached:
         break;
     }
+  }
+
+  /// BUG-1863：从真后台回前台后按需重建视频解码链（消除「静止的地方变成灰色」）。
+  ///
+  /// 标记**无条件**清掉，判据不成立只是这一轮不刷新，不能让它攒到下一次 resume 才放
+  /// （那会变成「某次切窗后莫名 seek 一下」）。刷新本身 fire-and-forget：它只是把播放
+  /// 头 seek 回原地，失败（player 已释放 / 流不可 seek）也没有需要回滚的状态。
+  void _refreshDecodeAfterResumeIfNeeded() {
+    final bool wasBackgrounded = _enteredRealBackground;
+    _enteredRealBackground = false;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final int? durationMs = controller.durationMs;
+    if (!VideoPlayerController.shouldRefreshDecodeOnResume(
+      enteredRealBackground: wasBackgrounded,
+      hasVideo: controller.hasFirstFrame,
+      seekable: durationMs != null && durationMs > 0,
+    )) {
+      return;
+    }
+    unawaited(controller.refreshDecodeAfterResume());
   }
 
   /// 进程退出统一 flush（TODO-086/BUG-191）。把当前播放位置写穿（[flushPosition]
