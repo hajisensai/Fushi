@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
@@ -15,10 +16,10 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
 const int _maximumAidokuImageBytes = 100 * 1024 * 1024;
-const String kAidokuBrowserUserAgent =
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-    'AppleWebKit/537.36 (KHTML, like Gecko) '
-    'Chrome/131.0 Safari/537.36';
+
+/// 图片下载与 wasm host / 解题 WebView 共用同一身份（BUG-1876：`cf_clearance`
+/// 绑 UA，图片 CDN 同在 Cloudflare 后面时换个 UA 就是 403）。
+const String kAidokuBrowserUserAgent = kAidokuUserAgent;
 
 class AidokuImagePage {
   const AidokuImagePage({
@@ -182,6 +183,7 @@ class AidokuReaderChapter extends OnlineMangaReaderChapter {
           p.join(p.dirname(package.packagePath), '.page-cache'),
         ),
         referer: _httpsUrl(manga['url']),
+        jar: AidokuCookieJar.shared,
       ).open();
 }
 
@@ -195,20 +197,26 @@ class AidokuMangaPageProvider implements MangaPageProvider {
     required this.pages,
     required this.cacheRoot,
     this.referer,
+    this.jar,
   });
 
   final List<AidokuImagePage> pages;
   final Directory cacheRoot;
   final String? referer;
 
+  /// 源站 cookie（含 Cloudflare 放行）；null = 不带。
+  final AidokuCookieJar? jar;
+
   @override
   Future<MangaReaderSession> open() async {
     await cacheRoot.create(recursive: true);
+    await jar?.ensureLoaded();
     return _AidokuMangaReaderSession(
       pages: pages,
       cacheRoot: cacheRoot,
       client: createAppHttpIoClient(),
       referer: referer,
+      jar: jar,
     );
   }
 }
@@ -219,12 +227,14 @@ class _AidokuMangaReaderSession implements MangaReaderSession {
     required this.cacheRoot,
     required this.client,
     required this.referer,
+    required this.jar,
   });
 
   final List<AidokuImagePage> pages;
   final Directory cacheRoot;
   final http.Client client;
   final String? referer;
+  final AidokuCookieJar? jar;
   final Map<int, Future<File>> _inFlight = <int, Future<File>>{};
   bool _closed = false;
 
@@ -283,8 +293,17 @@ class _AidokuMangaReaderSession implements MangaReaderSession {
         final File target =
             File(p.join(cacheRoot.path, '${page.identity}.img'));
         if (await target.exists() && await target.length() > 0) return target;
-        final http.Request request = http.Request('GET', Uri.parse(page.url));
+        final Uri url = Uri.parse(page.url);
+        final http.Request request = http.Request('GET', url);
         request.headers.addAll(page.requestHeaders(referer: referer));
+        // 源自己给的 Cookie 头优先（它可能带会话 token）；否则补上 jar 里对该
+        // host 生效的 cookie，让 Cloudflare 放行 cookie 跟到图片 CDN 上。
+        final String? cookie = jar?.cookieHeaderFor(url);
+        if (cookie != null &&
+            !request.headers.keys
+                .any((String name) => name.toLowerCase() == 'cookie')) {
+          request.headers[HttpHeaders.cookieHeader] = cookie;
+        }
         final http.StreamedResponse response = await client.send(request);
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw AidokuRuntimeException(

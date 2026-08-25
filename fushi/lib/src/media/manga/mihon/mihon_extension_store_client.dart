@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 
 const int mihonStoreMaxBytes = 10 * 1024 * 1024;
@@ -297,6 +298,19 @@ class MihonExtensionStoreClient {
 
   void close() => _client.close();
 
+  /// 拉一份资源，GitHub 直链不通时逐个换公共镜像（BUG-1875）。
+  ///
+  /// 仓库索引 / 扩展列表 / APK 几乎全在 GitHub raw / release 直链上，GFW 机器直连
+  /// `github.com` 会吃满 20s 连接超时然后整轮失败——而 app 早就有一份对这类直链有效
+  /// 的镜像名单（[gitHubMirrorCandidates]），只是这里从没用上。
+  ///
+  /// 只有 [isTransportFailure]（连不上 / 超时 / TLS）才换下一候选：服务端已经答复
+  /// 的 `STORE_HTTP_404`、`TOO_MANY_REDIRECTS`、坏数据换镜像拿到的还是同一份，立即
+  /// 抛出。全部候选都传输失败时抛**直连**（首候选）的原始错误——碰巧排最后的死镜像
+  /// 的 host-lookup 失败对用户毫无诊断价值（与 update_checker 的 TODO-666 一致）。
+  ///
+  /// 302 每一跳都回到这里，所以 `github.com/.../raw/...` 302 到
+  /// `raw.githubusercontent.com` 之后那一跳同样享有回退；非 GitHub 域只有它自己一个候选。
   Future<_NetworkBytes> _get(
     Uri url, {
     int maxBytes = mihonStoreMaxBytes,
@@ -305,6 +319,45 @@ class MihonExtensionStoreClient {
     bool allowNotModified = false,
     bool allowInsecure = false,
     int redirectCount = 0,
+  }) async {
+    Object? directError;
+    StackTrace? directStack;
+    final List<Uri> candidates = gitHubMirrorCandidates(url);
+    for (final Uri candidate in candidates) {
+      final bool isDirect = candidate == candidates.first;
+      try {
+        return await _getOnce(
+          _validatedUri(candidate.toString(), allowInsecure: allowInsecure),
+          maxBytes: maxBytes,
+          etag: etag,
+          lastModified: lastModified,
+          allowNotModified: allowNotModified,
+          allowInsecure: allowInsecure,
+          redirectCount: redirectCount,
+        );
+      } on Object catch (error, stack) {
+        // 直连的 HTTP 答复（404 / 重定向坏掉 …）是权威结论，不拿镜像去翻案；
+        // 直连只有「根本连不上」才轮到镜像。镜像是公共代理，对存在的资源乱返
+        // 403/404/5xx 是常态，所以镜像的任何失败都只是「换下一个」，最终抛的
+        // 仍是直连那次的传输错误——那才是用户真实的网络状况。
+        if (isDirect) {
+          if (!isTransportFailure(error)) rethrow;
+          directError = error;
+          directStack = stack;
+        }
+      }
+    }
+    Error.throwWithStackTrace(directError!, directStack!);
+  }
+
+  Future<_NetworkBytes> _getOnce(
+    Uri url, {
+    required int maxBytes,
+    required String? etag,
+    required String? lastModified,
+    required bool allowNotModified,
+    required bool allowInsecure,
+    required int redirectCount,
   }) async {
     final http.Request request = http.Request('GET', url);
     request.followRedirects = false;

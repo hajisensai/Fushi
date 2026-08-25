@@ -204,10 +204,12 @@ import Flutter
         }
         DispatchQueue.main.async {
           if let message = responseObject["error"] as? String {
+            // 整个错误信封原样透传：`CLOUDFLARE_CHALLENGE` 带 `challengeUrl`，
+            // Dart 侧靠它决定在 WebView 里打开哪一页解题（BUG-1876）。
             result(FlutterError(
               code: responseObject["code"] as? String ?? "RUNTIME_FAILED",
               message: message,
-              details: nil))
+              details: responseObject))
           } else {
             result(responseObject)
           }

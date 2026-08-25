@@ -3,6 +3,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use aidoku::{Chapter, FilterValue, Listing, Manga};
 use anyhow::{Context, Result, anyhow, bail};
@@ -20,7 +21,141 @@ use zip::ZipArchive;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_WASM_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CANVAS_PIXELS: u64 = 64 * 1024 * 1024;
+/// Fallback identity when the caller does not hand us one. The Dart side owns
+/// the real value (`kAidokuUserAgent`) and passes it through
+/// `request.network.userAgent`, because Cloudflare binds `cf_clearance` to the
+/// exact User-Agent that solved the challenge: the WebView that solves it and
+/// this HTTP client must send byte-identical strings or the cookie is rejected.
 const DEFAULT_USER_AGENT: &str = "Aidoku/1 CFNetwork/3826.500.131 Darwin/24.5.0";
+
+/// How many recent network exchanges we keep for diagnostics. When a source
+/// fails with an opaque parse error, this is the only evidence of what the
+/// server actually returned (status / size), so the tail is attached to the
+/// error message instead of being lost inside the sandbox.
+const NET_LOG_LIMIT: usize = 12;
+
+/// One cookie handed in by the caller. Domain-scoped (not URL-scoped) on
+/// purpose: `cf_clearance` is issued for `.example.com` and must ride along on
+/// every subdomain the source touches (api / cdn / image hosts).
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkCookie {
+    name: String,
+    value: String,
+    domain: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    secure: bool,
+}
+
+impl NetworkCookie {
+    /// Renders the cookie as a `Set-Cookie` line plus the origin it belongs to,
+    /// which is the only way `reqwest::cookie::Jar` accepts entries.
+    fn set_cookie(&self) -> Option<(reqwest::Url, String)> {
+        let domain = self.domain.trim().trim_start_matches('.');
+        if domain.is_empty() || self.name.trim().is_empty() {
+            return None;
+        }
+        let url = reqwest::Url::parse(&format!("https://{domain}/")).ok()?;
+        let path = self
+            .path
+            .as_deref()
+            .filter(|path| path.starts_with('/'))
+            .unwrap_or("/");
+        let mut header = format!("{}={}; Domain={domain}; Path={path}", self.name, self.value);
+        if self.secure {
+            header.push_str("; Secure");
+        }
+        Some((url, header))
+    }
+}
+
+/// Browser identity + cookies shared with the WebView that solves Cloudflare
+/// challenges. Parsed from `request.network`; absent means "no cookies, default
+/// User-Agent", which is exactly the pre-existing behaviour.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkSession {
+    #[serde(default)]
+    user_agent: Option<String>,
+    #[serde(default)]
+    cookies: Vec<NetworkCookie>,
+}
+
+impl NetworkSession {
+    fn from_request(request: &Value) -> Result<Self> {
+        match request.get("network") {
+            None | Some(Value::Null) => Ok(Self::default()),
+            Some(value) => {
+                serde_json::from_value(value.clone()).context("invalid Aidoku network session")
+            }
+        }
+    }
+
+    fn user_agent(&self) -> reqwest::header::HeaderValue {
+        self.user_agent
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .and_then(|value| reqwest::header::HeaderValue::from_str(value).ok())
+            .unwrap_or_else(|| reqwest::header::HeaderValue::from_static(DEFAULT_USER_AGENT))
+    }
+
+    fn cookie_jar(&self) -> reqwest::cookie::Jar {
+        let jar = reqwest::cookie::Jar::default();
+        for cookie in &self.cookies {
+            if let Some((url, header)) = cookie.set_cookie() {
+                jar.add_cookie_str(&header, &url);
+            }
+        }
+        jar
+    }
+
+    /// One client per invocation, shared by every request the source makes:
+    /// the cookie jar must persist across the source's own request chain
+    /// (challenge cookie → API call → image URL), which a per-request client
+    /// silently threw away.
+    fn client(&self) -> Result<reqwest::blocking::Client> {
+        reqwest::blocking::Client::builder()
+            .cookie_provider(Arc::new(self.cookie_jar()))
+            .build()
+            .context("failed to build Aidoku HTTP client")
+    }
+}
+
+/// Raised when a network response was a Cloudflare interstitial. Carries the
+/// URL that got challenged so the caller can open exactly that page in a
+/// WebView, solve it, and retry with the resulting `cf_clearance`.
+#[derive(Debug)]
+struct CloudflareChallenge {
+    url: String,
+}
+
+impl std::fmt::Display for CloudflareChallenge {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Cloudflare challenge blocked this source at {}",
+            self.url
+        )
+    }
+}
+
+impl std::error::Error for CloudflareChallenge {}
+
+/// Drops query/fragment so short-lived signed tokens never end up in error
+/// text that reaches the UI or uploaded logs.
+fn loggable_url(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        Err(_) => url.to_owned(),
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct SearchPageResult {
@@ -282,26 +417,54 @@ struct HostState {
     stdout: String,
     partial_results: Vec<Vec<u8>>,
     defaults: HashMap<String, Vec<u8>>,
-    /// Set when any network request during this invocation came back as a
-    /// Cloudflare interstitial ("Just a moment…" / Turnstile challenge). A
-    /// headless HTTP client cannot solve the JavaScript challenge, so the
-    /// source parses the challenge HTML as its expected JSON/HTML payload and
-    /// fails with an opaque decode error. Remembering that we saw the challenge
-    /// lets us turn that opaque failure into an actionable `CLOUDFLARE_CHALLENGE`
-    /// code instead of a raw `JsonParseError`.
-    cloudflare_challenge: bool,
+    /// Set to the challenged URL when any network request during this
+    /// invocation came back as a Cloudflare interstitial ("Just a moment…" /
+    /// Turnstile challenge). A headless HTTP client cannot solve the JavaScript
+    /// challenge, so the source parses the challenge HTML as its expected
+    /// JSON/HTML payload and fails with an opaque decode error. Remembering
+    /// the challenge lets us turn that opaque failure into an actionable
+    /// `CLOUDFLARE_CHALLENGE` (+ `challengeUrl`) instead of a raw
+    /// `JsonParseError`, and the caller can solve it in a WebView and retry.
+    cloudflare_challenge: Option<String>,
+    /// Shared HTTP client (cookie jar + identity) for every request this
+    /// invocation makes. See [`NetworkSession::client`].
+    client: reqwest::blocking::Client,
+    /// User-Agent applied when the source did not set its own.
+    user_agent: reqwest::header::HeaderValue,
+    /// Tail of `METHOD url -> status (bytes)` lines, see [`NET_LOG_LIMIT`].
+    net_log: Vec<String>,
 }
 
 impl HostState {
-    fn new(defaults: HashMap<String, Vec<u8>>) -> Self {
-        Self {
+    fn new(defaults: HashMap<String, Vec<u8>>, session: &NetworkSession) -> Result<Self> {
+        Ok(Self {
             memory: None,
             descriptors: HashMap::new(),
             next_descriptor: 1,
             stdout: String::new(),
             partial_results: Vec::new(),
             defaults,
-            cloudflare_challenge: false,
+            cloudflare_challenge: None,
+            client: session.client()?,
+            user_agent: session.user_agent(),
+            net_log: Vec::new(),
+        })
+    }
+
+    fn log_net(&mut self, line: String) {
+        if self.net_log.len() >= NET_LOG_LIMIT {
+            self.net_log.remove(0);
+        }
+        self.net_log.push(line);
+    }
+
+    /// Diagnostic suffix for opaque source failures; empty when the source
+    /// never touched the network (so pure decode errors stay unchanged).
+    fn net_log_suffix(&self) -> String {
+        if self.net_log.is_empty() {
+            String::new()
+        } else {
+            format!("\nnetwork: {}", self.net_log.join("; "))
         }
     }
 
@@ -536,11 +699,7 @@ fn method_from_code(value: i32) -> Option<Method> {
 /// deployments omit that header) we look for the challenge markup, but only when
 /// the status and `server` header already point at Cloudflare, so a source that
 /// legitimately returns a 403/503 JSON body is never misclassified.
-fn is_cloudflare_challenge(
-    status: u16,
-    headers: &reqwest::header::HeaderMap,
-    data: &[u8],
-) -> bool {
+fn is_cloudflare_challenge(status: u16, headers: &reqwest::header::HeaderMap, data: &[u8]) -> bool {
     if headers
         .get("cf-mitigated")
         .and_then(|value| value.to_str().ok())
@@ -579,17 +738,14 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
         return -4;
     };
     if !request.headers.contains_key(reqwest::header::USER_AGENT) {
-        request.headers.insert(
-            reqwest::header::USER_AGENT,
-            reqwest::header::HeaderValue::from_static(DEFAULT_USER_AGENT),
-        );
+        request
+            .headers
+            .insert(reqwest::header::USER_AGENT, state.user_agent.clone());
     }
-    let client = match reqwest::blocking::Client::builder().build() {
-        Ok(client) => client,
-        Err(_) => return -10,
-    };
-    let mut builder = client
-        .request(request.method.clone(), url)
+    let method = request.method.clone();
+    let mut builder = state
+        .client
+        .request(method.clone(), url.clone())
         .headers(request.headers.clone());
     if let Some(body) = request.body.clone() {
         builder = builder.body(body);
@@ -600,25 +756,49 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
     {
         builder = builder.timeout(std::time::Duration::from_secs_f64(timeout));
     }
-    let Ok(response) = builder.send() else {
-        return -10;
+    let response = match builder.send() {
+        Ok(response) => response,
+        Err(error) => {
+            state.log_net(format!("{method} {} -> {error}", loggable_url(&url)));
+            return -10;
+        }
     };
     let final_url = response.url().to_string();
     let status = response.status().as_u16();
     let headers = response.headers().clone();
-    let Ok(data) = response.bytes() else {
-        return -10;
+    let data = match response.bytes() {
+        Ok(data) => data,
+        Err(error) => {
+            state.log_net(format!(
+                "{method} {} -> {status} {error}",
+                loggable_url(&url)
+            ));
+            return -10;
+        }
     };
     let cloudflare_challenge = is_cloudflare_challenge(status, &headers, &data);
+    state.log_net(format!(
+        "{method} {} -> {status} ({} bytes){}",
+        loggable_url(&final_url),
+        data.len(),
+        if cloudflare_challenge {
+            " [cloudflare challenge]"
+        } else {
+            ""
+        }
+    ));
+    if cloudflare_challenge && state.cloudflare_challenge.is_none() {
+        state.cloudflare_challenge = Some(final_url.clone());
+    }
+    let Some(StoreItem::Request(request)) = state.descriptors.get_mut(&rid) else {
+        return -1;
+    };
     request.response = Some(NetResponse {
         url: final_url,
         status,
         headers,
         data: data.to_vec(),
     });
-    if cloudflare_challenge {
-        state.cloudflare_challenge = true;
-    }
     0
 }
 
@@ -1839,12 +2019,16 @@ struct EmbeddedRuntime {
 }
 
 impl EmbeddedRuntime {
-    fn load(wasm: &[u8], defaults: HashMap<String, Vec<u8>>) -> Result<Self> {
+    fn load(
+        wasm: &[u8],
+        defaults: HashMap<String, Vec<u8>>,
+        session: &NetworkSession,
+    ) -> Result<Self> {
         let engine = Engine::default();
         let module = Module::new(&engine, wasm).context("failed to parse Aidoku WebAssembly")?;
         let mut linker = Linker::new(&engine);
         register_imports(&mut linker)?;
-        let mut store = Store::new(&engine, HostState::new(defaults));
+        let mut store = Store::new(&engine, HostState::new(defaults, session)?);
         let instance = linker
             .instantiate_and_start(&mut store, &module)
             .context("failed to instantiate Aidoku WebAssembly")?;
@@ -1885,14 +2069,15 @@ impl EmbeddedRuntime {
 
     fn take_result<T: DeserializeOwned>(&mut self, pointer: i32) -> Result<T> {
         if pointer <= 0 {
-            if self.store.data().cloudflare_challenge {
-                bail!("Cloudflare challenge blocked this source");
+            if let Some(url) = &self.store.data().cloudflare_challenge {
+                return Err(CloudflareChallenge { url: url.clone() }.into());
             }
             let log = self.store.data().stdout.trim();
+            let network = self.store.data().net_log_suffix();
             if log.is_empty() {
-                bail!("Aidoku source returned error code {pointer}");
+                bail!("Aidoku source returned error code {pointer}{network}");
             }
-            bail!("Aidoku source returned error code {pointer}: {log}");
+            bail!("Aidoku source returned error code {pointer}: {log}{network}");
         }
         let header = read_u32(&self.store, self.memory, pointer)? as i32;
         let result = if header == -1 {
@@ -1923,8 +2108,10 @@ impl EmbeddedRuntime {
             .context("Aidoku source does not export free_result")?;
         free.call(&mut self.store, pointer)
             .context("Aidoku source failed to free its result")?;
-        if result.is_err() && self.store.data().cloudflare_challenge {
-            bail!("Cloudflare challenge blocked this source");
+        if result.is_err()
+            && let Some(url) = &self.store.data().cloudflare_challenge
+        {
+            return Err(CloudflareChallenge { url: url.clone() }.into());
         }
         result
     }
@@ -2094,7 +2281,8 @@ fn execute(request: &Value) -> Result<Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("missing Aidoku packagePath"))?;
     let package = AixPackage::open(package_path)?;
-    let mut runtime = EmbeddedRuntime::load(&package.wasm, package.defaults.clone())?;
+    let session = NetworkSession::from_request(request)?;
+    let mut runtime = EmbeddedRuntime::load(&package.wasm, package.defaults.clone(), &session)?;
     let source = package.manifest["info"].clone();
     match command {
         "inspect" => Ok(json!({
@@ -2192,28 +2380,38 @@ pub fn invoke_json(input: &str) -> String {
     match response {
         Ok(value) => serde_json::to_string(&value)
             .unwrap_or_else(|error| json!({"error": error.to_string()}).to_string()),
-        Err(error) => {
-            let message = format!("{error:#}");
-            let code = if message.contains("Cloudflare challenge")
-                || message.contains("CF challenge")
-            {
-                "CLOUDFLARE_CHALLENGE"
-            } else if message.contains("unknown import")
-                || message.contains("imported function type mismatch")
-                || message.contains("failed to instantiate Aidoku WebAssembly")
-            {
-                "UNSUPPORTED_IMPORT"
-            } else if message.contains("Aidoku package")
-                || message.contains("Payload/")
-                || message.contains("source manifest")
-            {
-                "INVALID_PACKAGE"
-            } else {
-                "RUNTIME_FAILED"
-            };
-            json!({"code": code, "error": message}).to_string()
-        }
+        Err(error) => error_response(&error),
     }
+}
+
+/// Maps a failed invocation to the `{code, error[, challengeUrl]}` envelope the
+/// Swift bridge forwards as `FlutterError(code, message, details)`.
+fn error_response(error: &anyhow::Error) -> String {
+    let message = format!("{error:#}");
+    if let Some(challenge) = error.downcast_ref::<CloudflareChallenge>() {
+        return json!({
+            "code": "CLOUDFLARE_CHALLENGE",
+            "error": message,
+            "challengeUrl": challenge.url,
+        })
+        .to_string();
+    }
+    let code = if message.contains("Cloudflare challenge") || message.contains("CF challenge") {
+        "CLOUDFLARE_CHALLENGE"
+    } else if message.contains("unknown import")
+        || message.contains("imported function type mismatch")
+        || message.contains("failed to instantiate Aidoku WebAssembly")
+    {
+        "UNSUPPORTED_IMPORT"
+    } else if message.contains("Aidoku package")
+        || message.contains("Payload/")
+        || message.contains("source manifest")
+    {
+        "INVALID_PACKAGE"
+    } else {
+        "RUNTIME_FAILED"
+    };
+    json!({"code": code, "error": message}).to_string()
 }
 
 #[unsafe(no_mangle)]
@@ -2268,6 +2466,101 @@ mod tests {
     }
 
     #[test]
+    fn network_session_is_optional_and_defaults_to_no_cookies() {
+        let session = NetworkSession::from_request(&json!({"command": "search"})).unwrap();
+        assert!(session.cookies.is_empty());
+        assert_eq!(session.user_agent(), DEFAULT_USER_AGENT);
+        // `null` is what the Dart codec sends for an omitted optional field.
+        let session = NetworkSession::from_request(&json!({"network": null})).unwrap();
+        assert!(session.cookies.is_empty());
+    }
+
+    #[test]
+    fn network_session_takes_the_caller_identity_and_cookies() {
+        let session = NetworkSession::from_request(&json!({
+            "network": {
+                "userAgent": "Mozilla/5.0 (iPhone) Safari/604.1",
+                "cookies": [
+                    {"name": "cf_clearance", "value": "abc", "domain": ".mangafire.to", "secure": true},
+                    {"name": "", "value": "ignored", "domain": "mangafire.to"},
+                    {"name": "orphan", "value": "1", "domain": ""}
+                ]
+            }
+        }))
+        .unwrap();
+        assert_eq!(session.user_agent(), "Mozilla/5.0 (iPhone) Safari/604.1");
+        let rendered = session
+            .cookies
+            .iter()
+            .filter_map(NetworkCookie::set_cookie)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rendered.len(),
+            1,
+            "blank name / blank domain must be dropped"
+        );
+        let (url, header) = &rendered[0];
+        assert_eq!(url.as_str(), "https://mangafire.to/");
+        assert_eq!(
+            header,
+            "cf_clearance=abc; Domain=mangafire.to; Path=/; Secure"
+        );
+        // A blank / whitespace user agent falls back to the default instead of
+        // sending an empty header.
+        let blank = NetworkSession::from_request(&json!({"network": {"userAgent": "  "}})).unwrap();
+        assert_eq!(blank.user_agent(), DEFAULT_USER_AGENT);
+        // Malformed session payloads are a caller bug and must not be silently
+        // downgraded to "no cookies" (that would re-introduce the challenge loop).
+        assert!(NetworkSession::from_request(&json!({"network": {"cookies": "nope"}})).is_err());
+    }
+
+    #[test]
+    fn cloudflare_error_keeps_its_challenge_url_through_context_layers() {
+        let error = anyhow::Error::from(CloudflareChallenge {
+            url: "https://mangafire.to/filter?keyword=x".to_owned(),
+        })
+        .context("Aidoku search failed");
+        let response: Value = serde_json::from_str(&error_response(&error)).unwrap();
+        assert_eq!(response["code"], "CLOUDFLARE_CHALLENGE");
+        assert_eq!(
+            response["challengeUrl"],
+            "https://mangafire.to/filter?keyword=x"
+        );
+        assert!(
+            response["error"]
+                .as_str()
+                .unwrap()
+                .contains("Cloudflare challenge blocked this source")
+        );
+        // Other failures keep the plain envelope without a challenge URL.
+        let plain: Value = serde_json::from_str(&error_response(&anyhow!(
+            "Aidoku source returned error code -1"
+        )))
+        .unwrap();
+        assert_eq!(plain["code"], "RUNTIME_FAILED");
+        assert!(plain.get("challengeUrl").is_none());
+    }
+
+    #[test]
+    fn network_log_keeps_a_bounded_tail_and_strips_query_tokens() {
+        let mut state = HostState::new(HashMap::new(), &NetworkSession::default()).unwrap();
+        assert_eq!(state.net_log_suffix(), "");
+        for index in 0..(NET_LOG_LIMIT + 3) {
+            state.log_net(format!("GET https://example.test/{index} -> 200 (1 bytes)"));
+        }
+        assert_eq!(state.net_log.len(), NET_LOG_LIMIT);
+        assert!(
+            state.net_log[0].contains("/3 ->"),
+            "oldest entries are dropped first"
+        );
+        assert!(state.net_log_suffix().starts_with("\nnetwork: "));
+        assert_eq!(
+            loggable_url("https://cdn.example/img.jpg?sig=secret&exp=1#frag"),
+            "https://cdn.example/img.jpg"
+        );
+    }
+
+    #[test]
     fn detects_cloudflare_challenge_by_mitigated_header() {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("cf-mitigated", "challenge".parse().unwrap());
@@ -2292,11 +2585,19 @@ mod tests {
         // no challenge markup) must never be misread as a challenge.
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::SERVER, "nginx".parse().unwrap());
-        assert!(!is_cloudflare_challenge(403, &headers, br#"{"error":"forbidden"}"#));
+        assert!(!is_cloudflare_challenge(
+            403,
+            &headers,
+            br#"{"error":"forbidden"}"#
+        ));
         // Cloudflare-served but a normal 200 JSON payload is fine too.
         let mut cf_headers = reqwest::header::HeaderMap::new();
         cf_headers.insert(reqwest::header::SERVER, "cloudflare".parse().unwrap());
-        assert!(!is_cloudflare_challenge(200, &cf_headers, br#"{"data":[]}"#));
+        assert!(!is_cloudflare_challenge(
+            200,
+            &cf_headers,
+            br#"{"data":[]}"#
+        ));
     }
 
     #[test]
@@ -2412,7 +2713,8 @@ mod tests {
             .unwrap_or_else(|_| "Sanagi no Heart".to_owned());
         let package = AixPackage::open(path).expect("open live Aidoku package");
         let mut runtime =
-            EmbeddedRuntime::load(&package.wasm, package.defaults).expect("load live source");
+            EmbeddedRuntime::load(&package.wasm, package.defaults, &NetworkSession::default())
+                .expect("load live source");
         let search = runtime.search(Some(&query), 1).expect("search live source");
         assert!(
             search
@@ -2464,7 +2766,9 @@ mod tests {
             }
             let package = AixPackage::open(&path)
                 .unwrap_or_else(|error| panic!("open {}: {error:#}", path.display()));
-            if let Err(error) = EmbeddedRuntime::load(&package.wasm, package.defaults) {
+            if let Err(error) =
+                EmbeddedRuntime::load(&package.wasm, package.defaults, &NetworkSession::default())
+            {
                 let engine = Engine::default();
                 let module =
                     Module::new(&engine, &package.wasm[..]).unwrap_or_else(|module_error| {

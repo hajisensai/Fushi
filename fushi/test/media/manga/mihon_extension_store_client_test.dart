@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 
 void main() {
   group('Mihon extension repositories', () {
@@ -423,6 +425,216 @@ void main() {
               ),
         ),
       );
+    });
+  });
+
+  // BUG-1875：仓库索引 / 扩展列表 / APK 几乎全在 GitHub raw / release 直链上，GFW
+  // 机器直连 github.com 吃满 20s 连接超时后整轮失败，而 app 早有一份对这类直链有效
+  // 的镜像名单从没在这里用上。
+  group('GitHub mirror fallback', () {
+    const String direct = 'https://github.com/o/r/raw/repo/index.json';
+    const String firstMirror = 'https://ghfast.top/$direct';
+    final String repository = jsonEncode(<String, Object?>{
+      'name': 'Mirrored repository',
+      'badgeLabel': 'Mirror',
+      'signingKey': 'aabb',
+      'extensionList': <String, Object?>{'extensions': <Object?>[]},
+    });
+
+    test('direct socket failure → first mirror serves the index', () async {
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == direct) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          if (request.url.toString() == firstMirror) {
+            return http.Response(repository, HttpStatus.ok);
+          }
+          fail('unexpected request ${request.url}');
+        }),
+      );
+      addTearDown(client.close);
+
+      final MihonStoreFetchResult result = await client.fetchStore(direct);
+
+      expect(result.store!.name, 'Mirrored repository');
+      expect(requested, <String>[direct, firstMirror]);
+    });
+
+    test('http.ClientException from IOClient also counts as transport failure',
+        () async {
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == direct) {
+            throw http.ClientException('connection closed', request.url);
+          }
+          return http.Response(repository, HttpStatus.ok);
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(
+        (await client.fetchStore(direct)).store!.name,
+        'Mirrored repository',
+      );
+      expect(requested, <String>[direct, firstMirror]);
+    });
+
+    test('a mirror that answers 404 is skipped, the next mirror still serves',
+        () async {
+      // 公共 gh 代理对存在的资源乱返 404/403 是常态：镜像的 HTTP 错误只是
+      // 「换下一个」，不能像直连 404 那样被当成权威结论。
+      const String secondMirror = 'https://gh-proxy.com/$direct';
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == direct) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          if (request.url.toString() == firstMirror) {
+            return http.Response('', HttpStatus.notFound);
+          }
+          if (request.url.toString() == secondMirror) {
+            return http.Response(repository, HttpStatus.ok);
+          }
+          fail('unexpected request ${request.url}');
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(
+        (await client.fetchStore(direct)).store!.name,
+        'Mirrored repository',
+      );
+      expect(requested, <String>[direct, firstMirror, secondMirror]);
+    });
+
+    test('direct 404 is final — mirrors are never asked', () async {
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          return http.Response('', HttpStatus.notFound);
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore(direct),
+        throwsA(
+          isA<MihonRuntimeException>().having(
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'STORE_HTTP_404',
+          ),
+        ),
+      );
+      expect(requested, <String>[direct]);
+    });
+
+    test('non-GitHub host has no mirrors: failure propagates after 1 request',
+        () async {
+      int requests = 0;
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requests += 1;
+          throw const SocketException('unreachable');
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore('https://repo.example/index.json'),
+        throwsA(isA<SocketException>()),
+      );
+      expect(requests, 1);
+    });
+
+    test('every candidate down → the direct error is rethrown, not the last',
+        () async {
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == direct) {
+            throw const SocketException('direct timed out');
+          }
+          throw SocketException('Failed host lookup: ${request.url.host}');
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore(direct),
+        throwsA(
+          isA<SocketException>().having(
+            (SocketException e) => e.message,
+            'message',
+            'direct timed out',
+          ),
+        ),
+      );
+      expect(requested.length, 1 + kGitHubMirrorPrefixes.length);
+      expect(requested.first, direct);
+    });
+
+    test('302 hop to raw.githubusercontent.com gets its own fallback',
+        () async {
+      const String rawDirect =
+          'https://raw.githubusercontent.com/o/r/repo/index.json';
+      const String rawMirror = 'https://ghfast.top/$rawDirect';
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          switch (request.url.toString()) {
+            case direct:
+              return http.Response(
+                '',
+                HttpStatus.found,
+                headers: <String, String>{
+                  HttpHeaders.locationHeader: rawDirect,
+                },
+              );
+            case rawDirect:
+              throw TimeoutException('no bytes');
+            case rawMirror:
+              return http.Response(repository, HttpStatus.ok);
+          }
+          fail('unexpected request ${request.url}');
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(
+        (await client.fetchStore(direct)).store!.name,
+        'Mirrored repository',
+      );
+      expect(requested, <String>[direct, rawDirect, rawMirror]);
+    });
+
+    test('downloadApk inherits the same fallback', () async {
+      const String apk = 'https://github.com/o/r/releases/download/v1/x.apk';
+      const String apkMirror = 'https://ghfast.top/$apk';
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == apk) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          return http.Response.bytes(<int>[1, 2, 3], HttpStatus.ok);
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(await client.downloadApk(apk), <int>[1, 2, 3]);
+      expect(requested, <String>[apk, apkMirror]);
     });
   });
 }
