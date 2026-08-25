@@ -100,4 +100,12 @@ await Promise（头两轮的「失败」全是假的）；`Directory.systemTemp`
   「bound is deliberate — a dictionary frame owns popup.js, observers and **decoded
   fonts**」——字体改走 URL 后这条理由变弱，池可以再评估。
 - `FushiDicts.instance.lookup` 同步跑在主 isolate（`app_model.dart:5051`），无 compute。
+  **已调查，不建议顺手改**：引擎自己的源码（`native/fushidicts/fushidicts_src/` +
+  `fushidicts_ffi.cpp`）里**没有任何 mutex / std::thread / pthread**（全仓命中的并发原语
+  都在 vendored 的 glaze 里），即它是无内部同步的单线程设计——多个 isolate 拿同一个
+  handle 并发查询会直接踩共享状态。已有先例 `FushiDicts.importDictionary`
+  （`fushidicts.dart:527`）之所以能 `Isolate.run`，是因为它是 **static、不需要 handle**，
+  在新 isolate 里自建 bindings；`lookup` 需要主 isolate 建的 handle，情况完全不同。
+  唯一安全的形态是**单个专用查词 isolate 串行化**，但那要把引擎 handle 的所有权整体
+  迁过去（牵动 AppModel 初始化与所有同步调用点），是独立的架构改动，应单独立项。
 - `popup.js` masonry 在 forEach 里写 6 个样式再读 `offsetHeight`，每张卡片一次强制同步布局。
