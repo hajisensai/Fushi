@@ -170,6 +170,15 @@ target_include_directories(fushi_voice_session_reuse_test PRIVATE "include")
 target_compile_definitions(fushi_voice_session_reuse_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_voice_session_reuse_test COMMAND fushi_voice_session_reuse_test)
 
+# ready 旧映射的 resident DLL 身份门：不启动/注入游戏，只验证路径与摘要的 fail-closed
+# 判定。Fushi 更新后旧 DLL 仍驻留时，injector 不得再误报 reuse_ready。
+add_executable(fushi_hook_module_identity_test
+  "tests/hook_module_identity_test.cpp"
+)
+target_include_directories(fushi_hook_module_identity_test PRIVATE "include")
+target_compile_definitions(fushi_hook_module_identity_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_hook_module_identity_test COMMAND fushi_hook_module_identity_test)
+
 # v16 injected WASAPI loopback policy: pure ABI/publication/lifecycle reducer
 # coverage. It never opens an audio endpoint or starts a game and runs in both
 # Win32/x64 configurations.

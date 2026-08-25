@@ -28,7 +28,9 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
         t.game_hook_reason_hook_dll_missing,
       GalHookInjectorFailure.gameExeMissing =>
         t.game_hook_reason_game_exe_missing,
-      GalHookInjectorFailure.staleSession => t.game_hook_reason_stale_session,
+      GalHookInjectorFailure.staleSession ||
+      GalHookInjectorFailure.residentHookMismatch =>
+        t.game_hook_reason_stale_session,
       GalHookInjectorFailure.readyTimeout => t.game_hook_reason_ready_timeout,
       GalHookInjectorFailure.injectionFailed =>
         t.game_hook_reason_injection_failed,

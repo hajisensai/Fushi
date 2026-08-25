@@ -105,7 +105,7 @@ void main() {
   });
 
   test('③ 移动事件仍被纯比较挡在所有系统调用之前（BUG-1048/1077 快路不回退）', () {
-    final int firstCompare = hookProc.indexOf('const bool is_click =');
+    final int firstCompare = hookProc.indexOf('const bool is_button_down =');
     final int firstSyscall = hookProc.indexOf('g_target.load');
     expect(firstCompare, greaterThan(0));
     expect(firstSyscall, greaterThan(firstCompare),

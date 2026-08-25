@@ -13,6 +13,7 @@ enum class LaunchFailureReason {
   kNone = 0,
   kBitnessMismatch,
   kStaleSession,
+  kResidentHookMismatch,
   kSharedMemoryUnavailable,
   kInjectionFailed,
   kReadyTimeout,
@@ -32,6 +33,8 @@ inline const char* LaunchFailureToken(LaunchFailureReason reason) {
       return "bitnessMismatch";
     case LaunchFailureReason::kStaleSession:
       return "staleSession";
+    case LaunchFailureReason::kResidentHookMismatch:
+      return "residentHookMismatch";
     case LaunchFailureReason::kSharedMemoryUnavailable:
       return "sharedMemoryUnavailable";
     case LaunchFailureReason::kInjectionFailed:

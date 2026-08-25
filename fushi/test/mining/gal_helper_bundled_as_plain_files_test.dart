@@ -16,8 +16,16 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart';
 ///
 /// 本文件钉住这条链路上三个「一改就回归」的点。
 void main() {
-  final File script =
-      File('../native/galgame_hook/tools/install_into_bundle.ps1');
+  final File script = File(
+    '../native/galgame_hook/tools/install_into_bundle.ps1',
+  );
+  final File buildScript = File(
+    '../native/galgame_hook/tools/build_distribution.ps1',
+  );
+  final File fingerprintScript = File(
+    '../native/galgame_hook/tools/helper_source_fingerprint.ps1',
+  );
+  final File windowsCmake = File('windows/CMakeLists.txt');
   final File iss = File('windows/installer/fushi.iss');
   final List<File> workflows = <File>[
     File('../.github/workflows/release-desktop.yml'),
@@ -25,7 +33,14 @@ void main() {
   ];
 
   setUpAll(() {
-    for (final File f in <File>[script, iss, ...workflows]) {
+    for (final File f in <File>[
+      script,
+      buildScript,
+      fingerprintScript,
+      windowsCmake,
+      iss,
+      ...workflows,
+    ]) {
       expect(f.existsSync(), isTrue, reason: '守卫锚点文件不存在：${f.path}');
     }
   });
@@ -37,16 +52,18 @@ void main() {
       test('$arch 必需文件清单与 galgameHelperRequiredFiles 逐条一致', () {
         final String src = script.readAsStringSync();
         final int start = src.indexOf("'$arch' = @(");
-        expect(start, greaterThanOrEqualTo(0),
-            reason: '脚本里找不到 $arch 的清单块，守卫锚点失效');
+        expect(
+          start,
+          greaterThanOrEqualTo(0),
+          reason: '脚本里找不到 $arch 的清单块，守卫锚点失效',
+        );
         final int end = src.indexOf(')', start);
         expect(end, greaterThan(start));
         final String block = src.substring(start, end);
 
-        final List<String> fromScript = RegExp(r"'([^']+\.[A-Za-z0-9]+)'")
-            .allMatches(block)
-            .map((RegExpMatch m) => m.group(1)!)
-            .toList();
+        final List<String> fromScript = RegExp(
+          r"'([^']+\.[A-Za-z0-9]+)'",
+        ).allMatches(block).map((RegExpMatch m) => m.group(1)!).toList();
         // classdata.tpk / COPYING 之类没有常规扩展名的条目也要覆盖到，
         // 用「引号内不含空格且不是 arch 名」再兜一遍，避免正则漏项导致假绿。
         final List<String> allQuoted = RegExp(r"'([^']+)'")
@@ -58,7 +75,8 @@ void main() {
         expect(
           allQuoted..sort(),
           equals(galgameHelperRequiredFiles(arch).toList()..sort()),
-          reason: 'install_into_bundle.ps1 的 $arch 清单与 Dart 侧不一致：'
+          reason:
+              'install_into_bundle.ps1 的 $arch 清单与 Dart 侧不一致：'
               '构建期校验会漏检或误报，用户装到残缺 helper 才发现',
         );
         // 交叉确认上面的宽松正则确实覆盖了带扩展名的那批（防两个正则一起写错）。
@@ -80,24 +98,155 @@ void main() {
         expect(
           RegExp(r"galgame_helper'").hasMatch(src),
           isFalse,
-          reason: '${wf.path} 又在随包发 zip 归档：'
+          reason:
+              '${wf.path} 又在随包发 zip 归档：'
               '磁盘上重新出现「需要与本体同步的第二份副本」，正是 BUG-1449 要消灭的形态',
         );
       });
     }
   });
 
+  test('本地 Windows 构建同样走普通文件安装且无新 dist 时清旧 helper (BUG-1868)', () {
+    final String src = windowsCmake.readAsStringSync();
+    final int start = src.indexOf('# === galgame hook helper 随包普通文件');
+    final int end = src.indexOf('# === Magpie', start);
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '找不到 galgame helper CMake 段',
+    );
+    expect(end, greaterThan(start), reason: '找不到 galgame helper CMake 段结束');
+    final String block = src.substring(start, end);
+
+    expect(block, contains('install_into_bundle.ps1'));
+    expect(block, contains('-AllowMissingDistribution'));
+    expect(
+      block,
+      isNot(contains('install(FILES')),
+      reason: '本地构建又只复制 zip：增量 bundle 会继续保留旧 voice_hook plain files',
+    );
+
+    final String installer = script.readAsStringSync();
+    expect(
+      installer,
+      contains("Join-Path \$BundleDirectory 'galgame_helper'"),
+      reason: '旧 zip 目录不清理时仍可在运行期把旧 helper 回填回来',
+    );
+    expect(
+      installer,
+      contains("Join-Path \$BundleDirectory 'voice_hook'"),
+      reason: '可选 dist 缺失时必须清掉增量 bundle 里的旧 helper',
+    );
+    expect(installer, contains('if (-not \$AllowMissingDistribution)'));
+  });
+
+  test('可选 dist 缺失时真实脚本会删除两份陈旧 helper (BUG-1868)', () async {
+    if (!Platform.isWindows) return;
+
+    final Directory temp = Directory.systemTemp.createTempSync(
+      'fushi_helper_optional_dist_',
+    );
+    addTearDown(() {
+      if (temp.existsSync()) temp.deleteSync(recursive: true);
+    });
+    final Directory bundle = Directory('${temp.path}/bundle')..createSync();
+    final Directory legacy = Directory('${bundle.path}/galgame_helper')
+      ..createSync();
+    final Directory plain = Directory('${bundle.path}/voice_hook/x64')
+      ..createSync(recursive: true);
+    File('${legacy.path}/voice_hook_x64.zip').writeAsStringSync('stale');
+    File('${plain.path}/fushi_voice_hook.dll').writeAsStringSync('stale');
+
+    final ProcessResult result = await Process.run('powershell.exe', <String>[
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      script.absolute.path,
+      '-BundleDirectory',
+      bundle.path,
+      '-DistDirectory',
+      '${temp.path}/missing-dist',
+      '-AllowMissingDistribution',
+    ]);
+
+    expect(
+      result.exitCode,
+      0,
+      reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+    );
+    expect(legacy.existsSync(), isFalse);
+    expect(Directory('${bundle.path}/voice_hook').existsSync(), isFalse);
+  });
+
+  test('完整但源码指纹陈旧的 dist 也不能回填旧 helper (BUG-1868)', () async {
+    if (!Platform.isWindows) return;
+
+    final Directory temp = Directory.systemTemp.createTempSync(
+      'fushi_helper_stale_dist_',
+    );
+    addTearDown(() {
+      if (temp.existsSync()) temp.deleteSync(recursive: true);
+    });
+    final Directory bundle = Directory('${temp.path}/bundle')..createSync();
+    final Directory plain = Directory('${bundle.path}/voice_hook/x64')
+      ..createSync(recursive: true);
+    File('${plain.path}/fushi_voice_hook.dll').writeAsStringSync('stale');
+    final Directory dist = Directory('${temp.path}/dist')..createSync();
+    for (final String arch in <String>['x86', 'x64']) {
+      File('${dist.path}/voice_hook_$arch.zip').writeAsBytesSync(<int>[]);
+      File(
+        '${dist.path}/voice_hook_$arch.zip.sha256',
+      ).writeAsStringSync('0' * 64);
+    }
+    File('${dist.path}/voice_hook_source.sha256').writeAsStringSync('0' * 64);
+
+    final ProcessResult result = await Process.run('powershell.exe', <String>[
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      script.absolute.path,
+      '-BundleDirectory',
+      bundle.path,
+      '-DistDirectory',
+      dist.path,
+      '-AllowMissingDistribution',
+    ]);
+
+    expect(
+      result.exitCode,
+      0,
+      reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+    );
+    expect(Directory('${bundle.path}/voice_hook').existsSync(), isFalse);
+  });
+
+  test('组包与安装必须共享当前源码指纹契约 (BUG-1868)', () {
+    final String build = buildScript.readAsStringSync();
+    final String install = script.readAsStringSync();
+    for (final String source in <String>[build, install]) {
+      expect(source, contains('helper_source_fingerprint.ps1'));
+      expect(source, contains('Get-FushiHelperSourceFingerprint'));
+      expect(source, contains('voice_hook_source.sha256'));
+    }
+  });
+
   test('安装器必须清掉上一版残留的随包归档 (BUG-1449)', () {
     final String src = iss.readAsStringSync();
-    expect(src.contains('[InstallDelete]'), isTrue,
-        reason: 'hibiki.iss 没有 [InstallDelete] 段');
+    expect(
+      src.contains('[InstallDelete]'),
+      isTrue,
+      reason: 'hibiki.iss 没有 [InstallDelete] 段',
+    );
     final int start = src.indexOf('[InstallDelete]');
     final int end = src.indexOf('[Files]', start);
     expect(end, greaterThan(start), reason: '[InstallDelete] 之后应有 [Files]');
     expect(
       src.substring(start, end).contains(r'{app}\galgame_helper'),
       isTrue,
-      reason: '升级时不清掉旧 galgame_helper：用户一旦删过 installed.sha256，'
+      reason:
+          '升级时不清掉旧 galgame_helper：用户一旦删过 installed.sha256，'
           '旧 zip 会把安装器刚放好的新组件回填成旧的，直接复发 BUG-1448',
     );
   });

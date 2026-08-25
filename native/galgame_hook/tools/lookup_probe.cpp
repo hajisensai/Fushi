@@ -51,6 +51,8 @@ const DiagBit kDiagBits[] = {
     {fushi_voice_hook::kLookupDiagClassicProcessCh, "classic_processch_fired"},
     {fushi_voice_hook::kLookupDiagLunaKnownHookReady,
      "luna_known_hook_ready"},
+    {fushi_voice_hook::kLookupDiagSgreDirectInputShieldReady,
+     "sgre_directinput_shield_ready"},
 };
 
 void PrintDiag(uint32_t diag) {

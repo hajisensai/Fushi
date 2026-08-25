@@ -15,6 +15,43 @@ namespace fushi_voice_hook {
 inline constexpr uintptr_t kSgreTextDrawRva = 0x35aa0u;
 inline constexpr uintptr_t kSgreScenarioTextVtableRva = 0x5be330u;
 
+// Exact SGRE Steam x64 mouse-device slot. Static/runtime evidence for the one
+// executable admitted by sgre_profile.h:
+//   CreateDevice(GUID_SysMouse, module + 0xA96E18, ...)
+//   SetDataFormat(c_dfDIMouse2)
+//   GetDeviceState(0x14, ...), vtable slot 9 / byte offset 0x48.
+// This RVA must never become a generic-engine heuristic.
+inline constexpr uintptr_t kSgreDirectInputMouseDeviceRva = 0xA96E18u;
+inline constexpr size_t kSgreDirectInputGetDeviceStateVtableIndex = 9u;
+inline constexpr size_t kSgreDirectInputMouseStateBytes = 20u;
+inline constexpr size_t kSgreDirectInputMouseButtonsOffset = 12u;
+inline constexpr size_t kSgreDirectInputMouseButtonCount = 8u;
+
+// Clear only DIMOUSESTATE2::rgbButtons while a direct lookup popup is
+// published. A local per-button latch survives popup teardown: once a down was
+// hidden from the game, that button stays hidden until the real device state
+// reports its matching up. Movement axes at bytes [0, 12) are never touched.
+// Unsupported state layouts are rejected unchanged because this is an exact
+// profile hook, not a best-effort DirectInput filter.
+inline uint8_t FilterSgreDirectInputMouseButtons(bool shield_active,
+                                                 uint8_t* state,
+                                                 size_t state_bytes,
+                                                 uint8_t latched_buttons) {
+  if (state == nullptr || state_bytes != kSgreDirectInputMouseStateBytes) {
+    return latched_buttons;
+  }
+  for (size_t index = 0; index < kSgreDirectInputMouseButtonCount; ++index) {
+    const uint8_t bit = static_cast<uint8_t>(1u << index);
+    const size_t offset = kSgreDirectInputMouseButtonsOffset + index;
+    const bool down = (state[offset] & 0x80u) != 0;
+    if (shield_active && down) latched_buttons |= bit;
+    const bool suppress = shield_active || (latched_buttons & bit) != 0;
+    if (suppress) state[offset] = 0;
+    if (!down) latched_buttons &= static_cast<uint8_t>(~bit);
+  }
+  return latched_buttons;
+}
+
 inline constexpr int32_t kSgreDesignWidth = 1920;
 inline constexpr int32_t kSgreDesignHeight = 1080;
 inline constexpr float kSgreDialogueOriginX = 320.0f;

@@ -1223,6 +1223,12 @@ void main() {
         ),
         GalHookInjectorFailure.accessDenied,
       );
+      expect(
+        classifyGalHookInjectorFailure(
+          'ERR reason=residentHookMismatch exit=2\n',
+        ),
+        GalHookInjectorFailure.residentHookMismatch,
+      );
     });
 
     test('旧 helper 的人类可读诊断仍能归类（向后兼容）', () {
@@ -1279,20 +1285,26 @@ void main() {
     });
 
     test('只有可能自愈的失败才允许重试', () {
-      // 会自愈：注入竞态 / DLL 加载慢 / 上一局残留。
+      // 会自愈：注入竞态 / DLL 加载慢 / 暂时不可复用的旧映射。
       expect(
         galHookFailureIsRetryable(GalHookInjectorFailure.readyTimeout),
-        isTrue,
-      );
-      expect(
-        galHookFailureIsRetryable(GalHookInjectorFailure.staleSession),
         isTrue,
       );
       expect(
         galHookFailureIsRetryable(GalHookInjectorFailure.handshakeTimeout),
         isTrue,
       );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.staleSession),
+        isTrue,
+      );
       // 不会自愈：重试只会掩盖必须告诉用户的处置。
+      expect(
+        galHookFailureIsRetryable(
+          GalHookInjectorFailure.residentHookMismatch,
+        ),
+        isFalse,
+      );
       expect(
         galHookFailureIsRetryable(GalHookInjectorFailure.accessDenied),
         isFalse,

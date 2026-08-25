@@ -129,7 +129,8 @@ class GlobalLookupWindow {
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
   // measure->resize jitter. Pass <=0 to keep the current size.
-  void Reveal(int width, int height, bool clamp_to_work_area = true);
+  void Reveal(int width, int height, bool clamp_to_work_area = true,
+              HWND consume_outside_owner = nullptr);
   // TODO-867 P3c E1 — reveals/resizes to the nested-stack union bounding box.
   // |dx|/|dy| offset the window from the pending cursor anchor (physical px; the
   // host bbox origin × dpr) so a left/up cascade shifts the window while the root
