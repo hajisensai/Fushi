@@ -495,6 +495,7 @@ class QBittorrentClient {
     String? savePath,
     bool sequentialDownload = false,
     bool firstLastPiecePrio = false,
+    bool startPaused = false,
   }) async {
     if (bytes.isEmpty) return false;
     final http.Response? res = await _request(
@@ -505,6 +506,9 @@ class QBittorrentClient {
         if (savePath != null) 'savepath': savePath,
         if (sequentialDownload) 'sequentialDownload': 'true',
         if (firstLastPiecePrio) 'firstLastPiecePrio': 'true',
+        // qB 4.x 使用 paused，5.x 政名 stopped；同时发送可覆盖两代 WebUI。
+        if (startPaused) 'paused': 'true',
+        if (startPaused) 'stopped': 'true',
       },
       torrentBytes: bytes,
       torrentFileName: fileName,

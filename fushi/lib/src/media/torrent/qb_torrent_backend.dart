@@ -11,6 +11,8 @@ class QbTorrentBackend
         TorrentPauseBackend,
         TorrentDetailBackend,
         TorrentMetainfoBackend,
+        TorrentPausedMetainfoBackend,
+        TorrentBulkFilePriorityBackend,
         TorrentTrackerMutationBackend {
   QbTorrentBackend(
     this._client, {
@@ -101,6 +103,24 @@ class QbTorrentBackend
       category: category,
       sequentialDownload: sequential,
       firstLastPiecePrio: firstLastPiecePrio,
+    );
+    if (added && payload.torrentId != null) {
+      final List<String> trackers = await _subscriptionTrackers();
+      if (trackers.isNotEmpty) await addTrackers(payload.torrentId!, trackers);
+    }
+    return added;
+  }
+
+  @override
+  Future<bool> addTorrentMetainfoPaused(
+    TorrentMetainfoPayload payload, {
+    required String category,
+  }) async {
+    final bool added = await _client.addTorrentFile(
+      payload.bytes,
+      fileName: payload.fileName,
+      category: category,
+      startPaused: true,
     );
     if (added && payload.torrentId != null) {
       final List<String> trackers = await _subscriptionTrackers();
@@ -220,6 +240,20 @@ class QbTorrentBackend
         fileIndexes: <int>[fileIndex],
         priority: _qbPriorityValue(priority),
       );
+
+  @override
+  Future<bool> setFilePriorities(
+    String torrentId,
+    Iterable<int> fileIndexes,
+    TorrentFilePriority priority,
+  ) {
+    final List<int> indexes = fileIndexes.toSet().toList()..sort();
+    return _client.setFilePriority(
+      hash: torrentId,
+      fileIndexes: indexes,
+      priority: _qbPriorityValue(priority),
+    );
+  }
 
   @override
   Future<TorrentSessionStatusInfo?> sessionStatus() =>

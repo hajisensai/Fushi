@@ -79,6 +79,7 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
@@ -3458,6 +3459,8 @@ class AppModel with ChangeNotifier {
         fixedDownloadProxyDirective(after)) {
       return;
     }
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     await reloadVideoDownloadPipelineRuntime();
   }
 
@@ -4259,6 +4262,9 @@ class AppModel with ChangeNotifier {
   MediaDiscoveryService get mediaDiscoveryService =>
       _mediaDiscoveryService ??= MediaDiscoveryService(
         sources: <MediaDiscoverySource>[
+          CoreAudioDiscoverySource(
+            httpClientFactory: createDownloadHttpClient,
+          ),
           NyaaDiscoverySource(
             id: 'nyaa',
             displayName: 'Nyaa',
@@ -5983,6 +5989,10 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _discoveryDownloadQueue?.dispose();
+    _discoveryDownloadQueue = null;
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     _videoDownloadPipelineRuntimeWanted = false;
     await _disposeVideoDownloadPipelineRuntime();
   }
@@ -6044,6 +6054,10 @@ class AppModel with ChangeNotifier {
     unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _discoveryDownloadQueue?.dispose();
+    _discoveryDownloadQueue = null;
+    _mediaDiscoveryService?.close();
+    _mediaDiscoveryService = null;
     _mihonManager?.dispose();
     _mihonManager = null;
     _prefsRepo?.removeListener(notifyListeners);

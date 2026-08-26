@@ -172,6 +172,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   Object? _error;
   int _page = 1;
 
+  /// CoreAudio 需要在点击后下载并解析 `.torrent`；按条目去重，避免连点产生多个
+  /// 同 hash durable 任务。
+  final Set<String> _resolvingTorrentIds = <String>{};
+
   /// 竞态哨兵：晚到的旧请求结果不覆盖新状态。
   int _loadSeq = 0;
 
@@ -330,28 +334,68 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   Future<void> _download(DiscoveryResourceItem item) async {
     final AppModel? appModel = _resolveAppModel();
-    if (appModel == null) return;
+    if (appModel == null || !item.isDownloadable) return;
     switch (item.payloadKind) {
       case DiscoveryPayloadKind.torrent:
-        final DiscoveryPayload? payload = item.payload;
-        if (payload is! DiscoveryTorrentPayload) return;
-        final GenericPushOutcome outcome = await pushGenericMagnet(
-          context: context,
-          appModel: appModel,
-          magnet: payload.magnetUri,
-          contentKind: switch (item.kind) {
-            DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
-            DiscoveryMediaKind.audiobook => AnimeDownloadPlan.kindAudiobook,
-            DiscoveryMediaKind.game => AnimeDownloadPlan.kindGame,
-            DiscoveryMediaKind.manga => AnimeDownloadPlan.kindAuto,
-          },
-        );
-        FushiToast.show(
-          msg: genericPushMessage(outcome),
-          severity: outcome == GenericPushOutcome.ok
-              ? ToastSeverity.success
-              : ToastSeverity.error,
-        );
+        final String resolvingKey = '${item.sourceId}\u0000${item.id}';
+        if (!_resolvingTorrentIds.add(resolvingKey)) return;
+        if (mounted) setState(() {});
+        try {
+          final MediaDiscoverySource? source =
+              appModel.mediaDiscoveryService.sourceById(item.sourceId);
+          if (source == null) return;
+          final DiscoveryPayload payload =
+              item.payload ?? await source.resolvePayload(item);
+          if (!mounted) return;
+          final GenericPushOutcome outcome;
+          if (payload is DiscoveryTorrentPayload) {
+            outcome = await pushGenericMagnet(
+              context: context,
+              appModel: appModel,
+              magnet: payload.magnetUri,
+              contentKind: switch (item.kind) {
+                DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
+                DiscoveryMediaKind.audiobook =>
+                  AnimeDownloadPlan.kindAudiobook,
+                DiscoveryMediaKind.game => AnimeDownloadPlan.kindGame,
+                DiscoveryMediaKind.manga => AnimeDownloadPlan.kindAuto,
+              },
+            );
+          } else if (payload is DiscoverySelectedTorrentPayload) {
+            outcome = await enqueueSelectedDiscoveryTorrent(
+              context: context,
+              appModel: appModel,
+              title: item.title,
+              resourceTitle: payload.resourceTitle,
+              metainfo: payload.metainfo,
+              selectedFileIndexes: payload.selectedFileIndexes,
+              kind: item.kind,
+              importAfterDownload: payload.importAfterDownload,
+              coverUrl: item.coverUrl,
+              metadataProvider: item.sourceId,
+              externalId: item.id,
+            );
+          } else {
+            return;
+          }
+          if (!mounted) return;
+          FushiToast.show(
+            msg: genericPushMessage(outcome),
+            severity: outcome == GenericPushOutcome.ok
+                ? ToastSeverity.success
+                : ToastSeverity.error,
+          );
+        } on Object {
+          if (mounted) {
+            FushiToast.show(
+              msg: genericPushMessage(GenericPushOutcome.pushFailed),
+              severity: ToastSeverity.error,
+            );
+          }
+        } finally {
+          _resolvingTorrentIds.remove(resolvingKey);
+          if (mounted) setState(() {});
+        }
       case DiscoveryPayloadKind.httpFile:
         final bool added = appModel.discoveryDownloadQueue.enqueue(
           item,
@@ -628,8 +672,13 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                   title: Text(entry.title),
                   // 目录条目不带来源名，用户看不出这是哪个站的目录。
                   subtitle: Text(
-                    service.sourceById(entry.sourceId)?.displayName ??
-                        entry.sourceId,
+                    <String>[
+                      service.sourceById(entry.sourceId)?.displayName ??
+                          entry.sourceId,
+                      if (entry.note?.trim().isNotEmpty == true) entry.note!,
+                      if (entry.itemCount != null)
+                        t.media_source_count_manga(n: entry.itemCount!),
+                    ].join(' · '),
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _openFolder(entry),
@@ -643,19 +692,26 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                   title: Text(entry.title),
                   titleMaxLines: 2,
                   subtitle: Text(_subtitleFor(entry, service)),
-                  trailing: queue.isPending(entry)
+                  trailing: _resolvingTorrentIds.contains(
+                            '${entry.sourceId}\u0000${entry.id}',
+                          ) ||
+                          queue.isPending(entry)
                       ? const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : FushiIconButton(
+                      : entry.isDownloadable
+                          ? FushiIconButton(
                           icon: Icons.download_outlined,
                           tooltip: t.anime_download_generic_download,
                           label: t.anime_download_generic_download,
                           onTap: () => unawaited(_download(entry)),
-                        ),
-                  onTap: () => unawaited(_download(entry)),
+                            )
+                          : null,
+                  onTap: entry.isDownloadable
+                      ? () => unawaited(_download(entry))
+                      : null,
                 ),
             },
           if (result != null && result.hasMore)
