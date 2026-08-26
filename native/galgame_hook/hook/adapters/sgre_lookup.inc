@@ -307,10 +307,14 @@ HWND GetValidPublishedSgreDirectInputShieldPopup(HWND game) {
   return popup;
 }
 
-bool IsPublishedSgreDirectInputShieldActive(HWND game) {
-  if (GetValidPublishedSgreDirectInputShieldPopup(game) == nullptr) {
-    return false;
-  }
+// Ready 是注入侧对 host 的握手：detour 真的装上了，host 才被允许发布 popup HWND；
+// health worker 在契约失效时会撤回它。屏蔽一旦生效就是把游戏的鼠标键整片清零，
+// 必须由完整契约背书，不能只看「Window 属性在不在」。
+//
+// 这里只留「读 ready」这一个原语，不再提供 popup+ready 的复合判据：detour 的热路径
+// 已经单独取过 popup HWND（卡外关闭要用它），复合判据会把 owner/class 校验做第二遍，
+// 而且它一旦没人调用就会变成守卫护着的死代码——那正是本次要修掉的形态。
+bool IsSgreDirectInputShieldReadyPublished(HWND game) {
   return reinterpret_cast<uintptr_t>(GetPropW(
              game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty)) ==
          fushi_voice_hook::kSgreDirectInputShieldReadyValue;
@@ -360,7 +364,11 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   const HWND direct_popup =
       GetValidPublishedSgreDirectInputShieldPopup(game);
   const bool bitmap_popup_visible = IsLookupOverlayInputShieldVisible();
-  const bool shield_active = direct_popup != nullptr || bitmap_popup_visible;
+  // direct route 必须过 Ready 握手；bitmap route 是注入侧自己画的卡，进程内可见性
+  // 就是全部真相，没有 host 侧握手可言。两者语义不同，不能折成「有没有卡」一问。
+  const bool direct_shield =
+      direct_popup != nullptr && IsSgreDirectInputShieldReadyPublished(game);
+  const bool shield_active = direct_shield || bitmap_popup_visible;
   const bool lookup_allowed =
       g_sgre_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
       !shield_active && game != nullptr;
@@ -390,8 +398,7 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   }
   const fushi_voice_hook::SgreLookupClickAction click_action =
       fushi_voice_hook::AdvanceSgreLookupClickGesture(
-          primary_down, lookup_allowed, hit_on_press, pointer_valid, pointer.x,
-          pointer.y, fushi_voice_hook::kSgreLookupClickDragThreshold,
+          primary_down, lookup_allowed, hit_on_press, pointer_valid,
           &g_sgre_lookup_click_gesture);
   if (click_action == fushi_voice_hook::SgreLookupClickAction::kBegin) {
     g_sgre_lookup_pending_click = pressed_payload;

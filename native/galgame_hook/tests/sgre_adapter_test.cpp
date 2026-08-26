@@ -108,67 +108,80 @@ int main() {
   fushi_voice_hook::SgreLookupClickGestureState click;
   // Injection/enable may happen while left is already physically held. That
   // half-transaction passes through and only its release arms single-click.
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, true, true, 100, 100, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
          ClickAction::kNone);
   assert(!click.synchronized && click.last_down && !click.active);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, true, true, true, 100, 100, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, true, true,
+                                                        &click) ==
          ClickAction::kNone);
   assert(click.synchronized && !click.last_down);
 
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, true, true, 100, 100, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
          ClickAction::kBegin);
   assert(click.active);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, false, true, 103, 102, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false, true,
+                                                        &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, true, false, true, 103, 102, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false, true,
+                                                        &click) ==
          ClickAction::kSubmit);
   assert(!click.active && !click.last_down);
 
-  // Physical screen movement at the threshold converts the pending lookup to
-  // a consumed drag; an enable/shield transition cancels in the same way.
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, true, true, 200, 200, 6, &click) ==
+  // 命中即承诺：down 已经从游戏的采样里抹掉了，位移**不是**取消理由。曾经的 6px
+  // 拖动阈值会让手抖越界的点击既不查词、也不推进台词（游戏和用户两头空），
+  // 那个特例已被消除——按住期间任意位移，抬起仍必须 kSubmit。
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
          ClickAction::kBegin);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, false, true, 206, 200, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false,
+                                                        true, &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, true, false, true, 206, 200, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false,
+                                                        true, &click) ==
+         ClickAction::kSubmit);
+
+  // 仍然保留的两个取消理由，都是「这次消费本来就不该成立」：查词权限/屏蔽在按住
+  // 期间掉电，或光标位置读不出来。下游本来就会吞掉这次点击，不构成额外损失。
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kBegin);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, false, false,
+                                                        true, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, false, false,
+                                                        true, &click) ==
          ClickAction::kCancel);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, true, true, 300, 300, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
          ClickAction::kBegin);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, false, false, true, 300, 300, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false,
+                                                        false, &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, false, false, true, 300, 300, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false,
+                                                        false, &click) ==
          ClickAction::kCancel);
 
   // A miss is a pass-through transaction. Becoming a hit while the same raw
   // button is held must never start consuming halfway through.
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, false, true, 400, 400, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false, true,
+                                                        &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, true, true, 401, 400, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, true, true, true, 401, 400, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, true, true,
+                                                        &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             true, true, true, false, 500, 500, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, false,
+                                                        &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, true, false, true, 500, 500, 6, &click) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false, true,
+                                                        &click) ==
          ClickAction::kNone);
-  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
-             false, true, true, true, 0, 0, 6, nullptr) ==
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, true, true,
+                                                        nullptr) ==
          ClickAction::kNone);
 
   // The scenario root is positioned in the 1920x1080 design surface, but the

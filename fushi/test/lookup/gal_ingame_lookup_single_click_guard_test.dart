@@ -81,7 +81,7 @@ void main() {
     expect(detour.contains('QueueSgreLookupClickSubmit('), isTrue);
   });
 
-  test('手势先同步完整 up，屏幕位移取消，miss 不会半途开始吞点击', () {
+  test('手势先同步完整 up，命中即承诺（位移不取消），miss 不会半途开始吞点击', () {
     final String gesture = compactCode(
       methodBody(
         header,
@@ -94,9 +94,27 @@ void main() {
       isTrue,
     );
     expect(gesture.contains('button_down&&!state->last_down'), isTrue);
-    expect(gesture.contains('state->down_x=pointer_x'), isTrue);
-    expect(gesture.contains('distance_squared>=threshold_squared'), isTrue);
     expect(gesture.contains('state->cancelled=true'), isTrue);
+    // 命中即承诺：kBegin 那一刻 down 已经从游戏的 DirectInput 采样里抹掉，事后无法
+    // 补发。曾经有过一个 6px 拖动阈值，用户手抖越界就走 kCancel —— down 被吞、查词
+    // 又被取消，游戏和用户两头都拿不到结果（症状：点台词偶尔完全没反应）。该特例
+    // 已消除，这两条禁止型断言防它复活。
+    expect(
+      gesture.contains('down_x') || gesture.contains('down_y'),
+      isFalse,
+      reason: '位移不再是取消理由，按下坐标不该再被记住',
+    );
+    expect(
+      gesture.contains('threshold') || gesture.contains('distance_squared'),
+      isFalse,
+      reason: '拖动阈值是「既不查词也不推进台词」的黑洞来源，不得复活',
+    );
+    // 保留的取消理由只有「这次消费本来就不该成立」：权限/屏蔽掉电、光标读不出来。
+    expect(
+      gesture.contains('!lookup_allowed||!pointer_valid'),
+      isTrue,
+      reason: '仅这两个理由可以取消，且它们下游本来就会吞掉这次点击',
+    );
     expect(
       gesture.indexOf('returnSgreLookupClickAction::kSubmit') >
           gesture.indexOf('state->last_down=false'),

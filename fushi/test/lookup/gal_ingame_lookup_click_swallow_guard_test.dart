@@ -440,10 +440,10 @@ void main() {
         'HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(',
       ),
     );
-    final String active = compactCode(
+    final String readyRead = compactCode(
       methodBody(
         sgreLookupSource,
-        'bool IsPublishedSgreDirectInputShieldActive(',
+        'bool IsSgreDirectInputShieldReadyPublished(',
       ),
     );
     final String validPopup = compactCode(
@@ -530,14 +530,33 @@ void main() {
       reason: '必须先取 raw state，再只处理精确 mouse self + 20-byte 状态',
     );
     expect(
-      active.contains('kSgreDirectInputShieldReadyProperty') &&
-          active.contains(
+      readyRead.contains('kSgreDirectInputShieldReadyProperty') &&
+          detour.contains(
             'GetValidPublishedSgreDirectInputShieldPopup(game)',
           ) &&
           validPopup.contains('GetWindow(popup,GW_OWNER)!=game') &&
           validPopup.contains('FushiGlobalLookupWindow'),
       isTrue,
       reason: '陈旧/伪造 HWND 不得让游戏永久进入输入屏蔽',
+    );
+    // 判据必须取自 detour **实际**用的表达式。此前这条断言取的是
+    // IsPublishedSgreDirectInputShieldActive 的函数体，而 detour 早已改成只看
+    // Window 属性、不再调它——函数零调用者、守卫恒绿，握手被静默拆掉也发现不了。
+    expect(
+      detour.contains(
+        'constbooldirect_shield=direct_popup!=nullptr&&'
+        'IsSgreDirectInputShieldReadyPublished(game);',
+      ),
+      isTrue,
+      reason: 'direct route 的屏蔽必须过 Ready 握手，不能只看 Window 属性在不在',
+    );
+    expect(
+      detour.contains(
+        'constboolshield_active=direct_shield||bitmap_popup_visible;',
+      ),
+      isTrue,
+      reason: 'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
+          '两条 route 的语义不同，不得折成「有没有卡」一问',
     );
     expect(
       filter.contains('kSgreDirectInputMouseButtonsOffset+index') &&

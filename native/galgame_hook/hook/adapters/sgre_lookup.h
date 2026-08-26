@@ -28,7 +28,6 @@ inline constexpr size_t kSgreDirectInputMouseButtonsOffset = 12u;
 inline constexpr size_t kSgreDirectInputMouseButtonCount = 8u;
 inline constexpr size_t kSgreLookupPrimaryButtonIndex = 0u;
 inline constexpr uint8_t kSgreLookupPrimaryButtonMask = 0x01u;
-inline constexpr int32_t kSgreLookupClickDragThreshold = 6;
 
 // Clear only DIMOUSESTATE2::rgbButtons while a direct lookup popup is
 // published. A local per-button latch survives popup teardown: once a down was
@@ -69,10 +68,7 @@ struct SgreLookupClickGestureState {
   bool synchronized = false;
   bool last_down = false;
   bool active = false;
-  bool dragged = false;
   bool cancelled = false;
-  int32_t down_x = 0;
-  int32_t down_y = 0;
 };
 
 // DirectInput exposes immediate button state rather than Win32 pointer
@@ -82,17 +78,21 @@ struct SgreLookupClickGestureState {
 // the matching up submits. The caller latches the physical button from kBegin
 // through the matching release so SGRE never observes half of the consumed
 // click.
+// 命中即承诺：kBegin 那一刻 down 就已经从游戏的 DirectInput 采样里抹掉了，事后无法
+// 补发（真让游戏看见 down，台词就推进了、这一行也没了）。所以**位移不是取消理由**——
+// 曾经存在过一个 6px 拖动阈值，用户手抖越过它就走 kCancel：down 被吞、查词又被取消，
+// 游戏和用户两头都拿不到任何结果，症状是「点台词偶尔完全没反应」且不可自解释。
+// 消除这个特例，而不是给它配补发逻辑。
+//
+// 留下的两个取消理由都是「这次消费本来就不该成立」：查词权限/屏蔽在按住期间掉电，
+// 或光标位置读不出来。两者下游本来就会吞掉这次点击，不构成额外损失。
 inline SgreLookupClickAction AdvanceSgreLookupClickGesture(
     bool button_down, bool lookup_allowed, bool hit_on_press,
-    bool pointer_valid, int32_t pointer_x, int32_t pointer_y,
-    int32_t drag_threshold,
-    SgreLookupClickGestureState* state) {
+    bool pointer_valid, SgreLookupClickGestureState* state) {
   if (state == nullptr) return SgreLookupClickAction::kNone;
-  const int32_t threshold = std::max<int32_t>(1, drag_threshold);
   if (!state->synchronized) {
     state->last_down = button_down;
     state->active = false;
-    state->dragged = false;
     state->cancelled = false;
     if (!button_down) state->synchronized = true;
     return SgreLookupClickAction::kNone;
@@ -101,25 +101,14 @@ inline SgreLookupClickAction AdvanceSgreLookupClickGesture(
   if (button_down && !state->last_down) {
     state->last_down = true;
     state->active = lookup_allowed && hit_on_press && pointer_valid;
-    state->dragged = false;
     state->cancelled = false;
-    state->down_x = pointer_x;
-    state->down_y = pointer_y;
     return state->active ? SgreLookupClickAction::kBegin
                          : SgreLookupClickAction::kNone;
   }
 
-  if (state->active && state->last_down) {
-    if (!lookup_allowed || !pointer_valid) {
-      state->cancelled = true;
-    } else {
-      const int64_t delta_x = static_cast<int64_t>(pointer_x) - state->down_x;
-      const int64_t delta_y = static_cast<int64_t>(pointer_y) - state->down_y;
-      const int64_t distance_squared = delta_x * delta_x + delta_y * delta_y;
-      const int64_t threshold_squared =
-          static_cast<int64_t>(threshold) * threshold;
-      if (distance_squared >= threshold_squared) state->dragged = true;
-    }
+  if (state->active && state->last_down &&
+      (!lookup_allowed || !pointer_valid)) {
+    state->cancelled = true;
   }
 
   if (button_down || !state->last_down) {
@@ -127,14 +116,11 @@ inline SgreLookupClickAction AdvanceSgreLookupClickGesture(
   }
 
   state->last_down = false;
-  const bool submit = state->active && !state->dragged &&
-                      !state->cancelled && lookup_allowed && pointer_valid;
+  const bool submit = state->active && !state->cancelled && lookup_allowed &&
+                      pointer_valid;
   const bool cancel = state->active && !submit;
   state->active = false;
-  state->dragged = false;
   state->cancelled = false;
-  state->down_x = 0;
-  state->down_y = 0;
   if (submit) return SgreLookupClickAction::kSubmit;
   return cancel ? SgreLookupClickAction::kCancel
                 : SgreLookupClickAction::kNone;
