@@ -277,14 +277,27 @@ void main() {
   });
 
   test('Esc 优先解锁（最外层沉浸态，排在退全屏 / 退页之前）', () {
+    // BUG-1862：逐级退出的层级表收进 `_dismissTopForegroundLayer` 单点（键盘 Esc /
+    // [PopScope] 系统返回键 / 手柄 B 共用），escape 回调只剩「先关一层，关不动才退全屏
+    // / 退页」。断言的行为没变：锁定态必须在任何退出动作之前被吃掉。
     final int escIdx = src.indexOf('escape: () {');
     expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 回调');
-    final int unlockIdx = src.indexOf('_immersiveLocked.value', escIdx);
+    final int dismissIdx = src.indexOf('_dismissTopForegroundLayer()', escIdx);
     final int fullscreenExitIdx =
         src.indexOf('_exitVideoFullscreen(ctx)', escIdx);
     final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
-    expect(unlockIdx, greaterThanOrEqualTo(0), reason: 'Esc 未在锁定态先解锁');
-    expect(unlockIdx, lessThan(fullscreenExitIdx), reason: 'Esc 解锁必须排在退全屏之前');
-    expect(unlockIdx, lessThan(exitIdx), reason: 'Esc 解锁必须排在退页之前（逐级退出）');
+    expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
+    expect(dismissIdx, lessThan(fullscreenExitIdx),
+        reason: 'Esc 关前台层必须排在退全屏之前');
+    expect(dismissIdx, lessThan(exitIdx), reason: 'Esc 关前台层必须排在退页之前（逐级退出）');
+
+    // 解锁确实还在那张共用层级表里。
+    final int tableIdx = src.indexOf('bool _dismissTopForegroundLayer() {');
+    expect(tableIdx, greaterThanOrEqualTo(0), reason: '缺共用层级表');
+    final int lockGate =
+        src.indexOf('immersiveLocked: _immersiveLocked.value', tableIdx);
+    final int unlockIdx = src.indexOf('_toggleImmersiveLock();', tableIdx);
+    expect(lockGate, greaterThanOrEqualTo(0), reason: '层级表未读锁定态');
+    expect(unlockIdx, greaterThan(lockGate), reason: '层级表未在锁定态解锁');
   });
 }

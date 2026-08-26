@@ -618,3 +618,75 @@ bool isVideoPanelFocusNavButton(GamepadButton button) {
       return false;
   }
 }
+
+/// 页级裸空格覆盖（视频页 `_withPageSpaceOverride`）的单步结论。
+///
+/// 抽成纯谓词的理由与 [isVideoImeSpacePlayPause] / [resolveHoldSpeedKeyTransition]
+/// 一致：`VideoFushiPage` 驱动 media_kit，离屏起不来整页 widget 树，判据留在页面里
+/// 就只能靠「同构副本」测——副本与生产各写各的，改坏一边另一边照样绿。
+enum PageSpaceOverrideDecision {
+  /// 与本层无关：非裸空格 / 带修饰键 / 抬起沿 / 页面还没有 controller（加载态、
+  /// 资源缺失态）。一律 [KeyEventResult.ignored] 原样放行，交回既有解析路径
+  /// （含全局裸空格中和层）。
+  passThrough,
+
+  /// 文本框持焦：**必须放行**，让空格落到 text-input。
+  ///
+  /// 与 [passThrough] 同样映射成 ignored，但语义不同、必须能单独断言：这是 BUG-962
+  /// 立下的契约（全局中和层为此专门加了 `focusedEditableText()` 豁免）。页级覆盖层
+  /// 离焦点更近、先于全局层看到按键，漏掉这条就是把 BUG-962 在页级原样重挖一遍——
+  /// 视频页侧栏里有 mpv.conf 多行框、弹幕屏蔽规则多行框、弹幕手动匹配搜索框
+  /// （初值是含空格的文件名），窗口与全屏两种模式都够得着。
+  yieldToTextInput,
+
+  /// 重复沿：消费掉但**不重复执行**。
+  ///
+  /// 旧实现是 `CallbackShortcuts` + `SingleActivator(space)`，而 [SingleActivator]
+  /// 默认 `includeRepeats: true`（Flutter `shortcuts.dart` 的 `accepts`：
+  /// `event is KeyDownEvent || (includeRepeats && event is KeyRepeatEvent)`），
+  /// 于是长按空格会按 OS 重复率反复 togglePlayPause。这里保留**消费**——不消费就会
+  /// 漏给 `WidgetsApp` 默认的 space→ActivateIntent，长按空格变成连点激活当前焦点
+  /// 控件，那才是真的改手感（全局 `_neutralizeBareSpace` 只吃按下沿，挡不住重复沿）
+  /// ——但不再重复触发播放/暂停。
+  swallowRepeat,
+
+  /// 词典浮层可见：先关顶层浮层，不在浮层后面 play/pause（BUG-924）。
+  dismissPopup,
+
+  /// 播放/暂停（由调用方经沉浸锁门控执行）。
+  togglePlayPause,
+}
+
+/// 页级裸空格覆盖的判据（纯函数，无平台 / 时序副作用，可单测）。
+///
+/// 逐条复刻旧 `SingleActivator(LogicalKeyboardKey.space)` 的匹配面，**只多一条**
+/// [PageSpaceOverrideDecision.yieldToTextInput]、**只少一条**「重复沿也触发」：
+/// - 触发沿：[KeyDownEvent] 或 [KeyRepeatEvent]（抬起沿从来不匹配，保持放行）；
+/// - 逻辑键必须是裸 [LogicalKeyboardKey.space]——IME 改写值走
+///   [isVideoImeSpacePlayPause] 的物理键回退，两条判据互不重叠；
+/// - 修饰键必须**全部未按下**：[SingleActivator] 的 `_shouldAcceptModifiers` 是逐个
+///   精确比对，`Ctrl/Shift/Alt/Meta + Space` 旧实现本就不匹配，这里同样放行。
+///
+/// [hasController] 为 false 时返回 [PageSpaceOverrideDecision.passThrough]，把按键
+/// 交回全局裸空格中和层——与本层上提到 `_wrapVideoGamepadControls` 之前完全一致
+/// （那时本层根本不挂在加载态那条分支上）。
+PageSpaceOverrideDecision decidePageSpaceOverride({
+  required KeyEvent event,
+  required bool hasModifier,
+  required bool hasEditableFocus,
+  required bool hasVisiblePopup,
+  required bool hasController,
+}) {
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    return PageSpaceOverrideDecision.passThrough;
+  }
+  if (event.logicalKey != LogicalKeyboardKey.space) {
+    return PageSpaceOverrideDecision.passThrough;
+  }
+  if (hasModifier) return PageSpaceOverrideDecision.passThrough;
+  if (hasEditableFocus) return PageSpaceOverrideDecision.yieldToTextInput;
+  if (event is KeyRepeatEvent) return PageSpaceOverrideDecision.swallowRepeat;
+  if (hasVisiblePopup) return PageSpaceOverrideDecision.dismissPopup;
+  if (!hasController) return PageSpaceOverrideDecision.passThrough;
+  return PageSpaceOverrideDecision.togglePlayPause;
+}

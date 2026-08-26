@@ -67,8 +67,39 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     Hibiki 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
 //     cleanOnly/resourceOnly 因而仍会录音。request_seq 最后发布请求，applied_seq 最后确认
 //     Stop/Release/线程退出；版本不匹配时 DLL 拒绝映射，旧 helper 不能绕过默认 deny。
-constexpr uint32_t kSharedVersion = 16;
+// v17：在头部最尾追加**本次注入所用 hook DLL 的 SHA-256**（`hook_module_sha256`）。
+//     写者是创建该映射的 injector（只在新建映射、memset 清零之后写一次）；读者是**下一次**
+//     injector——它见到已存在的映射时，拿 header 里这条记录跟本次请求 DLL 现算的摘要比。
+//     为什么磁盘摘要不够：驻留身份判据先比路径，路径不等直接 kPathMismatch，所以能走到
+//     摘要比较时两条路径已经相等；此时若两侧都用 Sha256File 读磁盘，读的是同一个文件，
+//     摘要恒等，kDigestMismatch 永不可达。而这道门要挡的恰恰是「Fushi 自更新把磁盘上那份
+//     DLL 换成新构建、游戏进程里仍驻留旧映像」——路径没变、磁盘上是新文件，磁盘里根本
+//     不含「进程里驻留的是哪个构建」这条信息。它只存在于当初完成注入的那一方，所以必须
+//     由注入者在建映射时留档。纯尾部追加：前面各区偏移逐字节不动。
+constexpr uint32_t kSharedVersion = 17;
 constexpr uint32_t kStableIpcVersion = 1;
+
+// BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
+// Win32 mouse-message 队列。direct galCard 因此需要一条很窄的跨进程发布面：
+//
+//   * injected SGRE adapter 先把 Required 置 1，声明该精确游戏不允许退回已经
+//     证伪的 HHOOK-only 路径；GetDeviceState detour 真正就绪后才最后提交 Ready；
+//   * Fushi 看到 Required 但没有 Ready 时 fail closed；只有 Ready 同时存在才把
+//     当前 direct popup HWND 发布到游戏 HWND；
+//   * detour 只接受仍存在、且 owner 正是游戏 HWND 的该 popup，随后仅清
+//     DIMOUSESTATE2::rgbButtons，绝不碰 lX/lY/lZ。
+//
+// HWND 自带进程崩溃生命周期：Fushi 退出后窗口会被系统销毁，注入侧即使看到陈旧
+// property 也会因 IsWindow/GW_OWNER 校验而 fail open，不会把游戏永久锁死。这里没有
+// 改 SharedHeader 布局，所以不升 kSharedVersion；两端共享名字只是为了杜绝手抄漂移。
+inline constexpr wchar_t kSgreDirectInputShieldReadyProperty[] =
+    L"Fushi.SGRE.DirectInputShield.Ready";
+inline constexpr wchar_t kSgreDirectInputShieldRequiredProperty[] =
+    L"Fushi.SGRE.DirectInputShield.Required";
+inline constexpr wchar_t kSgreDirectInputShieldWindowProperty[] =
+    L"Fushi.SGRE.DirectInputShield.Window";
+inline constexpr uintptr_t kSgreDirectInputShieldReadyValue = 1u;
+inline constexpr uintptr_t kSgreDirectInputShieldRequiredValue = 1u;
 
 // v16 native loopback policy/control ABI. Only the exact value 1 authorises
 // creation of the loopback worker; zero and every unknown value are deny.
@@ -464,6 +495,9 @@ constexpr uint32_t kLookupDiagCardPlainFallback = 0x00100000u;
 // 随后才逐条 InsertHook；同一入口还要叠加原生查词 detour 时，必须等到这一步完成才能稳定链式
 // 安装，不能拿“管道已连上”冒充“目标地址已改写”。
 constexpr uint32_t kLookupDiagLunaKnownHookReady = 0x00200000u;
+// 精确 SGRE profile 的 DirectInput mouse GetDeviceState detour 已装，且 ready
+// property 已发布到当前游戏主窗。它只证明输入盾可被 host 启用，不声称 popup 正显示。
+constexpr uint32_t kLookupDiagSgreDirectInputShieldReady = 0x00400000u;
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
@@ -545,7 +579,7 @@ constexpr uint32_t kLookupFrameHighlightOnly = 0x00000002u;
 // 当前 route；截图完成后 host 通过一张普通 full frame 恢复。hook 必须等 TJS hide/update 成功且
 // 又经过一次 continuous callback 后，才把本帧 seq 写进 lookup_frame_applied_seq。
 constexpr uint32_t kLookupFrameCaptureSuppress = 0x00000004u;
-// hook → host：落在卡片矩形内、需要喂给离屏 WebView2 的输入事件。
+// hook → host：需要喂给离屏 WebView2 的卡内输入，或由注入侧判定的弹框控制事件。
 struct LookupInputSlot {
   volatile uint64_t seq;  // 单调；**最后**写
   int32_t x;              // 卡片局部坐标（已减去 anchor）
@@ -561,6 +595,15 @@ constexpr uint32_t kLookupInputLeftDown = 1;
 constexpr uint32_t kLookupInputLeftUp = 2;
 constexpr uint32_t kLookupInputWheel = 3;
 constexpr uint32_t kLookupInputLeave = 4;
+// Injected bitmap presenters cannot receive a window message for a click that
+// lands on the game outside their layered HWND.  They publish this control
+// event after consuming that raw DirectInput transaction so Dart can retire the
+// same lookup session instead of merely hiding one stale bitmap.
+constexpr uint32_t kLookupInputDismissOutside = 5;
+
+// v17：hook DLL 摘要字段的固定长度 = 64 位十六进制 SHA-256 + 结尾 NUL。定长而不是变长，
+// 是因为它落在跨进程共享内存里：读侧必须能在不信任写侧的前提下有界读（strnlen 上界就是它）。
+constexpr uint32_t kHookModuleDigestChars = 65;
 
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。
@@ -664,6 +707,12 @@ struct SharedHeader {
   volatile uint32_t native_loopback_request_seq;
   volatile uint32_t native_loopback_state;
   volatile uint32_t native_loopback_applied_seq;
+  // ── v17 驻留 hook DLL 构建身份（纯追加；创建映射的 injector 写，下一次 injector 读）──
+  // 64 位小写十六进制 SHA-256 + NUL；全 0 表示「本次注入算不出摘要」，读侧据此走
+  // kDigestUnavailable（有界重试），绝不当成 mismatch 去要求用户重启游戏。
+  // 只在**新建映射**时写一次，复用既有映射时一个字节都不碰——那条记录属于当初真正
+  // 完成注入的那次会话，被本次请求覆盖就等于把要比对的证据自己抹掉了。
+  char hook_module_sha256[kHookModuleDigestChars];
 };
 #pragma pack(pop)
 

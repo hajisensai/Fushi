@@ -13,6 +13,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -27,7 +28,7 @@ import 'package:fushi/utils.dart';
 /// [BaseSourcePageState.searchDictionaryResult]（查词弹窗/朗读）、[ReaderPositionRepository]
 /// （阅读位置）、[ReadingTimeTracker]（时长统计）、[AnkiMiningContext]（制卡）。
 ///
-/// PDF 绝对路径由 `EpubBooks` 行还原：`p.join(extractDir, epubPath)`。
+/// PDF 绝对路径由 `EpubBooks` 行经 `bookMainFilePath` 还原（唯一真相源，不自拼）。
 class ReaderPdfPage extends BaseSourcePage {
   const ReaderPdfPage({
     super.key,
@@ -151,7 +152,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     final FushiDatabase db = appModel.database;
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
     if (row == null) return null;
-    final String path = p.join(row.extractDir, row.epubPath);
+    final String path = bookMainFilePath(row);
     if (!File(path).existsSync()) return null;
 
     _bookRow = row;

@@ -20,6 +20,7 @@
 
 #include "voice_hook_ipc.h"
 #include "voice_hook_session.h"
+#include "hook_module_identity.h"
 #include "child_process_policy.h"
 #include "ffmpeg_runtime.h"
 #include "launch_command_line.h"
@@ -1200,6 +1201,7 @@ struct LunaOptions {
 };
 
 std::string ReadUtf8File(const std::wstring& path);
+std::string Sha256File(const std::wstring& path);
 fushi_voice_hook::LunaTargetIdentity BuildTargetIdentity(
     const std::wstring& executable, DWORD pid);
 
@@ -1429,6 +1431,100 @@ bool RevokeNativeLoopbackForFailure(SharedHeader* header,
 // 承载了两种互斥含义：「本策略不需要 resume」（Siglus/follow-child：进程没被挂起创建）
 // 与「本该 resume 但句柄没拿到」（Locale Emulator 未回填 hThread）。后者被静默当成前者
 // 跳过，游戏永久挂起而 injector 照报 OK hooked。拆成两个参数就消掉了这个二义性。
+std::wstring NormalizeAbsoluteModulePath(const std::wstring& path) {
+  if (path.empty()) return {};
+  const DWORD required = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
+  if (required == 0) return {};
+  std::vector<wchar_t> buffer(static_cast<size_t>(required), L'\0');
+  const DWORD written = GetFullPathNameW(
+      path.c_str(), static_cast<DWORD>(buffer.size()), buffer.data(), nullptr);
+  if (written == 0 || written >= buffer.size()) return {};
+  std::wstring normalized(buffer.data(), written);
+  std::replace(normalized.begin(), normalized.end(), L'/', L'\\');
+  // Toolhelp 通常返回 DOS 路径；兼容调用方显式传入 Win32 extended path。
+  if (normalized.rfind(L"\\\\?\\UNC\\", 0) == 0) {
+    normalized = L"\\\\" + normalized.substr(8);
+  } else if (normalized.rfind(L"\\\\?\\", 0) == 0) {
+    normalized.erase(0, 4);
+  }
+  return normalized;
+}
+
+std::wstring ModuleBaseName(const std::wstring& path) {
+  const size_t slash = path.find_last_of(L"\\/");
+  return slash == std::wstring::npos ? path : path.substr(slash + 1);
+}
+
+bool FindResidentModulePath(DWORD pid, const std::wstring& module_basename,
+                            std::wstring* loaded_path) {
+  if (loaded_path == nullptr || module_basename.empty()) return false;
+  loaded_path->clear();
+  // Toolhelp documents ERROR_BAD_LENGTH as retryable for module snapshots.
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(
+        TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+      if (GetLastError() == ERROR_BAD_LENGTH) continue;
+      return false;
+    }
+    MODULEENTRY32W module = {0};
+    module.dwSize = sizeof(module);
+    bool found = false;
+    if (Module32FirstW(snapshot, &module)) {
+      do {
+        if (_wcsicmp(module.szModule, module_basename.c_str()) == 0) {
+          *loaded_path = module.szExePath;
+          found = true;
+          break;
+        }
+      } while (Module32NextW(snapshot, &module));
+    }
+    const DWORD enumeration_error = GetLastError();
+    CloseHandle(snapshot);
+    if (found) return true;
+    if (enumeration_error != ERROR_BAD_LENGTH) return false;
+  }
+  return false;
+}
+
+// 驻留 hook DLL 的身份门。两条判据的**信息来源不同**，这是整个函数的要点：
+//
+//   * 路径：进程里装的是不是本次请求那个目录的副本 —— Toolhelp 能直接答，读磁盘无关。
+//   * 摘要：进程里驻留的是**哪个构建** —— 磁盘答不了。能走到摘要这一步时 requested 与
+//     loaded 路径已经相等（不等在上一条判据就返回 kPathMismatch 了），所以若两侧都用
+//     Sha256File 读磁盘，读的就是同一个文件，loaded_sha 恒等于 requested_sha，
+//     kDigestMismatch 在真实运行中永不可达 —— 那是一道恒真的假校验。
+//     而它要挡的恰恰是「Fushi 自更新把磁盘上那份 DLL 换成新构建，游戏进程里仍驻留旧
+//     映像」：路径没变、磁盘上是新文件，磁盘里根本不含「驻留的是哪个构建」这条信息。
+//     这条信息只在**当初真正完成注入的那一方**手里，所以由 injector 在创建映射时把本次
+//     注入 DLL 的摘要写进 header（v17），下一次 injector 读它 —— 比较的两侧这才真的是
+//     「驻留构建」与「请求构建」。
+//
+// header 来自已成功 MapViewOfFile 的既有映射；magic/version 不符时不读该字段（旧布局里
+// 那段字节是音频环形的开头，当摘要读会得到垃圾），返回空串走 kDigestUnavailable。
+fushi_voice_hook::HookModuleIdentityStatus InspectResidentHookIdentity(
+    DWORD pid, const std::wstring& requested_dll_path,
+    const SharedHeader* resident_header) {
+  const std::wstring requested =
+      NormalizeAbsoluteModulePath(requested_dll_path);
+  std::wstring loaded_raw;
+  const bool found = FindResidentModulePath(
+      pid, ModuleBaseName(requested_dll_path), &loaded_raw);
+  const std::wstring loaded = NormalizeAbsoluteModulePath(loaded_raw);
+  const std::string requested_sha = Sha256File(requested);
+  std::string loaded_sha;
+  if (resident_header != nullptr && resident_header->magic == kSharedMagic &&
+      resident_header->version == kSharedVersion) {
+    const char* const digest = resident_header->hook_module_sha256;
+    // 定长安全读：共享内存里的字节不可信，不假定有 NUL。
+    loaded_sha.assign(
+        digest,
+        strnlen(digest, fushi_voice_hook::kHookModuleDigestChars));
+  }
+  return fushi_voice_hook::EvaluateHookModuleIdentity(
+      found, requested, loaded, requested_sha, loaded_sha);
+}
+
 int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                  DWORD wait_ms, bool hold, HANDLE resume_thread,
                  HANDLE hold_process, const LunaOptions& luna,
@@ -1506,15 +1602,44 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
   const uint32_t expected_clip_offset =
       static_cast<uint32_t>(expected_text_offset + text_region_bytes);
+  const auto resident_hook_identity =
+      mapping_already_exists
+          ? InspectResidentHookIdentity(pid, dll_path, header)
+          : fushi_voice_hook::HookModuleIdentityStatus::kMatch;
   const MappingSessionAction mapping_action = InspectMappingSession(
       mapping_already_exists, header, ring_capacity, expected_text_offset,
-      expected_clip_offset);
+      expected_clip_offset,
+      resident_hook_identity ==
+          fushi_voice_hook::HookModuleIdentityStatus::kMatch);
   if (mapping_action == MappingSessionAction::kRejectStale) {
-    fprintf(stderr,
-            "已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）；请重启一次游戏以清理旧 DLL。\n");
+    const bool resident_hook_requires_restart =
+        fushi_voice_hook::HookModuleIdentityRequiresRestart(
+            resident_hook_identity);
+    if (resident_hook_identity !=
+        fushi_voice_hook::HookModuleIdentityStatus::kMatch) {
+      fprintf(stderr,
+              "[session] resident hook identity mismatch (%s); refusing "
+              "ready mapping reuse\n",
+              fushi_voice_hook::HookModuleIdentityStatusToken(
+                  resident_hook_identity));
+    }
+    if (resident_hook_requires_restart) {
+      fprintf(stderr,
+              "已存在但不可复用的 hook 会话（驻留 DLL 路径或摘要与本次请求不匹配）；"
+              "请重启一次游戏以清理旧 DLL。\n");
+    } else {
+      fprintf(stderr,
+              "已存在但暂不可复用的 hook 会话（契约、hooked 或驻留 DLL 身份暂不可确认）；"
+              "将由宿主有界重试。\n");
+    }
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    return FailWith(reason_out, LaunchFailureReason::kStaleSession, 2);
+    return FailWith(
+        reason_out,
+        resident_hook_requires_restart
+            ? LaunchFailureReason::kResidentHookMismatch
+            : LaunchFailureReason::kStaleSession,
+        2);
   }
   const bool reuse_ready = mapping_action == MappingSessionAction::kReuseReady;
   if (!reuse_ready) {
@@ -1552,6 +1677,21 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->lookup_bitmap_bytes = fushi_voice_hook::kLookupBitmapBytes;
     header->lookup_frame_count = fushi_voice_hook::kLookupFrameCount;
     header->lookup_input_slot_count = fushi_voice_hook::kLookupInputSlotCount;
+    // v17：把**本次注入所用 DLL** 的摘要留档。injector 就是注入者，只有它知道等一下
+    // 驻留进游戏进程的是哪个构建；下一次 injector 见到这块映射时，拿这条记录跟那时
+    // 磁盘上的 DLL 现算摘要比，才是「驻留构建 vs 请求构建」的真比较（两边都读磁盘
+    // 得到的是同一个文件，恒等，见 InspectResidentHookIdentity 的说明）。
+    // 只在新建映射这条路上写：复用既有映射时这条记录属于当初那次注入，不得覆盖。
+    // 上面 memset 已把整块清零，算不出摘要就保持全 0 —— 读侧走 kDigestUnavailable
+    // （有界重试），不会被误判成 mismatch 而要求用户重启游戏。
+    const std::string injected_hook_sha =
+        Sha256File(NormalizeAbsoluteModulePath(dll_path));
+    if (!injected_hook_sha.empty() &&
+        injected_hook_sha.size() <
+            fushi_voice_hook::kHookModuleDigestChars) {
+      memcpy(header->hook_module_sha256, injected_hook_sha.c_str(),
+             injected_hook_sha.size() + 1);
+    }
   } else {
     fprintf(stderr,
             "[session] reusing live hook mapping pid=%lu text=%u audioBytes=%llu\n",

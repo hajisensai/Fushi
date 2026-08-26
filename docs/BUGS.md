@@ -29,11 +29,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1731 条。点号进各自文件。
+> 共 1757 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
+| [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
+| [BUG-1881](bugs/BUG-1881-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
+| [BUG-1880](bugs/BUG-1880-video-resource-search-backend-gate.md) | ✅ | ✅ | 搜索资源被下载后端运行时前置门禁阻断 |
+| [BUG-1878](bugs/BUG-1878-lookup-popup-surface-forced-pure-white-black.md) | ✅ | ✅ | 查词弹窗底色被钉成纯白/纯黑，不跟随 MD3 主题 |
+| [BUG-1874](bugs/BUG-1874-settings-downloads-open-page-subtitle-duplicate.md) | ✅ | ✅ | 「下载」设置分类里的下载页入口副标题也叫「下载设置」 |
+| [BUG-1873](bugs/BUG-1873-manga-discovery-loading-rows-bare-lines.md) | ✅ | ✅ | 漫画发现页来源热门行加载态是一排无标签的裸横线 |
+| [BUG-1872](bugs/BUG-1872-video-discovery-no-managed-source-snackbar.md) | ✅ | ✅ | 视频发现搜索资源/订阅在缺受管视频来源时只弹「暂无来源」snackbar |
+| [BUG-1871](bugs/BUG-1871-manga-global-search-empty-state-no-import-cta.md) | ✅ | ✅ | 漫画全源搜索空态文案指向不存在的「扩展」且无导入引导按钮 |
+| [BUG-1870](bugs/BUG-1870-storage-usage-db-snapshots-unlabeled-undeletable.md) | ✅ | ✅ | 存储页「数据库与内部数据」把几十个数据库快照残留按原始文件名逐条列出且无法删除 |
+| [BUG-1869](bugs/BUG-1869-data-root-migration-progress-exceeds-total.md) | ✅ | ✅ | 数据迁移进度「已复制 623 / 620」超过总数：选择性搬移的顶层单文件只加分子不加分母 |
+| [BUG-1868](bugs/BUG-1868-lookup-popup-slow.md) | ✅ | ✅ | 查词弹窗慢，尤其嵌套查词 |
+| [BUG-1867](bugs/BUG-1867-cover-backfill-hollow-m2ts.md) | ✅ | ✅ | 封面回填把 best-effort 失败刷进用户错误日志，且对未落盘文件仍走 ffmpeg |
+| [BUG-1866](bugs/BUG-1866-resolve-public-indexer-needs-network.md) | ✅ | ✅ | 公共索引器重解析非要联网重搜，搜不中就把活资源误报 notFound |
+| [BUG-1865](bugs/BUG-1865-organizer-numbered-extras.md) | ✅ | ✅ | 剧集整理把带编号的特典当正片，与真正片撞号整批失败 |
+| [BUG-1864](bugs/BUG-1864-video-fullscreen-space-pause-panel.md) | ✅ | ✅ | 视频全屏路由漏掉页级裸空格覆盖：焦点在字幕列表面板时按空格不暂停 |
+| [BUG-1863](bugs/BUG-1863-video-resume-gray-static-areas.md) | ✅ | ✅ | 从后台切回视频静止区域变成灰色 |
+| [BUG-1862](bugs/BUG-1862-video-esc-skips-overlay-dismiss.md) | ✅ | ✅ | 视频页 Esc/返回键在侧栏等前台浮层打开时直接退出页面，未逐级关闭 |
+| [BUG-1861](bugs/BUG-1861-video-subtitle-imported-not-listed.md) | ✅ | ✅ | 获取的字幕能应用上却不出现在字幕轨列表里 |
+| [BUG-1860](bugs/BUG-1860-gal-overlay-scrollbar-not-draggable.md) | ✅ | ✅ | gal 查词浮窗滚动条只是指示条：按住拖 thumb 变成拖窗 |
+| [BUG-1859](bugs/BUG-1859-gal-overlay-passthrough-wheel-gate.md) | ✅ | ✅ | gal 查词浮窗穿透态滚轮不滚：ScrollBy 的 pass_through_ 门是 WS_EX_TRANSPARENT 时代遗物 |
+| [BUG-1858](bugs/BUG-1858-settings-form-field-width.md) | ✅ | ✅ | 设置页输入框宽度三套并存：下载设置 480 / 在线服务 560 / 其余撑满 |
+| [BUG-1857](bugs/BUG-1857-gal-overlay-resize-card-does-not-follow-drag.md) | ✅ | ✅ | 查词浮窗拖右下角调大小时卡片不跟手，松手才跳到位 |
+| [BUG-1856](bugs/BUG-1856-jimaku-dialog-search-button-unreachable-phone-landscape-keyboard.md) | ✅ | ✅ | Jimaku 获取字幕对话框在手机横屏弹键盘时只看得见「取消」，搜索按钮藏在可滚区不可达 |
+| [BUG-1855](bugs/BUG-1855-home-continue-row-drops-collection-after-episode-complete.md) | ✅ | ✅ | 视频首页「继续观看」一集看完退出后合集消失，只有中途退出才在 |
+| [BUG-1854](bugs/BUG-1854-gal-mining-capture-includes-title-bar.md) | ✅ | ✅ | 制卡截图把游戏窗口标题栏截进去了，应裁到客户区 |
+| [BUG-1853](bugs/BUG-1853-gal-passthrough-glyph-holes-fall-through.md) | ✅ | ✅ | 穿透态点到文字笔画镂空处直接透给游戏，碰撞箱应为行矩形 |
 | [BUG-1852](bugs/BUG-1852-manga-region-rescan-lookup-action-removed.md) | 🚧 | 🚧 | 框选区域重识别移除了旧「框选查词」直通词典的入口 |
 | [BUG-1851](bugs/BUG-1851-manga-region-rescan-auto-engine-mix.md) | 🚧 | 🚧 | auto 引擎偏好下区域重识别可能与整卷用不同引擎，页内混引擎且 ocr 元数据仍写旧引擎 |
 | [BUG-1850](bugs/BUG-1850-settings-destination-itest-vacuous-selected-row.md) | ✅ | ✅ | 集成测试用恒真的选中行谓词当设置分类打开判据 |

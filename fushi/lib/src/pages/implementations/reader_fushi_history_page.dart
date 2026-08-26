@@ -11,6 +11,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
@@ -65,6 +66,7 @@ import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -2188,6 +2190,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.headphones_outlined,
         onPressed: () => _openAudiobookImport(item, bookKey),
       ),
+      // 桌面才有文件管理器契约（[currentRevealHost] 在移动端返回 null）——整条隐藏，
+      // 而不是画一个点了没反应的按钮。漫画卷要手改 mokuro 数据时，这一条直接把书目录
+      // 里的 manga.json 选中，省掉「书在哪个 bookKey 目录」这层猜。
+      if (currentRevealHost() != null)
+        DialogListAction(
+          label: t.book_file_location_open,
+          icon: Icons.folder_open_outlined,
+          onPressed: () => _openBookFileLocation(bookKey),
+        ),
       DialogListAction(
         label: _completedBookKeys.contains(bookKey)
             ? t.book_mark_uncompleted_action
@@ -2461,6 +2472,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 不必为了画一行菜单再去读一次库。
   bool _isMangaItem(MediaItem item) =>
       item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey;
+
+  /// 在系统文件管理器里定位这本书的磁盘文件（EPUB / PDF / 漫画同一条路径）。
+  ///
+  /// 与 [_convertBookFormat] 同款：读行 + 探磁盘都放在**点击后**，塞进菜单 build 会让
+  /// 书架每次重绘都吃一遍 IO。定位不到（书目录已被外部删除、文件管理器起不来）时给
+  /// 一句提示，不静默——静默的「打开文件位置」和坏掉的按钮无法区分。
+  Future<void> _openBookFileLocation(String bookKey) async {
+    Navigator.pop(context);
+    final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
+    final bool revealed = row != null && await revealBookLocation(row);
+    if (revealed || !mounted) return;
+    FushiToast.show(
+      msg: t.book_file_location_failed,
+      severity: ToastSeverity.error,
+    );
+  }
 
   /// 单卡「书 ↔ 漫画」转化：重建目标格式的磁盘产物，再把 `EpubBooks` 行指过去。
   ///

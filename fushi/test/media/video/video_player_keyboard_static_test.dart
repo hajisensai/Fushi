@@ -77,22 +77,39 @@ void main() {
 
     test('Escape cancels video control edit mode before video exit handling',
         () {
+      // BUG-1862：逐级退出的层级表搬进 `_dismissTopForegroundLayer`（页面私有）+
+      // `topVideoForegroundLayer`（纯函数）单点后，escape 回调只剩「先关一层，关不动
+      // 才退全屏 / 退页」。断言的行为没变：编辑态必须在任何退出动作之前被吃掉，只是
+      // 门从 escape 回调里挪到了那张共用层级表上（[PopScope] / 手柄 B 因此也照吃）。
       final String escapeBody = region(page, 'escape: () {', '},\n      ),');
-      final int editGate = escapeBody.indexOf('_videoControlEditMode.value');
-      final int cancelEdit = escapeBody.indexOf(
-        '_hideVideoControlEditOverlay(revealControls: false)',
-      );
+      final int dismissGate =
+          escapeBody.indexOf('_dismissTopForegroundLayer()');
       final int fullscreenExit = escapeBody.indexOf('_exitVideoFullscreen(');
       final int backExit = escapeBody.indexOf('_handleBackOrExit()');
 
+      expect(dismissGate, greaterThanOrEqualTo(0),
+          reason: 'Escape must first try to dismiss the top foreground layer');
+      expect(fullscreenExit, greaterThan(dismissGate),
+          reason: 'fullscreen exit must only run after the dismiss gate');
+      expect(backExit, greaterThan(dismissGate),
+          reason: 'page exit must only run after the dismiss gate');
+
+      // 编辑态确实还在那张层级表里，且关闭动作排在判定之后。
+      final String dismissBody = region(
+        page,
+        'bool _dismissTopForegroundLayer() {',
+        '\n  }\n',
+      );
+      final int editGate = dismissBody.indexOf(
+        'controlEditActive: _videoControlEditMode.value',
+      );
+      final int cancelEdit = dismissBody.indexOf(
+        '_hideVideoControlEditOverlay(revealControls: false)',
+      );
       expect(editGate, greaterThanOrEqualTo(0),
-          reason: 'Escape must first test on-video control edit mode');
+          reason: 'the shared layer table must still read control edit mode');
       expect(cancelEdit, greaterThan(editGate),
           reason: 'editing Escape should cancel the draft overlay');
-      expect(fullscreenExit, greaterThan(cancelEdit),
-          reason: 'fullscreen exit must only run after edit cancel gate');
-      expect(backExit, greaterThan(cancelEdit),
-          reason: 'page exit must only run after edit cancel gate');
     });
 
     test('exit confluence: PopScope and Escape share _handleBackOrExit', () {

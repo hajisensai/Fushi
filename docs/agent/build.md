@@ -242,16 +242,19 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   - 更早的一批客户端把 `hajisensai/hibiki-hook` 编进常量，**那个仓库早已不存在**，与本次删除无关。
 - **构建入口**：`native/galgame_hook/tools/build_distribution.ps1 -RunTests` 是唯一组包入口，
   cmake 编 x64（`-A x64`）+ x86（`-A Win32`），每架构打 `voice_hook_<arch>.zip`（injector/hook/
-  LunaHook/LunaHost，x86 另带 Locale Emulator）+ `.sha256` 侧车。`build-multiplatform.yml` 与
+  LunaHook/LunaHost，x86 另带 Locale Emulator）+ `.sha256` 侧车，并写入当前 helper 构建输入的
+  `voice_hook_source.sha256` 指纹。`build-multiplatform.yml` 与
   `release-desktop.yml` 的 windows job 都调它（`pull_request`/`push` + paths 含 `native/**`），
   所以**双架构编译与 ctest 是 PR 门**；`native-galgame-gate.yml` 另跑那 7 条平台无关的静态守卫。
-  产物由 `tools/install_into_bundle.ps1` 在构建期解压进 bundle 的 `voice_hook/<arch>/`，
+  产物由 `tools/install_into_bundle.ps1` 校验 archive SHA 与源码指纹后，在构建期解压进 bundle 的
+  `voice_hook/<arch>/`，
   Inno Setup 的 `recursesubdirs` 将其纳入安装器。`check_release_policy.ps1` 守卫这条链，禁止
   后续“构建仍绿但安装器漏带 helper”。
-- **app 端安装**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`fushi/lib/src/mining/
-  galgame_helper_installer.dart`）先读取 exe 同级 `galgame_helper/voice_hook_<arch>.zip` 与侧车，校验
-  SHA-256 后解压/换入 `voice_hook/<arch>/`，全程零网络、零下载确认；正式 Windows 主包必须命中此路。
-  开发构建/旧包没有随包归档时提示更新/重新构建 Fushi，**不回退网络**；已安装版本也没有后台自更新。
+- **app 端运行**：正式 Windows 主包已经直接携带 exe 同级 `voice_hook/<arch>/` 普通文件，
+  `GalgameHelperInstaller`（`fushi/lib/src/mining/galgame_helper_installer.dart`）只校验必需文件是否齐全；
+  注入前 `GalgameHookRuntimeStage` 再按文件内容分版复制到 app data 下的 `voice_hook_runtime/`，避免游戏
+  长期持有安装目录 DLL。开发构建若没有当前源码对应的 dist，会在 CMake 安装阶段主动清掉增量 bundle
+  中的旧 helper 并明确提示不可用，**不回退网络，也不继续注入旧件**；已安装版本没有后台自更新。
 - **Magpie 同样随包唯一来源**（BUG-1292）：两个 Windows workflow 用
   `tools/build_magpie_slim.ps1` 生成 `Magpie-hibiki-slim-x64.zip` + `.sha256`，放进
   `magpie_bundle/`。`MagpieInstaller` 校验后换入 `magpie/`；ARM64 Windows 走系统 x64 模拟。

@@ -31,9 +31,17 @@ class MangaDiscoveryDetailPage extends ConsumerStatefulWidget {
     required this.entry,
     super.key,
     this.matchSourcesOverride,
+    this.onOpenSources,
   });
 
   final MangaDiscoveryEntry entry;
+
+  /// 一个源都没有时兜底搜索页空态的去处：切库页壳到「导入」视图。
+  ///
+  /// 必须由推本页的调用方解析好传进来——本页是 pushed route，挂在 Navigator 下面，
+  /// `MediaLibraryShellScope.maybeOf(context)` 在这里恒为 null（壳的 InheritedWidget
+  /// 在 Navigator 更深处）。为 null 时搜索页只给文案不给按钮。
+  final VoidCallback? onOpenSources;
 
   /// 测试注入：给定时跳过平台来源发现，直接用这些来源做匹配。
   final List<MangaMatchSource>? matchSourcesOverride;
@@ -233,6 +241,7 @@ class _MangaDiscoveryDetailPageState
           mihonSources: _mihonSources,
           aidokuPackages: _aidokuPackages,
           initialQuery: widget.entry.preferredTitle,
+          onOpenSources: widget.onOpenSources,
         ),
       ),
     );

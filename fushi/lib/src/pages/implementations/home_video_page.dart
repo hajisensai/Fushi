@@ -824,6 +824,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final String? result = await extractVideoCover(
               videoPath: path,
               bookUid: row.bookUid,
+              // BUG-1867：回填是 best-effort 后台产线，「这文件给不出封面」（无视频流
+              // 的 BDMV 音轨 m2ts、seek 落在空洞区、torrent 还没下完）是预期内的正常
+              // 结果，不是 app 出错——书架显示占位图本身就是反馈。降级后这两段
+              // （内嵌封面 + 抽帧）的失败**不计入错误计数、不落盘**，转入日志页的
+              // 诊断/取证分节，证据照旧随复制/上传带走。ffmpeg 根本起不来仍是真错误。
+              diagnosticOnly: true,
             );
             if (result == null) return null;
             await widget.repo.updateCover(row.bookUid, result);
@@ -3123,14 +3129,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           lastWatched = at;
         }
       }
-      final int? currentIndex = latestPlayedSeriesIndex(
+      // Next-Up 口径（[continueWatchingSeriesIndex]）：续播用户最后实际播放且尚未
+      // 完成的那一集；那集已看完则落到紧接的下一集。不能退回序列中更早的未完成
+      // 集，也不能误跳到合集最后一集；整部看完不进本行。
+      final int? currentIndex = continueWatchingSeriesIndex(
         _seriesPlaybackStates(members),
       );
       if (currentIndex == null) return;
-      final VideoBookRow current = members[currentIndex];
-      // “继续观看”只续播用户最后实际播放且尚未完成的那一集，不能退回序列中
-      // 更早的未完成集，也不能误跳到合集最后一集。
-      if (current.completedAt != null || current.lastPositionMs <= 0) return;
       final MediaCollectionRow collection = _collectionsById[cid]!;
       items.add(_VideoRowItem(
         recentMs: lastWatched?.millisecondsSinceEpoch ?? 0,
@@ -3734,12 +3739,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       progressFraction:
           members.isEmpty ? null : completedCount / members.length,
       episodeNumber: currentIndex + 1,
-      secondaryText: _continueSecondaryText(
-        members[currentIndex],
-        episodeNumber: currentIndex + 1,
-      ),
+      // 目标集还没开播（上一集看完落到的下一集）→「下一集 · 第 N 集」；
+      // 有进度 →「看到第 N 集 · 剩 M 分钟」。由成员自身状态决定，不另传标志。
+      secondaryText: _isUnstarted(members[currentIndex])
+          ? t.video_home_next_episode_number(n: currentIndex + 1)
+          : _continueSecondaryText(
+              members[currentIndex],
+              episodeNumber: currentIndex + 1,
+            ),
     );
   }
+
+  static bool _isUnstarted(VideoBookRow book) =>
+      book.completedAt == null && book.lastPositionMs <= 0;
 
   /// 继续观看行·远端占位卡：点击流播（BUG-995 血缘——只看远端也有续播入口）；
   /// 云角标；远端无完成口径，不画进度条。

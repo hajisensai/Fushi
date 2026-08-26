@@ -217,4 +217,138 @@ void main() {
         findsNothing);
     expect(probe.gotRealNavigation[0], isFalse);
   });
+
+  // -------------------------------------------------------------------------
+  // 导航所有权（BUG-1871 复审）
+  // -------------------------------------------------------------------------
+  //
+  // 空态引导按钮要把用户从「压在壳上面的页面」带回壳里的某个视图。此前这一步的
+  // 正确性被硬编码成「调用页正好是壳上面唯一一层路由」：调用页先 pop 自己再调
+  // select。第二个调用点（发现详情页 → 全源搜索页）就是两层，pop 一层后详情页
+  // 仍盖在壳上面，用户看不到切过去的视图。现在 pop 收进 [MediaLibraryShellScope
+  // .select]，以壳自己的路由为界一次弹到底，调用方压了几层都对。
+
+  MediaLibraryViewSpec pushingSpec(MediaLibraryViewKind kind, String label) {
+    return MediaLibraryViewSpec(
+      kind: kind,
+      label: label,
+      builder: (BuildContext context, Widget navigation) => Column(
+        children: <Widget>[
+          navigation,
+          Builder(
+            builder: (BuildContext inner) => TextButton(
+              onPressed: () => Navigator.of(inner).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _PushedPage(
+                    label: '第一层',
+                    onOpenSources: MediaLibraryShellScope.maybeOf(inner)
+                        ?.actionFor(MediaLibraryViewKind.sources),
+                  ),
+                ),
+              ),
+              child: const Text('push'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  testWidgets('压一层路由：切视图时壳自己把它弹掉', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      pushingSpec(MediaLibraryViewKind.library, '书架'),
+      spec(1, MediaLibraryViewKind.sources, '导入'),
+    ]));
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    expect(find.text('第一层'), findsOneWidget);
+
+    await tester.tap(find.text('去来源'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('第一层'), findsNothing, reason: '壳上面的路由必须被弹掉');
+    expect(probe.gotRealNavigation[1], isTrue, reason: '壳切到了「导入」视图');
+  });
+
+  testWidgets('压两层路由：同一个调用点照样一次弹干净（第二个入口不需要另写一套）',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      pushingSpec(MediaLibraryViewKind.library, '书架'),
+      spec(1, MediaLibraryViewKind.sources, '导入'),
+    ]));
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('再推一层'));
+    await tester.pumpAndSettle();
+    expect(find.text('第一层+'), findsOneWidget);
+
+    // 最上面那一层的按钮（下面的路由仍在树里）。
+    await tester.tap(find.text('去来源').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第一层'), findsNothing);
+    expect(find.text('第一层+'), findsNothing);
+    expect(probe.gotRealNavigation[1], isTrue);
+  });
+
+  testWidgets('actionFor：壳没有声明该视图时返回 null（判据是「视图在」不是「壳在」）',
+      (WidgetTester tester) async {
+    late MediaLibraryShellScope scope;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: MediaLibraryShell(
+          focusIdPrefix: 'test-library-view',
+          views: <MediaLibraryViewSpec>[
+            MediaLibraryViewSpec(
+              kind: MediaLibraryViewKind.library,
+              label: '书架',
+              builder: (BuildContext context, Widget navigation) => Builder(
+                builder: (BuildContext inner) {
+                  scope = MediaLibraryShellScope.maybeOf(inner)!;
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(scope.actionFor(MediaLibraryViewKind.sources), isNull,
+        reason: '没有「导入」视图时必须给 null——select 对它是静默忽略，'
+            '照「壳在」渲染出来的按钮点了什么都不会发生');
+    expect(scope.actionFor(MediaLibraryViewKind.library), isNotNull);
+  });
+}
+
+/// 压在壳上面的页面：可以再推一层，也可以按引导按钮切壳视图。
+class _PushedPage extends StatelessWidget {
+  const _PushedPage({required this.label, required this.onOpenSources});
+
+  final String label;
+  final VoidCallback? onOpenSources;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(label),
+            if (onOpenSources != null)
+              TextButton(onPressed: onOpenSources, child: const Text('去来源')),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _PushedPage(
+                    label: '$label+',
+                    onOpenSources: onOpenSources,
+                  ),
+                ),
+              ),
+              child: const Text('再推一层'),
+            ),
+          ],
+        ),
+      );
 }

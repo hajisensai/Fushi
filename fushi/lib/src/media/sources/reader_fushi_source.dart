@@ -992,6 +992,32 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   static ReaderSettings? readerSettings;
 
+  /// 当前**生效**的 [ReaderSettings]。查词弹窗一侧（静态设置注入 + 字体 URL 拦截器
+  /// 白名单）的唯一取值入口——两边必须解析出同一份设置，否则就是「CSS 里引了某个
+  /// 字体，拦截器却拒绝供给」这类哑失败。
+  ///
+  /// **不要直接读 [readerSettings]。** 它在整个进程里只有一个赋值点
+  /// （`AppModel._initialiseOnce()`），而 `AppModel.initialiseForDictionaryPopup()`
+  /// 从不给它赋值。于是在 Android 独立 `:popup` 进程与悬浮查词窗
+  /// （`popup_main.dart` / `floating_dict_main.dart`）里它**恒为 null**：任何直接
+  /// 读它的判据在 app 外查词时都会静默退化成「用户什么都没配」。
+  ///
+  /// 没有活着的阅读器时退到 DB 背书的实例。注意必须**同时**灌 prefs 快照
+  /// （[ReaderSettings.applyPrefsSnapshot]）：`ReaderSettings(db)` 的内存缓存是空
+  /// 的，且所有读取器都是同步 getter、不会自己回源，只 new 一个出来等于返回一份
+  /// 「所有设置都是默认值」的假设置。快照取自 [AppModel.prefsRepo]（已在初始化里
+  /// 一次性读全表），因此这条路是纯内存的，热路径可调用。
+  ///
+  /// DB / prefs 仓库任一未就绪时返回 null（两者都是 late 字段，早期与测试 seam 会
+  /// 撞进未赋值窗口），调用方按「无设置」降级。
+  static ReaderSettings? resolveEffectiveReaderSettings(AppModel appModel) {
+    final ReaderSettings? live = readerSettings;
+    if (live != null) return live;
+    if (!appModel.isDatabaseReady || !appModel.isPreferencesReady) return null;
+    return ReaderSettings(appModel.database)
+      ..applyPrefsSnapshot(appModel.prefsRepo.prefsSnapshot);
+  }
+
   /// Fired on CSS-only setting changes (font size / line height / margins /
   /// indentation / justify / kerning / vpal / furigana / vert-orient). The
   /// reader live-updates the injected stylesheet without a full chapter reload.

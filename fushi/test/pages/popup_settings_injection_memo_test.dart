@@ -173,9 +173,12 @@ void main() {
             ),
           ],
         );
-        final Set<int> emitted = <int>{};
-        late String cold;
-        late String hot;
+        // 用真正的宿主账本走一遍「首次渲染 → 平台收下 → 再次渲染」，而不是手工传
+        // 两个裸 Set：账本是唯一入口，这样这条测试也顺带钉住 commit 的时机语义。
+        final PopupStaticRevisionCache revisions = PopupStaticRevisionCache();
+        const String hostKey = 'test-host';
+        late StackRenderScript cold;
+        late StackRenderScript hot;
         bool built = false;
         await tester.pumpWidget(
           MaterialApp(
@@ -203,8 +206,11 @@ void main() {
                     screenHeight: 1080,
                     maxWidth: 480,
                     maxHeight: 600,
-                    emittedStaticRevisions: emitted,
+                    staticRevisions: revisions,
+                    hostKey: hostKey,
                   );
+                  // 模拟平台侧 render 调用成功——只有此时才允许记账。
+                  revisions.commit(hostKey, cold.pendingRevisions);
                   hot = buildStackRenderScript(
                     context: context,
                     appModel: appModel,
@@ -213,7 +219,8 @@ void main() {
                     screenHeight: 1080,
                     maxWidth: 480,
                     maxHeight: 600,
-                    knownStaticRevisions: emitted,
+                    staticRevisions: revisions,
+                    hostKey: hostKey,
                   );
                 }
                 return const SizedBox.shrink();
@@ -222,18 +229,23 @@ void main() {
           ),
         );
 
-        expect(emitted, hasLength(1));
-        expect(cold, contains('"staticHeadJs"'));
-        expect(cold, contains('"staticTailJs"'));
+        expect(cold.pendingRevisions, hasLength(1));
+        expect(cold.script, contains('"staticHeadJs"'));
+        expect(cold.script, contains('"staticTailJs"'));
         expect(
-          hot,
+          hot.script,
           isNot(contains('"staticHeadJs"')),
           reason: '连续 Shift 查词不得再次跨 MethodChannel 发送 MB 级字体',
         );
-        expect(hot, isNot(contains('"staticTailJs"')));
-        expect(hot, contains('"staticRevision"'));
-        expect(hot, contains('"entriesJs"'));
-        expect(hot, contains('"renderJs"'));
+        expect(hot.script, isNot(contains('"staticTailJs"')));
+        expect(
+          hot.pendingRevisions,
+          isEmpty,
+          reason: '第二次渲染没有新发出任何静态段，账本不该再收到待确认版本',
+        );
+        expect(hot.script, contains('"staticRevision"'));
+        expect(hot.script, contains('"entriesJs"'));
+        expect(hot.script, contains('"renderJs"'));
       },
     );
   });

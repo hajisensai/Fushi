@@ -540,8 +540,9 @@ class GalHookSessionState {
 /// 引擎 hook 失败后的重试退避表。
 ///
 /// 只对**可能自愈**的失败生效（见 [galHookFailureIsRetryable]）：引擎初始化竞态、
-/// DLL 加载慢、上一局残留会话。位数不符 / 需要提权 / 缺文件这类不会随时间改变的
-/// 失败一次都不重试——重试只会掩盖必须告诉用户的处置。
+/// DLL 加载慢、暂不可复用的旧映射。位数不符 / 需要提权 / 缺文件这类不会随时间
+/// 改变的失败一次都不重试；residentHookMismatch 也必须重启游戏卸载驻留旧 DLL。
+/// 重试只会掩盖必须告诉用户的处置。
 ///
 /// 步长按「Unity/IL2CPP 游戏从进程创建到音频子系统就位」的量级取：首轮 3s 覆盖普通
 /// 竞态，最后一轮 20s 覆盖带壳解包与首次着色器编译；再长就该让用户手动重来了。
@@ -3869,10 +3870,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 引擎 hook 失败后的**有界恢复**调度。
   ///
-  /// 旧实现里 `_activateLoopback` 是终态：一次注入竞态（DLL 还在加载、上一局残留会话、
+  /// 旧实现里 `_activateLoopback` 是终态：一次注入竞态（DLL 还在加载、
   /// 引擎音频子系统尚未建好）就让整局只剩整机混音，用户只能关掉游戏重来。真实失败里
   /// 相当一部分会自愈，因此按退避表重试；不会自愈的失败（位数不符 / 需要提权 / 缺文件）
-  /// 一次都不试，直接把原因留在事件里让 UI 说清处置。
+  /// 以及必须重启游戏的 residentHookMismatch 一次都不试，直接把原因留在事件里让 UI
+  /// 说清处置。
   void _scheduleEngineRecovery(
     int generation, {
     required int pid,

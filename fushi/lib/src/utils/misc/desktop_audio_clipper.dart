@@ -368,9 +368,18 @@ class MiningMediaCompression {
   }
 }
 
-/// 把一条 ffmpeg 失败摘要落进日志。[diagnosticOnly] = 调用方**还会用降级参数再试一次**
-/// （能力探测），此时失败是预期内的正常降级，只进诊断日志（不计错误数、不进用户可见
-/// 错误日志页）；否则进错误日志。默认 false = 既有行为逐字等价。
+/// 把一条 ffmpeg 失败摘要落进日志。
+///
+/// [diagnosticOnly] = 这条失败**是预期内的正常结果，不是 app 出错**。两种调用方都算：
+/// * **能力探测**：调用方还会用降级参数再试一次（GIF 编码器/滤镜链回退），中途失败是
+///   正常降级路径；
+/// * **best-effort 产线**（BUG-1867，书架封面回填）：失败就是**终局**，没有重试，但
+///   「这文件给不出封面」（无视频流的 BDMV 音轨 m2ts、seek 落空、torrent 还没下完）
+///   本来就是预期内结果——书架显示占位图就是给用户的反馈。
+///
+/// 两者共用同一条通道：走 [ErrorLogService.logDiagnostic]，**不计入错误计数、不落盘**，
+/// 转入日志页的「诊断/取证」分节，随复制/分享/上传一并带走（降严重性，不删证据）。
+/// 否则走 [ErrorLogService.log] 进用户可见错误列表。默认 false = 既有行为逐字等价。
 void _logFfmpegSummary(String source, String summary, StackTrace stack,
     {required bool diagnosticOnly}) {
   if (diagnosticOnly) {
@@ -680,6 +689,10 @@ List<String> buildFfmpegFrameArgs({
   bool decodeFromStart = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // TODO-1082：目标宽度（高按原比例，`-2` 保证偶数以满足 yuv420 约束）。进度条
+  // 缩略图只显示几百像素宽，让 ffmpeg 在编码前就缩好，省掉全尺寸 JPEG 的编码、
+  // 落盘、读回、解码四段开销。null / <=0 表示不缩放（封面等既有调用方的行为不变）。
+  int? scaleWidth,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   return <String>[
@@ -690,6 +703,10 @@ List<String> buildFfmpegFrameArgs({
     inputPath,
     if (decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-an',
+    if (scaleWidth != null && scaleWidth > 0) ...<String>[
+      '-vf',
+      'scale=$scaleWidth:-2',
+    ],
     '-frames:v',
     '1',
     '-update',
@@ -716,6 +733,14 @@ Future<String?> extractVideoFrameViaFfmpeg({
   FfmpegFailureReporter? onFailure,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // BUG-1867：调用方是 best-effort 后台产线（书架封面回填）——「这文件给不出帧」是
+  // 预期内的正常结果（无视频流的 BDMV 音轨 m2ts、seek 落在空洞区…），与上游
+  // [extractEmbeddedVideoCoverViaFfmpeg] 把「容器没有内嵌封面」判为正常同层。置 true
+  // 时这条失败**不计入错误计数、不落盘**，转入日志页的诊断/取证分节（证据仍随复制
+  // /上传带走）。ffmpeg **根本起不来**（ProcessException）仍是真错误，不受本开关影响。
+  bool diagnosticOnly = false,
+  // TODO-1082：缩略图消费方按目标宽度出图（见 [buildFfmpegFrameArgs]）；null 保持原尺寸。
+  int? scaleWidth,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
@@ -730,6 +755,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         atSeconds: atSeconds,
         decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
+        scaleWidth: scaleWidth,
       ),
       const Duration(seconds: 30),
     );
@@ -742,7 +768,8 @@ Future<String?> extractVideoFrameViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure);
+    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure,
+        diagnosticOnly: diagnosticOnly);
     return null;
   } on ProcessException catch (e, stack) {
     _reportFfmpegProcessException(

@@ -31,7 +31,7 @@ namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
 //   wparam = 打包的屏幕物理坐标 ((uint32)x << 32) | (uint32)y
-//   lparam = 1 表示点击落在目标窗口 rect 内，0 表示在外
+//   lparam = 1 表示点击真实命中目标 window region/子窗，0 表示在透明区或窗外
 // 窗口线程自己决定「转发给 host / 关闭浮窗」——钩子线程不碰任何 C++ 对象。
 constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
 
@@ -46,6 +46,11 @@ constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
 // galgame 上，滚轮就照样喂给游戏（滚出履历/推进文本）；Win10 的「悬停滚动非活动
 // 窗口」只是个可关的用户选项，靠不住。只要不吞，卡片滚不滚都改不了游戏在动。
 constexpr UINT kLowLevelMouseWheelMessage = WM_APP + 0x52;
+
+// BUG-1882 — injected SGRE DirectInput shield 的按键事务已完整释放。钩子线程只
+// PostMessage；真正的跨进程 property 撤销仍回到 popup/window 线程串行执行，避免
+// 旧 mouse-up 与下一次 Reveal 交错时撤掉新一代发布。
+constexpr UINT kLowLevelMouseShieldReleaseMessage = WM_APP + 0x53;
 
 // 打包/解包屏幕坐标（x64 下 WPARAM 为 64 位；坐标可为负，故按 uint32 位模式搬运）。
 WPARAM PackMouseHookPoint(int x, int y);
@@ -74,11 +79,26 @@ struct MouseHookWheel {
 LPARAM PackMouseHookWheel(const MouseHookWheel& wheel);
 MouseHookWheel UnpackMouseHookWheel(LPARAM lparam);
 
-// 装钩子并把命中事件投递给 |target|。重复调用只是替换目标窗口（幂等）。
+// 桌面/global 查词：装钩子并把命中事件投递给 |target|。点外只通知关闭，
+// 点击仍交给原应用。重复调用只是替换目标窗口（幂等）。
 void ArmLowLevelMouseHook(HWND target);
+
+// direct galCard 专用：先在钩子线程确认 HHOOK 已安装，再把 |target| 与绑定的
+// |consume_outside_owner| 游戏 HWND 一起发布。只有落在该游戏窗口/渲染子窗客户区、
+// 且没落在查词窗口真实 region 上的 down/up 会被吞。返回 false 时调用方不得把
+// direct popup 上屏，应走既有 fallback，避免冷启动首帧点击穿透。
+bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner);
+// 处理 kLowLevelMouseShieldReleaseMessage。只有 |target| 仍是本次发布的 popup、
+// popup 已 Disarm 且没有按键等待 up 时才撤销；新 Reveal 已经开始时是 no-op。
+void FinalizeLowLevelMouseDirectInputShield(HWND target);
 // 卸钩子：目标窗口立即清空（回调纯放行）；真正的 UnhookWindowsHookEx 延迟一段
-// 宽限期（见 .cpp 的 kDisarmGraceMs），期间再次 Arm 则取消卸载。未装时是 no-op。
-void DisarmLowLevelMouseHook();
+// 宽限期（见 .cpp 的 kDisarmGraceMs），期间再次 Arm 则取消卸载；若仍有已吞 down
+// 等待配对 up，钩子会继续保留到释放完成。未装时是 no-op。
+// Disarm when |target| still owns the singleton binding, or clean an
+// uncommitted synchronous arm when no target was published. Passing the
+// concrete HWND prevents one lookup-window instance from tearing down another
+// instance's newer binding.
+void DisarmLowLevelMouseHook(HWND target);
 
 }  // namespace fushi
 

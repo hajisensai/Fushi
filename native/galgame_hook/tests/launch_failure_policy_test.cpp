@@ -62,6 +62,9 @@ int main() {
   assert(std::strcmp(LaunchFailureToken(LaunchFailureReason::kStaleSession),
                      "staleSession") == 0);
   assert(std::strcmp(
+             LaunchFailureToken(LaunchFailureReason::kResidentHookMismatch),
+             "residentHookMismatch") == 0);
+  assert(std::strcmp(
              LaunchFailureToken(LaunchFailureReason::kSharedMemoryUnavailable),
              "sharedMemoryUnavailable") == 0);
   assert(std::strcmp(LaunchFailureToken(LaunchFailureReason::kResumeFailed),

@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
+import 'package:fushi_core/fushi_core.dart'
+    show databaseSnapshotMainFileName, fnv1a32Hex, isDeletableDatabaseSnapshot;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -15,9 +16,11 @@ import 'package:fushi/src/storage/export_directory.dart'
 ///
 /// 只读扫描：本文件**不做任何删除**。删除一律走各域既有的删除路径
 /// （书籍 `ReaderFushiSource.deleteBook`、词典 `AppModel.deleteDictionary`、
+/// 主库快照残留 fushi_core `deleteDatabaseSnapshotFiles`、
 /// OCR 模型 `MangaOcrService.deleteModels`、Anime4K `deleteAnime4kShaderFiles`），
 /// 由 UI 层接线——存储页新写裸 `Directory.delete` 会绕过墓碑/引用护栏
-/// （见 `video_storage.dart` 头注释的共享资产误删坑）。
+/// （见 `video_storage.dart` 头注释的共享资产误删坑）。每条明细带
+/// [StorageEntryKind] 说明它接哪条原语（或只读）。
 ///
 /// 类目清单是 [AppPaths.fushiOwnedDocumentsEntries] 的**全覆盖分组**：documents
 /// 根下白名单顶层目录每一个都归属且只归属一个类目（守卫见
@@ -68,6 +71,23 @@ enum StorageCategoryId {
   ocrModels,
 }
 
+/// 明细条目的种类 = 它接哪条删除原语。可删性属于**条目**而不是类目：同一个
+/// 「数据库与内部数据」类目里，活库是只读的，快照残留却可删（BUG-1870）。
+enum StorageEntryKind {
+  /// 一本书（`id` = bookKey；删除走 `ReaderFushiSource.deleteBook`）。
+  book,
+
+  /// 一部词典（`id` = 词典名；删除走 `AppModel.deleteDictionary`）。
+  dictionary,
+
+  /// support 根下全部主库快照残留聚成的**一条**（`paths` = 文件清单；删除走
+  /// fushi_core `deleteDatabaseSnapshotFiles`，识别口径同源）。
+  databaseSnapshots,
+
+  /// 类目根下的磁盘子项，只读展示（删它就是裸 `Directory.delete`，绕过墓碑/引用护栏）。
+  readOnly,
+}
+
 /// 一个类目内的单条可展开条目（一本书 / 一部词典 / 类目根下的一个子项）。
 class StorageEntryUsage {
   const StorageEntryUsage({
@@ -75,13 +95,17 @@ class StorageEntryUsage {
     required this.label,
     required this.bytes,
     required this.paths,
+    required this.kind,
   });
 
   /// 域内主键（书 = bookKey，词典 = 词典名，通用子项 = 绝对路径）。
   final String id;
 
-  /// 显示名（书名 / 词典名 / `<顶层目录>/<子项名>`）。
+  /// 显示名（书名 / 词典名 / `<顶层目录>/<子项名>`）。[StorageEntryKind.databaseSnapshots]
+  /// 的显示名由 UI 按 `paths.length` 翻译，此处只是无 i18n 的兜底。
   final String label;
+
+  final StorageEntryKind kind;
 
   /// 该条目占用字节数（多个目录求和）。
   final int bytes;
@@ -259,6 +283,7 @@ List<Map<String, Object>> _childEntriesSync(final List<String> roots) {
         'label': '${p.basename(root)}/${p.basename(child.path)}',
         'path': child.path,
         'bytes': directorySizeSync(child.path),
+        'isFile': child is File,
       });
     }
   }
@@ -358,6 +383,7 @@ class StorageUsageService {
           label: books[i].title,
           bytes: sizes[i + 1],
           paths: perBookPaths[i],
+          kind: StorageEntryKind.book,
         ),
     ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
         b.bytes.compareTo(a.bytes));
@@ -394,6 +420,7 @@ class StorageUsageService {
           label: dictionaryNames[i],
           bytes: sizes[i + 1],
           paths: <String>[perDictPaths[i]],
+          kind: StorageEntryKind.dictionary,
         ),
     ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
         b.bytes.compareTo(a.bytes));
@@ -404,42 +431,107 @@ class StorageUsageService {
     );
   }
 
+  /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
+  static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
+
   Future<StorageCategoryUsage> _scanDatabase(final Directory support) async {
     // support 根的直接子项，减去 OCR 模型子目录（后者单列一类）。明细里因此
     // 能看到主库 `fushi.db`、本地发音库副本 `local_audio_*.db` 等具体大件。
-    return _scanGeneric(
-      StorageCategoryId.database,
-      <String>[support.path],
-      excludePaths: <String>{p.join(support.path, kOcrModelsSupportChild)},
+    //
+    // BUG-1870：主库快照残留（`fushi.db.corrupt-bak-<stamp>.db*`、旧
+    // `hibiki.db.bak.v16.*` 等，用户机器上实测几十个）不再逐个按原始文件名铺开，
+    // 而是聚成**一条**可删条目——识别口径直接用 fushi_core 的
+    // [isDeletableDatabaseSnapshot]（形态白名单 + 恢复流程所有权门控），与删除
+    // 原语同源。所有权门控需要「同目录还有哪些文件」，这份清单 [raw] 里已经有了，
+    // 不再二次 IO。
+    final List<Map<String, Object>> raw =
+        await _run(() => _childEntriesSync(<String>[support.path]));
+    final Set<String> supportChildNames = <String>{
+      for (final Map<String, Object> e in raw) p.basename(e['path'] as String),
+    };
+    final List<Map<String, Object>> snapshots = <Map<String, Object>>[
+      for (final Map<String, Object> e in raw)
+        if (e['isFile'] as bool &&
+            isDeletableDatabaseSnapshot(
+                p.basename(e['path'] as String), supportChildNames))
+          e,
+    ];
+    final List<String> snapshotPaths = <String>[
+      for (final Map<String, Object> e in snapshots) e['path'] as String,
+    ];
+    final List<StorageEntryUsage> entries = <StorageEntryUsage>[
+      ..._readOnlyEntries(raw, excludePaths: <String>{
+        p.join(support.path, kOcrModelsSupportChild),
+        ...snapshotPaths,
+      }),
+      if (snapshots.isNotEmpty)
+        StorageEntryUsage(
+          id: kDatabaseSnapshotsEntryId,
+          label: '${p.basename(support.path)}/'
+              '${_snapshotStemLabel(snapshotPaths)}.*',
+          bytes: snapshots.fold<int>(
+              0, (int sum, Map<String, Object> e) => sum + (e['bytes'] as int)),
+          paths: snapshotPaths,
+          kind: StorageEntryKind.databaseSnapshots,
+        ),
+    ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+        b.bytes.compareTo(a.bytes));
+    return StorageCategoryUsage(
+      id: StorageCategoryId.database,
+      bytes: _sumBytes(entries),
+      entries: entries,
     );
   }
 
+  /// 快照聚合条目 fallback label 里的库名部分。按**实际命中的**主库名生成：
+  /// 老用户盘上几十个文件全是 `hibiki.db.*`，写死 `fushi.db.*` 一个都描述不到
+  /// （BUG-1870 审查）。两个库名都命中时并列列出。
+  static String _snapshotStemLabel(final List<String> snapshotPaths) {
+    final List<String> stems = <String>{
+      for (final String path in snapshotPaths)
+        if (databaseSnapshotMainFileName(p.basename(path)) case final String s)
+          s,
+    }.toList()
+      ..sort();
+    return stems.length == 1 ? stems.single : '{${stems.join(',')}}';
+  }
+
   /// 通用类目扫描：类目根下每个直接子项一条明细，类目总量 = 明细求和。
-  /// [excludePaths] 里的子项既不计入明细也不计入总量（被别的类目单列时用）。
   Future<StorageCategoryUsage> _scanGeneric(
     final StorageCategoryId id,
-    final List<String> roots, {
-    final Set<String> excludePaths = const <String>{},
-  }) async {
+    final List<String> roots,
+  ) async {
     final List<Map<String, Object>> raw =
         await _run(() => _childEntriesSync(roots));
-    final List<StorageEntryUsage> entries = <StorageEntryUsage>[
+    final List<StorageEntryUsage> entries = _readOnlyEntries(raw)
+      ..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+          b.bytes.compareTo(a.bytes));
+    return StorageCategoryUsage(
+        id: id, bytes: _sumBytes(entries), entries: entries);
+  }
+
+  /// isolate 回传的原始子项 → 只读明细。[excludePaths] 里的子项既不计入明细也不
+  /// 计入总量（被别的类目单列、或已聚合进别的条目时用）。
+  static List<StorageEntryUsage> _readOnlyEntries(
+    final List<Map<String, Object>> raw, {
+    final Set<String> excludePaths = const <String>{},
+  }) {
+    return <StorageEntryUsage>[
       for (final Map<String, Object> e in raw)
         if (!excludePaths.contains(e['path'] as String))
           StorageEntryUsage(
-            // 通用明细没有域内主键，用绝对路径当身份（UI 只拿它做展开/去重，
-            // 不接删除原语——通用条目一律只读展示）。
+            // 通用明细没有域内主键，用绝对路径当身份（UI 只拿它做展开/去重）。
             id: e['path'] as String,
             label: e['label'] as String,
             bytes: e['bytes'] as int,
             paths: <String>[e['path'] as String],
+            kind: StorageEntryKind.readOnly,
           ),
-    ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
-        b.bytes.compareTo(a.bytes));
-    final int bytes =
-        entries.fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes);
-    return StorageCategoryUsage(id: id, bytes: bytes, entries: entries);
+    ];
   }
+
+  static int _sumBytes(final List<StorageEntryUsage> entries) =>
+      entries.fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes);
 
   /// 随包组件占用（桌面端安装目录内、随安装包携带；**只展示不可删**——
   /// 更新 = 安装器整体重写安装目录，删掉的必然回来）。移动端返回空。

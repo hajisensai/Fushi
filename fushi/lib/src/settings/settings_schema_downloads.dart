@@ -32,10 +32,13 @@ SettingsDestination buildDownloadsDestination() {
     sections: <SettingsSection>[
       SettingsSection(
         items: <SettingsItem>[
+          // 副标题说清它打开的是下载**页**（任务 / 资源 / 订阅）。此前写的是
+          // `download_settings`（「下载设置」），与本 destination 的 summary 同一个
+          // 词——用户看到的就是「下载设置里面还有一个下载设置」。
           SettingsNavigationItem(
             id: 'downloads.open_page',
             title: t.nav_downloads,
-            subtitle: t.download_settings,
+            subtitle: t.settings_downloads_open_page_hint,
             icon: Icons.download_outlined,
             showIcon: true,
             onTap: (SettingsContext settingsContext) async {
@@ -53,13 +56,13 @@ SettingsDestination buildDownloadsDestination() {
     ],
     // 内联既有 torrent 设置组件（不改写）。包一层 AdaptiveSettingsSection 让它拿到
     // 与其它 section 一致的卡片表面（body 契约：自带 section 布局、不自带脚手架/滚动）。
-    // constrainWidth:false —— 下载页那套「560 居中限宽」在设置详情 pane 里会让本组
-    // 左边缘变成 (paneWidth-560)/2，与其它分类的设置行完全对不齐。
+    // 宽度：BUG-1858 起本组件只有一条规则——与普通设置行同一条 16px 左右基线、
+    // 正文吃满剩下的宽度，不再有「560 居中限宽」那一档。
     // 下载落盘管道（路径映射 / 目标视频来源）是本机配置，跟在后端配置之后；它与
     // 后端表单是平级兄弟而非嵌套——各自承接同一条 rowHorizontal 基线。
     body: (SettingsContext context) => const AdaptiveSettingsSection(
       children: <Widget>[
-        TorrentSettingsSection(constrainWidth: false),
+        TorrentSettingsSection(),
         VideoExternalProviderSettingsSection(
           scope: VideoExternalProviderScope.downloadRouting,
         ),

@@ -75,6 +75,10 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
       fushi_voice_hook::CloseSgreVoiceArchive(&g_sgre_voice_archive);
       return false;
     }
+    // Device creation normally predates helper injection. Do not make audio
+    // support depend on this optional input guard, but install now and retry on
+    // every worker tick until the exact mouse slot is ready.
+    InstallSgreDirectInputShield();
     installed_ = true;
     return true;
   }
@@ -85,12 +89,16 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
   void ProcessPendingEvents() {
-    if (probe()) ProcessSgreLookupTick();
+    if (probe()) {
+      InstallSgreDirectInputShield();
+      ProcessSgreLookupTick();
+    }
   }
 
   void onModuleLoaded(const wchar_t*) override {}
 
   void shutdown() override {
+    ShutdownSgreDirectInputShield();
     if (!installed_) return;
     UnregisterXAudioCompressedResourceHandler(&HandleSgreCompressedResource);
     fushi_voice_hook::CloseSgreVoiceArchive(&g_sgre_voice_archive);

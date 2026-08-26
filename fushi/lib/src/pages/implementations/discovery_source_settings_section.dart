@@ -33,7 +33,7 @@ class _DiscoverySourceSettingsSectionState
     final List<MediaDiscoverySource> sources =
         appModel.mediaDiscoveryService.sources;
     final Set<String> disabled = appModel.discoveryDisabledSourceIds;
-    // 与 TorrentSettingsSection(constrainWidth: false) 同一条 16px 左右基线：
+    // 与 TorrentSettingsSection 同一条 16px 左右基线：
     // 设置详情 pane 里本区与它上下相邻，不对齐会一眼看出是两块拼上去的。
     return Padding(
       padding: EdgeInsets.symmetric(

@@ -84,23 +84,31 @@ void main() {
   });
 
   test('Esc 优先关 push-aside 字幕列表 / 浮层，再退页或退全屏（TODO-314）', () {
+    // BUG-1862：层序判定收进纯函数 `topVideoForegroundLayer`，执行收进
+    // `_dismissTopForegroundLayer`，键盘 Esc / [PopScope] 系统返回键 / 手柄 B 共用同一
+    // 份（此前 [PopScope] 那条只关词典浮层，侧栏开着按 Esc 会直接退掉整页）。这里断言
+    // 的行为没变：字幕列表比侧栏更前台，两者都排在退页之前。
     final int escIdx = src.indexOf('escape: () {');
     expect(escIdx, greaterThanOrEqualTo(0), reason: '缺 escape 回调');
-    // push-aside 字幕列表分支先判 _subtitleListVisible → 关列表。
-    final int listGate =
-        src.indexOf('if (_subtitleListVisible.value) {', escIdx);
-    final int listCloseIdx = src.indexOf('_toggleSubtitleJumpList();', escIdx);
-    // 浮层分支判 _videoSidePanel → _hideVideoSidePanel。
-    final int panelGate =
-        src.indexOf('if (_videoSidePanel.value != null) {', escIdx);
-    final int closeIdx = src.indexOf('_hideVideoSidePanel();', escIdx);
+    final int dismissIdx = src.indexOf('_dismissTopForegroundLayer()', escIdx);
     final int exitIdx = src.indexOf('_handleBackOrExit()', escIdx);
-    expect(listGate, greaterThanOrEqualTo(0),
-        reason: 'Esc 未先判 push-aside 字幕列表');
-    expect(listCloseIdx, greaterThan(listGate), reason: 'Esc 字幕列表分支未关列表');
-    expect(panelGate, greaterThan(listGate), reason: 'Esc 浮层分支应在字幕列表之后');
-    expect(closeIdx, greaterThan(panelGate), reason: 'Esc 浮层分支未关浮层');
-    expect(closeIdx, lessThan(exitIdx), reason: 'Esc 关侧栏必须排在退页之前');
+    expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
+    expect(dismissIdx, lessThan(exitIdx), reason: 'Esc 关前台层必须排在退页之前');
+
+    final int tableIdx = src.indexOf('bool _dismissTopForegroundLayer() {');
+    expect(tableIdx, greaterThanOrEqualTo(0), reason: '缺共用层级表');
+    // 层级表读的是两条独立可见性：push-aside 字幕列表 与 side panel。
+    final int listGate = src.indexOf(
+        'subtitleListVisible: _subtitleListVisible.value', tableIdx);
+    final int panelGate =
+        src.indexOf('sidePanelOpen: _videoSidePanel.value != null', tableIdx);
+    final int listCloseIdx =
+        src.indexOf('_toggleSubtitleJumpList();', tableIdx);
+    final int closeIdx = src.indexOf('_hideVideoSidePanel();', tableIdx);
+    expect(listGate, greaterThanOrEqualTo(0), reason: '层级表未读 push-aside 字幕列表');
+    expect(panelGate, greaterThan(listGate), reason: '字幕列表比侧栏更前台，读取顺序应保持一致');
+    expect(listCloseIdx, greaterThanOrEqualTo(0), reason: '层级表未关字幕列表');
+    expect(closeIdx, greaterThan(listCloseIdx), reason: '层级表未按层序关侧栏');
   });
 
   test('一体式字幕侧栏只剩「全部 / 收藏」两档，无制卡勾选框', () {

@@ -90,12 +90,26 @@ class ReaderSettings {
 
   // ── Core persistence ──────────────────────────────────────────────
 
-  Future<void> loadFromPrefsSnapshot(Map<String, String> snapshot) async {
+  /// 把 [snapshot]（全量 prefs 表快照）里属于本源的行**同步**灌进内存缓存。
+  ///
+  /// 与 [loadFromPrefsSnapshot] 的差别只有一个：不跑迁移、不写盘，因此可以在同步
+  /// 上下文里用。存在的理由是 [ReaderSettings] 的读取器全是同步 getter，但构造
+  /// 出来的实例缓存是**空的**——没有这一步，`ReaderSettings(db).dictionaryFonts`
+  /// 恒为空列表，和「用户什么都没配」不可区分（见
+  /// [ReaderFushiSource.resolveEffectiveReaderSettings] 的说明）。
+  ///
+  /// 迁移（边距/字体目录）由主进程的初始化路径负责且幂等，旁路只读消费方不需要、
+  /// 也不应该在只读路径上写盘。
+  void applyPrefsSnapshot(Map<String, String> snapshot) {
     for (final MapEntry<String, String> entry in snapshot.entries) {
       if (!entry.key.startsWith(_prefix)) continue;
       final String shortKey = entry.key.substring(_prefix.length);
       _cache[shortKey] = _parseValue(entry.value);
     }
+  }
+
+  Future<void> loadFromPrefsSnapshot(Map<String, String> snapshot) async {
+    applyPrefsSnapshot(snapshot);
     await _migrateMargins();
     await _ensureResponsiveMarginDefaults();
     await _ensureFontCatalogState();

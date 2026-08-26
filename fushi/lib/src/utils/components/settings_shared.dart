@@ -1711,6 +1711,93 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
   }
 }
 
+/// 设置页里**表单式**小节（下载后端配置、在线服务配置这类一列裸排输入框的段落）
+/// 的唯一输入框原语。
+///
+/// 与 [AdaptiveSettingsTextField] 的分工：那个是「一行一设置」的行式设置项（走
+/// [AdaptiveSettingsRow]，自带标题/副标题/图标）；本组件是表单段落里裸排的字段，
+/// 标签长在输入框自己的 `labelText` 上，并自带字段间距。
+///
+/// **宽度契约：恒为可用宽度（`double.infinity`）**，左右基线由所在小节承接
+/// （`rowHorizontal`，与普通设置行同一条），字段自身绝不再加一层 `maxWidth`。
+///
+/// BUG-1858：此前设置页并存三种输入框宽度——下载设置的字段自己缩到 480、那两段
+/// 正文又收进 560、其余分类的设置行（[AdaptiveSettingsTextField]）撑满 pane。
+/// 用户 2026-08-25 实报「这里和别的输入框宽度不一样」并拍板统一成撑满，两层限宽
+/// 随之删除。要再引入宽度上限，只能加在这里（全 app 一处），不能各段自设。
+class SettingsFormField extends StatelessWidget {
+  const SettingsFormField({
+    required this.label,
+    required this.onChanged,
+    super.key,
+    this.initialValue,
+    this.controller,
+    this.focusNode,
+    this.hintText,
+    this.helperText,
+    this.errorText,
+    this.obscureText = false,
+    this.keyboardType,
+    this.bottomSpacing = 8,
+  }) : assert(initialValue == null || controller == null,
+            'initialValue 与 controller 二选一');
+
+  /// 浮动标签（`InputDecoration.labelText`）。
+  final String label;
+
+  /// 与 [controller] 二选一：一次性初值。
+  final String? initialValue;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+
+  /// 输入后即消失的占位提示。
+  final String? hintText;
+
+  /// 常驻说明（`helperText`）：讲清输入框自身讲不完的生效边界，最多 3 行。
+  final String? helperText;
+
+  /// 非 null 时以错误态渲染并在下方显示该文案。
+  final String? errorText;
+
+  /// 遮蔽输入（密码 / API key）。同时关掉输入建议与自动纠错。
+  final bool obscureText;
+  final TextInputType? keyboardType;
+
+  /// 字段之间的垂直间距（落在字段下方）。
+  final double bottomSpacing;
+
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomSpacing),
+      child: SizedBox(
+        width: double.infinity,
+        child: TextFormField(
+          initialValue: initialValue,
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: obscureText,
+          enableSuggestions: !obscureText,
+          autocorrect: !obscureText,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hintText,
+            helperText: helperText,
+            helperMaxLines: 3,
+            errorText: errorText,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
 class AdaptiveSettingsStepperRow extends StatelessWidget {
   const AdaptiveSettingsStepperRow({
     required this.title,

@@ -119,6 +119,9 @@ class _PreviewBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool showThumb = state.image != null;
+    // 手上有图就显图、没图才转圈：下面是 `if (showThumb) ... else if (showSpinner)`，
+    // 两者互斥。loading 时**不**往图上叠 spinner——换帧本身就是可见反馈，再叠一层
+    // 转圈只会让匀速划过进度条变成频闪。
     final bool showSpinner = state.phase == ThumbnailPreviewPhase.loading;
     final double radius = 6.0 * uiScale;
     final double fontSize = 12.0 * uiScale;
@@ -134,25 +137,7 @@ class _PreviewBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius),
           child: AspectRatio(
             aspectRatio: aspect <= 0 ? 16 / 9 : aspect,
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                RawImage(image: image, fit: BoxFit.cover),
-                if (showSpinner)
-                  Container(
-                    color: colorScheme.scrim.withValues(alpha: 0.35),
-                    alignment: Alignment.center,
-                    child: SizedBox(
-                      width: 20 * uiScale,
-                      height: 20 * uiScale,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            child: RawImage(image: image, fit: BoxFit.cover),
           ),
         ),
       );

@@ -215,6 +215,20 @@
   // dismisses (persistent semantics). Carried per renderStack payload so a
   // cascade payload without the key is byte-identical to the pre-panel host.
   var layoutMode = 'cascade';
+  // BUG-1857 — 拖 root 卡右下角 grip 期间的「live-fit」状态。
+  //
+  // 拖拽走 native 模态 size 循环：窗口（viewport）每帧随光标长大，但 root 卡的
+  // 宽高是 Dart 钉死的 descriptor.frame 固定 px（applyShellStyle），host 又没有任何
+  // resize 监听 → 拖拽全程卡片一个像素不动、只有透明空白在长，松手后 Dart 收到
+  // WM_EXITSIZEMOVE 的 windowMoved 重排才一步跳到位。这里让 root 卡在拖拽期间跟着
+  // viewport 走：root 尺寸 = grip 按下时的 root 尺寸 + viewport 增量。与 Dart 松手
+  // 后的折算同一口径（resolveOverlayResizeFromDelta：当前尺寸 + 物理增量÷设备像素比，
+  // 且 CSS 增量 == 物理增量÷设备像素比），所以松手时 Dart 的权威重排只是把同一尺寸再写一遍
+  // （高度封顶到内容那一步除外）。不写 Dart、不重渲染词条、不发 overlaySize，
+  // 拖拽期间不会有第二个 SetWindowPos 和模态循环打架。
+  // 面板模式 root 本就 100% 跟 viewport，不走这条；嵌套子卡锚在父卡词上，不动。
+  var liveResize = null;
+  var LIVE_RESIZE_MIN_PX = 80;
   // Panel top bar height (CSS px): grip + pin + close. Root shell top offset.
   var PANEL_BAR_HEIGHT = 28;
   // Panel pin VISUAL state. The truth source is the Dart-side pref (native
@@ -1186,6 +1200,85 @@
   // 进模态 size 循环，松手经 WM_EXITSIZEMOVE 回报窗口 rect 给 Dart 落 overlay 尺寸键。
   // preventDefault + stopPropagation(capture)：不让这次 mousedown 触发 host 的
   // 点外关闭 / 拖出选区。返回 null 时（node harness 无 DOM）createRecord 照常健壮。
+  // BUG-1857 — viewport 尺寸（CSS px）。node harness 的假 window 没有 innerWidth，
+  // 取不到就返回 0：beginLiveResize 据此拒绝武装，拖拽退回「松手才跳」的旧观感，
+  // 绝不把 NaN 写进 style。
+  function viewportWidth() {
+    return (typeof window.innerWidth === 'number' && isFinite(window.innerWidth))
+        ? window.innerWidth : 0;
+  }
+
+  function viewportHeight() {
+    return (typeof window.innerHeight === 'number' &&
+            isFinite(window.innerHeight))
+        ? window.innerHeight : 0;
+  }
+
+  function liveResizeRootRecord() {
+    if (layoutMode !== 'cascade' || !lastRootId) {
+      return null;
+    }
+    var record = frames.get(lastRootId);
+    return (record && record.shell) ? record : null;
+  }
+
+  // grip mousedown 时武装：记下 root 卡当前 CSS 尺寸与 viewport 尺寸。root 尺寸优先读
+  // shell.style（applyShellStyle 可能已把高度封顶到内容），其次 descriptor.frame。
+  function beginLiveResize() {
+    liveResize = null;
+    var record = liveResizeRootRecord();
+    if (!record) {
+      return false;
+    }
+    var vw = viewportWidth();
+    var vh = viewportHeight();
+    if (vw <= 0 || vh <= 0) {
+      return false;
+    }
+    var f = (record.descriptor && record.descriptor.frame) || {};
+    var w = parseFloat(record.shell.style.width);
+    var h = parseFloat(record.shell.style.height);
+    if (!isFinite(w) || w <= 0) w = (typeof f.width === 'number') ? f.width : 0;
+    if (!isFinite(h) || h <= 0) h = (typeof f.height === 'number') ? f.height : 0;
+    if (w <= 0 || h <= 0) {
+      return false;
+    }
+    liveResize = {
+      id: lastRootId, width: w, height: h, viewportW: vw, viewportH: vh
+    };
+    return true;
+  }
+
+  // native WM_EXITSIZEMOVE 调用；renderStack 也调（Dart 权威重排接管，顺带清掉
+  // 「grip 按下但模态循环没起来」的悬空武装，免得下一次嵌套卡改窗口尺寸时误把
+  // root 卡拉大）。
+  function endLiveResize() {
+    liveResize = null;
+  }
+
+  // window resize（WM_SIZE → put_Bounds → Chromium viewport 变化）时每帧调用。
+  // 标记 contentMeasureDirty：松手后 Dart 重排时 shell.style.width 已等于新宽度，
+  // applyShellStyle 那条「宽度变了才置脏」判不到，若不在这里置脏，preserveMeasuredHeight
+  // 会拿旧宽度下量出的内容高度去封顶新卡、且 scheduleMeasure 复用缓存不重量。
+  function handleWindowResize() {
+    if (!liveResize) {
+      return false;
+    }
+    var record = frames.get(liveResize.id);
+    if (!record || !record.shell || layoutMode !== 'cascade') {
+      liveResize = null;
+      return false;
+    }
+    var w = liveResize.width + (viewportWidth() - liveResize.viewportW);
+    var h = liveResize.height + (viewportHeight() - liveResize.viewportH);
+    record.shell.style.width =
+        Math.max(LIVE_RESIZE_MIN_PX, Math.round(w)) + 'px';
+    record.shell.style.height =
+        Math.max(LIVE_RESIZE_MIN_PX, Math.round(h)) + 'px';
+    record.contentMeasureDirty = true;
+    return true;
+  }
+
   function createResizeGrip() {
     if (!document || typeof document.createElement !== 'function') {
       return null;
@@ -1201,6 +1294,8 @@
           event.stopPropagation();
         }
       }
+      // BUG-1857 — 先武装 live-fit 再进模态循环，拖拽期间 root 卡随 viewport 长。
+      beginLiveResize();
       postToHost('beginWindowResize', []);
     };
     if (typeof grip.addEventListener === 'function') {
@@ -3141,6 +3236,8 @@
 
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    // BUG-1857 — Dart 的权威重排接管 root 尺寸；live-fit 到此为止。
+    endLiveResize();
     // BUG-1793 — this bit identifies the originating UI surface, not merely the
     // physical HWND route. A galgame text-overlay tap intentionally uses the
     // desktop lookup window, but still must not expose process-wide copy history.
@@ -4245,6 +4342,12 @@
     setClipboardHistoryAvailable: setClipboardHistoryAvailable,
     showClipboardHistory: showClipboardHistory,
     hideClipboardHistory: hideClipboardHistory,
+    // BUG-1857 — grip 拖拽期间 root 卡跟随 viewport；endLiveResize 由 native
+    // WM_EXITSIZEMOVE 调，handleWindowResize 同时挂在 window resize 上（导出给
+    // node harness 直接驱动）。
+    beginLiveResize: beginLiveResize,
+    endLiveResize: endLiveResize,
+    handleWindowResize: handleWindowResize,
     _frames: frames,
     // TODO-1188 — exposed for the node bridge-routing harness only (never used to
     // drive behaviour): the live globalId -> {frameId, localId} route map.
@@ -4264,5 +4367,9 @@
         {once: true});
   } else {
     startStandbyPrewarm();
+  }
+  // BUG-1857 — 模态 size 循环里每次 WM_SIZE → put_Bounds 都会到这里；未武装时 no-op。
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', handleWindowResize);
   }
 })();

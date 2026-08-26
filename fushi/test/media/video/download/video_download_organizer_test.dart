@@ -210,6 +210,402 @@ void main() {
     );
   });
 
+  test(
+      'numbered specials in an EXTRA directory never claim episode targets '
+      '(BUG-1865)', () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-organizer-numbered-extras-',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    // 用户原始种子（Moozzi2 Hibike! Euphonium S3 - TV + SP）的真实文件名：
+    // EXTRA 里有 6 个以 `- 05` 结尾的特典，硬按文件名解集号时它们与真正的第 5
+    // 集抢同一个 `Season 03/… - S03E05.mkv`，整批整理直接失败。
+    const String releaseRoot =
+        '[Moozzi2] Hibike! Euphonium S3 [ x265-10Bit Ver. ] - TV + SP';
+    const String suffix = '(BD 1920x1080 x265-10Bit Flac).mkv';
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: '響け！ユーフォニアム３',
+        year: 2024,
+        kind: VideoOrganizationKind.episodic,
+        defaultSeasonNumber: 3,
+        sourceRoot: root.path,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: root.path,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+              '[SP05] Making Video Collection - 05 $suffix',
+          size: 30,
+          progress: 1,
+          index: 11,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+              '[SP08] Extra Episode - 05 $suffix',
+          size: 31,
+          progress: 1,
+          index: 16,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+              '[SP00] Menu - 05 [ Ver.01 ] $suffix',
+          size: 32,
+          progress: 1,
+          index: 26,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/EXTRA/[Moozzi2] Hibike! Euphonium S3 '
+              '[SP01] NCOP $suffix',
+          size: 33,
+          progress: 1,
+          index: 13,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/[Moozzi2] Hibike! Euphonium S3 - 05 '
+              '(BD 1920x1080 x265-10Bit FLACx3).mkv',
+          size: 900,
+          progress: 1,
+          index: 64,
+        ),
+      ],
+    );
+
+    final Map<int, VideoOrganizationFilePlan> byIndex =
+        <int, VideoOrganizationFilePlan>{
+      for (final VideoOrganizationFilePlan file in plan.files)
+        file.backendFileIndex: file,
+    };
+    // 唯一的正片拿到 Season 目标，且拿到的是它自己的集号。
+    expect(
+      byIndex[64]!.targetRelativePath,
+      '響け！ユーフォニアム３ (2024)/Season 03/'
+      '響け！ユーフォニアム３ (2024) - S03E05.mkv',
+    );
+    expect(byIndex[64]!.episodeNumber, 5);
+    // 特典一律镜像进 Extras/EXTRA/，且**不带集号**——带了就意味着它还在参与
+    // 集号命名空间，撞号只是迟早的事。
+    for (final int index in <int>[11, 16, 26, 13]) {
+      expect(
+        byIndex[index]!.targetRelativePath,
+        startsWith('響け！ユーフォニアム３ (2024)/Extras/EXTRA/'),
+        reason: 'index $index 应进 Extras',
+      );
+      expect(byIndex[index]!.episodeNumber, isNull, reason: 'index $index');
+    }
+    // Season 目录下有且只有正片一个文件。
+    expect(
+      plan.files
+          .where(
+            (VideoOrganizationFilePlan file) =>
+                file.targetRelativePath.contains('/Season '),
+          )
+          .map((VideoOrganizationFilePlan file) => file.backendFileIndex),
+      <int>[64],
+    );
+  });
+
+  test(
+      'numbered specials in SPs/Previews directories stay out of Season '
+      '(BUG-1865)', () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-organizer-vcb-extras-',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    // 第二个真实种子（VCB-Studio Hibike! Euphonium 2）：编号写在方括号里
+    // （`[SP05]` `[Menu05]` `[WEB Preview05]`）。
+    //
+    // 注意这三种**方括号编号** `parseVideoFilename` 其实解不出集号（实测
+    // `[SP05]` → `episode=null`），BUG-1785 之后它们本来就进 Extras——只拿它们
+    // 当语料的话，去掉目录判定这条用例照样绿，那就不是负向对照而只是形状文档。
+    // 所以额外放一个**解得出集号**的特典（`… - 05`，与正片 `[05]` 同解 5）：去掉
+    // 目录判定时它会和正片抢同一个 `S02E05`，用例必红。
+    const String releaseRoot = '[VCB-Studio] Hibike! Euphonium 2 [Ma10p_1080p]';
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: '響け！ユーフォニアム 2',
+        year: 2016,
+        kind: VideoOrganizationKind.episodic,
+        defaultSeasonNumber: 2,
+        sourceRoot: root.path,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: root.path,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: '$releaseRoot/'
+              '[VCB-Studio] Hibike! Euphonium 2 [05][Ma10p_1080p][x265_flac_2aac].mkv',
+          size: 900,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot\\SPs\\'
+              '[VCB-Studio] Hibike! Euphonium 2 [SP05][Ma10p_1080p][x265_flac].mkv',
+          size: 40,
+          progress: 1,
+          index: 1,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/SPs/'
+              '[VCB-Studio] Hibike! Euphonium 2 [Menu05][Ma10p_1080p][x265_flac].mkv',
+          size: 41,
+          progress: 1,
+          index: 2,
+        ),
+        const TorrentFileEntry(
+          name: '$releaseRoot/Previews/'
+              '[VCB-Studio] Hibike! Euphonium 2 [WEB Preview05][Ma10p_1080p][x265_flac].mkv',
+          size: 42,
+          progress: 1,
+          index: 3,
+        ),
+        // 负向对照的承重件：这条**解得出** `episode=5`（`- 05`），只有目录判定
+        // 拦得住它。
+        const TorrentFileEntry(
+          name: '$releaseRoot/SPs/'
+              '[VCB-Studio] Hibike! Euphonium 2 [SP] Bonus Interview - 05 '
+              '[Ma10p_1080p][x265_flac].mkv',
+          size: 43,
+          progress: 1,
+          index: 4,
+        ),
+      ],
+    );
+
+    final Map<int, VideoOrganizationFilePlan> byIndex =
+        <int, VideoOrganizationFilePlan>{
+      for (final VideoOrganizationFilePlan file in plan.files)
+        file.backendFileIndex: file,
+    };
+    expect(
+      byIndex[0]!.targetRelativePath,
+      '響け！ユーフォニアム 2 (2016)/Season 02/'
+      '響け！ユーフォニアム 2 (2016) - S02E05.mkv',
+    );
+    expect(
+      byIndex[1]!.targetRelativePath,
+      startsWith('響け！ユーフォニアム 2 (2016)/Extras/SPs/'),
+    );
+    expect(
+      byIndex[2]!.targetRelativePath,
+      startsWith('響け！ユーフォニアム 2 (2016)/Extras/SPs/'),
+    );
+    expect(
+      byIndex[3]!.targetRelativePath,
+      startsWith('響け！ユーフォニアム 2 (2016)/Extras/Previews/'),
+    );
+    expect(
+      byIndex[4]!.targetRelativePath,
+      startsWith('響け！ユーフォニアム 2 (2016)/Extras/SPs/'),
+    );
+    expect(byIndex[4]!.episodeNumber, isNull);
+    // Season 目录下有且只有正片一个文件。
+    expect(
+      plan.files
+          .where(
+            (VideoOrganizationFilePlan file) =>
+                file.targetRelativePath.contains('/Season '),
+          )
+          .map((VideoOrganizationFilePlan file) => file.backendFileIndex),
+      <int>[0],
+    );
+  });
+
+  test(
+      'a specials-only torrent falls back to filename parsing instead of '
+      'failing (BUG-1865)', () {
+    // 纯特典种子（用户单独下的 SP 盘）：所有视频都在 `SPs/` 下，先分类会一集都
+    // 认不出。这时必须退回旧口径按文件名解集号，而不是抛
+    // `unable to determine episode number` 把任务打进 needsAttention——那是把一
+    // 个修复前能正常整理的种子弄坏。
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: 'Show',
+        kind: VideoOrganizationKind.episodic,
+        sourceRoot: _localRoot,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: _localRoot,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Show SP Disc/SPs/Show - 01.mkv',
+          size: 10,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'Show SP Disc/SPs/Show - 02.mkv',
+          size: 11,
+          progress: 1,
+          index: 1,
+        ),
+      ],
+    );
+
+    expect(
+      plan.files.map((VideoOrganizationFilePlan f) => f.targetRelativePath),
+      <String>[
+        'Show/Season 01/Show - S01E01.mkv',
+        'Show/Season 01/Show - S01E02.mkv',
+      ],
+    );
+    expect(plan.files.first.episodeNumber, 1);
+    expect(plan.files.last.episodeNumber, 2);
+  });
+
+  test('a CJK-named extras directory is classified like EXTRA (BUG-1865)', () {
+    // `特典映像` / `映像特典` / `メニュー` 是日语/华语发布组最常见的特典目录名。
+    // 归一化一旦把非 ASCII 删光，这些目录名恒归一成空串、词表结构上不可能命中，
+    // 用户看到的仍然是与正片一模一样的撞号。`【】` 这类标点则必须继续被去掉。
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: 'Show',
+        kind: VideoOrganizationKind.episodic,
+        sourceRoot: _localRoot,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: _localRoot,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Show/Show - 05.mkv',
+          size: 100,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'Show/【特典映像】/Show - 05.mkv',
+          size: 10,
+          progress: 1,
+          index: 1,
+        ),
+        const TorrentFileEntry(
+          name: 'Show/メニュー/Show - 05.mkv',
+          size: 11,
+          progress: 1,
+          index: 2,
+        ),
+      ],
+    );
+
+    expect(
+      plan.files.first.targetRelativePath,
+      'Show/Season 01/Show - S01E05.mkv',
+    );
+    expect(
+      plan.files[1].targetRelativePath,
+      'Show/Extras/【特典映像】/Show - 05.mkv',
+    );
+    expect(plan.files[1].episodeNumber, isNull);
+    expect(
+      plan.files.last.targetRelativePath,
+      'Show/Extras/メニュー/Show - 05.mkv',
+    );
+    expect(plan.files.last.episodeNumber, isNull);
+  });
+
+  test('a Season subdirectory is not mistaken for an extras directory', () {
+    // 特典判定只认词表里的目录名。`Season 1/` 这类真·正片目录不在表里，必须
+    // 继续走集号解析——否则整季种子会被整批扫进 Extras，比撞号还糟。
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: 'Show',
+        kind: VideoOrganizationKind.episodic,
+        sourceRoot: _localRoot,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: _localRoot,
+        ),
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Show Complete/Season 1/Show - 01.mkv',
+          size: 100,
+          progress: 1,
+          index: 0,
+        ),
+        const TorrentFileEntry(
+          name: 'Show Complete/Extras/Show NCOP.mkv',
+          size: 10,
+          progress: 1,
+          index: 1,
+        ),
+      ],
+    );
+
+    expect(
+      plan.files.first.targetRelativePath,
+      'Show/Season 01/Show - S01E01.mkv',
+    );
+    expect(plan.files.first.episodeNumber, 1);
+    expect(
+      plan.files.last.targetRelativePath,
+      'Show/Extras/Extras/Show NCOP.mkv',
+    );
+  });
+
+  test('a genuine duplicate still fails, and names both source files', () {
+    // 撞号检查保留给**真**冲突（同一集两个文件）。修 BUG-1865 是把假冲突消掉，
+    // 不是把冲突检查拆掉；消息必须点名两个源文件，否则用户无从判断删哪个。
+    expect(
+      () => const VideoDownloadOrganizer().plan(
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: 'Show',
+          kind: VideoOrganizationKind.episodic,
+          sourceRoot: _localRoot,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: _localRoot,
+          ),
+        ),
+        <TorrentFileEntry>[
+          const TorrentFileEntry(
+            name: 'Show/Show - 01 [v1].mkv',
+            size: 100,
+            progress: 1,
+            index: 0,
+          ),
+          const TorrentFileEntry(
+            name: 'Show/Show - 01 [v2].mkv',
+            size: 110,
+            progress: 1,
+            index: 1,
+          ),
+        ],
+      ),
+      throwsA(
+        isA<FormatException>().having(
+          (FormatException error) => error.message,
+          'message',
+          allOf(
+            contains('organization target collision'),
+            contains('Show - 01 [v1].mkv'),
+            contains('Show - 01 [v2].mkv'),
+          ),
+        ),
+      ),
+    );
+  });
+
   test('unparseable episodic filename blocks before backend mutation',
       () async {
     final Directory root = await Directory.systemTemp.createTemp(

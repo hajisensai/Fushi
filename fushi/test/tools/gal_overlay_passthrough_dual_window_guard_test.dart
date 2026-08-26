@@ -220,6 +220,41 @@ void main() {
           reason: '穿透态背景必须无条件清零 alpha');
     });
 
+    // BUG-1853 — 穿透态的碰撞箱是「文字行矩形并集」，不是字形轮廓。
+    // 整窗 alpha 0 + 逐像素命中 = 只有字形像素归我们；口/国/目 的内部、笔画之间、
+    // 字距行距的镂空全透给游戏，点字查词变成看运气。修法是在每行文字的行盒里铺
+    // 一层 kHookTextMinCatchAlpha 的不可见 catch fill：行盒内任何一点都算点在字
+    // 上，行盒外仍是真 alpha 0（「点背景推台词」的不变式不动）。
+    test('穿透态必须在文字行矩形内铺不可见 catch fill（BUG-1853）', () {
+      final String render =
+          functionBody(body, 'void FloatingLyricWindow::Render()');
+      final int catchFill = render.indexOf(
+          'if (hook_text_mode_ && pass_through_ && !text_.empty())');
+      expect(catchFill, isNot(-1),
+          reason: '穿透态行矩形 catch fill 的守门条件必须存在，且只在'
+              'hook 台词 + 穿透态下生效（歌词条 / 非穿透态整窗兜底已经可点）');
+      // 行盒必须来自 DirectWrite 自己的排版（HitTestTextRange 全文范围），
+      // 不能手算——手算行高会和有注音时 SetLineSpacing 加高后的真实行盒漂移。
+      final String block = render.substring(catchFill, catchFill + 2200);
+      expect(
+        block.contains('HitTestTextRange(0, static_cast<UINT32>(text_.size())'),
+        isTrue,
+        reason: '行矩形必须取自 HitTestTextRange(0, text_.size())，'
+            '即 DirectWrite 排好版的逐行行盒',
+      );
+      expect(block.contains('kHookTextMinCatchAlpha << 24'), isTrue,
+          reason: 'catch fill 必须用 kHookTextMinCatchAlpha（不可见但可命中），'
+              '不能用可见 alpha——否则穿透态多出一块底色');
+      expect(block.contains('FillRectangle('), isTrue,
+          reason: '行矩形要真的填进 layered 位图，命中判定才会把它算成窗口像素');
+      // 铺在 PushAxisAlignedClip(text_clip) 之后：滚出视口的行不能吃点击。
+      final int clip = render.indexOf('PushAxisAlignedClip(text_clip');
+      expect(clip, isNot(-1));
+      expect(clip < catchFill, isTrue,
+          reason: 'catch fill 必须在 text_clip 裁剪之内绘制，'
+              '否则滚出视口的行仍会拦截本该给游戏的点击');
+    });
+
     test('a toolbar that cannot be created cancels pass-through', () {
       final String applier = functionBody(
           body, 'void FloatingLyricWindow::ApplyPassThroughExStyle()');
