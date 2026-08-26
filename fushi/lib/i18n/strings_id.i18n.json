@@ -3807,5 +3807,9 @@
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
   "download_video_source_required": "Video source required",
-  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed."
+  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed.",
+  "video_subtitle_delete": "Delete subtitle file",
+  "video_subtitle_delete_confirm": "Delete this subtitle file from disk? This can't be undone.\\n$path",
+  "video_subtitle_deleted": "Subtitle file deleted: $label",
+  "video_subtitle_delete_failed": "Failed to delete subtitle file: $label"
 }

@@ -3807,5 +3807,9 @@
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
   "download_video_source_required": "Video source required",
-  "game_hook_reason_stale_session": "上一次捕獲會話還沒釋放乾淨，Fushi 正在自動重試，不用做任何操作。"
+  "game_hook_reason_stale_session": "上一次捕獲會話還沒釋放乾淨，Fushi 正在自動重試，不用做任何操作。",
+  "video_subtitle_delete": "Delete subtitle file",
+  "video_subtitle_delete_confirm": "Delete this subtitle file from disk? This can't be undone.\\n$path",
+  "video_subtitle_deleted": "Subtitle file deleted: $label",
+  "video_subtitle_delete_failed": "Failed to delete subtitle file: $label"
 }
