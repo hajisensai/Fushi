@@ -3833,5 +3833,13 @@
   "delete_disclosure_book_source_kept": "インポートした元の書籍・字幕ファイル",
   "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
-  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。"
+  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

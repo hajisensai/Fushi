@@ -50,6 +50,12 @@ abstract interface class TorrentMetainfoBackend implements TorrentBackend {
   });
 }
 
+/// 支持给已有种子追加 Tracker 的可选能力。
+abstract interface class TorrentTrackerMutationBackend
+    implements TorrentBackend {
+  Future<bool> addTrackers(String torrentId, Iterable<String> trackerUrls);
+}
+
 /// 某一时刻单个种子任务的快照（后端无关）。
 class TorrentSnapshot {
   const TorrentSnapshot({

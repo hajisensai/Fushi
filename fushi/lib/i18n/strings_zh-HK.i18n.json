@@ -3833,5 +3833,13 @@
   "delete_disclosure_book_source_kept": "你匯入時選擇的原始書籍與字幕檔案",
   "download_task_delete_files_failed": "已下載的資料未能刪除：下載引擎沒有確認",
   "delete_local_files_failed": "有 $n 個本機檔案刪除失敗，可能正在被使用",
-  "batch_hidden_by_filter_note": "另有 ${n} 項被目前篩選隱藏，今次不會處理。"
+  "batch_hidden_by_filter_note": "另有 ${n} 項被目前篩選隱藏，今次不會處理。",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

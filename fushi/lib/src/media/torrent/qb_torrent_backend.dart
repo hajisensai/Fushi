@@ -1,17 +1,44 @@
+import 'package:fushi/src/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 
-/// [TorrentBackend] 的外接 qBittorrent 实现：纯转发适配器，把接口语义
-/// 一一映射到 [QBittorrentClient] 的 WebUI 调用，不加任何额外逻辑。
+/// [TorrentBackend] 的外接 qBittorrent 实现：把接口语义映射到
+/// [QBittorrentClient] 的 WebUI 调用，并按配置为新任务附加订阅 tracker。
 class QbTorrentBackend
     implements
         TorrentRemovalBackend,
         TorrentPauseBackend,
         TorrentDetailBackend,
-        TorrentMetainfoBackend {
-  QbTorrentBackend(this._client);
+        TorrentMetainfoBackend,
+        TorrentTrackerMutationBackend {
+  QbTorrentBackend(
+    this._client, {
+    TrackerSubscriptionService? trackerSubscriptionService,
+    bool autoAddTrackerSubscription = false,
+    String trackerSubscriptionUrl = '',
+  })  : _trackerSubscriptionService = trackerSubscriptionService,
+        _autoAddTrackerSubscription = autoAddTrackerSubscription,
+        _trackerSubscriptionUrl = trackerSubscriptionUrl;
 
   final QBittorrentClient _client;
+  final TrackerSubscriptionService? _trackerSubscriptionService;
+  final bool _autoAddTrackerSubscription;
+  final String _trackerSubscriptionUrl;
+
+  Future<List<String>> _subscriptionTrackers() async {
+    final TrackerSubscriptionService? service = _trackerSubscriptionService;
+    if (!_autoAddTrackerSubscription ||
+        service == null ||
+        _trackerSubscriptionUrl.trim().isEmpty) {
+      return const <String>[];
+    }
+    try {
+      return await service.fetch(_trackerSubscriptionUrl);
+    } on Object {
+      return const <String>[];
+    }
+  }
 
   /// qb WebUI 一直有暂停/恢复端点（4.x pause/resume、5.x stop/start，
   /// 客户端已双名兼容），能力恒可用。
@@ -46,13 +73,20 @@ class QbTorrentBackend
     required String category,
     bool sequential = false,
     bool firstLastPiecePrio = false,
-  }) =>
-      _client.addTorrents(
-        <String>[magnetOrUrl],
-        category: category,
-        sequentialDownload: sequential,
-        firstLastPiecePrio: firstLastPiecePrio,
-      );
+  }) async {
+    final bool added = await _client.addTorrents(
+      <String>[magnetOrUrl],
+      category: category,
+      sequentialDownload: sequential,
+      firstLastPiecePrio: firstLastPiecePrio,
+    );
+    final String? torrentId = parseMagnetInfoHash(magnetOrUrl);
+    if (added && torrentId != null) {
+      final List<String> trackers = await _subscriptionTrackers();
+      if (trackers.isNotEmpty) await addTrackers(torrentId, trackers);
+    }
+    return added;
+  }
 
   @override
   Future<bool> addTorrentMetainfo(
@@ -60,14 +94,27 @@ class QbTorrentBackend
     required String category,
     bool sequential = false,
     bool firstLastPiecePrio = false,
-  }) =>
-      _client.addTorrentFile(
-        payload.bytes,
-        fileName: payload.fileName,
-        category: category,
-        sequentialDownload: sequential,
-        firstLastPiecePrio: firstLastPiecePrio,
-      );
+  }) async {
+    final bool added = await _client.addTorrentFile(
+      payload.bytes,
+      fileName: payload.fileName,
+      category: category,
+      sequentialDownload: sequential,
+      firstLastPiecePrio: firstLastPiecePrio,
+    );
+    if (added && payload.torrentId != null) {
+      final List<String> trackers = await _subscriptionTrackers();
+      if (trackers.isNotEmpty) await addTrackers(payload.torrentId!, trackers);
+    }
+    return added;
+  }
+
+  @override
+  Future<bool> addTrackers(
+    String torrentId,
+    Iterable<String> trackerUrls,
+  ) =>
+      _client.addTrackers(torrentId, trackerUrls);
 
   @override
   Future<List<TorrentSnapshot>> listTorrents({String? category}) =>

@@ -3833,5 +3833,13 @@
   "delete_disclosure_book_source_kept": "ไฟล์หนังสือและคำบรรยายต้นฉบับที่คุณนำเข้า",
   "download_task_delete_files_failed": "ลบข้อมูลที่ดาวน์โหลดไว้ไม่สำเร็จ เพราะตัวจัดการดาวน์โหลดไม่ยืนยัน",
   "delete_local_files_failed": "ลบไฟล์ในเครื่องไม่สำเร็จ $n ไฟล์ อาจกำลังถูกใช้งานอยู่",
-  "batch_hidden_by_filter_note": "รายการที่เลือกอีก ${n} รายการถูกซ่อนด้วยตัวกรองปัจจุบันและจะไม่ถูกดำเนินการ"
+  "batch_hidden_by_filter_note": "รายการที่เลือกอีก ${n} รายการถูกซ่อนด้วยตัวกรองปัจจุบันและจะไม่ถูกดำเนินการ",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

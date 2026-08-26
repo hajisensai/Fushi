@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 
 /// [TorrentBackend] 的内置 libtorrent 实现（阶段1b：Windows 先行）。
@@ -24,7 +25,8 @@ class EmbeddedTorrentBackend
         TorrentRemovalBackend,
         TorrentPauseBackend,
         TorrentDetailBackend,
-        TorrentMetainfoBackend {
+        TorrentMetainfoBackend,
+        TorrentTrackerMutationBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
@@ -34,6 +36,9 @@ class EmbeddedTorrentBackend
     void Function()? endNetworkWake,
     void Function()? reconcileNetworkDiscovery,
     Directory? metainfoTempDirectory,
+    TrackerSubscriptionService? trackerSubscriptionService,
+    bool autoAddTrackerSubscription = false,
+    String trackerSubscriptionUrl = '',
   })  : _session = session,
         _saveRoots = saveRoots,
         _closesSession = closesSession,
@@ -41,7 +46,10 @@ class EmbeddedTorrentBackend
         _beginNetworkWake = beginNetworkWake,
         _endNetworkWake = endNetworkWake,
         _reconcileNetworkDiscovery = reconcileNetworkDiscovery,
-        _metainfoTempDirectory = metainfoTempDirectory;
+        _metainfoTempDirectory = metainfoTempDirectory,
+        _trackerSubscriptionService = trackerSubscriptionService,
+        _autoAddTrackerSubscription = autoAddTrackerSubscription,
+        _trackerSubscriptionUrl = trackerSubscriptionUrl;
 
   final EmbeddedTorrentSession _session;
 
@@ -70,6 +78,9 @@ class EmbeddedTorrentBackend
   final bool _closesSession;
 
   final Directory? _metainfoTempDirectory;
+  final TrackerSubscriptionService? _trackerSubscriptionService;
+  final bool _autoAddTrackerSubscription;
+  final String _trackerSubscriptionUrl;
 
   /// 已添加但 firstLastPiecePrio 尚未应用成功（等元数据）的种子。
   final Set<String> _pendingFirstLast = <String>{};
@@ -131,6 +142,10 @@ class EmbeddedTorrentBackend
       _endNetworkWake?.call();
     }
     if (!result.ok || result.id == null) return false;
+    final List<String> trackers = await _subscriptionTrackers();
+    if (trackers.isNotEmpty) {
+      _session.addTrackers(result.id!, trackers);
+    }
     if (firstLastPiecePrio) {
       // 立即试一次（.torrent 文件路径元数据现成）；不成留待轮询补。
       if (_session.applyFirstLastPriority(result.id!) != 1) {
@@ -139,6 +154,27 @@ class EmbeddedTorrentBackend
     }
     return true;
   }
+
+  Future<List<String>> _subscriptionTrackers() async {
+    final TrackerSubscriptionService? service = _trackerSubscriptionService;
+    if (!_autoAddTrackerSubscription ||
+        service == null ||
+        _trackerSubscriptionUrl.trim().isEmpty) {
+      return const <String>[];
+    }
+    try {
+      return await service.fetch(_trackerSubscriptionUrl);
+    } on Object {
+      return const <String>[];
+    }
+  }
+
+  @override
+  Future<bool> addTrackers(
+    String torrentId,
+    Iterable<String> trackerUrls,
+  ) async =>
+      _session.addTrackers(torrentId, trackerUrls);
 
   @override
   Future<bool> addTorrentMetainfo(

@@ -3833,5 +3833,13 @@
   "delete_disclosure_book_source_kept": "İçe aktardığın özgün kitap ve altyazı dosyaları",
   "download_task_delete_files_failed": "İndirilen veriler silinemedi; indirme motoru bunu onaylamadı",
   "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir",
-  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek."
+  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek.",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

@@ -3833,5 +3833,13 @@
   "delete_disclosure_book_source_kept": "Импортированные вами исходные файлы книги и субтитров",
   "download_task_delete_files_failed": "Не удалось удалить загруженные данные: движок загрузок не подтвердил операцию",
   "delete_local_files_failed": "Не удалось удалить локальные файлы ($n); возможно, они ещё используются",
-  "batch_hidden_by_filter_note": "Ещё ${n} выбранных элементов скрыты текущим фильтром и не будут обработаны."
+  "batch_hidden_by_filter_note": "Ещё ${n} выбранных элементов скрыты текущим фильтром и не будут обработаны.",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

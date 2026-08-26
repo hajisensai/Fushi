@@ -65,6 +65,7 @@ import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi/src/media/torrent/tracker_subscription.dart';
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
@@ -3592,6 +3593,24 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
+  TrackerSubscriptionService? _trackerSubscriptionService;
+  TrackerSubscriptionService get _trackers =>
+      _trackerSubscriptionService ??= TrackerSubscriptionService(
+        httpClientFactory: createDownloadHttpClient,
+      );
+
+  Future<List<String>> refreshTrackerSubscription({
+    String? sourceUrl,
+    bool forceRefresh = true,
+  }) {
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
+    return _trackers.fetch(
+      sourceUrl ?? config.trackerSubscriptionUrl,
+      forceRefresh: forceRefresh,
+    );
+  }
+
   /// 内置下载根集合（懒建 host 时需要）。[startAnimeDownloadService] 里算好存下，
   /// 避免懒建路径再去 await 一次目录解析。TODO-1961：活动根 = 用户配置目录（未配置
   /// 或不可用时 = 默认根），历史根让改过目录的旧任务在下载页仍然可见。
@@ -3937,14 +3956,23 @@ class AppModel with ChangeNotifier {
         config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     if (resolved == QbConnectionConfig.backendEmbedded) {
       final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
-      return host?.backendView();
+      return host?.backendView(
+        trackerSubscriptionService: _trackers,
+        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+      );
     }
     if (config.baseUrl.trim().isEmpty) return null;
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
   }
 
   Future<void> _startVideoDownloadPipeline() async {
@@ -4467,13 +4495,22 @@ class AppModel with ChangeNotifier {
             ? _ensureEmbeddedTorrentHost()
             : _embeddedTorrentHost;
     if (backend == QbConnectionConfig.backendEmbedded && host != null) {
-      return host.backendView();
+      return host.backendView(
+        trackerSubscriptionService: _trackers,
+        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+      );
     }
-    return QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.baseUrl,
-      username: config.username,
-      password: config.password,
-    ));
+    return QbTorrentBackend(
+      QBittorrentClient(
+        baseUrl: config.baseUrl,
+        username: config.username,
+        password: config.password,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
   }
 
   /// 本平台是否具备内置 libtorrent 引擎。UI（后端选择器 / 配置引导）与运行时

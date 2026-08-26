@@ -3833,5 +3833,13 @@
   "delete_disclosure_book_source_kept": "Berkas buku dan takarir asli yang kamu impor",
   "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
   "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan",
-  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses."
+  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses.",
+  "download_tracker_section": "Tracker subscription",
+  "download_tracker_auto_add": "Automatically add subscription trackers to new downloads",
+  "download_tracker_auto_add_hint": "The list is cached for 6 hours. A subscription failure will not block the download.",
+  "download_tracker_url": "Subscription URL",
+  "download_tracker_refresh": "Fetch trackers",
+  "download_tracker_preview_empty": "Fetch the subscription to preview supported HTTP, HTTPS, and UDP trackers.",
+  "download_tracker_preview_count": "Fetched $count trackers",
+  "download_tracker_fetch_failed": "Could not fetch trackers: $message"
 }

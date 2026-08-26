@@ -681,6 +681,22 @@ class QBittorrentClient {
     return parseQbTrackers(res.body);
   }
 
+  /// 给一个种子追加 Tracker；多个 URL 按 qB Web API 要求以换行分隔。
+  Future<bool> addTrackers(String hash, Iterable<String> trackerUrls) async {
+    final List<String> urls = trackerUrls
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (hash.isEmpty || urls.isEmpty) return false;
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/addTrackers',
+      form: <String, String>{'hash': hash, 'urls': urls.join('\n')},
+    );
+    return res != null && isQbActionSuccess(res.statusCode);
+  }
+
   /// TODO-2482：某种子每个文件的优先级（按 index 对位）：复用
   /// `GET /api/v2/torrents/files` 响应经 [parseQbFilePriorities] 提取。
   Future<List<TorrentFilePriority>?> fetchFilePriorities(String hash) async {
