@@ -2932,8 +2932,8 @@ class AppModel with ChangeNotifier {
   Map<String, String> browserExtensionThemeColors() {
     final ColorScheme s = themeNotifier.buildColorScheme(
         themeNotifier.isDarkMode ? Brightness.dark : Brightness.light);
-    // Niratan 对齐（2026-08-23）：默认卡面纯白/纯黑（popupCardSurface），
-    // 不再用 tinted scheme.surface；override 优先级不变。
+    // 卡面底色跟随主题 scheme.surface（popupCardSurface 单一真源），
+    // override 优先级不变。
     final Color bgColor =
         popupCardSurface(scheme: s, override: _overrideDictionaryColor);
     // BUG-736：核心色/圆角/列数变量的取值统一来自 buildPopupThemeCssVars——与 in-app
