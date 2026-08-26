@@ -636,6 +636,50 @@ jobs:
           $env:FFMPEG_MIN = ($target -replace '\\', '/')
           $env:FIXTURE_FFMPEG = ($fixtureFfmpeg -replace '\\', '/')
           & $bash -c 'bash tool/ffmpeg-min/smoke-test.sh'
+      # BUG-1883：打包前校验「app 起不来就靠它」的那批文件真在 bundle 里。
+      #
+      # 为什么非有不可：magpie 资源、ffmpeg、ffprobe、VC++ CRT 四样都各自有硬门禁，
+      # 唯独**词典引擎** fushidicts_ffi.dll 一个校验都没有——而它是这几样里唯一
+      # 缺了就让 app 卡在初始化的（main.dart 的 initError 屏）。用户侧症状是
+      # `Failed to load dynamic library 'fushidicts_ffi.dll'`（Win32 错误 126），
+      # 完全不可自解释。
+      #
+      # 这道门守的是「打包输入」，不是「构建有没有报错」：CMake 的
+      # `install(TARGETS fushidicts_ffi ...)` 正常时当然会拷，但改名、改
+      # INSTALL_BUNDLE_LIB_DIR、或哪次 install 步骤中途中断，都会让 ISCC 把一个
+      # 少了核心组件的目录整包发出去（[Files] 是 `{#SourceDir}\*` 整目录递归，
+      # 少什么就少什么，它自己不会知道）。本仓已经改过一次名
+      # （hoshidicts_ffi.dll → fushidicts_ffi.dll），正是最容易漏的那类改动。
+      #
+      # 只列「缺了 app 就不可用」的：DLL 名与 fushidicts_ffi_bindings.dart 的
+      # DynamicLibrary.open 参数逐字一致（守卫
+      # fushi/test/build/windows_installer_payload_guard_test.dart 钉住两侧同名）。
+      - name: Verify Windows installer payload has the core runtime
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            throw "Missing Windows release bundle directory: $targetDir"
+          }
+          $required = @(
+            'fushi.exe',
+            'fushidicts_ffi.dll',
+            'flutter_windows.dll'
+          )
+          $missing = @()
+          foreach ($file in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $targetDir $file) -PathType Leaf)) {
+              $missing += $file
+            }
+          }
+          if ($missing.Count -gt 0) {
+            throw ("Windows installer payload is missing core runtime file(s): " +
+              ($missing -join ', ') +
+              ". Shipping this bundle would brick the app at startup " +
+              "(Failed to load dynamic library / error 126). Bundle dir: $targetDir")
+          }
+          Write-Host "Core runtime present in payload: $($required -join ', ')"
+
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |
