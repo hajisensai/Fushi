@@ -1,32 +1,20 @@
 {
   "schemaVersion": 1,
-  "version": "2.0.0",
-  "tag": "v2.0.0-beta.11553",
+  "version": "2.2.1-beta.12447",
+  "tag": "v2.2.1-beta.12447",
   "channel": "beta",
   "prerelease": true,
-  "releaseSequence": 11553,
-  "notes": "Manual desktop beta/test build from develop @ 8b5821d. Beta/test releases are prerelease and never Latest.",
+  "releaseSequence": 12447,
+  "notes": "Manual desktop beta/test build from develop @ ec43136. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.0.0-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0-beta.11553/fushi-2.0.0-ios.ipa",
-      "releaseSequence": 11553,
-      "tag": "v2.0.0-beta.11553",
-      "version": "2.0.0"
-    },
-    {
-      "name": "fushi-2.0.0-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0-beta.11553/fushi-2.0.0-macos.zip",
-      "releaseSequence": 11553,
-      "tag": "v2.0.0-beta.11553",
-      "version": "2.0.0"
-    },
-    {
-      "name": "fushi-2.0.0-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.0.0-beta.11553/fushi-2.0.0-windows-setup.exe",
-      "releaseSequence": 11553,
-      "tag": "v2.0.0-beta.11553",
-      "version": "2.0.0"
+      "name": "fushi-2.2.1-beta.12447-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.1-beta.12447/fushi-2.2.1-beta.12447-windows-setup.exe",
+      "releaseSequence": 12447,
+      "tag": "v2.2.1-beta.12447",
+      "version": "2.2.1-beta.12447",
+      "size": 249084007,
+      "sha256": "4fec7db59661238cde0e236717f3556d7430929c46191a46b552646131bf1555"
     }
   ]
 }
