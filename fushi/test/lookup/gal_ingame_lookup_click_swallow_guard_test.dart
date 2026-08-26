@@ -557,7 +557,10 @@ void main() {
       methodBody(hookSource, 'void RevokeDirectInputShieldIfIdle('),
     );
     final String barrier = compactCode(
-      methodBody(hookSource, 'bool WaitForHookThreadBarrier('),
+      methodBody(
+        hookSource,
+        'HookThreadBarrierResult WaitForHookThreadBarrier(',
+      ),
     );
     final String windowMessage = compactCode(
       methodBody(windowSource, 'LRESULT GlobalLookupWindow::HandleMessage('),
@@ -598,6 +601,19 @@ void main() {
       reason: 'popup 内外 down 都需从 DirectInput 隐藏；up 只投递串行撤销消息',
     );
     expect(
+      hookProc.contains(
+        'g_swallowed_buttons.fetch_and(~bit,std::memory_order_relaxed);'
+        'constuint32_tstale_shield=g_direct_input_shield_buttons.fetch_and('
+        '~bit,std::memory_order_relaxed);',
+      ),
+      isTrue,
+      reason:
+          '同一物理键的新 down 必须同时丢掉两套位集合里的陈旧位。只清 '
+          'g_swallowed_buttons 时，丢失的 up 会把 shield 位一直卡着，下一个浮窗的 '
+          'PublishDirectInputShieldIfReady 因 pending!=0 且 popup 变了而 '
+          'fail-closed，游戏内查词要等 3s 物理状态对账才恢复',
+    );
+    expect(
       disarm.contains('current==expected_target') &&
           disarm.contains(
             'WaitForHookThreadBarrier(thread_id,expected_target)',
@@ -606,6 +622,25 @@ void main() {
           barrier.contains('PostThreadMessage(thread_id,kThreadBarrier'),
       isTrue,
       reason: 'Hide 撤 publication 前必须排空已读取旧 target 的 hook callback',
+    );
+    expect(
+      barrier.contains('returnHookThreadBarrierResult::kNotQueued;') &&
+          barrier.contains(
+            'returnHookThreadBarrierResult::kQueuedPending;',
+          ) &&
+          barrier.contains('returnHookThreadBarrierResult::kCrossed;') &&
+          disarm.contains('barrier!=HookThreadBarrierResult::kQueuedPending'),
+      isTrue,
+      reason:
+          '「屏障消息压根没投出去」与「投了但同步等待超时」是两件事：只有后者最终'
+          '会被处理并自己投递延迟收尾。折成同一个 false 时，前者会让游戏窗口上的'
+          'kSgreDirectInputShieldWindowProperty 永久留着，游戏的 DirectInput '
+          '立即状态被一直压制',
+    );
+    expect(
+      barrier.split('HookThreadBarrierResult::kNotQueued').length - 1,
+      2,
+      reason: '没有钩子线程、以及 PostThreadMessage 失败，都属于「从未排队」',
     );
     expect(
       requestFinalize.contains(

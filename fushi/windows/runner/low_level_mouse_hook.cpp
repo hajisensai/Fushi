@@ -385,6 +385,17 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
       // new transaction; otherwise an inside-popup click can leave the bit set
       // and have its unrelated up swallowed seconds later.
       g_swallowed_buttons.fetch_and(~bit, std::memory_order_relaxed);
+      // 同一物理键的新 down 同样证明上一次 DirectInput 屏蔽事务已经结束。两套位
+      // 集合必须同构：只给 g_swallowed_buttons 补这一步，丢失的 up 就只会把
+      // shield 位卡住，于是下一个浮窗的 PublishDirectInputShieldIfReady 因
+      // pending!=0 且 popup 变了而 fail-closed，游戏内查词在 3s 物理状态对账之前
+      // 一直装不上。清位与随后的条件 fetch_or 不冲突：新 down 若仍满足屏蔽契约，
+      // 下面几行会把位重新置上。
+      const uint32_t stale_shield = g_direct_input_shield_buttons.fetch_and(
+          ~bit, std::memory_order_relaxed);
+      if ((stale_shield & bit) != 0 && (stale_shield & ~bit) == 0) {
+        RequestDirectInputShieldFinalize();
+      }
     }
   }
   const HWND target = g_target.load(std::memory_order_acquire);
@@ -653,14 +664,33 @@ DWORD EnsureHookThread() {
   return g_thread_id.load(std::memory_order_acquire);
 }
 
-bool WaitForHookThreadBarrier(DWORD thread_id, HWND finalize_target) {
-  if (thread_id == 0 || g_arm_applied_event == nullptr) return false;
+// 屏障有三种结局，绝不能折成一个 bool。撤销跨进程属性的判据问的是「现在能不能
+// 由我来收尾」，而这取决于「钩子线程队列里到底有没有那条会自己收尾的消息」：
+//   kCrossed       —— 屏障已跨过，能截到旧 HWND 的回调全部已返回，此处同步撤销。
+//   kQueuedPending —— 消息已投递、只是同步等待超时。它最终会被处理，并在处理时
+//                     PostMessage 一条延迟收尾；此处**不能**抢着撤销，否则与仍在
+//                     飞的回调竞争。
+//   kNotQueued     —— 消息根本没投出去（没有钩子线程 / PostThreadMessage 失败）。
+//                     不会有任何延迟收尾。旧实现把它和超时一样返回 false，于是
+//                     游戏窗口上的 kSgreDirectInputShieldWindowProperty 永久留着，
+//                     游戏的 DirectInput 立即状态被一直压制——这是死态，不是竞态。
+enum class HookThreadBarrierResult {
+  kCrossed,
+  kQueuedPending,
+  kNotQueued,
+};
+
+HookThreadBarrierResult WaitForHookThreadBarrier(DWORD thread_id,
+                                                 HWND finalize_target) {
+  if (thread_id == 0 || g_arm_applied_event == nullptr) {
+    return HookThreadBarrierResult::kNotQueued;
+  }
   ResetEvent(g_arm_applied_event);
   const uint32_t generation =
       g_arm_requested_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
   if (!PostThreadMessage(thread_id, kThreadBarrier, generation,
                          reinterpret_cast<LPARAM>(finalize_target))) {
-    return false;
+    return HookThreadBarrierResult::kNotQueued;
   }
   const ULONGLONG deadline = GetTickCount64() + kArmAckTimeoutMs;
   while (g_arm_applied_generation.load(std::memory_order_acquire) !=
@@ -670,14 +700,14 @@ bool WaitForHookThreadBarrier(DWORD thread_id, HWND finalize_target) {
       break;
     }
     const ULONGLONG now = GetTickCount64();
-    if (now >= deadline) return false;
+    if (now >= deadline) return HookThreadBarrierResult::kQueuedPending;
     if (WaitForSingleObject(g_arm_applied_event,
                             static_cast<DWORD>(deadline - now)) !=
         WAIT_OBJECT_0) {
-      return false;
+      return HookThreadBarrierResult::kQueuedPending;
     }
   }
-  return true;
+  return HookThreadBarrierResult::kCrossed;
 }
 
 }  // namespace
@@ -808,10 +838,14 @@ void DisarmLowLevelMouseHook(HWND expected_target) {
   // remove the cross-process property until the installing thread has crossed
   // a callback barrier.  If the synchronous wait times out, the queued barrier
   // itself posts a delayed popup-thread finalizer once it is eventually crossed.
-  const bool callbacks_drained =
-      !owns_direct_publication ||
-      WaitForHookThreadBarrier(thread_id, expected_target);
-  if (callbacks_drained) {
+  const HookThreadBarrierResult barrier =
+      owns_direct_publication
+          ? WaitForHookThreadBarrier(thread_id, expected_target)
+          : HookThreadBarrierResult::kCrossed;
+  // kNotQueued 时也必须撤销：没有任何东西被排队，等不到那条延迟收尾。此处并不是
+  // 无保护地撤——RevokeDirectInputShieldIfIdle 自带 g_target / 按住键的闲置门控，
+  // 那正是屏障之外的第二道防线。而 kQueuedPending 才是唯一「交给别人收尾」的分支。
+  if (barrier != HookThreadBarrierResult::kQueuedPending) {
     RevokeDirectInputShieldIfIdle(expected_target);
   }
   if ((owns_binding || clean_uncommitted_arm) && thread_id != 0) {
