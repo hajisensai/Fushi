@@ -12,114 +12,11 @@
 
 [![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**No fiddly setup** — import the recommended dictionaries and audio in one step.
-
 [![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **Watch what you want to watch, and pick up the language along the way.**
-
-Fushi turns the novels you read, the shows you follow, and the audiobooks you listen to into your language input — tap any unknown word to look it up, then turn it into an Anki card with original context in one tap. It doesn't hand you a preset word list; it just helps you catch the words you **actually read and hear**.
-
-The most effective way to learn a language is heavy exposure to real content, not memorizing isolated words from a vocabulary book. But "immersion" has always had two annoyances: looking up a word breaks your flow, and you forget it the moment you look away. Fushi closes that loop —
-
-⬇️ **Get**: download shows and manga in one tap, right inside the app — they land in your library on their own.<br>
-📖 **Read**: tap a word in the EPUB reader to look it up, without leaving the current page.<br>
-🎧 **Listen**: audiobooks highlight along sentence by sentence and turn pages automatically.<br>
-🎬 **Watch**: look up words and make cards right on the video subtitles — following a show *is* input.<br>
-🃏 **Retain**: send any word you looked up, anywhere, straight to Anki, and review only the words you actually met.
-
-Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android, Windows, macOS, and iOS (Linux builds from source).
-
 </div>
 
-## Features
-
-### Bookshelf
-
-- Import EPUBs individually, in bulk, or recursively by folder; view reading progress on the shelf.
-- Organize books with custom bookshelves, tag filtering, and drag-to-reorder.
-- Drag-and-drop files to import books, subtitles, or videos (desktop).
-- Automatically associate same-name subtitle / audio files on import.
-
-### Reading
-
-- Read in vertical or horizontal layout; switch between paginated and continuous-scroll modes.
-- Customize themes (light / dark / pure black / custom), fonts, paragraph spacing, and reader controls.
-- Furigana (ふりがな) annotations.
-- Adjustable UI scale; bottom bar controls follow the scale.
-- Multi-user profiles (Profile), auto-switched per book.
-
-### Lookup
-
-- Import [Yomitan](https://github.com/yomidevs/yomitan) (formerly Yomichan), ABBYY Lingvo (DSL), MDict (MDX), and Migaku dictionaries.
-- Tap text in the reader to look up words, search on the dictionary page, or share text from other apps.
-- Deinflection covering **all Yomitan transformation languages** + pre-lookup text normalization (case / diacritics / Arabic harakat), driven by code points with no language switching.
-- Tap words inside definitions for recursive lookup (nested popups).
-- Parallel multi-dictionary queries, sub-source priority and toggling, pitch-accent and frequency annotations.
-- Online and local word audio.
-- Inject custom CSS.
-
-### Highlights & Statistics
-
-- Add five-color highlights while reading; jump to any highlight at any time.
-- Reading statistics: characters read, duration, reading speed — displayed in real time while reading.
-- Video statistics: watch time, cards created, and favorites.
-
-### Anki Card Creation
-
-- Create cards via [AnkiDroid](https://github.com/ankidroid/Anki-Android) or AnkiConnect.
-- Built-in [Lapis](https://github.com/donkuri/lapis) note type (vendored 1.7.0); create card templates and decks inside the app with one tap.
-- Auto-fill context sentences; audio recording and screenshot cropping.
-- Multiple export profiles (Profile) and custom field mapping.
-- Favorite words; cards created and favorites are counted in statistics.
-
-### Audiobook Sync (Sasayaki)
-
-- SRT / LRC / VTT / ASS subtitle support; automatically aligns subtitle text to the EPUB body.
-- Follow-along sentence highlighting and auto page-turning during playback.
-- Playback speed, seek actions, and system media controls.
-- "Play from this sentence" with seamless cross-chapter continuation.
-
-### Video Subtitle Lookup
-
-- Built-in video player based on [media_kit](https://github.com/media-kit/media-kit) (libmpv core).
-- Embedded (text + graphic tracks) and external subtitles; .m3u8 playlist import.
-- Look up words and create cards directly from subtitles during playback.
-- Video library management, tag filtering, series grouping, and batch operations.
-
-### Data Sync
-
-- Seven sync backends: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, and Fushi Interconnect.
-- Sync reading progress, statistics, and books.
-- **Fushi Interconnect** pairs your own devices directly over the LAN — no cloud account in between. One device hosts, the other reads its library remotely, and card creation can be delegated to the paired host's Anki.
-
-### Manga
-
-- Read manga alongside the other formats, with page and strip reading modes.
-- Look up words straight off the page via OCR — either the built-in engine or an external mokuro setup.
-
-### Downloads
-
-- **One tap gets you the media itself.** Search a show by AniList / Nyaa without leaving the app, then download a single episode, a batch, or a whole season — with subtitles attached when they exist.
-- Finished downloads land in your library on their own, and you can **start watching while the file is still downloading**.
-- **Manga**: browse an online catalogue, tick the volumes you want, and they download, unpack, and appear on the shelf.
-- Paste any magnet link to pull down a book or a video directly.
-- **Download and subscribe** to a series and new episodes fetch themselves (checked every 15 minutes while Fushi runs); an airing calendar shows when the next one lands.
-- Built-in torrent engine (libtorrent) — no external client to install; falls back to an external qBittorrent when the native library is unavailable.
-- A downloads page tracks jobs and subscriptions; renames and moves happen through the download engine so seeding is never interrupted.
-
-### Galgame Voice Mining (Windows)
-
-- Hook a running visual novel to capture the current line's text **and** its original voice clip, then mine both into a card.
-- A dedicated game library with per-title statistics.
-- The native voice-hook helper lives in this repository (`native/galgame_hook/`) and is built and bundled alongside the app — nothing is downloaded at runtime.
-
-### More
-
-- **17 interface languages**, fully localized across all platforms.
-- Share text from other apps to look up words directly.
-- Out-of-app text-selection lookup on both mobile and desktop, plus a browser extension.
 
 ## Platform Support
 

@@ -12,90 +12,11 @@
 
 [![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**Tanpa pengaturan rumit** — impor kamus dan audio yang direkomendasikan dalam satu langkah.
-
 [![Unduh versi terbaru](https://img.shields.io/badge/%E2%AC%87%20Unduh%20versi%20terbaru-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Gabung Discord](https://img.shields.io/badge/Gabung%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **Tonton apa yang ingin kamu tonton, lalu bahasanya ikut terkuasai.**
-
-Fushi mengubah novel yang kamu baca, serial yang kamu ikuti, dan buku audio yang kamu dengar menjadi input bahasamu — ketuk kata asing mana pun untuk mencarinya, lalu jadikan kartu Anki dengan konteks aslinya hanya dengan sekali ketuk. Ia tidak menyuruhmu menghafal daftar kata yang sudah ditetapkan, melainkan hanya membantumu menangkap kata yang **benar-benar kamu baca dan dengar**.
-
-Cara paling efektif untuk belajar bahasa adalah paparan dalam jumlah besar terhadap konten nyata, bukan menghafal kata-kata terisolasi dari buku kosakata. Tetapi "imersi" selalu punya dua kerepotan: mencari kata memutus alur, dan kamu lupa begitu mengalihkan pandangan. Fushi menyambungkan rantai itu:
-
-📖 **Baca**: ketuk kata di pembaca EPUB untuk mencarinya, tanpa keluar dari halaman saat ini.<br>
-🎧 **Dengar**: buku audio menyorot kalimat demi kalimat dan membalik halaman secara otomatis.<br>
-🎬 **Tonton**: cari kata dan buat kartu langsung di subtitel video — mengikuti serial *adalah* input.<br>
-🃏 **Endapkan**: kirim kata apa pun yang kamu cari, dari skenario mana pun, langsung ke Anki, dan tinjau ulang hanya kata yang benar-benar kamu temui.
-
-Semua skenario berbagi kamus, statistik, dan alur peninjauan yang sama. Cocok untuk bahasa apa pun (Jepang, Inggris, …), dan terutama untuk pembelajar imersif yang meyakini **banyak input + hanya kartu buatan sendiri**. Tersedia untuk Android dan Windows (iOS dan macOS direncanakan).
-
 </div>
 
-## Fitur
-
-### Rak Buku
-
-- Impor EPUB satu per satu, secara massal, atau rekursif berdasarkan folder; lihat progres baca di rak.
-- Atur buku dengan rak buku khusus, penyaringan tag, dan seret untuk menyusun ulang.
-- Seret dan letakkan berkas untuk mengimpor buku, subtitel, atau video (desktop).
-- Otomatis mengaitkan berkas subtitel / audio bernama sama saat impor.
-
-### Membaca
-
-- Baca dalam tata letak vertikal atau horizontal; beralih antara mode berhalaman dan gulir berkelanjutan.
-- Sesuaikan tema (terang / gelap / hitam pekat / khusus), font, jarak paragraf, dan kontrol pembaca.
-- Anotasi Furigana (ふりがな).
-- Skala antarmuka yang dapat disesuaikan; kontrol bilah bawah mengikuti skala.
-- Profil multi-pengguna (Profile), beralih otomatis per buku.
-
-### Pencarian Kata
-
-- Impor kamus [Yomitan](https://github.com/yomidevs/yomitan) (dahulu Yomichan), ABBYY Lingvo (DSL), MDict (MDX), dan Migaku.
-- Ketuk teks di pembaca untuk mencari kata, cari di halaman kamus, atau bagikan teks dari aplikasi lain.
-- Deinfleksi yang mencakup **semua bahasa tabel transformasi Yomitan** + normalisasi teks sebelum pencarian (huruf besar/kecil / diakritik / harakat Arab), digerakkan oleh titik kode (code points) tanpa pergantian bahasa.
-- Ketuk kata di dalam definisi untuk pencarian rekursif (popup bertingkat).
-- Kueri multi-kamus paralel, prioritas dan pengalihan sub-sumber, anotasi aksen nada (pitch-accent) dan frekuensi.
-- Audio kata daring dan lokal.
-- Sisipkan CSS khusus.
-
-### Sorotan & Statistik
-
-- Tambahkan sorotan lima warna saat membaca; lompat ke sorotan mana pun kapan saja.
-- Statistik baca: jumlah karakter terbaca, durasi, kecepatan baca — ditampilkan secara real-time saat membaca.
-- Statistik video: waktu tonton, kartu yang dibuat, dan favorit.
-
-### Pembuatan Kartu Anki
-
-- Buat kartu melalui [AnkiDroid](https://github.com/ankidroid/Anki-Android) atau AnkiConnect.
-- Tipe catatan [Lapis](https://github.com/donkuri/lapis) bawaan (vendored 1.7.0); buat templat kartu dan dek di dalam aplikasi sekali ketuk.
-- Isi otomatis kalimat konteks; perekaman audio dan pemotongan tangkapan layar.
-- Beberapa profil ekspor (Profile) dan pemetaan bidang khusus.
-- Kata favorit; kartu yang dibuat dan favorit dihitung dalam statistik.
-
-### Sinkronisasi Buku Audio (Sasayaki)
-
-- Dukungan subtitel SRT / LRC / VTT / ASS; secara otomatis menyelaraskan teks subtitel dengan isi EPUB.
-- Penyorotan kalimat yang mengikuti dan pembalik halaman otomatis selama pemutaran.
-- Kecepatan pemutaran, aksi pencarian posisi, dan kontrol media sistem.
-- "Putar dari kalimat ini" dengan kelanjutan lintas bab tanpa jeda.
-
-### Pencarian Kata dari Subtitel Video
-
-- Pemutar video bawaan berbasis [media_kit](https://github.com/media-kit/media-kit) (inti libmpv).
-- Subtitel tertanam (trek teks + grafik) dan eksternal; impor daftar putar .m3u8.
-- Cari kata dan buat kartu langsung dari subtitel selama pemutaran.
-- Manajemen pustaka video, penyaringan tag, pengelompokan seri, dan operasi massal.
-
-### Sinkronisasi Data
-
-- Tujuh backend sinkronisasi: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP, dan Fushi Interconnect.
-- Sinkronkan progres baca, statistik, dan buku.
-
-### Lainnya
-
-- **17 bahasa antarmuka**, dilokalkan sepenuhnya di semua platform.
-- Bagikan teks dari aplikasi lain untuk langsung mencari kata.
 
 ## Dukungan Platform
 
