@@ -689,6 +689,9 @@ void TestHeaderMirrorsCompileTimeConstants() {
   // 跨进程结构体不 8 对齐，双缓冲的第二块就会歪，且 volatile uint64 在 x86 上会撕裂。
   Check(sizeof(LookupFrame) % 8 == 0, "帧结构 8 对齐");
   Check(sizeof(LookupInputSlot) % 8 == 0, "输入槽结构 8 对齐");
+  Check(sizeof(LookupInputSlot) == 32, "输入槽 ABI 尺寸保持 32 字节");
+  Check(fushi_voice_hook::kLookupInputDismissOutside == 5,
+        "位图卡外关闭控制 kind 固定为 5");
 }
 
 }  // namespace

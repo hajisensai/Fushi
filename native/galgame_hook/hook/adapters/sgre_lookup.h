@@ -26,6 +26,9 @@ inline constexpr size_t kSgreDirectInputGetDeviceStateVtableIndex = 9u;
 inline constexpr size_t kSgreDirectInputMouseStateBytes = 20u;
 inline constexpr size_t kSgreDirectInputMouseButtonsOffset = 12u;
 inline constexpr size_t kSgreDirectInputMouseButtonCount = 8u;
+inline constexpr size_t kSgreLookupPrimaryButtonIndex = 0u;
+inline constexpr uint8_t kSgreLookupPrimaryButtonMask = 0x01u;
+inline constexpr int32_t kSgreLookupClickDragThreshold = 6;
 
 // Clear only DIMOUSESTATE2::rgbButtons while a direct lookup popup is
 // published. A local per-button latch survives popup teardown: once a down was
@@ -50,6 +53,91 @@ inline uint8_t FilterSgreDirectInputMouseButtons(bool shield_active,
     if (!down) latched_buttons &= static_cast<uint8_t>(~bit);
   }
   return latched_buttons;
+}
+
+enum class SgreLookupClickAction : uint8_t {
+  kNone = 0,
+  kBegin = 1,
+  kSubmit = 2,
+  kCancel = 3,
+};
+
+struct SgreLookupClickGestureState {
+  // A hook can be installed while the physical button is already held. Do not
+  // consume that half-transaction: wait for one observed up before accepting a
+  // fresh lookup down.
+  bool synchronized = false;
+  bool last_down = false;
+  bool active = false;
+  bool dragged = false;
+  bool cancelled = false;
+  int32_t down_x = 0;
+  int32_t down_y = 0;
+};
+
+// DirectInput exposes immediate button state rather than Win32 pointer
+// messages, so reproduce the source-window single-click transaction explicitly:
+// a fresh down over a glyph begins a pending lookup; physical screen movement
+// past the same 6 px threshold used by the native text strip cancels it; only
+// the matching up submits. The caller latches the physical button from kBegin
+// through the matching release so SGRE never observes half of the consumed
+// click.
+inline SgreLookupClickAction AdvanceSgreLookupClickGesture(
+    bool button_down, bool lookup_allowed, bool hit_on_press,
+    bool pointer_valid, int32_t pointer_x, int32_t pointer_y,
+    int32_t drag_threshold,
+    SgreLookupClickGestureState* state) {
+  if (state == nullptr) return SgreLookupClickAction::kNone;
+  const int32_t threshold = std::max<int32_t>(1, drag_threshold);
+  if (!state->synchronized) {
+    state->last_down = button_down;
+    state->active = false;
+    state->dragged = false;
+    state->cancelled = false;
+    if (!button_down) state->synchronized = true;
+    return SgreLookupClickAction::kNone;
+  }
+
+  if (button_down && !state->last_down) {
+    state->last_down = true;
+    state->active = lookup_allowed && hit_on_press && pointer_valid;
+    state->dragged = false;
+    state->cancelled = false;
+    state->down_x = pointer_x;
+    state->down_y = pointer_y;
+    return state->active ? SgreLookupClickAction::kBegin
+                         : SgreLookupClickAction::kNone;
+  }
+
+  if (state->active && state->last_down) {
+    if (!lookup_allowed || !pointer_valid) {
+      state->cancelled = true;
+    } else {
+      const int64_t delta_x = static_cast<int64_t>(pointer_x) - state->down_x;
+      const int64_t delta_y = static_cast<int64_t>(pointer_y) - state->down_y;
+      const int64_t distance_squared = delta_x * delta_x + delta_y * delta_y;
+      const int64_t threshold_squared =
+          static_cast<int64_t>(threshold) * threshold;
+      if (distance_squared >= threshold_squared) state->dragged = true;
+    }
+  }
+
+  if (button_down || !state->last_down) {
+    return SgreLookupClickAction::kNone;
+  }
+
+  state->last_down = false;
+  const bool submit = state->active && !state->dragged &&
+                      !state->cancelled && lookup_allowed && pointer_valid;
+  const bool cancel = state->active && !submit;
+  state->active = false;
+  state->dragged = false;
+  state->cancelled = false;
+  state->down_x = 0;
+  state->down_y = 0;
+  if (submit) return SgreLookupClickAction::kSubmit;
+  return cancel ? SgreLookupClickAction::kCancel
+                : SgreLookupClickAction::kNone;
 }
 
 inline constexpr int32_t kSgreDesignWidth = 1920;

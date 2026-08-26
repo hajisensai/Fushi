@@ -91,6 +91,86 @@ int main() {
              true, unsupported, sizeof(unsupported), 0x04) == 0x04);
   assert(unsupported[12] == 0x80);
 
+  // A lookup-owned transaction latches only the primary button. Movement and
+  // simultaneously held auxiliary buttons remain visible to the game.
+  memset(mouse_state, 0, sizeof(mouse_state));
+  mouse_state[0] = 0x33;
+  mouse_state[12] = 0x80;
+  mouse_state[13] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state),
+      fushi_voice_hook::kSgreLookupPrimaryButtonMask);
+  assert(latched == fushi_voice_hook::kSgreLookupPrimaryButtonMask);
+  assert(mouse_state[0] == 0x33 && mouse_state[12] == 0 &&
+         mouse_state[13] == 0x80);
+
+  using ClickAction = fushi_voice_hook::SgreLookupClickAction;
+  fushi_voice_hook::SgreLookupClickGestureState click;
+  // Injection/enable may happen while left is already physically held. That
+  // half-transaction passes through and only its release arms single-click.
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, true, true, 100, 100, 6, &click) ==
+         ClickAction::kNone);
+  assert(!click.synchronized && click.last_down && !click.active);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, true, true, true, 100, 100, 6, &click) ==
+         ClickAction::kNone);
+  assert(click.synchronized && !click.last_down);
+
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, true, true, 100, 100, 6, &click) ==
+         ClickAction::kBegin);
+  assert(click.active);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, false, true, 103, 102, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, true, false, true, 103, 102, 6, &click) ==
+         ClickAction::kSubmit);
+  assert(!click.active && !click.last_down);
+
+  // Physical screen movement at the threshold converts the pending lookup to
+  // a consumed drag; an enable/shield transition cancels in the same way.
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, true, true, 200, 200, 6, &click) ==
+         ClickAction::kBegin);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, false, true, 206, 200, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, true, false, true, 206, 200, 6, &click) ==
+         ClickAction::kCancel);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, true, true, 300, 300, 6, &click) ==
+         ClickAction::kBegin);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, false, false, true, 300, 300, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, false, false, true, 300, 300, 6, &click) ==
+         ClickAction::kCancel);
+
+  // A miss is a pass-through transaction. Becoming a hit while the same raw
+  // button is held must never start consuming halfway through.
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, false, true, 400, 400, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, true, true, 401, 400, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, true, true, true, 401, 400, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             true, true, true, false, 500, 500, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, true, false, true, 500, 500, 6, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(
+             false, true, true, true, 0, 0, 6, nullptr) ==
+         ClickAction::kNone);
+
   // The scenario root is positioned in the 1920x1080 design surface, but the
   // glyph draw point and texture cell are already physical units. These are
   // live values from the admitted 3840x2160 process: glyph+0x40 advances 80,

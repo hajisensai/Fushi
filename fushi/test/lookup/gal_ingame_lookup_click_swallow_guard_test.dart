@@ -197,11 +197,7 @@ void main() {
       isTrue,
       reason: '标题栏、边框和任务栏等非游戏客户区不得被吞',
     );
-    expect(
-      predicate.contains('WindowFromPoint(point)'),
-      isTrue,
-      reason: '级联窗口的 bbox 有透明缝隙，必须按真实窗口 region 命中',
-    );
+    expect(predicate.contains('WindowFromPoint(point)'), isFalse);
     expect(
       predicate.contains('hit==target||(hit!=nullptr&&IsChild(target,hit))'),
       isTrue,
@@ -231,11 +227,32 @@ void main() {
     final int ownerForTarget = hookProc.indexOf(
       'GetPropW(target,kConsumeOutsideOwnerProperty)',
     );
+    final int pointSnapshot = hookProc.indexOf(
+      'WindowFromPoint(info->pt)',
+    );
+    final int insideFromSnapshot = hookProc.indexOf(
+      'point_window==target',
+    );
+    final int consumeFromSnapshot = hookProc.indexOf(
+      'ShouldConsumeGameClientClick(target,consume_owner,point_window,info->pt)',
+    );
     expect(
       ownerForTarget,
       greaterThan(targetSnapshot),
       reason: 'owner 必须从已取到的同一个 target HWND 读取，不能用第二个独立 atomic',
     );
+    expect(pointSnapshot, greaterThan(targetSnapshot));
+    expect(
+      insideFromSnapshot,
+      greaterThan(pointSnapshot),
+      reason: '圆角和卡间透明区必须按真实 HRGN 命中，不能按 HWND 包围矩形算 inside',
+    );
+    expect(
+      consumeFromSnapshot,
+      greaterThan(insideFromSnapshot),
+      reason: '通知窗口线程与吞游戏点击必须复用同一次 WindowFromPoint 快照',
+    );
+    expect(hookProc.contains('GetWindowRect(target'), isFalse);
     expect(hookSource.contains('g_consume_outside_owner'), isFalse);
     final int barrierWait = directArm.indexOf('WaitForSingleObject(');
     final int bindOwner = directArm.indexOf(
