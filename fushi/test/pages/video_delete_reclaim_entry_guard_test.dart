@@ -24,18 +24,30 @@ void main() {
         'lib/src/media/video/download/video_download_pipeline_service.dart',
       ).readAsStringSync();
 
+      final String libraryDelete = File(
+        'lib/src/media/video/video_library_delete.dart',
+      ).readAsStringSync();
       final Map<String, ({String body, String operation})>
       entries = <String, ({String body, String operation})>{
+        // 视频页两个入口经 deleteVideoBooksWithDecision（同时删本地文件 + 联动
+        // 下载任务）落到仓库层；helper 自身再由下一条守住「必须走 reclaim 操作」。
         'home batch delete': (
           body: methodBody(home, 'Future<void> _batchDeleteConfirm() async'),
-          operation: 'deleteVideoBooksAndReclaimAssets',
+          operation: 'deleteVideoBooksWithDecision',
         ),
         'home single delete': (
           body: methodBody(
             home,
             'Future<void> _confirmDelete(VideoBookRow book) async',
           ),
-          operation: 'deleteVideoBookAndReclaimAssets',
+          operation: 'deleteVideoBooksWithDecision',
+        ),
+        'library delete helper': (
+          body: topLevelFunctionBody(
+            libraryDelete,
+            'deleteVideoBooksWithDecision',
+          )!,
+          operation: 'deleteVideoBooksAndReclaimAssets',
         ),
         'missing-resource delete': (
           body: methodBody(

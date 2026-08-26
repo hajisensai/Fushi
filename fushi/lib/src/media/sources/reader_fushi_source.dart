@@ -860,13 +860,22 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
   /// 复活墓碑（[FushiDatabase.deleteEpubBook] 的 tombstone:true）与 scope 无关，永远记
   /// （用户在本机删的东西，导入自己的旧备份不该复活）。
+  /// [deleteLocalFiles]（默认 false，对应删除弹窗「同时删除本地文件」）：true 时连
+  /// 这本书附带的有声书 / 配对字幕书登记的**原始音频文件**一起删。书本体（EPUB /
+  /// PDF / 漫画）导入即拷贝进 app 目录、原件路径根本没入库，没有可删的原件——
+  /// 这就是 [hasLocalSourceFiles] 只看音频列的原因。
   Future<DeleteBookResult> deleteBook({
     required FushiDatabase db,
     required String bookKey,
     AppModel? appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool deleteLocalFiles = false,
   }) async {
     try {
+      // 原件位置在 audiobooks / srt_books 行上，deleteEpubBook 的事务会把它们
+      // 级联删掉，必须先快照。
+      final Audiobook? audiobookBefore =
+          deleteLocalFiles ? await AudiobookRepository(db).findByBookKey(bookKey) : null;
       // HBK-AUDIT-041: db.deleteEpubBook removes every associated DB row
       // (readerPositions, bookmarks, srtBooks, audioCues, audiobooks for the
       // same bookKey) inside one transaction. Previously deleteBook ALSO
@@ -931,6 +940,22 @@ class ReaderFushiSource extends ReaderMediaSource {
         if (bookRow != null) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
+        // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次解析
+        // 到的已不存在自然跳过。
+        if (deleteLocalFiles) {
+          if (audiobookBefore != null) {
+            await deleteAudiobookSourceFiles(
+              audioPaths: audiobookBefore.audioPaths,
+              audioRoot: audiobookBefore.audioRoot,
+            );
+          }
+          if (srt != null) {
+            await deleteAudiobookSourceFiles(
+              audioPaths: srt.audioPaths,
+              audioRoot: srt.audioRoot,
+            );
+          }
+        }
 
         // HBK-AUDIT-040: these books are created with canDelete:false, so the
         // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
@@ -986,6 +1011,26 @@ class ReaderFushiSource extends ReaderMediaSource {
       debugPrint('[ReaderFushiSource] deleteBook failed: $e');
       return DeleteBookResult.failure(e.toString());
     }
+  }
+
+  /// 这本书（按 [bookKey]）有没有本机可删的原始文件——删除确认框据此决定摆不摆
+  /// 「同时删除本地文件」勾选框。只看附带有声书 / 配对字幕书登记的原始音频
+  /// （见 [deleteBook] 的说明）。
+  Future<bool> hasLocalSourceFiles({
+    required FushiDatabase db,
+    required String bookKey,
+  }) async {
+    if (bookKey.isEmpty) return false;
+    final Audiobook? ab = await AudiobookRepository(db).findByBookKey(bookKey);
+    if (ab != null &&
+        hasAudiobookSourceFiles(
+            audioPaths: ab.audioPaths, audioRoot: ab.audioRoot)) {
+      return true;
+    }
+    final SrtBook? srt = await SrtBookRepository(db).findByBookKey(bookKey);
+    return srt != null &&
+        hasAudiobookSourceFiles(
+            audioPaths: srt.audioPaths, audioRoot: srt.audioRoot);
   }
 
   // ── Settings (same keys as ReaderTtuSource for seamless migration) ──

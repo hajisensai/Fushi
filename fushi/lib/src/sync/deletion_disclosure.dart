@@ -21,13 +21,34 @@ enum DeletionDisclosureTarget {
 /// 这是纯数据，不含 Widget，可以在单测里与真实删除行为逐项对照——这正是本类存在的
 /// 理由：确认文案与实际删除范围必须由同一份事实派生，否则又会漂开。
 class DeletionDisclosure {
-  const DeletionDisclosure({required this.willDelete, required this.willKeep});
+  const DeletionDisclosure({
+    required this.willDelete,
+    required this.willKeep,
+    this.localFiles = const <String>[],
+  });
 
   /// 确认后真的会从本机消失的东西。
   final List<String> willDelete;
 
   /// 确认后仍然留着的东西——尤其是用户自己导入的原始文件。
   final List<String> willKeep;
+
+  /// [willKeep] 里描述「用户自己的原始文件」的那些条目：用户勾选「同时删除本地
+  /// 文件」后它们会从「保留」挪到「删除」（[withLocalFilesDeleted]）。必须是
+  /// [willKeep] 的子集；为空表示这个目标没有可删的原件。
+  final List<String> localFiles;
+
+  /// 勾选「同时删除本地文件」后的披露：原件条目挪进「会被删除」。
+  DeletionDisclosure withLocalFilesDeleted() {
+    if (localFiles.isEmpty) return this;
+    return DeletionDisclosure(
+      willDelete: <String>[...willDelete, ...localFiles],
+      willKeep: <String>[
+        for (final String item in willKeep)
+          if (!localFiles.contains(item)) item,
+      ],
+    );
+  }
 }
 
 /// 按 [target] 构造删除披露。
@@ -48,6 +69,9 @@ DeletionDisclosure buildDeletionDisclosure({
       //   3) EpubStorage.deleteBookDir(extractDir) 递归删 `<documents>/fushi_books/<key>`。
       // 不删：epub_books.epubPath 只存文件名，删除路径从不据它删用户原始文件；
       //       reading_statistics / reading_hourly_logs 无人清理，确实留着。
+      // 「同时删除本地文件」只对有声书原始音频有意义（书本体的原件路径没入库，
+      // 见 ReaderFushiSource.deleteBook）；localFiles 用的仍是同一条「原始文件」
+      // 披露，勾选后整条挪进删除区，不另造第二套措辞。
       return DeletionDisclosure(
         willDelete: <String>[
           t.delete_disclosure_book_records,
@@ -58,6 +82,7 @@ DeletionDisclosure buildDeletionDisclosure({
           t.delete_disclosure_source_kept,
           t.delete_disclosure_stats_kept,
         ],
+        localFiles: <String>[t.delete_disclosure_source_kept],
       );
     case DeletionDisclosureTarget.attachedAudiobook:
       // 真实删除集合见 AudiobookRepository.deleteAudiobook：
@@ -72,6 +97,7 @@ DeletionDisclosure buildDeletionDisclosure({
           t.delete_disclosure_audiobook_book_kept,
           t.delete_disclosure_audiobook_source_kept,
         ],
+        localFiles: <String>[t.delete_disclosure_audiobook_source_kept],
       );
   }
 }
@@ -104,6 +130,38 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 「同时删除本地文件」勾选行：两个删除确认框（`showDeleteScopeConfirm` /
+/// `ReaderHistoryDeleteDialog`）共用，保证措辞、图标与取值语义一致。勾选态用
+/// error 色——它删的是用户自己的原件，不是 app 的副本，视觉上必须比同步勾选框更重。
+class DeleteLocalFilesRow extends StatelessWidget {
+  const DeleteLocalFilesRow({
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  /// 省略时用通用说明 `delete_local_files_desc`。
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return AdaptiveSettingsRow(
+      title: t.delete_local_files,
+      subtitle: subtitle ?? t.delete_local_files_desc,
+      onTap: () => onChanged(!value),
+      trailing: Icon(
+        value ? Icons.check_box : Icons.check_box_outline_blank,
+        color: value ? colors.error : colors.onSurfaceVariant,
+      ),
     );
   }
 }

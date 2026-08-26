@@ -1001,7 +1001,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final NavigatorState outerNavigator =
         Navigator.of(context, rootNavigator: true);
 
-    final DeleteScope? scope = await showDeleteScopeConfirm(
+    final DeleteDecision? decision = await showDeleteScopeConfirm(
       context,
       title: t.dialog_delete,
       message: t.audiobook_delete_confirm,
@@ -1009,14 +1009,20 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         target: DeletionDisclosureTarget.attachedAudiobook,
       ),
       db: widget.repo.database,
+      // 登记了原始音频（显式列表或 audioRoot）才有原件可删。
+      offerLocalFiles: hasAudiobookSourceFiles(
+        audioPaths: ab.audioPaths,
+        audioRoot: ab.audioRoot,
+      ),
     );
-    debugPrint('AudiobookImportDialog: scope=$scope');
-    if (scope == null) return;
+    debugPrint('AudiobookImportDialog: decision=$decision');
+    if (decision == null) return;
 
     try {
       await widget.repo.deleteAudiobook(
         widget.bookKey,
-        propagateDeletion: scope == DeleteScope.syncEverywhere,
+        propagateDeletion: decision.scope == DeleteScope.syncEverywhere,
+        deleteLocalFiles: decision.deleteLocalFiles,
       );
       debugPrint('AudiobookImportDialog: deleteAudiobook done');
     } catch (e, st) {

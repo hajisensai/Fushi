@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
+import 'package:fushi/src/media/video/video_local_files.dart';
 import 'package:fushi/src/media/video/video_path_migration.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -741,12 +742,16 @@ class VideoBookRepository {
     String bookUid, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
+    bool deleteLocalFiles = false,
+    Future<void> Function(Set<String> deletedPaths)? onLocalFilesDeleted,
     Future<void> Function()? afterDeleteBeforeReclaim,
   }) {
     return deleteVideoBooksAndReclaimAssets(
       <String>[bookUid],
       scope: scope,
       compactDatabase: compactDatabase,
+      deleteLocalFiles: deleteLocalFiles,
+      onLocalFilesDeleted: onLocalFilesDeleted,
       afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
     ).then((int deletedCount) => deletedCount > 0);
   }
@@ -756,10 +761,19 @@ class VideoBookRepository {
   /// [afterDeleteBeforeReclaim] lets UI callers rebuild and release file-backed
   /// widgets after the rows disappear while still preventing scrape maintenance
   /// from entering before every deleted row's app-owned assets are reclaimed.
+  ///
+  /// [deleteLocalFiles]（删除确认框「同时删除本地文件」）：行删掉、UI 释放句柄之后，
+  /// 再把被删行自己的原始视频文件（`videoPath` + 播放列表各集，见
+  /// [localVideoFileCandidates]）从磁盘删掉。护栏：仍被任何幸存行引用的文件保留；
+  /// 远端流没有文件；只删文件不删目录。真删掉的路径经 [onLocalFilesDeleted] 回调
+  /// 给调用方（用来联动清下载任务——下载记录与库行之间只有路径这一条纽带，而
+  /// 本仓库层不认识下载管线）。
   Future<int> deleteVideoBooksAndReclaimAssets(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
+    bool deleteLocalFiles = false,
+    Future<void> Function(Set<String> deletedPaths)? onLocalFilesDeleted,
     Future<void> Function()? afterDeleteBeforeReclaim,
   }) {
     final VideoScrapeOperationLease? lease =
@@ -772,6 +786,8 @@ class VideoBookRepository {
         bookUids,
         scope: scope,
         compactDatabase: compactDatabase,
+        deleteLocalFiles: deleteLocalFiles,
+        onLocalFilesDeleted: onLocalFilesDeleted,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
       ),
     ).whenComplete(lease.release);
@@ -781,6 +797,9 @@ class VideoBookRepository {
     Iterable<String> bookUids, {
     required DeleteScope scope,
     required bool compactDatabase,
+    required bool deleteLocalFiles,
+    required Future<void> Function(Set<String> deletedPaths)?
+        onLocalFilesDeleted,
     required Future<void> Function()? afterDeleteBeforeReclaim,
   }) async {
     final deleted =
@@ -790,6 +809,7 @@ class VideoBookRepository {
             String? coverPath,
             String? subtitlePath,
             String videoPath,
+            String? playlistJson,
             List<String> imagePaths,
           })
         >[];
@@ -810,6 +830,7 @@ class VideoBookRepository {
         coverPath: book.coverPath,
         subtitlePath: book.subtitleSource,
         videoPath: book.videoPath,
+        playlistJson: book.playlistJson,
         imagePaths: imagePaths,
       ));
     }
@@ -825,6 +846,29 @@ class VideoBookRepository {
           deletedVideoPath: snapshot.videoPath,
           deletedImagePaths: snapshot.imagePaths,
         );
+      }
+      if (deleteLocalFiles && deleted.isNotEmpty) {
+        // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
+        // 单文件失败只记日志（[deleteLocalVideoFiles] 内部），不翻转删除结果。
+        final Set<String> removed = await deleteLocalVideoFiles(
+          candidates: <String>[
+            for (final snapshot in deleted)
+              ...localVideoFileCandidates(
+                videoPath: snapshot.videoPath,
+                playlistJson: snapshot.playlistJson,
+              ),
+          ],
+          stillReferenced: referencedLocalVideoPaths(await listAll()),
+        );
+        if (removed.isNotEmpty && onLocalFilesDeleted != null) {
+          try {
+            await onLocalFilesDeleted(removed);
+          } catch (e, stack) {
+            debugPrint(
+              'VideoBookRepository: onLocalFilesDeleted failed: $e\n$stack',
+            );
+          }
+        }
       }
       if (compactDatabase && deleted.isNotEmpty) {
         await compactAfterVideoDeleteBestEffort();

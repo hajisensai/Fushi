@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_model.dart';
 import 'audiobook_path_relocator.dart';
 import 'audiobook_repository.dart';
+import 'audiobook_source_files.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
 import '../parsers/srt_parser.dart';
@@ -352,11 +353,24 @@ class SrtBookRepository {
   /// 跨设备身份就是 uid。srt-backed 行（`bookKey` 非空）的身份是 bookKey，它的墓碑由
   /// `ReaderFushiSource.deleteBook` 写成 `book` 种类——两者互斥，同一资产绝不会产生
   /// 两条墓碑、也就不会在对端弹出两条重复的删除确认。
-  Future<int> delete(String uid, {bool propagateDeletion = false}) async {
-    // 身份判据要在删行前读（删完就查不到 bookKey 了）。
-    final bool standalone = propagateDeletion &&
-        ((await _db.getSrtBookByUid(uid))?.bookKey.isEmpty ?? false);
+  /// [deleteLocalFiles]（默认 false）：true 时连登记的原始音频文件一起删
+  /// （[deleteAudiobookSourceFiles]，对应删除弹窗「同时删除本地文件」）。
+  Future<int> delete(
+    String uid, {
+    bool propagateDeletion = false,
+    bool deleteLocalFiles = false,
+  }) async {
+    // 身份判据与原件位置都要在删行前读（删完就查不到了）。
+    final SrtBookRow? before = await _db.getSrtBookByUid(uid);
+    final bool standalone =
+        propagateDeletion && (before?.bookKey.isEmpty ?? false);
     final int deleted = await _db.deleteSrtBookByUid(uid);
+    if (deleteLocalFiles && before != null) {
+      await deleteAudiobookSourceFiles(
+        audioPaths: _decodeAudioPaths(before.audioPathsJson),
+        audioRoot: before.audioRoot,
+      );
+    }
     // 墓碑写在磁盘清理**之前**：DB 行是唯一真相源，此刻这本书对用户已经消失；持久化
     // 目录删除是删完再打扫的尾活，Windows 上可能因句柄占用抛 errno 32/145。若把墓碑
     // 排在它后面，一次尾活失败就会静默吞掉用户「从所有设备删除」的意图（同 TODO-1359
@@ -371,6 +385,16 @@ class SrtBookRepository {
     }
     await AudiobookStorage.deletePersistDir(uid);
     return deleted;
+  }
+
+  /// 删行前快照原件列表用；坏 JSON 当作没登记（与路径修复的容错口径一致）。
+  static List<String>? _decodeAudioPaths(String? raw) {
+    if (raw == null) return null;
+    try {
+      return (jsonDecode(raw) as List<dynamic>).cast<String>();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<AudioCue>> cuesFor(String uid) async {

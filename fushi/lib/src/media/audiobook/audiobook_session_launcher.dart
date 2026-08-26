@@ -190,31 +190,13 @@ class AudiobookSessionLauncher {
     return null;
   }
 
+  /// 原件解析的单一真相在 fushi_audio 的 [resolveAudiobookSourceFiles]：删除
+  /// 确认框「同时删除本地文件」删的就是这里装载的同一批文件。
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
     required String? audioRoot,
-  }) async {
-    if (audioPaths != null && audioPaths.isNotEmpty) {
-      final List<File> files = <File>[];
-      for (final String path in audioPaths) {
-        final File f = File(path);
-        if (await f.exists()) files.add(f);
-      }
-      return files;
-    }
-    if (audioRoot != null) {
-      final Directory dir = Directory(audioRoot);
-      if (!await dir.exists()) return <File>[];
-      final List<FileSystemEntity> entries = await dir.list().toList();
-      final List<File> files = entries
-          .whereType<File>()
-          .where((File f) => AudiobookStorage.isAudioFile(f.path))
-          .toList()
-        ..sort((File a, File b) => compareAudioFilePath(a.path, b.path));
-      return files;
-    }
-    return <File>[];
-  }
+  }) =>
+      resolveAudiobookSourceFiles(audioPaths: audioPaths, audioRoot: audioRoot);
 
   Audiobook _audiobookFromRow(AudiobookRow row) {
     final Audiobook ab = Audiobook()

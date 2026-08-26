@@ -1,12 +1,14 @@
 // GENERATED-NOTE: extracted from reader_fushi_history_page.dart (TODO-587).
 part of '../reader_fushi_history_page.dart';
 
-/// 书架删除确认弹窗。[onConfirm] 回传用户在「同步删除」勾选框选择的 [DeleteScope]
-/// （勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=
-/// [DeleteScope.keepLocalOnly] 只删本机）。[showSyncScope]=false 时把勾选框换成
-/// [DeleteScopeUnavailableNote] 说明行、恒 keepLocalOnly——由调用方按
-/// `hasDeletionPropagationChannel` 传入：本机一个同步通道都没有时，那个勾选框兑现不了
-/// （TODO-2470 死角②）。取消返回 null。
+/// 书架删除确认弹窗。[onConfirm] 回传用户的 [DeleteDecision]：scope 来自「同步删除」
+/// 勾选框（勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=
+/// [DeleteScope.keepLocalOnly] 只删本机），deleteLocalFiles 来自「同时删除本地文件」
+/// 勾选框（仅 [offerLocalFiles] 时渲染——书/PDF/漫画导入即拷贝进 app 目录、原件路径
+/// 根本没入库，只有记录了原始音频路径的有声书/字幕书才有本机可删的原件）。
+/// [showSyncScope]=false 时把同步勾选框换成 [DeleteScopeUnavailableNote] 说明行、恒
+/// keepLocalOnly——由调用方按 `hasDeletionPropagationChannel` 传入：本机一个同步通道
+/// 都没有时，那个勾选框兑现不了（TODO-2470 死角②）。取消返回 null。
 @visibleForTesting
 class ReaderHistoryDeleteDialog extends StatefulWidget {
   const ReaderHistoryDeleteDialog({
@@ -14,14 +16,16 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
     required this.message,
     required this.onConfirm,
     this.showSyncScope = true,
+    this.offerLocalFiles = false,
     this.disclosure,
     super.key,
   });
 
   final String title;
   final String message;
-  final ValueChanged<DeleteScope> onConfirm;
+  final ValueChanged<DeleteDecision> onConfirm;
   final bool showSyncScope;
+  final bool offerLocalFiles;
 
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
@@ -33,6 +37,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
 
 class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
   bool _syncDelete = false;
+  bool _deleteLocalFiles = false;
 
   @override
   Widget build(BuildContext context) {
@@ -63,9 +68,18 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
             Text(widget.message, style: tokens.type.listSubtitle),
             if (widget.disclosure != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
-              DeletionDisclosureView(disclosure: widget.disclosure!),
+              DeletionDisclosureView(
+                disclosure: _deleteLocalFiles
+                    ? widget.disclosure!.withLocalFilesDeleted()
+                    : widget.disclosure!,
+              ),
             ],
             SizedBox(height: tokens.spacing.gap),
+            if (widget.offerLocalFiles)
+              DeleteLocalFilesRow(
+                value: _deleteLocalFiles,
+                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
+              ),
             if (widget.showSyncScope)
               AdaptiveSettingsRow(
                 title: t.delete_scope_sync_everywhere,
@@ -98,9 +112,14 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
               context: context,
               isDestructiveAction: true,
               onPressed: () => widget.onConfirm(
-                  widget.showSyncScope && _syncDelete
+                DeleteDecision(
+                  scope: widget.showSyncScope && _syncDelete
                       ? DeleteScope.syncEverywhere
-                      : DeleteScope.keepLocalOnly),
+                      : DeleteScope.keepLocalOnly,
+                  deleteLocalFiles:
+                      widget.offerLocalFiles && _deleteLocalFiles,
+                ),
+              ),
               child: Text(t.dialog_delete),
             ),
           ],

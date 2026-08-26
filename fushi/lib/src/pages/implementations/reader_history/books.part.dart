@@ -549,8 +549,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     //   ② 本机存在删除传播通道（纯本地零网络判据）。
     final bool canSyncEverywhere = mediaCount > 0 &&
         await hasDeletionPropagationChannel(SyncRepository(appModel.database));
+    // 「同时删除本地文件」只在选中散卡里至少有一条登记了原始音频时才摆出来
+    // （书本体没有可删原件，见 ReaderFushiSource.deleteBook）。
+    final bool anyLocalFiles =
+        mediaCount > 0 && await _selectionHasLocalSourceFiles();
     if (!mounted) return;
-    final DeleteScope? scope = await showAppDialog<DeleteScope>(
+    final DeleteDecision? decision = await showAppDialog<DeleteDecision>(
       context: context,
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.dialog_delete,
@@ -563,10 +567,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
                 target: DeletionDisclosureTarget.shelfBook,
               ),
         showSyncScope: canSyncEverywhere,
-        onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
+        offerLocalFiles: anyLocalFiles,
+        onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
       ),
     );
-    if (scope == null || !mounted) return;
+    if (decision == null || !mounted) return;
+    final DeleteScope scope = decision.scope;
+    final bool deleteLocalFiles = decision.deleteLocalFiles;
 
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
@@ -590,6 +597,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
               db: appModel.database,
               bookKey: book.bookKey,
               scope: scope,
+              deleteLocalFiles: deleteLocalFiles,
             );
           }
           // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
@@ -598,7 +606,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           // scope 以前到这里就被丢弃、勾了「从所有设备删除」完全无效。propagateDeletion
           // 由 repo 按 standalone 判据决定写不写墓碑（srt-backed 已由 deleteBook 写过）。
           final int removed = await repo.delete(uid,
-              propagateDeletion: scope == DeleteScope.syncEverywhere);
+              propagateDeletion: scope == DeleteScope.syncEverywhere,
+              deleteLocalFiles: deleteLocalFiles);
           if (removed > 0) deleted++;
         }
       } else {
@@ -609,6 +618,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             db: appModel.database,
             bookKey: bookKey,
             scope: scope,
+            deleteLocalFiles: deleteLocalFiles,
           );
           if (result.deleted) deleted++;
         }
@@ -638,6 +648,36 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           ? ToastSeverity.success
           : ToastSeverity.warning,
     );
+  }
+
+  /// 选中的散卡里有没有任何一条登记了原始音频文件（批删确认框据此决定摆不摆
+  /// 「同时删除本地文件」）。纯字幕书看自己的音频列，EPUB 看附带有声书 / 配对字幕书。
+  Future<bool> _selectionHasLocalSourceFiles() async {
+    final FushiDatabase db = appModel.database;
+    for (final String key in _selectedKeys) {
+      if (key.startsWith('srt_')) {
+        final SrtBook? book =
+            await SrtBookRepository(db).findByUid(key.substring(4));
+        if (book == null) continue;
+        if (hasAudiobookSourceFiles(
+            audioPaths: book.audioPaths, audioRoot: book.audioRoot)) {
+          return true;
+        }
+        if (book.bookKey.isNotEmpty &&
+            await ReaderFushiSource.instance
+                .hasLocalSourceFiles(db: db, bookKey: book.bookKey)) {
+          return true;
+        }
+      } else {
+        final String? bookKey = _parseBookKey(key);
+        if (bookKey != null &&
+            await ReaderFushiSource.instance
+                .hasLocalSourceFiles(db: db, bookKey: bookKey)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// 批量操作前把选中集收敛到真实存在的条目上，真剔掉了就明说。
@@ -910,27 +950,41 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
+    final bool offerLocalFiles = hasAudiobookSourceFiles(
+          audioPaths: book.audioPaths,
+          audioRoot: book.audioRoot,
+        ) ||
+        (book.bookKey.isNotEmpty &&
+            await ReaderFushiSource.instance.hasLocalSourceFiles(
+              db: appModel.database,
+              bookKey: book.bookKey,
+            ));
+    if (!mounted) return;
     // P4：确认弹窗给人看，书名过门面（删除本体仍按 raw bookKey/uid 身份执行）。
-    final DeleteScope? scope = await _confirmMediaDelete(
+    final DeleteDecision? decision = await _confirmMediaDelete(
       title: t.srt_delete_title,
       message: t.srt_delete_confirm(title: _srtDisplayTitle(book)),
       disclosure: buildDeletionDisclosure(
         target: DeletionDisclosureTarget.shelfBook,
       ),
+      offerLocalFiles: offerLocalFiles,
     );
-    if (scope == null) return;
+    if (decision == null) return;
+    final DeleteScope scope = decision.scope;
 
     if (book.bookKey.isNotEmpty) {
       await ReaderFushiSource.instance.deleteBook(
         db: appModel.database,
         bookKey: book.bookKey,
         scope: scope,
+        deleteLocalFiles: decision.deleteLocalFiles,
       );
     }
     // TODO-2470 死角①：纯字幕书（bookKey 空）不走上面的 deleteBook，删除范围必须在
     // 这里落地，否则勾了「从所有设备删除」静默无效。
     await SrtBookRepository(appModel.database).delete(book.uid,
-        propagateDeletion: scope == DeleteScope.syncEverywhere);
+        propagateDeletion: scope == DeleteScope.syncEverywhere,
+        deleteLocalFiles: decision.deleteLocalFiles);
     if (mounted) {
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
@@ -975,8 +1029,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    final bool offerLocalFiles = await ReaderFushiSource.instance
+        .hasLocalSourceFiles(db: appModel.database, bookKey: bookKey);
+    if (!mounted) return;
     // P4：确认弹窗给人看，书名过门面（删除本体仍按 raw bookKey 身份执行）。
-    final DeleteScope? scope = await _confirmMediaDelete(
+    final DeleteDecision? decision = await _confirmMediaDelete(
       title: t.epub_delete_title,
       message: t.srt_delete_confirm(
         title: displayTitleForBook(item: item, rawTitle: item.title),
@@ -984,13 +1041,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       disclosure: buildDeletionDisclosure(
         target: DeletionDisclosureTarget.shelfBook,
       ),
+      offerLocalFiles: offerLocalFiles,
     );
-    if (scope == null) return;
+    if (decision == null) return;
 
     final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: appModel.database,
       bookKey: bookKey,
-      scope: scope,
+      scope: decision.scope,
+      deleteLocalFiles: decision.deleteLocalFiles,
     );
     if (!mounted) return;
     if (!result.deleted) {

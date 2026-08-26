@@ -499,12 +499,26 @@ class AnimeDownloadService {
 
   /// 删除计划并在后端支持时真实取消种子。与 importNow/tick 共用 per-plan
   /// 串行边界，避免「删除后旧 tick 晚回又 save 把计划复活」。
-  Future<bool> deletePlan(String planId, {bool deleteFiles = false}) =>
+  ///
+  /// [deleteFiles]：连后端已下载的数据一起删（`removeTorrent(deleteFiles: true)`）。
+  /// 计划本身不记录落盘路径，包内视频的绝对路径只有种子还在后端时才反查得到，
+  /// 所以在摘种子**之前**先 `listFiles` 解析出来，删完经 [onFilesDeleted] 回给
+  /// 调用方（用来清掉已入库的视频行——旧计划入库后库行与文件之间同样只有路径
+  /// 这一条纽带）。种子已不在后端时无从反查，回调不触发。
+  Future<bool> deletePlan(
+    String planId, {
+    bool deleteFiles = false,
+    Future<void> Function(List<String> videoAbsolutePaths)? onFilesDeleted,
+  }) =>
       _runPlanSerial<bool>(planId, () async {
         final QbConnectionConfig? config = _configProvider();
+        List<String> deletedVideos = const <String>[];
         if (config != null && config.isConfigured) {
           final TorrentBackend backend = _backendFactory(config);
           try {
+            if (deleteFiles && onFilesDeleted != null) {
+              deletedVideos = await _resolvePlanVideoPaths(backend, planId);
+            }
             if (backend is TorrentRemovalBackend) {
               await backend.removeTorrent(planId, deleteFiles: deleteFiles);
             }
@@ -513,10 +527,46 @@ class AnimeDownloadService {
           }
         }
         await store.delete(planId);
+        if (deletedVideos.isNotEmpty && onFilesDeleted != null) {
+          await onFilesDeleted(deletedVideos);
+        }
         return !(await store.loadAll()).any(
           (AnimeDownloadPlan plan) => plan.id == planId,
         );
       });
+
+  /// 种子仍在后端时反查这个计划包内视频文件的绝对路径；查不到（种子已摘 / 后端
+  /// 离线 / 元数据未解析）返回空表，绝不抛——它只服务 best-effort 的库行清理。
+  Future<List<String>> _resolvePlanVideoPaths(
+    TorrentBackend backend,
+    String planId,
+  ) async {
+    try {
+      AnimeDownloadPlan? plan;
+      for (final AnimeDownloadPlan candidate in await store.loadAll()) {
+        if (candidate.id == planId) {
+          plan = candidate;
+          break;
+        }
+      }
+      if (plan == null) return const <String>[];
+      final QbConnectionConfig? config = _configProvider();
+      final List<TorrentSnapshot> torrents = await backend.listTorrents(
+        category: config == null || config.category.isEmpty
+            ? null
+            : config.category,
+      );
+      for (final TorrentSnapshot info in torrents) {
+        if (info.hash.toLowerCase() != planId.toLowerCase()) continue;
+        final List<TorrentFileEntry> files = await backend.listFiles(info.hash);
+        final (List<String> videos, _) = _classifyContent(plan, info, files);
+        return videos;
+      }
+    } catch (_) {
+      // 反查失败只影响库行清理，不阻塞删除本身。
+    }
+    return const <String>[];
+  }
 
   Future<T> _runPlanSerial<T>(
     String planId,

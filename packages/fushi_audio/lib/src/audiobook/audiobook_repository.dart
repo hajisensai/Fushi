@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
+import 'audiobook_source_files.dart';
 import 'audiobook_storage.dart';
 
 class AudiobookRepository {
@@ -165,13 +166,26 @@ class AudiobookRepository {
   /// [propagateDeletion]（默认 false）：true 时记一条 `audiobook` sync 删除墓碑，供同步
   /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「同步删除」）。false（含消费
   /// 远端删除标记路径）只删本机，绝不回写墓碑造成循环。app 层按 DeleteScope 传入。
+  ///
+  /// [deleteLocalFiles]（默认 false）：true 时连用户自己导入的原始音频文件一起删
+  /// （[deleteAudiobookSourceFiles]，对应删除弹窗「同时删除本地文件」）。原件位置
+  /// 在行上，必须删行**前**快照。
   Future<void> deleteAudiobook(
     String bookKey, {
     bool propagateDeletion = false,
+    bool deleteLocalFiles = false,
   }) async {
+    final Audiobook? before =
+        deleteLocalFiles ? await findByBookKey(bookKey) : null;
     // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
     await _db.deleteAudiobookByBookKey(bookKey);
     await AudiobookStorage.deletePersistDir(bookKey);
+    if (before != null) {
+      await deleteAudiobookSourceFiles(
+        audioPaths: before.audioPaths,
+        audioRoot: before.audioRoot,
+      );
+    }
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(

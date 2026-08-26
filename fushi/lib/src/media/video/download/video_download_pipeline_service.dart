@@ -463,6 +463,89 @@ Future<void> deletePersistedVideoDownloadJob({
   }
 }
 
+/// 库侧删视频且用户勾了「同时删除本地文件」后，把已从磁盘消失的 [deletedPaths]
+/// 对账回下载任务——这是 [deletePersistedVideoDownloadJob]（任务侧删 → 联动删库行）
+/// 的反方向。任务与库行之间没有 id 级外键，唯一纽带是
+/// `VideoDownloadJobFiles.finalAbsolutePath`，按 [normalizeVideoPath] 归一后比对。
+///
+/// 命中的任务分两档：
+/// - **视频文件全没了**（任务已终态，且除本次删掉的之外没有任何 kind=video 文件
+///   仍在磁盘上）→ 整个任务删除：有 [pipeline] 走 [VideoDownloadPipelineService.deleteJob]
+///   （先从后端摘种子并删数据，再删任务行与残余字幕/附件）；没有 pipeline 走
+///   [deletePersistedVideoDownloadJob] 的 db-only 路径。
+/// - **只删了部分集**或任务还在跑 → 任务保留，只把命中的文件行标 `skipped`，任务
+///   页不再把它当已入库文件展示；后端种子不动（还在下的集不能被打断）。
+///
+/// 全程 best-effort：任务对账失败只记 ErrorLog，视频与文件早已删掉，不回滚。
+Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
+  required FushiDatabase database,
+  required Set<String> deletedPaths,
+  VideoDownloadPipelineService? pipeline,
+}) async {
+  if (deletedPaths.isEmpty) return;
+  final Set<String> deletedNormalized = <String>{
+    for (final String path in deletedPaths) normalizeVideoPath(path),
+  };
+  for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
+    final List<VideoDownloadJobFileRow> files =
+        await database.getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobFileRow> hit = <VideoDownloadJobFileRow>[
+      for (final VideoDownloadJobFileRow file in files)
+        if (file.finalAbsolutePath?.trim().isNotEmpty == true &&
+            deletedNormalized
+                .contains(normalizeVideoPath(file.finalAbsolutePath!.trim())))
+          file,
+    ];
+    if (hit.isEmpty) continue;
+    final bool terminal = job.lifecycle == VideoDownloadJobLifecycle.completed ||
+        job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
+        job.lifecycle == VideoDownloadJobLifecycle.failed;
+    bool otherVideoRemains = false;
+    if (terminal) {
+      final Set<int> hitIds = <int>{for (final f in hit) f.id};
+      for (final VideoDownloadJobFileRow file in files) {
+        if (hitIds.contains(file.id) || file.kind != 'video') continue;
+        final String path = file.finalAbsolutePath?.trim() ?? '';
+        if (path.isEmpty) continue;
+        if (await File(path).exists()) {
+          otherVideoRemains = true;
+          break;
+        }
+      }
+    }
+    try {
+      if (terminal && !otherVideoRemains) {
+        if (pipeline != null) {
+          await pipeline.deleteJob(job.jobId, deleteFiles: true);
+        } else {
+          await deletePersistedVideoDownloadJob(
+            database: database,
+            job: job,
+            deleteFiles: true,
+          );
+        }
+      } else {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        for (final VideoDownloadJobFileRow file in hit) {
+          await database.updateVideoDownloadJobFile(
+            file.id,
+            VideoDownloadJobFilesCompanion(
+              status: const Value<String>(VideoDownloadJobFileStatus.skipped),
+              updatedAt: Value<int>(now),
+            ),
+          );
+        }
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'VideoDownloadJobReconcile',
+        'Failed to reconcile job ${job.jobId} after local delete: $error',
+        stack,
+      );
+    }
+  }
+}
+
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
     Function(VideoDownloadJobRow job);
 

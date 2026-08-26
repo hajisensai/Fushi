@@ -31,6 +31,9 @@ import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/media/video/video_local_files.dart'
+    show videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -1110,17 +1113,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     // 混选/纯解散不删媒体本体 → 不展示同步删除选项（合集解散走合集传播机制）；
-    // 纯删媒体才有意义提供「从所有设备删除」。
+    // 纯删媒体才有意义提供「从所有设备删除」与「同时删除本地文件」。
     // 不能写成三元表达式：两分支各含 await 时 analyzer 视互为 async gap，
     // 两处 context 都报 use_build_context_synchronously（CI warning 致命）。
-    final DeleteScope? scope;
+    final DeleteDecision? decision;
     if (collectionCount == 0) {
-      scope = await showDeleteScopeConfirm(context,
+      // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
+      // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
+      final Set<String> selected = Set<String>.of(_selectedUids);
+      final bool anyLocalFile = (await widget.repo.listAll()).any(
+        (VideoBookRow b) =>
+            selected.contains(b.bookUid) && videoBookHasLocalFiles(b),
+      );
+      if (!mounted) return;
+      decision = await showDeleteScopeConfirm(context,
           title: t.dialog_delete,
           message: message,
-          db: ref.read(appProvider).database);
+          db: ref.read(appProvider).database,
+          offerLocalFiles: anyLocalFile,
+          localFilesSubtitle: t.delete_local_files_video_desc);
     } else {
-      scope = await showAppDialog<DeleteScope>(
+      decision = await showAppDialog<DeleteDecision>(
         context: context,
         builder: (BuildContext ctx) => AlertDialog(
           title: Text(t.dialog_delete),
@@ -1131,7 +1144,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               child: Text(t.dialog_cancel),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(ctx, DeleteScope.keepLocalOnly),
+              onPressed: () => Navigator.pop(
+                ctx,
+                const DeleteDecision(scope: DeleteScope.keepLocalOnly),
+              ),
               child: Text(
                 t.dialog_delete,
                 style: TextStyle(color: Theme.of(ctx).colorScheme.error),
@@ -1141,9 +1157,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       );
     }
-    if (scope == null || !mounted) return;
+    if (decision == null || !mounted) return;
 
-    final FushiDatabase db = ref.read(appProvider).database;
+    final AppModel appModel = ref.read(appProvider);
+    final FushiDatabase db = appModel.database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
     int dissolved = 0;
@@ -1153,9 +1170,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // 再删选中散卡的媒体本体（现状语义）。
     final Set<String> toDelete = Set<String>.of(_selectedUids);
-    final int deleted = await widget.repo.deleteVideoBooksAndReclaimAssets(
-      toDelete,
-      scope: scope,
+    final int deleted = await deleteVideoBooksWithDecision(
+      repo: widget.repo,
+      database: db,
+      pipeline: appModel.videoDownloadPipelineService,
+      bookUids: toDelete,
+      decision: decision,
       afterDeleteBeforeReclaim: () async {
         if (!mounted) return;
         _exitSelectionMode();
@@ -2356,16 +2376,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   Future<void> _confirmDelete(VideoBookRow book) async {
-    final DeleteScope? scope = await showDeleteScopeConfirm(
+    final AppModel appModel = ref.read(appProvider);
+    final DeleteDecision? decision = await showDeleteScopeConfirm(
       context,
       title: t.video_delete_title,
       message: t.video_delete_confirm(title: book.title),
-      db: ref.read(appProvider).database,
+      db: appModel.database,
+      // 远端流（互联直传 / WebDAV / Jellyfin）磁盘上没有文件，不摆勾选框。
+      offerLocalFiles: videoBookHasLocalFiles(book),
+      localFilesSubtitle: t.delete_local_files_video_desc,
     );
-    if (scope == null || !mounted) return;
-    await widget.repo.deleteVideoBookAndReclaimAssets(
-      book.bookUid,
-      scope: scope,
+    if (decision == null || !mounted) return;
+    await deleteVideoBooksWithDecision(
+      repo: widget.repo,
+      database: appModel.database,
+      pipeline: appModel.videoDownloadPipelineService,
+      bookUids: <String>[book.bookUid],
+      decision: decision,
       afterDeleteBeforeReclaim: () async {
         if (!mounted) return;
         _refreshAfterTagChange();
