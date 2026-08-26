@@ -8,6 +8,24 @@
   "notes": "Manual desktop beta/test build from develop @ ec43136. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
+      "name": "fushi-2.2.1-beta.12447-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.1-beta.12447/fushi-2.2.1-beta.12447-ios.ipa",
+      "releaseSequence": 12447,
+      "tag": "v2.2.1-beta.12447",
+      "version": "2.2.1-beta.12447",
+      "size": 68797166,
+      "sha256": "419645e513152e9164c80c5254821e6643f98770fb9808298cb216459c121643"
+    },
+    {
+      "name": "fushi-2.2.1-beta.12447-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.1-beta.12447/fushi-2.2.1-beta.12447-macos.zip",
+      "releaseSequence": 12447,
+      "tag": "v2.2.1-beta.12447",
+      "version": "2.2.1-beta.12447",
+      "size": 319185664,
+      "sha256": "f832a92e9f1e3cb2bbccb84355f7fd970c4c5d22666161cb09136840bc70afd2"
+    },
+    {
       "name": "fushi-2.2.1-beta.12447-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.1-beta.12447/fushi-2.2.1-beta.12447-windows-setup.exe",
       "releaseSequence": 12447,
