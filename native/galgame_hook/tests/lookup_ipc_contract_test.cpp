@@ -635,8 +635,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
         "查词区必须追加在所有 v13 区之后");
 }
 
-void TestV16OnlyAppendsNativeLoopbackPolicyOverV15() {
-  Check(kSharedVersion == 16, "本测试锁的是 v16 契约");
+void TestV16AndV17OnlyAppendOverV15() {
+  Check(kSharedVersion == 17, "本测试锁的是 v17 契约");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -658,10 +658,16 @@ void TestV16OnlyAppendsNativeLoopbackPolicyOverV15() {
             offsetof(SharedHeader, native_loopback_applied_seq) ==
                 first_v16_field + 3 * sizeof(uint32_t),
         "v16 四个 32 位 policy word 必须按契约连续尾追加");
-  Check(sizeof(SharedHeader) ==
+  // v17 只在 v16 末尾再追加驻留 hook DLL 摘要（定长 char 数组），前面各字段偏移不动。
+  const size_t only_v17_field = offsetof(SharedHeader, hook_module_sha256);
+  Check(only_v17_field ==
             offsetof(SharedHeader, native_loopback_applied_seq) +
                 sizeof(uint32_t),
-        "v16 末尾不得混入 policy 之外的字段");
+        "v17 摘要必须紧跟 v16 末字段，不能移动任何既有字段");
+  Check(sizeof(SharedHeader) ==
+            ((only_v17_field + fushi_voice_hook::kHookModuleDigestChars + 7u) /
+             8u) * 8u,
+        "v17 末尾除 8 字节对齐填充外不得混入其他字段");
 }
 
 // 头里的冗余自洽字段必须与编译期常量一致——否则读侧按 header 值寻址、写侧按常量写，
@@ -700,7 +706,7 @@ int main() {
   TestCaptureSuppressHasExactControlIdentity();
   TestAcceptedFramesAlwaysFitInsideTheirBitmapSlot();
   TestV14LookupRegionIsPureAppendOverV13();
-  TestV16OnlyAppendsNativeLoopbackPolicyOverV15();
+  TestV16AndV17OnlyAppendOverV15();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {
     fprintf(stderr, "lookup ipc contract test failures: %d\n", g_failures);

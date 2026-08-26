@@ -1487,8 +1487,24 @@ bool FindResidentModulePath(DWORD pid, const std::wstring& module_basename,
   return false;
 }
 
+// 驻留 hook DLL 的身份门。两条判据的**信息来源不同**，这是整个函数的要点：
+//
+//   * 路径：进程里装的是不是本次请求那个目录的副本 —— Toolhelp 能直接答，读磁盘无关。
+//   * 摘要：进程里驻留的是**哪个构建** —— 磁盘答不了。能走到摘要这一步时 requested 与
+//     loaded 路径已经相等（不等在上一条判据就返回 kPathMismatch 了），所以若两侧都用
+//     Sha256File 读磁盘，读的就是同一个文件，loaded_sha 恒等于 requested_sha，
+//     kDigestMismatch 在真实运行中永不可达 —— 那是一道恒真的假校验。
+//     而它要挡的恰恰是「Fushi 自更新把磁盘上那份 DLL 换成新构建，游戏进程里仍驻留旧
+//     映像」：路径没变、磁盘上是新文件，磁盘里根本不含「驻留的是哪个构建」这条信息。
+//     这条信息只在**当初真正完成注入的那一方**手里，所以由 injector 在创建映射时把本次
+//     注入 DLL 的摘要写进 header（v17），下一次 injector 读它 —— 比较的两侧这才真的是
+//     「驻留构建」与「请求构建」。
+//
+// header 来自已成功 MapViewOfFile 的既有映射；magic/version 不符时不读该字段（旧布局里
+// 那段字节是音频环形的开头，当摘要读会得到垃圾），返回空串走 kDigestUnavailable。
 fushi_voice_hook::HookModuleIdentityStatus InspectResidentHookIdentity(
-    DWORD pid, const std::wstring& requested_dll_path) {
+    DWORD pid, const std::wstring& requested_dll_path,
+    const SharedHeader* resident_header) {
   const std::wstring requested =
       NormalizeAbsoluteModulePath(requested_dll_path);
   std::wstring loaded_raw;
@@ -1496,7 +1512,15 @@ fushi_voice_hook::HookModuleIdentityStatus InspectResidentHookIdentity(
       pid, ModuleBaseName(requested_dll_path), &loaded_raw);
   const std::wstring loaded = NormalizeAbsoluteModulePath(loaded_raw);
   const std::string requested_sha = Sha256File(requested);
-  const std::string loaded_sha = Sha256File(loaded);
+  std::string loaded_sha;
+  if (resident_header != nullptr && resident_header->magic == kSharedMagic &&
+      resident_header->version == kSharedVersion) {
+    const char* const digest = resident_header->hook_module_sha256;
+    // 定长安全读：共享内存里的字节不可信，不假定有 NUL。
+    loaded_sha.assign(
+        digest,
+        strnlen(digest, fushi_voice_hook::kHookModuleDigestChars));
+  }
   return fushi_voice_hook::EvaluateHookModuleIdentity(
       found, requested, loaded, requested_sha, loaded_sha);
 }
@@ -1580,7 +1604,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       static_cast<uint32_t>(expected_text_offset + text_region_bytes);
   const auto resident_hook_identity =
       mapping_already_exists
-          ? InspectResidentHookIdentity(pid, dll_path)
+          ? InspectResidentHookIdentity(pid, dll_path, header)
           : fushi_voice_hook::HookModuleIdentityStatus::kMatch;
   const MappingSessionAction mapping_action = InspectMappingSession(
       mapping_already_exists, header, ring_capacity, expected_text_offset,
@@ -1653,6 +1677,21 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->lookup_bitmap_bytes = fushi_voice_hook::kLookupBitmapBytes;
     header->lookup_frame_count = fushi_voice_hook::kLookupFrameCount;
     header->lookup_input_slot_count = fushi_voice_hook::kLookupInputSlotCount;
+    // v17：把**本次注入所用 DLL** 的摘要留档。injector 就是注入者，只有它知道等一下
+    // 驻留进游戏进程的是哪个构建；下一次 injector 见到这块映射时，拿这条记录跟那时
+    // 磁盘上的 DLL 现算摘要比，才是「驻留构建 vs 请求构建」的真比较（两边都读磁盘
+    // 得到的是同一个文件，恒等，见 InspectResidentHookIdentity 的说明）。
+    // 只在新建映射这条路上写：复用既有映射时这条记录属于当初那次注入，不得覆盖。
+    // 上面 memset 已把整块清零，算不出摘要就保持全 0 —— 读侧走 kDigestUnavailable
+    // （有界重试），不会被误判成 mismatch 而要求用户重启游戏。
+    const std::string injected_hook_sha =
+        Sha256File(NormalizeAbsoluteModulePath(dll_path));
+    if (!injected_hook_sha.empty() &&
+        injected_hook_sha.size() <
+            fushi_voice_hook::kHookModuleDigestChars) {
+      memcpy(header->hook_module_sha256, injected_hook_sha.c_str(),
+             injected_hook_sha.size() + 1);
+    }
   } else {
     fprintf(stderr,
             "[session] reusing live hook mapping pid=%lu text=%u audioBytes=%llu\n",

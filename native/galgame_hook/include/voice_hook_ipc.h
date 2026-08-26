@@ -67,7 +67,16 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     Hibiki 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
 //     cleanOnly/resourceOnly 因而仍会录音。request_seq 最后发布请求，applied_seq 最后确认
 //     Stop/Release/线程退出；版本不匹配时 DLL 拒绝映射，旧 helper 不能绕过默认 deny。
-constexpr uint32_t kSharedVersion = 16;
+// v17：在头部最尾追加**本次注入所用 hook DLL 的 SHA-256**（`hook_module_sha256`）。
+//     写者是创建该映射的 injector（只在新建映射、memset 清零之后写一次）；读者是**下一次**
+//     injector——它见到已存在的映射时，拿 header 里这条记录跟本次请求 DLL 现算的摘要比。
+//     为什么磁盘摘要不够：驻留身份判据先比路径，路径不等直接 kPathMismatch，所以能走到
+//     摘要比较时两条路径已经相等；此时若两侧都用 Sha256File 读磁盘，读的是同一个文件，
+//     摘要恒等，kDigestMismatch 永不可达。而这道门要挡的恰恰是「Fushi 自更新把磁盘上那份
+//     DLL 换成新构建、游戏进程里仍驻留旧映像」——路径没变、磁盘上是新文件，磁盘里根本
+//     不含「进程里驻留的是哪个构建」这条信息。它只存在于当初完成注入的那一方，所以必须
+//     由注入者在建映射时留档。纯尾部追加：前面各区偏移逐字节不动。
+constexpr uint32_t kSharedVersion = 17;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -587,6 +596,10 @@ constexpr uint32_t kLookupInputLeftUp = 2;
 constexpr uint32_t kLookupInputWheel = 3;
 constexpr uint32_t kLookupInputLeave = 4;
 
+// v17：hook DLL 摘要字段的固定长度 = 64 位十六进制 SHA-256 + 结尾 NUL。定长而不是变长，
+// 是因为它落在跨进程共享内存里：读侧必须能在不信任写侧的前提下有界读（strnlen 上界就是它）。
+constexpr uint32_t kHookModuleDigestChars = 65;
+
 // 共享内存头。injector 创建并清零、填各区偏移；hook DLL 注入后填格式、持续更新计数。
 // volatile 字段跨进程无锁单写单读。绝不在此放指针（跨进程地址无意义）。
 // 内存布局：[SharedHeader][音频环形 ring_capacity][文本区 TextRegionBytes()]
@@ -689,6 +702,12 @@ struct SharedHeader {
   volatile uint32_t native_loopback_request_seq;
   volatile uint32_t native_loopback_state;
   volatile uint32_t native_loopback_applied_seq;
+  // ── v17 驻留 hook DLL 构建身份（纯追加；创建映射的 injector 写，下一次 injector 读）──
+  // 64 位小写十六进制 SHA-256 + NUL；全 0 表示「本次注入算不出摘要」，读侧据此走
+  // kDigestUnavailable（有界重试），绝不当成 mismatch 去要求用户重启游戏。
+  // 只在**新建映射**时写一次，复用既有映射时一个字节都不碰——那条记录属于当初真正
+  // 完成注入的那次会话，被本次请求覆盖就等于把要比对的证据自己抹掉了。
+  char hook_module_sha256[kHookModuleDigestChars];
 };
 #pragma pack(pop)
 

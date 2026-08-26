@@ -172,11 +172,14 @@ add_test(NAME fushi_voice_session_reuse_test COMMAND fushi_voice_session_reuse_t
 
 # ready 旧映射的 resident DLL 身份门：不启动/注入游戏，只验证路径与摘要的 fail-closed
 # 判定。Fushi 更新后旧 DLL 仍驻留时，injector 不得再误报 reuse_ready。
+# 同时带一条**调用侧**源码扫描守卫（FUSHI_INJECTOR_MAIN_SOURCE）：纯函数判据再对，只要
+# 调用方把两侧摘要都从磁盘读，kDigestMismatch 就恒不可达 —— 那种退化纯函数测试测不到。
 add_executable(fushi_hook_module_identity_test
   "tests/hook_module_identity_test.cpp"
 )
 target_include_directories(fushi_hook_module_identity_test PRIVATE "include")
-target_compile_definitions(fushi_hook_module_identity_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_definitions(fushi_hook_module_identity_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+  "FUSHI_INJECTOR_MAIN_SOURCE=\"${CMAKE_CURRENT_SOURCE_DIR}/injector/injector_main.cpp\"")
 add_test(NAME fushi_hook_module_identity_test COMMAND fushi_hook_module_identity_test)
 
 # v16 injected WASAPI loopback policy: pure ABI/publication/lifecycle reducer
