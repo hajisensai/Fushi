@@ -1,4 +1,4 @@
-// BUG-1869 源码守卫：direct galCard 点游戏区域时，第一整个点击只关闭查词框，
+// BUG-1882 源码守卫：direct galCard 点游戏区域时，第一整个点击只关闭查词框，
 // 不得穿透到游戏推进台词。
 //
 // 这是 Win32 WH_MOUSE_LL + WebView2 composition 的输入事务，Dart 测试无法伪造

@@ -153,7 +153,7 @@ install(CODE "
 # 本地 Debug 仍允许没跑 build_distribution.ps1：这对只改 UI 的开发机构建是必要的。
 # 但增量输出目录可能残留上一次构建的 voice_hook/。若这次 dist 不完整，或 dist 的源码
 # 指纹不属于当前 checkout，安装脚本必须主动删掉残留而不是把旧 DLL 伪装成新构建
-#（BUG-1868）；功能明确不可用胜过静默注入旧件。
+#（BUG-1881）；功能明确不可用胜过静默注入旧件。
 # CI/Release 随后仍会无 AllowMissingDistribution 调用同一脚本，分发物缺失或损坏时失败。
 # 要在本地拿到 helper：先在 native/galgame_hook 下跑 tools/build_distribution.ps1。
 set(FUSHI_GALGAME_HELPER_DIST_DIR

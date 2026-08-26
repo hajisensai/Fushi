@@ -1,4 +1,4 @@
-## BUG-1869 · 游戏内查词点外关闭时同一点击穿透到游戏推进台词
+## BUG-1882 · 游戏内查词点外关闭时同一点击穿透到游戏推进台词
 - **报告**：2026-08-25（用户：Windows / STEINS;GATE RE:BOOT 内嵌查词）
 - **真实性**：✅ 真 bug，且首版修复边界不足 — direct galCard 的 `WH_MOUSE_LL` 已在真机确认绑定正确并能关闭 popup，但 SGRE 不靠 Win32 mouse message 推进：精确 exe（SHA-256 `75A83A0E…C404B9D8`）创建 `GUID_SysMouse` / `c_dfDIMouse2`，以 `DISCL_FOREGROUND | DISCL_NONEXCLUSIVE` 获取设备，并在每帧调用 `IDirectInputDevice8::GetDeviceState(20)` 直接读取 `rgbButtons[0..7]`。因此 HHOOK `return 1` 只能挡窗口消息，挡不住物理 DirectInput state；这正是“框消失但游戏仍下一句”的首个失败边界。
 - **[x] ① host 点击事务** — `global_lookup_window.cpp` 只在 direct galCard 的 Reveal 事务中同步确认 HHOOK；`low_level_mouse_hook.cpp` 以真实窗口 region / 绑定游戏客户区区分卡内外，异步通知 Hide 并成对吞掉点外 down/up。桌面/global route 使用独立 HWND，仍保持原点击穿透语义。

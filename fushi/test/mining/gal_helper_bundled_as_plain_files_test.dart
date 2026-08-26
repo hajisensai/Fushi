@@ -106,7 +106,7 @@ void main() {
     }
   });
 
-  test('本地 Windows 构建同样走普通文件安装且无新 dist 时清旧 helper (BUG-1868)', () {
+  test('本地 Windows 构建同样走普通文件安装且无新 dist 时清旧 helper (BUG-1881)', () {
     final String src = windowsCmake.readAsStringSync();
     final int start = src.indexOf('# === galgame hook helper 随包普通文件');
     final int end = src.indexOf('# === Magpie', start);
@@ -140,7 +140,7 @@ void main() {
     expect(installer, contains('if (-not \$AllowMissingDistribution)'));
   });
 
-  test('可选 dist 缺失时真实脚本会删除两份陈旧 helper (BUG-1868)', () async {
+  test('可选 dist 缺失时真实脚本会删除两份陈旧 helper (BUG-1881)', () async {
     if (!Platform.isWindows) return;
 
     final Directory temp = Directory.systemTemp.createTempSync(
@@ -179,7 +179,7 @@ void main() {
     expect(Directory('${bundle.path}/voice_hook').existsSync(), isFalse);
   });
 
-  test('完整但源码指纹陈旧的 dist 也不能回填旧 helper (BUG-1868)', () async {
+  test('完整但源码指纹陈旧的 dist 也不能回填旧 helper (BUG-1881)', () async {
     if (!Platform.isWindows) return;
 
     final Directory temp = Directory.systemTemp.createTempSync(
@@ -222,7 +222,7 @@ void main() {
     expect(Directory('${bundle.path}/voice_hook').existsSync(), isFalse);
   });
 
-  test('组包与安装必须共享当前源码指纹契约 (BUG-1868)', () {
+  test('组包与安装必须共享当前源码指纹契约 (BUG-1881)', () {
     final String build = buildScript.readAsStringSync();
     final String install = script.readAsStringSync();
     for (final String source in <String>[build, install]) {

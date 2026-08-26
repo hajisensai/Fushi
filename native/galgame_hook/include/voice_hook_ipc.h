@@ -70,7 +70,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 constexpr uint32_t kSharedVersion = 16;
 constexpr uint32_t kStableIpcVersion = 1;
 
-// BUG-1869 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
+// BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
 // Win32 mouse-message 队列。direct galCard 因此需要一条很窄的跨进程发布面：
 //
 //   * injected SGRE adapter 先把 Required 置 1，声明该精确游戏不允许退回已经

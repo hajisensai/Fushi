@@ -7,7 +7,7 @@
   install_into_bundle.ps1 recomputes it before publishing plain helper files.
   This closes the otherwise invisible "complete, integrity-valid, but built
   from an older checkout" state that an incremental Flutter build cannot
-  distinguish from a fresh helper distribution (BUG-1868).
+  distinguish from a fresh helper distribution (BUG-1881).
 
   Keep the input list limited to files that can affect the shipped injector,
   hook DLL, Luna bridge, Locale Emulator package, or Unity audio runtime. Tests

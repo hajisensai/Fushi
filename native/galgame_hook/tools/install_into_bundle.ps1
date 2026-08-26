@@ -133,7 +133,7 @@ if ($missingArtifacts.Count -gt 0) {
 
   # A Debug build without a fresh dist is allowed, but it must be honestly
   # unavailable.  Leaving yesterday's voice_hook directory in the incremental
-  # bundle caused BUG-1868: SGRE injected pre-fix glyph geometry and selected a
+  # bundle caused BUG-1881: SGRE injected pre-fix glyph geometry and selected a
   # different character (or no character) even though Flutter had just rebuilt.
   $plainBundle = Join-Path $BundleDirectory 'voice_hook'
   if (Test-Path -LiteralPath $plainBundle) {

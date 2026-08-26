@@ -46,7 +46,7 @@ int main() {
                                                       wrong_hash.size()));
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(nullptr, 0));
 
-  // BUG-1869 — SGRE polls c_dfDIMouse2 directly, so swallowing Win32 mouse
+  // BUG-1882 — SGRE polls c_dfDIMouse2 directly, so swallowing Win32 mouse
   // messages cannot stop the game from seeing the click. Pin the exact profile
   // address/ABI and the button-only release latch used by the injected detour.
   assert(fushi_voice_hook::kSgreDirectInputMouseDeviceRva == 0xA96E18u);

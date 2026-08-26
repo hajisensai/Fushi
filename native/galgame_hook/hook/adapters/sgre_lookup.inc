@@ -48,7 +48,7 @@ uint32_t g_sgre_lookup_active_char_indices[kSgreLookupMaxGlyphs] = {};
 size_t g_sgre_lookup_active_mapped = 0;
 bool g_sgre_lookup_active_valid = false;
 
-// BUG-1869 — SGRE does not advance from WM_LBUTTONDOWN. It polls the
+// BUG-1882 — SGRE does not advance from WM_LBUTTONDOWN. It polls the
 // GUID_SysMouse IDirectInputDevice8 immediate state every frame. The popup HWND
 // published on the game window is the host-owned liveness token; the button
 // latch is injected-side state so teardown cannot expose the held half of a

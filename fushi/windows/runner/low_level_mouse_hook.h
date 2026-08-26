@@ -47,7 +47,7 @@ constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
 // 窗口」只是个可关的用户选项，靠不住。只要不吞，卡片滚不滚都改不了游戏在动。
 constexpr UINT kLowLevelMouseWheelMessage = WM_APP + 0x52;
 
-// BUG-1869 — injected SGRE DirectInput shield 的按键事务已完整释放。钩子线程只
+// BUG-1882 — injected SGRE DirectInput shield 的按键事务已完整释放。钩子线程只
 // PostMessage；真正的跨进程 property 撤销仍回到 popup/window 线程串行执行，避免
 // 旧 mouse-up 与下一次 Reveal 交错时撤掉新一代发布。
 constexpr UINT kLowLevelMouseShieldReleaseMessage = WM_APP + 0x53;

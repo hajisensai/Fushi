@@ -1,4 +1,4 @@
-## BUG-1839 · 搜索资源被下载后端运行时前置门禁阻断
+## BUG-1880 · 搜索资源被下载后端运行时前置门禁阻断
 - **报告**：2026-08-24（用户反馈；截图已去身份化）
 - **真实性**：✅ 真 bug。`home_page.dart` 的资源搜索与订阅入口在
   `Navigator.push` 前调用 `currentVideoDownloadBackendIdentity()`；Windows Debug 包缺少

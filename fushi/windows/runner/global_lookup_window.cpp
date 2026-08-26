@@ -1230,7 +1230,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
       if (y < mi.rcWork.top) y = mi.rcWork.top;
     }
   }
-  // BUG-1869 — direct galCard cannot be shown until the dedicated hook thread
+  // BUG-1882 — direct galCard cannot be shown until the dedicated hook thread
   // has acknowledged a live HHOOK. The normal desktop route deliberately stays
   // asynchronous: it never consumes the underlying app click. At this point all
   // geometry work is done, so the successful direct binding is published only
@@ -2308,7 +2308,7 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // rcWork excludes the taskbar and would move/trim a borderless/fullscreen game
   // card a second time, so keep the common reveal lifecycle but bypass only that
   // desktop clamp.
-  // BUG-1869 — Direct galCard is the only route whose outside click must be
+  // BUG-1882 — Direct galCard is the only route whose outside click must be
   // consumed. Pass the bound game HWND into the same reveal transaction that
   // makes the popup visible, so there is no first-frame window where the hook
   // is armed with desktop click-through semantics.
@@ -3421,7 +3421,7 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                          fushi::UnpackMouseHookWheel(lparam));
       return 0;
     case fushi::kLowLevelMouseShieldReleaseMessage:
-      // BUG-1869 — matching mouse-up 已由高优先级 hook 线程观测；跨进程
+      // BUG-1882 — matching mouse-up 已由高优先级 hook 线程观测；跨进程
       // DirectInput publication 在本窗口线程撤销，与下一次 Reveal 串行，避免旧 up
       // 删除新 popup 的 gate。
       fushi::FinalizeLowLevelMouseDirectInputShield(hwnd_);

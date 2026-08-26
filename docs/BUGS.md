@@ -33,15 +33,16 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
+| [BUG-1881](bugs/BUG-1881-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
+| [BUG-1880](bugs/BUG-1880-video-resource-search-backend-gate.md) | ✅ | ✅ | 搜索资源被下载后端运行时前置门禁阻断 |
 | [BUG-1874](bugs/BUG-1874-settings-downloads-open-page-subtitle-duplicate.md) | ✅ | ✅ | 「下载」设置分类里的下载页入口副标题也叫「下载设置」 |
 | [BUG-1873](bugs/BUG-1873-manga-discovery-loading-rows-bare-lines.md) | ✅ | ✅ | 漫画发现页来源热门行加载态是一排无标签的裸横线 |
 | [BUG-1872](bugs/BUG-1872-video-discovery-no-managed-source-snackbar.md) | ✅ | ✅ | 视频发现搜索资源/订阅在缺受管视频来源时只弹「暂无来源」snackbar |
 | [BUG-1871](bugs/BUG-1871-manga-global-search-empty-state-no-import-cta.md) | ✅ | ✅ | 漫画全源搜索空态文案指向不存在的「扩展」且无导入引导按钮 |
 | [BUG-1870](bugs/BUG-1870-storage-usage-db-snapshots-unlabeled-undeletable.md) | ✅ | ✅ | 存储页「数据库与内部数据」把几十个数据库快照残留按原始文件名逐条列出且无法删除 |
-| [BUG-1869](bugs/BUG-1869-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
 | [BUG-1869](bugs/BUG-1869-data-root-migration-progress-exceeds-total.md) | ✅ | ✅ | 数据迁移进度「已复制 623 / 620」超过总数：选择性搬移的顶层单文件只加分子不加分母 |
 | [BUG-1868](bugs/BUG-1868-lookup-popup-slow.md) | ✅ | ✅ | 查词弹窗慢，尤其嵌套查词 |
-| [BUG-1868](bugs/BUG-1868-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
 | [BUG-1867](bugs/BUG-1867-cover-backfill-hollow-m2ts.md) | ✅ | ✅ | 封面回填把 best-effort 失败刷进用户错误日志，且对未落盘文件仍走 ffmpeg |
 | [BUG-1866](bugs/BUG-1866-resolve-public-indexer-needs-network.md) | ✅ | ✅ | 公共索引器重解析非要联网重搜，搜不中就把活资源误报 notFound |
 | [BUG-1865](bugs/BUG-1865-organizer-numbered-extras.md) | ✅ | ✅ | 剧集整理把带编号的特典当正片，与真正片撞号整批失败 |
@@ -70,7 +71,6 @@
 | [BUG-1842](bugs/BUG-1842-jimaku-search-uses-display-name.md) | ✅ | ✅ | Jimaku 搜索拿显示名去猜，刮削存下的 AniList ID 从没被用过 |
 | [BUG-1841](bugs/BUG-1841-custom-theme-edit-persists-blank-draft.md) | ✅ | ✅ | 自定义主题「+新建」和「编辑」图标进编辑页前就落库空主题 |
 | [BUG-1840](bugs/BUG-1840-settings-custom-item-left-baseline.md) | ✅ | ✅ | 视频设置页 Jimaku/OpenSubtitles 块贴边，比标准设置行更靠左 |
-| [BUG-1839](bugs/BUG-1839-video-resource-search-backend-gate.md) | ✅ | ✅ | 搜索资源被下载后端运行时前置门禁阻断 |
 | [BUG-1838](bugs/BUG-1838-ankiconnect-installer-launcher-not-found.md) | 🚧 | 🚧 | AnkiConnect 一键代装误报 Anki 没运行：新版 launcher 下找不到入口 exe |
 | [BUG-1837](bugs/BUG-1837-anki-open-foreground-pid-launcher.md) | ✅ | ✅ | 制卡后在 Anki 中打开仍不到前台：新版 Anki launcher 下进程识别失效 |
 | [BUG-1836](bugs/BUG-1836-manual-install-rescue-reports-failure.md) | ✅ | ✅ | 手动跑安装包救援成功后仍必报更新失败（Inno 日志判据拿不到证据） |

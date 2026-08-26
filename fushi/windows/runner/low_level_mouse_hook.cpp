@@ -45,7 +45,7 @@ constexpr ULONGLONG kSynchronousArmFreshnessMs =
 // 钩子回调必须尽快返回，任何可能阻塞（锁竞争、堆分配）的东西都不该出现在这条路径上。
 std::atomic<HWND> g_target{nullptr};
 
-// BUG-1869 — direct galCard 的消费范围绑定在专用目标 HWND 上，而不是再放一个
+// BUG-1882 — direct galCard 的消费范围绑定在专用目标 HWND 上，而不是再放一个
 // 独立 relaxed atomic。修改属性前 ArmAndWait 会先清 g_target，再等钩子线程 ack
 //（它也是 callback barrier）；因此已取旧 target 的回调必已退出，之后的新回调只会
 // 看到 null，直到属性和 target 按此顺序发布。
@@ -342,7 +342,7 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
   // GetTickCount64 是读共享页的纯计算，没有系统调用开销。
   g_callback_tick.store(GetTickCount64(), std::memory_order_relaxed);
   // 只关心「按键」和「滚轮」：移动直接放行（这条分支每秒会跑上千次，在任何系统
-  // 调用之前必须先被纯比较挡掉）。BUG-1869 需要看 up，但 up 仍只是
+  // 调用之前必须先被纯比较挡掉）。BUG-1882 需要看 up，但 up 仍只是
   // 按键频率，不会把系统调用放进高频 move 路径。
   const bool is_button_down = IsButtonDownMessage(wparam);
   const bool is_button_up = IsButtonUpMessage(wparam);
