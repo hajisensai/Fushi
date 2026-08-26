@@ -10,11 +10,11 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | **Türkçe** | [العربية](README.ar.md)
 
-[![Kullanım Kılavuzu](https://img.shields.io/badge/%F0%9F%93%96%20Kullan%C4%B1m%20K%C4%B1lavuzu-0969DA?style=for-the-badge)](../user-guide.tr.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **Zahmetli kurulum yok** — önerilen sözlükleri ve sesi tek adımda içe aktarın.
 
-[![En son sürümü indir](https://img.shields.io/badge/%E2%AC%87%20En%20son%20s%C3%BCr%C3%BCm%C3%BC%20indir-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![En son sürümü indir](https://img.shields.io/badge/%E2%AC%87%20En%20son%20s%C3%BCr%C3%BCm%C3%BC%20indir-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Discord'a katıl](https://img.shields.io/badge/Discord%27a%20kat%C4%B1l-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **İzlemek istediğini izle, dili de yol üstünde kap.**
@@ -30,34 +30,6 @@ Bir dili öğrenmenin en etkili yolu, kelime kitabından kopuk sözcükler ezber
 
 Tüm senaryolar aynı sözlükleri, istatistikleri ve tekrar akışını paylaşır. Her dil için uygundur (Japonca, İngilizce, …) ve özellikle **bol girdi + yalnızca kendi yaptığın kartlar** ilkesine inanan daldırma öğrenenler için idealdir. Android ve Windows için kullanılabilir (iOS ve macOS planlanıyor).
 
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Kitaplık" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Video Kitaplığı" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Arama açılır penceresiyle masaüstünde dikey okuma" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Videoda arama (iç içe açılır pencereler)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Videoda arama (altyazı listesi)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Uygulama dışı metin seçerek arama (mobil)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Uygulama dışı metin seçerek arama (masaüstü)" width="100%"></td>
-  </tr>
-</table>
-
-**Tek dokunuşla Anki kartı oluşturma demosu**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Tek tıkla kart oluşturma demosunu izle ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Özellikler

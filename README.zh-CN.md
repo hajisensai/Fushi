@@ -10,11 +10,11 @@
 
 [English](README.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[![使用文档](https://img.shields.io/badge/%F0%9F%93%96%20%E4%BD%BF%E7%94%A8%E6%96%87%E6%A1%A3-0969DA?style=for-the-badge)](https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **无需繁琐配置**，推荐词典与本地音频一键导入即用。
 
-[![下载最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![下载最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![加入 Discord 社区](https://img.shields.io/badge/%E5%8A%A0%E5%85%A5%20Discord%20%E7%A4%BE%E5%8C%BA-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **看你想看的，语言顺手就学会了。**
@@ -31,34 +31,6 @@ Fushi 把你正在读的小说、追的番、听的有声书，变成你的语�
 
 所有场景共享同一套词典、统计和复习流程。适合任何语言（日语、英语……），尤其适合信奉**大量输入 + 只背自制卡**的沉浸式学习者。面向 Android、Windows、macOS 与 iOS 四个平台发布（Linux 可自行从源码构建）。
 
-<table>
-  <tr>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-bookshelf-zh.png" alt="书架" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-video-library-zh.png" alt="视频库" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="桌面竖排阅读 · 划词查词弹窗" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="视频查词（嵌套弹窗）" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="视频查词（字幕列表）" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="app 外选词查词（手机）" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="app 外选词查词（电脑）" width="100%"></td>
-  </tr>
-</table>
-
-**一键制卡演示**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="docs/static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[点此查看一键制卡演示 ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## 功能
@@ -167,14 +139,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/hajisensai/Fushi/releases) 下载最新版本，提供 Android APK、Windows 安装包，以及 macOS、iOS 构建。Linux 暂无预编译包，需自行从源码构建。
-
-<details open>
-<summary>📖 <b>无需繁琐配置</b>：推荐词典与本地音频一键导入即用。</summary>
-
-<a href="https://ncnies6wfjok.feishu.cn/wiki/OZbww3T3IiEAx5kBhHkcF07vncb"><img src="docs/static-assets/user-guide/config-tutorial.zh-CN.png" alt="配置教程 — 导入推荐词典和音频" width="420"></a>
-
-</details>
+从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包，以及 macOS、iOS 构建。Linux 暂无预编译包，需自行从源码构建。
 
 > 最低 Android 7.0（API 24）。
 

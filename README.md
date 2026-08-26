@@ -10,11 +10,11 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
-[![User Guide](https://img.shields.io/badge/%F0%9F%93%96%20User%20Guide-0969DA?style=for-the-badge)](docs/user-guide.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **No fiddly setup** — import the recommended dictionaries and audio in one step.
 
-[![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Watch what you want to watch, and pick up the language along the way.**
@@ -30,35 +30,6 @@ The most effective way to learn a language is heavy exposure to real content, no
 🃏 **Retain**: send any word you looked up, anywhere, straight to Anki, and review only the words you actually met.
 
 Every scenario shares the same dictionaries, statistics, and review workflow. It works for any language (Japanese, English, …), and is especially suited to immersion learners who believe in **heavy input + only self-made cards**. Available for Android, Windows, macOS, and iOS (Linux builds from source).
-
-<table>
-  <tr>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Bookshelf" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-video-library-en.png" alt="Video Library" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Desktop vertical reading with lookup popup" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Video lookup (nested popups)" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Video lookup (subtitle list)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Out-of-app text-selection lookup (mobile)" width="100%"></td>
-    <td><img src="docs/static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Out-of-app text-selection lookup (desktop)" width="100%"></td>
-  </tr>
-</table>
-
-**One-tap Anki mining demo**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="docs/static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Watch the HD video version ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 
 </div>
 
@@ -168,14 +139,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from [GitHub Releases](https://github.com/hajisensai/Fushi/releases) — Android APK, Windows installer, macOS, and iOS builds are available. Linux has no prebuilt release yet; build it from source.
-
-<details open>
-<summary>📖 <b>No fiddly setup</b> — import the recommended dictionaries and audio in one step.</summary>
-
-<a href="docs/user-guide.md"><img src="docs/static-assets/user-guide/config-tutorial.en.png" alt="Configuration tutorial — import recommended dictionaries and audio" width="360"></a>
-
-</details>
+Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, macOS, and iOS builds are available. Linux has no prebuilt release yet; build it from source.
 
 > Requires Android 7.0 (API 24) or higher.
 

@@ -10,11 +10,11 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Hướng dẫn sử dụng](https://img.shields.io/badge/%F0%9F%93%96%20H%C6%B0%E1%BB%9Bng%20d%E1%BA%ABn%20s%E1%BB%AD%20d%E1%BB%A5ng-0969DA?style=for-the-badge)](../user-guide.vi.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **Không cần cấu hình rườm rà** — nhập từ điển và âm thanh được đề xuất chỉ trong một bước.
 
-[![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![Tải bản mới nhất](https://img.shields.io/badge/%E2%AC%87%20T%E1%BA%A3i%20b%E1%BA%A3n%20m%E1%BB%9Bi%20nh%E1%BA%A5t-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Tham gia Discord](https://img.shields.io/badge/Tham%20gia%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Xem thứ bạn muốn xem, rồi tự nhiên học được ngôn ngữ.**
@@ -30,34 +30,6 @@ Cách học ngôn ngữ hiệu quả nhất là tiếp xúc thật nhiều với
 
 Mọi tình huống đều dùng chung một bộ từ điển, thống kê và quy trình ôn tập. Phù hợp với mọi ngôn ngữ (tiếng Nhật, tiếng Anh, …), và đặc biệt phù hợp với những người học theo lối đắm chìm tin vào **tiếp nhận thật nhiều + chỉ học thẻ tự làm**. Hỗ trợ Android và Windows (iOS, macOS đang lên kế hoạch).
 
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Kệ sách" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Thư viện video" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Đọc dọc trên máy tính với cửa sổ tra từ" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Tra từ trên video (cửa sổ lồng nhau)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Tra từ trên video (danh sách phụ đề)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (điện thoại)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Tra từ bằng cách chọn văn bản ngoài ứng dụng (máy tính)" width="100%"></td>
-  </tr>
-</table>
-
-**Demo tạo thẻ Anki chỉ với một chạm**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Xem demo tạo thẻ một chạm ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Tính năng

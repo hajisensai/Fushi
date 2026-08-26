@@ -10,11 +10,11 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | **Nederlands** | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Gebruikershandleiding](https://img.shields.io/badge/%F0%9F%93%96%20Gebruikershandleiding-0969DA?style=for-the-badge)](../user-guide.nl.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **Geen omslachtige configuratie** — importeer de aanbevolen woordenboeken en audio in één stap.
 
-[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![Nieuwste versie downloaden](https://img.shields.io/badge/%E2%AC%87%20Nieuwste%20versie%20downloaden-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Word lid van Discord](https://img.shields.io/badge/Word%20lid%20van%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **Kijk waar je zin in hebt en pik de taal onderweg op.**
@@ -30,34 +30,6 @@ De effectiefste manier om een taal te leren is veelvuldige blootstelling aan ech
 
 Alle situaties delen dezelfde woordenboeken, statistieken en herhalingsworkflow. Geschikt voor elke taal (Japans, Engels, …) en vooral voor onderdompelingsleerders die geloven in **veel input + alleen zelfgemaakte kaarten**. Beschikbaar voor Android en Windows (iOS en macOS gepland).
 
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Boekenplank" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Videobibliotheek" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Verticaal lezen op desktop met opzoek-pop-up" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Opzoeken in video (geneste pop-ups)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Opzoeken in video (ondertitellijst)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Opzoeken via tekstselectie buiten de app (mobiel)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Opzoeken via tekstselectie buiten de app (desktop)" width="100%"></td>
-  </tr>
-</table>
-
-**Demo: Anki-kaarten maken met één tik**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Bekijk de demo voor het maken van kaarten met één klik ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## Functies

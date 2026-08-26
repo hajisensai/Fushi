@@ -10,11 +10,11 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![사용 설명서](https://img.shields.io/badge/%F0%9F%93%96%20%EC%82%AC%EC%9A%A9%20%EC%84%A4%EB%AA%85%EC%84%9C-0969DA?style=for-the-badge)](../user-guide.ko.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **번거로운 설정 없이** — 추천 사전과 오디오를 한 번에 가져오기.
 
-[![최신 버전 다운로드](https://img.shields.io/badge/%E2%AC%87%20%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![최신 버전 다운로드](https://img.shields.io/badge/%E2%AC%87%20%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Discord 참여](https://img.shields.io/badge/Discord%20%EC%B0%B8%EC%97%AC-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **보고 싶은 걸 보다 보면, 언어는 자연스럽게 따라옵니다.**
@@ -30,34 +30,6 @@ Fushi는 당신이 읽는 소설, 챙겨 보는 애니, 듣는 오디오북을 �
 
 모든 상황이 같은 사전, 통계, 복습 흐름을 공유합니다. 어떤 언어(일본어, 영어……)에도 적합하며, 특히 **대량 입력 + 직접 만든 카드만 외우기**를 신조로 하는 몰입형 학습자에게 잘 맞습니다. Android와 Windows를 지원합니다(iOS, macOS는 계획 중).
 
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="책장" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="동영상 라이브러리" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="데스크톱에서의 세로쓰기 독서와 검색 팝업" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="동영상 단어 검색(중첩 팝업)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="동영상 단어 검색(자막 목록)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="앱 외부 텍스트 선택 검색(모바일)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="앱 외부 텍스트 선택 검색(데스크톱)" width="100%"></td>
-  </tr>
-</table>
-
-**원탭 Anki 카드 생성 데모**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[원클릭 카드 제작 데모 보기 ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## 기능

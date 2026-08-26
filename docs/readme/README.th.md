@@ -10,11 +10,11 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![คู่มือผู้ใช้](https://img.shields.io/badge/%F0%9F%93%96%20%E0%B8%84%E0%B8%B9%E0%B9%88%E0%B8%A1%E0%B8%B7%E0%B8%AD%E0%B8%9C%E0%B8%B9%E0%B9%89%E0%B9%83%E0%B8%8A%E0%B9%89-0969DA?style=for-the-badge)](../user-guide.th.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
 **ไม่ต้องตั้งค่ายุ่งยาก** — นำเข้าพจนานุกรมและเสียงที่แนะนำได้ในขั้นตอนเดียว
 
-[![ดาวน์โหลดเวอร์ชันล่าสุด](https://img.shields.io/badge/%E2%AC%87%20%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94%E0%B9%80%E0%B8%A7%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%B1%E0%B8%99%E0%B8%A5%E0%B9%88%E0%B8%B2%E0%B8%AA%E0%B8%B8%E0%B8%94-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![ดาวน์โหลดเวอร์ชันล่าสุด](https://img.shields.io/badge/%E2%AC%87%20%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94%E0%B9%80%E0%B8%A7%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%B1%E0%B8%99%E0%B8%A5%E0%B9%88%E0%B8%B2%E0%B8%AA%E0%B8%B8%E0%B8%94-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![เข้าร่วม Discord](https://img.shields.io/badge/%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%A3%E0%B9%88%E0%B8%A7%E0%B8%A1%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
 > **ดูสิ่งที่อยากดู แล้วเรียนรู้ภาษาไปในตัว**
@@ -30,34 +30,6 @@ Fushi เปลี่ยนนิยายที่คุณอ่าน ซี�
 
 ทุกสถานการณ์ใช้พจนานุกรม สถิติ และกระบวนการทบทวนชุดเดียวกัน เหมาะกับทุกภาษา (ญี่ปุ่น อังกฤษ …) โดยเฉพาะผู้เรียนแบบดื่มด่ำที่เชื่อใน**การรับอินพุตปริมาณมาก + ท่องเฉพาะการ์ดที่ทำเอง** รองรับ Android และ Windows (iOS, macOS อยู่ระหว่างวางแผน)
 
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="ชั้นหนังสือ" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="คลังวิดีโอ" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="การอ่านแนวตั้งบนเดสก์ท็อปพร้อมป๊อปอัปค้นคำ" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="การค้นคำในวิดีโอ (ป๊อปอัปซ้อน)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="การค้นคำในวิดีโอ (รายการคำบรรยาย)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (มือถือ)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (เดสก์ท็อป)" width="100%"></td>
-  </tr>
-</table>
-
-**เดโมการสร้างการ์ด Anki ด้วยการแตะครั้งเดียว**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[ดูเดโมการสร้างการ์ดในคลิกเดียว ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
 ## คุณสมบัติ
