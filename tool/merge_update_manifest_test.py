@@ -356,7 +356,10 @@ def test_integrity_fields_survive_retained_asset():
         release_sequence=10182,
         new_assets=assets,
     )
-    m2, apk = _publish(json.loads(json.dumps(m)), _android, 10192, live={exe, apk} if False else None)
+    # live=None（不是 `{exe, apk} if False else None`）：那个 `if False` 恒假，等价于
+    # None，但 `apk` 在这一行还没绑定——只因为 Python 不求值未选中的分支才没炸
+    # NameError。谁把它「清理」成 `if True` 就立刻爆，写成实话。
+    m2, apk = _publish(json.loads(json.dumps(m)), _android, 10192, live=None)
     a = _by_name(m2, exe)
     check(a.get("size") == 42 and a.get("sha256") == "cd" * 32, "retained desktop asset keeps size/sha256")
     check("sha256" not in _by_name(m2, apk), "asset published without sha256 carries none (no invented value)")
