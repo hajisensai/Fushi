@@ -484,10 +484,10 @@ void main() {
       reason: '只有 HookFn 与 trampoline 都成功后才能提交 enabled target/Ready',
     );
     expect(
-      readyPublish.indexOf('g_sgre_direct_input_game_window.store(game') >= 0 &&
+      readyPublish.contains('g_sgre_direct_input_game_window.store(game') &&
+          readyPublish.contains('SetPropW(game,') &&
           readyPublish.indexOf('g_sgre_direct_input_game_window.store(game') <
-              readyPublish.indexOf('SetPropW(game,') &&
-          readyPublish.indexOf('SetPropW(game,') >= 0,
+              readyPublish.indexOf('SetPropW(game,'),
       isTrue,
       reason: 'injected cache 必须先发布，Ready 属性是 host 可见的最后 commit',
     );

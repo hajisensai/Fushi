@@ -891,7 +891,7 @@
   "game_hook_reason_resume_failed": "Das gestartete Spiel konnte nicht fortgesetzt werden und wurde gestoppt; starten Sie es erneut.",
   "game_hook_reason_shared_memory_unavailable": "Der Aufnahmekanal konnte nicht geöffnet werden; starten Sie Fushi neu.",
   "game_hook_reason_spawn_failed": "Der Helper konnte nicht gestartet werden; überprüfen Sie, ob das Antivirusprogramm ihn entfernt oder blockiert hat.",
-  "game_hook_reason_stale_session": "Eine vorherige Aufnahmesitzung ist noch im Spiel geladen; starten Sie das Spiel einmal neu.",
+  "game_hook_reason_resident_hook_mismatch": "Eine vorherige Aufnahmesitzung ist noch im Spiel geladen; starten Sie das Spiel einmal neu.",
   "game_hook_reason_steam_timeout": "Steam hat die Startanfrage akzeptiert, aber der Spielprozess ist nie erschienen.",
   "game_hook_reason_target_missing": "Kein Spielprozess oder keine ausführbare Datei für die Aufnahme ausgewählt.",
   "game_hook_recapture_empty": "Kein Audio im Wiederaufnahmefenster aufgenommen",
@@ -3806,5 +3806,6 @@
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
-  "download_video_source_required": "Video source required"
+  "download_video_source_required": "Video source required",
+  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed."
 }

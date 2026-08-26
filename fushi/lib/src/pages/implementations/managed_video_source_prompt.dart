@@ -79,15 +79,23 @@ class ManagedVideoSourcePromptDialog extends StatelessWidget {
             ),
           ),
           SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          // OverflowBar 而非裸 Row（与 jimaku_subtitle_dialog 同因）：本框内容宽
+          // 只有 maxWidth 380 减两侧 padding = 332，「取消」+「添加视频来源」并排
+          // 实测溢出 58px（RenderFlex overflowed by 58 pixels on the right），
+          // 窄窗口/手机上会直接露黄黑条纹。裸 Row 没有「装不下」这个状态，只能靠
+          // 挑一个恰好够用的宽度硬撑，换一种语言或换一档字号又会破——OverflowBar
+          // 放不下自动改竖排，把这个特例消掉而不是给它配一个魔数。
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            overflowAlignment: OverflowBarAlignment.end,
+            spacing: tokens.spacing.gap,
+            overflowSpacing: tokens.spacing.gap,
             children: <Widget>[
               adaptiveDialogAction(
                 context: context,
                 onPressed: onCancel,
                 child: Text(t.dialog_cancel),
               ),
-              SizedBox(width: tokens.spacing.gap),
               KeyedSubtree(
                 key: const ValueKey<String>('managed_video_source_prompt_add'),
                 child: adaptiveDialogAction(

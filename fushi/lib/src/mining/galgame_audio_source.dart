@@ -343,11 +343,133 @@ class GalHookInjectorDiagnostics {
       };
 }
 
+/// 旧 helper 人类可读诊断里的一个失败标记，以及它对应的结构化原因。
+///
+/// [marker] 是在 injector stderr 里要找的子串；[sourceLiteral] 是这条诊断在
+/// `native/galgame_hook/injector/injector_main.cpp` 里的**逐字**产出锚点（含 `%lu`
+/// 这类格式化占位符——锚点比对的是源码，不是运行期输出）。[sourceLiteral] 为空表示
+/// 产出方已从当前 injector 移除，这条仅为兼容仍在用户机上的旧 helper 二进制保留。
+///
+/// 守卫测试 `test/mining/gal_injector_diagnostics_marker_guard_test.dart` 按这两项
+/// 逐条复核，把「靠自然语言串识别 native 失败」这个本就脆的判据钉回真相源：injector
+/// 一改文案，锚点先红，而不是等用户拿到一句与事实相反的处置建议。
+typedef GalHookDiagnosticsMarker = ({
+  String marker,
+  String sourceLiteral,
+  GalHookInjectorFailure failure,
+});
+
+/// 旧 helper 诊断 → 结构化失败原因的**有序**匹配表（先命中的先返回）。
+///
+/// 顺序是硬约束：`已存在但不可复用的 hook 会话` 是
+/// `已存在但不可复用的 hook 会话（驻留 DLL …）` 的子串，泛串排到具体串之前，会把
+/// 「必须重启游戏才能卸载驻留旧 DLL」的 [GalHookInjectorFailure.residentHookMismatch]
+/// 误判成「等一下会自愈」的 [GalHookInjectorFailure.staleSession]——两者的处置正好相反，
+/// 还会让 [galHookFailureIsRetryable] 对一个永远好不了的现场反复重试。
+///
+/// 表里没有英文 `bitness mismatch`：全仓历史上从没有哪个 injector 打过这句（`git log
+/// --all -S` 在 `native/` 下零命中），它只是一个从未命中的幻影分支。
+@visibleForTesting
+const List<GalHookDiagnosticsMarker> galHookLegacyDiagnosticsMarkers =
+    <GalHookDiagnosticsMarker>[
+  // 740 = ERROR_ELEVATION_REQUIRED。错误码由 `%lu` 填，源码里只有格式串可锚。
+  (
+    marker: 'CreateProcessW failed: 740',
+    sourceLiteral: 'CreateProcessW failed: %lu',
+    failure: GalHookInjectorFailure.elevationRequired,
+  ),
+  (
+    marker: 'CreateProcessW failed',
+    sourceLiteral: 'CreateProcessW failed: %lu',
+    failure: GalHookInjectorFailure.createProcessFailed,
+  ),
+  (
+    marker: '位数不匹配',
+    sourceLiteral: '位数不匹配：目标是 %s 进程，请改用对应 arch 的注入器 ',
+    failure: GalHookInjectorFailure.bitnessMismatch,
+  ),
+  (
+    marker: 'OpenProcess(',
+    sourceLiteral: 'OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)',
+    failure: GalHookInjectorFailure.accessDenied,
+  ),
+  (
+    marker: 'hook DLL not found',
+    sourceLiteral: 'hook DLL not found (pass --dll <path>)',
+    failure: GalHookInjectorFailure.hookDllMissing,
+  ),
+  (
+    marker: '目标 exe 不存在',
+    sourceLiteral: '目标 exe 不存在（--launch <exe路径>）',
+    failure: GalHookInjectorFailure.gameExeMissing,
+  ),
+  // 旧映射暂不可复用：宿主有界重试即可，用户什么都不用做。
+  (
+    marker: '已存在但暂不可复用的 hook 会话',
+    sourceLiteral:
+        '已存在但暂不可复用的 hook 会话（契约、hooked 或驻留 DLL 身份暂不可确认）；',
+    failure: GalHookInjectorFailure.staleSession,
+  ),
+  // 驻留 DLL 已被证明不同：Windows 不卸载已注入 DLL，同一 PID 重试永远无效。
+  (
+    marker: '已存在但不可复用的 hook 会话（驻留 DLL',
+    sourceLiteral:
+        '已存在但不可复用的 hook 会话（驻留 DLL 路径或摘要与本次请求不匹配）；',
+    failure: GalHookInjectorFailure.residentHookMismatch,
+  ),
+  // 拆分前（injector 打的是「契约不匹配或 hooked=0」）这句就是可重试的 staleSession。
+  // 当前 injector 不再产出它，只为旧 helper 二进制保留原语义。
+  (
+    marker: '已存在但不可复用的 hook 会话',
+    sourceLiteral: '',
+    failure: GalHookInjectorFailure.staleSession,
+  ),
+  (
+    marker: '未收到就绪信号',
+    sourceLiteral: '注入完成但未收到就绪信号（%lums 超时）；hooked=%u',
+    failure: GalHookInjectorFailure.readyTimeout,
+  ),
+  (
+    marker: 'injection failed',
+    sourceLiteral: 'injection failed',
+    failure: GalHookInjectorFailure.injectionFailed,
+  ),
+  (
+    marker: 'CreateRemoteThread failed',
+    sourceLiteral: 'CreateRemoteThread failed: %lu',
+    failure: GalHookInjectorFailure.injectionFailed,
+  ),
+  (
+    marker: 'WriteProcessMemory failed',
+    sourceLiteral: 'WriteProcessMemory failed: %lu',
+    failure: GalHookInjectorFailure.injectionFailed,
+  ),
+  (
+    marker: 'VirtualAllocEx failed',
+    sourceLiteral: 'VirtualAllocEx failed: %lu',
+    failure: GalHookInjectorFailure.injectionFailed,
+  ),
+  (
+    marker: 'resolve LoadLibraryW failed',
+    sourceLiteral: 'resolve LoadLibraryW failed',
+    failure: GalHookInjectorFailure.injectionFailed,
+  ),
+  (
+    marker: 'Steam 已接受启动请求',
+    sourceLiteral: 'Steam 已接受启动请求，但 45 秒内未发现目标进程：%ls',
+    failure: GalHookInjectorFailure.steamTimeout,
+  ),
+];
+
 /// injector 诊断输出 → 结构化失败原因（纯函数，可单测）。
 ///
-/// 优先认新 helper 的机器可读行 `ERR reason=<token>`；旧 helper 只有人类可读诊断，
-/// 因此保留对既有输出串的匹配（这些串是 native 现有事实，不是猜测）。两条路都命不中
-/// 时返回 [fallback]，绝不假装知道原因。
+/// 优先认新 helper 的机器可读行 `ERR reason=<token>`：当前 injector 的**每一条**失败
+/// 出口都会打这一行（`ReportFailureReason` 统一出口 + elevationRequired / accessDenied
+/// 两处直写），所以正常链路上根本走不到下面的自然语言匹配。旧 helper 二进制只有人类
+/// 可读诊断，因此保留 [galHookLegacyDiagnosticsMarkers] 这张有序表兜底——它是**兼容层**，
+/// 不是判据主路，任何新增失败原因都必须先走结构化 token。
+///
+/// 两条路都命不中时返回 [fallback]，绝不假装知道原因。
 GalHookInjectorFailure classifyGalHookInjectorFailure(
   String diagnostics, {
   GalHookInjectorFailure fallback = GalHookInjectorFailure.unknown,
@@ -366,40 +488,11 @@ GalHookInjectorFailure classifyGalHookInjectorFailure(
       }
     }
   }
-  if (diagnostics.contains('位数不匹配') ||
-      diagnostics.contains('bitness mismatch')) {
-    return GalHookInjectorFailure.bitnessMismatch;
-  }
-  if (diagnostics.contains('OpenProcess(')) {
-    return GalHookInjectorFailure.accessDenied;
-  }
-  if (diagnostics.contains('CreateProcessW failed')) {
-    // 740 = ERROR_ELEVATION_REQUIRED：游戏 manifest 要求管理员，非提权进程拉不起来。
-    return diagnostics.contains('CreateProcessW failed: 740')
-        ? GalHookInjectorFailure.elevationRequired
-        : GalHookInjectorFailure.createProcessFailed;
-  }
-  if (diagnostics.contains('hook DLL not found')) {
-    return GalHookInjectorFailure.hookDllMissing;
-  }
-  if (diagnostics.contains('目标 exe 不存在')) {
-    return GalHookInjectorFailure.gameExeMissing;
-  }
-  if (diagnostics.contains('已存在但不可复用的 hook 会话')) {
-    return GalHookInjectorFailure.staleSession;
-  }
-  if (diagnostics.contains('未收到就绪信号')) {
-    return GalHookInjectorFailure.readyTimeout;
-  }
-  if (diagnostics.contains('injection failed') ||
-      diagnostics.contains('CreateRemoteThread failed') ||
-      diagnostics.contains('WriteProcessMemory failed') ||
-      diagnostics.contains('VirtualAllocEx failed') ||
-      diagnostics.contains('resolve LoadLibraryW failed')) {
-    return GalHookInjectorFailure.injectionFailed;
-  }
-  if (diagnostics.contains('Steam 已接受启动请求')) {
-    return GalHookInjectorFailure.steamTimeout;
+  for (final GalHookDiagnosticsMarker entry
+      in galHookLegacyDiagnosticsMarkers) {
+    if (diagnostics.contains(entry.marker)) {
+      return entry.failure;
+    }
   }
   return fallback;
 }

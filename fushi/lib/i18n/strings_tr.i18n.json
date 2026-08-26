@@ -891,7 +891,7 @@
   "game_hook_reason_resume_failed": "Başlatılan oyun devam ettirilemedi ve durduruldu; tekrar başlatın.",
   "game_hook_reason_shared_memory_unavailable": "Yakalama kanalı açılamadı; Fushi'yi yeniden başlatın.",
   "game_hook_reason_spawn_failed": "Yardımcı başlatılamadı; antivirüsün kaldırmadığından veya engellemediğinden emin olun.",
-  "game_hook_reason_stale_session": "Önceki bir yakalama oturumu hâlâ oyunda yüklü; oyunu bir kez yeniden başlatın.",
+  "game_hook_reason_resident_hook_mismatch": "Önceki bir yakalama oturumu hâlâ oyunda yüklü; oyunu bir kez yeniden başlatın.",
   "game_hook_reason_steam_timeout": "Steam başlatma isteğini kabul etti ancak oyun işlemi hiç görünmedi.",
   "game_hook_reason_target_missing": "Yakalama için oyun işlemi veya çalıştırılabilir dosya seçilmedi.",
   "game_hook_recapture_empty": "Yeniden yakalama penceresinde ses yakalanamadı",
@@ -3806,5 +3806,6 @@
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
-  "download_video_source_required": "Video source required"
+  "download_video_source_required": "Video source required",
+  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed."
 }

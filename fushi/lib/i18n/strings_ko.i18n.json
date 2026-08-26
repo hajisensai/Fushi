@@ -891,7 +891,7 @@
   "game_hook_reason_resume_failed": "실행된 게임을 재개할 수 없어 중지되었습니다. 다시 실행하세요.",
   "game_hook_reason_shared_memory_unavailable": "캡처 채널을 열 수 없습니다. Fushi를 다시 시작하세요.",
   "game_hook_reason_spawn_failed": "헬퍼를 시작할 수 없습니다. 바이러스 백신이 헬퍼를 삭제하거나 차단하지 않았는지 확인하세요.",
-  "game_hook_reason_stale_session": "이전 캡처 세션이 아직 게임에 로드되어 있습니다. 게임을 한 번 다시 시작하세요.",
+  "game_hook_reason_resident_hook_mismatch": "이전 캡처 세션이 아직 게임에 로드되어 있습니다. 게임을 한 번 다시 시작하세요.",
   "game_hook_reason_steam_timeout": "Steam이 실행 요청을 수락했지만 게임 프로세스가 나타나지 않았습니다.",
   "game_hook_reason_target_missing": "캡처할 게임 프로세스나 실행 파일이 선택되지 않았습니다.",
   "game_hook_recapture_empty": "재캡처 시간 내에 캡처된 오디오 없음",
@@ -3806,5 +3806,6 @@
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
-  "download_video_source_required": "Video source required"
+  "download_video_source_required": "Video source required",
+  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed."
 }

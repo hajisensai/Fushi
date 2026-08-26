@@ -331,6 +331,17 @@ class HomePage extends BasePage {
   @visibleForTesting
   static void Function(HomeTab tab)? debugSelectTab;
 
+  /// 测试钩子：拿到 HomePage 真正接线给发现页/详情页的
+  /// [VideoDiscoveryActions]（`_productionVideoDiscoveryActions`）。这些回调的
+  /// 签名是 `(BuildContext, VideoDiscoveryItem)`、不捕获 State 的 context，所以
+  /// widget 测试可以直接调它们，钉住「打开资源搜索 / 订阅」这两条私有流程的行为。
+  ///
+  /// 存的是**闭包而不是值**：`_productionVideoDiscoveryActions` 会读 `appModel`
+  /// （即 `ref.watch`），在 initState 里提前求值等于把一次 watch 提到首帧之前；
+  /// 按需构造则与生产走同一条路径。仅 debug/profile build 注册。
+  @visibleForTesting
+  static VideoDiscoveryActions Function()? debugVideoDiscoveryActions;
+
   @override
   BasePageState<HomePage> createState() => _HomePageState();
 }
@@ -391,6 +402,8 @@ class _HomePageState extends BasePageState<HomePage>
     WidgetsBinding.instance.addObserver(this);
     assert(() {
       HomePage.debugSelectTab = _selectTab;
+      HomePage.debugVideoDiscoveryActions =
+          () => _productionVideoDiscoveryActions;
       return true;
     }());
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
@@ -599,6 +612,7 @@ class _HomePageState extends BasePageState<HomePage>
   void dispose() {
     assert(() {
       HomePage.debugSelectTab = null;
+      HomePage.debugVideoDiscoveryActions = null;
       return true;
     }());
     _periodicSyncTimer?.cancel();
@@ -1408,7 +1422,11 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 后端没配好时的统一出口：**直接弹配置引导**，而不是甩一句「请先配置下载
   /// 后端」让用户自己去翻设置。配完再点一次原入口即可继续。
-  Future<void> _promptDownloadBackendSetup(BuildContext context) =>
+  ///
+  /// 返回「是否真配完了」：同一个出口还要接给资源搜索 / 订阅页失败态那颗
+  /// 「开始配置」按钮（[VideoDownloadBackendSetupPrompt]），那边据此决定要不要
+  /// 自动重试原提交——不给回执的话，用户配完还得自己再找一遍刚才那条 release。
+  Future<bool> _promptDownloadBackendSetup(BuildContext context) =>
       promptDownloadBackendSetup(
         context: context,
         appModel: appModelNoUpdate,
@@ -1469,6 +1487,10 @@ class _HomePageState extends BasePageState<HomePage>
           sources: sources,
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+          // 后端 runtime 的可用性延后到提交时才判（见上），所以「后端没配好」这条
+          // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
+          // 失败态那句话才有一颗能真正解决它的按钮。
+          onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
             final VideoDownloadBackendIdentity identity =
                 await appModelNoUpdate.currentVideoDownloadBackendIdentity();
@@ -1528,6 +1550,8 @@ class _HomePageState extends BasePageState<HomePage>
           sources: sources,
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+          // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
+          onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
             final VideoDownloadBackendIdentity identity =
                 await appModelNoUpdate.currentVideoDownloadBackendIdentity();

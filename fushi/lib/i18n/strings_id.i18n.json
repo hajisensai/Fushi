@@ -891,7 +891,7 @@
   "game_hook_reason_resume_failed": "Game yang diluncurkan tidak bisa dilanjutkan dan dihentikan; luncurkan lagi.",
   "game_hook_reason_shared_memory_unavailable": "Saluran tangkapan tidak bisa dibuka; mulai ulang Fushi.",
   "game_hook_reason_spawn_failed": "Helper tidak bisa dimulai; periksa apakah antivirus telah menghapus atau memblokirnya.",
-  "game_hook_reason_stale_session": "Sesi tangkapan sebelumnya masih dimuat di game; mulai ulang game sekali.",
+  "game_hook_reason_resident_hook_mismatch": "Sesi tangkapan sebelumnya masih dimuat di game; mulai ulang game sekali.",
   "game_hook_reason_steam_timeout": "Steam menerima permintaan peluncuran tetapi proses game tidak pernah muncul.",
   "game_hook_reason_target_missing": "Tidak ada proses game atau eksekutabel yang dipilih untuk ditangkap.",
   "game_hook_recapture_empty": "Tidak ada audio yang ditangkap dalam jendela tangkap ulang",
@@ -3806,5 +3806,6 @@
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
-  "download_video_source_required": "Video source required"
+  "download_video_source_required": "Video source required",
+  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed."
 }

@@ -891,7 +891,7 @@
   "game_hook_reason_resume_failed": "Het gestarte spel kon niet worden hervat en is gestopt; start het opnieuw.",
   "game_hook_reason_shared_memory_unavailable": "Het opnamekanaal kon niet worden geopend; herstart Fushi.",
   "game_hook_reason_spawn_failed": "De helper kon niet worden gestart; controleer of antivirus deze niet heeft verwijderd of geblokkeerd.",
-  "game_hook_reason_stale_session": "Een vorige opnamesessie is nog geladen in het spel; herstart het spel.",
+  "game_hook_reason_resident_hook_mismatch": "Een vorige opnamesessie is nog geladen in het spel; herstart het spel.",
   "game_hook_reason_steam_timeout": "Steam heeft het startverzoek geaccepteerd maar het spelproces is nooit verschenen.",
   "game_hook_reason_target_missing": "Er is geen spelproces of uitvoerbestand geselecteerd voor opname.",
   "game_hook_recapture_empty": "Geen audio opgenomen in het heropnamevenster",
@@ -3806,5 +3806,6 @@
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
-  "download_video_source_required": "Video source required"
+  "download_video_source_required": "Video source required",
+  "game_hook_reason_stale_session": "A previous capture session has not been released yet; Fushi is retrying on its own, no action needed."
 }

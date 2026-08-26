@@ -28,9 +28,16 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
         t.game_hook_reason_hook_dll_missing,
       GalHookInjectorFailure.gameExeMissing =>
         t.game_hook_reason_game_exe_missing,
-      GalHookInjectorFailure.staleSession ||
+      // 这两个**不能**合成一句：[GalHookInjectorFailure.staleSession] 是旧映射暂时
+      // 不可复用（旧 injector 刚退出、Toolhelp/文件系统竞态），宿主自己有界重试就会
+      // 好，用户什么都不用做；[GalHookInjectorFailure.residentHookMismatch] 是已经
+      // 证明驻留 hook DLL 与本次请求不同，而 Windows 不卸载已注入 DLL，不重启游戏
+      // 重试多少次都不会好。合成一句「请重启一次游戏」等于对前者谎报要动手、对后者
+      // 又和「等一下」混在一起，用户只能瞎试。分流判据与 [galHookFailureIsRetryable]
+      // 同源（同一份事实，两处消费）。
+      GalHookInjectorFailure.staleSession => t.game_hook_reason_stale_session,
       GalHookInjectorFailure.residentHookMismatch =>
-        t.game_hook_reason_stale_session,
+        t.game_hook_reason_resident_hook_mismatch,
       GalHookInjectorFailure.readyTimeout => t.game_hook_reason_ready_timeout,
       GalHookInjectorFailure.injectionFailed =>
         t.game_hook_reason_injection_failed,

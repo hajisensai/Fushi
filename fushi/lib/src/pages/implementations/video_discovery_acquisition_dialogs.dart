@@ -40,6 +40,19 @@ typedef VideoDiscoverySubscriptionSubmit = Future<void> Function(
   VideoDiscoverySubscriptionSelection selection,
 );
 
+/// 失败态里「去配置下载后端」的端口。返回 true = 用户真配完了，调用方可以重试原动作。
+///
+/// 为什么是端口而不是在 surface 里直接调 `promptDownloadBackendSetup`：这块 surface 是
+/// 纯展示层，落地动作一律由宿主用回调注入（`onSubmit` / `onSubscriptionSubmit`），它
+/// 手上没有 `AppModel`；为了弹一个配置框把整棵子树改成 riverpod consumer 会连带要求
+/// 祖先有 `ProviderScope`，而既有 widget 测试正是不带 `ProviderScope` 直接 pump 它的。
+///
+/// 允许为 null：宿主没接线时 SnackBar 只报事实、**不给一个按下去什么都不发生的按钮**
+/// （与 `settings_schema_lookup.dart` 里「平台不支持就给 null」同一姿态）。
+typedef VideoDownloadBackendSetupPrompt = Future<bool> Function(
+  BuildContext context,
+);
+
 typedef VideoDiscoveryPathPicker = Future<String?> Function(
   BuildContext context,
 );
@@ -486,6 +499,7 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
     required this.sources,
     required this.onSubmit,
     this.defaultSourceId,
+    this.onConfigureBackend,
     super.key,
   });
 
@@ -494,6 +508,7 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit onSubmit;
+  final VideoDownloadBackendSetupPrompt? onConfigureBackend;
 
   @override
   Widget build(BuildContext context) => FushiDialogFrame(
@@ -507,6 +522,7 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
           sources: sources,
           defaultSourceId: defaultSourceId,
           onSubmit: onSubmit,
+          onConfigureBackend: onConfigureBackend,
           onClose: () => Navigator.pop(context),
         ),
       );
@@ -520,6 +536,7 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
     required this.sources,
     required this.onSubmit,
     this.defaultSourceId,
+    this.onConfigureBackend,
     super.key,
   });
 
@@ -528,6 +545,7 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit onSubmit;
+  final VideoDownloadBackendSetupPrompt? onConfigureBackend;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -539,6 +557,7 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
             sources: sources,
             defaultSourceId: defaultSourceId,
             onSubmit: onSubmit,
+            onConfigureBackend: onConfigureBackend,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
           ),
@@ -554,6 +573,7 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
     required this.sources,
     required this.onSubmit,
     this.defaultSourceId,
+    this.onConfigureBackend,
     super.key,
   });
 
@@ -562,6 +582,7 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
   final VideoDiscoverySubscriptionSubmit onSubmit;
+  final VideoDownloadBackendSetupPrompt? onConfigureBackend;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -573,6 +594,7 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
             sources: sources,
             defaultSourceId: defaultSourceId,
             onSubscriptionSubmit: onSubmit,
+            onConfigureBackend: onConfigureBackend,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
           ),
@@ -589,6 +611,7 @@ class VideoResourceSearchSurface extends StatefulWidget {
     this.defaultSourceId,
     this.onSubmit,
     this.onSubscriptionSubmit,
+    this.onConfigureBackend,
     this.onClose,
     this.pageMode = false,
     super.key,
@@ -600,6 +623,10 @@ class VideoResourceSearchSurface extends StatefulWidget {
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit? onSubmit;
   final VideoDiscoverySubscriptionSubmit? onSubscriptionSubmit;
+
+  /// 见 [VideoDownloadBackendSetupPrompt]：提交失败在「后端没配好 / 后端运行时缺失」
+  /// 时的可执行出口。null = 宿主没接线，失败态只报事实不给按钮。
+  final VideoDownloadBackendSetupPrompt? onConfigureBackend;
   final VoidCallback? onClose;
   final bool pageMode;
 
@@ -761,26 +788,65 @@ class _VideoResourceSearchSurfaceState
       }
       if (mounted) widget.onClose?.call();
     } on VideoDownloadBackendUnavailable catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
-      }
+      // 选中的后端 runtime 不可用（内置引擎的原生库缺失）。用户能自己做的事只有一件：
+      // 换一个后端 / 重配下载后端——所以按钮直落配置引导，而不是让他对着一句
+      // 「运行时缺失」干瞪眼。
+      _showSubmitFailure(error.message, _backendSetupAction());
     } on ArgumentError {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.download_backend_not_configured)),
-        );
-      }
+      // 后端身份拼不出来（qBittorrent 地址空/非法、安装 id 空）。缺的就是那几个字段。
+      _showSubmitFailure(
+        t.download_backend_not_configured,
+        _backendSetupAction(),
+      );
     } on VideoDownloadPipelineActionRequired catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
-      }
+      // 原因是运行期的（后端不可达、加种失败、路径映射缺失……），没有一个固定的
+      // 设置页可跳；唯一确定有意义的动作是「按用户修好外部条件后再来一次」。
+      _showSubmitFailure(
+        error.message,
+        SnackBarAction(label: t.retry, onPressed: () => unawaited(_submit())),
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// 提交失败的统一播报口：**一句事实 + 一个能直接解决它的动作**。
+  ///
+  /// 旧实现三条 catch 各写一遍裸 `SnackBar(content:)`，用户看到「下载后端未配置」
+  /// 却没有任何可按的东西，只能自己去猜该翻哪个页面。停留时间也一并拉长——4 秒的
+  /// 默认时长里根本来不及看完一句报错再决定按不按那个按钮。
+  void _showSubmitFailure(String message, SnackBarAction? action) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 10),
+        action: action,
+      ),
+    );
+  }
+
+  /// 「去配置下载后端」动作；宿主没接线时返回 null（不渲染按不动的按钮）。
+  SnackBarAction? _backendSetupAction() {
+    final VideoDownloadBackendSetupPrompt? configure =
+        widget.onConfigureBackend;
+    if (configure == null) return null;
+    return SnackBarAction(
+      label: t.download_backend_setup_start,
+      onPressed: () => unawaited(_configureBackendAndRetry(configure)),
+    );
+  }
+
+  /// 配完后**自动重试原提交**：用户点这个按钮的意图是「把这次下载办成」，让他配完
+  /// 再手动找一遍刚才那条 release 并重按一次提交，等于把修好的一半又扔回给他。
+  /// 返回 false（用户取消/没配完）或 surface 已卸载时不重试，绝不空转。
+  Future<void> _configureBackendAndRetry(
+    VideoDownloadBackendSetupPrompt configure,
+  ) async {
+    if (!mounted) return;
+    final bool configured = await configure(context);
+    if (!configured || !mounted) return;
+    await _submit();
   }
 
   @override

@@ -891,7 +891,7 @@
   "game_hook_reason_resume_failed": "已啟動的遊戲無法恢復運行並被結束，請重新啟動。",
   "game_hook_reason_shared_memory_unavailable": "捕獲通道無法打開，請重啟 Fushi。",
   "game_hook_reason_spawn_failed": "語音鉤子組件無法啟動，請檢查是否被殺毒軟體刪除或攔截。",
-  "game_hook_reason_stale_session": "遊戲裡還殘留上一次的捕獲會話，請重啟一次遊戲。",
+  "game_hook_reason_resident_hook_mismatch": "遊戲裡還殘留上一次的捕獲會話，請重啟一次遊戲。",
   "game_hook_reason_steam_timeout": "Steam 已接受啟動請求，但始終沒有出現遊戲進程。",
   "game_hook_reason_target_missing": "沒有可捕獲的遊戲進程或可執行檔案。",
   "game_hook_recapture_empty": "補錄視窗內沒有錄到聲音",
@@ -3806,5 +3806,6 @@
   "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
   "manga_global_search_open_sources": "Go to Import",
   "settings_downloads_open_page_hint": "Open the Downloads page (tasks, resources, subscriptions)",
-  "download_video_source_required": "Video source required"
+  "download_video_source_required": "Video source required",
+  "game_hook_reason_stale_session": "上一次捕獲會話還沒釋放乾淨，Fushi 正在自動重試，不用做任何操作。"
 }
