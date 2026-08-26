@@ -534,6 +534,12 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
               updatedAt: Value<int>(now),
             ),
           );
+          // 种子还在后端（做种 / 还在下别的集）时，文件已从磁盘消失，必须把它在
+          // 后端标 skip：否则 libtorrent / qB 一做校验就撞「文件缺失」把整个种子
+          // 停掉，别的集也跟着断。
+          if (pipeline != null && file.backendFileIndex != null) {
+            await pipeline.skipBackendFile(job, file.backendFileIndex!);
+          }
         }
       }
     } on Object catch (error, stack) {
@@ -1220,6 +1226,31 @@ class VideoDownloadPipelineService {
 
   /// Removes a durable task and, when requested, only the files that this task
   /// explicitly recorded. Directories are never recursively removed here.
+  /// 把 [job] 在后端的第 [fileIndex] 个文件标为不下载（[TorrentFilePriority.skip]）。
+  /// 库侧删掉某一集的本地文件后调用：种子仍在后端时，缺失的文件若还是 normal
+  /// 优先级，下一次校验就会让整个种子报错停掉。best-effort：后端离线 / 不支持
+  /// 文件优先级 / 种子已不在，都静默返回 false。
+  Future<bool> skipBackendFile(VideoDownloadJobRow job, int fileIndex) async {
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isEmpty) return false;
+    try {
+      final VideoDownloadBackendBinding? binding = await backendResolver(job);
+      _validateBackendBinding(job, binding);
+      final TorrentBackend backend = binding!.backend;
+      if (backend is! TorrentDetailBackend || !backend.detailAvailable) {
+        return false;
+      }
+      return await backend.setFilePriority(
+        torrentId,
+        fileIndex,
+        TorrentFilePriority.skip,
+      );
+    } on Object {
+      return false;
+    }
+  }
+
   Future<void> deleteJob(String jobId, {required bool deleteFiles}) async {
     VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
     if (job == null) return;
