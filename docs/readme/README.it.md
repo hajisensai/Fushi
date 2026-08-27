@@ -10,120 +10,13 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | **Italiano** | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![Guida utente](https://img.shields.io/badge/%F0%9F%93%96%20Guida%20utente-0969DA?style=for-the-badge)](../user-guide.it.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**Nessuna configurazione complicata** — importa i dizionari e l'audio consigliati in un solo passaggio.
-
-[![Scarica l'ultima versione](https://img.shields.io/badge/%E2%AC%87%20Scarica%20l%27ultima%20versione-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![Scarica l'ultima versione](https://img.shields.io/badge/%E2%AC%87%20Scarica%20l%27ultima%20versione-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Unisciti a Discord](https://img.shields.io/badge/Unisciti%20a%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **Guarda ciò che ti va di guardare e impara la lingua lungo il cammino.**
-
-Fushi trasforma i romanzi che leggi, le serie che segui e gli audiolibri che ascolti nel tuo input linguistico: tocca qualsiasi parola sconosciuta per cercarla e, con un solo tocco, trasformala in una carta Anki con il contesto originale. Non ti fa memorizzare un elenco di parole predefinito; ti aiuta solo a cogliere le parole che **leggi e ascolti davvero**.
-
-Il modo più efficace per imparare una lingua è l'esposizione massiccia a contenuti reali, non memorizzare parole isolate da un libro di vocaboli. Ma l'«immersione» ha sempre avuto due fastidi: cercare una parola spezza la concentrazione e la dimentichi appena distogli lo sguardo. Fushi chiude questo cerchio:
-
-📖 **Leggere**: tocca una parola nel lettore EPUB per cercarla, senza lasciare la pagina corrente.<br>
-🎧 **Ascoltare**: gli audiolibri evidenziano frase per frase e voltano pagina automaticamente.<br>
-🎬 **Guardare**: cerca parole e crea carte direttamente sui sottotitoli del video — seguire una serie *è* input.<br>
-🃏 **Consolidare**: invia ad Anki qualsiasi parola cercata, in qualsiasi scenario, e ripassa solo le parole che hai davvero incontrato.
-
-Tutti gli scenari condividono gli stessi dizionari, le stesse statistiche e lo stesso flusso di ripasso. Va bene per qualsiasi lingua (giapponese, inglese, …) ed è particolarmente adatto a chi impara per immersione e crede in **tanto input + solo carte fatte da sé**. Disponibile per Android e Windows (iOS e macOS in programma).
-
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="Libreria" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="Videoteca" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="Lettura verticale su desktop con finestra di ricerca" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="Ricerca nel video (finestre annidate)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="Ricerca nel video (elenco dei sottotitoli)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="Ricerca tramite selezione di testo fuori dall'app (mobile)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="Ricerca tramite selezione di testo fuori dall'app (desktop)" width="100%"></td>
-  </tr>
-</table>
-
-**Demo di creazione carte Anki con un tocco**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[Guarda la demo di creazione carte con un clic ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
-## Funzionalità
-
-### Libreria
-
-- Importa EPUB singolarmente, in blocco o ricorsivamente per cartella; visualizza l'avanzamento di lettura sullo scaffale.
-- Organizza i libri con scaffali personalizzati, filtro per etichette e riordino tramite trascinamento.
-- Trascina e rilascia i file per importare libri, sottotitoli o video (desktop).
-- Associa automaticamente i file di sottotitoli / audio con lo stesso nome durante l'importazione.
-
-### Lettura
-
-- Leggi in disposizione verticale o orizzontale; passa tra le modalità impaginata e scorrimento continuo.
-- Personalizza temi (chiaro / scuro / nero puro / personalizzato), caratteri, spaziatura dei paragrafi e controlli del lettore.
-- Annotazioni furigana (ふりがな).
-- Scala dell'interfaccia regolabile; i controlli della barra inferiore seguono la scala.
-- Profili multiutente (Profile), cambiati automaticamente in base al libro.
-
-### Ricerca
-
-- Importa dizionari [Yomitan](https://github.com/yomidevs/yomitan) (in precedenza Yomichan), ABBYY Lingvo (DSL), MDict (MDX) e Migaku.
-- Tocca il testo nel lettore per cercare parole, esegui ricerche nella pagina del dizionario o condividi testo da altre app.
-- Deflessione che copre **tutte le lingue di trasformazione di Yomitan** + normalizzazione del testo prima della ricerca (maiuscole/minuscole / segni diacritici / harakat arabo), guidata dai code point senza cambio di lingua.
-- Tocca le parole all'interno delle definizioni per una ricerca ricorsiva (finestre annidate).
-- Query parallele su più dizionari, priorità e attivazione delle sottofonti, annotazioni di accento tonale e frequenza.
-- Audio delle parole online e locale.
-- Inietta CSS personalizzato.
-
-### Evidenziazioni e statistiche
-
-- Aggiungi evidenziazioni in cinque colori mentre leggi; salta a qualsiasi evidenziazione in qualsiasi momento.
-- Statistiche di lettura: caratteri letti, durata, velocità di lettura — mostrate in tempo reale durante la lettura.
-- Statistiche video: tempo di visione, carte create e preferiti.
-
-### Creazione di carte Anki
-
-- Crea carte tramite [AnkiDroid](https://github.com/ankidroid/Anki-Android) o AnkiConnect.
-- Tipo di nota [Lapis](https://github.com/donkuri/lapis) integrato (incluso 1.7.0); crea modelli di carte e mazzi all'interno dell'app con un solo tocco.
-- Compila automaticamente le frasi di contesto; registrazione audio e ritaglio degli screenshot.
-- Più profili di esportazione (Profile) e mappatura dei campi personalizzata.
-- Parole preferite; le carte create e i preferiti vengono conteggiati nelle statistiche.
-
-### Sincronizzazione degli audiolibri (Sasayaki)
-
-- Supporto per sottotitoli SRT / LRC / VTT / ASS; allinea automaticamente il testo dei sottotitoli al corpo dell'EPUB.
-- Evidenziazione delle frasi con tracciamento e avanzamento automatico delle pagine durante la riproduzione.
-- Velocità di riproduzione, azioni di ricerca e controlli multimediali di sistema.
-- «Riproduci da questa frase» con continuazione fluida tra i capitoli.
-
-### Ricerca nei sottotitoli dei video
-
-- Lettore video integrato basato su [media_kit](https://github.com/media-kit/media-kit) (core libmpv).
-- Sottotitoli incorporati (tracce testuali + grafiche) ed esterni; importazione di playlist .m3u8.
-- Cerca parole e crea carte direttamente dai sottotitoli durante la riproduzione.
-- Gestione della videoteca, filtro per etichette, raggruppamento in serie e operazioni in blocco.
-
-### Sincronizzazione dei dati
-
-- Sette backend di sincronizzazione: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP e Fushi Interconnect.
-- Sincronizza l'avanzamento di lettura, le statistiche e i libri.
-
-### Altro
-
-- **17 lingue dell'interfaccia**, completamente localizzate su tutte le piattaforme.
-- Condividi testo da altre app per cercare parole direttamente.
 
 ## Supporto delle piattaforme
 
