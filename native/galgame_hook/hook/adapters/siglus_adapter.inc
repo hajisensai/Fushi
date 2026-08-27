@@ -409,7 +409,17 @@ bool IsSiglusEngine() {
   if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) return false;
   const wchar_t* slash = wcsrchr(path, L'\\');
   const wchar_t* base = slash != nullptr ? slash + 1 : path;
-  return _wcsicmp(base, L"SiglusEngine.exe") == 0;
+  if (_wcsicmp(base, L"SiglusEngine.exe") == 0) return true;
+  if (slash == nullptr) return false;
+
+  const std::wstring directory(path, static_cast<size_t>(slash - path));
+  return fushi_voice_hook::DirectoryLooksLikeSiglus(
+      directory, [](const std::wstring& dir, const wchar_t* name) {
+        const std::wstring candidate = dir + L"\\" + name;
+        const DWORD attributes = GetFileAttributesW(candidate.c_str());
+        return attributes != INVALID_FILE_ATTRIBUTES &&
+               (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+      });
 }
 
 bool TryHookSiglusOvk() {

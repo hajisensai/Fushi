@@ -35,18 +35,18 @@
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `executable_names`：SiglusEngine.exe；证据：real_sample — anemoi 正式版，hibiki handoff 2026-07-19
-- `pe_architectures`：x86；证据：real_sample — anemoi SiglusEngine 1.1.141.3
+- `executable_names`：SiglusEngine.exe；证据：real_sample — anemoi 正式版与 Summer Pockets Reflection Blue 原始安装样本（2026-07-19 / 2026-08-27）
+- `pe_architectures`：x86；证据：real_sample — anemoi SiglusEngine 1.1.141.3 与 Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 均为 x86
 - `directory_files_all`：Gameexe.dat、Scene.pck；证据：real_sample — renamed Siglus executable regression fixed by hibiki-hook d1601b9
 - `runtime_modules`：dsound.dll；证据：runtime_observation — anemoi used DirectSound through CoCreateInstance
 - `resource_extensions`：.ovk；证据：real_sample — anemoi koe/*.ovk entries exported byte-identically
-- `hashes`：algorithm=sha256, scope=game_executable, value=D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059, version=1.1.141.3；证据：real_sample — hibiki handoff 2026-07-19
+- `hashes`：algorithm=sha256, scope=game_executable, value=D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059, version=1.1.141.3、algorithm=sha256, scope=game_executable, value=190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD, version=1.1.134.0；证据：real_sample — anemoi 正式版（2026-07-19）与 Summer Pockets Reflection Blue 原始 SiglusEngine.exe 身份固定（2026-08-27）
 
 文本能力：
 
 - `engine_exact_utf16_hook`：`implemented_unverified` — The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record.
 - `luna_hook`：`implemented_unverified` — Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline.
-- `ingame_lookup_geometry`：`implemented_unverified` — An exact-profile implementation now covers the recorded anemoi formal-release SiglusEngine 1.1.141.3 x86 executable (SHA-256 D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059): admitted glyph and GetKeyState callsites reconstruct UTF-16 per-glyph geometry, scale the fixed 1920x1080 design surface into the live client, and publish both single-click and Shift-hover submissions through the shared LookupHitSlot path. Popup-owned button transactions remain consumed through the matching release, including the generic bitmap-presenter fallback. tests/siglus_lookup_test.cpp pins exact-profile rejection, multiline and wrapped geometry, stale-capture selection, DPI/client scaling, bounded capture, click ownership, and Shift edge behavior. This is offline implementation evidence only; an original-path lookup and card-mining E2E is not recorded, so the capability remains implemented_unverified.
+- `ingame_lookup_geometry`：`implemented_unverified` — An exact-profile implementation now covers the recorded anemoi formal-release SiglusEngine 1.1.141.3 x86 executable (on-disk SHA-256 D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059; the shipped launcher virtualizes in-process self-reads to its same-size .org image with SHA-256 28FD4B910846CA5E2ECA924CA3FCFC1E9E69C1B1AD7181D2E0C66B85CC59A486, and both exact digests belong to this one profile): admitted glyph and GetKeyState callsites reconstruct UTF-16 per-glyph geometry, scale the fixed 1920x1080 design surface into the live client, and publish both single-click and Shift-hover submissions through the shared LookupHitSlot path. Popup-owned button transactions remain consumed through the matching release, including the generic bitmap-presenter fallback. tests/siglus_lookup_test.cpp pins exact-profile rejection, both exact identity views, multiline and wrapped geometry, stale-capture selection, DPI/client scaling, bounded capture, click ownership, and Shift edge behavior. This is offline implementation evidence only; an original-path lookup and card-mining E2E is not recorded, so the capability remains implemented_unverified.
 - codepage：utf-16le for the exact engine path
 - 线程提示：Prefer the engine exact-text source when observed; otherwise select the stable Luna dialogue thread.
 
@@ -65,7 +65,7 @@
 - Verification is specific to the recorded x86 sample and OVK layout.
 - Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.
 - The exact-text hook is implemented but is not promoted to verified by this baseline.
-- In-game lookup geometry and input interception are exact-profile-only for the recorded anemoi x86 executable hash; native offline coverage does not replace an original-path lookup and card-mining E2E.
+- In-game lookup geometry and input interception are hash-pinned exact profiles for the recorded anemoi SiglusEngine 1.1.141.3 x86 executable (including its measured virtualized .org self-read hash) and Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 x86 executable SHA-256 190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD; unknown executable hashes fail closed. Native offline coverage does not replace an original-path lookup and same-session card-mining E2E, so this capability remains implemented_unverified.
 
 Fixtures：尚无（P5 补齐）
 

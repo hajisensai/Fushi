@@ -680,7 +680,7 @@ void main() {
             '正文命中的 down 也必须跨 caller 锁存到 exact raw up',
       );
       expect(
-        install.contains('.input_message_rva') &&
+        install.contains('profile->input_message_rva') &&
             install.contains('MatchesSiglusInputMessageEntry(target)') &&
             install.contains('Detour_SiglusInputMessage') &&
             install.contains('g_orig_SiglusInputMessage==nullptr'),
@@ -690,7 +690,7 @@ void main() {
       expect(
         messageDetour.contains(
               'return_address-module!='
-              'profile.main_input_message_return_rva',
+              'profile->main_input_message_return_rva',
             ) &&
             messageDetour.contains('DecideSiglusLookupMouseMessage(') &&
             messageDetour.contains(

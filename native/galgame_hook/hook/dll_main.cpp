@@ -50,6 +50,7 @@
 #include "ffmpeg_runtime.h"
 #include "hook_original_registry.h"
 #include "siglus_ovk.h"
+#include "siglus_launch.h"
 #include "adapters/siglus_lookup.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"

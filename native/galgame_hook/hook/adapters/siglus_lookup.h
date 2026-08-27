@@ -15,7 +15,15 @@ inline constexpr size_t kSiglusLookupMaxGlyphs = 256u;
 inline constexpr uint16_t kSiglusLookupNoGlyph =
     std::numeric_limits<uint16_t>::max();
 
-// This profile admits one measured executable only. The RVAs describe the
+// Keep the text source and its ABI in the exact executable profile. A native
+// TextUnion callback and a Luna Scenario lane have different ownership and
+// caller-validation contracts even when the surrounding renderer is Siglus.
+enum class SiglusLookupTextFeed : uint8_t {
+  kNativeEcxTextUnion = 1,
+  kLunaScenarioLane = 2,
+};
+
+// Each profile admits one measured executable only. The RVAs describe the
 // Siglus per-visible-glyph layout boundary and the return address immediately
 // after the engine's GetKeyState(VK_LBUTTON) call. They are unrelated to the
 // SGRE renderer and DirectInput ABI.
@@ -27,6 +35,7 @@ struct SiglusLookupProfile {
   std::array<uint8_t, 32> runtime_view_sha256 = {};
   uint16_t pe_machine = 0;
   uint8_t pointer_bits = 0;
+  SiglusLookupTextFeed text_feed = SiglusLookupTextFeed::kNativeEcxTextUnion;
   uintptr_t glyph_layout_rva = 0;
   uintptr_t dialogue_glyph_return_rva = 0;
   uintptr_t exact_text_rva = 0;
@@ -47,6 +56,7 @@ inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
      0x81, 0xd2, 0xe0, 0xc6, 0x6b, 0x85, 0xcc, 0x59, 0xa4, 0x86},
     kSiglusLookupPeMachineI386,
     32u,
+    SiglusLookupTextFeed::kNativeEcxTextUnion,
     0x1EC1C0u,
     0x1EDC5Cu,
     0x25C880u,
@@ -56,6 +66,34 @@ inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
     0x2B393Fu,
     1920,
     1080,
+};
+
+inline constexpr SiglusLookupProfile
+    kSummerPocketsReflectionBlueSiglusLookupProfile = {
+        {0x19, 0x0d, 0xf9, 0xa7, 0x29, 0x29, 0xbd, 0x6b, 0x63, 0x27, 0xe7,
+         0x73, 0x95, 0x2b, 0x5c, 0x50, 0x7c, 0x69, 0x05, 0x2b, 0xc6, 0xd3,
+         0xff, 0x16, 0xa4, 0x86, 0x8b, 0xd1, 0xff, 0x17, 0x91, 0xfd},
+        {0x19, 0x0d, 0xf9, 0xa7, 0x29, 0x29, 0xbd, 0x6b, 0x63, 0x27, 0xe7,
+         0x73, 0x95, 0x2b, 0x5c, 0x50, 0x7c, 0x69, 0x05, 0x2b, 0xc6, 0xd3,
+         0xff, 0x16, 0xa4, 0x86, 0x8b, 0xd1, 0xff, 0x17, 0x91, 0xfd},
+        kSiglusLookupPeMachineI386,
+        32u,
+        SiglusLookupTextFeed::kLunaScenarioLane,
+        0x1DC690u,
+        0x1DE25Cu,
+        0x1DECF0u,
+        0u,
+        0x2B3D63u,
+        0x2B3EE0u,
+        0x2A8247u,
+        1920,
+        1080,
+};
+
+inline constexpr std::array<const SiglusLookupProfile *, 2>
+    kSiglusLookupProfiles = {
+        &kAnemoiSiglusLookupProfile,
+        &kSummerPocketsReflectionBlueSiglusLookupProfile,
 };
 
 inline bool MatchesSiglusLookupDigest(const SiglusLookupProfile &profile,
@@ -80,17 +118,42 @@ inline bool MatchesSiglusLookupProfile(const SiglusLookupProfile &profile,
                                        const uint8_t *executable_sha256,
                                        size_t digest_bytes,
                                        uint16_t pe_machine) {
+  const bool valid_text_feed =
+      (profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion &&
+       profile.exact_text_rva != 0 && profile.exact_text_return_rva != 0) ||
+      (profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane &&
+       profile.exact_text_rva != 0);
   if (executable_sha256 == nullptr ||
       digest_bytes != profile.executable_sha256.size() ||
       pe_machine != profile.pe_machine || profile.pointer_bits != 32u ||
       profile.glyph_layout_rva == 0 || profile.dialogue_glyph_return_rva == 0 ||
-      profile.exact_text_rva == 0 || profile.exact_text_return_rva == 0 ||
-      profile.get_key_state_return_rva == 0 || profile.input_message_rva == 0 ||
+      !valid_text_feed || profile.get_key_state_return_rva == 0 ||
+      profile.input_message_rva == 0 ||
       profile.main_input_message_return_rva == 0 ||
       profile.viewport_width <= 0 || profile.viewport_height <= 0) {
     return false;
   }
   return MatchesSiglusLookupDigest(profile, executable_sha256, digest_bytes);
+}
+
+// Exact registry lookup deliberately rejects ambiguity. This preserves the
+// fail-closed boundary if a future profile accidentally reuses another
+// profile's executable or runtime-view digest.
+inline const SiglusLookupProfile *
+FindSiglusLookupProfile(const uint8_t *executable_sha256, size_t digest_bytes,
+                        uint16_t pe_machine) {
+  const SiglusLookupProfile *match = nullptr;
+  for (const SiglusLookupProfile *candidate : kSiglusLookupProfiles) {
+    if (candidate == nullptr ||
+        !MatchesSiglusLookupProfile(*candidate, executable_sha256,
+                                    digest_bytes, pe_machine)) {
+      continue;
+    }
+    if (match != nullptr)
+      return nullptr;
+    match = candidate;
+  }
+  return match;
 }
 
 struct SiglusLookupGlyphCapture {

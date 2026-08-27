@@ -25,6 +25,7 @@ int main() {
 
   const auto &profile = kAnemoiSiglusLookupProfile;
   assert(profile.pe_machine == kSiglusLookupPeMachineI386);
+  assert(profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion);
   assert(profile.input_message_rva == 0x2C1AC0u);
   assert(profile.main_input_message_return_rva == 0x2B393Fu);
   assert(profile.pointer_bits == 32u);
@@ -50,6 +51,72 @@ int main() {
                                      0x8664u));
   assert(!MatchesSiglusLookupProfile(profile, nullptr, 0,
                                      kSiglusLookupPeMachineI386));
+
+  const auto &sprb_profile =
+      kSummerPocketsReflectionBlueSiglusLookupProfile;
+  assert(sprb_profile.pe_machine == kSiglusLookupPeMachineI386);
+  assert(sprb_profile.pointer_bits == 32u);
+  assert(sprb_profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane);
+  assert(sprb_profile.glyph_layout_rva == 0x1DC690u);
+  assert(sprb_profile.dialogue_glyph_return_rva == 0x1DE25Cu);
+  assert(sprb_profile.exact_text_rva == 0x1DECF0u);
+  assert(sprb_profile.exact_text_return_rva == 0u);
+  assert(sprb_profile.get_key_state_return_rva == 0x2B3D63u);
+  assert(sprb_profile.input_message_rva == 0x2B3EE0u);
+  assert(sprb_profile.main_input_message_return_rva == 0x2A8247u);
+  assert(sprb_profile.viewport_width == 1920 &&
+         sprb_profile.viewport_height == 1080);
+  assert(MatchesSiglusLookupProfile(
+      sprb_profile, sprb_profile.executable_sha256.data(),
+      sprb_profile.executable_sha256.size(), kSiglusLookupPeMachineI386));
+  assert(FindSiglusLookupProfile(profile.executable_sha256.data(),
+                                 profile.executable_sha256.size(),
+                                 kSiglusLookupPeMachineI386) == &profile);
+  assert(FindSiglusLookupProfile(profile.runtime_view_sha256.data(),
+                                 profile.runtime_view_sha256.size(),
+                                 kSiglusLookupPeMachineI386) == &profile);
+  assert(FindSiglusLookupProfile(sprb_profile.executable_sha256.data(),
+                                 sprb_profile.executable_sha256.size(),
+                                 kSiglusLookupPeMachineI386) == &sprb_profile);
+
+  // Hashes never cross profile boundaries, and family/architecture identity
+  // cannot admit an unknown binary.
+  assert(!MatchesSiglusLookupProfile(
+      profile, sprb_profile.executable_sha256.data(),
+      sprb_profile.executable_sha256.size(), kSiglusLookupPeMachineI386));
+  assert(!MatchesSiglusLookupProfile(
+      sprb_profile, profile.executable_sha256.data(),
+      profile.executable_sha256.size(), kSiglusLookupPeMachineI386));
+  assert(FindSiglusLookupProfile(sprb_profile.executable_sha256.data(),
+                                 sprb_profile.executable_sha256.size(),
+                                 0x8664u) == nullptr);
+  auto unknown_hash = sprb_profile.executable_sha256;
+  unknown_hash[0] ^= 0x01u;
+  assert(FindSiglusLookupProfile(unknown_hash.data(), unknown_hash.size(),
+                                 kSiglusLookupPeMachineI386) == nullptr);
+  assert(FindSiglusLookupProfile(nullptr, 0, kSiglusLookupPeMachineI386) ==
+         nullptr);
+
+  // Native ECX/TextUnion requires its admitted return callsite. The Luna
+  // Scenario lane does not, but still requires its own exact feed RVA.
+  auto invalid_native_feed = profile;
+  invalid_native_feed.exact_text_return_rva = 0;
+  assert(!MatchesSiglusLookupProfile(
+      invalid_native_feed, invalid_native_feed.executable_sha256.data(),
+      invalid_native_feed.executable_sha256.size(),
+      kSiglusLookupPeMachineI386));
+  auto invalid_luna_feed = sprb_profile;
+  invalid_luna_feed.exact_text_rva = 0;
+  assert(!MatchesSiglusLookupProfile(
+      invalid_luna_feed, invalid_luna_feed.executable_sha256.data(),
+      invalid_luna_feed.executable_sha256.size(),
+      kSiglusLookupPeMachineI386));
+  auto unknown_text_feed = sprb_profile;
+  unknown_text_feed.text_feed = static_cast<SiglusLookupTextFeed>(0);
+  assert(!MatchesSiglusLookupProfile(
+      unknown_text_feed, unknown_text_feed.executable_sha256.data(),
+      unknown_text_feed.executable_sha256.size(),
+      kSiglusLookupPeMachineI386));
 
   SiglusLookupGlyphCaptureBuffer captures;
   // An older unrelated renderer fragment must not make a partial match pass.
