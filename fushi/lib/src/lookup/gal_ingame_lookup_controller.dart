@@ -51,6 +51,23 @@ typedef GalIngameLookupPreferenceReader =
 /// 的解析口，绝不复制那条链。找不到对应行返回 null（卡照样能建，只是没有 gal 媒体）。
 typedef GalIngameMiningResolver = OverlayMiningHandler? Function(String line);
 
+/// Test-only replacement for the shared popup lookup pipeline. Production
+/// instances leave this null and continue to call GlobalLookupController.
+@visibleForTesting
+typedef GalIngameLookupRunner = Future<bool> Function(
+  String query,
+  GalLookupHit hit,
+);
+
+/// Text-hook occurrence ids are intentionally distinct even when an engine
+/// republishes the same visible sentence. Only the sentence payload may retire
+/// an already-open game lookup surface.
+@visibleForTesting
+bool shouldRetireGalLookupForLineChange({
+  required String? activeLine,
+  required String? nextLine,
+}) => activeLine != null && activeLine != nextLine;
+
 /// Converts the fixed root-card anchor into the current nested-union anchor.
 /// All values are primaryLayer/WebView physical pixels; no DPR conversion is
 /// legal at this boundary.
@@ -65,7 +82,9 @@ typedef GalIngameMiningResolver = OverlayMiningHandler? Function(String line);
 class GalIngameLookupController {
   GalIngameLookupController._({
     GalIngameLookupPreferenceReader? preferenceReader,
-  }) : _preferenceReader = preferenceReader;
+    GalIngameLookupRunner? lookupRunner,
+  }) : _preferenceReader = preferenceReader,
+       _lookupRunner = lookupRunner;
 
   static final GalIngameLookupController instance =
       GalIngameLookupController._();
@@ -73,12 +92,17 @@ class GalIngameLookupController {
   @visibleForTesting
   GalIngameLookupController.test({
     GalIngameLookupPreferenceReader? preferenceReader,
-  }) : this._(preferenceReader: preferenceReader);
+    GalIngameLookupRunner? lookupRunner,
+  }) : this._(
+         preferenceReader: preferenceReader,
+         lookupRunner: lookupRunner,
+       );
 
   /// 「游戏内查词」开关的持久化 key（与其余 gal hook 偏好同一命名族）。
   static const String enabledPreferenceKey = 'gal_hook_ingame_lookup_enabled';
 
   GalIngameLookupPreferenceReader? _preferenceReader;
+  final GalIngameLookupRunner? _lookupRunner;
 
   AppModel? _appModel;
   GalIngameMiningResolver? _miningResolver;
@@ -116,6 +140,10 @@ class GalIngameLookupController {
   /// 最近一次真正提交查词的命中。hover 也有自己的 seq，但它只在 TJS 内即时移动高亮，
   /// 不能作废正在查词的 submit，也不能拿来给卡片 present / dismiss 做身份。
   GalLookupHit? _latestSubmitHit;
+
+  /// 同一 submit 的重复文本 occurrence 只记一次诊断；KiriKiri 人物动画可能
+  /// 持续重发，不能因为我们正在保护 route 反而每帧刷日志。
+  int? _sameLineReplayLoggedSubmitSeq;
 
   /// latest-wins 待处理命中：查词在途时又点了新字，只留最后一个（连点不排队）。
   ({GalLookupHit hit, int generation, GlobalLookupRoute route})? _pendingLookup;
@@ -299,9 +327,27 @@ class GalIngameLookupController {
     await _syncEnabled();
   }
 
-  /// 换行 / 换页：屏上那句话已经不在了，卡片必须跟着消场，否则卡片还挂在旧句子的
-  /// 字形位置上。由台词浮窗控制器在「显示行变了」那一刻调。
-  Future<void> onLineChanged() async {
+  /// 文本 hook 收到了新行身份。只有它的句子内容与当前 submit 不同
+  /// 时才退役游戏内卡片。
+  ///
+  /// KiriKiriZ / EmbedKrkrZ 会在人物动画、renderer 重绑时重发同一句：文本环
+  /// 为了语音配对与制卡必须保留那个新 line id，但 line id 本身不是句界。
+  /// 若在这里无条件 terminate，会 hide + invalidate 离屏 WebView route，DOM 选区也
+  /// 就随人物帧一起被刷掉。
+  Future<void> onLineChanged(String? nextLine) async {
+    final GalLookupHit? current = _latestSubmitHit ?? _activeHit;
+    if (current == null) return;
+    if (!shouldRetireGalLookupForLineChange(
+      activeLine: current.line,
+      nextLine: nextLine,
+    )) {
+      if (_sameLineReplayLoggedSubmitSeq != current.seq) {
+        _sameLineReplayLoggedSubmitSeq = current.seq;
+        glog('gal-ingame: same-line replay preserves route seq=${current.seq}');
+      }
+      return;
+    }
+    glog('gal-ingame: line-change retires route seq=${current.seq}');
     await _terminateCurrentLookup();
   }
 
@@ -322,6 +368,7 @@ class GalIngameLookupController {
       return;
     }
     _latestSubmitHit = hit;
+    _sameLineReplayLoggedSubmitSeq = null;
     // latest-wins：在途查词不打断，但只保留最后一次意图。代数也在入队时递增，
     // 所以当前 await 返回时就能判断自己是否已过期。
     final int generation = ++_lookupGeneration;
@@ -775,16 +822,17 @@ class GalIngameLookupController {
       'gal-ingame: lookup seq=${hit.seq} idx=${hit.charIndex} '
       'query="$query"',
     );
-    final bool taken = await GlobalLookupChannel.runWithRoute(
-      route,
-      () => GlobalLookupController.instance.lookupText(
+    final bool taken = await GlobalLookupChannel.runWithRoute(route, () {
+      final GalIngameLookupRunner? lookupRunner = _lookupRunner;
+      if (lookupRunner != null) return lookupRunner(query, hit);
+      return GlobalLookupController.instance.lookupText(
         query,
         sentence: hit.line,
         showSentenceBanner: false,
         allowClipboardHistory: false,
         miningHandler: _miningResolver?.call(hit.line),
-      ),
-    );
+      );
+    });
     if (!_isCurrentLookup(generation, route)) {
       return;
     }
@@ -958,6 +1006,7 @@ class GalIngameLookupController {
     _activeHit = null;
     _activeLookupGeneration = 0;
     _latestSubmitHit = null;
+    _sameLineReplayLoggedSubmitSeq = null;
     _pendingLookup = null;
     _cancelRecapture();
     try {

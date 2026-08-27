@@ -144,7 +144,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
   String? _displayedLineId;
 
   /// 游戏内查词用的「会话最新行」镜像，与 [_displayedLineId]（浮窗显示的那行）分开：
-  /// 浮窗被关掉时仍要能判出换行并让游戏内卡片消场。
+  /// 浮窗被关掉时仍要能观察新文本事件。ID 只是触发镜像；是否真换句
+  /// 由 [GalIngameLookupController.onLineChanged] 用当前 submit 的句子内容裁决。
   String? _ingameLatestLineId;
   double _opacity = _defaultOpacity;
   double _lastNonZeroOpacity = _defaultRestoreOpacity;
@@ -485,14 +486,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
       return;
     }
     final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
-    // 换行 / 换页：屏上那句已经不在了，游戏内卡片必须消场。判据取**会话最新行**而
-    // 不是浮窗的 [_displayedLineId]——浮窗可能被用户关掉（[_suppressedForSession]）
-    // 或压根没显示，那时 [_displayedLineId] 根本不动，卡片会一直挂在旧句子的字形
-    // 位置上。
+    // 会话最新行 ID 变化时让游戏内控制器复核句子内容。不能直接把 ID
+    // 当句界：KiriKiriZ 的人物动画/renderer 重绑会让 Luna 重发同句并分配新 ID。
+    // 文本服务仍保留这些 occurrence（配音/制卡身份需要），只有查词 surface
+    // 会把同句重发折叠为同一生命周期。
     final String? latestLineId = lines.isEmpty ? null : lines.last.id;
     if (latestLineId != _ingameLatestLineId) {
       _ingameLatestLineId = latestLineId;
-      await _ingameLookup.onLineChanged();
+      await _ingameLookup.onLineChanged(lines.isEmpty ? null : lines.last.text);
     }
 
     if (_suppressedForSession) return;

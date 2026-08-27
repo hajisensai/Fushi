@@ -692,6 +692,12 @@ void TestHeaderMirrorsCompileTimeConstants() {
   Check(sizeof(LookupInputSlot) == 32, "输入槽 ABI 尺寸保持 32 字节");
   Check(fushi_voice_hook::kLookupInputDismissOutside == 5,
         "位图卡外关闭控制 kind 固定为 5");
+  Check(fushi_voice_hook::kLookupInputVirtualKeyLeftButton == 0x0001u,
+        "输入 keys 的 bit0 固定表示 WebView2 左键");
+  Check(fushi_voice_hook::kLookupInputVirtualKeyShift == 0x0004u,
+        "输入 keys 的 Shift 固定为 WebView2 bit2，不得压成 bit0");
+  Check(fushi_voice_hook::kLookupInputVirtualKeyControl == 0x0008u,
+        "输入 keys 的 Control 固定为 WebView2 bit3");
 }
 
 }  // namespace

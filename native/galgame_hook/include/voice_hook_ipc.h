@@ -620,7 +620,7 @@ struct LookupInputSlot {
   int32_t y;
   uint32_t kind;          // kLookupInput*
   int32_t wheel;          // 滚轮增量（kind==kLookupInputWheel 时有效）
-  uint32_t keys;          // 修饰键位掩码
+  uint32_t keys;          // kLookupInputVirtualKey*；直接对应 WebView2 virtualKeys
   uint32_t reserved;
 };
 
@@ -634,6 +634,18 @@ constexpr uint32_t kLookupInputLeave = 4;
 // event after consuming that raw DirectInput transaction so Dart can retire the
 // same lookup session instead of merely hiding one stale bitmap.
 constexpr uint32_t kLookupInputDismissOutside = 5;
+
+// LookupInputSlot::keys 的跨进程真相源。数值与
+// COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS 完全一致；它不是 Win32 MK_* 的任意
+// “修饰键压缩表”。尤其 1 是左键、4 才是 Shift，WebView2 没有 Alt 位。
+constexpr uint32_t kLookupInputVirtualKeyNone = 0x0000u;
+constexpr uint32_t kLookupInputVirtualKeyLeftButton = 0x0001u;
+constexpr uint32_t kLookupInputVirtualKeyRightButton = 0x0002u;
+constexpr uint32_t kLookupInputVirtualKeyShift = 0x0004u;
+constexpr uint32_t kLookupInputVirtualKeyControl = 0x0008u;
+constexpr uint32_t kLookupInputVirtualKeyMiddleButton = 0x0010u;
+constexpr uint32_t kLookupInputVirtualKeyXButton1 = 0x0020u;
+constexpr uint32_t kLookupInputVirtualKeyXButton2 = 0x0040u;
 
 // v17：hook DLL 摘要字段的固定长度 = 64 位十六进制 SHA-256 + 结尾 NUL。定长而不是变长，
 // 是因为它落在跨进程共享内存里：读侧必须能在不信任写侧的前提下有界读（strnlen 上界就是它）。
