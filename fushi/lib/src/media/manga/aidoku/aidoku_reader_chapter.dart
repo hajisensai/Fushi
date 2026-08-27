@@ -17,10 +17,6 @@ import 'package:fushi/src/utils/net/app_http.dart';
 
 const int _maximumAidokuImageBytes = 100 * 1024 * 1024;
 
-/// 图片下载与 wasm host / 解题 WebView 共用同一身份（BUG-1876：`cf_clearance`
-/// 绑 UA，图片 CDN 同在 Cloudflare 后面时换个 UA 就是 403）。
-const String kAidokuBrowserUserAgent = kAidokuUserAgent;
-
 class AidokuImagePage {
   const AidokuImagePage({
     required this.url,
@@ -77,7 +73,7 @@ class AidokuImagePage {
 
   Map<String, String> requestHeaders({String? referer}) {
     final Map<String, String> resolved = <String, String>{
-      'User-Agent': kAidokuBrowserUserAgent,
+      'User-Agent': kAidokuUserAgent,
       if (referer != null) 'Referer': referer,
       ...headers,
     };

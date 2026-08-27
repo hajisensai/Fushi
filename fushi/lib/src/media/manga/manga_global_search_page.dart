@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
@@ -378,7 +378,7 @@ class _AidokuStripCover extends StatelessWidget {
     return Image.network(
       value,
       fit: BoxFit.cover,
-      headers: const <String, String>{'User-Agent': kAidokuBrowserUserAgent},
+      headers: const <String, String>{'User-Agent': kAidokuUserAgent},
       errorBuilder: (_, __, ___) => const ColoredBox(
         color: Color(0x11000000),
         child: Center(child: Icon(Icons.broken_image_outlined)),

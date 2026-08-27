@@ -82,30 +82,32 @@ void main() {
       );
     });
 
-    test('replaceForHost only touches the domains that host belongs to',
-        () async {
-      final AidokuCookieJar store = jar();
-      await store.replaceForHost('a.test', const <AidokuCookie>[
-        AidokuCookie(name: 'cf_clearance', value: 'old', domain: 'a.test'),
-      ]);
-      await store.replaceForHost('b.test', const <AidokuCookie>[
-        AidokuCookie(name: 'cf_clearance', value: 'b', domain: 'b.test'),
-      ]);
-      await store.replaceForHost('a.test', const <AidokuCookie>[
-        AidokuCookie(name: 'cf_clearance', value: 'new', domain: 'a.test'),
-        // 不属于 a.test 的条目不能借道混进来。
-        AidokuCookie(name: 'cf_clearance', value: 'evil', domain: 'c.test'),
-      ]);
-      expect(
-        store.cookieHeaderFor(Uri.parse('https://a.test/')),
-        'cf_clearance=new',
-      );
-      expect(
-        store.cookieHeaderFor(Uri.parse('https://b.test/')),
-        'cf_clearance=b',
-      );
-      expect(store.cookieHeaderFor(Uri.parse('https://c.test/')), isNull);
-    });
+    test(
+      'replaceForHost only touches the domains that host belongs to',
+      () async {
+        final AidokuCookieJar store = jar();
+        await store.replaceForHost('a.test', const <AidokuCookie>[
+          AidokuCookie(name: 'cf_clearance', value: 'old', domain: 'a.test'),
+        ]);
+        await store.replaceForHost('b.test', const <AidokuCookie>[
+          AidokuCookie(name: 'cf_clearance', value: 'b', domain: 'b.test'),
+        ]);
+        await store.replaceForHost('a.test', const <AidokuCookie>[
+          AidokuCookie(name: 'cf_clearance', value: 'new', domain: 'a.test'),
+          // 不属于 a.test 的条目不能借道混进来。
+          AidokuCookie(name: 'cf_clearance', value: 'evil', domain: 'c.test'),
+        ]);
+        expect(
+          store.cookieHeaderFor(Uri.parse('https://a.test/')),
+          'cf_clearance=new',
+        );
+        expect(
+          store.cookieHeaderFor(Uri.parse('https://b.test/')),
+          'cf_clearance=b',
+        );
+        expect(store.cookieHeaderFor(Uri.parse('https://c.test/')), isNull);
+      },
+    );
 
     test('expired cookies are neither served nor sent to the host', () async {
       final AidokuCookieJar store = jar();
@@ -138,5 +140,59 @@ void main() {
       expect(store.cookies, isEmpty);
       expect(store.networkPayload()['cookies'], isEmpty);
     });
+
+    test(
+      'an undecodable (non-UTF-8) cookie file also degrades to empty',
+      () async {
+        await file.parent.create(recursive: true);
+        // 0xFF 开头不是合法 UTF-8：readAsString 抛 FileSystemException 而非
+        // FormatException——同样只算「没 cookie」，不许拦下整个 invoke。
+        await file.writeAsBytes(<int>[0xFF, 0xFE, 0x00, 0x9F]);
+        final AidokuCookieJar store = jar();
+        await store.ensureLoaded();
+        expect(store.cookies, isEmpty);
+      },
+    );
+
+    test('a failed load is retried on the next ensureLoaded call', () async {
+      int attempts = 0;
+      final AidokuCookieJar store = AidokuCookieJar.lazy(() async {
+        attempts++;
+        if (attempts == 1) {
+          throw const FileSystemException('platform channel not ready');
+        }
+        return file;
+      });
+      await expectLater(
+        store.ensureLoaded(),
+        throwsA(isA<FileSystemException>()),
+      );
+      // 失败不被备忘：第二次调用重新走加载而不是复放同一个失败。
+      await store.ensureLoaded();
+      expect(attempts, 2);
+    });
+
+    test(
+      'clearanceValueFor returns the live cf_clearance value only',
+      () async {
+        final AidokuCookieJar store = jar();
+        await store.replaceForHost('mangafire.to', const <AidokuCookie>[
+          AidokuCookie(
+            name: 'cf_clearance',
+            value: 'v1',
+            domain: '.mangafire.to',
+          ),
+          AidokuCookie(name: 'other', value: 'x', domain: '.mangafire.to'),
+        ]);
+        expect(
+          store.clearanceValueFor(Uri.parse('https://mangafire.to/a')),
+          'v1',
+        );
+        expect(
+          store.clearanceValueFor(Uri.parse('https://elsewhere.example/')),
+          isNull,
+        );
+      },
+    );
   });
 }

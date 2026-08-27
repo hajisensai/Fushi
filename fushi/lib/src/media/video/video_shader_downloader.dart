@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 
 /// Anime4K（bloc97/Anime4K）GLSL 着色器一键下载：定义官方推荐预设、生成多镜像
@@ -237,18 +238,11 @@ const List<String> _kJsDelivrHosts = <String>[
   'testingcf.jsdelivr.net',
 ];
 
-/// 套在 `raw.githubusercontent.com` 直链前的 GitHub 加速代理前缀（BUG-319 同款名单）。
-const List<String> _kGhProxyPrefixes = <String>[
-  'https://ghfast.top/',
-  'https://gh-proxy.com/',
-  'https://ghproxy.net/',
-  'https://ghproxy.cc/',
-];
 
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（多镜像回退）。纯函数。
 ///
 /// 顺序：① jsDelivr 多 CDN 节点（[_kJsDelivrHosts]，独立边缘网络互为后备，中国可达）→
-/// ② gh 加速代理前缀套 raw 直链（[_kGhProxyPrefixes]，BUG-319 名单）→ ③ raw.githubusercontent.com
+/// ② gh 加速代理前缀套 raw 直链（[kGitHubMirrorPrefixes]，BUG-319 名单）→ ③ raw.githubusercontent.com
 /// 官方直连兜底。app 运行时下载**不走**本机命令行代理，故必须靠这些镜像在中国网络兜底。
 /// 逐个尝试，前一个失败回退下一个；整组跑完仍失败由 [downloadAnime4kFiles] 做有界重试
 /// （瞬态 CDN 抖动换轮再试）。
@@ -263,7 +257,7 @@ List<String> anime4kMirrorUrls(
   return <String>[
     for (final String host in _kJsDelivrHosts)
       'https://$host/gh/$repo@$ref/$repoPath',
-    for (final String prefix in _kGhProxyPrefixes) '$prefix$rawUrl',
+    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
     rawUrl,
   ];
 }
@@ -273,7 +267,7 @@ List<String> anime4kMirrorUrls(
 /// **直链优先、镜像兜底**：用户粘的就是 GitHub 链接，先试它本身（`blob` 链接转成可
 /// 直接下载的 `raw` 形式）——能直连 / 有系统代理 VPN 就直接用；**跑不通才回退**与
 /// [anime4kMirrorUrls] 同款的 jsDelivr 多 CDN 节点（[_kJsDelivrHosts]）+ gh 加速代理
-/// 前缀（[_kGhProxyPrefixes]，BUG-319 名单）兜底（中国网络）。其它任意直链原样单条返回。
+/// 前缀（[kGitHubMirrorPrefixes]，BUG-319 名单）兜底（中国网络）。其它任意直链原样单条返回。
 /// 让用户从 GitHub/教程里复制任意 `.glsl` 链接粘进来即可下，不必本机装 mpv。
 List<String> shaderDownloadUrlsFor(String userUrl) {
   final String url = userUrl.trim();
@@ -295,7 +289,7 @@ List<String> shaderDownloadUrlsFor(String userUrl) {
     // 跑不通才走镜像（与 anime4kMirrorUrls 同款多节点 + 代理前缀，中国网络兜底）。
     for (final String host in _kJsDelivrHosts)
       'https://$host/gh/$owner/$repo@$refAndPath',
-    for (final String prefix in _kGhProxyPrefixes) '$prefix$direct',
+    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$direct',
   ];
 }
 

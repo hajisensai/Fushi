@@ -99,10 +99,21 @@ class MihonStoreFetchResult {
 }
 
 class MihonExtensionStoreClient {
-  MihonExtensionStoreClient({http.Client? client})
-      : _client = client ?? createAppHttpIoClient();
+  MihonExtensionStoreClient({
+    http.Client? client,
+    this.fetchBudget = const Duration(seconds: 90),
+    DateTime Function()? now,
+  })  : _client = client ?? createAppHttpIoClient(),
+        _now = now ?? DateTime.now;
 
   final http.Client _client;
+
+  /// 单个资源（含全部镜像候选与重定向跳转）的**总**时间预算：镜像回退把最坏
+  /// 情况从一次 20s 超时放大成 直连 + 5 镜像 × 每次 30s、再乘重定向嵌套——
+  /// 没有总闸的话一台镜像也不通的机器一次刷新要挂几分钟。
+  final Duration fetchBudget;
+
+  final DateTime Function() _now;
 
   /// 跟随「一份索引指向另一份索引」的最大跳数。
   ///
@@ -319,21 +330,31 @@ class MihonExtensionStoreClient {
     bool allowNotModified = false,
     bool allowInsecure = false,
     int redirectCount = 0,
+    DateTime? deadline,
   }) async {
+    // 总闸：首跳定死整条链（含全部镜像候选 + 重定向嵌套）的截止时刻，
+    // 每跳、每个候选共享同一个 [deadline]，过点即停不再换镜像。
+    deadline ??= _now().add(fetchBudget);
     Object? directError;
     StackTrace? directStack;
     final List<Uri> candidates = gitHubMirrorCandidates(url);
-    for (final Uri candidate in candidates) {
-      final bool isDirect = candidate == candidates.first;
+    for (int index = 0; index < candidates.length; index++) {
+      final bool isDirect = index == 0;
+      final Duration remaining = deadline.difference(_now());
+      if (!isDirect && remaining <= Duration.zero) break;
       try {
         return await _getOnce(
-          _validatedUri(candidate.toString(), allowInsecure: allowInsecure),
+          _validatedUri(
+            candidates[index].toString(),
+            allowInsecure: allowInsecure,
+          ),
           maxBytes: maxBytes,
           etag: etag,
           lastModified: lastModified,
           allowNotModified: allowNotModified,
           allowInsecure: allowInsecure,
           redirectCount: redirectCount,
+          deadline: deadline,
         );
       } on Object catch (error, stack) {
         // 直连的 HTTP 答复（404 / 重定向坏掉 …）是权威结论，不拿镜像去翻案；
@@ -358,6 +379,7 @@ class MihonExtensionStoreClient {
     required bool allowNotModified,
     required bool allowInsecure,
     required int redirectCount,
+    required DateTime deadline,
   }) async {
     final http.Request request = http.Request('GET', url);
     request.followRedirects = false;
@@ -367,8 +389,16 @@ class MihonExtensionStoreClient {
     if (lastModified != null && lastModified.isNotEmpty) {
       request.headers[HttpHeaders.ifModifiedSinceHeader] = lastModified;
     }
+    // 单次尝试上限 30s，且不越过整条链的 [deadline]。
+    Duration attemptTimeout = deadline.difference(_now());
+    if (attemptTimeout > const Duration(seconds: 30)) {
+      attemptTimeout = const Duration(seconds: 30);
+    }
+    if (attemptTimeout < const Duration(milliseconds: 1)) {
+      attemptTimeout = const Duration(milliseconds: 1);
+    }
     final http.StreamedResponse response =
-        await _client.send(request).timeout(const Duration(seconds: 30));
+        await _client.send(request).timeout(attemptTimeout);
     if (<int>{
       HttpStatus.movedPermanently,
       HttpStatus.found,
@@ -404,6 +434,7 @@ class MihonExtensionStoreClient {
         allowNotModified: allowNotModified,
         allowInsecure: allowInsecure,
         redirectCount: redirectCount + 1,
+        deadline: deadline,
       );
     }
     _validatedUri(

@@ -19,12 +19,33 @@ const String kCloudflareClearanceCookie = 'cf_clearance';
 
 /// 解题回调：把 [challengeUrl] 交给 UI 层在 WebView 里完成验证，返回是否拿到了放行
 /// cookie（已写入 jar）。`false` = 用户取消或超时，调用方按原错误上报。
-typedef AidokuCloudflareResolver = Future<bool> Function(Uri challengeUrl);
+///
+/// [userAgent] 是**被挑战那次请求实际用的 UA**（源可能自设，覆盖默认身份）；
+/// 解题 WebView 必须用同一 UA，否则 `cf_clearance` 绑错身份、重试永远失败
+/// （上游 Mihon 同样按请求自己的 UA 解题）。
+typedef AidokuCloudflareResolver =
+    Future<bool> Function(Uri challengeUrl, String userAgent);
 
 /// 运行时与 UI 层的接线点：UI 启动时装一个 resolver，runtime 遇到
 /// `CLOUDFLARE_CHALLENGE` 时调用它。没装（测试 / 无 UI）就退化成直接报错。
 abstract final class AidokuCloudflareGate {
   static AidokuCloudflareResolver? resolver;
+
+  static const Object _suppressKey = #aidokuCloudflareSuppressed;
+
+  /// 当前异步链是否禁止弹解题页。后台批量流（全局搜索扇出、发现页自动匹配）
+  /// 里被 Cloudflare 拦下不该无操作弹全屏 WebView——让错误按
+  /// `CLOUDFLARE_CHALLENGE` 码上浮，由调用方标成徽标/状态，用户点进源页
+  /// 再交互解题。
+  static bool get suppressed => Zone.current[_suppressKey] == true;
+
+  /// 在抑制解题页的 Zone 里跑 [body]；Zone 值随整条异步链继承，包括受限并发
+  /// 扇出的每个 worker。
+  static Future<T> runSuppressed<T>(Future<T> Function() body) =>
+      runZoned<Future<T>>(
+        body,
+        zoneValues: <Object?, Object?>{_suppressKey: true},
+      );
 }
 
 /// 一条按域名作用的 cookie（对齐 Rust 侧 `NetworkCookie`）。
@@ -39,13 +60,13 @@ class AidokuCookie {
   });
 
   factory AidokuCookie.fromJson(Map<String, Object?> json) => AidokuCookie(
-        name: json['name']?.toString() ?? '',
-        value: json['value']?.toString() ?? '',
-        domain: json['domain']?.toString() ?? '',
-        path: json['path']?.toString() ?? '/',
-        secure: json['secure'] == true,
-        expiresAt: (json['expiresAt'] as num?)?.toInt(),
-      );
+    name: json['name']?.toString() ?? '',
+    value: json['value']?.toString() ?? '',
+    domain: json['domain']?.toString() ?? '',
+    path: json['path']?.toString() ?? '/',
+    secure: json['secure'] == true,
+    expiresAt: (json['expiresAt'] as num?)?.toInt(),
+  );
 
   final String name;
   final String value;
@@ -68,13 +89,13 @@ class AidokuCookie {
   bool matchesHost(String host) => hostMatchesDomain(host, canonicalDomain);
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'name': name,
-        'value': value,
-        'domain': canonicalDomain,
-        'path': path,
-        'secure': secure,
-        if (expiresAt != null) 'expiresAt': expiresAt,
-      };
+    'name': name,
+    'value': value,
+    'domain': canonicalDomain,
+    'path': path,
+    'secure': secure,
+    if (expiresAt != null) 'expiresAt': expiresAt,
+  };
 
   static String canonicalizeDomain(String domain) {
     String value = domain.trim().toLowerCase();
@@ -98,15 +119,15 @@ class AidokuCookie {
 /// 只存 Aidoku 源站的 cookie，设备本地、不进同步/备份。
 class AidokuCookieJar {
   AidokuCookieJar(File file, {int Function()? clock})
-      : _resolveFile = (() async => file),
-        _clock = clock ?? _defaultClock;
+    : _resolveFile = (() async => file),
+      _clock = clock ?? _defaultClock;
 
   /// 路径延迟解析（共享实例：支持目录要等平台通道就绪）。
   AidokuCookieJar.lazy(
     Future<File> Function() resolveFile, {
     int Function()? clock,
-  })  : _resolveFile = resolveFile,
-        _clock = clock ?? _defaultClock;
+  }) : _resolveFile = resolveFile,
+       _clock = clock ?? _defaultClock;
 
   static int _defaultClock() => DateTime.now().millisecondsSinceEpoch;
 
@@ -120,12 +141,9 @@ class AidokuCookieJar {
 
   static Future<File> _sharedFile() async {
     final Directory supportRoot = await AppPaths.supportRootDirectory();
-    return File(p.join(
-      supportRoot.path,
-      'manga_extensions',
-      'aidoku',
-      'cookies.json',
-    ));
+    return File(
+      p.join(supportRoot.path, 'manga_extensions', 'aidoku', 'cookies.json'),
+    );
   }
 
   final Future<File> Function() _resolveFile;
@@ -136,7 +154,13 @@ class AidokuCookieJar {
 
   List<AidokuCookie> get cookies => List<AidokuCookie>.unmodifiable(_cookies);
 
-  Future<void> ensureLoaded() => _loading ??= _load();
+  /// 失败不记忆：路径解析（平台通道未就绪）或 IO 失败时清掉备忘，下一次调用
+  /// 重试——否则一次启动期抖动会把所有 iOS Aidoku 调用毒到重启。
+  Future<void> ensureLoaded() =>
+      _loading ??= _load().onError((Object error, StackTrace stack) {
+        _loading = null;
+        Error.throwWithStackTrace(error, stack);
+      });
 
   Future<void> _load() async {
     final File target = _file ??= await _resolveFile();
@@ -146,12 +170,18 @@ class AidokuCookieJar {
       if (decoded is! List<Object?>) return;
       _cookies = decoded
           .whereType<Map<Object?, Object?>>()
-          .map((Map<Object?, Object?> item) =>
-              AidokuCookie.fromJson(item.cast<String, Object?>()))
+          .map(
+            (Map<Object?, Object?> item) =>
+                AidokuCookie.fromJson(item.cast<String, Object?>()),
+          )
           .where((AidokuCookie cookie) => cookie.isValid)
           .toList(growable: false);
     } on FormatException {
       // 坏文件 = 没 cookie；下一次写入会覆盖它。
+      _cookies = const <AidokuCookie>[];
+    } on FileSystemException {
+      // 读不动的文件（编码坏 / 权限抖动）同样当作没 cookie，不拦 invoke：
+      // cookie 只是增强，拿不到就按无 cookie 请求。
       _cookies = const <AidokuCookie>[];
     }
   }
@@ -160,8 +190,10 @@ class AidokuCookieJar {
   List<AidokuCookie> cookiesFor(Uri url) {
     final int now = _clock();
     return _cookies
-        .where((AidokuCookie cookie) =>
-            !cookie.isExpiredAt(now) && cookie.matchesHost(url.host))
+        .where(
+          (AidokuCookie cookie) =>
+              !cookie.isExpiredAt(now) && cookie.matchesHost(url.host),
+        )
         .toList(growable: false);
   }
 
@@ -175,8 +207,17 @@ class AidokuCookieJar {
   }
 
   /// 是否已持有对 [url] 生效的 Cloudflare 放行 cookie。
-  bool hasClearanceFor(Uri url) => cookiesFor(url)
-      .any((AidokuCookie cookie) => cookie.name == kCloudflareClearanceCookie);
+  bool hasClearanceFor(Uri url) => clearanceValueFor(url) != null;
+
+  /// 对 [url] 生效的 `cf_clearance` 的**值**；没有返回 null。调用方用它判断
+  /// 「排队解题期间 jar 是否已被别的调用换上新放行 cookie」——值变了直接重试，
+  /// 不必再弹解题页。
+  String? clearanceValueFor(Uri url) {
+    for (final AidokuCookie cookie in cookiesFor(url)) {
+      if (cookie.name == kCloudflareClearanceCookie) return cookie.value;
+    }
+    return null;
+  }
 
   /// 用 WebView 解题后导出的整组 cookie **替换**该站点（[host] 所属的全部注册域）
   /// 的旧条目：旧的 `cf_clearance` 已经失效才会走到解题，留着只会让 host 端多发一个
@@ -185,13 +226,16 @@ class AidokuCookieJar {
     await ensureLoaded();
     final int now = _clock();
     final List<AidokuCookie> incoming = fresh
-        .where((AidokuCookie cookie) =>
-            cookie.isValid &&
-            !cookie.isExpiredAt(now) &&
-            AidokuCookie.hostMatchesDomain(host, cookie.canonicalDomain))
+        .where(
+          (AidokuCookie cookie) =>
+              cookie.isValid &&
+              !cookie.isExpiredAt(now) &&
+              AidokuCookie.hostMatchesDomain(host, cookie.canonicalDomain),
+        )
         .toList(growable: false);
-    final Set<String> replacedDomains =
-        incoming.map((AidokuCookie cookie) => cookie.canonicalDomain).toSet();
+    final Set<String> replacedDomains = incoming
+        .map((AidokuCookie cookie) => cookie.canonicalDomain)
+        .toSet();
     _cookies = <AidokuCookie>[
       for (final AidokuCookie cookie in _cookies)
         if (!cookie.isExpiredAt(now) &&

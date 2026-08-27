@@ -126,10 +126,14 @@ impl NetworkSession {
 
 /// Raised when a network response was a Cloudflare interstitial. Carries the
 /// URL that got challenged so the caller can open exactly that page in a
-/// WebView, solve it, and retry with the resulting `cf_clearance`.
-#[derive(Debug)]
+/// WebView, solve it, and retry with the resulting `cf_clearance` — plus the
+/// User-Agent the challenged request actually sent, because Cloudflare binds
+/// `cf_clearance` to the solving UA: a source that set its own UA via
+/// `net.set_header` needs the WebView to solve with that exact string.
+#[derive(Debug, Clone)]
 struct CloudflareChallenge {
     url: String,
+    user_agent: Option<String>,
 }
 
 impl std::fmt::Display for CloudflareChallenge {
@@ -417,18 +421,23 @@ struct HostState {
     stdout: String,
     partial_results: Vec<Vec<u8>>,
     defaults: HashMap<String, Vec<u8>>,
-    /// Set to the challenged URL when any network request during this
-    /// invocation came back as a Cloudflare interstitial ("Just a moment…" /
-    /// Turnstile challenge). A headless HTTP client cannot solve the JavaScript
-    /// challenge, so the source parses the challenge HTML as its expected
-    /// JSON/HTML payload and fails with an opaque decode error. Remembering
-    /// the challenge lets us turn that opaque failure into an actionable
-    /// `CLOUDFLARE_CHALLENGE` (+ `challengeUrl`) instead of a raw
-    /// `JsonParseError`, and the caller can solve it in a WebView and retry.
-    cloudflare_challenge: Option<String>,
+    /// Set when any network request during this invocation came back as a
+    /// Cloudflare interstitial ("Just a moment…" / Turnstile challenge). A
+    /// headless HTTP client cannot solve the JavaScript challenge, so the
+    /// source parses the challenge HTML as its expected JSON/HTML payload and
+    /// fails with an opaque decode error. Remembering the challenge (URL +
+    /// effective User-Agent) lets us turn that opaque failure into an
+    /// actionable `CLOUDFLARE_CHALLENGE` (+ `challengeUrl` /
+    /// `challengeUserAgent`) instead of a raw `JsonParseError`, and the caller
+    /// can solve it in a WebView and retry.
+    cloudflare_challenge: Option<CloudflareChallenge>,
+    /// Cookie/identity source for the lazily built [`Self::client`].
+    session: NetworkSession,
     /// Shared HTTP client (cookie jar + identity) for every request this
-    /// invocation makes. See [`NetworkSession::client`].
-    client: reqwest::blocking::Client,
+    /// invocation makes, built on first use so commands that never touch the
+    /// network (`inspect`) pay nothing and cannot fail on client construction.
+    /// See [`NetworkSession::client`].
+    client: Option<reqwest::blocking::Client>,
     /// User-Agent applied when the source did not set its own.
     user_agent: reqwest::header::HeaderValue,
     /// Tail of `METHOD url -> status (bytes)` lines, see [`NET_LOG_LIMIT`].
@@ -436,8 +445,9 @@ struct HostState {
 }
 
 impl HostState {
-    fn new(defaults: HashMap<String, Vec<u8>>, session: &NetworkSession) -> Result<Self> {
-        Ok(Self {
+    fn new(defaults: HashMap<String, Vec<u8>>, session: NetworkSession) -> Self {
+        let user_agent = session.user_agent();
+        Self {
             memory: None,
             descriptors: HashMap::new(),
             next_descriptor: 1,
@@ -445,10 +455,11 @@ impl HostState {
             partial_results: Vec::new(),
             defaults,
             cloudflare_challenge: None,
-            client: session.client()?,
-            user_agent: session.user_agent(),
+            session,
+            client: None,
+            user_agent,
             net_log: Vec::new(),
-        })
+        }
     }
 
     fn log_net(&mut self, line: String) {
@@ -731,6 +742,15 @@ fn is_cloudflare_challenge(status: u16, headers: &reqwest::header::HeaderMap, da
 }
 
 fn send_request(state: &mut HostState, rid: i32) -> i32 {
+    if state.client.is_none() {
+        match state.session.client() {
+            Ok(client) => state.client = Some(client),
+            Err(error) => {
+                state.log_net(format!("client init failed: {error}"));
+                return -10;
+            }
+        }
+    }
     let Some(StoreItem::Request(request)) = state.descriptors.get_mut(&rid) else {
         return -1;
     };
@@ -742,9 +762,17 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
             .headers
             .insert(reqwest::header::USER_AGENT, state.user_agent.clone());
     }
+    // Captured now (default already inserted above) so a later challenge can
+    // record the UA this request actually went out with.
+    let effective_user_agent = request
+        .headers
+        .get(reqwest::header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(String::from);
     let method = request.method.clone();
-    let mut builder = state
-        .client
+    // Cheap Arc clone; splits the borrow away from `request` above.
+    let client = state.client.as_ref().expect("just built").clone();
+    let mut builder = client
         .request(method.clone(), url.clone())
         .headers(request.headers.clone());
     if let Some(body) = request.body.clone() {
@@ -788,7 +816,10 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
         }
     ));
     if cloudflare_challenge && state.cloudflare_challenge.is_none() {
-        state.cloudflare_challenge = Some(final_url.clone());
+        state.cloudflare_challenge = Some(CloudflareChallenge {
+            url: final_url.clone(),
+            user_agent: effective_user_agent,
+        });
     }
     let Some(StoreItem::Request(request)) = state.descriptors.get_mut(&rid) else {
         return -1;
@@ -2022,13 +2053,13 @@ impl EmbeddedRuntime {
     fn load(
         wasm: &[u8],
         defaults: HashMap<String, Vec<u8>>,
-        session: &NetworkSession,
+        session: NetworkSession,
     ) -> Result<Self> {
         let engine = Engine::default();
         let module = Module::new(&engine, wasm).context("failed to parse Aidoku WebAssembly")?;
         let mut linker = Linker::new(&engine);
         register_imports(&mut linker)?;
-        let mut store = Store::new(&engine, HostState::new(defaults, session)?);
+        let mut store = Store::new(&engine, HostState::new(defaults, session));
         let instance = linker
             .instantiate_and_start(&mut store, &module)
             .context("failed to instantiate Aidoku WebAssembly")?;
@@ -2069,8 +2100,8 @@ impl EmbeddedRuntime {
 
     fn take_result<T: DeserializeOwned>(&mut self, pointer: i32) -> Result<T> {
         if pointer <= 0 {
-            if let Some(url) = &self.store.data().cloudflare_challenge {
-                return Err(CloudflareChallenge { url: url.clone() }.into());
+            if let Some(challenge) = &self.store.data().cloudflare_challenge {
+                return Err(challenge.clone().into());
             }
             let log = self.store.data().stdout.trim();
             let network = self.store.data().net_log_suffix();
@@ -2109,9 +2140,9 @@ impl EmbeddedRuntime {
         free.call(&mut self.store, pointer)
             .context("Aidoku source failed to free its result")?;
         if result.is_err()
-            && let Some(url) = &self.store.data().cloudflare_challenge
+            && let Some(challenge) = &self.store.data().cloudflare_challenge
         {
-            return Err(CloudflareChallenge { url: url.clone() }.into());
+            return Err(challenge.clone().into());
         }
         result
     }
@@ -2282,7 +2313,7 @@ fn execute(request: &Value) -> Result<Value> {
         .ok_or_else(|| anyhow!("missing Aidoku packagePath"))?;
     let package = AixPackage::open(package_path)?;
     let session = NetworkSession::from_request(request)?;
-    let mut runtime = EmbeddedRuntime::load(&package.wasm, package.defaults.clone(), &session)?;
+    let mut runtime = EmbeddedRuntime::load(&package.wasm, package.defaults.clone(), session)?;
     let source = package.manifest["info"].clone();
     match command {
         "inspect" => Ok(json!({
@@ -2389,16 +2420,16 @@ pub fn invoke_json(input: &str) -> String {
 fn error_response(error: &anyhow::Error) -> String {
     let message = format!("{error:#}");
     if let Some(challenge) = error.downcast_ref::<CloudflareChallenge>() {
-        return json!({
-            "code": "CLOUDFLARE_CHALLENGE",
-            "error": message,
-            "challengeUrl": challenge.url,
-        })
-        .to_string();
+        let mut envelope = serde_json::Map::new();
+        envelope.insert("code".to_owned(), json!("CLOUDFLARE_CHALLENGE"));
+        envelope.insert("error".to_owned(), json!(message));
+        envelope.insert("challengeUrl".to_owned(), json!(challenge.url));
+        if let Some(user_agent) = &challenge.user_agent {
+            envelope.insert("challengeUserAgent".to_owned(), json!(user_agent));
+        }
+        return Value::Object(envelope).to_string();
     }
-    let code = if message.contains("Cloudflare challenge") || message.contains("CF challenge") {
-        "CLOUDFLARE_CHALLENGE"
-    } else if message.contains("unknown import")
+    let code = if message.contains("unknown import")
         || message.contains("imported function type mismatch")
         || message.contains("failed to instantiate Aidoku WebAssembly")
     {
@@ -2518,6 +2549,7 @@ mod tests {
     fn cloudflare_error_keeps_its_challenge_url_through_context_layers() {
         let error = anyhow::Error::from(CloudflareChallenge {
             url: "https://mangafire.to/filter?keyword=x".to_owned(),
+            user_agent: None,
         })
         .context("Aidoku search failed");
         let response: Value = serde_json::from_str(&error_response(&error)).unwrap();
@@ -2542,8 +2574,31 @@ mod tests {
     }
 
     #[test]
+    fn cloudflare_envelope_carries_the_effective_user_agent_only_when_known() {
+        let with_agent = anyhow::Error::from(CloudflareChallenge {
+            url: "https://mangafire.to/home".to_owned(),
+            user_agent: Some("SourceCustom/1.0".to_owned()),
+        });
+        let response: Value = serde_json::from_str(&error_response(&with_agent)).unwrap();
+        assert_eq!(response["code"], "CLOUDFLARE_CHALLENGE");
+        assert_eq!(response["challengeUrl"], "https://mangafire.to/home");
+        assert_eq!(response["challengeUserAgent"], "SourceCustom/1.0");
+
+        let without_agent = anyhow::Error::from(CloudflareChallenge {
+            url: "https://mangafire.to/home".to_owned(),
+            user_agent: None,
+        });
+        let response: Value = serde_json::from_str(&error_response(&without_agent)).unwrap();
+        assert_eq!(response["code"], "CLOUDFLARE_CHALLENGE");
+        assert!(
+            response.get("challengeUserAgent").is_none(),
+            "an unknown UA must omit the key, not send null"
+        );
+    }
+
+    #[test]
     fn network_log_keeps_a_bounded_tail_and_strips_query_tokens() {
-        let mut state = HostState::new(HashMap::new(), &NetworkSession::default()).unwrap();
+        let mut state = HostState::new(HashMap::new(), NetworkSession::default());
         assert_eq!(state.net_log_suffix(), "");
         for index in 0..(NET_LOG_LIMIT + 3) {
             state.log_net(format!("GET https://example.test/{index} -> 200 (1 bytes)"));
@@ -2713,7 +2768,7 @@ mod tests {
             .unwrap_or_else(|_| "Sanagi no Heart".to_owned());
         let package = AixPackage::open(path).expect("open live Aidoku package");
         let mut runtime =
-            EmbeddedRuntime::load(&package.wasm, package.defaults, &NetworkSession::default())
+            EmbeddedRuntime::load(&package.wasm, package.defaults, NetworkSession::default())
                 .expect("load live source");
         let search = runtime.search(Some(&query), 1).expect("search live source");
         assert!(
@@ -2767,7 +2822,7 @@ mod tests {
             let package = AixPackage::open(&path)
                 .unwrap_or_else(|error| panic!("open {}: {error:#}", path.display()));
             if let Err(error) =
-                EmbeddedRuntime::load(&package.wasm, package.defaults, &NetworkSession::default())
+                EmbeddedRuntime::load(&package.wasm, package.defaults, NetworkSession::default())
             {
                 let engine = Engine::default();
                 let module =

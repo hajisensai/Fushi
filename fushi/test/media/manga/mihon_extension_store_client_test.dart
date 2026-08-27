@@ -583,6 +583,36 @@ void main() {
       expect(requested.first, direct);
     });
 
+    test('the total fetch budget stops the mirror walk early', () async {
+      final List<String> requested = <String>[];
+      DateTime clock = DateTime(2026, 1, 1);
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        fetchBudget: const Duration(seconds: 45),
+        now: () => clock,
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          clock = clock.add(const Duration(seconds: 20)); // 每次尝试烧掉 20s
+          throw const SocketException('direct timed out');
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore(direct),
+        throwsA(
+          isA<SocketException>().having(
+            (SocketException e) => e.message,
+            'message',
+            'direct timed out',
+          ),
+        ),
+      );
+      // 预算 45s、每次烧 20s：直连 + 2 个镜像后过点，剩下的镜像不再尝试——
+      // 没有总闸时这里会是 1 + 5 个镜像全轮一遍。
+      expect(requested.length, 3);
+      expect(requested.first, direct);
+    });
+
     test('302 hop to raw.githubusercontent.com gets its own fallback',
         () async {
       const String rawDirect =
