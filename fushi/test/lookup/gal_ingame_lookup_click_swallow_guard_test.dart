@@ -41,6 +41,9 @@ void main() {
   final String sgreLookupSource = File(
     '../native/galgame_hook/hook/adapters/sgre_lookup.inc',
   ).readAsStringSync();
+  final String siglusLookupSource = File(
+    '../native/galgame_hook/hook/adapters/siglus_lookup.inc',
+  ).readAsStringSync();
 
   test('direct galCard 在首帧 Reveal 事务中绑定游戏，桌面 route 默认不吞', () {
     final String direct = methodBody(
@@ -227,12 +230,8 @@ void main() {
     final int ownerForTarget = hookProc.indexOf(
       'GetPropW(target,kConsumeOutsideOwnerProperty)',
     );
-    final int pointSnapshot = hookProc.indexOf(
-      'WindowFromPoint(info->pt)',
-    );
-    final int insideFromSnapshot = hookProc.indexOf(
-      'point_window==target',
-    );
+    final int pointSnapshot = hookProc.indexOf('WindowFromPoint(info->pt)');
+    final int insideFromSnapshot = hookProc.indexOf('point_window==target');
     final int consumeFromSnapshot = hookProc.indexOf(
       'ShouldConsumeGameClientClick(target,consume_owner,point_window,info->pt)',
     );
@@ -555,7 +554,8 @@ void main() {
         'constboolshield_active=direct_shield||bitmap_popup_visible;',
       ),
       isTrue,
-      reason: 'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
+      reason:
+          'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
           '两条 route 的语义不同，不得折成「有没有卡」一问',
     );
     expect(
@@ -566,6 +566,156 @@ void main() {
       reason: '轴必须保持原值；被屏蔽的 down 必须一直锁存到 raw up',
     );
   });
+
+  test(
+    'Siglus direct WebView 以 Required/Ready/Window 屏蔽 GetKeyState 到 matching up',
+    () {
+      final String shared = compactCode(ipcHeader);
+      final String install = compactCode(
+        methodBody(siglusLookupSource, 'bool InstallSiglusLookupSensor()'),
+      );
+      final String detour = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'SHORT WINAPI Detour_SiglusGetKeyState(',
+        ),
+      );
+      final String messageDetour = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'void __stdcall Detour_SiglusInputMessage(',
+        ),
+      );
+      final String readyPublish = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'bool PublishSiglusSampledInputShieldReady()',
+        ),
+      );
+      final String validPopup = compactCode(
+        methodBody(
+          siglusLookupSource,
+          'HWND GetValidPublishedSiglusSampledInputShieldPopup(',
+        ),
+      );
+      final String tick = compactCode(
+        methodBody(siglusLookupSource, 'void ProcessSiglusLookupTick()'),
+      );
+
+      expect(
+        shared.contains('Fushi.Siglus.SampledInputShield.Required') &&
+            shared.contains('Fushi.Siglus.SampledInputShield.Ready') &&
+            shared.contains('Fushi.Siglus.SampledInputShield.Window'),
+        isTrue,
+        reason: 'Siglus 与 SGRE ABI 不同，属性命名必须独立但共享同一事务形状',
+      );
+      expect(
+        install.contains('PublishSiglusSampledInputShieldRequired()') &&
+            install.contains('HookFn(target,') &&
+            install.contains('PublishSiglusSampledInputShieldReady()') &&
+            install.indexOf('PublishSiglusSampledInputShieldRequired()') <
+                install.indexOf('HookFn(target,') &&
+            install.indexOf('PublishSiglusSampledInputShieldReady()') >
+                install.lastIndexOf('HookFn(target,'),
+        isTrue,
+        reason: 'Required 先声明 fail-closed，三个 exact hook 就绪后 Ready 才能最后提交',
+      );
+      expect(
+        readyPublish.contains(
+              'g_siglus_sampled_input_game_window.store(game',
+            ) &&
+            readyPublish.contains('SetPropW(') &&
+            readyPublish.indexOf(
+                  'g_siglus_sampled_input_game_window.store(game',
+                ) <
+                readyPublish.indexOf('SetPropW('),
+        isTrue,
+        reason: 'detour 的 game cache 必须先于跨进程 Ready commit 可见',
+      );
+      expect(
+        validPopup.contains('GetWindow(popup,GW_OWNER)!=game') &&
+            validPopup.contains('FushiGlobalLookupWindow'),
+        isTrue,
+        reason: '陈旧或伪造 popup HWND 不得屏蔽游戏输入',
+      );
+      expect(
+        detour.contains(
+              'GetValidPublishedSiglusSampledInputShieldPopup(published_game)',
+            ) &&
+            detour.contains(
+              'IsSiglusSampledInputShieldReadyPublished(published_game)',
+            ) &&
+            detour.contains(
+              'constboolpopup_shield=direct_shield||bitmap_popup_visible;',
+            ) &&
+            detour.contains(
+              'AdvanceSiglusLookupClickSample(button_down,popup_shield,',
+            ),
+        isTrue,
+        reason: 'direct WebView 与 bitmap fallback 都必须进入既有完整 click owner 状态机',
+      );
+      final int popupShield = detour.indexOf(
+        'constboolpopup_shield=direct_shield||bitmap_popup_visible;',
+      );
+      final int exactPollerGate = detour.indexOf('if(!admitted_lookup_poller)');
+      expect(popupShield, greaterThanOrEqualTo(0));
+      expect(exactPollerGate, greaterThan(popupShield));
+      expect(
+        detour.contains('g_siglus_lookup_left_button_filter_latched.load(') &&
+            detour.contains(
+              'FilterSiglusLookupGetKeyState('
+              'raw,popup_shield||lookup_press_latched)',
+            ) &&
+            detour.contains(
+              'if(decision.consume){'
+              'g_siglus_lookup_left_button_filter_latched.store(true',
+            ) &&
+            detour.contains(
+              'if(!button_down){'
+              'g_siglus_lookup_left_button_filter_latched.store(false',
+            ),
+        isTrue,
+        reason:
+            'Siglus 的其它 VK_LBUTTON 消费点必须在 exact poller 早退之前看见 WebView shield；'
+            '正文命中的 down 也必须跨 caller 锁存到 exact raw up',
+      );
+      expect(
+        install.contains('.input_message_rva') &&
+            install.contains('MatchesSiglusInputMessageEntry(target)') &&
+            install.contains('Detour_SiglusInputMessage') &&
+            install.contains('g_orig_SiglusInputMessage==nullptr'),
+        isTrue,
+        reason: 'Ready 前必须安装 Siglus 自己的 WM_LBUTTON 剧情边沿写入点',
+      );
+      expect(
+        messageDetour.contains(
+              'return_address-module!='
+              'profile.main_input_message_return_rva',
+            ) &&
+            messageDetour.contains('DecideSiglusLookupMouseMessage(') &&
+            messageDetour.contains(
+              'g_siglus_lookup_message_left_button_latched.store(',
+            ) &&
+            messageDetour.contains(
+              'if(decision.consume){'
+              'g_siglus_lookup_left_button_filter_latched.store(true',
+            ) &&
+            messageDetour.contains('return;}original(message,wparam,lparam);'),
+        isTrue,
+        reason:
+            '只允许主 HWND 的 exact caller 吞正文/弹窗事务；'
+            '命中后 DOWN 到 matching UP 都不能写入游戏的剧情推进状态',
+      );
+      expect(
+        tick.contains('constboolpopup_visible=') &&
+            tick.contains('direct_popup_visible') &&
+            tick.contains('if(!popup_visible)') &&
+            tick.contains('||popup_visible||!game_point'),
+        isTrue,
+        reason: 'WebView 显示期间不能继续发布正文 click target 或接受 Shift 新查词',
+      );
+    },
+  );
 
   test('Fushi 只在 helper ready 后发布 popup HWND，Hide/down-up 生命周期不 ABA', () {
     final String directPublish = compactCode(
@@ -603,21 +753,19 @@ void main() {
     );
 
     expect(
-      directPublish.contains('kSgreDirectInputShieldRequiredProperty') &&
-          directPublish.contains('kSgreDirectInputShieldRequiredValue') &&
-          directPublish.contains('kSgreDirectInputShieldReadyProperty') &&
-          directPublish.contains('kSgreDirectInputShieldReadyValue') &&
-          directPublish.contains('SetPropW(game,') &&
-          directPublish.contains('kSgreDirectInputShieldWindowProperty') &&
+      hookSource.contains('kSgreSampledInputShieldContract') &&
+          hookSource.contains('kSiglusSampledInputShieldContract') &&
+          directPublish.contains('SelectSampledInputShieldContract(') &&
+          directPublish.contains('SetPropW(game,contract->window_property') &&
           directPublish.contains(
-            'IsSgreDirectInputShieldContractReady(game)',
+            'IsSelectedSampledInputShieldContractReady(game,contract)',
           ) &&
-          directPublish.contains(
-            'GetPropW(game,fushi_voice_hook::kSgreDirectInputShieldWindowProperty)',
-          ) &&
+          directPublish.contains('GetPropW(game,contract->window_property)') &&
           directPublish.contains('returnfalse;'),
       isTrue,
-      reason: '同完整性 SetProp 失败（含 UIPI）必须在 popup 上屏前 fail closed',
+      reason:
+          'SGRE/Siglus 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
+          '必须在 popup 上屏前 fail closed',
     );
     final int publish = directArm.indexOf(
       'PublishDirectInputShieldIfReady(target,consume_outside_owner)',
@@ -661,9 +809,7 @@ void main() {
     );
     expect(
       barrier.contains('returnHookThreadBarrierResult::kNotQueued;') &&
-          barrier.contains(
-            'returnHookThreadBarrierResult::kQueuedPending;',
-          ) &&
+          barrier.contains('returnHookThreadBarrierResult::kQueuedPending;') &&
           barrier.contains('returnHookThreadBarrierResult::kCrossed;') &&
           disarm.contains('barrier!=HookThreadBarrierResult::kQueuedPending'),
       isTrue,

@@ -55,6 +55,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/siglus_lookup.h"
+  "hook/adapters/siglus_lookup.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
@@ -92,6 +94,12 @@ add_executable(fushi_siglus_text_test
 )
 target_include_directories(fushi_siglus_text_test PRIVATE "hook")
 add_test(NAME fushi_siglus_text_test COMMAND fushi_siglus_text_test)
+
+add_executable(fushi_siglus_lookup_test
+  "tests/siglus_lookup_test.cpp"
+)
+target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
+add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
 
 add_executable(fushi_resource_audio_ready_test
   "tests/resource_audio_ready_test.cpp"

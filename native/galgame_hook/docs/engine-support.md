@@ -8,7 +8,7 @@
 
 | ID | 引擎 / 后端 | 状态 | 文本 | 音频优先级 | 已验证样本 |
 |---|---|---|---|---|---|
-| `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
@@ -46,6 +46,7 @@
 
 - `engine_exact_utf16_hook`：`implemented_unverified` — The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record.
 - `luna_hook`：`implemented_unverified` — Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline.
+- `ingame_lookup_geometry`：`implemented_unverified` — An exact-profile implementation now covers the recorded anemoi formal-release SiglusEngine 1.1.141.3 x86 executable (SHA-256 D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059): admitted glyph and GetKeyState callsites reconstruct UTF-16 per-glyph geometry, scale the fixed 1920x1080 design surface into the live client, and publish both single-click and Shift-hover submissions through the shared LookupHitSlot path. Popup-owned button transactions remain consumed through the matching release, including the generic bitmap-presenter fallback. tests/siglus_lookup_test.cpp pins exact-profile rejection, multiline and wrapped geometry, stale-capture selection, DPI/client scaling, bounded capture, click ownership, and Shift edge behavior. This is offline implementation evidence only; an original-path lookup and card-mining E2E is not recorded, so the capability remains implemented_unverified.
 - codepage：utf-16le for the exact engine path
 - 线程提示：Prefer the engine exact-text source when observed; otherwise select the stable Luna dialogue thread.
 
@@ -64,10 +65,11 @@
 - Verification is specific to the recorded x86 sample and OVK layout.
 - Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.
 - The exact-text hook is implemented but is not promoted to verified by this baseline.
+- In-game lookup geometry and input interception are exact-profile-only for the recorded anemoi x86 executable hash; native offline coverage does not replace an original-path lookup and card-mining E2E.
 
 Fixtures：尚无（P5 补齐）
 
-Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`
+Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`、`tests/siglus_lookup_test.cpp`
 
 ### elf AI6 (`elf_ai6`)
 

@@ -50,6 +50,7 @@
 #include "ffmpeg_runtime.h"
 #include "hook_original_registry.h"
 #include "siglus_ovk.h"
+#include "adapters/siglus_lookup.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
 #include "unity_text_mesh_reassembler.h"
@@ -545,6 +546,7 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapters/kirikiri_adapter.inc"
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"
+#include "adapters/siglus_lookup.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
 

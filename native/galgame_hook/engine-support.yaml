@@ -111,6 +111,11 @@
             "kind": "luna_hook",
             "status": "implemented_unverified",
             "verification": "Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "An exact-profile implementation now covers the recorded anemoi formal-release SiglusEngine 1.1.141.3 x86 executable (on-disk SHA-256 D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059; the shipped launcher virtualizes in-process self-reads to its same-size .org image with SHA-256 28FD4B910846CA5E2ECA924CA3FCFC1E9E69C1B1AD7181D2E0C66B85CC59A486, and both exact digests belong to this one profile): admitted glyph and GetKeyState callsites reconstruct UTF-16 per-glyph geometry, scale the fixed 1920x1080 design surface into the live client, and publish both single-click and Shift-hover submissions through the shared LookupHitSlot path. Popup-owned button transactions remain consumed through the matching release, including the generic bitmap-presenter fallback. tests/siglus_lookup_test.cpp pins exact-profile rejection, both exact identity views, multiline and wrapped geometry, stale-capture selection, DPI/client scaling, bounded capture, click ownership, and Shift edge behavior. This is offline implementation evidence only; an original-path lookup and card-mining E2E is not recorded, so the capability remains implemented_unverified."
           }
         ],
         "codepage": "utf-16le for the exact engine path",
@@ -152,14 +157,16 @@
       "known_limitations": [
         "Verification is specific to the recorded x86 sample and OVK layout.",
         "Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.",
-        "The exact-text hook is implemented but is not promoted to verified by this baseline."
+        "The exact-text hook is implemented but is not promoted to verified by this baseline.",
+        "In-game lookup geometry and input interception are exact-profile-only for the recorded anemoi x86 executable hash plus its measured virtualized .org self-read hash; native offline coverage does not replace an original-path lookup and card-mining E2E."
       ],
       "adapter_path": "hook/adapters/siglus_adapter.inc",
       "fixture_paths": [],
       "test_paths": [
         "tests/siglus_ovk_test.cpp",
         "tests/siglus_launch_test.cpp",
-        "tests/siglus_text_test.cpp"
+        "tests/siglus_text_test.cpp",
+        "tests/siglus_lookup_test.cpp"
       ]
     },
     {

@@ -128,6 +128,10 @@ void FlushGlyphAccumLocked() {
 
 #if defined(_M_IX86)
 
+void ObserveSiglusLookupExactText(const wchar_t* text, uint32_t text_units,
+                                  uint64_t callsite_rva,
+                                  uintptr_t function_rva);
+
 // Siglus 3 使用与 32 位 MSVC std::wstring 相同的 24-byte 小字符串布局。当前 Luna 的
 // EmbedSiglus2 也从该函数入口的 ECX 读取此对象；在引擎逻辑层拿整句可彻底避开 GDI
 // 描边/逐字重画造成的重复字与漏标点。
@@ -204,6 +208,9 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
     _snwprintf_s(hook_code, kTextHookCodeChars, _TRUNCATE,
                  L"EXBWX0@%llX:SiglusEngine.exe",
                  static_cast<unsigned long long>(g_siglus_text_function_rva));
+
+    ObserveSiglusLookupExactText(text, length, callsite_rva,
+                                 g_siglus_text_function_rva);
 
     EnterCriticalSection(&g_text_cs);
     WriteTextRingEntryLocked(

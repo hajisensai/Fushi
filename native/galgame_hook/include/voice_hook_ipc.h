@@ -101,6 +101,22 @@ inline constexpr wchar_t kSgreDirectInputShieldWindowProperty[] =
 inline constexpr uintptr_t kSgreDirectInputShieldReadyValue = 1u;
 inline constexpr uintptr_t kSgreDirectInputShieldRequiredValue = 1u;
 
+// Exact anemoi/Siglus uses GetKeyState(VK_LBUTTON) as an immediate sampled
+// input source.  WH_MOUSE_LL can remove Win32 mouse messages, but it cannot
+// change that physical key-state sample, so the direct WebView route needs the
+// same fail-closed Required -> Ready -> Window publication shape as SGRE.  Keep
+// a distinct property namespace: the admitted hook ABI is GetKeyState rather
+// than DIMOUSESTATE2, and an old host that only understands SGRE must not
+// mistake one contract for the other.
+inline constexpr wchar_t kSiglusSampledInputShieldReadyProperty[] =
+    L"Fushi.Siglus.SampledInputShield.Ready";
+inline constexpr wchar_t kSiglusSampledInputShieldRequiredProperty[] =
+    L"Fushi.Siglus.SampledInputShield.Required";
+inline constexpr wchar_t kSiglusSampledInputShieldWindowProperty[] =
+    L"Fushi.Siglus.SampledInputShield.Window";
+inline constexpr uintptr_t kSiglusSampledInputShieldReadyValue = 1u;
+inline constexpr uintptr_t kSiglusSampledInputShieldRequiredValue = 1u;
+
 // v16 native loopback policy/control ABI. Only the exact value 1 authorises
 // creation of the loopback worker; zero and every unknown value are deny.
 constexpr uint32_t kNativeLoopbackDeny = 0;
@@ -495,9 +511,27 @@ constexpr uint32_t kLookupDiagCardPlainFallback = 0x00100000u;
 // 随后才逐条 InsertHook；同一入口还要叠加原生查词 detour 时，必须等到这一步完成才能稳定链式
 // 安装，不能拿“管道已连上”冒充“目标地址已改写”。
 constexpr uint32_t kLookupDiagLunaKnownHookReady = 0x00200000u;
-// 精确 SGRE profile 的 DirectInput mouse GetDeviceState detour 已装，且 ready
-// property 已发布到当前游戏主窗。它只证明输入盾可被 host 启用，不声称 popup 正显示。
-constexpr uint32_t kLookupDiagSgreDirectInputShieldReady = 0x00400000u;
+// 精确 profile 的 sampled-input detour 已装，且 ready property 已发布到当前游戏
+// 主窗。SGRE 的实现是 DirectInput GetDeviceState，Siglus 的实现是 GetKeyState；该位只
+// 证明 host 可以安全启用对应输入盾，不声称 popup 正显示。保留旧 SGRE 名为 ABI/源码
+// 兼容别名。
+constexpr uint32_t kLookupDiagSampledInputShieldReady = 0x00400000u;
+constexpr uint32_t kLookupDiagSgreDirectInputShieldReady =
+    kLookupDiagSampledInputShieldReady;
+// Exact anemoi/Siglus 1.1.141.3 lookup gates. Keep identity, installation,
+// and live observations separate so a real-process probe identifies the first
+// failed boundary without inferring it from a missing popup.
+constexpr uint32_t kLookupDiagSiglusProfileMatched = 0x00800000u;
+constexpr uint32_t kLookupDiagSiglusGlyphHookReady = 0x01000000u;
+constexpr uint32_t kLookupDiagSiglusGetKeyStateHookReady = 0x02000000u;
+constexpr uint32_t kLookupDiagSiglusGlyphObserved = 0x04000000u;
+constexpr uint32_t kLookupDiagSiglusGetKeyStateObserved = 0x08000000u;
+// Exact-profile admission diagnostics. These keep the shared layout/version
+// unchanged while making fail-closed identity rejection observable.
+constexpr uint32_t kLookupDiagSiglusProfileChecked = 0x10000000u;
+constexpr uint32_t kLookupDiagSiglusExecutableRead = 0x20000000u;
+constexpr uint32_t kLookupDiagSiglusHashMatched = 0x40000000u;
+constexpr uint32_t kLookupDiagSiglusMachineMatched = 0x80000000u;
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
