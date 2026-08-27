@@ -3019,7 +3019,7 @@ function createEntryHeader(entry, idx) {
         }
     };
     const mineButton = el('button', {
-        className: 'mine-button',
+        className: 'inline-action-button mine-button',
         textContent: '+',
         ontouchstart: () => {
             lastSelection = __fushiSel()?.toString() || '';
