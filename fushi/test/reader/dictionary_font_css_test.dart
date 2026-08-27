@@ -47,6 +47,123 @@ void main() {
     expect(result.fontFamily, '"Good"');
   });
 
+  group('fontUrlBuilder（URL 模式：让静态段不再扛着字体走）', () {
+    // 为什么需要它：内联 data: URL 把字体塞进了「每次渲染都要重新注入的那段脚本」。
+    // 两个 CJK 字体 base64 后三十多 MB，而 in-app 弹窗每嵌套一层就新建 WebView
+    // （新 realm，静态段必须重发）——于是在弹窗里每点一次词就重传三十多 MB。
+    // URL 模式把脚本降到 KB 级，字节由宿主拦截器按需供、并跨 WebView 共享 HTTP 缓存。
+
+    test('产出 URL 而非 data:，且完全不含 base64 字节', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'hibiki_dictfont_url',
+      );
+      addTearDown(() async {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      final File fontFile = File('${dir.path}/MyFont.ttf');
+      await fontFile.writeAsBytes(<int>[0x00, 0x01, 0x02, 0x03]);
+
+      final result = DictionaryFontCss.build(
+        <Map<String, dynamic>>[_e('MyFont', path: fontFile.path)],
+        allowedDirectories: <String>[dir.path],
+        fontUrlBuilder: (String safePath) =>
+            'https://fushi.local/dictfonts/${Uri.encodeComponent(safePath)}',
+      );
+
+      expect(result.fontFamily, '"MyFont"');
+      expect(result.fontFaces, contains('@font-face'));
+      expect(result.fontFaces, contains('https://fushi.local/dictfonts/'));
+      expect(result.fontFaces, contains('format("truetype")'));
+      // 关键：一个 base64 字节都不许出现，否则这条路就白走了。
+      expect(result.fontFaces, isNot(contains('base64')));
+      expect(result.fontFaces, isNot(contains('AAECAw==')));
+    });
+
+    test('与内联模式产出同一组 families（门槛必须一致）', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'hibiki_dictfont_parity',
+      );
+      addTearDown(() async {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      final File ok = File('${dir.path}/Good.ttf');
+      await ok.writeAsBytes(<int>[1, 2, 3, 4]);
+      final List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[
+        _e('SystemOne'),
+        _e('Good', path: ok.path),
+        _e('Missing', path: '${dir.path}/nope.ttf'),
+        _e('BadExt', path: '${dir.path}/x.bin'),
+      ];
+
+      final inlined = DictionaryFontCss.build(
+        fonts,
+        allowedDirectories: <String>[dir.path],
+      );
+      final urled = DictionaryFontCss.build(
+        fonts,
+        allowedDirectories: <String>[dir.path],
+        fontUrlBuilder: (String safePath) => 'https://x/$safePath',
+      );
+
+      expect(urled.fontFamily, inlined.fontFamily,
+          reason: '同一份字体列表在两种模式下必须选出同一组字体，'
+              '否则换平台就会多一条/少一条，变成极难查的显示差异');
+      expect(urled.families, inlined.families);
+    });
+
+    test('文件不存在 / 超上限时同样跳过（只 stat，不读内容）', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'hibiki_dictfont_skip',
+      );
+      addTearDown(() async {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      final File big = File('${dir.path}/Big.ttf');
+      await big.writeAsBytes(List<int>.filled(64, 7));
+
+      final missing = DictionaryFontCss.build(
+        <Map<String, dynamic>>[_e('Missing', path: '${dir.path}/nope.ttf')],
+        allowedDirectories: <String>[dir.path],
+        fontUrlBuilder: (String safePath) => 'https://x/$safePath',
+      );
+      expect(missing.fontFaces, isEmpty);
+      expect(missing.fontFamily, isEmpty);
+
+      final tooBig = DictionaryFontCss.build(
+        <Map<String, dynamic>>[_e('Big', path: big.path)],
+        allowedDirectories: <String>[dir.path],
+        maxFileBytes: 8,
+        fontUrlBuilder: (String safePath) => 'https://x/$safePath',
+      );
+      expect(tooBig.fontFaces, isEmpty,
+          reason: 'URL 模式也必须尊重 maxFileBytes，门槛与内联模式一致');
+    });
+
+    test('白名单之外的路径不得产出 URL（越权读盘的入口不能因换模式而放开）',
+        () async {
+      final Directory allowed = await Directory.systemTemp.createTemp(
+        'hibiki_dictfont_allow',
+      );
+      final Directory other = await Directory.systemTemp.createTemp(
+        'hibiki_dictfont_other',
+      );
+      addTearDown(() async {
+        if (allowed.existsSync()) await allowed.delete(recursive: true);
+        if (other.existsSync()) await other.delete(recursive: true);
+      });
+      final File outside = File('${other.path}/Outside.ttf');
+      await outside.writeAsBytes(<int>[9, 9, 9, 9]);
+
+      final result = DictionaryFontCss.build(
+        <Map<String, dynamic>>[_e('Outside', path: outside.path)],
+        allowedDirectories: <String>[allowed.path],
+        fontUrlBuilder: (String safePath) => 'https://x/$safePath',
+      );
+      expect(result.fontFaces, isEmpty);
+      expect(result.fontFamily, isEmpty);
+    });
+  });
+
   test(
     'imported file inside the allowed dir → base64 data: @font-face',
     () async {

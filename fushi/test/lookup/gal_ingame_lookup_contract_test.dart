@@ -186,6 +186,23 @@ void main() {
       expect(received!.wheel, -120);
       expect(received!.keys, 8);
     });
+
+    test('onGalLookupInput 保留位图卡外关闭控制 kind', () async {
+      GalLookupInput? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onGalLookupInput: (GalLookupInput input) => received = input,
+      );
+      await invokeFromNative('onGalLookupInput', <String, Object?>{
+        'seq': 8,
+        'x': 0,
+        'y': 0,
+        'kind': GalLookupInput.dismissOutsideKind,
+        'wheel': 0,
+        'keys': 0,
+      });
+      expect(received, isNotNull);
+      expect(received!.kind, GalLookupInput.dismissOutsideKind);
+    });
   });
 
   group('定位：卡片必须整张留在游戏画面里', () {

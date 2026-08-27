@@ -90,6 +90,17 @@ try {
     )
     Copy-Tree (Join-Path $overlayRoot "overlay") $sourceRoot
 
+    # 把 vendored 的 org.jogamp 离线 Maven 仓库搬进构建树。补丁后的 build.gradle.kts
+    # 用 `rootProject.file("hibiki-offline-maven/jogamp")` 找它，目录在就离线解析、
+    # 不在就回落到两个远端镜像（见 third_party/jogamp/UPSTREAM：那两个主机分别在
+    # 2026-08-09 和 2026-08-25 把 CI 弄红过，而 Maven Central 根本没有 2.5.0）。
+    # 路径必须与补丁里的字面量一致，守卫 fushi/test/build/mihon_vendored_jogamp_guard_test.dart。
+    $jogampRepo = Join-Path $repositoryRoot "third_party\jogamp"
+    if (-not (Test-Path -LiteralPath (Join-Path $jogampRepo "org\jogamp\jogl\jogl-all\2.5.0\jogl-all-2.5.0.jar") -PathType Leaf)) {
+        throw "Vendored org.jogamp repository is missing at $jogampRepo"
+    }
+    Copy-Tree (Join-Path $jogampRepo "org") (Join-Path $sourceRoot "hibiki-offline-maven\jogamp\org")
+
     $archivePath = Join-Path $resolvedCache $temurinArchive
     if (-not (Test-Path -LiteralPath $archivePath)) {
         Invoke-WebRequest -Uri $temurinUrl -OutFile $archivePath

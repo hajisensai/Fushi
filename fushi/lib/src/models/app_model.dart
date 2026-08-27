@@ -2932,8 +2932,8 @@ class AppModel with ChangeNotifier {
   Map<String, String> browserExtensionThemeColors() {
     final ColorScheme s = themeNotifier.buildColorScheme(
         themeNotifier.isDarkMode ? Brightness.dark : Brightness.light);
-    // Niratan 对齐（2026-08-23）：默认卡面纯白/纯黑（popupCardSurface），
-    // 不再用 tinted scheme.surface；override 优先级不变。
+    // 卡面底色跟随主题 scheme.surface（popupCardSurface 单一真源），
+    // override 优先级不变。
     final Color bgColor =
         popupCardSurface(scheme: s, override: _overrideDictionaryColor);
     // BUG-736：核心色/圆角/列数变量的取值统一来自 buildPopupThemeCssVars——与 in-app
@@ -3929,17 +3929,14 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  /// 当前新任务必须绑定的真实后端**实例身份**。UI 只保存此快照，流水线执行时
-  /// 还会再次对比 kind/profile/fingerprint，配置切换后不会被另一实例隐式接管。
-  /// 分类不在身份里（BUG-1879），要新任务的落点请用
-  /// [currentVideoDownloadBackendTarget]。
-  Future<VideoDownloadBackendIdentity> currentVideoDownloadBackendIdentity() =>
-      _currentVideoDownloadBackendIdentity(
-        effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
-      );
-
-  /// 当前新任务的落点：后端实例身份 + 此刻设置里的投放分类。分类会被快照进
-  /// 新任务行，之后该任务始终用自己那一份，不再与当前设置比较。
+  /// 当前新任务的落点：后端实例身份 + 此刻设置里的投放分类。UI 只保存此快照，
+  /// 流水线执行时还会再次对比 kind/profile/fingerprint，配置切换后不会被另一
+  /// 实例隐式接管；分类则被快照进任务行，之后该任务始终用自己那一份，不再与
+  /// 当前设置比较（BUG-1879）。
+  ///
+  /// 这里**只暴露落点**：裸身份没有「往哪投」，曾经的
+  /// `currentVideoDownloadBackendIdentity()` 让调用方能拿到一个缺分类的落点，
+  /// 已随 BUG-1879 一并删除，别再加回来。
   Future<VideoDownloadBackendTarget> currentVideoDownloadBackendTarget() async {
     final QbConnectionConfig config =
         effectiveTorrentConfig(prefsRepo.qbConnectionConfig);

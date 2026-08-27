@@ -245,9 +245,10 @@ void main() {
     );
     expect(
       reveal,
-      contains('Reveal(screen_width, screen_height, false)'),
+      contains('Reveal(screen_width, screen_height, false, game)'),
       reason:
-          'game viewport geometry must not be clamped again to desktop rcWork',
+          'game viewport geometry must not be clamped again to desktop rcWork; '
+          'the direct reveal transaction also binds its game HWND for click swallowing',
     );
 
     final String present = functionBody(

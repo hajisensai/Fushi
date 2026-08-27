@@ -10,120 +10,13 @@
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
-[![คู่มือผู้ใช้](https://img.shields.io/badge/%F0%9F%93%96%20%E0%B8%84%E0%B8%B9%E0%B9%88%E0%B8%A1%E0%B8%B7%E0%B8%AD%E0%B8%9C%E0%B8%B9%E0%B9%89%E0%B9%83%E0%B8%8A%E0%B9%89-0969DA?style=for-the-badge)](../user-guide.th.md)
+[![fushi.moe](https://img.shields.io/badge/%F0%9F%8C%90%20fushi.moe-0969DA?style=for-the-badge)](https://fushi.moe/)
 
-**ไม่ต้องตั้งค่ายุ่งยาก** — นำเข้าพจนานุกรมและเสียงที่แนะนำได้ในขั้นตอนเดียว
-
-[![ดาวน์โหลดเวอร์ชันล่าสุด](https://img.shields.io/badge/%E2%AC%87%20%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94%E0%B9%80%E0%B8%A7%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%B1%E0%B8%99%E0%B8%A5%E0%B9%88%E0%B8%B2%E0%B8%AA%E0%B8%B8%E0%B8%94-2EA44F?style=for-the-badge)](https://github.com/hajisensai/Fushi/releases)
+[![ดาวน์โหลดเวอร์ชันล่าสุด](https://img.shields.io/badge/%E2%AC%87%20%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94%E0%B9%80%E0%B8%A7%E0%B8%AD%E0%B8%A3%E0%B9%8C%E0%B8%8A%E0%B8%B1%E0%B8%99%E0%B8%A5%E0%B9%88%E0%B8%B2%E0%B8%AA%E0%B8%B8%E0%B8%94-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![เข้าร่วม Discord](https://img.shields.io/badge/%E0%B9%80%E0%B8%82%E0%B9%89%E0%B8%B2%E0%B8%A3%E0%B9%88%E0%B8%A7%E0%B8%A1%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 
-> **ดูสิ่งที่อยากดู แล้วเรียนรู้ภาษาไปในตัว**
-
-Fushi เปลี่ยนนิยายที่คุณอ่าน ซีรีส์ที่คุณติดตาม และหนังสือเสียงที่คุณฟัง ให้กลายเป็นอินพุตทางภาษาของคุณ — แตะคำที่ไม่รู้จักเพื่อค้นหา แล้วแตะอีกครั้งเดียวเพื่อทำเป็นการ์ด Anki พร้อมบริบทต้นฉบับ มันไม่ได้บังคับให้คุณท่องรายการคำที่กำหนดไว้ล่วงหน้า แต่ช่วยให้คุณคว้าคำที่คุณ**ได้อ่านและได้ยินจริง ๆ**
-
-วิธีเรียนภาษาที่ได้ผลที่สุดคือการสัมผัสเนื้อหาจริงในปริมาณมาก ไม่ใช่ท่องคำโดด ๆ จากหนังสือคำศัพท์ แต่ "การดื่มด่ำ" มักมีสองเรื่องน่ารำคาญเสมอ คือ การค้นคำทำให้สมาธิขาดตอน และพอละสายตาก็ลืม Fushi เชื่อมต่อวงจรนี้เข้าด้วยกัน —
-
-📖 **อ่าน**: แตะคำในโปรแกรมอ่าน EPUB เพื่อค้นหา โดยไม่ต้องออกจากหน้าปัจจุบัน<br>
-🎧 **ฟัง**: หนังสือเสียงไฮไลต์ตามทีละประโยคและพลิกหน้าให้อัตโนมัติ<br>
-🎬 **ดู**: ค้นคำและทำการ์ดได้จากคำบรรยายวิดีโอโดยตรง — การติดตามซีรีส์ก็*คือ*อินพุต<br>
-🃏 **สะสม**: ส่งคำที่ค้นจากทุกสถานการณ์เข้า Anki ด้วยปุ่มเดียว แล้วทบทวนเฉพาะคำที่คุณพบจริง ๆ
-
-ทุกสถานการณ์ใช้พจนานุกรม สถิติ และกระบวนการทบทวนชุดเดียวกัน เหมาะกับทุกภาษา (ญี่ปุ่น อังกฤษ …) โดยเฉพาะผู้เรียนแบบดื่มด่ำที่เชื่อใน**การรับอินพุตปริมาณมาก + ท่องเฉพาะการ์ดที่ทำเอง** รองรับ Android และ Windows (iOS, macOS อยู่ระหว่างวางแผน)
-
-<table>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-bookshelf-en.png" alt="ชั้นหนังสือ" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-library-en.png" alt="คลังวิดีโอ" width="100%"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="../static-assets/screenshots/fushi-readme-reader-vertical-lookup.png" alt="การอ่านแนวตั้งบนเดสก์ท็อปพร้อมป๊อปอัปค้นคำ" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-nested.png" alt="การค้นคำในวิดีโอ (ป๊อปอัปซ้อน)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-video-lookup-subtitle.png" alt="การค้นคำในวิดีโอ (รายการคำบรรยาย)" width="100%"></td>
-  </tr>
-  <tr>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-mobile.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (มือถือ)" width="100%"></td>
-    <td><img src="../static-assets/screenshots/fushi-readme-out-of-app-lookup-desktop.png" alt="การค้นคำด้วยการเลือกข้อความนอกแอป (เดสก์ท็อป)" width="100%"></td>
-  </tr>
-</table>
-
-**เดโมการสร้างการ์ด Anki ด้วยการแตะครั้งเดียว**
-
-<!-- GitHub only renders <video> tags whose src is a user-attachments uuid URL
-     (uploaded via the web editor); raw repo links stay blank. Inline GIF is the
-     conventional workaround. To restore a real inline player, upload the mp4 in
-     the GitHub web editor and replace the img below with the generated
-     https://github.com/user-attachments/assets/<uuid> video tag. -->
-<img src="../static-assets/screenshots/fushi-readme-anki-mining-demo.gif" alt="One-tap Anki mining demo" width="100%">
-
-<sub>[ดูเดโมการสร้างการ์ดในคลิกเดียว ▶](https://github.com/hajisensai/Fushi/raw/main/docs/static-assets/screenshots/fushi-readme-anki-mining-demo.mp4)</sub>
 </div>
 
-## คุณสมบัติ
-
-### ชั้นหนังสือ
-
-- นำเข้า EPUB ทีละไฟล์ เป็นชุด หรือแบบเรียกซ้ำตามโฟลเดอร์ ดูความคืบหน้าการอ่านบนชั้นหนังสือ
-- จัดระเบียบหนังสือด้วยชั้นหนังสือที่กำหนดเอง การกรองด้วยแท็ก และการลากเพื่อจัดเรียงใหม่
-- ลากและวางไฟล์เพื่อนำเข้าหนังสือ คำบรรยาย หรือวิดีโอ (เดสก์ท็อป)
-- เชื่อมโยงไฟล์คำบรรยาย / เสียงที่มีชื่อเดียวกันโดยอัตโนมัติเมื่อนำเข้า
-
-### การอ่าน
-
-- อ่านแบบแนวตั้งหรือแนวนอน สลับระหว่างโหมดแบ่งหน้าและโหมดเลื่อนต่อเนื่อง
-- ปรับแต่งธีม (สว่าง / มืด / ดำสนิท / กำหนดเอง) แบบอักษร ระยะห่างย่อหน้า และตัวควบคุมของโปรแกรมอ่าน
-- คำอ่านกำกับ Furigana (ふりがな)
-- ปรับขนาดส่วนติดต่อผู้ใช้ได้ ตัวควบคุมแถบล่างจะปรับตามขนาด
-- โปรไฟล์ผู้ใช้หลายคน (Profile) สลับอัตโนมัติตามหนังสือ
-
-### การค้นคำ
-
-- นำเข้าพจนานุกรม [Yomitan](https://github.com/yomidevs/yomitan) (เดิมคือ Yomichan) ABBYY Lingvo (DSL) MDict (MDX) และ Migaku
-- แตะข้อความในโปรแกรมอ่านเพื่อค้นคำ ค้นหาในหน้าพจนานุกรม หรือแชร์ข้อความจากแอปอื่น
-- การแยกรูปคำ (deinflection) ครอบคลุม **ทุกภาษาของตารางการแปลงรูปของ Yomitan** + การปรับมาตรฐานข้อความก่อนค้นคำ (ตัวพิมพ์ / เครื่องหมายกำกับเสียง / harakat ภาษาอาหรับ) ขับเคลื่อนด้วยจุดรหัส (code points) โดยไม่ต้องสลับภาษา
-- แตะคำภายในคำนิยามเพื่อค้นคำแบบเรียกซ้ำ (ป๊อปอัปซ้อน)
-- การค้นหลายพจนานุกรมพร้อมกัน การจัดลำดับความสำคัญและการเปิด/ปิดแหล่งย่อย คำอ่านกำกับระดับเสียง (pitch-accent) และความถี่
-- เสียงคำทั้งแบบออนไลน์และในเครื่อง
-- แทรก CSS ที่กำหนดเอง
-
-### ไฮไลต์และสถิติ
-
-- เพิ่มไฮไลต์ห้าสีขณะอ่าน กระโดดไปยังไฮไลต์ใดก็ได้ทุกเมื่อ
-- สถิติการอ่าน: จำนวนอักขระที่อ่าน ระยะเวลา ความเร็วในการอ่าน แสดงแบบเรียลไทม์ขณะอ่าน
-- สถิติวิดีโอ: เวลาในการรับชม การ์ดที่สร้าง และรายการโปรด
-
-### การสร้างการ์ด Anki
-
-- สร้างการ์ดผ่าน [AnkiDroid](https://github.com/ankidroid/Anki-Android) หรือ AnkiConnect
-- มีประเภทบันทึก [Lapis](https://github.com/donkuri/lapis) ในตัว (vendored 1.7.0) สร้างเทมเพลตการ์ดและสำรับภายในแอปด้วยการแตะครั้งเดียว
-- เติมประโยคบริบทอัตโนมัติ การบันทึกเสียงและการครอบตัดภาพหน้าจอ
-- โปรไฟล์การส่งออกหลายชุด (Profile) และการจับคู่ฟิลด์ที่กำหนดเอง
-- คำโปรด การ์ดที่สร้างและรายการโปรดจะถูกนับรวมในสถิติ
-
-### การซิงก์หนังสือเสียง (Sasayaki)
-
-- รองรับคำบรรยาย SRT / LRC / VTT / ASS จับคู่ข้อความคำบรรยายกับเนื้อหา EPUB โดยอัตโนมัติ
-- การไฮไลต์ประโยคตามการเล่นและการเปลี่ยนหน้าอัตโนมัติระหว่างเล่น
-- ความเร็วในการเล่น การกระโดดตำแหน่ง และตัวควบคุมสื่อของระบบ
-- "เล่นจากประโยคนี้" พร้อมการเล่นต่อข้ามบทอย่างราบรื่น
-
-### การค้นคำจากคำบรรยายวิดีโอ
-
-- เครื่องเล่นวิดีโอในตัวที่ใช้ [media_kit](https://github.com/media-kit/media-kit) (แกนหลัก libmpv)
-- คำบรรยายแบบฝัง (แทร็กข้อความ + กราฟิก) และแบบภายนอก การนำเข้ารายการเล่น .m3u8
-- ค้นคำและสร้างการ์ดจากคำบรรยายได้โดยตรงระหว่างเล่น
-- การจัดการคลังวิดีโอ การกรองด้วยแท็ก การจัดกลุ่มเป็นซีรีส์ และการดำเนินการเป็นชุด
-
-### การซิงก์ข้อมูล
-
-- แบ็กเอนด์การซิงก์เจ็ดแบบ: Google Drive, OneDrive, Dropbox, WebDAV, FTP, SFTP และ Fushi Interconnect
-- ซิงก์ความคืบหน้าการอ่าน สถิติ และหนังสือ
-
-### อื่น ๆ
-
-- **ส่วนติดต่อผู้ใช้ 17 ภาษา** แปลครบทุกแพลตฟอร์ม
-- แชร์ข้อความจากแอปอื่นเพื่อค้นคำได้โดยตรง
 
 ## การรองรับแพลตฟอร์ม
 

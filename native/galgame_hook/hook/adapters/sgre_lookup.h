@@ -15,6 +15,117 @@ namespace fushi_voice_hook {
 inline constexpr uintptr_t kSgreTextDrawRva = 0x35aa0u;
 inline constexpr uintptr_t kSgreScenarioTextVtableRva = 0x5be330u;
 
+// Exact SGRE Steam x64 mouse-device slot. Static/runtime evidence for the one
+// executable admitted by sgre_profile.h:
+//   CreateDevice(GUID_SysMouse, module + 0xA96E18, ...)
+//   SetDataFormat(c_dfDIMouse2)
+//   GetDeviceState(0x14, ...), vtable slot 9 / byte offset 0x48.
+// This RVA must never become a generic-engine heuristic.
+inline constexpr uintptr_t kSgreDirectInputMouseDeviceRva = 0xA96E18u;
+inline constexpr size_t kSgreDirectInputGetDeviceStateVtableIndex = 9u;
+inline constexpr size_t kSgreDirectInputMouseStateBytes = 20u;
+inline constexpr size_t kSgreDirectInputMouseButtonsOffset = 12u;
+inline constexpr size_t kSgreDirectInputMouseButtonCount = 8u;
+inline constexpr size_t kSgreLookupPrimaryButtonIndex = 0u;
+inline constexpr uint8_t kSgreLookupPrimaryButtonMask = 0x01u;
+
+// Clear only DIMOUSESTATE2::rgbButtons while a direct lookup popup is
+// published. A local per-button latch survives popup teardown: once a down was
+// hidden from the game, that button stays hidden until the real device state
+// reports its matching up. Movement axes at bytes [0, 12) are never touched.
+// Unsupported state layouts are rejected unchanged because this is an exact
+// profile hook, not a best-effort DirectInput filter.
+inline uint8_t FilterSgreDirectInputMouseButtons(bool shield_active,
+                                                 uint8_t* state,
+                                                 size_t state_bytes,
+                                                 uint8_t latched_buttons) {
+  if (state == nullptr || state_bytes != kSgreDirectInputMouseStateBytes) {
+    return latched_buttons;
+  }
+  for (size_t index = 0; index < kSgreDirectInputMouseButtonCount; ++index) {
+    const uint8_t bit = static_cast<uint8_t>(1u << index);
+    const size_t offset = kSgreDirectInputMouseButtonsOffset + index;
+    const bool down = (state[offset] & 0x80u) != 0;
+    if (shield_active && down) latched_buttons |= bit;
+    const bool suppress = shield_active || (latched_buttons & bit) != 0;
+    if (suppress) state[offset] = 0;
+    if (!down) latched_buttons &= static_cast<uint8_t>(~bit);
+  }
+  return latched_buttons;
+}
+
+enum class SgreLookupClickAction : uint8_t {
+  kNone = 0,
+  kBegin = 1,
+  kSubmit = 2,
+  kCancel = 3,
+};
+
+struct SgreLookupClickGestureState {
+  // A hook can be installed while the physical button is already held. Do not
+  // consume that half-transaction: wait for one observed up before accepting a
+  // fresh lookup down.
+  bool synchronized = false;
+  bool last_down = false;
+  bool active = false;
+  bool cancelled = false;
+};
+
+// DirectInput exposes immediate button state rather than Win32 pointer
+// messages, so reproduce the source-window single-click transaction explicitly:
+// a fresh down over a glyph begins a pending lookup; physical screen movement
+// past the same 6 px threshold used by the native text strip cancels it; only
+// the matching up submits. The caller latches the physical button from kBegin
+// through the matching release so SGRE never observes half of the consumed
+// click.
+// 命中即承诺：kBegin 那一刻 down 就已经从游戏的 DirectInput 采样里抹掉了，事后无法
+// 补发（真让游戏看见 down，台词就推进了、这一行也没了）。所以**位移不是取消理由**——
+// 曾经存在过一个 6px 拖动阈值，用户手抖越过它就走 kCancel：down 被吞、查词又被取消，
+// 游戏和用户两头都拿不到任何结果，症状是「点台词偶尔完全没反应」且不可自解释。
+// 消除这个特例，而不是给它配补发逻辑。
+//
+// 留下的两个取消理由都是「这次消费本来就不该成立」：查词权限/屏蔽在按住期间掉电，
+// 或光标位置读不出来。两者下游本来就会吞掉这次点击，不构成额外损失。
+inline SgreLookupClickAction AdvanceSgreLookupClickGesture(
+    bool button_down, bool lookup_allowed, bool hit_on_press,
+    bool pointer_valid, SgreLookupClickGestureState* state) {
+  if (state == nullptr) return SgreLookupClickAction::kNone;
+  if (!state->synchronized) {
+    state->last_down = button_down;
+    state->active = false;
+    state->cancelled = false;
+    if (!button_down) state->synchronized = true;
+    return SgreLookupClickAction::kNone;
+  }
+
+  if (button_down && !state->last_down) {
+    state->last_down = true;
+    state->active = lookup_allowed && hit_on_press && pointer_valid;
+    state->cancelled = false;
+    return state->active ? SgreLookupClickAction::kBegin
+                         : SgreLookupClickAction::kNone;
+  }
+
+  if (state->active && state->last_down &&
+      (!lookup_allowed || !pointer_valid)) {
+    state->cancelled = true;
+  }
+
+  if (button_down || !state->last_down) {
+    return SgreLookupClickAction::kNone;
+  }
+
+  state->last_down = false;
+  const bool submit = state->active && !state->cancelled && lookup_allowed &&
+                      pointer_valid;
+  const bool cancel = state->active && !submit;
+  state->active = false;
+  state->cancelled = false;
+  if (submit) return SgreLookupClickAction::kSubmit;
+  return cancel ? SgreLookupClickAction::kCancel
+                : SgreLookupClickAction::kNone;
+}
+
 inline constexpr int32_t kSgreDesignWidth = 1920;
 inline constexpr int32_t kSgreDesignHeight = 1080;
 inline constexpr float kSgreDialogueOriginX = 320.0f;

@@ -46,6 +46,144 @@ int main() {
                                                       wrong_hash.size()));
   assert(!fushi_voice_hook::MatchesSgreExecutableHash(nullptr, 0));
 
+  // BUG-1882 — SGRE polls c_dfDIMouse2 directly, so swallowing Win32 mouse
+  // messages cannot stop the game from seeing the click. Pin the exact profile
+  // address/ABI and the button-only release latch used by the injected detour.
+  assert(fushi_voice_hook::kSgreDirectInputMouseDeviceRva == 0xA96E18u);
+  assert(fushi_voice_hook::kSgreDirectInputGetDeviceStateVtableIndex == 9u);
+  uint8_t mouse_state[fushi_voice_hook::kSgreDirectInputMouseStateBytes] = {};
+  mouse_state[0] = 0x11;   // lX bytes must survive unchanged.
+  mouse_state[8] = 0x22;   // lZ bytes must survive unchanged.
+  mouse_state[12] = 0x80;  // button 0 down.
+  mouse_state[19] = 0x80;  // button 7 down.
+  uint8_t latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      true, mouse_state, sizeof(mouse_state), 0);
+  assert(latched == 0x81);
+  assert(mouse_state[0] == 0x11 && mouse_state[8] == 0x22);
+  assert(mouse_state[12] == 0 && mouse_state[19] == 0);
+
+  // Popup is already gone but both physical buttons are still held: the same
+  // down transaction remains invisible until each raw up is observed.
+  mouse_state[12] = 0x80;
+  mouse_state[19] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0x81 && mouse_state[12] == 0 && mouse_state[19] == 0);
+  mouse_state[12] = 0;
+  mouse_state[19] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0x80 && mouse_state[19] == 0);
+  mouse_state[19] = 0;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0);
+
+  // Once inactive and drained, unrelated real input must pass untouched. An
+  // unknown state layout is also a strict no-op.
+  mouse_state[13] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), latched);
+  assert(latched == 0 && mouse_state[13] == 0x80);
+  uint8_t unsupported[16] = {};
+  unsupported[12] = 0x80;
+  assert(fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+             true, unsupported, sizeof(unsupported), 0x04) == 0x04);
+  assert(unsupported[12] == 0x80);
+
+  // A lookup-owned transaction latches only the primary button. Movement and
+  // simultaneously held auxiliary buttons remain visible to the game.
+  memset(mouse_state, 0, sizeof(mouse_state));
+  mouse_state[0] = 0x33;
+  mouse_state[12] = 0x80;
+  mouse_state[13] = 0x80;
+  latched = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state),
+      fushi_voice_hook::kSgreLookupPrimaryButtonMask);
+  assert(latched == fushi_voice_hook::kSgreLookupPrimaryButtonMask);
+  assert(mouse_state[0] == 0x33 && mouse_state[12] == 0 &&
+         mouse_state[13] == 0x80);
+
+  using ClickAction = fushi_voice_hook::SgreLookupClickAction;
+  fushi_voice_hook::SgreLookupClickGestureState click;
+  // Injection/enable may happen while left is already physically held. That
+  // half-transaction passes through and only its release arms single-click.
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(!click.synchronized && click.last_down && !click.active);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, true, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(click.synchronized && !click.last_down);
+
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kBegin);
+  assert(click.active);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false, true,
+                                                        &click) ==
+         ClickAction::kSubmit);
+  assert(!click.active && !click.last_down);
+
+  // 命中即承诺：down 已经从游戏的采样里抹掉了，位移**不是**取消理由。曾经的 6px
+  // 拖动阈值会让手抖越界的点击既不查词、也不推进台词（游戏和用户两头空），
+  // 那个特例已被消除——按住期间任意位移，抬起仍必须 kSubmit。
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kBegin);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false,
+                                                        true, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false,
+                                                        true, &click) ==
+         ClickAction::kSubmit);
+
+  // 仍然保留的两个取消理由，都是「这次消费本来就不该成立」：查词权限/屏蔽在按住
+  // 期间掉电，或光标位置读不出来。下游本来就会吞掉这次点击，不构成额外损失。
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kBegin);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, false, false,
+                                                        true, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, false, false,
+                                                        true, &click) ==
+         ClickAction::kCancel);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kBegin);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false,
+                                                        false, &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false,
+                                                        false, &click) ==
+         ClickAction::kCancel);
+
+  // A miss is a pass-through transaction. Becoming a hit while the same raw
+  // button is held must never start consuming halfway through.
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, false, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, true, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(true, true, true, false,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, false, true,
+                                                        &click) ==
+         ClickAction::kNone);
+  assert(fushi_voice_hook::AdvanceSgreLookupClickGesture(false, true, true, true,
+                                                        nullptr) ==
+         ClickAction::kNone);
+
   // The scenario root is positioned in the 1920x1080 design surface, but the
   // glyph draw point and texture cell are already physical units. These are
   // live values from the admitted 3840x2160 process: glyph+0x40 advances 80,

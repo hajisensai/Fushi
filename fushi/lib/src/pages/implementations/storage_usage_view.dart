@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
@@ -30,6 +32,7 @@ class StorageUsageView extends ConsumerStatefulWidget {
     required this.dictionaryNamesProvider,
     required this.deleteBook,
     required this.deleteDictionary,
+    required this.deleteDatabaseSnapshots,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
     super.key,
@@ -51,6 +54,13 @@ class StorageUsageView extends ConsumerStatefulWidget {
   /// 返回 null = 成功，非 null = 失败原因——`deleteDictionary` 内部 catch-all
   /// 不上抛，接线方必须以「删除后该名是否仍在」为准回报，不能拿无异常当成功。
   final Future<String?> Function(String name) deleteDictionary;
+
+  /// 删除 support 根下全部主库快照残留（BUG-1870；真实现 fushi_core
+  /// `deleteDatabaseSnapshotFiles(supportRoot)`，识别口径与扫描侧同源：
+  /// 展示什么就删什么，活库/侧车/待恢复副本结构上删不到）。返回逐文件容错的
+  /// 结果——部分文件被占用时其余照删，失败清单原样带给用户。
+  final Future<DatabaseSnapshotDeletionResult> Function()
+      deleteDatabaseSnapshots;
 
   /// Anime4K 已下载字节数 / 删除（默认真实现；测试注临时目录版）。
   final Future<int> Function() anime4kBytesProvider;
@@ -173,22 +183,43 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     return ok == true && mounted;
   }
 
-  Future<void> _deleteEntry(
-    StorageCategoryId category,
-    StorageEntryUsage entry,
-  ) async {
+  /// 条目显示名：快照聚合条目按文件数翻译，其余用服务层给的 label。
+  String _entryTitle(StorageEntryUsage entry) =>
+      entry.kind == StorageEntryKind.databaseSnapshots
+          ? t.storage_entry_database_snapshots_label(n: entry.paths.length)
+          : entry.label;
+
+  Future<void> _deleteEntry(StorageEntryUsage entry) async {
     if (_busyEntryId != null) return;
-    final String body = category == StorageCategoryId.books
-        ? t.storage_entry_delete_book_confirm_body
-        : t.storage_entry_delete_dictionary_confirm_body;
-    if (!await _confirmDelete(entry.label, body)) return;
+    final String body = switch (entry.kind) {
+      StorageEntryKind.book => t.storage_entry_delete_book_confirm_body,
+      StorageEntryKind.dictionary =>
+        t.storage_entry_delete_dictionary_confirm_body,
+      StorageEntryKind.databaseSnapshots =>
+        t.storage_entry_delete_database_snapshots_confirm_body,
+      StorageEntryKind.readOnly => throw StateError('read-only entry'),
+    };
+    if (!await _confirmDelete(_entryTitle(entry), body)) return;
     setState(() => _busyEntryId = entry.id);
     String? failure;
+    // 磁盘是否真的变了。快照删除是逐文件容错的：**部分**成功也必须重扫，否则
+    // 页面上的字节数会一直停在删除前的旧值（审查 M3）。
+    bool changed = false;
     try {
-      if (category == StorageCategoryId.books) {
-        failure = await widget.deleteBook(entry.id);
-      } else {
-        failure = await widget.deleteDictionary(entry.id);
+      switch (entry.kind) {
+        case StorageEntryKind.book:
+          failure = await widget.deleteBook(entry.id);
+          changed = failure == null;
+        case StorageEntryKind.dictionary:
+          failure = await widget.deleteDictionary(entry.id);
+          changed = failure == null;
+        case StorageEntryKind.databaseSnapshots:
+          final DatabaseSnapshotDeletionResult result =
+              await widget.deleteDatabaseSnapshots();
+          changed = result.deleted.isNotEmpty;
+          failure = _snapshotDeleteFailureReason(result);
+        case StorageEntryKind.readOnly:
+          throw StateError('read-only entry');
       }
     } catch (e) {
       failure = '$e';
@@ -196,18 +227,25 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       if (mounted) setState(() => _busyEntryId = null);
     }
     if (!mounted) return;
-    if (failure == null) {
-      FushiToast.show(
-        msg: t.storage_entry_delete_done,
-        severity: ToastSeverity.success,
-      );
-      await _rescan();
-    } else {
-      FushiToast.show(
-        msg: t.storage_entry_delete_failed(reason: failure),
-        severity: ToastSeverity.error,
-      );
-    }
+    FushiToast.show(
+      msg: failure == null
+          ? t.storage_entry_delete_done
+          : t.storage_entry_delete_failed(reason: failure),
+      severity: failure == null ? ToastSeverity.success : ToastSeverity.error,
+    );
+    if (changed) await _rescan();
+  }
+
+  /// 快照批量删除的失败摘要：全成功 → null；否则「第一个失败的文件名: 原因
+  /// (+还有几个)」。不新增 i18n key，直接填进既有的
+  /// `storage_entry_delete_failed(reason:)` 模板。
+  static String? _snapshotDeleteFailureReason(
+      final DatabaseSnapshotDeletionResult result) {
+    if (!result.hasFailures) return null;
+    final MapEntry<String, String> first = result.failures.entries.first;
+    final int rest = result.failures.length - 1;
+    final String head = '${p.basename(first.key)}: ${first.value}';
+    return rest > 0 ? '$head (+$rest)' : head;
   }
 
   // ── Anime4K 预设删除 ────────────────────────────────────────────────
@@ -385,19 +423,14 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                 })
             : null,
       ),
-      if (expandable && expanded) ..._buildEntryRows(id, usage),
+      if (expandable && expanded) ..._buildEntryRows(usage),
     ];
   }
 
-  List<Widget> _buildEntryRows(
-    StorageCategoryId id,
-    StorageCategoryUsage usage,
-  ) {
-    // 只有书籍/词典明细接得上既有删除原语（`deleteBook` / `deleteDictionary`）；
-    // 其余类目的明细是磁盘子项，删它就是裸 `Directory.delete`——会绕过墓碑/
-    // 引用护栏，也可能删掉主库文件，故一律只读展示。
-    final bool deletable =
-        id == StorageCategoryId.books || id == StorageCategoryId.dictionaries;
+  List<Widget> _buildEntryRows(StorageCategoryUsage usage) {
+    // 可删性由**条目 kind** 决定（书/词典/数据库快照残留各接自己的删除原语）；
+    // readOnly 条目是磁盘子项，删它就是裸 `Directory.delete`——会绕过墓碑/引用
+    // 护栏，也可能删掉主库文件，故只读展示。
     final List<StorageEntryUsage> visible =
         usage.entries.take(kMaxVisibleEntries).toList(growable: false);
     final List<StorageEntryUsage> rest =
@@ -407,11 +440,11 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     return <Widget>[
       for (final StorageEntryUsage entry in visible)
         FushiListItem(
-          title: Text(entry.label),
+          title: Text(_entryTitle(entry)),
           subtitle: Text(formatStorageBytes(entry.bytes)),
           padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
           density: FushiListDensity.compact,
-          trailing: !deletable
+          trailing: entry.kind == StorageEntryKind.readOnly
               ? null
               : (_busyEntryId == entry.id
                   ? const SizedBox(
@@ -424,7 +457,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                       icon: const Icon(Icons.delete_outline, size: 18),
                       onPressed: _busyEntryId != null
                           ? null
-                          : () => _deleteEntry(id, entry),
+                          : () => _deleteEntry(entry),
                     )),
         ),
       if (rest.isNotEmpty)

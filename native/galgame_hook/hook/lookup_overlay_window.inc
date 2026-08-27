@@ -51,6 +51,7 @@ struct LookupOverlayState {
   uint64_t pending_suppress_ack_seq = 0;
   fushi_voice_hook::OverlayRect card;
   bool visible = false;
+  bool outside_dismiss_pending = false;
   bool tracking_mouse = false;
   // 上一次转发出去的 move 位置（卡片局部坐标）。用来丢掉同位置的重复 move——
   // 见 WM_MOUSEMOVE 分支里的反馈环说明。-1 表示还没有过。
@@ -60,6 +61,27 @@ struct LookupOverlayState {
 };
 
 LookupOverlayState g_overlay;
+// DirectInput games can still observe the physical mouse while this injected
+// bitmap popup owns the click visually. Publish a lock-free visibility mirror
+// so exact engine adapters can shield that raw transaction without touching
+// the UI-thread-owned LookupOverlayState.
+volatile LONG g_lookup_overlay_input_shield_visible = 0;
+volatile LONG g_lookup_overlay_visibility_epoch = 0;
+volatile LONG g_lookup_overlay_outside_dismiss_epoch = 0;
+
+bool IsLookupOverlayInputShieldVisible() {
+  return InterlockedCompareExchange(&g_lookup_overlay_input_shield_visible, 0,
+                                    0) != 0;
+}
+
+bool RequestLookupOverlayOutsideDismiss() {
+  if (!IsLookupOverlayInputShieldVisible()) return false;
+  const LONG epoch = InterlockedCompareExchange(
+      &g_lookup_overlay_visibility_epoch, 0, 0);
+  if (epoch == 0 || !IsLookupOverlayInputShieldVisible()) return false;
+  InterlockedExchange(&g_lookup_overlay_outside_dismiss_epoch, epoch);
+  return true;
+}
 
 uint64_t ReadOverlaySharedU64(volatile uint64_t* value) {
   return static_cast<uint64_t>(InterlockedCompareExchange64(
@@ -148,8 +170,10 @@ HWND FindGameMainWindow() {
 }
 
 void HideOverlay() {
+  g_overlay.outside_dismiss_pending = false;
   if (!g_overlay.visible) return;
   g_overlay.visible = false;
+  InterlockedExchange(&g_lookup_overlay_input_shield_visible, 0);
   g_overlay.card = fushi_voice_hook::OverlayRect();
   // 位置去重的记忆只在"同一张卡片持续显示"期间有效；卡片收起后必须清掉，
   // 否则下一张卡片在同一位置的第一次 move 会被当成重复丢掉。
@@ -231,6 +255,28 @@ bool PresentOverlayBitmap(uint32_t width, uint32_t height) {
 
 // 读一帧并显示。返回 false 表示这轮没有可用新帧（不是错误）。
 void PollOverlayFrame() {
+  // A DirectInput game keeps polling the physical mouse even when this layered
+  // bitmap owns the visible card.  An outside click is detected in the exact
+  // engine detour, then handed back to this UI-thread writer.  Publish one
+  // control event and keep shielding until Dart terminates the whole session.
+  // The visibility epoch prevents a late request for an old card from closing a
+  // newly presented card that reused the same overlay thread.
+  const LONG dismiss_epoch = InterlockedExchange(
+      &g_lookup_overlay_outside_dismiss_epoch, 0);
+  const LONG visible_epoch = InterlockedCompareExchange(
+      &g_lookup_overlay_visibility_epoch, 0, 0);
+  if (dismiss_epoch != 0 && dismiss_epoch == visible_epoch &&
+      g_overlay.visible) {
+    if (!g_overlay.outside_dismiss_pending) {
+      QueueOverlayInput(fushi_voice_hook::kLookupInputDismissOutside, 0, 0, 0,
+                        0);
+    }
+    // Keep the card and its DirectInput mirror alive until Dart replies with
+    // the ordinary dismiss frame.  This is fail-closed if the control event is
+    // delayed and prevents a fresh lookup from racing the still-live route.
+    g_overlay.outside_dismiss_pending = true;
+    return;
+  }
   // 认领是**每帧复查**的，不是只在启动时问一次。真机实测（tenshi_sz，KiriKiri Z）：host 把
   // lookup_enabled 拨到 1 的时刻早于 KiriKiri 拿到 TJS exporter，于是通用呈现器先起了线程，
   // 随后 KiriKiri 才认领——只在 StartLookupOverlayIfUnclaimed 里判一次的话，这一局就会有
@@ -285,6 +331,13 @@ void PollOverlayFrame() {
         fushi_voice_hook::LookupFrameAt(g_header, i);
     if (candidate == nullptr) continue;
     if (candidate->ready == 0) continue;  // host 正在写这一槽
+    if (g_overlay.outside_dismiss_pending &&
+        (candidate->flags & fushi_voice_hook::kLookupFrameDismiss) == 0) {
+      // Once an outside click owns the raw transaction, only its authoritative
+      // dismiss frame may mutate this visible card.  Full/highlight frames from
+      // a route transition stay hidden behind the pending control operation.
+      continue;
+    }
     const uint64_t seq = ReadOverlaySharedU64(&candidate->seq);
     if (seq <= g_overlay.last_presented_seq) continue;  // 处理过了
     if (seq <= seq_before) continue;                    // 已有更新的候选
@@ -308,6 +361,7 @@ void PollOverlayFrame() {
     HideOverlay();
     return;
   }
+  if (g_overlay.outside_dismiss_pending) return;
   // 制卡截图的临时抑制**不是** dismiss：只把卡片藏起来，不动 host 那侧的会话状态。
   // 确认延后一轮（见函数开头）。
   if ((frame->flags & fushi_voice_hook::kLookupFrameCaptureSuppress) != 0) {
@@ -363,6 +417,11 @@ void PollOverlayFrame() {
   }
   if (!g_overlay.visible) {
     g_overlay.visible = true;
+    LONG epoch = InterlockedIncrement(&g_lookup_overlay_visibility_epoch);
+    if (epoch == 0) {
+      epoch = InterlockedIncrement(&g_lookup_overlay_visibility_epoch);
+    }
+    InterlockedExchange(&g_lookup_overlay_input_shield_visible, 1);
     // SW_SHOWNOAUTO... 不抢激活：WS_EX_NOACTIVATE + SW_SHOWNA。
     ShowWindow(g_overlay.window, SW_SHOWNA);
   }
@@ -464,6 +523,7 @@ DWORD WINAPI LookupOverlayThread(LPVOID) {
     DispatchMessageW(&message);
   }
   KillTimer(g_overlay.window, kOverlayTimerId);
+  InterlockedExchange(&g_lookup_overlay_input_shield_visible, 0);
   DestroyWindow(g_overlay.window);
   g_overlay.window = nullptr;
   return 0;

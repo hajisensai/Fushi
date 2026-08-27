@@ -18,6 +18,7 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
+import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
@@ -330,6 +331,17 @@ class HomePage extends BasePage {
   @visibleForTesting
   static void Function(HomeTab tab)? debugSelectTab;
 
+  /// 测试钩子：拿到 HomePage 真正接线给发现页/详情页的
+  /// [VideoDiscoveryActions]（`_productionVideoDiscoveryActions`）。这些回调的
+  /// 签名是 `(BuildContext, VideoDiscoveryItem)`、不捕获 State 的 context，所以
+  /// widget 测试可以直接调它们，钉住「打开资源搜索 / 订阅」这两条私有流程的行为。
+  ///
+  /// 存的是**闭包而不是值**：`_productionVideoDiscoveryActions` 会读 `appModel`
+  /// （即 `ref.watch`），在 initState 里提前求值等于把一次 watch 提到首帧之前；
+  /// 按需构造则与生产走同一条路径。仅 debug/profile build 注册。
+  @visibleForTesting
+  static VideoDiscoveryActions Function()? debugVideoDiscoveryActions;
+
   @override
   BasePageState<HomePage> createState() => _HomePageState();
 }
@@ -390,6 +402,8 @@ class _HomePageState extends BasePageState<HomePage>
     WidgetsBinding.instance.addObserver(this);
     assert(() {
       HomePage.debugSelectTab = _selectTab;
+      HomePage.debugVideoDiscoveryActions =
+          () => _productionVideoDiscoveryActions;
       return true;
     }());
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
@@ -598,6 +612,7 @@ class _HomePageState extends BasePageState<HomePage>
   void dispose() {
     assert(() {
       HomePage.debugSelectTab = null;
+      HomePage.debugVideoDiscoveryActions = null;
       return true;
     }());
     _periodicSyncTimer?.cancel();
@@ -1407,11 +1422,43 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 后端没配好时的统一出口：**直接弹配置引导**，而不是甩一句「请先配置下载
   /// 后端」让用户自己去翻设置。配完再点一次原入口即可继续。
-  Future<void> _promptDownloadBackendSetup(BuildContext context) =>
+  ///
+  /// 返回「是否真配完了」：同一个出口还要接给资源搜索 / 订阅页失败态那颗
+  /// 「开始配置」按钮（[VideoDownloadBackendSetupPrompt]），那边据此决定要不要
+  /// 自动重试原提交——不给回执的话，用户配完还得自己再找一遍刚才那条 release。
+  Future<bool> _promptDownloadBackendSetup(BuildContext context) =>
       promptDownloadBackendSetup(
         context: context,
         appModel: appModelNoUpdate,
       );
+
+  /// 受管视频来源清单；为空时**弹「添加视频来源」引导**，用户加完再读一次。
+  ///
+  /// 此前这一环用错了 i18n key：拿通用扫描根的 `media_source_no_sources`
+  /// （「暂无来源」）去描述「缺下载落地文件夹」，既说不清缺什么也没处点，用户自然
+  /// 猜成「没配下载后端」（下载页在 BUG-1706 已把原因拆开，这里漏改）。
+  /// 返回空表 = 用户取消或加完仍为空，调用方直接返回。
+  ///
+  /// **重读仍为空必须给回一句提示**：本条路径上没有可停留的空态门（下载页有，
+  /// `downloads_page.dart` 的 `_addVideoSource` 关掉对话框后重算前置条件、空态门
+  /// 继续留在页面上说明缺什么），静默返回等于整个流程无声消失——比修前那句 snackbar
+  /// 还糟。`promptManagedVideoSourceSetup` 返回 true 只表示用户走进了来源对话框，
+  /// 不表示真加成了。
+  Future<List<MediaSourceRow>> _managedVideoDownloadSourcesOrPrompt(
+    BuildContext context,
+  ) async {
+    final List<MediaSourceRow> sources =
+        await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (sources.isNotEmpty || !context.mounted) return sources;
+    final bool added = await promptManagedVideoSourceSetup(context: context);
+    if (!added) return const <MediaSourceRow>[];
+    final List<MediaSourceRow> retried =
+        await appModelNoUpdate.getManagedVideoDownloadSources();
+    if (retried.isEmpty && context.mounted) {
+      _showVideoDiscoveryMessage(context, t.download_no_managed_video_source);
+    }
+    return retried;
+  }
 
   Future<void> _openVideoDiscoveryResourceSearch(
     BuildContext context,
@@ -1426,27 +1473,12 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     }
     final List<MediaSourceRow> sources =
-        await appModelNoUpdate.getManagedVideoDownloadSources();
-    if (!context.mounted) return;
-    if (sources.isEmpty) {
-      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
-      return;
-    }
-    final VideoDownloadBackendTarget target;
-    try {
-      target = await appModelNoUpdate.currentVideoDownloadBackendTarget();
-    } on VideoDownloadBackendUnavailable catch (error) {
-      if (context.mounted) {
-        _showVideoDiscoveryMessage(context, error.message);
-      }
-      return;
-    } on Object {
-      if (context.mounted) {
-        unawaited(_promptDownloadBackendSetup(context));
-      }
-      return;
-    }
-    if (!context.mounted) return;
+        await _managedVideoDownloadSourcesOrPrompt(context);
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
+    // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
+    // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
+    // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
+    if (!context.mounted || sources.isEmpty) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoveryResourceSearchPage(
@@ -1455,7 +1487,13 @@ class _HomePageState extends BasePageState<HomePage>
           sources: sources,
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+          // 后端 runtime 的可用性延后到提交时才判（见上），所以「后端没配好」这条
+          // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
+          // 失败态那句话才有一颗能真正解决它的按钮。
+          onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+            final VideoDownloadBackendTarget target =
+                await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: selection.media,
@@ -1498,27 +1536,12 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     }
     final List<MediaSourceRow> sources =
-        await appModelNoUpdate.getManagedVideoDownloadSources();
-    if (!context.mounted) return;
-    if (sources.isEmpty) {
-      _showVideoDiscoveryMessage(context, t.media_source_no_sources);
-      return;
-    }
-    final VideoDownloadBackendTarget target;
-    try {
-      target = await appModelNoUpdate.currentVideoDownloadBackendTarget();
-    } on VideoDownloadBackendUnavailable catch (error) {
-      if (context.mounted) {
-        _showVideoDiscoveryMessage(context, error.message);
-      }
-      return;
-    } on Object {
-      if (context.mounted) {
-        unawaited(_promptDownloadBackendSetup(context));
-      }
-      return;
-    }
-    if (!context.mounted) return;
+        await _managedVideoDownloadSourcesOrPrompt(context);
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
+    // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
+    // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
+    // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
+    if (!context.mounted || sources.isEmpty) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoverySubscriptionPage(
@@ -1527,7 +1550,11 @@ class _HomePageState extends BasePageState<HomePage>
           sources: sources,
           defaultSourceId:
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+          // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
+          onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
+            final VideoDownloadBackendTarget target =
+                await appModelNoUpdate.currentVideoDownloadBackendTarget();
             final int now = DateTime.now().millisecondsSinceEpoch;
             final String subscriptionId =
                 videoDiscoverySubscriptionId(item.reference);

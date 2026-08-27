@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -153,6 +155,73 @@ void main() {
     await tester.tap(find.text('源里的热门作品'));
     await tester.pump();
     expect(opened, 1, reason: '点卡片走 feed 的 open 动作（生产适配为直进源详情页）');
+  });
+
+  // 加载中的来源行此前是一条 2px 裸进度条：二十几个源就是二十几条无标签横线。
+  // 现在加载中就渲染带源名的行头 + 行内小转圈，加载完卡片条在行头下面长出来。
+  testWidgets('来源热门行加载中显示带源名的行头，而不是一条裸横线', (WidgetTester tester) async {
+    final Completer<List<MangaDiscoverySourceItem>> pending =
+        Completer<List<MangaDiscoverySourceItem>>();
+    final _FakeProvider provider = _FakeProvider(<Object>[
+      const MangaDiscoverySnapshot(
+        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{},
+      ),
+    ]);
+    await tester.pumpWidget(wrap(MangaDiscoveryPage(
+      provider: provider,
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[
+        MangaDiscoverySourceFeed(
+          id: 'slow',
+          name: '慢源',
+          language: 'ja',
+          loadPopular: () => pending.future,
+        ),
+      ],
+    )));
+    await tester.pump();
+    await tester.pump();
+
+    final Finder header =
+        find.text(t.manga_discovery_source_popular(source: '慢源'));
+    expect(header, findsOneWidget, reason: '加载中就要能看出在等哪个源');
+    expect(
+      find.descendant(
+        of: find.byType(MangaDiscoverySourceRow),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+
+    // 加载中就要把卡片条的高度占住，否则加载完成那一刻凭空插入 222px，标题下方
+    // 所有内容整体下移。`pumpAndSettle` 会跳过中间帧，钉不住这一条——必须在
+    // pending 态直接量行高，再与 done 态比。
+    final double pendingHeight =
+        tester.getSize(find.byType(MangaDiscoverySourceRow)).height;
+
+    pending.complete(<MangaDiscoverySourceItem>[
+      MangaDiscoverySourceItem(
+        title: '慢源的热门作品',
+        buildCover: (BuildContext context) =>
+            const ColoredBox(color: Color(0xFF808080)),
+        open: (BuildContext context) {},
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(MangaDiscoverySourceRow)).height,
+      pendingHeight,
+      reason: '加载完成不得改变行高（占位高度必须与卡片条一致）',
+    );
+    expect(header, findsOneWidget);
+    expect(find.text('慢源的热门作品'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(MangaDiscoverySourceRow),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
   });
 
   // BUG-1710：合并前「发现」没有搜索框也没有来源筛选，来源清单在另一个同名
