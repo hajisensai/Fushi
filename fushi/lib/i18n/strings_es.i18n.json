@@ -3813,5 +3813,7 @@
   "video_subtitle_deleted": "Subtitle file deleted: $label",
   "video_subtitle_delete_failed": "Failed to delete subtitle file: $label",
   "db_cannot_open_title": "Data location unavailable",
-  "db_cannot_open_message": "Fushi could not open or create its database at the configured data location. Nothing is corrupt - the folder may be missing, read-only, or on a disconnected drive. Check the data location in Settings, or restart to use the default location."
+  "db_cannot_open_message": "Fushi could not open or create its database at the configured data location. Nothing is corrupt - the folder may be missing, read-only, or on a disconnected drive. Check the data location in Settings, or restart to use the default location.",
+  "anki_error_field_mapping_mismatch": "None of your field mappings match the selected note type, so Anki rejected the card. Open Anki settings to re-map the fields, or use 'Create Lapis deck'.",
+  "anki_error_first_field_empty": "The first field of the selected note type is empty, and Anki refuses such a note. Map a field to it in Anki settings."
 }

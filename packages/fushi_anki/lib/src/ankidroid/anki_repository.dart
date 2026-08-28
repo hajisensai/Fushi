@@ -230,6 +230,15 @@ class AnkiRepository extends BaseAnkiRepository {
         'Check your note type field mappings.',
       );
     }
+    // BUG-1900：Anki 的 `fields_check()` **只看第一个字段**——其余字段填得再满，首字段
+    // 空照样整张卡被拒。上面那条 every-empty 守卫拦不住「首字段空、别的字段有内容」。
+    // 与 AnkiConnect 后端共用同一条预检和同一组分类错误码，两个后端行为一致。
+    final MineOutcome? rejected = preflightNoteFields(
+      noteType,
+      fields,
+      fieldsForNoteType(noteType, fields),
+    );
+    if (rejected != null) return rejected;
     // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.

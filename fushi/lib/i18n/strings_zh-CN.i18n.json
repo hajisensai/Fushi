@@ -3813,5 +3813,7 @@
   "video_subtitle_deleted": "已删除字幕文件：$label",
   "video_subtitle_delete_failed": "删除字幕文件失败：$label",
   "db_cannot_open_title": "数据位置不可用",
-  "db_cannot_open_message": "Fushi 无法在配置的数据位置打开或创建数据库。数据没有损坏——该文件夹可能不存在、只读，或位于已断开的磁盘上。请在设置中检查数据位置，或重启以使用默认位置。"
+  "db_cannot_open_message": "Fushi 无法在配置的数据位置打开或创建数据库。数据没有损坏——该文件夹可能不存在、只读，或位于已断开的磁盘上。请在设置中检查数据位置，或重启以使用默认位置。",
+  "anki_error_field_mapping_mismatch": "当前的字段映射没有一个属于所选的笔记类型，Anki 因此拒收了这张卡。请在 Anki 设置里重新映射字段，或使用「一键创建 Lapis 卡组」。",
+  "anki_error_first_field_empty": "所选笔记类型的第一个字段为空，Anki 不接受这样的卡片。请在 Anki 设置里给它映射一个字段。"
 }

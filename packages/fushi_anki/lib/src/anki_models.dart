@@ -1197,6 +1197,21 @@ class AnkiErrorCode {
   static const String connectionTimeout = 'ANKI_CONNECTION_TIMEOUT';
   static const String httpError = 'ANKI_HTTP_ERROR';
   static const String connectionUnknown = 'ANKI_CONNECTION_UNKNOWN';
+
+  /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
+  ///
+  /// AnkiConnect 按字段**名**匹配，不认识的名字被静默丢弃；而
+  /// `BaseAnkiRepository.fieldMappingsAfterFetch` 对非 Lapis 笔记类型直接沿用旧映射
+  /// （`return current.fieldMappings`），换了笔记类型字段名就全对不上。此前用户拿到的
+  /// 是 AnkiConnect 透传的 `cannot create note because it is empty` —— 既看不出是自己
+  /// 选错了笔记类型，也不知道该去哪儿改。
+  static const String fieldMappingMismatch = 'ANKI_FIELD_MAPPING_MISMATCH';
+
+  /// BUG-1900：笔记类型的**第一个字段**为空。
+  ///
+  /// Anki 的 `fields_check()` 只看首字段，空就拒收整张卡（服务端原文同样是
+  /// `cannot create note because it is empty`）。本地预检把它变成一句能照着做的话。
+  static const String firstFieldEmpty = 'ANKI_FIRST_FIELD_EMPTY';
 }
 
 sealed class AnkiFetchResult {
