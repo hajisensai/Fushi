@@ -36,7 +36,11 @@ void main() {
 
   setUpAll(() {
     source = File('assets/popup/popup.js').readAsStringSync();
-    final int start = source.indexOf("className: 'mine-button'");
+    // class 列表可带布局基类前缀（BUG-1895 起是 'inline-action-button mine-button'）；
+    // 这里只是定位块起点，别把 class 名的确切拼写当判据。
+    final int start = source.indexOf(
+      RegExp(r"className: '[^']*\bmine-button',"),
+    );
     expect(
       start,
       greaterThanOrEqualTo(0),
