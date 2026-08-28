@@ -3092,7 +3092,7 @@ void main() {
     expect(railLeading, contains('tokens.spacing'));
     expect(railLeading, contains('tokens.radii.controlRadius'));
     expect(railLeading, contains('tokens.surfaces.card'));
-    expect(railLeading, contains('appModel.appIcon'));
+    expect(railLeading, contains('CurrentAppIcon'));
 
     final String collectionsSource = File(
       'lib/src/pages/implementations/collections_page.dart',

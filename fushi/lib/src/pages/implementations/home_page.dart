@@ -17,6 +17,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/current_app_icon.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
@@ -1220,7 +1221,7 @@ class _HomePageState extends BasePageState<HomePage>
               padding: EdgeInsets.all(tokens.spacing.gap),
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: ExcludeSemantics(child: appModel.appIcon),
+                child: const CurrentAppIcon(),
               ),
             ),
           ),

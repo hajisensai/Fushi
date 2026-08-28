@@ -88,18 +88,36 @@ class _MiscellaneousSettingsBodyState
         FushiChannels.iconSwitch
             .invokeMethod<bool>('isCustomShortcutSupported'),
       ]);
+      final AppIconSelection selection = publishAppIconSelection(
+        AppIconSelection(
+          presetKey: (results[0] as String?) ?? 'default',
+        ),
+      );
       if (!mounted) return;
       setState(() {
-        _currentIcon = (results[0] as String?) ?? 'default';
+        _currentIcon = selection.presetKey;
         _customSupported = (results[1] as bool?) ?? false;
       });
     } else if (Platform.isWindows) {
-      final String key = await loadIconPresetKey();
+      final AppIconSelection selection = await loadAppIconSelection();
       if (!mounted) return;
       setState(() {
-        _currentIcon = key;
+        _currentIcon = selection.presetKey;
         _customSupported = true; // Windows 支持任意图片
       });
+    }
+  }
+
+  Future<AppIconSelection> _persistAppliedIcon(
+    AppIconSelection selection,
+  ) async {
+    try {
+      return await saveAppIconSelection(selection);
+    } catch (e) {
+      // 原生窗口/launcher 图标已经成功切换时，偏好落盘失败不能让 rail 和设置
+      // 继续显示旧值；至少保证本次运行三处视觉状态一致，并留下诊断日志。
+      debugPrint('[Fushi] app icon preference persist failed: $e');
+      return publishAppIconSelection(selection);
     }
   }
 
@@ -124,12 +142,13 @@ class _MiscellaneousSettingsBodyState
           await syncWindowsShortcutIcons(await File(path).readAsBytes());
         }
       }
-      if (ok && mounted) {
-        final messenger = ScaffoldMessenger.of(context);
-        await saveIconPresetKey(key);
+      if (ok) {
+        final AppIconSelection applied = await _persistAppliedIcon(
+          AppIconSelection(presetKey: key),
+        );
         if (!mounted) return;
-        setState(() => _currentIcon = key);
-        messenger.showSnackBar(
+        setState(() => _currentIcon = applied.presetKey);
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(t.icon_switch_success)),
         );
       }
@@ -211,11 +230,15 @@ class _MiscellaneousSettingsBodyState
       final String persisted = await persistCustomIconFile(pickedPath);
       ok = await WindowCaptionChannel.setWindowIcon(persisted);
       if (ok) {
-        await saveCustomIconPath(persisted);
-        await saveIconPresetKey(customIconKey);
+        final AppIconSelection applied = await _persistAppliedIcon(
+          AppIconSelection(
+            presetKey: customIconKey,
+            customPath: persisted,
+          ),
+        );
         // TODO-901：同步桌面 / 开始菜单 .lnk 图标到用户自定义图。
         await syncWindowsShortcutIcons(await File(persisted).readAsBytes());
-        if (mounted) setState(() => _currentIcon = customIconKey);
+        if (mounted) setState(() => _currentIcon = applied.presetKey);
       }
     }
 

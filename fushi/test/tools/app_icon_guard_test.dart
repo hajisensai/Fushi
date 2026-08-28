@@ -81,6 +81,42 @@ void main() {
     expect(schema.contains('Platform.isWindows'), isTrue);
   });
 
+  test('BUG-1907：设置、启动恢复与宽屏 rail 共用可监听的当前图标真值', () {
+    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
+    final String page =
+        read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    final String home = read('lib/src/pages/implementations/home_page.dart');
+    final String main = read('lib/main.dart');
+    final String component =
+        read('lib/src/utils/components/current_app_icon.dart');
+
+    expect(prefs.contains('currentAppIconSelection'), isTrue);
+    expect(prefs.contains('appIconDecodePixelWidth = 256'), isTrue,
+        reason: '侧栏不得按原尺寸解码用户选择的相机/8K 图片');
+    expect(prefs.contains('await appIconImageProvider(resolved).evict()'),
+        isTrue,
+        reason: '固定自定义路径覆盖内容后必须清掉旧 ResizeImage cache');
+    expect(page.contains('saveAppIconSelection('), isTrue,
+        reason: '预设与自定义成功路径必须在持久化后发布运行时选择');
+    expect(page.contains('_persistAppliedIcon('), isTrue,
+        reason: '原生切换成功后即使偏好写入失败，rail 也必须同步本次运行态');
+    expect(page.contains('saveIconPresetKey('), isFalse);
+    expect(page.contains('saveCustomIconPath('), isFalse);
+    expect(home.contains('child: const CurrentAppIcon()'), isTrue,
+        reason: 'rail 不得再读取 AppModel 中固定的 assets/meta/icon.png');
+    expect(component.contains('ValueListenableBuilder<AppIconSelection>'),
+        isTrue);
+    expect(main.contains('startupAppIcon = await loadAppIconSelection()'),
+        isTrue,
+        reason: 'runApp 前必须恢复选择，避免第一帧画旧图标');
+    expect(main.contains("'getCurrentIcon'"), isTrue,
+        reason: 'Android 冷启动必须以 launcher alias 为当前图标真值');
+    expect(main.contains('appIconImageProvider(startupAppIcon)'), isTrue,
+        reason: '启动预缓存必须与 rail 共用同一个 provider 映射');
+    expect(main.contains("AssetImage('assets/meta/icon.png')"), isFalse,
+        reason: '启动路径不得再固定预缓存旧品牌图');
+  });
+
   test('Windows app icon 用已提交的 app_icon.ico wordmark', () {
     // TODO-879（f9f5bb380）删除了 flutter_launcher_icons 配置块（generator 会
     // 覆盖手调 adaptive 图标），Windows 改用已提交的 app_icon.ico。
