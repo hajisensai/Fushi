@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
@@ -82,6 +83,11 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 
 Color? _savedSplashColor;
+
+/// True only after Windows accepted the hidden native-caption style. Keeping
+/// this as an explicit startup capability avoids rendering two title bars if
+/// the plugin is unavailable or rejects the request on an unusual host.
+bool _windowsCustomTitleBarEnabled = false;
 
 /// 桌面端「从 app 外打开视频文件」时，runner 经 `set_dart_entrypoint_arguments`
 /// 把视频路径传进 `main(List<String> args)`；这里暂存，待 app 初始化完成后由
@@ -187,6 +193,17 @@ void main([List<String> args = const <String>[]]) {
     await recoverLegacyMacosPrefsFromSharedPreferences();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
+      if (Platform.isWindows) {
+        try {
+          await windowManager.setTitleBarStyle(
+            TitleBarStyle.hidden,
+            windowButtonVisibility: false,
+          );
+          _windowsCustomTitleBarEnabled = true;
+        } catch (e) {
+          debugPrint('[Fushi] custom Windows title bar unavailable: $e');
+        }
+      }
       // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
       // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
       MainWindowForegroundWatcher.instance.start();
@@ -1692,13 +1709,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           builder: (context, child) {
             _scheduleWindowsUpdateHandoffReconcile();
             final cs = Theme.of(context).colorScheme;
-            // Keep the native Windows title bar in sync with the live app theme
-            // (surface background + onSurface text). No-op on other platforms.
-            // The channel de-dupes identical values so this is cheap per rebuild.
-            WindowCaptionChannel.setCaptionColors(
-              caption: cs.surface,
-              text: cs.onSurface,
-            );
+            if (Platform.isWindows && !_windowsCustomTitleBarEnabled) {
+              // Preserve the previous themed native caption as a graceful
+              // fallback when hidden-title-bar support was unavailable.
+              WindowCaptionChannel.setCaptionColors(
+                caption: cs.surface,
+                text: cs.onSurface,
+              );
+            }
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder
             // reruns on every theme change, so the AnnotatedRegion re-emits the
@@ -1807,6 +1825,20 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             },
                             child: navigation,
                           ),
+                        );
+                      }
+                      if (Platform.isWindows &&
+                          _windowsCustomTitleBarEnabled) {
+                        navigation = FushiWindowsTitleBar(
+                          leadingInset: viewport.width >= 600 ? 80 : 0,
+                          title: ValueListenableBuilder<HomeTab>(
+                            valueListenable: homeShellTabNotifier,
+                            builder: (BuildContext context, HomeTab tab,
+                                Widget? child) {
+                              return Text(homeNavItemFor(tab).label);
+                            },
+                          ),
+                          child: navigation,
                         );
                       }
                       return FushiAppUiScale(scale: uiScale, child: navigation);
