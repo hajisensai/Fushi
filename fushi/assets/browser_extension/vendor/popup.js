@@ -3916,11 +3916,81 @@ function postProcessRuby(container) {
             }
         }
     });
+    markTouchingRubyUnits(container);
     // design-2026-08 讨论区反馈: inline-kanji tap targets ride the same post-pass so every
     // render path that ruby-fixes a subtree (first entry, deferred tail
     // entries, incremental updates) also gets them; both passes are idempotent
     // so the double walk over entry 0 (BUG-1098) stays harmless.
     wrapExpressionInlineKanji(container);
+}
+
+// BUG-1898: 给「隔壁也带注音」的基字单元打上 .ruby-tight，popup.css 只对它们把
+// .ruby-reserve 放回 in-flow。
+//
+// .ruby-rt 是 absolute + nowrap，宽度恒等于基字宽，读音比基字长时向两侧溢出而不
+// 撑开任何东西。溢出落在普通文字上没问题（原生 ruby 的悬出行为，BUG-1778 要保住
+// 的正是这个紧凑字距）；落在**另一个单元的读音**上就是糊成一团（BUG-850，明鏡
+// 「登場人物」= 登場(とうじょう)+人物(じんぶつ) 两个紧邻单元，相碰约 0.7em）。
+//
+// 所以判据是纯 DOM 的：两个单元之间除空白外没有任何内容 → 两侧都标。用 Range 取
+// 二者之间的文本，不触发任何布局测量（渲染期不能引入 reflow，BUG-1868）。两个都
+// 标是有意的：孪生体宽度是 max-content，读音不比基字宽时撑不开单元，标了等于没标，
+// 省掉「到底该谁让位」的分支。
+function markTouchingRubyUnits(container) {
+    const units = container.querySelectorAll('.ruby-unit');
+    for (let i = 1; i < units.length; i++) {
+        const prev = units[i - 1];
+        const curr = units[i];
+        // 没有读音的单元不会溢出，也就不会撞到谁。
+        if (!rubyUnitHasReading(prev) || !rubyUnitHasReading(curr)) continue;
+        if (!rubyUnitsAreTouching(prev, curr)) continue;
+        prev.classList.add('ruby-tight');
+        curr.classList.add('ruby-tight');
+    }
+}
+
+function rubyUnitHasReading(unit) {
+    for (const child of (unit.childNodes || [])) {
+        if (child.nodeType === Node.ELEMENT_NODE &&
+            child.classList && child.classList.contains('ruby-rt')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 文档序的下一个节点。`skipChildren` 用于跳过起点自身的子树（基字与读音是它自己的
+// 内容，不能算作「两个单元之间」）。只用 childNodes/nextSibling/parentNode —— 不碰
+// Range / :scope / compareDocumentPosition，这样真 WebView 与测试用的假 DOM 走完全
+// 同一条代码路径，行为测试才真的在测生产逻辑。
+function nextNodeInDocumentOrder(node, skipChildren) {
+    if (!skipChildren && node.childNodes && node.childNodes.length > 0) {
+        return node.childNodes[0];
+    }
+    let cursor = node;
+    while (cursor) {
+        if (cursor.nextSibling) return cursor.nextSibling;
+        cursor = cursor.parentNode;
+    }
+    return null;
+}
+
+// a 与 b 之间除空白外没有任何文本 → 两个注音会撞在一起。元素本身不算内容（它的文本
+// 会在下潜时作为文本节点被看到），所以 `</ruby><ruby>` 这种跨 ruby 的紧邻也判得出
+// —— 明鏡的四字熟語正是这个形状（曲学(きょくがく)+阿世(あせい)）。
+function rubyUnitsAreTouching(a, b) {
+    let node = nextNodeInDocumentOrder(a, true);
+    // 步数上限只防御环形/畸形 DOM；正常相邻只需几步。走超了就当判不出 → 不标记，
+    // 维持 BUG-1778 的悬出行为，绝不猜。
+    let steps = 0;
+    while (node && node !== b && steps++ < 512) {
+        if (node.nodeType === Node.TEXT_NODE &&
+            String(node.textContent || '').trim() !== '') {
+            return false;
+        }
+        node = nextNodeInDocumentOrder(node, false);
+    }
+    return node === b;
 }
 
 function applyCustomCSS() {

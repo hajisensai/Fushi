@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1757 条。点号进各自文件。
+> 共 1760 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1898](bugs/BUG-1898-touching-ruby-units-overlap.md) | ✅ | ✅ | 紧邻的两个带注音基字振假名重叠：明鏡四字熟語糊成一团 |
+| [BUG-1897](bugs/BUG-1897-dict-css-double-scales-ruby.md) | ✅ | ✅ | 词典自带 rt 字号与注音盒相乘，小学館十二版振假名只剩 0.3em |
+| [BUG-1896](bugs/BUG-1896-video-episode-picker-unordered.md) | ✅ | ✅ | 播放器选集横排缩略图乱序：番剧下载入库从不重排合集 |
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
 | [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
 | [BUG-1881](bugs/BUG-1881-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
