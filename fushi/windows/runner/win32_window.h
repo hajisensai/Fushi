@@ -117,11 +117,14 @@ class Win32Window {
   void PaintBackdrop(HDC dc);
 
   // BUG-1916: repaints this window's own redirection surface — including
-  // underneath the Flutter view — with |backdrop_brush_|. The view is composed
-  // as its own layer over that surface, so the surface colour is normally
-  // hidden, but maximize / restore / DPI transitions momentarily show the
-  // surface (DWM animates the window's surface, not the view). Keeping it
-  // uniformly theme-coloured is what removes the "backdrop layer" there.
+  // underneath the Flutter view — with |backdrop_brush_|. On the hardware
+  // path the view is composed as its own layer over that surface, so the
+  // surface colour is normally hidden, but maximize / restore / DPI
+  // transitions momentarily show the surface (DWM animates the window's
+  // surface, not the view). Keeping it uniformly theme-coloured is what
+  // removes the "backdrop layer" there. Under the engine's software-rendering
+  // fallback the view paints into this same surface, so a fill can show as at
+  // most one theme-coloured frame until the next present.
   void FillSurfaceBackdrop();
 
   // Owned solid brush used by PaintBackdrop. Starts as the TODO-959 splash

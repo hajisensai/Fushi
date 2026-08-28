@@ -301,8 +301,12 @@ Win32Window::MessageHandler(HWND hwnd,
       // BUG-1916: the surface just changed size; its new area is uninitialised
       // (black) and its old area may carry an older fill. Paint it whole,
       // under the view too, before the view is resized — MoveWindow below
-      // blocks until the engine presents a frame of the new size, so nothing
-      // of this fill is ever visible through the view itself.
+      // blocks until the engine presents a frame of the new size. On the
+      // hardware path the view is its own composition layer, so this fill is
+      // never visible through it; if the engine has fallen back to software
+      // rendering (view paints into this same surface) the worst case is one
+      // theme-coloured frame under the view — still better than the old
+      // teal erase on every WM_PAINT.
       FillSurfaceBackdrop();
       if (child_content_ != nullptr) {
         // Size and position the child window.

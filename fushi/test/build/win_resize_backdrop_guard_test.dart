@@ -29,6 +29,7 @@ void main() {
   late String cpp;
   late String header;
   late String flutterWindow;
+  late String mainDart;
 
   setUpAll(() {
     cpp = _stripLineComments(
@@ -38,6 +39,7 @@ void main() {
     flutterWindow = _stripLineComments(
       File('windows/runner/flutter_window.cpp').readAsStringSync(),
     );
+    mainDart = _stripLineComments(File('lib/main.dart').readAsStringSync());
   });
 
   group('BUG-1916 Windows surface backdrop', () {
@@ -155,6 +157,26 @@ void main() {
         reason:
             'the theme surface colour pushed by Dart must drive the '
             'backdrop, or the transition frame stays teal.',
+      );
+    });
+
+    test('Dart pushes the live theme surface colour as the caption colour', () {
+      // The native chain above is only as good as what Dart feeds it: if the
+      // app stopped pushing cs.surface, the brush would stay at the splash
+      // colour forever while every native guard still passed.
+      final int callAt = mainDart.indexOf(
+        'WindowCaptionChannel.setCaptionColors(',
+      );
+      expect(callAt, isNonNegative);
+      final int callEnd = mainDart.indexOf(');', callAt);
+      expect(callEnd, greaterThan(callAt));
+      final String call = mainDart.substring(callAt, callEnd);
+      expect(
+        RegExp(r'caption:\s*cs\.surface(?![A-Za-z0-9_])').hasMatch(call),
+        isTrue,
+        reason:
+            'the caption/backdrop colour must be the theme surface colour '
+            '(the page background), not any other role.',
       );
     });
   });
