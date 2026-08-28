@@ -397,6 +397,32 @@ Future<bool?> readDesktopWindowFullscreen() async {
   return null;
 }
 
+/// Applies [fullscreen] to the native Windows window and returns the state that
+/// is actually in effect, or null when the mutation failed and no read could
+/// establish the truth.
+///
+/// `window_manager` is the only source of truth here; the caller derives the
+/// app-frame chrome from this one value.
+Future<bool?> _resolveWindowsFullscreen(bool fullscreen) async {
+  bool mutated = false;
+  try {
+    await windowManager.setFullScreen(fullscreen);
+    mutated = true;
+    return await windowManager.isFullScreen();
+  } catch (error) {
+    debugPrint('[Fushi] window fullscreen mutation failed: $error');
+  }
+  try {
+    // The native read stays authoritative even when the mutation threw.
+    return await windowManager.isFullScreen();
+  } catch (_) {
+    // Both reads failed. If the mutation itself completed, the requested state
+    // is the best available truth, so a reader that entered fullscreen keeps
+    // ownership and can still restore the window later.
+    return mutated ? fullscreen : null;
+  }
+}
+
 /// Sets the desktop window fullscreen state through the platform's single
 /// native-window owner and returns the resulting state. Mobile returns null.
 Future<bool?> setDesktopWindowFullscreen(bool fullscreen) async {
@@ -418,38 +444,18 @@ Future<bool?> setDesktopWindowFullscreen(bool fullscreen) async {
       // previous maximized state, so WindowListener alone can remain stuck.
       final bool previousChromeState =
           FushiWindowsTitleBar.isWindowManagerFullscreen;
+      // Claim the hidden-caption state before the native flip so the app frame
+      // never paints over the fullscreen surface for a frame.
       if (fullscreen) {
         FushiWindowsTitleBar.setWindowManagerFullscreen(true);
       }
-      bool mutationCompleted = false;
-      try {
-        await windowManager.setFullScreen(fullscreen);
-        mutationCompleted = true;
-        FushiWindowsTitleBar.setWindowManagerFullscreen(fullscreen);
-        final bool applied = await windowManager.isFullScreen();
-        FushiWindowsTitleBar.setWindowManagerFullscreen(applied);
-        return applied;
-      } catch (error) {
-        try {
-          final bool current = await windowManager.isFullScreen();
-          FushiWindowsTitleBar.setWindowManagerFullscreen(current);
-          // Even if the mutation threw, the native read is authoritative. If
-          // only the verification read failed after a completed mutation,
-          // this retry also preserves the caller's fullscreen ownership.
-          return current;
-        } catch (_) {
-          if (mutationCompleted) {
-            // The mutation completed but both reads failed. Keep the requested
-            // state as the best available truth so a reader that entered
-            // fullscreen retains ownership and can restore the window later.
-            FushiWindowsTitleBar.setWindowManagerFullscreen(fullscreen);
-            return fullscreen;
-          }
-          FushiWindowsTitleBar.setWindowManagerFullscreen(previousChromeState);
-        }
-        debugPrint('[Fushi] window fullscreen mutation failed: $error');
-        rethrow;
-      }
+      // One resolve, one write: the chrome owner is derived from the single
+      // authoritative value below instead of being poked at every step.
+      final bool? applied = await _resolveWindowsFullscreen(fullscreen);
+      FushiWindowsTitleBar.setWindowManagerFullscreen(
+        applied ?? previousChromeState,
+      );
+      return applied;
     }
     if (Platform.isLinux) {
       await windowManager.setFullScreen(fullscreen);
