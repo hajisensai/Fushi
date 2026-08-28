@@ -22,7 +22,9 @@
 
   // enabled 由扩展 options 的 netflixSubtitlePanel 开关驱动（默认 false）。
   var st = {
-    activeLang: null, videoId: null, cues: [], currentIndex: -1,
+    // videoId 初始值是 '' 而非 null：与 videoKey() 的非空字符串契约同型，
+    // 首次 tick 仍会因 '' !== <真实 key> 而触发一次 refreshHeadless（语义不变）。
+    activeLang: null, videoId: '', cues: [], currentIndex: -1,
     tickTimer: null, enabled: false,
     overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
     overlayEl: null, overlayCue: null, dropHint: null,
@@ -34,6 +36,12 @@
     overlayAutoLookup: false,
     overlayBlur: false, overlayAllTracks: false,
     overlayHovered: false, autoLookupLastX: -1, autoLookupLastY: -1,
+    // 「用 Fushi 字幕替代站点原生字幕」：用预取的整集轨自绘一整句，并藏掉站点原生字幕。
+    // 针对 YouTube 自动生成字幕——它是**逐词滚动**渲染的（DOM 里每帧多一个词），
+    // 拿它划词/制卡永远只能拿到半句；而 youtube-bridge.js 早就把整集 srv3 轨按 <p> 段
+    // 预取进 store 了，只是渲染侧默认不用（站点自带轨不叠加，避免双份字幕）。
+    // replaceNativeActive = 本轮判定「替代确实生效中」，推给 content.js 决定藏不藏原生。
+    replaceNative: false, replaceNativeActive: false,
   };
   var EXT_PREFIX = '外挂:';
 
@@ -52,6 +60,9 @@
   function teardownAll() {
     hideSubtitleOverlay();
     hideDropHint();
+    // 面板整体被关掉时替代模式也随之失效（replaceNativeEffective 已含 st.enabled），
+    // 必须把站点原生字幕放回来——否则用户关掉字幕列表后既没有自绘覆盖层也没有原生字幕。
+    syncNativeSubtitleReplacement();
   }
   function applyEnabled(on) {
     st.enabled = !!on;
@@ -67,7 +78,14 @@
   // 契约）。契约缺失（加载顺序异常/单测隔离）时本地回落同构实现。
   function videoKey() {
     try {
-      if (typeof window.fushiVideoKey === 'function') return window.fushiVideoKey();
+      if (typeof window.fushiVideoKey === 'function') {
+        // 契约：videoKey() 永远返回非空字符串。返回值会直接拼进轨 key
+        // （`${videoKey}|${lang}`），漏出 undefined/'' 就会生成 "undefined|ja" 这种脏 key；
+        // 而身份比较（videoKey() !== st.videoId）会因两侧类型不同而永远判「换了视频」。
+        // 上游给不出有效值时落回下面的通用回落，不把脏值传出去。
+        var k = window.fushiVideoKey();
+        if (typeof k === 'string' && k) return k;
+      }
     } catch (_) {}
     var m = (location.pathname || '').match(/\/watch\/(\d+)/);
     if (/(^|\.)netflix\.com$/.test(location.hostname) && m) return m[1];
@@ -161,7 +179,9 @@
     st.overlayAutoLookup = c.subtitleOverlayAutoLookup === true;
     st.overlayBlur = c.subtitleOverlayBlur === true;
     st.overlayAllTracks = c.subtitleOverlayAllTracks === true;
+    st.replaceNative = c.subtitleReplaceNative === true;
     if (!st.overlayEnabled) hideSubtitleOverlay();
+    syncNativeSubtitleReplacement();
   }
 
   // 当前偏好快照（快捷键 toggle 用：改一个键、其余保持现值，绝不把用户已关的项刷回默认）。
@@ -173,6 +193,7 @@
       subtitleOverlayAutoLookup: st.overlayAutoLookup,
       subtitleOverlayBlur: st.overlayBlur,
       subtitleOverlayAllTracks: st.overlayAllTracks,
+      subtitleReplaceNative: st.replaceNative,
     };
   }
 
@@ -180,7 +201,7 @@
     var keys = [
       'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
       'subtitleOverlayAutoLookup',
-      'subtitleOverlayBlur', 'subtitleOverlayAllTracks',
+      'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleReplaceNative',
     ];
     try {
       var p = chrome.storage.local.get(keys);
@@ -189,7 +210,45 @@
     } catch (_) {}
   }
 
+  // 替代模式是否**真的**生效。四个条件缺一不可，任何一个不成立都必须放回原生字幕——
+  // 「藏了原生、自绘又没内容」= 用户一句字幕都看不到，比不做还糟：
+  //   ① 用户开了这个设置；② 覆盖层没被关掉（它就是替代品本身）；
+  //   ③ 当前活动轨不是 live 轨（live 轨就是从原生 DOM 逐词采来的，拿它替代原生毫无意义）；
+  //   ④ 这条轨真有 cue（整轨还没到 / 抓取失败时保持原生字幕可见）。
+  function replaceNativeEffective() {
+    return st.enabled && st.replaceNative && st.overlayEnabled &&
+      !!st.activeLang && st.activeLang !== LIVE_LANG && st.cues.length > 0;
+  }
+
+  // 把判定结果推给 content.js（遮蔽原因 'replace' 的唯一写入点）。幂等：状态没变不发。
+  function syncNativeSubtitleReplacement() {
+    var active = replaceNativeEffective();
+    if (active === st.replaceNativeActive) return;
+    st.replaceNativeActive = active;
+    try {
+      if (typeof window.fushiSetNativeSubtitleReplaced === 'function') {
+        window.fushiSetNativeSubtitleReplaced(active);
+      }
+    } catch (_) {}
+  }
+
   function tick() {
+    // 面板被关掉时 tick 直接停手。下面的身份检测会调 refreshHeadless，那是 sync() /
+    // fushiSubtitlePanelOnCues 的 enabled 门之外的第三条入口——不挡住的话，关掉的面板仍会
+    // 每 200ms 遍历整个 cue store 并拷一份 shiftedCues（整集轨可达数千条 × 多轨）。
+    // 注：这是**性能与语义一致性**门，不是正确性门——替代模式的撤销由 replaceNativeEffective
+    // 里的 st.enabled 保证，覆盖层的摘除由 teardownAll 保证，故变异掉这一行不会让测试变红。
+    if (!st.enabled) return;
+    // SPA 换视频先于一切：YouTube 只换 `?v=`，pathname 不变，下面那条 500ms 的 pathname
+    // 轮询根本看不见——不在这里认出身份变化，st.cues 会一直留着上一个视频的整轨，
+    // 替代模式就会拿旧字幕盖住新视频（且原生字幕已被藏）。refreshHeadless 内部会重跑 tick。
+    if (videoKey() !== st.videoId) {
+      st.activeLang = null;
+      refreshHeadless();
+      return;
+    }
+    // 先同步替代状态再走空轨短路：切视频/换轨导致 cues 清空时，原生字幕必须立刻放回来。
+    syncNativeSubtitleReplacement();
     if (!st.cues.length) { hideSubtitleOverlay(); return; }
     var nowMs = videoTimeMs();
     var idx = cueIndexAt(st.cues, nowMs);
@@ -262,9 +321,10 @@
 
   function updateSubtitleOverlay(cue) {
     // 外挂轨恒显示；检测轨（站点自带字幕）默认不重复叠字，除非用户开了「全轨覆盖层」
-    // （overlayAllTracks，配合防剧透模糊/悬浮字幕自动查词使用）。
+    // （overlayAllTracks，配合防剧透模糊/悬浮字幕自动查词使用）或「替代原生字幕」——
+    // 后者本来就是「原生藏掉、这里补上整句」，此时不叠字反而是空屏。
     if (!st.overlayEnabled || !cue ||
-        (!isExternalLang(st.activeLang) && !st.overlayAllTracks)) {
+        (!isExternalLang(st.activeLang) && !st.overlayAllTracks && !replaceNativeEffective())) {
       hideSubtitleOverlay();
       return;
     }
@@ -690,7 +750,7 @@
       var keys = [
         'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
         'subtitleOverlayAutoLookup',
-        'subtitleOverlayBlur', 'subtitleOverlayAllTracks',
+        'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleReplaceNative',
       ];
       for (var i = 0; i < keys.length; i++) {
         if (changes[keys[i]]) { prefs[keys[i]] = changes[keys[i]].newValue; changed = true; }

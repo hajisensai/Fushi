@@ -277,6 +277,10 @@ function loadWorld(opts) {
   vm.runInContext(fs.readFileSync(POPUP, 'utf8'), sandbox, { filename: 'popup.js' });
   vm.runInContext(fs.readFileSync(SHIM, 'utf8'), sandbox, { filename: 'bridge-shim.js' });
   loadFushiDictMedia(sandbox);
+  // manifest 里 popup-size.js 排在 content.js 之前（同隔离世界的顶层函数），
+  // content.js 的 fushiApplyTheme 直接调它的 fushiResolvePopupBox。
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'popup-size.js'), 'utf8'), sandbox,
+    { filename: 'popup-size.js' });
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), sandbox, { filename: 'content.js' });
 
   const flushRaf = () => { while (rafQueue.length) rafQueue.shift()(); };

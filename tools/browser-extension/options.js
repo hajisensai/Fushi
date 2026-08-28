@@ -20,6 +20,8 @@ const settingDefaults = Object.freeze({
   subtitleOverlayAutoLookup: false,
   subtitleOverlayBlur: false,
   subtitleOverlayAllTracks: false,
+  // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
+  subtitleReplaceNative: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
   videoShortcutPrevCue: true,
@@ -44,6 +46,7 @@ const toggleIds = Object.freeze({
   subtitleOverlayAutoLookup: 'subtitleOverlayAutoLookup',
   subtitleOverlayBlur: 'subtitleOverlayBlur',
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
+  subtitleReplaceNative: 'subtitleReplaceNative',
   subtitleHidden: 'subtitleHidden',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
   videoShortcutNextCue: 'videoShortcutNextCue',
@@ -125,8 +128,8 @@ async function loadSettings() {
 
   // 旧 subtitleHoverPause / videoShortcutsEnabled 只作一次向后兼容读取：
   // 新键已有显式值时永远优先；旧键不再由 UI 写入。
-  const keys = ['host', 'port', 'token', 'subtitleHoverPause', 'videoShortcutsEnabled']
-    .concat(Object.values(toggleIds));
+  const keys = ['host', 'port', 'token', 'subtitleHoverPause', 'videoShortcutsEnabled',
+    'popupSizeFromApp'].concat(Object.values(toggleIds));
   const saved = await chrome.storage.local.get(keys);
   if (saved.host != null && saved.host !== '') $('host').value = saved.host;
   if (saved.port != null && saved.port !== 0) $('port').value = saved.port;
@@ -147,6 +150,52 @@ async function loadSettings() {
       await chrome.storage.local.set({ [key]: input.checked });
       toast('已更新：' + input.closest('.setting-row').querySelector('strong').textContent);
     });
+  }
+  await loadPopupSize(saved);
+}
+
+// ── 查词框大小 ──
+// 尺寸真相源是 app 的 `extension_popup_max_width/height` 偏好；写入口只有一条
+// `POST /api/extension/popup-size`（弹窗拖拽把手、侧边栏拖拽把手、这里三处共用，
+// background.js 的 'popupSize' 消息就是它）。**这里绝不在扩展本地另存一份尺寸**——
+// 那会变成第二个真相源，用户在 app 设置页调完发现不生效。
+// 回显值来自 content.js 在每次查词时镜像下来的 `popupSizeFromApp`（只读，不参与决策）。
+const popupSizeIds = Object.freeze(['popupSizeWidth', 'popupSizeHeight']);
+
+function fillPopupSizeInputs(mirror) {
+  const m = mirror && typeof mirror === 'object' ? mirror : null;
+  const w = $('popupSizeWidth');
+  const h = $('popupSizeHeight');
+  // 输入框正被编辑时不覆盖用户正在打的字（镜像会随每次查词更新）。
+  if (w && document.activeElement !== w) w.value = m && m.width > 0 ? String(Math.round(m.width)) : '';
+  if (h && document.activeElement !== h) h.value = m && m.height > 0 ? String(Math.round(m.height)) : '';
+}
+
+async function submitPopupSize() {
+  const size = fushiClampPopupSize($('popupSizeWidth').value, $('popupSizeHeight').value);
+  if (!size) {
+    // 两个都得有值才能提交（端点契约是 {maxWidth, maxHeight} 一对）。清空 = 不改。
+    return;
+  }
+  $('popupSizeWidth').value = String(size.width);   // 让用户当场看到被夹住的值
+  $('popupSizeHeight').value = String(size.height);
+  const resp = await runtimeMessage(
+    { type: 'popupSize', maxWidth: size.width, maxHeight: size.height });
+  if (resp && resp.ok) {
+    toast('查词框大小已更新（下次查词生效）');
+  } else {
+    toast('没连上 Fushi，尺寸没保存');
+  }
+}
+
+async function loadPopupSize(saved) {
+  const store = saved && Object.prototype.hasOwnProperty.call(saved, 'popupSizeFromApp')
+    ? saved
+    : await chrome.storage.local.get(['popupSizeFromApp']);
+  fillPopupSizeInputs(store.popupSizeFromApp);
+  for (const id of popupSizeIds) {
+    // change（失焦/回车）而非 input：边打字边发请求会把「4」当成 4px 提交上去。
+    on(id, 'change', submitPopupSize);
   }
 }
 
@@ -276,6 +325,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const input = $(id);
     if (input) input.checked = changes[key].newValue === true;
   }
+  if (changes.popupSizeFromApp) fillPopupSizeInputs(changes.popupSizeFromApp.newValue);
   if (changes.fushiUpdateStale) refreshUpdateCard();
 });
 

@@ -185,7 +185,10 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   width: 400px;
   max-width: calc(100vw - 16px);
   max-height: min(360px, 80vh);
-  overflow-x: hidden;
+  /* 尺寸盒由 side-panel.js 的 applyLookupBox 按侧边栏实际视口夹取（zoom 已折算）。
+     这里保留 auto 而非 hidden 作为最后兜底：极端窄侧栏 + 不可断的长串（罗马音、URL、
+     宽表格）仍可能超出夹后的宽度，hidden 是**永久丢内容**，auto 至少还能横向滚出来。 */
+  overflow-x: auto;
   overflow-y: auto;
   overscroll-behavior: contain;
   visibility: hidden;
