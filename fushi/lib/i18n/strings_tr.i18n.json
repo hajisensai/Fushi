@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "Kapalı: video sayfasına girmek medya sunucusuna hiçbir istek göndermez; öğeleri elle listelemek için video kitaplığında çekerek yenileyin. Otomatik sayımın kazıma gibi görünüp kötüye kullanım tespitini tetikleyebildiği çok büyük sunucular için önerilir.",
   "jellyfin_libraries_title": "Listelenecek kitaplıklar",
   "jellyfin_libraries_hint": "Hiçbir şey seçmezseniz tüm video kitaplıkları listelenir. Gerçekten izlediğiniz kitaplıklarla sınırlamak, devasa sunucuların baştan sona sayılmasını önler.",
-  "jellyfin_libraries_load_failed": "Kitaplık listesi yüklenemedi"
+  "jellyfin_libraries_load_failed": "Kitaplık listesi yüklenemedi",
+  "video_filter_series": "Diziler",
+  "video_filter_series_in": "Bir dizide",
+  "video_filter_series_standalone": "Dizide değil"
 }

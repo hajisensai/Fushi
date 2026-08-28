@@ -347,6 +347,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   VideoYearFilter _yearFilter = const VideoYearFilter.all();
   VideoWatchStatusFilter _watchStatusFilter = VideoWatchStatusFilter.all;
 
+  /// 系列归属筛选（只在「全部视频」露出，同样不持久化）。「全部视频」把整库逐条
+  /// 平铺，系列的每一集都混在里面；这个档位让用户把已归进系列的集数收掉、只看
+  /// 还没成系列的散片（反过来也能只看系列内的集）。
+  VideoSeriesFilter _seriesFilter = VideoSeriesFilter.all;
+
+  /// 系列归属筛选归「全部视频」独有：控件只在那个分区露出，所以别的分区必须恒
+  /// 按「全部」过滤——否则同一个 State 被 tab 复用时，上个分区留下的档位会在没有
+  /// 任何控件可复位的页面上隐形吃掉条目。
+  VideoSeriesFilter get _effectiveSeriesFilter =>
+      widget.section == VideoLibrarySection.allVideos
+          ? _seriesFilter
+          : VideoSeriesFilter.all;
+
   /// TODO-2486：hero 轮播控制器 + 当前页。手动切换（滑动/指示条），**无自动
   /// 轮播**（尊重 prefers-reduced-motion 精神）。
   final PageController _heroPageController = PageController();
@@ -1047,9 +1060,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() => _selection.enterWith(slot));
   }
 
-  /// 一个可见视频是否已折进某合集（= 合集成员，不作散卡单选/全选）。
-  bool _isCollectionMember(String bookUid) => _primaryCollectionByEntry
-      .containsKey(MediaKind.video.compositeKey(bookUid));
+  /// 一个视频是否已归进某个系列（= 在系列视图里被折进合集卡）。
+  ///
+  /// 判据与 [_groupVideos] 的折叠判据同源：主合集归属存在 **且那个合集本身还在**。
+  /// 归属指向已删合集的孤儿条目在墙上本来就是散卡，不能算系列成员。「全部视频」
+  /// 的系列归属筛选与批量选择共用这一份判据，避免两处口径漂开。
+  bool _isCollectionMember(String bookUid) {
+    final int? collectionId =
+        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
+    return collectionId != null && _collectionsById.containsKey(collectionId);
+  }
 
   /// 全选 / 反选的候选散卡键：只含未折进合集的可见视频（折进的成员由整合集选中，
   /// 不单独勾）。两处共用同一份资格判据，避免全选与反选口径漂开。
@@ -2532,6 +2552,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             if (!(widget.section == VideoLibrarySection.series &&
                     _localExtraBookUids.contains(b.bookUid)) &&
                 _yearFilter.matches(_airYearByUid[b.bookUid]) &&
+                matchesVideoSeriesFilter(
+                  filter: _effectiveSeriesFilter,
+                  inSeries: _isCollectionMember(b.bookUid),
+                ) &&
                 matchesVideoWatchStatus(
                   filter: _watchStatusFilter,
                   completed: b.completedAt != null,
@@ -2563,7 +2587,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final List<RemoteVideoInfo> remoteVideos = <RemoteVideoInfo>[
               for (final RemoteVideoInfo v in _visibleRemoteVideos(
                   snapState ?? _lastRemoteState, filter))
+                // 远端占位与本地同规则过系列归属筛选：host 下发的 collection
+                // membership 就是它在系列视图里的折叠归属。
                 if (_yearFilter.matches(null) &&
+                    matchesVideoSeriesFilter(
+                      filter: _effectiveSeriesFilter,
+                      inSeries: v.collection != null,
+                    ) &&
                     matchesVideoWatchStatus(
                       filter: _watchStatusFilter,
                       completed: false,
@@ -5278,6 +5308,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           _buildYearFilterButton(),
           const SizedBox(width: 8),
           _buildWatchStatusFilterButton(),
+          // 系列归属档位只在「全部视频」露出：那里整库逐条平铺，是唯一会被系列
+          // 集数淹没的视图。系列页本身按合集折叠，再给它这个档位没有意义。
+          if (widget.section == VideoLibrarySection.allVideos) ...<Widget>[
+            const SizedBox(width: 8),
+            _buildSeriesFilterButton(),
+          ],
         ],
       ),
     );
@@ -5346,6 +5382,42 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       ),
     );
   }
+
+  /// 系列归属下拉筛选（全部 / 系列内 / 非系列）。「全部视频」逐条平铺整库，一部
+  /// 番的几十集会把散片淹掉；这个档位让用户把已归进系列的集数收起来，只看还没
+  /// 成系列的片子（反向档位同理，用来核对某些集是不是漏归系列了）。
+  Widget _buildSeriesFilterButton() {
+    final String label = _seriesFilter == VideoSeriesFilter.all
+        ? t.video_filter_series
+        : _seriesFilterLabel(_seriesFilter);
+    return PopupMenuButton<VideoSeriesFilter>(
+      key: const ValueKey<String>('home_video_filter_series'),
+      tooltip: t.video_filter_series,
+      initialValue: _seriesFilter,
+      onSelected: (VideoSeriesFilter value) =>
+          setState(() => _seriesFilter = value),
+      itemBuilder: (BuildContext context) =>
+          <PopupMenuEntry<VideoSeriesFilter>>[
+        for (final VideoSeriesFilter filter in VideoSeriesFilter.values)
+          PopupMenuItem<VideoSeriesFilter>(
+            value: filter,
+            child: Text(filter == VideoSeriesFilter.all
+                ? t.home_filter_all
+                : _seriesFilterLabel(filter)),
+          ),
+      ],
+      child: _filterDropdownChip(
+        label: label,
+        active: _seriesFilter != VideoSeriesFilter.all,
+      ),
+    );
+  }
+
+  String _seriesFilterLabel(VideoSeriesFilter filter) => switch (filter) {
+        VideoSeriesFilter.all => t.video_filter_series,
+        VideoSeriesFilter.inSeries => t.video_filter_series_in,
+        VideoSeriesFilter.standalone => t.video_filter_series_standalone,
+      };
 
   String _watchStatusFilterLabel(VideoWatchStatusFilter filter) =>
       switch (filter) {

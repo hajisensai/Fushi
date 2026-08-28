@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "Off: entering the video page sends no request to the media server; pull to refresh in the video library to list items manually. Recommended for very large servers, where automatic enumeration looks like scraping and can trip abuse detection.",
   "jellyfin_libraries_title": "Libraries to list",
   "jellyfin_libraries_hint": "Select nothing to list every video library. Narrowing to the libraries you actually watch keeps huge servers from being enumerated in full.",
-  "jellyfin_libraries_load_failed": "Could not load the library list"
+  "jellyfin_libraries_load_failed": "Could not load the library list",
+  "video_filter_series": "Series",
+  "video_filter_series_in": "In a series",
+  "video_filter_series_standalone": "Not in a series"
 }

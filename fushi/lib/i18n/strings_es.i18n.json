@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "Desactivado: entrar en la página de vídeo no envía ninguna petición al servidor de medios; desliza para actualizar en la videoteca para listar manualmente. Recomendado en servidores muy grandes, donde la enumeración automática parece scraping y puede activar la detección de abuso.",
   "jellyfin_libraries_title": "Bibliotecas a listar",
   "jellyfin_libraries_hint": "No seleccionar nada lista todas las bibliotecas de vídeo. Limitarlo a las bibliotecas que realmente ves evita que los servidores enormes se enumeren por completo.",
-  "jellyfin_libraries_load_failed": "No se pudo cargar la lista de bibliotecas"
+  "jellyfin_libraries_load_failed": "No se pudo cargar la lista de bibliotecas",
+  "video_filter_series": "Series",
+  "video_filter_series_in": "En una serie",
+  "video_filter_series_standalone": "Sin serie"
 }

@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "Disattivato: aprire la pagina video non invia alcuna richiesta al server multimediale; tira per aggiornare nella videoteca per elencare manualmente. Consigliato per server molto grandi, dove l'enumerazione automatica sembra scraping e può far scattare il rilevamento abusi.",
   "jellyfin_libraries_title": "Librerie da elencare",
   "jellyfin_libraries_hint": "Non selezionare nulla elenca tutte le librerie video. Limitarsi alle librerie che guardi davvero evita che server enormi vengano enumerati per intero.",
-  "jellyfin_libraries_load_failed": "Impossibile caricare l'elenco delle librerie"
+  "jellyfin_libraries_load_failed": "Impossibile caricare l'elenco delle librerie",
+  "video_filter_series": "Serie",
+  "video_filter_series_in": "In una serie",
+  "video_filter_series_standalone": "Senza serie"
 }
