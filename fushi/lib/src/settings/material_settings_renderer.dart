@@ -9,6 +9,49 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
+enum _MaterialDestinationGroup {
+  application,
+  content,
+  lookup,
+  data;
+
+  String get title => switch (this) {
+    _MaterialDestinationGroup.application =>
+      '${t.settings_section_app_shell} · ${t.settings_destination_appearance}',
+    _MaterialDestinationGroup.content => t.library_view_media,
+    _MaterialDestinationGroup.lookup =>
+      '${t.settings_destination_lookup} · ${t.settings_destination_card_creation}',
+    _MaterialDestinationGroup.data =>
+      '${t.settings_destination_system} · ${t.settings_destination_storage}',
+  };
+}
+
+_MaterialDestinationGroup _destinationGroup(SettingsDestinationId id) {
+  return switch (id) {
+    SettingsDestinationId.appearance ||
+    SettingsDestinationId.appIcon => _MaterialDestinationGroup.application,
+    SettingsDestinationId.reading ||
+    SettingsDestinationId.manga ||
+    SettingsDestinationId.listening ||
+    SettingsDestinationId.video ||
+    SettingsDestinationId.mediaTracking ||
+    SettingsDestinationId.downloads ||
+    SettingsDestinationId.services ||
+    SettingsDestinationId.game ||
+    SettingsDestinationId.readerQuickSettings ||
+    SettingsDestinationId.videoQuickSettings =>
+      _MaterialDestinationGroup.content,
+    SettingsDestinationId.lookup ||
+    SettingsDestinationId.cardCreation => _MaterialDestinationGroup.lookup,
+    SettingsDestinationId.profiles ||
+    SettingsDestinationId.syncBackup ||
+    SettingsDestinationId.storage ||
+    SettingsDestinationId.system ||
+    SettingsDestinationId.interconnect ||
+    SettingsDestinationId.shortcuts => _MaterialDestinationGroup.data,
+  };
+}
+
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
 
@@ -55,8 +98,14 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    final List<Widget> rows = <Widget>[
-      for (final SettingsDestination destination in destinations)
+    final Map<_MaterialDestinationGroup, List<Widget>> rowsByGroup =
+        <_MaterialDestinationGroup, List<Widget>>{
+          for (final _MaterialDestinationGroup group
+              in _MaterialDestinationGroup.values)
+            group: <Widget>[],
+        };
+    for (final SettingsDestination destination in destinations) {
+      rowsByGroup[_destinationGroup(destination.id)]!.add(
         FushiListItem(
           selected: destination.id == selectedDestinationId,
           // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
@@ -70,8 +119,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
           // 标签（如「同步与备份（实验性）」）用 FushiListItem 默认 titleMaxLines:1
           // 截成「同步与…」。放行第二行；全宽布局本就不换行，无害。
           titleMaxLines: 2,
-          subtitle:
-              destination.summary != null ? Text(destination.summary!) : null,
+          subtitle: destination.summary != null
+              ? Text(destination.summary!)
+              : null,
           // Chevron implies push navigation; only show it when tapping actually
           // pushes a detail route (narrow layout), not in the master-detail pane.
           trailing: pushRoutes ? const Icon(Icons.chevron_right) : null,
@@ -85,7 +135,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             );
           },
         ),
-    ];
+      );
+    }
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -95,10 +146,15 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         tokens.spacing.page + mediaPadding.bottom,
       ),
       children: <Widget>[
-        AdaptiveSettingsSection(
-          surfaceColor: tokens.surfaces.card,
-          children: rows,
-        ),
+        for (final _MaterialDestinationGroup group
+            in _MaterialDestinationGroup.values)
+          if (rowsByGroup[group]!.isNotEmpty)
+            AdaptiveSettingsSection(
+              key: ValueKey<String>('settings-destination-group-${group.name}'),
+              title: group.title,
+              surfaceColor: tokens.surfaces.card,
+              children: rowsByGroup[group]!,
+            ),
       ],
     );
   }
@@ -128,8 +184,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
   }) {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<SettingsSection> sections =
-        destination.visibleSections(settingsContext);
+    final List<SettingsSection> sections = destination.visibleSections(
+      settingsContext,
+    );
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     // Left side hugs the pane divider; give it MD3 expanded breathing room
     // (page + gap = 28) so detail content isn't glued to the nav pane. Horizontal
@@ -143,8 +200,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // pane's bespoke 导航 / 有声书 sub-pages instead of double-indenting and
     // rendering narrower (TODO-1321). Mirrors the Cupertino renderer, whose
     // detail body never owns a horizontal inset.
-    final EdgeInsets horizontal =
-        insetHorizontally ? detailHorizontalInsets(tokens) : EdgeInsets.zero;
+    final EdgeInsets horizontal = insetHorizontally
+        ? detailHorizontalInsets(tokens)
+        : EdgeInsets.zero;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal.left,
       tokens.spacing.gap,
@@ -153,17 +211,17 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     );
 
     Widget section(int index) => SettingsSchemaSection(
-          section: sections[index],
-          settingsContext: settingsContext,
-          showIcons: true,
-          routeBuilder: (BuildContext context, WidgetBuilder builder) {
-            return MaterialPageRoute<void>(builder: builder);
-          },
-          footerStyle: (BuildContext context) =>
-              Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: FushiDesignTokens.of(context).surfaces.onVariant,
-                  ),
-        );
+      section: sections[index],
+      settingsContext: settingsContext,
+      showIcons: true,
+      routeBuilder: (BuildContext context, WidgetBuilder builder) {
+        return MaterialPageRoute<void>(builder: builder);
+      },
+      footerStyle: (BuildContext context) => Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(color: FushiDesignTokens.of(context).surfaces.onVariant),
+    );
 
     // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
     // 与它们共享同一个滚动容器与内边距。

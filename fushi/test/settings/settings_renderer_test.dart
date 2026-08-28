@@ -116,6 +116,18 @@ SettingsDestination _fixtureDestination() {
   );
 }
 
+SettingsDestination _navigationFixture({
+  required SettingsDestinationId id,
+  required String title,
+}) {
+  return SettingsDestination(
+    id: id,
+    title: title,
+    icon: Icons.settings_outlined,
+    sections: const <SettingsSection>[],
+  );
+}
+
 Widget _buildHome(
   CupertinoThemeData? cupertinoTheme,
   Widget Function(SettingsContext) builder,
@@ -524,6 +536,48 @@ void main() {
     expect(item.selected, isTrue);
     expect(item.selectedShape, FushiListItemSelectedShape.pill);
     expect(item.trailing, isNull);
+  });
+
+  testWidgets('material destination list separates semantic groups', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext settingsContext) {
+          return MaterialSettingsRenderer().buildDestinationList(
+            settingsContext: settingsContext,
+            destinations: <SettingsDestination>[
+              _navigationFixture(
+                id: SettingsDestinationId.appearance,
+                title: 'Appearance',
+              ),
+              _navigationFixture(
+                id: SettingsDestinationId.reading,
+                title: 'Reading',
+              ),
+              _navigationFixture(
+                id: SettingsDestinationId.lookup,
+                title: 'Lookup',
+              ),
+              _navigationFixture(
+                id: SettingsDestinationId.profiles,
+                title: 'Profiles',
+              ),
+            ],
+            selectedDestinationId: SettingsDestinationId.appearance,
+            onDestinationSelected: (_) {},
+            pushRoutes: false,
+          );
+        },
+      ),
+    );
+
+    expect(find.byType(AdaptiveSettingsSection), findsNWidgets(4));
+    expect(find.text('App · Appearance'), findsOneWidget);
+    expect(find.text('Library'), findsOneWidget);
+    expect(find.text('Lookup · Card creation'), findsOneWidget);
+    expect(find.text('System · Storage'), findsOneWidget);
   });
 
   testWidgets('material push destination list keeps fill selection and chevron',
