@@ -84,11 +84,6 @@ import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 
 Color? _savedSplashColor;
 
-/// True only after Windows accepted the hidden native-caption style. Keeping
-/// this as an explicit startup capability avoids rendering two title bars if
-/// the plugin is unavailable or rejects the request on an unusual host.
-bool _windowsCustomTitleBarEnabled = false;
-
 /// 桌面端「从 app 外打开视频文件」时，runner 经 `set_dart_entrypoint_arguments`
 /// 把视频路径传进 `main(List<String> args)`；这里暂存，待 app 初始化完成后由
 /// [_FushiReaderAppState] 打开播放页并加入书架。null 表示本次启动不是外部打开视频。
@@ -199,7 +194,7 @@ void main([List<String> args = const <String>[]]) {
             TitleBarStyle.hidden,
             windowButtonVisibility: false,
           );
-          _windowsCustomTitleBarEnabled = true;
+          FushiWindowsTitleBar.isEnabled = true;
         } catch (e) {
           debugPrint('[Fushi] custom Windows title bar unavailable: $e');
         }
@@ -1709,7 +1704,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           builder: (context, child) {
             _scheduleWindowsUpdateHandoffReconcile();
             final cs = Theme.of(context).colorScheme;
-            if (Platform.isWindows && !_windowsCustomTitleBarEnabled) {
+            if (Platform.isWindows && !FushiWindowsTitleBar.isEnabled) {
               // Preserve the previous themed native caption as a graceful
               // fallback when hidden-title-bar support was unavailable.
               WindowCaptionChannel.setCaptionColors(
@@ -1828,7 +1823,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         );
                       }
                       if (Platform.isWindows &&
-                          _windowsCustomTitleBarEnabled) {
+                          FushiWindowsTitleBar.isEnabled) {
                         navigation = FushiWindowsTitleBar(
                           leadingInset: viewport.width >= 600 ? 80 : 0,
                           title: ValueListenableBuilder<HomeTab>(

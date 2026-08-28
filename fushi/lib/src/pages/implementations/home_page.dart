@@ -1118,29 +1118,6 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    if (_visibleTab == HomeTab.settings) {
-      // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
-      // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
-      // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
-      // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
-      // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
-      // 混排、无返回出口、且详情面板溢出。
-      return Scaffold(
-        resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          // macOS 透明标题栏 + full-size content view 下，交通灯不计入
-          // MediaQuery.padding，返回箭头会被压在按钮下方。预留标题栏高度作为
-          // SafeArea 下限，让顶部内容整体让位（BUG-869）。其它平台 top=0 无影响。
-          minimum: EdgeInsets.only(
-            top: Platform.isMacOS ? kMacTitleBarHeight : 0,
-          ),
-          child: FocusTraversalGroup(
-            child: _buildSettingsTabContent(showBackButton: true),
-          ),
-        ),
-      );
-    }
-
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2322,9 +2299,9 @@ class _HomePageState extends BasePageState<HomePage>
     }
   }
 
-  /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
-  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧，可直接切回）不
-  /// 显示箭头，系统返回手势仍由 [HomeSettingsTabContent] 内的 PopScope 拦截。
+  /// 设置 tab 的内容外壳。[showBackButton] 仅供没有主导航出口的宿主显示页头返回箭头；
+  /// 常规移动底栏 / 宽屏侧栏都可直接切回，系统返回手势仍由
+  /// [HomeSettingsTabContent] 内的 PopScope 拦截。
   Widget _buildSettingsTabContent({required bool showBackButton}) {
     return HomeSettingsTabContent(
       showBackButton: showBackButton,
@@ -2354,7 +2331,7 @@ class HomeSettingsTabContent extends StatelessWidget {
   /// 系统返回键被拦截后调用：切回进入设置前的来源 tab。
   final VoidCallback onReturnToPreviousTab;
 
-  /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
+  /// 是否在设置页头左侧显示返回箭头（仅用于没有主导航出口的宿主）。
   final bool showBackButton;
 
   /// 设置内容；为空时回落到默认的 [FushiSettingsContent]。

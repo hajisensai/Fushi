@@ -17,6 +17,10 @@ class FushiWindowsTitleBar extends StatefulWidget {
 
   static const double height = 52;
 
+  /// Set only after Windows accepts [TitleBarStyle.hidden]. Widgets below the
+  /// app frame use this to avoid rendering a second, redundant page header.
+  static bool isEnabled = false;
+
   final Widget title;
   final Widget child;
   final double leadingInset;
