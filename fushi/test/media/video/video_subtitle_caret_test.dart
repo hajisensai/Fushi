@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import '../../pages/video_fushi_page_source_corpus.dart';
@@ -182,57 +183,99 @@ void main() {
     });
   });
 
-  group('③ guardVideoShortcutsWithSubtitleCaret 键盘接管', () {
-    Map<ShortcutActivator, VoidCallback> base(List<String> log) =>
-        <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.arrowLeft,
-              includeRepeats: true): () => log.add('seekBack'),
-          const SingleActivator(LogicalKeyboardKey.arrowLeft,
-              control: true, includeRepeats: true): () => log.add('prevCue'),
-        };
+  /// 光标激活期的键盘接管（方案 D 之后住在两个纯函数里）：
+  ///
+  /// · [videoCaretKeyboardTakesPrecedence] 决定「这次按键该不该抢在注册表解析之前」；
+  /// · [resolveVideoKeyboardShortcut] 决定「没被光标抢走的键解析成哪个视频动作」。
+  ///
+  /// 两条合起来就是原来那条不变式：**裸方向键在光标激活期改走光标，Ctrl 组合键放行**。
+  /// 少了硬修饰豁免，光标一开 Ctrl+← 就从「上一句字幕」变成「光标左移一字」。
+  group('③ 光标激活期的键盘接管', () {
+    KeyDownEvent down(LogicalKeyboardKey key, PhysicalKeyboardKey physical) =>
+        KeyDownEvent(
+          logicalKey: key,
+          physicalKey: physical,
+          timeStamp: Duration.zero,
+        );
 
-    void runActivator(
-      Map<ShortcutActivator, VoidCallback> map, {
-      required bool ctrl,
-    }) {
-      for (final MapEntry<ShortcutActivator, VoidCallback> e in map.entries) {
-        final SingleActivator a = e.key as SingleActivator;
-        if (a.control == ctrl) e.value();
-      }
-    }
+    final KeyDownEvent arrowLeft =
+        down(LogicalKeyboardKey.arrowLeft, PhysicalKeyboardKey.arrowLeft);
 
-    test('激活期：无修饰方向键改走光标，Ctrl 组合键放行', () {
-      final List<String> log = <String>[];
-      final List<LogicalKeyboardKey> caretKeys = <LogicalKeyboardKey>[];
-      final Map<ShortcutActivator, VoidCallback> guarded =
-          guardVideoShortcutsWithSubtitleCaret(
-        base(log),
-        isCaretActive: () => true,
-        runCaretKey: (LogicalKeyboardKey key, {required bool shift}) {
-          caretKeys.add(key);
-          return true;
-        },
+    test('激活期：裸方向键归光标，Ctrl 组合键放行给注册表', () {
+      expect(
+        videoCaretKeyboardTakesPrecedence(
+          event: arrowLeft,
+          modifiers: const <ModifierKey>{},
+          caretActive: true,
+          hasEditableFocus: false,
+        ),
+        isTrue,
+        reason: '裸 ← 在光标激活期不得 seek，必须先被光标路由接走',
       );
-      runActivator(guarded, ctrl: false);
-      expect(log, isEmpty, reason: '裸 ← 在光标激活期不得 seek');
-      expect(caretKeys, <LogicalKeyboardKey>[LogicalKeyboardKey.arrowLeft]);
-
-      runActivator(guarded, ctrl: true);
-      expect(log, <String>['prevCue'], reason: 'Ctrl+← 上一句照常放行');
+      expect(
+        videoCaretKeyboardTakesPrecedence(
+          event: arrowLeft,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+          caretActive: true,
+          hasEditableFocus: false,
+        ),
+        isFalse,
+        reason: 'Ctrl+← 是「上一句字幕」，不是光标键，必须放行',
+      );
     });
 
-    test('未激活：零行为变化', () {
-      final List<String> log = <String>[];
-      final Map<ShortcutActivator, VoidCallback> guarded =
-          guardVideoShortcutsWithSubtitleCaret(
-        base(log),
-        isCaretActive: () => false,
-        runCaretKey: (LogicalKeyboardKey key, {required bool shift}) {
-          fail('未激活不得进光标路由');
-        },
+    test('Shift 不算硬修饰：Shift+Tab 仍归光标（后退一字，与阅读器一致）', () {
+      expect(
+        videoCaretKeyboardTakesPrecedence(
+          event: down(LogicalKeyboardKey.tab, PhysicalKeyboardKey.tab),
+          modifiers: const <ModifierKey>{ModifierKey.shift},
+          caretActive: true,
+          hasEditableFocus: false,
+        ),
+        isTrue,
       );
-      runActivator(guarded, ctrl: false);
-      expect(log, <String>['seekBack']);
+    });
+
+    test('未激活 / 文本框持焦：零接管', () {
+      expect(
+        videoCaretKeyboardTakesPrecedence(
+          event: arrowLeft,
+          modifiers: const <ModifierKey>{},
+          caretActive: false,
+          hasEditableFocus: false,
+        ),
+        isFalse,
+        reason: '未激活不得进光标路由',
+      );
+      expect(
+        videoCaretKeyboardTakesPrecedence(
+          event: arrowLeft,
+          modifiers: const <ModifierKey>{},
+          caretActive: true,
+          hasEditableFocus: true,
+        ),
+        isFalse,
+        reason: '文本框持焦时键盘整条通道让给输入',
+      );
+    });
+
+    test('被放行的 Ctrl+← 在主通道里确实解析成「上一句字幕」（闭合另一半）', () {
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
+        ..loadDefaults(TargetPlatform.windows);
+      expect(
+        resolveVideoKeyboardShortcut(
+          registry,
+          arrowLeft,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+          hasEditableFocus: false,
+          hasVisiblePopup: false,
+          videoSurfaceHoldsFocus: true,
+          panelHoldsFocusNavigation: false,
+        ),
+        const VideoKeyboardResolution(
+            VideoKeyboardDispatch.run, ShortcutAction.videoPreviousSubtitle),
+        reason: '光标豁免只有在主通道真的把 Ctrl+← 解析成上一句时才有意义',
+      );
     });
   });
 

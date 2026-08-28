@@ -206,16 +206,29 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
     return true;
   }
 
-  /// 页面最外层 Focus.onKeyEvent 的光标分支：接住**未进注册表 activator 表**的光标键
-  /// （Tab / [ / ] / , / . 及未被用户绑定的方向键、Esc 等；已绑键在内层
-  /// [guardVideoShortcutsWithSubtitleCaret] 就被接管、不会冒泡到这里）。
+  /// 页面最外层 Focus.onKeyEvent 的光标分支：光标激活期把**所有**光标键（方向 /
+  /// Enter / Esc / Tab / `[` `]` / `,` `.`）在注册表解析之前截获。
+  ///
+  /// 方案 D 之前这里只接「未进 activator 表」的那部分，已绑键由内层
+  /// media_kit 表上的 caret 守卫接管；现在键盘只剩这一条通道，两半合并到这里。
+  ///
+  /// 「该不该抢在注册表解析之前」的判据是纯函数
+  /// [videoCaretKeyboardTakesPrecedence]（含 Ctrl/Alt/Meta 组合键的豁免——Ctrl+←
+  /// 上一句在光标激活时照常执行，跳句后 [_onCaretControllerTick] 会自动重锚）；
+  /// 本方法只负责取页面态并执行。
   bool _handleCaretUnboundKey(KeyEvent event) {
-    if (!_videoCaretActive) return false;
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
-    if (focusedEditableText() != null) return false;
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    if (!videoCaretKeyboardTakesPrecedence(
+      event: event,
+      modifiers: currentKeyboardModifiers(keyboard),
+      caretActive: _videoCaretActive,
+      hasEditableFocus: focusedEditableText() != null,
+    )) {
+      return false;
+    }
     return _runCaretKeyboardKey(
       event.logicalKey,
-      shift: HardwareKeyboard.instance.isShiftPressed,
+      shift: keyboard.isShiftPressed,
     );
   }
 

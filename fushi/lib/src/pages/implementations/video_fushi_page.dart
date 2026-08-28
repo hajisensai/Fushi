@@ -97,8 +97,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         GamepadLongPressIntent,
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
-import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
@@ -4463,51 +4462,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) nav.pop();
   }
 
-  /// 桌面键盘快捷键，整表覆盖 media_kit 默认（[MaterialDesktopVideoControlsThemeData.
-  /// keyboardShortcuts] 是整表替换、无合并）。覆盖动机：
-  /// ① 默认 Escape 只 `exitFullscreen`，非全屏时是空操作 → 用户按 Esc 退不出视频页
-  ///    （本页 [PopScope] 自管退出，但收不到事件：media_kit 的 CallbackShortcuts 在
-  ///    本页外层 CallbackShortcuts 的内层，先吞掉 Escape）。改为非全屏退页、全屏退
-  ///    全屏。
-  /// ② 普通左右方向键 = 时间 seek（±seekSeconds 秒，TODO-090）；Ctrl+←/→ = 上/下一句
-  ///    字幕。上一句太远（gap > seekSeconds 秒）时 Ctrl+← 退化成回退 seekSeconds 秒（TODO-085）。
-  /// 其余键（空格/媒体键/J·I/F）按 media_kit 默认语义用底层 [Player] 重建，避免
-  /// 覆盖后丢默认行为。全屏相关 helper 需 controls 子树内 context，用 [_videoControlsContext]。
-  Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
-    VideoPlayerController controller,
-  ) {
-    // BUG-924：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
-    // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
-    // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
-    // videoEnterCaret：选词光标激活期，注册表已绑的无修饰光标键（方向键/Enter/Esc）
-    // 先走光标动作、不跑原动作（裸方向键不再 seek/调音量）。包在浮层守卫**之外**
-    // ——光标在弹窗面上时方向键要在弹窗里移动光标，而不是被「任一键先关浮层」吞掉。
-    final Map<ShortcutActivator, VoidCallback> guarded =
-        guardVideoShortcutsWithSubtitleCaret(
-      guardVideoShortcutsWithPopupDismiss(
-        buildVideoPlayerShortcutsFromRegistry(
-          appModel.shortcutRegistry,
-          _buildVideoShortcutActions(controller),
-        ),
-        isPopupVisible: () => _hasVisiblePopup,
-        dismissPopup: _dismissTopVisiblePopup,
-      ),
-      isCaretActive: () => _videoCaretActive,
-      runCaretKey: _runCaretKeyboardKey,
-    );
-    // 制卡键（ShortcutAction.popupMineEntry，默认 Ctrl+Enter）**合并在守卫之后**，这是
-    // 关键：上面那层守卫的前提是「视频 scope 没有任何作用于浮层本身的快捷键」，所以浮层
-    // 可见时它把每个键都改判成「先关浮层」。而制卡恰恰只在浮层可见时才有意义——若把它
-    // 放进被守卫的表里，按下去只会把浮层关掉，永远制不了卡。它属于 dictionaryPopup
-    // scope（独立 co-active 组），本就不是视频动作，走独立通道也保持了 scope 语义一致。
-    for (final InputBinding b in appModel.shortcutRegistry
-        .bindingsFor(ShortcutAction.popupMineEntry)
-        .keyboardBindings) {
-      guarded[b.toActivator(includeRepeats: false)] = _mineFromTopPopup;
-    }
-    return guarded;
-  }
-
   /// 「点弹窗里的加号」的键盘入口（视频页）。阅读器有等价的
   /// [ShortcutAction.readerCreateCardFromPopup]（caret.part.dart），视频页此前完全没有，
   /// 是 app 内制卡快捷键最大的缺口。执行体与鼠标点击完全同源——回 WebView 点那颗
@@ -4951,48 +4905,53 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  /// [ShortcutAction.videoEnterCaret] 的实时键盘 activator（注册表可重映射，桌面
-  /// 默认 Enter）。`includeRepeats: false` = press-edge-only：长按不连发查词。
-  Iterable<ShortcutActivator> _videoEnterCaretActivators() =>
-      appModel.shortcutRegistry
-          .bindingsFor(ShortcutAction.videoEnterCaret)
-          .keyboardBindings
-          .map((InputBinding b) => b.toActivator(includeRepeats: false));
-
-  /// videoEnterCaret 的键盘**进入**通道，挂在页面最外层 [Focus]（窗口与全屏共用
-  /// 同一个 [_wrapVideoGamepadControls]，两种模式行为一致）。
+  /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄
+  /// [_handleVideoGamepadButton] 逐段同构。
   ///
-  /// 为什么不放进 media_kit 的 `keyboardShortcuts`：那是一个包住整个 controls 子树
-  /// 的 [CallbackShortcuts]，activator 一匹配就返回 handled，Enter 从此再也到不了
-  /// WidgetsApp 的 Enter→ActivateIntent —— 底栏 / 顶栏每个按钮的「焦点确认」被整片
-  /// 吃掉（本 app 裸空格已被中和，Enter 是唯一确认键，见 CLAUDE.md）。
+  /// 挂在 [_wrapVideoGamepadControls] 的 `Focus.onKeyEvent` 上——窗口 `build()` 与
+  /// 全屏路由 `pageBuilder` 的唯一共同外层，也是**所有**子焦点节点（视频画面、
+  /// media_kit 控制条、[PanelFocusScope] 圈起来的字幕列表 / 剧集轨 / 侧栏）的共同
+  /// 祖先。BUG-1864 的根因就是「注册表声明的作用域是整页（[ShortcutScope.video]），
+  /// 挂载点却只在 media_kit controls 子树」——面板是 `Video` 的**兄弟**，焦点一进
+  /// 面板，整张表就够不着了。scope 与挂载点在这里第一次对齐。
   ///
-  /// 判据交给纯函数 [decideVideoEnterCaretKey]：焦点归属直接读
-  /// [_videoFocusNode]`.hasPrimaryFocus`（画面持焦），不额外维护一份状态——这与
-  /// [_focusOwnership] 的 [PageFocusOwnership] 模型是同一个真相源（它 reclaim 的
-  /// 就是这个节点），焦点落到控制条按钮上时 `hasPrimaryFocus` 自然为 false。
-  /// 与阅读器 `caret.part.dart` 的 `_isCaretEntryTrigger` 是同一条 contextual 范式。
-  bool _handleVideoEnterCaretKey(KeyEvent event) {
-    final VideoEnterCaretKeyDecision decision = decideVideoEnterCaretKey(
-      event: event,
-      enterActivators: _videoEnterCaretActivators(),
-      keyboardState: HardwareKeyboard.instance,
-      caretActive: _videoCaretActive,
+  /// 判据全在纯函数 [resolveVideoKeyboardShortcut] 里（可单测）；本方法只负责取页面
+  /// 态、按判决执行。执行体与手柄通道共用 [videoActionCallbacks]，所以两条通道命中
+  /// 同一动作时行为逐字一致（含 [_runWhenImmersiveAllowsShortcuts] 沉浸锁门控）。
+  bool _handleVideoKeyboardShortcut(KeyEvent event) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    final VideoKeyboardResolution resolution = resolveVideoKeyboardShortcut(
+      appModel.shortcutRegistry,
+      event,
+      modifiers: currentKeyboardModifiers(HardwareKeyboard.instance),
       hasEditableFocus: focusedEditableText() != null,
       hasVisiblePopup: _hasVisiblePopup,
+      // 「视频画面精确持焦」与 [_focusOwnership] 是同一个真相源（它 reclaim 的就是
+      // 这个节点）：焦点落到控制条按钮或面板行上时 hasPrimaryFocus 自然为 false。
       videoSurfaceHoldsFocus: _videoFocusNode.hasPrimaryFocus,
+      panelHoldsFocusNavigation: _videoNavigablePanelOpen,
     );
-    switch (decision) {
-      case VideoEnterCaretKeyDecision.notTrigger:
-      case VideoEnterCaretKeyDecision.passThrough:
+    switch (resolution.dispatch) {
+      case VideoKeyboardDispatch.ignore:
         return false;
-      case VideoEnterCaretKeyDecision.dismissPopup:
+      case VideoKeyboardDispatch.dismissPopup:
         _dismissTopVisiblePopup();
         return true;
-      case VideoEnterCaretKeyDecision.enterCaret:
-        final VideoPlayerController? controller = _controller;
-        if (controller == null) return false;
-        _handleEnterCaretAction(controller);
+      case VideoKeyboardDispatch.run:
+        final ShortcutAction action = resolution.action!;
+        // 制卡属于 dictionaryPopup scope，执行体不在 videoActionCallbacks 里。
+        if (action == ShortcutAction.popupMineEntry) {
+          _mineFromTopPopup();
+          return true;
+        }
+        final Map<ShortcutAction, VoidCallback> callbacks =
+            videoActionCallbacks(_buildVideoShortcutActions(controller));
+        final VoidCallback? callback = callbacks[action];
+        // 解析到了但本页没接线（universal scope 里 globalBack 之外的动作）：不消费，
+        // 交回既有路径——与 [_handleVideoGamepadButton] 的 `callback == null` 同款。
+        if (callback == null) return false;
+        callback();
         return true;
     }
   }
@@ -5018,16 +4977,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: (FocusNode node, KeyEvent event) {
-          // videoEnterCaret：选词光标激活期，接住未进注册表 activator 表的光标键
-          // （Tab / [ ] / , . / 未绑定的方向键与 Esc 等；已绑键在内层
-          // guardVideoShortcutsWithSubtitleCaret 就被接管，不会冒泡到这里）。
+          // videoEnterCaret：选词光标激活期，光标键（方向 / Enter / Esc / Tab /
+          // [ ] / , .）先于注册表解析被截获——选词是模态操作，裸方向键在这时是移动
+          // 光标而不是 seek / 调音量。带硬修饰的组合键（Ctrl+← 上一句等）不算光标键，
+          // 由 [_handleCaretUnboundKey] 自己放行、落到下面的注册表解析。
           if (_handleCaretUnboundKey(event)) {
-            return KeyEventResult.handled;
-          }
-          // videoEnterCaret 的**进入**通道（光标未激活时）。刻意不走内层
-          // media_kit `keyboardShortcuts`：那层一旦匹配就无条件消费，会把控制条
-          // 按钮的 Enter 确认整片吃掉（见 [_handleVideoEnterCaretKey]）。
-          if (_handleVideoEnterCaretKey(event)) {
             return KeyEventResult.handled;
           }
           // BUG-880：Shift 按下瞬间在最后指针位置反查字幕字符立即查词，根治「光标停在词上
@@ -5038,13 +4992,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   event.logicalKey == LogicalKeyboardKey.shiftRight)) {
             _triggerShiftLookupAtLastPointer();
           }
-          // 按住临时倍速（按下加速/松开恢复）需要 keyup 边沿，绑定不进内层
-          // activator 表，在此按注册表绑定判定按下/松开（见 _handleHoldSpeedKey）。
+          // 按住临时倍速（按下加速/松开恢复）需要 keyup 边沿，activator 表达不了，
+          // 故按下 / 松开都在这里按注册表绑定判定（见 _handleHoldSpeedKey）。必须排在
+          // 主通道之前：主通道只看按下 / 重复沿，松开沿只有这里认。
           if (_handleHoldSpeedKey(event) == KeyEventResult.handled) {
             return KeyEventResult.handled;
           }
-          // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
-          // 其余键交回手柄原生入口，行为不变。
+          // 视频快捷键主通道（方案 D）：press-time 问注册表，整页唯一挂载点。
+          if (_handleVideoKeyboardShortcut(event)) {
+            return KeyEventResult.handled;
+          }
+          // BUG-853 / BUG-936：IME 把裸空格的 logicalKey 改写成非 space 值，主通道
+          // 按逻辑键匹配不到，在此按**物理键**还原播放/暂停。放在主通道之后，两条路径
+          // 互斥不会双触发。
           if (_handleVideoImeSpacePlayPause(event)) {
             return KeyEventResult.handled;
           }
@@ -5056,23 +5016,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // BUG-1798：与那个接力点用同一条判据滤掉合成 hover——[_pokeControlsVisible] 的合成事件
         // 位置恒为视频区几何中心，写进来就是把「用户光标在哪」记成画面正中，Shift 反查随即查错
         // 位置。合成事件不代表用户指针，两个记账点必须同时滤，只滤一个仍会从另一个漏进来。
-        //
-        // BUG-1864：页级裸空格覆盖 [_withPageSpaceOverride] 挂在**本 wrapper 之内**
-        // （Focus 的后代），因为窗口与全屏是这层唯一的共同祖先。原先它只挂在
-        // `_buildScaffold` 上，而全屏是推到根 navigator 的独立路由、不经过 Scaffold，
-        // 于是全屏下「焦点不精确在 [_videoFocusNode]」（打开字幕列表 / 剧集轨 / 侧栏后
-        // [PanelFocusScope] 就会抢焦）时裸空格一路冒泡到全局中和层被吞 =「按了没反应」。
-        // 位置必须在 Focus 之内：CallbackShortcuts 作为后代先于本层 onKeyEvent 处理，
-        // 与窗口模式原有的相对顺序完全一致（caret / holdSpeed / IME 空格的既有语义不变）。
-        child: _withPageSpaceOverride(
-          Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerHover: (PointerHoverEvent event) {
-              if (_isSyntheticControlsHover(event)) return;
-              _lastGlobalPointerPos = event.position;
-            },
-            child: child,
-          ),
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerHover: (PointerHoverEvent event) {
+            if (_isSyntheticControlsHover(event)) return;
+            _lastGlobalPointerPos = event.position;
+          },
+          child: child,
         ),
       ),
     );
@@ -7234,59 +7184,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ],
         ),
       ),
-    );
-  }
-
-  /// 页内局部「裸空格 = 播放/暂停」覆盖（TODO-755，回归 c152fcd91）。
-  ///
-  /// 全局导航层（[wrapWithGlobalNavigation]）无条件把裸空格中和成
-  /// [DoNothingIntent]（`global_navigation.dart`，[DoNothingAction.consumesKey]
-  /// 为 true → 真消费按键），使焦点确认永不走空格。视频空格的正常路径是
-  /// media_kit 桌面 controls 的 `keyboardShortcuts`（[_videoKeyboardShortcuts]），
-  /// 但那只在 [_videoFocusNode]（或 controls 内置 Focus）**精确持焦**时才生效；
-  /// 一旦焦点落在视频页子树里其它节点（关对话框/菜单后短暂失焦、点了非视频区控件
-  /// 等），裸空格就会上浮到全局 [DoNothingIntent] 被吞掉 → 「按了没反应」。
-  ///
-  /// 本层是页内局部 [CallbackShortcuts]，位于全局 [DoNothingIntent] 之下、离视频
-  /// 更近：只要焦点落在视频页子树内**任意**节点，裸空格都先被这层消费、永不下沉到
-  /// 全局中和层。与阅读器 [resolveReaderSpaceOverride] / 有声书 audiobookPlayPause
-  /// 同范式——只在本页子树内覆盖裸空格，不碰全局中和（非视频界面空格仍被中和，
-  /// 不破坏 TODO-112「空格不确认焦点」）。media_kit 的 `keyboardShortcuts` 在精确
-  /// 持焦时是更近作用域、先消费，故两者不冲突；本层只是「焦点在视频页子树但不精确
-  /// 在 [_videoFocusNode]」时的兜底。语义与注册表 [_videoKeyboardShortcuts] 的
-  /// `togglePlayPause` 完全一致（经 [_runWhenImmersiveAllowsShortcuts] 尊重
-  /// 沉浸锁门控），不引入特例分支。
-  ///
-  /// BUG-1864：挂载点是**唯一的** [_wrapVideoGamepadControls]（窗口 `build()` 与全屏
-  /// 路由 `pageBuilder` 的共同外层），不再是 `_buildScaffold`。全屏是推到根 navigator
-  /// 的独立路由、不经过本页 Scaffold，此前那条路径上根本没有本层：打开字幕列表 /
-  /// 剧集轨 / 侧栏后 [PanelFocusScope] 抢焦，裸空格既够不到 media_kit
-  /// `keyboardShortcuts`（那层只包 `AdaptiveVideoControls` 子树，面板是它的兄弟），
-  /// 又没有页级兜底，直落全局中和层被吞 =「按了没反应」。与 BUG-697 把手柄输入层
-  /// 提到同一 wrapper 是同一条边界：窗口与全屏共用一处，不加全屏特判。
-  Widget _withPageSpaceOverride(Widget child) {
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): () {
-          // BUG-924：词典浮层可见时，裸空格也先关浮层（与 [_videoKeyboardShortcuts] 守卫
-          // 同语义），而非在浮层后面 play/pause。浮层不可见时保持原「裸空格=播放/暂停」覆写。
-          if (_hasVisiblePopup) {
-            _dismissTopVisiblePopup();
-            return;
-          }
-          // BUG-1864：controller 从页面字段 [_controller] 现取，不再由调用方传参。
-          // 本层已上提到窗口 / 全屏共用的 [_wrapVideoGamepadControls]，而全屏路由的
-          // pageBuilder 拿不到 `_buildScaffold` 那个局部变量；读同一个字段让两条路径
-          // 共用一份真相源，也顺带覆盖了加载态（此时 controller 为 null，按空格什么都
-          // 不做——与本层挂载前「被全局中和层吞掉」的观感一致，无行为回归）。
-          final VideoPlayerController? controller = _controller;
-          if (controller == null) return;
-          _runWhenImmersiveAllowsShortcuts(
-            () => unawaited(controller.playOrPause()),
-          );
-        },
-      },
-      child: child,
     );
   }
 

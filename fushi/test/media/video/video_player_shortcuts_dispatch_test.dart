@@ -3,7 +3,6 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
-import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
@@ -115,13 +114,14 @@ void main() {
   /// 条件消费 —— 控制条上每个按钮的 Enter 确认被整片吃掉：Tab / 手柄把焦点落到
   /// 播放、全屏、±10s 上按 Enter，按钮不会被按下，而是弹出选词光标。
   ///
-  /// 本组按**真实祖先结构**复现并锁死契约：
+  /// 本组按**真实祖先结构**复现并锁死契约（方案 D 之后键盘只剩一个挂载点）：
   /// ```
-  /// Focus(onKeyEvent → decideVideoEnterCaretKey)        ← 页面最外层（视频页真实层）
-  ///   └ CallbackShortcuts(buildVideoPlayerShortcutsFromRegistry(...))  ← media_kit
-  ///       └ Focus(videoNode, autofocus)                 ← 画面持焦（_videoFocusNode）
-  ///           └ ElevatedButton                          ← bottomButtonBar 的按钮
+  /// Focus(onKeyEvent → resolveVideoKeyboardShortcut)   ← 页面最外层（唯一挂载点）
+  ///   └ Focus(videoNode, autofocus)                    ← 画面持焦（_videoFocusNode）
+  ///       └ ElevatedButton                             ← bottomButtonBar 的按钮
   /// ```
+  /// press-time 解析让「命中了绑定键但这次不消费」成为一等结论：焦点不在画面上时
+  /// 判 [VideoKeyboardDispatch.ignore]，Enter 继续上浮到 Enter→ActivateIntent。
   group('videoEnterCaret 的 Enter 不吃掉控制条按钮的确认（PR#632 B2）', () {
     testWidgets('焦点在控制条按钮上：Enter 按下按钮，不进选词光标', (WidgetTester tester) async {
       final FocusNode videoNode = FocusNode(debugLabel: 'videoKeyboard');
@@ -145,8 +145,7 @@ void main() {
         log,
         <String>['buttonPressed'],
         reason: 'Enter 是全局焦点确认键：焦点在控制条按钮上时必须触发 onPressed，'
-            '既不能被 media_kit 的 keyboardShortcuts 整表吃掉（enterCaret），'
-            '也不能被页面层判成进光标（caretEntered）',
+            '不能被页面主通道判成进光标（enterCaret）',
       );
 
       videoNode.dispose();
@@ -171,14 +170,14 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();
 
-      expect(log, <String>['caretEntered'],
+      expect(log, <String>['enterCaret'],
           reason: '画面持焦时 Enter 才算选词键，且不得误按到按钮');
 
       videoNode.dispose();
       buttonNode.dispose();
     });
 
-    test('注册表 activator 整表里不含任何裸 Enter 绑定', () {
+    test('弹窗复用的 activator 表里不含任何裸 Enter 绑定', () {
       final FushiShortcutRegistry registry = FushiShortcutRegistry()
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> map =
@@ -195,14 +194,16 @@ void main() {
                 !a.shift,
           );
       expect(hasBareEnter, isFalse,
-          reason: '这张表装进的 CallbackShortcuts 包住整个 controls 子树、匹配即'
-              '无条件消费；一旦含裸 Enter，控制条按钮的确认就没救了');
+          reason: '这张表现在只服务字幕对轴弹窗，但它仍是一个 CallbackShortcuts：'
+              '匹配即无条件消费，一旦含裸 Enter，弹窗里每颗按钮的确认就没救了');
     });
   });
 }
 
 /// 复现视频页真实祖先结构的 Enter 派发 harness（见上方 group 文档）。
-/// 页面层的判据完全走生产纯函数 [decideVideoEnterCaretKey]，不在测试里另写一份。
+///
+/// 方案 D 之后页面只剩**一个**键盘挂载点，判据完全走生产纯函数
+/// [resolveVideoKeyboardShortcut]，不在测试里另写一份。
 Future<void> _pumpEnterCaretHarness(
   WidgetTester tester, {
   required FocusNode videoNode,
@@ -211,55 +212,46 @@ Future<void> _pumpEnterCaretHarness(
 }) async {
   final FushiShortcutRegistry registry = FushiShortcutRegistry()
     ..loadDefaults(TargetPlatform.windows);
-  final List<ShortcutActivator> enterActivators = registry
-      .bindingsFor(ShortcutAction.videoEnterCaret)
-      .keyboardBindings
-      .map((InputBinding b) => b.toActivator(includeRepeats: false))
-      .toList();
-  expect(enterActivators, isNotEmpty,
-      reason: '前置条件：videoEnterCaret 必须有键盘默认绑定，否则本组测了个寂寞');
-  bool caretActive = false;
+  expect(
+    registry.bindingsFor(ShortcutAction.videoEnterCaret).keyboardBindings,
+    isNotEmpty,
+    reason: '前置条件：videoEnterCaret 必须有键盘默认绑定，否则本组测了个寂寞',
+  );
 
   await tester.pumpWidget(MaterialApp(
     home: Focus(
       canRequestFocus: false,
       skipTraversal: true,
       onKeyEvent: (FocusNode node, KeyEvent event) {
-        switch (decideVideoEnterCaretKey(
-          event: event,
-          enterActivators: enterActivators,
-          keyboardState: HardwareKeyboard.instance,
-          caretActive: caretActive,
+        final VideoKeyboardResolution resolution = resolveVideoKeyboardShortcut(
+          registry,
+          event,
+          modifiers: currentKeyboardModifiers(HardwareKeyboard.instance),
           hasEditableFocus: false,
           hasVisiblePopup: false,
           videoSurfaceHoldsFocus: videoNode.hasPrimaryFocus,
-        )) {
-          case VideoEnterCaretKeyDecision.notTrigger:
-          case VideoEnterCaretKeyDecision.passThrough:
+          panelHoldsFocusNavigation: false,
+        );
+        switch (resolution.dispatch) {
+          case VideoKeyboardDispatch.ignore:
             return KeyEventResult.ignored;
-          case VideoEnterCaretKeyDecision.dismissPopup:
+          case VideoKeyboardDispatch.dismissPopup:
             log.add('dismissPopup');
             return KeyEventResult.handled;
-          case VideoEnterCaretKeyDecision.enterCaret:
-            caretActive = true;
-            log.add('caretEntered');
+          case VideoKeyboardDispatch.run:
+            videoActionCallbacks(_recordingVideoActions(log))[resolution.action]
+                ?.call();
             return KeyEventResult.handled;
         }
       },
-      child: CallbackShortcuts(
-        bindings: buildVideoPlayerShortcutsFromRegistry(
-          registry,
-          _recordingVideoActions(log),
-        ),
-        child: Focus(
-          focusNode: videoNode,
-          autofocus: true,
-          child: Center(
-            child: ElevatedButton(
-              focusNode: buttonNode,
-              onPressed: () => log.add('buttonPressed'),
-              child: const Text('play'),
-            ),
+      child: Focus(
+        focusNode: videoNode,
+        autofocus: true,
+        child: Center(
+          child: ElevatedButton(
+            focusNode: buttonNode,
+            onPressed: () => log.add('buttonPressed'),
+            child: const Text('play'),
           ),
         ),
       ),
