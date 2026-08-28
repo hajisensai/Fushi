@@ -69,6 +69,19 @@ cp -R "$vendored_source_root/." "$source_root/"
 git -C "$source_root" apply "$overlay_root/server-build.gradle.patch"
 cp -R "$overlay_root/overlay/." "$source_root/"
 
+# 把 vendored 的 org.jogamp 离线 Maven 仓库搬进构建树。补丁后的 build.gradle.kts
+# 用 `rootProject.file("hibiki-offline-maven/jogamp")` 找它，目录在就离线解析、
+# 不在就回落到两个远端镜像（见 third_party/jogamp/UPSTREAM：那两个主机分别在
+# 2026-08-09 和 2026-08-25 把 CI 弄红过，而 Maven Central 根本没有 2.5.0）。
+# 路径必须与补丁里的字面量一致，守卫 fushi/test/build/mihon_vendored_jogamp_guard_test.dart。
+jogamp_repo="$repository_root/third_party/jogamp"
+if [[ ! -f "$jogamp_repo/org/jogamp/jogl/jogl-all/2.5.0/jogl-all-2.5.0.jar" ]]; then
+  echo "vendored org.jogamp repository is missing at $jogamp_repo" >&2
+  exit 1
+fi
+mkdir -p "$source_root/hibiki-offline-maven/jogamp"
+cp -R "$jogamp_repo/org" "$source_root/hibiki-offline-maven/jogamp/"
+
 download_verified_archive() {
   local archive="$1"
   local expected_sha256="$2"

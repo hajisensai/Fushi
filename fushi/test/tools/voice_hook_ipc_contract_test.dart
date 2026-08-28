@@ -35,10 +35,22 @@ void main() {
       expect(source, contains('constexpr uint32_t $bit ='),
           reason: '$bit 没在契约头里定义');
     }
-    // v16：在 v15 之上纯尾部追加 injected WASAPI loopback 的 fail-closed 控制/确认。
+    // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
     // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
     // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 16;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 17;'));
+    // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
+    // 就只剩「两边都读磁盘」那条恒真的假校验。
+    expect(
+      source,
+      contains('char hook_module_sha256[kHookModuleDigestChars];'),
+      reason: '驻留 hook 身份门的驻留侧摘要只能从这个字段取',
+    );
+    expect(
+      source,
+      contains('constexpr uint32_t kHookModuleDigestChars = 65;'),
+      reason: '64 位十六进制 + NUL；读侧的 strnlen 上界就是它',
+    );
   });
 
   test('v15：截图抑制必须 exact-match，且普通帧不能推进 applied ack', () {

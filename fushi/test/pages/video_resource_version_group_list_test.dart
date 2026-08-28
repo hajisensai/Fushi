@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -90,7 +91,10 @@ VideoDiscoveryItem _item() => VideoDiscoveryItem(
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  Future<void> pumpSurface(WidgetTester tester) async {
+  Future<void> pumpSurface(
+    WidgetTester tester, {
+    VideoDiscoveryDownloadSubmit? onSubmit,
+  }) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -118,7 +122,8 @@ void main() {
                 ),
               ],
               defaultSourceId: 1,
-              onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+              onSubmit: onSubmit ??
+                  (VideoDiscoveryDownloadSelection selection) async {},
             ),
           ),
         ),
@@ -186,5 +191,43 @@ void main() {
       find.byKey(const ValueKey<String>('video-resource-version-groups')),
       findsNothing,
     );
+  });
+
+  testWidgets('下载运行时缺失只在提交时提示，资源页保持可用', (WidgetTester tester) async {
+    await pumpSurface(
+      tester,
+      onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+        throw const VideoDownloadBackendUnavailable(
+          videoDownloadEmbeddedBackendUnavailableMessage,
+        );
+      },
+    );
+    final VideoResourceVersionGroup movie = buildVideoResourceVersionGroups(
+      _items(),
+    ).firstWhere(
+      (VideoResourceVersionGroup group) => group.releaseGroup == 'Erai-raws',
+    );
+    await tester.tap(
+      find.byKey(ValueKey<String>('resource-version-${movie.key}')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-resource-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(videoDownloadEmbeddedBackendUnavailableMessage),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-resource-version-groups')),
+      findsOneWidget,
+      reason: '提交失败后仍应留在资源搜索页',
+    );
+    final FilledButton submit = tester.widget<FilledButton>(
+      find.byKey(const ValueKey<String>('video-resource-submit')),
+    );
+    expect(submit.onPressed, isNotNull, reason: '提示后应允许用户重试');
   });
 }

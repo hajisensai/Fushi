@@ -386,6 +386,24 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────────
+
+  /// BUG-1891：进视频页（含切回视频 tab）时是否**自动**向已登录的 Jellyfin/Emby
+  /// 服务器枚举条目。
+  ///
+  /// **默认 true**——绝大多数用户的服务器是自建小库，几百到几千条，自动列出正是他们
+  /// 要的体验，改默认等于把所有人的远端卡片关掉去迁就少数人（Never break userspace）。
+  /// 关掉之后进页面一个请求都不发，只复用上一次拉到的清单；要更新走视频页下拉刷新
+  /// （手动 = 用户自己按的，风控无从抱怨）。这条开关只管 Jellyfin/Emby：互联对端与
+  /// 云盘清单是自家后端，没有这种滥用检测问题，仍归 [showRemoteEntries] 管。
+  bool get jellyfinAutoListVideos =>
+      getPref('jellyfin_auto_list_videos', defaultValue: true) as bool;
+
+  Future<void> setJellyfinAutoListVideos(bool value) async {
+    await setPref('jellyfin_auto_list_videos', value);
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>
@@ -2067,6 +2085,25 @@ class PreferencesRepository extends ChangeNotifier {
   Future<void> setGalHookTextAlignment(String value) async {
     await setPref(
         'gal_hook_text_alignment', value == 'left' ? 'left' : 'center');
+    notifyListeners();
+  }
+
+  /// BUG-1890：台词浮窗**垂直**对齐。与水平对齐同形的白名单二值收敛
+  /// （'center' / 'top'），非法值一律回落 'center'（= 修前的唯一行为，
+  /// 老配置读出来还是老样子）。
+  ///
+  /// 'top' 不只是「不居中」：native 侧此前已有 NEAR（顶对齐）分支，但只在文字**溢出**
+  /// 窗口时才走，放得下就强制居中。长短句交替时台词会上下跳，这个偏好让用户把它钉死
+  /// 在顶部。
+  String get galHookTextVerticalAlignment {
+    final Object? value =
+        getPref('gal_hook_text_vertical_alignment', defaultValue: 'center');
+    return value == 'top' ? 'top' : 'center';
+  }
+
+  Future<void> setGalHookTextVerticalAlignment(String value) async {
+    await setPref(
+        'gal_hook_text_vertical_alignment', value == 'top' ? 'top' : 'center');
     notifyListeners();
   }
 

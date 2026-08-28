@@ -14,6 +14,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$fingerprintScript = Join-Path $PSScriptRoot 'helper_source_fingerprint.ps1'
+if (-not (Test-Path -LiteralPath $fingerprintScript -PathType Leaf)) {
+  throw "Helper source fingerprint script is missing: $fingerprintScript"
+}
+. $fingerprintScript
+$sourceFingerprintBefore = Get-FushiHelperSourceFingerprint -SourceRoot $sourceRoot
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
   $outputRoot = [IO.Path]::GetFullPath((Join-Path $sourceRoot 'dist'))
 }
@@ -222,5 +228,15 @@ foreach ($arch in @('x64', 'x86')) {
 foreach ($stage in @($stageX64, $stageX86)) {
   Remove-Item -LiteralPath $stage -Recurse -Force
 }
+
+# A zip hash proves archive integrity, not that the archive belongs to the
+# current checkout. Record the deterministic build-input identity only after
+# the build completes, and reject a source tree that changed underneath it.
+$sourceFingerprintAfter = Get-FushiHelperSourceFingerprint -SourceRoot $sourceRoot
+if ($sourceFingerprintAfter -ne $sourceFingerprintBefore) {
+  throw "Galgame helper sources changed during build: before=$sourceFingerprintBefore after=$sourceFingerprintAfter"
+}
+Set-Content -LiteralPath (Join-Path $outputRoot 'voice_hook_source.sha256') `
+  -Value $sourceFingerprintAfter -NoNewline -Encoding ascii
 
 Write-Host "Helper distribution archives ready: $outputRoot"

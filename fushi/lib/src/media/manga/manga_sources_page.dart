@@ -575,7 +575,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   void _openPreferences(MangaOnlineSourceRow source) {
     showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => _MihonPreferencesDialog(
+      builder: (BuildContext context) => MihonPreferencesDialog(
         manager: _manager!,
         source: source,
       ),
@@ -1352,8 +1352,13 @@ class _AidokuRepositorySourcesDialogState
   }
 }
 
-class _MihonPreferencesDialog extends StatefulWidget {
-  const _MihonPreferencesDialog({
+/// Mihon 在线来源的偏好编辑弹窗。
+///
+/// 文本偏好会保留为草稿，直到用户按下明确的“保存”按钮；开关、下拉和多选仍沿用
+/// Mihon 的即时保存契约。此 widget 公开是为了用真实 manager/runtime 做交互回归测试。
+class MihonPreferencesDialog extends StatefulWidget {
+  const MihonPreferencesDialog({
+    super.key,
     required this.manager,
     required this.source,
   });
@@ -1362,14 +1367,16 @@ class _MihonPreferencesDialog extends StatefulWidget {
   final MangaOnlineSourceRow source;
 
   @override
-  State<_MihonPreferencesDialog> createState() =>
+  State<MihonPreferencesDialog> createState() =>
       _MihonPreferencesDialogState();
 }
 
-class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
+class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
   List<MihonPreference>? _preferences;
   Object? _error;
   String? _savingKey;
+  bool _savingAll = false;
+  final Map<String, String> _textDrafts = <String, String>{};
 
   @override
   void initState() {
@@ -1391,6 +1398,29 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
     MihonPreference original,
     Object? value,
   ) async {
+    setState(() => _savingKey = original.key);
+    try {
+      final List<MihonPreference> preferences =
+          await _persistPreference(original, value);
+      if (mounted) {
+        setState(() {
+          _preferences = preferences;
+          if (_textDrafts[original.key] == value) {
+            _textDrafts.remove(original.key);
+          }
+        });
+      }
+    } on Object catch (error) {
+      if (mounted) setState(() => _error = error);
+    } finally {
+      if (mounted) setState(() => _savingKey = null);
+    }
+  }
+
+  Future<List<MihonPreference>> _persistPreference(
+    MihonPreference original,
+    Object? value,
+  ) {
     final MihonPreference changed = MihonPreference(
       key: original.key,
       kind: original.kind,
@@ -1400,15 +1430,33 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
       entries: original.entries,
       entryValues: original.entryValues,
     );
-    setState(() => _savingKey = original.key);
+    return widget.manager.setPreference(widget.source, changed);
+  }
+
+  Future<void> _saveAllAndClose() async {
+    final List<MihonPreference>? preferences = _preferences;
+    if (preferences == null || _savingKey != null || _savingAll) return;
+    setState(() => _savingAll = true);
     try {
-      final List<MihonPreference> preferences =
-          await widget.manager.setPreference(widget.source, changed);
-      if (mounted) setState(() => _preferences = preferences);
+      List<MihonPreference> updated = preferences;
+      for (final MihonPreference preference in preferences) {
+        if (preference.kind != MihonPreferenceKind.text) continue;
+        final String? draft = _textDrafts[preference.key];
+        if (draft == null || draft == (preference.value?.toString() ?? '')) {
+          continue;
+        }
+        updated = await _persistPreference(preference, draft);
+      }
+      if (!mounted) return;
+      setState(() {
+        _preferences = updated;
+        _textDrafts.clear();
+      });
+      Navigator.pop(context);
     } on Object catch (error) {
       if (mounted) setState(() => _error = error);
     } finally {
-      if (mounted) setState(() => _savingKey = null);
+      if (mounted) setState(() => _savingAll = false);
     }
   }
 
@@ -1435,15 +1483,22 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
       ),
       actions: <Widget>[
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _savingAll ? null : () => Navigator.pop(context),
           child: Text(t.dialog_close),
+        ),
+        FilledButton(
+          onPressed: preferences == null || _error != null ||
+                  _savingKey != null || _savingAll
+              ? null
+              : () => unawaited(_saveAllAndClose()),
+          child: Text(t.dialog_save),
         ),
       ],
     );
   }
 
   Widget _buildPreference(MihonPreference preference) {
-    final bool busy = _savingKey == preference.key;
+    final bool busy = _savingAll || _savingKey == preference.key;
     return switch (preference.kind) {
       MihonPreferenceKind.checkBox ||
       MihonPreferenceKind.switchControl =>
@@ -1468,6 +1523,7 @@ class _MihonPreferencesDialogState extends State<_MihonPreferencesDialog> {
               helperText:
                   preference.summary.isEmpty ? null : preference.summary,
             ),
+            onChanged: (String value) => _textDrafts[preference.key] = value,
             onFieldSubmitted: (String value) =>
                 unawaited(_save(preference, value)),
           ),

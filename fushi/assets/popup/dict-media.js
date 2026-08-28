@@ -24,7 +24,36 @@ function rewriteDictLinks(html, dictName) {
     });
 }
 
+/* 词典 CSS 作用域化的结果**只由** (css, dictName, scopePrefix) 决定——纯函数，
+   同输入必同输出。但它的调用点是 createGlossarySection，即「每个词条的每个词典块」
+   各调一次：N 条词条 × M 本词典就是 N×M 次把同一本词典那份（Yomitan 词典动辄几十 KB
+   的）CSS 重新做一遍逐字符扫描（下面的 while 循环对空白字符是一个字符 push 一次数组）。
+   查一次词就白烧几十上百遍完全相同的解析。
+   这里按三元组做 memo：外层用 css 串本身分桶（内容变了自然落到新桶，无需失效钩子，
+   也就不存在「换词典集后拿到旧作用域 CSS」的风险），内层用 dictName+scopePrefix。
+   递归分支走未缓存的实现，避免把每个 at-block 的子串都塞进缓存。 */
+const __dictCssCache = new Map();
+const __dictCssCacheMaxBuckets = 64;
+
 function constructDictCss(css, dictName, scopePrefix) {
+    if (!css) return '';
+    let byScope = __dictCssCache.get(css);
+    if (byScope === undefined) {
+        // 词典集切换/重新导入会带来新的 css 串；给桶数封顶，别让缓存无界增长。
+        if (__dictCssCache.size >= __dictCssCacheMaxBuckets) __dictCssCache.clear();
+        byScope = new Map();
+        __dictCssCache.set(css, byScope);
+    }
+    const key = JSON.stringify([dictName || '', scopePrefix || '']);
+    let out = byScope.get(key);
+    if (out === undefined) {
+        out = constructDictCssUncached(css, dictName, scopePrefix);
+        byScope.set(key, out);
+    }
+    return out;
+}
+
+function constructDictCssUncached(css, dictName, scopePrefix) {
     if (!css) return '';
     const prefix = scopePrefix || `[data-dictionary="${dictName}"]`;
     const parts = [];
@@ -83,7 +112,7 @@ function constructDictCss(css, dictName, scopePrefix) {
             parts.push(selectorPart, ' {');
             if (isConditionalGroup) {
                 // Recurse so inner style rules get the prefix; the prelude stays raw.
-                parts.push(constructDictCss(atBlockContent, dictName, scopePrefix));
+                parts.push(constructDictCssUncached(atBlockContent, dictName, scopePrefix));
             } else {
                 // @font-face / @keyframes / @page: body is declarations or
                 // keyframe selectors — emit verbatim, never prefixed.
@@ -136,7 +165,7 @@ function constructDictCss(css, dictName, scopePrefix) {
                 }
             }
             parts.push(properties);
-            if (nestedRules) parts.push(constructDictCss(nestedRules, dictName, scopePrefix));
+            if (nestedRules) parts.push(constructDictCssUncached(nestedRules, dictName, scopePrefix));
         } else {
             parts.push(blockContent);
         }

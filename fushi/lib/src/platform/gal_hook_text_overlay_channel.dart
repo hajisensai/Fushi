@@ -135,13 +135,17 @@ class GalLookupHit {
   }
 }
 
-/// 游戏内查词：落在卡片矩形内、由 hook 转发过来的一次输入事件。
+/// 游戏内查词：由 hook 转发过来的一次输入或弹框控制事件。
 ///
-/// Dart **不解释语义**（不判断这是点了哪个词条、要不要翻页）——原样透传给 runner 的
-/// popup 输入注入口，由已有的 WebView2 `SendMouseInput` 消费。坐标是**卡片本地** px
-/// （hook 已减去 anchor）。
+/// 普通卡内输入不由 Dart 解释（不判断点了哪个词条、要不要翻页），原样透传给 runner
+/// 的 WebView2 `SendMouseInput`。唯一例外是 [dismissOutsideKind]：它代表注入侧已吞掉
+/// 的卡外点击，由会话控制器直接关闭当前查词。普通输入坐标是**卡片本地** px。
 @immutable
 class GalLookupInput {
+  /// 位图回退弹框外的点击已经在注入侧完整吞掉；Dart 收到后应结束当前查词，
+  /// 不能再把它当 WebView2 鼠标输入转发。
+  static const int dismissOutsideKind = 5;
+
   const GalLookupInput({
     required this.seq,
     required this.x,
@@ -155,7 +159,7 @@ class GalLookupInput {
   final int x;
   final int y;
 
-  /// 0=move 1=leftDown 2=leftUp 3=wheel 4=leave。
+  /// 0=move 1=leftDown 2=leftUp 3=wheel 4=leave 5=dismissOutside。
   final int kind;
   final int wheel;
   final int keys;
@@ -405,6 +409,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double lineHeight = 1,
     bool bold = true,
     String textAlignment = 'center',
+    String verticalAlignment = 'center',
     int textColor = 0xFFFFFFFF,
     int bgColor = 0xE0000000,
     int outlineColor = 0xE0000000,
@@ -429,6 +434,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'lineHeight': lineHeight,
       'bold': bold,
       'textAlignment': textAlignment == 'left' ? 1 : 0,
+      // BUG-1890：0 = 垂直居中（老行为），1 = 顶部对齐。与 textAlignment 同样
+      // String→int 编码，native 侧 style.vertical_alignment 消费。
+      'verticalAlignment': verticalAlignment == 'top' ? 1 : 0,
       'textColor': textColor,
       'bgColor': bgColor,
       'outlineColor': outlineColor,
@@ -484,6 +492,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double lineHeight = 1,
     bool bold = true,
     String textAlignment = 'center',
+    String verticalAlignment = 'center',
     int outlineColor = 0xE0000000,
     double outlineWidth = 1.6,
     double textPadding = 20,
@@ -498,6 +507,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'lineHeight': lineHeight,
       'bold': bold,
       'textAlignment': textAlignment == 'left' ? 1 : 0,
+      'verticalAlignment': verticalAlignment == 'top' ? 1 : 0,
       'bgColor': bgColor,
       'textColor': textColor,
       'outlineColor': outlineColor,

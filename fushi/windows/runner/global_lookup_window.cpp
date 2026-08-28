@@ -1028,7 +1028,7 @@ void GlobalLookupWindow::ReleaseDismissHooks() {
     foreground_hook_ = nullptr;
   }
   if (mouse_hook_armed_) {
-    fushi::DisarmLowLevelMouseHook();
+    fushi::DisarmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = false;
   }
   // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
@@ -1199,7 +1199,8 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
 }
 
 void GlobalLookupWindow::Reveal(int width, int height,
-                                bool clamp_to_work_area) {
+                                bool clamp_to_work_area,
+                                HWND consume_outside_owner) {
   if (hwnd_ == nullptr) {
     return;
   }
@@ -1229,8 +1230,38 @@ void GlobalLookupWindow::Reveal(int width, int height,
       if (y < mi.rcWork.top) y = mi.rcWork.top;
     }
   }
-  SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
-               SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+  // BUG-1882 — direct galCard cannot be shown until the dedicated hook thread
+  // has acknowledged a live HHOOK. The normal desktop route deliberately stays
+  // asynchronous: it never consumes the underlying app click. At this point all
+  // geometry work is done, so the successful direct binding is published only
+  // a few instructions before SetWindowPos makes the off-screen renderer visible.
+  const bool prearm_direct_click_swallow =
+      arm_dismiss_hooks_ && consume_outside_owner != nullptr;
+  if (prearm_direct_click_swallow) {
+    if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
+      fushi::DisarmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = false;
+      NativeGlog(
+          "gal direct reveal declined: mouse hook install was not acknowledged");
+      return;
+    }
+    mouse_hook_armed_ = true;
+  }
+  if (!SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
+                    SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
+    // The direct route published its game-click binding immediately before
+    // this call. A failed move/show must revoke that binding before returning
+    // to RevealOverProcessClient's bitmap fallback; otherwise the still
+    // off-screen prewarm HWND reports no card while continuing to eat clicks.
+    if (prearm_direct_click_swallow) {
+      fushi::DisarmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = false;
+    }
+    revealed_ = false;
+    visible_ = false;
+    NativeGlog("lookup reveal declined: SetWindowPos failed");
+    return;
+  }
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   revealed_ = true;
   visible_ = true;
@@ -1270,8 +1301,10 @@ void GlobalLookupWindow::Reveal(int width, int height,
     }
     // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
     // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-    fushi::ArmLowLevelMouseHook(hwnd_);
-    mouse_hook_armed_ = true;
+    if (!prearm_direct_click_swallow) {
+      fushi::ArmLowLevelMouseHook(hwnd_);
+      mouse_hook_armed_ = true;
+    }
   }
   // 投影：上面 SetWindowPos 触发的 WM_WINDOWPOSCHANGED 到达时 revealed_ 还是
   // false（置位在其后），漏斗那次同步判为隐藏——首帧必须在标志置位后显式补一次。
@@ -2071,6 +2104,8 @@ static_assert(fushi_voice_hook::kLookupInputWheel == 3,
               "lookup input kind drift");
 static_assert(fushi_voice_hook::kLookupInputLeave == 4,
               "lookup input kind drift");
+static_assert(fushi_voice_hook::kLookupInputDismissOutside == 5,
+              "lookup input kind drift");
 
 bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
                                            int32_t wheel, uint32_t keys) {
@@ -2275,7 +2310,11 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // rcWork excludes the taskbar and would move/trim a borderless/fullscreen game
   // card a second time, so keep the common reveal lifecycle but bypass only that
   // desktop clamp.
-  Reveal(screen_width, screen_height, false);
+  // BUG-1882 — Direct galCard is the only route whose outside click must be
+  // consumed. Pass the bound game HWND into the same reveal transaction that
+  // makes the popup visible, so there is no first-frame window where the hook
+  // is armed with desktop click-through semantics.
+  Reveal(screen_width, screen_height, false, game);
   const bool shown = revealed_ && visible_ && IsWindowVisible(hwnd_);
   if (shown) {
     direct_process_client_active_ = true;
@@ -2641,6 +2680,35 @@ void GlobalLookupWindow::ConfigureWebView() {
       ReportOverlayError("put_ZoomFactor(1.0) failed", zoom_reset_hr);
     }
   }
+
+  // BUG-1887 ② —— 网页发起的权限请求一律拒绝（定位 / 麦克风 / 摄像头 / 通知 /
+  // 剪贴板读 / 传感器…）。
+  //
+  // in-app 的 fork 早就有这道门（in_app_webview.cpp 的 add_PermissionRequested：
+  // Dart 侧不接管时默认 put_State(DENY)），但 runner 自有的这两个裸 WebView2
+  // （app 外查词浮窗 + 剪贴板面板）从来没装，等于「不处理」——WebView2 的默认行为
+  // 是弹系统权限提示条。这个窗是无边框置顶浮窗、还开了防截屏，弹出来的提示条既
+  // 不该出现也没地方交互。
+  //
+  // 这与 ① 是两件事，别合并理解：① 拦的是浏览器进程启动期自己去占定位能力
+  // （Windows 显示「正在使用定位」的真正来源），② 拦的是页面运行期发起的请求。
+  // 只做 ② 修不掉系统显示；只做 ① 则将来某个词典/漫画页面（用户可导入任意 HTML
+  // 内容）请求麦克风时会弹提示条。两道门都要。
+  //
+  // put_State(DENY) 即拒绝且不显示默认 UI，无需 QI Args2 去设 Handled。
+  // ConfigureWebView 是两条创建路径（composition / windowed）+ BUG-693 自愈重建的
+  // 唯一漏斗，所以这个窗曾经拥有的每个 surface 都被覆盖。
+  webview_->add_PermissionRequested(
+      Callback<ICoreWebView2PermissionRequestedEventHandler>(
+          [](ICoreWebView2*,
+             ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
+            if (args != nullptr) {
+              args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+            }
+            return S_OK;
+          })
+          .Get(),
+      nullptr);
 
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
@@ -3381,7 +3449,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // BUG-1166 — 钩子线程已把这一格滚轮从输入流里吞掉（游戏收不到了），这里负责
       // 让卡片照常滚。同样是钩子线程只搬数据、窗口线程做事。
       HandleGlobalWheel(fushi::UnpackMouseHookPoint(wparam),
-                        fushi::UnpackMouseHookWheel(lparam));
+                         fushi::UnpackMouseHookWheel(lparam));
+      return 0;
+    case fushi::kLowLevelMouseShieldReleaseMessage:
+      // BUG-1882 — matching mouse-up 已由高优先级 hook 线程观测；跨进程
+      // DirectInput publication 在本窗口线程撤销，与下一次 Reveal 串行，避免旧 up
+      // 删除新 popup 的 gate。
+      fushi::FinalizeLowLevelMouseDirectInputShield(hwnd_);
       return 0;
     case WM_WINDOWPOSCHANGED:
       // 2026-08-23 弹窗观感 — 投影同步单漏斗：移动/缩放/显隐/Z 序变化（含

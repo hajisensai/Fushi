@@ -327,10 +327,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       const <int, CollectionScrapeMetaRow>{};
   Map<int, VideoMetadataWorkRow> _metadataWorkByCollection =
       const <int, VideoMetadataWorkRow>{};
-  Set<int> _aniDbScrapedCollectionIds = const <int>{};
-  Set<String> _aniDbScrapedBookUids = const <String>{};
-  Map<String, int> _aniDbScrapedCollectionByBookUid = const <String, int>{};
-  Map<String, int> _aniDbScrapedSortIndexByBookUid = const <String, int>{};
   Map<String, VideoMetadataWorkRow> _metadataWorkByBook =
       const <String, VideoMetadataWorkRow>{};
   Map<int, List<VideoMetadataImageRow>> _metadataImagesByWork =
@@ -615,23 +611,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         };
     final List<VideoMetadataWorkRow> metadataWorks = await db
         .getAllVideoMetadataWorks();
-    final Set<int> aniDbScrapedCollectionIds = await db
-        .aniDbScrapedVideoCollectionIds();
-    final Set<String> aniDbScrapedBookUids = await db
-        .aniDbScrapedVideoBookUids();
-    final Map<String, int> aniDbScrapedCollectionByBookUid = <String, int>{};
-    final Map<String, int> aniDbScrapedSortIndexByBookUid = <String, int>{};
-    for (final MediaCollectionItemRow item in collectionItems) {
-      if (item.mediaType != MediaKind.video.dbValue ||
-          !aniDbScrapedCollectionIds.contains(item.collectionId)) {
-        continue;
-      }
-      final int? current = aniDbScrapedCollectionByBookUid[item.entryKey];
-      if (current == null || item.collectionId < current) {
-        aniDbScrapedCollectionByBookUid[item.entryKey] = item.collectionId;
-        aniDbScrapedSortIndexByBookUid[item.entryKey] = item.sortIndex;
-      }
-    }
     final Map<int, VideoMetadataWorkRow> metadataWorkByCollection =
         <int, VideoMetadataWorkRow>{
       for (final VideoMetadataWorkRow work in metadataWorks)
@@ -691,10 +670,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _videoScrapeMetaByUid = scrapeMetaByUid;
       _collectionScrapeMetaById = collectionMetaById;
       _metadataWorkByCollection = metadataWorkByCollection;
-      _aniDbScrapedCollectionIds = aniDbScrapedCollectionIds;
-      _aniDbScrapedBookUids = aniDbScrapedBookUids;
-      _aniDbScrapedCollectionByBookUid = aniDbScrapedCollectionByBookUid;
-      _aniDbScrapedSortIndexByBookUid = aniDbScrapedSortIndexByBookUid;
       _metadataWorkByBook = metadataWorkByBook;
       _metadataImagesByWork = metadataImagesByWork;
       _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
@@ -952,12 +927,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 槽 = 来源身份 + 域（BUG-1202）。上面那行 `?? ` 让本方法**故意**不知道拿到的
       // 是互联还是云盘，所以来源身份只能由 source 自己申报；靠调用点分辨来源、或靠
       // 「换后端时记得失效」都治不了串味（换云盘后端根本不经过互联的失效信号）。
-      final List<RemoteVideoInfo> videos = await _remoteCache.read(
-        sourceId: source.remoteLibrarySourceId,
-        key: RemoteLibraryCacheKeys.videos,
+      final List<RemoteVideoInfo>? videos = await _readRemoteVideoList(
+        source: source,
         forceRefresh: forceRefresh,
-        fetch: source.listRemoteVideos,
       );
+      // BUG-1891：Jellyfin/Emby 关掉「自动列出条目」且手里还没有清单 → 本轮一个
+      // 请求都不发，也不渲染远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
+      if (videos == null) return null;
       // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
       final Set<String> localUids =
@@ -976,6 +952,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         failed: true,
       );
     }
+  }
+
+  /// 取远端视频清单：默认经 [RemoteLibraryCache] 取数；Jellyfin/Emby 且用户关掉
+  /// 「自动列出条目」时**只读缓存、绝不取数**（BUG-1891）。
+  ///
+  /// 用户报的「加进去直接开始刮削、卡死、封号」不是刮削（Jellyfin/Emby 条目根本
+  /// 不进任何刮削管线），是一进视频页就对整台服务器做全库递归枚举。几十万条目的
+  /// 公共 Emby 服上这就是几十上百个重查询连发，与刮削在观感和服务器负载上完全一致。
+  ///
+  /// 关掉之后仍把**上一次**拉到的清单显示出来（[RemoteLibraryCache.peek] 不看 TTL）
+  /// ——否则切一次 tab 回来卡片全没了，用户只能反复手动刷新，比自动枚举还糟。
+  /// `null` = 本轮无清单可显示（且没有发出任何请求）。
+  /// 手动刷新（下拉 = `forceRefresh: true`）永远照拉，开关不挡用户自己按的那一次。
+  Future<List<RemoteVideoInfo>?> _readRemoteVideoList({
+    required RemoteVideoSource source,
+    required bool forceRefresh,
+  }) async {
+    if (!shouldFetchRemoteVideoList(
+      source: source,
+      forceRefresh: forceRefresh,
+      jellyfinAutoList: appModelNoUpdate.prefsRepo.jellyfinAutoListVideos,
+    )) {
+      return _remoteCache.peek<List<RemoteVideoInfo>>(
+        sourceId: source.remoteLibrarySourceId,
+        key: RemoteLibraryCacheKeys.videos,
+      );
+    }
+    return _remoteCache.read<List<RemoteVideoInfo>>(
+      sourceId: source.remoteLibrarySourceId,
+      key: RemoteLibraryCacheKeys.videos,
+      forceRefresh: forceRefresh,
+      fetch: source.listRemoteVideos,
+    );
   }
 
   /// 多端库联合视图（spec §2.1/§2.4/§2.5）：解析可混排进主网格的远端占位视频。
@@ -2040,9 +2049,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<({String? source, String? format, List<AudioCue> cues})>
       _downloadRemoteSubtitleForBook(
     RemoteVideoClient client,
-    RemoteVideoInfo video,
+    RemoteVideoInfo listInfo,
     String bookUid,
   ) async {
+    // BUG-1891：Jellyfin/Emby 的清单不再带 MediaSources（它是全库枚举里最贵的
+    // 一段），所以清单里的 hasSubtitle 退化成服务器的粗粒度 HasSubtitles（图形轨
+    // 也算 true）且 subtitleFileName 为空 —— 后者会让下面按扩展名选解析器的那行
+    // 恒落 srt，ASS 轨会被 srt 解析器解成 0 条 cue。这里按需补齐一次单条目详情
+    // （只在真要下字幕时打一次 /Items/{id}），拿到精确文本轨与真实文件名。
+    // 互联 / 云盘清单本来就是全量下发，不实现该能力，走不到这条分支、零额外请求。
+    // 经 Object? 中转促成类型提升：RemoteVideoDetailFetch 是能力接口，不是
+    // RemoteVideoClient 的子类型，直接 is 判断不会提升接收者。
+    final Object fetcher = client;
+    RemoteVideoInfo video = listInfo;
+    if (fetcher is RemoteVideoDetailFetch && video.subtitleFileName == null) {
+      try {
+        video = await fetcher.remoteVideoDetail(video);
+      } catch (e) {
+        // 补齐失败不该把整条下载路径拖死：退回清单值，最差就是回到补齐前的行为。
+        debugPrint('[home-video] remote video detail failed: $e');
+      }
+    }
     if (!video.hasSubtitle) {
       return (source: null, format: null, cues: const <AudioCue>[]);
     }
@@ -2524,10 +2551,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // lastPositionMs 三档判。
         final List<VideoBookRow> ordered = <VideoBookRow>[
           for (final VideoBookRow b in searched)
+            // BUG-1839：系列页**不按刮削身份门控**。用户拍板「没刮削也应该进，
+            // 合集就应该在系列里面」——AniDB primary 身份对没注册 client 的用户
+            // 结构上永远写不出来（isHttpApiAvailable 恒 false），拿它当准入门等于
+            // 把整页清空。系列与「全部视频」的区别是**折叠方式**（合集折成一张卡
+            // vs 逐条平铺），不是刮削资格。只保留花絮/短篇排除。
             if (!(widget.section == VideoLibrarySection.series &&
                     _localExtraBookUids.contains(b.bookUid)) &&
-                (widget.section != VideoLibrarySection.series ||
-                    _isAniDbScrapedSeriesMember(b)) &&
                 _yearFilter.matches(_airYearByUid[b.bookUid]) &&
                 matchesVideoWatchStatus(
                   filter: _watchStatusFilter,
@@ -2631,24 +2661,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 标签过滤、标题搜索与最终分组共用同一份归属。普通分区沿用用户合集的
-  /// primary；“系列”只认 AniDB canonical collection，book-owned 结果因此为
-  /// loose（null），不会被同时加入的普通播放列表吞掉。
+  /// 标签过滤、标题搜索与最终分组共用同一份归属：条目所属的**主合集**。
+  ///
+  /// BUG-1839：这里曾按分区分叉（系列只认 AniDB canonical collection），于是
+  /// 用户合集在系列页既折不出合集卡、成员也被判成「无归属」。用户拍板合集就该
+  /// 在系列里，分叉去掉后三处（标签过滤 / 标题搜索 / 最终分组）天然同口径。
   int? _effectiveCollectionIdForBook(VideoBookRow book) {
-    if (widget.section == VideoLibrarySection.series) {
-      return _aniDbScrapedCollectionByBookUid[book.bookUid];
-    }
     return _primaryCollectionByEntry[MediaKind.video.compositeKey(
       book.bookUid,
     )];
-  }
-
-  /// “系列”不是文件夹归组的同义词。collection-owned 与 book-owned work 只要
-  /// 绑定了 primary AniDB identity 都是刮削结果；local provisional、TMDB-only
-  /// 和普通用户合集不进入本页。
-  bool _isAniDbScrapedSeriesMember(VideoBookRow book) {
-    return _aniDbScrapedCollectionByBookUid.containsKey(book.bookUid) ||
-        _aniDbScrapedBookUids.contains(book.bookUid);
   }
 
   /// TODO-2486（hayase 式改版）：顶部区 = 全宽 backdrop hero 轮播（最近在看的
@@ -3909,12 +3930,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<RemoteVideoInfo> remoteVideos,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    final bool seriesOnly = widget.section == VideoLibrarySection.series;
-    // 远端 placeholder 没有本机 canonical identity 证据，不得仅凭同名合集混进
-    // “系列”。它仍完整保留在“全部视频”与首页远端联合视图。
-    final List<RemoteVideoInfo> groupedRemoteVideos = seriesOnly
-        ? const <RemoteVideoInfo>[]
-        : remoteVideos;
+    // BUG-1839：远端占位卡曾被整体挡在系列外（理由是「没有本机 canonical identity
+    // 证据」）。准入门去掉后这条也一起去：系列与「全部视频」的区别是折叠方式，
+    // 不是条目资格；远端占位照常按 host 下发的主合集归属折进合集卡。
+    final List<RemoteVideoInfo> groupedRemoteVideos = remoteVideos;
     // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
     if (all.isEmpty && groupedRemoteVideos.isEmpty) {
       return <Widget>[
@@ -3938,22 +3957,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Map<String, int> memberSortIndex = Map<String, int>.of(
       _memberSortIndex,
     );
-    if (seriesOnly) {
-      for (final VideoBookRow book in books) {
-        final String key = MediaKind.video.compositeKey(book.bookUid);
-        final int? effectiveCollectionId = _effectiveCollectionIdForBook(book);
-        if (effectiveCollectionId != null) {
-          primaryByEntry[key] = effectiveCollectionId;
-          memberSortIndex[key] =
-              _aniDbScrapedSortIndexByBookUid[book.bookUid] ?? 0;
-        } else {
-          // 独立电影即使同时被用户放进普通播放列表，也应按 book-owned 刮削结果
-          // 作为 loose 卡展示，而不是被未刮削合集吞掉后过滤。
-          primaryByEntry.remove(key);
-          memberSortIndex.remove(key);
-        }
-      }
-    }
     for (final RemoteVideoInfo video in groupedRemoteVideos) {
       final RemoteCollectionMembership? membership = video.collection;
       if (membership == null) continue;
@@ -3974,13 +3977,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             primaryByEntry,
             memberSortIndex,
           ))
-            if (!seriesOnly ||
-                (group.collection != null &&
-                    _aniDbScrapedCollectionIds.contains(
-                      group.collection!.id,
-                    )) ||
-                group.collection == null)
-              group,
+            group,
         ];
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。
     // 合集卡（及其成员）按此显隐；散卡由 filteredVideoBookUidsProvider 另行过滤。
@@ -5202,27 +5199,53 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// UI 巡检 PR-4：此前只有「含字幕」一条且无字幕时正文整块为空（弹窗只剩标题，
   /// 像坏了）。补文件大小行（host 清单带 sizeBytes 时），字幕改为显式两态。
   void _showRemoteVideoInfo(RemoteVideoInfo video) {
-    final int? sizeBytes = video.sizeBytes;
+    // BUG-1891：Jellyfin/Emby 的清单不再带 MediaSources（全库枚举里最贵的一段），
+    // 文件大小与精确字幕轨改为**打开本弹窗时**按需取一次单条目详情。清单值先渲染，
+    // 详情到了再原地补上——不让用户对着 spinner 等一次网络往返。互联/云盘清单本来
+    // 就带全量字段、不实现该能力，走 null 分支，行为与补齐前一字不差。
+    // 经 Object? 中转促成类型提升（同 video_fushi_page._pushRemotePlayback）：
+    // RemoteVideoDetailFetch 是能力接口，不是 RemoteVideoSource 的子类型。
+    final Object? source = _remoteVideoSource;
+    final Future<RemoteVideoInfo>? detail =
+        source is RemoteVideoDetailFetch && video.sizeBytes == null
+            // 必须在这里就接住错误：FutureBuilder 要到下一帧才订阅，中间这段真空期
+            // 里 future 若已失败，Dart 会把它当无人处理的异步错误抛进 Zone。
+            ? source.remoteVideoDetail(video).catchError((Object e) {
+                debugPrint('[home-video] remote video detail failed: $e');
+                return video;
+              })
+            : null;
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(video.title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (sizeBytes != null && sizeBytes > 0)
-              Text(
-                t.remote_video_info_size(
-                  size: formatRemoteVideoSize(sizeBytes),
+        content: FutureBuilder<RemoteVideoInfo>(
+          future: detail,
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<RemoteVideoInfo> snapshot,
+          ) {
+            // 详情失败（网络/权限）就用清单值：信息弹窗不该因为补字段失败而报错。
+            final RemoteVideoInfo shown = snapshot.data ?? video;
+            final int? sizeBytes = shown.sizeBytes;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (sizeBytes != null && sizeBytes > 0)
+                  Text(
+                    t.remote_video_info_size(
+                      size: formatRemoteVideoSize(sizeBytes),
+                    ),
+                  ),
+                Text(
+                  shown.hasSubtitle
+                      ? t.remote_video_info_has_subtitle
+                      : t.remote_video_info_no_subtitle,
                 ),
-              ),
-            Text(
-              video.hasSubtitle
-                  ? t.remote_video_info_has_subtitle
-                  : t.remote_video_info_no_subtitle,
-            ),
-          ],
+              ],
+            );
+          },
         ),
         actions: <Widget>[
           TextButton(
@@ -6410,6 +6433,22 @@ class _VideoSlot {
   final VideoBookRow? local;
   final RemoteVideoInfo? remote;
 }
+
+/// 本轮该不该真的向远端要清单（BUG-1891）。**纯判定**，抽成顶层函数是为了能被
+/// 单测直接锁住——它是「一进视频页就把整台 Emby 递归一遍」的唯一闸门。
+///
+/// 三条放行理由，任一成立就取数：
+///  * [forceRefresh]：用户自己按的下拉刷新。开关不挡手动操作，否则关掉之后清单
+///    永远更新不了。
+///  * [source] 不是 Jellyfin/Emby：互联对端与云盘是自家后端，没有第三方媒体服务器
+///    那种滥用检测，清单也是一次性全量下发，不受本闸门管。
+///  * [jellyfinAutoList]：用户没关自动列出（默认就是没关）。
+bool shouldFetchRemoteVideoList({
+  required Object? source,
+  required bool forceRefresh,
+  required bool jellyfinAutoList,
+}) =>
+    forceRefresh || source is! JellyfinVideoClient || jellyfinAutoList;
 
 class _RemoteVideoState {
   const _RemoteVideoState({

@@ -22,6 +22,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
@@ -210,14 +211,27 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   }
 
   void _openEntry(MangaDiscoveryEntry entry) {
+    // 详情页是 pushed route，拿不到壳的 InheritedWidget（它在 Navigator 下面），
+    // 所以「去导入」的去处必须在这里解析好、随构造参数带过去。
+    final VoidCallback? openSources = _openSourcesAction();
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) =>
-            MangaDiscoveryDetailPage(entry: entry),
+        builder: (BuildContext context) => MangaDiscoveryDetailPage(
+          entry: entry,
+          onOpenSources: openSources,
+        ),
       ),
     );
   }
+
+  /// 「去『导入』视图装来源」的去处；本页不在库页壳里、或壳没有「导入」视图时为
+  /// null，空态只给文案不给按钮。
+  ///
+  /// 判据是「壳**有** sources 视图」而不是「壳在」：[MediaLibraryShellScope.select]
+  /// 对不存在的视图静默忽略，拿后者当判据就会渲染一个点了什么都不发生的按钮。
+  VoidCallback? _openSourcesAction() => MediaLibraryShellScope.maybeOf(context)
+      ?.actionFor(MediaLibraryViewKind.sources);
 
   void _openMokuro() {
     final AppModel appModel = ref.read(appProvider);
@@ -277,6 +291,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       return;
     }
     final MangaSourceCatalog scope = catalog.filterById(selected);
+    // 一个源都没有时搜索页的空态要能把用户带去「导入」视图装来源：去处由库页壳
+    // 提供（[_openSourcesAction]），弹掉搜索页也由壳自己做。
+    final VoidCallback? openSources = _openSourcesAction();
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
@@ -285,6 +302,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           mihonSources: scope.mihonSources,
           aidokuPackages: scope.aidokuPackages,
           initialQuery: query,
+          onOpenSources: openSources,
         ),
       ),
     );
@@ -530,7 +548,16 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
 }
 
 /// 一条「来源热门」横滑行：首次挂载才加载（发现视图本身已惰性构建，行不会
-/// 因页面存在就打请求风暴）；加载中显示细进度条，空/失败整行收起。
+/// 因页面存在就打请求风暴）；空/失败整行收起。
+///
+/// 加载中渲染的是**带源名的行头 + 行内小转圈**，与全局搜索页每段的加载态同形。
+/// 此前是一条 2px 的裸 `LinearProgressIndicator`：启用二十几个源时页面就是二十
+/// 几条没有任何标签的横线，用户看不出那是什么、也看不出在等谁。
+///
+/// 加载中**同时把卡片条的高度占住**（与全局搜索页 `_buildSectionBody` 的
+/// `case loading: SizedBox(height: 200)` 同一条纪律）：光有行头不占位的话，加载
+/// 完成那一刻会凭空插入 222px，标题下方所有内容整体下移。行整体高度因此在
+/// pending → done 之间不变。
 class MangaDiscoverySourceRow extends StatefulWidget {
   const MangaDiscoverySourceRow({required this.feed, super.key});
 
@@ -568,13 +595,7 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
   Widget build(BuildContext context) {
     if (_failed) return const SizedBox.shrink();
     final List<MangaDiscoverySourceItem>? items = _items;
-    if (items == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: LinearProgressIndicator(minHeight: 2),
-      );
-    }
-    if (items.isEmpty) return const SizedBox.shrink();
+    if (items != null && items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -582,23 +603,40 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              t.manga_discovery_source_popular(source: widget.feed.name),
-              style: Theme.of(context).textTheme.titleMedium,
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    t.manga_discovery_source_popular(source: widget.feed.name),
+                    style: Theme.of(context).textTheme.titleMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (items == null)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
+          // 高度常量与下面的卡片条一致：加载中占位、加载完原地换内容，行高不变。
           SizedBox(
             height: 214,
-            child: HorizontalDragScrollable(
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: items.length,
-                itemBuilder: (BuildContext context, int index) =>
-                    _buildCard(items[index]),
-              ),
-            ),
+            child: items == null
+                ? null
+                : HorizontalDragScrollable(
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: items.length,
+                      itemBuilder: (BuildContext context, int index) =>
+                          _buildCard(items[index]),
+                    ),
+                  ),
           ),
         ],
       ),

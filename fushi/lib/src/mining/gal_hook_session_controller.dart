@@ -12,7 +12,9 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_hook_runtime_stage.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
+import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
@@ -49,6 +51,37 @@ typedef GalgamePlayTrackerFactory = GalgamePlayTracker Function({
   required String gameDirectory,
   required GalgamePlaySessionSink onSessionEnded,
 });
+
+/// 一次捕获会话的库内身份。launch 与 attach 的**唯一**身份表示。
+///
+/// 三件事实各自可缺，缺席的语义不同，不能混：[gameId] 缺 = 这个游戏不在库里
+/// （`galgame_sessions.gameId` 的 FK 无处指向）；[executablePath] 缺 = 连 exe 路径
+/// 都查不到（无权限 / 进程已退出），候选进程组没有归属判据。两者缺一都不能计时。
+@immutable
+class GalHookSessionIdentity {
+  const GalHookSessionIdentity({
+    required this.gameId,
+    required this.title,
+    required this.executablePath,
+  });
+
+  /// `galgames.id`；null = 不在库内。
+  final String? gameId;
+
+  /// 活动 / 游玩会话落账用的显示名（永不为空：兜底到窗口标题或 exe 文件名）。
+  final String title;
+
+  /// 游戏 exe 全路径；null = 查不到。
+  final String? executablePath;
+
+  /// 是否够格建计时器（两件必需事实都在）。
+  bool get canTrackPlaytime =>
+      (gameId?.isNotEmpty ?? false) && executablePath != null;
+
+  @override
+  String toString() => 'GalHookSessionIdentity(gameId: $gameId, '
+      'title: $title, executablePath: $executablePath)';
+}
 
 enum GalHookSessionPhase {
   idle,
@@ -540,8 +573,9 @@ class GalHookSessionState {
 /// 引擎 hook 失败后的重试退避表。
 ///
 /// 只对**可能自愈**的失败生效（见 [galHookFailureIsRetryable]）：引擎初始化竞态、
-/// DLL 加载慢、上一局残留会话。位数不符 / 需要提权 / 缺文件这类不会随时间改变的
-/// 失败一次都不重试——重试只会掩盖必须告诉用户的处置。
+/// DLL 加载慢、暂不可复用的旧映射。位数不符 / 需要提权 / 缺文件这类不会随时间
+/// 改变的失败一次都不重试；residentHookMismatch 也必须重启游戏卸载驻留旧 DLL。
+/// 重试只会掩盖必须告诉用户的处置。
 ///
 /// 步长按「Unity/IL2CPP 游戏从进程创建到音频子系统就位」的量级取：首轮 3s 覆盖普通
 /// 竞态，最后一轮 20s 覆盖带壳解包与首次着色器编译；再长就该让用户手动重来了。
@@ -1132,6 +1166,9 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> startAttachedCapture(ExternalWindowInfo window) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
+    // 换游戏 / launch→attach 切换：上一场游玩先结算落库，本次再起新计时器。
+    // 缺了它，上一场 launch 的计时器会带着**旧 gameId** 继续累加（BUG-1892）。
+    await _stopPlayTracker();
     if (!_isWindows || generation != _operationGeneration) return;
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
@@ -1150,8 +1187,22 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
-    // attach 模式无稳定可执行文件 id：以窗口标题作为游戏名，mediaKey 留空。
-    _beginActivitySession(title: window.title, mediaKey: null);
+    // BUG-1892 — attach 不是「没有稳定身份」，只是此前没去查：PID 查得到 exe 全路径，
+    // exe 全路径就能反查回 `galgames.id`，与 launch 完全同一套解析。查不到才回落到
+    // 窗口标题 + 空 mediaKey（旧行为）。
+    final GalHookSessionIdentity identity = await _resolveSessionIdentity(
+      pid: window.pid,
+      fallbackTitle: window.title,
+    );
+    if (generation != _operationGeneration) return;
+    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
+    // 计时与 hook 彻底解耦：附着时游戏**已经在跑**，注入成功与否、走哪条降级，都不
+    // 改变「用户此刻正在玩」这个事实。所以计时起点就在这里，不挂在任何一条成功分支上。
+    _startPlayTracker(
+      generation: generation,
+      identity: identity,
+      mainPid: window.pid,
+    );
     _record(
       GalHookEventSeverity.info,
       'resolve',
@@ -1296,13 +1347,22 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
-    final String normalizedTitle = gameTitle?.trim() ?? '';
-    final String activityTitle = normalizedTitle.isEmpty
-        ? _displayNameForExecutable(executablePath)
-        : normalizedTitle;
+    // 身份解析与 attach 共用同一条：上层给了 galgames.id 就采信，没给就按 exe 路径
+    // 反查（裸 exe 启动的游戏也可能早就在库里）。
+    final GalHookSessionIdentity identity = await _resolveSessionIdentity(
+      gameId: gameId,
+      gameTitle: gameTitle,
+      executablePath: executablePath,
+      fallbackTitle: _displayNameForExecutable(executablePath),
+    );
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     // 活动 mediaKey 的跨层契约统一为 galgames.id。历史版本写过 exePath，读取侧保留
     // 兼容；新写入不再延续一字段两种身份的歧义。
-    _beginActivitySession(title: activityTitle, mediaKey: gameId);
+    _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
     // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
     // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会
     // 在最需要它的资源模式游戏里静默失效。
@@ -1416,9 +1476,7 @@ class GalHookSessionController extends ChangeNotifier {
         // 注入失败但游戏在跑：hook 降级不影响时长记账（计时与 hook 彻底解耦）。
         _startPlayTracker(
           generation: generation,
-          gameId: gameId,
-          title: activityTitle,
-          executablePath: executablePath,
+          identity: identity,
           mainPid: runningPid,
         );
         return const GalHookLaunchResult.launched();
@@ -1514,9 +1572,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     _startPlayTracker(
       generation: generation,
-      gameId: gameId,
-      title: activityTitle,
-      executablePath: executablePath,
+      identity: identity,
       mainPid: gamePid,
     );
     return const GalHookLaunchResult.launched();
@@ -1587,6 +1643,9 @@ class GalHookSessionController extends ChangeNotifier {
 
   Future<void> stopCapture({bool keepBinding = true}) async {
     ++_operationGeneration;
+    // 用户点「停止捕获」就是这一局游玩的终点（BUG-1892）：结算必须在这里发生，
+    // 不能拖到游戏进程死或 App 退出——否则停了捕获、人早就不玩了，计时器还在跑。
+    await _stopPlayTracker();
     // 会话结束先把剩余累计落库，再复位记账并解除游戏归属（防停后串扰）。
     _flushGameActivity();
     _activityAccumulator.reset();
@@ -3214,27 +3273,92 @@ class GalHookSessionController extends ChangeNotifier {
   @visibleForTesting
   GalgamePlayTracker? get playTracker => _playTracker;
 
-  /// 从游戏库启动成功后开始游玩计时（P4 B1 接线）。
+  /// 解析一次捕获会话的库内身份。**launch 与 attach 的唯一身份来源**（BUG-1892）。
   ///
-  /// 只有带 `galgames.id` 的启动才计时：裸 exe 启动（texthooker 页）没有库内身份，
+  /// [gameId] / [gameTitle] 是库页启动时上层已经握着的身份，直接采信；缺席时才反查。
+  /// exe 全路径优先取 [executablePath]（launch 自带），没有就由 [pid] 查——这正是
+  /// attach 唯一的抓手（`QueryFullProcessImageNameW`）。反查本身走与库页启动同一个
+  /// 纯函数 [findGalgameByExePath]，两条路径不可能给出不同答案。
+  ///
+  /// 反查不到（游戏不在库里 / DB 还没接上 / 进程查不到路径）时返回 gameId 为 null 的
+  /// 身份，调用方据此不落游玩账——这是**唯一**的降级，且不吞掉任何本可解析的情况：
+  /// 只要 exe 路径查得到且它在库里，attach 与 launch 拿到的就是同一个 `galgames.id`。
+  Future<GalHookSessionIdentity> _resolveSessionIdentity({
+    required String fallbackTitle,
+    String? gameId,
+    String? gameTitle,
+    String? executablePath,
+    int? pid,
+  }) async {
+    String? exePath = executablePath?.trim();
+    if (exePath != null && exePath.isEmpty) exePath = null;
+    // attach 唯一的抓手：上层没给 exe 路径时由 PID 反查（生产走
+    // QueryFullProcessImageNameW，见 [_targetImagePathProbe]）。launch 自带路径，
+    // 走不到这一步；两条路径此后共用完全相同的库内反查。
+    if (exePath == null && pid != null) {
+      final String? probed = _targetImagePathProbe(pid)?.trim();
+      if (probed != null && probed.isNotEmpty) exePath = probed;
+    }
+    final GalgameEntry? known =
+        exePath == null ? null : await _lookupGalgame(exePath);
+    final String explicitId = gameId?.trim() ?? '';
+    final String resolvedId =
+        explicitId.isNotEmpty ? explicitId : (known?.id ?? '');
+    String title = gameTitle?.trim() ?? '';
+    if (title.isEmpty) title = known?.displayName.trim() ?? '';
+    if (title.isEmpty) title = fallbackTitle.trim();
+    return GalHookSessionIdentity(
+      gameId: resolvedId.isEmpty ? null : resolvedId,
+      title: title,
+      executablePath: exePath,
+    );
+  }
+
+  /// exe 路径 → 库内条目：读已接上的 DB 全表（`galgames` 是用户手工维护的小表，
+  /// 库页本身也是一次批量取全量）再走**与库页启动同一个**纯函数判归属。
+  /// DB 未接上（App 没初始化完 / 测试替身无 DB）或查询失败时返回 null。
+  Future<GalgameEntry?> _lookupGalgame(String exePath) async {
+    final FushiDatabase? database = _activityDatabaseResolver?.call();
+    if (database == null) return null;
+    try {
+      final List<GalgameRow> rows = await database.getAllGalgames();
+      return findGalgameByExePath(
+        <GalgameEntry>[
+          for (final GalgameRow row in rows) galgameEntryFromRow(row),
+        ],
+        exePath,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 会话开始后接线游玩计时（P4 B1 接线；BUG-1892 起 attach 与 launch 共用）。
+  ///
+  /// 只有解析出库内身份才计时：不在库里的进程没有 `galgames.id`，
   /// `galgame_sessions.gameId` 无处指向（FK 到 [Galgames]），刻意不落账。
   /// [mainPid] 未知时喂 0：状态机对死 PID 连续判活失败后会按游戏目录重扫候选组，
   /// 前台逃逸检测也会当场收编真实进程，不丢账。
   void _startPlayTracker({
     required int generation,
-    required String? gameId,
-    required String title,
-    required String executablePath,
+    required GalHookSessionIdentity identity,
     required int? mainPid,
   }) {
-    if (gameId == null || gameId.isEmpty) return;
-    // 换代守卫：本次 launch 已被更新的操作取代时不得再起计时器——新操作入口的
+    final String? gameId = identity.gameId;
+    final String? executablePath = identity.executablePath;
+    if (!identity.canTrackPlaytime ||
+        gameId == null ||
+        executablePath == null) {
+      return;
+    }
+    // 换代守卫：本次会话已被更新的操作取代时不得再起计时器——新操作入口的
     // [_stopPlayTracker] 已经跑过，这里再起就是无人回收的泄漏。
     if (generation != _operationGeneration) return;
     final GalgamePlayTracker tracker = _playTrackerFactory(
       gameId: gameId,
       gameDirectory: File(executablePath).parent.path,
-      onSessionEnded: _makePlaySessionSink(gameId: gameId, title: title),
+      onSessionEnded:
+          _makePlaySessionSink(gameId: gameId, title: identity.title),
     );
     _playTracker = tracker;
     tracker.start(mainPid: mainPid ?? 0);
@@ -3869,10 +3993,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 引擎 hook 失败后的**有界恢复**调度。
   ///
-  /// 旧实现里 `_activateLoopback` 是终态：一次注入竞态（DLL 还在加载、上一局残留会话、
+  /// 旧实现里 `_activateLoopback` 是终态：一次注入竞态（DLL 还在加载、
   /// 引擎音频子系统尚未建好）就让整局只剩整机混音，用户只能关掉游戏重来。真实失败里
   /// 相当一部分会自愈，因此按退避表重试；不会自愈的失败（位数不符 / 需要提权 / 缺文件）
-  /// 一次都不试，直接把原因留在事件里让 UI 说清处置。
+  /// 以及必须重启游戏的 residentHookMismatch 一次都不试，直接把原因留在事件里让 UI
+  /// 说清处置。
   void _scheduleEngineRecovery(
     int generation, {
     required int pid,

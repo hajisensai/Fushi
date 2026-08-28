@@ -1866,6 +1866,7 @@ void main() {
   });
 
   _playTrackerLaunchWiring();
+  _playTrackerAttachWiring();
   _playTrackerWiringGuard();
   _bug950Guard();
 }
@@ -2150,6 +2151,285 @@ void _playTrackerWiringGuard() {
       isTrue,
       reason: '重复启动必须先结算上一场，否则旧计时器泄漏',
     );
+
+    // BUG-1892：附着捕获与启动捕获是同一件事的两条入口，计时接线必须对称。
+    final int attachAt =
+        body.indexOf('Future<void> startAttachedCapture(ExternalWindowInfo');
+    expect(attachAt, greaterThan(0), reason: 'startAttachedCapture 不存在，守卫需更新');
+    final int attachEnd =
+        body.indexOf('Future<GalHookLaunchResult> launchGame(', attachAt);
+    expect(attachEnd, greaterThan(attachAt), reason: '找不到 startAttachedCapture 结尾');
+    final String attachBody = body.substring(attachAt, attachEnd);
+    expect(
+      attachBody.contains('_startPlayTracker('),
+      isTrue,
+      reason: 'attach（附着并捕获）同样是一局游玩，必须起计时（BUG-1892）',
+    );
+    expect(
+      attachBody.contains('_stopPlayTracker('),
+      isTrue,
+      reason: 'launch→attach 切换必须先结算上一场，否则旧 gameId 继续累加',
+    );
+    expect(
+      attachBody.contains('_resolveSessionIdentity('),
+      isTrue,
+      reason: 'attach 的身份必须走与 launch 共用的解析，不得另写一份',
+    );
+
+    final int stopAt = body.indexOf('Future<void> stopCapture({');
+    expect(stopAt, greaterThan(0), reason: 'stopCapture 不存在，守卫需更新');
+    final int stopEnd = body.indexOf('static bool sameTrackMembership(', stopAt);
+    expect(stopEnd, greaterThan(stopAt), reason: '找不到 stopCapture 结尾');
+    expect(
+      body.substring(stopAt, stopEnd).contains('_stopPlayTracker('),
+      isTrue,
+      reason: '「停止捕获」就是这局游玩的终点，必须当场结算（BUG-1892）',
+    );
+  });
+}
+
+/// BUG-1892：附着并捕获（游戏已在跑，Hibiki 只是挂上去）同样要产生游玩记录。
+/// 身份链是 `window.pid → exe 全路径 → galgames 行`，与库页启动共用同一套解析。
+void _playTrackerAttachWiring() {
+  final String gameDir = p.join(p.rootPrefix(p.current), 'Games', 'Attached');
+  final String gameExe = p.join(gameDir, 'attached.exe');
+  const int gamePid = 4242;
+
+  ({
+    GalHookSessionController controller,
+    _FakePlayProbe probe,
+    List<({String gameId, String gameDirectory})> factoryCalls,
+    ChangeNotifier endpoints,
+  }) buildHarness(
+    FushiDatabase db, {
+    String? imagePathForPid,
+  }) {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakePlayProbe probe = _FakePlayProbe(
+      processes: <int, String>{gamePid: gameExe},
+      foregroundPid: gamePid,
+    );
+    final List<({String gameId, String gameDirectory})> factoryCalls =
+        <({String gameId, String gameDirectory})>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      // attach 唯一的身份抓手：PID → exe 全路径（生产是
+      // QueryFullProcessImageNameW）。传 null 模拟查不到路径的进程。
+      targetImagePathProbe: (int pid) =>
+          pid == gamePid ? imagePathForPid : null,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+        GalJapaneseLocaleMode japaneseLocaleMode =
+            kGalDefaultJapaneseLocaleMode,
+      }) =>
+          _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+      ),
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      playTrackerFactory: ({
+        required String gameId,
+        required String gameDirectory,
+        required GalgamePlaySessionSink onSessionEnded,
+      }) {
+        factoryCalls.add((gameId: gameId, gameDirectory: gameDirectory));
+        return GalgamePlayTracker(
+          gameId: gameId,
+          gameDirectory: gameDirectory,
+          onSessionEnded: onSessionEnded,
+          probe: probe,
+          isWindows: true,
+          foregroundInterval: const Duration(milliseconds: 1),
+          accrualInterval: const Duration(milliseconds: 1),
+        );
+      },
+    );
+    controller.attachActivityDatabase(() => db);
+    return (
+      controller: controller,
+      probe: probe,
+      factoryCalls: factoryCalls,
+      endpoints: endpoints,
+    );
+  }
+
+  Future<FushiDatabase> openDb({bool withGame = true}) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    if (withGame) {
+      await db.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: 'galgame-attached-7',
+          name: '附着的游戏',
+          exePath: gameExe,
+          workdir: gameDir,
+          addedAt: 0,
+        ),
+      );
+    }
+    return db;
+  }
+
+  Future<void> accrueUntil(GalgamePlayTracker tracker, int seconds) async {
+    for (int i = 0;
+        i < 400 && (tracker.machine?.activeSeconds ?? 0) < seconds;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(tracker.machine?.activeSeconds ?? 0, greaterThanOrEqualTo(seconds));
+  }
+
+  test('BUG-1892：附着并捕获接线游玩计时，游戏进程退出自动结算落库', () async {
+    final FushiDatabase db = await openDb();
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '窗口标题（会变）'),
+    );
+    // 身份不是猜的：PID → exe 全路径 → galgames 行，与库页启动同一套判据。
+    expect(harness.factoryCalls, hasLength(1));
+    expect(harness.factoryCalls.single.gameId, 'galgame-attached-7');
+    expect(harness.factoryCalls.single.gameDirectory, File(gameExe).parent.path);
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    expect(tracker.isRunning, isTrue);
+
+    await accrueUntil(tracker, kMinSessionSeconds);
+    harness.probe.processes.clear();
+    harness.probe.deadPids.add(gamePid);
+    List<GalgameSessionRow> sessions = const <GalgameSessionRow>[];
+    for (int i = 0; i < 400 && sessions.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      sessions = await db.getGalgameSessions('galgame-attached-7');
+    }
+    expect(sessions, hasLength(1));
+    expect(
+      sessions.single.durationSeconds,
+      greaterThanOrEqualTo(kMinSessionSeconds),
+    );
+
+    // 时长侧活动行照样落，mediaKey 是 galgames.id、标题取库内显示名（窗口标题会变，
+    // 不能当身份用）。
+    final List<ActivityEventRow> activities =
+        await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    final ActivityEventRow durationRow = activities.firstWhere(
+      (ActivityEventRow row) => row.durationMs != null,
+    );
+    expect(durationRow.mediaKey, 'galgame-attached-7');
+    expect(durationRow.title, '附着的游戏');
+    expect(
+      durationRow.durationMs,
+      sessions.single.durationSeconds * 1000,
+    );
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：附着的进程不在游戏库里 → 不落游玩账（唯一降级）', () async {
+    final FushiDatabase db = await openDb(withGame: false);
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '库外的游戏'),
+    );
+    expect(harness.factoryCalls, isEmpty);
+    expect(harness.controller.playTracker, isNull);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：PID 查不到 exe 路径 → 没有归属判据，不落游玩账', () async {
+    final FushiDatabase db = await openDb();
+    final harness = buildHarness(db, imagePathForPid: null);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '查不到路径'),
+    );
+    expect(harness.factoryCalls, isEmpty);
+    expect(harness.controller.playTracker, isNull);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：「停止捕获」当场结算，不拖到进程死或 App 退出', () async {
+    final FushiDatabase db = await openDb();
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '附着的游戏'),
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    // 游戏还活着（probe 里进程仍在），用户只是点了「停止捕获」。
+    await harness.controller.stopCapture();
+    expect(tracker.isRunning, isFalse);
+    // stopCapture 内部 await 了结算写穿，无需轮询即可读到。
+    expect(await db.getGalgameSessions('galgame-attached-7'), hasLength(1));
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-1892：launch→attach 切换先结算上一场，旧计时器不带着旧 gameId 继续跑', () async {
+    final FushiDatabase db = await openDb();
+    await db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: 'galgame-launched-1',
+        name: '先启动的游戏',
+        exePath: p.join(gameDir, 'launched.exe'),
+        workdir: gameDir,
+        addedAt: 0,
+      ),
+    );
+    final harness = buildHarness(db, imagePathForPid: gameExe);
+    final int flushBaseline = ExitFlushRegistry.instance.callbackCount;
+
+    expect(
+      (await harness.controller.launchGame(
+        p.join(gameDir, 'launched.exe'),
+        gameId: 'galgame-launched-1',
+        gameTitle: '先启动的游戏',
+      ))
+          .launched,
+      isTrue,
+    );
+    final GalgamePlayTracker first = harness.controller.playTracker!;
+    await accrueUntil(first, kMinSessionSeconds);
+
+    await harness.controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: gamePid, title: '附着的游戏'),
+    );
+    expect(first.isRunning, isFalse);
+    expect(await db.getGalgameSessions('galgame-launched-1'), hasLength(1));
+    final GalgamePlayTracker second = harness.controller.playTracker!;
+    expect(identical(first, second), isFalse);
+    expect(second.isRunning, isTrue);
+    expect(second.gameId, 'galgame-attached-7');
+    // 桌面点 X 走 exit(0)：attach 起的计时器同样要有退出结算登记（登记点在
+    // _startPlayTracker 内，两条路径共用）。
+    expect(ExitFlushRegistry.instance.callbackCount, flushBaseline + 1);
+
+    await harness.controller.close();
+    expect(ExitFlushRegistry.instance.callbackCount, flushBaseline);
+    harness.endpoints.dispose();
   });
 }
 
@@ -2451,6 +2731,127 @@ void _bug950Guard() {
       expect(codes, contains('engine.retry_skipped'));
       expect(codes, isNot(contains('engine.retry_scheduled')));
       expect(factoryCalls, 1);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('residentHookMismatch 要求重启游戏，对同一 PID 不自动重试', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource stale = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.residentHookMismatch,
+          exitCode: 2,
+          stderrTail: '已存在但不可复用的 hook 会话；请重启游戏',
+        ),
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+        }) {
+          factoryCalls++;
+          return stale;
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await waitForEvent(controller, 'engine.retry_skipped');
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.residentHookMismatch,
+      );
+      expect(controller.state.injectorDetail, contains('exit=2'));
+      final List<String> codes =
+          controller.events.map((GalHookEvent e) => e.code).toList();
+      expect(codes, contains('engine.retry_skipped'));
+      expect(codes, isNot(contains('engine.retry_scheduled')));
+      expect(factoryCalls, 1);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('staleSession 的旧映射消失后会有界重试并恢复', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource stale = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.staleSession,
+          exitCode: 2,
+          stderrTail: '已存在但暂不可复用的 hook 会话；将由宿主有界重试',
+        ),
+      );
+      final _FakeEngineSource recovered =
+          _FakeEngineSource(pairedBytes: Uint8List(0));
+      final List<_FakeEngineSource> queue = <_FakeEngineSource>[
+        stale,
+        recovered,
+      ];
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+        }) {
+          factoryCalls++;
+          return queue.isEmpty ? recovered : queue.removeAt(0);
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await waitForEvent(controller, 'engine.retry_scheduled');
+      await waitForEvent(controller, 'engine.attach_recovered');
+
+      expect(factoryCalls, 2);
+      expect(controller.state.injectorFailure, GalHookInjectorFailure.none);
+      expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
 
       await controller.close();
       endpoints.dispose();

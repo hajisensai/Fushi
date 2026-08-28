@@ -110,7 +110,8 @@ class GlobalLookupController {
   // font can make this payload ~13 MB, so only revisions not yet acknowledged
   // by the current host ride the render call. The host can demand a resend after
   // a whole-WebView recovery via `staticSettingsRequired`.
-  final Map<String, Set<int>> _hostStaticRevisions = <String, Set<int>>{};
+  final PopupStaticRevisionCache _hostStaticRevisions =
+      PopupStaticRevisionCache();
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
@@ -1208,17 +1209,14 @@ class GlobalLookupController {
       glog('js: handler=$handler args=${message['args']}');
     }
     if (handler == 'staticSettingsRequired') {
-      final int? revision = _firstIntArg(message);
+      final ({int? revision, int? hostGeometryEpoch}) req =
+          parseStaticSettingsRequired(message);
+      final int? revision = req.revision;
       if (revision != null) {
         final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
         final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
-        _hostStaticRevisions[hostKey]?.remove(revision);
-        final Object? requestArgs = message['args'];
-        final int? hostGeometryCounter =
-            requestArgs is List && requestArgs.length > 1
-            ? parseGlobalLookupGeometryEpoch(requestArgs[1])
-            : null;
-        if (hostGeometryCounter == 0) {
+        _hostStaticRevisions.invalidate(hostKey, revision);
+        if (req.hostGeometryEpoch == 0) {
           // A whole-WebView recovery restarts the host counter. Its first bbox
           // can equal the retired document's epoch and bounds, so clear Dart's
           // de-dup only for this fresh-realm signal. Ordinary child cache misses
@@ -1860,12 +1858,7 @@ class GlobalLookupController {
     final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
-    final Set<int> knownStaticRevisions = _hostStaticRevisions.putIfAbsent(
-      hostKey,
-      () => <int>{},
-    );
-    final Set<int> emittedStaticRevisions = <int>{};
-    final String stackScript = buildStackRenderScript(
+    final StackRenderScript stackRender = buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
@@ -1887,21 +1880,29 @@ class GlobalLookupController {
       // preserving the desktop global-lookup cascade.
       fitNestedHeightToAnchorSide: route.source == 'galCard',
       clipboardHistoryAvailable: _allowClipboardHistory,
-      knownStaticRevisions: knownStaticRevisions,
-      emittedStaticRevisions: emittedStaticRevisions,
+      staticRevisions: _hostStaticRevisions,
+      hostKey: hostKey,
     );
     // Cold-create and process-recovery paths cache exactly one complete script
     // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so
     // last-wins caching cannot discard the immutable route epoch while retaining
     // the pixels.  Subsequent nested/visual-only renders omit the prelude.
     final String script = beginRoute == null
-        ? stackScript
-        : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}$stackScript';
+        ? stackRender.script
+        : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}${stackRender.script}';
     await GlobalLookupChannel.render(script);
     // Commit only after the platform call accepted the complete script. A
     // thrown/invalidated send must leave the revision unknown so the next render
     // remains self-contained.
-    knownStaticRevisions.addAll(emittedStaticRevisions);
+    //
+    // 🔴 光 await 是**不够**的：[OverlayWindowChannel._invoke] 在路由失效时直接
+    // `return Future.value()` 把整条调用丢掉（挡住旧 zone 里排队的 Future 复活
+    // 老窗口），await 它正常完成，看不出脚本压根没送出去。若就此记账，宿主会被
+    // 标成「已装载」而它其实什么都没收到——下一次渲染不再下发静态段，卡片停在
+    // 没主题/没字体/没词典样式的状态，正是这套去重最怕的那个方向。
+    // 所以记账前再确认一次路由：宁可漏记（下次重发，只多一次带宽），不可误记。
+    if (!_isCurrentRoute) return;
+    _hostStaticRevisions.commit(hostKey, stackRender.pendingRevisions);
   }
 
   /// TODO-867 P3c C2 — parses the onLinkClick anchor arg ({x,y,width,height} in
@@ -2238,6 +2239,36 @@ class GlobalLookupController {
       }
     }
   }
+}
+
+/// host.js `staticSettingsRequired` 的载荷解析（`args = [revision, geometryEpoch]`）。
+///
+/// 抽出来共享是因为它有**两个**消费方（桌面/galCard 的 GlobalLookupController 与剪贴板
+/// 面板），而两边原先各写了一份 num/String 兼容解析。同一条协议消息被解析成两份，等
+/// 协议再加一个参数时必然漂移——这正是本轮修的那个 bug 的形状（同一件事分散在多处各做
+/// 各的，漏掉一处就静默失效）。
+///
+/// [revision] 为 null 表示载荷不合法，调用方应整条忽略。
+/// [hostGeometryEpoch] 仅桌面路径消费（面板模式下 host.js 短路了 measureAndReport）。
+({int? revision, int? hostGeometryEpoch}) parseStaticSettingsRequired(
+  Map<String, Object?> message,
+) {
+  final Object? args = message['args'];
+  if (args is! List || args.isEmpty) {
+    return (revision: null, hostGeometryEpoch: null);
+  }
+  int? asInt(Object? v) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  return (
+    revision: asInt(args.first),
+    hostGeometryEpoch: args.length > 1
+        ? parseGlobalLookupGeometryEpoch(args[1])
+        : null,
+  );
 }
 
 /// Parses one non-negative renderer geometry epoch from a MethodChannel value.

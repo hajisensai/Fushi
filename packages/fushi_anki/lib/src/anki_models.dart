@@ -925,6 +925,7 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'woff2': 'font/woff2',
   'ttf': 'font/ttf',
   'otf': 'font/otf',
+  'ttc': 'font/collection',
   // ── 音频 ──
   'mp3': 'audio/mpeg',
   'm4a': 'audio/mp4',

@@ -1007,6 +1007,53 @@ void main() {
       }
     });
 
+    test('BUG-1869：跨盘 copy 进度分子永不越过分母，收尾时 copied == total', () async {
+      // 用户截图「正在复制文件：623 / 620」：support 根走**选择性**搬移（`_MovePlan.isSelective`：
+      // 顶层有 prefs 要留原地 / 目标 support 非空需合并 / documents 白名单），其顶层单文件
+      // （fushi.db / -wal / -shm、local_audio_*.db）跨盘复制时只 fileCopied() 加分子、从没进过
+      // 分母。seedDb 在 support 顶层放了 fushi.db（+ WAL 侧车）和 local_audio_1.db；再往旧
+      // support 顶层放一个 shared_preferences.json（默认根迁移的真实形态）逼出选择性路径——
+      // 没有它排除集为空，plan 走整树 copy，根本到不了出 bug 的分支。
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'progress_bound');
+      // 分母应等于搬移前旧根里**会被搬**的真实文件数：prefs 留原地，不计。
+      int countFiles(Directory d) => d
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .length;
+      final int sourceFiles = countFiles(oldDocs) + countFiles(oldSupport);
+      File(p.join(oldSupport.path, 'shared_preferences.json'))
+          .writeAsStringSync('{}');
+      final List<({int copied, int total})> reports =
+          <({int copied, int total})>[];
+      DataRootMigrator.debugForceCopyFallback = true;
+      try {
+        await const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
+          onProgress: (int copied, int total) =>
+              reports.add((copied: copied, total: total)),
+        ));
+      } finally {
+        DataRootMigrator.debugForceCopyFallback = false;
+      }
+      expect(reports, isNotEmpty);
+      for (final ({int copied, int total}) r in reports) {
+        expect(r.copied, lessThanOrEqualTo(r.total),
+            reason: '进度 ${r.copied} / ${r.total} 分子越过分母');
+      }
+      final ({int copied, int total}) last = reports.last;
+      expect(last.total, greaterThan(0));
+      expect(last.copied, equals(last.total));
+      // 分母就是旧根真实文件数：support 顶层的 fushi.db（含侧车）与 local_audio_1.db
+      // 与 documents 子树一样被计入，不多不少。
+      expect(last.total, equals(sourceFiles));
+    });
+
     test('跨盘 copy 成功路径：提交成功后才删源，新根齐全 + DB rebase + 旧根清空', () async {
       await seedDb();
       final String newDataRoot = p.join(tmp.path, 'defer_ok');

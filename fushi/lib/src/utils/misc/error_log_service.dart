@@ -182,9 +182,18 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     return '$header$tail$footer';
   }
 
+  /// 裁剪判据只查文件**长度**（stat，O(1)），超限了才把内容读回来裁。
+  ///
+  /// 原实现每次 append 后都 `readAsBytes()` 整个文件再比长度——在未超限的常态下，
+  /// 读回来的字节除了被 `bytes.length` 量一下之外原样丢弃。日志文件长期贴着
+  /// [_maxFileBytes] 上限运行，于是**每条日志**都要付一次最多 512 KB 的读盘 +
+  /// 解码。任何高频日志源（渲染期每行释义一条的 popup console 桥就是一个）都会
+  /// 把这条放大成成百上千次整文件回读，压在同一条串行落盘链上，拖住其后的所有
+  /// UI 工作。`length()` 拿的是文件元数据，不触碰内容，超限分支的行为逐字不变。
   Future<void> _trimLogFileToMaxBytes() async {
     final File? file = _logFile;
     if (file == null || !await file.exists()) return;
+    if (await file.length() <= _maxFileBytes) return;
     final List<int> bytes = await file.readAsBytes();
     if (bytes.length <= _maxFileBytes) return;
     await file.writeAsString(_trimLogBytes(bytes));
@@ -193,6 +202,7 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   void _trimLogFileToMaxBytesSync() {
     final File? file = _logFile;
     if (file == null || !file.existsSync()) return;
+    if (file.lengthSync() <= _maxFileBytes) return;
     final List<int> bytes = file.readAsBytesSync();
     if (bytes.length <= _maxFileBytes) return;
     file.writeAsStringSync(_trimLogBytes(bytes), flush: true);

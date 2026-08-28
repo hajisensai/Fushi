@@ -1,15 +1,16 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
-/// 给合集种一条 **AniDB 主身份**，使它有资格出现在「系列」墙上。
+/// 给合集种一条 **AniDB 主身份**（规范作品身份 + 刮削标题）。
 ///
-/// 「系列」页的入墙资格不是「是个合集」，而是「有 AniDB primary identity 的规范
-/// 作品」（`FushiDatabase.aniDbScrapedVideoCollectionIds()`，契约见
+/// 🔴 BUG-1839 起这**不再是入墙资格**：「系列」页已不按刮削 provider 门控，零刮削
+/// 的普通合集照样折成合集卡（用户拍板「合集就应该在系列里面」，契约见
+/// `test/pages/home_video_series_admission_test.dart` 与
 /// `test/pages/video_library_series_structure_guard_test.dart`）。
 ///
-/// 大量库页 widget 测试拿「系列」当测试面，但它们守的是封面借用链、角标、批量选择、
-/// 折叠与排序——不是入墙资格本身。不种身份的话这些用例会齐刷刷停在「合集卡根本
-/// 没渲染」上，测不到它们真正要守的东西，而那恰恰是最容易被悄悄改坏的一层。
+/// 保留本 helper 是因为调用点里有一批用例需要**刮削作品本身**（规范标题、
+/// work 归属、封面借用链），种上它们才测得到自己真正要守的那层；新写用例若只是
+/// 要一个能出现在系列墙上的合集，直接 `createMediaCollection` 即可，不必种身份。
 ///
 /// 只种身份，不碰断言：调用点该断言什么还断言什么。
 Future<void> seedAniDbSeriesIdentity(
@@ -40,11 +41,10 @@ Future<void> seedAniDbSeriesIdentity(
   );
 }
 
-/// 给**不属于任何已刮削合集的独立视频**种一条 AniDB 主身份（book-owned work）。
+/// 给独立视频种一条 AniDB 主身份（book-owned work）。
 ///
-/// 与 [seedAniDbSeriesIdentity] 是同一条入墙资格的另一半：`_isAniDbScrapedSeriesMember`
-/// 认「合集归属」或「book 自身身份」二者之一。测「散卡」行为（散卡与合集卡混排、
-/// 仅散卡时的批量新建合集）时必须种这一条，否则散卡在系列页根本不渲染。
+/// 与 [seedAniDbSeriesIdentity] 同理：BUG-1839 起散卡不种身份也照常进系列墙，
+/// 这里只提供「有刮削作品身份的独立视频」这一形态。
 Future<void> seedAniDbLooseIdentity(
   FushiDatabase db,
   String bookUid, {
@@ -74,7 +74,7 @@ Future<void> seedAniDbLooseIdentity(
 }
 
 /// [FushiDatabase.createMediaCollection] + [seedAniDbSeriesIdentity] 的组合，
-/// 供「建完就该上系列墙」的测试直接替换原来的 createMediaCollection 调用。
+/// 供需要「合集 + 刮削作品身份」两件事的测试一次种好。
 Future<int> createSeriesCollection(
   FushiDatabase db,
   String name, {

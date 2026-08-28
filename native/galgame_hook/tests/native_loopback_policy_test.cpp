@@ -27,9 +27,9 @@ void Check(bool condition, const char* message) {
   std::abort();
 }
 
-void TestV16TailAbiAndDefaultDeny() {
+void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
-  Check(fushi_voice_hook::kSharedVersion == 16, "shared ABI must be v16");
+  Check(fushi_voice_hook::kSharedVersion == 17, "shared ABI must be v17");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");
@@ -39,15 +39,24 @@ void TestV16TailAbiAndDefaultDeny() {
   Check(offsetof(SharedHeader, native_loopback_applied_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 12,
         "applied_seq must be the final v16 word");
-  Check(sizeof(SharedHeader) ==
+  // v17 appends the resident hook module digest right after the last v16 word;
+  // nothing else may grow between them or after it.
+  Check(offsetof(SharedHeader, hook_module_sha256) ==
             offsetof(SharedHeader, native_loopback_applied_seq) + 4,
-        "v16 fields must be the exact SharedHeader tail");
+        "v17 digest must directly follow the final v16 word");
+  Check(sizeof(SharedHeader) ==
+            ((offsetof(SharedHeader, hook_module_sha256) +
+              fushi_voice_hook::kHookModuleDigestChars + 7u) /
+             8u) * 8u,
+        "v17 digest must be the exact SharedHeader tail (only 8-align padding)");
   Check(fushi_voice_hook::AtomicLoadShared32(
             &header.native_loopback_requested) ==
             fushi_voice_hook::kNativeLoopbackDeny,
         "zero-initialized header must fail closed");
   Check(!fushi_voice_hook::ReadNativeLoopbackRequest(&header).valid,
         "seq zero is not a published request");
+  Check(header.hook_module_sha256[0] == '\0',
+        "zero-initialized header must expose no resident hook digest");
 }
 
 void TestPublicationIsCoherentIdempotentAndStartsAtOne() {
@@ -200,7 +209,7 @@ void TestSequenceWrapUsesIdentityNotOrdering() {
 }  // namespace
 
 int main() {
-  TestV16TailAbiAndDefaultDeny();
+  TestV16AndV17TailAbiAndDefaultDeny();
   TestPublicationIsCoherentIdempotentAndStartsAtOne();
   TestOnlyExactAllowCanStart();
   TestRapidDenyAllowForcesGenerationBarrier();
