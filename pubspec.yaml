@@ -114,6 +114,18 @@ dependency_overrides:
   # third_party/media_kit_video/PATCHES.md.
   media_kit_video:
     path: third_party/media_kit_video
+  # BUG-1887: upstream permission_handler_windows 0.1.2 subscribes to
+  # Geolocator::PositionChanged in the PLUGIN CONSTRUCTOR (with an empty
+  # callback). Subscribing opens a Windows location session, so Windows shows
+  # "Fushi is currently using your location" from RegisterPlugins until the
+  # process exits -- on every launch, even though Fushi only ever asks this
+  # plugin about storage/camera on Android/iOS and never touches location on
+  # Windows. Vendored fork defers the Geolocator + subscription to the one
+  # place that reads it (checkServiceStatus for LOCATION*), so an app that
+  # never asks never opens a session. See
+  # third_party/permission_handler_windows/PATCHES.md.
+  permission_handler_windows:
+    path: third_party/permission_handler_windows
   # macOS build fix: upstream flutter_onnxruntime 1.8.3 declares ios/macos plugin
   # platforms whose podspecs pin onnxruntime-objc 1.23 -> forces macOS 14 / iOS 16
   # deployment target, breaking the "Build Desktop" macOS release job (project is

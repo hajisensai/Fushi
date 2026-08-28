@@ -57,6 +57,7 @@ void main() {
     required StorageUsageService service,
     Future<List<StorageBookRef>> Function()? books,
     Future<String?> Function(String bookKey)? deleteBook,
+    Future<String?> Function(String uid)? deleteSrtBook,
     Future<DatabaseSnapshotDeletionResult> Function()? deleteDatabaseSnapshots,
     Future<int> Function()? anime4kBytes,
     Future<List<String>> Function()? anime4kDelete,
@@ -66,6 +67,7 @@ void main() {
       booksProvider: books ?? () async => const <StorageBookRef>[],
       dictionaryNamesProvider: () async => const <String>[],
       deleteBook: deleteBook ?? (String _) async => null,
+      deleteSrtBook: deleteSrtBook ?? (String _) async => null,
       deleteDictionary: (String _) async => null,
       deleteDatabaseSnapshots: deleteDatabaseSnapshots ??
           () async => const DatabaseSnapshotDeletionResult(
@@ -84,7 +86,7 @@ void main() {
       service: service(),
       books: () async => <StorageBookRef>[
         StorageBookRef(
-          bookKey: 'keyA',
+          id: 'keyA',
           title: '吾輩は猫である',
           extractDir: p.join(docs.path, 'fushi_books', 'keyA'),
         ),
@@ -108,7 +110,7 @@ void main() {
       service: service(),
       books: () async => <StorageBookRef>[
         StorageBookRef(
-          bookKey: 'keyA',
+          id: 'keyA',
           title: '吾輩は猫である',
           extractDir: bookDir,
         ),
@@ -150,6 +152,61 @@ void main() {
 
     expect(deleted, <String>['keyA']);
     // 重扫必须自然结束（进度圈消失）——转不停就是 _scanning 永挂的产品 bug。
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('BUG-1893：standalone 字幕书条目的删除走 deleteSrtBook，不走 deleteBook',
+      (WidgetTester tester) async {
+    // 这类书 bookKey 恒空、没有 EpubBooks 行：走 deleteBook 必然找不到行。
+    final String audioDir = p.join(docs.path, 'audiobooks', 'srt-uid-1');
+    writeFile(p.join(audioDir, 'ch1.mp3'), 4096);
+    final List<String> deletedBooks = <String>[];
+    final List<String> deletedSrt = <String>[];
+
+    await tester.pumpWidget(wrap(view(
+      service: service(),
+      books: () async => <StorageBookRef>[
+        StorageBookRef(
+          id: 'srt-uid-1',
+          title: 'ひとりぼっち',
+          extractDir: '',
+          audioPaths: <String>[audioDir],
+          kind: StorageEntryKind.srtBook,
+        ),
+      ],
+      deleteBook: (String bookKey) async {
+        deletedBooks.add(bookKey);
+        return null;
+      },
+      deleteSrtBook: (String uid) async {
+        deletedSrt.add(uid);
+        Directory(audioDir).deleteSync(recursive: true);
+        return null;
+      },
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.storage_category_books));
+    await tester.pumpAndSettle();
+    expect(find.text('ひとりぼっち'), findsOneWidget);
+    // 音频大小真的显示出来了（旧实现这里是 0 B）。
+    expect(find.text('4.0 KB'), findsWidgets);
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
+    for (int i = 0; i < 20; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      if (deletedSrt.isNotEmpty &&
+          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
+    }
+
+    expect(deletedSrt, <String>['srt-uid-1']);
+    expect(deletedBooks, isEmpty);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 

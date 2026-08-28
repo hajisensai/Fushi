@@ -122,6 +122,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'DEVICE: native hook overlay font weight',
   'game/Text alignment': 'test/build/gal_overlay_appearance_guard_test.dart + '
       'DEVICE: native hook overlay text alignment',
+  // BUG-1890：垂直对齐——与上面那个水平「文字对齐」**正交的另一个轴**（不是三选一
+  // 的第三档）。同一个消费点：floating_lyric_window.cpp 的 SetParagraphAlignment，
+  // 同样没有可探的渲染输入。由专项测试咬住：偏好白名单二值收敛（真 DB，含「改水平
+  // 对齐不冲掉垂直对齐」）、通道 String→int 编码，以及 native 源码守卫（每帧覆写处
+  // 读该字段、且 hook_text_mode_ 门住不误伤有声书歌词条）。
+  'game/Vertical alignment':
+      'test/lookup/gal_hook_text_vertical_alignment_test.dart + '
+          'test/build/gal_overlay_appearance_guard_test.dart + '
+          'DEVICE: native hook overlay vertical alignment',
   'game/Window background opacity':
       'test/build/gal_overlay_appearance_guard_test.dart + '
           'test/build/gal_overlay_lyric_style_guard_test.dart + '

@@ -116,6 +116,11 @@ enum MangaReaderInputAction {
   panDown,
   panLeft,
   panRight,
+
+  /// BUG-1888：切换界面（顶栏页码/工具按钮 + 左上返回键）。漫画此前**没有任何**
+  /// 隐藏界面的方式，这两块恒挂在画面上遮住页图；移动端还联动系统栏沉浸，隐藏
+  /// 界面即真全屏。
+  toggleChrome,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -379,6 +384,12 @@ class MangaFushiPage extends BaseSourcePage {
       return dictionaryShown
           ? MangaReaderInputAction.dismissDictionary
           : MangaReaderInputAction.backOrExit;
+    }
+    // BUG-1888：切换界面。与平移同理排在两道翻页门控**之前**——它既不翻页也不动
+    // 视野，「webtoon 让位原生滚动」与「弹窗可见让位」对它都不适用：正在查词时
+    // 想把顶栏收掉看清页图，是完全合理的操作。
+    if (action == ShortcutAction.mangaToggleChrome) {
+      return MangaReaderInputAction.toggleChrome;
     }
     // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
     // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
@@ -674,6 +685,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   MangaReadingMode _mode = MangaReadingMode.spread;
   List<MangaSpreadEntry> _spreads = <MangaSpreadEntry>[];
   bool _loadFailed = false;
+
+  /// BUG-1888：界面（顶栏 + 左上返回键）是否可见。隐藏态下右上角仍留一个半透明
+  /// 「显示界面」按钮——漫画正文是原生 WebView，空白点击手势全在注入的 JS 里且
+  /// 已被翻页占用，没有这个按钮的话触屏设备再没有第二条通道能把界面唤回来。
+  bool _chromeVisible = true;
 
   /// 双页布局偏好：页内菜单运行时切换，不持久化，默认自动（横屏双页/竖屏单页）。
   MangaSpreadPreference _spreadPreference = MangaSpreadPreference.auto;
@@ -2114,6 +2130,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 'window.__mangaPanBy(${panStep.dx}, ${panStep.dy});',
           ) ??
           Future<void>.value());
+      return;
+    }
+    // BUG-1888：切换界面与平移同理就地返回——它不翻页、不关词典，也不该被翻页的
+    // 跨源去抖吃掉（那道去抖压的是「同一次翻页被 Flutter 与 WebView 桥各报一次」，
+    // 与本动作无关）。
+    if (action == MangaReaderInputAction.toggleChrome) {
+      _toggleMangaChrome();
       return;
     }
     final DateTime now = DateTime.now();
@@ -3679,7 +3702,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   key: const ValueKey<String>('manga_dictionary_host'),
                   child: buildDictionary(),
                 ),
-                if (_bookRow != null && !_loadFailed)
+                if (_bookRow != null && !_loadFailed && _chromeVisible)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -3695,17 +3718,59 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     ),
                   ),
                 // 顶部 chrome：页码指示 + 阅读模式切换。
-                if (_bookRow != null && !_loadFailed)
+                if (_bookRow != null && !_loadFailed && _chromeVisible)
                   Positioned(
                     top: 0,
                     right: 0,
                     child: SafeArea(child: _buildTopChrome()),
+                  ),
+                // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
+                if (_bookRow != null && !_loadFailed && !_chromeVisible)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: SafeArea(
+                      child: Opacity(
+                        opacity: 0.35,
+                        child: IconButton(
+                          key: const ValueKey<String>(
+                              'manga_chrome_show_button'),
+                          tooltip: t.manga_interface_show,
+                          iconSize: 20,
+                          color: Colors.white,
+                          icon: const Icon(Icons.visibility_outlined),
+                          onPressed: _toggleMangaChrome,
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// BUG-1888：切换界面可见性。移动端联动系统栏——隐藏界面即进入沉浸式全屏；
+  /// 桌面的窗口级全屏走全局 F11（[ShortcutAction.globalToggleFullscreen]），
+  /// 与本页无关，两者可叠加使用。
+  void _toggleMangaChrome() {
+    setState(() {
+      _chromeVisible = !_chromeVisible;
+    });
+    _applyMangaImmersiveMode();
+  }
+
+  /// 移动端系统栏跟随界面可见性：隐藏 → immersiveSticky（连状态栏/导航栏一起
+  /// 收掉，边缘滑动可临时唤出）；显示 → 回到 edgeToEdge，与 [AppModel.openMedia]
+  /// 打开媒体后的常规形态一致。桌面无系统栏概念，直接返回。
+  void _applyMangaImmersiveMode() {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    SystemChrome.setEnabledSystemUIMode(
+      _chromeVisible ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
+      overlays:
+          _chromeVisible ? SystemUiOverlay.values : const <SystemUiOverlay>[],
     );
   }
 
@@ -3872,6 +3937,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               color: Colors.white,
             ),
             onPressed: () => unawaited(_toggleReadingMode()),
+          ),
+        ),
+        // BUG-1888：隐藏界面。与快捷键（默认 M / 手柄 Y）同一个执行体。
+        Tooltip(
+          message: t.manga_interface_hide,
+          child: IconButton(
+            key: const ValueKey<String>('manga_chrome_hide_button'),
+            icon: const Icon(Icons.visibility_off_outlined,
+                color: Colors.white),
+            onPressed: _toggleMangaChrome,
           ),
         ),
       ],

@@ -362,6 +362,14 @@ class ShortcutDefaults {
     // 「只关词典、绝不退出」（漫画版）：**默认空绑定**，理由与 readerDismissDict
     // 完全相同——Esc 归 universal 的 globalBack 一键阶梯。
     ShortcutAction.mangaDismissDict: const ShortcutBindingSet(),
+    // BUG-1888：切换漫画界面。键盘 M / 手柄 Y，与 readerToggleChrome 同键——两者
+    // 分属不同 scope、绝不同时激活，肌肉记忆可以跨阅读器复用。manga scope 内 M 与
+    // Y 均未被占用（翻页占的是 RB/LB/dpad 与方向/空格系）。
+    ShortcutAction.mangaToggleChrome: _kb([
+      _key(LogicalKeyboardKey.keyM),
+    ], [
+      _gY
+    ]),
     // 放大后平移视野：默认 Ctrl+方向键。裸方向键四个全被翻页占了
     // （mangaPageForward/Backward 各绑两个），同 scope 内撞绑会被靠前声明者吃掉，
     // 所以默认必须带修饰键。用户可在快捷键设置里改。

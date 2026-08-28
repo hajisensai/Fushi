@@ -1060,8 +1060,15 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
       FUSHI_LOGW("simple entries data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
       break;
     }
-    if (processed.count >= kMaxEntriesPerBank) {
-      FUSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxEntriesPerBank);
+    // BUG-1904：这里是 MDX / DSL 的**整本词典**条目流，不是 Yomitan 的单个
+    // term_bank_N.json。kMaxEntriesPerBank 是给后者设计的——一本 Yomitan 词典摊成
+    // 几十上百个 bank、每个几千条，100 万/bank 绰绰有余；而 MDX 整本词典就是这一
+    // 个流，于是同一个常量在两种布局下语义完全不同。实测大辞林第四版声明
+    // 1,086,308 条，被这里砍到正好 1,000,000（少 86,308），导入还报 success。
+    // 整词典级别的 OOM 保护应当是 kMaxTotalEntries；数据量本身另有
+    // kMaxDataBufferBytes（1 GB）与单条 kMaxGlossarySizeBytes 兜底，三道都还在。
+    if (processed.count >= kMaxTotalEntries) {
+      FUSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxTotalEntries);
       break;
     }
 
