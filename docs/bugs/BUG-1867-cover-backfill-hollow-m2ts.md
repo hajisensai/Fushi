@@ -6,7 +6,12 @@
 - **备注**：本轮只让**失败变安静**，没让封面补上来。**「封面始终补不上」的真根因是另一件事**：
   `-ss 10` 对 BDMV 的 m2ts 要 18–75s/条，一轮 34 条要 339s，而 `_maybeBackfillCovers` 里的
   `if (!mounted) return;` 让用户切走页面就中断——本机那 4 条「能成功」的至今 `cover_path` 仍为空，
-  说明它们从来没轮到过。**需单独立项**，见文末「相邻发现」。
+  说明它们从来没轮到过。**已立项 [BUG-1877](BUG-1877-cover-backfill-never-completes.md)**，见文末「相邻发现」。
+  ⚠ **上面这句「让用户切走页面就中断」经复核是错的**：`HomeTab.video` 在 `home_page.dart:1244-1249` 的
+  `_keepAliveTabs` 里，切 tab / 切库页分区都不 unmount `HomeVideoPage`，`!mounted` 只在 app 重启或切
+  Profile 时命中。真机制是「关 app 即整轮丢失 + 内存账本清零 + 下一轮又从 index 0 串行重扫」，另加
+  「单条两次 ffmpeg 各 30s 上限」；`-ss` 也**在 `-i` 之前**（fast seek），慢的是 TS 的无界 probe 而非 seek。
+  更正与证据见 BUG-1877。
 
 ### 复现与证据（本机生产库 `D:\APP\HIBIKI_date\support\fushi.db`，随包 `D:\APP\Hibiki\ffmpeg.exe` n7.1.5）
 
