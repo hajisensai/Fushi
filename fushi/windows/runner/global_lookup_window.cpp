@@ -2704,6 +2704,35 @@ void GlobalLookupWindow::ConfigureWebView() {
     }
   }
 
+  // BUG-1887 ② —— 网页发起的权限请求一律拒绝（定位 / 麦克风 / 摄像头 / 通知 /
+  // 剪贴板读 / 传感器…）。
+  //
+  // in-app 的 fork 早就有这道门（in_app_webview.cpp 的 add_PermissionRequested：
+  // Dart 侧不接管时默认 put_State(DENY)），但 runner 自有的这两个裸 WebView2
+  // （app 外查词浮窗 + 剪贴板面板）从来没装，等于「不处理」——WebView2 的默认行为
+  // 是弹系统权限提示条。这个窗是无边框置顶浮窗、还开了防截屏，弹出来的提示条既
+  // 不该出现也没地方交互。
+  //
+  // 这与 ① 是两件事，别合并理解：① 拦的是浏览器进程启动期自己去占定位能力
+  // （Windows 显示「正在使用定位」的真正来源），② 拦的是页面运行期发起的请求。
+  // 只做 ② 修不掉系统显示；只做 ① 则将来某个词典/漫画页面（用户可导入任意 HTML
+  // 内容）请求麦克风时会弹提示条。两道门都要。
+  //
+  // put_State(DENY) 即拒绝且不显示默认 UI，无需 QI Args2 去设 Handled。
+  // ConfigureWebView 是两条创建路径（composition / windowed）+ BUG-693 自愈重建的
+  // 唯一漏斗，所以这个窗曾经拥有的每个 surface 都被覆盖。
+  webview_->add_PermissionRequested(
+      Callback<ICoreWebView2PermissionRequestedEventHandler>(
+          [](ICoreWebView2*,
+             ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
+            if (args != nullptr) {
+              args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+            }
+            return S_OK;
+          })
+          .Get(),
+      nullptr);
+
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
   std::wstring adapter = LoadAdapterScript();

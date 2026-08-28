@@ -172,6 +172,28 @@ class RemoteLibraryCache {
     }
   }
 
+  /// 只读取已缓存的值，**绝不触发取数**（BUG-1891）。
+  ///
+  /// 「关掉自动列出条目」的语义就是这个：进页面不发请求，但上一次手动刷新拿到的
+  /// 清单还得留在屏幕上——否则切一次 tab 回来卡片就全没了，用户只能反复手动刷新，
+  /// 比自动枚举还糟。
+  ///
+  /// [maxAge] 为 null = 不看新鲜度，返回槽里最后一次成功的值（[invalidate] /
+  /// [invalidateSource] / [invalidateAll] 之后为 null）。命中在途请求不算——
+  /// 本方法是纯读，不复用 future。
+  T? peek<T>({
+    required String sourceId,
+    required String key,
+    Duration? maxAge,
+  }) {
+    final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
+    if (slot == null || !slot.hasValue) return null;
+    if (maxAge != null && _nowMs() - slot.fetchedAtMs >= maxAge.inMilliseconds) {
+      return null;
+    }
+    return slot.value as T?;
+  }
+
   /// 仅供测试与诊断：[sourceId] 的 [key] 槽当前是否持有未过期的缓存值。
   bool isFresh(String sourceId, String key, {Duration? ttl}) {
     final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];

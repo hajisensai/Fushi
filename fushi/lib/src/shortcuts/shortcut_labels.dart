@@ -23,6 +23,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_manga_page_backward;
       case ShortcutAction.mangaDismissDict:
         return t.shortcut_action_manga_dismiss_dict;
+      case ShortcutAction.mangaToggleChrome:
+        return t.shortcut_action_manga_toggle_chrome;
       case ShortcutAction.mangaPanUp:
         return t.shortcut_action_manga_pan_up;
       case ShortcutAction.mangaPanDown:

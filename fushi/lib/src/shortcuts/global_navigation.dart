@@ -471,14 +471,15 @@ Widget wrapWithGlobalNavigation({
         final KeyEventResult backResult =
             _handleGlobalBack(navigatorKey, registry, event);
         if (backResult == KeyEventResult.handled) return backResult;
-        if (focusNavigationEnabled) {
-          // TODO-1093：注册表驱动的窗口级全屏切换（默认 F11）。放在 globalBack 之后、
-          // Escape 之前；仅桌面有窗口时真正 toggle，移动端 no-op（见下）。
-          final KeyEventResult fullscreenResult =
-              _handleGlobalToggleFullscreen(registry, event);
-          if (fullscreenResult == KeyEventResult.handled) {
-            return fullscreenResult;
-          }
+        // TODO-1093 / BUG-1886：注册表驱动的窗口级全屏切换（默认 F11）。放在 globalBack
+        // 之后、Escape 之前；仅桌面有窗口时真正 toggle，移动端 no-op（见下）。
+        // **不受 [focusNavigationEnabled] 门控**——理由同 globalBack 与手柄分发
+        // （BUG-1266）：全屏改键是正式功能（快捷键设置里有完整 UI 与默认绑定 F11），把它
+        // 挂在一个默认关闭的实验开关上，等于在默认安装上「配了 F11 却永不解析」。
+        final KeyEventResult fullscreenResult =
+            _handleGlobalToggleFullscreen(registry, event);
+        if (fullscreenResult == KeyEventResult.handled) {
+          return fullscreenResult;
         }
       }
       // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。对手柄 B 必须

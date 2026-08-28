@@ -98,6 +98,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
   static const String _lineHeightPreferenceKey = 'gal_hook_text_line_height';
   static const String _boldPreferenceKey = 'gal_hook_text_bold';
   static const String _alignmentPreferenceKey = 'gal_hook_text_alignment';
+  static const String _verticalAlignmentPreferenceKey =
+      'gal_hook_text_vertical_alignment';
   static const String _textColorPreferenceKey = 'gal_hook_text_color';
   static const String _backgroundColorPreferenceKey =
       'gal_hook_text_background_color';
@@ -154,6 +156,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   double _lineHeight = PreferencesRepository.galHookTextLineHeightDefault;
   bool _bold = true;
   String _textAlignment = 'center';
+  String _verticalAlignment = 'center';
   int _textColor = PreferencesRepository.galHookTextColorDefault;
   int _backgroundBaseColor =
       PreferencesRepository.galHookTextBackgroundColorDefault;
@@ -362,6 +365,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
         _readPreference(_alignmentPreferenceKey, 'center') == 'left'
             ? 'left'
             : 'center';
+    _verticalAlignment =
+        _readPreference(_verticalAlignmentPreferenceKey, 'center') == 'top'
+            ? 'top'
+            : 'center';
     _textColor = _readColor(
       _textColorPreferenceKey,
       PreferencesRepository.galHookTextColorDefault,
@@ -515,6 +522,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         lineHeight: _lineHeight,
         bold: _bold,
         textAlignment: _textAlignment,
+        verticalAlignment: _verticalAlignment,
         textColor: _textColor,
         bgColor: _backgroundColor,
         outlineColor: _outlineColor,
@@ -580,6 +588,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         lineHeight: _lineHeight,
         bold: _bold,
         textAlignment: _textAlignment,
+        verticalAlignment: _verticalAlignment,
         textColor: _textColor,
         outlineColor: _outlineColor,
         outlineWidth: _outlineWidth,

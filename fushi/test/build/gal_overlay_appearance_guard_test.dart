@@ -20,6 +20,7 @@ void main() {
       'lineHeight',
       'bold',
       'textAlignment',
+      'verticalAlignment',
       'textColor',
       'bgColor',
       'outlineColor',
