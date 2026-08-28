@@ -68,7 +68,6 @@
 #include "xaudio_trace.h"
 #include "xwma_resource.h"
 #include "generated/profile_includes.inc"
-
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
 // GetFileVersionInfo* 在 version.dll，用 #pragma 就地声明依赖，避免改 CMake（改动集中在本文件）。
 #pragma comment(lib, "version.lib")
