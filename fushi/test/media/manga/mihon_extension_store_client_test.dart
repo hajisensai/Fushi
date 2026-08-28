@@ -585,13 +585,13 @@ void main() {
 
     test('the total fetch budget stops the mirror walk early', () async {
       final List<String> requested = <String>[];
-      DateTime clock = DateTime(2026, 1, 1);
+      Duration elapsed = Duration.zero;
       final MihonExtensionStoreClient client = MihonExtensionStoreClient(
         fetchBudget: const Duration(seconds: 45),
-        now: () => clock,
+        elapsedClock: _fakeClockFactory(() => elapsed),
         client: MockClient((http.Request request) async {
           requested.add(request.url.toString());
-          clock = clock.add(const Duration(seconds: 20)); // 每次尝试烧掉 20s
+          elapsed += const Duration(seconds: 20); // 每次尝试烧掉 20s
           throw const SocketException('direct timed out');
         }),
       );
@@ -611,6 +611,39 @@ void main() {
       // 没有总闸时这里会是 1 + 5 个镜像全轮一遍。
       expect(requested.length, 3);
       expect(requested.first, direct);
+    });
+
+    test('预算按「一次操作」计，不是每次取数各起一份', () async {
+      // 一次 `fetchStore` 会顺着 index.min.json → repo.json 走两段独立取数。
+      // 预算若在每次 `_get` 入口重开，全阻断网络下用户要等的是 预算 × 取数次数。
+      const String indexMin =
+          'https://github.com/o/r/raw/repo/index.min.json';
+      final List<String> requested = <String>[];
+      Duration elapsed = Duration.zero;
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        fetchBudget: const Duration(seconds: 45),
+        elapsedClock: _fakeClockFactory(() => elapsed),
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          elapsed += const Duration(seconds: 20); // 每次取数烧掉 20s
+          if (request.url.toString() == indexMin) {
+            // 第一段成功，并把 repo.json 指出来。
+            return http.Response('[]', HttpStatus.ok);
+          }
+          throw const SocketException('repo.json timed out');
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore(indexMin),
+        throwsA(isA<SocketException>()),
+      );
+      // 预算 45s 归整次「添加仓库」：index.min.json 烧 20s，repo.json 段只剩
+      // 25s，直连 + 1 个镜像就过点 = 3 次。
+      // 预算若在索引链的下一跳重开，第二段会拿到满血 45s、多走一个镜像 = 4 次；
+      // 全阻断网络下这就是「20s 超时」变成「转几分钟才报同一条 SocketException」。
+      expect(requested.length, 3);
     });
 
     test('302 hop to raw.githubusercontent.com gets its own fallback',
@@ -648,6 +681,151 @@ void main() {
       expect(requested, <String>[direct, rawDirect, rawMirror]);
     });
 
+    test('镜像返回 200 + HTML 错误页 → 换下一个候选，不是整轮结束', () async {
+      // 公共 gh 代理限流时的常见形态。判据留在 `_get` 之外（旧实现）时：
+      // 直连传输失败 → 镜像1 返 HTML → `_get` 成功返回 → 上层解析炸 → 整轮结束，
+      // 后面 4 个镜像一个都没试。
+      const String secondMirror = 'https://gh-proxy.com/$direct';
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == direct) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          if (request.url.toString() == firstMirror) {
+            return http.Response(
+              '<!DOCTYPE html><html><body>rate limited</body></html>',
+              HttpStatus.ok,
+              headers: <String, String>{'content-type': 'text/html'},
+            );
+          }
+          if (request.url.toString() == secondMirror) {
+            return http.Response(repository, HttpStatus.ok);
+          }
+          fail('unexpected request ${request.url}');
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(
+        (await client.fetchStore(direct)).store!.name,
+        'Mirrored repository',
+      );
+      expect(requested, <String>[direct, firstMirror, secondMirror]);
+    });
+
+    test('直连返回的内容解析不出来仍是权威结论，镜像一个都不问', () async {
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          return http.Response('<!DOCTYPE html>', HttpStatus.ok);
+        }),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.fetchStore(direct),
+        throwsA(isA<MihonRuntimeException>()),
+      );
+      expect(requested, <String>[direct]);
+    });
+
+    test('扩展列表同样在候选循环内判内容可用性', () async {
+      const String listDirect =
+          'https://github.com/o/r/raw/repo/index.json';
+      const String listMirror = 'https://ghfast.top/$listDirect';
+      final MihonStore store = MihonStore(
+        indexUrl: direct,
+        name: 'Mirrored repository',
+        badgeLabel: '',
+        signingKey: 'aabb',
+        contact: const <String, String?>{},
+        format: MihonStoreFormat.currentJson,
+        extensionListUrl: listDirect,
+      );
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == listDirect) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          if (request.url.toString() == listMirror) {
+            return http.Response('<html>rate limited</html>', HttpStatus.ok);
+          }
+          return http.Response(
+            jsonEncode(<String, Object?>{'extensions': <Object?>[]}),
+            HttpStatus.ok,
+          );
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(await client.fetchExtensions(store), isEmpty);
+      expect(requested.length, greaterThanOrEqualTo(3));
+      expect(requested[0], listDirect);
+      expect(requested[1], listMirror);
+    });
+
+    test('镜像返回 200 但不是 APK → 换下一个候选', () async {
+      const String apk = 'https://github.com/o/r/releases/download/v1/y.apk';
+      const String apkMirror = 'https://ghfast.top/$apk';
+      const String secondMirror = 'https://gh-proxy.com/$apk';
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        client: MockClient((http.Request request) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == apk) {
+            throw const SocketException('HTTP connection timed out');
+          }
+          if (request.url.toString() == apkMirror) {
+            return http.Response('<html>rate limited</html>', HttpStatus.ok);
+          }
+          return http.Response.bytes(_apkBytes, HttpStatus.ok);
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(await client.downloadApk(apk), _apkBytes);
+      expect(requested, <String>[apk, apkMirror, secondMirror]);
+    });
+
+    test('回了 200 就不再发字节的候选被 stall 超时掐掉，不会无限挂住', () async {
+      final List<String> requested = <String>[];
+      final MihonExtensionStoreClient client = MihonExtensionStoreClient(
+        bodyStallTimeout: const Duration(milliseconds: 200),
+        client: MockClient.streaming((
+          http.BaseRequest request,
+          http.ByteStream body,
+        ) async {
+          requested.add(request.url.toString());
+          if (request.url.toString() == direct) {
+            // 头回来了、体永远不来：修复前 `.timeout` 只套在 send 上，
+            // `await for (chunk in response.stream)` 零超时，整条链永久挂住。
+            return http.StreamedResponse(
+              StreamController<List<int>>().stream,
+              HttpStatus.ok,
+            );
+          }
+          return http.StreamedResponse(
+            Stream<List<int>>.value(utf8.encode(repository)),
+            HttpStatus.ok,
+          );
+        }),
+      );
+      addTearDown(client.close);
+
+      expect(
+        (await client.fetchStore(direct).timeout(const Duration(seconds: 20)))
+            .store!
+            .name,
+        'Mirrored repository',
+      );
+      expect(requested, <String>[direct, firstMirror]);
+    });
+
     test('downloadApk inherits the same fallback', () async {
       const String apk = 'https://github.com/o/r/releases/download/v1/x.apk';
       const String apkMirror = 'https://ghfast.top/$apk';
@@ -658,12 +836,12 @@ void main() {
           if (request.url.toString() == apk) {
             throw const SocketException('HTTP connection timed out');
           }
-          return http.Response.bytes(<int>[1, 2, 3], HttpStatus.ok);
+          return http.Response.bytes(_apkBytes, HttpStatus.ok);
         }),
       );
       addTearDown(client.close);
 
-      expect(await client.downloadApk(apk), <int>[1, 2, 3]);
+      expect(await client.downloadApk(apk), _apkBytes);
       expect(requested, <String>[apk, apkMirror]);
     });
   });
@@ -697,3 +875,14 @@ List<int> _varint(int value) {
   } while (remaining != 0);
   return result;
 }
+
+/// 最小合法 APK：ZIP 本地文件头魔数 `PK\x03\x04`。
+final Uint8List _apkBytes = Uint8List.fromList(<int>[0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+
+/// 假单调计时器工厂：每次调用捕获当前 [now] 作为原点，返回「从原点到现在」。
+/// 逐字对齐生产实现（每份预算一只新 [Stopwatch]），否则「预算重开」这种回归
+/// 在测试里看起来和共享预算一模一样。
+MihonElapsedClockFactory _fakeClockFactory(Duration Function() now) => () {
+      final Duration origin = now();
+      return () => now() - origin;
+    };
