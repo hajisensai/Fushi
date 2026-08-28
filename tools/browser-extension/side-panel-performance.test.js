@@ -52,8 +52,18 @@ test('lookup pane is user-resizable and persists via the popupSize channel', () 
   const css = fs.readFileSync(path.join(__dirname, 'side-panel.css'), 'utf8');
   assert.match(css, /\.lookup-pane \{[^}]*resize: both/);
   assert.match(SIDE_PANEL, /lookupUserResized = true;[\s\S]*?type: 'popupSize'/);
-  // 用户拖过后主题下发不得再覆盖宽高。
-  assert.match(SIDE_PANEL, /if \(lookupUserResized\) return;/);
+  // 用户拖过后主题下发不得再覆盖**宽高**——但只锁这两项。
+  assert.match(
+    SIDE_PANEL,
+    /if \(!lookupUserResized\) \{\s*lookupPaneEl\.style\.width = box\.width \+ 'px';[\s\S]*?lookupPaneEl\.style\.maxHeight = lookupBaseMaxHeight;\s*\}/,
+  );
+  // zoom 由 app 的「词典字号」下发，拖把手改不到它，因此必须留在门外无条件跟随。
+  // 早退整个函数会让用户拖过一次后再改字号永远不生效（本会话内不可恢复）。
+  assert.doesNotMatch(SIDE_PANEL, /if \(lookupUserResized\) return;/);
+  assert.match(
+    SIDE_PANEL,
+    /\}\s*lookupPaneEl\.style\.maxWidth = 'calc\(100vw - 16px\)';\s*lookupPaneEl\.style\.zoom = String\(box\.zoom\);/,
+  );
   // 尺寸盒必须经 popup-size.js 的决策器并带上**本文档视口**：直接写 theme px 的老写法
   // 在 CSS zoom 之下必然溢出窄侧边栏（右半边被 overflow-x 切掉）。
   assert.match(

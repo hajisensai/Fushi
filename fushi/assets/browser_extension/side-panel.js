@@ -235,12 +235,18 @@
   // 让整窗等比缩小而不是切内容。
   var lookupThemeForBox = null;
   function applyLookupBox() {
-    if (lookupUserResized) return; // 用户手动拖过尺寸：本会话内不再自动改写
     var box = fushiResolvePopupBox(
       lookupThemeForBox, { width: window.innerWidth, height: window.innerHeight });
-    lookupPaneEl.style.width = box.width + 'px';
-    lookupBaseMaxHeight = box.maxHeight + 'px';
-    lookupPaneEl.style.maxHeight = lookupBaseMaxHeight;
+    // 「用户手动拖过尺寸」只锁**宽高两项**——那才是拖把手拖出来的东西，本会话内不再
+    // 被主题下发的值盖掉（拖拽结果经 popupSize 回写 app，下次会话由主题带回来）。
+    // zoom 不在此列：它由 app 的「词典字号」下发（--fushi-popup-zoom =
+    // dictionaryFontSize/16），拖把手根本改不到它。整个函数早退会让用户拖过一次之后，
+    // 本会话内再去 app 里改字号，侧边栏弹窗的缩放永远不跟——这是行为回归。
+    if (!lookupUserResized) {
+      lookupPaneEl.style.width = box.width + 'px';
+      lookupBaseMaxHeight = box.maxHeight + 'px';
+      lookupPaneEl.style.maxHeight = lookupBaseMaxHeight;
+    }
     lookupPaneEl.style.maxWidth = 'calc(100vw - 16px)';
     lookupPaneEl.style.zoom = String(box.zoom);
   }

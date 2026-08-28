@@ -108,6 +108,33 @@ test('极窄侧边栏：压到最窄可读宽度仍放不下时改压 zoom，而
     '渲染宽 ' + box.width * box.zoom + ' 仍须落在可用宽内');
 });
 
+test('theme 宽度本就低于最小基准宽时，zoom 绝不被反向放大', () => {
+  // 老 profile 里存着抬滑杆下限之前写的 <250 值（偏好是持久化的，历史值不受
+  // 当前滑杆约束）。此前 `width < MIN_WIDTH` 的分支是无条件覆盖赋值
+  // `zoom = max(MIN_ZOOM, availW / MIN_WIDTH)`，丢掉了传入的 zoom：400px 侧边栏下
+  // 240px 的小窗会被放大成 zoom≈1.54 铺满整条侧边栏——与「夹取只缩不放」的契约相反。
+  const theme = { '--fushi-popup-max-width': '240px', '--fushi-popup-max-height': '300px' };
+  const box = fushiResolvePopupBox(theme, { width: 400, height: 900 });
+  assert.strictEqual(box.zoom, 1, 'zoom 必须原样保留，不得被抬高');
+  assert.strictEqual(box.width, 240, '放得下就别动用户设的宽度');
+  assert.strictEqual(box.clamped, false, '没被视口压过就不该标记 clamped');
+});
+
+// 正向契约护栏（不是上一条那种回归守卫——原实现在这条路径上也是对的）：视口放得下
+// 时 zoom 必须原样透传。挡的是「在 vw>0 分支开头无条件夹一次 zoom」这类未来改动。
+// --fushi-popup-zoom = dictionaryFontSize/16，app 侧 clamp 到 0.3~8.0，所以 0.3 是
+// 可下发的真实值；FUSHI_POPUP_MIN_ZOOM 只是「空间不足要压 zoom 时」的下限，不是给
+// 下发值兜底的地方。
+test('视口放得下时下发 zoom 原样透传，不被 MIN_ZOOM 抬高', () => {
+  const theme = {
+    '--fushi-popup-max-width': '600px',
+    '--fushi-popup-max-height': '300px',
+    '--fushi-popup-zoom': '0.3',
+  };
+  const box = fushiResolvePopupBox(theme, { width: 400, height: 900 });
+  assert.strictEqual(box.zoom, 0.3, '视口放得下时 zoom 原样透传，不得抬到 MIN_ZOOM');
+});
+
 test('高度上限按「视口 80% ÷ zoom」折回基准尺度', () => {
   const box = fushiResolvePopupBox(THEME, { width: 1600, height: 500 });
   // 80% × 500 = 400 渲染 px；zoom=1.4 → 基准上限 ≈ 285.7

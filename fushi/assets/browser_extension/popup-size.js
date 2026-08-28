@@ -82,17 +82,22 @@ function fushiResolvePopupBox(theme, viewport, opts) {
     var availW = Math.max(1, vw - margin); // 真实可用渲染宽（不许抬高——抬高就掩盖了「放不下」）
     // ① 先在当前 zoom 下压宽度。渲染宽 = width × zoom，故基准上限 = availW / zoom。
     var maxBaseW = availW / zoom;
-    if (width > maxBaseW) { width = maxBaseW; clamped = true; }
-    // ② 压完仍低于「弹窗内部布局的最小基准宽」= 当前 zoom 下这点空间根本排不开内容。
-    //    此时该动的是 zoom 不是宽度：把宽度还原到最小基准宽，改让整窗等比缩小到放得下。
-    //    这消除了「只能横向切内容」这个特殊情况。
-    if (width < FUSHI_POPUP_MIN_WIDTH) {
-      width = FUSHI_POPUP_MIN_WIDTH;
-      zoom = Math.max(FUSHI_POPUP_MIN_ZOOM, availW / FUSHI_POPUP_MIN_WIDTH);
+    // 整个视口夹取**只缩不放**：宽度和 zoom 都只可能比下发值更小。所以 ①② 一律挂在
+    // 「theme 宽度在当前 zoom 下真的放不下」这一个条件上——用户自己把弹窗设小
+    // （老 profile 里存着抬滑杆下限之前的 <250 值）不是「放不下」，不该在这里被抬大。
+    if (width > maxBaseW) {
+      // ① 先在当前 zoom 下压宽度，但不压过「弹窗内部布局的最小基准宽」。
+      width = Math.max(FUSHI_POPUP_MIN_WIDTH, maxBaseW);
       clamped = true;
-      // zoom 已到可读下限仍放不下（侧边栏窄到极端）：宽度按下限 zoom 再压回可用空间，
-      // 剩余溢出交给 .lookup-pane 的横向滚动，绝不静默切掉内容。
-      if (width * zoom > availW) width = availW / zoom;
+      // ② 压到最小基准宽仍放不下 = 当前 zoom 下这点空间根本排不开内容。此时该动的
+      //    是 zoom 不是宽度：宽度停在最小基准宽，改让整窗等比缩小到放得下。这消除了
+      //    「只能横向切内容」这个特殊情况。Math.min(zoom, ...) 守住只缩不放。
+      if (width > maxBaseW) {
+        zoom = Math.max(FUSHI_POPUP_MIN_ZOOM, Math.min(zoom, availW / width));
+        // zoom 已到可读下限仍放不下（侧边栏窄到极端）：宽度按下限 zoom 再压回可用
+        // 空间，剩余溢出交给 .lookup-pane 的横向滚动，绝不静默切掉内容。
+        if (width * zoom > availW) width = availW / zoom;
+      }
     }
   }
   if (vh > 0) {
