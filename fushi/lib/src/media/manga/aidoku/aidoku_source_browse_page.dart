@@ -310,17 +310,36 @@ class AidokuMangaDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
+    // 拿不到 AppModel 是**正常状态**，不是错误：这一页展示所需的一切都在
+    // adapter 里，AppModel 只决定「能不能加入书架」。硬读会让这一页在没有
+    // ProviderScope 的树里直接崩（widget 测试正是这么立起来的）。
+    AppModel? appModel;
+    try {
+      appModel = ref.read(appProvider);
+    } on Object {
+      appModel = null;
+    }
     return MangaSeriesPage(
       target: SourceMangaSeriesTarget(
+        // 包与 runtime 都已在手：预置进去，别让作品页再去扫一遍已安装包列表。
+        adapter: AidokuLibraryAdapter(
+          runtime: runtime,
+          presetPackage: package,
+        ),
         // 刻意不走 AppModel.onlineMangaLibraryService：那条分派恒用
         // AidokuRuntimeFactory.create()，会把这里注入的 runtime（测试替身、
-        // 或浏览页已经建好的那一份）丢掉。
-        service: OnlineMangaLibraryService(
-          database: appModel.database,
-          rootDirectory: appModel.aidokuLibraryRoot,
-          adapter: AidokuLibraryAdapter(runtime: runtime),
-        ),
+        // 或浏览页已经建好的那一份）丢掉。拿不到 AppModel 时留空——展示照旧，
+        // 只是不能入库。
+        service: appModel == null
+            ? null
+            : OnlineMangaLibraryService(
+                database: appModel.database,
+                rootDirectory: appModel.aidokuLibraryRoot,
+                adapter: AidokuLibraryAdapter(
+                  runtime: runtime,
+                  presetPackage: package,
+                ),
+              ),
         seed: OnlineMangaLibraryEntry(
           runtime: OnlineMangaRuntimeKind.aidoku,
           // Aidoku 是单源包：包 id 同时充当扩展身份和源身份。

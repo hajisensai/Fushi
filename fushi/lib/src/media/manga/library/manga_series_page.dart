@@ -45,14 +45,26 @@ class ShelfMangaSeriesTarget extends MangaSeriesTarget {
 /// [OnlineMangaLibraryService.refreshFromSource] 拉齐。
 class SourceMangaSeriesTarget extends MangaSeriesTarget {
   const SourceMangaSeriesTarget({
-    required this.service,
+    required this.adapter,
     required this.seed,
+    this.service,
     this.sourceLabel,
     this.remoteCoverBuilder,
   });
 
-  final OnlineMangaLibraryService service;
+  /// 拉详情/章节/页面用的运行时半边。
+  ///
+  /// **只给 adapter 就能把这一页显示出来**：源浏览进来的作品还没入库，展示它不该
+  /// 需要数据库、更不该需要整个 AppModel（那会让「点开一个作品」依赖应用初始化，
+  /// 也让这条路径没法在 widget 测试里单独立起来）。
+  final OnlineMangaRuntimeAdapter adapter;
+
   final OnlineMangaLibraryEntry seed;
+
+  /// 书架半边。缺席时页面照常展示，只是「加入书架」不可用——由页面按需从
+  /// AppModel 解析；解析不到就保持缺席，不炸页面。
+  final OnlineMangaLibraryService? service;
+
   final String? sourceLabel;
 
   /// 未入库时怎么画封面。
@@ -92,6 +104,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   EpubBookRow? _row;
   OnlineMangaLibraryEntry? _entry;
   OnlineMangaLibraryService? _service;
+  OnlineMangaRuntimeAdapter? _adapter;
   Map<String, MangaChapterStateRow> _states =
       const <String, MangaChapterStateRow>{};
   String? _sourceLabel;
@@ -106,6 +119,37 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   bool _unreadOnly = false;
 
   AppModel get _appModel => ref.read(appProvider);
+
+  /// 取 AppModel，取不到返回 null。
+  ///
+  /// 源浏览进来的作品页可以活在没有 `ProviderScope` 的树里（widget 测试就是这么
+  /// 立起来的），而它展示所需的一切都在 target 的 adapter 里。所以「拿不到
+  /// AppModel」是一种**正常状态**，不是错误：只是不能碰书架而已。
+  AppModel? get _appModelOrNull {
+    try {
+      return ref.read(appProvider);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 书架半边，按需解析。解析不到就一直是 null，页面照常展示。
+  OnlineMangaLibraryService? _shelfServiceFor(OnlineMangaLibraryEntry entry) {
+    final OnlineMangaLibraryService? existing = _service;
+    if (existing != null) return existing;
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel == null) return null;
+    try {
+      return _service = appModel.onlineMangaLibraryService(entry.runtime);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaSeriesPage.resolveService',
+        error,
+        stack,
+      );
+      return null;
+    }
+  }
 
   /// 在库时的 bookKey；未入库的源条目为 null。
   String? get _bookKey => _row?.bookKey;
@@ -130,11 +174,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         case ShelfMangaSeriesTarget(:final String bookKey):
           await _loadFromShelf(bookKey);
         case SourceMangaSeriesTarget(
-          :final OnlineMangaLibraryService service,
+          :final OnlineMangaRuntimeAdapter adapter,
+          :final OnlineMangaLibraryService? service,
           :final OnlineMangaLibraryEntry seed,
           :final String? sourceLabel,
         ):
-          await _loadFromSource(service, seed, sourceLabel);
+          await _loadFromSource(adapter, service, seed, sourceLabel);
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.load', error, stack);
@@ -152,20 +197,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
       row.sourceMetadata,
     );
-    OnlineMangaLibraryService? service;
-    if (entry != null) {
-      // 服务解析失败（平台不支持等）不该挡住离线渲染——章节列表已经在描述符
-      // 里了，用户至少要能看见自己书架里有什么。
-      try {
-        service = _appModel.onlineMangaLibraryService(entry.runtime);
-      } on Object catch (error, stack) {
-        ErrorLogService.instance.log(
-          'MangaSeriesPage.resolveService',
-          error,
-          stack,
-        );
-      }
-    }
+    // 服务解析失败（平台不支持等）不该挡住离线渲染——章节列表已经在描述符里
+    // 了，用户至少要能看见自己书架里有什么。
+    final OnlineMangaLibraryService? service = entry == null
+        ? null
+        : _shelfServiceFor(entry);
     final Map<String, MangaChapterStateRow> states = await _readChapterStates(
       row,
     );
@@ -174,22 +210,35 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _row = row;
       _entry = entry;
       _service = service;
+      _adapter = service?.adapter;
       _states = states;
     });
     if (entry != null && service != null) {
-      unawaited(_resolveSourceLabel(service, entry));
+      unawaited(_resolveSourceLabel(service.adapter, entry));
       unawaited(_refreshFromSource(silent: true));
     }
   }
 
   Future<void> _loadFromSource(
-    OnlineMangaLibraryService service,
+    OnlineMangaRuntimeAdapter adapter,
+    OnlineMangaLibraryService? service,
     OnlineMangaLibraryEntry seed,
     String? sourceLabel,
   ) async {
     // 已经入过库就直接切成书架条目：同一部作品不该因为「从哪进来的」而显示成
     // 两种状态（在库的那份有已读标记，seed 那份没有）。
-    final EpubBookRow? existing = await service.find(seed);
+    //
+    // 书架半边可能整个缺席（没有 AppModel 的树里），那时就当「不在库」处理——
+    // 展示照旧，只是入库按钮不可用。
+    final OnlineMangaLibraryService? shelf = service ?? _shelfServiceFor(seed);
+    EpubBookRow? existing;
+    if (shelf != null) {
+      try {
+        existing = await shelf.find(seed);
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log('MangaSeriesPage.find', error, stack);
+      }
+    }
     final OnlineMangaLibraryEntry entry = existing == null
         ? seed
         : OnlineMangaLibraryEntry.tryParse(existing.sourceMetadata) ?? seed;
@@ -200,7 +249,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     setState(() {
       _row = existing;
       _entry = entry;
-      _service = service;
+      _adapter = adapter;
+      _service = shelf;
       _sourceLabel = sourceLabel;
       _states = states;
     });
@@ -211,14 +261,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     EpubBookRow row,
   ) async {
     if (row.uid.isEmpty) return const <String, MangaChapterStateRow>{};
-    return _appModel.database.getMangaChapterStates(row.uid);
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel == null) return const <String, MangaChapterStateRow>{};
+    return appModel.database.getMangaChapterStates(row.uid);
   }
 
   Future<void> _resolveSourceLabel(
-    OnlineMangaLibraryService service,
+    OnlineMangaRuntimeAdapter adapter,
     OnlineMangaLibraryEntry entry,
   ) async {
-    final String? label = await service.adapter.sourceLabel(entry);
+    final String? label = await adapter.sourceLabel(entry);
     if (mounted && label != null) setState(() => _sourceLabel = label);
   }
 
@@ -227,10 +279,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// [silent] = 进页时的自动刷新：失败只挂提示条，不弹 toast。用户手点刷新时
   /// 反过来——他在等一个明确回应。
   Future<void> _refreshFromSource({bool silent = false}) async {
-    final OnlineMangaLibraryService? service = _service;
+    final OnlineMangaRuntimeAdapter? adapter = _adapter;
     final OnlineMangaLibraryEntry? entry = _entry;
-    if (service == null || entry == null || _refreshing) return;
-    if (!service.adapter.isSupportedOnThisPlatform) {
+    if (adapter == null || entry == null || _refreshing) return;
+    if (!adapter.isSupportedOnThisPlatform) {
       if (mounted) {
         setState(
           () => _refreshError = const OnlineMangaUnavailable(
@@ -247,11 +299,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     });
     try {
       final String? bookKey = _bookKey;
-      if (bookKey == null) {
-        // 未入库：只拉，不落库。
-        final OnlineMangaRefreshResult result = await service.adapter.refresh(
-          entry,
-        );
+      final OnlineMangaLibraryService? service = _service;
+      if (bookKey == null || service == null) {
+        // 未入库（或够不着书架）：只拉，不落库。
+        final OnlineMangaRefreshResult result = await adapter.refresh(entry);
         if (!mounted) return;
         setState(() {
           _entry = entry.copyWith(
@@ -265,7 +316,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         bookKey: bookKey,
         entry: entry,
       );
-      final EpubBookRow? row = await _appModel.database.getEpubBook(bookKey);
+      final EpubBookRow? row = await service.database.getEpubBook(bookKey);
       if (!mounted) return;
       setState(() {
         _entry = updated;
@@ -509,10 +560,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return _entry?.extensionPackage;
   }
 
+  /// 页面上是不是一点内容都没有。
+  ///
+  /// 未入库 + 一章都没拉到 = 这次是**加载**失败，不是刷新失败。两者要给完全不同
+  /// 的界面：有内容时失败只挂一条不遮挡的横幅；什么都没有时必须把真实原因、
+  /// 诊断入口和重试摆出来，否则用户只看到一页空白（BUG-1767 的原始症状就是
+  /// 「只渲染一行光秃的异常文本，既没重试也拿不到堆栈」）。
+  bool get _hasNothingToShow =>
+      _row == null && (_entry?.chapters.isEmpty ?? true);
+
   Widget _buildBody(BuildContext context) {
     if (_loading) return Center(child: adaptiveIndicator(context: context));
     final Object? fatal = _fatalError;
     if (fatal != null) return _buildFatalError(context, fatal);
+    final OnlineMangaUnavailable? loadError = _refreshError;
+    if (loadError != null && _hasNothingToShow) {
+      return _buildLoadError(context, loadError);
+    }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
@@ -550,6 +614,65 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                       unawaited(_markUpToRead(chapter)),
           ),
       ],
+    );
+  }
+
+  /// 一点内容都拉不到时的完整错误视图。
+  ///
+  /// 三件事缺一不可（BUG-1767 用例逐条盯着）：**原因可见**（把桥接层给的
+  /// message 原样摆出来，不是一句「加载失败」）、**诊断入口**（原生堆栈和失败
+  /// 阶段太长不能铺在页面上，只能进可复制对话框）、**重试真的重发请求**。
+  Widget _buildLoadError(BuildContext context, OnlineMangaUnavailable error) {
+    final ThemeData theme = Theme.of(context);
+    // 源被禁用 / 平台不支持时重试永远不会成功，别给一个骗人的按钮。
+    final bool retryable =
+        error.reason == OnlineMangaUnavailableReason.runtimeFailure;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              t.manga_online_detail_load_failed,
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              error.message,
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                if (retryable)
+                  FilledButton(
+                    key: const ValueKey<String>('manga_series_error_retry'),
+                    onPressed: _refreshing
+                        ? null
+                        : () => unawaited(_refreshFromSource()),
+                    child: Text(t.retry),
+                  ),
+                TextButton(
+                  key: const ValueKey<String>('manga_series_error_details'),
+                  onPressed: () => unawaited(
+                    showErrorDetails(
+                      context,
+                      title: t.mihon_extension_error,
+                      error: error.diagnostics,
+                    ),
+                  ),
+                  child: Text(t.manga_online_error_view_detail),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

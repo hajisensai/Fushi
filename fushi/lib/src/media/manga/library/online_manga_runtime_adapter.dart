@@ -30,11 +30,44 @@ enum OnlineMangaUnavailableReason {
 }
 
 class OnlineMangaUnavailable implements Exception {
-  const OnlineMangaUnavailable(this.reason, this.message, {this.cause});
+  const OnlineMangaUnavailable(
+    this.reason,
+    this.message, {
+    this.cause,
+    this.stage,
+    this.sourceLabel,
+  });
 
   final OnlineMangaUnavailableReason reason;
   final String message;
   final Object? cause;
+
+  /// 断在哪一步：`details` / `chapters` / `pages` / `cover`。
+  ///
+  /// BUG-1767 的教训：三个阶段共用一个 catch，桥接层对它们返回的 code 可能完全
+  /// 一样，不记 stage 就分不出是拉详情、拉章节还是取页面失败。
+  final String? stage;
+
+  /// 出错时那个源的展示名，进诊断文本。
+  final String? sourceLabel;
+
+  /// 可复制诊断对话框用的全文。
+  ///
+  /// 必须带上运行时原生侧的堆栈（`MihonRuntimeException.diagnostics` 里的
+  /// `PlatformException.details`）——那几 KB 堆栈不进页面正文，但排障只能靠它。
+  String get diagnostics {
+    final Object? nested = cause;
+    final String detail = nested is MihonRuntimeException
+        ? nested.diagnostics
+        : (nested?.toString() ?? message);
+    return <String>[
+      'stage: ${stage ?? 'unknown'}',
+      if (sourceLabel != null) 'source: $sourceLabel',
+      'reason: ${reason.name}',
+      '',
+      detail,
+    ].join('\n');
+  }
 
   @override
   String toString() => 'OnlineMangaUnavailable($reason): $message';
@@ -84,15 +117,29 @@ abstract interface class OnlineMangaRuntimeAdapter {
 // ── Mihon ─────────────────────────────────────────────────────────────
 
 class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
-  const MihonLibraryAdapter(this.manager);
+  const MihonLibraryAdapter(this.manager, {this.presetContext});
 
   final MihonManager manager;
+
+  /// 调用方**已经解析好**的源上下文。
+  ///
+  /// 源浏览页手上本来就有一份（网格就是用它拉出来的），书架条目没有。给了就直接
+  /// 用，不给才从 manager 现解析。
+  ///
+  /// 这不是优化，是正确性：`_sourceRow` 要求该源已在库里登记且启用，而**预览态**
+  /// （`MihonPreviewTarget`，试用一个还没安装的扩展）根本没有库行——现解析必然抛
+  /// SOURCE_DISABLED。此外现解析还会走 `manager.initialise()`，把一次纯展示变成
+  /// 一趟可能很慢、甚至挂住的初始化。
+  final MihonSourceContext? presetContext;
 
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.mihon;
 
+  /// 同 [AidokuLibraryAdapter.isSupportedOnThisPlatform]：上下文已经预置好时，
+  /// 「本平台能不能自己造运行时」这条限制不适用。
   @override
-  bool get isSupportedOnThisPlatform => MihonRuntimeFactory.isSupported;
+  bool get isSupportedOnThisPlatform =>
+      presetContext != null || MihonRuntimeFactory.isSupported;
 
   @override
   Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async {
@@ -109,6 +156,9 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
   ) async {
     final MihonSourceContext context = await _context(entry);
     final MihonManga request = MihonManga.fromJson(entry.series.raw);
+    // 三个阶段共用一个 catch，桥接层对它们返回的 code 可能完全一样，所以必须
+    // 自己记住断在哪一步（BUG-1767）。
+    String stage = 'details';
     try {
       final MihonManga details = await manager.runtime.getDetails(
         context.extension,
@@ -116,6 +166,7 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
         request,
         preferences: context.preferences,
       );
+      stage = 'chapters';
       final List<MihonChapter> chapters = await manager.runtime.getChapters(
         context.extension,
         context.source,
@@ -135,6 +186,8 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
         OnlineMangaUnavailableReason.runtimeFailure,
         '$error',
         cause: error,
+        stage: stage,
+        sourceLabel: context.source.name,
       );
     }
   }
@@ -171,6 +224,8 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
         OnlineMangaUnavailableReason.runtimeFailure,
         '$error',
         cause: error,
+        stage: 'pages',
+        sourceLabel: context.source.name,
       );
     }
   }
@@ -204,6 +259,8 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
   }
 
   Future<MihonSourceContext> _context(OnlineMangaLibraryEntry entry) async {
+    final MihonSourceContext? preset = presetContext;
+    if (preset != null) return preset;
     if (!MihonRuntimeFactory.isSupported) {
       throw const OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.platformUnsupported,
@@ -264,7 +321,14 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
 // ── Aidoku ────────────────────────────────────────────────────────────
 
 class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
-  AidokuLibraryAdapter({AidokuRuntime? runtime}) : _runtime = runtime;
+  AidokuLibraryAdapter({AidokuRuntime? runtime, this.presetPackage})
+    : _runtime = runtime;
+
+  /// 调用方已经拿在手里的安装包（与 [MihonLibraryAdapter.presetContext] 同理）。
+  ///
+  /// 给了就不再去扫 `AidokuPackageStore.listInstalled()`——那是一次磁盘遍历，
+  /// 而源浏览页早就持有这个包。
+  final AidokuInstalledPackage? presetPackage;
 
   AidokuRuntime? _runtime;
 
@@ -274,8 +338,16 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.aidoku;
 
+  /// 平台门只管「要不要**我自己**去造运行时」。
+  ///
+  /// `AidokuRuntimeFactory.isSupported` 表达的是「本平台能不能创建 Aidoku 运行
+  /// 时」（只有 macOS/iOS）。但调用方把运行时和安装包都预置进来时，这条限制根本
+  /// 不适用——那份运行时已经在手上、能直接用。只看平台会把这种情况误判成不可用，
+  /// 于是页面明明能拉到章节却显示「本平台不支持」。
   @override
-  bool get isSupportedOnThisPlatform => AidokuRuntimeFactory.isSupported;
+  bool get isSupportedOnThisPlatform =>
+      (_runtime != null && presetPackage != null) ||
+      AidokuRuntimeFactory.isSupported;
 
   @override
   Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async {
@@ -305,6 +377,9 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
         OnlineMangaUnavailableReason.runtimeFailure,
         '$error',
         cause: error,
+        // Aidoku 的 getDetails 一次带回详情和章节，分不出更细的阶段。
+        stage: 'details',
+        sourceLabel: package.name,
       );
     }
   }
@@ -338,6 +413,8 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
         OnlineMangaUnavailableReason.runtimeFailure,
         '$error',
         cause: error,
+        stage: 'pages',
+        sourceLabel: package.name,
       );
     }
   }
@@ -374,6 +451,8 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
   }
 
   Future<AidokuInstalledPackage> _package(OnlineMangaLibraryEntry entry) async {
+    final AidokuInstalledPackage? preset = presetPackage;
+    if (preset != null) return preset;
     if (!AidokuRuntimeFactory.isSupported) {
       throw const OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.platformUnsupported,

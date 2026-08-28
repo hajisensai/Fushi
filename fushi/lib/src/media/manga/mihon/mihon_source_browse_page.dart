@@ -382,6 +382,10 @@ class MihonMangaDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MangaSeriesPage(
         target: SourceMangaSeriesTarget(
+          // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
+          // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，
+          // 现解析必然失败。
+          adapter: MihonLibraryAdapter(manager, presetContext: sourceContext),
           service: mihonOnlineLibraryService(manager),
           seed: OnlineMangaLibraryEntry(
             runtime: OnlineMangaRuntimeKind.mihon,
