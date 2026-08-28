@@ -894,7 +894,7 @@ class AppModel with ChangeNotifier {
     floatingLyricStyle: _appLevelFloatingLyricStyle,
     floatingLyricContextLines: () => floatingLyricContextLines,
     floatingLyricClickLookup: () => floatingLyricClickLookup,
-    onFloatingLyricLookup: (String text, int index) {
+    onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
       // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
       // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
       // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
@@ -905,6 +905,7 @@ class AppModel with ChangeNotifier {
           appModel: this,
           text: text,
           index: index,
+          wordRect: wordRect,
         )) {
           return;
         }

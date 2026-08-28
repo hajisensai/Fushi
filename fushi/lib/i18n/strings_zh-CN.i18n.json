@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "关闭后：进入视频页不向媒体服务器发任何请求，需在视频库下拉刷新手动列出。超大服务器建议关闭——自动枚举看起来像刮削，可能触发服务器的滥用检测。",
   "jellyfin_libraries_title": "要列出的媒体库",
   "jellyfin_libraries_hint": "不选 = 列出全部视频媒体库。只勾你真正会看的库，超大服务器就不会被整台枚举。",
-  "jellyfin_libraries_load_failed": "读取媒体库清单失败"
+  "jellyfin_libraries_load_failed": "读取媒体库清单失败",
+  "floating_lyric_passthrough": "鼠标穿透到下层窗口",
+  "floating_lyric_transparency": "切换底板",
+  "floating_lyric_topmost": "保持置顶"
 }

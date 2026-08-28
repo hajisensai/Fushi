@@ -518,12 +518,28 @@ class AudiobookSession extends ChangeNotifier {
       cornerRadius: style.cornerRadius,
       windowWidth: style.windowWidth,
       clickLookupEnabled: _floatingLyricClickLookup(),
+      slotTooltips: _slotTooltips,
     );
     if (!shown) return false;
     await _applyFloatingLyricStyle(style);
     _setupFloatingLyricHandlers();
     return true;
   }
+
+  /// 工具条槽位悬停提示文案，**下标与 native `hook_toolbar::kAudiobookSlotActions`
+  /// 严格同序**（上一句 / 播放暂停 / 下一句 / 穿透 / 透明 / 锁定 / 置顶 / 关闭）。
+  /// native 不持有 i18n，文案只能由这里按当前 locale 下发；表按 profile 分开存，
+  /// 不会和 galgame hook 台词浮窗的提示互相覆盖。
+  List<String> get _slotTooltips => <String>[
+        t.floating_lyric_previous,
+        t.floating_lyric_play_pause,
+        t.floating_lyric_next,
+        t.floating_lyric_passthrough,
+        t.floating_lyric_transparency,
+        t.floating_lyric_lock,
+        t.floating_lyric_topmost,
+        t.floating_lyric_close,
+      ];
 
   Future<void> _applyFloatingLyricStyle(FloatingLyricStyle style) async {
     await FloatingLyricChannel.updateStyle(
@@ -561,6 +577,19 @@ class AudiobookSession extends ChangeNotifier {
       onPreviousCue: () => _controller?.skipToPrevCue(),
       onNextCue: () => _controller?.skipToNextCue(),
       onClose: _onFloatingLyricClose,
+      // 穿透 / 一键透明是 native 就地生效的窗口能力：native 翻转自己的状态后把
+      // 结果回报上来，Dart 这边只做镜像与日志，不再往回推（往回推会和 native 的
+      // 当前态打架，正是「按一下闪一下又弹回去」的来源）。
+      onTogglePassThrough: () {
+        debugPrint('[Fushi] floating-lyric pass-through toggled');
+      },
+      onToggleTransparency: () {
+        debugPrint('[Fushi] floating-lyric transparency toggled');
+      },
+      onPassThroughChanged: (bool passThrough) {
+        // native 可能否决穿透（工具条窗建不出来时），所以真值以这条事件为准。
+        debugPrint('[Fushi] floating-lyric pass-through -> $passThrough');
+      },
       onLockChanged: (bool locked) {
         debugPrint('[Fushi] floating-lyric position lock -> $locked');
       },

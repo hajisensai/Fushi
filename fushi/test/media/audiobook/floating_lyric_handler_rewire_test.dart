@@ -28,7 +28,8 @@ void main() {
     activeColor: 0,
   );
 
-  AudiobookSession makeSession(void Function(String, int) appLevelLookup) {
+  AudiobookSession makeSession(
+      void Function(String, int, Rect?) appLevelLookup) {
     return AudiobookSession(
       audioHandler: () => null,
       // 复现前提：偏好开关 false（悬浮条临时拉起时的真实状态）。旧代码正是用它
@@ -81,12 +82,13 @@ void main() {
       '即使 show_floating_lyric=false（后台听书点词不再静默丢）', () async {
     final List<String> calls = <String>[];
     final AudiobookSession session =
-        makeSession((String t, int i) => calls.add('app:$t'));
+        makeSession((String t, int i, Rect? r) => calls.add('app:$t'));
 
     // reader attach：channel 必须接上 reader 的点词 handler（即便偏好开关 false）。
     session.installReaderSurfaces(
       floatingLyricStyle: () => style,
-      onFloatingLyricLookup: (String t, int i) => calls.add('reader:$t'),
+      onFloatingLyricLookup: (String t, int i, Rect? r) =>
+          calls.add('reader:$t'),
     );
     await sendNativeLookup('あ', 0);
     expect(calls, <String>['reader:あ'],

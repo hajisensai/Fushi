@@ -219,8 +219,10 @@ void main() {
 
   group('置顶（📌）按钮', () {
     test('槽表里有 topmost，且排在 close 之前（最右仍是关闭）', () {
-      final int tableStart = toolbarHeader.indexOf('kSlotActions');
-      expect(tableStart, greaterThan(0));
+      // 锚点必须带 '[' 且用完整表名：裸 indexOf('kSlotActions') 会先命中**注释里**
+      // 那个词，截出一段空表，于是断言报的是「缺置顶按钮」而不是「锚点找错了」。
+      final int tableStart = toolbarHeader.indexOf('kGalHookSlotActions[');
+      expect(tableStart, greaterThan(0), reason: '找不到 gal hook 槽表');
       final String table = toolbarHeader.substring(
           tableStart, toolbarHeader.indexOf('};', tableStart));
       final List<String> actions = RegExp('"([a-zA-Z]+)"')
