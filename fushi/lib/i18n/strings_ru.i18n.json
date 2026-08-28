@@ -1980,7 +1980,6 @@
   "texthooker": "Текстхукер",
   "texthooker_enabled": "Texthooker (приём текста)",
   "texthooker_enabled_hint": "Подключиться к Textractor/mpv/агенту и искать поступающий текст",
-  "texthooker_experimental_banner": "Texthooker — экспериментальная функция: живой текст, поиск и создание карточек могут работать нестабильно.",
   "theme_black": "Чёрная",
   "theme_code_copied": "Код темы скопирован в буфер обмена",
   "theme_dark": "Глубокая тёмная",

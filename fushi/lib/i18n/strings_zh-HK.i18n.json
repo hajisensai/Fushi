@@ -1980,7 +1980,6 @@
   "texthooker": "文本鉤子",
   "texthooker_enabled": "Texthooker（接收文字）",
   "texthooker_enabled_hint": "連接 Textractor/mpv/agent 並查詢收到的文字",
-  "texthooker_experimental_banner": "Texthooker 為實驗性功能：即時文字、查詞與製卡可能尚未穩定。",
   "theme_black": "純黑",
   "theme_code_copied": "主題代碼已複製到剪貼簿",
   "theme_dark": "深暗",

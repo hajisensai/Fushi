@@ -1980,7 +1980,6 @@
   "texthooker": "テキストフッカー",
   "texthooker_enabled": "テキストフッカー（テキスト受信）",
   "texthooker_enabled_hint": "Textractor/mpv/agent に接続し、受信したテキストを辞書で引きます",
-  "texthooker_experimental_banner": "テキストフッカーは実験的機能です。リアルタイムテキスト、辞書引き、カード作成が不安定な場合があります。",
   "theme_black": "ブラック",
   "theme_code_copied": "テーマコードをクリップボードにコピーしました",
   "theme_dark": "ダーク",

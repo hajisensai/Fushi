@@ -1980,7 +1980,6 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (nhận văn bản)",
   "texthooker_enabled_hint": "Kết nối Textractor/mpv/agent và tra văn bản nhận được",
-  "texthooker_experimental_banner": "Texthooker là tính năng thử nghiệm — văn bản trực tiếp, tra từ và tạo thẻ có thể chưa ổn định.",
   "theme_black": "Đen tuyền",
   "theme_code_copied": "Đã sao chép mã giao diện vào bộ nhớ tạm",
   "theme_dark": "Tối sâu",

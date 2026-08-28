@@ -1980,7 +1980,6 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (รับข้อความ)",
   "texthooker_enabled_hint": "เชื่อมต่อกับ Textractor/mpv/agent แล้วค้นคำจากข้อความที่ได้รับ",
-  "texthooker_experimental_banner": "Texthooker เป็นฟีเจอร์ทดลอง — ข้อความสด การค้นคำ และการสร้างการ์ดอาจยังไม่เสถียร",
   "theme_black": "ดำสนิท",
   "theme_code_copied": "คัดลอกรหัสธีมไปยังคลิปบอร์ดแล้ว",
   "theme_dark": "มืดลึก",

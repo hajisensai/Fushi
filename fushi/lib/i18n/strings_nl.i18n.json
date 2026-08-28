@@ -1980,7 +1980,6 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (tekst ontvangen)",
   "texthooker_enabled_hint": "Verbind met Textractor/mpv/agent en zoek binnenkomende tekst op",
-  "texthooker_experimental_banner": "Texthooker is experimenteel — live tekst, opzoeken en kaarten maken kunnen instabiel zijn.",
   "theme_black": "Puur zwart",
   "theme_code_copied": "Themacode gekopieerd naar klembord",
   "theme_dark": "Diep donker",

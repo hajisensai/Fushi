@@ -1980,7 +1980,6 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (استقبال النص)",
   "texthooker_enabled_hint": "الاتصال بـ Textractor/mpv/agent والبحث عن النص الوارد",
-  "texthooker_experimental_banner": "Texthooker ميزة تجريبية — قد يكون النص المباشر والبحث وإنشاء البطاقات غير مستقر.",
   "theme_black": "أسود صرف",
   "theme_code_copied": "تم نسخ رمز المظهر إلى الحافظة",
   "theme_dark": "داكن عميق",

@@ -1980,7 +1980,6 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (réception de texte)",
   "texthooker_enabled_hint": "Se connecter à Textractor/mpv/agent et rechercher le texte reçu",
-  "texthooker_experimental_banner": "Texthooker est expérimental — le texte en direct, la recherche et la création de cartes peuvent être instables.",
   "theme_black": "Noir pur",
   "theme_code_copied": "Code du thème copié dans le presse-papiers",
   "theme_dark": "Sombre profond",

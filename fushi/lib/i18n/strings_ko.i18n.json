@@ -1980,7 +1980,6 @@
   "texthooker": "텍스트 후커",
   "texthooker_enabled": "Texthooker(텍스트 수신)",
   "texthooker_enabled_hint": "Textractor/mpv/agent에 연결해 수신한 텍스트를 검색합니다",
-  "texthooker_experimental_banner": "Texthooker는 실험적 기능입니다 — 실시간 텍스트, 단어 찾기, 카드 만들기가 불안정할 수 있습니다.",
   "theme_black": "퓨어 블랙",
   "theme_code_copied": "테마 코드가 클립보드에 복사되었습니다",
   "theme_dark": "딥 다크",

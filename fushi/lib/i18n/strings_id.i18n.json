@@ -1980,7 +1980,6 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (terima teks)",
   "texthooker_enabled_hint": "Hubungkan ke Textractor/mpv/agent dan cari teks yang masuk",
-  "texthooker_experimental_banner": "Texthooker bersifat eksperimental — teks langsung, pencarian kata, dan pembuatan kartu mungkin belum stabil.",
   "theme_black": "Hitam murni",
   "theme_code_copied": "Kode tema disalin ke papan klip",
   "theme_dark": "Gelap pekat",

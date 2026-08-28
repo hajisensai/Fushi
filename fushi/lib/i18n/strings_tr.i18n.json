@@ -1980,7 +1980,6 @@
   "texthooker": "Metin yakalayıcı",
   "texthooker_enabled": "Texthooker (metin al)",
   "texthooker_enabled_hint": "Textractor/mpv/agent'a bağlanın ve gelen metni arayın",
-  "texthooker_experimental_banner": "Texthooker deneysel bir özelliktir — canlı metin, arama ve kart oluşturma kararsız olabilir.",
   "theme_black": "Saf siyah",
   "theme_code_copied": "Tema kodu panoya kopyalandı",
   "theme_dark": "Derin koyu",

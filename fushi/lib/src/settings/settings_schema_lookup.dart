@@ -999,8 +999,10 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
-            subtitle:
-                t.texthooker_enabled_hint + t.settings_experimental_suffix,
+            // 不再叠加 settings_experimental_suffix：文本钩子不再自称实验性功能
+            // （页内那条横幅也随之删除，守卫见
+            // test/pages/texthooker_experimental_markers_guard_test.dart）。
+            subtitle: t.texthooker_enabled_hint,
             icon: Icons.sensors_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.texthookerEnabled,
