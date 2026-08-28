@@ -367,6 +367,24 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # BUG-1922：与 release-desktop.yml 的 macos job 成对存在。这条 debug job 是
+      # PR 上唯一的 macOS 打包门，如果它不打 Aidoku runtime，就再没有任何一处能在
+      # 合入前发现 bundle 里少了这个 helper。两边都跑 universal，避免 debug 与
+      # release 的打包路径分叉 —— 分叉正是「CI 全绿但发布包坏掉」的温床。
+      - name: Bundle and verify pinned Aidoku runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          chmod +x tool/aidoku/build_macos_runtime.sh
+          app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
+          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
+          tool/aidoku/build_macos_runtime.sh "$runtime_dir"
+          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
+          chmod +x tool/aidoku/verify_macos_runtime.sh
+          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Verify macOS fushidicts dylib bundle
         working-directory: fushi
         run: |
