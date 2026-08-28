@@ -297,6 +297,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     StorageCategoryId.exports: Icons.output_outlined,
     StorageCategoryId.database: Icons.storage_outlined,
     StorageCategoryId.ocrModels: Icons.document_scanner_outlined,
+    StorageCategoryId.cache: Icons.cached_outlined,
+    StorageCategoryId.other: Icons.more_horiz_outlined,
   };
 
   String _categoryTitle(StorageCategoryId id) {
@@ -323,6 +325,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         return t.storage_category_database;
       case StorageCategoryId.ocrModels:
         return t.storage_category_ocr_models;
+      case StorageCategoryId.cache:
+        return t.storage_category_cache;
+      case StorageCategoryId.other:
+        return t.storage_category_other;
     }
   }
 

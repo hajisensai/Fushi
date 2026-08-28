@@ -355,6 +355,22 @@ class AppPaths {
     return prefs?.getString(documentsLayoutPrefKey) != documentsLayoutNested;
   }
 
+  /// BUG-1905：documents 根是不是 **Fushi 专属容器**（而不是与用户共享的平台
+  /// `Documents` 文件夹）。
+  ///
+  /// 存储统计要据此决定敢不敢把「白名单之外的顶层项」也算进占用：
+  /// * 自定义 dataRoot（`<dataRoot>/documents`）→ 专属；
+  /// * nested 默认布局（`<Documents>/Fushi/data`）→ 专属；
+  /// * **移动端**：沙盒里的 `Documents` 本就是 app 私有，扁平与否都专属
+  ///   （iOS 系统设置的「文稿与数据」算的也正是整个沙盒）；
+  /// * 只有**桌面的老扁平安装**为 false —— 那里 documents 根就是用户自己的文档
+  ///   文件夹，把用户的文件算成 app 占用既不准也吓人。
+  static Future<bool> documentsRootIsFushiOwned() async {
+    if (!isDesktopPlatform) return true;
+    if (await _resolveDataRoot() != null) return true;
+    return !await _useLegacyFlatDocumentsRoot();
+  }
+
   /// 判定 + 固化默认布局。**唯一做探测 IO 的地方**，只由 [resolve] 在启动期调用一次；
   /// 已判定（本进程判过 / prefs 有锚点）就直接沿用，不再探测。
   ///
