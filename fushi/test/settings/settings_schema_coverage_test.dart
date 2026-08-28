@@ -39,13 +39,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
   // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
   // =false 各自隐藏对应 tab、首页/设置恒在。
-  'system/Novels': 'test/pages/home_page_tabs_test.dart',
-  'system/Manga': 'test/pages/home_page_tabs_test.dart',
-  'system/Video': 'test/pages/home_page_tabs_test.dart',
-  'system/Galgame': 'test/pages/home_page_tabs_test.dart',
-  'system/Downloads': 'test/pages/home_page_tabs_test.dart',
-  'system/Lookup': 'test/pages/home_page_tabs_test.dart',
-  'system/Browser extension': 'test/pages/home_page_tabs_test.dart',
+  //
+  // 键的两半都随「功能模块」搬家改过：destId `system` → `appearance`（本区管底栏
+  // 出现哪些 tab，与「反转导航栏」同域），行标题不再是手抄的 module_*_label，而是
+  // 底栏真值 homeNavItemFor 的 label（Novels→Books、Galgame→Game、
+  // Browser extension→Extension）。键是 `$destId/${row.title}`，两处任一变了本表
+  // 就得跟着变。
+  'appearance/Books': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Video': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Game': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有

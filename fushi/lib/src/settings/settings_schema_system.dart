@@ -5,7 +5,6 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
@@ -141,103 +140,6 @@ SettingsDestination buildSystemDestination() {
             subtitle: t.about_tmdb_attribution,
             icon: Icons.movie_outlined,
             builder: _buildTmdbAttributionRow,
-          ),
-        ],
-      ),
-      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词 两个
-      // 工具 tab 的显隐开关（库页那几项与新手引导的功能选择写同一真值）。首页/设置
-      // 恒在，不提供开关；games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
-      // 顺序与底栏一致：库页 → 下载 → 查词 → 扩展。
-      SettingsSection(
-        title: t.settings_section_modules,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'system.module_books',
-            title: t.module_books_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.menu_book_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleBooksEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleBooksEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_manga',
-            title: t.module_manga_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.photo_library_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleMangaEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleMangaEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_video',
-            title: t.module_video_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.smart_display_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleVideoEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleVideoEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_games',
-            title: t.module_games_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.videogame_asset_outlined,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleGamesEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleGamesEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_downloads',
-            title: t.nav_downloads,
-            subtitle: t.module_tool_toggle_hint,
-            icon: Icons.download_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleDownloadsEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setModuleDownloadsEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_lookup',
-            title: t.nav_lookup,
-            subtitle: t.module_tool_toggle_hint,
-            icon: Icons.search_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleDictionariesEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setModuleDictionariesEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.module_browser_extension',
-            title: t.module_extension_label,
-            subtitle: t.module_toggle_hint,
-            icon: Icons.extension_outlined,
-            visible: (_) => DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleBrowserExtensionEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setModuleBrowserExtensionEnabled(value);
-              settingsContext.refresh();
-            },
           ),
         ],
       ),
