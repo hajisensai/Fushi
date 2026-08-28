@@ -313,9 +313,17 @@ function parseMineResult(reply) {
         // BUG-1908：把失败原因一起带出来。此前这里只取两个字段，宿主即便算出了
         // 「没选卡组 / 字段映射对不上 / Anki 没开」也没地方放，浮窗里就成了静默失败。
         const message = typeof reply.message === 'string' ? reply.message : '';
-        return { ankiConnect: reply.ankiConnect === true, noteId, message };
+        // BUG-1908：`duplicate` = 「这次失败是因为 Anki 里已经有这张卡」。它不是
+        // 「宿主猜的按钮态」，是宿主手里 MineResult.duplicate 这个**确定**结果——
+        // 唯一能让浮窗在不回查 Anki（TODO-448）的前提下知道卡确实存在的通道。
+        return {
+            ankiConnect: reply.ankiConnect === true,
+            noteId,
+            message,
+            duplicate: reply.duplicate === true,
+        };
     }
-    return { ankiConnect: reply === true, noteId: null, message: '' };
+    return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
 }
 
 // Records the just-mined word as the editable "latest" card when the backend
@@ -3038,6 +3046,20 @@ function createEntryHeader(entry, idx) {
                     // → stays the editable latest. A failed update drops the latest
                     //   flag back to a plain ✓ (the card is still mined).
                     rememberLatestMined(expression, reading, result.noteId);
+                    // BUG-1908：覆写失败以前把 result.message 直接丢掉。宿主
+                    // （gal_hook_text_overlay_controller）**专门为覆写失败算好了**本地化
+                    // 文案 —— toPopupReply(message: failureMessage)，updateNoteId != null
+                    // 就是这条路 —— 扔掉后那段 Dart 在覆写路上成了没有消费者的死代码，
+                    // 用户看到的是一个「成功」的绿勾外加零解释。
+                    //
+                    // 按钮态本身不用改：这条路进来时卡**已经**在 Anki 里，覆写成不成功它
+                    // 都还在，所以 ✓ 是真的；失败时 result.noteId 为 null，上一行的
+                    // rememberLatestMined 已经把「最新可改」降级回普通 ✓。要补的只是原因。
+                    if (!result.ankiConnect) {
+                        showInlineHint(
+                            mineButton,
+                            result.message || window.i18nMineFailed || '制卡失败');
+                    }
                     setMineState(true);
                     return;
                 }
@@ -3079,6 +3101,12 @@ function createEntryHeader(entry, idx) {
                             window.resetSelectedDictionariesForEntry(idx);
                             if (action.result.ankiConnect) {
                                 rememberLatestMined(expression, reading, action.result.noteId);
+                            }
+                            // BUG-1908：宿主给了原因就说出来。这条分支也覆盖「用户取消」
+                            // ——取消不带 message，所以判据是 message 非空，而不是
+                            // !ankiConnect（否则取消会被误报成失败）。
+                            if (action.result.message) {
+                                showInlineHint(mineButton, action.result.message);
                             }
                             const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                             setMineState(stillMined);
@@ -3140,8 +3168,17 @@ function createEntryHeader(entry, idx) {
                     // 建的页内车道，锚在按钮屏幕坐标上，窗口被裁到卡片 bbox 也可见。
                     showInlineHint(
                         mineButton,
-                        result.message || window.i18nMineFailed || 'Mining failed');
-                    setMineState(false);
+                        result.message || window.i18nMineFailed || '制卡失败');
+                    // TODO-448 原样保住：失败/不确定**绝不**回查 Anki 再把按钮翻成 ✓
+                    // （addNote 到了 Anki 但响应连接断了那次，延迟 duplicateCheck 会让用户
+                    // 先看到「失败」再看到 ✓）。所以这里不发任何 duplicateCheck。
+                    //
+                    // BUG-1908：但也不能再无条件写死 '+'。`MineResult.duplicate` 走的正是
+                    // success:false（error_log_service 的 duplicate 分支），此时 Anki 里
+                    // **确定**有这张卡 —— 画 '+' 是谎，↗「在 Anki 中打开」还会跟着藏起来，
+                    // 用户被告知「已存在」却没有任何入口。宿主把这个确定事实放进同一条
+                    // reply 的 `duplicate` 位，浮窗照它画，既不猜也不回查。
+                    setMineState(result.duplicate === true);
                 }
             } catch (e) {
                 // BUG-077: a rejected mineEntry/duplicateCheck (Dart handler threw,
@@ -3149,6 +3186,12 @@ function createEntryHeader(entry, idx) {
                 // disabled showing '+' with no feedback. Restore it to a clickable
                 // 可制卡 + so the user sees it failed and can retry.
                 console.error('mine button: mineEntry failed', e);
+                // BUG-1908：桥自身 reject（Dart handler 抛 / JS 组包出错）时以前只有
+                // console.error —— 对用户完全静默，与「点了没反应」无法区分。走同一条
+                // 页内提示车道说出来（app 外没有 Flutter toast 可用）。
+                showInlineHint(mineButton, window.i18nMineFailed || '制卡失败');
+                // 状态不可知（抛出的很可能就是桥本身，再发 duplicateCheck 只会再抛），
+                // 退回可点的 '+' 让用户重试 —— BUG-077 契约，也是 TODO-448 要的方向。
                 setMineState(false);
             } finally {
                 // The single-flight guard is ALWAYS released; the button's

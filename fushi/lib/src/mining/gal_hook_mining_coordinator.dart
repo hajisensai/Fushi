@@ -80,6 +80,11 @@ class GalHookMiningResult {
   bool get aborted => outcome == null;
   bool get success => outcome?.result == MineResult.success;
 
+  /// BUG-1908：制卡失败是不是**因为 Anki 里已经有这张卡**。见
+  /// `MinePopupResult.duplicate` —— 浮窗据它区分「卡已存在」与「真的没制成」，
+  /// 不必回查 Anki（TODO-448 禁止失败后回查把按钮翻成 ✓）。
+  bool get duplicate => outcome?.result == MineResult.duplicate;
+
   /// BUG-1908：[message] 是**失败时给用户看的原因**，由调用方（浮窗控制器）填入
   /// 已本地化的文案。
   ///
@@ -93,6 +98,7 @@ class GalHookMiningResult {
         'noteId': success ? outcome?.noteId : null,
         if (!success && message != null && message.isNotEmpty)
           'message': message,
+        if (duplicate) 'duplicate': true,
       };
 }
 

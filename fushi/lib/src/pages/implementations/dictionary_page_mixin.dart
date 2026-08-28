@@ -372,7 +372,11 @@ mixin DictionaryPageMixin {
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    // BUG-1908：重复是「卡已在 Anki 里」而不是「没有卡」，把这个确定事实带回弹窗，
+    // 否则 ✓ 被画成 ＋ 且 ↗ 入口消失（弹窗侧不许回查 Anki——TODO-448）。
+    return MinePopupResult(
+      duplicate: outcome.result == MineResult.duplicate,
+    );
   }
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）的字段——走 repo.updateMinedNote

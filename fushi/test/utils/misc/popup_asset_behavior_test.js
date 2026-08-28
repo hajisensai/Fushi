@@ -2629,3 +2629,172 @@ testInAppOpenInAnkiStillGoesToHost().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// ---------------------------------------------------------------------------
+// BUG-1908：制卡失败必须**就地**说出来，且按钮态不许硬猜。
+//
+// galgame 浮窗是独立的 native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口
+// 的 Overlay 上——游戏全屏时主窗在后台，那些 toast 一个也看不见。浮窗内唯一可见的
+// 反馈通道是 showInlineHint（BUG-1064 为「app 外没有 Flutter toast 可用」而建）。
+// ---------------------------------------------------------------------------
+
+function inlineHintText(context) {
+  const hint = context.document.querySelector('.inline-hint');
+  return hint ? (hint.textContent || '') : null;
+}
+
+// 覆写（✓↩）失败：以前 result.message 被直接丢掉、并照画一个「成功」的绿勾。宿主
+// （gal_hook_text_overlay_controller）**专门为覆写失败算好了**本地化文案，扔掉后那段
+// Dart 在覆写路上成了没有消费者的死代码。
+// 按钮态本身仍是 ✓：这条路进来时卡已经在 Anki 里，覆写成不成功它都还在；失败只是把
+// 「最新可改」降级回普通 ✓。
+async function testOverwriteFailureSaysWhyAndKeepsTheCard() {
+  const context = loadPopup();
+  context.window.allowDupes = true;
+  let cardExists = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      cardExists = true;
+      return Promise.resolve({ ankiConnect: true, noteId: 555 });
+    }
+    if (name === 'updateEntry') {
+      // 覆写失败：宿主带回已本地化的原因（describeMineOutcome(overwrite: true)）。
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        message: '字段映射对不上，Anki 拒绝了这张卡',
+      });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeaderFor(context, '猫');
+  await flush();
+  await mineButton.onclick(); // 新制 → 成为「最新可改」✓↩
+  await flush();
+  assert.equal(mineButton.dataset.latest, '1', '前置条件：这张是最新可改');
+
+  await mineButton.onclick(); // 覆写，失败
+  await flush();
+
+  assert.equal(inlineHintText(context), '字段映射对不上，Anki 拒绝了这张卡',
+    '覆写失败必须就地说出宿主给的原因，不能把 message 丢掉');
+  assert.equal(mineButton.dataset.mined, '1',
+    '覆写失败原卡仍在 Anki 里，按钮不能退回可制卡 +');
+  assert.notEqual(mineButton.dataset.latest, '1',
+    '失败没有回带 note id → 从「最新可改」降级回普通 ✓');
+  assert.equal(mineButton.textContent, '✓', '降级后是普通 ✓');
+  assert.equal(mineButton.disabled, false, '按钮永不卡死');
+}
+
+// duplicate 走的正是 ankiConnect:false（error_log_service 的 MineResult.duplicate
+// 分支 success:false）。此时 Anki 里**确定**有这张卡，以前被硬写成 +，↗「在 Anki 中
+// 打开」还跟着藏起来——用户被告知「已存在」却没有任何入口。
+// 修法不是回查 Anki（TODO-448 禁止），而是宿主把这个确定事实放进同一条 reply。
+async function testDuplicateFailureShowsCheckmarkWithoutReQueryingAnki() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  let duplicateChecks = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') {
+      duplicateChecks += 1;
+      return Promise.resolve(false); // 查词时没查到（探测与真相不一致）
+    }
+    if (name === 'mineEntry') {
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        message: '卡片已存在',
+        duplicate: true,
+      });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.textContent, '+', '前置条件：查词时判为可制卡');
+  assert.equal(duplicateChecks, 1, '只有查词那一次探测');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(duplicateChecks, 1,
+    'TODO-448：失败后绝不回查 Anki（「先失败后成功」那次投诉的根因）');
+  assert.equal(inlineHintText(context), '卡片已存在', '必须就地说出原因');
+  assert.equal(mineButton.dataset.mined, '1',
+    'duplicate = 卡确定在 Anki 里，不能画成可制卡 +');
+  assert.equal(mineButton.textContent, '✓', '真实状态是已制卡 ✓');
+}
+
+// 反面：不带 duplicate 位的普通失败仍然停在 +（TODO-448 的「不确定就别翻」）。
+// 这条与上一条成对，防止把 duplicate 的修法过度泛化成「失败就画 ✓」。
+async function testNonDuplicateFailureStaysMineableAndStillSaysWhy() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') {
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        message: '还没选牌组',
+      });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(inlineHintText(context), '还没选牌组', '普通失败同样要说原因');
+  assert.notEqual(mineButton.dataset.mined, '1',
+    '没有 duplicate 位 = 状态不确定，必须停在可制卡 +，不许翻成 ✓');
+  assert.equal(mineButton.textContent, '+', '不确定就停在 +');
+}
+
+// 桥自身 reject（Dart handler 抛 / JS 组包出错）以前只有 console.error —— 对用户
+// 完全静默，与「点了没反应」无法区分（BUG-077 只修了「不卡死」，没修「说出来」）。
+async function testBridgeRejectionIsNeverSilent() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') return Promise.reject(new Error('bridge down'));
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  const hint = inlineHintText(context);
+  assert.ok(hint && hint.length > 0,
+    '桥 reject 必须有可见提示，不能只写 console.error');
+  assert.equal(mineButton.textContent, '+', '状态不可知 → 退回可点的 + 让用户重试');
+  assert.equal(mineButton.disabled, false, 'BUG-077：永不卡死');
+}
+
+testOverwriteFailureSaysWhyAndKeepsTheCard().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testDuplicateFailureShowsCheckmarkWithoutReQueryingAnki().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testNonDuplicateFailureStaysMineableAndStillSaysWhy().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testBridgeRejectionIsNeverSilent().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

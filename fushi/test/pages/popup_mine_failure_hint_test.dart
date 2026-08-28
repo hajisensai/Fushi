@@ -79,4 +79,101 @@ void main() {
     expect(vendorApp, equals(popupJs));
     expect(vendorRepo, equals(popupJs));
   });
+
+  // BUG-1908 第二轮（PR #1032 审查）：前一轮只在**新制卡**那条路上接了提示，另外三条
+  // 出口仍然把宿主算好的原因丢掉、或对按钮态硬猜。这里逐条钉死。
+  //
+  // 行为覆盖在 fushi/test/utils/misc/popup_asset_behavior_test.js（node 真跑 popup.js
+  // 的假 DOM harness，四条用例 + 四次变异实测），但那套不进 CI；下面这层源码守卫是
+  // CI 里唯一能拦住回归的东西，所以判据取「区间内必须/不得出现某个 token」，并且每个
+  // 区间的起止都断言找得到，避免锚点被改名后守卫退化成零断言空转。
+  String region(String from, String to) {
+    final int start = popupJs.indexOf(from);
+    expect(start, greaterThanOrEqualTo(0), reason: '锚点消失：$from');
+    final int end = popupJs.indexOf(to, start);
+    expect(end, greaterThan(start), reason: '区间结束锚点消失：$to');
+    return popupJs.substring(start, end);
+  }
+
+  test('覆写（✓⤺）失败必须说出原因，且不把卡说没（BUG-1908）', () {
+    // 区间 = 「最新可改」覆写分支，止于紧随其后的「已存在卡」分支。
+    final String overwrite = region(
+      'TODO-270 D green',
+      "if (mineButton.dataset.mined === '1')",
+    );
+    expect(overwrite.contains('!result.ankiConnect'), isTrue,
+        reason: 'ankiConnect 才是覆写的真成败位；无条件画 ✓ 等于把失败画成成功');
+    expect(overwrite.contains('showInlineHint('), isTrue,
+        reason: '覆写失败必须走页内提示车道——gal 浮窗是独立 native 窗口，'
+            '宿主的 Flutter toast 在游戏全屏时用户一个也看不见');
+    expect(overwrite.contains('result.message'), isTrue,
+        reason: '宿主为覆写失败专门算了本地化文案'
+            '（toPopupReply(message: failureMessage)，updateNoteId != null 那条路）；'
+            '丢掉它就等于让那段 Dart 变成死代码');
+  });
+
+  test('制卡失败的按钮态只能来自宿主的确定答复，不许硬猜也不许回查（BUG-1908/TODO-448）',
+      () {
+    final String failure = region('制卡失败必须', '} catch (e) {');
+    expect(failure.contains('setMineState(result.duplicate === true)'), isTrue,
+        reason: '失败态必须照宿主给的 duplicate 位画：'
+            'MineResult.duplicate 走的正是 success:false，此时 Anki 里确定有卡，'
+            '硬写 setMineState(false) 会画成可制卡 ＋ 并把 ↗ 入口藏起来');
+    expect(failure.contains("callHandler('duplicateCheck'"), isFalse,
+        reason: 'TODO-448：失败/不确定后绝不回查 Anki 再把按钮翻成 ✓'
+            '（addNote 到了 Anki 但响应断了那次，用户先看到失败再看到 ✓）');
+
+    // 反面：宿主没给 duplicate 位时不许翻。parseMineResult 必须真读 reply.duplicate，
+    // 否则上面那条断言会被一个恒 false 的常量满足（假绿）。
+    expect(popupJs.contains('duplicate: reply.duplicate === true'), isTrue,
+        reason: 'duplicate 位必须来自宿主 reply，写死常量等于守卫空转');
+  });
+
+  test('桥自身 reject 时不得静默（BUG-1908）', () {
+    final String catchBlock = region(
+      "console.error('mine button: mineEntry failed'",
+      '} finally {',
+    );
+    expect(catchBlock.contains('showInlineHint('), isTrue,
+        reason: '只写 console.error 对用户等于「点了没反应」；'
+            'BUG-077 只修了「按钮不卡死」，没修「说出来」');
+  });
+
+  test('已存在卡的操作单回程也要带出宿主的原因（BUG-1908）', () {
+    final String handled = region(
+      "if (action.outcome === 'handled')",
+      "outcome === 'fallthrough'",
+    );
+    expect(handled.contains('action.result.message'), isTrue,
+        reason: '覆写/新增重复卡失败时宿主的原因不能在这条路上被丢掉');
+    expect(handled.contains('showInlineHint('), isTrue,
+        reason: '同上，必须落到页内提示车道');
+  });
+
+  test('Dart 侧把「重复」与「真没制成」分开回传（BUG-1908）', () {
+    final String coordinator = File(
+      'lib/src/mining/gal_hook_mining_coordinator.dart',
+    ).readAsStringSync();
+    expect(coordinator.contains('bool get duplicate'), isTrue,
+        reason: 'gal 回程必须能区分 MineResult.duplicate');
+    expect(coordinator.contains("if (duplicate) 'duplicate': true"), isTrue,
+        reason: 'duplicate 位必须真的进 reply');
+
+    final String popupResult = File(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    ).readAsStringSync();
+    expect(popupResult.contains('this.duplicate = false'), isTrue,
+        reason: 'MinePopupResult 必须带 duplicate 位');
+    expect(popupResult.contains("if (duplicate) 'duplicate': true"), isTrue,
+        reason: 'duplicate 位必须序列化给 JS');
+
+    final String bridge = File(
+      'lib/src/lookup/overlay_bridge_handlers.dart',
+    ).readAsStringSync();
+    expect(
+        bridge.contains(
+            "if (outcome.result == MineResult.duplicate) 'duplicate': true"),
+        isTrue,
+        reason: 'app 外裸浮窗的制卡回程同样要带 duplicate 位');
+  });
 }

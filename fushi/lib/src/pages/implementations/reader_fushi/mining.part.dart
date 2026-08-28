@@ -271,7 +271,10 @@ extension _ReaderMining on _ReaderFushiPageState {
       // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    // BUG-1908：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」区分。
+    return MinePopupResult(
+      duplicate: outcome.result == MineResult.duplicate,
+    );
   }
 
   Future<MinePopupResult> _onUpdateFromPopupInner(

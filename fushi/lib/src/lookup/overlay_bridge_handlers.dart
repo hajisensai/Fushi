@@ -400,6 +400,9 @@ Future<Map<String, Object?>> _mineEntry(
     'ankiConnect': success,
     'noteId': success ? outcome.noteId : null,
     if (message != null && message.isNotEmpty) 'message': message,
+    // BUG-1908：见 MinePopupResult.duplicate —— 让浮窗把「卡已存在」与「真的没制成」
+    // 分开，而不必回查 Anki（TODO-448 禁止失败后回查）。
+    if (outcome.result == MineResult.duplicate) 'duplicate': true,
   };
 }
 
