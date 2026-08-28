@@ -3803,7 +3803,7 @@
   "book_file_location_failed": "無法開啟這本書的檔案位置。",
   "storage_entry_database_snapshots_label": "資料庫備份快照（$n 個檔案）",
   "storage_entry_delete_database_snapshots_confirm_body": "將刪除全部殘留的資料庫備份快照（corrupt-bak / pre-restore / 舊版本遷移副本）。使用中的資料庫及其 -wal/-shm 附屬檔案不受影響。",
-  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
+  "manga_global_search_no_sources": "尚未啟用任何漫畫來源，去「導入」加一個。",
   "manga_global_search_open_sources": "去匯入",
   "settings_downloads_open_page_hint": "開啟下載頁（工作 / 資源 / 訂閱）",
   "download_video_source_required": "需要影片來源",
