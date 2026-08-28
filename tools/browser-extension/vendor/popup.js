@@ -637,17 +637,30 @@ function showDescription(element) {
     if (!description) {
         return;
     }
-    const overlay = __fushiRootNode().querySelector('.overlay');
-    __fushiRootNode().querySelector('.overlay-content').textContent = description;
+    const root = __fushiRootNode();
+    const overlay = root.querySelector('.overlay');
+    const title = root.querySelector('.overlay-title');
+    const content = root.querySelector('.overlay-content');
+    if (!overlay || !content) return;
+    if (title) title.textContent = element.textContent || '';
+    content.textContent = description;
     overlay.style.display = 'block';
+    overlay.scrollTop = 0;
 }
 
 function closeOverlay() {
-    __fushiRootNode().querySelector('.overlay').style.display = 'none';
+    const root = __fushiRootNode();
+    const overlay = root.querySelector('.overlay');
+    if (!overlay) return;
+    overlay.style.display = 'none';
+    const title = root.querySelector('.overlay-title');
+    const content = root.querySelector('.overlay-content');
+    if (title) title.textContent = '';
+    if (content) content.textContent = '';
 }
 
 /* 词形变化标签的语法说明浮层（桌面 hover）。
-   点击走 showDescription 的全屏 overlay——触屏上没有 hover，且窄屏放不下这块浮层。
+   点击走 showDescription 的内嵌查词卡片——触屏上没有 hover，且窄屏放不下这块浮层。
    浮层是懒创建的，挂在 __fushiOverlayParent()（shadow root 或 document.body）下，
    这样扩展注入到宿主页面时也不会跑到词典的 Shadow DOM 外面去。 */
 function ensureGrammarTooltip() {
@@ -3009,7 +3022,7 @@ function createEntryHeader(entry, idx) {
         }
     };
     const mineButton = el('button', {
-        className: 'mine-button',
+        className: 'inline-action-button mine-button',
         textContent: '+',
         ontouchstart: () => {
             lastSelection = __fushiSel()?.toString() || '';
@@ -4413,6 +4426,8 @@ function scheduleMasonry() {
 window.__fushiPrepareRealmForReuse = () => {
     window._renderGeneration += 1;
     window._renderInProgress = false;
+    closeOverlay();
+    hideGrammarTooltip();
     resetEntryStateChecks();
     if (masonryRaf != null) {
         try { cancelAnimationFrame(masonryRaf); } catch (_) { /* no-op */ }
@@ -4585,6 +4600,10 @@ window.renderPopup = function() {
     // returned before advancing this generation, so an old multi-entry timer
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
+    // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
+    // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空。
+    closeOverlay();
+    hideGrammarTooltip();
     // Cancel not-yet-visible status probes from the previous DOM before any new
     // entry headers are built. In-flight probes are epoch-gated on completion.
     resetEntryStateChecks();

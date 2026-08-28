@@ -434,15 +434,17 @@ body {
     font-size: 15px;
 }
 
-/* BUG-932: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留 + / ✓ / ✓↩ 文本
+/* BUG-932/1895: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留 + / ✓ / ✓↩ 文本
    标记，不走 SVG），与相邻 audio/favorite/open-anki/tune 的 1em SVG 图标共用上面的
    font-size:18px；但一个文本 '+' 字形只占 em 盒约一半高（≈9px），SVG 却铺满 1em
-   （可见 ≈14px），故静息加号目测明显比其余图标小/不齐。仅给静息 '+' 态（未制卡 =
-   无 .duplicate 类）单独放大字号补偿文本字形的空白，使其与 SVG 图标目测齐平；已制卡
-   ✓ / ✓↩（.duplicate / .latest）是高字形本就接近、且各有专属尺寸，保持不动。表头行高
-   由词条大标题主导，放大按钮不改行高。守卫见 popup_cards_nav_icon_guard #8。 */
+   （可见 ≈14px），故静息加号目测明显比其余图标小/不齐。24px 的旧补偿在实际 WebView
+   里仍只画出约 14px 高；30px 才与 18px SVG 的可见轮廓齐平。仅给静息 '+' 态（未制卡 =
+   无 .duplicate 类）放大字号；已制卡 ✓ / ✓↩（.duplicate / .latest）是高字形本就接近、
+   且各有专属尺寸，保持不动。表头行高由词条大标题主导，放大按钮不改行高。按钮本体还
+   必须挂 inline-action-button，才能走同排的 inline-flex 居中与 pointer 光标。守卫见
+   popup_cards_nav_icon_guard #8。 */
 .mine-button:not(.duplicate) {
-    font-size: 24px;
+    font-size: 30px;
 }
 
 .mine-button:disabled {
@@ -1284,28 +1286,35 @@ html[data-theme="dark"] :where(.glossary-group, .glossary-content) [class^="glos
 .overlay {
     display: none;
     position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    max-height: 80%;
+    inset: 8px;
+    width: auto;
+    max-height: none;
     overflow-y: auto;
-    padding: 16px;
+    padding: 10px;
     z-index: 727;
-    background: var(--surface-container-high);
-    border-top: 1px solid var(--outline-variant);
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+    color: var(--text-color);
+    background: var(--background-color);
+    border: 1px solid var(--outline-variant);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+.overlay-title {
+    min-height: 36px;
+    padding-right: 34px;
+    font-size: 26px;
+    line-height: 1.4;
 }
 
 .overlay-content {
     font-size: 15px;
-    padding-right: 20px;
+    padding: 4px 2px 2px;
     white-space: pre-wrap;
 }
 
 .overlay-close {
     position: absolute;
-    top: 10px;
+    top: 12px;
     right: 12px;
     font-size: 20px;
     line-height: 1;

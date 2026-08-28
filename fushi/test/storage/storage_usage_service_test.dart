@@ -117,13 +117,13 @@ void main() {
       final List<StorageCategoryUsage> all = await service().scanCategories(
         books: <StorageBookRef>[
           StorageBookRef(
-            bookKey: 'keyA',
+            id: 'keyA',
             title: 'A',
             extractDir: bookA,
             persistKeys: const <String>['keyA', 'srtbook_1'],
           ),
           StorageBookRef(
-            bookKey: 'keyB',
+            id: 'keyB',
             title: 'B',
             extractDir: bookB,
             persistKeys: const <String>['keyB'],
@@ -143,6 +143,143 @@ void main() {
       expect(books.entries[0].bytes, 640);
       expect(books.entries[1].id, 'keyB');
       expect(books.entries[1].bytes, 300);
+    });
+
+    test('BUG-1893：同步导入的明文音频目录（非哈希）计进明细，且不重复计数', () async {
+      // 互联/同步拉来的有声书落 audiobooks/<safeDirName(bookKey)>——**明文**目录，
+      // 不是 fnv1a32Hex(key)。旧实现只按哈希反推，这本书的明细恒为 0，几 GB 音频
+      // 全掉进「类目总量 − 明细之和」的差额里。
+      final String bookA = p.join(docs.path, 'fushi_books', 'keyA');
+      writeFile(p.join(bookA, 'ch1.html'), 100);
+      final String plainDir = p.join(docs.path, 'audiobooks', 'My Sync Book');
+      writeFile(p.join(plainDir, 'a.mp3'), 500);
+      writeFile(p.join(plainDir, 'b.mp3'), 200);
+      // 哈希目录根本不存在（同步导入从不建它）。
+      expect(Directory(audiobookPersistDirPath(docs, 'keyA')).existsSync(),
+          isFalse);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: <StorageBookRef>[
+          StorageBookRef(
+            id: 'keyA',
+            title: 'A',
+            extractDir: bookA,
+            persistKeys: const <String>['keyA'],
+            // DB 真相源：audioRoot（目录）+ audioPathsJson（它下面的文件）。
+            audioPaths: <String>[
+              plainDir,
+              p.join(plainDir, 'a.mp3'),
+              p.join(plainDir, 'b.mp3'),
+            ],
+          ),
+        ],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage books = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
+      expect(books.bytes, 800);
+      // 明细之和 == 类目总量：音频不再只出现在差额里。
+      expect(books.entries.single.bytes, 800);
+      // 目录与它下面的文件同时喂进来时只留目录（去嵌套），不会 800 变 1500。
+      expect(books.entries.single.paths, <String>[
+        bookA,
+        audiobookPersistDirPath(docs, 'keyA'),
+        plainDir,
+      ]);
+      expect(books.entries.single.externalPaths, isEmpty);
+    });
+
+    test('BUG-1893：哈希目录形态与 DB 路径指向同一目录时只算一次', () async {
+      // 本地导入的存量形态：audioPathsJson 里的文件就落在哈希持久目录内。
+      AudiobookStorage.documentsRootResolver = () async => docs;
+      addTearDown(() => AudiobookStorage.documentsRootResolver = null);
+      final Directory persist = await AudiobookStorage.ensurePersistDir('keyA');
+      writeFile(p.join(persist.path, 'audio.mp3'), 640);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: <StorageBookRef>[
+          StorageBookRef(
+            id: 'keyA',
+            title: 'A',
+            extractDir: p.join(docs.path, 'fushi_books', 'keyA'),
+            persistKeys: const <String>['keyA'],
+            audioPaths: <String>[
+              persist.path,
+              p.join(persist.path, 'audio.mp3'),
+            ],
+          ),
+        ],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage books = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
+      expect(books.entries.single.bytes, 640);
+      expect(books.bytes, 640);
+    });
+
+    test('BUG-1893：standalone 字幕书（bookKey 空、无 EPUB 正文）单独出条目', () async {
+      // 这类书只有 SrtBooks 行，旧接线按 bookKey 过滤掉 → 存储页永远无行、
+      // 也没有删除入口。
+      AudiobookStorage.documentsRootResolver = () async => docs;
+      addTearDown(() => AudiobookStorage.documentsRootResolver = null);
+      final Directory persist =
+          await AudiobookStorage.ensurePersistDir('srt-uid-1');
+      writeFile(p.join(persist.path, 'ch1.mp3'), 300);
+      writeFile(p.join(persist.path, 'sub.srt'), 20);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: <StorageBookRef>[
+          const StorageBookRef(
+            id: 'srt-uid-1',
+            title: 'S',
+            extractDir: '',
+            persistKeys: <String>['srt-uid-1'],
+            kind: StorageEntryKind.srtBook,
+          ),
+        ],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage books = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
+      final StorageEntryUsage entry = books.entries.single;
+      expect(entry.id, 'srt-uid-1');
+      expect(entry.kind, StorageEntryKind.srtBook);
+      expect(entry.bytes, 320);
+      // extractDir 为空串时不能混进求和路径（Directory('') 是个陷阱）。
+      expect(entry.paths, <String>[persist.path]);
+    });
+
+    test('BUG-1893：桌面「引用原文件」的外部音频不计体积，但如实报进 externalPaths', () async {
+      final String bookA = p.join(docs.path, 'fushi_books', 'keyA');
+      writeFile(p.join(bookA, 'ch1.html'), 100);
+      // app 目录之外：既不占应用空间，也删不掉。
+      final String external = p.join(tempRoot.path, 'external', 'audio.mp3');
+      writeFile(external, 900);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: <StorageBookRef>[
+          StorageBookRef(
+            id: 'keyA',
+            title: 'A',
+            extractDir: bookA,
+            persistKeys: const <String>['keyA'],
+            audioPaths: <String>[external],
+          ),
+        ],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage books = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
+      // 类目总量本来就扫不到 app 目录外的文件；明细必须同口径，否则明细之和 >
+      // 类目总量，页面自相矛盾。
+      expect(books.bytes, 100);
+      expect(books.entries.single.bytes, 100);
+      expect(books.entries.single.externalPaths, <String>[external]);
+      expect(books.entries.single.paths, isNot(contains(external)));
     });
 
     test('词典类目：明细按词典名对应资源子目录', () async {

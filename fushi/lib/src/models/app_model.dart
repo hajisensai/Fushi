@@ -6930,6 +6930,11 @@ class AppModel with ChangeNotifier {
   Future<void> setGalHookTextAlignment(String value) =>
       prefsRepo.setGalHookTextAlignment(value);
 
+  String get galHookTextVerticalAlignment =>
+      prefsRepo.galHookTextVerticalAlignment;
+  Future<void> setGalHookTextVerticalAlignment(String value) =>
+      prefsRepo.setGalHookTextVerticalAlignment(value);
+
   int get galHookTextColor => prefsRepo.galHookTextColor;
   Future<void> setGalHookTextColor(int value) =>
       prefsRepo.setGalHookTextColor(value);

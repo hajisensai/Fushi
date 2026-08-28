@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -42,22 +45,54 @@ SettingsDestination buildStorageDestination() {
         //（SrtBookRepository）；EpubBooks.uid 是 v81 本机机器 id，从不入哈希。
         final List<SrtBookRow> srtRows =
             await c.appModel.database.getAllSrtBooks();
+        // BUG-1893：音频的真相源是 DB 里记的路径（audioRoot / audioPathsJson）。
+        // 互联同步拉来的有声书落的是明文目录 audiobooks/<safeDirName(key)>，哈希
+        // 目录只是本地导入那一条路径的形态；两者都喂给扫描层，重叠部分由
+        // resolveBookStoragePaths 去嵌套去重，不会重复计数。
+        final List<AudiobookRow> audiobookRows =
+            await c.appModel.database.getAllAudiobooks();
+        final Map<String, List<String>> audioPathsByBookKey =
+            <String, List<String>>{};
+        for (final AudiobookRow ab in audiobookRows) {
+          if (ab.bookKey.isEmpty) continue;
+          (audioPathsByBookKey[ab.bookKey] ??= <String>[])
+              .addAll(_audioPathsOf(ab.audioRoot, ab.audioPathsJson));
+        }
         final Map<String, List<String>> srtUidsByBookKey =
             <String, List<String>>{};
+        // standalone 字幕书（bookKey 恒空）没有 EpubBooks 行。旧实现直接 continue
+        // 掉，于是这类书在存储页永远无行、也没有删除入口（BUG-1893 B 类）。
+        final List<SrtBookRow> standaloneSrtRows = <SrtBookRow>[];
         for (final SrtBookRow srt in srtRows) {
-          if (srt.bookKey.isEmpty) continue;
+          if (srt.bookKey.isEmpty) {
+            standaloneSrtRows.add(srt);
+            continue;
+          }
           (srtUidsByBookKey[srt.bookKey] ??= <String>[]).add(srt.uid);
+          (audioPathsByBookKey[srt.bookKey] ??= <String>[])
+              .addAll(_audioPathsOf(srt.audioRoot, srt.audioPathsJson));
         }
         return <StorageBookRef>[
           for (final EpubBookRow row in rows)
             StorageBookRef(
-              bookKey: row.bookKey,
+              id: row.bookKey,
               title: row.title,
               extractDir: row.extractDir,
               persistKeys: <String>[
                 row.bookKey,
                 ...srtUidsByBookKey[row.bookKey] ?? const <String>[],
               ],
+              audioPaths: audioPathsByBookKey[row.bookKey] ?? const <String>[],
+            ),
+          for (final SrtBookRow srt in standaloneSrtRows)
+            StorageBookRef(
+              id: srt.uid,
+              title: srt.title,
+              // 无 EPUB 正文载体：磁盘占用全在 persist 目录 / audioRoot 里。
+              extractDir: '',
+              persistKeys: <String>[srt.uid],
+              audioPaths: _audioPathsOf(srt.audioRoot, srt.audioPathsJson),
+              kind: StorageEntryKind.srtBook,
             ),
         ];
       },
@@ -80,6 +115,15 @@ SettingsDestination buildStorageDestination() {
           c.ref.invalidate(srtBookTagMapProvider);
         }
         return result.deleted ? null : result.failureReason;
+      },
+      // BUG-1893：standalone 字幕书没有 EpubBooks 行，deleteBook 按 bookKey 找行
+      // 必然落空；它的删除原语是 SrtBookRepository.delete（连带持久目录 + cue）。
+      // 与 deleteDictionary 同纪律：行本来就不在 = 目标状态已达成，按成功处理。
+      deleteSrtBook: (String uid) async {
+        await SrtBookRepository(c.appModel.database).delete(uid);
+        c.ref.invalidate(fushiBooksProvider);
+        c.ref.invalidate(srtBookTagMapProvider);
+        return null;
       },
       // BUG-1870：主库快照残留的删除原语在 fushi_core（与扫描侧识别口径同源）。
       deleteDatabaseSnapshots: () async =>
@@ -118,4 +162,27 @@ SettingsDestination buildStorageDestination() {
       ),
     ],
   );
+}
+
+/// DB 里一行有声书/字幕书的音频真实路径：legacy 的 `audioRoot`（目录模式）加
+/// `audioPathsJson`（文件列表模式）。两种模式历史上共存，同步导入更是两列都写
+/// （`sync_asset_package_service.dart`），所以两列全取、重叠交给
+/// `resolveBookStoragePaths` 去嵌套。坏 JSON 降级成空列表，不能炸整页扫描。
+List<String> _audioPathsOf(
+    final String? audioRoot, final String? audioPathsJson) {
+  final List<String> out = <String>[
+    if (audioRoot != null && audioRoot.isNotEmpty) audioRoot,
+  ];
+  if (audioPathsJson == null || audioPathsJson.isEmpty) return out;
+  try {
+    final Object? decoded = jsonDecode(audioPathsJson);
+    if (decoded is List) {
+      for (final Object? item in decoded) {
+        if (item is String && item.isNotEmpty) out.add(item);
+      }
+    }
+  } on FormatException {
+    // 旧行/手改坏值：当作没有文件列表，仍保留 audioRoot。
+  }
+  return out;
 }

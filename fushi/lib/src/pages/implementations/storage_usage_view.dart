@@ -31,6 +31,7 @@ class StorageUsageView extends ConsumerStatefulWidget {
     required this.booksProvider,
     required this.dictionaryNamesProvider,
     required this.deleteBook,
+    required this.deleteSrtBook,
     required this.deleteDictionary,
     required this.deleteDatabaseSnapshots,
     this.anime4kBytesProvider = anime4kInstalledBytes,
@@ -49,6 +50,11 @@ class StorageUsageView extends ConsumerStatefulWidget {
   /// 删除一本书（真实现 `ReaderFushiSource.instance.deleteBook`）。
   /// 返回 null = 成功，非 null = 失败原因。
   final Future<String?> Function(String bookKey) deleteBook;
+
+  /// 删除一本纯字幕书 / standalone 有声书（真实现 `SrtBookRepository.delete`）。
+  /// BUG-1893：这类书没有 EpubBooks 行、`bookKey` 恒空，[deleteBook] 那条路按
+  /// bookKey 找行必然落空——必须单独接原语，否则条目有行却删不掉。
+  final Future<String?> Function(String uid) deleteSrtBook;
 
   /// 删除一部词典（真实现 `AppModel.deleteDictionary` + 删除后核对词典表）。
   /// 返回 null = 成功，非 null = 失败原因——`deleteDictionary` 内部 catch-all
@@ -192,7 +198,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   Future<void> _deleteEntry(StorageEntryUsage entry) async {
     if (_busyEntryId != null) return;
     final String body = switch (entry.kind) {
-      StorageEntryKind.book => t.storage_entry_delete_book_confirm_body,
+      StorageEntryKind.book ||
+      StorageEntryKind.srtBook =>
+        t.storage_entry_delete_book_confirm_body,
       StorageEntryKind.dictionary =>
         t.storage_entry_delete_dictionary_confirm_body,
       StorageEntryKind.databaseSnapshots =>
@@ -209,6 +217,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       switch (entry.kind) {
         case StorageEntryKind.book:
           failure = await widget.deleteBook(entry.id);
+          changed = failure == null;
+        case StorageEntryKind.srtBook:
+          failure = await widget.deleteSrtBook(entry.id);
           changed = failure == null;
         case StorageEntryKind.dictionary:
           failure = await widget.deleteDictionary(entry.id);
@@ -447,7 +458,15 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       for (final StorageEntryUsage entry in visible)
         FushiListItem(
           title: Text(_entryTitle(entry)),
-          subtitle: Text(formatStorageBytes(entry.bytes)),
+          // BUG-1893：externalPaths 非空 = 桌面「引用原文件」导入，音频留在 app 目录
+          // 外，既不占应用空间也删不掉。不加这句说明的话，条目只显示 EPUB 正文那几百
+          // KB，用户会以为音频丢了——体积统计的口径必须自己说清楚。
+          subtitle: Text(
+            entry.externalPaths.isEmpty
+                ? formatStorageBytes(entry.bytes)
+                : '${formatStorageBytes(entry.bytes)} · '
+                    '${t.storage_entry_external_audio_hint}',
+          ),
           padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
           density: FushiListDensity.compact,
           trailing: entry.kind == StorageEntryKind.readOnly

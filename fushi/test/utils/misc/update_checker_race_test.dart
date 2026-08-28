@@ -388,6 +388,38 @@ void main() {
       expect(await file.readAsBytes(), payload);
     });
 
+    test('官网 R2 是首候选时获得 tie-break 偏好，实际分段不被 GitHub 反抢', () async {
+      final List<int> payload = _largePayload();
+      final UpdateAsset asset = _asset(payload);
+      const String r2 = 'https://fushi.moe/releases/v/v1.2.0/app.exe?src=r2';
+      final List<String> segmentHosts = <String>[];
+
+      final File file = await downloadUpdateAsset(
+        asset: asset,
+        version: '1.2.0',
+        updatesDir: updatesDir,
+        candidateUrls: <String>[r2, asset.url],
+        connectionCount: 4,
+        minSegmentBytes: _minSeg,
+        openUrl: (Uri uri, Map<String, String> headers) async {
+          final String? range = headers[HttpHeaders.rangeHeader];
+          final bool isProbe = range == 'bytes=0-0';
+          if (uri.host == 'fushi.moe' && isProbe) {
+            // GitHub 探针先到，但 R2 仍在 500ms 官方首选窗口内；应保留 R2。
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+          if (!isProbe) segmentHosts.add(uri.host);
+          return _rangeResponse(payload, range);
+        },
+      );
+
+      expect(await file.readAsBytes(), payload);
+      expect(segmentHosts, isNotEmpty);
+      expect(segmentHosts.toSet(), <String>{
+        'fushi.moe',
+      }, reason: '官网 R2 是候选首项，近似速度下应由它承担实际分段下载');
+    });
+
     test('竞速全失败（坏镜像 + 直连失败）→ failures 锚定直连（TODO-666 不破坏）', () async {
       final List<int> payload = _largePayload();
       final UpdateAsset asset = _asset(payload);

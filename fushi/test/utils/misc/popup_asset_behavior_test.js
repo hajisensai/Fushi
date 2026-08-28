@@ -2136,6 +2136,56 @@ function testRenderPopupNoKanjiNoEntriesShowsNoResults() {
     'empty everything must still show the no-results placeholder');
 }
 
+// BUG-1885: conjugation descriptions live outside #entries-container. A fresh
+// lookup therefore has to retire that detail surface explicitly before it
+// rebuilds the result DOM, including the no-results/early-return branches.
+function testConjugationDescriptionUsesPopupCardAndClosesOnNextLookup() {
+  const context = loadPopup();
+  const container = new FakeElement('div');
+  const overlay = new FakeElement('div');
+  overlay.classList.add('overlay');
+  const title = new FakeElement('div');
+  title.classList.add('overlay-title');
+  const content = new FakeElement('div');
+  content.classList.add('overlay-content');
+  overlay.append(title, content);
+  context.document.body.append(overlay);
+
+  const tag = new FakeElement('span');
+  tag.textContent = '-ている';
+  tag.setAttribute('data-description', 'Indicates an action in progress.');
+  context.showDescription(tag);
+
+  assert.equal(overlay.style.display, 'block',
+    'clicking a conjugation tag opens its detail card');
+  assert.equal(title.textContent, '-ている',
+    'the detail card uses the conjugation as its popup title');
+  assert.equal(content.textContent, 'Indicates an action in progress.',
+    'the grammar description is rendered in the popup body');
+
+  stubRenderPopupRuntime(context, container);
+  context.window.lookupEntries = [];
+  context.window.kanjiResults = [];
+  context.window.renderPopup();
+
+  assert.equal(overlay.style.display, 'none',
+    'a new lookup closes the previous conjugation detail card');
+  assert.equal(title.textContent, '',
+    'a closed detail card cannot retain the previous conjugation title');
+  assert.equal(content.textContent, '',
+    'a closed detail card cannot retain the previous grammar text');
+
+  const css = fs.readFileSync(popupCssPath, 'utf8');
+  const rule = css.match(/\.overlay\s*\{([^}]*)\}/);
+  assert.ok(rule, '.overlay popup-card rule must exist');
+  assert.ok(/inset\s*:\s*8px\s*;/.test(rule[1]),
+    'conjugation detail is an inset popup card, not a full-width bottom sheet');
+  assert.ok(/background\s*:\s*var\(--background-color\)\s*;/.test(rule[1]),
+    'conjugation detail uses the normal opaque lookup surface');
+  assert.ok(/border-radius\s*:\s*10px\s*;/.test(rule[1]),
+    'conjugation detail matches the normal lookup popup radius');
+}
+
 testEmSizedWideImagesUseHorizontalScrollWrapper();
 testSanseidoEmAccentImageStaysInlineAndPointsAtDictionaryMedia();
 testGlossImageScrollWrapperIsInline();
@@ -2168,6 +2218,7 @@ testKanjiCardEmptyPayloadRendersNothing();
 testKanjiCardOmitsAbsentFields();
 testRenderPopupShowsKanjiCardWithNoTermEntries();
 testRenderPopupNoKanjiNoEntriesShowsNoResults();
+testConjugationDescriptionUsesPopupCardAndClosesOnNextLookup();
 testSelectionHighlightReturnsBoundsForPopupPositioning();
 // TODO: testLongPress* tests access document.__listeners.touchstart but popup.js
 // registers touchstart on per-entry summary elements. Rewrite tests to create a

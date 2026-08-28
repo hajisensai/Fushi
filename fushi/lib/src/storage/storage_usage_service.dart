@@ -107,6 +107,11 @@ enum StorageEntryKind {
   /// 一本书（`id` = bookKey；删除走 `ReaderFushiSource.deleteBook`）。
   book,
 
+  /// 一本纯字幕书 / standalone 有声书（`id` = `SrtBooks.uid`；删除走
+  /// `SrtBookRepository.delete`）。这类书**没有** EpubBooks 行、`bookKey` 恒空，
+  /// 不能走 `ReaderFushiSource.deleteBook`（那条路按 bookKey 找行，必然落空）。
+  srtBook,
+
   /// 一部词典（`id` = 词典名；删除走 `AppModel.deleteDictionary`）。
   dictionary,
 
@@ -126,9 +131,11 @@ class StorageEntryUsage {
     required this.bytes,
     required this.paths,
     required this.kind,
+    this.externalPaths = const <String>[],
   });
 
-  /// 域内主键（书 = bookKey，词典 = 词典名，通用子项 = 绝对路径）。
+  /// 域内主键（EPUB 书 = bookKey，纯字幕书 = `SrtBooks.uid`，词典 = 词典名，
+  /// 通用子项 = 绝对路径）。
   final String id;
 
   /// 显示名（书名 / 词典名 / `<顶层目录>/<子项名>`）。[StorageEntryKind.databaseSnapshots]
@@ -142,6 +149,12 @@ class StorageEntryUsage {
 
   /// 参与求和的绝对路径（诊断用）。
   final List<String> paths;
+
+  /// 「引用原文件」的外部路径：桌面导入勾了「引用原文件」时音频留在 app 目录
+  /// 之外（`AudiobookStorage.syncAudioFiles(copy: false)` 直接存原始绝对路径），
+  /// 既不占应用空间也删不掉。**不计入 [bytes]**，只用于告诉用户「这本书的音频
+  /// 在别处」——否则条目显示 0 字节，用户以为音频丢了（BUG-1893）。
+  final List<String> externalPaths;
 }
 
 /// 一个类目的扫描结果。
@@ -164,21 +177,28 @@ class StorageCategoryUsage {
   final List<StorageEntryUsage> entries;
 }
 
-/// 书籍条目的扫描输入（由 UI 层从 `epub_books` + `srt_books` 表取出后传入）。
+/// 书籍条目的扫描输入（由 UI 层从 `epub_books` + `srt_books` + `audiobooks`
+/// 三张表取出后传入）。
 class StorageBookRef {
   const StorageBookRef({
-    required this.bookKey,
+    required this.id,
     required this.title,
     required this.extractDir,
     this.persistKeys = const <String>[],
+    this.audioPaths = const <String>[],
+    this.kind = StorageEntryKind.book,
   });
 
-  final String bookKey;
+  /// 域内主键，直接成为 [StorageEntryUsage.id]：[StorageEntryKind.book] 时是
+  /// `EpubBooks.bookKey`，[StorageEntryKind.srtBook] 时是 `SrtBooks.uid`
+  /// （standalone 字幕书的 bookKey 恒空串，做不了身份）。删除侧按 [kind] 分流。
+  final String id;
 
   final String title;
 
   /// `EpubBooks.extractDir`（解压正文绝对路径；这是唯一真相，**不要**用
-  /// bookKey 重新派生——pre-v16 的书目录名是旧 int id）。
+  /// bookKey 重新派生——pre-v16 的书目录名是旧 int id）。standalone 字幕书没有
+  /// EPUB 正文载体，传空串。
   final String extractDir;
 
   /// 有声书 persist 目录 `audiobooks/<fnv1a32Hex(key)>` 的键集合。真实键口径
@@ -186,7 +206,103 @@ class StorageBookRef {
   /// `SrtBookRepository` 传 SRT uid）：EPUB 配音频 = bookKey，字幕书音频 =
   /// 关联 `SrtBooks.uid`。**不是** `EpubBooks.uid`（那是 v81 的本机机器 id，
   /// 从不入哈希——审查 H1）。
+  ///
+  /// 哈希目录只是**本地导入**这一条路径的形态，不是唯一形态：见 [audioPaths]。
   final List<String> persistKeys;
+
+  /// DB 里记的音频**真实路径**：`Audiobooks.audioRoot` / `SrtBooks.audioRoot`
+  /// 与两表 `audioPathsJson` 里的逐个文件路径。
+  ///
+  /// BUG-1893：互联/同步拉来的有声书落的是**明文目录**
+  /// `audiobooks/<safeDirName(bookKey|uid)>`（`sync_asset_package_service.dart`），
+  /// 不是 [persistKeys] 派生的哈希目录。只按哈希反推就永远找不到它们，明细行
+  /// 显示 0 字节、几 GB 音频全掉进「类目总量 − 明细之和」的差额里。DB 路径是
+  /// 真相源，哈希派生只是存量兼容——两者都喂进来，重叠部分由
+  /// [resolveBookStoragePaths] 去嵌套去重，不会重复计数。
+  final List<String> audioPaths;
+
+  /// 该条目接哪条删除原语（[StorageEntryKind.book] / [StorageEntryKind.srtBook]）。
+  final StorageEntryKind kind;
+}
+
+/// 一本书的存储路径拆解结果（[resolveBookStoragePaths] 的产物）。
+class StorageBookPaths {
+  const StorageBookPaths({required this.counted, required this.external});
+
+  /// 计入体积的绝对路径：已去重、去嵌套，且音频部分全部落在书籍类目根之内
+  /// （保证「明细之和 ≤ 类目总量」这条不变式）。
+  final List<String> counted;
+
+  /// 落在 app 目录之外的音频路径（引用导入）。见 [StorageEntryUsage.externalPaths]。
+  final List<String> external;
+}
+
+/// [path] 是否等于或位于 [roots] 中任一根之内（空路径/空根跳过）。
+bool _isWithinAny(final List<String> roots, final String path) {
+  if (path.isEmpty) return false;
+  final String target = p.canonicalize(path);
+  for (final String root in roots) {
+    if (root.isEmpty) continue;
+    final String base = p.canonicalize(root);
+    if (p.equals(base, target) || p.isWithin(base, target)) return true;
+  }
+  return false;
+}
+
+/// 去掉重复路径与**被别的路径包住**的路径（保持原序）。
+///
+/// 这是「DB 真实路径 + 哈希派生目录」两个来源并存的必然要求：同步导入的书
+/// `audioRoot` 是目录、`audioPathsJson` 是它下面的文件，本地导入的哈希目录又
+/// 常常与 `audioRoot` 是同一个目录——不去嵌套就会把同一堆字节数两次三次。
+List<String> _dedupeNestedPaths(final List<String> paths) {
+  final List<String> kept = <String>[];
+  final List<String> canonical = <String>[];
+  for (final String path in paths) {
+    if (path.isEmpty) continue;
+    final String key = p.canonicalize(path);
+    if (canonical.contains(key)) continue;
+    kept.add(path);
+    canonical.add(key);
+  }
+  return <String>[
+    for (int i = 0; i < kept.length; i++)
+      if (!_isWithinAny(<String>[
+        for (int j = 0; j < canonical.length; j++)
+          if (j != i) canonical[j],
+      ], canonical[i]))
+        kept[i],
+  ];
+}
+
+/// 把一条 [book] 拆成「计入体积的路径」与「外部引用路径」两组。
+///
+/// [categoryRoots] 是书籍类目的 documents 子根（`fushi_books` / 旧名 /
+/// `audiobooks`）。音频路径只有落在这些根之内才计入——落在外面的是桌面
+/// 「引用原文件」导入，本来就不占应用空间、也删不掉，计进去就是假账（而类目
+/// 总量同样扫不到它，明细之和就会大于类目总量）。
+/// [StorageBookRef.extractDir] 无条件计入（它是 app 自己解压出来的正文）。
+StorageBookPaths resolveBookStoragePaths({
+  required final Directory documentsRoot,
+  required final StorageBookRef book,
+  required final List<String> categoryRoots,
+}) {
+  final List<String> inside = <String>[];
+  final List<String> external = <String>[];
+  for (final String candidate in <String>[
+    for (final String key in book.persistKeys)
+      if (key.isNotEmpty) audiobookPersistDirPath(documentsRoot, key),
+    for (final String path in book.audioPaths)
+      if (path.isNotEmpty) path,
+  ]) {
+    (_isWithinAny(categoryRoots, candidate) ? inside : external).add(candidate);
+  }
+  return StorageBookPaths(
+    counted: _dedupeNestedPaths(<String>[
+      if (book.extractDir.isNotEmpty) book.extractDir,
+      ...inside,
+    ]),
+    external: _dedupeNestedPaths(external),
+  );
 }
 
 /// 随包组件（安装目录内、随安装包携带）的一条展示项。
@@ -408,13 +524,19 @@ class StorageUsageService {
           in kStorageCategoryDocumentsChildren[StorageCategoryId.books]!)
         p.join(docs.path, child),
     ];
-    final List<List<String>> perBookPaths = <List<String>>[
+    // BUG-1893：明细口径 = DB 里记的真实音频路径（`audioRoot`/`audioPathsJson`）
+    // ∪ 哈希派生的 persist 目录，去嵌套去重后求和。只按哈希反推会漏掉同步导入
+    // 落的明文目录（几 GB 音频显示成 0）。
+    final List<StorageBookPaths> perBook = <StorageBookPaths>[
       for (final StorageBookRef b in books)
-        <String>[
-          b.extractDir,
-          for (final String key in b.persistKeys)
-            if (key.isNotEmpty) audiobookPersistDirPath(docs, key),
-        ],
+        resolveBookStoragePaths(
+          documentsRoot: docs,
+          book: b,
+          categoryRoots: categoryRoots,
+        ),
+    ];
+    final List<List<String>> perBookPaths = <List<String>>[
+      for (final StorageBookPaths paths in perBook) paths.counted,
     ];
     final List<int> sizes = await _run(() {
       return <int>[
@@ -425,11 +547,12 @@ class StorageUsageService {
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
       for (int i = 0; i < books.length; i++)
         StorageEntryUsage(
-          id: books[i].bookKey,
+          id: books[i].id,
           label: books[i].title,
           bytes: sizes[i + 1],
           paths: perBookPaths[i],
-          kind: StorageEntryKind.book,
+          externalPaths: perBook[i].external,
+          kind: books[i].kind,
         ),
     ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
         b.bytes.compareTo(a.bytes));
