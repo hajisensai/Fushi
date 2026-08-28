@@ -380,8 +380,15 @@ Future<void> _toggleWindowFullscreen() async {
 /// Mobile returns null.
 Future<bool?> readDesktopWindowFullscreen() async {
   try {
+    // `return await`, never a bare `return <future>`: in an async function the
+    // bare form hands the future to the caller and the enclosing try/catch is
+    // already gone when it rejects. Every branch here exists to *swallow*
+    // platform-channel failures (the callers `unawaited()` them), so a branch
+    // that lets its error escape turns a benign unavailable-window read into an
+    // unhandled zone error -- and in widget tests, into a failing test whose
+    // only message is "Test failed. See exception logs above.".
     if (Platform.isMacOS) {
-      return WindowManipulator.isWindowFullscreened();
+      return await WindowManipulator.isWindowFullscreened();
     }
     if (Platform.isWindows) {
       final bool fullscreen = await windowManager.isFullScreen();
@@ -389,7 +396,7 @@ Future<bool?> readDesktopWindowFullscreen() async {
       return fullscreen;
     }
     if (Platform.isLinux) {
-      return windowManager.isFullScreen();
+      return await windowManager.isFullScreen();
     }
   } catch (e) {
     debugPrint('[Fushi] window fullscreen state unavailable: $e');
@@ -459,7 +466,7 @@ Future<bool?> setDesktopWindowFullscreen(bool fullscreen) async {
     }
     if (Platform.isLinux) {
       await windowManager.setFullScreen(fullscreen);
-      return windowManager.isFullScreen();
+      return await windowManager.isFullScreen();
     }
   } catch (e) {
     debugPrint('[Fushi] window fullscreen change skipped: $e');
