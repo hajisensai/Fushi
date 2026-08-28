@@ -695,16 +695,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget _buildCover(BuildContext context) {
     final EpubBookRow? row = _row;
     if (row != null) {
-      final String? coverPath = row.coverPath;
-      if (coverPath != null && coverPath.isNotEmpty) {
-        final File file = File(
-          coverPath.startsWith('/') || coverPath.contains(':')
-              ? coverPath
-              : '${row.extractDir}${Platform.pathSeparator}$coverPath',
-        );
-        if (file.existsSync()) {
-          return Image.file(file, fit: BoxFit.cover);
-        }
+      // 复用书架/制卡那份解析（TODO-1388 / BUG-703），别自己拼路径：coverPath 可能
+      // 是相对页图路径、可能大小写与磁盘不符（跨平台备份还原），那些坑都已经在
+      // resolveCoverFilePath 里踩过了。
+      final String? resolved = ReaderFushiSource.resolveCoverFilePath(
+        extractDir: row.extractDir,
+        coverPath: row.coverPath,
+      );
+      if (resolved != null) {
+        return Image.file(File(resolved), fit: BoxFit.cover);
       }
     }
     final MangaSeriesTarget target = widget.target;

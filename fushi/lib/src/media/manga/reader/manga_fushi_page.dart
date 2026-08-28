@@ -693,6 +693,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 正在换章：挡住换章期间的翻页与重复触发。
   bool _switchingChapter = false;
 
+  /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
+  bool _edgeToastShown = false;
+
   /// 当前章在书架体系里的身份；非书架在线条目为 null。
   String? get _shelfChapterKey {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
@@ -1405,6 +1408,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _shelfLibraryService = service;
     _shelfEntry = entry;
     _shelfChapterIndex = chapterIndex;
+    _edgeToastShown = false;
     await _loadOnlineChapter(resolved, persistedRow: row);
   }
 
@@ -2095,7 +2099,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _turnQueue.enqueue(
       delta,
       maxMagnitude: _spreads.length,
-      canApply: () => mounted && !_navigating,
+      // 换章期间必须停止 drain：换章是在 applyStep 里 await 的，队列里剩下的
+      // step 会在新章上继续消费。长按翻页撞到章尾时，那意味着一次按键连跳好几
+      // 章。加上这一条，换章期间排队的 step 直接被丢掉。
+      canApply: () => mounted && !_navigating && !_switchingChapter,
       applyStep: _applyMangaTurnStep,
     );
   }
@@ -2145,7 +2152,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final int step = forward ? _kNextChapterStep : -_kNextChapterStep;
     final int target = _shelfChapterIndex + step;
     if (target < 0 || target >= entry.chapters.length) {
-      if (mounted) {
+      // 一章只提示一次。队列会把长按攒下的 pendingDelta 一步步喂进来，每一步都
+      // 撞在同一个边界上——不去重就是一串一模一样的 toast 糊住屏幕。
+      if (mounted && !_edgeToastShown) {
+        _edgeToastShown = true;
         FushiToast.show(
           msg: forward
               ? t.manga_series_last_chapter_reached
