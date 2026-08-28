@@ -1426,7 +1426,15 @@ void FloatingLyricWindow::Render() {
           hook_text_mode_ && style_.text_alignment == 1
               ? DWRITE_TEXT_ALIGNMENT_LEADING
               : DWRITE_TEXT_ALIGNMENT_CENTER);
-      text_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+      // BUG-1890: honour the vertical-alignment preference at creation time
+      // too. In hook mode this initial value is overwritten every frame by
+      // the layout-level call below, but the audiobook lyric strip
+      // (hook_text_mode_ == false) only ever uses this one — it must stay
+      // centred, so the preference is scoped to hook mode here as well.
+      text_format_->SetParagraphAlignment(
+          hook_text_mode_ && style_.vertical_alignment == 1
+              ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR
+              : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
       text_format_->SetWordWrapping(
           hook_text_mode_ ? DWRITE_WORD_WRAPPING_WRAP
                           : DWRITE_WORD_WRAPPING_NO_WRAP);
@@ -1526,8 +1534,13 @@ void FloatingLyricWindow::Render() {
       if (hook_text_mode_) {
         DWRITE_TEXT_METRICS metrics = {};
         if (SUCCEEDED(text_layout_->GetMetrics(&metrics))) {
+          // BUG-1890：用户选「顶部对齐」时恒 NEAR；没选则维持 BUG-1095 的原判据
+          // （溢出才顶对齐、放得下仍居中）。两种设置在**溢出**场景下行为完全一致，
+          // 而下面的滚动模型（scroll_max_px_ / text_origin_y）本来就是按 NEAR
+          // 顶对齐推导出来的，恒 NEAR 只会让它更自洽，不需要额外改。
           text_layout_->SetParagraphAlignment(
-              metrics.height > text_rect_.height
+              (style_.vertical_alignment == 1 ||
+               metrics.height > text_rect_.height)
                   ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR
                   : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
           // BUG-1095 (第二阶段) — 溢出量就是可滚动行程。

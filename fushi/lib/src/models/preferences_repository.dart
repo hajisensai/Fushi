@@ -2070,6 +2070,25 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// BUG-1890：台词浮窗**垂直**对齐。与水平对齐同形的白名单二值收敛
+  /// （'center' / 'top'），非法值一律回落 'center'（= 修前的唯一行为，
+  /// 老配置读出来还是老样子）。
+  ///
+  /// 'top' 不只是「不居中」：native 侧此前已有 NEAR（顶对齐）分支，但只在文字**溢出**
+  /// 窗口时才走，放得下就强制居中。长短句交替时台词会上下跳，这个偏好让用户把它钉死
+  /// 在顶部。
+  String get galHookTextVerticalAlignment {
+    final Object? value =
+        getPref('gal_hook_text_vertical_alignment', defaultValue: 'center');
+    return value == 'top' ? 'top' : 'center';
+  }
+
+  Future<void> setGalHookTextVerticalAlignment(String value) async {
+    await setPref(
+        'gal_hook_text_vertical_alignment', value == 'top' ? 'top' : 'center');
+    notifyListeners();
+  }
+
   int get galHookTextColor =>
       _galHookColor('gal_hook_text_color', galHookTextColorDefault);
 

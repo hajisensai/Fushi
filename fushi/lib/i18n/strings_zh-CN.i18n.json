@@ -3811,5 +3811,12 @@
   "video_subtitle_delete": "删除字幕文件",
   "video_subtitle_delete_confirm": "确定从磁盘删除这个字幕文件？此操作不可撤销。\\n$path",
   "video_subtitle_deleted": "已删除字幕文件：$label",
-  "video_subtitle_delete_failed": "删除字幕文件失败：$label"
+  "video_subtitle_delete_failed": "删除字幕文件失败：$label",
+  "shortcut_action_manga_toggle_chrome": "切换漫画界面",
+  "manga_interface_hide": "隐藏界面",
+  "manga_interface_show": "显示界面",
+  "gal_hook_text_vertical_alignment": "垂直对齐",
+  "gal_hook_text_vertical_alignment_center": "居中",
+  "gal_hook_text_vertical_alignment_top": "顶部",
+  "storage_entry_external_audio_hint": "音频引用原文件，不占用应用空间"
 }

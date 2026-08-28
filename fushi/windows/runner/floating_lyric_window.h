@@ -81,6 +81,10 @@ class FloatingLyricWindow {
     double line_height = 1.0;
     bool bold = true;
     int text_alignment = 0;  // 0 = center, 1 = leading.
+    // BUG-1890: 0 = vertically centred (legacy behaviour), 1 = top (NEAR).
+    // Orthogonal to text_alignment: horizontal and vertical are two axes,
+    // never folded into one tri-state.
+    int vertical_alignment = 0;
     uint32_t text_color = 0xFFFFFFFF;
     uint32_t bg_color = 0xCC000000;
     uint32_t outline_color = 0xE0000000;

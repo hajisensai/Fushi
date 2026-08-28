@@ -409,6 +409,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double lineHeight = 1,
     bool bold = true,
     String textAlignment = 'center',
+    String verticalAlignment = 'center',
     int textColor = 0xFFFFFFFF,
     int bgColor = 0xE0000000,
     int outlineColor = 0xE0000000,
@@ -433,6 +434,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'lineHeight': lineHeight,
       'bold': bold,
       'textAlignment': textAlignment == 'left' ? 1 : 0,
+      // BUG-1890：0 = 垂直居中（老行为），1 = 顶部对齐。与 textAlignment 同样
+      // String→int 编码，native 侧 style.vertical_alignment 消费。
+      'verticalAlignment': verticalAlignment == 'top' ? 1 : 0,
       'textColor': textColor,
       'bgColor': bgColor,
       'outlineColor': outlineColor,
@@ -488,6 +492,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double lineHeight = 1,
     bool bold = true,
     String textAlignment = 'center',
+    String verticalAlignment = 'center',
     int outlineColor = 0xE0000000,
     double outlineWidth = 1.6,
     double textPadding = 20,
@@ -502,6 +507,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'lineHeight': lineHeight,
       'bold': bold,
       'textAlignment': textAlignment == 'left' ? 1 : 0,
+      'verticalAlignment': verticalAlignment == 'top' ? 1 : 0,
       'bgColor': bgColor,
       'textColor': textColor,
       'outlineColor': outlineColor,

@@ -84,6 +84,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_outline_color',
   'gal_hook_text_outline_width',
   'gal_hook_text_padding',
+  'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
   'gal_mining_animated_format',
   'gal_mining_image_mode',
