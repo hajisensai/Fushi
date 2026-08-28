@@ -1043,17 +1043,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final AppModel appModel = ref.read(appProvider);
     final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
     if (store == null) return;
+    final AnimeDownloadService? service = appModel.animeDownloadService;
+    // 「同时删除已下载文件」只在真兑现得了时才摆出来：删数据只能由下载后端执行，
+    // 没有 service 或后端没配好时勾了也只会静默丢弃（与两个删除确认框里
+    // 「兑现不了就不显示」同一纪律）。
+    final bool canDeleteFiles = service != null &&
+        effectiveTorrentConfig(appModel.qbConnectionConfig).isConfigured;
     final bool? deleteFiles = await showDownloadTaskDeleteConfirm(
       context,
       title: plan.seriesTitle.isNotEmpty ? plan.seriesTitle : plan.torrentTitle,
       keySuffix: plan.id,
+      offerDeleteFiles: canDeleteFiles,
     );
     if (deleteFiles == null || !mounted) return;
-    final AnimeDownloadService? service = appModel.animeDownloadService;
     if (service == null) {
       await store.delete(plan.id);
     } else {
-      await service.deletePlan(
+      final AnimeDownloadPlanDeleteResult result = await service.deletePlan(
         plan.id,
         deleteFiles: deleteFiles,
         onFilesDeleted: (List<String> videoAbsolutePaths) async {
@@ -1075,6 +1081,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           }
         },
       );
+      // 勾了删文件却没删成（后端离线 / 摘种子失败）必须说出来：计划行已经消失，
+      // 用户不会再有第二次机会发现盘上的数据还在。
+      if (deleteFiles && !result.filesDeleted && mounted) {
+        FushiToast.show(
+          msg: t.download_task_delete_files_failed,
+          severity: ToastSeverity.warning,
+        );
+      }
     }
     await _reloadPlans();
   }

@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "สถิติการอ่าน",
   "delete_disclosure_audiobook_files": "ไฟล์เสียงและคำบรรยายที่จับคู่ที่ Fushi คัดลอกไว้ในที่จัดเก็บของตัวเอง",
   "delete_disclosure_audiobook_book_kept": "ตัวหนังสือและความคืบหน้าการอ่าน",
-  "delete_disclosure_audiobook_source_kept": "ไฟล์เสียงต้นฉบับที่คุณนำเข้า",
+  "delete_disclosure_audio_source_files": "ไฟล์เสียงต้นฉบับที่คุณนำเข้า",
   "audiobook_delete": "ลบหนังสือเสียง",
   "audiobook_delete_confirm": "ลบหนังสือเสียงที่แนบมา? ไฟล์เสียงจะถูกลบออกจากอุปกรณ์นี้",
   "delete_collection_confirm": "เฉพาะการจัดกลุ่มเท่านั้นที่จะถูกลบ รายการภายในจะยังคงอยู่",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "คลังที่จะแสดงรายการ",
   "jellyfin_libraries_hint": "ไม่เลือกอะไรเลยจะแสดงคลังวิดีโอทั้งหมด การจำกัดเฉพาะคลังที่ดูจริงช่วยไม่ให้เซิร์ฟเวอร์ขนาดใหญ่ถูกไล่รายการทั้งหมด",
   "jellyfin_libraries_load_failed": "โหลดรายการคลังไม่สำเร็จ",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "ลบไฟล์ในเครื่องด้วย",
+  "delete_local_files_video_desc": "ไฟล์วิดีโอจะถูกลบออกจากอุปกรณ์นี้ พร้อมกับงานดาวน์โหลดที่เกี่ยวข้อง และไม่สามารถกู้คืนได้",
+  "delete_local_files_audio_desc": "ไฟล์เสียงต้นฉบับจะถูกลบออกจากอุปกรณ์นี้ ส่วนไฟล์หนังสือและคำบรรยายต้นฉบับจะยังอยู่ และไม่สามารถกู้คืนได้",
+  "delete_disclosure_book_source_kept": "ไฟล์หนังสือและคำบรรยายต้นฉบับที่คุณนำเข้า",
+  "download_task_delete_files_failed": "ลบข้อมูลที่ดาวน์โหลดไว้ไม่สำเร็จ เพราะตัวจัดการดาวน์โหลดไม่ยืนยัน",
+  "delete_local_files_failed": "ลบไฟล์ในเครื่องไม่สำเร็จ $n ไฟล์ อาจกำลังถูกใช้งานอยู่"
 }

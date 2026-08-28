@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Статистика чтения",
   "delete_disclosure_audiobook_files": "Аудио и синхронизированные субтитры, скопированные Fushi в собственное хранилище",
   "delete_disclosure_audiobook_book_kept": "Сама книга и прогресс чтения",
-  "delete_disclosure_audiobook_source_kept": "Оригинальные аудиофайлы, которые вы импортировали",
+  "delete_disclosure_audio_source_files": "Оригинальные аудиофайлы, которые вы импортировали",
   "audiobook_delete": "Удалить аудиокнигу",
   "audiobook_delete_confirm": "Удалить прикреплённую аудиокнигу? Её аудиофайлы будут удалены с этого устройства.",
   "delete_collection_confirm": "Удаляется только группировка. Элементы в ней сохраняются.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Библиотеки для вывода",
   "jellyfin_libraries_hint": "Если ничего не выбрано, выводятся все видеотеки. Ограничение теми библиотеками, которые вы действительно смотрите, избавит огромные серверы от полного перебора.",
   "jellyfin_libraries_load_failed": "Не удалось загрузить список библиотек",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Также удалить локальные файлы",
+  "delete_local_files_video_desc": "Видеофайл будет удалён с этого устройства, а связанная задача загрузки — очищена. Отменить это нельзя.",
+  "delete_local_files_audio_desc": "Исходные аудиофайлы будут удалены с этого устройства; исходные файлы книги и субтитров останутся. Отменить это нельзя.",
+  "delete_disclosure_book_source_kept": "Импортированные вами исходные файлы книги и субтитров",
+  "download_task_delete_files_failed": "Не удалось удалить загруженные данные: движок загрузок не подтвердил операцию",
+  "delete_local_files_failed": "Не удалось удалить локальные файлы ($n); возможно, они ещё используются"
 }

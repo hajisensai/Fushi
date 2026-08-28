@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "읽기 통계",
   "delete_disclosure_audiobook_files": "Fushi가 자체 저장소에 복사한 오디오 및 정렬된 자막",
   "delete_disclosure_audiobook_book_kept": "도서 자체 및 읽기 진행률",
-  "delete_disclosure_audiobook_source_kept": "가져온 원본 오디오 파일",
+  "delete_disclosure_audio_source_files": "가져온 원본 오디오 파일",
   "audiobook_delete": "오디오북 삭제",
   "audiobook_delete_confirm": "첨부된 오디오북을 삭제하시겠습니까? 이 기기에서 오디오 파일이 제거됩니다.",
   "delete_collection_confirm": "그룹만 제거됩니다. 포함된 항목은 유지됩니다.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "나열할 라이브러리",
   "jellyfin_libraries_hint": "아무것도 선택하지 않으면 모든 비디오 라이브러리를 나열해요. 실제로 보는 라이브러리로 좁히면 거대한 서버가 통째로 열거되는 것을 막을 수 있어요.",
   "jellyfin_libraries_load_failed": "라이브러리 목록을 불러오지 못했어요",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "로컬 파일도 삭제",
+  "delete_local_files_video_desc": "이 기기에서 동영상 파일을 삭제하고 해당 다운로드 작업도 함께 지웁니다. 되돌릴 수 없습니다.",
+  "delete_local_files_audio_desc": "이 기기에서 원본 오디오 파일을 삭제합니다. 책과 자막 원본 파일은 그대로 둡니다. 되돌릴 수 없습니다.",
+  "delete_disclosure_book_source_kept": "가져온 원본 책 및 자막 파일",
+  "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
+  "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다"
 }

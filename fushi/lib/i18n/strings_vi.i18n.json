@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Thống kê đọc",
   "delete_disclosure_audiobook_files": "Âm thanh và phụ đề đã đồng bộ mà Fushi sao chép vào bộ nhớ riêng",
   "delete_disclosure_audiobook_book_kept": "Cuốn sách và tiến trình đọc của nó",
-  "delete_disclosure_audiobook_source_kept": "Các tệp âm thanh gốc bạn đã nhập",
+  "delete_disclosure_audio_source_files": "Các tệp âm thanh gốc bạn đã nhập",
   "audiobook_delete": "Xóa sách nói",
   "audiobook_delete_confirm": "Xóa sách nói đính kèm? Các tệp âm thanh sẽ bị xóa khỏi thiết bị này.",
   "delete_collection_confirm": "Chỉ xóa nhóm. Các mục trong đó vẫn được giữ lại.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Thư viện cần liệt kê",
   "jellyfin_libraries_hint": "Không chọn gì sẽ liệt kê mọi thư viện video. Thu hẹp về những thư viện bạn thực sự xem giúp máy chủ khổng lồ không bị liệt kê toàn bộ.",
   "jellyfin_libraries_load_failed": "Không tải được danh sách thư viện",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Xoá cả tệp trên máy",
+  "delete_local_files_video_desc": "Tệp video sẽ bị xoá khỏi thiết bị này, đồng thời xoá cả tác vụ tải xuống tương ứng. Không thể hoàn tác.",
+  "delete_local_files_audio_desc": "Các tệp âm thanh gốc sẽ bị xoá khỏi thiết bị này; tệp sách và phụ đề gốc vẫn được giữ. Không thể hoàn tác.",
+  "delete_disclosure_book_source_kept": "Tệp sách và phụ đề gốc bạn đã nhập",
+  "download_task_delete_files_failed": "Không thể xoá dữ liệu đã tải; công cụ tải xuống không xác nhận",
+  "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng"
 }

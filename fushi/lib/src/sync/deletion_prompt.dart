@@ -8,16 +8,21 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 通用「删除范围」确认弹窗：正文 + 「同时删除本地文件」勾选框（仅
-/// [offerLocalFiles] 时渲染，默认不勾）+ 「从所有设备删除」勾选框（默认不勾）。确认
-/// 返回用户的 [DeleteDecision]（scope：勾选=syncEverywhere 传播 / 不勾=keepLocalOnly
-/// 仅本机；deleteLocalFiles：是否连磁盘上的原始文件一起删）；取消返回 null。供
-/// 书架/视频/有声书等各删除入口共用（书架另有 ReaderHistoryDeleteDialog 变体）。
+/// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框（默认不勾）+
+/// 「同时删除本地文件」勾选框（仅 [localFilesSubtitle] 非 null 时渲染，默认不勾）。
+/// 确认返回用户的 [DeleteDecision]（scope：勾选=syncEverywhere 传播 / 不勾=
+/// keepLocalOnly 仅本机；deleteLocalFiles：是否连磁盘上的原始文件一起删）；取消返回
+/// null。供书架/视频/有声书等各删除入口共用（书架另有 ReaderHistoryDeleteDialog
+/// 变体）。
 ///
-/// [offerLocalFiles] 由调用方按「这条目到底有没有本机可删的原件」决定：视频要
-/// `videoPath` 是本地路径（http(s) 远端流没有文件可删），有声书要记录了原始音频
-/// 路径。没有可删原件就别摆勾选框——与下面同步勾选框「兑现不了就不显示」同一纪律。
-/// [localFilesSubtitle] 省略时用通用说明，视频入口传更具体的（连下载任务一起清）。
+/// [localFilesSubtitle] 一个参数同时编码「摆不摆勾选框」和「摆的话说什么」——这两件
+/// 事本来就是一个决定：null = 这条目没有本机可删的原件（视频是 http(s) 远端流；书 /
+/// 有声书没有显式登记在 app 目录之外的音频），非 null = 摆，且这句话必须如实说清
+/// 删的是什么。拆成 `offerLocalFiles` + 可选副标题会出现「摆了框但说的是一句通用
+/// 谎话」的非法组合。
+///
+/// 勾选框顺序：同步在前、删本地文件在后。破坏性最强的那个不该是列表第一行、也不该
+/// 是 Tab 焦点第一个落点。
 ///
 /// TODO-2470 死角②：传 [db] 时先查本机有没有删除传播通道（
 /// [hasDeletionPropagationChannel]，纯本地零网络），没有就不渲染那个兑现不了的勾选框，
@@ -29,7 +34,6 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
   required String message,
   DeletionDisclosure? disclosure,
   FushiDatabase? db,
-  bool offerLocalFiles = false,
   String? localFilesSubtitle,
 }) async {
   final bool canSyncEverywhere =
@@ -42,7 +46,6 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
       message: message,
       disclosure: disclosure,
       canSyncEverywhere: canSyncEverywhere,
-      offerLocalFiles: offerLocalFiles,
       localFilesSubtitle: localFilesSubtitle,
     ),
   );
@@ -54,7 +57,6 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
     required this.message,
     this.disclosure,
     this.canSyncEverywhere = true,
-    this.offerLocalFiles = false,
     this.localFilesSubtitle,
   });
   final String title;
@@ -64,8 +66,8 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
   /// false = 本机无任何删除传播通道，勾了也不可能生效 → 不渲染勾选框，恒 keepLocalOnly。
   final bool canSyncEverywhere;
 
-  /// false = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
-  final bool offerLocalFiles;
+  /// null = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
+  /// 非 null = 渲染，且这句副标题必须如实说清这个入口到底删什么。
   final String? localFilesSubtitle;
 
   @override
@@ -104,28 +106,23 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
               ),
             ],
             SizedBox(height: tokens.spacing.gap),
-            if (widget.offerLocalFiles)
-              DeleteLocalFilesRow(
-                value: _deleteLocalFiles,
-                subtitle: widget.localFilesSubtitle,
-                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
-              ),
             if (widget.canSyncEverywhere)
-              AdaptiveSettingsRow(
+              DeleteConfirmCheckboxRow(
                 title: t.delete_scope_sync_everywhere,
                 subtitle: _syncDelete
                     ? t.delete_scope_sync_everywhere_desc
                     : t.delete_scope_keep_local_desc,
-                onTap: () => setState(() => _syncDelete = !_syncDelete),
-                trailing: Icon(
-                  _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
-                  color: _syncDelete
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+                value: _syncDelete,
+                onChanged: (bool v) => setState(() => _syncDelete = v),
               )
             else
               const DeleteScopeUnavailableNote(),
+            if (widget.localFilesSubtitle != null)
+              DeleteLocalFilesRow(
+                value: _deleteLocalFiles,
+                subtitle: widget.localFilesSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
+              ),
           ],
         ),
         footer: Wrap(
@@ -148,7 +145,7 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
                       ? DeleteScope.syncEverywhere
                       : DeleteScope.keepLocalOnly,
                   deleteLocalFiles:
-                      widget.offerLocalFiles && _deleteLocalFiles,
+                      widget.localFilesSubtitle != null && _deleteLocalFiles,
                 ),
               ),
               child: Text(t.dialog_delete),

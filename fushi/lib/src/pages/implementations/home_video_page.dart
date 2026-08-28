@@ -32,6 +32,7 @@ import 'package:fushi/src/media/video/video_cover_extractor.dart'
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/media/video/video_local_files.dart'
     show videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
@@ -1139,8 +1140,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           title: t.dialog_delete,
           message: message,
           db: ref.read(appProvider).database,
-          offerLocalFiles: anyLocalFile,
-          localFilesSubtitle: t.delete_local_files_video_desc);
+          localFilesSubtitle:
+              anyLocalFile ? t.delete_local_files_video_desc : null);
     } else {
       decision = await showAppDialog<DeleteDecision>(
         context: context,
@@ -1179,7 +1180,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     // 再删选中散卡的媒体本体（现状语义）。
     final Set<String> toDelete = Set<String>.of(_selectedUids);
-    final int deleted = await deleteVideoBooksWithDecision(
+    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
       repo: widget.repo,
       database: db,
       pipeline: appModel.videoDownloadPipelineService,
@@ -1192,6 +1193,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         await _waitForVideoCardsToUnmount();
       },
     );
+    final int deleted = result.deleted;
     // 纯解散合集时上面的视频删除集合为空，仍需刷新页面。
     if (toDelete.isEmpty && mounted) {
       _exitSelectionMode();
@@ -1215,6 +1217,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       severity: deleted > 0 || dissolved > 0
           ? ToastSeverity.success
           : ToastSeverity.warning,
+    );
+    reportLocalFileDeleteFailures(
+      result.localFiles,
+      source: 'HomeVideoPage.batchDeleteLocalFiles',
     );
   }
 
@@ -2410,11 +2416,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       message: t.video_delete_confirm(title: book.title),
       db: appModel.database,
       // 远端流（互联直传 / WebDAV / Jellyfin）磁盘上没有文件，不摆勾选框。
-      offerLocalFiles: videoBookHasLocalFiles(book),
-      localFilesSubtitle: t.delete_local_files_video_desc,
+      localFilesSubtitle: videoBookHasLocalFiles(book)
+          ? t.delete_local_files_video_desc
+          : null,
     );
     if (decision == null || !mounted) return;
-    await deleteVideoBooksWithDecision(
+    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
       repo: widget.repo,
       database: appModel.database,
       pipeline: appModel.videoDownloadPipelineService,
@@ -2425,6 +2432,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _refreshAfterTagChange();
         await _waitForVideoCardsToUnmount();
       },
+    );
+    if (!mounted) return;
+    reportLocalFileDeleteFailures(
+      result.localFiles,
+      source: 'HomeVideoPage.deleteLocalFiles',
     );
   }
 

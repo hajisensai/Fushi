@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "読書統計",
   "delete_disclosure_audiobook_files": "Fushiが内部ストレージにコピーした音声と同期字幕",
   "delete_disclosure_audiobook_book_kept": "書籍本体とその読書進捗",
-  "delete_disclosure_audiobook_source_kept": "インポートした元の音声ファイル",
+  "delete_disclosure_audio_source_files": "インポートした元の音声ファイル",
   "audiobook_delete": "オーディオブックを削除",
   "audiobook_delete_confirm": "添付されたオーディオブックを削除しますか？音声ファイルはこのデバイスから削除されます。",
   "delete_collection_confirm": "グループのみ削除されます。中のアイテムは保持されます。",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "一覧表示するライブラリ",
   "jellyfin_libraries_hint": "何も選ばないとすべての動画ライブラリを一覧表示します。実際に見るライブラリだけに絞ると、巨大なサーバーが丸ごと列挙されるのを防げます。",
   "jellyfin_libraries_load_failed": "ライブラリ一覧を読み込めませんでした",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "ローカルファイルも削除する",
+  "delete_local_files_video_desc": "動画ファイルをこの端末から削除し、対応するダウンロードタスクも消去します。元に戻せません。",
+  "delete_local_files_audio_desc": "元の音声ファイルをこの端末から削除します。書籍と字幕の元ファイルは残ります。元に戻せません。",
+  "delete_disclosure_book_source_kept": "インポートした元の書籍・字幕ファイル",
+  "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
+  "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります"
 }

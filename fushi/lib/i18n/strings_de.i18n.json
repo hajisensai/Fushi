@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Lesestatistiken",
   "delete_disclosure_audiobook_files": "Das Audio und die zugeordneten Untertitel, die Fushi in seinen eigenen Speicher kopiert hat",
   "delete_disclosure_audiobook_book_kept": "Das Buch selbst und sein Lesefortschritt",
-  "delete_disclosure_audiobook_source_kept": "Die Original-Audiodateien, die Sie importiert haben",
+  "delete_disclosure_audio_source_files": "Die Original-Audiodateien, die Sie importiert haben",
   "audiobook_delete": "Hörbuch löschen",
   "audiobook_delete_confirm": "Angehängtes Hörbuch löschen? Die Audiodateien werden von diesem Gerät entfernt.",
   "delete_collection_confirm": "Nur die Gruppierung wird entfernt. Die enthaltenen Einträge bleiben erhalten.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Aufzulistende Bibliotheken",
   "jellyfin_libraries_hint": "Nichts auswählen listet jede Videobibliothek auf. Auf die Bibliotheken zu beschränken, die du wirklich schaust, verhindert, dass riesige Server komplett durchlaufen werden.",
   "jellyfin_libraries_load_failed": "Bibliotheksliste konnte nicht geladen werden",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Lokale Dateien ebenfalls löschen",
+  "delete_local_files_video_desc": "Die Videodatei wird von diesem Gerät entfernt und der zugehörige Download-Auftrag ebenfalls gelöscht. Das lässt sich nicht rückgängig machen.",
+  "delete_local_files_audio_desc": "Die ursprünglichen Audiodateien werden von diesem Gerät entfernt; die Original-Buch- und Untertiteldateien bleiben erhalten. Das lässt sich nicht rückgängig machen.",
+  "delete_disclosure_book_source_kept": "Die von dir importierten Original-Buch- und Untertiteldateien",
+  "download_task_delete_files_failed": "Die heruntergeladenen Daten konnten nicht gelöscht werden; der Download-Dienst hat es nicht bestätigt",
+  "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung"
 }

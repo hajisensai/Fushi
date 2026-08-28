@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Estatísticas de leitura",
   "delete_disclosure_audiobook_files": "O áudio e legendas alinhadas que o Fushi copiou para seu próprio armazenamento",
   "delete_disclosure_audiobook_book_kept": "O livro em si e seu progresso de leitura",
-  "delete_disclosure_audiobook_source_kept": "Os arquivos de áudio originais que você importou",
+  "delete_disclosure_audio_source_files": "Os arquivos de áudio originais que você importou",
   "audiobook_delete": "Excluir audiobook",
   "audiobook_delete_confirm": "Excluir o audiobook anexado? Seus arquivos de áudio são removidos deste dispositivo.",
   "delete_collection_confirm": "Apenas o agrupamento é removido. Os itens nele são mantidos.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Bibliotecas a listar",
   "jellyfin_libraries_hint": "Não selecionar nada lista todas as bibliotecas de vídeo. Restringir às bibliotecas que você realmente assiste evita que servidores enormes sejam enumerados por completo.",
   "jellyfin_libraries_load_failed": "Não foi possível carregar a lista de bibliotecas",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Excluir também os arquivos locais",
+  "delete_local_files_video_desc": "O arquivo de vídeo é removido deste dispositivo e a tarefa de download correspondente também. Isso não pode ser desfeito.",
+  "delete_local_files_audio_desc": "Os arquivos de áudio originais são removidos deste dispositivo; os arquivos originais do livro e das legendas são mantidos. Isso não pode ser desfeito.",
+  "delete_disclosure_book_source_kept": "Os arquivos originais do livro e das legendas que você importou",
+  "download_task_delete_files_failed": "Não foi possível excluir os dados baixados; o mecanismo de download não confirmou",
+  "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso"
 }

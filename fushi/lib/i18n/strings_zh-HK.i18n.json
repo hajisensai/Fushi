@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "閱讀統計",
   "delete_disclosure_audiobook_files": "Fushi 復製到自己存儲目錄裡的音頻和對齊字幕",
   "delete_disclosure_audiobook_book_kept": "書籍本身和它的閱讀進度",
-  "delete_disclosure_audiobook_source_kept": "你導入時選擇的原始音頻檔案",
+  "delete_disclosure_audio_source_files": "你導入時選擇的原始音頻檔案",
   "audiobook_delete": "刪除有聲書",
   "audiobook_delete_confirm": "刪除已附加的有聲書？它的音頻檔案會從本機刪除。",
   "delete_collection_confirm": "只解除分組，其中的條目會保留。",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "要列出的媒體庫",
   "jellyfin_libraries_hint": "不選 = 列出全部影片媒體庫。只勾你真正會看的庫，超大伺服器就不會被整台列舉。",
   "jellyfin_libraries_load_failed": "讀取媒體庫清單失敗",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "同時刪除本機檔案",
+  "delete_local_files_video_desc": "影片檔案將從本機刪除，對應的下載工作一併清除，無法復原",
+  "delete_local_files_audio_desc": "原始音訊檔案將從本機刪除；書籍與字幕原檔保留，無法復原",
+  "delete_disclosure_book_source_kept": "你匯入時選擇的原始書籍與字幕檔案",
+  "download_task_delete_files_failed": "已下載的資料未能刪除：下載引擎沒有確認",
+  "delete_local_files_failed": "有 $n 個本機檔案刪除失敗，可能正在被使用"
 }

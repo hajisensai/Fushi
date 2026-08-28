@@ -10,6 +10,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/video_local_files.dart'
+    show LocalVideoFileDeleteHooks;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -155,6 +157,90 @@ void main() {
       );
     });
 
+    test('别的集被改名/移走（DB 路径已过期）→ 归属判据不翻转，绝不整删', () async {
+      // 这是「拿存在性检查当归属判据」的具体炸法：用户在资源管理器里改名/移动
+      // 了 e2，或者换了盘符、qB 改了保存路径——DB 里那条路径就指不到文件了。
+      // 旧判据据此认定「别的视频都没了」，于是删一集连整个种子的数据一起删。
+      final File e1 = touch('e1.mkv');
+      final File e2 = touch('e2.mkv');
+      await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
+      await insertFile('job', e1, index: 0);
+      await insertFile('job', e2, index: 1);
+      e1.deleteSync();
+      final String renamed = p.join(tmp.path, 'e2-renamed.mkv');
+      e2.renameSync(renamed);
+
+      await reconcileVideoDownloadJobsAfterLocalDelete(
+        database: db,
+        deletedPaths: <String>{e1.path},
+      );
+
+      expect(
+        await db.getVideoDownloadJob('job'),
+        isNotNull,
+        reason: '本次删除只覆盖了 e1，e2 那条 video 行没被覆盖 → 任务不能整删',
+      );
+      expect(File(renamed).existsSync(), isTrue, reason: '改名后的那一集必须还在');
+      final Map<String, String> status = <String, String>{
+        for (final VideoDownloadJobFileRow f
+            in await db.getVideoDownloadJobFiles('job'))
+          f.originalRelativePath: f.status,
+      };
+      expect(status['e1.mkv'], VideoDownloadJobFileStatus.skipped);
+      expect(status['e2.mkv'], VideoDownloadJobFileStatus.imported);
+    });
+
+    test('有 kind=video 行没记落盘路径 → 不算被覆盖，不整删', () async {
+      // `finalAbsolutePath` 为空的行以前被 `continue` 当成「不存在」，是同方向的
+      // 第二个洞：判不出它指向哪，就不能拿它当整删的依据。
+      final File e1 = touch('e1.mkv');
+      await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
+      await insertFile('job', e1, index: 0);
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await db.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: 'job',
+          backendFileIndex: const Value<int?>(1),
+          originalRelativePath: 'e2.mkv',
+          currentRelativePath: 'e2.mkv',
+          kind: const Value<String>('video'),
+          status: const Value<String>(VideoDownloadJobFileStatus.pending),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      e1.deleteSync();
+
+      await reconcileVideoDownloadJobsAfterLocalDelete(
+        database: db,
+        deletedPaths: <String>{e1.path},
+      );
+
+      expect(await db.getVideoDownloadJob('job'), isNotNull);
+    });
+
+    test('大小写不同的路径仍然命中同一条文件行（Windows）', () async {
+      final File e1 = touch('Ep01.mkv');
+      await insertJob('job', lifecycle: VideoDownloadJobLifecycle.active);
+      await insertFile('job', e1, index: 0);
+      e1.deleteSync();
+
+      await reconcileVideoDownloadJobsAfterLocalDelete(
+        database: db,
+        deletedPaths: <String>{e1.path.toLowerCase()},
+      );
+
+      final String status =
+          (await db.getVideoDownloadJobFiles('job')).single.status;
+      expect(
+        status,
+        Platform.isWindows
+            ? VideoDownloadJobFileStatus.skipped
+            : VideoDownloadJobFileStatus.imported,
+        reason: 'Windows 上大小写不同 = 同一个文件；大小写敏感平台上不是',
+      );
+    });
+
     test('路径不命中任何任务 → 无副作用', () async {
       final File e1 = touch('e1.mkv');
       await insertJob('job', lifecycle: VideoDownloadJobLifecycle.completed);
@@ -177,15 +263,25 @@ void main() {
       await insertVideo('video/movie', v.path);
       Set<String>? reported;
 
+      List<String>? prepared;
       final int deleted = await repo.deleteVideoBooksAndReclaimAssets(
         <String>['video/movie'],
         deleteLocalFiles: true,
         compactDatabase: false,
-        onLocalFilesDeleted: (Set<String> paths) async => reported = paths,
+        localFileHooks: LocalVideoFileDeleteHooks(
+          beforeDelete: (List<String> candidates) async {
+            // 删磁盘之前跑，此刻文件必须还在——先让引用方放手，再销毁实体。
+            prepared = candidates;
+            expect(v.existsSync(), isTrue);
+          },
+          afterDelete: (LocalFileDeleteReport report) async =>
+              reported = report.removedSet,
+        ),
       );
 
       expect(deleted, 1);
       expect(v.existsSync(), isFalse);
+      expect(prepared, <String>[v.path]);
       expect(reported, <String>{v.path});
       expect(await repo.getByBookUid('video/movie'), isNull);
     });
@@ -208,10 +304,13 @@ void main() {
         <String>['video/a'],
         deleteLocalFiles: true,
         compactDatabase: false,
-        onLocalFilesDeleted: (_) async => called = true,
+        localFileHooks: LocalVideoFileDeleteHooks(
+          beforeDelete: (_) async => called = true,
+          afterDelete: (_) async => called = true,
+        ),
       );
       expect(v.existsSync(), isTrue);
-      expect(called, isFalse);
+      expect(called, isFalse, reason: '一个候选都不剩时前后挂钩都不该跑');
       expect(await repo.getByBookUid('video/ext/b'), isNotNull);
     });
 
@@ -222,7 +321,10 @@ void main() {
         <String>['video/remote'],
         deleteLocalFiles: true,
         compactDatabase: false,
-        onLocalFilesDeleted: (_) async => called = true,
+        localFileHooks: LocalVideoFileDeleteHooks(
+          beforeDelete: (_) async => called = true,
+          afterDelete: (_) async => called = true,
+        ),
       );
       expect(called, isFalse);
     });

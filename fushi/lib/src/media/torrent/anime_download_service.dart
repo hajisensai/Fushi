@@ -218,6 +218,27 @@ String sidecarPathFor(String videoAbsolutePath, PlanSubtitle sub) {
 ///
 /// 职责边界：**不直接碰 Drift/仓库**——入库逻辑经 [importer] 回调注入
 /// （AppModel 接线时组装 importSplitPlaylist 等），使本服务可纯 fake 测试。
+/// [AnimeDownloadService.deletePlan] 的结果。
+///
+/// 三个事实必须分开回报，揉成一个 bool 就必然有一个被谎报：计划有没有从本地记录里
+/// 消失、后端的数据有没有真的删掉、以及「压根没有可用的删除后端」这个状态。
+class AnimeDownloadPlanDeleteResult {
+  const AnimeDownloadPlanDeleteResult({
+    required this.planRemoved,
+    this.filesDeleted = false,
+    this.backendUnavailable = false,
+  });
+
+  /// 计划已从本地计划表消失。
+  final bool planRemoved;
+
+  /// 用户勾了「同时删除已下载文件」，且后端确认摘种子 + 删数据成功。
+  final bool filesDeleted;
+
+  /// 本机没有配好可摘种子的下载后端——此时 `deleteFiles` 无从兑现。
+  final bool backendUnavailable;
+}
+
 class AnimeDownloadService {
   AnimeDownloadService({
     required this.store,
@@ -502,41 +523,63 @@ class AnimeDownloadService {
   ///
   /// [deleteFiles]：连后端已下载的数据一起删（`removeTorrent(deleteFiles: true)`）。
   /// 计划本身不记录落盘路径，包内视频的绝对路径只有种子还在后端时才反查得到，
-  /// 所以在摘种子**之前**先 `listFiles` 解析出来，删完经 [onFilesDeleted] 回给
-  /// 调用方（用来清掉已入库的视频行——旧计划入库后库行与文件之间同样只有路径
-  /// 这一条纽带）。种子已不在后端时无从反查，回调不触发。
-  Future<bool> deletePlan(
+  /// 所以在摘种子**之前**先 `listFiles` 解析出来，**并且只有 `removeTorrent` 真的
+  /// 返回成功时**才经 [onFilesDeleted] 回给调用方（用来清掉已入库的视频行——旧计划
+  /// 入库后库行与文件之间同样只有路径这一条纽带）。以前这个回调是「摘种子之前解析、
+  /// 之后无条件触发」，后端离线或摘种子失败时文件明明还在，库行却被清掉了。
+  ///
+  /// 返回 [AnimeDownloadPlanDeleteResult]，而不是一个「计划没了」的裸 bool：
+  /// 没有配好后端、或后端不支持摘种子时，[deleteFiles] 以前被**静默丢弃**——用户在
+  /// 确认框里勾了「同时删除已下载文件」，计划消失、文件一个没删，还被告知成功。
+  /// 现在这两种情况如实回报 [AnimeDownloadPlanDeleteResult.filesDeleted]=false +
+  /// [AnimeDownloadPlanDeleteResult.backendUnavailable]，由 UI 决定怎么说。
+  Future<AnimeDownloadPlanDeleteResult> deletePlan(
     String planId, {
     bool deleteFiles = false,
     Future<void> Function(List<String> videoAbsolutePaths)? onFilesDeleted,
   }) =>
-      _runPlanSerial<bool>(planId, () async {
+      _runPlanSerial<AnimeDownloadPlanDeleteResult>(planId, () async {
         final QbConnectionConfig? config = _configProvider();
         List<String> deletedVideos = const <String>[];
+        bool backendUnavailable = true;
+        bool filesDeleted = false;
         if (config != null && config.isConfigured) {
           final TorrentBackend backend = _backendFactory(config);
           try {
-            if (deleteFiles && onFilesDeleted != null) {
+            if (deleteFiles) {
               deletedVideos = await _resolvePlanVideoPaths(backend, planId);
             }
             if (backend is TorrentRemovalBackend) {
-              await backend.removeTorrent(planId, deleteFiles: deleteFiles);
+              backendUnavailable = false;
+              final bool removed = await backend.removeTorrent(
+                planId,
+                deleteFiles: deleteFiles,
+              );
+              filesDeleted = deleteFiles && removed;
             }
           } finally {
             backend.close();
           }
         }
         await store.delete(planId);
-        if (deletedVideos.isNotEmpty && onFilesDeleted != null) {
+        if (filesDeleted && deletedVideos.isNotEmpty && onFilesDeleted != null) {
           await onFilesDeleted(deletedVideos);
         }
-        return !(await store.loadAll()).any(
-          (AnimeDownloadPlan plan) => plan.id == planId,
+        return AnimeDownloadPlanDeleteResult(
+          planRemoved: !(await store.loadAll()).any(
+            (AnimeDownloadPlan plan) => plan.id == planId,
+          ),
+          filesDeleted: filesDeleted,
+          backendUnavailable: backendUnavailable,
         );
       });
 
   /// 种子仍在后端时反查这个计划包内视频文件的绝对路径；查不到（种子已摘 / 后端
   /// 离线 / 元数据未解析）返回空表，绝不抛——它只服务 best-effort 的库行清理。
+  ///
+  /// 按 **hash** 找，不按分类过滤：删除本身就是按 hash 执行的，反查却先按
+  /// `config.category` 筛一道，用户在 qB 里改过这个种子的分类就静默漏清（种子明明
+  /// 还在，却当成「查不到」）。归属判据只能有一个，就是 hash。
   Future<List<String>> _resolvePlanVideoPaths(
     TorrentBackend backend,
     String planId,
@@ -550,12 +593,7 @@ class AnimeDownloadService {
         }
       }
       if (plan == null) return const <String>[];
-      final QbConnectionConfig? config = _configProvider();
-      final List<TorrentSnapshot> torrents = await backend.listTorrents(
-        category: config == null || config.category.isEmpty
-            ? null
-            : config.category,
-      );
+      final List<TorrentSnapshot> torrents = await backend.listTorrents();
       for (final TorrentSnapshot info in torrents) {
         if (info.hash.toLowerCase() != planId.toLowerCase()) continue;
         final List<TorrentFileEntry> files = await backend.listFiles(info.hash);

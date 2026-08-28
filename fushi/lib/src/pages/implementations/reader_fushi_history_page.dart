@@ -76,6 +76,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -1971,13 +1972,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 弹删除确认框，返回用户的 [DeleteDecision]（scope：[DeleteScope.syncEverywhere]
   /// = 同步删除到其他设备 / [DeleteScope.keepLocalOnly] = 仅本机；deleteLocalFiles：
-  /// 是否连原始音频文件一起删，仅 [offerLocalFiles] 时可勾）；取消或已 unmount 返回
+  /// 是否连原始音频文件一起删，仅 [localFilesSubtitle] 非 null 时可勾）；取消或已 unmount 返回
   /// null。
   Future<DeleteDecision?> _confirmMediaDelete({
     required String title,
     required String message,
     DeletionDisclosure? disclosure,
-    bool offerLocalFiles = false,
+    String? localFilesSubtitle,
   }) async {
     // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
@@ -1991,7 +1992,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         message: message,
         disclosure: disclosure,
         showSyncScope: canSyncEverywhere,
-        offerLocalFiles: offerLocalFiles,
+        localFilesSubtitle: localFilesSubtitle,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
       ),
     );

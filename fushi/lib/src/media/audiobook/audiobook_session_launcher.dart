@@ -190,13 +190,19 @@ class AudiobookSessionLauncher {
     return null;
   }
 
-  /// 原件解析的单一真相在 fushi_audio 的 [resolveAudiobookSourceFiles]：删除
-  /// 确认框「同时删除本地文件」删的就是这里装载的同一批文件。
+  /// 播放装载的文件解析在 fushi_audio 的 [resolveAudiobookPlaybackFiles]。
+  ///
+  /// 注意它**不是**删除判据：`audioPaths` 为空时这里会枚举 `audioRoot` 整个目录，
+  /// 多认一个文件顶多多一条轨；删除走 `audiobook_local_files.dart`，只认显式登记
+  /// 的路径。
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
     required String? audioRoot,
   }) =>
-      resolveAudiobookSourceFiles(audioPaths: audioPaths, audioRoot: audioRoot);
+      resolveAudiobookPlaybackFiles(
+        audioPaths: audioPaths,
+        audioRoot: audioRoot,
+      );
 
   Audiobook _audiobookFromRow(AudiobookRow row) {
     final Audiobook ab = Audiobook()

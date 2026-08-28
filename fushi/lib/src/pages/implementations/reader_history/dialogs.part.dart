@@ -4,8 +4,9 @@ part of '../reader_fushi_history_page.dart';
 /// 书架删除确认弹窗。[onConfirm] 回传用户的 [DeleteDecision]：scope 来自「同步删除」
 /// 勾选框（勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=
 /// [DeleteScope.keepLocalOnly] 只删本机），deleteLocalFiles 来自「同时删除本地文件」
-/// 勾选框（仅 [offerLocalFiles] 时渲染——书/PDF/漫画导入即拷贝进 app 目录、原件路径
-/// 根本没入库，只有记录了原始音频路径的有声书/字幕书才有本机可删的原件）。
+/// 勾选框（仅 [localFilesSubtitle] 非 null 时渲染——书/PDF/漫画导入即拷贝进 app 目录、
+/// 原件路径根本没入库，只有显式登记了 app 目录之外的原始音频路径的有声书/字幕书才有
+/// 本机可删的原件）。副标题必须由调用方给出、如实说清删的是什么，不能回落到通用措辞。
 /// [showSyncScope]=false 时把同步勾选框换成 [DeleteScopeUnavailableNote] 说明行、恒
 /// keepLocalOnly——由调用方按 `hasDeletionPropagationChannel` 传入：本机一个同步通道
 /// 都没有时，那个勾选框兑现不了（TODO-2470 死角②）。取消返回 null。
@@ -16,7 +17,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
     required this.message,
     required this.onConfirm,
     this.showSyncScope = true,
-    this.offerLocalFiles = false,
+    this.localFilesSubtitle,
     this.disclosure,
     super.key,
   });
@@ -25,7 +26,9 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   final String message;
   final ValueChanged<DeleteDecision> onConfirm;
   final bool showSyncScope;
-  final bool offerLocalFiles;
+
+  /// null = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
+  final String? localFilesSubtitle;
 
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
@@ -75,27 +78,25 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
               ),
             ],
             SizedBox(height: tokens.spacing.gap),
-            if (widget.offerLocalFiles)
-              DeleteLocalFilesRow(
-                value: _deleteLocalFiles,
-                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
-              ),
             if (widget.showSyncScope)
-              AdaptiveSettingsRow(
+              DeleteConfirmCheckboxRow(
                 title: t.delete_scope_sync_everywhere,
                 subtitle: _syncDelete
                     ? t.delete_scope_sync_everywhere_desc
                     : t.delete_scope_keep_local_desc,
-                onTap: () => setState(() => _syncDelete = !_syncDelete),
-                trailing: Icon(
-                  _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
-                  color: _syncDelete
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+                value: _syncDelete,
+                onChanged: (bool v) => setState(() => _syncDelete = v),
               )
             else
               const DeleteScopeUnavailableNote(),
+            // 破坏性最强的选项排在同步勾选框之后：它不该是列表第一行、也不该是
+            // Tab 焦点第一个落点。
+            if (widget.localFilesSubtitle != null)
+              DeleteLocalFilesRow(
+                value: _deleteLocalFiles,
+                subtitle: widget.localFilesSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
+              ),
           ],
         ),
         footer: Wrap(
@@ -117,7 +118,7 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
                       ? DeleteScope.syncEverywhere
                       : DeleteScope.keepLocalOnly,
                   deleteLocalFiles:
-                      widget.offerLocalFiles && _deleteLocalFiles,
+                      widget.localFilesSubtitle != null && _deleteLocalFiles,
                 ),
               ),
               child: Text(t.dialog_delete),

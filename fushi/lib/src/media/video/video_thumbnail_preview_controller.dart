@@ -352,8 +352,10 @@ class OffscreenVideoFrameGrabber {
     this.consecutiveFailureLimit = 3,
     this.ffmpegTempDir,
   }) {
-    _mediaHandleRegistration =
-        MediaHandleRegistry.instance.register(_releaseMediaHandles);
+    _mediaHandleRegistration = MediaHandleRegistry.instance.register(
+      _releaseMediaHandles,
+      mediaPath: () => videoPath,
+    );
   }
 
   /// 本地视频文件绝对路径（远端流不应构造本类，调用方先门控）。

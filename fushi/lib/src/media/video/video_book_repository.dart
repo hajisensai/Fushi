@@ -743,7 +743,7 @@ class VideoBookRepository {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
     bool deleteLocalFiles = false,
-    Future<void> Function(Set<String> deletedPaths)? onLocalFilesDeleted,
+    LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
   }) {
     return deleteVideoBooksAndReclaimAssets(
@@ -751,7 +751,7 @@ class VideoBookRepository {
       scope: scope,
       compactDatabase: compactDatabase,
       deleteLocalFiles: deleteLocalFiles,
-      onLocalFilesDeleted: onLocalFilesDeleted,
+      localFileHooks: localFileHooks,
       afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
     ).then((int deletedCount) => deletedCount > 0);
   }
@@ -765,15 +765,17 @@ class VideoBookRepository {
   /// [deleteLocalFiles]（删除确认框「同时删除本地文件」）：行删掉、UI 释放句柄之后，
   /// 再把被删行自己的原始视频文件（`videoPath` + 播放列表各集，见
   /// [localVideoFileCandidates]）从磁盘删掉。护栏：仍被任何幸存行引用的文件保留；
-  /// 远端流没有文件；只删文件不删目录。真删掉的路径经 [onLocalFilesDeleted] 回调
-  /// 给调用方（用来联动清下载任务——下载记录与库行之间只有路径这一条纽带，而
-  /// 本仓库层不认识下载管线）。
+  /// 远端流没有文件；相对路径不删；只删文件不删目录。
+  ///
+  /// [localFileHooks] 是这条尾活的前后挂钩：删之前先让引用方放手（下载后端把该
+  /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
+  /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
   Future<int> deleteVideoBooksAndReclaimAssets(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
     bool deleteLocalFiles = false,
-    Future<void> Function(Set<String> deletedPaths)? onLocalFilesDeleted,
+    LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
   }) {
     final VideoScrapeOperationLease? lease =
@@ -787,7 +789,7 @@ class VideoBookRepository {
         scope: scope,
         compactDatabase: compactDatabase,
         deleteLocalFiles: deleteLocalFiles,
-        onLocalFilesDeleted: onLocalFilesDeleted,
+        localFileHooks: localFileHooks,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
       ),
     ).whenComplete(lease.release);
@@ -798,8 +800,7 @@ class VideoBookRepository {
     required DeleteScope scope,
     required bool compactDatabase,
     required bool deleteLocalFiles,
-    required Future<void> Function(Set<String> deletedPaths)?
-        onLocalFilesDeleted,
+    required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
   }) async {
     final deleted =
@@ -849,25 +850,36 @@ class VideoBookRepository {
       }
       if (deleteLocalFiles && deleted.isNotEmpty) {
         // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
-        // 单文件失败只记日志（[deleteLocalVideoFiles] 内部），不翻转删除结果。
-        final Set<String> removed = await deleteLocalVideoFiles(
-          candidates: <String>[
-            for (final snapshot in deleted)
-              ...localVideoFileCandidates(
-                videoPath: snapshot.videoPath,
-                playlistJson: snapshot.playlistJson,
-              ),
-          ],
-          stillReferenced: referencedLocalVideoPaths(await listAll()),
+        // 单文件失败逐条回传（[LocalFileDeleteReport]），不翻转删除结果。
+        final Set<String> stillReferenced = referencedLocalVideoPaths(
+          await listAll(),
         );
-        if (removed.isNotEmpty && onLocalFilesDeleted != null) {
-          try {
-            await onLocalFilesDeleted(removed);
-          } catch (e, stack) {
-            debugPrint(
-              'VideoBookRepository: onLocalFilesDeleted failed: $e\n$stack',
-            );
+        final List<String> candidates = <String>[
+          for (final snapshot in deleted)
+            for (final String path in localVideoFileCandidates(
+              videoPath: snapshot.videoPath,
+              playlistJson: snapshot.playlistJson,
+            ))
+              if (!stillReferenced.contains(platformPathKey(path))) path,
+        ];
+        if (candidates.isNotEmpty) {
+          // 先让引用方放手，再销毁实体：还在做种的文件必须先在下载后端标 skip，
+          // 否则文件一消失，libtorrent / qB 下一次校验就把整个种子停掉。
+          await _runLocalFileHook(
+            'beforeDelete',
+            () => localFileHooks?.beforeDelete?.call(candidates),
+          );
+          final LocalFileDeleteReport report = await deleteLocalVideoFiles(
+            candidates: candidates,
+            stillReferenced: stillReferenced,
+          );
+          for (final LocalFileDeleteFailure failure in report.failures) {
+            ErrorLogService.instance.log('VideoLocalFileDelete', failure);
           }
+          await _runLocalFileHook(
+            'afterDelete',
+            () => localFileHooks?.afterDelete?.call(report),
+          );
         }
       }
       if (compactDatabase && deleted.isNotEmpty) {
@@ -875,6 +887,23 @@ class VideoBookRepository {
       }
     }
     return deleted.length;
+  }
+
+  /// 跑一个 [LocalVideoFileDeleteHooks] 挂钩：挂钩失败只记日志，绝不翻转「行已删、
+  /// 文件已删」这个既成事实（与本方法其它尾活同一纪律）。
+  Future<void> _runLocalFileHook(
+    String name,
+    Future<void>? Function() run,
+  ) async {
+    try {
+      await run();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'VideoBookRepository.localFileHook.$name',
+        e,
+        stack,
+      );
+    }
   }
 
   /// Reclaims app-owned video assets for a row that has already been deleted.

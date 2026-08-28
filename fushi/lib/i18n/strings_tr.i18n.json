@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Okuma istatistikleri",
   "delete_disclosure_audiobook_files": "Fushi'nin kendi depolama alanına kopyaladığı ses ve hizalanmış altyazılar",
   "delete_disclosure_audiobook_book_kept": "Kitabın kendisi ve okuma ilerlemesi",
-  "delete_disclosure_audiobook_source_kept": "İçe aktardığınız orijinal ses dosyaları",
+  "delete_disclosure_audio_source_files": "İçe aktardığınız orijinal ses dosyaları",
   "audiobook_delete": "Sesli kitabı sil",
   "audiobook_delete_confirm": "Ekli sesli kitap silinsin mi? Ses dosyaları bu cihazdan kaldırılacak.",
   "delete_collection_confirm": "Yalnızca gruplama kaldırılır. İçindeki öğeler korunur.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Listelenecek kitaplıklar",
   "jellyfin_libraries_hint": "Hiçbir şey seçmezseniz tüm video kitaplıkları listelenir. Gerçekten izlediğiniz kitaplıklarla sınırlamak, devasa sunucuların baştan sona sayılmasını önler.",
   "jellyfin_libraries_load_failed": "Kitaplık listesi yüklenemedi",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Yerel dosyaları da sil",
+  "delete_local_files_video_desc": "Video dosyası bu cihazdan silinir ve ilgili indirme görevi de temizlenir. Bu geri alınamaz.",
+  "delete_local_files_audio_desc": "Özgün ses dosyaları bu cihazdan silinir; kitap ve altyazı asılları korunur. Bu geri alınamaz.",
+  "delete_disclosure_book_source_kept": "İçe aktardığın özgün kitap ve altyazı dosyaları",
+  "download_task_delete_files_failed": "İndirilen veriler silinemedi; indirme motoru bunu onaylamadı",
+  "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir"
 }

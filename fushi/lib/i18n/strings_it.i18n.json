@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Statistiche di lettura",
   "delete_disclosure_audiobook_files": "L'audio e i sottotitoli allineati che Fushi ha copiato nel suo archivio",
   "delete_disclosure_audiobook_book_kept": "Il libro stesso e il suo progresso di lettura",
-  "delete_disclosure_audiobook_source_kept": "I file audio originali importati",
+  "delete_disclosure_audio_source_files": "I file audio originali importati",
   "audiobook_delete": "Elimina audiolibro",
   "audiobook_delete_confirm": "Eliminare l'audiolibro allegato? I suoi file audio vengono rimossi da questo dispositivo.",
   "delete_collection_confirm": "Solo il raggruppamento viene rimosso. Gli elementi vengono mantenuti.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Librerie da elencare",
   "jellyfin_libraries_hint": "Non selezionare nulla elenca tutte le librerie video. Limitarsi alle librerie che guardi davvero evita che server enormi vengano enumerati per intero.",
   "jellyfin_libraries_load_failed": "Impossibile caricare l'elenco delle librerie",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Elimina anche i file locali",
+  "delete_local_files_video_desc": "Il file video viene rimosso da questo dispositivo, insieme al relativo processo di download. L'operazione non è reversibile.",
+  "delete_local_files_audio_desc": "I file audio originali vengono rimossi da questo dispositivo; i file originali del libro e dei sottotitoli restano. L'operazione non è reversibile.",
+  "delete_disclosure_book_source_kept": "I file originali del libro e dei sottotitoli che hai importato",
+  "download_task_delete_files_failed": "Non è stato possibile eliminare i dati scaricati; il motore di download non lo ha confermato",
+  "delete_local_files_failed": "Impossibile eliminare $n file locali; potrebbero essere ancora in uso"
 }

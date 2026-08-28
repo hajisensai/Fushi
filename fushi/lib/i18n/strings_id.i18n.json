@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Statistik bacaan",
   "delete_disclosure_audiobook_files": "Audio dan subtitle yang diselaraskan yang disalin Fushi ke penyimpanan sendiri",
   "delete_disclosure_audiobook_book_kept": "Buku itu sendiri dan progres bacaannya",
-  "delete_disclosure_audiobook_source_kept": "File audio asli yang Anda impor",
+  "delete_disclosure_audio_source_files": "File audio asli yang Anda impor",
   "audiobook_delete": "Hapus buku audio",
   "audiobook_delete_confirm": "Hapus buku audio terlampir? File audionya akan dihapus dari perangkat ini.",
   "delete_collection_confirm": "Hanya pengelompokan yang dihapus. Item di dalamnya dipertahankan.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Pustaka yang didaftarkan",
   "jellyfin_libraries_hint": "Tidak memilih apa pun akan mendaftarkan semua pustaka video. Membatasi ke pustaka yang benar-benar Anda tonton mencegah server raksasa didaftar seluruhnya.",
   "jellyfin_libraries_load_failed": "Tidak dapat memuat daftar pustaka",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Hapus juga berkas lokal",
+  "delete_local_files_video_desc": "Berkas video dihapus dari perangkat ini beserta tugas unduhannya. Tindakan ini tidak dapat dibatalkan.",
+  "delete_local_files_audio_desc": "Berkas audio asli dihapus dari perangkat ini; berkas buku dan takarir asli tetap disimpan. Tindakan ini tidak dapat dibatalkan.",
+  "delete_disclosure_book_source_kept": "Berkas buku dan takarir asli yang kamu impor",
+  "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
+  "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan"
 }

@@ -7,10 +7,27 @@ import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_model.dart';
 import 'audiobook_path_relocator.dart';
 import 'audiobook_repository.dart';
-import 'audiobook_source_files.dart';
+import 'audiobook_local_files.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
 import '../parsers/srt_parser.dart';
+
+/// [SrtBookRepository.delete] 的结果：删掉几行 + 用户原件的逐条删除结果。
+///
+/// 行数与原件结果分开：前者是「这条记录还在不在」（BUG-439 的计数判据），后者是
+/// 「磁盘上少了什么、哪些没删掉」。把后者揉进 int 就等于把删除失败丢掉。
+class SrtBookDeleteResult {
+  const SrtBookDeleteResult({
+    required this.deleted,
+    this.localFiles = const LocalFileDeleteReport(),
+  });
+
+  /// 真的从 `srt_books` 删掉的行数（0 = uid 没匹配到）。
+  final int deleted;
+
+  /// 「同时删除本地文件」的逐条结果；没勾选时恒为空。
+  final LocalFileDeleteReport localFiles;
+}
 
 class SrtBookRepository {
   const SrtBookRepository(this._db);
@@ -339,9 +356,9 @@ class SrtBookRepository {
     return true;
   }
 
-  /// Deletes the SRT book + its on-disk persist dir. Returns the number of
-  /// srt_books rows actually removed (0 when [uid] matched nothing) so callers
-  /// can count only real deletions (BUG-439).
+  /// Deletes the SRT book + its on-disk persist dir. [SrtBookDeleteResult
+  /// .deleted] is the number of srt_books rows actually removed (0 when [uid]
+  /// matched nothing) so callers can count only real deletions (BUG-439).
   ///
   /// [propagateDeletion]（默认 false）：true 时记一条 `srtbook` sync 删除墓碑，供同步
   /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「从所有设备删除」）。false
@@ -353,9 +370,10 @@ class SrtBookRepository {
   /// 跨设备身份就是 uid。srt-backed 行（`bookKey` 非空）的身份是 bookKey，它的墓碑由
   /// `ReaderFushiSource.deleteBook` 写成 `book` 种类——两者互斥，同一资产绝不会产生
   /// 两条墓碑、也就不会在对端弹出两条重复的删除确认。
-  /// [deleteLocalFiles]（默认 false）：true 时连登记的原始音频文件一起删
-  /// （[deleteAudiobookSourceFiles]，对应删除弹窗「同时删除本地文件」）。
-  Future<int> delete(
+  /// [deleteLocalFiles]（默认 false）：true 时连显式登记的原始音频文件一起删
+  /// （[deleteAudiobookLocalFiles]，对应删除弹窗「同时删除本地文件」）。删除结果在
+  /// [SrtBookDeleteResult.localFiles] 里逐条回传，调用方负责记日志并告诉用户。
+  Future<SrtBookDeleteResult> delete(
     String uid, {
     bool propagateDeletion = false,
     bool deleteLocalFiles = false,
@@ -365,16 +383,11 @@ class SrtBookRepository {
     final bool standalone =
         propagateDeletion && (before?.bookKey.isEmpty ?? false);
     final int deleted = await _db.deleteSrtBookByUid(uid);
-    if (deleteLocalFiles && before != null) {
-      await deleteAudiobookSourceFiles(
-        audioPaths: _decodeAudioPaths(before.audioPathsJson),
-        audioRoot: before.audioRoot,
-      );
-    }
-    // 墓碑写在磁盘清理**之前**：DB 行是唯一真相源，此刻这本书对用户已经消失；持久化
-    // 目录删除是删完再打扫的尾活，Windows 上可能因句柄占用抛 errno 32/145。若把墓碑
-    // 排在它后面，一次尾活失败就会静默吞掉用户「从所有设备删除」的意图（同 TODO-1359
-    // 那类「尾活失败翻转结果」的坑）。
+    // 墓碑写在**任何**磁盘操作之前：DB 行是唯一真相源，此刻这本书对用户已经消失；
+    // 持久化目录删除与原件删除都是删完再打扫的尾活，Windows 上可能因句柄占用抛
+    // errno 32/145，且原件删除的解析阶段本身也会抛（权限拒绝 / 网络盘掉线）。若把
+    // 墓碑排在它们后面，一次尾活失败就会静默吞掉用户「从所有设备删除」的意图
+    // （同 TODO-1359 那类「尾活失败翻转结果」的坑）。
     if (deleted > 0 && standalone) {
       try {
         await _db.writeSyncDeletionTombstone(SyncTombstoneKind.srtbook.dbValue,
@@ -384,10 +397,21 @@ class SrtBookRepository {
       }
     }
     await AudiobookStorage.deletePersistDir(uid);
-    return deleted;
+    if (!deleteLocalFiles || before == null) {
+      return SrtBookDeleteResult(deleted: deleted);
+    }
+    return SrtBookDeleteResult(
+      deleted: deleted,
+      localFiles:
+          await deleteAudiobookLocalFiles(_decodeAudioPaths(before.audioPathsJson)),
+    );
   }
 
-  /// 删行前快照原件列表用；坏 JSON 当作没登记（与路径修复的容错口径一致）。
+  /// 删行前快照原件列表用；坏 JSON 当作**没登记**。
+  ///
+  /// 这个返回值绝不能触发任何「换个办法猜文件在哪」的回落：一次 JSON 解码失败若
+  /// 能把删除范围从「这几个登记过的文件」升级成别的什么，爆炸半径就由一个解析
+  /// 意外决定。没登记 = 没有可删清单，见 `audiobook_local_files.dart`。
   static List<String>? _decodeAudioPaths(String? raw) {
     if (raw == null) return null;
     try {

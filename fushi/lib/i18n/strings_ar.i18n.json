@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "إحصائيات القراءة",
   "delete_disclosure_audiobook_files": "ملفات الصوت والترجمات المحاذاة التي نسخها Fushi إلى مخزنه الخاص",
   "delete_disclosure_audiobook_book_kept": "الكتاب نفسه وتقدم القراءة فيه",
-  "delete_disclosure_audiobook_source_kept": "ملفات الصوت الأصلية التي استوردتها",
+  "delete_disclosure_audio_source_files": "ملفات الصوت الأصلية التي استوردتها",
   "audiobook_delete": "حذف الكتاب الصوتي",
   "audiobook_delete_confirm": "حذف الكتاب الصوتي المرفق؟ سيتم إزالة ملفات الصوت من هذا الجهاز.",
   "delete_collection_confirm": "سيتم إزالة التجميع فقط. العناصر الموجودة فيه ستبقى.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "المكتبات المراد سردها",
   "jellyfin_libraries_hint": "عدم اختيار أي شيء يسرد كل مكتبات الفيديو. حصر الأمر في المكتبات التي تشاهدها فعلًا يمنع سرد الخوادم الضخمة بالكامل.",
   "jellyfin_libraries_load_failed": "تعذّر تحميل قائمة المكتبات",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "حذف الملفات المحلية أيضًا",
+  "delete_local_files_video_desc": "سيُحذف ملف الفيديو من هذا الجهاز، وستُزال مهمة التنزيل المقابلة أيضًا. لا يمكن التراجع عن ذلك.",
+  "delete_local_files_audio_desc": "ستُحذف ملفات الصوت الأصلية من هذا الجهاز، بينما تبقى ملفات الكتاب والترجمة الأصلية. لا يمكن التراجع عن ذلك.",
+  "delete_disclosure_book_source_kept": "ملفات الكتاب والترجمة الأصلية التي استوردتها",
+  "download_task_delete_files_failed": "تعذّر حذف البيانات المنزّلة؛ لم يؤكّد محرّك التنزيل ذلك",
+  "delete_local_files_failed": "تعذّر حذف $n من الملفات المحلية؛ قد تكون قيد الاستخدام"
 }

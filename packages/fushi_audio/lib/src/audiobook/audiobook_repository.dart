@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
-import 'audiobook_source_files.dart';
+import 'audiobook_local_files.dart';
 import 'audiobook_storage.dart';
 
 class AudiobookRepository {
@@ -167,10 +167,16 @@ class AudiobookRepository {
   /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「同步删除」）。false（含消费
   /// 远端删除标记路径）只删本机，绝不回写墓碑造成循环。app 层按 DeleteScope 传入。
   ///
-  /// [deleteLocalFiles]（默认 false）：true 时连用户自己导入的原始音频文件一起删
-  /// （[deleteAudiobookSourceFiles]，对应删除弹窗「同时删除本地文件」）。原件位置
-  /// 在行上，必须删行**前**快照。
-  Future<void> deleteAudiobook(
+  /// [deleteLocalFiles]（默认 false）：true 时连用户自己登记的原始音频文件一起删
+  /// （[deleteAudiobookLocalFiles]，对应删除弹窗「同时删除本地文件」）。原件位置
+  /// 在行上，必须删行**前**快照。返回逐条删除结果，调用方负责记日志并告诉用户
+  /// 「N 个没删掉」——最常见的失败是这本正在播放、文件句柄被占用。
+  ///
+  /// 磁盘操作**全部**排在墓碑之后：DB 行是唯一真相源，删完行这本书对用户就已经
+  /// 消失了；持久目录回收与原件删除都是删完再打扫的尾活，Windows 上会因句柄占用
+  /// 抛 errno 32/145。把墓碑排在尾活后面，一次尾活失败就静默吞掉用户「从所有设备
+  /// 删除」的意图（与 [SrtBookRepository.delete] 同一纪律）。
+  Future<LocalFileDeleteReport> deleteAudiobook(
     String bookKey, {
     bool propagateDeletion = false,
     bool deleteLocalFiles = false,
@@ -179,13 +185,6 @@ class AudiobookRepository {
         deleteLocalFiles ? await findByBookKey(bookKey) : null;
     // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
     await _db.deleteAudiobookByBookKey(bookKey);
-    await AudiobookStorage.deletePersistDir(bookKey);
-    if (before != null) {
-      await deleteAudiobookSourceFiles(
-        audioPaths: before.audioPaths,
-        audioRoot: before.audioRoot,
-      );
-    }
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(
@@ -196,6 +195,9 @@ class AudiobookRepository {
         // best-effort：记账失败不影响有声书已删。
       }
     }
+    await AudiobookStorage.deletePersistDir(bookKey);
+    if (before == null) return const LocalFileDeleteReport();
+    return deleteAudiobookLocalFiles(before.audioPaths);
   }
 
   // ── playback position (preferences) ────────────────────────────

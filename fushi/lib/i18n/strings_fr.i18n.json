@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Statistiques de lecture",
   "delete_disclosure_audiobook_files": "L'audio et les sous-titres alignés que Fushi a copiés dans son propre stockage",
   "delete_disclosure_audiobook_book_kept": "Le livre lui-même et sa progression de lecture",
-  "delete_disclosure_audiobook_source_kept": "Les fichiers audio originaux que vous avez importés",
+  "delete_disclosure_audio_source_files": "Les fichiers audio originaux que vous avez importés",
   "audiobook_delete": "Supprimer le livre audio",
   "audiobook_delete_confirm": "Supprimer le livre audio associé ? Ses fichiers audio seront retirés de cet appareil.",
   "delete_collection_confirm": "Seul le regroupement est supprimé. Les éléments qu'elle contient sont conservés.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Bibliothèques à lister",
   "jellyfin_libraries_hint": "Ne rien sélectionner liste toutes les bibliothèques vidéo. Se limiter aux bibliothèques que vous regardez vraiment évite que d'énormes serveurs soient énumérés en entier.",
   "jellyfin_libraries_load_failed": "Impossible de charger la liste des bibliothèques",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Supprimer aussi les fichiers locaux",
+  "delete_local_files_video_desc": "Le fichier vidéo est supprimé de cet appareil, ainsi que sa tâche de téléchargement. Cette action est irréversible.",
+  "delete_local_files_audio_desc": "Les fichiers audio d'origine sont supprimés de cet appareil ; les fichiers du livre et des sous-titres d'origine sont conservés. Cette action est irréversible.",
+  "delete_disclosure_book_source_kept": "Les fichiers d'origine du livre et des sous-titres que vous avez importés",
+  "download_task_delete_files_failed": "Impossible de supprimer les données téléchargées ; le moteur de téléchargement ne l'a pas confirmé",
+  "delete_local_files_failed": "Impossible de supprimer $n fichier(s) local(aux) ; ils sont peut-être encore utilisés"
 }

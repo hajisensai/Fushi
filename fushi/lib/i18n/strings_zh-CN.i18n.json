@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "阅读统计",
   "delete_disclosure_audiobook_files": "Fushi 复制到自己存储目录里的音频和对齐字幕",
   "delete_disclosure_audiobook_book_kept": "书籍本身和它的阅读进度",
-  "delete_disclosure_audiobook_source_kept": "你导入时选择的原始音频文件",
+  "delete_disclosure_audio_source_files": "你导入时选择的原始音频文件",
   "audiobook_delete": "删除有声书",
   "audiobook_delete_confirm": "删除已附加的有声书？它的音频文件会从本机删除。",
   "delete_collection_confirm": "只解除分组，其中的条目会保留。",
@@ -3825,6 +3825,9 @@
   "jellyfin_libraries_hint": "不选 = 列出全部视频媒体库。只勾你真正会看的库，超大服务器就不会被整台枚举。",
   "jellyfin_libraries_load_failed": "读取媒体库清单失败",
   "delete_local_files": "同时删除本地文件",
-  "delete_local_files_desc": "原始文件将从本设备删除，无法恢复",
-  "delete_local_files_video_desc": "视频文件将从本设备删除，对应的下载任务一并清除，无法恢复"
+  "delete_local_files_video_desc": "视频文件将从本设备删除，对应的下载任务一并清除，无法恢复",
+  "delete_local_files_audio_desc": "原始音频文件将从本设备删除；书籍与字幕原件保留，无法恢复",
+  "delete_disclosure_book_source_kept": "你导入时选择的原始书籍与字幕文件",
+  "download_task_delete_files_failed": "已下载的数据未能删除：下载后端没有确认",
+  "delete_local_files_failed": "有 $n 个本地文件删除失败，可能正在被使用"
 }

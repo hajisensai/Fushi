@@ -2808,7 +2808,7 @@
   "delete_disclosure_stats_kept": "Leesstatistieken",
   "delete_disclosure_audiobook_files": "De audio en uitgelijnde ondertitels die Fushi in zijn eigen opslag heeft gekopieerd",
   "delete_disclosure_audiobook_book_kept": "Het boek zelf en de leesvoortgang",
-  "delete_disclosure_audiobook_source_kept": "De originele audiobestanden die je importeerde",
+  "delete_disclosure_audio_source_files": "De originele audiobestanden die je importeerde",
   "audiobook_delete": "Luisterboek verwijderen",
   "audiobook_delete_confirm": "Het bijgevoegde luisterboek verwijderen? De audiobestanden worden van dit apparaat verwijderd.",
   "delete_collection_confirm": "Alleen de groepering wordt verwijderd. De items erin worden bewaard.",
@@ -3824,7 +3824,10 @@
   "jellyfin_libraries_title": "Bibliotheken om te tonen",
   "jellyfin_libraries_hint": "Niets selecteren toont elke videobibliotheek. Beperken tot de bibliotheken die je echt kijkt voorkomt dat enorme servers volledig worden opgesomd.",
   "jellyfin_libraries_load_failed": "Kon de bibliotheeklijst niet laden",
-  "delete_local_files": "Also delete local files",
-  "delete_local_files_desc": "The original files are removed from this device. This cannot be undone.",
-  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone."
+  "delete_local_files": "Ook lokale bestanden verwijderen",
+  "delete_local_files_video_desc": "Het videobestand wordt van dit apparaat verwijderd en de bijbehorende downloadtaak ook. Dit kan niet ongedaan worden gemaakt.",
+  "delete_local_files_audio_desc": "De oorspronkelijke audiobestanden worden van dit apparaat verwijderd; de originele boek- en ondertitelbestanden blijven staan. Dit kan niet ongedaan worden gemaakt.",
+  "delete_disclosure_book_source_kept": "De originele boek- en ondertitelbestanden die je hebt geïmporteerd",
+  "download_task_delete_files_failed": "De gedownloade gegevens konden niet worden verwijderd; de downloadengine bevestigde dit niet",
+  "delete_local_files_failed": "$n lokale bestand(en) konden niet worden verwijderd; ze zijn mogelijk nog in gebruik"
 }
