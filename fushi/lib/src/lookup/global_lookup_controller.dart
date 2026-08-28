@@ -44,7 +44,18 @@ class GlobalLookupController {
   GlobalLookupController._();
   static final GlobalLookupController instance = GlobalLookupController._();
 
-  static bool get isSupported => Platform.isWindows;
+  /// 测试缝，与 [GalHookTextOverlayChannel.platformOverride] 同形：平台门描述的是
+  /// 「这台机器有没有覆盖窗」，与覆盖窗之上的路由 / 代数生命周期逻辑正交。
+  ///
+  /// 两半门只有一半可覆盖是不够的：游戏内查词的门是
+  /// `GalHookTextOverlayChannel.supportsCurrentPlatform && isSupported`，测试把前
+  /// 者覆盖成 true、后者仍钉死在 Windows，控制器在非 Windows 的 CI 上就整个空转
+  /// （`start` 早退、`_started` 恒 false、`handleHit` 直接 return），断言全落在
+  /// null 上——本机 Windows 恒绿、Linux CI 恒红。
+  @visibleForTesting
+  static bool? platformOverride;
+
+  static bool get isSupported => platformOverride ?? Platform.isWindows;
 
   /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
   /// 覆盖窗还是退回主窗 tab，请求不丢。

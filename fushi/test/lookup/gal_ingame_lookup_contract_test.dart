@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
@@ -81,11 +82,17 @@ void main() {
         .handlePlatformMessage(channelName, data, (_) {});
   }
 
-  setUp(() => GalHookTextOverlayChannel.platformOverride = true);
+  setUp(() {
+    // 门有两半，只覆盖一半等于没覆盖：非 Windows 上 GalIngameLookupController
+    // 的 isSupported 仍为 false，start 早退，行为用例全部空转。
+    GalHookTextOverlayChannel.platformOverride = true;
+    GlobalLookupController.platformOverride = true;
+  });
 
   tearDown(() {
     GalHookTextOverlayChannel.clearEventHandlers();
     GalHookTextOverlayChannel.platformOverride = null;
+    GlobalLookupController.platformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

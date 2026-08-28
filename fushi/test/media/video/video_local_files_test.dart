@@ -25,9 +25,20 @@ String _swapCase(String value) => String.fromCharCodes(<int>[
 
 void main() {
   group('isLocalVideoFilePath', () {
-    test('绝对的裸路径 / 盘符路径算本地', () {
-      expect(isLocalVideoFilePath(r'D:\Videos\ep01.mkv'), isTrue);
-      expect(isLocalVideoFilePath('/home/u/ep01.mkv'), isTrue);
+    test('绝对的裸路径算本地', () {
+      // 「绝对」由 package:path 按**宿主平台**判，而这正是删除判据要的语义：
+      // File(path).delete() 同样按本进程解析。所以盘符路径只在 Windows 上算绝对；
+      // 把它当跨平台常量断言，只会让这条用例在 Linux CI 上恒红、本机 Windows 恒绿。
+      expect(
+        isLocalVideoFilePath('/home/u/ep01.mkv'),
+        isTrue,
+        reason: '前导斜杠在 windows / posix 两种风格里都算 rooted',
+      );
+      expect(
+        isLocalVideoFilePath(r'D:\Videos\ep01.mkv'),
+        Platform.isWindows,
+        reason: '盘符路径只有在 Windows 上才是本进程能解析的绝对路径',
+      );
     });
 
     test('相对路径不算本地——File.delete() 会按进程 cwd 解析', () {
@@ -72,6 +83,25 @@ void main() {
 
   group('localVideoFileCandidates', () {
     test('videoPath + 播放列表各集，去重、剔远端', () {
+      // 路径样本按宿主平台构造：候选筛选走 isLocalVideoFilePath，它本就是宿主
+      // 相关的，写死盘符在非 Windows 上只会得到空表（而不是测到去重与剔远端）。
+      final String root = Platform.isWindows ? r'D:\v' : '/v';
+      final String list = p.join(root, 'list.m3u8');
+      final String e1 = p.join(root, 'e1.mkv');
+      final String json = jsonEncode(<Map<String, Object>>[
+        <String, Object>{'title': 'e1', 'path': e1},
+        <String, Object>{'title': 'e1-dup', 'path': e1},
+        <String, Object>{'title': 'remote', 'path': 'https://h/e2.mkv'},
+      ]);
+      expect(
+        localVideoFileCandidates(videoPath: list, playlistJson: json),
+        <String>[list, e1],
+      );
+    });
+
+    test('Windows：分隔符写法不同的同一集只留一条', () {
+      // 分隔符等价（`D:/v/e1.mkv` ≡ `D:\v\e1.mkv`）是 Windows 独有的；posix 下
+      // 反斜杠是合法文件名字符，那真是两个文件。
       final String json = jsonEncode(<Map<String, Object>>[
         <String, Object>{'title': 'e1', 'path': 'D:/v/e1.mkv'},
         <String, Object>{'title': 'e1-dup', 'path': r'D:\v\e1.mkv'},
@@ -84,7 +114,7 @@ void main() {
         ),
         <String>[r'D:\v\list.m3u8', 'D:/v/e1.mkv'],
       );
-    });
+    }, skip: Platform.isWindows ? null : '盘符路径只在 Windows 上是绝对路径');
 
     test('远端流 → 无候选 → 弹窗不摆勾选框', () {
       expect(
