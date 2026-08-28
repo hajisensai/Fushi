@@ -326,8 +326,7 @@ class GlobalLookupWindow {
   /// 选项且会周期性重申，而我们**只在 Reveal/Resize 设一次、此后永不重申**。
   ///
   /// 工具条窗早就有这层兜底（hook_toolbar_window.cpp 的 Sync：「Still re-assert Z」），
-  /// 查词卡漏了。这里补上同一条，并且**只在本实例本来就要置顶时**才重申——
-  /// 未 pin 的常驻面板有意落在非置顶带，不能被这个定时器拖回去。
+  /// 查词卡漏了。这里补上同一条：本类所有实例都是置顶窗，无条件重申即可。
   void ReassertTopmost();
   void StartTopmostGuard();
   void StopTopmostGuard();

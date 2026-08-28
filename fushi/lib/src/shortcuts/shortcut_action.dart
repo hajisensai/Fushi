@@ -456,13 +456,11 @@ enum ShortcutAction {
   // in-app 宿主会被显式注入 `null` 关掉 JS 侧判定——那里由 Dart 负责，两边都开就有在
   // 「WebView 键盘桥把同一次按键同时喂给 Flutter 和 JS」时制出两张卡的风险。
   //
-  // ⚠️ app 外这一端**只有剪贴板面板真能用，且要用户先点过面板**：面板实例走
-  // `SetActivatable(true)`（flutter_window.cpp）故能拿键盘焦点；而**瞬态查词覆盖窗**默认
-  // `activatable_ = false`，带 `WS_EX_NOACTIVATE`（global_lookup_window.cpp:988）——它
-  // 永不接收键盘焦点，runner 侧也没有任何键盘转发/钩子，所以本动作在那个表面上**物理上
-  // 不可能触发**。galgame 场景焦点通常在游戏上，不先点面板就按不到。要覆盖瞬态窗只有两条
-  // 路（去掉 NOACTIVATE = 抢游戏焦点、违背它的设计初衷；或上全局 RegisterHotKey），都是
-  // 产品取舍，未做——别把这里的实现说成「app 内 / app 外 / 浏览器都能用」。
+  // ⚠️ app 外这一端**实际不可触发**：app 外的查词覆盖窗一律 `WS_EX_NOACTIVATE`
+  // （global_lookup_window.cpp OverlayCreateExStyle）——它永不接收键盘焦点，runner 侧
+  // 也没有任何键盘转发/钩子，所以本动作在那个表面上**物理上不可能触发**。要覆盖它只有
+  // 两条路（去掉 NOACTIVATE = 抢游戏焦点、违背它的设计初衷；或上全局 RegisterHotKey），
+  // 都是产品取舍，未做——别把这里的实现说成「app 内 / app 外 / 浏览器都能用」。
   popupMineEntry(ShortcutScope.dictionaryPopup, 'popup_mine_entry'),
 
   // 手柄重设计 P2：播放第一个可见词条的发音（点既有 `.audio-button`，与制卡同一

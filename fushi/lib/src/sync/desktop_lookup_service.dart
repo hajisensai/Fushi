@@ -11,17 +11,11 @@ import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
 class DesktopLookupRequest {
-  const DesktopLookupRequest({
-    required this.text,
-    this.rubySpans = const <RubySpan>[],
-  });
+  const DesktopLookupRequest({required this.text});
 
   /// 纯基准文本：注音标记已在 [DesktopLookupService.triggerLookup] 剥掉
-  /// （注音落在 [rubySpans]）。本条链路的唯一坐标系。
+  /// （主窗词典页只显示 / 查询基准文本，不渲染注音）。
   final String text;
-
-  /// 注音（振假名）区间，下标落在 [text] 上（UTF-16 code unit）。空 = 无注音。
-  final List<RubySpan> rubySpans;
 }
 
 /// 桌面显式查词排队器。单例 ChangeNotifier。
@@ -50,17 +44,14 @@ class DesktopLookupService extends ChangeNotifier {
   /// tab、实际搜索都由消费侧（[bringPendingLookupToFront] + HomeDictionaryPage
   /// 挂载消费）负责。
   void triggerLookup(String text) {
-    // 注音标记在这里剥，且必须**先于**下面的截断：先截断会把 `<rふる>` 这类标记
-    // 拦腰切断，解析器认不出就只能把半截标记当正文留下。
-    final RubyMarkupText parsed = parseRubyMarkup(text);
+    // 注音标记在这里剥（悬浮字幕行可能带 `<rふる>震</r>` 标记），且必须**先于**
+    // 下面的截断：先截断会把标记拦腰切断，解析器认不出就只能把半截标记当正文留下。
+    final String base = parseRubyMarkup(text).text;
     // BUG-442：所有来源在排队前先按同一码点上限截断（用 characters 不切碎代理对 /
     // 字素簇），避免超长串一路流到逐字渲染的 SourceLookupTextPanel 把主 isolate 撑爆。
-    final String trimmed = _capLookupInput(parsed.text).trim();
+    final String trimmed = _capLookupInput(base).trim();
     if (trimmed.isEmpty) return;
-    _pendingRequest = DesktopLookupRequest(
-      text: trimmed,
-      rubySpans: parsed.rebase(trimmed).spans,
-    );
+    _pendingRequest = DesktopLookupRequest(text: trimmed);
     notifyListeners();
   }
 

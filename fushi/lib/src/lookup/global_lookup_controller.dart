@@ -493,8 +493,8 @@ class GlobalLookupController {
 
   /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word
   /// tap etc.). [text] is the already-segmented term; [sentence] is the line it
-  /// came from, shown as the root card's context banner and fed to mining's
-  /// sentence field ('' = no banner). Opens the SAME overlay card as the global
+  /// came from, fed to mining's `{sentence}` field only (the card never renders
+  /// it; '' = no sentence). Opens the SAME overlay card as the global
   /// hotkey, at the OS cursor (the click that triggered this just happened
   /// there — the native floating-lyric strip reports text+index only, no
   /// coordinates). Returns false when the overlay cannot take the lookup

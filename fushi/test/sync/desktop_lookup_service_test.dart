@@ -20,7 +20,6 @@ void main() {
 
     DesktopLookupService.instance.triggerLookup('  日本語  ');
     expect(DesktopLookupService.instance.pendingText, '日本語');
-    expect(DesktopLookupService.instance.pendingRequest!.rubySpans, isEmpty);
     expect(notified, 1);
   });
 

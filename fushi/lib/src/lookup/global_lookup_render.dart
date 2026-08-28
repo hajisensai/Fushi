@@ -69,7 +69,6 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  double cardBgAlpha = 1.0,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
@@ -77,14 +76,6 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
     options: const PopupSettingsOptions(globalLookup: true),
   );
   final String entriesJs = buildPopupEntriesJs(result);
-  // spec 2026-07-10 §6 — 半透明卡背景变量。面板路径传用户值（且仅当 Win11
-  // acrylic backdrop 可用），瞬态窗恒 1.0；in-app 路径不经此处。**恒注入**当前
-  // 值（审查修正：面板 WebView 常驻不重建，若 1.0 时不注入，从 0.85 调回 100%
-  // 后 documentElement 上的旧 0.85 残留、面板停在半透明）。同一 alpha 下
-  // settingsJs 跨渲染字节稳定（host 以 settingsJs 变更为重渲判据）。
-  final String cardBgAlphaLine =
-      "document.documentElement.style.setProperty('--fushi-card-bg-alpha', "
-      "'${cardBgAlpha.toStringAsFixed(2)}');\n";
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
   // frame, but everything else in the body (theme/zoom/entries) is
@@ -110,9 +101,8 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // 同一帧同一结果下这段 renderJs 跨渲染字节稳定（host 以 settingsJs 变更为
   // 重渲判据）：这里不得再掺任何每次查词都会变的上下文（曾经的句子横幅文本
   // 注入已随桌面剪贴板查词一并移除）。
-  final String renderJs = '''
+  const String renderJs = '''
     $kPopupTopPullReleaseJs
-    $cardBgAlphaLine
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
@@ -130,13 +120,11 @@ String buildFrameSettingsJs({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
-  double cardBgAlpha = 1.0,
 }) =>
     buildFrameSettingsJsParts(
       context: context,
       appModel: appModel,
       result: result,
-      cardBgAlpha: cardBgAlpha,
     ).combined;
 
 /// One stacked lookup card as the host script expects it (TODO-867 P3b/P3c).
@@ -346,7 +334,6 @@ StackRenderScript buildStackRenderScript({
   // nearly full-height child is clamped across the selected word. Keep this
   // opt-in so the desktop global-lookup cascade remains unchanged.
   bool fitNestedHeightToAnchorSide = false,
-  double cardBgAlpha = 1.0,
   // BUG-1833 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a custom font
   // (two CJK faces already run to tens of MB once base64-inlined) must not ride
@@ -393,7 +380,6 @@ StackRenderScript buildStackRenderScript({
       context: context,
       appModel: appModel,
       result: p.result,
-      cardBgAlpha: cardBgAlpha,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
