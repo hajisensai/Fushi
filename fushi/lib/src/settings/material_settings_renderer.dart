@@ -7,49 +7,34 @@ import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
 
-enum _MaterialDestinationGroup {
-  application,
-  content,
-  lookup,
-  data;
+class _BorderlessDestinationList extends StatelessWidget {
+  const _BorderlessDestinationList({required this.rows});
 
-  String get title => switch (this) {
-    _MaterialDestinationGroup.application =>
-      '${t.settings_section_app_shell} · ${t.settings_destination_appearance}',
-    _MaterialDestinationGroup.content => t.library_view_media,
-    _MaterialDestinationGroup.lookup =>
-      '${t.settings_destination_lookup} · ${t.settings_destination_card_creation}',
-    _MaterialDestinationGroup.data =>
-      '${t.settings_destination_system} · ${t.settings_destination_storage}',
-  };
-}
+  final List<Widget> rows;
 
-_MaterialDestinationGroup _destinationGroup(SettingsDestinationId id) {
-  return switch (id) {
-    SettingsDestinationId.appearance ||
-    SettingsDestinationId.appIcon => _MaterialDestinationGroup.application,
-    SettingsDestinationId.reading ||
-    SettingsDestinationId.manga ||
-    SettingsDestinationId.listening ||
-    SettingsDestinationId.video ||
-    SettingsDestinationId.mediaTracking ||
-    SettingsDestinationId.downloads ||
-    SettingsDestinationId.services ||
-    SettingsDestinationId.game ||
-    SettingsDestinationId.readerQuickSettings ||
-    SettingsDestinationId.videoQuickSettings =>
-      _MaterialDestinationGroup.content,
-    SettingsDestinationId.lookup ||
-    SettingsDestinationId.cardCreation => _MaterialDestinationGroup.lookup,
-    SettingsDestinationId.profiles ||
-    SettingsDestinationId.syncBackup ||
-    SettingsDestinationId.storage ||
-    SettingsDestinationId.system ||
-    SettingsDestinationId.interconnect ||
-    SettingsDestinationId.shortcuts => _MaterialDestinationGroup.data,
-  };
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      key: const ValueKey<String>('settings-destination-list'),
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (int index = 0; index < rows.length; index++) ...<Widget>[
+          if (index > 0) SizedBox(height: tokens.spacing.gap / 4),
+          ClipRRect(
+            borderRadius: BorderRadius.vertical(
+              top: index == 0 ? tokens.radii.groupRadius.topLeft : Radius.zero,
+              bottom: index == rows.length - 1
+                  ? tokens.radii.groupRadius.bottomLeft
+                  : Radius.zero,
+            ),
+            child: ColoredBox(color: tokens.surfaces.card, child: rows[index]),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class MaterialSettingsRenderer implements SettingsRenderer {
@@ -98,21 +83,13 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    final Map<_MaterialDestinationGroup, List<Widget>> rowsByGroup =
-        <_MaterialDestinationGroup, List<Widget>>{
-          for (final _MaterialDestinationGroup group
-              in _MaterialDestinationGroup.values)
-            group: <Widget>[],
-        };
-    for (final SettingsDestination destination in destinations) {
-      rowsByGroup[_destinationGroup(destination.id)]!.add(
+    final List<Widget> rows = <Widget>[
+      for (final SettingsDestination destination in destinations)
         FushiListItem(
           selected: destination.id == selectedDestinationId,
-          // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
-          // MD3 rounded pill highlight; the narrow push list keeps full-bleed fill.
-          selectedShape: pushRoutes
-              ? FushiListItemSelectedShape.fill
-              : FushiListItemSelectedShape.pill,
+          // 左侧导航是一整列无框线列表：选中态铺满整行，首尾圆角由外层按行位置
+          // 裁切；不再叠一层内缩胶囊描边。
+          selectedShape: FushiListItemSelectedShape.fill,
           leading: Icon(destination.icon),
           title: Text(destination.title),
           // TODO-1143：左父菜单在窄布局（clamp 280..360，最窄 280px）下曾把长分类
@@ -135,8 +112,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             );
           },
         ),
-      );
-    }
+    ];
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -145,17 +121,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         tokens.spacing.page,
         tokens.spacing.page + mediaPadding.bottom,
       ),
-      children: <Widget>[
-        for (final _MaterialDestinationGroup group
-            in _MaterialDestinationGroup.values)
-          if (rowsByGroup[group]!.isNotEmpty)
-            AdaptiveSettingsSection(
-              key: ValueKey<String>('settings-destination-group-${group.name}'),
-              title: group.title,
-              surfaceColor: tokens.surfaces.card,
-              children: rowsByGroup[group]!,
-            ),
-      ],
+      children: <Widget>[_BorderlessDestinationList(rows: rows)],
     );
   }
 

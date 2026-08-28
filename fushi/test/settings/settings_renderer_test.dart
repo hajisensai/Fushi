@@ -512,8 +512,8 @@ void main() {
   });
 
   testWidgets(
-      'material master-detail destination list is one grouped surface with '
-      'pill selection', (WidgetTester tester) async {
+      'material master-detail destination list is one borderless list with '
+      'full-row selection', (WidgetTester tester) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.android,
@@ -529,16 +529,20 @@ void main() {
       ),
     );
 
-    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('settings-destination-list')),
+      findsOneWidget,
+    );
+    expect(find.byType(AdaptiveSettingsSection), findsNothing);
     FushiListItem item = tester.widget<FushiListItem>(
       find.widgetWithText(FushiListItem, 'Appearance'),
     );
     expect(item.selected, isTrue);
-    expect(item.selectedShape, FushiListItemSelectedShape.pill);
+    expect(item.selectedShape, FushiListItemSelectedShape.fill);
     expect(item.trailing, isNull);
   });
 
-  testWidgets('material destination list separates semantic groups', (
+  testWidgets('material destination list only rounds its outer row edges', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -556,14 +560,6 @@ void main() {
                 id: SettingsDestinationId.reading,
                 title: 'Reading',
               ),
-              _navigationFixture(
-                id: SettingsDestinationId.lookup,
-                title: 'Lookup',
-              ),
-              _navigationFixture(
-                id: SettingsDestinationId.profiles,
-                title: 'Profiles',
-              ),
             ],
             selectedDestinationId: SettingsDestinationId.appearance,
             onDestinationSelected: (_) {},
@@ -573,11 +569,22 @@ void main() {
       ),
     );
 
-    expect(find.byType(AdaptiveSettingsSection), findsNWidgets(4));
-    expect(find.text('App · Appearance'), findsOneWidget);
-    expect(find.text('Library'), findsOneWidget);
-    expect(find.text('Lookup · Card creation'), findsOneWidget);
-    expect(find.text('System · Storage'), findsOneWidget);
+    final Finder list = find.byKey(
+      const ValueKey<String>('settings-destination-list'),
+    );
+    final List<ClipRRect> clips = tester
+        .widgetList<ClipRRect>(
+          find.descendant(of: list, matching: find.byType(ClipRRect)),
+        )
+        .toList(growable: false);
+    expect(clips, hasLength(2));
+    final BorderRadius first = clips.first.borderRadius as BorderRadius;
+    final BorderRadius last = clips.last.borderRadius as BorderRadius;
+    expect(first.topLeft, isNot(Radius.zero));
+    expect(first.bottomLeft, Radius.zero);
+    expect(last.topLeft, Radius.zero);
+    expect(last.bottomLeft, isNot(Radius.zero));
+    expect(find.byType(AdaptiveSettingsSection), findsNothing);
   });
 
   testWidgets('material push destination list keeps fill selection and chevron',
@@ -596,7 +603,11 @@ void main() {
       ),
     );
 
-    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('settings-destination-list')),
+      findsOneWidget,
+    );
+    expect(find.byType(AdaptiveSettingsSection), findsNothing);
     final FushiListItem item = tester.widget<FushiListItem>(
       find.widgetWithText(FushiListItem, 'Appearance'),
     );
