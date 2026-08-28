@@ -38,6 +38,18 @@ class DictStylePreview extends StatefulWidget {
   State<DictStylePreview> createState() => _DictStylePreviewState();
 }
 
+/// 集成测试用的取控制器口子（BUG-1918 的端到端验证要在真 WebView2 里发 JS）。
+///
+/// 预览本身不对外暴露 controller，而这条链路的失败方式是**进程级闪退**，只有真
+/// WebView2 能回答「还崩不崩」。给一个静态引用比给构造参数轻，也不动任何调用点
+/// 的签名；生产代码只写不读。
+@visibleForTesting
+class DictStylePreviewDebug {
+  DictStylePreviewDebug._();
+
+  static InAppWebViewController? lastController;
+}
+
 class _DictStylePreviewState extends State<DictStylePreview> {
   InAppWebViewController? _controller;
   final WebViewDeathGuard _deathGuard =
@@ -128,6 +140,7 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         ),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
+          DictStylePreviewDebug.lastController = controller;
           for (final String name in kDictStylePreviewNoopHandlers) {
             controller.addJavaScriptHandler(
               handlerName: name,
