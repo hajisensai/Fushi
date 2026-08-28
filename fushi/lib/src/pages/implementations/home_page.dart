@@ -127,7 +127,7 @@ List<HomeTab> homeActiveTabs({
     <HomeTab>[
       HomeTab.home,
       // 小说/漫画/视频/游戏/浏览器扩展五个库页 tab 与 下载/查词 两个工具 tab 都可
-      // 按「功能模块」偏好隐藏（设置 → 系统 → 功能模块；新手引导的功能选择只写
+      // 按「功能模块」偏好隐藏（设置 → 外观 → 功能模块；新手引导的功能选择只写
       // 库页那几项）；首页/设置恒在，是全部隐藏后的安全回退面。
       if (booksEnabled) HomeTab.books,
       if (mangaEnabled) HomeTab.manga,
