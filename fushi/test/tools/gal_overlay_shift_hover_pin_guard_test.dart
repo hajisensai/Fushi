@@ -291,10 +291,22 @@ void main() {
     });
 
     test('最小宽度跟着槽数走（下限必须不小于真实工具栏行宽）', () {
-      final Match? declared =
-          RegExp(r'kSlotCount\s*=\s*(\d+)\s*;').firstMatch(toolbarHeader);
-      expect(declared, isNotNull);
-      final int slots = int.parse(declared!.group(1)!);
+      // 必须问 kMaxSlotCount：窗口下限要容得下**最宽**的那张 profile 槽表。
+      // 旧写法 RegExp('kSlotCount = (\\d+)') 分表之后是巧合正确 —— 它命中的是
+      // kGalHookSlotCount（尾部恰好含 "kSlotCount"），只是碰巧 gal 表更长；哪天
+      // 有声书表长过它，守卫就会拿小的那个数放过一个真能把按钮拖没的下限。
+      final Match? galCount =
+          RegExp(r'kGalHookSlotCount\s*=\s*(\d+)\s*;').firstMatch(toolbarHeader);
+      final Match? audiobookCount = RegExp(r'kAudiobookSlotCount\s*=\s*(\d+)\s*;')
+          .firstMatch(toolbarHeader);
+      expect(galCount, isNotNull, reason: '找不到 kGalHookSlotCount');
+      expect(audiobookCount, isNotNull, reason: '找不到 kAudiobookSlotCount');
+      expect(toolbarHeader.contains('constexpr int kMaxSlotCount'), isTrue,
+          reason: 'kMaxSlotCount 必须存在——它是「最宽工具条」的单一真相');
+      final int slots = [
+        int.parse(galCount!.group(1)!),
+        int.parse(audiobookCount!.group(1)!),
+      ].reduce((int a, int b) => a > b ? a : b);
       final Match? minWidth =
           RegExp(r'kHookTextMinStripWidthDip = ([\d.]+)f;').firstMatch(window);
       expect(minWidth, isNotNull);

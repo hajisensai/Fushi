@@ -37,11 +37,13 @@ constexpr float kControlsTopDip = 8.0f;
 // Bottom-right resize grip and the min / max the user may drag the bar to.
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
-// Hook mode draws a centred 9-slot toolbar (9 * 32 + 8 * 4 = 320dip). The
-// generic 280dip floor would let the user drag the window narrower than its own
-// controls, clipping the leading voice buttons; hook mode therefore floors at
-// the toolbar width plus a small margin. Bump this whenever kSlotCount grows —
-// the floor is derived from the row width, not from a taste-based round number.
+// Hook mode draws a centred toolbar whose slot count depends on the profile
+// (gal hook 9 槽 = 9 * 32 + 8 * 4 = 320dip，有声书 8 槽更窄). The generic 280dip
+// floor would let the user drag the window narrower than its own controls,
+// clipping the leading buttons; hook mode therefore floors at the widest
+// toolbar's width plus a small margin. Bump this whenever
+// hook_toolbar::kMaxSlotCount grows — the floor is derived from that row width,
+// not from a taste-based round number（守卫按 kMaxSlotCount 复核）。
 constexpr float kHookTextMinStripWidthDip = 340.0f;
 // Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见
 // StartHoverLookupPolling）。 60ms ≈
