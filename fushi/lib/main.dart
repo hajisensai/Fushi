@@ -189,15 +189,15 @@ void main([List<String> args = const <String>[]]) {
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
       if (Platform.isWindows) {
-        try {
-          await windowManager.setTitleBarStyle(
-            TitleBarStyle.hidden,
-            windowButtonVisibility: false,
-          );
-          FushiWindowsTitleBar.isEnabled = true;
-        } catch (e) {
-          debugPrint('[Fushi] custom Windows title bar unavailable: $e');
-        }
+        // window_manager's Windows plugin implements setTitleBarStyle as a
+        // string assignment + SetWindowPos and always reports success, so there
+        // is no failure mode to fall back from here. The app frame is therefore
+        // unconditional on Windows once the plugin is initialised.
+        await windowManager.setTitleBarStyle(
+          TitleBarStyle.hidden,
+          windowButtonVisibility: false,
+        );
+        FushiWindowsTitleBar.markEnabled();
       }
       // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
       // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
@@ -1704,14 +1704,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           builder: (context, child) {
             _scheduleWindowsUpdateHandoffReconcile();
             final cs = Theme.of(context).colorScheme;
-            if (Platform.isWindows && !FushiWindowsTitleBar.isEnabled) {
-              // Preserve the previous themed native caption as a graceful
-              // fallback when hidden-title-bar support was unavailable.
-              WindowCaptionChannel.setCaptionColors(
-                caption: cs.surface,
-                text: cs.onSurface,
-              );
-            }
+            // The Windows native caption is hidden for good (see main()), so
+            // there is nothing left to theme through WindowCaptionChannel here.
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder
             // reruns on every theme change, so the AnnotatedRegion re-emits the

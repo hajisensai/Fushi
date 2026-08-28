@@ -21,9 +21,27 @@ class FushiWindowsTitleBar extends StatefulWidget {
   /// not grow with content zoom.
   static const double height = 32;
 
-  /// Set only after Windows accepts [TitleBarStyle.hidden]. Widgets below the
-  /// app frame use this to avoid rendering a second, redundant page header.
-  static bool isEnabled = false;
+  static bool _isEnabled = false;
+
+  /// True once the app shell has installed its own Windows frame
+  /// ([TitleBarStyle.hidden] + this widget). Widgets below the app frame read
+  /// it to avoid rendering a second, redundant page header, and `HomePage`
+  /// reads it to decide whether the settings tab still needs its own
+  /// full-screen shell with a back arrow.
+  ///
+  /// Deliberately a startup latch and **not** a `Platform.isWindows` expression:
+  /// widget tests never run `main()`, so a platform-derived value would make the
+  /// Windows dev host and the Linux CI host take different layout branches for
+  /// the very same test.
+  static bool get isEnabled => _isEnabled;
+
+  /// Latched exactly once from `main()` after the hidden title bar is applied.
+  /// One-way on purpose — nothing turns the app frame back off at runtime.
+  static void markEnabled() => _isEnabled = true;
+
+  /// Lets tests exercise both shells; production code must use [markEnabled].
+  @visibleForTesting
+  static set debugIsEnabled(bool value) => _isEnabled = value;
 
   /// Fullscreen surfaces that do not flow through `window_manager` (notably
   /// media_kit on Windows) acquire an owner here while they directly manipulate
