@@ -238,7 +238,6 @@ const List<String> _kJsDelivrHosts = <String>[
   'testingcf.jsdelivr.net',
 ];
 
-
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（多镜像回退）。纯函数。
 ///
 /// 顺序：① jsDelivr 多 CDN 节点（[_kJsDelivrHosts]，独立边缘网络互为后备，中国可达）→

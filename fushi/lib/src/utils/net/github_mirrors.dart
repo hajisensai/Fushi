@@ -60,7 +60,8 @@ List<Uri> gitHubMirrorCandidates(Uri url) {
 /// 值得换下一个镜像候选重来。
 ///
 /// - `SocketException`（连接超时 / 拒绝 / DNS 失败）、`TimeoutException`（我们自己的
-///   整体超时）、`HandshakeException` / `TlsException`（TLS 失败）→ true。
+///   整体超时 / stall 超时）、`TlsException`（TLS 失败；`HandshakeException` 和
+///   `CertificateException` 都 implements 它）→ true。
 /// - `http.ClientException`：`package:http` 的 `IOClient` 把底层 socket / HTTP 协议
 ///   错误包成它（其 `_ClientSocketException` 同时 implements `SocketException`）→ true。
 /// - 其它——服务端**已经答复**的 HTTP 状态错误、格式错误、业务异常——→ false：换镜像
@@ -68,6 +69,5 @@ List<Uri> gitHubMirrorCandidates(Uri url) {
 bool isTransportFailure(Object error) =>
     error is SocketException ||
     error is TimeoutException ||
-    error is HandshakeException ||
     error is TlsException ||
     error is http.ClientException;
