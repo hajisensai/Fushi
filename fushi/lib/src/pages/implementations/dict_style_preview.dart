@@ -128,14 +128,7 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         ),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
-          // popup.js 在渲染词条头时**无保护地**调这两个 handler；没注册就抛
-          // TypeError，被 renderPopup 的 try/catch 吞掉 → 整张卡片不渲染（白屏）。
-          for (final String name in const <String>[
-            'favoriteCheck',
-            'duplicateCheck',
-            'popupRendered',
-            'resolveWordAudio',
-          ]) {
+          for (final String name in kDictStylePreviewNoopHandlers) {
             controller.addJavaScriptHandler(
               handlerName: name,
               callback: (List<dynamic> _) => null,
@@ -175,6 +168,44 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     return '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
   }
 }
+
+/// popup.js / selection.js 能发起的**全部** JS 桥调用名，在预览里一律 no-op。
+///
+/// 两件事各自成立：
+/// * 行为上——预览只是调样式，制卡 / 播音 / 跳转 / 上报都不该真发生；
+///   `favoriteCheck` / `duplicateCheck` 这类在渲染词条头时**无保护地**被调，
+///   没注册就抛 TypeError、被 renderPopup 的 try/catch 吞掉 → 整张卡片白屏。
+/// * 存活上——BUG-1918：Dart 侧没注册的 handler 名会让插件回一个 **null**
+///   答复（`_handleMethod` 末尾 `return null`），Windows 原生侧把它当非空指针
+///   解引用 → 0xC0000005 整个 app 闪退。原生已根治（webview_channel_delegate.cpp
+///   的 decodeResult 空守卫），但预览本身也不应该依赖平台兜底：每个桥调用
+///   都得有确定的 Dart 侧语义。
+///
+/// 这份名单必须覆盖 popup.html 加载的所有脚本里的 `callHandler('X')`，
+/// 守卫测试：`fushi/test/pages/dict_style_preview_handler_coverage_test.dart`。
+const List<String> kDictStylePreviewNoopHandlers = <String>[
+  'clearSentenceDraft',
+  'duplicateCheck',
+  'favoriteCheck',
+  'favoriteEntry',
+  'findMinedMatches',
+  'mineEntry',
+  'minedCardAction',
+  'onLinkClick',
+  'openInAnki',
+  'openLink',
+  'openMinedNote',
+  'openSentenceContextModal',
+  'overwriteTargetNoteId',
+  'panelSentenceLookup',
+  'popupRendered',
+  'reportJsError',
+  'resolveWordAudio',
+  'setSentenceContext',
+  'tapOutside',
+  'textSelected',
+  'updateEntry',
+];
 
 /// 注入预览 WebView 的点选逻辑。
 ///

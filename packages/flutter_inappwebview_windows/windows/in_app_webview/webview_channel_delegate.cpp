@@ -32,8 +32,19 @@ namespace flutter_inappwebview_plugin
 
   WebViewChannelDelegate::CallJsHandlerCallback::CallJsHandlerCallback()
   {
+    // BUG-1918 æ ¹å ï¼Dart åå¤ null æ¶ StandardMethodCodec èµ°çæ¯æ å Success()ï¼
+    // è¿éæ¶å°ç value å°±æ¯ nullptrï¼å¸åè§¦åï¼JS è°äºä¸ä¸ª Dart ä¾§æ²¡
+    // addJavaScriptHandler æ³¨åç handler åï¼ãç´æ¥ return value ä¼æç©ºæéè£è¿ä¸ä¸ª
+    // **å·²å¼å**ç optionalï¼has_value() == trueï¼å¼ä¸º nullptrï¼ï¼äºæ¯ä¸æ¸¸é£å¥
+    // `response.has_value() && !response.value()->IsNull()`ï¼in_app_webview.cppï¼ç´æ¥è§£å¼ç¨
+    // ç©ºæé â 0xC0000005 æ´ä¸ª app éªéãç©ºåå¤å¿é¡»éæ nulloptï¼è®©é£å¥å®å«çç
+    // è½æ¦ä½ââåæä»¶å¶å® decodeResult æ¬æ¥å°±é½åå¤ `!value`ã
     decodeResult = [](const flutter::EncodableValue* value)
+      -> std::optional<const flutter::EncodableValue*>
       {
+        if (!value) {
+          return std::nullopt;
+        }
         return value;
       };
   }
@@ -52,8 +63,14 @@ namespace flutter_inappwebview_plugin
 
   WebViewChannelDelegate::PermissionRequestCallback::PermissionRequestCallback()
   {
+    // å BUG-1918ï¼Dart ä¾§ onPermissionRequest å nullï¼ææ²¡æ¥è¿ä¸ªåè°ï¼æ¶
+    // value ä¸º nullptrï¼è£¸ `*value` åæ ·æ¯ç©ºè§£å¼ç¨ã
     decodeResult = [](const flutter::EncodableValue* value)
+      -> std::optional<std::shared_ptr<PermissionResponse>>
       {
+        if (!value || value->IsNull()) {
+          return std::nullopt;
+        }
         return std::make_shared<PermissionResponse>(std::get<flutter::EncodableMap>(*value));
       };
   }

@@ -734,11 +734,14 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Size mediaSize = MediaQuery.of(context).size;
-    final double contentHeight = (mediaSize.height * 0.55).clamp(280.0, 480.0);
 
+    // 尺寸向 `LapisStyleEditorPage` 看齐：那边是整页 + 内容区 maxWidth 1180，
+    // 这边是对话框，同样取 1180 并把高度撑满到允许的 0.88 屏高。
+    // 之前写死的 `height: (屏高*0.55).clamp(280, 480)` 直接删掉而不是换个大常数：
+    // 固定高度在矮屏上会超过 [FushiDialogFrame] 的高度帽而溢出，而 body 本来
+    // 就是 Flexible、列里又有 Expanded，交给约束自己决定就行。
     return FushiDialogFrame(
-      maxWidth: 640,
+      maxWidth: 1180,
       maxHeightFactor: 0.88,
       insetPadding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.card,
@@ -763,7 +766,6 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
         ),
         body: SizedBox(
           width: double.maxFinite,
-          height: contentHeight,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -835,50 +837,75 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           _scopeCssToDictionary(buildPerDictionaryStyleCss(rules, name), name),
       ].join('\n'),
     );
-    return Column(
-      children: <Widget>[
-        Expanded(
-          flex: 2,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: tokens.surfaces.page,
-              borderRadius: tokens.radii.cardRadius,
-              border: Border.all(color: tokens.surfaces.outline),
+    final Widget preview = DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.surfaces.page,
+        borderRadius: tokens.radii.cardRadius,
+        border: Border.all(color: tokens.surfaces.outline),
+      ),
+      child: ClipRRect(
+        borderRadius: tokens.radii.cardRadius,
+        child: widget.previewBuilder?.call(
+              context,
+              previewCss,
+              _draft.selectedPart,
+              (DictStylePart part) =>
+                  setState(() => _draft.selectedPart = part),
+            ) ??
+            DictStylePreview(
+              css: previewCss,
+              highlightPart: _draft.selectedPart,
+              onPickPart: (DictStylePart part) =>
+                  setState(() => _draft.selectedPart = part),
             ),
-            child: ClipRRect(
-              borderRadius: tokens.radii.cardRadius,
-              child: widget.previewBuilder?.call(
-                    context,
-                    previewCss,
-                    _draft.selectedPart,
-                    (DictStylePart part) =>
-                        setState(() => _draft.selectedPart = part),
-                  ) ??
-                  DictStylePreview(
-                    css: previewCss,
-                    highlightPart: _draft.selectedPart,
-                    onPickPart: (DictStylePart part) =>
-                        setState(() => _draft.selectedPart = part),
-                  ),
-            ),
-          ),
-        ),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Text(t.dict_style_pick_hint, style: tokens.type.listSubtitle),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Expanded(
-          flex: 3,
-          child: DictStyleVisualEditor(
-            rules: rules,
-            scopeDictionary: scope,
-            selectedPart: _draft.selectedPart,
-            onSelectPart: (DictStylePart part) =>
-                setState(() => _draft.selectedPart = part),
-            onRulesChanged: (List<DictStyleRule> next) =>
-                setState(() => _draft.styleRules = next),
-          ),
-        ),
-      ],
+      ),
+    );
+    final Widget hint =
+        Text(t.dict_style_pick_hint, style: tokens.type.listSubtitle);
+    final Widget controls = DictStyleVisualEditor(
+      rules: rules,
+      scopeDictionary: scope,
+      selectedPart: _draft.selectedPart,
+      onSelectPart: (DictStylePart part) =>
+          setState(() => _draft.selectedPart = part),
+      onRulesChanged: (List<DictStyleRule> next) =>
+          setState(() => _draft.styleRules = next),
+    );
+
+    // 断点和分栏比例抄 `LapisStyleEditorPage`：宽于 820 时左预览右控件（控件定宽
+    // 340），窄于 820 时上下堆叠。两个编辑器读起来才是同一个东西。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth >= 820) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: preview),
+                    SizedBox(height: tokens.spacing.gap / 2),
+                    hint,
+                  ],
+                ),
+              ),
+              SizedBox(width: tokens.spacing.card),
+              SizedBox(width: 340, child: controls),
+            ],
+          );
+        }
+        return Column(
+          children: <Widget>[
+            Expanded(flex: 2, child: preview),
+            SizedBox(height: tokens.spacing.gap / 2),
+            hint,
+            SizedBox(height: tokens.spacing.gap / 2),
+            Expanded(flex: 3, child: controls),
+          ],
+        );
+      },
     );
   }
 
