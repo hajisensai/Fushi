@@ -451,7 +451,9 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               for (final _GameTypeFilter f in _GameTypeFilter.values)
                 ChoiceChip(
                   label: Text(f.label),
-                  visualDensity: VisualDensity.compact,
+                  // 视觉密度走 MD3 默认：这是普通页面 chrome，不该自开本地决策
+                  // （md3_design_system_static_test 钉死）。番剧下载那排 chip 用
+                  // compact 是**对话框**里的既有豁免类，不该顺手继承过来。
                   selected: _gameTypeFilter == f,
                   // 纯客户端过滤：不重新请求，只换渲染集合。
                   onSelected: (_) => setState(() => _gameTypeFilter = f),

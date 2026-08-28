@@ -1873,7 +1873,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 // 更不能把入口整个丢掉」。用 Flexible 而不是固定宽度：宽窗下它按
                 // 内容占位，与改动前逐字节一致。
                 Flexible(
-                  child: SingleChildScrollView(
+                  // 桌面端鼠标必须能拖动这个横滚区（默认 dragDevices 不含 mouse）——
+                  // 全仓横向滚动区的统一包裹件，由 horizontal_drag_scroll_guard 钉死。
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1915,6 +1918,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         ),
                       ],
                     ),
+                  ),
                   ),
                 ),
               ],
