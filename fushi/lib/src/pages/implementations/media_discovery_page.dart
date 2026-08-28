@@ -58,6 +58,52 @@ enum _DiscoveryIdle {
   queryRequired,
 }
 
+/// BUG-1910：游戏发现页的汉化状态筛选档位。
+///
+/// [unlabelled] 是**必须有**的一档：sukebei / AList 的条目 `gameLocalization` 恒为
+/// null（那两个源不给这个信息，**不是**「未汉化」）。没有这一档的话，用户在聚合搜索
+/// 里一按筛选就把那两个源整个滤没了，还会以为它们挂了。
+enum _GameTypeFilter {
+  all(null),
+  raw(DiscoveryGameLocalization.raw),
+  translated(DiscoveryGameLocalization.translated),
+  mobile(DiscoveryGameLocalization.mobile),
+  unlabelled(null);
+
+  const _GameTypeFilter(this.value);
+
+  /// 对应的分类；[all] 与 [unlabelled] 都没有对应值，靠 [matches] 区分语义。
+  final DiscoveryGameLocalization? value;
+
+  bool matches(DiscoveryGameLocalization? item) {
+    switch (this) {
+      case _GameTypeFilter.all:
+        return true;
+      case _GameTypeFilter.unlabelled:
+        return item == null;
+      case _GameTypeFilter.raw:
+      case _GameTypeFilter.translated:
+      case _GameTypeFilter.mobile:
+        return item == value;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case _GameTypeFilter.all:
+        return t.discovery_game_type_all;
+      case _GameTypeFilter.raw:
+        return t.discovery_game_type_raw;
+      case _GameTypeFilter.translated:
+        return t.discovery_game_type_translated;
+      case _GameTypeFilter.mobile:
+        return t.discovery_game_type_mobile;
+      case _GameTypeFilter.unlabelled:
+        return t.discovery_game_type_unlabelled;
+    }
+  }
+}
+
 class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   late DiscoveryMediaKind _kind = widget.kinds.first;
   String _sourceId = kDiscoveryAllSourcesId;
@@ -92,6 +138,35 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   String _query = '';
 
   final List<DiscoveryEntry> _entries = <DiscoveryEntry>[];
+
+  /// BUG-1910：游戏汉化状态筛选，默认「全部」。
+  ///
+  /// **纯客户端过滤，不重发请求**——分类是条目自带的可判定属性（源在解析时就算好了，
+  /// 见 `shinnkuGameLocalization`），没有任何理由为了换个筛选再打一次网络。与番剧
+  /// 下载对话框的排序切换同一条纪律（就地重排、不重新请求）。
+  _GameTypeFilter _gameTypeFilter = _GameTypeFilter.all;
+
+  /// 筛选是否可用：只有游戏域、且当前结果里确实存在带分类的条目时才出这排 chip。
+  /// 视频/书域，或搜的是压根不给分类的源，不该凭空多一排控件。
+  bool get _gameTypeFilterAvailable =>
+      _kind == DiscoveryMediaKind.game &&
+      _entries.any((DiscoveryEntry e) =>
+          e is DiscoveryResourceItem && e.gameLocalization != null);
+
+  /// 应用筛选后的条目。目录条目（[DiscoveryFolder]）永远保留——它们是导航结构，
+  /// 不是资源，把它们筛掉会让用户下不去。
+  List<DiscoveryEntry> get _visibleEntries {
+    if (_gameTypeFilter == _GameTypeFilter.all || !_gameTypeFilterAvailable) {
+      return _entries;
+    }
+    return <DiscoveryEntry>[
+      for (final DiscoveryEntry e in _entries)
+        if (e is! DiscoveryResourceItem ||
+            _gameTypeFilter.matches(e.gameLocalization))
+          e,
+    ];
+  }
+
   DiscoveryAggregateResult? _result;
   bool _loading = false;
   Object? _error;
@@ -315,6 +390,12 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       if (item.dateText != null) item.dateText!,
       if (item.seeders != null) '↑${item.seeders}',
       if (item.note != null) item.note!,
+      // BUG-1910：游戏的汉化状态走带类型的字段 + i18n 标签，不再是源里那句硬编码
+      // 中文（英文用户此前看到的就是「熟肉」两个方块）。
+      if (item.gameLocalization != null)
+        _GameTypeFilter.values
+            .firstWhere((_GameTypeFilter f) => f.value == item.gameLocalization)
+            .label,
     ];
     return parts.join(' · ');
   }
@@ -338,20 +419,56 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         _queryCtrl.clear();
         _submitSearch();
       },
-      leading: widget.kinds.length > 1
-          ? SegmentedButton<DiscoveryMediaKind>(
-              segments: <ButtonSegment<DiscoveryMediaKind>>[
-                for (final DiscoveryMediaKind kind in widget.kinds)
-                  ButtonSegment<DiscoveryMediaKind>(
-                    value: kind,
-                    label: Text(_kindLabel(kind)),
-                  ),
-              ],
-              selected: <DiscoveryMediaKind>{_kind},
-              onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
-                  _selectKind(selection.first),
-            )
-          : null,
+      leading: _buildHeaderLeading(),
+    );
+  }
+
+  /// header 上方插槽：媒体类型分段（多域时）+ BUG-1910 的游戏汉化状态筛选。
+  ///
+  /// 两者可能同时存在（书+游戏合用一页时），所以纵向叠放而不是二选一。
+  Widget? _buildHeaderLeading() {
+    final Widget? kindSelector = widget.kinds.length > 1
+        ? SegmentedButton<DiscoveryMediaKind>(
+            segments: <ButtonSegment<DiscoveryMediaKind>>[
+              for (final DiscoveryMediaKind kind in widget.kinds)
+                ButtonSegment<DiscoveryMediaKind>(
+                  value: kind,
+                  label: Text(_kindLabel(kind)),
+                ),
+            ],
+            selected: <DiscoveryMediaKind>{_kind},
+            onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
+                _selectKind(selection.first),
+          )
+        : null;
+    // BUG-1910：只有当前结果里确实有带分类的条目才出这排 chip——否则视频/书域，
+    // 或搜的是不给分类的源时，凭空多一排没用的控件。
+    final Widget? typeFilter = _gameTypeFilterAvailable
+        ? Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              for (final _GameTypeFilter f in _GameTypeFilter.values)
+                ChoiceChip(
+                  label: Text(f.label),
+                  visualDensity: VisualDensity.compact,
+                  selected: _gameTypeFilter == f,
+                  // 纯客户端过滤：不重新请求，只换渲染集合。
+                  onSelected: (_) => setState(() => _gameTypeFilter = f),
+                ),
+            ],
+          )
+        : null;
+    if (kindSelector == null) return typeFilter;
+    if (typeFilter == null) return kindSelector;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        kindSelector,
+        const SizedBox(height: 8),
+        typeFilter,
+      ],
     );
   }
 
@@ -502,7 +619,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                     ?.copyWith(color: theme.colorScheme.error),
               ),
             ),
-          for (final DiscoveryEntry entry in _entries)
+          for (final DiscoveryEntry entry in _visibleEntries)
             switch (entry) {
               DiscoveryFolder() => FushiListItem(
                   leading: const Icon(Icons.folder_outlined),

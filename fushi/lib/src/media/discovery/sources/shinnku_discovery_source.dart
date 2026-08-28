@@ -125,7 +125,10 @@ class ShinnkuDiscoverySource extends MediaDiscoverySource {
                   .first,
           detailUrl:
               '$_baseUrl/files/${segments.map(Uri.encodeComponent).join('/')}',
-          note: shinnkuGameTypeNote(filePath),
+          // BUG-1910：note 留空，分类走带类型的 gameLocalization —— UI 据它出 i18n
+          // 标签并筛选，而不是把这里的中文字面量当判据（按显示名筛是 BUG-1906
+          // 刚修过的反模式）。
+          gameLocalization: shinnkuGameLocalization(filePath),
         ),
       );
     }
@@ -205,9 +208,28 @@ String shinnkuDownloadUrl(String filePath) {
       '${segments.map(Uri.encodeComponent).join('/')}';
 }
 
-/// 按上游 `get_game_type` 的路径前缀规则给类型标注。
+/// BUG-1910：按上游 `get_game_type` 的路径前缀规则判**汉化状态**。
+///
+/// 这是这条规则的**唯一**实现；[shinnkuGameTypeNote] 由它派生，两种表示不会分叉。
+DiscoveryGameLocalization shinnkuGameLocalization(String filePath) {
+  if (filePath.startsWith('合集系列')) return DiscoveryGameLocalization.raw;
+  if (filePath.startsWith('zd') || filePath.startsWith('0/win')) {
+    return DiscoveryGameLocalization.translated;
+  }
+  return DiscoveryGameLocalization.mobile;
+}
+
+/// 按上游 `get_game_type` 的路径前缀规则给类型标注（中文字面量，历史行为）。
+///
+/// 保留是为了不改既有断言与展示；**新代码请用 [shinnkuGameLocalization]**——
+/// UI 侧的标签走 i18n，而不是把这里的中文字面量直接摆给英文用户看。
 String shinnkuGameTypeNote(String filePath) {
-  if (filePath.startsWith('合集系列')) return '生肉';
-  if (filePath.startsWith('zd') || filePath.startsWith('0/win')) return '熟肉';
-  return '手机';
+  switch (shinnkuGameLocalization(filePath)) {
+    case DiscoveryGameLocalization.raw:
+      return '生肉';
+    case DiscoveryGameLocalization.translated:
+      return '熟肉';
+    case DiscoveryGameLocalization.mobile:
+      return '手机';
+  }
 }

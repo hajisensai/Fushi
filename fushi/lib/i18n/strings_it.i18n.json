@@ -3828,5 +3828,10 @@
   "game_hook_code_paste_body": "The code is bound to the currently running game's executable, so Fushi can reuse it next time.",
   "game_hook_code_paste_saved": "Hook code saved for this game",
   "game_hook_code_paste_invalid": "That does not look like a hook code",
-  "game_hook_code_label": "Label (optional)"
+  "game_hook_code_label": "Label (optional)",
+  "discovery_game_type_all": "All",
+  "discovery_game_type_raw": "Untranslated",
+  "discovery_game_type_translated": "Translated",
+  "discovery_game_type_mobile": "Mobile",
+  "discovery_game_type_unlabelled": "Unlabelled"
 }

@@ -3828,5 +3828,10 @@
   "game_hook_code_paste_body": "特殊码会绑定到当前运行游戏的可执行文件，下次自动复用。",
   "game_hook_code_paste_saved": "特殊码已保存到当前游戏",
   "game_hook_code_paste_invalid": "这看起来不是一条特殊码",
-  "game_hook_code_label": "备注（可选）"
+  "game_hook_code_label": "备注（可选）",
+  "discovery_game_type_all": "全部",
+  "discovery_game_type_raw": "生肉",
+  "discovery_game_type_translated": "熟肉",
+  "discovery_game_type_mobile": "手机",
+  "discovery_game_type_unlabelled": "未标注"
 }

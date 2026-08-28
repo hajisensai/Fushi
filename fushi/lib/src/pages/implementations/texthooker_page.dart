@@ -1864,25 +1864,58 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 // BUG-1909：粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
                 // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须是游戏 exe
                 // 的 SHA-256——用户拿到的特殊码只是一串字符，中间那层转换没人做。
-                IconButton(
-                  tooltip: t.game_hook_code_paste_title,
-                  icon: const Icon(Icons.content_paste_go_outlined, size: 20),
-                  onPressed: _pasteLunaHookCode,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_save}',
-                  icon: const Icon(Icons.bookmark_add_outlined, size: 20),
-                  onPressed: _saveSelectedLunaHookCode,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_import}',
-                  icon: const Icon(Icons.file_download_outlined, size: 20),
-                  onPressed: _importLunaHookProfiles,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_export}',
-                  icon: const Icon(Icons.file_upload_outlined, size: 20),
-                  onPressed: _exportLunaHookProfiles,
+                // BUG-1909：Hook Code 动作组改成**可横滚**。
+                //
+                // 实测：这一行在 520px 下本来就没有横向余量了，直接再加一个
+                // IconButton 会让整卡 RenderFlex overflow（既有守卫
+                // `texthooker_page_test` 的 520px 用例当场转红）。这里用的正是本页
+                // 页头已有的那条兜底范式——「窄窗必须是可滚动，而不是 overflow，
+                // 更不能把入口整个丢掉」。用 Flexible 而不是固定宽度：宽窗下它按
+                // 内容占位，与改动前逐字节一致。
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        // 粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
+                        // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须
+                        // 是游戏 exe 的 SHA-256——用户拿到的只是一串字符。
+                        IconButton(
+                          tooltip: t.game_hook_code_paste_title,
+                          icon: const Icon(
+                            Icons.content_paste_go_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _pasteLunaHookCode,
+                        ),
+                        IconButton(
+                          tooltip: 'Hook Code · ${t.dialog_save}',
+                          icon: const Icon(
+                            Icons.bookmark_add_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _saveSelectedLunaHookCode,
+                        ),
+                        IconButton(
+                          tooltip: 'Hook Code · ${t.dialog_import}',
+                          icon: const Icon(
+                            Icons.file_download_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _importLunaHookProfiles,
+                        ),
+                        IconButton(
+                          tooltip: 'Hook Code · ${t.dialog_export}',
+                          icon: const Icon(
+                            Icons.file_upload_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _exportLunaHookProfiles,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

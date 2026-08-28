@@ -42,7 +42,9 @@ void main() {
 
     final DiscoveryResourceItem win = entries[0] as DiscoveryResourceItem;
     expect(win.title, 'ATRI -My Dear Moments- v1.3.7z');
-    expect(win.note, '熟肉');
+    // BUG-1910：汉化状态从 note 里那句硬编码中文改成带类型的字段（UI 据它筛选并
+    // 出 i18n 标签）。中文字面量本身仍由 shinnkuGameTypeNote 派生，见下方分组。
+    expect(win.gameLocalization, DiscoveryGameLocalization.translated);
     expect(win.sizeBytes, 3781414904);
     final DiscoveryHttpPayload winPayload =
         win.payload! as DiscoveryHttpPayload;
@@ -54,7 +56,7 @@ void main() {
 
     final DiscoveryResourceItem collection =
         entries[1] as DiscoveryResourceItem;
-    expect(collection.note, '生肉');
+    expect(collection.gameLocalization, DiscoveryGameLocalization.raw);
     final DiscoveryHttpPayload collectionPayload =
         collection.payload! as DiscoveryHttpPayload;
     expect(
@@ -65,7 +67,7 @@ void main() {
     expect(collectionPayload.url, isNot(contains('合集系列')));
 
     final DiscoveryResourceItem apk = entries[2] as DiscoveryResourceItem;
-    expect(apk.note, '手机');
+    expect(apk.gameLocalization, DiscoveryGameLocalization.mobile);
     expect(apk.detailUrl, contains('/files/0/apk/'));
   });
 

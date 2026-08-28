@@ -1718,10 +1718,25 @@ async function testFailedMineDoesNotRefreshIntoSuccessAfterDuplicateCheck() {
 
   assert.equal(duplicateChecks, 1,
     'failed/uncertain mine results must not run a delayed duplicateCheck');
-  assert.equal(context.__timers.size, 0,
-    'failed/uncertain mine results must not schedule delayed refresh timers');
   assert.equal(mineButton.textContent, '+',
     'a failed/uncertain mine must not later paint itself as success');
+
+  // BUG-1908：原先这里断言的是 `context.__timers.size === 0`，把「一个 pending
+  // 定时器都没有」当成「没有延迟刷新」的代理。那个代理太宽——失败时**就地提示**
+  // （showInlineHint，BUG-1064 为「app 外没有 Flutter toast 可用」建的页内车道）
+  // 本身就带一个 1.8s 自渐隐定时器，与 TODO-448 要防的「延迟 duplicateCheck 把按钮
+  // 翻成 ✓」毫无关系。
+  //
+  // 换成**更强**的直接断言：把所有挂起的定时器全跑一遍，再看有没有人偷偷刷新/翻转。
+  // 数定时器只能证明「没人排队」，跑完定时器能证明「排了队也不会翻」。
+  for (const timer of [...context.__timers.values()]) {
+    if (!timer.cleared) timer.callback();
+  }
+  await flush();
+  assert.equal(duplicateChecks, 1,
+    'no timer may run a delayed duplicateCheck after a failed mine');
+  assert.equal(mineButton.textContent, '+',
+    'no timer may repaint a failed mine as success');
 }
 
 // ── TODO-270 D: tri-state mine button (overwrite the latest mined card) ─────

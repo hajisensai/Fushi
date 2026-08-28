@@ -91,6 +91,7 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
     this.coverUrl,
     this.detailUrl,
     this.note,
+    this.gameLocalization,
   });
 
   /// 源内稳定 id（去重/防重复入队的身份键；语义源自定义：文件路径、种子页 URL 等）。
@@ -118,9 +119,34 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
   /// 外部详情页（nyaa view 页、shinnku 条目页）；「在浏览器打开」动作用。
   final String? detailUrl;
 
-  /// 源特定的一句话标注（shinnku 的「熟肉/生肉/手机」、平台标签等），
-  /// 原样展示，不参与任何逻辑。
+  /// 源特定的一句话标注（sukebei 的 `trusted`、平台标签等），原样展示，
+  /// 不参与任何逻辑。
+  ///
+  /// BUG-1910：游戏的「生肉/熟肉/手机」**不再**走这里 —— 见 [gameLocalization]。
   final String? note;
+
+  /// BUG-1910：游戏资源的**汉化状态**，带类型。
+  ///
+  /// 用户要「筛选生肉熟肉等标签」。此前这个信息只以 `note` 里一句硬编码中文存在
+  /// （「原样展示，不参与任何逻辑」——注释自陈），既没法筛，对非中文用户还是一串
+  /// 看不懂的字。按显示名筛选是本仓刚刚修过的反模式（BUG-1906 的导出范围）。
+  ///
+  /// null = **该源没有给出这个信息**（sukebei / AList 的条目就是 null），
+  /// 不是「未汉化」。UI 必须为它保留一个可见的「未标注」档，否则用户在聚合搜索里
+  /// 一按筛选就把这两个源整个滤没了。
+  final DiscoveryGameLocalization? gameLocalization;
+}
+
+/// BUG-1910：游戏资源的汉化状态。值域来自 shinnku 上游 `get_game_type` 的三分类。
+enum DiscoveryGameLocalization {
+  /// 生肉：原版未汉化。
+  raw,
+
+  /// 熟肉：已汉化 / 已翻译。
+  translated,
+
+  /// 手机版。
+  mobile,
 }
 
 /// 一次发现请求。[query] 非空白即搜索，否则是目录浏览（[path] null = 源根）。
