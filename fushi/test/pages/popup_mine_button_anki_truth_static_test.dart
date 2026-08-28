@@ -36,12 +36,7 @@ void main() {
 
   setUpAll(() {
     source = File('assets/popup/popup.js').readAsStringSync();
-    // 锚点用 `mine-button'`（class 串的**结尾**）而不是整串
-    // `className: 'mine-button'`：制卡按钮的 class 早已是
-    // `'inline-action-button mine-button'`，旧锚点在 develop 上就已经找不到了
-    // （本条与本批改动无关，是既有红——develop 的 popup.js 与本文件都逐字节验过）。
-    // 只钉「class 以 mine-button 收尾」这一点，再加个前缀也不会把守卫弄哑。
-    final int start = source.indexOf("mine-button'");
+    final int start = source.indexOf("className: 'mine-button'");
     expect(
       start,
       greaterThanOrEqualTo(0),

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1783 条。点号进各自文件。
+> 共 1784 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1914](bugs/BUG-1914-mine-button-lost-text-marker-restore.md) | 🚧 | 🚧 | 制卡按钮被加回 inline-action-button 基类，三条 TODO-1325 还原守卫在 develop 上已红 |
 | [BUG-1911](bugs/BUG-1911-gal-download-library-placeholder.md) | ✅ | ✅ | 下载中的游戏不在库里占位：看不出到底加没加进来 |
 | [BUG-1910](bugs/BUG-1910-gal-discovery-localization-filter.md) | ✅ | ✅ | gal 下载缺少生肉/熟肉筛选：分类只以一句硬编码中文存在 |
 | [BUG-1909](bugs/BUG-1909-gal-hook-code-paste.md) | ✅ | ✅ | gal 特殊码只能靠手拼七列 TSV 导入：缺少粘贴入口与归一化 |
