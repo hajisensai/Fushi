@@ -1709,15 +1709,45 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 			};
 
+			// primary 在「读取」与「parent 赋值」之间被换掉，是 rehome 唯一一种下一次
+			// 输入必然看到不同状态、因而值得等的失败。判据只有这一条；读 primaryLayer
+			// 本身可能抛，抛了就当没换（不值得等），交给上层走确定动作。
+			global.fushiLookupPrimaryRacedSince = function(primary)
+			{
+				try { return primary !== global.kag.primaryLayer; }
+				catch(e) { return false; }
+			};
+
+)TJS" LR"TJS(
+
 			// stable/run 和输入预检只允许尝试迁移。过渡中的 primary 可能还没有
 			// 完成 fore/back 交换；此时 rehome 失败必须保留 Card/CardSeq/CardEntry，
 			// 等 stable=true 或下一次输入重试。只有确认的换句路径才能退休 carrier。
+			//
+			// 🔴 两条硬约束，缺任何一条都会让 leftClickHook 把玩家的左键永久吞掉、
+			// 剧情再也推不动：
+			//
+			// ① 不变式 `CardSeq != 0 ⇒ fushiLookupCard 是有效 Layer`。Prepare / Apply /
+			//    Reconcile 一旦判定 carrier 不可用，都会把 Card / CardSeq / CardEntry
+			//    三个一起清掉。本函数是**第四个**能观察到该不变式被引擎侧打破的地方
+			//    （kag.clear()、场景重载、全屏切换重建 primary 树会直接 invalidate 掉
+			//    Layer），所以也必须在这里把它修回来。把矛盾状态原样报成 "not ready"
+			//    的后果是：fushiLookupCardVisible() 只看 CardSeq 就返回 true，本函数
+			//    返回 false，两个函数对同一状态给出相反答案，leftClick 的
+			//    popupTransaction && !carrierSettled 恒成立——而 TJS 侧唯一无条件清
+			//    CardSeq 的入口在 C++ 下发的 dismiss 上，玩家点不到、也就永远解不开。
+			//
+			// ② 返回 false（= 请上层再等一次）只保留给 primary 竞态这一种失败。其余
+			//    失败（引擎拒绝 parent 赋值、层脱离窗口树、图层树成环、恢复 visible
+			//    抛错、这一刻拿不到 primary）等多久都不会好，一律返回 true，让
+			//    leftClickHook 走确定动作（转发进卡或收卡），绝不出现「吞掉这一击但
+			//    什么都不做」这种既不推进游戏也不推进查词的状态。
 			global.fushiLookupTryRehomeVisualParents = function()
 			{
 				var primary = void;
 				try { primary = global.kag.primaryLayer; }
-				catch(e) { return false; }
-				if(primary === void || primary === null || !isvalid primary) return false;
+				catch(e) { return true; }
+				if(primary === void || primary === null || !isvalid primary) return true;
 
 				var highlight = global.fushiLookupHighlightLayer;
 				if(highlight !== void && highlight !== null &&
@@ -1726,9 +1756,27 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 				var card = global.fushiLookupCard;
 				if(card === void || card === null || !isvalid card)
-					return global.fushiLookupCardSeq == 0;
+				{
+					// carrier 已被引擎侧销毁，等不回来。就地恢复不变式，让
+					// fushiLookupCardVisible() 与本函数对同一状态给出同一答案；
+					// 这一击随后走正常收卡路径，而不是被静默吃掉。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					return true;
+				}
 				if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
-					!global.fushiLookupRehomeLayerToPrimary(card, primary)) return false;
+					!global.fushiLookupRehomeLayerToPrimary(card, primary))
+				{
+					if(global.fushiLookupPrimaryRacedSince(primary)) return false;
+					// 迁移永久失败：与 Reconcile 同一处置，只换视觉 carrier，
+					// route/submit 账本仍由真实句界管理。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					global.fushiLookupRetireDetachedLayer(card);
+					return true;
+				}
 				try
 				{
 					// KAG transition 可暂时隐藏子层。已应用且未进入截图 suppress
@@ -1740,7 +1788,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						card.update();
 					}
 				}
-				catch(e) { global.fushiLookupFault(); return false; }
+				catch(e)
+				{
+					// carrier 已经挂在 current primary 下了；恢复 visible 失败是局部
+					// 视觉故障，不是「再等一次就会好」。报 false 会让每一次左键都被吞。
+					global.fushiLookupFault();
+				}
 				return true;
 			};
 
@@ -3384,8 +3437,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// 致命错误弹框（"致命的なエラーが発生しました"），玩家的这一局当场被打断
 				// ——我们注进去的传感器把别人的游戏搞挂了。C++ 那侧的泵早就守着这条边界
 				// （KiriKiriLookupPumpCallback 的 catch(...)），TJS 这侧必须同样守。
-				// 非 popup 路径异常时 fail-open；一旦确认这次点击属于可见 popup，就必须
-				// fail-closed 返回 true。卡内交互失败是局部故障，把同一击交回剧情则会跳句。
+				// 兜底一律返回 false = **不消费**这次事件：查词坏掉是小事，把玩家的点击
+				// 吞掉、剧情推不动是大事。异常路径的状态按定义是未知的，在未知状态上
+				// fail-closed 只会把「这一击不确定」放大成「每一击都被吃掉」。
 				var popupTransaction = false;
 				try
 				{
@@ -3394,12 +3448,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					popupTransaction = global.fushiLookupCardVisible();
 					// primary 的 fore/back 身份变化只迁移 carrier，随后补 getRender/既有
 					// MsgwinRender；两步都不改变 route/fence，动画期间点击不会重建选区。
-					var cardReady = global.fushiLookupTryRehomeVisualParents();
+					// 该 helper 只在 primary 竞态时报 false，其余不可用一律先把 card 身份
+					// 收干净——因此下面这个吞事件分支不可能连续成立。
+					var carrierSettled = global.fushiLookupTryRehomeVisualParents();
 					global.fushiLookupRefreshCaptureBridges();
-					// 过渡中 primary 还不能接管旧 carrier 时，这一击仍属于
-					// 已显示 popup：只吞事件并等 stable=true 重试，不发 kind5、
-					// 不 Cancel，否则用户点选区反而会把同一 WebView route 关掉。
-					if(popupTransaction && !cardReady) return true;
+					// primary 在这一瞬被换掉时，这一击仍属于已显示 popup：只吞事件并
+					// 等下一次输入重试，不发 kind5、不 Cancel，否则用户点选区反而会把
+					// 同一 WebView route 关掉。
+					if(popupTransaction && !carrierSettled) return true;
 					if(global.fushiLookupCardVisible() && global.fushiLookupOverCard())
 					{
 						try
@@ -3434,7 +3490,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e)
 				{
 					global.fushiLookupFault();
-					return popupTransaction;
+					return false;
 				}
 			};
 			global.fushiLookupMouseMoveHook = function(x, y)

@@ -1162,6 +1162,7 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "fushiLookupRetireDetachedLayer",
         "fushiLookupAdvanceDismissFence",
         "fushiLookupRehomeLayerToPrimary",
+        "fushiLookupPrimaryRacedSince",
         "fushiLookupTryRehomeVisualParents",
         "fushiLookupReconcileVisualParents",
         "fushiLookupRefreshCaptureBridges",
@@ -1328,12 +1329,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         _restore_tjs_literals(tjs, functions["fushiLookupMouseMoveHook"])
     )
     # 人工点击只能做 attempt-only rehome 与补采集桥；先冻结本次
-    # 点击是否属于既有 popup。过渡中 rehome 暂时失败时，这一击只能被吞掉，
-    # 不得发 kind=5/Cancel，也不得退休 carrier 或推进 route。
+    # 点击是否属于既有 popup。只有 primary 竞态这一种「下一次输入必然看到不同
+    # 状态」的失败才吞掉这一击，且不得发 kind=5/Cancel，也不得推进 route。
     if not left_click.startswith(
         "varpopupTransaction=false;try{"
         "popupTransaction=global.fushiLookupCardVisible();"
-        "varcardReady=global.fushiLookupTryRehomeVisualParents();"
+        "varcarrierSettled=global.fushiLookupTryRehomeVisualParents();"
         "global.fushiLookupRefreshCaptureBridges();"
     ) or (
         left_click.count("global.fushiLookupTryRehomeVisualParents();") != 1
@@ -1344,7 +1345,7 @@ def find_invalid_lookup_entry_visibility_lifecycle(
             f"{ADAPTER.name}: leftClick 必须先冻结 popup 事务，再做 attempt-only "
             "carrier rehome 并补采集桥"
         )
-    rehome_wait_swallow = "if(popupTransaction&&!cardReady)returntrue;"
+    rehome_wait_swallow = "if(popupTransaction&&!carrierSettled)returntrue;"
     card_click = (
         "if(global.fushiLookupCardVisible()&&global.fushiLookupOverCard()){"
     )
@@ -1382,12 +1383,16 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         violations.append(
             f"{ADAPTER.name}: 卡内输入转发必须局部捕获异常并始终 return true 消费点击"
         )
+    # 🔴 兜底必须 fail-open。异常路径的状态按定义是未知的：在未知状态上 fail-closed
+    # （返回 popupTransaction / true）会把「这一击不确定」放大成「每一击都被吃掉」——
+    # 只要还有一个残留的非零 CardSeq，玩家就再也推不动剧情，而 TJS 侧唯一无条件清
+    # CardSeq 的入口恰好要靠玩家点得动才够得着。查词坏掉是小事，吞输入是大事。
     if not left_click.endswith(
-        "catch(e){global.fushiLookupFault();returnpopupTransaction;}"
+        "catch(e){global.fushiLookupFault();returnfalse;}"
     ):
         violations.append(
-            f"{ADAPTER.name}: leftClick 异常出口必须按已冻结 popupTransaction fail-closed，"
-            "popup 输入转发失败不得落回剧情"
+            f"{ADAPTER.name}: leftClick 异常出口必须 fail-open 返回 false，"
+            "不得在未知状态下消费玩家的点击"
         )
 
     queue_input = functions["fushiLookupQueueInput"]
@@ -2182,35 +2187,72 @@ def find_invalid_lookup_entry_visibility_lifecycle(
                 f"{ADAPTER.name}: carrier rehome 禁止改变 route/fence/card 身份: {forbidden}"
             )
 
+    # 🔴 rehome 唯一值得等的失败：primary 在「读取」与「parent 赋值」之间被换掉。
+    # 判据必须自成一个 helper 且只有这一条，否则「等一次」会被悄悄扩到永久失败上。
+    primary_raced = functions["fushiLookupPrimaryRacedSince"]
+    if primary_raced != (
+        "try{returnprimary!==global.kag.primaryLayer;}catch(e){returnfalse;}"
+    ):
+        violations.append(
+            f"{ADAPTER.name}: primary 竞态判据必须只比较 primary 与 current "
+            "primaryLayer，读不到时按「没换」处理"
+        )
+
+    # 🔴 不变式：CardSeq != 0 ⇒ fushiLookupCard 是有效 Layer。Prepare / Apply /
+    # Reconcile 判定 carrier 不可用时都会清 Card/CardSeq/CardEntry 三件套；
+    # attempt-only rehome 是第四个能观察到该不变式被引擎侧打破的地方（kag.clear()、
+    # 场景重载、全屏切换会直接 invalidate 掉 Layer），因此**必须就地修回不变式**。
+    # 若它把矛盾状态原样报成 "not ready"，fushiLookupCardVisible() 只看 CardSeq 会
+    # 返回 true，本函数返回 false，leftClick 的 popupTransaction && !carrierSettled
+    # 恒成立，玩家的左键被永久吞掉、剧情再也推不动。
     try_rehome = functions["fushiLookupTryRehomeVisualParents"]
+    invalid_card_restore = (
+        "if(card===void||card===null||!isvalidcard){"
+        "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+        "global.fushiLookupCardEntry=void;returntrue;}"
+    )
+    permanent_rehome_retire = (
+        "if(!global.fushiLookupLayerOwnedByPrimary(card,primary)&&"
+        "!global.fushiLookupRehomeLayerToPrimary(card,primary)){"
+        "if(global.fushiLookupPrimaryRacedSince(primary))returnfalse;"
+        "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+        "global.fushiLookupCardEntry=void;"
+        "global.fushiLookupRetireDetachedLayer(card);returntrue;}"
+    )
     try_rehome_patterns = (
         re.escape("varprimary=void;"),
         re.escape("try{primary=global.kag.primaryLayer;}"),
-        re.escape("catch(e){returnfalse;}"),
-        re.escape("if(primary===void||primary===null||!isvalidprimary)returnfalse;"),
+        re.escape("catch(e){returntrue;}"),
+        re.escape("if(primary===void||primary===null||!isvalidprimary)returntrue;"),
         re.escape(
             "if(highlight!==void&&highlight!==null&&"
             "!global.fushiLookupLayerOwnedByPrimary(highlight,primary))"
             "global.fushiLookupRehomeLayerToPrimary(highlight,primary);"
         ),
-        re.escape(
-            "if(card===void||card===null||!isvalidcard)"
-            "returnglobal.fushiLookupCardSeq==0;"
-        ),
-        re.escape(
-            "if(!global.fushiLookupLayerOwnedByPrimary(card,primary)&&"
-            "!global.fushiLookupRehomeLayerToPrimary(card,primary))returnfalse;"
-        ),
+        re.escape(invalid_card_restore),
+        re.escape(permanent_rehome_retire),
         re.escape(
             "if(global.fushiLookupCardSeq!=0&&"
             "!global.fushiLookupCaptureSuppressed&&!card.visible)"
         ),
-        re.escape("returntrue;"),
+        re.escape("catch(e){global.fushiLookupFault();}returntrue;"),
     )
     if not _matches_once_in_order(try_rehome, try_rehome_patterns):
         violations.append(
-            f"{ADAPTER.name}: stable/输入预检必须保留 card 身份，"
-            "对 highlight/card 只做 attempt-only rehome，并在卡存在时返回可用性"
+            f"{ADAPTER.name}: attempt-only rehome 必须在 carrier 失效/永久迁移失败时"
+            "就地恢复「CardSeq!=0 ⇒ card 有效」不变式，只对 primary 竞态返回 false"
+        )
+    # 「请上层再等一次」只能有唯一一个出口，且必须被竞态判据守着。多一个 return false
+    # 就是多一条能把玩家左键永久吞掉的路径。
+    if (
+        try_rehome.count("returnfalse;") != 1
+        or try_rehome.count("if(global.fushiLookupPrimaryRacedSince(primary))returnfalse;")
+        != 1
+        or try_rehome.count("global.fushiLookupCardSeq=0;") != 2
+    ):
+        violations.append(
+            f"{ADAPTER.name}: attempt-only rehome 只能有一个受 primary 竞态判据保护的 "
+            "return false，且两条 carrier 失效路径都要清 CardSeq"
         )
     active_restore_bodies = _braced_bodies_after(
         try_rehome,
@@ -2223,7 +2265,6 @@ def find_invalid_lookup_entry_visibility_lifecycle(
             "恢复 carrier visible/update"
         )
     for forbidden in (
-        "fushiLookupRetireDetachedLayer",
         "fushiLookupAdvanceDismissFence",
         "fushiLookupDismiss",
         "fushiLookupQueueInput",
@@ -2235,18 +2276,6 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         if forbidden in try_rehome:
             violations.append(
                 f"{ADAPTER.name}: attempt-only rehome 禁止销毁 surface/route: {forbidden}"
-            )
-    for assigned_state in (
-        "fushiLookupCard",
-        "fushiLookupCardSeq",
-        "fushiLookupCardEntry",
-    ):
-        if re.search(
-            rf"global\.{re.escape(assigned_state)}=(?!=)", try_rehome
-        ):
-            violations.append(
-                f"{ADAPTER.name}: attempt-only rehome 禁止清空卡片身份: "
-                f"{assigned_state}"
             )
 
     reconcile_layers = functions["fushiLookupReconcileVisualParents"]
@@ -3339,12 +3368,18 @@ global.fushiLookupRehomeLayerToPrimary = function(layer, primary)
   }
 };
 
+global.fushiLookupPrimaryRacedSince = function(primary)
+{
+  try { return primary !== global.kag.primaryLayer; }
+  catch(e) { return false; }
+};
+
 global.fushiLookupTryRehomeVisualParents = function()
 {
   var primary = void;
   try { primary = global.kag.primaryLayer; }
-  catch(e) { return false; }
-  if(primary === void || primary === null || !isvalid primary) return false;
+  catch(e) { return true; }
+  if(primary === void || primary === null || !isvalid primary) return true;
 
   var highlight = global.fushiLookupHighlightLayer;
   if(highlight !== void && highlight !== null &&
@@ -3353,9 +3388,22 @@ global.fushiLookupTryRehomeVisualParents = function()
 
   var card = global.fushiLookupCard;
   if(card === void || card === null || !isvalid card)
-    return global.fushiLookupCardSeq == 0;
+  {
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    return true;
+  }
   if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
-    !global.fushiLookupRehomeLayerToPrimary(card, primary)) return false;
+    !global.fushiLookupRehomeLayerToPrimary(card, primary))
+  {
+    if(global.fushiLookupPrimaryRacedSince(primary)) return false;
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    global.fushiLookupRetireDetachedLayer(card);
+    return true;
+  }
   try
   {
     if(global.fushiLookupCardSeq != 0 &&
@@ -3365,7 +3413,7 @@ global.fushiLookupTryRehomeVisualParents = function()
       card.update();
     }
   }
-  catch(e) { global.fushiLookupFault(); return false; }
+  catch(e) { global.fushiLookupFault(); }
   return true;
 };
 
@@ -3954,9 +4002,9 @@ global.fushiLookupLeftClickHook = function()
   try
   {
     popupTransaction = global.fushiLookupCardVisible();
-    var cardReady = global.fushiLookupTryRehomeVisualParents();
+    var carrierSettled = global.fushiLookupTryRehomeVisualParents();
     global.fushiLookupRefreshCaptureBridges();
-    if(popupTransaction && !cardReady) return true;
+    if(popupTransaction && !carrierSettled) return true;
     if(global.fushiLookupCardVisible() && global.fushiLookupOverCard())
     {
       try
@@ -3978,7 +4026,7 @@ global.fushiLookupLeftClickHook = function()
     }
     return global.fushiLookupProbe(true);
   }
-  catch(e) { global.fushiLookupFault(); return popupTransaction; }
+  catch(e) { global.fushiLookupFault(); return false; }
 };
 global.fushiLookupMouseMoveHook = function(x, y)
 {
@@ -4517,9 +4565,9 @@ class MutationSelfTest(unittest.TestCase):
                 "      return false;\n",
             ),
             (
+                "  catch(e) { global.fushiLookupFault(); return false; }\n",
                 "  catch(e) { global.fushiLookupFault(); "
                 "return popupTransaction; }\n",
-                "  catch(e) { global.fushiLookupFault(); return false; }\n",
             ),
         ):
             with self.subTest(replacement=new.strip()):
@@ -4531,14 +4579,14 @@ class MutationSelfTest(unittest.TestCase):
     def test_popup_rehome_failure_is_swallowed_without_closing_route(self) -> None:
         for old, new in (
             (
-                "    if(popupTransaction && !cardReady) return true;\n",
+                "    if(popupTransaction && !carrierSettled) return true;\n",
                 "",
             ),
             (
-                "    var cardReady = "
+                "    var carrierSettled = "
                 "global.fushiLookupTryRehomeVisualParents();\n",
                 "    global.fushiLookupReconcileVisualParents();\n"
-                "    var cardReady = true;\n",
+                "    var carrierSettled = true;\n",
             ),
         ):
             with self.subTest(replacement=new.strip()):
@@ -4616,21 +4664,81 @@ class MutationSelfTest(unittest.TestCase):
                     [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
                 )
 
-    def test_attempt_only_rehome_never_retires_or_clears_card_identity(self) -> None:
+    def test_attempt_only_rehome_restores_card_seq_invariant(self) -> None:
+        """每一种「不修不变式 / 多一条无守卫的等待」都必须红。
+
+        这些变异各自都足以让 leftClick 的 popupTransaction && !carrierSettled 恒成立，
+        把玩家的左键永久吞掉——而 TJS 侧唯一无条件清 CardSeq 的入口要靠玩家点得动才
+        够得着，所以一旦成立就再也解不开。
+        """
         for old, new in (
+            # ① carrier 已被引擎侧 invalidate 却只报「not ready」（PR #1030 的原形态）。
             (
                 "  if(card === void || card === null || !isvalid card)\n"
-                "    return global.fushiLookupCardSeq == 0;\n",
-                "  if(card === void || card === null || !isvalid card)\n"
                 "  {\n"
+                "    global.fushiLookupCard = void;\n"
                 "    global.fushiLookupCardSeq = 0;\n"
+                "    global.fushiLookupCardEntry = void;\n"
                 "    return true;\n"
                 "  }\n",
+                "  if(card === void || card === null || !isvalid card)\n"
+                "    return global.fushiLookupCardSeq == 0;\n",
             ),
+            # ② 迁移永久失败也只报「not ready」，carrier 永远换不掉。
+            (
+                "  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&\n"
+                "    !global.fushiLookupRehomeLayerToPrimary(card, primary))\n"
+                "  {\n"
+                "    if(global.fushiLookupPrimaryRacedSince(primary)) return false;\n"
+                "    global.fushiLookupCard = void;\n"
+                "    global.fushiLookupCardSeq = 0;\n"
+                "    global.fushiLookupCardEntry = void;\n"
+                "    global.fushiLookupRetireDetachedLayer(card);\n"
+                "    return true;\n"
+                "  }\n",
+                "  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&\n"
+                "    !global.fushiLookupRehomeLayerToPrimary(card, primary))"
+                " return false;\n",
+            ),
+            # ③ 「再等一次」失去 primary 竞态守卫，退化成无条件等待。
+            (
+                "    if(global.fushiLookupPrimaryRacedSince(primary)) return false;\n",
+                "    return false;\n",
+            ),
+            # ④ 恢复 visible 抛错被当成「等一次就会好」。
+            (
+                "  catch(e) { global.fushiLookupFault(); }\n"
+                "  return true;\n"
+                "};\n\n"
+                "global.fushiLookupReconcileVisualParents = function()\n",
+                "  catch(e) { global.fushiLookupFault(); return false; }\n"
+                "  return true;\n"
+                "};\n\n"
+                "global.fushiLookupReconcileVisualParents = function()\n",
+            ),
+            # ⑤ 这一刻拿不到 primary 也被当成「等一次就会好」。
+            (
+                "  try { primary = global.kag.primaryLayer; }\n"
+                "  catch(e) { return true; }\n"
+                "  if(primary === void || primary === null || !isvalid primary)"
+                " return true;\n",
+                "  try { primary = global.kag.primaryLayer; }\n"
+                "  catch(e) { return false; }\n"
+                "  if(primary === void || primary === null || !isvalid primary)"
+                " return false;\n",
+            ),
+            # ⑥ 竞态判据被放宽成恒真，等待又变回无界。
+            (
+                "  try { return primary !== global.kag.primaryLayer; }\n"
+                "  catch(e) { return false; }\n",
+                "  try { return true; }\n"
+                "  catch(e) { return false; }\n",
+            ),
+            # ⑦ attempt-only 路径不得顺手销毁还活着的 carrier。
             (
                 "      card.visible = true;\n"
                 "      card.update();\n",
-                "      global.fushiLookupRetireDetachedLayer(card);\n"
+                "      global.fushiLookupDismiss();\n"
                 "      card.visible = true;\n"
                 "      card.update();\n",
             ),
