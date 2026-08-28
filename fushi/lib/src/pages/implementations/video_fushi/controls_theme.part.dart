@@ -17,7 +17,7 @@ part of '../video_fushi_page.dart';
 /// `_videoButtonBarHeight`, `_videoControlIconSize`, `_videoSeekBar*`,
 /// `_mediaKitControlsVisible`, `_brightness`, `_enterBrightness`,
 /// `_onMediaKitVolumeChanged`, `_onMediaKitBrightnessChanged`,
-/// `_videoKeyboardShortcuts`, `_topBarSlotGroup`, `_topBarTitle`,
+/// `_topBarSlotGroup`, `_topBarTitle`,
 /// `_centeredBottomControlBar`, `_videoBottomSystemInset`, `_videoTopBarMargin`)
 /// and stays bare,
 /// resolved through the shared private scope.
@@ -107,7 +107,17 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           _VideoFushiPageState._videoDesktopSeekBarContainerHeight,
       seekBarBottomButtonBarOverlap:
           _VideoFushiPageState._videoDesktopSeekBarButtonBarOverlap,
-      keyboardShortcuts: _videoKeyboardShortcuts(controller),
+      // 方案 D（BUG-1864 同源缺口）：media_kit 这层**故意留空**，不再是视频快捷键的
+      // 挂载点。它只包 `AdaptiveVideoControls` 子树，而字幕列表 / 剧集轨 / 侧栏是
+      // `Video` 的**兄弟**——焦点一进面板（[PanelFocusScope] 会主动抢），整张表就够不
+      // 着了：注册表声明的作用域是整页（[ShortcutScope.video]），挂载点却只在 controls
+      // 子树，scope ≠ mount 就是那个根因。整表已上移到 [_wrapVideoGamepadControls] 的
+      // `Focus.onKeyEvent`（[_handleVideoKeyboardShortcut]，press-time 解析）。
+      //
+      // 传空表而不是 null：fork 的实现是 `keyboardShortcuts ?? _defaultKeyboardShortcuts`
+      // （`material_desktop.dart`），给 null 会把 media_kit 自己那套默认键装回来，
+      // 与注册表打架。
+      keyboardShortcuts: const <ShortcutActivator, VoidCallback>{},
       primaryButtonBar: const <Widget>[],
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
