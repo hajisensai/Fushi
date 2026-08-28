@@ -39,6 +39,55 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// `Row[Expanded(video), 面板列]`）真把画面挤窄到左侧、不浮层遮挡（TODO-314 根因：此前误经
   /// `_showVideoSidePanel(subtitleList)` 进 overlay 系统，push-aside 成死代码）。与其它浮层
   /// 互斥：开字幕列表先关任何打开的浮层（[_videoSidePanel]）。打开时唤醒控制条让用户看到入口。
+  /// BUG-1907：导出本视频「收藏档」里的句子。
+  ///
+  /// 复用既有的导出原语（[buildSentenceExport] + [saveOrShareExport]）——它们是纯函数
+  /// + 平台分流，与收藏夹页完全解耦，本来就是为复用而拆的。面板只把句子交出来，
+  /// 落盘/分享这类副作用留在页面层（与 [_copyCueText] / [_toggleFavoriteCueForVideo]
+  /// 同一条纪律）。
+  ///
+  /// 格式固定 Markdown：这是个一键动作，不值得为它再弹一层格式选择框；要挑格式的
+  /// 用户走收藏夹页的导出面板（那里本来就有四种格式）。
+  Future<void> _exportFavoriteCues(List<AudioCue> favorites) async {
+    if (favorites.isEmpty) return;
+    final String title = _title ?? widget.bookUid;
+    final DateTime now = DateTime.now();
+    final List<ExportSentence> rows = <ExportSentence>[
+      for (final AudioCue cue in favorites)
+        ExportSentence(
+          text: cue.text.trim(),
+          bookTitle: title,
+          createdAt: now,
+          source: kFavoriteSentenceSourceVideo,
+          bookKey: widget.bookUid,
+        ),
+    ];
+    final String content =
+        buildSentenceExport(rows, format: ExportFormat.markdown);
+    final ExportFileMeta meta = exportFileMeta(ExportFormat.markdown);
+    if (!mounted) return;
+    await saveOrShareExport(
+      context: context,
+      content: content,
+      fileName: '${sanitizeExportFileName(title)}.${meta.extension}',
+      mimeType: meta.mimeType,
+      subject: title,
+    );
+  }
+
+  /// BUG-1907：Ctrl+F —— 打开字幕列表并聚焦搜索框。
+  ///
+  /// 焦点在播放器上时按键由视频页整表快捷键接住，那张表**够不到**面板
+  /// （面板是 media_kit controls 的兄弟节点），所以这里负责「先把列表开出来，
+  /// 再通过 [_subtitleSearchRequests] 让面板自己展开搜索框并抢焦点」。
+  /// 焦点已经在面板里时，面板自带的那份 activator 直接生效，走不到这里。
+  void _requestSubtitleListSearch() {
+    if (!_subtitleListVisible.value) {
+      _toggleSubtitleJumpList();
+    }
+    _subtitleSearchRequests.value = _subtitleSearchRequests.value + 1;
+  }
+
   void _toggleSubtitleJumpList() {
     final bool next = !_subtitleListVisible.value;
     if (next) {
@@ -1847,6 +1896,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
                                 loadingHint: t.video_subtitle_list_loading,
                                 fontSize: 14 * _videoUiScale,
                                 width: panelWidth,
+                                // BUG-1907：Ctrl+F 的 activator 从快捷键注册表取
+                                // （唯一真相源，用户改绑后面板跟着变）。面板必须自带
+                                // 一份：整表快捷键只包 media_kit controls 子树，焦点
+                                // 一进面板就收不到按键了。
+                                searchActivators: <ShortcutActivator>[
+                                  for (final InputBinding b in appModel
+                                      .shortcutRegistry
+                                      .bindingsFor(ShortcutAction
+                                          .videoSearchSubtitleList)
+                                      .keyboardBindings)
+                                    b.toActivator(includeRepeats: false),
+                                ],
+                                searchRequests: _subtitleSearchRequests,
+                                onExportFavorites: _exportFavoriteCues,
                               ),
                               Positioned(
                                 left: 0,

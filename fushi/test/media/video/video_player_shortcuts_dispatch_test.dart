@@ -30,6 +30,7 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     screenshot: () => record('screenshot'),
     toggleFullscreen: () => record('toggleFullscreen'),
     toggleSubtitleList: () => record('toggleSubtitleList'),
+    searchSubtitleList: () => record('searchSubtitleList'),
     toggleImmersiveLock: () => record('toggleImmersiveLock'),
     toggleSubtitleBlur: () => record('toggleSubtitleBlur'),
     cycleSubtitleObscure: () => record('cycleSubtitleObscure'),

@@ -3817,5 +3817,10 @@
   "storage_category_cache": "Caches and temporary files",
   "storage_category_other": "Other uncategorised",
   "collection_export_pick_source": "Select a source",
-  "collection_export_all_sources": "All sources"
+  "collection_export_all_sources": "All sources",
+  "video_subtitle_list_search": "Search subtitles",
+  "video_subtitle_list_search_hint": "Type to filter lines",
+  "video_subtitle_list_search_empty": "No line matches",
+  "video_subtitle_list_export_favorites": "Export favorited lines",
+  "shortcut_action_video_search_subtitle_list": "Search subtitle list"
 }

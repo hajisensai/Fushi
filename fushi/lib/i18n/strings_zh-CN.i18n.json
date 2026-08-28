@@ -3817,5 +3817,10 @@
   "storage_category_cache": "缓存与临时文件",
   "storage_category_other": "其他未归类",
   "collection_export_pick_source": "选择来源",
-  "collection_export_all_sources": "全部来源"
+  "collection_export_all_sources": "全部来源",
+  "video_subtitle_list_search": "搜索字幕",
+  "video_subtitle_list_search_hint": "输入以筛选台词",
+  "video_subtitle_list_search_empty": "没有匹配的台词",
+  "video_subtitle_list_export_favorites": "导出收藏语句",
+  "shortcut_action_video_search_subtitle_list": "搜索字幕列表"
 }

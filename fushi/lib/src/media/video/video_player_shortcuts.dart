@@ -68,6 +68,7 @@ class VideoPlayerShortcutActions {
     required this.screenshot,
     required this.toggleFullscreen,
     required this.toggleSubtitleList,
+    required this.searchSubtitleList,
     required this.toggleImmersiveLock,
     required this.toggleSubtitleBlur,
     required this.cycleSubtitleObscure,
@@ -116,6 +117,9 @@ class VideoPlayerShortcutActions {
 
   /// 打开/关闭字幕跳转列表面板（TODO-069，默认裸 L 键；asbplayer 式 transcript 列表）。
   final VoidCallback toggleSubtitleList;
+
+  /// BUG-1907：打开字幕列表并聚焦搜索框（默认 Ctrl+F）。列表已开则只聚焦。
+  final VoidCallback searchSubtitleList;
 
   /// 翻转锁定 / 沉浸模式（TODO-101，默认 Shift+L）。锁定后控制条按钮不再随鼠标/触摸弹出，
   /// 视频纯画面播放，但查词与快捷键仍可用；再按一次（或点常驻解锁按钮）退出。
@@ -210,6 +214,7 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoNextChapter,
   // 字幕显示 / 遮蔽
   ShortcutAction.videoToggleSubtitleList,
+  ShortcutAction.videoSearchSubtitleList,
   ShortcutAction.videoToggleSubtitleBlur,
   ShortcutAction.videoCycleSubtitleObscure,
   ShortcutAction.videoToggleSubtitleHide,
@@ -261,6 +266,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoScreenshot: actions.screenshot,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
+    ShortcutAction.videoSearchSubtitleList: actions.searchSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
     ShortcutAction.videoToggleSubtitleBlur: actions.toggleSubtitleBlur,
     ShortcutAction.videoCycleSubtitleObscure: actions.cycleSubtitleObscure,

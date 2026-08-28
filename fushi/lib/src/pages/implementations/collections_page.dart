@@ -1085,7 +1085,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     required String baseName,
   }) async {
     final ExportFileMeta meta = exportFileMeta(format);
-    final String fileName = '${_sanitizeFileName(baseName)}.${meta.extension}';
+    final String fileName =
+        '${sanitizeExportFileName(baseName)}.${meta.extension}';
     if (!mounted) return;
     await saveOrShareExport(
       context: context,
@@ -1119,7 +1120,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final String content = buildWordExport(words, format: format);
     final ExportFileMeta meta = exportFileMeta(format);
     final String fileName =
-        '${_sanitizeFileName(t.collection_export_words_title)}.${meta.extension}';
+        '${sanitizeExportFileName(t.collection_export_words_title)}.${meta.extension}';
     if (!mounted) return;
     await saveOrShareExport(
       context: context,
@@ -1131,11 +1132,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   /// 把书名/标题清洗成安全文件名（去掉路径分隔符和保留字符），用于默认导出文件名。
-  String _sanitizeFileName(String name) {
-    final String cleaned = safeWindowsFileName(name).trim();
-    return cleaned.isEmpty ? 'export' : cleaned;
-  }
-
   /// 行的稳定列表键（Dismissible key 与「播放中」行标记共用同一编码）。
   String _itemKey(_CollectionItem item) {
     switch (item.type) {

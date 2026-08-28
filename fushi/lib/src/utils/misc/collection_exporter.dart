@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi/src/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -112,6 +113,16 @@ class ExportMinedSentence {
   /// BUG-1906：**身份**键（`MinedSentences.bookKey`）。理由同
   /// [ExportSentence.bookKey]。
   final String? bookKey;
+}
+
+/// BUG-1907：导出文件名清洗（Windows 非法字符 + 空名兜底）。
+///
+/// 原先是 `collections_page.dart` 的私有方法 `_sanitizeFileName`；字幕列表的
+/// 「导出收藏语句」也要用同一套规则，与其复制一份，不如提到导出器这一层
+/// ——它本来就是导出相关纯函数的家。
+String sanitizeExportFileName(String name) {
+  final String cleaned = safeWindowsFileName(name).trim();
+  return cleaned.isEmpty ? 'export' : cleaned;
 }
 
 /// 文件元信息：扩展名（不含点）+ MIME 类型。

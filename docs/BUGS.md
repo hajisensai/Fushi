@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1766 条。点号进各自文件。
+> 共 1767 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1907](bugs/BUG-1907-subtitle-list-search-and-export.md) | ✅ | ✅ | 字幕列表缺少搜索（Ctrl+F）与导出收藏语句 |
 | [BUG-1906](bugs/BUG-1906-export-panel-cannot-pick-collection.md) | ✅ | ✅ | 收藏夹导出面板挤在 bottom sheet、文案写死书籍、且没法按合集导出 |
 | [BUG-1905](bugs/BUG-1905-ios-storage-total-undercounts.md) | ✅ | ✅ | 存储统计漏算缓存根与白名单外顶层项：app 内 6.9GB vs 系统 13.68GB |
 | [BUG-1902](bugs/BUG-1902-onboarding-anki-missing-deck-controls.md) | ✅ | ✅ | 新手引导配置 Anki 缺少创建 Lapis 卡组/刷新/选牌组 |

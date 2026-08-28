@@ -121,6 +121,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_toggle_fullscreen;
       case ShortcutAction.videoToggleSubtitleList:
         return t.shortcut_action_video_toggle_subtitle_list;
+      case ShortcutAction.videoSearchSubtitleList:
+        return t.shortcut_action_video_search_subtitle_list;
       case ShortcutAction.videoToggleImmersiveLock:
         return t.shortcut_action_video_toggle_immersive_lock;
       case ShortcutAction.videoToggleSubtitleBlur:
@@ -314,6 +316,8 @@ extension ShortcutActionIcon on ShortcutAction {
       // 字幕显示 / 遮蔽
       case ShortcutAction.videoToggleSubtitleList:
         return Icons.format_list_bulleted;
+      case ShortcutAction.videoSearchSubtitleList:
+        return Icons.search;
       case ShortcutAction.videoToggleSubtitleBlur:
         return Icons.blur_on;
       case ShortcutAction.videoCycleSubtitleObscure:
