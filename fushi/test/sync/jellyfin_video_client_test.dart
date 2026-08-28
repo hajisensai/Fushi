@@ -211,7 +211,23 @@ void main() {
     test('listRemoteVideos 映射标题/时长/封面 URL（自带 api_key）/断点', () async {
       final JellyfinVideoClient c =
           clientWith(MockClient((http.Request req) async {
+        // BUG-1891：默认枚举先问 Views（只递归视频域媒体库），再逐库列条目。
+        if (req.url.path == '/Users/u1/Views') {
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'Items': <Object?>[
+                <String, Object?>{
+                  'Id': 'lib-tv',
+                  'Name': 'TV',
+                  'CollectionType': 'tvshows',
+                },
+              ],
+            }),
+            200,
+          );
+        }
         expect(req.url.path, '/Users/u1/Items');
+        expect(req.url.queryParameters['ParentId'], 'lib-tv');
         expect(req.url.queryParameters['Recursive'], 'true');
         expect(req.url.queryParameters['IncludeItemTypes'], 'Movie,Episode');
         return http.Response(

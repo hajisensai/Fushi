@@ -3818,5 +3818,10 @@
   "gal_hook_text_vertical_alignment": "垂直对齐",
   "gal_hook_text_vertical_alignment_center": "居中",
   "gal_hook_text_vertical_alignment_top": "顶部",
-  "storage_entry_external_audio_hint": "音频引用原文件，不占用应用空间"
+  "storage_entry_external_audio_hint": "音频引用原文件，不占用应用空间",
+  "jellyfin_auto_list_title": "进入视频页时自动列出条目",
+  "jellyfin_auto_list_hint": "关闭后：进入视频页不向媒体服务器发任何请求，需在视频库下拉刷新手动列出。超大服务器建议关闭——自动枚举看起来像刮削，可能触发服务器的滥用检测。",
+  "jellyfin_libraries_title": "要列出的媒体库",
+  "jellyfin_libraries_hint": "不选 = 列出全部视频媒体库。只勾你真正会看的库，超大服务器就不会被整台枚举。",
+  "jellyfin_libraries_load_failed": "读取媒体库清单失败"
 }
