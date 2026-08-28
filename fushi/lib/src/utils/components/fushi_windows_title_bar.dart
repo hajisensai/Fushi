@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// App-themed Windows frame used after the native caption is hidden.
@@ -288,6 +289,7 @@ class _FushiCaptionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: IconButton(
@@ -300,13 +302,13 @@ class _FushiCaptionButton extends StatelessWidget {
             EdgeInsets.zero,
           ),
           shape: WidgetStatePropertyAll<OutlinedBorder>(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
           ),
           foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
             if (isClose && states.contains(WidgetState.hovered)) {
               return colors.onError;
             }
-            return colors.onSurfaceVariant;
+            return tokens.surfaces.onVariant;
           }),
           backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
             if (isClose && states.contains(WidgetState.hovered)) {
@@ -314,7 +316,7 @@ class _FushiCaptionButton extends StatelessWidget {
             }
             if (states.contains(WidgetState.hovered) ||
                 states.contains(WidgetState.focused)) {
-              return colors.surfaceContainerHighest;
+              return tokens.surfaces.overlay;
             }
             return Colors.transparent;
           }),
