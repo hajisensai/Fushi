@@ -389,11 +389,36 @@ class AdapterStructureTest(unittest.TestCase):
         )
         for marker in (
             "ClaimLeafInputPollerThread",
-            "g_leaf_input_poller_conflicted",
+            "ReleaseDeadLeafInputPollerOwner",
             "LeafAquaplusConflictingPollerMustConsume",
             "LeafAquaplusTailRequestIsOrphaned",
         ):
             self.assertIn(marker, adapter)
+        # 🔴 争用是当前状态，不是一次性闩。admitted poller 区间是 374 字节的 RVA
+        # 区间，任意二级线程碰一次就置位；只要没有清除边，整个进程剩余生命周期查词
+        # 全废、用户只看到「点了没反应」。所以判据必须每 tick 用单调冲突计数的增量
+        # 重算，且 owner 死了要能回收，否则「去掉闩」等于没去。
+        tick = adapter.split("void ProcessLeafAquaplusLookupTick()", 1)[1].split(
+            "\n}\n", 1
+        )[0]
+        self.assertIn("poller_conflicts != g_leaf_lookup_seen_poller_conflicts", tick)
+        self.assertIn("g_leaf_lookup_seen_poller_conflicts = poller_conflicts;", tick)
+        self.assertIn("ReleaseDeadLeafInputPollerOwner();", tick)
+        self.assertIn("input_poller_contended", tick)
+        self.assertNotIn(
+            "g_leaf_input_poller_conflicted",
+            adapter,
+            "争用不得再退回没有清除边的一次性闩",
+        )
+        shutdown = adapter.split("void shutdown() override {", 1)[1].split(
+            "\n  }\n", 1
+        )[0]
+        for marker in (
+            "g_leaf_input_poller_owner_tid.store(0",
+            "input_poller_contended",
+            "g_leaf_lookup_seen_poller_conflicts =",
+        ):
+            self.assertIn(marker, shutdown, "shutdown 必须把争用账本清干净")
         detour = adapter.split(
             "SHORT WINAPI Detour_LeafGetAsyncKeyState", 1
         )[1].split("HRESULT STDMETHODCALLTYPE Detour_LeafSetTexture", 1)[0]
@@ -401,7 +426,10 @@ class AdapterStructureTest(unittest.TestCase):
             detour.index("if (admitted_poller && !poller_owner)"),
             detour.index("AdvanceLeafAquaplusSampledInputTail"),
         )
-        self.assertIn("poller=owner:%u,conflicts:%u,last_conflict:%u", probe)
+        self.assertIn(
+            "poller=owner:%u,conflicts:%u,last_conflict:%u,contended:%u",
+            probe,
+        )
         self.assertNotIn("code_unit=", probe)
         for marker in (
             "Detour_LeafTextTraversal",

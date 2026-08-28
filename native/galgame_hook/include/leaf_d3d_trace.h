@@ -71,7 +71,12 @@ struct alignas(8) LeafD3DTraceBuffer {
   uint32_t input_poller_owner_tid = 0;
   uint32_t input_poller_conflicts = 0;
   uint32_t input_poller_last_conflict_tid = 0;
-  uint32_t input_poller_reserved = 0;
+  // Whether a non-owner thread entered the admitted poller range since the
+  // previous worker tick, i.e. contention *right now* rather than "ever".
+  // Lookup is suppressed exactly while this is 1, so it is the field that
+  // explains a "clicking does nothing" report for this profile. It replaces a
+  // v1 reserved word at the same offset; the exported layout is unchanged.
+  uint32_t input_poller_contended = 0;
   LeafD3DTraceSlot slots[kLeafD3DTraceCapacity] = {};
 };
 

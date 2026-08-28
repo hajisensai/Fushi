@@ -41,7 +41,15 @@ std::atomic<bool> g_leaf_lookup_runtime_enabled{false};
 std::atomic<uint64_t> g_leaf_sentence_epoch_atomic{0};
 std::atomic<uint64_t> g_leaf_lookup_activation_epoch{1};
 std::atomic<uint32_t> g_leaf_input_poller_owner_tid{0};
-std::atomic<bool> g_leaf_input_poller_conflicted{false};
+// 🔴 「有没有别的线程在争用 admitted poller 区间」是**当前状态**，不是一次性事实。
+// 它曾被记成一个没有清除边的 bool 闩：admitted 区间是 374 字节的 RVA 区间
+// （0x44a83e~0x44a9b4），WA2 的消息泵或任意二级线程碰一次就永久置位，之后整个进程
+// 剩余生命周期查词全废，用户只看到「点了没反应」。改成 worker 每 tick 比较
+// FushiLeafD3DTraceV1.input_poller_conflicts 这个单调计数的增量：干扰线程一停，
+// 下一 tick 自动恢复；当前判定结果同时发布到 trace 的 input_poller_contended，
+// 让「点了没反应」在 ring_probe 里可诊断（共享 lookup_diag 的 32 位已全部分配完，
+// 新增一位需要扩 SharedHeader 布局，故落在本 profile 自己的数值 trace 上）。
+uint32_t g_leaf_lookup_seen_poller_conflicts = 0;
 std::atomic<bool> g_leaf_lookup_click_transaction_active{false};
 volatile LONG g_leaf_d3d_trace_writer = 0;
 
@@ -1299,13 +1307,37 @@ bool ClaimLeafInputPollerThread(uint32_t thread_id) {
   }
   if (owner == thread_id)
     return true;
-  g_leaf_input_poller_conflicted.store(true, std::memory_order_release);
   InterlockedIncrement(reinterpret_cast<volatile LONG *>(
       &FushiLeafD3DTraceV1.input_poller_conflicts));
   InterlockedExchange(reinterpret_cast<volatile LONG *>(
                           &FushiLeafD3DTraceV1.input_poller_last_conflict_tid),
                       static_cast<LONG>(thread_id));
   return false;
+}
+
+// owner_tid 只在第一次 CAS 时认领，之后从不释放。认领它的线程一旦退出（WA2 在场景
+// 切换/全屏重建时会重建工作线程），真正的 poller 就会**每次调用**都判为冲突，争用状态
+// 于是永远为真——闩虽然去掉了，实质仍是死锁。所以争用发生时要在 worker 上校验 owner
+// 是否还活着，死了就把槽位撤回 0 让下一次 admitted 调用重新认领。这两个 syscall 只能
+// 放在 worker 上：游戏线程那条 detour 每秒被调上千次。
+void ReleaseDeadLeafInputPollerOwner() {
+  const uint32_t owner =
+      g_leaf_input_poller_owner_tid.load(std::memory_order_acquire);
+  if (owner == 0)
+    return;
+  bool alive = false;
+  const HANDLE thread =
+      OpenThread(SYNCHRONIZE, FALSE, static_cast<DWORD>(owner));
+  if (thread != nullptr) {
+    alive = WaitForSingleObject(thread, 0) == WAIT_TIMEOUT;
+    CloseHandle(thread);
+  }
+  if (alive)
+    return;
+  g_leaf_input_poller_owner_tid.store(0, std::memory_order_release);
+  InterlockedExchange(reinterpret_cast<volatile LONG *>(
+                          &FushiLeafD3DTraceV1.input_poller_owner_tid),
+                      0);
 }
 
 bool IsLeafAdmittedInputPoller(uintptr_t return_address) {
@@ -2562,7 +2594,19 @@ void SetLeafLookupRuntimeEnabled(bool enabled) {
 }
 
 void ProcessLeafAquaplusLookupTick() {
-  if (g_leaf_input_poller_conflicted.load(std::memory_order_acquire)) {
+  const uint32_t poller_conflicts =
+      static_cast<uint32_t>(InterlockedCompareExchange(
+          reinterpret_cast<volatile LONG *>(
+              &FushiLeafD3DTraceV1.input_poller_conflicts),
+          0, 0));
+  const bool poller_contended =
+      poller_conflicts != g_leaf_lookup_seen_poller_conflicts;
+  g_leaf_lookup_seen_poller_conflicts = poller_conflicts;
+  InterlockedExchange(reinterpret_cast<volatile LONG *>(
+                          &FushiLeafD3DTraceV1.input_poller_contended),
+                      poller_contended ? 1 : 0);
+  if (poller_contended) {
+    ReleaseDeadLeafInputPollerOwner();
     SetLeafLookupRuntimeEnabled(false);
     InvalidateLeafLookupClickTarget();
     return;
@@ -2672,6 +2716,20 @@ public:
     SetLeafLookupRuntimeEnabled(false);
     g_leaf_d3d_trace_ready.store(false, std::memory_order_release);
     g_leaf_sampled_input_latched_buttons.store(0, std::memory_order_release);
+    // 争用账本也要收干净：owner 槽位撤回 0，当前争用状态清零，并把 worker 侧的
+    // 冲突基线对齐到当前计数，免得下一次 install 把旧计数当成新增量。
+    g_leaf_input_poller_owner_tid.store(0, std::memory_order_release);
+    InterlockedExchange(reinterpret_cast<volatile LONG *>(
+                            &FushiLeafD3DTraceV1.input_poller_owner_tid),
+                        0);
+    InterlockedExchange(reinterpret_cast<volatile LONG *>(
+                            &FushiLeafD3DTraceV1.input_poller_contended),
+                        0);
+    g_leaf_lookup_seen_poller_conflicts =
+        static_cast<uint32_t>(InterlockedCompareExchange(
+            reinterpret_cast<volatile LONG *>(
+                &FushiLeafD3DTraceV1.input_poller_conflicts),
+            0, 0));
     InvalidateLeafLookupClickTarget();
     RevokeLeafSampledInputShieldReady(g_leaf_sampled_input_property_window);
     installed_ = false;

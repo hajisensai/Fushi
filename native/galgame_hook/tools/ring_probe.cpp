@@ -791,7 +791,7 @@ struct alignas(8) LeafD3DTraceHeaderSnapshot {
   uint32_t input_poller_owner_tid = 0;
   uint32_t input_poller_conflicts = 0;
   uint32_t input_poller_last_conflict_tid = 0;
-  uint32_t input_poller_reserved = 0;
+  uint32_t input_poller_contended = 0;
 };
 
 static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
@@ -1402,7 +1402,7 @@ bool DumpLeafD3DTrace(DWORD pid) {
       "type_rejects=%llu "
       "count_rejects=%llu stride_rejects=%llu bounds_rejects=%llu "
       "last=pt:%u,pc:%u,stride:%u,caller:%08x "
-      "poller=owner:%u,conflicts:%u,last_conflict:%u\n",
+      "poller=owner:%u,conflicts:%u,last_conflict:%u,contended:%u\n",
       pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
       export_rva, static_cast<unsigned long long>(header.next_sequence),
       static_cast<unsigned long long>(header.dropped_busy), header.capacity,
@@ -1422,7 +1422,7 @@ bool DumpLeafD3DTrace(DWORD pid) {
       header.last_primitive_type, header.last_primitive_count,
       header.last_vertex_stride, header.last_caller_rva,
       header.input_poller_owner_tid, header.input_poller_conflicts,
-      header.input_poller_last_conflict_tid);
+      header.input_poller_last_conflict_tid, header.input_poller_contended);
 
   const uint64_t next = static_cast<uint64_t>(header.next_sequence);
   const uint64_t first =
