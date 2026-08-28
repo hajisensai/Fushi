@@ -271,10 +271,9 @@ extension _ReaderMining on _ReaderFushiPageState {
       // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    // BUG-1908：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」区分。
-    return MinePopupResult(
-      duplicate: outcome.result == MineResult.duplicate,
-    );
+    // BUG-1908/1915：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」
+    // 区分；判据只住在 .failed(outcome) 一处。
+    return MinePopupResult.failed(outcome);
   }
 
   Future<MinePopupResult> _onUpdateFromPopupInner(
@@ -308,7 +307,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   /// TODO-948/952：制卡『句子为空 / 字段未映射』诊断（加性、零行为改动）。

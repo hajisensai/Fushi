@@ -224,11 +224,13 @@ void main() {
     });
   });
 
-  group('isDuplicate query shaping', () {
+  // findNotesByField 仍是「按字段名反查 note id」的实现（覆写目标 / 在 Anki 中打开
+  // 用它拿 id）。BUG-1915 之后它**不再**用于查重——查重见 isDuplicateForAdd。
+  group('findNotesByField query shaping', () {
     test('builds a deck/field scoped findNotes query', () async {
       final issued = <http.Request>[];
       await withMock(
-        (s) => s.isDuplicate(
+        (s) => s.findNotesByField(
             deckName: 'Mining', fieldName: 'Expression', fieldValue: '勉強'),
         sink: issued,
         result: const <int>[],
@@ -241,7 +243,7 @@ void main() {
     test('escapes double quotes in the field value', () async {
       final issued = <http.Request>[];
       await withMock(
-        (s) => s.isDuplicate(
+        (s) => s.findNotesByField(
             deckName: 'Mining', fieldName: 'Expression', fieldValue: 'a"b'),
         sink: issued,
         result: const <int>[],
@@ -249,23 +251,86 @@ void main() {
       expect((bodyOf(issued.single)['params'] as Map)['query'],
           r'deck:"Mining" "Expression:a\"b"');
     });
+  });
 
-    test('returns true when findNotes returns matches', () async {
+  group('isDuplicateForAdd — 与 addNote 同源的查重（BUG-1915）', () {
+    test('问的是 canAddNotesWithErrorDetail，不是 findNotes', () async {
+      final issued = <http.Request>[];
+      await withMock(
+        (s) => s.isDuplicateForAdd(
+          deckName: 'Mining',
+          modelName: 'Lapis',
+          firstFieldName: 'Expression',
+          firstFieldValue: 'たっぷり',
+        ),
+        sink: issued,
+        result: const <Map<String, Object?>>[
+          <String, Object?>{'canAdd': true, 'error': null},
+        ],
+      );
+      final body = bodyOf(issued.single);
+      expect(body['action'], 'canAddNotesWithErrorDetail');
+      final note =
+          ((body['params'] as Map)['notes'] as List).single as Map<String, Object?>;
+      expect(note['deckName'], 'Mining');
+      expect(note['modelName'], 'Lapis');
+      // 只发第一字段：Anki 的判重只看它，其余字段不影响判定。
+      expect(note['fields'], <String, String>{'Expression': 'たっぷり'});
+    });
+
+    test('Anki 明说重复 → true', () async {
       final issued = <http.Request>[];
       final dup = await withMock(
-        (s) => s.isDuplicate(deckName: 'D', fieldName: 'F', fieldValue: 'v'),
+        (s) => s.isDuplicateForAdd(
+          deckName: 'D',
+          modelName: 'M',
+          firstFieldName: 'F',
+          firstFieldValue: 'v',
+        ),
         sink: issued,
-        result: <int>[1, 2, 3],
+        result: const <Map<String, Object?>>[
+          <String, Object?>{
+            'canAdd': false,
+            'error': 'cannot create note because it is a duplicate',
+          },
+        ],
       );
       expect(dup, isTrue);
     });
 
-    test('returns false when findNotes returns no matches', () async {
+    test('canAdd:true → false', () async {
       final issued = <http.Request>[];
       final dup = await withMock(
-        (s) => s.isDuplicate(deckName: 'D', fieldName: 'F', fieldValue: 'v'),
+        (s) => s.isDuplicateForAdd(
+          deckName: 'D',
+          modelName: 'M',
+          firstFieldName: 'F',
+          firstFieldValue: 'v',
+        ),
         sink: issued,
-        result: const <int>[],
+        result: const <Map<String, Object?>>[
+          <String, Object?>{'canAdd': true, 'error': null},
+        ],
+      );
+      expect(dup, isFalse);
+    });
+
+    test('canAdd:false 但原因不是重复（卡组过期等）→ false，不能画成已制卡', () async {
+      final issued = <http.Request>[];
+      final dup = await withMock(
+        (s) => s.isDuplicateForAdd(
+          deckName: 'Gone',
+          modelName: 'M',
+          firstFieldName: 'F',
+          firstFieldValue: 'v',
+        ),
+        sink: issued,
+        result: const <Map<String, Object?>>[
+          <String, Object?>{
+            'canAdd': false,
+            'error': 'deck was not found: Gone',
+          },
+        ],
       );
       expect(dup, isFalse);
     });

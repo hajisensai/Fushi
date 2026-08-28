@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki.dart' show MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -63,13 +64,36 @@ class MinePopupResult {
     this.duplicate = false,
   });
 
+  /// BUG-1915：一次**未成功**的制卡结果。
+  ///
+  /// 此前所有失败结局（重复 / 未配置 / 出错 / addNote 响应丢失）都被压成同一个
+  /// `const MinePopupResult()`，弹窗只能看到 `ankiConnect:false`，于是它无法区分
+  /// 「Anki 明说这张卡已经在库里」和「这次 addNote 的结果根本不知道」。
+  ///
+  /// 两者该走相反的动作：
+  ///   * [MineResult.duplicate] 是**确定已知**的状态——Anki 查过了，卡就在那儿。
+  ///     弹窗应当立刻按真实状态把按钮重画成已制卡 ✓，否则就会出现「toast 说重复、
+  ///     按钮说可制卡」两个互相打架的说法。
+  ///   * 其余失败（尤其 addNote 送达但响应丢失的 commit-unknown）结果未知，必须
+  ///     维持 TODO-448 定的「不重画」——把未知结局粉饰成成功比不刷新更糟。
+  ///
+  /// 这个工厂是**唯一**的失败构造入口：8 个制卡表面（弹窗 mixin / 漫画 / 阅读器
+  /// 正文与覆写 / PDF / texthooker / 视频页 / gal 浮窗）此前各自散写
+  /// `MinePopupResult(duplicate: outcome.result == MineResult.duplicate)`，
+  /// 漏一处就是漏一个用户可见的表面——用户实报的正是被漏掉的视频页。
+  MinePopupResult.failed(MineOutcome outcome)
+      : ankiConnect = false,
+        noteId = null,
+        duplicate = outcome.result == MineResult.duplicate;
+
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
 
   /// 后端返回的 note id；仅 AnkiConnect 成功制卡时非空。
   final int? noteId;
 
-  /// BUG-1908：这次失败是不是**因为 Anki 里已经有这张卡**（[MineResult.duplicate]）。
+  /// BUG-1908 / BUG-1915：这次失败是不是**因为 Anki 里已经有这张卡**
+  /// （[MineResult.duplicate]，见 [MinePopupResult.failed]）。
   ///
   /// [ankiConnect] 一位布尔把「重复」和「没配置 / 字段对不上 / 连接断了」压成同一个
   /// false，弹窗只能猜。TODO-448 又（正确地）禁止弹窗在失败后回查 Anki 把按钮翻成 ✓
@@ -84,6 +108,8 @@ class MinePopupResult {
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
         'noteId': noteId,
+        // 只在为真时带上：popup.js 的 `reply.duplicate === true` 对缺字段与 false
+        // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
         if (duplicate) 'duplicate': true,
       };
 }

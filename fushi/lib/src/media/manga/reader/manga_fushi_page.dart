@@ -3281,10 +3281,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (described.success) {
         return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
       }
-      // BUG-1908：重复 ≠ 没制成，见 MinePopupResult.duplicate。
-      return MinePopupResult(
-        duplicate: outcome.result == MineResult.duplicate,
-      );
+      // BUG-1908/1915：重复 ≠ 没制成，见 MinePopupResult.duplicate；
+      // 失败结局一律经 .failed(outcome) 这一个入口，别在各表面散写判据。
+      return MinePopupResult.failed(outcome);
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.onMineFromPopup', e, stack);
       return const MinePopupResult();

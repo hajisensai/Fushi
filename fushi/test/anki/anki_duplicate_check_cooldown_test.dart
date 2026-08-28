@@ -141,9 +141,16 @@ void main() {
         client: MockClient((http.Request request) async {
           calls++;
           if (fail) throw const SocketException('Connection refused');
+          // BUG-1915：查重现在问 `canAddNotesWithErrorDetail`（与 addNote 同源），
+          // 应答形状随之改变；本用例断言的冷却语义不变。
           return http.Response(
             jsonEncode({
-              'result': [123],
+              'result': [
+                {
+                  'canAdd': false,
+                  'error': 'cannot create note because it is a duplicate',
+                },
+              ],
               'error': null,
             }),
             200,

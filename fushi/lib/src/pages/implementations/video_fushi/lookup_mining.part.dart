@@ -424,7 +424,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MineOutcome outcome = res.outcome! as MineOutcome;
     final MinePopupResult result = outcome.result == MineResult.success
         ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
-        : const MinePopupResult();
+        : MinePopupResult.failed(outcome);
     if (!context.mounted) return result;
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
     // overwrite=true（updateNoteId 非空）→ 收口产 card_overwritten + record=false；
