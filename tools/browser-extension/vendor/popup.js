@@ -310,9 +310,12 @@ function parseMineResult(reply) {
         const noteId = (typeof rawId === 'number' && Number.isFinite(rawId))
             ? rawId
             : null;
-        return { ankiConnect: reply.ankiConnect === true, noteId };
+        // BUG-1908：把失败原因一起带出来。此前这里只取两个字段，宿主即便算出了
+        // 「没选卡组 / 字段映射对不上 / Anki 没开」也没地方放，浮窗里就成了静默失败。
+        const message = typeof reply.message === 'string' ? reply.message : '';
+        return { ankiConnect: reply.ankiConnect === true, noteId, message };
     }
-    return { ankiConnect: reply === true, noteId: null };
+    return { ankiConnect: reply === true, noteId: null, message: '' };
 }
 
 // Records the just-mined word as the editable "latest" card when the backend
@@ -3124,6 +3127,21 @@ function createEntryHeader(entry, idx) {
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
+                } else {
+                    // BUG-1908：制卡失败必须**就地**说出来。
+                    //
+                    // 此前这里整段没有 else：`ankiConnect:false` 是正常 resolve、不抛，
+                    // 既不进 catch 也不进 if —— 浮窗里零反馈。而 galgame 浮窗是独立的
+                    // native WebView2 窗口，宿主那边的 Flutter toast 画在主 app 窗口的
+                    // Overlay 上，游戏全屏时主窗在后台，用户一个也看不见（用户报
+                    // 「gal 制卡报错没有明显提示」）。
+                    //
+                    // showInlineHint 正是 BUG-1064 为「app 外没有 Flutter toast 可用」
+                    // 建的页内车道，锚在按钮屏幕坐标上，窗口被裁到卡片 bbox 也可见。
+                    showInlineHint(
+                        mineButton,
+                        result.message || window.i18nMineFailed || 'Mining failed');
+                    setMineState(false);
                 }
             } catch (e) {
                 // BUG-077: a rejected mineEntry/duplicateCheck (Dart handler threw,

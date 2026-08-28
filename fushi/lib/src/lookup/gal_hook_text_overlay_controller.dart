@@ -1001,17 +1001,17 @@ class GalHookTextOverlayController extends ChangeNotifier {
           : null,
     );
     if (result.aborted) {
-      FushiToast.showMine(
-        // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
-        // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
-        msg: result.audioFallbackDisabled
-            ? t.game_audio_fallback_disabled_missing
-            : result.failureReason != null
-                ? '${t.external_window_capture_failed}：${result.failureReason}'
-                : t.external_window_capture_failed,
-        status: MineToastStatus.failed,
-      );
-      return result.toPopupReply();
+      // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
+      // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
+      final String abortMessage = result.audioFallbackDisabled
+          ? t.game_audio_fallback_disabled_missing
+          : result.failureReason != null
+              ? '${t.external_window_capture_failed}：${result.failureReason}'
+              : t.external_window_capture_failed;
+      FushiToast.showMine(msg: abortMessage, status: MineToastStatus.failed);
+      // BUG-1908：同一句话也回给浮窗——游戏全屏时主 app 窗在后台，上面那个 toast
+      // 用户看不见。
+      return result.toPopupReply(message: abortMessage);
     }
     final MineOutcome outcome = result.outcome!;
     final described = describeMineOutcome(
@@ -1019,6 +1019,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
       overwrite: updateNoteId != null,
     );
     FushiToast.showMine(msg: described.message, status: described.status);
+    // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
+    // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。
+    final String? failureMessage = result.success ? null : described.message;
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。
       FushiToast.show(
@@ -1033,6 +1036,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
         severity: ToastSeverity.warning,
       );
     }
-    return result.toPopupReply();
+    return result.toPopupReply(message: failureMessage);
   }
 }
