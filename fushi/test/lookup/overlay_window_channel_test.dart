@@ -1,5 +1,5 @@
 // spec 2026-07-10 — OverlayWindowChannel 抽取的契约测试：
-// ① 两条 channel（global_lookup / clipboard_panel）互不串线；
+// ① 两条 channel（global_lookup / 任意第二实例）互不串线；
 // ② GlobalLookupChannel 静态门面仍走 global_lookup channel 名（1700 行
 //    controller 零改动的前提）；
 // ③ resolveBridge 双重 jsonEncode 契约保持（adapter 侧 JSON.parse(arg)）。
@@ -9,6 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/overlay_window_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+
+/// 第二实例的通道名（任意，只要与 global_lookup 不同）。
+const MethodChannel kSecondChannel =
+    MethodChannel('app.fushi.reader/test_second_overlay');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -32,12 +36,11 @@ void main() {
           return null;
         });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel, (
+        .setMockMethodCallHandler(kSecondChannel, (
           MethodCall call,
         ) async {
           panelCalls.add(call.method);
           lastPanelCall = call;
-          if (call.method == 'applyBackdrop') return true;
           return null;
         });
   });
@@ -46,7 +49,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(FushiChannels.globalLookup, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel, null);
+        .setMockMethodCallHandler(kSecondChannel, null);
   });
 
   test('GlobalLookupChannel 静态门面仍走 global_lookup channel', () async {
@@ -100,20 +103,19 @@ void main() {
     expect(args['top'], 6);
   });
 
-  test('面板实例走 clipboard_panel channel，与 global_lookup 互不串线', () async {
+  test('第二实例走自己的 channel，与 global_lookup 互不串线', () async {
     const OverlayWindowChannel panel = OverlayWindowChannel(
-      FushiChannels.clipboardPanel,
+      kSecondChannel,
     );
     await panel.hide();
-    await panel.setPinned(true);
-    expect(await panel.applyBackdrop(), isTrue);
-    expect(panelCalls, <String>['hide', 'setPinned', 'applyBackdrop']);
+    await panel.setBlockCapture(true);
+    expect(panelCalls, <String>['hide', 'setBlockCapture']);
     expect(globalCalls, isEmpty);
   });
 
   test('resolveBridge 保持双重 jsonEncode 契约（adapter JSON.parse(arg)）', () async {
     const OverlayWindowChannel panel = OverlayWindowChannel(
-      FushiChannels.clipboardPanel,
+      kSecondChannel,
     );
     await panel.resolveBridge(7, <String, Object?>{'ok': true});
     final Map<Object?, Object?> args =
@@ -125,7 +127,7 @@ void main() {
 
   test('showAt 解析 native map 回复（work area + 窗口原点偏移）', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel, (
+        .setMockMethodCallHandler(kSecondChannel, (
           MethodCall call,
         ) async {
           return <String, Object?>{
@@ -140,7 +142,7 @@ void main() {
           };
         });
     const OverlayWindowChannel panel = OverlayWindowChannel(
-      FushiChannels.clipboardPanel,
+      kSecondChannel,
     );
     final GlobalLookupShowResult r = await panel.showAt(
       x: 100,
@@ -160,13 +162,13 @@ void main() {
     // BUG-859 — 旧 native / 查询失败：monitorDpr 缺省 0，controller 据此回退主窗口
     // dpr（行为与修复前逐字节一致，Never break userspace）。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.clipboardPanel, (
+        .setMockMethodCallHandler(kSecondChannel, (
           MethodCall call,
         ) async {
           return <String, Object?>{'ok': true, 'workW': 1920, 'workH': 1040};
         });
     const OverlayWindowChannel panel = OverlayWindowChannel(
-      FushiChannels.clipboardPanel,
+      kSecondChannel,
     );
     final GlobalLookupShowResult r = await panel.showAt(
       x: 0,

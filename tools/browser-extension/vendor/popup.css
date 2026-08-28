@@ -230,15 +230,15 @@ body {
 .entry {
     padding: 8px 0;
     /* TODO-1325 #5 part1: fushiFocusDictionaryEntryMove 的 scrollIntoView 落点留白，
-       避免当前词条被顶部句子横幅(.global-lookup-sentence)或弹窗边缘贴死。 */
+       避免当前词条被顶部汉字卡或弹窗边缘贴死。 */
     scroll-margin-top: 14px;
     scroll-margin-bottom: 14px;
 }
 
 /* design-2026-08 讨论区反馈: 顶栏贴近词头——首词条不再叠加自己的 8px 顶距（顶部呼吸空间由
    Flutter 顶栏 + 振假名 0.55em 预留区承担），词条之间的 8px 节奏不变。
-   :first-child 的语义恰好精确：句子横幅(.global-lookup-sentence)或汉字卡
-   (kanjiSection)在场时首词条不是 first-child，自动保留原间距不贴死。 */
+   :first-child 的语义恰好精确：汉字卡(kanjiSection)在场时首词条不是
+   first-child，自动保留原间距不贴死。 */
 .entry:first-child {
     padding-top: 0;
 }
@@ -1756,65 +1756,8 @@ html.global-lookup[data-theme="dark"] body {
    上面的 a.gloss-sc-a 规则保留：它还兜住词典自带 styles.css 对 <a> 的
    float/position（BUG-435 的次要成因），且 <a> 本就是行内元素零副作用。 */
 
-/* TODO-1030 M0 — app-external global-lookup sentence-context banner. Shows the
-   sentence the selected word sits in (captured via Windows UI Automation) above
-   the dictionary entries. Only rendered when window.__globalLookupSentence is
-   set (never for in-app popups). Uses the same injected theme vars as the rest
-   of the popup so it follows light/dark + ColorScheme. */
-.global-lookup-sentence {
-    margin: 0 0 8px 0;
-    padding: 8px 10px;
-    border-radius: var(--fushi-radius-card, 10px);
-    background: var(--surface-variant, rgba(128, 128, 128, 0.12));
-    /* 真机反馈（2026-07-10）：左侧 3px 强调色竖条（引用块样式）在面板里像
-       「搜索栏左边一块莫名深色」——去掉竖条，改四边细边框的普通搜索框外观。 */
-    border: 1px solid var(--md-outline-variant, rgba(120, 120, 128, 0.32));
-    color: var(--text-color-light1, #555555);
-    font-size: 0.85em;
-    line-height: 1.5;
-    word-break: break-word;
-    white-space: pre-wrap;
-}
-
-/* 真机第 4 轮 — 面板 root 的句子条是「选词区」：字号与底下词条正文一致
-   （1em，不再缩小），用正文主色（不是弱化的 context 灰）。瞬态覆盖窗的
-   横幅保持 0.85em context 条外观不变。 */
-.global-lookup-sentence-panel {
-    font-size: 1em;
-    color: var(--text-color, #333333);
-}
-
-/* spec 2026-07-10 — 句子横幅逐字可点（点字=该字到句尾后缀查词）。 */
-.global-lookup-sentence-char {
-    cursor: pointer;
-}
-
-/* 逐字 hover 框只留给瞬态窗（那里点字=嵌套子卡，需要逐字瞄准反馈）。
-   面板选词区是连续正常文本：不按字画格子，点击后由引擎分词结果整词高亮
-   （真机第 4 轮「不应该按照字来划分，应该按照正常的来断」）。 */
-.global-lookup-sentence:not(.global-lookup-sentence-panel)
-    .global-lookup-sentence-char:hover {
-    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
-    border-radius: 2px;
-}
-
-/* 引擎匹配到的词（bestLength）在面板选词区的整词高亮——与查词高亮同色变量。 */
-.global-lookup-sentence-hit {
-    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
-    border-radius: 2px;
-}
-
 .ctx-adjust-button {
     opacity: 0.85;
-}
-
-/* 真机第 5 轮 — 面板释义区被点击、正在外部瞬态窗里查的那段文字的高亮
-   （markGlobalLookupExtHit；下次点击替换、重渲清除）。
-   BUG：上面 .ctx-adjust-button 规则原缺闭合 }，CSS 错误恢复把本条整规则当无效
-   声明吞掉（ext-hit 高亮从未生效）；补上闭合后本条恢复。 */
-.global-lookup-ext-hit {
-    background: var(--fushi-primary-highlight, rgba(56, 106, 88, 0.22));
-    border-radius: 2px;
 }
 
 /* =====================================================================
@@ -2073,23 +2016,6 @@ html.eink .fushi-dict-highlight {
 html.eink ::selection {
     background-color: var(--text-color);
     color: var(--background-color);
-}
-
-/* 句子横幅的命中/外部查词高亮与逐字 hover：色块 → 下划线 / 描边。 */
-html.eink .global-lookup-sentence-hit,
-html.eink .global-lookup-ext-hit {
-    background: transparent;
-    text-decoration-line: underline;
-    text-decoration-color: currentColor;
-    text-decoration-thickness: 0.14em;
-    text-underline-offset: 0.15em;
-}
-
-html.eink .global-lookup-sentence:not(.global-lookup-sentence-panel)
-    .global-lookup-sentence-char:hover {
-    background: transparent;
-    outline: 1px solid currentColor;
-    outline-offset: -1px;
 }
 
 /* app 外全局查词卡壳：半透明灰描边 → 实线前景色描边，方角，不透明底。 */

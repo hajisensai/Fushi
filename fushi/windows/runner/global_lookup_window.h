@@ -178,72 +178,20 @@ class GlobalLookupWindow {
     hidden_cb_ = std::move(cb);
   }
 
-  // spec 2026-07-10 clipboard panel — the persistent clipboard-panel window is
-  // a SECOND GlobalLookupWindow instance. Panel differences are data, not
-  // modes: it never arms the dismiss hooks (persistent semantics: click-outside
-  // / foreground-switch must NOT close it), and it gets its own WebView2
-  // user-data leaf so its environment options never have to match the lookup
-  // overlay's (same-folder different-options fails with 0x8007139F).
-  void SetArmDismissHooks(bool arm) { arm_dismiss_hooks_ = arm; }
-  void SetUserDataLeaf(std::wstring leaf) { user_data_leaf_ = std::move(leaf); }
-  // 真机第 4 轮 — 面板窗可被激活：不带 WS_EX_NOACTIVATE 创建，点击面板时焦点
-  // 落在面板上（游戏失焦，滚轮不再穿到底下的游戏）。程序化 show/update 仍全
-  // 走 SW_SHOWNOACTIVATE / SWP_NOACTIVATE，文本流更新绝不抢游戏焦点。瞬态
-  // 覆盖窗保持默认 false（查词卡出现时前台键盘焦点原地不动，design §5 保证 3）。
-  // 必须在首次 ShowAt/PrewarmWebView（窗口创建）前设置。
-  void SetActivatable(bool activatable) { activatable_ = activatable; }
-  // 面板任务栏图标 — 常驻剪贴板面板要有独立任务栏按钮（WS_EX_APPWINDOW 而非
-  // WS_EX_TOOLWINDOW）：面板未置顶（图钉关）被游戏/浏览器压到底下时，点任务栏
-  // 图标即可激活+拉回前台（任务栏激活自带 raise），面板永远找得回来。瞬态查词
-  // 覆盖窗保持默认 false（工具窗，无任务栏项/Alt-Tab 项）。必须在窗口创建前设置。
-  void SetTaskbarPresence(bool present) { taskbar_presence_ = present; }
-  // 任务栏按钮 / Alt-Tab 项显示的窗口标题（Dart 侧传本地化文案）。创建前设置
-  // 则用于 CreateWindowExW；窗口已存在时经 SetWindowTextW 即时生效。
-  void SetWindowTitle(const std::wstring& title);
 
-  // 剪切板面板背景逐像素透明 — 仅面板实例开启：窗口用 WS_EX_NOREDIRECTIONBITMAP
+  // 背景逐像素透明 — 仅 gal 卡片离屏实例开启：窗口用 WS_EX_NOREDIRECTIONBITMAP
   // 建、WebView2 走 composition controller + DirectComposition 视觉树，透明像素
   // 真透到桌面（背景全透 + 文字实心），取代整窗 LWA_ALPHA 的「文字一起变淡」。
   // 瞬态查词覆盖窗保持默认 false（windowed，行为一字不改）。必须在首次
   // ShowAt/PrewarmWebView（窗口 + WebView 创建）前设置。
   void SetCompositionMode(bool composition) { composition_mode_ = composition; }
 
-  // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
-  // behind the window's transparent WebView2 pixels. Returns whether the OS
-  // accepted it (Win10 / pre-22H2 -> false; the panel then stays opaque and
-  // Dart hides the opacity slider). Requires the window to exist (call after
-  // ShowAt/PrewarmWebView). Never touches WS_EX_LAYERED (incompatible with the
-  // WebView2 composition surface, see the CreateWindowExW comment).
-  bool ApplySystemBackdrop();
-
-  // spec 2026-07-10 panel pin — toggles HWND_TOPMOST without moving/resizing
-  // or activating. No-op before the window exists.
-  void SetTopmost(bool topmost);
-
-  // 防截屏（剪贴板面板） — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：
+  // 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：
   // 窗口对用户可见，但被排除在截图 / 录屏 / 屏幕共享捕获之外（内容不外泄）。
   // 记住 [block] 到 block_capture_，窗口重建（ForgetDeadWindow → 新 hwnd）后由
-  // CreateWindowExW 之后的 ApplyBlockCapture() 自动重加。默认 false（瞬态查词
-  // 覆盖窗不受影响）；面板实例的 Dart 控制器在显示时按 pref 置 true。
+  // CreateWindowExW 之后的 ApplyBlockCapture() 自动重加。默认 false；Dart 控制器
+  // 按 pref 置 true。
   void SetBlockCapture(bool block);
-
-  // 面板抬前台 — 每次查词把已显示的面板重排到 z 序最上，绝不激活（不抢当前
-  // 前台窗口的键盘焦点）。[topmost]=true（已 pin）直接 HWND_TOPMOST；false
-  // 时用 TOPMOST→NOTOPMOST 弹一下，绕过前台锁把面板顶到非置顶带最上（裸
-  // HWND_TOP 在别的 app 处于前台时可能被系统拒绝）。No-op before the window
-  // exists.
-  void RaiseToFront(bool topmost);
-
-  // spec §6 真机修正 — WHOLE-WINDOW opacity via WS_EX_LAYERED +
-  // SetLayeredWindowAttributes(LWA_ALPHA). Real-device finding: the acrylic
-  // backdrop chain renders user-visibly OPAQUE through the windowed WebView2
-  // child — and frosted glass was never the ask anyway; the user wants to SEE
-  // the game/page beneath. LWA_ALPHA is the verified working path for WebView2
-  // hosts (whole window fades, incl. text; LWA_COLORKEY is NOT supported by
-  // WebView2) and works on Win10 too. [percent] clamped to 30..100; the
-  // layered bit sticks once set (a layered window does not render until
-  // SetLayeredWindowAttributes is called, so the call always follows).
-  void SetWindowAlpha(int percent);
 
   // ── v14 游戏内查词（KiriKiri/KAGEX）：本窗当卡片的**像素来源** ──────────────────
   //
@@ -331,7 +279,7 @@ class GlobalLookupWindow {
   // mode), the region is the UNION of those card rects instead of the full
   // window — the TODO-1345 reserved-floor window spans ~the whole work area,
   // and an opaque full-window region both paints a giant sheet and swallows
-  // every click meant for the app below (clipboard panel next-word tap).
+  // every click meant for the app below (next-word tap in the app beneath).
   void ApplyRoundedRegion();
   // BUG-749 — parses the host's {handler:'shellRects', args:['l,t,w,h;…']}
   // message (window-relative CSS px) and re-applies the window region.
@@ -378,8 +326,7 @@ class GlobalLookupWindow {
   /// 选项且会周期性重申，而我们**只在 Reveal/Resize 设一次、此后永不重申**。
   ///
   /// 工具条窗早就有这层兜底（hook_toolbar_window.cpp 的 Sync：「Still re-assert Z」），
-  /// 查词卡漏了。这里补上同一条，并且**只在本实例本来就要置顶时**才重申——
-  /// 未 pin 的常驻面板有意落在非置顶带，不能被这个定时器拖回去。
+  /// 查词卡漏了。这里补上同一条：本类所有实例都是置顶窗，无条件重申即可。
   void ReassertTopmost();
   void StartTopmostGuard();
   void StopTopmostGuard();
@@ -465,30 +412,22 @@ class GlobalLookupWindow {
   // 进去导致尺寸暴涨/卡片甩边（乱跳）。0 = 未在拖拽。
   int resize_start_w_ = 0;
   int resize_start_h_ = 0;
-  // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
-  // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
-  bool arm_dismiss_hooks_ = true;
-  bool activatable_ = false;
-
-  /// 本实例显示时是否应处于置顶带。瞬态查词卡恒真；常驻面板跟随图钉。
-  bool wants_topmost_ = true;
-
   /// 置顶重申定时器 id（0 = 未起）。见 [ReassertTopmost]。
   UINT_PTR topmost_guard_timer_ = 0;
-  bool taskbar_presence_ = false;
   // 防截屏当前请求值（真相源是 Dart pref；窗口重建后 ApplyBlockCapture 用它重加）。
-  // 默认 false：只有面板实例的控制器会按 pref 置 true，瞬态覆盖窗恒不受影响。
+  // 默认 false：Dart 控制器按 pref 置 true。
   bool block_capture_ = false;
-  // 背景逐像素透明模式（仅面板实例）：composition controller + DirectComposition。
+  // 背景逐像素透明模式（仅 gal 卡片离屏实例）：composition controller + DirectComposition。
   // 默认 false=windowed（瞬态窗与历史行为一字不改）。见 SetCompositionMode。
   bool composition_mode_ = false;
   // composition_mode_ 请求下 DComp 设备真的建起来了才为 true：任何 D3D11/DComp/
   // composition controller 创建失败都回退 composition_active_=false（windowed），
-  // 面板永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
+  // 窗口永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
   // controller 分支、WM_SIZE 都以 composition_active_（而非 _mode_）为准。
   bool composition_active_ = false;
   std::wstring window_title_ = L"Fushi Lookup";
-  std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
+  // WebView2 profile folder leaf under %LOCALAPPDATA%（见 OverlayUserDataFolder）。
+  const std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
   RouteContext route_context_;

@@ -2189,7 +2189,6 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
                     ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
                     : element.textContent || '';
                 const rect = element.getBoundingClientRect();
-                markGlobalLookupExtHit(element);
                 window.flutter_inappwebview.callHandler('onLinkClick', query, {
                     x: rect.left,
                     y: rect.top,
@@ -2948,7 +2947,6 @@ function createEntryHeader(entry, idx) {
         const anchorEl = kanjiEl || expressionSpan;
         const term = kanjiEl ? kanjiEl.textContent : expression;
         const rect = anchorEl.getBoundingClientRect();
-        markGlobalLookupExtHit(anchorEl);
         window.flutter_inappwebview.callHandler('onLinkClick', term, {
             x: rect.left,
             y: rect.top,
@@ -4126,7 +4124,6 @@ function createKanjiCard(kanji) {
         e.preventDefault();
         e.stopPropagation();
         const rect = charEl.getBoundingClientRect();
-        markGlobalLookupExtHit(charEl);
         window.flutter_inappwebview.callHandler('onLinkClick', kanji.character, {
             x: rect.left,
             y: rect.top,
@@ -4504,92 +4501,6 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     document.addEventListener('toggle', scheduleMasonry, true);
 }
 
-// TODO-1030 M0 — the app-external global-lookup capture (Windows UIA) hands the
-// popup the sentence the selected word sits in via window.__globalLookupSentence
-// (set per-render by buildFrameSettingsJs; empty for in-app popups and for
-// nested child cards). Build a small context banner shown above the entries so
-// the user sees the word IN CONTEXT (Yomitan {sentence}-style). Returns null
-// when there is no captured sentence, so the in-app / no-context paths render
-// exactly as before.
-function buildGlobalLookupSentenceBanner() {
-    const sentence = window.__globalLookupSentence;
-    if (typeof sentence !== 'string' || sentence.length === 0) {
-        return null;
-    }
-    const banner = el('div', { className: 'global-lookup-sentence' });
-    // spec 2026-07-10 — per-character spans: clicking any character looks up
-    // the "char to sentence end" suffix (the same semantics as the in-app
-    // ClipboardLookupTextPanel; the engine prefix/deinflection-matches from
-    // the clicked char). textContent per span (never innerHTML) — the sentence
-    // is untrusted foreground-app/clipboard text, never interpreted as markup.
-    //
-    // 真机第 4 轮 — 面板 root（window.__globalLookupPanelRoot，settingsJs 注入）
-    // 的句子条是「选词区」：点字走 panelSentenceLookup 桥，Dart 换根结果=底部
-    // 原地更新，不再嵌套压卡；引擎匹配到的词以 __globalLookupSentenceHit
-    // {start,length}（码点下标）整词高亮——分词由词典引擎给出，视觉上是连续
-    // 正常文本（面板无逐字 hover 框，见 popup.css 的 :not() 作用域）。
-    // 瞬态覆盖窗保持原语义：点字=onLinkClick 嵌套子卡。
-    const chars = Array.from(sentence);
-    const isPanelRoot = window.__globalLookupPanelRoot === true;
-    const hit = isPanelRoot ? window.__globalLookupSentenceHit : null;
-    const hitStart = hit && typeof hit.start === 'number' ? hit.start : -1;
-    const hitEnd = hitStart >= 0 && hit && typeof hit.length === 'number'
-        ? hitStart + hit.length
-        : -1;
-    if (isPanelRoot) {
-        banner.classList.add('global-lookup-sentence-panel');
-    }
-    chars.forEach((ch, i) => {
-        const span = el('span', {
-            className: 'global-lookup-sentence-char'
-                + (i >= hitStart && i < hitEnd
-                    ? ' global-lookup-sentence-hit'
-                    : ''),
-            textContent: ch,
-        });
-        span.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const suffix = chars.slice(i).join('');
-            if (isPanelRoot) {
-                // i = 码点下标（chars 是 Array.from 的码点数组），Dart 侧原样
-                // 作为高亮起点回注——两端同一单位，无 UTF-16 代理对错位。
-                window.flutter_inappwebview.callHandler(
-                    'panelSentenceLookup', suffix, i);
-                return;
-            }
-            const rect = span.getBoundingClientRect();
-            window.flutter_inappwebview.callHandler(
-                'onLinkClick', suffix, {
-                x: rect.left,
-                y: rect.top,
-                width: rect.width,
-                height: rect.height
-            });
-        });
-        banner.appendChild(span);
-    });
-    return banner;
-}
-
-// 真机第 5 轮 — 面板 root：点释义/见出语/汉字标签弹**外部**瞬态窗时，被点元素
-// 加 .global-lookup-ext-hit 高亮（外部窗不在本文档里，没有嵌套卡的父卡反馈；
-// 高亮在下次点击时被替换、重渲时随 DOM 重建自然清除）。瞬态窗/in-app 弹窗
-// 不启用（__globalLookupPanelRoot 仅面板 root 注入，那边嵌套卡自有视觉反馈）。
-function markGlobalLookupExtHit(target) {
-    if (window.__globalLookupPanelRoot !== true || !target || !target.classList) {
-        return;
-    }
-    try {
-        document.querySelectorAll('.global-lookup-ext-hit').forEach((n) => {
-            n.classList.remove('global-lookup-ext-hit');
-        });
-    } catch (e) {
-        // querySelectorAll 失败也不阻断查词本身。
-    }
-    target.classList.add('global-lookup-ext-hit');
-}
-
 // 真机第 5 轮 — 视口感知的词典列数收敛：TODO-1357 只按平台定默认（桌面 2 列
 // Niratan 双栏、移动 1 列「不硬塞多列避免窄屏挤爆」），但面板窗可被拖到很窄，
 // 固定多列会让底下的词典玻璃卡互相挤压重叠。这里把同一「窄了就收」判断按真实
@@ -4628,19 +4539,6 @@ if (typeof window.addEventListener === 'function'
     && !window.__fushiDictColsResizeHooked) {
     window.__fushiDictColsResizeHooked = true;
     window.addEventListener('resize', updateEffectiveDictColumns);
-}
-
-// Inserts the sentence-context banner (if any) as the FIRST child of the popup
-// entries container, above the kanji card / entries / no-results placeholder.
-// No-op when there is no captured sentence (in-app popups, nested cards).
-function prependSentenceBanner(container) {
-    const banner = buildGlobalLookupSentenceBanner();
-    if (!banner || !container) return;
-    if (container.firstChild) {
-        container.insertBefore(banner, container.firstChild);
-    } else {
-        container.appendChild(banner);
-    }
 }
 
 window.renderPopup = function() {
@@ -4682,7 +4580,6 @@ window.renderPopup = function() {
             + '<div class="no-results-icon">&#x1F50D;</div>'
             + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
             + '</div>';
-        prependSentenceBanner(container);
         window._renderedGlossaryCounts = [];
         _firePopupRendered();
         _emitPopupRenderPerf('complete', t0, 0, { noResults: true });
@@ -4703,7 +4600,6 @@ window.renderPopup = function() {
     // Kanji-only result (no term entries): render just the kanji card(s).
     if (!entries || !entries.length) {
         container.innerHTML = '';
-        prependSentenceBanner(container);
         if (kanjiSection) {
             container.appendChild(kanjiSection);
         }
@@ -4718,7 +4614,6 @@ window.renderPopup = function() {
     let firstEntry = null;
     try {
         container.innerHTML = '';
-        prependSentenceBanner(container);
 
         if (kanjiSection) {
             container.appendChild(kanjiSection);
@@ -5310,7 +5205,6 @@ function handleGlossaryAnchorClick(event, anchor) {
     const query = (anchor.textContent || '').trim();
     if (!query) return;
     const rect = anchor.getBoundingClientRect();
-    markGlobalLookupExtHit(anchor);
     window.flutter_inappwebview.callHandler('onLinkClick', query, {
         x: rect.left,
         y: rect.top,

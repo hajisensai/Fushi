@@ -460,9 +460,8 @@ void NativeGlog(const std::string& message) {
 // environments register. Falls back to %TEMP% then to empty (default) as a last
 // resort; empty only re-risks the conflict, which the added error logging then
 // surfaces instead of swallowing.
-// spec 2026-07-10 — |leaf| is the per-instance profile directory name (lookup
-// overlay: GlobalLookupWebView2; clipboard panel: ClipboardPanelWebView2).
-// Separate folders keep the two instances' environment options independent
+// |leaf| is the profile directory name (GlobalLookupWebView2); its own folder
+// keeps the overlay environment options independent of the in-app fork's
 // (same-folder different-options fails the second create with 0x8007139F).
 std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
   wchar_t buf[MAX_PATH];
@@ -972,8 +971,8 @@ GlobalLookupWindow::~GlobalLookupWindow() {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
   }
-  // spec 2026-07-10 — the window class is PROCESS-scoped and shared by both
-  // instances (lookup overlay + clipboard panel), so no instance may
+  // spec 2026-07-10 — the window class is PROCESS-scoped and shared by all
+  // instances (lookup overlay + gal card renderer), so no instance may
   // UnregisterClassW it: destroying one window would rip the class out from
   // under the other. The class stays registered for the process lifetime
   // (registered once in EnsureWindowClass; the OS reclaims it at exit).
@@ -1031,9 +1030,8 @@ void GlobalLookupWindow::ReleaseDismissHooks() {
     fushi::DisarmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = false;
   }
-  // spec 2026-07-10 — only clear the hook owner if it is OURS: the persistent
-  // clipboard panel never arms the hooks, and its Hide() must not disarm the
-  // transient lookup overlay's live click-outside callbacks.
+  // Only clear the hook owner if it is OURS: another instance's Hide() must
+  // not disarm the transient lookup overlay's live click-outside callbacks.
   if (s_hook_owner_ == this) {
     s_hook_owner_ = nullptr;
   }
@@ -1112,11 +1110,6 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
     // No WS_EX_LAYERED: WebView2 brings its own composition surface and does not
     // coexist with a layered window. WS_EX_NOACTIVATE keeps the foreground app's
     // keyboard focus intact when the card appears (design §5 guarantee 3).
-    // 真机第 4 轮 — 面板实例（activatable_）不带 NOACTIVATE：点击面板时焦点
-    // 落面板，滚轮不再穿到底下仍持焦点的游戏。程序化路径全程 SWP_NOACTIVATE /
-    // SW_SHOWNOACTIVATE，流式更新不抢焦点。
-    // 面板任务栏图标 — taskbar_presence_（面板实例）用 APPWINDOW 换掉
-    // TOOLWINDOW：任务栏出现独立按钮，点它即可把被压底的面板拉回前台。
     // 背景逐像素透明 — composition 模式下 OverlayCreateExStyle 带
     // WS_EX_NOREDIRECTIONBITMAP（透明像素经 DComp 上桌面）。
     hwnd_ = CreateWindowExW(
@@ -1235,8 +1228,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // asynchronous: it never consumes the underlying app click. At this point all
   // geometry work is done, so the successful direct binding is published only
   // a few instructions before SetWindowPos makes the off-screen renderer visible.
-  const bool prearm_direct_click_swallow =
-      arm_dismiss_hooks_ && consume_outside_owner != nullptr;
+  const bool prearm_direct_click_swallow = consume_outside_owner != nullptr;
   if (prearm_direct_click_swallow) {
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
       fushi::DisarmLowLevelMouseHook(hwnd_);
@@ -1266,45 +1258,23 @@ void GlobalLookupWindow::Reveal(int width, int height,
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
-  // BUG-1689 — 把**本线程的活动窗口**换成这个可激活的浮窗（不改前台、不抢焦点）。
-  //
-  // 根因：用户点一个「所属进程不在前台」的可激活窗口时，Windows 的前台切换会先把该
-  // 线程的活动窗口前台化、抬到 Z 序上层，然后才把激活交给真正被点的那个窗口。runner
-  // 主窗一直是本线程的活动窗口，于是「在游戏/浏览器里点一下剪贴板查词面板」＝「主界面
-  // 浮到用户正在用的窗口上面」（用户 2026-08-16 报，且只有主窗非最小化时看得见）。
-  // 抬升发生在系统内部，进程里没有任何一行代码调用它，事后再 SetWindowPos 推回去也
-  // 追不上（真机实测：系统给的插入位置与原前驱相同，推回等于没动）。
-  //
-  // SetActiveWindow 只改**本线程**的活动窗口；本进程不是前台进程时它不改变前台、不动
-  // Z 序、不抢键盘焦点（面板照旧 SW_SHOWNOACTIVATE 上屏）。活动窗口换成面板后，那一步
-  // 顺带抬升的对象就是面板自己——它本来就要显示在最上，于是主窗彻底不再被牵动。
-  // 只对可激活实例做：瞬态卡 / gal 卡窗带 WS_EX_NOACTIVATE，本就不参与激活。
-  if (activatable_) {
-    SetActiveWindow(hwnd_);
-  }
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();
   // Arm the click-outside dismiss only now that the card is on-screen (skip our
   // own process so interacting with the card / main window does not close it).
-  // spec 2026-07-10 — the clipboard panel instance is PERSISTENT (click-outside
-  // / foreground-switch must not close it): it never arms these hooks and thus
-  // never touches the singleton s_hook_owner_, which stays owned by the
-  // transient lookup overlay.
-  if (arm_dismiss_hooks_) {
-    s_hook_owner_ = this;
-    if (foreground_hook_ == nullptr) {
-      foreground_hook_ = SetWinEventHook(
-          EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-          &GlobalLookupWindow::ForegroundHookProc, 0, 0,
-          WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    }
-    // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
-    // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-    if (!prearm_direct_click_swallow) {
-      fushi::ArmLowLevelMouseHook(hwnd_);
-      mouse_hook_armed_ = true;
-    }
+  s_hook_owner_ = this;
+  if (foreground_hook_ == nullptr) {
+    foreground_hook_ = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+  }
+  // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
+  // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+  if (!prearm_direct_click_swallow) {
+    fushi::ArmLowLevelMouseHook(hwnd_);
+    mouse_hook_armed_ = true;
   }
   // 投影：上面 SetWindowPos 触发的 WM_WINDOWPOSCHANGED 到达时 revealed_ 还是
   // false（置位在其后），漏斗那次同步判为隐藏——首帧必须在标志置位后显式补一次。
@@ -1403,21 +1373,18 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     }
   }
   // Arm the click-outside dismiss hooks now that the stack is on-screen (the
-  // first reveal arms; later resizes are idempotent re-arms). The clipboard
-  // panel instance never arms them (persistent semantics, see Reveal).
-  if (arm_dismiss_hooks_) {
-    s_hook_owner_ = this;
-    if (foreground_hook_ == nullptr) {
-      foreground_hook_ = SetWinEventHook(
-          EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-          &GlobalLookupWindow::ForegroundHookProc, 0, 0,
-          WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    }
-    // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
-    // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
-    fushi::ArmLowLevelMouseHook(hwnd_);
-    mouse_hook_armed_ = true;
+  // first reveal arms; later resizes are idempotent re-arms).
+  s_hook_owner_ = this;
+  if (foreground_hook_ == nullptr) {
+    foreground_hook_ = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+        &GlobalLookupWindow::ForegroundHookProc, 0, 0,
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
   }
+  // BUG-1048 — 钩子跑在专用线程上（见 low_level_mouse_hook.h）：装在 platform 线程
+  // 时，全系统每个鼠标事件都要排在 Flutter 的帧后面，游戏里鼠标一动就卡。
+  fushi::ArmLowLevelMouseHook(hwnd_);
+  mouse_hook_armed_ = true;
   // 投影：与 Reveal 同因——上面 SetWindowPos 触发漏斗时 revealed_ 还是 false，
   // 标志置位后显式补一次，首帧才有影。
   SyncShadow();
@@ -1650,102 +1617,7 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   }
 }
 
-namespace {
-
-// spec §6 Win10 translucency fallback — the undocumented user32
-// SetWindowCompositionAttribute accent policy (the API TranslucentTB /
-// EarTrumpet shipped on for ~a decade; Win10 is feature-frozen so the removal
-// risk is effectively nil). Win10 has no documented per-window backdrop and
-// WS_EX_LAYERED is WebView2-incompatible, so this is the only viable
-// translucency path there. Deliberately ACCENT_ENABLE_BLURBEHIND (3), NOT
-// ACCENT_ENABLE_ACRYLICBLURBEHIND (4): the acrylic accent has a well-known,
-// never-fixed drag/resize lag regression since Win10 1903 — and the panel is
-// repositioned via the HTCAPTION modal drag loop, which would hit it head-on.
-// GradientColor is ABGR and must carry a non-zero alpha on some builds for the
-// blur to engage (0x01 black tint = visually neutral).
-struct AccentPolicy {
-  int accent_state;
-  int accent_flags;
-  DWORD gradient_color;
-  int animation_id;
-};
-
-struct WindowCompositionAttribData {
-  int attrib;
-  PVOID pv_data;
-  SIZE_T cb_data;
-};
-
-using SetWindowCompositionAttributeProc =
-    BOOL(WINAPI*)(HWND, WindowCompositionAttribData*);
-
-bool ApplyWin10AccentBlurBehind(HWND hwnd) {
-  const HMODULE user32 = GetModuleHandleW(L"user32.dll");
-  if (user32 == nullptr) {
-    return false;
-  }
-  const auto set_wca = reinterpret_cast<SetWindowCompositionAttributeProc>(
-      GetProcAddress(user32, "SetWindowCompositionAttribute"));
-  if (set_wca == nullptr) {
-    return false;
-  }
-  AccentPolicy accent{};
-  accent.accent_state = 3;             // ACCENT_ENABLE_BLURBEHIND
-  accent.accent_flags = 0;
-  accent.gradient_color = 0x01000000;  // ABGR: alpha 0x01, black tint
-  accent.animation_id = 0;
-  WindowCompositionAttribData data{};
-  data.attrib = 19;  // WCA_ACCENT_POLICY
-  data.pv_data = &accent;
-  data.cb_data = sizeof(accent);
-  return set_wca(hwnd, &data) != FALSE;
-}
-
-}  // namespace
-
-bool GlobalLookupWindow::ApplySystemBackdrop() {
-  if (hwnd_ == nullptr) {
-    return false;
-  }
-  // spec §6 semi-transparency gate — translucency chain (first hit wins):
-  // 1) Win11 22H2+ system backdrop: DWM paints acrylic (blurred desktop
-  //    content behind the window) wherever the client pixels are transparent;
-  //    the WebView2 default background is already fully transparent
-  //    (put_DefaultBackgroundColor A=0, TODO-893), so a CSS rgba card
-  //    background composites over the acrylic. Extend the frame into the whole
-  //    client area first — without it the backdrop only covers the (zero-size)
-  //    frame region.
-  // 2) Win10 fallback: undocumented accent-policy blur-behind (see
-  //    ApplyWin10AccentBlurBehind above) — same WebView2 transparency
-  //    prerequisite, plain blur instead of acrylic.
-  // 3) Both unavailable -> false: the panel stays opaque and Dart hides the
-  //    opacity slider (graceful degrade, spec §6 fallback).
-  const MARGINS margins{-1, -1, -1, -1};
-  DwmExtendFrameIntoClientArea(hwnd_, &margins);
-  int backdrop = 3;  // DWMSBT_TRANSIENTWINDOW (acrylic)
-  const HRESULT hr = DwmSetWindowAttribute(
-      hwnd_, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &backdrop, sizeof(backdrop));
-  if (SUCCEEDED(hr)) {
-    return true;
-  }
-  return ApplyWin10AccentBlurBehind(hwnd_);
-}
-
-void GlobalLookupWindow::SetWindowTitle(const std::wstring& title) {
-  if (title.empty()) {
-    return;
-  }
-  window_title_ = title;
-  if (hwnd_ != nullptr) {
-    // 已创建（面板启动即预热）：任务栏按钮标题即时更新。
-    SetWindowTextW(hwnd_, window_title_.c_str());
-  }
-}
-
 // BUG-1479 — 显示期间周期性重申置顶。
-//
-// 判据必须是「本实例本来就要置顶」而不是「无脑重申」：未 pin 的常驻剪贴板面板
-// 有意落在非置顶带（见 RaiseToFront），定时器把它拖回置顶带就是另一个 bug。
 namespace {
 constexpr UINT_PTR kTopmostGuardTimerId = 0xA11D;
 // 800ms：够快到用户看不出被压过（游戏重申置顶通常在切场景/取焦点时），
@@ -1754,7 +1626,7 @@ constexpr UINT kTopmostGuardIntervalMs = 800;
 }  // namespace
 
 void GlobalLookupWindow::ReassertTopmost() {
-  if (hwnd_ == nullptr || !wants_topmost_ || !IsShowing()) {
+  if (hwnd_ == nullptr || !IsShowing()) {
     return;
   }
   SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
@@ -1762,7 +1634,7 @@ void GlobalLookupWindow::ReassertTopmost() {
 }
 
 void GlobalLookupWindow::StartTopmostGuard() {
-  if (hwnd_ == nullptr || !wants_topmost_ || topmost_guard_timer_ != 0) {
+  if (hwnd_ == nullptr || topmost_guard_timer_ != 0) {
     return;
   }
   topmost_guard_timer_ =
@@ -1775,20 +1647,6 @@ void GlobalLookupWindow::StopTopmostGuard() {
   }
   KillTimer(hwnd_, kTopmostGuardTimerId);
   topmost_guard_timer_ = 0;
-}
-
-void GlobalLookupWindow::SetTopmost(bool topmost) {
-  if (hwnd_ == nullptr) {
-    return;
-  }
-  // 记住意图：重申定时器据此决定该不该把窗口拖回置顶带。
-  wants_topmost_ = topmost;
-  if (!topmost) StopTopmostGuard();
-  // SWP_NOOWNERZORDER：不带它时改 Z 序会连带 owner 的 Z 序（真机症状=点图钉
-  // 把主 app 拉到前台）。面板现已无 owner（见 RegisterClipboardPanelChannel），
-  // 此标志兜底防回归；与 Reveal/RevealStack 的 SetWindowPos 口径一致。
-  SetWindowPos(hwnd_, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
 void GlobalLookupWindow::SetBlockCapture(bool block) {
@@ -1812,49 +1670,6 @@ void GlobalLookupWindow::ApplyBlockCapture() {
   if (!SetWindowDisplayAffinity(hwnd_, WDA_EXCLUDEFROMCAPTURE)) {
     SetWindowDisplayAffinity(hwnd_, WDA_MONITOR);
   }
-}
-
-void GlobalLookupWindow::RaiseToFront(bool topmost) {
-  if (hwnd_ == nullptr) {
-    return;
-  }
-  // 每次查词把已显示的面板重排到 z 序最上，绝不激活（SWP_NOACTIVATE，不抢当前
-  // 前台窗口键盘焦点）。SWP_NOOWNERZORDER 兜底不连带 owner（面板现无 owner，
-  // 与 SetTopmost/Reveal 口径一致）。
-  const UINT flags =
-      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
-  if (topmost) {
-    // 已 pin：直接顶到置顶带最上。
-    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, flags);
-    return;
-  }
-  // 未 pin：裸 HWND_TOP 在别的 app 处于前台时可能被前台锁拒绝，故先短暂置顶
-  // 再撤销——面板落到「非置顶带最上、仍压在前台游戏/浏览器之上」，且全程不激活。
-  SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0, flags);
-  SetWindowPos(hwnd_, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
-}
-
-void GlobalLookupWindow::SetWindowAlpha(int percent) {
-  if (hwnd_ == nullptr) {
-    return;
-  }
-  // 背景逐像素透明（composition）模式：透明由 DComp per-pixel 承担，整窗
-  // WS_EX_LAYERED + LWA_ALPHA 会与之冲突（把文字一起变淡、甚至令 NOREDIRECTIONBITMAP
-  // 窗不渲染）。此模式下整窗 alpha 是 no-op，透明度语义交给 CSS 卡背景（cardBgAlpha）。
-  if (composition_active_) {
-    return;
-  }
-  if (percent < 30) percent = 30;
-  if (percent > 100) percent = 100;
-  const LONG_PTR ex = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
-  if ((ex & WS_EX_LAYERED) == 0) {
-    SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, ex | WS_EX_LAYERED);
-  }
-  // A WS_EX_LAYERED window does not render AT ALL until
-  // SetLayeredWindowAttributes is called — always call it (100% => 255), and
-  // keep the layered bit once set (toggling it forces repaint quirks).
-  SetLayeredWindowAttributes(
-      hwnd_, 0, static_cast<BYTE>((255 * percent) / 100), LWA_ALPHA);
 }
 
 void GlobalLookupWindow::Hide(bool notify) {
@@ -2030,9 +1845,7 @@ DWORD GlobalLookupWindow::OverlayCreateExStyle() {
   if (composition_mode_ && !composition_active_) {
     composition_active_ = InitCompositionDevice();
   }
-  return WS_EX_TOPMOST |
-         (taskbar_presence_ ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
-         (activatable_ ? 0 : WS_EX_NOACTIVATE) |
+  return WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
          (composition_active_ ? WS_EX_NOREDIRECTIONBITMAP : 0);
 }
 
@@ -2842,14 +2655,14 @@ void GlobalLookupWindow::ConfigureWebView() {
             wil::unique_cotaskmem_string json;
             if (SUCCEEDED(args->get_WebMessageAsJson(&json))) {
               std::string body = WideToUtf8(json.get());
-              // spec 2026-07-10 panel — host-chrome window drag/resize. The
-              // client area is fully covered by the WebView2 child HWND, so
-              // WM_NCHITTEST never reaches this window; the panel grip posts
-              // {handler:'beginWindowDrag'/'beginWindowResize'} instead and we
-              // enter the modal move/size loop via the HTCAPTION trick.
+              // Phase C — host-chrome window resize. The client area is fully
+              // covered by the WebView2 child HWND, so WM_NCHITTEST never
+              // reaches this window; the root card grip posts
+              // {handler:'beginWindowResize'} instead and we enter the modal
+              // size loop via the WM_NCLBUTTONDOWN/HTBOTTOMRIGHT trick.
               // 真机修复：必须 PostMessage 而非 SendMessage——SendMessage 在
               // WebMessageReceived 的 COM 回调栈里同步进模态循环，会把 WebView2
-              // 的消息派发挂在回调里（真机表现=面板拖不动）。PostMessage 让模态
+              // 的消息派发挂在回调里（真机表现=拖不动）。PostMessage 让模态
               // 循环从消息泵正常入口启动；拖/拉结束后由 WM_EXITSIZEMOVE（见
               // HandleMessage）统一回报最终 rect 给 Dart 持久化。Matching
               // quoted handler names keeps glossary text that merely mentions
@@ -2891,17 +2704,11 @@ void GlobalLookupWindow::ConfigureWebView() {
                   FinalizePendingShellGeometry(geometry_epoch);
                 }
               }
-              if (body.find("\"handler\":\"beginWindowDrag\"") !=
-                      std::string::npos ||
-                  body.find("\"handler\":\"beginWindowResize\"") !=
-                      std::string::npos) {
-                const bool resize =
-                    body.find("\"handler\":\"beginWindowResize\"") !=
-                    std::string::npos;
+              if (body.find("\"handler\":\"beginWindowResize\"") !=
+                  std::string::npos) {
                 if (hwnd_ != nullptr) {
                   ReleaseCapture();
-                  PostMessage(hwnd_, WM_NCLBUTTONDOWN,
-                              resize ? HTBOTTOMRIGHT : HTCAPTION, 0);
+                  PostMessage(hwnd_, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, 0);
                 }
                 return S_OK;
               }
@@ -3082,20 +2889,8 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // full_script is the complete JS built in Dart (settings + lookupEntries +
   // renderPopup), mirroring dictionary_popup_webview._pushResults. Cached until
   // the page finishes loading (renderPopup must exist).
-  // BUG-1793 follow-up — surface identity belongs to this physical HWND, not to
-  // mutable/replayed JS route state.  Append the native truth AFTER renderStack:
-  // a galCard window synchronously removes the process-wide clipboard-history
-  // chrome before WebView2 presents the frame; desktop/panel windows retain it.
-  // The guarded call remains compatible with a host page from before BUG-1793.
-  std::string routed_script = full_script;
-  if (route_context_.source == "galCard") {
-    routed_script +=
-        "\n;(function(h){if(h&&typeof h.setClipboardHistoryAvailable==="
-        "'function'){h.setClipboardHistoryAvailable(false);}})"
-        "(window.__globalLookupHost);";
-  }
   if (recovering_ || !webview_ready_ || !webview_) {
-    pending_json_ = routed_script;
+    pending_json_ = full_script;
     return;
   }
   // TODO-1268 (BUG-693) -- deterministic dead-surface detection. The overlay
@@ -3115,9 +2910,9 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   // RecoverDeadWebView which caches this script and rebuilds the
   // environment/controller/webview; NavigationCompleted then replays it, so
   // the very lookup that DISCOVERS the dead surface still renders a real card.
-  const std::string script_copy = routed_script;
+  const std::string script_copy = full_script;
   HRESULT sync_hr = webview_->ExecuteScript(
-      Utf8ToWide(routed_script).c_str(),
+      Utf8ToWide(full_script).c_str(),
       Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
           [this, script_copy](HRESULT error_code, LPCWSTR) -> HRESULT {
             if (FAILED(error_code)) {
@@ -3132,7 +2927,7 @@ void GlobalLookupWindow::RenderJson(const std::string& full_script) {
   if (FAILED(sync_hr)) {
     ReportOverlayError("overlay ExecuteScript call failed; recovering",
                        sync_hr);
-    RecoverDeadWebView(routed_script);
+    RecoverDeadWebView(full_script);
   }
 }
 
@@ -3597,10 +3392,9 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       ApplyRoundedRegion();
       return 0;
     case WM_EXITSIZEMOVE: {
-      // 模态 move/size 循环结束（面板拖动/调整，或 Phase C 起的瞬态覆盖窗拖角 resize）：
-      // 回报最终窗口 rect（物理 px）供 Dart 持久化。同一 windowMoved 通道，两实例各自的
-      // message_cb_ 落不同真值——面板落 clipboardPanelRect，瞬态窗落 overlay 尺寸键（Dart
-      // 侧按实例区分去向，见各自 controller 的 _onJsMessage / windowMoved 分支）。
+      // 模态 size 循环结束（Phase C 瞬态覆盖窗拖角 resize）：回报最终窗口 rect
+      // （物理 px）供 Dart 持久化（windowMoved → overlay 尺寸键，见 controller 的
+      // _onJsMessage / windowMoved 分支）。
       // Phase C — 先复原 resize 期间临时挂起的 shell 区域裁剪（resizing_ 归零后重算）。
       resizing_ = false;
       ApplyRoundedRegion();

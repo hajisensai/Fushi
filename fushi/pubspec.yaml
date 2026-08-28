@@ -141,7 +141,6 @@ dependencies:
   # 漫画内置 OCR：ONNX Runtime 五平台绑定（检测 RT-DETR + 识别 manga-ocr）。
   # 选型见 lib/src/ocr/；EP 策略（CUDA/DirectML/CoreML/CPU）在 ocr_inference.dart。
   flutter_onnxruntime: ^1.8.3
-  clipboard_watcher: ^0.3.0
   hotkey_manager: ^0.2.3
   screen_retriever: ^0.2.0
   window_manager: ^0.5.1

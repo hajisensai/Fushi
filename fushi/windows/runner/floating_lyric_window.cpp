@@ -106,7 +106,7 @@ constexpr int kHookTextControlSlotCount = hook_toolbar::kSlotCount;
 // there is a background strip to grab when dragging the overlay.
 constexpr float kToolbarWindowMarginDip = 5.0f;
 
-// Text-only clipboard window (Luna-style hover toolbar). A thin top strip is
+// Text-only hook window (Luna-style hover toolbar). A thin top strip is
 // ALWAYS a mouse catch (drawn at ~2% alpha across the full width) so the fully
 // transparent window can always be grabbed to move + can reveal its toolbar,
 // while the body below stays truly transparent (click-through to the game). At
@@ -412,14 +412,10 @@ bool FloatingLyricWindow::Show(HWND owner) {
 
     // The strip must be mouse-interactive immediately so the first click after
     // entering the bar cannot fall through to the app below. WS_EX_NOACTIVATE
-    // keeps that click from stealing keyboard focus. The text-only clipboard
-    // window uses WS_EX_APPWINDOW so it shows in the taskbar / Alt+Tab as a
-    // selectable window (the transparent overlay is otherwise easy to lose); the
-    // lyric strip keeps WS_EX_TOOLWINDOW to stay off the taskbar.
-    const DWORD taskbar_ex =
-        (text_only_ && !hook_text_mode_) ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW;
+    // keeps that click from stealing keyboard focus. WS_EX_TOOLWINDOW keeps
+    // both the lyric strip and the hook text window off the taskbar / Alt+Tab.
     hwnd_ = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TOPMOST | taskbar_ex | WS_EX_NOACTIVATE,
+        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         kWindowClassName,
         hook_text_mode_ ? L"Fushi Hook Text" : window_title_.c_str(),
         WS_POPUP, x, y, width, height,
@@ -575,16 +571,6 @@ void FloatingLyricWindow::ApplyStyleWidth() {
                target_px, rc.bottom - rc.top,
                SWP_NOMOVE | SWP_NOACTIVATE);
   ClampCurrentPositionToWindowMonitor();
-}
-
-void FloatingLyricWindow::SetWindowTitle(const std::wstring& title) {
-  if (title.empty()) {
-    return;
-  }
-  window_title_ = title;
-  if (hwnd_ != nullptr) {
-    SetWindowTextW(hwnd_, window_title_.c_str());
-  }
 }
 
 void FloatingLyricWindow::UpdateLabels(const Labels& labels) {
@@ -782,8 +768,8 @@ void FloatingLyricWindow::ApplyPassThroughExStyle() {
     return;
   }
   // Only the galgame hook overlay has a pass-through mode. The audiobook lyric
-  // strip and the clipboard text window never reach the branch below, so their
-  // window styles are byte-for-byte what they always were.
+  // strip never reaches the branch below, so its window style is byte-for-byte
+  // what it always was.
   const bool want = hook_text_mode_ && pass_through_ && visible_;
   if (!want) {
     pass_through_toolbar_.Hide();
@@ -1463,7 +1449,7 @@ void FloatingLyricWindow::Render() {
       ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip) +
       ScaleForDpi(kControlsTopDip);
   // Both modes reserve controls_h at the top: the lyric strip for its transport
-  // row, the text-only clipboard window for its thin Luna-style hover toolbar
+  // row, the hook text window for its thin Luna-style hover toolbar
   // (the text sits below the strip so the toolbar never overlaps it).
   text_rect_.left = pad;
   text_rect_.top = controls_h;
@@ -1869,16 +1855,13 @@ void FloatingLyricWindow::Render() {
   }
 
   if (text_only_) {
-    // Luna-style hover toolbar for the transparent clipboard window: a thin top
+    // Luna-style hover toolbar for the text-only (hook) window: a thin top
     // strip that is ALWAYS a mouse catch (so the transparent window can be
     // grabbed to move + can reveal its controls), showing only a grip hint at
-    // rest and the lock + one-click-transparency buttons on hover. Geometry
-    // mirrors ControlActionAt(text_only_) exactly.
-    const float t_btn =
-        ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip);
-    const float t_pad = ScaleForDpi(kHorizontalPaddingDip);
-    const float t_gap =
-        ScaleForDpi(hook_text_mode_ ? kHookTextButtonGapDip : kButtonGapDip);
+    // rest and the shared-slot toolbar on hover. Geometry mirrors
+    // ControlActionAt(text_only_) exactly.
+    const float t_btn = ScaleForDpi(kHookTextButtonSizeDip);
+    const float t_gap = ScaleForDpi(kHookTextButtonGapDip);
     const float t_top = ScaleForDpi(kControlsTopDip);
     const float strip_h = t_top + t_btn;
 
@@ -1921,10 +1904,9 @@ void FloatingLyricWindow::Render() {
       render_target_->FillRoundedRectangle(grip_rect, grip_brush.Get());
     }
 
-    // Controls appear only on hover. Clipboard mode keeps its historical
-    // right-aligned buttons (transparency, pin/topmost, lock); Hook mode uses a
-    // centred shared-slot core toolbar. Their hit areas in ControlActionAt()
-    // are gated on hovered_ too, so a click can never hit an invisible button.
+    // Controls appear only on hover: a centred shared-slot core toolbar. Their
+    // hit areas in ControlActionAt() are gated on hovered_ too, so a click can
+    // never hit an invisible button.
     if (hovered_ && draw_body_toolbar) {
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_active;
@@ -1972,30 +1954,20 @@ void FloatingLyricWindow::Render() {
           }
         }
       };
-      if (hook_text_mode_) {
-        // 绘制是 HookToolbarSlotAt 的逆向：同一条 RowLeft 决定起点，逐槽步进
-        // (btn + gap)。命中与绘制共用起点，两者不可能各画各的。
-        // Render 的 |width| 是 client px 的 int；显式转 float 与改造前
-        // 「(width - controls_total) / 2.0f」的隐式提升逐位等价。
-        const float left = HookToolbarRowLeft(static_cast<float>(width));
-        // No second pill behind the row: the full-width hover strip is already
-        // the toolbar surface. Only active buttons receive a local soft tint.
-        for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
-          draw_tbtn(left + slot * (t_btn + t_gap), slot,
-                    hook_toolbar::SlotActive(slot, tb_states));
-        }
-      } else {
-        const float lock_x = width - t_pad - t_btn;
-        const float top_x = lock_x - t_gap - t_btn;
-        const float trans_x = top_x - t_gap - t_btn;
-        draw_tbtn(trans_x, 4, false);   // one-click background transparency
-        draw_tbtn(top_x, 7, topmost_);  // pin: always-on-top
-        draw_tbtn(lock_x, 5, locked_);
+      // 绘制是 HookToolbarSlotAt 的逆向：同一条 RowLeft 决定起点，逐槽步进
+      // (btn + gap)。命中与绘制共用起点，两者不可能各画各的。
+      // Render 的 |width| 是 client px 的 int；显式转 float 与改造前
+      // 「(width - controls_total) / 2.0f」的隐式提升逐位等价。
+      const float left = HookToolbarRowLeft(static_cast<float>(width));
+      // No second pill behind the row: the full-width hover strip is already
+      // the toolbar surface. Only active buttons receive a local soft tint.
+      for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+        draw_tbtn(left + slot * (t_btn + t_gap), slot,
+                  hook_toolbar::SlotActive(slot, tb_states));
       }
     }
 
-    // Hook text is a real resizable text box. The clipboard text destination
-    // remains intentionally grip-less for compatibility.
+    // Hook text is a real resizable text box.
     if (hook_text_mode_ && !locked_) {
       const float resize = ScaleForDpi(kResizeGripDip);
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> resize_brush;
@@ -2135,7 +2107,7 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
   }
   if (action == "topmost") {
     // 按钮按下 = 翻转，落地走 SetTopmost（与 Dart 的会话复位同一条路径）。
-    // Pin button (clipboard Luna toolbar + galgame hook toolbar slot 7): toggle
+    // Pin button (galgame hook toolbar slot 7): toggle
     // always-on-top locally (LunaTranslator #36). Handled natively — no Dart
     // round-trip — and every window-Z SetWindowPos reads topmost_ so the new
     // state sticks. Re-pinning also re-asserts HWND_TOPMOST, which is the way
@@ -2188,46 +2160,24 @@ int FloatingLyricWindow::HookToolbarSlotAt(float x, float y) const {
 
 std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
   if (text_only_) {
-    // Text-only Luna toolbar: only the lock + one-click-transparency buttons are
-    // control hits, and only while hovered (they are invisible otherwise, so a
-    // click must never land on a phantom button). The grip / empty strip returns
-    // empty so a press there becomes a window drag — geometry mirrors Render().
+    // Text-only Luna toolbar: buttons are control hits only while hovered (they
+    // are invisible otherwise, so a click must never land on a phantom button).
+    // The grip / empty strip returns empty so a press there becomes a window
+    // drag — geometry mirrors Render().
     if (!hovered_) {
       return std::string();
     }
-    RECT rc;
-    GetClientRect(hwnd_, &rc);
-    const float width = static_cast<float>(rc.right - rc.left);
-    const float btn =
-        ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip);
-    const float gap =
-        ScaleForDpi(hook_text_mode_ ? kHookTextButtonGapDip : kButtonGapDip);
-    const float pad = ScaleForDpi(kHorizontalPaddingDip);
+    const float btn = ScaleForDpi(kHookTextButtonSizeDip);
     const float ctrl_top = ScaleForDpi(kControlsTopDip);
     if (y < ctrl_top || y > ctrl_top + btn) {
       return std::string();
     }
-    if (hook_text_mode_) {
-      // Shared slot table (hook_toolbar::kSlotActions): the standalone
-      // pass-through toolbar indexes the very same array, so the two windows
-      // physically cannot disagree about what a button does. 几何走
-      // HookToolbarSlotAt——悬停提示问的是同一个入口，提示与命中永远指同一颗。
-      const int slot = HookToolbarSlotAt(x, y);
-      return slot >= 0 ? hook_toolbar::kSlotActions[slot] : std::string();
-    }
-    const float lock_x = width - pad - btn;
-    const float top_x = lock_x - gap - btn;
-    const float trans_x = top_x - gap - btn;
-    if (x >= lock_x && x <= lock_x + btn) {
-      return "lock";
-    }
-    if (x >= top_x && x <= top_x + btn) {
-      return "topmost";
-    }
-    if (x >= trans_x && x <= trans_x + btn) {
-      return "toggleTransparency";
-    }
-    return std::string();
+    // Shared slot table (hook_toolbar::kSlotActions): the standalone
+    // pass-through toolbar indexes the very same array, so the two windows
+    // physically cannot disagree about what a button does. 几何走
+    // HookToolbarSlotAt——悬停提示问的是同一个入口，提示与命中永远指同一颗。
+    const int slot = HookToolbarSlotAt(x, y);
+    return slot >= 0 ? hook_toolbar::kSlotActions[slot] : std::string();
   }
   RECT rc;
   GetClientRect(hwnd_, &rc);
@@ -2264,10 +2214,7 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
 }
 
 bool FloatingLyricWindow::ResizeGripContains(float x, float y) const {
-  // Text-only clipboard window has no resize grip — WM_NCHITTEST stays HTCLIENT
-  // everywhere so the whole surface keeps driving drag / lookup, never a system
-  // resize loop.
-  if ((text_only_ && !hook_text_mode_) || locked_ || hwnd_ == nullptr) {
+  if (locked_ || hwnd_ == nullptr) {
     return false;
   }
   RECT rc;

@@ -828,8 +828,6 @@ class GalIngameLookupController {
       return GlobalLookupController.instance.lookupText(
         query,
         sentence: hit.line,
-        showSentenceBanner: false,
-        allowClipboardHistory: false,
         miningHandler: _miningResolver?.call(hit.line),
       );
     });

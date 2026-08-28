@@ -388,7 +388,7 @@ void main() {
       expect(result.error, 'lookup_region_missing');
     });
 
-    test('主路复用 Fushi popup，内嵌模式只隐藏顶部整句横幅', () {
+    test('主路复用 Fushi popup，不另造卡片', () {
       final String source = File(
         'lib/src/lookup/gal_ingame_lookup_controller.dart',
       ).readAsStringSync();
@@ -420,8 +420,9 @@ void main() {
       );
       expect(
         source,
-        contains('showSentenceBanner: false'),
-        reason: '内嵌模式只隐藏 popup 顶部整句横幅，不能另造一套卡片',
+        isNot(contains('showSentenceBanner')),
+        reason: 'popup 顶部整句横幅已随桌面剪贴板查词移除，不再有该开关；'
+            '内嵌模式复用同一份 popup，不能另造一套卡片',
       );
       expect(
         source,

@@ -17,10 +17,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
-import 'package:fushi/src/lookup/clipboard_history_payload.dart';
-import 'package:fushi/src/lookup/desktop_lookup_router.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
@@ -49,9 +46,8 @@ class GlobalLookupController {
 
   static bool get isSupported => Platform.isWindows;
 
-  /// spec 2026-07-10 — 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。
-  /// 剪贴板查词去向路由（desktop_lookup_router）以此决定 panel/transient 是否
-  /// 可用；不可用一律退回主窗 tab，请求不丢。
+  /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
+  /// 覆盖窗还是退回主窗 tab，请求不丢。
   bool get isAvailable => isSupported && _started;
 
   /// 当前 root 卡的引擎匹配长度（UTF-16 code unit，`bestLength`）。
@@ -177,15 +173,6 @@ class GlobalLookupController {
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
   bool _revealed = false;
-  // BUG-1099 — 当前这张瞬态卡是否为**用户显式动作**的产物：台词浮窗/面板释义/悬浮
-  // 字幕点词开出的卡（[lookupText] 且非被动流），或用户在卡内点词压出的子卡
-  // （[_lookupNested]）。为 true 且卡还在屏上时，被动剪贴板流不再重建 root——
-  // 否则 [_lookupExternal] 会把 _lastSentWidth/_lastSentHeight 打回 -1、_revealed 清
-  // false 并 `_stack = [新 root]`，auto-size 窗口跟着新 root 的小内容缩下去，正是用户
-  // 报的「查完词后剪贴板一更新，释义被清空缩回去」。
-  // 不会永久粘住：真正的用户关闭（点外/前台钩子/Esc）走 [_onOverlayHidden] 复位，
-  // 任何显式意图（热键/点词）也会重新置位。
-  bool _userOwnedCard = false;
   Timer? _revealSafety;
   // TODO-1079 (B) — ready-driven reveal safety cadence. Each tick re-checks
   // isWebViewReady before revealing; a not-yet-ready surface reschedules up to
@@ -198,25 +185,12 @@ class GlobalLookupController {
   // frame's own DictionarySearchResult is held alongside (the pure stack
   // model only carries identity/linkage). _frameSeq mints stable per-frame
   // ids (the stack model never generates random/clock ids, see its docs).
-  // TODO-1030 M0 — the current sentence for THIS lookup (剪贴板整句 / UIA 前台句).
-  // Two consumers: (1) mining `{sentence}` context (sentenceContext, BUG-730);
-  // (2) the root card's context banner — GATED by [_showSentenceBanner] so the
-  // sentence still feeds mining even when the banner is suppressed. Empty when
-  // no sentence was captured. Reset per lookup in _lookupExternal.
+  // TODO-1030 M0 — the current sentence for THIS lookup (UIA 前台句 / 悬浮字幕行 /
+  // galgame 台词). Sole consumer: mining `{sentence}` context (sentenceContext,
+  // BUG-730). The card itself never renders it. Empty when no sentence was
+  // captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
   OverlayMiningHandler? _currentMiningHandler;
-
-  // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
-  // 快捷键查词不显示（其整句仍进制卡 sentence，只是不贴横幅）。与 _currentSentence
-  // 解耦：banner 注入独立门控，mining context 不受影响。默认 true（剪切板/悬浮
-  // 字幕等既有带句路径不变），仅热键路径显式传 false。Reset per lookup。
-  bool _showSentenceBanner = true;
-
-  // BUG-1793 — whether this lookup surface may expose process-wide clipboard
-  // history. Normal global/clipboard lookups keep it; a word opened from the
-  // galgame text overlay explicitly disables it. Kept as per-card state so
-  // nested dictionary links inherit the originating surface semantics.
-  bool _allowClipboardHistory = true;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
@@ -277,15 +251,12 @@ class GlobalLookupController {
       onRoutedOverlayHidden: _onRoutedOverlayHidden,
     );
 
-    // 防截屏初值 — 瞬态覆盖窗与剪贴板面板同一 pref（clipboardPanelBlockCapture，
-    // 默认开）。native GlobalLookupWindow 记住该值并在每次窗口（重）建时重应用
-    // （ApplyBlockCapture），故启动推一次即可覆盖此后每次弹出；pref 变更时经
-    // [ClipboardPanelController.applyBlockCapture] 扇出到 [applyBlockCapture]
-    // 即时重推。best-effort：失败不打断启动链（热键注册等）。
+    // 防截屏初值（pref lookupBlockCapture，默认关）。native GlobalLookupWindow
+    // 记住该值并在每次窗口（重）建时重应用（ApplyBlockCapture），故启动推一次即可
+    // 覆盖此后每次弹出；pref 变更时设置页经 [applyBlockCapture] 即时重推。
+    // best-effort：失败不打断启动链（热键注册等）。
     try {
-      await GlobalLookupChannel.setBlockCapture(
-        appModel.clipboardPanelBlockCapture,
-      );
+      await GlobalLookupChannel.setBlockCapture(appModel.lookupBlockCapture);
     } catch (e) {
       glog('start: setBlockCapture FAILED (non-fatal): $e');
     }
@@ -309,10 +280,8 @@ class GlobalLookupController {
     unawaited(_prewarmOverlay(appModel));
   }
 
-  /// 「防截屏」pref 即时重应用到瞬态覆盖窗（与剪贴板面板同一 pref
-  /// clipboardPanelBlockCapture）。唯一扇出入口是
-  /// [ClipboardPanelController.applyBlockCapture]（设置页开关与面板栏 🛡 按钮
-  /// 都走它），本方法只管把值推到本窗的 native 通道；native 侧记值并在窗口
+  /// 「防截屏」pref（lookupBlockCapture）即时重应用到覆盖窗。设置页开关是唯一
+  /// 调用点；本方法只管把值推到本窗的 native 通道；native 侧记值并在窗口
   /// 重建后自动重加（global_lookup_window.cpp ApplyBlockCapture），故无需在每次
   /// 查词路径上重推。不依赖 [_started]——native 通道随主窗注册即存在，[start]
   /// 时还会按 pref 再推一次初值兜底。
@@ -510,17 +479,10 @@ class GlobalLookupController {
         glog('hotkey: empty selection — abort');
         return;
       }
-      // BUG-1099：全局热键是用户最显式的意图，这张卡归用户所有——之后到达的被动
-      // 剪贴板流不得把它整帧重建掉。热键直接走 _lookupExternal（不经 lookupText），
-      // 故所有权在这里置位。
-      _userOwnedCard = true;
-      // 用户 2026-07-12 — 手动快捷键查词不显示整句横幅（框）：整句仍传下去供
-      // 制卡 `{sentence}` 兜底（sentenceContext），但 showSentenceBanner:false
-      // 让 root 卡不贴横幅。只有剪切板自动唤出的瞬态窗（dispatcher）才带横幅。
+      // 整句只进制卡 `{sentence}` 兜底（sentenceContext），卡上不显示。
       await _lookupExternal(
         text,
         sentence: sentence,
-        showSentenceBanner: false,
         autoRead: true,
         miningHandler: null,
       );
@@ -531,23 +493,15 @@ class GlobalLookupController {
 
   /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word
   /// tap etc.). [text] is the already-segmented term; [sentence] is the line it
-  /// came from, shown as the root card's context banner and fed to mining's
-  /// sentence field ('' = no banner). Opens the SAME overlay card as the global
+  /// came from, fed to mining's `{sentence}` field only (the card never renders
+  /// it; '' = no sentence). Opens the SAME overlay card as the global
   /// hotkey, at the OS cursor (the click that triggered this just happened
   /// there — the native floating-lyric strip reports text+index only, no
   /// coordinates). Returns false when the overlay cannot take the lookup
   /// (unsupported platform / [start] never ran / blank term) so the caller
   /// falls back to its existing in-app route — a tap is never silently lost.
-  /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形
-  /// 下方（剪贴板面板释义点击=被点文字处），null 保持 OS 光标语义。
-  /// BUG-1099 — [passiveStream]：本次文本来自环境剪贴板监听（galgame 台词流 /
-  /// 外部 texthooker），不是用户对 Hibiki 的显式动作。用户自己点出来的卡还在屏上时，
-  /// 被动流**整条丢弃**（不重建 root、不清空已测尺寸、不动窗口），卡原地不动直到用户
-  /// 自己关掉它；关掉后（[_onOverlayHidden]）下一条被动流照常开新卡。
-  ///
-  /// 这里比面板更保守（面板会把新句刷进横幅）：瞬态卡是锚在被点词旁的一次性卡片，
-  /// 把横幅换成一句无关的新台词既看不懂，又会把制卡 `{sentence}` 上下文
-  /// （[_currentSentence]）换成用户根本没在看的那句，做出错卡。
+  /// [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形下方（台词浮窗
+  /// 点词=被点文字处），null 保持 OS 光标语义。
   /// 游戏内查词的**物理像素**尺寸上限（宽, 高）。null = 不限（桌面浮窗）。
   ///
   /// 为什么必须有：游戏内卡片要塞进两个硬约束——游戏视口，以及共享内存的位图预算
@@ -602,9 +556,6 @@ class GlobalLookupController {
     String text, {
     String sentence = '',
     Rect? anchorScreenRect,
-    bool showSentenceBanner = true,
-    bool allowClipboardHistory = true,
-    bool passiveStream = false,
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
   }) async {
@@ -618,9 +569,6 @@ class GlobalLookupController {
         text,
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
-        showSentenceBanner: showSentenceBanner,
-        allowClipboardHistory: allowClipboardHistory,
-        passiveStream: passiveStream,
         autoRead: autoRead,
         miningHandler: miningHandler,
       ),
@@ -631,9 +579,6 @@ class GlobalLookupController {
     String text, {
     required String sentence,
     required Rect? anchorScreenRect,
-    required bool showSentenceBanner,
-    required bool allowClipboardHistory,
-    required bool passiveStream,
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
   }) async {
@@ -641,18 +586,8 @@ class GlobalLookupController {
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
       return false;
     }
-    if (keepUserOwnedCardForPassiveStream(
-      passiveStream: passiveStream,
-      userOwnedCard: _userOwnedCard,
-      visible: _revealed,
-    )) {
-      glog('lookupText: passive stream dropped (user-owned card kept)');
-      return true;
-    }
     _activateRoute(GlobalLookupChannel.currentRoute);
-    // 显式意图开的卡归用户所有；被动流开的卡不归（下一条流可以正常替换它）。
-    _userOwnedCard = !passiveStream;
-    glog('lookupText: "$term" passive=$passiveStream');
+    glog('lookupText: "$term"');
     // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
     // programmatic (desktop floating-lyric tap) path: AWAIT a leading
     // hide(notify:false) so the overlay collapses to a confirmed-hidden state
@@ -671,8 +606,6 @@ class GlobalLookupController {
       term,
       sentence: sentence,
       anchorScreenRect: anchorScreenRect,
-      showSentenceBanner: showSentenceBanner,
-      allowClipboardHistory: allowClipboardHistory,
       autoRead: autoRead,
       miningHandler: miningHandler,
     );
@@ -709,63 +642,21 @@ class GlobalLookupController {
     onRoutedRevealed?.call(route, width, height, dx, dy);
   }
 
-  /// 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入，覆盖窗进程只读）后注入
-  /// 覆盖层。best-effort：任何失败记日志吞掉，绝不打断覆盖窗。
-  Future<void> _showClipboardHistory() async {
-    final AppModel? model = _appModel;
-    if (model == null) return;
-    try {
-      await model.clipboardHistoryRepo.loadFromDb();
-      await _renderClipboardHistory(model);
-    } catch (e, st) {
-      glog('lookup: clipboard-history EXCEPTION $e\n$st');
-    }
-  }
-
-  /// 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
-  Future<void> _clearClipboardHistoryAndRefresh() async {
-    final AppModel? model = _appModel;
-    if (model == null) return;
-    try {
-      await model.clearClipboardHistory();
-      await _renderClipboardHistory(model);
-    } catch (e, st) {
-      glog('lookup: clipboard-history clear EXCEPTION $e\n$st');
-    }
-  }
-
-  /// 把当前 [AppModel.clipboardHistory] + 本地化标签转成 host payload 注入渲染。
-  Future<void> _renderClipboardHistory(AppModel model) async {
-    final String payload = buildClipboardHistoryPayloadJson(
-      entries: model.clipboardHistory,
-      title: t.clipboard_history_title,
-      clearLabel: t.clipboard_history_clear,
-      emptyLabel: t.clipboard_history_empty,
-      now: DateTime.now(),
-    );
-    await GlobalLookupChannel.render(
-      'window.__globalLookupHost && '
-      'window.__globalLookupHost.showClipboardHistory($payload);',
-    );
-  }
-
   /// TODO-872 — the shared app-external lookup chain for BOTH triggers (the
   /// global hotkey and the programmatic [lookupText] entry): unconditional
   /// hide → searchDictionary → reset reveal state → seed the stack root →
   /// showAt(atCursor) → renderStack → auto-read → ready-driven reveal safety.
   /// Never throws (logs and swallows, matching the old _onHotKey contract).
   ///
-  /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：剪贴板面板的释义点击给出
-  /// 被点文字的屏幕矩形，卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是
-  /// 光标点右下。null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
+  /// [anchorScreenRect]（屏幕逻辑 px）：台词浮窗点词给出被点文字的屏幕矩形，
+  /// 卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是光标点右下。
+  /// null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
   /// showAt 在 atCursor:false 时直接用传入点并以该点算工作区偏移，级联种子
   /// （cursorWorkX/Y）自动对齐锚点，无需 native 改动。
   Future<void> _lookupExternal(
     String text, {
     required String sentence,
     Rect? anchorScreenRect,
-    bool showSentenceBanner = true,
-    bool allowClipboardHistory = true,
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
   }) async {
@@ -788,8 +679,6 @@ class GlobalLookupController {
       GlobalLookupChannel.hide(notify: false);
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
-      _showSentenceBanner = showSentenceBanner;
-      _allowClipboardHistory = allowClipboardHistory;
       // Retire every acknowledgement belonging to the previous lookup before
       // the asynchronous dictionary search yields. The renderer's epoch itself
       // is host-global and is intentionally NOT reset here.
@@ -1109,9 +998,6 @@ class GlobalLookupController {
     _revealSafety?.cancel();
     _nestedLookupGeneration++;
     _revealed = false;
-    // BUG-1099：用户真把卡关了 = 放弃这次查词，所有权随之释放，下一条被动剪贴板
-    // 流照常开新卡（保护不会永久粘住）。
-    _userOwnedCard = false;
     _resetGeometryHandshakeForLookup();
     // TODO-1231 (BUG-583) — clear the origin ratchet on a genuine dismissal so
     // the next session starts unconstrained.
@@ -1148,8 +1034,8 @@ class GlobalLookupController {
   /// 下取整 + clamp，见 [resolveOverlayResizeFromWindow]），再按「拖即解锁」好品味写
   /// 真值：一动手定制 overlay 尺寸就脱钩「跟随 app 内」——
   /// [AppModel.setOverlayLookupIndependentSize]`(true)` + 写 overlay 宽/高键。滑杆与
-  /// 拖拽写同一真值，下次查词沿用新尺寸（预期行为）。**绝不写 clipboardPanelRect /
-  /// popupMaxWidth**——那是剪贴板面板与 app 内弹窗各自的真值，串台就破坏它们。
+  /// 拖拽写同一真值，下次查词沿用新尺寸（预期行为）。**绝不写 popupMaxWidth**——
+  /// 那是 app 内弹窗的真值，串台就破坏它。
   void _onOverlayResized(Map<String, Object?> message) {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1305,31 +1191,8 @@ class GlobalLookupController {
       return;
     }
     // BUG-1127 / BUG-1210 — 浮窗 iframe realm 回报自动发音 `audio.play()` 真实
-    // 结果（args = [token, ok, reason?]）。处理收口进共享 [OverlayAutoRead]，与
-    // 剪贴板面板同一实现。
+    // 结果（args = [token, ok, reason?]）。处理收口进共享 [OverlayAutoRead]。
     if (_autoRead.maybeHandleWordAudioPlayed(handler, message)) {
-      return;
-    }
-    // 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入）并注入覆盖层。
-    if (handler == 'clipboardHistory') {
-      if (!_allowClipboardHistory) return;
-      unawaited(_showClipboardHistory());
-      return;
-    }
-    // 历史某条被点：以该文本重查（复用共享 app-external 查词链 lookupText）。
-    if (handler == 'lookupClipboardHistoryEntry') {
-      final Object? args = message['args'];
-      if (args is List && args.isNotEmpty) {
-        final String text = args.first?.toString() ?? '';
-        if (text.isNotEmpty) {
-          unawaited(lookupText(text));
-        }
-      }
-      return;
-    }
-    // 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
-    if (handler == 'clearClipboardHistory') {
-      unawaited(_clearClipboardHistoryAndRefresh());
       return;
     }
     if (handler == 'tapOutside' || handler == 'dismiss') {
@@ -1584,9 +1447,6 @@ class GlobalLookupController {
     }
     try {
       _recordLookupCount();
-      // BUG-1099：卡内点词=用户显式动作，这张卡（及其级联）从此归用户所有，
-      // 被动剪贴板流不得再把它整帧重建掉。置位放在 await 之前，挡住在途竞争。
-      _userOwnedCard = true;
       final Future<DictionarySearchResult> search = model.searchDictionary(
         searchTerm: query,
         searchWithWildcards: false,
@@ -1817,19 +1677,11 @@ class GlobalLookupController {
       if (result == null) {
         continue;
       }
-      // TODO-1030 M0 — only the ROOT frame carries the captured sentence banner;
-      // nested child lookups (clicked words) have no sentence context, so they
-      // render without a banner. 用户 2026-07-12 — 且仅当 [_showSentenceBanner]
-      // 时才贴横幅：手动快捷键窗（showSentenceBanner:false）整句只进制卡不显示，
-      // 只有剪切板自动唤出的瞬态窗才带整句框。mining sentenceContext 仍用完整
-      // _currentSentence（line ~740），与横幅解耦。
-      final bool isRoot = frame.id == kGlobalLookupRootFrameId;
       payloads.add(
         GlobalLookupFramePayload(
           frame: frame,
           result: result,
           anchorRect: _frameAnchors[frame.id],
-          sentence: (isRoot && _showSentenceBanner) ? _currentSentence : '',
         ),
       );
     }
@@ -1879,7 +1731,6 @@ class GlobalLookupController {
       // viewport. Match the in-app child popup's above/below fitting there while
       // preserving the desktop global-lookup cascade.
       fitNestedHeightToAnchorSide: route.source == 'galCard',
-      clipboardHistoryAvailable: _allowClipboardHistory,
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
     );

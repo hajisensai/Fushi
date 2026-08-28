@@ -171,32 +171,20 @@ class FloatingLyricWindow {
   // 关闭时（默认）hook 浮窗只在**按住 Shift** 悬停时查词；打开时纯悬停即查。
   // Shift-悬停本身不受此开关控制，它是查词的通用手势。
   void SetHoverAutoLookup(bool enabled);
-  // Text-only mode (the transparent clipboard text window): the strip draws
-  // ONLY the draggable, tappable text — no playback / lock / close control
-  // buttons and no resize grip. Drag + single-tap word lookup still work exactly
-  // as in the audiobook lyric strip. Set once right after construction (before
-  // Show) by the clipboard_text channel; the audiobook lyric instance leaves it
-  // false so its rendering + hit-testing stay byte-for-byte unchanged.
-  void SetTextOnly(bool text_only) { text_only_ = text_only; }
-  // Rich text-only mode used by the galgame Hook window. It keeps the text-only
-  // rendering surface but enables wrapping, resizing, the shared-slot
-  // toolbar (hook_toolbar::kSlotActions), line-context lookup and body
-  // pass-through.
+  // Rich text-only mode used by the galgame Hook window: the strip draws the
+  // draggable, tappable text (no playback / close controls) and enables
+  // wrapping, resizing, the shared-slot toolbar (hook_toolbar::kSlotActions),
+  // line-context lookup and body pass-through. Set once right after
+  // construction (before Show); the audiobook lyric instance leaves it false so
+  // its rendering + hit-testing stay byte-for-byte unchanged.
   void SetHookTextMode(bool enabled) {
     hook_text_mode_ = enabled;
-    if (enabled) text_only_ = true;
+    text_only_ = enabled;
     // 兜底字族按模式分派（DefaultFontFamily：hook 用全宽假名的 Yu Gothic，其余
     // 表面保持界面字体 Yu Gothic UI）。模式一变，上一次解析出来的
     // resolved_font_family_ 就可能属于另一个模式，必须重解析。
     font_collection_dirty_ = true;
   }
-  // Window title = the taskbar / Alt+Tab label. The text-only clipboard window
-  // shows in the taskbar (WS_EX_APPWINDOW) so the fully transparent overlay is
-  // always a selectable window the user can find / raise; this sets its label
-  // (localised, pushed from Dart). No-op visual for the lyric strip, which keeps
-  // WS_EX_TOOLWINDOW and never appears in the taskbar. Call before Show to seed
-  // the CreateWindowExW title; later calls retitle the live window.
-  void SetWindowTitle(const std::wstring& title);
   // Position lock: when locked the strip can no longer be dragged, but word
   // lookup taps and the playback-control buttons keep working (mirrors the
   // Android FloatingLyricService position lock — drag-only restriction).
@@ -417,8 +405,9 @@ class FloatingLyricWindow {
   int hover_lookup_index_ = -1;
   // 悬停轮询定时器是否已挂（只在鼠标在窗口内时挂着）。
   bool hover_poll_active_ = false;
-  // Text-only clipboard window: suppress control buttons + resize grip, use the
-  // full window height for text. Never true for the audiobook lyric strip.
+  // Text-only surface (set by SetHookTextMode): suppress the transport control
+  // buttons, use the full window height for text. Never true for the audiobook
+  // lyric strip.
   bool text_only_ = false;
   bool hook_text_mode_ = false;
   bool pass_through_ = false;
@@ -455,7 +444,7 @@ class FloatingLyricWindow {
   // 相关的行距加高与附加绘制。
   std::vector<RubySpan> ruby_spans_;
   std::string context_id_;
-  // Taskbar / Alt+Tab label; seeds CreateWindowExW and retitles the live window.
+  // Window title for the lyric strip (tool window: never shown in the taskbar).
   std::wstring window_title_ = L"Fushi Lyric";
   int highlight_start_ = -1;
   int highlight_length_ = 0;

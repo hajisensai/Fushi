@@ -115,7 +115,7 @@ void main() {
       expect(src.contains('floatingLyricSearchTerm('), isTrue,
           reason: '分词必须走与旧路由同一把 floatingLyricSearchTerm，防漂移');
       expect(src.contains('sentence: text.trim()'), isTrue,
-          reason: '整行字幕必须作为句子横幅/制卡 sentence 字段传给覆盖窗');
+          reason: '整行字幕必须作为制卡 sentence 字段传给覆盖窗');
     });
   });
 }

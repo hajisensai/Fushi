@@ -31,10 +31,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_update_dictionaries',
   'builtInTagsSeeded',
   'clipboard_panel_block_capture',
-  'clipboard_panel_opacity',
-  'clipboard_panel_pinned',
-  'clipboard_panel_rect',
-  'clipboard_text_window_bg_opacity',
   'collapse_dictionaries',
   'collapsed_collection_ids',
   'compress_mining_media',
@@ -45,11 +41,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
   'default_content_language',
   'design_system',
-  'desktop_clipboard_always_on_top',
-  'desktop_clipboard_auto_lookup',
-  'desktop_clipboard_destination',
-  'desktop_clipboard_enabled',
-  'desktop_clipboard_window_mode',
   'dictionary_entry_font_size',
   'dictionary_update_interval',
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
