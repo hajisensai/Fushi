@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "字幕ファイルを削除",
   "video_subtitle_delete_confirm": "この字幕ファイルをディスクから削除しますか？この操作は元に戻せません。\\n$path",
   "video_subtitle_deleted": "字幕ファイルを削除しました: $label",
-  "video_subtitle_delete_failed": "字幕ファイルの削除に失敗しました: $label"
+  "video_subtitle_delete_failed": "字幕ファイルの削除に失敗しました: $label",
+  "shortcut_action_manga_toggle_chrome": "マンガUIの表示切り替え",
+  "manga_interface_hide": "UIを隠す",
+  "manga_interface_show": "UIを表示",
+  "gal_hook_text_vertical_alignment": "垂直方向の配置",
+  "gal_hook_text_vertical_alignment_center": "中央",
+  "gal_hook_text_vertical_alignment_top": "上",
+  "storage_entry_external_audio_hint": "音声は元のファイルを参照するため、アプリの容量を使いません",
+  "jellyfin_auto_list_title": "動画を開いたときに自動で一覧表示",
+  "jellyfin_auto_list_hint": "オフ: 動画ページを開いてもメディアサーバーにリクエストを送りません。動画ライブラリで引っ張って更新すると手動で一覧表示できます。非常に大きなサーバーでは、自動列挙がスクレイピングのように見えて不正利用検知に引っかかることがあるため、オフを推奨します。",
+  "jellyfin_libraries_title": "一覧表示するライブラリ",
+  "jellyfin_libraries_hint": "何も選ばないとすべての動画ライブラリを一覧表示します。実際に見るライブラリだけに絞ると、巨大なサーバーが丸ごと列挙されるのを防げます。",
+  "jellyfin_libraries_load_failed": "ライブラリ一覧を読み込めませんでした"
 }

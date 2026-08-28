@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "ลบไฟล์คำบรรยาย",
   "video_subtitle_delete_confirm": "ลบไฟล์คำบรรยายนี้ออกจากดิสก์ใช่ไหม การกระทำนี้ย้อนกลับไม่ได้\\n$path",
   "video_subtitle_deleted": "ลบไฟล์คำบรรยายแล้ว: $label",
-  "video_subtitle_delete_failed": "ลบไฟล์คำบรรยายไม่สำเร็จ: $label"
+  "video_subtitle_delete_failed": "ลบไฟล์คำบรรยายไม่สำเร็จ: $label",
+  "shortcut_action_manga_toggle_chrome": "สลับอินเทอร์เฟซมังงะ",
+  "manga_interface_hide": "ซ่อนอินเทอร์เฟซ",
+  "manga_interface_show": "แสดงอินเทอร์เฟซ",
+  "gal_hook_text_vertical_alignment": "การจัดแนวแนวตั้ง",
+  "gal_hook_text_vertical_alignment_center": "กึ่งกลาง",
+  "gal_hook_text_vertical_alignment_top": "บน",
+  "storage_entry_external_audio_hint": "เสียงอ้างอิงไฟล์ต้นฉบับ ไม่ใช้พื้นที่ของแอป",
+  "jellyfin_auto_list_title": "แสดงรายการอัตโนมัติเมื่อเข้าหน้าวิดีโอ",
+  "jellyfin_auto_list_hint": "ปิด: การเข้าหน้าวิดีโอจะไม่ส่งคำขอไปยังมีเดียเซิร์ฟเวอร์ ให้ดึงเพื่อรีเฟรชในคลังวิดีโอเพื่อแสดงรายการเอง แนะนำสำหรับเซิร์ฟเวอร์ขนาดใหญ่มาก เพราะการไล่รายการอัตโนมัติดูเหมือนการขูดข้อมูลและอาจไปกระตุ้นระบบตรวจจับการใช้งานผิดปกติ",
+  "jellyfin_libraries_title": "คลังที่จะแสดงรายการ",
+  "jellyfin_libraries_hint": "ไม่เลือกอะไรเลยจะแสดงคลังวิดีโอทั้งหมด การจำกัดเฉพาะคลังที่ดูจริงช่วยไม่ให้เซิร์ฟเวอร์ขนาดใหญ่ถูกไล่รายการทั้งหมด",
+  "jellyfin_libraries_load_failed": "โหลดรายการคลังไม่สำเร็จ"
 }

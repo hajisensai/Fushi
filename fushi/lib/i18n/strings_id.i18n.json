@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Hapus berkas subtitle",
   "video_subtitle_delete_confirm": "Hapus berkas subtitle ini dari disk? Tindakan ini tidak bisa dibatalkan.\\n$path",
   "video_subtitle_deleted": "Berkas subtitle dihapus: $label",
-  "video_subtitle_delete_failed": "Gagal menghapus berkas subtitle: $label"
+  "video_subtitle_delete_failed": "Gagal menghapus berkas subtitle: $label",
+  "shortcut_action_manga_toggle_chrome": "Alihkan antarmuka manga",
+  "manga_interface_hide": "Sembunyikan antarmuka",
+  "manga_interface_show": "Tampilkan antarmuka",
+  "gal_hook_text_vertical_alignment": "Perataan vertikal",
+  "gal_hook_text_vertical_alignment_center": "Tengah",
+  "gal_hook_text_vertical_alignment_top": "Atas",
+  "storage_entry_external_audio_hint": "Audio merujuk ke berkas aslinya, tidak memakai penyimpanan aplikasi",
+  "jellyfin_auto_list_title": "Daftarkan item otomatis saat masuk Video",
+  "jellyfin_auto_list_hint": "Mati: masuk ke halaman video tidak mengirim permintaan apa pun ke server media; tarik untuk menyegarkan di pustaka video agar item didaftar manual. Disarankan untuk server yang sangat besar, karena pendaftaran otomatis terlihat seperti scraping dan bisa memicu deteksi penyalahgunaan.",
+  "jellyfin_libraries_title": "Pustaka yang didaftarkan",
+  "jellyfin_libraries_hint": "Tidak memilih apa pun akan mendaftarkan semua pustaka video. Membatasi ke pustaka yang benar-benar Anda tonton mencegah server raksasa didaftar seluruhnya.",
+  "jellyfin_libraries_load_failed": "Tidak dapat memuat daftar pustaka"
 }

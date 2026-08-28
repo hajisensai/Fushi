@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Supprimer le fichier de sous-titres",
   "video_subtitle_delete_confirm": "Supprimer ce fichier de sous-titres du disque ? Cette action est irréversible.\\n$path",
   "video_subtitle_deleted": "Fichier de sous-titres supprimé : $label",
-  "video_subtitle_delete_failed": "Échec de la suppression du fichier de sous-titres : $label"
+  "video_subtitle_delete_failed": "Échec de la suppression du fichier de sous-titres : $label",
+  "shortcut_action_manga_toggle_chrome": "Basculer l'interface manga",
+  "manga_interface_hide": "Masquer l'interface",
+  "manga_interface_show": "Afficher l'interface",
+  "gal_hook_text_vertical_alignment": "Alignement vertical",
+  "gal_hook_text_vertical_alignment_center": "Centre",
+  "gal_hook_text_vertical_alignment_top": "Haut",
+  "storage_entry_external_audio_hint": "L'audio référence les fichiers d'origine et n'occupe aucun espace de l'application",
+  "jellyfin_auto_list_title": "Lister les éléments à l'ouverture de Vidéo",
+  "jellyfin_auto_list_hint": "Désactivé : ouvrir la page vidéo n'envoie aucune requête au serveur média ; tirez pour actualiser dans la vidéothèque afin de lister manuellement. Recommandé pour les très gros serveurs, où l'énumération automatique ressemble à du scraping et peut déclencher la détection d'abus.",
+  "jellyfin_libraries_title": "Bibliothèques à lister",
+  "jellyfin_libraries_hint": "Ne rien sélectionner liste toutes les bibliothèques vidéo. Se limiter aux bibliothèques que vous regardez vraiment évite que d'énormes serveurs soient énumérés en entier.",
+  "jellyfin_libraries_load_failed": "Impossible de charger la liste des bibliothèques"
 }

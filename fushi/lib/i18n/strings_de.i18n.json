@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Untertiteldatei löschen",
   "video_subtitle_delete_confirm": "Diese Untertiteldatei von der Festplatte löschen? Das kann nicht rückgängig gemacht werden.\\n$path",
   "video_subtitle_deleted": "Untertiteldatei gelöscht: $label",
-  "video_subtitle_delete_failed": "Untertiteldatei konnte nicht gelöscht werden: $label"
+  "video_subtitle_delete_failed": "Untertiteldatei konnte nicht gelöscht werden: $label",
+  "shortcut_action_manga_toggle_chrome": "Manga-Oberfläche umschalten",
+  "manga_interface_hide": "Oberfläche ausblenden",
+  "manga_interface_show": "Oberfläche einblenden",
+  "gal_hook_text_vertical_alignment": "Vertikale Ausrichtung",
+  "gal_hook_text_vertical_alignment_center": "Mittig",
+  "gal_hook_text_vertical_alignment_top": "Oben",
+  "storage_entry_external_audio_hint": "Audio verweist auf die Originaldateien und belegt keinen App-Speicher",
+  "jellyfin_auto_list_title": "Beim Öffnen von Video automatisch auflisten",
+  "jellyfin_auto_list_hint": "Aus: Beim Öffnen der Videoseite geht keine Anfrage an den Medienserver; ziehe in der Videobibliothek zum Aktualisieren, um manuell aufzulisten. Empfohlen für sehr große Server, wo automatisches Auflisten wie Scraping aussieht und die Missbrauchserkennung auslösen kann.",
+  "jellyfin_libraries_title": "Aufzulistende Bibliotheken",
+  "jellyfin_libraries_hint": "Nichts auswählen listet jede Videobibliothek auf. Auf die Bibliotheken zu beschränken, die du wirklich schaust, verhindert, dass riesige Server komplett durchlaufen werden.",
+  "jellyfin_libraries_load_failed": "Bibliotheksliste konnte nicht geladen werden"
 }

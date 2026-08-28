@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Elimina file dei sottotitoli",
   "video_subtitle_delete_confirm": "Eliminare questo file dei sottotitoli dal disco? L'operazione non può essere annullata.\\n$path",
   "video_subtitle_deleted": "File dei sottotitoli eliminato: $label",
-  "video_subtitle_delete_failed": "Impossibile eliminare il file dei sottotitoli: $label"
+  "video_subtitle_delete_failed": "Impossibile eliminare il file dei sottotitoli: $label",
+  "shortcut_action_manga_toggle_chrome": "Attiva/disattiva interfaccia manga",
+  "manga_interface_hide": "Nascondi interfaccia",
+  "manga_interface_show": "Mostra interfaccia",
+  "gal_hook_text_vertical_alignment": "Allineamento verticale",
+  "gal_hook_text_vertical_alignment_center": "Centro",
+  "gal_hook_text_vertical_alignment_top": "Alto",
+  "storage_entry_external_audio_hint": "L'audio fa riferimento ai file originali e non occupa spazio dell'app",
+  "jellyfin_auto_list_title": "Elenca gli elementi all'apertura di Video",
+  "jellyfin_auto_list_hint": "Disattivato: aprire la pagina video non invia alcuna richiesta al server multimediale; tira per aggiornare nella videoteca per elencare manualmente. Consigliato per server molto grandi, dove l'enumerazione automatica sembra scraping e può far scattare il rilevamento abusi.",
+  "jellyfin_libraries_title": "Librerie da elencare",
+  "jellyfin_libraries_hint": "Non selezionare nulla elenca tutte le librerie video. Limitarsi alle librerie che guardi davvero evita che server enormi vengano enumerati per intero.",
+  "jellyfin_libraries_load_failed": "Impossibile caricare l'elenco delle librerie"
 }

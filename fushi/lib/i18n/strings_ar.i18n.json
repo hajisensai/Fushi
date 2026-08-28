@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "حذف ملف الترجمة",
   "video_subtitle_delete_confirm": "هل تريد حذف ملف الترجمة هذا من القرص؟ لا يمكن التراجع عن ذلك.\\n$path",
   "video_subtitle_deleted": "تم حذف ملف الترجمة: $label",
-  "video_subtitle_delete_failed": "فشل حذف ملف الترجمة: $label"
+  "video_subtitle_delete_failed": "فشل حذف ملف الترجمة: $label",
+  "shortcut_action_manga_toggle_chrome": "تبديل واجهة المانغا",
+  "manga_interface_hide": "إخفاء الواجهة",
+  "manga_interface_show": "إظهار الواجهة",
+  "gal_hook_text_vertical_alignment": "المحاذاة الرأسية",
+  "gal_hook_text_vertical_alignment_center": "توسيط",
+  "gal_hook_text_vertical_alignment_top": "أعلى",
+  "storage_entry_external_audio_hint": "يشير الصوت إلى الملفات الأصلية ولا يستهلك مساحة التطبيق",
+  "jellyfin_auto_list_title": "سرد العناصر تلقائيًا عند فتح الفيديو",
+  "jellyfin_auto_list_hint": "عند الإيقاف: لا يُرسل فتح صفحة الفيديو أي طلب إلى خادم الوسائط؛ اسحب للتحديث في مكتبة الفيديو لسرد العناصر يدويًا. يُنصح به للخوادم الكبيرة جدًا، حيث يبدو السرد التلقائي كأنه كشط وقد يُفعّل كشف إساءة الاستخدام.",
+  "jellyfin_libraries_title": "المكتبات المراد سردها",
+  "jellyfin_libraries_hint": "عدم اختيار أي شيء يسرد كل مكتبات الفيديو. حصر الأمر في المكتبات التي تشاهدها فعلًا يمنع سرد الخوادم الضخمة بالكامل.",
+  "jellyfin_libraries_load_failed": "تعذّر تحميل قائمة المكتبات"
 }

@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Excluir arquivo de legenda",
   "video_subtitle_delete_confirm": "Excluir este arquivo de legenda do disco? Isso não pode ser desfeito.\\n$path",
   "video_subtitle_deleted": "Arquivo de legenda excluído: $label",
-  "video_subtitle_delete_failed": "Falha ao excluir o arquivo de legenda: $label"
+  "video_subtitle_delete_failed": "Falha ao excluir o arquivo de legenda: $label",
+  "shortcut_action_manga_toggle_chrome": "Alternar interface de mangá",
+  "manga_interface_hide": "Ocultar interface",
+  "manga_interface_show": "Mostrar interface",
+  "gal_hook_text_vertical_alignment": "Alinhamento vertical",
+  "gal_hook_text_vertical_alignment_center": "Centro",
+  "gal_hook_text_vertical_alignment_top": "Topo",
+  "storage_entry_external_audio_hint": "O áudio referencia os arquivos originais e não ocupa espaço do app",
+  "jellyfin_auto_list_title": "Listar itens ao entrar em Vídeo",
+  "jellyfin_auto_list_hint": "Desativado: entrar na página de vídeo não envia nenhuma requisição ao servidor de mídia; puxe para atualizar na videoteca para listar manualmente. Recomendado para servidores muito grandes, onde a enumeração automática parece scraping e pode acionar a detecção de abuso.",
+  "jellyfin_libraries_title": "Bibliotecas a listar",
+  "jellyfin_libraries_hint": "Não selecionar nada lista todas as bibliotecas de vídeo. Restringir às bibliotecas que você realmente assiste evita que servidores enormes sejam enumerados por completo.",
+  "jellyfin_libraries_load_failed": "Não foi possível carregar a lista de bibliotecas"
 }

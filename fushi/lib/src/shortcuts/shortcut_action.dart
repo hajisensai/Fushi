@@ -398,6 +398,10 @@ enum ShortcutAction {
   // 「关弹窗并翻页」，那条语义在 [MangaReaderInputAction] 侧，与本动作无关。
   // 退出漫画走 universal 的 [globalBack] 阶梯（弹窗可见先关弹窗，否则退出）。
   mangaDismissDict(ShortcutScope.manga, 'manga_dismiss_dict'),
+  // BUG-1888：切换漫画界面（顶部页码/工具按钮 + 返回键）。与 [readerToggleChrome]
+  // 同形同键（键盘 M / 手柄 Y）——漫画此前**没有任何**隐藏界面的方式，顶栏恒挂在
+  // 画面上。隐藏态下右上角仍留一个半透明「显示界面」按钮，触屏也唤得回来。
+  mangaToggleChrome(ShortcutScope.manga, 'manga_toggle_chrome'),
   // 放大后在页面上平移视野（默认 Ctrl+方向键）。裸方向键已被翻页占死，所以默认
   // 走修饰键组合；用户可在快捷键设置里改成任意键。语义是「视野往哪个方向走」，
   // 与滚动条直觉一致，不随阅读方向镜像（镜像只对**翻页**有意义）。

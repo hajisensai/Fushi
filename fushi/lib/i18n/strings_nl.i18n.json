@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Ondertitelbestand verwijderen",
   "video_subtitle_delete_confirm": "Dit ondertitelbestand van de schijf verwijderen? Dit kan niet ongedaan worden gemaakt.\\n$path",
   "video_subtitle_deleted": "Ondertitelbestand verwijderd: $label",
-  "video_subtitle_delete_failed": "Verwijderen van ondertitelbestand mislukt: $label"
+  "video_subtitle_delete_failed": "Verwijderen van ondertitelbestand mislukt: $label",
+  "shortcut_action_manga_toggle_chrome": "Manga-interface schakelen",
+  "manga_interface_hide": "Interface verbergen",
+  "manga_interface_show": "Interface tonen",
+  "gal_hook_text_vertical_alignment": "Verticale uitlijning",
+  "gal_hook_text_vertical_alignment_center": "Midden",
+  "gal_hook_text_vertical_alignment_top": "Boven",
+  "storage_entry_external_audio_hint": "Audio verwijst naar de originele bestanden en gebruikt geen app-opslag",
+  "jellyfin_auto_list_title": "Items automatisch tonen bij openen van Video",
+  "jellyfin_auto_list_hint": "Uit: bij het openen van de videopagina wordt geen verzoek naar de mediaserver gestuurd; trek in de videobibliotheek omlaag om te vernieuwen en items handmatig te tonen. Aanbevolen voor zeer grote servers, waar automatisch opsommen op scraping lijkt en misbruikdetectie kan activeren.",
+  "jellyfin_libraries_title": "Bibliotheken om te tonen",
+  "jellyfin_libraries_hint": "Niets selecteren toont elke videobibliotheek. Beperken tot de bibliotheken die je echt kijkt voorkomt dat enorme servers volledig worden opgesomd.",
+  "jellyfin_libraries_load_failed": "Kon de bibliotheeklijst niet laden"
 }

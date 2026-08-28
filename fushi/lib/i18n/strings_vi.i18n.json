@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Xoá tệp phụ đề",
   "video_subtitle_delete_confirm": "Xoá tệp phụ đề này khỏi ổ đĩa? Không thể hoàn tác.\\n$path",
   "video_subtitle_deleted": "Đã xoá tệp phụ đề: $label",
-  "video_subtitle_delete_failed": "Xoá tệp phụ đề thất bại: $label"
+  "video_subtitle_delete_failed": "Xoá tệp phụ đề thất bại: $label",
+  "shortcut_action_manga_toggle_chrome": "Bật/tắt giao diện truyện tranh",
+  "manga_interface_hide": "Ẩn giao diện",
+  "manga_interface_show": "Hiện giao diện",
+  "gal_hook_text_vertical_alignment": "Căn dọc",
+  "gal_hook_text_vertical_alignment_center": "Giữa",
+  "gal_hook_text_vertical_alignment_top": "Trên",
+  "storage_entry_external_audio_hint": "Âm thanh tham chiếu tệp gốc, không chiếm dung lượng của ứng dụng",
+  "jellyfin_auto_list_title": "Tự động liệt kê mục khi vào Video",
+  "jellyfin_auto_list_hint": "Tắt: vào trang video sẽ không gửi yêu cầu nào tới máy chủ phương tiện; kéo để làm mới trong thư viện video để liệt kê thủ công. Nên tắt với máy chủ rất lớn, vì việc liệt kê tự động trông giống thu thập dữ liệu và có thể kích hoạt cơ chế phát hiện lạm dụng.",
+  "jellyfin_libraries_title": "Thư viện cần liệt kê",
+  "jellyfin_libraries_hint": "Không chọn gì sẽ liệt kê mọi thư viện video. Thu hẹp về những thư viện bạn thực sự xem giúp máy chủ khổng lồ không bị liệt kê toàn bộ.",
+  "jellyfin_libraries_load_failed": "Không tải được danh sách thư viện"
 }

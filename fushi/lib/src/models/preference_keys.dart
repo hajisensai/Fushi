@@ -84,6 +84,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_outline_color',
   'gal_hook_text_outline_width',
   'gal_hook_text_padding',
+  'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
   'gal_mining_animated_format',
   'gal_mining_image_mode',
@@ -93,6 +94,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'games_collapsed_collection_ids',
   'global_dict_css',
   'harmonic_frequency',
+  // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
+  // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
+  'jellyfin_auto_list_videos',
   'jimaku_api_key',
   'jimaku_default_language',
   // bool（默认 true）：Jimaku 是否参与字幕搜索。与 jimaku_api_key 组成

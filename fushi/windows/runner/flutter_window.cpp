@@ -794,6 +794,8 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   style.bold = BoolFromValue(args, "bold", style.bold);
   style.text_alignment =
       IntFromValue(args, "textAlignment", style.text_alignment);
+  style.vertical_alignment =
+      IntFromValue(args, "verticalAlignment", style.vertical_alignment);
   style.text_color = ArgbFromValue(args, "textColor", style.text_color);
   style.bg_color = ArgbFromValue(args, "bgColor", style.bg_color);
   style.outline_color =

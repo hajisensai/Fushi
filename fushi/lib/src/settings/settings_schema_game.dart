@@ -209,6 +209,31 @@ SettingsDestination buildGameDestination() {
               () => settingsContext.appModel.setGalHookTextAlignment(value),
             ),
           ),
+          // BUG-1890：垂直对齐单列一项，不与水平对齐合成三选一——两者是正交的两个
+          // 轴，合并会造出「选了顶部就没法同时左对齐」这种假互斥。
+          SettingsSegmentedItem<String>(
+            id: 'game.gal_hook_text_vertical_alignment',
+            title: t.gal_hook_text_vertical_alignment,
+            icon: Icons.vertical_align_center,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'center',
+                label: t.gal_hook_text_vertical_alignment_center,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'top',
+                label: t.gal_hook_text_vertical_alignment_top,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextVerticalAlignment,
+            onChanged: (SettingsContext settingsContext, String value) =>
+                _commitGalHookAppearance(
+              settingsContext,
+              () => settingsContext.appModel
+                  .setGalHookTextVerticalAlignment(value),
+            ),
+          ),
           _galHookColorItem(
             id: 'game.gal_hook_text_color',
             title: t.gal_hook_text_color,

@@ -3811,5 +3811,17 @@
   "video_subtitle_delete": "Altyazı dosyasını sil",
   "video_subtitle_delete_confirm": "Bu altyazı dosyası diskten silinsin mi? Bu işlem geri alınamaz.\\n$path",
   "video_subtitle_deleted": "Altyazı dosyası silindi: $label",
-  "video_subtitle_delete_failed": "Altyazı dosyası silinemedi: $label"
+  "video_subtitle_delete_failed": "Altyazı dosyası silinemedi: $label",
+  "shortcut_action_manga_toggle_chrome": "Manga arayüzünü aç/kapat",
+  "manga_interface_hide": "Arayüzü gizle",
+  "manga_interface_show": "Arayüzü göster",
+  "gal_hook_text_vertical_alignment": "Dikey hizalama",
+  "gal_hook_text_vertical_alignment_center": "Orta",
+  "gal_hook_text_vertical_alignment_top": "Üst",
+  "storage_entry_external_audio_hint": "Ses özgün dosyaları kullanır, uygulama depolamasında yer kaplamaz",
+  "jellyfin_auto_list_title": "Video'ya girerken öğeleri otomatik listele",
+  "jellyfin_auto_list_hint": "Kapalı: video sayfasına girmek medya sunucusuna hiçbir istek göndermez; öğeleri elle listelemek için video kitaplığında çekerek yenileyin. Otomatik sayımın kazıma gibi görünüp kötüye kullanım tespitini tetikleyebildiği çok büyük sunucular için önerilir.",
+  "jellyfin_libraries_title": "Listelenecek kitaplıklar",
+  "jellyfin_libraries_hint": "Hiçbir şey seçmezseniz tüm video kitaplıkları listelenir. Gerçekten izlediğiniz kitaplıklarla sınırlamak, devasa sunucuların baştan sona sayılmasını önler.",
+  "jellyfin_libraries_load_failed": "Kitaplık listesi yüklenemedi"
 }

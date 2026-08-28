@@ -27,6 +27,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha1;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/metadata/credential_redaction.dart'
@@ -58,6 +59,7 @@ class JellyfinServerConfig {
     required this.userId,
     required this.accessToken,
     this.serverName,
+    this.libraryIds = const <String>[],
   });
 
   /// 归一化后的服务器根 URL（[JellyfinApi.normalizeServerUrl] 口径）。
@@ -67,12 +69,21 @@ class JellyfinServerConfig {
   final String accessToken;
   final String? serverName;
 
+  /// 要枚举的媒体库视图 id（BUG-1891）。**空 = 全部视频域媒体库**（由
+  /// [JellyfinVideoClient.resolveEnumerationParents] 经 `/Users/{uid}/Views` +
+  /// [JellyfinLibraryView.isVideoish] 解析），不是「整台服务器递归」——几十万
+  /// 条目的公共 Emby 服上，整库递归 = 几十上百个重查询连发，观感与负载都和刮削
+  /// 一样，还会撞服务器的滥用检测。库 id 是**每服务器**的 GUID，所以它落在
+  /// 本配置的 JSON 里（登出即随键一起删），不进全局偏好表。
+  final List<String> libraryIds;
+
   Map<String, Object?> toJson() => <String, Object?>{
         'serverUrl': serverUrl,
         'username': username,
         'userId': userId,
         'accessToken': accessToken,
         if (serverName != null) 'serverName': serverName,
+        if (libraryIds.isNotEmpty) 'libraryIds': libraryIds,
       };
 
   static JellyfinServerConfig? fromJson(Map<String, dynamic> json) {
@@ -88,8 +99,23 @@ class JellyfinServerConfig {
       userId: userId,
       accessToken: accessToken,
       serverName: json['serverName'] as String?,
+      libraryIds: <String>[
+        for (final Object? raw in (json['libraryIds'] as List?) ?? const <Object?>[])
+          if (raw is String && raw.isNotEmpty) raw,
+      ],
     );
   }
+
+  /// 复制并替换要枚举的媒体库（设置页保存选择用）。
+  JellyfinServerConfig copyWithLibraryIds(List<String> ids) =>
+      JellyfinServerConfig(
+        serverUrl: serverUrl,
+        username: username,
+        userId: userId,
+        accessToken: accessToken,
+        serverName: serverName,
+        libraryIds: ids,
+      );
 
   /// 从配置构造可用客户端（每次取数新建实例，缓存身份见
   /// [JellyfinVideoClient.remoteLibrarySourceId]）。
@@ -101,6 +127,7 @@ class JellyfinServerConfig {
           client: httpClient,
         ),
         userId: userId,
+        libraryIds: libraryIds,
       );
 }
 
@@ -243,6 +270,27 @@ class JellyfinItemsPage {
   final int totalCount;
 }
 
+/// 一次递归枚举的结果（BUG-1891）。
+///
+/// 单独一个类而不是裸 `List`：`kMaxRecursiveItems` 熔断此前是**静默截断**——几十万
+/// 条目的服务器上用户拿到的是「前 20000 条」，却没有任何地方说过这件事，看起来就是
+/// 「库里就这么多」。把截断事实与服务器报的总数一起带出来，调用方才有得报。
+class JellyfinRecursiveResult {
+  const JellyfinRecursiveResult({
+    required this.items,
+    required this.truncated,
+    required this.totalCount,
+  });
+
+  final List<JellyfinItem> items;
+
+  /// 是否撞上 [JellyfinApi.kMaxRecursiveItems] 提前收工（= 拿到的不是全部）。
+  final bool truncated;
+
+  /// 服务器报的 TotalRecordCount（多库枚举时为各库之和）。
+  final int totalCount;
+}
+
 /// Jellyfin HTTP 异常：状态码 + 端点，供 UI 按连接失败呈现。
 class JellyfinApiException implements Exception {
   const JellyfinApiException(this.statusCode, this.endpoint);
@@ -282,7 +330,17 @@ class JellyfinApi {
   ///
   /// 不是业务上限，是防死循环：服务器给了错的 TotalRecordCount（或忽略
   /// StartIndex、每页恒返同一批）时，没有它就是无限循环 + 无限内存。
+  ///
+  /// BUG-1891：在几十万条目的服务器上它同时也是**静默截断**点，所以枚举结果现在
+  /// 带 [JellyfinRecursiveResult.truncated]，调用方必须把这件事说出来。
   static const int kMaxRecursiveItems = 20000;
+
+  /// 递归枚举**相邻两页之间**的最小间隔（BUG-1891）。
+  ///
+  /// 旧写法页与页之间零间隔：40 次重查询在几百毫秒内连发，正是 Emby / Jellyfin
+  /// 滥用检测（以及公共服的风控）眼里的爬虫特征。150ms 对小库无感（3 页 = 300ms），
+  /// 对大库则把突发压成稳定低速流。只插在页**之间**，第一页不等。
+  static const Duration kPageInterval = Duration(milliseconds: 150);
 
   final http.Client _client;
 
@@ -394,16 +452,36 @@ class JellyfinApi {
   /// 没传。这里按 [pageSize] 逐页取到 StartIndex >= totalCount（或某页返空）为止，
   /// 熔断见 [kMaxRecursiveItems]。
   ///
-  /// Fields 带 MediaSources：清单卡的「有无外挂字幕 / 文件大小」全靠它——缺了
-  /// 这段，下载入库的 Jellyfin 视频永远进不了外挂字幕下载分支。
-  Future<List<JellyfinItem>> recursiveVideoItems({
+  /// **Fields 刻意不带 MediaSources**（BUG-1891）。它曾是为了让清单卡直接拿到
+  /// 「有无外挂字幕 / 文件大小」，但那是这条请求真正昂贵的部分：服务器要为**每一
+  /// 条**条目展开 MediaSource（Emby 侧还含外挂字幕文件的磁盘探测）。几十万条目的
+  /// 服务器上，一进视频页就是几十上百个这种重查询连发 —— 用户看到的「一添加就开始
+  /// 刮削、卡死、封号」正是它，与元数据刮削毫无关系。
+  ///
+  /// 代价与补偿：清单里的 `hasSubtitle` 退回服务器的粗粒度 `HasSubtitles`
+  /// （把 PGS/DVDSub 图形轨也算 true，见 [JellyfinItem.hasTextSubtitle]），
+  /// `sizeBytes` / `subtitleFileName` 为空。这三样在**单条目消费点**按需补齐：
+  /// [JellyfinVideoClient.remoteVideoDetail]（[RemoteVideoDetailFetch] 能力）
+  /// 打一次 `/Items/{id}` 拿全量 MediaSources，下载入库与信息弹窗都走它——功能
+  /// 一件没砍，只是从「列表阶段 N 次重查询」改成「用到时 1 次」。
+  Future<JellyfinRecursiveResult> recursiveVideoItems({
     required String userId,
     String? parentId,
     int pageSize = 500,
+    Duration pageInterval = kPageInterval,
   }) async {
     final List<JellyfinItem> all = <JellyfinItem>[];
     int start = 0;
-    while (start < kMaxRecursiveItems) {
+    int total = 0;
+    bool truncated = false;
+    while (true) {
+      if (start >= kMaxRecursiveItems) {
+        truncated = true;
+        break;
+      }
+      if (start > 0 && pageInterval > Duration.zero) {
+        await Future<void>.delayed(pageInterval);
+      }
       final Map<String, Object?> json =
           await _getJson('/Users/$userId/Items', <String, String>{
         if (parentId != null) 'ParentId': parentId,
@@ -411,17 +489,22 @@ class JellyfinApi {
         'IncludeItemTypes': 'Movie,Episode',
         'StartIndex': '$start',
         'Limit': '$pageSize',
-        'Fields': 'ProductionYear,MediaSources',
+        'Fields': 'ProductionYear',
         'SortBy': 'SortName',
         'SortOrder': 'Ascending',
       });
       final JellyfinItemsPage page = parseItemsPage(json);
       all.addAll(page.items);
+      total = page.totalCount;
       if (page.items.isEmpty) break;
       start += page.items.length;
       if (start >= page.totalCount) break;
     }
-    return all;
+    return JellyfinRecursiveResult(
+      items: all,
+      truncated: truncated,
+      totalCount: total < all.length ? all.length : total,
+    );
   }
 
   /// 单条目详情（含 MediaSources/MediaStreams，字幕流选择用）。
@@ -703,11 +786,20 @@ class JellyfinApi {
 /// 「显示视频库」的结构表达：单集经 [RemoteCollectionMembership] 按剧名折叠成
 /// playlist 合集卡（组内序 = 季×10000+集），复用库页既有的合集混排/上下集/
 /// 剧集面板——不另造 Jellyfin 专属浏览层。
-class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
-  JellyfinVideoClient({required this.api, required this.userId});
+class JellyfinVideoClient
+    implements RemoteVideoClient, RemoteCoverFetcher, RemoteVideoDetailFetch {
+  JellyfinVideoClient({
+    required this.api,
+    required this.userId,
+    this.libraryIds = const <String>[],
+  });
 
   final JellyfinApi api;
   final String userId;
+
+  /// 要枚举的媒体库视图 id；空 = 全部视频域媒体库（见
+  /// [JellyfinServerConfig.libraryIds] 与 [resolveEnumerationParents]）。
+  final List<String> libraryIds;
 
   /// 缓存槽身份的**唯一**构造点。登出失效等「手里没有 client 实例」的调用方也
   /// 走这里，别再各自拼字面量——拼歪一个字符就是「以为清了、其实没清」。
@@ -780,14 +872,68 @@ class JellyfinVideoClient implements RemoteVideoClient, RemoteCoverFetcher {
     );
   }
 
+  /// 本次枚举要递归哪些 ParentId（BUG-1891）。
+  ///
+  /// 三档，从窄到宽：
+  ///  1. 用户在设置里点了名（[libraryIds] 非空）→ 只递归这几个库；
+  ///  2. 没点名 → 问 `/Users/{uid}/Views` 要媒体库清单，只留视频域的
+  ///     （[JellyfinLibraryView.isVideoish] 滤掉音乐/图书/照片库）。**这是新的默认
+  ///     行为**：可见结果与整库递归一致（`IncludeItemTypes=Movie,Episode` 本来就
+  ///     只在视频库里有命中），但服务器不必再被要求扫非视频库；
+  ///  3. Views 拿不到 / 为空（老服务器、权限、网络抖）→ 退回 `[null]`，即旧的整库
+  ///     递归。宁可多扫也不能因为一次 Views 失败就让用户的库整个消失。
+  ///
+  /// 返回的元素允许为 null（= 不带 ParentId 的整库递归）。
+  Future<List<String?>> resolveEnumerationParents() async {
+    if (libraryIds.isNotEmpty) return List<String?>.from(libraryIds);
+    try {
+      final List<JellyfinLibraryView> views = await api.views(userId);
+      final List<String?> videoish = <String?>[
+        for (final JellyfinLibraryView v in views)
+          if (v.isVideoish && v.id.isNotEmpty) v.id,
+      ];
+      if (videoish.isNotEmpty) return videoish;
+    } catch (e) {
+      debugPrint('[jellyfin] views() failed, falling back to whole-server '
+          'recursion: $e');
+    }
+    return const <String?>[null];
+  }
+
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async {
-    final List<JellyfinItem> items =
-        await api.recursiveVideoItems(userId: userId);
-    return <RemoteVideoInfo>[
-      for (final JellyfinItem item in items)
-        if (item.isPlayableVideo) infoFromItem(item),
-    ];
+    final List<String?> parents = await resolveEnumerationParents();
+    final List<RemoteVideoInfo> out = <RemoteVideoInfo>[];
+    final Set<String> seen = <String>{};
+    bool truncated = false;
+    int totalCount = 0;
+    for (final String? parentId in parents) {
+      final JellyfinRecursiveResult page =
+          await api.recursiveVideoItems(userId: userId, parentId: parentId);
+      truncated = truncated || page.truncated;
+      totalCount += page.totalCount;
+      for (final JellyfinItem item in page.items) {
+        // 同一条目可能同时属于两个被点名的库（混合库 / 嵌套文件夹），按 id 去重。
+        if (!item.isPlayableVideo || !seen.add(item.id)) continue;
+        out.add(infoFromItem(item));
+      }
+    }
+    if (truncated) {
+      // 静默截断是「以为拉全了、其实没有」——至少要在日志里看得见。
+      debugPrint('[jellyfin] library enumeration truncated at '
+          '${JellyfinApi.kMaxRecursiveItems} items (server reported '
+          '$totalCount); pick specific libraries in settings to narrow it.');
+    }
+    return out;
+  }
+
+  /// [RemoteVideoDetailFetch]：打一次 `/Items/{id}` 把清单里省掉的重字段
+  /// （MediaSources → 文件大小 / 精确文本字幕轨 / 字幕文件名）补齐。
+  @override
+  Future<RemoteVideoInfo> remoteVideoDetail(RemoteVideoInfo listInfo) async {
+    final JellyfinItem item =
+        await api.itemDetail(userId: userId, itemId: listInfo.id);
+    return infoFromItem(item);
   }
 
   @override
