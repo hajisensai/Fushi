@@ -113,8 +113,17 @@ void main() {
         isTrue,
       );
 
+      // 预取链的全体，不是某一个方法名。`_loadLibraryMaps` 后来拆成「代次
+      // 薄壳 + `_loadLibraryMapsInner` 真身」，代次检查随之搬进 Inner——只盯外层
+      // 名字会把一次纯重构报成回归（实际就在 2026-08-28 批量合并里报了）。
+      // 取并集后拆分/合并都不会假红；整条链被改名则 [methodBody] 会自己报缺失。
+      final List<String> chain = <String>[
+        'Future<void> _loadLibraryMaps() async',
+        'Future<void> _loadLibraryMapsInner(int requestGeneration) async',
+      ].where(source.contains).toList();
+      expect(chain, isNotEmpty, reason: '预取链上的方法全部消失（改名？）');
       final String body = compactCode(
-        methodBody(source, 'Future<void> _loadLibraryMaps() async'),
+        chain.map((String sig) => methodBody(source, sig)).join('\n'),
       );
       const String request =
           'finalintrequestGeneration=++_libraryMapsRequestGeneration;';
