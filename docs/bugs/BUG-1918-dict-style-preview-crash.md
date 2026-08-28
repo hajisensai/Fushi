@@ -44,5 +44,26 @@
   与之完全对齐（缺了红、多了也红）；② 源码扫描钉住 `CallJsHandlerCallback::decodeResult`
   的 `!value` → `std::nullopt` 空守卫（C++ 崩点 flutter test 跑不到，但那行的有无是二元的）。
   两条都做了变异实测：删 `'reportJsError'` → ①红；删 C++ 里的 `if (!value) return std::nullopt;` → ②红。
+- **同轮查出的第二个真缺陷（同一条链，白屏而非闪退）**：
+  `dict_style_preview.dart` 调的是**裸的** `DictionaryPopupWebViewState.buildInlinePopupHtml(...)`，
+  而那个构造函数假定四份内联资产（popup.css / dict-media.js / selection.js / popup.js）
+  已装载。装载只有两条路径：`main.dart:444` 启动时 fire-and-forget 的
+  `preloadInlinePopupAssets()`，和真弹窗 `build()` 里的同步兜底
+  `_ensureInlinePopupAssetsLoaded()` + 四项非空校验（不满足就回退 file:// URL）。
+  预览两条都没走 → 预读未完成时拼出 `<style></style><script></script>` 空壳：
+  没有 popup.js，预览白屏，`window.renderPopup` 都不存在。
+  真 WebView2 集成测试里 `document.querySelectorAll('.entry').length` 恒为 0 就是这一支。
+
+  修法：把「确保装载 + 四项非空 + 拼装」收成一个原语
+  `buildInlinePopupHtmlIfReady`（未就绪返回 null，调用方回退 file://），
+  **真弹窗的 build 也改用它** —— 两个入口不可能再漂移出两种加载行为。
+  测试 `fushi/test/pages/popup_inline_assets_readiness_test.dart` 三条。
+
+- **真机证据**：Windows 集成测试
+  `fushi/integration_test/dict_style_preview_null_reply_crash_itest.dart`
+  （`.\tool\run_windows_itest.ps1`，离屏、隔离 WebView2 profile）。
+  用例① 在真 WebView2 里已通过：调未注册 handler → promise resolve 成 null，
+  之后再发一次 JS 仍有回应（进程存活）；修前这一步即 0xC0000005。
+
 - **备注**：同一轮把该编辑器尺寸改成与 `LapisStyleEditorPage` 一致（对话框 maxWidth 640 → 1180、
   去掉写死的 0.55 屏高、宽于 820 时左预览右控件 340 的分栏），见同分支提交。
