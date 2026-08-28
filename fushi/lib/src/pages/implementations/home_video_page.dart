@@ -1081,6 +1081,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 就已排除折叠成员，改取真相源后那边行为逐项不变，两处口径也不会再漂开。
   Set<String> _selectableLooseUids() => _selection.visibleLooseKeys.toSet();
 
+  /// 空态 / 筛选空态帧登记「本帧一张卡都没画」。
+  ///
+  /// 两个 sliver builder 的空态是**提前 return** 的，登记可见序的那几行在 return
+  /// 之后。不在早退处登记，[MediaSelectionController.visibleLooseKeys] 和
+  /// [_visibleCollectionIds] 就留着上一帧的整份列表，而批量操作栏并不随空态隐藏
+  /// ——「筛到一条不剩 → 全选 → 批量删除」于是作用在屏幕上根本不存在的条目上。
+  /// 可见序必须每帧都写，哪怕写空。
+  ///
+  /// 只在早退分支调：正常路径已在末尾写真值，这里再清一次会让
+  /// [MediaSelectionController.setVisibleOrder] 每帧连着变两次顺序、把 Shift 区间
+  /// 选的锚点清光。连续空态帧之间等值早退，不会反复清锚点。
+  void _clearVisibleOrder() {
+    _visibleCollectionIds = const <int>[];
+    _selection.setVisibleOrder(
+      loose: const <String>[],
+      collections: const <int>[],
+    );
+  }
+
   void _selectAllVisible() {
     setState(() => _selection.selectAll(
           loose: _selectableLooseUids(),
@@ -2627,6 +2646,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     targetWidth:
                         readerShelfGridExtentForWidth(constraints.maxWidth),
                   );
+                  // 首页分区一张可勾选的卡都不画（只有概览条与空态），可见序照样
+                  // 得登记成空：多选态跨分区切换是保持的（三分区共用一个 State），
+                  // 从「全部视频」进多选态再切回首页，批量操作栏仍在，全选却会拿到
+                  // 上一分区遗留的整份列表。另两个分区在各自 builder 里登记。
+                  if (widget.section == VideoLibrarySection.home) {
+                    _clearVisibleOrder();
+                  }
                   return CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: <Widget>[
@@ -3945,11 +3971,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<RemoteVideoInfo> groupedRemoteVideos = remoteVideos;
     // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
     if (all.isEmpty && groupedRemoteVideos.isEmpty) {
+      _clearVisibleOrder();
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
       ];
     }
     if (books.isEmpty && groupedRemoteVideos.isEmpty) {
+      _clearVisibleOrder();
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
@@ -4068,11 +4096,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ({int columns, double cardWidth}) cardLayout,
   ) {
     if (all.isEmpty && remoteVideos.isEmpty) {
+      _clearVisibleOrder();
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
       ];
     }
     if (books.isEmpty && remoteVideos.isEmpty) {
+      _clearVisibleOrder();
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];

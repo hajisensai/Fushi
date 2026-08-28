@@ -274,6 +274,44 @@ void main() {
     );
   });
 
+  testWidgets('筛到一条不剩时全选勾不中任何条目（空态帧照样登记可见序）',
+      (WidgetTester tester) async {
+    // 只种系列的集、不种散片：选「非系列」后墙上一条不剩，走 _buildFilteredEmpty。
+    await seedVideo('video/ep1', '第1集');
+    await seedVideo('video/ep2', '第2集');
+    final int cid = await db.createMediaCollection(
+      '我的番',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
+
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    // 前提：这一帧登记了两张可见散卡——空态帧要清掉的正是它。
+    expect(cardOf('video/ep1'), findsOneWidget);
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+    expect(cardOf('video/ep1'), findsNothing, reason: '前提：确实筛成了空态');
+    expect(cardOf('video/ep2'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.batch_select_all));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.batch_selected_count(n: 0)),
+      findsOneWidget,
+      reason: '空态是提前 return 的，可见序若不在早退处登记就留着上一帧那两张卡'
+          '——「筛到一条不剩 → 全选 → 批量删除」会删掉屏幕上根本不存在的条目',
+    );
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsNothing,
+      reason: '兜住上一条：别因为计数控件整个没渲染而假绿',
+    );
+  });
+
   testWidgets('筛选控件只在「全部视频」露出', (WidgetTester tester) async {
     await seedSeriesAndLoose();
 
