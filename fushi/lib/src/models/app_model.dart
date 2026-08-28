@@ -3572,11 +3572,19 @@ class AppModel with ChangeNotifier {
       case OnlineMangaRuntimeKind.aidoku:
         return OnlineMangaLibraryService(
           database: database,
-          rootDirectory: Directory(path.join(databaseDirectory.path, 'aidoku')),
+          rootDirectory: aidokuLibraryRoot,
           adapter: AidokuLibraryAdapter(),
         );
     }
   }
+
+  /// Aidoku 书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  ///
+  /// 单独暴露是为了让源浏览的详情页能带着**自己那份**（可能是测试注入的）
+  /// `AidokuRuntime` 建服务，而不是被迫走上面那条恒用
+  /// `AidokuRuntimeFactory.create()` 的分派。
+  Directory get aidokuLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'aidoku'));
 
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>

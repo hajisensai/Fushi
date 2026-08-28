@@ -48,11 +48,20 @@ class SourceMangaSeriesTarget extends MangaSeriesTarget {
     required this.service,
     required this.seed,
     this.sourceLabel,
+    this.remoteCoverBuilder,
   });
 
   final OnlineMangaLibraryService service;
   final OnlineMangaLibraryEntry seed;
   final String? sourceLabel;
+
+  /// 未入库时怎么画封面。
+  ///
+  /// 入库后封面走本地落盘那张（作品页首屏不该依赖网络）；但**还没入库**时本地
+  /// 什么都没有，只能由来源自己提供取图控件——Mihon 要经扩展的 imageProxy 带鉴权
+  /// 头，Aidoku 是普通 https + referer，两者的取图方式没有公共分母。作品页因此
+  /// 不自己开取图路径，只留这个口子。
+  final Widget Function(BuildContext context)? remoteCoverBuilder;
 }
 
 /// 漫画作品页。
@@ -697,6 +706,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           return Image.file(file, fit: BoxFit.cover);
         }
       }
+    }
+    final MangaSeriesTarget target = widget.target;
+    if (target is SourceMangaSeriesTarget) {
+      final Widget Function(BuildContext)? builder = target.remoteCoverBuilder;
+      if (builder != null) return builder(context);
     }
     return const ColoredBox(
       color: Color(0xff303030),

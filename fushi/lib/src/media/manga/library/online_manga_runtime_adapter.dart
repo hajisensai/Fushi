@@ -5,6 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart'
+    show aidokuChapterDisplayTitle;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -435,13 +437,21 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
       final Map<String, Object?> map = item.cast<String, Object?>();
       final String key = map['key']?.toString() ?? '';
       if (key.isEmpty) continue;
-      final num? chapterNumber = map['chapterNumber'] as num?;
-      final int uploadedAt = (map['dateUploaded'] as num?)?.toInt() ?? 0;
+      // 字段名以 Aidoku 的 wire 形状为准：蛇形 `chapter_number` /
+      // `date_uploaded`，翻译组是**复数列表** `scanlators`（不是 Mihon 那样的
+      // 单个 `scanlator`），标题可能为空、要回退到卷/话号。抄错这几处不会报错，
+      // 只会让章节列表变成一片没有编号、没有副标题的空行。
+      final num? chapterNumber = map['chapter_number'] as num?;
+      final int uploadedAt = (map['date_uploaded'] as num?)?.toInt() ?? 0;
+      final Object? scanlators = map['scanlators'];
+      final String scanlator = scanlators is List<Object?>
+          ? scanlators.map((Object? value) => value.toString()).join(', ')
+          : map['scanlator']?.toString() ?? '';
       chapters.add(
         OnlineMangaChapter(
           key: key,
-          name: map['title']?.toString() ?? '',
-          scanlator: map['scanlator']?.toString(),
+          name: aidokuChapterDisplayTitle(map),
+          scanlator: scanlator.isEmpty ? null : scanlator,
           number: chapterNumber?.toDouble(),
           uploadedAt: uploadedAt <= 0 ? null : uploadedAt,
           raw: map,
