@@ -1,4 +1,4 @@
-## BUG-1885 · KiriKiri 人物动画重发同句时销毁游戏内查词 WebView 选区
+## BUG-1912 · KiriKiri 人物动画重发同句时销毁游戏内查词 WebView 选区
 - **报告**：2026-08-27（用户：KiriKiri 游戏的人物动画/资源帧变化时，内嵌查词卡的 WebView 文本选区仍会被刷掉。）
 - **真实性**：✅ 真 bug，且有两层同源生命周期错误。KiriKiriZ / EmbedKrkrZ 可在 renderer 重绑时经 `injector_main.cpp:928` 重发同一句；`gal_hook_session_controller.dart:4183` 会把每个新文本 seq 作为独立 occurrence 交给 `TexthookerService.appendLine`（`texthooker_service.dart:730`），因而正常产生新 line id。Dart 侧修复前只比较 ID，并无条件进入 `_terminateCurrentLookup`，会 dismiss 游戏卡、hide 离屏 WebView 并 invalidate route。native 侧则把 KAG `current` entry 的瞬时 identity / visibility 复合状态当作同一句 lookup entry 的活性；人物眼睛、嘴型等动画帧切换时该复合状态会短暂失配，`fushiLookupProbe` 因此返回未命中并清掉高亮。脱敏运行日志在同一 submit、相同 slot generation 和相同几何边界下先后出现 `z=V → z=H`，证明失败发生在严格 entry 活性否决，而不是句子、坐标或字形边界改变。
 - **[x] ① 已修复** — 文本历史仍保留同文不同 ID（不破坏语音配对/制卡身份）；Dart lookup surface 只在句子内容真变化或文本线程变空时退役，同句 replay 保留 WebView route 和 DOM 选区。KiriKiri adapter 另以 slot 的 `line + generation + activeEntry` 作为已提交句子的活性真相源；动画期只迁移 visual carrier，不刷新 sentence surface，严格 KAG identity 判据只保留在新 candidate 接管处。点击卡片和点空白关闭仍走完整 WebView2 指针事务并吞掉游戏鼠标事件。
