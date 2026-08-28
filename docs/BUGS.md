@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1793 条。点号进各自文件。
+> 共 1795 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1917](bugs/BUG-1917-win-drag-low-fps-unreproduced.md) | 🚧 | 🚧 | 窗口拖动帧率低（未复现） |
+| [BUG-1916](bugs/BUG-1916-win-resize-backdrop-layer.md) | ✅ | ✅ | 窗口缩放时露出深青底色层 |
 | [BUG-1915](bugs/BUG-1915-anki-dup-check-cross-model.md) | ✅ | ✅ | 查词弹窗查重与制卡判重不同源：跨笔记类型的重复卡画成可制卡 + |
 | [BUG-1914](bugs/BUG-1914-mine-button-lost-text-marker-restore.md) | ✅ | ✅ | 制卡按钮被加回 inline-action-button 基类，三条 TODO-1325 还原守卫在 develop 上已红 |
 | [BUG-1913](bugs/BUG-1913-wa2-directsound-audio-timeline.md) | ✅ | ✅ | WA2 DirectSound 制卡炸音且未取得 VOICE.PAK 源语音 |

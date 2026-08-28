@@ -69,14 +69,25 @@ bool IsTestOnscreenMode() {
 // 是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
 constexpr const wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
 
-// TODO-959: splash 背景画刷色。旧进程 exit(0) 杀掉自己到新进程 Flutter 画出首帧
-// 之间，runner 窗口已 WS_VISIBLE 上屏但还没有任何内容；窗口类原本 hbrBackground=0
+// TODO-959: splash 背景色。旧进程 exit(0) 杀掉自己到新进程 Flutter 画出首帧
+// 之间，runner 窗口已 WS_VISIBLE 上屏但还没有任何内容；stock 模板 hbrBackground=0
 // （无背景画刷）→ 系统不擦背景 → 这段冷启动窗口里看到黑/未定义像素（经典 Flutter
-// Windows runner 首帧黑窗）。给窗口类一个非黑的 solid brush，让 WM_ERASEBKGND 用它
-// 填充，首帧前就是这块纯色而非黑。颜色取 Dart splash 的品牌 seed 色 0xFF1F4959
-// （main.dart 的 ColorScheme.fromSeed seedColor / 加载页 _savedSplashColor 兜底同色系深青），
-// 与启动画面观感一致，深色优先（不刺眼、不闪白）。COLORREF 是 0x00BBGGRR，
-// 故 R=0x1F G=0x49 B=0x59。
+// Windows runner 首帧黑窗）。用这块非黑纯色擦背景，首帧前就是它而非黑。颜色取
+// Dart splash 的品牌 seed 色 0xFF1F4959（main.dart 的 ColorScheme.fromSeed
+// seedColor / 加载页 _savedSplashColor 兜底同色系深青），与启动画面观感一致，
+// 深色优先（不刺眼、不闪白）。COLORREF 是 0x00BBGGRR，故 R=0x1F G=0x49 B=0x59。
+//
+// BUG-1916: 这块颜色只是 Win32Window::backdrop_brush_ 的**初始值**，不再挂在窗口
+// 类上。Flutter 子窗是 DWM 里独立的合成层，盖在本窗口自己的重定向表面之上；表面
+// 里是什么颜色平时看不见，但最大化 / 还原 / DPI 切换这类过渡里 DWM 动画的是
+// 「表面」而不是子窗层，表面就会露出来一帧。原实现把画刷挂在 WNDCLASS.hbrBackground
+// 且父窗没有 WS_CLIPCHILDREN：每次缩放系统都把整块表面（含子窗底下）擦成深青，
+// 第一次最大化实测整窗 100% 深青一帧——用户说的「缩放有层底色」。现在画刷归窗口
+// 实例所有，Dart 每次主题变化把 surface 色推过来（FlutterWindow::ApplyCaptionColors
+// → SetBackdropColor），并在换色和 WM_SIZE 时把表面整块（含子窗底下）刷成该色，
+// 过渡帧露出的就是 app 自己的背景色（实测 0%）；冷启动首帧前仍是这块 splash 色
+// （TODO-959 不变）。交互缩放本身的节奏（每步 2~3 vsync）是引擎同步缩放的固有成本，
+// hello-world 同样如此，与本修复无关。
 constexpr COLORREF kSplashBackgroundColor = RGB(0x1F, 0x49, 0x59);
 
 // TODO-959: 本进程 argv 是否带 [kRestartMarkerArg]（迁移后自动重启拉起的新进程）。
@@ -143,11 +154,9 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    // TODO-959: 给窗口类一个非黑背景画刷（原为 0 = 无画刷），消除迁移重启
-    // 新进程冷启动期「窗已上屏但 Flutter 首帧未出」的黑窗。系统用它响应
-    // WM_ERASEBKGND 填充客户区。画刷由窗口类持有，生存期到 UnregisterWindowClass，
-    // RegisterClass 成功后由系统管理，无需手动 DeleteObject。
-    window_class.hbrBackground = CreateSolidBrush(kSplashBackgroundColor);
+    // BUG-1916: 窗口类不带背景画刷（stock 模板值）。背景由每个窗口实例的
+    // backdrop_brush_ 在 WM_ERASEBKGND / WM_SIZE 里自己画，见 PaintBackdrop。
+    window_class.hbrBackground = nullptr;
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -161,13 +170,18 @@ void WindowClassRegistrar::UnregisterWindowClass() {
   class_registered_ = false;
 }
 
-Win32Window::Win32Window() {
+Win32Window::Win32Window()
+    : backdrop_brush_(CreateSolidBrush(kSplashBackgroundColor)) {
   ++g_active_window_count;
 }
 
 Win32Window::~Win32Window() {
   --g_active_window_count;
   Destroy();
+  if (backdrop_brush_ != nullptr) {
+    DeleteObject(backdrop_brush_);
+    backdrop_brush_ = nullptr;
+  }
 }
 
 bool Win32Window::CreateAndShow(const std::wstring& title,
@@ -208,9 +222,15 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   // （hidden）不受影响：它靠 WS_VISIBLE+移出屏外保证引擎持续渲染，不能去掉
   // WS_VISIBLE。只有「非测试 + 重启新进程」走隐藏建窗。
   const bool restarted_hidden = !hidden && IsRestartedProcess();
-  const DWORD window_style = restarted_hidden
-                                 ? WS_OVERLAPPEDWINDOW
-                                 : (WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+  // BUG-1916: WS_CLIPCHILDREN — the Flutter view is a child HWND that covers
+  // the whole client area; WM_PAINT erases (BeginPaint) must not touch the
+  // pixels under it (that matters if the engine ever falls back to software
+  // rendering, where the view paints into this same surface). The deliberate
+  // under-the-view fills go through FillSurfaceBackdrop instead.
+  const DWORD window_style =
+      WS_CLIPCHILDREN |
+      (restarted_hidden ? WS_OVERLAPPEDWINDOW
+                        : (WS_OVERLAPPEDWINDOW | WS_VISIBLE));
 
   HWND window = CreateWindowEx(
       ex_style, window_class, title.c_str(), window_style,
@@ -278,6 +298,16 @@ Win32Window::MessageHandler(HWND hwnd,
     }
     case WM_SIZE: {
       RECT rect = GetClientArea();
+      // BUG-1916: the surface just changed size; its new area is uninitialised
+      // (black) and its old area may carry an older fill. Paint it whole,
+      // under the view too, before the view is resized — MoveWindow below
+      // blocks until the engine presents a frame of the new size. On the
+      // hardware path the view is its own composition layer, so this fill is
+      // never visible through it; if the engine has fallen back to software
+      // rendering (view paints into this same surface) the worst case is one
+      // theme-coloured frame under the view — still better than the old
+      // teal erase on every WM_PAINT.
+      FillSurfaceBackdrop();
       if (child_content_ != nullptr) {
         // Size and position the child window.
         MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
@@ -287,17 +317,22 @@ Win32Window::MessageHandler(HWND hwnd,
     }
 
     case WM_ERASEBKGND:
-      // kSplashBackgroundColor is a pre-Flutter-frame fallback only. Once the
-      // Flutter child is attached it owns every client pixel. Letting
-      // DefWindowProc erase the parent with the class brush during live resize
-      // briefly covers the child with a large #1F4959 rectangle before the
-      // renderer presents its next frame. Acknowledge the erase instead; the
-      // child keeps its previous frame visible until Flutter repaints. Before
-      // SetChildContent, fall through so cold start still gets the splash color.
-      if (child_content_ != nullptr) {
-        return TRUE;
-      }
-      break;
+      // BUG-1916 / TODO-959: erase with the instance backdrop brush (splash
+      // colour before the first Flutter frame, live theme surface afterwards).
+      // Child-clipped, so once the view covers the client this paints nothing.
+      //
+      // This supersedes the earlier `if (child_content_) return TRUE; break;`
+      // guard, which existed only to stop DefWindowProc from erasing the parent
+      // with the *class* brush and flashing a #1F4959 rectangle over the child
+      // during live resize. The class brush is gone now (hbrBackground =
+      // nullptr), so that `break` would fall through to a DefWindowProc with no
+      // brush at all — painting nothing, and bringing the TODO-959 cold-start
+      // black window straight back. The wparam DC honours WS_CLIPCHILDREN, so
+      // "don't cover the child" is now structural rather than a special case:
+      // there is no child yet at cold start (splash fill lands), and once the
+      // view covers the client area this call is clipped down to nothing.
+      PaintBackdrop(reinterpret_cast<HDC>(wparam));
+      return 1;
 
     // Braced: this case declares locals, and without its own scope MSVC rejects
     // the switch outright (C2360, initialization skipped by a later case label).
@@ -393,6 +428,42 @@ RECT Win32Window::GetClientArea() {
   RECT frame;
   GetClientRect(window_handle_, &frame);
   return frame;
+}
+
+void Win32Window::SetBackdropColor(COLORREF color) {
+  HBRUSH brush = CreateSolidBrush(color);
+  if (brush == nullptr) {
+    return;
+  }
+  if (backdrop_brush_ != nullptr) {
+    DeleteObject(backdrop_brush_);
+  }
+  backdrop_brush_ = brush;
+  // Without this the surface keeps the cold-start splash fill under the view
+  // forever, and the first maximize shows it (BUG-1916 residual).
+  FillSurfaceBackdrop();
+}
+
+void Win32Window::FillSurfaceBackdrop() {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+  // GetDCEx with plain DCX_CACHE deliberately ignores WS_CLIPCHILDREN so the
+  // fill reaches under the child; GetDC would clip it out.
+  HDC dc = GetDCEx(window_handle_, nullptr, DCX_CACHE);
+  if (dc == nullptr) {
+    return;
+  }
+  PaintBackdrop(dc);
+  ReleaseDC(window_handle_, dc);
+}
+
+void Win32Window::PaintBackdrop(HDC dc) {
+  if (dc == nullptr || backdrop_brush_ == nullptr || window_handle_ == nullptr) {
+    return;
+  }
+  RECT rect = GetClientArea();
+  FillRect(dc, &rect, backdrop_brush_);
 }
 
 HWND Win32Window::GetHandle() {

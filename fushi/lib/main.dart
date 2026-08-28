@@ -1724,8 +1724,28 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           builder: (context, child) {
             _scheduleWindowsUpdateHandoffReconcile();
             final cs = Theme.of(context).colorScheme;
-            // The Windows native caption is hidden for good (see main()), so
-            // there is nothing left to theme through WindowCaptionChannel here.
+            // BUG-1916: this is no longer about the *caption* — the Windows
+            // native caption is hidden for good (see main()), and the themed
+            // native title bar this call used to feed was correctly deleted
+            // with it (`3c4a5960f8`). The same channel now also drives the
+            // runner's own window-surface backdrop brush
+            // (`FlutterWindow::ApplyCaptionColors` → `Win32Window::
+            // SetBackdropColor`), and that surface is very much alive: DWM
+            // animates it — not the Flutter view's composition layer — during
+            // maximize / restore / DPI transitions, so whatever colour it holds
+            // shows for a frame. Without this push the brush stays at the
+            // TODO-959 cold-start splash teal forever and every maximize flashes
+            // it (measured 100% of the window at +43ms). Hence: pushed
+            // unconditionally, not behind a title-bar capability check — the
+            // DwmSetWindowAttribute half is a harmless no-op under a hidden
+            // caption, and the channel de-dupes identical values, so this is
+            // cheap per rebuild. Guarded by
+            // `test/build/win_resize_backdrop_guard_test.dart` (the native chain
+            // is only as good as what Dart feeds it).
+            WindowCaptionChannel.setCaptionColors(
+              caption: cs.surface,
+              text: cs.onSurface,
+            );
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder
             // reruns on every theme change, so the AnnotatedRegion re-emits the

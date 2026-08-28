@@ -2612,6 +2612,11 @@ void FlutterWindow::ApplyCaptionColors(uint32_t caption_argb,
   // ignore, leaving the system-drawn title bar untouched.
   DwmSetWindowAttribute(hwnd, 35, &caption, sizeof(caption));
   DwmSetWindowAttribute(hwnd, 36, &text, sizeof(text));
+  // BUG-1916: the caption colour Dart pushes is the theme's surface colour —
+  // the same colour the app paints its page background with. Use it for this
+  // window's own surface too, so a maximize / restore / DPI transition that
+  // momentarily shows the surface shows the app background, not the splash.
+  SetBackdropColor(caption);
 }
 
 bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
