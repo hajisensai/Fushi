@@ -16,6 +16,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
@@ -1118,6 +1119,34 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
+    // Windows 自绘标题栏（[FushiWindowsTitleBar.isEnabled]）已经把当前 tab 名画在
+    // 应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回箭头」的全屏
+    // 设置就成了没有来源的第二条返回出口。**只有 Windows 走这个新路径**：macOS
+    // （交通灯预留 BUG-869）、Linux、横屏 Android 平板都保持原分支，它们的顶栏没有
+    // tab 名、也没有 rail 常驻的保证。
+    if (_visibleTab == HomeTab.settings && !FushiWindowsTitleBar.isEnabled) {
+      // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
+      // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
+      // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
+      // 复用同一 Material 架构；返回出口由 SettingsHomePage 的嵌入页头提供
+      // （BUG-009 R2）。否则会退化成「3 图标 rail + 嵌入式 Cupertino 设置」三栏
+      // 混排、无返回出口、且详情面板溢出。
+      return Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: SafeArea(
+          // macOS 透明标题栏 + full-size content view 下，交通灯不计入
+          // MediaQuery.padding，返回箭头会被压在按钮下方。预留标题栏高度作为
+          // SafeArea 下限，让顶部内容整体让位（BUG-869）。其它平台 top=0 无影响。
+          minimum: EdgeInsets.only(
+            top: Platform.isMacOS ? kMacTitleBarHeight : 0,
+          ),
+          child: FocusTraversalGroup(
+            child: _buildSettingsTabContent(showBackButton: true),
+          ),
+        ),
+      );
+    }
+
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2299,8 +2328,9 @@ class _HomePageState extends BasePageState<HomePage>
     }
   }
 
-  /// 设置 tab 的内容外壳。[showBackButton] 仅供没有主导航出口的宿主显示页头返回箭头；
-  /// 常规移动底栏 / 宽屏侧栏都可直接切回，系统返回手势仍由
+  /// 设置 tab 的内容外壳。[showBackButton] 为 true 时（宽屏隐藏 3 图标侧栏的全屏
+  /// 设置）显示页头左上返回箭头；为 false 时（移动底栏 / 宽屏侧栏在侧 / Windows 自绘
+  /// 标题栏常驻 rail，可直接切回）不显示箭头，系统返回手势仍由
   /// [HomeSettingsTabContent] 内的 PopScope 拦截。
   Widget _buildSettingsTabContent({required bool showBackButton}) {
     return HomeSettingsTabContent(
@@ -2331,7 +2361,7 @@ class HomeSettingsTabContent extends StatelessWidget {
   /// 系统返回键被拦截后调用：切回进入设置前的来源 tab。
   final VoidCallback onReturnToPreviousTab;
 
-  /// 是否在设置页头左侧显示返回箭头（仅用于没有主导航出口的宿主）。
+  /// 是否在设置页头左侧显示返回箭头（宽屏隐藏图标侧栏的全屏设置场景）。
   final bool showBackButton;
 
   /// 设置内容；为空时回落到默认的 [FushiSettingsContent]。
