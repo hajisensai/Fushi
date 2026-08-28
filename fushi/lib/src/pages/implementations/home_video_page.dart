@@ -393,7 +393,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _future = widget.repo.listForShelf();
     _remoteFuture = _loadRemoteVideos();
     // 首帧就预取分组/排序映射（合集折叠首绘就要 _collectionsById，不能等刷新）。
-    _loadLibraryMaps();
+    _loadLibraryMapsGuarded();
     // 统一合集：后台给缺封面的各集补抽封面（拆集/迁移拆出的非首集、每集独立视频应各有封面）。
     _maybeBackfillCovers();
     // 条目自动刮削：进页面补刮还没有资料的本地视频（取代旧页头「批量匹配海报」按钮）。
@@ -493,7 +493,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _onCollectionTablesChanged(void _) {
     _collectionsReloadDebounce?.cancel();
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) _loadLibraryMaps();
+      if (mounted) _loadLibraryMapsGuarded();
     });
   }
 
@@ -518,7 +518,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _future = widget.repo.listForShelf();
       if (remote) _remoteFuture = _loadRemoteVideos();
     });
-    _loadLibraryMaps();
+    _loadLibraryMapsGuarded();
     _maybeBackfillCovers();
   }
 
@@ -554,7 +554,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _remoteFuture = remote;
       });
     }
-    _loadLibraryMaps();
+    _loadLibraryMapsGuarded();
     // BUG-1564：显式下拉 = 用户要「重新获取」——封面回填的失败记账在此清空，
     // 本轮对此前失败的条目允许再试一次（自动路径仍被记账拦住，不会刷屏烧 CPU）。
     // BUG-1564：显式下拉 = 用户要「重新获取」——封面回填的失败记账在此清空，
@@ -574,24 +574,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
   /// watch-stats 最近观看，外加偏好里的排序方式。
-  Future<void> _loadLibraryMaps() async {
-    final int requestGeneration = ++_libraryMapsRequestGeneration;
+  /// [_loadLibraryMaps] 的失败兜底包装：所有调用点都走这里。
+  ///
+  /// [_libraryMapsReady] 只在成功路径置位的话，DB 一出错它就永远是 false，系列
+  /// 归属档位于是**永久静默失效**——chip 照常显示用户选的档位，却什么都不筛。
+  /// 宁可让它按（空的）映射生效：「系列内」筛出空墙，不对劲是看得见的、用户能
+  /// 自己切回「全部」，也好过「看起来选了、其实没生效」。异常照常上抛，不吞。
+  ///
+  /// 刻意做成外层包装而不是把 try 写进 [_loadLibraryMaps]：那个方法体被两条源码
+  /// 守卫按语句顺序扫（`video_delete_reclaim_entry_guard_test` 的 generation /
+  /// stale-guard 顺序、`local_media_cover_perf_guard_test` 的 BUG-959 N+1），
+  /// 拆分或重排都会让它们红。
+  Future<void> _loadLibraryMapsGuarded() async {
     try {
-      await _loadLibraryMapsInner(requestGeneration);
+      await _loadLibraryMaps();
     } catch (_) {
-      // 失败也要标记「这一轮加载结束了」。只在成功路径置位的话，DB 一出错
-      // [_libraryMapsReady] 就永远为 false，系列归属档位**永久静默失效**——chip
-      // 照常显示用户选的档位，却什么都不筛。宁可让它按（空的）映射生效：
-      // 「系列内」筛出空墙，不对劲是看得见的、用户能自己切回「全部」，也好过
-      // 「看起来选了、其实没生效」。异常照常上抛，不吞。
-      if (mounted && requestGeneration == _libraryMapsRequestGeneration) {
-        setState(() => _libraryMapsReady = true);
-      }
+      if (mounted) setState(() => _libraryMapsReady = true);
       rethrow;
     }
   }
 
-  Future<void> _loadLibraryMapsInner(int requestGeneration) async {
+  Future<void> _loadLibraryMaps() async {
+    final int requestGeneration = ++_libraryMapsRequestGeneration;
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     final ShelfSortMode sortMode =
@@ -1692,7 +1696,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     if (!mounted) return;
     _exitSelectionMode();
-    await _loadLibraryMaps();
+    await _loadLibraryMapsGuarded();
     FushiToast.show(msg: t.series_created, severity: ToastSeverity.success);
   }
 
@@ -1707,7 +1711,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     if (!mounted) return;
     _exitSelectionMode();
-    await _loadLibraryMaps();
+    await _loadLibraryMapsGuarded();
     FushiToast.show(
       msg: t.batch_add_to_collection_success(n: refs.length),
       severity: ToastSeverity.success,
@@ -1765,7 +1769,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     await db.renameMediaCollection(targetId, name);
     if (!mounted) return;
     _exitSelectionMode();
-    await _loadLibraryMaps();
+    await _loadLibraryMapsGuarded();
     FushiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
   }
 
@@ -2356,7 +2360,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       entryKey: book.bookUid,
     );
     if (!added || !mounted) return;
-    await _loadLibraryMaps();
+    await _loadLibraryMapsGuarded();
   }
 
   /// 把视频卡拖到合集封面卡上 = 把该视频加入本合集（`CollectionDropTarget`）。
@@ -2372,7 +2376,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       mediaRef: mediaRef,
     );
     if (outcome != CollectionAddOutcome.added || !mounted) return;
-    await _loadLibraryMaps();
+    await _loadLibraryMapsGuarded();
     FushiToast.show(
       msg: t.batch_add_to_collection_success(n: 1),
       severity: ToastSeverity.success,
