@@ -1822,18 +1822,40 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       );
                       if (Platform.isWindows &&
                           FushiWindowsTitleBar.isEnabled) {
-                        navigation = FushiWindowsTitleBar(
-                          // The native-sized frame sits outside app UI zoom;
-                          // align its title with the visually scaled home rail.
-                          leadingInset:
-                              viewport.width >= 600 ? 80 * uiScale : 0,
-                          title: ValueListenableBuilder<HomeTab>(
-                            valueListenable: homeShellTabNotifier,
-                            builder: (BuildContext context, HomeTab tab,
-                                Widget? child) {
-                              return Text(homeNavItemFor(tab).label);
-                            },
-                          ),
+                        navigation = ValueListenableBuilder<bool>(
+                          // The home rail is only on screen while the home
+                          // shell is the top route; opening a media item
+                          // covers it — the same signal the macOS shell uses
+                          // to drop its sidebar — so the title has to
+                          // un-indent with it. `navigation` is passed through
+                          // as the unchanging `child`, so flipping this never
+                          // rebuilds the navigator subtree.
+                          valueListenable: appModel.mediaOpenNotifier,
+                          builder: (BuildContext context, bool mediaOpen,
+                              Widget? child) {
+                            final bool railVisible = !mediaOpen &&
+                                windowSizeClassForWidth(viewport.width) !=
+                                    WindowSizeClass.compact;
+                            return FushiWindowsTitleBar(
+                              // The native-sized frame sits outside app UI
+                              // zoom; align its title with the visually scaled
+                              // home rail. Breakpoint and rail width both come
+                              // from the widgets that own them (HomePage's
+                              // size class / adaptiveNavRail), so they cannot
+                              // drift apart behind a copied literal.
+                              leadingInset: railVisible
+                                  ? kAdaptiveNavRailWidth * uiScale
+                                  : 0,
+                              title: ValueListenableBuilder<HomeTab>(
+                                valueListenable: homeShellTabNotifier,
+                                builder: (BuildContext context, HomeTab tab,
+                                    Widget? _) {
+                                  return Text(homeNavItemFor(tab).label);
+                                },
+                              ),
+                              child: child!,
+                            );
+                          },
                           child: navigation,
                         );
                       }
