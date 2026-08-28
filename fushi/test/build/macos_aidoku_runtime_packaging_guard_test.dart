@@ -96,6 +96,17 @@ void main() {
             '拿到 app 本体才能做架构覆盖核对。');
   });
 
+  test('发布 job 不得把 Aidoku runtime 降级成 host 架构', () {
+    final String job =
+        extractJob(maskHashComments(read(releaseWorkflow)), 'macos');
+
+    expect(job, isNot(contains('FUSHI_AIDOKU_ARCHS')),
+        reason: '发布包必须走脚本默认的 universal。降级成 host 最终会被同一步里的'
+            '架构覆盖门拦下（app 本体是 universal，runtime 只有一个架构就盖不住），'
+            '但那要先烧掉十几分钟的 macOS 构建才红；这条在 PR 单测阶段秒级就红。'
+            'debug job 显式用 host 是有意的，见 build-multiplatform.yml 的注释。');
+  });
+
   test('构建脚本默认出 universal，不是 runner 的 host 架构', () {
     final String script = read('../tool/aidoku/build_macos_runtime.sh');
 
