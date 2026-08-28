@@ -787,7 +787,14 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
     let response = match builder.send() {
         Ok(response) => response,
         Err(error) => {
-            state.log_net(format!("{method} {} -> {error}", loggable_url(&url)));
+            // `without_url`：reqwest::Error 的 Display 自带 ` for url (<完整地址>)`，
+            // 直接插值等于把带 `sig=` / `jwt=` 的签名地址整条写进日志，`loggable_url`
+            // 白脱了 query。
+            state.log_net(format!(
+                "{method} {} -> {}",
+                loggable_url(&url),
+                error.without_url()
+            ));
             return -10;
         }
     };
@@ -798,8 +805,9 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
         Ok(data) => data,
         Err(error) => {
             state.log_net(format!(
-                "{method} {} -> {status} {error}",
-                loggable_url(&url)
+                "{method} {} -> {status} {}",
+                loggable_url(&url),
+                error.without_url()
             ));
             return -10;
         }
