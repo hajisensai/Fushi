@@ -7,3 +7,4 @@
     qlie_.shutdown();
     elf_ai6_.shutdown();
     sgre_.shutdown();
+    leaf_aquaplus_.shutdown();

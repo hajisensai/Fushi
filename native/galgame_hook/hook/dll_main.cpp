@@ -41,6 +41,7 @@
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
 #include "lookup_overlay_geometry.h"
+#include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
@@ -52,8 +53,10 @@
 #include "siglus_ovk.h"
 #include "siglus_launch.h"
 #include "adapters/siglus_lookup.h"
+#include "adapters/leaf_aquaplus_voice_archive.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
+#include "luna_text_selector.h"
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
@@ -91,6 +94,10 @@
 // 同位数。初始化只含常量/零值，不在 loader lock 下做任何动作。
 extern "C" __declspec(dllexport) alignas(8)
     fushi_voice_hook::XAudioTraceBuffer FushiXAudioTraceV1 = {};
+
+// Numeric-only exact-profile renderer telemetry, outside SharedHeader ABI.
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::LeafD3DTraceBuffer FushiLeafD3DTraceV1 = {};
 
 namespace {
 

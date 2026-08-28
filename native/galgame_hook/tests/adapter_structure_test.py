@@ -316,6 +316,193 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertLess(main_body.index("--dump-xaudio-trace"),
                         main_body.index("OpenFileMappingW"))
 
+    def test_leaf_d3d_trace_is_numeric_exported_and_remotely_read(self) -> None:
+        trace = (ROOT / "include" / "leaf_d3d_trace.h").read_text(
+            encoding="utf-8"
+        )
+        main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        adapter = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc"
+        ).read_text(encoding="utf-8")
+        probe = (ROOT / "tools" / "ring_probe.cpp").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'extern "C" __declspec(dllexport) alignas(8)\n'
+            "    fushi_voice_hook::LeafD3DTraceBuffer "
+            "FushiLeafD3DTraceV1 = {};",
+            main,
+        )
+        for marker in (
+            "sizeof(LeafD3DTraceEvent) == 96",
+            "sizeof(LeafD3DTraceSlot) == 104",
+            "offsetof(LeafD3DTraceBuffer, slots) == 168",
+            "kLeafD3DTraceCapacity = 2048",
+            "input_poller_owner_tid",
+            "input_poller_conflicts",
+            "input_poller_last_conflict_tid",
+            "primary_quad_candidates",
+            "alternate_quad_candidates",
+        ):
+            self.assertIn(marker, trace)
+
+        event = trace.split("struct alignas(8) LeafD3DTraceEvent", 1)[1]
+        event = event.split("};", 1)[0]
+        for forbidden in (
+            "char ",
+            "wchar_t",
+            "void*",
+            "std::",
+            "payload",
+        ):
+            self.assertNotIn(forbidden, event)
+        self.assertNotIn("code_unit", event)
+        self.assertNotIn("packed_cp932", trace)
+        self.assertIn("uint32_t match_reserved = 0;", event)
+        declarations = [
+            line.strip() for line in event.splitlines() if " = " in line
+        ]
+        self.assertTrue(declarations)
+        self.assertTrue(
+            all(
+                declaration.startswith(("uint64_t ", "uint32_t ", "float "))
+                for declaration in declarations
+            )
+        )
+
+        for marker in (
+            "--dump-leaf-d3d-trace",
+            "FindRemoteLeafD3DTrace",
+            "kLeafD3DTraceExportName",
+            "LeafD3DTraceHeaderSnapshot",
+            "ReadRemoteExact",
+            "ReadProcessMemory",
+            "writing_before == 0",
+            "sequence_before == expected",
+            "sequence_after == expected",
+            "Leaf D3D trace export exceeds remote module bounds",
+        ):
+            self.assertIn(marker, probe)
+        main_body = probe.split("int main(int argc, char** argv)", 1)[1]
+        self.assertLess(
+            main_body.index("--dump-leaf-d3d-trace"),
+            main_body.index("OpenFileMappingW"),
+        )
+        for marker in (
+            "ClaimLeafInputPollerThread",
+            "g_leaf_input_poller_conflicted",
+            "LeafAquaplusConflictingPollerMustConsume",
+            "LeafAquaplusTailRequestIsOrphaned",
+        ):
+            self.assertIn(marker, adapter)
+        detour = adapter.split(
+            "SHORT WINAPI Detour_LeafGetAsyncKeyState", 1
+        )[1].split("HRESULT STDMETHODCALLTYPE Detour_LeafSetTexture", 1)[0]
+        self.assertLess(
+            detour.index("if (admitted_poller && !poller_owner)"),
+            detour.index("AdvanceLeafAquaplusSampledInputTail"),
+        )
+        self.assertIn("poller=owner:%u,conflicts:%u,last_conflict:%u", probe)
+        self.assertNotIn("code_unit=", probe)
+        for marker in (
+            "Detour_LeafTextTraversal",
+            "Detour_LeafRasterDraw",
+            "profile->text_traversal_rva",
+            "profile->raster_draw_rva",
+            "profile->raster_glyph_return_rva",
+            "profile->raster_packed_cp932_stack_offset",
+            "PublishLeafPrivateTraversal",
+            "CutLeafPrivateTraversalCommittedSequence",
+            "NormalizeLeafAquaplusLookupText",
+        ):
+            self.assertIn(marker, adapter)
+        for forbidden in (
+            "DescribeLeafGlyph",
+            "Detour_LeafGlyphDraw",
+            "glyph_code_unit_offset",
+            "glyph_record_stride",
+        ):
+            self.assertNotIn(forbidden, adapter)
+        stage = adapter.split(
+            "bool StageLeafLookupPrivateTraversal", 1
+        )[1].split("bool BuildLeafLookupGeometryFromCandidate", 1)[0]
+        for marker in (
+            "AreLeafAquaplusMatchedGlyphDrawsPrimary",
+            "captured.draw_format",
+            "captured.caller_rva",
+            "captured.vertex_stride",
+            "captured.fvf",
+            "profile->quad_draw_return_rva",
+            "profile->quad_vertex_stride",
+            "profile->quad_fvf",
+        ):
+            self.assertIn(marker, stage)
+        self.assertNotIn("alternate_quad_draw_return_rva", stage)
+        self.assertNotIn("alternate_quad_vertex_stride", stage)
+        self.assertNotIn("alternate_quad_fvf", stage)
+        self.assertLess(
+            stage.index("AreLeafAquaplusMatchedGlyphDrawsPrimary"),
+            stage.index("wchar_t decoded"),
+        )
+        selected_consumer = adapter.split(
+            "void ConsumeLeafLookupSelectedText", 1
+        )[1].split("void ConsumeLeafLookupPrivateTraversals", 1)[0]
+        for marker in (
+            "newest_selected_event_seq",
+            "ClassifyLeafAquaplusSelectedLineEvent",
+            "selected_exact_line",
+            "payload_shape_valid",
+            "g_leaf_text_processed_seq = newest_selected_event_seq",
+            "normalized_units == 0",
+        ):
+            self.assertIn(marker, selected_consumer)
+        self.assertGreaterEqual(
+            selected_consumer.count(
+                "InvalidateLeafLookupSentence(g_leaf_active_line_units != 0)"
+            ),
+            2,
+        )
+        invalid_payload_branch = selected_consumer.split(
+            "if (newest_disposition !=", 1
+        )[1].split("wchar_t normalized", 1)[0]
+        self.assertLess(
+            invalid_payload_branch.index("InvalidateLeafLookupSentence"),
+            invalid_payload_branch.index("return;"),
+        )
+        normalization_failure_branch = selected_consumer.split(
+            "if (!fushi_voice_hook::NormalizeLeafAquaplusLookupText", 1
+        )[1].split("const uint32_t normalized_count", 1)[0]
+        self.assertLess(
+            normalization_failure_branch.index("InvalidateLeafLookupSentence"),
+            normalization_failure_branch.index("return;"),
+        )
+
+        private_publisher = adapter.split(
+            "bool PublishLeafPrivateTraversal", 1
+        )[1].split("void PublishLeafD3DTraceTraversal", 1)[0]
+        committed_cut = adapter.split(
+            "uint64_t CutLeafPrivateTraversalCommittedSequence", 1
+        )[1].split("void InvalidateLeafLookupSentence", 1)[0]
+        for body in (private_publisher, committed_cut):
+            self.assertIn(
+                "InterlockedCompareExchange(&g_leaf_private_traversal_writer, 1, 0)",
+                body,
+            )
+            self.assertIn(
+                "InterlockedExchange(&g_leaf_private_traversal_writer, 0)", body
+            )
+
+        invalidate = adapter.split("void InvalidateLeafLookupSentence", 1)[
+            1
+        ].split("void ConsumeLeafLookupSelectedText", 1)[0]
+        committed_cut_index = invalidate.index(
+            "CutLeafPrivateTraversalCommittedSequence()"
+        )
+        self.assertLess(
+            committed_cut_index,
+            invalidate.index("memset(g_leaf_active_line"),
+        )
+        self.assertLess(committed_cut_index, invalidate.index("if (advance_epoch)"))
+
     def test_registry_exposes_module_notification_seam(self) -> None:
         source = (ROOT / "hook" / "adapter_registry.inc").read_text(
             encoding="utf-8"

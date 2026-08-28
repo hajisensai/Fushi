@@ -68,6 +68,14 @@ void RememberElfAi6VoiceArc(HANDLE handle, const wchar_t* path);
 void ObserveElfAi6VoiceArcRead(HANDLE file, const void* buffer, DWORD done,
                                LPOVERLAPPED overlapped);
 void ForgetElfAi6VoiceArc(HANDLE handle);
+// Leaf/AQUAPLUS owns the archive identity, index layout and worker tasks.  This
+// shared KernelBase boundary only fans file events out so engines never stack
+// competing ReadFile detours.
+void RememberLeafAquaplusVoicePak(HANDLE handle, const wchar_t* path);
+void ObserveLeafAquaplusVoicePakRead(HANDLE file, const void* buffer,
+                                    DWORD done, LPOVERLAPPED overlapped,
+                                    const void* caller);
+void ForgetLeafAquaplusVoicePak(HANDLE handle);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -177,6 +185,9 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   if (result != INVALID_HANDLE_VALUE) RememberCatSystem2Pcm(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberMalieArchive(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberElfAi6VoiceArc(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) {
+    RememberLeafAquaplusVoicePak(result, file_name);
+  }
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -207,6 +218,7 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberCatSystem2Pcm(result, wide);
       RememberMalieArchive(result, wide);
       RememberElfAi6VoiceArc(result, wide);
+      RememberLeafAquaplusVoicePak(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }
@@ -262,6 +274,7 @@ void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
 
 BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
                             LPDWORD bytes_read, LPOVERLAPPED overlapped) {
+  const void* caller = _ReturnAddress();
   if (g_capture_enabled && overlapped != nullptr && requested > 0) {
     ObserveTyranoAsarReadRequest(file, requested, overlapped);
     ObserveMalieArchiveReadRequest(file, requested, overlapped);
@@ -276,6 +289,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveCatSystem2PcmRead(file, done, overlapped);
   ObserveMalieArchiveRead(file, done, overlapped);
   ObserveElfAi6VoiceArcRead(file, buffer, done, overlapped);
+  ObserveLeafAquaplusVoicePakRead(file, buffer, done, overlapped, caller);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -310,6 +324,7 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetCatSystem2Pcm(handle);
   ForgetMalieArchive(handle);
   ForgetElfAi6VoiceArc(handle);
+  ForgetLeafAquaplusVoicePak(handle);
   ForgetMalieMapping(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);

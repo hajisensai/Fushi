@@ -117,6 +117,44 @@ inline constexpr wchar_t kSiglusSampledInputShieldWindowProperty[] =
 inline constexpr uintptr_t kSiglusSampledInputShieldReadyValue = 1u;
 inline constexpr uintptr_t kSiglusSampledInputShieldRequiredValue = 1u;
 
+// Exact WHITE ALBUM2 / Leaf-AQUAPLUS samples GetAsyncKeyState directly.  A
+// low-level mouse hook can swallow the corresponding Win32 messages, but it
+// cannot hide the physical high/low bits from that poller.  Give this distinct
+// ABI its own Required -> Ready -> Window namespace while reusing the host's
+// sampled-input transaction lifetime.  Unknown Leaf builds never publish
+// Required because executable admission remains hash-pinned in the adapter.
+inline constexpr wchar_t kLeafAquaplusSampledInputShieldReadyProperty[] =
+    L"Fushi.LeafAquaplus.SampledInputShield.Ready";
+inline constexpr wchar_t kLeafAquaplusSampledInputShieldRequiredProperty[] =
+    L"Fushi.LeafAquaplus.SampledInputShield.Required";
+inline constexpr wchar_t kLeafAquaplusSampledInputShieldWindowProperty[] =
+    L"Fushi.LeafAquaplus.SampledInputShield.Window";
+inline constexpr wchar_t kLeafAquaplusSampledInputShieldTailRequestProperty[] =
+    L"Fushi.LeafAquaplus.SampledInputShield.TailRequest";
+inline constexpr wchar_t kLeafAquaplusSampledInputShieldTailAckProperty[] =
+    L"Fushi.LeafAquaplus.SampledInputShield.TailAck";
+inline constexpr uintptr_t kLeafAquaplusSampledInputShieldReadyValue = 1u;
+inline constexpr uintptr_t kLeafAquaplusSampledInputShieldRequiredValue = 1u;
+inline constexpr uint32_t kLeafAquaplusSampledInputLeftButton = 0x1u;
+inline constexpr uint32_t kLeafAquaplusSampledInputRightButton = 0x2u;
+inline constexpr uint32_t kLeafAquaplusSampledInputMiddleButton = 0x4u;
+inline constexpr uint32_t kLeafAquaplusSampledInputButtonMask = 0x7u;
+// Cross-process completion notification sent by the injected Leaf detour after
+// every requested GetAsyncKeyState low bit has been observed and a later raw-0
+// sample proves the transaction tail is drained. WM_APP is fixed at 0x8000.
+inline constexpr uint32_t kSampledInputShieldReleaseWindowMessage = 0x8053u;
+
+inline constexpr uint32_t MakeLeafAquaplusSampledInputTailToken(
+    uint32_t generation, uint32_t buttons) {
+  return ((generation & 0x1fffffffu) << 3u) |
+         (buttons & kLeafAquaplusSampledInputButtonMask);
+}
+
+inline constexpr uint32_t LeafAquaplusSampledInputTailButtons(
+    uint32_t token) {
+  return token & kLeafAquaplusSampledInputButtonMask;
+}
+
 // v16 native loopback policy/control ABI. Only the exact value 1 authorises
 // creation of the loopback worker; zero and every unknown value are deny.
 constexpr uint32_t kNativeLoopbackDeny = 0;
@@ -286,6 +324,17 @@ constexpr uint32_t kXAudioDiagGameResourcePublished = 0x00080000u;
 // 与上面那位分开的理由：那位能宣称负载逐字节等于源 entry，这一位不能——fmt 是本
 // 进程按 XAudio2 报的源格式合成的。混成一位，台账上就分不出这两级证据。
 constexpr uint32_t kXAudioDiagRuntimeXwmaPublished = 0x00100000u;
+// Exact WHITE ALBUM2 Leaf/AQUAPLUS resource capture reuses the shared
+// KernelBase file broker: VOICE.PAK is validated as a LAC archive at install,
+// then a playback-time read queues the original Ogg member for worker-side
+// publication.  These bits live in the existing diagnostics word; no IPC
+// layout or region size changes.
+constexpr uint32_t kXAudioDiagLeafLacHooksReady = 0x00200000u;
+constexpr uint32_t kXAudioDiagLeafLacHandleTracked = 0x00400000u;
+constexpr uint32_t kXAudioDiagLeafLacReadObserved = 0x00800000u;
+constexpr uint32_t kXAudioDiagLeafLacVoiceQueued = 0x01000000u;
+constexpr uint32_t kXAudioDiagLeafLacTaskRejected = 0x02000000u;
+constexpr uint32_t kXAudioDiagLeafLacVoicePublished = 0x04000000u;
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
@@ -312,6 +361,7 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
          (hook_diagnostics & kDiagMalieLibpHooksReady) != 0 ||
          (hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0 ||
          (reserved_hook_diagnostics & kDiagElfAi6ArcHooksReady) != 0 ||
+         (xaudio_diagnostics & kXAudioDiagLeafLacHooksReady) != 0 ||
          (xaudio_diagnostics & kXAudioDiagGameResourcePublished) != 0 ||
          unity_ready;
 }

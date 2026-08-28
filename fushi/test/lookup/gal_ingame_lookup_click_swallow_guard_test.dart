@@ -44,6 +44,9 @@ void main() {
   final String siglusLookupSource = File(
     '../native/galgame_hook/hook/adapters/siglus_lookup.inc',
   ).readAsStringSync();
+  final String leafAquaplusSource = File(
+    '../native/galgame_hook/hook/adapters/leaf_aquaplus_adapter.inc',
+  ).readAsStringSync();
 
   test('direct galCard 在首帧 Reveal 事务中绑定游戏，桌面 route 默认不吞', () {
     final String direct = methodBody(
@@ -346,7 +349,10 @@ void main() {
       'PostMessage(target,kLowLevelMouseClickMessage',
     );
     final int decideDown = hookProc.indexOf('constboolconsume_click=');
-    final int markDown = hookProc.indexOf('g_swallowed_buttons.fetch_or(');
+    final int markDown = hookProc.indexOf(
+      'g_swallowed_buttons.fetch_or(',
+      decideDown,
+    );
     final int swallowDown = hookProc.indexOf('return1;', markDown);
     expect(decideDown, greaterThanOrEqualTo(0));
     expect(markDown, greaterThan(decideDown));
@@ -742,6 +748,31 @@ void main() {
     final String revoke = compactCode(
       methodBody(hookSource, 'void RevokeDirectInputShieldIfIdle('),
     );
+    final String abortInvalid = compactCode(
+      methodBody(
+        hookSource,
+        'void AbortInvalidDirectInputShieldAfterBarrier()',
+      ),
+    );
+    final String leafRevoke = compactCode(
+      methodBody(leafAquaplusSource, 'void RevokeLeafSampledInputShieldReady('),
+    );
+    final String publishTail = compactCode(
+      methodBody(hookSource, 'bool PublishSampledInputTailRequest('),
+    );
+    final String refreshTail = compactCode(
+      methodBody(hookSource, 'void RefreshSampledInputTailAck('),
+    );
+    const String leafContractDeclaration =
+        'constexpr SampledInputShieldContract '
+        'kLeafAquaplusSampledInputShieldContract =';
+    final int leafContractStart = hookSource.indexOf(leafContractDeclaration);
+    final int leafContractEnd = hookSource.indexOf('};', leafContractStart);
+    expect(leafContractStart, greaterThanOrEqualTo(0));
+    expect(leafContractEnd, greaterThan(leafContractStart));
+    final String leafContract = compactCode(
+      hookSource.substring(leafContractStart, leafContractEnd),
+    );
     final String barrier = compactCode(
       methodBody(
         hookSource,
@@ -755,6 +786,7 @@ void main() {
     expect(
       hookSource.contains('kSgreSampledInputShieldContract') &&
           hookSource.contains('kSiglusSampledInputShieldContract') &&
+          hookSource.contains('kLeafAquaplusSampledInputShieldContract') &&
           directPublish.contains('SelectSampledInputShieldContract(') &&
           directPublish.contains('SetPropW(game,contract->window_property') &&
           directPublish.contains(
@@ -764,14 +796,65 @@ void main() {
           directPublish.contains('returnfalse;'),
       isTrue,
       reason:
-          'SGRE/Siglus 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
+          'SGRE/Siglus/Leaf 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
           '必须在 popup 上屏前 fail closed',
+    );
+    expect(
+      leafContract.contains(
+            'kLeafAquaplusSampledInputShieldTailRequestProperty',
+          ) &&
+          leafContract.contains(
+            'kLeafAquaplusSampledInputShieldTailAckProperty',
+          ) &&
+          !leafContract.contains('nullptr'),
+      isTrue,
+      reason:
+          'Leaf sampled-input 契约必须声明非空 TailRequest/TailAck；退化成 '
+          'SGRE/Siglus 的无 tail 初始化会重新暴露两次轮询之间的完整快点',
+    );
+    expect(
+      publishTail.contains('LeafAquaplusSampledInputTailButtons(previous)') &&
+          publishTail.contains(
+            'MakeLeafAquaplusSampledInputTailToken(generation,buttons)',
+          ) &&
+          publishTail.indexOf('SetPropW(game,contract->tail_request_property') <
+              publishTail.indexOf(
+                'g_direct_input_shield_tail_token.store(token',
+              ) &&
+          refreshTail.contains('if(ack!=token)return;') &&
+          refreshTail.contains(
+            'g_direct_input_shield_tail_token.compare_exchange_strong(',
+          ) &&
+          !refreshTail.contains('RemovePropW'),
+      isTrue,
+      reason:
+          'Leaf tail token 必须合并未确认按钮、先跨进程发布再取得本地所有权，且只由'
+          '精确 generation Ack 清零；陈旧 Ack 或回调并发不能提前撤销新事务',
+    );
+    expect(
+      directPublish.contains('(pending!=0||pending_tail!=0)') &&
+          directPublish.contains(
+            'HasSampledInputTailHandshake(contract)&&pending_tail==0',
+          ) &&
+          revoke.contains('RefreshSampledInputTailAck(game,contract)') &&
+          revoke.contains(
+            'g_direct_input_shield_tail_token.load(std::memory_order_acquire)!=0',
+          ),
+      isTrue,
+      reason:
+          '未收到精确 Ack 的 Leaf tail 必须跨 Hide 保留，并阻止另一 popup 复用 publication；'
+          '只有 pending_tail 已清零才可清理跨进程属性',
     );
     final int publish = directArm.indexOf(
       'PublishDirectInputShieldIfReady(target,consume_outside_owner)',
     );
+    final int abortStale = directArm.indexOf(
+      'AbortInvalidDirectInputShieldAfterBarrier()',
+    );
     final int exposeTarget = directArm.indexOf('g_target.store(target');
     expect(publish, greaterThanOrEqualTo(0));
+    expect(abortStale, greaterThanOrEqualTo(0));
+    expect(publish, greaterThan(abortStale));
     expect(exposeTarget, greaterThan(publish));
     expect(
       desktopArm.contains('PublishDirectInputShieldIfReady'),
@@ -783,6 +866,24 @@ void main() {
           hookProc.contains('RequestDirectInputShieldFinalize()'),
       isTrue,
       reason: 'popup 内外 down 都需从 DirectInput 隐藏；up 只投递串行撤销消息',
+    );
+    final int tailPublish = hookProc.indexOf(
+      'constbooltail_published=PublishSampledInputTailRequest(',
+    );
+    final int clickDispatch = hookProc.indexOf(
+      'PostMessage(target,kLowLevelMouseClickMessage',
+    );
+    expect(tailPublish, greaterThanOrEqualTo(0));
+    expect(clickDispatch, greaterThan(tailPublish));
+    expect(
+      hookProc.contains(
+        'if(!tail_published){g_swallowed_buttons.fetch_or('
+        'bit,std::memory_order_relaxed);return1;}',
+      ),
+      isTrue,
+      reason:
+          'Leaf TailRequest 发布失败时不得把 down 交给 WebView 或 dismiss：必须吞掉'
+          '整次事务并保留 popup，避免完整快点落在两次游戏轮询之间后穿透',
     );
     expect(
       hookProc.contains(
@@ -824,6 +925,34 @@ void main() {
       2,
       reason: '没有钩子线程、以及 PostThreadMessage 失败，都属于「从未排队」',
     );
+    expect(
+      abortInvalid.contains(
+            'IsSelectedSampledInputShieldContractReady(game,contract)',
+          ) &&
+          abortInvalid.contains(
+            'GetPropW(game,contract->window_property))==popup',
+          ) &&
+          abortInvalid.contains(
+            'GetPropW(game,contract->tail_request_property)))==token',
+          ) &&
+          abortInvalid.contains('g_direct_input_shield_tail_token.store(0') &&
+          disarm.contains(
+            'barrier==HookThreadBarrierResult::kCrossed)'
+            '{AbortInvalidDirectInputShieldAfterBarrier();',
+          ),
+      isTrue,
+      reason:
+          'helper/game/window 失效后，只有跨过 callback barrier 才能取消永远不会再获真 Ack '
+          '的 Leaf tail；跨进程属性必须按本地 token 精确删除，不能误删新事务',
+    );
+    final int leafReadyRevoke = leafRevoke.indexOf(
+      'kLeafAquaplusSampledInputShieldReadyProperty',
+    );
+    final int leafWindowRevoke = leafRevoke.indexOf(
+      'kLeafAquaplusSampledInputShieldWindowProperty',
+    );
+    expect(leafReadyRevoke, greaterThanOrEqualTo(0));
+    expect(leafWindowRevoke, greaterThan(leafReadyRevoke));
     expect(
       requestFinalize.contains(
             'g_target.load(std::memory_order_acquire)!=popup',

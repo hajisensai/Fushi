@@ -21,6 +21,7 @@
 | `malie_libp` | Malie System / LIBP CFI | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | malie_libp_cfi_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `qlie_filepack` | QLIE / FilePack | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | qlie_wuvorbis_per_source_pcm (verified)；qlie_wuvorbis_float_per_source_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified)；unity_legacy_text_events (implemented_unverified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
+| `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | — | engine_archive_resource (implemented_unverified) | 0 |
 
 ## 识别与能力明细
@@ -576,6 +577,52 @@ Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`
+
+### Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) (`leaf_aquaplus`)
+
+- 状态：`implemented_unverified`
+- 别名：Leaf、AQUAPLUS、WHITE ALBUM2、WA2
+- 家族：`leaf_aquaplus`（Leaf / AQUAPLUS custom Windows runtime）
+- 当前 adapter：`hook/adapters/leaf_aquaplus_adapter.inc`
+- 进程策略：launch=`normal_launch_or_suspended_launch_implemented_unverified`，attach=`implemented_unverified`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：WA2.exe；证据：real_sample — WHITE ALBUM2 bundled installation sample inspected on 2026-08-28; the name is descriptive only and never enables exact offsets
+- `pe_architectures`：x86；证据：real_sample — Measured WA2.exe PE/COFF i386 sample, 1,220,096 bytes
+- `pe_imports`：d3d9.dll、dsound.dll；证据：real_sample — Measured import table of the exact hashed x86 sample
+- `runtime_modules`：d3d9.dll、dsound.dll；证据：runtime_observation — The exact hashed WA2 x86 sample completed original-path D3D9 lookup/input interception and source-audio card mining on 2026-08-28
+- `resource_extensions`：.pak；证据：real_sample — VOICE.PAK and IC/VOICE.PAK are validated LAC archives whose playback entries are complete Ogg/Vorbis resources; the root archive completed original-path card mining on 2026-08-28
+- `hashes`：algorithm=sha256, scope=game_executable, value=005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED, version=WHITE ALBUM2 bundled edition (version not recorded)；证据：real_sample — SHA-256 measured from the user's original WA2.exe on 2026-08-28
+
+文本能力：
+
+- `luna_exact_cp932_thread`：`implemented_unverified` — The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped.
+- `ingame_lookup_geometry`：`implemented_unverified` — The exact D3D9 profile reconstructs bounded per-glyph geometry and kept same-sentence selection stable in user acceptance; release evidence gates remain incomplete.
+- `ingame_lookup_sampled_input_shield`：`implemented_unverified` — Single-click and Shift-hover lookup plus popup/dismiss mouse-transaction swallowing were user-accepted for the exact GetAsyncKeyState profile; release evidence gates remain incomplete.
+- codepage：CP932
+- 线程提示：Use only the selected Luna line source whose thread address equals WA2.exe + 0x512BF.
+
+音频优先级：
+
+1. `leaf_lac_voice_resource` — `implemented_unverified`；格式：original Ogg/Vorbis entry from VOICE.PAK or IC/VOICE.PAK；clean voice：是
+2. `directsound_pcm` — `implemented_unverified`；格式：48000 Hz / mono / signed 16-bit in the observed sample；clean voice：engine_dependent
+
+真实样本证据：
+
+
+已知限制：
+
+- This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim.
+- A game update or different executable hash disables the selected text, geometry and sampled-input offsets until that build is measured independently.
+- DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.
+- The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.
+- Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.
+- The original path was user-accepted, but the requested skip-all-tests submission leaves the full release evidence/offline gate set incomplete, so support is not promoted to verified.
+
+Fixtures：`tests/fixtures/leaf_aquaplus_replay.json`
+
+Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/leaf_aquaplus_voice_archive_test.cpp`、`tests/leaf_d3d_trace_export_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/galhook_workflow_test.py`、`../../fushi/test/lookup/gal_ingame_lookup_click_swallow_guard_test.dart`
 
 ### M2 wind3d11 runtime (STEINS;GATE RE:BOOT) (`sgre`)
 

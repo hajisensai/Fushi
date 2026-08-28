@@ -1768,6 +1768,156 @@
       ]
     },
     {
+      "id": "leaf_aquaplus",
+      "display_name": "Leaf / AQUAPLUS (WHITE ALBUM2 exact profile)",
+      "aliases": [
+        "Leaf",
+        "AQUAPLUS",
+        "WHITE ALBUM2",
+        "WA2"
+      ],
+      "family": {
+        "id": "leaf_aquaplus",
+        "relation": "Leaf / AQUAPLUS custom Windows runtime"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "WA2.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "WHITE ALBUM2 bundled installation sample inspected on 2026-08-28; the name is descriptive only and never enables exact offsets"
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured WA2.exe PE/COFF i386 sample, 1,220,096 bytes"
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [
+            "d3d9.dll",
+            "dsound.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured import table of the exact hashed x86 sample"
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "d3d9.dll",
+            "dsound.dll"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The exact hashed WA2 x86 sample completed original-path D3D9 lookup/input interception and source-audio card mining on 2026-08-28"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".pak"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "VOICE.PAK and IC/VOICE.PAK are validated LAC archives whose playback entries are complete Ogg/Vorbis resources; the root archive completed original-path card mining on 2026-08-28"
+          }
+        },
+        "hashes": {
+          "values": [
+            {
+              "algorithm": "sha256",
+              "scope": "game_executable",
+              "value": "005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED",
+              "version": "WHITE ALBUM2 bundled edition (version not recorded)"
+            }
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SHA-256 measured from the user's original WA2.exe on 2026-08-28"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "normal_launch_or_suspended_launch_implemented_unverified",
+        "attach": "implemented_unverified",
+        "follow_child_processes": false,
+        "notes": [
+          "Admission requires the exact executable SHA-256 and i386 machine type. WA2.exe, Leaf/AQUAPLUS family labels and sibling PAK files never enable binary offsets by themselves.",
+          "The measured profile pins the selected Luna CP932 source thread, D3D9 glyph path and GetAsyncKeyState poller to exact RVAs; an unknown or patched executable fails closed."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_exact_cp932_thread",
+            "status": "implemented_unverified",
+            "verification": "The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "The exact D3D9 profile reconstructs bounded per-glyph geometry and kept same-sentence selection stable in user acceptance; release evidence gates remain incomplete."
+          },
+          {
+            "kind": "ingame_lookup_sampled_input_shield",
+            "status": "implemented_unverified",
+            "verification": "Single-click and Shift-hover lookup plus popup/dismiss mouse-transaction swallowing were user-accepted for the exact GetAsyncKeyState profile; release evidence gates remain incomplete."
+          }
+        ],
+        "codepage": "CP932",
+        "thread_selection_hint": "Use only the selected Luna line source whose thread address equals WA2.exe + 0x512BF."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "leaf_lac_voice_resource",
+            "format": "original Ogg/Vorbis entry from VOICE.PAK or IC/VOICE.PAK",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "48000 Hz / mono / signed 16-bit in the observed sample",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim.",
+        "A game update or different executable hash disables the selected text, geometry and sampled-input offsets until that build is measured independently.",
+        "DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.",
+        "The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.",
+        "Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.",
+        "The original path was user-accepted, but the requested skip-all-tests submission leaves the full release evidence/offline gate set incomplete, so support is not promoted to verified."
+      ],
+      "adapter_path": "hook/adapters/leaf_aquaplus_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/leaf_aquaplus_replay.json"
+      ],
+      "test_paths": [
+        "tests/leaf_aquaplus_adapter_test.cpp",
+        "tests/leaf_aquaplus_voice_archive_test.cpp",
+        "tests/leaf_d3d_trace_export_test.cpp",
+        "tests/resource_audio_ready_test.cpp",
+        "tests/adapter_structure_test.py",
+        "tests/galhook_workflow_test.py",
+        "../../fushi/test/lookup/gal_ingame_lookup_click_swallow_guard_test.dart"
+      ]
+    },
+    {
       "id": "sgre",
       "display_name": "M2 wind3d11 runtime (STEINS;GATE RE:BOOT)",
       "aliases": [

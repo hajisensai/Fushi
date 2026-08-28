@@ -527,6 +527,7 @@ class AdapterRegistry {
     kirikiri_.ProcessPendingEvents();
     renpy_.ProcessPendingEvents();
     sgre_.ProcessPendingEvents();
+    leaf_aquaplus_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
@@ -569,6 +570,11 @@ class AdapterRegistry {
     }
     if (siglus_.probe() && IsSiglusLookupProfileMatched() &&
         g_header != nullptr && fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
+    if (leaf_aquaplus_.probe() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
         g_header->lookup_enabled != 0) {
       return 16;
     }
