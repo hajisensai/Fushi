@@ -1200,8 +1200,8 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// 宽屏主导航的品牌位。应用图标只占 rail 顶部固定的 80×80 区域，下面的目的地
-  /// 仍在剩余空间内独立居中；窗口变矮时目的地列表照常滚动，不会被图标挤出屏幕。
+  /// 宽屏主导航的品牌位。应用图标直接占 rail 顶部固定区域，不再叠加卡片底色、
+  /// 描边或内边距；下面的目的地仍在剩余空间内独立居中。
   Widget _buildRailLeading() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
@@ -1211,19 +1211,9 @@ class _HomePageState extends BasePageState<HomePage>
         label: 'Fushi',
         child: SizedBox.square(
           dimension: 64,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: tokens.surfaces.card,
-              border: Border.all(color: tokens.surfaces.outline),
-              borderRadius: tokens.radii.controlRadius,
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.gap),
-              child: ClipRRect(
-                borderRadius: tokens.radii.chipRadius,
-                child: const CurrentAppIcon(),
-              ),
-            ),
+          child: ClipRRect(
+            borderRadius: tokens.radii.controlRadius,
+            child: const CurrentAppIcon(),
           ),
         ),
       ),

@@ -104,6 +104,8 @@ void main() {
     expect(page.contains('saveCustomIconPath('), isFalse);
     expect(home.contains('child: const CurrentAppIcon()'), isTrue,
         reason: 'rail 不得再读取 AppModel 中固定的 assets/meta/icon.png');
+    expect(home.contains('child: DecoratedBox('), isFalse,
+        reason: 'rail 应直接显示应用图标，不得再套卡片底色和描边');
     expect(component.contains('ValueListenableBuilder<AppIconSelection>'),
         isTrue);
     expect(main.contains('startupAppIcon = await loadAppIconSelection()'),

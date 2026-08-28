@@ -3091,8 +3091,10 @@ void main() {
     expect(railLeading, contains('FushiDesignTokens.of(context)'));
     expect(railLeading, contains('tokens.spacing'));
     expect(railLeading, contains('tokens.radii.controlRadius'));
-    expect(railLeading, contains('tokens.surfaces.card'));
     expect(railLeading, contains('CurrentAppIcon'));
+    expect(railLeading, isNot(contains('DecoratedBox')));
+    expect(railLeading, isNot(contains('tokens.surfaces.card')));
+    expect(railLeading, isNot(contains('Border.all')));
 
     final String collectionsSource = File(
       'lib/src/pages/implementations/collections_page.dart',
