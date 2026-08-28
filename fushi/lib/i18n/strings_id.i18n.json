@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "Tidak dapat memuat daftar pustaka",
   "video_filter_series": "Seri",
   "video_filter_series_in": "Dalam seri",
-  "video_filter_series_standalone": "Tanpa seri"
+  "video_filter_series_standalone": "Tanpa seri",
+  "manga_source_cloudflare_verify_title": "Verifikasi situs",
+  "manga_source_cloudflare_verify_hint": "Selesaikan pemeriksaan Cloudflare di bawah ini. Pemuatan akan dilanjutkan otomatis setelah lolos."
 }

@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "라이브러리 목록을 불러오지 못했어요",
   "video_filter_series": "시리즈",
   "video_filter_series_in": "시리즈에 포함",
-  "video_filter_series_standalone": "시리즈 없음"
+  "video_filter_series_standalone": "시리즈 없음",
+  "manga_source_cloudflare_verify_title": "사이트 확인",
+  "manga_source_cloudflare_verify_hint": "아래 Cloudflare 확인을 완료하세요. 통과하면 자동으로 불러오기를 계속합니다."
 }

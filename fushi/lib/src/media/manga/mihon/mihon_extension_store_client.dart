@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 
 const int mihonStoreMaxBytes = 10 * 1024 * 1024;
@@ -97,11 +98,80 @@ class MihonStoreFetchResult {
   final bool notModified;
 }
 
+/// 开一只新的单调秒表，返回的函数报「从开表到现在」。
+///
+/// 用 [Stopwatch] 而不是 `DateTime.now()`：墙钟会被 NTP 校时 / 时区切换往前后跳，
+/// 一次跳变要么让预算瞬间过期（一个镜像都不试）要么推后几小时（总闸形同虚设）。
+typedef MihonElapsedClockFactory = Duration Function() Function();
+
+Duration Function() _monotonicClock() {
+  final Stopwatch stopwatch = Stopwatch()..start();
+  return () => stopwatch.elapsed;
+}
+
+/// 一次**公开操作**（fetchStore / fetchExtensions / downloadApk）的时间预算。
+///
+/// 单位是「操作」不是「资源」：一次「添加仓库」会顺着 `index.min.json` →
+/// `repo.json` → `index_v2` 的索引链发起最多 `_maxIndexHops + 1` 次独立取数，
+/// 加上 `fetchExtensions` 那次。预算若按资源各起一份，用户在全阻断网络下要等的
+/// 是 预算 × 取数次数，而不是预算。
+class _FetchBudget {
+  _FetchBudget.withClock(this.total, MihonElapsedClockFactory clock)
+      : _elapsed = clock();
+
+  final Duration total;
+  final Duration Function() _elapsed;
+
+  Duration get remaining => total - _elapsed();
+
+  bool get isExhausted => remaining <= Duration.zero;
+
+  /// [ceiling] 与剩余预算里更小的那个，且至少 1ms（`Future.timeout` 不接受负数）。
+  Duration capped(Duration ceiling) {
+    final Duration left = remaining;
+    final Duration value = left < ceiling ? left : ceiling;
+    return value < const Duration(milliseconds: 1)
+        ? const Duration(milliseconds: 1)
+        : value;
+  }
+}
+
 class MihonExtensionStoreClient {
-  MihonExtensionStoreClient({http.Client? client})
-      : _client = client ?? createAppHttpIoClient();
+  MihonExtensionStoreClient({
+    http.Client? client,
+    this.fetchBudget = const Duration(seconds: 90),
+    this.downloadBudget = const Duration(minutes: 10),
+    this.bodyStallTimeout = const Duration(seconds: 30),
+    MihonElapsedClockFactory? elapsedClock,
+  })  : _client = client ?? createAppHttpIoClient(),
+        _elapsedClock = elapsedClock ?? _monotonicClock;
 
   final http.Client _client;
+
+  /// 一次索引/扩展列表拉取（含索引链上的每一跳、全部镜像候选与重定向嵌套）的
+  /// **总**时间预算：镜像回退把最坏情况从一次 20s 超时放大成 直连 + 5 镜像 ×
+  /// 每次 30s、再乘索引跳数与重定向嵌套——没有总闸的话一台镜像也不通的机器
+  /// 一次刷新要挂几分钟。
+  final Duration fetchBudget;
+
+  /// APK 下载的总预算。与 [fetchBudget] 分开：索引是几十 KB 的小文档，APK 上限
+  /// 100 MiB，拿 90s 当硬顶等于把慢网络上的正常下载掐断。真正防「回了 200
+  /// 就不再发字节」的是 [_kBodyStallTimeout]，本预算只兜住总时长。
+  final Duration downloadBudget;
+
+  /// 响应体的 **stall** 超时——计的是「两个数据块之间的间隔」，不是总时长。
+  ///
+  /// `app_http.dart` 的文件头写明它只管连接建立、响应体传输不设默认时限
+  /// （一刀切会掐断几百 MB 的下载），「需要 stall 超时的链路自己在上层设」；
+  /// 这里就是那个上层。一个回 200 然后不发一个字节的公共代理，修复前能让整条
+  /// 链无限挂住（候选从 1 扩到 6 之后撞上的概率乘了 6）；一个慢但一直在传的
+  /// 100 MiB APK 不受影响。
+  final Duration bodyStallTimeout;
+
+  final MihonElapsedClockFactory _elapsedClock;
+
+  /// 单个候选的**响应头**上限：一个死候选不该把整份预算吃光、饿死后面的镜像。
+  static const Duration _kHeadersTimeout = Duration(seconds: 30);
 
   /// 跟随「一份索引指向另一份索引」的最大跳数。
   ///
@@ -123,11 +193,13 @@ class MihonExtensionStoreClient {
         lastModified: lastModified,
         allowInsecure: allowInsecure,
         hop: 0,
+        budget: _FetchBudget.withClock(fetchBudget, _elapsedClock),
       );
 
   Future<MihonStoreFetchResult> _fetchStore(
     String rawUrl, {
     required int hop,
+    required _FetchBudget budget,
     String? etag,
     String? lastModified,
     bool allowInsecure = false,
@@ -139,8 +211,10 @@ class MihonExtensionStoreClient {
       );
     }
     final Uri indexUrl = _validatedUri(rawUrl, allowInsecure: allowInsecure);
-    final _NetworkBytes response = await _get(
+    final _Fetched<_StoreDocument> response = await _get<_StoreDocument>(
       indexUrl,
+      parse: (Uint8List bytes) => _parseStoreDocument(indexUrl, bytes),
+      budget: budget,
       etag: etag,
       lastModified: lastModified,
       allowNotModified: true,
@@ -154,12 +228,29 @@ class MihonExtensionStoreClient {
         notModified: true,
       );
     }
-    final Uint8List bytes = _decodeGzip(
-      response.bytes,
-      maxBytes: mihonStoreMaxBytes,
+    final _StoreDocument document = response.value!;
+    final Uri? nextIndexUrl = document.nextIndexUrl;
+    if (nextIndexUrl != null) {
+      return _fetchStore(
+        nextIndexUrl.toString(),
+        allowInsecure: allowInsecure,
+        hop: hop + 1,
+        budget: budget,
+      );
+    }
+    return MihonStoreFetchResult(
+      store: document.store,
+      etag: response.etag,
+      lastModified: response.lastModified,
     );
+  }
+
+  /// **纯函数**：把一份索引响应体解析成「一份可用的仓库」或「指向下一份索引的
+  /// 跳转」。不发网络——所以它可以在镜像候选循环**内**跑，一个返回 HTML 错误页
+  /// 的镜像会被当场判死、换下一个候选，而不是把 200 当成成功、留给上层解析炸掉。
+  static _StoreDocument _parseStoreDocument(Uri indexUrl, Uint8List raw) {
+    final Uint8List bytes = _decodeGzip(raw, maxBytes: mihonStoreMaxBytes);
     final int first = _firstNonWhitespace(bytes);
-    MihonStore store;
     if (first == 0x5b) {
       if (!indexUrl.path.endsWith('/index.min.json')) {
         throw const MihonRuntimeException(
@@ -167,12 +258,7 @@ class MihonExtensionStoreClient {
           'Legacy extension list URL must end with /index.min.json',
         );
       }
-      final Uri metadataUrl = indexUrl.replace(
-          path: indexUrl.path.replaceFirst(
-        RegExp(r'/index\.min\.json$'),
-        '/repo.json',
-      ));
-      // `repo.json` 就是下面 `0x7b` 分支处理的那份文档，直接递归过去。
+      // `repo.json` 就是下面 `0x7b` 分支处理的那份文档，直接跳过去。
       //
       // 这里曾经自己又调一遍 `_parseLegacyStore`，于是 `index_v2` 被整个吞掉：
       // 对象分支会跟着 `index_v2` 走到新索引，数组分支拿着同一份 `repo.json`
@@ -181,36 +267,29 @@ class MihonExtensionStoreClient {
       // 装什么都是 `STORE_HTTP_404`。
       //
       // 顺带修掉一个错配：旧实现把 `index.min.json` 响应的 etag 跟着
-      // `repo.json` 这个 `indexUrl` 一起落库，下次条件请求的 etag 压根不属于那个地址。
-      return _fetchStore(
-        metadataUrl.toString(),
-        allowInsecure: allowInsecure,
-        hop: hop + 1,
+      // `repo.json` 这个地址一起落库，下次条件请求的 etag 压根不属于那个地址。
+      return _StoreDocument.hop(
+        indexUrl.replace(
+          path: indexUrl.path.replaceFirst(
+            RegExp(r'/index\.min\.json$'),
+            '/repo.json',
+          ),
+        ),
       );
-    } else if (first == 0x7b) {
-      final Map<String, Object?> json = _jsonObject(bytes);
-      if (json.containsKey('meta')) {
-        final MihonStore legacy = _parseLegacyStore(indexUrl, json);
-        final Object? indexV2 = json['index_v2'];
-        if (indexV2 is String && indexV2.trim().isNotEmpty) {
-          return _fetchStore(
-            indexUrl.resolve(indexV2).toString(),
-            allowInsecure: allowInsecure,
-            hop: hop + 1,
-          );
-        }
-        store = legacy;
-      } else {
-        store = _parseCurrentStoreJson(indexUrl, json);
-      }
-    } else {
-      store = _parseCurrentStoreProto(indexUrl, bytes);
     }
-    return MihonStoreFetchResult(
-      store: store,
-      etag: response.etag,
-      lastModified: response.lastModified,
-    );
+    if (first == 0x7b) {
+      final Map<String, Object?> json = _jsonObject(bytes);
+      if (!json.containsKey('meta')) {
+        return _StoreDocument.store(_parseCurrentStoreJson(indexUrl, json));
+      }
+      final MihonStore legacy = _parseLegacyStore(indexUrl, json);
+      final Object? indexV2 = json['index_v2'];
+      if (indexV2 is String && indexV2.trim().isNotEmpty) {
+        return _StoreDocument.hop(indexUrl.resolve(indexV2));
+      }
+      return _StoreDocument.store(legacy);
+    }
+    return _StoreDocument.store(_parseCurrentStoreProto(indexUrl, bytes));
   }
 
   Future<List<MihonAvailableExtension>> fetchExtensions(
@@ -220,6 +299,8 @@ class MihonExtensionStoreClient {
     if (store.embeddedExtensions.isNotEmpty) {
       return store.embeddedExtensions;
     }
+    final _FetchBudget budget =
+        _FetchBudget.withClock(fetchBudget, _elapsedClock);
     final Uri indexUrl = Uri.parse(store.indexUrl);
     if (store.format == MihonStoreFormat.legacy) {
       final Uri listUrl = indexUrl.replace(
@@ -228,29 +309,16 @@ class MihonExtensionStoreClient {
           '/index.min.json',
         ),
       );
-      final _NetworkBytes response = await _get(
+      final Uri base = indexUrl.resolve('.');
+      final _Fetched<List<MihonAvailableExtension>> response =
+          await _get<List<MihonAvailableExtension>>(
         listUrl,
+        parse: (Uint8List bytes) =>
+            _parseLegacyExtensionList(store, base, bytes),
+        budget: budget,
         allowInsecure: allowInsecure,
       );
-      final Object? decoded = jsonDecode(utf8.decode(_decodeGzip(
-        response.bytes,
-        maxBytes: mihonStoreMaxBytes,
-      )));
-      if (decoded is! List<Object?>) {
-        throw const MihonRuntimeException(
-          'INVALID_STORE',
-          'Legacy extension index is not a JSON array',
-        );
-      }
-      final Uri base = indexUrl.resolve('.');
-      return decoded
-          .whereType<Map<Object?, Object?>>()
-          .map((Map<Object?, Object?> item) => _parseLegacyExtension(
-                store,
-                base,
-                item.cast<String, Object?>(),
-              ))
-          .toList(growable: false);
+      return response.value!;
     }
     final String? rawListUrl = store.extensionListUrl;
     if (rawListUrl == null || rawListUrl.isEmpty) return const [];
@@ -258,14 +326,50 @@ class MihonExtensionStoreClient {
       indexUrl.resolve(rawListUrl).toString(),
       allowInsecure: allowInsecure,
     );
-    final _NetworkBytes response = await _get(
+    final _Fetched<List<MihonAvailableExtension>> response =
+        await _get<List<MihonAvailableExtension>>(
       listUrl,
+      parse: (Uint8List bytes) =>
+          _parseCurrentExtensionList(store, listUrl, bytes),
+      budget: budget,
       allowInsecure: allowInsecure,
     );
-    final Uint8List bytes = _decodeGzip(
-      response.bytes,
-      maxBytes: mihonStoreMaxBytes,
+    return response.value!;
+  }
+
+  /// **纯函数**：旧格式 `index.min.json` 的响应体 → 扩展列表。同
+  /// [_parseStoreDocument]，解析要在候选循环内跑才挡得住 HTML 错误页。
+  static List<MihonAvailableExtension> _parseLegacyExtensionList(
+    MihonStore store,
+    Uri base,
+    Uint8List raw,
+  ) {
+    final Object? decoded = jsonDecode(
+      utf8.decode(_decodeGzip(raw, maxBytes: mihonStoreMaxBytes)),
     );
+    if (decoded is! List<Object?>) {
+      throw const MihonRuntimeException(
+        'INVALID_STORE',
+        'Legacy extension index is not a JSON array',
+      );
+    }
+    return decoded
+        .whereType<Map<Object?, Object?>>()
+        .map((Map<Object?, Object?> item) => _parseLegacyExtension(
+              store,
+              base,
+              item.cast<String, Object?>(),
+            ))
+        .toList(growable: false);
+  }
+
+  /// **纯函数**：新格式扩展列表（JSON 或 protobuf）的响应体 → 扩展列表。
+  static List<MihonAvailableExtension> _parseCurrentExtensionList(
+    MihonStore store,
+    Uri listUrl,
+    Uint8List raw,
+  ) {
+    final Uint8List bytes = _decodeGzip(raw, maxBytes: mihonStoreMaxBytes);
     if (_firstNonWhitespace(bytes) == 0x7b) {
       final Map<String, Object?> json = _jsonObject(bytes);
       final List<Object?> values =
@@ -287,24 +391,111 @@ class MihonExtensionStoreClient {
     bool allowInsecure = false,
   }) async {
     final Uri url = _validatedUri(rawUrl, allowInsecure: allowInsecure);
-    final _NetworkBytes response = await _get(
+    final _Fetched<Uint8List> response = await _get<Uint8List>(
       url,
+      parse: _requireApk,
+      budget: _FetchBudget.withClock(downloadBudget, _elapsedClock),
       maxBytes: mihonExtensionApkMaxBytes,
       allowInsecure: allowInsecure,
     );
-    return response.bytes;
+    return response.value!;
+  }
+
+  /// APK 的内容可用性判据：ZIP 本地文件头魔数。公共 gh 代理限流时回的是
+  /// 200 + HTML 错误页；没有这道判据它会被当成一个「下载成功」的安装包，
+  /// 而且后面 5 个候选一个都不会试。
+  static Uint8List _requireApk(Uint8List bytes) {
+    if (bytes.length < 4 ||
+        bytes[0] != 0x50 ||
+        bytes[1] != 0x4b ||
+        bytes[2] != 0x03 ||
+        bytes[3] != 0x04) {
+      throw const MihonRuntimeException(
+        'INVALID_APK',
+        'Downloaded file is not an APK archive',
+      );
+    }
+    return bytes;
   }
 
   void close() => _client.close();
 
-  Future<_NetworkBytes> _get(
+  /// 拉一份资源、**在候选循环内**把响应体解析成 [T]，GitHub 直链不通或镜像返回
+  /// 不可用内容时逐个换公共镜像（BUG-1875）。
+  ///
+  /// 仓库索引 / 扩展列表 / APK 几乎全在 GitHub raw / release 直链上，GFW 机器直连
+  /// `github.com` 会吃满 20s 连接超时然后整轮失败——而 app 早就有一份对这类直链有效
+  /// 的镜像名单（[gitHubMirrorCandidates]），只是这里从没用上。
+  ///
+  /// **判据是「内容可用」而不是「HTTP 层没抛」**：公共 gh 代理限流时的常见形态是
+  /// 200 + 一页 HTML。[parse] 在循环**内**跑，所以那种响应会被当场判死、换下一个
+  /// 候选；把解析留到 `_get` 返回之后（旧实现）等于「直连传输失败 → 镜像1 返 HTML →
+  /// 上层解析炸 → 整轮结束」，后面 4 个镜像一个都没试。
+  ///
+  /// **直连是权威**：直连只有 [isTransportFailure]（连不上 / 超时 / TLS）才轮到镜像；
+  /// 服务端已经答复的 `STORE_HTTP_404`、`TOO_MANY_REDIRECTS`、以及直连那份内容自己
+  /// 解析不出来，换镜像拿到的还是同一份，立即抛出。镜像是公共代理，对存在的资源乱返
+  /// 403/404/5xx/HTML 是常态，所以镜像的**任何**失败都只是「换下一个」。全部候选都
+  /// 失败时抛**直连**（首候选）的原始错误——碰巧排最后的死镜像的 host-lookup 失败对
+  /// 用户毫无诊断价值（与 update_checker 的 TODO-666 一致）。
+  ///
+  /// 302 每一跳都回到这里，所以 `github.com/.../raw/...` 302 到
+  /// `raw.githubusercontent.com` 之后那一跳同样享有回退；非 GitHub 域只有它自己一个候选。
+  Future<_Fetched<T>> _get<T>(
     Uri url, {
+    required T Function(Uint8List bytes) parse,
+    required _FetchBudget budget,
     int maxBytes = mihonStoreMaxBytes,
     String? etag,
     String? lastModified,
     bool allowNotModified = false,
     bool allowInsecure = false,
     int redirectCount = 0,
+  }) async {
+    Object? directError;
+    StackTrace? directStack;
+    final List<Uri> candidates = gitHubMirrorCandidates(url);
+    for (int index = 0; index < candidates.length; index++) {
+      final bool isDirect = index == 0;
+      // 总闸：整次公开操作（含索引链上每一跳、全部候选、重定向嵌套）共享同一份
+      // [budget]，过点即停不再换镜像。
+      if (!isDirect && budget.isExhausted) break;
+      try {
+        return await _getOnce<T>(
+          _validatedUri(
+            candidates[index].toString(),
+            allowInsecure: allowInsecure,
+          ),
+          parse: parse,
+          budget: budget,
+          maxBytes: maxBytes,
+          etag: etag,
+          lastModified: lastModified,
+          allowNotModified: allowNotModified,
+          allowInsecure: allowInsecure,
+          redirectCount: redirectCount,
+        );
+      } on Object catch (error, stack) {
+        if (isDirect) {
+          if (!isTransportFailure(error)) rethrow;
+          directError = error;
+          directStack = stack;
+        }
+      }
+    }
+    Error.throwWithStackTrace(directError!, directStack!);
+  }
+
+  Future<_Fetched<T>> _getOnce<T>(
+    Uri url, {
+    required T Function(Uint8List bytes) parse,
+    required _FetchBudget budget,
+    required int maxBytes,
+    required String? etag,
+    required String? lastModified,
+    required bool allowNotModified,
+    required bool allowInsecure,
+    required int redirectCount,
   }) async {
     final http.Request request = http.Request('GET', url);
     request.followRedirects = false;
@@ -315,7 +506,7 @@ class MihonExtensionStoreClient {
       request.headers[HttpHeaders.ifModifiedSinceHeader] = lastModified;
     }
     final http.StreamedResponse response =
-        await _client.send(request).timeout(const Duration(seconds: 30));
+        await _client.send(request).timeout(budget.capped(_kHeadersTimeout));
     if (<int>{
       HttpStatus.movedPermanently,
       HttpStatus.found,
@@ -343,8 +534,10 @@ class MihonExtensionStoreClient {
         allowInsecure: allowInsecure,
       );
       await response.stream.drain<void>();
-      return _get(
+      return _get<T>(
         redirected,
+        parse: parse,
+        budget: budget,
         maxBytes: maxBytes,
         etag: etag,
         lastModified: lastModified,
@@ -358,8 +551,8 @@ class MihonExtensionStoreClient {
       allowInsecure: allowInsecure,
     );
     if (allowNotModified && response.statusCode == HttpStatus.notModified) {
-      return _NetworkBytes(
-        Uint8List(0),
+      return _Fetched<T>(
+        value: null,
         etag: response.headers[HttpHeaders.etagHeader],
         lastModified: response.headers[HttpHeaders.lastModifiedHeader],
         notModified: true,
@@ -389,7 +582,11 @@ class MihonExtensionStoreClient {
     }
     final BytesBuilder builder = BytesBuilder(copy: false);
     int length = 0;
-    await for (final List<int> chunk in response.stream) {
+    // `Stream.timeout` 计的是**两个事件之间**的间隔：回了 200 就不再发字节的
+    // 公共代理会在 [bodyStallTimeout] 后抛 TimeoutException（= 传输失败 =
+    // 换下一个候选），而一个慢但一直在传的大文件永远不会被它掐断。
+    await for (final List<int> chunk
+        in response.stream.timeout(bodyStallTimeout)) {
       length += chunk.length;
       if (length > maxBytes) {
         throw MihonRuntimeException(
@@ -399,8 +596,8 @@ class MihonExtensionStoreClient {
       }
       builder.add(chunk);
     }
-    return _NetworkBytes(
-      builder.takeBytes(),
+    return _Fetched<T>(
+      value: parse(builder.takeBytes()),
       etag: response.headers[HttpHeaders.etagHeader],
       lastModified: response.headers[HttpHeaders.lastModifiedHeader],
     );
@@ -868,18 +1065,30 @@ class _LimitedByteSink extends ByteConversionSink {
   }
 }
 
-class _NetworkBytes {
-  const _NetworkBytes(
-    this.bytes, {
+/// 一次取数的结果：已解析好的 [value] 加条件请求要回写的校验器。
+///
+/// [value] 只在 `notModified` 时为 null——`304` 没有响应体可解析。
+class _Fetched<T> {
+  const _Fetched({
+    required this.value,
     this.etag,
     this.lastModified,
     this.notModified = false,
   });
 
-  final Uint8List bytes;
+  final T? value;
   final String? etag;
   final String? lastModified;
   final bool notModified;
+}
+
+/// 一份索引文档的解析结果：要么是可用的仓库，要么是「跟着走到下一份索引」。
+class _StoreDocument {
+  const _StoreDocument.store(MihonStore this.store) : nextIndexUrl = null;
+  const _StoreDocument.hop(Uri this.nextIndexUrl) : store = null;
+
+  final MihonStore? store;
+  final Uri? nextIndexUrl;
 }
 
 class _ProtoReader {

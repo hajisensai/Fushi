@@ -6,17 +6,36 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 const Duration kAidokuRuntimeTimeout = Duration(seconds: 90);
 const int kAidokuRuntimeOutputLimit = 32 * 1024 * 1024;
 
+/// 运行时错误码：源站返回了 Cloudflare 挑战页。[AidokuRuntimeException.challengeUrl]
+/// 给出被拦的那一页，UI 可以在 WebView 里打开它完成验证后重试（BUG-1876）。
+const String kAidokuCloudflareChallengeCode = 'CLOUDFLARE_CHALLENGE';
+
 class AidokuRuntimeException implements Exception {
-  const AidokuRuntimeException(this.code, this.message, {this.cause});
+  const AidokuRuntimeException(
+    this.code,
+    this.message, {
+    this.cause,
+    this.challengeUrl,
+    this.challengeUserAgent,
+  });
 
   final String code;
   final String message;
   final Object? cause;
+
+  /// 仅 [kAidokuCloudflareChallengeCode]：被 Cloudflare 拦下的请求 URL。
+  final Uri? challengeUrl;
+
+  /// 仅 [kAidokuCloudflareChallengeCode]：被拦那次请求实际发出的 User-Agent
+  /// （源可自设覆盖默认身份）。解题 WebView 必须用它，`cf_clearance` 才绑对
+  /// 身份；缺省时退回 [kAidokuUserAgent]。
+  final String? challengeUserAgent;
 
   @override
   String toString() => 'AidokuRuntimeException($code): $message';
@@ -124,7 +143,7 @@ abstract final class AidokuRuntimeFactory {
 
   static AidokuRuntime create() {
     if (Platform.isMacOS) return DesktopAidokuRuntime();
-    if (Platform.isIOS) return IosAidokuRuntime();
+    if (Platform.isIOS) return IosAidokuRuntime(jar: AidokuCookieJar.shared);
     throw const AidokuRuntimeException(
       'UNSUPPORTED_PLATFORM',
       'Aidoku extensions are currently supported on macOS and iOS',
@@ -133,9 +152,23 @@ abstract final class AidokuRuntimeFactory {
 }
 
 class IosAidokuRuntime implements AidokuRuntime {
-  IosAidokuRuntime({this.timeout = kAidokuRuntimeTimeout});
+  IosAidokuRuntime({
+    this.timeout = kAidokuRuntimeTimeout,
+    this.jar,
+    AidokuCloudflareResolver? resolver,
+  }) : _resolver = resolver;
 
   final Duration timeout;
+
+  /// 随每次调用送进 host 的 cookie / UA；null = 不带（旧行为，测试用）。
+  final AidokuCookieJar? jar;
+
+  /// 显式注入的解题器；未注入时每次调用读 [AidokuCloudflareGate.resolver]，
+  /// 这样 UI 装好 resolver 前创建的 runtime 也能用上它。
+  final AidokuCloudflareResolver? _resolver;
+
+  AidokuCloudflareResolver? get resolver =>
+      _resolver ?? AidokuCloudflareGate.resolver;
 
   @override
   Future<AidokuPackageInspection> inspect(String packagePath) async =>
@@ -213,10 +246,64 @@ class IosAidokuRuntime implements AidokuRuntime {
     return result;
   }
 
+  /// 一次调用 = 「带当前 cookie 调 host → 若被 Cloudflare 拦下且能解题 → 解完
+  /// 带新 cookie **重试一次**」。只重试一次：第二次仍被拦说明解题没拿到有效
+  /// `cf_clearance`（UA 不一致 / 用户没过验证），再循环只会无限弹 WebView。
+  ///
+  /// 弹解题页之前先看两道门：
+  /// 1. [AidokuCloudflareGate.suppressed]——后台批量流不弹页，错误按码上浮；
+  /// 2. jar 里该站的 `cf_clearance` 值是否已与**本次发出的**不同——并发调用
+  ///    排队期间别的调用可能已解完题，值变了就直接带新 cookie 重试。
   Future<Map<String, Object?>> _invoke(Map<String, Object?> request) async {
+    final AidokuCookieJar? jar = this.jar;
+    // cookie 是增强不是前提：jar 读不动（平台通道抖动 / 数据根不可达）时按无
+    // cookie 继续，本来无 cookie 也能搜的源不该给用户看 FileSystemException。
+    if (jar != null) await jar.ensureLoadedBestEffort();
+    final Map<String, Object?>? network = jar?.networkPayload();
+    try {
+      return await _invokeOnce(request, network);
+    } on AidokuRuntimeException catch (error) {
+      final Uri? challengeUrl = error.challengeUrl;
+      if (challengeUrl == null || jar == null) rethrow;
+      if (AidokuCloudflareGate.suppressed) rethrow;
+      final String? sentClearance = _clearanceIn(network, challengeUrl);
+      if (jar.clearanceValueFor(challengeUrl) != sentClearance) {
+        return _invokeOnce(request, jar.networkPayload());
+      }
+      final AidokuCloudflareResolver? resolver = this.resolver;
+      if (resolver == null) rethrow;
+      final String userAgent = error.challengeUserAgent ?? kAidokuUserAgent;
+      if (!await resolver(challengeUrl, userAgent)) rethrow;
+      return _invokeOnce(request, jar.networkPayload());
+    }
+  }
+
+  /// [network]（`networkPayload()` 快照）里对 [url] 生效的 `cf_clearance` 值。
+  static String? _clearanceIn(Map<String, Object?>? network, Uri url) {
+    final List<Object?> cookies =
+        network?['cookies'] as List<Object?>? ?? const <Object?>[];
+    for (final Object? item in cookies) {
+      if (item is! Map<String, Object?>) continue;
+      final AidokuCookie cookie = AidokuCookie.fromJson(item);
+      if (cookie.name == kCloudflareClearanceCookie &&
+          cookie.matchesHost(url.host)) {
+        return cookie.value;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, Object?>> _invokeOnce(
+    Map<String, Object?> request,
+    Map<String, Object?>? network,
+  ) async {
+    final Map<String, Object?> payload = <String, Object?>{
+      ...request,
+      if (network != null) 'network': network,
+    };
     try {
       final Object? response = await FushiChannels.aidokuRuntime
-          .invokeMethod<Object?>('invoke', request)
+          .invokeMethod<Object?>('invoke', payload)
           .timeout(timeout);
       return _object(response, 'response');
     } on TimeoutException catch (error) {
@@ -226,10 +313,14 @@ class IosAidokuRuntime implements AidokuRuntime {
         cause: error,
       );
     } on PlatformException catch (error) {
+      final bool challenged = error.code == kAidokuCloudflareChallengeCode;
       throw AidokuRuntimeException(
         error.code,
         error.message ?? 'Aidoku runtime failed',
         cause: error,
+        challengeUrl: challenged ? _challengeUrl(error.details) : null,
+        challengeUserAgent:
+            challenged ? _challengeUserAgent(error.details) : null,
       );
     } on MissingPluginException catch (error) {
       throw AidokuRuntimeException(
@@ -238,6 +329,23 @@ class IosAidokuRuntime implements AidokuRuntime {
         cause: error,
       );
     }
+  }
+
+  /// Swift 桥把 host 的错误信封整个塞进 `FlutterError.details`；只认 https 的
+  /// `challengeUrl`——解题 WebView 只该打开源站页面。
+  static Uri? _challengeUrl(Object? details) {
+    if (details is! Map<Object?, Object?>) return null;
+    final Uri? url = Uri.tryParse(details['challengeUrl']?.toString() ?? '');
+    if (url == null || !url.isScheme('https') || url.host.isEmpty) return null;
+    return url;
+  }
+
+  /// host 信封的 `challengeUserAgent`：被拦请求实际发出的 UA。缺省 null
+  /// （旧信封 / 默认身份），调用方退回 [kAidokuUserAgent]。
+  static String? _challengeUserAgent(Object? details) {
+    if (details is! Map<Object?, Object?>) return null;
+    final String value = details['challengeUserAgent']?.toString().trim() ?? '';
+    return value.isEmpty ? null : value;
   }
 
   static void _validatePage(int page) {

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
@@ -500,7 +501,8 @@ class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
 /// instead of an opaque `JsonParseError`. Turn that into an actionable line
 /// rather than dumping the exception's `toString()`.
 String aidokuErrorMessage(Object? error) {
-  if (error is AidokuRuntimeException && error.code == 'CLOUDFLARE_CHALLENGE') {
+  if (error is AidokuRuntimeException &&
+      error.code == kAidokuCloudflareChallengeCode) {
     return t.manga_source_cloudflare_blocked;
   }
   return '$error';
@@ -556,7 +558,7 @@ class _AidokuCover extends StatelessWidget {
       value,
       fit: BoxFit.cover,
       headers: <String, String>{
-        'User-Agent': kAidokuBrowserUserAgent,
+        'User-Agent': kAidokuUserAgent,
         if (referer != null) 'Referer': referer!,
       },
       errorBuilder: (_, __, ___) => const ColoredBox(

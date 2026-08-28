@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "Не удалось загрузить список библиотек",
   "video_filter_series": "Сериалы",
   "video_filter_series_in": "В сериале",
-  "video_filter_series_standalone": "Вне сериала"
+  "video_filter_series_standalone": "Вне сериала",
+  "manga_source_cloudflare_verify_title": "Проверка сайта",
+  "manga_source_cloudflare_verify_hint": "Пройдите проверку Cloudflare ниже. После её прохождения загрузка продолжится автоматически."
 }

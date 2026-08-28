@@ -64,6 +64,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi/src/media/video/external_video.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -679,6 +680,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
+    installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {

@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "Impossible de charger la liste des bibliothèques",
   "video_filter_series": "Séries",
   "video_filter_series_in": "Dans une série",
-  "video_filter_series_standalone": "Sans série"
+  "video_filter_series_standalone": "Sans série",
+  "manga_source_cloudflare_verify_title": "Vérification du site",
+  "manga_source_cloudflare_verify_hint": "Effectuez la vérification Cloudflare ci-dessous. Le chargement reprend automatiquement une fois validée."
 }

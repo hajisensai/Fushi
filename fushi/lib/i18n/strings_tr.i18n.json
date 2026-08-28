@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "Kitaplık listesi yüklenemedi",
   "video_filter_series": "Diziler",
   "video_filter_series_in": "Bir dizide",
-  "video_filter_series_standalone": "Dizide değil"
+  "video_filter_series_standalone": "Dizide değil",
+  "manga_source_cloudflare_verify_title": "Site doğrulaması",
+  "manga_source_cloudflare_verify_hint": "Aşağıdaki Cloudflare doğrulamasını tamamlayın. Doğrulama geçilince yükleme otomatik olarak sürer."
 }

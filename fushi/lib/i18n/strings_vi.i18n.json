@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "Không tải được danh sách thư viện",
   "video_filter_series": "Sê-ri",
   "video_filter_series_in": "Thuộc sê-ri",
-  "video_filter_series_standalone": "Không thuộc sê-ri"
+  "video_filter_series_standalone": "Không thuộc sê-ri",
+  "manga_source_cloudflare_verify_title": "Xác minh trang web",
+  "manga_source_cloudflare_verify_hint": "Hoàn tất kiểm tra Cloudflare bên dưới. Quá trình tải sẽ tự động tiếp tục sau khi vượt qua."
 }

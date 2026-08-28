@@ -3826,5 +3826,7 @@
   "jellyfin_libraries_load_failed": "讀取媒體庫清單失敗",
   "video_filter_series": "系列",
   "video_filter_series_in": "系列內",
-  "video_filter_series_standalone": "非系列"
+  "video_filter_series_standalone": "非系列",
+  "manga_source_cloudflare_verify_title": "網站驗證",
+  "manga_source_cloudflare_verify_hint": "請在下方完成 Cloudflare 驗證，通過後會自動繼續載入。"
 }

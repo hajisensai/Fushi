@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1773 条。点号进各自文件。
+> 共 1775 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -54,6 +54,8 @@
 | [BUG-1879](bugs/BUG-1879-download-category-in-backend-identity.md) | ✅ | ✅ | 改 qBittorrent 分类后全部在途下载任务卡死 needsAttention |
 | [BUG-1878](bugs/BUG-1878-lookup-popup-surface-forced-pure-white-black.md) | ✅ | ✅ | 查词弹窗底色被钉成纯白/纯黑，不跟随 MD3 主题 |
 | [BUG-1877](bugs/BUG-1877-cover-backfill-never-completes.md) | 🚧 | 🚧 | 封面回填永远跑不完：单条两次 ffmpeg 各 30s 上限 + 失败账本只在内存 + 每轮从头串行扫 |
+| [BUG-1876](bugs/BUG-1876-aidoku-ios-cloudflare-no-passthrough.md) | ✅ | ✅ | iOS Aidoku 源遇 Cloudflare 挑战无过盾能力只报 JsonParseError |
+| [BUG-1875](bugs/BUG-1875-mihon-store-github-no-mirror.md) | ✅ | ✅ | Mihon 扩展仓库索引拉取直连 GitHub 超时无镜像回退 |
 | [BUG-1874](bugs/BUG-1874-settings-downloads-open-page-subtitle-duplicate.md) | ✅ | ✅ | 「下载」设置分类里的下载页入口副标题也叫「下载设置」 |
 | [BUG-1873](bugs/BUG-1873-manga-discovery-loading-rows-bare-lines.md) | ✅ | ✅ | 漫画发现页来源热门行加载态是一排无标签的裸横线 |
 | [BUG-1872](bugs/BUG-1872-video-discovery-no-managed-source-snackbar.md) | ✅ | ✅ | 视频发现搜索资源/订阅在缺受管视频来源时只弹「暂无来源」snackbar |
