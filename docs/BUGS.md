@@ -35,9 +35,9 @@
 |---|:--:|:--:|---|
 | [BUG-1893](bugs/BUG-1893-storage-audiobook-size-missing-in-entries.md) | ✅ | ✅ | 存储页书籍条目不显示有声书音频大小 |
 | [BUG-1892](bugs/BUG-1892-galgame-attach-mode-no-play-session.md) | ✅ | ✅ | galgame 附着模式不记录游玩时长，停止捕获也不结算 |
-| [BUG-1891](bugs/BUG-1891-jellyfin-emby-full-library-enumeration.md) | 🚧 | 🚧 | Emby/Jellyfin 一进视频页就全库递归枚举且带 MediaSources 重字段 |
+| [BUG-1891](bugs/BUG-1891-jellyfin-emby-full-library-enumeration.md) | ✅ | ✅ | Emby/Jellyfin 一进视频页就全库递归枚举且带 MediaSources 重字段 |
 | [BUG-1890](bugs/BUG-1890-gal-hook-text-vertical-align-forced-center.md) | ✅ | ✅ | gal 台词浮窗文字放得下时被强制垂直居中，无法选择顶部对齐 |
-| [BUG-1889](bugs/BUG-1889-gal-hook-outline-8way-stamping-aliasing.md) | 🚧 | 🚧 | gal 台词浮窗描边是 8 向偏移叠印伪描边，边缘粗细不均有锯齿感 |
+| [BUG-1889](bugs/BUG-1889-gal-hook-outline-8way-stamping-aliasing.md) | ✅ | ✅ | gal 台词浮窗描边是 8 向偏移叠印伪描边，边缘粗细不均有锯齿感 |
 | [BUG-1888](bugs/BUG-1888-manga-top-chrome-no-hide.md) | ✅ | ✅ | 漫画阅读器顶栏无任何隐藏方式，也没有全屏入口 |
 | [BUG-1886](bugs/BUG-1886-global-fullscreen-gated-by-experimental-focus-nav.md) | ✅ | ✅ | F11 窗口全屏被实验性焦点导航开关门控，默认安装上按 F11 无反应 |
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
