@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "未標註",
   "game_library_downloading": "下載中",
   "game_library_download_queued": "排隊中",
-  "game_library_download_retrying": "重試中"
+  "game_library_download_retrying": "重試中",
+  "delete_disclosure_audio_source_files": "你導入時選擇的原始音頻檔案",
+  "delete_local_files": "同時刪除本機檔案",
+  "delete_local_files_video_desc": "影片檔案將從本機刪除，對應的下載工作一併清除，無法復原",
+  "delete_local_files_audio_desc": "原始音訊檔案將從本機刪除；書籍與字幕原檔保留，無法復原",
+  "delete_disclosure_book_source_kept": "你匯入時選擇的原始書籍與字幕檔案",
+  "download_task_delete_files_failed": "已下載的資料未能刪除：下載引擎沒有確認",
+  "delete_local_files_failed": "有 $n 個本機檔案刪除失敗，可能正在被使用"
 }

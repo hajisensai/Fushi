@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "미분류",
   "game_library_downloading": "다운로드 중",
   "game_library_download_queued": "대기 중",
-  "game_library_download_retrying": "재시도 중"
+  "game_library_download_retrying": "재시도 중",
+  "delete_disclosure_audio_source_files": "가져온 원본 오디오 파일",
+  "delete_local_files": "로컬 파일도 삭제",
+  "delete_local_files_video_desc": "이 기기에서 동영상 파일을 삭제하고 해당 다운로드 작업도 함께 지웁니다. 되돌릴 수 없습니다.",
+  "delete_local_files_audio_desc": "이 기기에서 원본 오디오 파일을 삭제합니다. 책과 자막 원본 파일은 그대로 둡니다. 되돌릴 수 없습니다.",
+  "delete_disclosure_book_source_kept": "가져온 원본 책 및 자막 파일",
+  "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
+  "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다"
 }

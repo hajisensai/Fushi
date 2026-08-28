@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "غير مصنّفة",
   "game_library_downloading": "جارٍ التحميل",
   "game_library_download_queued": "في قائمة الانتظار",
-  "game_library_download_retrying": "جارٍ إعادة المحاولة"
+  "game_library_download_retrying": "جارٍ إعادة المحاولة",
+  "delete_disclosure_audio_source_files": "ملفات الصوت الأصلية التي استوردتها",
+  "delete_local_files": "حذف الملفات المحلية أيضًا",
+  "delete_local_files_video_desc": "سيُحذف ملف الفيديو من هذا الجهاز، وستُزال مهمة التنزيل المقابلة أيضًا. لا يمكن التراجع عن ذلك.",
+  "delete_local_files_audio_desc": "ستُحذف ملفات الصوت الأصلية من هذا الجهاز، بينما تبقى ملفات الكتاب والترجمة الأصلية. لا يمكن التراجع عن ذلك.",
+  "delete_disclosure_book_source_kept": "ملفات الكتاب والترجمة الأصلية التي استوردتها",
+  "download_task_delete_files_failed": "تعذّر حذف البيانات المنزّلة؛ لم يؤكّد محرّك التنزيل ذلك",
+  "delete_local_files_failed": "تعذّر حذف $n من الملفات المحلية؛ قد تكون قيد الاستخدام"
 }

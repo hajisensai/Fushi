@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Ohne Kennzeichnung",
   "game_library_downloading": "Wird heruntergeladen",
   "game_library_download_queued": "In Warteschlange",
-  "game_library_download_retrying": "Erneuter Versuch"
+  "game_library_download_retrying": "Erneuter Versuch",
+  "delete_disclosure_audio_source_files": "Die Original-Audiodateien, die Sie importiert haben",
+  "delete_local_files": "Lokale Dateien ebenfalls löschen",
+  "delete_local_files_video_desc": "Die Videodatei wird von diesem Gerät entfernt und der zugehörige Download-Auftrag ebenfalls gelöscht. Das lässt sich nicht rückgängig machen.",
+  "delete_local_files_audio_desc": "Die ursprünglichen Audiodateien werden von diesem Gerät entfernt; die Original-Buch- und Untertiteldateien bleiben erhalten. Das lässt sich nicht rückgängig machen.",
+  "delete_disclosure_book_source_kept": "Die von dir importierten Original-Buch- und Untertiteldateien",
+  "download_task_delete_files_failed": "Die heruntergeladenen Daten konnten nicht gelöscht werden; der Download-Dienst hat es nicht bestätigt",
+  "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung"
 }

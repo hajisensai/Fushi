@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
@@ -24,6 +26,8 @@ import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
+    show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -1032,15 +1036,59 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     unawaited(ref.read(appProvider).animeDownloadService?.tick());
   }
 
+  /// 删除旧番剧计划：与 v78 任务面板同一确认框（正文 + 「同时删除已下载文件」）。
+  /// 以前这里没有确认框、也从不删文件；勾选后经后端 `removeTorrent(deleteFiles)` 删
+  /// 数据，并把已入库、指向这些文件的视频行一并清掉（否则库里留下一排打不开的壳）。
   Future<void> _deletePlan(AnimeDownloadPlan plan) async {
     final AppModel appModel = ref.read(appProvider);
     final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
     if (store == null) return;
     final AnimeDownloadService? service = appModel.animeDownloadService;
+    // 「同时删除已下载文件」只在真兑现得了时才摆出来：删数据只能由下载后端执行，
+    // 没有 service 或后端没配好时勾了也只会静默丢弃（与两个删除确认框里
+    // 「兑现不了就不显示」同一纪律）。
+    final bool canDeleteFiles = service != null &&
+        effectiveTorrentConfig(appModel.qbConnectionConfig).isConfigured;
+    final bool? deleteFiles = await showDownloadTaskDeleteConfirm(
+      context,
+      title: plan.seriesTitle.isNotEmpty ? plan.seriesTitle : plan.torrentTitle,
+      keySuffix: plan.id,
+      offerDeleteFiles: canDeleteFiles,
+    );
+    if (deleteFiles == null || !mounted) return;
     if (service == null) {
       await store.delete(plan.id);
     } else {
-      await service.deletePlan(plan.id);
+      final AnimeDownloadPlanDeleteResult result = await service.deletePlan(
+        plan.id,
+        deleteFiles: deleteFiles,
+        onFilesDeleted: (List<String> videoAbsolutePaths) async {
+          final VideoBookRepository repo =
+              VideoBookRepository(appModel.database);
+          bool any = false;
+          for (final String path in videoAbsolutePaths) {
+            final VideoBookRow? row = await repo.findByVideoPath(path);
+            if (row == null) continue;
+            await repo.deleteVideoBookAndReclaimAssets(
+              row.bookUid,
+              compactDatabase: false,
+            );
+            any = true;
+          }
+          if (any) {
+            await repo.compactAfterVideoDeleteBestEffort();
+            appModel.database.notifyVideoLibraryChanged();
+          }
+        },
+      );
+      // 勾了删文件却没删成（后端离线 / 摘种子失败）必须说出来：计划行已经消失，
+      // 用户不会再有第二次机会发现盘上的数据还在。
+      if (deleteFiles && !result.filesDeleted && mounted) {
+        FushiToast.show(
+          msg: t.download_task_delete_files_failed,
+          severity: ToastSeverity.warning,
+        );
+      }
     }
     await _reloadPlans();
   }

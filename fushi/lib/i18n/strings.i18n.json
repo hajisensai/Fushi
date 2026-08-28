@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Unlabelled",
   "game_library_downloading": "Downloading",
   "game_library_download_queued": "Queued",
-  "game_library_download_retrying": "Retrying"
+  "game_library_download_retrying": "Retrying",
+  "delete_disclosure_audio_source_files": "The original audio files you imported",
+  "delete_local_files": "Also delete local files",
+  "delete_local_files_video_desc": "The video file is removed from this device and its download task is cleared too. This cannot be undone.",
+  "delete_local_files_audio_desc": "The original audio files are removed from this device; book and subtitle originals are kept. This cannot be undone.",
+  "delete_disclosure_book_source_kept": "The original book and subtitle files you imported",
+  "download_task_delete_files_failed": "The downloaded data could not be deleted; the download backend did not confirm it",
+  "delete_local_files_failed": "Could not delete $n local file(s); they may still be in use"
 }

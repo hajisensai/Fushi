@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Tanpa label",
   "game_library_downloading": "Mengunduh",
   "game_library_download_queued": "Diantrikan",
-  "game_library_download_retrying": "Mencoba ulang"
+  "game_library_download_retrying": "Mencoba ulang",
+  "delete_disclosure_audio_source_files": "File audio asli yang Anda impor",
+  "delete_local_files": "Hapus juga berkas lokal",
+  "delete_local_files_video_desc": "Berkas video dihapus dari perangkat ini beserta tugas unduhannya. Tindakan ini tidak dapat dibatalkan.",
+  "delete_local_files_audio_desc": "Berkas audio asli dihapus dari perangkat ini; berkas buku dan takarir asli tetap disimpan. Tindakan ini tidak dapat dibatalkan.",
+  "delete_disclosure_book_source_kept": "Berkas buku dan takarir asli yang kamu impor",
+  "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
+  "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan"
 }

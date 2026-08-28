@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Без метки",
   "game_library_downloading": "Загрузка",
   "game_library_download_queued": "В очереди",
-  "game_library_download_retrying": "Повторная попытка"
+  "game_library_download_retrying": "Повторная попытка",
+  "delete_disclosure_audio_source_files": "Оригинальные аудиофайлы, которые вы импортировали",
+  "delete_local_files": "Также удалить локальные файлы",
+  "delete_local_files_video_desc": "Видеофайл будет удалён с этого устройства, а связанная задача загрузки — очищена. Отменить это нельзя.",
+  "delete_local_files_audio_desc": "Исходные аудиофайлы будут удалены с этого устройства; исходные файлы книги и субтитров останутся. Отменить это нельзя.",
+  "delete_disclosure_book_source_kept": "Импортированные вами исходные файлы книги и субтитров",
+  "download_task_delete_files_failed": "Не удалось удалить загруженные данные: движок загрузок не подтвердил операцию",
+  "delete_local_files_failed": "Не удалось удалить локальные файлы ($n); возможно, они ещё используются"
 }

@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Chưa gắn nhãn",
   "game_library_downloading": "Đang tải xuống",
   "game_library_download_queued": "Đang chờ",
-  "game_library_download_retrying": "Đang thử lại"
+  "game_library_download_retrying": "Đang thử lại",
+  "delete_disclosure_audio_source_files": "Các tệp âm thanh gốc bạn đã nhập",
+  "delete_local_files": "Xoá cả tệp trên máy",
+  "delete_local_files_video_desc": "Tệp video sẽ bị xoá khỏi thiết bị này, đồng thời xoá cả tác vụ tải xuống tương ứng. Không thể hoàn tác.",
+  "delete_local_files_audio_desc": "Các tệp âm thanh gốc sẽ bị xoá khỏi thiết bị này; tệp sách và phụ đề gốc vẫn được giữ. Không thể hoàn tác.",
+  "delete_disclosure_book_source_kept": "Tệp sách và phụ đề gốc bạn đã nhập",
+  "download_task_delete_files_failed": "Không thể xoá dữ liệu đã tải; công cụ tải xuống không xác nhận",
+  "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng"
 }

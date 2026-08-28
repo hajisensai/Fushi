@@ -1253,7 +1253,7 @@ void main() {
         expect(saved.importedEarly, isTrue);
         expect(saved.failReason, contains('error'));
 
-        expect(await service.deletePlan(_kHash), isTrue);
+        expect((await service.deletePlan(_kHash)).planRemoved, isTrue);
         expect(await store.loadAll(), isEmpty);
         expect(qb.deleteRequests, 1);
         await service.tick();
@@ -1271,7 +1271,7 @@ void main() {
 
         final Future<void> staleTick = service.tick();
         await infoStarted.future;
-        expect(await service.deletePlan(_kHash), isTrue);
+        expect((await service.deletePlan(_kHash)).planRemoved, isTrue);
         expect(await store.loadAll(), isEmpty);
 
         releaseInfo.complete();

@@ -150,10 +150,16 @@ final epubBookUidByKeyProvider =
 /// 状。[failureReason] 在失败时携带面向诊断的原因（同一原因已写入
 /// `ErrorLogService`），供调用方在 toast 里一并展示。
 class DeleteBookResult {
-  const DeleteBookResult._(this.deleted, this.failureReason);
+  const DeleteBookResult._(
+    this.deleted,
+    this.failureReason, [
+    this.localFiles = const LocalFileDeleteReport(),
+  ]);
 
   /// 成功删除（DB 行已删）。磁盘副本清理失败不影响成功判定，只记日志。
-  const DeleteBookResult.success() : this._(true, null);
+  const DeleteBookResult.success({
+    LocalFileDeleteReport localFiles = const LocalFileDeleteReport(),
+  }) : this._(true, null, localFiles);
 
   /// 删除失败，[reason] 是面向诊断的原因（已写入 ErrorLogService）。
   const DeleteBookResult.failure(String reason) : this._(false, reason);
@@ -163,6 +169,10 @@ class DeleteBookResult {
 
   /// 失败原因；[deleted] 为 true 时恒为 null。
   final String? failureReason;
+
+  /// 「同时删除本地文件」的逐条结果（没勾选时恒为空）。删除本身成功、原件却一个
+  /// 都没删掉（正在播放、句柄占用）是必须让用户看见的状态，不能混进 [deleted]。
+  final LocalFileDeleteReport localFiles;
 }
 
 /// 阅读器媒体源的**持久化身份键**（DB pref 前缀 `src:reader_fushi:`、
@@ -860,13 +870,25 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
   /// 复活墓碑（[FushiDatabase.deleteEpubBook] 的 tombstone:true）与 scope 无关，永远记
   /// （用户在本机删的东西，导入自己的旧备份不该复活）。
+  /// [deleteLocalFiles]（默认 false，对应删除弹窗「同时删除本地文件」）：true 时连
+  /// 这本书附带的有声书 / 配对字幕书**显式登记的原始音频文件**一起删。书本体
+  /// （EPUB / PDF / 漫画）导入即拷贝进 app 目录、原件路径根本没入库，没有可删的
+  /// 原件——这就是 [hasLocalFiles] 只看音频列的原因，也是「同时删除本地文件」这条
+  /// 披露只讲音频的原因。
   Future<DeleteBookResult> deleteBook({
     required FushiDatabase db,
     required String bookKey,
     AppModel? appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool deleteLocalFiles = false,
   }) async {
     try {
+      // 原件位置在 audiobooks / srt_books 行上，deleteEpubBook 的事务会把它们
+      // 级联删掉，必须先快照。
+      final Audiobook? audiobookBefore = deleteLocalFiles
+          ? await AudiobookRepository(db).findByBookKey(bookKey)
+          : null;
+      LocalFileDeleteReport localFileReport = const LocalFileDeleteReport();
       // HBK-AUDIT-041: db.deleteEpubBook removes every associated DB row
       // (readerPositions, bookmarks, srtBooks, audioCues, audiobooks for the
       // same bookKey) inside one transaction. Previously deleteBook ALSO
@@ -931,6 +953,27 @@ class ReaderFushiSource extends ReaderMediaSource {
         if (bookRow != null) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
+        // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次删到的
+        // 已不存在，[deleteLocalFiles] 既不计入 removed 也不计入 failures。
+        if (deleteLocalFiles) {
+          if (audiobookBefore != null) {
+            localFileReport = localFileReport.merge(
+              await deleteAudiobookLocalFiles(audiobookBefore.audioPaths),
+            );
+          }
+          if (srt != null) {
+            localFileReport = localFileReport.merge(
+              await deleteAudiobookLocalFiles(srt.audioPaths),
+            );
+          }
+          for (final LocalFileDeleteFailure failure
+              in localFileReport.failures) {
+            ErrorLogService.instance.log(
+              'ReaderFushiSource.deleteBook.localFiles',
+              failure,
+            );
+          }
+        }
 
         // HBK-AUDIT-040: these books are created with canDelete:false, so the
         // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
@@ -974,7 +1017,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
       if (deletedRows > 0 || srt != null) {
-        return const DeleteBookResult.success();
+        return DeleteBookResult.success(localFiles: localFileReport);
       }
       final String reason = 'DB 删除未移除任何行（bookKey="$bookKey"，deletedRows=0）';
       ErrorLogService.instance
@@ -986,6 +1029,22 @@ class ReaderFushiSource extends ReaderMediaSource {
       debugPrint('[ReaderFushiSource] deleteBook failed: $e');
       return DeleteBookResult.failure(e.toString());
     }
+  }
+
+  /// 这本书（按 [bookKey]）有没有本机可删的原件——删除确认框据此决定摆不摆
+  /// 「同时删除本地文件」勾选框。只看附带有声书 / 配对字幕书**显式登记在 app 持久
+  /// 目录之外**的原始音频（见 [deleteBook] 与 `audiobook_local_files.dart`）。
+  Future<bool> hasLocalFiles({
+    required FushiDatabase db,
+    required String bookKey,
+  }) async {
+    if (bookKey.isEmpty) return false;
+    final Audiobook? ab = await AudiobookRepository(db).findByBookKey(bookKey);
+    if (ab != null && await resolveAudiobookHasLocalFiles(ab.audioPaths)) {
+      return true;
+    }
+    final SrtBook? srt = await SrtBookRepository(db).findByBookKey(bookKey);
+    return srt != null && await resolveAudiobookHasLocalFiles(srt.audioPaths);
   }
 
   // ── Settings (same keys as ReaderTtuSource for seamless migration) ──

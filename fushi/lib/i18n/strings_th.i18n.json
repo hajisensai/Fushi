@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "ไม่ได้ระบุ",
   "game_library_downloading": "กำลังดาวน์โหลด",
   "game_library_download_queued": "อยู่ในคิว",
-  "game_library_download_retrying": "กำลังลองใหม่"
+  "game_library_download_retrying": "กำลังลองใหม่",
+  "delete_disclosure_audio_source_files": "ไฟล์เสียงต้นฉบับที่คุณนำเข้า",
+  "delete_local_files": "ลบไฟล์ในเครื่องด้วย",
+  "delete_local_files_video_desc": "ไฟล์วิดีโอจะถูกลบออกจากอุปกรณ์นี้ พร้อมกับงานดาวน์โหลดที่เกี่ยวข้อง และไม่สามารถกู้คืนได้",
+  "delete_local_files_audio_desc": "ไฟล์เสียงต้นฉบับจะถูกลบออกจากอุปกรณ์นี้ ส่วนไฟล์หนังสือและคำบรรยายต้นฉบับจะยังอยู่ และไม่สามารถกู้คืนได้",
+  "delete_disclosure_book_source_kept": "ไฟล์หนังสือและคำบรรยายต้นฉบับที่คุณนำเข้า",
+  "download_task_delete_files_failed": "ลบข้อมูลที่ดาวน์โหลดไว้ไม่สำเร็จ เพราะตัวจัดการดาวน์โหลดไม่ยืนยัน",
+  "delete_local_files_failed": "ลบไฟล์ในเครื่องไม่สำเร็จ $n ไฟล์ อาจกำลังถูกใช้งานอยู่"
 }

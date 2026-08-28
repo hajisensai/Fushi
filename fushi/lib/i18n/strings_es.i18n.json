@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Sin etiquetar",
   "game_library_downloading": "Descargando",
   "game_library_download_queued": "En cola",
-  "game_library_download_retrying": "Reintentando"
+  "game_library_download_retrying": "Reintentando",
+  "delete_disclosure_audio_source_files": "Los archivos de audio originales que importó",
+  "delete_local_files": "Eliminar también los archivos locales",
+  "delete_local_files_video_desc": "El archivo de vídeo se elimina de este dispositivo y su tarea de descarga también. Esto no se puede deshacer.",
+  "delete_local_files_audio_desc": "Los archivos de audio originales se eliminan de este dispositivo; los archivos originales del libro y los subtítulos se conservan. Esto no se puede deshacer.",
+  "delete_disclosure_book_source_kept": "Los archivos originales del libro y los subtítulos que importaste",
+  "download_task_delete_files_failed": "No se pudieron eliminar los datos descargados; el motor de descargas no lo confirmó",
+  "delete_local_files_failed": "No se pudieron eliminar $n archivo(s) local(es); puede que sigan en uso"
 }

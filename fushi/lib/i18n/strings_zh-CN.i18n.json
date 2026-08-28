@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "未标注",
   "game_library_downloading": "下载中",
   "game_library_download_queued": "排队中",
-  "game_library_download_retrying": "重试中"
+  "game_library_download_retrying": "重试中",
+  "delete_disclosure_audio_source_files": "你导入时选择的原始音频文件",
+  "delete_local_files": "同时删除本地文件",
+  "delete_local_files_video_desc": "视频文件将从本设备删除，对应的下载任务一并清除，无法恢复",
+  "delete_local_files_audio_desc": "原始音频文件将从本设备删除；书籍与字幕原件保留，无法恢复",
+  "delete_disclosure_book_source_kept": "你导入时选择的原始书籍与字幕文件",
+  "download_task_delete_files_failed": "已下载的数据未能删除：下载后端没有确认",
+  "delete_local_files_failed": "有 $n 个本地文件删除失败，可能正在被使用"
 }

@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Non étiquetés",
   "game_library_downloading": "Téléchargement",
   "game_library_download_queued": "En file d'attente",
-  "game_library_download_retrying": "Nouvelle tentative"
+  "game_library_download_retrying": "Nouvelle tentative",
+  "delete_disclosure_audio_source_files": "Les fichiers audio originaux que vous avez importés",
+  "delete_local_files": "Supprimer aussi les fichiers locaux",
+  "delete_local_files_video_desc": "Le fichier vidéo est supprimé de cet appareil, ainsi que sa tâche de téléchargement. Cette action est irréversible.",
+  "delete_local_files_audio_desc": "Les fichiers audio d'origine sont supprimés de cet appareil ; les fichiers du livre et des sous-titres d'origine sont conservés. Cette action est irréversible.",
+  "delete_disclosure_book_source_kept": "Les fichiers d'origine du livre et des sous-titres que vous avez importés",
+  "download_task_delete_files_failed": "Impossible de supprimer les données téléchargées ; le moteur de téléchargement ne l'a pas confirmé",
+  "delete_local_files_failed": "Impossible de supprimer $n fichier(s) local(aux) ; ils sont peut-être encore utilisés"
 }

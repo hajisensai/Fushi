@@ -467,6 +467,138 @@ Future<void> deletePersistedVideoDownloadJob({
   }
 }
 
+/// 任务与库行之间没有 id 级外键，唯一纽带是
+/// `VideoDownloadJobFiles.finalAbsolutePath`。归一走 [platformPathKey]（绝对化 +
+/// Windows 折大小写），**不用** `normalizeVideoPath`——后者不折大小写，Windows 上
+/// `D:\x\a.mkv` 与 `d:\x\a.mkv` 会漏命中。
+List<VideoDownloadJobFileRow> _jobFilesMatching(
+  List<VideoDownloadJobFileRow> files,
+  Set<String> pathKeys,
+) =>
+    <VideoDownloadJobFileRow>[
+      for (final VideoDownloadJobFileRow file in files)
+        if ((file.finalAbsolutePath?.trim().isNotEmpty ?? false) &&
+            pathKeys.contains(platformPathKey(file.finalAbsolutePath!.trim())))
+          file,
+    ];
+
+/// 库侧「同时删除本地文件」**删磁盘之前**必须先跑这一步：把即将消失的
+/// [candidatePaths] 在下载后端标成不下载（[TorrentFilePriority.skip]）。
+///
+/// 顺序不能反。种子还在后端做种时，文件先消失、后端还按 normal 优先级期待它，
+/// 下一次校验就把整个种子停掉，同一种子里别的集跟着断。先 skip 再删，中间那一
+/// 瞬间后端本来就已经不再期待这个文件。
+///
+/// best-effort：后端离线 / 不支持文件优先级 / 种子已不在，都只记日志不阻塞删除
+/// ——但**不再静默**：以前 `on Object { return false; }` 把所有失败吃掉，用户和
+/// 日志两头都看不到「skip 没设上，一会儿种子要停」。
+Future<void> prepareVideoDownloadJobsForLocalDelete({
+  required FushiDatabase database,
+  required Iterable<String> candidatePaths,
+  VideoDownloadPipelineService? pipeline,
+}) async {
+  if (pipeline == null) return;
+  final Set<String> keys = <String>{
+    for (final String path in candidatePaths) platformPathKey(path),
+  };
+  if (keys.isEmpty) return;
+  for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
+    final List<VideoDownloadJobFileRow> hit = _jobFilesMatching(
+      await database.getVideoDownloadJobFiles(job.jobId),
+      keys,
+    );
+    for (final VideoDownloadJobFileRow file in hit) {
+      if (file.backendFileIndex == null) continue;
+      await pipeline.skipBackendFile(job, file.backendFileIndex!);
+    }
+  }
+}
+
+/// 库侧删视频且用户勾了「同时删除本地文件」后，把已从磁盘消失的 [deletedPaths]
+/// 对账回下载任务——这是 [deletePersistedVideoDownloadJob]（任务侧删 → 联动删库行）
+/// 的反方向。
+///
+/// 命中的任务分两档，判据是**归属**而不是存在性检查：
+/// - **这个任务记录过的 kind=video 文件被本次删除全部覆盖**（且任务已终态）→ 任务
+///   已经没有任何视频产物，删任务行 + 删本任务显式记录过的其余文件（字幕/附件），
+///   并**只摘种子、不让下载引擎删数据**（`deleteBackendPayload: false`）：引擎删的
+///   是它自己记账的整个 save_path，范围远超本任务记录过的文件。
+/// - 否则（只删了部分集 / 有 video 行没记路径 / 任务还在跑）→ 任务保留，只把命中
+///   的文件行标 `skipped`，任务页不再把它当已入库文件展示。
+///
+/// 以前这里拿「其它集的 DB 路径 `File.exists()`」当判据：用户改名、移动、换盘符、
+/// qB 改保存路径，判据就翻成「别的视频都没了」，删一集连带整个种子在磁盘上还好好
+/// 的其它集一起被删；`finalAbsolutePath` 为空的行被 `continue` 当成「不存在」，是
+/// 同方向的第二个洞。归属判据只看这个任务自己记过什么，不问磁盘。
+///
+/// 全程 best-effort：任务对账失败只记 ErrorLog，视频与文件早已删掉，不回滚。
+Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
+  required FushiDatabase database,
+  required Set<String> deletedPaths,
+  VideoDownloadPipelineService? pipeline,
+}) async {
+  if (deletedPaths.isEmpty) return;
+  final Set<String> deletedKeys = <String>{
+    for (final String path in deletedPaths) platformPathKey(path),
+  };
+  for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
+    final List<VideoDownloadJobFileRow> files =
+        await database.getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobFileRow> hit = _jobFilesMatching(
+      files,
+      deletedKeys,
+    );
+    if (hit.isEmpty) continue;
+    final bool terminal =
+        job.lifecycle == VideoDownloadJobLifecycle.completed ||
+            job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
+            job.lifecycle == VideoDownloadJobLifecycle.failed;
+    final Set<int> hitIds = <int>{for (final f in hit) f.id};
+    final List<VideoDownloadJobFileRow> videoRows = <VideoDownloadJobFileRow>[
+      for (final VideoDownloadJobFileRow file in files)
+        if (file.kind == 'video') file,
+    ];
+    // 「这个任务的视频产物全没了」= 它记过的每一条 video 行都在本次删除里。没记
+    // 路径的 video 行不算被覆盖——判不出它指向哪，就不能拿它当整删的依据。
+    final bool allVideoRowsDeleted = videoRows.isNotEmpty &&
+        videoRows.every((VideoDownloadJobFileRow f) => hitIds.contains(f.id));
+    try {
+      if (terminal && allVideoRowsDeleted) {
+        if (pipeline != null) {
+          await pipeline.deleteJob(
+            job.jobId,
+            deleteFiles: true,
+            deleteBackendPayload: false,
+          );
+        } else {
+          await deletePersistedVideoDownloadJob(
+            database: database,
+            job: job,
+            deleteFiles: true,
+          );
+        }
+      } else {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        for (final VideoDownloadJobFileRow file in hit) {
+          await database.updateVideoDownloadJobFile(
+            file.id,
+            VideoDownloadJobFilesCompanion(
+              status: const Value<String>(VideoDownloadJobFileStatus.skipped),
+              updatedAt: Value<int>(now),
+            ),
+          );
+        }
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'VideoDownloadJobReconcile',
+        'Failed to reconcile job ${job.jobId} after local delete: $error',
+        stack,
+      );
+    }
+  }
+}
+
 typedef VideoDownloadBackendResolver = Future<VideoDownloadBackendBinding?>
     Function(VideoDownloadJobRow job);
 
@@ -1139,9 +1271,55 @@ class VideoDownloadPipelineService {
     );
   }
 
+  /// 把 [job] 在后端的第 [fileIndex] 个文件标为不下载（[TorrentFilePriority.skip]）。
+  /// 库侧删这一集的本地文件**之前**调用（见
+  /// [prepareVideoDownloadJobsForLocalDelete]）：种子仍在后端时，缺失的文件若还是
+  /// normal 优先级，下一次校验就会让整个种子报错停掉。
+  ///
+  /// best-effort：后端离线 / 不支持文件优先级 / 种子已不在都返回 false，但**失败
+  /// 会记 ErrorLog**——静默返回 false 意味着「skip 没设上、一会儿种子要停」这件事
+  /// 在日志里也查不到。
+  Future<bool> skipBackendFile(VideoDownloadJobRow job, int fileIndex) async {
+    final String torrentId =
+        (job.backendTaskId ?? job.torrentHash ?? '').trim();
+    if (torrentId.isEmpty) return false;
+    try {
+      final VideoDownloadBackendBinding? binding = await backendResolver(job);
+      _validateBackendBinding(job, binding);
+      final TorrentBackend backend = binding!.backend;
+      if (backend is! TorrentDetailBackend || !backend.detailAvailable) {
+        return false;
+      }
+      return await backend.setFilePriority(
+        torrentId,
+        fileIndex,
+        TorrentFilePriority.skip,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'VideoDownloadSkipBackendFile',
+        'Failed to skip file $fileIndex of job ${job.jobId}: $error',
+        stack,
+      );
+      return false;
+    }
+  }
+
   /// Removes a durable task and, when requested, only the files that this task
   /// explicitly recorded. Directories are never recursively removed here.
-  Future<void> deleteJob(String jobId, {required bool deleteFiles}) async {
+  ///
+  /// [deleteFiles]：删本任务 DB 里显式记录过的文件（视频 / 字幕 / 附件）。
+  /// [deleteBackendPayload]：是否**同时**让下载引擎删掉它自己记账的整个种子数据
+  /// （`removeTorrent(deleteFiles: true)`）。两者分开的原因是范围不同：引擎删的是
+  /// 整个 save_path 下的全部内容，远超本任务记录过的文件。任务面板「删除任务 + 同
+  /// 时删除已下载文件」要的就是整份数据（默认 true）；库侧「我删了这一集的本地
+  /// 文件」对账过来时必须传 false，否则删一集会把磁盘上还好好的其它集一起带走。
+  /// [deleteFiles] 为 false 时本参数无意义（种子只摘不删数据）。
+  Future<void> deleteJob(
+    String jobId, {
+    required bool deleteFiles,
+    bool deleteBackendPayload = true,
+  }) async {
     VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
     if (job == null) return;
     if (job.lifecycle != VideoDownloadJobLifecycle.completed &&
@@ -1178,7 +1356,10 @@ class VideoDownloadPipelineService {
         _validateBackendBinding(job, binding);
         final TorrentBackend backend = binding!.backend;
         if (backend is TorrentRemovalBackend) {
-          await backend.removeTorrent(torrentId, deleteFiles: deleteFiles);
+          await backend.removeTorrent(
+            torrentId,
+            deleteFiles: deleteFiles && deleteBackendPayload,
+          );
         }
       } on Object {
         // A stale/offline backend must not make a durable UI row impossible to

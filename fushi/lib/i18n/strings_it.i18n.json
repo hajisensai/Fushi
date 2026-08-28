@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Senza etichetta",
   "game_library_downloading": "Download in corso",
   "game_library_download_queued": "In coda",
-  "game_library_download_retrying": "Nuovo tentativo"
+  "game_library_download_retrying": "Nuovo tentativo",
+  "delete_disclosure_audio_source_files": "I file audio originali importati",
+  "delete_local_files": "Elimina anche i file locali",
+  "delete_local_files_video_desc": "Il file video viene rimosso da questo dispositivo, insieme al relativo processo di download. L'operazione non è reversibile.",
+  "delete_local_files_audio_desc": "I file audio originali vengono rimossi da questo dispositivo; i file originali del libro e dei sottotitoli restano. L'operazione non è reversibile.",
+  "delete_disclosure_book_source_kept": "I file originali del libro e dei sottotitoli che hai importato",
+  "download_task_delete_files_failed": "Non è stato possibile eliminare i dati scaricati; il motore di download non lo ha confermato",
+  "delete_local_files_failed": "Impossibile eliminare $n file locali; potrebbero essere ancora in uso"
 }

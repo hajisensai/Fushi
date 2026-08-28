@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Etiketsiz",
   "game_library_downloading": "İndiriliyor",
   "game_library_download_queued": "Sırada",
-  "game_library_download_retrying": "Yeniden deneniyor"
+  "game_library_download_retrying": "Yeniden deneniyor",
+  "delete_disclosure_audio_source_files": "İçe aktardığınız orijinal ses dosyaları",
+  "delete_local_files": "Yerel dosyaları da sil",
+  "delete_local_files_video_desc": "Video dosyası bu cihazdan silinir ve ilgili indirme görevi de temizlenir. Bu geri alınamaz.",
+  "delete_local_files_audio_desc": "Özgün ses dosyaları bu cihazdan silinir; kitap ve altyazı asılları korunur. Bu geri alınamaz.",
+  "delete_disclosure_book_source_kept": "İçe aktardığın özgün kitap ve altyazı dosyaları",
+  "download_task_delete_files_failed": "İndirilen veriler silinemedi; indirme motoru bunu onaylamadı",
+  "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir"
 }

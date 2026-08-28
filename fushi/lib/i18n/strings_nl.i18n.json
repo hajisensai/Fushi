@@ -3855,5 +3855,12 @@
   "discovery_game_type_unlabelled": "Zonder label",
   "game_library_downloading": "Downloaden",
   "game_library_download_queued": "In wachtrij",
-  "game_library_download_retrying": "Opnieuw proberen"
+  "game_library_download_retrying": "Opnieuw proberen",
+  "delete_disclosure_audio_source_files": "De originele audiobestanden die je importeerde",
+  "delete_local_files": "Ook lokale bestanden verwijderen",
+  "delete_local_files_video_desc": "Het videobestand wordt van dit apparaat verwijderd en de bijbehorende downloadtaak ook. Dit kan niet ongedaan worden gemaakt.",
+  "delete_local_files_audio_desc": "De oorspronkelijke audiobestanden worden van dit apparaat verwijderd; de originele boek- en ondertitelbestanden blijven staan. Dit kan niet ongedaan worden gemaakt.",
+  "delete_disclosure_book_source_kept": "De originele boek- en ondertitelbestanden die je hebt geïmporteerd",
+  "download_task_delete_files_failed": "De gedownloade gegevens konden niet worden verwijderd; de downloadengine bevestigde dit niet",
+  "delete_local_files_failed": "$n lokale bestand(en) konden niet worden verwijderd; ze zijn mogelijk nog in gebruik"
 }
