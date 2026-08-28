@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1758 条。点号进各自文件。
+> 共 1759 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1894](bugs/BUG-1894-theme-edit-button-duplicates-new.md) | ✅ | ✅ | 主题行铅笔按钮在无活跃自定义主题时退化成第二个新建入口 |
+| [BUG-1887](bugs/BUG-1887-windows-location-in-use.md) | ✅ | ✅ | Windows 显示 Fushi 正在使用定位（permission_handler_windows 启动即开定位会话） |
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
 | [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
 | [BUG-1881](bugs/BUG-1881-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
