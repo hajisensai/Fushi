@@ -22,7 +22,9 @@
 
   // enabled 由扩展 options 的 netflixSubtitlePanel 开关驱动（默认 false）。
   var st = {
-    activeLang: null, videoId: null, cues: [], currentIndex: -1,
+    // videoId 初始值是 '' 而非 null：与 videoKey() 的非空字符串契约同型，
+    // 首次 tick 仍会因 '' !== <真实 key> 而触发一次 refreshHeadless（语义不变）。
+    activeLang: null, videoId: '', cues: [], currentIndex: -1,
     tickTimer: null, enabled: false,
     overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
     overlayEl: null, overlayCue: null, dropHint: null,
@@ -76,7 +78,14 @@
   // 契约）。契约缺失（加载顺序异常/单测隔离）时本地回落同构实现。
   function videoKey() {
     try {
-      if (typeof window.fushiVideoKey === 'function') return window.fushiVideoKey();
+      if (typeof window.fushiVideoKey === 'function') {
+        // 契约：videoKey() 永远返回非空字符串。返回值会直接拼进轨 key
+        // （`${videoKey}|${lang}`），漏出 undefined/'' 就会生成 "undefined|ja" 这种脏 key；
+        // 而身份比较（videoKey() !== st.videoId）会因两侧类型不同而永远判「换了视频」。
+        // 上游给不出有效值时落回下面的通用回落，不把脏值传出去。
+        var k = window.fushiVideoKey();
+        if (typeof k === 'string' && k) return k;
+      }
     } catch (_) {}
     var m = (location.pathname || '').match(/\/watch\/(\d+)/);
     if (/(^|\.)netflix\.com$/.test(location.hostname) && m) return m[1];

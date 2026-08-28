@@ -282,3 +282,36 @@ test('在设置页开关经 storage.onChanged 实时生效，无需刷新页面'
   w.tick();
   assert.ok(w.styleText(), '改设置后当前页面应立刻进入替代模式');
 });
+
+test('videoKey 契约：上游给不出有效 key 时落回 host+path，不外泄 undefined', () => {
+  // 为什么钉这条：videoKey() 的返回值有两个消费面——① 直接拼进轨 key
+  // (`${videoKey}|${lang}`)，漏出 undefined 会生成 "undefined|English" 这种永远命不中的脏
+  // key；② 身份比较 videoKey() !== st.videoId，两侧类型一旦不同就会每 200ms 都判「换了
+  // 视频」并空转 refreshHeadless。上游 window.fushiVideoKey 是跨文件全局（video-shortcuts.js
+  // 那边也早就用 String() 兜过它），面板这侧不能假定它一定给字符串。
+  const w = loadWorld({ subtitleReplaceNative: true });
+  w.sandbox.window.fushiVideoKey = () => undefined;
+
+  const fallbackKey = 'www.youtube.com/watch';
+  w.sandbox.window.fushiEpisodeCues[fallbackKey + '|English'] = CUES;
+  w.sandbox.window.fushiSubtitlePanelOnCues(fallbackKey + '|English');
+  w.tick();
+
+  const overlay = w.overlayEl();
+  assert.ok(overlay,
+    '上游给不出 key 时必须落回 host+path 继续选轨，而不是拿 undefined 去拼一把命不中的 key');
+  assert.strictEqual(overlay.textContent, CUES[0].text);
+  assert.ok(w.styleText(), '落回 key 选中整轨后，替代照常生效');
+});
+
+test('videoKey 契约：上游返回空字符串同样落回，不会被当成有效身份', () => {
+  const w = loadWorld({ subtitleReplaceNative: true });
+  w.sandbox.window.fushiVideoKey = () => '';
+
+  const fallbackKey = 'www.youtube.com/watch';
+  w.sandbox.window.fushiEpisodeCues[fallbackKey + '|English'] = CUES;
+  w.sandbox.window.fushiSubtitlePanelOnCues(fallbackKey + '|English');
+  w.tick();
+
+  assert.ok(w.overlayEl(), '空字符串不是有效身份，必须落回通用回落');
+});
