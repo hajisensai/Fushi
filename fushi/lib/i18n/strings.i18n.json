@@ -366,7 +366,6 @@
   "collection_continue_progress": "Continue · EP $n",
   "collection_empty": "Collection is empty",
   "collection_expand": "Expand",
-  "collection_export_all_books": "All books",
   "collection_export_all_mined": "All mined sentences",
   "collection_export_all_words": "All favorite words",
   "collection_export_dedupe": "Deduplicate by sentence",
@@ -375,7 +374,6 @@
   "collection_export_format": "Format",
   "collection_export_mined_title": "Mined sentences",
   "collection_export_no_items": "Nothing to export",
-  "collection_export_pick_book": "Choose a book",
   "collection_export_save": "Save export",
   "collection_export_saved": "Export saved",
   "collection_export_scope": "Export scope",
@@ -3817,5 +3815,7 @@
   "anki_error_field_mapping_mismatch": "None of your field mappings match the selected note type, so Anki rejected the card. Open Anki settings to re-map the fields, or use 'Create Lapis deck'.",
   "anki_error_first_field_empty": "The first field of the selected note type is empty, and Anki refuses such a note. Map a field to it in Anki settings.",
   "storage_category_cache": "Caches and temporary files",
-  "storage_category_other": "Other uncategorised"
+  "storage_category_other": "Other uncategorised",
+  "collection_export_pick_source": "Select a source",
+  "collection_export_all_sources": "All sources"
 }

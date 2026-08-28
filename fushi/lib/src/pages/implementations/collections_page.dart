@@ -827,35 +827,89 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       item.type == _CollectionType.sentence ||
       item.type == _CollectionType.mined);
 
-  /// 把当前列表里的收藏句转成导出载体（按 bookTitle 分组、来源透传）。
+  /// BUG-1906：按**身份**把当前列表里的条目归成可选来源（合集优先，未归合集的
+  /// 条目单列）。
   ///
-  /// P4 身份/显示二分：导出是「给人看的导出」——分组标题（= 导出面板可选书目 =
-  /// 文内分组头）过 display-title 门面显示改名后书名；DB 快照列本身保持 raw
-  /// 不动。[_loadFavoritesForExport] 的分组键同过门面，勾选过滤两端恒一致。
-  List<ExportSentence> _favoriteSentencesForExport() => _items
-      .where((item) => item.type == _CollectionType.sentence)
-      .map((item) => ExportSentence(
-            text: item.text ?? '',
-            bookTitle: _itemDisplayBookTitle(item) ?? t.collection_sentence,
-            chapterLabel: item.chapterLabel,
-            source: item.source,
-            createdAt: item.createdAt,
-          ))
-      .toList();
+  /// 合集归属走 `getPrimaryCollectionIdByEntry()` —— 这个封装仓库里早就有
+  /// （单查询 GROUP BY MIN，避免 N+1），导出链路一次都没用过。它的键是
+  /// `'<mediaType>|<entryKey>'`，而收藏句只记 `source`（`book`/`video`/…）+
+  /// `bookKey`，两者不是同一套词汇；与其猜一个映射，不如拿 bookKey 去**试遍**
+  /// 四种 mediaType——map 已在内存里，命中即得，猜错的成本是零。
+  Future<List<_ExportSourceOption>> _exportSourceOptions() async {
+    final Map<String, int> primaryCollection =
+        await appModel.database.getPrimaryCollectionIdByEntry();
+
+    int? collectionIdOf(String bookKey) {
+      for (final MediaKind kind in MediaKind.values) {
+        final int? id = primaryCollection['${kind.dbValue}|$bookKey'];
+        if (id != null) return id;
+      }
+      return null;
+    }
+
+    // 收藏句 + 制卡句都参与：来源列表要能覆盖两个勾选范围，否则选了合集却发现
+    // 制卡句段没被过滤，就成了另一个「两端口径不一致」。
+    final Map<String, String> labelByKey = <String, String>{};
+    for (final _CollectionItem item in _items) {
+      if (item.type != _CollectionType.sentence &&
+          item.type != _CollectionType.mined) {
+        continue;
+      }
+      final String? key = item.bookKey;
+      if (key == null || key.isEmpty) continue;
+      labelByKey.putIfAbsent(
+          key, () => _itemDisplayBookTitle(item) ?? t.collection_sentence);
+    }
+
+    final Map<int, Set<String>> byCollection = <int, Set<String>>{};
+    final List<_ExportSourceOption> loose = <_ExportSourceOption>[];
+    for (final MapEntry<String, String> e in labelByKey.entries) {
+      final int? collectionId = collectionIdOf(e.key);
+      if (collectionId != null) {
+        byCollection.putIfAbsent(collectionId, () => <String>{}).add(e.key);
+      } else {
+        loose.add(_ExportSourceOption(
+          id: 'entry:${e.key}',
+          label: e.value,
+          bookKeys: <String>{e.key},
+          isCollection: false,
+        ));
+      }
+    }
+
+    final List<_ExportSourceOption> collections = <_ExportSourceOption>[];
+    for (final MapEntry<int, Set<String>> e in byCollection.entries) {
+      final MediaCollectionRow? row =
+          await appModel.database.getMediaCollectionById(e.key);
+      collections.add(_ExportSourceOption(
+        id: 'collection:${e.key}',
+        // 合集行意外缺失（并发删除）时退回它任一成员的显示名，绝不显示空标题。
+        label: row?.name ?? labelByKey[e.value.first] ?? t.collection_sentence,
+        bookKeys: e.value,
+        isCollection: true,
+      ));
+    }
+    collections.sort((_ExportSourceOption a, _ExportSourceOption b) =>
+        a.label.compareTo(b.label));
+    loose.sort((_ExportSourceOption a, _ExportSourceOption b) =>
+        a.label.compareTo(b.label));
+    return <_ExportSourceOption>[...collections, ...loose];
+  }
 
   /// 打开导出面板（TODO-829 / 913 / 914）：勾选制卡句/收藏句（默认全勾）+ 去重开关
   /// （默认开），可单独导出收藏词；「全部」= 两类都勾，产出两段一份文件。
   Future<void> _openExportSheet() async {
-    final List<ExportSentence> sentences = _favoriteSentencesForExport();
-    // 按 bookTitle 分组出可选书目（恒非空键）。
-    final List<String> bookTitles = <String>[];
-    for (final ExportSentence s in sentences) {
-      if (!bookTitles.contains(s.bookTitle)) bookTitles.add(s.bookTitle);
-    }
+    final List<_ExportSourceOption> sources = await _exportSourceOptions();
+    if (!mounted) return;
 
-    final _ExportChoice? choice = await showModalBottomSheet<_ExportChoice>(
+    // BUG-1906：从 bottom sheet 换成大弹窗。旧写法是裸 showModalBottomSheet（没传
+    // isScrollControlled），被默认 9/16 屏高上限卡死——sheet 内壳写的
+    // maxHeightFactor: 0.82 根本够不着，来源一多就只剩一条缝可滚。
+    // 同文件里 CollectionItemDialogFrame / CollectionDeleteDialog 早就是
+    // FushiDialogFrame 的写法，只有导出/清空两个面板停在 sheet 上。
+    final _ExportChoice? choice = await showAppDialog<_ExportChoice>(
       context: context,
-      builder: (ctx) => _ExportSheet(bookTitles: bookTitles),
+      builder: (BuildContext ctx) => _ExportDialog(sources: sources),
     );
     if (choice == null || !mounted) return;
 
@@ -882,10 +936,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   ///
   /// P4：分组标题（给人看的导出）过 display-title 门面；`document_title` 快照列
   /// 保持 raw 身份不动。
-  Future<List<ExportMinedSentence>> _loadMinedForExport() async {
+  Future<List<ExportMinedSentence>> _loadMinedForExport({
+    Set<String> bookKeys = const <String>{},
+  }) async {
     final List<MinedSentenceRow> rows =
         await appModel.database.getAllMinedSentences();
-    return rows
+    final List<ExportMinedSentence> mapped = rows
         .map((r) => ExportMinedSentence(
               sentence: r.sentence,
               expression: r.expression,
@@ -899,18 +955,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                   t.collection_export_mined_title,
               source: r.source,
               createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
+              bookKey: r.bookKey,
             ))
+        .toList();
+    // BUG-1906：制卡句段此前**恒是 DB 全量**，来源选择只作用于收藏句——用户选了
+    // 一部作品却导出了全库制卡句，这个不对称没有任何理由。现在两段同一范围。
+    if (bookKeys.isEmpty) return mapped;
+    return mapped
+        .where((ExportMinedSentence m) => bookKeys.contains(m.bookKey))
         .toList();
   }
 
   /// 读 DB 全量收藏句并映射成导出载体（口径=DB 全量，对齐制卡句 全量；不依赖页面
   /// 内存 [_items]，避免「全部」模式两段覆盖范围隐性不一致）。可选按书过滤。
   ///
-  /// P4：分组标题过 display-title 门面（与 [_favoriteSentencesForExport] 产出的
-  /// 可选书目同一口径，[bookTitle] 过滤两端恒一致）；`book_title` 快照列保持
-  /// raw 身份不动。
-  Future<List<ExportSentence>> _loadFavoritesForExport(
-      {String? bookTitle}) async {
+  /// P4：分组标题过 display-title 门面（给人看的导出）；`book_title` 快照列保持
+  /// raw 身份不动。过滤走 [ExportSentence.bookKey] 这个**身份**键，与显示名解耦
+  /// （BUG-1906）。
+  Future<List<ExportSentence>> _loadFavoritesForExport({
+    Set<String> bookKeys = const <String>{},
+  }) async {
     final List<FavoriteSentence> all =
         await FavoriteSentenceRepository(appModel.database).getAll();
     final List<ExportSentence> mapped = all
@@ -925,11 +989,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               chapterLabel: f.chapterLabel,
               source: f.source,
               createdAt: f.createdAt,
+              bookKey: f.bookKey,
             ))
         .toList();
-    if (bookTitle == null) return mapped;
+    // BUG-1906：按**身份**过滤，不再按显示名字符串相等——那样既表达不了合集，
+    // 也会让同名/改名后重名的两个条目塌成一项。
+    if (bookKeys.isEmpty) return mapped;
     return mapped
-        .where((ExportSentence s) => s.bookTitle == bookTitle)
+        .where((ExportSentence s) => bookKeys.contains(s.bookKey))
         .toList();
   }
 
@@ -942,7 +1009,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 仅制卡句（去重聚合 / 平铺二分，TODO-914）。
   Future<void> _exportMinedOnly(_ExportChoice choice) async {
-    final List<ExportMinedSentence> items = await _loadMinedForExport();
+    final List<ExportMinedSentence> items =
+        await _loadMinedForExport(bookKeys: choice.bookKeys);
     if (!mounted) return;
     if (items.isEmpty) {
       await _emptyExportToast();
@@ -962,7 +1030,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 仅收藏句（去重 / 平铺二分；选具体书则只导该书，TODO-914）。
   Future<void> _exportFavoritesOnly(_ExportChoice choice) async {
     final List<ExportSentence> all =
-        await _loadFavoritesForExport(bookTitle: choice.bookTitle);
+        await _loadFavoritesForExport(bookKeys: choice.bookKeys);
     if (!mounted) return;
     if (all.isEmpty) {
       await _emptyExportToast();
@@ -977,16 +1045,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       // P4 判断：导出文件名属「给人看的导出」（一次性产物，无任何程序把它
       // re-parse 回书身份），随分组标题一起用门面显示名；真正的身份文件名
       // （bookKey=sanitizeTtuFilename、同步资产键）不经此路径。
-      baseName: choice.bookTitle ?? t.collection_export_sentences_title,
+      baseName: choice.source?.label ?? t.collection_export_sentences_title,
     );
   }
 
   /// 「全部」= 制卡句段 + 收藏句段，两段一份文件（段内各自去重，段间不互消，TODO-914）。
   Future<void> _exportCombined(_ExportChoice choice) async {
-    final List<ExportMinedSentence> minedRows = await _loadMinedForExport();
+    final List<ExportMinedSentence> minedRows =
+        await _loadMinedForExport(bookKeys: choice.bookKeys);
     if (!mounted) return;
     final List<ExportSentence> favRows =
-        await _loadFavoritesForExport(bookTitle: choice.bookTitle);
+        await _loadFavoritesForExport(bookKeys: choice.bookKeys);
     if (!mounted) return;
     if (minedRows.isEmpty && favRows.isEmpty) {
       await _emptyExportToast();
@@ -1588,13 +1657,46 @@ class CollectionDeleteDialog extends StatelessWidget {
 }
 
 /// 导出面板的选择结果（TODO-914：可勾选多选 + 去重）。
+/// BUG-1906：导出范围里的一个可选**来源**。
+///
+/// 用户报了三件事：这个面板是个挤在屏幕下半截的 bottom sheet、文案叫「选择书籍」
+/// 但列出来的其实是视频剧集、而且**没办法按合集导出**。
+///
+/// 前两件是表面，第三件是结构问题：过滤此前按 `ExportSentence.bookTitle` 这个
+/// **显示名字符串**相等做，而合集归属只能由**身份**反查
+/// （`media_collection_items.entry_key` → `collection_id`），显示名里根本没有这个
+/// 信息。所以范围的单位从「一个书名」改成「一组 bookKey」：合集 = 它成员的 key 集合，
+/// 单个条目 = 只含自己的一元集合，全部 = 空集合（不过滤）。
+///
+/// 顺带修掉一个既有缺陷：同名或改名后重名的两个条目此前会塌成同一项。
+class _ExportSourceOption {
+  const _ExportSourceOption({
+    required this.id,
+    required this.label,
+    required this.bookKeys,
+    required this.isCollection,
+  });
+
+  /// 稳定身份（`all` / `collection:<id>` / `entry:<bookKey>`），radio 的 value。
+  final String id;
+
+  /// 显示名（合集名 / 条目显示名）。
+  final String label;
+
+  /// 命中的 `bookKey` 集合；空集合 = 不过滤（「全部」）。
+  final Set<String> bookKeys;
+
+  /// 合集项排在单条目之前，UI 也据此给不同图标。
+  final bool isCollection;
+}
+
 class _ExportChoice {
   const _ExportChoice({
     required this.scopes,
     required this.includeWords,
     required this.dedupe,
     required this.format,
-    this.bookTitle,
+    this.source,
   });
 
   /// 勾选的内容范围（制卡句 / 收藏句）；空集合且未勾收藏词时导出按钮 disabled。
@@ -1607,8 +1709,11 @@ class _ExportChoice {
   final bool dedupe;
   final ExportFormat format;
 
-  /// 收藏句仅导某本书时为目标书名；null = 全部书籍。
-  final String? bookTitle;
+  /// BUG-1906：选中的来源（合集 / 单个条目）；null 或 `bookKeys` 为空 = 全部。
+  final _ExportSourceOption? source;
+
+  /// 本次导出要保留的 `bookKey` 集合；空 = 不过滤。
+  Set<String> get bookKeys => source?.bookKeys ?? const <String>{};
 }
 
 /// 导出面板（TODO-829 + 913 MD3 + 914 可勾选去重）：勾选制卡句/收藏句（默认全勾）
@@ -1617,16 +1722,17 @@ class _ExportChoice {
 /// 均为共享 [FushiListItem]（leading [Checkbox] / trailing [Switch]，整行 Tab → Enter
 /// 翻转），格式是 [ChoiceChip]，确认是 [FilledButton]（勾选集空且未勾收藏词时
 /// `onPressed: null` 灰掉）。
-class _ExportSheet extends StatefulWidget {
-  const _ExportSheet({required this.bookTitles});
+class _ExportDialog extends StatefulWidget {
+  const _ExportDialog({required this.sources});
 
-  final List<String> bookTitles;
+  /// BUG-1906：可选来源（合集在前、未归合集的条目在后）。空 = 只有「全部」。
+  final List<_ExportSourceOption> sources;
 
   @override
-  State<_ExportSheet> createState() => _ExportSheetState();
+  State<_ExportDialog> createState() => _ExportDialogState();
 }
 
-class _ExportSheetState extends State<_ExportSheet> {
+class _ExportDialogState extends State<_ExportDialog> {
   // 默认「全部」= 制卡句 + 收藏句都勾。
   final Set<ExportScope> _scopes = <ExportScope>{
     ExportScope.mined,
@@ -1634,8 +1740,8 @@ class _ExportSheetState extends State<_ExportSheet> {
   };
   bool _includeWords = false;
   bool _dedupe = true;
-  // 收藏句二级：null = 全部书籍；否则某本书。
-  String? _targetBookTitle;
+  // 二级范围：null = 全部来源；否则某个合集 / 某个条目（BUG-1906）。
+  _ExportSourceOption? _targetSource;
   ExportFormat _format = ExportFormat.markdown;
 
   static const Map<ExportFormat, String> _formatLabels = <ExportFormat, String>{
@@ -1663,10 +1769,38 @@ class _ExportSheetState extends State<_ExportSheet> {
       includeWords: _includeWords,
       dedupe: _dedupe,
       format: _format,
-      bookTitle:
-          _scopes.contains(ExportScope.favorites) ? _targetBookTitle : null,
+      source: _targetSource,
     );
     Navigator.pop(context, choice);
+  }
+
+  /// BUG-1906：来源单选行。
+  ///
+  /// 用共享 [FushiListItem] + 裸 [Radio]，与同面板的勾选/开关行同构；此前这里是
+  /// 裸 [RadioListTile]。MD3 静态守卫扫的是几个**字面 token**（[ListTile] 及其
+  /// Checkbox/Switch 变体的构造调用），而 `RadioListTile<String?>` 中间夹了泛型
+  /// 参数，字面上凑不出那个 token —— 它是漏网，不是被有意豁免。
+  ///
+  /// 注：本注释刻意不写出那几个 token 的字面形式。该守卫按原文扫描、**不剥注释**，
+  /// 写出来会把自己误判成违规（守卫的盲点只会造成误报，故此处绕开而不改守卫——
+  /// 它的 allowlist 还带「无死条目」断言，动它的匹配面会牵连既有条目）。
+  Widget _exportSourceRow({
+    required String label,
+    required IconData icon,
+    required _ExportSourceOption? option,
+  }) {
+    final bool selected = _targetSource?.id == option?.id;
+    return FushiListItem(
+      selected: selected,
+      onTap: () => setState(() => _targetSource = option),
+      leading: Radio<String?>(
+        value: option?.id,
+        groupValue: _targetSource?.id,
+        onChanged: (_) => setState(() => _targetSource = option),
+      ),
+      title: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: Icon(icon, size: 18),
+    );
   }
 
   /// 导出范围复选行（MD3）：共享 [FushiListItem] + 裸 [Checkbox] 为 leading，
@@ -1713,141 +1847,145 @@ class _ExportSheetState extends State<_ExportSheet> {
       horizontal: tokens.spacing.card,
     );
 
-    return FushiModalSheetFrame(
-      title: t.dialog_export,
-      maxHeightFactor: 0.82,
-      scrollable: true,
-      bodyPadding: EdgeInsets.fromLTRB(
-        0,
-        tokens.spacing.gap,
-        0,
-        tokens.spacing.gap,
-      ),
-      footerPadding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.gap,
-        tokens.spacing.card,
-        tokens.spacing.card,
-      ),
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // ── 导出范围（可勾选多选）──
-          Padding(
-            padding: sectionPad,
-            child: Text(
-              t.collection_export_scope,
-              style: tokens.type.listSubtitle.copyWith(
-                fontWeight: FontWeight.w600,
+    // BUG-1906：大弹窗外壳。同文件的 CollectionItemDialogFrame /
+    // CollectionDeleteDialog 早就是这个写法，只有导出/清空两个面板还停在
+    // showModalBottomSheet 上——而那条路没传 isScrollControlled，被默认 9/16 屏高
+    // 上限卡死，来源一多就只剩一条缝可滚。宽度取 520：来源名（番剧标题带季集号）
+    // 比这个面板原有的勾选项长得多。
+    return FushiDialogFrame(
+      maxWidth: 520,
+      maxHeightFactor: 0.86,
+      scrollable: false,
+      child: FushiModalSheetFrame(
+        title: t.dialog_export,
+        maxHeightFactor: 0.86,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          0,
+          tokens.spacing.gap,
+          0,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            // ── 导出范围（可勾选多选）──
+            Padding(
+              padding: sectionPad,
+              child: Text(
+                t.collection_export_scope,
+                style: tokens.type.listSubtitle.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-          _exportCheckRow(
-            label: t.collection_export_all_mined,
-            checked: _scopes.contains(ExportScope.mined),
-            onChanged: (bool v) => _toggleScope(ExportScope.mined, v),
-          ),
-          _exportCheckRow(
-            label: t.collection_export_favorites_scope,
-            checked: _scopes.contains(ExportScope.favorites),
-            onChanged: (bool v) => _toggleScope(ExportScope.favorites, v),
-          ),
-          _exportCheckRow(
-            label: t.collection_export_all_words,
-            checked: _includeWords,
-            onChanged: (bool v) => setState(() => _includeWords = v),
-          ),
-          // 勾了「收藏句」且存在书目时展开「全部书籍 / 某本书」二级。
-          if (_scopes.contains(ExportScope.favorites) &&
-              widget.bookTitles.isNotEmpty) ...<Widget>[
+            _exportCheckRow(
+              label: t.collection_export_all_mined,
+              checked: _scopes.contains(ExportScope.mined),
+              onChanged: (bool v) => _toggleScope(ExportScope.mined, v),
+            ),
+            _exportCheckRow(
+              label: t.collection_export_favorites_scope,
+              checked: _scopes.contains(ExportScope.favorites),
+              onChanged: (bool v) => _toggleScope(ExportScope.favorites, v),
+            ),
+            _exportCheckRow(
+              label: t.collection_export_all_words,
+              checked: _includeWords,
+              onChanged: (bool v) => setState(() => _includeWords = v),
+            ),
+            // BUG-1906：来源二级。此前标题写死「选择书籍」，列出来的却是视频剧集；
+            // 而且只有收藏句受它约束、制卡句恒全量。现在它对两段同时生效，所以不再
+            // 与「勾没勾收藏句」绑定。
+            if (widget.sources.isNotEmpty) ...<Widget>[
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.card,
+                  0,
+                  tokens.spacing.card,
+                  tokens.spacing.gap,
+                ),
+                child: Text(
+                  t.collection_export_pick_source,
+                  style: tokens.type.listSubtitle,
+                ),
+              ),
+              _exportSourceRow(
+                label: t.collection_export_all_sources,
+                icon: Icons.select_all_outlined,
+                option: null,
+              ),
+              for (final _ExportSourceOption option in widget.sources)
+                _exportSourceRow(
+                  label: option.label,
+                  icon: option.isCollection
+                      ? Icons.collections_bookmark_outlined
+                      : Icons.article_outlined,
+                  option: option,
+                ),
+            ],
+            SizedBox(height: tokens.spacing.gap),
+            // ── 去重开关 ──
+            _exportSwitchRow(
+              label: t.collection_export_dedupe,
+              value: _dedupe,
+              onChanged: (bool v) => setState(() => _dedupe = v),
+            ),
+            Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+            SizedBox(height: tokens.spacing.gap),
+            // ── 格式 ──
+            Padding(
+              padding: sectionPad,
+              child: Text(
+                t.collection_export_format,
+                style: tokens.type.listSubtitle.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
             Padding(
               padding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
-                0,
-                tokens.spacing.card,
                 tokens.spacing.gap,
+                tokens.spacing.card,
+                0,
               ),
-              child: Text(
-                t.collection_export_pick_book,
-                style: tokens.type.listSubtitle,
+              child: Wrap(
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  for (final ExportFormat f in ExportFormat.values)
+                    ChoiceChip(
+                      label: Text(_formatLabels[f]!),
+                      selected: _format == f,
+                      onSelected: (_) => setState(() => _format = f),
+                    ),
+                ],
               ),
             ),
-            Padding(
-              padding: EdgeInsets.only(left: tokens.spacing.card),
-              child: RadioListTile<String?>(
-                value: null,
-                groupValue: _targetBookTitle,
-                onChanged: (String? v) => setState(() => _targetBookTitle = v),
-                title: Text(t.collection_export_all_books),
-              ),
-            ),
-            for (final String title in widget.bookTitles)
-              Padding(
-                padding: EdgeInsets.only(left: tokens.spacing.card),
-                child: RadioListTile<String?>(
-                  value: title,
-                  groupValue: _targetBookTitle,
-                  onChanged: (String? v) =>
-                      setState(() => _targetBookTitle = v),
-                  title: Text(title, maxLines: 2),
-                ),
-              ),
           ],
-          SizedBox(height: tokens.spacing.gap),
-          // ── 去重开关 ──
-          _exportSwitchRow(
-            label: t.collection_export_dedupe,
-            value: _dedupe,
-            onChanged: (bool v) => setState(() => _dedupe = v),
+        ),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            icon: const Icon(Icons.share_outlined, size: 18),
+            label: Text(t.dialog_export),
+            onPressed: _canExport ? _confirm : null,
           ),
-          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
-          SizedBox(height: tokens.spacing.gap),
-          // ── 格式 ──
-          Padding(
-            padding: sectionPad,
-            child: Text(
-              t.collection_export_format,
-              style: tokens.type.listSubtitle.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              0,
-            ),
-            child: Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap,
-              children: <Widget>[
-                for (final ExportFormat f in ExportFormat.values)
-                  ChoiceChip(
-                    label: Text(_formatLabels[f]!),
-                    selected: _format == f,
-                    onSelected: (_) => setState(() => _format = f),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      footer: Align(
-        alignment: Alignment.centerRight,
-        child: FilledButton.icon(
-          icon: const Icon(Icons.share_outlined, size: 18),
-          label: Text(t.dialog_export),
-          onPressed: _canExport ? _confirm : null,
         ),
       ),
     );
   }
 }
 
-/// 「清空」范围面板（镜像 [_ExportSheet] 的可勾选多选 + 底部确认按钮范式）：只列出
+/// 「清空」范围面板（镜像 [_ExportDialog] 的可勾选多选 + 底部确认按钮范式）：只列出
 /// 当前收藏夹里真实存在的类型（书签/收藏句/制卡句/收藏词），默认**全不勾**（销毁操作
 /// 需用户显式勾选，杜绝一进面板就误清全部），底部「清空」按钮红色破坏性样式、未勾时
 /// `onPressed: null` 灰掉。确认返回勾选的 [_CollectionType] 集合（取消返回 null）。

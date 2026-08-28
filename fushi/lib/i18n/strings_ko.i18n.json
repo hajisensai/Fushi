@@ -366,7 +366,6 @@
   "collection_continue_progress": "계속 · EP $n",
   "collection_empty": "컬렉션이 비어 있습니다",
   "collection_expand": "펼치기",
-  "collection_export_all_books": "모든 도서",
   "collection_export_all_mined": "채굴한 모든 문장",
   "collection_export_all_words": "즐겨찾기 단어 전체",
   "collection_export_dedupe": "문장별 중복 제거",
@@ -375,7 +374,6 @@
   "collection_export_format": "형식",
   "collection_export_mined_title": "Mined Sentences",
   "collection_export_no_items": "내보낼 항목이 없습니다",
-  "collection_export_pick_book": "도서 선택",
   "collection_export_save": "Save Export",
   "collection_export_saved": "내보내기 저장됨",
   "collection_export_scope": "내보내기 범위",
@@ -3817,5 +3815,7 @@
   "anki_error_field_mapping_mismatch": "None of your field mappings match the selected note type, so Anki rejected the card. Open Anki settings to re-map the fields, or use 'Create Lapis deck'.",
   "anki_error_first_field_empty": "The first field of the selected note type is empty, and Anki refuses such a note. Map a field to it in Anki settings.",
   "storage_category_cache": "Caches and temporary files",
-  "storage_category_other": "Other uncategorised"
+  "storage_category_other": "Other uncategorised",
+  "collection_export_pick_source": "Select a source",
+  "collection_export_all_sources": "All sources"
 }

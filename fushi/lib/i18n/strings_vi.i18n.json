@@ -366,7 +366,6 @@
   "collection_continue_progress": "Tiếp tục · Tập $n",
   "collection_empty": "Bộ sưu tập trống",
   "collection_expand": "Mở rộng",
-  "collection_export_all_books": "Tất cả sách",
   "collection_export_all_mined": "Tất cả câu đã khai thác",
   "collection_export_all_words": "Tất cả từ yêu thích",
   "collection_export_dedupe": "Loại trùng theo câu",
@@ -375,7 +374,6 @@
   "collection_export_format": "Định dạng",
   "collection_export_mined_title": "Mined Sentences",
   "collection_export_no_items": "Không có gì để xuất",
-  "collection_export_pick_book": "Chọn sách",
   "collection_export_save": "Save Export",
   "collection_export_saved": "Đã lưu xuất",
   "collection_export_scope": "Phạm vi xuất",
@@ -3817,5 +3815,7 @@
   "anki_error_field_mapping_mismatch": "None of your field mappings match the selected note type, so Anki rejected the card. Open Anki settings to re-map the fields, or use 'Create Lapis deck'.",
   "anki_error_first_field_empty": "The first field of the selected note type is empty, and Anki refuses such a note. Map a field to it in Anki settings.",
   "storage_category_cache": "Caches and temporary files",
-  "storage_category_other": "Other uncategorised"
+  "storage_category_other": "Other uncategorised",
+  "collection_export_pick_source": "Select a source",
+  "collection_export_all_sources": "All sources"
 }
