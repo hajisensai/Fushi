@@ -76,7 +76,17 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     DLL 换成新构建、游戏进程里仍驻留旧映像」——路径没变、磁盘上是新文件，磁盘里根本
 //     不含「进程里驻留的是哪个构建」这条信息。它只存在于当初完成注入的那一方，所以必须
 //     由注入者在建映射时留档。纯尾部追加：前面各区偏移逐字节不动。
-constexpr uint32_t kSharedVersion = 17;
+// v18：`LookupInputSlot::keys` 的**取值语义**换成 WebView2 的
+//     COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS（Shift=4 / Ctrl=8 / 没有 Alt 位），
+//     不再是旧的 Shift=1 / Ctrl=2 / Alt=4 自定义压缩表。布局一字节没动，正因为如此
+//     才必须靠版本号挡：v17 helper + v18 host 时，玩家按住 Shift 会被 host 读成
+//     kLookupInputVirtualKeyLeftButton 塞给 SendMouseInput，move 事件被 WebView2
+//     当成拖拽，症状是「按住 Shift 划过卡片就开始拖选」而不是任何显式错误。
+//     BUG-1881 已经证明「Windows Debug 构建残留旧 helper」是真实发生过的场景，所以
+//     这种**同布局、异语义**的变更同样要升版本：跨进程契约的版本号锁的是解释方式，
+//     不只是偏移。升到 18 之后旧 helper 建的映射会在三处既有门被拒（host 的
+//     ProtocolMatches、DLL 的 header 校验、injector 的驻留映射复用判据）。
+constexpr uint32_t kSharedVersion = 18;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通

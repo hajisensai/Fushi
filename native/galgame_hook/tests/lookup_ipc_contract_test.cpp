@@ -636,7 +636,7 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16AndV17OnlyAppendOverV15() {
-  Check(kSharedVersion == 17, "本测试锁的是 v17 契约");
+  Check(kSharedVersion == 18, "本测试锁的是 v18 契约");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
