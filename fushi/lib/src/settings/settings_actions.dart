@@ -287,6 +287,10 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
   final FushiDesignTokens tokens =
       FushiDesignTokens.of(settingsContext.context);
+  // BUG-1894: 行尾「编辑」按钮的目标只能是**当前活跃的自定义主题**。解析一次放在
+  // 这里，既给按钮的 onTap 用，也给它的 enabled 门用——两者必须读同一个值，否则
+  // 又会长出「按钮亮着但没有目标」的状态。
+  final String? activeCustomThemeId = appModel.activeCustomThemeEntry?.id;
 
   return AdaptiveSettingsRow(
     title: t.reader_theme,
@@ -410,8 +414,12 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
         ),
         // TODO-930 M1: 焦点/手柄没有长按，故保留一个焦点可达的「编辑」按钮，编辑
         // 当前活跃的自定义主题（先切到某个自定义 swatch，再用此按钮编辑它）。
-        // 当前不在自定义主题上时没有活跃 entry，按钮打开空草稿编辑页（同「+」，
-        // BUG-1841：不预先落库）。
+        // BUG-1894: 当前不在自定义主题上时**没有可编辑的对象**，按钮禁用。它以前
+        // 回落到打开空草稿编辑页，与左邻「+」卡片逐字节等价——同一行里两个按钮做
+        // 同一件事，其中挂着「编辑」图标的那个却在新建，和 tooltip 自相矛盾。修法
+        // 是承认这个空状态而不是给它编个目标：enabled=false 会同时置灰图标、把
+        // InkWell.onTap 置 null、并让 FushiFocusTarget(enabled: false) 把按钮摘出
+        // 焦点/手柄遍历，于是新建入口唯一收敛在「+」卡片上。
         // Material 祖先：Cupertino 渲染器下没有 Material，FushiIconButton 的
         // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
         Material(
@@ -419,15 +427,15 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           child: FushiIconButton(
             icon: Icons.edit_outlined,
             tooltip: t.edit_custom_theme,
+            enabled: activeCustomThemeId != null,
             constraints: BoxConstraints.tightFor(
               width: _swatchSize,
               height: _swatchSize,
             ),
             onTap: () async {
-              final String? activeId = appModel.activeCustomThemeEntry?.id;
               await pushSettingsPage(
                 settingsContext,
-                (_) => CustomThemePage(themeId: activeId),
+                (_) => CustomThemePage(themeId: activeCustomThemeId),
               );
               notifyReaderSettingsChanged(settingsContext);
             },

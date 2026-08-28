@@ -14,9 +14,13 @@ import '../helpers/test_platform_services.dart';
 
 /// BUG-1841：主题 swatch 行的「+新建」圈和「编辑」按钮（当前不在自定义主题上时）
 /// 以前先 `upsertCustomTheme` 一条空主题再进编辑页——用户只是点开看看、什么都
-/// 没改、直接返回，列表也已经多了一个主题。修后两个入口只 push 一个
+/// 没改、直接返回，列表也已经多了一个主题。修后入口只 push 一个
 /// `CustomThemePage(themeId: null)` 草稿，只有编辑页里点「应用」才写列表。
 /// 这里用记录型 AppModel 直接断言 upsert 的调用次数与时机。
+///
+/// BUG-1894：其中「编辑按钮在没有活跃自定义主题时也开空草稿」这一支已被移除——
+/// 它与「+」卡片行为完全相同，构成同一行里的重复入口。现在该状态下按钮禁用，
+/// 空草稿入口唯一保留在「+」上；BUG-1841 的不落库不变式仍由本文件继续守。
 class _RecordingAppModel extends AppModel {
   _RecordingAppModel({
     List<CustomThemeEntry> themes = const <CustomThemeEntry>[],
@@ -194,9 +198,14 @@ void main() {
       expect(appModel.customThemes, hasLength(1), reason: '列表不能因为点了 + 就多出一条');
     });
 
+    // BUG-1894：这条用例以前断言「预设主题上按编辑 → 打开空草稿」。那个回落让
+    // 编辑按钮与左邻「+」卡片逐字节等价——同一行两个按钮做同一件事，挂着「编辑」
+    // 图标的那个却在新建，和它的 tooltip 自相矛盾。现在没有可编辑对象时按钮直接
+    // 禁用；BUG-1841 真正要守的「不得预先落库」由下面的 upserts 断言继续守着。
     testWidgets(
-        'edit button on a preset theme (no active custom entry) opens a draft, '
-        'no upsert', (WidgetTester tester) async {
+        'BUG-1894: edit button is disabled on a preset theme (no active custom '
+        'entry) — it no longer duplicates the +new draft entry point',
+        (WidgetTester tester) async {
       final _RecordingAppModel appModel = _RecordingAppModel(
         themes: <CustomThemeEntry>[_existing],
         themeKey: 'light-theme',
@@ -204,11 +213,28 @@ void main() {
       await tester.pumpWidget(_swatchRowHost(appModel));
       await tester.pumpAndSettle();
 
-      await _tapIcon(tester, Icons.edit_outlined);
+      final Finder editIcon = find.byIcon(Icons.edit_outlined);
+      await tester.scrollUntilVisible(
+        editIcon,
+        300,
+        scrollable: _verticalScrollable,
+      );
+      await tester.ensureVisible(editIcon);
+      await tester.pumpAndSettle();
 
-      final CustomThemePage page =
-          tester.widget<CustomThemePage>(find.byType(CustomThemePage));
-      expect(page.themeId, isNull);
+      // 按钮仍然渲染（布局稳定、功能可发现），但 FushiIconButton 在 enabled=false
+      // 时把 InkWell.onTap 置空 —— 点不动。
+      final InkWell ink = tester.widget<InkWell>(
+        find.ancestor(of: editIcon, matching: find.byType(InkWell)).first,
+      );
+      expect(ink.onTap, isNull,
+          reason: '没有活跃自定义主题时编辑按钮必须禁用，而不是回落去开空草稿');
+
+      await tester.tap(editIcon, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CustomThemePage), findsNothing,
+          reason: '禁用的编辑按钮不得打开编辑页——那正是与「+」重合的旧行为');
       expect(appModel.upserts, isEmpty, reason: '编辑按钮在预设主题上不得先造一条空主题');
       expect(appModel.customThemes, hasLength(1));
     });
