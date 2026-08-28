@@ -991,7 +991,7 @@ class UpdateChecker {
           asset: target,
           version: version,
           updatesDir: updatesDir,
-          candidateUrls: updateCheckUrls(target.url),
+          candidateUrls: updateDownloadUrls(target.url),
           openUrl: (Uri uri, Map<String, String> headers) =>
               _openHttpDownload(downloadClient, uri, headers, version),
           onProgress: (double value) {

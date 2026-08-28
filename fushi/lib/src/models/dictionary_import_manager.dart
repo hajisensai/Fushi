@@ -24,6 +24,19 @@ class DictionaryImportManager {
   final Directory _resourceDirectory;
   final Map<String, DictionaryFormat> _formats;
 
+  /// BUG-1903：压缩包里**每个各自成典**的条目（`.mdx` / `.dsl`）。
+  ///
+  /// 判据刻意只认这两种扩展名：Yomitan 包里有几十个 `term_bank_N.json`，那仍然是
+  /// **一本**词典，按文件数拆会把一本拆成几十本；而 MDX / DSL 是「一个文件一本
+  /// 词典」，同一个包里出现两个就是两本。
+  ///
+  /// 大小写与路径分隔符已由 [_readZipFileNames] 归一（全小写）。
+  static List<String> archivedDictionaryEntries(List<String> zipEntryNames) =>
+      <String>[
+        for (final String name in zipEntryNames)
+          if (name.endsWith('.mdx') || name.endsWith('.dsl')) name,
+      ];
+
   DictionaryFormat detectFormat(File file) {
     final ext = path.extension(file.path).toLowerCase();
     if (ext == '.dsl') return _formats['abbyy_lingvo']!;
@@ -317,6 +330,87 @@ class DictionaryImportManager {
     }
   }
 
+  /// BUG-1903：把一个装了多本词典的压缩包拆开、逐本导入。
+  ///
+  /// 解压保持原有目录层级：MDX 的样式表 / 资源（`.css` / `.mdd`）就躺在它自己那本
+  /// 词典的目录里，摊平会让 A 典的样式套到 B 典头上。每本只带**同目录**的 css。
+  ///
+  /// 单本失败不中断其余（与 [importFromDirectory] 同策略）：三本里坏一本，另外两本
+  /// 照样进库，最后用同一套汇总提示告诉用户哪本没进去。
+  Future<void> _importArchivedDictionaries({
+    required File archive,
+    required ValueNotifier<String> progressNotifier,
+    required Function() onImportSuccess,
+    required bool lowMemoryMode,
+    VoidCallback? onMemoryError,
+  }) async {
+    final Directory work =
+        Directory(path.join(_resourceDirectory.path, 'import_multi_temp'));
+    if (work.existsSync()) work.deleteSync(recursive: true);
+    work.createSync(recursive: true);
+    try {
+      progressNotifier.value = t.import_extract;
+      await Future<void>.delayed(Duration.zero);
+      await extractFileToDisk(archive.path, work.path);
+
+      final List<File> dictionaries = work
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) {
+            final String ext = path.extension(f.path).toLowerCase();
+            return ext == '.mdx' || ext == '.dsl';
+          })
+          .toList()
+        ..sort((File a, File b) => a.path.compareTo(b.path));
+
+      final List<String> failedNames = <String>[];
+      for (int i = 0; i < dictionaries.length; i++) {
+        final File dictionary = dictionaries[i];
+        final List<File> cssFiles = Directory(path.dirname(dictionary.path))
+            .listSync()
+            .whereType<File>()
+            .where((File f) => f.path.toLowerCase().endsWith('.css'))
+            .toList();
+        try {
+          await importFromFile(
+            file: dictionary,
+            progressNotifier: progressNotifier,
+            cssFiles: cssFiles,
+            onImportSuccess: onImportSuccess,
+            lowMemoryMode: lowMemoryMode,
+            onMemoryError: onMemoryError,
+          );
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictImport.multiArchive', e, stack);
+          failedNames.add(path.basenameWithoutExtension(dictionary.path));
+        }
+      }
+
+      if (failedNames.isNotEmpty) {
+        FushiToast.show(
+          msg: formatImportFailureSummary(failedNames),
+          toastLength: Toast.LENGTH_LONG,
+          severity: ToastSeverity.error,
+        );
+      }
+      final int succeeded = dictionaries.length - failedNames.length;
+      if (succeeded > 0) {
+        FushiToast.show(
+          msg: t.dict_import_success_summary(n: succeeded),
+          severity: ToastSeverity.success,
+        );
+      }
+    } finally {
+      if (work.existsSync()) {
+        try {
+          work.deleteSync(recursive: true);
+        } catch (e, stack) {
+          ErrorLogService.instance.log('DictImport.multiArchiveCleanup', e, stack);
+        }
+      }
+    }
+  }
+
   Future<void> importFromFile({
     required File file,
     required ValueNotifier<String> progressNotifier,
@@ -339,6 +433,31 @@ class DictionaryImportManager {
     // replaceOldVersion 分支同待遇）。普通导入入口不传，行为不变。
     Dictionary? replaceTarget,
   }) async {
+    // BUG-1903：一个压缩包里装了多本词典时，native 侧只认它找到的第一本、其余
+    // **静默丢弃**并照样报 success——用户把打包好的「日语辞典三件套」拖进来，只会
+    // 多出一本，另外两本无声无息（实测：三本 MDX 的包导入后只剩旺文社一本）。
+    // 拆开逐本走同一条 [importFromFile]，与目录导入的循环同形。
+    //
+    // 三个「这是在更新某一本」的入口（强制重导 / 来源回填 / 显式替换目标）不分流：
+    // 它们的语义是「用这个包替换那一本」，拆包会把一次更新变成多次追加。
+    if (replaceTarget == null &&
+        !forceReplaceExisting &&
+        sourceOverride == null &&
+        path.extension(file.path).toLowerCase() == '.zip') {
+      final List<String> archived =
+          archivedDictionaryEntries(_readZipFileNames(file));
+      if (archived.length > 1) {
+        await _importArchivedDictionaries(
+          archive: file,
+          progressNotifier: progressNotifier,
+          onImportSuccess: onImportSuccess,
+          lowMemoryMode: lowMemoryMode,
+          onMemoryError: onMemoryError,
+        );
+        return;
+      }
+    }
+
     _dictRepo.clearDictionaryResultsCache();
 
     try {

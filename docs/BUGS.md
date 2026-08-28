@@ -29,12 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1767 条。点号进各自文件。
+> 共 1771 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1913](bugs/BUG-1913-wa2-directsound-audio-timeline.md) | ✅ | ✅ | WA2 DirectSound 制卡炸音且未取得 VOICE.PAK 源语音 |
 | [BUG-1912](bugs/BUG-1912-gal-ingame-same-line-replay-destroys-selection.md) | ✅ | ✅ | KiriKiri 人物动画重发同句时销毁游戏内查词 WebView 选区 |
+| [BUG-1904](bugs/BUG-1904-dict-import-entry-cap-silent-truncation.md) | ✅ | ✅ | 词条数撞 100 万每 bank 上限被静默截断，仍报导入成功 |
+| [BUG-1903](bugs/BUG-1903-dict-zip-multi-mdx-only-first-imported.md) | ✅ | ✅ | 一个压缩包内含多本 MDX 词典时只导入第一本，其余静默丢弃且报成功 |
+| [BUG-1895](bugs/BUG-1895-lookup-popup-plus-short.md) | ✅ | ✅ | 查词弹窗静息加号比相邻操作图标矮 |
 | [BUG-1893](bugs/BUG-1893-storage-audiobook-size-missing-in-entries.md) | ✅ | ✅ | 存储页书籍条目不显示有声书音频大小 |
 | [BUG-1892](bugs/BUG-1892-galgame-attach-mode-no-play-session.md) | ✅ | ✅ | galgame 附着模式不记录游玩时长，停止捕获也不结算 |
 | [BUG-1891](bugs/BUG-1891-jellyfin-emby-full-library-enumeration.md) | ✅ | ✅ | Emby/Jellyfin 一进视频页就全库递归枚举且带 MediaSources 重字段 |
@@ -43,6 +46,7 @@
 | [BUG-1888](bugs/BUG-1888-manga-top-chrome-no-hide.md) | ✅ | ✅ | 漫画阅读器顶栏无任何隐藏方式，也没有全屏入口 |
 | [BUG-1887](bugs/BUG-1887-windows-location-in-use.md) | ✅ | ✅ | Windows 显示 Fushi 正在使用定位（permission_handler_windows 启动即开定位会话） |
 | [BUG-1886](bugs/BUG-1886-global-fullscreen-gated-by-experimental-focus-nav.md) | ✅ | ✅ | F11 窗口全屏被实验性焦点导航开关门控，默认安装上按 F11 无反应 |
+| [BUG-1885](bugs/BUG-1885-conjugation-description-popup.md) | ✅ | ✅ | 动词变形说明弹窗样式异常且跨查询残留 |
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
 | [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
 | [BUG-1881](bugs/BUG-1881-galgame-debug-stale-helper-artifact.md) | ✅ | ✅ | Windows Debug 构建残留旧 helper 导致 SGRE 内嵌查词坐标回退 |
