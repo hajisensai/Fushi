@@ -188,6 +188,44 @@ void main([List<String> args = const <String>[]]) {
     // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
     // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
     await recoverLegacyMacosPrefsFromSharedPreferences();
+    AppIconSelection startupAppIcon = currentAppIconSelection.value;
+    try {
+      // BUG-1920：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏
+      // 第一帧先画固定旧图标，直到用户重新打开设置页才刷新。
+      startupAppIcon = await loadAppIconSelection();
+    } catch (e) {
+      debugPrint('[Fushi] app icon preference restore failed: $e');
+    }
+    if (Platform.isAndroid) {
+      try {
+        // Android 启动器 alias 才是老用户当前图标的权威来源。旧版本没有写 Dart
+        // 偏好；冷启动必须先读 native 状态，避免 rail 每次都回到 default。
+        final String nativePreset =
+            await FushiChannels.iconSwitch.invokeMethod<String>(
+                  'getCurrentIcon',
+                ) ??
+                'default';
+        final AppIconSelection nativeSelection = AppIconSelection(
+          presetKey: nativePreset,
+        );
+        try {
+          // 值没变就不写盘：getCurrentIcon 只是把 launcher alias 的既有真值读回来，
+          // 每次冷启动无条件 setString 是纯浪费（且发生在 runApp 之前）。仅发布，
+          // 让 rail 拿到正确图标即可。
+          if (nativePreset == startupAppIcon.presetKey) {
+            startupAppIcon = await publishAppIconSelection(nativeSelection);
+          } else {
+            startupAppIcon = await saveAppIconSelection(nativeSelection);
+          }
+        } catch (e) {
+          // 偏好写入失败也不能覆盖已经生效的 launcher 真值；本次运行仍同步 rail。
+          startupAppIcon = await publishAppIconSelection(nativeSelection);
+          debugPrint('[Fushi] Android app icon preference sync failed: $e');
+        }
+      } catch (e) {
+        debugPrint('[Fushi] Android launcher icon restore failed: $e');
+      }
+    }
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
       if (Platform.isWindows) {
@@ -239,10 +277,9 @@ void main([List<String> args = const <String>[]]) {
       // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
       if (Platform.isWindows) {
         try {
-          final String presetKey = await loadIconPresetKey();
-          final String? iconPath = presetKey == customIconKey
-              ? await loadCustomIconPath()
-              : await exportPresetIconToFile(presetKey);
+          final String? iconPath = startupAppIcon.usesCustomFile
+              ? startupAppIcon.customPath
+              : await exportPresetIconToFile(startupAppIcon.presetKey);
           if (iconPath != null && File(iconPath).existsSync()) {
             await WindowCaptionChannel.setWindowIcon(iconPath);
           }
@@ -283,7 +320,7 @@ void main([List<String> args = const <String>[]]) {
       await WindowManipulator.enableFullSizeContentView();
     }
 
-    /// Ensure no pop-in for the app icon. Precaching is a best-effort
+    /// Ensure no pop-in for the selected app icon. Precaching is a best-effort
     /// optimisation: if the decode fails (e.g. the CI software-GPU emulator
     /// can't decompress the PNG → "Could not decompress image", or low memory),
     /// it must NOT surface as an unhandled FlutterError — that would both spam
@@ -294,7 +331,7 @@ void main([List<String> args = const <String>[]]) {
       final context = binding.rootElement;
       if (context != null) {
         precacheImage(
-          const AssetImage('assets/meta/icon.png'),
+          appIconImageProvider(startupAppIcon),
           context,
           onError: (Object error, StackTrace? stack) {
             debugPrint('[startup] app icon precache skipped: $error');

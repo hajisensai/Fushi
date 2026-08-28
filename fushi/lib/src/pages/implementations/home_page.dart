@@ -17,6 +17,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/current_app_icon.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
@@ -1189,10 +1190,38 @@ class _HomePageState extends BasePageState<HomePage>
                 currentIndex: visualIndex,
                 onTap: selectVisual,
                 items: displayItems,
+                leading: _buildRailLeading(),
               ),
             ),
             Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 宽屏主导航的品牌位。应用图标直接占 rail 顶部固定区域，不再叠加卡片底色、
+  /// 描边或内边距；下面的目的地仍在剩余空间内独立居中。
+  Widget _buildRailLeading() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 8 + 64 + 8 正好等于 kAdaptiveNavRailWidth（80），零余量。rail 外面是
+    // SafeArea(right: false)，left inset 一旦大于 0（带刘海的平板/折叠屏横屏）
+    // 可用宽度就不足 80，写死的 64 会溢出。用 FittedBox 兜住：有地方时仍是 64，
+    // 挤了就等比缩小，而不是画到框外。
+    return Padding(
+      padding: EdgeInsets.all(tokens.spacing.gap),
+      child: Semantics(
+        image: true,
+        label: 'Fushi',
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox.square(
+            dimension: 64,
+            child: ClipRRect(
+              borderRadius: tokens.radii.controlRadius,
+              child: const CurrentAppIcon(),
+            ),
+          ),
         ),
       ),
     );
