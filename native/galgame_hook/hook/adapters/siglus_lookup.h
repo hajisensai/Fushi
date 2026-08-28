@@ -612,20 +612,39 @@ struct SiglusLookupMouseMessageDecision {
 
 // Siglus writes its own dialogue-advance edges from WM_LBUTTONDOWN/UP before
 // the lookup WebView exists. Keep the entire admitted transaction away from
-// that engine sink. A fresh miss explicitly clears stale ownership; a double
-// click is down-equivalent because Windows follows it with another button-up.
+// that engine sink. A double click is down-equivalent because Windows follows
+// it with another button-up.
+//
+// Two invariants, both of which the engine depends on:
+//
+// (1) Down and up are consumed as a pair. `latched` means "this down was mine",
+//     and it is the only input to the up decision. Deciding the up from
+//     `popup_shield` instead lets a down reach the engine while its up is
+//     swallowed (the popup opens between them on the async worker tick), and
+//     Siglus is then stuck believing the left button is still held: skip, drag
+//     and auto-mode all mis-fire.
+//
+// (2) `latched` must not survive a lost up. Its only clearing edge is an up
+//     that reaches this admitted callsite, and alt-tab, WM_CANCELMODE, capture
+//     loss or dragging out of the window route the up elsewhere. So a *down*
+//     while latched is by construction a stale latch -- no second press can be
+//     in flight -- and it is judged on its own merits instead of inheriting the
+//     stale value. Without that, one lost up consumed every later down and the
+//     player never got the left button back. This mirrors how the GetKeyState
+//     filter latch heals from the physical `!button_down` sample; the message
+//     path heals from the down edge, which is its equivalent ground truth.
 inline SiglusLookupMouseMessageDecision
 DecideSiglusLookupMouseMessage(uint32_t message, bool popup_shield,
                                bool glyph_hit, bool latched) {
   SiglusLookupMouseMessageDecision decision;
   if (message == kSiglusLookupWmLeftButtonDown ||
       message == kSiglusLookupWmLeftButtonDoubleClick) {
-    decision.consume = popup_shield || glyph_hit || latched;
+    decision.consume = popup_shield || glyph_hit;
     decision.next_latched = decision.consume;
     return decision;
   }
   if (message == kSiglusLookupWmLeftButtonUp) {
-    decision.consume = popup_shield || latched;
+    decision.consume = latched;
     return decision;
   }
   decision.next_latched = latched;

@@ -314,6 +314,29 @@ int main() {
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
 
+  // A down that reached the engine must have its up reach the engine too, even
+  // if the popup opened in between on the worker tick. Otherwise Siglus keeps a
+  // left button that never comes back up.
+  message_decision = DecideSiglusLookupMouseMessage(
+      kSiglusLookupWmLeftButtonDown, false, false, false);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      kSiglusLookupWmLeftButtonUp, true, false, message_decision.next_latched);
+  assert(!message_decision.consume && !message_decision.next_latched);
+
+  // A lost up (alt-tab, WM_CANCELMODE, drag out of the window) must not turn the
+  // latch into a permanent left-button sink: the next down is judged on its own
+  // merits and republishes the latch from scratch.
+  message_decision = DecideSiglusLookupMouseMessage(
+      kSiglusLookupWmLeftButtonDown, false, false, true);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      kSiglusLookupWmLeftButtonDoubleClick, false, false, true);
+  assert(!message_decision.consume && !message_decision.next_latched);
+
   bool last_shift_down = false;
   assert(!ConsumeSiglusLookupShiftSample(0x0000u, &last_shift_down));
   assert(ConsumeSiglusLookupShiftSample(0x8001u, &last_shift_down));
