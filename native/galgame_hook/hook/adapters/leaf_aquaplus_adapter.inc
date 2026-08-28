@@ -496,11 +496,18 @@ struct LeafVoiceHandle {
   uint32_t archive_index = 0;
 };
 
+// 🔴 游戏线程（Detour_ReadFile）只允许往这里抄「档案槽位 + 文件内偏移 + 本次读
+// 长度」这些定值，绝不能解引用 g_leaf_voice_archives[].ranges：那块堆内存的生命周期
+// 归 HookWorker（LoadLeafVoiceArchives / StopLeafAquaplusResourceAudio），而
+// MH_DisableHook(MH_ALL_HOOKS) 排在 registry.Shutdown() 之后，free 期间 ReadFile
+// detour 仍然活着。offset → range_index 的二分因此整段推给 worker 解析，跟 siglus
+// 的做法一致；worker 与 Stop 同在 HookWorker 上，不存在跨线程释放窗口。
 struct LeafVoiceTask {
   volatile LONG state = 0; // 0=free, 1=producing, 2=pending, 3=consuming
   uint64_t tick_ms = 0;
+  uint64_t offset = 0;
+  uint32_t read_bytes = 0;
   uint32_t archive_index = 0;
-  uint32_t range_index = 0;
 };
 
 LeafVoiceArchive g_leaf_voice_archives[kLeafVoiceArchiveSlots];
@@ -728,14 +735,14 @@ void ForgetLeafAquaplusVoicePak(HANDLE handle) {
   LeaveCriticalSection(&g_cs);
 }
 
-bool QueueLeafVoice(uint32_t archive_index, uint32_t range_index,
-                    uint64_t tick_ms) {
+bool QueueLeafVoice(uint32_t archive_index, uint64_t offset,
+                    uint32_t read_bytes, uint64_t tick_ms) {
   for (int index = 0; index < kLeafVoiceTaskSlots; ++index) {
     const LONG state =
         InterlockedCompareExchange(&g_leaf_voice_tasks[index].state, 0, 0);
     if (state >= 2 &&
         g_leaf_voice_tasks[index].archive_index == archive_index &&
-        g_leaf_voice_tasks[index].range_index == range_index) {
+        g_leaf_voice_tasks[index].offset == offset) {
       return true;
     }
   }
@@ -746,10 +753,32 @@ bool QueueLeafVoice(uint32_t archive_index, uint32_t range_index,
     }
     g_leaf_voice_tasks[index].tick_ms = tick_ms;
     g_leaf_voice_tasks[index].archive_index = archive_index;
-    g_leaf_voice_tasks[index].range_index = range_index;
+    g_leaf_voice_tasks[index].offset = offset;
+    g_leaf_voice_tasks[index].read_bytes = read_bytes;
     MemoryBarrier();
     InterlockedExchange(&g_leaf_voice_tasks[index].state, 2);
     return true;
+  }
+  return false;
+}
+
+// 只在 HookWorker 上调用：ranges 的所有权在那条线程上。
+bool FindLeafVoiceRangeIndex(const LeafVoiceArchive &archive, uint64_t offset,
+                             uint32_t *range_index) {
+  if (archive.ranges == nullptr || range_index == nullptr)
+    return false;
+  uint32_t first = 0;
+  uint32_t last = archive.range_count;
+  while (first < last) {
+    const uint32_t middle = first + (last - first) / 2u;
+    if (offset < archive.ranges[middle].offset) {
+      last = middle;
+    } else if (offset > archive.ranges[middle].offset) {
+      first = middle + 1u;
+    } else {
+      *range_index = middle;
+      return true;
+    }
   }
   return false;
 }
@@ -804,26 +833,14 @@ void ObserveLeafAquaplusVoicePakRead(HANDLE file, const void *buffer,
     return;
   }
   const uint64_t start = static_cast<uint64_t>(current.QuadPart) - done;
-  const LeafVoiceArchive &archive = g_leaf_voice_archives[archive_index];
-  uint32_t first = 0;
-  uint32_t last = archive.range_count;
-  while (first < last) {
-    const uint32_t middle = first + (last - first) / 2u;
-    if (start < archive.ranges[middle].offset) {
-      last = middle;
-    } else if (start > archive.ranges[middle].offset) {
-      first = middle + 1u;
-    } else {
-      if (done > archive.ranges[middle].size)
-        return;
-      const bool queued =
-          QueueLeafVoice(archive_index, middle, GetTickCount64());
-      SetXAudioDiagnostic(
-          queued ? fushi_voice_hook::kXAudioDiagLeafLacVoiceQueued
-                 : fushi_voice_hook::kXAudioDiagLeafLacTaskRejected);
-      return;
-    }
-  }
+  // 到此为止只用了定值：档案槽位、文件内偏移、本次读长度。offset 是否真落在某个
+  // LAC entry 起点、以及 done 是否越过该 entry，都由 worker 在自己拥有的 ranges
+  // 上判定（ProcessLeafVoiceTask）。游戏线程一律不碰那块堆内存。
+  const bool queued = QueueLeafVoice(archive_index, start, done,
+                                     GetTickCount64());
+  SetXAudioDiagnostic(queued
+                          ? fushi_voice_hook::kXAudioDiagLeafLacVoiceQueued
+                          : fushi_voice_hook::kXAudioDiagLeafLacTaskRejected);
 }
 
 void ProcessLeafVoiceTask(LeafVoiceTask *task) {
@@ -836,13 +853,19 @@ void ProcessLeafVoiceTask(LeafVoiceTask *task) {
   }
   const LeafVoiceArchive &archive =
       g_leaf_voice_archives[task->archive_index];
-  if (task->range_index >= archive.range_count || archive.ranges == nullptr) {
+  uint32_t range_index = 0;
+  if (!FindLeafVoiceRangeIndex(archive, task->offset, &range_index) ||
+      range_index >= archive.range_count) {
     SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagLeafLacTaskRejected);
     return;
   }
-  const LeafVoiceRange range = archive.ranges[task->range_index];
+  const LeafVoiceRange range = archive.ranges[range_index];
+  if (task->read_bytes > range.size) {
+    SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagLeafLacTaskRejected);
+    return;
+  }
   if (task->archive_index == g_leaf_voice_last_archive &&
-      task->range_index == g_leaf_voice_last_range &&
+      range_index == g_leaf_voice_last_range &&
       task->tick_ms >= g_leaf_voice_last_tick &&
       task->tick_ms - g_leaf_voice_last_tick <= 2000u) {
     return;
@@ -880,7 +903,7 @@ void ProcessLeafVoiceTask(LeafVoiceTask *task) {
   }
   if (valid) {
     g_leaf_voice_last_archive = task->archive_index;
-    g_leaf_voice_last_range = task->range_index;
+    g_leaf_voice_last_range = range_index;
     g_leaf_voice_last_tick = task->tick_ms;
     SetXAudioDiagnostic(
         fushi_voice_hook::kXAudioDiagLeafLacVoicePublished |
@@ -924,11 +947,15 @@ void StopLeafAquaplusResourceAudio() {
     }
     LeaveCriticalSection(&g_cs);
   }
-  for (int index = 0; index < kLeafVoiceArchiveSlots; ++index) {
-    free(g_leaf_voice_archives[index].ranges);
-    g_leaf_voice_archives[index] = {};
-  }
+  // 🔴 顺序不可颠倒：先把 count 撤成 0（这是任何消费者判定「档案表可用」的唯一
+  // 闸门），再摘指针，最后才 free。反过来写会让 free 与「还没被撤发布的表」重叠。
+  // 与 catsystem2_adapter.inc 的 StopCatSystem2PcmVoice 同一模式。
   InterlockedExchange(&g_leaf_voice_archive_count, 0);
+  for (int index = 0; index < kLeafVoiceArchiveSlots; ++index) {
+    LeafVoiceRange *ranges = g_leaf_voice_archives[index].ranges;
+    g_leaf_voice_archives[index] = {};
+    free(ranges);
+  }
   g_leaf_voice_last_archive = UINT32_MAX;
   g_leaf_voice_last_range = UINT32_MAX;
   g_leaf_voice_last_tick = 0;

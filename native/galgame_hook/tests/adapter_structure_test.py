@@ -919,5 +919,75 @@ class AdapterStructureTest(unittest.TestCase):
         poll = registry.split("void Poll() {", 1)[1]
         self.assertIn("loopback_.PollPolicy();", poll)
 
+    @staticmethod
+    def _function_body(source: str, signature: str) -> str:
+        """取 C++ 自由函数体（从签名后的第一个 `{` 起做大括号配对）。"""
+        at = source.index(signature)
+        open_at = source.index("{", at)
+        depth = 0
+        for i in range(open_at, len(source)):
+            if source[i] == "{":
+                depth += 1
+            elif source[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return source[open_at : i + 1]
+        raise AssertionError(f"unbalanced braces after {signature}")
+
+    def test_leaf_voice_archive_ranges_are_owned_by_the_worker(self) -> None:
+        """游戏线程绝不解引用 ranges，Stop 必须先撤发布再释放。
+
+        ranges 是 HookWorker 上 malloc / free 的堆表，而
+        ObserveLeafAquaplusVoicePakRead 跑在游戏线程的 ReadFile detour 里，且
+        MH_DisableHook(MH_ALL_HOOKS) 排在 registry.Shutdown() 之后——shutdown 期间
+        detour 仍然活着。只要游戏线程还在 ranges 上做二分，命中已归还的页就是玩家的
+        游戏进程当场崩溃。修法不是加判空（那只收窄窗口），而是把索引解析整段推给
+        worker，让所有权和访问落在同一条线程上。
+        """
+        source = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc"
+        ).read_text(encoding="utf-8")
+
+        observer = self._function_body(
+            source, "void ObserveLeafAquaplusVoicePakRead("
+        )
+        self.assertNotIn(
+            "g_leaf_voice_archives",
+            observer,
+            "游戏线程的 VOICE.PAK 观察者不得触碰 worker 拥有的档案表",
+        )
+        self.assertNotIn(
+            ".ranges",
+            observer,
+            "游戏线程的 VOICE.PAK 观察者不得解引用 ranges",
+        )
+        self.assertIn(
+            "QueueLeafVoice(archive_index, start, done,",
+            observer,
+            "观察者只能把 (槽位, 文件内偏移, 读长度) 这些定值抄进任务",
+        )
+
+        resolver = self._function_body(source, "bool FindLeafVoiceRangeIndex(")
+        self.assertIn("archive.ranges == nullptr", resolver)
+
+        worker = self._function_body(source, "void ProcessLeafVoiceTask(")
+        self.assertIn("FindLeafVoiceRangeIndex(archive, task->offset,", worker)
+        self.assertIn("task->read_bytes > range.size", worker)
+
+        stop = self._function_body(source, "void StopLeafAquaplusResourceAudio(")
+        unpublish = stop.index("InterlockedExchange(&g_leaf_voice_archive_count, 0)")
+        self.assertIn("free(ranges);", stop)
+        self.assertLess(
+            unpublish,
+            stop.index("free("),
+            "必须先把 archive_count 撤成 0 再 free，顺序颠倒等于 free 一张仍在发布的表",
+        )
+        self.assertLess(
+            stop.index("g_leaf_voice_archives[index] = {};"),
+            stop.index("free(ranges);"),
+            "必须先摘掉指针再 free",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
