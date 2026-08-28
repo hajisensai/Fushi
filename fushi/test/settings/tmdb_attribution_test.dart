@@ -86,8 +86,8 @@ void main() {
     expect(schema, contains('_kTmdbLogoHeight * 190.24 / 81.52'));
     expect(schema, contains('fit: BoxFit.contain'));
     // 显眼度上限：24dp 与设置行图标徽标（`FushiBadge` 18+6*2 = 30dp）同量级；
-    // 应用自身图标的最大渲染点仍是设置 › 外观 › 应用图标的预设瓦片（62×62dp）；
-    // 宽屏 rail 新增的品牌位图片为 48×48dp。逐条依据见 `_kTmdbLogoHeight` 的注释。
+    // 应用自身图标的最大渲染点是宽屏 rail 的品牌位（64×64dp），设置 › 外观 ›
+    // 应用图标的预设瓦片为 62×62dp。逐条依据见 `_kTmdbLogoHeight` 的注释。
     final RegExp height = RegExp(r'_kTmdbLogoHeight = (\d+(?:\.\d+)?)');
     final RegExpMatch? m = height.firstMatch(schema);
     expect(m, isNotNull);

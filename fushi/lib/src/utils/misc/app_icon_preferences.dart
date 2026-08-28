@@ -59,7 +59,7 @@ class AppIconSelection {
 }
 
 /// 主窗口侧栏与设置页共享的运行时真值。启动恢复和每次成功切换都只发布到这里，
-/// 避免窗口图标、偏好和 Flutter 品牌位各维护一份互不通知的状态（BUG-1907）。
+/// 避免窗口图标、偏好和 Flutter 品牌位各维护一份互不通知的状态（BUG-1920）。
 final ValueNotifier<AppIconSelection> currentAppIconSelection =
     ValueNotifier<AppIconSelection>(
       const AppIconSelection(presetKey: 'default'),

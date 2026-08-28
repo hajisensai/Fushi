@@ -81,7 +81,7 @@ void main() {
     expect(schema.contains('Platform.isWindows'), isTrue);
   });
 
-  test('BUG-1907：设置、启动恢复与宽屏 rail 共用可监听的当前图标真值', () {
+  test('BUG-1920：设置、启动恢复与宽屏 rail 共用可监听的当前图标真值', () {
     final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
     final String page =
         read('lib/src/pages/implementations/miscellaneous_settings_page.dart');

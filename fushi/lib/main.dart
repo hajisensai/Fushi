@@ -190,7 +190,7 @@ void main([List<String> args = const <String>[]]) {
     await recoverLegacyMacosPrefsFromSharedPreferences();
     AppIconSelection startupAppIcon = currentAppIconSelection.value;
     try {
-      // BUG-1907：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏
+      // BUG-1920：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏
       // 第一帧先画固定旧图标，直到用户重新打开设置页才刷新。
       startupAppIcon = await loadAppIconSelection();
     } catch (e) {

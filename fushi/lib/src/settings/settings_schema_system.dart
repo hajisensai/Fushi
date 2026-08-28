@@ -528,15 +528,15 @@ const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
 /// - 应用自身图标在 Flutter widget 树里有两个真渲染点。设置 › 外观 › 应用图标的
 ///   预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）中，
 ///   `SizedBox.square(72)` 扣掉 `FushiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
-///   双侧 padding，图片实得 62×62dp；宽屏主导航 rail 的品牌位则是 64dp 容器扣掉
-///   `gap = 8` 的双侧 padding，图片实得 48×48dp。取较大的 62dp 作比较，TMDB
-///   标识 24dp 高 = 其 38.7%；面积 24×56.0 ≈ 1344dp²，是其 3844dp² 的 35%——
+///   双侧 padding，图片实得 62×62dp；宽屏主导航 rail 的品牌位直接显示经过圆角
+///   裁切的 64×64dp 图片。取较大的 64dp 作比较，TMDB 标识 24dp 高 = 其 37.5%；
+///   面积 24×56.0 ≈ 1344dp²，是其 4096dp² 的 32.8%——
 ///   两个维度都更小，满足条款的 "less prominent"。
 /// - 除上述预设瓦片和宽屏 rail 外应用图标不再重复绘制：首页 dashboard、
 ///   loading/splash 都不传图；窄屏底栏也没有品牌位。
 ///
 /// 所以旧注释那句「远小于应用自身 logo 的**任何**展示尺寸」结论对、依据错：可比
-/// 的最大展示尺寸仍是 62×62dp。调整本值前请重跑上述核对——这段是「不得更显眼」
+/// 的最大展示尺寸现在是 64×64dp。调整本值前请重跑上述核对——这段是「不得更显眼」
 /// 的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
 const double _kTmdbLogoHeight = 24;
 

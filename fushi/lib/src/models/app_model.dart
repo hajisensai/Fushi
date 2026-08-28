@@ -2118,13 +2118,9 @@ class AppModel with ChangeNotifier {
     return exportDirectory;
   }
 
-  /// Shared app icon rendered in the desktop navigation rail. Constructing it
-  /// with the model also keeps one stable [AssetImage] instance across tab
-  /// rebuilds; startup separately precaches the same asset to avoid pop-in.
+  /// Preloads the app icon so that there is no pop-in.
   final Image appIcon = Image.asset(
     'assets/meta/icon.png',
-    fit: BoxFit.contain,
-    filterQuality: FilterQuality.medium,
   );
 
   /// Injects licenses to be displayed in the licenses page that aren't
