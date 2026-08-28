@@ -998,6 +998,121 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
+  /// BUG-1909：把用户粘来的一串特殊码转成可入库的 profile 行。
+  ///
+  /// 用户原话：「特殊码确实是可以用在 fushi 上的，不过要稍微转换一下，因为 fushi 只接受
+  /// tsv 合适的，一般特殊码只是一串字符」。缺的正是这段转换：
+  /// * 洗掉复制带来的引号/换行/全角噪声（[normalizeGalHookCode]）；
+  /// * 补上 profile 的身份列——**当前运行游戏 exe 的 SHA-256**。这是 profile 能被
+  ///   下次自动复用的唯一依据（native 按 exe 哈希匹配），也是用户手工拼 TSV 时最过不去
+  ///   的一关；
+  /// * 补 codepage 932 与 label，拼成七列行。
+  ///
+  /// 用 `upsert` 而不是导入用的 `replaceFrom`：粘一条码不该把用户既有的其它 profile
+  /// 全部清掉。
+  Future<void> _pasteLunaHookCode() async {
+    final String? executable = _session.currentLaunchExecutable;
+    if (executable == null) {
+      // 没有正在运行的游戏 = 算不出身份哈希，这条码存下来也永远匹配不上。
+      FushiToast.show(
+        msg: t.game_text_thread_hint,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final TextEditingController codeController = TextEditingController();
+    final TextEditingController labelController = TextEditingController(
+      text: executable.split(RegExp(r'[/\\]')).last,
+    );
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => FushiDialogFrame(
+        maxWidth: 480,
+        child: FushiModalSheetFrame(
+          title: t.game_hook_code_paste_title,
+          scrollable: true,
+          body: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.game_hook_code_paste_body),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: codeController,
+                  autofocus: true,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: InputDecoration(
+                    labelText: 'Hook Code',
+                    hintText: t.game_hook_code_paste_hint,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: labelController,
+                  decoration: InputDecoration(
+                    labelText: t.game_hook_code_label,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          footer: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.dialog_save),
+            ),
+          ),
+        ),
+      ),
+    );
+    final String code = normalizeGalHookCode(codeController.text);
+    final String label = labelController.text.trim();
+    codeController.dispose();
+    labelController.dispose();
+    if (confirmed != true || !mounted) return;
+    if (code.isEmpty) {
+      FushiToast.show(
+        msg: t.game_hook_code_paste_invalid,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    try {
+      final String hash = await sha256File(File(executable));
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      await store.upsert(
+        LunaHookCodeProfile(
+          executableSha256: hash,
+          moduleName: '',
+          moduleSha256: '',
+          codepage: 932,
+          hookCode: code,
+          label: label.isEmpty
+              ? executable.split(RegExp(r'[/\\]')).last
+              : label,
+        ),
+      );
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.game_hook_code_paste_saved,
+        severity: ToastSeverity.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
   Future<void> _saveSelectedLunaHookCode() async {
     final String? executable = _session.currentLaunchExecutable;
     final TexthookerTextThread? thread = _session.selectedTextThread;
@@ -1745,6 +1860,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       });
                     }
                   },
+                ),
+                // BUG-1909：粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
+                // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须是游戏 exe
+                // 的 SHA-256——用户拿到的特殊码只是一串字符，中间那层转换没人做。
+                IconButton(
+                  tooltip: t.game_hook_code_paste_title,
+                  icon: const Icon(Icons.content_paste_go_outlined, size: 20),
+                  onPressed: _pasteLunaHookCode,
                 ),
                 IconButton(
                   tooltip: 'Hook Code · ${t.dialog_save}',

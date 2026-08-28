@@ -3822,5 +3822,11 @@
   "video_subtitle_list_search_hint": "输入以筛选台词",
   "video_subtitle_list_search_empty": "没有匹配的台词",
   "video_subtitle_list_export_favorites": "导出收藏语句",
-  "shortcut_action_video_search_subtitle_list": "搜索字幕列表"
+  "shortcut_action_video_search_subtitle_list": "搜索字幕列表",
+  "game_hook_code_paste_title": "粘贴特殊码",
+  "game_hook_code_paste_hint": "粘贴原始特殊码，例如 /HQN4@4CE90:game.exe",
+  "game_hook_code_paste_body": "特殊码会绑定到当前运行游戏的可执行文件，下次自动复用。",
+  "game_hook_code_paste_saved": "特殊码已保存到当前游戏",
+  "game_hook_code_paste_invalid": "这看起来不是一条特殊码",
+  "game_hook_code_label": "备注（可选）"
 }
