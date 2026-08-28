@@ -156,11 +156,30 @@ class AidokuCookieJar {
 
   /// 失败不记忆：路径解析（平台通道未就绪）或 IO 失败时清掉备忘，下一次调用
   /// 重试——否则一次启动期抖动会把所有 iOS Aidoku 调用毒到重启。
+  ///
+  /// **会抛**：写路径（[replaceForHost] / [clear]）拿不到文件就没法保证写入，
+  /// 必须让调用方知道。只读 cookie 的调用方走 [ensureLoadedBestEffort]。
   Future<void> ensureLoaded() =>
       _loading ??= _load().onError((Object error, StackTrace stack) {
         _loading = null;
         Error.throwWithStackTrace(error, stack);
       });
+
+  /// 读路径的加载契约：**cookie 只是增强，加载失败按无 cookie 继续**。
+  ///
+  /// [_load] 内部只兜住了 `jsonDecode` / `readAsString`；`_resolveFile()`
+  /// （支持目录的平台通道未就绪 / 自定义数据根不可达）与 `target.exists()`
+  /// 的失败会整个穿出去，把一次本来无 cookie 也能正常完成的搜索炸成
+  /// `FileSystemException`。降级判据属于**调用点契约**，写在这里一次，
+  /// 而不是在 [_load] 里再多包一层 catch 把写路径也一起吞掉。
+  Future<void> ensureLoadedBestEffort() async {
+    try {
+      await ensureLoaded();
+    } on Object {
+      // 忽略：`_cookies` 保持空/上一次的快照，调用方按无 cookie 请求。
+      // `ensureLoaded` 已经清掉了失败备忘，下一次调用会重试加载。
+    }
+  }
 
   Future<void> _load() async {
     final File target = _file ??= await _resolveFile();

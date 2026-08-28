@@ -58,6 +58,34 @@ void main() {
       ((request['network'] as Map<Object?, Object?>)['cookies']
           as List<Object?>);
 
+  test('jar 读不动时降级为无 cookie 继续，不把 invoke 炸掉', () async {
+    // 路径解析失败（支持目录的平台通道未就绪 / 自定义数据根不可达）：
+    // `_load` 内部的 catch 兜不住它，修复前会整个穿出去，把一次本来无 cookie
+    // 也能正常完成的搜索变成用户看不懂的 FileSystemException。
+    int resolveAttempts = 0;
+    final AidokuCookieJar broken = AidokuCookieJar.lazy(() async {
+      resolveAttempts++;
+      throw const FileSystemException('support directory unavailable');
+    });
+    installHost(
+      (_) async => <String, Object?>{
+        'result': <String, Object?>{'entries': <Object?>[]},
+      },
+    );
+
+    await IosAidokuRuntime(jar: broken).search('/pkg.aix', query: 'x');
+
+    final Map<Object?, Object?> network =
+        requests.single['network'] as Map<Object?, Object?>;
+    // 身份仍然送出（UA 必须一致），只是没有 cookie。
+    expect(network['userAgent'], kAidokuUserAgent);
+    expect(cookiesSent(requests.single), isEmpty);
+
+    // 失败不记忆：下一次调用会重新尝试解析路径。
+    await IosAidokuRuntime(jar: broken).search('/pkg.aix', query: 'x');
+    expect(resolveAttempts, 2);
+  });
+
   test(
     'every invoke carries the shared identity and current cookies',
     () async {

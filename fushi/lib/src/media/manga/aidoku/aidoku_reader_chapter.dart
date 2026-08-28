@@ -206,7 +206,8 @@ class AidokuMangaPageProvider implements MangaPageProvider {
   @override
   Future<MangaReaderSession> open() async {
     await cacheRoot.create(recursive: true);
-    await jar?.ensureLoaded();
+    // 同 `AidokuRuntime._invoke`：cookie 拿不到就按无 cookie 下图，不拦阅读。
+    await jar?.ensureLoadedBestEffort();
     return _AidokuMangaReaderSession(
       pages: pages,
       cacheRoot: cacheRoot,

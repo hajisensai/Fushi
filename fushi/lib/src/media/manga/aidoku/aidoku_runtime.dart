@@ -256,7 +256,9 @@ class IosAidokuRuntime implements AidokuRuntime {
   ///    排队期间别的调用可能已解完题，值变了就直接带新 cookie 重试。
   Future<Map<String, Object?>> _invoke(Map<String, Object?> request) async {
     final AidokuCookieJar? jar = this.jar;
-    if (jar != null) await jar.ensureLoaded();
+    // cookie 是增强不是前提：jar 读不动（平台通道抖动 / 数据根不可达）时按无
+    // cookie 继续，本来无 cookie 也能搜的源不该给用户看 FileSystemException。
+    if (jar != null) await jar.ensureLoadedBestEffort();
     final Map<String, Object?>? network = jar?.networkPayload();
     try {
       return await _invokeOnce(request, network);
