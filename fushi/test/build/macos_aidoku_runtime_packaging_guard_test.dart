@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1922：macOS 发布包从来没装过 Aidoku runtime。
 ///
 /// `tool/aidoku/build_macos_runtime.sh` 在全仓只被本地开发脚本
@@ -21,15 +23,12 @@ void main() {
     return file.readAsStringSync();
   }
 
-  /// 剥掉 YAML 注释行。顺序断言必须在剥注释后做：本仓的步骤注释里就写着
-  /// 「必须排在 Developer ID 签名之前」，不剥的话 indexOf 会先命中注释里的那份
-  /// 字面量，顺序守卫恒绿。
-  String stripComments(String yaml) => yaml
-      .split('\n')
-      .where((String line) => !RegExp(r'^\s*#').hasMatch(line))
-      .join('\n');
-
   /// 截出顶层 job（key 缩进 2 空格）的正文，避免把别的 job 的步骤算进来。
+  ///
+  /// 调用方一律先过 [maskHashComments]：本仓的步骤注释里就写着脚本路径和「必须
+  /// 排在 Developer ID 签名之前」，不掩的话 indexOf 会先命中注释里的那份字面
+  /// 量，存在性与顺序两类断言都恒绿。用等长掩码而不是删行，indexOf 的下标才
+  /// 仍与原文对齐。
   String extractJob(String yaml, String job) {
     final int start = yaml.indexOf('\n  $job:\n');
     expect(start, isNot(-1), reason: 'job "$job" not found');
@@ -59,7 +58,7 @@ void main() {
 
   test('两条 macOS job 都把 Aidoku runtime 装进 bundle 并验证', () {
     for (final String path in <String>[releaseWorkflow, multiWorkflow]) {
-      final String job = extractJob(stripComments(read(path)), 'macos');
+      final String job = extractJob(maskHashComments(read(path)), 'macos');
 
       expect(job, contains('tool/aidoku/build_macos_runtime.sh'),
           reason: '$path 的 macos job 不打 Aidoku runtime，发布包里就没有它。');
@@ -72,7 +71,8 @@ void main() {
   });
 
   test('发布 job 在 Developer ID 签名之前装 Aidoku runtime', () {
-    final String job = extractJob(stripComments(read(releaseWorkflow)), 'macos');
+    final String job =
+        extractJob(maskHashComments(read(releaseWorkflow)), 'macos');
 
     final int bundled = job.indexOf('tool/aidoku/build_macos_runtime.sh');
     final int signed = job.indexOf('Sign macOS app with Developer ID');
@@ -84,7 +84,8 @@ void main() {
   });
 
   test('发布 job 用 app 本体核对 runtime 的架构覆盖', () {
-    final String job = extractJob(stripComments(read(releaseWorkflow)), 'macos');
+    final String job =
+        extractJob(maskHashComments(read(releaseWorkflow)), 'macos');
 
     expect(
         job,
