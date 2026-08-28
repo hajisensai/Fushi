@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "元の音声ファイルをこの端末から削除します。書籍と字幕の元ファイルは残ります。元に戻せません。",
   "delete_disclosure_book_source_kept": "インポートした元の書籍・字幕ファイル",
   "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
-  "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります"
+  "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
+  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。"
 }

@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "原始音频文件将从本设备删除；书籍与字幕原件保留，无法恢复",
   "delete_disclosure_book_source_kept": "你导入时选择的原始书籍与字幕文件",
   "download_task_delete_files_failed": "已下载的数据未能删除：下载后端没有确认",
-  "delete_local_files_failed": "有 $n 个本地文件删除失败，可能正在被使用"
+  "delete_local_files_failed": "有 $n 个本地文件删除失败，可能正在被使用",
+  "batch_hidden_by_filter_note": "另有 ${n} 项被当前筛选隐藏，本次不会处理。"
 }

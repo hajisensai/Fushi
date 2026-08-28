@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "Các tệp âm thanh gốc sẽ bị xoá khỏi thiết bị này; tệp sách và phụ đề gốc vẫn được giữ. Không thể hoàn tác.",
   "delete_disclosure_book_source_kept": "Tệp sách và phụ đề gốc bạn đã nhập",
   "download_task_delete_files_failed": "Không thể xoá dữ liệu đã tải; công cụ tải xuống không xác nhận",
-  "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng"
+  "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng",
+  "batch_hidden_by_filter_note": "Còn ${n} mục đã chọn bị ẩn bởi bộ lọc hiện tại và sẽ không được xử lý."
 }

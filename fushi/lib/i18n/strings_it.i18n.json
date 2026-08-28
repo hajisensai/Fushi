@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "I file audio originali vengono rimossi da questo dispositivo; i file originali del libro e dei sottotitoli restano. L'operazione non è reversibile.",
   "delete_disclosure_book_source_kept": "I file originali del libro e dei sottotitoli che hai importato",
   "download_task_delete_files_failed": "Non è stato possibile eliminare i dati scaricati; il motore di download non lo ha confermato",
-  "delete_local_files_failed": "Impossibile eliminare $n file locali; potrebbero essere ancora in uso"
+  "delete_local_files_failed": "Impossibile eliminare $n file locali; potrebbero essere ancora in uso",
+  "batch_hidden_by_filter_note": "Altri ${n} elementi selezionati sono nascosti dal filtro corrente e non verranno elaborati."
 }

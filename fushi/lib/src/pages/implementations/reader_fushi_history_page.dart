@@ -1488,10 +1488,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final String? key = _looseSelectionKey(g.items.first.payload);
       if (key != null) visibleLooseKeys.add(key);
     }
-    _selection.setVisibleOrder(
-      loose: visibleLooseKeys,
-      collections: _visibleCollectionIds,
-    );
+    // 可见序真变了就补一帧：它是 build 期算出来的（搜索 / 标签筛选 / 排序的
+    // 结果），而底栏「已选 N」在同一帧更早的位置就读过选中集，会慢一拍且没有
+    // 后续 setState 补上。只在多选态补（非多选态选中集恒空）。
+    if (_selection.setVisibleOrder(
+          loose: visibleLooseKeys,
+          collections: _visibleCollectionIds,
+        ) &&
+        _selectionMode) {
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (mounted) setState(() {});
+      });
+    }
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;

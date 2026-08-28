@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "이 기기에서 원본 오디오 파일을 삭제합니다. 책과 자막 원본 파일은 그대로 둡니다. 되돌릴 수 없습니다.",
   "delete_disclosure_book_source_kept": "가져온 원본 책 및 자막 파일",
   "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
-  "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다"
+  "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다",
+  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다."
 }

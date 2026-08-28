@@ -21,6 +21,23 @@
 /// 库页把合集行与散卡分两区渲染，两区各有自己的可见顺序。区间选**不跨区**：
 /// 锚点与目标不同区时退化为普通切换（并重设锚点）。这比「跨区时按某种拼接顺序
 /// 选一片」可预测得多。
+///
+/// ## 可见性约束（选中集对外只暴露看得见的那部分）
+///
+/// 内部选中集**无损**保留用户点过的每一格，但 [looseKeys] / [collectionIds] /
+/// [length] / [isSelected] 一律只暴露**当前可见**（[setVisibleOrder] 登记）的
+/// 那部分。于是「已选 N」永远等于用户屏幕上勾着的卡片数，批量操作也只作用于
+/// 他看得见的条目。
+///
+/// 为什么不在筛选变化时把不可见项**清掉**：那要求每次 [setVisibleOrder] 都是
+/// 权威的「这一帧真的只有这些」，而两个消费页的调用契约并不一致（视频库在空态
+/// 提前 return、不调用；书架页每帧无条件调用）。数据重载途中闪一帧空列表就会
+/// 永久吃掉用户的选中。改成视图约束后根本不需要判断「什么时候该清」——不可见
+/// 期间选中项只是不参与计数与操作，筛选切回来它们原样还在，用户没取消过的东西
+/// 就不会被系统悄悄取消。
+///
+/// [retainExisting] 仍作用于内部集：那管的是「条目真的没了」，与「暂时看不见」
+/// 是两回事。
 library;
 
 import 'dart:collection';
@@ -86,6 +103,28 @@ class MediaSelectionController {
   List<String> _visibleLoose = const <String>[];
   List<int> _visibleCollections = const <int>[];
 
+  /// [_visibleLoose] / [_visibleCollections] 的 Set 视图。
+  Set<String> _visibleLooseSet = const <String>{};
+  Set<int> _visibleCollectionSet = const <int>{};
+
+  /// [looseKeys] / [collectionIds] 的缓存。
+  ///
+  /// 这两个 getter 是**每卡渲染都要问一次**的热路径：两个库页判断勾选态用的是
+  /// `looseKeys.contains(key)`（不是 [isSelected]），而「全部视频」的列表布局还会
+  /// 一次性急切构建全部行。若每次取值都现算交集，全选之后就是 O(n²)——5000 条
+  /// 库每帧两千五百万次集合插入。选中集或可见集一变就置空，下次取值重算一次。
+  Set<String>? _looseKeysView;
+  Set<int>? _collectionIdsView;
+
+  /// 选中集或可见集变了：两个派生视图作废。**任何**改动 [_looseKeys] /
+  /// [_collectionIds] / [_visibleLooseSet] / [_visibleCollectionSet] 的地方都必须
+  /// 调它，否则读到的是陈旧交集（守卫见
+  /// `media_selection_controller_test.dart` 的「派生视图缓存」）。
+  void _invalidateViews() {
+    _looseKeysView = null;
+    _collectionIdsView = null;
+  }
+
   /// 长按扫选期间的基线选中集（拖动只在基线上叠加区间，故手指往回滑能取消刚
   /// 刷上的那一段，而不是只增不减）。null = 当前没在扫选。
   Set<String>? _dragBaseLoose;
@@ -94,11 +133,30 @@ class MediaSelectionController {
   /// 多选态是否开启。
   bool get active => _active;
 
-  /// 已选散卡键（只读视图）。
-  Set<String> get looseKeys => UnmodifiableSetView<String>(_looseKeys);
+  /// 已选散卡键（只读视图，**只含当前可见的**——见库文档「可见性约束」）。
+  Set<String> get looseKeys => _looseKeysView ??= UnmodifiableSetView<String>(
+        <String>{
+          for (final String key in _looseKeys)
+            if (_visibleLooseSet.contains(key)) key,
+        },
+      );
 
-  /// 已选合集 id（只读视图）。
-  Set<int> get collectionIds => UnmodifiableSetView<int>(_collectionIds);
+  /// 已选合集 id（只读视图，**只含当前可见的**）。
+  Set<int> get collectionIds => _collectionIdsView ??= UnmodifiableSetView<int>(
+        <int>{
+          for (final int id in _collectionIds)
+            if (_visibleCollectionSet.contains(id)) id,
+        },
+      );
+
+  /// 内部选中集（含当前不可见的）。仅供测试比对派生视图是否陈旧。
+  @visibleForTesting
+  Set<String> get retainedLooseKeys => UnmodifiableSetView<String>(_looseKeys);
+
+  /// 内部合集选中集（含当前不可见的）。仅供测试。
+  @visibleForTesting
+  Set<int> get retainedCollectionIds =>
+      UnmodifiableSetView<int>(_collectionIds);
 
   /// 当前锚点（无则 null）。仅供测试与调试断言。
   @visibleForTesting
@@ -107,16 +165,31 @@ class MediaSelectionController {
   /// 是否正在长按扫选。
   bool get isRangeDragging => _dragBaseLoose != null;
 
-  /// 选中总数（散卡 + 合集）。
-  int get length => _looseKeys.length + _collectionIds.length;
+  /// 选中总数（散卡 + 合集），**只数可见的**——底栏「已选 N」必须等于用户屏幕上
+  /// 勾着的卡片数。
+  int get length => looseKeys.length + collectionIds.length;
 
   bool get isEmpty => length == 0;
 
   bool get isNotEmpty => length != 0;
 
+  /// 内部选中总数（含当前不可见的）。仅供测试断言「不可见项确实无损保留」。
+  @visibleForTesting
+  int get retainedLength => _looseKeys.length + _collectionIds.length;
+
+  /// 勾过、但当前被筛选/搜索挡住看不见的格数。
+  ///
+  /// 批量操作只作用于可见的那部分（见库文档「可见性约束」），这个差值就是**这次
+  /// 不会被处理的条数**。确认框必须把它说出来：否则用户勾了 5 个、切个筛选只剩
+  /// 3 个可见，点删除只删 3 个，剩下 2 个既没被删也没被告知，退出多选态时还一起
+  /// 丢掉——他会以为 5 个都删了。
+  int get hiddenSelectedCount => retainedLength - length;
+
   bool isSelected(SelectionSlot slot) => slot.isCollection
-      ? _collectionIds.contains(slot.collectionId)
-      : _looseKeys.contains(slot.looseKey);
+      ? _collectionIds.contains(slot.collectionId) &&
+          _visibleCollectionSet.contains(slot.collectionId)
+      : _looseKeys.contains(slot.looseKey) &&
+          _visibleLooseSet.contains(slot.looseKey);
 
   /// 当前可见的散卡键（[setVisibleOrder] 最近一次登记的那份）。
   ///
@@ -128,17 +201,25 @@ class MediaSelectionController {
   ///
   /// 顺序一变就清锚点——见库文档「锚点」。内容相同（每帧新建但等值的列表）
   /// 视为未变，不会误清。
-  void setVisibleOrder({
+  ///
+  /// 返回**这次是否真的变了**。调用方据此补一帧：可见顺序是 build 期算出来的
+  /// （筛选 / 排序的结果），而底栏计数这类消费者在同一帧更早的位置就读过选中集，
+  /// 会比可见序滞后一帧，且没有后续 setState 把这一帧补上。
+  bool setVisibleOrder({
     required List<String> loose,
     required List<int> collections,
   }) {
     if (listEquals(_visibleLoose, loose) &&
         listEquals(_visibleCollections, collections)) {
-      return;
+      return false;
     }
     _visibleLoose = List<String>.unmodifiable(loose);
     _visibleCollections = List<int>.unmodifiable(collections);
+    _visibleLooseSet = loose.toSet();
+    _visibleCollectionSet = collections.toSet();
+    _invalidateViews();
     _anchor = null;
+    return true;
   }
 
   /// 切换多选态（工具栏的选择按钮）。开与关都清空选中集，与两页原行为一致。
@@ -224,6 +305,7 @@ class MediaSelectionController {
     _collectionIds
       ..clear()
       ..addAll(baseCollections);
+    _invalidateViews();
     for (final SelectionSlot each in range) {
       _addSlot(each);
     }
@@ -235,30 +317,38 @@ class MediaSelectionController {
     _dragBaseCollections = null;
   }
 
-  /// 全选：把调用方给出的候选（各页自有资格规则，如视频库跳过已折进合集的成员）
-  /// 全部并入。
+  /// 全选：把调用方给出的候选（= 当前可见的那些格）全部并入。
   void selectAll({
     required Iterable<String> loose,
     required Iterable<int> collections,
   }) {
     _looseKeys.addAll(loose);
     _collectionIds.addAll(collections);
+    _invalidateViews();
   }
 
-  /// 反选：在候选集内取补集。锚点失效（选中集与最后一次点击已无关系）。
+  /// 反选：**在候选集内**取补集。锚点失效（选中集与最后一次点击已无关系）。
+  ///
+  /// 只翻候选集内的格：候选集之外（当前不可见）的选中项原样保留。此前这里
+  /// `clear()` 后重填，在候选集恒等于「全部可选项」的旧设计下看不出问题，但那会
+  /// 把用户在别的筛选档位下选中、此刻只是看不见的条目一并抹掉——与库文档
+  /// 「可见性约束」里「没取消过的东西不会被系统悄悄取消」直接冲突。
   void invert({
     required Iterable<String> loose,
     required Iterable<int> collections,
   }) {
-    final Set<String> invertedLoose = loose.toSet().difference(_looseKeys);
+    final Set<String> looseCandidates = loose.toSet();
+    final Set<int> collectionCandidates = collections.toSet();
+    final Set<String> invertedLoose = looseCandidates.difference(_looseKeys);
     final Set<int> invertedCollections =
-        collections.toSet().difference(_collectionIds);
+        collectionCandidates.difference(_collectionIds);
     _looseKeys
-      ..clear()
+      ..removeAll(looseCandidates)
       ..addAll(invertedLoose);
     _collectionIds
-      ..clear()
+      ..removeAll(collectionCandidates)
       ..addAll(invertedCollections);
+    _invalidateViews();
     _anchor = null;
   }
 
@@ -284,16 +374,22 @@ class MediaSelectionController {
   /// 标签筛掉的条目仍然存在，用户先勾后筛是合法用法，不该被悄悄剔掉）。
   ///
   /// 剔除后锚点失效：它可能正指着被剔掉的那一格。
+  ///
+  /// 返回的是**用户看得见的**那部分里被剔掉了多少（[length] 口径）：这个数字直接
+  /// 进「已跳过 M 项 / 共 N 项」提示，而提示要跟他屏幕上的东西对得上。当前不可见
+  /// 的幽灵键同样被剔干净，只是不计入 M。锚点则按内部集判——它可能正指着一个不
+  /// 可见但已被剔掉的格。
   int retainExisting({
     required Set<String> loose,
     required Set<int> collections,
   }) {
     final int before = length;
+    final int retainedBefore = retainedLength;
     _looseKeys.retainWhere(loose.contains);
     _collectionIds.retainWhere(collections.contains);
-    final int dropped = before - length;
-    if (dropped > 0) _anchor = null;
-    return dropped;
+    _invalidateViews();
+    if (retainedLength != retainedBefore) _anchor = null;
+    return before - length;
   }
 
   /// 锚点 → [slot] 的可见区间。不可用时返回 null（调用方退化处理）。
@@ -326,16 +422,22 @@ class MediaSelectionController {
     } else {
       _looseKeys.add(slot.looseKey!);
     }
+    _invalidateViews();
   }
 
   /// 移除并返回「原本在不在集合里」。
-  bool _removeSlot(SelectionSlot slot) => slot.isCollection
-      ? _collectionIds.remove(slot.collectionId)
-      : _looseKeys.remove(slot.looseKey);
+  bool _removeSlot(SelectionSlot slot) {
+    final bool removed = slot.isCollection
+        ? _collectionIds.remove(slot.collectionId)
+        : _looseKeys.remove(slot.looseKey);
+    if (removed) _invalidateViews();
+    return removed;
+  }
 
   void _resetSelection() {
     _looseKeys.clear();
     _collectionIds.clear();
+    _invalidateViews();
     _anchor = null;
     _dragBaseLoose = null;
     _dragBaseCollections = null;

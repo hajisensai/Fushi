@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "De oorspronkelijke audiobestanden worden van dit apparaat verwijderd; de originele boek- en ondertitelbestanden blijven staan. Dit kan niet ongedaan worden gemaakt.",
   "delete_disclosure_book_source_kept": "De originele boek- en ondertitelbestanden die je hebt geïmporteerd",
   "download_task_delete_files_failed": "De gedownloade gegevens konden niet worden verwijderd; de downloadengine bevestigde dit niet",
-  "delete_local_files_failed": "$n lokale bestand(en) konden niet worden verwijderd; ze zijn mogelijk nog in gebruik"
+  "delete_local_files_failed": "$n lokale bestand(en) konden niet worden verwijderd; ze zijn mogelijk nog in gebruik",
+  "batch_hidden_by_filter_note": "Nog ${n} geselecteerde items zijn verborgen door het huidige filter en worden niet verwerkt."
 }

@@ -274,9 +274,110 @@ void main() {
     );
   });
 
+  testWidgets('切档位后被筛走的选中项不再计数（幽灵选中）', (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(cardOf('video/ep1'));
+    await tester.pump();
+    await tester.tap(cardOf('video/loose'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsOneWidget,
+      reason: 'ep1 已被筛走、屏幕上没有它，底栏就不能还把它算进「已选」——'
+          '用户是照着这个数字点删除的',
+    );
+
+    // 但它只是看不见，不是被系统替用户取消了：切回来还在。
+    await pickSeriesFilter(tester, t.home_filter_all);
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsOneWidget,
+      reason: '先勾后筛是合法用法，筛选切回来选中必须原样还在',
+    );
+  });
+
+  testWidgets('切到首页分区后计数归零（首页没有可勾选的格）',
+      (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(cardOf('video/ep1'));
+    await tester.pump();
+    await tester.tap(cardOf('video/loose'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    // 三个分区共用同一个 State，批量栏不按分区门控：切到首页后它照样显示，
+    // 而首页只有 hero + 横滚行（横滚行卡不参与勾选），一个可勾选的格都没有。
+    await tester.pumpWidget(buildApp(VideoLibrarySection.home));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsNothing,
+      reason: '首页从不登记可见序，计数会停在「全部视频」那一档——批量删除于是'
+          '作用在一批首页上根本没画出来的条目上',
+    );
+
+    // 证明上一条不是因为 State 被重建、选中丢了：切回去还在。
+    await tester.pumpWidget(buildApp(VideoLibrarySection.allVideos));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsOneWidget,
+      reason: '选中集无损保留，只是首页那一帧不暴露',
+    );
+  });
+
+  testWidgets('筛到一条不剩时计数归零（空态帧也要如实登记「屏幕上没有卡」）',
+      (WidgetTester tester) async {
+    // 库里只有系列成员，没有任何散片：选「非系列」会筛到 0 条，走筛选空态。
+    await seedVideo('video/ep1', '第1集');
+    await seedVideo('video/ep2', '第2集');
+    final int cid = await db.createMediaCollection(
+      '我的番',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
+
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(cardOf('video/ep1'));
+    await tester.pump();
+    await tester.tap(cardOf('video/ep2'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+
+    expect(
+      find.text(t.tag_no_books_for_filter),
+      findsOneWidget,
+      reason: '前提：这一档确实筛到 0 条，走的是筛选空态那条分支',
+    );
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsNothing,
+      reason: '空态帧此前在登记可见序之前就提前 return，可见序停在上一档——'
+          '墙上一张卡都没有，底栏却还写着「已选 2」，点删除会真的删掉它们',
+    );
+  });
+
   testWidgets('筛到一条不剩时全选勾不中任何条目（空态帧照样登记可见序）',
       (WidgetTester tester) async {
-    // 只种系列的集、不种散片：选「非系列」后墙上一条不剩，走 _buildFilteredEmpty。
+    // 上一条量的是「已选计数」，这一条量的是「全选候选集」：同一份可见序
+    // 喂给两条不同的消费路径，只修其中一条都会把另一条留成真删错条目。
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     final int cid = await db.createMediaCollection(
@@ -309,6 +410,32 @@ void main() {
       find.text(t.batch_selected_count(n: 2)),
       findsNothing,
       reason: '兜住上一条：别因为计数控件整个没渲染而假绿',
+    );
+  });
+
+  testWidgets('chip 在「全部」态显示维度名，选中档位后显示档位名',
+      (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
+        matching: find.text(t.video_filter_series),
+      ),
+      findsOneWidget,
+      reason: '「全部」态的 chip 要回答「这个下拉管什么」',
+    );
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
+        matching: find.text(t.video_filter_series_standalone),
+      ),
+      findsOneWidget,
+      reason: '选了档位后 chip 显示当前档位',
     );
   });
 

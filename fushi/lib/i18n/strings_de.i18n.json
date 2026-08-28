@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "Die ursprünglichen Audiodateien werden von diesem Gerät entfernt; die Original-Buch- und Untertiteldateien bleiben erhalten. Das lässt sich nicht rückgängig machen.",
   "delete_disclosure_book_source_kept": "Die von dir importierten Original-Buch- und Untertiteldateien",
   "download_task_delete_files_failed": "Die heruntergeladenen Daten konnten nicht gelöscht werden; der Download-Dienst hat es nicht bestätigt",
-  "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung"
+  "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung",
+  "batch_hidden_by_filter_note": "Weitere ${n} ausgewählte Elemente sind durch den aktuellen Filter ausgeblendet und werden nicht bearbeitet."
 }

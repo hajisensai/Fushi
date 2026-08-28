@@ -3860,5 +3860,6 @@
   "delete_local_files_audio_desc": "Os arquivos de áudio originais são removidos deste dispositivo; os arquivos originais do livro e das legendas são mantidos. Isso não pode ser desfeito.",
   "delete_disclosure_book_source_kept": "Os arquivos originais do livro e das legendas que você importou",
   "download_task_delete_files_failed": "Não foi possível excluir os dados baixados; o mecanismo de download não confirmou",
-  "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso"
+  "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso",
+  "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados."
 }
