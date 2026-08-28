@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "關閉後：進入影片頁不向媒體伺服器發任何請求，需在影片庫下拉重新整理手動列出。超大伺服器建議關閉——自動列舉看起來像刮削，可能觸發伺服器的濫用偵測。",
   "jellyfin_libraries_title": "要列出的媒體庫",
   "jellyfin_libraries_hint": "不選 = 列出全部影片媒體庫。只勾你真正會看的庫，超大伺服器就不會被整台列舉。",
-  "jellyfin_libraries_load_failed": "讀取媒體庫清單失敗"
+  "jellyfin_libraries_load_failed": "讀取媒體庫清單失敗",
+  "video_filter_series": "系列",
+  "video_filter_series_in": "系列內",
+  "video_filter_series_standalone": "非系列"
 }

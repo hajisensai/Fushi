@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "オフ: 動画ページを開いてもメディアサーバーにリクエストを送りません。動画ライブラリで引っ張って更新すると手動で一覧表示できます。非常に大きなサーバーでは、自動列挙がスクレイピングのように見えて不正利用検知に引っかかることがあるため、オフを推奨します。",
   "jellyfin_libraries_title": "一覧表示するライブラリ",
   "jellyfin_libraries_hint": "何も選ばないとすべての動画ライブラリを一覧表示します。実際に見るライブラリだけに絞ると、巨大なサーバーが丸ごと列挙されるのを防げます。",
-  "jellyfin_libraries_load_failed": "ライブラリ一覧を読み込めませんでした"
+  "jellyfin_libraries_load_failed": "ライブラリ一覧を読み込めませんでした",
+  "video_filter_series": "シリーズ",
+  "video_filter_series_in": "シリーズ内",
+  "video_filter_series_standalone": "シリーズ外"
 }

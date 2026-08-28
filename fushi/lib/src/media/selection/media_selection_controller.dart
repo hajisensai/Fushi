@@ -118,6 +118,12 @@ class MediaSelectionController {
       ? _collectionIds.contains(slot.collectionId)
       : _looseKeys.contains(slot.looseKey);
 
+  /// 当前可见的散卡键（[setVisibleOrder] 最近一次登记的那份）。
+  ///
+  /// 这是「屏幕上真的有哪些散卡」的唯一真相源：区间选、扫选、全选 / 反选的候选
+  /// 都该取它，而不是各自再推一遍资格判据——两处推导迟早漂开。
+  List<String> get visibleLooseKeys => _visibleLoose;
+
   /// 每帧写入当前**可见顺序**（排序 / 搜索 / 筛选之后的实际渲染顺序）。
   ///
   /// 顺序一变就清锚点——见库文档「锚点」。内容相同（每帧新建但等值的列表）

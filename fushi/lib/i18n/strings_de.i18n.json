@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "Aus: Beim Öffnen der Videoseite geht keine Anfrage an den Medienserver; ziehe in der Videobibliothek zum Aktualisieren, um manuell aufzulisten. Empfohlen für sehr große Server, wo automatisches Auflisten wie Scraping aussieht und die Missbrauchserkennung auslösen kann.",
   "jellyfin_libraries_title": "Aufzulistende Bibliotheken",
   "jellyfin_libraries_hint": "Nichts auswählen listet jede Videobibliothek auf. Auf die Bibliotheken zu beschränken, die du wirklich schaust, verhindert, dass riesige Server komplett durchlaufen werden.",
-  "jellyfin_libraries_load_failed": "Bibliotheksliste konnte nicht geladen werden"
+  "jellyfin_libraries_load_failed": "Bibliotheksliste konnte nicht geladen werden",
+  "video_filter_series": "Serie",
+  "video_filter_series_in": "In einer Serie",
+  "video_filter_series_standalone": "Nicht in einer Serie"
 }

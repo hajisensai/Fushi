@@ -3823,5 +3823,8 @@
   "jellyfin_auto_list_hint": "Mati: masuk ke halaman video tidak mengirim permintaan apa pun ke server media; tarik untuk menyegarkan di pustaka video agar item didaftar manual. Disarankan untuk server yang sangat besar, karena pendaftaran otomatis terlihat seperti scraping dan bisa memicu deteksi penyalahgunaan.",
   "jellyfin_libraries_title": "Pustaka yang didaftarkan",
   "jellyfin_libraries_hint": "Tidak memilih apa pun akan mendaftarkan semua pustaka video. Membatasi ke pustaka yang benar-benar Anda tonton mencegah server raksasa didaftar seluruhnya.",
-  "jellyfin_libraries_load_failed": "Tidak dapat memuat daftar pustaka"
+  "jellyfin_libraries_load_failed": "Tidak dapat memuat daftar pustaka",
+  "video_filter_series": "Seri",
+  "video_filter_series_in": "Dalam seri",
+  "video_filter_series_standalone": "Tanpa seri"
 }
