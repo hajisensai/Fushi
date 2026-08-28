@@ -403,28 +403,17 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
   }
 
-  /// 该 epub bookKey 是否已折进某合集（= 合集成员，不作散卡单选/全选）。
-  /// v83：成员表 epub entryKey = uid，bookKey 经 [_epubUidByKey] 换算后查；
-  /// 换算不上（uid 缺失的异常行）沿用 bookKey——与透传行同键，仍可命中。
-  bool _isEpubCollectionMember(String? bookKey) =>
-      bookKey != null &&
-      _primaryCollectionByEntry.containsKey(
-        MediaKind.epub.compositeKey(_epubUidByKey[bookKey] ?? bookKey),
-      );
-
-  /// 该 srt uid 是否已折进某合集。
-  bool _isSrtCollectionMember(String uid) =>
-      _primaryCollectionByEntry.containsKey(MediaKind.srt.compositeKey(uid));
-
-  /// 全选 / 反选的候选散卡键：只含未折进合集的可见书（折进的成员由整合集选中，
-  /// 不单独勾）。两处共用同一份资格判据，避免全选与反选口径漂开。
-  Set<String> _selectableLooseKeys() => <String>{
-        for (final item in _visibleEpubBooks)
-          if (!_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier)))
-            item.mediaIdentifier,
-        for (final book in _visibleSrtBooks)
-          if (!_isSrtCollectionMember(book.uid)) 'srt_${book.uid}',
-      };
+  /// 全选 / 反选的候选散卡键 = **屏幕上真的画出来的那些散卡**，直接取每帧
+  /// [MediaSelectionController.setVisibleOrder] 登记的可见散卡序（那份就是按
+  /// `groupByCollections` 折叠后剩下的散卡组逐项推出来的）。
+  ///
+  /// 此前这里自推一遍资格（`!_isEpubCollectionMember` / `!_isSrtCollectionMember`，
+  /// 两个方法已随之删除，免得又被当成判据捡回来），与登记可见序的那份口径是两处
+  /// 推导、已经漂开了：`collectionIdOf` 要求合集**当前还存在**才算折叠，那两个
+  /// 方法却只查归属键在不在。于是合集行被删、成员行还在的孤儿条目在墙上按散卡
+  /// 渲染、进得了可见序，却被判成合集成员排除出候选——单击能勾、全选勾不上、
+  /// 反选也还不掉。视频库同一处已收敛到真相源，这里跟上。
+  Set<String> _selectableLooseKeys() => _selection.visibleLooseKeys.toSet();
 
   void _selectAll() {
     _rebuild(() => _selection.selectAll(
@@ -535,14 +524,24 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   Future<void> _batchDeleteConfirm() async {
     // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
     if (!await _pruneStaleSelection() || !mounted) return;
-    final int mediaCount = _selectedKeys.length;
-    final int collectionCount = _selectedCollectionIds.length;
+    // **在弹确认框之前就把目标定死**：选中集是只暴露当前可见项的派生视图，弹窗
+    // 期间任何一次改变可见序的重建（筛选 provider 解析完成、书架刷新）都会让它
+    // 自己变，跨 await 两侧各读一次会让确认框的数字与实际删除量对不上。
+    final Set<String> targetKeys = Set<String>.of(_selectedKeys);
+    final Set<int> targetCollectionIds = Set<int>.of(_selectedCollectionIds);
+    final int mediaCount = targetKeys.length;
+    final int collectionCount = targetCollectionIds.length;
     if (mediaCount == 0 && collectionCount == 0) return;
-    final String message = collectionCount == 0
+    final String baseMessage = collectionCount == 0
         ? t.batch_delete_confirm(n: mediaCount)
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
+    // 勾过但被当前搜索/标签筛选挡住的那些不会被删，必须说出来。
+    final int hidden = _selection.hiddenSelectedCount;
+    final String message = hidden == 0
+        ? baseMessage
+        : '$baseMessage\n\n${t.batch_hidden_by_filter_note(n: hidden)}';
     // TODO-2470 死角②：勾选框只在它真能兑现时才摆出来，两个条件缺一不可——
     //   ① 本轮真会删媒体本体（纯解散合集 mediaCount==0 只解除分组，scope 无处可用，
     //      合集自身的删除传播走 collection_sync_engine；与视频页同一判断）；
@@ -569,7 +568,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (scope == null || !mounted) return;
 
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
-    final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
+    // 用确认框弹出前定死的那份目标，不重新读选中集。
+    final Set<int> toDissolve = targetCollectionIds;
     int dissolved = 0;
     for (final int id in toDissolve) {
       final int removed =
@@ -578,7 +578,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
 
     int deleted = 0;
-    final Set<String> toDelete = Set.of(_selectedKeys);
+    final Set<String> toDelete = targetKeys;
     for (final key in toDelete) {
       if (key.startsWith('srt_')) {
         final String uid = key.substring(4);

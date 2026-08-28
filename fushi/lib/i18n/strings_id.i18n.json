@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "Tidak dapat memuat daftar pustaka",
   "video_filter_series": "Seri",
   "video_filter_series_in": "Dalam seri",
-  "video_filter_series_standalone": "Tanpa seri"
+  "video_filter_series_standalone": "Tanpa seri",
+  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses."
 }

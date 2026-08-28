@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "Не удалось загрузить список библиотек",
   "video_filter_series": "Сериалы",
   "video_filter_series_in": "В сериале",
-  "video_filter_series_standalone": "Вне сериала"
+  "video_filter_series_standalone": "Вне сериала",
+  "batch_hidden_by_filter_note": "Ещё ${n} выбранных элементов скрыты текущим фильтром и не будут обработаны."
 }

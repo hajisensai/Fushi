@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "라이브러리 목록을 불러오지 못했어요",
   "video_filter_series": "시리즈",
   "video_filter_series_in": "시리즈에 포함",
-  "video_filter_series_standalone": "시리즈 없음"
+  "video_filter_series_standalone": "시리즈 없음",
+  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다."
 }

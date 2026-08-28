@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "读取媒体库清单失败",
   "video_filter_series": "系列",
   "video_filter_series_in": "系列内",
-  "video_filter_series_standalone": "非系列"
+  "video_filter_series_standalone": "非系列",
+  "batch_hidden_by_filter_note": "另有 ${n} 项被当前筛选隐藏，本次不会处理。"
 }

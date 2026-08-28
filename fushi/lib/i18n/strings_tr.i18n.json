@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "Kitaplık listesi yüklenemedi",
   "video_filter_series": "Diziler",
   "video_filter_series_in": "Bir dizide",
-  "video_filter_series_standalone": "Dizide değil"
+  "video_filter_series_standalone": "Dizide değil",
+  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek."
 }

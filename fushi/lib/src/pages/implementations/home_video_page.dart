@@ -572,6 +572,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// watch-stats 最近观看，外加偏好里的排序方式。
   Future<void> _loadLibraryMaps() async {
     final int requestGeneration = ++_libraryMapsRequestGeneration;
+    try {
+      await _loadLibraryMapsInner(requestGeneration);
+    } catch (_) {
+      // 失败也要标记「这一轮加载结束了」。只在成功路径置位的话，DB 一出错
+      // [_libraryMapsReady] 就永远为 false，系列归属档位**永久静默失效**——chip
+      // 照常显示用户选的档位，却什么都不筛。宁可让它按（空的）映射生效：
+      // 「系列内」筛出空墙，不对劲是看得见的、用户能自己切回「全部」，也好过
+      // 「看起来选了、其实没生效」。异常照常上抛，不吞。
+      if (mounted && requestGeneration == _libraryMapsRequestGeneration) {
+        setState(() => _libraryMapsReady = true);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _loadLibraryMapsInner(int requestGeneration) async {
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     final ShelfSortMode sortMode =
@@ -1084,6 +1100,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return collectionId != null && _collectionsById.containsKey(collectionId);
   }
 
+  /// 首页分区：登记空可见序（首页没有可勾选的格），不产出任何 sliver。
+  List<Widget> _homeSectionSelectionReset() {
+    _visibleCollectionIds = const <int>[];
+    _syncVisibleOrder(loose: const <String>[], collections: const <int>[]);
+    return const <Widget>[];
+  }
+
+  /// 空态 / 筛选空态那一帧的 slivers。
+  ///
+  /// 必须走这里而不是直接 return：这一帧屏幕上一张可勾选的卡都没有，可见序就得
+  /// 跟着清空。此前空态在登记可见序**之前**提前 return，于是「勾了 2 个再切到一个
+  /// 筛不出东西的档位」会停在上一档的可见序——墙上空空如也，底栏还写着「已选 2」，
+  /// 点删除真的会删掉那两个看不见的条目。
+  List<Widget> _emptyStateSlivers(Widget child) {
+    _visibleCollectionIds = const <int>[];
+    _syncVisibleOrder(loose: const <String>[], collections: const <int>[]);
+    return <Widget>[
+      SliverFillRemaining(hasScrollBody: false, child: child),
+    ];
+  }
+
   /// 登记本帧可见序，并在它真的变了时补一帧。
   ///
   /// 可见序是 build 期算出来的（筛选 / 排序的结果，写在 sliver 构建里），而底栏
@@ -1164,16 +1201,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<void> _batchDeleteConfirm() async {
     // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
     if (!await _pruneStaleSelection() || !mounted) return;
-    final int mediaCount = _selectedUids.length;
-    final int collectionCount = _selectedCollectionIds.length;
+    // **在弹确认框之前就把目标定死**。选中集现在是派生视图（只暴露当前可见的
+    // 那部分），弹窗期间任何一次重建改变可见序——远端拉取落地、标签筛选 provider
+    // 从 null 解析出集合、自动刮削刷新列表——都会让它自己变。跨 await 两侧各读
+    // 一次的话，确认框说「删 5 个」而实际删 3 个，极端情况下甚至一个都没删还弹
+    // 成功提示。
+    final Set<String> targetUids = Set<String>.of(_selectedUids);
+    final Set<int> targetCollectionIds = Set<int>.of(_selectedCollectionIds);
+    final int mediaCount = targetUids.length;
+    final int collectionCount = targetCollectionIds.length;
     if (mediaCount == 0 && collectionCount == 0) return;
     // 纯删媒体分支用视频专用文案（batch_delete_confirm_video，develop 新增 key）；
     // 混选/纯解散仍走合集区分文案（本分支批量删除语义超集）。
-    final String message = collectionCount == 0
+    final String baseMessage = collectionCount == 0
         ? t.batch_delete_confirm_video(n: mediaCount)
         : mediaCount == 0
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
+    // 勾过但被当前筛选挡住的那些不会被删（批量操作只作用于看得见的条目），必须
+    // 说出来——否则用户以为勾了几个就删了几个。
+    final int hidden = _selection.hiddenSelectedCount;
+    final String message = hidden == 0
+        ? baseMessage
+        : '$baseMessage\n\n${t.batch_hidden_by_filter_note(n: hidden)}';
     // 混选/纯解散不删媒体本体 → 不展示同步删除选项（合集解散走合集传播机制）；
     // 纯删媒体才有意义提供「从所有设备删除」。
     // 不能写成三元表达式：两分支各含 await 时 analyzer 视互为 async gap，
@@ -1210,14 +1260,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
     final FushiDatabase db = ref.read(appProvider).database;
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
-    final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
+    // 用确认框弹出前定死的那份目标，不重新读选中集——否则删除量与用户刚点头的
+    // 数字对不上。
+    final Set<int> toDissolve = targetCollectionIds;
     int dissolved = 0;
     for (final int id in toDissolve) {
       final int removed = await deleteMediaCollectionWithAssets(db, id);
       if (removed > 0) dissolved++;
     }
     // 再删选中散卡的媒体本体（现状语义）。
-    final Set<String> toDelete = Set<String>.of(_selectedUids);
+    final Set<String> toDelete = targetUids;
     final int deleted = await widget.repo.deleteVideoBooksAndReclaimAssets(
       toDelete,
       scope: scope,
@@ -2685,6 +2737,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       if (widget.section == VideoLibrarySection.allVideos)
                         ..._buildAllVideoSlivers(
                             all, ordered, remoteVideos, cardLayout),
+                      // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
+                      // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
+                      // 同一个 State，多选态下从「全部视频」切到首页时，可见序
+                      // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
+                      // 没有的条目（批量栏不按分区门控，切过来照样显示）。
+                      if (widget.section == VideoLibrarySection.home)
+                        ..._homeSectionSelectionReset(),
                       if (widget.section == VideoLibrarySection.home &&
                           all.isEmpty &&
                           remoteVideos.isEmpty)
@@ -3978,14 +4037,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<RemoteVideoInfo> groupedRemoteVideos = remoteVideos;
     // 空态/筛选空态须把远端占位一并纳入判断：仅本地空但有远端占位时仍要渲染网格。
     if (all.isEmpty && groupedRemoteVideos.isEmpty) {
-      return <Widget>[
-        SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
-      ];
+      return _emptyStateSlivers(_buildEmpty());
     }
     if (books.isEmpty && groupedRemoteVideos.isEmpty) {
-      return <Widget>[
-        SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
-      ];
+      return _emptyStateSlivers(_buildFilteredEmpty());
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 多端库联合视图 §2.3 任务10：把「远端有本地无」视频的**主合集归属**（host 下发的
@@ -4101,14 +4156,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ({int columns, double cardWidth}) cardLayout,
   ) {
     if (all.isEmpty && remoteVideos.isEmpty) {
-      return <Widget>[
-        SliverFillRemaining(hasScrollBody: false, child: _buildEmpty()),
-      ];
+      return _emptyStateSlivers(_buildEmpty());
     }
     if (books.isEmpty && remoteVideos.isEmpty) {
-      return <Widget>[
-        SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
-      ];
+      return _emptyStateSlivers(_buildFilteredEmpty());
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<VideoBookRow> ordered = books.toList()

@@ -304,6 +304,76 @@ void main() {
     );
   });
 
+  testWidgets('切到首页分区后计数归零（首页没有可勾选的格）',
+      (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(cardOf('video/ep1'));
+    await tester.pump();
+    await tester.tap(cardOf('video/loose'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    // 三个分区共用同一个 State，批量栏不按分区门控：切到首页后它照样显示，
+    // 而首页只有 hero + 横滚行（横滚行卡不参与勾选），一个可勾选的格都没有。
+    await tester.pumpWidget(buildApp(VideoLibrarySection.home));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsNothing,
+      reason: '首页从不登记可见序，计数会停在「全部视频」那一档——批量删除于是'
+          '作用在一批首页上根本没画出来的条目上',
+    );
+
+    // 证明上一条不是因为 State 被重建、选中丢了：切回去还在。
+    await tester.pumpWidget(buildApp(VideoLibrarySection.allVideos));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsOneWidget,
+      reason: '选中集无损保留，只是首页那一帧不暴露',
+    );
+  });
+
+  testWidgets('筛到一条不剩时计数归零（空态帧也要如实登记「屏幕上没有卡」）',
+      (WidgetTester tester) async {
+    // 库里只有系列成员，没有任何散片：选「非系列」会筛到 0 条，走筛选空态。
+    await seedVideo('video/ep1', '第1集');
+    await seedVideo('video/ep2', '第2集');
+    final int cid = await db.createMediaCollection(
+      '我的番',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
+
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(cardOf('video/ep1'));
+    await tester.pump();
+    await tester.tap(cardOf('video/ep2'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+
+    expect(
+      find.text(t.tag_no_books_for_filter),
+      findsOneWidget,
+      reason: '前提：这一档确实筛到 0 条，走的是筛选空态那条分支',
+    );
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsNothing,
+      reason: '空态帧此前在登记可见序之前就提前 return，可见序停在上一档——'
+          '墙上一张卡都没有，底栏却还写着「已选 2」，点删除会真的删掉它们',
+    );
+  });
+
   testWidgets('chip 在「全部」态显示维度名，选中档位后显示档位名',
       (WidgetTester tester) async {
     await seedSeriesAndLoose();

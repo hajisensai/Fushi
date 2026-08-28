@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "No se pudo cargar la lista de bibliotecas",
   "video_filter_series": "Series",
   "video_filter_series_in": "En una serie",
-  "video_filter_series_standalone": "Sin serie"
+  "video_filter_series_standalone": "Sin serie",
+  "batch_hidden_by_filter_note": "Otros ${n} elementos seleccionados están ocultos por el filtro actual y no se procesarán."
 }

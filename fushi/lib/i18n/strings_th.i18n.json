@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "โหลดรายการคลังไม่สำเร็จ",
   "video_filter_series": "ซีรีส์",
   "video_filter_series_in": "อยู่ในซีรีส์",
-  "video_filter_series_standalone": "ไม่อยู่ในซีรีส์"
+  "video_filter_series_standalone": "ไม่อยู่ในซีรีส์",
+  "batch_hidden_by_filter_note": "รายการที่เลือกอีก ${n} รายการถูกซ่อนด้วยตัวกรองปัจจุบันและจะไม่ถูกดำเนินการ"
 }

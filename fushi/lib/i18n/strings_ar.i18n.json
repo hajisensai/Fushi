@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "تعذّر تحميل قائمة المكتبات",
   "video_filter_series": "المسلسلات",
   "video_filter_series_in": "ضمن مسلسل",
-  "video_filter_series_standalone": "غير ضمن مسلسل"
+  "video_filter_series_standalone": "غير ضمن مسلسل",
+  "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته."
 }

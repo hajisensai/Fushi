@@ -3826,5 +3826,6 @@
   "jellyfin_libraries_load_failed": "ライブラリ一覧を読み込めませんでした",
   "video_filter_series": "シリーズ",
   "video_filter_series_in": "シリーズ内",
-  "video_filter_series_standalone": "シリーズ外"
+  "video_filter_series_standalone": "シリーズ外",
+  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。"
 }
