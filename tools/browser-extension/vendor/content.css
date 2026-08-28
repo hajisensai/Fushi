@@ -389,17 +389,59 @@
     font-size: 15px;
 }
 
-/* BUG-932/1895: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留 + / ✓ / ✓↩ 文本
-   标记，不走 SVG），与相邻 audio/favorite/open-anki/tune 的 1em SVG 图标共用上面的
-   font-size:18px；但一个文本 '+' 字形只占 em 盒约一半高（≈9px），SVG 却铺满 1em
-   （可见 ≈14px），故静息加号目测明显比其余图标小/不齐。24px 的旧补偿在实际 WebView
-   里仍只画出约 14px 高；30px 才与 18px SVG 的可见轮廓齐平。仅给静息 '+' 态（未制卡 =
-   无 .duplicate 类）放大字号；已制卡 ✓ / ✓↩（.duplicate / .latest）是高字形本就接近、
-   且各有专属尺寸，保持不动。表头行高由词条大标题主导，放大按钮不改行高。按钮本体还
-   必须挂 inline-action-button，才能走同排的 inline-flex 居中与 pointer 光标。守卫见
-   popup_cards_nav_icon_guard #8。 */
+/* BUG-932/1895/1923: 制卡按钮静息态 '+' 是文本字形（TODO-1325 应用户要求保留
+   + / ✓ / ✓↩ 文本标记，不走 SVG），前两轮一直靠「放大 font-size 撑出可见高度」来补偿
+   文本字形只占 em 盒约一半的问题（18px → 24px → 30px）。这条路把「可见大小」和「可见
+   位置」绑死在同一个字号上，而字形的垂直位置根本不由布局决定，只由字体度量决定：
+   墨迹中心相对行几何中心的偏移 = (ascent - descent) / 2 - 数学轴。Edge 4x 像素实测
+   Segoe UI Symbol 与 Segoe UI 同为 +0.125em、DejaVu Sans +0.066em、Roboto ≈ +0.02em、
+   Arial 0.000em——也就是说 Windows 上 '+' 天生就比同排 SVG 图标低 0.125em，且字号越大
+   偏得越多：24px 偏低 3.0px，上一轮为补大小改到 30px 后变成偏低 3.75px（用户「加号还是
+   低了」）。按钮盒本身是精确居中的（.header-buttons 的 align-items:center，实测盒 cy 与
+   相邻按钮完全一致），偏的只有字形墨迹在 line box 里的位置，故任何「再调一次字号」或
+   「加一个 translateY 常量」都治不了：补偿量随平台实际命中的字体在 0 ~ 0.125em 之间变，
+   把 Windows 补正就会把 Arial/Roboto 那类字体反向补歪。
+
+   根治：静息 '+' 不再由字形绘制，改用两条以按钮盒为参照绝对居中的矩形拼出十字（与
+   .entry-current .entry-header::before 的纯 CSS 三角同法，零字体依赖），可见大小与可见
+   位置都不再受任何平台字体度量影响。textContent 仍是 '+'，setMineState 状态机、无障碍
+   朗读与守卫判据均不变，只是字形本身不再着色。已制卡 ✓ / ✓↩（.duplicate / .latest）是
+   高字形、本就接近且各有专属尺寸，仍走上面的单色符号字体栈，保持不动。
+   font-size:30px 保留：它现在只决定按钮盒的宽高（进而是标题行行高，保持零布局变化），
+   与加号的可见大小/位置都无关。守卫见 popup_cards_nav_icon_guard #8。 */
 .mine-button:not(.duplicate) {
     font-size: 30px;
+    position: relative;
+    /* 文本 '+' 只保留语义与盒尺寸，字形本身不着色。这里只关掉文本填充，color 不变，
+       故下面两条矩形的 currentColor 仍取到真实前景色，主题色 / eink 反色 / hover 与
+       disabled 的 opacity 全部照常跟随。 */
+    -webkit-text-fill-color: transparent;
+}
+
+/* 十字的两条臂。以按钮的 padding box（position:relative）为参照居中，与字体度量彻底
+   无关，故 '+' 的可见中心恒等于按钮盒中心，也就恒等于同排 SVG 图标的中心。 */
+.mine-button:not(.duplicate)::before,
+.mine-button:not(.duplicate)::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: currentColor;
+}
+
+/* 0.467em / 0.067em 在 font-size:30px 下 = 14px / 2px。14px 与相邻 favorite SVG 的可见
+   轮廓等高（实测同为 14.00px），2px 是同排 SVG 的线宽量级。必须用 em 而非绝对 px，才能
+   跟随弹窗内容缩放（同 .expression rt 处关于绝对 px 不跟踪 content zoom 的说明）。
+   横臂与竖臂互为转置，改一条就必须同步改另一条，否则十字不再等臂。 */
+.mine-button:not(.duplicate)::before {
+    width: 0.467em;
+    height: 0.067em;
+}
+
+.mine-button:not(.duplicate)::after {
+    width: 0.067em;
+    height: 0.467em;
 }
 
 .mine-button:disabled {
