@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
+import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
 /// 在 app 根 navigator 就绪后调用一次；runtime 遇到 `CLOUDFLARE_CHALLENGE` 时
@@ -109,6 +110,20 @@ class _AidokuCloudflareChallengePageState
   Timer? _poll;
   bool _checking = false;
   bool _done = false;
+
+  /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
+  /// 非 null 回调：Java 侧 `InAppWebViewClientCompat.onRenderProcessGone` 据此
+  /// `return true`，不再把整个 app 进程一起杀掉）。
+  ///
+  /// 这块表面没有需要抢救的用户数据——解题进度全在 WebView 自己的 cookie 存储里，
+  /// 而 `sharedCookiesEnabled` 让它跨 renderer 代存活；重建后 [_check] 的轮询会
+  /// 照常把新拿到的 `cf_clearance` 判出来。所以只要重建 + 让轮询继续跑。
+  late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
+    surface: 'aidoku_cf_challenge',
+    afterRebuild: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   /// jar 里现存（= 已被判失效）的 `cf_clearance` 值；WebView 里出现同值只说明
   /// 共享 cookie 存储还留着旧账，不算解完。null = 基线未就绪，先不判。
@@ -226,17 +241,29 @@ class _AidokuCloudflareChallengePageState
           Expanded(
             child:
                 widget.webViewBuilder?.call(context) ??
-                InAppWebView(
-                  initialUrlRequest: URLRequest(
-                    url: WebUri.uri(widget.challengeUrl),
+                KeyedSubtree(
+                  // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正
+                  // 重建出新的 platform view，而不动 WebView 自己的锚点。
+                  key: _deathGuard.rebuildKey,
+                  child: InAppWebView(
+                    initialUrlRequest: URLRequest(
+                      url: WebUri.uri(widget.challengeUrl),
+                    ),
+                    initialSettings: InAppWebViewSettings(
+                      // 与被拦请求逐字节一致，见 [AidokuCloudflareResolver]。
+                      userAgent: widget.userAgent,
+                      javaScriptEnabled: true,
+                      sharedCookiesEnabled: true,
+                    ),
+                    onLoadStop: (_, __) => unawaited(_check()),
+                    // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+                    onRenderProcessGone:
+                        (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+                            unawaited(_deathGuard.handleDeath(
+                      didCrash: detail.didCrash,
+                      rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                    )),
                   ),
-                  initialSettings: InAppWebViewSettings(
-                    // 与被拦请求逐字节一致，见 [AidokuCloudflareResolver]。
-                    userAgent: widget.userAgent,
-                    javaScriptEnabled: true,
-                    sharedCookiesEnabled: true,
-                  ),
-                  onLoadStop: (_, __) => unawaited(_check()),
                 ),
           ),
         ],
