@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.1-debug.12463",
-  "tag": "v2.2.1-debug.12463+31c7d79",
+  "version": "2.2.1-debug.12469",
+  "tag": "v2.2.1-debug.12469+4125386",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 12463,
-  "notes": "Automated release-signed debug-channel build from develop @ 31c7d79. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 12469,
+  "notes": "Automated desktop debug-channel build from develop @ 4125386. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.1-debug.12459-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "cc5fc4f8f52cc202049281e5c03aa8241cc6ab72224208aa94308e6832543fca"
     },
     {
-      "name": "fushi-2.2.1-debug.12459-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12459-windows-setup.exe",
-      "releaseSequence": 12459,
-      "tag": "v2.2.1-debug.12459+9679ab2",
-      "version": "2.2.1-debug.12459",
-      "size": 249101740,
-      "sha256": "324febbddbd5b218bbe3c68e004b8e46e0080184885f05a7741ad7cdefdf320b"
-    },
-    {
       "name": "fushi-2.2.1-debug.12463-31c7d79-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12463-31c7d79-debug.apk",
       "releaseSequence": 12463,
@@ -42,6 +33,15 @@
       "version": "2.2.1-debug.12463",
       "size": 268347281,
       "sha256": "09a8f85d7ee23151b91672f0761ce98252a457a8710394cd5e7069beb017241f"
+    },
+    {
+      "name": "fushi-2.2.1-debug.12469-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.1-debug.12469-windows-setup.exe",
+      "releaseSequence": 12469,
+      "tag": "v2.2.1-debug.12469+4125386",
+      "version": "2.2.1-debug.12469",
+      "size": 249149607,
+      "sha256": "ba50752af7b263453ff15049df709d313c4ddb259671594baac391dd75dd5791"
     }
   ]
 }
