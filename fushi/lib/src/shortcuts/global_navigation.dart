@@ -10,6 +10,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         arrowFocusMoveDirection,
@@ -284,7 +285,8 @@ bool gamepadBackMustBeSwallowed(KeyEvent event) =>
 /// way [DesktopWindowPlacement.saveCurrentBoundsNow] does
 /// ([WindowManager.isFullScreen]). Only meaningful on desktop (Windows / macOS /
 /// Linux) where a native window exists; on mobile there is no such window, so the
-/// binding resolves but the toggle is a no-op (guarded by [_isDesktopWindow]).
+/// binding resolves but the toggle is a no-op (guarded by
+/// [desktopWindowFullscreenSupported]).
 ///
 /// Resolution is synchronous so [Focus.onKeyEvent] can return a [KeyEventResult]
 /// immediately; the actual (async) [WindowManager] round-trip is fired
@@ -319,7 +321,7 @@ KeyEventResult _handleGlobalToggleFullscreen(
   }
   // Bound but no desktop window (mobile): consume the key (it is intentionally
   // assigned) but do nothing — there is no window to toggle.
-  if (_isDesktopWindow) {
+  if (desktopWindowFullscreenSupported) {
     unawaited(_toggleWindowFullscreen());
   }
   return KeyEventResult.handled;
@@ -327,7 +329,7 @@ KeyEventResult _handleGlobalToggleFullscreen(
 
 /// Whether the running platform has a desktop window whose fullscreen state can
 /// be toggled via [WindowManager] (mirrors [DesktopWindowPlacement] desktop gate).
-bool get _isDesktopWindow =>
+bool get desktopWindowFullscreenSupported =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
 /// 裸空格中和：焦点确认永不走空格（确认键统一 Enter / 手柄 A，由框架默认提供），故在
@@ -368,20 +370,108 @@ KeyEventResult _neutralizeBareSpace(KeyEvent event) {
 /// 任何 platform-channel 失败都以 debug 日志吞掉，杂散按键永不崩应用。
 Future<void> _toggleWindowFullscreen() async {
   try {
-    if (Platform.isMacOS) {
-      final bool current = await WindowManipulator.isWindowFullscreened();
-      if (current) {
-        await WindowManipulator.exitFullscreen();
-      } else {
-        await WindowManipulator.enterFullscreen();
-      }
-      return;
-    }
-    final bool current = await windowManager.isFullScreen();
-    await windowManager.setFullScreen(!current);
+    await toggleDesktopWindowFullscreen();
   } catch (e) {
     debugPrint('[Fushi] window fullscreen toggle skipped: $e');
   }
+}
+
+/// Reads the desktop window fullscreen state from its single native owner.
+/// Mobile returns null.
+Future<bool?> readDesktopWindowFullscreen() async {
+  try {
+    if (Platform.isMacOS) {
+      return WindowManipulator.isWindowFullscreened();
+    }
+    if (Platform.isWindows) {
+      final bool fullscreen = await windowManager.isFullScreen();
+      FushiWindowsTitleBar.setWindowManagerFullscreen(fullscreen);
+      return fullscreen;
+    }
+    if (Platform.isLinux) {
+      return windowManager.isFullScreen();
+    }
+  } catch (e) {
+    debugPrint('[Fushi] window fullscreen state unavailable: $e');
+  }
+  return null;
+}
+
+/// Applies [fullscreen] to the native Windows window and returns the state that
+/// is actually in effect, or null when the mutation failed and no read could
+/// establish the truth.
+///
+/// `window_manager` is the only source of truth here; the caller derives the
+/// app-frame chrome from this one value.
+Future<bool?> _resolveWindowsFullscreen(bool fullscreen) async {
+  bool mutated = false;
+  try {
+    await windowManager.setFullScreen(fullscreen);
+    mutated = true;
+    return await windowManager.isFullScreen();
+  } catch (error) {
+    debugPrint('[Fushi] window fullscreen mutation failed: $error');
+  }
+  try {
+    // The native read stays authoritative even when the mutation threw.
+    return await windowManager.isFullScreen();
+  } catch (_) {
+    // Both reads failed. If the mutation itself completed, the requested state
+    // is the best available truth, so a reader that entered fullscreen keeps
+    // ownership and can still restore the window later.
+    return mutated ? fullscreen : null;
+  }
+}
+
+/// Sets the desktop window fullscreen state through the platform's single
+/// native-window owner and returns the resulting state. Mobile returns null.
+Future<bool?> setDesktopWindowFullscreen(bool fullscreen) async {
+  try {
+    if (Platform.isMacOS) {
+      final bool current = await WindowManipulator.isWindowFullscreened();
+      if (current != fullscreen) {
+        if (fullscreen) {
+          await WindowManipulator.enterFullscreen();
+        } else {
+          await WindowManipulator.exitFullscreen();
+        }
+      }
+      return fullscreen;
+    }
+    if (Platform.isWindows) {
+      // Update the app frame explicitly. window_manager's Windows plugin does
+      // not emit leave-full-screen when a fullscreen window returns to its
+      // previous maximized state, so WindowListener alone can remain stuck.
+      final bool previousChromeState =
+          FushiWindowsTitleBar.isWindowManagerFullscreen;
+      // Claim the hidden-caption state before the native flip so the app frame
+      // never paints over the fullscreen surface for a frame.
+      if (fullscreen) {
+        FushiWindowsTitleBar.setWindowManagerFullscreen(true);
+      }
+      // One resolve, one write: the chrome owner is derived from the single
+      // authoritative value below instead of being poked at every step.
+      final bool? applied = await _resolveWindowsFullscreen(fullscreen);
+      FushiWindowsTitleBar.setWindowManagerFullscreen(
+        applied ?? previousChromeState,
+      );
+      return applied;
+    }
+    if (Platform.isLinux) {
+      await windowManager.setFullScreen(fullscreen);
+      return windowManager.isFullScreen();
+    }
+  } catch (e) {
+    debugPrint('[Fushi] window fullscreen change skipped: $e');
+  }
+  return null;
+}
+
+/// Flips the main desktop window between fullscreen and windowed.
+Future<bool?> toggleDesktopWindowFullscreen() async {
+  final bool? current = await readDesktopWindowFullscreen();
+  if (current == null) return null;
+  return setDesktopWindowFullscreen(!current);
 }
 
 /// Wrap [child] (typically MaterialApp's builder child) with app-wide keyboard /

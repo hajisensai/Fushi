@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
@@ -192,6 +193,17 @@ void main([List<String> args = const <String>[]]) {
     await recoverLegacyMacosPrefsFromSharedPreferences();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
+      if (Platform.isWindows) {
+        // window_manager's Windows plugin implements setTitleBarStyle as a
+        // string assignment + SetWindowPos and always reports success, so there
+        // is no failure mode to fall back from here. The app frame is therefore
+        // unconditional on Windows once the plugin is initialised.
+        await windowManager.setTitleBarStyle(
+          TitleBarStyle.hidden,
+          windowButtonVisibility: false,
+        );
+        FushiWindowsTitleBar.markEnabled();
+      }
       // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
       // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
       MainWindowForegroundWatcher.instance.start();
@@ -1712,13 +1724,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           builder: (context, child) {
             _scheduleWindowsUpdateHandoffReconcile();
             final cs = Theme.of(context).colorScheme;
-            // Keep the native Windows title bar in sync with the live app theme
-            // (surface background + onSurface text). No-op on other platforms.
-            // The channel de-dupes identical values so this is cheap per rebuild.
-            WindowCaptionChannel.setCaptionColors(
-              caption: cs.surface,
-              text: cs.onSurface,
-            );
+            // The Windows native caption is hidden for good (see main()), so
+            // there is nothing left to theme through WindowCaptionChannel here.
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder
             // reruns on every theme change, so the AnnotatedRegion re-emits the
@@ -1829,7 +1836,50 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           ),
                         );
                       }
-                      return FushiAppUiScale(scale: uiScale, child: navigation);
+                      navigation = FushiAppUiScale(
+                        scale: uiScale,
+                        child: navigation,
+                      );
+                      if (Platform.isWindows &&
+                          FushiWindowsTitleBar.isEnabled) {
+                        navigation = ValueListenableBuilder<bool>(
+                          // The home rail is only on screen while the home
+                          // shell is the top route; opening a media item
+                          // covers it — the same signal the macOS shell uses
+                          // to drop its sidebar — so the title has to
+                          // un-indent with it. `navigation` is passed through
+                          // as the unchanging `child`, so flipping this never
+                          // rebuilds the navigator subtree.
+                          valueListenable: appModel.mediaOpenNotifier,
+                          builder: (BuildContext context, bool mediaOpen,
+                              Widget? child) {
+                            final bool railVisible = !mediaOpen &&
+                                windowSizeClassForWidth(viewport.width) !=
+                                    WindowSizeClass.compact;
+                            return FushiWindowsTitleBar(
+                              // The native-sized frame sits outside app UI
+                              // zoom; align its title with the visually scaled
+                              // home rail. Breakpoint and rail width both come
+                              // from the widgets that own them (HomePage's
+                              // size class / adaptiveNavRail), so they cannot
+                              // drift apart behind a copied literal.
+                              leadingInset: railVisible
+                                  ? kAdaptiveNavRailWidth * uiScale
+                                  : 0,
+                              title: ValueListenableBuilder<HomeTab>(
+                                valueListenable: homeShellTabNotifier,
+                                builder: (BuildContext context, HomeTab tab,
+                                    Widget? _) {
+                                  return Text(homeNavItemFor(tab).label);
+                                },
+                              ),
+                              child: child!,
+                            );
+                          },
+                          child: navigation,
+                        );
+                      }
+                      return navigation;
                     },
                   ),
                 ),

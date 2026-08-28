@@ -152,7 +152,7 @@ class _MaterialNavCluster extends StatelessWidget {
       key: fushiMaterialNavKey,
       color: colors.surface,
       child: SizedBox(
-        width: 80,
+        width: kAdaptiveNavRailWidth,
         child: SafeArea(
           right: false,
           child: Column(
@@ -295,6 +295,13 @@ class _FushiNavTile extends StatelessWidget {
     );
   }
 }
+
+/// Width of the desktop navigation rail, in logical pixels.
+///
+/// Single source of truth: the rail itself lays out against it, and the Windows
+/// app frame indents its title by the same amount so the caption text lines up
+/// with the content pane instead of floating over the rail.
+const double kAdaptiveNavRailWidth = 80;
 
 /// Self-drawn Material navigation rail (per-item gamepad/keyboard focus). Mirrors
 /// `NavigationRail(labelType: all)` with a leading logo and centered group, but

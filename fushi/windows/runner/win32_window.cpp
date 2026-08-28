@@ -286,6 +286,19 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
 
+    case WM_ERASEBKGND:
+      // kSplashBackgroundColor is a pre-Flutter-frame fallback only. Once the
+      // Flutter child is attached it owns every client pixel. Letting
+      // DefWindowProc erase the parent with the class brush during live resize
+      // briefly covers the child with a large #1F4959 rectangle before the
+      // renderer presents its next frame. Acknowledge the erase instead; the
+      // child keeps its previous frame visible until Flutter repaints. Before
+      // SetChildContent, fall through so cold start still gets the splash color.
+      if (child_content_ != nullptr) {
+        return TRUE;
+      }
+      break;
+
     // Braced: this case declares locals, and without its own scope MSVC rejects
     // the switch outright (C2360, initialization skipped by a later case label).
     case WM_ACTIVATE: {
