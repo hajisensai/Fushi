@@ -76,7 +76,7 @@ class VideoDownloadEnqueueRequest {
   const VideoDownloadEnqueueRequest({
     required this.media,
     required this.resource,
-    required this.backendIdentity,
+    required this.backendTarget,
     required this.targetSourceId,
     this.subtitlePolicy = VideoDownloadSubtitlePolicy.bestEffort,
     this.priority = 0,
@@ -86,7 +86,9 @@ class VideoDownloadEnqueueRequest {
 
   final VideoMediaReference media;
   final VideoResourceCandidate resource;
-  final VideoDownloadBackendIdentity backendIdentity;
+
+  /// 落点：后端实例 + 创建这一刻的投放分类（分类会被快照进任务行）。
+  final VideoDownloadBackendTarget backendTarget;
   final int targetSourceId;
   final VideoDownloadSubtitlePolicy subtitlePolicy;
   final int priority;
@@ -122,7 +124,7 @@ DiscoveryMediaKind? discoveryKindOfOrganizationPolicy(String policy) {
 class VideoDownloadManualEnqueueRequest {
   const VideoDownloadManualEnqueueRequest({
     required this.title,
-    required this.backendIdentity,
+    required this.backendTarget,
     this.magnetUri,
     this.metainfo,
     this.discoveryKind,
@@ -134,7 +136,9 @@ class VideoDownloadManualEnqueueRequest {
   });
 
   final String title;
-  final VideoDownloadBackendIdentity backendIdentity;
+
+  /// 落点：后端实例 + 创建这一刻的投放分类（分类会被快照进任务行）。
+  final VideoDownloadBackendTarget backendTarget;
   final String? magnetUri;
   final InspectedTorrentMetainfo? metainfo;
   final DiscoveryMediaKind? discoveryKind;
@@ -680,10 +684,10 @@ class VideoDownloadPipelineService {
         year: Value<int?>(request.media.year),
         season: Value<int?>(request.media.season),
         coverUrl: Value<String?>(request.coverUrl),
-        backendKind: Value<String>(request.backendIdentity.kind),
-        backendProfileId: Value<String?>(request.backendIdentity.profileId),
-        fingerprint: Value<String>(request.backendIdentity.fingerprint),
-        category: Value<String?>(request.backendIdentity.category),
+        backendKind: Value<String>(request.backendTarget.kind),
+        backendProfileId: Value<String?>(request.backendTarget.profileId),
+        fingerprint: Value<String>(request.backendTarget.fingerprint),
+        category: Value<String?>(request.backendTarget.category),
         targetSourceId: Value<int?>(request.targetSourceId),
         organizationPolicy: const Value<String>('library'),
         subtitlePolicy: Value<String>(request.subtitlePolicy.name),
@@ -776,10 +780,10 @@ class VideoDownloadPipelineService {
         discoveryCategory: const Value<String?>(null),
         title: Value<String>(title),
         year: const Value<int?>(null),
-        backendKind: Value<String>(request.backendIdentity.kind),
-        backendProfileId: Value<String?>(request.backendIdentity.profileId),
-        fingerprint: Value<String>(request.backendIdentity.fingerprint),
-        category: Value<String?>(request.backendIdentity.category),
+        backendKind: Value<String>(request.backendTarget.kind),
+        backendProfileId: Value<String?>(request.backendTarget.profileId),
+        fingerprint: Value<String>(request.backendTarget.fingerprint),
+        category: Value<String?>(request.backendTarget.category),
         targetSourceId: Value<int?>(video ? request.targetSourceId : null),
         organizationPolicy: Value<String>(
           video ? 'library' : manualDiscoveryOrganizationPolicy(discoveryKind),
@@ -1390,12 +1394,15 @@ class VideoDownloadPipelineService {
       );
     }
     final VideoDownloadBackendIdentity current = binding.identity;
+    // 只比后端**实例身份**。分类不参与：它是任务自己的投放位置（列
+    // `VideoDownloadJobs.category`），用户改设置里的分类、或升级后默认分类
+    // 漂移，都不代表换了一台下载器；下游全部用 `job.category` 去后端定位这个
+    // 任务自己的种子，旧种子本来也还在旧分类下（BUG-1879）。
     if (current.kind != job.backendKind ||
         current.profileId != job.backendProfileId ||
-        current.fingerprint != job.fingerprint ||
-        current.category != (job.category ?? '')) {
+        current.fingerprint != job.fingerprint) {
       throw const VideoDownloadPipelineActionRequired(
-        'The backend instance, profile, or category no longer matches this job',
+        'The backend instance or profile no longer matches this job',
       );
     }
   }

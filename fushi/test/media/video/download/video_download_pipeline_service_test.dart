@@ -35,7 +35,11 @@ const VideoDownloadBackendIdentity _expectedIdentity =
   kind: 'embedded',
   profileId: 'embedded',
   fingerprint: 'installation-fingerprint',
-  category: 'fushi-video',
+);
+const String _expectedCategory = 'fushi-video';
+const VideoDownloadBackendTarget _expectedTarget = VideoDownloadBackendTarget(
+  identity: _expectedIdentity,
+  category: _expectedCategory,
 );
 
 void main() {
@@ -101,7 +105,7 @@ void main() {
     expect(persisted.selectedResourceId, 'release-1');
     expect(persisted.torrentHash, _torrentHash);
     expect(persisted.fingerprint, _expectedIdentity.fingerprint);
-    expect(persisted.category, _expectedIdentity.category);
+    expect(persisted.category, _expectedCategory);
     expect(persisted.targetSourceId, environment.sourceId);
 
     backend.releaseAdd();
@@ -319,16 +323,22 @@ void main() {
         kind: 'embedded',
         profileId: 'embedded',
         fingerprint: 'different-installation',
-        category: 'fushi-video',
       ),
     ),
     (
-      label: 'category',
+      label: 'profile',
       identity: const VideoDownloadBackendIdentity(
         kind: 'embedded',
+        profileId: 'another-profile',
+        fingerprint: 'installation-fingerprint',
+      ),
+    ),
+    (
+      label: 'kind',
+      identity: const VideoDownloadBackendIdentity(
+        kind: 'qbittorrent',
         profileId: 'embedded',
         fingerprint: 'installation-fingerprint',
-        category: 'different-category',
       ),
     ),
   ]) {
@@ -363,6 +373,48 @@ void main() {
     });
   }
 
+  test('改掉配置里的分类不会拦下已有任务，任务用自己那份分类投递', () async {
+    // BUG-1879：分类曾被算进后端身份，用户在设置里把分类从 hibiki 改成 fushi
+    // （或升级后默认分类漂移）会让全部在途任务当场判失配、卡死 needsAttention，
+    // 重试还会再撞同一道门。分类是任务自己的投放位置，不是「这是哪台下载器」。
+    const String jobCategory = 'hibiki';
+    expect(jobCategory, isNot(_expectedCategory));
+
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(
+      snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.1)],
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: backend,
+      // 同一台下载器（身份没变），只是用户改了设置里的分类。
+      backendResolver: (_) async => VideoDownloadBackendBinding(
+        backend: backend,
+        identity: _expectedIdentity,
+      ),
+    );
+    addTearDown(environment.close);
+
+    const String jobId = 'category-changed-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.enqueue,
+      category: jobCategory,
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.stage == VideoDownloadJobStage.download,
+    );
+
+    expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+    expect(job.lastError, isNull);
+    // 旧任务照旧投到它自己那个分类里——旧种子本来也还在那儿。
+    expect(job.category, jobCategory);
+    expect(backend.preparedCategories, contains(jobCategory));
+    expect(backend.preparedCategories, isNot(contains(_expectedCategory)));
+  });
+
   test('restart resumes persisted download stage without enqueueing again',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend(
@@ -390,7 +442,6 @@ void main() {
                   kind: 'embedded',
                   profileId: 'embedded',
                   fingerprint: 'changed-after-download',
-                  category: 'fushi-video',
                 ),
         );
       },
@@ -1393,7 +1444,6 @@ void main() {
           kind: 'embedded',
           profileId: 'embedded',
           fingerprint: 'another-installation',
-          category: 'fushi-video',
         ),
       ),
     );
@@ -1479,7 +1529,7 @@ void main() {
       final String jobId = await environment.service.enqueueManual(
         VideoDownloadManualEnqueueRequest(
           title: 'Manual Movie',
-          backendIdentity: _expectedIdentity,
+          backendTarget: _expectedTarget,
           magnetUri: manualMagnet,
           targetSourceId: environment.sourceId,
         ),
@@ -1511,7 +1561,7 @@ void main() {
         environment.service.enqueueManual(
           VideoDownloadManualEnqueueRequest(
             title: 'x',
-            backendIdentity: _expectedIdentity,
+            backendTarget: _expectedTarget,
             magnetUri: manualMagnet,
             metainfo: metainfo,
             targetSourceId: environment.sourceId,
@@ -1524,7 +1574,7 @@ void main() {
         environment.service.enqueueManual(
           VideoDownloadManualEnqueueRequest(
             title: 'x',
-            backendIdentity: _expectedIdentity,
+            backendTarget: _expectedTarget,
             targetSourceId: environment.sourceId,
           ),
         ),
@@ -1534,7 +1584,7 @@ void main() {
         environment.service.enqueueManual(
           VideoDownloadManualEnqueueRequest(
             title: 'x',
-            backendIdentity: _expectedIdentity,
+            backendTarget: _expectedTarget,
             magnetUri: 'magnet:?dn=no-hash',
             targetSourceId: environment.sourceId,
           ),
@@ -1545,7 +1595,7 @@ void main() {
         environment.service.enqueueManual(
           VideoDownloadManualEnqueueRequest(
             title: 'x',
-            backendIdentity: _expectedIdentity,
+            backendTarget: _expectedTarget,
             magnetUri: manualMagnet,
           ),
         ),
@@ -1582,7 +1632,7 @@ void main() {
       final String jobId = await service.enqueueManual(
         VideoDownloadManualEnqueueRequest(
           title: 'Manual Torrent',
-          backendIdentity: _expectedIdentity,
+          backendTarget: _expectedTarget,
           metainfo: metainfo,
           targetSourceId: environment.sourceId,
         ),
@@ -1607,7 +1657,7 @@ void main() {
         environment.service.enqueueManual(
           VideoDownloadManualEnqueueRequest(
             title: 'x',
-            backendIdentity: _expectedIdentity,
+            backendTarget: _expectedTarget,
             metainfo: inspectTorrentMetainfo(_manualV1Metainfo()),
             targetSourceId: environment.sourceId,
           ),
@@ -1625,7 +1675,7 @@ void main() {
         environment.service.enqueueManual(
           VideoDownloadManualEnqueueRequest(
             title: 'A Novel',
-            backendIdentity: _expectedIdentity,
+            backendTarget: _expectedTarget,
             magnetUri: manualMagnet,
             discoveryKind: DiscoveryMediaKind.novel,
           ),
@@ -1653,7 +1703,7 @@ void main() {
       final String jobId = await service.enqueueManual(
         VideoDownloadManualEnqueueRequest(
           title: 'A Novel',
-          backendIdentity: _expectedIdentity,
+          backendTarget: _expectedTarget,
           magnetUri: manualMagnet,
           discoveryKind: DiscoveryMediaKind.novel,
           // 故意同时给字幕策略与来源：发现域任务必须把它们归零。
@@ -1810,7 +1860,7 @@ class _PipelineEnvironment {
   VideoDownloadEnqueueRequest enqueueRequest() => VideoDownloadEnqueueRequest(
         media: _mediaReference(),
         resource: provider.candidate,
-        backendIdentity: _expectedIdentity,
+        backendTarget: _expectedTarget,
         targetSourceId: sourceId,
       );
 
@@ -1825,6 +1875,7 @@ class _PipelineEnvironment {
     bool withoutTargetSource = false,
     String backendKind = 'embedded',
     String lifecycle = VideoDownloadJobLifecycle.active,
+    String category = _expectedCategory,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.upsertVideoDownloadJob(
@@ -1848,7 +1899,7 @@ class _PipelineEnvironment {
         backendTaskId: const Value<String?>(_torrentHash),
         backendProfileId: Value<String?>(_expectedIdentity.profileId),
         fingerprint: _expectedIdentity.fingerprint,
-        category: Value<String?>(_expectedIdentity.category),
+        category: Value<String?>(category),
         targetSourceId: Value<int?>(withoutTargetSource ? null : sourceId),
         organizationPolicy: Value<String>(organizationPolicy),
         subtitlePolicy: Value<String>(subtitlePolicy.name),
@@ -2103,6 +2154,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   final Completer<void> addEntered = Completer<void>();
   Future<void> Function()? beforeAdd;
   int prepareCategoryCalls = 0;
+  final List<String> preparedCategories = <String>[];
   int addCalls = 0;
   int listTorrentsCalls = 0;
   int listFilesCalls = 0;
@@ -2177,6 +2229,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   @override
   Future<bool> prepareCategory(String category) async {
     prepareCategoryCalls += 1;
+    preparedCategories.add(category);
     return true;
   }
 

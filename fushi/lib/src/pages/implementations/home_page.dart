@@ -1474,7 +1474,7 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
-    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（identity 在
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
     // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
@@ -1492,13 +1492,13 @@ class _HomePageState extends BasePageState<HomePage>
           // 失败态那句话才有一颗能真正解决它的按钮。
           onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
-            final VideoDownloadBackendIdentity identity =
-                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+            final VideoDownloadBackendTarget target =
+                await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: selection.media,
                 resource: selection.resource,
-                backendIdentity: identity,
+                backendTarget: target,
                 targetSourceId: selection.source.id,
                 subtitlePolicy: selection.subtitlePolicy,
                 coverUrl: item.posterUrl,
@@ -1537,7 +1537,7 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
-    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（identity 在
+    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
     // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
@@ -1553,8 +1553,8 @@ class _HomePageState extends BasePageState<HomePage>
           // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
           onConfigureBackend: _promptDownloadBackendSetup,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
-            final VideoDownloadBackendIdentity identity =
-                await appModelNoUpdate.currentVideoDownloadBackendIdentity();
+            final VideoDownloadBackendTarget target =
+                await appModelNoUpdate.currentVideoDownloadBackendTarget();
             final int now = DateTime.now().millisecondsSinceEpoch;
             final String subscriptionId =
                 videoDiscoverySubscriptionId(item.reference);
@@ -1583,10 +1583,10 @@ class _HomePageState extends BasePageState<HomePage>
                       : 'ongoing',
                 ),
                 startAfterEpisode: Value<int?>(selection.startAfterEpisode),
-                backendKind: identity.kind,
-                backendProfileId: Value<String?>(identity.profileId),
-                fingerprint: identity.fingerprint,
-                category: Value<String?>(identity.category),
+                backendKind: target.kind,
+                backendProfileId: Value<String?>(target.profileId),
+                fingerprint: target.fingerprint,
+                category: Value<String?>(target.category),
                 targetSourceId: Value<int?>(selection.download.source.id),
                 organizationPolicy: const Value<String>('library'),
                 subtitlePolicy:

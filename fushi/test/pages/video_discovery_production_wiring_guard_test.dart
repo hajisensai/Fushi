@@ -50,7 +50,7 @@ void main() {
       final int pageConstruction = entryPoint.indexOf('Page(');
       final int submitCallback = entryPoint.indexOf('onSubmit:');
       final int backendResolution =
-          entryPoint.indexOf('currentVideoDownloadBackendIdentity()');
+          entryPoint.indexOf('currentVideoDownloadBackendTarget()');
       expect(pageConstruction, isNonNegative);
       expect(submitCallback, greaterThan(pageConstruction));
       expect(
