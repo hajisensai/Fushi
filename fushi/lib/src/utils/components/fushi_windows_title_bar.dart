@@ -162,6 +162,11 @@ class _FushiWindowsTitleBarState extends State<FushiWindowsTitleBar>
         final Widget frame = ColoredBox(
           color: colors.surface,
           child: Column(
+            // The frame is always wrapped in DragToResizeArea's Stack, which
+            // hands its non-positioned child loose constraints. Stretch makes
+            // the cross axis tight regardless, so hiding the caption row cannot
+            // change how wide the page below lays out.
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               if (!hideFrame)
                 SizedBox(
@@ -244,18 +249,26 @@ class _FushiWindowsTitleBarState extends State<FushiWindowsTitleBar>
         // cache, which is vulnerable to the same missing Windows leave event.
         // Fullscreen omits resize hit targets entirely; maximized windows keep
         // them disabled until the native state is explicitly re-read above.
-        return hideFrame
-            ? frame
-            : DragToResizeArea(
-                enableResizeEdges: _isMaximized
-                    ? const <ResizeEdge>[]
-                    : const <ResizeEdge>[
-                        ResizeEdge.topLeft,
-                        ResizeEdge.top,
-                        ResizeEdge.topRight,
-                      ],
-                child: frame,
-              );
+        //
+        // The wrapper widget type is invariant on purpose: swapping between
+        // `frame` and `DragToResizeArea(child: frame)` makes
+        // `Widget.canUpdate` false at this slot on every fullscreen flip, which
+        // deactivates and re-inflates the whole subtree below — including the
+        // keyless global-shortcut Focus node and the FushiFocusRoot controller,
+        // so focus is lost on each F11 / media fullscreen toggle. State is
+        // expressed through `enableResizeEdges` instead; an empty list makes
+        // every edge a bare `Container()` with no gesture target, which is
+        // exactly the zero-hit-area semantics the removed branch had.
+        return DragToResizeArea(
+          enableResizeEdges: (hideFrame || _isMaximized)
+              ? const <ResizeEdge>[]
+              : const <ResizeEdge>[
+                  ResizeEdge.topLeft,
+                  ResizeEdge.top,
+                  ResizeEdge.topRight,
+                ],
+          child: frame,
+        );
       },
     );
   }
