@@ -3802,6 +3802,6 @@
   "module_downloads_hidden_hint": "The Downloads tab is hidden in Settings → System → Feature modules; turn it back on to manage subscriptions.",
   "book_file_location_open": "Open file location",
   "book_file_location_failed": "Could not open this book's file location.",
-  "manga_source_cloudflare_verify_title": "Site verification",
-  "manga_source_cloudflare_verify_hint": "Complete the Cloudflare check below. Loading resumes automatically once it passes."
+  "manga_source_cloudflare_verify_title": "Siteverificatie",
+  "manga_source_cloudflare_verify_hint": "Voltooi de Cloudflare-controle hieronder. Het laden gaat automatisch verder zodra deze is geslaagd."
 }
