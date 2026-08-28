@@ -1456,12 +1456,20 @@ def find_invalid_lookup_entry_visibility_lifecycle(
 
     refresh = functions["fushiLookupRefreshSentenceSurface"]
     refresh_patterns = (
+        # 🔴 重入早退必须把 pending 放回去。pending 位在 FlushVisualWork 里已经被清，
+        # 这里裸 return 会把换句刷新永久丢掉，且 FlushVisualWork 仍报「已排空」——
+        # 与兄弟路径 VisualFlushActive「保留 pending + 返回未排空」的不变式相反。
+        re.escape(
+            "if(global.fushiLookupSentenceRefreshActive)"
+            "{global.fushiLookupPendingSentenceRefresh=true;return;}"
+        ),
         re.escape("global.fushiLookupReconcileVisualParents();"),
         re.escape("global.fushiLookupRefreshCaptureBridges();"),
     )
     if not _matches_once_in_order(refresh, refresh_patterns):
         violations.append(
-            f"{ADAPTER.name}: 逐句 refresh 必须先处理 Layer 归属，再调用 bridge-only refresh"
+            f"{ADAPTER.name}: 逐句 refresh 重入时必须保留 pending 请求，"
+            "随后先处理 Layer 归属，再调用 bridge-only refresh"
         )
     if bootstrap.count("global.fushiLookupReconcileVisualParents();") != 1:
         violations.append(
@@ -2099,20 +2107,32 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "global.fushiLookupPendingSentenceRefresh=true;",
         "完整 candidate 证明同一逻辑槽内容变化后必须只排队逐句刷新",
     )
-    for pending_write, message in (
-        (
-            "global.fushiLookupPendingSubmitFence=true;",
-            "submit fence 请求只能由完整 candidate 的句子边界发布",
-        ),
-        (
-            "global.fushiLookupPendingSentenceRefresh=true;",
-            "surface refresh 请求只能由完整 candidate 的句子边界发布",
-        ),
+    if bootstrap.count("global.fushiLookupPendingSubmitFence=true;") != 1:
+        violations.append(
+            f"{ADAPTER.name}: submit fence 请求只能由完整 candidate 的句子边界发布"
+            f"（出现 {bootstrap.count('global.fushiLookupPendingSubmitFence=true;')} 次）"
+        )
+    # surface refresh 恰好两处，且两处的语义必须不同：
+    #   ① 完整 candidate 的句子边界**发布**请求；
+    #   ② RefreshSentenceSurface 重入早退时把已发布的请求**放回去**。
+    # 第二处不是新的发布者：pending 位在 FlushVisualWork 里已经被摘掉，没有这次
+    # 回填就等于把换句刷新永久丢掉，而 FlushVisualWork 末尾仍会报「已排空」。
+    # 计数从 1 放宽到 2 时必须同时钉住第二处的确切形状，否则等于把「只有句子边界
+    # 能发布」这条规则整个作废。
+    sentence_requeue = (
+        "if(global.fushiLookupSentenceRefreshActive)"
+        "{global.fushiLookupPendingSentenceRefresh=true;return;}"
+    )
+    if (
+        bootstrap.count("global.fushiLookupPendingSentenceRefresh=true;") != 2
+        or bootstrap.count(sentence_requeue) != 1
     ):
-        if bootstrap.count(pending_write) != 1:
-            violations.append(
-                f"{ADAPTER.name}: {message}（出现 {bootstrap.count(pending_write)} 次）"
-            )
+        violations.append(
+            f"{ADAPTER.name}: surface refresh 请求只能由完整 candidate 的句子边界发布，"
+            "外加 RefreshSentenceSurface 重入早退时原样放回（出现 "
+            f"{bootstrap.count('global.fushiLookupPendingSentenceRefresh=true;')} 次，"
+            f"重入回填 {bootstrap.count(sentence_requeue)} 次）"
+        )
 
     layer_owned = functions["fushiLookupLayerOwnedByPrimary"]
     require_once(
@@ -3465,7 +3485,11 @@ global.fushiLookupRefreshCaptureBridges = function()
 
 global.fushiLookupRefreshSentenceSurface = function()
 {
-  if(global.fushiLookupSentenceRefreshActive) return;
+  if(global.fushiLookupSentenceRefreshActive)
+  {
+    global.fushiLookupPendingSentenceRefresh = true;
+    return;
+  }
   global.fushiLookupSentenceRefreshActive = true;
   try
   {
@@ -4745,6 +4769,29 @@ class MutationSelfTest(unittest.TestCase):
         ):
             with self.subTest(replacement=new.strip()):
                 dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_sentence_refresh_reentry_keeps_the_pending_request(self) -> None:
+        """重入早退丢掉 pending = 换句刷新永久丢失，且 flush 还谎报已排空。"""
+        for old_body, new_body in (
+            (
+                "  if(global.fushiLookupSentenceRefreshActive)\n"
+                "  {\n"
+                "    global.fushiLookupPendingSentenceRefresh = true;\n"
+                "    return;\n"
+                "  }\n",
+                "  if(global.fushiLookupSentenceRefreshActive) return;\n",
+            ),
+            (
+                "    global.fushiLookupPendingSentenceRefresh = true;\n"
+                "    return;\n",
+                "    return;\n",
+            ),
+        ):
+            with self.subTest(replacement=new_body.strip()):
+                dirty = self._mutate_entry_lifecycle(old_body, new_body)
                 self.assertNotEqual(
                     [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
                 )

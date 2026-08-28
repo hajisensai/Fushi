@@ -14,6 +14,10 @@
 #define DIRECTSOUND_VERSION 0x0800
 #include <dsound.h>
 
+// 精确 WHITE ALBUM2 profile 的 D3D9 几何 trace（只用接口定义，不链 d3d9.lib）。
+// 必须在这里而不是 adapter 里 include —— 理由见 leaf_aquaplus_adapter.inc 顶部。
+#include <d3d9.h>
+
 // C.2e Ren'Py/FFmpeg 捕获：按前缀（avcodec-54*/avformat-54*）枚举已加载模块用 Toolhelp 快照。
 #include <tlhelp32.h>
 

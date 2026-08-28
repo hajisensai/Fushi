@@ -818,11 +818,14 @@ SHORT WINAPI Detour_SiglusGetKeyState(int virtual_key) {
   if (original == nullptr)
     return 0;
   const SHORT raw = original(virtual_key);
-  const uintptr_t module =
-      reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   if (virtual_key != VK_LBUTTON || !g_capture_enabled) {
     return raw;
   }
+  // 早退之后才解析模块基址：这条 detour 装在全进程的 user32!GetKeyState 上，
+  // 游戏每帧会为一堆与查词无关的虚拟键调它，把 syscall 排在早退之前等于给每一次
+  // 调用白付一笔。
+  const uintptr_t module =
+      reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   const bool runtime_enabled =
       g_siglus_lookup_click_runtime_enabled.load(std::memory_order_acquire);
   const HWND published_game =

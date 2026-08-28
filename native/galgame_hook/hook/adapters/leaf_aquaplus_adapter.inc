@@ -3,7 +3,10 @@
 // kept in leaf_aquaplus_profile.h.
 #include "leaf_aquaplus_profile.h"
 
-#include <d3d9.h>
+// d3d9.h 由 dll_main.cpp 在系统头块里 include。本文件整体被 include 进
+// dll_main 的**匿名 namespace 内部**，在这里 include 系统头等于把整套 COM
+// 接口声明塞进匿名 namespace；今天能编过只是 include 顺序侥幸（先前已有
+// 别的 TU 引入过），换个顺序就是一片重定义/链接错误。
 
 volatile LONG g_leaf_aquaplus_profile_state =
     0; // 0 unknown, +1 match, -1 reject
@@ -652,6 +655,43 @@ bool LoadLeafVoiceArchive(const wchar_t *path, LeafVoiceArchive *out) {
   return valid;
 }
 
+// 归档候选路径的**内容无关**指纹：一次 GetFileAttributesExW，不读一个字节。
+struct LeafVoiceArchiveStamp {
+  bool present = false;
+  uint64_t bytes = 0;
+  uint64_t written = 0;
+
+  bool operator==(const LeafVoiceArchiveStamp &other) const {
+    return present == other.present && bytes == other.bytes &&
+           written == other.written;
+  }
+};
+
+constexpr size_t kLeafVoiceArchivePathCount =
+    std::size(fushi_voice_hook::kWhiteAlbum2LeafVoiceArchiveRelativePaths);
+LeafVoiceArchiveStamp g_leaf_voice_load_stamps[kLeafVoiceArchivePathCount];
+bool g_leaf_voice_load_attempted = false;
+
+void StampLeafVoiceArchivePath(const wchar_t *path,
+                               LeafVoiceArchiveStamp *out) {
+  *out = {};
+  WIN32_FILE_ATTRIBUTE_DATA data = {};
+  if (!GetFileAttributesExW(path, GetFileExInfoStandard, &data))
+    return;
+  out->present = true;
+  out->bytes = (static_cast<uint64_t>(data.nFileSizeHigh) << 32) |
+               static_cast<uint64_t>(data.nFileSizeLow);
+  out->written =
+      (static_cast<uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) |
+      static_cast<uint64_t>(data.ftLastWriteTime.dwLowDateTime);
+}
+
+// install() 每 16ms 被 worker 调一次，解析失败时这里会被重跑。VOICE.PAK 是安装时
+// 就落盘的静态文件：路径不存在或不是合法 LAC，都不是「等一会儿就会好」的失败，
+// 而全量索引读在 WA2 量级是 1~2MB 同步 IO。所以重试由**输入变化**驱动而不是由
+// 时间驱动：记下失败那一次每个候选路径的存在性/大小/最后写入时间，下一 tick 只有
+// 指纹变了才重新解析。既不引入退避常数，也不会把「文件后来才装上」这种真实情况
+// 挡在门外。
 bool LoadLeafVoiceArchives() {
   if (InterlockedCompareExchange(&g_leaf_voice_archive_count, 0, 0) > 0)
     return true;
@@ -666,14 +706,29 @@ bool LoadLeafVoiceArchives() {
     return false;
   *slash = 0;
 
+  std::wstring paths[kLeafVoiceArchivePathCount];
+  LeafVoiceArchiveStamp stamps[kLeafVoiceArchivePathCount];
+  bool unchanged = g_leaf_voice_load_attempted;
+  for (size_t index = 0; index < kLeafVoiceArchivePathCount; ++index) {
+    paths[index] =
+        std::wstring(executable) + L"\\" +
+        fushi_voice_hook::kWhiteAlbum2LeafVoiceArchiveRelativePaths[index];
+    StampLeafVoiceArchivePath(paths[index].c_str(), &stamps[index]);
+    if (!(stamps[index] == g_leaf_voice_load_stamps[index]))
+      unchanged = false;
+  }
+  if (unchanged)
+    return false;
+  g_leaf_voice_load_attempted = true;
+  for (size_t index = 0; index < kLeafVoiceArchivePathCount; ++index)
+    g_leaf_voice_load_stamps[index] = stamps[index];
+
   LONG loaded = 0;
-  for (const wchar_t *relative :
-       fushi_voice_hook::kWhiteAlbum2LeafVoiceArchiveRelativePaths) {
+  for (size_t index = 0; index < kLeafVoiceArchivePathCount; ++index) {
     if (loaded >= kLeafVoiceArchiveSlots)
       break;
-    const std::wstring path = std::wstring(executable) + L"\\" + relative;
     LeafVoiceArchive archive;
-    if (!LoadLeafVoiceArchive(path.c_str(), &archive))
+    if (!LoadLeafVoiceArchive(paths[index].c_str(), &archive))
       continue;
     g_leaf_voice_archives[loaded] = archive;
     ++loaded;
@@ -964,6 +1019,10 @@ void StopLeafAquaplusResourceAudio() {
     g_leaf_voice_archives[index] = {};
     free(ranges);
   }
+  // 会话结束后重新 install 必须重新解析一次，不能被上一会话的指纹挡住。
+  g_leaf_voice_load_attempted = false;
+  for (size_t index = 0; index < kLeafVoiceArchivePathCount; ++index)
+    g_leaf_voice_load_stamps[index] = {};
   g_leaf_voice_last_archive = UINT32_MAX;
   g_leaf_voice_last_range = UINT32_MAX;
   g_leaf_voice_last_tick = 0;

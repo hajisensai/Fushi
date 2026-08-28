@@ -349,6 +349,33 @@ void main() {
       'PostMessage(target,kLowLevelMouseClickMessage',
     );
     final int decideDown = hookProc.indexOf('constboolconsume_click=');
+    // 🔴 down 上的 fetch_or 恰好两处，两处都在吞 down：
+    //   ① tail request 发布失败时的提前 return 1；
+    //   ② 命中游戏客户区、决定关闭查词的那次 return 1。
+    // markDown 从 decideDown 起找，正是为了跳过 ①。跳过意味着 ① 完全没有顺序守卫，
+    // 所以必须在这里单独钉住它——不变式对两条路径一样：任何吞掉 down 的
+    // return 1 之前都必须先把同键事务位置上，否则配对的 up 会漏给游戏，
+    // 引擎收到一个永远不抬起的按键。
+    expect(
+      'g_swallowed_buttons.fetch_or('.allMatches(hookProc).length,
+      2,
+      reason: '新增吞 down 的路径必须同时在本守卫里补上顺序断言',
+    );
+    final int tailFailSwallow = hookProc.indexOf(
+      'if(!tail_published){'
+      'g_swallowed_buttons.fetch_or(bit,std::memory_order_relaxed);'
+      'return1;}',
+    );
+    expect(
+      tailFailSwallow,
+      greaterThanOrEqualTo(0),
+      reason: 'tail request 发布失败必须先冻结配对 up 事务再吞掉这次 down',
+    );
+    expect(
+      tailFailSwallow,
+      lessThan(decideDown),
+      reason: 'markDown 的搜索起点 decideDown 依赖这条早期路径排在它之前',
+    );
     final int markDown = hookProc.indexOf(
       'g_swallowed_buttons.fetch_or(',
       decideDown,

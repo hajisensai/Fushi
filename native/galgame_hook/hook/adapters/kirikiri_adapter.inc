@@ -2013,7 +2013,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 扫最多 16 个既有 renderer。动画/资源帧只走上面的 bridge-only helper。
 			global.fushiLookupRefreshSentenceSurface = function()
 			{
-				if(global.fushiLookupSentenceRefreshActive) return;
+				// 重入早退必须**保留请求**——pending 位已经在 FlushVisualWork 里被清掉，
+				// 这里直接 return 会把这次换句的 surface 刷新永久丢掉，而
+				// FlushVisualWork 末尾重读 pending 位后还会报「已排空」。兄弟路径
+				// VisualFlushActive 的重入语义正是「保留 pending + 返回未排空」，这里
+				// 必须守同一条不变式：把请求放回去，让外层 flush 结束后重新排。
+				if(global.fushiLookupSentenceRefreshActive)
+				{
+					global.fushiLookupPendingSentenceRefresh = true;
+					return;
+				}
 				global.fushiLookupSentenceRefreshActive = true;
 				try
 				{
