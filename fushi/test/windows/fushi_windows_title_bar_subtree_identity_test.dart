@@ -27,17 +27,17 @@ void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), (
-          MethodCall call,
-        ) async {
-          switch (call.method) {
-            case 'isMaximized':
-            case 'isFullScreen':
-            case 'isFocused':
-              return false;
-            default:
-              return null;
-          }
-        });
+      MethodCall call,
+    ) async {
+      switch (call.method) {
+        case 'isMaximized':
+        case 'isFullScreen':
+        case 'isFocused':
+          return false;
+        default:
+          return null;
+      }
+    });
   });
 
   tearDown(() {
@@ -50,7 +50,8 @@ void main() {
   testWidgets('进出全屏不重建标题栏下方子树，焦点保持原位', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: FushiWindowsTitleBar(title: Text('Fushi'), child: _SubtreeProbe()),
+        home:
+            FushiWindowsTitleBar(title: Text('Fushi'), child: _SubtreeProbe()),
       ),
     );
     await tester.pump();
@@ -67,8 +68,8 @@ void main() {
     await tester.pump();
 
     expect(
-      identical(tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)),
-          before),
+      identical(
+          tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)), before),
       isTrue,
       reason: '进全屏时标题栏下方子树被重建了——全局快捷键 Focus 节点与焦点控制器'
           '（都没有 key）会一起销毁重建，焦点必然丢失。',
@@ -80,8 +81,8 @@ void main() {
     await tester.pump();
 
     expect(
-      identical(tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)),
-          before),
+      identical(
+          tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)), before),
       isTrue,
       reason: '出全屏时标题栏下方子树被重建了（同上）。',
     );
@@ -91,7 +92,8 @@ void main() {
   testWidgets('全屏态下 resize 边框零命中区，widget 类型不变', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: FushiWindowsTitleBar(title: Text('Fushi'), child: _SubtreeProbe()),
+        home:
+            FushiWindowsTitleBar(title: Text('Fushi'), child: _SubtreeProbe()),
       ),
     );
     await tester.pump();
@@ -101,7 +103,11 @@ void main() {
 
     expect(
       area().enableResizeEdges,
-      const <ResizeEdge>[ResizeEdge.topLeft, ResizeEdge.top, ResizeEdge.topRight],
+      const <ResizeEdge>[
+        ResizeEdge.topLeft,
+        ResizeEdge.top,
+        ResizeEdge.topRight
+      ],
       reason: 'window_manager 的 TitleBarStyle.hidden 只吃掉顶边，顶边三个 resize '
           '把手必须由 Flutter 侧补。',
     );
