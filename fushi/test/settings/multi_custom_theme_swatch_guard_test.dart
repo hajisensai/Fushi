@@ -53,6 +53,44 @@ void main() {
           reason: 'the focus/gamepad edit button was removed');
     });
 
+    // BUG-1894: 编辑按钮曾在「当前活跃主题不是自定义主题」时回落到打开空草稿
+    // 编辑页——与左邻「+」卡片逐字节等价，于是同一行两个按钮做同一件事，挂着
+    // 「编辑」图标的那个却在新建。修法是禁用而不是回落。
+    test('BUG-1894: edit button is disabled when there is nothing to edit', () {
+      expect(actions.contains('enabled: activeCustomThemeId != null'), isTrue,
+          reason: 'the edit button must be disabled with no active custom '
+              'theme instead of falling back to a blank-draft editor');
+    });
+
+    test('BUG-1894: the edit target is resolved once, shared by onTap+enabled',
+        () {
+      // 门和目标必须读同一个值，否则又会长出「按钮亮着但没有目标」的状态。
+      expect(
+          RegExp(r'final String\? activeCustomThemeId =\s*\n?\s*'
+                  r'appModel\.activeCustomThemeEntry\?\.id;')
+              .hasMatch(actions),
+          isTrue,
+          reason: 'active custom theme id must be resolved once up front');
+      expect(actions.contains('CustomThemePage(themeId: activeCustomThemeId)'),
+          isTrue,
+          reason: 'the edit button must route to the active entry');
+      // 旧的行内解析（onTap 里现算一个 activeId）不得回来。
+      expect(actions.contains('final String? activeId ='), isFalse,
+          reason: 'the per-tap activeId fallback must stay deleted');
+    });
+
+    test('BUG-1894: the blank-draft editor has exactly one entry point (+)',
+        () {
+      // 关键守卫：任何让编辑按钮（或别的控件）重新回落到空草稿的改法都会让这个
+      // 计数变成 2 而变红。「+」卡片是唯一的新建入口。
+      expect(
+        RegExp(r'const CustomThemePage\(\)').allMatches(actions).length,
+        1,
+        reason: 'blank-draft CustomThemePage() must have exactly one call '
+            'site — the +new swatch',
+      );
+    });
+
     test(
         'TODO-1320: swatch row renders no name caption; Custom N default lives '
         'in the editor only', () {
