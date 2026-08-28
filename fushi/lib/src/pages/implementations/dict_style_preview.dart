@@ -38,6 +38,18 @@ class DictStylePreview extends StatefulWidget {
   State<DictStylePreview> createState() => _DictStylePreviewState();
 }
 
+/// 集成测试用的取控制器口子（BUG-1918 的端到端验证要在真 WebView2 里发 JS）。
+///
+/// 预览本身不对外暴露 controller，而这条链路的失败方式是**进程级闪退**，只有真
+/// WebView2 能回答「还崩不崩」。给一个静态引用比给构造参数轻，也不动任何调用点
+/// 的签名；生产代码只写不读。
+@visibleForTesting
+class DictStylePreviewDebug {
+  DictStylePreviewDebug._();
+
+  static InAppWebViewController? lastController;
+}
+
 class _DictStylePreviewState extends State<DictStylePreview> {
   InAppWebViewController? _controller;
   final WebViewDeathGuard _deathGuard =
@@ -98,23 +110,29 @@ class _DictStylePreviewState extends State<DictStylePreview> {
 
   @override
   Widget build(BuildContext context) {
-    final bool inline = DictionaryPopupWebViewState.shouldInlinePopupAssets;
     final ThemeData theme = Theme.of(context);
+    // 与真弹窗同一个原语：它内部先确保内联资产装载，未就绪才返回 null。
+    // 不能再调裸的构造函数——启动时的预读是 fire-and-forget，早开设置就会拼出
+    // 空 <script>，预览白屏（BUG-1918 ②）。
+    final String? inlineHtml =
+        DictionaryPopupWebViewState.shouldInlinePopupAssets
+            ? DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
+                themeAttr:
+                    theme.brightness == Brightness.dark ? 'dark' : 'light',
+                bgHex: _hex(theme.colorScheme.surface),
+              )
+            : null;
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
-        initialData: inline
+        initialData: inlineHtml != null
             ? InAppWebViewInitialData(
-                data: DictionaryPopupWebViewState.buildInlinePopupHtml(
-                  themeAttr:
-                      theme.brightness == Brightness.dark ? 'dark' : 'light',
-                  bgHex: _hex(theme.colorScheme.surface),
-                ),
+                data: inlineHtml,
                 mimeType: 'text/html',
                 encoding: 'utf-8',
               )
             : null,
-        initialUrlRequest: inline
+        initialUrlRequest: inlineHtml != null
             ? null
             : URLRequest(
                 url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
@@ -128,14 +146,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
         ),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
-          // popup.js 在渲染词条头时**无保护地**调这两个 handler；没注册就抛
-          // TypeError，被 renderPopup 的 try/catch 吞掉 → 整张卡片不渲染（白屏）。
-          for (final String name in const <String>[
-            'favoriteCheck',
-            'duplicateCheck',
-            'popupRendered',
-            'resolveWordAudio',
-          ]) {
+          DictStylePreviewDebug.lastController = controller;
+          for (final String name in kDictStylePreviewNoopHandlers) {
             controller.addJavaScriptHandler(
               handlerName: name,
               callback: (List<dynamic> _) => null,
@@ -175,6 +187,43 @@ class _DictStylePreviewState extends State<DictStylePreview> {
     return '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
   }
 }
+
+/// popup.js / selection.js 能发起的**全部** JS 桥调用名，在预览里一律 no-op。
+///
+/// 两件事各自成立：
+/// * 行为上——预览只是调样式，制卡 / 播音 / 跳转 / 上报都不该真发生；
+///   `favoriteCheck` / `duplicateCheck` 这类在渲染词条头时**无保护地**被调，
+///   没注册就抛 TypeError、被 renderPopup 的 try/catch 吞掉 → 整张卡片白屏。
+/// * 存活上——BUG-1918：Dart 侧没注册的 handler 名会让插件回一个 **null**
+///   答复（`_handleMethod` 末尾 `return null`），Windows 原生侧把它当非空指针
+///   解引用 → 0xC0000005 整个 app 闪退。原生已根治（webview_channel_delegate.cpp
+///   的 decodeResult 空守卫），但预览本身也不应该依赖平台兜底：每个桥调用
+///   都得有确定的 Dart 侧语义。
+///
+/// 这份名单必须覆盖 popup.html 加载的所有脚本里的 `callHandler('X')`，
+/// 守卫测试：`fushi/test/pages/dict_style_preview_handler_coverage_test.dart`。
+const List<String> kDictStylePreviewNoopHandlers = <String>[
+  'clearSentenceDraft',
+  'duplicateCheck',
+  'favoriteCheck',
+  'favoriteEntry',
+  'findMinedMatches',
+  'mineEntry',
+  'minedCardAction',
+  'onLinkClick',
+  'openInAnki',
+  'openLink',
+  'openMinedNote',
+  'openSentenceContextModal',
+  'overwriteTargetNoteId',
+  'popupRendered',
+  'reportJsError',
+  'resolveWordAudio',
+  'setSentenceContext',
+  'tapOutside',
+  'textSelected',
+  'updateEntry',
+];
 
 /// 注入预览 WebView 的点选逻辑。
 ///
