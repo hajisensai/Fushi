@@ -52,6 +52,9 @@ import 'package:fushi/src/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
@@ -3544,6 +3547,35 @@ class AppModel with ChangeNotifier {
     _mihonManager = manager;
     unawaited(manager.initialise());
     return manager;
+  }
+
+  /// 按 runtime 分派在线漫画书架服务。
+  ///
+  /// 书架条目和作品页手上只有 `bookKey` + 描述符里的 runtime，不知道该找哪个
+  /// 运行时；这里是唯一的分派点。
+  ///
+  /// **Aidoku 分支刻意不碰 [mihonManager]**：平台矩阵不重合——Mihon 是
+  /// Android/Windows/macOS，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
+  /// 条目时去取 mihonManager 会直接抛 `UnsupportedError`，把「打开这本书」变成
+  /// 崩溃。两个分支各自独立到底。
+  OnlineMangaLibraryService onlineMangaLibraryService(
+    OnlineMangaRuntimeKind runtime,
+  ) {
+    switch (runtime) {
+      case OnlineMangaRuntimeKind.mihon:
+        final MihonManager manager = mihonManager;
+        return OnlineMangaLibraryService(
+          database: manager.database,
+          rootDirectory: manager.rootDirectory,
+          adapter: MihonLibraryAdapter(manager),
+        );
+      case OnlineMangaRuntimeKind.aidoku:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: Directory(path.join(databaseDirectory.path, 'aidoku')),
+          adapter: AidokuLibraryAdapter(),
+        );
+    }
   }
 
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
