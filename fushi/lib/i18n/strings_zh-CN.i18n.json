@@ -3833,5 +3833,8 @@
   "discovery_game_type_raw": "生肉",
   "discovery_game_type_translated": "熟肉",
   "discovery_game_type_mobile": "手机",
-  "discovery_game_type_unlabelled": "未标注"
+  "discovery_game_type_unlabelled": "未标注",
+  "game_library_downloading": "下载中",
+  "game_library_download_queued": "排队中",
+  "game_library_download_retrying": "重试中"
 }

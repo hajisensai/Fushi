@@ -11,6 +11,8 @@ import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
@@ -119,12 +121,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     // 仓储是 ChangeNotifier：监听它，游戏从任何入口落库（「导入」视图快速导入、
     // 详情页编辑等）本页都能自动刷新，不再依赖「写操作都发生在本页」的隐含假设。
     _repo.addListener(_refresh);
+    // BUG-1911：下载中的游戏要在库页占位，所以也得跟着下载队列刷新。
+    _appModel.discoveryDownloadQueue.addListener(_refresh);
     unawaited(_reload());
   }
 
   @override
   void dispose() {
     _repo.removeListener(_refresh);
+    _appModel.discoveryDownloadQueue.removeListener(_refresh);
     _searchController.dispose();
     super.dispose();
   }
@@ -1142,6 +1147,26 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             );
           }
         }
+        // BUG-1911：在途下载排在最前——用户刚点完下载，第一眼要能确认「加进来了」。
+        final List<DiscoveryDownloadTask> pending = _pendingGameDownloads;
+        if (pending.isNotEmpty) {
+          slivers.add(
+            SliverGrid.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: spacing,
+                crossAxisSpacing: spacing,
+                mainAxisExtent: _gameCardExtent(context, cardWidth),
+              ),
+              itemCount: pending.length,
+              itemBuilder: (BuildContext context, int i) =>
+                  _buildPendingDownloadCard(pending[i]),
+            ),
+          );
+          slivers.add(
+            SliverToBoxAdapter(child: SizedBox(height: spacing)),
+          );
+        }
         if (loose.isNotEmpty) {
           slivers.add(
             SliverGrid.builder(
@@ -1228,6 +1253,27 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 外层 [MediaCardDraggable] = 拖卡进合集的拖拽源（桌面端；游戏库本就只在
   /// Windows 有实际使用场景）。合集行内的成员卡同样可拖——把成员从一个合集拖到
   /// 另一个合集行头即多归属（合集成员是多对多，不是移动）。
+  /// BUG-1911：**尚未入库**的在途游戏下载。
+  ///
+  /// 用户原话：「刚开始下载的、下载一半的应该也进到库里面占位。否则不知道是否加入了，
+  /// 毕竟发现已经获取到对应的名称和封面了」。
+  ///
+  /// 刻意**不往 `Galgames` 表写占位行**：那张表的 `exePath` 是 NOT NULL，且没有任何
+  /// 状态列——一行存在就等于「本机有一个可启动的 exe」。为占位造一行意味着要么写个
+  /// 假路径，要么加 schema 列 + 迁移，还得回答「下载失败/取消后这行归谁删」「同步与
+  /// 墓碑怎么算」。而下载队列本身就是这些条目此刻的**唯一真相源**，并且随手就带着
+  /// 用户说的那两样东西（`item.title` / `item.coverUrl`）。所以占位是**渲染**出来的，
+  /// 不是**存**出来的：下载完成走既有的入库路径落成真条目，失败/取消则自然消失。
+  ///
+  /// 只覆盖发现页的 HTTP 直链队列（shinnku / AList）——torrent 通道的游戏计划落 JSON
+  /// 文件、无变更通知，且 `AnimeDownloadPlan.coverUrl` 对游戏恒为 null，没有可占位的
+  /// 名称+封面。见本条 bug 档的备注。
+  List<DiscoveryDownloadTask> get _pendingGameDownloads =>
+      pendingGameDownloads(_appModel.discoveryDownloadQueue.tasks);
+
+  Widget _buildPendingDownloadCard(DiscoveryDownloadTask task) =>
+      buildPendingGameDownloadCard(task);
+
   Widget _buildGameCard(GalgameEntry game) {
     return MediaCardDraggable(
       mediaRef: MediaRef(kind: MediaKind.game, entryKey: game.id),
@@ -1254,6 +1300,75 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
       onEditLanguage: () => unawaited(_editGameLanguage(game)),
     );
+  }
+}
+
+/// BUG-1911：从下载队列里挑出**尚未入库**的游戏下载（顶层纯函数，供测试直接驱动；
+/// 同文件的 [buildGameCollectionMemberCard] 是同一个范式）。
+List<DiscoveryDownloadTask> pendingGameDownloads(
+  Iterable<DiscoveryDownloadTask> tasks,
+) =>
+    <DiscoveryDownloadTask>[
+      for (final DiscoveryDownloadTask task in tasks)
+        if (task.item.kind == DiscoveryMediaKind.game && !task.isFinished) task,
+    ];
+
+/// BUG-1911：在途下载的占位卡：封面/名称来自发现页条目，底部一条进度。
+Widget buildPendingGameDownloadCard(DiscoveryDownloadTask task) {
+  final String? coverUrl = task.item.coverUrl;
+  final int? total = task.totalBytes;
+  final double? progress = (total != null && total > 0)
+      ? (task.receivedBytes / total).clamp(0.0, 1.0)
+      : null;
+  return GalgamePosterCard(
+    cover: Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        if (coverUrl != null && coverUrl.isNotEmpty)
+          Opacity(
+            // 压暗以示「还不能玩」——与旁边可启动的真条目在一眼之内可区分。
+            opacity: 0.45,
+            child: Image.network(coverUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const ColoredBox(
+                      color: Colors.black26,
+                      child: Center(child: Icon(Icons.download_outlined)),
+                    )),
+          )
+        else
+          const ColoredBox(
+            color: Colors.black26,
+            child: Center(child: Icon(Icons.download_outlined)),
+          ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: LinearProgressIndicator(value: progress, minHeight: 4),
+        ),
+      ],
+    ),
+    title: task.item.title,
+    overlayText: pendingGameDownloadLabel(task),
+    // 不可点：它还不是一个能启动的游戏。点击应当没有反应而不是抛错。
+    semanticLabel: '${task.item.title} · ${pendingGameDownloadLabel(task)}',
+  );
+}
+
+/// BUG-1911：占位卡上的状态短标签。
+String pendingGameDownloadLabel(DiscoveryDownloadTask task) {
+  switch (task.status) {
+    case DiscoveryDownloadStatus.running:
+      final int? total = task.totalBytes;
+      if (total != null && total > 0) {
+        return '${((task.receivedBytes / total) * 100).clamp(0, 100).toStringAsFixed(0)}%';
+      }
+      return t.game_library_downloading;
+    case DiscoveryDownloadStatus.waitingRetry:
+      return t.game_library_download_retrying;
+    case DiscoveryDownloadStatus.queued:
+    case DiscoveryDownloadStatus.done:
+    case DiscoveryDownloadStatus.failed:
+    case DiscoveryDownloadStatus.cancelled:
+      return t.game_library_download_queued;
   }
 }
 

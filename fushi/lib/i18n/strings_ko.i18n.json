@@ -3833,5 +3833,8 @@
   "discovery_game_type_raw": "Untranslated",
   "discovery_game_type_translated": "Translated",
   "discovery_game_type_mobile": "Mobile",
-  "discovery_game_type_unlabelled": "Unlabelled"
+  "discovery_game_type_unlabelled": "Unlabelled",
+  "game_library_downloading": "Downloading",
+  "game_library_download_queued": "Queued",
+  "game_library_download_retrying": "Retrying"
 }
