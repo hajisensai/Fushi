@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1764 条。点号进各自文件。
+> 共 1765 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,7 @@
 | [BUG-1890](bugs/BUG-1890-gal-hook-text-vertical-align-forced-center.md) | ✅ | ✅ | gal 台词浮窗文字放得下时被强制垂直居中，无法选择顶部对齐 |
 | [BUG-1889](bugs/BUG-1889-gal-hook-outline-8way-stamping-aliasing.md) | ✅ | ✅ | gal 台词浮窗描边是 8 向偏移叠印伪描边，边缘粗细不均有锯齿感 |
 | [BUG-1888](bugs/BUG-1888-manga-top-chrome-no-hide.md) | ✅ | ✅ | 漫画阅读器顶栏无任何隐藏方式，也没有全屏入口 |
+| [BUG-1887](bugs/BUG-1887-windows-location-in-use.md) | ✅ | ✅ | Windows 显示 Fushi 正在使用定位（permission_handler_windows 启动即开定位会话） |
 | [BUG-1886](bugs/BUG-1886-global-fullscreen-gated-by-experimental-focus-nav.md) | ✅ | ✅ | F11 窗口全屏被实验性焦点导航开关门控，默认安装上按 F11 无反应 |
 | [BUG-1884](bugs/BUG-1884-mihon-source-preferences-save.md) | ✅ | ✅ | Mihon 来源偏好没有保存按钮，未提交文本会丢失 |
 | [BUG-1882](bugs/BUG-1882-gal-ingame-outside-click-through.md) | ✅ | ✅ | 游戏内查词点外关闭时同一点击穿透到游戏推进台词 |
