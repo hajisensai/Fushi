@@ -174,7 +174,19 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
         ) {
           final VideoDiscoveryDetailData details =
               snapshot.data ?? VideoDiscoveryDetailData(item: widget.item);
-          return CustomScrollView(
+          // BUG-1901：整页一个 SelectionArea，而不是逐个把 Text 换成 SelectableText。
+          //
+          // 用户报「这个界面，不能复制文件名，下面的简介可以」——根因不是包裹范围问题
+          // （改前全 fushi/lib 只有日志查看器一处 SelectionArea，与本页毫无关系），
+          // 而是**逐 widget 手工选型**：谁被想起来写成 SelectableText 谁能选。改前全页
+          // 15 个文本元素只有简介和 facts 右列 2 个可选，标题、原标题、年份/类型、评分、
+          // 演职人员、相关作品全不可选。
+          //
+          // 逐个补 SelectableText 只是把这个特殊情况再复制 13 份，下次加字段照样漏。
+          // 页级 SelectionArea 让「可选」成为默认，特殊情况消失，还顺带支持跨元素拖选
+          // （标题连着简介一起选）。按钮的点击不受影响。
+          return SelectionArea(
+              child: CustomScrollView(
             key: const PageStorageKey<String>('video-discovery-detail-scroll'),
             slivers: <Widget>[
               _buildHero(details.item),
@@ -195,7 +207,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                 child: SizedBox(height: tokens.spacing.section),
               ),
             ],
-          );
+          ));
         },
       ),
     );
@@ -490,7 +502,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           ),
           if (overview != null && overview.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            SelectableText(
+            // BUG-1901：页级 SelectionArea 已让所有文本可选。这里保持普通 Text ——
+            // 嵌套的 SelectableText 会自成一个独立选区，反而切断与标题/元数据的跨元素
+            // 拖选，是 SelectionArea 之前遗留的逐 widget 写法。
+            Text(
               overview,
               style: Theme.of(context).textTheme.bodyLarge,
             ),
@@ -515,7 +530,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                     ),
                     SizedBox(width: tokens.spacing.gap),
                     Expanded(
-                      child: SelectableText(
+                      child: Text(
                         fact.value,
                         style: tokens.type.listTitle,
                       ),
