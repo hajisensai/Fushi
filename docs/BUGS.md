@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1800 条。点号进各自文件。
+> 共 1801 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1923](bugs/BUG-1923-downloads-center-sections-global-search.md) | ✅ | ✅ | 下载中心四分区被移除且资源页发现入口失去模块复用 |
 | [BUG-1922](bugs/BUG-1922-torrent-detail-missing-live-data-layout.md) | ✅ | ✅ | Torrent 详情缺少实时数据时空态布局失衡 |
 | [BUG-1921](bugs/BUG-1921-settings-module-labels-mismatch.md) | ✅ | ✅ | 设置里的功能模块开关名字与底栏/侧栏对不上 |
 | [BUG-1920](bugs/BUG-1920-app-icon-rail-live-sync.md) | ✅ | ✅ | 应用图标切换未同步到主侧栏 |
