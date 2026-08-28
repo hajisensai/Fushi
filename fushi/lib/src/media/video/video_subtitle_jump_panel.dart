@@ -538,6 +538,13 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 面板自己那份 Ctrl+F 只在焦点已经在面板里时才收得到。焦点在播放器上时，按键由
   /// 视频页的整表快捷键接住 —— 那时列表可能还没打开，页面需要先开列表、再让面板
   /// 聚焦搜索框。用计数器而不是 bool：连按两次 Ctrl+F 也要每次都重新聚焦。
+  ///
+  /// PR#1032 审查 B1 契约（**水位线，不是边沿事件**）：计数值的含义是「本次面板会话已请求到
+  /// 第 N 次搜索」，基线 0 由页面在打开列表时归零。消费端（本面板）负责在**挂载时**
+  /// 就把自己对齐到当前水位，而不是只听 +1 的那一下通知。
+  /// 原因：列表关着时按 Ctrl+F，页面先开列表、同一个微任务里就 +1，而面板要到下一帧
+  /// 才 mount —— 边沿语义下那一刻零监听者，请求必丢。边沿语义天生要求发送方和接收方
+  /// 的生命周期对齐，是坏契约；水位线语义下任何路径的 +1 都不会丢。
   final ValueListenable<int>? searchRequests;
 
   @override
@@ -549,6 +556,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   /// BUG-1907：搜索框是否展开（收起时不占高度，也不影响过滤）。
   bool _searchOpen = false;
+
+  /// PR#1032 审查 B1：本面板已服务到的搜索请求**水位线**（见
+  /// [VideoSubtitleJumpPanel.searchRequests] 的契约说明）。
+  ///
+  /// 页面层的计数器是「已请求到第 N 次」的水位线而不是边沿事件：面板每次挂载时
+  /// （[initState]）都先把自己对齐到当前水位，因此「列表还没打开 → 页面先开列表再
+  /// 立刻 +1 → 面板下一帧才 mount」这条路径不会把请求丢掉。面板会话开始时水位由页面
+  /// 归零（`_toggleSubtitleJumpList` 的打开分支），所以基线恒为 0。
+  int _handledSearchRequests = 0;
 
   /// 当前搜索词。空串 = 不过滤。
   String _searchQuery = '';
@@ -807,6 +823,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
     widget.controller.addListener(_onControllerChanged);
     widget.searchRequests?.addListener(_onSearchRequested);
+    // PR#1032 审查 B1：挂载即对齐水位线。Ctrl+F 在列表关着时按下，页面会先开列表再立刻 +1，
+    // 而面板要到下一帧才 mount —— 那一刻 notifier 上零监听者。只靠 addListener 的边沿
+    // 通知必然丢掉这次请求（症状：第一次 Ctrl+F 只把列表开出来，要再按一次才出搜索框）。
+    // 这里直接读当前值补齐；仍在 initState，不能 setState，故直接落 [_searchOpen]，
+    // 首帧就带搜索态构建。
+    _syncSearchRequests(duringInit: true);
     // BUG-878：跟踪 Ctrl / ⌘ 键状态，供 Ctrl+滚轮缩字号时把列表滚动物理切成禁滚。
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _scheduleScrollToCurrentCue();
@@ -885,6 +907,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _rowKeys.clear();
       _retainRowKeyFor(_scrollTargetRawIndex);
       _scheduleScrollToCurrentCue();
+    }
+    // PR#1032 审查 B1：换了请求通道就重挂监听并重新对齐水位线（新通道可能已经有未服务的请求）。
+    if (oldWidget.searchRequests != widget.searchRequests) {
+      oldWidget.searchRequests?.removeListener(_onSearchRequested);
+      widget.searchRequests?.addListener(_onSearchRequested);
+      _handledSearchRequests = 0;
+      _syncSearchRequests();
     }
     _clearCueCaches();
   }
@@ -1094,7 +1123,27 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       ];
 
   /// BUG-1907：页面层（整表快捷键）请求打开搜索。
-  void _onSearchRequested() => _toggleSearch(open: true);
+  void _onSearchRequested() => _syncSearchRequests();
+
+  /// PR#1032 审查 B1：把面板对齐到页面层的搜索请求水位线。
+  ///
+  /// 水位比自己服务过的高就进入搜索态并重新抢焦点（连按两次 Ctrl+F 也要每次重聚焦），
+  /// 否则什么都不做——这条判据同时覆盖「挂载时就已经欠着一次请求」和「挂载后又来一次」，
+  /// 不依赖调用方在面板监听的那一瞬间恰好 +1。
+  ///
+  /// [duringInit] 为真表示在 [initState] 里调用：此时不能 setState，直接落状态即可，
+  /// 首帧就会带着搜索框构建。
+  void _syncSearchRequests({bool duringInit = false}) {
+    final int requested = widget.searchRequests?.value ?? 0;
+    if (requested <= _handledSearchRequests) return;
+    _handledSearchRequests = requested;
+    if (duringInit) {
+      _searchOpen = true;
+      _focusSearchAfterFrame();
+      return;
+    }
+    _toggleSearch(open: true);
+  }
 
   /// BUG-1907：切换搜索框。展开即抢焦点（Ctrl+F 的期望行为）；收起时清空搜索词，
   /// 否则列表会停在一个用户已经看不见输入框的过滤态上。
@@ -1109,10 +1158,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       }
     });
     if (next) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocusNode.requestFocus();
-      });
+      _focusSearchAfterFrame();
     }
+  }
+
+  /// 搜索框要等这一帧布局出来才存在，焦点请求必须排到帧后。
+  void _focusSearchAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   void _onSearchChanged(String value) {

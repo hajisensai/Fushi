@@ -81,6 +81,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// （面板是 media_kit controls 的兄弟节点），所以这里负责「先把列表开出来，
   /// 再通过 [_subtitleSearchRequests] 让面板自己展开搜索框并抢焦点」。
   /// 焦点已经在面板里时，面板自带的那份 activator 直接生效，走不到这里。
+  ///
+  /// PR#1032 审查 B1：列表还没打开时，这里开完列表就 +1，而面板要到**下一帧**才由
+  /// `layout.part.dart` 的 `ListenableBuilder` 构造、initState 才 addListener ——
+  /// 此刻 [_subtitleSearchRequests] 上零监听者。所以计数器的语义被定成「本次面板会话
+  /// 已请求到第 N 次」的**水位线**（基线由 [_toggleSubtitleJumpList] 打开分支归零），
+  /// 由面板在挂载时自己对齐，而不是「必须在我监听的瞬间刚好 +1」的边沿事件。
   void _requestSubtitleListSearch() {
     if (!_subtitleListVisible.value) {
       _toggleSubtitleJumpList();
@@ -91,6 +97,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   void _toggleSubtitleJumpList() {
     final bool next = !_subtitleListVisible.value;
     if (next) {
+      // PR#1032 审查 B1：面板会话开始 = 搜索请求水位线归零。放在**打开**分支而不是关闭分支，
+      // 因为关闭有一条绕过 [_closeSubtitleJumpList] 的路径（`_showVideoSidePanel` 直接
+      // 置 false），而打开只有这一处，归零在这里才是无条件成立的。
+      _subtitleSearchRequests.value = 0;
       _clearRailHover();
       // 与浮层互斥：开 push-aside 字幕列表前关掉任何打开的浮层（设置/音轨/倍速等）。
       _hideVideoControlEditOverlay(revealControls: false);

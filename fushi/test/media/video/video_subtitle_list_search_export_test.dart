@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+
+import '../../helpers/source_guard.dart';
 
 /// BUG-1907：字幕列表加「搜索（Ctrl+F 可快捷触发）和导出（导出收藏语句）」
 /// （用户 2026-08-28）。
@@ -203,6 +207,128 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('PR#1032 审查 B1：列表关着时发出的请求不能丢（面板下一帧才挂载）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(900, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
+    addTearDown(visible.dispose);
+    final ValueNotifier<int> requests = ValueNotifier<int>(0);
+    addTearDown(requests.dispose);
+    final VideoPlayerController controller = seeded(tester);
+
+    // 视频页 `_requestSubtitleListSearch` + `_toggleSubtitleJumpList` 的等价路径：
+    // 列表没开就先开（开 = 面板会话开始 = 水位线归零），**同一个微任务里**接着 +1。
+    // 真面板要等下一帧才由 ListenableBuilder 构造、initState 才 addListener，所以
+    // 这次 +1 发生在「零监听者」的时刻——这正是唯一会坏的时序，也是用户报的主路径。
+    void requestSearch() {
+      if (!visible.value) {
+        requests.value = 0;
+        visible.value = true;
+      }
+      requests.value = requests.value + 1;
+    }
+
+    await tester.pumpWidget(_wrap(ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext _, bool open, __) => open
+          ? panel(controller, searchRequests: requests)
+          : const SizedBox.shrink(),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoSubtitleJumpPanel), findsNothing);
+
+    requestSearch();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(VideoSubtitleJumpPanel), findsOneWidget,
+        reason: '请求必须同时把列表开出来');
+    expect(find.byType(TextField), findsOneWidget,
+        reason: '第一次 Ctrl+F 就该出搜索框；要按第二次说明请求被当边沿事件丢了');
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+      isTrue,
+      reason: '展开搜索必须同时抢到焦点，否则用户还得再点一下输入框',
+    );
+  });
+
+  testWidgets('PR#1032 审查 B1：重开列表不会因为上次的水位残留而自动进搜索态', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(900, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
+    addTearDown(visible.dispose);
+    final ValueNotifier<int> requests = ValueNotifier<int>(0);
+    addTearDown(requests.dispose);
+    final VideoPlayerController controller = seeded(tester);
+
+    await tester.pumpWidget(_wrap(ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext _, bool open, __) => open
+          ? panel(controller, searchRequests: requests)
+          : const SizedBox.shrink(),
+    )));
+
+    // 一次带搜索的打开。
+    requests.value = 0;
+    visible.value = true;
+    requests.value = requests.value + 1;
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+
+    // 关掉列表，再用「不带搜索」的普通打开（控制条字幕按钮）重开：水位线由打开分支
+    // 归零，所以新面板不该自作主张进搜索态。
+    visible.value = false;
+    await tester.pumpAndSettle();
+    requests.value = 0;
+    visible.value = true;
+    await tester.pumpAndSettle();
+
+    expect(find.byType(VideoSubtitleJumpPanel), findsOneWidget);
+    expect(find.byType(TextField), findsNothing,
+        reason: '普通打开不该带搜索态——否则水位线基线没被归零');
+  });
+
+  group('PR#1032 审查 B1 页面侧水位线归零（守卫上面两条用例里的等价路径确实等价）', () {
+    String subtitlePartSource() => File(
+          'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+        ).readAsStringSync().replaceAll('\r\n', '\n');
+
+    test('_toggleSubtitleJumpList 的打开分支把 _subtitleSearchRequests 归零', () {
+      final String src = subtitlePartSource();
+      final int start = src.indexOf('void _toggleSubtitleJumpList() {');
+      expect(start, isNonNegative, reason: '方法被改名了，守卫要跟着改');
+      final int elseAt = src.indexOf('} else {', start);
+      expect(elseAt, isNonNegative);
+      final String openBranch = src.substring(start, elseAt);
+      expect(
+        containsCodeLine(openBranch, '_subtitleSearchRequests.value = 0;'),
+        isTrue,
+        reason: '面板会话开始必须把搜索请求水位线归零（基线 0），否则重开列表会带着'
+            '上一次的水位直接进搜索态；注释里写着这句不算实现',
+      );
+    });
+
+    test('_requestSubtitleListSearch 仍是「先开列表再 +1」（水位线语义的前提）', () {
+      final String src = subtitlePartSource();
+      final int start = src.indexOf('void _requestSubtitleListSearch() {');
+      expect(start, isNonNegative);
+      final String body = src.substring(start, src.indexOf('\n  }', start));
+      expect(containsCodeLine(body, '_toggleSubtitleJumpList();'), isTrue);
+      expect(
+        containsCodeLine(
+          body,
+          '_subtitleSearchRequests.value = _subtitleSearchRequests.value + 1;',
+        ),
+        isTrue,
+      );
+    });
   });
 
   testWidgets('收藏档出现导出按钮，交出的是收藏句（不受搜索词影响）', (WidgetTester tester) async {
