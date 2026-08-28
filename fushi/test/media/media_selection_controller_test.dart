@@ -107,7 +107,12 @@ void main() {
     test('目标已不在可见顺序里时退化为普通切换', () {
       controller.toggle(const SelectionSlot.loose('b'));
       controller.extendTo(const SelectionSlot.loose('zzz'));
-      expect(controller.looseKeys, <String>{'b', 'zzz'});
+      // 守的是这条：b 与 zzz 之间没有可推导的区间，绝不能把 c/d/e 刷进来。
+      expect(controller.looseKeys, <String>{'b'});
+      // zzz 本身按普通切换进了内部选中集，只是它不在可见序里，按「可见性约束」
+      // 不对外暴露。真实页面构造不出这一格——三处 setVisibleOrder 登记的都是当帧
+      // 真正渲染的卡（横滚行卡不参与勾选），所以这里只是状态机的边界行为。
+      expect(controller.retainedLength, 2);
     });
   });
 
@@ -304,6 +309,116 @@ void main() {
       // 变成剔除后的数字（那样 M/N 会自相矛盾）。
       expect(dropped + c.length, 5);
       expect(dropped, 3);
+    });
+  });
+
+  /// 可见性约束：内部选中集无损，对外只暴露看得见的那部分。
+  ///
+  /// 触发它的真实场景是库页的本地即筛档位（视频库的年份 / 看完状态 / 系列归属）：
+  /// 勾了几张卡再换档位，那些卡从墙上消失，但选中集从不随之剪枝——底栏「已选 N」
+  /// 于是把看不见的也算进去，用户照着一个虚数做删除决定；「组合成系列」还会拿
+  /// 不在可见表里的 uid 去推标题，退化成拿 entryKey 当名字。
+  ///
+  /// 刻意**不**在筛选变化时把不可见项清掉：见 [MediaSelectionController]
+  /// 库文档「可见性约束」与 [MediaSelectionController.retainExisting] 的
+  /// 「先勾后筛是合法用法」。
+  group('可见性约束', () {
+    test('可见集收缩后，看不见的选中项不计入 looseKeys / length / isSelected', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+      expect(controller.length, 2);
+
+      // 换了个筛选档位：只剩 a、b 还在墙上。
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+
+      expect(controller.looseKeys, <String>{'a'});
+      expect(controller.length, 1, reason: '底栏计数必须等于屏幕上勾着的卡片数');
+      expect(
+        controller.isSelected(const SelectionSlot.loose('d')),
+        isFalse,
+        reason: '看不见的那张不该被当成选中参与任何操作',
+      );
+    });
+
+    test('筛选切回来，之前的选中原样还在（内部无损）', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+      expect(controller.retainedLength, 2, reason: '不可见项只是不暴露，不是被删了');
+
+      seedVisible();
+
+      expect(
+        controller.looseKeys,
+        <String>{'a', 'd'},
+        reason: '用户没取消过 d，系统就不该替他取消',
+      );
+      expect(controller.length, 2);
+    });
+
+    test('合集侧同理：合集行不可见时不计入 collectionIds', () {
+      controller.enterWith(const SelectionSlot.collection(10));
+      expect(controller.collectionIds, <int>{10});
+
+      // 「全部视频」这类不折叠合集的视图：一个合集行都不渲染。
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+
+      expect(controller.collectionIds, isEmpty);
+      expect(controller.length, 0);
+      expect(controller.retainedLength, 1);
+    });
+
+    test('反选只翻候选集内的格，候选集外（不可见）的选中项不受影响', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('d'));
+
+      // d 被筛走，可见的只剩 a、b。
+      controller.setVisibleOrder(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+      controller.invert(
+        loose: const <String>['a', 'b'],
+        collections: const <int>[],
+      );
+
+      expect(controller.looseKeys, <String>{'b'}, reason: '可见集内取补集');
+
+      seedVisible();
+      expect(
+        controller.looseKeys,
+        <String>{'b', 'd'},
+        reason: '反选是「翻当前这一屏」，不该顺手抹掉别的档位下选的东西',
+      );
+    });
+
+    test('全选之后收缩可见集：计数跟着屏幕走，不是跟着历史走', () {
+      controller.toggleMode();
+      controller.selectAll(
+        loose: const <String>['a', 'b', 'c', 'd', 'e'],
+        collections: const <int>[10, 20, 30],
+      );
+      expect(controller.length, 8);
+
+      controller.setVisibleOrder(
+        loose: const <String>['a'],
+        collections: const <int>[10],
+      );
+
+      expect(controller.length, 2);
+      expect(controller.looseKeys, <String>{'a'});
+      expect(controller.collectionIds, <int>{10});
+      expect(controller.retainedLength, 8);
     });
   });
 }

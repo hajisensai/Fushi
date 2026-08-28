@@ -274,6 +274,62 @@ void main() {
     );
   });
 
+  testWidgets('切档位后被筛走的选中项不再计数（幽灵选中）', (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(cardOf('video/ep1'));
+    await tester.pump();
+    await tester.tap(cardOf('video/loose'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsOneWidget,
+      reason: 'ep1 已被筛走、屏幕上没有它，底栏就不能还把它算进「已选」——'
+          '用户是照着这个数字点删除的',
+    );
+
+    // 但它只是看不见，不是被系统替用户取消了：切回来还在。
+    await pickSeriesFilter(tester, t.home_filter_all);
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsOneWidget,
+      reason: '先勾后筛是合法用法，筛选切回来选中必须原样还在',
+    );
+  });
+
+  testWidgets('chip 在「全部」态显示维度名，选中档位后显示档位名',
+      (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
+        matching: find.text(t.video_filter_series),
+      ),
+      findsOneWidget,
+      reason: '「全部」态的 chip 要回答「这个下拉管什么」',
+    );
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
+        matching: find.text(t.video_filter_series_standalone),
+      ),
+      findsOneWidget,
+      reason: '选了档位后 chip 显示当前档位',
+    );
+  });
+
   testWidgets('筛选控件只在「全部视频」露出', (WidgetTester tester) async {
     await seedSeriesAndLoose();
 

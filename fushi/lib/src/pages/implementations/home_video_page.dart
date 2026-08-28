@@ -352,11 +352,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 还没成系列的散片（反过来也能只看系列内的集）。
   VideoSeriesFilter _seriesFilter = VideoSeriesFilter.all;
 
+  /// 系列归属判据依赖的两份映射（[_primaryCollectionByEntry] / [_collectionsById]）
+  /// 是否已由 [_loadLibraryMaps] 落位。
+  ///
+  /// 映射未就位时它们是空 map，[_isCollectionMember] 会对**每一条**返回 false——
+  /// 那是「还不知道」，不是「都不在系列里」。把未知当否会让「系列内」档位在映射
+  /// 到位前把整墙判空，闪一下筛选空态。大库上 [_loadLibraryMaps] 要跑一会儿，
+  /// 用户完全来得及在这段窗口里选档位。
+  bool _libraryMapsReady = false;
+
   /// 系列归属筛选归「全部视频」独有：控件只在那个分区露出，所以别的分区必须恒
   /// 按「全部」过滤——否则同一个 State 被 tab 复用时，上个分区留下的档位会在没有
   /// 任何控件可复位的页面上隐形吃掉条目。
+  ///
+  /// 映射未就位时同样退回「全部」（宁可先按不过滤渲染，也不拿「还不知道」当
+  /// 判据把条目筛掉）。
   VideoSeriesFilter get _effectiveSeriesFilter =>
-      widget.section == VideoLibrarySection.allVideos
+      widget.section == VideoLibrarySection.allVideos && _libraryMapsReady
           ? _seriesFilter
           : VideoSeriesFilter.all;
 
@@ -674,6 +686,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         for (final MediaCollectionRow c in collections) c.id: c,
       };
       _primaryCollectionByEntry = primaryMap;
+      _libraryMapsReady = true;
       _watchAtByUid = watchByUid;
       _legacyWatchAtByTitle = legacyByTitle;
       _airYearByUid = airYearByUid;
@@ -1069,6 +1082,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final int? collectionId =
         _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
     return collectionId != null && _collectionsById.containsKey(collectionId);
+  }
+
+  /// 登记本帧可见序，并在它真的变了时补一帧。
+  ///
+  /// 可见序是 build 期算出来的（筛选 / 排序的结果，写在 sliver 构建里），而底栏
+  /// 「已选 N」在同一帧更早的位置就读过选中集——切档位那一帧它读到的还是上一帧的
+  /// 可见序，计数会比墙上的卡片慢一拍，而且之后没有任何 setState 把这一帧补上，
+  /// 数字就永久停在旧值。只在多选态补：非多选态选中集恒空，补帧没有意义。
+  void _syncVisibleOrder({
+    required List<String> loose,
+    required List<int> collections,
+  }) {
+    final bool changed = _selection.setVisibleOrder(
+      loose: loose,
+      collections: collections,
+    );
+    if (!changed || !_selectionMode) return;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (mounted) setState(() {});
+    });
   }
 
   /// 全选 / 反选的候选散卡键 = **屏幕上真的画出来的那些散卡**，直接取每帧
@@ -4029,7 +4062,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // Shift 区间选 / 长按扫选的顺序真值：取排序**之后**的散卡序，与用户屏幕上的
     // 排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。顺序一变，控制器自动
     // 清锚点，Shift 不会选中一片没看见的条目。
-    _selection.setVisibleOrder(
+    _syncVisibleOrder(
       loose: <String>[
         for (final _VideoLooseCard card in loose)
           if (card.selectionKey != null) card.selectionKey!,
@@ -4085,7 +4118,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             _sortMode,
           ));
     _visibleCollectionIds = const <int>[];
-    _selection.setVisibleOrder(
+    _syncVisibleOrder(
       loose: <String>[for (final VideoBookRow book in ordered) book.bookUid],
       collections: const <int>[],
     );
@@ -5393,9 +5426,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 番的几十集会把散片淹掉；这个档位让用户把已归进系列的集数收起来，只看还没
   /// 成系列的片子（反向档位同理，用来核对某些集是不是漏归系列了）。
   Widget _buildSeriesFilterButton() {
-    final String label = _seriesFilter == VideoSeriesFilter.all
-        ? t.video_filter_series
-        : _seriesFilterLabel(_seriesFilter);
+    final String label = _seriesFilterLabel(_seriesFilter);
     return PopupMenuButton<VideoSeriesFilter>(
       key: const ValueKey<String>('home_video_filter_series'),
       tooltip: t.video_filter_series,
@@ -5419,6 +5450,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
+  /// chip 上的档位名。「全部」态显示维度名（「系列」），因为 chip 要回答的是
+  /// 「这个下拉管什么」；菜单项那边对同一档位显示的是「全部」，两处语义不同，
+  /// 故三元只留在菜单项一侧，这里三个分支都可达。
   String _seriesFilterLabel(VideoSeriesFilter filter) => switch (filter) {
         VideoSeriesFilter.all => t.video_filter_series,
         VideoSeriesFilter.inSeries => t.video_filter_series_in,
