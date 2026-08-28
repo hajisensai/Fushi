@@ -116,18 +116,6 @@ SettingsDestination _fixtureDestination() {
   );
 }
 
-SettingsDestination _navigationFixture({
-  required SettingsDestinationId id,
-  required String title,
-}) {
-  return SettingsDestination(
-    id: id,
-    title: title,
-    icon: Icons.settings_outlined,
-    sections: const <SettingsSection>[],
-  );
-}
-
 Widget _buildHome(
   CupertinoThemeData? cupertinoTheme,
   Widget Function(SettingsContext) builder,
@@ -512,8 +500,8 @@ void main() {
   });
 
   testWidgets(
-      'material master-detail destination list is one borderless list with '
-      'full-row selection', (WidgetTester tester) async {
+      'material master-detail destination list is one grouped surface with '
+      'pill selection', (WidgetTester tester) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.android,
@@ -529,62 +517,13 @@ void main() {
       ),
     );
 
-    expect(
-      find.byKey(const ValueKey<String>('settings-destination-list')),
-      findsOneWidget,
-    );
-    expect(find.byType(AdaptiveSettingsSection), findsNothing);
+    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
     FushiListItem item = tester.widget<FushiListItem>(
       find.widgetWithText(FushiListItem, 'Appearance'),
     );
     expect(item.selected, isTrue);
-    expect(item.selectedShape, FushiListItemSelectedShape.fill);
+    expect(item.selectedShape, FushiListItemSelectedShape.pill);
     expect(item.trailing, isNull);
-  });
-
-  testWidgets('material destination list only rounds its outer row edges', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.android,
-        builder: (SettingsContext settingsContext) {
-          return MaterialSettingsRenderer().buildDestinationList(
-            settingsContext: settingsContext,
-            destinations: <SettingsDestination>[
-              _navigationFixture(
-                id: SettingsDestinationId.appearance,
-                title: 'Appearance',
-              ),
-              _navigationFixture(
-                id: SettingsDestinationId.reading,
-                title: 'Reading',
-              ),
-            ],
-            selectedDestinationId: SettingsDestinationId.appearance,
-            onDestinationSelected: (_) {},
-            pushRoutes: false,
-          );
-        },
-      ),
-    );
-
-    final Finder list = find.byKey(
-      const ValueKey<String>('settings-destination-list'),
-    );
-    final List<ClipRRect> clips = tester
-        .widgetList<ClipRRect>(
-          find.descendant(of: list, matching: find.byType(ClipRRect)),
-        )
-        .toList(growable: false);
-    expect(clips, hasLength(2));
-    final BorderRadius first = clips.first.borderRadius as BorderRadius;
-    final BorderRadius last = clips.last.borderRadius as BorderRadius;
-    expect(first.topLeft, isNot(Radius.zero));
-    expect(first.bottomLeft, Radius.zero);
-    expect(last.topLeft, Radius.zero);
-    expect(last.bottomLeft, isNot(Radius.zero));
-    expect(find.byType(AdaptiveSettingsSection), findsNothing);
   });
 
   testWidgets('material push destination list keeps fill selection and chevron',
@@ -603,11 +542,7 @@ void main() {
       ),
     );
 
-    expect(
-      find.byKey(const ValueKey<String>('settings-destination-list')),
-      findsOneWidget,
-    );
-    expect(find.byType(AdaptiveSettingsSection), findsNothing);
+    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
     final FushiListItem item = tester.widget<FushiListItem>(
       find.widgetWithText(FushiListItem, 'Appearance'),
     );
