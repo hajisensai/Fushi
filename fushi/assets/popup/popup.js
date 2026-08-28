@@ -3029,6 +3029,13 @@ function createEntryHeader(entry, idx) {
             openAnkiButton.classList.toggle('open-anki-hidden', !isMined);
         }
     };
+    // BUG-932/1895：挂 `inline-action-button` 基类是**有意的**，与上面 TODO-1325
+    // 「不再走 SVG 图标」不矛盾：基类只给**布局**（inline-flex 居中 + pointer
+    // 光标 + hover/active/disabled 三态），它自己既没有 padding 也没有 font-size，
+    // 而它的 SVG 尺寸规则是 `.inline-action-button > svg`（本按钮只有文本子节点，
+    // 永远不命中）。字形尺寸/内边距/单色符号字体栈全由 `.mine-button` 自己定
+    // （字体栈还带 !important）。去掉基类反而会丢掉同排居中与手形光标——
+    // 见 popup.css 那段 BUG-932/1895 注释与守卫 popup_cards_nav_icon_guard #8。
     const mineButton = el('button', {
         className: 'inline-action-button mine-button',
         textContent: '+',
