@@ -37,9 +37,10 @@
    candidate（可见宿主 + 字符原点跨度 + page/index）形成后提交**。无 candidate 的新句只清
    当前 renderer，不能推进 slot 或 dismiss；同句重绘必须保留上一轮完整 binding。提交时原子
    退休同 slot peer、推进 generation 并发布 activeEntry。Probe 只接受当前 generation 的
-   activeEntry；严格 current 身份可绕过短命 visibleHost，另一个共存 slot 成为 current 时则回退
-   到本 entry 的 visibleHost。退休 entry 的同世代迟到 `done` 必须被 render epoch 门拒绝；同 entry
-   同句不能降级 binding strength，另一 renderer 的更强 candidate 则可接管弱 active。Entry/slot
+   activeEntry，并把这份句子账本作为命中存活真值；人物动画造成的 `kag.current` 短暂 void/换壳
+   不得否决同句。严格 current 身份只用于同句 renderer 的接管优先级，不能单独宣告句界；无 slot
+   的经典 KAG3 才回退本 entry 的可见层。退休 entry 的同世代迟到 `done` 必须被 render epoch 门
+   拒绝；同 entry 同句不能降级 binding strength，另一 renderer 的更强 candidate 则可接管弱 active。Entry/slot
    LRU 都必须优先淘汰 inactive；渲染原函数必须先于 Capture，epoch 账本和查词采集只能作为不抛
    出的 sidecar。三个 TextRender wrapper 必须直接安装并立即回读，固定 stage 记录安装边界；
    mouseMove 只做一次 identity 基线，leftClick 低频复核后续覆写，且 bitmask 仅在状态变化时发布。
@@ -1091,10 +1092,20 @@ def find_invalid_common_root_coordinate_conversion(
             f"{ADAPTER.name}: Probe 必须检查 ComputeOffset 失败并跳过当前记录"
         )
     all_tjs = _compact_tjs(tjs.masked)
-    if all_tjs.count("global.fushiLookupComputeOffset(layer)") != 1:
+    rehomes = _assigned_tjs_functions(tjs, "fushiLookupRehomeLayerToPrimary")
+    expected_compute_calls = 2 if len(rehomes) == 1 else 1
+    if all_tjs.count("global.fushiLookupComputeOffset(layer)") != expected_compute_calls:
         violations.append(
-            f"{ADAPTER.name}: ComputeOffset 只能由受检的 Probe 调用一次"
+            f"{ADAPTER.name}: ComputeOffset 只能由受检的 Probe 调用一次，"
+            "并可由 carrier rehome 再调用一次"
         )
+    if len(rehomes) == 1:
+        rehome = _compact_tjs(rehomes[0][1])
+        rehome_gate = "if(!global.fushiLookupComputeOffset(layer))returnfalse;"
+        if rehome.count(rehome_gate) != 1:
+            violations.append(
+                f"{ADAPTER.name}: carrier rehome 必须检查共同根坐标换算失败并停止迁移"
+            )
     for needle, message in (
         (
             "rx=lx-global.fushiLookupOffX-entry.imgLeft-entry.originX;",
@@ -1144,9 +1155,24 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "fushiLookupSlotFor",
         "fushiLookupAdoptSlot",
         "fushiLookupCurrentIdentityState",
+        "fushiLookupActiveSentenceState",
         "fushiLookupCaptureTokenCurrent",
         "fushiLookupCapture",
+        "fushiLookupLayerOwnedByPrimary",
+        "fushiLookupRetireDetachedLayer",
+        "fushiLookupAdvanceDismissFence",
+        "fushiLookupRehomeLayerToPrimary",
+        "fushiLookupPrimaryRacedSince",
+        "fushiLookupTryRehomeVisualParents",
+        "fushiLookupReconcileVisualParents",
+        "fushiLookupRefreshCaptureBridges",
+        "fushiLookupRefreshSentenceSurface",
+        "fushiLookupEnsureHighlight",
         "fushiLookupFlushVisualWork",
+        "fushiLookupPrepare",
+        "fushiLookupApply",
+        "fushiLookupCardVisible",
+        "fushiLookupQueueInput",
         "fushiLookupBindOrigin",
         "fushiLookupProbe",
         "fushiLookupLeftClickHook",
@@ -1210,6 +1236,10 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "35",
         "36",
         "37",
+        # 38/39：注册 KAG stable-state plugin。两个边沿都只尝试迁移
+        # carrier，仅 stable=false 的 run 边沿补 renderer/getRender 采集桥。
+        "38",
+        "39",
         "40",
         "41",
         "42",
@@ -1219,7 +1249,7 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→35/36/37→40/41/42/43→50；"
+            "0→10/11→20/21→30/31→35/36/37→38/39→40/41/42/43→50；"
             f"实际 {install_stages}"
         )
 
@@ -1298,18 +1328,92 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     mouse_move = _compact_tjs(
         _restore_tjs_literals(tjs, functions["fushiLookupMouseMoveHook"])
     )
-    # 人工点击是低频的，所以这里可以做有界的重活：先把 getRender 桥补上（游戏可能在
-    # bootstrap 之后才加载 msgwin 插件），再扫一遍既有 renders[]（覆盖游戏直接替换
-    # textRender 而没走 getRender 的路径），最后才审计。顺序固定：审计要看的是补完之后
-    # 的现状，先审后补等于永远审的是上一帧。
+    # 人工点击只能做 attempt-only rehome 与补采集桥；先冻结本次
+    # 点击是否属于既有 popup。只有 primary 竞态这一种「下一次输入必然看到不同
+    # 状态」的失败才吞掉这一击，且不得发 kind=5/Cancel，也不得推进 route。
     if not left_click.startswith(
-        "try{global.fushiLookupInstallGetRenderBridge();"
-        "global.fushiLookupSweepMsgwinRenders();"
-        "global.fushiLookupAuditWrappers(true);"
-    ) or left_click.count("global.fushiLookupAuditWrappers(true);") != 1:
+        "varpopupTransaction=false;try{"
+        "popupTransaction=global.fushiLookupCardVisible();"
+        "varcarrierSettled=global.fushiLookupTryRehomeVisualParents();"
+        "global.fushiLookupRefreshCaptureBridges();"
+    ) or (
+        left_click.count("global.fushiLookupTryRehomeVisualParents();") != 1
+        or left_click.count("global.fushiLookupRefreshCaptureBridges();") != 1
+        or "global.fushiLookupReconcileVisualParents();" in left_click
+    ):
         violations.append(
-            f"{ADAPTER.name}: leftClick 必须每次先补 getRender 桥 + 扫 MsgwinRenders "
-            "再 AuditWrappers(true)，低频复核后续脚本覆写"
+            f"{ADAPTER.name}: leftClick 必须先冻结 popup 事务，再做 attempt-only "
+            "carrier rehome 并补采集桥"
+        )
+    rehome_wait_swallow = "if(popupTransaction&&!carrierSettled)returntrue;"
+    card_click = (
+        "if(global.fushiLookupCardVisible()&&global.fushiLookupOverCard()){"
+    )
+    outside_dismiss = (
+        "if(popupTransaction||global.fushiLookupCardVisible()){"
+        "try{global.fushiLookupQueueInput(5,0,0,0);}"
+        "catch(e){global.fushiLookupFault();}"
+        "try{global.fushiLookupCancelCurrent();}"
+        "catch(e){global.fushiLookupFault();}returntrue;}"
+    )
+    probe_submit = "returnglobal.fushiLookupProbe(true);"
+    if (
+        left_click.count(rehome_wait_swallow) != 1
+        or left_click.count(card_click) != 1
+        or left_click.count(outside_dismiss) != 1
+        or left_click.find(rehome_wait_swallow) > left_click.find(card_click)
+        or left_click.find(card_click) > left_click.find(outside_dismiss)
+        or left_click.find(outside_dismiss) > left_click.find(probe_submit)
+    ):
+        violations.append(
+            f"{ADAPTER.name}: leftClick 必须先吞掉暂不可 rehome 的 popup 点击，"
+            "再消费卡片内点击、以 kind=5 关闭并消费卡片外点击，"
+            "只有非 popup 点击才能进入文字 Probe"
+        )
+    card_bodies = _braced_bodies_after(
+        left_click,
+        "if(global.fushiLookupCardVisible()&&global.fushiLookupOverCard())",
+    )
+    if (
+        len(card_bodies) != 1
+        or card_bodies[0].count("try{") != 1
+        or card_bodies[0].count("catch(e){global.fushiLookupFault();}") != 1
+        or not card_bodies[0].endswith("returntrue;")
+    ):
+        violations.append(
+            f"{ADAPTER.name}: 卡内输入转发必须局部捕获异常并始终 return true 消费点击"
+        )
+    # 🔴 兜底必须 fail-open。异常路径的状态按定义是未知的：在未知状态上 fail-closed
+    # （返回 popupTransaction / true）会把「这一击不确定」放大成「每一击都被吃掉」——
+    # 只要还有一个残留的非零 CardSeq，玩家就再也推不动剧情，而 TJS 侧唯一无条件清
+    # CardSeq 的入口恰好要靠玩家点得动才够得着。查词坏掉是小事，吞输入是大事。
+    if not left_click.endswith(
+        "catch(e){global.fushiLookupFault();returnfalse;}"
+    ):
+        violations.append(
+            f"{ADAPTER.name}: leftClick 异常出口必须 fail-open 返回 false，"
+            "不得在未知状态下消费玩家的点击"
+        )
+
+    queue_input = functions["fushiLookupQueueInput"]
+    for needle, message in (
+        (
+            "if(System.getKeyState(0x10))keys=keys|4;",
+            "KiriKiri 输入必须从即时键态把 Shift 编为 WebView2 bit2",
+        ),
+        (
+            "if(kind==1)keys=keys|1;",
+            "LeftDown 必须携带 WebView2 左键 bit0",
+        ),
+        (
+            "if(kind==4||kind==5)keys=0;",
+            "LEAVE 与卡外控制事件必须强制清空 virtual keys",
+        ),
+    ):
+        require_once(queue_input, needle, message)
+    if "if(global.fushiLookupShiftDown)keys=keys|1;" in queue_input:
+        violations.append(
+            f"{ADAPTER.name}: 不得把粘滞 Shift 状态编码成 WebView2 左键 bit0"
         )
     if not mouse_move.startswith(
         "try{global.fushiLookupAuditWrappers(false);"
@@ -1321,8 +1425,116 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "global.fushiLookupAuditWrappers(false);"
     ) != 1:
         violations.append(
-            f"{ADAPTER.name}: wrapper audit 调用面只能是 leftClick(true) 与 mouseMove(false)"
+            f"{ADAPTER.name}: wrapper audit 调用面只能是 bridge refresh(true) 与 mouseMove(false)"
         )
+
+    bridge_refresh = functions["fushiLookupRefreshCaptureBridges"]
+    bridge_patterns = (
+        re.escape("global.fushiLookupInstallGetRenderBridge();"),
+        re.escape("global.fushiLookupSweepMsgwinRenders();"),
+        re.escape("global.fushiLookupAuditWrappers(true);"),
+    )
+    if not _matches_once_in_order(bridge_refresh, bridge_patterns):
+        violations.append(
+            f"{ADAPTER.name}: bridge refresh 必须按 getRender 桥→既有 renderer→audit "
+            "的固定顺序执行"
+        )
+    for forbidden in (
+        "fushiLookupLayerOwnedByPrimary",
+        "fushiLookupRefreshSentenceLayers",
+        "fushiLookupAdvanceDismissFence",
+        "fushiLookupDismiss",
+        "fushiLookupFlushVisualWork",
+        "fushiLookupPendingVisualDismiss",
+        "fushiLookupPendingSentenceRefresh",
+        "fushiLookupPendingSubmitFence",
+    ):
+        if forbidden in bridge_refresh:
+            violations.append(
+                f"{ADAPTER.name}: 动画/资源 bridge refresh 禁止改变 Layer/route: {forbidden}"
+            )
+
+    refresh = functions["fushiLookupRefreshSentenceSurface"]
+    refresh_patterns = (
+        # 🔴 重入早退必须把 pending 放回去。pending 位在 FlushVisualWork 里已经被清，
+        # 这里裸 return 会把换句刷新永久丢掉，且 FlushVisualWork 仍报「已排空」——
+        # 与兄弟路径 VisualFlushActive「保留 pending + 返回未排空」的不变式相反。
+        re.escape(
+            "if(global.fushiLookupSentenceRefreshActive)"
+            "{global.fushiLookupPendingSentenceRefresh=true;return;}"
+        ),
+        re.escape("global.fushiLookupReconcileVisualParents();"),
+        re.escape("global.fushiLookupRefreshCaptureBridges();"),
+    )
+    if not _matches_once_in_order(refresh, refresh_patterns):
+        violations.append(
+            f"{ADAPTER.name}: 逐句 refresh 重入时必须保留 pending 请求，"
+            "随后先处理 Layer 归属，再调用 bridge-only refresh"
+        )
+    if bootstrap.count("global.fushiLookupReconcileVisualParents();") != 1:
+        violations.append(
+            f"{ADAPTER.name}: 可销毁 carrier 的 reconcile 只能由确认换句的 "
+            "RefreshSentenceSurface 调用一次"
+        )
+
+    bridge_plugin = (
+        "installStage=38;if(typeofglobal.kag.addPlugin==\"Object\"){"
+        "global.fushiLookupBridgePlugin=%[onStableStateChanged:function(stable){"
+        "try{global.fushiLookupTryRehomeVisualParents();"
+        "if(!stable)global.fushiLookupRefreshCaptureBridges();}"
+        "catch(e){global.fushiLookupFault();}}];"
+        "try{global.kag.addPlugin(global.fushiLookupBridgePlugin);}"
+        "catch(e){global.fushiLookupFault();}}installStage=39;"
+    )
+    require_once(
+        bootstrap,
+        bridge_plugin,
+        "KAG stable 两边沿都必须 attempt-only rehome，且只能在 run "
+        "边沿补采集桥，不得把动画/资源恢复当作句子边界",
+    )
+    stable_callback_bodies = _braced_bodies_after(
+        bootstrap, "onStableStateChanged:function(stable)"
+    )
+    if len(stable_callback_bodies) != 1:
+        violations.append(
+            f"{ADAPTER.name}: stable→run callback 定义数应为 1，"
+            f"实际 {len(stable_callback_bodies)}"
+        )
+    else:
+        stable_callback = stable_callback_bodies[0]
+        if (
+            stable_callback.count("global.fushiLookupTryRehomeVisualParents();")
+            != 1
+            or stable_callback.count(
+                "if(!stable)global.fushiLookupRefreshCaptureBridges();"
+            )
+            != 1
+        ):
+            violations.append(
+                f"{ADAPTER.name}: stable=false/true 两边沿必须共用一次 "
+                "attempt-only rehome，仅 stable=false 刷新采集桥"
+            )
+        for forbidden in (
+            "fushiLookupReconcileVisualParents",
+            "fushiLookupRetireDetachedLayer",
+            "fushiLookupAdvanceDismissFence",
+            "fushiLookupDismiss",
+            "fushiLookupCancelCurrent",
+            "fushiLookupQueueInput",
+            "fushiLookupPendingSubmitFence",
+            "fushiLookupPendingVisualDismiss",
+            "fushiLookupPendingSentenceRefresh",
+            "fushiLookupFlushVisualWork",
+            "fushiLookupRefreshSentenceSurface",
+            "fushiLookupCard=",
+            "fushiLookupCardSeq=",
+            "fushiLookupCardEntry=",
+            "invalidate",
+        ):
+            if forbidden in stable_callback:
+                violations.append(
+                    f"{ADAPTER.name}: stable→run plugin 禁止改变 lookup surface/route: {forbidden}"
+                )
 
     wrapper_markers = (
         (
@@ -1675,6 +1887,22 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         violations.append(
             f"{ADAPTER.name}: 完整异句 candidate 必须原子退休 peer、推进 generation 后提交身份"
         )
+    # 字符串 literal 在 masked function body 中被移除，因此 `== ""` 紧缩为 `==`。
+    initial_bodies = _braced_bodies_after(adopt, "if(slot.line==)")
+    adoption_return = "return%[slot:slot,same:same,advanced:advanced];"
+    if (
+        adopt.count("varadvanced=false;") != 1
+        or "sentenceBoundary" in adopt
+        or len(initial_bodies) != 1
+        or initial_bodies[0].count("advanced=true;") != 0
+        or len(changed_bodies) != 1
+        or changed_bodies[0].count("advanced=true;") != 1
+        or adopt.count(adoption_return) != 1
+    ):
+        violations.append(
+            f"{ADAPTER.name}: fresh slot 首次观测不得发布句界；只有同一逻辑槽完整异句 "
+            "candidate 才能 advanced 并触发 surface/route 换代"
+        )
     identity = functions["fushiLookupCurrentIdentityState"]
     identity_patterns = (
         re.escape(
@@ -1698,6 +1926,35 @@ def find_invalid_lookup_entry_visibility_lifecycle(
             f"{ADAPTER.name}: identity state 必须先验 active/generation；当前同 slot 严格比身份，"
             "其他共存 slot 回退 visibleHost"
         )
+
+    sentence_state = functions["fushiLookupActiveSentenceState"]
+    sentence_state_patterns = (
+        re.escape("if(entry.slotPage==0||entry.slotIndex<0)return0;"),
+        re.escape(
+            "varslot=global.fushiLookupFindSlot(entry.slotPage,entry.slotIndex);"
+        ),
+        re.escape(
+            "if(slot===void||slot.generation!=entry.slotGeneration||"
+            "slot.line==||entry.line==||slot.line!=entry.line||"
+            "slot.line!=entry.logicalLine||slot.activeEntry!==entry)return-1;"
+        ),
+        re.escape("return1;"),
+    )
+    if not _matches_once_in_order(sentence_state, sentence_state_patterns):
+        violations.append(
+            f"{ADAPTER.name}: Probe 的 sentence state 必须只按 "
+            "slot line/generation/activeEntry 判存活"
+        )
+    for forbidden in (
+        "fushiLookupResolveCurrentSlot",
+        "entry.currentIdentity",
+        "fushiLookupEntryVisible",
+    ):
+        if forbidden in sentence_state:
+            violations.append(
+                f"{ADAPTER.name}: sentence state 不得把动画期对象身份/可见性当句界: "
+                f"{forbidden}"
+            )
 
     capture = functions["fushiLookupCapture"]
     # expectedBindRevision 与 lease/epoch 同属"进入这次 Capture 时就冻结"的快照：
@@ -1828,9 +2085,336 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     for needle, message in (
         ("if(global.fushiLookupVisualFlushActive)returnfalse", "visual flush 必须防递归"),
         ("global.fushiLookupPendingVisualDismiss=false", "visual flush 必须先摘 pending dismiss"),
+        ("varsentenceRefresh=global.fushiLookupPendingSentenceRefresh", "visual flush 必须冻结逐句刷新请求"),
+        ("global.fushiLookupPendingSentenceRefresh=false", "visual flush 必须先摘 pending 逐句刷新"),
+        ("varsubmitFence=global.fushiLookupPendingSubmitFence", "visual flush 必须冻结 submit fence 请求"),
+        ("global.fushiLookupPendingSubmitFence=false", "visual flush 必须先摘 pending submit fence"),
+        ("if(submitFence)global.fushiLookupAdvanceDismissFence()", "submit fence 必须在视觉操作前推进"),
+        ("if(sentenceRefresh)global.fushiLookupRefreshSentenceSurface()", "逐句刷新只能由事务外 visual leaf 执行"),
+        ("!global.fushiLookupPendingSubmitFence", "visual flush 完成条件必须包含重入产生的新 fence"),
         ("global.fushiLookupFlushPendingHighlightErase()", "visual leaf 必须 drain erase"),
     ):
         require_once(visual_flush, needle, message)
+    require_once(
+        capture,
+        "if(slotAdoption!==void&&slotAdoption.advanced)"
+        "global.fushiLookupPendingSubmitFence=true;",
+        "完整 candidate 证明同一逻辑槽内容变化后必须先排队旧 submit fence",
+    )
+    require_once(
+        capture,
+        "if(slotAdoption!==void&&slotAdoption.advanced)"
+        "global.fushiLookupPendingSentenceRefresh=true;",
+        "完整 candidate 证明同一逻辑槽内容变化后必须只排队逐句刷新",
+    )
+    if bootstrap.count("global.fushiLookupPendingSubmitFence=true;") != 1:
+        violations.append(
+            f"{ADAPTER.name}: submit fence 请求只能由完整 candidate 的句子边界发布"
+            f"（出现 {bootstrap.count('global.fushiLookupPendingSubmitFence=true;')} 次）"
+        )
+    # surface refresh 恰好两处，且两处的语义必须不同：
+    #   ① 完整 candidate 的句子边界**发布**请求；
+    #   ② RefreshSentenceSurface 重入早退时把已发布的请求**放回去**。
+    # 第二处不是新的发布者：pending 位在 FlushVisualWork 里已经被摘掉，没有这次
+    # 回填就等于把换句刷新永久丢掉，而 FlushVisualWork 末尾仍会报「已排空」。
+    # 计数从 1 放宽到 2 时必须同时钉住第二处的确切形状，否则等于把「只有句子边界
+    # 能发布」这条规则整个作废。
+    sentence_requeue = (
+        "if(global.fushiLookupSentenceRefreshActive)"
+        "{global.fushiLookupPendingSentenceRefresh=true;return;}"
+    )
+    if (
+        bootstrap.count("global.fushiLookupPendingSentenceRefresh=true;") != 2
+        or bootstrap.count(sentence_requeue) != 1
+    ):
+        violations.append(
+            f"{ADAPTER.name}: surface refresh 请求只能由完整 candidate 的句子边界发布，"
+            "外加 RefreshSentenceSurface 重入早退时原样放回（出现 "
+            f"{bootstrap.count('global.fushiLookupPendingSentenceRefresh=true;')} 次，"
+            f"重入回填 {bootstrap.count(sentence_requeue)} 次）"
+        )
+
+    layer_owned = functions["fushiLookupLayerOwnedByPrimary"]
+    require_once(
+        layer_owned,
+        "layer.parent===primary",
+        "视觉 Layer 必须以严格 parent 身份归属 current primaryLayer",
+    )
+    retire_layer = functions["fushiLookupRetireDetachedLayer"]
+    hide_position = retire_layer.find("layer.visible=false;")
+    update_position = retire_layer.find("layer.update();")
+    invalidate_position = retire_layer.find("invalidatelayer;")
+    if not (
+        retire_layer.count("try{") == 2
+        and 0 <= hide_position < update_position < invalidate_position
+    ):
+        violations.append(
+            f"{ADAPTER.name}: 脱离树的 Layer 必须分两段 best-effort 隐藏/update 再 invalidate，"
+            "update 抛错不得阻止退休"
+        )
+
+    advance_fence = functions["fushiLookupAdvanceDismissFence"]
+    advance_patterns = (
+        re.escape("varsubmitSeq=global.fushiLookupSubmitSeq;"),
+        re.escape("if(submitSeq>global.fushiLookupDismissedSubmitSeq)"),
+        re.escape("global.fushiLookupDismissedSubmitSeq=submitSeq;"),
+        re.escape("global.fushiLookupNotify++;"),
+        re.escape("returntrue;"),
+    )
+    if not _matches_once_in_order(advance_fence, advance_patterns):
+        violations.append(
+            f"{ADAPTER.name}: submit fence helper 必须先发布 dismissed seq、再 notify，"
+            "且完全不触碰 Layer"
+        )
+    for forbidden in (".visible=", ".update(", "invalidate"):
+        if forbidden in advance_fence:
+            violations.append(
+                f"{ADAPTER.name}: submit fence helper 必须无 Layer 副作用: {forbidden}"
+            )
+
+    rehome_layer = functions["fushiLookupRehomeLayerToPrimary"]
+    rehome_needles = (
+        "if(global.fushiLookupLayerOwnedByPrimary(layer,primary))returntrue;",
+        "if(!global.fushiLookupComputeOffset(layer))returnfalse;",
+        "varnewLeft=global.fushiLookupOffX;",
+        "varnewTop=global.fushiLookupOffY;",
+        "if(primary!==global.kag.primaryLayer)returnfalse;",
+        "layer.parent=primary;",
+        "layer.setPos(newLeft,newTop);",
+        "if(layer.parent!==primary)returnfalse;",
+    )
+    rehome_positions = [rehome_layer.find(needle) for needle in rehome_needles]
+    final_rehome_success = rehome_layer.rfind("returntrue;")
+    if not (
+        all(position >= 0 for position in rehome_positions)
+        and rehome_positions == sorted(rehome_positions)
+        and final_rehome_success > rehome_positions[-1]
+        and rehome_layer.count("returntrue;") == 2
+    ):
+        violations.append(
+            f"{ADAPTER.name}: primary 变化必须按共同根坐标无损迁移 carrier，"
+            "并在提交 parent 后复核归属"
+        )
+    for forbidden in (
+        "fushiLookupAdvanceDismissFence",
+        "fushiLookupDismiss",
+        "fushiLookupPending",
+        "fushiLookupCardSeq=",
+        "fushiLookupCardEntry=",
+    ):
+        if forbidden in rehome_layer:
+            violations.append(
+                f"{ADAPTER.name}: carrier rehome 禁止改变 route/fence/card 身份: {forbidden}"
+            )
+
+    # 🔴 rehome 唯一值得等的失败：primary 在「读取」与「parent 赋值」之间被换掉。
+    # 判据必须自成一个 helper 且只有这一条，否则「等一次」会被悄悄扩到永久失败上。
+    primary_raced = functions["fushiLookupPrimaryRacedSince"]
+    if primary_raced != (
+        "try{returnprimary!==global.kag.primaryLayer;}catch(e){returnfalse;}"
+    ):
+        violations.append(
+            f"{ADAPTER.name}: primary 竞态判据必须只比较 primary 与 current "
+            "primaryLayer，读不到时按「没换」处理"
+        )
+
+    # 🔴 不变式：CardSeq != 0 ⇒ fushiLookupCard 是有效 Layer。Prepare / Apply /
+    # Reconcile 判定 carrier 不可用时都会清 Card/CardSeq/CardEntry 三件套；
+    # attempt-only rehome 是第四个能观察到该不变式被引擎侧打破的地方（kag.clear()、
+    # 场景重载、全屏切换会直接 invalidate 掉 Layer），因此**必须就地修回不变式**。
+    # 若它把矛盾状态原样报成 "not ready"，fushiLookupCardVisible() 只看 CardSeq 会
+    # 返回 true，本函数返回 false，leftClick 的 popupTransaction && !carrierSettled
+    # 恒成立，玩家的左键被永久吞掉、剧情再也推不动。
+    try_rehome = functions["fushiLookupTryRehomeVisualParents"]
+    invalid_card_restore = (
+        "if(card===void||card===null||!isvalidcard){"
+        "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+        "global.fushiLookupCardEntry=void;returntrue;}"
+    )
+    permanent_rehome_retire = (
+        "if(!global.fushiLookupLayerOwnedByPrimary(card,primary)&&"
+        "!global.fushiLookupRehomeLayerToPrimary(card,primary)){"
+        "if(global.fushiLookupPrimaryRacedSince(primary))returnfalse;"
+        "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+        "global.fushiLookupCardEntry=void;"
+        "global.fushiLookupRetireDetachedLayer(card);returntrue;}"
+    )
+    try_rehome_patterns = (
+        re.escape("varprimary=void;"),
+        re.escape("try{primary=global.kag.primaryLayer;}"),
+        re.escape("catch(e){returntrue;}"),
+        re.escape("if(primary===void||primary===null||!isvalidprimary)returntrue;"),
+        re.escape(
+            "if(highlight!==void&&highlight!==null&&"
+            "!global.fushiLookupLayerOwnedByPrimary(highlight,primary))"
+            "global.fushiLookupRehomeLayerToPrimary(highlight,primary);"
+        ),
+        re.escape(invalid_card_restore),
+        re.escape(permanent_rehome_retire),
+        re.escape(
+            "if(global.fushiLookupCardSeq!=0&&"
+            "!global.fushiLookupCaptureSuppressed&&!card.visible)"
+        ),
+        re.escape("catch(e){global.fushiLookupFault();}returntrue;"),
+    )
+    if not _matches_once_in_order(try_rehome, try_rehome_patterns):
+        violations.append(
+            f"{ADAPTER.name}: attempt-only rehome 必须在 carrier 失效/永久迁移失败时"
+            "就地恢复「CardSeq!=0 ⇒ card 有效」不变式，只对 primary 竞态返回 false"
+        )
+    # 「请上层再等一次」只能有唯一一个出口，且必须被竞态判据守着。多一个 return false
+    # 就是多一条能把玩家左键永久吞掉的路径。
+    if (
+        try_rehome.count("returnfalse;") != 1
+        or try_rehome.count("if(global.fushiLookupPrimaryRacedSince(primary))returnfalse;")
+        != 1
+        or try_rehome.count("global.fushiLookupCardSeq=0;") != 2
+    ):
+        violations.append(
+            f"{ADAPTER.name}: attempt-only rehome 只能有一个受 primary 竞态判据保护的 "
+            "return false，且两条 carrier 失效路径都要清 CardSeq"
+        )
+    active_restore_bodies = _braced_bodies_after(
+        try_rehome,
+        "if(global.fushiLookupCardSeq!=0&&"
+        "!global.fushiLookupCaptureSuppressed&&!card.visible)",
+    )
+    if active_restore_bodies != ["card.visible=true;card.update();"]:
+        violations.append(
+            f"{ADAPTER.name}: attempt-only rehome 只能在活跃卡且非截图抑制时"
+            "恢复 carrier visible/update"
+        )
+    for forbidden in (
+        "fushiLookupAdvanceDismissFence",
+        "fushiLookupDismiss",
+        "fushiLookupQueueInput",
+        "fushiLookupCancelCurrent",
+        "fushiLookupPending",
+        "fushiLookupRefreshSentenceSurface",
+        "invalidate",
+    ):
+        if forbidden in try_rehome:
+            violations.append(
+                f"{ADAPTER.name}: attempt-only rehome 禁止销毁 surface/route: {forbidden}"
+            )
+
+    reconcile_layers = functions["fushiLookupReconcileVisualParents"]
+    for needle, message in (
+        (
+            "!global.fushiLookupLayerOwnedByPrimary(highlight,primary)&&"
+            "!global.fushiLookupRehomeLayerToPrimary(highlight,primary)",
+            "高亮 parent 变化必须先尝试无损迁移",
+        ),
+        (
+            "global.fushiLookupHighlightLayer=void;"
+            "global.fushiLookupHighlightRect=void;"
+            "global.fushiLookupPendingHighlightEraseRect=void;"
+            "global.fushiLookupRetireDetachedLayer(highlight);",
+            "迁移失败才可撤销高亮引用并退休坏 Layer",
+        ),
+        (
+            "!global.fushiLookupLayerOwnedByPrimary(card,primary)&&"
+            "!global.fushiLookupRehomeLayerToPrimary(card,primary)",
+            "卡片 parent 变化必须先尝试无损迁移",
+        ),
+        (
+            "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+            "global.fushiLookupCardEntry=void;"
+            "global.fushiLookupRetireDetachedLayer(card);",
+            "迁移失败才可撤销坏 carrier 引用，且不得推进 route fence",
+        ),
+    ):
+        require_once(reconcile_layers, needle, message)
+    for forbidden in (
+        "fushiLookupAdvanceDismissFence",
+        "fushiLookupQueueInput",
+        "fushiLookupDismiss",
+        "fushiLookupPendingSubmitFence",
+        "fushiLookupPendingSentenceRefresh",
+        "fushiLookupPendingVisualDismiss",
+    ):
+        if forbidden in reconcile_layers:
+            violations.append(
+                f"{ADAPTER.name}: 确认换句 reconcile 禁止改变 lookup route: {forbidden}"
+            )
+
+    ensure_highlight = functions["fushiLookupEnsureHighlight"]
+    prepare = functions["fushiLookupPrepare"]
+    apply_frame = functions["fushiLookupApply"]
+    if (
+        ensure_highlight.count("global.fushiLookupRehomeLayerToPrimary(layer,primary)") != 1
+        or prepare.count("global.fushiLookupRehomeLayerToPrimary(card,primary)") != 1
+        or apply_frame.count("global.fushiLookupRehomeLayerToPrimary(card,primary)") != 1
+    ):
+        violations.append(
+            f"{ADAPTER.name}: 高亮 ensure、卡片 prepare/apply 都必须先无损迁移到 current primary"
+        )
+    for body, needle, message in (
+        (
+            reconcile_layers,
+            "if(highlight!==void&&highlight!==null&&"
+            "!global.fushiLookupLayerOwnedByPrimary(highlight,primary)&&"
+            "!global.fushiLookupRehomeLayerToPrimary(highlight,primary))",
+            "视觉 reconcile 必须把 invalid Layer 当成迁移失败",
+        ),
+        (
+            reconcile_layers,
+            "if(card!==void&&card!==null&&"
+            "!global.fushiLookupLayerOwnedByPrimary(card,primary)&&"
+            "!global.fushiLookupRehomeLayerToPrimary(card,primary))",
+            "视觉 reconcile 必须把 invalid card 当成迁移失败",
+        ),
+        (
+            ensure_highlight,
+            "if(layer!==void&&layer!==null&&"
+            "!global.fushiLookupLayerOwnedByPrimary(layer,primary)&&"
+            "!global.fushiLookupRehomeLayerToPrimary(layer,primary))",
+            "高亮 ensure 必须先迁移，失败才换 carrier",
+        ),
+        (
+            prepare,
+            "if(card!==void&&card!==null&&"
+            "!global.fushiLookupLayerOwnedByPrimary(card,primary)&&"
+            "!global.fushiLookupRehomeLayerToPrimary(card,primary))",
+            "Prepare 必须先迁移，失败才让当前 full frame 重建 carrier",
+        ),
+    ):
+        require_once(body, needle, message)
+    prepare_detached = (
+        "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+        "global.fushiLookupCardEntry=void;"
+        "global.fushiLookupRetireDetachedLayer(card);card=void;"
+    )
+    require_once(
+        prepare,
+        prepare_detached,
+        "Prepare 迁移失败时只换 carrier，不得取消当前 route/full frame",
+    )
+    apply_detached = (
+        "global.fushiLookupCard=void;global.fushiLookupCardSeq=0;"
+        "global.fushiLookupCardEntry=void;"
+        "global.fushiLookupRetireDetachedLayer(card);return;"
+    )
+    require_once(
+        apply_frame,
+        apply_detached,
+        "Apply 期间 primary 变化且迁移失败时必须清理半写 carrier，"
+        "不得留下旧 CardSeq",
+    )
+    for forbidden in (
+        "detachedSubmit",
+        "fushiLookupAdvanceDismissFence",
+        "fushiLookupDismissedSubmitSeq",
+    ):
+        if forbidden in prepare:
+            violations.append(
+                f"{ADAPTER.name}: Prepare 不得把 primary 变化解释成句子 fence: {forbidden}"
+            )
+        if forbidden in apply_frame:
+            violations.append(
+                f"{ADAPTER.name}: Apply 不得把 primary 变化解释成句子 fence: "
+                f"{forbidden}"
+            )
     span_patterns = (
         re.escape("varglyphOriginSpanX=originMaxX-originMinX;"),
         re.escape("varglyphOriginSpanY=originMaxY-originMinY;"),
@@ -2026,23 +2610,36 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         re.escape("varlayer=entry.layer;"),
         re.escape("if(!global.fushiLookupComputeOffset(layer))"),
         re.escape(
-            "varcurrentIdentityState="
-            "global.fushiLookupCurrentIdentityState(entry);"
+            "varactiveSentenceState="
+            "global.fushiLookupActiveSentenceState(entry);"
         ),
-        # 可见性只能经 fushiLookupEntryVisible 这一个入口：它内部是「entry.layer 可见就算
-        # 可见，否则回退 visibleHost」的固定顺序。把这两段拆开写在 Probe 里，顺序一错就是
-        # 两类真机故障之一——先判短命 host 会让配音角色一说话整句变不可选（BUG-1631），
-        # 而完全不看 layer 又会让没有 visibleHost 的经典 KAG3 采集面永远命不中。
+        # 已提交 slot 的 line/generation/activeEntry 是同句存活真值；只有无 slot 的经典
+        # KAG3 才经 EntryVisible 回退。把 kag.current identity 搬回 Probe 会让人物动画
+        # 换 MessageLayer 对象时出现同一句一帧可点、下一帧不可点。
         re.escape(
-            "if(currentIdentityState<0||(currentIdentityState==0&&"
+            "if(activeSentenceState<0||(activeSentenceState==0&&"
             "!global.fushiLookupEntryVisible(entry)))"
         ),
     )
     if not _matches_once_in_order(probe, probe_patterns):
         violations.append(
             f"{ADAPTER.name}: Probe 坐标必须走 layer；可见性必须走 "
-            "identity/EntryVisible 共存语义"
+            "sentence-ledger/EntryVisible 共存语义"
         )
+    for call, owner, message in (
+        (
+            "global.fushiLookupCurrentIdentityState(",
+            capture,
+            "strict current identity 只能用于 Capture candidate takeover",
+        ),
+        (
+            "global.fushiLookupActiveSentenceState(",
+            probe,
+            "active sentence state 只能用于 Probe liveness",
+        ),
+    ):
+        if joined.count(call) != 1 or owner.count(call) != 1:
+            violations.append(f"{ADAPTER.name}: {message}")
     for forbidden in (
         "global.fushiLookupVisible(layer)",
         "global.fushiLookupVisible(visibleHost)",
@@ -2663,6 +3260,10 @@ global.fushiLookupPendingHighlightEraseSeq = 0;
 global.fushiLookupHighlightFlushActive = false;
 global.fushiLookupPendingVisualDismiss = false;
 global.fushiLookupVisualFlushActive = false;
+global.fushiLookupPendingSentenceRefresh = false;
+global.fushiLookupPendingSubmitFence = false;
+global.fushiLookupSentenceRefreshActive = false;
+global.fushiLookupBridgePlugin = void;
 global.fushiLookupWrapperAuditPending = true;
 global.fushiLookupWrapperAuditLastState = -1;
 
@@ -2718,6 +3319,237 @@ global.fushiLookupAuditWrappers = function(force)
     global.fushiLookupWrapperAuditLastState = state;
     global.fushiLookupNoteError("wrapper.identity", %[message: "state=" + state]);
   }
+};
+
+global.fushiLookupLayerOwnedByPrimary = function(layer, primary)
+{
+  try
+  {
+    return layer !== void && layer !== null && isvalid layer &&
+      primary !== void && primary !== null && isvalid primary &&
+      layer.parent === primary;
+  }
+  catch(e) { return false; }
+};
+
+global.fushiLookupRetireDetachedLayer = function(layer)
+{
+  try
+  {
+    if(layer !== void && layer !== null && isvalid layer)
+    {
+      layer.visible = false;
+      layer.update();
+    }
+  }
+  catch(e) { global.fushiLookupFault(); }
+  try
+  {
+    if(layer !== void && layer !== null && isvalid layer)
+      invalidate layer;
+  }
+  catch(e) { global.fushiLookupFault(); }
+};
+
+global.fushiLookupAdvanceDismissFence = function()
+{
+  var submitSeq = global.fushiLookupSubmitSeq;
+  if(submitSeq > global.fushiLookupDismissedSubmitSeq)
+  {
+    global.fushiLookupDismissedSubmitSeq = submitSeq;
+    global.fushiLookupNotify++;
+    return true;
+  }
+  return false;
+};
+
+global.fushiLookupRehomeLayerToPrimary = function(layer, primary)
+{
+  try
+  {
+    if(global.fushiLookupLayerOwnedByPrimary(layer, primary)) return true;
+    if(layer === void || layer === null || !isvalid layer ||
+      primary === void || primary === null || !isvalid primary) return false;
+    if(!global.fushiLookupComputeOffset(layer)) return false;
+    var newLeft = global.fushiLookupOffX;
+    var newTop = global.fushiLookupOffY;
+    if(primary !== global.kag.primaryLayer) return false;
+    layer.parent = primary;
+    layer.setPos(newLeft, newTop);
+    if(layer.parent !== primary) return false;
+    if(layer.visible) layer.update();
+    return true;
+  }
+  catch(e)
+  {
+    global.fushiLookupNoteError("layer.rehome", e);
+    global.fushiLookupFault();
+    return false;
+  }
+};
+
+global.fushiLookupPrimaryRacedSince = function(primary)
+{
+  try { return primary !== global.kag.primaryLayer; }
+  catch(e) { return false; }
+};
+
+global.fushiLookupTryRehomeVisualParents = function()
+{
+  var primary = void;
+  try { primary = global.kag.primaryLayer; }
+  catch(e) { return true; }
+  if(primary === void || primary === null || !isvalid primary) return true;
+
+  var highlight = global.fushiLookupHighlightLayer;
+  if(highlight !== void && highlight !== null &&
+    !global.fushiLookupLayerOwnedByPrimary(highlight, primary))
+    global.fushiLookupRehomeLayerToPrimary(highlight, primary);
+
+  var card = global.fushiLookupCard;
+  if(card === void || card === null || !isvalid card)
+  {
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    return true;
+  }
+  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+    !global.fushiLookupRehomeLayerToPrimary(card, primary))
+  {
+    if(global.fushiLookupPrimaryRacedSince(primary)) return false;
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    global.fushiLookupRetireDetachedLayer(card);
+    return true;
+  }
+  try
+  {
+    if(global.fushiLookupCardSeq != 0 &&
+      !global.fushiLookupCaptureSuppressed && !card.visible)
+    {
+      card.visible = true;
+      card.update();
+    }
+  }
+  catch(e) { global.fushiLookupFault(); }
+  return true;
+};
+
+global.fushiLookupReconcileVisualParents = function()
+{
+  var primary = global.kag.primaryLayer;
+  var highlight = global.fushiLookupHighlightLayer;
+  if(highlight !== void && highlight !== null &&
+    !global.fushiLookupLayerOwnedByPrimary(highlight, primary) &&
+    !global.fushiLookupRehomeLayerToPrimary(highlight, primary))
+  {
+    global.fushiLookupHighlightLayer = void;
+    global.fushiLookupHighlightRect = void;
+    global.fushiLookupPendingHighlightEraseRect = void;
+    global.fushiLookupRetireDetachedLayer(highlight);
+  }
+  var card = global.fushiLookupCard;
+  if(card !== void && card !== null &&
+    !global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+    !global.fushiLookupRehomeLayerToPrimary(card, primary))
+  {
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    global.fushiLookupRetireDetachedLayer(card);
+  }
+};
+
+global.fushiLookupEnsureHighlight = function()
+{
+  var primary = global.kag.primaryLayer;
+  var layer = global.fushiLookupHighlightLayer;
+  if(layer !== void && layer !== null &&
+    !global.fushiLookupLayerOwnedByPrimary(layer, primary) &&
+    !global.fushiLookupRehomeLayerToPrimary(layer, primary))
+  {
+    global.fushiLookupHighlightLayer = void;
+    global.fushiLookupRetireDetachedLayer(layer);
+    layer = void;
+  }
+};
+
+global.fushiLookupRefreshCaptureBridges = function()
+{
+  global.fushiLookupInstallGetRenderBridge();
+  global.fushiLookupSweepMsgwinRenders();
+  global.fushiLookupAuditWrappers(true);
+};
+
+global.fushiLookupRefreshSentenceSurface = function()
+{
+  if(global.fushiLookupSentenceRefreshActive)
+  {
+    global.fushiLookupPendingSentenceRefresh = true;
+    return;
+  }
+  global.fushiLookupSentenceRefreshActive = true;
+  try
+  {
+    global.fushiLookupReconcileVisualParents();
+    global.fushiLookupRefreshCaptureBridges();
+  }
+  catch(e) { global.fushiLookupFault(); }
+  global.fushiLookupSentenceRefreshActive = false;
+};
+
+global.fushiLookupPrepare = function(anchorX, anchorY, cardW, cardH)
+{
+  var primary = global.kag.primaryLayer;
+  var card = global.fushiLookupCard;
+  if(card !== void && card !== null &&
+    !global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+    !global.fushiLookupRehomeLayerToPrimary(card, primary))
+  {
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    global.fushiLookupRetireDetachedLayer(card);
+    card = void;
+  }
+};
+
+global.fushiLookupApply = function(seq, highlightStart, highlightLen,
+  anchorX, anchorY, cardW, cardH)
+{
+  var card = global.fushiLookupCard;
+  var primary = global.kag.primaryLayer;
+  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+    !global.fushiLookupRehomeLayerToPrimary(card, primary))
+  {
+    global.fushiLookupCard = void;
+    global.fushiLookupCardSeq = 0;
+    global.fushiLookupCardEntry = void;
+    global.fushiLookupRetireDetachedLayer(card);
+    return;
+  }
+};
+
+global.fushiLookupCardVisible = function()
+{
+  var card = global.fushiLookupCard;
+  return global.fushiLookupCardSeq != 0 ||
+    (card !== void && isvalid card && card.visible);
+};
+
+global.fushiLookupQueueInput = function(kind, x, y, wheel)
+{
+  var keys = 0;
+  try
+  {
+    if(System.getKeyState(0x10)) keys = keys | 4;
+  }
+  catch(e) {}
+  if(kind == 1) keys = keys | 1;
+  if(kind == 4 || kind == 5) keys = 0;
+  global.fushiLookupInputQueue.add(keys);
 };
 
 global.fushiLookupFindEntry = function(renderer)
@@ -2942,11 +3774,20 @@ global.fushiLookupFlushVisualWork = function()
   if(global.fushiLookupVisualFlushActive) return false;
   global.fushiLookupVisualFlushActive = true;
   var dismiss = global.fushiLookupPendingVisualDismiss;
+  var sentenceRefresh = global.fushiLookupPendingSentenceRefresh;
+  var submitFence = global.fushiLookupPendingSubmitFence;
   global.fushiLookupPendingVisualDismiss = false;
+  global.fushiLookupPendingSentenceRefresh = false;
+  global.fushiLookupPendingSubmitFence = false;
+  if(submitFence) global.fushiLookupAdvanceDismissFence();
   if(dismiss) global.fushiLookupDismissNow();
+  if(sentenceRefresh) global.fushiLookupRefreshSentenceSurface();
   global.fushiLookupFlushPendingHighlightErase();
   global.fushiLookupVisualFlushActive = false;
-  return true;
+  return !global.fushiLookupPendingVisualDismiss &&
+    !global.fushiLookupPendingSentenceRefresh &&
+    !global.fushiLookupPendingSubmitFence &&
+    global.fushiLookupPendingHighlightEraseRect === void;
 };
 
 global.fushiLookupCurrentIdentityState = function(entry)
@@ -2962,6 +3803,16 @@ global.fushiLookupCurrentIdentityState = function(entry)
   if(resolved.page == entry.slotPage && resolved.index == entry.slotIndex)
     return resolved.identity === captured ? 1 : -1;
   return 0;
+};
+
+global.fushiLookupActiveSentenceState = function(entry)
+{
+  if(entry.slotPage == 0 || entry.slotIndex < 0) return 0;
+  var slot = global.fushiLookupFindSlot(entry.slotPage, entry.slotIndex);
+  if(slot === void || slot.generation != entry.slotGeneration ||
+    slot.line == "" || entry.line == "" || slot.line != entry.line ||
+    slot.line != entry.logicalLine || slot.activeEntry !== entry) return -1;
+  return 1;
 };
 )TJS" LR"TJS(
 global.fushiLookupCaptureTokenCurrent = function(entry, renderer,
@@ -3072,6 +3923,9 @@ global.fushiLookupCapture = function(renderer, capturePhase,
     ((anchorKind != 0 && anchorPage != 0 && anchorIndex >= 0) ? 1 : 0);
   if(candidateReady && entrySameLogical && entry.hasBase &&
     candidateStrength < entry.bindingStrength) candidateReady = false;
+  var activeIdentityState =
+    global.fushiLookupCurrentIdentityState(entry);
+  if(activeIdentityState < 0) activeUsable = false;
   if(activeUsable && candidateStrength <= logicalSlot.activeStrength)
     candidateReady = false;
   if(!global.fushiLookupCaptureTokenCurrent(entry, renderer,
@@ -3090,6 +3944,10 @@ global.fushiLookupCapture = function(renderer, capturePhase,
     entry.currentIdentity = candidateCurrentIdentity;
     if(logicalSlot !== void)
       logicalSlot.activeEntry = entry;
+    if(slotAdoption !== void && slotAdoption.advanced)
+      global.fushiLookupPendingSubmitFence = true;
+    if(slotAdoption !== void && slotAdoption.advanced)
+      global.fushiLookupPendingSentenceRefresh = true;
     if(slotAdoption !== void && slotAdoption.advanced)
       global.fushiLookupPendingVisualDismiss = true;
   }
@@ -3146,10 +4004,10 @@ global.fushiLookupProbe = function(submit)
   var entry = global.fushiLookupRegistry[0];
   var layer = entry.layer;
   if(!global.fushiLookupComputeOffset(layer)) return false;
-  var currentIdentityState =
-    global.fushiLookupCurrentIdentityState(entry);
-  if(currentIdentityState < 0 ||
-    (currentIdentityState == 0 &&
+  var activeSentenceState =
+    global.fushiLookupActiveSentenceState(entry);
+  if(activeSentenceState < 0 ||
+    (activeSentenceState == 0 &&
     !global.fushiLookupEntryVisible(entry)))
     return false;
   return true;
@@ -3164,11 +4022,32 @@ global.fushiLookupPatchRendererInstance = function(patch)
 
 global.fushiLookupLeftClickHook = function()
 {
+  var popupTransaction = false;
   try
   {
-    global.fushiLookupInstallGetRenderBridge();
-    global.fushiLookupSweepMsgwinRenders();
-    global.fushiLookupAuditWrappers(true);
+    popupTransaction = global.fushiLookupCardVisible();
+    var carrierSettled = global.fushiLookupTryRehomeVisualParents();
+    global.fushiLookupRefreshCaptureBridges();
+    if(popupTransaction && !carrierSettled) return true;
+    if(global.fushiLookupCardVisible() && global.fushiLookupOverCard())
+    {
+      try
+      {
+        global.fushiLookupQueueInput(0, 0, 0, 0);
+        global.fushiLookupQueueInput(1, 0, 0, 0);
+        global.fushiLookupQueueInput(2, 0, 0, 0);
+      }
+      catch(e) { global.fushiLookupFault(); }
+      return true;
+    }
+    if(popupTransaction || global.fushiLookupCardVisible())
+    {
+      try { global.fushiLookupQueueInput(5, 0, 0, 0); }
+      catch(e) { global.fushiLookupFault(); }
+      try { global.fushiLookupCancelCurrent(); }
+      catch(e) { global.fushiLookupFault(); }
+      return true;
+    }
     return global.fushiLookupProbe(true);
   }
   catch(e) { global.fushiLookupFault(); return false; }
@@ -3258,6 +4137,24 @@ if(global.fushiLookupResolveMsgwinPlugin() !== void)
   global.fushiLookupSweepMsgwinRenders();
   installStage = 37;
 }
+installStage = 38;
+if(typeof global.kag.addPlugin == "Object")
+{
+  global.fushiLookupBridgePlugin = %[
+    onStableStateChanged:function(stable)
+    {
+      try
+      {
+        global.fushiLookupTryRehomeVisualParents();
+        if(!stable) global.fushiLookupRefreshCaptureBridges();
+      }
+      catch(e) { global.fushiLookupFault(); }
+    }
+  ];
+  try { global.kag.addPlugin(global.fushiLookupBridgePlugin); }
+  catch(e) { global.fushiLookupFault(); }
+}
+installStage = 39;
 installStage = 40;
 global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
 installStage = 41;
@@ -3656,6 +4553,311 @@ class MutationSelfTest(unittest.TestCase):
             [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
         )
 
+    def test_sentence_refresh_reconciles_layers_before_renderer_audit(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "    global.fushiLookupReconcileVisualParents();\n"
+            "    global.fushiLookupRefreshCaptureBridges();\n",
+            "    global.fushiLookupRefreshCaptureBridges();\n"
+            "    global.fushiLookupReconcileVisualParents();\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_primary_reconcile_never_advances_route_fence(self) -> None:
+        old = "    global.fushiLookupRetireDetachedLayer(card);\n"
+        dirty = self._mutate_entry_lifecycle(
+            old,
+            "    global.fushiLookupAdvanceDismissFence();\n" + old,
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_popup_outside_click_is_dismissed_and_consumed(self) -> None:
+        for old, new in (
+            (
+                "      try { global.fushiLookupQueueInput(5, 0, 0, 0); }\n",
+                "",
+            ),
+            (
+                "      try { global.fushiLookupCancelCurrent(); }\n"
+                "      catch(e) { global.fushiLookupFault(); }\n"
+                "      return true;\n",
+                "      try { global.fushiLookupCancelCurrent(); }\n"
+                "      catch(e) { global.fushiLookupFault(); }\n"
+                "      return false;\n",
+            ),
+            (
+                "  catch(e) { global.fushiLookupFault(); return false; }\n",
+                "  catch(e) { global.fushiLookupFault(); "
+                "return popupTransaction; }\n",
+            ),
+        ):
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_popup_rehome_failure_is_swallowed_without_closing_route(self) -> None:
+        for old, new in (
+            (
+                "    if(popupTransaction && !carrierSettled) return true;\n",
+                "",
+            ),
+            (
+                "    var carrierSettled = "
+                "global.fushiLookupTryRehomeVisualParents();\n",
+                "    global.fushiLookupReconcileVisualParents();\n"
+                "    var carrierSettled = true;\n",
+            ),
+        ):
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_kirikiri_input_uses_webview_virtual_key_bits(self) -> None:
+        for old, new in (
+            (
+                "    if(System.getKeyState(0x10)) keys = keys | 4;\n",
+                "    if(System.getKeyState(0x10)) keys = keys | 1;\n",
+            ),
+            (
+                "  if(kind == 1) keys = keys | 1;\n",
+                "",
+            ),
+            (
+                "  if(kind == 4 || kind == 5) keys = 0;\n",
+                "",
+            ),
+        ):
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_only_existing_slot_text_change_publishes_sentence_advance(self) -> None:
+        for old, new in (
+            (
+                "    slot.line = line;\n"
+                "    slot.generation++;\n"
+                "  }\n"
+                "  else if(slot.line != line)\n",
+                "    slot.line = line;\n"
+                "    slot.generation++;\n"
+                "    advanced = true;\n"
+                "  }\n"
+                "  else if(slot.line != line)\n",
+            ),
+            ("    advanced = true;\n", ""),
+        ):
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_stable_edges_preserve_surface_and_post_transition_rehome(self) -> None:
+        for old, new in (
+            (
+                "        global.fushiLookupTryRehomeVisualParents();\n",
+                "",
+            ),
+            (
+                "        if(!stable) "
+                "global.fushiLookupRefreshCaptureBridges();\n",
+                "        global.fushiLookupRefreshCaptureBridges();\n",
+            ),
+            (
+                "        global.fushiLookupTryRehomeVisualParents();\n"
+                "        if(!stable) "
+                "global.fushiLookupRefreshCaptureBridges();\n",
+                "        global.fushiLookupTryRehomeVisualParents();\n"
+                "        global.fushiLookupReconcileVisualParents();\n"
+                "        if(!stable) "
+                "global.fushiLookupRefreshCaptureBridges();\n",
+            ),
+        ):
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_attempt_only_rehome_restores_card_seq_invariant(self) -> None:
+        """每一种「不修不变式 / 多一条无守卫的等待」都必须红。
+
+        这些变异各自都足以让 leftClick 的 popupTransaction && !carrierSettled 恒成立，
+        把玩家的左键永久吞掉——而 TJS 侧唯一无条件清 CardSeq 的入口要靠玩家点得动才
+        够得着，所以一旦成立就再也解不开。
+        """
+        for old, new in (
+            # ① carrier 已被引擎侧 invalidate 却只报「not ready」（PR #1030 的原形态）。
+            (
+                "  if(card === void || card === null || !isvalid card)\n"
+                "  {\n"
+                "    global.fushiLookupCard = void;\n"
+                "    global.fushiLookupCardSeq = 0;\n"
+                "    global.fushiLookupCardEntry = void;\n"
+                "    return true;\n"
+                "  }\n",
+                "  if(card === void || card === null || !isvalid card)\n"
+                "    return global.fushiLookupCardSeq == 0;\n",
+            ),
+            # ② 迁移永久失败也只报「not ready」，carrier 永远换不掉。
+            (
+                "  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&\n"
+                "    !global.fushiLookupRehomeLayerToPrimary(card, primary))\n"
+                "  {\n"
+                "    if(global.fushiLookupPrimaryRacedSince(primary)) return false;\n"
+                "    global.fushiLookupCard = void;\n"
+                "    global.fushiLookupCardSeq = 0;\n"
+                "    global.fushiLookupCardEntry = void;\n"
+                "    global.fushiLookupRetireDetachedLayer(card);\n"
+                "    return true;\n"
+                "  }\n",
+                "  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&\n"
+                "    !global.fushiLookupRehomeLayerToPrimary(card, primary))"
+                " return false;\n",
+            ),
+            # ③ 「再等一次」失去 primary 竞态守卫，退化成无条件等待。
+            (
+                "    if(global.fushiLookupPrimaryRacedSince(primary)) return false;\n",
+                "    return false;\n",
+            ),
+            # ④ 恢复 visible 抛错被当成「等一次就会好」。
+            (
+                "  catch(e) { global.fushiLookupFault(); }\n"
+                "  return true;\n"
+                "};\n\n"
+                "global.fushiLookupReconcileVisualParents = function()\n",
+                "  catch(e) { global.fushiLookupFault(); return false; }\n"
+                "  return true;\n"
+                "};\n\n"
+                "global.fushiLookupReconcileVisualParents = function()\n",
+            ),
+            # ⑤ 这一刻拿不到 primary 也被当成「等一次就会好」。
+            (
+                "  try { primary = global.kag.primaryLayer; }\n"
+                "  catch(e) { return true; }\n"
+                "  if(primary === void || primary === null || !isvalid primary)"
+                " return true;\n",
+                "  try { primary = global.kag.primaryLayer; }\n"
+                "  catch(e) { return false; }\n"
+                "  if(primary === void || primary === null || !isvalid primary)"
+                " return false;\n",
+            ),
+            # ⑥ 竞态判据被放宽成恒真，等待又变回无界。
+            (
+                "  try { return primary !== global.kag.primaryLayer; }\n"
+                "  catch(e) { return false; }\n",
+                "  try { return true; }\n"
+                "  catch(e) { return false; }\n",
+            ),
+            # ⑦ attempt-only 路径不得顺手销毁还活着的 carrier。
+            (
+                "      card.visible = true;\n"
+                "      card.update();\n",
+                "      global.fushiLookupDismiss();\n"
+                "      card.visible = true;\n"
+                "      card.update();\n",
+            ),
+        ):
+            with self.subTest(replacement=new.strip()):
+                dirty = self._mutate_entry_lifecycle(old, new)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_sentence_refresh_reentry_keeps_the_pending_request(self) -> None:
+        """重入早退丢掉 pending = 换句刷新永久丢失，且 flush 还谎报已排空。"""
+        for old_body, new_body in (
+            (
+                "  if(global.fushiLookupSentenceRefreshActive)\n"
+                "  {\n"
+                "    global.fushiLookupPendingSentenceRefresh = true;\n"
+                "    return;\n"
+                "  }\n",
+                "  if(global.fushiLookupSentenceRefreshActive) return;\n",
+            ),
+            (
+                "    global.fushiLookupPendingSentenceRefresh = true;\n"
+                "    return;\n",
+                "    return;\n",
+            ),
+        ):
+            with self.subTest(replacement=new_body.strip()):
+                dirty = self._mutate_entry_lifecycle(old_body, new_body)
+                self.assertNotEqual(
+                    [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+                )
+
+    def test_apply_rehome_failure_retires_half_written_carrier(self) -> None:
+        old = (
+            "global.fushiLookupApply = function(seq, highlightStart, highlightLen,\n"
+            "  anchorX, anchorY, cardW, cardH)\n"
+            "{\n"
+            "  var card = global.fushiLookupCard;\n"
+            "  var primary = global.kag.primaryLayer;\n"
+            "  if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&\n"
+            "    !global.fushiLookupRehomeLayerToPrimary(card, primary))\n"
+            "  {\n"
+            "    global.fushiLookupCard = void;\n"
+            "    global.fushiLookupCardSeq = 0;\n"
+            "    global.fushiLookupCardEntry = void;\n"
+            "    global.fushiLookupRetireDetachedLayer(card);\n"
+            "    return;\n"
+            "  }\n"
+            "};\n"
+        )
+        dirty = self._mutate_entry_lifecycle(
+            old,
+            old.replace(
+                "    global.fushiLookupCard = void;\n"
+                "    global.fushiLookupCardSeq = 0;\n"
+                "    global.fushiLookupCardEntry = void;\n"
+                "    global.fushiLookupRetireDetachedLayer(card);\n",
+                "",
+            ),
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_visual_layer_must_belong_to_current_primary(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "      layer.parent === primary;\n",
+            "      true;\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_prepare_rehomes_an_invalid_or_detached_prior_card(self) -> None:
+        old = (
+            "global.fushiLookupPrepare = function(anchorX, anchorY, cardW, cardH)\n"
+            "{\n"
+            "  var primary = global.kag.primaryLayer;\n"
+            "  var card = global.fushiLookupCard;\n"
+            "  if(card !== void && card !== null &&\n"
+            "    !global.fushiLookupLayerOwnedByPrimary(card, primary) &&\n"
+            "    !global.fushiLookupRehomeLayerToPrimary(card, primary))\n"
+        )
+        dirty = self._mutate_entry_lifecycle(
+            old,
+            old.replace(
+                "card !== null &&\n",
+                "card !== null && isvalid card &&\n",
+            ),
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
     def test_slot_key_requires_page_and_index(self) -> None:
         dirty = self._mutate_entry_lifecycle(
             "    if(slots[i].page == page && slots[i].index == index) "
@@ -3913,6 +5115,32 @@ class MutationSelfTest(unittest.TestCase):
                 self.assertNotEqual(
                     [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
                 )
+
+    def test_probe_liveness_uses_sentence_ledger_not_current_identity(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  var activeSentenceState =\n"
+            "    global.fushiLookupActiveSentenceState(entry);\n",
+            "  var activeSentenceState =\n"
+            "    global.fushiLookupCurrentIdentityState(entry);\n",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
+
+    def test_sentence_ledger_does_not_consult_animation_identity(self) -> None:
+        dirty = self._mutate_entry_lifecycle(
+            "  return 1;\n"
+            "};\n"
+            ")TJS\" LR\"TJS(\n"
+            "global.fushiLookupCaptureTokenCurrent",
+            "  return global.fushiLookupCurrentIdentityState(entry);\n"
+            "};\n"
+            ")TJS\" LR\"TJS(\n"
+            "global.fushiLookupCaptureTokenCurrent",
+        )
+        self.assertNotEqual(
+            [], find_invalid_lookup_entry_visibility_lifecycle(dirty)
+        )
 
     def test_same_current_slot_requires_exact_object_identity(self) -> None:
         dirty = self._mutate_entry_lifecycle(

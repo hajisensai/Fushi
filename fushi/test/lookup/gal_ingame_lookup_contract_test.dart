@@ -18,8 +18,12 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+
+import '../helpers/test_platform_services.dart';
 
 /// 卡片与被点字形之间的间距（primaryLayer px），与控制器退化分支同值。
 const int _kCardGap = 4;
@@ -66,6 +70,9 @@ void main() {
 
   const String channelName = 'app.fushi.reader/gal_hook_text';
   const MethodChannel channel = MethodChannel(channelName);
+  const MethodChannel globalLookupChannel = MethodChannel(
+    'app.fushi.reader/global_lookup',
+  );
   const MethodCodec codec = StandardMethodCodec();
 
   Future<void> invokeFromNative(String method, Object? arguments) async {
@@ -81,6 +88,8 @@ void main() {
     GalHookTextOverlayChannel.platformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(globalLookupChannel, null);
   });
 
   group('runner → Dart：命中事件', () {
@@ -510,6 +519,85 @@ void main() {
         ),
       );
       expect(source, contains('generation == _lookupGeneration'));
+    });
+
+    test('同句新 lineId 保留 active route，真换句才 dismiss→hide→invalidate', () async {
+      final List<String> lifecycle = <String>[];
+      final List<MethodCall> globalCalls = <MethodCall>[];
+      mockRunner((MethodCall call) {
+        lifecycle.add('gal:${call.method}');
+        return <String, Object?>{};
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(globalLookupChannel, (
+            MethodCall call,
+          ) async {
+            globalCalls.add(call);
+            lifecycle.add('global:${call.method}');
+            return null;
+          });
+
+      late GlobalLookupRoute activeRoute;
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test(
+            preferenceReader:
+                (String key, {required Object? defaultValue}) =>
+                    key == GalIngameLookupController.enabledPreferenceKey
+                    ? true
+                    : defaultValue,
+            lookupRunner: (String query, GalLookupHit hit) async {
+              activeRoute = GlobalLookupChannel.currentRoute;
+              return true;
+            },
+          );
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        await controller.setSessionActive(true);
+        final GalLookupHit hit = _hit(seq: 41, line: '同一句台词');
+        await controller.handleHit(hit);
+
+        calls.clear();
+        globalCalls.clear();
+        lifecycle.clear();
+        expect(controller.debugActiveHit, same(hit));
+        expect(GlobalLookupChannel.isRouteValid(activeRoute), isTrue);
+
+        await controller.onLineChanged('同一句台词');
+
+        expect(
+          calls.where((MethodCall call) => call.method == 'galLookupDismiss'),
+          isEmpty,
+          reason: '人物动画只重发同句 occurrence，不得撤掉游戏内卡片',
+        );
+        expect(
+          globalCalls.where((MethodCall call) => call.method == 'hide'),
+          isEmpty,
+          reason: '同句重发不得隐藏离屏 WebView，否则 DOM 选区会消失',
+        );
+        expect(GlobalLookupChannel.isRouteValid(activeRoute), isTrue);
+        expect(controller.debugActiveHit, same(hit));
+
+        await controller.onLineChanged('下一句台词');
+
+        expect(lifecycle, <String>['gal:galLookupDismiss', 'global:hide']);
+        expect(calls, hasLength(1));
+        expect(calls.single.method, 'galLookupDismiss');
+        expect(calls.single.arguments, <String, Object?>{'seq': 41});
+        expect(globalCalls, hasLength(1));
+        final MethodCall hide = globalCalls.single;
+        expect(hide.method, 'hide');
+        final Map<Object?, Object?> hideArgs =
+            hide.arguments as Map<Object?, Object?>;
+        expect(hideArgs['notify'], isFalse);
+        expect(hideArgs['target'], 'galCard');
+        expect(hideArgs['source'], 'galCard');
+        expect(hideArgs['routeEpoch'], activeRoute.routeEpoch);
+        expect(hideArgs['lookupEpoch'], activeRoute.lookupEpoch);
+        expect(GlobalLookupChannel.isRouteValid(activeRoute), isFalse);
+        expect(controller.debugActiveHit, isNull);
+      } finally {
+        await controller.stopForTesting();
+      }
     });
 
     test('非 Windows 上三个调用一律不过桥，返回 unsupported', () async {

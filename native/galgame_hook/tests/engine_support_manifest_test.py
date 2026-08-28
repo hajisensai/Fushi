@@ -7,6 +7,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,9 @@ from evidence_contract_test import _complete_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WA2_EXACT_SHA256 = (
+    "005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED"
+)
 
 
 def load_generator() -> ModuleType:
@@ -126,6 +130,63 @@ class EngineSupportManifestTest(unittest.TestCase):
                         group["evidence"]["kind"],
                         {"real_sample", "runtime_observation"},
                     )
+
+    def test_leaf_aquaplus_support_is_exact_hash_and_unverified(self) -> None:
+        leaf = self.engines["leaf_aquaplus"]
+        profile_document = json.loads(
+            (ROOT / "profiles" / "leaf_aquaplus.json").read_text(encoding="utf-8")
+        )
+        profile_header = (
+            ROOT / "hook" / "adapters" / "leaf_aquaplus_profile.h"
+        ).read_text(encoding="utf-8")
+        digest_match = re.search(
+            r"kWhiteAlbum2LeafAquaplusProfile\s*=\s*\{\s*\{(?P<digest>.*?)\}"
+            r"\s*,\s*kLeafAquaplusPeMachineI386\s*,\s*32u\s*,\s*0x734430u",
+            profile_header,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(digest_match)
+        assert digest_match is not None
+        profile_digest = bytes(
+            int(value, 16)
+            for value in re.findall(r"0x([0-9a-fA-F]{2})", digest_match["digest"])
+        ).hex().upper()
+
+        self.assertEqual("implemented_unverified", leaf["current_status"])
+        self.assertEqual([], leaf["verified_games"])
+        self.assertEqual(
+            [
+                {
+                    "algorithm": "sha256",
+                    "scope": "game_executable",
+                    "value": WA2_EXACT_SHA256,
+                    "version": "WHITE ALBUM2 bundled edition (version not recorded)",
+                }
+            ],
+            leaf["detection"]["hashes"]["values"],
+        )
+        self.assertEqual(
+            [WA2_EXACT_SHA256.lower()],
+            profile_document["detection"]["executable_sha256"],
+        )
+        self.assertEqual(WA2_EXACT_SHA256, profile_digest)
+        self.assertIn(
+            "constexpr uint16_t kLeafAquaplusPeMachineI386 = 0x014cu;",
+            profile_header,
+        )
+        self.assertTrue(
+            all(
+                capability["status"] == "implemented_unverified"
+                for capability in leaf["text"]["capabilities"]
+                + leaf["audio"]["priority"]
+            )
+        )
+        self.assertIn(
+            "tests/fixtures/leaf_aquaplus_replay.json", leaf["fixture_paths"]
+        )
+        self.assertIn(
+            "tests/leaf_d3d_trace_export_test.cpp", leaf["test_paths"]
+        )
 
     def test_support_status_and_capability_promotions_require_evidence(self) -> None:
         reallive = self.engines["reallive"]

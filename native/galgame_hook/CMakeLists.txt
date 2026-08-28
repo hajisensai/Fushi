@@ -55,6 +55,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
+  "hook/adapters/siglus_lookup.h"
+  "hook/adapters/siglus_lookup.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
@@ -74,6 +76,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"
   "hook/adapters/sgre_voice_archive.h"
+  "hook/adapters/leaf_aquaplus_profile.h"
+  "hook/adapters/leaf_aquaplus_lookup.h"
+  "hook/adapters/leaf_aquaplus_voice_archive.h"
+  "hook/adapters/leaf_aquaplus_adapter.inc"
+  "include/leaf_d3d_trace.h"
 )
 target_include_directories(fushi_voice_hook PRIVATE "include")
 target_compile_definitions(fushi_voice_hook PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -92,6 +99,27 @@ add_executable(fushi_siglus_text_test
 )
 target_include_directories(fushi_siglus_text_test PRIVATE "hook")
 add_test(NAME fushi_siglus_text_test COMMAND fushi_siglus_text_test)
+
+add_executable(fushi_siglus_lookup_test
+  "tests/siglus_lookup_test.cpp"
+)
+target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
+add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
+
+add_executable(fushi_leaf_aquaplus_adapter_test
+  "tests/leaf_aquaplus_adapter_test.cpp"
+)
+target_include_directories(fushi_leaf_aquaplus_adapter_test PRIVATE "hook")
+add_test(NAME fushi_leaf_aquaplus_adapter_test
+  COMMAND fushi_leaf_aquaplus_adapter_test)
+
+add_executable(fushi_leaf_aquaplus_voice_archive_test
+  "tests/leaf_aquaplus_voice_archive_test.cpp"
+)
+target_include_directories(fushi_leaf_aquaplus_voice_archive_test
+  PRIVATE "hook/adapters")
+add_test(NAME fushi_leaf_aquaplus_voice_archive_test
+  COMMAND fushi_leaf_aquaplus_voice_archive_test)
 
 add_executable(fushi_resource_audio_ready_test
   "tests/resource_audio_ready_test.cpp"
@@ -137,6 +165,16 @@ target_compile_definitions(fushi_xaudio_trace_export_test
 add_dependencies(fushi_xaudio_trace_export_test fushi_voice_hook)
 add_test(NAME fushi_xaudio_trace_export_test
   COMMAND fushi_xaudio_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
+
+add_executable(fushi_leaf_d3d_trace_export_test
+  "tests/leaf_d3d_trace_export_test.cpp"
+)
+target_include_directories(fushi_leaf_d3d_trace_export_test PRIVATE "include")
+target_compile_definitions(fushi_leaf_d3d_trace_export_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_dependencies(fushi_leaf_d3d_trace_export_test fushi_voice_hook)
+add_test(NAME fushi_leaf_d3d_trace_export_test
+  COMMAND fushi_leaf_d3d_trace_export_test "$<TARGET_FILE:fushi_voice_hook>")
 
 add_executable(fushi_voice_resource_filename_test
   "tests/voice_resource_filename_test.cpp"

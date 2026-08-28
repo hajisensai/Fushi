@@ -128,6 +128,12 @@ void FlushGlyphAccumLocked() {
 
 #if defined(_M_IX86)
 
+void ObserveSiglusLookupExactText(const wchar_t* text, uint32_t text_units,
+                                  uint64_t callsite_rva,
+                                  uintptr_t function_rva);
+bool IsSiglusLookupProfileMatched();
+const fushi_voice_hook::SiglusLookupProfile* ActiveSiglusLookupProfile();
+
 // Siglus 3 使用与 32 位 MSVC std::wstring 相同的 24-byte 小字符串布局。当前 Luna 的
 // EmbedSiglus2 也从该函数入口的 ECX 读取此对象；在引擎逻辑层拿整句可彻底避开 GDI
 // 描边/逐字重画造成的重复字与漏标点。
@@ -205,6 +211,9 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
                  L"EXBWX0@%llX:SiglusEngine.exe",
                  static_cast<unsigned long long>(g_siglus_text_function_rva));
 
+    ObserveSiglusLookupExactText(text, length, callsite_rva,
+                                 g_siglus_text_function_rva);
+
     EnterCriticalSection(&g_text_cs);
     WriteTextRingEntryLocked(
         text, static_cast<int>(length), thread_id,
@@ -222,6 +231,17 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
 bool TryHookSiglusExactText() {
   if (!IsSiglusEngine()) return true;
   if (g_orig_SiglusExactText != nullptr) return true;
+  // Some admitted Siglus builds expose scenario text through Luna with a
+  // different function ABI. Do not install the native ECX/TextUnion detour on
+  // those builds; the lookup sensor consumes their exact Luna lane instead.
+  if (IsSiglusLookupProfileMatched()) {
+    const auto* profile = ActiveSiglusLookupProfile();
+    if (profile != nullptr &&
+        profile->text_feed !=
+            fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
+      return true;
+    }
+  }
   HMODULE module = GetModuleHandleW(nullptr);
   if (module == nullptr) return false;
   const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);

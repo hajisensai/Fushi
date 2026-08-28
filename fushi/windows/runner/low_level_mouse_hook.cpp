@@ -70,6 +70,61 @@ std::atomic<HWND> g_direct_input_shield_game{nullptr};
 std::atomic<HWND> g_direct_input_shield_popup{nullptr};
 std::atomic<uint32_t> g_direct_input_shield_buttons{0};
 
+// A direct galCard may sit above an engine that samples physical mouse state
+// outside the Win32 message queue.  SGRE, exact-profile Siglus, and admitted
+// Leaf/AQUAPLUS use different injected ABIs, but the host publication
+// transaction is identical. Keep the property names as data so the low-level
+// hook can retain one down/up lifetime implementation without pretending the
+// engine-side detours are interchangeable.
+struct SampledInputShieldContract {
+  const wchar_t* required_property;
+  uintptr_t required_value;
+  const wchar_t* ready_property;
+  uintptr_t ready_value;
+  const wchar_t* window_property;
+  const wchar_t* tail_request_property;
+  const wchar_t* tail_ack_property;
+};
+
+constexpr SampledInputShieldContract kSgreSampledInputShieldContract = {
+    fushi_voice_hook::kSgreDirectInputShieldRequiredProperty,
+    fushi_voice_hook::kSgreDirectInputShieldRequiredValue,
+    fushi_voice_hook::kSgreDirectInputShieldReadyProperty,
+    fushi_voice_hook::kSgreDirectInputShieldReadyValue,
+    fushi_voice_hook::kSgreDirectInputShieldWindowProperty,
+    nullptr,
+    nullptr,
+};
+
+constexpr SampledInputShieldContract kSiglusSampledInputShieldContract = {
+    fushi_voice_hook::kSiglusSampledInputShieldRequiredProperty,
+    fushi_voice_hook::kSiglusSampledInputShieldRequiredValue,
+    fushi_voice_hook::kSiglusSampledInputShieldReadyProperty,
+    fushi_voice_hook::kSiglusSampledInputShieldReadyValue,
+    fushi_voice_hook::kSiglusSampledInputShieldWindowProperty,
+    nullptr,
+    nullptr,
+};
+
+constexpr SampledInputShieldContract kLeafAquaplusSampledInputShieldContract = {
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldRequiredProperty,
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldRequiredValue,
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldReadyProperty,
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldReadyValue,
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldWindowProperty,
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldTailRequestProperty,
+    fushi_voice_hook::kLeafAquaplusSampledInputShieldTailAckProperty,
+};
+
+std::atomic<const SampledInputShieldContract*>
+    g_direct_input_shield_contract{nullptr};
+std::atomic<uint32_t> g_direct_input_shield_tail_generation{0};
+std::atomic<uint32_t> g_direct_input_shield_tail_token{0};
+
+static_assert(kLowLevelMouseShieldReleaseMessage ==
+                  fushi_voice_hook::kSampledInputShieldReleaseWindowMessage,
+              "host/helper sampled-input release message drifted");
+
 // BUG-1286 — 回调最近一次被调用的时刻。存活性判据的一半（另一半是光标是否移动过）。
 // 只在回调里写、只在钩子线程的定时器里读，relaxed 足够：判据比较的是「有没有变化」，
 // 不依赖它与其他内存的顺序关系。
@@ -210,28 +265,173 @@ uint32_t ReconcileDirectInputShieldButtonsWithPhysicalState() {
   return still_held;
 }
 
+bool IsSampledInputShieldContractDeclared(
+    HWND game, const SampledInputShieldContract& contract) {
+  return game != nullptr &&
+         reinterpret_cast<uintptr_t>(
+             GetPropW(game, contract.required_property)) ==
+             contract.required_value;
+}
+
+bool IsSampledInputShieldContractReady(
+    HWND game, const SampledInputShieldContract& contract) {
+  return IsSampledInputShieldContractDeclared(game, contract) &&
+         reinterpret_cast<uintptr_t>(GetPropW(game, contract.ready_property)) ==
+             contract.ready_value;
+}
+
+// Retain the named SGRE predicate as a narrow compatibility seam for the
+// source guards and for diagnostics that specifically discuss DirectInput.
+// New host code selects the declared engine contract below.
 bool IsSgreDirectInputShieldContractReady(HWND game) {
-  return reinterpret_cast<uintptr_t>(GetPropW(
-             game,
-             fushi_voice_hook::kSgreDirectInputShieldRequiredProperty)) ==
-             fushi_voice_hook::kSgreDirectInputShieldRequiredValue &&
-         reinterpret_cast<uintptr_t>(GetPropW(
-             game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty)) ==
-             fushi_voice_hook::kSgreDirectInputShieldReadyValue;
+  return IsSampledInputShieldContractReady(
+      game, kSgreSampledInputShieldContract);
+}
+
+bool IsSelectedSampledInputShieldContractReady(
+    HWND game, const SampledInputShieldContract* contract) {
+  if (contract == &kSgreSampledInputShieldContract) {
+    return IsSgreDirectInputShieldContractReady(game);
+  }
+  return contract != nullptr &&
+         IsSampledInputShieldContractReady(game, *contract);
+}
+
+const SampledInputShieldContract* SelectSampledInputShieldContract(
+    HWND game, bool* any_declared) {
+  const bool sgre = IsSampledInputShieldContractDeclared(
+      game, kSgreSampledInputShieldContract);
+  const bool siglus = IsSampledInputShieldContractDeclared(
+      game, kSiglusSampledInputShieldContract);
+  const bool leaf_aquaplus = IsSampledInputShieldContractDeclared(
+      game, kLeafAquaplusSampledInputShieldContract);
+  const uint32_t declared_count = static_cast<uint32_t>(sgre) +
+                                  static_cast<uint32_t>(siglus) +
+                                  static_cast<uint32_t>(leaf_aquaplus);
+  if (any_declared != nullptr) *any_declared = declared_count != 0;
+  // Multiple simultaneous declarations mean the target identity is
+  // internally inconsistent. Never choose one arbitrarily: every injected ABI
+  // suppresses physical input and a false choice can leave the game locked.
+  if (declared_count != 1) return nullptr;
+  if (sgre) return &kSgreSampledInputShieldContract;
+  return siglus ? &kSiglusSampledInputShieldContract
+                : &kLeafAquaplusSampledInputShieldContract;
+}
+
+bool HasSampledInputTailHandshake(
+    const SampledInputShieldContract* contract) {
+  return contract != nullptr && contract->tail_request_property != nullptr &&
+         contract->tail_ack_property != nullptr;
+}
+
+// Call only after the hook thread has crossed a callback barrier.  A helper
+// health failure or a destroyed game HWND can revoke the cross-process
+// contract while the host still owns a Leaf tail token.  Such a token can no
+// longer receive a real (raw-state-drained) acknowledgement; retaining it
+// would make every later lookup popup fail closed forever.
+void AbortInvalidDirectInputShieldAfterBarrier() {
+  const HWND popup =
+      g_direct_input_shield_popup.load(std::memory_order_acquire);
+  if (popup == nullptr) return;
+  const HWND game =
+      g_direct_input_shield_game.load(std::memory_order_acquire);
+  const SampledInputShieldContract* contract =
+      g_direct_input_shield_contract.load(std::memory_order_acquire);
+  const bool publication_valid =
+      game != nullptr && IsWindow(game) && IsWindow(popup) &&
+      contract != nullptr &&
+      IsSelectedSampledInputShieldContractReady(game, contract) &&
+      reinterpret_cast<HWND>(GetPropW(game, contract->window_property)) ==
+          popup;
+  if (publication_valid) return;
+
+  const uint32_t token =
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire);
+  if (game != nullptr && IsWindow(game) && contract != nullptr) {
+    if (reinterpret_cast<HWND>(
+            GetPropW(game, contract->window_property)) == popup) {
+      RemovePropW(game, contract->window_property);
+    }
+    if (HasSampledInputTailHandshake(contract) && token != 0) {
+      if (static_cast<uint32_t>(reinterpret_cast<uintptr_t>(GetPropW(
+              game, contract->tail_request_property))) == token) {
+        RemovePropW(game, contract->tail_request_property);
+      }
+      if (static_cast<uint32_t>(reinterpret_cast<uintptr_t>(GetPropW(
+              game, contract->tail_ack_property))) == token) {
+        RemovePropW(game, contract->tail_ack_property);
+      }
+    }
+  }
+  g_direct_input_shield_buttons.store(0, std::memory_order_release);
+  g_direct_input_shield_tail_token.store(0, std::memory_order_release);
+  g_direct_input_shield_popup.store(nullptr, std::memory_order_release);
+  g_direct_input_shield_game.store(nullptr, std::memory_order_release);
+  g_direct_input_shield_contract.store(nullptr, std::memory_order_release);
+}
+
+bool PublishSampledInputTailRequest(
+    HWND game, const SampledInputShieldContract* contract,
+    uint32_t button_bit) {
+  if (!HasSampledInputTailHandshake(contract)) return true;
+  const uint32_t requested =
+      button_bit & fushi_voice_hook::kLeafAquaplusSampledInputButtonMask;
+  if (requested == 0) return true;
+  const uint32_t previous =
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire);
+  const uint32_t buttons =
+      requested | fushi_voice_hook::LeafAquaplusSampledInputTailButtons(
+                      previous);
+  const uint32_t generation =
+      g_direct_input_shield_tail_generation.fetch_add(
+          1, std::memory_order_acq_rel) +
+      1u;
+  const uint32_t token =
+      fushi_voice_hook::MakeLeafAquaplusSampledInputTailToken(generation,
+                                                              buttons);
+  if (game == nullptr || !IsWindow(game) || token == 0 ||
+      !SetPropW(game, contract->tail_request_property,
+                reinterpret_cast<HANDLE>(static_cast<uintptr_t>(token)))) {
+    return false;
+  }
+  // Publish host ownership only after the cross-process request is visible.
+  // A stale helper ack cannot match this new generation.
+  g_direct_input_shield_tail_token.store(token, std::memory_order_release);
+  return true;
+}
+
+void RefreshSampledInputTailAck(
+    HWND game, const SampledInputShieldContract* contract) {
+  if (!HasSampledInputTailHandshake(contract) || game == nullptr ||
+      !IsWindow(game)) {
+    return;
+  }
+  uint32_t token =
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire);
+  if (token == 0) return;
+  const uint32_t ack = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(
+      GetPropW(game, contract->tail_ack_property)));
+  if (ack != token) return;
+  // Do not remove the properties here: a new hook callback can publish a newer
+  // request concurrently. The generation CAS is race-free; stale property
+  // values are harmless and are removed only behind the callback barrier when
+  // the Window publication itself is revoked.
+  g_direct_input_shield_tail_token.compare_exchange_strong(
+      token, 0, std::memory_order_acq_rel, std::memory_order_acquire);
 }
 
 bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
-  const uintptr_t required = reinterpret_cast<uintptr_t>(GetPropW(
-      game, fushi_voice_hook::kSgreDirectInputShieldRequiredProperty));
-  if (required != fushi_voice_hook::kSgreDirectInputShieldRequiredValue) {
+  bool any_declared = false;
+  const SampledInputShieldContract* contract =
+      SelectSampledInputShieldContract(game, &any_declared);
+  if (contract == nullptr && !any_declared) {
     return true;  // Other engines retain the existing WH_MOUSE_LL-only path.
   }
-  const uintptr_t ready = reinterpret_cast<uintptr_t>(GetPropW(
-      game, fushi_voice_hook::kSgreDirectInputShieldReadyProperty));
-  if (ready != fushi_voice_hook::kSgreDirectInputShieldReadyValue) {
-    // Exact SGRE declared DirectInput protection mandatory, but its detour is
-    // not ready. Fail closed instead of silently falling back to the HHOOK-only
-    // route already disproved on the real game.
+  if (!IsSelectedSampledInputShieldContractReady(game, contract)) {
+    // An exact sampled-input engine declared protection mandatory, but its
+    // detour is absent/not ready (or two contracts conflict).  Fail closed
+    // instead of silently falling back to the HHOOK-only route already
+    // disproved on both SGRE and Siglus.
     return false;
   }
   const uint32_t pending =
@@ -240,15 +440,20 @@ bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
       g_direct_input_shield_game.load(std::memory_order_acquire);
   const HWND previous_popup =
       g_direct_input_shield_popup.load(std::memory_order_acquire);
-  if (pending != 0 &&
+  const uint32_t pending_tail =
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire);
+  if ((pending != 0 || pending_tail != 0) &&
       (previous_game != game || previous_popup != popup)) {
     return false;
   }
+  if (HasSampledInputTailHandshake(contract) && pending_tail == 0) {
+    RemovePropW(game, contract->tail_request_property);
+    RemovePropW(game, contract->tail_ack_property);
+  }
   // Cross-process SetProp can be denied by UIPI (normal Fushi -> elevated
   // game). Fail closed before the popup is shown; HHOOK alone is known not to
-  // suppress SGRE's DirectInput immediate state.
-  if (!SetPropW(game,
-                fushi_voice_hook::kSgreDirectInputShieldWindowProperty,
+  // suppress an immediate physical-state poller.
+  if (!SetPropW(game, contract->window_property,
                 reinterpret_cast<HANDLE>(popup))) {
     return false;
   }
@@ -257,18 +462,16 @@ bool PublishDirectInputShieldIfReady(HWND popup, HWND game) {
   // commit properties and our exact Window value before exposing the popup.
   // The injected side, in turn, defers routine main-window migration while this
   // live publication exists.
-  if (!IsSgreDirectInputShieldContractReady(game) ||
-      reinterpret_cast<HWND>(GetPropW(
-          game, fushi_voice_hook::kSgreDirectInputShieldWindowProperty)) !=
+  if (!IsSelectedSampledInputShieldContractReady(game, contract) ||
+      reinterpret_cast<HWND>(GetPropW(game, contract->window_property)) !=
           popup) {
-    if (reinterpret_cast<HWND>(GetPropW(
-            game, fushi_voice_hook::kSgreDirectInputShieldWindowProperty)) ==
-        popup) {
-      RemovePropW(game,
-                  fushi_voice_hook::kSgreDirectInputShieldWindowProperty);
+    if (reinterpret_cast<HWND>(
+            GetPropW(game, contract->window_property)) == popup) {
+      RemovePropW(game, contract->window_property);
     }
     return false;
   }
+  g_direct_input_shield_contract.store(contract, std::memory_order_release);
   g_direct_input_shield_game.store(game, std::memory_order_release);
   g_direct_input_shield_popup.store(popup, std::memory_order_release);
   return true;
@@ -280,19 +483,28 @@ void RevokeDirectInputShieldIfIdle(HWND expected_popup) {
   const HWND game =
       g_direct_input_shield_game.load(std::memory_order_acquire);
   if (popup == nullptr || game == nullptr || popup != expected_popup) return;
+  const SampledInputShieldContract* contract =
+      g_direct_input_shield_contract.load(std::memory_order_acquire);
+  RefreshSampledInputTailAck(game, contract);
   if (g_target.load(std::memory_order_acquire) == popup ||
-      g_direct_input_shield_buttons.load(std::memory_order_acquire) != 0) {
+      g_direct_input_shield_buttons.load(std::memory_order_acquire) != 0 ||
+      g_direct_input_shield_tail_token.load(std::memory_order_acquire) != 0) {
     return;
   }
   if (IsWindow(game) &&
-      reinterpret_cast<HWND>(GetPropW(
-          game, fushi_voice_hook::kSgreDirectInputShieldWindowProperty)) ==
+      contract != nullptr &&
+      reinterpret_cast<HWND>(GetPropW(game, contract->window_property)) ==
           popup) {
-    RemovePropW(game,
-                fushi_voice_hook::kSgreDirectInputShieldWindowProperty);
+    RemovePropW(game, contract->window_property);
+    if (HasSampledInputTailHandshake(contract)) {
+      RemovePropW(game, contract->tail_request_property);
+      RemovePropW(game, contract->tail_ack_property);
+    }
   }
+  g_direct_input_shield_tail_token.store(0, std::memory_order_release);
   g_direct_input_shield_popup.store(nullptr, std::memory_order_release);
   g_direct_input_shield_game.store(nullptr, std::memory_order_release);
+  g_direct_input_shield_contract.store(nullptr, std::memory_order_release);
 }
 
 bool PointInWindowClient(HWND window, POINT point) {
@@ -417,16 +629,32 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
         g_direct_input_shield_game.load(std::memory_order_acquire);
     const HWND shield_popup =
         g_direct_input_shield_popup.load(std::memory_order_acquire);
+    const SampledInputShieldContract* shield_contract =
+        g_direct_input_shield_contract.load(std::memory_order_acquire);
     if (bit != 0 && shield_game == consume_owner && shield_popup == target &&
-        reinterpret_cast<HWND>(GetPropW(
-            shield_game,
-            fushi_voice_hook::kSgreDirectInputShieldWindowProperty)) ==
-            target) {
+        shield_contract != nullptr &&
+        reinterpret_cast<HWND>(
+            GetPropW(shield_game, shield_contract->window_property)) == target) {
       // Track both outside and popup-internal downs. WebView2 still receives an
       // internal click, while the injected DirectInput detour hides it from the
       // game and retains the publication if that click closes the popup.
+      // Leaf's GetAsyncKeyState low bit can survive a complete fast click that
+      // happens between two engine polls. Publish a generation-tagged tail
+      // request before the popup thread can hide; the injected detour acks only
+      // after it has consumed the active sample and then observed raw zero.
+      const bool tail_published =
+          PublishSampledInputTailRequest(shield_game, shield_contract, bit);
       g_direct_input_shield_buttons.fetch_or(bit,
                                               std::memory_order_relaxed);
+      if (!tail_published) {
+        // Never dispatch this down to either WebView or the dismiss path.  A
+        // Leaf quick click can otherwise close the popup between two engine
+        // polls without a retained low-bit drain request, then advance the
+        // game.  Keep the popup/Window publication intact and swallow the
+        // matching up; a later transaction may retry the tail publication.
+        g_swallowed_buttons.fetch_or(bit, std::memory_order_relaxed);
+        return 1;
+      }
     }
     const bool consume_click =
         bit != 0 &&
@@ -807,6 +1035,7 @@ bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
   // The ack is also a hook-thread barrier: every callback that could have read
   // the old target has completed, while newer callbacks see target == nullptr.
   // It is now safe to replace this dedicated HWND's game binding.
+  AbortInvalidDirectInputShieldAfterBarrier();
   if (!SetPropW(target, kConsumeOutsideOwnerProperty,
                  reinterpret_cast<HANDLE>(consume_outside_owner))) {
     return false;
@@ -850,6 +1079,9 @@ void DisarmLowLevelMouseHook(HWND expected_target) {
   // 无保护地撤——RevokeDirectInputShieldIfIdle 自带 g_target / 按住键的闲置门控，
   // 那正是屏障之外的第二道防线。而 kQueuedPending 才是唯一「交给别人收尾」的分支。
   if (barrier != HookThreadBarrierResult::kQueuedPending) {
+    if (barrier == HookThreadBarrierResult::kCrossed) {
+      AbortInvalidDirectInputShieldAfterBarrier();
+    }
     RevokeDirectInputShieldIfIdle(expected_target);
   }
   if ((owns_binding || clean_uncommitted_arm) && thread_id != 0) {

@@ -91,6 +91,51 @@ class GalhookWorkflowTest(unittest.TestCase):
         )
         self.assertTrue(report["session_clean"])
 
+    def test_leaf_aquaplus_replay_uses_only_synthetic_text_and_pcm_metadata(
+        self,
+    ) -> None:
+        fixture = ROOT / "tests" / "fixtures" / "leaf_aquaplus_replay.json"
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "replay", str(fixture)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        report = json.loads(completed.stdout)
+        self.assertEqual(
+            report["cards"],
+            [
+                {
+                    "text_id": "synthetic-leaf-line",
+                    "audio_backend": "pcm",
+                    "audio_id": "synthetic-leaf-pcm",
+                }
+            ],
+        )
+        self.assertEqual(report["duplicate_text_events"], 1)
+        self.assertEqual(report["thread_filtered_events"], 1)
+        self.assertTrue(report["session_clean"])
+
+        fixture_data = json.loads(fixture.read_text(encoding="utf-8"))
+        self.assertEqual(fixture_data["status"], "implemented_unverified")
+        pcm = next(
+            event for event in fixture_data["events"] if event["kind"] == "pcm"
+        )
+        self.assertEqual(
+            {
+                "format": pcm["format"],
+                "sample_rate_hz": pcm["sample_rate_hz"],
+                "channels": pcm["channels"],
+                "bits_per_sample": pcm["bits_per_sample"],
+            },
+            {
+                "format": "s16le",
+                "sample_rate_hz": 48000,
+                "channels": 1,
+                "bits_per_sample": 16,
+            },
+        )
+
     @unittest.skipUnless(sys.platform == "win32", "PowerShell wrapper is Windows-only")
     def test_powershell_wrapper_dispatches_replay(self) -> None:
         subprocess.run(

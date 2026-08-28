@@ -14,6 +14,10 @@
 #define DIRECTSOUND_VERSION 0x0800
 #include <dsound.h>
 
+// 精确 WHITE ALBUM2 profile 的 D3D9 几何 trace（只用接口定义，不链 d3d9.lib）。
+// 必须在这里而不是 adapter 里 include —— 理由见 leaf_aquaplus_adapter.inc 顶部。
+#include <d3d9.h>
+
 // C.2e Ren'Py/FFmpeg 捕获：按前缀（avcodec-54*/avformat-54*）枚举已加载模块用 Toolhelp 快照。
 #include <tlhelp32.h>
 
@@ -41,6 +45,7 @@
 #include "il2cpp_thread_scope.h"
 #include "adapter.h"
 #include "lookup_overlay_geometry.h"
+#include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
@@ -50,8 +55,12 @@
 #include "ffmpeg_runtime.h"
 #include "hook_original_registry.h"
 #include "siglus_ovk.h"
+#include "siglus_launch.h"
+#include "adapters/siglus_lookup.h"
+#include "adapters/leaf_aquaplus_voice_archive.h"
 #include "siglus_text.h"
 #include "text_thread_identity.h"
+#include "luna_text_selector.h"
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
@@ -63,7 +72,6 @@
 #include "xaudio_trace.h"
 #include "xwma_resource.h"
 #include "generated/profile_includes.inc"
-
 // C.2d KiriKiriZ 原始语音 OGG 捕获需读主模块 VersionInfo 确认引擎版本（仅诊断，非门控）。
 // GetFileVersionInfo* 在 version.dll，用 #pragma 就地声明依赖，避免改 CMake（改动集中在本文件）。
 #pragma comment(lib, "version.lib")
@@ -89,6 +97,10 @@
 // 同位数。初始化只含常量/零值，不在 loader lock 下做任何动作。
 extern "C" __declspec(dllexport) alignas(8)
     fushi_voice_hook::XAudioTraceBuffer FushiXAudioTraceV1 = {};
+
+// Numeric-only exact-profile renderer telemetry, outside SharedHeader ABI.
+extern "C" __declspec(dllexport) alignas(8)
+    fushi_voice_hook::LeafD3DTraceBuffer FushiLeafD3DTraceV1 = {};
 
 namespace {
 
@@ -545,6 +557,7 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapters/kirikiri_adapter.inc"
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"
+#include "adapters/siglus_lookup.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
 

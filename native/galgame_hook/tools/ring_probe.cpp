@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "voice_clip_energy.h"
+#include "leaf_d3d_trace.h"
 #include "voice_hook_ipc.h"
 #include "voice_hook_utterance_window.h"
 #include "xaudio_trace.h"
@@ -762,9 +763,43 @@ struct alignas(8) XAudioTraceHeaderSnapshot {
   int64_t dropped_busy = 0;
 };
 
+struct alignas(8) LeafD3DTraceHeaderSnapshot {
+  uint32_t magic = 0;
+  uint32_t version = 0;
+  uint32_t event_size = 0;
+  uint32_t slot_size = 0;
+  uint32_t capacity = 0;
+  uint32_t reserved = 0;
+  int64_t next_sequence = 0;
+  int64_t dropped_busy = 0;
+  int64_t glyph_calls = 0;
+  int64_t glyph_describe_failures = 0;
+  int64_t glyph_armed_calls = 0;
+  int64_t armed_draw_calls = 0;
+  int64_t quad_candidates = 0;
+  int64_t primary_quad_candidates = 0;
+  int64_t alternate_quad_candidates = 0;
+  int64_t caller_rejects = 0;
+  int64_t primitive_type_rejects = 0;
+  int64_t primitive_count_rejects = 0;
+  int64_t vertex_stride_rejects = 0;
+  int64_t bounds_rejects = 0;
+  uint32_t last_primitive_type = 0;
+  uint32_t last_primitive_count = 0;
+  uint32_t last_vertex_stride = 0;
+  uint32_t last_caller_rva = 0;
+  uint32_t input_poller_owner_tid = 0;
+  uint32_t input_poller_conflicts = 0;
+  uint32_t input_poller_last_conflict_tid = 0;
+  uint32_t input_poller_contended = 0;
+};
+
 static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
                   offsetof(fushi_voice_hook::XAudioTraceBuffer, slots),
               "remote XAudio trace header layout drifted");
+static_assert(sizeof(LeafD3DTraceHeaderSnapshot) ==
+                  offsetof(fushi_voice_hook::LeafD3DTraceBuffer, slots),
+              "remote Leaf D3D trace header layout drifted");
 
 bool ReadRemoteExact(HANDLE process, uintptr_t address, void* destination,
                      size_t length) {
@@ -996,6 +1031,47 @@ bool FindRemoteXAudioTrace(HANDLE process, DWORD pid,
         !ReadRemoteExact(process, address, &header, sizeof(header)) ||
         header.magic != fushi_voice_hook::kXAudioTraceMagic ||
         header.version != fushi_voice_hook::kXAudioTraceVersion) {
+      continue;
+    }
+    *found_module = module;
+    *found_rva = export_rva;
+    *found_header = header;
+    return true;
+  }
+  if (error_code != nullptr) *error_code = ERROR_MOD_NOT_FOUND;
+  return false;
+}
+
+bool FindRemoteLeafD3DTrace(HANDLE process, DWORD pid,
+                            RemoteHookModule* found_module,
+                            uint32_t* found_rva,
+                            LeafD3DTraceHeaderSnapshot* found_header,
+                            DWORD* error_code) {
+  if (found_module == nullptr || found_rva == nullptr ||
+      found_header == nullptr) {
+    return false;
+  }
+  std::vector<RemoteHookModule> modules;
+  if (!EnumerateRemoteModules(pid, &modules, error_code)) return false;
+  std::stable_sort(modules.begin(), modules.end(),
+                   [](const RemoteHookModule& left,
+                      const RemoteHookModule& right) {
+                     return IsExpectedHookModuleName(left.name) &&
+                            !IsExpectedHookModuleName(right.name);
+                   });
+  for (const RemoteHookModule& module : modules) {
+    uint32_t export_rva = 0;
+    if (!ResolveRemotePeExportRva(
+            process, module, fushi_voice_hook::kLeafD3DTraceExportName,
+            &export_rva)) {
+      continue;
+    }
+    uintptr_t address = 0;
+    LeafD3DTraceHeaderSnapshot header;
+    if (!RemoteModuleAddress(module, export_rva, sizeof(header), &address) ||
+        !ReadRemoteExact(process, address, &header, sizeof(header)) ||
+        header.magic != fushi_voice_hook::kLeafD3DTraceMagic ||
+        header.version != fushi_voice_hook::kLeafD3DTraceVersion) {
       continue;
     }
     *found_module = module;
@@ -1277,6 +1353,141 @@ bool DumpXAudioTrace(DWORD pid) {
   return true;
 }
 
+bool DumpLeafD3DTrace(DWORD pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION |
+                                   PROCESS_VM_READ,
+                               FALSE, pid);
+  if (process == nullptr) {
+    fprintf(stderr, "OpenProcess(pid=%lu) failed: %lu\n", pid,
+            GetLastError());
+    return false;
+  }
+  RemoteHookModule module;
+  uint32_t export_rva = 0;
+  LeafD3DTraceHeaderSnapshot header;
+  DWORD module_error = ERROR_SUCCESS;
+  if (!FindRemoteLeafD3DTrace(process, pid, &module, &export_rva, &header,
+                              &module_error)) {
+    fprintf(stderr, "live hook DLL export %s not found for pid=%lu: %lu\n",
+            fushi_voice_hook::kLeafD3DTraceExportName, pid, module_error);
+    CloseHandle(process);
+    return false;
+  }
+  if (export_rva > module.image_size ||
+      sizeof(fushi_voice_hook::LeafD3DTraceBuffer) >
+          static_cast<size_t>(module.image_size - export_rva) ||
+      module.base > (std::numeric_limits<uintptr_t>::max)() - export_rva) {
+    fprintf(stderr, "Leaf D3D trace export exceeds remote module bounds\n");
+    CloseHandle(process);
+    return false;
+  }
+  if (header.event_size != sizeof(fushi_voice_hook::LeafD3DTraceEvent) ||
+      header.slot_size != sizeof(fushi_voice_hook::LeafD3DTraceSlot) ||
+      header.capacity != fushi_voice_hook::kLeafD3DTraceCapacity ||
+      header.next_sequence < 0 || header.dropped_busy < 0) {
+    fprintf(stderr,
+            "Leaf D3D trace ABI mismatch: magic=0x%08x version=%u event=%u "
+            "slot=%u capacity=%u\n",
+            header.magic, header.version, header.event_size, header.slot_size,
+            header.capacity);
+    CloseHandle(process);
+    return false;
+  }
+  const uintptr_t trace_address = module.base + export_rva;
+  printf(
+      "leaf_d3d_trace pid=%lu module=%ls base=0x%llx export_rva=0x%08x "
+      "next=%llu dropped_busy=%llu capacity=%u flags=0x%08x "
+      "glyph_calls=%llu describe_fail=%llu armed=%llu draws=%llu "
+      "candidates=%llu primary=%llu alternate=%llu caller_rejects=%llu "
+      "type_rejects=%llu "
+      "count_rejects=%llu stride_rejects=%llu bounds_rejects=%llu "
+      "last=pt:%u,pc:%u,stride:%u,caller:%08x "
+      "poller=owner:%u,conflicts:%u,last_conflict:%u,contended:%u\n",
+      pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
+      export_rva, static_cast<unsigned long long>(header.next_sequence),
+      static_cast<unsigned long long>(header.dropped_busy), header.capacity,
+      header.reserved,
+      static_cast<unsigned long long>(header.glyph_calls),
+      static_cast<unsigned long long>(header.glyph_describe_failures),
+      static_cast<unsigned long long>(header.glyph_armed_calls),
+      static_cast<unsigned long long>(header.armed_draw_calls),
+      static_cast<unsigned long long>(header.quad_candidates),
+      static_cast<unsigned long long>(header.primary_quad_candidates),
+      static_cast<unsigned long long>(header.alternate_quad_candidates),
+      static_cast<unsigned long long>(header.caller_rejects),
+      static_cast<unsigned long long>(header.primitive_type_rejects),
+      static_cast<unsigned long long>(header.primitive_count_rejects),
+      static_cast<unsigned long long>(header.vertex_stride_rejects),
+      static_cast<unsigned long long>(header.bounds_rejects),
+      header.last_primitive_type, header.last_primitive_count,
+      header.last_vertex_stride, header.last_caller_rva,
+      header.input_poller_owner_tid, header.input_poller_conflicts,
+      header.input_poller_last_conflict_tid, header.input_poller_contended);
+
+  const uint64_t next = static_cast<uint64_t>(header.next_sequence);
+  const uint64_t first =
+      next > header.capacity ? next - header.capacity + 1u : 1u;
+  uint32_t accepted = 0;
+  uint32_t unstable = 0;
+  for (uint64_t expected = first; expected <= next; ++expected) {
+    const uint64_t index = (expected - 1u) % header.capacity;
+    const uint64_t slot_offset =
+        offsetof(fushi_voice_hook::LeafD3DTraceBuffer, slots) +
+        index * sizeof(fushi_voice_hook::LeafD3DTraceSlot);
+    if (slot_offset > (std::numeric_limits<uintptr_t>::max)() - trace_address) {
+      ++unstable;
+      continue;
+    }
+    const uintptr_t slot_address =
+        trace_address + static_cast<uintptr_t>(slot_offset);
+    const uintptr_t sequence_address =
+        slot_address + offsetof(fushi_voice_hook::LeafD3DTraceSlot, event) +
+        offsetof(fushi_voice_hook::LeafD3DTraceEvent, sequence);
+    LONG writing_before = 0;
+    LONG writing_after = 0;
+    uint64_t sequence_before = 0;
+    uint64_t sequence_after = 0;
+    fushi_voice_hook::LeafD3DTraceSlot slot;
+    const bool stable =
+        ReadRemoteExact(process, sequence_address, &sequence_before,
+                        sizeof(sequence_before)) &&
+        ReadRemoteExact(process, slot_address, &writing_before,
+                        sizeof(writing_before)) &&
+        ReadRemoteExact(process, slot_address, &slot, sizeof(slot)) &&
+        ReadRemoteExact(process, sequence_address, &sequence_after,
+                        sizeof(sequence_after)) &&
+        ReadRemoteExact(process, slot_address, &writing_after,
+                        sizeof(writing_after)) &&
+        writing_before == 0 && slot.writing == 0 && writing_after == 0 &&
+        sequence_before == expected && slot.event.sequence == expected &&
+        sequence_after == expected;
+    if (!stable) {
+      ++unstable;
+      continue;
+    }
+    ++accepted;
+    const auto& event = slot.event;
+    printf(
+        "leaf_d3d seq=%llu ts=%llu frame=%llu traversal=%llu "
+        "glyph=%u/%u call=%08x texture=%08llx "
+        "pt=%u pc=%u stride=%u fvf=%08x vertices=%u "
+        "rect=%.2f,%.2f,%.2f,%.2f\n",
+        static_cast<unsigned long long>(event.sequence),
+        static_cast<unsigned long long>(event.timestamp_ms),
+        static_cast<unsigned long long>(event.frame_sequence),
+        static_cast<unsigned long long>(event.traversal_id),
+        event.glyph_index, event.glyph_count, event.caller_rva,
+        static_cast<unsigned long long>(event.texture0 & 0xffffffffull),
+        event.primitive_type, event.primitive_count, event.vertex_stride,
+        event.fvf, event.vertex_count, event.left, event.top, event.right,
+        event.bottom);
+  }
+  printf("leaf_d3d_trace_summary accepted=%u gaps_or_unstable=%u\n", accepted,
+         unstable);
+  CloseHandle(process);
+  return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1285,6 +1496,7 @@ int main(int argc, char** argv) {
             "usage: fushi_voice_ring_probe <pid> [轮数=30] [间隔ms=500]\n"
             "  或导出: <pid> --dump-text | --dump-text-events | --list-clips\n"
             "         <pid> --dump-xaudio-trace\n"
+            "         <pid> --dump-leaf-d3d-trace\n"
             "         <pid> --select-text-thread <thread_id|0>\n"
             "         <pid> --dump-wav|--dump-utterance <ts_ms> <out.wav>\n"
             "         <pid> --dump-sources <ts_ms> <prefix>\n"
@@ -1302,6 +1514,9 @@ int main(int argc, char** argv) {
   // command remains useful even when the mapping is unavailable or mismatched.
   if (argc >= 3 && strcmp(argv[2], "--dump-xaudio-trace") == 0) {
     return DumpXAudioTrace(pid) ? 0 : 2;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-leaf-d3d-trace") == 0) {
+    return DumpLeafD3DTrace(pid) ? 0 : 2;
   }
 
   const std::wstring shm = SharedMemoryName(pid);

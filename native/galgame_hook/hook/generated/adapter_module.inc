@@ -7,3 +7,4 @@
         qlie_.onModuleLoaded(entry.szModule);
         elf_ai6_.onModuleLoaded(entry.szModule);
         sgre_.onModuleLoaded(entry.szModule);
+        leaf_aquaplus_.onModuleLoaded(entry.szModule);

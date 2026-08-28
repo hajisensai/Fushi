@@ -197,6 +197,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "ffmpeg_resource_event": "resource_observed",
     "kirikiri_decoder_pcm": "pcm_observed",
     "kirikiri_resource_stream": "resource_observed",
+    "leaf_lac_voice_resource": "resource_observed",
     "malie_libp_cfi_voice_resource": "resource_observed",
     "process_loopback": "loopback_observed",
     "qlie_wuvorbis_float_per_source_pcm": "pcm_observed",

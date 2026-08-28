@@ -8,7 +8,7 @@
 
 | ID | 引擎 / 后端 | 状态 | 文本 | 音频优先级 | 已验证样本 |
 |---|---|---|---|---|---|
-| `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
+| `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
@@ -21,6 +21,7 @@
 | `malie_libp` | Malie System / LIBP CFI | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | malie_libp_cfi_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `qlie_filepack` | QLIE / FilePack | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | qlie_wuvorbis_per_source_pcm (verified)；qlie_wuvorbis_float_per_source_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified)；unity_legacy_text_events (implemented_unverified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
+| `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | — | engine_archive_resource (implemented_unverified) | 0 |
 
 ## 识别与能力明细
@@ -35,17 +36,18 @@
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `executable_names`：SiglusEngine.exe；证据：real_sample — anemoi 正式版，hibiki handoff 2026-07-19
-- `pe_architectures`：x86；证据：real_sample — anemoi SiglusEngine 1.1.141.3
+- `executable_names`：SiglusEngine.exe；证据：real_sample — anemoi 正式版与 Summer Pockets Reflection Blue 原始安装样本（2026-07-19 / 2026-08-27）
+- `pe_architectures`：x86；证据：real_sample — anemoi SiglusEngine 1.1.141.3 与 Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 均为 x86
 - `directory_files_all`：Gameexe.dat、Scene.pck；证据：real_sample — renamed Siglus executable regression fixed by hibiki-hook d1601b9
 - `runtime_modules`：dsound.dll；证据：runtime_observation — anemoi used DirectSound through CoCreateInstance
 - `resource_extensions`：.ovk；证据：real_sample — anemoi koe/*.ovk entries exported byte-identically
-- `hashes`：algorithm=sha256, scope=game_executable, value=D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059, version=1.1.141.3；证据：real_sample — hibiki handoff 2026-07-19
+- `hashes`：algorithm=sha256, scope=game_executable, value=D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059, version=1.1.141.3、algorithm=sha256, scope=game_executable, value=190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD, version=1.1.134.0；证据：real_sample — anemoi 正式版（2026-07-19）与 Summer Pockets Reflection Blue 原始 SiglusEngine.exe 身份固定（2026-08-27）
 
 文本能力：
 
 - `engine_exact_utf16_hook`：`implemented_unverified` — The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record.
 - `luna_hook`：`implemented_unverified` — Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline.
+- `ingame_lookup_geometry`：`implemented_unverified` — An exact-profile implementation now covers the recorded anemoi formal-release SiglusEngine 1.1.141.3 x86 executable (on-disk SHA-256 D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059; the shipped launcher virtualizes in-process self-reads to its same-size .org image with SHA-256 28FD4B910846CA5E2ECA924CA3FCFC1E9E69C1B1AD7181D2E0C66B85CC59A486, and both exact digests belong to this one profile): admitted glyph and GetKeyState callsites reconstruct UTF-16 per-glyph geometry, scale the fixed 1920x1080 design surface into the live client, and publish both single-click and Shift-hover submissions through the shared LookupHitSlot path. Popup-owned button transactions remain consumed through the matching release, including the generic bitmap-presenter fallback. tests/siglus_lookup_test.cpp pins exact-profile rejection, both exact identity views, multiline and wrapped geometry, stale-capture selection, DPI/client scaling, bounded capture, click ownership, and Shift edge behavior. This is offline implementation evidence only; an original-path lookup and card-mining E2E is not recorded, so the capability remains implemented_unverified.
 - codepage：utf-16le for the exact engine path
 - 线程提示：Prefer the engine exact-text source when observed; otherwise select the stable Luna dialogue thread.
 
@@ -64,10 +66,11 @@
 - Verification is specific to the recorded x86 sample and OVK layout.
 - Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.
 - The exact-text hook is implemented but is not promoted to verified by this baseline.
+- In-game lookup geometry and input interception are hash-pinned exact profiles for the recorded anemoi SiglusEngine 1.1.141.3 x86 executable (including its measured virtualized .org self-read hash) and Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 x86 executable SHA-256 190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD; unknown executable hashes fail closed. Native offline coverage does not replace an original-path lookup and same-session card-mining E2E, so this capability remains implemented_unverified.
 
 Fixtures：尚无（P5 补齐）
 
-Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`
+Tests：`tests/siglus_ovk_test.cpp`、`tests/siglus_launch_test.cpp`、`tests/siglus_text_test.cpp`、`tests/siglus_lookup_test.cpp`
 
 ### elf AI6 (`elf_ai6`)
 
@@ -574,6 +577,52 @@ Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`
+
+### Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) (`leaf_aquaplus`)
+
+- 状态：`implemented_unverified`
+- 别名：Leaf、AQUAPLUS、WHITE ALBUM2、WA2
+- 家族：`leaf_aquaplus`（Leaf / AQUAPLUS custom Windows runtime）
+- 当前 adapter：`hook/adapters/leaf_aquaplus_adapter.inc`
+- 进程策略：launch=`normal_launch_or_suspended_launch_implemented_unverified`，attach=`implemented_unverified`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：WA2.exe；证据：real_sample — WHITE ALBUM2 bundled installation sample inspected on 2026-08-28; the name is descriptive only and never enables exact offsets
+- `pe_architectures`：x86；证据：real_sample — Measured WA2.exe PE/COFF i386 sample, 1,220,096 bytes
+- `pe_imports`：d3d9.dll、dsound.dll；证据：real_sample — Measured import table of the exact hashed x86 sample
+- `runtime_modules`：d3d9.dll、dsound.dll；证据：runtime_observation — The exact hashed WA2 x86 sample completed original-path D3D9 lookup/input interception and source-audio card mining on 2026-08-28
+- `resource_extensions`：.pak；证据：real_sample — VOICE.PAK and IC/VOICE.PAK are validated LAC archives whose playback entries are complete Ogg/Vorbis resources; the root archive completed original-path card mining on 2026-08-28
+- `hashes`：algorithm=sha256, scope=game_executable, value=005E71107ED70E662C41CB526879CDCF0B9486E067C0E5A306308688C17409ED, version=WHITE ALBUM2 bundled edition (version not recorded)；证据：real_sample — SHA-256 measured from the user's original WA2.exe on 2026-08-28
+
+文本能力：
+
+- `luna_exact_cp932_thread`：`implemented_unverified` — The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped.
+- `ingame_lookup_geometry`：`implemented_unverified` — The exact D3D9 profile reconstructs bounded per-glyph geometry and kept same-sentence selection stable in user acceptance; release evidence gates remain incomplete.
+- `ingame_lookup_sampled_input_shield`：`implemented_unverified` — Single-click and Shift-hover lookup plus popup/dismiss mouse-transaction swallowing were user-accepted for the exact GetAsyncKeyState profile; release evidence gates remain incomplete.
+- codepage：CP932
+- 线程提示：Use only the selected Luna line source whose thread address equals WA2.exe + 0x512BF.
+
+音频优先级：
+
+1. `leaf_lac_voice_resource` — `implemented_unverified`；格式：original Ogg/Vorbis entry from VOICE.PAK or IC/VOICE.PAK；clean voice：是
+2. `directsound_pcm` — `implemented_unverified`；格式：48000 Hz / mono / signed 16-bit in the observed sample；clean voice：engine_dependent
+
+真实样本证据：
+
+
+已知限制：
+
+- This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim.
+- A game update or different executable hash disables the selected text, geometry and sampled-input offsets until that build is measured independently.
+- DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.
+- The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.
+- Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.
+- The original path was user-accepted, but the requested skip-all-tests submission leaves the full release evidence/offline gate set incomplete, so support is not promoted to verified.
+
+Fixtures：`tests/fixtures/leaf_aquaplus_replay.json`
+
+Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/leaf_aquaplus_voice_archive_test.cpp`、`tests/leaf_d3d_trace_export_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/galhook_workflow_test.py`、`../../fushi/test/lookup/gal_ingame_lookup_click_swallow_guard_test.dart`
 
 ### M2 wind3d11 runtime (STEINS;GATE RE:BOOT) (`sgre`)
 

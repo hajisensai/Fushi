@@ -2106,6 +2106,19 @@ static_assert(fushi_voice_hook::kLookupInputLeave == 4,
               "lookup input kind drift");
 static_assert(fushi_voice_hook::kLookupInputDismissOutside == 5,
               "lookup input kind drift");
+static_assert(
+    fushi_voice_hook::kLookupInputVirtualKeyLeftButton ==
+        static_cast<uint32_t>(
+            COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_LEFT_BUTTON),
+    "lookup input left-button key drift");
+static_assert(
+    fushi_voice_hook::kLookupInputVirtualKeyShift ==
+        static_cast<uint32_t>(COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_SHIFT),
+    "lookup input shift key drift");
+static_assert(
+    fushi_voice_hook::kLookupInputVirtualKeyControl ==
+        static_cast<uint32_t>(COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL),
+    "lookup input control key drift");
 
 bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
                                            int32_t wheel, uint32_t keys) {
@@ -2143,6 +2156,16 @@ bool GlobalLookupWindow::InjectLookupInput(uint32_t kind, int32_t x, int32_t y,
       break;
     default:
       return false;
+  }
+  // Producers publish WebView2's bit layout directly. Normalize the button
+  // transition here as a final contract fence, and keep LEAVE at NONE as
+  // required by SendMouseInput even if an older producer leaked modifiers.
+  if (kind == fushi_voice_hook::kLookupInputLeftDown) {
+    keys |= fushi_voice_hook::kLookupInputVirtualKeyLeftButton;
+  } else if (kind == fushi_voice_hook::kLookupInputLeftUp) {
+    keys &= ~fushi_voice_hook::kLookupInputVirtualKeyLeftButton;
+  } else if (kind == fushi_voice_hook::kLookupInputLeave) {
+    keys = fushi_voice_hook::kLookupInputVirtualKeyNone;
   }
   const auto virtual_keys =
       static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys);
