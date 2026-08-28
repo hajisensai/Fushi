@@ -1678,9 +1678,32 @@ void FloatingLyricWindow::Render() {
       // drawing effect，因此描边遍不会被 SetDrawingEffect 换色。
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_outline;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_shadow;
+      // BUG-1889 — 描边遍改成「图层内不透明叠印 + 整体一次合成」。
+      //
+      // 修前：8 遍描边各自带着用户设定的 alpha（默认 0xE0）直接 src-over 到目标。
+      // 字形边缘像素被覆盖的次数随方向从 1 到 8 不等，累加出来的 alpha 是非线性且
+      // 方向相关的，于是描边粗细沿轮廓忽粗忽细——曲线笔画（の / っ / あ 的弧）最
+      // 明显，看起来就是「奇怪的锯齿」。
+      //
+      // 顺带修掉一个语义 bug：叠 k 遍后的实际不透明度是 1-(1-a)^k，用户把描边设成
+      // 半透明，拿到的却几乎恒为纯色。
+      //
+      // 现在：描边色在图层内强制不透明（各遍叠加只决定**形状的并集**，不再累加
+      // alpha），PopLayer 时按用户真正设定的 alpha 整体合成一次。
+      // CreateLayer 失败时原样降级回旧路径（半透明直绘），不影响可用性。
+      Microsoft::WRL::ComPtr<ID2D1Layer> outline_layer;
+      float outline_alpha = 1.0f;
       if (hook_text_mode_) {
+        render_target_->CreateLayer(nullptr, outline_layer.GetAddressOf());
+        const bool layered = outline_layer != nullptr;
+        outline_alpha =
+            layered
+                ? static_cast<float>((style_.outline_color >> 24) & 0xFF) /
+                      255.0f
+                : 1.0f;
         render_target_->CreateSolidColorBrush(
-            ColorFromArgb(style_.outline_color),
+            ColorFromArgb(layered ? (style_.outline_color | 0xFF000000)
+                                  : style_.outline_color),
             lyric_outline.GetAddressOf());
         render_target_->CreateSolidColorBrush(
             ColorFromArgb(kLyricShadowColor), lyric_shadow.GetAddressOf());
@@ -1692,19 +1715,36 @@ void FloatingLyricWindow::Render() {
             D2D1::Point2F(text_rect_.left + shadow_off * 0.5f,
                           text_origin_y + shadow_off),
             text_layout_.Get(), lyric_shadow.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
-        const float r = ScaleForDpi(static_cast<float>(
-            std::clamp(style_.outline_width, 0.0, 8.0)));
+        // BUG-1889 — 偏移必须取整到物理像素。ScaleForDpi 不取整：r = 1.6dip 在
+        // 150% DPI 下是 2.4px，d = r*0.7071 = 1.697px，于是每一遍字形都落在**不同
+        // 的亚像素相位**上栅格化，灰度 AA 的边缘覆盖率各不相同，叠起来就是摩尔纹
+        // 式的毛边。取整后所有描边遍与填充遍同相位，边缘干净。
+        const float r = std::round(ScaleForDpi(static_cast<float>(
+            std::clamp(style_.outline_width, 0.0, 8.0))));
         if (r > 0.0f) {
-          const float d = r * 0.7071f;
-          const D2D1_POINT_2F ring[8] = {
+          const float d = std::round(r * 0.7071f);
+          // 22.5° 环的两个分量：8 向在曲线笔画上留下的扇形缺口由它们补齐。
+          const float n = std::round(r * 0.9239f);
+          const float m = std::round(r * 0.3827f);
+          const D2D1_POINT_2F ring[16] = {
               {r, 0.0f},  {-r, 0.0f}, {0.0f, r},  {0.0f, -r},
-              {d, d},     {d, -d},    {-d, d},    {-d, -d}};
+              {d, d},     {d, -d},    {-d, d},    {-d, -d},
+              {n, m},     {n, -m},    {-n, m},    {-n, -m},
+              {m, n},     {m, -n},    {-m, n},    {-m, -n}};
+          if (outline_layer != nullptr) {
+            render_target_->PushLayer(
+                D2D1::LayerParameters(text_clip, nullptr,
+                                      D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                      D2D1::IdentityMatrix(), outline_alpha),
+                outline_layer.Get());
+          }
           for (const D2D1_POINT_2F& off : ring) {
             render_target_->DrawTextLayout(
                 D2D1::Point2F(text_rect_.left + off.x, text_origin_y + off.y),
                 text_layout_.Get(), lyric_outline.Get(),
                 D2D1_DRAW_TEXT_OPTIONS_NONE);
           }
+          if (outline_layer != nullptr) render_target_->PopLayer();
         }
       }
       render_target_->DrawTextLayout(
@@ -1742,13 +1782,23 @@ void FloatingLyricWindow::Render() {
               text_origin_y + box.top + ruby_gap_px);
           // 注音的桌面歌词描边：字小，半径收到 0.75 倍、不画投影。
           if (hook_text_mode_ && lyric_outline != nullptr) {
-            const float rr = ScaleForDpi(static_cast<float>(
-                std::clamp(style_.outline_width, 0.0, 8.0) * 0.75));
+            // BUG-1889：与主文本同样取整到物理像素、同样在图层内不透明叠印，
+            // 否则注音描边会比正文描边更黑更实（叠印 k 遍 ≈ 纯色），两处观感不一致。
+            const float rr = std::round(ScaleForDpi(static_cast<float>(
+                std::clamp(style_.outline_width, 0.0, 8.0) * 0.75)));
             if (rr > 0.0f) {
-              const float rd = rr * 0.7071f;
+              const float rd = std::round(rr * 0.7071f);
               const D2D1_POINT_2F ruby_ring[8] = {
                   {rr, 0.0f}, {-rr, 0.0f}, {0.0f, rr},  {0.0f, -rr},
                   {rd, rd},   {rd, -rd},   {-rd, rd},   {-rd, -rd}};
+              if (outline_layer != nullptr) {
+                render_target_->PushLayer(
+                    D2D1::LayerParameters(text_clip, nullptr,
+                                          D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                          D2D1::IdentityMatrix(),
+                                          outline_alpha),
+                    outline_layer.Get());
+              }
               for (const D2D1_POINT_2F& off : ruby_ring) {
                 const D2D1_RECT_F shifted = D2D1::RectF(
                     ruby_rect.left + off.x, ruby_rect.top + off.y,
@@ -1758,6 +1808,7 @@ void FloatingLyricWindow::Render() {
                     ruby_format_.Get(), shifted, lyric_outline.Get(),
                     D2D1_DRAW_TEXT_OPTIONS_NONE);
               }
+              if (outline_layer != nullptr) render_target_->PopLayer();
             }
           }
           render_target_->DrawTextW(
