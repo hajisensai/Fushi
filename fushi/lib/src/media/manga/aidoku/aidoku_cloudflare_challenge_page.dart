@@ -12,29 +12,58 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 ///
 /// 按 host 单飞：并发调用（全局搜索扇出 / 源匹配）同站的挑战共享同一次解题，
 /// 不会叠出多个全屏页——后到的调用等第一次的结果，成功后各自带新 cookie 重试。
-void installAidokuCloudflareResolver(GlobalKey<NavigatorState> navigatorKey) {
+void installAidokuCloudflareResolver(
+  GlobalKey<NavigatorState> navigatorKey, {
+  @visibleForTesting
+  Widget Function(Uri challengeUrl, String userAgent)? pageBuilder,
+}) {
   final Map<String, Future<bool>> inflight = <String, Future<bool>>{};
   AidokuCloudflareGate.resolver = (Uri challengeUrl, String userAgent) {
-    return inflight[challengeUrl.host] ??= () async {
-      try {
-        final NavigatorState? navigator = navigatorKey.currentState;
-        if (navigator == null) return false;
-        final bool? solved = await navigator.push<bool>(
-          MaterialPageRoute<bool>(
-            builder: (BuildContext context) => AidokuCloudflareChallengePage(
-              challengeUrl: challengeUrl,
-              userAgent: userAgent,
-              jar: AidokuCookieJar.shared,
-            ),
-            fullscreenDialog: true,
-          ),
-        );
-        return solved ?? false;
-      } finally {
-        inflight.remove(challengeUrl.host);
-      }
-    }();
+    final String host = challengeUrl.host;
+    final Future<bool>? pending = inflight[host];
+    if (pending != null) return pending;
+    // 顺序是硬要求：**先建 future → 再写 map → 最后挂清理**。
+    //
+    // 写成 `inflight[host] ??= () async { ... finally { inflight.remove(host); } }()`
+    // 会把这个 host 永久毒死：`map[k] ??= expr` 是「先求值 expr、再写 map」，
+    // 而 async 函数体在第一个 await 之前是**同步**跑的——navigator 还没挂上
+    // （启动期，或两个共用 navigatorKey 的 widget 切换窗口）的早退路径一个 await 都没有，
+    // 于是 `remove` 在 map 被写入之前就跑完了（空操作），随后那个已完成的
+    // `Future(false)` 被钉进 map：该站点整个进程生命周期内再也弹不出解题页。
+    final Future<bool> solving = _solveChallenge(
+      navigatorKey,
+      challengeUrl,
+      userAgent,
+      pageBuilder,
+    );
+    inflight[host] = solving;
+    return solving.whenComplete(() => inflight.remove(host));
   };
+}
+
+/// 推一页解题 WebView 并等结果。navigator 未就绪（启动期 / 切换窗口）直接
+/// 返回 false，调用方按原错误上报；下一次调用会重新尝试。
+Future<bool> _solveChallenge(
+  GlobalKey<NavigatorState> navigatorKey,
+  Uri challengeUrl,
+  String userAgent,
+  Widget Function(Uri challengeUrl, String userAgent)? pageBuilder,
+) async {
+  final NavigatorState? navigator = navigatorKey.currentState;
+  if (navigator == null) return false;
+  final bool? solved = await navigator.push<bool>(
+    MaterialPageRoute<bool>(
+      builder: (BuildContext context) =>
+          pageBuilder?.call(challengeUrl, userAgent) ??
+          AidokuCloudflareChallengePage(
+            challengeUrl: challengeUrl,
+            userAgent: userAgent,
+            jar: AidokuCookieJar.shared,
+          ),
+      fullscreenDialog: true,
+    ),
+  );
+  return solved ?? false;
 }
 
 /// 用**被拦请求同一 User-Agent** 加载被拦的页面，让用户/浏览器完成 Cloudflare
