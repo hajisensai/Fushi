@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiSettings;
@@ -408,11 +409,37 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           t.onboarding_anki_backend_label,
           _ankiBackendLabel(anki.settings),
         ),
-        _ankiConfigRow(t.anki_deck, anki.settings.selectedDeckName ?? '—'),
-        _ankiConfigRow(
-          t.anki_note_type,
-          anki.settings.selectedNoteTypeName ?? '—',
-        ),
+        // BUG-1902：连上 Anki 之后就地给出「创建 Lapis 卡组 / 选牌组 / 选笔记类型」，
+        // 不再只显示三行「—」逼用户跳去设置页再回来。
+        //
+        // 用的是与制卡设置页**同一份**共享组件（anki/anki_config_controls.dart），
+        // 不是复制一份：两处显示同一份 AnkiSettings 真值、同一种行为。
+        //
+        // 「一键创建 Lapis 卡组」是新手最该点的那一下——它一次性把 deck + note type +
+        // 字段映射三者对齐，正好消除 BUG-1900 那类「换了笔记类型但映射没跟着换 →
+        // cannot create note because it is empty」的状态。
+        if (anki.settings.availableDecks.isEmpty)
+          // 还没拉到牌组：保持只读摘要，先引导用户点下面的「测试连接」。
+          _ankiConfigRow(t.anki_deck, anki.settings.selectedDeckName ?? '—')
+        else ...<Widget>[
+          AnkiCreateLapisRow(
+            viewModel: ref.read(ankiViewModelProvider.notifier),
+            isFetching: anki.isFetching,
+          ),
+          AnkiDeckPickerRow(
+            settings: anki.settings,
+            viewModel: ref.read(ankiViewModelProvider.notifier),
+          ),
+          AnkiNoteTypePickerRow(
+            settings: anki.settings,
+            viewModel: ref.read(ankiViewModelProvider.notifier),
+          ),
+        ],
+        if (anki.settings.availableDecks.isEmpty)
+          _ankiConfigRow(
+            t.anki_note_type,
+            anki.settings.selectedNoteTypeName ?? '—',
+          ),
         SizedBox(height: tokens.spacing.card),
         if (_ankiTestAttempted && !anki.isFetching) ...<Widget>[
           if (connected)
@@ -453,8 +480,15 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.link_outlined),
-              label: Text(t.onboarding_anki_test_action),
+                  : Icon(anki.settings.availableDecks.isEmpty
+                      ? Icons.link_outlined
+                      : Icons.sync_outlined),
+              // BUG-1902：已经拉到牌组之后，这颗按钮的实际作用就是「刷新牌组与笔记
+              // 类型」（它调的一直是 fetchConfiguration，与设置页刷新同一条路径）。
+              // 继续叫「测试连接」会让用户在 Anki 里新建了牌组后找不到刷新入口。
+              label: Text(anki.settings.availableDecks.isEmpty
+                  ? t.onboarding_anki_test_action
+                  : t.anki_fetch),
               onPressed: anki.isFetching
                   ? null
                   : () => unawaited(_testAnkiConnection()),

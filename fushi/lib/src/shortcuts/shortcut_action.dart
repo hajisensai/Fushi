@@ -335,6 +335,8 @@ enum ShortcutAction {
 
   // 字幕显示
   videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
+  // BUG-1907：在字幕列表里搜索台词（默认 Ctrl+F）。列表没开时先开列表再聚焦搜索框。
+  videoSearchSubtitleList(ShortcutScope.video, 'video_search_subtitle_list'),
   videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
   // TODO-840 Part B：字幕遮蔽模式（不遮蔽/模糊/隐藏，见 VideoSubtitleObscureMode）。
   // videoCycleSubtitleObscure 在三态间循环；videoToggleSubtitleHide 直接开/关「隐藏

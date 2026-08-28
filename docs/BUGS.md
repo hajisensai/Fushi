@@ -29,12 +29,26 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1775 条。点号进各自文件。
+> 共 1789 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1911](bugs/BUG-1911-gal-download-library-placeholder.md) | ✅ | ✅ | 下载中的游戏不在库里占位：看不出到底加没加进来 |
+| [BUG-1910](bugs/BUG-1910-gal-discovery-localization-filter.md) | ✅ | ✅ | gal 下载缺少生肉/熟肉筛选：分类只以一句硬编码中文存在 |
+| [BUG-1909](bugs/BUG-1909-gal-hook-code-paste.md) | ✅ | ✅ | gal 特殊码只能靠手拼七列 TSV 导入：缺少粘贴入口与归一化 |
+| [BUG-1908](bugs/BUG-1908-gal-mining-failure-silent.md) | ✅ | ✅ | gal 浮窗制卡失败完全没有提示：回程只传布尔，失败分支没有 else |
+| [BUG-1907](bugs/BUG-1907-subtitle-list-search-and-export.md) | ✅ | ✅ | 字幕列表缺少搜索（Ctrl+F）与导出收藏语句 |
+| [BUG-1906](bugs/BUG-1906-export-panel-cannot-pick-collection.md) | ✅ | ✅ | 收藏夹导出面板挤在 bottom sheet、文案写死书籍、且没法按合集导出 |
+| [BUG-1905](bugs/BUG-1905-ios-storage-total-undercounts.md) | ✅ | ✅ | 存储统计漏算缓存根与白名单外顶层项：app 内 6.9GB vs 系统 13.68GB |
 | [BUG-1904](bugs/BUG-1904-dict-import-entry-cap-silent-truncation.md) | ✅ | ✅ | 词条数撞 100 万每 bank 上限被静默截断，仍报导入成功 |
 | [BUG-1903](bugs/BUG-1903-dict-zip-multi-mdx-only-first-imported.md) | ✅ | ✅ | 一个压缩包内含多本 MDX 词典时只导入第一本，其余静默丢弃且报成功 |
+| [BUG-1902](bugs/BUG-1902-onboarding-anki-missing-deck-controls.md) | ✅ | ✅ | 新手引导配置 Anki 缺少创建 Lapis 卡组/刷新/选牌组 |
+| [BUG-1901](bugs/BUG-1901-discovery-detail-title-not-selectable.md) | ✅ | ✅ | 番剧详情页标题不能选中复制：全页只有 2/15 个文本可选 |
+| [BUG-1900](bugs/BUG-1900-anki-empty-note-message-misleading.md) | ✅ | ✅ | AnkiConnect 制卡把字段映射不匹配报成 cannot create note because it is empty |
+| [BUG-1899](bugs/BUG-1899-custom-data-root-reported-as-db-damaged.md) | ✅ | ✅ | 自定义数据安装位置启动即 Database damaged：派生根目录从没被创建 |
+| [BUG-1898](bugs/BUG-1898-touching-ruby-units-overlap.md) | ✅ | ✅ | 紧邻的两个带注音基字振假名重叠：明鏡四字熟語糊成一团 |
+| [BUG-1897](bugs/BUG-1897-dict-css-double-scales-ruby.md) | ✅ | ✅ | 词典自带 rt 字号与注音盒相乘，小学館十二版振假名只剩 0.3em |
+| [BUG-1896](bugs/BUG-1896-video-episode-picker-unordered.md) | ✅ | ✅ | 播放器选集横排缩略图乱序：番剧下载入库从不重排合集 |
 | [BUG-1895](bugs/BUG-1895-lookup-popup-plus-short.md) | ✅ | ✅ | 查词弹窗静息加号比相邻操作图标矮 |
 | [BUG-1894](bugs/BUG-1894-theme-edit-button-duplicates-new.md) | ✅ | ✅ | 主题行铅笔按钮在无活跃自定义主题时退化成第二个新建入口 |
 | [BUG-1893](bugs/BUG-1893-storage-audiobook-size-missing-in-entries.md) | ✅ | ✅ | 存储页书籍条目不显示有声书音频大小 |

@@ -998,6 +998,121 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
+  /// BUG-1909：把用户粘来的一串特殊码转成可入库的 profile 行。
+  ///
+  /// 用户原话：「特殊码确实是可以用在 fushi 上的，不过要稍微转换一下，因为 fushi 只接受
+  /// tsv 合适的，一般特殊码只是一串字符」。缺的正是这段转换：
+  /// * 洗掉复制带来的引号/换行/全角噪声（[normalizeGalHookCode]）；
+  /// * 补上 profile 的身份列——**当前运行游戏 exe 的 SHA-256**。这是 profile 能被
+  ///   下次自动复用的唯一依据（native 按 exe 哈希匹配），也是用户手工拼 TSV 时最过不去
+  ///   的一关；
+  /// * 补 codepage 932 与 label，拼成七列行。
+  ///
+  /// 用 `upsert` 而不是导入用的 `replaceFrom`：粘一条码不该把用户既有的其它 profile
+  /// 全部清掉。
+  Future<void> _pasteLunaHookCode() async {
+    final String? executable = _session.currentLaunchExecutable;
+    if (executable == null) {
+      // 没有正在运行的游戏 = 算不出身份哈希，这条码存下来也永远匹配不上。
+      FushiToast.show(
+        msg: t.game_text_thread_hint,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final TextEditingController codeController = TextEditingController();
+    final TextEditingController labelController = TextEditingController(
+      text: executable.split(RegExp(r'[/\\]')).last,
+    );
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => FushiDialogFrame(
+        maxWidth: 480,
+        child: FushiModalSheetFrame(
+          title: t.game_hook_code_paste_title,
+          scrollable: true,
+          body: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(t.game_hook_code_paste_body),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: codeController,
+                  autofocus: true,
+                  maxLines: 2,
+                  minLines: 1,
+                  decoration: InputDecoration(
+                    labelText: 'Hook Code',
+                    hintText: t.game_hook_code_paste_hint,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: labelController,
+                  decoration: InputDecoration(
+                    labelText: t.game_hook_code_label,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          footer: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(t.dialog_save),
+            ),
+          ),
+        ),
+      ),
+    );
+    final String code = normalizeGalHookCode(codeController.text);
+    final String label = labelController.text.trim();
+    codeController.dispose();
+    labelController.dispose();
+    if (confirmed != true || !mounted) return;
+    if (code.isEmpty) {
+      FushiToast.show(
+        msg: t.game_hook_code_paste_invalid,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    try {
+      final String hash = await sha256File(File(executable));
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      await store.upsert(
+        LunaHookCodeProfile(
+          executableSha256: hash,
+          moduleName: '',
+          moduleSha256: '',
+          codepage: 932,
+          hookCode: code,
+          label: label.isEmpty
+              ? executable.split(RegExp(r'[/\\]')).last
+              : label,
+        ),
+      );
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.game_hook_code_paste_saved,
+        severity: ToastSeverity.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.audiobook_import_error,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
   Future<void> _saveSelectedLunaHookCode() async {
     final String? executable = _session.currentLaunchExecutable;
     final TexthookerTextThread? thread = _session.selectedTextThread;
@@ -1746,20 +1861,65 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     }
                   },
                 ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_save}',
-                  icon: const Icon(Icons.bookmark_add_outlined, size: 20),
-                  onPressed: _saveSelectedLunaHookCode,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_import}',
-                  icon: const Icon(Icons.file_download_outlined, size: 20),
-                  onPressed: _importLunaHookProfiles,
-                ),
-                IconButton(
-                  tooltip: 'Hook Code · ${t.dialog_export}',
-                  icon: const Icon(Icons.file_upload_outlined, size: 20),
-                  onPressed: _exportLunaHookProfiles,
+                // BUG-1909：粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
+                // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须是游戏 exe
+                // 的 SHA-256——用户拿到的特殊码只是一串字符，中间那层转换没人做。
+                // BUG-1909：Hook Code 动作组改成**可横滚**。
+                //
+                // 实测：这一行在 520px 下本来就没有横向余量了，直接再加一个
+                // IconButton 会让整卡 RenderFlex overflow（既有守卫
+                // `texthooker_page_test` 的 520px 用例当场转红）。这里用的正是本页
+                // 页头已有的那条兜底范式——「窄窗必须是可滚动，而不是 overflow，
+                // 更不能把入口整个丢掉」。用 Flexible 而不是固定宽度：宽窗下它按
+                // 内容占位，与改动前逐字节一致。
+                Flexible(
+                  // 桌面端鼠标必须能拖动这个横滚区（默认 dragDevices 不含 mouse）——
+                  // 全仓横向滚动区的统一包裹件，由 horizontal_drag_scroll_guard 钉死。
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        // 粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
+                        // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须
+                        // 是游戏 exe 的 SHA-256——用户拿到的只是一串字符。
+                        IconButton(
+                          tooltip: t.game_hook_code_paste_title,
+                          icon: const Icon(
+                            Icons.content_paste_go_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _pasteLunaHookCode,
+                        ),
+                        IconButton(
+                          tooltip: 'Hook Code · ${t.dialog_save}',
+                          icon: const Icon(
+                            Icons.bookmark_add_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _saveSelectedLunaHookCode,
+                        ),
+                        IconButton(
+                          tooltip: 'Hook Code · ${t.dialog_import}',
+                          icon: const Icon(
+                            Icons.file_download_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _importLunaHookProfiles,
+                        ),
+                        IconButton(
+                          tooltip: 'Hook Code · ${t.dialog_export}',
+                          icon: const Icon(
+                            Icons.file_upload_outlined,
+                            size: 20,
+                          ),
+                          onPressed: _exportLunaHookProfiles,
+                        ),
+                      ],
+                    ),
+                  ),
+                  ),
                 ),
               ],
             ),

@@ -174,7 +174,38 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
         ) {
           final VideoDiscoveryDetailData details =
               snapshot.data ?? VideoDiscoveryDetailData(item: widget.item);
-          return CustomScrollView(
+          // BUG-1901：整页一个 SelectionArea，而不是逐个把 Text 换成 SelectableText。
+          //
+          // 用户报「这个界面，不能复制文件名，下面的简介可以」——根因不是包裹范围问题
+          // （改前全 fushi/lib 只有日志查看器一处 SelectionArea，与本页毫无关系），
+          // 而是**逐 widget 手工选型**：谁被想起来写成 SelectableText 谁能选。改前全页
+          // 15 个文本元素只有简介和 facts 右列 2 个可选，标题、原标题、年份/类型、评分、
+          // 演职人员、相关作品全不可选。
+          //
+          // 逐个补 SelectableText 只是把这个特殊情况再复制 13 份，下次加字段照样漏。
+          // 页级 SelectionArea 让「可选」成为默认，特殊情况消失，还顺带支持跨元素拖选
+          // （标题连着简介一起选）。按钮的点击不受影响。
+          //
+          // ⚠ 不变式：**懒加载列表不得裸露在这个 SelectionArea 里**。
+          //
+          // 上游 flutter#119355（本仓已吃过两次：BUG-694、BUG-1582）——SelectionArea
+          // 套 Scrollable 时，「选中文字 → 滚走（端点所在 item 被 itemBuilder 回收）
+          // → 再长按」会让 _ScrollableSelectionContainerDelegate 仍持有指向已回收
+          // Selectable 的 currentSelectionEndIndex，
+          // _updateDragLocationsFromGeometries() 无条件读 endSelectionPoint! 抛空断言。
+          // debug 下 assert(geometry.hasSelection) 先一步拦住，**只在 release 崩**。
+          //
+          // 本页外层 CustomScrollView 用的全是 SliverToBoxAdapter（非懒加载，子节点
+          // 不随滚动回收），本身不触发；真正的懒加载只有 _buildPeople /
+          // _buildRelated 两条横向 ListView.separated —— 它们各自用
+          // SelectionContainer.disabled 把整条排除在选区外，Selectable 一个都不注册，
+          // 触发条件从源头消失（而不是像日志面板那样事后清选区缓解：那里的懒加载列表
+          // 正是用户要选的正文，只能缓解；这里横向卡片条本就不需要被选中）。
+          //
+          // 新增横向/懒加载区块请照做，守卫见
+          // test/pages/video_discovery_detail_selectable_test.dart。
+          return SelectionArea(
+              child: CustomScrollView(
             key: const PageStorageKey<String>('video-discovery-detail-scroll'),
             slivers: <Widget>[
               _buildHero(details.item),
@@ -195,7 +226,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                 child: SizedBox(height: tokens.spacing.section),
               ),
             ],
-          );
+          ));
         },
       ),
     );
@@ -490,7 +521,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           ),
           if (overview != null && overview.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            SelectableText(
+            // BUG-1901：页级 SelectionArea 已让所有文本可选。这里保持普通 Text ——
+            // 嵌套的 SelectableText 会自成一个独立选区，反而切断与标题/元数据的跨元素
+            // 拖选，是 SelectionArea 之前遗留的逐 widget 写法。
+            Text(
               overview,
               style: Theme.of(context).textTheme.bodyLarge,
             ),
@@ -515,7 +549,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                     ),
                     SizedBox(width: tokens.spacing.gap),
                     Expanded(
-                      child: SelectableText(
+                      child: Text(
                         fact.value,
                         style: tokens.type.listTitle,
                       ),
@@ -557,47 +591,60 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           SizedBox(height: tokens.spacing.card),
-          SizedBox(
-            height: 142,
-            child: HorizontalDragScrollable(
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: people.length,
-                separatorBuilder: (_, __) =>
-                    SizedBox(width: tokens.spacing.card),
-                itemBuilder: (BuildContext context, int index) {
-                  final VideoDiscoveryPerson person = people[index];
-                  final ImageProvider? image = _networkImage(person.imageUrl);
-                  return SizedBox(
-                    width: 92,
-                    child: Column(
-                      children: <Widget>[
-                        CircleAvatar(
-                          radius: 38,
-                          backgroundColor: tokens.surfaces.group,
-                          backgroundImage: image,
-                          child: image == null
-                              ? const Icon(Icons.person_outline_rounded)
-                              : null,
-                        ),
-                        SizedBox(height: tokens.spacing.gap),
-                        Text(
-                          person.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tokens.type.listTitle,
-                        ),
-                        if (person.role?.trim().isNotEmpty == true)
+          // flutter#119355（本仓 BUG-694 / BUG-1582 同一条 release-only 崩溃）：
+          // 懒加载列表不得进入页级 SelectionArea 的选区。详见 build() 里
+          // SelectionArea 处的长注释。这一层把整条横向人物条排除在选区之外——
+          // 里面的 Selectable 一个都不注册，回收也就无从「回收掉选区端点」。
+          //
+          // 顺带解掉桌面端的手势争抢：HorizontalDragScrollable 把
+          // PointerDeviceKind.mouse 塞进了 dragDevices，而 SelectableRegion 对鼠标
+          // 用 PanGestureRecognizer，两者在同一竞技场里抢「鼠标按下横拖」到底算
+          // 「拖着滚」还是「刷选区」（精确指针下 horizontal 的 hitSlop=1 <
+          // pan 的 panSlop=2，横拖多半是滚动赢，但斜拖/纵拖会被选区抢走并触发外层
+          // 纵向视口的边缘自动滚动）。排除选区后这条竞争彻底消失，鼠标横拖恒为滚动。
+          SelectionContainer.disabled(
+            child: SizedBox(
+              height: 142,
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: people.length,
+                  separatorBuilder: (_, __) =>
+                      SizedBox(width: tokens.spacing.card),
+                  itemBuilder: (BuildContext context, int index) {
+                    final VideoDiscoveryPerson person = people[index];
+                    final ImageProvider? image = _networkImage(person.imageUrl);
+                    return SizedBox(
+                      width: 92,
+                      child: Column(
+                        children: <Widget>[
+                          CircleAvatar(
+                            radius: 38,
+                            backgroundColor: tokens.surfaces.group,
+                            backgroundImage: image,
+                            child: image == null
+                                ? const Icon(Icons.person_outline_rounded)
+                                : null,
+                          ),
+                          SizedBox(height: tokens.spacing.gap),
                           Text(
-                            person.role!,
+                            person.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: tokens.type.metadata,
+                            style: tokens.type.listTitle,
                           ),
-                      ],
-                    ),
-                  );
-                },
+                          if (person.role?.trim().isNotEmpty == true)
+                            Text(
+                              person.role!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tokens.type.metadata,
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -623,30 +670,35 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           SizedBox(height: tokens.spacing.card),
-          SizedBox(
-            height: 252,
-            child: HorizontalDragScrollable(
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: related.length,
-                separatorBuilder: (_, __) =>
-                    SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int index) => SizedBox(
-                  width: 132,
-                  child: _RelatedWorkCard(
-                    item: related[index],
-                    onTap: () {
-                      Navigator.pushReplacement<void, void>(
-                        context,
-                        adaptivePageRoute<void>(
-                          context: context,
-                          builder: (_) => VideoDiscoveryDetailPage(
-                            item: related[index],
-                            actions: widget.actions,
+          // flutter#119355：同上，相关作品条也排除在页级选区之外。这里额外多一层
+          // 理由——卡片本身是点击目标（pushReplacement 进下一部作品），把它变成可
+          // 拖选的文本区只会让「按下拖一下」在导航与刷选区之间摇摆。
+          SelectionContainer.disabled(
+            child: SizedBox(
+              height: 252,
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: related.length,
+                  separatorBuilder: (_, __) =>
+                      SizedBox(width: tokens.spacing.gap),
+                  itemBuilder: (BuildContext context, int index) => SizedBox(
+                    width: 132,
+                    child: _RelatedWorkCard(
+                      item: related[index],
+                      onTap: () {
+                        Navigator.pushReplacement<void, void>(
+                          context,
+                          adaptivePageRoute<void>(
+                            context: context,
+                            builder: (_) => VideoDiscoveryDetailPage(
+                              item: related[index],
+                              actions: widget.actions,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),

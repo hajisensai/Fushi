@@ -212,6 +212,7 @@ class _Rig {
       screenshot: _noop,
       toggleFullscreen: _noop,
       toggleSubtitleList: _noop,
+      searchSubtitleList: _noop,
       toggleImmersiveLock: _noop,
       toggleSubtitleBlur: _noop,
       cycleSubtitleObscure: _noop,

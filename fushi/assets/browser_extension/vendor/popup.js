@@ -310,9 +310,20 @@ function parseMineResult(reply) {
         const noteId = (typeof rawId === 'number' && Number.isFinite(rawId))
             ? rawId
             : null;
-        return { ankiConnect: reply.ankiConnect === true, noteId };
+        // BUG-1908：把失败原因一起带出来。此前这里只取两个字段，宿主即便算出了
+        // 「没选卡组 / 字段映射对不上 / Anki 没开」也没地方放，浮窗里就成了静默失败。
+        const message = typeof reply.message === 'string' ? reply.message : '';
+        // BUG-1908：`duplicate` = 「这次失败是因为 Anki 里已经有这张卡」。它不是
+        // 「宿主猜的按钮态」，是宿主手里 MineResult.duplicate 这个**确定**结果——
+        // 唯一能让浮窗在不回查 Anki（TODO-448）的前提下知道卡确实存在的通道。
+        return {
+            ankiConnect: reply.ankiConnect === true,
+            noteId,
+            message,
+            duplicate: reply.duplicate === true,
+        };
     }
-    return { ankiConnect: reply === true, noteId: null };
+    return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
 }
 
 // Records the just-mined word as the editable "latest" card when the backend
@@ -3048,6 +3059,20 @@ function createEntryHeader(entry, idx) {
                     // → stays the editable latest. A failed update drops the latest
                     //   flag back to a plain ✓ (the card is still mined).
                     rememberLatestMined(expression, reading, result.noteId);
+                    // BUG-1908：覆写失败以前把 result.message 直接丢掉。宿主
+                    // （gal_hook_text_overlay_controller）**专门为覆写失败算好了**本地化
+                    // 文案 —— toPopupReply(message: failureMessage)，updateNoteId != null
+                    // 就是这条路 —— 扔掉后那段 Dart 在覆写路上成了没有消费者的死代码，
+                    // 用户看到的是一个「成功」的绿勾外加零解释。
+                    //
+                    // 按钮态本身不用改：这条路进来时卡**已经**在 Anki 里，覆写成不成功它
+                    // 都还在，所以 ✓ 是真的；失败时 result.noteId 为 null，上一行的
+                    // rememberLatestMined 已经把「最新可改」降级回普通 ✓。要补的只是原因。
+                    if (!result.ankiConnect) {
+                        showInlineHint(
+                            mineButton,
+                            result.message || window.i18nMineFailed || '制卡失败');
+                    }
                     setMineState(true);
                     return;
                 }
@@ -3089,6 +3114,12 @@ function createEntryHeader(entry, idx) {
                             window.resetSelectedDictionariesForEntry(idx);
                             if (action.result.ankiConnect) {
                                 rememberLatestMined(expression, reading, action.result.noteId);
+                            }
+                            // BUG-1908：宿主给了原因就说出来。这条分支也覆盖「用户取消」
+                            // ——取消不带 message，所以判据是 message 非空，而不是
+                            // !ankiConnect（否则取消会被误报成失败）。
+                            if (action.result.message) {
+                                showInlineHint(mineButton, action.result.message);
                             }
                             const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                             setMineState(stillMined);
@@ -3137,6 +3168,30 @@ function createEntryHeader(entry, idx) {
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
+                } else {
+                    // BUG-1908：制卡失败必须**就地**说出来。
+                    //
+                    // 此前这里整段没有 else：`ankiConnect:false` 是正常 resolve、不抛，
+                    // 既不进 catch 也不进 if —— 浮窗里零反馈。而 galgame 浮窗是独立的
+                    // native WebView2 窗口，宿主那边的 Flutter toast 画在主 app 窗口的
+                    // Overlay 上，游戏全屏时主窗在后台，用户一个也看不见（用户报
+                    // 「gal 制卡报错没有明显提示」）。
+                    //
+                    // showInlineHint 正是 BUG-1064 为「app 外没有 Flutter toast 可用」
+                    // 建的页内车道，锚在按钮屏幕坐标上，窗口被裁到卡片 bbox 也可见。
+                    showInlineHint(
+                        mineButton,
+                        result.message || window.i18nMineFailed || '制卡失败');
+                    // TODO-448 原样保住：失败/不确定**绝不**回查 Anki 再把按钮翻成 ✓
+                    // （addNote 到了 Anki 但响应连接断了那次，延迟 duplicateCheck 会让用户
+                    // 先看到「失败」再看到 ✓）。所以这里不发任何 duplicateCheck。
+                    //
+                    // BUG-1908：但也不能再无条件写死 '+'。`MineResult.duplicate` 走的正是
+                    // success:false（error_log_service 的 duplicate 分支），此时 Anki 里
+                    // **确定**有这张卡 —— 画 '+' 是谎，↗「在 Anki 中打开」还会跟着藏起来，
+                    // 用户被告知「已存在」却没有任何入口。宿主把这个确定事实放进同一条
+                    // reply 的 `duplicate` 位，浮窗照它画，既不猜也不回查。
+                    setMineState(result.duplicate === true);
                 }
             } catch (e) {
                 // BUG-077: a rejected mineEntry/duplicateCheck (Dart handler threw,
@@ -3144,6 +3199,12 @@ function createEntryHeader(entry, idx) {
                 // disabled showing '+' with no feedback. Restore it to a clickable
                 // 可制卡 + so the user sees it failed and can retry.
                 console.error('mine button: mineEntry failed', e);
+                // BUG-1908：桥自身 reject（Dart handler 抛 / JS 组包出错）时以前只有
+                // console.error —— 对用户完全静默，与「点了没反应」无法区分。走同一条
+                // 页内提示车道说出来（app 外没有 Flutter toast 可用）。
+                showInlineHint(mineButton, window.i18nMineFailed || '制卡失败');
+                // 状态不可知（抛出的很可能就是桥本身，再发 duplicateCheck 只会再抛），
+                // 退回可点的 '+' 让用户重试 —— BUG-077 契约，也是 TODO-448 要的方向。
                 setMineState(false);
             } finally {
                 // The single-flight guard is ALWAYS released; the button's
@@ -3929,11 +3990,81 @@ function postProcessRuby(container) {
             }
         }
     });
+    markTouchingRubyUnits(container);
     // design-2026-08 讨论区反馈: inline-kanji tap targets ride the same post-pass so every
     // render path that ruby-fixes a subtree (first entry, deferred tail
     // entries, incremental updates) also gets them; both passes are idempotent
     // so the double walk over entry 0 (BUG-1098) stays harmless.
     wrapExpressionInlineKanji(container);
+}
+
+// BUG-1898: 给「隔壁也带注音」的基字单元打上 .ruby-tight，popup.css 只对它们把
+// .ruby-reserve 放回 in-flow。
+//
+// .ruby-rt 是 absolute + nowrap，宽度恒等于基字宽，读音比基字长时向两侧溢出而不
+// 撑开任何东西。溢出落在普通文字上没问题（原生 ruby 的悬出行为，BUG-1778 要保住
+// 的正是这个紧凑字距）；落在**另一个单元的读音**上就是糊成一团（BUG-850，明鏡
+// 「登場人物」= 登場(とうじょう)+人物(じんぶつ) 两个紧邻单元，相碰约 0.7em）。
+//
+// 所以判据是纯 DOM 的：两个单元之间除空白外没有任何内容 → 两侧都标。用 Range 取
+// 二者之间的文本，不触发任何布局测量（渲染期不能引入 reflow，BUG-1868）。两个都
+// 标是有意的：孪生体宽度是 max-content，读音不比基字宽时撑不开单元，标了等于没标，
+// 省掉「到底该谁让位」的分支。
+function markTouchingRubyUnits(container) {
+    const units = container.querySelectorAll('.ruby-unit');
+    for (let i = 1; i < units.length; i++) {
+        const prev = units[i - 1];
+        const curr = units[i];
+        // 没有读音的单元不会溢出，也就不会撞到谁。
+        if (!rubyUnitHasReading(prev) || !rubyUnitHasReading(curr)) continue;
+        if (!rubyUnitsAreTouching(prev, curr)) continue;
+        prev.classList.add('ruby-tight');
+        curr.classList.add('ruby-tight');
+    }
+}
+
+function rubyUnitHasReading(unit) {
+    for (const child of (unit.childNodes || [])) {
+        if (child.nodeType === Node.ELEMENT_NODE &&
+            child.classList && child.classList.contains('ruby-rt')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 文档序的下一个节点。`skipChildren` 用于跳过起点自身的子树（基字与读音是它自己的
+// 内容，不能算作「两个单元之间」）。只用 childNodes/nextSibling/parentNode —— 不碰
+// Range / :scope / compareDocumentPosition，这样真 WebView 与测试用的假 DOM 走完全
+// 同一条代码路径，行为测试才真的在测生产逻辑。
+function nextNodeInDocumentOrder(node, skipChildren) {
+    if (!skipChildren && node.childNodes && node.childNodes.length > 0) {
+        return node.childNodes[0];
+    }
+    let cursor = node;
+    while (cursor) {
+        if (cursor.nextSibling) return cursor.nextSibling;
+        cursor = cursor.parentNode;
+    }
+    return null;
+}
+
+// a 与 b 之间除空白外没有任何文本 → 两个注音会撞在一起。元素本身不算内容（它的文本
+// 会在下潜时作为文本节点被看到），所以 `</ruby><ruby>` 这种跨 ruby 的紧邻也判得出
+// —— 明鏡的四字熟語正是这个形状（曲学(きょくがく)+阿世(あせい)）。
+function rubyUnitsAreTouching(a, b) {
+    let node = nextNodeInDocumentOrder(a, true);
+    // 步数上限只防御环形/畸形 DOM；正常相邻只需几步。走超了就当判不出 → 不标记，
+    // 维持 BUG-1778 的悬出行为，绝不猜。
+    let steps = 0;
+    while (node && node !== b && steps++ < 512) {
+        if (node.nodeType === Node.TEXT_NODE &&
+            String(node.textContent || '').trim() !== '') {
+            return false;
+        }
+        node = nextNodeInDocumentOrder(node, false);
+    }
+    return node === b;
 }
 
 function applyCustomCSS() {

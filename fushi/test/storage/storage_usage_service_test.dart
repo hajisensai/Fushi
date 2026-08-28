@@ -14,10 +14,17 @@ void main() {
   late Directory docs;
   late Directory support;
 
+  /// BUG-1905：app 的**缓存根**（`AppPaths.tempRoot`，iOS 上是 `Library/Caches`）。
+  /// 它是新增的第三个扫描根，与上面那个仅仅是本测试沙箱容器的 [tempRoot] 无关，
+  /// 必须像 docs/support 一样注入——否则默认实现会打真 path_provider，
+  /// 在无 binding 的纯 `test()` 里直接抛。
+  late Directory cache;
+
   setUp(() {
     tempRoot = Directory.systemTemp.createTempSync('storage_usage_test');
     docs = Directory(p.join(tempRoot.path, 'docs'))..createSync();
     support = Directory(p.join(tempRoot.path, 'support'))..createSync();
+    cache = Directory(p.join(tempRoot.path, 'cache'))..createSync();
   });
 
   tearDown(() {
@@ -34,9 +41,12 @@ void main() {
     f.writeAsBytesSync(List<int>.filled(bytes, 0x61));
   }
 
-  StorageUsageService service() => StorageUsageService(
+  StorageUsageService service({bool documentsRootIsFushiOwned = true}) =>
+      StorageUsageService(
         documentsRoot: () async => docs,
         supportRoot: () async => support,
+        cacheRoots: () async => <Directory>[cache],
+        documentsRootIsFushiOwned: () async => documentsRootIsFushiOwned,
       );
 
   group('directorySizeSync', () {
@@ -514,6 +524,72 @@ void main() {
       expect(all.map((StorageCategoryUsage u) => u.id).toSet(),
           StorageCategoryId.values.toSet());
       expect(all.length, StorageCategoryId.values.length);
+    });
+
+    // ── BUG-1905：漏算的两块 ────────────────────────────────────────────
+    //
+    // 用户 2026-08-28 报 iOS 上 app 内总计 6.9 GB、系统「文稿与数据」13.68 GB。
+    // 根因是 scanCategories 只取 documents + support 两个根，而 iOS 的
+    // Library/Caches（= AppPaths.tempRoot）与 <沙盒>/tmp 一个都没扫；再加上
+    // 「总计 = 各类目之和」这个口径，漏了多少都没人发现得了。
+
+    Future<StorageCategoryUsage> categoryOf(
+      StorageCategoryId id, {
+      bool documentsRootIsFushiOwned = true,
+    }) async {
+      final List<StorageCategoryUsage> all = await service(
+        documentsRootIsFushiOwned: documentsRootIsFushiOwned,
+      ).scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+      return all.firstWhere((StorageCategoryUsage u) => u.id == id);
+    }
+
+    test('cache 类目统计缓存根（此前完全没被扫过，BUG-1905）', () async {
+      writeFile(p.join(cache.path, 'remote_cover_cache', 'a.jpg'), 4000);
+      writeFile(p.join(cache.path, 'hibiki_remote_audiobooks', 'x.zip'), 6000);
+
+      final StorageCategoryUsage usage =
+          await categoryOf(StorageCategoryId.cache);
+
+      expect(usage.bytes, 10000);
+      expect(
+        usage.entries.map((StorageEntryUsage e) => e.bytes).toList(),
+        <int>[6000, 4000],
+        reason: '明细按字节降序，与其余类目同口径',
+      );
+    });
+
+    test('other 类目收白名单之外的顶层项（video_clips / 日志，BUG-1905）', () async {
+      // 白名单内的目录：必须归它自己的类目，绝不能在 other 里被重复计一次。
+      writeFile(p.join(docs.path, 'video_covers', 'c.jpg'), 100);
+      // 白名单外的既有漏点：剪辑导出与错误日志。
+      writeFile(p.join(docs.path, 'video_clips', 'clip.mp4'), 7000);
+      writeFile(p.join(docs.path, 'fushi_error_log.txt'), 300);
+
+      final StorageCategoryUsage usage =
+          await categoryOf(StorageCategoryId.other);
+
+      expect(usage.bytes, 7300);
+      final List<String> labels =
+          usage.entries.map((StorageEntryUsage e) => e.label).toList();
+      expect(labels.any((String l) => l.contains('video_clips')), isTrue);
+      expect(labels.any((String l) => l.contains('fushi_error_log')), isTrue);
+      expect(labels.any((String l) => l.contains('video_covers')), isFalse,
+          reason: '白名单内的目录已归属别的类目，出现在 other 就是重复计数');
+    });
+
+    test('documents 根不是 Fushi 专属容器时 other 恒为 0（不把用户自己的文件算进来）', () async {
+      writeFile(p.join(docs.path, '我的简历.docx'), 5000);
+
+      final StorageCategoryUsage usage = await categoryOf(
+        StorageCategoryId.other,
+        documentsRootIsFushiOwned: false,
+      );
+
+      expect(usage.bytes, 0);
+      expect(usage.entries, isEmpty);
     });
   });
 

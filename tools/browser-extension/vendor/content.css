@@ -1118,8 +1118,25 @@
     line-height: 1;
 }
 
+/* BUG-1897 — `!important` 是必需的，不是保险丝。
+
+   词典 zip 自带的 styles.css 被 constructDictCss 逐规则加前缀后注入进该词典的
+   dictWrapper 内部（dict-media.js），所以词典里一条裸的 `rt { font-size: 0.5em }`
+   会变成 `[data-dictionary="X"] rt { font-size: 0.5em }` —— 特异度 (0,1,1)，与本条
+   归一化规则 `.ruby-rt rt`（同为 (0,1,1)）**打平**，而它注入得更晚，靠文档顺序赢。
+   于是 .ruby-rt 盒的 0.6em 再乘词典的 0.5 = 基字的 0.3em：15px 正文下振假名只剩
+   4.5px（用户报告「小学館例解学習国語 第十二版 振假名这么小」，该词典 styles.css
+   第 328 行正是 `rt { font-size: 0.5em; }`）。
+
+   词典作者写这条时假设的是**原生 ruby**——那里 rt 的字号只作用一次。本实现把 ruby
+   拆成 `.ruby-unit > .ruby-rt > rt` 三层手工模拟，字号由 .ruby-rt 这个盒统一承担
+   （见上面的 em 链注释），内层 <rt> 必须恒为 1em，否则任何词典的 rt 字号都会与盒
+   相乘。**振假名几何归弹窗所有**，词典的 rt 字号意图在这套布局下没有正确语义，只能
+   丢弃；rt 的颜色/字重/字体等非几何声明不受影响，仍照常生效。
+   用户自定义的 `.ruby-rt { font-size: X em !important }`（词典样式可视化编辑器）作用在
+   外层盒上，与本条不冲突，仍然可调。 */
 :where(.glossary-group, .glossary-content, .expression) .ruby-rt rt {
-    font-size: 1em;
+    font-size: 1em !important;
 }
 
 /* BUG-1778: the hidden reading twin must NOT participate in inline layout.
@@ -1145,6 +1162,26 @@
     visibility: hidden;
     -webkit-user-select: none;
     user-select: none;
+}
+
+/* BUG-1898 — 悬出与预留不是二选一，判据是「隔壁是不是也有注音」。
+
+   BUG-850 让 .ruby-reserve 永远 in-flow（每个基字都撑到 max(基字, 读音)）：相邻读音
+   不再相碰，但只要短基字配长读音（体/からだ）正文字距就被拉开。BUG-1778 反过来把它
+   永远 absolute：字距自然了，但 BUG-850 防的那个碰撞原样回来了 —— 明鏡「登場人物」
+   拆成紧邻的 登場(とうじょう) + 人物(じんぶつ) 两个单元，前者每侧溢出 0.5em、后者
+   0.2em，相碰 0.7em，读音糊成一团（用户报告「四字词语带振假名重叠」）。BUG-1655 把
+   注音从 0.5em 放大到 0.6em 让溢出又多了两成。
+
+   两次修复各自都对，只是判据下错了层：**注音悬出到普通文字上没有任何问题**（原生
+   ruby 的参考行为，也正是 BUG-1778 想要的），**只有当隔壁也是一个带注音的单元时才必须
+   给出空间**（BUG-850 的真实场景）。所以预留不再是全局开关，而由 postProcessRuby 在
+   DOM 上判定「两个 .ruby-unit 之间除空白外没有任何内容」后给两侧都打上 .ruby-tight，
+   仅这些单元把孪生体放回 in-flow —— 恰好只在会碰撞的地方付出字距代价，其余位置保持
+   BUG-1778 的紧凑正文。两个单元互相标记是安全的：孪生体宽度是 max-content，读音不比
+   基字宽时它撑不开任何东西，标了等于没标。 */
+:where(.glossary-group, .glossary-content, .expression) .ruby-unit.ruby-tight > .ruby-reserve {
+    position: static;
 }
 
 /* BUG-851: dark-mode legibility for dictionary inline-coloured tags (明鏡 の

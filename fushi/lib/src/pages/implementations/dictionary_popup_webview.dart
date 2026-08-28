@@ -57,7 +57,11 @@ const Duration kPopupNativeSelectLongPressDuration =
 /// 再点 ✓ 时按 id 走 `updateEntry` 覆盖而非新建。AnkiDroid 恒 `null` → 永远进不了
 /// 第三态（优雅降级）。失败/重复/未配置时 [noteId] 为 `null`。
 class MinePopupResult {
-  const MinePopupResult({this.ankiConnect = false, this.noteId});
+  const MinePopupResult({
+    this.ankiConnect = false,
+    this.noteId,
+    this.duplicate = false,
+  });
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -65,10 +69,22 @@ class MinePopupResult {
   /// 后端返回的 note id；仅 AnkiConnect 成功制卡时非空。
   final int? noteId;
 
+  /// BUG-1908：这次失败是不是**因为 Anki 里已经有这张卡**（[MineResult.duplicate]）。
+  ///
+  /// [ankiConnect] 一位布尔把「重复」和「没配置 / 字段对不上 / 连接断了」压成同一个
+  /// false，弹窗只能猜。TODO-448 又（正确地）禁止弹窗在失败后回查 Anki 把按钮翻成 ✓
+  /// ——「先失败后成功」正是那次的用户投诉。于是 duplicate 被迫画成「可制卡 ＋」，
+  /// 但那张卡**确定**在 Anki 里，↗「在 Anki 中打开」还会跟着藏起来。
+  ///
+  /// 这一位把宿主手里的确定事实直接送到弹窗：不是猜、也不是回查，是同一条 reply 里的
+  /// 权威答复。仅重复时为真。
+  final bool duplicate;
+
   /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
         'noteId': noteId,
+        if (duplicate) 'duplicate': true,
       };
 }
 

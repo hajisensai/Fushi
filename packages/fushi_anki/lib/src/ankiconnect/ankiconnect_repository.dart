@@ -726,13 +726,23 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           'Check your note type field mappings.',
         );
       }
+      // BUG-1900：字段名必须与**当前**笔记类型求交后再送出。AnkiDroid 后端一直是按
+      // `noteType.fields` 的位置取值（`ankidroid/anki_repository.dart` 的 fieldArray），
+      // 天然免疫；AnkiConnect 这条路把 map 原样丢给服务端，名字不认识就被静默丢弃。
+      final Map<String, String> outgoing = fieldsForNoteType(noteType, fields);
+      final MineOutcome? rejected =
+          preflightNoteFields(noteType, fields, outgoing);
+      if (rejected != null) {
+        await mediaTransaction.rollback();
+        return rejected;
+      }
       try {
         // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
         // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
         final int? noteId = await service.addNote(
           deckName: deck.name,
           modelName: noteType.name,
-          fields: fields,
+          fields: outgoing,
           tags: tags,
           allowDuplicate: settings.allowDupes,
           duplicateScope: settings.duplicateScope,
@@ -1273,7 +1283,8 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }
 
   @override
-  Future<bool> probeMediaMaintenance() async => (await _localMediaDir()) != null;
+  Future<bool> probeMediaMaintenance() async =>
+      (await _localMediaDir()) != null;
 
   /// 媒体目录里的一个文件（媒体目录是扁平的，文件名即相对路径）。
   File _mediaFile(Directory mediaDir, String name) =>

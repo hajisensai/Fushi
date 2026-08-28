@@ -69,6 +69,36 @@ enum StorageCategoryId {
 
   /// 漫画 OCR 模型：`<support>/ocr_models`（可删可恢复）。
   ocrModels,
+
+  /// BUG-1905：缓存与临时文件。
+  ///
+  /// 此前 `scanCategories` 只取 documents + support 两个根，**缓存根一个都没扫过**，
+  /// 而在 iOS 上它恰恰是大头：`path_provider` 的 `getTemporaryDirectory()` 在 Apple
+  /// 平台返回的是 **`Library/Caches`**（不是 `tmp`，见 `PathProviderPlugin.swift` 的
+  /// `case .temp: return .cachesDirectory`），而 Dart 的 `Directory.systemTemp` 读
+  /// `TMPDIR` 指向 `<沙盒>/tmp`——**两个不同目录**。落在这里的有：远端封面缓存
+  /// （自称常驻）、互联导入发音库的 staging 副本（与 support 里那份重复）、整包
+  /// `.fushiaudio` / EPUB、备份 zip、file_picker 对每个导入文件的整份复制、
+  /// `flutter_cache_manager` 的图片缓存。
+  ///
+  /// iOS 系统设置里的「文稿与数据」= Documents + 整个 Library/* + tmp，三块全算；
+  /// 只扫两块必然少报（用户 2026-08-28：app 内 6.9 GB vs 系统 13.68 GB）。
+  ///
+  /// **具体扫哪些根按平台门控**——桌面的临时目录是全系统共享的，算进来会严重高报。
+  /// 判据与理由见 [StorageUsageService._defaultCacheRoots]。
+  cache,
+
+  /// BUG-1905：其他未归类 —— documents 根下**不在**白名单里的顶层项。
+  ///
+  /// 存在的意义是让「漏算」变得**结构上无法隐藏**：此前总计 = 各类目之和，
+  /// 而类目 = 一份手写白名单，漏了什么就静默少算多少，页面自己永远发现不了
+  /// （守卫测试也只断言「类目清单 == 迁移白名单」，而迁移白名单本身就故意排除
+  /// 了 temp、`video_clips`、日志）。现在白名单之外的东西会自己冒出来。
+  ///
+  /// **只在 documents 根是 Fushi 专属容器时才有意义**：老安装的扁平布局下
+  /// documents 根就是用户真实的 `Documents` 文件夹（共享目录，装着用户自己的
+  /// 文件），把那些算进来既不准也吓人。桌面扁平布局下本类目恒为 0。
+  other,
 }
 
 /// 明细条目的种类 = 它接哪条删除原语。可删性属于**条目**而不是类目：同一个
@@ -423,13 +453,25 @@ class StorageUsageService {
   StorageUsageService({
     Future<Directory> Function()? documentsRoot,
     Future<Directory> Function()? supportRoot,
+    Future<List<Directory>> Function()? cacheRoots,
+    Future<bool> Function()? documentsRootIsFushiOwned,
     StorageIsolateRunner? isolateRunner,
   })  : _documentsRoot = documentsRoot ?? AppPaths.documentsRootDirectory,
         _supportRoot = supportRoot ?? AppPaths.supportRootDirectory,
+        _cacheRoots = cacheRoots ?? _defaultCacheRoots,
+        _documentsRootIsFushiOwned =
+            documentsRootIsFushiOwned ?? AppPaths.documentsRootIsFushiOwned,
         _run = isolateRunner ?? Isolate.run;
 
   final Future<Directory> Function() _documentsRoot;
   final Future<Directory> Function() _supportRoot;
+
+  /// BUG-1905：此前完全没被扫过的第三类根（缓存/临时）。见 [_defaultCacheRoots]。
+  final Future<List<Directory>> Function() _cacheRoots;
+
+  /// BUG-1905：见 [AppPaths.documentsRootIsFushiOwned]——决定「其他未归类」敢不敢算。
+  final Future<bool> Function() _documentsRootIsFushiOwned;
+
   final StorageIsolateRunner _run;
 
   /// 多路径求和（isolate 隔离）。
@@ -457,6 +499,10 @@ class StorageUsageService {
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
           ]);
+        case StorageCategoryId.cache:
+          yield await _scanCache();
+        case StorageCategoryId.other:
+          yield await _scanOther(docs);
         default:
           final List<String> children =
               kStorageCategoryDocumentsChildren[id] ?? const <String>[];
@@ -631,6 +677,72 @@ class StorageUsageService {
           b.bytes.compareTo(a.bytes));
     return StorageCategoryUsage(
         id: id, bytes: _sumBytes(entries), entries: entries);
+  }
+
+  /// BUG-1905：要统计的缓存/临时根。
+  ///
+  /// **只在这些目录确实属于本 app 时才统计** —— 这是本类目唯一的正确性红线：
+  /// * **iOS / Android**：两个目录都在 app 沙盒内，且**互不相同**——
+  ///   `path_provider` 的 `getTemporaryDirectory()` 在 Apple 平台返回
+  ///   `Library/Caches`（见 `PathProviderPlugin.swift` 的
+  ///   `case .temp: return .cachesDirectory`），而 Dart 的 `Directory.systemTemp`
+  ///   读 `TMPDIR` 指向 `<沙盒>/tmp`。两个都要算，去重后扫。
+  /// * **macOS**：`getTemporaryDirectory()` 给的是 app 私有的 `Library/Caches`，
+  ///   算；但 `systemTemp`（`/var/folders/…/T`）是跨 app 共享的，不算。
+  /// * **Windows / Linux**：临时目录是**全系统共享**的（`%TEMP%` / `/tmp`），
+  ///   里面装着别的程序的文件。把它算进 app 占用会严重高报——宁可这一类为 0，
+  ///   也绝不报一个假的大数。要在桌面统计 Fushi 自己的临时文件，只能再引入一份
+  ///   「哪些子目录是我们的」白名单，而白名单漂移正是本 bug 的成因，不再重蹈。
+  static Future<List<Directory>> _defaultCacheRoots() async {
+    final bool sandboxed = Platform.isIOS || Platform.isAndroid;
+    if (!sandboxed && !Platform.isMacOS) return const <Directory>[];
+    final Directory temp = await AppPaths.tempRootDirectory();
+    if (!sandboxed) return <Directory>[temp];
+    final Directory system = Directory.systemTemp;
+    return <Directory>[
+      temp,
+      if (p.canonicalize(system.path) != p.canonicalize(temp.path)) system,
+    ];
+  }
+
+  /// BUG-1905：缓存与临时文件。根的选取与理由见 [_defaultCacheRoots]。
+  Future<StorageCategoryUsage> _scanCache() async {
+    final List<Directory> roots = await _cacheRoots();
+    if (roots.isEmpty) {
+      return const StorageCategoryUsage(id: StorageCategoryId.cache, bytes: 0);
+    }
+    return _scanGeneric(
+      StorageCategoryId.cache,
+      <String>[for (final Directory d in roots) d.path],
+    );
+  }
+
+  /// BUG-1905：documents 根下**白名单之外**的顶层项。
+  ///
+  /// 让漏算无法隐藏：白名单是手写的，漏了什么就静默少算多少，而总计恰恰是各类目
+  /// 之和，页面自己永远发现不了。已知的两个既有漏点就落在这里——剪辑导出
+  /// `video_clips`（`clip_export.part.dart`，`fushiOwnedDocumentsEntries` 明确「刻意
+  /// 不收」）与错误日志 `.txt`。
+  ///
+  /// 桌面老扁平安装下 documents 根就是用户自己的文档文件夹，那里的东西不是 app 的
+  /// 占用，本类目直接返回 0（见 [AppPaths.documentsRootIsFushiOwned]）。
+  Future<StorageCategoryUsage> _scanOther(final Directory docs) async {
+    if (!await _documentsRootIsFushiOwned()) {
+      return const StorageCategoryUsage(id: StorageCategoryId.other, bytes: 0);
+    }
+    final List<Map<String, Object>> raw =
+        await _run(() => _childEntriesSync(<String>[docs.path]));
+    const Set<String> known = AppPaths.fushiOwnedDocumentsEntries;
+    final List<StorageEntryUsage> entries = <StorageEntryUsage>[
+      for (final StorageEntryUsage e in _readOnlyEntries(raw))
+        if (!known.contains(p.basename(e.paths.single))) e,
+    ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
+        b.bytes.compareTo(a.bytes));
+    return StorageCategoryUsage(
+      id: StorageCategoryId.other,
+      bytes: _sumBytes(entries),
+      entries: entries,
+    );
   }
 
   /// isolate 回传的原始子项 → 只读明细。[excludePaths] 里的子项既不计入明细也不
