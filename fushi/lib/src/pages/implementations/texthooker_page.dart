@@ -712,7 +712,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   Future<void> _toggleExternalWindowMode() async {

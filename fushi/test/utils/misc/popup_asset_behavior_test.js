@@ -2665,3 +2665,50 @@ testInAppOpenInAnkiStillGoesToHost().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// BUG-1915：制卡被 Anki 以「重复」拒绝后，按钮必须按 Anki 的真实状态重画成 ✓。
+//
+// 旧行为：制卡后的重画被 `if (result.ankiConnect)` 门控，而 duplicate / 未配置 /
+// 出错三种结局的宿主都回 `{ankiConnect: false}`——于是弹「重复卡片，未导出」的同时，
+// 按钮一动不动仍是 `+`。用户看到的是「提示说重复、按钮说可制卡」两个互相打架的说法。
+async function testDuplicateOutcomeStillRepaintsFromAnki() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const mined = [];
+  // 查词那一刻 Anki 还没有这张卡（弹窗画 +），点下去时 Anki 判重复并拒绝。
+  // 这正是「卡组里混着别的笔记类型、同词已存在」的现场。
+  let cardExists = false;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      cardExists = true; // Anki：这个词已经有卡了，拒绝新增
+      // 宿主把「Anki 明说是重复」原样回传（MinePopupResult.failed）。
+      return Promise.resolve({
+        ankiConnect: false,
+        noteId: null,
+        duplicate: true,
+      });
+    }
+    return Promise.resolve(null);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.notEqual(mineButton.dataset.mined, '1',
+    '查词时 Anki 还没这张卡 -> 可制卡 +');
+
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(mined.length, 1, '点击确实发起了一次制卡');
+  assert.equal(mineButton.dataset.mined, '1',
+    '制卡被判重复后，按钮必须按 Anki 真实状态重画成 已制卡 ✓');
+  assert.notEqual(mineButton.textContent, '+',
+    '按钮不能在提示「重复卡片」之后还显示可制卡 +');
+}
+
+testDuplicateOutcomeStillRepaintsFromAnki().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

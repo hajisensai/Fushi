@@ -8,9 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 // PRIMARY MECHANISM: when the popup renders a word (createEntryHeader runs as
 // part of renderPopup, which rebuilds the DOM on every lookup), the initial
 // `duplicateCheck` is scheduled when that header approaches the viewport and
-// queries Anki live (AnkiConnect findNotes / AnkiDroid
-// findDuplicateNotes — see packages/fushi_anki/test/ankiconnect_service_test
-// .dart's "isDuplicate" group) and sets a real `data-mined` state via
+// queries Anki live (AnkiConnect canAddNotesWithErrorDetail — the SAME judgement
+// addNote uses, BUG-1915 / AnkiDroid findDuplicateNotes — see
+// packages/fushi_anki/test/duplicate_check_same_source_test.dart) and sets a real
+// `data-mined` state via
 // setMineState: card in Anki -> 已制卡 ✓, card absent -> 可制卡 +. The ✓ is NOT
 // decorative; data-mined is the source of truth for what a click does.
 //
@@ -36,7 +37,9 @@ void main() {
 
   setUpAll(() {
     source = File('assets/popup/popup.js').readAsStringSync();
-    final int start = source.indexOf("className: 'mine-button'");
+    // 锚点必须是 popup.js 里真实存在的那串。类名后来加了 `inline-action-button`
+    // 前缀，而这里的锚点没跟着改，于是 indexOf 恒 -1、整条守卫空转（红在 setUpAll）。
+    final int start = source.indexOf("className: 'inline-action-button mine-button'");
     expect(
       start,
       greaterThanOrEqualTo(0),

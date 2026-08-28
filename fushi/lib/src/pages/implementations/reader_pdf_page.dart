@@ -607,7 +607,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       if (described.success) {
         return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
       }
-      return const MinePopupResult();
+      return MinePopupResult.failed(outcome);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.onMineFromPopup', e, stack);
       return const MinePopupResult();

@@ -954,6 +954,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     seconds: 30,
   );
 
+  /// AnkiConnect 对不认识的 action 固定回 `unsupported action`。用它把「这台
+  /// AnkiConnect 太老」与真正的业务/传输错误区分开——只有前者才该退回旧判据。
+  static bool _isUnsupportedActionError(AnkiConnectException e) =>
+      e.message.toLowerCase().contains('unsupported action');
+
   static DateTime? _duplicateCheckUnreachableUntil;
 
   /// 测试用：清掉进程级查重冷却，避免用例间互相污染。
@@ -1003,14 +1008,39 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
       return false;
     }
+    // 空词问 Anki 只会拿到「第一字段为空」，不是重复；提前退，别浪费一次往返。
+    if (expression.isEmpty) return false;
     try {
       final service = _serviceForSettings(settings);
-      final bool duplicate = await service.isDuplicate(
-        deckName: deck.name,
-        fieldName: noteType.fields.first,
-        fieldValue: expression,
-        scope: settings.duplicateScope,
-      );
+      bool duplicate;
+      try {
+        // BUG-1915：与 addNote 物理同源的判据
+        // （见 [AnkiConnectService.isDuplicateForAdd]）。
+        duplicate = await service.isDuplicateForAdd(
+          deckName: deck.name,
+          modelName: noteType.name,
+          firstFieldName: noteType.fields.first,
+          firstFieldValue: expression,
+          scope: settings.duplicateScope,
+        );
+      } on AnkiConnectException catch (e) {
+        // 老版 AnkiConnect 没有 `canAddNotesWithErrorDetail`。只有这一种错误才退回
+        // 按字段名查的旧判据——它在「卡组里只有一种笔记类型」时给的是对的答案，正是
+        // 这些用户今天已有的行为。宁可保住旧行为，也不要让他们的 ✓ 集体消失
+        // （Never break userspace）。这**不是**把两条判据并存回来：新版走的永远只有
+        // 上面那一条。
+        //
+        // 其余异常一律 rethrow 到下面那个 catch：本方法对调用方的契约是 fail-soft
+        // （查不到就当不重复，绝不抛给查词渲染路径），冷却是否武装也只在那里判。
+        if (!_isUnsupportedActionError(e)) rethrow;
+        duplicate = (await service.findNotesByField(
+          deckName: deck.name,
+          fieldName: noteType.fields.first,
+          fieldValue: expression,
+          scope: settings.duplicateScope,
+        ))
+            .isNotEmpty;
+      }
       // 拿到应答即证明主机活着，立刻解除冷却（不必等窗口自然到期）。
       _duplicateCheckUnreachableUntil = null;
       return duplicate;

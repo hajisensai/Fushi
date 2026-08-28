@@ -310,9 +310,17 @@ function parseMineResult(reply) {
         const noteId = (typeof rawId === 'number' && Number.isFinite(rawId))
             ? rawId
             : null;
-        return { ankiConnect: reply.ankiConnect === true, noteId };
+        // BUG-1915: `duplicate` says Anki REFUSED the add because the card is
+        // already there — a definitively KNOWN state, unlike the other failures.
+        // Hosts that predate the field simply never set it (undefined -> false),
+        // so they keep the old behaviour exactly.
+        return {
+            ankiConnect: reply.ankiConnect === true,
+            noteId,
+            duplicate: reply.duplicate === true,
+        };
     }
-    return { ankiConnect: reply === true, noteId: null };
+    return { ankiConnect: reply === true, noteId: null, duplicate: false };
 }
 
 // Records the just-mined word as the editable "latest" card when the backend
@@ -3136,6 +3144,21 @@ function createEntryHeader(entry, idx) {
                     // the new "latest editable"; this also supersedes any prior
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
+                }
+                // BUG-1915: a duplicate refusal must repaint too. `ankiConnect`
+                // only says "the host handed back a note id", so it is false for
+                // duplicate, not-configured, error and lost-response alike — and
+                // gating the repaint on it left the button showing `+` right after
+                // Anki refused the add as a duplicate: the toast said 重复卡片，
+                // the button said 可制卡.
+                //
+                // Only `duplicate` is added to the gate, NOT every failure:
+                // TODO-448 deliberately keeps a failed/uncertain mine from a
+                // delayed duplicateCheck that would flip the button to ✓ and read
+                // as "first it failed, then it succeeded" (the addNote-reached-Anki
+                // -but-the-response-was-lost case). Duplicate is not uncertain:
+                // Anki looked and the card is there, so ✓ is simply the truth.
+                if (result.ankiConnect || result.duplicate) {
                     await refreshFromAnki();
                 }
             } catch (e) {

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki.dart' show MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -57,7 +58,28 @@ const Duration kPopupNativeSelectLongPressDuration =
 /// 再点 ✓ 时按 id 走 `updateEntry` 覆盖而非新建。AnkiDroid 恒 `null` → 永远进不了
 /// 第三态（优雅降级）。失败/重复/未配置时 [noteId] 为 `null`。
 class MinePopupResult {
-  const MinePopupResult({this.ankiConnect = false, this.noteId});
+  const MinePopupResult({
+    this.ankiConnect = false,
+    this.noteId,
+    this.duplicate = false,
+  });
+
+  /// BUG-1915：一次**未成功**的制卡结果。
+  ///
+  /// 此前所有失败结局（重复 / 未配置 / 出错 / addNote 响应丢失）都被压成同一个
+  /// `const MinePopupResult()`，弹窗只能看到 `ankiConnect:false`，于是它无法区分
+  /// 「Anki 明说这张卡已经在库里」和「这次 addNote 的结果根本不知道」。
+  ///
+  /// 两者该走相反的动作：
+  ///   * [MineResult.duplicate] 是**确定已知**的状态——Anki 查过了，卡就在那儿。
+  ///     弹窗应当立刻按真实状态把按钮重画成已制卡 ✓，否则就会出现「toast 说重复、
+  ///     按钮说可制卡」两个互相打架的说法。
+  ///   * 其余失败（尤其 addNote 送达但响应丢失的 commit-unknown）结果未知，必须
+  ///     维持 TODO-448 定的「不重画」——把未知结局粉饰成成功比不刷新更糟。
+  MinePopupResult.failed(MineOutcome outcome)
+      : ankiConnect = false,
+        noteId = null,
+        duplicate = outcome.result == MineResult.duplicate;
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -65,10 +87,14 @@ class MinePopupResult {
   /// 后端返回的 note id；仅 AnkiConnect 成功制卡时非空。
   final int? noteId;
 
+  /// Anki 明确以「已存在同一张卡」拒绝了这次制卡（见 [MinePopupResult.failed]）。
+  final bool duplicate;
+
   /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
         'noteId': noteId,
+        'duplicate': duplicate,
       };
 }
 

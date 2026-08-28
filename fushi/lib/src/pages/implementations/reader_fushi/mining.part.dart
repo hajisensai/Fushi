@@ -271,7 +271,7 @@ extension _ReaderMining on _ReaderFushiPageState {
       // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   Future<MinePopupResult> _onUpdateFromPopupInner(
@@ -305,7 +305,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   /// TODO-948/952：制卡『句子为空 / 字段未映射』诊断（加性、零行为改动）。
