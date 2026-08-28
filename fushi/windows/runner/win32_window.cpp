@@ -303,10 +303,10 @@ Win32Window::MessageHandler(HWND hwnd,
     // the switch outright (C2360, initialization skipped by a later case label).
     case WM_ACTIVATE: {
       // WM_ACTIVATE is sent for both sides of an activation hand-off. When an
-      // activatable Fushi auxiliary window (for example the clipboard lookup
-      // panel) starts its native move/size loop, the main window receives
-      // WA_INACTIVE. Restoring focus from that deactivation notification pulls
-      // the main window back above the panel and the user's foreground app.
+      // activatable Fushi auxiliary window starts its native move/size loop,
+      // the main window receives WA_INACTIVE. Restoring focus from that
+      // deactivation notification pulls the main window back above the
+      // auxiliary window and the user's foreground app.
       // A non-null HWND is not sufficient: child views can be destroyed and
       // Windows recycles handle values. Confirm both liveness and ownership so
       // a later main-window activation cannot focus an unrelated recycled HWND.

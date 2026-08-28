@@ -3,12 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
-import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
@@ -177,7 +174,7 @@ SettingsDestination buildLookupDestination() {
         ],
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
-      // 剪贴板与全局查词 / 朗读与反馈。纯展示重组：item id、持久化 key、
+      // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、
       // onChanged、ReaderPlacement 全部不变。
       SettingsSection(
         title: t.settings_section_lookup_trigger,
@@ -266,6 +263,26 @@ SettingsDestination buildLookupDestination() {
             onChanged: (SettingsContext settingsContext, num value) {
               settingsContext.appModel.setMaximumTerms(value.toInt());
               settingsContext.appModel.clearDictionaryResultsCache();
+              settingsContext.refresh();
+            },
+          ),
+          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
+          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
+          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
+          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
+          // 故仅桌面（DesktopLookupService.isDesktop）显示。
+          SettingsSwitchItem(
+            id: 'lookup.global_context_capture',
+            title: t.global_context_capture,
+            subtitle: t.global_context_capture_hint,
+            icon: Icons.short_text_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.globalContextCaptureEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setGlobalContextCaptureEnabled(value);
               settingsContext.refresh();
             },
           ),
@@ -683,265 +700,24 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-        ],
-      ),
-      // 剪贴板与全局查词：桌面剪贴板监听全家桶（总开关 + 去向/窗口模式/不透明度）
-      // 和 app 外全局查词的上下文抓取，仅桌面平台可见的一整条链路。
-      SettingsSection(
-        title: t.settings_section_lookup_clipboard,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'lookup.desktop_clipboard',
-            title: t.desktop_clipboard_enabled,
-            subtitle: t.desktop_clipboard_enabled_hint,
-            icon: Icons.content_paste_search,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              // spec 2026-07-10 §7：setter 内部经 applyDesktopClipboardLifecycle
-              // 幂等 start/stop，此处不再直接操作服务。
-              await settingsContext.appModel.setDesktopClipboardEnabled(value);
-              // 默认去向=panel（用户拍板）：开总开关时若去向是面板则补预热
-              // （启动预热要求「开关开 且 去向 panel」双条件）；关总开关时收起
-              // 面板（服务已停，面板不该留着最后一句挂在屏上）。
-              if (ClipboardPanelController.isSupported) {
-                if (value &&
-                    settingsContext.appModel.desktopClipboardDestination ==
-                        DesktopClipboardDestination.panel) {
-                  unawaited(
-                      ClipboardPanelController.instance.ensurePrewarmed());
-                } else if (!value) {
-                  await ClipboardPanelController.instance.hidePanel();
-                }
-              }
-              settingsContext.refresh();
-            },
-          ),
-          // 复制后是否自动查词。关掉后剪贴板面板/查词只显示复制到的文字，点词才查
-          // （见 ClipboardPanelController 纯文字态）。仅桌面 + 剪贴板总开关开时可见。
-          SettingsSwitchItem(
-            id: 'lookup.desktop_clipboard_auto_lookup',
-            title: t.desktop_clipboard_auto_lookup,
-            subtitle: t.desktop_clipboard_auto_lookup_hint,
-            icon: Icons.search_off_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardAutoLookup,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setDesktopClipboardAutoLookup(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSegmentedItem<DesktopClipboardWindowMode>(
-            id: 'lookup.desktop_clipboard_window_mode',
-            title: t.desktop_clipboard_window_mode,
-            // 副标题保留：spec 2026-07-10 §7 守卫要求 hint 描述置顶行为、且旧的
-            // 「仅在查词页监听」措辞不得复活（desktop_lookup_to_dictionary_tab_test）。
-            subtitle: t.desktop_clipboard_window_mode_hint,
-            icon: Icons.vertical_align_top_outlined,
-            // spec 2026-07-10：本项管的是主窗置顶策略，仅 destination==main 时
-            // 有意义（面板/瞬态去向不经主窗显示结果）。
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.main,
-            options: <SettingsSegmentOption<DesktopClipboardWindowMode>>[
-              SettingsSegmentOption<DesktopClipboardWindowMode>(
-                value: DesktopClipboardWindowMode.normal,
-                label: t.desktop_clipboard_window_mode_normal,
-                tooltip: t.desktop_clipboard_window_mode_normal,
-              ),
-              SettingsSegmentOption<DesktopClipboardWindowMode>(
-                value: DesktopClipboardWindowMode.lookup,
-                label: t.desktop_clipboard_window_mode_lookup,
-                tooltip: t.desktop_clipboard_window_mode_lookup,
-              ),
-              SettingsSegmentOption<DesktopClipboardWindowMode>(
-                value: DesktopClipboardWindowMode.always,
-                label: t.desktop_clipboard_window_mode_always,
-                tooltip: t.desktop_clipboard_window_mode_always,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardWindowMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              DesktopClipboardWindowMode value,
-            ) async {
-              await settingsContext.appModel.setDesktopClipboardWindowMode(
-                value,
-              );
-              settingsContext.refresh();
-            },
-          ),
-          // spec 2026-07-10 §4/§7 — 剪贴板查词去向三选。main = 主窗查词 tab
-          // （现状默认）；transient = 光标处瞬态弹卡（复用全局查词覆盖窗）；
-          // panel = 常驻悬浮面板（M2 落地后加入选项）。覆盖窗是 Windows-only
-          // （GlobalLookupController.isSupported），其余桌面平台不显示本项、
-          // 隐含恒为 main。
-          SettingsSegmentedItem<DesktopClipboardDestination>(
-            id: 'lookup.desktop_clipboard_destination',
-            title: t.desktop_clipboard_destination,
-            icon: Icons.picture_in_picture_alt_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                GlobalLookupController.isSupported,
-            options: <SettingsSegmentOption<DesktopClipboardDestination>>[
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.main,
-                label: t.desktop_clipboard_destination_main,
-                tooltip: t.desktop_clipboard_destination_main,
-              ),
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.panel,
-                label: t.desktop_clipboard_destination_panel,
-                tooltip: t.desktop_clipboard_destination_panel,
-              ),
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.transient,
-                label: t.desktop_clipboard_destination_transient,
-                tooltip: t.desktop_clipboard_destination_transient,
-              ),
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.textWindow,
-                label: t.desktop_clipboard_destination_text_window,
-                tooltip: t.desktop_clipboard_destination_text_window,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardDestination,
-            onChanged: (
-              SettingsContext settingsContext,
-              DesktopClipboardDestination value,
-            ) async {
-              await settingsContext.appModel
-                  .setDesktopClipboardDestination(value);
-              // 去向切走时收起面板（不留孤儿常驻窗）；切到面板时补预热（启动预热仅
-              // destination==panel 时做——默认 main 不常驻第二 WebView2）。BUG-717：
-              // 面板不再有 × 暂停态，切回面板无需「解除暂停」，下一条剪贴板自然重开。
-              if (ClipboardPanelController.isSupported) {
-                if (value == DesktopClipboardDestination.panel) {
-                  unawaited(
-                      ClipboardPanelController.instance.ensurePrewarmed());
-                } else {
-                  await ClipboardPanelController.instance.hidePanel();
-                }
-              }
-              // 切走透明文字窗去向时收起它（不留孤儿透明窗）；透明窗无需预热，
-              // native 窗到首个 textWindow 分区请求才创建。
-              if (ClipboardTextOverlayController.isSupported &&
-                  value != DesktopClipboardDestination.textWindow) {
-                await ClipboardTextOverlayController.instance.hide();
-              }
-              settingsContext.refresh();
-            },
-          ),
-          // spec 2026-07-10 §6 真机修正 — 面板整窗不透明度（LWA_ALPHA 真透视，
-          // Win10/11 通用），destination==panel 即显示（原 acrylic backdropOk
-          // 门控随路线废弃删除）。
-          SettingsSliderItem(
-            id: 'lookup.clipboard_panel_opacity',
-            title: t.clipboard_panel_opacity,
-            subtitle: t.clipboard_panel_opacity_hint,
-            icon: Icons.opacity_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.panel,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.clipboardPanelOpacity * 100,
-            min: 50,
-            max: 100,
-            divisions: 50,
-            step: 5,
-            titleReadout: true,
-            label: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setClipboardPanelOpacity(value / 100);
-              await ClipboardPanelController.instance.refreshOpacity();
-            },
-          ),
-          // 真透明剪切板文字窗的背景不透明度（destination==textWindow 时显示）。
-          // 默认 0% = 完全透明背景只露实心文字（用户诉求）；亮色游戏上白字看不清
-          // 时上抬垫一层暗底。与面板整窗 LWA_ALPHA 不同，这里只压背景 alpha。
-          SettingsSliderItem(
-            id: 'lookup.clipboard_text_window_bg_opacity',
-            title: t.clipboard_text_window_bg_opacity,
-            subtitle: t.clipboard_text_window_bg_opacity_hint,
-            icon: Icons.gradient_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.textWindow,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.clipboardTextWindowBgOpacity * 100,
-            min: 0,
-            max: 100,
-            divisions: 20,
-            step: 5,
-            titleReadout: true,
-            label: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setClipboardTextWindowBgOpacity(value / 100);
-              await ClipboardTextOverlayController.instance.refreshStyle();
-            },
-          ),
-          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
-          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
-          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
-          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
-          // 故仅桌面（DesktopLookupService.isDesktop）显示。
-          SettingsSwitchItem(
-            id: 'lookup.global_context_capture',
-            title: t.global_context_capture,
-            subtitle: t.global_context_capture_hint,
-            icon: Icons.short_text_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.globalContextCaptureEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setGlobalContextCaptureEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          // 防截屏（用户诉求）：桌面查词/剪贴板悬浮窗经 native
+          // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
-          // 与面板栏 🛡 按钮同一 pref、同一 native 通道（ClipboardPanelController
-          // .applyBlockCapture → OverlayWindowChannel.setBlockCapture），改设置即时
-          // 重应用，不新起并行机制。applyBlockCapture 是唯一扇出入口：面板窗 +
-          // 瞬态全局查词窗（GlobalLookupController.applyBlockCapture）一起保护。
+          // 写穿 pref（存储键沿用历史名 clipboard_panel_block_capture）后经
+          // GlobalLookupController.applyBlockCapture 即时重应用到覆盖窗；native 侧
+          // 记值并在窗口重建后自动重加，不新起并行机制。
           SettingsSwitchItem(
             id: 'lookup.block_capture',
-            title: t.clipboard_panel_block_capture,
-            subtitle: t.clipboard_panel_block_capture_hint,
+            title: t.lookup_block_capture,
+            subtitle: t.lookup_block_capture_hint,
             icon: Icons.shield_outlined,
             visible: (SettingsContext settingsContext) =>
-                ClipboardPanelController.isSupported,
+                GlobalLookupController.isSupported,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.clipboardPanelBlockCapture,
+                settingsContext.appModel.lookupBlockCapture,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setClipboardPanelBlockCapture(value);
-              // 即时重应用到已打开的面板窗（同 🛡 按钮路径）。
-              if (ClipboardPanelController.isSupported) {
-                await ClipboardPanelController.instance
-                    .applyBlockCapture(value);
-              }
+              await settingsContext.appModel.setLookupBlockCapture(value);
+              await GlobalLookupController.instance.applyBlockCapture(value);
               settingsContext.refresh();
             },
           ),

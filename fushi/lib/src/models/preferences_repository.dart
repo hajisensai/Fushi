@@ -24,53 +24,6 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 
-enum DesktopClipboardWindowMode {
-  normal('normal'),
-  lookup('lookup'),
-  always('always');
-
-  const DesktopClipboardWindowMode(this.storageValue);
-
-  final String storageValue;
-
-  static DesktopClipboardWindowMode fromStorage(String value) {
-    for (final DesktopClipboardWindowMode mode
-        in DesktopClipboardWindowMode.values) {
-      if (mode.storageValue == value) return mode;
-    }
-    return DesktopClipboardWindowMode.normal;
-  }
-}
-
-/// 剪贴板查词去向（spec 2026-07-10 剪贴板独立弹窗）：
-/// panel = 常驻悬浮面板（覆盖窗第二实例，仅 Windows，**默认**——用户 2026-07-10
-/// 拍板：默认独立窗口而非主窗口）；main = 主窗查词 tab；transient = 光标处
-/// 瞬态弹卡（复用全局查词覆盖窗，仅 Windows）。
-/// 未知/空存值回退 panel（=默认）。非 Windows 平台覆盖窗不可用，去向路由
-/// （resolveDesktopLookupConsumer）自动退回主窗 tab，行为不变。
-enum DesktopClipboardDestination {
-  main('main'),
-  panel('panel'),
-  transient('transient'),
-
-  /// 真透明剪切板文字窗：剪贴板文本落进逐像素透明的悬浮文字窗（复用
-  /// FloatingLyricWindow 第二实例，text-only），背景默认全透只露实心文字，点字
-  /// 弹瞬态查词卡。VN/游戏 + Textractor 自动复制场景。Windows-only。
-  textWindow('textWindow');
-
-  const DesktopClipboardDestination(this.storageValue);
-
-  final String storageValue;
-
-  static DesktopClipboardDestination fromStorage(String value) {
-    for (final DesktopClipboardDestination d
-        in DesktopClipboardDestination.values) {
-      if (d.storageValue == value) return d;
-    }
-    return DesktopClipboardDestination.panel;
-  }
-}
-
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
 /// 与 mpv 内置几何（`video_setting_mpv_aspect`/`zoom`/`panscan`）是两个不同层：这里只决定
@@ -498,30 +451,7 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── desktop clipboard lookup ─────────────────────────────────────────
-
-  /// 桌面剪贴板查词是否开启。默认 true：galgame UX 统一后，剪贴板 / galgame 台词都走同一条
-  /// 查词去向路由（默认落悬浮查词面板），故桌面开箱即用无需先手动开开关。
-  bool get desktopClipboardEnabled =>
-      getPref('desktop_clipboard_enabled', defaultValue: true) as bool;
-
-  Future<void> setDesktopClipboardEnabled(bool value) async {
-    await setPref('desktop_clipboard_enabled', value);
-    notifyListeners();
-  }
-
-  /// 剪切板复制后是否自动查词（默认 true=保持现状）。false 时剪切板面板只显示
-  /// 复制到的句子文字（逐字可点），不自动 [searchDictionary]、不弹释义、不朗读；
-  /// 用户点句中字才手动查（走面板既有 panelSentenceLookup 桥）。总开关
-  /// [desktopClipboardEnabled] 仍决定「是否监听剪切板」，本开关只决定「监听到之后
-  /// 自不自动查词」，两者正交。
-  bool get desktopClipboardAutoLookup =>
-      getPref('desktop_clipboard_auto_lookup', defaultValue: true) as bool;
-
-  Future<void> setDesktopClipboardAutoLookup(bool value) async {
-    await setPref('desktop_clipboard_auto_lookup', value);
-    notifyListeners();
-  }
+  // ── desktop global lookup ────────────────────────────────────────────
 
   // TODO-1030 M0 — 全局查词（应用外）是否抓取选中文本周围的上下文句。默认 false：
   // 抓取要读前台应用的 UIA 文本，隐私敏感，用户显式开启才启用；关闭时全局查词只用
@@ -534,103 +464,15 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get desktopClipboardAlwaysOnTop =>
-      desktopClipboardWindowMode != DesktopClipboardWindowMode.normal;
-
-  Future<void> setDesktopClipboardAlwaysOnTop(bool value) async {
-    await setDesktopClipboardWindowMode(
-      value
-          ? DesktopClipboardWindowMode.lookup
-          : DesktopClipboardWindowMode.normal,
-    );
-  }
-
-  DesktopClipboardWindowMode get desktopClipboardWindowMode {
-    final String saved = getPref(
-      'desktop_clipboard_window_mode',
-      defaultValue: '',
-    ) as String;
-    if (saved.isNotEmpty) {
-      return DesktopClipboardWindowMode.fromStorage(saved);
-    }
-    final bool legacyAlwaysOnTop =
-        getPref('desktop_clipboard_always_on_top', defaultValue: false) as bool;
-    return legacyAlwaysOnTop
-        ? DesktopClipboardWindowMode.lookup
-        : DesktopClipboardWindowMode.normal;
-  }
-
-  Future<void> setDesktopClipboardWindowMode(
-    DesktopClipboardWindowMode value,
-  ) async {
-    await setPref('desktop_clipboard_window_mode', value.storageValue);
-    notifyListeners();
-  }
-
-  DesktopClipboardDestination get desktopClipboardDestination =>
-      DesktopClipboardDestination.fromStorage(getPref(
-        'desktop_clipboard_destination',
-        defaultValue: '',
-      ) as String);
-
-  Future<void> setDesktopClipboardDestination(
-    DesktopClipboardDestination value,
-  ) async {
-    await setPref('desktop_clipboard_destination', value.storageValue);
-    notifyListeners();
-  }
-
-  // spec §6 真机修正（2026-07-10 第二轮）：透明机制改整窗 LWA_ALPHA（真透视，
-  // 整窗含文字统一变淡）。85% 是「能看清底下游戏 + 面板正文可读」的平衡点；
-  // 滑杆 50%-100% 可调。
-  final double defaultClipboardPanelOpacity = 0.85;
-
-  double get clipboardPanelOpacity => getPref('clipboard_panel_opacity',
-      defaultValue: defaultClipboardPanelOpacity) as double;
-
-  Future<void> setClipboardPanelOpacity(double value) async {
-    await setPref('clipboard_panel_opacity', value);
-    notifyListeners();
-  }
-
-  /// 真透明剪切板文字窗的**背景**不透明度。与 [clipboardPanelOpacity]（整窗
-  /// LWA_ALPHA）不同：这里只影响窗口背景 alpha，文字始终实心。**默认 1.0 = 黑底**
-  /// （用户实测拍板「先一律默认黑底白字」——纯透明+跟随主题的深色字在黑底上看不清）；
-  /// 想要真透明把滑杆拉到 0（或点顶栏一键透明 ◐），文字始终白色实心。
-  double get clipboardTextWindowBgOpacity => getPref(
-        'clipboard_text_window_bg_opacity',
-        defaultValue: 1.0,
-      ) as double;
-
-  Future<void> setClipboardTextWindowBgOpacity(double value) async {
-    await setPref('clipboard_text_window_bg_opacity', value);
-    notifyListeners();
-  }
-
-  /// 面板窗位置/尺寸记忆，格式 `x,y,w,h`（逻辑像素）；空 = 从未摆放（用默认位）。
-  String get clipboardPanelRect =>
-      getPref('clipboard_panel_rect', defaultValue: '') as String;
-
-  Future<void> setClipboardPanelRect(String value) async {
-    await setPref('clipboard_panel_rect', value);
-    notifyListeners();
-  }
-
-  bool get clipboardPanelPinned =>
-      getPref('clipboard_panel_pinned', defaultValue: true) as bool;
-
-  Future<void> setClipboardPanelPinned(bool value) async {
-    await setPref('clipboard_panel_pinned', value);
-    notifyListeners();
-  }
-
-  /// 防截屏（剪贴板面板，Windows）—— 面板窗设 SetWindowDisplayAffinity
+  /// 防截屏（桌面查词浮窗，Windows）—— 覆盖窗设 SetWindowDisplayAffinity
   /// (WDA_EXCLUDEFROMCAPTURE)，对用户可见但从截图 / 录屏 / 屏幕共享排除。
-  /// 默认 false（用户要求默认关闭，2026-07；需要时面板栏 🛡 按钮或设置里打开）。
-  bool get clipboardPanelBlockCapture =>
+  /// 默认 false（用户要求默认关闭，2026-07）。
+  /// 存储键 `clipboard_panel_block_capture` 是历史名（该偏好最初随剪贴板面板引入，
+  /// 面板已删；持久化键冻结不追改，避免用户已存的开关值丢失）。
+  bool get lookupBlockCapture =>
       getPref('clipboard_panel_block_capture', defaultValue: false) as bool;
 
-  Future<void> setClipboardPanelBlockCapture(bool value) async {
+  Future<void> setLookupBlockCapture(bool value) async {
     await setPref('clipboard_panel_block_capture', value);
     notifyListeners();
   }

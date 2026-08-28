@@ -29,9 +29,8 @@
 //
 // 贴边 ambient 瓣在 d→0 处 alpha 最高，紧贴 GDI region 裁出的锯齿边缘形成
 // 深色渐变过渡，顺带显著弱化 region 圆角无抗锯齿的观感（真 AA 需要逐像素
-// 透明合成，而 composition 路线有真机「透明像素合成成黑」前科，见
-// flutter_window.cpp RegisterClipboardPanelChannel 注释——修好 DComp 黑底前
-// 不走那条路）。
+// 透明合成，而 composition 路线有真机「透明像素合成成黑」前科（DComp/WebView2
+// alpha 合成未生效）——修好 DComp 黑底前不走那条路）。
 class LookupShadowWindow {
  public:
   LookupShadowWindow() = default;

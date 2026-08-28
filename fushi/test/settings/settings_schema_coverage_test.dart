@@ -311,7 +311,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Scan non-Japanese text': 'test/reader/todo861_hoshi_ports_test.dart',
   // TODO-1030 M0：全局查词（应用外）抓取选中文本上下文开关（隐私敏感，默认关，仅桌面）。
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 Windows UIA native 捕获 +
-  // 纯函数句子裁剪 + popup.js 句子横幅注入（非 reader CSS / 主题树），无适用 T4 探针；
+  // 纯函数句子裁剪 + 制卡 {sentence} 上下文（非 reader CSS / 主题树），无适用 T4 探针；
   // 由纯函数守卫（含与阅读器分隔符表的双端一致性）+ pref 往返覆盖。
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
@@ -518,22 +518,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
-  'lookup/Desktop clipboard lookup':
-      'DEVICE: clipboard watcher + hotkey lifecycle (test/sync/desktop_lookup_service_test.dart)',
-  // galgame UX 统一后 desktop_clipboard_enabled 默认开（剪贴板 / galgame 台词都走
-  // 悬浮查词面板），下列三项子设置随之在 coverage 中可达；其运行时效果由 desktop
-  // lookup service 行为守卫 / 设备验证覆盖，非 widget-tree 可断言。
-  'lookup/Auto-look-up on copy':
-      'DEVICE: clipboard auto-lookup on copy (test/sync/desktop_lookup_service_test.dart)',
-  'lookup/Lookup popup position':
-      'DEVICE: clipboard lookup destination routing main/panel/transient (test/sync/desktop_lookup_service_test.dart)',
-  'lookup/Panel opacity':
-      'DEVICE: floating clipboard panel opacity (native/WebView render)',
   // 阶段 E：防截屏开关。效果是 native SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
-  // （Windows-only，widget 树测不到）；写穿 + 即时重应用由专项测试咬住，
-  // 面板栏 🛡 按钮同路径由 clipboard_panel_controller_test 覆盖。
+  // （Windows-only，widget 树测不到）；写穿 + 即时重应用由专项测试咬住。
   'lookup/Block screen capture':
-      'test/settings/settings_block_capture_test.dart + test/lookup/clipboard_panel_controller_test.dart (native display affinity)',
+      'test/settings/settings_block_capture_test.dart (native display affinity)',
   'lookup/Auto read word on lookup': 'DEVICE: TTS auto-read',
   'lookup/Lookup audio volume':
       'test/reader/lookup_audio_volume_settings_test.dart + test/utils/misc/lookup_audio_volume_wiring_static_test.dart + test/settings/settings_renderer_test.dart',

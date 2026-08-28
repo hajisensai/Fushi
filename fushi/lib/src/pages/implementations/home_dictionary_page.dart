@@ -12,9 +12,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/lookup/desktop_lookup_router.dart';
-import 'package:fushi/src/lookup/global_lookup_controller.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
@@ -120,15 +117,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   bool _historyWritten = false;
 
-  /// BUG-1020：本页是否真正对 [DesktopLookupService] 做过一次 start（refcount +1）。
-  /// dispose 的 stop 必须与它配对，**不能**改读可变 pref `desktopClipboardEnabled`——
-  /// 该 pref 会在 initState 与 dispose 之间被用户翻转（页内打开/关闭剪贴板监听开关），
-  /// 令 start 门控与 stop 门控读到不同值 → 页级 stop 吞掉 app 级 hold 的 +1 → 计数归 0
-  /// → OS watcher 被真正拆掉、pref 却仍显示「已开启」→ 剪贴板监听永久哑火直到重启。
-  /// 用实例 bool 记录「本页确实 start 过」，把 stop 与外部可变量彻底解耦，页级 owner
-  /// 恒为严格配对的 +1/-1。
-  bool _desktopLookupStarted = false;
-
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
   Future<void>? _lastDispatchedSearch;
@@ -144,19 +132,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _searchFocusNode.addListener(_onFocusChanged);
     widget.focusSignal?.addListener(_onFocusSignal);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
-    // TODO-1394 方案B：恢复 1385（BUG-700）的页级引用计数生命周期——本页挂载时
-    // start()、卸载时 stop()（受 desktopClipboardEnabled 门控）；跨 600px 断点重建时
-    // 计数 1→2→1 恒 >0 使 watcher 存活（守卫 home_dictionary_clipboard_watcher_
-    // breakpoint_test.dart）。剪贴板独立面板/瞬态去向所需的「tab 未挂载也监听」由
-    // AppModel.applyDesktopClipboardLifecycle 的 app 级 hold 提供——refcount 让页级 +
-    // app 级两个持有者安全并存（见 desktop_lookup_service.dart 的 _startRefCount）。
-    unawaited(_startDesktopLookupIfEnabled());
-    // TODO-376：无条件消费一次挂载前已排入的 pending（不被 desktopClipboardEnabled
-    // 门控）。桌面悬浮字幕点词由 floatingLyricClickLookup 控制、与剪贴板监听无关：它
-    // 在切到本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在
-    // 本页 addListener 之前收不到。若只在剪贴板开启分支里消费，「开了悬浮字幕点词但
-    // 关了剪贴板监听」的默认用户会 pending 卡死、查词静默丢失。故挂载即排一次后帧
-    // 消费已存在的 pending（有 pending 才消费，无 pending 则 no-op，不会乱消费）。
+    // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
+    // 本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在本页
+    // addListener 之前收不到。故挂载即排一次后帧消费已存在的 pending（有 pending 才
+    // 消费，无 pending 则 no-op，不会乱消费）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDesktopLookupPending();
     });
@@ -192,50 +171,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     });
   }
 
-  /// TODO-1394 方案B / TODO-1385（BUG-700）：进入查词页时按引用计数 start（受
-  /// desktopClipboardEnabled 门控），离开时 stop（见 dispose）。与 AppModel 的 app 级
-  /// hold 经 [DesktopLookupService] 的 _startRefCount 安全并存（0→1 才真正挂 watcher，
-  /// 1→0 才真正拆）。
-  ///
-  /// BUG-1020：置 [_desktopLookupStarted] 记录本页确实 start 过——同步在 start() 之前
-  /// 置位，与 start() 内部同步完成的 `_startRefCount++`（首个 await 之前）天然配对；
-  /// dispose 只据此 bool 决定是否 stop，不再改读可变 pref。
-  Future<void> _startDesktopLookupIfEnabled() async {
-    final AppModel model = appModelNoUpdate;
-    if (!DesktopLookupService.isDesktop || !model.desktopClipboardEnabled) {
-      return;
-    }
-    _desktopLookupStarted = true;
-    await DesktopLookupService.instance.start(
-      windowMode: model.desktopClipboardWindowMode,
-    );
-    // 已存在的 pending 由 initState 的 post-frame 无条件消费一次（不依赖剪贴板
-    // 是否开启），这里不再重复消费——start 之后的剪贴板/热键命中走 addListener。
-  }
-
   void _onDesktopLookupPending() {
     final DesktopLookupRequest? request =
         DesktopLookupService.instance.pendingRequest;
     if (request == null) return;
-    // spec 2026-07-10 §4 — destination 路由：本页只消费 mainTab 分区；
-    // panel/transient 由 DesktopLookupDispatcher 消费（同一纯函数互斥分区，
-    // 无双消费）。AppModel 未初始化（早帧 / widget 测试桩）时 prefsRepo 为
-    // null，读 destination 会抛——此时按默认 main 消费（与 _seedWarmPopup 的
-    // 「成功路径必已初始化」同范式；TODO-376 挂载即消费的契约不受影响）。
-    final DesktopClipboardDestination destination =
-        appModelNoUpdate.isInitialised
-            ? appModelNoUpdate.desktopClipboardDestination
-            : DesktopClipboardDestination.main;
-    if (resolveDesktopLookupConsumer(
-          origin: request.origin,
-          destination: destination,
-          overlayAvailable: GlobalLookupController.instance.isAvailable,
-        ) !=
-        DesktopLookupConsumer.mainTab) {
-      return;
-    }
     DesktopLookupService.instance.clearPending();
-    _sourceLookupText = request.showSourcePanel ? request.text : '';
+    _sourceLookupText = request.text;
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
       _runDesktopLookup(request);
     } else {
@@ -247,13 +188,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   void _runDesktopLookup(DesktopLookupRequest request) {
     if (!mounted) return;
-    if (request.foregroundPolicy ==
-        DesktopLookupForegroundPolicy.bringToFront) {
-      unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
-    }
-    // BUG-1025：force——服务层时间窗已判定这是真实查词意图（同词超窗口的重复复制、
-    // 或热键/显式查词），页面不再叠加第二次「同词不重查」内容去重。
-    if (mounted) _search(request.text, autoRead: false, force: true);
+    // 显式查词（深链 / 浏览器扩展 / 悬浮字幕点词）：把主窗唤到前台。
+    unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
+    // force——显式查词意图，即便与上次同词也要重查，页面不叠加「同词不重查」去重。
+    _search(request.text, autoRead: false, force: true);
   }
 
   void _onFocusChanged() {
@@ -288,15 +226,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   void dispose() {
     widget.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
-    // TODO-1394 方案B：恢复 1385 页级 stop（refcount -1）。app 级 hold 仍保 watcher 在
-    // tab 卸载后为剪贴板独立面板/瞬态去向运行（见 initState）。BUG-1020：stop 与本页自己
-    // 的 start 严格配对——只据 [_desktopLookupStarted] 判定，**不**改读可变 pref
-    // desktopClipboardEnabled（该 pref 会在 start 与 dispose 之间被翻转，导致页级 stop
-    // 吞掉 app 级 hold 的计数、把 OS watcher 拆死而 pref 仍显示开启 → 永久哑火）。
-    if (_desktopLookupStarted) {
-      _desktopLookupStarted = false;
-      unawaited(DesktopLookupService.instance.stop());
-    }
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
@@ -871,7 +800,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             },
           ),
         // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
-        // 「界面大小」FittedBox 拉糊。剪贴板文本条是普通 app UI，留在中和器外继续吃界面大小。
+        // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
         // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
         // 限宽 + padding + 默认 hardEdge 裁住），改由 [_buildPopupOverlay] 渲染在根 Overlay。
         Expanded(

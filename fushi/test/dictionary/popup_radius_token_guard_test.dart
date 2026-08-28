@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 机制：Dart 侧把 `FushiRadii.cardValue` 作为 `--fushi-radius-card` CSS 变量
 /// 注入 popup WebView（与 `--md-*` 颜色变量同一注入点），popup.css 的卡片表面
-/// （`.kanji-card` / `.global-lookup-sentence`）用 `var(--fushi-radius-card, 10px)`
+/// （`.kanji-card`）用 `var(--fushi-radius-card, 10px)`
 /// 而不是硬编码，从而与 Dart 侧 `FushiPopupSurface`（card=10）统一。
 /// 变量值的单一真源已收敛到 popup_theme_css.dart 的 buildPopupThemeCssVars，
 /// 两个注入器改为从该 map 取值（不再各自手抄 FushiRadii.cardValue）。
@@ -40,14 +40,9 @@ void main() {
     final String css = read('assets/popup/popup.css');
     expect(css, contains('var(--fushi-radius-card'),
         reason: '弹窗卡片表面应引用注入的圆角 token');
-    // .kanji-card / .global-lookup-sentence 块不应再出现硬编码 8px 圆角。
+    // .kanji-card 块不应再出现硬编码 8px 圆角。
     expect(RegExp(r'\.kanji-card\s*\{[^}]*border-radius:\s*8px').hasMatch(css),
         isFalse,
         reason: '.kanji-card 不应硬编码 border-radius: 8px');
-    expect(
-        RegExp(r'\.global-lookup-sentence\s*\{[^}]*border-radius:\s*8px')
-            .hasMatch(css),
-        isFalse,
-        reason: '.global-lookup-sentence 不应硬编码 border-radius: 8px');
   });
 }

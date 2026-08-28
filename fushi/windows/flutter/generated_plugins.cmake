@@ -4,7 +4,6 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   bonsoir_windows
-  clipboard_watcher
   desktop_drop
   dynamic_color
   flutter_inappwebview_windows

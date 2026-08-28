@@ -14,9 +14,11 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 阶段 E：查词设置页「防截屏」开关。守卫：
-/// 1) 查词 destination「剪贴板与全局查词」区确有此开关，且 Windows 门控；
-/// 2) 切换写穿 pref（setClipboardPanelBlockCapture）；
-/// 3) 切换即时重应用到面板窗（与面板栏 🛡 按钮同一 native 通道，不新起并行机制）。
+/// 1) 查词 destination 确有此开关，且 Windows 门控；
+/// 2) 切换写穿 pref（setLookupBlockCapture，存储键沿用历史名
+///    clipboard_panel_block_capture）；
+/// 3) 切换即时重应用到瞬态全局查词窗（GlobalLookupController.applyBlockCapture，
+///    不新起并行机制）。
 void main() {
   SettingsItem? findLookupItem(String id) {
     final SettingsDestination dest = buildLookupDestination();
@@ -36,21 +38,11 @@ void main() {
     expect(item!.visible, isNotNull, reason: '防截屏开关必须门控（否则泄漏进非 Windows 平台）');
   });
 
-  testWidgets('switch writes through pref and live-applies to the panel window',
-      (WidgetTester tester) async {
-    final List<MethodCall> channelCalls = <MethodCall>[];
-    // 面板窗 native 通道的 mock：记录 setBlockCapture（即时重应用的落点），
+  testWidgets('switch writes through pref and live-applies to the overlay', (
+    WidgetTester tester,
+  ) async {
+    // 瞬态全局查词窗 native 通道的 mock：记录 setBlockCapture（即时重应用的落点），
     // 同时避免测试机上真调 native 抛 MissingPluginException。
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      FushiChannels.clipboardPanel,
-      (MethodCall call) async {
-        channelCalls.add(call);
-        return null;
-      },
-    );
-    // 瞬态全局查词窗 native 通道的 mock：applyBlockCapture 是唯一扇出入口，
-    // 同一次切换必须同时保护瞬态窗（审查 Finding 1——否则录屏/串流从热键或
-    // 面板内点词弹出的瞬态窗泄露面板承诺保护的内容）。
     final List<MethodCall> overlayCalls = <MethodCall>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       FushiChannels.globalLookup,
@@ -60,10 +52,6 @@ void main() {
       },
     );
     addTearDown(() {
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        FushiChannels.clipboardPanel,
-        null,
-      );
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         FushiChannels.globalLookup,
         null,
@@ -107,105 +95,107 @@ void main() {
     expect(appModel.recorded, <bool>[false, true]);
     expect(toggle.value(sctx), isTrue);
 
-    // 即时重应用只在 Windows 生效（isSupported）——落到面板窗 native 通道的
-    // setBlockCapture（同 🛡 按钮路径）。非 Windows 平台恒隐藏、不接线。
+    // 即时重应用只在 Windows 生效（GlobalLookupController.isSupported）——落到
+    // 全局查词窗 native 通道的 setBlockCapture。非 Windows 平台恒隐藏、不接线。
     if (Platform.isWindows) {
-      final Iterable<MethodCall> blockCalls =
-          channelCalls.where((MethodCall c) => c.method == 'setBlockCapture');
-      expect(blockCalls, isNotEmpty,
-          reason: '切换必须经 native 通道即时重应用（同面板栏 🛡 按钮）');
+      final Iterable<MethodCall> blockCalls = overlayCalls.where(
+        (MethodCall c) => c.method == 'setBlockCapture',
+      );
+      expect(blockCalls, isNotEmpty, reason: '切换必须经 native 通道即时重应用到瞬态全局查词窗');
       final Map<Object?, Object?> lastArgs =
           (blockCalls.last.arguments as Map<Object?, Object?>);
       expect(lastArgs['block'], isTrue);
-
-      // 审查 Finding 1：同一次切换必须扇出到瞬态全局查词窗通道。
-      final Iterable<MethodCall> overlayBlockCalls =
-          overlayCalls.where((MethodCall c) => c.method == 'setBlockCapture');
-      expect(overlayBlockCalls, isNotEmpty,
-          reason: '切换必须同时重应用到瞬态全局查词窗（同一 pref 保护两块表面）');
-      final Map<Object?, Object?> overlayArgs =
-          (overlayBlockCalls.last.arguments as Map<Object?, Object?>);
-      expect(overlayArgs['block'], isTrue);
     }
   });
 
-  test('native global-lookup channel wires setBlockCapture (Finding 1 guard)',
-      () {
-    // 源码守卫（flutter test 无法编译/运行 C++ runner）：flutter_window.cpp 的
-    // 全局查词通道（RegisterGlobalLookupChannel）必须有 setBlockCapture 分支并
-    // 应用到 global_lookup_window_，否则「防截屏」只保护面板、瞬态查词窗照样
-    // 被录屏/串流采集（与 clipboard_panel_guard_test 的 C++ 源码扫描同款）。
-    final String fw =
-        File('windows/runner/flutter_window.cpp').readAsStringSync();
-    final int globalStart =
-        fw.indexOf('void FlutterWindow::RegisterGlobalLookupChannel()');
-    final int panelStart =
-        fw.indexOf('void FlutterWindow::RegisterClipboardPanelChannel()');
-    expect(globalStart, greaterThan(0));
-    expect(panelStart, greaterThan(globalStart));
-    final String globalChannel = fw.substring(globalStart, panelStart);
-    expect(globalChannel.contains('"setBlockCapture"'), isTrue,
-        reason: '全局查词通道必须处理 setBlockCapture');
-    // 通道现在按 `target` 路由到桌面浮窗或游戏内离屏卡片窗，处理器统一用局部
-    // `win`——这条防截屏因此同时覆盖两个表面，不是只覆盖成员那一个。
-    expect(globalChannel.contains('win->SetBlockCapture'), isTrue,
-        reason: 'setBlockCapture 必须应用到通道当前路由到的瞬态查词窗对象');
-
-    // Dart 侧：控制器 start 时推 pref 初值（native 记值 + 窗口重建自动重加，
-    // 覆盖此后每次弹出），并暴露 applyBlockCapture 供扇出入口即时重推。
-    final String controllerSrc =
-        File('lib/src/lookup/global_lookup_controller.dart').readAsStringSync();
-    // dart format 可能折行，拆两段断言（不锁死单行）。
-    expect(
-        controllerSrc.contains('GlobalLookupChannel.setBlockCapture('), isTrue,
-        reason: 'GlobalLookupController 必须经本窗通道推 setBlockCapture');
-    expect(
-        controllerSrc.contains('appModel.clipboardPanelBlockCapture'), isTrue,
-        reason: 'GlobalLookupController.start 必须推「防截屏」pref 初值');
-    expect(controllerSrc.contains('Future<void> applyBlockCapture('), isTrue,
-        reason: 'GlobalLookupController 必须暴露 applyBlockCapture 供扇出');
-
-    // 唯一扇出入口：ClipboardPanelController.applyBlockCapture 同时推两条通道
-    // （面板 + 瞬态窗），设置页开关与面板栏 🛡 按钮都走它。
-    final String panelSrc =
-        File('lib/src/lookup/clipboard_panel_controller.dart')
-            .readAsStringSync();
-    final int at = panelSrc.indexOf('Future<void> applyBlockCapture(');
-    expect(at, greaterThan(0));
-    final int end = panelSrc.indexOf('\n  }', at);
-    final String body = panelSrc.substring(at, end);
-    expect(
-        body.contains(
-            'GlobalLookupController.instance.applyBlockCapture(block)'),
+  test(
+    'native global-lookup channel wires setBlockCapture (Finding 1 guard)',
+    () {
+      // 源码守卫（flutter test 无法编译/运行 C++ runner）：flutter_window.cpp 的
+      // 全局查词通道（RegisterGlobalLookupChannel）必须有 setBlockCapture 分支并
+      // 应用到通道当前路由到的窗口，否则「防截屏」开关是空的。
+      final String fw = File(
+        'windows/runner/flutter_window.cpp',
+      ).readAsStringSync();
+      final int globalStart = fw.indexOf(
+        'void FlutterWindow::RegisterGlobalLookupChannel()',
+      );
+      final int nextStart = fw.indexOf(
+        'void FlutterWindow::RegisterForegroundSelectionChannel()',
+      );
+      expect(globalStart, greaterThan(0));
+      expect(nextStart, greaterThan(globalStart));
+      final String globalChannel = fw.substring(globalStart, nextStart);
+      expect(
+        globalChannel.contains('"setBlockCapture"'),
         isTrue,
-        reason: 'applyBlockCapture 必须扇出到瞬态全局查词窗');
+        reason: '全局查词通道必须处理 setBlockCapture',
+      );
+      // 通道现在按 `target` 路由到桌面浮窗或游戏内离屏卡片窗，处理器统一用局部
+      // `win`——这条防截屏因此同时覆盖两个表面，不是只覆盖成员那一个。
+      expect(
+        globalChannel.contains('win->SetBlockCapture'),
+        isTrue,
+        reason: 'setBlockCapture 必须应用到通道当前路由到的瞬态查词窗对象',
+      );
+
+      // Dart 侧：控制器 start 时推 pref 初值（native 记值 + 窗口重建自动重加，
+      // 覆盖此后每次弹出），并暴露 applyBlockCapture 供设置页即时重推。
+      final String controllerSrc = File(
+        'lib/src/lookup/global_lookup_controller.dart',
+      ).readAsStringSync();
+      expect(
+        controllerSrc.contains('GlobalLookupChannel.setBlockCapture('),
+        isTrue,
+        reason: 'GlobalLookupController 必须经本窗通道推 setBlockCapture',
+      );
+      expect(
+        controllerSrc.contains('appModel.lookupBlockCapture'),
+        isTrue,
+        reason: 'GlobalLookupController.start 必须推「防截屏」pref 初值',
+      );
+      expect(
+        controllerSrc.contains('Future<void> applyBlockCapture('),
+        isTrue,
+        reason: 'GlobalLookupController 必须暴露 applyBlockCapture 供设置页',
+      );
+    },
+  );
+
+  test('schema onChanged reuses GlobalLookupController.applyBlockCapture', () {
+    // 源码守卫：查词 schema 的开关 onChanged 写穿 pref 后复用控制器的即时重应用，
+    // 而非另起并行机制。
+    final String lookupSrc = File(
+      'lib/src/settings/settings_schema_lookup.dart',
+    ).readAsStringSync();
+    expect(
+      lookupSrc.contains('setLookupBlockCapture(value)'),
+      isTrue,
+      reason: '开关必须写穿 pref',
+    );
+    expect(
+      lookupSrc.contains(
+        'GlobalLookupController.instance.applyBlockCapture(value)',
+      ),
+      isTrue,
+      reason: '开关必须调 GlobalLookupController.applyBlockCapture 即时重应用',
+    );
   });
 
-  test(
-      'schema onChanged reuses the 🛡 button live-apply path (no parallel wiring)',
-      () {
-    // 源码守卫：查词 schema 的开关 onChanged 复用 ClipboardPanelController 的
-    // 即时重应用（applyBlockCapture），而非另起并行机制。
-    final String lookupSrc =
-        File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
-    expect(lookupSrc.contains('setClipboardPanelBlockCapture(value)'), isTrue,
-        reason: '开关必须写穿 pref');
-    // dart format 可能把链式调用折行，故拆两段断言（不锁死单行）。
-    expect(lookupSrc.contains('ClipboardPanelController.instance'), isTrue,
-        reason: '开关必须经控制器即时重应用到面板窗');
-    expect(lookupSrc.contains('.applyBlockCapture(value)'), isTrue,
-        reason: '开关必须调 applyBlockCapture 复用 🛡 按钮路径');
-
-    // 控制器的 applyBlockCapture 复用面板栏 🛡 按钮同一条 native 通道。
-    final String controllerSrc =
-        File('lib/src/lookup/clipboard_panel_controller.dart')
-            .readAsStringSync();
-    final int at = controllerSrc.indexOf('Future<void> applyBlockCapture(');
-    expect(at, greaterThan(0), reason: '控制器必须暴露 applyBlockCapture 供设置页复用');
-    final int end = controllerSrc.indexOf('\n  }', at);
-    final String body = controllerSrc.substring(at, end);
-    expect(body.contains('_channel.setBlockCapture(block)'), isTrue,
-        reason: 'applyBlockCapture 必须调同一 native 通道（同 🛡 按钮）');
+  test('storage key stays frozen at clipboard_panel_block_capture', () {
+    // 面板已删，但用户已存的开关值不能丢：存储键冻结不追改。
+    final String prefsSrc = File(
+      'lib/src/models/preferences_repository.dart',
+    ).readAsStringSync();
+    final int at = prefsSrc.indexOf('bool get lookupBlockCapture');
+    expect(at, greaterThan(0));
+    expect(
+      prefsSrc
+          .substring(at, at + 400)
+          .contains("'clipboard_panel_block_capture'"),
+      isTrue,
+      reason: 'lookupBlockCapture 必须继续读写历史存储键',
+    );
   });
 }
 
@@ -217,10 +207,10 @@ class _RecordingAppModel extends AppModel {
   bool _stored = true;
 
   @override
-  bool get clipboardPanelBlockCapture => _stored;
+  bool get lookupBlockCapture => _stored;
 
   @override
-  Future<void> setClipboardPanelBlockCapture(bool value) async {
+  Future<void> setLookupBlockCapture(bool value) async {
     recorded.add(value);
     _stored = value;
   }

@@ -1,20 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import '../helpers/source_guard.dart';
 
 /// BUG-518 / TODO-1086 — source-scan guards for the app-OUTSIDE global lookup
 /// hotkey (Ctrl+Alt+D) reliability on Windows.
 ///
-/// Two independent structural defects made "global lookup does not fire outside
+/// Independent structural defects made "global lookup does not fire outside
 /// the app" possible; these guards lock each fix so a later refactor cannot
 /// silently reintroduce them:
 ///
-///   1. [DesktopLookupService.stop] used to call the PROCESS-GLOBAL
-///      `hotKeyManager.unregisterAll()`, which nukes EVERY registered system
-///      hotkey — including [GlobalLookupController]'s Ctrl+Alt+D — whenever the
-///      old clipboard/Ctrl+Shift+D service was stopped/restarted. It must only
-///      unregister its OWN hotkey (per-hotkey `unregister`).
+///   1. (Retired) [DesktopLookupService.stop] used to call the PROCESS-GLOBAL
+///      `hotKeyManager.unregisterAll()`, nuking Ctrl+Alt+D whenever the old
+///      clipboard/Ctrl+Shift+D service restarted. That service — and its hotkey
+///      — was deleted with desktop clipboard lookup, so the guard is gone too.
 ///
 ///   2. [GlobalLookupController] used to swallow a failed hotkey `register()`
 ///      into the temp-file-only `glog`, so a registration failure (key already
@@ -30,36 +28,6 @@ import '../helpers/source_guard.dart';
 ///      the overlay hotkey register could silently fail.
 void main() {
   String read(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
-
-  group('desktop_lookup_service.stop() is per-hotkey, not global', () {
-    late String source;
-    late String stopBody;
-    setUpAll(() {
-      source = read('lib/src/sync/desktop_lookup_service.dart');
-      final int at = source.indexOf('Future<void> stop() async {');
-      expect(at, greaterThan(-1), reason: 'stop() must exist');
-      // Body from stop() up to the next method (configureWindowMode).
-      final int end = source.indexOf('Future<void> configureWindowMode(', at);
-      expect(end, greaterThan(at));
-      // Strip // line comments: the fix's Chinese doc comment legitimately
-      // MENTIONS unregisterAll() to explain why it was removed; the CODE must
-      // not call it.
-      stopBody = _stripLineComments(source.substring(at, end));
-    });
-
-    test('stop() does NOT call global hotKeyManager.unregisterAll()', () {
-      expect(stopBody.contains('hotKeyManager.unregisterAll('), isFalse,
-          reason: 'global unregisterAll() in stop() nukes OTHER services\' '
-              'system hotkeys (incl. GlobalLookupController Ctrl+Alt+D). It must '
-              'only unregister its own hotkey.');
-    });
-
-    test('stop() unregisters only its own hotkey (per-hotkey)', () {
-      expect(stopBody.contains('hotKeyManager.unregister('), isTrue,
-          reason: 'stop() must call per-hotkey unregister on the hotkey it '
-              'holds (_hotKey), not the process-global unregisterAll');
-    });
-  });
 
   group('global lookup hotkey register failure is visible', () {
     late String controller;
@@ -144,48 +112,40 @@ void main() {
     });
   });
 
-  // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
-  // 快捷键查词不显示（整句仍进制卡 sentence，与横幅解耦）。
-  group('整句横幅只给剪切板自动唤出的瞬态窗', () {
+  // 整句横幅（弹窗顶部的灰底句子框）已随桌面剪贴板查词一并移除：popup.js 不再
+  // 渲染 .global-lookup-sentence，渲染链也不再有 showSentenceBanner 开关。整句
+  // 只进制卡 {sentence} 上下文（sentenceContext），这条链必须保留。
+  group('整句横幅已移除，整句只进制卡上下文', () {
     late String controllerSrc;
-    late String dispatcherSrc;
+    late String renderSrc;
+    late String popupJs;
     late String galOverlaySrc;
     setUpAll(() {
       controllerSrc = read('lib/src/lookup/global_lookup_controller.dart');
-      dispatcherSrc = read('lib/src/lookup/desktop_lookup_dispatcher.dart');
+      renderSrc = read('lib/src/lookup/global_lookup_render.dart');
+      popupJs = read('assets/popup/popup.js');
       galOverlaySrc =
           read('lib/src/lookup/gal_hook_text_overlay_controller.dart');
     });
 
-    test('手动快捷键窗不贴横幅：hotkey 的 _lookupExternal 传 showSentenceBanner:false', () {
-      final int at = controllerSrc.indexOf('hotkey: empty selection');
-      expect(at, greaterThan(-1), reason: 'hotkey 分支必须存在');
-      final String tail = controllerSrc.substring(at);
-      // 锚点不能写成 `_lookupExternal(text,` 这种**单行**字面量：实参一旦换行
-      // （dart format 在参数变多时必然这么做）它就找不到了，而语义一点没变。
-      // 只认调用名，参数怎么排都行。
-      final int callAt = tail.indexOf('_lookupExternal(');
-      expect(callAt, greaterThan(-1), reason: 'hotkey 必须走 _lookupExternal');
-      final String call = tail.substring(callAt, tail.indexOf(';', callAt));
-      expect(call.contains('showSentenceBanner: false'), isTrue,
-          reason: '手动快捷键查词不显示整句横幅（框）');
+    test('showSentenceBanner 开关不再存在（controller / 渲染链 / popup.js）', () {
+      expect(controllerSrc.contains('showSentenceBanner'), isFalse,
+          reason: '横幅已删，controller 不得再保留 showSentenceBanner 参数');
+      expect(controllerSrc.contains('_showSentenceBanner'), isFalse);
+      expect(renderSrc.contains('__globalLookupSentence'), isFalse,
+          reason: '渲染脚本不得再向 popup.js 注入句子横幅文本');
+      expect(popupJs.contains('buildGlobalLookupSentenceBanner'), isFalse);
+      expect(popupJs.contains('prependSentenceBanner'), isFalse);
+      expect(popupJs.contains('__globalLookupSentence'), isFalse);
     });
 
-    test('横幅注入门控在 _showSentenceBanner（与 mining 解耦）', () {
-      expect(
-        controllerSrc.contains('(isRoot && _showSentenceBanner)'),
-        isTrue,
-        reason: 'root 卡横幅必须同时满足 isRoot 且 _showSentenceBanner',
-      );
-    });
-
-    test('制卡 sentenceContext 仍用完整 _currentSentence（横幅关掉也不空）', () {
+    test('制卡 sentenceContext 仍用完整 _currentSentence（横幅删掉也不空）', () {
       expect(
           controllerSrc.contains('sentenceContext: _currentSentence'), isTrue,
-          reason: 'BUG-730：热键窗整句仍进制卡 {sentence}，与横幅解耦不受影响');
+          reason: 'BUG-730：热键窗整句仍进制卡 {sentence}，与横幅无关');
     });
 
-    test('游戏台词浮窗点词不贴横幅，但保留完整句子供制卡', () {
+    test('游戏台词浮窗点词保留完整句子供制卡', () {
       final int handlerAt =
           galOverlaySrc.indexOf('Future<void> _onLookupText(');
       expect(handlerAt, greaterThan(-1), reason: '游戏台词浮窗查词入口必须存在');
@@ -197,27 +157,10 @@ void main() {
       final int callEnd = galOverlaySrc.indexOf(');', callAt);
       expect(callEnd, greaterThan(callAt));
       final String call = galOverlaySrc.substring(callAt, callEnd + 2);
-      expect(call.contains('showSentenceBanner: false'), isTrue,
-          reason: '游戏台词已经在浮窗显示，查词卡不得重复显示整句横幅');
+      expect(call.contains('showSentenceBanner'), isFalse,
+          reason: '横幅开关已删，调用点不得再传 showSentenceBanner');
       expect(call.contains('sentence: entry.text'), isTrue,
-          reason: '隐藏横幅不能清空制卡需要的完整句子上下文');
-    });
-
-    test('剪切板自动唤出（dispatcher transient）保留横幅：不关 banner', () {
-      final int at = dispatcherSrc.indexOf('DesktopLookupConsumer.transient');
-      expect(at, greaterThan(-1));
-      final String tail = dispatcherSrc.substring(at);
-      final int callAt = tail.indexOf('.lookupText(');
-      expect(callAt, greaterThan(-1));
-      final String call =
-          tail.substring(callAt, tail.indexOf(');', callAt) + 1);
-      expect(call.contains('showSentenceBanner: false'), isFalse,
-          reason: '剪切板自动唤出的瞬态窗必须显示整句框（默认 true 不关）');
+          reason: '制卡需要的完整句子上下文必须继续传入');
     });
   });
 }
-
-/// Removes `//` line comments so a source-scan assertion inspects CODE only
-/// (doc comments may legitimately mention a forbidden call to explain its
-/// removal).
-String _stripLineComments(String source) => maskComments(source);
