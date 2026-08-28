@@ -3079,9 +3079,21 @@ void main() {
   });
 
   test('page chrome surfaces use shared MD3 spacing tokens', () {
-    // 注：宽屏 rail 的 leading logo 表面在 8fd0fc1fe（drop rail logo）已整体删除，
-    // 其 `_buildRailLeading()` 函数不复存在；对它的 MD3 token 守卫随之移除（BUG-012）。
-    // 下方 collections + tag-management 页面 chrome 的守卫保持不变。
+    final String homeSource = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final String railLeading = _functionSource(
+      homeSource,
+      'Widget _buildRailLeading()',
+      'Widget _bodyWithMiniBar()',
+    );
+    expect(homeSource, contains('leading: _buildRailLeading()'));
+    expect(railLeading, contains('FushiDesignTokens.of(context)'));
+    expect(railLeading, contains('tokens.spacing'));
+    expect(railLeading, contains('tokens.radii.controlRadius'));
+    expect(railLeading, contains('tokens.surfaces.card'));
+    expect(railLeading, contains('appModel.appIcon'));
+
     final String collectionsSource = File(
       'lib/src/pages/implementations/collections_page.dart',
     ).readAsStringSync();
