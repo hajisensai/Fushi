@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1760 条。点号进各自文件。
+> 共 1761 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1899](bugs/BUG-1899-custom-data-root-reported-as-db-damaged.md) | ✅ | ✅ | 自定义数据安装位置启动即 Database damaged：派生根目录从没被创建 |
 | [BUG-1898](bugs/BUG-1898-touching-ruby-units-overlap.md) | ✅ | ✅ | 紧邻的两个带注音基字振假名重叠：明鏡四字熟語糊成一团 |
 | [BUG-1897](bugs/BUG-1897-dict-css-double-scales-ruby.md) | ✅ | ✅ | 词典自带 rt 字号与注音盒相乘，小学館十二版振假名只剩 0.3em |
 | [BUG-1896](bugs/BUG-1896-video-episode-picker-unordered.md) | ✅ | ✅ | 播放器选集横排缩略图乱序：番剧下载入库从不重排合集 |

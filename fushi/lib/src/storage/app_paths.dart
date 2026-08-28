@@ -94,11 +94,50 @@ class AppPaths {
     final Directory documents = await _resolveDocumentsRoot();
     final Directory support = await _resolveSupportRoot();
     final Directory temp = await _resolveTempRoot();
+    await _ensureResolvedRootsExist(documents, support);
     return AppPaths._(
       documentsRoot: documents,
       supportRoot: support,
       tempRoot: temp,
     );
+  }
+
+  /// BUG-1899：启动期确保两个根**目录真实存在**。
+  ///
+  /// 默认分支天然满足这个契约：`getApplicationSupportDirectory()` 内部就
+  /// `create(recursive: true)`，平台 `Documents` 更是一定在。而 dataRoot 分支
+  /// （[rootsForDataRoot] 派生的 `<dataRoot>/documents` 与 `<dataRoot>/support`）
+  /// **只是纯路径拼接**——安装向导的首启引导只 `create` 了 dataRoot 本身
+  /// （`installer_data_root_bootstrap.dart`），两个子目录从来没人建。
+  ///
+  /// 后果：sqlite 打开 `<dataRoot>/support/fushi.db` 拿到 SQLITE_CANTOPEN(14)，
+  /// 被恢复阶梯当成「侧车/损坏」，用户看到「Database damaged」并被引导去恢复备份或
+  /// 清空数据——而磁盘上什么都没坏，只是少一个空目录。设置页换位置那条路不受影响，
+  /// 因为 `DataRootMigrator` 搬文件时顺手把目录建了；只有「安装向导选自定义位置 →
+  /// 首启」这一条路会踩。
+  ///
+  /// 修的是**两条分支的契约不一致**，不是给 DB 打补丁：`resolve()` 承诺返回可用的根，
+  /// 就必须两条分支都可用。
+  ///
+  /// 只在 `resolve()` 里做，**绝不下沉进 `_resolve*Root()`**——那三个函数会被运行时的
+  /// 静态便捷层高频调用，其中包括 widget 测试里的封面/资源解析；`testWidgets` 跑在
+  /// FakeAsync 上，真实文件 IO 的 future 在那里永不完成（同 `_ensureDocumentsLayoutDecided`
+  /// 的理由）。
+  static Future<void> _ensureResolvedRootsExist(
+    Directory documents,
+    Directory support,
+  ) async {
+    for (final Directory dir in <Directory>[documents, support]) {
+      try {
+        if (await dir.exists()) continue;
+        await dir.create(recursive: true);
+      } on FileSystemException {
+        // 建不出来 = 这个位置真的不可用（无权限 / 只读介质 / 盘断链）。这与「配置的
+        // 数据位置不可达」是同一件事，走同一个可操作的逃生屏（重试 / 本次用默认位置），
+        // 而不是让它继续走到 DB 层被误报成「数据库损坏」。
+        throw DataRootUnavailableException(configuredPath: dir.path);
+      }
+    }
   }
 
   // ---- 单一真相源：三个根的解析函数（实例 + 静态层共用） ----

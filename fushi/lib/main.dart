@@ -76,7 +76,11 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
-    show VideoBooksCompanion, VideoBookRow, ProfileMediaKind;
+    show
+        VideoBooksCompanion,
+        VideoBookRow,
+        ProfileMediaKind,
+        FushiDatabaseFailureKind;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
@@ -1328,6 +1332,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // "disk I/O error" with a dead Retry loop.
     final unrecoverable = appModel.unrecoverableDbError;
     if (unrecoverable != null) {
+      // BUG-1899：「打不开」不是「坏了」。父目录不存在 / 无权限 / 只读介质 / 盘断链
+      // 都会让 sqlite 报 SQLITE_CANTOPEN(14)，此前它们共用「数据库损坏，请恢复备份或
+      // 清空数据」这句话——在磁盘完好的情况下把用户往清空数据上引。
+      final bool cannotOpen =
+          unrecoverable.kind == FushiDatabaseFailureKind.cannotOpen;
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final cs = ColorScheme.fromSeed(
@@ -1346,11 +1355,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.broken_image_outlined,
-                        size: 48, color: cs.error),
+                    Icon(
+                        cannotOpen
+                            ? Icons.folder_off_outlined
+                            : Icons.broken_image_outlined,
+                        size: 48,
+                        color: cs.error),
                     const SizedBox(height: 16),
                     Text(
-                      t.db_unrecoverable_title,
+                      cannotOpen
+                          ? t.db_cannot_open_title
+                          : t.db_unrecoverable_title,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -1360,7 +1375,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      t.db_unrecoverable_message,
+                      cannotOpen
+                          ? t.db_cannot_open_message
+                          : t.db_unrecoverable_message,
                       style: TextStyle(
                         fontSize: 13,
                         color: cs.onSurfaceVariant,
