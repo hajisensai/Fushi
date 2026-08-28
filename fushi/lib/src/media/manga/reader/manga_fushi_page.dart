@@ -3784,11 +3784,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
+        // Cache the navigator before either async cleanup step; this callback
+        // must not read BuildContext after an await.
+        final NavigatorState navigator = Navigator.of(context);
         // Fullscreen is a presentation layer above the reader route. Back/Esc
         // leaves that layer first and keeps the current WebView/page intact.
         if (await _exitOwnedFullscreenBeforePop()) return;
-        // 在 await 前拿住 navigator：onWillPop 是异步长操作（落位置 + closeMedia）。
-        final NavigatorState navigator = Navigator.of(context);
         final bool shouldPop = await onWillPop();
         if (!mounted || !shouldPop) return;
         navigator.pop();
