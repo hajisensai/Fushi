@@ -1489,15 +1489,33 @@ JSON.stringify((function(){
   /// 平台清单，迟早在某个平台上分叉成两种加载行为。
   static bool get shouldInlinePopupAssets => _shouldInlinePopupAssets;
 
-  /// 构造内联资产版的 popup HTML，供 [shouldInlinePopupAssets] 为真的平台使用。
+  /// 内联资产**就绪时**返回内联 popup HTML，否则返回 null（调用方回退 file:// URL）。
   ///
   /// 与 in-app 弹窗同一份 memo 路径，故预览与真实弹窗吃的是同一份 popup.js /
   /// popup.css，不会出现「预览好看、真弹窗不一样」。
-  static String buildInlinePopupHtml({
+  ///
+  /// BUG-1918 ②：此前对外只暴露裸的 [_buildInlinePopupHtml]，它假定四个
+  /// `_inline*` 静态字段已装载——而装载有两条路径：启动时 fire-and-forget 的
+  /// [preloadInlinePopupAssets]，以及真弹窗 build 里的同步兜底
+  /// [_ensureInlinePopupAssetsLoaded]。词典样式预览只调了裸构造，于是在预读
+  /// 尚未完成（或曾瞬时失败）时拼出 `<style></style><script></script>` 的空壳：
+  /// 没有 popup.css 也没有 popup.js，预览白屏且连 `window.renderPopup` 都不存在。
+  ///
+  /// 「确保装载 + 四项非空 + 拼装」是一个不可分的原语，任何调用点都不该再自己
+  /// 拼这三步——真弹窗的 build 也改用它，两个入口从此不可能漂移。
+  static String? buildInlinePopupHtmlIfReady({
     required String themeAttr,
     required String bgHex,
-  }) =>
-      _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex);
+  }) {
+    _ensureInlinePopupAssetsLoaded();
+    if (_inlineCss == null ||
+        _inlineDictMediaJs == null ||
+        _inlineSelectionJs == null ||
+        _inlinePopupJs == null) {
+      return null;
+    }
+    return _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex);
+  }
 
   /// 测试专用别名，保留既有调用点。
   @visibleForTesting
@@ -1553,13 +1571,13 @@ JSON.stringify((function(){
     InAppWebViewInitialData? popupInitialData;
     final bool shouldInlinePopupAssets = _shouldInlinePopupAssets;
     if (shouldInlinePopupAssets) {
-      _ensureInlinePopupAssetsLoaded();
-      if (_inlineCss != null &&
-          _inlineDictMediaJs != null &&
-          _inlineSelectionJs != null &&
-          _inlinePopupJs != null) {
+      final String? inlineHtml = buildInlinePopupHtmlIfReady(
+        themeAttr: themeAttr,
+        bgHex: bgHex,
+      );
+      if (inlineHtml != null) {
         popupInitialData = InAppWebViewInitialData(
-          data: _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex),
+          data: inlineHtml,
           mimeType: 'text/html',
           encoding: 'utf-8',
         );

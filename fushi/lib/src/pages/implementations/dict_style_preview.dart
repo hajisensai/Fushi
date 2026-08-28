@@ -110,23 +110,29 @@ class _DictStylePreviewState extends State<DictStylePreview> {
 
   @override
   Widget build(BuildContext context) {
-    final bool inline = DictionaryPopupWebViewState.shouldInlinePopupAssets;
     final ThemeData theme = Theme.of(context);
+    // 与真弹窗同一个原语：它内部先确保内联资产装载，未就绪才返回 null。
+    // 不能再调裸的构造函数——启动时的预读是 fire-and-forget，早开设置就会拼出
+    // 空 <script>，预览白屏（BUG-1918 ②）。
+    final String? inlineHtml =
+        DictionaryPopupWebViewState.shouldInlinePopupAssets
+            ? DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
+                themeAttr:
+                    theme.brightness == Brightness.dark ? 'dark' : 'light',
+                bgHex: _hex(theme.colorScheme.surface),
+              )
+            : null;
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
-        initialData: inline
+        initialData: inlineHtml != null
             ? InAppWebViewInitialData(
-                data: DictionaryPopupWebViewState.buildInlinePopupHtml(
-                  themeAttr:
-                      theme.brightness == Brightness.dark ? 'dark' : 'light',
-                  bgHex: _hex(theme.colorScheme.surface),
-                ),
+                data: inlineHtml,
                 mimeType: 'text/html',
                 encoding: 'utf-8',
               )
             : null,
-        initialUrlRequest: inline
+        initialUrlRequest: inlineHtml != null
             ? null
             : URLRequest(
                 url: WebUri(webViewAssetUrl('assets/popup/popup.html')),
