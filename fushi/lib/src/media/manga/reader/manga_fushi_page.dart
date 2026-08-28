@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
+import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -48,6 +49,11 @@ import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dar
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/global_navigation.dart'
+    show
+        desktopWindowFullscreenSupported,
+        readDesktopWindowFullscreen,
+        setDesktopWindowFullscreen;
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show
         GamepadButton,
@@ -121,6 +127,10 @@ enum MangaReaderInputAction {
   /// 隐藏界面的方式，这两块恒挂在画面上遮住页图；移动端还联动系统栏沉浸，隐藏
   /// 界面即真全屏。
   toggleChrome,
+
+  /// Toggle the desktop window's fullscreen presentation without rebuilding
+  /// the manga WebView or losing its current OCR/selection state.
+  toggleFullscreen,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -372,6 +382,9 @@ class MangaFushiPage extends BaseSourcePage {
     required MangaReadingMode mode,
   }) {
     if (action == null) return null;
+    if (action == ShortcutAction.globalToggleFullscreen) {
+      return MangaReaderInputAction.toggleFullscreen;
+    }
     if (action == ShortcutAction.mangaDismissDict) {
       return dictionaryShown ? MangaReaderInputAction.dismissDictionary : null;
     }
@@ -434,7 +447,13 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static final String navigationKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaNavigationKey',
-    keys: const <String>['ArrowLeft', 'ArrowRight', 'Escape', 'Esc'],
+    keys: const <String>[
+      'ArrowLeft',
+      'ArrowRight',
+      'Escape',
+      'Esc',
+      'F11',
+    ],
     forwardRepeats: false,
     stopPropagation: true,
   );
@@ -657,7 +676,7 @@ class MangaFushiPage extends BaseSourcePage {
 }
 
 class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, WindowListener {
   InAppWebViewController? _controller;
   EpubBookRow? _bookRow;
 
@@ -690,6 +709,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 「显示界面」按钮——漫画正文是原生 WebView，空白点击手势全在注入的 JS 里且
   /// 已被翻页占用，没有这个按钮的话触屏设备再没有第二条通道能把界面唤回来。
   bool _chromeVisible = true;
+
+  bool _isWindowFullscreen = false;
+  bool _ownsWindowFullscreen = false;
+  bool _fullscreenTransitioning = false;
 
   /// 双页布局偏好：页内菜单运行时切换，不持久化，默认自动（横屏双页/竖屏单页）。
   MangaSpreadPreference _spreadPreference = MangaSpreadPreference.auto;
@@ -931,6 +954,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
     );
     WidgetsBinding.instance.addObserver(this);
+    if (Platform.isWindows || Platform.isLinux) {
+      windowManager.addListener(this);
+    }
+    if (desktopWindowFullscreenSupported) {
+      unawaited(_readInitialFullscreenState());
+    }
     // 进程退出兜底：把未落盘的页码 flush 掉（与 EPUB/PDF 阅读器同纪律）。
     ExitFlushRegistry.instance.register(_flushPosition);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBook());
@@ -947,6 +976,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    if (Platform.isWindows || Platform.isLinux) {
+      windowManager.removeListener(this);
+    }
+    if (_ownsWindowFullscreen) {
+      _ownsWindowFullscreen = false;
+      unawaited(_restoreOwnedFullscreenAfterDispose());
+    }
     // 交还音量键所有权：必须早于其它拆栈，且无条件执行。
     _volumeKeyPagingController.dispose();
     ExitFlushRegistry.instance.unregister(_flushPosition);
@@ -978,6 +1014,76 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     super.dispose();
   }
 
+  Future<void> _readInitialFullscreenState() async {
+    final bool? fullscreen = await readDesktopWindowFullscreen();
+    if (!mounted || fullscreen == null || fullscreen == _isWindowFullscreen) {
+      return;
+    }
+    setState(() => _isWindowFullscreen = fullscreen);
+  }
+
+  Future<void> _changeMangaFullscreen({bool? requested}) async {
+    if (!desktopWindowFullscreenSupported || _fullscreenTransitioning) return;
+    _fullscreenTransitioning = true;
+    try {
+      final bool fullscreen = requested ??
+          !((await readDesktopWindowFullscreen()) ?? _isWindowFullscreen);
+      if (!mounted) return;
+      // Claim ownership before the native transition starts. If the route is
+      // removed while the platform call is in flight, dispose can still issue
+      // the matching exit instead of leaking a borderless fullscreen window.
+      if (fullscreen) {
+        _ownsWindowFullscreen = true;
+      }
+      final bool? applied = await setDesktopWindowFullscreen(fullscreen);
+      if (!mounted) {
+        if (fullscreen && _ownsWindowFullscreen) {
+          _ownsWindowFullscreen = false;
+          await _restoreOwnedFullscreenAfterDispose();
+        }
+        return;
+      }
+      if (applied == null) {
+        if (fullscreen) _ownsWindowFullscreen = false;
+        return;
+      }
+      _ownsWindowFullscreen = applied;
+      if (_isWindowFullscreen != applied) {
+        setState(() => _isWindowFullscreen = applied);
+      }
+    } finally {
+      _fullscreenTransitioning = false;
+    }
+  }
+
+  Future<void> _setMangaFullscreen(bool fullscreen) =>
+      _changeMangaFullscreen(requested: fullscreen);
+
+  Future<void> _toggleMangaFullscreen() => _changeMangaFullscreen();
+
+  Future<bool> _exitOwnedFullscreenBeforePop() async {
+    if (!_ownsWindowFullscreen) return false;
+    await _setMangaFullscreen(false);
+    return true;
+  }
+
+  Future<void> _restoreOwnedFullscreenAfterDispose() async {
+    await setDesktopWindowFullscreen(false);
+  }
+
+  @override
+  void onWindowEnterFullScreen() {
+    if (!mounted || _isWindowFullscreen) return;
+    setState(() => _isWindowFullscreen = true);
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    _ownsWindowFullscreen = false;
+    if (!mounted || !_isWindowFullscreen) return;
+    setState(() => _isWindowFullscreen = false);
+  }
+
   Future<void> _closePageSession(MangaReaderSession session) async {
     await session.close();
   }
@@ -1000,6 +1106,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   Future<void> onSourcePagePop() async {
+    if (_ownsWindowFullscreen) {
+      await _setMangaFullscreen(false);
+    }
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     _readingTimeTracker?.stop();
@@ -2110,6 +2219,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     MangaReaderInputAction action, {
     required _MangaReaderInputSource source,
   }) {
+    if (action == MangaReaderInputAction.toggleFullscreen) {
+      unawaited(_toggleMangaFullscreen());
+      return;
+    }
     // 框选识别模式独占键盘：「返回上一级」/ 关词典键（默认都是 Escape）退出模式，
     // 翻页键一律吞掉——框选途中翻走当前页会让松手时算出的 pageIndex 指向另一页，
     // 回写就落错页。放在去抖之前：两条输入源（Flutter / 原生 WebView 桥）共用这一个
@@ -2195,6 +2308,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // 「返回上一级」（默认 Esc）：弹窗持焦时也要能关弹窗。它在 universal scope，
         // [resolveDictionaryPopupInputToken] 会在 manga 未命中后回落到 universal。
         ShortcutAction.globalBack,
+        ShortcutAction.globalToggleFullscreen,
       };
 
   @override
@@ -2245,6 +2359,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           key,
           modifiers: modifiers,
           scope: ShortcutScope.universal,
+        ) ??
+        registry.resolveKeyboard(
+          key,
+          modifiers: modifiers,
+          scope: ShortcutScope.global,
         );
     final ShortcutAction? corrected = resolveMangaArrowPageTurn(
           key: key,
@@ -2281,6 +2400,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         registry.resolveGamepad(
           button,
           scope: ShortcutScope.universal,
+        ) ??
+        registry.resolveGamepad(
+          button,
+          scope: ShortcutScope.global,
         );
     final ShortcutAction? corrected = resolveMangaDpadPageTurn(
           button: button,
@@ -3661,6 +3784,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
+        // Fullscreen is a presentation layer above the reader route. Back/Esc
+        // leaves that layer first and keeps the current WebView/page intact.
+        if (await _exitOwnedFullscreenBeforePop()) return;
         // 在 await 前拿住 navigator：onWillPop 是异步长操作（落位置 + closeMedia）。
         final NavigatorState navigator = Navigator.of(context);
         final bool shouldPop = await onWillPop();
@@ -3949,6 +4075,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             onPressed: _toggleMangaChrome,
           ),
         ),
+        if (desktopWindowFullscreenSupported)
+          Tooltip(
+            message: t.shortcut_action_global_toggle_fullscreen,
+            child: IconButton(
+              key: const ValueKey<String>('manga_fullscreen_button'),
+              icon: Icon(
+                _isWindowFullscreen
+                    ? Icons.fullscreen_exit_rounded
+                    : Icons.fullscreen_rounded,
+                color: Colors.white,
+              ),
+              // The method itself serializes native transitions. Keeping the
+              // button enabled avoids rebuilding it as permanently disabled
+              // when the final state update occurs before the transition's
+              // finally block clears its guard.
+              onPressed: () => unawaited(_toggleMangaFullscreen()),
+            ),
+          ),
       ],
     );
   }

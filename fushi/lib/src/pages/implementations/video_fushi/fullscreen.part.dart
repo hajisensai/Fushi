@@ -319,7 +319,29 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// （改动前窗口侧 Video 未传回调、落 media_kit 默认 = 桌面真全屏），属本修复范围外的
   /// 桌面回归，故桌面转调默认回调原样保留。
   Future<void> _enterVideoNativeFullscreen() async {
-    if (!isMobilePlatform) return defaultEnterNativeFullscreen();
+    if (!isMobilePlatform) {
+      if (Platform.isWindows) {
+        // media_kit directly edits the HWND and never emits window_manager's
+        // fullscreen event. Hide the app frame before that transition so no
+        // title-bar frame remains above the native fullscreen surface.
+        FushiWindowsTitleBar.setContentFullscreen(
+          owner: this,
+          enabled: true,
+        );
+      }
+      try {
+        await defaultEnterNativeFullscreen();
+      } catch (_) {
+        if (Platform.isWindows) {
+          FushiWindowsTitleBar.setContentFullscreen(
+            owner: this,
+            enabled: false,
+          );
+        }
+        rethrow;
+      }
+      return;
+    }
     await SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
       overlays: <SystemUiOverlay>[],
@@ -343,12 +365,23 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 设备方向，无竖屏问题。
   Future<void> _exitVideoNativeFullscreen() async {
     if (!isMobilePlatform) {
-      await defaultExitNativeFullscreen();
-      // BUG-973: AppKit 的 `toggleFullScreen` 退出原生全屏会重建标题栏视图、可能把
-      // `standardWindowButton.isHidden` 复位 → 交通灯在窗口化播放态重新遮住左上角控件。
-      // 退全屏后重新断言隐藏（与 initState 的隐藏一致）。仅 macOS 有交通灯；
-      // Windows / Linux 桌面 no-op。
-      await setMacOSTrafficLightsHidden(true);
+      try {
+        await defaultExitNativeFullscreen();
+        // BUG-973: AppKit 的 `toggleFullScreen` 退出原生全屏会重建标题栏视图、可能把
+        // `standardWindowButton.isHidden` 复位 → 交通灯在窗口化播放态重新遮住左上角控件。
+        // 退全屏后重新断言隐藏（与 initState 的隐藏一致）。仅 macOS 有交通灯；
+        // Windows / Linux 桌面 no-op。
+        await setMacOSTrafficLightsHidden(true);
+      } finally {
+        if (Platform.isWindows) {
+          // Wait until media_kit has restored the HWND rectangle and style;
+          // showing the frame earlier causes a visible flash during exit.
+          FushiWindowsTitleBar.setContentFullscreen(
+            owner: this,
+            enabled: false,
+          );
+        }
+      }
       return;
     }
     await SystemChrome.setEnabledSystemUIMode(

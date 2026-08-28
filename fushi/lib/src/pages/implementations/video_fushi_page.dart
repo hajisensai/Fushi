@@ -29,6 +29,7 @@ import 'package:fushi/src/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -3696,6 +3697,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void dispose() {
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.clearHandler(this);
+      // Abnormal route teardown must never leave the app frame hidden. The
+      // normal fullscreen exit releases this owner only after HWND restoration.
+      FushiWindowsTitleBar.setContentFullscreen(
+        owner: this,
+        enabled: false,
+      );
     }
     WidgetsBinding.instance.removeObserver(this);
     // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。

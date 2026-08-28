@@ -1822,10 +1822,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           ),
                         );
                       }
+                      navigation = FushiAppUiScale(
+                        scale: uiScale,
+                        child: navigation,
+                      );
                       if (Platform.isWindows &&
                           FushiWindowsTitleBar.isEnabled) {
                         navigation = FushiWindowsTitleBar(
-                          leadingInset: viewport.width >= 600 ? 80 : 0,
+                          // The native-sized frame sits outside app UI zoom;
+                          // align its title with the visually scaled home rail.
+                          leadingInset:
+                              viewport.width >= 600 ? 80 * uiScale : 0,
                           title: ValueListenableBuilder<HomeTab>(
                             valueListenable: homeShellTabNotifier,
                             builder: (BuildContext context, HomeTab tab,
@@ -1836,7 +1843,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           child: navigation,
                         );
                       }
-                      return FushiAppUiScale(scale: uiScale, child: navigation);
+                      return navigation;
                     },
                   ),
                 ),
