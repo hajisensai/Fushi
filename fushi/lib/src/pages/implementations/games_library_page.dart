@@ -676,11 +676,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final Set<String>? allowedIds =
         ref.watch(filteredGameIdsProvider).valueOrNull;
     final List<GalgameEntry> visible = _visibleFor(allowedIds);
-    final Widget grid = _games.isEmpty
-        ? _buildEmpty(context)
-        : (visible.isEmpty
-            ? _buildNoMatch(context)
-            : _buildGrid(context, visible));
+    // BUG-1911：**不要**把三元收回来。在途下载占位与「库里有什么 / 筛出了什么」
+    // 是两条正交的渲染输入，分支判定整个下沉到 [_buildBody]；这里再挑一次分支就
+    // 等于重新把占位关进网格分支里。
     final Widget body = FushiFileDropTarget(
       debugLabel: 'games-library',
       onDrop: (List<String> paths, Offset position) =>
@@ -689,7 +687,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         children: <Widget>[
           if (_games.isNotEmpty) _buildToolbar(context),
           if (_games.isNotEmpty) _buildTagFilterBar(allTags),
-          Expanded(child: grid),
+          Expanded(child: _buildBody(context, visible)),
         ],
       ),
     );
@@ -1093,18 +1091,106 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return cardWidth * 4 / 3 + titleLine * 2 + 10 + kTextBlockSlack;
   }
 
+  /// 库页主体：**在途下载占位**与**库内容**是两条并列的渲染输入，同挂一棵
+  /// [CustomScrollView]。
+  ///
+  /// BUG-1911（二次修正）：占位卡代表的是「还没进库的东西」，它天然不受「库里
+  /// 有什么」（`_games`）和「筛选匹配了什么」（`visible`）这两个判据管辖。首版把
+  /// 占位 sliver 挂在网格构造内部，于是空库首次下载（走空态）与筛选无匹配（走无
+  /// 匹配态）这两条路径上占位整个消失——恰恰是用户最需要它的时刻（用户原话「否则
+  /// 不知道是否加入了」说的正是空库那一次）。现在占位恒定排在库内容段之前；空态 /
+  /// 无匹配态用 [SliverFillRemaining] 只吃它**之后**的剩余空间，挤不掉它。
+  Widget _buildBody(BuildContext context, List<GalgameEntry> visible) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final _GameGridMetrics metrics =
+            _GameGridMetrics.forWidth(constraints.maxWidth);
+        return CustomScrollView(
+          slivers: <Widget>[
+            ..._buildPendingDownloadSlivers(context, metrics),
+            ..._buildLibrarySlivers(context, visible, metrics),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 在途下载占位段（与库内容段并列，见 [_buildBody]）。排在最前——用户刚点完
+  /// 下载，第一眼要能确认「加进来了」。没有在途下载时是空段。
+  List<Widget> _buildPendingDownloadSlivers(
+    BuildContext context,
+    _GameGridMetrics metrics,
+  ) {
+    final List<DiscoveryDownloadTask> pending = _pendingGameDownloads;
+    if (pending.isEmpty) return const <Widget>[];
+    return <Widget>[
+      SliverPadding(
+        key: const ValueKey<String>('games_pending_downloads'),
+        // 底边留 0：下一段（网格）自带 16 顶边，两段之间正好一个 spacing。
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        sliver: SliverGrid.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: metrics.columns,
+            mainAxisSpacing: _kGameGridSpacing,
+            crossAxisSpacing: _kGameGridSpacing,
+            mainAxisExtent: _gameCardExtent(context, metrics.cardWidth),
+          ),
+          itemCount: pending.length,
+          itemBuilder: (BuildContext context, int i) =>
+              _buildPendingDownloadCard(pending[i]),
+        ),
+      ),
+    ];
+  }
+
+  /// 库内容段：空库 → 空态；有库但筛选无匹配 → 无匹配态；否则 → 海报网格。
+  ///
+  /// 两个提示态各自持有自己的布局（[SliverFillRemaining] 居中、不带网格那份 FAB
+  /// 底部留白），所以它们只填满**占位段之后**的剩余高度，不会把占位挤出视口。
+  List<Widget> _buildLibrarySlivers(
+    BuildContext context,
+    List<GalgameEntry> visible,
+    _GameGridMetrics metrics,
+  ) {
+    if (_games.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(hasScrollBody: false, child: _buildEmpty(context)),
+      ];
+    }
+    if (visible.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: _buildNoMatch(context),
+        ),
+      ];
+    }
+    return <Widget>[
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+        sliver: SliverMainAxisGroup(
+          slivers: _buildGridSlivers(context, visible, metrics),
+        ),
+      ),
+    ];
+  }
+
   /// 游戏海报网格（对齐 ReinaManager 库页：3:4 竖版海报卡，见
   /// `docs/design/galgame-library-reina-visual-parity.md` §1）+ 合集分区。
   ///
   /// 不再套书架的 extent/比例：galgame 是竖版海报（3:4 封面 + 下方标题），与横向
-  /// 偏方的书封不同形。目标卡宽≈168（ReinaManager 海报宽档），间距 16，
-  /// childAspectRatio 按「3:4 封面 + 一行标题」估（约 0.62），标题超长由卡内省略。
+  /// 偏方的书封不同形。目标卡宽≈168（ReinaManager 海报宽档），间距 16，卡高按真实
+  /// 行高算（[_gameCardExtent]），标题超长由卡内省略。
   ///
   /// 合集渲染照书架分区范式（去碎片方案 A+顶部）：属合集的游戏折进
   /// [CollectionShelfRow] 横排行集中在前，散卡合成单一 SliverGrid 在后；排序/筛选
-  /// 作用于 [_visible]（散卡序与成员存活），组内成员序走合集 sortIndex（与书架/
+  /// 作用于 [_visibleFor]（散卡序与成员存活），组内成员序走合集 sortIndex（与书架/
   /// 详情页同一顺序真相源）。
-  Widget _buildGrid(BuildContext context, List<GalgameEntry> visible) {
+  List<Widget> _buildGridSlivers(
+    BuildContext context,
+    List<GalgameEntry> visible,
+    _GameGridMetrics metrics,
+  ) {
     final List<CollectionGroup<GalgameEntry>> groups =
         groupByCollections<GalgameEntry>(
       items: <CollectionOrderingItem<GalgameEntry>>[
@@ -1120,82 +1206,40 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       collectionsById: _collectionsById,
       memberSortIndex: _memberSortIndex,
     );
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        // 复算 MaxCrossAxisExtent(168) 的列数/卡宽（ceil→卡宽 ≤168），供合集行
-        // 成员卡与散卡网格取同一实际卡宽，行内卡与网格卡逐像素同尺寸。
-        const double spacing = 16;
-        const double targetExtent = 168;
-        final double rawWidth = constraints.maxWidth - 32;
-        final double available = rawWidth < 1 ? 1 : rawWidth;
-        final int columns = ((available + spacing) / (targetExtent + spacing))
-            .ceil()
-            .clamp(1, 1 << 10);
-        final double cardWidth =
-            (available - (columns - 1) * spacing) / columns;
-        final List<Widget> slivers = <Widget>[];
-        final List<GalgameEntry> loose = <GalgameEntry>[];
-        for (final CollectionGroup<GalgameEntry> group in groups) {
-          final MediaCollectionRow? collection = group.collection;
-          if (collection == null) {
-            loose.add(group.coverItem.payload);
-          } else {
-            slivers.add(
-              SliverToBoxAdapter(
-                child: _buildCollectionRow(group, collection, cardWidth),
-              ),
-            );
-          }
-        }
-        // BUG-1911：在途下载排在最前——用户刚点完下载，第一眼要能确认「加进来了」。
-        final List<DiscoveryDownloadTask> pending = _pendingGameDownloads;
-        if (pending.isNotEmpty) {
-          slivers.add(
-            SliverGrid.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                mainAxisSpacing: spacing,
-                crossAxisSpacing: spacing,
-                mainAxisExtent: _gameCardExtent(context, cardWidth),
-              ),
-              itemCount: pending.length,
-              itemBuilder: (BuildContext context, int i) =>
-                  _buildPendingDownloadCard(pending[i]),
-            ),
-          );
-          slivers.add(
-            SliverToBoxAdapter(child: SizedBox(height: spacing)),
-          );
-        }
-        if (loose.isNotEmpty) {
-          slivers.add(
-            SliverGrid.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                mainAxisSpacing: spacing,
-                crossAxisSpacing: spacing,
-                // BUG-1184：原先是死比例 0.62（按「3:4 封面 + 一行标题」估）。窄屏
-                // 上卡宽只有约 136px，文字区按比例只剩 38px，物理上放不下两行——
-                // galgame 名普遍 20 字以上，单行等于只看得到开头几个字。改为按真实
-                // 行高算出卡高（封面仍是精确的 3:4，不再被文字区挤压变形）。
-                mainAxisExtent: _gameCardExtent(context, cardWidth),
-              ),
-              itemCount: loose.length,
-              itemBuilder: (BuildContext context, int i) =>
-                  _buildGameCard(loose[i]),
-            ),
-          );
-        }
-        return CustomScrollView(
-          slivers: <Widget>[
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-              sliver: SliverMainAxisGroup(slivers: slivers),
-            ),
-          ],
+    final List<Widget> slivers = <Widget>[];
+    final List<GalgameEntry> loose = <GalgameEntry>[];
+    for (final CollectionGroup<GalgameEntry> group in groups) {
+      final MediaCollectionRow? collection = group.collection;
+      if (collection == null) {
+        loose.add(group.coverItem.payload);
+      } else {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _buildCollectionRow(group, collection, metrics.cardWidth),
+          ),
         );
-      },
-    );
+      }
+    }
+    if (loose.isNotEmpty) {
+      slivers.add(
+        SliverGrid.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: metrics.columns,
+            mainAxisSpacing: _kGameGridSpacing,
+            crossAxisSpacing: _kGameGridSpacing,
+            // BUG-1184：原先是死比例 0.62（按「3:4 封面 + 一行标题」估）。窄屏
+            // 上卡宽只有约 136px，文字区按比例只剩 38px，物理上放不下两行——
+            // galgame 名普遍 20 字以上，单行等于只看得到开头几个字。改为按真实
+            // 行高算出卡高（封面仍是精确的 3:4，不再被文字区挤压变形）。
+            mainAxisExtent: _gameCardExtent(context, metrics.cardWidth),
+          ),
+          itemCount: loose.length,
+          itemBuilder: (BuildContext context, int i) =>
+              _buildGameCard(loose[i]),
+        ),
+      );
+    }
+    return slivers;
   }
 
   /// 一个游戏合集的横排行：行头（合集名 + 数量 + 查看全部 → 详情页）+ 行内成员
@@ -1301,6 +1345,38 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onEditLanguage: () => unawaited(_editGameLanguage(game)),
     );
   }
+}
+
+/// 游戏网格的卡间距。
+const double _kGameGridSpacing = 16;
+
+/// 游戏海报卡的目标宽度（ReinaManager 海报宽档）。
+const double _kGameCardTargetWidth = 168;
+
+/// 游戏网格几何：列数 + 实际卡宽。
+///
+/// 在途下载占位段、散卡网格、合集横排行三处共用同一份——三段的卡片必须逐像素同
+/// 尺寸，各算各的迟早会分叉（BUG-1184 就是两处各写一遍死比例埋的雷）。
+class _GameGridMetrics {
+  const _GameGridMetrics({required this.columns, required this.cardWidth});
+
+  /// 复算 `MaxCrossAxisExtent(168)` 的列数与卡宽（ceil → 卡宽 ≤168）。
+  factory _GameGridMetrics.forWidth(double maxWidth) {
+    // 32 = 网格段左右各 16 的内边距。
+    final double rawWidth = maxWidth - 32;
+    final double available = rawWidth < 1 ? 1 : rawWidth;
+    final int columns = ((available + _kGameGridSpacing) /
+            (_kGameCardTargetWidth + _kGameGridSpacing))
+        .ceil()
+        .clamp(1, 1 << 10);
+    return _GameGridMetrics(
+      columns: columns,
+      cardWidth: (available - (columns - 1) * _kGameGridSpacing) / columns,
+    );
+  }
+
+  final int columns;
+  final double cardWidth;
 }
 
 /// BUG-1911：从下载队列里挑出**尚未入库**的游戏下载（顶层纯函数，供测试直接驱动；
