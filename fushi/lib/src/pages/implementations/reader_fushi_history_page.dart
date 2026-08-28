@@ -27,6 +27,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
+import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -2134,6 +2135,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ),
       dragLabel: displayTitleForBook(item: item, rawTitle: item.title),
       onTap: () async {
+        // 漫画先进作品页，不直接开书。
+        //
+        // 作品页**刻意不走 `openMedia`**：那条路是「媒体会话」语义——沉浸模式、
+        // wakelock、audio handler、_currentMediaSource 全在里面开。作品页是个可
+        // 浏览的库页面（章节列表、已读标记、刷新），当媒体会话打开会让它顶着
+        // 隐藏的系统 UI、亮着屏。真正的会话由作品页内部再 `openMedia` 开阅读器
+        // 时启动，语义与 v88 前逐字相同。
+        if (_isMangaItem(item) && bookKey != null) {
+          await Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext context) => MangaSeriesPage(
+                target: ShelfMangaSeriesTarget(bookKey, item: item),
+              ),
+            ),
+          );
+          return;
+        }
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(
           ref: ref,

@@ -6,10 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
@@ -26,9 +29,14 @@ sealed class MangaSeriesTarget {
 /// 已在书架的条目。**只带 bookKey**：作品页因此不需要任何来源上下文就能开，
 /// 源挂了、扩展被禁用、甚至离线，用户依然能看到自己书架里这部作品有哪些章。
 class ShelfMangaSeriesTarget extends MangaSeriesTarget {
-  const ShelfMangaSeriesTarget(this.bookKey);
+  const ShelfMangaSeriesTarget(this.bookKey, {this.item});
 
   final String bookKey;
+
+  /// 书架传进来的媒体条目。开阅读器时原样交回 `AppModel.openMedia`，让沉浸
+  /// 模式、wakelock、audio handler、历史记账与 v88 前逐字相同。书架以外的入口
+  /// （源浏览）没有它，开阅读器时现造一条。
+  final MediaItem? item;
 }
 
 /// 还没入库的在线作品，来自一次源浏览。
@@ -113,10 +121,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         case ShelfMangaSeriesTarget(:final String bookKey):
           await _loadFromShelf(bookKey);
         case SourceMangaSeriesTarget(
-            :final OnlineMangaLibraryService service,
-            :final OnlineMangaLibraryEntry seed,
-            :final String? sourceLabel,
-          ):
+          :final OnlineMangaLibraryService service,
+          :final OnlineMangaLibraryEntry seed,
+          :final String? sourceLabel,
+        ):
           await _loadFromSource(service, seed, sourceLabel);
       }
     } on Object catch (error, stack) {
@@ -132,8 +140,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (row == null) {
       throw StateError('The book is no longer in the library: $bookKey');
     }
-    final OnlineMangaLibraryEntry? entry =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata);
+    final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    );
     OnlineMangaLibraryService? service;
     if (entry != null) {
       // 服务解析失败（平台不支持等）不该挡住离线渲染——章节列表已经在描述符
@@ -141,12 +150,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       try {
         service = _appModel.onlineMangaLibraryService(entry.runtime);
       } on Object catch (error, stack) {
-        ErrorLogService.instance
-            .log('MangaSeriesPage.resolveService', error, stack);
+        ErrorLogService.instance.log(
+          'MangaSeriesPage.resolveService',
+          error,
+          stack,
+        );
       }
     }
-    final Map<String, MangaChapterStateRow> states =
-        await _readChapterStates(row);
+    final Map<String, MangaChapterStateRow> states = await _readChapterStates(
+      row,
+    );
     if (!mounted) return;
     setState(() {
       _row = row;
@@ -171,8 +184,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry entry = existing == null
         ? seed
         : OnlineMangaLibraryEntry.tryParse(existing.sourceMetadata) ?? seed;
-    final Map<String, MangaChapterStateRow> states =
-        existing == null ? const <String, MangaChapterStateRow>{} : await _readChapterStates(existing);
+    final Map<String, MangaChapterStateRow> states = existing == null
+        ? const <String, MangaChapterStateRow>{}
+        : await _readChapterStates(existing);
     if (!mounted) return;
     setState(() {
       _row = existing;
@@ -209,10 +223,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (service == null || entry == null || _refreshing) return;
     if (!service.adapter.isSupportedOnThisPlatform) {
       if (mounted) {
-        setState(() => _refreshError = const OnlineMangaUnavailable(
-              OnlineMangaUnavailableReason.platformUnsupported,
-              'This manga runtime is not available on this platform',
-            ));
+        setState(
+          () => _refreshError = const OnlineMangaUnavailable(
+            OnlineMangaUnavailableReason.platformUnsupported,
+            'This manga runtime is not available on this platform',
+          ),
+        );
       }
       return;
     }
@@ -224,8 +240,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       final String? bookKey = _bookKey;
       if (bookKey == null) {
         // 未入库：只拉，不落库。
-        final OnlineMangaRefreshResult result =
-            await service.adapter.refresh(entry);
+        final OnlineMangaRefreshResult result = await service.adapter.refresh(
+          entry,
+        );
         if (!mounted) return;
         setState(() {
           _entry = entry.copyWith(
@@ -323,14 +340,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
       if (!mounted) return;
       setState(() => _entry = selected);
-      await Navigator.of(context).push(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
-            child: MangaFushiPage(item: null, bookKey: bookKey!),
-          ),
-        ),
-      );
+      await _openReader(bookKey);
       // 从阅读器回来必须重读：读了哪些页、哪章读完了全在阅读器里写的库。
       await _reloadAfterReading();
     } on OnlineMangaUnavailable catch (error) {
@@ -351,15 +361,44 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<void> _openLocalBook() async {
     final String? bookKey = _bookKey;
     if (bookKey == null) return;
-    await Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
-          child: MangaFushiPage(item: null, bookKey: bookKey),
-        ),
-      ),
-    );
+    await _openReader(bookKey);
     await _reloadAfterReading();
+  }
+
+  /// 开阅读器。
+  ///
+  /// **必须走 `openMedia`**，不能自己 `Navigator.push` 一个 `MangaFushiPage`：
+  /// 沉浸模式、wakelock、audio handler 预热、`_currentMediaSource`、历史记账
+  /// 全在 `openMedia` 里。v88 前书架是直接 `openMedia` 开阅读器的，作品页插在
+  /// 中间后，这些副作用必须原样跟着阅读器走，否则漫画会静默丢掉一整套会话行为。
+  ///
+  /// `MangaFushiSource.buildLaunchPage` 仍然返回阅读器（不是作品页），所以这里
+  /// 不会自我递归。
+  Future<void> _openReader(String bookKey) async {
+    MediaItem? item = switch (widget.target) {
+      ShelfMangaSeriesTarget(:final MediaItem? item) => item,
+      SourceMangaSeriesTarget() => null,
+    };
+    item ??= await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
+    if (!mounted) return;
+    if (item == null) {
+      // 条目刚入库、MediaItem 还建不出来（不该发生）：退回直接开阅读器，
+      // 宁可少一层会话副作用，也不能让「点了没反应」。
+      await Navigator.of(context).push(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
+            child: MangaFushiPage(item: null, bookKey: bookKey),
+          ),
+        ),
+      );
+      return;
+    }
+    await _appModel.openMedia(
+      ref: ref,
+      mediaSource: MangaFushiSource.instance,
+      item: item,
+    );
   }
 
   Future<void> _reloadAfterReading() async {
@@ -367,8 +406,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (bookKey == null || !mounted) return;
     final EpubBookRow? row = await _appModel.database.getEpubBook(bookKey);
     if (row == null || !mounted) return;
-    final Map<String, MangaChapterStateRow> states =
-        await _readChapterStates(row);
+    final Map<String, MangaChapterStateRow> states = await _readChapterStates(
+      row,
+    );
     if (!mounted) return;
     setState(() {
       _row = row;
@@ -417,8 +457,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<void> _reloadChapterStates() async {
     final EpubBookRow? row = _row;
     if (row == null || !mounted) return;
-    final Map<String, MangaChapterStateRow> states =
-        await _readChapterStates(row);
+    final Map<String, MangaChapterStateRow> states = await _readChapterStates(
+      row,
+    );
     if (mounted) setState(() => _states = states);
   }
 
@@ -427,8 +468,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   @override
   Widget build(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
-    final String title =
-        entry?.series.title ?? _row?.title ?? t.manga_library;
+    final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
     return FushiPageScaffold(
       title: title,
       subtitle: _subtitle(),
@@ -437,7 +477,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           IconButton(
             key: const ValueKey<String>('manga_series_refresh'),
             tooltip: t.manga_series_refresh,
-            onPressed: _refreshing ? null : () => unawaited(_refreshFromSource()),
+            onPressed: _refreshing
+                ? null
+                : () => unawaited(_refreshFromSource()),
             icon: _refreshing
                 ? const SizedBox(
                     width: 20,
@@ -492,37 +534,37 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             onToggleRead: _bookUid == null
                 ? null
                 : (OnlineMangaChapter chapter) =>
-                    unawaited(_toggleChapterRead(chapter)),
+                      unawaited(_toggleChapterRead(chapter)),
             onMarkUpToRead: _bookUid == null
                 ? null
                 : (OnlineMangaChapter chapter) =>
-                    unawaited(_markUpToRead(chapter)),
+                      unawaited(_markUpToRead(chapter)),
           ),
       ],
     );
   }
 
   Widget _buildFatalError(BuildContext context, Object error) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                t.manga_online_detail_load_failed,
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              SelectableText(
-                '$error',
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            t.manga_online_detail_load_failed,
+            style: Theme.of(context).textTheme.titleMedium,
+            textAlign: TextAlign.center,
           ),
-        ),
-      );
+          const SizedBox(height: 8),
+          SelectableText(
+            '$error',
+            style: Theme.of(context).textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    ),
+  );
 
   /// 刷新失败提示条。
   ///
@@ -536,17 +578,17 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final ThemeData theme = Theme.of(context);
     final (String text, bool retryable) = switch (error.reason) {
       OnlineMangaUnavailableReason.sourceDisabled => (
-          t.manga_series_source_disabled,
-          false,
-        ),
+        t.manga_series_source_disabled,
+        false,
+      ),
       OnlineMangaUnavailableReason.platformUnsupported => (
-          t.manga_series_platform_unsupported,
-          false,
-        ),
+        t.manga_series_platform_unsupported,
+        false,
+      ),
       OnlineMangaUnavailableReason.runtimeFailure => (
-          t.manga_series_refresh_failed,
-          true,
-        ),
+        t.manga_series_refresh_failed,
+        true,
+      ),
     };
     return FushiCard(
       child: Row(
@@ -575,11 +617,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             ),
           TextButton(
             key: const ValueKey<String>('manga_series_error_details'),
-            onPressed: () => unawaited(showErrorDetails(
-              context,
-              title: t.manga_online_detail_load_failed,
-              error: '${error.reason}\n\n${error.message}',
-            )),
+            onPressed: () => unawaited(
+              showErrorDetails(
+                context,
+                title: t.manga_online_detail_load_failed,
+                error: '${error.reason}\n\n${error.message}',
+              ),
+            ),
             child: Text(t.manga_online_error_view_detail),
           ),
         ],
@@ -680,8 +724,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final int resumeIndex = _resumeIndex;
     final OnlineMangaChapter? resumeChapter =
         entry != null && resumeIndex >= 0 && resumeIndex < entry.chapters.length
-            ? entry.chapters[resumeIndex]
-            : null;
+        ? entry.chapters[resumeIndex]
+        : null;
     return Wrap(
       spacing: 12,
       runSpacing: 8,
@@ -700,7 +744,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         ),
         OutlinedButton.icon(
           key: const ValueKey<String>('manga_series_add_to_bookshelf'),
-          onPressed: inLibrary || _busy ? null : () => unawaited(_addToLibrary()),
+          onPressed: inLibrary || _busy
+              ? null
+              : () => unawaited(_addToLibrary()),
           icon: Icon(inLibrary ? Icons.check : Icons.library_add_outlined),
           label: Text(
             inLibrary ? t.mihon_in_bookshelf : t.mihon_add_to_bookshelf,
@@ -722,10 +768,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          t.manga_series_volume_info,
-          style: theme.textTheme.titleLarge,
-        ),
+        Text(t.manga_series_volume_info, style: theme.textTheme.titleLarge),
         const SizedBox(height: 8),
         FushiCard(
           padding: EdgeInsets.zero,

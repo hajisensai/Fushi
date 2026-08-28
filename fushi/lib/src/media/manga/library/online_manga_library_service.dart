@@ -76,11 +76,11 @@ class OnlineMangaLibraryService {
   }
 
   static String bookKeyOf(OnlineMangaLibraryEntry entry) => bookKeyFor(
-        runtime: entry.runtime,
-        extensionPackage: entry.extensionPackage,
-        sourceId: entry.sourceId,
-        seriesKey: entry.series.key,
-      );
+    runtime: entry.runtime,
+    extensionPackage: entry.extensionPackage,
+    sourceId: entry.sourceId,
+    seriesKey: entry.series.key,
+  );
 
   Future<EpubBookRow?> find(OnlineMangaLibraryEntry entry) =>
       database.getEpubBook(bookKeyOf(entry));
@@ -99,8 +99,9 @@ class OnlineMangaLibraryService {
       return (await database.getEpubBook(bookKey))!;
     }
 
-    final Directory directory =
-        Directory(p.join(rootDirectory.path, 'library', bookKey));
+    final Directory directory = Directory(
+      p.join(rootDirectory.path, 'library', bookKey),
+    );
     await Directory(p.join(directory.path, 'chapters')).create(recursive: true);
     final File placeholder = File(p.join(directory.path, 'manga.json'));
     await _writeAtomic(placeholder, '{"pages":[]}');
@@ -151,8 +152,9 @@ class OnlineMangaLibraryService {
     int? nextIndex;
     final OnlineMangaChapter? selected = existing.currentChapter;
     if (selected != null) {
-      final int found = chapters
-          .indexWhere((OnlineMangaChapter item) => item.key == selected.key);
+      final int found = chapters.indexWhere(
+        (OnlineMangaChapter item) => item.key == selected.key,
+      );
       if (found >= 0) nextIndex = found;
     }
     final OnlineMangaLibraryEntry updated = OnlineMangaLibraryEntry(
@@ -201,8 +203,9 @@ class OnlineMangaLibraryService {
     if (chapterIndex < 0 || chapterIndex >= entry.chapters.length) {
       throw RangeError.index(chapterIndex, entry.chapters, 'chapterIndex');
     }
-    final OnlineMangaLibraryEntry updated =
-        entry.copyWith(currentChapterIndex: chapterIndex);
+    final OnlineMangaLibraryEntry updated = entry.copyWith(
+      currentChapterIndex: chapterIndex,
+    );
     await database.updateEpubBookMihonState(
       bookKey,
       sourceMetadata: updated.encode(),
@@ -214,8 +217,10 @@ class OnlineMangaLibraryService {
 
   /// 某一章页图的落盘目录。
   Directory chapterDirectory(String bookKey, OnlineMangaChapter chapter) {
-    final String digest =
-        sha256.convert(utf8.encode(chapter.key)).toString().substring(0, 24);
+    final String digest = sha256
+        .convert(utf8.encode(chapter.key))
+        .toString()
+        .substring(0, 24);
     return Directory(
       p.join(rootDirectory.path, 'reader-cache', 'chapters', bookKey, digest),
     );
@@ -228,14 +233,13 @@ class OnlineMangaLibraryService {
     required OnlineMangaChapter chapter,
     bool persistProgress = true,
     int? initialPage,
-  }) =>
-      adapter.openChapter(
-        entry: entry,
-        chapter: chapter,
-        managedDirectory: chapterDirectory(bookKey, chapter),
-        persistProgress: persistProgress,
-        initialPage: initialPage,
-      );
+  }) => adapter.openChapter(
+    entry: entry,
+    chapter: chapter,
+    managedDirectory: chapterDirectory(bookKey, chapter),
+    persistProgress: persistProgress,
+    initialPage: initialPage,
+  );
 
   /// 新读者从哪一章开始。
   ///

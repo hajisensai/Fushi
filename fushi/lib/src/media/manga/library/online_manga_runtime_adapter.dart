@@ -371,9 +371,7 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
     }
   }
 
-  Future<AidokuInstalledPackage> _package(
-    OnlineMangaLibraryEntry entry,
-  ) async {
+  Future<AidokuInstalledPackage> _package(OnlineMangaLibraryEntry entry) async {
     if (!AidokuRuntimeFactory.isSupported) {
       throw const OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.platformUnsupported,
@@ -438,8 +436,7 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
       final String key = map['key']?.toString() ?? '';
       if (key.isEmpty) continue;
       final num? chapterNumber = map['chapterNumber'] as num?;
-      final int uploadedAt =
-          (map['dateUploaded'] as num?)?.toInt() ?? 0;
+      final int uploadedAt = (map['dateUploaded'] as num?)?.toInt() ?? 0;
       chapters.add(
         OnlineMangaChapter(
           key: key,

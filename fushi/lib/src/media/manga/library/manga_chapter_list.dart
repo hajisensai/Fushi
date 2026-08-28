@@ -63,9 +63,7 @@ class MangaChapterList extends StatelessWidget {
     );
   }
 
-  List<OnlineMangaChapter> _visibleChapters(
-    List<OnlineMangaChapter> chapters,
-  ) {
+  List<OnlineMangaChapter> _visibleChapters(List<OnlineMangaChapter> chapters) {
     final Iterable<OnlineMangaChapter> filtered = unreadOnly
         ? chapters.where(
             (OnlineMangaChapter chapter) => states[chapter.key]?.readAt == null,
@@ -90,9 +88,7 @@ class MangaChapterList extends StatelessWidget {
           TextButton.icon(
             key: const ValueKey<String>('manga_chapter_sort'),
             onPressed: onSortToggled,
-            icon: Icon(
-              newestFirst ? Icons.arrow_downward : Icons.arrow_upward,
-            ),
+            icon: Icon(newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
             label: Text(
               newestFirst
                   ? t.manga_series_sort_newest
@@ -111,11 +107,11 @@ class MangaChapterList extends StatelessWidget {
   }
 
   Widget _buildEmpty(BuildContext context, String message) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 24),
+    child: Center(
+      child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
+    ),
+  );
 
   Widget _buildRow(BuildContext context, OnlineMangaChapter chapter) {
     final ThemeData theme = Theme.of(context);
@@ -141,8 +137,8 @@ class MangaChapterList extends StatelessWidget {
           read
               ? Icons.check_circle_outline
               : partial
-                  ? Icons.incomplete_circle
-                  : Icons.circle_outlined,
+              ? Icons.incomplete_circle
+              : Icons.circle_outlined,
           color: read
               ? theme.colorScheme.onSurfaceVariant
               : theme.colorScheme.primary,

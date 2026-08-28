@@ -55,13 +55,13 @@ class OnlineMangaChapter {
   final Map<String, Object?> raw;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'key': key,
-        'name': name,
-        if (scanlator != null) 'scanlator': scanlator,
-        if (number != null) 'number': number,
-        if (uploadedAt != null) 'uploadedAt': uploadedAt,
-        'raw': raw,
-      };
+    'key': key,
+    'name': name,
+    if (scanlator != null) 'scanlator': scanlator,
+    if (number != null) 'number': number,
+    if (uploadedAt != null) 'uploadedAt': uploadedAt,
+    'raw': raw,
+  };
 
   static OnlineMangaChapter? fromJson(Map<String, Object?> json) {
     final String key = json['key']?.toString() ?? '';
@@ -145,15 +145,15 @@ class OnlineMangaSeries {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'key': key,
-        'title': title,
-        if (coverUrl != null) 'coverUrl': coverUrl,
-        if (author != null) 'author': author,
-        if (artist != null) 'artist': artist,
-        if (description != null) 'description': description,
-        if (genre != null) 'genre': genre,
-        'raw': raw,
-      };
+    'key': key,
+    'title': title,
+    if (coverUrl != null) 'coverUrl': coverUrl,
+    if (author != null) 'author': author,
+    if (artist != null) 'artist': artist,
+    if (description != null) 'description': description,
+    if (genre != null) 'genre': genre,
+    'raw': raw,
+  };
 
   static OnlineMangaSeries? fromJson(Map<String, Object?> json) {
     final String key = json['key']?.toString() ?? '';
@@ -249,30 +249,29 @@ class OnlineMangaLibraryEntry {
     List<OnlineMangaChapter>? chapters,
     int? currentChapterIndex,
     bool clearCurrentChapter = false,
-  }) =>
-      OnlineMangaLibraryEntry(
-        runtime: runtime,
-        extensionPackage: extensionPackage,
-        sourceId: sourceId,
-        series: series ?? this.series,
-        chapters: chapters ?? this.chapters,
-        currentChapterIndex: clearCurrentChapter
-            ? null
-            : currentChapterIndex ?? this.currentChapterIndex,
-      );
+  }) => OnlineMangaLibraryEntry(
+    runtime: runtime,
+    extensionPackage: extensionPackage,
+    sourceId: sourceId,
+    series: series ?? this.series,
+    chapters: chapters ?? this.chapters,
+    currentChapterIndex: clearCurrentChapter
+        ? null
+        : currentChapterIndex ?? this.currentChapterIndex,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'type': marker,
-        'version': version,
-        'runtime': runtime.wireValue,
-        'extensionPackage': extensionPackage,
-        'sourceId': sourceId,
-        'series': series.toJson(),
-        'chapters': <Map<String, Object?>>[
-          for (final OnlineMangaChapter chapter in chapters) chapter.toJson(),
-        ],
-        'currentChapterIndex': currentChapterIndex,
-      };
+    'type': marker,
+    'version': version,
+    'runtime': runtime.wireValue,
+    'extensionPackage': extensionPackage,
+    'sourceId': sourceId,
+    'series': series.toJson(),
+    'chapters': <Map<String, Object?>>[
+      for (final OnlineMangaChapter chapter in chapters) chapter.toJson(),
+    ],
+    'currentChapterIndex': currentChapterIndex,
+  };
 
   String encode() => jsonEncode(toJson());
 
@@ -298,8 +297,9 @@ class OnlineMangaLibraryEntry {
   }
 
   static OnlineMangaLibraryEntry? _parseV2(Map<String, Object?> json) {
-    final OnlineMangaRuntimeKind? runtime =
-        OnlineMangaRuntimeKind.fromWire(json['runtime']?.toString());
+    final OnlineMangaRuntimeKind? runtime = OnlineMangaRuntimeKind.fromWire(
+      json['runtime']?.toString(),
+    );
     final Object? rawSeries = json['series'];
     final Object? rawChapters = json['chapters'];
     if (runtime == null ||
@@ -307,8 +307,9 @@ class OnlineMangaLibraryEntry {
         rawChapters is! List<Object?>) {
       return null;
     }
-    final OnlineMangaSeries? series =
-        OnlineMangaSeries.fromJson(rawSeries.cast<String, Object?>());
+    final OnlineMangaSeries? series = OnlineMangaSeries.fromJson(
+      rawSeries.cast<String, Object?>(),
+    );
     if (series == null) return null;
     return OnlineMangaLibraryEntry(
       runtime: runtime,
@@ -326,16 +327,19 @@ class OnlineMangaLibraryEntry {
     if (rawManga is! Map<Object?, Object?> || rawChapters is! List<Object?>) {
       return null;
     }
-    final OnlineMangaSeries? series =
-        OnlineMangaSeries.fromLegacyMihonJson(rawManga.cast<String, Object?>());
+    final OnlineMangaSeries? series = OnlineMangaSeries.fromLegacyMihonJson(
+      rawManga.cast<String, Object?>(),
+    );
     if (series == null) return null;
     return OnlineMangaLibraryEntry(
       runtime: OnlineMangaRuntimeKind.mihon,
       extensionPackage: json['extensionPackage']?.toString() ?? '',
       sourceId: json['sourceId']?.toString() ?? '',
       series: series,
-      chapters:
-          _chaptersFrom(rawChapters, OnlineMangaChapter.fromLegacyMihonJson),
+      chapters: _chaptersFrom(
+        rawChapters,
+        OnlineMangaChapter.fromLegacyMihonJson,
+      ),
       currentChapterIndex: (json['currentChapterIndex'] as num?)?.toInt(),
     );
   }
