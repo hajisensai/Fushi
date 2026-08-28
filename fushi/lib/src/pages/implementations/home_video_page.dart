@@ -1062,21 +1062,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 一个视频是否已归进某个系列（= 在系列视图里被折进合集卡）。
   ///
-  /// 判据与 [_groupVideos] 的折叠判据同源：主合集归属存在 **且那个合集本身还在**。
-  /// 归属指向已删合集的孤儿条目在墙上本来就是散卡，不能算系列成员。「全部视频」
-  /// 的系列归属筛选与批量选择共用这一份判据，避免两处口径漂开。
+  /// 判据与 [_groupVideos] 的折叠判据同源（`collection_grouping.collectionIdOf`）：
+  /// 主合集归属存在 **且那个合集本身还在**。归属指向已删合集的孤儿条目在墙上本来
+  /// 就是散卡，不能算系列成员。「全部视频」的系列归属筛选按这份判据分档。
   bool _isCollectionMember(String bookUid) {
     final int? collectionId =
         _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
     return collectionId != null && _collectionsById.containsKey(collectionId);
   }
 
-  /// 全选 / 反选的候选散卡键：只含未折进合集的可见视频（折进的成员由整合集选中，
-  /// 不单独勾）。两处共用同一份资格判据，避免全选与反选口径漂开。
-  Set<String> _selectableLooseUids() => <String>{
-        for (final VideoBookRow book in _visibleVideos)
-          if (!_isCollectionMember(book.bookUid)) book.bookUid,
-      };
+  /// 全选 / 反选的候选散卡键 = **屏幕上真的画出来的那些散卡**，直接取每帧
+  /// [MediaSelectionController.setVisibleOrder] 登记的可见散卡序。
+  ///
+  /// 此前这里按 `!_isCollectionMember` 自己重推一遍资格。那条规则只在系列墙成立
+  /// （成员折进合集卡、由整卡代选），而「全部视频」墙上压根没有合集卡、每一集都
+  /// 是独立散卡——于是那里的合集成员单击能选、全选却选不上；系列归属筛选选到
+  /// 「系列内」时满墙都是成员，全选/反选直接变成 no-op。系列墙传进去的可见序本来
+  /// 就已排除折叠成员，改取真相源后那边行为逐项不变，两处口径也不会再漂开。
+  Set<String> _selectableLooseUids() => _selection.visibleLooseKeys.toSet();
 
   void _selectAllVisible() {
     setState(() => _selection.selectAll(
@@ -2587,12 +2590,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final List<RemoteVideoInfo> remoteVideos = <RemoteVideoInfo>[
               for (final RemoteVideoInfo v in _visibleRemoteVideos(
                   snapState ?? _lastRemoteState, filter))
-                // 远端占位与本地同规则过系列归属筛选：host 下发的 collection
-                // membership 就是它在系列视图里的折叠归属。
+                // 远端占位与本地同规则过系列归属筛选，判据同样取**在系列墙上的
+                // 折叠形态**：host 下发的 membership 还要能解析到本机存在的合集
+                // （[_remoteCollectionId]，解析不到系列墙就按散卡降级）。只看
+                // `collection != null` 会让「host 有、本机没有同名合集」的占位卡
+                // 在系列墙上是散卡、在这里却算系列成员。
                 if (_yearFilter.matches(null) &&
                     matchesVideoSeriesFilter(
                       filter: _effectiveSeriesFilter,
-                      inSeries: v.collection != null,
+                      inSeries: _remoteCollectionId(v) != null,
                     ) &&
                     matchesVideoWatchStatus(
                       filter: _watchStatusFilter,

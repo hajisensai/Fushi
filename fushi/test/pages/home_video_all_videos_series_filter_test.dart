@@ -226,6 +226,54 @@ void main() {
     );
   });
 
+  testWidgets('档位不泄漏到别的分区（三分区共用同一个 State 实例）',
+      (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    await pickSeriesFilter(tester, t.video_filter_series_in);
+    expect(cardOf('video/loose'), findsNothing, reason: '前提：档位已生效');
+
+    // 同一 widget 位置换 section（与 video_library_shell 换 section: 参数同构）
+    // → State 复用，_seriesFilter 仍是「系列内」。
+    await tester.pumpWidget(buildApp(VideoLibrarySection.series));
+    await tester.pumpAndSettle();
+
+    expect(
+      cardOf('video/loose'),
+      findsOneWidget,
+      reason: '系列页没有这个筛选控件，绝不能被「全部视频」留下的档位隐形吃掉散片',
+    );
+
+    // 证明上一条不是因为 State 被重建、档位复位成「全部」才通过的：切回去档位
+    // 还在。没有这一步，去掉 _effectiveSeriesFilter 门控也能让上一条恒绿。
+    await tester.pumpWidget(buildApp(VideoLibrarySection.allVideos));
+    await tester.pumpAndSettle();
+    expect(
+      cardOf('video/loose'),
+      findsNothing,
+      reason: 'State 确实被复用、档位确实还挂着——上一条测的才是门控',
+    );
+  });
+
+  testWidgets('「系列内」档位下全选真的勾得上（候选取可见散卡序，不再二次推导资格）',
+      (WidgetTester tester) async {
+    await seedSeriesAndLoose();
+    await pumpSection(tester, VideoLibrarySection.allVideos);
+    await pickSeriesFilter(tester, t.video_filter_series_in);
+
+    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.batch_select_all));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsOneWidget,
+      reason: '「全部视频」墙上没有合集卡，每一集都是独立散卡——全选必须把它们'
+          '都勾上。按「跳过合集成员」的旧资格判据这里会是 0（no-op）',
+    );
+  });
+
   testWidgets('筛选控件只在「全部视频」露出', (WidgetTester tester) async {
     await seedSeriesAndLoose();
 
