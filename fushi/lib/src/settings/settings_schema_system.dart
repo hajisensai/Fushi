@@ -47,8 +47,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSwitchItem(
             id: 'system.focus_navigation',
             title: t.focus_navigation_enabled,
-            subtitle: t.focus_navigation_enabled_hint +
-                t.settings_experimental_suffix,
+            subtitle: t.focus_navigation_enabled_hint,
             icon: Icons.gamepad_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.experimentalFocusNavigationEnabled,

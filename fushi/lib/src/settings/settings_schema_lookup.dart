@@ -325,8 +325,7 @@ SettingsDestination buildLookupDestination() {
             // 语义收敛：列数一直是「自动填充、封顶用户值」（effective = min(用户值,
             // 视口可容)），文案随之改为「词典最多列数（自动填充）」，不改底层算法。
             title: t.popup_dictionary_max_columns,
-            subtitle: t.popup_dictionary_max_columns_hint +
-                t.settings_experimental_suffix,
+            subtitle: t.popup_dictionary_max_columns_hint,
             icon: Icons.view_column_outlined,
             min: 1,
             max: 4,
@@ -695,9 +694,6 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.desktop_clipboard',
             title: t.desktop_clipboard_enabled,
-            // 文案统一（阶段 F）：平台标记 + 实验性合并为单个括注
-            // （桌面·实验性）已并入 desktop_clipboard_enabled_hint 值本身，
-            // 不再叠加共享的 settings_experimental_suffix（否则出现双重括注）。
             subtitle: t.desktop_clipboard_enabled_hint,
             icon: Icons.content_paste_search,
             visible: (SettingsContext settingsContext) =>
@@ -962,8 +958,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.yomitan_api_server',
             title: t.yomitan_api_server,
-            subtitle:
-                t.yomitan_api_server_hint + t.settings_experimental_suffix,
+            subtitle: t.yomitan_api_server_hint,
             icon: Icons.api_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.yomitanApiServerEnabled,
@@ -999,9 +994,6 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
-            // 不再叠加 settings_experimental_suffix：文本钩子不再自称实验性功能
-            // （页内那条横幅也随之删除，守卫见
-            // test/pages/texthooker_experimental_markers_guard_test.dart）。
             subtitle: t.texthooker_enabled_hint,
             icon: Icons.sensors_outlined,
             value: (SettingsContext settingsContext) =>
