@@ -147,6 +147,10 @@
     return (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(1) + 's';
   }
 
+  // 与 subtitle-adapters.js 的 findCueIndexAt 是同一判据（含「落在字幕间隙返回 -1」）。
+  // 这里**有意**保留独立实现而不去调它：本文件被多套测试 harness 单独装进 vm 沙箱，
+  // 依赖同世界的其它 content script 会让面板从自包含变成跨文件依赖，harness 漏装一个
+  // 就假红。两份都只有 8 行、语义封闭，改其一必须同步另一处。
   function cueIndexAt(cues, t) {
     var lo = 0, hi = cues.length - 1, ans = -1;
     while (lo <= hi) {
@@ -617,6 +621,15 @@
   // 兼容旧 content.js 的批量录制钩子。原生 Side Panel 不属于标签页画面，不再需要改网页宽度。
   window.fushiSubtitlePanelSuspendPush = function () {};
   window.fushiSubtitlePanelResumePush = function () {};
+
+  // 制卡链路（content.js fushiFullTrackWindowAt）按播放时间到整轨取精确窗时要跟面板看到的
+  // 是同一份：已应用用户设的时轴偏移，语言也是用户正在读的那条。live 伪轨不对外——它是
+  // 降级来源，content.js 自己有 DOM 采样兜底，不需要绕经这里。
+  window.fushiActiveFullTrack = function () {
+    if (!st.activeLang || st.activeLang === LIVE_LANG) return null;
+    if (!st.cues || !st.cues.length) return null;
+    return { lang: st.activeLang, cues: st.cues };
+  };
 
   window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;

@@ -27,6 +27,7 @@ function loadFushiDictMedia(ctx) {
 function loadContent(opts) {
   const events = []; // 时序记录：listener 注册 / postMessage
   const intervals = []; // {fn, ms}
+  const storageWrites = []; // chrome.storage.local.set 落盘记录（制卡队列真相源）
   const state = { subText: '', videoPresent: true, video: null };
   function createVideo(currentTime, textTracks) {
     const listeners = Object.create(null);
@@ -103,7 +104,7 @@ function loadContent(opts) {
         sendMessage() {},
       },
       storage: {
-        local: { get: () => {}, set() {} },
+        local: { get: () => {}, set(obj) { storageWrites.push(obj); } },
         onChanged: { addListener() {} },
       },
     },
@@ -121,6 +122,7 @@ function loadContent(opts) {
   return {
     events,
     state,
+    storageWrites,
     video,
     windowObj,
     location: sandbox.location,
@@ -648,4 +650,103 @@ test('videoKey 契约：netflix=watch id、youtube=yt-<v>、其它=host+path', (
   assert.strictEqual(yt.windowObj.fushiVideoKey(), 'yt-abc123');
   const generic = loadContent({ hostname: 'example.com', pathname: '/show/1' });
   assert.strictEqual(generic.windowObj.fushiVideoKey(), 'example.com/show/1');
+});
+
+// ── 整轨优先仲裁（TODO-1219 收口）──
+// 需求：整集字幕是主路径，DOM 实时采集只能是降级。此前 content.js 只有「面板行点进来」
+// 才用整轨精确窗，画面上直接查词永远退到抖动的 DOM 采样窗，且 live 轨与整轨并行长。
+
+// 取队列里最后一次落盘的最后一项（fushiEnqueue → fushiQueueSave → storage.local.set）。
+function lastQueuedItem(h) {
+  for (let i = h.storageWrites.length - 1; i >= 0; i--) {
+    const q = h.storageWrites[i] && h.storageWrites[i].fushiQueue;
+    if (Array.isArray(q) && q.length) return q[q.length - 1];
+  }
+  return null;
+}
+
+test('整轨优先：整集轨在场时 DOM 采样不再写 live 伪轨（实时采集降级为兜底）', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
+  const store = h.windowObj.fushiEpisodeCues;
+  // 整集拦截已到（netflix-bridge.js document_start hook 的正常时序，早于用户读到字幕）。
+  store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '整轨第一句' }];
+
+  h.video.currentTime = 1.6;
+  h.state.subText = 'DOM 抖动快照';
+  h.sampler.fn();
+
+  assert.strictEqual(store['81001|live'], undefined,
+    '已有整轨时不得再往 live 伪轨写——两条来源并存会让面板多出一条重复的抖动轨');
+});
+
+test('整轨优先：没有整轨时 live 采样照常工作（降级路径未被砍掉）', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81002' });
+  const store = h.windowObj.fushiEpisodeCues;
+
+  h.video.currentTime = 1.6;
+  h.state.subText = '只有 DOM 有字幕';
+  h.sampler.fn();
+
+  assert.ok(store['81002|live'] && store['81002|live'].length === 1,
+    '整轨缺席时 live 轨仍须照常入轨，否则等于砍掉退路而不是降级');
+});
+
+test('整轨优先：画面上直接查词制卡取整轨精确窗，不再退到 DOM 采样窗', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
+  const store = h.windowObj.fushiEpisodeCues;
+  store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '整轨第一句' }];
+
+  // DOM 采样在 t=1.6s 留下抖动窗；旧行为就是拿它去制卡（startV 会是 1600-200=1400）。
+  h.video.currentTime = 1.6;
+  h.state.subText = 'DOM 抖动快照';
+  h.sampler.fn();
+
+  const r = h.windowObj.fushiEnqueue({ expression: '語' }, '');
+  assert.ok(r && r.ok, '制卡必须入队成功');
+  const item = lastQueuedItem(h);
+  assert.ok(item, '队列必须落盘');
+  assert.strictEqual(item.sentence, '整轨第一句', '句子必须取自整轨，而非 DOM 抖动快照');
+  assert.strictEqual(item.cueStartV, 1000, '句首必须是整轨的精确 startMs');
+  assert.strictEqual(item.startV, 800, '录制窗 = 整轨 startMs - 200 录制边距');
+  assert.strictEqual(item.endV, 3200, '录制窗 = 整轨 endMs + 200 录制边距');
+});
+
+test('整轨优先：当前时刻落在整轨字幕间隙时回落 DOM 采样窗，不吸附邻句', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
+  const store = h.windowObj.fushiEpisodeCues;
+  store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '整轨第一句' }];
+
+  // t=4.0s 在整轨覆盖范围之外（静音段）：整轨查不中，必须回落 DOM 采样窗。
+  h.video.currentTime = 4.0;
+  h.state.subText = 'DOM 兜底句';
+  h.sampler.fn();
+
+  const r = h.windowObj.fushiEnqueue({ expression: '語' }, '');
+  assert.ok(r && r.ok, '间隙处仍须能制卡（兜底路径还在）');
+  const item = lastQueuedItem(h);
+  assert.strictEqual(item.sentence, 'DOM 兜底句', '间隙处必须用 DOM 采样句');
+  assert.strictEqual(item.cueStartV, 4000,
+    '绝不能吸附到邻句 1000——那会录到一段与所查词无关的画面');
+});
+
+test('整轨优先：面板暴露的活动轨（已应用时轴偏移）优先于自取第一条轨', () => {
+  const h = loadContent({ hostname: 'www.netflix.com', pathname: '/watch/81001' });
+  const store = h.windowObj.fushiEpisodeCues;
+  store['81001|ja'] = [{ startMs: 1000, endMs: 3000, text: '未偏移的日文轨' }];
+  // 面板在场：用户选了英文轨并设了 +500ms 偏移，面板给出的就是偏移后的 cue。
+  h.windowObj.fushiActiveFullTrack = () => ({
+    lang: 'en',
+    cues: [{ startMs: 1500, endMs: 3500, text: '面板选中的英文轨' }],
+  });
+
+  h.video.currentTime = 2.0;
+  h.state.subText = 'DOM 抖动快照';
+  h.sampler.fn();
+
+  const r = h.windowObj.fushiEnqueue({ expression: 'word' }, '');
+  assert.ok(r && r.ok);
+  const item = lastQueuedItem(h);
+  assert.strictEqual(item.sentence, '面板选中的英文轨',
+    '面板在场时必须跟随它选中的语言与偏移，否则制卡句与用户正在读的对不上');
+  assert.strictEqual(item.cueStartV, 1500, '必须用面板给出的偏移后时间轴');
 });

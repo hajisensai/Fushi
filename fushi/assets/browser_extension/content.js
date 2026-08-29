@@ -532,6 +532,44 @@ const fushiEpisodeCues = Object.create(null); // key: `${videoId}|${lang}` -> [{
 // （面板只依赖 window.fushiEpisodeCues 这一个契约，不跨文件依赖 const 词法作用域）。同一对象
 // 引用，后续 fushiOnFullEpisodeCues 就地写入即对面板可见。
 window.fushiEpisodeCues = fushiEpisodeCues;
+
+// ── 整轨优先仲裁（TODO-1219 收口）──
+// 整集拦截轨是主路径，DOM 实时采样只是兜底。判据与选轨逻辑收在 subtitle-adapters.js
+// 的共享纯函数里（findCueIndexAt / pickPrimaryCueTrack），面板与此处共用同一份。
+
+// 面板在场时以它暴露的活动轨为准——那份已应用用户设的时轴偏移，语言也与用户正在读的
+// 一致；面板未加载或未开启时自取第一条非 live 轨（偏移默认 0，不影响正确性）。
+function fushiActiveFullTrackCues() {
+  try {
+    if (typeof window.fushiActiveFullTrack === 'function') {
+      const t = window.fushiActiveFullTrack();
+      if (t && t.cues && t.cues.length) return t.cues;
+    }
+  } catch (_) {}
+  const picked = pickPrimaryCueTrack(fushiEpisodeCues, fushiVideoKey(), FUSHI_LIVE_LANG);
+  return picked ? picked.cues : null;
+}
+
+// 该视频是否已有整轨（live 伪轨不算）。live 采样据此降级，见 fushiLiveCueStart。
+function fushiHasFullEpisodeTrack(videoKey) {
+  return !!pickPrimaryCueTrack(fushiEpisodeCues, videoKey, FUSHI_LIVE_LANG);
+}
+
+/**
+ * 当前播放时刻在整轨中的精确 [startMs,endMs] 窗。整轨缺席、或当前时刻落在字幕间隙
+ * （静音段）时返回 null，交由调用方回落 DOM 采样窗。
+ * @returns {{text:string,startV:number,endV:number}|null}
+ */
+function fushiFullTrackWindowAt() {
+  const cues = fushiActiveFullTrackCues();
+  if (!cues) return null;
+  const nowV = fushiVideoTimeMs();
+  if (nowV === null) return null;
+  const idx = findCueIndexAt(cues, nowV);
+  if (idx < 0) return null;
+  const cue = cues[idx];
+  return { text: cue.text || '', startV: cue.startMs, endV: cue.endMs };
+}
 function fushiOnFullEpisodeCues(msg) {
   try {
     const cues = msg.format === 'ttml' ? parseTtml(msg.text) : parseWebVtt(msg.text);
@@ -650,6 +688,15 @@ function fushiCueTextRelated(a, b) {
 }
 function fushiLiveCueStart(state, text, startV, allowReplay) {
   if (!text) {
+    state.liveCue = null;
+    state.liveCueReplay = false;
+    return;
+  }
+  // 整轨优先：已有整集拦截/textTracks 收割的真语言轨时，DOM 实时采样退居兜底，不再往
+  // `|live` 伪轨写——两条来源并存会让面板多出一条重复的抖动轨（用户诉求：实时采集只能
+  // 是降级）。注意 cueHist 仍照常采样，fushiCurrentCueWindowV 是整轨查不中（字幕间隙、
+  // 整轨尚未到达）时的最后退路，所以这是降级不是砍掉退路。
+  if (fushiHasFullEpisodeTrack(state.key)) {
     state.liveCue = null;
     state.liveCueReplay = false;
     return;
@@ -911,7 +958,12 @@ window.fushiEnqueue = function (fields, sentence) {
   // [startMs,endMs] 窗（稳过 DOM 采样）；否则回落 fushiCurrentCueWindowV 的 DOM 采样窗。下方
   // startV-200/endV+200 录制边距 + fushiQueueKey 去重两路不变。
   const cw = fushiPendingCueWindow;
-  const w = cw ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs } : fushiCurrentCueWindowV();
+  // 面板行查词带来的精确窗最强（用户显式点了那一行）；否则按当前播放时间到整轨里查
+  // ——此前这里直接回落 DOM 采样窗，整轨明明已在内存里却没人查，画面上直接查词制卡
+  // 拿到的一直是抖动窗。整轨查不中（间隙/未到达）才退 DOM 采样。
+  const w = cw
+      ? { text: cw.text || '', startV: cw.startMs, endV: cw.endMs }
+      : (fushiFullTrackWindowAt() || fushiCurrentCueWindowV());
   if (!w) return { ok: false, reason: 'no-cue' };
   // BUG-1416：**制卡那一刻**的视频时间就地采样并随队列项持久化。用户拍板「按制卡时候的时间来」，
   // 而这是唯一还知道那一刻的地方——之后的回放录制只知道句首，再也拿不回这个时刻。
