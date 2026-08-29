@@ -220,6 +220,26 @@ document-created 注入的 EME 垫片（拒 `com.microsoft.playready*`、Widevin
 或 environment 的 `additionalBrowserArguments`）→ 网飞 1080p Widevine 软件档、帧可捕获 → 超分 / 截图 /
 录制全通。**画质模式** = 默认环境（PlayReady 硬件档 1440p/4K，不可捕获）。
 
+### 5.2 app 内真机（`integration_test/web_video_netflix_live_itest.dart`，runner `-Visible -KeepUserDirs`）
+
+- **硬件 PlayReady 在 fork 的 composition hosting 下不可用**：默认档（UA 带 `Edg/`，Netflix 选
+  `playready.recommendation.3000`）页面报 `D7703-1003-80070003`（CDP 截图证据
+  `.codex-test/windows-itest/web-video-netflix-live/screenshots/observe-web-video-webview.png` 上一版）。
+  同一份登录 profile、同一台机、同一环境变量，pywebview（窗口宿主）播到 2560×1440——差别只剩
+  `CreateCoreWebView2CompositionController` + 自建 visual 离屏 WGC 捕获（WebView2 #4935 同类：hardware
+  keysystem 黑屏，`playready.software` 正常）。runner 重定向 LOCALAPPDATA/USERPROFILE/TEMP 也会独立触发同错
+  （见 `-KeepUserDirs`），两者叠加时先排环境再看宿主。
+- **软件 DRM 档（Chrome UA + document-start EME 垫片 → Widevine `SW_SECURE_DECODE`）在 app 内全链路通过**：
+  起播（位置持续前进、0 掉帧）、DOM 采样 live 轨进字幕列表面板、画面字幕叠层渲染当前句、bridge seek
+  精确落点（780504→810505，目标 810504）、Flutter 帧证据 `observe-web-video-subtitle-list.png`。
+- **CDP `Page.captureScreenshot` 在默认环境（不加 `--disable-direct-composition`）下就能拿到清晰帧**
+  （3.1 MB PNG，草原蝗虫画面）——它走 compositor 回读，不受 DComp overlay 影响。P3 取帧走 `takeScreenshot`
+  即可，`--disable-direct-composition` 只在需要 WGC 纹理（超分）时才必要。
+- 待定：整集明文字幕轨（netflix-bridge `timedtexttracks`）在 app 内未到，只有 live 轨（诊断进行中）。
+- 结论修正：「观看=正常模式（PlayReady 全画质）」在 fork 现有 composition hosting 下**做不到**，app 内上限 =
+  软件档 1080p（与用户 Chrome 关硬件加速时同档）。要 1440p/4K 必须给 fork 加**窗口宿主**（HWND child，
+  `CreateCoreWebView2Controller`）模式给视频页专用——工作量单独评估，由用户拍板。
+
 P2 落地时的两条硬约束：
 - `--disable-direct-composition` 是 **WebView2 environment 级**（每个 user data folder 一个浏览器进程）
   参数，不能运行期切换 → 双模式 = 两个 `WebViewEnvironment`（两套 profile 目录，cookie 不共享，登录要各登一次，
