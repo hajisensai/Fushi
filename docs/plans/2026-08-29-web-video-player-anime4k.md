@@ -172,6 +172,9 @@
 | 上一行 + `--disable-gpu` | 同上 | 1920×1080 → 掉到 960×540（纯软件渲染扛不住） | ✅ |
 | 上一行 + **`--disable-direct-composition`** | 同上 | **1920×1080 稳定**，0 掉帧 | ✅ **清晰可截** |
 
+**用户决定（2026-08-29）**：观看一律走正常模式（PlayReady 全画质，不捕获）；1080p 稳定（增强）模式**只在自动制卡时用**，
+由制卡流程在独立环境里跑，不影响观看；网页播放器的观看体验对齐现有视频页。三个阶段全部做。
+
 **增强模式配方（已验证）**：Chrome UA（`CoreWebView2.Settings.UserAgent` 去掉 `Edg/` 标记）+
 document-created 注入的 EME 垫片（拒 `com.microsoft.playready*`、Widevine `HW_SECURE_*` 降
 `SW_SECURE_CRYPTO`）+ 浏览器参数 `--disable-direct-composition`（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
