@@ -300,7 +300,7 @@ class VideoDownloadOrganizer {
             .map((VideoOrganizationFilePlan f) => f.finalLocalPath)
             .toList()
           ..sort())
-        .join(' ');
+        .join('\u0000');
     return _withTargetLock(lockKey, () async {
       for (final VideoOrganizationFilePlan file in planned.files) {
         if (await File(file.finalLocalPath).exists()) {
