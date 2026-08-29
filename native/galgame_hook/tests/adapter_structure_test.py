@@ -43,16 +43,29 @@ class AdapterStructureTest(unittest.TestCase):
         source = (
             ROOT / "hook" / "adapters" / "sgre_lookup.inc"
         ).read_text(encoding="utf-8")
-        header = (
-            ROOT / "hook" / "adapters" / "sgre_lookup.h"
+        anchors = (
+            ROOT / "hook" / "adapters" / "sgre_anchors.h"
         ).read_text(encoding="utf-8")
         detour = source.split("void __fastcall SgreTextDrawDetour", 1)[1]
         detour = detour.split("bool InstallSgreLookupSensor", 1)[0]
         snapshot = detour.index("CaptureSgreLookupDrawState(text_surface)")
         original = detour.index("g_sgre_text_draw_original(text_surface)")
         self.assertLess(snapshot, original)
-        self.assertIn("kSgreTextDrawRva", header)
-        self.assertIn("kSgreScenarioTextVtableRva", header)
+        # The measured draw boundary lives in the known-build table; the hook
+        # site itself reads the resolved anchor set and never a raw constant.
+        self.assertIn("kSgreTextDrawRva", anchors)
+        self.assertIn("kSgreScenarioTextVtableRva", anchors)
+        self.assertIn("kSgreKnownBuilds", anchors)
+        install = source.split("bool InstallSgreLookupSensor", 1)[1]
+        install = install.split("bool ReadLatestSgreLookupCapture", 1)[0]
+        self.assertNotIn("kSgreTextDrawRva", install)
+        self.assertNotIn("kSgreScenarioTextVtableRva", install)
+        self.assertIn("g_sgre_anchors.text_draw.rva", install)
+        self.assertIn("g_sgre_anchors.scenario_text_vtable.rva", install)
+        self.assertLess(
+            install.index("!g_sgre_anchors.lookup_sensor_available()"),
+            install.index("g_sgre_anchors.text_draw.rva"),
+        )
         self.assertIn("kSgreDrawVisibleGlyphsOffset", source)
         self.assertIn("kSgreGlyphCharacterOffset", source)
         self.assertIn("kSgreGlyphDrawXOffset", source)
@@ -850,10 +863,18 @@ class AdapterStructureTest(unittest.TestCase):
         generic = (
             ROOT / "hook" / "adapters" / "windows_audio_adapter.inc"
         ).read_text(encoding="utf-8")
-        self.assertIn("MatchesSgreProfile", adapter)
+        # Family membership (voice_body.bin next to the executable) is the
+        # probe; the executable hash only selects measured anchors.
+        self.assertIn("MatchesSgreFamily", adapter)
+        self.assertNotIn("MatchesSgreProfile", adapter)
         self.assertIn("RegisterXAudioCompressedResourceHandler", adapter)
         self.assertIn("FindSgreVoiceArchiveResourceParts", adapter)
-        self.assertIn("kSgreExecutableSha256", profile)
+        self.assertIn("FindSgreKnownBuild", profile)
+        self.assertIn("ResolveSgreRuntimeAnchors", profile)
+        anchors = (ROOT / "hook" / "adapters" / "sgre_anchors.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("kSgreExecutableSha256", anchors)
         self.assertIn("HasXAudioCompressedResourceHandler", generic)
         self.assertFalse((ROOT / "hook" / "xaudio_pcm_capture_xapo.h").exists())
         self.assertNotIn("700", generic)
@@ -883,14 +904,22 @@ class AdapterStructureTest(unittest.TestCase):
         for forbidden in ("Sgre", "sgre", "voice_body"):
             self.assertNotIn(forbidden, adapter, forbidden)
         self.assertIn("RegisterXAudioCompressedResourceHandler", sgre)
-        # Identity is the executable hash, i.e. the same anchor the Luna text
-        # profile keys on, so text and audio identity cannot drift apart.
-        # An executable *file name* would be a distribution property, not an
-        # engine identity, and CLAUDE.md forbids enabling shared middleware on
-        # that kind of match.
-        self.assertIn("kSgreExecutableSha256", profile)
+        # Family identity is the wind3d11 voice archive next to the executable
+        # -- the very data contract the audio proof checks membership against.
+        # Build-specific addresses come from the measured hash table or a
+        # unique signature hit, never from an executable *file name*: that is
+        # a distribution property, not an engine identity, and CLAUDE.md
+        # forbids enabling shared middleware on that kind of match.
+        self.assertIn("voice_body.bin", profile)
         self.assertNotIn("sgre_steam.exe", profile)
         self.assertNotIn("sgre_steam.exe", adapter)
+        anchors = (ROOT / "hook" / "adapters" / "sgre_anchors.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("kSgreExecutableSha256", anchors)
+        self.assertIn("kSgreKnownBuilds", anchors)
+        self.assertNotIn("sgre_steam.exe", anchors)
+        self.assertNotIn("executable_names", anchors)
 
     def test_unclaimed_xwma_submissions_are_published_not_dropped(self) -> None:
         adapter = (

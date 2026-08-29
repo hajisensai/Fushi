@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1822 条。点号进各自文件。
+> 共 1823 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1950](bugs/BUG-1950-sgre-single-hash-gate-no-attempt.md) | ✅ | ✅ | STEINS;GATE RE:BOOT 内嵌查词对非首日构建静默失效：SGRE 适配把单个 exe 哈希当准入门，从不尝试其它构建 |
 | [BUG-1946](bugs/BUG-1946-sukebei-rss-namespace-rejected.md) | ✅ | ✅ | Sukebei 发现源结果恒空：NyaaClient 严格解析硬编码 nyaa.si 命名空间，sukebei RSS 的 sukebei.nyaa.si/xmlns/nyaa 被判 invalidNamespace |
 | [BUG-1945](bugs/BUG-1945-video-fullscreen-exit-deactivated-context.md) | ✅ | ✅ | 视频取消全屏短暂闪现 deactivated widget 红屏 |
 | [BUG-1944](bugs/BUG-1944-mokuro-retry-cancel-test-wall-clock-race.md) | ✅ | ✅ | mokuro 退避取消测试拿真时钟当同步原语，CI 上偶发红 |

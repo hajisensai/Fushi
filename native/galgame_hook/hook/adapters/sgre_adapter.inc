@@ -49,21 +49,49 @@ bool HandleSgreCompressedResource(
   return published;
 }
 
+// Family membership is the probe; the executable hash only selects measured
+// anchors. Unknown builds are attempted (signature resolution), and each hook
+// site stays inert for whatever anchor did not resolve. The archive-membership
+// audio proof needs no anchor at all, so it works for every family build.
+void ResolveSgreAnchorsOnce() {
+  if (g_sgre_anchors_resolved) return;
+  g_sgre_anchors =
+      fushi_voice_hook::ResolveSgreRuntimeAnchors(&g_sgre_executable_sha256);
+  g_sgre_anchors_resolved = true;
+  SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagSgreFamilyMatched);
+  SetXAudioDiagnostic(g_sgre_anchors.complete()
+                          ? fushi_voice_hook::kXAudioDiagSgreAnchorsResolved
+                          : fushi_voice_hook::kXAudioDiagSgreAnchorsUnresolved);
+}
+
 class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "sgre"; }
 
   bool probe() const override {
-    if (!profile_probed_) {
-      profile_matched_ = fushi_voice_hook::MatchesSgreProfile(nullptr);
-      profile_probed_ = true;
+    if (!family_probed_) {
+      family_matched_ = fushi_voice_hook::MatchesSgreFamily();
+      family_probed_ = true;
     }
-    return profile_matched_;
+    return family_matched_;
+  }
+
+  bool lookup_sensor_available() const {
+    return probe() && g_sgre_anchors_resolved &&
+           g_sgre_anchors.lookup_sensor_available();
   }
 
   bool install() override {
     if (installed_) return true;
     if (!probe()) return false;
+    ResolveSgreAnchorsOnce();
+    // Device creation normally predates helper injection. Do not make audio
+    // support depend on this optional input guard, but install now and retry on
+    // every worker tick until the mouse slot is ready. Without a sensor no
+    // card can ever appear, so the shield contract is not published either.
+    if (g_sgre_anchors.lookup_sensor_available()) {
+      InstallSgreDirectInputShield();
+    }
     std::wstring archive_path;
     if (!fushi_voice_hook::SgreVoiceArchivePath(&archive_path) ||
         !fushi_voice_hook::OpenSgreVoiceArchive(
@@ -75,10 +103,6 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
       fushi_voice_hook::CloseSgreVoiceArchive(&g_sgre_voice_archive);
       return false;
     }
-    // Device creation normally predates helper injection. Do not make audio
-    // support depend on this optional input guard, but install now and retry on
-    // every worker tick until the exact mouse slot is ready.
-    InstallSgreDirectInputShield();
     installed_ = true;
     return true;
   }
@@ -89,7 +113,11 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
   void ProcessPendingEvents() {
-    if (probe()) {
+    if (!probe() || !g_sgre_anchors_resolved) return;
+    // Required/Ready is only meaningful while a lookup card can appear, i.e.
+    // while the sensor is available; the shield itself additionally needs its
+    // own anchor and reports NotReady without it.
+    if (g_sgre_anchors.lookup_sensor_available()) {
       InstallSgreDirectInputShield();
       ProcessSgreLookupTick();
     }
@@ -111,7 +139,7 @@ class SgreAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
-  mutable bool profile_probed_ = false;
-  mutable bool profile_matched_ = false;
+  mutable bool family_probed_ = false;
+  mutable bool family_matched_ = false;
   bool installed_ = false;
 };
