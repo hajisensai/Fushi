@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Dit is het eerste hoofdstuk",
   "manga_series_open_series": "Werkpagina",
   "manga_series_read_progress": "Gelezen tot pagina $page van $total",
-  "manga_series_read_progress_partial": "Gelezen tot pagina $page"
+  "manga_series_read_progress_partial": "Gelezen tot pagina $page",
+  "settings_section_reading_stats": "Leesstatistieken",
+  "reading_stats_idle_timeout": "Inactiviteitstime-out",
+  "reading_stats_idle_timeout_hint": "Stop met het tellen van leestijd na dit aantal minuten zonder bladeren, scrollen of een woord opzoeken. Alleen voor romans, pdf's en manga; video telt zolang het afspeelt."
 }

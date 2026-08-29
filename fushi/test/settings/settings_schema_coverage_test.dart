@@ -35,6 +35,13 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // v90 阅读空闲门（分钟）：写 prefsRepo（changed=true），生效点是阅读器建
+  // StudyClock 时读一次 appModel.readingIdleTimeout——harness 里没有阅读器。
+  // 空闲门行为由 study_clock_test「阅读空闲门」用例咬住，接线由
+  // statistics_write_convergence_guard_test ⑤ 咬住。
+  'reading/Idle timeout':
+      'test/media/audiobook/study_clock_test.dart（空闲门）+ '
+          'test/tools/statistics_write_convergence_guard_test.dart',
   // 「功能模块」七开关（五库页 + 下载/查词两个工具 tab）。写 prefsRepo
   // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
   // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关

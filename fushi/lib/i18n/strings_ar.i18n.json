@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "هذا هو الفصل الأول",
   "manga_series_open_series": "صفحة العمل",
   "manga_series_read_progress": "تمت القراءة حتى الصفحة $page من $total",
-  "manga_series_read_progress_partial": "تمت القراءة حتى الصفحة $page"
+  "manga_series_read_progress_partial": "تمت القراءة حتى الصفحة $page",
+  "settings_section_reading_stats": "إحصائيات القراءة",
+  "reading_stats_idle_timeout": "مهلة الخمول",
+  "reading_stats_idle_timeout_hint": "إيقاف احتساب وقت القراءة بعد هذا العدد من الدقائق دون تقليب صفحة أو تمرير أو بحث عن كلمة. ينطبق على الروايات وملفات PDF والمانغا فقط؛ يُحتسب الفيديو أثناء التشغيل."
 }

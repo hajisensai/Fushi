@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Das ist das erste Kapitel",
   "manga_series_open_series": "Werkseite",
   "manga_series_read_progress": "Bis Seite $page von $total gelesen",
-  "manga_series_read_progress_partial": "Bis Seite $page gelesen"
+  "manga_series_read_progress_partial": "Bis Seite $page gelesen",
+  "settings_section_reading_stats": "Lesestatistik",
+  "reading_stats_idle_timeout": "Inaktivitäts-Timeout",
+  "reading_stats_idle_timeout_hint": "Lesezeit nach so vielen Minuten ohne Umblättern, Scrollen oder Wortsuche nicht mehr zählen. Gilt nur für Romane, PDFs und Manga; Video zählt, solange es läuft."
 }

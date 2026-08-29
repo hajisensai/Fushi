@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Đây là chương đầu tiên",
   "manga_series_open_series": "Trang tác phẩm",
   "manga_series_read_progress": "Đã đọc đến trang $page trên $total",
-  "manga_series_read_progress_partial": "Đã đọc đến trang $page"
+  "manga_series_read_progress_partial": "Đã đọc đến trang $page",
+  "settings_section_reading_stats": "Thống kê đọc",
+  "reading_stats_idle_timeout": "Thời gian không hoạt động",
+  "reading_stats_idle_timeout_hint": "Ngừng tính thời gian đọc sau số phút này nếu không lật trang, cuộn hoặc tra từ. Chỉ áp dụng cho tiểu thuyết, PDF và manga; video được tính khi đang phát."
 }

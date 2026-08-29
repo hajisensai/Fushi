@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Bu ilk bölüm",
   "manga_series_open_series": "Eser sayfası",
   "manga_series_read_progress": "$total sayfadan $page. sayfaya kadar okundu",
-  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu"
+  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu",
+  "settings_section_reading_stats": "Okuma istatistikleri",
+  "reading_stats_idle_timeout": "Boşta kalma süresi",
+  "reading_stats_idle_timeout_hint": "Sayfa çevirme, kaydırma veya sözcük arama olmadan bu kadar dakika geçince okuma süresini saymayı durdur. Yalnızca roman, PDF ve manga için; video oynatılırken sayılır."
 }

@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Ini bab pertama",
   "manga_series_open_series": "Halaman karya",
   "manga_series_read_progress": "Dibaca sampai halaman $page dari $total",
-  "manga_series_read_progress_partial": "Dibaca sampai halaman $page"
+  "manga_series_read_progress_partial": "Dibaca sampai halaman $page",
+  "settings_section_reading_stats": "Statistik membaca",
+  "reading_stats_idle_timeout": "Batas waktu idle",
+  "reading_stats_idle_timeout_hint": "Berhenti menghitung waktu membaca setelah sekian menit tanpa membalik halaman, menggulir, atau mencari kata. Hanya untuk novel, PDF, dan manga; video dihitung selama diputar."
 }

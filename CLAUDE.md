@@ -136,6 +136,7 @@
 | Computer Use 可见巡检 / 离屏、非焦点抓真实像素 / 确定性开页 debug 钩子 / 证据留存 | [docs/agent/computer-use-testing.md](docs/agent/computer-use-testing.md) |
 | Windows app 外打开视频（文件关联 / argv / 拖拽）数据流 / single-instance WM_COPYDATA 转发 | [docs/agent/external-video-open.md](docs/agent/external-video-open.md) |
 | 全量快捷键 / 手柄 / 鼠标绑定盘点快照（2026-06-11） | [docs/agent/shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
+| 学习统计域（v90）：唯一事实表 `study_segments` / `StudyClock` / `loadStatFacts` / `StatWindow` / 同步 wire v2 / legacy 冻结规则 | [docs/agent/statistics.md](docs/agent/statistics.md) |
 | Galgame 用户报告 / 脱敏 probe / adapter 骨架 / 离线 replay / 双架构验证 / 真机证据 | [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md) |
 
 ## 模块索引

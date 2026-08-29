@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Este es el primer capítulo",
   "manga_series_open_series": "Página de la obra",
   "manga_series_read_progress": "Leído hasta la página $page de $total",
-  "manga_series_read_progress_partial": "Leído hasta la página $page"
+  "manga_series_read_progress_partial": "Leído hasta la página $page",
+  "settings_section_reading_stats": "Estadísticas de lectura",
+  "reading_stats_idle_timeout": "Tiempo de inactividad",
+  "reading_stats_idle_timeout_hint": "Dejar de contar el tiempo de lectura tras estos minutos sin pasar página, desplazarse o buscar una palabra. Solo para novelas, PDF y manga; el vídeo cuenta mientras se reproduce."
 }
