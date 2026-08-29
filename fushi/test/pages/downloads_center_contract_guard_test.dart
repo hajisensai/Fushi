@@ -16,7 +16,7 @@ String _read(String path) {
 }
 
 void main() {
-  test('BUG-1923：下载中心保留资源、任务、订阅、设置四个顶层页签', () {
+  test('BUG-1926：下载中心保留资源、任务、订阅、设置四个顶层页签', () {
     final String source = _read(_downloadsPath);
     final String code = maskCommentsAndScriptLines(source);
     final String structural = maskCommentsAndStrings(source);
@@ -58,7 +58,7 @@ void main() {
     );
   });
 
-  test('BUG-1923：initialTabIndex 与 initialShowSettings 真正决定初始页', () {
+  test('BUG-1926：initialTabIndex 与 initialShowSettings 真正决定初始页', () {
     final String source = _read(_downloadsPath);
     final EnclosingCall controller = enclosingCallOf(
       source,
@@ -88,7 +88,7 @@ void main() {
     expect(code, contains('Navigator.of(context).maybePop()'));
   });
 
-  test('BUG-1923：资源页用单个类型下拉框复用四个模块的发现页', () {
+  test('BUG-1926：资源页用单个类型下拉框复用四个模块的发现页', () {
     final String downloads = _read(_downloadsPath);
     final String code = maskCommentsAndScriptLines(downloads);
     final String downloadsStructural = maskCommentsAndStrings(downloads);

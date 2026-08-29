@@ -251,7 +251,7 @@ class EmbeddedTorrentBackend
       }
       final List<String> trackers = await _subscriptionTrackers();
       if (trackers.isNotEmpty) {
-        _session.addTrackers(addedTorrentId!, trackers);
+        _session.addTrackers(addedTorrentId, trackers);
       }
       return true;
     } on FileSystemException {

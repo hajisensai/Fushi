@@ -1171,11 +1171,6 @@ class VideoDownloadPipelineService {
     bool rewindToEnqueue = false;
     final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '')
         .trim();
-    final List<VideoDownloadJobFileRow> persistedFiles = await database
-        .getVideoDownloadJobFiles(job.jobId);
-    final bool selective = persistedFiles.any(
-      (VideoDownloadJobFileRow file) => !file.selected,
-    );
     if (torrentId.isNotEmpty) {
       final VideoDownloadBackendBinding? binding = await backendResolver(job);
       _validateBackendBinding(job, binding);
@@ -1806,8 +1801,7 @@ class VideoDownloadPipelineService {
         'The download backend cannot safely apply a single-file selection',
       );
     }
-    final TorrentPausedMetainfoBackend pausedBackend =
-        backend as TorrentPausedMetainfoBackend;
+    final TorrentPausedMetainfoBackend pausedBackend = backend;
     final TorrentDetailBackend detailBackend = backend as TorrentDetailBackend;
     final TorrentPauseBackend pauseBackend = backend as TorrentPauseBackend;
     final List<TorrentSnapshot> existing = await backend.listTorrents();
