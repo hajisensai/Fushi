@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "Bu ilk bölüm",
   "manga_series_open_series": "Eser sayfası",
   "manga_series_read_progress": "$total sayfadan $page. sayfaya kadar okundu",
-  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu"
+  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu",
+  "options_website": "Resmî web sitesini ziyaret et"
 }

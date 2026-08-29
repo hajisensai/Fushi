@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "Это первая глава",
   "manga_series_open_series": "Страница произведения",
   "manga_series_read_progress": "Прочитано до страницы $page из $total",
-  "manga_series_read_progress_partial": "Прочитано до страницы $page"
+  "manga_series_read_progress_partial": "Прочитано до страницы $page",
+  "options_website": "Открыть официальный сайт"
 }

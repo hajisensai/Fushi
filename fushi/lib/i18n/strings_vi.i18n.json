@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "Đây là chương đầu tiên",
   "manga_series_open_series": "Trang tác phẩm",
   "manga_series_read_progress": "Đã đọc đến trang $page trên $total",
-  "manga_series_read_progress_partial": "Đã đọc đến trang $page"
+  "manga_series_read_progress_partial": "Đã đọc đến trang $page",
+  "options_website": "Truy cập trang web chính thức"
 }

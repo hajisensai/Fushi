@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "最初の章です",
   "manga_series_open_series": "作品ページ",
   "manga_series_read_progress": "$total ページ中 $page ページまで",
-  "manga_series_read_progress_partial": "$page ページまで"
+  "manga_series_read_progress_partial": "$page ページまで",
+  "options_website": "公式サイトを開く"
 }

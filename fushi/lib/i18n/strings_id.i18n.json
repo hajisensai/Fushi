@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "Ini bab pertama",
   "manga_series_open_series": "Halaman karya",
   "manga_series_read_progress": "Dibaca sampai halaman $page dari $total",
-  "manga_series_read_progress_partial": "Dibaca sampai halaman $page"
+  "manga_series_read_progress_partial": "Dibaca sampai halaman $page",
+  "options_website": "Kunjungi situs web resmi"
 }

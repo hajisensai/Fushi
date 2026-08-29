@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "Este é o primeiro capítulo",
   "manga_series_open_series": "Página da obra",
   "manga_series_read_progress": "Lido até a página $page de $total",
-  "manga_series_read_progress_partial": "Lido até a página $page"
+  "manga_series_read_progress_partial": "Lido até a página $page",
+  "options_website": "Visitar o site oficial"
 }

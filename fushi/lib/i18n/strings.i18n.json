@@ -3864,5 +3864,6 @@
   "manga_series_first_chapter_reached": "This is the first chapter",
   "manga_series_open_series": "Series page",
   "manga_series_read_progress": "Read to page $page of $total",
-  "manga_series_read_progress_partial": "Read to page $page"
+  "manga_series_read_progress_partial": "Read to page $page",
+  "options_website": "Visit the official website"
 }
