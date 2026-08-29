@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "Kunjungi situs web resmi"
+  "options_website": "Kunjungi situs web resmi",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "Pemetaan nada HDR",
+  "video_setting_hdr_tone_mapping_hint": "Kurva yang dipakai saat sumber HDR harus dipadatkan ke layar SDR. \"Otomatis\" membiarkan mpv memilih per sumber.",
+  "video_setting_hdr_compute_peak": "Deteksi puncak dinamis",
+  "video_setting_hdr_compute_peak_hint": "Mengukur puncak kecerahan asli tiap bingkai alih-alih mempercayai metadata sumber. Sorotan lebih baik, memakan sedikit GPU.",
+  "video_setting_hdr_auto": "Otomatis",
+  "video_setting_hdr_on": "Aktif",
+  "video_setting_hdr_off": "Nonaktif"
 }

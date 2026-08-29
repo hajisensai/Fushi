@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "Officiële website bezoeken"
+  "options_website": "Officiële website bezoeken",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "HDR-tonemapping",
+  "video_setting_hdr_tone_mapping_hint": "Curve die wordt gebruikt als een HDR-bron op een SDR-scherm moet worden geperst. ‘Automatisch’ laat mpv per bron kiezen.",
+  "video_setting_hdr_compute_peak": "Dynamische piekdetectie",
+  "video_setting_hdr_compute_peak_hint": "Meet de echte piekhelderheid van elk beeld in plaats van te vertrouwen op de metadata van de bron. Betere highlights, kost wat GPU.",
+  "video_setting_hdr_auto": "Automatisch",
+  "video_setting_hdr_on": "Aan",
+  "video_setting_hdr_off": "Uit"
 }

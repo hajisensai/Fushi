@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "Открыть официальный сайт"
+  "options_website": "Открыть официальный сайт",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "Тональное отображение HDR",
+  "video_setting_hdr_tone_mapping_hint": "Кривая, по которой HDR-источник укладывается в SDR-экран. «Авто» оставляет выбор за mpv для каждого источника.",
+  "video_setting_hdr_compute_peak": "Динамическое определение пика",
+  "video_setting_hdr_compute_peak_hint": "Измеряет реальную пиковую яркость каждого кадра вместо доверия метаданным источника. Света лучше, но нагружает GPU.",
+  "video_setting_hdr_auto": "Авто",
+  "video_setting_hdr_on": "Вкл.",
+  "video_setting_hdr_off": "Выкл."
 }

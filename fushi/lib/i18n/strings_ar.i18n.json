@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "زيارة الموقع الرسمي"
+  "options_website": "زيارة الموقع الرسمي",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "تعيين ألوان HDR",
+  "video_setting_hdr_tone_mapping_hint": "المنحنى المستخدم عند ضغط مصدر HDR على شاشة SDR. «تلقائي» يترك الاختيار لـ mpv حسب كل مصدر.",
+  "video_setting_hdr_compute_peak": "كشف الذروة الديناميكي",
+  "video_setting_hdr_compute_peak_hint": "قياس ذروة السطوع الحقيقية لكل إطار بدلاً من الوثوق ببيانات المصدر. إبرازات أدق مقابل بعض استهلاك المعالج الرسومي.",
+  "video_setting_hdr_auto": "تلقائي",
+  "video_setting_hdr_on": "تشغيل",
+  "video_setting_hdr_off": "إيقاف"
 }

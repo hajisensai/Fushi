@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "เยี่ยมชมเว็บไซต์ทางการ"
+  "options_website": "เยี่ยมชมเว็บไซต์ทางการ",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "การแมปโทน HDR",
+  "video_setting_hdr_tone_mapping_hint": "เส้นโค้งที่ใช้เมื่อต้องบีบแหล่ง HDR ลงบนจอ SDR \"อัตโนมัติ\" ให้ mpv เลือกตามแต่ละแหล่ง",
+  "video_setting_hdr_compute_peak": "ตรวจจับจุดสว่างสุดแบบไดนามิก",
+  "video_setting_hdr_compute_peak_hint": "วัดความสว่างสูงสุดจริงของแต่ละเฟรมแทนการเชื่อเมตาดาตาของแหล่ง ไฮไลต์ดีขึ้นแต่กิน GPU เล็กน้อย",
+  "video_setting_hdr_auto": "อัตโนมัติ",
+  "video_setting_hdr_on": "เปิด",
+  "video_setting_hdr_off": "ปิด"
 }

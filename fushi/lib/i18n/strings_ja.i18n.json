@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "公式サイトを開く"
+  "options_website": "公式サイトを開く",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "HDR トーンマッピング",
+  "video_setting_hdr_tone_mapping_hint": "HDR ソースを SDR ディスプレイに収めるときに使うカーブ。「自動」は mpv がソースごとに選びます。",
+  "video_setting_hdr_compute_peak": "動的ピーク検出",
+  "video_setting_hdr_compute_peak_hint": "ソースのメタデータを信じる代わりに、フレームごとの実際のピーク輝度を測ります。ハイライトが良くなる一方、GPU を少し使います。",
+  "video_setting_hdr_auto": "自動",
+  "video_setting_hdr_on": "オン",
+  "video_setting_hdr_off": "オフ"
 }

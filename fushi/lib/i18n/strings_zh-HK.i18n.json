@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "瀏覽官方網站"
+  "options_website": "瀏覽官方網站",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "HDR 色調映射",
+  "video_setting_hdr_tone_mapping_hint": "把 HDR 片源壓進 SDR 螢幕時用的曲線。自動 = 交給 mpv 按片源決定。",
+  "video_setting_hdr_compute_peak": "動態峰值偵測",
+  "video_setting_hdr_compute_peak_hint": "逐格量實際峰值亮度，而不是信片源中繼資料。高光更準，但會佔一點 GPU。",
+  "video_setting_hdr_auto": "自動",
+  "video_setting_hdr_on": "開",
+  "video_setting_hdr_off": "關"
 }

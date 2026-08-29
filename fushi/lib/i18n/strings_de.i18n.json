@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "Offizielle Website besuchen"
+  "options_website": "Offizielle Website besuchen",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "HDR-Tonemapping",
+  "video_setting_hdr_tone_mapping_hint": "Kurve, mit der eine HDR-Quelle auf ein SDR-Display gebracht wird. „Automatisch“ überlässt mpv die Wahl je Quelle.",
+  "video_setting_hdr_compute_peak": "Dynamische Spitzenwerterkennung",
+  "video_setting_hdr_compute_peak_hint": "Misst die echte Spitzenhelligkeit jedes Bildes, statt den Metadaten der Quelle zu vertrauen. Bessere Lichter, kostet etwas GPU-Leistung.",
+  "video_setting_hdr_auto": "Automatisch",
+  "video_setting_hdr_on": "An",
+  "video_setting_hdr_off": "Aus"
 }

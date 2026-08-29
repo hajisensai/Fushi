@@ -3868,5 +3868,13 @@
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
   "mihon_extension_sources_less": "Show fewer sources",
-  "options_website": "공식 웹사이트 방문"
+  "options_website": "공식 웹사이트 방문",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "HDR 톤 매핑",
+  "video_setting_hdr_tone_mapping_hint": "HDR 소스를 SDR 디스플레이에 맞출 때 쓰는 곡선입니다. ‘자동’은 mpv가 소스마다 고르게 합니다.",
+  "video_setting_hdr_compute_peak": "동적 피크 검출",
+  "video_setting_hdr_compute_peak_hint": "소스 메타데이터를 믿는 대신 프레임마다 실제 최대 밝기를 측정합니다. 하이라이트가 좋아지지만 GPU를 조금 씁니다.",
+  "video_setting_hdr_auto": "자동",
+  "video_setting_hdr_on": "켜기",
+  "video_setting_hdr_off": "끄기"
 }
