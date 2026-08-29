@@ -39,7 +39,6 @@ import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
-import 'package:fushi/src/startup/hdr_spike_app.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -154,14 +153,6 @@ void popupMain() {
 /// video path here. We stash the first supported video path for the widget tree
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
-  // HDR Phase 0 spike（docs/plans/2026-08-30-video-hdr-passthrough.md §3）：
-  // 编译期 --dart-define=FUSHI_HDR_SPIKE=true 才存在，正式构建恒 false。
-  // 整棵树不碰 AppModel / DB，只回答「Flutter 没画的区域能否透出后方窗口」。
-  if (const bool.fromEnvironment('FUSHI_HDR_SPIKE')) {
-    WidgetsFlutterBinding.ensureInitialized();
-    runApp(const HdrSpikeApp());
-    return;
-  }
   // 桌面端：从 args 里挑出外部打开的视频路径（仅 Windows runner 会传 argv）。
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     final String? videoArg = firstExternalVideoArg(args);

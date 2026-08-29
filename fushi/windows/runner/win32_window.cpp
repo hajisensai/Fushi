@@ -1,6 +1,5 @@
 #include "win32_window.h"
 
-#include "hdr_spike.h"
 #include "window_activation_policy.h"
 
 #include <flutter_windows.h>
@@ -209,13 +208,7 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   // origin so it is composed for screenshots. Default test mode stays parked
   // off-screen. Both are non-blocking; only the position differs.
   const bool onscreen = hidden && IsTestOnscreenMode();
-  // HDR Phase 0 spike variants 15/16: no redirection surface (Chromium-style
-  // DirectComposition hosting). Creation-time-only ex-style, hence here.
-  const int hdr_spike = fushi::HdrSpike::Variant();
-  const DWORD spike_ex =
-      (hdr_spike == 15 || hdr_spike == 16) ? WS_EX_NOREDIRECTIONBITMAP : 0;
-  const DWORD ex_style =
-      (hidden ? (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) : 0) | spike_ex;
+  const DWORD ex_style = hidden ? (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) : 0;
   const int window_x =
       (hidden && !onscreen) ? kOffscreenOrigin : Scale(origin.x, scale_factor);
   const int window_y =

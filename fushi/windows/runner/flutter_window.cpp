@@ -26,7 +26,6 @@
 #include "audio_loopback_capture.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
-#include "hdr_spike.h"
 #include "ime_space_dispatch.h"
 #include "window_capture.h"
 
@@ -554,11 +553,6 @@ bool FlutterWindow::OnCreate() {
   RegisterMagpieChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
-  // HDR Phase 0 spike (env FUSHI_HDR_SPIKE, never set in real launches).
-  if (fushi::HdrSpike::Variant() != 0) {
-    fushi::HdrSpike::Start(GetHandle(),
-                           flutter_controller_->view()->GetNativeWindow());
-  }
   return true;
 }
 
@@ -2377,20 +2371,6 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  // HDR Phase 0 spike: keep the probe window glued behind the main window.
-  if (fushi::HdrSpike::Variant() != 0) {
-    if (message == WM_WINDOWPOSCHANGING || message == WM_WINDOWPOSCHANGED) {
-      fushi::HdrSpike::TraceWindowPos(hwnd, message,
-                                      reinterpret_cast<WINDOWPOS*>(lparam));
-    }
-    if (message == WM_WINDOWPOSCHANGED || message == WM_ACTIVATE ||
-        message == WM_SIZE || message == WM_MOVE ||
-        message == WM_SHOWWINDOW) {
-      fushi::HdrSpike::Sync(hwnd);
-    } else if (message == WM_DESTROY) {
-      fushi::HdrSpike::Stop();
-    }
-  }
   // BUG-1239: inspect VK_PROCESSKEY before Flutter handles the message. The
   // engine deliberately reports IME-owned keys as physical=0/logical=0, so
   // checking after HandleTopLevelWindowProc can no longer identify Space.
