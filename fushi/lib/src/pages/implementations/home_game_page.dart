@@ -1,5 +1,3 @@
-import 'dart:async' show unawaited;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -111,6 +109,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
   }
 
   void _showSection(GameSection section) {
+    // 门必须在这里、不能逐调用点补：新的两个调用点（drop 落库后、文件选择器返回
+    // 后）都在 await 之后，用户完全可以在文件对话框开着时切走 tab / 关窗口。
+    // 那时 [dispose] 已经把 notifier 复位成 dashboard，这里再写一次就是把一次
+    // 过期的导航请求泄漏给下一次挂载——正是 [dispose] 那段注释要防的事。
+    if (!mounted) return;
     if (gameSectionNotifier.value != section) {
       gameSectionNotifier.value = section;
       return;
@@ -248,14 +251,16 @@ class _HomeGamePageState extends State<HomeGamePage> {
     // 完全没反应——页面上还写着「也可以把 .exe 拖进来」。
     return FushiFileDropTarget(
       debugLabel: 'game-import',
-      onDrop: (List<String> paths, Offset position) => unawaited(
-        addGamesFromPaths(
-          ProviderScope.containerOf(context, listen: false)
-              .read(appProvider)
-              .galgameRepo,
-          paths,
-          onImported: _showLibrary,
-        ),
+      // 必须把这个 future 交回去：`FushiFileDropTarget.runDrop` 特意 await 回调，
+      // 那是拖放路径上**唯一**的错误咽喉（否则 repo.load()/addAll() 抛出时异常
+      // 直接漂进 zone，用户看到的只有「拖了没反应」——正是本页要修的症状）。
+      // 包成 unawaited 等于把回调立刻变成 void，await 什么也接不到。
+      onDrop: (List<String> paths, Offset position) => addGamesFromPaths(
+        ProviderScope.containerOf(context, listen: false)
+            .read(appProvider)
+            .galgameRepo,
+        paths,
+        onImported: _showLibrary,
       ),
       child: DesktopContentLayout(
         kind: DesktopContentKind.readerShelf,

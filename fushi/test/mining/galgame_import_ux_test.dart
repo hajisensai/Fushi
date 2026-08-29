@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 用户报的三件事：
 ///   ①「导入游戏 exe 时拖动功能没反应」
 ///   ②「选文件导入后要不再给个成功提示或者给跳转到游戏库页面，导成功没反应我还
@@ -14,60 +16,12 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 注意：所有「顺序 / 不存在」类断言都必须先剥注释——注释里出现同一个标识符会先被
 /// indexOf 命中，把守卫变成恒真或恒假。
-String stripComments(String source) {
-  final StringBuffer out = StringBuffer();
-  for (final String line in source.split('\n')) {
-    final String trimmed = line.trimLeft();
-    if (trimmed.startsWith('//')) continue;
-    final int inline = line.indexOf('//');
-    // 只剥「不在字符串里」的行尾注释：本仓源码里带 // 的字符串常量都是 URL，
-    // 一律含 :// ，据此排除。
-    if (inline >= 0 && !line.contains('://')) {
-      out.writeln(line.substring(0, inline));
-      continue;
-    }
-    out.writeln(line);
-  }
-  return out.toString();
-}
-
-/// 精确截取一个函数体：参数表按括号配平跳过，函数体按花括号配平闭合。
-///
-/// **不要**改回「从签名往后取固定长度窗口」：`addGameViaFilePicker` 紧挨着
-/// `addGamesFromPaths`，固定窗口会溢出到下一个函数里——两者都有 success toast，
-/// 于是「本函数有没有 toast」这条断言恒真。变异实测抓到过这一次空转。
-///
-/// 前提：传进来的 source 已经剥过注释（注释里的花括号会把配平算歪）。
-String methodBody(String source, String signature) {
-  final int at = source.indexOf(signature);
-  expect(at, isNonNegative, reason: '找不到 $signature');
-  // signature 自带一个未闭合的 '('，从它之后开始配平参数表。
-  int i = at + signature.length;
-  int paren = 1;
-  while (i < source.length && paren > 0) {
-    if (source[i] == '(') paren++;
-    if (source[i] == ')') paren--;
-    i++;
-  }
-  final int braceAt = source.indexOf('{', i);
-  expect(braceAt, isNonNegative, reason: '$signature 后面找不到函数体');
-  int depth = 0;
-  for (int j = braceAt; j < source.length; j++) {
-    if (source[j] == '{') depth++;
-    if (source[j] == '}') {
-      depth--;
-      if (depth == 0) return source.substring(at, j + 1);
-    }
-  }
-  fail('找不到 $signature 的函数体结尾');
-}
-
 void main() {
   group('① 游戏「导入」页要自己接 drop', () {
     late String source;
 
     setUpAll(() {
-      source = stripComments(
+      source = maskComments(
         File('lib/src/pages/implementations/home_game_page.dart')
             .readAsStringSync(),
       );
@@ -86,6 +40,38 @@ void main() {
       expect(body, contains('addGamesFromPaths('));
     });
 
+    test('onDrop 必须把 future 交回去，不得 unawaited —— 那是唯一的错误咽喉', () {
+      final String body = methodBody(source, 'Widget _buildImport(');
+      final int dropAt = body.indexOf('onDrop:');
+      expect(dropAt, isNonNegative);
+      // `FushiFileDropTarget.runDrop` 特意 await 这个回调：各页的路由函数挂在
+      // desktop_drop 的 void 回调上，抛出时异常直接漂进 zone，用户看到的只有
+      // 「拖了没反应」。包成 unawaited(...) 等于让回调立刻返回 void，await 什么
+      // 也接不到 —— 而「拖了没反应」正是本页要修的那个症状。
+      final int bodyEnd = body.indexOf('child:', dropAt);
+      expect(bodyEnd, greaterThan(dropAt));
+      expect(
+        body.substring(dropAt, bodyEnd),
+        isNot(contains('unawaited(')),
+        reason: 'onDrop 的 future 必须交回 runDrop，否则落库失败会被静默吞掉',
+      );
+    });
+
+    test('_showSection 自带 mounted 门（两个新调用点都在 await 之后）', () {
+      final String body = methodBody(source, 'void _showSection(GameSection section)');
+      // drop 落库后、文件选择器返回后才回调，用户完全可以在文件对话框开着的时候
+      // 切走 tab / 关窗口。那时 dispose() 已把 notifier 复位成 dashboard，这里
+      // 再写一次就是把一次过期的导航请求泄漏给下一次挂载。
+      // 门必须在 _showSection 里，不能逐调用点补 —— 下一个新调用点还会漏。
+      expect(body, contains('if (!mounted) return;'),
+          reason: 'dispose() 复位 notifier 之后不得再被 await 回来的回调写脏');
+      final int gateAt = body.indexOf('if (!mounted) return;');
+      final int writeAt = body.indexOf('gameSectionNotifier.value = section;');
+      expect(writeAt, isNonNegative);
+      expect(gateAt, lessThan(writeAt),
+          reason: 'mounted 门必须排在写 notifier 之前才有意义');
+    });
+
     test('drop target 必须包在 _buildImport 的最外层（内层会被布局裁掉命中区）', () {
       final String body = methodBody(source, 'Widget _buildImport(');
       final int dropAt = body.indexOf('FushiFileDropTarget(');
@@ -102,7 +88,7 @@ void main() {
     late String flow;
 
     setUpAll(() {
-      flow = stripComments(
+      flow = maskComments(
         File('lib/src/mining/galgame_add_flow.dart').readAsStringSync(),
       );
     });
@@ -126,7 +112,7 @@ void main() {
     });
 
     test('「导入」页把跳转接上了游戏库', () {
-      final String page = stripComments(
+      final String page = maskComments(
         File('lib/src/pages/implementations/home_game_page.dart')
             .readAsStringSync(),
       );
@@ -143,7 +129,7 @@ void main() {
     });
 
     test('游戏库页的拖放收敛到同一条共享路径（两处各写一份必然走岔）', () {
-      final String library = stripComments(
+      final String library = maskComments(
         File('lib/src/pages/implementations/games_library_page.dart')
             .readAsStringSync(),
       );
@@ -160,7 +146,7 @@ void main() {
     late String source;
 
     setUpAll(() {
-      source = stripComments(
+      source = maskComments(
         File('lib/src/pages/implementations/miscellaneous_settings_page.dart')
             .readAsStringSync(),
       );
@@ -195,7 +181,7 @@ void main() {
     });
 
     test('裁剪对话框支持锁定宽高比，且真的传给了 CropController', () {
-      final String crop = stripComments(
+      final String crop = maskComments(
         File('lib/src/pages/implementations/crop_image_dialog_page.dart')
             .readAsStringSync(),
       );
