@@ -451,6 +451,9 @@
       currentLookupCue = cue || currentLookupCue;
       var shown = await sendToTab({
         type: 'fushiSubtitleSidePanelShowLookup', term: value, cue: currentLookupCue,
+        // 侧栏与宿主页是两个视口，绝对坐标没有意义；交纵向比例，页面按自己的视口还原，
+        // 弹窗就落在被点那一行的高度上（贴右缘=紧邻侧栏），不再固定糊在右上角挡内容。
+        anchorRatio: lookupAnchorRatio(anchor),
       });
       if (shown && shown.ok === true) {
         pageLookupOpen = true;
@@ -497,6 +500,17 @@
     if (shouldPosition) positionLookup(anchor);
   }
 
+  // 被点词在侧栏视口里的纵向比例（0=顶、1=底）。没有锚点（嵌套查词等）时沿用上一次的位置。
+  var lastAnchorRatio = 0.15;
+  function lookupAnchorRatio(anchor) {
+    var height = window.innerHeight || 0;
+    if (anchor && height > 0 && typeof anchor.top === 'number') {
+      var ratio = anchor.top / height;
+      lastAnchorRatio = Math.min(1, Math.max(0, ratio));
+    }
+    return lastAnchorRatio;
+  }
+
   function anchorForHit(hit, x, y) {
     try {
       var node = hit && hit.node;
@@ -519,10 +533,15 @@
     return { left: x, top: y, right: x + 1, bottom: y + 1, width: 1, height: 1 };
   }
 
-  function lookupAtPointer(pointer, announceMissing) {
-    if (!pointer || !pointer.textEl || !pointer.textEl.isConnected) return;
+  // explicit：用户显式手势（点击 / 按下 Shift），永远放行在途闸；announceMissing：取不到词时
+  // 是否提示。两者曾是同一个参数，于是「点击」被迫既放行在途闸又必须弹 toast——而点行内空白
+  // 本就取不到词，那条 toast 挡住的正是用户想要的跳转。返回 true 表示这一击真的发起了查词。
+  function lookupAtPointer(pointer, options) {
+    var explicit = !!(options && options.explicit);
+    var announceMissing = !!(options && options.announceMissing);
+    if (!pointer || !pointer.textEl || !pointer.textEl.isConnected) return false;
     var hovered = document.elementFromPoint(pointer.x, pointer.y);
-    if (!hovered || (hovered !== pointer.textEl && !pointer.textEl.contains(hovered))) return;
+    if (!hovered || (hovered !== pointer.textEl && !pointer.textEl.contains(hovered))) return false;
     var term = '';
     var hit = null;
     try {
@@ -536,18 +555,19 @@
     } catch (_) { term = ''; }
     if (!term) {
       if (announceMissing) toast('未识别到可查词文字');
-      return;
+      return false;
     }
     var scanKey = pointer.index + '\u0000' + term;
-    if (scanKey === activeScanKey && (pageLookupOpen || !lookupPaneEl.hidden)) return;
-    // 在途闸只拦 pointermove 自动扫词（announceMissing=false）；显式手势永远放行。
+    if (scanKey === activeScanKey && (pageLookupOpen || !lookupPaneEl.hidden)) return true;
+    // 在途闸只拦 pointermove 自动扫词；显式手势（点击 / Shift）永远放行。
     // 超过截止时间的在途视为已死（SW 被回收等），放行新查词——死锁不可复活。
-    if (!announceMissing && lookupPendingSince &&
+    if (!explicit && lookupPendingSince &&
         Date.now() - lookupPendingSince < LOOKUP_PENDING_TIMEOUT_MS) {
-      return;
+      return false;
     }
     activeScanKey = scanKey;
     lookupTerm(term, pointer.cue, anchorForHit(hit, pointer.x, pointer.y));
+    return true;
   }
 
   function schedulePointerLookup(pointer) {
@@ -557,7 +577,7 @@
       scanFrame = null;
       var next = scheduledPointer;
       scheduledPointer = null;
-      lookupAtPointer(next, false);
+      lookupAtPointer(next, {}); // pointermove 自动扫词：受在途闸约束、不提示
     });
   }
 
@@ -727,10 +747,13 @@
           var clickSel = window.getSelection && window.getSelection();
           if (clickSel && !clickSel.isCollapsed) return;
         } catch (_) {}
-        event.stopPropagation(); // 不冒泡到 row 的 seek：点文字=查词、点行其它区域=跳转
-        lookupAtPointer({
+        // 文字块占满整行宽度，点文字右侧的空白也落在这里：取到词才算「点文字=查词」并吞掉
+        // 这一击；取不到词就让它继续冒泡到 row 的 seek（点空白=跳转到这句），而不是只留下
+        // 一条「未识别到可查词文字」——那时用户既查不了词也跳不了。
+        var started = lookupAtPointer({
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
-        }, true);
+        }, { explicit: true });
+        if (started) event.stopPropagation();
       });
       function rememberPointer(event) {
         lastPointer = {
@@ -1036,7 +1059,7 @@
     // Yomitan 的 modifier-on-keydown 路径：指针已经停在词上时，按下 Shift 就用最后
     // 一次 pointer 坐标立即查，不要求用户再晃动鼠标，也不 preventDefault。
     if (event.key === 'Shift' && !event.repeat && lastPointer) {
-      lookupAtPointer(lastPointer, true);
+      lookupAtPointer(lastPointer, { explicit: true, announceMissing: true });
     }
   }, true);
   document.addEventListener('keyup', function (event) {

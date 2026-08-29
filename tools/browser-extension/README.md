@@ -86,11 +86,14 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 
     侧栏取词 → fushiSubtitleSidePanelShowLookup（tabs 消息，带该行精确时间窗）
       → subtitle-panel.js → content.js 的 fushiShowLookupFromSidePanel
-      → fushiSendLookup（页面自己发查词） → 页面弹窗（Shadow host），落在视口右上角
+      → fushiSendLookup（页面自己发查词） → 页面弹窗（Shadow host）
 
 于是嵌套查词、发音、查重、制卡、「查词时暂停」全部沿用页面既有链路，与 Shift 划词同源。
 几个必须成立的点：
 
+- **落点跟着被点的那一行**：侧栏与宿主页是两个视口，绝对坐标没有意义，所以侧栏交的是
+  `anchorRatio`（被点行在侧栏视口里的纵向比例），页面按自己的视口还原：横向贴右缘（紧邻
+  侧栏），纵向落在那一行的高度上。固定糊在右上角会压住画面里正在读的文字。
 - **锚点是权威的**：侧栏交来的词在宿主页上没有对应选区，`anchorRect.authoritative` 让
   `fushiRender` 跳过整段选区探测——否则 `highlightSelection` 的无选区兜底会把**上一轮**查词的
   bbox 当锚点，弹窗落到上一个词旁边、还会把那处重新点亮。
@@ -101,7 +104,26 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `fushiSidePanelLookupGone`，侧栏据此复位扫词去重键；没有它，鼠标停在同一个字上就永远
   重查不了。页面自身的 Shift 查词关窗**不**发这条。
 
-行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点、锚点、回落、Esc、去重复位）。
+- **关窗那一击不漏给站点**：Netflix 等把「点画面」当播放/暂停切换，用户点旁边只是想关弹窗，
+  却连带把视频停了。关窗后在 capture 阶段截住紧随其后的那一个 click（不 `preventDefault`，
+  聚焦/选区这些默认行为要留着）；没产生 click 时由定时器撤掉监听，不误吞后面的点击。
+- **Esc 关弹窗**：页面弹窗此前根本不认 Esc。现在 capture 阶段先关窗并截住这次按键，站点自己
+  的 Esc 处理不再同时发生。**但视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，
+  网页脚本拦不住**——这里能保证的只是「弹窗一定被关掉」。
+
+行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点跟随、锚点、回落、Esc、
+关窗吞击、去重复位、点空白跳转）。
+
+## 字幕列表的点击分工
+
+一行里三块区域各管一件事，互不抢：**时间戳**跳转、**文字**查词、**行内空白**跳转。
+文字块占满整行宽度，点文字右侧的空白同样落在它身上，所以「点文字=查词」必须**取到词才**
+`stopPropagation`；取不到词就把这一击让回给行的 seek。否则用户点空白既查不了词也跳不了，
+只剩一条「未识别到可查词文字」的 toast（用户报「点击空白位置不会跳转到这句」）。
+
+`lookupAtPointer(pointer, { explicit, announceMissing })` 的两个开关也是为此拆开的：`explicit`
+（点击 / 按下 Shift）放行在途闸，`announceMissing` 才决定取不到词时是否提示——它们曾是同一个
+参数，于是「点击」被迫既放行在途闸又必须弹那条 toast。
 
 ## 查词框大小（单一真相源 + 窄侧边栏自动收敛）
 

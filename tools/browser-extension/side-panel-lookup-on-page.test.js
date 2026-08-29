@@ -5,11 +5,13 @@
 // 不管怎么定位都画不出面板边界——没有 CSS/JS 能突破。唯一的真路径是把词交回宿主页，用
 // 页面弹窗（Shadow host）渲染，于是查词请求、暂停/恢复、嵌套查词、发音、查重、制卡全部
 // 沿用页面既有链路。本文件守住这条链路的两端：
-//   [content.js]  fushiShowLookupFromSidePanel：发查词 + 弹窗落在视口右上（紧邻侧栏、不压
-//                 底部字幕）；不拿宿主页上一轮的选区当锚点、不把上一处词重新点亮；关窗时
-//                 定向回 fushiSidePanelLookupGone（页面自己的 Shift 查词关窗不发）。
+//   [content.js]  fushiShowLookupFromSidePanel：发查词 + 弹窗贴右缘、纵向跟随侧栏里被点的
+//                 那一行；不拿宿主页上一轮的选区当锚点、不把上一处词重新点亮；关窗时定向回
+//                 fushiSidePanelLookupGone（页面自己的 Shift 查词关窗不发）；关窗的那一击与
+//                 Esc 都不再漏给站点（Netflix 点画面=播放/暂停切换）。
 //   [side-panel.js] 默认把词交给宿主页且**不**在面板内渲染；宿主页不可达时回落面板内渲染
-//                 （绝不能变成查不了词）；设置关掉时仍走面板内；Esc 关掉页面上那份。
+//                 （绝不能变成查不了词）；设置关掉时仍走面板内；Esc 关掉页面上那份；点文字
+//                 =查词、点行内空白（取不到词）=让这一击冒泡成「跳转到这句」。
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -128,7 +130,19 @@ function loadContent() {
     documentElement: html,
     body,
     fullscreenElement: null,
-    addEventListener: (t, fn) => { (docListeners[t] = docListeners[t] || []).push(fn); },
+    addEventListener: (t, fn, opts) => {
+      (docListeners[t] = docListeners[t] || []).push(fn);
+      if (opts === true || (opts && opts.capture)) {
+        (docListeners['capture:' + t] = docListeners['capture:' + t] || []).push(fn);
+      }
+    },
+    removeEventListener: (t, fn) => {
+      for (const bucket of [docListeners[t], docListeners['capture:' + t]]) {
+        if (!bucket) continue;
+        const i = bucket.indexOf(fn);
+        if (i >= 0) bucket.splice(i, 1);
+      }
+    },
     getElementById: () => null,
     querySelector: () => null,
     querySelectorAll: () => [],
@@ -192,13 +206,13 @@ test('侧栏查词交给宿主页：发出查词请求并建出页面弹窗（�
   assert.ok(findById(h.body, 'hibiki-popup-host'), '必须在宿主页上建出页面弹窗');
 });
 
-test('侧栏查词的弹窗落在视口右上（紧邻侧栏、不压底部字幕）', () => {
+test('没带位置信息时弹窗贴视口右上（紧邻侧栏那侧，不压底部字幕）', () => {
   const h = loadContent();
   h.sandbox.window.fushiShowLookupFromSidePanel('世界', null);
   const host = h.runPlacement(400, 300);
-  // 锚点是视口右上角的零宽矩形：左缘溢出后夹回 vw - pw - 8 = 1200 - 400 - 8。
+  // 锚点是视口右缘的零宽矩形：左缘溢出后夹回 vw - pw - 8 = 1200 - 400 - 8。
   assert.strictEqual(host.style.left, '792px', '弹窗未贴视口右缘（应紧邻侧栏那侧）');
-  assert.strictEqual(host.style.top, '12px', '弹窗未落在视口顶部（落到底部会压住字幕）');
+  assert.strictEqual(host.style.top, '12px', '无位置信息时应落在顶部（落到底部会压住字幕）');
 });
 
 test('侧栏查词不拿宿主页上一轮选区当锚点，也不把上一处词重新点亮', () => {
@@ -228,6 +242,58 @@ test('页面弹窗关闭时回 fushiSidePanelLookupGone；页面自身 Shift 查
   for (const fn of (p.docListeners.mousedown || [])) fn({ target: outside });
   assert.ok(!p.sent.some((m) => m && m.type === 'fushiSidePanelLookupGone'),
     '页面自身查词关窗也发了侧栏回执（会误清侧栏状态）');
+});
+
+test('弹窗纵向跟随侧栏里被点的那一行（固定糊在右上角会压住画面里的文字）', () => {
+  const top = loadContent();
+  top.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.05);
+  const topHost = top.runPlacement(400, 300);
+
+  const middle = loadContent();
+  middle.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.6);
+  const midHost = middle.runPlacement(400, 300);
+
+  assert.strictEqual(topHost.style.left, '792px', '横向仍应贴右缘（紧邻侧栏）');
+  assert.strictEqual(midHost.style.left, '792px', '横向仍应贴右缘（紧邻侧栏）');
+  // 视口高 800：点列表上方 → 锚点 y=40，弹窗落其下方 44px；点靠下 → 锚点 y=480，落 484px。
+  assert.strictEqual(topHost.style.top, '44px', '点列表上方时弹窗应落在上方');
+  assert.strictEqual(midHost.style.top, '484px', '点列表靠下时弹窗应跟着下移');
+});
+
+test('关掉弹窗的那一击不再传给站点（Netflix 点画面=播放/暂停切换）', () => {
+  const h = loadContent();
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
+  assert.ok(findById(h.body, 'hibiki-popup-host'), '前置：页面弹窗应在场');
+
+  const outside = makeEl('div');
+  for (const fn of (h.docListeners['capture:mousedown'] || [])) fn({ target: outside });
+  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null, '点弹窗外应关窗');
+
+  let stopped = 0;
+  const clickEvent = {
+    target: outside,
+    stopPropagation() { stopped += 1; },
+    stopImmediatePropagation() { stopped += 1; },
+  };
+  const clickCaptors = h.docListeners['capture:click'] || [];
+  assert.ok(clickCaptors.length >= 1, '关窗后必须截住紧随其后的那一次 click');
+  for (const fn of clickCaptors) fn(clickEvent);
+  assert.ok(stopped >= 1, '关窗的这一击仍传给了站点（视频会被连带暂停/播放）');
+});
+
+test('Esc 关掉页面弹窗，并截住这次按键不让站点再处理', () => {
+  const h = loadContent();
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
+  let stopped = 0;
+  const esc = {
+    key: 'Escape',
+    defaultPrevented: false,
+    stopPropagation() { stopped += 1; },
+    stopImmediatePropagation() { stopped += 1; },
+  };
+  for (const fn of (h.docListeners['capture:keydown'] || [])) fn(esc);
+  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), null, 'Esc 没关掉页面弹窗');
+  assert.ok(stopped >= 1, 'Esc 未被截住，站点自己的 Esc 处理会同时发生');
 });
 
 // ───────────────────────── side-panel.js（侧边栏一侧） ─────────────────────────
@@ -294,6 +360,7 @@ function loadSidePanel(storedSettings, tabReply) {
   });
   // 字幕行里被“点”的那个文字元素（elementFromPoint 的命中目标）。
   let hitEl = null;
+  let nextTerm = '世界'; // 置空 = 点在行内空白，取不到词
   const cueTextNode = { textContent: '世界です', nodeType: 3 };
   const windowObj = {
     addEventListener() {},
@@ -302,8 +369,8 @@ function loadSidePanel(storedSettings, tabReply) {
     getSelection: () => ({ isCollapsed: true }),
     // 侧栏里的取词（与宿主页同一套 selection.js）：命中一个字、扩成词。
     fushiSelection: {
-      getCharacterAtPoint: () => ({ node: cueTextNode, offset: 0 }),
-      selectFromPosition: () => '世界',
+      getCharacterAtPoint: () => (nextTerm ? { node: cueTextNode, offset: 0 } : null),
+      selectFromPosition: () => nextTerm,
     },
   };
   const sandbox = {
@@ -345,11 +412,25 @@ function loadSidePanel(storedSettings, tabReply) {
     pane: els.get('lookup-pane'),
     lookup(term) { windowObj.flutter_inappwebview.callHandler('onLinkClick', term); },
     // 用户在字幕行里点词（asbplayer 同款单击查词）——截图里那个操作的真实路径。
-    clickCueWord() {
+    // term 为空 = 点在文字右侧的行内空白（取不到词）；未被 stopPropagation 时按真实 DOM 那样
+    // 继续冒泡到 row 的 click（点空白=跳转到这句）。
+    clickCueWord(term) {
+      nextTerm = term === undefined ? '世界' : term;
       const text = findByClassName(els.get('list'), 'subtitle-text');
       assert.ok(text, '字幕列表里没有渲染出可点的字幕文字');
       hitEl = text;
-      for (const fn of (text.handlers.click || [])) fn({ clientX: 40, clientY: 60, stopPropagation() {} });
+      let stopped = false;
+      const event = {
+        clientX: 40, clientY: 60, shiftKey: false, target: text,
+        stopPropagation() { stopped = true; },
+      };
+      for (const fn of (text.handlers.click || [])) fn(event);
+      if (!stopped) {
+        const row = text.parentNode;
+        assert.ok(row, '字幕文字必须挂在行里（点空白要冒泡到行的 seek）');
+        for (const fn of (row.handlers.click || [])) fn(event);
+      }
+      return stopped;
     },
     pressEscape() {
       for (const fn of (docListeners.keydown || [])) fn({ key: 'Escape' });
@@ -456,4 +537,28 @@ test('页面弹窗关窗回执到达后，同一个词能重新查（去重键�
   assert.strictEqual(
     h.tabMessages.filter((m) => m && m.type === 'fushiSubtitleSidePanelShowLookup').length, 2,
     '页面弹窗已关，同词必须能重新查（否则用户得先移到别的词上再回来）');
+});
+
+test('点行内空白（取不到词）跳转到这句，而不是只弹一条「未识别到可查词文字」', async () => {
+  const h = loadSidePanel({}, OK_REPLY);
+  await flush();
+  const stopped = h.clickCueWord(''); // 文字右侧的空白：取不到词
+  await flush();
+  assert.strictEqual(stopped, false, '取不到词时不该吞掉这一击（行的 seek 就在冒泡路径上）');
+  assert.ok(h.tabMessages.some((m) => m && m.type === 'fushiSubtitleSidePanelSeek'),
+    '点行内空白没有跳转到这句');
+  assert.ok(!h.tabMessages.some((m) => m && m.type === 'fushiSubtitleSidePanelShowLookup'),
+    '取不到词却发起了查词');
+});
+
+test('点文字仍是查词，且不冒泡成跳转', async () => {
+  const h = loadSidePanel({}, OK_REPLY);
+  await flush();
+  const stopped = h.clickCueWord('世界');
+  await flush();
+  assert.strictEqual(stopped, true, '取到词必须吞掉这一击，否则会连带跳转');
+  assert.ok(h.tabMessages.some((m) => m && m.type === 'fushiSubtitleSidePanelShowLookup'),
+    '点文字没有查词');
+  assert.ok(!h.tabMessages.some((m) => m && m.type === 'fushiSubtitleSidePanelSeek'),
+    '查词的同时还跳转了（视频会被拉走）');
 });

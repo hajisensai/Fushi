@@ -712,7 +712,8 @@
         // 会退回面板内自己渲染——宿主页没有 content.js（chrome:// 等）不能变成查不了词。
         var showCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
         var shown = typeof window.fushiShowLookupFromSidePanel === 'function' &&
-          window.fushiShowLookupFromSidePanel(String(msg.term || ''), showCue) === true;
+          window.fushiShowLookupFromSidePanel(
+            String(msg.term || ''), showCue, msg.anchorRatio) === true;
         sendResponse({ ok: shown });
         return false;
       }

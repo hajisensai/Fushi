@@ -649,3 +649,40 @@ test('videoKey 契约：netflix=watch id、youtube=yt-<v>、其它=host+path', (
   const generic = loadContent({ hostname: 'example.com', pathname: '/show/1' });
   assert.strictEqual(generic.windowObj.fushiVideoKey(), 'example.com/show/1');
 });
+
+// 用户报（截图）：来回跳转后实时采集轨里同一句出现两条，时间戳都停在同一秒。
+// 成因链：cue 的 startMs 记的是「这句在 DOM 里被我们看到的时刻」——先前那次经过若是 seek 落在
+// 句子中段，它就比真实句首晚了一截；下一次从句首正常播放采到同一句，两个起点差出旧判据的
+// 750ms 窄窗（且新起点更早，正好从窗口前沿漏出去），于是同一句被当成两句入轨。
+test('seek 落在句中先采到这句，回跳后从句首经过不得再插一条同句', () => {
+  const h = loadContent({
+    hostname: 'www.youtube.com',
+    pathname: '/watch',
+    search: '?v=seek-mid',
+  });
+  const key = 'yt-seek-mid|live';
+
+  // ① 用户直接跳到 12:49.9（句子已经在屏幕上）：这句第一次被看到，起点只能记成落点。
+  h.video.currentTime = 769.9;
+  h.state.subText = '（玲琳）よく効く熱さましが…';
+  h.sampler.fn();
+  const track = h.windowObj.fushiEpisodeCues[key];
+  assert.strictEqual(track.length, 1, '前置：落点处这句应入轨');
+  assert.strictEqual(track[0].startMs, 769900, '前置：起点就是落点（比真实句首晚）');
+
+  // ② 往回跳到 12:44 的另一句。
+  h.seekTo(764.0);
+  h.state.subText = '（慧月）せいせい 死の足音におびえて過ごすといいわ';
+  h.sampler.fn();
+  assert.strictEqual(track.length, 2, '前置：回跳处的另一句是新句，应入轨');
+
+  // ③ 正常播放推进到 12:49.0——同一句的真实句首，比 ① 记下的起点早 900ms。
+  h.video.currentTime = 769.0;
+  h.state.subText = '（玲琳）よく効く熱さましが…';
+  h.sampler.fn();
+
+  const sameLine = track.filter((cue) => cue.text === '（玲琳）よく効く熱さましが…');
+  assert.strictEqual(sameLine.length, 1,
+    '同一句入轨两次（用户截图里 12:49 那两行重复字幕）');
+  assert.strictEqual(track.length, 2, '轨里只该有这两句');
+});

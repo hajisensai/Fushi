@@ -357,6 +357,7 @@ function fushiNewSamplerState(video, key, replayPending) {
     cueHist: [],
     liveCue: null,
     liveCueReplay: false,
+    justEndedCue: null,
     replayPending: !!replayPending,
     seeking: false,
     onSeeking: null,
@@ -454,6 +455,7 @@ function fushiSyncSamplerLifecycle() {
 function fushiSampleCue() {
   const state = fushiSyncSamplerLifecycle();
   if (!state) return;
+  state.justEndedCue = null; // 只在本次采样内有效（见 fushiLiveCueEnd）
   const nowV = fushiVideoTimeMs(state.video);
   if (nowV === null) return;
 
@@ -479,7 +481,7 @@ function fushiSampleCue() {
     state.lastDomText = text;
     state.curText = text;
     state.curStartV = nowV;
-    fushiLiveCueStart(state, text, nowV, true);
+    fushiLiveCueStart(state, text, nowV);
     return;
   }
   if (text === state.lastDomText) return;
@@ -504,7 +506,7 @@ function fushiSampleCue() {
     }
     state.curText = addedText.replace(/^\s+/, '');
     state.curStartV = state.curText ? nowV : 0;
-    if (state.curText) fushiLiveCueStart(state, state.curText, nowV, false);
+    if (state.curText) fushiLiveCueStart(state, state.curText, nowV);
     return;
   }
   if (state.curText) {
@@ -514,7 +516,7 @@ function fushiSampleCue() {
   state.lastDomText = text;
   state.curText = text;
   state.curStartV = text ? nowV : 0;
-  if (text) fushiLiveCueStart(state, text, nowV, false); // TODO-1363：新句出现即入 live 轨（暂定 end）
+  if (text) fushiLiveCueStart(state, text, nowV); // TODO-1363：新句出现即入 live 轨（暂定 end）
 }
 // 当前句的视频时间窗：命中历史（倒退回看过的句）用其完整 [startV,endV]；否则用当前 start +
 // 现在的视频时间作暂定 end（Netflix 回放时会按字幕变化重新定 end；YouTube 用此窗即可）。
@@ -664,7 +666,7 @@ function fushiSortedCueInsert(cues, cue, windowMs) {
 function fushiCueTextRelated(a, b) {
   return a === b || a.indexOf(b) === 0 || b.indexOf(a) === 0;
 }
-function fushiLiveCueStart(state, text, startV, allowReplay) {
+function fushiLiveCueStart(state, text, startV) {
   if (!text) {
     state.liveCue = null;
     state.liveCueReplay = false;
@@ -672,16 +674,24 @@ function fushiLiveCueStart(state, text, startV, allowReplay) {
   }
   const key = state.key + '|' + FUSHI_LIVE_LANG;
   const track = fushiEpisodeCues[key] || (fushiEpisodeCues[key] = []);
-  if (allowReplay) {
-    // 真实 seek 或同 key 的新 video 代际回到已采区间时，页面先给较短快照、再逐字扩长；
-    // 只读 replay 只由这两个明确生命周期事件开启，普通采样停顿不会误入。
-    for (const existing of track) {
-      if (startV < existing.startMs - 750 || startV > existing.endMs + 750) continue;
-      if (!fushiCueTextRelated(existing.text, text)) continue;
-      state.liveCue = null;
-      state.liveCueReplay = true;
-      return;
-    }
+  // 「这句我采过吗」：文本相关（逐字扩长的前缀关系）且落进已有那条的整段时间窗
+  // [startMs-750, endMs+750]。判据用整段区间而不是 fushiSortedCueInsert 的「句首相差 <750ms」
+  // 窄窗，是因为 startMs 记的是**这句在 DOM 里被我们看到的时刻**：上一次经过若是 seek 落在句
+  // 中，它就比真实句首晚了一两秒；下一次正常播放从句首采到它，两个起点差出窄窗，同一句于是
+  // 在轨里留下两条（用户截图：来回跳转后 12:49 同一句两行）。
+  // 例外只有一个：同一次采样里刚定格的上一条要跳过——DOM 在同一时刻把 abcdef 更正/缩短成
+  // abc 是**新句**而不是历史重复（justEndedCue 每次采样开头清空，只在本次采样内有效）。
+  for (const existing of track) {
+    if (existing === state.justEndedCue) continue;
+    // 向后容差 750ms、**向前 3s**：两个方向的偏差成因不同。向后只是采样抖动；向前是因为上一次
+    // 经过时 seek 落在句中，那条的 startMs 比真实句首晚了一截，这一次从句首采到它，新起点反而
+    // 更早——只留 750ms 的话正好从窗口前沿漏出去，于是同一句入轨两次。
+    if (startV < existing.startMs - 3000 || startV > existing.endMs + 750) continue;
+    if (!fushiCueTextRelated(existing.text, text)) continue;
+    // 命中历史：只读跟随页面快照，既不重复入轨也不动旧句的窗。
+    state.liveCue = null;
+    state.liveCueReplay = true;
+    return;
   }
   const cue = { startMs: startV, endMs: startV + 1500, text: text };
   if (fushiSortedCueInsert(track, cue)) {
@@ -707,6 +717,8 @@ function fushiLiveCueEnd(state, endV) {
   if (state.liveCue && typeof endV === 'number' && endV > state.liveCue.startMs) {
     state.liveCue.endMs = endV;
   }
+  // 本次采样内刚定格的这条：紧随其后的 fushiLiveCueStart 不得把它当成「历史里的同一句」。
+  state.justEndedCue = state.liveCue;
   state.liveCue = null;
   state.liveCueReplay = false;
 }
@@ -2129,7 +2141,7 @@ window.fushiPrepareLookupFromSidePanel = function (cueWindow) {
 // 取词发生在侧栏，宿主页这边并没有对应选区：先清掉上一轮的选区与高亮覆盖层，否则 fushiRender
 // 会拿上一个词的 rects 当锚点、并把那处词重新点亮。锚点给视口右上角的零宽矩形，经落点夹取后
 // 弹窗贴右缘展开——紧邻侧栏、也不压住底部字幕。
-window.fushiShowLookupFromSidePanel = function (term, cueWindow) {
+window.fushiShowLookupFromSidePanel = function (term, cueWindow, anchorRatio) {
   const value = String(term || '').trim();
   if (!value) return false;
   try {
@@ -2140,9 +2152,16 @@ window.fushiShowLookupFromSidePanel = function (term, cueWindow) {
   fushiClearHighlightOverlay();
   const margin = 8;
   const edge = Math.max(margin, window.innerWidth - margin);
+  // 纵向跟随侧栏里被点的那一行（anchorRatio 是它在侧栏视口中的比例——两个视口高度不同，只有
+  // 比例可搬），横向贴右缘紧邻侧栏。固定糊在右上角的话，弹窗会压住画面里正在读的那段文字。
+  const ratio = typeof anchorRatio === 'number' && isFinite(anchorRatio)
+    ? Math.min(1, Math.max(0, anchorRatio))
+    : 0;
+  const y = Math.max(margin, Math.min(
+    Math.max(margin, window.innerHeight - margin), Math.round(window.innerHeight * ratio)));
   const anchorRect = {
-    x: edge, y: margin, width: 0, height: 0,
-    left: edge, top: margin, right: edge, bottom: margin,
+    x: edge, y: y, width: 0, height: 0,
+    left: edge, top: y, right: edge, bottom: y,
     authoritative: true, // 宿主页上没有对应选区，锚点以这份为准（见 fushiRender）
   };
   fushiSendLookup(value, anchorRect, cueWindow, true);
@@ -2700,6 +2719,23 @@ function fushiObservePopupResize() {
   fushiPlaceObserver.observe(fushiContainer);
 }
 
+// 关窗的那一击不再传给站点：Netflix 等把「点画面」当播放/暂停切换，用户点旁边只是想关掉
+// 弹窗，却连带把视频停了/放了。只吞紧随本次 mousedown 的那一个 click（capture 阶段截住，站点
+// 的 document/元素监听都收不到），不 preventDefault——聚焦、选区这些浏览器默认行为要留着。
+// 没产生 click（拖拽出界）时由定时器撤掉监听，不会误吞后面无关的点击。
+function fushiSwallowClosingClick() {
+  const swallow = (ev) => {
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+  };
+  try {
+    document.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => {
+      try { document.removeEventListener('click', swallow, true); } catch (_) {}
+    }, 700);
+  } catch (_) { /* 老浏览器不支持 once：不吞就是旧行为，不影响关窗 */ }
+}
+
 document.addEventListener('mousedown', (e) => {
   // BUG-688：shadow 内点击 e.target 被 retarget 成 fushiHost，故 contains 判定天然把
   // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
@@ -2709,5 +2745,19 @@ document.addEventListener('mousedown', (e) => {
       (e.target === fushiResizeGrip || fushiResizeGrip.contains(e.target))) {
     return;
   }
-  if (fushiHost && !fushiHost.contains(e.target)) fushiRemoveContainer();
-});
+  if (fushiHost && !fushiHost.contains(e.target)) {
+    fushiRemoveContainer();
+    fushiSwallowClosingClick();
+  }
+}, true);
+
+// Esc 关弹窗（此前页面弹窗根本不认 Esc：全屏看片时按 Esc 只会退出全屏，弹窗还留在那）。
+// capture 阶段先关掉并截住这一次按键，站点自己的 Esc 处理（退出播放器等）不再同时发生。
+// 注意：视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，网页脚本拦不住——
+// 这里能保证的是「弹窗一定被关掉」，退全屏仍会发生。
+document.addEventListener('keydown', (e) => {
+  if (!fushiHost || e.key !== 'Escape' || e.defaultPrevented) return;
+  fushiRemoveContainer();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+}, true);
