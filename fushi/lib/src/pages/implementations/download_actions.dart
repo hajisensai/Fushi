@@ -142,13 +142,13 @@ Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
   if (pipeline == null) return GenericPushOutcome.storeUnavailable;
   await maybeShowTorrentUploadConsent(context, appModel);
   try {
-    final VideoDownloadBackendIdentity identity =
-        await appModel.currentVideoDownloadBackendIdentity();
+    final VideoDownloadBackendTarget target =
+        await appModel.currentVideoDownloadBackendTarget();
     await pipeline.enqueueManual(
       VideoDownloadManualEnqueueRequest(
         title: title,
         resourceTitle: resourceTitle,
-        backendIdentity: identity,
+        backendTarget: target,
         metainfo: metainfo,
         selectedFileIndexes: selectedFileIndexes,
         discoveryKind: kind,

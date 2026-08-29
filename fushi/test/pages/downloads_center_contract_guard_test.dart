@@ -6,6 +6,8 @@ import '../helpers/source_guard.dart';
 
 const String _downloadsPath =
     'lib/src/pages/implementations/downloads_page.dart';
+const String _downloadActionsPath =
+    'lib/src/pages/implementations/download_actions.dart';
 
 String _read(String path) {
   final File file = File(path);
@@ -143,5 +145,16 @@ void main() {
       isNot(contains('DownloadsGlobalResourceSearchSurface')),
       reason: '旧的自建全域结果面不得与模块发现页并存',
     );
+  });
+
+  test('BUG-1925：选择性下载使用当前后端落点快照', () {
+    final String source = _read(_downloadActionsPath);
+    final String code = maskCommentsAndScriptLines(source);
+
+    expect(code, contains('currentVideoDownloadBackendTarget()'));
+    expect(code, contains('backendTarget: target'));
+    expect(code, isNot(contains('currentVideoDownloadBackendIdentity()')),
+        reason: '裸后端身份已被 BUG-1879 删除，新任务必须同时快照分类');
+    expect(code, isNot(contains('backendIdentity: identity')));
   });
 }
