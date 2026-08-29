@@ -8,6 +8,8 @@ import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:fushi/src/utils/window_caption_channel.dart';
+
 /// Desktop main-window sizing and placement policy.
 ///
 /// This intentionally lives outside [AppModel]: the window needs to be placed
@@ -83,9 +85,13 @@ class DesktopWindowPlacement {
     _saveTimer?.cancel();
     _saveTimer = null;
     try {
+      // BUG-1933：Windows 全屏由 runner 自有实现拥有（WindowCaptionChannel），
+      // window_manager.isFullScreen 在 Windows 上恒 false——不加这问就会把
+      // 「客户区盖满显示器」的巨窗矩形当普通 bounds 存盘，下次启动整窗贴屏。
       if (await windowManager.isMinimized() ||
           await windowManager.isMaximized() ||
-          await windowManager.isFullScreen()) {
+          await windowManager.isFullScreen() ||
+          await WindowCaptionChannel.isFullscreen()) {
         return;
       }
 

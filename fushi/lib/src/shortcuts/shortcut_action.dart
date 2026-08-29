@@ -274,9 +274,10 @@ enum ShortcutAction {
   globalScrollPageUp(ShortcutScope.global, 'global_scroll_page_up'),
   // TODO-1093：窗口级/app 级「全屏切换」（区别于视频播放器内的
   // videoToggleFullscreen——那个只切视频表面）。执行体在 wrapWithGlobalNavigation
-  // 里读本 action 的键盘绑定，命中时调 windowManager.setFullScreen(!当前)，当前态
-  // 用 DesktopWindowPlacement.isFullScreen() 读取。global scope、桌面（Win/macOS/
-  // Linux）生效、移动端 no-op（window_manager 无桌面窗）。默认键盘 F11。
+  // 里读本 action 的键盘绑定，命中时调 toggleDesktopWindowFullscreen()（macOS 走
+  // WindowManipulator、Windows 走 runner 自有全屏（BUG-1933）、Linux 走
+  // window_manager）。global scope、桌面（Win/macOS/Linux）生效、移动端 no-op
+  // （无桌面窗）。默认键盘 F11。
   globalToggleFullscreen(ShortcutScope.global, 'global_toggle_fullscreen'),
 
   // Audiobook（上一句在前，与视频组「上/下一句字幕」顺序一致）

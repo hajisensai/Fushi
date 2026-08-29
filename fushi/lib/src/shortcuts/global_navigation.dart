@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -391,7 +392,10 @@ Future<bool?> readDesktopWindowFullscreen() async {
       return await WindowManipulator.isWindowFullscreened();
     }
     if (Platform.isWindows) {
-      final bool fullscreen = await windowManager.isFullScreen();
+      // BUG-1933：Windows 全屏由 runner 自有实现拥有（保边框巨窗，见
+      // WindowCaptionChannel.setFullscreen 的文档）；window_manager 在 Windows
+      // 上不再进入全屏、其 isFullScreen 恒 false，状态只能问 runner。
+      final bool fullscreen = await WindowCaptionChannel.isFullscreen();
       FushiWindowsTitleBar.setWindowManagerFullscreen(fullscreen);
       return fullscreen;
     }
@@ -405,29 +409,18 @@ Future<bool?> readDesktopWindowFullscreen() async {
 }
 
 /// Applies [fullscreen] to the native Windows window and returns the state that
-/// is actually in effect, or null when the mutation failed and no read could
-/// establish the truth.
+/// is actually in effect.
 ///
-/// `window_manager` is the only source of truth here; the caller derives the
-/// app-frame chrome from this one value.
+/// BUG-1933：变更与读取都走 runner 自有实现（`app.fushi/window` channel）。
+/// window_manager 的 `setFullScreen` 剥 `WS_CAPTION|WS_THICKFRAME` 触发 DWM
+/// 重建窗口 visual，进出全屏各露一帧表面色（浅色主题=白帧）；runner 改为保留
+/// 边框、把窗口放大到客户区盖满显示器（边框悬屏外）+ TOPMOST，与最大化同合成
+/// 路径，实测零露出。runner 是唯一真相源；channel 自身吞平台异常（widget 测试
+/// / 旧宿主下退化为 no-op + false），故此处不再需要 window_manager 式的双重
+/// 读回退，读到什么就是什么。
 Future<bool?> _resolveWindowsFullscreen(bool fullscreen) async {
-  bool mutated = false;
-  try {
-    await windowManager.setFullScreen(fullscreen);
-    mutated = true;
-    return await windowManager.isFullScreen();
-  } catch (error) {
-    debugPrint('[Fushi] window fullscreen mutation failed: $error');
-  }
-  try {
-    // The native read stays authoritative even when the mutation threw.
-    return await windowManager.isFullScreen();
-  } catch (_) {
-    // Both reads failed. If the mutation itself completed, the requested state
-    // is the best available truth, so a reader that entered fullscreen keeps
-    // ownership and can still restore the window later.
-    return mutated ? fullscreen : null;
-  }
+  await WindowCaptionChannel.setFullscreen(fullscreen);
+  return WindowCaptionChannel.isFullscreen();
 }
 
 /// Sets the desktop window fullscreen state through the platform's single
