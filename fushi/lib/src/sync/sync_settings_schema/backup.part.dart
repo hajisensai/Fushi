@@ -127,8 +127,6 @@ class _BackupExportWidget extends StatefulWidget {
 }
 
 class _BackupExportWidgetState extends State<_BackupExportWidget> {
-  bool _isExporting = false;
-
   /// Per-book export selection (TODO-1195 part A). null = every book (the legacy
   /// full export); a non-null set = only those `book_key`s travel. Persists
   /// across dialog opens within this settings session (the picker re-seeds from
@@ -144,9 +142,11 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   Future<void> _export() async {
     // Re-entrant guard: the row's Activate (A/Enter) and the trailing button
     // both call this, so ignore a second trigger while an export is running.
-    if (_isExporting) return;
-    final appModel = widget.settingsContext.appModel;
-    final service = BackupService(
+    // 真相源在 AppModel —— 本 State 会随「本地备份」分区折叠而销毁，State 字段
+    // 守不住重入（折叠再展开就是一个全新的 State，标志位归零）。
+    final AppModel appModel = widget.settingsContext.appModel;
+    if (appModel.backupExportActive) return;
+    final BackupService service = BackupService(
       db: appModel.database,
       dbDirectory: appModel.databaseDirectory.path,
       dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
@@ -170,60 +170,19 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     final Set<BackupCategory>? categories =
         await _pickExportCategories(summary);
     if (categories == null || !mounted) return;
-    setState(() => _isExporting = true);
-    try {
-      final tmpDir = await getTemporaryDirectory();
-      final filename = service.defaultFilename();
-      final tmpPath = p.join(tmpDir.path, filename);
-      final tmpFile = File(tmpPath);
+    // 交棒点：此后一律由 AppModel 驱动，不再看本 State 的 mounted / context。
+    await runBackupExportFlow(
+      appModel: appModel,
+      service: service,
+      categories: categories,
       // Per-book selection (TODO-1195 part A) only applies when the Books
       // category is packed; excluding Books strips every book regardless.
-      await service.createBackup(
-        tmpPath,
-        categories: categories,
-        bookKeys: categories.contains(BackupCategory.books)
-            ? _selectedBookKeys
-            : null,
-        videoKeys: categories.contains(BackupCategory.videos)
-            ? _selectedVideoKeys
-            : null,
-      );
-
-      if (!mounted) return;
-
-      if (Platform.isAndroid || Platform.isIOS) {
-        await FushiShare.shareFiles(
-          [XFile(tmpPath, mimeType: 'application/zip')],
-          subject: filename,
-        );
-      } else {
-        final savePath = await FilePicker.platform.saveFile(
-          dialogTitle: t.backup_export,
-          fileName: filename,
-          type: FileType.custom,
-          allowedExtensions: ['zip'],
-        );
-        try {
-          if (savePath == null) return;
-          await tmpFile.copy(savePath);
-        } finally {
-          if (await tmpFile.exists()) {
-            await tmpFile.delete();
-          }
-        }
-      }
-
-      if (mounted) {
-        _showSnackBar(context, t.backup_export_success);
-      }
-    } catch (e) {
-      if (mounted) {
-        _showSnackBar(context,
-            t.backup_export_failed(message: friendlySyncErrorDetail(e)));
-      }
-    } finally {
-      if (mounted) setState(() => _isExporting = false);
-    }
+      bookKeys:
+          categories.contains(BackupCategory.books) ? _selectedBookKeys : null,
+      videoKeys: categories.contains(BackupCategory.videos)
+          ? _selectedVideoKeys
+          : null,
+    );
   }
 
   /// Prompts the user to choose which optional file trees travel in the backup.
@@ -645,40 +604,174 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveSettingsRow(
-      title: t.backup_export,
-      subtitle: t.backup_export_hint,
-      icon: Icons.upload_file_outlined,
-      controlBelow: true,
-      // Row onTap registers the focus target so directional nav reaches the
-      // export action (BUG-016); the trailing button is the visual affordance.
-      onTap: _export,
-      trailing: _isExporting
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: adaptiveIndicator(context: context, strokeWidth: 2),
+    final AppModel appModel = widget.settingsContext.appModel;
+    // 导出态的真相源在 AppModel（本 State 随分区折叠销毁），这里只订阅、不持有。
+    return AnimatedBuilder(
+      animation: appModel,
+      builder: (BuildContext context, Widget? _) {
+        final bool exporting = appModel.backupExportActive;
+        return AdaptiveSettingsRow(
+          title: t.backup_export,
+          subtitle: t.backup_export_hint,
+          icon: Icons.upload_file_outlined,
+          controlBelow: true,
+          // Row onTap registers the focus target so directional nav reaches the
+          // export action (BUG-016); the trailing button is the visual
+          // affordance.
+          onTap: _export,
+          trailing: exporting
+              ? ValueListenableBuilder<double?>(
+                  valueListenable: appModel.backupExportProgress,
+                  builder: (
+                    BuildContext context,
+                    double? progress,
+                    Widget? _,
+                  ) =>
+                      Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: adaptiveIndicator(
+                          context: context,
+                          strokeWidth: 2,
+                          // null = 还在准备阶段（VACUUM INTO / 按分类裁剪 /
+                          // 枚举待打包文件），没有可分的量，走不确定动画；
+                          // 进了打包阶段就按已写字节走确定进度。
+                          value: progress,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(progress == null
+                          ? t.backup_exporting
+                          : '${t.backup_exporting} '
+                              '${(progress * 100).floor()}%'),
+                    ],
+                  ),
+                )
+              : FilledButton.tonal(
+                  onPressed: _export,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(Icons.upload_file_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(t.backup_export),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Text(t.backup_exporting),
-              ],
-            )
-          : FilledButton.tonal(
-              onPressed: _export,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.upload_file_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(t.backup_export),
-                ],
-              ),
-            ),
+        );
+      },
     );
   }
+
+}
+
+
+/// 导出包的文件名形状（[BackupService.defaultFilename] 产出
+/// `fushi-backup-<日期>.fushi.zip`；`hibiki-backup-*.hibiki.zip` 是改名前的老包）。
+///
+/// 刻意用「前缀 + 后缀」双重限定，而不是只认 `.fushi.zip` —— 临时目录里还可能躺着
+/// 推荐词典包 `fushi-recommended.fushi.zip` 这类同后缀、但绝不该被清掉的文件。
+final RegExp _kBackupArchiveName =
+    RegExp(r'^(fushi|hibiki)-backup-.*\.(fushi|hibiki)\.zip$');
+
+/// 清掉临时目录里上一次导出遗留的备份包。
+///
+/// 移动端走系统分享面板，而 [FushiShare.shareFiles] 用的是**非结果变体**，Future 在
+/// 面板呈现后就完成、拿不到「用户存完了」的时机 —— 当场删会把文件从接收方手里抽走。
+/// 所以清理挪到**下一次导出之前**：磁盘上最多滞留一份，而不是每导出一次就永久堆一份
+/// 完整备份（旧实现的 `finally { tmpFile.delete() }` 只写在桌面分支里，移动端一次都
+/// 没删过，几 GB 的包就这么攒着，而且存储页里也没有删除入口）。
+Future<void> _sweepStaleBackupArchives(Directory tmpDir) async {
+  try {
+    await for (final FileSystemEntity entity
+        in tmpDir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      if (!_kBackupArchiveName.hasMatch(p.basename(entity.path))) continue;
+      try {
+        await entity.delete();
+      } catch (_) {
+        // 仍被分享面板占着 / 无权限：留到下一次再扫，不让清理失败拖垮导出。
+      }
+    }
+  } catch (_) {
+    // 临时目录列不出来（不存在 / 无权限）同样不该让导出失败。
+  }
+}
+
+/// 本地备份「导出/创建」的完整流程：打包 → 分享（移动端）/ 另存（桌面）→ 结果提示。
+///
+/// 与 [runBackupImportFlowForFile] 同纪律：所有权在 [AppModel]，**全程不依赖任何页面
+/// 的 `mounted` / `context`**。设置页那一行只负责挑分类，随后把活交给这里 —— 因为
+/// 「本地备份」是可折叠分区，收起时整棵 rows 子树会从 widget tree 移除、那一行的
+/// State 随之 dispose，旧实现在 createBackup 之后的 `if (!mounted) return` 于是把已经
+/// 打完的 zip 连同分享/另存/成功提示一起丢掉，用户看到的正是「点一下折叠箭头，备份被
+/// 取消了」。
+Future<void> runBackupExportFlow({
+  required AppModel appModel,
+  required BackupService service,
+  required Set<BackupCategory> categories,
+  Set<String>? bookKeys,
+  Set<String>? videoKeys,
+}) async {
+  if (appModel.backupExportActive) return;
+  appModel.beginBackupExport();
+  String? failure;
+  bool cancelled = false;
+  try {
+    final Directory tmpDir = await getTemporaryDirectory();
+    await _sweepStaleBackupArchives(tmpDir);
+    final String filename = service.defaultFilename();
+    final String tmpPath = p.join(tmpDir.path, filename);
+    final File tmpFile = File(tmpPath);
+    await service.createBackup(
+      tmpPath,
+      categories: categories,
+      bookKeys: bookKeys,
+      videoKeys: videoKeys,
+      onProgress: appModel.reportBackupExportProgress,
+    );
+    if (Platform.isAndroid || Platform.isIOS) {
+      await FushiShare.shareFiles(
+        <XFile>[XFile(tmpPath, mimeType: 'application/zip')],
+        subject: filename,
+      );
+    } else {
+      final String? savePath = await FilePicker.platform.saveFile(
+        dialogTitle: t.backup_export,
+        fileName: filename,
+        type: FileType.custom,
+        allowedExtensions: <String>['zip'],
+      );
+      try {
+        if (savePath == null) {
+          cancelled = true;
+        } else {
+          await tmpFile.copy(savePath);
+        }
+      } finally {
+        if (await tmpFile.exists()) {
+          await tmpFile.delete();
+        }
+      }
+    }
+  } catch (e) {
+    failure = friendlySyncErrorDetail(e);
+  } finally {
+    appModel.endBackupExport();
+  }
+  if (cancelled) return;
+  // 结果提示走全局 navigator：发起导出的那一行此刻可能已经被折叠掉了。
+  final BuildContext? rootCtx = await _rootContextAfterOverlay(appModel);
+  if (rootCtx == null || !rootCtx.mounted) return;
+  _showSnackBar(
+    rootCtx,
+    failure == null
+        ? t.backup_export_success
+        : t.backup_export_failed(message: failure),
+  );
 }
 
 // ── Backup import widget ─────────────────────────────────────────────

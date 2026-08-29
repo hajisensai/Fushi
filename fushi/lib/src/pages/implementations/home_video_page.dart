@@ -5283,7 +5283,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(video.title),
-        content: Text(t.sync_compare_delete_confirm(name: video.title)),
+        content: Text(t.sync_peer_video_delete_confirm(name: video.title)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),

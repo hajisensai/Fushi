@@ -374,6 +374,9 @@ void FloatingLyricWindow::ClampCurrentPositionToWindowMonitor() {
   if (clamped.x != rc.left || clamped.y != rc.top) {
     SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, clamped.x, clamped.y, 0, 0,
                  SWP_NOSIZE | SWP_NOACTIVATE);
+    // Same invariant as MoveBodyTo: anything that relocates the body must
+    // re-push the toolbar geometry, or WM_EXITSIZEMOVE's clamp strands it.
+    SyncPassThroughToolbar();
   }
 }
 
@@ -1020,26 +1023,14 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       if (dragging_) {
         POINT cursor;
         GetCursorPos(&cursor);
-        int new_x = cursor.x - drag_anchor_.x;
-        int new_y = cursor.y - drag_anchor_.y;
-        // TODO-832: clamp against the work area of the monitor under the
-        // cursor (not the window's old monitor) so the strip can never be
-        // dragged off-screen yet still slides freely across displays.
-        RECT rc;
-        GetWindowRect(hwnd_, &rc);
-        const int width = rc.right - rc.left;
-        const int height = rc.bottom - rc.top;
-        HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi = {};
-        mi.cbSize = sizeof(mi);
-        if (GetMonitorInfo(monitor, &mi)) {
-          const POINT clamped =
-              ClampOriginToWorkArea(new_x, new_y, width, height, mi.rcWork);
-          new_x = clamped.x;
-          new_y = clamped.y;
-        }
-        SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, new_x, new_y, 0, 0,
-                     SWP_NOSIZE | SWP_NOACTIVATE);
+        // Moving the body is ONE primitive: MoveBodyTo carries both the
+        // TODO-832 work-area clamp and the BUG-951 toolbar sync. Open-coding
+        // the SetWindowPos here is what left the pass-through toolbar behind
+        // for the whole drag -- a layered window's SWP_NOSIZE move raises no
+        // WM_PAINT/WM_SIZE, and this branch returns before any RequestRender,
+        // so Render() (the only other caller of SyncPassThroughToolbar) never
+        // ran until the next subtitle line teleported the pill into place.
+        MoveBodyTo(cursor.x - drag_anchor_.x, cursor.y - drag_anchor_.y);
         return 0;
       }
       // A pending press becomes a drag once the cursor travels past the

@@ -1205,6 +1205,43 @@ class AppModel with ChangeNotifier {
     backupImportProgress.value = fraction.clamp(0.0, 1.0);
   }
 
+  /// 本地备份「导出/创建」的所有权与进度。
+  ///
+  /// 导出**不** [closeDatabase]，app 全程可用，所以不像导入那样切全屏遮罩；但任务
+  /// 必须挂在这里，而不是设置页那一行的 State 上 ——「本地备份」分区收起时整棵 rows
+  /// 子树会从 widget tree 移除，State 随之 dispose，旧实现 createBackup 之后的
+  /// `if (!mounted) return` 就把已经打完的 zip 连同分享/另存/成功提示一起丢掉，用户
+  /// 看到的是「点一下折叠箭头，备份被取消了」。所有权挪到这里之后，折叠只是不再显示
+  /// 进度，任务本身与 UI 生命周期无关。
+  bool _backupExportActive = false;
+  bool get backupExportActive => _backupExportActive;
+
+  /// 打包阶段的确定进度（0..1）；null = 尚未进入打包。准备阶段（VACUUM INTO、按
+  /// 分类裁剪行、枚举待打包文件）没有可分的量，UI 此时走不确定动画。与导入侧同理用
+  /// [ValueNotifier]，让**只有进度条**随每个文件落盘重建，而不是整行重绘。
+  final ValueNotifier<double?> backupExportProgress =
+      ValueNotifier<double?>(null);
+
+  void beginBackupExport() {
+    if (_backupExportActive) return;
+    _backupExportActive = true;
+    backupExportProgress.value = null;
+    notifyListeners();
+  }
+
+  /// 由 [BackupService.createBackup] 的 onProgress 回调驱动（本 isolate 上被打包
+  /// isolate 的 SendPort 消息触发）。夹紧到 [0,1]。
+  void reportBackupExportProgress(double fraction) {
+    backupExportProgress.value = fraction.clamp(0.0, 1.0);
+  }
+
+  void endBackupExport() {
+    if (!_backupExportActive) return;
+    _backupExportActive = false;
+    backupExportProgress.value = null;
+    notifyListeners();
+  }
+
   /// TODO-1151：备份「读取/校验」阶段的作废 token。选完文件后 validate + previewMerge
   /// 会跑数十秒（后台 isolate，UI 不冻结但只有 24px 小圈）。进入 [beginBackupValidating]
   /// 时自增；用户点「取消」或开启新一轮校验会再自增作废旧 token——in-flight 的后台 isolate

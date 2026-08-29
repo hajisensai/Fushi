@@ -3833,5 +3833,9 @@
   "delete_disclosure_book_source_kept": "你导入时选择的原始书籍与字幕文件",
   "download_task_delete_files_failed": "已下载的数据未能删除：下载后端没有确认",
   "delete_local_files_failed": "有 $n 个本地文件删除失败，可能正在被使用",
-  "batch_hidden_by_filter_note": "另有 ${n} 项被当前筛选隐藏，本次不会处理。"
+  "batch_hidden_by_filter_note": "另有 ${n} 项被当前筛选隐藏，本次不会处理。",
+  "manga_online_series_empty": "这个系列没有可下载的卷。",
+  "sync_peer_book_delete_confirm": "确定从对端设备删除「$name」吗？对端上的文件与阅读进度会被永久删除，本机没有副本，此操作不可撤销。",
+  "sync_peer_video_delete_confirm": "确定从对端设备的媒体库移除「$name」吗？对端自己导入的视频文件会保留，此操作不可撤销。",
+  "storage_entry_delete_files_confirm_body": "将立即从磁盘删除。媒体库里没有条目引用它——这里放的是缓存、导出或可重新获取的数据。"
 }

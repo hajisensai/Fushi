@@ -1037,11 +1037,16 @@ class BackupService {
   /// from the DB copy so restore never resurrects a "ghost video" with no file)
   /// AND their `videos/` content. Ignored when the [BackupCategory.videos]
   /// category itself is excluded (then no video rows or files travel at all).
+  ///
+  /// [onProgress] 报打包阶段的确定进度（0..1，已写入字节 / 待打包总字节）。它只在
+  /// 真正写 zip 时才开始走 —— 之前的 VACUUM INTO、按分类裁剪行、枚举待打包文件
+  /// 都没有可分的量，调用方在收到第一次回调前应显示不确定动画。
   Future<BackupMeta> createBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
     Set<String>? bookKeys,
     Set<String>? videoKeys,
+    void Function(double progress)? onProgress,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -1307,11 +1312,21 @@ class BackupService {
 
       final String metaJson =
           const JsonEncoder.withIndent('  ').convert(meta.toJson());
+      // 分母：files 已经是一张平铺的 archivePath→磁盘路径表，逐项求大小即可。
+      final int totalBytes = _totalSourceBytes(files);
+      int writtenBytes = 0;
       await _writeBackupZipInIsolate(
         outputPath: outputPath,
         metaName: _metaName,
         metaJson: metaJson,
         archivePathToSource: files,
+        onBytes: onProgress == null
+            ? null
+            : (int deltaBytes) {
+                writtenBytes += deltaBytes;
+                final double fraction = writtenBytes / totalBytes;
+                onProgress(fraction > 1.0 ? 1.0 : fraction);
+              },
       );
 
       return meta;
@@ -3474,37 +3489,71 @@ class BackupService {
   /// epub/audio are already compressed and a full library can be GB-scale, so
   /// streaming-store keeps memory flat and the UI isolate free. A mid-way
   /// failure deletes the half-written archive so it is never mistaken for valid.
+  /// 待打包总字节。缺失 / 无权限的源按 0 计，与 worker 里 `existsSync` 跳过同口径；
+  /// 恒 ≥1 以免空备份除零（与导入侧 [_totalContentBytes] 同款）。
+  static int _totalSourceBytes(Map<String, String> archivePathToSource) {
+    int total = 0;
+    for (final String source in archivePathToSource.values) {
+      try {
+        final File file = File(source);
+        if (file.existsSync()) total += file.lengthSync();
+      } catch (_) {
+        // 扫描期被删 / 无权限：worker 同样会跳过它，分母不计它。
+      }
+    }
+    return total > 0 ? total : 1;
+  }
+
   static Future<void> _writeBackupZipInIsolate({
     required String outputPath,
     required String metaName,
     required String metaJson,
     required Map<String, String> archivePathToSource,
+    void Function(int deltaBytes)? onBytes,
   }) async {
-    await Isolate.run(() async {
-      final ZipFileEncoder encoder = ZipFileEncoder();
-      encoder.create(outputPath);
-      try {
-        final List<int> metaBytes = utf8.encode(metaJson);
-        encoder
-            .addArchiveFile(ArchiveFile(metaName, metaBytes.length, metaBytes));
-        for (final MapEntry<String, String> entry
-            in archivePathToSource.entries) {
-          final File file = File(entry.value);
-          if (!file.existsSync()) continue;
-          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
-        }
-        encoder.closeSync();
-      } catch (_) {
-        encoder.closeSync();
+    // 进度回传口：闭包捕获 SendPort（SendPort 可跨 isolate 传递），Isolate.run 的
+    // 错误传播与 crash-safety 一字不改。archive 3.6.1 的 addFile 没有 chunk 级
+    // 回调，所以粒度只能到「每个文件写完」——对单个超大视频仍会停一段时间。
+    ReceivePort? port;
+    SendPort? sendPort;
+    if (onBytes != null) {
+      port = ReceivePort();
+      port.listen((dynamic message) {
+        if (message is int) onBytes(message);
+      });
+      sendPort = port.sendPort;
+    }
+    try {
+      await Isolate.run(() async {
+        final ZipFileEncoder encoder = ZipFileEncoder();
+        encoder.create(outputPath);
         try {
-          final File partial = File(outputPath);
-          if (partial.existsSync()) partial.deleteSync();
+          final List<int> metaBytes = utf8.encode(metaJson);
+          encoder.addArchiveFile(
+              ArchiveFile(metaName, metaBytes.length, metaBytes));
+          for (final MapEntry<String, String> entry
+              in archivePathToSource.entries) {
+            final File file = File(entry.value);
+            if (!file.existsSync()) continue;
+            final int size = file.lengthSync();
+            await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+            sendPort?.send(size);
+          }
+          encoder.closeSync();
         } catch (_) {
-          // best-effort cleanup; rethrow the real export failure below.
+          encoder.closeSync();
+          try {
+            final File partial = File(outputPath);
+            if (partial.existsSync()) partial.deleteSync();
+          } catch (_) {
+            // best-effort cleanup; rethrow the real export failure below.
+          }
+          rethrow;
         }
-        rethrow;
-      }
-    });
+      });
+    } finally {
+      port?.close();
+    }
   }
 
   Future<bool> _hasCompleteDictionaryResources(Directory? root) async {
