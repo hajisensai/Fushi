@@ -340,6 +340,88 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
+      // HDR：这一节控制的是「HDR 片源压到 SDR 屏幕上」那一次不可避免的映射做得好不好，
+      // **不是 HDR 直通**。Windows 侧走 vo=libmpv → ANGLE → Flutter 外部纹理，共享纹理
+      // 格式写死 8-bit BGRA；Android 侧还额外强制 vf=format=yuv420p 降位（BUG-465）。
+      // 直通要动 vendored 的原生 surface 与 Flutter 合成，不在本节范围内。
+      SettingsSection(
+        title: t.video_setting_mpv_group_hdr,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.tone_mapping',
+            title: t.video_setting_hdr_tone_mapping,
+            subtitle: t.video_setting_hdr_tone_mapping_hint,
+            icon: Icons.hdr_auto_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 70,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              // 曲线名直接用 mpv 的标识符：这些是行业术语（BT.2390 等），翻译反而
+              // 让人对不上 mpv 文档和别处的教程。
+              for (final String curve in <String>[
+                'bt.2390',
+                'bt.2446a',
+                'spline',
+                'reinhard',
+                'mobius',
+                'hable',
+                'clip',
+              ])
+                SettingsSegmentOption<String>(value: curve, label: curve),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrToneMapping,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrToneMapping: value),
+              );
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.compute_peak',
+            title: t.video_setting_hdr_compute_peak,
+            subtitle: t.video_setting_hdr_compute_peak_hint,
+            icon: Icons.brightness_7_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 71,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'yes',
+                label: t.video_setting_hdr_on,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'no',
+                label: t.video_setting_hdr_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrComputePeak,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrComputePeak: value),
+              );
+            },
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.video_setting_mpv_group_quality,
         collapsedByDefault: true,

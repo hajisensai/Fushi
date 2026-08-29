@@ -41,6 +41,8 @@ class VideoMpvConfig {
     required this.audioChannels,
     required this.normalizeDownmix,
     required this.loopFile,
+    required this.hdrToneMapping,
+    required this.hdrComputePeak,
     required this.rawConf,
   });
 
@@ -68,6 +70,8 @@ class VideoMpvConfig {
     audioChannels: 'auto-safe',
     normalizeDownmix: false,
     loopFile: false,
+    hdrToneMapping: 'auto',
+    hdrComputePeak: 'auto',
     rawConf: '',
   );
 
@@ -131,6 +135,25 @@ class VideoMpvConfig {
   /// 单文件循环。
   final bool loopFile;
 
+  /// HDR→SDR 的色调映射曲线（mpv `tone-mapping`）。
+  ///
+  /// **这是 HDR 片源在 SDR 屏幕上的观感开关，不是 HDR 直通。** 本仓 Windows 侧走
+  /// `vo=libmpv` render API → ANGLE → Flutter 外部纹理，共享纹理格式写死
+  /// `DXGI_FORMAT_B8G8R8A8_UNORM`（8-bit SDR，见 third_party/media_kit_video 的
+  /// angle_surface_manager.cc），10-bit PQ 根本出不去；Android 侧还额外有
+  /// `vf=format=yuv420p` 的强制降位（Mali 16-bit 纹理 OOM，BUG-465）。所以能做的是
+  /// **把不可避免的那次 HDR→SDR 映射做好**，而不是假装支持直通。
+  ///
+  /// 值域取 mpv 的合法名：`auto` | `bt.2390` | `bt.2446a` | `spline` | `reinhard`
+  /// | `mobius` | `hable` | `clip`。只在真的需要色调映射时才起作用，SDR 片源不受影响。
+  final String hdrToneMapping;
+
+  /// 逐帧动态峰值检测（mpv `hdr-compute-peak`）：`auto` | `yes` | `no`。
+  ///
+  /// 相信片源元数据里的 MaxCLL 常常过亮或过暗；打开后由 GPU 实测每帧峰值。代价是
+  /// 一点 GPU 占用，弱机可以关掉。
+  final String hdrComputePeak;
+
   /// 原始 mpv.conf 文本（每行 `key=value` 或裸 flag）；优先级高于上面结构化项。
   final String rawConf;
 
@@ -157,6 +180,8 @@ class VideoMpvConfig {
     String? audioChannels,
     bool? normalizeDownmix,
     bool? loopFile,
+    String? hdrToneMapping,
+    String? hdrComputePeak,
     String? rawConf,
   }) =>
       VideoMpvConfig(
@@ -182,6 +207,8 @@ class VideoMpvConfig {
         audioChannels: audioChannels ?? this.audioChannels,
         normalizeDownmix: normalizeDownmix ?? this.normalizeDownmix,
         loopFile: loopFile ?? this.loopFile,
+        hdrToneMapping: hdrToneMapping ?? this.hdrToneMapping,
+        hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
         rawConf: rawConf ?? this.rawConf,
       );
 
@@ -209,6 +236,8 @@ class VideoMpvConfig {
         'audioChannels': c.audioChannels,
         'normalizeDownmix': c.normalizeDownmix,
         'loopFile': c.loopFile,
+        'hdrToneMapping': c.hdrToneMapping,
+        'hdrComputePeak': c.hdrComputePeak,
         'rawConf': c.rawConf,
       });
 
@@ -234,6 +263,14 @@ class VideoMpvConfig {
       final String ch = d['audioChannels'] is String
           ? d['audioChannels'] as String
           : 'auto-safe';
+      // 值域白名单：坏值一律退回 auto。往 mpv 灌一个不认识的 tone-mapping 名不会
+      // 崩，但会让整条属性下发**静默失败**，用户看到的是「开关没用」。
+      final String tone = d['hdrToneMapping'] is String
+          ? d['hdrToneMapping'] as String
+          : defaults.hdrToneMapping;
+      final String peak = d['hdrComputePeak'] is String
+          ? d['hdrComputePeak'] as String
+          : defaults.hdrComputePeak;
       return VideoMpvConfig(
         hwdec: decodedHwdec,
         highQuality: d['highQuality'] is bool
@@ -264,6 +301,12 @@ class VideoMpvConfig {
         audioChannels: channels.contains(ch) ? ch : 'auto-safe',
         normalizeDownmix: d['normalizeDownmix'] == true,
         loopFile: d['loopFile'] == true,
+        hdrToneMapping: kHdrToneMappingValues.contains(tone)
+            ? tone
+            : defaults.hdrToneMapping,
+        hdrComputePeak: kHdrComputePeakValues.contains(peak)
+            ? peak
+            : defaults.hdrComputePeak,
         rawConf: d['rawConf'] is String ? d['rawConf'] as String : '',
       );
     } catch (_) {
@@ -271,6 +314,21 @@ class VideoMpvConfig {
     }
   }
 }
+
+/// mpv `tone-mapping` 的合法取值（本 app 暴露的子集）。
+const Set<String> kHdrToneMappingValues = <String>{
+  'auto',
+  'bt.2390',
+  'bt.2446a',
+  'spline',
+  'reinhard',
+  'mobius',
+  'hable',
+  'clip',
+};
+
+/// mpv `hdr-compute-peak` 的取值。
+const Set<String> kHdrComputePeakValues = <String>{'auto', 'yes', 'no'};
 
 /// 解析 mpv.conf 风格文本为 `属性名→值` map。纯函数。
 ///
@@ -550,6 +608,11 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // [resolveAudioChannels]；stereo/mono（用户显式强制）原样透传。
   out['audio-channels'] = resolveAudioChannels(config.audioChannels);
   out['audio-normalize-downmix'] = config.normalizeDownmix ? 'yes' : 'no';
+  // HDR→SDR 色调映射。两条都**只在真的需要色调映射时**起作用，SDR 片源不受影响，
+  // 所以无条件下发即可，不必按片源门控。见 [VideoMpvConfig.hdrToneMapping] 对
+  // 「为什么是映射质量而不是 HDR 直通」的说明。
+  out['tone-mapping'] = config.hdrToneMapping;
+  out['hdr-compute-peak'] = config.hdrComputePeak;
   // 播放
   out['loop-file'] = config.loopFile ? 'inf' : 'no';
   // 原始 mpv.conf：最后合并，同 key 覆盖结构化项

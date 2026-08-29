@@ -3864,5 +3864,13 @@
   "manga_series_first_chapter_reached": "已經是第一章了",
   "manga_series_open_series": "作品頁",
   "manga_series_read_progress": "讀到第 $page/$total 頁",
-  "manga_series_read_progress_partial": "讀到第 $page 頁"
+  "manga_series_read_progress_partial": "讀到第 $page 頁",
+  "video_setting_mpv_group_hdr": "HDR",
+  "video_setting_hdr_tone_mapping": "HDR tone mapping",
+  "video_setting_hdr_tone_mapping_hint": "Curve used when an HDR source has to be squeezed onto an SDR display. Auto lets mpv pick per source.",
+  "video_setting_hdr_compute_peak": "Dynamic peak detection",
+  "video_setting_hdr_compute_peak_hint": "Measure each frame's real peak brightness instead of trusting the stream metadata. Better highlights, costs some GPU.",
+  "video_setting_hdr_auto": "Auto",
+  "video_setting_hdr_on": "On",
+  "video_setting_hdr_off": "Off"
 }
