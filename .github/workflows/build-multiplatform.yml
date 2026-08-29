@@ -367,6 +367,30 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # BUG-1922：与 release-desktop.yml 的 macos job 成对存在。这条 debug job 是
+      # PR 上唯一的 macOS 打包门，如果它不打 Aidoku runtime，就再没有任何一处能在
+      # 合入前发现 bundle 里少了这个 helper。
+      #
+      # 这里显式用 host 而不是默认的 universal：debug 构建的 fushi.app 本体只有
+      # runner 的架构（实测 `app archs: arm64`），多出来的 x86_64 切片不被下面的
+      # 架构覆盖门、也不被任何别的断言使用——纯空转，实测多花约 9 分钟。x86_64
+      # 交叉编译本身能不能过，由 release-desktop.yml 的 macos job 兜底：它在每次
+      # push 到 develop / main 时都跑，那里的 app 本体是 universal，架构门是强门。
+      # 若将来 debug 构建也变成 universal，下面的架构门会立刻红——那是正确的红。
+      - name: Bundle and verify pinned Aidoku runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          chmod +x tool/aidoku/build_macos_runtime.sh
+          app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
+          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
+          FUSHI_AIDOKU_ARCHS=host tool/aidoku/build_macos_runtime.sh "$runtime_dir"
+          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
+          chmod +x tool/aidoku/verify_macos_runtime.sh
+          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Verify macOS fushidicts dylib bundle
         working-directory: fushi
         run: |

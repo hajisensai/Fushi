@@ -764,4 +764,115 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('kind filter (BUG-1937)', () {
+    test('filterVideoDownloadJobsByKind：非发现域一律算视频，发现域按名精确匹配', () {
+      final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[
+        _job(id: 'tv', title: 'TV').copyWith(mediaKind: 'tv'),
+        _job(id: 'movie', title: 'Movie').copyWith(mediaKind: 'movie'),
+        _job(id: 'legacy', title: 'Legacy').copyWith(mediaKind: 'unknown-x'),
+        _job(id: 'game', title: 'Game').copyWith(mediaKind: 'game'),
+        _job(id: 'novel', title: 'Novel').copyWith(mediaKind: 'novel'),
+        _job(id: 'audiobook', title: 'AB').copyWith(mediaKind: 'audiobook'),
+        _job(id: 'manga', title: 'Manga').copyWith(mediaKind: 'manga'),
+      ];
+      List<String> ids(VideoDownloadJobKindFilter filter) =>
+          filterVideoDownloadJobsByKind(jobs, filter)
+              .map((VideoDownloadJobRow row) => row.jobId)
+              .toList();
+
+      expect(ids(VideoDownloadJobKindFilter.all), hasLength(7));
+      expect(ids(VideoDownloadJobKindFilter.video),
+          <String>['tv', 'movie', 'legacy'],
+          reason: 'movie/tv 与历史未知值都不是发现域 → 视频；不写白名单免得漏成幽灵');
+      expect(ids(VideoDownloadJobKindFilter.game), <String>['game']);
+      expect(ids(VideoDownloadJobKindFilter.novel), <String>['novel']);
+      expect(ids(VideoDownloadJobKindFilter.audiobook), <String>['audiobook']);
+      expect(ids(VideoDownloadJobKindFilter.manga), <String>['manga']);
+      // 六档标签各不相同（菜单里不能出现两条同名项）。
+      expect(
+        VideoDownloadJobKindFilter.values
+            .map(videoDownloadJobKindFilterLabel)
+            .toSet(),
+        hasLength(VideoDownloadJobKindFilter.values.length),
+      );
+    });
+
+    testWidgets('类型菜单选「游戏」只剩游戏任务，切回全部恢复', (WidgetTester tester) async {
+      final _MemoryJobsStore store = _MemoryJobsStore();
+      addTearDown(store.close);
+      await _pumpPanel(
+        tester,
+        panel: VideoDownloadJobsPanel(store: store),
+      );
+      store.emit(<VideoDownloadJobRow>[
+        _job(id: 'tv', title: 'Some Show').copyWith(mediaKind: 'tv'),
+        _job(id: 'game', title: 'Some Game').copyWith(mediaKind: 'game'),
+      ]);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('video-download-job-tv')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('video-download-job-game')),
+          findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-download-job-kind')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .text(videoDownloadJobKindFilterLabel(
+              VideoDownloadJobKindFilter.game,
+            ))
+            .last,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('video-download-job-tv')),
+          findsNothing);
+      expect(find.byKey(const ValueKey<String>('video-download-job-game')),
+          findsOneWidget);
+
+      // 筛到空：给「没有匹配」空态而不是「没有任务」，工具条仍在可切回。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-download-job-kind')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .text(videoDownloadJobKindFilterLabel(
+              VideoDownloadJobKindFilter.novel,
+            ))
+            .last,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.download_task_no_match), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-download-job-kind')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.download_task_kind_all).last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('video-download-job-tv')),
+          findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('video-download-job-game')),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('工具条在 360 逻辑像素宽不溢出', (WidgetTester tester) async {
+      final _MemoryJobsStore store = _MemoryJobsStore();
+      addTearDown(store.close);
+      await _pumpPanel(
+        tester,
+        panel: VideoDownloadJobsPanel(store: store),
+        size: const Size(360, 640),
+      );
+      store.emit(<VideoDownloadJobRow>[_job(id: 'a', title: 'A')]);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('video-download-job-kind')),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

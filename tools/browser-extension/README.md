@@ -48,7 +48,7 @@ scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
 
 1. 本目录随 app 以 Flutter asset 打包（镜像 `fushi/assets/browser_extension/`）。
 2. app 扩展页「准备扩展」→ `browser_extension_installer.dart` 解压到
-   `<appSupport>/hibiki-browser-extension/`，并把**当前 server 真值**（host/port/token）与
+   `<appSupport>/fushi-browser-extension/`（改名前是 `hibiki-browser-extension/`；老用户浏览器仍按绝对路径指着旧目录，故旧目录存在时继续同步刷新），并把**当前 server 真值**（host/port/token）与
    **内容指纹 build**（全部文件排除 `fushi-defaults.js` 的 sha256 前 16 hex）写进
    `fushi-defaults.js` → 用户浏览器「加载已解压」后零配置可用。
 3. 用户可在 options 页覆盖连接参数（chrome.storage.local 优先于内置默认）。
