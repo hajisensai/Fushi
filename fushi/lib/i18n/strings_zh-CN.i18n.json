@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "这个系列没有可下载的卷。",
   "sync_peer_book_delete_confirm": "确定从对端设备删除「$name」吗？对端上的文件与阅读进度会被永久删除，本机没有副本，此操作不可撤销。",
   "sync_peer_video_delete_confirm": "确定从对端设备的媒体库移除「$name」吗？对端自己导入的视频文件会保留，此操作不可撤销。",
-  "storage_entry_delete_files_confirm_body": "将立即从磁盘删除。媒体库里没有条目引用它——这里放的是缓存、导出或可重新获取的数据。"
+  "storage_entry_delete_files_confirm_body": "将立即从磁盘删除。媒体库里没有条目引用它——这里放的是缓存、导出或可重新获取的数据。",
+  "gal_hook_fold_progressive_lines": "合并分段吐出的台词",
+  "gal_hook_fold_progressive_lines_hint": "有些引擎每次点击都重绘整行，一句台词会被抓成好几条。开启后把同一句的多次快照折成一条。"
 }

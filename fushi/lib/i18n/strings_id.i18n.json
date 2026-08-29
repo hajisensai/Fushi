@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "Seri ini tidak memiliki volume.",
   "sync_peer_book_delete_confirm": "Hapus \"$name\" dari perangkat pasangan? Berkas dan progres bacanya di sana akan dihapus permanen, dan perangkat ini tidak punya salinan. Tindakan ini tidak dapat dibatalkan.",
   "sync_peer_video_delete_confirm": "Hapus \"$name\" dari pustaka perangkat pasangan? Berkas video yang diimpor sendiri oleh perangkat itu tetap disimpan. Tindakan ini tidak dapat dibatalkan.",
-  "storage_entry_delete_files_confirm_body": "Akan langsung dihapus dari disk. Tidak ada di pustaka Anda yang merujuk ke sini — isinya data cache, hasil ekspor, atau yang bisa diunduh ulang."
+  "storage_entry_delete_files_confirm_body": "Akan langsung dihapus dari disk. Tidak ada di pustaka Anda yang merujuk ke sini — isinya data cache, hasil ekspor, atau yang bisa diunduh ulang.",
+  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
 }

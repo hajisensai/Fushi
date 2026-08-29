@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "No volumes in this series.",
   "sync_peer_book_delete_confirm": "Delete \"$name\" from the peer device? Its files and reading progress there are removed for good, and this device has no copy. This cannot be undone.",
   "sync_peer_video_delete_confirm": "Remove \"$name\" from the peer device's library? The peer's own imported video file is kept. This cannot be undone.",
-  "storage_entry_delete_files_confirm_body": "This deletes it from disk right away. Nothing in your library references it - it is cached, exported or re-downloadable data."
+  "storage_entry_delete_files_confirm_body": "This deletes it from disk right away. Nothing in your library references it - it is cached, exported or re-downloadable data.",
+  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
 }

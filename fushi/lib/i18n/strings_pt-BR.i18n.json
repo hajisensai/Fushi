@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "Esta série não tem volumes.",
   "sync_peer_book_delete_confirm": "Excluir \"$name\" do dispositivo pareado? Os arquivos e o progresso de leitura de lá serão removidos definitivamente, e este dispositivo não tem cópia. Não é possível desfazer.",
   "sync_peer_video_delete_confirm": "Remover \"$name\" da biblioteca do dispositivo pareado? O arquivo de vídeo importado pelo próprio dispositivo é mantido. Não é possível desfazer.",
-  "storage_entry_delete_files_confirm_body": "Será excluído do disco imediatamente. Nada na sua biblioteca faz referência a isso — são dados em cache, exportados ou que podem ser baixados de novo."
+  "storage_entry_delete_files_confirm_body": "Será excluído do disco imediatamente. Nada na sua biblioteca faz referência a isso — são dados em cache, exportados ou que podem ser baixados de novo.",
+  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
 }

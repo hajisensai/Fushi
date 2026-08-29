@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "ซีรีส์นี้ไม่มีเล่ม",
   "sync_peer_book_delete_confirm": "ลบ \"$name\" ออกจากอุปกรณ์คู่หรือไม่? ไฟล์และความคืบหน้าการอ่านบนอุปกรณ์นั้นจะถูกลบถาวร และเครื่องนี้ไม่มีสำเนา การกระทำนี้ย้อนกลับไม่ได้",
   "sync_peer_video_delete_confirm": "นำ \"$name\" ออกจากคลังของอุปกรณ์คู่หรือไม่? ไฟล์วิดีโอที่อุปกรณ์นั้นนำเข้าเองจะยังคงอยู่ การกระทำนี้ย้อนกลับไม่ได้",
-  "storage_entry_delete_files_confirm_body": "จะถูกลบออกจากดิสก์ทันที ไม่มีรายการใดในคลังอ้างอิงถึงไฟล์นี้ — เป็นข้อมูลแคช ข้อมูลที่ส่งออก หรือข้อมูลที่ดาวน์โหลดใหม่ได้"
+  "storage_entry_delete_files_confirm_body": "จะถูกลบออกจากดิสก์ทันที ไม่มีรายการใดในคลังอ้างอิงถึงไฟล์นี้ — เป็นข้อมูลแคช ข้อมูลที่ส่งออก หรือข้อมูลที่ดาวน์โหลดใหม่ได้",
+  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
 }

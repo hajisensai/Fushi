@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "Deze serie bevat geen delen.",
   "sync_peer_book_delete_confirm": "\"$name\" van het gekoppelde apparaat verwijderen? De bestanden en leesvoortgang daar worden definitief verwijderd en dit apparaat heeft geen kopie. Dit kan niet ongedaan worden gemaakt.",
   "sync_peer_video_delete_confirm": "\"$name\" uit de bibliotheek van het gekoppelde apparaat verwijderen? Het videobestand dat dat apparaat zelf heeft geïmporteerd blijft bewaard. Dit kan niet ongedaan worden gemaakt.",
-  "storage_entry_delete_files_confirm_body": "Wordt meteen van de schijf verwijderd. Niets in je bibliotheek verwijst ernaar: het zijn cache-, geëxporteerde of opnieuw te downloaden gegevens."
+  "storage_entry_delete_files_confirm_body": "Wordt meteen van de schijf verwijderd. Niets in je bibliotheek verwijst ernaar: het zijn cache-, geëxporteerde of opnieuw te downloaden gegevens.",
+  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
 }

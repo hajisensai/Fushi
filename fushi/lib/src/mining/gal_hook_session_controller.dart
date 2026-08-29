@@ -4320,7 +4320,13 @@ class GalHookSessionController extends ChangeNotifier {
           continue;
         }
         receivedTextLine = true;
-        _recordActivityLine(entry.text, fromEngineHook: true);
+        // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
+        // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
+        // （增量为空 = 这次重绘没带来新字，不算新活动）。
+        final String countedText = _textService.lastAppendedDelta;
+        if (countedText.isNotEmpty) {
+          _recordActivityLine(countedText, fromEngineHook: true);
+        }
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
         _lineTextEventIdCache[entry.id] = line.seq;

@@ -90,6 +90,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   //   ③ ruby-render 守卫：行距门控与默认行高恒等 1.0。
   // ②③ 那两条默认值断言是这批登记的前提：可配置化如果顺手改了默认观感，
   // 「没探针」就会变成「没人发现所有老用户的浮窗都变样了」。
+  // 台词折叠开关。写 prefsRepo（changed=true），生效点在 TexthookerService 这个
+  // 进程级单例的 buffer 折叠上——harness 里没有跑着的 hook 会话，也就没有可探的
+  // 输入。由折叠判据的纯函数用例 + service 级行为用例咬住（前缀/后缀/等长/过短
+  // 四种形状 + 关掉开关必须退回旧的逐条追加行为）。
+  'game/Merge split dialogue lines':
+      'test/sync/texthooker_progressive_fold_test.dart',
   'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '

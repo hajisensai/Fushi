@@ -3840,5 +3840,7 @@
   "manga_online_series_empty": "Bộ truyện này không có tập nào.",
   "sync_peer_book_delete_confirm": "Xóa \"$name\" khỏi thiết bị đối tác? Tệp và tiến độ đọc trên thiết bị đó sẽ bị xóa vĩnh viễn, và máy này không có bản sao. Không thể hoàn tác.",
   "sync_peer_video_delete_confirm": "Gỡ \"$name\" khỏi thư viện của thiết bị đối tác? Tệp video do thiết bị đó tự nhập vẫn được giữ lại. Không thể hoàn tác.",
-  "storage_entry_delete_files_confirm_body": "Sẽ bị xóa khỏi ổ đĩa ngay lập tức. Không có mục nào trong thư viện tham chiếu tới nó — đây là dữ liệu bộ nhớ đệm, đã xuất hoặc có thể tải lại."
+  "storage_entry_delete_files_confirm_body": "Sẽ bị xóa khỏi ổ đĩa ngay lập tức. Không có mục nào trong thư viện tham chiếu tới nó — đây là dữ liệu bộ nhớ đệm, đã xuất hoặc có thể tải lại.",
+  "gal_hook_fold_progressive_lines": "Merge split dialogue lines",
+  "gal_hook_fold_progressive_lines_hint": "Some engines redraw the whole line on every click, so one line is captured several times. Fold those snapshots into a single line."
 }
