@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Les téléchargements groupés choisissent d’abord cette version pour que toute la saison partage la même synchronisation.",
   "video_subtitle_collection_release_group_any": "Toute version",
   "video_subtitle_source_label": "Source",
-  "video_subtitle_collection_members_hint": "Les épisodes sont associés par leur numéro dans le nom de fichier ; les packs de saison sont découpés automatiquement."
+  "video_subtitle_collection_members_hint": "Les épisodes sont associés par leur numéro dans le nom de fichier ; les packs de saison sont découpés automatiquement.",
+  "video_subtitle_adjust_title": "Réglages des sous-titres",
+  "video_subtitle_adjust_collapse": "Réduire",
+  "video_subtitle_adjust_expand": "Développer"
 }

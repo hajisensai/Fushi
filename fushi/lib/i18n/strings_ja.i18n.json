@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "一括ダウンロードではこのバージョンを優先し、シーズン全体で同じタイミングを共有します。",
   "video_subtitle_collection_release_group_any": "バージョン指定なし",
   "video_subtitle_source_label": "ソース",
-  "video_subtitle_collection_members_hint": "各話はファイル名の話数で照合され、シーズンパックは自動で分割されます。"
+  "video_subtitle_collection_members_hint": "各話はファイル名の話数で照合され、シーズンパックは自動で分割されます。",
+  "video_subtitle_adjust_title": "字幕の調整",
+  "video_subtitle_adjust_collapse": "折りたたむ",
+  "video_subtitle_adjust_expand": "展開"
 }

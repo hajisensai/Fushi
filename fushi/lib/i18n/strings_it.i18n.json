@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "I download in blocco scelgono prima questa versione così l’intera stagione condivide lo stesso timing.",
   "video_subtitle_collection_release_group_any": "Qualsiasi versione",
   "video_subtitle_source_label": "Fonte",
-  "video_subtitle_collection_members_hint": "Gli episodi vengono abbinati dal numero nel nome file; i pacchetti di stagione vengono divisi automaticamente."
+  "video_subtitle_collection_members_hint": "Gli episodi vengono abbinati dal numero nel nome file; i pacchetti di stagione vengono divisi automaticamente.",
+  "video_subtitle_adjust_title": "Regolazioni sottotitoli",
+  "video_subtitle_adjust_collapse": "Comprimi",
+  "video_subtitle_adjust_expand": "Espandi"
 }

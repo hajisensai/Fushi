@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Пакетная загрузка сначала выбирает эту версию, чтобы весь сезон имел одинаковый тайминг.",
   "video_subtitle_collection_release_group_any": "Любая версия",
   "video_subtitle_source_label": "Источник",
-  "video_subtitle_collection_members_hint": "Серии сопоставляются по номеру в имени файла; сезонные паки разбиваются автоматически."
+  "video_subtitle_collection_members_hint": "Серии сопоставляются по номеру в имени файла; сезонные паки разбиваются автоматически.",
+  "video_subtitle_adjust_title": "Настройка субтитров",
+  "video_subtitle_adjust_collapse": "Свернуть",
+  "video_subtitle_adjust_expand": "Развернуть"
 }

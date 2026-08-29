@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Sammel-Downloads wählen zuerst diese Version, damit die ganze Staffel dasselbe Timing teilt.",
   "video_subtitle_collection_release_group_any": "Beliebige Version",
   "video_subtitle_source_label": "Quelle",
-  "video_subtitle_collection_members_hint": "Folgen werden anhand der Nummer im Dateinamen zugeordnet; Staffelpakete werden automatisch aufgeteilt."
+  "video_subtitle_collection_members_hint": "Folgen werden anhand der Nummer im Dateinamen zugeordnet; Staffelpakete werden automatisch aufgeteilt.",
+  "video_subtitle_adjust_title": "Untertitel anpassen",
+  "video_subtitle_adjust_collapse": "Einklappen",
+  "video_subtitle_adjust_expand": "Ausklappen"
 }

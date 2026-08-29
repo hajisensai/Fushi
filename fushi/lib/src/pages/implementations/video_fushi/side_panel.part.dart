@@ -88,12 +88,17 @@ extension _VideoSidePanel on _VideoFushiPageState {
         return t.video_quality;
       case _VideoSidePanelKind.danmakuMatch:
         return t.video_danmaku_manual_match_title;
+      case _VideoSidePanelKind.subtitleAdjust:
+        return t.video_subtitle_adjust_title;
     }
   }
 
   double _videoSidePanelWidth(_VideoSidePanelKind kind) {
     switch (kind) {
       case _VideoSidePanelKind.settings:
+      // 抽屉不用这张表（宽度由 [VideoTranslucentBottomDrawer] 自己按屏宽算），
+      // 给同一值只为穷举。
+      case _VideoSidePanelKind.subtitleAdjust:
         // BUG-1546：设置侧栏不再固定 560——桌面大窗口下随窗口宽度自适应放宽
         // （560..900），窄窗仍是旧值；上限与快捷设置弹窗同源。
         return fushiQuickSettingsPanelWidth(MediaQuery.sizeOf(context).width);
@@ -115,6 +120,9 @@ extension _VideoSidePanel on _VideoFushiPageState {
       case _VideoSidePanelKind.speed:
         return _buildSpeedSidePanel();
       case _VideoSidePanelKind.settings:
+      // 字幕抽屉与设置侧栏是**同一份**面板（`_settingsInitialCategory` 已由
+      // `_showPlayerSettings` 置成 'subtitle'），只是容器不同。
+      case _VideoSidePanelKind.subtitleAdjust:
         return _buildVideoQuickSettingsSheet();
       case _VideoSidePanelKind.chapters:
         return _buildChapterSidePanel(controller);
@@ -174,6 +182,18 @@ extension _VideoSidePanel on _VideoFushiPageState {
     VideoPlayerController controller,
   ) {
     final _VideoSidePanelKind kind = panelState.kind;
+    if (kind == _VideoSidePanelKind.subtitleAdjust) {
+      // 底部抽屉：视频全幅可见，字幕样式/调轴/位置改动在真实位置实时预览（PR-C）。
+      // 与设置侧栏一样包 [FushiAppUiScale]（同一份 schema 投影面板）。
+      return FushiAppUiScale(
+        scale: _videoUiScale,
+        child: VideoTranslucentBottomDrawer(
+          title: _videoSidePanelTitle(kind),
+          onClose: _hideVideoSidePanel,
+          child: _buildVideoSidePanelChild(kind, controller),
+        ),
+      );
+    }
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
       width: _videoSidePanelWidth(kind),

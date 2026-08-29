@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Downloads em lote escolhem esta versão primeiro para que toda a temporada compartilhe a mesma sincronia.",
   "video_subtitle_collection_release_group_any": "Qualquer versão",
   "video_subtitle_source_label": "Fonte",
-  "video_subtitle_collection_members_hint": "Os episódios são combinados pelo número no nome do arquivo; pacotes de temporada são divididos automaticamente."
+  "video_subtitle_collection_members_hint": "Os episódios são combinados pelo número no nome do arquivo; pacotes de temporada são divididos automaticamente.",
+  "video_subtitle_adjust_title": "Ajustes de legenda",
+  "video_subtitle_adjust_collapse": "Recolher",
+  "video_subtitle_adjust_expand": "Expandir"
 }

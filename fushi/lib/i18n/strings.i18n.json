@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Batch downloads pick this version first so the whole season shares one timing.",
   "video_subtitle_collection_release_group_any": "Any version",
   "video_subtitle_source_label": "Source",
-  "video_subtitle_collection_members_hint": "Episodes are matched by number from file names; season packs are split automatically."
+  "video_subtitle_collection_members_hint": "Episodes are matched by number from file names; season packs are split automatically.",
+  "video_subtitle_adjust_title": "Subtitle adjustments",
+  "video_subtitle_adjust_collapse": "Collapse",
+  "video_subtitle_adjust_expand": "Expand"
 }

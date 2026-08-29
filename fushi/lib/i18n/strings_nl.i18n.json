@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Bulkdownloads kiezen eerst deze versie zodat het hele seizoen dezelfde timing deelt.",
   "video_subtitle_collection_release_group_any": "Elke versie",
   "video_subtitle_source_label": "Bron",
-  "video_subtitle_collection_members_hint": "Afleveringen worden gekoppeld op het nummer in de bestandsnaam; seizoenspakketten worden automatisch gesplitst."
+  "video_subtitle_collection_members_hint": "Afleveringen worden gekoppeld op het nummer in de bestandsnaam; seizoenspakketten worden automatisch gesplitst.",
+  "video_subtitle_adjust_title": "Ondertitels aanpassen",
+  "video_subtitle_adjust_collapse": "Inklappen",
+  "video_subtitle_adjust_expand": "Uitklappen"
 }

@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Tải hàng loạt sẽ chọn phiên bản này trước để cả mùa dùng chung một mốc thời gian.",
   "video_subtitle_collection_release_group_any": "Phiên bản bất kỳ",
   "video_subtitle_source_label": "Nguồn",
-  "video_subtitle_collection_members_hint": "Các tập được khớp theo số trong tên tệp; gói cả mùa được tách tự động."
+  "video_subtitle_collection_members_hint": "Các tập được khớp theo số trong tên tệp; gói cả mùa được tách tự động.",
+  "video_subtitle_adjust_title": "Điều chỉnh phụ đề",
+  "video_subtitle_adjust_collapse": "Thu gọn",
+  "video_subtitle_adjust_expand": "Mở rộng"
 }

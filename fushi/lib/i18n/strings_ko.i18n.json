@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "일괄 다운로드 시 이 버전을 우선 선택해 시즌 전체가 같은 타이밍을 공유합니다.",
   "video_subtitle_collection_release_group_any": "버전 무관",
   "video_subtitle_source_label": "출처",
-  "video_subtitle_collection_members_hint": "에피소드는 파일 이름의 화수로 매칭되며, 시즌 팩은 자동으로 분리됩니다."
+  "video_subtitle_collection_members_hint": "에피소드는 파일 이름의 화수로 매칭되며, 시즌 팩은 자동으로 분리됩니다.",
+  "video_subtitle_adjust_title": "자막 조정",
+  "video_subtitle_adjust_collapse": "접기",
+  "video_subtitle_adjust_expand": "펼치기"
 }

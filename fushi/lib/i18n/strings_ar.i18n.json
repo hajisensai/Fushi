@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "يختار التنزيل الجماعي هذا الإصدار أولًا ليشترك الموسم كله في توقيت واحد.",
   "video_subtitle_collection_release_group_any": "أي إصدار",
   "video_subtitle_source_label": "المصدر",
-  "video_subtitle_collection_members_hint": "تُطابَق الحلقات بالرقم في اسم الملف؛ وتُقسَّم حزم المواسم تلقائيًا."
+  "video_subtitle_collection_members_hint": "تُطابَق الحلقات بالرقم في اسم الملف؛ وتُقسَّم حزم المواسم تلقائيًا.",
+  "video_subtitle_adjust_title": "ضبط الترجمة",
+  "video_subtitle_adjust_collapse": "طيّ",
+  "video_subtitle_adjust_expand": "توسيع"
 }

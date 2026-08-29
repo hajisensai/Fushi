@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Toplu indirmeler önce bu sürümü seçer, böylece tüm sezon aynı zamanlamayı paylaşır.",
   "video_subtitle_collection_release_group_any": "Herhangi bir sürüm",
   "video_subtitle_source_label": "Kaynak",
-  "video_subtitle_collection_members_hint": "Bölümler dosya adındaki numaraya göre eşleştirilir; sezon paketleri otomatik olarak bölünür."
+  "video_subtitle_collection_members_hint": "Bölümler dosya adındaki numaraya göre eşleştirilir; sezon paketleri otomatik olarak bölünür.",
+  "video_subtitle_adjust_title": "Altyazı ayarları",
+  "video_subtitle_adjust_collapse": "Daralt",
+  "video_subtitle_adjust_expand": "Genişlet"
 }

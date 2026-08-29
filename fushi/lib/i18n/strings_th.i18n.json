@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "การดาวน์โหลดแบบกลุ่มจะเลือกเวอร์ชันนี้ก่อน เพื่อให้ทั้งซีซันใช้ไทม์มิ่งเดียวกัน",
   "video_subtitle_collection_release_group_any": "เวอร์ชันใดก็ได้",
   "video_subtitle_source_label": "แหล่งที่มา",
-  "video_subtitle_collection_members_hint": "จับคู่แต่ละตอนตามหมายเลขในชื่อไฟล์ แพ็กทั้งซีซันจะถูกแยกอัตโนมัติ"
+  "video_subtitle_collection_members_hint": "จับคู่แต่ละตอนตามหมายเลขในชื่อไฟล์ แพ็กทั้งซีซันจะถูกแยกอัตโนมัติ",
+  "video_subtitle_adjust_title": "ปรับซับไตเติล",
+  "video_subtitle_adjust_collapse": "ย่อ",
+  "video_subtitle_adjust_expand": "ขยาย"
 }

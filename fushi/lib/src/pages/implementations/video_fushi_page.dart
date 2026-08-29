@@ -692,6 +692,11 @@ enum _VideoSidePanelKind {
   quality,
   // TODO-1376：弹幕手动搜索/选集匹配侧栏。
   danmakuMatch,
+  // 2026-08 字幕工作台 PR-C：字幕调整走**底部抽屉**而不是右侧栏——视频全幅可见、
+  // 继续播放，字幕在真实位置实时预览。内容仍是同一份 schema 投影的快捷设置面板
+  // （`initialCategory: 'subtitle'`），只是容器换成 [VideoTranslucentBottomDrawer]；
+  // 开关/互斥/焦点/逐级 Esc 全部沿用侧栏机制（它就是一种侧栏 kind）。
+  subtitleAdjust,
 }
 
 class _VideoSidePanelState {
@@ -7046,6 +7051,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
     _settingsInitialCategory = initialCategory;
+    // 字幕分类走底部抽屉（PR-C）：字幕轨按钮 / 右键「字幕轨」/ 字幕加载遮罩都传
+    // 'subtitle'，统一在这一处分流，不让调用方各记一个 kind。
+    if (initialCategory == 'subtitle') {
+      _showVideoSidePanel(
+        _VideoSidePanelKind.subtitleAdjust,
+        sourceSlot: sourceSlot,
+      );
+      return;
+    }
     _showVideoSidePanel(
       _VideoSidePanelKind.settings,
       sourceSlot: sourceSlot,

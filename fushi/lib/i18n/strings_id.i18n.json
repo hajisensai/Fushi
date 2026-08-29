@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "Unduhan massal memilih versi ini lebih dulu agar satu musim berbagi timing yang sama.",
   "video_subtitle_collection_release_group_any": "Versi apa pun",
   "video_subtitle_source_label": "Sumber",
-  "video_subtitle_collection_members_hint": "Episode dicocokkan berdasarkan nomor di nama berkas; paket musim dipisah otomatis."
+  "video_subtitle_collection_members_hint": "Episode dicocokkan berdasarkan nomor di nama berkas; paket musim dipisah otomatis.",
+  "video_subtitle_adjust_title": "Penyesuaian subtitle",
+  "video_subtitle_adjust_collapse": "Ciutkan",
+  "video_subtitle_adjust_expand": "Perluas"
 }

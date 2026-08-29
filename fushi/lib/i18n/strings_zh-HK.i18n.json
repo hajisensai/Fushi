@@ -3847,5 +3847,8 @@
   "video_subtitle_collection_release_group_hint": "批次下載優先選這個版本，整季共用一套時間軸。",
   "video_subtitle_collection_release_group_any": "不限版本",
   "video_subtitle_source_label": "來源",
-  "video_subtitle_collection_members_hint": "各集按檔名中的集數匹配；整季打包字幕自動拆分。"
+  "video_subtitle_collection_members_hint": "各集按檔名中的集數匹配；整季打包字幕自動拆分。",
+  "video_subtitle_adjust_title": "字幕調整",
+  "video_subtitle_adjust_collapse": "收起",
+  "video_subtitle_adjust_expand": "展開"
 }
