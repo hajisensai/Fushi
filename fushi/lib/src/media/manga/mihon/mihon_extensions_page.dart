@@ -768,6 +768,15 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           final bool busy =
               manager.isExtensionActionBusy(extension.packageName);
           return _AvailableExtensionTile(
+            // 身份键，**必需**：这个 tile 是 StatefulWidget，自己持有
+            // `_showAllSources`（「展开全部源 / 收起源列表」）。
+            // SliverChildBuilderDelegate 按位置槽复用 Element，`Widget.canUpdate`
+            // 只看 runtimeType + key —— 都是 null 的话，折叠上方任一仓库分组、
+            // 改语言筛选、或输入搜索让行表一位移，同一个 index 上换了扩展，
+            // `_AvailableExtensionTileState` 连同 `_showAllSources` 被原样复用：
+            // 另一个扩展显示成「已展开全部源」，原来那个反而收了回去。
+            // 身份就是 packageName（同文件 toggle 按钮的 key 已经这么用了）。
+            key: ValueKey<String>(extension.packageName),
             extension: extension,
             installed: row,
             busy: busy,
@@ -984,6 +993,7 @@ class _StoreGroupHeader extends StatelessWidget {
 
 class _AvailableExtensionTile extends StatefulWidget {
   const _AvailableExtensionTile({
+    super.key,
     required this.extension,
     required this.installed,
     required this.busy,

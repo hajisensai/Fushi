@@ -224,22 +224,36 @@ void main() {
     });
 
     testWidgets('搜索强制展开：结果躲在收起的分组里等于搜索失效', (WidgetTester tester) async {
+      // 判据链是 `_storeExpanded`：① 搜索非空 → true；② 用户的 override；
+      // ③ count <= 阈值。**必须让 ① 成为唯一还能展开的理由**，否则这条用例恒真：
+      // 分组吃的是搜索**过滤之后**的列表，搜一个只命中 1 条的词 → count 1 <= 20
+      // → 走 ③ 也一样展开，把 ① 整条删掉照样绿（原版就是这个形状）。
+      // 所以先用小仓库（默认展开，走 ③）→ 手动点表头收起，写下 override=false
+      // → 这时只有 ① 能再把它打开。
       manager.available = <MihonAvailableExtension>[
-        for (int i = 0; i < kMihonStoreAutoCollapseThreshold + 1; i++)
-          _ext('ext$i', storeUrl: kStoreA),
+        for (int i = 0; i < 3; i++) _ext('ext$i', storeUrl: kStoreA),
       ];
       await pump(tester);
-      // 断言用条目**独有**的文本：搜索框自己也画着 'ext7'，find.text('ext7')
+      // 断言用条目**独有**的文本：搜索框自己也画着 'ext1'，find.text('ext1')
       // 会连 EditableText 一起命中（2 个），把断言变成一道谜题。
-      expect(find.textContaining('ext7 source 0'), findsNothing);
+      expect(find.textContaining('ext1 source 0'), findsOneWidget,
+          reason: '前置：小仓库默认展开');
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('mihon-store-group-$kStoreA')),
+      );
+      await tester.pump();
+      expect(find.textContaining('ext1 source 0'), findsNothing,
+          reason: '前置：用户手动收起，override=false 已写下');
 
       await tester.enterText(
         find.byKey(const ValueKey<String>('mihon_extension_search_field')),
-        'ext7',
+        'ext1',
       );
       await tester.pump();
 
-      expect(find.textContaining('ext7 source 0'), findsOneWidget);
+      expect(find.textContaining('ext1 source 0'), findsOneWidget,
+          reason: '搜索必须盖过用户的收起，否则结果躲在收起的分组里等于搜索失效');
     });
 
     testWidgets('「包含的源」默认只露前 3 条，可展开全部', (WidgetTester tester) async {
@@ -261,6 +275,41 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('many source 11'), findsOneWidget);
+    });
+
+    testWidgets('「展开全部源」的状态不得随行表位移串到别的扩展上',
+        (WidgetTester tester) async {
+      // `_AvailableExtensionTile` 是 StatefulWidget，自己持有 `_showAllSources`；
+      // 而 SliverChildBuilderDelegate 按**位置槽**复用 Element，没有
+      // findChildIndexCallback。两者都没有 key 时 `Widget.canUpdate` 恒真，同一个
+      // index 上换了扩展，State 连同 `_showAllSources` 被原样复用 —— 另一个扩展
+      // 显示成「已展开全部源」，按钮还写着「收起源列表」。
+      manager.available = <MihonAvailableExtension>[
+        _ext('aaa', storeUrl: kStoreA, sourceCount: 12),
+        _ext('bbb', storeUrl: kStoreA, sourceCount: 12),
+      ];
+      await pump(tester);
+
+      // 展开第一条（它占着 aaa 之后的那个位置槽）。
+      await tester.tap(find.byKey(
+        const ValueKey<String>('mihon-sources-toggle-org.example.aaa'),
+      ));
+      await tester.pump();
+      expect(find.textContaining('aaa source 11'), findsOneWidget);
+      expect(find.textContaining('bbb source 3'), findsNothing,
+          reason: '前置：bbb 仍是默认的只露前 3 条');
+
+      // 搜索把 aaa 过滤掉 → bbb 上移，落进 aaa 刚才那个位置槽。
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('mihon_extension_search_field')),
+        'bbb',
+      );
+      await tester.pump();
+
+      expect(find.textContaining('bbb source 0'), findsOneWidget,
+          reason: '前置：搜到 bbb 了');
+      expect(find.textContaining('bbb source 3'), findsNothing,
+          reason: 'bbb 没被展开过，不该继承 aaa 的「已展开全部源」状态');
     });
 
     testWidgets('源数不超过 3 条时不出「展开全部」按钮', (WidgetTester tester) async {
