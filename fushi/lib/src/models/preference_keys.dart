@@ -46,8 +46,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
-  'download_custom_proxy',
-  'download_network_proxy_mode',
   'download_save_root',
   'download_save_root_history',
   'experimental_focus_navigation_enabled',

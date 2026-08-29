@@ -42,7 +42,7 @@ import 'package:fushi/src/utils/net/app_proxy.dart';
 
 /// 公网出站的默认**连接建立**超时（DNS + TCP + 代理隧道 + TLS 握手）。
 ///
-/// 与 `sync_http.dart` / `download_network_proxy.dart` 同范式：连不上要快速失败，
+/// 与 `sync_http.dart` / `download_timeouts.dart` 同范式：连不上要快速失败，
 /// 而不是靠上层的整体超时空转。响应体传输**不设**默认时限——本层同时服务「一次 API 往返」
 /// 与「几百 MB 模型下载」，一刀切会掐断后者。需要 stall 超时的链路自己在上层设。
 const Duration kAppHttpConnectionTimeout = Duration(seconds: 20);

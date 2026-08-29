@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 88);
-    expect(db.schemaVersion, 88);
+    expect(version.read<int>('user_version'), 89);
+    expect(db.schemaVersion, 89);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -138,7 +138,10 @@ void main() {
       preferences.map((QueryRow row) =>
           (row.read<String>('key'), row.read<String>('value'))),
       <(String, String)>[
-        ('download_custom_proxy', 's:127.0.0.1:7890'),
+        // seed 里的 `download_custom_proxy` 走完阶梯后被 v89 删除：下载域独立
+        // 代理已并入全局项，没有 `download_network_proxy_mode = custom` 行的
+        // 孤立地址不归并（见 migration_v89_download_proxy_merge_test.dart）。
+        // 本用例的重点仍是 v63 只删自己那一个键、不动别的。
         ('theme', 's:dark'),
       ],
     );
@@ -294,7 +297,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 88);
+    expect(version.read<int>('user_version'), 89);
   });
 
   test(
@@ -325,7 +328,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 88);
+      expect(probe.select('PRAGMA user_version').first.values.first, 89);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

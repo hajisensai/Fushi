@@ -2413,24 +2413,9 @@ class PreferencesRepository extends ChangeNotifier {
   // 副本，不迁移到任何游戏；旧 Profile apply/JSON import 也会拒绝它复活。全局值
   // 无法映射成「每个游戏各自开不开」，新结构仍一律从关闭起步，用户按游戏自己开。
 
-  /// AniList/Nyaa/Jimaku requests: direct (default, BUG-1538 —— 下载域默认不走
-  /// 代理), auto (env > enabled system proxy > direct), or a user-provided
-  /// host:port proxy. 已显式存过 'auto' 的用户不受默认值变更影响。
-  String get downloadNetworkProxyMode =>
-      getPref('download_network_proxy_mode', defaultValue: 'direct') as String;
-
-  Future<void> setDownloadNetworkProxyMode(String value) async {
-    await setPref('download_network_proxy_mode', value);
-    notifyListeners();
-  }
-
-  String get downloadCustomProxy =>
-      getPref('download_custom_proxy', defaultValue: '') as String;
-
-  Future<void> setDownloadCustomProxy(String value) async {
-    await setPref('download_custom_proxy', value);
-    notifyListeners();
-  }
+  // 下载域曾有独立的代理三态（`download_network_proxy_mode` /
+  // `download_custom_proxy`），2026-08-29 合并进唯一的全局代理项
+  // [updateCustomProxy]；存量行由 schema v89 迁移归并后删除，这里不再有读写器。
 
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。

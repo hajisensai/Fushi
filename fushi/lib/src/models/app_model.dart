@@ -58,7 +58,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
+import 'package:fushi/src/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
 import 'package:fushi/src/media/torrent/download_save_root.dart';
 import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
@@ -3422,47 +3422,17 @@ class AppModel with ChangeNotifier {
   // 读写走 [galgameRepo]。这里刻意不再有全局 getter/setter —— 留着一个全局值就会
   // 有人接回去用，然后两份真值慢慢漂开。
 
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      DownloadNetworkProxyConfig(
-        mode: DownloadNetworkProxyMode.parse(
-          prefsRepo.downloadNetworkProxyMode,
-        ),
-        customProxy: prefsRepo.downloadCustomProxy,
-      );
-
-  Future<void> setDownloadNetworkProxyMode(
-    DownloadNetworkProxyMode mode,
-  ) async {
-    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
-    await prefsRepo.setDownloadNetworkProxyMode(mode.name);
-    await _reloadPipelineIfProxyDirectiveChanged(before);
-  }
-
-  Future<void> setDownloadCustomProxy(String value) async {
-    final DownloadNetworkProxyConfig before = downloadNetworkProxyConfig;
-    await prefsRepo.setDownloadCustomProxy(value);
-    await _reloadPipelineIfProxyDirectiveChanged(before);
-  }
-
-  /// BUG-1738 放大器：自定义代理输入框逐键落库，改一个字符就整套重建下载
-  /// runtime（拆掉全部 service + registry 再起）。半截输入在 custom 模式下的
-  /// 有效指令恒为 `DIRECT`（见 [fixedDownloadProxyDirective] 的 fail-open），
-  /// 指令没变就没有重建的理由；auto↔custom(非法)、custom(非法)↔direct 这类
-  /// 行为等价的切换也一并被同一条规则吸收，不设特例。
-  Future<void> _reloadPipelineIfProxyDirectiveChanged(
-    DownloadNetworkProxyConfig before,
-  ) async {
-    final DownloadNetworkProxyConfig after = downloadNetworkProxyConfig;
-    if (fixedDownloadProxyDirective(before) ==
-        fixedDownloadProxyDirective(after)) {
-      return;
-    }
-    await reloadVideoDownloadPipelineRuntime();
-  }
-
-  /// Proxy-aware client shared by AniList, Nyaa and Jimaku call sites.
-  Future<http.Client> createDownloadHttpClient() =>
-      buildDownloadHttpClient(downloadNetworkProxyConfig);
+  /// 下载发现链路（AniList / Nyaa / Torznab / Jimaku / OpenSubtitles）共用的
+  /// client：全应用同一个代理出口 + 这条链路特有的 10s 建连超时。
+  ///
+  /// 没有独立的代理配置：出口由 `app_proxy.dart` 统一解析，用户手填值就是系统
+  /// 设置里那一项（`update_custom_proxy`），`findProxy` 请求时现读，所以改了
+  /// 代理不需要重建下载管线里持有的长活 client。
+  ///
+  /// 仍返回 `Future` 是为了不动十几个 `await` 调用点和测试替身的签名；构造本身
+  /// 是同步的。
+  Future<http.Client> createDownloadHttpClient() async =>
+      createAppHttpIoClient(connectionTimeout: kDownloadConnectionTimeout);
 
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {

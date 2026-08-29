@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/utils.dart';
@@ -40,10 +39,6 @@ class _TestAppModel extends AppModel {
   // getter 换成常量默认（qb 未配置 → 桌面解析成内置引擎，字段最全）。
   @override
   QbConnectionConfig? get qbConnectionConfig => null;
-
-  @override
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      const DownloadNetworkProxyConfig();
 }
 
 Widget _harness({required double paneWidth}) {

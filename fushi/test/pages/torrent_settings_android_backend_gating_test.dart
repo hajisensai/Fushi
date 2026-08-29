@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/utils.dart';
@@ -41,10 +40,6 @@ class _TestAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => _config;
-
-  @override
-  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
-      const DownloadNetworkProxyConfig();
 }
 
 /// 存量配置：用户在某个版本里**显式**选过内置引擎（不是 auto），
