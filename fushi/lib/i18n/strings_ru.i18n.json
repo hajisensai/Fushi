@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "Импорт невозможно прервать",
   "dict_download_busy": "Загрузка словаря уже выполняется.",
   "gal_hook_ingame_lookup": "Поиск по словарю в игре",
-  "gal_hook_ingame_lookup_hint": "Показывать карточку словаря прямо в окне игры (движок KiriKiri, только Windows)",
+  "gal_hook_ingame_lookup_hint": "Показывать карточку словаря прямо в окне игры (только Windows; нужен поддерживаемый движок игры)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Не удалось обработать перетащенные файлы. Попробуйте снова.",
   "tag_add_failed": "Не удалось добавить тег. Попробуйте снова.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "Импортированные вами исходные файлы книги и субтитров",
   "download_task_delete_files_failed": "Не удалось удалить загруженные данные: движок загрузок не подтвердил операцию",
   "delete_local_files_failed": "Не удалось удалить локальные файлы ($n); возможно, они ещё используются",
-  "batch_hidden_by_filter_note": "Ещё ${n} выбранных элементов скрыты текущим фильтром и не будут обработаны."
+  "batch_hidden_by_filter_note": "Ещё ${n} выбранных элементов скрыты текущим фильтром и не будут обработаны.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Этот движок игры пока не поддерживает поиск внутри игры",
+  "gal_hook_ingame_lookup_version_unsupported": "Эта версия игры пока не в списке поддерживаемых",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Скопировать SHA-256 исполняемого файла игры",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Не удалось прочитать исполняемый файл игры",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 исполняемого файла скопирован"
 }

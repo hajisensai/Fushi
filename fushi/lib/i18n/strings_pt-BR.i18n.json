@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "A importação não pode ser interrompida",
   "dict_download_busy": "Um download de dicionário já está em andamento.",
   "gal_hook_ingame_lookup": "Consulta de dicionário no jogo",
-  "gal_hook_ingame_lookup_hint": "Mostrar o cartão de dicionário dentro da própria janela do jogo (motor KiriKiri, apenas Windows)",
+  "gal_hook_ingame_lookup_hint": "Mostrar o cartão de dicionário dentro da janela do jogo (somente Windows; requer um motor de jogo compatível)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Não foi possível processar os arquivos soltos. Tente novamente.",
   "tag_add_failed": "Não foi possível adicionar a tag. Tente novamente.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "Os arquivos originais do livro e das legendas que você importou",
   "download_task_delete_files_failed": "Não foi possível excluir os dados baixados; o mecanismo de download não confirmou",
   "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso",
-  "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados."
+  "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Este motor de jogo ainda não oferece suporte à busca dentro do jogo",
+  "gal_hook_ingame_lookup_version_unsupported": "Esta versão do jogo ainda não está na lista de compatíveis",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Copiar o SHA-256 do executável do jogo",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Não foi possível ler o executável do jogo",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 do executável copiado"
 }

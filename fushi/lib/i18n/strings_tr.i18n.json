@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "İçe aktarma kesintiye uğratılamaz",
   "dict_download_busy": "Bir sözlük indirmesi zaten çalışıyor.",
   "gal_hook_ingame_lookup": "Oyun içi sözlük araması",
-  "gal_hook_ingame_lookup_hint": "Sözlük kartını oyun penceresinin içinde gösterin (KiriKiri motoru, yalnızca Windows)",
+  "gal_hook_ingame_lookup_hint": "Sözlük kartını doğrudan oyun penceresinde göster (yalnızca Windows; desteklenen bir oyun motoru gerekir)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Bırakılan dosyalar işlenemedi. Lütfen tekrar deneyin.",
   "tag_add_failed": "Etiket eklenemedi. Lütfen tekrar deneyin.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "İçe aktardığın özgün kitap ve altyazı dosyaları",
   "download_task_delete_files_failed": "İndirilen veriler silinemedi; indirme motoru bunu onaylamadı",
   "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir",
-  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek."
+  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Bu oyun motoru henüz oyun içi sözlük aramasını desteklemiyor",
+  "gal_hook_ingame_lookup_version_unsupported": "Bu oyun sürümü henüz desteklenenler listesinde değil",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Oyun çalıştırılabilir dosyasının SHA-256 değerini kopyala",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Oyun çalıştırılabilir dosyası okunamadı",
+  "gal_hook_ingame_lookup_exe_hash_copied": "Çalıştırılabilir dosyanın SHA-256 değeri kopyalandı"
 }

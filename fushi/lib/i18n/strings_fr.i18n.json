@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "L'importation ne peut pas être interrompue",
   "dict_download_busy": "Un téléchargement de dictionnaire est déjà en cours.",
   "gal_hook_ingame_lookup": "Recherche dans le dictionnaire en jeu",
-  "gal_hook_ingame_lookup_hint": "Afficher la carte du dictionnaire dans la fenêtre du jeu elle-même (moteur KiriKiri, Windows uniquement)",
+  "gal_hook_ingame_lookup_hint": "Afficher la carte du dictionnaire dans la fenêtre du jeu (Windows uniquement ; nécessite un moteur de jeu pris en charge)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Impossible de traiter les fichiers déposés. Veuillez réessayer.",
   "tag_add_failed": "Impossible d'ajouter le tag. Veuillez réessayer.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "Les fichiers d'origine du livre et des sous-titres que vous avez importés",
   "download_task_delete_files_failed": "Impossible de supprimer les données téléchargées ; le moteur de téléchargement ne l'a pas confirmé",
   "delete_local_files_failed": "Impossible de supprimer $n fichier(s) local(aux) ; ils sont peut-être encore utilisés",
-  "batch_hidden_by_filter_note": "${n} autres éléments sélectionnés sont masqués par le filtre actuel et ne seront pas traités."
+  "batch_hidden_by_filter_note": "${n} autres éléments sélectionnés sont masqués par le filtre actuel et ne seront pas traités.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Ce moteur de jeu ne prend pas encore en charge la recherche en jeu",
+  "gal_hook_ingame_lookup_version_unsupported": "Cette version du jeu ne figure pas encore dans la liste prise en charge",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Copier le SHA-256 de l'exécutable du jeu",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Impossible de lire l'exécutable du jeu",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 de l'exécutable copié"
 }

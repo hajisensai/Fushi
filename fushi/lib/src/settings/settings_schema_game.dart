@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -78,12 +80,21 @@ SettingsDestination buildGameDestination() {
       // 里，用户要在游戏跑着的时候去另一个分类翻开关，找不到是必然的。
       SettingsSection(
         items: <SettingsItem>[
-          // KiriKiri 游戏内查词：命中的字直接在**游戏渲染树内部**弹出词典卡片
-          // （不抢焦点、不 alt-tab、跟随全屏与窗口变换）。
+          // 游戏内查词：命中的字直接在**游戏渲染树内部**弹出词典卡片
+          // （不抢焦点、不 alt-tab、跟随全屏与窗口变换）。传感器按引擎逐个做，
+          // 不是所有引擎都有——本局能不能用由 hook 报上来的准入状态说了算。
           SettingsSwitchItem(
             id: 'game.ingame_lookup',
             title: t.gal_hook_ingame_lookup,
             subtitle: t.gal_hook_ingame_lookup_hint,
+            // 准入把本局挡住时副标题换成原因；其余状态（含 unknown）回落静态说明。
+            //
+            // 🔴 **不置灰**，哪怕本局明确用不了。这个开关是**全局偏好**（用户意图），
+            // 准入是**当前这一局的能力**，两者正交。拿后者去禁用前者会造出一个很蠢的
+            // 状态：默认值是 true，所以"引擎不支持"时用户看到的是一个被锁死在 ON 上、
+            // 想关也关不掉的开关——而他此刻最可能想做的恰恰是把它关掉。能力信息属于
+            // 副标题，不属于可交互性。
+            subtitleBuilder: (_) => _ingameLookupBlockedReason(),
             icon: Icons.crop_free,
             visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
@@ -95,6 +106,31 @@ SettingsDestination buildGameDestination() {
               await GalIngameLookupController.instance
                   .applyEnabledFromPreferences();
               settingsContext.refresh();
+            },
+          ),
+          // 被挡住时唯一能推进事情的信息：当前游戏 exe 的 SHA-256。用户把它报回来，
+          // 我们才知道该给哪个版本加白名单。摘要优先取注入侧上报的；Leaf / SGRE 那
+          // 类「probe 本身就是 hash 门」的 adapter 在不匹配时压根不参与汇总、没人填
+          // 得了那个字段，此时由 runner 兜底自己算（见 voice_hook_reader.cpp）。
+          SettingsActionItem(
+            id: 'game.ingame_lookup_exe_hash',
+            title: t.gal_hook_ingame_lookup_exe_hash_copy,
+            subtitleBuilder: (_) =>
+                _ingameLookupExeSha256() ??
+                t.gal_hook_ingame_lookup_exe_hash_unavailable,
+            icon: Icons.fingerprint_outlined,
+            // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。设置页监听准入
+            // notifier（settings_home_page / settings_detail_page），所以开着页面
+            // 启动游戏也会把这一行刷出来。
+            visible: (_) => Platform.isWindows && _isIngameLookupBlocked(),
+            onTap: (SettingsContext settingsContext) async {
+              final String? sha = _ingameLookupExeSha256();
+              if (sha == null) return;
+              await Clipboard.setData(ClipboardData(text: sha));
+              _showGameSettingsSnackBar(
+                settingsContext,
+                t.gal_hook_ingame_lookup_exe_hash_copied,
+              );
             },
           ),
         ],
@@ -446,4 +482,43 @@ Future<Color?> _pickGalHookColor(
     ),
   );
   return confirmed ? picked : null;
+}
+
+/// 本局游戏的查词准入快照。非 Windows 上恒为 [GalLookupAdmission.unknown]
+/// （runner 只在 Windows 推这条事件），因此下面两个判据在别的平台恒为"没挡住"。
+GalLookupAdmission _ingameLookupAdmission() =>
+    GalIngameLookupController.instance.admission.value;
+
+/// 准入是否把本局的游戏内查词整个挡在门外。判据的唯一真值在
+/// [GalLookupAdmissionState.blocksLookup]——尤其 unknown（"还不知道"）不算挡住。
+bool _isIngameLookupBlocked() =>
+    _ingameLookupAdmission().state.blocksLookup;
+
+/// 开关被灰掉的原因文案；没被挡住时返回 null（回落静态 hint）。
+String? _ingameLookupBlockedReason() {
+  switch (_ingameLookupAdmission().state) {
+    case GalLookupAdmissionState.engineUnsupported:
+      return t.gal_hook_ingame_lookup_engine_unsupported;
+    case GalLookupAdmissionState.identityRejected:
+      return t.gal_hook_ingame_lookup_version_unsupported;
+    case GalLookupAdmissionState.unknown:
+    case GalLookupAdmissionState.identityAccepted:
+    case GalLookupAdmissionState.sensorInstalled:
+      return null;
+  }
+}
+
+/// 当前游戏主 exe 的 SHA-256；算不出来（拿不到路径 / 权限不足）时为 null。
+/// **绝不**在这里编一个占位串——用户会把它当真值报回来。
+String? _ingameLookupExeSha256() {
+  final String sha = _ingameLookupAdmission().executableSha256;
+  return sha.isEmpty ? null : sha;
+}
+
+/// 轻量提示条（与 settings_schema_video.dart 的 `_showVideoSettingsSnackBar` 同款）。
+void _showGameSettingsSnackBar(
+    SettingsContext settingsContext, String message) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
 }

@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "가져오기는 중단할 수 없습니다",
   "dict_download_busy": "사전 다운로드가 이미 진행 중입니다.",
   "gal_hook_ingame_lookup": "인게임 사전 조회",
-  "gal_hook_ingame_lookup_hint": "게임 창 안에 사전 카드를 표시합니다 (KiriKiri 엔진, Windows 전용)",
+  "gal_hook_ingame_lookup_hint": "게임 창 안에 사전 카드를 직접 표시합니다 (Windows 전용, 지원되는 엔진 필요)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "드롭된 파일을 처리할 수 없습니다. 다시 시도해 주세요.",
   "tag_add_failed": "태그를 추가할 수 없습니다. 다시 시도해 주세요.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "가져온 원본 책 및 자막 파일",
   "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
   "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다",
-  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다."
+  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다.",
+  "gal_hook_ingame_lookup_engine_unsupported": "이 게임 엔진은 아직 인게임 사전 검색을 지원하지 않습니다",
+  "gal_hook_ingame_lookup_version_unsupported": "이 게임 버전은 아직 지원 목록에 없습니다",
+  "gal_hook_ingame_lookup_exe_hash_copy": "게임 실행 파일의 SHA-256 복사",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "게임 실행 파일을 읽을 수 없습니다 (권한 부족일 수 있음)",
+  "gal_hook_ingame_lookup_exe_hash_copied": "실행 파일의 SHA-256을 복사했습니다"
 }

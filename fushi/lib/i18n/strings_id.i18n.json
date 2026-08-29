@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "Impor tidak bisa diinterupsi",
   "dict_download_busy": "Unduhan kamus sudah berjalan.",
   "gal_hook_ingame_lookup": "Pencarian kamus dalam game",
-  "gal_hook_ingame_lookup_hint": "Tampilkan kartu kamus di dalam jendela game itu sendiri (mesin KiriKiri, hanya Windows)",
+  "gal_hook_ingame_lookup_hint": "Tampilkan kartu kamus di dalam jendela gim itu sendiri (khusus Windows; perlu mesin gim yang didukung)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Tidak bisa menangani file yang dijatuhkan. Silakan coba lagi.",
   "tag_add_failed": "Tidak bisa menambahkan tag. Silakan coba lagi.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "Berkas buku dan takarir asli yang kamu impor",
   "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
   "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan",
-  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses."
+  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Mesin gim ini belum mendukung pencarian kamus dalam gim",
+  "gal_hook_ingame_lookup_version_unsupported": "Versi gim ini belum ada dalam daftar yang didukung",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Salin SHA-256 file eksekusi gim",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Tidak dapat membaca file eksekusi gim",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 file eksekusi disalin"
 }

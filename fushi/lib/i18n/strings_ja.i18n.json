@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "インポートは中断できません",
   "dict_download_busy": "辞書のダウンロードが既に実行中です。",
   "gal_hook_ingame_lookup": "ゲーム内辞書検索",
-  "gal_hook_ingame_lookup_hint": "ゲームウィンドウ内に辞書カードを表示します（KiriKiriエンジン、Windowsのみ）",
+  "gal_hook_ingame_lookup_hint": "ゲームウィンドウ内に辞書カードを直接表示します（Windows のみ、対応エンジンが必要）",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "ドロップされたファイルを処理できませんでした。もう一度お試しください。",
   "tag_add_failed": "タグを追加できませんでした。もう一度お試しください。",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "インポートした元の書籍・字幕ファイル",
   "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
-  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。"
+  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。",
+  "gal_hook_ingame_lookup_engine_unsupported": "このゲームエンジンはゲーム内辞書引きに未対応です",
+  "gal_hook_ingame_lookup_version_unsupported": "このゲームのバージョンはまだ対応リストにありません",
+  "gal_hook_ingame_lookup_exe_hash_copy": "ゲーム実行ファイルの SHA-256 をコピー",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "ゲーム実行ファイルを読み取れません（権限不足の可能性）",
+  "gal_hook_ingame_lookup_exe_hash_copied": "実行ファイルの SHA-256 をコピーしました"
 }

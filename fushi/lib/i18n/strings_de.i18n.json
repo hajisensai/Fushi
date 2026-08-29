@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "Import kann nicht unterbrochen werden",
   "dict_download_busy": "Ein Wörterbuch-Download läuft bereits.",
   "gal_hook_ingame_lookup": "Wörterbuchsuche im Spiel",
-  "gal_hook_ingame_lookup_hint": "Wörterbuchkarte direkt im Spielfenster anzeigen (KiriKiri-Engine, nur Windows)",
+  "gal_hook_ingame_lookup_hint": "Wörterbuchkarte direkt im Spielfenster anzeigen (nur Windows; erfordert eine unterstützte Spiel-Engine)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Die abgelegten Dateien konnten nicht verarbeitet werden. Bitte versuchen Sie es erneut.",
   "tag_add_failed": "Tag konnte nicht hinzugefügt werden. Bitte versuchen Sie es erneut.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "Die von dir importierten Original-Buch- und Untertiteldateien",
   "download_task_delete_files_failed": "Die heruntergeladenen Daten konnten nicht gelöscht werden; der Download-Dienst hat es nicht bestätigt",
   "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung",
-  "batch_hidden_by_filter_note": "Weitere ${n} ausgewählte Elemente sind durch den aktuellen Filter ausgeblendet und werden nicht bearbeitet."
+  "batch_hidden_by_filter_note": "Weitere ${n} ausgewählte Elemente sind durch den aktuellen Filter ausgeblendet und werden nicht bearbeitet.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Diese Spiel-Engine unterstützt die Suche im Spiel noch nicht",
+  "gal_hook_ingame_lookup_version_unsupported": "Diese Spielversion steht noch nicht auf der Liste der unterstützten Versionen",
+  "gal_hook_ingame_lookup_exe_hash_copy": "SHA-256 der Spieldatei kopieren",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Die Spieldatei konnte nicht gelesen werden",
+  "gal_hook_ingame_lookup_exe_hash_copied": "SHA-256 der Spieldatei kopiert"
 }

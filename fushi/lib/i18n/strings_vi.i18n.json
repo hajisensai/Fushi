@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "Quá trình nhập không thể bị gián đoạn",
   "dict_download_busy": "Một bản tải từ điển đang chạy.",
   "gal_hook_ingame_lookup": "Tra từ điển trong trò chơi",
-  "gal_hook_ingame_lookup_hint": "Hiển thị thẻ từ điển bên trong cửa sổ trò chơi (engine KiriKiri, chỉ Windows)",
+  "gal_hook_ingame_lookup_hint": "Hiển thị thẻ từ điển ngay trong cửa sổ trò chơi (chỉ Windows; cần engine trò chơi được hỗ trợ)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "Không thể xử lý các tệp được thả. Vui lòng thử lại.",
   "tag_add_failed": "Không thể thêm thẻ gắn. Vui lòng thử lại.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "Tệp sách và phụ đề gốc bạn đã nhập",
   "download_task_delete_files_failed": "Không thể xoá dữ liệu đã tải; công cụ tải xuống không xác nhận",
   "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng",
-  "batch_hidden_by_filter_note": "Còn ${n} mục đã chọn bị ẩn bởi bộ lọc hiện tại và sẽ không được xử lý."
+  "batch_hidden_by_filter_note": "Còn ${n} mục đã chọn bị ẩn bởi bộ lọc hiện tại và sẽ không được xử lý.",
+  "gal_hook_ingame_lookup_engine_unsupported": "Engine trò chơi này chưa hỗ trợ tra từ trong trò chơi",
+  "gal_hook_ingame_lookup_version_unsupported": "Phiên bản trò chơi này chưa có trong danh sách được hỗ trợ",
+  "gal_hook_ingame_lookup_exe_hash_copy": "Sao chép SHA-256 của tệp thực thi trò chơi",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "Không đọc được tệp thực thi trò chơi",
+  "gal_hook_ingame_lookup_exe_hash_copied": "Đã sao chép SHA-256 của tệp thực thi"
 }

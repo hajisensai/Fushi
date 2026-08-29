@@ -40,11 +40,21 @@
 
   **结论**：用户看到的「怎么都不行」是「版本没到 + hash 不中」两层静默失败叠加，产品把这两种情况都呈现成了「坏了」。
 
-- **[ ] ① 未修复** — 按成本排序：
-  1. **发一个含 #1030 的构建**（手动 workflow_dispatch 出 beta / 刷新 debug rolling），否则用户无从验证。这是当前第一顺位阻塞项，不是代码改动。
-  2. **准入回显（真修复）**：给 Leaf 侧补 admission 分型位（对齐 Siglus 的 `voice_hook_ipc.h:591-594`），把「本 exe 未进白名单」经共享内存回传 Dart，在设置项/工作台显示「当前游戏可执行文件未在内嵌查词白名单内（SHA-256 …）」并置灰开关。必须新增位——现有 `kLookupDiagSensorInstalled` 无法区分「不支持」与「装失败」。
-  3. **文档**：`docs/agent/galgame-hooking.md` 全文 `lookup|查词` 零命中，适用范围（当前 = KiriKiri Z 带 textrender.dll / Ren'Py / SGRE 单游戏 / Siglus 2 个 exe / WA2 1 个 exe）没有任何记载，同类误判会反复发生。
-- **[ ] ② 未加自动化测试** — 修复方案定下后补：admission 位的 IPC 契约测试（对齐 `native/galgame_hook/tests/lookup_ipc_contract_test.cpp`）+ Dart 侧「exe 未准入时开关置灰/提示」的 widget 测试。
+- **[x] ① 已修复（静默失效这条）** — 把「查词准入结论」建模成协议里的一等状态，全链路回显。
+  - **v19 契约**：`SharedHeader` 尾部纯追加 `lookup_admission` / `lookup_admission_seq` / `lookup_executable_sha256`，`kSharedVersion` 18→19（`native/galgame_hook/include/voice_hook_ipc.h`）。用**单值枚举** `LookupAdmissionState`（Unknown / EngineUnsupported / IdentityRejected / IdentityAccepted / SensorInstalled）而不是再加 `lookup_diag` 位：后者是粘滞累积的诊断位（"曾经发生过"）且 32 位已用满，而准入是状态机的当前状态——用位能表达出「既 IdentityRejected 又 SensorInstalled」这种不存在的状态，读侧只能按一个没人维护的优先级去猜。
+  - **能力位**：`AdapterCapability` 加 `kIngameLookup`；`EngineAdapter::lookupAdmission()` 默认返回 `EngineUnsupported`，所以 **12 个不带传感器的 adapter 一行都没改**。声明能力，而不是让每个 adapter 逐个否认。
+  - **单点汇总**：`AdapterRegistry::PublishLookupAdmissionSummary()` 取 probe 命中者中的最高进展，跨进程只有一个写者。`generic_audio` / `text_render` / `loopback` 的 `probe()` 恒真（横切能力，不声称引擎身份），排除在外——否则任何游戏在引擎识别成立前都会先被误判成不支持，开关先灰后亮。
+  - **Unknown 不是终态**：Leaf/SGRE 的 `probe()` 本身就是精确 exe hash 门，「白2 的另一个发行版」没有任何 adapter 会认领，状态会永远停在 Unknown（界面上就是永远"正在判定"）。模块表扫完仍无人认领即收敛为不支持/未识别。
+  - **host 回显**：runner 读准入并经既有 `gal_hook_text` 通道推事件；准入被挡住且注入侧没填摘要时，host 自己按 pid 缓存地算游戏 exe 的 SHA-256（`fushi/windows/runner/voice_hook_reader.cpp`）。设置页显示原因 + 一行可复制的 exe 摘要（`fushi/lib/src/settings/settings_schema_game.dart`）。
+  - **开关不置灰**：能力信息只进副标题。开关是全局偏好（用户意图），准入是当前会话能力，两者正交；默认值为 true，置灰只会造出"引擎不支持时反而关不掉"的死状态。
+- **[x] ② 已加自动化测试** —
+  - native：`tests/lookup_ipc_contract_test.cpp` 新增 v19 纯追加形状守卫（含 4 字节对齐断言——防有人把 `pack(8)` 改成 `pack(1)` 后 Interlocked 落在未对齐地址上静默撕裂）、准入往返 / 幂等不推进 seq / 未知状态值落回 Unknown / 无 NUL 摘要有界读、摘要十六进制格式化；`tests/native_loopback_policy_test.cpp` 的尾部形状守卫按 v19 更新。
+  - Dart：`fushi/test/lookup/gal_ingame_lookup_contract_test.dart` 6 条（逐字段解码、线上值逐值对应、未知值回落、只有 engineUnsupported/identityRejected 挡住查词且用 `values.length == 5` 逼新状态显式表态、会话换代复位、同内容不重复通知）；`fushi/test/tools/voice_hook_ipc_contract_test.dart` 加 v19 守卫。
+  - 实跑结论：x86+x64 hook DLL 构建通过；native CTest 18/18；Python 结构守卫 8/8；`flutter analyze` No issues found；`FLUTTER TEST VERDICT: PASSED - 1396 tests ran`（test/lookup test/settings test/i18n test/tools）。
+- **[ ] ③ 仍未做（不属本 bug，另开任务）** — 让**用户这台机器上的游戏**真的能查词，取决于他的 exe 是否进白名单：
+  1. **发一个含 PR #1030 + 本次改动的构建**，否则用户无从验证（当前已发布包最新是 08-26 的 beta，早于 #1030）。
+  2. 用户按新 UI 复制出 exe 的 SHA-256 报回来后，才谈得上为那个版本测 RVA、加 profile。
+  3. **文档**：`docs/agent/galgame-hooking.md` 全文 `lookup|查词` 仍零命中，适用范围（KiriKiri Z 带 textrender.dll / Ren'Py / SGRE 单游戏 / Siglus 2 个 exe / WA2 1 个 exe）没有记载，同类误判会反复发生。
 - **备注**：
   - **本单第一版结论全错，已整体重写**。首版在**落后于 origin/develop 的主 checkout 工作区**上 grep，得出「Siglus 从来没有查词传感器」「`LookupHitSlot` 只有 3 处」「白2 就是 SiglusEngine」等结论，全部作废。当前树实际有 **5 处**写 `LookupHitSlot`（`kirikiri_adapter.inc:5318` / `renpy_lookup.inc:603` / `sgre_lookup.inc:924` / `siglus_lookup.inc:1159` / `leaf_aquaplus_adapter.inc:2571`）。教训：调查前必须 `git fetch` 并对 `origin/develop` 取证。
   - **订正**：白色相簿2 **不是** SiglusEngine，而是独立引擎 `leaf_aquaplus`（`engine-support.yaml:1771-1782`，Leaf/AQUAPLUS 自研 Windows runtime，`d3d9.dll`/`dsound.dll`/`*.pak`），与 Siglus（`Gameexe.dat`/`Scene.pck`/`koe/*.ovk`）判据不相交，两个 adapter 不存在互抢（`adapter_registry.inc:515-562` 顺序调用全部 adapter，无 else/break/独占）。

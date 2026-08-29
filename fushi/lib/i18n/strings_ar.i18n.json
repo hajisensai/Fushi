@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "لا يمكن مقاطعة الاستيراد",
   "dict_download_busy": "هناك تحميل قاموس قيد التشغيل بالفعل.",
   "gal_hook_ingame_lookup": "البحث في القاموس داخل اللعبة",
-  "gal_hook_ingame_lookup_hint": "عرض بطاقة القاموس داخل نافذة اللعبة نفسها (محرك KiriKiri، Windows فقط)",
+  "gal_hook_ingame_lookup_hint": "عرض بطاقة القاموس داخل نافذة اللعبة نفسها (Windows فقط؛ يتطلب محرك لعبة مدعومًا)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "تعذّرت معالجة الملفات المسقطة. يرجى المحاولة مرة أخرى.",
   "tag_add_failed": "تعذّرت إضافة الوسم. يرجى المحاولة مرة أخرى.",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "ملفات الكتاب والترجمة الأصلية التي استوردتها",
   "download_task_delete_files_failed": "تعذّر حذف البيانات المنزّلة؛ لم يؤكّد محرّك التنزيل ذلك",
   "delete_local_files_failed": "تعذّر حذف $n من الملفات المحلية؛ قد تكون قيد الاستخدام",
-  "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته."
+  "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته.",
+  "gal_hook_ingame_lookup_engine_unsupported": "محرك اللعبة هذا لا يدعم البحث داخل اللعبة بعد",
+  "gal_hook_ingame_lookup_version_unsupported": "إصدار اللعبة هذا ليس ضمن القائمة المدعومة بعد",
+  "gal_hook_ingame_lookup_exe_hash_copy": "نسخ SHA-256 لملف اللعبة التنفيذي",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "تعذّرت قراءة ملف اللعبة التنفيذي",
+  "gal_hook_ingame_lookup_exe_hash_copied": "تم نسخ SHA-256 لملف اللعبة التنفيذي"
 }

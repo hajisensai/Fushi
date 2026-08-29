@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "導入階段無法中斷",
   "dict_download_busy": "已有詞典下載正在進行。",
   "gal_hook_ingame_lookup": "遊戲內查詞",
-  "gal_hook_ingame_lookup_hint": "在遊戲畫面內直接顯示詞典卡片（KiriKiri 引擎，僅 Windows）",
+  "gal_hook_ingame_lookup_hint": "在遊戲視窗內直接彈出詞典卡片（僅限 Windows，需遊戲引擎已支援）",
   "download_subscription_start_episode": "從第 $episode 集開始",
   "drag_drop_failed": "拖入的檔案處理失敗，請重試。",
   "tag_add_failed": "標簽添加失敗，請重試。",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "你匯入時選擇的原始書籍與字幕檔案",
   "download_task_delete_files_failed": "已下載的資料未能刪除：下載引擎沒有確認",
   "delete_local_files_failed": "有 $n 個本機檔案刪除失敗，可能正在被使用",
-  "batch_hidden_by_filter_note": "另有 ${n} 項被目前篩選隱藏，今次不會處理。"
+  "batch_hidden_by_filter_note": "另有 ${n} 項被目前篩選隱藏，今次不會處理。",
+  "gal_hook_ingame_lookup_engine_unsupported": "目前遊戲引擎不支援遊戲內查詞",
+  "gal_hook_ingame_lookup_version_unsupported": "目前遊戲版本未在支援清單中",
+  "gal_hook_ingame_lookup_exe_hash_copy": "複製遊戲 exe 的 SHA-256",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "無法讀取遊戲 exe（可能權限不足）",
+  "gal_hook_ingame_lookup_exe_hash_copied": "已複製 exe 的 SHA-256"
 }

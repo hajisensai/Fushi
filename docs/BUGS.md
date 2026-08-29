@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1935](bugs/BUG-1935-gal-ingame-lookup-no-engine-gating.md) | 🚧 | 🚧 | 内嵌查词在 Siglus/白2 上 hash 钉定不中时静默失效且无任何提示 |
+| [BUG-1935](bugs/BUG-1935-gal-ingame-lookup-no-engine-gating.md) | ✅ | ✅ | 内嵌查词在 Siglus/白2 上 hash 钉定不中时静默失效且无任何提示 |
 | [BUG-1925](bugs/BUG-1925-sync-collections-resurrect-flaky.md) | 🚧 | 🚧 | 全量下 sync_orchestrator_collections 的 peer-republish 用例偶发红（4 次全量红 2 次，单跑绿） |
 | [BUG-1922](bugs/BUG-1922-macos-aidoku-runtime-not-bundled.md) | ✅ | ✅ | macOS 发布包缺 Aidoku runtime，删除再添加 Aidoku 仓库报 RUNTIME_MISSING |
 | [BUG-1921](bugs/BUG-1921-settings-module-labels-mismatch.md) | ✅ | ✅ | 设置里的功能模块开关名字与底栏/侧栏对不上 |

@@ -3216,7 +3216,7 @@
   "dict_download_import_uncancellable": "ไม่สามารถหยุดการนำเข้าได้",
   "dict_download_busy": "การดาวน์โหลดพจนานุกรมกำลังทำงานอยู่แล้ว",
   "gal_hook_ingame_lookup": "ค้นหาพจนานุกรมในเกม",
-  "gal_hook_ingame_lookup_hint": "แสดงการ์ดพจนานุกรมในหน้าต่างเกม (เอนจิน KiriKiri, Windows เท่านั้น)",
+  "gal_hook_ingame_lookup_hint": "แสดงการ์ดพจนานุกรมภายในหน้าต่างเกมโดยตรง (เฉพาะ Windows ต้องใช้เอนจินเกมที่รองรับ)",
   "download_subscription_start_episode": "从第 $episode 集开始",
   "drag_drop_failed": "ไม่สามารถจัดการไฟล์ที่วาง กรุณาลองอีกครั้ง",
   "tag_add_failed": "ไม่สามารถเพิ่มแท็ก กรุณาลองอีกครั้ง",
@@ -3833,5 +3833,10 @@
   "delete_disclosure_book_source_kept": "ไฟล์หนังสือและคำบรรยายต้นฉบับที่คุณนำเข้า",
   "download_task_delete_files_failed": "ลบข้อมูลที่ดาวน์โหลดไว้ไม่สำเร็จ เพราะตัวจัดการดาวน์โหลดไม่ยืนยัน",
   "delete_local_files_failed": "ลบไฟล์ในเครื่องไม่สำเร็จ $n ไฟล์ อาจกำลังถูกใช้งานอยู่",
-  "batch_hidden_by_filter_note": "รายการที่เลือกอีก ${n} รายการถูกซ่อนด้วยตัวกรองปัจจุบันและจะไม่ถูกดำเนินการ"
+  "batch_hidden_by_filter_note": "รายการที่เลือกอีก ${n} รายการถูกซ่อนด้วยตัวกรองปัจจุบันและจะไม่ถูกดำเนินการ",
+  "gal_hook_ingame_lookup_engine_unsupported": "เอนจินเกมนี้ยังไม่รองรับการเปิดพจนานุกรมในเกม",
+  "gal_hook_ingame_lookup_version_unsupported": "เกมเวอร์ชันนี้ยังไม่อยู่ในรายการที่รองรับ",
+  "gal_hook_ingame_lookup_exe_hash_copy": "คัดลอก SHA-256 ของไฟล์เกม",
+  "gal_hook_ingame_lookup_exe_hash_unavailable": "อ่านไฟล์เกมไม่ได้",
+  "gal_hook_ingame_lookup_exe_hash_copied": "คัดลอก SHA-256 ของไฟล์เกมแล้ว"
 }
