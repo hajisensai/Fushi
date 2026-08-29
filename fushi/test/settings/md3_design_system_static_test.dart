@@ -1027,15 +1027,17 @@ void main() {
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
               'checkbox rows (transient video-subsystem content).',
-      'lib/src/pages/implementations/jimaku_batch_dialog.dart':
-          'Jimaku batch-download member list renders per-episode status icon / '
-              'title / language rows as video-subsystem content (batch subtitle '
-              'download progress), not ordinary page chrome — same reviewed '
-              'content exception class as video_episode_panel / '
-              'video_subtitle_jump_panel and the sibling jimaku_subtitle_dialog.',
-      'lib/src/pages/implementations/jimaku_subtitle_dialog.dart':
-          'Experimental Jimaku subtitle dialog lists downloadable subtitle '
-              'files as transient video-subsystem content rows.',
+      // 2026-08 字幕工作台：两个 Jimaku 对话框的状态机整体搬进面板文件（对话框只剩
+      // 壳，不再含被禁模式），豁免随代码一起搬，理由不变。
+      'lib/src/pages/implementations/subtitle_collection_panel.dart':
+          'Collection batch-download member list renders per-episode status '
+              'icon / title / language rows as video-subsystem content (batch '
+              'subtitle download progress), not ordinary page chrome — same '
+              'reviewed content exception class as video_episode_panel / '
+              'video_subtitle_jump_panel and the sibling subtitle_search_panel.',
+      'lib/src/pages/implementations/subtitle_search_panel.dart':
+          'Online subtitle search panel lists downloadable subtitle files as '
+              'transient video-subsystem content rows.',
       'lib/src/pages/implementations/anime_download_dialog.dart':
           'Anime download dialog lists Nyaa torrent candidates (release group / '
               'resolution / seeders / subtitle-coverage badges) and per-episode '
@@ -1270,10 +1272,11 @@ void main() {
         'BorderRadius.circular(',
         'fontSize:'
       },
-      'lib/src/pages/implementations/jimaku_batch_dialog.dart': <String>{
+      'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
+        'BorderRadius.circular(',
         'ListTile('
       },
-      'lib/src/pages/implementations/jimaku_subtitle_dialog.dart': <String>{
+      'lib/src/pages/implementations/subtitle_search_panel.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'ListTile('

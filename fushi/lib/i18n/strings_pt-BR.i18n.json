@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso",
   "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados.",
   "video_ajatt_settings_hint": "Arquivo gratuito de legendas em japonês (espelho do kitsunekko). Não precisa de conta; os arquivos são baixados do GitHub.",
-  "video_ajatt_enabled_hint": "Desligado significa que o arquivo AJATT é ignorado ao buscar legendas."
+  "video_ajatt_enabled_hint": "Desligado significa que o arquivo AJATT é ignorado ao buscar legendas.",
+  "video_subtitle_workbench_title": "Legendas",
+  "video_subtitle_scope_episode": "Este episódio",
+  "video_subtitle_scope_collection": "Coleção inteira",
+  "video_subtitle_search_open": "Buscar legendas online",
+  "video_subtitle_collection_settings": "Configurações de legenda da coleção",
+  "video_subtitle_collection_language": "Idioma de legenda padrão",
+  "video_subtitle_collection_language_hint": "Vale para todos os episódios desta coleção. Vazio = seguir o idioma do vídeo.",
+  "video_subtitle_collection_release_group": "Versão preferida",
+  "video_subtitle_collection_release_group_hint": "Downloads em lote escolhem esta versão primeiro para que toda a temporada compartilhe a mesma sincronia.",
+  "video_subtitle_collection_release_group_any": "Qualquer versão",
+  "video_subtitle_source_label": "Fonte",
+  "video_subtitle_collection_members_hint": "Os episódios são combinados pelo número no nome do arquivo; pacotes de temporada são divididos automaticamente."
 }

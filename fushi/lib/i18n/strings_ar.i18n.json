@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "تعذّر حذف $n من الملفات المحلية؛ قد تكون قيد الاستخدام",
   "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته.",
   "video_ajatt_settings_hint": "أرشيف مجاني للترجمات اليابانية (مرآة kitsunekko). لا يتطلب حسابًا؛ تُنزَّل ملفات الترجمة من GitHub.",
-  "video_ajatt_enabled_hint": "عند الإيقاف يتم تخطي أرشيف AJATT عند البحث عن الترجمات."
+  "video_ajatt_enabled_hint": "عند الإيقاف يتم تخطي أرشيف AJATT عند البحث عن الترجمات.",
+  "video_subtitle_workbench_title": "الترجمات",
+  "video_subtitle_scope_episode": "هذه الحلقة",
+  "video_subtitle_scope_collection": "المجموعة كاملة",
+  "video_subtitle_search_open": "البحث عن ترجمات عبر الإنترنت",
+  "video_subtitle_collection_settings": "إعدادات ترجمة المجموعة",
+  "video_subtitle_collection_language": "لغة الترجمة الافتراضية",
+  "video_subtitle_collection_language_hint": "تنطبق على كل حلقة في هذه المجموعة. فارغ = اتباع لغة الفيديو نفسه.",
+  "video_subtitle_collection_release_group": "الإصدار المفضل",
+  "video_subtitle_collection_release_group_hint": "يختار التنزيل الجماعي هذا الإصدار أولًا ليشترك الموسم كله في توقيت واحد.",
+  "video_subtitle_collection_release_group_any": "أي إصدار",
+  "video_subtitle_source_label": "المصدر",
+  "video_subtitle_collection_members_hint": "تُطابَق الحلقات بالرقم في اسم الملف؛ وتُقسَّم حزم المواسم تلقائيًا."
 }

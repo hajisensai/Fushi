@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "Не удалось удалить локальные файлы ($n); возможно, они ещё используются",
   "batch_hidden_by_filter_note": "Ещё ${n} выбранных элементов скрыты текущим фильтром и не будут обработаны.",
   "video_ajatt_settings_hint": "Бесплатный архив японских субтитров (зеркало kitsunekko). Аккаунт не нужен; файлы скачиваются с GitHub.",
-  "video_ajatt_enabled_hint": "Выключено — архив AJATT пропускается при поиске субтитров."
+  "video_ajatt_enabled_hint": "Выключено — архив AJATT пропускается при поиске субтитров.",
+  "video_subtitle_workbench_title": "Субтитры",
+  "video_subtitle_scope_episode": "Эта серия",
+  "video_subtitle_scope_collection": "Вся коллекция",
+  "video_subtitle_search_open": "Искать субтитры онлайн",
+  "video_subtitle_collection_settings": "Настройки субтитров коллекции",
+  "video_subtitle_collection_language": "Язык субтитров по умолчанию",
+  "video_subtitle_collection_language_hint": "Применяется ко всем сериям коллекции. Пусто = следовать языку видео.",
+  "video_subtitle_collection_release_group": "Предпочтительная версия",
+  "video_subtitle_collection_release_group_hint": "Пакетная загрузка сначала выбирает эту версию, чтобы весь сезон имел одинаковый тайминг.",
+  "video_subtitle_collection_release_group_any": "Любая версия",
+  "video_subtitle_source_label": "Источник",
+  "video_subtitle_collection_members_hint": "Серии сопоставляются по номеру в имени файла; сезонные паки разбиваются автоматически."
 }

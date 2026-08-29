@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir",
   "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek.",
   "video_ajatt_settings_hint": "Ücretsiz Japonca altyazı arşivi (kitsunekko yansıması). Hesap gerekmez; altyazı dosyaları GitHub'dan indirilir.",
-  "video_ajatt_enabled_hint": "Kapalıysa altyazı aranırken AJATT arşivi atlanır."
+  "video_ajatt_enabled_hint": "Kapalıysa altyazı aranırken AJATT arşivi atlanır.",
+  "video_subtitle_workbench_title": "Altyazılar",
+  "video_subtitle_scope_episode": "Bu bölüm",
+  "video_subtitle_scope_collection": "Tüm koleksiyon",
+  "video_subtitle_search_open": "Çevrimiçi altyazı ara",
+  "video_subtitle_collection_settings": "Koleksiyon altyazı ayarları",
+  "video_subtitle_collection_language": "Varsayılan altyazı dili",
+  "video_subtitle_collection_language_hint": "Bu koleksiyondaki her bölüme uygulanır. Boş = videonun kendi dilini izle.",
+  "video_subtitle_collection_release_group": "Tercih edilen sürüm",
+  "video_subtitle_collection_release_group_hint": "Toplu indirmeler önce bu sürümü seçer, böylece tüm sezon aynı zamanlamayı paylaşır.",
+  "video_subtitle_collection_release_group_any": "Herhangi bir sürüm",
+  "video_subtitle_source_label": "Kaynak",
+  "video_subtitle_collection_members_hint": "Bölümler dosya adındaki numaraya göre eşleştirilir; sezon paketleri otomatik olarak bölünür."
 }

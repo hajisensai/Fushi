@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "有 $n 个本地文件删除失败，可能正在被使用",
   "batch_hidden_by_filter_note": "另有 ${n} 项被当前筛选隐藏，本次不会处理。",
   "video_ajatt_settings_hint": "免费日语字幕库（kitsunekko 镜像）。无需账号；字幕文件从 GitHub 下载。",
-  "video_ajatt_enabled_hint": "关闭后搜索字幕时跳过 AJATT 字幕库。"
+  "video_ajatt_enabled_hint": "关闭后搜索字幕时跳过 AJATT 字幕库。",
+  "video_subtitle_workbench_title": "字幕",
+  "video_subtitle_scope_episode": "本集",
+  "video_subtitle_scope_collection": "整个合集",
+  "video_subtitle_search_open": "在线搜索字幕",
+  "video_subtitle_collection_settings": "合集字幕设置",
+  "video_subtitle_collection_language": "默认字幕语言",
+  "video_subtitle_collection_language_hint": "对本合集所有集生效；留空 = 跟随视频自身语言。",
+  "video_subtitle_collection_release_group": "偏好版本",
+  "video_subtitle_collection_release_group_hint": "批量下载优先选这个版本，整季共用一套时间轴。",
+  "video_subtitle_collection_release_group_any": "不限版本",
+  "video_subtitle_source_label": "来源",
+  "video_subtitle_collection_members_hint": "各集按文件名里的集号匹配；整季打包字幕自动拆分。"
 }

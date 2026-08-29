@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다",
   "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다.",
   "video_ajatt_settings_hint": "무료 일본어 자막 아카이브(kitsunekko 미러). 계정 불필요. 자막 파일은 GitHub에서 다운로드됩니다.",
-  "video_ajatt_enabled_hint": "끄면 자막 검색 시 AJATT 아카이브를 건너뜁니다."
+  "video_ajatt_enabled_hint": "끄면 자막 검색 시 AJATT 아카이브를 건너뜁니다.",
+  "video_subtitle_workbench_title": "자막",
+  "video_subtitle_scope_episode": "이 에피소드",
+  "video_subtitle_scope_collection": "컬렉션 전체",
+  "video_subtitle_search_open": "온라인 자막 검색",
+  "video_subtitle_collection_settings": "컬렉션 자막 설정",
+  "video_subtitle_collection_language": "기본 자막 언어",
+  "video_subtitle_collection_language_hint": "이 컬렉션의 모든 에피소드에 적용됩니다. 비워 두면 영상 자체 언어를 따릅니다.",
+  "video_subtitle_collection_release_group": "선호 버전",
+  "video_subtitle_collection_release_group_hint": "일괄 다운로드 시 이 버전을 우선 선택해 시즌 전체가 같은 타이밍을 공유합니다.",
+  "video_subtitle_collection_release_group_any": "버전 무관",
+  "video_subtitle_source_label": "출처",
+  "video_subtitle_collection_members_hint": "에피소드는 파일 이름의 화수로 매칭되며, 시즌 팩은 자동으로 분리됩니다."
 }

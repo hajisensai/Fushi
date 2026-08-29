@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "No se pudieron eliminar $n archivo(s) local(es); puede que sigan en uso",
   "batch_hidden_by_filter_note": "Otros ${n} elementos seleccionados están ocultos por el filtro actual y no se procesarán.",
   "video_ajatt_settings_hint": "Archivo gratuito de subtítulos en japonés (réplica de kitsunekko). No requiere cuenta; los archivos se descargan desde GitHub.",
-  "video_ajatt_enabled_hint": "Desactivado significa que el archivo AJATT se omite al buscar subtítulos."
+  "video_ajatt_enabled_hint": "Desactivado significa que el archivo AJATT se omite al buscar subtítulos.",
+  "video_subtitle_workbench_title": "Subtítulos",
+  "video_subtitle_scope_episode": "Este episodio",
+  "video_subtitle_scope_collection": "Toda la colección",
+  "video_subtitle_search_open": "Buscar subtítulos en línea",
+  "video_subtitle_collection_settings": "Ajustes de subtítulos de la colección",
+  "video_subtitle_collection_language": "Idioma de subtítulos predeterminado",
+  "video_subtitle_collection_language_hint": "Se aplica a todos los episodios de esta colección. Vacío = seguir el idioma del vídeo.",
+  "video_subtitle_collection_release_group": "Versión preferida",
+  "video_subtitle_collection_release_group_hint": "Las descargas en lote eligen primero esta versión para que toda la temporada comparta la misma sincronización.",
+  "video_subtitle_collection_release_group_any": "Cualquier versión",
+  "video_subtitle_source_label": "Fuente",
+  "video_subtitle_collection_members_hint": "Los episodios se emparejan por el número del nombre de archivo; los packs de temporada se dividen automáticamente."
 }

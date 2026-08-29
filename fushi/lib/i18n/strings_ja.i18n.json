@@ -3835,5 +3835,17 @@
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
   "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。",
   "video_ajatt_settings_hint": "無料の日本語字幕アーカイブ（kitsunekko ミラー）。アカウント不要。字幕ファイルは GitHub からダウンロードされます。",
-  "video_ajatt_enabled_hint": "オフにすると字幕検索時に AJATT アーカイブをスキップします。"
+  "video_ajatt_enabled_hint": "オフにすると字幕検索時に AJATT アーカイブをスキップします。",
+  "video_subtitle_workbench_title": "字幕",
+  "video_subtitle_scope_episode": "このエピソード",
+  "video_subtitle_scope_collection": "コレクション全体",
+  "video_subtitle_search_open": "オンラインで字幕を検索",
+  "video_subtitle_collection_settings": "コレクションの字幕設定",
+  "video_subtitle_collection_language": "既定の字幕言語",
+  "video_subtitle_collection_language_hint": "このコレクションの全エピソードに適用。空欄 = 動画自身の言語に従う。",
+  "video_subtitle_collection_release_group": "優先バージョン",
+  "video_subtitle_collection_release_group_hint": "一括ダウンロードではこのバージョンを優先し、シーズン全体で同じタイミングを共有します。",
+  "video_subtitle_collection_release_group_any": "バージョン指定なし",
+  "video_subtitle_source_label": "ソース",
+  "video_subtitle_collection_members_hint": "各話はファイル名の話数で照合され、シーズンパックは自動で分割されます。"
 }
