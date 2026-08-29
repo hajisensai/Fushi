@@ -2,7 +2,7 @@
 
 - 日期：2026-08-30
 - 基线：`origin/develop@7d76382446`
-- 状态：**Phase 0 探针原型待跑 → 用户拍板架构 → Phase 1 实现**
+- 状态：**Phase 0 探针已跑完（2026-08-30，方案 A 成立，见 §3.1）→ 等用户拍板进 Phase 1**
 - 前置：PR #1066（HDR 色调映射旋钮，OPEN）只做了 HDR→SDR 映射的用户控制，明确写明「直通没做」。本计划就是那条没做的直通。
 
 ---
@@ -83,7 +83,7 @@ runner 已链接 `dcomp dwmapi d3d11 dxgi`（`fushi/windows/runner/CMakeLists.tx
 
 | 方案 | 做法 | 结论 |
 |---|---|---|
-| A（推荐，待 Phase 0 证实） | **双窗口**：mpv 拿一个独立顶层宿主 HWND（`WS_POPUP`、`WS_EX_NOACTIVATE\|TOOLWINDOW`），`vo=gpu-next --gpu-context=d3d11 --wid=<hwnd> --target-colorspace-hint=auto`，自建 HDR 交换链；宿主窗 z-order 钉在主窗**正后方**；主窗的视频矩形画成透明（alpha=0），Flutter 16 层控件照常画在上面，DWM 负责把 SDR 的 Flutter 层合成到 HDR 画面上 | 唯一既保留全部 Flutter 层、又不改 Flutter 引擎的路。**前提**：Flutter 子窗交换链的 alpha 能被 DWM 采纳（`DwmExtendFrameIntoClientArea(-1)` 是 DX 应用做透明窗的标准招；剪贴板面板的黑色失败是 WebView2 composition controller 的问题，不能直接推到 Flutter 上，但也不能反证） |
+| A（推荐，**Phase 0 已证实**，§3.1） | **双窗口**：mpv 拿一个独立顶层宿主 HWND（`WS_POPUP`、`WS_EX_NOACTIVATE\|TOOLWINDOW`），`vo=gpu-next --gpu-context=d3d11 --wid=<hwnd> --target-colorspace-hint=auto`，自建 HDR 交换链；宿主窗 z-order 钉在主窗**正后方**；主窗的视频矩形画成透明（alpha=0），Flutter 16 层控件照常画在上面，DWM 负责把 SDR 的 Flutter 层合成到 HDR 画面上 | 唯一既保留全部 Flutter 层、又不改 Flutter 引擎的路。**前提**：Flutter 子窗交换链的 alpha 能被 DWM 采纳（`DwmExtendFrameIntoClientArea(-1)` 是 DX 应用做透明窗的标准招；剪贴板面板的黑色失败是 WebView2 composition controller 的问题，不能直接推到 Flutter 上，但也不能反证） |
 | B | 原生子窗口盖在 Flutter 上，字幕/OSC 全交给 mpv 自己画 | 16 层 Flutter 控件 + 查词弹窗全部被遮。**违反 §0 铁律，否决** |
 | C | 纹理路径升 10-bit/FP16 | 到不了显示器（§1.1）；还会把 mpv 的抖动换成 Skia 的截断，**倒退**。否决 |
 | D | fork Flutter Windows 引擎加 HDR 交换链 | 引擎是预编译产物，本仓没有引擎构建链；量级和维护成本不成比例。否决 |
@@ -109,6 +109,23 @@ runner 已链接 `dcomp dwmapi d3d11 dxgi`（`fushi/windows/runner/CMakeLists.tx
    - ❌ 视频区黑/主题色（alpha 被丢）→ 再试两种变体：(i) 主窗+Flutter 子窗都加 `WS_EX_LAYERED` + `LWA_ALPHA 255`；(ii) 方案 E 色键。两者都失败 → 方案 A 判死，回到用户处拍板是否接受方案 B 的「HDR 纯观影模式」（无查词）或搁置。
 5. 变体 (ii) 若成功但 (i)/主路径失败，则只能提供「HDR 模式下控件不透明」的降级体验，需用户拍板。
 
+### 3.1 Phase 0 结果（2026-08-30 实测，证据 `.codex-test/hdr-passthrough/`，表格见其 `RESULTS.md`）
+
+探针代码在本分支 `spike(hdr)` 提交里（`fushi/windows/runner/hdr_spike.{h,cpp}` + `main.dart` 顶部短路 + `lib/src/startup/hdr_spike_app.dart`），全部由 `FUSHI_HDR_SPIKE` 环境变量 + `--dart-define=FUSHI_HDR_SPIKE=true` 门控，正式构建不含；**Phase 1 开工前整体删除**。共跑 16 个变体，屏幕逐像素采样（以不透明侧栏 = (48,48,48) 作有效性门）：
+
+| 结论 | 证据 |
+|---|---|
+| ✅ **方案 A 成立**：主窗 `DwmEnableBlurBehindWindow(DWM_BB_ENABLE\|DWM_BB_BLURREGION, CreateRectRgn(0,0,-1,-1))` 后，Flutter 子窗没画的区域**透出正后方的顶层窗口**，0xAA 字幕底、渐变控制条逐像素正确混合，侧栏不透明 | 变体 6：洞 (0,255,0)、字幕框 (0,85,0)、渐变 (0,73,0)；截图 `spike_v6.png` |
+| `DwmExtendFrameIntoClientArea(-1)` 只透出 Win11 边框材质（白），对本需求无用，也不需要与 blur-behind 叠加 | 变体 1/7 |
+| ❌ 同窗 DirectComposition（visual 挂 `CreateTargetForHwnd(main, topmost=FALSE)`）三种组合全灭：被主窗重定向表面挡住；`WS_EX_NOREDIRECTIONBITMAP` 去掉表面则 **Flutter 子窗整个不再合成** | 变体 10/12/13/14（visual 改蓝后洞仍是探针的绿）、15/16（整窗绿/白） |
+| ❌ 色键（半透明控件与色键混成紫）、layered 子窗（DX 内容不渲染） | 变体 4 / 3 |
+| 探针方法学：后台进程对自己主窗设 `HWND_TOPMOST` 被系统静默丢弃（`WS_POPUP` 也一样），须 `AttachThreadInput` 借前台线程权限瞬间置顶；`PrintWindow` 分不出透明与黑 | `RESULTS.md` 末节 |
+
+对 §4 的修正：
+- §4.1 主窗透明手段改为 **blur-behind 空区域**（不是 ExtendFrame），仍只在宿主窗存活期开启、销毁时 `fEnable=FALSE` 还原。
+- BUG-1916 的 `FillSurfaceBackdrop`（GDI 画主题色垫底、alpha=0）在 blur-behind 下会变成透明——HDR 模式中它垫的是视频洞正后方的宿主窗，恰好是想要的；非视频区域每帧由 Flutter 覆盖。Phase 1 用例要咬「HDR 模式缩放不闪白/不闪桌面」。
+- z-order 同步只用 `SetWindowPos(host, main, …)`（插到主窗之后），永不对主窗设 TOPMOST；#1047 全屏走它自己的置顶，宿主窗 `SyncZOrder` 以主窗为锚自然跟随。
+
 ---
 
 ## 4. Phase 1：实现（方案 A 成立后，3–5 天）
@@ -116,7 +133,7 @@ runner 已链接 `dcomp dwmapi d3d11 dxgi`（`fushi/windows/runner/CMakeLists.tx
 ### 4.1 runner：`HdrVideoHostWindow`（新文件 `fushi/windows/runner/hdr_video_host_window.{h,cpp}`）
 - 建窗/销毁；`SetHostRect(screen px)`；`SyncZOrder()`（插在主窗正后方，`SWP_NOACTIVATE`）；跟随主窗 `WM_WINDOWPOSCHANGED`（含最小化/还原/显示器切换/DPI）；主窗 `WM_ACTIVATE` 后重钉 z-order（TOPMOST 全屏时主窗是 TOPMOST，宿主窗插在其后自然也在 TOPMOST 带内）。
 - 通过既有 `app.fushi/window` 类 MethodChannel 暴露：`hdrHost.create → hwnd`、`hdrHost.setRect`、`hdrHost.destroy`、`hdrHost.displayColorSpace`（DXGI `GetDesc1().ColorSpace`，供 §4.4 判据；`WM_DISPLAYCHANGE` 时向 Dart 推事件）。
-- 主窗透明：仅在宿主窗存活期间 `DwmExtendFrameIntoClientArea(-1)`，销毁时还原（§3 若证明需要 `WS_EX_LAYERED` 则同样成对开关）。
+- 主窗透明：仅在宿主窗存活期间 `DwmEnableBlurBehindWindow(main, {DWM_BB_ENABLE|DWM_BB_BLURREGION, TRUE, CreateRectRgn(0,0,-1,-1)})`（§3.1 实证配方），销毁时 `fEnable=FALSE` 还原；不用 ExtendFrame、不用 `WS_EX_LAYERED`。
 
 ### 4.2 media_kit_video fork：`VideoOutput` 新增 `hostWindow` 模式
 - `VideoOutputManager.Create` 增参 `wid`（可空）。有 `wid` 时 `VideoOutput` **不建** `ANGLESurfaceManager`、不注册 Flutter 纹理，改为向 libmpv 设：`vo=gpu-next`、`gpu-context=d3d11`、`wid=<hwnd>`、`target-colorspace-hint=auto`、`d3d11-output-csp=auto`；`hwdec` 沿用 `resolvePlatformHwdec`。
