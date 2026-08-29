@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 一条在线漫画书架条目**不可用**的原因。
 ///
@@ -426,7 +427,10 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
   ) async {
     // Aidoku 封面是普通 https 资源（源包不提供图片代理接口），带上作品页作为
     // referer 就够——与 AidokuMangaPageProvider 取页图时的做法一致。
-    final HttpClient client = HttpClient();
+    //
+    // 走 `createAppHttpClient()` 而不是裸 `HttpClient()`：封面是**公网**请求，
+    // 必须跟随应用的统一代理出口（`outbound_http_discipline_guard` 钉住这条）。
+    final HttpClient client = createAppHttpClient();
     try {
       final HttpClientRequest request = await client.getUrl(Uri.parse(url));
       final String? referer = entry.series.raw['url']?.toString();
