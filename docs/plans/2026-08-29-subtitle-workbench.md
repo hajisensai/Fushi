@@ -62,7 +62,7 @@ class SubtitleWorkbenchTarget {
 ```
 
 - **判据泛化**：`jimaku_matching.dart` 的 `JimakuEpisodeIndex` / `chooseJimakuFileForEpisode` 改成对 `VideoSubtitleCandidate` 工作（新文件 `subtitle/subtitle_episode_matching.dart`，`SubtitleEpisodeIndex` / `chooseSubtitleForEpisode`），旧名保留为薄 re-export 兼容层（现有 5 条路径的测试不动）。
-- **合集级字幕配置**（新）：`MediaCollections` 加两列（schema v63）：`subtitleLanguage TEXT NULL`、`subtitleReleaseGroup TEXT NULL`（版本组/来源标签，来自 `subtitle_version_groups.dart` 的分组键）。语义与 `subtitleDelayMs` 同款：**null = 没人配过 → 回退视频内容语言链 `resolveContentLanguage`（BUG-1700：用户显式 > 视频内容语言 > 不表态；绝不硬编码 ja）**，非 null 覆盖每集。现有 prefs `jimakuPreferredLanguages[seriesKey]` 只读迁移：合集有列值优先，否则回退 seriesKey 记忆（Never break userspace）。
+- **合集级字幕配置**（新）：`MediaCollections` 加两列（schema v89（实际落地号；方案初稿误写 v63））：`subtitleLanguage TEXT NULL`、`subtitleReleaseGroup TEXT NULL`（版本组/来源标签，来自 `subtitle_version_groups.dart` 的分组键）。语义与 `subtitleDelayMs` 同款：**null = 没人配过 → 回退视频内容语言链 `resolveContentLanguage`（BUG-1700：用户显式 > 视频内容语言 > 不表态；绝不硬编码 ja）**，非 null 覆盖每集。现有 prefs `jimakuPreferredLanguages[seriesKey]` 只读迁移：合集有列值优先，否则回退 seriesKey 记忆（Never break userspace）。
 - **AJATT 目录缓存**：`<appSupport>/subtitle_catalogs/ajatt.json`（解析后的紧凑条目：type/slug/name/en/ja/lastModified），带 `fetchedAt` + `ETag`；24 h 内不重拉，拉取/解析在 isolate 里做。
 
 ### 3.2 `AjattSubtitleProvider`（id `ajatt`，priority 150，Jimaku 之后）
@@ -113,11 +113,11 @@ class SubtitleWorkbenchTarget {
 
 ## 4. 影响范围与风险
 
-- **改**：`app_model.dart`（装配 ajatt）、`video_subtitle_registry.dart`（排序表加 ajatt）、`jimaku_matching.dart`（泛化+兼容层）、`subtitle.part.dart`（入口/调起）、`side_panel.part.dart` + `layout.part.dart`（前景层互斥）、`video_foreground_layers.dart`、`settings_schema_video.dart`（provider 卡）、`preference_keys.dart`、`tables.dart`+`database.dart`（v63 两列）、`jimaku_subtitle_dialog.dart` / `jimaku_batch_dialog.dart`（搬空成壳）、`home_video_page.dart` / `media_collection_detail_page.dart`（调用方不改签名，仅目标类）。
+- **改**：`app_model.dart`（装配 ajatt）、`video_subtitle_registry.dart`（排序表加 ajatt）、`jimaku_matching.dart`（泛化+兼容层）、`subtitle.part.dart`（入口/调起）、`side_panel.part.dart` + `layout.part.dart`（前景层互斥）、`video_foreground_layers.dart`、`settings_schema_video.dart`（provider 卡）、`preference_keys.dart`、`tables.dart`+`database.dart`（v89 两列）、`jimaku_subtitle_dialog.dart` / `jimaku_batch_dialog.dart`（搬空成壳）、`home_video_page.dart` / `media_collection_detail_page.dart`（调用方不改签名，仅目标类）。
 - **新**：`media/video/subtitle/ajatt_catalog.dart`（HTML 解析 + 缓存）、`ajatt_subtitle_provider.dart`、`subtitle_episode_matching.dart`、`pages/implementations/subtitle_workbench_page.dart`、`media/video/subtitle_adjust_overlay.dart`。
 - **风险**：
   1. GitHub 在部分网络不可达 → 只表现为 AJATT 一条 failure，其它源正常；设置页可关。
-  2. schema v63 迁移：两列 nullable、无回填，迁移阶梯只 `addColumn`；升级不改任何既有行为。
+  2. schema v89（实际落地号；方案初稿误写 v63） 迁移：两列 nullable、无回填，迁移阶梯只 `addColumn`；升级不改任何既有行为。
   3. 判据泛化是全仓 5 条字幕路径的共同依赖 → 保留旧符号 re-export + 跑全部 `jimaku_*`/`subtitle_*` 测试（含 PR#878 那批）。
   4. 前景层互斥：新层必须进 `_hideVideoSidePanel`/`_hideControlPopover` 的关闭链，否则会出现「抽屉开着侧栏也开着」的双层（BUG-1864 备注：侧栏/popover 是兄弟，焦点进去整表失效）。
   5. i18n：改名只准 `--rename`，新 key 全 17 语言。
@@ -134,5 +134,5 @@ class SubtitleWorkbenchTarget {
 
 1. 全屏调整形态选 **A（底部抽屉 + 视频全幅继续播）** 还是别的？
 2. AJATT **默认开启**（零配置源）是否接受？
-3. 合集级「版本组」要不要入库（schema v63）？不入库则只做「语言」一列，版本偏好只在本次批量内生效。
+3. 合集级「版本组」要不要入库（schema v89（实际落地号；方案初稿误写 v63））？不入库则只做「语言」一列，版本偏好只在本次批量内生效。
 4. 三期分 PR 还是一条 PR 到底？
