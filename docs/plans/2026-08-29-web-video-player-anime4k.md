@@ -126,13 +126,33 @@
 
 | 风险 | 处置 |
 |---|---|
-| WebView2 对 PlayReady 支持不明（Widevine 内置） | P1 真机实测 Netflix；黑帧/拒播即记录，不宣称 |
+| WebView2 对 PlayReady 支持 | **已实测（2026-08-29，本机 Evergreen 151.0.4129.107，见 §5）**：硬件级 SL3000 许可可得、真账号 Netflix 播到 2560×1440（UHD 阶梯）、0 掉帧；受保护帧截屏纯黑、页面字幕层可见 |
 | 方案 B 延迟 1~2 帧 | P2 实测台账；超 100 ms 走方案 A |
 | 站点 bridge 与扩展分叉 | 镜像守卫测试，改只改扩展源 |
 | rawvideo 尺寸变化闪一下 | 防抖 300 ms 重开；可接受 |
 | fork 未构建 / 非 Windows | 所有原生入口 fail-open，页面退化为纯 WebView 无超分 |
 
-## 5. 验证清单
+## 5. 已实测事实（2026-08-29，Windows 11 24H2，Evergreen WebView2 151.0.4129.107，宿主 pywebview）
+
+证据：`.codex-test/web-video-player/`（不入库）。探针脚本在 job tmp，不入库。
+
+- EME 能力：`com.microsoft.playready.recommendation` robustness 3000 / 2000 / 150、`playready.hardware`
+  全部 OK；`decodingInfo` HEVC 2160p + PR3000 = supported+powerEfficient；Widevine 只到
+  `SW_SECURE_CRYPTO`（L3）。UA 带 `Edg/151.0.0.0`。
+- 手写 EME 许可链（微软测试片 + 测试许可服务器 `cfg=(sl:3000)`）：video 3000 + audio 2000 →
+  `createMediaKeys`/`generateRequest`/许可 200/`update` → keyStatus **`usable`**。**音频 robustness 不能
+  设 3000**（`NotSupportedError`），与 Netflix 在 Edge 上的 3000/2000 组合一致。
+- video 2000（软件 CDM）在本机 `generateRequest` 挂死，**真 Edge 同样挂死** → 非 WebView2 问题
+  （疑似软件 CDM 首次个性化走网络被本机 fake-ip DNS 卡住），与 Netflix 硬件路径无关。
+- shaka 4.11 要用 `drm.keySystemsMapping: {'com.microsoft.playready': 'com.microsoft.playready.recommendation'}`
+  才会走 recommendation；否则选旧 keysystem 且 CDM 不发许可请求。
+- 微软 4K H.264 测试片在 SL3000 下 `MediaFoundationRenderer 0x8004B821`（许可已拿到、解码失败），
+  但 **真账号 Netflix 在同一 WebView2 里正常播**：`/watch/81236554` `videoWidth×Height=2560×1440`、
+  21 s 内 522 帧解码 / 0 掉帧 → 测试片失败是内容/编码特例，不是 WebView2 硬件 DRM 不可用。
+- 截屏（GDI，t=12 s / 25 s）：视频区域 mean=0、stddev=0（**受保护输出，帧不可得**）；页面渲染的
+  字幕文本「六万年前」清晰可见 → 字幕/查词/制卡链路不受 DRM 影响，超分对 Netflix 不可能。
+
+## 6. 验证清单
 
 - `dart format` 改动文件 + 全量 `flutter analyze`（含 test）。
 - 定向 `flutter test`：新测试 + `test/tools/` 守卫 + 视频 launch 相关。
