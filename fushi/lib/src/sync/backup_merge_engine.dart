@@ -171,6 +171,8 @@ class BackupMergeEngine {
         await _mergeFavoriteWords();
         await _mergeMinedSentences();
         await _mergeActivityEvents();
+        // v90：学习事实段按 uid LWW + 按身份墓碑（与 legacy 统计家族并行、互不触碰）。
+        await _mergeStudySegments();
         // galgame_sessions 刻意不合并（成文决策，不是遗漏）：游戏是本机局域
         // 身份，galgames 行本身就不搬运（见 tables.dart 的 GalgameTagMappings
         // 注释——整套游戏数据不进 live-sync 也不进备份合并导入，全量备份恢复
@@ -923,6 +925,84 @@ class BackupMergeEngine {
   /// 代价：target 无 {event_type, ...} 复合索引，NOT EXISTS 对每条 src 行走
   /// 全表扫描（O(src×target)）。activity 是 session 粒度（每天几行~几十行），
   /// 年级数据也在万行内，SQLite 毫秒级，不值得为 merge 加索引。
+  /// v90 学习事实段（`study_segments`）+ 按身份墓碑（`study_segment_tombstones`）。
+  ///
+  /// 语义与在线同步 [AggregateMergeService.mergeStudySegments] /
+  /// [AggregateMergeService.arbitrateStudySegments] 完全一致，只是写成 SQL：
+  ///  ① 墓碑并集取 max deletedAt；
+  ///  ② 段按 uid：目标没有 → 插；两边都有且 src.updated_at 严格更新 → 整行覆盖
+  ///     （LWW，同值重放 no-op）；
+  ///  ③ 删掉目标里被（合并后）墓碑压制的段（updated_at < deleted_at）；
+  ///  ④ 删掉被任一段（updated_at >= deleted_at）复活的墓碑。
+  /// 旧备份（v90 前）没有这两张表：ATTACH 前已迁到当前 schema，两侧必有表。
+  Future<void> _mergeStudySegments() async {
+    await _db.customStatement(
+      'INSERT INTO study_segment_tombstones (media_kind, media_key, deleted_at) '
+      'SELECT media_kind, media_key, deleted_at '
+      'FROM $_srcAlias.study_segment_tombstones AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM study_segment_tombstones AS t '
+      'WHERE t.media_kind = s.media_kind AND t.media_key = s.media_key)',
+    );
+    await _db.customStatement(
+      'UPDATE study_segment_tombstones SET deleted_at = ('
+      'SELECT s.deleted_at FROM $_srcAlias.study_segment_tombstones AS s '
+      'WHERE s.media_kind = study_segment_tombstones.media_kind '
+      'AND s.media_key = study_segment_tombstones.media_key) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segment_tombstones AS s '
+      'WHERE s.media_kind = study_segment_tombstones.media_kind '
+      'AND s.media_key = study_segment_tombstones.media_key '
+      'AND s.deleted_at > study_segment_tombstones.deleted_at)',
+    );
+    final List<String> cols = <String>[
+      'uid',
+      'device_id',
+      'media_kind',
+      'media_key',
+      'format',
+      'title',
+      'start_at',
+      'end_at',
+      'date_key',
+      'hour',
+      'duration_ms',
+      'chars',
+      'pages',
+      'updated_at',
+    ];
+    final String colList = cols.join(', ');
+    await _db.customStatement(
+      'INSERT INTO study_segments ($colList) '
+      'SELECT $colList FROM $_srcAlias.study_segments AS s '
+      'WHERE NOT EXISTS (SELECT 1 FROM study_segments AS t WHERE t.uid = s.uid)',
+    );
+    final String setClause = cols
+        .where((String c) => c != 'uid')
+        .map((String c) =>
+            '$c = (SELECT s.$c FROM $_srcAlias.study_segments AS s '
+            'WHERE s.uid = study_segments.uid)')
+        .join(', ');
+    await _db.customStatement(
+      'UPDATE study_segments SET $setClause '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s '
+      'WHERE s.uid = study_segments.uid '
+      'AND s.updated_at > study_segments.updated_at)',
+    );
+    await _db.customStatement(
+      'DELETE FROM study_segments WHERE EXISTS ('
+      'SELECT 1 FROM study_segment_tombstones AS t '
+      'WHERE t.media_kind = study_segments.media_kind '
+      'AND t.media_key = study_segments.media_key '
+      'AND t.deleted_at > study_segments.updated_at)',
+    );
+    await _db.customStatement(
+      'DELETE FROM study_segment_tombstones WHERE EXISTS ('
+      'SELECT 1 FROM study_segments AS s '
+      'WHERE s.media_kind = study_segment_tombstones.media_kind '
+      'AND s.media_key = study_segment_tombstones.media_key '
+      'AND s.updated_at >= study_segment_tombstones.deleted_at)',
+    );
+  }
+
   Future<void> _mergeActivityEvents() async {
     final List<String> cols = await _columnsExceptId('activity_events');
     final String colList = cols.join(', ');

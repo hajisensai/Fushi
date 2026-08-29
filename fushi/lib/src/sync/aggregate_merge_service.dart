@@ -1,3 +1,5 @@
+import 'package:fushi/src/sync/aggregate_snapshot.dart'
+    show StudySegmentRecord, StudyTombstoneRecord;
 import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository;
 
@@ -75,6 +77,66 @@ class AggregateMergeService {
       out[key] = existing == null ? value : existing.maxWith(value);
     });
     return out;
+  }
+
+  /// v90 学习事实段的并集（wire v2）：按 `uid` 并集，同 uid 取 `updatedAt` 大者
+  /// （LWW；相等时保留 local，值本就相同）。**不是** MAX-union——段有幂等键，两端
+  /// 各写各的 uid，并集天然不重复、不塌缩，四条不变量照样成立：只增（uid 不会丢）、
+  /// 值不缩（同 uid 只被更新的覆盖）、幂等、交换。
+  static Map<String, StudySegmentRecord> mergeStudySegments(
+    Iterable<StudySegmentRecord> local,
+    Iterable<StudySegmentRecord> remote,
+  ) {
+    final Map<String, StudySegmentRecord> out = <String, StudySegmentRecord>{
+      for (final StudySegmentRecord r in local) r.uid: r,
+    };
+    for (final StudySegmentRecord r in remote) {
+      final StudySegmentRecord? existing = out[r.uid];
+      if (existing == null || r.updatedAt > existing.updatedAt) out[r.uid] = r;
+    }
+    return out;
+  }
+
+  /// v90 段墓碑并集：同 (mediaKind, mediaKey) 取 max deletedAt。
+  static Map<String, StudyTombstoneRecord> mergeStudyTombstones(
+    Iterable<StudyTombstoneRecord> local,
+    Iterable<StudyTombstoneRecord> remote,
+  ) {
+    final Map<String, StudyTombstoneRecord> out =
+        <String, StudyTombstoneRecord>{};
+    for (final StudyTombstoneRecord t
+        in <StudyTombstoneRecord>[...local, ...remote]) {
+      final StudyTombstoneRecord? prev = out[t.key];
+      if (prev == null || t.deletedAt > prev.deletedAt) out[t.key] = t;
+    }
+    return out;
+  }
+
+  /// 「删除 vs 重新学习」仲裁（纯函数，与收藏的 `_arbitrateFavorites` 同律）：
+  /// - 墓碑 `deletedAt` **严格大于**段 `updatedAt` → 段出局（删除跨端传播）；
+  /// - 否则段保留；某身份若有任一段 `updatedAt >= deletedAt`，该墓碑出局
+  ///   （用户又读了 = 复活，且防「删除僵尸」反向把新段删掉）。
+  static ({
+    List<StudySegmentRecord> segments,
+    List<StudyTombstoneRecord> tombstones
+  }) arbitrateStudySegments({
+    required Iterable<StudySegmentRecord> union,
+    required Map<String, StudyTombstoneRecord> tombstones,
+  }) {
+    final Map<String, int> latestUpdated = <String, int>{};
+    for (final StudySegmentRecord s in union) {
+      final int prev = latestUpdated[s.mediaIdentity] ?? -1;
+      if (s.updatedAt > prev) latestUpdated[s.mediaIdentity] = s.updatedAt;
+    }
+    final List<StudySegmentRecord> segments = <StudySegmentRecord>[
+      for (final StudySegmentRecord s in union)
+        if ((tombstones[s.mediaIdentity]?.deletedAt ?? 0) <= s.updatedAt) s,
+    ];
+    final List<StudyTombstoneRecord> live = <StudyTombstoneRecord>[
+      for (final StudyTombstoneRecord t in tombstones.values)
+        if ((latestUpdated[t.key] ?? -1) < t.deletedAt) t,
+    ];
+    return (segments: segments, tombstones: live);
   }
 
   /// Dedupe-union of favorite words. [uniqueKeyOf] projects each row to its
