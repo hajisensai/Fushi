@@ -187,9 +187,9 @@ extension _VideoSidePanel on _VideoFushiPageState {
       // 与设置侧栏一样包 [FushiAppUiScale]（同一份 schema 投影面板）。
       return FushiAppUiScale(
         scale: _videoUiScale,
+        // 关闭走 overlay 的点外 barrier（[_buildVideoSidePanelOverlay]，BUG-254）。
         child: VideoTranslucentBottomDrawer(
           title: _videoSidePanelTitle(kind),
-          onClose: _hideVideoSidePanel,
           child: _buildVideoSidePanelChild(kind, controller),
         ),
       );

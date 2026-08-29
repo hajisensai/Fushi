@@ -6,14 +6,13 @@ import 'package:fushi/src/media/video/video_chrome_colors.dart';
 /// 贴底而不是贴边——视频全幅可见、继续播放，字幕在真实位置实时预览（字幕调整专用，
 /// 2026-08 字幕工作台 PR-C）。
 ///
-/// 三个交互：头部拖拽条上下拖改高度（[minHeightFraction]..[maxHeightFraction]）、
-/// 「收起」把抽屉缩成只剩头部一条、「关闭」交给 [onClose]（页面层的点外 barrier 也会
-/// 关）。高度是本 widget 的瞬时状态，不持久化——每次打开回到 [initialHeightFraction]。
+/// 两个交互：头部拖拽条上下拖改高度（[minHeightFraction]..[maxHeightFraction]）、
+/// 「收起」把抽屉缩成只剩头部一条。关闭走页面层的点外 barrier（BUG-254：浮层一律
+/// 不渲染 X）。高度是本 widget 的瞬时状态，不持久化——每次打开回到 [initialHeightFraction]。
 class VideoTranslucentBottomDrawer extends StatefulWidget {
   const VideoTranslucentBottomDrawer({
     required this.title,
     required this.child,
-    this.onClose,
     this.initialHeightFraction = 0.42,
     this.minHeightFraction = 0.2,
     this.maxHeightFraction = 0.9,
@@ -23,7 +22,6 @@ class VideoTranslucentBottomDrawer extends StatefulWidget {
 
   final String title;
   final Widget child;
-  final VoidCallback? onClose;
 
   /// 打开时的高度（占屏高比例）。
   final double initialHeightFraction;
@@ -135,14 +133,7 @@ class _VideoTranslucentBottomDrawerState
                                   : Icons.keyboard_arrow_down,
                             ),
                           ),
-                          IconButton(
-                            key: const ValueKey<String>(
-                              'video-subtitle-drawer-close',
-                            ),
-                            tooltip: t.dialog_close,
-                            onPressed: widget.onClose,
-                            icon: const Icon(Icons.close),
-                          ),
+                          // BUG-254：浮层不渲染 X，点抽屉外任意位置关闭（页面层 barrier）。
                         ],
                       ),
                     ),

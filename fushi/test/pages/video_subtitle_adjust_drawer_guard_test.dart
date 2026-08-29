@@ -81,7 +81,17 @@ void main() {
     expect(drawer, greaterThan(guard));
     expect(scale, greaterThan(guard));
     expect(scale, lessThan(drawer), reason: '缩放包在抽屉外层');
-    expect(content, contains('onClose: _hideVideoSidePanel'));
+    // BUG-254：浮层不带 X，关闭只走 overlay 的点外 barrier——抽屉块里不许出现 onClose
+    // （侧栏块保留它给 barrier/其它调用方复用，故只查抽屉那一段）。
+    final int sidePanelStart = content.indexOf(
+      'VideoTranslucentSidePanel(',
+      guard,
+    );
+    expect(sidePanelStart, greaterThan(drawer));
+    expect(
+      content.substring(guard, sidePanelStart),
+      isNot(contains('onClose:')),
+    );
   });
 
   test('三处字幕入口仍经 _showPlayerSettings 传 subtitle', () {

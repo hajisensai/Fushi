@@ -113,21 +113,16 @@ void main() {
     );
   });
 
-  testWidgets('关闭按钮调 onClose', (WidgetTester tester) async {
-    int closed = 0;
+  testWidgets('不渲染 X 关闭按钮（BUG-254：浮层一律点外关闭）', (WidgetTester tester) async {
     await tester.pumpWidget(
       wrap(
-        VideoTranslucentBottomDrawer(
+        const VideoTranslucentBottomDrawer(
           title: 'Subtitles',
-          onClose: () => closed++,
-          child: const SizedBox.expand(key: content),
+          child: SizedBox.expand(key: content),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('video-subtitle-drawer-close')),
-    );
-    expect(closed, 1);
+    expect(find.byIcon(Icons.close), findsNothing);
   });
 }
