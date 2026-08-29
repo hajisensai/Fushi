@@ -3524,36 +3524,62 @@ class BackupService {
       sendPort = port.sendPort;
     }
     try {
-      await Isolate.run(() async {
-        final ZipFileEncoder encoder = ZipFileEncoder();
-        encoder.create(outputPath);
-        try {
-          final List<int> metaBytes = utf8.encode(metaJson);
-          encoder.addArchiveFile(
-              ArchiveFile(metaName, metaBytes.length, metaBytes));
-          for (final MapEntry<String, String> entry
-              in archivePathToSource.entries) {
-            final File file = File(entry.value);
-            if (!file.existsSync()) continue;
-            final int size = file.lengthSync();
-            await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
-            sendPort?.send(size);
-          }
-          encoder.closeSync();
-        } catch (_) {
-          encoder.closeSync();
-          try {
-            final File partial = File(outputPath);
-            if (partial.existsSync()) partial.deleteSync();
-          } catch (_) {
-            // best-effort cleanup; rethrow the real export failure below.
-          }
-          rethrow;
-        }
-      });
+      await _runBackupZipWorker(
+        outputPath: outputPath,
+        metaName: metaName,
+        metaJson: metaJson,
+        archivePathToSource: archivePathToSource,
+        sendPort: sendPort,
+      );
     } finally {
       port?.close();
     }
+  }
+
+  /// [_writeBackupZipInIsolate] 的 worker，**必须留在这个独立作用域里**。
+  ///
+  /// Dart 按**作用域**分配 Context，闭包序列化时整个 Context 一起发往子 isolate。
+  /// 把 `Isolate.run(...)` 内联回调用方，闭包就会连带捕获那里的 `port`
+  /// （`_ReceivePortImpl`，native 句柄）和 `onBytes`（一路捕获到 `AppModel` →
+  /// `FushiDatabase` → `DynamicLibrary`）—— 两者都不可发送，spawn 当场抛
+  /// `Illegal argument in isolate message`，导出备份 100% 失效（BUG-1929）。
+  ///
+  /// 本函数的 Context 只有下面五个形参，全部可跨 isolate 传递（String / Map /
+  /// SendPort）。**别把它内联回去**，也别在这里引用任何外层变量。
+  static Future<void> _runBackupZipWorker({
+    required String outputPath,
+    required String metaName,
+    required String metaJson,
+    required Map<String, String> archivePathToSource,
+    required SendPort? sendPort,
+  }) {
+    return Isolate.run(() async {
+      final ZipFileEncoder encoder = ZipFileEncoder();
+      encoder.create(outputPath);
+      try {
+        final List<int> metaBytes = utf8.encode(metaJson);
+        encoder.addArchiveFile(
+            ArchiveFile(metaName, metaBytes.length, metaBytes));
+        for (final MapEntry<String, String> entry
+            in archivePathToSource.entries) {
+          final File file = File(entry.value);
+          if (!file.existsSync()) continue;
+          final int size = file.lengthSync();
+          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+          sendPort?.send(size);
+        }
+        encoder.closeSync();
+      } catch (_) {
+        encoder.closeSync();
+        try {
+          final File partial = File(outputPath);
+          if (partial.existsSync()) partial.deleteSync();
+        } catch (_) {
+          // best-effort cleanup; rethrow the real export failure below.
+        }
+        rethrow;
+      }
+    });
   }
 
   Future<bool> _hasCompleteDictionaryResources(Directory? root) async {
