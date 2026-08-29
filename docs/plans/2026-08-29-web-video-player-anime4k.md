@@ -108,6 +108,10 @@
   `demuxer=rawvideo` / `demuxer-rawvideo-w,h,mp-format=bgra` / `untimed=yes` / `demuxer-thread=no`
   / `cache=no` / `audio=no`。着色器档位切换沿用视频页同一份设置（`VideoShaderTier`）。
 - 黑帧 → 关叠层 + 提示（i18n 走 `i18n_sync --add`）。
+- **画质 / 增强双模式**（§5.1 配方）：增强模式用独立 `WebViewEnvironment`（`additionalBrowserArguments:
+  --disable-direct-composition`、独立 user data folder）+ Chrome UA + document-created EME 垫片；画质模式用
+  默认环境。模式是网页播放器页级设置，切换 = 重建 WebView。P2 第一步先在 fork 里验 `--disable-direct-composition`
+  下 visual 捕获仍出帧。
 
 测试：
 - C++ gtest（fork 已有 `TEST_RUNNER`）：帧队列覆盖语义、read 分片正确性、尺寸变化 EOF、黑帧判定。
@@ -127,6 +131,7 @@
 | 风险 | 处置 |
 |---|---|
 | WebView2 对 PlayReady 支持 | **已实测（2026-08-29，本机 Evergreen 151.0.4129.107，见 §5）**：硬件级 SL3000 许可可得、真账号 Netflix 播到 2560×1440（UHD 阶梯）、0 掉帧；受保护帧截屏纯黑、页面字幕层可见 |
+| 网飞帧能否捕获（超分/截图/录制前提） | **已实测（§5.1）**：Chrome UA + 拒 PlayReady + `--disable-direct-composition` → Widevine 软件档 1080p、帧可截。双模式落地受 environment 级参数约束，fork 的 visual 捕获在该参数下须真机验 |
 | 方案 B 延迟 1~2 帧 | P2 实测台账；超 100 ms 走方案 A |
 | 站点 bridge 与扩展分叉 | 镜像守卫测试，改只改扩展源 |
 | rawvideo 尺寸变化闪一下 | 防抖 300 ms 重开；可接受 |
@@ -150,7 +155,36 @@
   但 **真账号 Netflix 在同一 WebView2 里正常播**：`/watch/81236554` `videoWidth×Height=2560×1440`、
   21 s 内 522 帧解码 / 0 掉帧 → 测试片失败是内容/编码特例，不是 WebView2 硬件 DRM 不可用。
 - 截屏（GDI，t=12 s / 25 s）：视频区域 mean=0、stddev=0（**受保护输出，帧不可得**）；页面渲染的
-  字幕文本「六万年前」清晰可见 → 字幕/查词/制卡链路不受 DRM 影响，超分对 Netflix 不可能。
+  字幕文本「六万年前」清晰可见 → 字幕/查词/制卡链路不受 DRM 影响。
+
+### 5.1 「画质 / 增强」双模式实测（同日，同一 WebView2，网飞真账号）
+
+黑帧的真正变量**不是 DRM 等级，而是 Chromium 的 DirectComposition overlay**：GPU 合成开着时，
+受保护视频（哪怕 Widevine 软件档）被放进受保护 overlay，任何截屏都黑；用户 Chrome 关硬件加速能截网飞
+就是这个原因（其 Chrome 实测走 Widevine 1080p）。逐步排除的台账：
+
+| 配置 | 网飞选的 keySystem（`createMediaKeys` 原型钩子实测） | 分辨率 | 帧可截？ |
+|---|---|---|---|
+| 默认（UA 带 `Edg/`） | `playready.recommendation.3000` | 2560×1440 / 1920×1080 | ❌ 纯黑 |
+| 运行期垫片拒 PlayReady（实例/原型补丁） | 拦不到——网飞在页面加载时已抓走原始函数引用 | — | — |
+| document-created 垫片拒 PlayReady，UA 仍 `Edg/` | 依次试 `.3000`→`.2000` 被拒后**不试 Widevine**，无 `<video>` | — | — |
+| document-created 垫片 + **Chrome UA**（去 `Edg/`） | `com.widevine.alpha` `SW_SECURE_DECODE` | 1920×1080 | ❌ 仍黑（overlay） |
+| 上一行 + `--disable-gpu` | 同上 | 1920×1080 → 掉到 960×540（纯软件渲染扛不住） | ✅ |
+| 上一行 + **`--disable-direct-composition`** | 同上 | **1920×1080 稳定**，0 掉帧 | ✅ **清晰可截** |
+
+**增强模式配方（已验证）**：Chrome UA（`CoreWebView2.Settings.UserAgent` 去掉 `Edg/` 标记）+
+document-created 注入的 EME 垫片（拒 `com.microsoft.playready*`、Widevine `HW_SECURE_*` 降
+`SW_SECURE_CRYPTO`）+ 浏览器参数 `--disable-direct-composition`（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
+或 environment 的 `additionalBrowserArguments`）→ 网飞 1080p Widevine 软件档、帧可捕获 → 超分 / 截图 /
+录制全通。**画质模式** = 默认环境（PlayReady 硬件档 1440p/4K，不可捕获）。
+
+P2 落地时的两条硬约束：
+- `--disable-direct-composition` 是 **WebView2 environment 级**（每个 user data folder 一个浏览器进程）
+  参数，不能运行期切换 → 双模式 = 两个 `WebViewEnvironment`（两套 profile 目录，cookie 不共享，登录要各登一次，
+  或用 `CookieManager` 同步）。fork 的 `WebViewEnvironmentSettings.additionalBrowserArguments` 已有入口。
+- fork 的纹理链路是 `CreateGraphicsCaptureItemFromVisual`（composition hosting）；`--disable-direct-composition`
+  只关 Chromium 内部的 DComp 用法，对 host 提供的 visual 树是否有副作用**必须在 fork 里真机验**——这是 P2
+  第一件事，验不过就退回 `--disable-gpu-compositing` 一类更粗的开关逐个试。
 
 ## 6. 验证清单
 
