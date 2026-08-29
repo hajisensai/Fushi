@@ -108,14 +108,36 @@ void main() {
       expect(watchdogAt, isNonNegative,
           reason: '窗口已隐藏后若清理不归，进程就成了用户看不见也关不掉的僵尸。');
       expect(main, contains('exit watchdog fired after'));
+      // 原断言只查到那句日志为止 —— 把回调体里的 exit(0) 删掉它照样绿，用例名
+      // 承诺的「会强制终止」根本没被钉住。取 Timer 到其闭合之间的片段。
+      final int timerAt = main.indexOf('Timer(_exitWatchdogTimeout', hookAt);
+      expect(timerAt, isNonNegative);
+      final int closeAt = main.indexOf('});', timerAt);
+      expect(closeAt, greaterThan(timerAt));
+      expect(main.substring(timerAt, closeAt), contains('exit(0)'),
+          reason: '看门狗到点必须真的终止进程，只打一行日志等于没有兜底');
+    });
+
+    test('看门狗不得在最后一步之前 cancel', () {
+      final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
+      final int exitAppAt =
+          main.indexOf('platformServices.lifecycle.exitApp()', hookAt);
+      final int cancelAt = main.indexOf('exitWatchdog.cancel()', hookAt);
+      expect(exitAppAt, isNonNegative);
+      expect(cancelAt, isNonNegative);
+      // exitApp() = WindowsNativePreExit + exit(0)，历史上最会不归的就是它（原生
+      // WebView2 / DirectComposition 同步析构）。窗口此刻已 hide，卡在这里就是
+      // 「用户看不见也关不掉的僵尸」—— 而看门狗恰恰在它之前被撤了岗。
+      expect(cancelAt, greaterThan(exitAppAt),
+          reason: '看门狗必须一直守到 exitApp 之后；exit(0) 生效时它根本没机会跑');
     });
 
     test('关库有超时上界（退出链上过去唯一的无界等待）', () {
       final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
-      final int closeAt = main.indexOf('appModel.closeDatabase()', hookAt);
+      final int closeAt = main.indexOf('.closeDatabase(', hookAt);
       expect(closeAt, isNonNegative);
       expect(
-        main.substring(closeAt, closeAt + 120),
+        main.substring(closeAt, closeAt + 240),
         contains('_closeDatabaseOnExitTimeout'),
         reason: '数据根迁移路径早就有这层保护，退出路径一直缺。',
       );
@@ -132,17 +154,55 @@ void main() {
       // 否则守卫会去检查一个跟退出路径无关的方法体（断言恒假 / 恒真都不对）。
       final int classAt = source.indexOf('class VideoDownloadPipelineService {');
       expect(classAt, isNonNegative);
-      final int stopAt = source.indexOf('Future<void> stop() async {', classAt);
-      expect(stopAt, isNonNegative);
+      final int stopAt =
+          source.indexOf('Future<void> stop({Duration? drainTimeout}) async {',
+              classAt);
+      expect(stopAt, isNonNegative,
+          reason: '上界必须是**可选参数**，不能是 stop() 的全局语义');
       final String body = source.substring(stopAt, stopAt + 600);
 
       expect(body, contains('while (_running)'));
       expect(
         body,
-        contains('stopDrainTimeout'),
-        reason: 'dispose() 挂在 closeDatabase 上，即挂在退出路径上——裸忙等等于让'
-            '一个在飞的下载决定 app 什么时候能关掉。',
+        contains('drainTimeout != null && waited.elapsed >= drainTimeout'),
+        reason: '不传上界时必须等到真收尾：迁移导入 / 备份导入 / 数据根迁移也走 '
+            'closeDatabase，它们关库后要在文件层动整个 DB 目录，放行一个在飞的 '
+            '_process 是数据安全问题（BUG-1505），不是噪声问题。',
       );
+    });
+
+    test('1.5s 上界只由退出路径传进来', () {
+      // 守卫必须钉「谁传」，而不只是「有没有这个常量」：把上界写死回 stop() 里，
+      // 上面那条断言换个写法也能绿，而 BUG-1505 会在迁移路径上原地复活。
+      final String mainSource = File('lib/main.dart').readAsStringSync();
+      final int hookAt =
+          mainSource.indexOf('_flushAndExitForWindowClose() async');
+      final int closeAt = mainSource.indexOf('.closeDatabase(', hookAt);
+      expect(closeAt, isNonNegative);
+      expect(
+        mainSource.substring(closeAt, closeAt + 240),
+        contains(
+            'pipelineDrainTimeout: VideoDownloadPipelineService.stopDrainTimeout'),
+        reason: '退出路径必须显式传上界；其余 closeDatabase 调用方一律等到真收尾',
+      );
+    });
+
+    test('正在退出的首实例不得接管第二实例的文件（Windows 单实例）', () {
+      final String runner = File('windows/runner/main.cpp').readAsStringSync();
+      // main.dart 的退出链第一步就 windowManager.hide()，此后进程最长还活约 6s，
+      // 互斥量一直被它持有、隐藏窗口也照样被 FindWindowW 找得到。转交给它 = 路径
+      // 整个丢掉；只前置一个看不见的窗口 = 用户双击视频「点了没反应」。
+      expect(runner, contains('::IsWindowVisible(exiting)'),
+          reason: '必须能把「正在退出」和「正常运行」区分开');
+      final int probeAt = runner.indexOf('::IsWindowVisible(exiting)');
+      final int waitAt =
+          runner.indexOf('WaitForSingleInstanceMutex', probeAt);
+      expect(waitAt, greaterThan(probeAt),
+          reason: '认出它在退出之后要等它释放互斥量，然后本进程按首实例正常启动');
+      final int handoffAt =
+          runner.indexOf('SendExternalVideoPath', probeAt);
+      expect(handoffAt, greaterThan(waitAt),
+          reason: '转交分支必须排在这道判定之后，否则仍会把路径交给一个将死的进程');
     });
   });
 

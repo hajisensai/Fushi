@@ -63,6 +63,7 @@ import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
+import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/external_video.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -893,13 +894,26 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     //    这里过去是整条退出链上唯一的无界等待。WAL 本身崩溃安全，超时放行只损失一次
     //    checkpoint（下次启动自动回放），不损失任何已提交的数据。
     await _guardedExitStep('database close', () async {
-      await appModel.closeDatabase().timeout(_closeDatabaseOnExitTimeout);
+      // 上界只在**这条**退出链上给：迁移导入 / 备份导入 / 数据根迁移也调
+      // closeDatabase()，它们关库后要在文件层动整个 DB 目录，放行一个仍在飞的
+      // `_process` 是数据安全问题（BUG-1505）。退出路径不同——进程马上就没了。
+      await appModel
+          .closeDatabase(
+            pipelineDrainTimeout: VideoDownloadPipelineService.stopDrainTimeout,
+          )
+          .timeout(_closeDatabaseOnExitTimeout);
     });
-    exitWatchdog.cancel();
     debugPrint(
         '[Fushi] exit teardown finished in ${exitWatch.elapsedMilliseconds}ms');
     // ④ 进程级快杀（desktop lifecycle = exit(0)），跳过 destroy() 的同步插件拆除。
+    //
+    // **看门狗不在这之前 cancel**：exitApp() 里 WindowsNativePreExit + exit(0) 才是
+    // 历史上最会不归的一步（原生 WebView2 / DirectComposition 同步析构），而窗口此刻
+    // 已经 hide 掉，卡在这里就是「用户看不见也关不掉的僵尸」。exit(0) 一旦生效，
+    // 这个 Timer 根本没机会跑；真走到下面说明 exitApp 没杀掉进程，那正是要它兜底的
+    // 场景。cancel 放在最后，只为「万一 exitApp 返回了」留一个显式的收口点。
     await appModel.platformServices.lifecycle.exitApp();
+    exitWatchdog.cancel();
   }
 
   /// 退出期单步执行器：统一吞掉超时/异常 + 耗时埋点。退出清理失败绝不阻止退出，但
