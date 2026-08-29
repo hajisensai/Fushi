@@ -3833,5 +3833,8 @@
   "delete_disclosure_book_source_kept": "インポートした元の書籍・字幕ファイル",
   "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
-  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。"
+  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。",
+  "download_direct_queue_section": "直リンクダウンロード",
+  "download_task_kind_all": "すべての種類",
+  "download_task_kind_filter": "種類で絞り込む"
 }

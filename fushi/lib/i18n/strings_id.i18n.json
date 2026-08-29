@@ -3833,5 +3833,8 @@
   "delete_disclosure_book_source_kept": "Berkas buku dan takarir asli yang kamu impor",
   "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
   "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan",
-  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses."
+  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses.",
+  "download_direct_queue_section": "Direct downloads",
+  "download_task_kind_all": "All types",
+  "download_task_kind_filter": "Filter by type"
 }

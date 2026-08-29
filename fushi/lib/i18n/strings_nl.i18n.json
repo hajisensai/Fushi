@@ -3833,5 +3833,8 @@
   "delete_disclosure_book_source_kept": "De originele boek- en ondertitelbestanden die je hebt geïmporteerd",
   "download_task_delete_files_failed": "De gedownloade gegevens konden niet worden verwijderd; de downloadengine bevestigde dit niet",
   "delete_local_files_failed": "$n lokale bestand(en) konden niet worden verwijderd; ze zijn mogelijk nog in gebruik",
-  "batch_hidden_by_filter_note": "Nog ${n} geselecteerde items zijn verborgen door het huidige filter en worden niet verwerkt."
+  "batch_hidden_by_filter_note": "Nog ${n} geselecteerde items zijn verborgen door het huidige filter en worden niet verwerkt.",
+  "download_direct_queue_section": "Direct downloads",
+  "download_task_kind_all": "All types",
+  "download_task_kind_filter": "Filter by type"
 }
