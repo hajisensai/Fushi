@@ -1387,7 +1387,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final OnlineMangaChapter chapter = entry.chapters[chapterIndex];
     // 每章进度：切回读过一半的旧章要落回原页，而不是从头开始（v88 前
     // selectChapter 会把唯一那行 reader_positions 清零，上一章位置永久丢失）。
-    int? initialPage;
+    //
+    // 书架在线章**一律显式给页码**（读到一半给 lastPage，其余给 0），不能留
+    // null：`_loadOnlineChapter` 在 `initialPage == null` 时会回落到整本**唯一
+    // 那行** `reader_positions`，而那一行装的是**上一章**读到哪。读完第 3 话第
+    // 20 页 → 自动换到未读的第 4 话 → 第 4 话从第 20 页开始，整章整章跳过内容。
+    // 每章进度的真相源是 `manga_chapter_states`；书级那行只服务单章 / 本地条目。
+    int initialPage = 0;
     if (row.uid.isNotEmpty) {
       final MangaChapterStateRow? state =
           await appModel.database.getMangaChapterState(

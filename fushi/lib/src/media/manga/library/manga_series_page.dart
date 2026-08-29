@@ -322,7 +322,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         _entry = updated;
         if (row != null) _row = row;
       });
-    } on OnlineMangaUnavailable catch (error) {
+    } on OnlineMangaUnavailable catch (error, stack) {
+      // 这条**才是**在线漫画的主流失败路径：adapter 已经把 Mihon/Aidoku 的运行时
+      // 与网络异常全包成了 OnlineMangaUnavailable，兜底的 `on Object` 基本收不到
+      // 东西。不在这里记，用户报「漫画刷不出来」时事后捞日志就是空的。
+      ErrorLogService.instance.log(
+        'MangaSeriesPage.refresh[${error.reason.name}]',
+        error,
+        stack,
+      );
       if (!mounted) return;
       setState(() => _refreshError = error);
       if (!silent) {
@@ -403,7 +411,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       await _openReader(bookKey);
       // 从阅读器回来必须重读：读了哪些页、哪章读完了全在阅读器里写的库。
       await _reloadAfterReading();
-    } on OnlineMangaUnavailable catch (error) {
+    } on OnlineMangaUnavailable catch (error, stack) {
+      // 同 refresh：开章失败绝大多数落在这一支，不记就等于「漫画打不开」这类
+      // 报障永远没有可捞的记录。
+      ErrorLogService.instance.log(
+        'MangaSeriesPage.openChapter[${error.reason.name}]',
+        error,
+        stack,
+      );
       if (mounted) {
         setState(() => _refreshError = error);
         FushiToast.show(msg: error.message, severity: ToastSeverity.error);

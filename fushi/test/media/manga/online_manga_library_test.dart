@@ -98,6 +98,46 @@ void main() {
     expect(await database.getAllEpubBooks(), hasLength(1));
   });
 
+  test('刷出空章节列表不得覆盖书架：抛失败、库里旧描述符原样保留', () async {
+    final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+    final OnlineMangaLibraryEntry stored =
+        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    expect(stored.chapters, hasLength(2));
+
+    // Mihon 的 chapterListParse 撞 Cloudflare 拦截页时**返回空列表而不抛**。
+    await expectLater(
+      service.refresh(
+        bookKey: row.bookKey,
+        existing: stored,
+        series: stored.series,
+        chapters: const <OnlineMangaChapter>[],
+      ),
+      throwsA(isA<OnlineMangaUnavailable>()),
+    );
+
+    final EpubBookRow? after = await database.getEpubBook(row.bookKey);
+    final OnlineMangaLibraryEntry kept =
+        OnlineMangaLibraryEntry.tryParse(after!.sourceMetadata)!;
+    expect(kept.chapters, hasLength(2),
+        reason: '一次没抛异常的失败刷新不得把书架里的章节清空');
+    expect(after.chapterCount, 2);
+  });
+
+  test('刷新本来就空的条目仍照常落库（守卫只挡「有变没有」）', () async {
+    final EpubBookRow row = await service.add(entryFor());
+    final OnlineMangaLibraryEntry stored =
+        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)!;
+    expect(stored.chapters, isEmpty);
+
+    final OnlineMangaLibraryEntry? updated = await service.refresh(
+      bookKey: row.bookKey,
+      existing: stored,
+      series: stored.series,
+      chapters: chapters,
+    );
+    expect(updated?.chapters, hasLength(2));
+  });
+
   test('bookKey 与 v88 的推导逐字节一致（存量书架条目不能变孤儿）', () async {
     // v88 的公式（fushi/lib/src/media/manga/mihon/mihon_library.dart 原文）：
     //   sha256(packageName NUL sourceId NUL manga.url)[0:32]，前缀 'mihon-'

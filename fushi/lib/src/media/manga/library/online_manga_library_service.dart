@@ -149,6 +149,17 @@ class OnlineMangaLibraryService {
     required List<OnlineMangaChapter> chapters,
   }) async {
     if (existing == null) return null;
+    // 「刷出来一章都没有、而库里本来有」不是一次成功的刷新，是一次没抛异常的
+    // 失败：Mihon 的 `chapterListParse` 撞上 Cloudflare 拦截页时通常**返回空
+    // 列表而不抛**。照单全收就会把书架里那部漫画的章节整个清空、进度条归零，
+    // 而且零提示。这里不落库、抛回给调用方走正常的失败展示（横幅 + 日志），
+    // 库里的旧描述符原样保留。
+    if (chapters.isEmpty && existing.chapters.isNotEmpty) {
+      throw const OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.runtimeFailure,
+        'Source returned no chapters; keeping the existing list.',
+      );
+    }
     int? nextIndex;
     final OnlineMangaChapter? selected = existing.currentChapter;
     if (selected != null) {
