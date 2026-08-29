@@ -18,6 +18,9 @@ const settingDefaults = Object.freeze({
   // 默认开启，对齐 app 侧 pauseOnLookup 默认 true（TODO-1108）；显式选择（含旧键）优先。
   subtitlePauseOnLookup: true,
   subtitleOverlayAutoLookup: false,
+  // 侧边栏查词结果显示在网页上（默认开）：side panel 的 DOM 画不出面板边界，面板内的弹窗
+  // 只能有面板那么宽；交给宿主页渲染才有完整空间。关掉则回到面板内那份窄弹窗。
+  subtitleLookupOnPage: true,
   subtitleOverlayBlur: false,
   subtitleOverlayAllTracks: false,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
@@ -44,6 +47,7 @@ const toggleIds = Object.freeze({
   nfHideNext: 'netflixHideNextEpisode',
   subtitlePauseOnLookup: 'subtitlePauseOnLookup',
   subtitleOverlayAutoLookup: 'subtitleOverlayAutoLookup',
+  subtitleLookupOnPage: 'subtitleLookupOnPage',
   subtitleOverlayBlur: 'subtitleOverlayBlur',
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
   subtitleReplaceNative: 'subtitleReplaceNative',

@@ -97,10 +97,21 @@ function parseSubtitleTimestamp(raw, tickRate) {
   return null;
 }
 
-// 去行内标签（<c>、<i>、<b.bg_transparent> …）与方向/零宽控制字符，最小实体解码。
-function stripCueTags(text) {
+// 注音（振假名）标注元素：`<rt>` 是读音本身，`<rp>` 是给不支持 ruby 的渲染器看的回退括号，
+// `<rtc>` 是读音容器。三者的内容**都不是正文**——只有 ruby base 是。光删标签保留内容会把读音
+// 拼进正文（`<ruby>震<rt>ふる</rt></ruby>` → `震ふる`），于是列表里读音与正文并排成同级文字，
+// 查词、制卡 sentence、字幕匹配一起被污染。app 侧 strip_html_tags.dart 早为此收过口
+// （BUG-1161），这里是它在扩展侧的孪生实现，判据逐条对齐：
+//  - 一条规则同时吃「显式闭合 <rt>ふる</rt>」与「隐式闭合 <ruby>震<rt>ふる</ruby>」；
+//  - 开标签属性段写成 (?:[^<>/]|/(?!>))* 而不是 [^>]*：不许跨越 `<`（缺 `>` 的畸形开标签不能
+//    借后面的 `>` 凑合法，否则会把正文一路吃光），也不许把自闭合 `<rt/>` 当成有内容的开标签。
+//    认不出的形态整体不匹配 → 退回「只删标签」的旧行为，宁可多留一个假名也不吃掉正文。
+const RUBY_ANNOTATION = '<(?:rt|rp|rtc)\\b(?:[^<>/]|/(?!>))*>' +
+  '(?:(?!</?(?:ruby|rt|rp|rtc)\\b)[\\s\\S])*(?:</(?:rt|rp|rtc)\\s*>)?';
+
+// 方向/零宽控制字符与最小实体解码（不碰标签）。
+function decodeCueEntities(text) {
   return String(text || '')
-    .replace(/<[^>]*>/g, '')
     .replace(/[‎‏]/g, '')
     .replace(/&lrm;|&rlm;/g, '')
     .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
@@ -108,8 +119,60 @@ function stripCueTags(text) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .trim();
+    .replace(/&amp;/g, '&');
+}
+
+// 去掉行内标签（<c>、<i>、<b.bg_transparent> …）并解码实体；注音内容已在上游剔除。
+function stripInlineTags(text) {
+  return decodeCueEntities(String(text || '').replace(/<[^>]*>/g, ''));
+}
+
+// 把一行字幕切成「正文段 + 可选读音」的序列：`<ruby>震<rt>ふる</rt></ruby>える` →
+// [{text:'震', reading:'ふる'}, {text:'える', reading:''}]。读音单独留着是为了让字幕列表/覆盖层
+// 能画出真正的 <ruby>（振假名在正文上方），而 cue.text 仍然只有正文——两个用途各取所需，
+// 不再让读音以同级文字的身份混进正文。没有注音时返回单段（reading 为空）。
+function splitCueRuby(text) {
+  const source = String(text || '');
+  const segments = [];
+  const rubyBlock = /<ruby\b(?:[^<>/]|\/(?!>))*>([\s\S]*?)<\/ruby\s*>/gi;
+  let cursor = 0;
+  let match;
+  const pushPlain = (raw) => {
+    const plain = stripInlineTags(raw);
+    if (plain) segments.push({ text: plain, reading: '' });
+  };
+  while ((match = rubyBlock.exec(source)) !== null) {
+    pushPlain(source.slice(cursor, match.index));
+    const inner = match[1];
+    // base = 注音整段剔除后剩下的内容；reading = 各 <rt> 的内容按序拼接（<rp> 的回退括号
+    // 不是读音，丢掉）。
+    const base = stripInlineTags(inner.replace(new RegExp(RUBY_ANNOTATION, 'gi'), ''));
+    let reading = '';
+    const rt = /<rt\b(?:[^<>/]|\/(?!>))*>((?:(?!<\/?(?:ruby|rt|rp|rtc)\b)[\s\S])*)/gi;
+    let rtMatch;
+    while ((rtMatch = rt.exec(inner)) !== null) reading += stripInlineTags(rtMatch[1]);
+    if (base) segments.push({ text: base, reading: reading });
+    else pushPlain(inner);
+    cursor = match.index + match[0].length;
+  }
+  pushPlain(source.slice(cursor));
+  // 不变式：段拼接 === stripCueTags 的正文。渲染端画的是段、查词/制卡吃的是 cue.text，两者
+  // 一旦漂开就会出现「列表上看到的字和查到的词对不上」。畸形注音（`<ruby>漢<rt かん</ruby>`
+  // 这类缺 `>` 的输入）会让上面的分段留下标签字面量——那时整行退回单段，宁可不画振假名也
+  // 不让两端分岔。
+  const joined = segments.map((seg) => seg.text).join('');
+  const plain = stripCueTags(source);
+  if (joined.trim() !== plain) {
+    return plain ? [{ text: plain, reading: '' }] : [];
+  }
+  return segments;
+}
+
+// 行内标签剥离后的**正文**（读音不在其中）。旧签名不变，调用方无需改。
+function stripCueTags(text) {
+  const withoutAnnotations = String(text || '')
+    .replace(new RegExp(RUBY_ANNOTATION, 'gi'), '');
+  return stripInlineTags(withoutAnnotations).trim();
 }
 
 // WebVTT（Netflix webvtt-lssdh-ios8）→ cues。按空行切块，含 '-->' 的块才是 cue，
@@ -256,6 +319,7 @@ if (typeof module !== 'undefined' && module.exports) {
     netflixVideoEl,
     parseSubtitleTimestamp,
     stripCueTags,
+    splitCueRuby,
     parseWebVtt,
     parseTtml,
     parseBilibiliJson,

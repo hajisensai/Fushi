@@ -339,7 +339,8 @@
     var el = ensureSubtitleOverlay();
     st.overlayCue = cue;
     el.setAttribute('data-theme', resolveTheme());
-    el.textContent = cue.text;
+    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
+    else el.textContent = cue.text;
     el.style.left = (rect.left + rect.width / 2) + 'px';
     el.style.top = (rect.top + rect.height * 0.84) + 'px';
     el.style.maxWidth = Math.max(240, rect.width * 0.9) + 'px';
@@ -719,12 +720,30 @@
         sendResponse({ ok: handled });
         return false;
       }
+      if (msg.type === 'fushiSubtitleSidePanelShowLookup') {
+        // 「跨出面板」：侧栏取好词后交给宿主页渲染页面弹窗（content.js 里的
+        // fushiShowLookupFromSidePanel 说明了为什么面板内画不出去）。ok:false 时侧栏
+        // 会退回面板内自己渲染——宿主页没有 content.js（chrome:// 等）不能变成查不了词。
+        var showCue = msg.cue && typeof msg.cue === 'object' ? msg.cue : null;
+        var shown = typeof window.fushiShowLookupFromSidePanel === 'function' &&
+          window.fushiShowLookupFromSidePanel(
+            String(msg.term || ''), showCue, msg.anchorRatio) === true;
+        sendResponse({ ok: shown });
+        return false;
+      }
       if (msg.type === 'fushiSubtitleSidePanelLookupClosed') {
         // Side Panel 查词面板关闭 → 恢复由查词暂停的视频（content.js 只恢复「确实是查词
         // 暂停的」，用户自己暂停的不动）。
         var closed = typeof window.fushiLookupClosedFromSidePanel === 'function' &&
           window.fushiLookupClosedFromSidePanel() === true;
         sendResponse({ ok: closed });
+        return false;
+      }
+      if (msg.type === 'fushiSubtitleSidePanelCloseLookup') {
+        // 侧栏按 Esc：关掉宿主页上那份侧栏交出去的弹窗（面板内那份侧栏自己关）。
+        var closedPage = typeof window.fushiCloseLookupFromSidePanel === 'function' &&
+          window.fushiCloseLookupFromSidePanel() === true;
+        sendResponse({ ok: closedPage });
         return false;
       }
       if (msg.type === 'fushiSubtitleSidePanelMine') {
