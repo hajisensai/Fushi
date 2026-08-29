@@ -3833,5 +3833,8 @@
   "delete_disclosure_book_source_kept": "Los archivos originales del libro y los subtítulos que importaste",
   "download_task_delete_files_failed": "No se pudieron eliminar los datos descargados; el motor de descargas no lo confirmó",
   "delete_local_files_failed": "No se pudieron eliminar $n archivo(s) local(es); puede que sigan en uso",
-  "batch_hidden_by_filter_note": "Otros ${n} elementos seleccionados están ocultos por el filtro actual y no se procesarán."
+  "batch_hidden_by_filter_note": "Otros ${n} elementos seleccionados están ocultos por el filtro actual y no se procesarán.",
+  "download_direct_queue_section": "Direct downloads",
+  "download_task_kind_all": "All types",
+  "download_task_kind_filter": "Filter by type"
 }

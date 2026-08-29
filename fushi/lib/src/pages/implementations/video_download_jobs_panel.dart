@@ -10,6 +10,8 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobRow,
         VideoDownloadJobStage;
 
+import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
@@ -215,6 +217,57 @@ List<VideoDownloadJobRow> filterVideoDownloadJobs(
       ],
     );
 
+/// 任务列表的类型筛选档位（BUG-1937；会话级，不落偏好，同 [VideoDownloadJobSort]）。
+///
+/// [video] 之外的四档与 [DiscoveryMediaKind] 一一对应——`video_download_jobs.mediaKind`
+/// 的值域按 organizationPolicy 分治：视频任务放 `VideoMetadataMediaKind.name`
+/// （movie/tv），发现域手动任务放 `DiscoveryMediaKind.name`。
+enum VideoDownloadJobKindFilter {
+  all(null),
+  video(null),
+  novel(DiscoveryMediaKind.novel),
+  audiobook(DiscoveryMediaKind.audiobook),
+  game(DiscoveryMediaKind.game),
+  manga(DiscoveryMediaKind.manga);
+
+  const VideoDownloadJobKindFilter(this.discoveryKind);
+
+  /// 对应的发现域；[all] 与 [video] 没有。
+  final DiscoveryMediaKind? discoveryKind;
+}
+
+/// 任务所属的发现域；`mediaKind` 不是任何发现域名（movie/tv 或历史值）即视频任务。
+///
+/// 不列 movie/tv 白名单：这条管线本来就是视频管线，「不是发现域」就是视频，
+/// 写白名单反而会把历史/未知值筛成两头都不属于的幽灵。
+DiscoveryMediaKind? videoDownloadJobDiscoveryKind(VideoDownloadJobRow job) =>
+    DiscoveryMediaKind.values.asNameMap()[job.mediaKind];
+
+/// 类型筛选（纯函数）。
+List<VideoDownloadJobRow> filterVideoDownloadJobsByKind(
+  List<VideoDownloadJobRow> jobs,
+  VideoDownloadJobKindFilter filter,
+) =>
+    switch (filter) {
+      VideoDownloadJobKindFilter.all => jobs,
+      VideoDownloadJobKindFilter.video => <VideoDownloadJobRow>[
+          for (final VideoDownloadJobRow job in jobs)
+            if (videoDownloadJobDiscoveryKind(job) == null) job,
+        ],
+      _ => <VideoDownloadJobRow>[
+          for (final VideoDownloadJobRow job in jobs)
+            if (videoDownloadJobDiscoveryKind(job) == filter.discoveryKind) job,
+        ],
+    };
+
+/// 类型筛选档位的用户可见名（发现域四档复用 [discoveryMediaKindLabel]）。
+String videoDownloadJobKindFilterLabel(VideoDownloadJobKindFilter filter) =>
+    switch (filter) {
+      VideoDownloadJobKindFilter.all => t.download_task_kind_all,
+      VideoDownloadJobKindFilter.video => t.anime_download_kind_video,
+      _ => discoveryMediaKindLabel(filter.discoveryKind!),
+    };
+
 /// Compact task surface for schema-v78 durable video downloads.
 ///
 /// Retrying and cancelling are deliberately action ports rather than direct DB
@@ -301,6 +354,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
   VideoDownloadJobSort _sort = VideoDownloadJobSort.createdDesc;
+  VideoDownloadJobKindFilter _kindFilter = VideoDownloadJobKindFilter.all;
 
   @override
   void initState() {
@@ -407,7 +461,10 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
             );
           }
           final List<VideoDownloadJobRow> visible = sortedVideoDownloadJobs(
-            filterVideoDownloadJobs(jobs, _searchQuery),
+            filterVideoDownloadJobsByKind(
+              filterVideoDownloadJobs(jobs, _searchQuery),
+              _kindFilter,
+            ),
             _sort,
           );
           return Column(
@@ -428,50 +485,99 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
     );
   }
 
-  /// 任务列表上方的搜索 + 排序工具条（只在真有任务时出现）。
+  /// 任务列表上方的搜索 + 类型筛选 + 排序工具条（只在真有任务时出现）。
+  ///
+  /// 宽度不足 [_kToolbarSingleRowMinWidth] 时分两行：搜索框独占一行，筛选/排序
+  /// 靠右另起一行。BUG-1937 加类型筛选前，360 逻辑像素宽的单行只剩几十像素余量，
+  /// 再放一个控件就右溢出；把搜索框挤成几十像素也不是能用的东西。
   Widget _buildToolbar() {
+    final Widget search = FushiSearchField(
+      fieldKey: const ValueKey<String>('video-download-job-search'),
+      controller: _searchController,
+      focusNode: _searchFocusNode,
+      hintText: t.download_task_search_hint,
+      onChanged: (String value) => setState(() => _searchQuery = value),
+      onSubmitted: (String value) => setState(() => _searchQuery = value),
+      onClear: () => setState(() => _searchQuery = ''),
+    );
+    // 类型筛选走纯图标（不像排序那样带文字）：筛选中换实心图标 + 主色，
+    // tooltip 报当前档位；具体档位在菜单里有勾选态。
+    final Widget kind = FushiOverflowMenu<VideoDownloadJobKindFilter>(
+      key: const ValueKey<String>('video-download-job-kind'),
+      tooltip: _kindFilter == VideoDownloadJobKindFilter.all
+          ? t.download_task_kind_filter
+          : '${t.download_task_kind_filter} · '
+              '${videoDownloadJobKindFilterLabel(_kindFilter)}',
+      iconWidget: _kindFilter == VideoDownloadJobKindFilter.all
+          ? const Icon(Icons.filter_list)
+          : Icon(
+              Icons.filter_alt,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+      onSelected: (VideoDownloadJobKindFilter value) =>
+          setState(() => _kindFilter = value),
+      items: <PopupMenuEntry<VideoDownloadJobKindFilter>>[
+        for (final VideoDownloadJobKindFilter value
+            in VideoDownloadJobKindFilter.values)
+          FushiPopupMenuItem<VideoDownloadJobKindFilter>(
+            value: value,
+            label: videoDownloadJobKindFilterLabel(value),
+            selected: _kindFilter == value,
+          ),
+      ],
+    );
+    final Widget sort = FushiOverflowMenu<VideoDownloadJobSort>(
+      key: const ValueKey<String>('video-download-job-sort'),
+      tooltip: t.sort_by,
+      onSelected: (VideoDownloadJobSort value) => setState(() => _sort = value),
+      items: <PopupMenuEntry<VideoDownloadJobSort>>[
+        for (final VideoDownloadJobSort value in VideoDownloadJobSort.values)
+          FushiPopupMenuItem<VideoDownloadJobSort>(
+            value: value,
+            label: _sortLabel(value),
+            selected: _sort == value,
+          ),
+      ],
+      child: OutlinedButton.icon(
+        // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
+        onPressed: null,
+        icon: const Icon(Icons.sort, size: 18),
+        label: Text(_sortLabel(_sort)),
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: FushiSearchField(
-              fieldKey: const ValueKey<String>('video-download-job-search'),
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              hintText: t.download_task_search_hint,
-              onChanged: (String value) => setState(() => _searchQuery = value),
-              onSubmitted: (String value) =>
-                  setState(() => _searchQuery = value),
-              onClear: () => setState(() => _searchQuery = ''),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FushiOverflowMenu<VideoDownloadJobSort>(
-            key: const ValueKey<String>('video-download-job-sort'),
-            tooltip: t.sort_by,
-            onSelected: (VideoDownloadJobSort value) =>
-                setState(() => _sort = value),
-            items: <PopupMenuEntry<VideoDownloadJobSort>>[
-              for (final VideoDownloadJobSort value
-                  in VideoDownloadJobSort.values)
-                FushiPopupMenuItem<VideoDownloadJobSort>(
-                  value: value,
-                  label: _sortLabel(value),
-                  selected: _sort == value,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (constraints.maxWidth < _kToolbarSingleRowMinWidth) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                search,
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[kind, const SizedBox(width: 4), sort],
                 ),
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: search),
+              const SizedBox(width: 8),
+              kind,
+              const SizedBox(width: 4),
+              sort,
             ],
-            child: OutlinedButton.icon(
-              // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
-              onPressed: null,
-              icon: const Icon(Icons.sort, size: 18),
-              label: Text(_sortLabel(_sort)),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
+
+  /// 工具条单行布局的最小宽度；再窄就分两行（见 [_buildToolbar]）。
+  static const double _kToolbarSingleRowMinWidth = 480;
 
   static String _sortLabel(VideoDownloadJobSort sort) => switch (sort) {
         VideoDownloadJobSort.createdDesc => t.download_task_sort_created,
@@ -520,10 +626,10 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
                 ),
         // Mobile has no file-manager reveal contract; the action would
         // always fail, so it is not offered there.
-        onOpenLocation: widget.locationLoader == null ||
-                currentRevealHost() == null
-            ? null
-            : () => _openLocation(job),
+        onOpenLocation:
+            widget.locationLoader == null || currentRevealHost() == null
+                ? null
+                : () => _openLocation(job),
         onDelete: widget.onDelete == null ? null : () => _confirmDelete(job),
         lifecycleLabel: widget.lifecycleLabel,
         stageLabel: widget.stageLabel,

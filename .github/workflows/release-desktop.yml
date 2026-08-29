@@ -978,6 +978,29 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # BUG-1922：这一步以前根本不存在。tool/aidoku/build_macos_runtime.sh 只被本地
+      # 的 script/build_and_run.sh 调用，两条 macOS CI job 里一步都没有，于是发出去
+      # 的 fushi.app 里 Contents/Resources/aidoku_runtime/ 压根是空的。
+      # DesktopAidokuRuntime._bundledExecutable()（aidoku_runtime.dart）只认这个固定
+      # 路径、没有任何回退，所以用户一碰 Aidoku 仓库（刷新 / 删掉再添加 / 装扩展）
+      # 就吃 AidokuRuntimeException(RUNTIME_MISSING)，而 CI 一路全绿。
+      #
+      # 必须排在下面的 Developer ID 签名之前：那一步按 Mach-O 判定把 bundle 里每个
+      # 可执行体重签一遍，runtime 只要先躺进 bundle 就会被一并签好、一并公证。
+      - name: Bundle and sign pinned Aidoku runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          chmod +x tool/aidoku/build_macos_runtime.sh
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
+          tool/aidoku/build_macos_runtime.sh "$runtime_dir"
+          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
+          chmod +x tool/aidoku/verify_macos_runtime.sh
+          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1421: the macOS bundle never shipped ffmpeg at all. Only the Windows
       # job had an install step, so fushi.app/Contents/MacOS/ held just the main
       # executable and _bundledExecutablePath() (ffmpeg_backend.dart) always
