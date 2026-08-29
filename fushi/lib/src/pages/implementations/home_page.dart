@@ -1357,7 +1357,30 @@ class _HomePageState extends BasePageState<HomePage>
       onOpenDownloads: downloadsReachable ? () => _openDownloadsTab(0) : null,
       onOpenSubscriptions:
           downloadsReachable ? _openVideoDiscoverySubscriptionsPanel : null,
+      // 取消不经下载 tab，所以**不随** downloadsReachable 门控：下载模块被关掉的
+      // 用户照样可能有一条在飞的任务需要停掉。
+      onCancelDownloads: _cancelVideoDiscoveryDownloads,
     );
+  }
+
+  /// 取消本作品当前在飞的下载任务。
+  ///
+  /// 逐条调 [VideoDownloadPipelineService.cancelJob]：它对已完成的任务会拒绝，
+  /// 这里不预判——状态流是异步的，读到的 activeJobIds 可能已经过期，让服务层
+  /// 用真值裁决。任一条失败不影响其余（一条取消不了不该把其他几条也留下）。
+  Future<void> _cancelVideoDiscoveryDownloads(List<String> jobIds) async {
+    final VideoDownloadPipelineService? pipeline =
+        appModelNoUpdate.videoDownloadPipelineService;
+    if (pipeline == null) return;
+    for (final String jobId in jobIds) {
+      try {
+        await pipeline.cancelJob(jobId);
+      } catch (e) {
+        debugPrint('[Fushi] cancel video download job $jobId failed: $e');
+      }
+    }
+    // 不必手动戳刷新信号：cancelJob 落库后 watchVideoDownloadJobs() 会自己让
+    // 状态流重新求值（见 _watchVideoDiscoveryStatus 的三条订阅）。
   }
 
   /// 「先回到 home 这一层路由，再切下载 tab 并定位子 tab」的唯一出口。
@@ -1825,8 +1848,17 @@ class _HomePageState extends BasePageState<HomePage>
         await _matchingVideoDiscoverySubscriptions(reference);
     final _LocalDiscoveryTarget? local =
         await _resolveLocalDiscoveryTarget(reference);
-    final VideoDownloadJobRow? job = jobs.firstOrNull;
-    final bool busy = job?.lifecycle == VideoDownloadJobLifecycle.active;
+    // 「在飞」是**任意一条** active，不是排序后第一条 active。同一部作品可以并存
+    // 多条下载（换源重下时旧的还在跑），而排序是 priority DESC, createdAt DESC
+    // —— 新提交的那条一旦完成，仍在跑的旧任务就会被判成「不忙」，取消入口跟着
+    // 消失、进度也不再显示。
+    final List<VideoDownloadJobRow> activeJobs = jobs
+        .where((VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.active)
+        .toList(growable: false);
+    // 状态文案优先讲还在跑的那条；都跑完了才退回排序首条（完成 / 失败 / 已取消）。
+    final VideoDownloadJobRow? job = activeJobs.firstOrNull ?? jobs.firstOrNull;
+    final bool busy = activeJobs.isNotEmpty;
     final bool subscribed = subscriptions.any(
       (VideoDownloadSubscriptionRow row) => row.enabled,
     );
@@ -1839,6 +1871,9 @@ class _HomePageState extends BasePageState<HomePage>
       isSubscribed: subscribed,
       isInLibrary: local != null,
       isBusy: busy,
+      activeJobIds: <String>[
+        for (final VideoDownloadJobRow row in activeJobs) row.jobId,
+      ],
     );
   }
 
