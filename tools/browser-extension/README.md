@@ -114,6 +114,25 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点跟随、锚点、回落、Esc、
 关窗吞击、去重复位、点空白跳转）。
 
+## 字幕里的振假名
+
+`<rt>` / `<rp>` / `<rtc>` 的内容**都不是正文**，只有 ruby base 是。两条采集路径都踩过这个坑
+（用户报「振假名变成和文字一个层级」）：DOM 采样用 `textContent`（真实 DOM 的 textContent
+**包含** `<rt>`），字符串路径 `stripCueTags` 只删标签保留内容——`<ruby>熱<rt>ねつ</rt></ruby>`
+两边都变成「熱ねつ」，被污染的不止显示，查词、制卡 sentence、字幕匹配吃的都是这份 cue.text。
+app 侧 `strip_html_tags.dart` 早为同一形状收过口（BUG-1161），扩展侧的正则判据逐条对齐它。
+
+现在：`cue.text` 只有正文，读音单独留在可选的 `cue.ruby`（「正文段 + 可选读音」的序列）。
+渲染由 `ruby-render.js` 一份实现负责，**字幕列表与视频覆盖层共用**。两条不变式：
+
+- 段拼接恒等于 `stripCueTags` 的正文——畸形注音（`<ruby>漢<rt かん</ruby>` 这类缺 `>` 的输入）
+  整行退回单段，宁可不画振假名，也不让「列表上看到的字」与「查到的词」分岔。
+- 段与 `cue.text` 对不上时不挂 `ruby`：DOM 快照是整句，而逐字扩长被切行后 cue.text 只是后缀，
+  照挂会把振假名标到别的字上。
+
+点振假名不会查到读音：`vendor/selection.js` 的 `getCharacterAtPoint` 命中 `<rt>` 时经
+`resolveRubyBase` 重定向到 ruby base。
+
 ## 查词后自动朗读
 
 开关是 **app 的全局偏好**「查词后自动朗读」（`autoReadOnLookup`），扩展不另立一个——它随查词

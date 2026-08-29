@@ -335,7 +335,8 @@
     var el = ensureSubtitleOverlay();
     st.overlayCue = cue;
     el.setAttribute('data-theme', resolveTheme());
-    el.textContent = cue.text;
+    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
+    else el.textContent = cue.text;
     el.style.left = (rect.left + rect.width / 2) + 'px';
     el.style.top = (rect.top + rect.height * 0.84) + 'px';
     el.style.maxWidth = Math.max(240, rect.width * 0.9) + 'px';

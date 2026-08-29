@@ -747,7 +747,10 @@
       });
       var text = document.createElement('div');
       text.className = 'subtitle-text';
-      text.textContent = cue.text;
+      // 有振假名就画真正的 <ruby>（读音在正文上方），没有就一个文本节点——与覆盖层共用
+      // 同一份渲染，见 ruby-render.js。
+      if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(text, cue);
+      else text.textContent = cue.text;
       text.title = '单击文字查词；点击时间或行空白跳转；双击选择文本；按住 Shift 悬停扫词';
       text.addEventListener('click', function (event) {
         // 行内文字单击=查词（asbplayer 同款；8-11 迁原生 Side Panel 时随旧 UI 层一起丢了，

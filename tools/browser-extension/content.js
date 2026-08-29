@@ -328,17 +328,63 @@ function fushiVideoTimeMs(video) {
     ? Math.round(v.currentTime * 1000)
     : null;
 }
-function fushiSubtitleTextNow() {
+// 把字幕 DOM 切成「正文段 + 可选读音」。`textContent` 会把 <rt> 的读音直接拼进正文
+// （`<ruby>熱<rt>ねつ</rt></ruby>さまし` → `熱ねつさまし`），于是列表里读音与正文并排成同级
+// 文字，查词、制卡 sentence 一起被污染——这正是 app 侧 strip_html_tags.dart 修过的 BUG-1161
+// 在 DOM 采样这一侧的孪生。`<rp>` 是给不支持 ruby 的渲染器看的回退括号，同样不是正文。
+function fushiCollectCueSegments(node, out) {
+  for (const child of node.childNodes || []) {
+    if (child.nodeType === 3) {
+      const value = child.nodeValue || '';
+      if (value) out.push({ text: value, reading: '' });
+      continue;
+    }
+    if (child.nodeType !== 1) continue;
+    const tag = (child.tagName || '').toLowerCase();
+    if (tag === 'rt' || tag === 'rp' || tag === 'rtc') continue; // 读音/回退括号不是正文
+    if (tag === 'ruby') {
+      let base = '';
+      let reading = '';
+      for (const part of child.childNodes || []) {
+        if (part.nodeType === 3) { base += part.nodeValue || ''; continue; }
+        if (part.nodeType !== 1) continue;
+        const partTag = (part.tagName || '').toLowerCase();
+        if (partTag === 'rt') { reading += part.textContent || ''; continue; }
+        if (partTag === 'rp') continue;
+        if (partTag === 'rtc') {
+          // <rtc> 是读音容器，其中的 <rt> 才是读音本身。
+          for (const inner of part.querySelectorAll ? part.querySelectorAll('rt') : []) {
+            reading += inner.textContent || '';
+          }
+          continue;
+        }
+        base += part.textContent || ''; // <rb> 等 base 侧容器
+      }
+      if (base) out.push({ text: base, reading: reading });
+      continue;
+    }
+    fushiCollectCueSegments(child, out);
+  }
+  return out;
+}
+
+// 当前屏幕上的字幕：{ text: 正文（不含读音）, ruby: 段序列 }。
+function fushiSubtitleSegmentsNow() {
   // Netflix: .player-timedtext；YouTube: .ytp-caption-segment / .captions-text。
   const sels = ['.player-timedtext', '.ytp-caption-segment', '.captions-text'];
   for (const sel of sels) {
     const nodes = document.querySelectorAll(sel);
     if (!nodes.length) continue;
-    let s = '';
-    for (const n of nodes) s += n.textContent || '';
-    if (s.trim()) return s.trim();
+    const segments = [];
+    for (const n of nodes) fushiCollectCueSegments(n, segments);
+    const text = segments.map((seg) => seg.text).join('');
+    if (text.trim()) return { text: text.trim(), ruby: segments };
   }
-  return '';
+  return { text: '', ruby: [] };
+}
+
+function fushiSubtitleTextNow() {
+  return fushiSubtitleSegmentsNow().text;
 }
 const FUSHI_LIVE_CUE_MAX_MS = 12000;
 const FUSHI_LIVE_LANG = 'live';
@@ -358,6 +404,7 @@ function fushiNewSamplerState(video, key, replayPending) {
     liveCue: null,
     liveCueReplay: false,
     justEndedCue: null,
+    lastSegments: null,
     replayPending: !!replayPending,
     seeking: false,
     onSeeking: null,
@@ -472,7 +519,9 @@ function fushiSampleCue() {
     state.replayPending = true;
   }
   state.lastSampleV = nowV;
-  const text = fushiSubtitleTextNow();
+  const snapshot = fushiSubtitleSegmentsNow();
+  const text = snapshot.text;
+  state.lastSegments = snapshot.ruby;
 
   if (state.replayPending) {
     // seek/remount 后字幕 DOM 可能短暂为空；等第一份真实快照再消费 replay 门。
@@ -694,6 +743,7 @@ function fushiLiveCueStart(state, text, startV) {
     return;
   }
   const cue = { startMs: startV, endMs: startV + 1500, text: text };
+  fushiAttachCueRuby(cue, state.lastSegments);
   if (fushiSortedCueInsert(track, cue)) {
     state.liveCue = cue;
     state.liveCueReplay = false;
@@ -703,9 +753,20 @@ function fushiLiveCueStart(state, text, startV) {
     state.liveCueReplay = true;
   }
 }
+// 段序列只有在拼接结果与 cue 正文完全一致时才挂上去：DOM 快照是**整句**，而逐字扩长被切成
+// 下一行时 cue.text 只是后缀，两者错位就会把振假名标到别的字上。宁可这行不画振假名。
+function fushiAttachCueRuby(cue, segments) {
+  if (!cue || !Array.isArray(segments) || !segments.length) return;
+  const joined = segments.map((seg) => seg.text).join('').trim();
+  if (joined !== cue.text) return;
+  if (!segments.some((seg) => seg.reading)) return; // 整句没有注音：不必带这份数据
+  cue.ruby = segments;
+}
+
 function fushiLiveCueAppend(state, addedText, nowV) {
   if (!state.liveCue || state.liveCueReplay || !addedText) return false;
   state.liveCue.text += addedText;
+  fushiAttachCueRuby(state.liveCue, state.lastSegments);
   // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 fushiLiveCueEnd 定格。
   state.liveCue.endMs = Math.max(state.liveCue.endMs, nowV + 1500);
   const key = state.key + '|' + FUSHI_LIVE_LANG;
@@ -770,9 +831,11 @@ function fushiHarvestTextTracks() {
     for (let j = 0; j < tt.cues.length; j++) {
       const c = tt.cues[j];
       if (!c || typeof c.startTime !== 'number' || typeof c.endTime !== 'number') continue;
-      const text = stripCueTags(String(c.text || ''));
+      const raw = String(c.text || '');
+      const text = stripCueTags(raw);
       if (!text) continue;
       const cue = { startMs: Math.round(c.startTime * 1000), endMs: Math.round(c.endTime * 1000), text: text };
+      if (typeof splitCueRuby === 'function') fushiAttachCueRuby(cue, splitCueRuby(raw));
       if (fushiSortedCueInsert(track, cue, 1)) inserted = true;
     }
     if (inserted) fushiNotifyPanel(key);
