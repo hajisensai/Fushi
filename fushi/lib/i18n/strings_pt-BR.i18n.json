@@ -3866,11 +3866,11 @@
   "manga_series_read_progress": "Lido até a página $page de $total",
   "manga_series_read_progress_partial": "Lido até a página $page",
   "video_setting_mpv_group_hdr": "HDR",
-  "video_setting_hdr_tone_mapping": "HDR tone mapping",
-  "video_setting_hdr_tone_mapping_hint": "Curve used when an HDR source has to be squeezed onto an SDR display. Auto lets mpv pick per source.",
-  "video_setting_hdr_compute_peak": "Dynamic peak detection",
-  "video_setting_hdr_compute_peak_hint": "Measure each frame's real peak brightness instead of trusting the stream metadata. Better highlights, costs some GPU.",
-  "video_setting_hdr_auto": "Auto",
-  "video_setting_hdr_on": "On",
-  "video_setting_hdr_off": "Off"
+  "video_setting_hdr_tone_mapping": "Mapeamento de tons HDR",
+  "video_setting_hdr_tone_mapping_hint": "Curva usada quando uma fonte HDR precisa ser comprimida para uma tela SDR. “Automático” deixa o mpv escolher por fonte.",
+  "video_setting_hdr_compute_peak": "Detecção dinâmica de pico",
+  "video_setting_hdr_compute_peak_hint": "Mede o pico real de brilho de cada quadro em vez de confiar nos metadados da fonte. Melhores altas-luzes, com algum custo de GPU.",
+  "video_setting_hdr_auto": "Automático",
+  "video_setting_hdr_on": "Ligado",
+  "video_setting_hdr_off": "Desligado"
 }

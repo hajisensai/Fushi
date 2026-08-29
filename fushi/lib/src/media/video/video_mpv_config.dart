@@ -146,6 +146,11 @@ class VideoMpvConfig {
   ///
   /// 值域取 mpv 的合法名：`auto` | `bt.2390` | `bt.2446a` | `spline` | `reinhard`
   /// | `mobius` | `hable` | `clip`。只在真的需要色调映射时才起作用，SDR 片源不受影响。
+  ///
+  /// **软渲回落时本项无效**（同 `glsl-shaders` / `scale`）：ANGLE 初始化失败会让
+  /// `video_output.cc` 退到 `MPV_RENDER_API_TYPE_SW`，那条路没有 vo=gpu 管线，
+  /// 这两个属性和超分一样静默失效。用户报「HDR 开关没反应」时，第一步先看日志里
+  /// 有没有那句 `S/W rendering ... are INERT`。
   final String hdrToneMapping;
 
   /// 逐帧动态峰值检测（mpv `hdr-compute-peak`）：`auto` | `yes` | `no`。

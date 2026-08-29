@@ -3866,11 +3866,11 @@
   "manga_series_read_progress": "$total ページ中 $page ページまで",
   "manga_series_read_progress_partial": "$page ページまで",
   "video_setting_mpv_group_hdr": "HDR",
-  "video_setting_hdr_tone_mapping": "HDR tone mapping",
-  "video_setting_hdr_tone_mapping_hint": "Curve used when an HDR source has to be squeezed onto an SDR display. Auto lets mpv pick per source.",
-  "video_setting_hdr_compute_peak": "Dynamic peak detection",
-  "video_setting_hdr_compute_peak_hint": "Measure each frame's real peak brightness instead of trusting the stream metadata. Better highlights, costs some GPU.",
-  "video_setting_hdr_auto": "Auto",
-  "video_setting_hdr_on": "On",
-  "video_setting_hdr_off": "Off"
+  "video_setting_hdr_tone_mapping": "HDR トーンマッピング",
+  "video_setting_hdr_tone_mapping_hint": "HDR ソースを SDR ディスプレイに収めるときに使うカーブ。「自動」は mpv がソースごとに選びます。",
+  "video_setting_hdr_compute_peak": "動的ピーク検出",
+  "video_setting_hdr_compute_peak_hint": "ソースのメタデータを信じる代わりに、フレームごとの実際のピーク輝度を測ります。ハイライトが良くなる一方、GPU を少し使います。",
+  "video_setting_hdr_auto": "自動",
+  "video_setting_hdr_on": "オン",
+  "video_setting_hdr_off": "オフ"
 }

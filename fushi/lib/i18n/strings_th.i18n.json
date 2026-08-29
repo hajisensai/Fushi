@@ -3866,11 +3866,11 @@
   "manga_series_read_progress": "อ่านถึงหน้า $page จาก $total",
   "manga_series_read_progress_partial": "อ่านถึงหน้า $page",
   "video_setting_mpv_group_hdr": "HDR",
-  "video_setting_hdr_tone_mapping": "HDR tone mapping",
-  "video_setting_hdr_tone_mapping_hint": "Curve used when an HDR source has to be squeezed onto an SDR display. Auto lets mpv pick per source.",
-  "video_setting_hdr_compute_peak": "Dynamic peak detection",
-  "video_setting_hdr_compute_peak_hint": "Measure each frame's real peak brightness instead of trusting the stream metadata. Better highlights, costs some GPU.",
-  "video_setting_hdr_auto": "Auto",
-  "video_setting_hdr_on": "On",
-  "video_setting_hdr_off": "Off"
+  "video_setting_hdr_tone_mapping": "การแมปโทน HDR",
+  "video_setting_hdr_tone_mapping_hint": "เส้นโค้งที่ใช้เมื่อต้องบีบแหล่ง HDR ลงบนจอ SDR \"อัตโนมัติ\" ให้ mpv เลือกตามแต่ละแหล่ง",
+  "video_setting_hdr_compute_peak": "ตรวจจับจุดสว่างสุดแบบไดนามิก",
+  "video_setting_hdr_compute_peak_hint": "วัดความสว่างสูงสุดจริงของแต่ละเฟรมแทนการเชื่อเมตาดาตาของแหล่ง ไฮไลต์ดีขึ้นแต่กิน GPU เล็กน้อย",
+  "video_setting_hdr_auto": "อัตโนมัติ",
+  "video_setting_hdr_on": "เปิด",
+  "video_setting_hdr_off": "ปิด"
 }

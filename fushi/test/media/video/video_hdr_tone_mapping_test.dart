@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../helpers/source_guard.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 
 /// 用户问「咱们支持 hdr 吗，不支持支持一下」。
@@ -101,16 +105,28 @@ void main() {
       expect(back.deband, isTrue);
     });
 
-    test('暴露的曲线集合与白名单一致（别只加 UI 不加白名单）', () {
-      // UI 里多列一条而白名单没有 → 用户选完、重启就被打回 auto，且没有任何提示。
-      expect(kHdrToneMappingValues, contains('auto'));
-      expect(kHdrToneMappingValues, contains('bt.2390'));
-      expect(kHdrToneMappingValues, contains('bt.2446a'));
-      expect(kHdrToneMappingValues, contains('spline'));
-      expect(kHdrToneMappingValues, contains('reinhard'));
-      expect(kHdrToneMappingValues, contains('mobius'));
-      expect(kHdrToneMappingValues, contains('hable'));
-      expect(kHdrToneMappingValues, contains('clip'));
+    test('设置页的曲线选项从白名单派生，不得再抄第二份清单', () {
+      // 原来这条用例是把 kHdrToneMappingValues 的每个元素**再念一遍**——它从头到尾
+      // 没读过 settings_schema_video.dart，注释里描述的失败模式（UI 多列一条、
+      // 白名单没有 → 用户选完重启被打回 auto 且零提示）一条也抓不到，是恒真空转。
+      //
+      // 真正的根治是消灭第二份清单，所以这里钉的就是「派生」这件事本身。
+      final String schema = maskComments(
+        File('lib/src/settings/settings_schema_video.dart').readAsStringSync(),
+      );
+      expect(
+        schema,
+        contains("kHdrToneMappingValues.where((String c) => c != 'auto')"),
+        reason: '曲线选项必须从白名单派生；写死第二份清单必然与 decode 分叉',
+      );
+      // 负向：schema 里不得再出现硬写的曲线字面量。
+      for (final String curve in <String>['bt.2390', 'bt.2446a', 'spline']) {
+        expect(
+          schema,
+          isNot(contains("'$curve'")),
+          reason: '$curve 只应住在 kHdrToneMappingValues 里',
+        );
+      }
       expect(kHdrComputePeakValues, <String>{'auto', 'yes', 'no'});
     });
   });
