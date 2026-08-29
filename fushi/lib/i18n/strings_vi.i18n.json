@@ -3876,5 +3876,8 @@
   "video_setting_hdr_compute_peak_hint": "Đo độ sáng đỉnh thực của từng khung hình thay vì tin vào siêu dữ liệu của nguồn. Vùng sáng đẹp hơn, tốn thêm chút GPU.",
   "video_setting_hdr_auto": "Tự động",
   "video_setting_hdr_on": "Bật",
-  "video_setting_hdr_off": "Tắt"
+  "video_setting_hdr_off": "Tắt",
+  "video_discovery_cancel_downloads_title": "Huỷ tải xuống?",
+  "video_discovery_cancel_downloads_body": "$n tác vụ tải xuống của tác phẩm này sẽ bị dừng. Các phần đã tải vẫn nằm trên ổ đĩa; bạn có thể tải lại sau.",
+  "video_discovery_cancel_downloads_failed": "Không huỷ được tải xuống. Tác vụ có thể đã xong, hoặc backend tải xuống hiện không khả dụng."
 }

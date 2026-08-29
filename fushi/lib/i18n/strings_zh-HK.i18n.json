@@ -3876,5 +3876,8 @@
   "video_setting_hdr_compute_peak_hint": "逐格量實際峰值亮度，而不是信片源中繼資料。高光更準，但會佔一點 GPU。",
   "video_setting_hdr_auto": "自動",
   "video_setting_hdr_on": "開",
-  "video_setting_hdr_off": "關"
+  "video_setting_hdr_off": "關",
+  "video_discovery_cancel_downloads_title": "取消下載？",
+  "video_discovery_cancel_downloads_body": "本作品有 $n 個下載任務會被停止。已下載的分片仍保留在磁碟上，之後可以重新開始下載。",
+  "video_discovery_cancel_downloads_failed": "取消下載失敗。任務可能已經結束，或下載後端目前無法使用。"
 }

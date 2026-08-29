@@ -3876,5 +3876,8 @@
   "video_setting_hdr_compute_peak_hint": "逐帧测量真实峰值亮度，而不是相信片源元数据。高光更准，但会占一点 GPU。",
   "video_setting_hdr_auto": "自动",
   "video_setting_hdr_on": "开",
-  "video_setting_hdr_off": "关"
+  "video_setting_hdr_off": "关",
+  "video_discovery_cancel_downloads_title": "取消下载？",
+  "video_discovery_cancel_downloads_body": "本作品有 $n 个下载任务会被停止。已下载的分片仍保留在磁盘上，之后可以重新开始下载。",
+  "video_discovery_cancel_downloads_failed": "取消下载失败。任务可能已经结束，或下载后端当前不可用。"
 }

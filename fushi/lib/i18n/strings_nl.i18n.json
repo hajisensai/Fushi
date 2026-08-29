@@ -3876,5 +3876,8 @@
   "video_setting_hdr_compute_peak_hint": "Meet de echte piekhelderheid van elk beeld in plaats van te vertrouwen op de metadata van de bron. Betere highlights, kost wat GPU.",
   "video_setting_hdr_auto": "Automatisch",
   "video_setting_hdr_on": "Aan",
-  "video_setting_hdr_off": "Uit"
+  "video_setting_hdr_off": "Uit",
+  "video_discovery_cancel_downloads_title": "Downloads annuleren?",
+  "video_discovery_cancel_downloads_body": "$n downloadtaak/-taken voor deze titel worden gestopt. Al gedownloade delen blijven op schijf staan; je kunt de download later opnieuw starten.",
+  "video_discovery_cancel_downloads_failed": "Kon de download niet annuleren. De taak is mogelijk al klaar, of de download-backend is niet beschikbaar."
 }
