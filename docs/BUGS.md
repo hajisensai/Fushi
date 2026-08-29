@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1814 条。点号进各自文件。
+> 共 1815 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +46,7 @@
 | [BUG-1927](bugs/BUG-1927-mokuro-catalog-series-blank.md) | ✅ | ✅ | mokuro.moe 目录点进系列后一片空白 |
 | [BUG-1926](bugs/BUG-1926-gal-overlay-toolbar-not-following-drag.md) | ✅ | ✅ | 穿透态 galgame 浮窗：拖正文时顶栏不跟随 |
 | [BUG-1925](bugs/BUG-1925-sync-collections-resurrect-flaky.md) | 🚧 | 🚧 | 全量下 sync_orchestrator_collections 的 peer-republish 用例偶发红（4 次全量红 2 次，单跑绿） |
+| [BUG-1924](bugs/BUG-1924-manga-shelf-locked-to-first-chapter.md) | ✅ | ✅ | 漫画加入书架后只能看第一章：书架没有作品页、阅读器不换章 |
 | [BUG-1923](bugs/BUG-1923-lookup-popup-plus-optical-center.md) | ✅ | ✅ | 查词弹窗静息加号可见位置比同排图标低 |
 | [BUG-1922](bugs/BUG-1922-macos-aidoku-runtime-not-bundled.md) | ✅ | ✅ | macOS 发布包缺 Aidoku runtime，删除再添加 Aidoku 仓库报 RUNTIME_MISSING |
 | [BUG-1921](bugs/BUG-1921-settings-module-labels-mismatch.md) | ✅ | ✅ | 设置里的功能模块开关名字与底栏/侧栏对不上 |
