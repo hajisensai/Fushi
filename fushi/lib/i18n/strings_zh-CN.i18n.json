@@ -3867,5 +3867,6 @@
   "manga_series_read_progress_partial": "读到第 $page 页",
   "mihon_store_extension_count": "$count 个扩展",
   "mihon_extension_sources_more": "展开全部 $count 个源",
-  "mihon_extension_sources_less": "收起源列表"
+  "mihon_extension_sources_less": "收起源列表",
+  "options_website": "访问官网"
 }
