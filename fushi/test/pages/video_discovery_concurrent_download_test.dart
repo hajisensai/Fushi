@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -245,6 +247,34 @@ void main() {
           reason: '旧的单条判定必须真的被替换掉，而不是留着并存。');
       expect(body, contains('activeJobIds:'),
           reason: '取消需要知道取消哪几条，聚合成一个 bool 不够。');
+    });
+
+    test('取消必须先弹确认，且一条都没取消掉要说话', () {
+      final String source = maskComments(
+          File('lib/src/pages/implementations/home_page.dart')
+              .readAsStringSync());
+      final String body = methodBody(
+        source,
+        'Future<void> _cancelVideoDiscoveryDownloads(List<String> jobIds) async',
+      );
+
+      // 一颗按钮停掉**该作品全部**在飞任务，而这个入口的动机场景恰恰是「A 下错了
+      // 再下 B」—— 不确认就点等于把 A 和 B 一起干掉。
+      final int confirmAt = body.indexOf('FushiDestructiveConfirmDialog(');
+      final int loopAt = body.indexOf('for (final String jobId in jobIds)');
+      expect(confirmAt, isNonNegative, reason: '取消必须先确认');
+      expect(loopAt, greaterThan(confirmAt),
+          reason: '确认必须排在真正调 cancelJob 之前');
+      expect(body, contains('if (confirmed == null) return;'),
+          reason: '用户取消对话框就得真的不动手');
+
+      // cancelJob 在 backendTaskId 还没落库、或后端解析不出来时会失败，而 UI 这边
+      // 什么都不变 —— 用户只看到「点了没反应，还在下」。
+      expect(body, contains('cancelled == 0'),
+          reason: '一条都没取消掉必须给提示，不能只 debugPrint');
+      expect(body, contains('video_discovery_cancel_downloads_failed'));
+      expect(body, isNot(contains('debugPrint(')),
+          reason: '失败要进 ErrorLogService，不是 debugPrint 吞掉');
     });
   });
 }

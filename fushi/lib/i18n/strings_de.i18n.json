@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Das ist das erste Kapitel",
   "manga_series_open_series": "Werkseite",
   "manga_series_read_progress": "Bis Seite $page von $total gelesen",
-  "manga_series_read_progress_partial": "Bis Seite $page gelesen"
+  "manga_series_read_progress_partial": "Bis Seite $page gelesen",
+  "video_discovery_cancel_downloads_title": "Downloads abbrechen?",
+  "video_discovery_cancel_downloads_body": "$n Download-Aufgabe(n) für diesen Titel werden gestoppt. Bereits geladene Teile bleiben auf der Festplatte; du kannst den Download später erneut starten.",
+  "video_discovery_cancel_downloads_failed": "Download konnte nicht abgebrochen werden. Die Aufgabe ist möglicherweise schon fertig, oder das Download-Backend ist nicht verfügbar."
 }

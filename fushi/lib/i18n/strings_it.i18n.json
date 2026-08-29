@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Questo è il primo capitolo",
   "manga_series_open_series": "Pagina dell'opera",
   "manga_series_read_progress": "Letto fino a pagina $page di $total",
-  "manga_series_read_progress_partial": "Letto fino a pagina $page"
+  "manga_series_read_progress_partial": "Letto fino a pagina $page",
+  "video_discovery_cancel_downloads_title": "Annullare i download?",
+  "video_discovery_cancel_downloads_body": "Verranno interrotte $n attività di download per questo titolo. Le parti già scaricate restano sul disco; potrai riavviare il download più tardi.",
+  "video_discovery_cancel_downloads_failed": "Impossibile annullare il download. L’attività potrebbe essere già terminata, oppure il backend di download non è disponibile."
 }

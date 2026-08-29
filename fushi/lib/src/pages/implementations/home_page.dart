@@ -1354,7 +1354,11 @@ class _HomePageState extends BasePageState<HomePage>
       // 订阅本身与下载 tab 无关（订阅在后台照常拉取），故不随下载模块门控。
       onSubscribe: _openVideoDiscoverySubscription,
       onPlay: _openLocalVideoDiscoveryWork,
-      onOpenDownloads: downloadsReachable ? () => _openDownloadsTab(0) : null,
+      // 必须走 _popToDownloadsTab：作品**详情页**永远是 pushed route，而
+      // _openDownloadsTab 只 setState 切 home 的 tab、不动导航栈 —— tab 在
+      // 底下切了，用户还停在详情页上，看起来什么都没发生。
+      // 内联在 home 里的发现页已在栈顶，popUntil(isFirst) 对它是 no-op。
+      onOpenDownloads: downloadsReachable ? () => _popToDownloadsTab(0) : null,
       onOpenSubscriptions:
           downloadsReachable ? _openVideoDiscoverySubscriptionsPanel : null,
       // 取消不经下载 tab，所以**不随** downloadsReachable 门控：下载模块被关掉的
@@ -1369,15 +1373,43 @@ class _HomePageState extends BasePageState<HomePage>
   /// 这里不预判——状态流是异步的，读到的 activeJobIds 可能已经过期，让服务层
   /// 用真值裁决。任一条失败不影响其余（一条取消不了不该把其他几条也留下）。
   Future<void> _cancelVideoDiscoveryDownloads(List<String> jobIds) async {
+    if (jobIds.isEmpty) return;
     final VideoDownloadPipelineService? pipeline =
         appModelNoUpdate.videoDownloadPipelineService;
     if (pipeline == null) return;
+
+    // 一颗按钮会停掉**该作品全部**在飞任务，而这个入口的动机场景恰恰是「A 下错
+    // 了再下 B」—— 不确认就点等于把 A 和 B 一起干掉。条数摆出来让用户自己判断。
+    final BuildContext dialogContext = context;
+    final FushiDestructiveConfirmResult? confirmed =
+        await showAppDialog<FushiDestructiveConfirmResult>(
+      context: dialogContext,
+      builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+        title: t.video_discovery_cancel_downloads_title,
+        message: t.video_discovery_cancel_downloads_body(n: jobIds.length),
+        confirmLabel: t.cancel,
+        leadingIcon: Icons.close,
+      ),
+    );
+    if (confirmed == null) return;
+
+    int cancelled = 0;
     for (final String jobId in jobIds) {
       try {
         await pipeline.cancelJob(jobId);
-      } catch (e) {
-        debugPrint('[Fushi] cancel video download job $jobId failed: $e');
+        cancelled++;
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('HomePage.cancelVideoDiscoveryDownload', e, stack);
       }
+    }
+    // 一条都没取消掉必须说话：cancelJob 在 backendTaskId 还没落库、或后端解析不
+    // 出来时会失败，而 UI 这边什么都不变 —— 用户只看到「点了没反应，还在下」。
+    if (cancelled == 0 && mounted) {
+      _showVideoDiscoveryMessage(
+        context,
+        t.video_discovery_cancel_downloads_failed,
+      );
     }
     // 不必手动戳刷新信号：cancelJob 落库后 watchVideoDownloadJobs() 会自己让
     // 状态流重新求值（见 _watchVideoDiscoveryStatus 的三条订阅）。

@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Bu ilk bölüm",
   "manga_series_open_series": "Eser sayfası",
   "manga_series_read_progress": "$total sayfadan $page. sayfaya kadar okundu",
-  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu"
+  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu",
+  "video_discovery_cancel_downloads_title": "İndirmeler iptal edilsin mi?",
+  "video_discovery_cancel_downloads_body": "Bu yapım için $n indirme görevi durdurulacak. İndirilmiş parçalar diskte kalır; indirmeyi sonra yeniden başlatabilirsin.",
+  "video_discovery_cancel_downloads_failed": "İndirme iptal edilemedi. Görev çoktan bitmiş olabilir ya da indirme arka ucu kullanılamıyor."
 }

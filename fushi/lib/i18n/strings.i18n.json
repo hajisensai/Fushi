@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "This is the first chapter",
   "manga_series_open_series": "Series page",
   "manga_series_read_progress": "Read to page $page of $total",
-  "manga_series_read_progress_partial": "Read to page $page"
+  "manga_series_read_progress_partial": "Read to page $page",
+  "video_discovery_cancel_downloads_title": "Cancel downloads?",
+  "video_discovery_cancel_downloads_body": "$n download task(s) for this title will be stopped. Downloaded pieces stay on disk; you can start the download again later.",
+  "video_discovery_cancel_downloads_failed": "Could not cancel the download. The task may have already finished, or the download backend is unavailable."
 }

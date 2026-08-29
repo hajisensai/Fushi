@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "已經是第一章了",
   "manga_series_open_series": "作品頁",
   "manga_series_read_progress": "讀到第 $page/$total 頁",
-  "manga_series_read_progress_partial": "讀到第 $page 頁"
+  "manga_series_read_progress_partial": "讀到第 $page 頁",
+  "video_discovery_cancel_downloads_title": "取消下載？",
+  "video_discovery_cancel_downloads_body": "本作品有 $n 個下載任務會被停止。已下載的分片仍保留在磁碟上，之後可以重新開始下載。",
+  "video_discovery_cancel_downloads_failed": "取消下載失敗。任務可能已經結束，或下載後端目前無法使用。"
 }
