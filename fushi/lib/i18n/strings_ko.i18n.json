@@ -3836,5 +3836,9 @@
   "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다.",
   "download_direct_queue_section": "직접 링크 다운로드",
   "download_task_kind_all": "모든 유형",
-  "download_task_kind_filter": "유형별 필터"
+  "download_task_kind_filter": "유형별 필터",
+  "manga_online_series_empty": "이 시리즈에는 권이 없습니다.",
+  "sync_peer_book_delete_confirm": "상대 기기에서 \"$name\"을(를) 삭제할까요? 해당 기기의 파일과 읽기 진행률이 영구히 삭제되며, 이 기기에는 사본이 없습니다. 이 작업은 되돌릴 수 없습니다.",
+  "sync_peer_video_delete_confirm": "상대 기기의 라이브러리에서 \"$name\"을(를) 제거할까요? 상대 기기가 직접 가져온 동영상 파일은 유지됩니다. 이 작업은 되돌릴 수 없습니다.",
+  "storage_entry_delete_files_confirm_body": "디스크에서 즉시 삭제합니다. 라이브러리의 어떤 항목도 이를 참조하지 않습니다 — 캐시, 내보낸 파일, 또는 다시 받을 수 있는 데이터입니다."
 }

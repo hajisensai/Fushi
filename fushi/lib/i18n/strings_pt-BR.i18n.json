@@ -3836,5 +3836,9 @@
   "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados.",
   "download_direct_queue_section": "Direct downloads",
   "download_task_kind_all": "All types",
-  "download_task_kind_filter": "Filter by type"
+  "download_task_kind_filter": "Filter by type",
+  "manga_online_series_empty": "Esta série não tem volumes.",
+  "sync_peer_book_delete_confirm": "Excluir \"$name\" do dispositivo pareado? Os arquivos e o progresso de leitura de lá serão removidos definitivamente, e este dispositivo não tem cópia. Não é possível desfazer.",
+  "sync_peer_video_delete_confirm": "Remover \"$name\" da biblioteca do dispositivo pareado? O arquivo de vídeo importado pelo próprio dispositivo é mantido. Não é possível desfazer.",
+  "storage_entry_delete_files_confirm_body": "Será excluído do disco imediatamente. Nada na sua biblioteca faz referência a isso — são dados em cache, exportados ou que podem ser baixados de novo."
 }

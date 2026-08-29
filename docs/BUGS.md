@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1807 条。点号进各自文件。
+> 共 1814 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,13 @@
 | [BUG-1937](bugs/BUG-1937-download-tasks-kind-filter.md) | ✅ | ✅ | 下载任务面板缺少类型筛选 |
 | [BUG-1936](bugs/BUG-1936-downloads-discovery-queue-invisible.md) | ✅ | ✅ | 发现页直链下载（游戏等）提示已加入下载，下载页任务 tab 却不显示 |
 | [BUG-1934](bugs/BUG-1934-tombstone-partial-read-baseline.md) | ✅ | ✅ | 远端删除墓碑单条读失败被跳过，基线照常推进 → 该条删除永久不再提示 |
+| [BUG-1932](bugs/BUG-1932-lookup-pending-dismiss-freezes-popup.md) | ✅ | ✅ | 挂起期关栈后查词界面卡死、播放控件再也唤不回 |
+| [BUG-1931](bugs/BUG-1931-backup-archive-cannot-be-deleted.md) | ✅ | ✅ | 导出的备份包无法删除，且移动端从不清理 |
+| [BUG-1930](bugs/BUG-1930-backup-export-cancelled-by-collapse.md) | ✅ | ✅ | 折叠「本地备份」分区会取消进行中的备份 |
+| [BUG-1929](bugs/BUG-1929-backup-export-no-progress.md) | ✅ | ✅ | 导出备份没有进度，只有一个转圈 |
+| [BUG-1928](bugs/BUG-1928-peer-delete-confirm-says-local-kept.md) | ✅ | ✅ | 远端卡「从远端删除」文案谎称本地数据保留 |
+| [BUG-1927](bugs/BUG-1927-mokuro-catalog-series-blank.md) | ✅ | ✅ | mokuro.moe 目录点进系列后一片空白 |
+| [BUG-1926](bugs/BUG-1926-gal-overlay-toolbar-not-following-drag.md) | ✅ | ✅ | 穿透态 galgame 浮窗：拖正文时顶栏不跟随 |
 | [BUG-1925](bugs/BUG-1925-sync-collections-resurrect-flaky.md) | 🚧 | 🚧 | 全量下 sync_orchestrator_collections 的 peer-republish 用例偶发红（4 次全量红 2 次，单跑绿） |
 | [BUG-1923](bugs/BUG-1923-lookup-popup-plus-optical-center.md) | ✅ | ✅ | 查词弹窗静息加号可见位置比同排图标低 |
 | [BUG-1922](bugs/BUG-1922-macos-aidoku-runtime-not-bundled.md) | ✅ | ✅ | macOS 发布包缺 Aidoku runtime，删除再添加 Aidoku 仓库报 RUNTIME_MISSING |

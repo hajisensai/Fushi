@@ -3836,5 +3836,9 @@
   "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته.",
   "download_direct_queue_section": "Direct downloads",
   "download_task_kind_all": "All types",
-  "download_task_kind_filter": "Filter by type"
+  "download_task_kind_filter": "Filter by type",
+  "manga_online_series_empty": "لا توجد مجلدات في هذه السلسلة.",
+  "sync_peer_book_delete_confirm": "هل تريد حذف \"$name\" من الجهاز النظير؟ ستُحذف ملفاته وتقدّم القراءة هناك نهائيًا، ولا توجد نسخة على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء.",
+  "sync_peer_video_delete_confirm": "هل تريد إزالة \"$name\" من مكتبة الجهاز النظير؟ سيبقى ملف الفيديو الذي استورده النظير بنفسه. لا يمكن التراجع عن هذا الإجراء.",
+  "storage_entry_delete_files_confirm_body": "سيُحذف من القرص فورًا. لا يشير إليه أي عنصر في مكتبتك — فهذه بيانات مؤقتة أو مُصدَّرة أو يمكن تنزيلها من جديد."
 }

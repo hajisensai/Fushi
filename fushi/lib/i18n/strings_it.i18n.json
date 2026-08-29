@@ -3836,5 +3836,9 @@
   "batch_hidden_by_filter_note": "Altri ${n} elementi selezionati sono nascosti dal filtro corrente e non verranno elaborati.",
   "download_direct_queue_section": "Direct downloads",
   "download_task_kind_all": "All types",
-  "download_task_kind_filter": "Filter by type"
+  "download_task_kind_filter": "Filter by type",
+  "manga_online_series_empty": "Nessun volume in questa serie.",
+  "sync_peer_book_delete_confirm": "Eliminare \"$name\" dal dispositivo peer? I suoi file e i progressi di lettura lì verranno rimossi definitivamente e questo dispositivo non ne ha alcuna copia. L'operazione non può essere annullata.",
+  "sync_peer_video_delete_confirm": "Rimuovere \"$name\" dalla libreria del dispositivo peer? Il file video importato dal peer stesso viene conservato. L'operazione non può essere annullata.",
+  "storage_entry_delete_files_confirm_body": "Verrà eliminato subito dal disco. Nulla nella tua libreria vi fa riferimento: sono dati in cache, esportati o riscaricabili."
 }

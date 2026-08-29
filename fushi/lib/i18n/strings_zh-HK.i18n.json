@@ -3836,5 +3836,9 @@
   "batch_hidden_by_filter_note": "另有 ${n} 項被目前篩選隱藏，今次不會處理。",
   "download_direct_queue_section": "直鏈下載",
   "download_task_kind_all": "全部類型",
-  "download_task_kind_filter": "按類型篩選"
+  "download_task_kind_filter": "按類型篩選",
+  "manga_online_series_empty": "這個系列沒有可下載的卷。",
+  "sync_peer_book_delete_confirm": "確定從對端裝置刪除「$name」嗎？對端上的檔案與閱讀進度會被永久刪除，本機沒有副本，此操作不可撤銷。",
+  "sync_peer_video_delete_confirm": "確定從對端裝置的媒體庫移除「$name」嗎？對端自己匯入的影片檔案會保留，此操作不可撤銷。",
+  "storage_entry_delete_files_confirm_body": "將立即從磁碟刪除。媒體庫裡沒有項目引用它——這裡放的是快取、匯出或可重新取得的資料。"
 }

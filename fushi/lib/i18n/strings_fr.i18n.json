@@ -3836,5 +3836,9 @@
   "batch_hidden_by_filter_note": "${n} autres éléments sélectionnés sont masqués par le filtre actuel et ne seront pas traités.",
   "download_direct_queue_section": "Direct downloads",
   "download_task_kind_all": "All types",
-  "download_task_kind_filter": "Filter by type"
+  "download_task_kind_filter": "Filter by type",
+  "manga_online_series_empty": "Aucun volume dans cette série.",
+  "sync_peer_book_delete_confirm": "Supprimer « $name » de l'appareil pair ? Ses fichiers et la progression de lecture qui s'y trouvent seront définitivement supprimés, et cet appareil n'en a aucune copie. Cette action est irréversible.",
+  "sync_peer_video_delete_confirm": "Retirer « $name » de la bibliothèque de l'appareil pair ? Le fichier vidéo importé par l'appareil pair lui-même est conservé. Cette action est irréversible.",
+  "storage_entry_delete_files_confirm_body": "Suppression immédiate du disque. Rien dans votre bibliothèque n'y fait référence : ce sont des données en cache, exportées ou re-téléchargeables."
 }
