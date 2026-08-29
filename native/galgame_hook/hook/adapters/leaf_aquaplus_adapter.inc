@@ -40,6 +40,8 @@ std::atomic<uint64_t> g_leaf_frame_sequence{0};
 std::atomic<uint64_t> g_leaf_next_traversal_id{0};
 std::atomic<uintptr_t> g_leaf_texture0{0};
 std::atomic<bool> g_leaf_d3d_trace_ready{false};
+// v19 准入上报用：当前主 exe 的十六进制摘要，由 IsLeafAquaplusProfileMatched() 顺手填。
+char g_leaf_lookup_executable_sha256[fushi_voice_hook::kHookModuleDigestChars] = {};
 std::atomic<bool> g_leaf_lookup_runtime_enabled{false};
 std::atomic<uint64_t> g_leaf_sentence_epoch_atomic{0};
 std::atomic<uint64_t> g_leaf_lookup_activation_epoch{1};
@@ -461,6 +463,13 @@ bool IsLeafAquaplusProfileMatched() {
                              digest.data(), digest.size(), machine)
           ? &fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
           : nullptr;
+  // 摘要已算出，顺手留一份十六进制给 host。白2 的准入是**单个** exe hash，用户拿到
+  // 不同发行版/补丁版就必然落空，此时唯一能推进事情的信息就是他这份 hash 是多少。
+  if (executable_read) {
+    fushi_voice_hook::FormatSha256Hex(
+        digest.data(), digest.size(), g_leaf_lookup_executable_sha256,
+        sizeof(g_leaf_lookup_executable_sha256));
+  }
   g_leaf_aquaplus_profile.store(profile, std::memory_order_release);
   if (profile != nullptr) {
     InterlockedOr(
@@ -2767,7 +2776,25 @@ public:
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
-           fushi_voice_hook::AdapterCapability::kPcmAudio;
+           fushi_voice_hook::AdapterCapability::kPcmAudio |
+           fushi_voice_hook::AdapterCapability::kIngameLookup;
+  }
+  // v19 准入。注意这里**不能**调 IsLeafAquaplusProfileMatched() 之外的东西：probe()
+  // 已经在 registry 侧判过，这里只把已缓存的结论翻译成准入状态。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (!IsLeafAquaplusProfileMatched()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      std::memcpy(report.executable_sha256, g_leaf_lookup_executable_sha256,
+                  sizeof(report.executable_sha256));
+      return report;
+    }
+    // 身份过了还要 D3D trace 真的装上——白2 的几何全靠那三个 vtable 槽，装不上就
+    // 只有身份没有传感器。这一步失败在真机上很常见（D3D9 设备还没建好就轮询到了）。
+    report.state = g_leaf_d3d_trace_ready.load(std::memory_order_acquire)
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
   }
   void onModuleLoaded(const wchar_t *) override { install(); }
   void shutdown() override {

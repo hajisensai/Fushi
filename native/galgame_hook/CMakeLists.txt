@@ -375,7 +375,9 @@ add_test(NAME fushi_unity_text_mesh_reassembler_test
   COMMAND fushi_unity_text_mesh_reassembler_test)
 
 add_executable(fushi_adapter_contract_test tests/adapter_contract_test.cpp)
-target_include_directories(fushi_adapter_contract_test PRIVATE hook)
+# v19 起 adapter.h 依赖 IPC 头（LookupAdmissionReport 是 adapter 契约的一部分：
+# adapter 要回答"本引擎的查词准入结论"，而那个结论的类型定义在跨进程契约里）。
+target_include_directories(fushi_adapter_contract_test PRIVATE hook include)
 add_test(NAME fushi_adapter_contract_test COMMAND fushi_adapter_contract_test)
 
 add_executable(fushi_directsound_format_registry_test
