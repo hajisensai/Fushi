@@ -3845,5 +3845,9 @@
   "web_video_mine_queue_empty": "No queued cards",
   "web_video_mine_queued": "Queued for card creation ($count pending)",
   "web_video_mine_queue_running": "Creating cards $done/$total...",
-  "web_video_mine_queue_finished": "Cards created: $ok, failed: $failed"
+  "web_video_mine_queue_finished": "Cards created: $ok, failed: $failed",
+  "web_video_hosting_menu": "Playback mode",
+  "web_video_hosting_builtin": "Built-in (1080p; super-resolution, screenshots and cards available)",
+  "web_video_hosting_windowed": "Native window (4K, hardware DRM; cards are queued for later)",
+  "web_video_mine_switch_builtin": "Switch to built-in mode to create $count queued cards"
 }

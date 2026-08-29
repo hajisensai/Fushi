@@ -141,6 +141,32 @@ mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生�
 `CreateGraphicsCaptureItemFromVisual` 出帧；第二步在 (a)/(b) 间按「用户粘贴任意 .glsl 要不要保证」定案。
 超分只对可捕获内容（非硬件 DRM 站 / 增强环境）生效，观看网飞（正常模式）不受影响。
 
+#### P2 落地（2026-08-30，方案 a libplacebo）
+
+- **产物**：`third_party/libplacebo-win/`——libplacebo v7.360.1 仅 D3D11 + shaderc（vulkan/opengl/lcms/dovi 全关），
+  MSYS2 MINGW64 本地构建（`tool` 配方复刻到 `.github/workflows/libplacebo-win.yml` workflow_dispatch），随包 6 个 DLL
+  （本体 1.4 MB + shaderc 10.6 MB + spirv-cross 3.4 MB + 3 个 MinGW 运行时），`bin/SHA256SUMS` + 守卫
+  `test/build/libplacebo_win_vendored_guard_test.dart`（哈希 / `PL_API_VER`=DLL 名=fork 字面量 / CMake 接入）。
+- **fork**：`custom_platform_view/placebo_pass.{h,cc}`——**LoadLibrary 动态加载**（不链导入库：MinGW `.dll.a` 对 MSVC
+  不可靠，且缺 DLL 要 fail-open），只按头文件取结构体布局与 `decltype` 签名；`pl_d3d11_create(device=共享 D3D11 设备)`
+  → `pl_renderer` → 每帧 `pl_d3d11_wrap` src（WGC 帧）/dst（共享纹理，按指针缓存）→ `pl_render_image(fast_params +
+  hooks)`；hooks = `pl_mpv_user_shader_parse` 逐文件。挂在 `TextureBridgeGpu::ProcessFrame`：链启用且渲染成功就
+  跳过 `CopyResource`，否则原样拷贝。首次 `setShaders` 非空才加载 DLL / 建设备（`mutex_` 内）。方法通道
+  `setShaders([glsl 文本…])`（`CustomPlatformView::HandleMethodCall`）。
+- **app**：`web_video_shaders.dart`——档位偏好 `web_video_shader_tier`（与 mpv 页两套状态无关：网页帧没有 mpv 缩放器，
+  只有 GLSL 链一维；`low` 档不列）；`loadWebVideoShaderTexts(tier)` 复用 `video_shader_tier.dart` 档位表 +
+  `downloadAnime4kFiles` 同目录同镜像，读文本按预设顺序；`applyWebVideoShaders(controller.platform.id, texts)` 走
+  `com.pichillilorenzo/custom_platform_view_<id>`。页面 AppBar 超分菜单（仅内置档）。
+- **BGRA 通道映射（真机对照踩出）**：`pl_plane.component_mapping` 按纹理存储序（renderer.h 的 Y/CbCr-on-BGRA 例子），
+  d3d11 `bgra8` 的 `sample_order={2,1,0,3}` 就是每个存储分量的语义下标——**源**按此映射；但 wrapped 的 bgra8 **渲染目标**
+  libplacebo 不再换位，目标必须恒等映射。三次同帧开/关对照：源目标都恒等 → R/B 对调；都按存储序 → 仍对调（互相抵消）；
+  源存储序 + 目标恒等 → 颜色与直通一致（`observe-web-video-{shaded,unshaded}-paused.png`）。
+- **真机（builtin itest `FUSHI_WEB_VIDEO_SHADER_TIER=medium`）**：`texts=6 accepted=true`、`active=true`、帧非空，P3 重放同跑
+  （audio 45 KB + cover 2.0 MB）。libplacebo 头文件在 MSVC 下只有 1 条 C4244 warning。
+- **尺寸语义**：WGC 帧 = 页面视觉尺寸 = 共享纹理尺寸（src==dst），Anime4K 的 `Upscale_x2` 在 `//!WHEN` 判 output 不大于
+  input 时自动跳过，只剩 Restore/Clamp 类 pass 起作用——与 Magpie 套浏览器窗口同档；真正放大链要等输出纹理按显示器物理
+  尺寸独立于源（`SetOnSurfaceSizeChanged` 反馈路径，fork 里仍注释着）。
+
 ### P3 制卡
 
 事实（沿代码核实）：
@@ -191,6 +217,42 @@ mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生�
 - 换集行（`row.videoKey != 当前`）：先 `loadUrl(row.href)` 等该视频就绪再重放；30 s 不就绪标 `navigate_timeout`。
 - 不做：多语言整轨自动切轨（用户切轨才触发新下载，见 BUG-1949）、后台第二实例、队列跨书全局页（队列按书，
   入口在该书的播放页）。
+
+### 4K 窗口宿主档（2026-08-30，用户定案「有 4K 的让用户选」）
+
+fork 早就有 `CreateCoreWebView2Controller` 的窗口分支（`in_app_webview.cpp createInAppWebViewEnv` 的
+`willBeSurface=false` 路径），只是 `in_app_webview_manager.cpp` 写死传 `true`。本档把它接通，**不新造宿主**：
+
+- **开关是环境级**：`WebViewEnvironmentSettings.additionalBrowserArguments` 带哨兵 `--fushi-windowed-hosting`
+  （`WebViewEnvironment::kWindowedHostingSentinel`；Chromium 忽略未知开关），fork 在该环境创建 WebView 时
+  `willBeSurface=false`、宿主 hwnd 带 `WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS`。为什么不走 settings 字段：
+  `InAppWebViewSettings` 住在 pub-cache 的 platform-interface 里改不了；而宿主方式本来就和 DRM 相关的浏览器参数
+  绑在一个环境上（4K 环境**不能**带 `--disable-direct-composition`，硬件 PlayReady 的受保护输出要 DComp）。
+- `CustomPlatformView`：`view->surface()==nullptr` 即窗口宿主 → 不建 TextureBridge/WGC，注册一个永不产帧的
+  `PixelBufferTexture` 占位（Dart 侧 Texture 需要合法 id 当通道名）；`setSize/setPosition` 在窗口模式改成
+  `SetWindowPos` 子窗口（Flutter 逻辑 px × DPI = 视图客户区物理 px）+ `put_Bounds`，不设 BoundsMode /
+  RasterizationScale；析构按 `destroyParentWindowOnClose` 回收 hwnd（旧代码只在有 compositionController 时
+  DestroyWindow，窗口模式会漏）。指针/滚轮桥在窗口模式早退（WebView2 直接收 Win32 输入）。
+- app 侧（`WebVideoHosting` / `web_video_hosting.dart`）：偏好 `web_video_hosting`（builtin|windowed，缺省 builtin）；
+  4K 环境独立 user data folder `…-4k`，打开时把内置档的站点 cookie 复制过去（不用登录两次）；
+  Flutter 字幕叠层/弹窗在窗口模式画不到子窗口上面 →
+  **a.** 字幕层注入页面 DOM（`web_video_dom_subtitles.js`：从同一份 providers store 取 Dart 选定的轨，按 `<video>`
+  时间渲染当前 cue，逐字形 span，点击/悬停投 `{type:'lookup', sentence, index, rect, screenX, screenY}`；分词仍在
+  Dart `subtitleLookupTerm`）；
+  **b.** 查词卡走 `GlobalLookupController.lookupText`（runner 自带的顶层 `WS_POPUP` WebView2 窗口，gal 浮窗同款），
+  锚点 = 字形视口矩形 + `window.screenX/Y`（DIP = Windows 逻辑 px）；关卡片 → `onHidden` 恢复因查词暂停的播放
+  （TODO-1233 预留的钩子）；制卡 handler 只入队 → AppBar「切到内置模式制作 N 张」`pushReplacement` 内置档
+  `autoRunMineQueue: true`。
+- AppBar 「播放模式」菜单二选一，切换即原地重开本页并写偏好。
+
+真机（2026-08-30，itest `FUSHI_WEB_VIDEO_HOSTING=windowed` + `FUSHI_WEB_VIDEO_4K_USER_DATA_FOLDER=%LOCALAPPDATA%\…-itest`）：
+Netflix `/watch/81236554` 硬件 PlayReady 起播（Edge UA、无垫片；采样时 1920×1080，阶梯随后上 2560/3840，pywebview
+同环境参数实测到 3840×2160）、整集 zh-Hans 轨 381 条、bridge seek 落位、DOM 字幕层渲染逐字形 span、模拟点「所」→
+`GlobalLookupChannel.isShowing()` 为真 + 播放暂停、制卡入队 id=3。**两条坑**：① 4K profile 放在仓库目录（itest 隔离根）下
+Netflix 报 **D7702-1003**，挪到 `%LOCALAPPDATA%` 下即起播（MF CDM 对 profile 位置有要求；生产默认路径本就在
+LOCALAPPDATA）；② fork `getCookies` 把 CDP 秒级 `expires` 当毫秒回给 Dart → 复制过去的 cookie 落到 1970 年被丢弃
+（BUG-1951，已修，顺带修好漫画过盾页 cf_clearance 落库即判过期）。哨兵开关 `--fushi-windowed-hosting` 经 pywebview
+对照实测对 DRM 无影响。
 
 ## 4. 风险
 

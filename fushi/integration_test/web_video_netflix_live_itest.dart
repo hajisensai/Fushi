@@ -13,6 +13,11 @@
 // 必须 -Visible（WebView2 / 站点播放器要 DWM 合成实窗）；必须 -KeepUserDirs——PlayReady 硬件
 // DRM（MF CDM）要真实的 LOCALAPPDATA / USERPROFILE / TEMP，任一被 runner 重定向都报
 // Netflix D7702/D7703（0x80070003），实测二分定位。可用 FUSHI_WEB_VIDEO_URL 换片。
+//
+// 4K 窗口宿主档：FUSHI_WEB_VIDEO_HOSTING=windowed，且必须
+// FUSHI_WEB_VIDEO_4K_USER_DATA_FOLDER=%LOCALAPPDATA%\Fushi\WebVideoWebView2-4k-itest——硬件
+// PlayReady 的 profile 放在仓库目录（隔离根）下报 D7702-1003，放 LOCALAPPDATA 下才起播（2026-08-30 实测）。
+// 内置档超分（P2）：FUSHI_WEB_VIDEO_SHADER_TIER=medium|high|ultra（Anime4K 文件缺则经镜像下载）。
 import 'dart:async';
 import 'dart:io';
 
@@ -26,6 +31,10 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/web_video_hosting.dart';
+import 'package:fushi/src/media/video/web_video_shaders.dart';
+import 'package:fushi/src/media/video/video_shader_tier.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -43,6 +52,9 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 bool get _live => Platform.environment['FUSHI_WEB_VIDEO_LIVE_ITEST'] == '1';
+
+bool get _windowed =>
+    Platform.environment['FUSHI_WEB_VIDEO_HOSTING'] == 'windowed';
 
 String get _url =>
     Platform.environment['FUSHI_WEB_VIDEO_URL'] ??
@@ -111,6 +123,27 @@ void main() {
       // 视频页按 tag 筛选 provider 的缓存 uid 集过滤；seed 晚于首次求值必须失效重算，
       // 否则新种的卡永远不上屏（与 helpers/library_fixture.dart seedVideo 同步骤）。
       container.invalidate(filteredVideoBookUidsProvider);
+      // FUSHI_WEB_VIDEO_HOSTING=windowed → 4K 窗口宿主档（硬件 PlayReady、DOM 字幕层、顶层查词窗）。
+      // runner 的隔离 DB 跨次运行保留：两种模式都显式写偏好，不然上一次 windowed 运行留下的
+      // 偏好会让「builtin」运行实际开成窗口档（profile 在仓库目录 → D7702，见文件头）。
+      final bool windowedMode = _windowed;
+      await appModel.prefsRepo.setPref(
+        kWebVideoHostingPrefKey,
+        (windowedMode ? WebVideoHosting.windowed : WebVideoHosting.builtin)
+            .name,
+      );
+      debugPrint(
+        '[web-video-itest] hosting=${windowedMode ? 'windowed' : 'builtin'}',
+      );
+      // 内置档超分（P2）：按环境变量预置档位偏好，页面创建 WebView 后自动喂给 fork。
+      final String? shaderTierEnv =
+          Platform.environment['FUSHI_WEB_VIDEO_SHADER_TIER'];
+      if (shaderTierEnv != null && shaderTierEnv.isNotEmpty) {
+        await appModel.prefsRepo.setPref(
+          kWebVideoShaderTierPrefKey,
+          shaderTierEnv,
+        );
+      }
 
       expect(HomePage.debugSelectTab, isNotNull);
       HomePage.debugSelectTab!(HomeTab.video);
@@ -285,6 +318,108 @@ void main() {
       final WebVideoDebugSnapshot after = WebVideoFushiPage.debugSnapshot!();
       debugPrint('[web-video-itest] after seek: $after');
 
+      if (windowedMode) {
+        // ── 4K 窗口宿主档：画面归站点（硬件 DRM，期望 ≥1080p 阶梯）；字幕层在页面 DOM；
+        // 点词 → callHandler → GlobalLookupController → 顶层 WS_POPUP 查词窗口。──
+        final String? dims = await WebVideoFushiPage.debugEvalJs?.call(
+          "(() => { const v = document.querySelector('video'); return JSON.stringify("
+          '{vw: v && v.videoWidth, vh: v && v.videoHeight, '
+          "dom: !!document.getElementById('fushi-dom-subtitle'), "
+          "spans: document.querySelectorAll('#fushi-dom-subtitle [data-fushi-g]').length,"
+          'cur: window.__fushiDomSubs && window.__fushiDomSubs.current()}); })()',
+        );
+        debugPrint('[web-video-itest] windowed page: $dims');
+        // 等 DOM 字幕层渲染出当前 cue（字幕间隙时元素被摘掉，最多等 30 s）。
+        int spans = 0;
+        for (int i = 0; i < 60 && spans == 0; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          final String? n = await WebVideoFushiPage.debugEvalJs?.call(
+            "String(document.querySelectorAll('#fushi-dom-subtitle [data-fushi-g]').length)",
+          );
+          spans = int.tryParse(n ?? '') ?? 0;
+        }
+        expect(spans, greaterThan(0), reason: 'DOM 字幕层应渲染出逐字形 span');
+        // 模拟点第一个字形（真实用户就是点它）。
+        final String? clicked = await WebVideoFushiPage.debugEvalJs?.call(
+          "(() => { const s = document.querySelector('#fushi-dom-subtitle [data-fushi-g]');"
+          ' if (!s) return "none"; const r = s.getBoundingClientRect();'
+          " s.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.left + 2, clientY: r.top + 2}));"
+          " return 'clicked:' + s.textContent; })()",
+        );
+        debugPrint('[web-video-itest] dom click: $clicked');
+        bool showing = false;
+        for (int i = 0; i < 30 && !showing; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          showing = await GlobalLookupChannel.isShowing();
+        }
+        expect(showing, isTrue, reason: 'DOM 字幕点词后顶层查词窗口应显示');
+        final int? queuedId = await WebVideoFushiPage.debugEnqueueCurrentCue!(
+          <String, String>{'term': 'itest', 'sentence': 'itest sentence'},
+        );
+        expect(queuedId, isNotNull, reason: '窗口宿主档制卡只入队');
+        final WebVideoDebugSnapshot afterWin =
+            WebVideoFushiPage.debugSnapshot!();
+        debugPrint(
+          '[web-video-itest] windowed end: $afterWin queued=$queuedId',
+        );
+        assertStrictErrors(errors);
+        return;
+      }
+
+      // ── P2 超分：档位偏好预置后，fork 的 libplacebo 通道必须确认已启用，且 Flutter 帧仍在出
+      //（着色器链把 WGC 帧渲染进共享纹理；任何失败 fail-open 回原帧，但那样 active 会是 false）。
+      if (shaderTierEnv != null && shaderTierEnv.isNotEmpty) {
+        bool active = false;
+        for (int i = 0; i < 60 && !active; i++) {
+          await tester.pump(const Duration(milliseconds: 500));
+          active = WebVideoFushiPage.debugShaderActive?.call() ?? false;
+        }
+        final ObserveShot shaded = await captureFlutterFrame(
+          tester,
+          'observe-web-video-shaded',
+        );
+        debugPrint(
+          '[web-video-itest] shader tier=$shaderTierEnv active=$active '
+          'frame=${shaded.path} nonBlank=${shaded.nonBlank}',
+        );
+        expect(
+          active,
+          isTrue,
+          reason: 'fork libplacebo 通道应确认着色器链已启用（DLL 随包 + Anime4K 文件在）',
+        );
+        expect(shaded.nonBlank, isTrue, reason: '着色器启用后画面不应黑屏');
+        // 对照：暂停在同一帧上切到 off 再截一张，肉眼比对通道输出是「同一帧的增强」而非乱码。
+        await WebVideoFushiPage.debugEvalJs?.call(
+          "(() => { const v = document.querySelector('video'); if (v) v.pause(); return 'paused'; })()",
+        );
+        await tester.pump(const Duration(seconds: 1));
+        final ObserveShot shadedPaused = await captureFlutterFrame(
+          tester,
+          'observe-web-video-shaded-paused',
+        );
+        await WebVideoFushiPage.debugSelectShaderTier!(VideoShaderTier.off);
+        await tester.pump(const Duration(seconds: 2));
+        final ObserveShot unshaded = await captureFlutterFrame(
+          tester,
+          'observe-web-video-unshaded-paused',
+        );
+        debugPrint(
+          '[web-video-itest] compare: shaded=${shadedPaused.path} '
+          'unshaded=${unshaded.path} activeAfterOff='
+          '${WebVideoFushiPage.debugShaderActive?.call()}',
+        );
+        expect(
+          WebVideoFushiPage.debugShaderActive?.call(),
+          isFalse,
+          reason: 'off 档 = 直通，fork 不再报启用',
+        );
+        await WebVideoFushiPage.debugSelectShaderTier!(VideoShaderTier.medium);
+        await WebVideoFushiPage.debugEvalJs?.call(
+          "(() => { const v = document.querySelector('video'); if (v) v.play(); return 'play'; })()",
+        );
+        await tester.pump(const Duration(seconds: 1));
+      }
+
       // ── P3 自动制卡队列：入队当前 cue → 跑队列（真 seek/播/停 + WASAPI loopback 录音 +
       // CDP 截帧 → 沉浸制卡引擎）。测试环境无 Anki 后端，引擎落卡预期失败并写进队列行
       // error；这里验证的是重放链路本身抓到了真媒体：封面 PNG 非空、loopback 音频非空。
@@ -296,8 +431,10 @@ void main() {
       final List<WebMineReplayCapture> caps =
           await WebVideoFushiPage.debugRunMineQueue!();
       await tester.pump(const Duration(seconds: 1));
-      expect(caps, hasLength(1), reason: '队列里恰一行 → 恰一次重放');
-      final WebMineReplayCapture cap = caps.single;
+      // runner 的隔离 DB 跨次运行保留（上一次 windowed 运行入队的行仍 pending，也会被重放）：
+      // 本次入队的行排在最后，取最后一次重放。
+      expect(caps, isNotEmpty, reason: '至少重放本次入队的那一行');
+      final WebMineReplayCapture cap = caps.last;
       debugPrint(
         '[web-video-itest] mine capture: audio=${cap.audio?.length}B '
         'cover=${cap.cover?.length}B warnings=${cap.warnings}',
@@ -329,8 +466,13 @@ void main() {
             'Windows 真机 WASAPI loopback 应录到 Netflix 音频（warnings=${cap.warnings}）',
       );
       expect(cap.audio!.length, greaterThan(1000));
+      // runner 的隔离 DB 跨次运行保留：只看本次入队的那一行（上次的 failed 行不再是
+      // pending、不会被重放；caps 恰一次已在上面断言）。
+      final WebMineQueueRow mine = rows.firstWhere(
+        (WebMineQueueRow r) => r.id == queuedId,
+      );
       expect(
-        rows.single.status,
+        mine.status,
         isNot(WebMineQueueStatus.pending),
         reason: '跑完后行必须离开 pending（done 或 failed 都写了结果）',
       );

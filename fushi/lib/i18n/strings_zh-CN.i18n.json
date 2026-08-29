@@ -3845,5 +3845,9 @@
   "web_video_mine_queue_empty": "制卡队列为空",
   "web_video_mine_queued": "已加入制卡队列（待制 $count 张）",
   "web_video_mine_queue_running": "制卡中 $done/$total…",
-  "web_video_mine_queue_finished": "制卡完成：成功 $ok，失败 $failed"
+  "web_video_mine_queue_finished": "制卡完成：成功 $ok，失败 $failed",
+  "web_video_hosting_menu": "播放模式",
+  "web_video_hosting_builtin": "内置（1080p；可超分、可截图制卡）",
+  "web_video_hosting_windowed": "原生窗口（4K 硬件 DRM；制卡先排队）",
+  "web_video_mine_switch_builtin": "切到内置模式制作 $count 张排队卡片"
 }

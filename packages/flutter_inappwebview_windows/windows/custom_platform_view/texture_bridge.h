@@ -12,6 +12,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "graphics_context.h"
 
@@ -67,6 +69,10 @@ namespace flutter_inappwebview_plugin
 
     void NotifySurfaceSizeChanged(size_t width, size_t height);
     void SetFpsLimit(std::optional<int> max_fps);
+
+    // 计划 P2：mpv 用户着色器链（.glsl 文本，按序）。空 = 直通。只有 GPU 桥实现；
+    // 回 true = 全部解析成功并已启用。
+    virtual bool SetShaders(const std::vector<std::string>& shader_texts) { return false; }
 
   protected:
     typedef WgcPumpTickHandler PumpTickHandler;

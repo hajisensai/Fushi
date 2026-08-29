@@ -25,6 +25,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetPointerButton = "setPointerButton";
   constexpr auto kMethodSetScrollDelta = "setScrollDelta";
   constexpr auto kMethodSetFpsLimit = "setFpsLimit";
+  constexpr auto kMethodSetShaders = "setShaders";
 
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
@@ -157,35 +158,45 @@ namespace flutter_inappwebview_plugin
     std::shared_ptr<flutter_inappwebview_plugin::InAppWebView> webView)
     : hwnd_(hwnd), view(std::move(webView)), texture_registrar_(texture_registrar)
   {
+    if (!view->surface()) {
+      // 窗口宿主模式：WebView2 是真子窗口自己绘制，没有 WGC 捕获链路。Dart 侧 Texture
+      // widget 仍要一个合法 id 当通道名 / 占位，注册一个永不产帧的像素纹理即可。
+      flutter_texture_ =
+        std::make_unique<flutter::TextureVariant>(flutter::PixelBufferTexture(
+          [](size_t, size_t) -> const FlutterDesktopPixelBuffer* { return nullptr; }));
+      texture_id_ = texture_registrar->RegisterTexture(flutter_texture_.get());
+    }
+    else {
 #ifdef HAVE_FLUTTER_D3D_TEXTURE
-    texture_bridge_ =
-      std::make_unique<TextureBridgeGpu>(graphics_context, view->surface());
+      texture_bridge_ =
+        std::make_unique<TextureBridgeGpu>(graphics_context, view->surface());
 
-    flutter_texture_ =
-      std::make_unique<flutter::TextureVariant>(flutter::GpuSurfaceTexture(
-        kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle,
-        [bridge = static_cast<TextureBridgeGpu*>(texture_bridge_.get())](
-          size_t width,
-          size_t height) -> const FlutterDesktopGpuSurfaceDescriptor*
-        {
-          return bridge->GetSurfaceDescriptor(width, height);
-        }));
+      flutter_texture_ =
+        std::make_unique<flutter::TextureVariant>(flutter::GpuSurfaceTexture(
+          kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle,
+          [bridge = static_cast<TextureBridgeGpu*>(texture_bridge_.get())](
+            size_t width,
+            size_t height) -> const FlutterDesktopGpuSurfaceDescriptor*
+          {
+            return bridge->GetSurfaceDescriptor(width, height);
+          }));
 #else
-    texture_bridge_ = std::make_unique<TextureBridgeFallback>(
-      graphics_context, webview_->surface());
+      texture_bridge_ = std::make_unique<TextureBridgeFallback>(
+        graphics_context, webview_->surface());
 
-    flutter_texture_ =
-      std::make_unique<flutter::TextureVariant>(flutter::PixelBufferTexture(
-        [bridge = static_cast<TextureBridgeFallback*>(texture_bridge_.get())](
-          size_t width, size_t height) -> const FlutterDesktopPixelBuffer*
-        {
-          return bridge->CopyPixelBuffer(width, height);
-        }));
+      flutter_texture_ =
+        std::make_unique<flutter::TextureVariant>(flutter::PixelBufferTexture(
+          [bridge = static_cast<TextureBridgeFallback*>(texture_bridge_.get())](
+            size_t width, size_t height) -> const FlutterDesktopPixelBuffer*
+          {
+            return bridge->CopyPixelBuffer(width, height);
+          }));
 #endif
 
-    texture_id_ = texture_registrar->RegisterTexture(flutter_texture_.get());
-    texture_bridge_->SetOnFrameAvailable(
-      [this]() { texture_registrar_->MarkTextureFrameAvailable(texture_id_); });
+      texture_id_ = texture_registrar->RegisterTexture(flutter_texture_.get());
+      texture_bridge_->SetOnFrameAvailable(
+        [this]() { texture_registrar_->MarkTextureFrameAvailable(texture_id_); });
+    }
     // texture_bridge_->SetOnSurfaceSizeChanged([this](Size size) {
     //  view->SetSurfaceSize(size.width, size.height);
     //});
@@ -277,7 +288,9 @@ namespace flutter_inappwebview_plugin
       {
         WgcLog::Write("surface-size-changed", nullptr,
           SurfaceSizeDetail(width, height, texture_id_, texture_bridge_.get()));
-        texture_bridge_->NotifySurfaceSizeChanged(width, height);
+        if (texture_bridge_) {
+          texture_bridge_->NotifySurfaceSizeChanged(width, height);
+        }
       });
 
     view->onCursorChanged([this](const HCURSOR cursor)
@@ -375,7 +388,9 @@ namespace flutter_inappwebview_plugin
           static_cast<size_t>(height),
           static_cast<float>(scale_factor));
 
-        texture_bridge_->Start();
+        if (texture_bridge_) {
+          texture_bridge_->Start();
+        }
         return result->Success();
       }
       return result->Error(kErrorInvalidArgs);
@@ -393,10 +408,28 @@ namespace flutter_inappwebview_plugin
       }
       return result->Error(kErrorInvalidArgs);
     }
+    // setShaders: [String glslText, ...]（计划 P2；窗口宿主 / 无 GPU 桥 → false）
+    else if (method_name.compare(kMethodSetShaders) == 0) {
+      const flutter::EncodableList* list =
+        std::get_if<flutter::EncodableList>(method_call.arguments());
+      if (!list) {
+        return result->Error(kErrorInvalidArgs);
+      }
+      std::vector<std::string> texts;
+      for (const auto& item : *list) {
+        if (const auto s = std::get_if<std::string>(&item)) {
+          texts.push_back(*s);
+        }
+      }
+      const bool ok = texture_bridge_ ? texture_bridge_->SetShaders(texts) : false;
+      return result->Success(flutter::EncodableValue(ok));
+    }
     else if (method_name.compare(kMethodSetFpsLimit) == 0) {
       if (const auto value = std::get_if<int32_t>(method_call.arguments())) {
-        texture_bridge_->SetFpsLimit(*value == 0 ? std::nullopt
-          : std::make_optional(*value));
+        if (texture_bridge_) {
+          texture_bridge_->SetFpsLimit(*value == 0 ? std::nullopt
+            : std::make_optional(*value));
+        }
         return result->Success();
       }
     }

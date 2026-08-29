@@ -103,6 +103,9 @@ namespace flutter_inappwebview_plugin
     std::unique_ptr<WebViewChannelDelegate> channelDelegate;
     std::shared_ptr<InAppWebViewSettings> settings;
     InAppBrowser* inAppBrowser = nullptr;
+    /// 由 InAppWebViewManager 置 true：宿主 hwnd 是它为本实例建的，析构时 DestroyWindow。
+    /// 窗口宿主模式没有 compositionController 可当判据，故显式标记。
+    bool destroyParentWindowOnClose = false;
     std::unique_ptr<UserContentController> userContentController;
 
     InAppWebView(const FlutterInappwebviewWindowsPlugin* plugin, const InAppWebViewCreationParams& params, const HWND parentWindow,
@@ -194,6 +197,13 @@ namespace flutter_inappwebview_plugin
     SurfaceSizeChangedCallback surfaceSizeChangedCallback_;
     CursorChangedCallback cursorChangedCallback_;
     float scaleFactor_ = 1.0;
+    // 窗口宿主模式（surface_ 为空）：子 HWND 在 Flutter 视图客户区里的物理像素矩形，
+    // 由 setPosition / setSurfaceSize 各更新一半、applyWindowedBounds 一起落地。
+    int windowedX_ = 0;
+    int windowedY_ = 0;
+    int windowedWidth_ = 0;
+    int windowedHeight_ = 0;
+    void applyWindowedBounds();
     POINT lastCursorPos_ = { 0, 0 };
     VirtualKeyState virtualKeys_;
 

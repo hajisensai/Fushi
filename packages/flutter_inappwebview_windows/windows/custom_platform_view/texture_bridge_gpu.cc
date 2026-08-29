@@ -3,6 +3,9 @@
 #include <iostream>
 
 #include "util/direct3d11.interop.h"
+#ifdef HAVE_LIBPLACEBO_HEADERS
+#include "placebo_pass.h"
+#endif
 
 namespace flutter_inappwebview_plugin
 {
@@ -15,6 +18,8 @@ namespace flutter_inappwebview_plugin
     surface_descriptor_.format =
       kFlutterDesktopPixelFormatNone;  // no format required for DXGI surfaces
   }
+
+  TextureBridgeGpu::~TextureBridgeGpu() = default;
 
   void TextureBridgeGpu::ProcessFrame(
     winrt::com_ptr<ID3D11Texture2D> src_texture)
@@ -29,8 +34,40 @@ namespace flutter_inappwebview_plugin
 
     auto device_context = graphics_context_->d3d_device_context();
 
+#ifdef HAVE_LIBPLACEBO_HEADERS
+    // 计划 P2：着色器链启用时由 libplacebo 从 src 渲染进共享纹理；任何失败回退原样拷贝。
+    if (placebo_ && placebo_->enabled() && surface_ &&
+        placebo_->Render(src_texture.get(), surface_.get())) {
+      device_context->Flush();
+      return;
+    }
+#endif
+
     device_context->CopyResource(surface_.get(), src_texture.get());
     device_context->Flush();
+  }
+
+  bool TextureBridgeGpu::SetShaders(const std::vector<std::string>& shader_texts)
+  {
+#ifdef HAVE_LIBPLACEBO_HEADERS
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (shader_texts.empty()) {
+      if (placebo_) {
+        placebo_->SetShaders({});
+      }
+      return true;
+    }
+    if (!placebo_ && !placebo_unavailable_) {
+      placebo_ = PlaceboPass::Create(graphics_context_->d3d_device());
+      placebo_unavailable_ = !placebo_;
+    }
+    if (!placebo_) {
+      return false;
+    }
+    return placebo_->SetShaders(shader_texts);
+#else
+    return false;
+#endif
   }
 
   void TextureBridgeGpu::EnsureSurface(uint32_t width, uint32_t height)

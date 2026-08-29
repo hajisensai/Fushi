@@ -1812,9 +1812,35 @@ namespace flutter_inappwebview_plugin
   }
 
   // flutter_view
+  void InAppWebView::applyWindowedBounds()
+  {
+    HWND child = nullptr;
+    if (!webViewController || !succeededOrLog(webViewController->get_ParentWindow(&child)) || !child) {
+      return;
+    }
+    // 子窗口坐标 = Flutter 视图客户区物理像素（逻辑 px × DPI），与 Flutter 布局一一对应。
+    ::SetWindowPos(child, HWND_TOP, windowedX_, windowedY_, windowedWidth_, windowedHeight_,
+      SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    RECT bounds{ 0, 0, windowedWidth_, windowedHeight_ };
+    failedLog(webViewController->put_Bounds(bounds));
+  }
+
   void InAppWebView::setSurfaceSize(size_t width, size_t height, float scale_factor)
   {
     if (!webViewController) {
+      return;
+    }
+
+    if (!surface_ && width > 0 && height > 0) {
+      // 窗口宿主模式：不设 BoundsMode / RasterizationScale（WebView2 自己按显示器 DPI 栅格化，
+      // 这正是硬件 PlayReady 走受保护输出所需的常规窗口路径）。
+      scaleFactor_ = scale_factor;
+      windowedWidth_ = static_cast<int>(width * scale_factor);
+      windowedHeight_ = static_cast<int>(height * scale_factor);
+      applyWindowedBounds();
+      if (surfaceSizeChangedCallback_) {
+        surfaceSizeChangedCallback_(width, height);
+      }
       return;
     }
 
@@ -1850,6 +1876,15 @@ namespace flutter_inappwebview_plugin
   void InAppWebView::setPosition(size_t x, size_t y, float scale_factor)
   {
     if (!webViewController || !plugin || !plugin->registrar) {
+      return;
+    }
+
+    if (!surface_) {
+      // 窗口宿主模式：位置相对 Flutter 视图客户区（WS_CHILD），不是屏幕坐标。
+      scaleFactor_ = scale_factor;
+      windowedX_ = static_cast<int>(x * scale_factor);
+      windowedY_ = static_cast<int>(y * scale_factor);
+      applyWindowedBounds();
       return;
     }
 
@@ -2192,9 +2227,10 @@ namespace flutter_inappwebview_plugin
       failedLog(webView->Stop());
     }
     HWND parentWindow = nullptr;
-    if (webViewCompositionController && webViewController && succeededOrLog(webViewController->get_ParentWindow(&parentWindow))) {
-      // if it's an InAppWebView (so webViewCompositionController will be not a nullptr!),
-      // then destroy the Window created with it
+    // InAppWebViewManager 建的宿主 hwnd（composition 模式恒有 compositionController；窗口宿主模式
+    // 没有，由 destroyParentWindowOnClose 标记）随本实例销毁；InAppBrowser / headless 自管窗口。
+    if ((webViewCompositionController || destroyParentWindowOnClose) && webViewController &&
+        succeededOrLog(webViewController->get_ParentWindow(&parentWindow)) && parentWindow) {
       DestroyWindow(parentWindow);
     }
     if (webViewController) {
