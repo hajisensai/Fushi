@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1805 条。点号进各自文件。
+> 共 1806 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1942](bugs/BUG-1942-extension-lookup-no-auto-read.md) | ✅ | ✅ | 浏览器扩展查词不自动播放单词音频 |
 | [BUG-1941](bugs/BUG-1941-subtitle-row-blank-click-no-seek.md) | ✅ | ✅ | 点字幕行内空白不跳转只弹未识别提示 |
 | [BUG-1940](bugs/BUG-1940-page-lookup-close-click-leaks.md) | ✅ | ✅ | 关弹窗的点击与 Esc 漏给站点 |
 | [BUG-1939](bugs/BUG-1939-side-panel-lookup-popup-placement.md) | ✅ | ✅ | 侧栏查词弹窗不跟随位置且遮挡内容 |

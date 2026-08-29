@@ -1801,6 +1801,8 @@ function fushiRemoveContainer() {
   window.__fushiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
+  // 关窗即作废在途的自动朗读：弹窗都没了还响一声是纯噪音。
+  if (typeof window.fushiCancelAutoRead === 'function') window.fushiCancelAutoRead();
   // 「查词时暂停」的恢复侧：关窗即恢复（实现与不变式见 fushiResumePausedForLookup）。
   // 嵌套查词只换弹窗内容、不经此处，天然不会提前恢复——与 app「整栈关空才恢复」同语义。
   fushiResumePausedForLookup();
@@ -2080,6 +2082,14 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
       // popup.js 读取的全局上——不落这一步 mdx 词典的自带样式在扩展里全失效。
       applyFushiPopupCss(resp.data);
       fushiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
+      // 查词后自动朗读：开关是 app 的全局偏好（随响应下发），解析与播放都走点 ♪ 的同一条
+      // 路径。扩展曾是唯一没接这条线的表面（app 内弹窗 / app 外浮窗 / 剪贴板面板都有）。
+      if (typeof window.fushiAutoReadFirstEntry === 'function') {
+        window.fushiAutoReadFirstEntry(window.lookupEntries, {
+          enabled: resp.data.autoReadOnLookup === true,
+          audioSources: window.audioSources,
+        });
+      }
     });
   } catch (_) {
     fushiPending = false; // 「Extension context invalidated」：静默，等用户重载页面

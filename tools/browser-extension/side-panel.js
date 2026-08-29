@@ -166,6 +166,8 @@
   // 只收起面板内那份弹窗：推进请求代际让在途查词的渲染失效，清空内容。**不动 activeScanKey**
   // ——那是扫词去重键，只在「这一轮查词真的没了」时才该复位（closeLookup / 页面弹窗关窗回执）。
   function hideLookupPane() {
+    // 收窗即作废在途的自动朗读（弹窗没了不该再响）。
+    if (typeof window.fushiCancelAutoRead === 'function') window.fushiCancelAutoRead();
     lookupRequestId += 1;
     if (Number.isInteger(window._renderGeneration)) window._renderGeneration += 1;
     window._renderInProgress = false;
@@ -318,6 +320,13 @@
     window._noResultsMessage = '没有查到结果';
     applyLookupTheme(data.theme);
     if (typeof window.renderPopup === 'function') window.renderPopup();
+    // 查词后自动朗读：与页面弹窗共用 auto-read.js 那一份（开关同为 app 全局偏好）。
+    if (typeof window.fushiAutoReadFirstEntry === 'function') {
+      window.fushiAutoReadFirstEntry(window.lookupEntries, {
+        enabled: data.autoReadOnLookup === true,
+        audioSources: window.audioSources,
+      });
+    }
     else lookupContainer.innerHTML = '<div class="no-results">词典组件尚未就绪，请重试。</div>';
     if (lookupPaneEl.style.visibility === 'visible' &&
         currentLookupPerfContext && !currentLookupPerfContext.visibleReported) {
@@ -386,6 +395,7 @@
       applyFushiPopupCss(data);
       var prepared = {
         audioSources: data.audioSources,
+        autoReadOnLookup: data.autoReadOnLookup === true,
         theme: data.theme,
         entries: [],
         estimatedChars: data.popupJson.length,

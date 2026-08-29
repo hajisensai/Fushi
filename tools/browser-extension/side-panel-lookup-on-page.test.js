@@ -22,6 +22,10 @@ const CONTENT = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
 const SIDE_PANEL = fs.readFileSync(path.join(__dirname, 'side-panel.js'), 'utf8');
 // BUG-1718：真实运行时里 vendor/dict-media.js 恒在 content.js / side-panel.js 之前加载。
 const DICT_MEDIA = fs.readFileSync(path.join(__dirname, 'vendor', 'dict-media.js'), 'utf8');
+// manifest / side-panel.html 里 auto-read.js 与两侧脚本同世界加载（查词后自动朗读）。
+const AUTO_READ = fs.readFileSync(path.join(__dirname, 'auto-read.js'), 'utf8');
+// side-panel.html 里 popup-size.js 排在最前（side-panel.js 的 applyLookupBox 直接调它）。
+const POPUP_SIZE = fs.readFileSync(path.join(__dirname, 'popup-size.js'), 'utf8');
 
 const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
 
@@ -97,12 +101,14 @@ function findById(el, id) {
 
 // ───────────────────────── content.js（宿主页一侧） ─────────────────────────
 
-function loadContent() {
+function loadContent(lookupExtras) {
   const docListeners = Object.create(null);
+  const bridgeCalls = [];
   const sent = [];
   const rafs = [];
   const body = makeEl('body');
   const html = makeEl('html');
+  const played = [];
   // 宿主页上一轮 Shift 查词留下的选区：侧栏路径必须先清掉它，否则会拿旧词的 rects 当锚点、
   // 并把页面上那处词重新点亮（用户点的是侧栏里的另一个词）。
   const staleTextNode = { textContent: '前回の言葉', nodeType: 3 };
@@ -164,7 +170,11 @@ function loadContent() {
       onMessage: { addListener() {} },
       sendMessage: (msg, cb) => {
         sent.push(msg);
-        if (cb) cb({ ok: true, data: { popupJson: '[]', result: { bestLength: 2 }, audioSources: [] } });
+        if (cb) cb({ ok: true, data: Object.assign({
+          popupJson: '[{"expression":"世界","reading":"せかい"}]',
+          result: { bestLength: 2 },
+          audioSources: [],
+        }, lookupExtras) });
       },
     },
     storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } },
@@ -175,14 +185,22 @@ function loadContent() {
     innerHeight: 800,
     matchMedia: () => ({ matches: false }),
     fushiSelection: selection,
-    flutter_inappwebview: { callHandler() {} },
+    flutter_inappwebview: {
+      callHandler(name, args) {
+        bridgeCalls.push({ name: name, args: args });
+        // resolveWordAudio 走的是点 ♪ 的同一条桥；这里直接给一个可播的 URL。
+        return Promise.resolve(name === 'resolveWordAudio' ? 'https://audio/1' : null);
+      },
+    },
+    __fushiPlayWordAudioUrl(url) { played.push(url); return Promise.resolve(true); },
   };
   sandbox.window.window = sandbox.window;
   vm.createContext(sandbox);
   vm.runInContext(DICT_MEDIA, sandbox, { filename: 'vendor/dict-media.js' });
+  vm.runInContext(AUTO_READ, sandbox, { filename: 'auto-read.js' });
   vm.runInContext(CONTENT, sandbox, { filename: 'content.js' });
   return {
-    sandbox, docListeners, sent, body, selection, rafs,
+    sandbox, docListeners, sent, body, selection, rafs, bridgeCalls, played,
     // 量出真实尺寸后跑落点（rAF 里的 place）。
     runPlacement(width, height) {
       const host = findById(body, 'hibiki-popup-host');
@@ -311,7 +329,7 @@ function permissive() {
 
 // storedSettings：chrome.storage.local 的初值；tabReply：宿主页对 side panel 消息的回复
 // （null = 页面不可达，如 chrome:// 或没有内容脚本的页面）。
-function loadSidePanel(storedSettings, tabReply) {
+function loadSidePanel(storedSettings, tabReply, lookupReply) {
   const els = new Map();
   const created = [];
   const runtimeMessages = [];
@@ -328,7 +346,11 @@ function loadSidePanel(storedSettings, tabReply) {
           onMessage: { addListener(fn) { runtimeListeners.push(fn); } },
           sendMessage(message, callback) {
             runtimeMessages.push(message);
-            if (message && message.type === 'lookup') return; // 留在途，本文件不断言查词结果
+            if (message && message.type === 'lookup') {
+              // 默认留在途（本文件多数用例不关心查词结果）；给了 lookupReply 才走渲染路径。
+              if (lookupReply && callback) callback(lookupReply);
+              return;
+            }
             if (callback) callback(undefined);
           },
           openOptionsPage() {},
@@ -403,8 +425,10 @@ function loadSidePanel(storedSettings, tabReply) {
   sandbox.window.window = sandbox.window;
   sandbox.self = sandbox.window;
   vm.createContext(sandbox);
+  vm.runInContext(POPUP_SIZE, sandbox, { filename: 'popup-size.js' });
   vm.runInContext(DICT_MEDIA, sandbox, { filename: 'vendor/dict-media.js' });
   vm.runInContext(SIDE_PANEL, sandbox, { filename: 'side-panel.js' });
+  vm.runInContext(AUTO_READ, sandbox, { filename: 'auto-read.js' });
   const container = created.find((el) => el.id === 'entries-container');
   assert.ok(container, 'side-panel.js 必须建出 #entries-container 查词容器');
   return {
@@ -561,4 +585,49 @@ test('点文字仍是查词，且不冒泡成跳转', async () => {
     '点文字没有查词');
   assert.ok(!h.tabMessages.some((m) => m && m.type === 'fushiSubtitleSidePanelSeek'),
     '查词的同时还跳转了（视频会被拉走）');
+});
+
+// ─────────────────── 查词后自动朗读的两侧接线（模块本身见 auto-read.test.js） ───────────────────
+
+// app 下发「查词后自动朗读」偏好 + 一个已启用的音频源。
+const AUTO_READ_ON = { autoReadOnLookup: true, audioSources: ['jpod101'] };
+
+test('页面弹窗：渲染后按 app 下发的偏好自动朗读首条词', async () => {
+  const h = loadContent(AUTO_READ_ON);
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
+  await flush();
+  const audio = h.bridgeCalls.filter((c) => c.name === 'resolveWordAudio');
+  assert.strictEqual(audio.length, 1, '没有解析首条词的发音（用户报「查词不会自动播放」）');
+  assert.strictEqual(audio[0].args.expression, '世界', '解析的不是弹窗顶部那条词');
+  assert.strictEqual(h.played.join('|'), 'https://audio/1', '解析到的发音没有播出来');
+});
+
+test('页面弹窗：偏好没下发时不朗读（app 侧开关关着）', async () => {
+  const h = loadContent({ audioSources: ['jpod101'] });
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null, 0.2);
+  await flush();
+  assert.strictEqual(h.bridgeCalls.filter((c) => c.name === 'resolveWordAudio').length, 0,
+    '偏好关着却仍去解析发音');
+  assert.strictEqual(h.played.length, 0);
+});
+
+test('面板内渲染路径同样自动朗读（两个表面不得漂开）', async () => {
+  const h = loadSidePanel({}, (message) => {
+    if (message.type === 'fushiSubtitleSidePanelState') return OK_REPLY(message);
+    if (message.type === 'fushiSubtitleSidePanelShowLookup') return { ok: false }; // 宿主页不可达
+    return { ok: true };
+  }, {
+    ok: true,
+    data: {
+      popupJson: '[{"expression":"世界","reading":"せかい"}]',
+      audioSources: ['jpod101'],
+      autoReadOnLookup: true,
+      theme: {},
+    },
+  });
+  await flush();
+  h.clickCueWord('世界');
+  await flush();
+  assert.ok(h.runtimeMessages.some((m) => m && m.type === 'lookupAudio'),
+    '面板内渲染路径没有自动朗读（页面弹窗有、这边没有=同一个开关两个表面行为漂开）');
 });
