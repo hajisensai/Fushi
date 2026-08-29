@@ -3833,5 +3833,11 @@
   "delete_disclosure_book_source_kept": "가져온 원본 책 및 자막 파일",
   "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
   "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다",
-  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다."
+  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다.",
+  "web_video_track_menu": "Subtitle track",
+  "web_video_track_live": "Live captions (sampled from page)",
+  "web_video_no_tracks": "No subtitles captured yet",
+  "web_video_hide_native_subtitles": "Hide site subtitles",
+  "web_video_import_hint": "This is a web page (not a direct stream). It will open in the built-in web player.",
+  "web_video_platform_unsupported": "The built-in web player is only available on Windows for now."
 }

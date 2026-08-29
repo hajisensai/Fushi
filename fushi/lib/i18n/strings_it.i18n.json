@@ -3833,5 +3833,11 @@
   "delete_disclosure_book_source_kept": "I file originali del libro e dei sottotitoli che hai importato",
   "download_task_delete_files_failed": "Non è stato possibile eliminare i dati scaricati; il motore di download non lo ha confermato",
   "delete_local_files_failed": "Impossibile eliminare $n file locali; potrebbero essere ancora in uso",
-  "batch_hidden_by_filter_note": "Altri ${n} elementi selezionati sono nascosti dal filtro corrente e non verranno elaborati."
+  "batch_hidden_by_filter_note": "Altri ${n} elementi selezionati sono nascosti dal filtro corrente e non verranno elaborati.",
+  "web_video_track_menu": "Subtitle track",
+  "web_video_track_live": "Live captions (sampled from page)",
+  "web_video_no_tracks": "No subtitles captured yet",
+  "web_video_hide_native_subtitles": "Hide site subtitles",
+  "web_video_import_hint": "This is a web page (not a direct stream). It will open in the built-in web player.",
+  "web_video_platform_unsupported": "The built-in web player is only available on Windows for now."
 }

@@ -48,6 +48,10 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
+    show WebVideoFushiPage;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show
         YoutubeCaptionTrack,
@@ -355,7 +359,7 @@ final RegExp _kLatinWordCharRegExp =
 /// 不该由脚本决定：C++ `scan_candidates` 明确禁止在空格分词语言的单词中间切
 /// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
 /// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
-@visibleForTesting
+/// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
 String subtitleLookupTerm(String sentence, int graphemeIndex) {
   final List<String> graphemes = sentence.characters.toList();
   if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
@@ -2114,6 +2118,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
+      // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
+      // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
+      // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
+      // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
+      if (shouldOpenInWebVideoPlayer(row.videoPath)) {
+        final BuildContext pageContext = context;
+        if (!pageContext.mounted) return;
+        unawaited(Navigator.of(pageContext).pushReplacement(
+          adaptivePageRoute<void>(
+            context: pageContext,
+            builder: (_) => WebVideoFushiPage.neutralized(
+              bookUid: widget.bookUid,
+              repo: widget.repo,
+            ),
+          ),
+        ));
+        return;
+      }
       // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);

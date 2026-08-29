@@ -3833,5 +3833,11 @@
   "delete_disclosure_book_source_kept": "インポートした元の書籍・字幕ファイル",
   "download_task_delete_files_failed": "ダウンロード済みデータを削除できませんでした。ダウンロードエンジンが確認を返していません",
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
-  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。"
+  "batch_hidden_by_filter_note": "選択済みの ${n} 件は現在のフィルターで非表示のため、今回は処理されません。",
+  "web_video_track_menu": "Subtitle track",
+  "web_video_track_live": "Live captions (sampled from page)",
+  "web_video_no_tracks": "No subtitles captured yet",
+  "web_video_hide_native_subtitles": "Hide site subtitles",
+  "web_video_import_hint": "This is a web page (not a direct stream). It will open in the built-in web player.",
+  "web_video_platform_unsupported": "The built-in web player is only available on Windows for now."
 }
