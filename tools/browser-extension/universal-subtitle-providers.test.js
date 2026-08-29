@@ -11,6 +11,7 @@ const vm = require('node:vm');
 //   3) HTML5 video.textTracks 全量收割：原生字幕轨站点直接得到整集列表（含标签清洗与增量刷新）。
 
 const ADAPTERS = path.join(__dirname, 'subtitle-adapters.js');
+const PROVIDERS = path.join(__dirname, 'subtitle-providers.js');
 const CONTENT = process.env.FUSHI_CONTENT_UNDER_TEST ||
   path.join(__dirname, 'content.js');
 
@@ -115,6 +116,8 @@ function loadContent(opts) {
   // content.js 的 fushiApplyTheme 直接调它的 fushiResolvePopupBox。
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'popup-size.js'), 'utf8'), sandbox,
     { filename: 'popup-size.js' });
+  // manifest 顺序：subtitle-providers.js（store + provider）先于 content.js
+  vm.runInContext(fs.readFileSync(PROVIDERS, 'utf8'), ctx, { filename: 'subtitle-providers.js' });
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), ctx, { filename: 'content.js' });
   const sampler = intervals.find((i) => i.ms === 200);
   const harvester = intervals.find((i) => i.ms === 1200);

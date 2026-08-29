@@ -156,6 +156,8 @@ function loadWorld(prefs) {
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(DICT_MEDIA, 'utf8'), sandbox, { filename: 'vendor/dict-media.js' });
   vm.runInContext(fs.readFileSync(POPUP_SIZE, 'utf8'), sandbox, { filename: 'popup-size.js' });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-providers.js'), 'utf8'), sandbox,
+    { filename: 'subtitle-providers.js' }); // manifest 顺序：先于 content.js
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), sandbox, { filename: 'content.js' });
   vm.runInContext(fs.readFileSync(PANEL, 'utf8'), sandbox, { filename: 'subtitle-panel.js' });
 
