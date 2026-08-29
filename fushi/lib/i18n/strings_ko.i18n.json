@@ -3864,5 +3864,16 @@
   "manga_series_first_chapter_reached": "첫 번째 챕터입니다",
   "manga_series_open_series": "작품 페이지",
   "manga_series_read_progress": "$total페이지 중 $page페이지까지 읽음",
-  "manga_series_read_progress_partial": "$page페이지까지 읽음"
+  "manga_series_read_progress_partial": "$page페이지까지 읽음",
+  "gal_hook_click_lookup": "Tap a word to look it up",
+  "gal_hook_click_lookup_hint": "Off means clicks on the caption never trigger a lookup — useful with click-through on, when you would rather not hit a word by accident.",
+  "gal_hook_lookup_trigger": "Lookup trigger",
+  "gal_hook_lookup_trigger_hint": "Which mouse button looks up the word under the pointer. Independent of the switch above: you can turn tap-lookup off and still look up with a side button.",
+  "gal_hook_lookup_trigger_left": "Left click",
+  "gal_hook_lookup_trigger_middle": "Middle click",
+  "gal_hook_lookup_trigger_side": "Side button",
+  "gal_hook_toolbar_auto_hide": "Auto-hide the toolbar",
+  "gal_hook_toolbar_auto_hide_hint": "Hide the toolbar until the pointer reaches the caption box, LunaHook style. Hidden means really hidden — those pixels go back to the game.",
+  "gal_hook_passthrough_blocks_mouse": "Caption still catches clicks while clicking through",
+  "gal_hook_passthrough_blocks_mouse_hint": "On: text lines still take clicks so you can tap a word. Off: the whole overlay is transparent to the mouse — you can click whatever is underneath, but tapping words no longer works."
 }

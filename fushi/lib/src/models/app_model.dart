@@ -561,9 +561,9 @@ class AppModel with ChangeNotifier {
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
-      extractVideoCover:
-          ({required String videoPath, required String bookUid}) =>
-              extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+      extractVideoCover: (
+              {required String videoPath, required String bookUid}) =>
+          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
@@ -703,10 +703,10 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
-                  c.itemKey,
-                  scope: DeleteScope.keepLocalOnly,
-                  compactDatabase: false,
-                );
+              c.itemKey,
+              scope: DeleteScope.keepLocalOnly,
+              compactDatabase: false,
+            );
             deletedVideoBook = deletedVideoBook || deleted;
           case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
@@ -6337,7 +6337,8 @@ class AppModel with ChangeNotifier {
 
   /// 防截屏（桌面查词浮窗，Windows）。存储键沿用历史名 `clipboard_panel_block_capture`。
   bool get lookupBlockCapture => prefsRepo.lookupBlockCapture;
-  Future<void> setLookupBlockCapture(bool v) => prefsRepo.setLookupBlockCapture(v);
+  Future<void> setLookupBlockCapture(bool v) =>
+      prefsRepo.setLookupBlockCapture(v);
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
@@ -6630,7 +6631,8 @@ class AppModel with ChangeNotifier {
       audioSourcesProvider: () => enabledAudioSources,
       // 查词后自动朗读：与 app 内弹窗/app 外浮窗/剪贴板面板同一个全局偏好（读同一个
       // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
-      autoReadOnLookupProvider: () => ReaderFushiSource.instance.autoReadOnLookup,
+      autoReadOnLookupProvider: () =>
+          ReaderFushiSource.instance.autoReadOnLookup,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
@@ -6959,6 +6961,24 @@ class AppModel with ChangeNotifier {
   Future<void> setGalIngameLookupEnabled(bool value) =>
       prefsRepo.setGalIngameLookupEnabled(value);
 
+  // hook 台词浮窗的交互偏好四件套（仅 Windows 生效）。
+  bool get galHookClickLookup => prefsRepo.galHookClickLookup;
+  Future<void> setGalHookClickLookup(bool value) =>
+      prefsRepo.setGalHookClickLookup(value);
+
+  int get galHookLookupTrigger => prefsRepo.galHookLookupTrigger;
+  Future<void> setGalHookLookupTrigger(int value) =>
+      prefsRepo.setGalHookLookupTrigger(value);
+
+  bool get galHookToolbarAutoHide => prefsRepo.galHookToolbarAutoHide;
+  Future<void> setGalHookToolbarAutoHide(bool value) =>
+      prefsRepo.setGalHookToolbarAutoHide(value);
+
+  bool get galHookPassThroughBlocksMouse =>
+      prefsRepo.galHookPassThroughBlocksMouse;
+  Future<void> setGalHookPassThroughBlocksMouse(bool value) =>
+      prefsRepo.setGalHookPassThroughBlocksMouse(value);
+
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>
       prefsRepo.floatingLyricButtonBgOpacity;
@@ -7068,7 +7088,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setMangaOcrLensLanguage(value);
 
   bool get mangaTapToOcr => prefsRepo.mangaTapToOcr;
-  Future<void> setMangaTapToOcr(bool value) => prefsRepo.setMangaTapToOcr(value);
+  Future<void> setMangaTapToOcr(bool value) =>
+      prefsRepo.setMangaTapToOcr(value);
 
   bool get mangaTapToOcrNoticeShown => prefsRepo.mangaTapToOcrNoticeShown;
   Future<void> setMangaTapToOcrNoticeShown(bool value) =>

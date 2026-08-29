@@ -1145,6 +1145,14 @@ void FlutterWindow::RegisterGalHookTextChannel() {
               BoolFromValue(args, "clickLookupEnabled", true));
           gal_hook_text_window_->SetHoverAutoLookup(
               BoolFromValue(args, "hoverAutoLookup", false));
+          // 查词触发方式 / 工具条自动隐藏 / 穿透时是否拦截鼠标：三项都是**偏好**
+          // 而不是会话状态，随 show 下发一次，改设置时再走各自的 live setter。
+          gal_hook_text_window_->SetLookupTrigger(
+              IntFromValue(args, "lookupTrigger", 0));
+          gal_hook_text_window_->SetToolbarAutoHide(
+              BoolFromValue(args, "toolbarAutoHide", true));
+          gal_hook_text_window_->SetPassThroughBlocksMouse(
+              BoolFromValue(args, "passThroughBlocksMouse", true));
           // 置顶按会话复位（与 locked / passThrough / following 同规矩）：上一局
           // 关掉置顶后，这一局的浮窗不该藏在全屏游戏后面让用户以为它没出来。
           gal_hook_text_window_->SetTopmost(
@@ -1188,6 +1196,18 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           // 一局游戏（与字号 applyFontSizeFromPreferences 同款纪律）。
           gal_hook_text_window_->SetHoverAutoLookup(
               BoolFromValue(args, "enabled", false));
+          result->Success();
+        } else if (method == "setLookupTrigger") {
+          gal_hook_text_window_->SetLookupTrigger(
+              IntFromValue(args, "trigger", 0));
+          result->Success();
+        } else if (method == "setToolbarAutoHide") {
+          gal_hook_text_window_->SetToolbarAutoHide(
+              BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setPassThroughBlocksMouse") {
+          gal_hook_text_window_->SetPassThroughBlocksMouse(
+              BoolFromValue(args, "enabled", true));
           result->Success();
         } else if (method == "setLocked") {
           gal_hook_text_window_->SetLocked(

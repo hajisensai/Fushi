@@ -90,6 +90,20 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   //   ③ ruby-render 守卫：行距门控与默认行高恒等 1.0。
   // ②③ 那两条默认值断言是这批登记的前提：可配置化如果顺手改了默认观感，
   // 「没探针」就会变成「没人发现所有老用户的浮窗都变样了」。
+  // hook 台词浮窗的交互三件套（单击查词 / 工具条自动隐藏 / 穿透时是否拦截鼠标）。
+  // 写 prefsRepo（changed=true），生效点全在 runner 自有的 Win32 分层浮窗里：
+  // 前者是 native 的 click_lookup_enabled_ 门控，后两者一个决定工具条窗显不显示、
+  // 一个决定穿透态要不要铺行盒 catch fill——本进程内没有任何可探的渲染输入，故无
+  // 适用探针。由偏好行为用例 + runner 源码守卫咬住（含「设置项必须 live 下发」
+  // 这条：只落盘不推 channel = 开关本局不生效，要退出重进一局）。
+  //
+  // 「查词触发方式」是下拉不是开关，coverage 的 changed 判定够不到它，因此不在此表。
+  'game/Tap a word to look it up':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  'game/Auto-hide the toolbar':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
+  'game/Caption still catches clicks while clicking through':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
   'game/In-game dictionary lookup':
       'test/lookup/gal_ingame_lookup_contract_test.dart + '
           'native/galgame_hook/tests/lookup_ipc_contract_test.cpp + '
