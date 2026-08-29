@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "Os arquivos originais do livro e das legendas que você importou",
   "download_task_delete_files_failed": "Não foi possível excluir os dados baixados; o mecanismo de download não confirmou",
   "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso",
-  "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados."
+  "batch_hidden_by_filter_note": "Outros ${n} itens selecionados estão ocultos pelo filtro atual e não serão processados.",
+  "video_ajatt_settings_hint": "Arquivo gratuito de legendas em japonês (espelho do kitsunekko). Não precisa de conta; os arquivos são baixados do GitHub.",
+  "video_ajatt_enabled_hint": "Desligado significa que o arquivo AJATT é ignorado ao buscar legendas."
 }

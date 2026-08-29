@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "ملفات الكتاب والترجمة الأصلية التي استوردتها",
   "download_task_delete_files_failed": "تعذّر حذف البيانات المنزّلة؛ لم يؤكّد محرّك التنزيل ذلك",
   "delete_local_files_failed": "تعذّر حذف $n من الملفات المحلية؛ قد تكون قيد الاستخدام",
-  "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته."
+  "batch_hidden_by_filter_note": "هناك ${n} عنصر محدد مخفي بواسطة عامل التصفية الحالي ولن تتم معالجته.",
+  "video_ajatt_settings_hint": "أرشيف مجاني للترجمات اليابانية (مرآة kitsunekko). لا يتطلب حسابًا؛ تُنزَّل ملفات الترجمة من GitHub.",
+  "video_ajatt_enabled_hint": "عند الإيقاف يتم تخطي أرشيف AJATT عند البحث عن الترجمات."
 }

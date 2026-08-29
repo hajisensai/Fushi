@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "가져온 원본 책 및 자막 파일",
   "download_task_delete_files_failed": "다운로드된 데이터를 삭제하지 못했습니다. 다운로드 엔진이 확인하지 않았습니다",
   "delete_local_files_failed": "로컬 파일 $n 개를 삭제하지 못했습니다. 아직 사용 중일 수 있습니다",
-  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다."
+  "batch_hidden_by_filter_note": "선택한 항목 중 ${n}개는 현재 필터로 숨겨져 있어 처리되지 않습니다.",
+  "video_ajatt_settings_hint": "무료 일본어 자막 아카이브(kitsunekko 미러). 계정 불필요. 자막 파일은 GitHub에서 다운로드됩니다.",
+  "video_ajatt_enabled_hint": "끄면 자막 검색 시 AJATT 아카이브를 건너뜁니다."
 }

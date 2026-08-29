@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "Tệp sách và phụ đề gốc bạn đã nhập",
   "download_task_delete_files_failed": "Không thể xoá dữ liệu đã tải; công cụ tải xuống không xác nhận",
   "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng",
-  "batch_hidden_by_filter_note": "Còn ${n} mục đã chọn bị ẩn bởi bộ lọc hiện tại và sẽ không được xử lý."
+  "batch_hidden_by_filter_note": "Còn ${n} mục đã chọn bị ẩn bởi bộ lọc hiện tại và sẽ không được xử lý.",
+  "video_ajatt_settings_hint": "Kho phụ đề tiếng Nhật miễn phí (bản sao kitsunekko). Không cần tài khoản; tệp phụ đề tải từ GitHub.",
+  "video_ajatt_enabled_hint": "Tắt nghĩa là bỏ qua kho AJATT khi tìm phụ đề."
 }

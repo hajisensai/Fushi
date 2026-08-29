@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "The original book and subtitle files you imported",
   "download_task_delete_files_failed": "The downloaded data could not be deleted; the download backend did not confirm it",
   "delete_local_files_failed": "Could not delete $n local file(s); they may still be in use",
-  "batch_hidden_by_filter_note": "Another ${n} selected item(s) are hidden by the current filter and will not be affected."
+  "batch_hidden_by_filter_note": "Another ${n} selected item(s) are hidden by the current filter and will not be affected.",
+  "video_ajatt_settings_hint": "Free Japanese subtitle archive (kitsunekko mirror). No account needed; subtitle files download from GitHub.",
+  "video_ajatt_enabled_hint": "Off means the AJATT archive is skipped when searching subtitles."
 }

@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "Berkas buku dan takarir asli yang kamu impor",
   "download_task_delete_files_failed": "Data unduhan tidak dapat dihapus; mesin unduhan tidak mengonfirmasinya",
   "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan",
-  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses."
+  "batch_hidden_by_filter_note": "${n} item terpilih lainnya disembunyikan oleh filter saat ini dan tidak akan diproses.",
+  "video_ajatt_settings_hint": "Arsip subtitle bahasa Jepang gratis (cermin kitsunekko). Tidak perlu akun; berkas subtitle diunduh dari GitHub.",
+  "video_ajatt_enabled_hint": "Nonaktif berarti arsip AJATT dilewati saat mencari subtitle."
 }

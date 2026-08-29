@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "Les fichiers d'origine du livre et des sous-titres que vous avez importés",
   "download_task_delete_files_failed": "Impossible de supprimer les données téléchargées ; le moteur de téléchargement ne l'a pas confirmé",
   "delete_local_files_failed": "Impossible de supprimer $n fichier(s) local(aux) ; ils sont peut-être encore utilisés",
-  "batch_hidden_by_filter_note": "${n} autres éléments sélectionnés sont masqués par le filtre actuel et ne seront pas traités."
+  "batch_hidden_by_filter_note": "${n} autres éléments sélectionnés sont masqués par le filtre actuel et ne seront pas traités.",
+  "video_ajatt_settings_hint": "Archive gratuite de sous-titres japonais (miroir kitsunekko). Aucun compte requis ; les fichiers sont téléchargés depuis GitHub.",
+  "video_ajatt_enabled_hint": "Désactivé : l'archive AJATT est ignorée lors de la recherche de sous-titres."
 }

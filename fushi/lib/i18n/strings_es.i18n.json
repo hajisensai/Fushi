@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "Los archivos originales del libro y los subtítulos que importaste",
   "download_task_delete_files_failed": "No se pudieron eliminar los datos descargados; el motor de descargas no lo confirmó",
   "delete_local_files_failed": "No se pudieron eliminar $n archivo(s) local(es); puede que sigan en uso",
-  "batch_hidden_by_filter_note": "Otros ${n} elementos seleccionados están ocultos por el filtro actual y no se procesarán."
+  "batch_hidden_by_filter_note": "Otros ${n} elementos seleccionados están ocultos por el filtro actual y no se procesarán.",
+  "video_ajatt_settings_hint": "Archivo gratuito de subtítulos en japonés (réplica de kitsunekko). No requiere cuenta; los archivos se descargan desde GitHub.",
+  "video_ajatt_enabled_hint": "Desactivado significa que el archivo AJATT se omite al buscar subtítulos."
 }

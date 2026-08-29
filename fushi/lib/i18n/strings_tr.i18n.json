@@ -3833,5 +3833,7 @@
   "delete_disclosure_book_source_kept": "İçe aktardığın özgün kitap ve altyazı dosyaları",
   "download_task_delete_files_failed": "İndirilen veriler silinemedi; indirme motoru bunu onaylamadı",
   "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir",
-  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek."
+  "batch_hidden_by_filter_note": "Seçili ${n} öğe daha geçerli filtre tarafından gizlendi ve işlenmeyecek.",
+  "video_ajatt_settings_hint": "Ücretsiz Japonca altyazı arşivi (kitsunekko yansıması). Hesap gerekmez; altyazı dosyaları GitHub'dan indirilir.",
+  "video_ajatt_enabled_hint": "Kapalıysa altyazı aranırken AJATT arşivi atlanır."
 }
