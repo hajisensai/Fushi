@@ -963,13 +963,19 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     _forceRefreshRemoteBooks();
   }
 
-  /// 远端删除的统一二次确认框（文案明说「从远端删除、本地保留、不可撤销」）。
+  /// 远端删除的统一二次确认框。
+  ///
+  /// 文案**不能**用 `sync_compare_delete_confirm`（「本地数据保留」）：这里的卡片
+  /// 按构造就是本机没有的条目 —— `dedupeRemoteBooks` 把标题键已存在于本地的远端
+  /// 条目全部滤掉了。所以「本地数据保留」保留的是空集，读起来却像「删了本机还留
+  /// 着一份」，而实际确认之后对端的 DB 行、阅读进度、书签、有声书和整个 extractDir
+  /// 页图目录全没了，用户手上一份都不剩。用说实话的对端专用文案。
   Future<bool?> _confirmRemoteDelete(String name) {
     return showAppDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(name),
-        content: Text(t.sync_compare_delete_confirm(name: name)),
+        content: Text(t.sync_peer_book_delete_confirm(name: name)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
