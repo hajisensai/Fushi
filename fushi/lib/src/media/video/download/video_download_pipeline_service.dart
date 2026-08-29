@@ -1457,10 +1457,26 @@ class VideoDownloadPipelineService {
     unawaited(_drain().whenComplete(() => _running = false));
   }
 
+  /// 单轮 `_drain` 收尾的等待上界。`_disposed` 只让 `_drain` 的循环条件提前结束，
+  /// **当前那一个 `await _process(job)` 仍要跑完**——它做网络 + 文件 + Drift 工作，
+  /// 时长不可控。此前这里是裸 `while (_running)` 无界忙等，而 `dispose()` 挂在
+  /// `AppModel.closeDatabase()` → 退出路径上，等于让一个在飞的下载决定 app 什么时候
+  /// 能关掉（BUG-192 遗留的最后一个无界点）。放行不丢数据：job 状态机是租约式的，
+  /// 未完成的 claim 到期后由下次启动重新领取。
+  static const Duration stopDrainTimeout = Duration(milliseconds: 1500);
+
   Future<void> stop() async {
     _timer?.cancel();
     _timer = null;
+    final Stopwatch waited = Stopwatch()..start();
     while (_running) {
+      if (waited.elapsed >= stopDrainTimeout) {
+        debugPrint(
+          '[Fushi] video download pipeline stop timed out after '
+          '${waited.elapsedMilliseconds}ms; releasing',
+        );
+        return;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   }
