@@ -435,4 +435,47 @@ void main() {
     expect(cmake.contains('"hook_toolbar_window.cpp"'), isTrue,
         reason: 'A file missing from CMakeLists silently never ships.');
   });
+
+  group('BUG-1926 · 移动正文窗只有一条原语，顶栏不可能掉队', () {
+    // 用户报的是「按住浮窗的文字拖，窗跟着动了，顶栏没跟上」。
+    //
+    // 穿透态下顶栏是**另一个顶层窗口**（正文窗必须整窗 click-through，单窗做不到
+    // 「正文穿透、顶栏可点」），它的位置由正文窗单向下推。而唯一的下推入口
+    // SyncPassThroughToolbar 从前只挂在 Render() 末尾 —— 拖窗分支自己裸调
+    // SetWindowPos 之后直接 return 0，而 layered 窗的 SWP_NOSIZE 移动既不产生
+    // WM_PAINT 也不产生 WM_SIZE，HandleMessage 里也没有 WM_MOVE 分支，于是整个
+    // 拖动过程一次 Render 都不发生，顶栏原地不动，直到下一句台词才瞬移过去。
+    //
+    // 必须剥注释：上面这段说明和 C++ 里的修复注释都写了 SetWindowPos / MoveBodyTo，
+    // 裸 indexOf 会先命中注释里那一份，守卫恒绿。
+    late String masked;
+    setUpAll(() => masked = maskComments(body));
+
+    test('MoveBodyTo 是那条原语：钳制 + 顶栏同步都在里面', () {
+      final String moveBody =
+          functionBody(masked, 'void FloatingLyricWindow::MoveBodyTo(int x, int y)');
+      expect(moveBody.contains('SyncPassThroughToolbar();'), isTrue,
+          reason: '移动正文窗后不同步顶栏，两个窗就会漂开。');
+      expect(moveBody.contains('ClampOriginToWorkArea('), isTrue,
+          reason: 'TODO-832 的工作区钳制也归这条原语，不该再被抄一份出去。');
+    });
+
+    test('拖正文的分支走 MoveBodyTo，不再自己裸 SetWindowPos', () {
+      final String dragBranch = functionBody(masked, 'if (dragging_)');
+      expect(dragBranch.contains('MoveBodyTo('), isTrue,
+          reason: '拖窗必须复用同一条原语，否则收尾的顶栏同步又会被抄漏。');
+      expect(dragBranch.contains('SetWindowPos('), isFalse,
+          reason: '裸 SetWindowPos 正是让顶栏掉队的那行 —— 它绕过了同步漏斗。');
+    });
+
+    test('WM_EXITSIZEMOVE 的边界钳制同样要把顶栏带上', () {
+      expect(
+          functionBody(masked,
+                  'void FloatingLyricWindow::ClampCurrentPositionToWindowMonitor()')
+              .contains('SyncPassThroughToolbar();'),
+          isTrue,
+          reason: '「凡是挪了正文窗的地方都同步顶栏」必须是个不变式，'
+              '而不是逐个调用点各记各的。');
+    });
+  });
 }

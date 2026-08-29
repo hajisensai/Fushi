@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-scan guards for TODO-832 (悬浮字幕/词典浮层拖动越界 clamp). The native
 /// Win32 (cpp) and Android (java) drag paths cannot run on the Dart host, so
 /// these guards pin the load-bearing wiring that keeps a floating overlay from
@@ -19,8 +21,29 @@ void main() {
   String readJava(String relative) =>
       File('$androidRoot/$relative').readAsStringSync();
 
+  /// 取 `signature { ... }` 的函数体（花括号配对）。语料已掩注释与串内容，
+  /// 注释里的花括号与字符串里的花括号都不会带偏配对。
+  String functionBody(String source, String signature) {
+    final int start = source.indexOf(signature);
+    expect(start, isNonNegative, reason: 'missing $signature');
+    final int open = source.indexOf('{', start);
+    expect(open, isNonNegative, reason: 'no opening brace after $signature');
+    int depth = 0;
+    for (int i = open; i < source.length; i++) {
+      if (source[i] == '{') depth++;
+      if (source[i] == '}') {
+        depth--;
+        if (depth == 0) return source.substring(open, i + 1);
+      }
+    }
+    fail('unbalanced braces after $signature');
+  }
+
   setUpAll(() {
-    cpp = File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
+    // 掩注释：BUG-1926 的修复注释在拖动分支里就写着 SetWindowPos / MoveBodyTo，
+    // 不掩的话下面的要求型断言可以被注释单独满足。等长掩码，下标语义不变。
+    cpp = maskCommentsAndStrings(
+        File('windows/runner/floating_lyric_window.cpp').readAsStringSync());
     header = File('windows/runner/floating_lyric_window.h').readAsStringSync();
   });
 
@@ -34,19 +57,25 @@ void main() {
     });
 
     test('the drag (WM_MOUSEMOVE) path clamps against the cursor monitor', () {
+      // BUG-1926 起，「移动正文窗」收成了唯一原语 MoveBodyTo（TODO-832 的钳制 +
+      // BUG-951 的穿透态顶栏同步都在里面）。此前拖动分支把钳制逻辑抄了第二份，
+      // 而那一份漏了收尾的顶栏同步 —— 穿透态顶栏整段拖动都掉队。所以这条守卫跟着
+      // 原语走：拖动分支必须委托给它，钳制语义在原语里钉。不变式本身没变。
       final int move = cpp.indexOf('case WM_MOUSEMOVE:');
       expect(move, isNonNegative);
       final int leave = cpp.indexOf('case WM_MOUSELEAVE:', move);
       expect(leave, greaterThan(move));
-      final String body = cpp.substring(move, leave);
+      expect(cpp.substring(move, leave).contains('MoveBodyTo('), isTrue,
+          reason: '拖动必须走 MoveBodyTo 这条唯一原语，不能再自己抄一份钳制。');
 
+      final String primitive = functionBody(
+          cpp, 'void FloatingLyricWindow::MoveBodyTo(int x, int y)');
       // Drag must clamp before SetWindowPos, against the monitor under the
       // cursor (so it slides across displays but can't be lost).
-      expect(body.contains('MonitorFromPoint('), isTrue,
+      expect(primitive.contains('MonitorFromPoint('), isTrue,
           reason: 'drag clamp must use the cursor monitor.');
-      expect(body.contains('ClampOriginToWorkArea('), isTrue);
-      final int clampAt = body.indexOf('ClampOriginToWorkArea(');
-      final int setPosAt = body.indexOf('SetWindowPos(');
+      final int clampAt = primitive.indexOf('ClampOriginToWorkArea(');
+      final int setPosAt = primitive.indexOf('SetWindowPos(');
       expect(clampAt, isNonNegative);
       expect(setPosAt, greaterThan(clampAt),
           reason: 'clamp must run before the move is committed.');
