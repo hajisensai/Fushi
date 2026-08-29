@@ -267,7 +267,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
     _videoFullscreenTransitioning = true;
     try {
       await navigator.maybePop();
-      // BUG-1927: pop 后 controls element 可能仍 mounted、却已 deactivated；这里只能
+      // BUG-1945: pop 后 controls element 可能仍 mounted、却已 deactivated；这里只能
       // 使用 pop 前捕获的稳定引用，不能再从旧 context 查祖先。
       if (parent.mounted) {
         parent.refreshView();
