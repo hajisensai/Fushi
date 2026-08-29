@@ -2,15 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 只保留代码行：整行 `//` / `///` 注释里也会写出下面这些判据串（本次修复的注释就
-/// 大段引用了「旧实现在 createBackup 之后的 `if (!mounted) return`」），不剥掉的话
-/// indexOf 会先命中注释里那一份，守卫恒绿。
-String _codeOnly(String src) {
-  return src
-      .split('\n')
-      .map((String line) => line.trimLeft().startsWith('//') ? '' : line)
-      .join('\n');
-}
+import '../helpers/source_guard.dart';
 
 /// 从 [declStart] 起那个声明的花括号块（含两端）。注释已剥，字符串里的花括号只有
 /// 配平的 `${...}` 插值，直接计数即可。
@@ -35,7 +27,11 @@ String _bracedBody(String src, int declStart, {String openAfter = '{'}) {
 }
 
 void main() {
-  final String src = _codeOnly(
+  // 判据前必须剥注释：本次修复的注释大段引用了「旧实现在 createBackup 之后的
+  // `if (!mounted) return`」，不剥的话 indexOf 会先命中注释里那一份，守卫恒绿。
+  // 用共享原语（等长掩码，下标可直接回原串切片），并连字符串内容一起掩掉 ——
+  // 下面要做花括号配对，三引号/普通串里的花括号不能参与配对。
+  final String src = maskCommentsAndStrings(
     File('lib/src/sync/sync_settings_schema/backup.part.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n'),

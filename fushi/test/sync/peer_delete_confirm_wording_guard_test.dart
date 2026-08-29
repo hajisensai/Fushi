@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1928 · 远端卡的删除确认不能谎称「本地数据保留」。
 ///
 /// `sync_compare_delete_confirm`（"…Local data is kept…"）服务了两个真值相反的语境：
@@ -16,14 +18,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 修法是给远端卡另起两个说实话的 key（书和视频删的东西还不一样：书连页图目录一起删，
 /// 视频保留对端自己导入的原始文件），而**不是**改老 key 的值——那会把比较对话框里的
 /// 真话一起污染掉。这条守卫钉住这个分工。
-String _codeOnly(String src) => src
-    .split('\n')
-    .map((String line) => line.trimLeft().startsWith('//') ? '' : line)
-    .join('\n');
-
 void main() {
-  String read(String path) =>
-      _codeOnly(File(path).readAsStringSync().replaceAll('\r\n', '\n'));
+  // 必须剥注释：修复注释里就写着「文案**不能**用 sync_compare_delete_confirm」，
+  // 不剥的话下面那条 isNot(contains(...)) 会被注释命中而恒红。走共享原语。
+  String read(String path) => maskComments(
+      File(path).readAsStringSync().replaceAll('\r\n', '\n'));
 
   Map<String, dynamic> locale(String suffix) => jsonDecode(
         File('lib/i18n/strings$suffix.i18n.json').readAsStringSync(),
