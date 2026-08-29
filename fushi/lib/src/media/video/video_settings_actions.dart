@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_control_layout_editor.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -263,6 +264,18 @@ Future<void> setVideoFitModeDual(
     await host.onVideoFitModeChanged(mode);
   } else {
     await context.appModel.setVideoFitMode(mode);
+  }
+}
+
+Future<void> setVideoHdrOutputModeDual(
+  SettingsContext context,
+  VideoHdrOutputMode mode,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onHdrOutputModeChanged != null) {
+    await host!.onHdrOutputModeChanged!(mode);
+  } else {
+    await context.appModel.setVideoHdrOutputMode(mode);
   }
 }
 

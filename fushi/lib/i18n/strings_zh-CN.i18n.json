@@ -3867,5 +3867,10 @@
   "manga_series_read_progress_partial": "读到第 $page 页",
   "mihon_store_extension_count": "$count 个扩展",
   "mihon_extension_sources_more": "展开全部 $count 个源",
-  "mihon_extension_sources_less": "收起源列表"
+  "mihon_extension_sources_less": "收起源列表",
+  "video_setting_hdr_output": "HDR / 10-bit 输出",
+  "video_setting_hdr_output_hint": "仅 Windows。自动：显示器开着 HDR 且片源是 HDR 时经原生视频窗口直通；始终：所有视频都走原生窗口（10-bit 输出）；关闭：沿用常规渲染。",
+  "video_setting_hdr_output_auto": "自动",
+  "video_setting_hdr_output_always": "始终",
+  "video_setting_hdr_output_off": "关闭"
 }

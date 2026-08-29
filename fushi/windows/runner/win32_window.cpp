@@ -249,7 +249,42 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   power_notify_ = RegisterPowerSettingNotification(
       window_handle_, &GUID_MONITOR_POWER_ON, DEVICE_NOTIFY_WINDOW_HANDLE);
 
+  ApplyTestTopmostPlacement(window);
+
   return OnCreate();
+}
+
+// FUSHI_TEST_TOPMOST="x,y,w,h" (test mode only, alongside FUSHI_TEST_ONSCREEN):
+// park the window there and make it TOPMOST so pixel-level evidence capture
+// (screen grab / desktop duplication) is never covered by the user's windows.
+// A background process' own HWND_TOPMOST is silently dropped by the shell
+// (WS_EX_TOPMOST never set — measured, HDR Phase 0), so borrow the foreground
+// thread's input state for the single SetWindowPos; no focus / foreground
+// change is made, the window stays WS_EX_NOACTIVATE.
+void Win32Window::ApplyTestTopmostPlacement(HWND window) {
+  if (!IsTestHiddenMode()) {
+    return;
+  }
+  wchar_t spec[64] = {0};
+  if (GetEnvironmentVariableW(L"FUSHI_TEST_TOPMOST", spec, 64) == 0) {
+    return;
+  }
+  int x = 0, y = 0, w = 0, h = 0;
+  if (swscanf_s(spec, L"%d,%d,%d,%d", &x, &y, &w, &h) != 4 || w <= 0 ||
+      h <= 0) {
+    return;
+  }
+  const HWND foreground = GetForegroundWindow();
+  const DWORD fg_thread =
+      foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
+  const DWORD self_thread = GetCurrentThreadId();
+  const bool attached = fg_thread != 0 && fg_thread != self_thread &&
+                        AttachThreadInput(fg_thread, self_thread, TRUE);
+  SetWindowPos(window, HWND_TOPMOST, x, y, w, h,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  if (attached) {
+    AttachThreadInput(fg_thread, self_thread, FALSE);
+  }
 }
 
 // static

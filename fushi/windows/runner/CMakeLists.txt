@@ -30,6 +30,7 @@ add_executable(${BINARY_NAME} WIN32
   "foreground_selection.cpp"
   "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
+  "hdr_video_host_window.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
   "ime_space_dispatch.cpp"

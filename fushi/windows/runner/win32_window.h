@@ -54,6 +54,9 @@ class Win32Window {
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
+  // Test mode only (FUSHI_TEST_TOPMOST): see win32_window.cpp.
+  void ApplyTestTopmostPlacement(HWND window);
+
   // BUG-1916: sets the colour this window paints its own surface with. Before
   // the first Flutter frame that is what the user sees (the TODO-959 splash
   // fill); afterwards the surface sits underneath the Flutter view and only

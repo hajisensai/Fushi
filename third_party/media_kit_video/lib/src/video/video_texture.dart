@@ -238,6 +238,11 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(Video oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // HIBIKI FORK: follow the `hidden` flag of whichever controller we bind.
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.hidden.removeListener(_onHiddenChanged);
+      widget.controller.hidden.addListener(_onHiddenChanged);
+    }
 
     final currentParams = videoViewParametersNotifier.value;
 
@@ -303,6 +308,8 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // HIBIKI FORK: HDR passthrough hole (see `VideoController.hidden`).
+    widget.controller.hidden.addListener(_onHiddenChanged);
     // --------------------------------------------------
     // Do not show the video frame until width & height are available.
     // Since [ValueNotifier<Rect?>] inside [VideoController] only gets updated by the render loop (i.e. it will not fire when video's width & height are not available etc.), it's important to handle this separately here.
@@ -354,6 +361,7 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.controller.hidden.removeListener(_onHiddenChanged);
     _wakelock.disable();
     for (final subscription in _subscriptions) {
       subscription.cancel();
@@ -378,11 +386,16 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
       child: ValueListenableBuilder<VideoViewParameters>(
         valueListenable: videoViewParametersNotifier,
         builder: (context, videoViewParameters, _) {
+          // HIBIKI FORK: `controller.hidden` (Windows HDR passthrough) turns the
+          // picture area into a transparent hole — no fill, no Texture — while
+          // the subtitle view / controls below keep rendering on top of it.
+          // Rebuilt through _onHiddenChanged (listener added in initState).
+          final bool hidden = widget.controller.hidden.value;
           return Container(
             clipBehavior: Clip.none,
             width: videoViewParameters.width,
             height: videoViewParameters.height,
-            color: videoViewParameters.fill,
+            color: hidden ? const Color(0x00000000) : videoViewParameters.fill,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -402,7 +415,8 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
                                   builder: (context, rect, _) {
                                     if (id != null &&
                                         rect != null &&
-                                        _visible) {
+                                        _visible &&
+                                        !hidden) {
                                       return SizedBox(
                                         // Apply aspect ratio if provided.
                                         width:
@@ -468,6 +482,11 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
         },
       ),
     );
+  }
+
+  // HIBIKI FORK: see `VideoController.hidden`.
+  void _onHiddenChanged() {
+    if (mounted) setState(() {});
   }
 }
 

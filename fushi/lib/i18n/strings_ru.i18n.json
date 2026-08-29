@@ -3867,5 +3867,10 @@
   "manga_series_read_progress_partial": "Прочитано до страницы $page",
   "mihon_store_extension_count": "$count extensions",
   "mihon_extension_sources_more": "Show all $count sources",
-  "mihon_extension_sources_less": "Show fewer sources"
+  "mihon_extension_sources_less": "Show fewer sources",
+  "video_setting_hdr_output": "HDR / 10-bit output",
+  "video_setting_hdr_output_hint": "Windows only. Auto hands HDR sources straight to an HDR display through a native video window; Always uses that window for every video (10-bit output); Off keeps the standard renderer.",
+  "video_setting_hdr_output_auto": "Auto",
+  "video_setting_hdr_output_always": "Always",
+  "video_setting_hdr_output_off": "Off"
 }

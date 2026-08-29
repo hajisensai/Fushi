@@ -2,7 +2,7 @@
 
 - 日期：2026-08-30
 - 基线：`origin/develop@7d76382446`
-- 状态：**Phase 0 探针已跑完（2026-08-30，方案 A 成立，见 §3.1）→ 等用户拍板进 Phase 1**
+- 状态：**Phase 1 已实现并真机验证（2026-08-30，用户拍板「开了 HDR，实现 10-bit 和 HDR」）**；证据 `.codex-test/hdr-passthrough/RESULTS.md` Phase 1 节。实现与 §4 的差异：不重建 Player，用 mpv 运行时切 `vo`（纹理路径常驻）；新增进程级 `hdrHostActiveGlobal` 让 Windows 标题栏外壳的内容区底色让路；设置三态 `auto / always / off`（always = SDR 片也走宿主窗 10-bit）。
 - 前置：PR #1066（HDR 色调映射旋钮，OPEN）只做了 HDR→SDR 映射的用户控制，明确写明「直通没做」。本计划就是那条没做的直通。
 
 ---

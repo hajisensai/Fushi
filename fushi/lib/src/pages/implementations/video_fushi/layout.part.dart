@@ -50,6 +50,9 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// also stay in the main shell: they sit between `build` and [_buildVideoBody] and
 /// are not part of this contiguous render-tree run (cutting them would require
 /// splitting a non-contiguous subset).
+/// 无播放器时 [ValueListenableBuilder] 的常量占位（HDR 宿主窗恒未激活）。
+final ValueNotifier<bool> _kHdrHostInactive = ValueNotifier<bool>(false);
+
 extension _VideoLayout on _VideoFushiPageState {
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
   /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
@@ -80,7 +83,11 @@ extension _VideoLayout on _VideoFushiPageState {
       // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
       child: _videoWithSubtitlePanel(
         controller,
-        Video(
+        // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
+        // 进入直通那一刻就有正确矩形可用）。
+        HdrHostRectReporter(
+          onRect: controller.reportHdrHostRect,
+          child: Video(
           controller: videoController,
           // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
@@ -127,6 +134,7 @@ extension _VideoLayout on _VideoFushiPageState {
           // 桌面转调 media_kit 默认回调，保留「全屏 = OS 窗口真全屏」（不碰设备方向）。
           onEnterFullscreen: _enterVideoNativeFullscreen,
           onExitFullscreen: _exitVideoNativeFullscreen,
+        ),
         ),
       ),
     );
