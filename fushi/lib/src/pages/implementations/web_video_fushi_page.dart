@@ -24,7 +24,21 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/mining/galgame_audio_encode.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
+import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
+import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+    show MiningMediaCompression;
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -68,8 +82,12 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     required this.bookUid,
     required this.repo,
     this.softwareDrm = true,
+    this.autoRunMineQueue = false,
     super.key,
   });
+
+  /// 打开后画面一就绪就自动跑本书的制卡队列（4K 窗口宿主档「切到内置档制卡」的交接）。
+  final bool autoRunMineQueue;
 
   /// 书架流媒体书 uid（`video/stream/…`，与 mpv 视频页共用同一条 [VideoBooks] 行）。
   final String bookUid;
@@ -116,8 +134,13 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   static Widget neutralized({
     required String bookUid,
     required VideoBookRepository repo,
+    bool autoRunMineQueue = false,
   }) => FushiAppUiScaleNeutralizer(
-    child: WebVideoFushiPage(bookUid: bookUid, repo: repo),
+    child: WebVideoFushiPage(
+      bookUid: bookUid,
+      repo: repo,
+      autoRunMineQueue: autoRunMineQueue,
+    ),
   );
 
   /// 集成测试钩子（debug/profile only，assert 注册；与 `HomePage.debugSelectTab` 同范式）：
@@ -137,8 +160,51 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   @visibleForTesting
   static Future<Uint8List?> Function()? debugScreenshot;
 
+  /// 制卡队列真机钩子：把当前 cue（无则位置附近最近一条）按弹窗制卡同一路径入队，
+  /// 回队列行 id；`debugRunMineQueue` 跑完整个队列（重放录音/截帧 → 引擎）后返回
+  /// 一次重放抓到的媒体大小与 warning（引擎落卡结果看队列行 status/error）。
+  @visibleForTesting
+  static Future<int?> Function(Map<String, String> fields)?
+  debugEnqueueCurrentCue;
+  @visibleForTesting
+  static Future<List<WebMineReplayCapture>> Function()? debugRunMineQueue;
+
   @override
   ConsumerState<WebVideoFushiPage> createState() => _WebVideoFushiPageState();
+}
+
+/// 队列重放的宿主适配：位置/播放态取页面状态轮询，seek/播/停走页面 JS，截图走 CDP。
+class _WebMineHost implements WebMineReplayHost {
+  _WebMineHost(this._page);
+
+  final _WebVideoFushiPageState _page;
+
+  @override
+  int? get positionMs => _page._state?.positionMs;
+
+  @override
+  bool get isPlaying => _page._state?.isPlaying ?? false;
+
+  @override
+  Future<void> seek(int ms) => _page._seekMs(ms);
+
+  @override
+  Future<void> play() => _page._play();
+
+  @override
+  Future<void> pause() => _page._pause();
+
+  @override
+  Future<Uint8List?> screenshot() async {
+    try {
+      return await _page._web?.takeScreenshot().timeout(
+        const Duration(seconds: 8),
+      );
+    } catch (e) {
+      ErrorLogService.instance.log('web_video', 'screenshot: $e');
+      return null;
+    }
+  }
 }
 
 /// [WebVideoFushiPage.debugSnapshot] 的只读快照。
@@ -219,6 +285,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 本视频已收藏句缓存（`text|startMs`），列表面板星标同步读。
   final Set<String> _favoritedKeys = <String>{};
 
+  /// 自动制卡队列（schema v89 `web_mine_queue`）：观看时入队，本页可捕获档逐句重放落卡。
+  late final WebMineQueueStore _mineQueue = WebMineQueueStore(
+    _appModel.database,
+  );
+  int _minePending = 0;
+  bool _mineRunning = false;
+  bool _mineStopRequested = false;
+  ({int done, int total})? _mineProgress;
+  bool _autoRunTriggered = false;
+
+  /// 真机钩子收集：非 null 时每句重放抓到的媒体都记一份（只在 debugRunMineQueue 内）。
+  List<WebMineReplayCapture>? _debugCaptures;
+
   @override
   AppModel get mixinAppModel => _appModel;
 
@@ -255,16 +334,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _controller.addListener(_onControllerChanged);
     assert(() {
       WebVideoFushiPage.debugSnapshot = () => (
-            hasVideo: _state?.hasVideo ?? false,
-            positionMs: _state?.positionMs,
-            playing: _state?.isPlaying ?? false,
-            trackCount: _tracks.length,
-            activeTrackKey: _activeTrackKey,
-            cueCount: _controller.cues.length,
-            currentCueIndex: _controller.currentCueIndex,
-            videoKey: _videoKey,
-            listVisible: _listVisible,
-          );
+        hasVideo: _state?.hasVideo ?? false,
+        positionMs: _state?.positionMs,
+        playing: _state?.isPlaying ?? false,
+        trackCount: _tracks.length,
+        activeTrackKey: _activeTrackKey,
+        cueCount: _controller.cues.length,
+        currentCueIndex: _controller.currentCueIndex,
+        videoKey: _videoKey,
+        listVisible: _listVisible,
+      );
       WebVideoFushiPage.debugToggleList = _toggleList;
       WebVideoFushiPage.debugSeek = _seekMs;
       WebVideoFushiPage.debugEvalJs = (String js) async {
@@ -272,6 +351,26 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         return r?.toString();
       };
       WebVideoFushiPage.debugScreenshot = () async => _web?.takeScreenshot();
+      WebVideoFushiPage
+          .debugEnqueueCurrentCue = (Map<String, String> fields) async {
+        final List<AudioCue> cues = _controller.cues;
+        final int pos = _state?.positionMs ?? 0;
+        final AudioCue? cue =
+            _controller.currentCue ??
+            (cues.isEmpty ? null : cues[nearestCueIndexAtOrBefore(cues, pos)]);
+        if (cue == null) return null;
+        _lastLookupCue = cue;
+        await onMineEntry(fields);
+        final List<WebMineQueueRow> rows = await _mineQueue.pending(
+          widget.bookUid,
+        );
+        return rows.isEmpty ? null : rows.last.id;
+      };
+      WebVideoFushiPage.debugRunMineQueue = () async {
+        _debugCaptures = <WebMineReplayCapture>[];
+        await _runMineQueue();
+        return _debugCaptures ?? const <WebMineReplayCapture>[];
+      };
       return true;
     }());
     unawaited(_init());
@@ -286,8 +385,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       WebVideoFushiPage.debugSeek = null;
       WebVideoFushiPage.debugEvalJs = null;
       WebVideoFushiPage.debugScreenshot = null;
+      WebVideoFushiPage.debugEnqueueCurrentCue = null;
+      WebVideoFushiPage.debugRunMineQueue = null;
       return true;
     }());
+    _mineStopRequested = true;
     unawaited(_watchTracker?.stop());
     unawaited(_flushPosition());
     final OverlayEntry? entry = _popupOverlayEntry;
@@ -336,6 +438,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _env = await WebVideoFushiPage.capturableEnvironment();
     if (!mounted) return;
     unawaited(_refreshFavoriteCache());
+    unawaited(_refreshMinePending());
     setState(() {
       _row = row;
       _userScripts = UnmodifiableListView<UserScript>(<UserScript>[
@@ -439,13 +542,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         playing: state.isPlaying,
         durationMs: state.durationMs,
       );
-      _maybePersistPosition(pos);
-      _syncWatchTracker(state.isPlaying);
+      // 队列重放期间的 seek/播放是机器驱动，不算观看进度、不计观看时长。
+      if (!_mineRunning) {
+        _maybePersistPosition(pos);
+        _syncWatchTracker(state.isPlaying);
+      }
     }
     if (fullscreenChanged) {
       _fullscreen = state.fullscreen;
       if (mounted) setState(() {});
     }
+    _maybeAutoRunMineQueue();
   }
 
   void _onKeyToken(List<dynamic> args) {
@@ -491,6 +598,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _js('window.__fushiWebVideo.setRate($rate)');
   Future<void> _setNativeSubtitlesHidden(bool hidden) =>
       _js('window.__fushiWebVideo.setNativeSubtitlesHidden($hidden)');
+  Future<void> _setPlayerChromeHidden(bool hidden) =>
+      _js('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');
 
   Future<void> _seekRelative(int deltaMs) {
     final int pos = _state?.positionMs ?? 0;
@@ -595,6 +704,216 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     } else {
       unawaited(tracker.stop());
     }
+  }
+
+  // ── 自动制卡队列（计划 P3）────────────────────────────────────────────────
+
+  /// 观看时点「制卡」**只入队**：观看档可能是硬件 DRM 的 4K 窗口宿主（画面不可捕获、无本地
+  /// 媒体源），录不了句子音频/截不了帧。之后在本页（可捕获的 1080p 内置档）按队列逐句重放
+  /// 录音 + 截帧再落卡。行里冻结点击那一刻的 Anki 字段（词典释义等）与 cue 时间窗。
+  /// 无锚点 cue（还没查过词 / 无字幕轨）时退回 mixin 的纯字段制卡，行为与改动前一致。
+  @override
+  Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
+    final AudioCue? cue = _lastLookupCue ?? _controller.currentCue;
+    final VideoBookRow? row = _row;
+    if (cue == null || row == null) return super.onMineEntry(fields);
+    final String fieldSentence = (fields['sentence'] ?? '').trim();
+    await _mineQueue.enqueue(
+      bookUid: widget.bookUid,
+      videoKey: _videoKey,
+      href: _state?.href.isNotEmpty == true ? _state!.href : row.videoPath,
+      cueStartMs: cue.startMs,
+      cueEndMs: cue.endMs,
+      sentence: fieldSentence.isEmpty ? cue.text.trim() : fieldSentence,
+      cueSentence: cue.text,
+      fields: fields,
+    );
+    await _refreshMinePending();
+    FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
+    // 卡还没真落地：不把弹窗按钮画成 ✓（弹窗侧「未知结局不重画」契约，TODO-448）。
+    return const MinePopupResult();
+  }
+
+  Future<void> _refreshMinePending() async {
+    final int n = await _mineQueue.pendingCount(widget.bookUid);
+    if (!mounted) return;
+    setState(() => _minePending = n);
+    _maybeAutoRunMineQueue();
+  }
+
+  void _maybeAutoRunMineQueue() {
+    if (!widget.autoRunMineQueue || _autoRunTriggered || _mineRunning) return;
+    if (_minePending == 0 || !(_state?.hasVideo ?? false)) return;
+    _autoRunTriggered = true;
+    unawaited(_runMineQueue());
+  }
+
+  /// 队列行属于别的视频（换集后入队的）：先导航过去等画面就绪。
+  Future<bool> _navigateForMining(WebMineQueueRow row) async {
+    final InAppWebViewController? web = _web;
+    if (web == null) return false;
+    await web.loadUrl(urlRequest: URLRequest(url: WebUri(row.href)));
+    final DateTime until = DateTime.now().add(const Duration(seconds: 30));
+    while (DateTime.now().isBefore(until)) {
+      if (!mounted || _mineStopRequested) return false;
+      if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    return false;
+  }
+
+  Future<void> _runMineQueue() async {
+    if (_mineRunning || _row == null) return;
+    final List<WebMineQueueRow> rows = await _mineQueue.pending(widget.bookUid);
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      FushiToast.show(msg: t.web_video_mine_queue_empty);
+      return;
+    }
+    setState(() {
+      _mineRunning = true;
+      _mineStopRequested = false;
+      _mineProgress = (done: 0, total: rows.length);
+    });
+    final int? resumePos = _state?.positionMs;
+    unawaited(_watchTracker?.stop());
+    if (_popup.hasVisiblePopup) _popNestedPopupAt(0);
+    // 封面不带站点控制栏（Dart 驱动的 seek/pause 会让控件浮出来）。
+    await _setPlayerChromeHidden(true);
+    // WASAPI loopback（整机混音，60 s 环形缓冲）；非 Windows / 插件缺失 → null → 只截帧。
+    final LoopbackGalAudioSource loopback = LoopbackGalAudioSource();
+    final PcmFormat? format = await loopback.start();
+    final String tempDir = (await getTemporaryDirectory()).path;
+    final MiningMediaCompression compression = MiningMediaCompression.resolve(
+      imageTier: _appModel.miningImageQuality,
+      audioTier: _appModel.miningAudioQuality,
+      format: _appModel.videoMiningAnimatedFormat,
+    );
+    final WebMineReplayRunner runner = WebMineReplayRunner(
+      host: _WebMineHost(this),
+      audioSource: format == null ? null : loopback,
+      encodeAudio: (GalAudioSlice slice) => pcmSliceToAacBytes(
+        pcm: slice.pcm,
+        format: slice.format,
+        tempDir: tempDir,
+        outputExtension: immersionMiningAudioExtension(),
+        audioChannels: compression.audioChannels,
+        audioBitrate: compression.audioBitrate,
+      ),
+    );
+    int ok = 0;
+    int failed = 0;
+    try {
+      for (final WebMineQueueRow row in rows) {
+        if (!mounted || _mineStopRequested) break;
+        if (row.videoKey != _videoKey && !await _navigateForMining(row)) {
+          await _mineQueue.markFailed(row.id, 'navigate_timeout');
+          failed++;
+        } else {
+          final WebMineReplayCapture cap = await runner.capture(
+            cueStartMs: row.cueStartMs,
+            cueEndMs: row.cueEndMs,
+          );
+          _debugCaptures?.add(cap);
+          final String? error = await _mineQueuedRow(
+            row,
+            cap,
+            compression,
+            tempDir,
+          );
+          if (error == null) {
+            ok++;
+          } else {
+            failed++;
+          }
+        }
+        if (mounted) {
+          setState(
+            () => _mineProgress = (done: ok + failed, total: rows.length),
+          );
+        }
+      }
+    } finally {
+      await loopback.stop();
+      await _setPlayerChromeHidden(false);
+      if (mounted) {
+        setState(() {
+          _mineRunning = false;
+          _mineProgress = null;
+        });
+        if (resumePos != null) unawaited(_seekMs(resumePos));
+        unawaited(_refreshMinePending());
+      }
+    }
+    FushiToast.show(
+      msg: t.web_video_mine_queue_finished(ok: ok, failed: failed),
+    );
+  }
+
+  /// 抓到的媒体 + 行里冻结的字段 → 沉浸制卡引擎。返回 null = 成功；否则失败原因
+  /// （已写进队列行 error 列）。
+  Future<String?> _mineQueuedRow(
+    WebMineQueueRow row,
+    WebMineReplayCapture cap,
+    MiningMediaCompression compression,
+    String tempDir,
+  ) async {
+    final String? title = _row?.title;
+    final ImmersionMiningResult res;
+    try {
+      res = await ImmersionMiningEngine().mine(
+        ImmersionMiningRequest(
+          fields: decodeWebMineFields(row.fieldsJson),
+          clipStartMs: row.cueStartMs,
+          clipEndMs: row.cueEndMs,
+          sentence: row.sentence,
+          cueSentence: row.cueSentence,
+          documentTitle: title,
+          source: AnkiMiningSource.video,
+          bookTitleTag: _appModel.autoAddBookNameToTags
+              ? BaseAnkiRepository.sanitizeTitleTag(title)
+              : null,
+          providedCoverBytes: cap.cover,
+          providedCoverName: 'web_video_cover.png',
+          providedAudioBytes: cap.audio,
+          providedAudioName:
+              'web_video_audio.${immersionMiningAudioExtension()}',
+          // 录不到音（无 loopback / 站点静音）也出截图卡：用户排队等的是这张卡，
+          // 缺音频记进行 warning 而不是整行报废。
+          requireAudio: false,
+          stillFormat: _appModel.videoMiningStillFormat,
+        ),
+        compression: compression,
+        tempDir: tempDir,
+        repo: ref.read(ankiRepositoryProvider),
+      );
+    } catch (e, st) {
+      ErrorLogService.instance.log('web_video.mineQueue', e, st);
+      await _mineQueue.markFailed(row.id, '$e');
+      return '$e';
+    }
+    if (res.aborted) {
+      final String reason = res.abortReason ?? 'aborted';
+      await _mineQueue.markFailed(row.id, reason);
+      return reason;
+    }
+    final Object? outcome = res.outcome;
+    if (outcome is! MineOutcome) {
+      await _mineQueue.markFailed(row.id, 'no_outcome');
+      return 'no_outcome';
+    }
+    final described = describeMineOutcome(outcome);
+    if (!described.success) {
+      await _mineQueue.markFailed(row.id, described.message);
+      return described.message;
+    }
+    if (described.record) unawaited(recordMined());
+    await _mineQueue.markDone(
+      row.id,
+      noteId: outcome.noteId,
+      warning: cap.warnings.isEmpty ? null : cap.warnings.join(','),
+    );
+    return null;
   }
 
   // ── 收藏句（与视频页同一 FavoriteSentenceRepository / 来源标记）───────────
@@ -1021,12 +1340,36 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       for (final WebVideoTrack t in _tracks.values)
         if (t.videoKey == _videoKey && t.cues.isNotEmpty) t,
     ];
+    final ({int done, int total})? progress = _mineProgress;
     return AppBar(
       title: Text(
-        _state?.title.isNotEmpty == true ? _state!.title : row.title,
+        progress != null
+            ? t.web_video_mine_queue_running(
+                done: progress.done,
+                total: progress.total,
+              )
+            : (_state?.title.isNotEmpty == true ? _state!.title : row.title),
         overflow: TextOverflow.ellipsis,
       ),
       actions: <Widget>[
+        if (_mineRunning)
+          IconButton(
+            tooltip: t.web_video_mine_queue_stop,
+            icon: const Icon(Icons.stop_circle_outlined),
+            onPressed: () => _mineStopRequested = true,
+          )
+        else
+          IconButton(
+            tooltip: t.web_video_mine_queue_run,
+            icon: Badge.count(
+              count: _minePending,
+              isLabelVisible: _minePending > 0,
+              child: const Icon(Icons.auto_awesome_motion_outlined),
+            ),
+            onPressed: _minePending == 0
+                ? null
+                : () => unawaited(_runMineQueue()),
+          ),
         PopupMenuButton<String>(
           tooltip: t.web_video_track_menu,
           icon: const Icon(Icons.subtitles_outlined),

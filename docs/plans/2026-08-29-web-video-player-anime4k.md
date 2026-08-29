@@ -163,7 +163,34 @@ mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生�
 - 句音频：`audio_loopback_capture.cpp` 已有 WASAPI loopback；按 cue [start,end] 窗口录 → 现有
   `immersion_capture` 通道（与扩展 `mineClip` 同一服务端 `buildImmersionRequest`）。
 - 截图：P2 tap 帧或 `takeScreenshot`。
-- 细节待 P1/P2 落地后另开计划。
+
+#### P3 落地（2026-08-30）
+
+比上面的事实清单再砍一刀：**不开第二个（headless）WebView 实例**。重放就在本页（可捕获的 1080p 内置档）
+跑——同一个 WebView2、同一份登录态、同一条 JS 桥，省掉 cookie 同步和第二个环境。「观看用正常模式、制卡用
+1080p 稳定模式」由**入队/重放分离**实现，而不是双实例并存：
+
+- `web_mine_queue`（schema **v89**，`packages/fushi_core` tables.dart；设备本地，进 backup 的 device-local
+  三处清单）：`bookUid / videoKey / href / cueStartMs / cueEndMs / sentence / cueSentence / fieldsJson /
+  status(pending|done|failed) / error / noteId / createdAt / minedAt`。`fieldsJson` 冻结弹窗点击那一刻的 Anki
+  字段（词典释义等），重放只补媒体。Dart 侧 `WebMineQueueStore`（`fushi/lib/src/mining/web_mine_queue_store.dart`）。
+- 入队：`WebVideoFushiPage.onMineEntry` 覆写 `DictionaryPageMixin` 的制卡入口——有锚点 cue 就入队 + toast
+  「已加入制卡队列（待制 N 张）」，回 `const MinePopupResult()`（弹窗不画 ✓，卡还没落地）；无 cue 退回
+  mixin 的纯字段制卡，行为与改动前一致。
+- 重放：`WebMineReplayRunner`（`web_mine_replay.dart`，纯编排、假时钟可测）每句 seek(cueStart−300) → 等落位 →
+  play → 等观测到开播 t0 → cue 中点 `takeScreenshot` → 播过 cueEnd+250 → pause → `grabRecent(now−t0+150)`
+  → `pcmSliceToAacBytes`。时间窗**按墙钟**取而不是猜播放器时钟。宿主接口 `WebMineReplayHost` 由页面用
+  现有 `_seekMs/_play/_pause/_state` 实现。
+- 落卡：`ImmersionMiningEngine.mine(ImmersionMiningRequest(providedCoverBytes: png, providedAudioBytes: m4a,
+  requireAudio: false, source: video, …))`；成功 `markDone(noteId, warning)`、失败 `markFailed(error)`。
+  引擎 `providedCoverBytes` 路径会按用户静图格式偏好转码一次（只换编码不改尺寸）。
+- UI：AppBar 「制卡队列」图标带 Badge 计数 → 点击跑队列；运行中标题变「制卡中 i/N」、图标变停止；跑完 toast
+  「成功 X 失败 Y」并 seek 回原位置。运行期不登记观看进度/时长（`_mineRunning` 门）。
+- 交接：`WebVideoFushiPage(autoRunMineQueue: true)`——4K 窗口宿主档的「切到内置档制卡」按钮以此打开本页，
+  画面一就绪自动跑队列。
+- 换集行（`row.videoKey != 当前`）：先 `loadUrl(row.href)` 等该视频就绪再重放；30 s 不就绪标 `navigate_timeout`。
+- 不做：多语言整轨自动切轨（用户切轨才触发新下载，见 BUG-1949）、后台第二实例、队列跨书全局页（队列按书，
+  入口在该书的播放页）。
 
 ## 4. 风险
 

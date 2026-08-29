@@ -3839,5 +3839,11 @@
   "web_video_no_tracks": "尚未采集到字幕",
   "web_video_hide_native_subtitles": "隐藏站点字幕",
   "web_video_import_hint": "这是网页地址（非直链），将用内置网页播放器打开。",
-  "web_video_platform_unsupported": "内置网页播放器目前仅支持 Windows。"
+  "web_video_platform_unsupported": "内置网页播放器目前仅支持 Windows。",
+  "web_video_mine_queue_run": "制作队列中的卡片",
+  "web_video_mine_queue_stop": "停止制卡",
+  "web_video_mine_queue_empty": "制卡队列为空",
+  "web_video_mine_queued": "已加入制卡队列（待制 $count 张）",
+  "web_video_mine_queue_running": "制卡中 $done/$total…",
+  "web_video_mine_queue_finished": "制卡完成：成功 $ok，失败 $failed"
 }

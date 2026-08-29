@@ -175,6 +175,24 @@ test('隐藏站点原生字幕：visibility 而非 display:none，可撤销', ()
   assert.strictEqual(sb.styles.length, 0);
 });
 
+test('制卡重放隐藏站点播放器 chrome：与字幕隐藏各自独立、幂等、可撤销，且不碰 <video>', () => {
+  const sb = makeSandbox();
+  assert.strictEqual(sb.window.__fushiWebVideo.setPlayerChromeHidden(true), true);
+  assert.strictEqual(sb.styles.length, 1);
+  const css = sb.styles[0].textContent;
+  assert.match(css, /\.watch-video--bottom-controls-container/, 'Netflix 控制栏');
+  assert.match(css, /\.ytp-chrome-bottom/, 'YouTube 控制栏');
+  assert.match(css, /visibility:hidden/);
+  assert.doesNotMatch(css, /(^|[^-\w])video\s*[{,]/, '不得把 <video> 本身藏掉');
+  sb.window.__fushiWebVideo.setPlayerChromeHidden(true);
+  assert.strictEqual(sb.styles.length, 1, '幂等');
+  sb.window.__fushiWebVideo.setNativeSubtitlesHidden(true);
+  assert.strictEqual(sb.styles.length, 2, '两个开关各自一份 <style>');
+  sb.window.__fushiWebVideo.setPlayerChromeHidden(false);
+  assert.strictEqual(sb.styles.length, 1, '撤销 chrome 隐藏不影响字幕隐藏');
+  assert.match(sb.styles[0].textContent, /player-timedtext/);
+});
+
 test('replayCues 同时请求两类 bridge 重放并把 store 现有轨全部重投', () => {
   const sb = makeSandbox();
   sb.messages.length = 0;

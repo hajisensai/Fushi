@@ -1972,6 +1972,53 @@ abstract final class VideoDownloadJobStage {
   static const String scrape = 'scrape';
 }
 
+/// 网页播放器自动制卡队列（schema v89）。
+///
+/// 观看网页流媒体（Netflix 等）时点「制卡」**只入队**：观看档可能是硬件 DRM 的 4K 窗口宿主
+/// 模式（画面不可捕获、无本地媒体源），录不了句子音频/截不了帧。之后在可捕获的 1080p
+/// 内置档里按队列逐句重放：seek → 播 → WASAPI loopback 录音 + 截帧 → 走沉浸制卡引擎落卡。
+/// 每行冻结点击那一刻的 Anki 字段 JSON（词典释义等）与 cue 时间窗；重放只补媒体。
+///
+/// 设备本地：含站点页 URL、本机重放状态，不进备份/同步（与 `video_download_jobs` 同列
+/// 于 backup 的 device-local 清单）。
+@DataClassName('WebMineQueueRow')
+class WebMineQueue extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 书架流媒体书 uid（`video/stream/…`）。
+  TextColumn get bookUid => text()();
+
+  /// 站点内视频身份（`fushiVideoKey`，如 Netflix 的 `/watch/<id>`）与页面 URL（重放时导航）。
+  TextColumn get videoKey => text()();
+  TextColumn get href => text()();
+
+  IntColumn get cueStartMs => integer()();
+  IntColumn get cueEndMs => integer()();
+
+  /// 制卡句（多句合并后的整句）与锚点 cue 原句。
+  TextColumn get sentence => text()();
+  TextColumn get cueSentence => text().nullable()();
+
+  /// 弹窗点击时的 Anki 字段映射（`Map<String,String>` JSON），重放时原样喂引擎。
+  TextColumn get fieldsJson => text()();
+
+  /// [WebMineQueueStatus]。
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  TextColumn get error => text().nullable()();
+
+  /// 成功后的 Anki note id（AnkiDroid 后端恒 null）。
+  IntColumn get noteId => integer().nullable()();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get minedAt => integer().nullable()();
+}
+
+abstract final class WebMineQueueStatus {
+  static const String pending = 'pending';
+  static const String done = 'done';
+  static const String failed = 'failed';
+}
+
 @DataClassName('VideoDownloadJobRow')
 class VideoDownloadJobs extends Table {
   /// 调用方生成的稳定任务 id；不能用自增 id 充当跨崩溃幂等键。

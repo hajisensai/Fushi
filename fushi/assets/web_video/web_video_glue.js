@@ -128,6 +128,29 @@
   }
   // 全屏元素换了父节点时 <style> 仍在 head 里全局生效，无需迁移。
 
+  // 制卡重放期间隐藏站点播放器 chrome（进度条 / 按钮 / 顶栏）：Dart 驱动的 seek/pause 会让
+  // 控件浮出来，cue 中点截的封面就带一条控制栏。只藏 chrome 不藏 <video>；字幕层另有开关。
+  var HIDE_CHROME_ID = 'fushi-web-video-hide-chrome';
+  var HIDE_CHROME_CSS =
+    '.watch-video--bottom-controls-container,.watch-video--back-container,' +
+    '.watch-video--flag-container,.watch-video--evidence-overlay-container,' +
+    '[data-uia="player-controls"],[data-uia="controls-standard"],' +
+    '.ytp-chrome-bottom,.ytp-chrome-top,.ytp-gradient-bottom,.ytp-gradient-top,' +
+    '.bpx-player-control-wrap,.bpx-player-sending-bar,.vjs-control-bar,.shaka-controls-container' +
+    '{visibility:hidden !important}';
+  function setPlayerChromeHidden(hidden) {
+    var el = document.getElementById(HIDE_CHROME_ID);
+    if (hidden && !el) {
+      el = document.createElement('style');
+      el.id = HIDE_CHROME_ID;
+      el.textContent = HIDE_CHROME_CSS;
+      (document.head || document.documentElement).appendChild(el);
+    } else if (!hidden && el) {
+      el.remove();
+    }
+    return !!hidden;
+  }
+
   // ── Dart → 页面命令 ──
   window.__fushiWebVideo = {
     seek: function (ms) {
@@ -156,6 +179,7 @@
       return Object.keys(store).length;
     },
     setNativeSubtitlesHidden: setNativeSubtitlesHidden,
+    setPlayerChromeHidden: setPlayerChromeHidden,
     state: function () { var s = snapshot(); last = s; return JSON.stringify(s); },
   };
 })();
