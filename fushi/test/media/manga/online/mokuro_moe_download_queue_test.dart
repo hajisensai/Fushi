@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
@@ -235,25 +236,37 @@ void main() {
       r.queue.dispose();
     });
 
-    test('退避中取消：移出队列，且到期后不会被偷偷重排', () async {
-      // 退避设短但非零：cancel 掐掉定时器后，即使等过这个时长也不该再起下载。
-      final r =
-          makeQueue(backoff: const <Duration>[Duration(milliseconds: 10)]);
-      r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
-      final MokuroMoeDownloadTask task = r.queue.tasks.single;
+    test('退避中取消：移出队列，且到期后不会被偷偷重排', () {
+      // 退避非零，且必须用假时钟推进：真时钟下 `pumpEventQueue()` 自身的耗时就
+      // 可能超过退避（CI 机器负载高时几十毫秒很常见），重试定时器先烧掉，断言
+      // 前状态已从 waitingRetry 翻成 running —— 那是测试拿真时钟当同步原语，不
+      // 是被测代码有问题。假时钟下「退避未到期」和「取消后推进过期」都是确定的。
+      fakeAsync((FakeAsync async) {
+        final r =
+            makeQueue(backoff: const <Duration>[Duration(seconds: 10)]);
+        r.queue.enqueue(seriesName: 'S', volumeNames: <String>['v1']);
+        final MokuroMoeDownloadTask task = r.queue.tasks.single;
 
-      r.ctrls[0].addError(timeout);
-      await r.ctrls[0].close();
-      await pumpEventQueue();
-      expect(task.status, MokuroMoeTaskStatus.waitingRetry);
+        r.ctrls[0].addError(timeout);
+        unawaited(r.ctrls[0].close());
+        async.flushMicrotasks();
+        expect(task.status, MokuroMoeTaskStatus.waitingRetry);
 
-      r.queue.cancel(task);
-      expect(r.queue.tasks, isEmpty);
+        r.queue.cancel(task);
+        expect(r.queue.tasks, isEmpty);
 
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      await pumpEventQueue();
-      expect(r.calls, hasLength(1), reason: '取消后定时器必须已被掐掉');
-      r.queue.dispose();
+        async.elapse(const Duration(seconds: 30));
+        expect(r.calls, hasLength(1), reason: '取消后定时器必须已被掐掉');
+        // `cancel` 只把任务移出 `_tasks`、不动 status，所以「定时器被掐掉」唯一
+        // 能观测到的地方就是这里：定时器还活着的话，到期回调会把这条已经不在
+        // 队列里的任务翻成 queued（`_pump` 扫不到它，calls 反而看不出差别）。
+        expect(
+          task.status,
+          MokuroMoeTaskStatus.waitingRetry,
+          reason: '到期回调不得再碰这条已移出队列的任务',
+        );
+        r.queue.dispose();
+      });
     });
 
     test('404 不自动重试（该卷就是没有，重试只是白等）；503 才重试', () async {
