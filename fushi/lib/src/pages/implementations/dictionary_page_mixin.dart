@@ -925,7 +925,9 @@ mixin DictionaryPageMixin {
     // 弹窗时不进搜索占位态：父弹窗全程提供上下文，子层就绪即 markPendingReveal→
     // revealRendered 直接在顶层出现，无层级翻转（reveal 时序仍受 BUG-170 保护）。
     if (!controller.hasVisiblePopup) {
-      controller.beginSearchUi(rect);
+      // 传目标 entry：盖板态由「这条 entry 仍在栈内且仍 searching/待翻出」派生，
+      // 关栈路径清掉它就自动落幕，不再依赖某条成功路径记得调 endSearchUi。
+      controller.beginSearchUi(rect, entry);
     }
     setState(() {});
     late final DictionarySearchResult result;

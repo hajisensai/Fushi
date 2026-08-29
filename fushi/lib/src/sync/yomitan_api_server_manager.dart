@@ -15,6 +15,7 @@ class YomitanApiServerManager {
     FushiRemoteHistoryService? historyService,
     Map<String, String> Function()? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
+    bool Function()? autoReadOnLookupProvider,
     String? Function()? extensionBuildProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
@@ -29,6 +30,7 @@ class YomitanApiServerManager {
         _readingResolver = readingResolver,
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
+        _autoReadOnLookupProvider = autoReadOnLookupProvider,
         _extensionBuildProvider = extensionBuildProvider,
         _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
@@ -46,6 +48,7 @@ class YomitanApiServerManager {
   final Map<String, String> Function()? _themeColorsProvider;
   // 单词音频：已启用音频源供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展。
   final List<String> Function()? _audioSourcesProvider;
+  final bool Function()? _autoReadOnLookupProvider;
   // BUG-726：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
   // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，透传给 [YomitanApiServer]，
@@ -80,6 +83,7 @@ class YomitanApiServerManager {
       readingResolver: _readingResolver,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
+      autoReadOnLookupProvider: _autoReadOnLookupProvider,
       extensionBuildProvider: _extensionBuildProvider,
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,

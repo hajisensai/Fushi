@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
@@ -237,6 +238,44 @@ class VideoDownloadOrganizer {
     );
   }
 
+  /// 「先来后到」闸：同一批目标路径同时只允许一条 job 走完
+  /// 「查重 → 改名 → 落位」。
+  ///
+  /// [finalLocalPath] 是 (title, year, sourceRoot, season/episode) 的**纯函数**，
+  /// 所以同一作品的两条 job 必然算出同一路径。此前查重只有下面那一趟
+  /// `exists()` 前置检查：两条 job 并发进来会**双双通过**（那时磁盘上还什么都
+  /// 没有），随后各自让后端往同一个路径搬 —— 内置引擎靠 libtorrent 的
+  /// `fail_if_exist` 兜住（第二条直接 needsAttention，用户莫名其妙），而外接
+  /// qBittorrent 的 `setLocation` 自己的注释就写着「不保证目标已存在时整体失败
+  /// 不覆盖」且是异步的，存在真实的互相覆盖窗口。
+  ///
+  /// 作品页允许「下载中再下一个」之后，这条路径从「UI 不可达」变成一键可达，
+  /// 所以必须把这个窗口关掉。两条 job 跑在同一个 app 进程里，进程内串行化就够：
+  /// 第二条排队等第一条落位完成，再跑 `exists()` 时就能看到真实结果，走正常的
+  /// 「organization target already exists」失败路径而不是覆盖。
+  static final Map<String, Future<void>> _targetLocks = <String, Future<void>>{};
+
+  static Future<T> _withTargetLock<T>(
+    String key,
+    Future<T> Function() body,
+  ) async {
+    final Future<void>? previous = _targetLocks[key];
+    final Completer<void> release = Completer<void>();
+    _targetLocks[key] = release.future;
+    try {
+      if (previous != null) {
+        // 前一条的失败不该把后一条也拖死：只等它结束，不接它的异常。
+        await previous.catchError((Object _) {});
+      }
+      return await body();
+    } finally {
+      release.complete();
+      if (identical(_targetLocks[key], release.future)) {
+        _targetLocks.remove(key);
+      }
+    }
+  }
+
   Future<VideoOrganizationResult> organize({
     required TorrentBackend backend,
     required VideoOrganizationRequest request,
@@ -254,48 +293,58 @@ class VideoDownloadOrganizer {
         error: error.message.toString(),
       );
     }
-    for (final VideoOrganizationFilePlan file in planned.files) {
-      if (await File(file.finalLocalPath).exists()) {
-        return VideoOrganizationResult(
-          ok: false,
-          files: planned.files,
-          error: 'organization target already exists: ${file.finalLocalPath}',
-        );
-      }
-    }
-    final List<VideoOrganizationFilePlan> committed =
-        <VideoOrganizationFilePlan>[];
-    for (final VideoOrganizationFilePlan file in planned.files) {
-      if (_normalizeRelative(file.originalRelativePath) !=
-          _normalizeRelative(file.targetRelativePath)) {
-        final TorrentStorageResult renamed = await backend.renameFile(
-          request.torrentId,
-          file.backendFileIndex,
-          file.targetRelativePath,
-        );
-        if (!renamed.ok) {
+    // 查重 → 改名 → 落位必须是一个不可分割的段（见 [_withTargetLock]）。
+    // 闸的键取本次计划的全部目标路径：同一作品的两条 job 键相同、排队；不同作品
+    // 的 job 键不同、照常并行，不引入无谓的全局串行。
+    final String lockKey = (planned.files
+            .map((VideoOrganizationFilePlan f) => f.finalLocalPath)
+            .toList()
+          ..sort())
+        .join(' ');
+    return _withTargetLock(lockKey, () async {
+      for (final VideoOrganizationFilePlan file in planned.files) {
+        if (await File(file.finalLocalPath).exists()) {
           return VideoOrganizationResult(
             ok: false,
-            files: committed,
-            error: renamed.error ?? 'backend file rename failed',
+            files: planned.files,
+            error: 'organization target already exists: ${file.finalLocalPath}',
           );
         }
       }
-      committed.add(file);
-      await onFileCommitted?.call(file);
-    }
-    final TorrentStorageResult moved = await backend.moveStorage(
-      request.torrentId,
-      planned.remoteSourceRoot,
-    );
-    if (!moved.ok) {
-      return VideoOrganizationResult(
-        ok: false,
-        files: committed,
-        error: moved.error ?? 'backend storage move failed',
+      final List<VideoOrganizationFilePlan> committed =
+          <VideoOrganizationFilePlan>[];
+      for (final VideoOrganizationFilePlan file in planned.files) {
+        if (_normalizeRelative(file.originalRelativePath) !=
+            _normalizeRelative(file.targetRelativePath)) {
+          final TorrentStorageResult renamed = await backend.renameFile(
+            request.torrentId,
+            file.backendFileIndex,
+            file.targetRelativePath,
+          );
+          if (!renamed.ok) {
+            return VideoOrganizationResult(
+              ok: false,
+              files: committed,
+              error: renamed.error ?? 'backend file rename failed',
+            );
+          }
+        }
+        committed.add(file);
+        await onFileCommitted?.call(file);
+      }
+      final TorrentStorageResult moved = await backend.moveStorage(
+        request.torrentId,
+        planned.remoteSourceRoot,
       );
-    }
-    return VideoOrganizationResult(ok: true, files: planned.files);
+      if (!moved.ok) {
+        return VideoOrganizationResult(
+          ok: false,
+          files: committed,
+          error: moved.error ?? 'backend storage move failed',
+        );
+      }
+      return VideoOrganizationResult(ok: true, files: planned.files);
+    });
   }
 
   static bool _isVideo(String value) => const <String>{

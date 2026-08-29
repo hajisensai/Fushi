@@ -9,6 +9,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -218,16 +219,28 @@ class _MiscellaneousSettingsBodyState
     final String? pickedPath = result.files.first.path;
     if (pickedPath == null) return;
 
+    // 裁剪步骤：图标最终按**正方形**渲染，直接拿一张长条照片去当图标只会被拉伸
+    // 变形，用户没有任何机会挑出想要的那一块。锁 1:1，取消裁剪 = 取消整个流程
+    // （裁剪框默认铺满整图，不想裁的人直接确认即可拿到等价于原图的结果）。
+    if (!mounted) return;
+    final File? cropped = await showCropImageDialog(
+      context,
+      File(pickedPath),
+      aspectRatio: 1,
+    );
+    if (cropped == null) return;
+    final String iconPath = cropped.path;
+
     bool ok = false;
     if (Platform.isAndroid) {
-      final bytes = await File(pickedPath).readAsBytes();
+      final bytes = await File(iconPath).readAsBytes();
       ok = (await FushiChannels.iconSwitch.invokeMethod<bool>(
             'createCustomShortcut',
             {'imageBytes': bytes},
           )) ==
           true;
     } else if (Platform.isWindows) {
-      final String persisted = await persistCustomIconFile(pickedPath);
+      final String persisted = await persistCustomIconFile(iconPath);
       ok = await WindowCaptionChannel.setWindowIcon(persisted);
       if (ok) {
         await _persistAppliedIcon(

@@ -2102,6 +2102,25 @@
     cursor: text;
 }
 
+/* 覆盖层里的振假名：与字幕列表同一套取向——读音在正文上方、不参与选择/取词。 */
+#fushi-subtitle-overlay ruby {
+    ruby-position: over;
+    ruby-align: center;
+}
+
+/* 同字幕列表：有振假名的那句要给上方读音留出行框。 */
+#fushi-subtitle-overlay:has(ruby) {
+    line-height: 2;
+}
+
+#fushi-subtitle-overlay rt {
+    font-size: 0.5em;
+    line-height: 1.1;
+    opacity: 0.82;
+    text-shadow: 0 1px 2px #000;
+    user-select: none;
+}
+
 /* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。 */
 #fushi-subtitle-drop-hint {
     position: fixed;
