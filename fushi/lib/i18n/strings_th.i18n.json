@@ -3865,5 +3865,8 @@
   "manga_series_open_series": "หน้าผลงาน",
   "manga_series_read_progress": "อ่านถึงหน้า $page จาก $total",
   "manga_series_read_progress_partial": "อ่านถึงหน้า $page",
+  "mihon_store_extension_count": "$count extensions",
+  "mihon_extension_sources_more": "Show all $count sources",
+  "mihon_extension_sources_less": "Show fewer sources",
   "options_website": "เยี่ยมชมเว็บไซต์ทางการ"
 }

@@ -6628,6 +6628,9 @@ class AppModel with ChangeNotifier {
       // 单词音频（1139②）：已启用音频源随查词响应下发，扩展弹窗据此渲染 ♪ 按钮
       // （点击 → /api/lookup/audio 解析 → HTML5 Audio 播放）。
       audioSourcesProvider: () => enabledAudioSources,
+      // 查词后自动朗读：与 app 内弹窗/app 外浮窗/剪贴板面板同一个全局偏好（读同一个
+      // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
+      autoReadOnLookupProvider: () => ReaderFushiSource.instance.autoReadOnLookup,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
