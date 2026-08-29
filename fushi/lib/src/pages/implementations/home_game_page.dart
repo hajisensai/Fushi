@@ -1,9 +1,12 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
@@ -240,59 +243,80 @@ class _HomeGamePageState extends State<HomeGamePage> {
   Widget _buildImport(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    return DesktopContentLayout(
-      kind: DesktopContentKind.readerShelf,
-      child: Column(
-        children: <Widget>[
-          FushiPageHeader.customTitle(
-            title: GameSectionTabs(
-              selected: GameSection.importGames,
-              focusIdPrefix: 'game-import-tab',
-              onSelectDashboard: _showDashboard,
-              onSelectLibrary: _showLibrary,
-              onSelectMonitor: _showMonitor,
-              onSelectSettings: _showSettings,
+    // 导入页自己接 drop：此前整个游戏域只有**库**页挂了 drop target，而
+    // `DropSurfaceScope` 又按当前 section 过滤，于是站在「导入」页拖 exe 进来
+    // 完全没反应——页面上还写着「也可以把 .exe 拖进来」。
+    return FushiFileDropTarget(
+      debugLabel: 'game-import',
+      onDrop: (List<String> paths, Offset position) => unawaited(
+        addGamesFromPaths(
+          ProviderScope.containerOf(context, listen: false)
+              .read(appProvider)
+              .galgameRepo,
+          paths,
+          onImported: _showLibrary,
+        ),
+      ),
+      child: DesktopContentLayout(
+        kind: DesktopContentKind.readerShelf,
+        child: Column(
+          children: <Widget>[
+            FushiPageHeader.customTitle(
+              title: GameSectionTabs(
+                selected: GameSection.importGames,
+                focusIdPrefix: 'game-import-tab',
+                onSelectDashboard: _showDashboard,
+                onSelectLibrary: _showLibrary,
+                onSelectMonitor: _showMonitor,
+                onSelectSettings: _showSettings,
+              ),
+              actions: const <Widget>[],
             ),
-            actions: const <Widget>[],
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Builder(
-                    builder: (BuildContext context) {
-                      return QuickImportSection(
-                        actions: <QuickImportAction>[
-                          QuickImportAction(
-                            icon: Icons.videogame_asset_outlined,
-                            label: t.game_add,
-                            // IndexedStack 急切构建全部子区，本视图在无
-                            // ProviderScope 的 widget 测试里也会被 build——
-                            // 容器只在点按时解析，构建期零 provider 依赖。
-                            onTap: () => addGameViaFilePicker(
-                              ProviderScope.containerOf(context, listen: false)
-                                  .read(appProvider)
-                                  .galgameRepo,
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Builder(
+                      builder: (BuildContext context) {
+                        return QuickImportSection(
+                          actions: <QuickImportAction>[
+                            QuickImportAction(
+                              icon: Icons.videogame_asset_outlined,
+                              label: t.game_add,
+                              // IndexedStack 急切构建全部子区，本视图在无
+                              // ProviderScope 的 widget 测试里也会被 build——
+                              // 容器只在点按时解析，构建期零 provider 依赖。
+                              // 导入成功后跳到游戏库：新游戏落在**另一个** section
+                              // 里，停在导入页的话屏幕上什么都不变，成功与失败在
+                              // 观感上一模一样（用户「导成功没反应我还以为失败了
+                              // 重试了好几次」）。
+                              onTap: () => addGameViaFilePicker(
+                                ProviderScope.containerOf(context,
+                                        listen: false)
+                                    .read(appProvider)
+                                    .galgameRepo,
+                                onImported: _showLibrary,
+                              ),
                             ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    t.game_import_drop_hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                          ],
+                        );
+                      },
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    Text(
+                      t.game_import_drop_hint,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
