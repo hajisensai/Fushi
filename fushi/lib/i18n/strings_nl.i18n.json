@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Dit is het eerste hoofdstuk",
   "manga_series_open_series": "Werkpagina",
   "manga_series_read_progress": "Gelezen tot pagina $page van $total",
-  "manga_series_read_progress_partial": "Gelezen tot pagina $page"
+  "manga_series_read_progress_partial": "Gelezen tot pagina $page",
+  "mihon_store_extension_count": "$count extensions",
+  "mihon_extension_sources_more": "Show all $count sources",
+  "mihon_extension_sources_less": "Show fewer sources"
 }
