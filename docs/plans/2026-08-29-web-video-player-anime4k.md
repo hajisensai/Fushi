@@ -248,6 +248,17 @@ document-created 注入的 EME 垫片（拒 `com.microsoft.playready*`、Widevin
   要 1440p/4K 必须给 fork 加**窗口宿主**（HWND child，`CreateCoreWebView2Controller`）模式给视频页专用，
   且该模式下画面不经捕获、超分/取帧不可用——工作量单独评估，由用户拍板。
 
+### 5.3 用户决定（2026-08-30）
+
+- **画质双模式给用户选**：「1080p 内置」= 现 P1（捕获式，超分/取帧可用）；「4K」= fork 新增 **HWND 窗口宿主**模式
+  （`CreateCoreWebView2Controller`，硬件 PlayReady 可用，画面不经捕获）。4K 模式下 Flutter 画不到子 HWND 之上，故
+  (a) 画面字幕改为**注入页面 DOM**（自己的字幕 div 盖住站点原生字幕，逐词点击 / hover → `callHandler` 回 Dart 查词，
+  即浏览器扩展的做法）；(b) 查词弹窗用**独立顶层窗口**（`global_lookup_window.cpp` 那套，gal 查词浮窗同款，可盖在子
+  HWND 之上）。
+- **BUG-1949 要修**（先查其它分支是否已修）。
+- **P2 着色器运行时选 (a) libplacebo**（原样吃 mpv `.glsl`；新依赖 + CI 自建 artifact，仿 `ffmpeg-min.yml`）。
+- 全部做完。执行顺序：BUG-1949 → P3 制卡 → 4K 窗口宿主 → P2 libplacebo。
+
 P2 落地时的两条硬约束：
 - `--disable-direct-composition` 是 **WebView2 environment 级**（每个 user data folder 一个浏览器进程）
   参数，不能运行期切换 → 双模式 = 两个 `WebViewEnvironment`（两套 profile 目录，cookie 不共享，登录要各登一次，
