@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "Bu ilk bölüm",
   "manga_series_open_series": "Eser sayfası",
   "manga_series_read_progress": "$total sayfadan $page. sayfaya kadar okundu",
-  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu"
+  "manga_series_read_progress_partial": "$page. sayfaya kadar okundu",
+  "mihon_store_extension_count": "$count extensions",
+  "mihon_extension_sources_more": "Show all $count sources",
+  "mihon_extension_sources_less": "Show fewer sources"
 }

@@ -3864,5 +3864,8 @@
   "manga_series_first_chapter_reached": "첫 번째 챕터입니다",
   "manga_series_open_series": "작품 페이지",
   "manga_series_read_progress": "$total페이지 중 $page페이지까지 읽음",
-  "manga_series_read_progress_partial": "$page페이지까지 읽음"
+  "manga_series_read_progress_partial": "$page페이지까지 읽음",
+  "mihon_store_extension_count": "$count extensions",
+  "mihon_extension_sources_more": "Show all $count sources",
+  "mihon_extension_sources_less": "Show fewer sources"
 }
