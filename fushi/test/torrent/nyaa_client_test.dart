@@ -613,6 +613,75 @@ void main() {
       );
     });
 
+    test('BUG-1946：sukebei / 镜像站 <site>/xmlns/nyaa 命名空间被接受，路径不同才拒', () async {
+      // 上游 nyaa 把命名空间拼成 <站点 origin>/xmlns/nyaa，sukebei 真实 feed 是
+      // https://sukebei.nyaa.si/xmlns/nyaa；硬编码 nyaa.si 会把每条 item 判成
+      // invalidNamespace，发现页 Sukebei 源恒空。
+      Future<Object?> parseWithNamespace(String ns) {
+        return searchResponse(
+          utf8.encode('''
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:nyaa="$ns">
+  <channel><item>
+    <title>[260825][破顔研] イモータルリコール 外伝 [RJ01660478]</title>
+    <link>https://sukebei.nyaa.si/download/4697097.torrent</link>
+    <guid isPermaLink="true">https://sukebei.nyaa.si/view/4697097</guid>
+    <pubDate>Sat, 29 Aug 2026 13:37:06 -0000</pubDate>
+    <nyaa:seeders>29</nyaa:seeders>
+    <nyaa:leechers>18</nyaa:leechers>
+    <nyaa:downloads>44</nyaa:downloads>
+    <nyaa:infoHash>14d40b587d2a237150b6b019e6236e93e16a1f73</nyaa:infoHash>
+    <nyaa:categoryId>1_3</nyaa:categoryId>
+    <nyaa:category>Art - Games</nyaa:category>
+    <nyaa:size>252.8 MiB</nyaa:size>
+    <nyaa:trusted>Yes</nyaa:trusted>
+    <nyaa:remake>No</nyaa:remake>
+  </item></channel>
+</rss>'''),
+        );
+      }
+
+      for (final String ns in <String>[
+        'https://sukebei.nyaa.si/xmlns/nyaa',
+        'https://nyaa.si/xmlns/nyaa',
+        'https://nyaa.land/xmlns/nyaa',
+        'http://127.0.0.1:8080/xmlns/nyaa',
+      ]) {
+        final Object? result = await parseWithNamespace(ns);
+        expect(result, isA<List<NyaaTorrent>>(), reason: ns);
+        final List<NyaaTorrent> items = result! as List<NyaaTorrent>;
+        expect(items, hasLength(1), reason: ns);
+        final NyaaTorrent item = items.single;
+        expect(item.infoHash, '14d40b587d2a237150b6b019e6236e93e16a1f73');
+        expect(item.seeders, 29, reason: '$ns：nyaa:seeders 也要按命名空间读到');
+        expect(item.categoryId, '1_3', reason: ns);
+        expect(item.sizeBytes, (252.8 * 1024 * 1024).round(), reason: ns);
+        expect(item.trusted, isTrue, reason: ns);
+      }
+
+      for (final String ns in <String>[
+        'https://invalid.example/ns',
+        'https://nyaa.si/xmlns/other',
+        'https://nyaa.si/xmlns/nyaa/',
+        'nyaa',
+      ]) {
+        expect(
+          await parseWithNamespace(ns),
+          isA<NyaaFeedFormatException>().having(
+            (NyaaFeedFormatException error) => error.code,
+            'code',
+            NyaaFeedErrorCode.invalidNamespace,
+          ),
+          reason: ns,
+        );
+      }
+
+      expect(isNyaaNamespace(null), isFalse);
+      expect(isNyaaNamespace(''), isFalse);
+      expect(isNyaaNamespace('/xmlns/nyaa'), isFalse, reason: '无 host 不算');
+      expect(isNyaaNamespace('https://sukebei.nyaa.si/xmlns/nyaa'), isTrue);
+    });
+
     test('真实本地 HTTP：特殊字符 query/category/trusted 与任意前缀 namespace', () async {
       final HttpServer server = await HttpServer.bind(
         InternetAddress.loopbackIPv4,
