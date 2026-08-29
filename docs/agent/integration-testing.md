@@ -54,6 +54,10 @@
 flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/integration-test.sh
 # Windows 离屏后台（PowerShell，仓库根）
 .\fushi\tool\run_windows_itest.ps1 integration_test/<t>_test.dart
+# Windows + WebView2 里的 DRM 站点（Netflix / PlayReady）live 测试：必须 -Visible -KeepUserDirs——
+# runner 默认重定向 LOCALAPPDATA / USERPROFILE / TEMP，任一被改都让 MF CDM 报 Netflix D7702/D7703
+# （0x80070003，实测二分）；该开关保留三者真实、APPDATA 与 WebView2 profile 仍隔离
+.\fushi\tool\run_windows_itest.ps1 -Visible -KeepUserDirs integration_test/web_video_netflix_live_itest.dart
 # Mac 跨机（Windows 当总指挥，sync→Mac ff→跑）
 .\tool\run_mac_itest.ps1 integration_test/<t>_test.dart
 ```

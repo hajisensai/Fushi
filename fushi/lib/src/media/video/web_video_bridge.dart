@@ -53,6 +53,15 @@ const String kWebVideoYoutubeBridgeAsset =
     'assets/browser_extension/youtube-bridge.js';
 const String kWebVideoGlueAsset = 'assets/web_video/web_video_glue.js';
 
+/// 软件 DRM 档 EME 垫片（拒 PlayReady、Widevine 降软件级），仅制卡 / 增强环境用；须与
+/// [kWebVideoChromeUserAgent] 配对，否则 Netflix 被拒后不试 Widevine。
+const String kWebVideoEmeShimAsset = 'assets/web_video/web_video_eme_shim.js';
+
+/// 去掉 `Edg/` 标记的 Chrome UA（版本号与随包 WebView2 运行时同代即可；站点只看有没有 Edg）。
+const String kWebVideoChromeUserAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36';
+
 /// DOM 采样 live 轨的语言标签（与 `subtitle-providers.js` 的 `FUSHI_LIVE_LANG` 同值）。
 const String kWebVideoLiveTrackLang = 'live';
 

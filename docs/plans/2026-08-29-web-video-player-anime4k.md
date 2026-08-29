@@ -119,7 +119,46 @@
 - 真机：Anime4K 开/关截图对比（同一帧）；A/V 延迟台账（JS `currentTime` 帧号打进画面 vs mpv
   输出帧截图读数）；CPU/GPU 占用；1080p→4K 极高档不掉帧。延迟 > 100 ms 即触发方案 A 评估。
 
+#### P2 修订（2026-08-29 晚，沿 fork 代码核实后）
+
+「帧 tap → `mpv_stream_cb` rawvideo」的硬事实：
+- fork 的 `ProcessFrame` 不在 WGC 线程，而在 **Flutter raster 线程**按需拉（`texture_bridge_gpu.cc:79-98`
+  `GetSurfaceDescriptor` → `ProcessFrame`），持 `TextureBridge::mutex_`；帧池 `kNumBuffers=1`
+  （`texture_bridge.cc:21`），`last_frame_` 复用同一块显存 → 任何拷贝必须在锁内完成。
+- staging `Map(D3D11_MAP_READ)` 是同步回读：1080p60 ≈ 500 MB/s PCIe + 500 MB/s memcpy，且 mpv demux
+  线程的消费速度会经环形缓冲**反压 raster 线程** → 整个 Flutter UI 掉帧。全链路两次 PCIe 往返 +
+  三次全帧 memcpy（R6）。
+- `Player.open` 走 `loadlist`，自定义协议非 safe 会被 mpv 拒（`real.dart:194-210`）；`setProperty`
+  静默吞错（`real.dart:1239`）；`demuxer-rawvideo-w/h` 加载期固定，捕获尺寸却随布局/DPI 任意变。
+- `mpv_stream_cb_add_ro` 不在 media_kit 的 Dart bindings 里，只能 C++ 注册（`libmpv-2.dll` 已导出）；
+  注册后不可注销、按 handle 幂等。
+
+**结论**：rawvideo 喂入只配当 **≤720p/30fps 的可行性原型**，不是正式方案。正式方案回到「帧已经在 fork 的
+D3D11 纹理里，就地跑着色器」：候选 (a) libplacebo D3D11 后端（原样吃 mpv `.glsl`，新依赖 + CI 自建
+artifact，仿 `ffmpeg-min.yml`）；(b) fork 内 ANGLE（Flutter Windows 已随包 libEGL/libGLESv2）自写
+mpv-hook 指令（HOOK/BIND/SAVE/WIDTH/HEIGHT/WHEN）运行器，GLSL 体原生编译、零新依赖，`COMPUTE` 类
+不支持即跳过。两者对 Dart 侧接口相同。P2 第一步仍是验证 `--disable-direct-composition` 下
+`CreateGraphicsCaptureItemFromVisual` 出帧；第二步在 (a)/(b) 间按「用户粘贴任意 .glsl 要不要保证」定案。
+超分只对可捕获内容（非硬件 DRM 站 / 增强环境）生效，观看网飞（正常模式）不受影响。
+
 ### P3 制卡
+
+事实（沿代码核实）：
+- 落卡唯一出口 `ImmersionMiningEngine.mine`（`immersion_mining_engine.dart:228`）已支持
+  `providedCoverBytes` / `providedAudioBytes`（扩展 `mineClip` 路径就是这么进来的），网页播放器直接喂
+  字节，不走 `app.fushi.reader/immersion_capture`（该通道在 `fushi/windows/` **没有 native 实现**）。
+- WASAPI loopback（`audio_loopback_capture.cpp`）是**整机默认渲染端点混音**，只有 `grabRecent(backMs)`
+  往回取（环 60 s），没有按窗起停；Dart 封装 `LoopbackGalAudioSource`，PCM → `slicePcmByMs` →
+  `pcmSliceToAacBytes`（`galgame_audio_encode.dart`）。
+- 逐句时序照抄扩展 `fushiRunNetflixBatch`（`content.js:524`）：seek(cueStart−200) → pause → 等落定/缓冲/真前进
+  → play + 计时 → 「字幕变句 + 0.35 s」或 hardEnd 12 s → pause → `grabRecent(elapsed+preRoll)` +
+  `takeScreenshot`（增强环境下非黑）。
+- 增强环境：`WindowsWebViewEnvironment.create(userDataFolder, additionalBrowserArguments:
+  '--disable-direct-composition')` + `HeadlessInAppWebView(webViewEnvironment:)`，登录态用
+  `CookieManager.instance(webViewEnvironment: watchEnv).getCookies` → 增强 env `setCookie` 同步。
+- app 内没有持久化制卡队列（扩展的 `chrome.storage.local.fushiQueue` 是唯一先例）：新建
+  Drift 表 `web_mine_queue`，条目形状复刻 `content.js:437`（fields / sentence / cueStart−200 /
+  cueEnd+200 / mineAt / videoKey / pageUrl / documentTitle），去重键复刻 `fushiQueueKey`。
 
 - 句音频：`audio_loopback_capture.cpp` 已有 WASAPI loopback；按 cue [start,end] 窗口录 → 现有
   `immersion_capture` 通道（与扩展 `mineClip` 同一服务端 `buildImmersionRequest`）。

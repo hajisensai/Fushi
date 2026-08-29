@@ -67,12 +67,21 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   const WebVideoFushiPage({
     required this.bookUid,
     required this.repo,
+    this.softwareDrm = false,
     super.key,
   });
 
   /// 书架流媒体书 uid（`video/stream/…`，与 mpv 视频页共用同一条 [VideoBooks] 行）。
   final String bookUid;
   final VideoBookRepository repo;
+
+  /// 软件 DRM 档：Chrome UA + document-start EME 垫片（拒 PlayReady、Widevine 降软件级）。
+  /// 观看默认 false（PlayReady 全画质）；制卡 / 增强环境与诊断用 true（帧可捕获，Netflix 1080p）。
+  final bool softwareDrm;
+
+  /// 诊断 / 集成测试用：让经分流打开的页面也走软件 DRM 档（构造参数由分流点固定为 false）。
+  @visibleForTesting
+  static bool debugForceSoftwareDrm = false;
 
   /// 打开本页的唯一入口：路由层包 [FushiAppUiScaleNeutralizer]（WebView2 是平台纹理，
   /// 落在缩放画布里会被栅格化再放大 → 糊；与 `VideoFushiPage.neutralized` 同理）。
@@ -83,14 +92,47 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     child: WebVideoFushiPage(bookUid: bookUid, repo: repo),
   );
 
+  /// 集成测试钩子（debug/profile only，assert 注册；与 `HomePage.debugSelectTab` 同范式）：
+  /// 离屏 / 非焦点下焦点驱动偶发不触发，真机验证用这些直达读状态 / 开列表 / seek。
+  @visibleForTesting
+  static WebVideoDebugSnapshot Function()? debugSnapshot;
+  @visibleForTesting
+  static VoidCallback? debugToggleList;
+  @visibleForTesting
+  static Future<void> Function(int ms)? debugSeek;
+
+  /// 在站点页面里求值（诊断用：location / 标题 / 正文片段），返回 JSON 字符串。
+  @visibleForTesting
+  static Future<String?> Function(String js)? debugEvalJs;
+
+  /// CDP 截图（页面 UI 可见；受保护视频区为黑），返回 PNG 字节。
+  @visibleForTesting
+  static Future<Uint8List?> Function()? debugScreenshot;
+
   @override
   ConsumerState<WebVideoFushiPage> createState() => _WebVideoFushiPageState();
 }
+
+/// [WebVideoFushiPage.debugSnapshot] 的只读快照。
+typedef WebVideoDebugSnapshot = ({
+  bool hasVideo,
+  int? positionMs,
+  bool playing,
+  int trackCount,
+  String? activeTrackKey,
+  int cueCount,
+  int currentCueIndex,
+  String videoKey,
+  bool listVisible,
+});
 
 class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     with DictionaryPageMixin {
   /// 缓存的 [AppModel]（浮层在 LayoutBuilder 回调里读，widget 失活后 `ref.read` 会抛）。
   late final AppModel _appModel = ref.read(appProvider);
+
+  bool get _softwareDrm =>
+      widget.softwareDrm || WebVideoFushiPage.debugForceSoftwareDrm;
 
   /// 只当 cue 仓库 + 字幕定位器用的 controller：永不 [VideoPlayerController.load]，
   /// 位置 / 播放态经 [VideoPlayerController.applyExternalPlaybackState] 由页面 JS 注入。
@@ -183,12 +225,41 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     super.initState();
     attachLookupCounter(_popup);
     _controller.addListener(_onControllerChanged);
+    assert(() {
+      WebVideoFushiPage.debugSnapshot = () => (
+            hasVideo: _state?.hasVideo ?? false,
+            positionMs: _state?.positionMs,
+            playing: _state?.isPlaying ?? false,
+            trackCount: _tracks.length,
+            activeTrackKey: _activeTrackKey,
+            cueCount: _controller.cues.length,
+            currentCueIndex: _controller.currentCueIndex,
+            videoKey: _videoKey,
+            listVisible: _listVisible,
+          );
+      WebVideoFushiPage.debugToggleList = _toggleList;
+      WebVideoFushiPage.debugSeek = _seekMs;
+      WebVideoFushiPage.debugEvalJs = (String js) async {
+        final Object? r = await _web?.evaluateJavascript(source: js);
+        return r?.toString();
+      };
+      WebVideoFushiPage.debugScreenshot = () async => _web?.takeScreenshot();
+      return true;
+    }());
     unawaited(_init());
   }
 
   @override
   void dispose() {
     _overlayInert = true;
+    assert(() {
+      WebVideoFushiPage.debugSnapshot = null;
+      WebVideoFushiPage.debugToggleList = null;
+      WebVideoFushiPage.debugSeek = null;
+      WebVideoFushiPage.debugEvalJs = null;
+      WebVideoFushiPage.debugScreenshot = null;
+      return true;
+    }());
     unawaited(_watchTracker?.stop());
     unawaited(_flushPosition());
     final OverlayEntry? entry = _popupOverlayEntry;
@@ -222,6 +293,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return;
     }
     final List<String> assets = <String>[
+      // 垫片必须排第一：站点脚本一跑就会抓走原始 EME 函数引用。
+      if (_softwareDrm) kWebVideoEmeShimAsset,
       ...webVideoBridgeAssetsForHost(uri.host),
       kWebVideoAdaptersAsset,
       kWebVideoProvidersAsset,
@@ -978,6 +1051,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       initialUrlRequest: URLRequest(url: WebUri(row.videoPath)),
       initialUserScripts: scripts,
       initialSettings: InAppWebViewSettings(
+        // Windows 生效（fork put_UserAgent）。软件 DRM 档必须去掉 Edg/ 标记，否则
+        // Netflix 只试 PlayReady、被垫片拒后不回落 Widevine。
+        userAgent: _softwareDrm ? kWebVideoChromeUserAgent : null,
         javaScriptEnabled: true,
         sharedCookiesEnabled: true,
         mediaPlaybackRequiresUserGesture: false,
