@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
@@ -3402,16 +3403,8 @@ class GalHookSessionController extends ChangeNotifier {
             dateKey: dateKey,
           ),
         );
-        await database.addActivityEvent(
-          eventType: kActivityGame,
-          mediaType: kActivityMediaGame,
-          title: title,
-          mediaKey: gameId,
-          dateKey: dateKey,
-          timestampMs: result.endMs,
-          durationMs: result.durationSeconds * 1000,
-          // charsDelta 刻意不传（留 null）：字符数由 hook 文本路径独立写行。
-        );
+        // v90：时长只落 galgame_sessions 这一张事实表；首页活动流 / 热力图从它
+        // 派生，不再另写 activity 行（那是第二本账）。
       } catch (error, stack) {
         // 会话在游戏退出瞬间结算，游戏可能已被用户从库里删除（FK cascade 把
         // galgame_sessions 一并清了，这条账本来就该消失）——落库失败降级为
@@ -3510,17 +3503,27 @@ class GalHookSessionController extends ChangeNotifier {
       required String dateKey,
       required int timestampMs,
       required int charsDelta,
-    }) =>
-        database.addActivityEvent(
-          eventType: kActivityGame,
-          mediaType: kActivityMediaGame,
-          title: title,
-          mediaKey: mediaKey,
-          dateKey: dateKey,
-          timestampMs: timestampMs,
-          // durationMs 刻意不传（留 null）：时长由 GalgamePlayTracker 独立写行。
-          charsDelta: charsDelta,
-        );
+    }) async {
+      // v90：hook 字数落 study_segments 一条 chars-only 段（时长恒 0：时长真相源
+      // 是 galgame_sessions，两者量纲分列、SUM 不会双计）。无稳定身份（不在游戏库）
+      // 的文本流没有可归属的 media_key，不落——统计永不按 title 认身份。
+      if (mediaKey == null || mediaKey.isEmpty) return;
+      final String deviceId = await database.getOrCreateStudyDeviceId();
+      final DateTime at = DateTime.fromMillisecondsSinceEpoch(timestampMs);
+      await database.upsertStudySegment(StudySegmentsCompanion.insert(
+        uid: FushiDatabase.newStudySegmentUid(),
+        deviceId: deviceId,
+        mediaKind: kActivityMediaGame,
+        mediaKey: mediaKey,
+        title: title,
+        startAt: timestampMs,
+        endAt: timestampMs,
+        dateKey: dateKey,
+        hour: at.hour,
+        chars: Value(charsDelta),
+        updatedAt: timestampMs,
+      ));
+    };
   }
 
   Future<void> _safeWriteActivity({

@@ -1,12 +1,12 @@
-import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 
 /// 学习活动的**来源**维度：供跨来源首页汇总与来源拆分纯函数使用。
 ///
 /// 四个来源摊平成同一形状，消费方再明确选择自己的域：阅读统计页只取
-/// [book]/[manga]，视频与游戏由各自统计页读取各自事实表；首页跨来源目标可取并集。
+/// [book]/[manga]，视频与游戏由各自统计页读取各自事实；首页跨来源目标可取并集。
 ///
 /// 每个来源都带**两个独立量纲**（字数 + 时长），漫画额外带页数：
-/// - [book]：EPUB / PDF 等书内阅读（`reading_statistics` 中 `format != 'manga'`）。
+/// - [book]：EPUB / PDF 等书内阅读（`format != 'manga'` 的书事实）。
 /// - [manga]：漫画（`format == 'manga'`），OCR 字数 + 页数 + 时长。
 /// - [video]：视频，字幕字数 + 观看时长。
 /// - [game]：galgame hook 文本字数 + 游玩时长。
@@ -36,50 +36,29 @@ class StatSourceTotals {
   bool get isEmpty => chars == 0 && timeMs == 0 && pages == 0;
 }
 
-/// 逐来源、逐日的统计合计。
-///
-/// [formatByTitle] 是 `epub_books.title -> format`（`'epub'` / `'pdf'` / `'manga'`）；
-/// 统计行只存 title，靠它反查书身份。查不到的 title（书已删、统计还在）按 [book]
-/// 归类——宁可算进阅读，也不凭 `pagesRead > 0` 这类二元标志猜身份。
+/// 事实 → 来源桶。书事实按 [StatFact.format] 拆普通书 / 漫画（legacy 行反查库表
+/// 失败的 format '' 归普通书——宁可算进阅读，也不凭 `pages > 0` 这类二元标志猜身份）。
+StatBreakdownSource statSourceOf(StatFact f) {
+  if (f.isVideo) return StatBreakdownSource.video;
+  if (f.isGame) return StatBreakdownSource.game;
+  return f.isManga ? StatBreakdownSource.manga : StatBreakdownSource.book;
+}
+
+/// 逐来源、逐日的统计合计（v90：输入是统一事实面的**日面**，不再各表各读）。
 Map<StatBreakdownSource, Map<String, StatSourceTotals>>
-    aggregateStatSourceDaily({
-  required List<ReadingStatisticRow> reading,
-  required Map<String, String> formatByTitle,
-  required List<VideoWatchStatisticRow> video,
-  required List<(String, int, int)> gameDaily,
-}) {
+    aggregateStatSourceDaily(Iterable<StatFact> daily) {
   final Map<StatBreakdownSource, Map<String, StatSourceTotals>> out =
       <StatBreakdownSource, Map<String, StatSourceTotals>>{
     for (final StatBreakdownSource s in StatBreakdownSource.values)
       s: <String, StatSourceTotals>{},
   };
-
-  StatSourceTotals bucket(StatBreakdownSource source, String dateKey) =>
-      out[source]!.putIfAbsent(dateKey, StatSourceTotals.new);
-
-  for (final ReadingStatisticRow r in reading) {
-    final bool isManga = formatByTitle[r.title] == 'manga';
-    final StatSourceTotals b = bucket(
-      isManga ? StatBreakdownSource.manga : StatBreakdownSource.book,
-      r.dateKey,
-    );
-    b.chars += r.charactersRead;
-    b.timeMs += r.readingTimeMs;
-    b.pages += r.pagesRead;
+  for (final StatFact f in daily) {
+    final StatSourceTotals b =
+        out[statSourceOf(f)]!.putIfAbsent(f.dateKey, StatSourceTotals.new);
+    b.chars += f.chars;
+    b.timeMs += f.ms;
+    b.pages += f.pages;
   }
-
-  for (final VideoWatchStatisticRow w in video) {
-    final StatSourceTotals b = bucket(StatBreakdownSource.video, w.dateKey);
-    b.chars += w.subtitleChars;
-    b.timeMs += w.watchTimeMs;
-  }
-
-  for (final (String dateKey, int charsDelta, int durationMs) in gameDaily) {
-    final StatSourceTotals b = bucket(StatBreakdownSource.game, dateKey);
-    b.chars += charsDelta;
-    b.timeMs += durationMs;
-  }
-
   return out;
 }
 

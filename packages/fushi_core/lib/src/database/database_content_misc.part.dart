@@ -178,6 +178,32 @@ mixin _FushiDbContentMisc
         ),
       );
 
+  /// v90：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。段
+  /// `updatedAt > deletedAt` 的后续新写自然复活，不需要显式清碑。
+  Future<int> deleteStudySegmentsForMedia({
+    required String mediaKind,
+    required String mediaKey,
+  }) =>
+      transaction(() async {
+        final int removed = await (delete(studySegments)
+              ..where((t) =>
+                  t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
+            .go();
+        await into(studySegmentTombstones).insertOnConflictUpdate(
+          StudySegmentTombstonesCompanion.insert(
+            mediaKind: mediaKind,
+            mediaKey: mediaKey,
+            deletedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        return removed;
+      });
+
+  /// v90：清空某媒体种类的全部段（统计页「清空全部」）。与 legacy 的 clearAll* 同律：
+  /// 整体重置不逐媒体立碑（会永久毒化身份空间）。
+  Future<int> clearStudySegments(String mediaKind) =>
+      (delete(studySegments)..where((t) => t.mediaKind.equals(mediaKind))).go();
+
   /// 清除 (title, sourceType) 的统计删除墓碑（用户又读该书 / 查词、新写当日统计时
   /// 调用，让该书统计重新生效）。返回删除的行数（无墓碑时 0）。
   Future<int> clearStatisticsTombstone(String title, String sourceType) =>
@@ -204,8 +230,19 @@ mixin _FushiDbContentMisc
   /// 不删 favorite_words / favorite_sentences（收藏）。小时日志（reading_hourly_logs）
   /// 只按 (dateKey, hour) 聚合、不带 title，无法按书精确清理，故不动（全局时段分布仍
   /// 含该书历史贡献，属已知精度边界）。
-  Future<void> deleteReadingStatisticsForTitle(String title) =>
+  ///
+  /// v90：[bookKey] 非空时同一事务连带删该书的 `study_segments` 事实并立按身份的
+  /// 墓碑（legacy 行仍按 title 删、按 (title, sourceType) 立碑——两套墓碑各管各的
+  /// wire 家族）。
+  Future<void> deleteReadingStatisticsForTitle(
+    String title, {
+    String? bookKey,
+  }) =>
       transaction(() async {
+        if (bookKey != null && bookKey.isNotEmpty) {
+          await deleteStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: bookKey);
+        }
         await (delete(readingStatistics)..where((t) => t.title.equals(title)))
             .go();
         await (delete(lookupMiningCounters)
@@ -243,6 +280,11 @@ mixin _FushiDbContentMisc
     bool includeUnattributed = false,
   }) =>
       transaction(() async {
+        // v90：有身份即连带删 study_segments 事实 + 按身份立碑。
+        if (bookUid != null && bookUid.isNotEmpty) {
+          await deleteStudySegmentsForMedia(
+              mediaKind: kActivityMediaVideo, mediaKey: bookUid);
+        }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
         // wire title 粒度的已知限制，见方法 doc）。
         final Set<String> tombstoneTitles = <String>{title};
@@ -354,6 +396,7 @@ mixin _FushiDbContentMisc
   /// 书的统计。云同步开启时下次聚合仍可能从云端 MAX-union 回灌（清空是本地动作，云端为
   /// 权威源）——属已知边界，不在本方法处理。
   Future<void> clearAllReadingStatistics() => transaction(() async {
+        await clearStudySegments(kActivityMediaBook);
         await delete(readingStatistics).go();
         await delete(readingHourlyLogs).go();
         await (delete(lookupMiningCounters)
@@ -370,6 +413,7 @@ mixin _FushiDbContentMisc
   /// video 行)。与 [clearAllReadingStatistics] 对称，同样不动收藏 / 制卡历史 / 视频本体，
   /// 也不写墓碑。
   Future<void> clearAllVideoStatistics() => transaction(() async {
+        await clearStudySegments(kActivityMediaVideo);
         await delete(videoWatchStatistics).go();
         await delete(videoHourlyLogs).go();
         await (delete(lookupMiningCounters)

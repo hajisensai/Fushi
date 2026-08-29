@@ -1,3 +1,4 @@
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 // 统计来源标识 kStatSourceBook / kStatSourceVideo（命名统一 Phase 3.4）已挪进
@@ -25,21 +26,18 @@ String statDateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 String statTodayKey() => statDateKey(DateTime.now());
 
 /// 纯函数：把 (dateKey, count) 事件按 [now] 的今日/本周/本月/全部窗口累加。
-/// dateKey 形如 `2026-06-07`，与 DB 里统计行的 dateKey 同格式，可字典序比较。
+/// 窗口阈值只来自 [StatWindow]（v90：近 7 天恰 7 天、近 30 天恰 30 天）。
 StatActivityBuckets bucketActivityByDateKey(
   Iterable<(String dateKey, int count)> events,
   DateTime now,
 ) {
   final StatActivityBuckets b = StatActivityBuckets();
-  final String todayKey = statDateKey(now);
-  final String weekAgoKey = statDateKey(now.subtract(const Duration(days: 7)));
-  final String monthAgoKey =
-      statDateKey(now.subtract(const Duration(days: 30)));
+  final StatWindow w = StatWindow(now);
   for (final (String dateKey, int count) in events) {
     b.all += count;
-    if (dateKey == todayKey) b.today += count;
-    if (dateKey.compareTo(weekAgoKey) >= 0) b.week += count;
-    if (dateKey.compareTo(monthAgoKey) >= 0) b.month += count;
+    if (w.isToday(dateKey)) b.today += count;
+    if (w.inWeek(dateKey)) b.week += count;
+    if (w.inMonth(dateKey)) b.month += count;
   }
   return b;
 }
